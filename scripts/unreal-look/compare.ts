@@ -84,6 +84,8 @@ export interface IOptions {
   check?: boolean;
   /** `--write-locks <since>`: seed parity-locks.json with every cell and metric that holds now. */
   writeLocks?: string;
+  /** `--lock-metric iou,...`: seed only these metrics (default: every metric that holds). */
+  lockMetrics?: string[];
   sheet?: boolean;
 }
 type LockMetric = "deltaE" | "dP50" | "dEv" | "iou";
@@ -429,6 +431,7 @@ export function seedLocks(
   rows: readonly IRow[],
   thresholds: IThresholdFile,
   since: string,
+  metrics: readonly LockMetric[] = LOCK_METRICS,
 ): IParityLock[] {
   const out: IParityLock[] = [];
   for (const row of rows) {
@@ -436,7 +439,7 @@ export function seedLocks(
     if (row.layer === "ID" || sun === undefined || pose === undefined) continue;
     const { layers: perLayer, ...flat } = thresholds;
     const limits = { ...flat, ...perLayer?.[row.layer] };
-    for (const metric of LOCK_METRICS) {
+    for (const metric of metrics) {
       const threshold = limits[metric];
       const value = lockValue(row, metric);
       if (threshold !== undefined && value !== null && holds(value, { metric, threshold }))
@@ -940,7 +943,12 @@ export function runComparison(options: IOptions = {}) {
   }
   if (options.writeStats) writeJson(path.join(dir, "reference-stats.json"), reference);
   if (options.writeLocks) {
-    const seeded = seedLocks(rows, thresholdData ?? {}, options.writeLocks);
+    const seeded = seedLocks(
+      rows,
+      thresholdData ?? {},
+      options.writeLocks,
+      (options.lockMetrics ?? LOCK_METRICS) as LockMetric[],
+    );
     if (!seeded.length) fail("BAD_INPUT", "no cell holds its thresholds; nothing to lock");
     writeJson(path.join(dir, "parity-locks.json"), { locks: seeded });
   }
@@ -1011,6 +1019,7 @@ export function parseArgs(args: string[]): IOptions {
           "--unreal-vs-unreal",
           "--reference-dir",
           "--write-locks",
+          "--lock-metric",
         ].includes(required(flag))
       )
         fail("BAD_INPUT", `unknown flag ${flag}`);
@@ -1035,6 +1044,13 @@ export function parseArgs(args: string[]): IOptions {
         case "--write-locks":
           options.writeLocks = value;
           break;
+        case "--lock-metric": {
+          const metrics = value.split(",");
+          if (metrics.some((m) => !LOCK_METRICS.includes(m as LockMetric)))
+            fail("BAD_INPUT", `unknown lock metric in ${value}`);
+          options.lockMetrics = metrics;
+          break;
+        }
         case "--layer":
           options.layers = [...(options.layers ?? []), ...value.split(",")];
           break;

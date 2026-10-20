@@ -442,6 +442,13 @@ describe("Unreal reference comparison", () => {
         "abc1234",
       );
       expect(seeded.map((l) => l.metric)).toEqual(["dP50"]);
+      expect(
+        seedLocks(report.rows, { layers: { L1: { dP50: 100 } } }, "abc1234", ["deltaE"]),
+      ).toEqual([]);
+      expect(parseArgs(["--write-locks", "abc", "--lock-metric", "iou,dP50"])).toEqual({
+        writeLocks: "abc",
+        lockMetrics: ["iou", "dP50"],
+      });
       expect(seeded[0]).toMatchObject({
         layer: "L1",
         sun: "sun60",
