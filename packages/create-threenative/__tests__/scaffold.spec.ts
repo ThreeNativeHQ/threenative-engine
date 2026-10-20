@@ -193,6 +193,9 @@ const BUG_REPORT_SKILL_PATHS = [
 // an Engine section, and seven templates pin the legacy engine (slice 8). Measured from the committed branch head, with no sibling edits in the tree.
 // Recomputed 2026-10-18 through all thirteen actual createProject trees after release-cohort preparation and Sailing motion repair.
 // Re-measured all 13 trees for the SMAA mip0 patch; restoring only copied patch bytes recovers every prior hash.
+// Recomputed 2026-10-20 for the Unreal look epic (PR #541): every template gains the opt-in `filmic` tone mode (tonemap.ts,
+// worldEnvironment.ts), the exposure cold-read retry and the histogram-walk fix, and one AGENTS.md/CLAUDE.md line on the engine
+// default. Measured from the committed branch head.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // 2026-10-19: every kit's exposureReadback.ts retries the undrawn cold-start target. Measured by this test.
   // PRD-632 (2026-10-19): every kit ships the shared filmic curve render/tonemap.ts. Measured by this test.
@@ -268,23 +271,23 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-10-18 merging develop f30f9b6d3 (PRD-478) into PR #493: the merged Three patch moves every tree.
   // Recomputed 2026-10-16 for PRD-617: puzzle's boot-failure scenario asserts the engine-neutral
   // boot-failure text both engines now show, so only puzzle's tree moves.
-  "action-rpg": "c57f0462f265361d868feb50c38be27caf9bba78d842ca962d06fb6210bbbcf5",
-  minimal: "6c5928928b6a03425aa6e9b7b8fbf2b616620213cb6264733b1150a8b4a60dd3",
-  platformer: "4934af402c86a37f98e4b91e8122a4a99a24a711033b5a3094918254f004e90c",
-  puzzle: "b9b6a55ec9dbf345f30085b509eec0348e6b5ff75e51ec1dcef8c0c6e9bdd6dc",
-  racing: "2cd50fb5b9d1813bc338ae66cde7da7765abf9905e501e1d2426b26e06fd87a6",
-  rain: "4a564f60269522a8d0510ba0045f83ea26d73648844c5571cd90636df747d665",
-  rts: "3323c7c27229769ed2ca4c531b59b43db87081426dbbd77c0170926ea8733217",
-  runner: "7ed7a7aa5c30cf01d2a013326a26d703c80a80f0976d303888d613f0ff3fe5de",
+  "action-rpg": "6902fe11f9a7ba17d05716c642cbbc470c276cd52aaeda6684ccfcfd22af25c3",
+  minimal: "b1a7585a2b609b0a98b129eb313e982e15c5adb1bed8dd2e3c774bf38b7c0601",
+  platformer: "efc1a5d087f70ed5eb952e8fcf4de0046da7e3c806e78faf47b9df14c6ef57bb",
+  puzzle: "a2945ef37d674bb9c5ec6207d9e0039f6cbaa51afbad35efbb2f166848f0495f",
+  racing: "849d695fcb88873a5a459085996b86c7dc357b68bc5528fed360a1d7a1659631",
+  rain: "f0dedcf67230fba8964088832b8c3c0b44c34a9dbc14bda4c2385d4651284ba6",
+  rts: "ebc267b85557c8b387d2062403c0aaa06fcd277cfac0acb7042ae1bd44c065f0",
+  runner: "6ea468632f2ba179c16e2db2f9fdb224731ec663709c111c5d645d9e862482e1",
   // Finite-height readiness plus hull, sail, and buoy interpolation from the current swell pose.
-  sailing: "8d87c0198b128dcd2c3f1d4325da48cf5f676cf615cac06a2ee4b55a65c745cf",
-  shooter: "dc3ca760ff1e3b9e460fe77b74681c8ce4319f91489a575f50840bc8a0002827",
-  snow: "1379884e5390390ed0de16b37331c683dbaf2a515e8cd4000b2f728d25470daf",
+  sailing: "80f7f0586933419ce729dbe9a868e35c115c653043e974937ad7e44c552bcd96",
+  shooter: "b41b16f1b96a863de278467b9a7d109bb6e7b0cf1621d990a6db5ce73c4fd61f",
+  snow: "ef1448aa9dda7fd6dfbfb2f8e20dd624efc4801ec5be9034f2711ea935b7bbea",
   // Measured 2026-10-16 through createProject after starter's completed-work quality fallback fix.
   // Recomputed 2026-10-16: starter's adaptiveQuality split its policy resolution into qualityPolicy.ts
   // to stay under the 200-line render-file cap; only starter's tree moves.
-  starter: "aae851cb8b1209e616ab1b619efcb181488d61f84def69e7204276d595c2d8a2",
-  "tower-defense": "413bc014bac7278be66b7020f11885d31575102364b8a4b86247ff868ff93737",
+  starter: "4dd85beadd04bf042511aefef5df516d6d98306e4fc8611bd22df9d7d8b46cd3",
+  "tower-defense": "c3bf07e5b6683294dec1d922edd8d068d901f092931cf4de7f376fd15dc6618a",
 };
 
 const GENERATED_SCAFFOLD_METADATA =
