@@ -1331,7 +1331,10 @@ export function defineBrowserClasses(
         },
       });
     }
-    if (binding.members.includes("parent") || binding.getters.includes("parent")) {
+    const graphNode = binding.members.includes("parent") || binding.getters.includes("parent");
+    // three gives Object3D, Material, Texture and BufferGeometry a `userData`; the engine classes
+    // with a parent or a `dispose` are those.
+    if (graphNode || binding.methods.includes("dispose")) {
       Object.defineProperty(prototype, "userData", {
         configurable: true,
         get(this: object) {
@@ -1342,6 +1345,8 @@ export function defineBrowserClasses(
           userData.set(this, value);
         },
       });
+    }
+    if (graphNode) {
       defineTraversal(
         prototype,
         name,

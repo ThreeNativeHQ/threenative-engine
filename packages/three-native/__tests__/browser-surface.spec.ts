@@ -102,6 +102,13 @@ describe("browser back end object surface", () => {
     expect(group.userData).toEqual({ hp: 3 });
     group.userData = { team: "red" };
     expect(group.userData).toEqual({ team: "red" });
+    // three gives textures, materials and geometries a userData too.
+    for (const name of ["Texture", "MeshStandardMaterial", "BufferGeometry"]) {
+      const object = new (classes[name] as Constructor)();
+      expect(object.userData).toEqual({});
+      (object.userData as Record<string, unknown>).tag = name;
+      expect(object.userData).toEqual({ tag: name });
+    }
   });
 
   it("walks children depth first, and only visible subtrees for traverseVisible", () => {
