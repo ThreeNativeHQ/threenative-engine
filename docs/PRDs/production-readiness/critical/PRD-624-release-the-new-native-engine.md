@@ -1,12 +1,12 @@
 # PRD-624 — Release the new native engine
 
-**Status:** IN PROGRESS
-**Priority:** P0 — Native Runner still loses its GPU, startup preparation is incomplete, and PR #493 has merge conflicts.
+**Status:** PARTIAL
+**Blocker:** 0.3.5 is released (npm `latest`, GitHub release `runtime-native-v0.3.5`); the one open box needs João's threshold call for the Three.js PMREM bake on software adapters.
+**Priority:** P0 — The Phase 1 Three.js startup box still reports `timedOut` on 3-CPU SwiftShader and waits on the owner threshold call.
 **Complexity:** 6 → HIGH; security-boundary override for the public dependency chain.
 **Owner:** ThreeNative engine/release agent; João owns merge and publication approval.
 **Depends on:** PRD-573 release-blocking v1 work only; its later performance cycles do not block this release.
-**Progress:** 0/7 remaining outcomes verified.
-**Execution:** Planning only. Implementation is paused.
+**Progress:** 6/7 remaining outcomes verified.
 
 ## Scope
 
@@ -59,10 +59,11 @@ Verification: use fresh normally generated consumers and the shipped scenarios. 
 
 ### Phase 3 — Qualify the exact release source
 
-**Status:** IN PROGRESS
+**Status:** DONE
 **Files:** Existing qualification workflows and release-candidate PR metadata; no workflow per feature.
 
-- [ ] [shared] **The frozen candidate passes the complete required qualification.** Run required local checks, then one fresh full exact-source CI board under runner admission. Require actual successful executions of all seven previously failing parity jobs, `ci-required`/Integration, the full unit suite, shipped-template/golden journeys and supported native/platform lanes. The host-projection check retains its 120-second watchdog; investigate recurring failures instead of rerunning blindly. Any later source change invalidates the affected proof. proof: `pnpm typecheck`, `pnpm lint`, `pnpm test`, and completed exact-head full qualification jobs/receipts linked on the release PR.
+- [x] [shared] **The frozen candidate passes the complete required qualification.** Run required local checks, then one fresh full exact-source CI board under runner admission. Require actual successful executions of all seven previously failing parity jobs, `ci-required`/Integration, the full unit suite, shipped-template/golden journeys and supported native/platform lanes. The host-projection check retains its 120-second watchdog; investigate recurring failures instead of rerunning blindly. Any later source change invalidates the affected proof. proof: `pnpm typecheck`, `pnpm lint`, `pnpm test`, and completed exact-head full qualification jobs/receipts linked on the release PR.
+  - Result 2026-10-20 at 21a5a84f9 (#493 merged as 4e8fe84ae, then release fixes #522-#538 promoted to main): main CI 39310175297 success (attempt 3; attempts 1-2 cancelled on a racing parity flake and a corrupt Android NDK download), native-platforms 39310220017 success, release-candidate 39326878221 success (dispatched once for the SHA). Local on the same SHA: `pnpm typecheck`, `pnpm lint`, `pnpm test` 11804/11804 and `pnpm build` green inside `pnpm release --yes` under a private Xvfb. Tag run 39327476745: every build (win32, darwin, linux, android, iOS simulator), publish, clean-consumer, clean-consumer-windows and finalize success; release `runtime-native-v0.3.5` final with 22 assets. `clean-consumer-ios` failed on a stale fixture (iOS is not a supported target; PRD-632). `pnpm release --yes --skip-gates` (gates from the green run above, unchanged SHA) passed the upgrade proof and published the cohort: `@threenative/core`, `runtime-native`, `ui`, `physics`, `playtest` 0.3.5 `latest`, `create-threenative` 0.2.9. The post-publish clean room found a restart world-loss and an Android bundle parse error: follow-up PRD-632 (P0).
 
 Verification: final evidence must identify source revision, dependency/artifact cohort and target. Draft skips, cancelled jobs, an older green run, local unit tests alone or an adapter substitute do not qualify the required platform. Reuse the final CI unit result when it proves the same frozen source; do not add equivalent reruns.
 
@@ -76,8 +77,9 @@ Verification: final evidence must identify source revision, dependency/artifact 
 
 ## Blocked on
 
-- **Sculpt maintainer:** publish the prepared external SDK-floor repair; a real fixed registry version is required before the public core dependency proof can close.
-- **Native release owner:** produce/authorize the complete supported prebuilt matrix for the final cohort. Existing partial 0.3.5 artifacts are insufficient; each published artifact needs matching immutable-source provenance and its platform proof.
+- **João (owner):** the Three.js PMREM threshold call for the open Phase 1 box. On 3-CPU SwiftShader the full-quality bake needs about 80 s against the 45 s `environmentBudgetMs`, and no bound inside the 180 s launch contract fits it. Lighting is correct at capture.
+- Resolved 2026-10-18: the sculpt maintainer published `threenative-sculpt-mcp` 0.2.2 (Phase 2).
+- Resolved 2026-10-20: the native release owner's prebuilt matrix is published as `runtime-native-v0.3.5` (tag run 39327476745).
 - **João:** decide whether the outstanding Android instrumented receipt/pump qualification and unresolved host-projection intermittency need additional initial-release evidence. They remain explicitly unverified; this plan grants no waiver. Required platform CI still must pass.
 - **João:** lift the existing draft/merge/publication hold after reviewing the qualified candidate. Promotion remains the ordinary full-checked `develop → main` PR with a merge commit. Tags, registry publication, deployment and post-publication fresh-install smoke require that authorization; this planning request authorizes none of them.
 
