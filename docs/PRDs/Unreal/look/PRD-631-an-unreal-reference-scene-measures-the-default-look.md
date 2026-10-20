@@ -272,3 +272,12 @@ because generated source belongs to the game.
     Unreal's sun lux (PRD-633), not from hand-picked constants.
   - Noted: auto exposure brightened the interior (Unreal's is cooler and darker). The cause is
     unoccluded sky light indoors, owned by the L7 GI work, not by the exposure meter.
+- 2026-10-19 (owner, supersedes the "three.js first" interview answer): the reference scene is
+  tuned on the owned C++ Wasm engine only ("threenative engine (wasm) is the default. Whatever is
+  not there you have to create"). The harness drops its `engine: "threejs"` pin. Every tuned feature
+  the engine lacks (custom tone mapping is refused at `renderer.cpp:833-853` and `tsl_call.cpp:292`,
+  the soft-shadow `filterNode`, `SkyCapture`, auto exposure) becomes engine work in this epic and PR.
+  three.js frames captured so far stay as history; new BEFORE/AFTER pairs are engine frames.
+  The four templates that still pin three.js (runner, snow, sailing, action-rpg) belong to
+  [PRD-617](../../performance/PRD-617-every-template-runs-on-the-native-engine.md), in progress on
+  its own lane; the starter is unpinned and already defaults to the engine.

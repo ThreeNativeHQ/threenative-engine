@@ -5,7 +5,19 @@ import {
   type LightShadow,
   type OrthographicCamera,
 } from "three";
-import { Fn, If, float, ivec2, max, min, reference, texture, textureLoad, vec2 } from "three/tsl";
+import {
+  Fn,
+  If,
+  float,
+  ivec2,
+  max,
+  min,
+  reference,
+  step,
+  type texture,
+  textureLoad,
+  vec2,
+} from "three/tsl";
 import type { Node } from "three/webgpu";
 
 /** World-space gap to UV radius; sourceAngleRad is in radians, in [0, PI/2). */
@@ -112,11 +124,19 @@ export function sourceAngleShadowFilter({
       const searchRadius = max(texel, vec2(receiver.mul(range).mul(tangent)).div(span)).toVar();
       const blockerSum = float(0).toVar();
       const blockerCount = float(0).toVar();
+      // Integer loads read raw depth without interpolated blockers. Both loops load: three r185
+      // gives a depth texture one sampler binding, typed by the first node that registers it, so
+      // a load followed by `.compare()` emitted a plain sampler and failed to compile.
+      const load = (uv: Node<"vec2">) =>
+        linearDepth(
+          withLayer(
+            textureLoad(depthTexture, ivec2(min(max(uv.mul(size).floor(), vec2(0)), size.sub(1)))),
+          ).r,
+        );
       for (let index = 0; index < blockerSamples; index++) {
-        const uv = shadowCoord.xy.add(disk(index, blockerSamples).mul(searchRadius));
-        const pixel = ivec2(min(max(uv.mul(size).floor(), vec2(0)), size.sub(1)));
-        // Integer loads read raw depth without a comparison sampler or interpolated blockers.
-        const depth = linearDepth(withLayer(textureLoad(depthTexture, pixel)).r).toVar();
+        const depth = load(
+          shadowCoord.xy.add(disk(index, blockerSamples).mul(searchRadius)),
+        ).toVar();
         If(depth.lessThan(receiver), () => {
           blockerSum.addAssign(depth);
           blockerCount.addAssign(1);
@@ -126,8 +146,8 @@ export function sourceAngleShadowFilter({
       const radius = max(texel, vec2(gap.mul(tangent)).div(span)).toVar();
       const visibility = float(0).toVar();
       for (let index = 0; index < filterSamples; index++) {
-        const uv = shadowCoord.xy.add(disk(index, filterSamples).mul(radius));
-        visibility.addAssign(withLayer(texture(depthTexture, uv)).compare(shadowCoord.z));
+        const depth = load(shadowCoord.xy.add(disk(index, filterSamples).mul(radius)));
+        visibility.addAssign(step(receiver, depth));
       }
       return blockerCount.greaterThan(0).select(visibility.div(filterSamples), float(1));
     })();
