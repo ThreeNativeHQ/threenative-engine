@@ -91,19 +91,14 @@ async function patchScaffold(target: string, fresh: boolean, baseline: boolean):
   await writeFile(game, source);
   const config = path.join(target, "threenative.config.ts");
   // One drawing pixel per display pixel, so both engines rasterise the same grid.
+  // The scene renders on the template's default engine, the owned C++ Wasm engine (owner,
+  // 2026-10-19); upstream three is never pinned here.
   await writeFile(
     config,
     replaceOnce(
-      replaceOnce(
-        await readFile(config, "utf8"),
-        'resolutionScale: "auto"',
-        "resolutionScale: 1",
-        config,
-      ),
-      'nativeEntry: "src/game.ts",',
-      // Upstream three.js renders the template's TSL as written; the owned engine's agreement
-      // with it is the separate per-layer parity gate (`pnpm parity --target desktop`).
-      'nativeEntry: "src/game.ts",\n  engine: "threejs",',
+      await readFile(config, "utf8"),
+      'resolutionScale: "auto"',
+      "resolutionScale: 1",
       config,
     ),
   );
@@ -230,6 +225,10 @@ export async function captureThreeNative(options: IThreeNativeCaptureOptions): P
           await page.addStyleTag({ content: HIDE_UI });
           await page.waitForSelector('[data-threenative-startup="ready"]', { timeout: 120_000 });
           await page.waitForFunction(() => "__tnRef" in window, undefined, { timeout: 30_000 });
+          const engine = await page.evaluate("window.__tnRef.engine");
+          if (engine !== "threenative")
+            throw new Error(`TN_UNREAL_LOOK_WRONG_ENGINE: ${layer} drew on ${String(engine)}`);
+          if (count === 0) console.info(`TN_UNREAL_LOOK engine=${engine}`);
           for (const pose of wanted) {
             await page.evaluate((p) => {
               (window as unknown as { __tnRef: { pose(p: unknown): void } }).__tnRef.pose(p);

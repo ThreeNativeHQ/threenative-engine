@@ -120,6 +120,9 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
     const target = new Vector3();
     (window as unknown as { __tnRef: unknown }).__tnRef = {
       layer: LAYER,
+      // Only the owned engine's renderer carries `info.engine`; the capture refuses anything else.
+      engine:
+        "engine" in (ctx.renderer.raw as unknown as { info: object }).info ? "threenative" : "threejs",
       pose(pose: Pose): void {
         const aspect = innerWidth / innerHeight;
         const half = (pose.hfovDeg * Math.PI) / 360;
