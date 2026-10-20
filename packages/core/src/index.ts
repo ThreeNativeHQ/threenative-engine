@@ -916,6 +916,17 @@ export { readVirtualShadowMarker } from "./render/virtual-shadow.js";
  */
 export { sourceAngleShadowFilter } from "./render/soft-shadow.js";
 /**
+ * Source-radius blocker search and variable-radius PCF on a spot or point light's shadow map.
+ * @situation soften a lamp's shadow by the lamp's size, as Unreal's SourceRadius does
+ * @constraint sourceRadius is required, in metres, 0 or more (0 is one hard tap); forward-depth maps only
+ * @alias SourceRadius, PCSS, soft lamp shadow
+ * @example lamp.shadow.filterNode = sourceRadiusShadowFilter({ sourceRadius: 0.05 });
+ */
+export {
+  lampPenumbraTangent,
+  sourceRadiusShadowFilter,
+} from "./render/soft-shadow.js";
+/**
  * Convert world-space caster gap to a shadow UV radius, floored at one texel.
  * @situation measure a source-angle shadow's filter radius without a GPU
  * @constraint inputs must be finite and non-negative; sizes must be positive and angle < PI/2 radians

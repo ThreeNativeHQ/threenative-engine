@@ -163,6 +163,7 @@ DirectLight::Shadow shadowOf(LightShadow& shadow, const std::array<double, 3>& f
     out.matrix = toArray(matrix);
     out.virtualShadow = shadow.virtualShadow;
     out.sourceAngleFilter = shadow.sourceAngleFilter;
+    out.sourceRadiusFilter = shadow.sourceRadiusFilter;
     out.bias = shadow.bias;
     out.normalBias = shadow.normalBias;
     out.radius = shadow.radius;
@@ -170,6 +171,12 @@ DirectLight::Shadow shadowOf(LightShadow& shadow, const std::array<double, 3>& f
     out.width = static_cast<uint32_t>(shadow.mapSize.x);
     out.height = static_cast<uint32_t>(shadow.mapSize.y);
     out.layersMask = layersMask;
+    // A spot map is perspective: its depth turns back into a distance for the source-radius filter.
+    if (const auto* perspective = dynamic_cast<const PerspectiveCamera*>(&camera)) {
+        out.near = perspective->near;
+        out.far = perspective->far;
+        out.tanHalfFov = 1.0 / camera.projectionMatrix.elements[5];
+    }
     return out;
 }
 
@@ -199,6 +206,7 @@ DirectLight::Shadow pointShadowOf(LightShadow& shadow, const std::array<double, 
     out.matrix = toArray(matrix);
     out.virtualShadow = shadow.virtualShadow;
     out.sourceAngleFilter = shadow.sourceAngleFilter;
+    out.sourceRadiusFilter = shadow.sourceRadiusFilter;
     out.bias = shadow.bias;
     out.normalBias = shadow.normalBias;
     out.radius = shadow.radius;

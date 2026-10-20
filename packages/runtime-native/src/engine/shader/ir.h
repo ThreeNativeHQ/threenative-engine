@@ -141,6 +141,8 @@ public:
     ExprId textureLoad(uint32_t texture, ExprId coordinate, ExprId level, Where where = Where::current());
     /** A depth texture (2D, or a cube) and its comparison sampler, bound together: a shadow map. */
     uint32_t textureDepth(std::string_view name, bool cube = false);
+    /** A depth cube read for its stored depths (sampleLevel with an i32 level answers f32): a blocker search. */
+    uint32_t textureDepthCubeValues(std::string_view name);
     /** f32 in [0, 1]: `reference` compared against the depth texture at `uv` (vec3 for a cube), filtered. */
     ExprId sampleCompare(uint32_t texture, ExprId uv, ExprId reference, Where where = Where::current());
     /** vec4: the four texels around `uv` (2D depth texture, offset by whole texels) each compared with
@@ -239,7 +241,8 @@ private:
     std::unordered_map<std::string, std::string> authoredFunctions_;
     std::vector<Storage> storage_;
     std::vector<std::string> textures_;
-    enum class TextureKind : uint8_t { Float2d, Depth2d, DepthCube, Float3d, FloatCube };
+    // DepthCubeValues: a depth cube read for its stored values through a plain nearest sampler.
+    enum class TextureKind : uint8_t { Float2d, Depth2d, DepthCube, Float3d, FloatCube, DepthCubeValues };
     std::vector<TextureKind> textureKinds_; // per texture
     struct OutputSlot {
         uint64_t name;

@@ -39,6 +39,8 @@ public:
     std::unique_ptr<Camera> camera;
     std::shared_ptr<const shadows::AtlasOptions> virtualShadow;
     std::optional<std::array<double, 3>> sourceAngleFilter;
+    // sourceRadiusShadowFilter on a lamp: {sourceRadius m, blockerSamples, filterSamples}.
+    std::optional<std::array<double, 3>> sourceRadiusFilter;
     double intensity = 1;
     double bias = 0;
     double normalBias = 0;

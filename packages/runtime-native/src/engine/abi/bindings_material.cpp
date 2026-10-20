@@ -457,21 +457,29 @@ void registerLightShadow(ClassBinding& b, bool spot) {
     };
     b.setters["filterNode"] = [](void* self, const Value& value) {
         auto& shadow = *as<LightShadow>(self);
-        if (value.kind == Value::Kind::Null) { shadow.sourceAngleFilter.reset(); return; }
+        if (value.kind == Value::Kind::Null) {
+            shadow.sourceAngleFilter.reset();
+            shadow.sourceRadiusFilter.reset();
+            return;
+        }
+        // sourceAngleShadowFilter on a sun (orthographic map), sourceRadiusShadowFilter on a lamp.
+        const bool lamp = dynamic_cast<PerspectiveCamera*>(shadow.camera.get()) != nullptr;
+        const char* size = lamp ? "sourceRadius" : "sourceAngleRad";
         if (value.kind != Value::Kind::Record || value.fields.size() != 3 ||
-            !dynamic_cast<OrthographicCamera*>(shadow.camera.get()))
-            throw Unsupported{"TN_VIRTUAL_SHADOW_UNSUPPORTED: filterNode (directional sourceAngleShadowFilter required)"};
-        double angle = -1, blockers = 0, samples = 0;
+            (!lamp && !dynamic_cast<OrthographicCamera*>(shadow.camera.get())))
+            throw Unsupported{"TN_VIRTUAL_SHADOW_UNSUPPORTED: filterNode (sourceAngleShadowFilter on a directional "
+                              "light, or sourceRadiusShadowFilter on a spot or point light, required)"};
+        double extent = -1, blockers = 0, samples = 0;
         for (const auto& [key, v] : value.fields) {
-            if (key == "sourceAngleRad") angle = number(v);
+            if (key == size) extent = number(v);
             else if (key == "blockerSamples") blockers = number(v);
             else if (key == "filterSamples") samples = number(v);
         }
-        if (!std::isfinite(angle) || angle < 0 || angle >= 1.5707963267948966 ||
+        if (!std::isfinite(extent) || extent < 0 || (!lamp && extent >= 1.5707963267948966) ||
             !std::isfinite(blockers) || blockers < 1 || blockers > 64 || blockers != std::floor(blockers) ||
             !std::isfinite(samples) || samples < 1 || samples > 64 || samples != std::floor(samples))
-            throw Unsupported{"TN_VIRTUAL_SHADOW_INVALID: source-angle filter"};
-        shadow.sourceAngleFilter = {angle, blockers, samples};
+            throw Unsupported{lamp ? "TN_VIRTUAL_SHADOW_INVALID: source-radius filter" : "TN_VIRTUAL_SHADOW_INVALID: source-angle filter"};
+        (lamp ? shadow.sourceRadiusFilter : shadow.sourceAngleFilter) = std::array<double, 3>{extent, blockers, samples};
     };
     if (spot) {
         b.getters["focus"] = [](void* self) { return Value::of(as<LightShadow>(self)->focus); };

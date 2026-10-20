@@ -36,6 +36,7 @@ struct Binding {
     bool depth = false;    // texture: texture_depth_2d (or _cube); sampler: sampler_comparison
     bool cube = false;     // a depth texture's view is a cube
     bool volume = false;   // a float texture's view is 3D
+    bool values = false;   // a depth texture read for its values: a plain nearest (non-filtering) sampler
 };
 
 struct VertexAttribute {

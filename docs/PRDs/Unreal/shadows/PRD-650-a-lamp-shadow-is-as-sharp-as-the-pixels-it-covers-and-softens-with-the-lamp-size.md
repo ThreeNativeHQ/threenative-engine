@@ -97,9 +97,9 @@ shadows (off in Unreal, declined in PRD-561).
 - [ ] AC-2 holds. proof: the AC-2 command.
 
 #### Phase 3: `sourceRadius`
-**Status:** NOT STARTED
+**Status:** IN PROGRESS
 **Files:** `packages/core/src/render/soft-shadow.ts`, `packages/core/__tests__/soft-shadow.spec.ts`, `packages/runtime-native/src/engine/shader/standard.cpp`, `packages/runtime-native/conformance/registry.json`
-- [ ] The perspective and cube filters widen linearly with the caster gap and with `sourceRadius`, and fall to one hard tap at 0. proof: `pnpm exec vitest run packages/core/__tests__/soft-shadow.spec.ts`.
+- [x] The perspective and cube filters widen linearly with the caster gap and with `sourceRadius`, and fall to one hard tap at 0. proof: `pnpm exec vitest run packages/core/__tests__/soft-shadow.spec.ts`. — Evidence 2026-10-20: `sourceRadiusShadowFilter` (core TSL, spot and point) and the owned engine's `lampSoftShadowFactor`; soft-shadow.spec.ts 6/6 (`lampPenumbraTangent` doubles with the gap and the radius, 0 at radius 0), shadow-node.spec.ts 6/6; red-green native test `native_engine_lamp_source_radius`: a 1 m penumbra at radius 0.5 m measures 0 px with the filter selection off, 7 px (point cube) and 8 px (spot) with it on; three's PCF and radius 0 measure 0 px.
 - [ ] The native engine matches the browser within tolerance. proof: `pnpm parity --target desktop --only-tests soft-shadow-source-radius`.
 - [ ] AC-1 and AC-3 hold, with the sheets posted on the PR. proof: the AC-1 and AC-3 commands.
 **Verification:** AC-1 to AC-3.
@@ -111,3 +111,8 @@ shadows (off in Unreal, declined in PRD-561).
   measure. PRD-457 keeps the directional page-cost gate.
 - 2026-10-20 (slicing): the default `sourceRadius` is 0, as in Unreal, so a fresh lamp shadow is
   sharp. Softness is a game choice made in `src/render/`.
+- 2026-10-20 (Phase 3): the radius rides on `sourceRadiusShadowFilter({ sourceRadius })` as
+  `light.shadow.filterNode`, the shape of `sourceAngleShadowFilter`, because three's `LightShadow`
+  has no field a filter could read. The browser cube compares each search tap at four depths
+  (three r185 gives a depth texture one sampler, and WGSL has no integer load on a cube); the owned
+  engine reads the cube's raw depths through a second, non-comparison binding.

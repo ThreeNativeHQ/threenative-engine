@@ -178,7 +178,8 @@ constexpr const char* kSlotNames[] = {
 constexpr const char* kLightFieldNames[] = {"Color",       "Direction",        "Position",     "Distance",
                                             "Decay",       "Axis",             "ConeCos",      "PenumbraCos",
                                             "ShadowMatrix", "ShadowBias",      "ShadowNormalBias", "ShadowRadius",
-                                            "ShadowMapSize", "ShadowIntensity", "ShadowNear", "ShadowFar"};
+                                            "ShadowMapSize", "ShadowIntensity", "ShadowNear", "ShadowFar",
+                                            "ShadowSourceRadius"};
 
 constexpr uint64_t kUniformAlign = 256;  // minUniformBufferOffsetAlignment's WebGPU default
 uint64_t aligned(uint64_t size) { return (size + kUniformAlign - 1) / kUniformAlign * kUniformAlign; }
@@ -490,6 +491,9 @@ Renderer::Renderer(WGPUInstance instance, WGPUDevice device, WGPUQueue queue, Ev
     lutSampler_ = wgpuDeviceCreateSampler(device, &sampler);
     sampler.compare = WGPUCompareFunction_LessEqual;
     compareSampler_ = wgpuDeviceCreateSampler(device, &sampler);
+    sampler.compare = WGPUCompareFunction_Undefined;
+    sampler.magFilter = sampler.minFilter = WGPUFilterMode_Nearest;
+    depthValueSampler_ = wgpuDeviceCreateSampler(device, &sampler);
 
     // One triangle covers the frame; the output pass samples the scene target texel for texel.
     const float triangle[6] = {-1, -1, 3, -1, -1, 3};
@@ -818,6 +822,7 @@ Renderer::~Renderer() {
     if (outputLayout_) wgpuBindGroupLayoutRelease(outputLayout_);
     wgpuSamplerRelease(lutSampler_);
     wgpuSamplerRelease(compareSampler_);
+    wgpuSamplerRelease(depthValueSampler_);
     if (linearClampSampler_) wgpuSamplerRelease(linearClampSampler_);
     for (auto& [light, shadow] : virtualShadows_) shadowMaps_.push_back(shadow.map);
     shadowMaps_.insert(shadowMaps_.end(), cubeShadowMaps_.begin(), cubeShadowMaps_.end());
@@ -1245,7 +1250,7 @@ WGPUBindGroup Renderer::bindGroup(WGPUBindGroupLayout layout, const shader::Stag
             if (virtualMap && !virtualShadows_.count(index)) return nullptr;
             if (b.kind == shader::BindingKind::Texture)
                 e.textureView = virtualMap ? virtualShadows_.at(index).map.view : (b.cube ? cubeShadowMaps_ : shadowMaps_).at(index).view;
-            else e.sampler = compareSampler_;
+            else e.sampler = b.values ? depthValueSampler_ : compareSampler_;
         } else if (b.kind == shader::BindingKind::Texture) {
             const auto postView = postTextureView(b.name.substr(2));
             const MaterialTexture* pbrTexture = pbr(b.name, false);
@@ -2003,7 +2008,8 @@ void Renderer::buildLayouts(Program& program, const std::string& key) {
                 e.texture.viewDimension = b.volume ? WGPUTextureViewDimension_3D
                                           : b.cube ? WGPUTextureViewDimension_Cube : WGPUTextureViewDimension_2D;
             } else if (b.kind == shader::BindingKind::Sampler) {
-                e.sampler.type = b.depth ? WGPUSamplerBindingType_Comparison : WGPUSamplerBindingType_Filtering;
+                e.sampler.type = b.values ? WGPUSamplerBindingType_NonFiltering
+                                 : b.depth ? WGPUSamplerBindingType_Comparison : WGPUSamplerBindingType_Filtering;
             } else {
                 throw std::runtime_error("TN_NATIVE_BINDING_UNSUPPORTED: " + b.name);
             }
@@ -2473,7 +2479,9 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             if (const char* refusal = sourceAngleFilterRefusal(*l.shadow)) throw std::runtime_error(refusal);
         const char kind = l.kind == DirectLight::Kind::Directional ? 'd' : l.kind == DirectLight::Kind::Point ? 'p' : 's';
         unshadowedKinds += kind;
-        lightKinds += virtualShadows_.count(i) ? char('0' + virtualShadows_.at(i).atlas.options().clipExtents.size()) : l.shadow ? static_cast<char>(kind - 'a' + 'A') : kind;
+        // A lamp with sourceRadiusShadowFilter reads the soft filter: 'Q' a point light, 'R' a spot light.
+        const char shadowed = l.shadow && l.shadow->sourceRadiusFilter ? (kind == 'p' ? 'Q' : 'R') : static_cast<char>(kind - 'a' + 'A');
+        lightKinds += virtualShadows_.count(i) ? char('0' + virtualShadows_.at(i).atlas.options().clipExtents.size()) : l.shadow ? shadowed : kind;
         if (virtualShadows_.count(i)) {
             auto& shadow = virtualShadows_.at(i);
             if (shadow.map.texture) continue;
@@ -2880,6 +2888,9 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 put(frameUniforms_, f, slot[kLightShadowIntensity], std::array<double, 1>{l.shadow->intensity});
                 put(frameUniforms_, f, slot[kLightShadowNear], std::array<double, 1>{l.shadow->near});
                 put(frameUniforms_, f, slot[kLightShadowFar], std::array<double, 1>{l.shadow->far});
+                if (const auto& soft = l.shadow->sourceRadiusFilter)
+                    put(frameUniforms_, f, slot[kLightShadowSourceRadius],
+                        std::array<double, 4>{(*soft)[0], l.shadow->tanHalfFov, (*soft)[1], (*soft)[2]});
             }
         }
         put(frameUniforms_, f, fs[kHemisphereSky], lights.hemisphereSky);

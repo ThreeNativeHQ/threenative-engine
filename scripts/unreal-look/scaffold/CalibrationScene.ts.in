@@ -4,7 +4,7 @@
 // It is scene setup only; every look decision comes from the copy's own `src/render/`.
 //   ?tnGi=<scene>&layer=<ID|L1..L9>
 // and `window.__tnRef.pose(...)` frames one camera pose, as in Reference.ts.
-import { type ICtx, Scene, type SceneFrame } from "@threenative/core";
+import { type ICtx, Scene, type SceneFrame, sourceRadiusShadowFilter } from "@threenative/core";
 import type { IPhysicsContext } from "@threenative/physics";
 import {
   Color,
@@ -122,12 +122,15 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
         point.castShadow = shadows && light.castShadows;
         scene.add(point);
         lights.push(point);
-        if ((light.sourceRadiusM ?? 0) > 0)
+        if ((light.sourceRadiusM ?? 0) > 0) {
+          // The lamp's radius softens its shadow as Unreal's does (PRD-650); its highlight stays a point's.
+          point.shadow.filterNode = sourceRadiusShadowFilter({ sourceRadius: light.sourceRadiusM ?? 0 });
           unsupported.push({
             actor: light.name,
             property: "sourceRadiusM",
-            reason: "a punctual light has no area: highlights and shadow edges stay hard (PRD-634)",
+            reason: "a punctual light has no area: highlights stay hard (PRD-634)",
           });
+        }
       }
       if (level >= 7) {
         const gi = installGi(ctx, model, {

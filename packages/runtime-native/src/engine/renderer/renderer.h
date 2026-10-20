@@ -230,6 +230,8 @@ struct DirectLight {
     struct Shadow {
         std::shared_ptr<const shadows::AtlasOptions> virtualShadow;
         std::optional<std::array<double, 3>> sourceAngleFilter;
+        std::optional<std::array<double, 3>> sourceRadiusFilter;
+        double tanHalfFov = 1;  // a perspective map's: a cube face's is 1
         Matrix view{}, projection{}, matrix{};
         double bias = 0, normalBias = 0, radius = 1, intensity = 1;
         uint32_t width = 512, height = 512;
@@ -600,7 +602,7 @@ private:
     enum LightField : uint8_t { kLightColor, kLightDirection, kLightPosition, kLightDistance, kLightDecay, kLightAxis,
                                 kLightConeCos, kLightPenumbraCos, kLightShadowMatrix, kLightShadowBias,
                                 kLightShadowNormalBias, kLightShadowRadius, kLightShadowMapSize,
-                                kLightShadowIntensity, kLightShadowNear, kLightShadowFar, kLightFieldCount };
+                                kLightShadowIntensity, kLightShadowNear, kLightShadowFar, kLightShadowSourceRadius, kLightFieldCount };
     uint64_t renderPrepared(std::span<const DrawItem> items, const CameraState& camera, const LightState& lights,
         std::array<double, 4> clear, std::vector<std::shared_ptr<PipelineCompilation>>* compilation,
         WGPUTextureFormat outputFormat, bool defer = false);
@@ -812,6 +814,7 @@ private:
     std::map<std::size_t, VirtualShadow> virtualShadows_;
     bool virtualCut_ = false;
     WGPUSampler compareSampler_ = nullptr;
+    WGPUSampler depthValueSampler_ = nullptr;  // nearest, no compare: a blocker search's depth reads
     // The viewport textures (three's viewportSharedTexture / viewportDepthTexture): the scene colour
     // and depth copied at the first draw that reads either, created with the scene target.
     WGPUTexture viewportColor_ = nullptr, viewportDepth_ = nullptr;
