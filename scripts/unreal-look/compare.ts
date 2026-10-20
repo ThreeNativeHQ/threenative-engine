@@ -3,6 +3,7 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { PNG } from "pngjs";
+import { floorEdges, linearLuminance, matchedWidths } from "./penumbra.js";
 // Three.js belongs to core's dependency graph; root scripts do not install a second copy.
 const coreRequire = createRequire(new URL("../../packages/core/package.json", import.meta.url));
 const { FloatType } = await import(pathToFileURL(coreRequire.resolve("three")).href);
@@ -99,14 +100,21 @@ export function decode(bytes: Uint8Array, format: "png" | "exr" = "png"): IImage
     return fail("BAD_INPUT", `cannot decode ${format}: ${String(error)}`);
   }
 }
+const linearToSrgb = (v: number): number =>
+  v <= 0.0031308 ? v * 12.92 : 1.055 * v ** (1 / 2.4) - 0.055;
 export function classify(
   rgb: readonly number[],
   colors: Record<string, readonly number[]>,
 ): string | null {
   const near = (color: readonly number[]) =>
     color.every((v, c) => Math.abs(v - required(rgb[c])) <= 6);
+  // Unreal writes its ID frames display-encoded: a linear 128 arrives as 187.
+  const encoded = (color: readonly number[]) =>
+    color.map((v) => Math.round(255 * linearToSrgb(v / 255)));
   if (near([0, 0, 0])) return "Sky";
-  return Object.entries(colors).find(([, color]) => near(color))?.[0] ?? null;
+  return (
+    Object.entries(colors).find(([, color]) => near(color) || near(encoded(color)))?.[0] ?? null
+  );
 }
 export function masks(image: IImage, colors: Record<string, readonly number[]>): IMasks {
   const regions: Record<string, Mask> = {};
@@ -515,6 +523,13 @@ export function runComparison(options: IOptions = {}) {
     dEv: number;
   }[] = [];
   const noise: { layer: string; cell: string; dP50: number }[] = [];
+  const penumbra: {
+    cell: string;
+    matched: number;
+    unrealPx: number;
+    threenativePx: number;
+    ratio: number;
+  }[] = [];
   const sheets = new Map<string, PNG>();
   for (const layer of layers)
     if (options.sheet)
@@ -656,6 +671,26 @@ export function runComparison(options: IOptions = {}) {
             threenativeP50: wholeB.p50,
             dEv: Math.log2(Math.max(wholeB.p50, 2 ** -20) / Math.max(wholeA.p50, 2 ** -20)),
           });
+        if (options.metric === "penumbra" && layer === "L5" && a) {
+          // Shadow-edge width on the floor (PRD-634): rows where both arms hold an edge.
+          const floor = required(base.regions.Floor);
+          const edges = (image: IImage) =>
+            floorEdges(
+              linearLuminance(image.data, image.width * image.height),
+              image.width,
+              image.height,
+              floor,
+            );
+          const m = matchedWidths(edges(a), edges(b));
+          if (m.matched > 0)
+            penumbra.push({
+              cell,
+              matched: m.matched,
+              unrealPx: m.unreal,
+              threenativePx: m.other,
+              ratio: m.other / m.unreal,
+            });
+        }
         if (options.unrealVsUnreal)
           noise.push({
             layer,
@@ -703,6 +738,7 @@ export function runComparison(options: IOptions = {}) {
     summary,
     exposure,
     noise,
+    penumbra,
     maxNoise: noise.length
       ? Math.max(
           ...noise.map((r) => r.dP50),
@@ -793,6 +829,15 @@ export function main(args = process.argv.slice(2)): void {
     for (const r of report.exposure)
       console.log(
         `| ${r.layer} | ${r.cell} | ${r.unrealP50} | ${r.threenativeP50} | ${show(r.dEv)} |`,
+      );
+  }
+  if (report.penumbra.length) {
+    console.log(
+      "\n| L5 cell | matched edge rows | UE width px | TN width px | TN / UE |\n|---|---:|---:|---:|---:|",
+    );
+    for (const r of report.penumbra)
+      console.log(
+        `| ${r.cell} | ${r.matched} | ${show(r.unrealPx)} | ${show(r.threenativePx)} | ${show(r.ratio)} |`,
       );
   }
   if (report.noise.length) {
