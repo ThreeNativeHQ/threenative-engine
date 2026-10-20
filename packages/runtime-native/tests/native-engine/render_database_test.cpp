@@ -3304,9 +3304,14 @@ void maskedShadow() {
     leaf->side = Side::Front;
     const double frontFacingLight = shadowed();
     leaf->alphaTest = 0;
+    leaf->shadowSide = Side::Front;  // material.shadowSide draws the front face that faces the light
+    const double frontShadowSide = shadowed();
+    leaf->shadowSide.reset();
     leaf->side = Side::Double;
     const double solid = shadowed();
-    std::printf("masked shadow: cut %.3f, front side facing the light %.3f, solid %.3f\n", cut, frontFacingLight, solid);
+    std::printf("masked shadow: cut %.3f, front side facing the light %.3f, shadowSide front %.3f, solid %.3f\n", cut,
+                frontFacingLight, frontShadowSide, solid);
+    CHECK(frontShadowSide > 0.95);
     CHECK(solid > 0.95);                   // the card without a cut shades its whole footprint
     CHECK(std::abs(cut - 0.5) < 0.05);     // the cut card shades its opaque half
     CHECK(frontFacingLight < 0.05);        // three's shadowSide: a FrontSide caster draws its back faces

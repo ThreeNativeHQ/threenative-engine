@@ -163,6 +163,20 @@ void registerMaterialBase(ClassBinding& b) {
         as<Material>(self)->side = static_cast<Side>(static_cast<int>(side));
         as<Material>(self)->needsUpdate();
     };
+    b.getters["shadowSide"] = [](void* self) {
+        const auto& side = as<Material>(self)->shadowSide;
+        return side ? Value::of(double(*side)) : Value{};
+    };
+    b.setters["shadowSide"] = [](void* self, const Value& v) {
+        auto& material = *as<Material>(self);
+        if (v.kind == Value::Kind::Null) material.shadowSide.reset();
+        else {
+            const double side = number(v);
+            if (side != 0 && side != 1 && side != 2) throw Unsupported{"shadowSide must be null, FrontSide, BackSide or DoubleSide"};
+            material.shadowSide = static_cast<Side>(static_cast<int>(side));
+        }
+        material.needsUpdate();
+    };
     b.getters["blending"] = [](void* self) { return Value::of(double(as<Material>(self)->blending)); };
     b.setters["blending"] = [](void* self, const Value& v) {
         // NoBlending 0, NormalBlending 1, AdditiveBlending 2; Subtractive and Multiply need

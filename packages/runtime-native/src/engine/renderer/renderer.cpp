@@ -2714,7 +2714,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     const auto drawTargetKey = [&](const DrawItem& item, const shader::StageModule& vertex) {
         uint64_t h = 0xcbf29ce484222325ull;
         const auto mix = [&h](uint64_t v) { h = (h ^ v) * 0x100000001b3ull; };
-        mix(item.side); mix(item.blending); mix(item.transparent); mix(item.depthWrite); mix(item.colorWrite);
+        mix(item.side); mix(item.shadowSide); mix(item.blending); mix(item.transparent); mix(item.depthWrite); mix(item.colorWrite);
         mix(item.depthBias); mix(std::bit_cast<uint32_t>(item.depthBiasSlopeScale));
         mix(item.background); mix(item.frontFace() == WGPUFrontFace_CW);
         mix(static_cast<uint64_t>(item.topology));
@@ -2968,10 +2968,11 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             }
             const shader::StageModule* depthFragment = masked ? &cachedDepth->fragment : nullptr;
             Program& program = *cachedDepth;
-            // three's _shadowSide: a front-sided caster draws its back faces, a back-sided one its
-            // front faces, a double-sided one both.
+            // material.shadowSide names the faces drawn; when null, three's _shadowSide: a front-sided
+            // caster draws its back faces, a back-sided one its front faces, a double-sided one both.
+            const uint8_t faces = item.shadowSide != 255 ? item.shadowSide : item.side == 2 ? 2 : item.side == 1 ? 0 : 1;
             const WGPUCullMode cull =
-                item.side == 2 ? WGPUCullMode_None : item.side == 1 ? WGPUCullMode_Back : WGPUCullMode_Front;
+                faces == 2 ? WGPUCullMode_None : faces == 0 ? WGPUCullMode_Back : WGPUCullMode_Front;
             PipelineTarget target{WGPUTextureFormat_Undefined, WGPUTextureFormat_Depth24Plus, cull};
             target.layout = program.pipelineLayout;
             target.frontFace = item.frontFace();

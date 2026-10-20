@@ -499,6 +499,7 @@ RenderDatabase::Record& RenderDatabase::record(const Mesh& mesh, Record& r, bool
     d.positionNode = material->positionNode;
     d.nodes = material->nodes;
     d.side = static_cast<uint8_t>(material->side);
+    d.shadowSide = material->shadowSide ? static_cast<uint8_t>(*material->shadowSide) : 255;
     d.flatShading = material->flatShading;
     d.blending = static_cast<uint8_t>(material->blending);
     r.drawable = d.positions != nullptr;
@@ -515,6 +516,7 @@ DrawItem& RenderDatabase::refresh(const Mesh& mesh, Record& r) {
     d.depthWrite = r.material->depthWrite;
     d.colorWrite = r.material->colorWrite;
     d.side = static_cast<uint8_t>(r.material->side);
+    d.shadowSide = r.material->shadowSide ? static_cast<uint8_t>(*r.material->shadowSide) : 255;
     d.flatShading = r.material->flatShading;
     d.blending = static_cast<uint8_t>(r.material->blending);
     d.positionNode = r.material->positionNode;
