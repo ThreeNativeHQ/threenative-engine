@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const packageVersion = JSON.parse(readFileSync(join(packageRoot, 'package.json'), 'utf8')).version;
-export const RELEASE_REPOSITORY = 'ThreeNativeHQ/threenative-engine';
+export const RELEASE_REPOSITORY = 'ThreeNativeHQ/threenative';
 
 /** Every asset a packaged consumer or native release workflow may request. */
 export const PREBUILT_ASSET_NAMES = Object.freeze({
