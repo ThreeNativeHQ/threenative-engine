@@ -1,0 +1,179 @@
+// Written by scripts/unreal-look/capture-threenative.ts into a scaffolded copy of the starter
+// (PRD-646). It recreates a PRD-638 calibration scene: geometry and materials from the scene.glb
+// that Unreal exported, lights and exposure from its scene.json (src/scenes/calibrationData.ts).
+// It is scene setup only; every look decision comes from the copy's own `src/render/`.
+//   ?tnGi=<scene>&layer=<ID|L1..L9>
+// and `window.__tnRef.pose(...)` frames one camera pose, as in Reference.ts.
+import { type ICtx, Scene, type SceneFrame } from "@threenative/core";
+import type { IPhysicsContext } from "@threenative/physics";
+import {
+  Color,
+  type Group,
+  Mesh,
+  MeshBasicMaterial,
+  NoToneMapping,
+  type Object3D,
+  type PerspectiveCamera,
+  PointLight,
+  Vector3,
+} from "three";
+import { installGi } from "../render/giCache.js";
+import { qualityPreset } from "../render/quality.js";
+import { WorldEnvironment } from "../render/worldEnvironment.js";
+import type { GameState } from "../state.js";
+import { SCENES } from "./calibrationData.js";
+import { Play } from "./Play.js";
+
+type GameCtx = ICtx<GameState, IPhysicsContext>;
+type Pose = { position: number[]; target: number[]; hfovDeg: number };
+
+const params = new URLSearchParams(location.search);
+const NAME = params.get("tnGi") ?? "";
+const LAYER = params.get("layer") ?? "L7";
+const level = LAYER === "ID" ? -1 : Number(LAYER.slice(1));
+const DATA = SCENES[NAME];
+
+/**
+ * Unreal light units to three's. three's punctual light intensity is candela, and its Lambert
+ * BRDF carries the same 1 / pi as Unreal's (Engine/Shaders/Private/BRDF.ush, Diffuse_Lambert), so
+ * the falloff and the window at the attenuation radius map one to one.
+ */
+export function candela(intensity: number, units: string): number {
+  if (units === "candelas") return intensity;
+  // An unshaded point light spreads its lumens over the whole sphere (PointLightComponent.cpp).
+  if (units === "lumens") return intensity / (4 * Math.PI);
+  throw new Error(`TN_CALIBRATION_SCENE_UNIT: ${units}`);
+}
+
+export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
+  static override readonly initialState: GameState = Play.initialState;
+  #model: Group | undefined;
+  #dispose: (() => void) | undefined;
+
+  override async load(ctx: GameCtx): Promise<void> {
+    if (DATA === undefined) throw new Error(`TN_CALIBRATION_SCENE_UNKNOWN: ${NAME}`);
+    const model = await ctx.assets.model<{ scene: Group }>(`unreal-reference/gi/${NAME}/scene.glb`);
+    this.#model = model.scene;
+  }
+
+  override enter(ctx: GameCtx): SceneFrame<GameState, IPhysicsContext> {
+    const model = this.#model;
+    if (model === undefined || DATA === undefined) throw new Error("TN_CALIBRATION_SCENE_NOT_LOADED");
+    ctx.add(model);
+    const scene = ctx.scene;
+    const camera = ctx.camera as PerspectiveCamera;
+    const raw = ctx.renderer.raw as unknown as { toneMapping: number };
+    // Every scene.json property this recreation does not carry, with the PRD that owns it.
+    const unsupported: { actor: string; property: string; reason: string }[] = [];
+    // The region a mesh belongs to: the scene.glb node named after the Unreal actor.
+    const regionOf = (object: Object3D): string | undefined => {
+      for (let o: Object3D | null = object; o !== null; o = o.parent)
+        if (o.name in DATA.regions) return o.name;
+      return undefined;
+    };
+    const meshes: Mesh[] = [];
+    model.traverse((object) => {
+      if (object instanceof Mesh) meshes.push(object);
+    });
+    for (const mesh of meshes)
+      if (regionOf(mesh) === undefined) throw new Error(`TN_CALIBRATION_SCENE_UNMAPPED: ${mesh.name}`);
+
+    scene.background = new Color(0x000000);
+    scene.environment = null;
+    if (level <= 0) {
+      // ID and L0: the region colour unlit, no post. Unreal: ShowFlag.Lighting 0, post off, base
+      // colour id / 255 as linear, display-encoded on output.
+      for (const mesh of meshes) {
+        const [r = 0, g = 0, b = 0] = DATA.regions[regionOf(mesh) ?? ""] ?? [];
+        mesh.material = new MeshBasicMaterial({
+          color: new Color().setRGB(r / 255, g / 255, b / 255),
+          toneMapped: false,
+        });
+      }
+      raw.toneMapping = NoToneMapping;
+    } else {
+      // Unreal L1 to L4 render without shadows (r.ShadowQuality 0); from L5 every light casts.
+      const shadows = level >= 5;
+      for (const mesh of meshes) {
+        mesh.castShadow = shadows;
+        mesh.receiveShadow = shadows;
+      }
+      const lights: PointLight[] = [];
+      for (const light of DATA.lights) {
+        if (light.class !== "PointLight")
+          throw new Error(`TN_CALIBRATION_SCENE_LIGHT: ${light.name} ${light.class}`);
+        const [r = 1, g = 1, b = 1] = light.color;
+        const point = new PointLight(
+          new Color().setRGB(r, g, b),
+          candela(light.intensity, light.units),
+          light.attenuationRadiusM,
+          2,
+        );
+        point.name = light.name;
+        point.position.fromArray(light.position);
+        point.castShadow = shadows && light.castShadows;
+        scene.add(point);
+        lights.push(point);
+        if ((light.sourceRadiusM ?? 0) > 0)
+          unsupported.push({
+            actor: light.name,
+            property: "sourceRadiusM",
+            reason: "a punctual light has no area: highlights and shadow edges stay hard (PRD-634)",
+          });
+      }
+      if (level >= 7) {
+        const gi = installGi(ctx, model, {
+          bounces: 5,
+          lights: lights.map((l) => ({
+            position: l.position,
+            color: l.color,
+            intensity: l.intensity,
+            distance: l.distance,
+          })),
+        });
+        if (gi === undefined)
+          unsupported.push({ actor: NAME, property: "GI", reason: "the GI cache did not bake" });
+      }
+      // The template's `high` chain with the L9-only stages off, as Reference.ts runs below L9.
+      // Exposure is the scene's fixed EV100: Unreal's manual exposure, 0.18 / 2^EV100.
+      const world = new WorldEnvironment({
+        ...qualityPreset("high"),
+        autoExposureEnabled: false,
+        bloomEnabled: false,
+        gtaoEnabled: level >= 6,
+        vignetteAmount: 0,
+        exposure: DATA.exposure.exposureScale,
+      });
+      this.#dispose = world.apply(ctx.renderer, scene, camera, {}).dispose;
+    }
+    for (const u of unsupported)
+      console.info(`TN_CALIBRATION_SCENE unsupported ${u.actor}.${u.property}: ${u.reason}`);
+
+    const target = new Vector3();
+    (window as unknown as { __tnRef: unknown }).__tnRef = {
+      layer: LAYER,
+      scene: NAME,
+      unsupported,
+      engine:
+        "engine" in (ctx.renderer.raw as unknown as { info: object }).info ? "threenative" : "threejs",
+      pose(pose: Pose): void {
+        const aspect = innerWidth / innerHeight;
+        const half = (pose.hfovDeg * Math.PI) / 360;
+        camera.fov = (2 * Math.atan(Math.tan(half) / aspect) * 180) / Math.PI;
+        camera.aspect = aspect;
+        camera.near = 0.1;
+        camera.far = 2000;
+        camera.position.fromArray(pose.position);
+        camera.lookAt(target.fromArray(pose.target));
+        camera.updateProjectionMatrix();
+      },
+    };
+    return () => undefined;
+  }
+
+  override exit(ctx: GameCtx): void {
+    this.#dispose?.();
+    this.#dispose = undefined;
+    super.exit(ctx);
+  }
+}
