@@ -907,6 +907,14 @@ if(EMSCRIPTEN)
     if(TARGET tn_engine_gltf)
         target_link_libraries(tn-native-engine-web PRIVATE tn_engine_gltf)
         target_compile_definitions(tn-native-engine-web PRIVATE TN_WEB_GLTF=1)
+    else()
+        # A web engine with no glTF loader refuses every model at runtime (TN_WASM_GLTF_UNAVAILABLE),
+        # so building one is an error, not a quieter engine. Only this target fails; a configure
+        # that never builds it is unaffected.
+        add_custom_command(TARGET tn-native-engine-web PRE_LINK
+            COMMAND ${CMAKE_COMMAND} -E echo "TN_WEB_ENGINE_DEPS_MISSING: third_party/cgltf is not provisioned. Run node scripts/download-deps.mjs --only cgltf, also stb and webp-source, then reconfigure."
+            COMMAND ${CMAKE_COMMAND} -E false
+            VERBATIM)
     endif()
     target_include_directories(tn-native-engine-web PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
     tn_native_engine_target(tn-native-engine-web)
