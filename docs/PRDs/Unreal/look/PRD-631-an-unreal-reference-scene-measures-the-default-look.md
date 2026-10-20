@@ -260,3 +260,15 @@ because generated source belongs to the game.
   [PRD-VQ-03](../../rendering/PRD-VQ-03-local-reflection-probes.md) for L8, starting with the
   installed `ssr`, and the GI owners listed above for L7, starting with the installed `ssgi` and
   `ProbeVolume`. They run after PRD-632 to PRD-636, on this branch and PR.
+- 2026-10-19 (second external review, adjudicated; each claim checked, generic advice filtered for scale):
+  - Adopted: "no cast shadows at all" was true. The harness never set `castShadow`/`receiveShadow`
+    on the reference meshes (fixed in `Reference.ts.in`; every lit three.js cell before this is void).
+  - Rejected as not scalable: a `CubeCamera` per chrome object and a `PointLight` inside each
+    emissive mesh. Both are per-object game work. The scalable owners are SSR with Unreal's
+    roughness cut-off (`r.Lumen.Reflections.MaxRoughnessToTrace`, which also answers the starter's
+    "SSR speckles rough floors" reason for leaving it off) and GI from emissive surfaces (L7).
+  - Rejected as fitting, not modelling: "set `environmentIntensity` 0.25-0.4" and
+    "`backgroundIntensity` 0.5-0.7". The sky-to-sun ratio comes from the atmosphere `SkyCapture` at
+    Unreal's sun lux (PRD-633), not from hand-picked constants.
+  - Noted: auto exposure brightened the interior (Unreal's is cooler and darker). The cause is
+    unoccluded sky light indoors, owned by the L7 GI work, not by the exposure meter.
