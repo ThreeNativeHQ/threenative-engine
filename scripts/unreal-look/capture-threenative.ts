@@ -25,6 +25,10 @@ const REPO_ROOT = path.resolve(import.meta.dirname, "../..");
 const REFERENCE = path.join(REPO_ROOT, "tools/unreal-reference");
 const TEMPLATE = path.join(REPO_ROOT, "packages/create-threenative/templates/starter");
 
+/** The overlay source. A lane can point this at a private copy to prove its change beside others' unfinished edits. */
+const SCAFFOLD_DIR =
+  process.env.TN_UNREAL_LOOK_SCAFFOLD ?? path.join(import.meta.dirname, "scaffold");
+
 interface IPose {
   readonly name: string;
   readonly position: number[];
@@ -62,7 +66,7 @@ async function patchScaffold(target: string, fresh: boolean, baseline: boolean):
   // The look under tuning: these files replace the template's own in the copy only. A tuned
   // file moves into the templates once the reference cells match Unreal.
   if (!baseline)
-    await cp(path.join(import.meta.dirname, "scaffold/render"), path.join(target, "src/render"), {
+    await cp(path.join(SCAFFOLD_DIR, "render"), path.join(target, "src/render"), {
       recursive: true,
     });
   // Until the engine facade has TempNode, auto exposure (a TempNode subclass) refuses to start:
@@ -78,7 +82,7 @@ async function patchScaffold(target: string, fresh: boolean, baseline: boolean):
     );
   }
   await cp(
-    path.join(import.meta.dirname, "scaffold/Reference.ts.in"),
+    path.join(SCAFFOLD_DIR, "Reference.ts.in"),
     path.join(target, "src/scenes/Reference.ts"),
   );
   await mkdir(path.join(target, "assets/unreal-reference"), { recursive: true });
@@ -198,6 +202,15 @@ export async function captureThreeNative(options: IThreeNativeCaptureOptions): P
       const page = await browser.newPage({ viewport: { width, height }, deviceScaleFactor: 1 });
       const errors: string[] = [];
       page.on("pageerror", (error) => errors.push(error.message));
+      // Engine markers that say whether a stage ran (probe bake, refusals) belong in the capture log.
+      page.on("console", (message) => {
+        if (
+          message.type() === "error" ||
+          message.type() === "warning" ||
+          /^TN_(INDIRECT_LIGHT|PROBE_VOLUME|NATIVE_|RENDER_CHAIN|SSR|SSGI)/.test(message.text())
+        )
+          console.info(`page: ${message.text().slice(0, 1500)}`);
+      });
       const adapter = await (async () => {
         await page.goto(origin, { waitUntil: "domcontentloaded" });
         return page.evaluate(async () => {
