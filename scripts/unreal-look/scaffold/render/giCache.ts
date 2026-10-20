@@ -11,8 +11,9 @@
 //     because a room's opening is a small solid angle) and gathers, for the six axis directions, the
 //     cosine-weighted radiance that arrives: an ambient cube, E / pi per face, the radiance a white
 //     Lambert surface returns. A ray that misses sees the sky; one that hits a surface sees what that
-//     surface returns: its albedo times the sun it receives, plus its own emission, plus (from L7) the
-//     light the previous pass cached at that point. Each further bounce re-gathers the same rays.
+//     surface returns: its albedo times the sun and the local lights it receives, plus its own emission,
+//     plus (from L7) the light the previous pass cached at that point. Each further bounce re-gathers the
+//     same rays. A scene without a sky has a black one: rays that miss carry nothing (a box lit by one lamp).
 //   - Probes know which neighbours they can see (one ray per link) and whether they sit inside a solid.
 //     The cache is read through those links, so a surface never takes light from a probe on the other
 //     side of a wall (Lumen weighs probes by what they see for the same reason). The final grid is
@@ -77,7 +78,17 @@ export interface IGiOptions {
   /** Passes that carry surface light back into the cache. 0 is the sky alone (Unreal L2 to L6). */
   readonly bounces: number;
   /** The sun: its colour (tint and air transmittance), intensity, and unit direction toward it. */
-  readonly sun: { readonly color: Color; readonly intensity: number; readonly direction: Vector3 };
+  readonly sun?: { readonly color: Color; readonly intensity: number; readonly direction: Vector3 };
+  /**
+   * Point lights, in three's units: `intensity` is a `PointLight.intensity` (candela), `distance` its cutoff
+   * (0 = none). A surface returns albedo x colour x (intensity / pi) / d^2 x window x cos x visibility, as the sun.
+   */
+  readonly lights?: readonly {
+    readonly position: Vector3;
+    readonly color: Color;
+    readonly intensity: number;
+    readonly distance: number;
+  }[];
   /**
    * Unreal without global illumination (layers L2 to L6) shadows its movable sky light with the scene's
    * distance fields, up to the sky light's occlusion distance (1000 cm,
@@ -796,15 +807,24 @@ function environmentShare(
 
 /**
  * Bakes the cache for `root` and gives every standard material under it an `irradianceNode` that
- * reads it. Returns what it did, or undefined when there is no sky to gather (no OffscreenCanvas).
+ * reads it. Returns what it did, or undefined when there is no light at all: no sky (no OffscreenCanvas), no sun
+ * and no local light. Without a sky, rays that miss carry zero.
  */
 export function installGi(
   ctx: IRayContext,
   root: Object3D,
   options: IGiOptions,
 ): IGiReport | undefined {
-  const sky = skyRadiance.current;
-  if (sky === undefined) return undefined;
+  const lights = options.lights ?? [];
+  const sun = options.sun;
+  if (skyRadiance.current === undefined && sun === undefined && lights.length === 0)
+    return undefined;
+  const sky = skyRadiance.current ?? {
+    data: new Float32Array(3),
+    width: 1,
+    height: 1,
+    scale: [1, 1, 1],
+  };
   const started = performance.now();
   root.updateMatrixWorld(true);
   const grid = gridOver(root);
@@ -830,23 +850,18 @@ export function installGi(
   const backfaces = new Uint16Array(probes);
 
   const sunRadiance = [0, 1, 2].map(
-    (c) =>
-      ([options.sun.color.r, options.sun.color.g, options.sun.color.b][c] ?? 0) *
-      (options.sun.intensity / Math.PI),
+    (c) => ([sun?.color.r, sun?.color.g, sun?.color.b][c] ?? 0) * ((sun?.intensity ?? 0) / Math.PI),
   );
   const shaded = new Map<string, number[]>();
   let shadowRays = 0;
   let traced = 0;
   const origin = new Vector3();
   const direction = new Vector3();
-  const [sunX, sunY, sunZ] = [
-    options.sun.direction.x,
-    options.sun.direction.y,
-    options.sun.direction.z,
-  ];
+  const [sunX, sunY, sunZ] = [sun?.direction.x ?? 0, sun?.direction.y ?? 0, sun?.direction.z ?? 0];
+  const toLight = new Vector3();
   const colour = [0, 0, 0];
 
-  /** What a surface point returns of the sun (albedo x sun x cos x visibility) plus its emission. */
+  /** What a surface point returns of the sun and the point lights (albedo x light x cos x visibility) plus its emission. */
   const surface = (
     object: Object3D,
     [px, py, pz]: readonly [number, number, number],
@@ -859,17 +874,33 @@ export function installGi(
     if (cached !== undefined) return cached;
     const cosine = Math.max(0, nx * sunX + ny * sunY + nz * sunZ);
     let visible = 0;
-    if (cosine > 0) {
+    if (sun !== undefined && cosine > 0) {
       shadowRays += 1;
       origin.set(px + nx * 0.02, py + ny * 0.02, pz + nz * 0.02);
       visible =
-        ctx.raycast({ origin, direction: options.sun.direction, far, targets: root }) === undefined
-          ? 1
-          : 0;
+        ctx.raycast({ origin, direction: sun.direction, far, targets: root }) === undefined ? 1 : 0;
     }
     const lit = [0, 1, 2].map(
       (c) => (albedo[c] ?? 0) * (sunRadiance[c] ?? 0) * cosine * visible + (emissive[c] ?? 0),
     );
+    origin.set(px + nx * 0.02, py + ny * 0.02, pz + nz * 0.02);
+    for (const light of lights) {
+      toLight.subVectors(light.position, origin);
+      const d = toLight.length();
+      toLight.divideScalar(d);
+      const cos = Math.max(0, nx * toLight.x + ny * toLight.y + nz * toLight.z);
+      // three's getDistanceAttenuation: inverse square times a window that closes at the cutoff distance.
+      const window =
+        light.distance > 0 ? Math.min(1, Math.max(0, 1 - (d / light.distance) ** 4)) ** 2 : 1;
+      if (cos <= 0 || window <= 0 || d < 0.02) continue;
+      shadowRays += 1;
+      if (ctx.raycast({ origin, direction: toLight, far: d - 0.02, targets: root }) !== undefined)
+        continue;
+      const scale = (light.intensity / Math.PI / (d * d)) * window * cos;
+      const tint = [light.color.r, light.color.g, light.color.b];
+      for (let c = 0; c < 3; c += 1)
+        lit[c] = (lit[c] ?? 0) + (albedo[c] ?? 0) * (tint[c] ?? 0) * scale;
+    }
     shaded.set(key, lit);
     return lit;
   };

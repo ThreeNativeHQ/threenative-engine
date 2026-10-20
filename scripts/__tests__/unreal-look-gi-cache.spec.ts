@@ -131,4 +131,55 @@ describe("the world-space GI cache against closed forms (PRD-631 L7)", () => {
       expect((face[0] as number) / expected).toBeLessThan(1.25);
     }
   });
+
+  describe("a scene with no sky and no sun, lit by one point light", () => {
+    const lamp = {
+      position: new Vector3(0, 3, 0),
+      color: new Color(1, 1, 1),
+      intensity: 100,
+      distance: 0,
+    };
+    const sceneOf = (plate: boolean): Group => {
+      const floor = new Mesh(
+        new PlaneGeometry(10, 10).rotateX(-Math.PI / 2),
+        new MeshStandardMaterial({ color: new Color(0.8, 0.8, 0.8), side: DoubleSide }),
+      );
+      const scene = new Group().add(floor);
+      if (plate)
+        scene.add(
+          new Mesh(
+            new BoxGeometry(3, 0.1, 3).translate(0, 1.5, 0),
+            new MeshStandardMaterial({ color: new Color(0.5, 0.5, 0.5), side: DoubleSide }),
+          ),
+        );
+      return scene;
+    };
+    /** The light that reaches a probe 0.5 m over the floor, under the lamp: the sum of its six faces. */
+    const bake = (plate: boolean) => {
+      skyRadiance.current = undefined;
+      const scene = sceneOf(plate);
+      const report = installGi(rayContext(scene), scene, { bounces: 1, lights: [lamp] });
+      const total = texelAt(new Vector3(0.5, 0.5, 0.5))
+        .faces.flat()
+        .reduce((a, b) => a + b, 0);
+      return { report, total };
+    };
+
+    it("bakes, and the probe under the light receives light", () => {
+      const { report, total } = bake(false);
+      expect(report).toBeDefined();
+      expect(report?.shadowRays).toBeGreaterThan(0);
+      expect(total).toBeGreaterThan(0);
+    });
+
+    it("an occluder between the light and the floor lowers the light on the floor below it", () => {
+      expect(bake(true).total).toBeLessThan(bake(false).total);
+    });
+  });
+
+  it("returns undefined with no sky, no sun and no lights", () => {
+    skyRadiance.current = undefined;
+    const scene = new Group().add(new Mesh(new PlaneGeometry(2, 2), new MeshStandardMaterial()));
+    expect(installGi(rayContext(scene), scene, { bounces: 1 })).toBeUndefined();
+  });
 });
