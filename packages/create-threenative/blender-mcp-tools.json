@@ -1,9 +1,9 @@
 {
-  "comment": "The blender MCP surface a generated project actually gets. `tools` is set-equal to the live tools/list response of version 0.1.5, packed from this workspace and installed from that tarball into a clean directory — never read from src/. `recommended` is the ordered loop the shipped agent docs describe. Regenerate with `pnpm tsx scripts/capture-blender-mcp-tools.ts`.",
-  "version": "0.1.5",
+  "comment": "The blender MCP surface a generated project actually gets. `tools` is set-equal to the live tools/list response of version 0.1.6, packed from this workspace and installed from that tarball into a clean directory — never read from src/. `recommended` is the ordered loop the shipped agent docs describe. Regenerate with `pnpm tsx scripts/capture-blender-mcp-tools.ts`.",
+  "version": "0.1.6",
   "serverInfo": {
     "name": "threenative-blender-mcp",
-    "version": "0.1.5"
+    "version": "0.1.6"
   },
   "recommended": [
     "blender_status",
@@ -34,7 +34,9 @@
           "type": "string"
         }
       },
-      "required": ["source"],
+      "required": [
+        "source"
+      ],
       "type": "object"
     },
     "blender_convert": {
@@ -49,7 +51,10 @@
           "type": "string"
         }
       },
-      "required": ["source", "out"],
+      "required": [
+        "source",
+        "out"
+      ],
       "type": "object"
     },
     "blender_recipes": {
@@ -86,7 +91,11 @@
           "type": "number"
         }
       },
-      "required": ["source", "out", "cell"],
+      "required": [
+        "source",
+        "out",
+        "cell"
+      ],
       "type": "object"
     },
     "blender_run_python": {
@@ -105,7 +114,9 @@
           "type": "number"
         }
       },
-      "required": ["script"],
+      "required": [
+        "script"
+      ],
       "type": "object"
     }
   },

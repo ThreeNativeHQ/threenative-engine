@@ -1,6 +1,6 @@
 {
   "name": "@threenative/core",
-  "version": "0.3.5",
+  "version": "0.3.6",
   "license": "MIT AND GPL-2.0-or-later",
   "description": "The small vanilla Three.js game runtime foundation.",
   "keywords": [
@@ -106,7 +106,7 @@
     "@typescript/native": "catalog:"
   },
   "peerDependencies": {
-    "@threenative/playtest": ">=0.3.5 <0.4.0",
+    "@threenative/playtest": ">=0.3.6 <0.4.0",
     "react": ">=19.2.0 <20",
     "react-reconciler": ">=0.33.0 <0.34"
   },
