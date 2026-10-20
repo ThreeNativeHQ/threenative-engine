@@ -4,7 +4,8 @@
 // reference (tsl-corpus/reference.ts, the same graphs in the pinned three's TSL, normalised into the
 // IR's syntax), and compares them graph by graph.
 //
-// One normalisation is applied to the native text: an ordered read (`%n = load v3`, `%n = load
+// Two normalisations are applied to the native text. A variable assigned once is inlined as its
+// value (inlineTemps, after the reads). An ordered read (`%n = load v3`, `%n = load
 // buf[i]`) is inlined where it is used, as `v3` / `load:buf[i]`. Upstream TSL has no separate read
 // statement, so the comparison is of structure and types, not of the IR's read numbering.
 //
@@ -66,6 +67,30 @@ function inlineReads(lines) {
   return out.map((line) => line.replace(/%(\d+)/g, (whole, number) => reads.get(number) ?? whole));
 }
 
+// Code generation shares a node into a temporary (`v0 = expr`, read later), as three's
+// WGSLNodeBuilder does for a multi-use TempNode or a texture sample. The reference prints the node
+// tree, where VarNode is transparent, so a variable assigned exactly once, at the top level, is
+// inlined back as its value. One assigned again (a `.toVar()` that is mutated) is kept.
+function inlineTemps(lines) {
+  const assigned = new Map();
+  for (const line of lines) {
+    const set = /^\s*(v\d+) = /.exec(line);
+    if (set) assigned.set(set[1], (assigned.get(set[1]) ?? 0) + 1);
+  }
+  const temps = new Map();
+  const out = [];
+  for (const line of lines) {
+    const body = (text) => text.replace(/\b(v\d+)\b/g, (whole, name) => temps.get(name) ?? whole);
+    const temp = /^(v\d+) = (.*)$/.exec(line);
+    if (temp && assigned.get(temp[1]) === 1) {
+      temps.set(temp[1], body(temp[2]));
+      continue;
+    }
+    out.push(body(line));
+  }
+  return out;
+}
+
 const wasm = option("--wasm");
 const nativeText =
   wasm === undefined
@@ -73,7 +98,7 @@ const nativeText =
     : run("pnpm", ["exec", "tsx", "tests/native-engine/wasm/tsl-corpus.ts", path.resolve(wasm)], packageRoot);
 const nativeGraphs = graphs(nativeText).map((graph) => ({
   ...graph,
-  lines: inlineReads(graph.lines),
+  lines: inlineTemps(inlineReads(graph.lines)),
 }));
 const referenceGraphs = graphs(
   run("pnpm", ["exec", "tsx", "tests/native-engine/tsl-corpus/reference.ts"], packageRoot),

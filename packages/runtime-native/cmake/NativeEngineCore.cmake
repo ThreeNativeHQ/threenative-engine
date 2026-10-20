@@ -287,6 +287,11 @@ else()
     message(STATUS "cgltf not provisioned (or Emscripten): the native glTF loader is not built")
 endif()
 
+tn_native_engine_test(tn-native-engine-tsl-shared-node-test tests/native-engine/tsl_shared_node_test.cpp
+    native_engine_tsl_shared_node=shared
+    native_engine_tsl_shared_node_scopes=scopes)
+target_link_libraries(tn-native-engine-tsl-shared-node-test PRIVATE tn_engine_shader)
+
 tn_native_engine_test(tn-native-engine-tsl-math-test tests/native-engine/tsl_math_test.cpp
     native_engine_tsl_math=math)
 target_link_libraries(tn-native-engine-tsl-math-test PRIVATE tn_engine_abi)
