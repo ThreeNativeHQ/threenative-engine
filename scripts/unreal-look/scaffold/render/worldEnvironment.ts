@@ -793,13 +793,13 @@ export class WorldEnvironment {
           const ssgiScale = options.ssgiResolutionScale;
           const sizedGi = gi as unknown as {
             setSize?: (width: number, height: number) => void;
+            resolutionScale?: number;
           };
+          if (wasmEngine) sizedGi.resolutionScale = ssgiScale;
           const fullGiSize = sizedGi.setSize?.bind(gi);
           if (!wasmEngine && ssgiScale > 0 && ssgiScale < 1 && fullGiSize !== undefined) {
             sizedGi.setSize = (width: number, height: number): void => {
-            resolutionScale?: number;
               fullGiSize(
-          if (wasmEngine) sizedGi.resolutionScale = ssgiScale;
                 Math.max(1, Math.round(width * ssgiScale)),
                 Math.max(1, Math.round(height * ssgiScale)),
               );
