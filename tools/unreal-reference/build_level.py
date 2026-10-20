@@ -380,6 +380,7 @@ def run_gi(scene):
         log=log, to_unreal=to_unreal, add_job=add_job, queue=queue, render=render,
         build_cameras=build_cameras, asset_tools=asset_tools, level_subsystem=level_subsystem,
         actor_subsystem=actor_subsystem, LAYERS=LAYERS,
+        sun_rotation=sun_rotation, TEMPLATE_MAP=TEMPLATE_MAP,  # PRD-649 template-lit shadow scenes
     )
     if MODE == "build":
         gi.build(ref, scene)

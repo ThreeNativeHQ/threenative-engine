@@ -10,6 +10,10 @@
  *   pnpm unreal-look:compare --scene gi:cornell --unreal-vs-unreal [--write-stats]
  *   pnpm unreal-look:compare --scene gi:cornell --layer L1[,L7]   ThreeNative against Unreal, per region
  *
+ * PRD-649: `--scene shadow | shadow:<name>` runs the same pipeline on the shadow family, whose scenes
+ * live in tools/unreal-reference/shadow/<name>/ with their own shadow/scenes.json. A `gi:` id keeps its
+ * bare name everywhere; a `shadow:` id captures to captures/<engine>/shadow/<name>/.
+ *
  * Capture authors and exports each scene once (scene.glb, scene.json), checks that the two
  * agree, then renders each variant in its own editor and reads the variant's GI settings back from
  * the editor log. Every check fails closed.
@@ -33,6 +37,11 @@ import {
 const REPO_ROOT = path.resolve(import.meta.dirname, "../..");
 const REFERENCE = path.join(REPO_ROOT, "tools/unreal-reference");
 const GI = path.join(REFERENCE, "gi");
+/** Scene families on this pipeline: each has its own folder and scenes.json (PRD-649). */
+const FAMILIES: Readonly<Record<string, string>> = {
+  gi: GI,
+  shadow: path.join(REFERENCE, "shadow"),
+};
 const LOG = path.join(REFERENCE, "Saved/Logs/ThreeNativeReference.log");
 /** PRD-631 noise floor: two Unreal runs agree within 1% (display p50). */
 export const CONVERGENCE = 0.01;
@@ -98,27 +107,93 @@ interface IVariant {
   expect: Record<string, number>;
   kinds: ("png" | "exr")[];
 }
-interface IRegistry {
+export interface IRegistry {
   resolution: [number, number];
-  scenes: { name: string; owner: string; poses: string[] }[];
+  /** `scene`: a scene of another family this entry reuses, authored once (`gi:foliage`). */
+  scenes: { name: string; owner: string; poses: string[]; scene?: string }[];
   variants: IVariant[];
+}
+interface ILayer {
+  name: string;
+  cvars: Record<string, number>;
 }
 
 function fail(code: string, message: string): never {
   throw new Error(`TN_UNREAL_LOOK_${code}: ${message}`);
 }
 
-export function registry(): IRegistry {
-  return JSON.parse(readFileSync(path.join(GI, "scenes.json"), "utf8")) as IRegistry;
+/** The family a `--scene` value names: `gi`, `gi:a`, `shadow`, `shadow:a,shadow:b`. One per run. */
+export function familyOf(value: string): string {
+  const families = new Set(value.split(",").map((s) => s.split(":")[0] ?? ""));
+  const [family] = [...families];
+  if (families.size !== 1 || family === undefined || !(family in FAMILIES))
+    fail("BAD_INPUT", `--scene ${value}: one family of ${Object.keys(FAMILIES).join(", ")}`);
+  return family;
 }
 
-/** `gi` selects every registered scene, `gi:a,gi:b` the named ones. */
+/** A scene id's folder: `cornell` (a GI scene) or `shadow:<name>`. */
+export function sceneDir(id: string): string {
+  const [family, name] = id.includes(":") ? id.split(":") : ["gi", id];
+  return path.join(FAMILIES[family ?? ""] ?? fail("BAD_INPUT", `scene ${id}`), name ?? "");
+}
+
+/** A scene id's folder under captures/<engine>/: `cornell`, or `shadow/<name>`. */
+export function sceneKey(id: string): string {
+  return id.replace(/^gi:/, "").replace(":", "/");
+}
+
+export function registry(family = "gi"): IRegistry {
+  const dir = FAMILIES[family] ?? fail("BAD_INPUT", `scene family ${family}`);
+  const reg = JSON.parse(readFileSync(path.join(dir, "scenes.json"), "utf8")) as IRegistry;
+  if (family === "shadow") {
+    const layers = JSON.parse(readFileSync(path.join(REFERENCE, "layers.json"), "utf8")) as {
+      layers: ILayer[];
+    };
+    validateShadowRegistry(reg, dir, layers.layers);
+  }
+  return reg;
+}
+
+/**
+ * PRD-649, fail closed: every shadow scene has the judge's criteria.md, and an L5 shadow cell renders
+ * with GI and AO off, so neither can hide or add a shadow.
+ */
+export function validateShadowRegistry(
+  reg: IRegistry,
+  dir: string,
+  layers: readonly ILayer[],
+): void {
+  for (const scene of reg.scenes)
+    if (!existsSync(path.join(dir, scene.name, "criteria.md")))
+      fail("BAD_INPUT", `shadow scene ${scene.name} has no criteria.md`);
+  for (const variant of reg.variants.filter((v) => v.layer === "L5")) {
+    const layer = layers.find((l) => l.name === "L5") ?? fail("BAD_INPUT", "layers.json has no L5");
+    const cvars = { ...layer.cvars, ...variant.cvars };
+    for (const name of ["r.DynamicGlobalIlluminationMethod", "r.AmbientOcclusionLevels"])
+      if (cvars[name] !== 0)
+        fail("BAD_INPUT", `shadow variant ${variant.name}: ${name} ${cvars[name]} must be 0 at L5`);
+  }
+}
+
+/**
+ * `gi` selects every registered GI scene, `gi:a,gi:b` the named ones; the same for `shadow`. A GI scene
+ * keeps its bare name, a shadow scene comes back as `shadow:<name>`.
+ */
 export function sceneNames(value: string, known: readonly string[]): string[] {
-  const names = value === "gi" ? [...known] : value.split(",").map((s) => s.replace(/^gi:/, ""));
+  const family = familyOf(value);
+  const names =
+    value === family ? [...known] : value.split(",").map((s) => s.slice(family.length + 1));
   for (const name of names)
-    if (!known.includes(name)) fail("BAD_INPUT", `unknown GI scene ${name} (gi/scenes.json)`);
+    if (!known.includes(name))
+      fail(
+        "BAD_INPUT",
+        `unknown ${family === "gi" ? "GI" : family} scene ${name} (${family}/scenes.json)`,
+      );
   if (!names.length) fail("BAD_INPUT", "--scene selects no scene");
-  return names;
+  if (family === "gi") return names;
+  // An entry that reuses a scene of another family resolves to that scene (`gi:foliage` -> `foliage`).
+  const reused = new Map(registry(family).scenes.map((s) => [s.name, s.scene]));
+  return names.map((name) => reused.get(name)?.replace(/^gi:/, "") ?? `${family}:${name}`);
 }
 
 /** The JSON chunk of a binary glTF. */
@@ -237,7 +312,7 @@ export function validateSceneExport(scene: ISceneJson, gltf: IGltf): void {
 }
 
 export function readScene(name: string): { scene: ISceneJson; gltf: IGltf } {
-  const dir = path.join(GI, name);
+  const dir = sceneDir(name);
   for (const file of ["scene.json", "scene.glb"])
     if (!existsSync(path.join(dir, file))) fail("SCENE_EXPORT", `${name}: ${file} was not written`);
   return {
@@ -276,9 +351,11 @@ export function folderName(variant: string, warmUp: number, run: number): string
 type RunUnreal = (mode: string, out: string, env?: Record<string, string>) => Promise<number>;
 
 export async function captureGi(args: readonly string[], runUnreal: RunUnreal): Promise<number> {
-  const reg = registry();
+  const value = flag(args, "--scene") ?? "gi";
+  const family = familyOf(value);
+  const reg = registry(family);
   const scenes = sceneNames(
-    flag(args, "--scene") ?? "gi",
+    value,
     reg.scenes.map((s) => s.name),
   );
   const only = flag(args, "--variants")?.split(",");
@@ -298,13 +375,18 @@ export async function captureGi(args: readonly string[], runUnreal: RunUnreal): 
   }
   let cells = 0;
   for (const name of scenes) {
-    const content = path.join(REFERENCE, "Content/GI", name);
+    const content = path.join(
+      REFERENCE,
+      "Content",
+      family === "gi" ? "GI" : "Shadow",
+      sceneKey(name).replace(/^shadow\//, ""),
+    );
     if (args.includes("--rebuild") || !existsSync(content)) {
       await rm(content, { recursive: true, force: true });
       if ((await runUnreal("build", out, { TN_UE_SCENE: name })) !== 0) return 1;
       // The exported scene.json is committed: give it the repo's JSON format.
       // Relative: Biome skips an absolute path that runs through a .claude/ worktree.
-      const file = path.relative(REPO_ROOT, path.join(GI, name, "scene.json"));
+      const file = path.relative(REPO_ROOT, path.join(sceneDir(name), "scene.json"));
       spawnSync("pnpm", ["exec", "biome", "format", "--write", file], {
         cwd: REPO_ROOT,
         stdio: "ignore",
@@ -324,7 +406,7 @@ export async function captureGi(args: readonly string[], runUnreal: RunUnreal): 
           if ((await runUnreal("capture", out, env)) !== 0) return 1;
           const jobs = scene.poses.length * variant.kinds.length;
           const problems = checkReadback(readFileSync(LOG, "utf8"), variant.expect, jobs);
-          const folder = path.join(out, name, folderName(variant.name, warmUp, run));
+          const folder = path.join(out, sceneKey(name), folderName(variant.name, warmUp, run));
           for (const pose of scene.poses)
             for (const kind of variant.kinds)
               if (!existsSync(path.join(folder, `${pose.name}.${kind}`)))
@@ -383,11 +465,14 @@ export function compareGiToUnreal(name: string, layers: readonly string[], root:
   const thresholds = existsSync(thresholdFile)
     ? (JSON.parse(readFileSync(thresholdFile, "utf8")) as IThresholds)
     : undefined;
-  const unreal = path.join(root, "unreal", name);
-  const tn = path.join(root, "threenative", name);
+  const unreal = path.join(root, "unreal", sceneKey(name));
+  const tn = path.join(root, "threenative", sceneKey(name));
   const rows: IRow[] = [];
   for (const layer of layers) {
-    const variant = UNREAL_VARIANT[layer] ?? fail("BAD_INPUT", `GI layer ${layer}`);
+    // A shadow scene names its Unreal variants after their layers (shadow/scenes.json).
+    const variant = name.startsWith("shadow:")
+      ? layer
+      : (UNREAL_VARIANT[layer] ?? fail("BAD_INPUT", `GI layer ${layer}`));
     for (const pose of scene.poses) {
       const reference = masks(image(path.join(unreal, "ID", `${pose.name}.png`)), scene.regions);
       const own = masks(image(path.join(tn, "ID", `${pose.name}.png`)), scene.regions);
@@ -420,9 +505,10 @@ export function compareGi(args: readonly string[]): number {
   const layerFlag = flag(args, "--layer");
   if (layerFlag !== undefined) {
     const root = path.resolve(flag(args, "--captures") ?? path.join(REFERENCE, "captures"));
+    const value = flag(args, "--scene") ?? "gi";
     const names = sceneNames(
-      flag(args, "--scene") ?? "gi",
-      registry().scenes.map((s) => s.name),
+      value,
+      registry(familyOf(value)).scenes.map((s) => s.name),
     );
     const rows = names.flatMap((name) => compareGiToUnreal(name, layerFlag.split(","), root));
     const f = (v: number | null, d = 3) => (v === null ? "—" : v.toFixed(d));
@@ -436,16 +522,17 @@ export function compareGi(args: readonly string[]): number {
     );
     return rows.some((r) => r.pass === false) ? 1 : 0;
   }
-  const reg = registry();
+  const value = flag(args, "--scene") ?? "gi";
+  const reg = registry(familyOf(value));
   const scenes = sceneNames(
-    flag(args, "--scene") ?? "gi",
+    value,
     reg.scenes.map((s) => s.name),
   );
   const root = path.resolve(flag(args, "--unreal") ?? path.join(REFERENCE, "captures", "unreal"));
   let failed = false;
   for (const name of scenes) {
     const { scene } = readScene(name);
-    const base = path.join(root, name);
+    const base = path.join(root, sceneKey(name));
     const stats: Record<string, Record<string, IStats>> = {};
     const rows: string[] = [];
     let noiseFloor = 0;
@@ -486,7 +573,7 @@ export function compareGi(args: readonly string[]): number {
     if (args.includes("--write-stats")) {
       if (!Object.keys(stats).length) fail("MISSING_CELL", `${name}: no captured variant`);
       writeFileSync(
-        path.join(GI, name, "reference-stats.json"),
+        path.join(sceneDir(name), "reference-stats.json"),
         `${JSON.stringify({ generatedAt: new Date().toISOString(), scene: name, resolution: scene.resolution, cells: stats }, null, 2)}\n`,
       );
       console.log(`wrote gi/${name}/reference-stats.json cells=${Object.keys(stats).length}`);

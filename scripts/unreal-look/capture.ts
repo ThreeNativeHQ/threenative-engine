@@ -21,7 +21,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { captureGiThreeNative } from "./capture-gi-threenative.js";
 import { captureThreeNative } from "./capture-threenative.js";
-import { captureGi, registry, sceneNames } from "./gi.js";
+import { captureGi, familyOf, registry, sceneNames } from "./gi.js";
 
 const REPO_ROOT = path.resolve(import.meta.dirname, "../..");
 const REFERENCE = path.join(REPO_ROOT, "tools/unreal-reference");
@@ -103,10 +103,13 @@ export async function main(args: readonly string[]): Promise<number> {
 
   if (engine === "unreal" && flag(args, "--scene") !== undefined) return captureGi(args, runUnreal);
   if (engine === "threenative" && flag(args, "--scene") !== undefined) {
-    const known = registry().scenes.map((s) => s.name);
+    const value = flag(args, "--scene") ?? "gi";
+    const known = registry(familyOf(value)).scenes.map((s) => s.name);
     const count = await captureGiThreeNative({
-      scenes: sceneNames(flag(args, "--scene") ?? "gi", known),
-      layers: flag(args, "--layers")?.split(",") ?? ["ID", "L1", "L7"],
+      scenes: sceneNames(value, known),
+      layers:
+        flag(args, "--layers")?.split(",") ??
+        (familyOf(value) === "shadow" ? ["ID", "L5", "L9"] : ["ID", "L1", "L7"]),
       out: path.resolve(flag(args, "--out") ?? path.join(REFERENCE, "captures", "threenative")),
       reuse: args.includes("--reuse"),
     });

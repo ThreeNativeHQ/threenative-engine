@@ -12,6 +12,11 @@ own helpers in `ref`. Modes:
            console variables from its start commands, so capture.ts reads the GI level back from
            the editor log.
 
+PRD-649: a `shadow:<name>` scene lives in ../shadow/<name>/ with ../shadow/scenes.json. A scene with
+"template": "default" is lit by Unreal's default level (Template_Default): one level per entry of
+"suns", the template floor deleted, the boxes added, and an unbound post-process volume with no
+overrides, as build_level.py builds the PRD-631 reference. Its poses run once per sun.
+
 Unreal is the source of truth: scene.json holds what the level reports, not what scene.py asked for.
 The proxy materials (/GLTFExporter/Materials/Proxy/M_GLTF_Default) are the exporter's own, so their
 factors reach scene.glb unchanged. This file holds no Unreal code; it drives the editor through its
@@ -26,7 +31,7 @@ import os
 import unreal
 
 GI = os.path.dirname(os.path.abspath(__file__))
-REGISTRY = json.load(open(os.path.join(GI, "scenes.json")))
+FAMILIES = {"gi": GI, "shadow": os.path.join(os.path.dirname(GI), "shadow")}
 PROXY = "/GLTFExporter/Materials/Proxy/M_GLTF_Default"
 # Region IDs are unlit: with lighting off, the lit proxy still adds its rough specular albedo, so a
 # 0 channel arrives as 112 in the ID frame (Unreal 5.8.3, Substrate).
@@ -39,17 +44,51 @@ ID_COLORS = [
 mel = unreal.MaterialEditingLibrary
 
 
+def split(name):
+    """`cornell` or `gi:cornell` -> ("gi", "cornell"); `shadow:penumbra-lab` -> ("shadow", "penumbra-lab")."""
+    family, _, short = name.rpartition(":")
+    return family or "gi", short
+
+
+def scene_dir(name):
+    family, short = split(name)
+    return os.path.join(FAMILIES[family], short)
+
+
+def registry(name):
+    return json.load(open(os.path.join(FAMILIES[split(name)[0]], "scenes.json")))
+
+
+def out_key(name):
+    """The capture folder, as sceneKey() in scripts/unreal-look/gi.ts: `cornell` or `shadow/<name>`."""
+    family, short = split(name)
+    return short if family == "gi" else f"{family}/{short}"
+
+
 def load_scene(name):
-    if name not in [s["name"] for s in REGISTRY["scenes"]]:
-        raise ValueError(f"scene {name} is not registered in gi/scenes.json")
-    spec = importlib.util.spec_from_file_location(f"tn_gi_{name}", os.path.join(GI, name, "scene.py"))
+    family, short = split(name)
+    if short not in [s["name"] for s in registry(name)["scenes"]]:
+        raise ValueError(f"scene {name} is not registered in {family}/scenes.json")
+    spec = importlib.util.spec_from_file_location(f"tn_{family}_{short}", os.path.join(scene_dir(name), "scene.py"))
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module.SCENE
 
 
 def root(name):
-    return f"/Game/GI/{name}"
+    family, short = split(name)
+    return f"/Game/{'GI' if family == 'gi' else family.capitalize()}/{short}"
+
+
+def level_path(name, suffix=""):
+    return f"{root(name)}/GI_{split(name)[1]}{suffix}"
+
+
+def poses_of(scene):
+    """A template-lit scene runs each pose once per sun, as `<sun>-<pose>`; other scenes as authored."""
+    if scene.get("template") != "default":
+        return scene["poses"]
+    return [dict(p, name=f"{s['name']}-{p['name']}", sun=s["name"]) for s in scene["suns"] for p in scene["poses"]]
 
 
 # --- build -------------------------------------------------------------------
@@ -124,18 +163,41 @@ def exposure_volume(ref, ev100):
     return volume
 
 
-def build_level(ref, path, scene, meshes, materials, lights):
-    if not ref.level_subsystem.new_level(path):
-        raise RuntimeError("new_level failed for " + path)
+def spawn_boxes(ref, scene, meshes, materials):
     actors = []
     for box in scene["boxes"]:
         actor = ref.actor_subsystem.spawn_actor_from_object(
             meshes[box["name"]], ref.to_unreal(box["position"]),
-            unreal.Rotator(roll=0.0, pitch=0.0, yaw=-box.get("rotationYDeg", 0.0)),
+            # three's +X is Unreal's +X; the axis swap that flips handedness negates both angles.
+            unreal.Rotator(roll=-box.get("rotationXDeg", 0.0), pitch=0.0, yaw=-box.get("rotationYDeg", 0.0)),
         )
         actor.set_actor_label(box["name"])
         actor.static_mesh_component.set_material(0, materials[box["name"]])
         actors.append(actor)
+    return actors
+
+
+def build_template_level(ref, path, scene, meshes, materials, sun):
+    """PRD-649: Unreal's default level with the template floor replaced by the scene's boxes."""
+    if not ref.level_subsystem.new_level_from_template(path, ref.TEMPLATE_MAP):
+        raise RuntimeError("new_level_from_template failed for " + path)
+    for actor in ref.actor_subsystem.get_all_level_actors():
+        cls = actor.get_class().get_name()
+        if cls == "StaticMeshActor" and actor.get_actor_label() == "Floor":
+            ref.actor_subsystem.destroy_actor(actor)
+        elif cls == "DirectionalLight":
+            actor.set_actor_rotation(ref.sun_rotation(sun), False)
+    actors = spawn_boxes(ref, scene, meshes, materials)
+    volume = ref.actor_subsystem.spawn_actor_from_class(unreal.PostProcessVolume, unreal.Vector(0, 0, 0))
+    volume.set_editor_property("unbound", True)
+    ref.level_subsystem.save_current_level()
+    return actors
+
+
+def build_level(ref, path, scene, meshes, materials, lights):
+    if not ref.level_subsystem.new_level(path):
+        raise RuntimeError("new_level failed for " + path)
+    actors = spawn_boxes(ref, scene, meshes, materials)
     if lights:
         for light in scene["lights"]:
             spawn_light(ref, light)
@@ -146,8 +208,11 @@ def build_level(ref, path, scene, meshes, materials, lights):
 
 def build(ref, name):
     scene = load_scene(name)
-    if scene.get("sky") or scene.get("sun") or scene.get("fog"):
+    template = scene.get("template") == "default"
+    if not template and (scene.get("sky") or scene.get("sun") or scene.get("fog")):
         raise ValueError(f"scene {name}: sky, sun and fog are not authored yet (PRD-638 Phase 2)")
+    if template and (scene["lights"] or not scene.get("suns")):
+        raise ValueError(f"scene {name}: a template-lit scene names its suns and adds no light")
     if len(scene["boxes"]) > len(ID_COLORS):
         raise ValueError(f"scene {name}: more boxes than region-ID colours")
     base = root(name)
@@ -159,11 +224,16 @@ def build(ref, name):
         for b, rgb in regions.items()
     }
     meshes = {box["name"]: box_mesh(f"{base}/Meshes", box) for box in scene["boxes"]}
-    build_level(ref, f"{base}/GI_{name}_id", scene, meshes, ids, False)
-    actors = build_level(ref, f"{base}/GI_{name}", scene, meshes, {b["name"]: named[b["material"]] for b in scene["boxes"]}, True)
+    build_level(ref, level_path(name, "_id"), scene, meshes, ids, False)
+    lit = {b["name"]: named[b["material"]] for b in scene["boxes"]}
+    if template:
+        for sun in scene["suns"]:
+            actors = build_template_level(ref, level_path(name, f"_{sun['name']}"), scene, meshes, lit, sun)
+    else:
+        actors = build_level(ref, level_path(name), scene, meshes, lit, True)
     write_json(name, describe_level(ref, name, scene, regions))
     export_glb(name, actors)
-    ref.build_cameras(scene["poses"], base)
+    ref.build_cameras(poses_of(scene), base)
     ref.level_subsystem.save_all_dirty_levels()
     ref.log(f"gi build done scene={name}")
 
@@ -176,7 +246,7 @@ def export_glb(name, actors):
     options.set_editor_property("skip_near_default_values", False)
     options.set_editor_property("bake_material_inputs", unreal.GLTFMaterialBakeMode.DISABLED)
     world = unreal.get_editor_subsystem(unreal.UnrealEditorSubsystem).get_editor_world()
-    result = unreal.GLTFExporter.export_to_gltf(world, os.path.join(GI, name, "scene.glb"), options, set(actors))
+    result = unreal.GLTFExporter.export_to_gltf(world, os.path.join(scene_dir(name), "scene.glb"), options, set(actors))
     ok = result[0] if isinstance(result, tuple) else result
     if not ok:
         raise RuntimeError(f"glTF export failed for {name}: {result}")
@@ -188,13 +258,13 @@ def to_three(v):
 
 
 def describe_level(ref, name, scene, regions):
-    meshes, lights, exposure = [], [], None
+    meshes, lights, exposure, sun = [], [], None, None
     for actor in ref.actor_subsystem.get_all_level_actors():
         label, cls = actor.get_actor_label(), actor.get_class().get_name()
         if cls == "StaticMeshActor":
             rot = actor.get_actor_rotation()
-            if abs(rot.pitch) > 1e-3 or abs(rot.roll) > 1e-3:
-                raise ValueError(f"{label}: only rotation about the vertical axis is exported")
+            if abs(rot.pitch) > 1e-3 or (abs(rot.roll) > 1e-3 and abs(rot.yaw) > 1e-3):
+                raise ValueError(f"{label}: only one rotation, about the vertical or the x axis, is exported")
             component = actor.static_mesh_component
             box = component.static_mesh.get_bounding_box()
             mi = component.get_material(0)
@@ -203,6 +273,7 @@ def describe_level(ref, name, scene, regions):
                 "class": cls,
                 "position": to_three(actor.get_actor_location()),
                 "rotationYDeg": round(-rot.yaw, 6),
+                **({"rotationXDeg": round(-rot.roll, 6)} if abs(rot.roll) > 1e-3 else {}),
                 "size": to_three(unreal.Vector(box.max.x - box.min.x, box.max.y - box.min.y, box.max.z - box.min.z)),
                 "material": material_values(mi),
             })
@@ -224,7 +295,19 @@ def describe_level(ref, name, scene, regions):
             if cls != "RectLight":
                 light["sourceRadiusM"] = c.get_editor_property("source_radius") / 100.0
             lights.append(light)
-        elif cls == "PostProcessVolume":
+        elif cls == "DirectionalLight":
+            # A template-lit scene: the default sun, read back; its rotation is the last sun's level.
+            c = actor.get_component_by_class(unreal.DirectionalLightComponent)
+            sun = {
+                "intensityLux": c.get_editor_property("intensity"),
+                "temperatureK": c.get_editor_property("temperature"),
+                "useTemperature": c.get_editor_property("use_temperature"),
+                "sourceAngleDeg": c.get_editor_property("light_source_angle"),
+                "sourceSoftAngleDeg": c.get_editor_property("light_source_soft_angle"),
+                "castShadows": c.get_editor_property("cast_shadows"),
+                "contactShadowLength": c.get_editor_property("contact_shadow_length"),
+            }
+        elif cls == "PostProcessVolume" and scene.get("template") != "default":
             s = actor.get_editor_property("settings")
             bias = s.get_editor_property("auto_exposure_bias")
             lens = unreal.SystemLibrary.get_console_variable_float_value("r.EyeAdaptation.LensAttenuation")
@@ -241,16 +324,17 @@ def describe_level(ref, name, scene, regions):
                 "exposureScale": 2.0 ** bias * lens / 0.78,
             }
     return {
-        "note": f"Written by gi/export.py from the Unreal 5.8.3 level GI_{name}. three.js frame: Y up, metres. Unreal is the authority; scene.py is only the authoring input.",
+        "note": f"Written by gi/export.py from the Unreal 5.8.3 level {level_path(name)}. three.js frame: Y up, metres. Unreal is the authority; scene.py is only the authoring input.",
         "scene": name,
-        "resolution": REGISTRY["resolution"],
+        "resolution": registry(name)["resolution"],
         "meshes": meshes,
         "lights": lights,
-        "sky": None,
-        "sun": None,
+        "sky": "template" if scene.get("template") == "default" else None,
+        "sun": sun,
+        **({"template": "default", "suns": scene["suns"]} if scene.get("template") == "default" else {}),
         "fog": None,
         "exposure": exposure,
-        "poses": scene["poses"],
+        "poses": poses_of(scene),
         "regions": regions,
     }
 
@@ -276,7 +360,7 @@ def material_values(mi):
 
 
 def write_json(name, value):
-    with open(os.path.join(GI, name, "scene.json"), "w") as f:
+    with open(os.path.join(scene_dir(name), "scene.json"), "w") as f:
         json.dump(value, f, indent=2)
         f.write("\n")
 
@@ -284,7 +368,7 @@ def write_json(name, value):
 # --- capture -----------------------------------------------------------------
 def capture(ref, name, out):
     scene = load_scene(name)
-    variant = next((v for v in REGISTRY["variants"] if v["name"] == os.environ.get("TN_UE_VARIANT")), None)
+    variant = next((v for v in registry(name)["variants"] if v["name"] == os.environ.get("TN_UE_VARIANT")), None)
     if variant is None:
         raise ValueError(f"unknown TN_UE_VARIANT {os.environ.get('TN_UE_VARIANT')}")
     layer = next(l for l in ref.LAYERS if l["name"] == variant["layer"])
@@ -292,15 +376,15 @@ def capture(ref, name, out):
     run = int(os.environ.get("TN_UE_RUN", "1"))
     # Same naming as folderName() in scripts/unreal-look/gi.ts.
     folder = variant["name"] + ("" if warm_up == 90 else f"@{warm_up}") + ("" if run == 1 else f"#{run}")
-    level = f"{root(name)}/GI_{name}" + ("_id" if variant.get("level") == "id" else "")
     cvars = dict(layer["cvars"], **variant["cvars"])
     queue = ref.queue()
     count = 0
-    for pose in scene["poses"]:
+    for pose in poses_of(scene):
+        level = level_path(name, "_id" if variant.get("level") == "id" else f"_{pose['sun']}" if "sun" in pose else "")
         for kind in variant["kinds"]:
             ref.add_job(
                 queue, pose["name"], level, f"{root(name)}/Sequences/Seq_{pose['name']}",
-                os.path.join(out, name, folder), cvars, layer["showFlags"], kind, warm_up,
+                os.path.join(out, out_key(name), folder), cvars, layer["showFlags"], kind, warm_up,
                 list(variant["expect"]),
             )
             count += 1
