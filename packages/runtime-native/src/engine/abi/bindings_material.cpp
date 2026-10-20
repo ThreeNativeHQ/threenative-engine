@@ -353,6 +353,44 @@ void shadowBindings(ClassBinding& b, const char* shadowClass, std::vector<const 
 // its numbers, `mapSize`, and `camera`, which is the shadow camera itself (orthographic for a
 // directional light, perspective otherwise). Only a spot shadow has `focus`.
 void registerLightShadow(ClassBinding& b, bool spot) {
+    b.setters["shadowNode"] = [](void* self, const Value& value) {
+        auto& shadow = *as<LightShadow>(self);
+        if (value.kind == Value::Kind::Null) { shadow.virtualShadow.reset(); return; }
+        if (value.kind != Value::Kind::Record || !dynamic_cast<OrthographicCamera*>(shadow.camera.get()))
+            throw Unsupported{"TN_NATIVE_SHADOW_NODE_UNSUPPORTED: directional VirtualShadowNode required"};
+        shadows::AtlasOptions options;
+        for (const auto& [key, v] : value.fields) {
+            if (key == "clipExtents") options.clipExtents = numbersOf(v);
+            else if (key == "selectionGuard") options.selectionGuard = numbersOf(v);
+            else if (key == "refreshStep") options.refreshStep = numbersOf(v);
+            else if (key == "invalidationDelay") options.invalidationDelay = numbersOf(v);
+            else if (key == "mapSize") {
+                const double n = number(v);
+                if (!std::isfinite(n) || n != std::floor(n) || n < 1 || n > 4096)
+                    throw Unsupported{"TN_VIRTUAL_SHADOW_INVALID: mapSize"};
+                options.mapSize = int(n);
+                options.pageTexels = std::min(128, options.mapSize);
+            }
+            else if (key == "lightDistance") options.lightDistance = number(v);
+            else if (key == "depthRange") options.depthRange = number(v);
+            else if (key == "autoDepth" && flag(v)) throw Unsupported{"TN_VIRTUAL_SHADOW_UNSUPPORTED: automatic depth"};
+            else if (key == "adaptiveRefresh") options.adaptiveRefresh = flag(v);
+            else if (key == "adaptiveCasterGate") options.adaptiveCasterGate = flag(v);
+            else if (key == "followViewFocus") options.followViewFocus = flag(v);
+            else if (key == "shadowLodBias") options.shadowLodBias = flag(v);
+            else if (key == "minCasterTexels") options.minCasterTexels = number(v);
+            else if (key == "receiverPlaneBias") options.receiverPlaneBias = flag(v);
+        }
+        if (!std::isfinite(shadow.radius) || shadow.radius < 0 || shadow.radius + 0.5 > options.border)
+            throw Unsupported{"TN_VIRTUAL_SHADOW_UNSUPPORTED: PCF radius exceeds page guard texels"};
+        std::string error;
+        if (!shadows::PageAtlas::create(options, error)) throw Unsupported{error};
+        shadow.virtualShadow = std::make_shared<const shadows::AtlasOptions>(std::move(options));
+    };
+    b.setters["filterNode"] = [](void*, const Value& value) {
+        if (value.kind != Value::Kind::Null)
+            throw Unsupported{"TN_VIRTUAL_SHADOW_UNSUPPORTED: filterNode"};
+    };
     if (spot) {
         b.getters["focus"] = [](void* self) { return Value::of(as<LightShadow>(self)->focus); };
         b.setters["focus"] = [](void* self, const Value& v) { as<LightShadow>(self)->focus = number(v); };

@@ -10,6 +10,7 @@
 #include "engine/foundation/math/Vector.h"
 #include "engine/scene/camera.h"
 #include "engine/scene/object3d.h"
+#include "engine/renderer/shadows/virtual/atlas.h"
 
 namespace tn::engine {
 
@@ -36,6 +37,7 @@ class LightShadow {
 public:
     explicit LightShadow(std::unique_ptr<Camera> camera) : camera(std::move(camera)) {}
     std::unique_ptr<Camera> camera;
+    std::shared_ptr<const shadows::AtlasOptions> virtualShadow;
     double intensity = 1;
     double bias = 0;
     double normalBias = 0;

@@ -471,7 +471,7 @@ tn_native_engine_test(tn-native-engine-vsm-atlas-test tests/native-engine/vsm/vs
     native_engine_vsm_atlas=atlas
     native_engine_vsm_continuous_invalidation=continuous_invalidation
     native_engine_vsm_sampling=sampling)
-target_link_libraries(tn-native-engine-vsm-atlas-test PRIVATE tn_engine_vsm tn_engine_shader)
+target_link_libraries(tn-native-engine-vsm-atlas-test PRIVATE tn_engine_vsm tn_engine_shader tn_engine_bindings)
 
 # The header compiles as strict C11 and a C program links against the ABI.
 add_executable(tn-native-engine-abi-c11 EXCLUDE_FROM_ALL tests/native-engine/abi_c11.c)
@@ -644,6 +644,7 @@ tn_native_engine_test(tn-native-engine-ieee754-test tests/native-engine/ieee754_
 add_library(tn_engine_bindings STATIC src/engine/abi/bindings_math.cpp src/engine/abi/bindings_mathutils.cpp
     src/engine/abi/bindings_scene.cpp src/engine/abi/bindings_geometry.cpp src/engine/abi/bindings_material.cpp)
 tn_native_engine_target(tn_engine_bindings)
+target_link_libraries(tn_engine_bindings PUBLIC tn_engine_vsm)
 target_link_libraries(tn_engine_bindings PUBLIC tn_engine_foundation tn_engine_scene tn_engine_animation)
 if(EMSCRIPTEN)
     # Bindings and graph lowering report refusals by exception; the ABI/host catches them.

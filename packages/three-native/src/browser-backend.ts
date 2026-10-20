@@ -14,6 +14,7 @@
 
 import { defineMath } from "./browser-math.js";
 import type { ITslRuntime, TslArgValue } from "./browser-tsl.js";
+import { virtualShadowOptions } from "./shadow-node.js";
 import { withUpdateRanges } from "./update-ranges.js";
 
 export interface IRegistryClass {
@@ -872,6 +873,26 @@ export function defineBrowserClasses(
         },
         set(this: object, value: unknown) {
           const ref = refOf(this);
+          if (property === "filterNode") {
+            if (value !== null) throw new Error("TN_VIRTUAL_SHADOW_UNSUPPORTED: filterNode");
+            runtime.set(ref, property, null);
+            return;
+          }
+          if (property === "shadowNode") {
+            const options = virtualShadowOptions(value);
+            runtime.set(
+              ref,
+              property,
+              options === null
+                ? null
+                : Object.fromEntries(
+                    Object.entries(options).map(([key, item]) => [key, toEngine(item)]),
+                  ),
+            );
+            const slots = shaderNodes.get(ref.key) ?? new Map<string, unknown>();
+            shaderNodes.set(ref.key, slots.set(property, value));
+            return;
+          }
           if (value === null) {
             runtime.set(ref, property, null);
             shaderNodes.get(ref.key)?.delete(property);

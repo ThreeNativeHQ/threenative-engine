@@ -1,4 +1,18 @@
 export * from "./core-three.mjs";
+export { ShadowBaseNode } from "../../../../three-native/src/shadow-node.ts";
+import { virtualShadowOptions } from "../../../../three-native/src/shadow-node.ts";
+// Native VSM configuration crosses the same LightShadow registry setter as the Wasm facade.
+for (const name of ["DirectionalLightShadow", "PointLightShadow", "SpotLightShadow"]) {
+  const prototype = globalThis[name]?.prototype;
+  const set = prototype && Object.getOwnPropertyDescriptor(prototype, "shadowNode")?.set;
+  if (!set) continue;
+  const nodes = new WeakMap();
+  Object.defineProperty(prototype, "shadowNode", {
+    configurable: true,
+    get() { return nodes.get(this) ?? null; },
+    set(value) { set.call(this, virtualShadowOptions(value)); nodes.set(this, value); },
+  });
+}
 import { BufferAttribute, Color, Material, NormalBlending } from "./core-three.mjs";
 import { unsupportedExport } from "../../../../three-native/src/refused.ts";
 import { PassNode, StorageBufferAttribute, StorageInstancedBufferAttribute, syncUniforms, updateSecondaryPasses } from "./core-tsl.mjs";

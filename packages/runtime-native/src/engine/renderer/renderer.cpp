@@ -585,6 +585,32 @@ void Renderer::setVirtualShadow(std::size_t light, const shadows::AtlasOptions& 
     table.buffer = gpu_.createBuffer(table.capacity, WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst);
 }
 
+void Renderer::syncVirtualShadows(const LightState& lights) {
+    // Facade configurations follow their light, not its sorted slot; remove stale GPU bindings.
+    for (auto it = virtualShadows_.begin(); it != virtualShadows_.end();) {
+        const auto i = it->first;
+        const auto source = i < lights.direct.size() && lights.direct[i].shadow
+            ? lights.direct[i].shadow->virtualShadow : nullptr;
+        if (!it->second.source || it->second.source == source) { ++it; continue; }
+        auto& map = it->second.map;
+        if (map.view) wgpuTextureViewRelease(map.view);
+        if (map.texture) wgpuTextureRelease(map.texture);
+        auto storage = storages_.find("vsmTable" + std::to_string(i));
+        if (storage != storages_.end()) {
+            gpu_.destroy(storage->second.buffer);
+            storages_.erase(storage);
+        }
+        it = virtualShadows_.erase(it);
+        shadowMapsChanged_ = true;
+    }
+    for (std::size_t i = 0; i < lights.direct.size(); ++i) {
+        const auto& light = lights.direct[i];
+        if (!light.shadow || !light.shadow->virtualShadow || virtualShadows_.count(i)) continue;
+        setVirtualShadow(i, *light.shadow->virtualShadow);
+        virtualShadows_.at(i).source = light.shadow->virtualShadow;
+    }
+}
+
 void GpuJointScene::revoke() {
     *valid = false;
     for (const auto& weak : bones) {
@@ -1155,6 +1181,9 @@ WGPUBindGroup Renderer::bindGroup(WGPUBindGroupLayout layout, const shader::Stag
     for (const shader::Binding& b : stage.bindings) {
         WGPUBindGroupEntry e = {};
         e.binding = b.binding;
+        // Cached programs outlive a detached virtual-shadow provider. Rebind when it returns.
+        if (b.kind == shader::BindingKind::Storage && b.name.rfind("s_vsmTable", 0) == 0 &&
+            !storages_.count(b.name.substr(2))) return nullptr;
         if (b.kind == shader::BindingKind::Uniform) {
             e.buffer = gpu_.buffer(uniforms);
             e.size = stage.uniformBlockSize;
@@ -1201,6 +1230,7 @@ WGPUBindGroup Renderer::bindGroup(WGPUBindGroupLayout layout, const shader::Stag
             const bool virtualMap = b.name.find("vsm") != std::string::npos;
             const std::string prefix = virtualMap ? "vsm" : b.cube ? "shadowCube" : "shadow";
             const std::size_t index = std::stoul(b.name.substr(b.name.find(prefix) + prefix.size()));
+            if (virtualMap && !virtualShadows_.count(index)) return nullptr;
             if (b.kind == shader::BindingKind::Texture)
                 e.textureView = virtualMap ? virtualShadows_.at(index).map.view : (b.cube ? cubeShadowMaps_ : shadowMaps_).at(index).view;
             else e.sampler = compareSampler_;

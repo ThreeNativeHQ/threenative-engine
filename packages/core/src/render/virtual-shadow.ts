@@ -1232,6 +1232,11 @@ export class VirtualShadowNode extends ShadowBaseNode {
     };
   }
 
+  /** Engine bridge: preserve whether depth was authored, rather than mistaking fallback values for overrides. */
+  get [Symbol.for("threenative.virtualShadow")](): object {
+    return { ...this.options, autoDepth: this.#autoDepth };
+  }
+
   /** The per-frame counters, as of the last `updateBefore`. */
   get stats(): IVirtualShadowStats {
     return this.#stats;

@@ -226,6 +226,7 @@ struct DirectLight {
      * world position to the map's uv and depth.
      */
     struct Shadow {
+        std::shared_ptr<const shadows::AtlasOptions> virtualShadow;
         Matrix view{}, projection{}, matrix{};
         double bias = 0, normalBias = 0, radius = 1, intensity = 1;
         uint32_t width = 512, height = 512;
@@ -359,6 +360,7 @@ public:
     /** Linear filtering, clamped to the edge: three's RenderTarget texture defaults. */
     WGPUSampler linearClampSampler();
     void setVirtualShadow(std::size_t light, const shadows::AtlasOptions& options);
+    void syncVirtualShadows(const LightState& lights);
     bool hasVirtualShadows() const { return !virtualShadows_.empty(); }
     void cutVirtualShadows() { virtualCut_ = true; }
     void setOutput(const OutputState& output);
@@ -783,6 +785,7 @@ private:
     bool shadowMapsChanged_ = false;  // compilation changes survive until a real frame rebuilds groups
     struct VirtualShadow {
         shadows::PageAtlas atlas;
+        std::shared_ptr<const shadows::AtlasOptions> source;
         ShadowMap map;
         std::map<uint64_t, Box3> casters;
         std::map<uint64_t, std::string> casterPrograms;

@@ -87,6 +87,8 @@ A capsule's feet stay sharp, and a shadow cast from 10 m up spreads to about 9 c
 - [ ] The native engine applies the same filter within tolerance of the browser. proof: `pnpm parity --target desktop --only-tests soft-shadow-source-angle`.
 - [ ] AC-2 passes on the starter. proof: `pnpm unreal-look:compare --layer L5 --metric penumbra`.
 
+- [ ] The owned engine accepts `light.shadow.shadowNode = new VirtualShadowNode(...)` through its native clipmap atlas, with source-owned shadow settings preserved. proof: `pnpm exec vitest run packages/three-native` and Wasm VSM tests. Native atlas currently refuses automatic depth, adaptive policies and custom filters; these must not be silently dropped. **2026-10-19 partial:** facade constructs core’s real node and installs fixed-depth configurations; source bias/normalBias/intensity/radius survive the registry setter. Focused facade regression: 3 pass (options-array serialization reproduced red, then green); Wasm VSM atlas/binding, continuous invalidation and sampling: 3/3 pass; `tn-native-engine-web` builds with `EM_CACHE=/tmp/shadownode-em-cache`; facade `tsc --noEmit` exits 0. Full `pnpm exec vitest run packages/three-native` stalled in unchanged `run-native.spec.ts` and was interrupted (130); rerun excluding that file passes 33 files / 240 tests (0). Default options still refuse `TN_VIRTUAL_SHADOW_UNSUPPORTED: automatic depth`; custom filters refuse `TN_VIRTUAL_SHADOW_UNSUPPORTED: filterNode`. Desktop V8 and headed visual/playtest proof unverified; box remains open.
+
 #### Phase 3: Every template
 **Status:** NOT STARTED
 **Files:** `packages/create-threenative/templates/*/src/render/lighting.ts`, `packages/create-threenative/templates/minimal/AGENTS.md` (and mirror)

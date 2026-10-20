@@ -161,6 +161,7 @@ DirectLight::Shadow shadowOf(LightShadow& shadow, const std::array<double, 3>& f
     out.view = toArray(camera.matrixWorldInverse);
     out.projection = toArray(camera.projectionMatrix);
     out.matrix = toArray(matrix);
+    out.virtualShadow = shadow.virtualShadow;
     out.bias = shadow.bias;
     out.normalBias = shadow.normalBias;
     out.radius = shadow.radius;
@@ -195,6 +196,7 @@ DirectLight::Shadow pointShadowOf(LightShadow& shadow, const std::array<double, 
     out.view = out.faceViews[0];
     out.projection = toArray(camera.projectionMatrix);
     out.matrix = toArray(matrix);
+    out.virtualShadow = shadow.virtualShadow;
     out.bias = shadow.bias;
     out.normalBias = shadow.normalBias;
     out.radius = shadow.radius;
@@ -1587,6 +1589,9 @@ uint64_t RenderDatabase::render(Renderer& renderer, Object3D& scene, Camera& cam
     gpuPreparing_ = true;
     try { prepare(scene, camera, lights_, nullptr, renderer.hasVirtualShadows()); } catch (...) { gpuPreparing_ = false; throw; }
     gpuPreparing_ = false;
+    const bool hadVirtual = renderer.hasVirtualShadows();
+    renderer.syncVirtualShadows(lights_);
+    if (!hadVirtual && renderer.hasVirtualShadows()) prepare(scene, camera, lights_, nullptr, true);
     const auto preparedScene = profiling ? Clock::now() : Clock::time_point{};
     // Frame-pumped PMREM (PRD-573): until every environment this frame samples is fully baked,
     // advance one retained packet and skip the frame. No partial target is published and the covered

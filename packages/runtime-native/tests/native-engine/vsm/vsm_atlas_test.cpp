@@ -2,6 +2,8 @@
 #include "engine/renderer/shadows/virtual/atlas.h"
 #include "engine/shader/standard.h"
 #include "engine/shader/package.h"
+#include "engine/abi/bindings.h"
+#include "engine/scene/lights.h"
 
 #include <algorithm>
 #include <cmath>
@@ -9,7 +11,57 @@
 using namespace tn::engine;
 using namespace tn::engine::shadows;
 
+// The same registry setter is reached by the Wasm ABI and desktop V8 adapter.
+void binding() {
+    using namespace tn::binding;
+    struct EmptyStore : Store {
+        Object* find(const Value&) override { return nullptr; }
+        Value adopt(std::string, std::shared_ptr<void>) override { return {}; }
+        Value adoptAlias(std::string, void*, void*) override { return {}; }
+        Value share(std::string, std::shared_ptr<void>) override { return {}; }
+        std::vector<double> numbers(const Value&) override { return {}; }
+    } store;
+    Registry registry;
+    registerMaterialBindings(registry);
+    const auto& setters = registry.at("DirectionalLightShadow").setters;
+    CHECK(setters.count("shadowNode") == 1);
+    if (!setters.count("shadowNode")) return;
+    DirectionalLight light;
+    light.shadow.bias = -0.002; light.shadow.normalBias = 0.03;
+    light.shadow.intensity = 0.7; light.shadow.radius = 1.25;
+    const Value options = Value::record({{"clipExtents", Value::list({8, 24})},
+        {"mapSize", Value::of(256.0)}, {"lightDistance", Value::of(20.0)}, {"depthRange", Value::of(40.0)}});
+    const auto& set = setters.at("shadowNode");
+    set(&light.shadow, options, store);
+    const auto installed = light.shadow.virtualShadow;
+    CHECK(installed != nullptr);
+    CHECK(light.shadow.bias == -0.002 && light.shadow.normalBias == 0.03);
+    CHECK(light.shadow.intensity == 0.7 && light.shadow.radius == 1.25);
+    std::string error;
+    auto plan = PageAtlas::create(*installed, error);
+    CHECK(plan.has_value());
+    CHECK(!plan->update(Vector3(0, 0, 0), Vector3(0, 1, 1)).empty());
+    CHECK(!plan->update(Vector3(0, 0, 0), Vector3(0, 1, 1)).empty());
+    CHECK(plan->update(Vector3(0, 0, 0), Vector3(0, 1, 1)).empty());
+    const auto held = plan->table();
+    CHECK(!plan->update(Vector3(100, 0, 0), Vector3(0, 1, 1)).empty());
+    CHECK(plan->table() != held);
+    auto bad = options;
+    bad.fields.emplace_back("autoDepth", Value::of(true));
+    bool refused = false;
+    try { set(&light.shadow, bad, store); }
+    catch (const Unsupported& e) { refused = e.reason == "TN_VIRTUAL_SHADOW_UNSUPPORTED: automatic depth"; }
+    CHECK(refused && light.shadow.virtualShadow == installed);
+    refused = false;
+    try { setters.at("filterNode")(&light.shadow, Value::of(1.0), store); }
+    catch (const Unsupported& e) { refused = e.reason == "TN_VIRTUAL_SHADOW_UNSUPPORTED: filterNode"; }
+    CHECK(refused && light.shadow.virtualShadow == installed);
+    set(&light.shadow, Value{}, store);
+    CHECK(!light.shadow.virtualShadow);
+}
+
 void atlas() {
+    binding();
     std::string error;
     AtlasOptions options;
     options.clipExtents = {8, 24}; options.mapSize = 256; options.pageTexels = 64;
