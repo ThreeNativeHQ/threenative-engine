@@ -114,36 +114,44 @@ export class Race extends Scene<GameState, IPhysicsContext> {
 
   override async load(ctx: GameCtx): Promise<void> {
     const generation = ++this.#lightingGeneration;
-    await ctx.assets.texture("sky.jpg").then(async (texture) => {
-      if (generation !== this.#lightingGeneration) return;
-      this.#sky = texture;
-      const scene = ctx.scene;
-      if (scene === undefined) return;
-      setupSky(scene, texture);
-      const controller = this.#materialLighting;
-      const sample = await sampleEnvironment(ctx.renderer.raw, scene, {
-        web: getPlatform().runtime === "web",
-        rendererKind: ctx.renderer.kind,
-        webglFallback: isWebGLFallbackRenderer(ctx.renderer.raw),
-        mobile: isMobile(),
-        software: ctx.renderer.softwareAdapter !== undefined,
-      });
-      if (generation !== this.#lightingGeneration || ctx.scene !== scene) return;
-      this.#environmentSample = sample;
-      // A cached sky may start sampling before enter creates the receiver controller.
-      // A controller that already existed when sampling began must still be the same one.
-      const currentController = this.#materialLighting;
-      if (
-        currentController !== undefined &&
-        (controller === undefined || controller === currentController)
-      )
-        currentController.setEnvironmentMeasurement(
-          sample.measurement,
-          sample.source,
-          sample.intensity,
-          sample,
-        );
+    const texture = await ctx.assets.texture("sky.jpg");
+    if (generation !== this.#lightingGeneration) return;
+    this.#sky = texture;
+    const scene = ctx.scene;
+    if (scene === undefined) return;
+    setupSky(scene, texture);
+    // The measurement is not awaited: it reads the GPU back and must not hold the first frame.
+    void this.#sampleSky(ctx, scene, generation);
+  }
+
+  async #sampleSky(
+    ctx: GameCtx,
+    scene: NonNullable<GameCtx["scene"]>,
+    generation: number,
+  ): Promise<void> {
+    const controller = this.#materialLighting;
+    const sample = await sampleEnvironment(ctx.renderer.raw, scene, {
+      web: getPlatform().runtime === "web",
+      rendererKind: ctx.renderer.kind,
+      webglFallback: isWebGLFallbackRenderer(ctx.renderer.raw),
+      mobile: isMobile(),
+      software: ctx.renderer.softwareAdapter !== undefined,
     });
+    if (generation !== this.#lightingGeneration || ctx.scene !== scene) return;
+    this.#environmentSample = sample;
+    // A cached sky may start sampling before enter creates the receiver controller.
+    // A controller that already existed when sampling began must still be the same one.
+    const currentController = this.#materialLighting;
+    if (
+      currentController !== undefined &&
+      (controller === undefined || controller === currentController)
+    )
+      currentController.setEnvironmentMeasurement(
+        sample.measurement,
+        sample.source,
+        sample.intensity,
+        sample,
+      );
   }
 
   override enter(ctx: GameCtx): SceneFrame<GameState, IPhysicsContext> {
