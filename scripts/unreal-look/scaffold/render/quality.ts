@@ -103,6 +103,7 @@ export function resolveQualityTier(
  */
 const shared: IWorldEnvironmentOptions = {
   autoExposureEnabled: true,
+  localExposureEnabled: true,
   // Bloom cost: ~4.6 ms in the reference ablation — the second most expensive stage there.
   bloomEnabled: true,
   bloomRadius: 0.6,

@@ -57,6 +57,7 @@ import {
 import { BlendMode, type Node, type NodeBuilder, type TextureNode } from "three/webgpu";
 import { AutoExposureNode, applyExposure } from "./autoExposure.js";
 import { type IExposureSettings, exposureSettings } from "./exposure.js";
+import { LocalExposureNode } from "./localExposure.js";
 import { installFilmicToneMapping } from "./tonemap.js";
 
 /** Lumen reflections stop at this roughness, fading to nothing over the length below it. */
@@ -271,6 +272,8 @@ export interface IWorldEnvironmentOptions {
   readonly exposure?: number;
   /** Cost opt-in. False retains the direct constant-exposure path. */
   readonly autoExposureEnabled?: boolean;
+  /** Unreal's bilateral local exposure on top of the automatic exposure (harness overlay). */
+  readonly localExposureEnabled?: boolean;
   /** Editable game policy; disabled application still measures when cost is opted in. */
   readonly exposurePolicy?: Readonly<IExposureSettings>;
 }
@@ -572,6 +575,7 @@ export class WorldEnvironment {
       tonemapMode,
       exposure: options.exposure ?? 1,
       autoExposureEnabled: options.autoExposureEnabled ?? false,
+      localExposureEnabled: options.localExposureEnabled ?? false,
       exposurePolicy: options.exposurePolicy ?? exposureSettings,
     };
   }
@@ -706,15 +710,26 @@ export class WorldEnvironment {
     const exposure = options.autoExposureEnabled
       ? new AutoExposureNode(colour, options.exposurePolicy, options.exposure)
       : undefined;
+    // Harness: Unreal's local exposure, on with automatic exposure (ladder layer L9).
+    const localExposure =
+      exposure !== undefined && options.localExposureEnabled
+        ? new LocalExposureNode(colour, exposure.exposureNode)
+        : undefined;
     const exposed =
       exposure === undefined
         ? colour.mul(options.exposure)
-        : applyExposure(colour, exposure.exposureNode);
+        : applyExposure(
+            colour,
+            localExposure === undefined
+              ? exposure.exposureNode
+              : exposure.exposureNode.mul(localExposure.gainNode),
+          );
     let released = false;
     const releaseGraph = (): void => {
       if (released) return;
       released = true;
       exposure?.dispose();
+      localExposure?.dispose();
       // Only a newly created RTT is ours. A PassNode converts to a borrowed PassTextureNode;
       // supplied TextureNodes/RTTs belong to the caller even when their resources are shared.
       if (colour !== base && Reflect.get(colour, "isRTTNode") === true) {
