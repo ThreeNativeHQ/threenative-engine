@@ -11,6 +11,7 @@ import type * as THREE from "three";
 
 import { defineBufferGeometryUtils } from "../src/addons/merge-geometries.js";
 import { definePostEffects } from "../src/addons/post-effects.js";
+import { defineScreenSpaceReflections } from "../src/addons/screen-space.js";
 import type { defineAudioClasses } from "../src/audio.js";
 import {
   type IEngineRef,
@@ -1396,6 +1397,21 @@ if (runtime.tsl !== undefined) {
   check(ao.radius?.value === 0.25, "ao radius initial value");
   ao.radius.value = 0.5;
   check(ao.radius?.value === 0.5, "ao radius updated value");
+
+  // 8b. screen-space reflections are authored over the engine TSL: the graph builds (Loop, If, Break,
+  // bisection and the projection-column maths) and publishes the SSR uniforms of three.
+  const reflections = defineScreenSpaceReflections(tsl as never)(
+    tsl.texture({ name: "colour" }, tsl.uv()),
+    tsl.texture({ name: "depth" }, tsl.uv()),
+    tsl.texture({ name: "normal" }, tsl.uv()),
+    { metalnessNode: tsl.float(1), roughnessNode: tsl.float(0.1), reflectNonMetals: true },
+  );
+  check(typeof reflections[TSL_NODE] === "number", "ssr builds a render-texture node");
+  check(reflections.maxDistance.value === 1, "ssr maxDistance defaults to three's 1");
+  reflections.maxDistance.value = 30;
+  check(reflections.maxDistance.value === 30, "ssr maxDistance is a live uniform");
+  reflections.resolutionScale = 0.5;
+  check(reflections.resolutionScale === 0.5, "ssr resolutionScale reaches the render texture");
 
   // 9. builds screenUV once and flips it
   const screen = tsl.screenUV;
