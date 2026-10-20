@@ -234,8 +234,11 @@ it("owns the direct base-colour graph without requiring an unrelated post stage"
     setOutputNode(node: unknown, worldPass?: unknown) {
       outputs.push(node);
       worldPasses.push(worldPass);
+      // traverse visits a node once per reference: exposure reads the colour twice (rgb, alpha).
+      const seen = new Set<unknown>();
       (node as Node).traverse((candidate) => {
-        if (Reflect.get(candidate, "isRTTNode") !== true) return;
+        if (Reflect.get(candidate, "isRTTNode") !== true || seen.has(candidate)) return;
+        seen.add(candidate);
         const scratch = candidate as unknown as {
           renderTarget: { dispose(): void };
           _quadMesh: { material: { dispose(): void } };
@@ -586,4 +589,45 @@ it("keeps lazy bloom mips valid at small viewports and releases retired bindings
   } finally {
     graph.dispose?.();
   }
+});
+
+it("scales a fixed exposure into light only, never into the alpha the output transform divides by", () => {
+  // RenderOutputNode unpremultiplies before tone mapping: an exposure that also scales alpha cancels
+  // there and returns as a display-space multiply (cornell at 1/32 capped every pixel at 8/255).
+  let input: unknown;
+  new WorldEnvironment({ exposure: 0.25 }).apply(
+    {
+      kind: "webgpu",
+      raw: {},
+      createRenderChain(options) {
+        input = options.input;
+        return { applied: { stages: [], dropped: [] }, dispose() {} };
+      },
+    },
+    new Scene(),
+    new PerspectiveCamera(),
+  );
+  const seen = new Set<object>();
+  const products: { aNode: unknown; bNode: unknown }[] = [];
+  const walk = (node: unknown): void => {
+    if (typeof node !== "object" || node === null || seen.has(node)) return;
+    seen.add(node);
+    const n = node as { isNode?: boolean; op?: string; aNode?: unknown; bNode?: unknown };
+    if (n.isNode && n.op === "*") products.push(n as { aNode: unknown; bNode: unknown });
+    for (const value of Object.values(node)) if (typeof value === "object") walk(value);
+  };
+  walk(input);
+  // TSL wraps operands in VarNodes; the operand itself is the node they hold.
+  const unwrap = (node: unknown): unknown => {
+    let n = node as { isVarNode?: boolean; node?: unknown } | null;
+    while (n?.isVarNode) n = n.node as typeof n;
+    return n;
+  };
+  const isExposure = (node: unknown) => (unwrap(node) as { value?: unknown } | null)?.value === 0.25;
+  const exposed = products.filter((p) => isExposure(p.aNode) || isExposure(p.bNode));
+  expect(exposed).toHaveLength(1);
+  const [product] = exposed as [{ aNode: unknown; bNode: unknown }];
+  const light = isExposure(product.bNode) ? product.aNode : product.bNode;
+  // `.rgb`, which TSL stores as the xyz swizzle: the alpha lane never sees the exposure.
+  expect((unwrap(light) as { components?: string }).components).toBe("xyz");
 });
