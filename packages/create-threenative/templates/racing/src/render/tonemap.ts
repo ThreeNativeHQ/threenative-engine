@@ -10,8 +10,7 @@
 // from shifting hue, as the ACES reference rendering does.
 //
 // `worldEnvironment.ts` installs it as three's `CustomToneMapping` when `tonemapMode` is
-// `"filmic"`. `"aces"` stays available as the named override. `filmicToneMap()` is the same
-// curve on plain numbers, so a test or a capture script can apply it to a scene-linear image.
+// `"filmic"`. `"aces"` stays available as the named override.
 import { CustomToneMapping } from "three";
 import { clamp, dot, exp, log, max, mix, step, vec3 } from "three/tsl";
 import type { Node } from "three/webgpu";
@@ -25,7 +24,7 @@ export interface IFilmicCurve {
 }
 
 /** Unreal 5.8.3 project defaults. Change these numbers to change the curve. */
-export const FILMIC_CURVE: IFilmicCurve = {
+const FILMIC_CURVE: IFilmicCurve = {
   slope: 0.88,
   toe: 0.55,
   shoulder: 0.26,
@@ -75,64 +74,8 @@ function curveMatches(c: IFilmicCurve): {
   return { toeScale, shoulderScale, toeMatch, shoulderMatch, straightMatch };
 }
 
-function smooth(t: number): number {
-  return t * t * (3 - 2 * t);
-}
-
-/** One AP1 channel through the curve. Input is scene-linear, output is display-linear. */
-export function filmicCurve(value: number, c: IFilmicCurve = FILMIC_CURVE): number {
-  const m = curveMatches(c);
-  const logValue = Math.log10(Math.max(value, 1e-10));
-  const straight = c.slope * (logValue + m.straightMatch);
-  const toe =
-    logValue < m.toeMatch
-      ? -c.blackClip +
-        (2 * m.toeScale) / (1 + Math.exp((-2 * c.slope * (logValue - m.toeMatch)) / m.toeScale))
-      : straight;
-  const shoulder =
-    logValue > m.shoulderMatch
-      ? 1 +
-        c.whiteClip -
-        (2 * m.shoulderScale) /
-          (1 + Math.exp((2 * c.slope * (logValue - m.shoulderMatch)) / m.shoulderScale))
-      : straight;
-  let t = Math.min(1, Math.max(0, (logValue - m.toeMatch) / (m.shoulderMatch - m.toeMatch)));
-  if (m.shoulderMatch < m.toeMatch) t = 1 - t;
-  return toe + (shoulder - toe) * smooth(t);
-}
-
-function multiply(m: Mat3, v: Vec3): [number, number, number] {
-  return [
-    m[0] * v[0] + m[1] * v[1] + m[2] * v[2],
-    m[3] * v[0] + m[4] * v[1] + m[5] * v[2],
-    m[6] * v[0] + m[7] * v[1] + m[8] * v[2],
-  ];
-}
-
-function saturate(v: Vec3, amount: number): [number, number, number] {
-  const y = v[0] * AP1_LUMA[0] + v[1] * AP1_LUMA[1] + v[2] * AP1_LUMA[2];
-  return [y + (v[0] - y) * amount, y + (v[1] - y) * amount, y + (v[2] - y) * amount];
-}
-
-/** Scene-linear sRGB in, display-linear sRGB out (before the sRGB transfer), on plain numbers. */
-export function filmicToneMap(
-  rgb: readonly [number, number, number],
-  exposure = 1,
-  c: IFilmicCurve = FILMIC_CURVE,
-): [number, number, number] {
-  const [r, g, b] = rgb.map((v) => Math.max(0, v * exposure)) as unknown as Vec3;
-  const pre = saturate(multiply(SRGB_TO_AP1, [r, g, b]), PRE_SATURATION);
-  const toned = saturate(
-    [filmicCurve(pre[0], c), filmicCurve(pre[1], c), filmicCurve(pre[2], c)],
-    POST_SATURATION,
-  );
-  const [x, y, z] = multiply(AP1_TO_SRGB, toned);
-  const unit = (v: number): number => Math.min(1, Math.max(0, v));
-  return [unit(x), unit(y), unit(z)];
-}
-
 /** The same curve as a TSL tone-mapping function, `(color, exposure) => color`. */
-export function filmicToneMappingNode(
+function filmicToneMappingNode(
   c: IFilmicCurve = FILMIC_CURVE,
 ): (color: Node<"vec3">, exposure: Node<"float">) => Node<"vec3"> {
   const m = curveMatches(c);

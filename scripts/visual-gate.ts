@@ -18,7 +18,11 @@ import {
   createImageBlindBundle,
   hashPromptFile,
 } from "./score-blind.js";
-import { localPackageEntries, workspacePackages } from "./workspace-packages.js";
+import {
+  assertWebEngineBuilt,
+  localPackageEntries,
+  workspacePackages,
+} from "./workspace-packages.js";
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const TEMPLATE_ROOT = path.join(
@@ -333,6 +337,7 @@ export async function packageLocalFramework(root: string): Promise<Record<string
   const packageRoot = path.join(root, "packages");
   await mkdir(packageRoot, { recursive: true });
   const packages = LOCAL_FRAMEWORK_PACKAGES;
+  if (packages.some(([name]) => name === "@threenative/runtime-native")) assertWebEngineBuilt();
   const manifests = new Map(workspacePackages(REPO_ROOT).map((item) => [item.name, item]));
   const archives = new Map<string, string>();
   for (const [name] of packages) {
