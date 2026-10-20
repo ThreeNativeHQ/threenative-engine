@@ -22,6 +22,9 @@ function renderer() {
     getActiveCubeFace: () => 3,
     getActiveMipmapLevel: () => 2,
     setRenderTarget: vi.fn(),
+    // The scene pass's MRT; a capture must not inherit it (empty `OutputType` on a real GPU).
+    getMRT: () => "scene-mrt",
+    setMRT: vi.fn(),
     render: vi.fn(),
   };
 }
@@ -99,6 +102,8 @@ describe("SkyCapture", () => {
     for (let i = 0; i < 3; i++) capture.update(sun(10));
     expect(filter.fromCubemap).toHaveBeenLastCalledWith(capture.cubeTarget.texture, target);
     expect(raw.setRenderTarget).toHaveBeenLastCalledWith(null, 3, 2);
+    expect(raw.setMRT).toHaveBeenNthCalledWith(1, null);
+    expect(raw.setMRT).toHaveBeenLastCalledWith("scene-mrt");
     expect(raw.xr.enabled).toBe(true);
     expect(raw.autoClear).toBe(false);
     expect(raw.toneMapping).toBe(4);

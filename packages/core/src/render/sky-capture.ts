@@ -145,9 +145,12 @@ export class SkyCapture {
     const xr = raw.xr.enabled;
     const autoClear = raw.autoClear;
     const toneMapping = raw.toneMapping;
+    const mrt = raw.getMRT();
     try {
       raw.xr.enabled = false;
       raw.toneMapping = NoToneMapping;
+      // A nested scene pass's named MRT outputs do not belong to the cube target.
+      raw.setMRT(null);
       if (this.#camera.coordinateSystem !== raw.coordinateSystem) {
         this.#camera.coordinateSystem = raw.coordinateSystem;
         this.#camera.updateCoordinateSystem();
@@ -172,6 +175,7 @@ export class SkyCapture {
       throw error;
     } finally {
       raw.setRenderTarget(target, face, mip);
+      raw.setMRT(mrt);
       raw.xr.enabled = xr;
       raw.autoClear = autoClear;
       raw.toneMapping = toneMapping;
