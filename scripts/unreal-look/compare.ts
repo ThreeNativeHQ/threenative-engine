@@ -115,7 +115,10 @@ export function classify(
     color.map((v) => Math.round(255 * linearToSrgb(v / 255)));
   if (near([0, 0, 0])) return "Sky";
   return (
-    Object.entries(colors).find(([, color]) => near(color) || near(encoded(color)))?.[0] ?? null
+    Object.entries(colors).find(
+      // Unreal 5.8.3's unlit glTF proxy (GI calibration scenes) encodes once more: 128 arrives as 222.
+      ([, color]) => near(color) || near(encoded(color)) || near(encoded(encoded(color))),
+    )?.[0] ?? null
   );
 }
 export function masks(image: IImage, colors: Record<string, readonly number[]>): IMasks {
