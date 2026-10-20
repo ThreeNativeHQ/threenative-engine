@@ -92,7 +92,7 @@ shadows (off in Unreal, declined in PRD-561).
 #### Phase 2: A cache per lamp
 **Status:** NOT STARTED
 **Files:** `packages/runtime-native/src/engine/renderer/renderer.cpp`, `packages/core/src/render/` (shared caster sort), native engine tests
-- [ ] A still lamp with still casters redraws 0 times over 300 frames, a caster moving inside its radius redraws it, and a caster moving outside its radius does not. proof: red-green native engine test `native_engine_lamp_cache`.
+- [x] A still lamp with still casters redraws 0 times over 300 frames, a caster moving inside its radius redraws it, and a caster moving outside its radius does not. proof: red-green native engine test `native_engine_lamp_cache`. — Evidence (2026-10-20): point + spot lamp, 300 still frames: 0 shadow draws (red with the skip disabled: 2100); caster moved outside range: 0 (red: 7); moved inside: 7; kept map pixels equal the fresh map's on all channels. The signature is the lamp cameras, map size and target, and each caster's key, matrix, geometry version, pipeline and cut; a GPU-deformed caster redraws every frame. `ctest -R native_engine_` only baseline reds (update_scaling under -j8, world_cells known red).
 - [ ] The shadow markers report lamp redraws and lamp shadow GPU time apart from the sun's levels, and the totals reconcile with the renderer's shadow submissions on one mixed-light frame. proof: red-green parser test in `packages/core/__tests__/virtual-shadow.spec.ts`.
 - [ ] AC-2 holds. proof: the AC-2 command.
 

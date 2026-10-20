@@ -3402,6 +3402,88 @@ void lampSourceRadius() {
 // shadowSide draws a front-sided caster's back faces, so there the stored depth is the box's back face
 // at the floor and the strip leaks light (cornell's tall box); the strip's darkest-to-brightest
 // shadowed-to-open ratio. material.shadowSide = FrontSide closes it without acne on the lit floor.
+// PRD-650: a still lamp keeps its map. Over 300 still frames neither lamp draws a caster; a caster
+// moving inside a lamp's range redraws it, one moving outside its range does not, and the kept map
+// still shadows the floor as a fresh one does.
+void lampCache() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(96, 96);
+    OrthographicCamera camera(-4, 4, 4, -4, 0.1, 20);
+    camera.position.set(0, 10, 0.001);
+    camera.lookAt(0, 0, 0);
+    camera.updateProjectionMatrix();
+    Scene scene;
+    PointLight lamp{Color(1, 1, 1), 40, 6};  // range 6 m: the shadow camera's far
+    lamp.position.set(-1.5, 2, 0);
+    lamp.setCastShadow(true);
+    scene.add(lamp);
+    SpotLight spot{Color(1, 1, 1), 40, 6, 0.9};
+    spot.position.set(1.5, 3, 0);
+    spot.target->position.set(1.5, 0, 0);
+    spot.setCastShadow(true);
+    scene.add(spot);
+    scene.add(*spot.target);
+    auto white = std::make_shared<Material>(MaterialType::Standard);
+    Mesh floor{makeBoxGeometry(8, 0.2, 8), white};
+    floor.position.y = -0.1;
+    floor.setReceiveShadow(true);
+    scene.add(floor);
+    Mesh near{makeBoxGeometry(0.6, 0.6, 0.6), white};
+    near.position.set(-1.5, 1, 0);
+    near.setCastShadow(true);
+    scene.add(near);
+    Mesh far{makeBoxGeometry(0.6, 0.6, 0.6), white};
+    far.position.set(30, 1, 0);  // 31 m from the lamp, 28.5 m from the spot: beyond both ranges
+    far.setCastShadow(true);
+    scene.add(far);
+    RenderDatabase database;
+    database.shadowMapEnabled = true;
+    const auto frame = [&] {
+        scene.updateMatrixWorld(true);
+        database.render(renderer, scene, camera);
+        return renderer.lastFrame().shadowDraws;
+    };
+    const auto pixels = [&] {
+        std::vector<uint8_t> out;
+        bool read = false;
+        renderer.readPixels([&](GpuStatus status, std::vector<uint8_t> px) {
+            if (status == GpuStatus::Ok) out = std::move(px);
+            read = true;
+        });
+        for (int i = 0; i < 5000 && !read; ++i) {
+            renderer.poll();
+            events.drain();
+            if (!read) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        CHECK(out.size() == size_t{96} * 96 * 4);
+        return out;
+    };
+    const uint64_t first = frame();
+    CHECK(first > 0);
+    const std::vector<uint8_t> fresh = pixels();
+    uint64_t still = 0;
+    for (int i = 0; i < 300; ++i) still += frame();
+    std::printf("lamp cache: first %llu, 300 still frames %llu\n", (unsigned long long)first, (unsigned long long)still);
+    CHECK(still == 0);
+    const std::vector<uint8_t> kept = pixels();
+    int differ = 0;
+    for (size_t k = 0; k < kept.size(); ++k) differ += std::abs(int(kept[k]) - int(fresh[k])) > 2;
+    std::printf("lamp cache: kept map differs on %d channels\n", differ);
+    CHECK(differ == 0);
+    far.position.x = 31;
+    const uint64_t outside = frame();
+    std::printf("lamp cache: caster moved outside range %llu\n", (unsigned long long)outside);
+    CHECK(outside == 0);
+    near.position.x = -1.2;
+    const uint64_t inside = frame();
+    std::printf("lamp cache: caster moved inside range %llu\n", (unsigned long long)inside);
+    CHECK(inside > 0);
+    CHECK(frame() == 0);
+}
+
 void contactShadowFoot() {
     mystral::webgpu::Context context;
     CHECK(context.initializeHeadless());
@@ -4387,7 +4469,7 @@ TN_TEST_MAIN({"gpu_joint_production", gpuJointProduction}, {"multi_material_grou
              {"material_unsupported", materialUnsupported}, {"shader_invalid", shaderInvalid}, {"time_uniform", timeUniform}, {"gpu_mipmaps", gpuMipmaps}, {"updates", updates},
              {"multi_camera_layers", multiCameraLayers}, {"render_callback", renderCallback}, {"instanced", instanced},
              {"batched_vs_unbatched", batchedVsUnbatched}, {"skinned_crowd", skinnedCrowdPixels}, {"skinned_decline_cadence", skinnedDeclineCadence}, {"skinned_normalized_weights", skinnedNormalizedWeights}, {"normal_map_tilt", normalMapTilt}, {"unsupported_map_slot", unsupportedMapSlot}, {"converted_copies_swept", convertedCopiesAreSwept}, {"gpu_timer_covers_offscreen", gpuTimerCoversOffscreen}, {"gpu_timer_covers_shadows", gpuTimerCoversShadows}, {"overlay_over_frame", overlayOverFrame}, {"gpu_timer_is_opt_in", gpuTimerIsOptIn}, {"msaa_edges", msaaEdges}, {"shadow_camera_layers", shadowCameraLayers}, {"flat_shading_needs_no_normals", flatShadingNeedsNoNormals}, {"map_sampleability_changes", mapSampleabilityChanges}, {"batch_caches_stay_put", batchCachesStayPut}, {"frustum_culling", frustumCulling},
-             {"shadow_caster_frustum_culling", shadowCasterFrustumCulling}, {"masked_shadow", maskedShadow}, {"point_shadow_cube_faces", pointShadowCubeFaces}, {"lamp_source_radius", lampSourceRadius}, {"contact_shadow_foot", contactShadowFoot}, {"shadow_lights_follow_hierarchy", shadowLightsFollowHierarchy}, {"records_survive_siblings", recordsSurviveSiblings}, {"steady_frame_hashes_no_record", steadyFrameHashesNoRecord}, {"nested_record_cache", nestedRecordCache}, {"frustum_record_retention", frustumRecordRetention}, {"world_sphere_measured_once", worldSphereMeasuredOnce}, {"reflection_reuse", reflectionReuse})
+             {"shadow_caster_frustum_culling", shadowCasterFrustumCulling}, {"masked_shadow", maskedShadow}, {"point_shadow_cube_faces", pointShadowCubeFaces}, {"lamp_source_radius", lampSourceRadius}, {"contact_shadow_foot", contactShadowFoot}, {"lamp_cache", lampCache}, {"shadow_lights_follow_hierarchy", shadowLightsFollowHierarchy}, {"records_survive_siblings", recordsSurviveSiblings}, {"steady_frame_hashes_no_record", steadyFrameHashesNoRecord}, {"nested_record_cache", nestedRecordCache}, {"frustum_record_retention", frustumRecordRetention}, {"world_sphere_measured_once", worldSphereMeasuredOnce}, {"reflection_reuse", reflectionReuse})
 
 
 

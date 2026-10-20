@@ -2917,6 +2917,8 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         const auto virtualIt = virtualShadows_.find(i);
         const bool virtualMap = virtualIt != virtualShadows_.end();
         const int passCount = compilation ? 1 : virtualMap ? int(virtualPages[i].size()) : shadow.cube ? 6 : 1;
+        const std::size_t firstPass = shadowPasses.size();
+        const bool lamp = lights.direct[i].kind != DirectLight::Kind::Directional && !virtualMap && !compilation;
         for (int face = 0; face < passCount; ++face) {
         const shadows::AtlasPage* page = virtualMap && !compilation ? &virtualPages[i][face] : nullptr;
         const Matrix& view = page ? page->view.elements : shadow.cube ? shadow.faceViews[face] : shadow.view;
@@ -2943,6 +2945,21 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             const DrawItem& item = *selected;
             if (!item.castShadow || item.instanceCount == 0 || !item.positions) continue;
             if ((item.layers & (shadow.layersMask | (virtualMap ? (1u << 29) | (1u << 28) : 0u))) == 0) continue;
+            // A caster wholly beyond the lamp camera's far plane writes no depth: skip it, so it moving
+            // there neither costs a draw nor invalidates the lamp's cached map (PRD-650).
+            if (lamp && shadow.far > 0 && item.shadowObject && !item.positionNode && !item.nodes.positionNode && !item.boneMatrices && !item.morphGeometry) {
+                const Sphere* local = item.shadowObject->type() == "InstancedMesh"
+                    ? static_cast<const InstancedMesh*>(item.shadowObject)->boundingSphere.get()
+                    : item.shadowObject->type() == "Mesh" && static_cast<const Mesh*>(item.shadowObject)->geometry
+                        ? static_cast<const Mesh*>(item.shadowObject)->geometry->boundingSphere.get() : nullptr;
+                if (local) {
+                    Sphere world = *local;
+                    Matrix4 model; model.elements = item.matrixWorld;
+                    world.applyMatrix4(model);
+                    const auto& at = lights.direct[i].position;
+                    if (world.center.distanceTo(Vector3(at[0], at[1], at[2])) - world.radius > shadow.far) continue;
+                }
+            }
             if (page) {
                 const auto& atlas = virtualIt->second.atlas;
                 if (page->mover ? !atlas.isMover(item.key) : !atlas.drawsStatic(item.key)) continue;
@@ -3020,6 +3037,31 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             pass.draws.push_back({&item, &program, pipeline, static_cast<uint32_t>(v), static_cast<uint32_t>(masked ? f : 0)});
         }
         }
+        // PRD-650: a lamp keeps last frame's map while nothing it draws changed: its cameras, its map
+        // and each caster's matrix, geometry and cut. A GPU-deformed caster changes every frame.
+        if (!lamp) continue;
+        uint64_t h = 0xcbf29ce484222325ull;
+        const auto mix = [&h](uint64_t v) { h = (h ^ v) * 0x100000001b3ull; };
+        const auto mixMatrix = [&](const Matrix& m) { for (double e : m) mix(std::bit_cast<uint64_t>(e)); };
+        const auto mixStore = [&](const BufferStore* b) { mix(reinterpret_cast<uintptr_t>(b)); if (b) { mix(b->version()); mix(b->epoch()); } };  // three uploads on needsUpdate, not on a write
+        bool animated = false;
+        mixMatrix(shadow.projection);
+        if (shadow.cube) for (const Matrix& m : shadow.faceViews) mixMatrix(m); else mixMatrix(shadow.view);
+        mix(shadow.width); mix(shadow.height);
+        for (std::size_t k = firstPass; k < shadowPasses.size(); ++k) {
+            mix(reinterpret_cast<uintptr_t>(shadowPasses[k].target));
+            for (const Planned& p : shadowPasses[k].draws) {
+                const DrawItem& item = *p.item;
+                animated |= item.positionNode || item.nodes.positionNode || item.boneMatrices || item.morphGeometry || item.gpuJoints;
+                mix(item.key); mixMatrix(item.matrixWorld); mix(item.instanceCount);
+                mixStore(item.positions); mixStore(item.indices); mixStore(item.instanceMatrices); mixStore(item.uvs);
+                mix(reinterpret_cast<uintptr_t>(p.pipeline)); mix(reinterpret_cast<uintptr_t>(item.map));
+                mix(std::bit_cast<uint32_t>(item.material->alphaTest)); mix(std::bit_cast<uint32_t>(item.material->opacity));
+            }
+        }
+        uint64_t& last = lampSignatures_[i];
+        if (!animated && last == h) shadowPasses.erase(shadowPasses.begin() + std::ptrdiff_t(firstPass), shadowPasses.end());
+        else last = animated ? 0 : h;
     }
 
     // One buffer for the frame's uniforms, grown (and its bind groups rebuilt) when it is too small,

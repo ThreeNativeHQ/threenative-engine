@@ -813,6 +813,8 @@ private:
         std::map<int, uint64_t> consumedCosts;
     };
     std::map<std::size_t, VirtualShadow> virtualShadows_;
+    /** Each lamp's last drawn map signature (PRD-650): an equal one skips its depth passes. */
+    std::map<std::size_t, uint64_t> lampSignatures_;
     bool virtualCut_ = false;
     WGPUSampler compareSampler_ = nullptr;
     WGPUSampler depthValueSampler_ = nullptr;  // nearest, no compare: a blocker search's depth reads
