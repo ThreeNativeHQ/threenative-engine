@@ -95,6 +95,17 @@ describe("GI calibration scene export (PRD-638 AC-3)", () => {
     expect(() => validateSceneExport(scene, gltf)).not.toThrow();
   });
 
+  it("checks a tilt about +X against scene.glb (PRD-649 ramps)", () => {
+    const { scene, gltf } = fixture();
+    const half = (15 * Math.PI) / 360;
+    Object.assign(scene.meshes[0] ?? {}, { rotationYDeg: 0, rotationXDeg: 15 });
+    const node = gltf.nodes?.[0] ?? {};
+    node.rotation = [Math.sin(half), 0, 0, Math.cos(half)];
+    expect(() => validateSceneExport(scene, gltf)).not.toThrow();
+    node.rotation = [-Math.sin(half), 0, 0, Math.cos(half)];
+    expect(() => validateSceneExport(scene, gltf)).toThrow(/Wall_Red: rotation differs/);
+  });
+
   it("fails on a mesh that scene.glb lacks, naming the actor", () => {
     const { scene, gltf } = fixture();
     gltf.nodes = [];

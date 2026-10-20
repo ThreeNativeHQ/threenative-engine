@@ -169,7 +169,7 @@ def spawn_boxes(ref, scene, meshes, materials):
         actor = ref.actor_subsystem.spawn_actor_from_object(
             meshes[box["name"]], ref.to_unreal(box["position"]),
             # three's +X is Unreal's +X; the axis swap that flips handedness negates both angles.
-            unreal.Rotator(roll=-box.get("rotationXDeg", 0.0), pitch=0.0, yaw=-box.get("rotationYDeg", 0.0)),
+            unreal.Rotator(roll=box.get("rotationXDeg", 0.0), pitch=0.0, yaw=-box.get("rotationYDeg", 0.0)),
         )
         actor.set_actor_label(box["name"])
         actor.static_mesh_component.set_material(0, materials[box["name"]])
@@ -258,10 +258,14 @@ def to_three(v):
 
 
 def describe_level(ref, name, scene, regions):
-    meshes, lights, exposure, sun = [], [], None, None
+    meshes, lights, exposure, sun, template_meshes = [], [], None, None, []
+    boxes = {b["name"] for b in scene["boxes"]}
     for actor in ref.actor_subsystem.get_all_level_actors():
         label, cls = actor.get_actor_label(), actor.get_class().get_name()
-        if cls == "StaticMeshActor":
+        if cls == "StaticMeshActor" and label not in boxes and scene.get("template") == "default":
+            # The default level's own meshes (its sky sphere and the like) are Unreal's, not the scene's.
+            template_meshes.append(label)
+        elif cls == "StaticMeshActor":
             rot = actor.get_actor_rotation()
             if abs(rot.pitch) > 1e-3 or (abs(rot.roll) > 1e-3 and abs(rot.yaw) > 1e-3):
                 raise ValueError(f"{label}: only one rotation, about the vertical or the x axis, is exported")
@@ -273,7 +277,8 @@ def describe_level(ref, name, scene, regions):
                 "class": cls,
                 "position": to_three(actor.get_actor_location()),
                 "rotationYDeg": round(-rot.yaw, 6),
-                **({"rotationXDeg": round(-rot.roll, 6)} if abs(rot.roll) > 1e-3 else {}),
+                # A roll is the same angle about three's +X: the glTF export writes it so (penumbra-lab's ramp).
+                **({"rotationXDeg": round(rot.roll, 6)} if abs(rot.roll) > 1e-3 else {}),
                 "size": to_three(unreal.Vector(box.max.x - box.min.x, box.max.y - box.min.y, box.max.z - box.min.z)),
                 "material": material_values(mi),
             })
@@ -331,7 +336,7 @@ def describe_level(ref, name, scene, regions):
         "lights": lights,
         "sky": "template" if scene.get("template") == "default" else None,
         "sun": sun,
-        **({"template": "default", "suns": scene["suns"]} if scene.get("template") == "default" else {}),
+        **({"template": "default", "suns": scene["suns"], "templateMeshes": sorted(template_meshes)} if scene.get("template") == "default" else {}),
         "fog": None,
         "exposure": exposure,
         "poses": poses_of(scene),
