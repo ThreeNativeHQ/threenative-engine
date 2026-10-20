@@ -300,6 +300,14 @@ int main() {
         infinite->ior != 1000 || infinite->specularColor.b != 0.3) {
         std::printf("physical: wrong material type or ior/specular inputs: %s\n", physical.error.c_str()); ++differ;
     }
+    // KHR_materials_emissive_strength (GLTFMaterialsEmissiveStrengthExtension): the model loads and the
+    // strength lands on emissiveIntensity. The Unreal reference scene's emissive sphere uses it.
+    const std::string glowBytes = readFile(std::string(TN_REPO_ROOT) + "/tools/unreal-reference/scene.glb");
+    auto glowScene = gltf::load(std::span<const uint8_t>(reinterpret_cast<const uint8_t*>(glowBytes.data()), glowBytes.size()));
+    auto* glow = glowScene.scene ? dynamic_cast<Mesh*>(glowScene.scene->getObjectByName("Sphere_Emissive")) : nullptr;
+    if (!glowScene.error.empty() || !glow || glow->material->emissiveIntensity != 5) {
+        std::printf("emissive strength: refused or not applied: %s\n", glowScene.error.c_str()); ++differ;
+    }
     // KHR_materials_clearcoat (GLTFMaterialsClearcoatExtension): a MeshPhysicalMaterial with the coat's
     // factors and its clearcoat and clearcoat-roughness maps.
     const std::string coatBytes = readFile(std::string(TN_REPO_ROOT) + "/packages/three-native/tests/compatibility/fixtures/gltf-model-clearcoat.glb");
