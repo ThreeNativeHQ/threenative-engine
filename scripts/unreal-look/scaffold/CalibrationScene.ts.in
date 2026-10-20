@@ -191,6 +191,8 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
         ...(params.get("ssgiIntensity") === null ? {} : { ssgiIntensity: Number(params.get("ssgiIntensity")) }),
         // Unreal's L7 is its Epic tier, so the gather takes the template's top sample budget.
         ssgiQuality: (params.get("ssgiQuality") ?? "high") as "high",
+        // Diagnosis: ?ssgiScale=N gathers at a fraction of the frame (PRD-640 cost gate).
+        ...(params.get("ssgiScale") === null ? {} : { ssgiResolutionScale: Number(params.get("ssgiScale")) }),
         vignetteAmount: 0,
         exposure: EXPOSURE,
       });
