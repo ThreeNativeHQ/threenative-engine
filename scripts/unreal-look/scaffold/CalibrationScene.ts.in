@@ -32,6 +32,8 @@ const NAME = params.get("tnGi") ?? "";
 const LAYER = params.get("layer") ?? "L7";
 const level = LAYER === "ID" ? -1 : Number(LAYER.slice(1));
 const DATA = SCENES[NAME];
+// Diagnosis only: scales every light, so a capture can bracket a unit error. Unset in every judged capture.
+const LIGHT_SCALE = Number(params.get("lightScale") ?? 1);
 
 /**
  * Unreal light units to three's. three's punctual light intensity is candela, and its Lambert
@@ -108,7 +110,7 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
         const [r = 1, g = 1, b = 1] = light.color;
         const point = new PointLight(
           new Color().setRGB(r, g, b),
-          candela(light.intensity, light.units),
+          candela(light.intensity, light.units) * LIGHT_SCALE,
           light.attenuationRadiusM,
           2,
         );
@@ -145,7 +147,7 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
         bloomEnabled: false,
         gtaoEnabled: level >= 6,
         vignetteAmount: 0,
-        exposure: DATA.exposure.exposureScale,
+        exposure: Number(params.get("exposure") ?? DATA.exposure.exposureScale),
       });
       this.#dispose = world.apply(ctx.renderer, scene, camera, {}).dispose;
     }
@@ -157,6 +159,26 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
       layer: LAYER,
       scene: NAME,
       unsupported,
+      // The live scene and renderer, for in-page diagnosis.
+      scene,
+      renderer: ctx.renderer.raw,
+      disposePost: () => this.#dispose?.(),
+      // What the frame was drawn with, for the capture report: a wrong unit shows here first.
+      probe: () => {
+        const r = ctx.renderer.raw as unknown as { toneMapping: number; toneMappingExposure: number };
+        const lights: unknown[] = [];
+        scene.traverse((o) => {
+          const l = o as PointLight;
+          if (l.isLight) lights.push({ type: l.type, intensity: l.intensity, distance: l.distance, decay: l.decay, visible: l.visible });
+        });
+        const m = meshes[0]?.material as { type?: string; color?: Color; roughness?: number } | undefined;
+        return {
+          toneMapping: r.toneMapping,
+          toneMappingExposure: r.toneMappingExposure,
+          lights,
+          material: { type: m?.type, color: m?.color?.toArray(), roughness: m?.roughness },
+        };
+      },
       engine:
         "engine" in (ctx.renderer.raw as unknown as { info: object }).info ? "threenative" : "threejs",
       pose(pose: Pose): void {

@@ -116,7 +116,8 @@ export async function captureGiThreeNative(options: {
         if (!adapter || /swiftshader|llvmpipe/i.test(JSON.stringify(adapter)))
           throw new Error(`TN_UNREAL_LOOK_SOFTWARE_ADAPTER: ${JSON.stringify(adapter)}`);
         for (const layer of options.layers) {
-          await page.goto(`${origin}?tnGi=${name}&layer=${layer}`, {
+          const extra = process.env.TN_GI_URL_EXTRA ?? "";
+          await page.goto(`${origin}?tnGi=${name}&layer=${layer}${extra}`, {
             waitUntil: "domcontentloaded",
           });
           await page.addStyleTag({ content: HIDE_UI });
@@ -130,6 +131,7 @@ export async function captureGiThreeNative(options: {
           report[`${name}/${layer}`] = {
             engine,
             unsupported: await page.evaluate("window.__tnRef.unsupported"),
+            probe: await page.evaluate("window.__tnRef.probe()"),
           };
           for (const pose of scene.poses) {
             await page.evaluate(`window.__tnRef.pose(${JSON.stringify(pose)})`);
