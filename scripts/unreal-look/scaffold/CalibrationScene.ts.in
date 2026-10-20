@@ -65,10 +65,13 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
     const raw = ctx.renderer.raw as unknown as { toneMapping: number };
     // Every scene.json property this recreation does not carry, with the PRD that owns it.
     const unsupported: { actor: string; property: string; reason: string }[] = [];
-    // The region a mesh belongs to: the scene.glb node named after the Unreal actor.
+    // The region a mesh belongs to: the scene.glb node named after the Unreal actor, or, when the
+    // asset pipeline flattened the nodes away, the mesh named after its static mesh, SM_<actor>.
     const regionOf = (object: Object3D): string | undefined => {
-      for (let o: Object3D | null = object; o !== null; o = o.parent)
-        if (o.name in DATA.regions) return o.name;
+      for (let o: Object3D | null = object; o !== null; o = o.parent) {
+        const name = o.name.replace(/^SM_/, "");
+        if (name in DATA.regions) return name;
+      }
       return undefined;
     };
     const meshes: Mesh[] = [];
