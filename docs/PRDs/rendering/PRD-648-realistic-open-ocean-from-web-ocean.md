@@ -1,4 +1,4 @@
-# PRD-624 - A realistic open ocean without a second water stack
+# PRD-648 - A realistic open ocean without a second water stack
 
 **Status:** PROPOSED - draft proposal only; no implementation or runtime qualification yet.
 **Priority:** P2 - Improve open-ocean appearance while preserving the installed water mechanisms and sailing behavior.
