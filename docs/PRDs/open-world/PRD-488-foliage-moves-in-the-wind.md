@@ -29,6 +29,7 @@ Megascans store their wind masks in vertex colours, and the UE5 importer leaves 
 
 - 2026-10-03 (agent, proposed): the phase comes from the instance's world origin, not a per-instance phase attribute. The compacted matrix buffer already carries the origin on every path. An attribute would need a parallel compaction in `world-gpu-scene.ts` and a copy in every impostor and shadow path.
 - 2026-10-03 (agent, proposed): cached virtual-shadow levels draw casters at rest pose. Swaying them would undo PRD-478's re-render cut. Rest-pose shadows are judged under the blind A/B rather than proven identical.
+- 2026-10-20 (shadow slicing): amended for near levels. Unreal sways foliage in every shadow level by default. [PRD-651](../Unreal/shadows/PRD-651-leaves-cast-leaf-shadows-that-sway-near-the-camera.md) sways a caster in the levels whose texel resolves the sway, through the mover maps, and keeps the rest pose in coarser levels. This PRD still owns the wind itself. No box changed.
 - 2026-10-03 (agent, proposed): importing Megascans' vertex-colour wind masks is out of scope. The height weight needs no importer change; a follow-up PRD takes the masks if the A/B shows the height weight bending trunks.
 
 ## Integration Ledger

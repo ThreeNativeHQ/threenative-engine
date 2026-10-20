@@ -1,0 +1,105 @@
+---
+prd_contract: v1
+---
+
+# PRD-651 — Leaves cast leaf shadows that sway near the camera
+
+**Status:** NOT STARTED
+**Priority:** P1 — no box is ticked: on the owned engine, which is the default, an alpha-tested leaf card casts a solid rectangle, because the native shadow depth program discards nothing; tree shadows also stand still in the wind, and a back-lit leaf darkens through normal bias.
+**Complexity:** 6 (MEDIUM) — 1–5 files per phase in the native engine and core (+2), the native engine and the browser are separate build boundaries (+2), swaying casters change what the shadow cache may keep (+2); risk override: none
+**Owner:** João
+**Depends on:** [PRD-649](PRD-649-shadow-calibration-scenes-are-built-in-unreal-and-judged-until-parity.md) Phase 2 (the shared `foliage` scene and its `wind` run). Phase 2 depends on [PRD-488](../../open-world/PRD-488-foliage-moves-in-the-wind.md) (the wind node). Coordinates with [PRD-643](../gi/PRD-643-glass-fog-and-leaves-take-the-bounce-light-too.md), which owns the bounce light on leaves, and [PRD-VQ-15](../../rendering/PRD-VQ-15-hair-card-material-qualification.md), which owns hair-card shadows.
+
+## Context
+
+**ThreeNative today:**
+
+- **Native engine (the default engine):** `Renderer::depthProgram` builds the shadow depth program
+  with an empty fragment stage. It also clears the diffuse map from the vertex variant, so no UV
+  reaches it (`packages/runtime-native/src/engine/renderer/renderer.cpp:2120-2140`). The material's
+  `alphaTest` discard exists only in the colour program (`packages/runtime-native/src/engine/shader/standard.cpp:1532-1536`).
+  So a leaf card's shadow is the whole card. Phase 1 reproduces this before the fix.
+- **Browser (three):** three's shadow pass copies `alphaTest` and the map, so cards cut correctly
+  there. It ignores `alphaTestNode`. `WorldImpostorSurface` works round that with `maskShadowNode`
+  and a positive `alphaTest` floor (`packages/core/src/render/world-impostor-surface.ts:72,381,451`).
+- **Wind:** [PRD-488](../../open-world/PRD-488-foliage-moves-in-the-wind.md) (PROPOSED) decided
+  that cached virtual-shadow levels draw casters at rest pose, so wind adds no level redraws. A
+  tree then sways while its shadow stands still.
+- **Distance:** `VirtualShadowNode` already gives coarse levels a coarser caster
+  (`shadowLodBias`) and drops casters under `minCasterTexels` (`packages/core/src/render/virtual-shadow.ts:209`).
+  This PRD does not add a second caster LOD.
+
+**Unreal 5.8.3** (source read 2026-10-20; clean-room summary, no code copied):
+
+| Behaviour | Default | Source |
+| --- | --- | --- |
+| Masked casters | The shadow depth pixel shader runs the material's clip, so a leaf card casts a leaf | `Engine/Shaders/Private/ShadowDepthPixelShader.usf:48-105` |
+| Wind in the shadow | World position offset runs in every shadow level, unless the primitive sets a disable distance; then a clip level whose distance threshold (about `2^(level − 3)` cm) passes that distance draws the rest pose | `Engine/Shaders/Private/VirtualShadowMaps/VirtualShadowMapPageCacheCommon.ush:26-44`; `r.Shadow.Virtual.Clipmap.WPODisableDistance` 1, `.LodBias` 3 |
+| Cache | A swaying caster invalidates its pages into the dynamic layer, redrawn while it moves | `VirtualShadowMapCacheManager.cpp:85-215`; per-primitive `ShadowCacheInvalidationBehavior` `Auto` (`PrimitiveComponent.cpp:347`) |
+| Leaf receivers | Two-sided-foliage and subsurface pixels skip the normal bias and the screen ray, and widen the sun's source as opacity falls, from a 5° minimum | `Engine/Shaders/Private/VirtualShadowMaps/VirtualShadowMapProjection.usf:352-355,1047-1058`; `r.Shadow.Virtual.SubsurfaceShadowMinSourceAngle` 5 |
+
+## Solution
+
+1. **A leaf casts a leaf (Phase 1).** The native depth program keeps the UV and the map when the
+   material has `alphaTest > 0` or an alpha-test node, and discards with the same test as the colour
+   program. A material with `side = DoubleSide` casts from both faces. Opaque materials keep the
+   empty fragment stage, so their cost does not change. The browser path gets one fix: a caster
+   whose cut comes from `alphaTestNode` alone casts the same cut, without the impostor workaround.
+2. **Wind reaches the shadow where a texel can see it (Phase 2).** A caster with a wind
+   `positionNode` sways in a shadow level when the sway amplitude is at least one texel of that
+   level, and draws its rest pose in coarser levels. The engine measures the amplitude where it is
+   used, so the author sets nothing. A swaying caster in a near level draws into that level's mover
+   map, as any moving caster does (PRD-572), and the cached static layer stays valid.
+   `worldPositionOffsetDisableDistance` (metres, Unreal's name) is the named override, and the
+   caster reports it. This amends the PRD-488 rest-pose decision for near levels only.
+3. **A leaf receiver is not over-biased (Phase 3).** A two-sided, alpha-tested receiver skips the
+   normal bias and takes the widened source of Unreal's subsurface rule, so a thin leaf is neither
+   self-shadowed black nor leaking. The leaf's transmitted colour stays in the template's foliage
+   material (`src/render/`), and its bounce light in PRD-643.
+
+**Look is untouched.** The cut threshold, the wind curve, the leaf texture and the leaf colour come
+from the game. The engine only makes the shadow follow them.
+
+## Acceptance Criteria
+
+- [ ] AC-1 [local]: On `foliage/canopy` at `high`, a PRD-647 round returns no REGRESSION against BEFORE and MATCH or CLOSE against Unreal, with the leaf gaps visible in the ground shadow. proof: `pnpm unreal-look:calibrate --scene shadow:foliage --tier high --before <commit>` — Evidence: pending.
+- [ ] AC-2 [local]: In the `wind` run, the near-ground tree shadow moves with the tree, and the GPU cost of wind stays within PRD-488's 0.25 ms against wind off on the RTX 2080. proof: `pnpm unreal-look:calibrate --scene shadow:foliage --run wind` and `TN_FRAME_BUDGET` windows from `playtest perf` — Evidence: pending.
+
+## Integration Ledger
+
+| Capability | Reachable consumer/trigger | Replaces / disposition | Evidence |
+|---|---|---|---|
+| Masked shadow depth program | Any `castShadow` mesh with `alphaTest` or an alpha-test node, on the owned engine | Replaces the empty fragment stage for masked materials | Phase 1 |
+| Sway in near shadow levels | `VirtualShadowNode` levels drawing a caster with a wind `positionNode` | Amends PRD-488's rest pose in levels whose texel resolves the sway | AC-2 |
+| Leaf receiver bias rule | Two-sided alpha-tested receivers | Replaces the uniform normal bias for leaves | AC-1 |
+
+## Execution Phases
+
+#### Phase 1: A leaf casts a leaf
+**Status:** NOT STARTED
+**Files:** `packages/runtime-native/src/engine/renderer/renderer.cpp`, `packages/runtime-native/src/engine/shader/standard.cpp`, native engine tests, `packages/runtime-native/conformance/registry.json`, `packages/core/src/render/world-impostor-surface.ts`
+- [ ] A 50%-cut leaf card casts a shadow with 50% ± 5% coverage of the card's projected area on the native engine. proof: red-green native engine test `native_engine_masked_shadow` (red first on the empty fragment stage).
+- [ ] A `DoubleSide` card casts from its back face. proof: the same test.
+- [ ] Browser and native match on the masked caster. proof: `pnpm parity --target desktop --only-tests masked-shadow-caster`.
+
+#### Phase 2: Wind reaches the near shadow
+**Status:** NOT STARTED
+**Files:** `packages/core/src/render/virtual-shadow.ts`, `packages/core/__tests__/virtual-shadow.spec.ts`, the native VSM atlas
+- [ ] A caster swaying 5 cm sways in a 2 cm-texel level and draws its rest pose in a 20 cm-texel level, and the override moves that boundary and is reported. proof: `pnpm exec vitest run packages/core/__tests__/virtual-shadow.spec.ts`.
+- [ ] AC-2 holds. proof: the AC-2 commands.
+
+#### Phase 3: Leaf receivers
+**Status:** NOT STARTED
+**Files:** `packages/core/src/render/soft-shadow.ts`, `packages/runtime-native/src/engine/shader/standard.cpp`
+- [ ] A two-sided alpha-tested receiver skips the normal bias and widens its source to the 5° minimum, on both engines. proof: `pnpm exec vitest run packages/core/__tests__/soft-shadow.spec.ts` and `pnpm parity --target desktop --only-tests leaf-receiver`.
+- [ ] AC-1 holds, with the sheets posted on the PR. proof: the AC-1 command.
+**Verification:** AC-1 and AC-2.
+
+## Decisions
+
+- 2026-10-20 (slicing): the masked-caster fault is an engine bug (`packages/runtime-native/`), not
+  a game one. Every game with leaves on the default engine has it, so it is fixed in the engine.
+- 2026-10-20 (slicing): Unreal sways foliage in every shadow level by default. ThreeNative sways
+  only where a texel resolves the sway, so the measured PRD-478 redraw cut holds in coarse levels.
+  The `wind` run judges whether that difference shows. If it shows, the boundary moves, and the
+  rule stays.
