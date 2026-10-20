@@ -370,7 +370,12 @@ export function relativeChange(a: IStats, b: IStats): number {
 }
 
 /** The Unreal variant each ThreeNative layer is judged against (capture-gi-threenative.ts). */
-const UNREAL_VARIANT: Readonly<Record<string, string>> = { L1: "L1", L7: "L7-Epic", L9: "L9-Epic" };
+const UNREAL_VARIANT: Readonly<Record<string, string>> = {
+  L1: "L1",
+  L6: "L7-Low",
+  L7: "L7-Epic",
+  L9: "L9-Epic",
+};
 
 /**
  * ThreeNative against Unreal for one scene: region statistics of every (layer, pose), with the

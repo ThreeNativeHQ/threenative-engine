@@ -25,6 +25,8 @@ const SCAFFOLD_DIR =
 export const GI_LAYERS: Readonly<Record<string, string>> = {
   ID: "ID",
   L1: "L1",
+  // Shadows and AO without GI: the pair of Unreal with Lumen GI off.
+  L6: "L7-Low",
   L7: "L7-Epic",
   L9: "L9-Epic",
 };
