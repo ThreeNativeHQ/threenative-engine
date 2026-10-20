@@ -29,6 +29,7 @@ import {
   sunTransmittance,
   temperatureColour,
 } from "./atmosphere.js";
+import { skyRadiance } from "./giCache.js";
 import { HEIGHT_FOG, type HeightFogParams, heightFogNode } from "./heightFog.js";
 
 /**
@@ -152,6 +153,9 @@ function atmosphereSky(): Texture | undefined {
   const [w, h] = [SKY_WIDTH, SKY_WIDTH / 2];
   const radiance = bakeSkyRadiance(SUN_DIRECTION, w, h);
   const tint = temperatureColour(SUN_KELVIN);
+  // The world-space light cache gathers this same sky, unclipped, in the sun's units.
+  const scale = [0, 1, 2].map((c) => (tint[c] ?? 1) * SUN_ILLUMINANCE * SKY_TO_SUN) as [number, number, number];
+  skyRadiance.current = { data: radiance, width: w, height: h, scale };
   const canvas = new OffscreenCanvas(w, h);
   const context = canvas.getContext("2d");
   if (context === null) return undefined;

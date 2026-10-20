@@ -28,7 +28,7 @@ import { setupLighting } from "../render/lighting.js";
 import { setupPost } from "../render/postprocessing.js";
 import { qualityPreset } from "../render/quality.js";
 import { SUN_DIRECTION, setupSky } from "../render/sky.js";
-import { installSkyOcclusion } from "../render/skyOcclusion.js";
+import { installGi } from "../render/giCache.js";
 import { WorldEnvironment } from "../render/worldEnvironment.js";
 import type { GameState } from "../state.js";
 import { Play } from "./Play.js";
@@ -130,6 +130,15 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
         scene.background = new Color(0x000000);
         scene.environment = null;
       }
+      // PRD-631: indirect diffuse from a world-space light cache of the sky and, from L7 (Unreal's
+      // global illumination), the sun a surface returns (render/giCache.ts).
+      if (TUNED && level >= 2)
+        installGi(ctx, model, {
+          bounces: level >= 7 ? 2 : 0,
+          // Unreal below L7 has no GI: its sky light is shadowed by distance fields, up to 10 m.
+          ...(level < 7 ? { skyShadowDistance: 10 } : {}),
+          sun: { color: key.color, intensity: key.intensity, direction: SUN_DIRECTION },
+        });
       if (level >= 9) {
         const post = setupPost(ctx.renderer, scene, camera, { godraysLight: key, tier: "high" });
         this.#dispose = () => post.dispose();
@@ -147,8 +156,6 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
       }
     }
 
-    // PRD-635: the sky light is occluded by what stands above a surface (render/skyOcclusion.ts).
-    if (TUNED && level >= 2) installSkyOcclusion(ctx, model);
     const target = new Vector3();
     (window as unknown as { __tnRef: unknown }).__tnRef = {
       layer: LAYER,

@@ -251,7 +251,7 @@ export async function captureThreeNative(options: IThreeNativeCaptureOptions): P
           );
           await page.addStyleTag({ content: HIDE_UI });
           await page.waitForSelector('[data-threenative-startup="ready"]', { timeout: 120_000 });
-          await page.waitForFunction(() => "__tnRef" in window, undefined, { timeout: 30_000 });
+          await page.waitForFunction(() => "__tnRef" in window, undefined, { timeout: 240_000 });
           const engine = await page.evaluate("window.__tnRef.engine");
           if (engine !== "threenative")
             throw new Error(`TN_UNREAL_LOOK_WRONG_ENGINE: ${layer} drew on ${String(engine)}`);
