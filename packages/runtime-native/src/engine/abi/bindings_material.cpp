@@ -21,6 +21,7 @@
 #include <cmath>
 #include <map>
 #include <memory>
+#include <optional>
 #include <string>
 
 namespace tn::binding {
@@ -749,9 +750,16 @@ void registerTextureBindings(Registry& classes) {
         if (!(width >= 1) || !(height >= 1) || width > 16384 || height > 16384)
             throw Unsupported{"RenderTarget size must be 1 to 16384"};
         uint16_t type = kTextureUnsignedByteType;
+        std::optional<uint16_t> minFilter, magFilter;
         if (a.size() > 2 && a[2].kind == Value::Kind::Record)
             for (const auto& [key, value] : a[2].fields) {
-                if (key == "type") {
+                if (key == "minFilter" || key == "magFilter") {
+                    // A target has no mip chain: only the two single-level filters apply.
+                    const auto filter = static_cast<uint16_t>(number(value));
+                    if (filter != uint16_t(TextureFilter::Nearest) && filter != uint16_t(TextureFilter::Linear))
+                        throw Unsupported{"RenderTarget " + key + " must be NearestFilter or LinearFilter"};
+                    (key == "minFilter" ? minFilter : magFilter) = filter;
+                } else if (key == "type") {
                     type = static_cast<uint16_t>(number(value));
                     if (type != kTextureUnsignedByteType && type != kTextureHalfFloatType && type != kTextureFloatType)
                         throw Unsupported{"RenderTarget type must be UnsignedByteType, HalfFloatType or FloatType"};
@@ -761,7 +769,10 @@ void registerTextureBindings(Registry& classes) {
                     throw Unsupported{"RenderTarget option " + key + " is not supported natively"};
                 }
             }
-        return RenderTarget::make(static_cast<uint32_t>(width), static_cast<uint32_t>(height), type);
+        auto target = RenderTarget::make(static_cast<uint32_t>(width), static_cast<uint32_t>(height), type);
+        if (minFilter) target->texture->minFilter = *minFilter;
+        if (magFilter) target->texture->magFilter = *magFilter;
+        return target;
     };
     fixedMember(target, "texture", [](void* self, const Args&, Store& store) {
         return store.share("Texture", as<RenderTarget>(self)->texture);

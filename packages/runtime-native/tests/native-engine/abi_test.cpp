@@ -2142,6 +2142,34 @@ void starter_post_bindings() {
         CHECK(tn_object_release(depth, &diagnostic) == TN_OK);
         CHECK(tn_get(target, "depthTexture", &attached, &diagnostic) == TN_OK);
     }
+    {
+        // three's RenderTarget options: the exposure meter reads its 1x1 target with nearest filters.
+        const tn_value_t nearest[]{
+            {TN_VALUE_STRING, 0, 0, {}, 0, "type", 4, {}}, num(1015.0),
+            {TN_VALUE_STRING, 0, 0, {}, 0, "minFilter", 9, {}}, num(1003.0),
+            {TN_VALUE_STRING, 0, 0, {}, 0, "magFilter", 9, {}}, num(1003.0),
+            {TN_VALUE_STRING, 0, 0, {}, 0, "depthBuffer", 11, {}}, boolean(false)};
+        tn_value_t options{};
+        options.kind = TN_VALUE_RECORD;
+        options.count = 4;
+        options.values = nearest;
+        const tn_value_t metered[]{num(1.0), num(1.0), options};
+        tn_handle_t meter{};
+        CHECK(tn_construct(context, "RenderTarget", metered, 3, &meter, &diagnostic) == TN_OK);
+        if (meter.type) {
+            const auto made = std::static_pointer_cast<tn::engine::RenderTarget>(tn::abi::objectOf(meter)->ptr);
+            CHECK(made->texture->minFilter == 1003 && made->texture->magFilter == 1003);
+        }
+        const tn_value_t mipmapped[]{{TN_VALUE_STRING, 0, 0, {}, 0, "minFilter", 9, {}}, num(1008.0)};
+        tn_value_t bad{};
+        bad.kind = TN_VALUE_RECORD;
+        bad.count = 1;
+        bad.values = mipmapped;
+        const tn_value_t rejected[]{num(1.0), num(1.0), bad};
+        tn_handle_t none{};
+        CHECK(tn_construct(context, "RenderTarget", rejected, 3, &none, &diagnostic) == TN_ERROR_UNSUPPORTED);
+        tn_diagnostic_release(&diagnostic);
+    }
     CHECK(tn_context_destroy(context, &diagnostic) == TN_OK);
     std::string authoredSource = "fn authoredArea(sample: u32, lo: vec2<f32>, hi: vec2<f32>) -> f32 { return f32(sample) + dot(hi-lo, hi-lo); }";
     std::string authoredName = "authoredArea";
