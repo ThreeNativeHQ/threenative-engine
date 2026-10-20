@@ -25,7 +25,6 @@ import {
   color,
   dot,
   float,
-  instancedArray,
   max,
   mix,
   mx_noise_float,
@@ -39,10 +38,11 @@ import {
   smoothstep,
   transformNormalToView,
   uniform,
+  uniformArray,
   vec2,
   vec3,
 } from "three/tsl";
-import type { Node, StorageBufferNode } from "three/webgpu";
+import type { Node } from "three/webgpu";
 import { MeshStandardNodeMaterial } from "three/webgpu";
 import { SeaMaps, sampleBilinear, sampleBilinearFloat } from "./realisticSeaMaps.js";
 import {
@@ -256,7 +256,9 @@ export function createRealisticWaterMesh(
     ),
     LOOK.slopeTable,
   );
-  const tableBuffer = instancedArray(table, "float") as StorageBufferNode<"float">;
+  // A uniform array, not a storage buffer: a device made with the default limits allows eight
+  // storage buffers in the fragment stage, and the slope and foam grids below already use seven.
+  const tableBuffer = uniformArray(Array.from(table), "float");
 
   const material = new MeshStandardNodeMaterial({ metalness: 0, roughness: 0.2 });
   material.envMapIntensity = LOOK.environmentIntensity;
@@ -301,7 +303,10 @@ export function createRealisticWaterMesh(
       slope.addAssign(read.xy);
       jxx.addAssign(read.z);
       jzz.addAssign(read.w);
-      jxz.addAssign(sampleBilinear(maps.shear(c), size, patch(c), restX, restZ).x.mul(weight));
+      // The shear matters only where foam is drawn from the Jacobian; the finest cascade's is a
+      // few millimetres and its buffer would be the ninth storage binding.
+      if (FOAM.cascades.includes(c))
+        jxz.addAssign(sampleBilinear(maps.shear(c), size, patch(c), restX, restZ).x.mul(weight));
     }
     const jx = max(jxx.add(1), 0.15);
     const jz = max(jzz.add(1), 0.15);
@@ -328,9 +333,10 @@ export function createRealisticWaterMesh(
     .clamp(0, 1)
     .mul(LOOK.slopeTable.count - 1);
   const lower = tableIndex.floor();
+  const entry = (index: Node<"uint">) => tableBuffer.element(index) as unknown as Node<"float">;
   const unresolved = mix(
-    tableBuffer.element(lower.toUint()),
-    tableBuffer.element(
+    entry(lower.toUint()),
+    entry(
       lower
         .add(1)
         .min(LOOK.slopeTable.count - 1)
@@ -484,7 +490,6 @@ export function createRealisticWaterMesh(
       mirror?.dispose();
       geometry.dispose();
       material.dispose();
-      tableBuffer.value.dispose();
     },
   };
 }
