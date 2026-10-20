@@ -2361,7 +2361,8 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         if (!std::isfinite(towards.lengthSq()) || towards.lengthSq() == 0)
             throw std::runtime_error("TN_VIRTUAL_SHADOW_INVALID: light direction");
         const double radius = lights.direct[i].shadow->radius;
-        if (!std::isfinite(radius) || radius < 0 || radius + 0.5 > shadow.atlas.options().border)
+        if (!std::isfinite(radius) || radius < 0 ||
+            (!lights.direct[i].shadow->sourceAngleFilter && radius + 0.5 > shadow.atlas.options().border))
             throw std::runtime_error("TN_VIRTUAL_SHADOW_UNSUPPORTED: PCF radius exceeds page guard texels");
         std::vector<shadows::CasterState> states;
         for (const DrawItem& item : items) {

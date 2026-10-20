@@ -183,14 +183,18 @@ function tintSun(): void {
   );
 }
 
-export function setupSky(scene: Scene, photo: Texture, software = false): void {
+/**
+ * `fogged` false (Unreal's layers below L3) keeps the sky as it is: with no fog, Unreal's void
+ * below the horizon is dark, not the fog band.
+ */
+export function setupSky(scene: Scene, photo: Texture, software = false, fogged = true): void {
   const sky = atmosphereSky() ?? photo;
   tintSun();
   sky.mapping = EquirectangularReflectionMapping;
   sky.colorSpace = SRGBColorSpace;
   const ambient = skyAmbient(sky);
   const fogColor = (ambient ?? new Color(0xacb1c1)).multiply(AMBIENT_SCALE);
-  scene.background = (ambient === undefined ? undefined : voidSky(sky, fogColor)) ?? sky;
+  scene.background = (ambient === undefined || !fogged ? undefined : voidSky(sky, fogColor)) ?? sky;
   scene.backgroundIntensity = SKY_RANGE;
   // The environment keeps the unpainted photograph: the light from below is the sky's, not the fog's.
   if (!software) {

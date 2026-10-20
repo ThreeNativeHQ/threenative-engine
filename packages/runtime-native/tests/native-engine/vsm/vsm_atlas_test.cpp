@@ -77,6 +77,12 @@ void binding() {
     try { setters.at("filterNode")(&light.shadow, Value::of(1.0), store); }
     catch (const Unsupported& e) { refused = e.reason.find("TN_VIRTUAL_SHADOW_UNSUPPORTED: filterNode") == 0; }
     CHECK(refused);
+    // The starter's PCF radius (2 texels) is wider than a page border; the source-angle filter
+    // replaces that footprint, so installing the node before or after the filter must not refuse.
+    light.shadow.radius = 2;
+    bool wide = true;
+    try { set(&light.shadow, options, store); } catch (const Unsupported&) { wide = false; }
+    CHECK(wide);
     set(&light.shadow, Value{}, store);
     CHECK(!light.shadow.virtualShadow);
 }

@@ -445,7 +445,9 @@ void registerLightShadow(ClassBinding& b, bool spot) {
             else if (key == "receiverPlaneBias") options.receiverPlaneBias = flag(v);
         }
         if (!automaticGiven) options.autoDepth = !distanceGiven || !rangeGiven;
-        if (!std::isfinite(shadow.radius) || shadow.radius < 0 || shadow.radius + 0.5 > options.border)
+        // The page-border limit on the PCF radius is checked where the filter is known, at render:
+        // a source-angle filter replaces that footprint, and it may be installed after this node.
+        if (!std::isfinite(shadow.radius) || shadow.radius < 0)
             throw Unsupported{"TN_VIRTUAL_SHADOW_UNSUPPORTED: PCF radius exceeds page guard texels"};
         std::string error;
         if (!shadows::PageAtlas::create(options, error)) throw Unsupported{error};
