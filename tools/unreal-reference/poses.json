@@ -1,0 +1,16 @@
+{
+  "note": "three.js convention: Y up, metres, right-handed. hfovDeg is horizontal, as Unreal reports it; three.js derives its vertical fov from it and the aspect. The sun direction points from the scene to the sun.",
+  "resolution": [1280, 720],
+  "suns": [
+    { "name": "sun60", "elevationDeg": 60, "azimuthDeg": 25 },
+    { "name": "sun15", "elevationDeg": 15, "azimuthDeg": 25 },
+    { "name": "sun04", "elevationDeg": 4, "azimuthDeg": 25 }
+  ],
+  "azimuthNote": "azimuthDeg is measured from +Z towards +X: direction = (sin(az) cos(el), sin(el), cos(az) cos(el)).",
+  "poses": [
+    { "name": "exterior", "position": [0, 3, 14], "target": [0, 1, 0], "hfovDeg": 90 },
+    { "name": "spheres", "position": [0, 1.2, 5], "target": [0, 0.6, 0], "hfovDeg": 60 },
+    { "name": "interior", "position": [-10, 1.6, -5.6], "target": [-10, 1.2, -11], "hfovDeg": 90 },
+    { "name": "backlit", "position": [8, 1.6, 0], "target": [8, 2.2, 8], "hfovDeg": 75 }
+  ]
+}

@@ -1,0 +1,185 @@
+{
+  "note": "Cumulative ladder (PRD-631). Each layer lists the console variables it sets in Unreal; a layer inherits nothing, so every row is complete. Phase 1 resolves every name on the installed binary (--check-cvars) and the capture fails on a name that does not resolve.",
+  "layers": [
+    {
+      "name": "L0",
+      "adds": "geometry and camera, unlit base colour",
+      "cvars": {
+        "r.DynamicGlobalIlluminationMethod": 0,
+        "r.ReflectionMethod": 0,
+        "r.DefaultFeature.AutoExposure": 0,
+        "r.BloomQuality": 0,
+        "r.AmbientOcclusionLevels": 0,
+        "r.Fog": 0,
+        "r.VolumetricFog": 0,
+        "r.VolumetricCloud": 0,
+        "r.Shadow.Virtual.Enable": 0,
+        "r.ShadowQuality": 0,
+        "r.SkyAtmosphere": 0
+      },
+      "showFlags": { "Lighting": 0, "PostProcessing": 0 }
+    },
+    {
+      "name": "L1",
+      "adds": "sun, fixed exposure, tonemapper",
+      "cvars": {
+        "r.DynamicGlobalIlluminationMethod": 0,
+        "r.ReflectionMethod": 0,
+        "r.DefaultFeature.AutoExposure": 0,
+        "r.BloomQuality": 0,
+        "r.AmbientOcclusionLevels": 0,
+        "r.Fog": 0,
+        "r.VolumetricFog": 0,
+        "r.VolumetricCloud": 0,
+        "r.Shadow.Virtual.Enable": 0,
+        "r.ShadowQuality": 0,
+        "r.SkyAtmosphere": 0
+      },
+      "showFlags": {}
+    },
+    {
+      "name": "L2",
+      "adds": "sky atmosphere, sky light real-time capture",
+      "cvars": {
+        "r.DynamicGlobalIlluminationMethod": 0,
+        "r.ReflectionMethod": 0,
+        "r.DefaultFeature.AutoExposure": 0,
+        "r.BloomQuality": 0,
+        "r.AmbientOcclusionLevels": 0,
+        "r.Fog": 0,
+        "r.VolumetricFog": 0,
+        "r.VolumetricCloud": 0,
+        "r.Shadow.Virtual.Enable": 0,
+        "r.ShadowQuality": 0,
+        "r.SkyAtmosphere": 1
+      },
+      "showFlags": {}
+    },
+    {
+      "name": "L3",
+      "adds": "height fog, volumetric fog, aerial perspective",
+      "cvars": {
+        "r.DynamicGlobalIlluminationMethod": 0,
+        "r.ReflectionMethod": 0,
+        "r.DefaultFeature.AutoExposure": 0,
+        "r.BloomQuality": 0,
+        "r.AmbientOcclusionLevels": 0,
+        "r.Fog": 1,
+        "r.VolumetricFog": 1,
+        "r.VolumetricCloud": 0,
+        "r.Shadow.Virtual.Enable": 0,
+        "r.ShadowQuality": 0,
+        "r.SkyAtmosphere": 1
+      },
+      "showFlags": {}
+    },
+    {
+      "name": "L4",
+      "adds": "volumetric clouds",
+      "cvars": {
+        "r.DynamicGlobalIlluminationMethod": 0,
+        "r.ReflectionMethod": 0,
+        "r.DefaultFeature.AutoExposure": 0,
+        "r.BloomQuality": 0,
+        "r.AmbientOcclusionLevels": 0,
+        "r.Fog": 1,
+        "r.VolumetricFog": 1,
+        "r.VolumetricCloud": 1,
+        "r.Shadow.Virtual.Enable": 0,
+        "r.ShadowQuality": 0,
+        "r.SkyAtmosphere": 1
+      },
+      "showFlags": {}
+    },
+    {
+      "name": "L5",
+      "adds": "sun shadows, virtual shadow maps",
+      "cvars": {
+        "r.DynamicGlobalIlluminationMethod": 0,
+        "r.ReflectionMethod": 0,
+        "r.DefaultFeature.AutoExposure": 0,
+        "r.BloomQuality": 0,
+        "r.AmbientOcclusionLevels": 0,
+        "r.Fog": 1,
+        "r.VolumetricFog": 1,
+        "r.VolumetricCloud": 1,
+        "r.Shadow.Virtual.Enable": 1,
+        "r.ShadowQuality": 5,
+        "r.SkyAtmosphere": 1
+      },
+      "showFlags": {}
+    },
+    {
+      "name": "L6",
+      "adds": "ambient occlusion",
+      "cvars": {
+        "r.DynamicGlobalIlluminationMethod": 0,
+        "r.ReflectionMethod": 0,
+        "r.DefaultFeature.AutoExposure": 0,
+        "r.BloomQuality": 0,
+        "r.AmbientOcclusionLevels": -1,
+        "r.Fog": 1,
+        "r.VolumetricFog": 1,
+        "r.VolumetricCloud": 1,
+        "r.Shadow.Virtual.Enable": 1,
+        "r.ShadowQuality": 5,
+        "r.SkyAtmosphere": 1
+      },
+      "showFlags": {}
+    },
+    {
+      "name": "L7",
+      "adds": "global illumination (Lumen)",
+      "cvars": {
+        "r.DynamicGlobalIlluminationMethod": 1,
+        "r.ReflectionMethod": 0,
+        "r.DefaultFeature.AutoExposure": 0,
+        "r.BloomQuality": 0,
+        "r.AmbientOcclusionLevels": -1,
+        "r.Fog": 1,
+        "r.VolumetricFog": 1,
+        "r.VolumetricCloud": 1,
+        "r.Shadow.Virtual.Enable": 1,
+        "r.ShadowQuality": 5,
+        "r.SkyAtmosphere": 1
+      },
+      "showFlags": {}
+    },
+    {
+      "name": "L8",
+      "adds": "reflections (Lumen)",
+      "cvars": {
+        "r.DynamicGlobalIlluminationMethod": 1,
+        "r.ReflectionMethod": 1,
+        "r.DefaultFeature.AutoExposure": 0,
+        "r.BloomQuality": 0,
+        "r.AmbientOcclusionLevels": -1,
+        "r.Fog": 1,
+        "r.VolumetricFog": 1,
+        "r.VolumetricCloud": 1,
+        "r.Shadow.Virtual.Enable": 1,
+        "r.ShadowQuality": 5,
+        "r.SkyAtmosphere": 1
+      },
+      "showFlags": {}
+    },
+    {
+      "name": "L9",
+      "adds": "bloom, auto exposure, anti-aliasing: the full default",
+      "cvars": {
+        "r.DynamicGlobalIlluminationMethod": 1,
+        "r.ReflectionMethod": 1,
+        "r.DefaultFeature.AutoExposure": 1,
+        "r.BloomQuality": 5,
+        "r.AmbientOcclusionLevels": -1,
+        "r.Fog": 1,
+        "r.VolumetricFog": 1,
+        "r.VolumetricCloud": 1,
+        "r.Shadow.Virtual.Enable": 1,
+        "r.ShadowQuality": 5,
+        "r.SkyAtmosphere": 1
+      },
+      "showFlags": {}
+    }
+  ]
+}
