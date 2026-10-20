@@ -33,13 +33,20 @@ export interface IExposureSettings {
 
 // Unreal 5.8.3 project defaults (PRD-632; Engine/Source/Runtime/Engine/Private/Scene.cpp:494,
 // :520 and SceneView.cpp:183-190): histogram metering that ignores the darkest and brightest
-// 10%, mid grey 0.18 lifted by the +1 EV exposure bias, 3 stops/s brightening, 1 stop/s darkening.
-// The scene is not in physical units yet, so the -10..+20 EV100 range stays a +-12 stop window.
+// 10%, mid grey 0.18 lifted by the +1 EV exposure bias (key 0.18 x 2^1), 3 stops/s brightening,
+// 1 stop/s darkening. The meter averages log2 luminance (Engine/Shaders/Private/
+// PostProcessHistogramCommon.ush, ComputeAverageLuminanceWithoutOutlier) and sets
+// exposure = key / average (EyeAdaptationCommon in PostProcessEyeAdaptation.usf).
+//
+// The -10..+20 EV100 range clamps the average luminance to 2^-10..2^20 (the lens attenuation of
+// 0.78 makes the luminance scale 1: PostProcessEyeAdaptation.cpp LuminanceMaxFromLensAttenuation),
+// so the exposure, in stops, runs from log2(key) - 20 to log2(key) + 10.
+const KEY = 0.36;
 export const exposureSettings: Readonly<IExposureSettings> = {
   enabled: true,
-  key: 0.36,
-  minStops: -12,
-  maxStops: 12,
+  key: KEY,
+  minStops: Math.log2(KEY) - 20,
+  maxStops: Math.log2(KEY) + 10,
   lowPercent: 10,
   highPercent: 90,
   rateUp: 3,
@@ -59,9 +66,11 @@ export const exposureSettings: Readonly<IExposureSettings> = {
  */
 export function exposureMeter(colour: Node<"vec4">, uv: Node<"vec2">): Node<"vec2"> {
   const luminance = dot(colour.rgb, vec3(0.2126, 0.7152, 0.0722)).clamp(0.0001, 65504);
-  // Larger bottom-of-frame preference favours ground over bright sky (WebGPU UV y is down).
-  const weight = float(1).add(uv.y);
-  return vec2(luminance.mul(weight), weight);
+  // Unreal meters the whole view with weight 1 unless a meter mask texture is set
+  // (EyeAdaptation_MeterMaskTexture, white by default); there is no bottom-of-frame preference.
+  void uv;
+  const weight = float(1);
+  return vec2(luminance, weight);
 }
 
 /** Receives the clipped histogram's linear mean luminance. Change it if the game encodes RMS. */

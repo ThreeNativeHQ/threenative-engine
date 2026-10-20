@@ -6,8 +6,10 @@
 // the sky ambient term of the inscattering). The void beyond the floor is the planet, fogged
 // until opaque, so it shows that colour and nothing else.
 //
-// ThreeNative's sky is a photograph, so the ambient colour is the photograph's own: its upper
-// hemisphere, weighted by the cosine to the zenith, in the radiance the sky is drawn at.
+// The sky itself is the atmosphere of `atmosphere.ts` baked at load in the sun's units (PRD-632:
+// the sun and the sky read one illuminance), and the ambient colour is that sky's upper
+// hemisphere, weighted by the cosine to the zenith, in the radiance the sky is drawn at. The
+// photograph the starter ships stays as the fallback when there is no OffscreenCanvas.
 import {
   CanvasTexture,
   Color,
@@ -18,18 +20,31 @@ import {
   type Texture,
   Vector3,
 } from "three";
+import {
+  SKY_TO_SUN,
+  SUN_ILLUMINANCE,
+  SUN_KELVIN,
+  bakeSkyRadiance,
+  sunLight,
+  sunTransmittance,
+  temperatureColour,
+} from "./atmosphere.js";
 import { HEIGHT_FOG, type HeightFogParams, heightFogNode } from "./heightFog.js";
 
 /**
- * Unreal's scale is white. TEMPORARY fit: the photograph's haze and clouds make its mean ambient
- * paler and brighter than the clear atmosphere's, and the lit floor is still under-exposed against
- * it (L1), so this scale pulls the void toward Unreal's measured band (73,107,155). It goes back
- * to white when the atmosphere sky (`next/sky.ts`) runs on the engine.
+ * Unreal's scale is white (SkyAtmosphereAmbientContributionColorScale). The fit that stood here
+ * pulled the photograph's ambient toward Unreal's void band; the atmosphere bake needs none.
  */
-const AMBIENT_SCALE = new Color(0.3, 0.5, 0.75);
+const AMBIENT_SCALE = new Color(1, 1, 1);
 
-/** How the JPEG was made from the 4k HDR: linear radiance x 0.4, so white in the file is 2.5. */
-const SKY_RANGE = 2.5;
+/**
+ * Scene radiance that white spans in the sky texture (8-bit sRGB over 0..SKY_RANGE). The baked sky
+ * peaks near 1.6 at the 60 degree sun and brighter in the aureole at low sun, which clips here.
+ */
+const SKY_RANGE = 4;
+
+/** Baked sky resolution. Smooth sky, bilinear lookups: 256 x 128 is 1.4 degrees a texel. */
+const SKY_WIDTH = 256;
 
 /** Unit vector toward the photographed sun: 47.9 deg up, measured from the source HDR. */
 export const SUN_DIRECTION = new Vector3(0.555, 0.742, 0.38).normalize();
@@ -131,7 +146,46 @@ function voidSky(sky: Texture, fog: Color): Texture | undefined {
   return texture;
 }
 
-export function setupSky(scene: Scene, sky: Texture, software = false): void {
+/** The atmosphere for the current `SUN_DIRECTION`, in scene radiance, as an 8-bit equirect canvas. */
+function atmosphereSky(): Texture | undefined {
+  if (typeof OffscreenCanvas === "undefined") return undefined;
+  const [w, h] = [SKY_WIDTH, SKY_WIDTH / 2];
+  const radiance = bakeSkyRadiance(SUN_DIRECTION, w, h);
+  const tint = temperatureColour(SUN_KELVIN);
+  const canvas = new OffscreenCanvas(w, h);
+  const context = canvas.getContext("2d");
+  if (context === null) return undefined;
+  const image = context.createImageData(w, h);
+  for (let i = 0; i < w * h; i += 1) {
+    for (let c = 0; c < 3; c += 1) {
+      const value = (radiance[i * 3 + c] ?? 0) * (tint[c] ?? 1) * SUN_ILLUMINANCE * SKY_TO_SUN;
+      image.data[i * 4 + c] = Math.round(255 * linearToSrgb(Math.min(1, value / SKY_RANGE)));
+    }
+    image.data[i * 4 + 3] = 255;
+  }
+  context.putImageData(image, 0, 0);
+  const texture = new CanvasTexture(canvas as unknown as HTMLCanvasElement);
+  texture.mapping = EquirectangularReflectionMapping;
+  texture.colorSpace = SRGBColorSpace;
+  return texture;
+}
+
+/** The sun reaches the ground through the air: its colour is the temperature tint times transmittance. */
+function tintSun(): void {
+  const sun = sunLight.current;
+  if (sun === undefined) return;
+  const tint = temperatureColour(SUN_KELVIN);
+  const through = sunTransmittance(Math.asin(Math.min(1, Math.max(-1, SUN_DIRECTION.y))));
+  sun.color.setRGB(
+    (tint[0] ?? 1) * through[0],
+    (tint[1] ?? 1) * through[1],
+    (tint[2] ?? 1) * through[2],
+  );
+}
+
+export function setupSky(scene: Scene, photo: Texture, software = false): void {
+  const sky = atmosphereSky() ?? photo;
+  tintSun();
   sky.mapping = EquirectangularReflectionMapping;
   sky.colorSpace = SRGBColorSpace;
   const ambient = skyAmbient(sky);
