@@ -3,9 +3,15 @@
 // `src/render/`, and a layer below L9 only switches a system off. The URL picks the cell:
 //   ?tnRef=<ID|L0..L9>&sun=<elevation>,<azimuth>
 // and `window.__tnRef.pose(...)` frames one camera pose.
-import { type ICtx, Scene, type SceneFrame, sourceAngleShadowFilter } from "@threenative/core";
+import {
+  type ICtx,
+  Scene,
+  type SceneFrame,
+  sourceAngleShadowFilter,
+} from "@threenative/core";
 import type { IPhysicsContext } from "@threenative/physics";
 import {
+  Box3,
   Color,
   type Group,
   Mesh,
@@ -13,9 +19,11 @@ import {
   type MeshStandardMaterial,
   NoToneMapping,
   type PerspectiveCamera,
+  Sphere,
   type Texture,
   Vector3,
 } from "three";
+import { installIndirectLight } from "../render/indirectLight.js";
 import { setupLighting } from "../render/lighting.js";
 import { setupPost } from "../render/postprocessing.js";
 import { qualityPreset } from "../render/quality.js";
@@ -86,10 +94,37 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
         }
       });
       // three's WebGPU ShadowNode reads `shadow.filterNode`; its types do not declare it yet.
-      if (TUNED)
+      if (TUNED) {
         (key.shadow as unknown as { filterNode: unknown }).filterNode = sourceAngleShadowFilter({
           sourceAngleRad: SUN_SOURCE_ANGLE_RAD,
         });
+        // Unreal's directional light shadows the whole view (camera-centred virtual shadow maps).
+        // The template fits one map to a 28 m box around the origin; whatever sits outside it in
+        // light space counts as lit, which put a sunlit triangle on the closed room's back wall.
+        // `VirtualShadowNode` is the camera-centred answer but the Wasm engine facade refuses it
+        // (TN_NATIVE_UNCATALOGUED_SHADOWBASENODE), so the single map is fitted to the scene's own
+        // bounding sphere instead: no scene point can fall outside it.
+        const bounds = new Box3().setFromObject(model).getBoundingSphere(new Sphere());
+        const reach = bounds.radius;
+        key.target.position.copy(bounds.center);
+        scene.add(key.target);
+        key.position.copy(SUN_DIRECTION).multiplyScalar(reach + 1).add(bounds.center);
+        const cam = key.shadow.camera;
+        // The template's biases are tuned for its box. A wider box has bigger texels, and the
+        // source-angle filter reads several texels per sample, so the biases grow faster than the
+        // texel. Measured on the capsule, spheres and interior walls: the texel ratio alone (2x)
+        // leaves acne, 6x, 10x and 16x are clean; 6x is the smallest tested, so 3 x the ratio.
+        const texelScale = (2 * reach) / (cam.right - cam.left);
+        key.shadow.bias *= 3 * texelScale;
+        key.shadow.normalBias *= 3 * texelScale;
+        cam.left = -reach;
+        cam.right = reach;
+        cam.top = reach;
+        cam.bottom = -reach;
+        cam.near = 0.5;
+        cam.far = 2 * reach + 2;
+        cam.updateProjectionMatrix();
+      }
       if (level >= 2) {
         setupSky(scene, sky, ctx.renderer.softwareAdapter !== undefined);
         if (level < 3) {
@@ -100,6 +135,8 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
         scene.background = new Color(0x000000);
         scene.environment = null;
       }
+      // L7: bounced light from a baked probe volume (PRD-631 Lumen GI tier; render/indirectLight.ts).
+      if (level >= 7) installIndirectLight(ctx, scene, model);
       if (level >= 9) {
         const post = setupPost(ctx.renderer, scene, camera, { godraysLight: key, tier: "high" });
         this.#dispose = () => post.dispose();

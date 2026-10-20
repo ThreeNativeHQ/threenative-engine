@@ -65,6 +65,18 @@ async function patchScaffold(target: string, fresh: boolean, baseline: boolean):
     await cp(path.join(import.meta.dirname, "scaffold/render"), path.join(target, "src/render"), {
       recursive: true,
     });
+  // Until the engine facade has TempNode, auto exposure (a TempNode subclass) refuses to start:
+  // set TN_UNREAL_LOOK_NO_AUTO_EXPOSURE=1 to capture with it off. The capture is then not an L9 match.
+  if (process.env.TN_UNREAL_LOOK_NO_AUTO_EXPOSURE === "1") {
+    const q = path.join(target, "src/render/quality.ts");
+    await writeFile(
+      q,
+      (await readFile(q, "utf8")).replaceAll(
+        "autoExposureEnabled: true",
+        "autoExposureEnabled: false",
+      ),
+    );
+  }
   await cp(
     path.join(import.meta.dirname, "scaffold/Reference.ts.in"),
     path.join(target, "src/scenes/Reference.ts"),
