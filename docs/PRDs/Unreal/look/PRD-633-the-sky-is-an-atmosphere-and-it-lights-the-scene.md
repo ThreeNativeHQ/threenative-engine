@@ -100,6 +100,8 @@ sun colour all change together. That coupling is a large part of the Unreal look
 - [ ] All photo-sky templates default to the atmosphere sky, and the template gate passes. proof: `pnpm test:templates`.
 - [ ] Every affected template's `AGENTS.md` (and mirror) states the atmosphere sky and its capture, with `sky: "photo"` as the override, so a new project's agent knows the default and how to override it. proof: `rg -l 'sky: "photo"' packages/create-threenative/templates/*/AGENTS.md` lists every affected template, and `pnpm sync:agents --check` exits 0.
 
+- [ ] The height fog takes its colour from the atmosphere, not from a fixed palette grey: Unreal's fog has no colour of its own (`FogInscatteringLuminance` black, `SkyAtmosphereAmbientContributionColorScale` white, `Engine/Source/Runtime/Engine/Private/Components/ExponentialHeightFogComponent.cpp:76-78`). The L3 horizon band (rows 30-40 %, exterior, sun60) matches Unreal's colour within the PRD-631 threshold; on 2026-10-19 it measured Unreal (159,184,208) vs three.js (130,131,145). proof: `pnpm unreal-look:compare --layer L3`.
+
 ## Decisions
 
 - 2026-10-19: Atmosphere coefficients and the sun disk are a look, so they go in template source.
@@ -112,3 +114,7 @@ sun colour all change together. That coupling is a large part of the Unreal look
   so the sky fill is too strong against the sun and shadows wash out. The atmosphere sky fixes the
   ratio by construction: the environment comes from `SkyCapture` of the same atmosphere the sun
   lights, at Unreal's sun lux, never from a separate intensity knob.
+- 2026-10-19 (owner impressions, measured): "three.js horizon is grey, Unreal's is ocean blue". Unreal's
+  level has no sky sphere and no ocean (`template-actors.json`); the blue band is its height fog lit
+  by the atmosphere. Turning fog on moves Unreal's horizon from saturation 0.07 to 0.24; three.js's
+  fog moves nothing measurable (L2 = L3). A box above owns it.

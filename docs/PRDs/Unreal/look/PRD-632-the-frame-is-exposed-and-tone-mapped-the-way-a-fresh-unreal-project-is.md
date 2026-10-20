@@ -120,3 +120,7 @@ plumbing every game repeats, so it belongs in core, with the values chosen in te
   now owns them. The review's "use AgX or an Unreal LUT" is rejected: the target is Unreal's own
   curve and parameters, not a look-alike.
 - 2026-10-19: the live 5.8.3 level's sun is 6.0 lux, 6500 K, source angle 0.7357° (`template-actors.json`).
+- 2026-10-19 (owner impression "three.js has a light grey tone; on Unreal I see things better",
+  measured): the gap is already there at L2, before fog and post: floor 126 vs 214 and frame
+  contrast (luma std-dev) 22.7 vs 39.9, exterior sun60. Owners: exposure here, the sun-to-sky ratio
+  in PRD-633 (the starter lights with a photo environment at 2.5, not with the sky the sun lights).
