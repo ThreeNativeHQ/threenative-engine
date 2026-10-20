@@ -586,15 +586,16 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
         if (args.size() != 1) arity(2);
         const auto uvInput = [&] { return args.size() == 1 ? g::uv() : arg(1); };
         // An engine Texture with texels, or a render target's texture, samples itself under a binding
-        // named by its cache identity. ponytail: another imageless one keeps naming a map, as before;
-        // a texture whose texels arrive after the graph is built is not followed.
+        // named by its cache identity. An imageless texture with no name is three's placeholder
+        // (`texture(new Texture())`, later `.value = target.texture`): it binds as an object texture
+        // so `textureValue` can swap the real one in. ponytail: a named imageless one keeps naming a
+        // map, as before; a texture whose texels arrive after the graph is built is not followed.
         if (args[0].kind == TslArg::Kind::Object) {
             if (args[0].cls.find("Texture") == std::string::npos || !args[0].object)
                 throw std::runtime_error("texture needs an engine Texture");
             const auto* source = static_cast<const engine::Texture*>(args[0].object.get());
-            if (source->sampleable())
+            if (source->sampleable() || source->name.empty())
                 return g::objectTexture(args[0].object, "nodeMap" + std::to_string(++serial), uvInput());
-            if (source->name.empty()) throw std::runtime_error("texture needs a name");
             return g::texture(source->name, uvInput());
         }
         if (args[0].kind != TslArg::Kind::Named)

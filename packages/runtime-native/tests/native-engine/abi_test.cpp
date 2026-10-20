@@ -946,6 +946,13 @@ void tsl_call() {
         CHECK(texture->textureObject() == second && copy->textureObject() == second);
         CHECK(other->textureObject() == first && other->name != texture->name);
         CHECK(g::key(texture) == key);
+        // three's placeholder, `texture(new Texture())` then `.value = target.texture` (the exposure meter).
+        const auto placeholder = std::make_shared<tn::engine::Texture>();
+        const auto holder = tn::abi::tslCall("texture", nullptr, {tn::abi::TslArg::objectOf("Texture", placeholder)}, serial);
+        CHECK(holder && holder->textureObject() == placeholder);
+        const auto holderReceiver = tn::abi::TslArg::of(holder);
+        CHECK(tn::abi::tslCall("textureValue", &holderReceiver, {tn::abi::TslArg::objectOf("Texture", target->texture)}, serial) == holder);
+        CHECK(holder->textureObject() == target->texture);
     }
     // A material is no texture, and a released handle is no object.
     const tn_tsl_arg_t wrong[3] = {handleArg(material), nodeArg(direction), number(0.5)};
