@@ -1225,6 +1225,12 @@ static StandardPrograms buildStandardProgram(const StandardMaterial& material, b
         }
     }
 
+    // No environment: irradianceNode is still the material's indirect diffuse, as an IrradianceNode adds to the
+    // irradiance with no environment present (PhysicalLightingModel.indirectDiffuse, Lambert). A baked GI cache in a
+    // room with no sky otherwise vanishes.
+    if (!variant.environment && variant.nodes.irradianceNode)
+        environmentDiffuse = f.mul(diffuseContribution, slotValue(f, slots, variant.nodes.irradianceNode, Type::vec(3), kInvalid));
+
     // MaterialNode.EMISSIVE: emissive * emissiveIntensity (the uniform), times the emissiveMap texel.
     ExprId emissiveFactor = variant.nodes.emissiveNode ? kInvalid : f.uniform("emissive", Type::vec(3));
     if (emissiveFactor != kInvalid && variant.reads(kEmissiveMap))
