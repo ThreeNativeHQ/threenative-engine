@@ -351,12 +351,9 @@ function volume(values: Float32Array, grid: IGrid): Data3DTexture {
       texels[o + 3] = toHalf(1);
     }
   }
-  // The engine's Data3DTexture constructor takes bytes or floats, so the half-float bits go in through
-  // `image.data` once the type says what they are (the path three's own examples take too).
-  const texture = new Data3DTexture(new Float32Array(texels.length), grid.nx, grid.ny, slices);
+  const texture = new Data3DTexture(texels, grid.nx, grid.ny, slices);
   texture.format = RGBAFormat;
   texture.type = HalfFloatType;
-  (texture.image as unknown as { data: Uint16Array }).data = texels;
   texture.minFilter = LinearFilter;
   texture.magFilter = LinearFilter;
   texture.unpackAlignment = 1;

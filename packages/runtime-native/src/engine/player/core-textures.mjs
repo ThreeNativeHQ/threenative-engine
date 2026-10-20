@@ -60,7 +60,13 @@ DataTexture.prototype = NativeDataTexture.prototype;
 Object.setPrototypeOf(DataTexture, NativeDataTexture);
 
 export function Data3DTexture(data = null, width = 1, height = 1, depth = 1) {
-  const texture = Reflect.construct(NativeVolumeTexture, [data ?? undefined, width, height, depth], new.target ?? Data3DTexture);
+  // The engine's constructor takes bytes or floats: a Uint16Array's half-float bits go in on needsUpdate, after `type`.
+  const bits = data instanceof Uint16Array;
+  const texture = Reflect.construct(
+    NativeVolumeTexture,
+    [bits ? new Float32Array(data.length) : (data ?? undefined), width, height, depth],
+    new.target ?? Data3DTexture,
+  );
   if (data) sources.set(texture, { data, width, height, depth });
   return texture;
 }
