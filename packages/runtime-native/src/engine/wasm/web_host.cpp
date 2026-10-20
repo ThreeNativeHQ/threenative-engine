@@ -237,14 +237,19 @@ extern "C" int tnw_web_render(const tn_handle_t* sceneHandle, const tn_handle_t*
     outputChanged = false;
     // RenderPipeline installs its graph before the facade submits renderer settings. Compile only
     // now, when an explicit renderOutput(..., 5) can see the registered curve on its first frame.
-    if (postChanged) renderer->setPostGraph(pendingPost);
+    // A refusal the renderer throws (an unported feature, a refused binding, a post graph it cannot build) is this
+    // frame's named failure, never a bare WebAssembly.Exception in the page.
+    std::string refused;
+    try {
+        if (postChanged) renderer->setPostGraph(pendingPost);
+    } catch (const std::exception& error) {
+        refused = error.what();
+    }
     postChanged = false;
     database.shadowMapEnabled = shadowMap;
     database.shadowMapType = shadowMapType;
-    // A refusal the renderer throws (an unported feature, a refused binding) is this frame's named
-    // failure, never a bare WebAssembly.Exception in the page.
-    std::string refused;
     try {
+        if (!refused.empty()) throw std::runtime_error(refused);
         renderer->setSampleCount(sampleCount);
         renderer->setGpuTimerSourceFrame(sourceFrame);  // the sample resolves under the caller's frame id, not the readback's
         Renderer::PresentScope present(*renderer, view, surfaceFormat);

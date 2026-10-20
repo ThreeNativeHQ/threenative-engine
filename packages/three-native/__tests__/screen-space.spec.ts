@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { type IScreenSpaceTsl, defineScreenSpaceReflections } from "../src/addons/screen-space.js";
+import {
+  type IScreenSpaceTsl,
+  defineScreenSpaceGi,
+  defineScreenSpaceReflections,
+} from "../src/addons/screen-space.js";
 
 /** A node that answers every property read and call with another node: enough to run the graph body. */
 function chain(): unknown {
@@ -88,6 +92,44 @@ describe("defineScreenSpaceReflections", () => {
     const { tsl } = stubTsl();
     expect(() => defineScreenSpaceReflections(tsl)(chain(), chain(), chain(), {} as never)).toThrow(
       /TN_NATIVE_SSR_CAMERA/,
+    );
+  });
+});
+
+describe("defineScreenSpaceGi", () => {
+  const camera = {
+    near: 0.25,
+    projectionMatrix: { elements: Array.from({ length: 16 }, (_, i) => i + 1) },
+  };
+
+  it("reads the scene camera's projection through uniforms, for both call shapes", () => {
+    for (const call of [camera, { camera }]) {
+      const { tsl, updates, initial, read } = stubTsl();
+      defineScreenSpaceGi(tsl)(chain(), chain(), chain(), call);
+      expect(initial).toEqual(expect.arrayContaining([1, 6, 9, 10, 11, 15, 0.25]));
+      expect(read).toEqual([]);
+      expect(updates.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("asks the fallback tier once per pixel, with a position and a normal", () => {
+    const { tsl } = stubTsl();
+    const calls: unknown[][] = [];
+    defineScreenSpaceGi(tsl)(chain(), chain(), chain(), {
+      camera,
+      fallback: (position, normal) => {
+        calls.push([position, normal]);
+        return chain();
+      },
+    });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.every((node) => node !== undefined)).toBe(true);
+  });
+
+  it("refuses a call that names no camera", () => {
+    const { tsl } = stubTsl();
+    expect(() => defineScreenSpaceGi(tsl)(chain(), chain(), chain(), {} as never)).toThrow(
+      /TN_NATIVE_SSGI_CAMERA/,
     );
   });
 });

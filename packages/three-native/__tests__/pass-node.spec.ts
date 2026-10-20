@@ -70,6 +70,25 @@ describe("native scene pass surface targets", () => {
   });
 });
 
+describe("native scene pass albedo target", () => {
+  it("names the renderer's albedo pass for a diffuseColor MRT, and refuses it unasked", () => {
+    const api = definePass({
+      texture: (source: unknown) => ({ source }),
+      uv: () => ({}),
+      normalView,
+    });
+    const scenePass = api.pass({}, {});
+    expect(() => scenePass.getTextureNode("diffuseColor")).toThrow(
+      /TN_NATIVE_PASS_TEXTURE_UNSUPPORTED/u,
+    );
+    scenePass.setMRT(api.mrt({ output: api.output, diffuseColor: api.diffuseColor }));
+    expect(scenePass.getTextureNode("diffuseColor")).toEqual({ source: { name: "albedo" } });
+    expect(() => api.mrt({ diffuse: api.diffuseColor })).toThrow(
+      /TN_NATIVE_MRT_UNSUPPORTED: diffuse/u,
+    );
+  });
+});
+
 describe("native scene pass MRT", () => {
   it("accepts the normal target as normalView or as vec4(normalView, 0)", () => {
     expect(mrt({ output, normal: normalView }).outputs.normal).toBe(normalView);

@@ -445,7 +445,7 @@ struct Renderer::ShadowPass {
 
 struct Renderer::FrameJob {
     uint64_t groupEpoch = 0;  // the group epoch the plan's bind groups were chosen under
-    std::vector<Planned> plan, velocityPlan, normalPlan;
+    std::vector<Planned> plan, velocityPlan, normalPlan, albedoPlan;
     std::vector<ShadowPass> shadowPasses;
     std::deque<DrawItem> shadowLodItems;
     WGPURenderPassColorAttachment color{};
@@ -456,7 +456,7 @@ struct Renderer::FrameJob {
     LightState lights;
     WGPUTextureView presentTarget = nullptr;
     WGPUTextureFormat presentFormat = WGPUTextureFormat_Undefined;
-    bool timed = false, normalPass = false;
+    bool timed = false, normalPass = false, albedoPass = false;
     uint64_t source = 0;  // the caller frame id this frame's timed sample is reported under
     std::vector<uint64_t> bundleKey;  // the main bundle's inputs, built while the draws' stores were live
 };
@@ -848,6 +848,9 @@ void Renderer::releaseTargets() {
     if (sceneColor_) wgpuTextureRelease(sceneColor_);
     if (normalView_) wgpuTextureViewRelease(normalView_);
     if (normalTexture_) wgpuTextureRelease(normalTexture_);
+    if (albedoView_) wgpuTextureViewRelease(albedoView_);
+    if (albedoTexture_) wgpuTextureRelease(albedoTexture_);
+    albedoView_ = nullptr; albedoTexture_ = nullptr;
     if (viewportColorView_) wgpuTextureViewRelease(viewportColorView_);
     if (viewportColor_) wgpuTextureRelease(viewportColor_);
     if (viewportDepthView_) wgpuTextureViewRelease(viewportDepthView_);
@@ -901,7 +904,10 @@ void Renderer::setOutput(const OutputState& output) {
     const shader::OutputPrograms programs = shader::buildOutput(output.toneMapping, output.srgb, post_.get(), true, output.customToneMapping);
     outputVertex_ = shader::buildStage(programs.vertex, 0);
     outputFragment_ = shader::buildStage(programs.fragment, 0);
-    if (!outputVertex_.wgsl.ok() || !outputFragment_.wgsl.ok()) throw std::runtime_error("TN_NATIVE_SHADER_INVALID: output program");
+    if (!outputVertex_.wgsl.ok() || !outputFragment_.wgsl.ok()) {
+        const auto& errors = outputFragment_.wgsl.ok() ? outputVertex_.wgsl.errors : outputFragment_.wgsl.errors;
+        throw std::runtime_error("TN_NATIVE_SHADER_INVALID: output program: " + errors.front());
+    }
     collectPostSources();
     releaseOutputGroup();  // its layout belongs to the previous program
     // An explicit layout: the output program declares the scene binding even when a post graph
@@ -2066,7 +2072,42 @@ Renderer::Program* Renderer::program(MaterialKind kind, const shader::VertexVari
         const auto& errors = vertex.wgsl.ok() ? fragment.wgsl.errors : vertex.wgsl.errors;
         return refuseBuild(errors.empty() ? "no reason" : errors.front());
     }
-    return &add(key, std::move(vertex), std::move(fragment));
+    Program& built = add(key, std::move(vertex), std::move(fragment));
+    built.kind = kind; built.variant = vv; built.lightKinds = lights; built.softShadows = softShadows;
+    return &built;
+}
+
+// The albedo pass's fragment: the same builder run again with the output swapped. Every uniform and texture is
+// created in the same order, so the layout equals the program's own and the draw's bind groups are valid for it.
+const shader::StageModule* Renderer::albedoFragment(Program& program) {
+    if (program.albedoBuilt) return program.albedo.get();
+    program.albedoBuilt = true;
+    if (program.kind == MaterialKind::Basic) return nullptr;  // unlit: nothing is lit by a bounce
+    shader::VertexVariant variant = program.variant;
+    variant.albedoOutput = true;
+    const shader::LightLayout layout{program.lightKinds, program.softShadows};
+    try {
+        shader::StandardPrograms source;
+        switch (program.kind) {
+        case MaterialKind::Standard: source = shader::buildStandard(shader::StandardMaterial{}, variant, layout); break;
+        case MaterialKind::Lambert: source = shader::buildLambert(variant, layout); break;
+        case MaterialKind::Phong: source = shader::buildPhong(variant, layout); break;
+        case MaterialKind::Physical: source = shader::buildPhysical(shader::StandardMaterial{}, variant, layout); break;
+        case MaterialKind::Basic: return nullptr;
+        }
+        if (!source.fragment.diagnostics().empty()) return nullptr;
+        auto module = std::make_unique<shader::StageModule>(shader::buildStage(source.fragment, 1));
+        const auto& own = program.fragment;
+        bool same = module->wgsl.ok() && module->uniforms.size() == own.uniforms.size() &&
+                    module->bindings.size() == own.bindings.size() && module->uniformBlockSize == own.uniformBlockSize;
+        for (std::size_t i = 0; same && i < own.uniforms.size(); ++i)
+            same = module->uniforms[i].name == own.uniforms[i].name && module->uniforms[i].offset == own.uniforms[i].offset;
+        if (!same) return nullptr;
+        program.albedo = std::move(module);
+    } catch (const std::exception&) {
+        return nullptr;
+    }
+    return program.albedo.get();
 }
 
 Renderer::Program& Renderer::depthProgram(const shader::VertexVariant& variant) {
@@ -2589,7 +2630,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     // Only a frame that draws a second pipeline depth-Equal against the colour pass asks for @invariant
     // positions: the normal pass (it shares the colour vertex stage) and TRAA's velocity pass (its own
     // vertex stage, flagged the same way below). Every other frame is compiled as three's is.
-    const bool invariantPosition = (postEffects_ && postEffects_->reads("normal")) || traa_;
+    const bool invariantPosition = (postEffects_ && (postEffects_->reads("normal") || postEffects_->reads("albedo"))) || traa_;
     auto variantOf = [invariantPosition](const DrawItem& item) {
         shader::VertexVariant v;
         v.invariantPosition = invariantPosition;
@@ -2662,7 +2703,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     FrameJob compileJob;  // a compile plans pipelines only: it never touches a pending frame's job
     if (!compilation && !job_) job_ = std::make_unique<FrameJob>();
     FrameJob& job = compilation ? compileJob : *job_;
-    job.plan.clear(); job.velocityPlan.clear(); job.normalPlan.clear(); job.shadowPasses.clear(); job.shadowLodItems.clear();
+    job.plan.clear(); job.velocityPlan.clear(); job.normalPlan.clear(); job.albedoPlan.clear(); job.shadowPasses.clear(); job.shadowLodItems.clear();
     std::vector<Planned>& plan = job.plan;
     std::vector<Planned>& velocityPlan = job.velocityPlan;
     plan.reserve(opaque.size());
@@ -3078,6 +3119,54 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             if (!compilation) postEffects_->input("normal", normalView_);
         }
     };
+    // A post pass that reads "albedo" (three's MRT `diffuseColor`) gets each opaque lit draw's diffuse colour, map
+    // and instance tint included, as a pass over the same draws, depth-tested like the normal pass. A draw the pass
+    // cannot write (unlit, transparent, sprite, alpha-tested) leaves alpha 0: the effect reads no albedo there.
+    std::vector<Planned>& albedoPlan = job.albedoPlan;
+    const bool albedoPass = postEffects_ && postEffects_->reads("albedo");
+    const auto planAlbedo = [&] {
+        if (!albedoPass) return;
+        for (const Planned& draw : plan) {
+            const DrawItem& item = *draw.item;
+            if (item.background || item.kind == MaterialKind::Basic) continue;
+            if (item.transparent || item.sprite || item.material->alphaTest > 0) continue;  // named by the normal pass
+            const shader::StageModule* fragment = albedoFragment(*draw.program);
+            if (!fragment) {
+                const std::string note = "TN_POST_ALBEDO_SKIPPED: a draw's program has no albedo fragment on its own layout";
+                if (std::find(diagnostics_.begin(), diagnostics_.end(), note) == diagnostics_.end()) diagnostics_.push_back(note);
+                continue;
+            }
+            PipelineTarget target{WGPUTextureFormat_RGBA16Float, WGPUTextureFormat_Depth32Float,
+                item.side == 2 ? WGPUCullMode_None : item.side == 1 ? WGPUCullMode_Front : WGPUCullMode_Back};
+            target.layout = draw.program->pipelineLayout; target.depthWrite = false;
+            target.colorWrite = item.colorWrite;
+            target.depthCompare = WGPUCompareFunction_Equal; target.frontFace = item.frontFace();
+            if (sampleCount_ == 4) {  // the normal pass's reason: a resolved sample against a pixel-centre interpolation
+                target.depthCompare = WGPUCompareFunction_LessEqual;
+                target.depthBias = -4; target.depthBiasSlopeScale = -1.5f;
+            }
+            target.skinIndex = skinIndexFormat(item);
+            target.instanceStepMask = instanceStepMask(draw.program->vertex, item);
+            if (compilation) {
+                compilation->push_back(pipelines_->getAsync(draw.program->vertex, fragment, target));
+                continue;
+            }
+            const auto pipeline = pipelines_->get(draw.program->vertex, fragment, target);
+            if (!pipeline) throw std::runtime_error("TN_POST_ALBEDO_PIPELINE_REFUSED");
+            Planned albedo = draw;
+            albedo.pipeline = pipeline;
+            albedoPlan.push_back(albedo);
+        }
+        if (!compilation && !albedoTexture_) {
+            WGPUTextureDescriptor desc = {};
+            desc.dimension = WGPUTextureDimension_2D; desc.size = {width_, height_, 1};
+            desc.format = WGPUTextureFormat_RGBA16Float; desc.mipLevelCount = 1; desc.sampleCount = 1;
+            desc.usage = WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopySrc;
+            albedoTexture_ = wgpuDeviceCreateTexture(device_, &desc);
+            albedoView_ = view2d(albedoTexture_, WGPUTextureFormat_RGBA16Float);
+        }
+        if (!compilation) postEffects_->input("albedo", albedoView_);
+    };
     WGPURenderPipeline pageClear = nullptr;
     if (!virtualShadows_.empty()) {
         shader::Program clear(shader::Stage::Vertex);
@@ -3097,6 +3186,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     }
     if (compilation) {
         planNormals();
+        planAlbedo();
         PipelineTarget target{outputFormat, WGPUTextureFormat_Undefined, WGPUCullMode_None};
         target.layout = outputPipelineLayout_;
         compilation->push_back(pipelines_->getAsync(outputVertex_, &outputFragment_, target));
@@ -3294,6 +3384,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     const uint64_t groupsChosenAt = groupEpoch_;
 
     planNormals();
+    planAlbedo();
 
     if (!compilation && gpuJoints_ && (!gpuJoints_->drawUse.empty() || Object3D::poseObserver)) {
         const auto mark = [](const Planned& p) {
@@ -3397,6 +3488,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     job.source = sourceFrame_;
     job.groupEpoch = groupsChosenAt;
     job.normalPass = normalPass;
+    job.albedoPass = albedoPass;
     job.camera = camera; job.lights = lights;
     job.pageClear = pageClear;
     job.presentTarget = presentTarget;
@@ -3421,7 +3513,7 @@ void Renderer::encodeFrame(FrameJob& job) {
     WGPUCommandEncoder encoder = job.encoder;
     WGPURenderPassColorAttachment& color = job.color;
     WGPURenderPassDepthStencilAttachment& depth = job.depth;
-    const bool timed = job.timed, normalPass = job.normalPass;
+    const bool timed = job.timed, normalPass = job.normalPass, albedoPass = job.albedoPass;
     const uint64_t source = job.source;
     const CameraState& camera = job.camera;
     const LightState& lights = job.lights;
@@ -3651,6 +3743,22 @@ void Renderer::encodeFrame(FrameJob& job) {
         for (const Planned& p : normalPlan) encode(normalEncoder, p, Tally::Extra);
         wgpuRenderPassEncoderEnd(normalEncoder); wgpuRenderPassEncoderRelease(normalEncoder);
     }
+    if (albedoPass) {
+        WGPURenderPassColorAttachment albedo{};
+        albedo.view = albedoView_; albedo.loadOp = WGPULoadOp_Clear; albedo.storeOp = WGPUStoreOp_Store;
+#if defined(MYSTRAL_WEBGPU_DAWN)
+        albedo.depthSlice = WGPU_DEPTH_SLICE_UNDEFINED;
+#endif
+        WGPURenderPassDepthStencilAttachment albedoDepth{};
+        albedoDepth.view = depthView_; albedoDepth.depthReadOnly = true;
+        WGPURenderPassDescriptor albedoDesc{};
+        albedoDesc.colorAttachmentCount = 1; albedoDesc.colorAttachments = &albedo;
+        albedoDesc.depthStencilAttachment = &albedoDepth;
+        auto albedoEncoder = beginTimedRenderPass(encoder, &albedoDesc);
+        bound = nullptr; boundIndex = nullptr;
+        for (const Planned& p : job.albedoPlan) encode(albedoEncoder, p, Tally::Extra);
+        wgpuRenderPassEncoderEnd(albedoEncoder); wgpuRenderPassEncoderRelease(albedoEncoder);
+    }
     if (traa_) {
         WGPURenderPassColorAttachment motion{};
         motion.view = traa_->velocityView(); motion.loadOp = WGPULoadOp_Clear; motion.storeOp = WGPUStoreOp_Store;
@@ -3792,6 +3900,7 @@ void Renderer::outputPass(WGPUCommandEncoder encoder, WGPUTextureView present, W
 GpuStatus Renderer::readProbePixels(ReadbackCallback done) { return readRgba16(sceneColor_, std::move(done)); }
 
 GpuStatus Renderer::readNormalPixels(ReadbackCallback done) { return readRgba16(normalTexture_, std::move(done)); }
+GpuStatus Renderer::readAlbedoPixels(ReadbackCallback done) { return readRgba16(albedoTexture_, std::move(done)); }
 
 GpuStatus Renderer::readRgba16(WGPUTexture texture, ReadbackCallback done) {
     if (!done) return GpuStatus::OutOfRange;

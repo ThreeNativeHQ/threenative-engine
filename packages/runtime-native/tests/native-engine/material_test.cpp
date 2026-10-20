@@ -242,6 +242,43 @@ void irradianceNode() {
     CHECK(with.code.find("f_nodeIrradiance") != std::string::npos);
 }
 
+// The albedo pass draws a lit draw's diffuse colour through the draw's own bind groups, so the albedo fragment must
+// keep the lit fragment's layout exactly (every uniform at the same offset, every texture at the same binding) and
+// differ only in what it writes: the diffuse colour, unfogged, alpha 1.
+void albedoOutput() {
+    for (int kind = 1; kind < 5; ++kind) {
+        for (int shape = 0; shape < 3; ++shape) {
+            VertexVariant lit;
+            lit.map = shape >= 1;
+            lit.fog = shape == 2 ? 1 : 0;
+            lit.instanceColor = shape == 2;
+            lit.environment = kind >= 3;
+            VertexVariant albedo = lit;
+            albedo.albedoOutput = true;
+            const auto build = [&](const VertexVariant& v) {
+                return kind == 1 ? buildLambert(v) : kind == 2 ? buildPhong(v) : kind == 3 ? buildStandard({}, v) : buildPhysical({}, v);
+            };
+            const auto litFragment = buildStage(build(lit).fragment, 1), albedoFragment = buildStage(build(albedo).fragment, 1);
+            CHECK(litFragment.wgsl.ok() && albedoFragment.wgsl.ok());
+            CHECK(albedoFragment.uniforms.size() == litFragment.uniforms.size());
+            CHECK(albedoFragment.uniformBlockSize == litFragment.uniformBlockSize);
+            CHECK(albedoFragment.bindings.size() == litFragment.bindings.size());
+            for (std::size_t i = 0; i < litFragment.uniforms.size(); ++i) {
+                CHECK(albedoFragment.uniforms[i].name == litFragment.uniforms[i].name);
+                CHECK(albedoFragment.uniforms[i].offset == litFragment.uniforms[i].offset);
+            }
+            CHECK(albedoFragment.wgsl.code != litFragment.wgsl.code);
+            // Unfogged: the albedo output never mixes toward the fog colour.
+            if (shape == 2) {
+                CHECK(litFragment.wgsl.code.find("f_fogColor") != std::string::npos);
+                const auto output = albedoFragment.wgsl.code.rfind("out.color");
+                CHECK(output != std::string::npos);
+                CHECK(albedoFragment.wgsl.code.find("mix(", output) == std::string::npos);
+            }
+        }
+    }
+}
+
 void nodes() {
     namespace g = tn::engine::shader::graph;
     VertexVariant variant;
@@ -307,6 +344,7 @@ void builds() {
     surfacePrefix();
     aoNode();
     irradianceNode();
+    albedoOutput();
     VertexVariant storage; storage.instanced = storage.instanceStorage = storage.instanceColor = true;
     CHECK(storage.key() != VertexVariant{}.key());
     for (int kind = 0; kind < 5; ++kind) {

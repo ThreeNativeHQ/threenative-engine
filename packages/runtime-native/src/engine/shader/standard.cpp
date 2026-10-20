@@ -439,11 +439,15 @@ static ExprId nodeValue(Program& f, const graph::Node& node, Type type, ExprId f
 
 // NodeMaterial.setup: `vec4(outgoingLight, diffuseColor.a).max(0)`, which forces unsigned output,
 // then setupOutput mixes the fog into the clamped colour.
-ExprId materialOutput(Program& f, const VertexVariant& variant, ExprId outgoing, ExprId alpha) {
+ExprId materialOutput(Program& f, const VertexVariant& variant, ExprId outgoing, ExprId alpha, ExprId albedo = kInvalid) {
     const ExprId clamped = f.call("max", {f.construct(Type::vec(4), {outgoing, alpha}),
                                           f.construct(Type::vec(4), {f.constant(0.0f)})});
-    if (!variant.fog && !variant.nodes.fogNode) return clamped;  // no fog to mix: one clamp expression, not one per lane
-    return f.construct(Type::vec(4), {fogColor(f, variant, f.swizzle(clamped, "xyz")), f.swizzle(clamped, "w")});
+    // The albedo program builds everything above and below (so its uniforms and bindings equal the lit program's)
+    // and writes the diffuse colour instead, unfogged, alpha 1: the lighting expressions are never read.
+    const ExprId lit = !variant.fog && !variant.nodes.fogNode
+        ? clamped  // no fog to mix: one clamp expression, not one per lane
+        : f.construct(Type::vec(4), {fogColor(f, variant, f.swizzle(clamped, "xyz")), f.swizzle(clamped, "w")});
+    return variant.albedoOutput && albedo != kInvalid ? f.construct(Type::vec(4), {albedo, f.constant(1.0f)}) : lit;
 }
 
 ExprId fogColor(Program& f, const VertexVariant& variant, ExprId outgoing) {
@@ -1228,7 +1232,7 @@ static StandardPrograms buildStandardProgram(const StandardMaterial& material, b
     const ExprId outgoing = f.add(outgoingLight, emissive);
     const ExprId alpha = diffuseAlpha(f, slots, variant, diffuse, texel);
     // Linear HDR out: tone mapping and the output colour space belong to the output pass (output.h).
-    f.output("color", materialOutput(f, variant, outgoing, materialAlpha(f, alpha)));
+    f.output("color", materialOutput(f, variant, outgoing, materialAlpha(f, alpha), diffuseColor));
     outputDepthNode(f, slots, variant);
     linkNodeVaryings(out, variant, local.position, local.normal);
     for (const Program* stage : {&out.vertex, &out.fragment}) {
@@ -1360,7 +1364,7 @@ StandardPrograms buildLit(bool phong, const VertexVariant& variant, const LightL
     const ExprId outgoing = f.add(lighting, emissive);
     const ExprId alpha = diffuseAlpha(f, slots, variant, diffuse, texel);
     // Linear HDR out: tone mapping and the output colour space belong to the output pass (output.h).
-    f.output("color", materialOutput(f, variant, outgoing, materialAlpha(f, alpha)));
+    f.output("color", materialOutput(f, variant, outgoing, materialAlpha(f, alpha), diffuseColor));
     outputDepthNode(f, slots, variant);
     linkNodeVaryings(out, variant, local.position, local.normal);
     for (const Program* stage : {&out.vertex, &out.fragment}) {

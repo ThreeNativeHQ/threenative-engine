@@ -1,7 +1,7 @@
 /**
  * three's `pass(scene, camera)`, `mrt()` and the MRT slots over the engine's own scene pass, for both
  * back ends (the V8 player and the Wasm engine). The engine draws one scene pass whose targets are
- * the renderer's colour ("output"), depth and, with an MRT that asks for it, view normals; a pass's
+ * the renderer's colour ("output"), depth and, with an MRT that asks for it, view normals and the diffuse colour; a pass's
  * texture nodes name those targets. `normalView` is the engine's TSL node, as in three, so a graph
  * reads it and `mrt({ normal: normalView })` names the normal target by that node's identity.
  *
@@ -105,6 +105,7 @@ export function definePass(
   const normalView = tsl.normalView;
   const metalness = slot("metalness");
   const roughness = slot("roughness");
+  const diffuseColor = slot("diffuseColor");
 
   function mrt(outputs: Record<string, unknown>): IMRTNode {
     const named: Record<string, unknown> = {};
@@ -118,7 +119,7 @@ export function definePass(
         ((value as IMRTSlot | null)?.isMRTSlot !== true || name !== (value as IMRTSlot).name)
       )
         throw new Error(
-          `TN_NATIVE_MRT_UNSUPPORTED: ${name} must be one of output, normal: normalView or vec4(normalView, 0), metalness, roughness`,
+          `TN_NATIVE_MRT_UNSUPPORTED: ${name} must be one of output, normal: normalView or vec4(normalView, 0), metalness, roughness, diffuseColor`,
         );
       named[name] = normal ? normalView : value;
     }
@@ -135,7 +136,7 @@ export function definePass(
     return node;
   }
 
-  const slots: Record<string, IMRTSlot> = { metalness, roughness };
+  const slots: Record<string, IMRTSlot> = { metalness, roughness, diffuseColor };
 
   /**
    * The engine's normal target carries the surface in its alpha (Renderer::planNormals):
@@ -274,6 +275,9 @@ export function definePass(
       if (name === "depth") return tsl.texture({ name: "depth" }, tsl.uv());
       if (name === "normal" && this.#mrt?.outputs.normal === normalView)
         return tsl.texture({ name: "normal" }, tsl.uv());
+      // The renderer's albedo pass: each opaque lit draw's diffuse colour in rgb, alpha 1 where it wrote one.
+      if (name === "diffuseColor" && this.#mrt?.outputs.diffuseColor === diffuseColor)
+        return tsl.texture({ name: "albedo" }, tsl.uv());
       if (
         (name === "metalness" || name === "roughness") &&
         this.#mrt?.outputs.normal === normalView &&
@@ -314,5 +318,15 @@ export function definePass(
     for (const entry of [...offscreen]) entry[drawPass](lastSurface, draw);
   }
 
-  return { pass, PassNode, updateSecondaryPasses, mrt, output, normalView, metalness, roughness };
+  return {
+    pass,
+    PassNode,
+    updateSecondaryPasses,
+    mrt,
+    output,
+    normalView,
+    metalness,
+    roughness,
+    diffuseColor,
+  };
 }

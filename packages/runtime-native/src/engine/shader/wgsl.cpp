@@ -260,7 +260,9 @@ WgslModule WgslEmitter::emit(const Program& program, uint32_t group) {
     WgslEmitter e(program);
     WgslModule module;
     if (!program.ok()) {
-        module.errors.push_back("TN_SHADER_PACKAGE_INVALID: the program has construction diagnostics");
+        // The first one names the authoring call that built the bad node (code, operation, reason).
+        const Diagnostic& first = program.diagnostics().front();
+        module.errors.push_back("TN_SHADER_PACKAGE_INVALID: the program has construction diagnostics: " + first.code + " " + first.node + ": " + first.reason);
         return module;
     }
     static std::atomic<uint64_t> nextId{1};

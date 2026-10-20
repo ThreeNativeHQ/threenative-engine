@@ -329,6 +329,8 @@ public:
     GpuStatus readProbePixels(ReadbackCallback done);
     /** The post normal target (RGBA16Float, packed rows); InvalidHandle until a post pass has read "normal". */
     GpuStatus readNormalPixels(ReadbackCallback done);
+    /** The post albedo target (RGBA16Float, packed rows); InvalidHandle until a post pass has read "albedo". */
+    GpuStatus readAlbedoPixels(ReadbackCallback done);
     /** Textures the renderer holds GPU copies of (a destroyed Texture's are released at the next frame). */
     std::size_t materialTextureCount() const { return textures_->records.size(); }
     /** What the last frame refused or skipped by name; cleared at the start of each frame. */
@@ -623,7 +625,17 @@ private:
         const shader::UniformField* vertexSlots[kSlotCount] = {};
         const shader::UniformField* fragmentSlots[kSlotCount] = {};
         std::vector<std::array<const shader::UniformField*, kLightFieldCount>> lightSlots;
+        // What the program was built from, so albedoFragment() can build the same fragment again with its output swapped.
+        MaterialKind kind = MaterialKind::Standard;
+        shader::VertexVariant variant;
+        std::string lightKinds;
+        bool softShadows = false;
+        std::unique_ptr<shader::StageModule> albedo;  // built on first request; empty module when the kind has none
+        bool albedoBuilt = false;
     };
+    /** The program's fragment with the diffuse colour as its output (VertexVariant::albedoOutput), on the program's own
+     *  layout so a draw's bind groups serve it; null for an unlit kind, or when the builder refuses the variant. */
+    const shader::StageModule* albedoFragment(Program& program);
     void buildLayouts(Program& program, const std::string& key);
     /** The program for a material kind, vertex variant and light layout, built on first use; null
      *  when its WGSL is invalid, which is reported once in diagnostics() and its draws are skipped,
@@ -850,6 +862,10 @@ private:
     // drawn after the main pass; created with the first such frame, released with the targets.
     WGPUTexture normalTexture_ = nullptr;
     WGPUTextureView normalView_ = nullptr;
+    /** The diffuse colour of every opaque lit draw for post passes that read "albedo" (three's MRT `diffuseColor`),
+     *  drawn after the normal pass over the same draws; created with the first such frame, released with the targets. */
+    WGPUTexture albedoTexture_ = nullptr;
+    WGPUTextureView albedoView_ = nullptr;
     shader::StageModule normalFragment_;
     /** normalFragment_ for Standard and Physical draws: the alpha also packs metalness and roughness (see planNormals). */
     shader::StageModule surfaceFragment_;

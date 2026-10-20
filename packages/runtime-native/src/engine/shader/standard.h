@@ -147,6 +147,12 @@ struct VertexVariant {
     bool clearcoat = false;
     /** The position output is @invariant: this frame draws a normal pass that shares the vertex stage, or TRAA's velocity pass depth-Equal against it. */
     bool invariantPosition = false;
+    /**
+     * The fragment's colour output is the diffuse colour (map, tint and colorNode included), not the lit colour. Every
+     * uniform and texture is still created in the same order, so its layout equals the lit program's and a draw's bind
+     * groups serve both. Only Renderer::albedoFragment builds it; it is no program key.
+     */
+    bool albedoOutput = false;
     MaterialNodes nodes;
     /** Equal variants build the same program: a draw whose variant is unchanged reuses its Program*. */
     bool operator==(const VertexVariant&) const = default;
