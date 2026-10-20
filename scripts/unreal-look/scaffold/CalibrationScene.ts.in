@@ -162,7 +162,8 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
         ...qualityPreset("high"),
         autoExposureEnabled: false,
         bloomEnabled: false,
-        gtaoEnabled: level >= 6,
+        // Diagnosis: ?gtao=0 takes the contact occlusion out, to tell its darkening from the shadow's.
+        gtaoEnabled: level >= 6 && params.get("gtao") !== "0",
         // Diagnosis: ?ssgi=0|1 and ?ssgiIntensity=N bracket the screen-space gather over the cache.
         ...(params.get("ssgi") === null ? {} : { ssgiEnabled: params.get("ssgi") === "1" }),
         ...(params.get("ssgiIntensity") === null ? {} : { ssgiIntensity: Number(params.get("ssgiIntensity")) }),
