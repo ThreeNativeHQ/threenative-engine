@@ -243,6 +243,14 @@ StandardPrograms buildPhong(const VertexVariant& variant = {}, const LightLayout
  */
 StandardPrograms buildBasic(const VertexVariant& variant = {});
 
+/**
+ * The shadow depth program of an alpha-tested caster (PRD-651): buildBasic's vertex, uv included, and a
+ * fragment that writes nothing and discards where materialAlpha would (map alpha x diffuse opacity at or
+ * below alphaTest), as three's shadow pass copies alphaTest and map. Fragment uniforms "diffuse",
+ * "alphaTest", "opaque", "uvTransform"; binding "map" when variant.map.
+ */
+StandardPrograms buildMaskedDepth(const VertexVariant& variant);
+
 /** Link authored and engine varyings from the local vertex, shared by mesh and sprite builders. */
 void linkNodeVaryings(StandardPrograms& out, const VertexVariant& variant, ExprId position, ExprId normal = kInvalid);
 

@@ -90,6 +90,7 @@ struct DrawCache {
     uint64_t mapGroupKey = 0;     // the textures/epoch the fragment bind group was built for
     void* program = nullptr;
     void* depthProgram = nullptr;
+    bool depthMasked = false;     // the depth program runs the material's alpha test (PRD-651)
     void* pipeline = nullptr;
     void* depthPipeline = nullptr;
     void* mapGroup = nullptr;
@@ -643,7 +644,7 @@ private:
     Program* program(MaterialKind kind, const shader::VertexVariant& variant, const std::string& lights,
                      bool softShadows = false);
     /** The shadow pass's depth-only program for a vertex variant (0 plain, 1 instanced). */
-    Program& depthProgram(const shader::VertexVariant& variant);
+    Program& depthProgram(const shader::VertexVariant& variant, bool masked);
     Program& add(const std::string& key, shader::StageModule vertex, shader::StageModule fragment);
     struct MaterialTexture;
     /** blitTo's pass-through copy into `format`, blended by PipelineTarget's `blend`. */

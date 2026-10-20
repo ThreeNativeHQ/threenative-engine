@@ -2117,7 +2117,7 @@ const shader::StageModule* Renderer::albedoFragment(Program& program) {
     return program.albedo.get();
 }
 
-Renderer::Program& Renderer::depthProgram(const shader::VertexVariant& variant) {
+Renderer::Program& Renderer::depthProgram(const shader::VertexVariant& variant, bool masked) {
     ++programKeyBuilds_;
     ++programLookups_;
     shader::VertexVariant kind = variant;
@@ -2128,9 +2128,20 @@ Renderer::Program& Renderer::depthProgram(const shader::VertexVariant& variant) 
     kind.nodes = {};
     kind.nodes.positionNode = positionGraph; // a depth pass reads no colour
     kind.nodes.vertexNode = variant.nodes.vertexNode;  // ...but casts where the vertexNode puts it
-    kind.map = false;           // ...nor a diffuse map: no uv passes through the depth program
-    const std::string key = "depth|" + kind.key();
+    // ...nor a diffuse map, unless the caster is alpha-tested: three's shadow pass copies alphaTest and
+    // the map, so a leaf card casts its cut (PRD-651). An opaque caster keeps no fragment stage.
+    kind.map = masked && variant.map;
+    const std::string key = (masked ? "depth-masked|" : "depth|") + kind.key();
     if (const auto found = programs_.find(key); found != programs_.end()) return *found->second;
+    if (masked) {
+        const auto source = shader::buildMaskedDepth(kind);
+        shader::StageModule vertex = shader::buildStage(source.vertex, 0), fragment = shader::buildStage(source.fragment, 1);
+        if (!vertex.wgsl.ok() || !fragment.wgsl.ok()) {
+            const auto& errors = vertex.wgsl.ok() ? fragment.wgsl.errors : vertex.wgsl.errors;
+            throw std::runtime_error("TN_NATIVE_SHADER_INVALID: masked shadow depth program: " + (errors.empty() ? std::string("no reason") : errors.front()));
+        }
+        return add(key, std::move(vertex), std::move(fragment));
+    }
     // three's shadow pass draws with the default positionNode, the same transform as a basic material.
     shader::StageModule vertex = shader::buildStage(shader::buildBasic(kind).vertex, 0);
     if (!vertex.wgsl.ok()) throw std::runtime_error("TN_NATIVE_SHADER_INVALID: shadow depth program");
@@ -2931,17 +2942,20 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             if (page && !page->mover && !item.positionNode && !item.nodes.positionNode && !item.boneMatrices && !item.morphGeometry &&
                 !item.instanceMatrices && !virtualIt->second.atlas.overlaps(*page, casterBounds.at(i).at(item.key))) continue;
             shader::VertexVariant variant = variantOf(item);
+            const bool masked = item.material->alphaTest > 0;
             DrawCache* cache = item.cache;
             Program* cachedDepth = nullptr;
-            if (cache && cache->depthProgram && cache->variant == variant)
+            if (cache && cache->depthProgram && cache->variant == variant && cache->depthMasked == masked)
                 cachedDepth = static_cast<Program*>(cache->depthProgram);
             else {
-                cachedDepth = &depthProgram(variant);
+                cachedDepth = &depthProgram(variant, masked);
                 if (cache) {
                     cache->variant = variant;  // a shadow-only draw has no main program to set it
                     cache->depthProgram = cachedDepth; cache->depthPipeline = nullptr; cache->depthTargetKey = 0;
+                    cache->depthMasked = masked;
                 }
             }
+            const shader::StageModule* depthFragment = masked ? &cachedDepth->fragment : nullptr;
             Program& program = *cachedDepth;
             // three's _shadowSide: a front-sided caster draws its back faces, a back-sided one its
             // front faces, a double-sided one both.
@@ -2953,7 +2967,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             target.skinIndex = skinIndexFormat(item);
             target.instanceStepMask = instanceStepMask(program.vertex, item);
             if (compilation) {
-                compilation->push_back(pipelines_->getAsync(program.vertex, nullptr, target));
+                compilation->push_back(pipelines_->getAsync(program.vertex, depthFragment, target));
                 continue;
             }
             const uint64_t depthTargetKey = drawTargetKey(item, program.vertex);
@@ -2961,12 +2975,21 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             if (cache && cache->depthPipeline && cache->depthTargetKey == depthTargetKey) {
                 pipeline = static_cast<WGPURenderPipeline>(cache->depthPipeline);
             } else {
-                pipeline = pipelines_->get(program.vertex, nullptr, target);
+                pipeline = pipelines_->get(program.vertex, depthFragment, target);
                 if (!pipeline) throw std::runtime_error("TN_NATIVE_PIPELINE_REFUSED: shadow depth program");
                 if (cache) { cache->depthTargetKey = depthTargetKey; cache->depthPipeline = pipeline; }
             }
             const uint64_t v = frameUniforms_.size();
-            frameUniforms_.resize(v + aligned(program.vertex.uniformBlockSize), 0);
+            const uint64_t f = v + aligned(program.vertex.uniformBlockSize);
+            frameUniforms_.resize(f + aligned(program.fragment.uniformBlockSize), 0);
+            if (masked) {
+                const shader::StandardMaterial& m = *item.material;
+                const auto* fs = program.fragmentSlots;
+                put(frameUniforms_, f, fs[kDiffuse], std::array<double, 4>{m.color[0], m.color[1], m.color[2], m.opacity});
+                put(frameUniforms_, f, fs[kAlphaTest], std::array<double, 1>{m.alphaTest});
+                put(frameUniforms_, f, fs[kOpaque], std::array<double, 1>{0.0});
+                if (item.map) put(frameUniforms_, f, fs[kUvTransform], uvTransformOf(*item.map));
+            }
             put(frameUniforms_, v, program.vertexSlots[kModelMatrix], item.matrixWorld);
             if (item.instanceMatrices) put(frameUniforms_, v, program.vertexSlots[kInstanceBase], std::array<double, 1>{instanceBases.at(drawn)});
             put(frameUniforms_, v, program.vertexSlots[kViewMatrix], view);
@@ -2982,7 +3005,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             put(frameUniforms_, v, program.vertexSlots[kCameraProjectionMatrix], page ? page->projection.elements : shadow.projection);
             putSkin(v, program.vertexSlots, item);
             putNodes(frameUniforms_, v, program.vertex, item.nodes, frameTime_, frameDelta_, lights);
-            pass.draws.push_back({&item, &program, pipeline, static_cast<uint32_t>(v), 0});
+            pass.draws.push_back({&item, &program, pipeline, static_cast<uint32_t>(v), static_cast<uint32_t>(masked ? f : 0)});
         }
         }
     }
@@ -3388,6 +3411,19 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                                .first->second;
         if (cache) { cache->mapGroupKey = groupKey; cache->mapGroup = p.mapGroup; }
     }
+    // A masked caster's depth program samples the caster's map: its group binds that texture (PRD-651).
+    for (ShadowPass& pass : shadowPasses)
+        for (Planned& draw : pass.draws) {
+            if (!draw.item->map || !perDrawFragment(draw.program->fragment)) continue;
+            const MaterialTexture* map = materialTexture(*draw.item->map);
+            const std::string key = "depth|" + std::to_string(reinterpret_cast<uintptr_t>(draw.program)) + "|" +
+                                    std::to_string(reinterpret_cast<uintptr_t>(map->view)) + "|" +
+                                    std::to_string(reinterpret_cast<uintptr_t>(map->sampler));
+            const auto found = mapGroups_.find(key);
+            draw.mapGroup = found != mapGroups_.end() ? found->second
+                : mapGroups_.emplace(key, bindGroup(draw.program->layouts[1], draw.program->fragment, uniformBuffer_,
+                                                    lutView_, lutSampler_, map->view, map->sampler)).first->second;
+        }
     const uint64_t groupsChosenAt = groupEpoch_;
 
     planNormals();

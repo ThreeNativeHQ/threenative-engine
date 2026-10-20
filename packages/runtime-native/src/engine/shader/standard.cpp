@@ -1493,6 +1493,19 @@ StandardPrograms buildBasic(const VertexVariant& variant) {
     return out;
 }
 
+StandardPrograms buildMaskedDepth(const VertexVariant& variant) {
+    StandardPrograms out = buildBasic(variant);
+    out.fragment = Program{Stage::Fragment};
+    Program& f = out.fragment;
+    const ExprId texel = mapTexel(f, variant);
+    ExprId alpha = f.swizzle(f.uniform("diffuse", Type::vec(4)), "w");
+    if (texel != kInvalid) alpha = f.mul(alpha, f.swizzle(texel, "w"));
+    // The stage needs an output; a depth-only pipeline has no colour target, so it is never written.
+    f.output("color", f.construct(Type::vec(4), {f.constant(0.0f), f.constant(0.0f), f.constant(0.0f), materialAlpha(f, alpha)}));
+    out.vertex.linkVaryings(out.fragment);
+    return out;
+}
+
 StandardPrograms buildEquirectangularCube() {
     StandardPrograms out;
     Program& vertex = out.vertex;
