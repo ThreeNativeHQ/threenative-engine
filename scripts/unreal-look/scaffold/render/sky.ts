@@ -38,6 +38,9 @@ import { HEIGHT_FOG, type HeightFogParams, heightFogNode } from "./heightFog.js"
  * Unreal's scale is white (SkyAtmosphereAmbientContributionColorScale). The fit that stood here
  * pulled the photograph's ambient toward Unreal's void band; the atmosphere bake needs none.
  */
+/** Draw the sky with gpuSky.ts (Unreal LUT atmosphere and clouds) instead of the CPU bake. */
+const GPU_SKY = false;
+
 const AMBIENT_SCALE = new Color(1, 1, 1);
 
 /**
@@ -201,7 +204,8 @@ export function setupSky(
   fogged = true,
   clouds = false,
 ): void {
-  const gpu = software ? undefined : createGpuSky(scene, SUN_DIRECTION, fogged, clouds);
+  // The GPU sky needs TSL acos/tan/ceil on the Wasm engine; off until the engine math lands.
+  const gpu = software || !GPU_SKY ? undefined : createGpuSky(scene, SUN_DIRECTION, fogged, clouds);
   const sky = gpu?.environment ?? atmosphereSky(clouds) ?? photo;
   tintSun();
   sky.mapping = EquirectangularReflectionMapping;
