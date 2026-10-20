@@ -91,3 +91,4 @@ so the surface BRDF itself needs no change.
   because Lumen occludes the sky inside the room (layer L7). Before the GI PRDs land, the installed
   `ProbeVolume` (static bake) is the candidate for interior sky occlusion; the AO change in this PRD
   only stops AO from darkening direct light.
+- 2026-10-20 (GI set for PR #541): with dynamic GI on (L7 and up), Unreal replaces SSAO with Lumen Short Range AO. That AO is [PRD-640](../gi/PRD-640-pixels-gather-bounce-light-from-screen-probes-and-the-radiance-cache-answers-the-rest.md) Phase 3 (`ShortRangeAO`). GTAO on indirect light, from this PRD, stays the AO of the `low` tier ([PRD-644](../gi/PRD-644-the-gi-tier-follows-unreal-quality-levels-and-the-measured-gpu-time.md)).

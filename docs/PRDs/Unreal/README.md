@@ -7,7 +7,8 @@ moved here by topic, and each one was re-checked against the 5.8.3 source.**
 | Folder | Holds |
 | --- | --- |
 | [`look/`](look/) | The Unreal default look, measured against a real Unreal render and turned on layer by layer |
-| [`rendering/`](rendering/) | Atmosphere, clouds, shadows, virtualized geometry, global illumination |
+| [`gi/`](gi/) | Lumen-style global illumination: the GI reference scene, gathers, surface cache, temporal stability, reflections, tiers |
+| [`rendering/`](rendering/) | Atmosphere, clouds, shadows, virtualized geometry, the radiance cache probes (PRD-603 to PRD-605) |
 | [`performance/`](performance/) | Resolution scale, temporal reconstruction, tile memory, texture residency |
 | [`open-world/`](open-world/) | Terrain LOD, streaming transitions, world partition |
 | [`animation/`](animation/) | Character animation and skinning cost |
@@ -130,8 +131,8 @@ A layer turns on by default only when five conditions hold:
 | L4 | Volumetric clouds | [PRD-VQ-08](rendering/PRD-VQ-08-clouds-and-overhead-transmittance.md) (amended) |
 | L5 | Sun shadows: coverage and source-angle penumbra | [PRD-634](look/PRD-634-sun-shadows-reach-the-horizon-and-soften-with-distance-from-the-caster.md); page cost in [PRD-457](rendering/PRD-457-virtual-shadows-scale-by-measurement.md) |
 | L6 | Ambient occlusion on indirect light only | [PRD-635](look/PRD-635-ambient-occlusion-darkens-only-the-light-that-comes-from-around.md) |
-| L7 | Global illumination | [PRD-267](../useful-defaults/PRD-267-screen-space-gi-ships-in-the-templates.md) (amended), with PRD-603 to PRD-605 |
-| L8 | Reflections | [PRD-VQ-03](../rendering/PRD-VQ-03-local-reflection-probes.md) (amended) |
+| L7 | Global illumination | The [GI set](#global-illumination-the-lumen-set-filed-2026-10-20) below: PRD-603 to PRD-605, PRD-638 to PRD-645, PRD-VQ-09; templates last through [PRD-267](../useful-defaults/PRD-267-screen-space-gi-ships-in-the-templates.md) (amended) |
+| L8 | Reflections | [PRD-642](gi/PRD-642-glossy-surfaces-reflect-what-the-camera-cannot-see.md) on `high`; [PRD-VQ-03](../rendering/PRD-VQ-03-local-reflection-probes.md) (amended) on `low` and `medium` |
 | L9 | Bloom, vignette, local exposure, motion blur, neutral grade | [PRD-636](look/PRD-636-the-finishing-post-chain-matches-unreal-defaults.md); anti-aliasing in [PRD-539](performance/PRD-539-low-resolution-temporal-reconstruction-quality-and-cost.md) (amended); exposure default in [PRD-632](look/PRD-632-the-frame-is-exposed-and-tone-mapped-the-way-a-fresh-unreal-project-is.md) |
 
 Order: PRD-631 first, then PRD-632, because every later row is compared at matched exposure. After
@@ -168,9 +169,12 @@ Gaps checked on 2026-10-12 and not filed. Each one needs new evidence before it 
   Software rasterization needs 64-bit image atomics and a visibility buffer that owns shading. Page
   streaming saves little because vertex data is about 74% of resident bytes (PRD-285). Tessellation
   and displacement are a material look decision.
-- **Lumen.** Global and mesh distance fields: `GPUSceneBVH` already gives a GPU trace (PRD-603 revisits
-  this if its gate fails). Surface cache cards are too large for one PRD. Screen-probe gather waits on
-  PRD-267. Reflections belong to PRD-VQ-03. Hardware ray tracing needs an API WebGPU lacks.
+- **Lumen.** Re-checked 2026-10-20; the GI set below now owns the surface cache (PRD-639), the screen
+  probe gather (PRD-640), reflections (PRD-642 and PRD-VQ-03) and native hardware ray tracing
+  (PRD-645). Still not filed: global and mesh distance fields, because `GPUSceneBVH` already gives a
+  GPU trace (PRD-603 revisits this if its gate fails); ReSTIR GI, because Unreal needs hardware ray
+  tracing for it and no quality level turns it on (`LumenReSTIRGather.cpp`); the far field, which is
+  hardware-only and off by default.
 - **World Partition.** Data layers have no consumer, and two `WorldCells` instances already cover
   the case. Several streaming sources would need a terrain rewrite, because `TerrainTiles` holds
   one focus. Loaded-but-inactive cells save no draw. HLOD layers belong to PRD-456. Unreal doubles
@@ -179,6 +183,59 @@ Gaps checked on 2026-10-12 and not filed. Each one needs new evidence before it 
   On-death spawn needs atomic appends with no consumer, and Unreal counts event spawns on the CPU
   too. Grid smoke ships as `fluid-field.ts`. Particle lights have no consumer. Sorting belongs to
   PRD-VQ-12, and culling and budget belong to PRD-569.
+
+## Global illumination: the Lumen set (filed 2026-10-20)
+
+Owner direction (2026-10-19): Lumen-like GI is part of the default look. Owner rule (2026-10-20):
+**GI abstractions take Unreal's names**, without the Lumen brand, in camelCase, so an agent that
+knows Unreal finds them with `engine_search_capabilities`. Examples: `RadianceCache`,
+`IrradianceFieldGather`, `ScreenProbeGather`, `ShortRangeAO`, `SurfaceCache`, `TracedReflections`
+(Unreal's "Lumen Reflections"), `BoxReflectionCapture`, `finalGatherMethod`,
+`affectDynamicIndirectLighting`. Units stay metres. Each manifest entry carries the Unreal terms,
+"lumen" included, as `@alias` lines, and each PRD has a box that proves the search finds it.
+
+What a fresh Unreal 5.8.3 project runs, from the source: Lumen GI and Lumen reflections, software
+tracing against the global distance field, GI quality Epic, which uses the screen probe gather.
+Medium uses the irradiance field gather, and Low has no dynamic GI (`Engine/Config/BaseScalability.ini`).
+The set rebuilds that ladder on `GPUSceneBVH` instead of distance fields, and matches each tier to
+its own Unreal level.
+
+| Lumen part | PRD | Outcome | Waits on |
+| --- | --- | --- | --- |
+| Reference and visualize modes | [PRD-638](gi/PRD-638-a-gi-reference-scene-shows-every-lumen-behaviour-still-and-in-motion.md) | A GI reference scene shows every Lumen behaviour, still and in motion | PRD-631 Phase 3 |
+| Radiance cache | [PRD-603](rendering/PRD-603-probes-refresh-by-tracing-the-packed-scene-not-by-drawing-it-six-times.md) | `RadianceCache` refreshes by tracing the packed scene | — |
+| Irradiance field gather | [PRD-604](rendering/PRD-604-a-surface-is-lit-only-by-probes-that-can-see-it.md) | A surface is lit only by probes that can see it | — |
+| Radiance cache clipmaps | [PRD-605](rendering/PRD-605-the-probe-field-follows-the-camera-in-nested-rings.md) | The probe field follows the camera in nested rings | PRD-603, PRD-604 |
+| Dynamic updates | [PRD-VQ-09](../rendering/PRD-VQ-09-incremental-diffuse-relighting.md) | A door that opens and a lamp that switches change the bounce light | PRD-603, PRD-638 |
+| Surface cache | [PRD-639](gi/PRD-639-a-surface-cache-gives-traced-rays-the-texture-glow-and-lights-of-what-they-hit.md) | Traced rays see the texture, glow and lights of what they hit | PRD-603 |
+| Screen probe gather, Short Range AO | [PRD-640](gi/PRD-640-pixels-gather-bounce-light-from-screen-probes-and-the-radiance-cache-answers-the-rest.md) | Pixels gather from screen probes, and the radiance cache answers the rest | PRD-603, PRD-638 |
+| Temporal filter | [PRD-641](gi/PRD-641-bounce-light-holds-still-while-the-camera-moves-and-follows-a-light-that-changes.md) | Bounce light holds still and follows a changed light | PRD-638, PRD-640 |
+| Reflections | [PRD-642](gi/PRD-642-glossy-surfaces-reflect-what-the-camera-cannot-see.md) | Glossy surfaces reflect what the camera cannot see | PRD-603, PRD-639 |
+| Translucency volume, foliage | [PRD-643](gi/PRD-643-glass-fog-and-leaves-take-the-bounce-light-too.md) | Glass, fog and leaves take the bounce light too | PRD-603, PRD-604 |
+| Scalability | [PRD-644](gi/PRD-644-the-gi-tier-follows-unreal-quality-levels-and-the-measured-gpu-time.md) | The GI tier follows Unreal's quality levels and the measured GPU time | PRD-638 |
+| Hardware ray tracing | [PRD-645](gi/PRD-645-a-desktop-gpu-with-ray-tracing-traces-gi-rays-in-hardware.md) | A desktop GPU with ray tracing traces GI rays in hardware (opt-in) | PRD-603 |
+| Templates | [PRD-267](../useful-defaults/PRD-267-screen-space-gi-ships-in-the-templates.md) | The templates take the tuned tier table, last | PRD-644 |
+
+```mermaid
+flowchart LR
+  P638[PRD-638 GI scene] --> P603[PRD-603 RadianceCache]
+  P603 --> P604[PRD-604 IrradianceFieldGather]
+  P604 --> P605[PRD-605 clipmaps]
+  P603 --> P639[PRD-639 SurfaceCache]
+  P603 --> PVQ09[PRD-VQ-09 dynamic updates]
+  P603 --> P640[PRD-640 ScreenProbeGather]
+  P640 --> P641[PRD-641 temporal]
+  P639 --> P642[PRD-642 TracedReflections]
+  P604 --> P643[PRD-643 translucency]
+  P603 --> P645[PRD-645 hardware RT]
+  P604 --> P644[PRD-644 tiers]
+  P640 --> P644
+  P644 --> P267[PRD-267 templates]
+```
+
+Order: PRD-638 Phase 1 and PRD-603 Phase 1 first and in parallel. The harness `giCache.ts` (PR #541)
+is the CPU reference for PRD-603 to PRD-604 until PRD-603 Phase 2 deletes it. Template edits come
+last (owner, 2026-10-19: tune the harness 1:1 first).
 
 ## Existing PRDs amended from the same read
 

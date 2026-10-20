@@ -2,64 +2,107 @@
 prd_contract: v1
 ---
 
-# PRD-VQ-09 — Diffuse probes refresh bounded changed regions without a visible half-bake
+# PRD-VQ-09 — A door that opens and a lamp that switches change the bounce light
 
-**Status:** PROPOSED — 2026-10-01. No implementation or qualification is claimed.
-**Priority:** P2 — Proposed revision-aware dirty-region rebaking against a full-rebake reference.
-**Batch:** Visual quality execution batch. **Wave:** 3 / gated GI extension.
-**Dependencies:** First reconcile and qualify existing PRD-268. The incumbent ProbeVolume remains the single diffuse-probe owner.
+**Status:** NOT STARTED
+**Priority:** P2 — no box is ticked: the traced radiance cache of PRD-603 reacts only to a global sun or sky step, and its BVH holds static triangles only, so a door, a lamp or a moved crate changes no bounce light.
+**Complexity:** 7 (HIGH) — 1–5 files: dirty regions, a dynamic BVH part, specs, one conformance scene (+1), complex state: dirty bounds, a per-frame refit and probe generations (+2), changes the trace kernel's inputs (+2), native proof (+1), two prerequisite PRDs (+1); risk override: none
+**Owner:** João
+**Depends on:** [PRD-603](../Unreal/rendering/PRD-603-probes-refresh-by-tracing-the-packed-scene-not-by-drawing-it-six-times.md) Phase 3 (the stale queue, generations and the lighting-step rule). [PRD-638](../Unreal/gi/PRD-638-a-gi-reference-scene-shows-every-lumen-behaviour-still-and-in-motion.md) Phase 2 (the `door`, `neon` and occluder motion runs). Part of the GI set in [`../Unreal/gi/`](../Unreal/gi/) (PR #541).
 
-## Grounding and intended outcome
+## Context
 
-[packages/core/src/render/probe-volume.ts](https://github.com/ThreeNativeHQ/threenative/blob/d72778382b134ef8763f58825cb4d4fd8cc0f6e3/packages/core/src/render/probe-volume.ts) already performs static diffuse capture and exposes rebaking. Existing [PRD-268](https://github.com/ThreeNativeHQ/threenative/blob/develop/docs/PRDs/lighting/PRD-268-light-that-comes-from-off-screen.md) owns that path. This proposal is only for measured gaps in incremental relighting; manual rebaking must be evaluated before new code is admitted.
+**Re-scoped 2026-10-20.** This PRD was filed on 2026-10-01 against the cube-capture `ProbeVolume`,
+before PRD-603 planned a traced refresh. No box was ticked and no code was written. The outcome is
+the same: a local change updates the bounce light near it, and no reader sees a half-updated field.
+The mechanism now follows PRD-603.
 
-**Outcome:** Changing an off-screen lamp or opening a door updates the affected diffuse lighting within a declared latency budget while unaffected regions retain a complete valid result. This is bounded probe relighting, not Lumen parity.
+- PRD-603 gives the `RadianceCache` a stale queue, probe generations that publish only when complete,
+  and a lighting-step rule. That rule reads the sun direction, the sun colour and the sky value. It
+  does not see a local lamp, an emissive material that changes or a mesh that moves.
+- `GPUSceneBVH` (`packages/core/src/gpu-scene-bvh.ts`) packs the static scene triangles once. A door
+  that swings stays closed in the trace. The harness `giCache.ts` is a fixed-world bake: "move a wall
+  and bake again".
 
-## Design and ownership
+### What Unreal does (UE 5.8.3, read 2026-10-20; clean-room summary, no code copied)
 
-Use the existing ProbeVolume capture/sample infrastructure and explicit scene/light revision invalidation. Coalesce dirty regions and schedule work through the existing lifecycle. Publish completed coefficient generations atomically; no reader sees a half-updated atlas. Define previous-versus-current bounce inputs to avoid energy accumulation. Keep artistic response and application in generated materials. If the existing rebake path already satisfies the tests and budget, close this proposal as covered rather than adding a scheduler.
+- **A moved primitive invalidates its own data.** Its surface cache cards are captured again inside
+  the per-frame capture budget (`r.LumenScene.SurfaceCache.CardCaptureEnableInvalidation=1`; UE 5.8.3:
+  `Engine/Source/Runtime/Renderer/Private/Lumen/LumenSceneRendering.cpp`). The global distance field
+  updates the regions of movable objects, 2 clipmaps per frame
+  (UE 5.8.3: `Engine/Source/Runtime/Renderer/Private/GlobalDistanceField.cpp`).
+- **Lights refresh the cache by budget.** Direct lighting of the surface cache refreshes atlas ÷ 32
+  texels per frame at Epic, and the radiance cache traces its stalest used probes first
+  (PRD-603 cites the files).
+- **Skinned meshes are poor occluders in software tracing.** They have no mesh distance field and get
+  cards from their bounds only, and Medium turns those off (`r.MeshCardRepresentation.SkeletalMesh=0`;
+  UE 5.8.3: `Engine/Config/BaseScalability.ini`).
+- **Each primitive can opt out.** "Affect Dynamic Indirect Lighting" (`bAffectDynamicIndirectLighting`)
+  on a primitive removes it from Lumen (UE 5.8.3: `Engine/Source/Runtime/Engine/Classes/Components/PrimitiveComponent.h`).
 
-A small indoor volume, one changed lamp and one door/occluder case. No hardware RT dependency, whole-world fully dynamic GI, infinite bounces, or replacement of SSGI.
+## Solution
 
-## Required behavior
+1. **Measure (Phase 1).** Run the PRD-638 `door`, `neon` and occluder runs on the owned engine with
+   PRD-603 as it lands: static BVH, a full re-trace on `requestBake`. Record response frames, the
+   probes traced per change and the frame cost. Unreal Epic's response from the same runs is the
+   target.
+2. **Dirty regions (Phase 2).** A change marks a box stale, not the whole field:
+   - a GI light whose position, range, colour or intensity changes marks its range;
+   - an emissive material whose colour or intensity changes marks the bounds of its meshes;
+   - a mesh whose world matrix changes marks its old and new bounds.
+   Each box grows by the trace distance of the probes. The probes inside it move to the front of the
+   PRD-603 queue, and the old values serve until each new generation is complete. A change smaller
+   than the noise floor marks nothing.
+3. **Moving meshes in the trace (Phase 3).** The trace reads two parts: the static `GPUSceneBVH` and
+   a dynamic part for rigid meshes that moved. Each moved mesh keeps its own small BVH, and the
+   kernel transforms the ray into that mesh's space, as a two-level ray tracing scene does. A frame
+   updates only the transforms of moved meshes. Skinned meshes stay out of the trace, as in Unreal
+   software tracing, and the report counts them.
 
-- The off-screen source test changes diffuse response even when the lamp remains outside the camera.
-- A completed refresh converges toward a full rebake reference within the declared fixture tolerance.
-- Unchanged regions do not continually rebake, requests coalesce and cancelled generations never publish.
-- Total energy remains bounded over repeated lamp toggles and repeated bake cycles.
+**Names and manifest.** The per-object switch is `affectDynamicIndirectLighting` (default `true`),
+Unreal's primitive property in camelCase. The manifest entry carries
+`@alias affect dynamic indirect lighting` and `@alias lumen dynamic update`.
 
-## Execution phases
+**Where each part lives.** Dirty regions and the dynamic BVH are mechanism in
+`packages/core/src/render/` and `packages/core/src/gpu-scene-bvh.ts`. Which objects move, and which
+lights change, is the game's. `TN_PROBE_VOLUME` adds the dirty boxes this frame, the probes they
+marked, the moved meshes in the trace and the skinned meshes left out.
 
-All proof paths below are **planned implementation targets**, not existing passing tests. Reuse an existing equivalent test or scenario after inspecting current code, and update the canonical proof path rather than adding a duplicate. Follow EXECUTE.md for fixture setup, variables, review and repository gates.
+## Acceptance Criteria
 
-### Phase 1 — Bounded dirty-region updates
+- [ ] AC-1 [local]: In the `door` run on the owned engine, the lit floor of the second room reaches 90% of its settled value in no more frames than Unreal Epic's response. proof: `pnpm unreal-look:compare --scene gi --metric motion`, `door` run — Evidence: pending.
+- [ ] AC-2 [local]: In the `neon` run, no probe outside the neon's dirty box is traced beyond the steady budget. proof: the `TN_PROBE_VOLUME` dirty-probe count in the same run — Evidence: pending.
+- [ ] AC-3 [local; needs a built desktop host]: The conformance row `radiance-cache-door` passes on the desktop lane: a moved box changes the irradiance behind it within tolerance of the browser. proof: `pnpm parity --target desktop --only-tests radiance-cache-door` — Evidence: pending.
 
-- [ ] Extend only the demonstrated gaps in existing rebaking with revision-aware dirty regions and bounded scheduling. proof: `pnpm exec vitest run packages/core/__tests__/vq-incremental-diffuse-relighting.spec.ts`.
-- [ ] Implement atomic atlas/coefficients publication and cancellation without a second diffuse-probe cache. proof: `pnpm exec vitest run packages/core/__tests__/vq-incremental-diffuse-relighting.spec.ts`.
+## Integration Ledger
 
-### Phase 2 — Convergence and stable composition
+| Capability | Reachable consumer/trigger | Replaces / disposition | Evidence |
+|---|---|---|---|
+| Dirty regions | Any GI light, emissive material or mesh the game changes | Replaces a full `requestBake` for local changes; `requestBake` stays for a full refresh | AC-1, AC-2 |
+| Moving rigid meshes in the trace | Meshes whose world matrix changes | Extends `GPUSceneBVH`; static scenes trace as before | AC-1, AC-3 |
+| `affectDynamicIndirectLighting` | A per-object flag the game sets | New. Default `true` | Phase 2 |
 
-- [ ] Verify changed-lamp and door response against the full-rebake reference, including repeated bounce cycles. proof: `pnpm exec vitest run packages/core/__tests__/vq-incremental-diffuse-relighting.spec.ts`.
-- [ ] Integrate the refreshed diffuse term with the existing material and SSGI composition without duplicate contribution. proof: `pnpm exec vitest run packages/core/__tests__/vq-incremental-diffuse-relighting.spec.ts`.
+## Execution Phases
 
-### Phase 3 — Qualify the visible result
+#### Phase 1: How a local change behaves today
+**Status:** NOT STARTED
+**Files:** none beyond PRD-638 and PRD-603 (measurement only)
+- [ ] Response frames, probes traced per change and frame cost for the three runs, with Unreal Epic's response, are recorded under `## Decisions`. proof: `pnpm unreal-look:compare --scene gi --metric motion`.
 
-- [ ] The lamp/door scenario records refresh latency, unchanged-region work and radiance convergence on WebGPU. proof: `node packages/playtest/dist/runner/cli.js examples/abyss-framework/playtests/vq-incremental-diffuse-relighting.playtest.json --url ${VQ_URL:?} --browser-recipe webgpu`.
-- [ ] The same scenario passes on Linux native with its own measured refresh budget and complete-generation observations. proof: `node packages/playtest/dist/runner/cli.js examples/abyss-framework/playtests/vq-incremental-diffuse-relighting.playtest.json --target desktop --executable ${VQ_NATIVE_EXECUTABLE:?}`.
+#### Phase 2: A change marks a box stale
+**Status:** NOT STARTED
+**Files:** `packages/core/src/render/probe-volume.ts`, `packages/core/src/render/radiance-cache.ts`, `packages/core/__tests__/probe-volume.spec.ts`, `packages/core/src/index.ts`, `packages/engine-mcp/__tests__/search.spec.ts`
+- [ ] A changed light, emissive material or moved mesh marks only the probes in its grown box, and a change below the noise floor marks none. proof: `pnpm exec vitest run packages/core/__tests__/probe-volume.spec.ts`.
+- [ ] An object with `affectDynamicIndirectLighting: false` neither marks probes nor appears in the trace. proof: the same spec.
 
-## Acceptance criteria
+#### Phase 3: Moving meshes in the trace
+**Status:** NOT STARTED
+**Files:** `packages/core/src/gpu-scene-bvh.ts`, `packages/core/src/render/probe-trace.ts`, `packages/core/__tests__/gpu-scene-bvh.spec.ts`, `packages/runtime-native/conformance/scenes/shared/radiance-cache-door.js` (new), `packages/runtime-native/conformance/registry.json`
+- [ ] A ray against a moved rigid mesh hits it at its new transform, and a skinned mesh is skipped and counted. proof: `pnpm exec vitest run packages/core/__tests__/gpu-scene-bvh.spec.ts`.
+**Verification:** AC-1 to AC-3. A visual judge subagent reviews frames 0, 30 and 90 of the `door` run against Unreal's, and must return IMPROVEMENT against the Phase 1 run.
 
-- [ ] The admitted incremental route performs less work than a full rebake for localized changes while meeting a predeclared image and latency bound; otherwise retain the incumbent. proof: the completed Phase 3 scenario outputs, with the named fixture, package/cohort and adapter recorded inline here.
-- [ ] The feature preserves its documented inactive/fallback path and releases owned resources after repeated lifecycle transitions. proof: `pnpm exec vitest run packages/core/__tests__/vq-incremental-diffuse-relighting.spec.ts` plus the Phase 3 lifecycle scenario.
+## Decisions
 
-## Performance and promotion
-
-Pin probe count, density, bounce count and changed region before comparison. A 500 ms response goal is an initial fixture target, not a claimed current engine capability. Numerical targets are proposed acceptance targets, not benchmark results. Pin the fixture, metrics and thresholds before changing the implementation; never relax a failing threshold just to mark this PRD complete. Shared abstractions must pass the repository's reuse/LOC admission rule. Appearance remains editable source.
-
-## Blocked on
-
-PRD-268 qualification and a representative dynamic-lighting consumer precede default admission; hardware-specific quality tiers remain separate.
-
-## Completion record
-
-Update the phase boxes and this PRD only after the named proof runs. Record actual results inline, including any remaining exclusions. A merged planning or implementation PR alone is not proof that every acceptance criterion passed. Archive according to the parent PRD filing rules when the work is genuinely complete.
+- 2026-10-20 (GI set for PR #541): re-scoped from the cube-capture `ProbeVolume` to the traced
+  `RadianceCache` of PRD-603. The 2026-10-01 text had no ticked box and no code. The old blocker,
+  "PRD-268 qualification", is gone: PRD-268 was superseded into PRD-267 on 2026-10-03.
