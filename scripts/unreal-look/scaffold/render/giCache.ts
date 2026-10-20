@@ -947,6 +947,7 @@ export function installGi(
   const sunRadiance = [0, 1, 2].map(
     (c) => ([sun?.color.r, sun?.color.g, sun?.color.b][c] ?? 0) * ((sun?.intensity ?? 0) / Math.PI),
   );
+  /** Per surface cell, the shadow rays' answers: [sun, ...lights], 1 when lit. */
   const shaded = new Map<string, number[]>();
   let shadowRays = 0;
   let traced = 0;
@@ -956,7 +957,12 @@ export function installGi(
   const toLight = new Vector3();
   const colour = [0, 0, 0];
 
-  /** What a surface point returns of the sun and the point lights (albedo x light x cos x visibility) plus its emission. */
+  /**
+   * What a surface point returns of the sun and the point lights (albedo x light x cos x visibility) plus its emission.
+   * Only the visibility is shared by a 0.5 m surface cell (a shadow ray each); the cosine and the inverse square are
+   * the point's own. Sharing the whole result let one sample stand for its cell: the cornell shade, 0.3 m above its
+   * lamp, ranges 100 to 13 across a cell, and a sample near the hot spot lit the floor below it 1.8 times too bright.
+   */
   const surface = (
     object: Object3D,
     [px, py, pz]: readonly [number, number, number],
@@ -965,21 +971,40 @@ export function installGi(
     emissive: number[],
   ): number[] => {
     const key = `${object.id}|${Math.floor(px / SHADE_CELL)}|${Math.floor(py / SHADE_CELL)}|${Math.floor(pz / SHADE_CELL)}|${Math.round(nx)}${Math.round(ny)}${Math.round(nz)}`;
-    const cached = shaded.get(key);
-    if (cached !== undefined) return cached;
-    const cosine = Math.max(0, nx * sunX + ny * sunY + nz * sunZ);
-    let visible = 0;
-    if (sun !== undefined && cosine > 0) {
-      shadowRays += 1;
-      origin.set(px + nx * 0.02, py + ny * 0.02, pz + nz * 0.02);
-      visible =
-        ctx.raycast({ origin, direction: sun.direction, far, targets: root }) === undefined ? 1 : 0;
-    }
-    const lit = [0, 1, 2].map(
-      (c) => (albedo[c] ?? 0) * (sunRadiance[c] ?? 0) * cosine * visible + (emissive[c] ?? 0),
-    );
+    let visible = shaded.get(key);
     origin.set(px + nx * 0.02, py + ny * 0.02, pz + nz * 0.02);
-    for (const light of lights) {
+    if (visible === undefined) {
+      visible = [0];
+      if (sun !== undefined && nx * sunX + ny * sunY + nz * sunZ > 0) {
+        shadowRays += 1;
+        visible[0] =
+          ctx.raycast({ origin, direction: sun.direction, far, targets: root }) === undefined
+            ? 1
+            : 0;
+      }
+      for (const light of lights) {
+        toLight.subVectors(light.position, origin);
+        const d = toLight.length();
+        toLight.divideScalar(d);
+        let open = 0;
+        if (d >= 0.02 && nx * toLight.x + ny * toLight.y + nz * toLight.z > 0) {
+          shadowRays += 1;
+          open =
+            ctx.raycast({ origin, direction: toLight, far: d - 0.02, targets: root }) === undefined
+              ? 1
+              : 0;
+        }
+        visible.push(open);
+      }
+      shaded.set(key, visible);
+    }
+    const cosine = Math.max(0, nx * sunX + ny * sunY + nz * sunZ);
+    const lit = [0, 1, 2].map(
+      (c) =>
+        (albedo[c] ?? 0) * (sunRadiance[c] ?? 0) * cosine * (visible[0] ?? 0) + (emissive[c] ?? 0),
+    );
+    lights.forEach((light, l) => {
+      if (visible[l + 1] !== 1) return;
       toLight.subVectors(light.position, origin);
       const d = toLight.length();
       toLight.divideScalar(d);
@@ -987,16 +1012,12 @@ export function installGi(
       // three's getDistanceAttenuation: inverse square times a window that closes at the cutoff distance.
       const window =
         light.distance > 0 ? Math.min(1, Math.max(0, 1 - (d / light.distance) ** 4)) ** 2 : 1;
-      if (cos <= 0 || window <= 0 || d < 0.02) continue;
-      shadowRays += 1;
-      if (ctx.raycast({ origin, direction: toLight, far: d - 0.02, targets: root }) !== undefined)
-        continue;
+      if (cos <= 0 || window <= 0 || d < 0.02) return;
       const scale = (light.intensity / Math.PI / (d * d)) * window * cos;
       const tint = [light.color.r, light.color.g, light.color.b];
       for (let c = 0; c < 3; c += 1)
         lit[c] = (lit[c] ?? 0) + (albedo[c] ?? 0) * (tint[c] ?? 0) * scale;
-    }
-    shaded.set(key, lit);
+    });
     return lit;
   };
 
