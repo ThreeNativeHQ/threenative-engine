@@ -41,6 +41,17 @@ export interface IThresholds {
   iou?: number;
   dEv?: number;
 }
+/** thresholds.json: flat keys apply to every layer, `layers.<name>` overrides them for that layer. */
+export interface IThresholdFile extends IThresholds {
+  layers?: Record<string, IThresholds>;
+}
+/** The noise floor is measured, then widened: a threshold is the larger of NOISE_MARGIN times the worst
+ * Unreal-vs-Unreal difference of its layer and one absolute floor that no render noise can be below. */
+export const NOISE_MARGIN = 2;
+/** deltaE: one CIEDE2000 just-noticeable difference. dP50: the 1% target of PRD-631. dEv: 2% luminance. */
+export const NOISE_FLOORS = { deltaE: 1, dP50: 0.01, dEv: 0.02 } as const;
+/** Silhouette overlap is geometry, not render noise: PRD-631 fixes it at 0.98. */
+export const IOU_THRESHOLD = 0.98;
 export interface IRow {
   layer: string;
   cell: string;
@@ -68,6 +79,7 @@ export interface IOptions {
   unrealVsUnreal?: string;
   writeMasks?: boolean;
   writeStats?: boolean;
+  writeThresholds?: boolean;
   sheet?: boolean;
 }
 
@@ -271,6 +283,30 @@ function measure(image: IImage, mask: Mask, exr?: IImage): IStats {
     pixels: display.length,
   };
 }
+export function deriveThresholds(
+  noiseRows: readonly Pick<IRow, "layer" | "deltaE" | "dP50" | "dEv50">[],
+): Record<string, IThresholds> {
+  if (!noiseRows.length) fail("BAD_INPUT", "no Unreal-vs-Unreal rows to derive thresholds from");
+  const out: Record<string, IThresholds> = {};
+  for (const layer of new Set(noiseRows.map((r) => r.layer))) {
+    const rows = noiseRows.filter((r) => r.layer === layer);
+    const worst = (values: (number | null)[]) => {
+      const numbers = values.flatMap((v) => (v === null ? [] : [Math.abs(v)]));
+      return numbers.length ? Math.max(...numbers) : null;
+    };
+    const limit = (noise: number | null, floor: number) =>
+      noise === null ? undefined : Number(Math.max(NOISE_MARGIN * noise, floor).toPrecision(3));
+    const entry: IThresholds = {};
+    const deltaE = limit(worst(rows.map((r) => r.deltaE)), NOISE_FLOORS.deltaE);
+    const dP50 = limit(worst(rows.map((r) => r.dP50)), NOISE_FLOORS.dP50);
+    const dEv = limit(worst(rows.map((r) => r.dEv50)), NOISE_FLOORS.dEv);
+    if (deltaE !== undefined) entry.deltaE = deltaE;
+    if (dP50 !== undefined) entry.dP50 = dP50;
+    if (dEv !== undefined) entry.dEv = dEv;
+    out[layer] = entry;
+  }
+  return out;
+}
 function passes(row: IRow, thresholds?: IThresholds): boolean | null {
   if (!thresholds) return null;
   const checks: [number | null, number | undefined, boolean][] = [
@@ -436,6 +472,11 @@ export function runComparison(options: IOptions = {}) {
   const rootA = options.unreal ?? path.join(dir, "captures/unreal");
   const rootB =
     options.unrealVsUnreal ?? options.threenative ?? path.join(dir, "captures/threenative");
+  if (options.writeThresholds && !options.unrealVsUnreal)
+    fail(
+      "BAD_INPUT",
+      "--write-thresholds derives from the noise floor: add --unreal-vs-unreal <dir>",
+    );
   const offline = !existsSync(rootA);
   const prepareOnly =
     !existsSync(rootB) &&
@@ -497,19 +538,33 @@ export function runComparison(options: IOptions = {}) {
   if (!layers.length) fail("MISSING_CELL", "no layers present");
   if (layers.some((l) => !allLayers.includes(l) && l !== "ID")) fail("BAD_INPUT", "unknown layer");
   const thresholdFile = path.join(dir, "thresholds.json");
-  const thresholds = existsSync(thresholdFile)
-    ? (object(json(thresholdFile)) as IThresholds)
+  const thresholdData = existsSync(thresholdFile)
+    ? (object(json(thresholdFile)) as IThresholdFile)
     : undefined;
-  if (thresholds)
-    for (const [key, value] of Object.entries(thresholds))
+  const checkThresholds = (value: Record<string, unknown>, nested: boolean) => {
+    for (const [key, limit] of Object.entries(value)) {
+      if (key === "layers" && !nested) continue;
       if (
         !["deltaE", "dP50", "iou", "dEv"].includes(key) ||
-        typeof value !== "number" ||
-        !Number.isFinite(value) ||
-        value < 0 ||
-        (key === "iou" && value > 1)
+        typeof limit !== "number" ||
+        !Number.isFinite(limit) ||
+        limit < 0 ||
+        (key === "iou" && limit > 1)
       )
         fail("BAD_INPUT", "invalid thresholds");
+    }
+  };
+  if (thresholdData) {
+    checkThresholds(thresholdData as Record<string, unknown>, false);
+    for (const entry of Object.values(thresholdData.layers ?? {}))
+      checkThresholds(object(entry), true);
+  }
+  const thresholdsFor = (layer: string): IThresholds | undefined => {
+    if (!thresholdData) return undefined;
+    const { layers: perLayer, ...flat } = thresholdData;
+    return { ...flat, ...perLayer?.[layer] };
+  };
+  const thresholds = thresholdData;
   const reference: IReference = {
     generatedAt: new Date().toISOString(),
     resolution: resolution as [number, number],
@@ -613,7 +668,7 @@ export function runComparison(options: IOptions = {}) {
             };
             // ID geometry is sun-independent: emit each pose once in ID mode.
             if (sunIndex === 0) {
-              row.pass = passes(row, thresholds);
+              row.pass = passes(row, thresholdsFor(layer));
               rows.push(row);
             }
           }
@@ -655,7 +710,7 @@ export function runComparison(options: IOptions = {}) {
           unrealExr: exrA,
           otherExr: exrB,
           reference: cached?.cells[key],
-          thresholds,
+          thresholds: thresholdsFor(layer),
         });
         if (layer === "L0" && masksB)
           for (const row of cellRows) {
@@ -664,7 +719,7 @@ export function runComparison(options: IOptions = {}) {
                 required(base.regions[row.region]),
                 required(masksB.regions[row.region]),
               );
-            row.pass = passes(row, thresholds);
+            row.pass = passes(row, thresholdsFor(layer));
           }
         rows.push(...cellRows);
         const wholeA = a ? measure(a, whole, exrA) : cached?.cells[key]?.WholeFrame;
@@ -741,6 +796,11 @@ export function runComparison(options: IOptions = {}) {
     }
   }
   if (options.writeStats) writeJson(path.join(dir, "reference-stats.json"), reference);
+  if (options.writeThresholds)
+    writeJson(thresholdFile, {
+      iou: thresholdData?.iou ?? IOU_THRESHOLD,
+      layers: { ...thresholdData?.layers, ...deriveThresholds(rows) },
+    });
   for (const [layer, sheet] of sheets)
     writePng(path.join(dir, "captures/sheets", `${layer}.png`), sheet);
   const summary = layers.map((layer) => {
@@ -789,6 +849,7 @@ export function parseArgs(args: string[]): IOptions {
     const flag = args[i];
     if (flag === "--write-masks") options.writeMasks = true;
     else if (flag === "--write-stats") options.writeStats = true;
+    else if (flag === "--write-thresholds") options.writeThresholds = true;
     else if (flag === "--sheet") options.sheet = true;
     else {
       if (
