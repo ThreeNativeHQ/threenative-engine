@@ -110,8 +110,14 @@ export async function main(args: readonly string[]): Promise<number> {
     if ((await runUnreal("build", out)) !== 0) return 1;
   }
   if (args.includes("--dump-actors")) return 0;
-  const env = { TN_UE_LAYERS: layers.join(","), ...(cellsFlag ? { TN_UE_CELLS: cellsFlag } : {}) };
-  const code = await runUnreal("capture", out, env);
+  // One editor per layer: a single editor rendering every layer ran out of video memory on an
+  // 8 GB card at the third job, because Lumen and the virtual shadow pages are not released
+  // between Movie Render Queue jobs.
+  let code = 0;
+  for (const layer of layers) {
+    const env = { TN_UE_LAYERS: layer, ...(cellsFlag ? { TN_UE_CELLS: cellsFlag } : {}) };
+    code = Math.max(code, await runUnreal("capture", out, env));
+  }
   console.info(
     `TN_UNREAL_LOOK unreal png=${countFiles(out, ".png")} exr=${countFiles(out, ".exr")} out=${out}`,
   );

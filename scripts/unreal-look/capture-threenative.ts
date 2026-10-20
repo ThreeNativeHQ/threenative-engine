@@ -57,6 +57,11 @@ function replaceOnce(source: string, from: string, to: string, file: string): st
 
 /** Applies the harness patches to a scaffolded starter; fails closed when the template moved. */
 async function patchScaffold(target: string, fresh = true): Promise<void> {
+  // The look under tuning: these files replace the template's own in the copy only. A tuned
+  // file moves into the templates once the reference cells match Unreal.
+  await cp(path.join(import.meta.dirname, "scaffold/render"), path.join(target, "src/render"), {
+    recursive: true,
+  });
   await cp(
     path.join(import.meta.dirname, "scaffold/Reference.ts.in"),
     path.join(target, "src/scenes/Reference.ts"),

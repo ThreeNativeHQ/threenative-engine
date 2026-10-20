@@ -327,13 +327,26 @@ def capture():
             add_job(queue, layer, sun, pose, kind)
             count += 1
     log(f"capture queued={count}")
-    executor = subsystem.render_queue_with_executor(unreal.MoviePipelinePIEExecutor)
+    # Module-level references: the executor and its callbacks must outlive this function, or
+    # Python collects them and the editor never quits after the last job.
+    global EXECUTOR, TICK
+    EXECUTOR = subsystem.render_queue_with_executor(unreal.MoviePipelinePIEExecutor)
+    state = {"success": True, "frames": 0}
 
-    def finished(executor_, success):
-        log(f"capture finished success={success}")
-        quit_editor(0 if success else 1)
+    def errored(executor_, pipeline, fatal, message):
+        log(f"capture error fatal={fatal} {message}")
+        state["success"] = False
 
-    executor.on_executor_finished_delegate.add_callable_unique(finished)
+    def tick(delta):
+        # Polling is the fail-safe: the queue is done when the subsystem stops rendering.
+        state["frames"] += 1
+        if state["frames"] > 30 and not subsystem.is_rendering():
+            unreal.unregister_slate_post_tick_callback(TICK)
+            log(f"capture finished success={state['success']}")
+            quit_editor(0 if state["success"] else 1)
+
+    EXECUTOR.on_executor_errored_delegate.add_callable_unique(errored)
+    TICK = unreal.register_slate_post_tick_callback(tick)
 
 
 # --- entry -------------------------------------------------------------------

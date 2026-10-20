@@ -13,7 +13,7 @@
 // `"filmic"`. `"aces"` stays available as the named override. `filmicToneMap()` is the same
 // curve on plain numbers, so a test or a capture script can apply it to a scene-linear image.
 import { CustomToneMapping } from "three";
-import { clamp, dot, exp, log, mat3, max, mix, step, vec3 } from "three/tsl";
+import { clamp, dot, exp, log, max, mix, step, vec3 } from "three/tsl";
 import type { Node } from "three/webgpu";
 
 export interface IFilmicCurve {
@@ -136,13 +136,16 @@ export function filmicToneMappingNode(
   c: IFilmicCurve = FILMIC_CURVE,
 ): (color: Node<"vec3">, exposure: Node<"float">) => Node<"vec3"> {
   const m = curveMatches(c);
-  // mat3 takes columns, so the row-major tables go in transposed.
-  const column = (r: Mat3) => mat3(r[0], r[3], r[6], r[1], r[4], r[7], r[2], r[5], r[8]);
-  const toAp1 = column(SRGB_TO_AP1);
-  const toSrgb = column(AP1_TO_SRGB);
+  // One dot product per row: no row- or column-major convention to get wrong.
+  const apply = (m: Mat3, v: Node<"vec3">) =>
+    vec3(
+      dot(vec3(m[0], m[1], m[2]), v),
+      dot(vec3(m[3], m[4], m[5]), v),
+      dot(vec3(m[6], m[7], m[8]), v),
+    );
   const luma = vec3(...AP1_LUMA);
   return (color, exposure) => {
-    const ap1 = toAp1.mul(max(color.mul(exposure), vec3(0)));
+    const ap1 = apply(SRGB_TO_AP1, max(color.mul(exposure), vec3(0)));
     const pre = mix(vec3(dot(ap1, luma)), ap1, PRE_SATURATION);
     const logValue = log(max(pre, vec3(1e-10))).div(LOG10);
     const straight = logValue.add(m.straightMatch).mul(c.slope);
@@ -165,7 +168,7 @@ export function filmicToneMappingNode(
     const t = m.shoulderMatch < m.toeMatch ? linear.oneMinus() : linear;
     const toned = blend(toe, shoulder, t.mul(t).mul(t.mul(-2).add(3)));
     const post = mix(vec3(dot(toned, luma)), toned, POST_SATURATION);
-    return clamp(toSrgb.mul(post), 0, 1);
+    return clamp(apply(AP1_TO_SRGB, post), 0, 1);
   };
 }
 
