@@ -292,7 +292,9 @@ export async function captureGi(args: readonly string[], runUnreal: RunUnreal): 
       await rm(content, { recursive: true, force: true });
       if ((await runUnreal("build", out, { TN_UE_SCENE: name })) !== 0) return 1;
       // The exported scene.json is committed: give it the repo's JSON format.
-      spawnSync("pnpm", ["exec", "biome", "format", "--write", path.join(GI, name, "scene.json")], {
+      // Relative: Biome skips an absolute path that runs through a .claude/ worktree.
+      const file = path.relative(REPO_ROOT, path.join(GI, name, "scene.json"));
+      spawnSync("pnpm", ["exec", "biome", "format", "--write", file], {
         cwd: REPO_ROOT,
         stdio: "ignore",
       });
