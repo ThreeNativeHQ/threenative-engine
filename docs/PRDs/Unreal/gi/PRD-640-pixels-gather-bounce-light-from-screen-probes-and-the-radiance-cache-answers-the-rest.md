@@ -30,6 +30,16 @@ pixel. The field is 1 m coarse, so contact-scale bounce off-screen is lost. The 
 records wide dark bands at interior corners, stripes on the capsule and a seam at the base of the
 backlit wall at L7. Each pixel also pays for its own rays: the cost grows with resolution.
 
+**Measured on cornell L7 (2026-10-20, feat/unreal-gi `cd6e484bc`).** The gather now runs on the owned
+engine. Before `147140ecd`, `denoise()` refused its computed AO input, and the chain dropped SSGI. The
+gather brings the corner floor to 96 (Unreal 93, cache alone 126) and Box_Tall to 172 (Unreal 174).
+Box_Short's camera-facing face goes the wrong way: 101 (Unreal Epic 58, Unreal Medium 3, cache 80). Its
+missed rays leave through the open front. Lumen's world trace returns black there, but our miss keeps
+the pixel's cache average. A per-ray miss that reads the cache 0.5 to 2 m ahead of the ray, about the
+ray's direction, moved the frame by 0.14 levels mean. The 6-face cache is too smooth to tell "black
+straight out" from "lit floor below". The miss tier needs directional radiance (screen probes with a
+world-space trace, this PRD's Solution), not a second read of the irradiance field.
+
 ### What Unreal does (UE 5.8.3, read 2026-10-20; clean-room summary, no code copied)
 
 - **Screen probes, not per-pixel rays.** At Epic, one probe sits on every 16 × 16 pixel tile, plus up
