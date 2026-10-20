@@ -79,6 +79,16 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
     const auto arg = [&](size_t i) { return input(args.at(i)); };
     const auto lhs = [&] { return method ? input(*receiver) : arg(0); };
     const auto rhs = [&] { return arg(method ? 0 : 1); };
+    // three's convertToTexture: a texture stays as it is; any other node renders to a texture of its own.
+    const auto toTexture = [&](const g::Node& source) -> g::Node {
+        if (source->kind == g::Kind::Texture || source->kind == g::Kind::RenderTexture) return source;
+        auto target = std::make_shared<g::NodeData>();
+        target->kind = g::Kind::RenderTexture;
+        target->name = "native_rtt_" + std::to_string(++serial);
+        target->type = Type::vec(4);
+        target->args = {source, g::uv()};
+        return target;
+    };
 
     if (!method && name == "toneMappingColor") {
         arity(0);
@@ -271,7 +281,8 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
         const bool denoise = name == "denoise";
         if (args.size() < (denoise ? 3u : 2u)) throw std::runtime_error("expected the effect's texture inputs");
         const auto optional = [&](size_t i) { return args[i].kind == TslArg::Kind::Node ? arg(i) : g::Node{}; };
-        const auto effect = denoise ? g::denoiseEffect(arg(0), arg(1), optional(2), static_cast<uint32_t>(++serial))
+        // three's denoise converts its input itself (DenoiseNode.js: convertToTexture(node)).
+        const auto effect = denoise ? g::denoiseEffect(toTexture(arg(0)), arg(1), optional(2), static_cast<uint32_t>(++serial))
                                     : g::gtaoEffect(arg(0), optional(1));
         return g::effectNode(effect);
     }
@@ -778,15 +789,7 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
     }
     if (name == "convertToTexture") {
         arity(1);
-        const auto source = arg(0);
-        if (source->kind == g::Kind::Texture || source->kind == g::Kind::RenderTexture)
-            return source;
-        auto target = std::make_shared<g::NodeData>();
-        target->kind = g::Kind::RenderTexture;
-        target->name = "native_rtt_" + std::to_string(++serial);
-        target->type = Type::vec(4);
-        target->args = {source, g::uv()};
-        return target;
+        return toTexture(arg(0));
     }
     if (name == "sample") {
         arity(1);
