@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import {
   BoxGeometry,
   Color,
@@ -11,7 +12,6 @@ import {
   SphereGeometry,
   Vector3,
 } from "three";
-import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { giCache, installGi, skyRadiance } from "../unreal-look/scaffold/render/giCache.js";
 
