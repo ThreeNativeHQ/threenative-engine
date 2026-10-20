@@ -6,6 +6,7 @@ moved here by topic, and each one was re-checked against the 5.8.3 source.**
 
 | Folder | Holds |
 | --- | --- |
+| [`look/`](look/) | The Unreal default look, measured against a real Unreal render and turned on layer by layer |
 | [`rendering/`](rendering/) | Atmosphere, clouds, shadows, virtualized geometry, global illumination |
 | [`performance/`](performance/) | Resolution scale, temporal reconstruction, tile memory, texture residency |
 | [`open-world/`](open-world/) | Terrain LOD, streaming transitions, world partition |
@@ -88,7 +89,7 @@ earlier wave unless the "Waits on" column says so.
 | 1 | [PRD-571](../BLOCKED/requires-physical-device/PRD-571-exposure-meters-a-histogram-and-ignores-the-sun.md) | Exposure ignores the brightest and darkest tenth of the frame | 2 LOW | — |
 | 1 | [PRD-572](../done/PRD-572-shadow-casters-sort-themselves-into-static-and-moving.md) | A moving shadow caster updates its shadow without a `trackCaster` call | 3 LOW | — |
 | 1 | [PRD-567](../done/PRD-567-terrain-layers-blend-by-their-own-height.md) | Terrain layers blend by their own height maps | 3 LOW | owner confirms the core/template split |
-| 2 | [PRD-561](../done/PRD-561-contact-shadows-from-screen-depth.md) | Small objects and feet sit on the ground (screen-space contact shadows) | 5 MEDIUM | — |
+| 2 | [PRD-561](../done/PRD-561-contact-shadows-from-screen-depth.md) | DECLINED 2026-10-10: the mechanism never grounded feet and was deleted. Unreal's default light has contact-shadow length 0, so the default look does not need it | 5 MEDIUM | — |
 | 2 | [PRD-563](../done/PRD-563-the-first-frame-starts-at-the-tier-the-gpu-family-holds.md) | The first frame starts at the tier the GPU family can hold | 5 MEDIUM | — |
 | 2 | [PRD-569](../done/PRD-569-gpu-particle-emitters-cull-and-yield-to-the-frame-budget.md) | Off-view GPU emitters stop costing; effects yield to the frame budget | 5 MEDIUM | — |
 | 2 | [PRD-566](../done/PRD-566-terrain-lod-morphs-on-the-gpu-and-picks-by-screen-error.md) | Terrain LOD morphs on the GPU and picks its level by screen error | 3 LOW | — |
@@ -97,6 +98,44 @@ earlier wave unless the "Waits on" column says so.
 | 3 | [PRD-562](./rendering/PRD-562-aerial-perspective-from-a-froxel-volume.md) | Distant land takes the colour of the sky it is seen through | 4 MEDIUM | — |
 | 3 | [PRD-568](../done/PRD-568-mobile-builds-ship-gpu-ready-astc.md) | Mobile builds ship GPU-ready ASTC, not RGBA8 | 4 MEDIUM | [PRD-VQ-01](../done/PRD-VQ-01-native-asset-capabilities.md) |
 | 3 | [PRD-565](../done/PRD-565-multisampled-targets-stay-in-tile-memory-on-android.md) | MSAA attachments stay in tile memory on the Android host | 3 LOW | [PRD-329](../performance/critical/PRD-329-the-native-gpu-frame-matches-chrome-at-matched-pixels.md) Phase 2 (Dawn on Android) |
+
+## The Unreal default look, measured (filed 2026-10-19)
+
+The PRDs above copy mechanisms from the Unreal source. These PRDs make the **templates look like a
+fresh Unreal 5.8.3 project** with no tuning. They measure against real Unreal renders of one shared
+scene and do not tune from memory. [PRD-631](look/PRD-631-an-unreal-reference-scene-measures-the-default-look.md)
+builds the instrument:
+- a headless Unreal capture of a cumulative layer ladder (L0 to L9)
+- the same cells from the scaffolded starter
+- a comparison that gates every layer
+
+Agents control the editor interactively through Epic's own Unreal MCP plugin. That plugin ships in
+the 5.8.3 install.
+
+A layer turns on by default only when five conditions hold:
+1. Its row matches the Unreal reference.
+2. A visual judge returns IMPROVEMENT.
+3. The `high` frame budget holds.
+4. The `low` tier has a fallback.
+5. The native engine renders it.
+
+| Layer | Adds | Owner |
+| --- | --- | --- |
+| L0 | Geometry and camera alignment | [PRD-631](look/PRD-631-an-unreal-reference-scene-measures-the-default-look.md) |
+| L1 | Tone curve, exposure, light units | [PRD-632](look/PRD-632-the-frame-is-exposed-and-tone-mapped-the-way-a-fresh-unreal-project-is.md) |
+| L2 | Sky atmosphere and sky light capture | [PRD-633](look/PRD-633-the-sky-is-an-atmosphere-and-it-lights-the-scene.md) |
+| L3 | Height fog and aerial perspective | [PRD-562](rendering/PRD-562-aerial-perspective-from-a-froxel-volume.md) (amended) |
+| L4 | Volumetric clouds | [PRD-VQ-08](rendering/PRD-VQ-08-clouds-and-overhead-transmittance.md) (amended) |
+| L5 | Sun shadows: coverage and source-angle penumbra | [PRD-634](look/PRD-634-sun-shadows-reach-the-horizon-and-soften-with-distance-from-the-caster.md); page cost in [PRD-457](rendering/PRD-457-virtual-shadows-scale-by-measurement.md) |
+| L6 | Ambient occlusion on indirect light only | [PRD-635](look/PRD-635-ambient-occlusion-darkens-only-the-light-that-comes-from-around.md) |
+| L7 | Global illumination | [PRD-267](../useful-defaults/PRD-267-screen-space-gi-ships-in-the-templates.md) (amended), with PRD-603 to PRD-605 |
+| L8 | Reflections | [PRD-VQ-03](../rendering/PRD-VQ-03-local-reflection-probes.md) (amended) |
+| L9 | Bloom, vignette, local exposure, motion blur, neutral grade | [PRD-636](look/PRD-636-the-finishing-post-chain-matches-unreal-defaults.md); anti-aliasing in [PRD-539](performance/PRD-539-low-resolution-temporal-reconstruction-quality-and-cost.md) (amended); exposure default in [PRD-632](look/PRD-632-the-frame-is-exposed-and-tone-mapped-the-way-a-fresh-unreal-project-is.md) |
+
+Order: PRD-631 first, then PRD-632, because every later row is compared at matched exposure. After
+that, PRD-633 and PRD-635 can run in parallel, then the rest. Not filed: a surface BRDF PRD. three.js
+r185 and the native shader already compensate GGX multi-scatter with Lambert diffuse and F0 0.04,
+as Unreal's default lit does (PRD-635 `## Decisions`).
 
 ## Parity PRDs for Nanite, Lumen, World Partition and Niagara (filed 2026-10-12)
 

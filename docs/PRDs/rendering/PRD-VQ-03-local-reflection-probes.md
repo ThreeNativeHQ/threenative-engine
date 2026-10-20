@@ -50,6 +50,7 @@ All proof paths below are **planned implementation targets**, not existing passi
 ## Acceptance criteria
 
 - [ ] The off-screen reflected landmark survives a camera turn that removes it from screen space; every visible probe generation is complete. proof: the completed Phase 3 scenario outputs, with the named fixture, package/cohort and adapter recorded inline here.
+- [ ] The starter L8 cells (reflections) match the Unreal L8 cells within the PRD-631 thresholds. proof: `pnpm unreal-look:compare --layer L8`.
 - [ ] The feature preserves its documented inactive/fallback path and releases owned resources after repeated lifecycle transitions. proof: `pnpm exec vitest run packages/core/__tests__/vq-local-reflection-probes.spec.ts` plus the Phase 3 lifecycle scenario.
 
 ## Performance and promotion
@@ -59,6 +60,10 @@ Report capture faces, prefilter cost, capture age and resident bytes. Bound acti
 ## Blocked on
 
 Physical-device quality/performance tiers are qualified separately; native support must not be extrapolated from a browser cube render.
+
+## Decisions
+
+- 2026-10-19 (PRD-631 reference plan): This PRD owns layer L8 (reflections) of the Unreal reference ladder in [PRD-631](../Unreal/look/PRD-631-an-unreal-reference-scene-measures-the-default-look.md). Unreal 5.8.3 defaults to Lumen reflections (`Engine/Source/Editor/GameProjectGeneration/Private/GameProjectUtils.cpp:128`). They trace only surfaces with roughness up to 0.4, and rougher surfaces take the GI and sky term (`Engine/Source/Runtime/Engine/Private/Scene.cpp:658`). The chrome and smooth-dielectric spheres are the cells that test this PRD. The templates' choice to leave SSR off stays unless L8 shows that probes alone cannot match. Added one acceptance box.
 
 ## Completion record
 
