@@ -17,7 +17,7 @@ import {
   PointLight,
   Vector3,
 } from "three";
-import { installGi } from "../render/giCache.js";
+import { giCache, installGi } from "../render/giCache.js";
 import { qualityPreset } from "../render/quality.js";
 import { WorldEnvironment } from "../render/worldEnvironment.js";
 import type { GameState } from "../state.js";
@@ -99,6 +99,9 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
     } else {
       // Unreal L1 to L4 render without shadows (r.ShadowQuality 0); from L5 every light casts.
       const shadows = level >= 5;
+      // Casters and receivers do nothing until the renderer runs a shadow pass (scaffold lighting.ts does
+      // this for the reference scene, which this scene does not use).
+      (ctx.renderer.raw as unknown as { shadowMap: { enabled: boolean } }).shadowMap.enabled = shadows;
       for (const mesh of meshes) {
         mesh.castShadow = shadows;
         mesh.receiveShadow = shadows;
@@ -159,8 +162,9 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
       layer: LAYER,
       scene: NAME,
       unsupported,
-      // The live scene and renderer, for in-page diagnosis.
+      // The live scene, renderer and GI cache, for in-page diagnosis.
       scene,
+      gi: giCache,
       renderer: ctx.renderer.raw,
       disposePost: () => this.#dispose?.(),
       // What the frame was drawn with, for the capture report: a wrong unit shows here first.
