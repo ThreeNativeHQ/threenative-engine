@@ -383,6 +383,61 @@ int main() {
         ignored->maps.at("map")->offset.x != 0) {
         std::printf("texture transform: applied without KHR_texture_transform in extensionsUsed\n"); ++differ;
     }
+    // The physical extensions the standard program cannot draw yet still load (the renderer refuses the mesh by
+    // name): MeshPhysicalMaterial with the factors and maps GLTFLoader's plugins set. Volume adds nothing alone.
+    auto physicalExtensions = tiny(
+        R"("KHR_materials_transmission","KHR_materials_volume","KHR_materials_sheen","KHR_materials_iridescence","KHR_materials_anisotropy","KHR_materials_dispersion","EXT_materials_bump")",
+        {R"({"extensions":{"KHR_materials_transmission":{"transmissionFactor":0.5,"transmissionTexture":{"index":0}}}})",
+         R"({"extensions":{"KHR_materials_volume":{"thicknessFactor":2,"attenuationDistance":3}}})",
+         R"({"extensions":{"KHR_materials_sheen":{"sheenColorFactor":[1,0,0],"sheenColorTexture":{"index":0},"sheenRoughnessTexture":{"index":0}}}})",
+         R"({"extensions":{"KHR_materials_iridescence":{"iridescenceFactor":0.3,"iridescenceTexture":{"index":0},"iridescenceThicknessTexture":{"index":0}}}})",
+         R"({"extensions":{"KHR_materials_anisotropy":{"anisotropyStrength":0.7,"anisotropyTexture":{"index":0}}}})",
+         R"({"extensions":{"KHR_materials_dispersion":{"dispersion":0.4}}})",
+         R"({"extensions":{"EXT_materials_bump":{"bumpFactor":2,"bumpTexture":{"index":0}}}})", R"({})"});
+    const auto physicalOf = [&](const char* node) { return materialIn(physicalExtensions, node); };
+    const Material* transmitting = physicalOf("m0");
+    const Material* volumetric = physicalOf("m1");
+    const Material* sheeny = physicalOf("m2");
+    const Material* iridescent = physicalOf("m3");
+    const Material* anisotropic = physicalOf("m4");
+    const Material* dispersive = physicalOf("m5");
+    const Material* bumpy = physicalOf("m6");
+    const Material* ordinary = physicalOf("m7");
+    if (!physicalExtensions.error.empty() || !transmitting || !volumetric || !sheeny || !iridescent || !anisotropic ||
+        !dispersive || !bumpy || !ordinary) {
+        std::printf("physical extensions: model refused: %s\n", physicalExtensions.error.c_str()); ++differ;
+    } else {
+        const auto checkType = [&](const Material* m, const char* what) {
+            if (m->type != MaterialType::Physical) { std::printf("%s: not a MeshPhysicalMaterial\n", what); ++differ; }
+        };
+        checkType(transmitting, "transmission"); checkType(volumetric, "volume"); checkType(sheeny, "sheen");
+        checkType(iridescent, "iridescence"); checkType(anisotropic, "anisotropy"); checkType(dispersive, "dispersion");
+        checkType(bumpy, "bump");
+        if (transmitting->transmission != 0.5 || !transmitting->maps.count("transmissionMap")) {
+            std::printf("transmission: factor or map not read\n"); ++differ;
+        }
+        if (volumetric->transmission != 0 || !volumetric->maps.empty()) { std::printf("volume: set something without transmission\n"); ++differ; }
+        if (sheeny->sheen != 1 || !sheeny->maps.count("sheenColorMap") || !sheeny->maps.count("sheenRoughnessMap") ||
+            !sheeny->maps.at("sheenColorMap")->isSRGB()) {
+            std::printf("sheen: factor, maps or colour space wrong\n"); ++differ;
+        }
+        if (iridescent->iridescence != 0.3 || !iridescent->maps.count("iridescenceMap") || !iridescent->maps.count("iridescenceThicknessMap")) {
+            std::printf("iridescence: factor or maps not read\n"); ++differ;
+        }
+        if (anisotropic->anisotropy != 0.7 || !anisotropic->maps.count("anisotropyMap")) {
+            std::printf("anisotropy: strength or map not read\n"); ++differ;
+        }
+        if (dispersive->dispersion != 0.4) { std::printf("dispersion: not read\n"); ++differ; }
+        if (bumpy->bumpScale != 2 || !bumpy->maps.count("bumpMap")) { std::printf("bump: factor or map not read\n"); ++differ; }
+        if (ordinary->type != MaterialType::Standard || ordinary->sheen != 0 || ordinary->transmission != 0) {
+            std::printf("physical extensions: a plain material changed\n"); ++differ;
+        }
+    }
+    // A mesh using these factors keeps them through assignFinalMaterial's clone (no tangents: a flagged copy).
+    auto* transmittingMesh = physicalExtensions.scene ? dynamic_cast<Mesh*>(physicalExtensions.scene->getObjectByName("m0")) : nullptr;
+    if (!transmittingMesh || transmittingMesh->material->transmission != 0.5 || transmittingMesh->material->type != MaterialType::Physical) {
+        std::printf("physical extensions: the final material lost the factor\n"); ++differ;
+    }
     // PRD-526: a texture's image decodes at load (PNG and JPEG), with the sampler GLTFLoader applies.
     const std::string imageBytes = readFile(std::string(TN_REPO_ROOT) + "/packages/runtime-native/tests/native-engine/assets/image-textures.gltf");
     auto images = gltf::load(std::span<const uint8_t>(reinterpret_cast<const uint8_t*>(imageBytes.data()), imageBytes.size()));

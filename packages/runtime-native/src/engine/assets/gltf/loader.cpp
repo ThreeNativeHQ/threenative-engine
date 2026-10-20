@@ -67,10 +67,15 @@ const std::set<std::string> kThreeExtensions = {
     "KHR_materials_volume", "KHR_texture_basisu", "KHR_texture_transform", "KHR_mesh_quantization",
     "KHR_materials_emissive_strength", "EXT_materials_bump", "EXT_texture_webp", "EXT_texture_avif",
     "EXT_meshopt_compression", "KHR_meshopt_compression", "EXT_mesh_gpu_instancing"};
-// An extension GLTFLoader implements and this loader does not is refused by name.
+// What stays refused is what needs a decoder this loader does not have (draco, meshopt, basisu, avif).
+// A material extension the standard program cannot draw yet still loads: its factors land on the
+// Material and the renderer refuses that mesh by name (TN_NATIVE_MATERIAL_UNSUPPORTED), not the model.
 const std::set<std::string> kSupported = {"KHR_mesh_quantization", "KHR_lights_punctual", "KHR_materials_unlit",
                                           "KHR_materials_ior", "KHR_materials_specular", "KHR_materials_clearcoat",
-                                          "KHR_materials_emissive_strength", "KHR_texture_transform"};
+                                          "KHR_materials_emissive_strength", "KHR_texture_transform",
+                                          "KHR_materials_transmission", "KHR_materials_volume", "KHR_materials_sheen",
+                                          "KHR_materials_iridescence", "KHR_materials_anisotropy",
+                                          "KHR_materials_dispersion", "EXT_materials_bump"};
 
 class Builder {
   public:
@@ -591,6 +596,12 @@ class Builder {
         to.clearcoat = from.clearcoat;
         to.clearcoatRoughness = from.clearcoatRoughness;
         to.clearcoatNormalScale = from.clearcoatNormalScale;
+        to.sheen = from.sheen;
+        to.transmission = from.transmission;
+        to.iridescence = from.iridescence;
+        to.anisotropy = from.anisotropy;
+        to.dispersion = from.dispersion;
+        to.bumpScale = from.bumpScale;
         to.maps = from.maps;
     }
 
@@ -602,10 +613,14 @@ class Builder {
         const Value* ior = member(extensions, "KHR_materials_ior");
         const Value* specular = member(extensions, "KHR_materials_specular");
         const Value* clearcoat = member(extensions, "KHR_materials_clearcoat");
-        // loadMaterial: unlit wins; otherwise the ior, specular and clearcoat plugins choose MeshPhysicalMaterial.
+        // loadMaterial: unlit wins; otherwise any plugin that reports MeshPhysicalMaterial chooses it.
+        bool physical = ior || specular || clearcoat;
+        for (const char* name : {"KHR_materials_sheen", "KHR_materials_transmission", "KHR_materials_volume",
+                                 "KHR_materials_iridescence", "KHR_materials_anisotropy", "KHR_materials_dispersion",
+                                 "EXT_materials_bump"})
+            physical = physical || member(extensions, name);
         auto material = std::make_shared<Material>(unlit ? MaterialType::Basic
-                                                   : ior || specular || clearcoat ? MaterialType::Physical
-                                                                                  : MaterialType::Standard);
+                                                   : physical ? MaterialType::Physical : MaterialType::Standard);
         if (index < 0) {
             // createDefaultMaterial
             material->metalness = 1;
@@ -675,6 +690,44 @@ class Builder {
                     if (member(normal, "scale"))
                         material->clearcoatNormalScale.x = material->clearcoatNormalScale.y = number(member(normal, "scale"), 1);
                 }
+            }
+            // The extensions below set Material fields the standard program does not draw yet, so the renderer
+            // refuses the mesh by name (TN_NATIVE_MATERIAL_UNSUPPORTED). Parameters with no Material field
+            // (sheenColor, sheenRoughness, iridescenceIOR and thickness range, anisotropyRotation, volume
+            // thickness and attenuation) are not stored. KHR_materials_volume only shapes transmission, so
+            // it adds nothing here: a volume without transmission draws as plain PBR, as in three.
+            // GLTFMaterialsSheenExtension: sheen is on (1) as soon as the extension is present.
+            if (const Value* sheen = member(extensions, "KHR_materials_sheen")) {
+                material->sheen = 1;
+                assignTexture(*material, "sheenColorMap", member(sheen, "sheenColorTexture"));
+                assignTexture(*material, "sheenRoughnessMap", member(sheen, "sheenRoughnessTexture"));
+            }
+            // GLTFMaterialsTransmissionExtension
+            if (const Value* transmission = member(extensions, "KHR_materials_transmission")) {
+                if (member(transmission, "transmissionFactor"))
+                    material->transmission = number(member(transmission, "transmissionFactor"), 0);
+                assignTexture(*material, "transmissionMap", member(transmission, "transmissionTexture"));
+            }
+            // GLTFMaterialsIridescenceExtension
+            if (const Value* iridescence = member(extensions, "KHR_materials_iridescence")) {
+                if (member(iridescence, "iridescenceFactor"))
+                    material->iridescence = number(member(iridescence, "iridescenceFactor"), 0);
+                assignTexture(*material, "iridescenceMap", member(iridescence, "iridescenceTexture"));
+                assignTexture(*material, "iridescenceThicknessMap", member(iridescence, "iridescenceThicknessTexture"));
+            }
+            // GLTFMaterialsAnisotropyExtension
+            if (const Value* anisotropy = member(extensions, "KHR_materials_anisotropy")) {
+                if (member(anisotropy, "anisotropyStrength"))
+                    material->anisotropy = number(member(anisotropy, "anisotropyStrength"), 0);
+                assignTexture(*material, "anisotropyMap", member(anisotropy, "anisotropyTexture"));
+            }
+            // GLTFMaterialsDispersionExtension
+            if (const Value* dispersion = member(extensions, "KHR_materials_dispersion"))
+                material->dispersion = number(member(dispersion, "dispersion"), 0);
+            // GLTFMaterialsBumpExtension
+            if (const Value* bump = member(extensions, "EXT_materials_bump")) {
+                material->bumpScale = number(member(bump, "bumpFactor"), 1);
+                assignTexture(*material, "bumpMap", member(bump, "bumpTexture"));
             }
         }
         if (truthyName(member(def, "name"))) material->name = text(member(def, "name"));
