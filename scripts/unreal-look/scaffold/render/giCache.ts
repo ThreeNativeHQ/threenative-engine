@@ -113,7 +113,9 @@ export interface IGiReport {
   readonly milliseconds: number;
 }
 
-const CELL = 1;
+const CELL = 0.5;
+/** How far past the rest of the scene the grid covers a ground plane that dwarfs it (`sceneBounds`). */
+const GROUND_MARGIN = 2;
 const MAX_POINTS = 24000;
 /** Rays every probe shoots, and the extra rays a probe that is mostly enclosed shoots. */
 /** An element that exists by construction (a fixed-length array indexed by a loop over its length). */
@@ -161,8 +163,39 @@ interface IField {
   readonly sky?: Float32Array;
 }
 
+/**
+ * The bounds the probes cover: the scene's, less a ground plane that dwarfs the rest. The sunlit room's 40 m ground
+ * stretched the grid to 1 m probes, 0.9 m under its ceiling: each bounce read the light nearer the sun patch and the
+ * walls came out 1.4 to 1.6 times the path trace.
+ */
+function sceneBounds(root: Object3D): Box3 {
+  const boxes: Box3[] = [];
+  root.traverse((object) => {
+    if ((object as Mesh).isMesh) boxes.push(new Box3().setFromObject(object));
+  });
+  const area = (box: Box3) => (box.max.x - box.min.x) * (box.max.z - box.min.z);
+  const widest = boxes.reduce<Box3 | undefined>(
+    (w, box) => (w === undefined || area(box) > area(w) ? box : w),
+    undefined,
+  );
+  const rest = new Box3();
+  for (const box of boxes) if (box !== widest) rest.union(box);
+  // A 40 m floor under a 12 m roof (11 times its area) is a covered plaza, all of it read; the room's ground is 29 times.
+  if (widest === undefined || rest.isEmpty() || area(widest) < 20 * area(rest))
+    return new Box3().setFromObject(root);
+  // The ground next to the walls stays in the grid; past it a read takes probes 2 m out, in the open.
+  return rest
+    .expandByVector(new Vector3(GROUND_MARGIN, 0, GROUND_MARGIN))
+    .union(
+      new Box3(
+        new Vector3(rest.min.x, widest.min.y, rest.min.z),
+        new Vector3(rest.max.x, widest.max.y, rest.max.z),
+      ),
+    );
+}
+
 function gridOver(root: Object3D): IGrid {
-  const bounds = new Box3().setFromObject(root);
+  const bounds = sceneBounds(root);
   const size = bounds.getSize(new Vector3());
   const cell = Math.max(CELL, Math.cbrt((size.x * size.y * size.z) / MAX_POINTS));
   return {
@@ -1057,7 +1090,7 @@ export function installGi(
     if (bound === null) return;
     const radius = bound.radius * mesh.matrixWorld.getMaxScaleOnAxis();
     // A source wider than a probe cell is sampled well by the rays (a lit room, a glowing panel).
-    if (radius > grid.cell) return;
+    if (radius > Math.max(1, grid.cell)) return;
     emitters.push({
       centre: bound.center.clone().applyMatrix4(mesh.matrixWorld),
       radius,
