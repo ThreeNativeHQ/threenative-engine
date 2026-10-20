@@ -67,9 +67,10 @@ const std::set<std::string> kThreeExtensions = {
     "KHR_materials_volume", "KHR_texture_basisu", "KHR_texture_transform", "KHR_mesh_quantization",
     "KHR_materials_emissive_strength", "EXT_materials_bump", "EXT_texture_webp", "EXT_texture_avif",
     "EXT_meshopt_compression", "KHR_meshopt_compression", "EXT_mesh_gpu_instancing"};
+// An extension GLTFLoader implements and this loader does not is refused by name.
 const std::set<std::string> kSupported = {"KHR_mesh_quantization", "KHR_lights_punctual", "KHR_materials_unlit",
                                           "KHR_materials_ior", "KHR_materials_specular", "KHR_materials_clearcoat",
-                                          "KHR_materials_emissive_strength"};
+                                          "KHR_materials_emissive_strength", "KHR_texture_transform"};
 
 class Builder {
   public:
@@ -114,6 +115,7 @@ class Builder {
     bool checkExtensions() {
         for (std::size_t i = 0; i < data_.extensions_used_count; ++i) {
             const std::string name = data_.extensions_used[i];
+            used_.insert(name);
             if (name == "EXT_texture_webp" && decodesWebP()) continue;
             if (kThreeExtensions.count(name) && !kSupported.count(name)) {
                 refuse("TN_NATIVE_GLTF_EXTENSION_UNSUPPORTED " + name);
@@ -700,11 +702,29 @@ class Builder {
             decodeImage(*made);
             texture = made;
         }
-        // parser.assignTexture sets the colour space on the shared texture, so the last sRGB slot that
-        // names it wins for every material that uses it, as upstream.
-        if (std::string_view(slot) == "map" || std::string_view(slot) == "emissiveMap" || std::string_view(slot) == "specularColorMap")
-            texture->colorSpace = TextureColorSpace::SRGB;
-        material.maps[slot] = texture;
+        // GLTFTextureTransformExtension.extendTexture: a transform clones the texture (a new GPU identity,
+        // the image shared) with its offset, rotation and repeat. texCoord needs a Texture channel, which
+        // does not exist yet, so it is ignored here as it is for every other slot.
+        std::shared_ptr<Texture> bound = texture;
+        if (used_.count("KHR_texture_transform")) {
+            const Value* transform = member(member(info, "extensions"), "KHR_texture_transform");
+            const Value* offset = member(transform, "offset");
+            const Value* rotation = member(transform, "rotation");
+            const Value* scale = member(transform, "scale");
+            if (offset || rotation || scale) {
+                bound = std::make_shared<Texture>(*texture);
+                if (offset) bound->offset.set(number(item(offset, 0), 0), number(item(offset, 1), 0));
+                if (rotation) bound->rotation = number(rotation, 0);
+                if (scale) bound->repeat.set(number(item(scale, 0), 1), number(item(scale, 1), 1));
+                bound->needsUpdate();
+            }
+        }
+        // parser.assignTexture sets the colour space on the texture it hands over: the shared one without a
+        // transform, so the last sRGB slot that names it wins for every material that uses it, as upstream.
+        if (std::string_view(slot) == "map" || std::string_view(slot) == "emissiveMap" || std::string_view(slot) == "specularColorMap" ||
+            std::string_view(slot) == "sheenColorMap")
+            bound->colorSpace = TextureColorSpace::SRGB;
+        material.maps[slot] = bound;
     }
 
     // GLTFLoader.assignTexture: the sampler's wraps and filters, else Repeat, Linear and
@@ -915,6 +935,7 @@ class Builder {
     const Value& json_;
     const LoadOptions& options_;
     std::string error_;
+    std::set<std::string> used_;  // extensionsUsed: the plugins GLTFLoader registers by that list
     std::vector<bool> bones_, skinnedMesh_;
     std::map<std::string, int> namesUsed_;
     std::vector<std::shared_ptr<Object3D>> nodes_;

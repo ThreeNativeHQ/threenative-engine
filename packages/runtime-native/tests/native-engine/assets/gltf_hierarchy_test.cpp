@@ -2,6 +2,7 @@
 // names, types, parents, transforms, geometry layout, materials, skeletons and the clip list —
 // compared against gltf_reference.json (written by gltf-reference.ts from the real loader).
 #include <algorithm>
+#include <array>
 #include <cstring>
 #include <cstdio>
 #include <fstream>
@@ -323,6 +324,64 @@ int main() {
         coatMapped->clearcoatRoughness != 1 || !coatMapped->maps.count("clearcoatMap") ||
         !coatMapped->maps.count("clearcoatRoughnessMap")) {
         std::printf("clearcoat: wrong material type, factors or maps: %s\n", coat.error.c_str()); ++differ;
+    }
+    // A one-triangle glTF in memory: mesh i uses materials[i] and sits on node "m<i>"; `nodeExtra` is JSON
+    // appended to each node (an extension), `used` the extensionsUsed list. Texture 0 has no image.
+    const auto tiny = [](const std::string& used, const std::vector<std::string>& materials, const std::string& nodeExtra = "") {
+        std::string mats, meshes, nodes, scene;
+        for (std::size_t i = 0; i < materials.size(); ++i) {
+            const std::string sep = i ? "," : "";
+            mats += sep + materials[i];
+            meshes += sep + R"({"primitives":[{"attributes":{"POSITION":0},"material":)" + std::to_string(i) + "}]}";
+            nodes += sep + R"({"name":"m)" + std::to_string(i) + R"(","mesh":)" + std::to_string(i) + nodeExtra + "}";
+            scene += sep + std::to_string(i);
+        }
+        const std::string json = R"({"asset":{"version":"2.0"},"extensionsUsed":[)" + used + R"(],
+          "buffers":[{"byteLength":60,"uri":"data:application/octet-stream;base64,AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAPwAAAEAAAEBAAACAQAAAoEAAAMBA"}],
+          "bufferViews":[{"buffer":0,"byteLength":36},{"buffer":0,"byteOffset":36,"byteLength":24}],
+          "accessors":[{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3","min":[0,0,0],"max":[0,0,0]},
+                       {"bufferView":1,"componentType":5126,"count":2,"type":"VEC3"}],
+          "textures":[{}],"materials":[)" + mats + R"(],"meshes":[)" + meshes + R"(],"nodes":[)" + nodes +
+                                 R"(],"scenes":[{"nodes":[)" + scene + R"(]}],"scene":0})";
+        return gltf::load(std::span<const uint8_t>(reinterpret_cast<const uint8_t*>(json.data()), json.size()));
+    };
+    const auto materialIn = [](gltf::LoadResult& result, const char* node) -> const Material* {
+        auto* mesh = result.scene ? dynamic_cast<Mesh*>(result.scene->getObjectByName(node)) : nullptr;
+        return mesh ? mesh->material.get() : nullptr;
+    };
+    // An extension that needs a decoder this loader lacks is still refused by name, not dropped.
+    for (const char* decoder : {"KHR_draco_mesh_compression", "EXT_meshopt_compression", "KHR_texture_basisu", "EXT_texture_avif"}) {
+        auto refusedDecoder = tiny(std::string("\"") + decoder + "\"", {R"({})"});
+        if (refusedDecoder.error != std::string("TN_NATIVE_GLTF_EXTENSION_UNSUPPORTED ") + decoder) {
+            std::printf("%s: not refused by name (%s)\n", decoder, refusedDecoder.error.c_str()); ++differ;
+        }
+    }
+    // KHR_texture_transform (GLTFTextureTransformExtension): a transformed slot gets its own Texture with the
+    // offset, rotation and repeat; a slot without one shares the plain texture; no extensionsUsed entry, no transform.
+    const std::string transformed = R"({"pbrMetallicRoughness":{"baseColorTexture":{"index":0,"extensions":{"KHR_texture_transform":{"offset":[0.25,0.5],"rotation":1.5,"scale":[2,3]}}}},
+        "emissiveTexture":{"index":0}})";
+    const std::string transformless = R"({"pbrMetallicRoughness":{"baseColorTexture":{"index":0,"extensions":{"KHR_texture_transform":{"texCoord":0}}}}})";
+    auto transform = tiny("\"KHR_texture_transform\"", {transformed, transformless});
+    const Material* movedMaterial = materialIn(transform, "m0");
+    const Material* plainMaterial = materialIn(transform, "m1");
+    if (!transform.error.empty() || !movedMaterial || !plainMaterial || !movedMaterial->maps.count("map") ||
+        !movedMaterial->maps.count("emissiveMap") || !plainMaterial->maps.count("map")) {
+        std::printf("texture transform: model refused or maps missing: %s\n", transform.error.c_str()); ++differ;
+    } else {
+        const Texture& moved = *movedMaterial->maps.at("map");
+        const Texture& glowing = *movedMaterial->maps.at("emissiveMap");
+        if (moved.offset.x != 0.25 || moved.offset.y != 0.5 || moved.rotation != 1.5 || moved.repeat.x != 2 ||
+            moved.repeat.y != 3 || &moved == &glowing || glowing.repeat.x != 1 || glowing.offset.x != 0 ||
+            glowing.rotation != 0 || plainMaterial->maps.at("map") != movedMaterial->maps.at("emissiveMap") ||
+            !moved.isSRGB() || glowing.ident.value() == moved.ident.value()) {
+            std::printf("texture transform: wrong offset, rotation or repeat, or the texture is not cloned\n"); ++differ;
+        }
+    }
+    auto transformIgnored = tiny("", {transformed});
+    const Material* ignored = materialIn(transformIgnored, "m0");
+    if (!transformIgnored.error.empty() || !ignored || !ignored->maps.count("map") || ignored->maps.at("map")->repeat.x != 1 ||
+        ignored->maps.at("map")->offset.x != 0) {
+        std::printf("texture transform: applied without KHR_texture_transform in extensionsUsed\n"); ++differ;
     }
     // PRD-526: a texture's image decodes at load (PNG and JPEG), with the sampler GLTFLoader applies.
     const std::string imageBytes = readFile(std::string(TN_REPO_ROOT) + "/packages/runtime-native/tests/native-engine/assets/image-textures.gltf");
