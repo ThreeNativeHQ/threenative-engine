@@ -30,11 +30,13 @@ import {
   Scene,
   SphereGeometry,
   UnsignedByteType,
+  Vector2,
   setConsoleFunction,
 } from "three";
 import {
   Fn,
   If,
+  Loop,
   attribute,
   cameraFar,
   cameraNear,
@@ -98,6 +100,10 @@ const probe = {
   /** A QuadMesh whose material the engine refuses, drawn into a target: the draw throws, once, by name. */
   targetRefusal: "",
   sharedNode: "",
+  /** A vec3 summed in a Loop: constants, then a texture read at level 0. Bytes of the first pixel. */
+  vec3Loop: "",
+  /** A half-float target read back through the bloom downsample pattern: bytes of its first pixel. */
+  chainRead: "",
   /** Draw calls the world scene submits after that refusal; -1 until measured, 0 while the host stays dead. */
   drawsAfterTargetRefusal: -1,
 };
@@ -349,6 +355,70 @@ try {
   const sharedScene = new Scene();
   sharedScene.add(sharedQuad);
   probe.sharedNode = (await drawStrip(sharedScene)).split(",").slice(0, 2).join(",");
+  // Three iterations of a vec3 accumulator in a Loop: (0.1, 0.2, 0.3) x 3 reads 77,153,230 as bytes
+  // (all three channels). A texture read at level 0 sums the same way.
+  const swatch = new DataTexture(new Uint8Array([51, 102, 153, 255]), 1, 1);
+  swatch.needsUpdate = true;
+  const looped = new MeshBasicNodeMaterial();
+  looped.colorNode = Fn(() => {
+    const sum = vec3(0).toVar();
+    Loop(3, () => {
+      sum.addAssign(vec3(0.1, 0.2, 0.3));
+    });
+    return vec4(sum, 1);
+  })();
+  const loopedTexture = new MeshBasicNodeMaterial();
+  loopedTexture.colorNode = Fn(() => {
+    const sum = vec3(0).toVar();
+    Loop(3, () => {
+      sum.addAssign(texture(swatch).sample(uv()).level(0).rgb.mul(0.5));
+    });
+    return vec4(sum, 1);
+  })();
+  const loopPixels: string[] = [];
+  for (const material of [looped, loopedTexture]) {
+    const loopQuad = new Mesh(new PlaneGeometry(4, 1), material);
+    loopQuad.position.set(2, 0.5, 0);
+    const loopScene = new Scene();
+    loopScene.add(loopQuad);
+    loopPixels.push((await drawStrip(loopScene)).split(",").slice(0, 3).join(","));
+  }
+  probe.vec3Loop = loopPixels.join(" | ");
+  // The bloom chain's pattern: a colour written to a half-float target, then read with four offset
+  // taps through a uniform vec2 and averaged. (0.2, 0.4, 0.6) must come back in all three channels.
+  const chainA = new RenderTarget(4, 1, { type: HalfFloatType });
+  const chainB = new RenderTarget(2, 1, { type: HalfFloatType });
+  const chainFlat = new MeshBasicNodeMaterial();
+  chainFlat.colorNode = vec3(0.2, 0.4, 0.6);
+  const chainStep = uniform(new Vector2(0.125, 0.5));
+  const chainSource = texture(chainA.texture);
+  const reduce = new MeshBasicNodeMaterial();
+  reduce.colorNode = Fn(() => {
+    const sum = vec3(0).toVar();
+    for (const [x, y] of [
+      [-1, -1],
+      [1, -1],
+      [-1, 1],
+      [1, 1],
+    ] as const)
+      sum.addAssign(chainSource.sample(uv().add(chainStep.mul(vec2(x, y)))).rgb);
+    return vec4(sum.div(4), 1);
+  })();
+  const chainScene = new Scene();
+  const chainFlatQuad = new Mesh(new PlaneGeometry(4, 1), chainFlat);
+  chainFlatQuad.position.set(2, 0.5, 0);
+  chainScene.add(chainFlatQuad);
+  renderer.setRenderTarget(chainA);
+  renderer.render(chainScene, columns);
+  const reduceScene = new Scene();
+  const reduceQuad = new Mesh(new PlaneGeometry(2, 1), reduce);
+  reduceQuad.position.set(1, 0.5, 0);
+  reduceScene.add(reduceQuad);
+  renderer.setRenderTarget(chainB);
+  renderer.render(reduceScene, new OrthographicCamera(0, 2, 1, 0, -1, 1));
+  renderer.setRenderTarget(null);
+  const chainPixels = await renderer.readRenderTargetPixelsAsync(chainB, 0, 0, 1, 1);
+  probe.chainRead = `${chainPixels.constructor.name}:${Array.from(chainPixels).join(",")}`;
   // InstancedBufferGeometry draws instanceCount (3) of its 4 instances; TSL attribute() reads each
   // instance's offset and tint. The fourth (white) instance must not draw.
   const strip = new InstancedBufferGeometry();
@@ -422,7 +492,9 @@ try {
     new QuadMesh(unlowerable).render(renderer);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    probe.targetRefusal = message.includes("components for 2") ? "refused: components for 2" : message;
+    probe.targetRefusal = message.includes("components for 2")
+      ? "refused: components for 2"
+      : message;
   }
   renderer.setRenderTarget(null);
   for (let attempt = 0; attempt < 60 && probe.drawsAfterTargetRefusal <= 0; attempt++) {

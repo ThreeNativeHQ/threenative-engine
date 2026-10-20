@@ -48,6 +48,20 @@
       {
         "entity": "wasm-renderer",
         "component": "probe",
+        "path": "vec3Loop",
+        "equals": "76,153,229 | 76,153,229",
+        "allowTrivial": "A vec3 accumulator in a Loop sums three constants, then three level-0 texture reads, into all three channels."
+      },
+      {
+        "entity": "wasm-renderer",
+        "component": "probe",
+        "path": "chainRead",
+        "equals": "Uint16Array:12902,13926,14540,15360",
+        "allowTrivial": "Four offset taps through a uniform vec2 of a half-float target return (0.2, 0.4, 0.6) in every channel."
+      },
+      {
+        "entity": "wasm-renderer",
+        "component": "probe",
         "path": "error",
         "equals": "",
         "allowTrivial": "The page reports its own failure here."
