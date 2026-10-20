@@ -13,6 +13,7 @@
  * agree, then renders each variant in its own editor and reads the variant's GI settings back from
  * the editor log. Every check fails closed.
  */
+import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import path from "node:path";
@@ -290,6 +291,11 @@ export async function captureGi(args: readonly string[], runUnreal: RunUnreal): 
     if (args.includes("--rebuild") || !existsSync(content)) {
       await rm(content, { recursive: true, force: true });
       if ((await runUnreal("build", out, { TN_UE_SCENE: name })) !== 0) return 1;
+      // The exported scene.json is committed: give it the repo's JSON format.
+      spawnSync("pnpm", ["exec", "biome", "format", "--write", path.join(GI, name, "scene.json")], {
+        cwd: REPO_ROOT,
+        stdio: "ignore",
+      });
     }
     const { scene, gltf } = readScene(name);
     validateSceneExport(scene, gltf);
