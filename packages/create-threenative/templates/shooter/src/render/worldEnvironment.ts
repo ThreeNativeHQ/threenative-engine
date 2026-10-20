@@ -17,6 +17,7 @@ import {
   ACESFilmicToneMapping,
   AgXToneMapping,
   type Camera,
+  CustomToneMapping,
   type DirectionalLight,
   MaterialBlending,
   NeutralToneMapping,
@@ -56,12 +57,16 @@ import {
 import { BlendMode, type Node, type NodeBuilder, type TextureNode } from "three/webgpu";
 import { AutoExposureNode, applyExposure } from "./autoExposure.js";
 import { type IExposureSettings, exposureSettings } from "./exposure.js";
+import { installFilmicToneMapping } from "./tonemap.js";
 
 /** Godot's `Viewport.screen_space_aa`: which post-process antialiasing smooths the frame's edges. */
 export type ScreenSpaceAA = "smaa" | "fxaa" | "disabled";
 
-/** Godot's `Environment.tonemap_mode`, with the modes Three.js actually ships. */
-export type TonemapMode = "aces" | "agx" | "neutral";
+/**
+ * Godot's `Environment.tonemap_mode`: the modes Three.js ships, plus `filmic`, the Unreal 5
+ * default curve written in `tonemap.ts`.
+ */
+export type TonemapMode = "aces" | "agx" | "filmic" | "neutral";
 
 /**
  * SSGI sample budget. The three tiers are the presets SSGINode's own documentation
@@ -79,6 +84,7 @@ const SSGI_QUALITY: Record<SsgiQuality, { sliceCount: number; stepCount: number 
 const TONEMAP: Record<TonemapMode, number> = {
   aces: ACESFilmicToneMapping,
   agx: AgXToneMapping,
+  filmic: CustomToneMapping,
   neutral: NeutralToneMapping,
 };
 
@@ -578,6 +584,17 @@ export class WorldEnvironment {
     const options = this.#options;
     const raw = renderer.raw as { toneMapping?: number; toneMappingExposure?: number };
     raw.toneMapping = TONEMAP[options.tonemapMode];
+    if (options.tonemapMode === "filmic") {
+      // The curve is this game's source, registered as three's custom tone mapping. A renderer
+      // without a node library cannot run it; that frame keeps ACES and says so.
+      const installed = installFilmicToneMapping(renderer.raw);
+      if (installed === undefined) {
+        raw.toneMapping = ACESFilmicToneMapping;
+        console.warn(
+          `TN_TONEMAP ${JSON.stringify({ requested: "filmic", applied: "aces", reason: `renderer:${renderer.kind}` })}`,
+        );
+      }
+    }
 
     const requested: string[] = (
       ["ssgi", "ambientOcclusion", "godRays", "ssr", "sharpen", "bloom", "vignette"] as const
