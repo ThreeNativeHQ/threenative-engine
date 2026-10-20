@@ -267,6 +267,17 @@ export const SUN_KELVIN = 6500;
 export const SUN_ILLUMINANCE = SUN_LUX * Math.PI;
 
 /**
+ * Emissive in the sun's units. Unreal shades a lit diffuse surface as albedo / pi x lux x cos(theta)
+ * (Diffuse_Lambert, Engine/Shaders/Private/BRDF.ush:157, used at Engine/Shaders/Private/
+ * ShadingModels.ush:260-262) and adds a material's emissive as it stands: the glTF importer only
+ * multiplies texture, factor and strength (Engine/Plugins/Interchange/Runtime/Source/Import/Private/
+ * Gltf/InterchangeGLTFMaterial.cpp:481-487). Emissive 5 therefore outshines a white surface under the
+ * 6 lux sun by 5 / (6 / pi) = 2.6x. `SUN_ILLUMINANCE` carries a pi, so a white surface here reads 6;
+ * the emissive takes the same pi to keep that ratio. Applied where the scene's materials load.
+ */
+export const EMISSIVE_UNITS = Math.PI;
+
+/**
  * Sky radiance relative to the sun, as Unreal renders it. TEMPORARY, measured and not derived: with
  * the sun at 6 lux the model above is 1.3x too bright against the Unreal L2 frames, flat across
  * channels and across the 15 and 4 degree suns (1.30 / 1.30 / 1.35 at 19 degrees elevation), so

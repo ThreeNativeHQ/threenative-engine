@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  EMISSIVE_UNITS,
   SUN_ILLUMINANCE,
   SUN_KELVIN,
   bakeSkyRadiance,
@@ -18,6 +19,16 @@ describe("the harness lighting model against Unreal 5.8.3 frames (PRD-632, PRD-6
 
   it("the sun is Unreal's 6 lux in three's units, pi times larger", () => {
     expect(SUN_ILLUMINANCE).toBeCloseTo(6 * Math.PI, 10);
+  });
+
+  it("emissive 5 outshines a white surface under the sun by Unreal's ratio, 5 / (6 / pi)", () => {
+    // Unreal: emissive as it stands, against albedo / pi x lux (Diffuse_Lambert, BRDF.ush:157).
+    const unreal = 5 / (6 / Math.PI);
+    // Here: three's Lambert divides the sun by pi, so a white surface at normal incidence reads
+    // SUN_ILLUMINANCE / pi, and the emissive intensity is scaled by EMISSIVE_UNITS.
+    const here = (5 * EMISSIVE_UNITS) / (SUN_ILLUMINANCE / Math.PI);
+    expect(here).toBeCloseTo(unreal, 10);
+    expect(unreal).toBeCloseTo(2.618, 3);
   });
 
   it("the sun reddens as it sets, to within a few percent of the Unreal L2 sun-lit boxes", () => {

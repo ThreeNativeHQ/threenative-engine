@@ -24,6 +24,7 @@ import {
   type Texture,
   Vector3,
 } from "three";
+import { EMISSIVE_UNITS } from "../render/atmosphere.js";
 import { setupLighting } from "../render/lighting.js";
 import { setupPost } from "../render/postprocessing.js";
 import { qualityPreset } from "../render/quality.js";
@@ -90,10 +91,17 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
       key.castShadow = level >= 5;
       // Unreal's static meshes cast and receive shadows by default; three's meshes do neither
       // until asked. Both arms (baseline and tuned) need this, so it is not tuning.
+      const emissiveSeen = new Set<unknown>();
       model.traverse((object) => {
         if (object instanceof Mesh) {
           object.castShadow = true;
           object.receiveShadow = true;
+          // Unreal's emissive is radiance as it stands, the sun is lux / pi (EMISSIVE_UNITS).
+          const material = object.material as MeshStandardMaterial;
+          if (!emissiveSeen.has(material)) {
+            emissiveSeen.add(material);
+            material.emissiveIntensity *= EMISSIVE_UNITS;
+          }
         }
       });
       // three's WebGPU ShadowNode reads `shadow.filterNode`; its types do not declare it yet.
