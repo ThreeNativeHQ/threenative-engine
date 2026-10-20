@@ -15,16 +15,16 @@ import { chromium } from "@playwright/test";
 import { WEBGPU_BROWSER_ARGS } from "../../packages/playtest/src/runner/browser.js";
 import { assertVisualPortAvailable, stopVisualServer } from "../visual-gate.js";
 import { HIDE_UI, freePort, scaffold, waitForServer } from "./capture-threenative.js";
-import { readScene } from "./gi.js";
+import { readScene, sceneDir, sceneKey } from "./gi.js";
 
 const REPO_ROOT = path.resolve(import.meta.dirname, "../..");
-const GI = path.join(REPO_ROOT, "tools/unreal-reference/gi");
 const SCAFFOLD_DIR =
   process.env.TN_UNREAL_LOOK_SCAFFOLD ?? path.join(import.meta.dirname, "scaffold");
 /** Layers a GI scene is captured at: the Unreal variant each one is judged against. */
 export const GI_LAYERS: Readonly<Record<string, string>> = {
   ID: "ID",
   L1: "L1",
+  L5: "L5", // the shadow family's direct-shadow layer (PRD-649)
   // Shadows and AO without GI: the pair of Unreal with Lumen GI off.
   L6: "L7-Low",
   L7: "L7-Epic",
@@ -39,9 +39,9 @@ async function patchGi(target: string, scenes: readonly string[]): Promise<void>
   const data: Record<string, unknown> = {};
   for (const name of scenes) {
     data[name] = readScene(name).scene;
-    const dir = path.join(target, "assets/unreal-reference/gi", name);
+    const dir = path.join(target, "assets/unreal-reference/gi", sceneKey(name));
     await mkdir(dir, { recursive: true });
-    await cp(path.join(GI, name, "scene.glb"), path.join(dir, "scene.glb"));
+    await cp(path.join(sceneDir(name), "scene.glb"), path.join(dir, "scene.glb"));
   }
   await writeFile(
     path.join(target, "src/scenes/calibrationData.ts"),
@@ -155,7 +155,7 @@ export async function captureGiThreeNative(options: {
             );
             if (errors.length > 0)
               throw new Error(`TN_UNREAL_LOOK_PAGE_ERROR: ${errors.join(" | ")}`);
-            const file = path.join(options.out, name, layer, `${pose.name}.png`);
+            const file = path.join(options.out, sceneKey(name), layer, `${pose.name}.png`);
             await mkdir(path.dirname(file), { recursive: true });
             await writeFile(file, await page.screenshot({ type: "png" }));
             count += 1;
