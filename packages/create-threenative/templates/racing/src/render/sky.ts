@@ -45,11 +45,11 @@ function distanceDensity(p: HeightFogParams = HEIGHT_FOG): number {
 }
 
 /**
- * Puts the sky on the scene, or a plain gradient if the photograph has not decoded yet.
+ * Puts the sky on the scene, or a plain gradient if no photograph is given.
  *
- * The second argument is optional because `Race.load()` does not wait for the JPEG: the scene has
- * to enter on the first frame or the playtest bridge describes nothing. Passing `undefined` here is
- * the fallback the scene starts in, and calling it again with the texture is the swap.
+ * `Race.load()` waits for the JPEG, so the scene enters with the photograph already applied. The
+ * fallback stays for a scene that has no sky asset, and a swap after the first frame is not safe on
+ * `engine: "threejs"` (see `Race.load`).
  */
 export function setupSky(scene: Scene, sky?: Texture): void {
   if (sky === undefined) {
