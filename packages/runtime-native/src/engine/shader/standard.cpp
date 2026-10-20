@@ -830,13 +830,26 @@ static ExprId virtualShadowFactor(Program& f, Tsl& t, std::size_t index, int lev
     const ExprId world = f.add(positionWorld, f.mul(normalWorld, f.uniform(at + "ShadowNormalBias", Type::f32())));
     const ExprId plane = f.call("cross", {f.call("dFdx", {positionWorld}), f.call("dFdy", {positionWorld})});
     const ExprId phi = noisePhi(f, t);
-    ExprId result = t.f(1);
-    for (int l = levels - 1; l >= 0; --l) {
-        const ExprId matrix = f.construct(Type::mat(4, 4), {row(l*9), row(l*9+1), row(l*9+2), row(l*9+3)});
+    // Finest level first: a level that holds the whole weight left skips every coarser one, so a pixel
+    // inside the finest window reads one level, and one in a blend band reads two. The weights are the
+    // coarse-to-fine mix chain unrolled: finest * w0 + (1 - w0) * (next * w1 + ...).
+    const VarId accumulated = f.var(Type::f32(), t.f(0)), remaining = f.var(Type::f32(), t.f(1));
+    for (int l = 0; l < levels; ++l) {
         const ExprId window = row(l*9+4), u = row(l*9+5), v = row(l*9+6), w = row(l*9+7), params = row(l*9+8);
-        const ExprId mapSize = f.swizzle(u, "w"), tiles = f.swizzle(v, "w"), span = f.swizzle(w, "w");
         const ExprId axisU = f.swizzle(u, "xyz"), axisV = f.swizzle(v, "xyz"), axisW = f.swizzle(w, "xyz");
         const ExprId extent = f.swizzle(window, "z"), guard = f.swizzle(window, "w");
+        ExprId weight = t.f(1);
+        if (l != levels - 1) {
+            const ExprId distance = f.call("max", {f.call("abs", {f.sub(t.dot(positionWorld, axisU), f.swizzle(window, "x"))}),
+                f.call("abs", {f.sub(t.dot(positionWorld, axisV), f.swizzle(window, "y"))})});
+            const ExprId edge = f.mul(extent, guard);
+            const ExprId band = f.call("max", {f.sub(extent, edge), f.div(f.mul(extent, t.f(4)), f.swizzle(u, "w"))});
+            weight = f.select(f.less(edge, distance), t.f(0), f.select(f.less(t.f(0), f.swizzle(params, "w")),
+                t.oneMinus(f.call("smoothstep", {f.sub(edge, band), edge, distance})), t.f(0)));
+        }
+        f.If(f.less(t.f(0), f.mul(f.load(remaining), weight)), [&] {
+        const ExprId matrix = f.construct(Type::mat(4, 4), {row(l*9), row(l*9+1), row(l*9+2), row(l*9+3)});
+        const ExprId mapSize = f.swizzle(u, "w"), tiles = f.swizzle(v, "w"), span = f.swizzle(w, "w");
         const ExprId projected4 = f.mul(matrix, f.construct(Type::vec(4), {world, t.f(1)}));
         const ExprId projected = f.div(f.swizzle(projected4, "xyz"), f.swizzle(projected4, "w"));
         const ExprId uv = f.construct(Type::vec(2), {f.swizzle(projected, "x"), t.oneMinus(f.swizzle(projected, "y"))});
@@ -852,6 +865,7 @@ static ExprId virtualShadowFactor(Program& f, Tsl& t, std::size_t index, int lev
             f.add(t.f(float(levels * 9 + l)), f.mul(t.f(float(levels)), f.mul(tiles, tiles)))}));
         auto sampleLayer = [&](bool moving) {
         const ExprId resolution = moving ? f.swizzle(mover, "z") : mapSize;
+        auto pcf = [&] {
         ExprId sum = kInvalid;
         for (int tap = 0; tap < 5; ++tap) {
             const ExprId sampleUv = f.call("clamp", {f.add(uv, f.mul(vogelDisk(f, t, tap, phi), f.div(radius, resolution))),
@@ -869,7 +883,10 @@ static ExprId virtualShadowFactor(Program& f, Tsl& t, std::size_t index, int lev
             const ExprId value = f.select(f.less(t.f(0), f.swizzle(entry, "z")), f.sampleCompare(map, atlasUv, z), t.f(1));
             sum = sum == kInvalid ? value : f.add(sum, value);
         }
-        const VarId filtered = f.var(Type::f32(), f.mul(sum, t.f(1.0f / 5.0f)));
+        return f.mul(sum, t.f(1.0f / 5.0f));
+        };
+        // The filter replaces the 5-tap PCF where it is on, so a pixel pays for one of the two.
+        const VarId filtered = f.var(Type::f32(), t.f(1));
         const ExprId filterIndex = f.add(t.f(float(levels * 10)), f.mul(t.f(float(levels)), f.mul(tiles, tiles)));
         const ExprId filter = f.loadStorage(table, f.construct(Type::u32(), {filterIndex}));
         f.If(f.less(t.f(0), f.swizzle(filter, "w")), [&] {
@@ -929,21 +946,39 @@ static ExprId virtualShadowFactor(Program& f, Tsl& t, std::size_t index, int lev
             });
             const ExprId gap = f.mul(f.call("max", {t.f(0), f.sub(baseZ,
                 f.div(f.load(blockerSum), f.call("max", {f.load(blockerCount), t.f(1)})))}), span);
-            const ExprId penumbra = f.call("max", {texel, f.div(f.mul(gap, tangent), width)});
+            // Where the blockers touch the receiver the penumbra is under a texel: each tap is then the
+            // hardware's bilinear compare, so the edge is about one texel wide and not stair-stepped,
+            // and the floor of the disk is half a texel.
+            const ExprId penumbra = f.call("max", {f.mul(texel, t.f(0.5f)), f.div(f.mul(gap, tangent), width)});
+            auto compareAt = [&](ExprId atUv, ExprId z) {
+                const ExprId clamped = f.call("clamp", {atUv, f.construct(Type::vec(2), {t.f(0)}), f.construct(Type::vec(2), {t.f(1)})});
+                const ExprId grid = f.mul(clamped, tiles);
+                const ExprId tile = f.call("min", {f.call("floor", {grid}), f.construct(Type::vec(2), {f.sub(tiles, t.f(1))})});
+                const ExprId pageIndex = f.add(t.f(float(levels*9)), f.add(f.mul(t.f(float(l)), f.mul(tiles, tiles)),
+                    f.add(f.mul(f.swizzle(tile, "y"), tiles), f.swizzle(tile, "x"))));
+                const ExprId entry = f.loadStorage(table, f.construct(Type::u32(), {pageIndex}));
+                const ExprId local = f.mul(f.sub(grid, tile), f.swizzle(params, "x"));
+                const ExprId atlasUv = moving
+                    ? f.div(f.add(f.swizzle(mover, "xy"), f.mul(clamped, resolution)), f.swizzle(params, "z"))
+                    : f.div(f.add(f.add(f.swizzle(entry, "xy"), f.construct(Type::vec(2), {f.swizzle(params, "y")})), local), f.swizzle(params, "z"));
+                return f.select(f.less(t.f(0), f.swizzle(entry, "z")), f.sampleCompare(map, atlasUv, z), t.f(1));
+            };
             const VarId visibility = f.var(Type::f32(), t.f(0));
             f.Loop(f.construct(Type::i32(), {samples}), [&](ExprId i) {
                 const ExprId offset = f.mul(disk(i, samples), penumbra);
-                const ExprId depth = load(f.add(uv, offset));
-                f.assign(visibility, f.add(f.load(visibility), f.select(f.less(depth, tapZ(offset)), t.f(0), t.f(1))));
+                f.assign(visibility, f.add(f.load(visibility), compareAt(f.add(uv, offset), tapZ(offset))));
             });
             f.assign(filtered, f.select(f.less(t.f(0), f.load(blockerCount)), f.div(f.load(visibility), samples), t.f(1)));
-        });
+        }, [&] { f.assign(filtered, pcf()); });
         return f.load(filtered);
         };
-        ExprId value = sampleLayer(false);
         // A separate map shares the held level camera; animated casters never dirty static pages.
-        const ExprId moverValue = sampleLayer(true);
-        value = f.call("min", {value, f.select(f.less(t.f(0), f.swizzle(mover, "w")), moverValue, t.f(1))});
+        // Its pass runs only while a caster moves.
+        const VarId combined = f.var(Type::f32(), sampleLayer(false));
+        f.If(f.less(t.f(0), f.swizzle(mover, "w")), [&] {
+            f.assign(combined, f.call("min", {f.load(combined), sampleLayer(true)}));
+        });
+        ExprId value = f.load(combined);
         value = f.select(f.less(f.swizzle(uv, "x"), t.f(0)), t.f(1), value);
         value = f.select(f.less(t.f(1), f.swizzle(uv, "x")), t.f(1), value);
         value = f.select(f.less(f.swizzle(uv, "y"), t.f(0)), t.f(1), value);
@@ -951,17 +986,11 @@ static ExprId virtualShadowFactor(Program& f, Tsl& t, std::size_t index, int lev
         value = f.select(f.less(t.f(1), baseZ), t.f(1), value);
         value = f.call("mix", {t.f(1), value, f.uniform(at + "ShadowIntensity", Type::f32())});
         value = f.select(f.less(t.f(0), f.swizzle(params, "w")), value, t.f(1));
-        if (l == levels - 1) { result = value; continue; }
-        const ExprId distance = f.call("max", {f.call("abs", {f.sub(t.dot(positionWorld, axisU), f.swizzle(window, "x"))}),
-            f.call("abs", {f.sub(t.dot(positionWorld, axisV), f.swizzle(window, "y"))})});
-        const ExprId edge = f.mul(extent, guard);
-        const ExprId band = f.call("max", {f.sub(extent, edge), f.div(f.mul(extent, t.f(4)), mapSize)});
-        const ExprId weight = t.oneMinus(f.call("smoothstep", {f.sub(edge, band), edge, distance}));
-        const ExprId blended = f.call("mix", {result, value, weight});
-        result = f.select(f.less(edge, distance), result,
-            f.select(f.less(t.f(0), f.swizzle(params, "w")), blended, result));
+        f.assign(accumulated, f.add(f.load(accumulated), f.mul(f.mul(f.load(remaining), weight), value)));
+        f.assign(remaining, f.mul(f.load(remaining), t.oneMinus(weight)));
+        });
     }
-    return result;
+    return f.load(accumulated);
 }
 
 // `kind` upper case: the light casts a shadow this mesh receives; `positionWorld` is then read.

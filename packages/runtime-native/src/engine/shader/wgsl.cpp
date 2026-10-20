@@ -140,7 +140,9 @@ std::string WgslEmitter::inlined(ExprId id) const {
             }
             const std::string& name = p_.textures_[e.immediate];
             if (e.argc == 2)  // three's generateTextureCompare
-                return (p_.stage_ == Stage::Fragment ? "textureSampleCompare(t_" : "textureSampleCompareLevel(t_") + name +
+                // Level 0 always: a depth map has one mip, and the virtual shadow reads it under divergent
+                // control flow, where textureSampleCompare is refused.
+                return "textureSampleCompareLevel(t_" + name +
                        ", smp_" + name + ", " + expr(e.args[0]) + ", " + expr(e.args[1]) + ")";
             return p_.stage_ == Stage::Fragment
                        ? "textureSample(t_" + name + ", smp_" + name + ", " + expr(e.args[0]) + ")"
