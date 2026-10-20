@@ -468,7 +468,12 @@ async function main(args: readonly string[]): Promise<void> {
   // upgrade proof installs these versions as tarballs, and a version npm already serves can resolve
   // from the registry instead, so the proof would credit the old bytes under the candidate's name.
   // Checked here, before the pack, and answered once — the publish loop below uses this answer.
-  const publishPackages = unpublishedReleasePackages(packages, npmLookup(REPO));
+  // A `--dry-run` packs and stops before the upgrade proof, so a cohort npm already serves is not a
+  // hazard: the rehearsal answers "absent" and runs on any tree, even one whose version is published.
+  const publishPackages = unpublishedReleasePackages(
+    packages,
+    dryRun ? () => ({ state: "absent" }) : npmLookup(REPO),
+  );
   const publishNames = new Set(publishPackages.map((item) => item.name));
 
   // Pack the candidate, then prove the previous `latest` upgrades onto it. Both happen before the
