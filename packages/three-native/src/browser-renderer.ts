@@ -10,6 +10,7 @@ import type { PassDraw } from "./pass-node.js";
 import { defineRenderTargets } from "./render-target.js";
 import { ShadowMap } from "./shadow-map.js";
 import { readStorageBytes } from "./storage.js";
+import type { INodeFrame } from "./temp-node.js";
 
 /** The product host's exports beside the catalog ABI (all numbers: pointers, sizes, status). */
 type HostCall =
@@ -64,7 +65,7 @@ function unsupported(name: string): never {
 export function defineWebRenderer(
   module: WebEngineModule,
   Color: new (...args: unknown[]) => IColorLike,
-  beforeRender: (frame?: { camera?: unknown; scene?: unknown }) => void = () => {},
+  beforeRender: (frame?: INodeFrame) => void = () => {},
   tsl?: ITslRuntime,
   /** Draws the offscreen PassNodes into their targets (pass-node.ts); given the drawing buffer and the target draw. */
   drawSecondaryPasses: (
@@ -283,6 +284,12 @@ export function defineWebRenderer(
       this.#clear = [value.r, value.g, value.b, alpha];
     }
 
+    getClearColor<T extends IColorLike & { setRGB(r: number, g: number, b: number): T }>(
+      target: T,
+    ): T {
+      return target.setRGB(this.#clear[0], this.#clear[1], this.#clear[2]);
+    }
+
     getClearAlpha(): number {
       return this.#clear[3];
     }
@@ -303,7 +310,7 @@ export function defineWebRenderer(
         this.info.engine.frameGateSkips += 1;
         return;
       }
-      beforeRender({ camera, scene });
+      beforeRender({ camera, scene, renderer: this, frameId: this.info.frame });
       drawSecondaryPasses(
         () => ({ width: this.#drawWidth(), height: this.#drawHeight() }),
         (target, root, view) => this[DRAW_TARGET](target, root, view, true),
@@ -368,7 +375,7 @@ export function defineWebRenderer(
     [DRAW_TARGET](target: unknown, root: unknown, camera: unknown, deferred = false): void {
       if (this.#adapter === undefined)
         throw new Error("TN_WASM_RENDERER: render() before init() finished.");
-      beforeRender({ camera, scene: root });
+      beforeRender({ camera, scene: root, renderer: this, frameId: this.info.frame });
       this.#applyState();
       writeHandle(0, root, "scene");
       writeHandle(12, camera, "camera");

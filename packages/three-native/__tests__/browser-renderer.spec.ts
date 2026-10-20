@@ -14,7 +14,10 @@ import {
   defineBrowserClasses,
 } from "../src/browser-backend.js";
 import { type WebEngineModule, defineWebRenderer } from "../src/browser-renderer.js";
+import { type ITslRuntime, defineTsl } from "../src/browser-tsl.js";
 import { loadCatalog } from "../src/catalog.js";
+import { defineQuadMesh } from "../src/quad-mesh.js";
+import { defineRendererUtils } from "../src/renderer-utils.js";
 
 const REPO = process.cwd();
 const registry = JSON.parse(
@@ -26,6 +29,7 @@ function host(
   render: (...args: number[]) => number = () => 0,
   secondary?: Parameters<typeof defineWebRenderer>[4],
   renderTarget: (...args: number[]) => number = () => 0,
+  before?: Parameters<typeof defineWebRenderer>[2],
 ) {
   const types = new Map<string, number>();
   const runtime: IBrowserRuntime = {
@@ -62,13 +66,7 @@ function host(
     _tnw_web_frame: frame,
     _tnw_web_renderer_state: state,
   } as unknown as WebEngineModule;
-  const Renderer = defineWebRenderer(
-    module,
-    classes.Color as never,
-    undefined,
-    undefined,
-    secondary,
-  );
+  const Renderer = defineWebRenderer(module, classes.Color as never, before, undefined, secondary);
   const canvas = { width: 300, height: 150, style: {}, setAttribute: () => undefined };
   const scene = new (classes.Scene as new () => object)();
   const camera = new (classes.PerspectiveCamera as new () => object)();
@@ -208,7 +206,12 @@ describe("the Wasm engine's WebGPURenderer sample count", () => {
     ];
     let call = -1;
     const { Renderer, canvas, scene, camera } = host(
-      (field) => (field === 0 ? perCall[call]?.draws ?? 0 : field === 1 ? perCall[call]?.triangles ?? 0 : 0),
+      (field) =>
+        field === 0
+          ? (perCall[call]?.draws ?? 0)
+          : field === 1
+            ? (perCall[call]?.triangles ?? 0)
+            : 0,
       () => {
         call += 1;
         return 0;
@@ -420,5 +423,90 @@ describe("the Wasm engine's WebGPURenderer across a hot update", () => {
       renderer.dispose();
     }
     expect(initCalls).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("Wasm TempNode render lifecycle", () => {
+  it("draws a subclass quad through the existing target path once per frame and restores state", async () => {
+    let next = 0;
+    const runtime: ITslRuntime = {
+      call: () => ++next,
+      release() {},
+      set() {},
+      setUniform() {},
+      effectParameter: () => 0,
+      setPost() {},
+      compute() {},
+      readStorage: async () => new ArrayBuffer(0),
+      deleteStorage() {},
+    };
+    const tsl = defineTsl(runtime);
+    const draw = vi.fn(() => 0);
+    const { Renderer, canvas, scene, camera, classes } = host(
+      undefined,
+      undefined,
+      undefined,
+      draw,
+      tsl.sync,
+    );
+    const renderer = new Renderer({ canvas }) as {
+      init(): Promise<void>;
+      render(scene: unknown, camera: unknown): void;
+      setRenderTarget(target: unknown): void;
+      getRenderTarget(): unknown;
+      setClearColor(color: unknown, alpha: number): void;
+      getClearAlpha(): number;
+      autoClear: boolean;
+    };
+    const utils = defineRendererUtils(classes.Color as never);
+    const QuadMesh = defineQuadMesh(classes as never);
+    const quad = new QuadMesh();
+    const TempNode = tsl.exports.TempNode as new (
+      type: string,
+    ) => {
+      setup(builder: unknown): unknown;
+      updateBefore(frame: unknown): unknown;
+      updateBeforeType: string;
+      dispose(): void;
+    };
+    const target = new (classes.RenderTarget as new () => object)();
+    const update = vi.fn();
+    class Exposure extends TempNode {
+      constructor() {
+        super("float");
+        this.updateBeforeType = "frame";
+      }
+      override setup(builder: unknown) {
+        super.setup(builder);
+        return (tsl.exports.float as (v: number) => unknown)(2);
+      }
+      override updateBefore(frame: unknown) {
+        expect((frame as { renderer: unknown }).renderer).toBe(renderer);
+        update();
+        const state = utils.resetRendererState(renderer as never);
+        try {
+          renderer.setRenderTarget(target);
+          quad.render(renderer);
+        } finally {
+          utils.restoreRendererState(renderer as never, state);
+        }
+      }
+    }
+    const node = new Exposure();
+    (tsl.exports.float as (v: unknown) => unknown)(node);
+    await renderer.init();
+    renderer.setClearColor(0, 0.25);
+    renderer.autoClear = false;
+    renderer.render(scene, camera);
+    expect(update).toHaveBeenCalledTimes(1);
+    expect(draw).toHaveBeenCalledTimes(1);
+    expect(renderer.getRenderTarget()).toBe(null);
+    expect(renderer.getClearAlpha()).toBe(0.25);
+    expect(renderer.autoClear).toBe(false);
+    renderer.render(scene, camera);
+    expect(update).toHaveBeenCalledTimes(2);
+    node.dispose();
+    renderer.render(scene, camera);
+    expect(update).toHaveBeenCalledTimes(2);
   });
 });

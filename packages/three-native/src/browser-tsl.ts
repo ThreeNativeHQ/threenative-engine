@@ -3,6 +3,7 @@ import { markNormalTarget } from "./pass-node.js";
 import { defineQuadMesh } from "./quad-mesh.js";
 import { type IRttClasses, defineRtt } from "./rtt.js";
 import { defineStorage } from "./storage.js";
+import { type INodeFrame, NodeUpdateType, defineTempNode } from "./temp-node.js";
 import { defineTslExtras } from "./tsl-extras.js";
 import { defineStruct } from "./tsl-struct.js";
 import { type ConstClasses, liveUniforms, uniformLanes, withConstValues } from "./tsl-uniforms.js";
@@ -295,7 +296,7 @@ export function defineTsl(
   classes?: ConstClasses,
 ): {
   exports: Record<string, unknown>;
-  sync(frame?: { camera?: unknown; scene?: unknown }): void;
+  sync(frame?: INodeFrame): void;
 } {
   const released = new FinalizationRegistry<number>((node) => runtime.release(node));
   const prototype: Record<string, unknown> = {};
@@ -438,9 +439,26 @@ export function defineTsl(
     runtime.release(previous);
     return this;
   };
+  const custom = defineTempNode(prototype);
   const exports: Record<string, unknown> = {};
+  exports.TempNode = custom.TempNode;
+  exports.NodeUpdateType = NodeUpdateType;
   for (const name of FUNCTIONS)
     exports[name] = (...args: unknown[]) => wrap(call(name, null, args));
+  exports.nodeObject = (value: unknown) =>
+    isTslNode(value) ? value : wrap(call("nodeObject", null, [value]));
+  exports.texture = (value: unknown, ...args: unknown[]) => {
+    const node = wrap(call("texture", null, [value, ...args]));
+    return Object.defineProperty(node, "value", {
+      get: () => value,
+      set: (next: unknown) => {
+        if (next !== value)
+          throw new Error(
+            "TN_NATIVE_TEXTURE_VALUE_UNSUPPORTED: retargeting an existing texture node requires a native texture-binding ABI",
+          );
+      },
+    });
+  };
   exports.rtt = defineRtt(
     exports.rtt as Parameters<typeof defineRtt>[0],
     classes && "Mesh" in classes
@@ -634,7 +652,22 @@ export function defineTsl(
     exports.uniform as (value: unknown, type?: unknown) => ITslNode,
     (node, lanes) => runtime.setUniform(node[TSL_NODE], lanes),
   );
-  exports.uniform = live.uniform;
+  exports.uniform = (value: unknown, type?: unknown) => {
+    if (typeof value !== "boolean") return live.uniform(value, type);
+    if (type !== undefined && type !== "bool")
+      throw new TypeError("TN_TSL_UNIFORM_VALUE: a boolean uniform requires bool type");
+    // The ABI stores numeric lanes; compare the live float to produce a shader bool.
+    const scalar = live.uniform(Number(value)) as ITslNode & { value: number };
+    const boolean = wrap(call("notEqual", scalar[TSL_NODE], [0]));
+    return Object.defineProperty(boolean, "value", {
+      get: () => Boolean(scalar.value),
+      set: (next: unknown) => {
+        if (typeof next !== "boolean")
+          throw new TypeError("TN_TSL_UNIFORM_VALUE: expected a boolean");
+        scalar.value = Number(next);
+      },
+    });
+  };
   exports.uniformArray = live.uniformArray;
   exports.reference = live.reference;
   if (classes !== undefined) withConstValues(exports, classes);
@@ -646,5 +679,11 @@ export function defineTsl(
     args.length === 2 && args[1] === 0
       ? (markNormalTarget(vec4, exports.normalView) as typeof vec4)(...args)
       : vec4(...args);
-  return { exports, sync: live.sync };
+  return {
+    exports,
+    sync(frame) {
+      custom.update(frame);
+      live.sync(frame);
+    },
+  };
 }
