@@ -188,7 +188,8 @@
         "entity": "wasm-renderer",
         "component": "probe",
         "path": "renderUpdates",
-        "gte": 30
+        "gte": 30,
+        "changed": true
       },
       {
         "entity": "wasm-renderer",
