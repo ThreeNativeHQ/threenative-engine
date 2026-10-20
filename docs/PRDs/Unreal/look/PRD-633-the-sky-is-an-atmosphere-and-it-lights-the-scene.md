@@ -96,6 +96,7 @@ sun colour all change together. That coupling is a large part of the Unreal look
 **Files:** `packages/create-threenative/templates/*/src/render/sky.ts`, `packages/runtime-native/conformance/scenes/shared/atmosphere-sky-capture.js` (new), `packages/runtime-native/conformance/registry.json`
 - [ ] The atmosphere sky and its capture render on the desktop native engine within tolerance of the browser. proof: `pnpm parity --target desktop --only-tests atmosphere-sky-capture`.
 - [ ] All photo-sky templates default to the atmosphere sky, and the template gate passes. proof: `pnpm test:templates`.
+- [ ] Every affected template's `AGENTS.md` (and mirror) states the atmosphere sky and its capture, with `sky: "photo"` as the override, so a new project's agent knows the default and how to override it. proof: `rg -l 'sky: "photo"' packages/create-threenative/templates/*/AGENTS.md` lists every affected template, and `pnpm sync:agents --check` exits 0.
 
 ## Decisions
 

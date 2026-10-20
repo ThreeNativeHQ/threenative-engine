@@ -101,6 +101,8 @@ earlier wave unless the "Waits on" column says so.
 
 ## The Unreal default look, measured (filed 2026-10-19)
 
+**Owner rule (2026-10-19): the out-of-the-box Unreal 5.8.3 look is ThreeNative's default look.**
+
 The PRDs above copy mechanisms from the Unreal source. These PRDs make the **templates look like a
 fresh Unreal 5.8.3 project** with no tuning. They measure against real Unreal renders of one shared
 scene and do not tune from memory. [PRD-631](look/PRD-631-an-unreal-reference-scene-measures-the-default-look.md)
