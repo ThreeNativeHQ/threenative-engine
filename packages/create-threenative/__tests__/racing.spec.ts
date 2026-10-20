@@ -128,18 +128,16 @@ describe("the circuit", () => {
     expect(KERB_HEIGHT).toBeLessThan(RIDE - CAR.shape.height / 2);
   });
 
-  it("does not withhold the first frame for the sky photograph", () => {
+  it("applies the sky photograph before the first frame, without waiting for the GPU sample", () => {
     const race = read("src/scenes/Race.ts");
-    // `await`ing the texture in `load()` held scene entry for a decode, and the playtest bridge
-    // describes the scene before the runtime enters it, so `survives` read
-    // TN_PLAYTEST_CAPABILITY_MISSING for `runtime.components`.
-    const load = race.slice(race.indexOf("override load"), race.indexOf("override enter"));
-    expect(load).toContain('texture("sky.jpg")');
-    // The sampling continuation may await after decode; the load hook itself must still
-    // return immediately so the player registry is populated synchronously.
-    expect(load).toContain("override load(ctx: GameCtx): void");
-    expect(load).toContain('void ctx.assets.texture("sky.jpg").then(');
-    expect(load.split(".then(")[0]).not.toMatch(/\bawait\b/u);
+    const load = race.slice(race.indexOf("override async load"), race.indexOf("async #sampleSky"));
+    // A sky swapped in from a promise after the first frame lands mid-frame on `engine: "threejs"`
+    // and is never drawn (engine parity scored racing 0.823), so the texture is awaited here.
+    expect(load).toContain('const texture = await ctx.assets.texture("sky.jpg");');
+    expect(load.indexOf("await")).toBeLessThan(load.indexOf("setupSky(scene, texture)"));
+    // The environment measurement reads the GPU back; it starts here and is not awaited.
+    expect(load).toContain("void this.#sampleSky(");
+    expect(load.match(/\bawait\b/gu)).toHaveLength(1);
   });
 });
 
