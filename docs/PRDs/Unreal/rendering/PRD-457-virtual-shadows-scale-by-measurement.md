@@ -48,6 +48,7 @@ scalability—without pretending directional clipmaps solve point/spot lights.
 - **Local lights are a measured follow-on.** This PRD may establish a common budget/update scheduler
   for one spot-light fixture, but does not claim full Unreal-style point/spot shadow virtualization
   unless the acceptance evidence actually covers it.
+- 2026-10-19 (PRD-631 reference plan): [PRD-634](../look/PRD-634-sun-shadows-reach-the-horizon-and-soften-with-distance-from-the-caster.md) now owns the template sun-shadow method and the source-angle penumbra, measured on layer L5 of the Unreal reference. If its Phase 1 picks virtual shadows, this PRD's page-cost gate decides whether that default holds the frame budget. No box changed.
 
 ## What Unreal does (UE 5.8.3, read 2026-10-09; ideas only, no code copied)
 

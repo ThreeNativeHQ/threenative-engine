@@ -357,6 +357,7 @@ boxes above are the progress record; these close the PRD.
 - [ ] A game that never constructs the node has identical draw calls and identical frame timing to HEAD. proof: the draw-call/timing comparison.
 - [ ] Frame cost on a physical Pixel 8 is recorded, and this PRD states whether it passed or was refused on it. proof: the paired device arms — **see `## Blocked on`: the physical device is not attached today, so the interim number is the emulator or attached-device arm, labelled as such.**
 - [ ] `pnpm budgets` passes, including §10b's line-count justification if the subsystem crosses it. proof: `pnpm budgets`.
+- [ ] The starter L7 cells (global illumination) match the Unreal L7 cells within the PRD-631 thresholds, room-interior pose included. proof: `pnpm unreal-look:compare --layer L7`.
 
 ## Decisions
 
@@ -383,6 +384,7 @@ boxes above are the progress record; these close the PRD.
 - **2026-10-03 — the `PRD-266` dependency is retired; the chain landed as PRD-278.** Filing-date
   claims about the chain, the template count and the playtest assertion vocabulary are corrected in
   *What landed since filing* rather than left to mislead the executor.
+- 2026-10-19 (PRD-631 reference plan): This PRD owns layer L7 (global illumination) of the Unreal reference ladder in [PRD-631](../Unreal/look/PRD-631-an-unreal-reference-scene-measures-the-default-look.md). Unreal 5.8.3 defaults to Lumen screen-probe gather (`Engine/Source/Editor/GameProjectGeneration/Private/GameProjectUtils.cpp:121`). It marks SSGI deprecated and does not fall back to it when Lumen is off (`Engine/Source/Runtime/Renderer/Private/IndirectLightRendering.cpp:93,595`). Screen space alone cannot light the room-interior pose from a sun the camera does not see. So Phase 3 (light from off screen) and PRD-603 to PRD-605 decide whether L7 can match, not the SSGI stage alone. The depth-normal prepass comes from [PRD-635](../Unreal/look/PRD-635-ambient-occlusion-darkens-only-the-light-that-comes-from-around.md). Added one acceptance box.
 
 ## Blocked on
 

@@ -1,0 +1,113 @@
+---
+prd_contract: v1
+---
+
+# PRD-632 — The frame is exposed and tone-mapped the way a fresh Unreal project is
+
+**Status:** NOT STARTED
+**Priority:** P2 — no box is ticked: the templates tone-map with stock three.js ACES at a hand-set exposure, auto exposure is off, and no light carries a physical unit.
+**Complexity:** 6 (MEDIUM) — template render source in 13 templates (+2), a new tone curve that must also run on the native engine (+2), physical light units that change every authored intensity (+2); risk override: none
+**Owner:** João
+**Depends on:** [PRD-631](PRD-631-an-unreal-reference-scene-measures-the-default-look.md) Phase 3 (the L1 and L9 rows). Turns on the histogram meter that [PRD-571](../../BLOCKED/requires-physical-device/PRD-571-exposure-meters-a-histogram-and-ignores-the-sun.md) shipped opt-in.
+
+## Context
+
+Tone and exposure set the brightness and the colour of every other layer. They are layer L1 of the
+PRD-631 ladder, so this PRD runs first.
+
+**ThreeNative today** (starter `high`, `packages/create-threenative/templates/starter/src/render/`):
+
+- Stock three.js `ACESFilmicToneMapping` (`worldEnvironment.ts:79`): the rational RRT/ODT fit, with
+  exposure divided by 0.6. The C++ engine ports the same fit (`packages/runtime-native/src/engine/shader/tonemap.cpp:27`).
+- A fixed exposure multiplier of 0.62, applied before bloom (`quality.ts:104`). Other templates use
+  0.60, 0.66 and 0.9.
+- Auto exposure is off. The histogram meter in `exposure.ts` / `exposureGraph.ts` ships in generated
+  source with a 10/90 percentile, 2 stops/s opening and 4 stops/s closing, limits of ±12 stops, and
+  a `1 + uv.y` weight.
+- The sun is `DirectionalLight(0xfff1e0, 4.5)`, "matched by eye" (`lighting.ts:19`). The sky photo
+  and environment are scaled by 2.5. No intensity has a unit.
+
+**Unreal 5.8.3, fresh desktop project** (source read 2026-10-19):
+
+| Setting | Default | Source |
+| --- | --- | --- |
+| Tonemapper | Filmic: slope 0.88, toe 0.55, shoulder 0.26, black clip 0, white clip 0.04 | `Engine/Source/Runtime/Engine/Private/Scene.cpp:440-448` |
+| Gamut and blue | Expand gamut 1, blue correction 0.6, tone curve amount 1 | `Scene.cpp:436` |
+| Curve shape | Log-domain straight segment with sigmoid toe and shoulder in AP1, plus glow and desaturation steps. It is not a rational fit | `Engine/Shaders/Private/TonemapCommon.ush:110-206` |
+| Auto exposure | On, histogram method | `Engine/Source/Runtime/Engine/Private/SceneView.cpp:183-190` |
+| Range | −10 to +20 EV100 ("extend default luminance range", set by the project generator) | `Scene.cpp:500-505`; `Engine/Source/Editor/GameProjectGeneration/Private/GameProjectUtils.cpp:148` |
+| Metering | Ignore the lowest 10% and the highest 10% of the histogram | `Scene.cpp:494` |
+| Speed | 3 stops/s brightening, 1 stop/s darkening | `Scene.cpp:520` |
+| Bias | +1 EV | `SceneView.cpp:197`; `Scene.cpp:516` |
+| Physical camera | Applied: 1/60 s, ISO 100, f/4; lens attenuation 0.78 | `Scene.cpp:490,523,607`; `Engine/Source/Runtime/Renderer/Private/PostProcess/PostProcessEyeAdaptation.cpp:104` |
+| Light units | Sun in lux, point lights in candela | `Engine/Source/Runtime/Engine/Private/SceneView.cpp:248` |
+
+Two gaps follow. **The curve:** ACES compresses the highlights and saturates the shadows
+differently from Unreal's filmic curve. **Exposure:** a fixed 0.62 cannot follow a scene from noon
+to a room interior, and Unreal adapts by default.
+
+### Where the change goes
+
+The tone curve and the exposure settings decide how the frame looks. Under the root `AGENTS.md`
+rule "(b) vetoes (a)", they ship as generated source in each template's `src/render/`, not in
+`packages/core`. Light units are different: converting lux and EV100 to a renderer multiplier is
+plumbing every game repeats, so it belongs in core, with the values chosen in template source.
+
+## Solution
+
+1. **A filmic tone node in template source.** Write a TSL function with Unreal's parameters: slope,
+   toe, shoulder, black clip and white clip, using the published straight-line-plus-sigmoid shape.
+   Write it from the description, not from Unreal code. Add it as `tonemapMode: "filmic"` next to
+   `aces`, `agx` and `neutral`, and make it the template default only after Phase 3. A game keeps
+   `"aces"` as the named override.
+2. **Exposure in EV100.** Core converts EV100 to the renderer multiplier with the standard
+   photometric formula: exposure = 1 / (1.2 × 2^EV100). The physical-camera term and the lens
+   attenuation are measured on the L1 cells, not assumed. The template sets the sun in lux and the
+   sky in nits, read from PRD-631's `template-actors.json`. A game that sets a unitless intensity
+   still works, and `TN_RENDER_CHAIN` reports that the frame is unitless.
+3. **Auto exposure on by default** with Unreal's metering: 10/90 percentiles, 3 stops/s brightening
+   and 1 stop/s darkening, the −10 to +20 range and the +1 bias. The PRD-571 histogram already
+   implements the percentiles. This PRD changes its speeds, its range and its default. The
+   `1 + uv.y` weight stays, because Unreal has no counterpart and the sky test passes without it.
+   The `low` tier keeps a fixed exposure, set to the metered mean of its scene.
+
+## Acceptance Criteria
+
+- [ ] AC-1 [local]: The L1 cells of the starter match the Unreal L1 cells within the PRD-631 thresholds, in all 12 poses. proof: `pnpm unreal-look:compare --layer L1` — Evidence: pending.
+- [ ] AC-2 [local]: With the sun moved from 60° to 4°, the adapted exposure of the starter follows the Unreal L9 exposure within 0.5 EV in each pose. proof: `pnpm unreal-look:compare --layer L9 --metric exposure` — Evidence: pending.
+- [ ] AC-3 [local]: A visual judge subagent returns IMPROVEMENT for the filmic, auto-exposed starter against the current starter, with the Unreal frames as the target. proof: judge verdict on the PRD-631 contact sheet, recorded here — Evidence: pending.
+
+## Integration Ledger
+
+| Capability | Reachable consumer/trigger | Replaces / disposition | Evidence |
+|---|---|---|---|
+| Filmic tone node | `templates/*/src/render/worldEnvironment.ts` → `tonemapMode: "filmic"` | Replaces `"aces"` as the template default. ACES stays as the named override | Phase 2 |
+| EV100 exposure and light units | `templates/*/src/render/lighting.ts` sets lux; core converts | Replaces the hand-set `exposure: 0.62` and `DirectionalLight(…, 4.5)` | Phase 2 |
+| Auto exposure default | `templates/*/src/render/exposure.ts` `enabled: true` at `high` and `medium` | Replaces PRD-571's opt-in default | Phase 3 |
+
+## Execution Phases
+
+#### Phase 1: The curve and the units
+**Status:** NOT STARTED
+**Files:** `packages/create-threenative/templates/starter/src/render/tonemap.ts` (new), `packages/core/src/render/exposure-units.ts` (new), `packages/core/__tests__/exposure-units.spec.ts`
+- [ ] The filmic node maps the scene-linear L1 EXR cells to the Unreal L1 PNG cells within the thresholds when both use the same exposure. This isolates the curve. proof: `pnpm unreal-look:compare --layer L1 --apply-curve-to unreal-exr`.
+- [ ] EV100 to multiplier round-trips, and the defaults convert as stated. proof: `pnpm exec vitest run packages/core/__tests__/exposure-units.spec.ts`.
+
+#### Phase 2: The starter matches L1
+**Status:** NOT STARTED
+**Files:** `packages/create-threenative/templates/starter/src/render/{quality,lighting,sky,worldEnvironment,exposure}.ts`
+- [ ] The starter sun is in lux and the sky is in nits, with the values taken from `template-actors.json`. proof: `pnpm unreal-look:compare --layer L1`.
+- [ ] Auto exposure runs with Unreal's metering at `high` and `medium`, and AC-2 passes. proof: `pnpm unreal-look:compare --layer L9 --metric exposure`.
+
+#### Phase 3: Default in every template, native included
+**Status:** NOT STARTED
+**Files:** `packages/create-threenative/templates/*/src/render/`, `packages/runtime-native/conformance/scenes/shared/filmic-tonemap.js` (new), `packages/runtime-native/conformance/registry.json`
+- [ ] The filmic curve renders on the desktop native engine within tolerance of the browser. proof: `pnpm parity --target desktop --only-tests filmic-tonemap`.
+- [ ] All templates use filmic, EV100 and auto exposure, and the template gate passes. proof: `pnpm test:templates`.
+
+## Decisions
+
+- 2026-10-19: Unreal's tone curve is a look, so it ships as template source. The EV100-to-multiplier
+  conversion is plumbing, so it ships in core.
+- 2026-10-19: The `low` tier keeps a fixed exposure. Unreal's mobile hardware targeting also turns
+  auto exposure off (`Engine/Source/Editor/HardwareTargeting/Private/HardwareTargetingModule.cpp:235`).
