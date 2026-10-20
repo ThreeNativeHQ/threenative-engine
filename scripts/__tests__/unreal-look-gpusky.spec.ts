@@ -31,6 +31,7 @@ const {
   gpuHg,
   gpuMedium,
   skyAnglesToUv,
+  skyFogOpacity,
   skyUvToAngles,
 } = await import(overlayPath);
 
@@ -109,6 +110,29 @@ function compile(material: object) {
 }
 
 describe("GPU Unreal sky", () => {
+  it("fogs the sky like Unreal's height fog: smooth in elevation, opaque at the horizon", () => {
+    // Unreal's L3 frame over its L2 frame (exterior pose, left strip, both suns) gives the opacity
+    // of the fog on the sky by elevation, the same for every colour. Level fog: tools/unreal-reference.
+    const fog = { density: 0.00436, heightFalloff: 0.02, fogHeight: -68.5 };
+    const measured: Array<[number, number]> = [
+      [5.91, 0.51],
+      [4.55, 0.61],
+      [3.18, 0.74],
+      [2.49, 0.825],
+      [1.8, 0.91],
+      [1.1, 0.98],
+    ];
+    for (const [degrees, opacity] of measured)
+      expect(skyFogOpacity(Math.sin((degrees * Math.PI) / 180), 3, fog)).toBeCloseTo(opacity, 1);
+    expect(skyFogOpacity(Math.sin((0.4 * Math.PI) / 180), 3, fog)).toBeGreaterThan(0.99);
+    expect(skyFogOpacity(0, 3, fog)).toBe(1);
+    // The rise is gradual: the old linear 1.5 degree ramp went from 0 to 1 over a quarter of this span.
+    const near = skyFogOpacity(Math.sin((1.5 * Math.PI) / 180), 3, fog);
+    const far = skyFogOpacity(Math.sin((3 * Math.PI) / 180), 3, fog);
+    expect(near - far).toBeLessThan(0.2);
+    expect(skyFogOpacity(0.5, 3, { ...fog, density: 0 })).toBe(0);
+  });
+
   it("compiles all four RTT graphs and the background graph to WGSL without a GPU", () => {
     const start = performance.now();
     const sky = new GpuSkyNode(new Vector3(0.5, Math.sqrt(0.75), 0), new Scene(), true, true);

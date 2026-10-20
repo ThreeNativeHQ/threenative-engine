@@ -39,7 +39,7 @@ import { HEIGHT_FOG, type HeightFogParams, heightFogNode } from "./heightFog.js"
  * pulled the photograph's ambient toward Unreal's void band; the atmosphere bake needs none.
  */
 /** Draw the sky with gpuSky.ts (Unreal LUT atmosphere and clouds) instead of the CPU bake. */
-const GPU_SKY = !/[?&]off=[^&]*gpusky/.test(globalThis.location?.search ?? "");
+const GPU_SKY = true;
 
 const AMBIENT_SCALE = new Color(1, 1, 1);
 
@@ -115,8 +115,9 @@ function skyAmbient(sky: Texture): Color | undefined {
 
 /**
  * The photograph with its lower hemisphere painted the fog colour, because three.js never fogs a
- * background and Unreal's void is fogged to opaque. A 1.5 degree ramp above the horizon stands in
- * for the haze Unreal's fog and aerial perspective lay over the sky's own horizon.
+ * background and Unreal's void is fogged to opaque. The software fallback only: a 1.5 degree ramp
+ * above the horizon stands in for the haze. The GPU sky fogs by the height fog's own opacity
+ * (`skyFogOpacity` in gpuSky.ts).
  */
 function voidSky(sky: Texture, fog: Color): Texture | undefined {
   const width = (sky.image as { width?: number }).width ?? 0;
@@ -211,7 +212,10 @@ export function setupSky(
   clouds = false,
 ): void {
   // The GPU sky needs TSL acos/tan/ceil on the Wasm engine; off until the engine math lands.
-  const gpu = software || !GPU_SKY ? undefined : createGpuSky(scene, SUN_DIRECTION, fogged, clouds);
+  const gpu =
+    software || !GPU_SKY
+      ? undefined
+      : createGpuSky(scene, SUN_DIRECTION, fogged, clouds, UNREAL_FOG);
   const sky = gpu?.environment ?? atmosphereSky(clouds) ?? photo;
   tintSun();
   sky.mapping = EquirectangularReflectionMapping;

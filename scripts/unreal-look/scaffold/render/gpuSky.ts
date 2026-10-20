@@ -3,8 +3,10 @@
 // under ~/UnrealEngine-5.8.3/Engine. Physical constants remain in atmosphere.ts and clouds.ts.
 import {
   CanvasTexture,
+  ClampToEdgeWrapping,
   Color,
   Data3DTexture,
+  DataTexture,
   FloatType,
   HalfFloatType,
   LinearFilter,
@@ -19,6 +21,7 @@ import {
   Fn,
   If,
   Loop,
+  cameraPosition,
   clamp,
   float,
   mix,
@@ -62,19 +65,40 @@ import {
 } from "./atmosphere.js";
 import {
   CLOUD_BOTTOM_KM,
+  CLOUD_MATERIAL,
   CLOUD_MODEL,
   CLOUD_TOP_KM,
-  EXTINCTION,
+  PATTERN_SIZE,
+  VOLUME_SIZE,
   bakeCloudRadiance,
-  cloudNoiseLattice,
+  cloudOctaves,
+  cloudProfileTexture,
+  cloudTextures,
 } from "./clouds.js";
 import { skyRadiance } from "./giCache.js";
+
+/** Exponential height fog, in metres: density at `fogHeight` (base 2) and falloff per metre. */
+export interface ISkyFog {
+  readonly density: number;
+  readonly heightFalloff: number;
+  readonly fogHeight: number;
+}
+const HEIGHT_FOG_DEFAULT: ISkyFog = { density: 0.0021, heightFalloff: 0.08, fogHeight: 0 };
+
+/**
+ * Fog opacity on a sky ray that rises at sin(e) and never ends (what Unreal applies to its far
+ * pixels): 1 - 2^-(density at the camera / (falloff ln2 sin e)). A ray at or below the horizon is opaque.
+ */
+export function skyFogOpacity(sinElevation: number, cameraY: number, fog: ISkyFog): number {
+  const density = fog.density * 2 ** (-fog.heightFalloff * (cameraY - fog.fogHeight));
+  return 1 - 2 ** -(density / (fog.heightFalloff * Math.LN2) / Math.max(sinElevation, 1e-4));
+}
 
 export const GPU_SKY_SIZES = {
   transmittance: [256, 64],
   multi: [32, 32],
   sky: [192, 108],
-  clouds: [1024, 512],
+  clouds: [4096, 2048],
 } as const;
 export const GPU_CLOUD_STEPS = {
   view: CLOUD_MODEL.maxViewSteps,
@@ -197,66 +221,55 @@ function material(colour: Node) {
   return m;
 }
 
-/** The same lattice and smooth interpolation as cloudDensityField, without a CPU cloud bake. */
+/** The cloud material's density on the GPU: the same generated textures as cloudDensityField. */
 function cloudNoise() {
-  const lattice = cloudNoiseLattice();
-  const rgba = new Float32Array(lattice.length * 4);
-  for (let i = 0; i < lattice.length; i++) rgba[i * 4] = lattice[i] ?? 0;
-  const map = new Data3DTexture(rgba, 32, 32, 32);
+  const { pattern, volume } = cloudTextures();
+  const rgba = new Float32Array(VOLUME_SIZE ** 3 * 4);
+  for (let i = 0; i < VOLUME_SIZE ** 3; i++) {
+    rgba[i * 4] = volume[i * 2] ?? 0;
+    rgba[i * 4 + 1] = volume[i * 2 + 1] ?? 0;
+  }
+  const map = new Data3DTexture(rgba, VOLUME_SIZE, VOLUME_SIZE, VOLUME_SIZE);
+  const patternMap = new DataTexture(pattern, PATTERN_SIZE, PATTERN_SIZE, RGBAFormat, FloatType);
+  const profileMap = new DataTexture(cloudProfileTexture(), 64, 64, RGBAFormat, FloatType);
+  for (const t of [map, patternMap, profileMap]) {
+    t.minFilter = t.magFilter = LinearFilter;
+    t.wrapS = t.wrapT = RepeatWrapping;
+    t.needsUpdate = true;
+  }
   map.type = FloatType;
   map.format = RGBAFormat;
-  map.minFilter = map.magFilter = LinearFilter;
-  map.wrapS = map.wrapT = map.wrapR = RepeatWrapping;
-  map.needsUpdate = true;
-  const sample = texture3D(map);
-  const noise = (p: Direction) => {
-    const f = p.fract();
-    return sample
-      .sample(
-        p
-          .floor()
-          .add(f.mul(f).mul(vec3(3).sub(f.mul(2))))
-          .add(0.5)
-          .div(32),
-      )
-      .level(float(0)).r;
-  };
-  const smooth = (t: Scalar) => {
-    const f = clamp(t, 0, 1);
-    return f.mul(f).mul(float(3).sub(f.mul(2)));
-  };
+  map.wrapR = RepeatWrapping;
+  profileMap.wrapS = profileMap.wrapT = ClampToEdgeWrapping;
+  const volumeSample = texture3D(map);
+  const patternSample = texture(patternMap);
+  const profileSample = texture(profileMap);
+  const m = CLOUD_MATERIAL;
+  const volumeAt = (p: Direction) => volumeSample.sample(p).level(float(0));
   return {
     map,
+    patternMap,
+    profileMap,
+    /** Extinction per metre at planet-centred p in km. */
     density: (p: Direction) => {
       const altitude = p.length().sub(BOTTOM_KM);
       const h = altitude.sub(CLOUD_BOTTOM_KM).div(CLOUD_TOP_KM - CLOUD_BOTTOM_KM);
-      const m = CLOUD_MODEL;
-      const profile = smooth(h.div(m.baseRamp)).mul(
-        float(1).sub(smooth(h.sub(m.topStart).div(m.topRamp))),
-      );
-      const coverage = smooth(
-        noise(vec3(p.x.mul(1000 / m.weatherMetres), 0, p.z.mul(1000 / m.weatherMetres)))
-          .sub(m.coverageStart)
-          .div(m.coverageWidth),
-      );
-      let shape: Scalar = float(0);
-      for (let i = 0; i < m.shapeWeights.length; i++) {
-        const frequency = (1000 * 2 ** i) / m.shapeMetres;
-        shape = shape.add(
-          noise(vec3(p.x, altitude, p.z).mul(frequency)).mul(m.shapeWeights[i] ?? 0),
-        );
-      }
-      const erosion = noise(vec3(p.x, altitude, p.z).mul(1000 / m.erosionMetres));
-      return clamp(
-        shape
-          .mul(profile)
-          .sub(m.shapeFloor)
-          .sub(float(1).sub(coverage).mul(m.coverageCarve))
-          .mul(m.densityGain)
-          .sub(float(1).sub(erosion).mul(m.erosionStrength)),
-        0,
-        1,
-      ).mul(profile);
+      const uv = vec2(p.x, p.z).div(m.layoutKm);
+      const pat = patternSample.sample(uv).level(float(0)).rgb;
+      const coverage = pat.x.max(pat.y).max(pat.z);
+      const profileAt = (channel: "x" | "y" | "z") =>
+        profileSample.sample(vec2(h, pat[channel])).level(float(0))[channel];
+      const profile = profileAt("x").max(profileAt("y")).max(profileAt("z")).sub(0.5);
+      const sky = vec3(uv.x.add(0.5), uv.y.add(0.5), p.y.sub(BOTTOM_KM).div(m.layoutKm));
+      const a = h.mul(0.95).add(0.05);
+      const c = a.sub(0.5).abs().mul(2).pow(2);
+      const warp = volumeAt(sky.mul(vec3(...m.noise2Scale)))
+        .r.sub(m.noiseBias[1])
+        .mul(m.noiseStrength[1]);
+      const shape = volumeAt(sky.mul(vec3(...m.noise1Scale)).add(vec3(a, a, c).mul(warp))).g;
+      const noise = shape.sub(m.noiseBias[0]).add(m.coverage).mul(m.noiseStrength[0]);
+      const inside = h.greaterThanEqual(m.insideLayer[0]).and(h.lessThanEqual(m.insideLayer[1]));
+      return inside.select(clamp(coverage.mul(profile.add(noise)).mul(m.density), 0, 1), float(0));
     },
   };
 }
@@ -291,6 +304,7 @@ export class GpuSkyNode extends TempNode<"vec3"> {
     readonly fogged: boolean,
     readonly clouds: boolean,
     readonly refreshEnvironment?: () => void,
+    readonly fog?: ISkyFog,
   ) {
     super("vec3");
     this.updateBeforeType = NodeUpdateType.FRAME;
@@ -471,9 +485,12 @@ export class GpuSkyNode extends TempNode<"vec3"> {
             const fade = float(1).sub(fadeT.mul(fadeT).mul(float(3).sub(fadeT.mul(2))));
             const through = float(1).toVar();
             const light = vec3(0).toVar();
-            const phase = gpuHg(d.dot(this.sun), 0.65)
-              .mul(0.8)
-              .add(gpuHg(d.dot(this.sun), -0.2).mul(0.2));
+            const forward = gpuHg(d.dot(this.sun), CLOUD_MATERIAL.phase.g);
+            const phase = forward.add(
+              gpuHg(d.dot(this.sun), CLOUD_MATERIAL.phase.g2)
+                .sub(forward)
+                .mul(CLOUD_MATERIAL.phase.blend),
+            );
             const airDepth = vec3(0).toVar();
             Loop(8, ({ i }) => {
               const p = vec3(0, R0, 0).add(d.mul(entry.mul(float(i).add(0.5).div(8))));
@@ -493,7 +510,7 @@ export class GpuSkyNode extends TempNode<"vec3"> {
             Loop(GPU_CLOUD_STEPS.view, ({ i }) => {
               If(float(i).lessThan(steps).and(through.greaterThan(0.005)), () => {
                 const p = vec3(0, R0, 0).add(d.mul(entry.add(float(i).add(0.5).mul(dt))));
-                const extinction = this.#noise.density(p).mul(EXTINCTION).mul(fade);
+                const extinction = this.#noise.density(p).mul(1000).mul(fade);
                 If(extinction.greaterThan(0), () => {
                   const rr = p.length();
                   const shadowLength = exit(
@@ -512,32 +529,26 @@ export class GpuSkyNode extends TempNode<"vec3"> {
                     shadow.addAssign(
                       this.#noise
                         .density(p.add(this.sun.mul(s)))
-                        .mul(EXTINCTION)
+                        .mul(1000)
                         .mul(ds),
                     );
                   });
                   const direct = float(0).toVar();
-                  let scatter = 1;
-                  for (let octave = 0; octave < 3; octave++) {
+                  for (const o of cloudOctaves())
                     direct.addAssign(
                       shadow
-                        .mul(-scatter)
+                        .mul(-o.extinction)
                         .exp()
-                        .mul(scatter)
-                        .mul(float(1 / (4 * PI)).add(phase.sub(1 / (4 * PI)).mul(scatter))),
+                        .mul(o.scatter)
+                        .mul(float(1 / (4 * PI)).add(phase.sub(1 / (4 * PI)).mul(o.anisotropy))),
                     );
-                    scatter *= 0.5 ** (2 ** octave);
-                  }
-                  const h = clamp(
-                    rr.sub(BOTTOM_KM + CLOUD_BOTTOM_KM).div(CLOUD_TOP_KM - CLOUD_BOTTOM_KM),
-                    0,
-                    1,
-                  );
-                  const source = this.#light
+                  const source = transmission(rr, p.dot(this.sun).div(rr))
                     .mul(direct)
-                    .add(this.#ambient.mul(h.mul(0.5).add(0.5)));
+                    .add(this.#ambient.mul(CLOUD_MATERIAL.skyOcclusion));
                   const stepT = extinction.mul(dt).negate().exp();
-                  light.addAssign(through.mul(float(1).sub(stepT)).mul(0.98).mul(source));
+                  light.addAssign(
+                    through.mul(float(1).sub(stepT)).mul(CLOUD_MATERIAL.albedo).mul(source),
+                  );
                   through.mulAssign(stepT);
                 });
               });
@@ -582,9 +593,17 @@ export class GpuSkyNode extends TempNode<"vec3"> {
         vec3(0),
       );
     const colour = sky.add(disc).mul(this.#scale);
-    return this.fogged
-      ? mix(colour, this.#fog, clamp(float(1).sub(d.y.div(Math.sin((1.5 * PI) / 180))), 0, 1))
-      : colour;
+    if (!this.fogged) return colour;
+    // Unreal fogs the sky like any far pixel: the exponential height fog's optical depth along a ray
+    // that rises at sin(e) and never ends is density_at_camera / (falloff ln2 sin e), base 2 as in
+    // HeightFogCommon.ush. A ray at or below the horizon sees the full depth, so the void is opaque.
+    // Measured on the Unreal L2 and L3 frames: transmittance x sin(e) is 0.105 at 1 to 6 degrees.
+    const fog = this.fog ?? HEIGHT_FOG_DEFAULT;
+    const density = float(fog.density).mul(
+      float(-fog.heightFalloff).mul(cameraPosition.y.sub(fog.fogHeight)).exp2(),
+    );
+    const depth = density.div(fog.heightFalloff * Math.LN2).div(d.y.max(1e-4));
+    return mix(colour, this.#fog, float(1).sub(depth.negate().exp2()));
   }
   get backgroundNode(): Direction {
     return nodeObject(this);
@@ -684,6 +703,7 @@ export function createGpuSky(
   sun: Vector3,
   fogged: boolean,
   clouds: boolean,
+  fog?: ISkyFog,
 ): { node: GpuSkyNode; environment: Texture } | undefined {
   if (typeof OffscreenCanvas === "undefined") return undefined;
   const w = 64;
@@ -728,7 +748,7 @@ export function createGpuSky(
     node.setAmbient(ambient.map((v) => v / weights));
     console.info(`CPU environment sky 64x32: ${(performance.now() - start).toFixed(1)} ms`);
   };
-  const node = new GpuSkyNode(sun, scene, fogged, clouds, refresh);
+  const node = new GpuSkyNode(sun, scene, fogged, clouds, refresh, fog);
   refresh();
   return { node, environment };
 }
