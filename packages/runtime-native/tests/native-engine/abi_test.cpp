@@ -1862,6 +1862,24 @@ void body_result_in_a_branch() {
     CHECK(assignments == 2);
 }
 
+// ivec2(a, b) and vec2(a, b) of whole-number parts: three's JoinNode casts each part to the vector's element
+// type, so the starter's auto exposure can load a texel at ivec2(i.mod(width), i.div(width)). The graph used to
+// refuse it as "construct vec2<f32>: part 0 is i32", which made the exposure pass throw inside the frame.
+void join_converts_integer_parts() {
+    namespace g = tn::engine::shader::graph;
+    using tn::abi::TslArg;
+    using namespace tn::engine::shader;
+    uint64_t serial = 0;
+    const auto whole = [&](double value) { return tn::abi::tslCall("int", nullptr, {TslArg::of(value)}, serial); };
+    const auto texel = tn::abi::tslCall("ivec2", nullptr, {TslArg::of(whole(3)), TslArg::of(whole(4))}, serial);
+    const auto mixed = tn::abi::tslCall("vec2", nullptr, {TslArg::of(whole(5)), TslArg::of(0.5)}, serial);
+    const auto root = g::vec4({g::float_(g::swizzle(texel, "y")), g::swizzle(mixed, "x"), g::swizzle(mixed, "y"), g::float_(1)});
+    Program program(Stage::Fragment);
+    tn::engine::shader::tsl::Build scope(program);
+    program.output("color", g::lower(root, program));
+    CHECK(buildStage(program).wgsl.ok());
+}
+
 void struct_function_return() {
     namespace g = tn::engine::shader::graph;
     using tn::abi::TslArg;
@@ -2301,7 +2319,7 @@ void starter_post_bindings() {
 
 }
 
-TN_TEST_MAIN({"body_result_lowers_once", body_result_lowers_once}, {"body_result_in_a_branch", body_result_in_a_branch}, {"struct_function_return", struct_function_return}, {"authored_output", authored_output}, {"fragment_node_vec3_is_opaque", fragment_node_vec3_is_opaque}, {"rtt_quad_depth_has_a_vertex_output", rtt_quad_depth_has_a_vertex_output}, {"post_output_depth_has_a_vertex_output", post_output_depth_has_a_vertex_output}, {"skinned_bounds_before_the_first_frame", skinned_bounds_before_the_first_frame}, {"tsl_mat2_scalar_order", tsl_mat2_scalar_order}, {"starter_post_bindings", starter_post_bindings}, {"gpu_bind_escape", gpu_bind_escape}, {"version", version}, {"handles", handles}, {"generic", generic}, {"scene", scene},
+TN_TEST_MAIN({"body_result_lowers_once", body_result_lowers_once}, {"body_result_in_a_branch", body_result_in_a_branch}, {"join_converts_integer_parts", join_converts_integer_parts}, {"struct_function_return", struct_function_return}, {"authored_output", authored_output}, {"fragment_node_vec3_is_opaque", fragment_node_vec3_is_opaque}, {"rtt_quad_depth_has_a_vertex_output", rtt_quad_depth_has_a_vertex_output}, {"post_output_depth_has_a_vertex_output", post_output_depth_has_a_vertex_output}, {"skinned_bounds_before_the_first_frame", skinned_bounds_before_the_first_frame}, {"tsl_mat2_scalar_order", tsl_mat2_scalar_order}, {"starter_post_bindings", starter_post_bindings}, {"gpu_bind_escape", gpu_bind_escape}, {"version", version}, {"handles", handles}, {"generic", generic}, {"scene", scene},
              {"unsupported_member", unsupported_member}, {"material", material}, {"light", light}, {"lifetime", lifetime},
              {"callbacks", callbacks}, {"color_set", color_set}, {"children", children}, {"tsl_call", tsl_call}, {"tsl_uniform_value", tsl_uniform_value}, {"tsl_statements", tsl_statements}, {"tsl_effect_parameter", tsl_effect_parameter}, {"mixer_time_field", mixer_time_field}, {"visible_field", visible_field}, {"layers_field", layers_field}, {"walk_parents", walk_parents}, {"property_bind", property_bind}, {"euler_order_field", euler_order_field}, {"object_addresses", object_addresses}, {"geometry_shapes", geometry_shapes}, {"typed_bytes", typed_bytes}, {"data_texture_bytes", data_texture_bytes}, {"attribute_view_writes", attribute_view_writes},
              {"attribute_defer", attribute_defer}, {"material_uuid", material_uuid}, {"matrix_walk_count", matrix_walk_count}, {"geometry_index_null", geometry_index_null}, {"world_space_conversions", world_space_conversions},

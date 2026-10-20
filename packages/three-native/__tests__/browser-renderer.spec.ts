@@ -270,6 +270,44 @@ describe("the Wasm engine's WebGPURenderer sample count", () => {
     expect(render).toHaveBeenCalledTimes(1);
     expect(secondary).toHaveBeenCalledTimes(1);
   });
+
+  it("names the loss on the console, so a caller that swallows the one throw cannot hide a black page", async () => {
+    // A warm-up or a frame hook may catch the single throw. Every later render() then returns without
+    // drawing and nothing says why: auto exposure's refused shader killed the page that way.
+    let hostState = 1;
+    const render = vi.fn(() => {
+      hostState = 2;
+      return 1;
+    });
+    const { Renderer, canvas, scene, camera } = host(
+      undefined,
+      render,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      () => hostState,
+    );
+    const renderer = new Renderer({ canvas }) as {
+      init(): Promise<unknown>;
+      render(scene: unknown, camera: unknown): void;
+    };
+    await renderer.init();
+    const errors = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      for (let frame = 0; frame < 5; frame += 1) {
+        try {
+          renderer.render(scene, camera);
+        } catch {
+          // The caller swallows it, as startup warm-up does.
+        }
+      }
+      expect(errors).toHaveBeenCalledTimes(1);
+      expect(String(errors.mock.calls[0]?.[0])).toContain("TN_WASM_RENDERER_LOST");
+    } finally {
+      errors.mockRestore();
+    }
+  });
 });
 
 describe("the Wasm engine's offscreen PassNode draw", () => {

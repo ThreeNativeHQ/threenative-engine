@@ -330,6 +330,7 @@ tn_native_engine_test(tn-native-engine-abi-test tests/native-engine/abi_test.cpp
     native_engine_abi_callbacks=callbacks
     native_engine_abi_color_set=color_set
     native_engine_abi_children=children
+    native_engine_join_converts_integer_parts=join_converts_integer_parts
     native_engine_struct_function_return=struct_function_return
     native_engine_authored_output=authored_output
     native_engine_starter_post_bindings=starter_post_bindings

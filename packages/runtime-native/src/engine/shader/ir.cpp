@@ -262,15 +262,23 @@ ExprId Program::construct(Type type, const std::vector<ExprId>& parts, Where whe
     Expr e{Op::Construct, type, {}, static_cast<uint8_t>(parts.size())};
     for (size_t i = 0; i < parts.size(); ++i) {
         if (parts[i] == kInvalid) return kInvalid;
-        const Type part = exprs_[parts[i]].type;
+        ExprId id = parts[i];
+        Type part = exprs_[id].type;
         // One numeric part of the same shape converts, as WGSL's u32(x) and vec3<f32>(v) do.
         const auto numeric = [](Type t) { return t.scalar != Type::Scalar::Bool && !t.isMatrix(); };
         const bool conversion = parts.size() == 1 && numeric(part) && numeric(type) && part.rows == type.rows;
+        // Several parts: three's JoinNode casts each input to the vector's element type, so ivec2(a, b) of
+        // whole numbers and vec2(i32, f32) build. A scalar part converts first; WGSL has no implicit cast.
+        if (parts.size() > 1 && part.isScalar() && numeric(part) && numeric(type) && part.scalar != type.scalar) {
+            id = construct(Type{type.scalar, 1, 1}, {id}, where);
+            if (id == kInvalid) return kInvalid;
+            part = exprs_[id].type;
+        }
         if ((part.scalar != type.scalar && !conversion) || part.isMatrix()) {
             return fail("construct " + type.name(), "part " + std::to_string(i) + " is " + part.name(), where);
         }
         components += part.rows;
-        e.args[i] = parts[i];
+        e.args[i] = id;
     }
     const unsigned want = static_cast<unsigned>(type.rows) * type.cols;
     // A single scalar splats, as vec3(1.0) does.

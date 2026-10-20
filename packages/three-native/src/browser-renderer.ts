@@ -425,7 +425,14 @@ export function defineWebRenderer(
      * page error per frame. A refusal that leaves the host running (a render target's) still throws each time.
      */
     #drawStatus(status: number): void {
-      if (status !== 0 && module._tnw_web_poll() === FAILED) this.#lost = true;
+      if (status !== 0 && !this.#lost && module._tnw_web_poll() === FAILED) {
+        this.#lost = true;
+        // The throw below is the only other report, and a warm-up or a frame hook may swallow it: every
+        // later render() returns without drawing, so the console must name the loss once, here.
+        console.error(
+          `TN_WASM_RENDERER_LOST: this renderer draws nothing after this call. ${module.UTF8ToString(module._tnw_web_error())}`,
+        );
+      }
       check(status);
     }
 
