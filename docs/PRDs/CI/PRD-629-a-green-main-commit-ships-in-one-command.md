@@ -88,6 +88,7 @@ Each box sits under the phase that delivers it, so progress moves phase by phase
 
 ## Decisions
 
+- A proof run builds `build-ios-simulator` too. The published matrix includes the simulator asset, so the first rehearsal (run 39348347531) failed in `publish` with "Incomplete prebuilt release matrix" while that job was skipped. It runs beside the Windows build, which is longer, so it adds no wall time. `clean-consumer-ios` stays tag-only.
 - **2026-10-19, rehearsal consumer (owner delegated to the implementer).** `clean-consumer` keeps its
   same-run asset server. A draft release has no anonymous download URL, and `install-prebuilt.mjs`
   pins every lock URL to the real `runtime-native-v<version>` tag, so a consumer cannot install from

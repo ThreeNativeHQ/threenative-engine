@@ -703,25 +703,57 @@ test("the main prerequisite verdict reads the event instead of holding a runner"
   );
 });
 
-// `clean-consumer-ios` and `build-ios-simulator` are the two publishing-adjacent jobs that rely on
-// implicit skip-propagation rather than an explicit event condition, so they are exactly the two
-// worth pinning. Their guards are already correct; this closes a coverage gap, not a defect.
-for (const name of ["clean-consumer-ios", "build-ios-simulator"]) {
-  test(`${name} stays out of every non-tag proof route`, () => {
-    // Neither job carries an event condition; both are held out by `validate-tag` skipping and
-    // emitting no `candidate_sha`. So the route has to be modelled as it actually runs - with
-    // `validate-tag` skipped - rather than with the helper's default populated outputs.
-    for (const event of ["pull_request", "workflow_dispatch", "push"] as const) {
-      assert.equal(allowed(name, event, "branch", { "validate-tag": "skipped" }), false);
-    }
-    assert.equal(allowed(name, "workflow_dispatch", "tag", { "validate-tag": "skipped" }), false);
-    // And the skip has to be able to propagate: no `always()`/`!cancelled()` escape, and the
-    // dependency that does the holding must still be declared.
-    const body = job(name).split("\n    steps:")[0] ?? "";
-    assert.match(body, /\n\x20{4}needs: \[?[^\n]*validate-tag/u);
-    assert.doesNotMatch(body, /always\(\)|!cancelled\(\)/u);
-  });
-}
+// `clean-consumer-ios` relies on implicit skip-propagation rather than an explicit event
+// condition, so it is worth pinning. Its guard is already correct; this closes a coverage gap.
+test("clean-consumer-ios stays out of every non-tag proof route", () => {
+  // The job carries no event condition; `validate-tag` skipping and emitting no `candidate_sha`
+  // holds it out. So the route is modelled as it runs - with `validate-tag` skipped - rather than
+  // with the helper's default populated outputs.
+  for (const event of ["pull_request", "workflow_dispatch", "push"] as const) {
+    assert.equal(
+      allowed("clean-consumer-ios", event, "branch", { "validate-tag": "skipped" }),
+      false,
+    );
+  }
+  assert.equal(
+    allowed("clean-consumer-ios", "workflow_dispatch", "tag", { "validate-tag": "skipped" }),
+    false,
+  );
+  // And the skip has to be able to propagate: no `always()`/`!cancelled()` escape, and the
+  // dependency that does the holding must still be declared.
+  const body = job("clean-consumer-ios").split("\n    steps:")[0] ?? "";
+  assert.match(body, /\n\x20{4}needs: \[?[^\n]*validate-tag/u);
+  assert.doesNotMatch(body, /always\(\)|!cancelled\(\)/u);
+});
+
+// PRD-629: the published matrix includes the simulator asset, so a proof run builds it and the
+// rehearsal lock is the lock the tag run generates. A tag run still builds it only for the
+// candidate commit, and a proof run skips it when the gates fail.
+test("build-ios-simulator runs on proof runs and on the candidate's tag run only", () => {
+  for (const event of ["pull_request", "workflow_dispatch", "push"] as const) {
+    assert.equal(
+      allowed("build-ios-simulator", event, "branch", { "validate-tag": "skipped" }),
+      true,
+    );
+    assert.equal(
+      allowed("build-ios-simulator", event, "branch", {
+        gates: "failure",
+        "validate-tag": "skipped",
+      }),
+      false,
+    );
+  }
+  assert.equal(allowed("build-ios-simulator", "push", "tag"), true);
+  assert.equal(allowed("build-ios-simulator", "push", "tag", { "validate-tag": "skipped" }), false);
+});
+
+test("a rehearsal publish waits for the simulator asset", () => {
+  assert.equal(allowed("publish", "pull_request", "branch"), true);
+  assert.equal(
+    allowed("publish", "pull_request", "branch", { "build-ios-simulator": "skipped" }),
+    false,
+  );
+});
 
 test("the emulator lane reports acceleration instead of asserting it", () => {
   // Read the step out of the job rather than via `script()`: that helper needs a line between

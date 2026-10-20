@@ -710,8 +710,13 @@ jobs:
           if-no-files-found: error
 
   build-ios-simulator:
+    # PRD-629: the published matrix includes this asset, so a proof run builds it too. The lock the
+    # rehearsal `publish` generates is then the lock the tag run generates. It runs beside the
+    # Windows build, which is the longer job, so it adds no wall time.
     needs: [validate-tag, gates]
-    if: needs.validate-tag.outputs.candidate_sha == github.sha
+    if: >-
+      ${{ !cancelled() && needs.gates.result == 'success' &&
+      (github.ref_type != 'tag' || needs.validate-tag.outputs.candidate_sha == github.sha) }}
     runs-on: macos-15
     timeout-minutes: 60
     steps:
@@ -758,7 +763,8 @@ jobs:
     needs: [validate-tag, gates, build, build-android, build-ios-simulator]
     if: >-
       ${{ !cancelled() && needs.build.result == 'success' && needs.build-android.result == 'success' &&
-      ((github.ref_type != 'tag' && needs.gates.result == 'success') ||
+      ((github.ref_type != 'tag' && needs.gates.result == 'success' &&
+      needs.build-ios-simulator.result == 'success') ||
       (github.event_name == 'push' && github.ref_type == 'tag' && needs.validate-tag.result == 'success' &&
       needs.build-ios-simulator.result == 'success' && needs.validate-tag.outputs.candidate_sha == github.sha)) }}
     runs-on: ubuntu-24.04
