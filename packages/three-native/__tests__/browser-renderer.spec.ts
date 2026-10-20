@@ -30,6 +30,7 @@ function host(
   secondary?: Parameters<typeof defineWebRenderer>[4],
   renderTarget: (...args: number[]) => number = () => 0,
   before?: Parameters<typeof defineWebRenderer>[2],
+  poll: () => number = () => 1,
 ) {
   const types = new Map<string, number>();
   const runtime: IBrowserRuntime = {
@@ -57,7 +58,7 @@ function host(
     },
     _free: () => undefined,
     _tnw_web_init: initCalls,
-    _tnw_web_poll: () => 1,
+    _tnw_web_poll: poll,
     _tnw_web_adapter: () => 0,
     _tnw_web_error: () => 0,
     _tnw_web_resize: () => 0,
@@ -229,6 +230,42 @@ describe("the Wasm engine's WebGPURenderer sample count", () => {
     expect(renderer.info.render.triangles).toBe(13707);
     renderer.info.reset();
     expect(renderer.info.render).toMatchObject({ drawCalls: 0, frameCalls: 0, triangles: 0 });
+  });
+
+  it("reports a lost device once and then stops drawing, instead of throwing every frame", async () => {
+    // Chromium's headless shell cannot back a WebGPU canvas, so the GPU process destroys the device right
+    // after start; the host stays Failed. The renderer threw "TN_WASM_DEVICE_LOST" from every render() (about
+    // 950 page errors in 25 s).
+    let hostState = 1;
+    const render = vi.fn(() => {
+      hostState = 2;
+      return 1;
+    });
+    const secondary = vi.fn();
+    const { Renderer, canvas, scene, camera } = host(
+      undefined,
+      render,
+      secondary,
+      undefined,
+      undefined,
+      () => hostState,
+    );
+    const renderer = new Renderer({ canvas }) as {
+      init(): Promise<unknown>;
+      render(scene: unknown, camera: unknown): void;
+    };
+    await renderer.init();
+    const failures: unknown[] = [];
+    for (let frame = 0; frame < 50; frame += 1) {
+      try {
+        renderer.render(scene, camera);
+      } catch (error) {
+        failures.push(error);
+      }
+    }
+    expect(failures).toHaveLength(1);
+    expect(render).toHaveBeenCalledTimes(1);
+    expect(secondary).toHaveBeenCalledTimes(1);
   });
 });
 

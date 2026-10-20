@@ -162,6 +162,8 @@ export function defineWebRenderer(
     #initialized: Promise<this> | undefined;
     #adapter: IAdapterInfo | undefined;
     #last: [unknown, unknown] | undefined;
+    /** The host is Failed for good (the GPU process destroyed the device, an uncaptured error): see #drawStatus. */
+    #lost = false;
     #state: string | undefined;
     #gpuSamples = 0;
     #holdsSlot = true;
@@ -301,6 +303,7 @@ export function defineWebRenderer(
     render(scene: unknown, camera: unknown): void {
       if (this.#adapter === undefined)
         throw new Error("TN_WASM_RENDERER: render() before init() finished.");
+      if (this.#lost) return;
       // Chromium queues a submitted frame without bound. When rAF outruns the GPU (an unthrottled
       // loop, a heavy scene) the page blocks until the GPU drains and the GPU process is killed.
       // The host says 1 while two drawn frames are still on the GPU: draw nothing this call.
@@ -320,7 +323,7 @@ export function defineWebRenderer(
       writeHandle(0, scene, "scene");
       writeHandle(12, camera, "camera");
       const renderFrame = this.info.frame;
-      check(module._tnw_web_render(handles, handles + 12, ...this.#clear, renderFrame));
+      this.#drawStatus(module._tnw_web_render(handles, handles + 12, ...this.#clear, renderFrame));
       this.info.frame += 1;
       this.info.render.frameCalls = module._tnw_web_frame(0);
       this.info.render.calls += this.info.render.frameCalls;
@@ -375,12 +378,13 @@ export function defineWebRenderer(
     [DRAW_TARGET](target: unknown, root: unknown, camera: unknown, deferred = false): void {
       if (this.#adapter === undefined)
         throw new Error("TN_WASM_RENDERER: render() before init() finished.");
+      if (this.#lost) return;
       beforeRender({ camera, scene: root, renderer: this, frameId: this.info.frame });
       this.#applyState();
       writeHandle(0, root, "scene");
       writeHandle(12, camera, "camera");
       writeHandle(24, target, "render target");
-      check(
+      this.#drawStatus(
         module._tnw_web_render_target(
           handles + 24,
           handles,
@@ -389,6 +393,16 @@ export function defineWebRenderer(
           deferred ? 1 : 0,
         ),
       );
+    }
+
+    /**
+     * A draw's status. The host stays Failed once it lost its device and answers every later draw with the
+     * same message, so the first one throws and the renderer draws nothing after it: one diagnostic, not one
+     * page error per frame. A refusal that leaves the host running (a render target's) still throws each time.
+     */
+    #drawStatus(status: number): void {
+      if (status !== 0 && module._tnw_web_poll() === FAILED) this.#lost = true;
+      check(status);
     }
 
     /** The last scene and camera again: RenderPipeline.render() draws through its post graph. */
