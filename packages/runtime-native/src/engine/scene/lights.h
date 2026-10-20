@@ -38,6 +38,7 @@ public:
     explicit LightShadow(std::unique_ptr<Camera> camera) : camera(std::move(camera)) {}
     std::unique_ptr<Camera> camera;
     std::shared_ptr<const shadows::AtlasOptions> virtualShadow;
+    std::optional<std::array<double, 3>> sourceAngleFilter;
     double intensity = 1;
     double bias = 0;
     double normalBias = 0;

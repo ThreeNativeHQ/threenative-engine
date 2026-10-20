@@ -48,14 +48,27 @@ void binding() {
     CHECK(plan->table() != held);
     auto bad = options;
     bad.fields.emplace_back("autoDepth", Value::of(true));
+    set(&light.shadow, bad, store);
+    CHECK(light.shadow.virtualShadow != installed);
+    auto automatic = PageAtlas::create(*light.shadow.virtualShadow, error);
+    CHECK(automatic.has_value());
+    CHECK(!automatic->update(Vector3(0, 0, 0), Vector3(0, 1, 0)).empty());
+    const Value filter = Value::record({{"sourceAngleRad", Value::of(0.01)},
+        {"blockerSamples", Value::of(8.0)}, {"filterSamples", Value::of(12.0)}});
+    setters.at("filterNode")(&light.shadow, filter, store);
+    CHECK(light.shadow.sourceAngleFilter && (*light.shadow.sourceAngleFilter)[0] == 0.01);
+    CHECK((*light.shadow.sourceAngleFilter)[1] == 8 && (*light.shadow.sourceAngleFilter)[2] == 12);
+    auto invalidFilter = filter; invalidFilter.fields[0].second = Value::of(-0.1);
+    bool invalid = false;
+    try { setters.at("filterNode")(&light.shadow, invalidFilter, store); }
+    catch (const Unsupported& e) { invalid = e.reason == "TN_VIRTUAL_SHADOW_INVALID: source-angle filter"; }
+    CHECK(invalid && (*light.shadow.sourceAngleFilter)[0] == 0.01);
+    setters.at("filterNode")(&light.shadow, Value{}, store);
+    CHECK(!light.shadow.sourceAngleFilter);
     bool refused = false;
-    try { set(&light.shadow, bad, store); }
-    catch (const Unsupported& e) { refused = e.reason == "TN_VIRTUAL_SHADOW_UNSUPPORTED: automatic depth"; }
-    CHECK(refused && light.shadow.virtualShadow == installed);
-    refused = false;
     try { setters.at("filterNode")(&light.shadow, Value::of(1.0), store); }
-    catch (const Unsupported& e) { refused = e.reason == "TN_VIRTUAL_SHADOW_UNSUPPORTED: filterNode"; }
-    CHECK(refused && light.shadow.virtualShadow == installed);
+    catch (const Unsupported& e) { refused = e.reason.find("TN_VIRTUAL_SHADOW_UNSUPPORTED: filterNode") == 0; }
+    CHECK(refused);
     set(&light.shadow, Value{}, store);
     CHECK(!light.shadow.virtualShadow);
 }
@@ -128,6 +141,38 @@ void atlas() {
     CHECK(fresh->update(after, light).size() == 16);
     CHECK(std::equal(cut->table().begin(), cut->table().begin() + 72, fresh->table().begin()));
     CHECK(cut->update(after, light).empty());
+    // Automatic depth uses only overlapping casters, holds cached/deferred cameras, and refits
+    // a changed caster. A wide ground mass contributes its height, not its world diagonal.
+    options.autoDepth = true;
+    auto fitted = PageAtlas::create(options, error);
+    Box3 prop; prop.set(Vector3(-1, 2, -1), Vector3(1, 4, 1));
+    Box3 remote; remote.set(Vector3(100, 1000, 100), Vector3(101, 1001, 101));
+    const std::vector<Box3> casters{prop, remote};
+    auto fitPages = fitted->update(eye, Vector3(0, 1, 0), false, casters);
+    CHECK(!fitPages.empty());
+    CHECK(std::abs(fitted->table()[31] - std::sqrt(12.0)) < 1e-5);
+    for (const auto& point : {prop.min, prop.max}) {
+        Vector3 projected = point;
+        projected.applyMatrix4(fitPages[0].view).applyMatrix4(fitPages[0].projection);
+        CHECK(projected.z >= 0 && projected.z <= 1);
+    }
+    fitted->update(eye, Vector3(0, 1, 0), false, casters);
+    const auto fittedTable = fitted->table();
+    CHECK(fitted->update(Vector3(0, 5, 0), Vector3(0, 1, 0), false, casters).empty());
+    CHECK(fitted->table() == fittedTable);
+    prop.max.y = 14;
+    fitted->invalidate(prop);
+    CHECK(!fitted->update(eye, Vector3(0, 1, 0), false, {prop}).empty());
+    CHECK(fitted->table()[31] > fittedTable[31]);
+    Box3 mass; mass.set(Vector3(-1000, -2, -1000), Vector3(1000, 0, 1000));
+    fitted->invalidateAll();
+    fitPages = fitted->update(eye, Vector3(0, 1, 0), false, {mass});
+    CHECK(fitted->table()[fitPages.front().level * 36 + 31] == 2);
+    // A sun below the derivation threshold keeps the configured fallback, as the JS node does.
+    auto horizon = PageAtlas::create(options, error);
+    horizon->update(eye, Vector3(1, 0, 0), false, casters);
+    CHECK(horizon->table()[31] == 59);
+    options.autoDepth = false;
     options.adaptiveRefresh = true;
     CHECK(!PageAtlas::create(options, error) && error == "TN_VIRTUAL_SHADOW_UNSUPPORTED: adaptiveRefresh");
     options.adaptiveRefresh = false;
@@ -174,6 +219,7 @@ void sampling() {
         CHECK(vertex.wgsl.ok() && fragment.wgsl.ok());
         CHECK(fragment.wgsl.code.find("vsmTable0") != std::string::npos);
         CHECK(fragment.wgsl.code.find("textureSampleCompare") != std::string::npos);
+        CHECK(fragment.wgsl.code.find("textureLoad") != std::string::npos);
         CHECK(vertex.wgsl.code.find("positionWorld") != std::string::npos);
     }
 }

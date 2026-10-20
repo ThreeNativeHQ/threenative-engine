@@ -162,6 +162,7 @@ DirectLight::Shadow shadowOf(LightShadow& shadow, const std::array<double, 3>& f
     out.projection = toArray(camera.projectionMatrix);
     out.matrix = toArray(matrix);
     out.virtualShadow = shadow.virtualShadow;
+    out.sourceAngleFilter = shadow.sourceAngleFilter;
     out.bias = shadow.bias;
     out.normalBias = shadow.normalBias;
     out.radius = shadow.radius;
@@ -197,6 +198,7 @@ DirectLight::Shadow pointShadowOf(LightShadow& shadow, const std::array<double, 
     out.projection = toArray(camera.projectionMatrix);
     out.matrix = toArray(matrix);
     out.virtualShadow = shadow.virtualShadow;
+    out.sourceAngleFilter = shadow.sourceAngleFilter;
     out.bias = shadow.bias;
     out.normalBias = shadow.normalBias;
     out.radius = shadow.radius;

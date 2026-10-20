@@ -2311,6 +2311,10 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         auto& lightCasterBounds = casterBounds[i];
         for (const DrawItem& item : items) {
             if (!item.castShadow || !item.positions || item.instanceCount == 0 || (item.layers & mask) == 0) continue;
+            // Bind-pose bounds cannot fit a GPU-displaced caster without clipping its shadow.
+            if (shadow.atlas.options().autoDepth &&
+                (item.positionNode || item.nodes.positionNode || item.boneMatrices || item.morphGeometry))
+                throw std::runtime_error("TN_VIRTUAL_SHADOW_UNSUPPORTED: automatic depth for GPU-deformed casters; supply lightDistance and depthRange");
             Box3 bounds;
             if (item.positions->scalar() == Scalar::F32) {
                 for (uint64_t idx = 0; idx + 2 < item.positions->count(); idx += 3) {
@@ -2319,6 +2323,17 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 }
             }
             Matrix4 model; model.elements = item.matrixWorld;
+            if (item.instanceMatrices) {
+                Box3 instances;
+                const auto* matrices = reinterpret_cast<const float*>(item.instanceMatrices->data());
+                for (uint32_t instance = 0; instance < item.instanceCount; ++instance) {
+                    Matrix4 transform;
+                    for (int e = 0; e < 16; ++e) transform.elements[e] = matrices[instance * 16 + e];
+                    Box3 box = bounds; box.applyMatrix4(transform);
+                    instances.unionWith(box);
+                }
+                bounds = instances;
+            }
             bounds.applyMatrix4(model);
             lightCasterBounds[item.key] = bounds;
         }
@@ -2357,12 +2372,16 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         }
         shadow.casterPrograms = std::move(casterPrograms);
         shadow.casters = lightCasterBounds;
-        virtualPages[i] = shadow.atlas.update(Vector3(camera.matrixWorld[12], camera.matrixWorld[13], camera.matrixWorld[14]), towards, virtualCut_);
+        std::vector<Box3> depthCasters;
+        for (const auto& [key, bounds] : lightCasterBounds) depthCasters.push_back(bounds);
+        virtualPages[i] = shadow.atlas.update(Vector3(camera.matrixWorld[12], camera.matrixWorld[13], camera.matrixWorld[14]), towards, virtualCut_, depthCasters);
     }
     if (!compilation) virtualCut_ = false;
     std::string lightKinds, unshadowedKinds;
     for (std::size_t i = 0; i < lights.direct.size(); ++i) {
         const DirectLight& l = lights.direct[i];
+        if (l.shadow && l.shadow->sourceAngleFilter && !virtualShadows_.count(i))
+            throw std::runtime_error("TN_VIRTUAL_SHADOW_UNSUPPORTED: sourceAngleShadowFilter requires VirtualShadowNode");
         const char kind = l.kind == DirectLight::Kind::Directional ? 'd' : l.kind == DirectLight::Kind::Point ? 'p' : 's';
         unshadowedKinds += kind;
         lightKinds += virtualShadows_.count(i) ? char('0' + virtualShadows_.at(i).atlas.options().clipExtents.size()) : l.shadow ? static_cast<char>(kind - 'a' + 'A') : kind;
@@ -2432,7 +2451,13 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     // else 1 minus the influences' sum, summed in double as JS reduces them.
     for (auto& [name, storage] : storages_)
         if (name.rfind("probe_", 0) != 0 && name != "instances") storage.data.clear();
-    for (const auto& [i, shadow] : virtualShadows_) storages_["vsmTable" + std::to_string(i)].data = shadow.atlas.table();
+    for (const auto& [i, shadow] : virtualShadows_) {
+        auto& table = storages_["vsmTable" + std::to_string(i)].data;
+        table = shadow.atlas.table();
+        const auto& filter = lights.direct[i].shadow->sourceAngleFilter;
+        table.insert(table.end(), {filter ? float(std::tan((*filter)[0])) : 0.0f,
+            filter ? float((*filter)[1]) : 0.0f, filter ? float((*filter)[2]) : 0.0f, filter ? 1.0f : 0.0f});
+    }
     const uint64_t jointPrefix = gpuJoints_ && gpuJoints_->current() ? gpuJoints_->parents.size() * 64 : 0;
     std::vector<float>& bones = storages_["boneMatrices"].data;
     std::vector<float>& morphData = storages_["morphData"].data;

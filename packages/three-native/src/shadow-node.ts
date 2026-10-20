@@ -38,3 +38,33 @@ export function virtualShadowOptions(value: unknown): Record<string, unknown> | 
     selectionGuard: guards.map((guard, i) => guard + (steps[Math.min(i, steps.length - 1)] ?? 0)),
   };
 }
+
+/** Only the source-angle filter has an atlas implementation; never silently drop a callback. */
+export function shadowFilterOptions(value: unknown): Record<string, number> | null {
+  if (value === null) return null;
+  const options =
+    typeof value === "function"
+      ? (value as unknown as Record<symbol, unknown>)[
+          Symbol.for("threenative.sourceAngleShadowFilter")
+        ]
+      : undefined;
+  if (typeof options !== "object" || options === null)
+    throw new Error("TN_VIRTUAL_SHADOW_UNSUPPORTED: filterNode (sourceAngleShadowFilter required)");
+  const config = options as Record<string, unknown>;
+  const { sourceAngleRad, blockerSamples, filterSamples } = config;
+  if (
+    typeof sourceAngleRad !== "number" ||
+    !Number.isFinite(sourceAngleRad) ||
+    sourceAngleRad < 0 ||
+    sourceAngleRad >= Math.PI / 2 ||
+    [blockerSamples, filterSamples].some(
+      (count) => typeof count !== "number" || !Number.isInteger(count) || count < 1 || count > 64,
+    )
+  )
+    throw new Error("TN_VIRTUAL_SHADOW_INVALID: source-angle filter");
+  return {
+    sourceAngleRad,
+    blockerSamples: blockerSamples as number,
+    filterSamples: filterSamples as number,
+  };
+}

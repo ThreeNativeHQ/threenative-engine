@@ -83,7 +83,12 @@ export function sourceAngleShadowFilter({
     const angle = index * Math.PI * (3 - Math.sqrt(5));
     return vec2(radius * Math.cos(angle), radius * Math.sin(angle));
   };
-  return ({ depthTexture, shadowCoord, shadow, depthLayer = 0 }) => {
+  const filter = ({
+    depthTexture,
+    shadowCoord,
+    shadow,
+    depthLayer = 0,
+  }: ISourceAngleShadowInputs) => {
     const camera = shadow.camera as OrthographicCamera;
     if (camera.isOrthographicCamera !== true) {
       throw new RangeError("source-angle shadows require an orthographic shadow camera");
@@ -152,4 +157,12 @@ export function sourceAngleShadowFilter({
       return blockerCount.greaterThan(0).select(visibility.div(filterSamples), float(1));
     })();
   };
+  // Native virtual maps translate the same filter parameters into atlas-aware depth loads.
+  return Object.assign(filter, {
+    [Symbol.for("threenative.sourceAngleShadowFilter")]: Object.freeze({
+      sourceAngleRad,
+      blockerSamples,
+      filterSamples,
+    }),
+  });
 }

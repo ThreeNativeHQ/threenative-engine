@@ -183,11 +183,36 @@ because generated source belongs to the game.
 - [x] The level builds and all 120 cells render headless, each with a PNG and an EXR. proof: `pnpm unreal-look:capture --engine unreal` exit 0, 240 files. Result 2026-10-19: exit 0, 120 PNG + 120 EXR (EXR with the tone curve off), plus 4 ID PNGs.
 
 #### Phase 2: ThreeNative renders the same cells, and the comparison runs
-**Status:** NOT STARTED
+**Status:** PARTIAL
 **Files:** `scripts/unreal-look/capture-threenative.ts`, `scripts/unreal-look/compare.ts`, `scripts/__tests__/unreal-look-compare.spec.ts`
 - [x] `compare.ts` fails closed on a missing cell, a size mismatch and an empty mask. proof: `pnpm exec vitest run scripts/__tests__/unreal-look-compare.spec.ts`. Result 2026-10-19: 17/17 pass; on real captures it also refused a missing L5 cell (`TN_UNREAL_LOOK_MISSING_CELL`).
 - [ ] The L0 cells line up: silhouette IoU at or above 0.98 for every region mask in all 12 poses. This proves that axes, units and FOV match. proof: `pnpm unreal-look:compare --layer L0`.
 - [ ] All 120 ThreeNative cells render headed on WebGPU, with `adapter.info` recorded. proof: `pnpm unreal-look:capture --engine threenative` exit 0.
+
+Native shadow round 2 (2026-10-19): extend the existing native virtual page atlas, rather than
+running core's nested Three.js shadow renderer inside the facade. Scope stops after automatic
+depth and source-angle filtering; mover maps require independent dynamic depth and transition
+invalidation, and adaptive policies require per-level timing, focus and LOD inputs.
+
+- [x] Fit clip cameras from caster bounds and retain cached/explicit depth. proof: Wasm `native_engine_vsm_*` CTest, 5/5 pass, including
+  fitted depth, distant-caster exclusion, mass height, low-sun fallback and cache retention.
+- [x] Translate source-angle filters to atlas-aware PCF on both adapters. proof: facade shadow-node Vitest;
+  native VSM sampling/binding CTest; `tsc --noEmit -p packages/three-native/tsconfig.json`, exit 0.
+  GPU rendering and a visual judge remain **unverified**: the smoke server cannot bind
+  `127.0.0.1:5299` (`listen EPERM`) in this sandbox. Desktop V8 has not executed this change.
+  The full facade Vitest command was attempted and interrupted after its differential runner
+  stalled; an independent `spawnSync` stdin probe timed out, and stdout piping returned EPERM.
+  Excluding `run-native.spec.ts`: 33 files / 241 tests pass. Core shadow regressions: 126 pass.
+  `tn-native-engine-web` builds with a writable `/tmp` Emscripten cache; no SDK writes.
+
+The default constructor still refuses `TN_VIRTUAL_SHADOW_UNSUPPORTED: adaptiveRefresh`.
+Adaptive caster gating, focus/LOD, nonzero caster gating and delayed invalidation remain refused;
+unknown filter callbacks retain `TN_VIRTUAL_SHADOW_UNSUPPORTED: filterNode`. Bias, normal bias,
+intensity and the stock radius path remain owned by `light.shadow`.
+Automatic depth also refuses GPU-deformed casters (`TN_VIRTUAL_SHADOW_UNSUPPORTED: automatic
+depth for GPU-deformed casters; supply lightDistance and depthRange`): native bind-pose bounds
+cannot safely bound arbitrary position shaders, skinning or morphs. Fixed depth remains available;
+this refusal's render-time branch is compiled but unexecuted here.
 
 #### Phase 3: Noise floor, thresholds and the baseline gap
 **Status:** NOT STARTED

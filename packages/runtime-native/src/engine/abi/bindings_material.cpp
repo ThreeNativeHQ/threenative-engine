@@ -359,7 +359,12 @@ void registerLightShadow(ClassBinding& b, bool spot) {
         if (value.kind != Value::Kind::Record || !dynamic_cast<OrthographicCamera*>(shadow.camera.get()))
             throw Unsupported{"TN_NATIVE_SHADOW_NODE_UNSUPPORTED: directional VirtualShadowNode required"};
         shadows::AtlasOptions options;
+        options.autoDepth = true;
+        bool distanceGiven = false, rangeGiven = false, automaticGiven = false;
         for (const auto& [key, v] : value.fields) {
+            distanceGiven |= key == "lightDistance";
+            rangeGiven |= key == "depthRange";
+            automaticGiven |= key == "autoDepth";
             if (key == "clipExtents") options.clipExtents = numbersOf(v);
             else if (key == "selectionGuard") options.selectionGuard = numbersOf(v);
             else if (key == "refreshStep") options.refreshStep = numbersOf(v);
@@ -373,7 +378,7 @@ void registerLightShadow(ClassBinding& b, bool spot) {
             }
             else if (key == "lightDistance") options.lightDistance = number(v);
             else if (key == "depthRange") options.depthRange = number(v);
-            else if (key == "autoDepth" && flag(v)) throw Unsupported{"TN_VIRTUAL_SHADOW_UNSUPPORTED: automatic depth"};
+            else if (key == "autoDepth") options.autoDepth = flag(v);
             else if (key == "adaptiveRefresh") options.adaptiveRefresh = flag(v);
             else if (key == "adaptiveCasterGate") options.adaptiveCasterGate = flag(v);
             else if (key == "followViewFocus") options.followViewFocus = flag(v);
@@ -381,15 +386,30 @@ void registerLightShadow(ClassBinding& b, bool spot) {
             else if (key == "minCasterTexels") options.minCasterTexels = number(v);
             else if (key == "receiverPlaneBias") options.receiverPlaneBias = flag(v);
         }
+        if (!automaticGiven) options.autoDepth = !distanceGiven || !rangeGiven;
         if (!std::isfinite(shadow.radius) || shadow.radius < 0 || shadow.radius + 0.5 > options.border)
             throw Unsupported{"TN_VIRTUAL_SHADOW_UNSUPPORTED: PCF radius exceeds page guard texels"};
         std::string error;
         if (!shadows::PageAtlas::create(options, error)) throw Unsupported{error};
         shadow.virtualShadow = std::make_shared<const shadows::AtlasOptions>(std::move(options));
     };
-    b.setters["filterNode"] = [](void*, const Value& value) {
-        if (value.kind != Value::Kind::Null)
-            throw Unsupported{"TN_VIRTUAL_SHADOW_UNSUPPORTED: filterNode"};
+    b.setters["filterNode"] = [](void* self, const Value& value) {
+        auto& shadow = *as<LightShadow>(self);
+        if (value.kind == Value::Kind::Null) { shadow.sourceAngleFilter.reset(); return; }
+        if (value.kind != Value::Kind::Record || value.fields.size() != 3 ||
+            !dynamic_cast<OrthographicCamera*>(shadow.camera.get()))
+            throw Unsupported{"TN_VIRTUAL_SHADOW_UNSUPPORTED: filterNode (directional sourceAngleShadowFilter required)"};
+        double angle = -1, blockers = 0, samples = 0;
+        for (const auto& [key, v] : value.fields) {
+            if (key == "sourceAngleRad") angle = number(v);
+            else if (key == "blockerSamples") blockers = number(v);
+            else if (key == "filterSamples") samples = number(v);
+        }
+        if (!std::isfinite(angle) || angle < 0 || angle >= 1.5707963267948966 ||
+            !std::isfinite(blockers) || blockers < 1 || blockers > 64 || blockers != std::floor(blockers) ||
+            !std::isfinite(samples) || samples < 1 || samples > 64 || samples != std::floor(samples))
+            throw Unsupported{"TN_VIRTUAL_SHADOW_INVALID: source-angle filter"};
+        shadow.sourceAngleFilter = {angle, blockers, samples};
     };
     if (spot) {
         b.getters["focus"] = [](void* self) { return Value::of(as<LightShadow>(self)->focus); };

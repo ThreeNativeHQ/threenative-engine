@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { type IBrowserRuntime, defineBrowserClasses } from "../src/browser-backend.js";
 import { bindUpstreamExports } from "../src/browser-entry.js";
 
-import { ShadowBaseNode, virtualShadowOptions } from "../src/shadow-node.js";
+import { ShadowBaseNode, shadowFilterOptions, virtualShadowOptions } from "../src/shadow-node.js";
 
 vi.mock("three/webgpu", async (original) => ({
   ...(await original<typeof import("three/webgpu")>()),
@@ -46,7 +46,7 @@ describe("native virtual shadow binding", () => {
   });
 });
 
-it("constructs core's fixed-depth node and installs through the facade setter", async () => {
+it("constructs core's automatic-depth node and installs through the facade setter", async () => {
   // Runtime import keeps core typed by its own upstream declarations, not this facade's narrower catalog.
   const source = "../../core/src/render/virtual-shadow.ts";
   const { VirtualShadowNode: CoreVirtualShadowNode } = await import(source);
@@ -82,8 +82,6 @@ it("constructs core's fixed-depth node and installs through the facade setter", 
   const node = new CoreVirtualShadowNode(sun, {
     clipExtents: [8, 24],
     marker: false,
-    lightDistance: 20,
-    depthRange: 40,
     adaptiveRefresh: false,
     adaptiveCasterGate: false,
     followViewFocus: false,
@@ -96,12 +94,48 @@ it("constructs core's fixed-depth node and installs through the facade setter", 
   expect(writes).toContainEqual([
     expect.any(Object),
     "shadowNode",
-    expect.objectContaining({ autoDepth: false, clipExtents: [8, 24] }),
+    expect.objectContaining({ autoDepth: true, clipExtents: [8, 24] }),
   ]);
+  const filterSource = "../../core/src/render/soft-shadow.ts";
+  const { sourceAngleShadowFilter } = await import(filterSource);
+  const filter = sourceAngleShadowFilter({
+    sourceAngleRad: 0.01,
+    blockerSamples: 8,
+    filterSamples: 12,
+  });
+  shadow.filterNode = filter;
+  expect(shadow.filterNode).toBe(filter);
+  expect(writes.at(-1)).toEqual([
+    expect.any(Object),
+    "filterNode",
+    {
+      sourceAngleRad: 0.01,
+      blockerSamples: 8,
+      filterSamples: 12,
+    },
+  ]);
+  shadow.filterNode = null;
+  expect(shadow.filterNode).toBeNull();
   expect(() => {
     shadow.filterNode = () => 0;
   }).toThrow("TN_VIRTUAL_SHADOW_UNSUPPORTED: filterNode");
   shadow.shadowNode = null;
   expect(writes.at(-1)).toEqual([expect.any(Object), "shadowNode", null]);
   node.dispose();
+});
+
+it("validates branded source-angle parameters before either engine ABI sees them", () => {
+  expect(shadowFilterOptions(null)).toBeNull();
+  for (const options of [
+    { sourceAngleRad: Number.NaN, blockerSamples: 16, filterSamples: 16 },
+    { sourceAngleRad: Math.PI / 2, blockerSamples: 16, filterSamples: 16 },
+    { sourceAngleRad: 0, blockerSamples: 0, filterSamples: 16 },
+    { sourceAngleRad: 0, blockerSamples: 16, filterSamples: 65 },
+    { sourceAngleRad: 0, blockerSamples: 1.5, filterSamples: 16 },
+  ]) {
+    const callback = Object.assign(() => {}, {
+      [Symbol.for("threenative.sourceAngleShadowFilter")]: options,
+    });
+    expect(() => shadowFilterOptions(callback)).toThrow("TN_VIRTUAL_SHADOW_INVALID");
+  }
 });

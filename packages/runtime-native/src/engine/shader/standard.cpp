@@ -856,7 +856,53 @@ static ExprId virtualShadowFactor(Program& f, Tsl& t, std::size_t index, int lev
             const ExprId value = f.select(f.less(t.f(0), f.swizzle(entry, "z")), f.sampleCompare(map, atlasUv, z), t.f(1));
             sum = sum == kInvalid ? value : f.add(sum, value);
         }
-        ExprId value = f.mul(sum, t.f(1.0f / 5.0f));
+        const VarId filtered = f.var(Type::f32(), f.mul(sum, t.f(1.0f / 5.0f)));
+        const ExprId filterIndex = f.add(t.f(float(levels * 9)), f.mul(t.f(float(levels)), f.mul(tiles, tiles)));
+        const ExprId filter = f.loadStorage(table, f.construct(Type::u32(), {filterIndex}));
+        f.If(f.less(t.f(0), f.swizzle(filter, "w")), [&] {
+            const ExprId tangent = f.swizzle(filter, "x"), blockers = f.swizzle(filter, "y"), samples = f.swizzle(filter, "z");
+            const ExprId texel = f.div(t.f(1), mapSize), width = f.mul(extent, t.f(2));
+            // Match core's integer raw-depth loads, clamped in the virtual level before resolving
+            // the physical page. A wide penumbra crosses pages, never a neighbour's atlas tile.
+            auto load = [&](ExprId atUv) {
+                const ExprId pixel = f.call("clamp", {f.call("floor", {f.mul(atUv, mapSize)}),
+                    f.construct(Type::vec(2), {t.f(0)}), f.construct(Type::vec(2), {f.sub(mapSize, t.f(1))})});
+                const ExprId tile = f.call("floor", {f.div(pixel, f.swizzle(params, "x"))});
+                const ExprId pageIndex = f.add(t.f(float(levels*9)), f.add(f.mul(t.f(float(l)), f.mul(tiles, tiles)),
+                    f.add(f.mul(f.swizzle(tile, "y"), tiles), f.swizzle(tile, "x"))));
+                const ExprId entry = f.loadStorage(table, f.construct(Type::u32(), {pageIndex}));
+                const ExprId local = f.sub(pixel, f.mul(tile, f.swizzle(params, "x")));
+                const ExprId coordinate = f.construct(Type::vec(2, Type::Scalar::I32), {
+                    f.add(f.add(f.swizzle(entry, "xy"), f.construct(Type::vec(2), {f.swizzle(params, "y")})), local)});
+                return f.select(f.less(t.f(0), f.swizzle(entry, "z")),
+                    f.textureLoad(map, coordinate, f.constant(int32_t(0))), t.f(1));
+            };
+            auto disk = [&](ExprId i, ExprId count) {
+                const ExprId n = f.construct(Type::f32(), {i});
+                const ExprId r = f.call("sqrt", {f.div(f.add(n, t.f(0.5f)), count)});
+                const ExprId angle = f.mul(n, t.f(2.399963229728653f));
+                return f.mul(f.construct(Type::vec(2), {f.call("cos", {angle}), f.call("sin", {angle})}), r);
+            };
+            const ExprId search = f.call("max", {texel, f.div(f.mul(f.mul(baseZ, span), tangent), width)});
+            const VarId blockerSum = f.var(Type::f32(), t.f(0)), blockerCount = f.var(Type::f32(), t.f(0));
+            f.Loop(f.construct(Type::i32(), {blockers}), [&](ExprId i) {
+                const ExprId depth = load(f.add(uv, f.mul(disk(i, blockers), search)));
+                f.If(f.less(depth, baseZ), [&] {
+                    f.assign(blockerSum, f.add(f.load(blockerSum), depth));
+                    f.assign(blockerCount, f.add(f.load(blockerCount), t.f(1)));
+                });
+            });
+            const ExprId gap = f.mul(f.call("max", {t.f(0), f.sub(baseZ,
+                f.div(f.load(blockerSum), f.call("max", {f.load(blockerCount), t.f(1)})))}), span);
+            const ExprId penumbra = f.call("max", {texel, f.div(f.mul(gap, tangent), width)});
+            const VarId visibility = f.var(Type::f32(), t.f(0));
+            f.Loop(f.construct(Type::i32(), {samples}), [&](ExprId i) {
+                const ExprId depth = load(f.add(uv, f.mul(disk(i, samples), penumbra)));
+                f.assign(visibility, f.add(f.load(visibility), f.select(f.less(depth, baseZ), t.f(0), t.f(1))));
+            });
+            f.assign(filtered, f.select(f.less(t.f(0), f.load(blockerCount)), f.div(f.load(visibility), samples), t.f(1)));
+        });
+        ExprId value = f.load(filtered);
         value = f.select(f.less(f.swizzle(uv, "x"), t.f(0)), t.f(1), value);
         value = f.select(f.less(t.f(1), f.swizzle(uv, "x")), t.f(1), value);
         value = f.select(f.less(f.swizzle(uv, "y"), t.f(0)), t.f(1), value);

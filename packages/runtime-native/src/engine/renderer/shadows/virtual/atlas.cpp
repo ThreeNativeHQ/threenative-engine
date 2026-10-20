@@ -10,7 +10,6 @@ double at(const std::vector<double>& values, int level) { return values[std::min
 
 std::optional<PageAtlas> PageAtlas::create(const AtlasOptions& options, std::string& error) {
     const std::pair<const char*, bool> unsupported[] = {
-        {"automatic depth (supply lightDistance and depthRange)", options.lightDistance == 0 || options.depthRange == 0},
         {"adaptiveRefresh", options.adaptiveRefresh}, {"adaptiveCasterGate", options.adaptiveCasterGate},
         {"followViewFocus", options.followViewFocus}, {"shadowLodBias", options.shadowLodBias},
         {"minCasterTexels", options.minCasterTexels != 0},
@@ -65,7 +64,7 @@ bool PageAtlas::overlaps(const AtlasPage& page, const Box3& bounds) const {
     return u.low <= page.highU && u.high >= page.lowU && v.low <= page.highV && v.high >= page.lowV;
 }
 
-std::vector<AtlasPage> PageAtlas::update(const Vector3& eye, const Vector3& towards, bool cameraCut) {
+std::vector<AtlasPage> PageAtlas::update(const Vector3& eye, const Vector3& towards, bool cameraCut, const std::vector<Box3>& casters) {
     Vector3 direction = towards;
     direction.normalize();
     // A cut requests fresh windows, but deferred levels retain their rendered matrices/pages,
@@ -115,12 +114,43 @@ std::vector<AtlasPage> PageAtlas::update(const Vector3& eye, const Vector3& towa
         const double cv = (window.minY + options_.mapSize / 2.0) * window.pageWorldSize;
         Vector3 target = clipmap_->basisU(); target.multiplyScalar(cu);
         target.addScaledVector(clipmap_->basisV(), cv).addScaledVector(clipmap_->basisW(), center.w);
-        Vector3 from = target; from.addScaledVector(clipmap_->basisW(), options_.lightDistance);
+        if (!level.mapped) {
+            level.eye = options_.lightDistance;
+            level.near = 1;
+            level.far = options_.lightDistance + options_.depthRange;
+        }
+        // virtual-shadow.ts #deriveDepth: sideways overlap, sphere depth for props, box height
+        // for masses wider than the window; a low sun or empty set keeps the last fitted span.
+        if (options_.autoDepth && direction.y >= 0.05) {
+            double low = INFINITY, high = -INFINITY;
+            const double side = window.extent * std::sqrt(2.0);
+            const double heightReach = window.extent * (std::abs(clipmap_->basisU().y) + std::abs(clipmap_->basisV().y));
+            for (const Box3& box : casters) {
+                if (box.isEmpty()) continue;
+                Vector3 delta; delta.addVectors(box.min, box.max).multiplyScalar(0.5).sub(target);
+                const double radius = box.min.distanceTo(box.max) * 0.5;
+                if (std::abs(delta.dot(clipmap_->basisU())) > side + radius ||
+                    std::abs(delta.dot(clipmap_->basisV())) > side + radius) continue;
+                if (radius > window.extent) {
+                    low = std::min(low, (box.min.y - target.y - heightReach) / direction.y);
+                    high = std::max(high, (box.max.y - target.y + heightReach) / direction.y);
+                } else {
+                    low = std::min(low, delta.dot(direction) - radius);
+                    high = std::max(high, delta.dot(direction) + radius);
+                }
+            }
+            if (std::isfinite(low) && high > low) {
+                level.near = std::max(1.0, (high - low) * 0.02);
+                level.eye = high + level.near;
+                level.far = level.near + high - low;
+            }
+        }
+        Vector3 from = target; from.addScaledVector(clipmap_->basisW(), level.eye);
         Matrix4 world; world.lookAt(from, target, Vector3(0, 1, 0)); world.setPosition(from);
         level.view = world; level.view.invert();
         Matrix4 projection;
         projection.makeOrthographic(-window.extent, window.extent, window.extent, -window.extent,
-                                    1, options_.lightDistance + options_.depthRange, CoordinateSystem::WebGPU);
+                                    level.near, level.far, CoordinateSystem::WebGPU);
         level.matrix.set(0.5, 0, 0, 0.5, 0, 0.5, 0, 0.5, 0, 0, 1, 0, 0, 0, 0, 1);
         level.matrix.multiply(projection).multiply(level.view);
         level.slots.clear();
@@ -136,7 +166,7 @@ std::vector<AtlasPage> PageAtlas::update(const Vector3& eye, const Vector3& towa
             AtlasPage page{l, x, y, allocation->entry.slot, level.view};
             page.projection.makeOrthographic(left - pad, left + options_.pageTexels * texel + pad,
                 bottom + options_.pageTexels * texel + pad, bottom - pad,
-                1, options_.lightDistance + options_.depthRange, CoordinateSystem::WebGPU);
+                level.near, level.far, CoordinateSystem::WebGPU);
             page.axisU.set(world.elements[0], world.elements[1], world.elements[2]);
             page.axisV.set(world.elements[4], world.elements[5], world.elements[6]);
             const double cameraU = target.dot(page.axisU), cameraV = target.dot(page.axisV);
@@ -168,7 +198,7 @@ void PageAtlas::writeTable() {
         const Vector3 axes[] = {clipmap_->basisU(), clipmap_->basisV(), clipmap_->basisW()};
         for (int i = 0; i < 3; ++i) { out[20 + 4*i] = float(axes[i].x); out[21 + 4*i] = float(axes[i].y); out[22 + 4*i] = float(axes[i].z); }
         out[23] = float(options_.mapSize); out[27] = float(tiles());
-        out[31] = float(options_.lightDistance + options_.depthRange - 1);
+        out[31] = float(level.far - level.near);
         out[32] = float(options_.pageTexels); out[33] = float(options_.border);
         out[34] = float(edge()); out[35] = level.mapped ? 1 : 0;
         if (!level.mapped) continue;

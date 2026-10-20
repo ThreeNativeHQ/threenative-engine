@@ -227,6 +227,7 @@ struct DirectLight {
      */
     struct Shadow {
         std::shared_ptr<const shadows::AtlasOptions> virtualShadow;
+        std::optional<std::array<double, 3>> sourceAngleFilter;
         Matrix view{}, projection{}, matrix{};
         double bias = 0, normalBias = 0, radius = 1, intensity = 1;
         uint32_t width = 512, height = 512;

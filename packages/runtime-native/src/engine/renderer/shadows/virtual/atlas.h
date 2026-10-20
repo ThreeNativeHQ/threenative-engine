@@ -5,16 +5,13 @@
 
 namespace tn::engine::shadows {
 
-// Rendering configuration uses VirtualShadowNode's units and names. The caller supplies the
-// explicit depth override; automatic depth/focus, adaptive gates, movers and custom filters are
-// not part of this rendering slice (TN_VIRTUAL_SHADOW_UNSUPPORTED at the configuration boundary).
+// Camera-centred virtual depth pages; unsupported scheduling policies fail at configuration.
 struct AtlasOptions {
     std::vector<double> clipExtents{16, 48, 144};
     int mapSize = 512, pageTexels = 128, border = 2;
     std::vector<double> selectionGuard{0.9}, refreshStep{0.125};
-    // Explicit depth override, as in VirtualShadowNode. Zero refuses automatic depth rather
-    // than silently replacing its scene-derived span with a constant.
-    double lightDistance = 0, depthRange = 0;
+    bool autoDepth = false;
+    double lightDistance = 200, depthRange = 400;
     double minCasterTexels = 0;
     std::vector<double> invalidationDelay{0};
     bool adaptiveRefresh = false, adaptiveCasterGate = false, followViewFocus = false, shadowLodBias = false;
@@ -34,7 +31,8 @@ public:
     static std::optional<PageAtlas> create(const AtlasOptions& options, std::string& error);
     // One clip level per frame, retaining deferred maps as VirtualShadowNode does. Cuts start
     // finest first; subsequent grants rotate so continuously dirty levels cannot starve.
-    std::vector<AtlasPage> update(const Vector3& eye, const Vector3& direction, bool cameraCut = false);
+    std::vector<AtlasPage> update(const Vector3& eye, const Vector3& direction, bool cameraCut = false,
+                                  const std::vector<Box3>& casters = {});
     void invalidate(const Box3& bounds);
     void invalidateAll();
     const AtlasOptions& options() const { return options_; }
@@ -48,7 +46,7 @@ public:
 private:
     struct Level {
         ClipWindow window;
-        double centerW = 0;
+        double centerW = 0, eye = 200, near = 1, far = 600;
         bool mapped = false, dirty = false;
         Matrix4 view, matrix;
         std::vector<int> slots;
