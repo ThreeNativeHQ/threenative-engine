@@ -58,10 +58,12 @@ async function bundleFiles(directory = path.join(bundle, "src"), prefix = ""): P
 }
 
 export async function adoptRealisticOcean(target: string): Promise<void> {
-  await run(process.execPath, [path.join(bundle, "install.mjs"), target]);
   const file = path.join(target, SCENE);
   let source = await readFile(file, "utf8");
+  // Every edit is checked before the first file is copied, so a changed template is never
+  // half-adopted.
   for (const [original, adopted] of EDITS) source = replaceOnce(source, original, adopted);
+  await run(process.execPath, [path.join(bundle, "install.mjs"), target]);
   await writeFile(file, source);
 }
 
@@ -72,6 +74,34 @@ export async function removeRealisticOcean(target: string): Promise<void> {
     source = replaceOnce(source, adopted, original);
   await writeFile(file, source);
   for (const relative of await bundleFiles()) await rm(path.join(target, "src", relative));
+}
+
+const POSE_ANCHOR =
+  "  camera.lookAt(target.x + forwardX * LEAD, target.y + AIM, target.z + forwardZ * LEAD);\n}";
+const POSE_HOOK = `  camera.lookAt(target.x + forwardX * LEAD, target.y + AIM, target.z + forwardZ * LEAD);
+  // Capture instrumentation (scripts/realistic-ocean-consumer.ts --capture-hook), identical on both
+  // arms: a pose set before load, as \`yaw\` degrees from the sun's bearing, so a frame can be
+  // repeated exactly. Never part of the scaffold or of the bundle.
+  const pose = (globalThis as { __TN_OCEAN_POSE?: { x: number; y: number; z: number; yaw: number; pitch: number } }).__TN_OCEAN_POSE;
+  if (pose !== undefined) {
+    const sunYaw = Math.atan2(-SUN_DIRECTION.x, -SUN_DIRECTION.z);
+    camera.position.set(pose.x, pose.y, pose.z);
+    camera.rotation.order = "YXZ";
+    camera.rotation.set((pose.pitch * Math.PI) / 180, sunYaw + (pose.yaw * Math.PI) / 180, 0);
+  }
+}`;
+
+/** Patch a consumer's camera so a capture script can pose it. Fails closed on a changed template. */
+export async function addCapturePose(target: string): Promise<void> {
+  const file = path.join(target, "src/render/camera.ts");
+  let source = await readFile(file, "utf8");
+  source = replaceOnce(source, POSE_ANCHOR, POSE_HOOK);
+  source = replaceOnce(
+    source,
+    'import type { PerspectiveCamera } from "three";',
+    'import type { PerspectiveCamera } from "three";\nimport { SUN_DIRECTION } from "./sky.js";',
+  );
+  await writeFile(file, source);
 }
 
 /** A digest of every file under `src/`, so removal can be proved against the scaffold. */
@@ -95,6 +125,11 @@ async function main(): Promise<void> {
   const args = process.argv.slice(2);
   const rootIndex = args.indexOf("--root");
   const root = path.resolve(rootIndex >= 0 ? (args[rootIndex + 1] as string) : "ocean-consumer");
+  if (args.includes("--patch-only")) {
+    await addCapturePose(path.join(root, "sailing-incumbent"));
+    await addCapturePose(path.join(root, "sailing-realistic"));
+    return;
+  }
   await mkdir(root, { recursive: true });
   const packageSources = await packageLocalFramework(root);
   const create = (target: string) =>
@@ -113,6 +148,10 @@ async function main(): Promise<void> {
       throw new Error("TN_REALISTIC_CONSUMER: removal did not restore the scaffold's source.");
     await adoptRealisticOcean(candidate);
     process.stdout.write("TN_REALISTIC_CONSUMER remove restores the scaffold byte for byte\n");
+  }
+  if (args.includes("--capture-hook")) {
+    await addCapturePose(incumbent.target);
+    await addCapturePose(candidate);
   }
   process.stdout.write(
     `TN_REALISTIC_CONSUMER incumbent=${incumbent.target} realistic=${candidate}\n`,
