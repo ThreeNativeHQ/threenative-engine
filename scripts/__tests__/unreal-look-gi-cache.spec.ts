@@ -301,7 +301,7 @@ describe("the world-space GI cache against closed forms (PRD-631 L7)", () => {
     expect(underRoof.share[1]).toBeLessThan((below.share[1] ?? 0) + 0.05);
   }, 120_000);
 
-  it("the sunlit room's walls and ceiling read the path-traced light, not 1.5 times it (sunlit-room)", () => {
+  it("the sunlit room's walls and ceiling read the path-traced light, not 1.5 times it, and smooth (sunlit-room)", () => {
     // A 40 m ground stretched the probe grid to 1 m, 0.9 m under the ceiling, and every bounce over-read: the walls
     // came out 1.46 to 1.78 times the path trace. Five bounces against a path of six surfaces, both with the same sun.
     const room = sunlitRoom();
@@ -335,6 +335,28 @@ describe("the world-space GI cache against closed forms (PRD-631 L7)", () => {
       expect(cached / traced).toBeGreaterThan(0.7);
       expect(cached / traced).toBeLessThan(1.2);
     }
+    // And a flat wall reads smooth: at 0.5 m probes the rays' noise showed as half-metre blotches (judge round 10).
+    // Roughness is the mean |read - its 1 m box mean| / mean over the left wall: 0.060 unfiltered, 0.011 at 1 m probes.
+    const [w, h] = [48, 20];
+    const reads: number[] = [];
+    for (let b = 0; b < h; b += 1)
+      for (let a = 0; a < w; a += 1)
+        reads.push(
+          cacheAt(
+            new Vector3(-3, 0.4 + (2.2 * (b + 0.5)) / h, -5.6 + (5.2 * (a + 0.5)) / w),
+            new Vector3(1, 0, 0),
+          ),
+        );
+    let [deviation, level] = [0, 0];
+    for (let b = 2; b < h - 2; b += 1)
+      for (let a = 4; a < w - 4; a += 1) {
+        let box = 0;
+        for (let db = -2; db <= 2; db += 1)
+          for (let da = -4; da <= 4; da += 1) box += reads[(b + db) * w + a + da] ?? 0;
+        deviation += Math.abs((reads[b * w + a] ?? 0) - box / 45);
+        level += reads[b * w + a] ?? 0;
+      }
+    expect(deviation / level).toBeLessThan(0.015);
   }, 120_000);
 
   it("returns undefined with no sky, no sun and no lights", () => {
