@@ -472,15 +472,41 @@ const UNREAL_VARIANT: Readonly<Record<string, string>> = {
   L1: "L1",
   L6: "L7-Low",
   L7: "L7-Epic",
+  // A quality tier names the Unreal level it follows (scaffold/render/quality.ts, PRD-644).
+  "L7-low": "L7-Low",
+  "L7-medium": "L7-Medium",
+  "L7-high": "L7-Epic",
   L9: "L9-Epic",
 };
+
+/** `sg.GlobalIlluminationQuality` of the GI variants a calibration scene is captured at in Unreal. */
+const UNREAL_LEVEL_VARIANT: Readonly<Record<number, string>> = {
+  0: "L7-Low",
+  1: "L7-Medium",
+  3: "L7-Epic",
+};
+
+/**
+ * The Unreal variant a ThreeNative layer is judged against. `unrealLevel` (0 Low, 1 Medium, 3 Epic)
+ * overrides the layer's own pair, to hold one capture against another level's frame.
+ */
+export function unrealVariant(layer: string, unrealLevel?: number): string {
+  if (unrealLevel !== undefined)
+    return UNREAL_LEVEL_VARIANT[unrealLevel] ?? fail("BAD_INPUT", `unreal level ${unrealLevel}`);
+  return UNREAL_VARIANT[layer] ?? fail("BAD_INPUT", `GI layer ${layer}`);
+}
 
 /**
  * ThreeNative against Unreal for one scene: region statistics of every (layer, pose), with the
  * Unreal ID frame as the mask and the IoU of the two ID frames per region. A row passes against
  * tools/unreal-reference/thresholds.json when that file exists (PRD-631); otherwise it reports.
  */
-export function compareGiToUnreal(name: string, layers: readonly string[], root: string): IRow[] {
+export function compareGiToUnreal(
+  name: string,
+  layers: readonly string[],
+  root: string,
+  unrealLevel?: number,
+): IRow[] {
   const { scene } = readScene(name);
   const thresholdFile = path.join(REFERENCE, "thresholds.json");
   const thresholds = existsSync(thresholdFile)
@@ -491,9 +517,7 @@ export function compareGiToUnreal(name: string, layers: readonly string[], root:
   const rows: IRow[] = [];
   for (const layer of layers) {
     // A shadow scene names its Unreal variants after their layers (shadow/scenes.json).
-    const variant = name.startsWith("shadow:")
-      ? layer
-      : (UNREAL_VARIANT[layer] ?? fail("BAD_INPUT", `GI layer ${layer}`));
+    const variant = name.startsWith("shadow:") ? layer : unrealVariant(layer, unrealLevel);
     for (const pose of scene.poses) {
       const reference = masks(image(path.join(unreal, "ID", `${pose.name}.png`)), scene.regions);
       const own = masks(image(path.join(tn, "ID", `${pose.name}.png`)), scene.regions);
@@ -531,7 +555,11 @@ export function compareGi(args: readonly string[]): number {
       value,
       registry(familyOf(value)).scenes.map((s) => s.name),
     );
-    const rows = names.flatMap((name) => compareGiToUnreal(name, layerFlag.split(","), root));
+    const levelFlag = flag(args, "--unreal-level");
+    const unrealLevel = levelFlag === undefined ? undefined : Number(levelFlag);
+    const rows = names.flatMap((name) =>
+      compareGiToUnreal(name, layerFlag.split(","), root, unrealLevel),
+    );
     const f = (v: number | null, d = 3) => (v === null ? "—" : v.toFixed(d));
     console.log(
       `| layer | cell | region | Unreal p50 | TN p50 | dP50 | ΔE2000 | ID IoU | verdict |\n|---|---|---|---:|---:|---:|---:|---:|---|\n${rows

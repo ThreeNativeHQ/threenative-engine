@@ -22,6 +22,16 @@ function searchResults(
 }
 
 describe("threenative-engine-mcp", () => {
+  it("finds the global illumination and shadow quality tier watchers by Unreal's names", () => {
+    const symbols = (situation: string) => searchResults(situation).map((r) => r.symbol);
+    expect(symbols("global illumination quality")).toContain("GIBudget");
+    expect(symbols("lumen scalability")).toContain("GIBudget");
+    expect(symbols("sg.GlobalIlluminationQuality")).toContain("GIBudget");
+    expect(symbols("shadow quality")).toContain("ShadowFilterBudget");
+    expect(symbols("virtual shadow map scalability")).toContain("ShadowFilterBudget");
+    expect(symbols("sg.ShadowQuality")).toContain("ShadowFilterBudget");
+  });
+
   it("exposes exactly the two read-only capability tools", () => {
     expect(toolDefinitions().map((tool) => tool.name)).toEqual([
       "engine_search_capabilities",

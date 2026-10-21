@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-644 — The GI tier follows Unreal's quality levels and the measured GPU time
 
-**Status:** NOT STARTED
+**Status:** IN PROGRESS
 **Priority:** P1 — no box is ticked: no tier says which GI algorithm it runs, so the default-on contract of PRD-631 (a budget that holds on `high`, a `low` fallback that still draws) cannot be met for GI.
 **Complexity:** 6 (MEDIUM) — 1–5 files: the harness `quality.ts`, a GI budget watcher in `packages/core`, specs, one conformance scene (+1), state across frames: a measured window and a hysteresis (+2), runs on three platforms (+2), native proof (+1); risk override: none
 **Owner:** João
@@ -88,24 +88,43 @@ prd_contract: v1
 | Capability | Reachable consumer/trigger | Replaces / disposition | Evidence |
 |---|---|---|---|
 | Tier table with `finalGatherMethod` | `quality.ts` in the harness, later the templates via PRD-267 | Replaces layer-based GI switches in the harness overlay | AC-1 |
-| `GIBudget` watcher | `ctx.add(new GIBudget(...))` from `worldEnvironment.ts` | New. Reuses `FrameBudget` | AC-2 |
+| `GIBudget` watcher | `ctx.beforeRender(() => gi.observeRenderer(ctx.renderer.raw))` from `worldEnvironment.ts` (`ctx.add` takes only an `Object3D`) | New. Reads the per-pass GPU times that `FrameBudget` already resolves | AC-2 |
 
 ## Execution Phases
 
 #### Phase 1: The tier table matches its Unreal level
 **Status:** NOT STARTED
 **Files:** `scripts/unreal-look/scaffold/render/quality.ts`, `scripts/unreal-look/scaffold/render/worldEnvironment.ts`, `scripts/unreal-look/compare.ts`
-- [ ] The compare tool pairs a ThreeNative tier with its Unreal level and fails closed when the cell of that level is missing. proof: `pnpm exec vitest run scripts/__tests__/unreal-look-compare.spec.ts`.
+- [x] The compare tool pairs a ThreeNative tier with its Unreal level and fails closed when the cell of that level is missing. proof: `pnpm exec vitest run scripts/__tests__/unreal-look-compare.spec.ts` — red first (`unrealVariant` absent, `L7-medium` rejected as `GI layer`), then 32 passed on 2026-10-21. `L7-low`, `L7-medium` and `L7-high` pair with `L7-Low`, `L7-Medium` and `L7-Epic`; `--unreal-level 0|1|3` pairs one capture with another level; a missing Unreal frame throws `TN_UNREAL_LOOK_MISSING_CELL` and names `L7-Medium`.
 - [ ] Unreal's GI GPU time at Low, Medium and Epic on the RTX 2080 is recorded under `## Decisions` as the tier budgets. proof: `r.ProfileGPU` logs from `pnpm unreal-look:capture --engine unreal --scene gi`.
 
 #### Phase 2: The measured budget steps the method
 **Status:** NOT STARTED
 **Files:** `packages/core/src/render/gi-budget.ts` (new), `packages/core/src/index.ts`, `packages/core/__tests__/gi-budget.spec.ts` (new), `packages/engine-mcp/__tests__/search.spec.ts`
-- [ ] A window above budget steps the method down once, a window below 70% of the next budget steps it up, and an explicit `finalGatherMethod` never changes. proof: `pnpm exec vitest run packages/core/__tests__/gi-budget.spec.ts`, with an injected clock.
-- [ ] A capability search for "global illumination quality" returns `GIBudget`. proof: `pnpm exec vitest run packages/engine-mcp/__tests__/search.spec.ts`.
+- [x] A window above budget steps the method down once, a window below 70% of the next budget steps it up, and an explicit `finalGatherMethod` never changes. proof: `pnpm exec vitest run packages/core/__tests__/gi-budget.spec.ts packages/core/__tests__/budget-ladder.spec.ts`, with injected GPU readings — 7 and 10 tests passed on 2026-10-21 (step down once, step up below 70% with room in the frame, no climb on a full frame, growing retry wait after a failed step, explicit keeps the method and reports, no timestamps holds the method).
+- [x] A capability search for "global illumination quality" returns `GIBudget`. proof: `pnpm exec vitest run packages/engine-mcp/__tests__/search.spec.ts` — 55 passed on 2026-10-21, including "global illumination quality", "lumen scalability" and "sg.GlobalIlluminationQuality".
 
 #### Phase 3: Desktop host and emulator
 **Status:** NOT STARTED
 **Files:** `packages/runtime-native/conformance/scenes/shared/gi-tier-medium.js` (new), `packages/runtime-native/conformance/registry.json`
 - [ ] The desktop host renders the `medium` tier within tolerance of the browser. proof: `pnpm parity --target desktop --only-tests gi-tier-medium`.
 **Verification:** AC-3. A PRD-647 round per tier on every registered calibration scene returns no REGRESSION against BEFORE.
+
+## Decisions
+
+- 2026-10-21 (tier-lane, layer): the engine owns when to step (`packages/core/src/render/gi-budget.ts`, built on the
+  shared `budget-ladder.ts`). The game owns what each method draws, so `quality.ts` keeps the tier table and the
+  `finalGatherMethod` names. This is the same kind of measured ladder as the `RenderChain` auto tier. `CHARTER.md`
+  has no line for it yet. That file is the owner's, so the line stays open.
+- 2026-10-21 (tier-lane, window): the window value is the mean GI-stage GPU time of 120 frames, not p95, with at
+  least 8 resolved frames. A window with fewer resolved frames is "unobserved" and the method holds.
+- 2026-10-21 (tier-lane, hysteresis): the 70% rule alone can flap when two budgets are close, so a step up also needs
+  room in the whole frame, and a method that failed is retried after 5, 10, 20 ... windows (at most 160).
+- 2026-10-21 (tier-lane, no timestamps): an adapter without timestamp queries holds the method. The Solution text
+  "else the `render` phase of `FrameBudget`" is not built: that phase is whole-frame CPU time and cannot name the GI
+  share, so a fallback would step on a number that is not the GI cost.
+- 2026-10-21 (tier-lane, stage names): `RenderPassBudget` now attributes nested passes to the scene name three gives
+  them (`SSGI`, `AO`, ...) and hands out `stageGpuReading(renderer)`. The game lists the pass names that are GI
+  work in `stages`.
+- 2026-10-21 (tier-lane, wiring): the ledger said `ctx.add(new GIBudget(...))`. `ctx.add` takes only an `Object3D`,
+  so the watcher is fed with `ctx.beforeRender`.

@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-652 — The shadow tier follows Unreal's shadow quality levels
 
-**Status:** NOT STARTED
+**Status:** IN PROGRESS
 **Priority:** P2 — no box is ticked: the templates' `low`, `medium` and `high` tiers change only the sun map size, while Unreal's shadow levels change the filter, its sample count and the shadow resolution bias, and nothing compares a ThreeNative tier with its Unreal level.
 **Complexity:** 5 (MEDIUM) — 1–5 files: the harness `quality.ts`, the filter options, the native filter (+1), a tier table every template takes (+2), a cost step under GPU pressure (+2); risk override: none
 **Owner:** João
@@ -66,7 +66,7 @@ manifest entry carries `@alias shadow quality`, `@alias virtual shadow map scala
 ## Acceptance Criteria
 
 - [ ] AC-1 [local]: A PRD-647 round on `penumbra-lab` and `horizon` at each tier, against that tier's Unreal level, returns MATCH or CLOSE on every cell and no REGRESSION against BEFORE. proof: `pnpm unreal-look:calibrate --scene shadow:<name> --tier <low|medium|high> --before <commit>` — Evidence: pending.
-- [ ] AC-2 [local]: `engine_search_capabilities` with "shadow quality" returns the tier report entry. proof: `pnpm exec vitest run packages/engine-mcp` (search fixture) — Evidence: pending.
+- [x] AC-2 [local]: `engine_search_capabilities` with "shadow quality" returns the tier report entry. proof: `pnpm exec vitest run packages/engine-mcp` (search fixture) — Evidence: `packages/engine-mcp/__tests__/search.spec.ts` 55 passed on 2026-10-21. "shadow quality", "virtual shadow map scalability" and "sg.ShadowQuality" return `ShadowFilterBudget`.
 
 ## Integration Ledger
 
@@ -81,13 +81,13 @@ manifest entry carries `@alias shadow quality`, `@alias virtual shadow map scala
 #### Phase 1: The tier table on the harness
 **Status:** NOT STARTED
 **Files:** `scripts/unreal-look/scaffold/render/quality.ts`, `scripts/unreal-look/scaffold/render/lighting.ts`, `packages/core/src/render/virtual-shadow.ts` (resolution bias option)
-- [ ] `resolutionLodBiasDirectional` −1 halves the finest level's texel and keeps the clipmap's outer reach. proof: `pnpm exec vitest run packages/core/__tests__/virtual-shadow.spec.ts`.
+- [x] `resolutionLodBiasDirectional` −1 halves the finest level's texel and keeps the clipmap's outer reach. proof: `pnpm exec vitest run packages/core/__tests__/virtual-shadow.spec.ts` — 124 passed on 2026-10-21. A bias of −1 turns clip extents `[8, 32, 128]` into `[4, 32, 128]`, −1.5 gives `8 / 2^1.5`, and a bias that passes the next level throws `TN_VIRTUAL_SHADOW_INVALID`.
 - [ ] Each tier is captured on `penumbra-lab` against its Unreal level, and the sample counts that bring the penumbra metric inside the thresholds are recorded. proof: `pnpm unreal-look:calibrate --scene shadow:penumbra-lab --tier <tier>`.
 
 #### Phase 2: The filter steps down under GPU pressure
 **Status:** NOT STARTED
-**Files:** `packages/core/src/render/soft-shadow.ts`, `packages/core/src/render-pass-budget.ts`, `packages/core/__tests__/soft-shadow.spec.ts`
-- [ ] A filter over budget for a 120-frame window steps its samples down one level, steps up only below 70% of the next level's budget, and leaves an explicit setting alone with a report. proof: `pnpm exec vitest run packages/core/__tests__/soft-shadow.spec.ts`.
+**Files:** `packages/core/src/render/shadow-filter-budget.ts` (new), `packages/core/src/render/budget-ladder.ts` (new, shared with PRD-644), `packages/core/src/render-pass-budget.ts`, `packages/core/__tests__/shadow-filter-budget.spec.ts` (new)
+- [x] A filter over budget for a 120-frame window steps its samples down one level, steps up only below 70% of the next level's budget, and leaves an explicit setting alone with a report. proof: `pnpm exec vitest run packages/core/__tests__/shadow-filter-budget.spec.ts packages/core/__tests__/budget-ladder.spec.ts` — 5 and 10 tests passed on 2026-10-21 (step down one tier over the period, up below 70%, explicit keeps the counts and reports, no timestamps holds the tier).
 - [ ] The step runs on the native engine. proof: `pnpm parity --target desktop --only-tests shadow-filter-step`.
 
 #### Phase 3: Every template
@@ -103,3 +103,12 @@ manifest entry carries `@alias shadow quality`, `@alias virtual shadow map scala
   tier follows it.
 - 2026-10-20 (slicing): Unreal's `high` tier is Epic, as in PRD-644, because a fresh Unreal project
   runs Epic.
+- 2026-10-21 (tier-lane, signal): the receiver filter runs inside the colour pass and three labels no pass for it,
+  so its own GPU time cannot be read from the per-pass budget. `ShadowFilterBudget` holds the whole frame's GPU
+  time to the frame period instead. A frame that is slow for another reason also steps the filter down, and the
+  `@constraint` tag says so. The step rules are the ones of PRD-644 (`budget-ladder.ts`).
+- 2026-10-21 (tier-lane, layer): the engine owns when the filter steps. The game owns what each tier samples and
+  rebuilds its filter in `onStep`. The tier table is `shadowPreset` in the harness `quality.ts`.
+- 2026-10-21 (tier-lane, new Unreal cells): `tools/unreal-reference/shadow/scenes.json` gains the variants
+  `L5-Low` (`sg.ShadowQuality` 0) and `L5-Medium` (`sg.ShadowQuality` 1) so each tier has its own Unreal frame.
+  Both keep the L5 layer, so GI and AO stay off (`validateShadowRegistry`).

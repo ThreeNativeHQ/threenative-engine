@@ -22,6 +22,7 @@ import {
   seedLocks,
   silhouetteIou,
 } from "../unreal-look/compare.js";
+import { compareGiToUnreal, readScene, unrealVariant } from "../unreal-look/gi.js";
 
 const roots: string[] = [];
 afterEach(() => {
@@ -476,5 +477,39 @@ describe("Unreal reference comparison", () => {
     ).toEqual({ layers: ["L0", "L1", "L5"], suns: ["4"], metric: "penumbra" });
     expect(() => parseArgs(["--layer"])).toThrow(/^TN_UNREAL_LOOK_BAD_INPUT/);
     expect(() => parseArgs(["--unknown"])).toThrow(/^TN_UNREAL_LOOK_BAD_INPUT/);
+  });
+
+  describe("GI quality tiers (PRD-644)", () => {
+    it("pairs each ThreeNative tier with the Unreal level it follows", () => {
+      expect(unrealVariant("L7-low")).toBe("L7-Low");
+      expect(unrealVariant("L7-medium")).toBe("L7-Medium");
+      expect(unrealVariant("L7-high")).toBe("L7-Epic");
+      // The level flag compares one capture against another level's frame.
+      expect(unrealVariant("L7", 0)).toBe("L7-Low");
+      expect(unrealVariant("L7", 1)).toBe("L7-Medium");
+      expect(unrealVariant("L7", 3)).toBe("L7-Epic");
+    });
+    it("fails closed on a layer or level that is not in the table", () => {
+      expect(() => unrealVariant("L7-ultra")).toThrow(/^TN_UNREAL_LOOK_BAD_INPUT/);
+      expect(() => unrealVariant("L7", 2)).toThrow(/^TN_UNREAL_LOOK_BAD_INPUT.*unreal level 2/);
+    });
+    it("throws TN_UNREAL_LOOK_MISSING_CELL naming the Unreal frame of the level when it is absent", () => {
+      const { root, put } = fixture();
+      const { scene } = readScene("cornell");
+      const [name = "", color = []] = Object.entries(scene.regions)[0] ?? [];
+      const id = png([color, color, color, color]);
+      for (const engine of ["unreal", "threenative"])
+        for (const pose of scene.poses) put(`${engine}/cornell/ID/${pose.name}.png`, id);
+      for (const pose of scene.poses)
+        put(`threenative/cornell/L7-medium/${pose.name}.png`, floor());
+      expect(name).not.toBe("");
+      expect(() => compareGiToUnreal("cornell", ["L7-medium"], root)).toThrow(
+        /^TN_UNREAL_LOOK_MISSING_CELL.*L7-Medium/,
+      );
+      for (const pose of scene.poses) put(`unreal/cornell/L7-Medium/${pose.name}.png`, floor());
+      const rows = compareGiToUnreal("cornell", ["L7-medium"], root);
+      expect(rows.length).toBeGreaterThan(0);
+      expect(new Set(rows.map((r) => r.layer))).toEqual(new Set(["L7-medium"]));
+    });
   });
 });
