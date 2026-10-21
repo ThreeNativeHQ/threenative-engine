@@ -509,9 +509,8 @@ void registerLightShadow(ClassBinding& b, bool spot) {
         return memberAlias(store, self, as<LightShadow>(self)->mapSize, "Vector2");
     });
     fixedMember(b, "camera", [](void* self, const Args&, Store& store) {
-        Camera* camera = as<LightShadow>(self)->camera.get();
-        return store.adoptAlias(dynamic_cast<OrthographicCamera*>(camera) ? "OrthographicCamera" : "PerspectiveCamera",
-                                camera, self);
+        const std::shared_ptr<Object3D> camera = as<LightShadow>(self)->camera;
+        return store.share(std::string(camera->type()), camera);
     });
 }
 
