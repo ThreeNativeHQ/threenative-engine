@@ -118,7 +118,22 @@ describe("SurfaceCache albedo (PRD-639 Phase 2)", () => {
     const out = [0, 0, 0];
     cache.albedo(0, 0.5, 0.5, out);
     expect(out).toEqual([0.3, 0.3, 0.3]);
-    expect(cache.report.fallbacks).toEqual([{ material: "Wall", reason: "unreadable-image" }]);
+    expect(cache.report.fallbacks).toEqual([
+      { material: "Wall", reason: "unreadable-image", detail: "Object 4x4, no OffscreenCanvas" },
+    ]);
+  });
+
+  it("reads an image whose data is a plain ArrayBuffer, and names an empty one a closed bitmap", () => {
+    const bytes = Uint8Array.from([0, 255, 0, 255]).buffer;
+    const cache = SurfaceCache.from([
+      { map: { image: { width: 1, height: 1, data: bytes }, colorSpace: "srgb-linear" } },
+      { name: "Gone", map: { image: { width: 0, height: 0 } } },
+    ]);
+    const out = [0, 0, 0];
+    cache.albedo(0, 0.5, 0.5, out);
+    expect(out).toEqual([0, 1, 0]);
+    expect(cache.report.fallbacks[0]?.material).toBe("Gone");
+    expect(cache.report.fallbacks[0]?.detail).toBe("Object 0x0, no OffscreenCanvas");
   });
 
   it("shrinks every tile until the materials fit the atlas, and reports the bytes", () => {

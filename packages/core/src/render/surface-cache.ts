@@ -66,7 +66,12 @@ export interface ISurfaceCacheReport {
   readonly mappedMaterials: number;
   readonly flatMaterials: number;
   /** Materials that have a map the cache could not use, so their hits return the flat colour. */
-  readonly fallbacks: readonly { readonly material: string; readonly reason: string }[];
+  readonly fallbacks: readonly {
+    readonly material: string;
+    readonly reason: "unreadable-image";
+    /** What the image was and why it could not be read. */
+    readonly detail: string;
+  }[];
 }
 
 const START_TILE = 64;
@@ -83,36 +88,41 @@ function srgbToLinear(v: number): number {
   return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
 }
 
-/** The pixels of a map, or why they cannot be read. */
-function pixelsOf(image: unknown): IPixels | "unreadable-image" {
-  const candidate = image as Partial<IPixels> | null | undefined;
+/** The pixels of a map, or a sentence saying what the image was and why it cannot be read. */
+function pixelsOf(image: unknown): IPixels | string {
+  const candidate = image as
+    | { data?: unknown; width?: number; height?: number; constructor?: { name?: string } }
+    | null
+    | undefined;
+  const what = `${candidate?.constructor?.name ?? typeof image} ${candidate?.width ?? "?"}x${candidate?.height ?? "?"}`;
+  if (typeof candidate?.width !== "number" || typeof candidate.height !== "number")
+    return `${what}, no size`;
+  const data =
+    candidate.data instanceof ArrayBuffer ? new Uint8Array(candidate.data) : candidate.data;
   if (
-    candidate !== null &&
-    candidate !== undefined &&
-    ArrayBuffer.isView(candidate.data) &&
-    typeof candidate.width === "number" &&
-    typeof candidate.height === "number"
+    ArrayBuffer.isView(data) &&
+    !(data instanceof DataView) &&
+    candidate.width > 0 &&
+    candidate.height > 0
   )
-    return candidate as IPixels;
-  const drawable = candidate as { width?: number; height?: number } | null | undefined;
-  if (
-    typeof OffscreenCanvas === "undefined" ||
-    !drawable?.width ||
-    !drawable.height ||
-    typeof (drawable as { getContext?: unknown }).getContext === "function"
-  )
-    return "unreadable-image";
-  const scale = Math.min(1, MAX_READ / Math.max(drawable.width, drawable.height));
+    return {
+      data: data as unknown as ArrayLike<number>,
+      width: candidate.width,
+      height: candidate.height,
+    };
+  if (typeof OffscreenCanvas === "undefined") return `${what}, no OffscreenCanvas`;
+  if (!candidate.width || !candidate.height) return `${what}, empty (a closed bitmap?)`;
+  const scale = Math.min(1, MAX_READ / Math.max(candidate.width, candidate.height));
   const [w, h] = [
-    Math.max(1, Math.round(drawable.width * scale)),
-    Math.max(1, Math.round(drawable.height * scale)),
+    Math.max(1, Math.round(candidate.width * scale)),
+    Math.max(1, Math.round(candidate.height * scale)),
   ];
   try {
     const context = new OffscreenCanvas(w, h).getContext("2d");
     context?.drawImage(image as CanvasImageSource, 0, 0, w, h);
-    return context?.getImageData(0, 0, w, h) ?? "unreadable-image";
-  } catch {
-    return "unreadable-image";
+    return context?.getImageData(0, 0, w, h) ?? `${what}, no 2d context`;
+  } catch (error) {
+    return `${what}, ${String(error).slice(0, 120)}`;
   }
 }
 
@@ -206,7 +216,7 @@ export class SurfaceCache {
     if (Math.floor(atlasSize / tile) ** 2 < materials.length)
       throw new RangeError(`atlasSize ${atlasSize} holds fewer than ${materials.length} materials`);
 
-    const fallbacks: { material: string; reason: string }[] = [];
+    const fallbacks: { material: string; reason: "unreadable-image"; detail: string }[] = [];
     let mapped = 0;
     const tileOf = (
       material: ISurfaceCacheMaterial,
@@ -215,8 +225,12 @@ export class SurfaceCache {
     ): ITile | undefined => {
       if (texture === null || texture === undefined) return undefined;
       const pixels = pixelsOf(texture.image);
-      if (pixels === "unreadable-image") {
-        fallbacks.push({ material: material.name || `material ${index}`, reason: pixels });
+      if (typeof pixels === "string") {
+        fallbacks.push({
+          material: material.name || `material ${index}`,
+          reason: "unreadable-image",
+          detail: pixels,
+        });
         return undefined;
       }
       const texels = new Float32Array(tile * tile * 3);
