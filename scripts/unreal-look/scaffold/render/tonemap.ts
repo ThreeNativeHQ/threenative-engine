@@ -13,7 +13,20 @@
 // `"filmic"`. `"aces"` stays available as the named override. `filmicToneMap()` is the same
 // curve on plain numbers, so a test or a capture script can apply it to a scene-linear image.
 import { CustomToneMapping, Matrix3 } from "three";
-import { clamp, dot, exp, exp2, float, log, max, mix, step, vec3 } from "three/tsl";
+import {
+  clamp,
+  dot,
+  exp,
+  exp2,
+  float,
+  log,
+  max,
+  mix,
+  screenCoordinate,
+  step,
+  vec2,
+  vec3,
+} from "three/tsl";
 import type { Node } from "three/webgpu";
 
 export interface IFilmicCurve {
@@ -28,6 +41,12 @@ export interface IFilmicCurve {
    * fit against Unreal's own L1 and L2 frames found no expansion in a fresh project (PRD-632). 1 is the override.
    */
   readonly expandGamut: number;
+  /**
+   * Output dither in 8-bit steps: triangular grain added to the display colour before the backbuffer rounds it.
+   * Unreal 5.8.3 uses one step for an 8-bit backbuffer, so a dim gradient reads as grain of one level instead of
+   * contour bands. 0 turns it off. Only the tone-mapping node dithers; `filmicToneMap()` stays noise-free.
+   */
+  readonly dither: number;
 }
 
 /** Unreal 5.8.3 project defaults. Change these numbers to change the curve. */
@@ -39,6 +58,7 @@ export const FILMIC_CURVE: IFilmicCurve = {
   whiteClip: 0.04,
   blueCorrection: 0.6,
   expandGamut: 0,
+  dither: 1,
 };
 
 type Vec3 = readonly [number, number, number];
@@ -278,6 +298,46 @@ export function filmicToneMap(
   return [unit(x), unit(y), unit(z)];
 }
 
+/** One 8-bit step of display value. */
+const EIGHT_BIT_STEP = 1 / 255;
+const blend3 = (a: Node<"vec3">, b: Node<"vec3">, w: Node<"vec3">) => a.add(b.sub(a).mul(w));
+const toDisplay = (c: Node<"vec3">) =>
+  blend3(
+    c.mul(12.92),
+    c
+      .pow(1 / 2.4)
+      .mul(1.055)
+      .sub(0.055),
+    step(vec3(0.0031308), c),
+  );
+const toLinear = (v: Node<"vec3">) =>
+  blend3(v.div(12.92), v.add(0.055).div(1.055).pow(2.4), step(vec3(0.04045), v));
+
+/**
+ * Triangular grain, `steps` 8-bit steps wide, added in display space. Unreal 5.8.3 does this to its 8-bit output
+ * (`Engine/Shaders/Private/PostProcessTonemap.usf`, scaled by `BackbufferQuantizationDithering` in
+ * `Engine/Source/Runtime/Renderer/Private/PostProcess/PostProcessTonemap.cpp`). The pipeline applies the sRGB
+ * transfer after this node, so the grain goes in on the display value and the result comes back to linear.
+ * The shape is Unreal's triangle on [-1, 1]. The hash is white noise of the pixel position, with the sine
+ * argument kept under pi. Unreal's grain moves every frame; this one stays on its pixel, so two captures of
+ * one frame match bit for bit. The hash reads the pixel position: `screenUV` gave no grain in this stage on
+ * the owned engine.
+ */
+function dithered(linear: Node<"vec3">, steps: number): Node<"vec3"> {
+  const uniform = dot(screenCoordinate, vec2(12.9898, 78.233))
+    .mod(Math.PI)
+    .sin()
+    .mul(43758.5453)
+    .fract();
+  // The inverse of the triangular CDF: one root for each half of the unit interval.
+  const grain = mix(
+    uniform.mul(2).sqrt().sub(1),
+    float(1).sub(float(2).sub(uniform.mul(2)).sqrt()),
+    step(0.5, uniform),
+  );
+  return toLinear(clamp(toDisplay(linear).add(grain.mul(steps * EIGHT_BIT_STEP)), 0, 1));
+}
+
 /** The same curve as a TSL tone-mapping function, `(color, exposure) => color`. */
 export function filmicToneMappingNode(
   c: IFilmicCurve = FILMIC_CURVE,
@@ -328,7 +388,8 @@ export function filmicToneMappingNode(
       c.blueCorrection === 0
         ? post
         : mix(post, apply(BLUE_CORRECTION_INVERSE_AP1, post), c.blueCorrection);
-    return clamp(apply(AP1_TO_SRGB, restored), 0, 1);
+    const display = clamp(apply(AP1_TO_SRGB, restored), 0, 1);
+    return c.dither === 0 ? display : dithered(display, c.dither);
   };
 }
 
