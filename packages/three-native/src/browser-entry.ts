@@ -24,7 +24,12 @@ import { RENDER_AGAIN, defineWebRenderer, isWebHostModule } from "./browser-rend
 import { type ITslRuntime, defineTsl, isTslNode } from "./browser-tsl.js";
 import type { CatalogEntry, ICatalog } from "./catalog.js";
 import { withMathUtilsExtras } from "./math-utils.js";
-import { Material, defineObjectSurface, defineTypeFlags } from "./object-surface.js";
+import {
+  Material,
+  defineObjectSurface,
+  defineReleaseNoops,
+  defineTypeFlags,
+} from "./object-surface.js";
 import { type PassDraw, definePass } from "./pass-node.js";
 import { definePropertyBinding } from "./property-binding.js";
 import { defineQuadMesh } from "./quad-mesh.js";
@@ -124,13 +129,7 @@ export async function bindWebEngine(
   // Engine crossings so far, for a bench page's per-frame bridgeCalls (the pair's crossing budget).
   (globalThis as { __tnCrossingCount?: () => number }).__tnCrossingCount = crossings;
   defineTypeFlags(classes);
-  // three's BatchedMesh/InstancedMesh.dispose frees the instance textures; the engine frees its instance
-  // buffers with the object, so the call has nothing to release (core's projection mirror makes it).
-  for (const name of ["BatchedMesh", "InstancedMesh"]) {
-    const prototype = (classes[name] as { prototype: { dispose?: () => void } } | undefined)
-      ?.prototype;
-    if (prototype !== undefined) prototype.dispose ??= () => {};
-  }
+  defineReleaseNoops(classes);
   // attributes/groups, shape.holes and the abstract Material, as on the V8 player (object-surface.ts).
   const entries = engineCatalog.entries;
   const extending = (base: string) =>

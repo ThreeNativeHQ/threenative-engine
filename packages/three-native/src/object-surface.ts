@@ -228,6 +228,22 @@ const FLAGGED_CLASSES = [
 ] as const;
 
 /**
+ * three's `dispose()` on lights and instanced meshes frees a shadow map or the instance textures. The
+ * engine frees those with the object, so the call has nothing to release (core's projection mirror
+ * and a scene's exit make it). A back end's own `dispose` stays.
+ */
+export function defineReleaseNoops(classes: Readonly<Record<string, unknown>>): void {
+  for (const name of [
+    "BatchedMesh",
+    "InstancedMesh",
+    ...FLAGGED_CLASSES.filter((n) => n.endsWith("Light")),
+  ]) {
+    const cls = classes[name] as { prototype: { dispose?: () => void } } | undefined;
+    if (typeof cls === "function") cls.prototype.dispose ??= () => {};
+  }
+}
+
+/**
  * Puts three's type flags (`isMesh`, `isCamera`, `isLight`, ...) on a back end's scene classes. A
  * subclass inherits its parent's through the prototype chain, as in three; a missing class is skipped.
  */
