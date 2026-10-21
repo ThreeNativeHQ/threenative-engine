@@ -19,6 +19,7 @@ import {
   type Object3D,
   type PerspectiveCamera,
   PointLight,
+  SRGBColorSpace,
   SpotLight,
   Vector3,
 } from "three";
@@ -135,7 +136,10 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
         if (light.class !== "PointLight" && light.class !== "SpotLight")
           throw new Error(`TN_CALIBRATION_SCENE_LIGHT: ${light.name} ${light.class}`);
         const [r = 1, g = 1, b = 1] = light.color;
-        const colour = new Color().setRGB(r, g, b);
+        // scene.json holds Unreal's `light_color`, an FColor: Unreal reads its bytes as sRGB and lights with the linear
+        // value (neon-corridor L1 EXR: a [1, 0.85, 0.65] lamp lights a grey wall at G/R 0.70 and B/R 0.41, the
+        // decoded (1, 0.69, 0.38), not the raw numbers). A white lamp reads the same either way.
+        const colour = new Color().setRGB(r, g, b, SRGBColorSpace);
         const cd = candela(light.intensity, light.units) * LIGHT_SCALE;
         // A spot looks at its target through the outer cone; three's penumbra is the share of the cone that
         // fades, Unreal's inner cone the part that does not (PRD-649 lamp-room).
@@ -198,7 +202,10 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
         const gi = installGi(ctx, model, {
           // Diagnosis: ?bounces=N brackets how much of the indirect light the later bounces carry.
           bounces: Number(params.get("bounces") ?? 5),
-          lights: lights.map((l) => ({
+          // The Surface Cache is on: a ray reads the map where it lands (PRD-639). Diagnosis: ?giMaps=0 returns the
+          // flat colour factor, ?giLights=0 leaves the lamps out of what a ray returns (the direct frame keeps them).
+          surfaceCache: params.get("giMaps") !== "0",
+          lights: (params.get("giLights") === "0" ? [] : lights).map((l) => ({
             position: l.position,
             color: l.color,
             intensity: l.intensity,

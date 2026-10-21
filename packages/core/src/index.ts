@@ -836,6 +836,30 @@ export {
   ProbeVolume,
 } from "./render/probe-volume.js";
 /**
+ * The Surface Cache: what a traced global-illumination ray reads where it hits a surface. A material atlas
+ * (base colour and emissive maps reduced to small tiles) answers the albedo and the glow at the hit UV; a flat
+ * material keeps its colour. `SurfaceLights` adds the scene's point and spot lamps at the hit, the brightest eight.
+ * @situation give a traced bounce ray the texture colour and glow of the surface it hits
+ * @situation light the hit of a traced ray with the scene's point and spot lamps
+ * @alias lumen surface cache
+ * @alias lumen scene
+ * @alias mesh cards
+ * @constraint the materials are fixed when the cache is built; build a new one when a material or a map changes
+ * @constraint a map the cache cannot read (an image the runtime cannot draw to a canvas) returns the flat colour and is listed in `report.fallbacks`
+ * @constraint the cache owns no colour, texture or light; the game's materials and lamps are the only source
+ * @override atlasSize and cardTexelDensityScale size the atlas; maxLights caps the lamps evaluated at a hit
+ * @example const cache = SurfaceCache.from(materials); cache.albedo(slot, hit.uv.x, hit.uv.y, out);
+ */
+export { SurfaceCache, SurfaceLights } from "./render/surface-cache.js";
+export type {
+  ISurfaceCacheMaterial,
+  ISurfaceCacheOptions,
+  ISurfaceCacheReport,
+  ISurfaceCacheTexture,
+  ISurfaceLight,
+  ISurfaceLightsOptions,
+} from "./render/surface-cache.js";
+/**
  * Read the most recent observation from a probe volume.
  * @situation inspect the latest probe bake observation
  * @constraint the returned observation is a measurement; it does not own lighting or materials

@@ -100,6 +100,22 @@ describe("threenative-engine-mcp", () => {
     expect(replication.guidance).toContain("authoritative replication");
   });
 
+  it("finds the Surface Cache from Unreal's vocabulary (PRD-639)", () => {
+    for (const query of [
+      "lumen surface cache",
+      "lumen scene",
+      "mesh cards",
+      "give a traced bounce ray the texture colour and glow of the surface it hits",
+    ]) {
+      expect(
+        searchResults(query, workspaceManifest)
+          .slice(0, 3)
+          .map((result) => result.symbol),
+        query,
+      ).toContain("SurfaceCache");
+    }
+  });
+
   it("finds camera framing from third-person vocabulary", () => {
     const results = searchResults("third person camera follow", workspaceManifest);
     expect(results.slice(0, 3).map((result) => result.symbol)).toContain("defineGame");

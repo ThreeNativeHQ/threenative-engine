@@ -212,6 +212,8 @@
         "@threenative/core#SpectralOcean": "export class SpectralOcean extends Object3D implements IComputeDriven { … }",
         "@threenative/core#SpriteAnimator3D": "export class SpriteAnimator3D { … }",
         "@threenative/core#staticTransformCensus": "export function staticTransformCensus(): IStaticTransformCensus { … }",
+        "@threenative/core#SurfaceCache": "export class SurfaceCache { … }",
+        "@threenative/core#SurfaceLights": "export class SurfaceLights { … }",
         "@threenative/core#TracerPool3D": "export class TracerPool3D { … }",
         "@threenative/core#unlitFoliageWarning": "export function unlitFoliageWarning( scene: Object3D & { … }",
         "@threenative/core#unmarkStatic": "export function unmarkStatic(root: Object3D): void { … }",
