@@ -4,7 +4,7 @@
  *   pnpm unreal-look:capture --engine unreal --scene gi | gi:cornell[,gi:<name>...]
  *     --check-cvars          first resolve every variant console variable in the editor
  *     --variants L7-Epic,ID  limit the variants (default: every variant in gi/scenes.json)
- *     --warm-up 90,180       render warm-up frames per run (default 90)
+ *     --warm-up 180,360      render warm-up frames per run (default 180: sunlit-room is still 1% dark at 90)
  *     --runs 2               repeat each run; run 2 lands in "<variant>#2" (the noise floor)
  *     --rebuild              author and export the scene again even if its level exists
  *   pnpm unreal-look:compare --scene gi:cornell --unreal-vs-unreal [--write-stats]
@@ -355,8 +355,11 @@ function flag(args: readonly string[], name: string): string | undefined {
   return index === -1 ? undefined : args[index + 1];
 }
 
+/** Warm-up frames of the reference capture: Lumen has converged by here (180 against 360 and 720 sit inside the noise floor). */
+export const REFERENCE_WARM_UP = 180;
+
 export function folderName(variant: string, warmUp: number, run: number): string {
-  return `${variant}${warmUp === 90 ? "" : `@${warmUp}`}${run === 1 ? "" : `#${run}`}`;
+  return `${variant}${warmUp === REFERENCE_WARM_UP ? "" : `@${warmUp}`}${run === 1 ? "" : `#${run}`}`;
 }
 
 type RunUnreal = (mode: string, out: string, env?: Record<string, string>) => Promise<number>;
@@ -372,7 +375,7 @@ export async function captureGi(args: readonly string[], runUnreal: RunUnreal): 
   const only = flag(args, "--variants")?.split(",");
   const variants = reg.variants.filter((v) => !only || only.includes(v.name));
   if (only && variants.length !== only.length) fail("BAD_INPUT", `unknown variant in ${only}`);
-  const warmUps = (flag(args, "--warm-up") ?? "90").split(",").map(Number);
+  const warmUps = (flag(args, "--warm-up") ?? String(REFERENCE_WARM_UP)).split(",").map(Number);
   if (!warmUps.every((w) => Number.isInteger(w) && w > 0)) fail("BAD_INPUT", "--warm-up");
   const runs = Number(flag(args, "--runs") ?? 1);
   const out = path.resolve(flag(args, "--out") ?? path.join(REFERENCE, "captures", "unreal"));
@@ -411,7 +414,7 @@ export async function captureGi(args: readonly string[], runUnreal: RunUnreal): 
     const { scene, gltf } = readScene(name);
     validateSceneExport(scene, gltf);
     for (const variant of variants)
-      for (const warmUp of variant.name === "ID" ? [90] : warmUps)
+      for (const warmUp of variant.name === "ID" ? [REFERENCE_WARM_UP] : warmUps)
         for (let run = 1; run <= (variant.name === "ID" ? 1 : runs); run++) {
           const env = {
             TN_UE_SCENE: name,
@@ -605,16 +608,17 @@ export function compareGi(args: readonly string[]): number {
           );
       }
       if (!args.includes("--unreal-vs-unreal")) continue;
-      // Convergence: 90 against 180 warm-up frames. Noise floor: two runs at 180.
-      const at90 = regionStats(path.join(base, "L7-Epic"), pose.name, regionMasks);
-      const at180 = regionStats(path.join(base, "L7-Epic@180"), pose.name, regionMasks);
-      const again = existsSync(path.join(base, "L7-Epic@180#2"))
-        ? regionStats(path.join(base, "L7-Epic@180#2"), pose.name, regionMasks)
+      // Convergence: the reference warm-up against twice as many frames. Noise floor: two runs at the reference warm-up.
+      const longer = REFERENCE_WARM_UP * 2;
+      const atReference = regionStats(path.join(base, "L7-Epic"), pose.name, regionMasks);
+      const atLonger = regionStats(path.join(base, `L7-Epic@${longer}`), pose.name, regionMasks);
+      const again = existsSync(path.join(base, "L7-Epic#2"))
+        ? regionStats(path.join(base, "L7-Epic#2"), pose.name, regionMasks)
         : undefined;
-      for (const [region, a] of Object.entries(at90)) {
-        const b = at180[region] ?? fail("EMPTY_MASK", `${region} missing at 180 frames`);
+      for (const [region, a] of Object.entries(atReference)) {
+        const b = atLonger[region] ?? fail("EMPTY_MASK", `${region} missing at ${longer} frames`);
         const change = relativeChange(a, b);
-        const noise = again?.[region] ? relativeChange(b, again[region]) : null;
+        const noise = again?.[region] ? relativeChange(a, again[region]) : null;
         if (noise !== null) noiseFloor = Math.max(noiseFloor, noise);
         const pass = change < CONVERGENCE;
         failed ||= !pass;
@@ -625,7 +629,7 @@ export function compareGi(args: readonly string[]): number {
     }
     if (rows.length) {
       console.log(
-        `\n### ${name}: Lumen convergence, L7 Epic, 90 vs 180 warm-up frames (limit ${CONVERGENCE * 100}%)\n\n| scene | pose | region | EV50 @90 | EV50 @180 | change | run-to-run @180 | verdict |\n|---|---|---|---:|---:|---:|---:|---|\n${rows.join("\n")}\n\nnoise floor (largest run-to-run change at 180 frames): ${(noiseFloor * 100).toFixed(2)}%`,
+        `\n### ${name}: Lumen convergence, L7 Epic, ${REFERENCE_WARM_UP} vs ${REFERENCE_WARM_UP * 2} warm-up frames (limit ${CONVERGENCE * 100}%)\n\n| scene | pose | region | EV50 @${REFERENCE_WARM_UP} | EV50 @${REFERENCE_WARM_UP * 2} | change | run-to-run @${REFERENCE_WARM_UP} | verdict |\n|---|---|---|---:|---:|---:|---:|---|\n${rows.join("\n")}\n\nnoise floor (largest run-to-run change at ${REFERENCE_WARM_UP} frames): ${(noiseFloor * 100).toFixed(2)}%`,
       );
     }
     if (args.includes("--write-stats")) {

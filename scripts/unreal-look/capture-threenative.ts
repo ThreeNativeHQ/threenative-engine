@@ -256,7 +256,7 @@ export async function captureThreeNative(options: IThreeNativeCaptureOptions): P
           if (wanted.length === 0) continue;
           const started = Date.now();
           await page.goto(
-            `${origin}?tnRef=${layer}&sun=${sun.elevationDeg},${sun.azimuthDeg}${options.baseline ? "&baseline=1" : ""}${options.off ? `&off=${options.off}` : ""}`,
+            `${origin}?tnRef=${layer}&sun=${sun.elevationDeg},${sun.azimuthDeg}${options.baseline ? "&baseline=1" : ""}${options.off ? `&off=${options.off}` : ""}${process.env.TN_URL_EXTRA ?? ""}`,
             {
               waitUntil: "domcontentloaded",
             },
