@@ -27,6 +27,33 @@ export function bakeRays(root: Object3D): IFlatRays | undefined {
 }
 
 /**
+ * Per triangle, the edges from corner a to b and to c and their cross product, as the ray test needs them (the corner
+ * order of a back-face-only material is the reverse and is worked out per ray).
+ */
+function triangleEdges(corners: Float64Array, count: number): Float64Array {
+  const edges = new Float64Array(count * 9);
+  for (let t = 0; t < count; t += 1) {
+    const c = t * 9;
+    const e1x = (corners[c + 3] ?? 0) - (corners[c] ?? 0);
+    const e1y = (corners[c + 4] ?? 0) - (corners[c + 1] ?? 0);
+    const e1z = (corners[c + 5] ?? 0) - (corners[c + 2] ?? 0);
+    const e2x = (corners[c + 6] ?? 0) - (corners[c] ?? 0);
+    const e2y = (corners[c + 7] ?? 0) - (corners[c + 1] ?? 0);
+    const e2z = (corners[c + 8] ?? 0) - (corners[c + 2] ?? 0);
+    edges[c] = e1x;
+    edges[c + 1] = e1y;
+    edges[c + 2] = e1z;
+    edges[c + 3] = e2x;
+    edges[c + 4] = e2y;
+    edges[c + 5] = e2z;
+    edges[c + 6] = e1y * e2z - e1z * e2y;
+    edges[c + 7] = e1z * e2x - e1x * e2z;
+    edges[c + 8] = e1x * e2y - e1y * e2x;
+  }
+  return edges;
+}
+
+/**
  * Writes instance `instance`'s world matrix (the mesh's times its own) into `world`, and returns the inverse transpose
  * of the instance's 3 x 3: its columns are the cross products of the other two columns over the determinant.
  */
@@ -211,6 +238,8 @@ function build(root: Object3D): IFlatRays | undefined {
     }
   });
 
+  const edges = triangleEdges(corners, count);
+
   // Median split on the widest centroid axis; nodes are flat arrays, children are node + 1 and `right`.
   const order = new Uint32Array(count);
   for (let i = 0; i < count; i += 1) order[i] = i;
@@ -290,9 +319,17 @@ function build(root: Object3D): IFlatRays | undefined {
   const rays: IFlatRays = {
     doubleSided: false,
     raycast({ origin, direction, far }): Intersection | undefined {
-      const [ox, oy, oz] = [origin.x, origin.y, origin.z];
-      const [dx, dy, dz] = [direction.x, direction.y, direction.z];
-      const [ix, iy, iz] = [1 / dx, 1 / dy, 1 / dz];
+      // Plain scalars throughout: this runs a million times per bake, and a destructured array literal is an allocation.
+      const ox = origin.x;
+      const oy = origin.y;
+      const oz = origin.z;
+      const dx = direction.x;
+      const dy = direction.y;
+      const dz = direction.z;
+      const ix = 1 / dx;
+      const iy = 1 / dy;
+      const iz = 1 / dz;
+      const everySide = rays.doubleSided;
       let best = far;
       let found = -1;
       stack[0] = 0;
@@ -301,75 +338,98 @@ function build(root: Object3D): IFlatRays | undefined {
         top -= 1;
         const node = stack[top] ?? 0;
         const b = node * 6;
-        // Slab test against the node's box, limited to the best hit so far. A ray parallel to an axis only
+        // Slab test against the node's box, limited to the best hit so far. The near plane of each axis is the one the ray
+        // meets first (chosen by the sign of its direction, so no min / max per axis). A ray parallel to an axis only
         // has to start between that axis' planes (0 x infinity is NaN, so the division is skipped).
         let tmin = 0;
         let tmax = best;
         if (dx === 0) {
           if (ox < (bounds[b] ?? 0) || ox > (bounds[b + 3] ?? 0)) continue;
         } else {
-          const t1 = ((bounds[b] ?? 0) - ox) * ix;
-          const t2 = ((bounds[b + 3] ?? 0) - ox) * ix;
-          tmin = Math.max(tmin, Math.min(t1, t2));
-          tmax = Math.min(tmax, Math.max(t1, t2));
+          const near = (bounds[dx < 0 ? b + 3 : b] ?? 0) - ox;
+          const far = (bounds[dx < 0 ? b : b + 3] ?? 0) - ox;
+          const t1 = near * ix;
+          const t2 = far * ix;
+          if (t1 > tmin) tmin = t1;
+          if (t2 < tmax) tmax = t2;
         }
         if (dy === 0) {
           if (oy < (bounds[b + 1] ?? 0) || oy > (bounds[b + 4] ?? 0)) continue;
         } else {
-          const t1 = ((bounds[b + 1] ?? 0) - oy) * iy;
-          const t2 = ((bounds[b + 4] ?? 0) - oy) * iy;
-          tmin = Math.max(tmin, Math.min(t1, t2));
-          tmax = Math.min(tmax, Math.max(t1, t2));
+          const t1 = ((bounds[dy < 0 ? b + 4 : b + 1] ?? 0) - oy) * iy;
+          const t2 = ((bounds[dy < 0 ? b + 1 : b + 4] ?? 0) - oy) * iy;
+          if (t1 > tmin) tmin = t1;
+          if (t2 < tmax) tmax = t2;
         }
         if (dz === 0) {
           if (oz < (bounds[b + 2] ?? 0) || oz > (bounds[b + 5] ?? 0)) continue;
         } else {
-          const t1 = ((bounds[b + 2] ?? 0) - oz) * iz;
-          const t2 = ((bounds[b + 5] ?? 0) - oz) * iz;
-          tmin = Math.max(tmin, Math.min(t1, t2));
-          tmax = Math.min(tmax, Math.max(t1, t2));
+          const t1 = ((bounds[dz < 0 ? b + 5 : b + 2] ?? 0) - oz) * iz;
+          const t2 = ((bounds[dz < 0 ? b + 2 : b + 5] ?? 0) - oz) * iz;
+          if (t1 > tmin) tmin = t1;
+          if (t2 < tmax) tmax = t2;
         }
         if (tmin > tmax) continue;
         const count = size[node] ?? 0;
         if (count === 0) {
           // Visit the near child first.
-          const negative = ([dx, dy, dz][axisOf[node] ?? 0] ?? 0) < 0;
+          const along = axisOf[node] ?? 0;
+          const negative = (along === 0 ? dx : along === 1 ? dy : dz) < 0;
           const right = start[node] ?? 0;
           stack[top] = negative ? node + 1 : right;
           stack[top + 1] = negative ? right : node + 1;
           top += 2;
           continue;
         }
-        for (let i = start[node] ?? 0; i < (start[node] ?? 0) + count; i += 1) {
+        const from = start[node] ?? 0;
+        for (let i = from; i < from + count; i += 1) {
           const t = order[i] ?? 0;
-          const material = materials[owner[t] ?? 0] as Material | Material[];
-          const side = rays.doubleSided
-            ? 2
-            : ((Array.isArray(material) ? material[slot[t] ?? 0] : material)?.side ?? 0);
+          let side = 2;
+          if (!everySide) {
+            const material = materials[owner[t] ?? 0] as Material | Material[];
+            side = (Array.isArray(material) ? material[slot[t] ?? 0] : material)?.side ?? 0;
+          }
           const c = t * 9;
           // Three's Ray.intersectTriangle, culled by FrontSide (0), reversed for BackSide (1).
-          let [ax, ay, az] = [corners[c] ?? 0, corners[c + 1] ?? 0, corners[c + 2] ?? 0];
-          const [bx, by, bz] = [corners[c + 3] ?? 0, corners[c + 4] ?? 0, corners[c + 5] ?? 0];
-          let [cx, cy, cz] = [corners[c + 6] ?? 0, corners[c + 7] ?? 0, corners[c + 8] ?? 0];
-          if (side === 1) [ax, ay, az, cx, cy, cz] = [cx, cy, cz, ax, ay, az];
-          const cull = side !== 2;
-          const [e1x, e1y, e1z] = [bx - ax, by - ay, bz - az];
-          const [e2x, e2y, e2z] = [cx - ax, cy - ay, cz - az];
-          const [nx, ny, nz] = [
-            e1y * e2z - e1z * e2y,
-            e1z * e2x - e1x * e2z,
-            e1x * e2y - e1y * e2x,
-          ];
+          let ax = corners[c] ?? 0;
+          let ay = corners[c + 1] ?? 0;
+          let az = corners[c + 2] ?? 0;
+          let e1x = edges[c] ?? 0;
+          let e1y = edges[c + 1] ?? 0;
+          let e1z = edges[c + 2] ?? 0;
+          let e2x = edges[c + 3] ?? 0;
+          let e2y = edges[c + 4] ?? 0;
+          let e2z = edges[c + 5] ?? 0;
+          let nx = edges[c + 6] ?? 0;
+          let ny = edges[c + 7] ?? 0;
+          let nz = edges[c + 8] ?? 0;
+          if (side === 1) {
+            // Corners a and c trade places.
+            ax = corners[c + 6] ?? 0;
+            ay = corners[c + 7] ?? 0;
+            az = corners[c + 8] ?? 0;
+            e1x = (corners[c + 3] ?? 0) - ax;
+            e1y = (corners[c + 4] ?? 0) - ay;
+            e1z = (corners[c + 5] ?? 0) - az;
+            e2x = (corners[c] ?? 0) - ax;
+            e2y = (corners[c + 1] ?? 0) - ay;
+            e2z = (corners[c + 2] ?? 0) - az;
+            nx = e1y * e2z - e1z * e2y;
+            ny = e1z * e2x - e1x * e2z;
+            nz = e1x * e2y - e1y * e2x;
+          }
           let ddn = dx * nx + dy * ny + dz * nz;
           let sign: number;
           if (ddn > 0) {
-            if (cull) continue;
+            if (side !== 2) continue;
             sign = 1;
           } else if (ddn < 0) {
             sign = -1;
             ddn = -ddn;
           } else continue;
-          const [qx, qy, qz] = [ox - ax, oy - ay, oz - az];
+          const qx = ox - ax;
+          const qy = oy - ay;
+          const qz = oz - az;
           // diff x edge2, edge1 x diff.
           const ddqxe2 =
             sign *

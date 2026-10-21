@@ -363,18 +363,22 @@ const cornerWeight = new Float64Array(8);
  */
 function weightsAt(field: IField, point: Vector3, sees?: (probe: number) => boolean): void {
   const { grid } = field;
-  const [nx, ny, nz] = [grid.nx, grid.ny, grid.nz];
+  const nx = grid.nx;
+  const ny = grid.ny;
+  const nz = grid.nz;
   // No arrays or closures before the fast path: this runs for every ray of every bounce pass and every texel.
   const fx = Math.min(nx - 1, Math.max(0, (point.x - grid.origin.x) / grid.cell - 0.5));
   const fy = Math.min(ny - 1, Math.max(0, (point.y - grid.origin.y) / grid.cell - 0.5));
   const fz = Math.min(nz - 1, Math.max(0, (point.z - grid.origin.z) / grid.cell - 0.5));
-  const [lx, ly, lz] = [Math.floor(fx), Math.floor(fy), Math.floor(fz)];
-  const [tx, ty, tz] = [fx - lx, fy - ly, fz - lz];
-  const [hx, hy, hz] = [
-    Math.min(nx - 1, lx + 1),
-    Math.min(ny - 1, ly + 1),
-    Math.min(nz - 1, lz + 1),
-  ];
+  const lx = Math.floor(fx);
+  const ly = Math.floor(fy);
+  const lz = Math.floor(fz);
+  const tx = fx - lx;
+  const ty = fy - ly;
+  const tz = fz - lz;
+  const hx = Math.min(nx - 1, lx + 1);
+  const hy = Math.min(ny - 1, ly + 1);
+  const hz = Math.min(nz - 1, lz + 1);
   let best = -1;
   let bestWeight = -1;
   let cut = false;
@@ -387,7 +391,10 @@ function weightsAt(field: IField, point: Vector3, sees?: (probe: number) => bool
     if (field.valid[probe] !== 1) cut = true;
     for (let a = 0; a < 3; a += 1)
       if (!((corner >> a) & 1) && field.links[probe * 3 + a] !== 1) cut = true;
-    if (field.valid[probe] === 1 && w > bestWeight) [best, bestWeight] = [corner, w];
+    if (field.valid[probe] === 1 && w > bestWeight) {
+      best = corner;
+      bestWeight = w;
+    }
   }
   // No wall, no solid around the cell: every corner is reachable, so only the renormalisation below remains.
   if (!cut) {
@@ -450,20 +457,37 @@ function weightsAt(field: IField, point: Vector3, sees?: (probe: number) => bool
 /** The ambient-cube read of a field at `point` for `normal`: E / pi. */
 function readField(field: IField, point: Vector3, normal: Vector3, out: number[]): void {
   weightsAt(field, point);
-  const axes = [normal.x * normal.x, normal.y * normal.y, normal.z * normal.z];
-  const faces = [normal.x < 0 ? 1 : 0, normal.y < 0 ? 3 : 2, normal.z < 0 ? 5 : 4];
-  out[0] = out[1] = out[2] = 0;
+  // The three faces the normal leans on and how much (its squared components); every corner adds each of them in turn.
+  const squareX = normal.x * normal.x;
+  const squareY = normal.y * normal.y;
+  const squareZ = normal.z * normal.z;
+  const faceX = normal.x < 0 ? 1 : 0;
+  const faceY = normal.y < 0 ? 3 : 2;
+  const faceZ = normal.z < 0 ? 5 : 4;
+  const { values } = field;
+  let r = 0;
+  let g = 0;
+  let b = 0;
   for (let i = 0; i < 8; i += 1) {
     const w = cornerWeight[i] ?? 0;
     if (w === 0) continue;
-    for (let a = 0; a < 3; a += 1)
-      for (let c = 0; c < 3; c += 1)
-        out[c] =
-          (out[c] ?? 0) +
-          w *
-            (axes[a] ?? 0) *
-            (field.values[((cornerProbe[i] ?? 0) * 6 + (faces[a] ?? 0)) * 3 + c] ?? 0);
+    const probe = (cornerProbe[i] ?? 0) * 6;
+    let at = (probe + faceX) * 3;
+    r += w * squareX * (values[at] ?? 0);
+    g += w * squareX * (values[at + 1] ?? 0);
+    b += w * squareX * (values[at + 2] ?? 0);
+    at = (probe + faceY) * 3;
+    r += w * squareY * (values[at] ?? 0);
+    g += w * squareY * (values[at + 1] ?? 0);
+    b += w * squareY * (values[at + 2] ?? 0);
+    at = (probe + faceZ) * 3;
+    r += w * squareZ * (values[at] ?? 0);
+    g += w * squareZ * (values[at + 1] ?? 0);
+    b += w * squareZ * (values[at + 2] ?? 0);
   }
+  out[0] = r;
+  out[1] = g;
+  out[2] = b;
 }
 
 /**
@@ -1477,23 +1501,40 @@ export function installGi(
     const hitAt: [number, number, number] = [0, 0, 0];
     const hitNormal: [number, number, number] = [0, 0, 0];
 
-    /** Traces a block of rays from a probe and stores what they find. Returns how many hit within ENCLOSED_DISTANCE. */
-    const trace = (probe: number, centre: Vector3, directions: Float64Array): number => {
+    /**
+     * Traces a block of rays from a probe and stores what they find. Returns how many hit within ENCLOSED_DISTANCE.
+     * `skies` is the sky radiance along each direction of the block (the same for every probe, so it is read once).
+     */
+    const trace = (
+      probe: number,
+      centre: Vector3,
+      directions: Float64Array,
+      skies: Float64Array,
+    ): number => {
       let near = 0;
       for (let k = 0; k < directions.length; k += 3) {
-        const [dx, dy, dz] = [directions[k] ?? 0, directions[k + 1] ?? 0, directions[k + 2] ?? 0];
+        const dx = directions[k] ?? 0;
+        const dy = directions[k + 1] ?? 0;
+        const dz = directions[k + 2] ?? 0;
         const i = used;
         used += 1;
         traced += 1;
-        ray.direction[i * 3] = dx;
-        ray.direction[i * 3 + 1] = dy;
-        ray.direction[i * 3 + 2] = dz;
+        const at = i * 3;
+        ray.direction[at] = dx;
+        ray.direction[at + 1] = dy;
+        ray.direction[at + 2] = dz;
         direction.set(dx, dy, dz);
         const hit = ctx.raycast({ origin: centre, direction, far, targets: root });
-        skyAt(sky, dx, dy, dz, colour);
-        ray.sky.set(colour, i * 3);
+        const skyR = skies[k] ?? 0;
+        const skyG = skies[k + 1] ?? 0;
+        const skyB = skies[k + 2] ?? 0;
+        ray.sky[at] = skyR;
+        ray.sky[at + 1] = skyG;
+        ray.sky[at + 2] = skyB;
         if (hit === undefined) {
-          ray.base.set(colour, i * 3);
+          ray.base[at] = skyR;
+          ray.base[at + 1] = skyG;
+          ray.base[at + 2] = skyB;
           continue;
         }
         ray.hit[i] = 1;
@@ -1501,32 +1542,49 @@ export function installGi(
         ray.distance[i] = distance;
         if (distance < ENCLOSED_DISTANCE) near += 1;
         const hitPoint = hit.point;
-        [hitAt[0], hitAt[1], hitAt[2]] = [hitPoint.x, hitPoint.y, hitPoint.z];
+        hitAt[0] = hitPoint.x;
+        hitAt[1] = hitPoint.y;
+        hitAt[2] = hitPoint.z;
         const face = hit.face?.normal;
         const m = matrixOf(hit.object);
         // transformDirection: the upper 3x3 of the world matrix, normalised.
-        const [fx, fy, fz] =
-          face === undefined || face === null ? [dx, dy, dz] : [face.x, face.y, face.z];
-        let [nx, ny, nz] = [
-          (m[0] ?? 0) * fx + (m[4] ?? 0) * fy + (m[8] ?? 0) * fz,
-          (m[1] ?? 0) * fx + (m[5] ?? 0) * fy + (m[9] ?? 0) * fz,
-          (m[2] ?? 0) * fx + (m[6] ?? 0) * fy + (m[10] ?? 0) * fz,
-        ];
+        const hasFace = face !== undefined && face !== null;
+        const fx = hasFace ? face.x : dx;
+        const fy = hasFace ? face.y : dy;
+        const fz = hasFace ? face.z : dz;
+        let nx = (m[0] ?? 0) * fx + (m[4] ?? 0) * fy + (m[8] ?? 0) * fz;
+        let ny = (m[1] ?? 0) * fx + (m[5] ?? 0) * fy + (m[9] ?? 0) * fz;
+        let nz = (m[2] ?? 0) * fx + (m[6] ?? 0) * fy + (m[10] ?? 0) * fz;
         const length = Math.hypot(nx, ny, nz) || 1;
-        [nx, ny, nz] = [nx / length, ny / length, nz / length];
+        nx /= length;
+        ny /= length;
+        nz /= length;
         if (nx * dx + ny * dy + nz * dz > 0) {
-          [nx, ny, nz] = [-nx, -ny, -nz];
-          if (face !== undefined && face !== null) backfaces[probe] = (backfaces[probe] ?? 0) + 1;
+          nx = -nx;
+          ny = -ny;
+          nz = -nz;
+          if (hasFace) backfaces[probe] = (backfaces[probe] ?? 0) + 1;
         }
-        [hitNormal[0], hitNormal[1], hitNormal[2]] = [nx, ny, nz];
+        hitNormal[0] = nx;
+        hitNormal[1] = ny;
+        hitNormal[2] = nz;
         const { albedo, emissive } = surfaceOf(hit.object);
-        ray.base.set(
-          params.bounces > 0 ? surface(hit.object, hitAt, hitNormal, albedo, emissive) : [0, 0, 0],
-          i * 3,
-        );
-        ray.albedo.set(albedo, i * 3);
-        ray.point.set(hitAt, i * 3);
-        ray.normal.set(hitNormal, i * 3);
+        // A bake without bounces keeps no surface light: `base` stays at its zeros.
+        if (params.bounces > 0) {
+          const lit = surface(hit.object, hitAt, hitNormal, albedo, emissive);
+          ray.base[at] = lit[0] ?? 0;
+          ray.base[at + 1] = lit[1] ?? 0;
+          ray.base[at + 2] = lit[2] ?? 0;
+        }
+        ray.albedo[at] = albedo[0] ?? 0;
+        ray.albedo[at + 1] = albedo[1] ?? 0;
+        ray.albedo[at + 2] = albedo[2] ?? 0;
+        ray.point[at] = hitAt[0];
+        ray.point[at + 1] = hitAt[1];
+        ray.point[at + 2] = hitAt[2];
+        ray.normal[at] = nx;
+        ray.normal[at + 1] = ny;
+        ray.normal[at + 2] = nz;
       }
       return near;
     };
@@ -1539,18 +1597,31 @@ export function installGi(
     const next = random(1);
     const baseRays = sphereRays(params.baseRays, next);
     const extraRays = sphereRays(params.extraRays, next);
+    /** The sky radiance along each direction of a block: it does not depend on the probe. */
+    const skiesOf = (directions: Float64Array): Float64Array => {
+      const out = new Float64Array(directions.length);
+      for (let k = 0; k < directions.length; k += 3) {
+        skyAt(sky, directions[k] ?? 0, directions[k + 1] ?? 0, directions[k + 2] ?? 0, colour);
+        out[k] = colour[0] ?? 0;
+        out[k + 1] = colour[1] ?? 0;
+        out[k + 2] = colour[2] ?? 0;
+      }
+      return out;
+    };
+    const baseSkies = skiesOf(baseRays);
+    const extraSkies = skiesOf(extraRays);
     for (let probe = 0; probe < probes; probe += 1) {
       if (due()) yield* pause();
       centreOf(probe, centre);
       first[probe] = used;
-      const near = trace(probe, centre, baseRays);
+      const near = trace(probe, centre, baseRays, baseSkies);
       if (
         params.extraRays > 0 &&
         near > params.baseRays * ENCLOSED_SHARE &&
         enclosedProbes < MAX_ENCLOSED
       ) {
         enclosedProbes += 1;
-        trace(probe, centre, extraRays);
+        trace(probe, centre, extraRays, extraSkies);
       }
       end[probe] = used;
     }
@@ -1669,10 +1740,12 @@ export function installGi(
             g += (ray.albedo[i * 3 + 1] ?? 0) * (cached[1] ?? 0);
             b += (ray.albedo[i * 3 + 2] ?? 0) * (cached[2] ?? 0);
           }
-          for (let f = 0; f < 6; f += 1) {
-            const face = FACES[f] as readonly [number, number, number];
-            const w = Math.max(0, face[0] * dx + face[1] * dy + face[2] * dz);
-            if (w === 0) continue;
+          // A ray adds to the face on each axis it points along (+x, -x, +y, -y, +z, -z), by that component.
+          for (let a = 0; a < 3; a += 1) {
+            const d = a === 0 ? dx : a === 1 ? dy : dz;
+            if (d === 0) continue;
+            const f = d > 0 ? a * 2 : a * 2 + 1;
+            const w = d > 0 ? d : -d;
             weight[f] = (weight[f] ?? 0) + w;
             if (free) open[f] = (open[f] ?? 0) + w;
             if (ray.hit[i] === 0) sees[f] = (sees[f] ?? 0) + w;
