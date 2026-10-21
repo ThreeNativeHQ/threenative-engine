@@ -17,6 +17,9 @@ export default defineConfig({
         importer: string | undefined,
         options: object,
       ) {
+        // The harness overlay giCache.ts reads the Surface Cache from core (PRD-639); its spec runs on core's source.
+        if (source === "@threenative/core" && importer?.startsWith(path.join(root, "scripts/")))
+          return path.join(root, "packages/core/src/index.ts");
         if (!/^three(\/|$)/.test(source) || !importer?.startsWith(path.join(root, "scripts/")))
           return null;
         return this.resolve(source, path.join(root, "packages/core/package.json"), {
