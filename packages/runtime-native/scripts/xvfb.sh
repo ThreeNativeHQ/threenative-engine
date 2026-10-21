@@ -114,11 +114,22 @@ for candidate in xcompmgr picom compton; do
 done
 
 # Owning _NET_WM_CM_S0 takes a moment, and a command that reaches the runtime first sees a display
-# with no compositing manager and gets the refusal. The same quarter second the runner's TypeScript
-# path waits, followed by the same liveness check: a compositor that already died is not one we can
-# report as running, and the refusal then names the real state.
+# with no compositing manager and gets the refusal. A compositor maps a window on the root as soon
+# as it is up, so poll xwininfo for one, bounded at 5 seconds; without xwininfo fall back to the
+# quarter second the runner's TypeScript path waits. Either way a compositor that already died is
+# not one we can report as running, and the refusal then names the real state.
 if [ -n "$compositor_pid" ]; then
-  sleep 0.25
+  if command -v xwininfo >/dev/null 2>&1; then
+    waited=0
+    while [ "$waited" -lt 50 ]; do
+      kill -0 "$compositor_pid" 2>/dev/null || break
+      xwininfo -root -children 2>/dev/null | grep -q '^ *[1-9][0-9]* child' && break
+      sleep 0.1
+      waited=$((waited + 1))
+    done
+  else
+    sleep 0.25
+  fi
   if ! kill -0 "$compositor_pid" 2>/dev/null; then
     wait "$compositor_pid" 2>/dev/null || true
     compositor_pid=""
