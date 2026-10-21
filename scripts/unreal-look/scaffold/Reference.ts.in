@@ -2,7 +2,8 @@
 // (PRD-631). It is scene setup only: every look decision comes from the copy's own
 // `src/render/`, and a layer below L9 only switches a system off. The URL picks the cell:
 //   ?tnRef=<ID|L0..L9>&sun=<elevation>,<azimuth>
-// and `window.__tnRef.pose(...)` frames one camera pose.
+// and `window.__tnRef.pose(...)` frames one camera pose. Until then the page shows the first
+// capture pose, or `?pose=<name>`.
 import {
   type ICtx,
   Scene,
@@ -37,6 +38,7 @@ import { SUN_DIRECTION, setupSky } from "../render/sky.js";
 import { WorldEnvironment } from "../render/worldEnvironment.js";
 import type { GameState } from "../state.js";
 import { Play } from "./Play.js";
+import { POSES } from "./referencePoses.js";
 
 type GameCtx = ICtx<GameState, IPhysicsContext>;
 type Pose = { position: number[]; target: number[]; hfovDeg: number };
@@ -243,6 +245,11 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
         camera.updateProjectionMatrix();
       },
     };
+    // Start at the capture's first pose (or ?pose=<name>). The framework camera starts at the
+    // origin, inside the floor plane, where the floor draws as a 1-px line across the frame.
+    const poses = POSES[params.get("model") ?? ""] ?? [];
+    const start = poses.find((pose) => pose.name === params.get("pose")) ?? poses[0];
+    if (start !== undefined) reference.pose(start);
     const publishReference = () => {
       (window as unknown as { __tnRef: unknown }).__tnRef = reference;
     };
