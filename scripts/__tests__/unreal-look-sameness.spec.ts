@@ -15,6 +15,7 @@ import {
   EDGE_GAP_LIMIT,
   type ISamenessInput,
   NO_ID_LIMIT,
+  classifiedFrame,
   overlapFrame,
   runSameness,
   samenessCell,
@@ -293,6 +294,31 @@ describe("sameness gate: capture roots", () => {
     expect(report.allowed).toBe(EDGE_FAR_LIMIT);
     expect(existsSync(path.join(root, "overlap/ID/ID_spheres.png"))).toBe(true);
     expect(existsSync(path.join(root, "overlap/ID/ID_exterior.png"))).toBe(true);
+  });
+
+  it("writes each engine's frame redrawn in the exact colours of its objects beside the overlap", () => {
+    const root = tempRoot();
+    // Unreal's frame is display encoded: a linear 128 arrives as 187. The gate knows it, and the redrawn frame is exact.
+    const palette = { A: [128, 0, 255], B: [0, 255, 0] };
+    put(root, "unreal", "ID_spheres.png", frame(good, { A: [187, 0, 255], B: [0, 255, 0] }));
+    put(root, "threenative", "ID_spheres.png", frame(good, palette));
+    const report = samenessReport([{ ...input("spheres"), colors: palette }], root);
+    expect(report.cells[0]?.pass).toBe(true);
+    for (const engine of ["unreal", "threenative"]) {
+      const file = path.join(root, "overlap/ID", `ID_spheres.${engine}.png`);
+      const png = PNG.sync.read(readFileSync(file));
+      expect([...png.data.subarray(0, 4)], engine).toEqual([128, 0, 255, 255]);
+    }
+  });
+
+  it("redraws a pixel with no object colour in dark grey and background in black", () => {
+    const redrawn = classifiedFrame(masksOf(["A?.."]), COLORS);
+    const at = (x: number) => [...redrawn.data.subarray(x * 4, x * 4 + 3)];
+    expect([at(0), at(1), at(2)]).toEqual([
+      [255, 0, 0],
+      [64, 64, 64],
+      [0, 0, 0],
+    ]);
   });
 
   it("names the ID layer in every heading of its report and shows every number the verdict reads", () => {

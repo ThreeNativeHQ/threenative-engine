@@ -16,8 +16,10 @@
  * while a 22 px corner of a 57000 px floor scores 0.977.
  *
  * It fails closed: a missing frame, frames of two sizes, a pose that shows no object, an object only one
- * engine draws, and a frame with more pixels of no ID colour than the limit all fail. A frame per pose
- * goes to <root>/overlap/ with the disagreements marked, for the sheet of a mismatch.
+ * engine draws, and a frame with more pixels of no ID colour than the limit all fail. Three frames per
+ * pose go to <root>/overlap/ for the sheet of a mismatch (tools/unreal-reference/sameness-sheet.py): the
+ * overlap with the disagreements of the failing objects marked, and each engine's frame redrawn in the
+ * exact colour of each object.
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
@@ -325,6 +327,23 @@ export function overlapFrame(
   return png;
 }
 
+/**
+ * A frame redrawn in the exact colour of each object (Unreal's ID frames are display encoded and read
+ * brighter than ThreeNative's), a pixel with no object colour in dark grey: the two engines' frames
+ * look alike on a sheet where they agree.
+ */
+export function classifiedFrame(frame: IMasks, colors: Record<string, readonly number[]>): PNG {
+  const names = Object.keys(frame.regions);
+  const label = labels(frame);
+  const png = new PNG({ width: frame.width, height: frame.height });
+  for (let i = 0; i < label.length; i++) {
+    const rgb =
+      label[i] === -1 ? [64, 64, 64] : (colors[names[label[i] as number] ?? ""] ?? [0, 0, 0]);
+    png.data.set([...rgb, 255], i * 4);
+  }
+  return png;
+}
+
 function load(file: string, colors: Record<string, readonly number[]>): IMasks {
   if (!existsSync(file)) fail("MISSING_CELL", file);
   return masks(decode(readFileSync(file), "png"), colors);
@@ -362,6 +381,14 @@ export function samenessReport(
       file,
       PNG.sync.write(overlapFrame(unreal, threenative, input.colors, cell.violations)),
     );
+    for (const [engine, frame] of [
+      ["unreal", unreal],
+      ["threenative", threenative],
+    ] as const)
+      writeFileSync(
+        file.replace(/\.png$/, `.${engine}.png`),
+        PNG.sync.write(classifiedFrame(frame, input.colors)),
+      );
     report.rows.push(...cell.rows);
     report.cells.push({
       scene: input.scene,
