@@ -6,8 +6,9 @@
  * look stays in the copy's `src/render/`: tuning a layer means editing the template, then
  * rerunning this with `--reuse`, which re-copies the template source into the same scaffold.
  */
-import { type ChildProcess, spawn } from "node:child_process";
-import { existsSync } from "node:fs";
+import { type ChildProcess, execFileSync, spawn } from "node:child_process";
+import { createHash } from "node:crypto";
+import { existsSync, statSync } from "node:fs";
 import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import os from "node:os";
@@ -16,10 +17,12 @@ import { chromium } from "@playwright/test";
 import { createProject } from "../../packages/create-threenative/src/index.js";
 import { WEBGPU_BROWSER_ARGS } from "../../packages/playtest/src/runner/browser.js";
 import {
+  LOCAL_FRAMEWORK_PACKAGES,
   assertVisualPortAvailable,
   packageLocalFramework,
   stopVisualServer,
 } from "../visual-gate.js";
+import { workspacePackages } from "../workspace-packages.js";
 
 const REPO_ROOT = path.resolve(import.meta.dirname, "../..");
 const REFERENCE = path.join(REPO_ROOT, "tools/unreal-reference");
@@ -126,9 +129,50 @@ async function patchScaffold(target: string, fresh: boolean, baseline: boolean):
   );
 }
 
+/**
+ * What a scaffold's install was packed from: the framework packages' committed trees, their
+ * uncommitted and untracked edits, and the separately built files (the Wasm engine pair). A
+ * reused scaffold whose stamp differs would capture the framework as it was when first packed.
+ */
+export function frameworkStamp(
+  root: string,
+  directories: readonly string[],
+  built: readonly string[],
+): string {
+  const git = (...args: string[]) =>
+    execFileSync("git", ["-C", root, ...args], { maxBuffer: 1 << 30 });
+  const hash = createHash("sha256");
+  hash.update(git("ls-tree", "HEAD", "--", ...directories));
+  hash.update(git("diff", "HEAD", "--binary", "--", ...directories));
+  const untracked = git("ls-files", "-o", "--exclude-standard", "--", ...directories)
+    .toString()
+    .split("\n");
+  for (const file of [...untracked.filter(Boolean).map((f) => path.join(root, f)), ...built]) {
+    const stat = existsSync(file) ? statSync(file) : undefined;
+    hash.update(`${path.relative(root, file)}:${stat?.size}:${stat?.mtimeMs}\n`);
+  }
+  return hash.digest("hex");
+}
+
+function localFrameworkStamp(): string {
+  const names = new Set(LOCAL_FRAMEWORK_PACKAGES.map(([name]) => name));
+  const directories = workspacePackages(REPO_ROOT)
+    .filter((item) => names.has(item.name))
+    .map((item) => path.relative(REPO_ROOT, item.directory));
+  const engine = path.join(REPO_ROOT, "packages/runtime-native/build/web/tn-native-engine-web");
+  return frameworkStamp(REPO_ROOT, directories, [`${engine}.mjs`, `${engine}.wasm`]);
+}
+
 export async function scaffold(work: string, reuse: boolean, baseline: boolean): Promise<string> {
   const target = path.join(work, "starter");
-  if (reuse && existsSync(path.join(target, "node_modules"))) {
+  const stampFile = path.join(work, "framework.stamp");
+  const stamp = localFrameworkStamp();
+  const packed = existsSync(stampFile) ? await readFile(stampFile, "utf8") : undefined;
+  if (reuse && packed !== stamp && existsSync(path.join(target, "node_modules")))
+    console.log(
+      "TN_UNREAL_LOOK --reuse: the framework changed since this scaffold was packed; packing it again",
+    );
+  if (reuse && packed === stamp && existsSync(path.join(target, "node_modules"))) {
     // The look lives in src/render/; re-copy it (and public/) so a template edit reaches the
     // scaffold. Everything else, including the stamped config and the install, stays.
     await rm(path.join(target, "src/render"), { recursive: true, force: true });
@@ -147,6 +191,7 @@ export async function scaffold(work: string, reuse: boolean, baseline: boolean):
     work,
   );
   await patchScaffold(target, true, baseline);
+  await writeFile(stampFile, stamp);
   return target;
 }
 
