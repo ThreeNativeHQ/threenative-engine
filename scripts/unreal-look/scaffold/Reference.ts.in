@@ -211,6 +211,18 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
           ...(params.get("ssgiScale") === null ? {} : { ssgiResolutionScale: Number(params.get("ssgiScale")) }),
           ...(params.get("ssgiIntensity") === null ? {} : { ssgiIntensity: Number(params.get("ssgiIntensity")) }),
           ...(params.get("ssgiDenoise") === null ? {} : { ssgiDenoiseRadius: Number(params.get("ssgiDenoise")) }),
+          // Diagnosis: ?probes=1 gathers with screen probes (PRD-640).
+          // 16 x 16 rays per probe: the engine's probes carry no radiance cache, so they trace twice Unreal's real-time 8 x 8
+          // (PRD-640 round 2026-10-21: sunlit-room dP50 0.129 against 0.140 for the per-pixel Epic gather). ?probeRays=N overrides.
+          ...(params.get("probes") === "1"
+            ? {
+                ssgiScreenProbes: true,
+                ssgiProbeRays: Number(params.get("probeRays") ?? 16),
+                ssgiDenoiseRadius: Number(params.get("ssgiDenoise") ?? 16),
+              }
+            : {}),
+          ...(params.get("probeJitter") === null ? {} : { ssgiProbeJitter: Number(params.get("probeJitter")) }),
+          ...(params.get("probeDebug") === null ? {} : { ssgiProbeDebug: Number(params.get("probeDebug")) }),
           autoExposureEnabled: false,
           bloomEnabled: false,
           gtaoEnabled: level >= 6,

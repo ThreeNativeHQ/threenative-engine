@@ -46,7 +46,7 @@ export interface IScreenSpaceTsl {
     source: TslNode,
     width: number | null,
     height: number | null,
-    options: { type: number },
+    options: { type: number; minFilter?: number; magFilter?: number },
   ) => TslNode;
   readonly smoothstep: (low: TslNode, high: TslNode, value: TslNode) => TslNode;
   readonly uniform: (value: number) => TslNode;
@@ -283,6 +283,116 @@ export function defineScreenSpaceReflections(tsl: IScreenSpaceTsl) {
   };
 }
 
+/** The scene the traces read, and the uniforms that shape them. */
+export interface IGiTraceScene {
+  readonly colorNode: TslNode;
+  readonly depthNode: TslNode;
+  readonly normalNode: TslNode;
+  readonly mapping: ReturnType<typeof defineCameraMapping>;
+  readonly uniforms: {
+    readonly radius: TslNode;
+    readonly screenEdgeFade: TslNode;
+    readonly stepCount: TslNode;
+    readonly thickness: TslNode;
+  };
+}
+
+/**
+ * The depth-buffer march and the hit shading both gathers share (`ssgi` per pixel, the screen probes per probe).
+ * `march` walks one ray in `stepCount` slices (quadratic spacing out to `radius`) and answers where it crossed the
+ * depth buffer; `shade` turns a crossing into the lit colour there and a weight.
+ */
+export function defineGiTrace(tsl: IScreenSpaceTsl, scene: IGiTraceScene) {
+  const { Break, If, Loop, float, int, max, min, smoothstep, vec2, vec3 } = tsl;
+  const { colorNode, depthNode, normalNode } = scene;
+  const { cameraNear, viewZ, project } = scene.mapping;
+  const { radius, screenEdgeFade, stepCount, thickness } = scene.uniforms;
+  const march = (origin: TslNode, direction: TslNode, startZ: TslNode) => {
+    const hitCoordinate = vec2(0, 0).toVar();
+    const hitDistance = float(-1).toVar();
+    const previous = float(0).toVar();
+    const previousBehind = float(-1).toVar();
+    const previousSceneZ = startZ.toVar();
+    Loop({ start: int(0), end: int(GI_MAX_STEPS), type: "int", condition: "<" }, ({ i: step }) => {
+      If(float(step).greaterThanEqual(stepCount), () => {
+        Break();
+      });
+      const fraction = float(step).add(1).div(stepCount);
+      const travelled = radius.mul(fraction.mul(fraction));
+      const point = origin.add(direction.mul(travelled));
+      If(point.z.greaterThan(cameraNear.negate()), () => {
+        Break();
+      });
+      const screen = project(point);
+      If(
+        screen.x
+          .lessThan(0)
+          .or(screen.x.greaterThan(1))
+          .or(screen.y.lessThan(0))
+          .or(screen.y.greaterThan(1)),
+        () => {
+          Break();
+        },
+      );
+      const sceneDepth = depthNode.sample(screen).r;
+      const sceneZ = viewZ(sceneDepth);
+      const behind = sceneZ.sub(point.z);
+      const slice = travelled.sub(previous);
+      const drop = sceneZ.sub(previousSceneZ).abs();
+      const slack = drop.lessThan(sceneZ.abs().mul(0.15)).select(drop, float(0));
+      // Lumen's relative thickness, plus what the slice itself can have crossed.
+      const reach = sceneZ.abs().mul(thickness).add(slice.mul(direction.z.abs())).add(slack);
+      If(
+        sceneDepth
+          .lessThan(1)
+          .and(behind.greaterThan(0))
+          .and(previousBehind.lessThanEqual(0))
+          .and(behind.lessThan(reach)),
+        () => {
+          hitCoordinate.assign(screen);
+          hitDistance.assign(travelled);
+          Break();
+        },
+      );
+      previous.assign(travelled);
+      previousBehind.assign(behind);
+      previousSceneZ.assign(sceneZ);
+    });
+
+    return { hitCoordinate, hitDistance };
+  };
+  const shade = (hitCoordinate: TslNode, hitDistance: TslNode, direction: TslNode) => {
+    // A surface that faces away from the ray was reached through its back: a miss.
+    // (An unlit surface has no normal, so it counts as facing: a light source is usually one.)
+    const hitNormal = normalNode.sample(hitCoordinate).xyz;
+    const hitLength = hitNormal.dot(hitNormal).sqrt();
+    const facing = hitLength
+      .greaterThan(0.5)
+      .select(
+        smoothstep(0.25, -0.05, hitNormal.dot(direction).div(max(hitLength, float(1e-4)))),
+        float(1),
+      );
+    const edge = min(
+      min(
+        smoothstep(0, screenEdgeFade, hitCoordinate.x),
+        smoothstep(0, screenEdgeFade, float(1).sub(hitCoordinate.x)),
+      ),
+      min(
+        smoothstep(0, screenEdgeFade, hitCoordinate.y),
+        smoothstep(0, screenEdgeFade, float(1).sub(hitCoordinate.y)),
+      ),
+    );
+    // The trace fades into the fallback over its last half, as SSR's does.
+    const reachFade = float(1).sub(smoothstep(0.5, 1, hitDistance.div(radius)));
+    const weight = facing.mul(edge).mul(reachFade);
+    const radiance = colorNode
+      .sample(hitCoordinate)
+      .rgb.min(vec3(GI_MAX_LUMINANCE, GI_MAX_LUMINANCE, GI_MAX_LUMINANCE));
+    return { radiance, weight };
+  };
+  return { march, shade };
+}
+
 export interface IScreenSpaceGiOptions {
   /** The camera the scene pass draws with (see IScreenSpaceReflectionOptions.camera). */
   readonly camera: IScreenSpaceCamera;
@@ -293,7 +403,26 @@ export interface IScreenSpaceGiOptions {
    * hit, so the two tiers never add the same light twice. Missing means 0, as three's SSGINode (hits add light).
    */
   readonly fallback?: (position: TslNode, normal: TslNode) => TslNode;
+  /**
+   * Gather with screen probes instead of per-pixel rays (Unreal's ScreenProbeGather): one probe per
+   * `downsampleFactor` pixel tile traces an octahedron of rays, the probe radiance is turned into an irradiance
+   * octahedron, and each pixel blends the four nearest probes it can see. The call shape and the result are the
+   * per-pixel gather's, at a fraction of its rays.
+   */
+  readonly probes?: IScreenProbeOptions;
 }
+
+export interface IScreenProbeOptions {
+  /** Pixels between probes (Unreal's r.Lumen.ScreenProbeGather.DownsampleFactor; 16 at Epic). */
+  readonly downsampleFactor: number;
+  /** The drawing buffer, in pixels. It fixes the probe grid; a resize needs a new gather. */
+  readonly viewport: { readonly width: number; readonly height: number };
+  /** Rays on a side of each probe's octahedron (r.Lumen.ScreenProbeGather.TracingOctahedronResolution; 8 at Epic). */
+  readonly tracingOctahedronResolution?: number;
+}
+
+/** Texels on a side of the irradiance octahedron each probe keeps (Unreal's gather resolution 6, bilinear lookup). */
+const IRRADIANCE_SIDE = 6;
 
 /** Rays per slice: sliceCount x this many cosine-weighted rays leave each pixel. */
 const RAYS_PER_SLICE = 4;
@@ -326,17 +455,56 @@ export function defineScreenSpaceGi(tsl: IScreenSpaceTsl) {
     const { vec2, vec3, vec4 } = tsl;
     const options: IScreenSpaceGiOptions =
       "camera" in cameraOrOptions ? cameraOrOptions : { camera: cameraOrOptions };
-    const { cameraNear, viewZ, viewPosition, project } = defineCameraMapping(
-      tsl,
-      options.camera,
-      "ssgi",
-    );
+    const mapping = defineCameraMapping(tsl, options.camera, "ssgi");
+    const { viewPosition } = mapping;
     const radius = uniform(12);
     const thickness = uniform(0.02);
     const sliceCount = uniform(2);
     const stepCount = uniform(12);
     const intensity = uniform(1);
     const screenEdgeFade = uniform(0.1);
+    const probeJitter = uniform(1);
+    const probeDebug = uniform(0);
+    const { march, shade } = defineGiTrace(tsl, {
+      colorNode,
+      depthNode,
+      mapping,
+      normalNode,
+      uniforms: { radius, screenEdgeFade, stepCount, thickness },
+    });
+
+    if (options.probes !== undefined) {
+      const node = defineScreenProbes(tsl, {
+        depthNode,
+        mapping,
+        march,
+        normalNode,
+        options,
+        probes: options.probes,
+        shade,
+        uniform: { intensity, jitter: probeJitter, debug: probeDebug },
+      });
+      return Object.defineProperties(node, {
+        ...Object.fromEntries(
+          Object.entries({
+            radius,
+            thickness,
+            sliceCount,
+            stepCount,
+            intensity,
+            screenEdgeFade,
+            probeJitter,
+            probeDebug,
+          }).map(([name, value]) => [name, { value }]),
+        ),
+        getGINode: { value: () => node },
+        getAONode: { value: () => tsl.vec4(1, 1, 1, 1) },
+        resolutionScale: {
+          get: () => node.getResolutionScale(),
+          set: (value: number) => node.setResolutionScale(value),
+        },
+      });
+    }
 
     const graph = Fn(() => {
       const coordinate = uv();
@@ -387,97 +555,11 @@ export function defineScreenSpaceGi(tsl: IScreenSpaceTsl) {
                 .add(normal.mul(float(1).sub(u1).sqrt())),
             );
 
-            const hitCoordinate = vec2(0, 0).toVar();
-            const hitDistance = float(-1).toVar();
-            const previous = float(0).toVar();
-            const previousBehind = float(-1).toVar();
-            const previousSceneZ = position.z.toVar();
-            Loop(
-              { start: int(0), end: int(GI_MAX_STEPS), type: "int", condition: "<" },
-              ({ i: step }) => {
-                If(float(step).greaterThanEqual(stepCount), () => {
-                  Break();
-                });
-                const fraction = float(step).add(1).div(stepCount);
-                const travelled = radius.mul(fraction.mul(fraction));
-                const point = origin.add(direction.mul(travelled));
-                If(point.z.greaterThan(cameraNear.negate()), () => {
-                  Break();
-                });
-                const screen = project(point);
-                If(
-                  screen.x
-                    .lessThan(0)
-                    .or(screen.x.greaterThan(1))
-                    .or(screen.y.lessThan(0))
-                    .or(screen.y.greaterThan(1)),
-                  () => {
-                    Break();
-                  },
-                );
-                const sceneDepth = depthNode.sample(screen).r;
-                const sceneZ = viewZ(sceneDepth);
-                const behind = sceneZ.sub(point.z);
-                const slice = travelled.sub(previous);
-                const drop = sceneZ.sub(previousSceneZ).abs();
-                const slack = drop.lessThan(sceneZ.abs().mul(0.15)).select(drop, float(0));
-                // Lumen's relative thickness, plus what the slice itself can have crossed.
-                const reach = sceneZ
-                  .abs()
-                  .mul(thickness)
-                  .add(slice.mul(direction.z.abs()))
-                  .add(slack);
-                If(
-                  sceneDepth
-                    .lessThan(1)
-                    .and(behind.greaterThan(0))
-                    .and(previousBehind.lessThanEqual(0))
-                    .and(behind.lessThan(reach)),
-                  () => {
-                    hitCoordinate.assign(screen);
-                    hitDistance.assign(travelled);
-                    Break();
-                  },
-                );
-                previous.assign(travelled);
-                previousBehind.assign(behind);
-                previousSceneZ.assign(sceneZ);
-              },
-            );
-
-            If(hitDistance.greaterThanEqual(0), () => {
-              // A surface that faces away from the ray was reached through its back: a miss.
-              // (An unlit surface has no normal, so it counts as facing: a light source is usually one.)
-              const hitNormal = normalNode.sample(hitCoordinate).xyz;
-              const hitLength = hitNormal.dot(hitNormal).sqrt();
-              const facing = hitLength
-                .greaterThan(0.5)
-                .select(
-                  smoothstep(
-                    0.25,
-                    -0.05,
-                    hitNormal.dot(direction).div(max(hitLength, float(1e-4))),
-                  ),
-                  float(1),
-                );
-              const edge = min(
-                min(
-                  smoothstep(0, screenEdgeFade, hitCoordinate.x),
-                  smoothstep(0, screenEdgeFade, float(1).sub(hitCoordinate.x)),
-                ),
-                min(
-                  smoothstep(0, screenEdgeFade, hitCoordinate.y),
-                  smoothstep(0, screenEdgeFade, float(1).sub(hitCoordinate.y)),
-                ),
-              );
-              // The trace fades into the fallback over its last half, as SSR's does.
-              const reachFade = float(1).sub(smoothstep(0.5, 1, hitDistance.div(radius)));
-              const weight = facing.mul(edge).mul(reachFade);
-              const radiance = colorNode
-                .sample(hitCoordinate)
-                .rgb.min(vec3(GI_MAX_LUMINANCE, GI_MAX_LUMINANCE, GI_MAX_LUMINANCE));
-              gathered.assign(gathered.add(radiance.sub(fallback).mul(weight)));
-              hits.assign(hits.add(weight));
+            const trace = march(origin, direction, position.z);
+            If(trace.hitDistance.greaterThanEqual(0), () => {
+              const hit = shade(trace.hitCoordinate, trace.hitDistance, direction);
+              gathered.assign(gathered.add(hit.radiance.sub(fallback).mul(hit.weight)));
+              hits.assign(hits.add(hit.weight));
             });
           },
         );
@@ -500,4 +582,237 @@ export function defineScreenSpaceGi(tsl: IScreenSpaceTsl) {
       },
     });
   };
+}
+
+/** Octahedral direction of a point in the unit square (a unit vector, uniform enough over the sphere for a probe). */
+function octahedronDecode(tsl: IScreenSpaceTsl, square: TslNode): TslNode {
+  const { float, normalize, vec2, vec3 } = tsl;
+  const f = square.mul(2).sub(1);
+  const z = float(1).sub(f.x.abs()).sub(f.y.abs());
+  const fold = vec2(float(1).sub(f.y.abs()), float(1).sub(f.x.abs())).mul(
+    vec2(
+      f.x.greaterThanEqual(0).select(float(1), float(-1)),
+      f.y.greaterThanEqual(0).select(float(1), float(-1)),
+    ),
+  );
+  const xy = z.lessThan(0).select(fold, f);
+  return normalize(vec3(xy.x, xy.y, z));
+}
+
+/** The point of the unit square an octahedral direction lands on (the inverse of `octahedronDecode`). */
+function octahedronEncode(tsl: IScreenSpaceTsl, direction: TslNode): TslNode {
+  const { float, vec2 } = tsl;
+  const p = vec2(direction.x, direction.y).div(
+    direction.x.abs().add(direction.y.abs()).add(direction.z.abs()),
+  );
+  const fold = vec2(float(1).sub(p.y.abs()), float(1).sub(p.x.abs())).mul(
+    vec2(
+      p.x.greaterThanEqual(0).select(float(1), float(-1)),
+      p.y.greaterThanEqual(0).select(float(1), float(-1)),
+    ),
+  );
+  return direction.z.lessThan(0).select(fold, p).mul(0.5).add(0.5);
+}
+
+/**
+ * The screen-probe gather (PRD-640). Three passes, none per pixel until the last:
+ *   1. trace   one texel per ray: a probe per tile traces an `n x n` octahedron of rays (view space) and keeps the lit
+ *              colour each hit found and its weight.
+ *   2. filter  each probe turns its rays into an irradiance octahedron: per direction, the cosine-weighted mean of
+ *              `hit - fallback` over every ray, as the per-pixel gather returns it, so a ray that leaves the screen keeps
+ *              the cache. A pixel then reads one bilinear tap instead of 64 rays.
+ *   3. gather  each pixel blends the four nearest probes by position, depth-plane distance and normal agreement, and
+ *              reads each probe's irradiance along the pixel normal. A pixel no probe can see gets the cache alone.
+ */
+function defineScreenProbes(
+  tsl: IScreenSpaceTsl,
+  input: {
+    readonly depthNode: TslNode;
+    readonly normalNode: TslNode;
+    readonly mapping: ReturnType<typeof defineCameraMapping>;
+    readonly march: ReturnType<typeof defineGiTrace>["march"];
+    readonly shade: ReturnType<typeof defineGiTrace>["shade"];
+    readonly options: IScreenSpaceGiOptions;
+    readonly probes: IScreenProbeOptions;
+    readonly uniform: {
+      readonly intensity: TslNode;
+      readonly jitter: TslNode;
+      readonly debug: TslNode;
+    };
+  },
+): TslNode {
+  const { Fn, If, Loop, float, int, max, min, normalize, rtt, smoothstep, uv, vec2, vec3, vec4 } =
+    tsl;
+  const { depthNode, normalNode, march, shade, options, probes } = input;
+  const { viewPosition } = input.mapping;
+  const factor = probes.downsampleFactor;
+  const side = probes.tracingOctahedronResolution ?? 8;
+  if (
+    !(factor >= 1) ||
+    !(side >= 2) ||
+    !(probes.viewport.width > 0) ||
+    !(probes.viewport.height > 0)
+  )
+    throw new TypeError(
+      `TN_NATIVE_SCREEN_PROBES: downsampleFactor ${factor}, tracingOctahedronResolution ${side}, viewport ${probes.viewport.width}x${probes.viewport.height}`,
+    );
+  const tilesX = Math.ceil(probes.viewport.width / factor);
+  const tilesY = Math.ceil(probes.viewport.height / factor);
+  const tiles = vec2(tilesX, tilesY);
+  const traceSize = vec2(tilesX * side, tilesY * side);
+  const irradianceSize = vec2(tilesX * IRRADIANCE_SIDE, tilesY * IRRADIANCE_SIDE);
+  const valid = (depth: TslNode, normal: TslNode): TslNode =>
+    // A draw the normal pass skips (an unlit material) leaves a zero normal: it takes no gathered light.
+    depth
+      .lessThan(1)
+      .and(normal.dot(normal).greaterThan(0.25));
+
+  // Each probe rotates its octahedron by its own offset inside one cell (a golden-ratio sequence over the tile index), so
+  // the rays of neighbouring probes never repeat: banding that follows the probe grid turns into noise the denoiser removes.
+  const rayDirection = (tile: TslNode, cell: TslNode): TslNode => {
+    const index = tile.x.add(tile.y.mul(tilesX));
+    const offset = index
+      .mul(vec2(0.7548776662, 0.569840291))
+      .fract()
+      .sub(0.5)
+      .mul(input.uniform.jitter)
+      .add(0.5);
+    return octahedronDecode(tsl, cell.add(offset).div(side));
+  };
+
+  // 1. trace: this texel is ray `cell` of probe `tile`.
+  const traceGraph = Fn(() => {
+    const texel = uv().mul(traceSize).floor();
+    const tile = texel.div(side).floor();
+    const cell = texel.sub(tile.mul(side));
+    const probeUv = tile.add(0.5).div(tiles).min(vec2(1, 1));
+    const result = vec4(0, 0, 0, 0).toVar();
+    const depth = depthNode.sample(probeUv).r;
+    const rawNormal = normalNode.sample(probeUv).xyz;
+    If(valid(depth, rawNormal), () => {
+      const position = viewPosition(probeUv, depth);
+      const normal = normalize(rawNormal);
+      const direction = rayDirection(tile, cell);
+      const origin = position.add(normal.mul(max(0.01, position.z.negate().mul(0.004))));
+      const trace = march(origin, direction, position.z);
+      If(trace.hitDistance.greaterThanEqual(0), () => {
+        // The lit colour the ray found and its weight; the filter subtracts what the cache believes about the receiver.
+        const hit = shade(trace.hitCoordinate, trace.hitDistance, direction);
+        result.assign(vec4(hit.radiance.mul(hit.weight), hit.weight));
+      });
+    });
+    return result;
+  })();
+  const traced = rtt(traceGraph, tilesX * side, tilesY * side, {
+    type: HALF_FLOAT_TYPE,
+    minFilter: 1003,
+    magFilter: 1003,
+  });
+
+  // 2. filter: this texel is direction `cell` of probe `tile`'s irradiance octahedron.
+  const filterGraph = Fn(() => {
+    const texel = uv().mul(irradianceSize).floor();
+    const tile = texel.div(IRRADIANCE_SIDE).floor();
+    const cell = texel.sub(tile.mul(IRRADIANCE_SIDE));
+    const normal = octahedronDecode(tsl, cell.add(0.5).div(IRRADIANCE_SIDE));
+    const sum = vec4(0, 0, 0, 0).toVar();
+    const weights = float(0).toVar();
+    Loop({ start: int(0), end: int(side * side), type: "int", condition: "<" }, ({ i }) => {
+      const row = float(i).div(side).floor();
+      const ray = vec2(float(i).sub(row.mul(side)), row);
+      const direction = rayDirection(tile, ray);
+      const weight = max(direction.dot(normal), float(0));
+      const found = traced.sample(tile.mul(side).add(ray).add(0.5).div(traceSize));
+      sum.assign(sum.add(found.mul(weight)));
+      weights.assign(weights.add(weight));
+    });
+    // The per-pixel gather's convention, once per probe direction instead of once per pixel: the rays that hit return
+    // `hit - cache` over every ray, so the two tiers never add the same light twice.
+    const probeUv = tile.add(0.5).div(tiles).min(vec2(1, 1));
+    const depth = depthNode.sample(probeUv).r;
+    const rawNormal = normalNode.sample(probeUv).xyz;
+    const believed = valid(depth, rawNormal).select(
+      options.fallback?.(viewPosition(probeUv, depth), normal) ?? vec3(0, 0, 0),
+      vec3(0, 0, 0),
+    );
+    const total = max(weights, float(1e-4));
+    return vec4(sum.rgb.sub(believed.mul(sum.a)).div(total), sum.a.div(total));
+  })();
+  const filtered = rtt(filterGraph, tilesX * IRRADIANCE_SIDE, tilesY * IRRADIANCE_SIDE, {
+    type: HALF_FLOAT_TYPE,
+  });
+
+  // 3. gather: each pixel blends the four nearest probes it can see.
+  const gatherGraph = Fn(() => {
+    const coordinate = uv();
+    const result = vec4(0, 0, 0, 0).toVar();
+    const centreDepth = depthNode.sample(coordinate).r;
+    const centreNormal = normalNode.sample(coordinate).xyz;
+    If(valid(centreDepth, centreNormal), () => {
+      const position = viewPosition(coordinate, centreDepth);
+      const normal = normalize(centreNormal);
+      const grid = coordinate.mul(tiles).sub(0.5);
+      const base = grid.floor();
+      const fraction = grid.sub(base);
+      const lookup = octahedronEncode(tsl, normal)
+        .mul(IRRADIANCE_SIDE - 1)
+        .add(0.5);
+      const sum = vec4(0, 0, 0, 0).toVar();
+      const weights = float(0).toVar();
+      for (const [dx, dy] of [
+        [0, 0],
+        [1, 0],
+        [0, 1],
+        [1, 1],
+      ] as const) {
+        const tile = base.add(vec2(dx, dy)).max(vec2(0, 0)).min(tiles.sub(1));
+        const probeUv = tile.add(0.5).div(tiles);
+        const probeDepth = depthNode.sample(probeUv).r;
+        const probeNormal = normalNode.sample(probeUv).xyz;
+        const probePosition = viewPosition(probeUv, probeDepth);
+        const bilinear = (dx === 1 ? fraction.x : float(1).sub(fraction.x)).mul(
+          dy === 1 ? fraction.y : float(1).sub(fraction.y),
+        );
+        // A probe on another surface reads another surface's light: weigh it by how far it lies off this pixel's plane
+        // (relative to depth) and how closely its normal agrees.
+        const offPlane = normal
+          .dot(probePosition.sub(position))
+          .abs()
+          .div(max(position.z.abs(), float(1e-3)));
+        const planeWeight = float(1).sub(smoothstep(0, 0.05, offPlane));
+        const agree = max(normal.dot(normalize(probeNormal)), float(0));
+        const normalWeight = agree.mul(agree).mul(agree.mul(agree));
+        const weight = valid(probeDepth, probeNormal).select(
+          bilinear.mul(planeWeight).mul(normalWeight),
+          float(0),
+        );
+        const irradiance = filtered.sample(
+          tile.mul(IRRADIANCE_SIDE).add(lookup).div(irradianceSize),
+        );
+        sum.assign(sum.add(irradiance.mul(weight)));
+        weights.assign(weights.add(weight));
+      }
+      // A pixel the probes cannot vouch for keeps the cache alone, fading in as their weight grows.
+      const trust = smoothstep(0.02, 0.25, weights);
+      const mean = sum.div(max(weights, float(1e-4))).mul(trust);
+      const shown = vec4(mean.rgb.mul(input.uniform.intensity), mean.a);
+      // Diagnosis: 1 shows the probes' weight and trust, 2 the delta's sign (red lighter than the cache, blue darker).
+      const luminance = mean.r.add(mean.g).add(mean.b).mul(0.3333);
+      result.assign(
+        input.uniform.debug
+          .equal(1)
+          .select(
+            vec4(trust, weights.min(1), 0, 0),
+            input.uniform.debug
+              .equal(2)
+              .select(
+                vec4(luminance.max(0).mul(8), 0, luminance.negate().max(0).mul(8), 0),
+                shown,
+              ),
+          ),
+      );
+    });
+    return result;
+  })();
+  return rtt(gatherGraph, null, null, { type: HALF_FLOAT_TYPE });
 }

@@ -126,6 +126,65 @@ describe("defineScreenSpaceGi", () => {
     expect(calls[0]?.every((node) => node !== undefined)).toBe(true);
   });
 
+  describe("with screen probes", () => {
+    const viewport = { width: 1280, height: 720 };
+
+    it("traces one texel per ray and keeps a six-texel irradiance octahedron per probe", () => {
+      const { tsl } = stubTsl();
+      const sizes: unknown[][] = [];
+      (tsl as unknown as Record<string, unknown>).rtt = (_: unknown, w: unknown, h: unknown) => {
+        sizes.push([w, h]);
+        return chain();
+      };
+      defineScreenSpaceGi(tsl)(chain(), chain(), chain(), {
+        camera,
+        probes: { downsampleFactor: 16, viewport },
+      });
+      // 80 x 45 probes: 8 x 8 rays each, then 6 x 6 irradiance texels each, then the full-frame gather.
+      expect(sizes).toEqual([
+        [640, 360],
+        [480, 270],
+        [null, null],
+      ]);
+    });
+
+    it("rounds the probe grid up so the last tile still has its probe", () => {
+      const { tsl } = stubTsl();
+      const sizes: unknown[][] = [];
+      (tsl as unknown as Record<string, unknown>).rtt = (_: unknown, w: unknown, h: unknown) => {
+        sizes.push([w, h]);
+        return chain();
+      };
+      defineScreenSpaceGi(tsl)(chain(), chain(), chain(), {
+        camera,
+        probes: { downsampleFactor: 16, viewport: { width: 1920, height: 1080 } },
+      });
+      expect(sizes[0]).toEqual([960, 544]);
+    });
+
+    it("asks the fallback tier once per ray, and refuses a grid it cannot build", () => {
+      const { tsl } = stubTsl();
+      let calls = 0;
+      defineScreenSpaceGi(tsl)(chain(), chain(), chain(), {
+        camera,
+        fallback: () => {
+          calls += 1;
+          return chain();
+        },
+        probes: { downsampleFactor: 16, viewport },
+      });
+      expect(calls).toBe(1);
+      for (const probes of [
+        { downsampleFactor: 0, viewport },
+        { downsampleFactor: 16, viewport: { width: 0, height: 720 } },
+        { downsampleFactor: 16, tracingOctahedronResolution: 1, viewport },
+      ])
+        expect(() =>
+          defineScreenSpaceGi(tsl)(chain(), chain(), chain(), { camera, probes }),
+        ).toThrow(/TN_NATIVE_SCREEN_PROBES/);
+    });
+  });
+
   it("refuses a call that names no camera", () => {
     const { tsl } = stubTsl();
     expect(() => defineScreenSpaceGi(tsl)(chain(), chain(), chain(), {} as never)).toThrow(

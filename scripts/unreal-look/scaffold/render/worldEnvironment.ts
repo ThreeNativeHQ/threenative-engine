@@ -137,6 +137,17 @@ export interface IWorldEnvironmentOptions {
   readonly denoiseEnabled?: boolean;
   /** The SSGI denoise's reach in gather pixels; omit for DenoiseNode's 5. A half-resolution gather wants more. */
   readonly ssgiDenoiseRadius?: number;
+  /**
+   * Gather the SSGI with screen probes (one per 16 x 16 pixels, an 8 x 8 octahedron of rays each) instead of per-pixel
+   * rays: Unreal's ScreenProbeGather at its Epic settings (PRD-640). Owned engine only; elsewhere the per-pixel gather runs.
+   */
+  readonly ssgiScreenProbes?: boolean;
+  /** Screen probes only: 0 keeps every probe's rays on the same octahedron, 1 (default) offsets them per probe. */
+  readonly ssgiProbeJitter?: number;
+  /** Screen probes only: rays on a side of each probe's octahedron. Omit for 8 (Unreal's real-time Epic; its cinematic setting is 16). */
+  readonly ssgiProbeRays?: number;
+  /** Screen probes only, diagnosis: 1 draws the probes' weight and trust, 2 the sign of the gathered delta. */
+  readonly ssgiProbeDebug?: number;
   /** Raymarched shafts. Needs `godraysLight`, and that light must cast shadows. */
   readonly godraysEnabled?: boolean;
   /** How dense the participating medium is. Higher is foggier — and the whole frame brighter. */
@@ -565,6 +576,10 @@ export class WorldEnvironment {
       ssrResolutionScale: options.ssrResolutionScale ?? 1,
       denoiseEnabled: options.denoiseEnabled ?? true,
       ssgiDenoiseRadius: options.ssgiDenoiseRadius,
+      ssgiScreenProbes: options.ssgiScreenProbes ?? false,
+      ssgiProbeJitter: options.ssgiProbeJitter ?? 1,
+      ssgiProbeRays: options.ssgiProbeRays,
+      ssgiProbeDebug: options.ssgiProbeDebug ?? 0,
       godraysEnabled: options.godraysEnabled ?? false,
       godraysDensity: options.godraysDensity ?? 0.7,
       godraysFloor: options.godraysFloor ?? 0,
@@ -797,9 +812,31 @@ export class WorldEnvironment {
             base,
             depth(),
             normal(),
-            wasmEngine ? { camera: view, fallback } : view,
+            wasmEngine
+              ? {
+                  camera: view,
+                  fallback,
+                  ...(options.ssgiScreenProbes
+                    ? {
+                        probes: {
+                          downsampleFactor: 16,
+                          viewport: drawingBufferSize(renderer),
+                          ...(options.ssgiProbeRays === undefined
+                            ? {}
+                            : { tracingOctahedronResolution: options.ssgiProbeRays }),
+                        },
+                      }
+                    : {}),
+                }
+              : view,
           );
           const tier = SSGI_QUALITY[options.ssgiQuality];
+          const probeUniforms = gi as unknown as {
+            probeJitter?: { value: number };
+            probeDebug?: { value: number };
+          };
+          if (probeUniforms.probeJitter) probeUniforms.probeJitter.value = options.ssgiProbeJitter;
+          if (probeUniforms.probeDebug) probeUniforms.probeDebug.value = options.ssgiProbeDebug;
           gi.sliceCount.value = tier.sliceCount;
           gi.stepCount.value = tier.stepCount;
           gi.radius.value = options.ssgiRadius;
@@ -843,7 +880,7 @@ export class WorldEnvironment {
           // The gather's own AO leaves emission alone too (see the GTAO stage).
           const emitted = textureNode("emissive").rgb.mul(gain);
           return base
-            .mul(occlusion.r)
+            .mul(vec4(occlusion.r, occlusion.r, occlusion.r, 1))
             .add(vec4(reflected.add(emitted.mul(float(1).sub(occlusion.r))), 0));
         },
       }),
@@ -905,7 +942,11 @@ export class WorldEnvironment {
           // indirect light. The emitted part passes at full weight; the rest takes the occlusion.
           // The chain reads exposed light, so the emitted radiance takes the frame's gain too.
           const emitted = textureNode("emissive").rgb.mul(gain);
-          return input.mul(occlusion.r).add(vec4(emitted.mul(float(1).sub(occlusion.r)), 0));
+          // Scale the colour only: `input.mul(occlusion.r)` scales alpha too, which darkens the frame a second time.
+          const composited = input
+            .mul(vec4(occlusion.r, occlusion.r, occlusion.r, 1))
+            .add(vec4(emitted.mul(float(1).sub(occlusion.r)), 0));
+          return composited;
         },
       }),
       stage({
@@ -1309,6 +1350,21 @@ export class WorldEnvironment {
       })}`,
     );
   }
+}
+
+/** The drawing buffer in pixels. The engine answers `{ width, height }` from a target that returns what it is given. */
+function drawingBufferSize(renderer: OutputRenderer): { width: number; height: number } {
+  const size = (
+    renderer.raw as unknown as {
+      getDrawingBufferSize(target: unknown): {
+        width?: number;
+        height?: number;
+        x?: number;
+        y?: number;
+      };
+    }
+  ).getDrawingBufferSize({ set: (width: number, height: number) => ({ width, height }) });
+  return { width: size.width ?? size.x ?? 0, height: size.height ?? size.y ?? 0 };
 }
 
 function isChainTier(value: unknown): value is ChainTier {
