@@ -1,4 +1,5 @@
 import { type IEngineRef, TSL_NODE, engineRef } from "./browser-backend.js";
+import { withFnBuilder } from "./fn-builder.js";
 import { markNormalTarget } from "./pass-node.js";
 import { defineQuadMesh } from "./quad-mesh.js";
 import { type IRttClasses, defineRtt } from "./rtt.js";
@@ -122,6 +123,7 @@ const FUNCTIONS = [
   "varying",
   // The live post effects (lane-531's table entries); post-effects.ts publishes them as three's addons.
   "ao",
+  "ssr",
   "denoise",
   "smaa",
   "bloom",
@@ -488,6 +490,7 @@ export function defineTsl(
     };
     return Object.assign(inline, { setLayout: () => inline });
   };
+  exports.Fn = withFnBuilder(exports.Fn as Parameters<typeof withFnBuilder>[0]);
   for (const name of ["atomicAdd", "atomicStore", "textureStore"])
     exports[name] = (...args: unknown[]) => {
       statement(name);

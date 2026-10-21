@@ -9,7 +9,7 @@ import { __tnTsl } from "three/tsl";
 import { unsupportedExport } from "../refused.js";
 import { type IEffectTsl, definePostEffects } from "./post-effects.js";
 
-export const { ao, denoise, smaa, bloom, traa, film, lut3D } = definePostEffects(
+export const { ao, ssr, denoise, smaa, bloom, traa, film, lut3D } = definePostEffects(
   __tnTsl as IEffectTsl,
 );
 
@@ -18,5 +18,4 @@ export const { ao, denoise, smaa, bloom, traa, film, lut3D } = definePostEffects
 export const fxaa = unsupportedExport("fxaa");
 export const godrays = unsupportedExport("godrays");
 export const ssgi = unsupportedExport("ssgi");
-export const ssr = unsupportedExport("ssr");
 export const sharpen = unsupportedExport("sharpen");

@@ -15,6 +15,7 @@ type Effect = (...args: unknown[]) => IEffectNode;
 /** The back end's TSL functions the effects are built by (the shared table's "ao", "bloom", ...). */
 export interface IEffectTsl {
   readonly ao: Effect;
+  readonly ssr: Effect;
   readonly denoise: Effect;
   readonly smaa: Effect;
   readonly bloom: Effect;
@@ -39,8 +40,94 @@ function uniforms(node: IEffectNode, names: readonly string[]): IEffectNode {
   return node;
 }
 
+const SSR_REFUSED_DEFAULTS: Readonly<Record<string, unknown>> = {
+  stochastic: false,
+  envImportanceSampling: false,
+  environmentNode: null,
+  diffuseNode: null,
+};
+
+function validateSsrOptions(options: Record<string, unknown>): void {
+  if (options === null || typeof options !== "object")
+    throw new TypeError("TN_NATIVE_SSR_OPTIONS: expected an options object");
+  for (const [name, value] of Object.entries(options)) {
+    if (["camera", "metalnessNode", "roughnessNode"].includes(name)) continue;
+    if (["reflectNonMetals", "binaryRefine"].includes(name)) {
+      if (typeof value !== "boolean")
+        throw new TypeError(`TN_NATIVE_SSR_OPTIONS: ${name} must be boolean`);
+      continue;
+    }
+    if (Object.hasOwn(SSR_REFUSED_DEFAULTS, name) && value === SSR_REFUSED_DEFAULTS[name]) continue;
+    throw new Error(`TN_NATIVE_SSR_UNSUPPORTED: ${name}`);
+  }
+}
+
 export function definePostEffects(tsl: IEffectTsl) {
   return {
+    ssr(
+      color: unknown,
+      depth: unknown,
+      normal: unknown,
+      options: Record<string, unknown> = {},
+    ): IEffectNode {
+      validateSsrOptions(options);
+      const camera =
+        options.camera ?? (color as { passNode?: { camera?: unknown } } | null)?.passNode?.camera;
+      if (camera == null) throw new Error("TN_NATIVE_SSR_CAMERA: ssr() requires a camera");
+      const node = uniforms(
+        tsl.ssr(color, depth, normal, options.metalnessNode ?? null, options.roughnessNode ?? null),
+        [
+          "maxDistance",
+          "thickness",
+          "opacity",
+          "quality",
+          "intensity",
+          "maxLuminance",
+          "blurQuality",
+        ],
+      );
+      // r185 uses a number for blurQuality; also accept the uniform spelling used by native callers.
+      const blurQuality = Object.getOwnPropertyDescriptor(node, "blurQuality")?.value;
+      Object.defineProperty(node, "blurQuality", {
+        configurable: true,
+        get: () => blurQuality,
+        set: (value: number) => node.__effect("blurQuality", value),
+      });
+      for (const name of ["reflectNonMetals", "binaryRefine"]) {
+        node.__effect(name, Number(options[name] ?? false));
+        Object.defineProperty(node, name, {
+          configurable: true,
+          get: () => node.__effect(name) !== 0,
+          set: (value: boolean) => node.__effect(name, Number(value)),
+        });
+      }
+      Object.defineProperty(node, "resolutionScale", {
+        configurable: true,
+        get: () => node.__effect("resolutionScale"),
+        set: (value: number) => node.__effect("resolutionScale", value),
+      });
+      for (const [name, value] of Object.entries({
+        ...SSR_REFUSED_DEFAULTS,
+        historyTexture: null,
+        velocityTexture: null,
+        screenEdgeFadeBlack: false,
+      }))
+        Object.defineProperty(node, name, {
+          configurable: true,
+          get: () => value,
+          set: () => {
+            throw new Error(`TN_NATIVE_SSR_UNSUPPORTED: ${name}`);
+          },
+        });
+      for (const name of ["setHistory", "setEnvMap"])
+        Object.defineProperty(node, name, {
+          value: () => {
+            throw new Error(`TN_NATIVE_SSR_UNSUPPORTED: ${name}`);
+          },
+        });
+      node.getTextureNode = () => node;
+      return node;
+    },
     film: (input: unknown, intensity?: unknown, uv?: unknown): IEffectNode =>
       tsl.film(input, intensity, uv),
     lut3D: (input: unknown, lut: unknown, size: number, intensity: unknown): IEffectNode =>

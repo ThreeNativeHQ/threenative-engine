@@ -601,6 +601,79 @@ globalThis.tn.onUpdate(() => {
 `);
 assert.equal(materialReadback.verdict, "COMPUTE_OK", materialReadback.output);
 
+// Reflect the red front-face centre (0,1,1) across y=0. The camera-to-image line
+// meets the floor at (0,0,2.25); its reflected ray hits (0,1,1), not a tuned screen pixel.
+const ssrReadback = await runComputeGame(executable, `
+import { BoxGeometry, Mesh, MeshStandardMaterial, NoToneMapping, PerspectiveCamera, PlaneGeometry, Scene, Vector2, Vector3 } from "three";
+import { RenderPipeline, WebGPURenderer } from "three/webgpu";
+import { convertToTexture, metalness, mrt, normalView, output, pass, roughness } from "three/tsl";
+import { ssr } from "three/addons/tsl/display/SSRNode.js";
+let started = false;
+const waiting = [];
+const frames = (count) => new Promise((done) => waiting.push({ count, done }));
+globalThis.tn.onFrame(() => {
+  for (const wait of waiting.splice(0)) {
+    if (--wait.count === 0) wait.done(); else waiting.push(wait);
+  }
+});
+globalThis.tn.onUpdate(() => {
+  if (started) return;
+  started = true;
+  const scene = new Scene();
+  const renderer = new WebGPURenderer(); renderer.toneMapping = NoToneMapping;
+  const size = renderer.getDrawingBufferSize(new Vector2());
+  const camera = new PerspectiveCamera(60, size.x / size.y, 0.1, 50);
+  camera.position.set(0,3,6); camera.lookAt(0,0.5,0);
+  const floorMaterial = new MeshStandardMaterial({ color: 0x040404, metalness: 1, roughness: 0 });
+  const floor = new Mesh(new PlaneGeometry(20,20), floorMaterial);
+  floor.rotation.x = -Math.PI / 2; scene.add(floor);
+  const box = new Mesh(new BoxGeometry(2,2,2), new MeshStandardMaterial({ color: 0, emissive: 0xff0000, metalness: 0, roughness: 1 }));
+  box.position.y = 1; scene.add(box);
+  globalThis.tn.scene = scene; globalThis.tn.camera = camera;
+  const scenePass = pass(scene,camera);
+  scenePass.setMRT(mrt({ output, normal: normalView, metalness, roughness }));
+  const base = convertToTexture(scenePass.getTextureNode());
+  const reflection = ssr(base, scenePass.getTextureNode("depth"), scenePass.getTextureNode("normal"), {
+    camera, metalnessNode: scenePass.getTextureNode("metalness").r,
+    roughnessNode: scenePass.getTextureNode("roughness").g, reflectNonMetals: true,
+  });
+  reflection.maxDistance.value = 30; reflection.quality.value = 1; reflection.resolutionScale = 0.5;
+  if (reflection.thickness.value !== Math.fround(0.1) || reflection.opacity.value !== 1)
+    throw Error("SSR defaults did not reach the native effect");
+  const pipeline = new RenderPipeline(renderer); pipeline.outputColorTransform = false;
+  const capture = async (node) => {
+    pipeline.outputNode = node; pipeline.render();
+    await frames(3);
+    const pixels = await globalThis.tn.readFrame();
+    if (pixels.length !== size.x * size.y * 4) throw Error("SSR frame readback is empty or has the wrong extent: " + pixels.length);
+    const sample = (point) => {
+      const projected = point.project(camera);
+      const x = Math.floor((projected.x * 0.5 + 0.5) * size.x);
+      const y = Math.floor((0.5 - projected.y * 0.5) * size.y);
+      if (x < 0 || x >= size.x || y < 0 || y >= size.y) throw Error("SSR geometry projects outside the frame");
+      return Array.from(pixels.slice((y * size.x + x) * 4, (y * size.x + x) * 4 + 4));
+    };
+    return { hit: sample(new Vector3(0,0,2.25)), far: sample(new Vector3(3,0,2.25)) };
+  };
+  (async () => {
+    const baseline = await capture(base);
+    const mirror = await capture(base.add(reflection));
+    // Ideal linear red = (1-1/30)^2 * 3.75^2/(3^2+3.75^2) = 0.570; >145/255.
+    // An 80-code rise allows raster/march error while excluding a missing reflection.
+    if (mirror.hit[0] - baseline.hit[0] < 80) throw Error("SSR mirror did not reflect red: " + JSON.stringify({baseline,mirror}));
+    if (mirror.far.some((v,i) => Math.abs(v - baseline.far[i]) > 2)) throw Error("SSR changed a floor pixel whose ray misses the box");
+    reflection.reflectNonMetals = false;
+    floorMaterial.metalness = 0; floorMaterial.roughness = 1;
+    const roughBaseline = await capture(base);
+    const roughFloor = await capture(base.add(reflection));
+    if (["hit","far"].some((key) => roughFloor[key].some((v,i) => Math.abs(v - roughBaseline[key][i]) > 2)))
+      throw Error("SSR reflected a rough non-metal: " + JSON.stringify({roughBaseline,roughFloor}));
+    globalThis.tn.log("COMPUTE_OK");
+  })().catch((error) => globalThis.tn.log("COMPUTE_ERROR " + error.message));
+});
+`);
+assert.equal(ssrReadback.verdict, "COMPUTE_OK", ssrReadback.output);
+
 // Perspective depth must stay a depth resource in both intermediate and output graph programs.
 for (const postPass of [true, false]) {
   const depthReadback = await runComputeGame(executable, `

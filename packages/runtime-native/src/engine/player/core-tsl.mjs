@@ -6,6 +6,7 @@ import { BufferAttribute, Color, Object3D, PerspectiveCamera, Vector2, Vector3, 
 import { defineStorage, defineStorageTextures } from "../../../../three-native/src/storage.ts";
 import { defineStruct } from "../../../../three-native/src/tsl-struct.ts";
 import { defineTslExtras } from "../../../../three-native/src/tsl-extras.ts";
+import { withFnBuilder } from "../../../../three-native/src/fn-builder.ts";
 
 // r185's ConstNode.value on float(), vec3(), color() and the other constants (shared with the Wasm back end).
 const constants = { ...globalThis.tsl };
@@ -21,8 +22,9 @@ export const syncUniforms = live.sync;
 
 export const { float, int, uint, vec2, vec3, color } = constants;
 export const vec4 = markNormalTarget(constants.vec4, globalThis.tsl.normalView);
+export const Fn = withFnBuilder(globalThis.tsl.Fn);
 export const {
-  atomicAdd, atomicStore, atomicLoad, Break, Continue, Return, log, lightShadowMatrix, attribute, uv, texture, renderOutput, Fn, If, Loop, luminance, viewZToOrthographicDepth, viewZToPerspectiveDepth, logarithmicDepthToViewZ, vertexIndex,
+  atomicAdd, atomicStore, atomicLoad, Break, Continue, Return, log, lightShadowMatrix, attribute, uv, texture, renderOutput, If, Loop, luminance, viewZToOrthographicDepth, viewZToPerspectiveDepth, logarithmicDepthToViewZ, vertexIndex,
   add, sub, mul, div, negate, lessThan, greaterThan, equal, lessThanEqual, greaterThanEqual, and, or, not, all, any, abs, sin, cos,
   floor, fract, sqrt, exp, exp2, log2, normalize, length, min, max, pow, step, dot,
   distance, cross, mix, clamp, smoothstep, select, positionLocal, positionWorld,

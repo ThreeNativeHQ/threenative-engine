@@ -2716,8 +2716,11 @@ generateMipmaps: boolean;
 readonly source: Source;
 format: number;
 type: number;
+readonly center: Vector2;
 
   dispose(): void;
+
+  clone(): this;
 }
 
 /** Catalog supported: three/webgpu/TorusGeometry. */
@@ -3269,6 +3272,9 @@ export declare function lightShadowMatrix(light: Light): Node;
 /** Catalog supported: three/tsl/rtt. */
 export declare function rtt(node: Node, width?: number | null, height?: number | null, options?: Record<string, unknown>): Node;
 
+/** Catalog partial (stochastic-ggx-not-implemented, environment-mis-not-implemented, history-feedback-not-implemented): three/addons/tsl/display/SSRNode.js/ssr. */
+export declare function ssr(colorNode: unknown, depthNode: unknown, normalNode: unknown, options?: { camera?: Camera; metalnessNode?: unknown; roughnessNode?: unknown; reflectNonMetals?: boolean; binaryRefine?: boolean }): Node & { maxDistance: { value: number }; thickness: { value: number }; opacity: { value: number }; quality: { value: number }; intensity: { value: number }; maxLuminance: { value: number }; blurQuality: { value: number }; resolutionScale: number; reflectNonMetals: boolean; binaryRefine: boolean; getTextureNode(): Node };
+
 /** Catalog partial (resource-parameters, includes, more-than-four-arguments): three/tsl/wgslFn. */
 export declare function wgslFn(code: string, includes?: unknown[]): Function;
 
@@ -3574,7 +3580,6 @@ export declare function atomicStore(pointerNode: Node, valueNode: Node | number)
 /** Catalog supported: three/webgpu/StorageTexture. */
 export declare class StorageTexture extends Texture {
 constructor(width?: number, height?: number);
-image: { width: number; height: number };
 readonly isStorageTexture: true;
 mipmapsAutoUpdate: boolean;
 
@@ -3589,3 +3594,6 @@ export declare function storageTexture(...args: unknown[]): unknown;
 
 /** Catalog supported: three/tsl/textureStore. */
 export declare function textureStore(...args: unknown[]): unknown;
+
+/** Catalog supported: three/tsl/modelWorldMatrix. */
+export declare function modelWorldMatrix(): void;

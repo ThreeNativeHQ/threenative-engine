@@ -26708,9 +26708,36 @@
       "kind": "function",
       "source": "three/addons/tsl/display/SSRNode.js",
       "status": {
-        "kind": "unsupported",
-        "diagnostic": "TN_NATIVE_UNSUPPORTED_SSR"
-      }
+        "kind": "partial",
+        "gaps": [
+          "stochastic-ggx-not-implemented",
+          "environment-mis-not-implemented",
+          "history-feedback-not-implemented"
+        ]
+      },
+      "parameters": [
+        {
+          "name": "colorNode",
+          "type": "unknown",
+          "optional": false
+        },
+        {
+          "name": "depthNode",
+          "type": "unknown",
+          "optional": false
+        },
+        {
+          "name": "normalNode",
+          "type": "unknown",
+          "optional": false
+        },
+        {
+          "name": "options",
+          "type": "{ camera?: Camera; metalnessNode?: unknown; roughnessNode?: unknown; reflectNonMetals?: boolean; binaryRefine?: boolean }",
+          "optional": true
+        }
+      ],
+      "returns": "Node & { maxDistance: { value: number }; thickness: { value: number }; opacity: { value: number }; quality: { value: number }; intensity: { value: number }; maxLuminance: { value: number }; blurQuality: { value: number }; resolutionScale: number; reflectNonMetals: boolean; binaryRefine: boolean; getTextureNode(): Node }"
     },
     {
       "name": "step",

@@ -276,6 +276,11 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
     // camera), denoise(input, depth, normal, camera), smaa(input), bloom(input, strength, radius,
     // threshold). The camera three takes is the render camera here: a pass reads its matrices each
     // frame. A missing normal (null) derives normals from depth, as three does.
+    if (name == "ssr") {
+        arity(5);
+        const auto optional = [&](size_t i) { return args[i].kind == TslArg::Kind::Other ? g::Node{} : arg(i); };
+        return g::effectNode(g::ssrEffect(arg(0), arg(1), arg(2), optional(3), optional(4)));
+    }
     if (name == "ao" || name == "denoise") {
         const bool denoise = name == "denoise";
         if (args.size() < (denoise ? 3u : 2u)) throw std::runtime_error("expected the effect's texture inputs");
@@ -1047,7 +1052,9 @@ double tslEffectParameter(const g::Node& node, const std::string& name, const do
     }
     if (name == "resolutionScale") {
         if (value) {
-            if (!(*value > 0 && *value <= 8)) throw std::runtime_error("resolutionScale must be in (0, 8]");
+            const double maximum = effect.kind == "SSRNode" ? 1 : 8;
+            if (!std::isfinite(*value) || !(*value > 0 && *value <= maximum))
+                throw std::runtime_error("resolutionScale must be in (0, " + std::to_string(maximum) + "]");
             effect.resolutionScale = static_cast<float>(*value);
         }
         return effect.resolutionScale;
@@ -1057,6 +1064,15 @@ double tslEffectParameter(const g::Node& node, const std::string& name, const do
         throw std::runtime_error(effect.kind + " has no scalar uniform " + name);
     if (value) {
         if (!std::isfinite(*value)) throw std::runtime_error("expected a finite number");
+        if (effect.kind == "SSRNode") {
+            if (!std::isfinite(static_cast<float>(*value))) throw std::runtime_error("TN_NATIVE_SSR_PARAMETER: " + name);
+            if ((name == "maxDistance" && *value <= 0) ||
+                ((name == "thickness" || name == "opacity" || name == "intensity" || name == "maxLuminance") && *value < 0) ||
+                (name == "quality" && (*value < 0 || *value > 1)) ||
+                (name == "blurQuality" && (*value < 1 || *value > 3 || *value != std::floor(*value))) ||
+                ((name == "reflectNonMetals" || name == "binaryRefine") && *value != 0 && *value != 1))
+                throw std::runtime_error("TN_NATIVE_SSR_PARAMETER: " + name);
+        }
         found->second[0] = static_cast<float>(*value);
     }
     return found->second[0];
