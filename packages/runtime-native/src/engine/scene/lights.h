@@ -94,8 +94,8 @@ public:
     double angle;    // radians, the cone's half angle; three's default is PI / 3
     double penumbra; // 0..1, the fraction of the cone that fades
     double decay;
-    std::unique_ptr<Object3D> ownTarget;
-    Object3D* target;
+    /** Shared like a DirectionalLight's, so a scene that holds it as a child can hand it to a walk. */
+    std::shared_ptr<Object3D> target;
     /** SpotLightShadow: a PerspectiveCamera(50, 1, 0.5, 500) fitted to the cone each frame. */
     LightShadow shadow{std::make_unique<PerspectiveCamera>(50, 1, 0.5, 500)};
 };
