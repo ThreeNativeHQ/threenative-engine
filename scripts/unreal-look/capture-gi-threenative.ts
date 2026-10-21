@@ -124,7 +124,6 @@ export async function captureGiThreeNative(options: {
         // The frame meter prints to the console; a measured pose keeps the windows between two marks.
         let meter: string[] = [];
         page.on("pageerror", (error) => errors.push(error.message));
-        let meter: string[] = [];
         page.on("console", (message) => {
           if (message.text().startsWith("TN_FRAME_BUDGET")) meter.push(message.text());
           if (
