@@ -227,11 +227,23 @@ async function main(): Promise<void> {
         gaps: [number, number][];
       };
       await strip;
+      // The auto exposure of the full look (L9) closes at 1 stop/s: a frame taken before it settled differs from another
+      // arm's by the stops it still owes, not by the light. `settled` is the exposure pass's own word that it is there.
+      const exposures = () => markers.filter((m) => m.text.startsWith("TN_AUTO_EXPOSURE:"));
+      let exposureSettled: boolean | null = null;
       if (shots !== undefined) {
         await page.evaluate(`window.__tnRef.pose(${pose})`);
+        const poseAt = Date.now() - begin;
         await page.evaluate(
           "new Promise((resolve) => { let n = 0; const tick = () => (++n >= 90 ? resolve() : requestAnimationFrame(tick)); requestAnimationFrame(tick); })",
         );
+        if (exposures().at(-1)?.text.includes('"applied":true') === true) {
+          const deadline = Date.now() + 240_000;
+          const settledSince = () =>
+            exposures().some((m) => m.atMs > poseAt && m.text.includes('"settled":true'));
+          while (!settledSince() && Date.now() < deadline) await page.waitForTimeout(500);
+          exposureSettled = settledSince();
+        }
         await page.screenshot({ path: path.join(out, `${kind}${index + 1}.png`) });
       }
       if (cdp !== undefined) {
@@ -273,6 +285,13 @@ async function main(): Promise<void> {
         giPreviewAtMs: gis[0]?.atMs ?? null,
         giPreview: parse(gis[0]),
         giCache: parse(gis.at(-1)),
+        // The last exposure reading, and whether the exposure had settled when the settled frame was taken (L9 only).
+        exposure: JSON.parse(
+          exposures()
+            .at(-1)
+            ?.text.replace(/^TN_AUTO_EXPOSURE:/, "") ?? "null",
+        ),
+        exposureSettled,
         markers,
         startedAt: new Date(load0).toISOString(),
       };
