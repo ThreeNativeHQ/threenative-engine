@@ -87,6 +87,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.json && pnpm -r --if-present run typecheck",
     "unreal-look:capture": "tsx scripts/unreal-look/capture.ts",
     "unreal-look:compare": "tsx scripts/unreal-look/compare.ts",
+    "unreal-look:curve": "tsx scripts/unreal-look/curve.ts",
     "verify:golden-path": "sh scripts/xvfb.sh tsx scripts/verify-golden-path.ts",
     "visuals": "sh scripts/xvfb.sh tsx scripts/visual-gate.ts",
     "visuals:ab": "sh scripts/xvfb.sh tsx scripts/visual-ab.ts",
