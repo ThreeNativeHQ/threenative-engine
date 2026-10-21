@@ -804,7 +804,9 @@ describe("CI pipeline structure", () => {
     expect(triggers).toContain("workflow_dispatch:");
     expect(triggers).toContain("workflow_call:");
     expect(triggers).toContain("ios_only:");
-    expect(triggers).not.toMatch(/\n\s{2}(?:push|pull_request|schedule):/u);
+    // PRD-629: the one push trigger is main, so the release candidate gets a standalone run.
+    expect(triggers).not.toMatch(/\n\s{2}(?:pull_request|schedule):/u);
+    expect(triggers).toMatch(/\n\s{2}push:\n\s{4}branches: \[main\]\n/u);
   });
 
   it("never lets a draft pull request run cancel a ready one", async () => {
@@ -1875,9 +1877,10 @@ describe("CI pipeline structure", () => {
     // runner-minutes of PR proof against a pool of about three).
     const groups = [...concurrency.matchAll(/^\x20{2}group: (.*)$/gmu)].map((match) => match[1]);
     // Proof-eligible runs share `native-release-proof`; every other run (an ordinary PR push that
-    // `gates` refuses) gets a group of its own so it can never displace a pending proof.
+    // `gates` refuses) gets a group of its own so it can never displace a pending proof. A release
+    // tag run has its own group too (PRD-629), so no proof run can queue ahead of a publish.
     expect(groups).toEqual([
-      "${{ (github.event_name != 'pull_request' || github.event.pull_request.base.ref == 'main' || contains(github.event.pull_request.labels.*.name, 'release-proof')) && 'native-release-proof' || format('native-release-skip-{0}', github.run_id) }}",
+      "${{ github.ref_type == 'tag' && 'native-release-tag' || (github.event_name != 'pull_request' || github.event.pull_request.base.ref == 'main' || contains(github.event.pull_request.labels.*.name, 'release-proof')) && 'native-release-proof' || format('native-release-skip-{0}', github.run_id) }}",
     ]);
     // `false`, not a conditional: a superseded run still lets its queued consumer finish.
     expect(concurrency).toContain("cancel-in-progress: false");
@@ -2346,7 +2349,8 @@ describe("CI pipeline structure", () => {
       "utf8",
     );
     expect(triggerSection(native)).toContain("workflow_call:");
-    expect(triggerSection(native)).not.toMatch(/\n\s{2}(?:push|pull_request|schedule):/u);
+    expect(triggerSection(native)).not.toMatch(/\n\s{2}(?:pull_request|schedule):/u);
+    expect(triggerSection(native)).toMatch(/\n\s{2}push:\n\s{4}branches: \[main\]\n/u);
   });
 
   it("both emulator lanes share the KVM provisioning commands", async () => {
@@ -3146,7 +3150,9 @@ describe("CI pipeline structure", () => {
     // The reusable workflow is invoked by ci.yml for every non-prose board selection.
     const triggers = triggerSection(native);
     expect(triggers).toContain("workflow_call:");
-    expect(triggers).not.toMatch(/\n\s{2}(?:push|pull_request|schedule):/u);
+    // PRD-629: the one push trigger is main, so the release candidate gets a standalone run.
+    expect(triggers).not.toMatch(/\n\s{2}(?:pull_request|schedule):/u);
+    expect(triggers).toMatch(/\n\s{2}push:\n\s{4}branches: \[main\]\n/u);
 
     const android = requiredJob(native, "android-emulator-parity");
     expect(android).not.toContain("continue-on-error: true");

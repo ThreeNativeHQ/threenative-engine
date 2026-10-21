@@ -12,7 +12,7 @@ import {
   pairObservations,
   readCaptureProvenance,
 } from "./observationSampling.js";
-import { accumulatedPathLength, entityPosition, failureReport, interruptedPlaytestError, isAnonymousMovementScenario, observedEntityIds, observedResourceIds, safePart, SCREENSHOT_TIMEOUT_MS, withPageCause } from "./shared.js";
+import { accumulatedPathLength, entityPosition, failureReport, interruptedPlaytestError, isAnonymousMovementScenario, observedEntityIds, observedResourceIds, PRESENTATION_BOUND_MS, safePart, SCREENSHOT_TIMEOUT_MS, withPageCause } from "./shared.js";
 import {
   failedDiagnosticsAssertion,
   ManagedServerError,
@@ -48,6 +48,7 @@ import {
 } from "../index.js";
 import type { IPlaytestObservationSnapshot } from "../protocol.js";
 import { assertCaptureNotBlank, CaptureGuardError, collectRegionalTone } from "../capture.js";
+import { retakeWhileBlank } from "./capture-retry.js";
 import { chromium, type Browser, type BrowserContext, type CDPSession, type Page } from "playwright";
 
 import { connectPlaytestBridge, PlaytestBridgeError, type IPlaytestBridgeClient } from "./bridgeClient.js";
@@ -541,10 +542,12 @@ async function runStandalonePlaytestInternal(
     let captureFailure: { code: "TN_CAPTURE_BLANK"; label: string; reason: string } | undefined;
     /**
      * One blank-capture grace window. An accelerated canvas can legitimately present nothing at
-     * the sampled instant — shader prewarm still settling, HMR re-present, a busy GPU — while the
-     * world is one present away from its first visible frame. Wait for two more animation frames
-     * (bounded by 500 ms) before the caller shoots again. Not a skip: whatever the second shot
-     * shows is final, so a genuinely blank surface still fails closed.
+     * the sampled instant — shader prewarm still settling, HMR re-present, a busy GPU, a restart's
+     * new render chain still compiling — while the world is some presents away from its first
+     * visible frame. Wait for two more animation frames (bounded by 500 ms) before the caller
+     * shoots again, and keep shooting until the surface shows something or
+     * `PRESENTATION_BOUND_MS` passes. Not a skip: a surface still blank at the bound is final,
+     * so a genuinely blank surface still fails closed.
      */
     const presentationGrace = async (): Promise<void> => {
       if (page === undefined || page.isClosed?.()) return;
@@ -599,18 +602,23 @@ async function runStandalonePlaytestInternal(
         return { ...(elementRegions === undefined ? {} : { elementRegions }), image: png };
       } catch (error) {
         if (!(error instanceof CaptureGuardError)) throw error;
-        await presentationGrace();
-        if (captureElementBounds) elementRegions = await sampleVisualElementBounds(activePage, visualAssertions);
         try {
-          png = await activePage.screenshot(options);
-        } catch {
-          // The first shot stands; its blank verdict is what gets reported below.
-        }
-        try {
-          const stats = assertCaptureNotBlank(png, label);
-          if (stats.tone !== undefined) tone.push({ code: "TN_TONE", label, ...(atStep === undefined ? {} : { atStep }), ...stats.tone });
-          tone.push(...collectRegionalTone(png, scenario.assert?.tone ?? [], label, atStep));
-          return { ...(elementRegions === undefined ? {} : { elementRegions }), image: png };
+          return await retakeWhileBlank(
+            async () => {
+              if (captureElementBounds) elementRegions = await sampleVisualElementBounds(activePage, visualAssertions);
+              try {
+                png = await activePage.screenshot(options);
+              } catch {
+                // The first shot stands; its blank verdict is what gets reported below.
+              }
+              const stats = assertCaptureNotBlank(png, label);
+              if (stats.tone !== undefined) tone.push({ code: "TN_TONE", label, ...(atStep === undefined ? {} : { atStep }), ...stats.tone });
+              tone.push(...collectRegionalTone(png, scenario.assert?.tone ?? [], label, atStep));
+              return { ...(elementRegions === undefined ? {} : { elementRegions }), image: png };
+            },
+            presentationGrace,
+            PRESENTATION_BOUND_MS,
+          );
         } catch (error2) {
           if (!(error2 instanceof CaptureGuardError)) throw error2;
           captureFailure ??= { code: error2.code, label: error2.label, reason: error2.reason };
@@ -647,15 +655,20 @@ async function runStandalonePlaytestInternal(
         return { image: png };
       } catch (error) {
         if (!(error instanceof CaptureGuardError)) throw error;
-        await presentationGrace();
         try {
-          const retry = await captureVisualSurface(activePage, artifactPath);
-          if (retry !== undefined) {
-            const stats = assertCaptureNotBlank(retry, label);
-            if (stats.tone !== undefined) tone.push({ code: "TN_TONE", label, ...(atStep === undefined ? {} : { atStep }), ...stats.tone });
-            tone.push(...collectRegionalTone(retry, scenario.assert?.tone ?? [], label, atStep));
-            return { image: retry };
-          }
+          const retry = await retakeWhileBlank(
+            async () => {
+              const shot = await captureVisualSurface(activePage, artifactPath);
+              if (shot === undefined) return undefined;
+              const stats = assertCaptureNotBlank(shot, label);
+              if (stats.tone !== undefined) tone.push({ code: "TN_TONE", label, ...(atStep === undefined ? {} : { atStep }), ...stats.tone });
+              tone.push(...collectRegionalTone(shot, scenario.assert?.tone ?? [], label, atStep));
+              return shot;
+            },
+            presentationGrace,
+            PRESENTATION_BOUND_MS,
+          );
+          if (retry !== undefined) return { image: retry };
         } catch (error2) {
           if (!(error2 instanceof CaptureGuardError)) throw error2;
           captureFailure ??= { code: error2.code, label: error2.label, reason: error2.reason };

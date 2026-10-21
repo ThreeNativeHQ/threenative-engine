@@ -61,6 +61,7 @@ function allowed(
       "gates",
       "build",
       "build-android",
+      "build-ios-simulator",
       "publish",
       "clean-consumer",
       "clean-consumer-ios",
@@ -180,13 +181,76 @@ test("main evidence arrives via CI completion, never via a push-to-main trigger"
   assert.match(pushBlock, /runtime-native-v\*/u);
 });
 
-for (const name of ["validate-tag", "publish", "finalize", "cleanup-failed-release"]) {
+for (const name of ["validate-tag", "cleanup-failed-release"]) {
   test(`${name} cannot mutate releases from a pull request or manual invocation`, () => {
     assert.equal(allowed(name, "pull_request", "branch"), false);
     assert.equal(allowed(name, "workflow_dispatch", "branch"), false);
     assert.equal(allowed(name, "workflow_dispatch", "tag"), false);
   });
 }
+
+// PRD-629: `publish` and `finalize` also run on a proof run, as a rehearsal against a draft named
+// `rehearsal-<run id>`. Only a `push` of a validated tag may touch the real release.
+for (const name of ["publish", "finalize"]) {
+  test(`${name} touches the real release only from a validated tag push`, () => {
+    assert.equal(allowed(name, "workflow_dispatch", "tag"), false);
+    assert.equal(allowed(name, "pull_request", "tag"), false);
+    // A tag push whose candidate gate failed (`validate-tag` skipped, so no candidate SHA).
+    assert.equal(allowed(name, "push", "tag", { "validate-tag": "skipped" }), false);
+    assert.equal(allowed(name, "push", "tag"), true);
+  });
+
+  test(`${name} rehearses on a proof run and not on an ordinary pull request`, () => {
+    const proof = { "validate-tag": "skipped" } as const;
+    assert.equal(allowed(name, "pull_request", "branch", proof, "push", { base: "main" }), true);
+    assert.equal(allowed(name, "workflow_dispatch", "branch", proof), true);
+    assert.equal(allowed(name, "workflow_run", "branch", proof), true);
+    assert.equal(
+      allowed(name, "pull_request", "branch", { ...proof, gates: "skipped", publish: "skipped" }),
+      false,
+      `${name} spent a runner on an ordinary pull request`,
+    );
+  });
+}
+
+test("a proof run publishes only a draft rehearsal release, never the tag", () => {
+  const publish = job("publish");
+  assert.match(publish, /echo "release_tag=rehearsal-\$GITHUB_RUN_ID"/u);
+  const branches =
+    publish.split('if [ "${REHEARSAL:-}" = true ]; then')[1]?.split("\n          fi\n")[0] ?? "";
+  const [rehearsal = "", real = ""] = branches.split("\n          else\n");
+  assert.doesNotMatch(real, /--draft/u);
+  assert.match(rehearsal, /--draft/u);
+  assert.doesNotMatch(rehearsal, /--verify-tag|--prerelease|--latest/u);
+  assert.match(real, /--verify-tag/u);
+  assert.match(real, /--prerelease/u);
+  // The finalize promotion edit is tag-only; a proof run only checks the draft.
+  assert.match(
+    job("finalize"),
+    /name: Promote the consumer-verified release\n\x20{8}if: github\.ref_type == 'tag'/u,
+  );
+  // The cleanup deletes nothing that is not a rehearsal draft.
+  const cleanup = job("cleanup-rehearsal");
+  assert.match(cleanup, /case "\$RELEASE_TAG" in rehearsal-\*\)/u);
+  assert.match(cleanup, /if: \$\{\{ always\(\) && github\.ref_type != 'tag'/u);
+});
+
+test("the proof runs the npm cohort dry run against the rehearsal lock", () => {
+  const dryRun = job("npm-dry-run");
+  assert.match(dryRun, /needs: \[publish\]/u);
+  assert.match(dryRun, /--pattern prebuilt-lock\.json/u);
+  assert.match(dryRun, /scripts\/release\.ts --dry-run --skip-gates --lock/u);
+  assert.doesNotMatch(dryRun, /--yes|NPM_TOKEN/u, "the rehearsal must not be able to publish");
+  assert.match(job("cleanup-rehearsal"), /needs: \[publish, finalize, npm-dry-run\]/u);
+});
+
+test("the tag-only publication rides nothing a proof run did not run", () => {
+  // The finding-1 defect: RELEASE_REPOSITORY named the old repository, and only the tag run saw it.
+  // Both routes now generate the lock from the same step, with the real repository and tag.
+  const lock = script("Generate the checksum lock from the verified assets");
+  assert.match(lock, /generateReleaseManifest\("release"/u);
+  assert.match(job("publish"), /RELEASE_REPOSITORY: \$\{\{ github\.repository \}\}/u);
+});
 
 for (const name of [
   "gates",
@@ -203,7 +267,7 @@ for (const name of [
         name,
         "pull_request",
         "branch",
-        { "validate-tag": "skipped", publish: "skipped" },
+        { "validate-tag": "skipped", publish: "success" },
         "push",
         {
           base: "main",
@@ -214,7 +278,7 @@ for (const name of [
     assert.equal(
       allowed(name, "workflow_dispatch", "branch", {
         "validate-tag": "skipped",
-        publish: "skipped",
+        publish: "success",
       }),
       true,
     );
@@ -226,7 +290,7 @@ for (const name of [
 // every PR touching one of four paths started a macOS/Windows/Linux/Android board. An ordinary
 // push must now start nothing at all, while the four routes that do need the proof keep it.
 test("the release proof runs only for a promotion PR, the release-proof label, dispatch or a release tag", () => {
-  const proof = { "validate-tag": "skipped", publish: "skipped" } as const;
+  const proof = { "validate-tag": "skipped", publish: "success" } as const;
   const downstream = { "validate-tag": "skipped", gates: "skipped" } as const;
   for (const name of [
     "gates",
@@ -301,7 +365,7 @@ test("native builds and consumers refuse failed dependencies rather than treatin
   assert.equal(
     allowed("clean-consumer", "pull_request", "branch", {
       "validate-tag": "skipped",
-      publish: "skipped",
+      publish: "success",
       "build-android": "failure",
     }),
     false,
@@ -310,7 +374,7 @@ test("native builds and consumers refuse failed dependencies rather than treatin
   assert.equal(
     allowed("clean-consumer-windows", "pull_request", "branch", {
       "validate-tag": "skipped",
-      publish: "skipped",
+      publish: "success",
       build: "failure",
     }),
     false,
@@ -639,25 +703,57 @@ test("the main prerequisite verdict reads the event instead of holding a runner"
   );
 });
 
-// `clean-consumer-ios` and `build-ios-simulator` are the two publishing-adjacent jobs that rely on
-// implicit skip-propagation rather than an explicit event condition, so they are exactly the two
-// worth pinning. Their guards are already correct; this closes a coverage gap, not a defect.
-for (const name of ["clean-consumer-ios", "build-ios-simulator"]) {
-  test(`${name} stays out of every non-tag proof route`, () => {
-    // Neither job carries an event condition; both are held out by `validate-tag` skipping and
-    // emitting no `candidate_sha`. So the route has to be modelled as it actually runs - with
-    // `validate-tag` skipped - rather than with the helper's default populated outputs.
-    for (const event of ["pull_request", "workflow_dispatch", "push"] as const) {
-      assert.equal(allowed(name, event, "branch", { "validate-tag": "skipped" }), false);
-    }
-    assert.equal(allowed(name, "workflow_dispatch", "tag", { "validate-tag": "skipped" }), false);
-    // And the skip has to be able to propagate: no `always()`/`!cancelled()` escape, and the
-    // dependency that does the holding must still be declared.
-    const body = job(name).split("\n    steps:")[0] ?? "";
-    assert.match(body, /\n\x20{4}needs: \[?[^\n]*validate-tag/u);
-    assert.doesNotMatch(body, /always\(\)|!cancelled\(\)/u);
-  });
-}
+// `clean-consumer-ios` relies on implicit skip-propagation rather than an explicit event
+// condition, so it is worth pinning. Its guard is already correct; this closes a coverage gap.
+test("clean-consumer-ios stays out of every non-tag proof route", () => {
+  // The job carries no event condition; `validate-tag` skipping and emitting no `candidate_sha`
+  // holds it out. So the route is modelled as it runs - with `validate-tag` skipped - rather than
+  // with the helper's default populated outputs.
+  for (const event of ["pull_request", "workflow_dispatch", "push"] as const) {
+    assert.equal(
+      allowed("clean-consumer-ios", event, "branch", { "validate-tag": "skipped" }),
+      false,
+    );
+  }
+  assert.equal(
+    allowed("clean-consumer-ios", "workflow_dispatch", "tag", { "validate-tag": "skipped" }),
+    false,
+  );
+  // And the skip has to be able to propagate: no `always()`/`!cancelled()` escape, and the
+  // dependency that does the holding must still be declared.
+  const body = job("clean-consumer-ios").split("\n    steps:")[0] ?? "";
+  assert.match(body, /\n\x20{4}needs: \[?[^\n]*validate-tag/u);
+  assert.doesNotMatch(body, /always\(\)|!cancelled\(\)/u);
+});
+
+// PRD-629: the published matrix includes the simulator asset, so a proof run builds it and the
+// rehearsal lock is the lock the tag run generates. A tag run still builds it only for the
+// candidate commit, and a proof run skips it when the gates fail.
+test("build-ios-simulator runs on proof runs and on the candidate's tag run only", () => {
+  for (const event of ["pull_request", "workflow_dispatch", "push"] as const) {
+    assert.equal(
+      allowed("build-ios-simulator", event, "branch", { "validate-tag": "skipped" }),
+      true,
+    );
+    assert.equal(
+      allowed("build-ios-simulator", event, "branch", {
+        gates: "failure",
+        "validate-tag": "skipped",
+      }),
+      false,
+    );
+  }
+  assert.equal(allowed("build-ios-simulator", "push", "tag"), true);
+  assert.equal(allowed("build-ios-simulator", "push", "tag", { "validate-tag": "skipped" }), false);
+});
+
+test("a rehearsal publish waits for the simulator asset", () => {
+  assert.equal(allowed("publish", "pull_request", "branch"), true);
+  assert.equal(
+    allowed("publish", "pull_request", "branch", { "build-ios-simulator": "skipped" }),
+    false,
+  );
+});
 
 test("the emulator lane reports acceleration instead of asserting it", () => {
   // Read the step out of the job rather than via `script()`: that helper needs a line between
@@ -740,7 +836,7 @@ test("at most one release proof holds runners at a time, across branches", () =>
   // no cancel: a superseded run still lets its queued consumer finish.
   assert.match(
     settings,
-    /^\x20{2}group: \$\{\{ \(.*\) && 'native-release-proof' \|\| format\('native-release-skip-\{0\}', github\.run_id\) \}\}$/mu,
+    /^\x20{2}group: \$\{\{ github\.ref_type == 'tag' && 'native-release-tag' \|\| \(.*\) && 'native-release-proof' \|\| format\('native-release-skip-\{0\}', github\.run_id\) \}\}$/mu,
   );
   assert.match(settings, /^\x20{2}cancel-in-progress: false$/mu);
 });
@@ -770,12 +866,12 @@ test.each(["schedule", "workflow_dispatch", "pull_request"])(
 test("workflow_run evidence runs proof without a release candidate", () => {
   for (const name of ["gates", "build", "build-android", "clean-consumer"]) {
     assert.equal(
-      allowed(name, "workflow_run", "branch", { "validate-tag": "skipped", publish: "skipped" }),
+      allowed(name, "workflow_run", "branch", { "validate-tag": "skipped", publish: "success" }),
       true,
       `${name} does not run on the workflow_run evidence path`,
     );
   }
-  for (const name of ["validate-tag", "publish", "finalize", "cleanup-failed-release"]) {
+  for (const name of ["validate-tag", "cleanup-failed-release"]) {
     assert.equal(
       allowed(name, "workflow_run", "branch"),
       false,
@@ -906,6 +1002,13 @@ test("the same-run proof serves the published cohort, not every non-iOS key", ()
   );
 });
 
+test("the Linux proof lane ignores the simulator zip a proof run now downloads", () => {
+  // Run 39352029148: `build-ios-simulator` runs on proof runs (PRD-629), so `pattern: runtime-*`
+  // also collects its zip, and the "no extras" check failed a run whose staging was right.
+  const consumer = job("clean-consumer");
+  assert.match(consumer, /name\.startsWith\("threenative-ios-"\)/u);
+});
+
 test("the Windows consumer serves only the Windows row it installs", () => {
   // Run 34725179598: `build-android`'s V8 source build hit its 2h cap and uploaded nothing, so the
   // Windows lane died demanding Android assets it never needed and never depended on. It now serves
@@ -1034,7 +1137,10 @@ test("the Windows consumer proves a renderer that never presents fails the launc
 });
 
 test("the Windows consumer is a mandatory release prerequisite, not advisory", () => {
-  assert.match(job("finalize"), /needs: \[validate-tag, clean-consumer, clean-consumer-windows\]/u);
+  assert.match(
+    job("finalize"),
+    /needs: \[validate-tag, publish, clean-consumer, clean-consumer-windows\]/u,
+  );
   assert.match(
     job("cleanup-failed-release"),
     /needs: \[validate-tag, publish, clean-consumer, clean-consumer-windows\]/u,

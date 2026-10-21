@@ -39,6 +39,12 @@ interface IPostController {
 const GRADE_TABLE_URL = "grade.cube";
 
 let active: IPostController | undefined;
+/**
+ * The table, kept for the page's life. Every scene entry builds a controller, and a restart is an
+ * entry: fetching the file again and rebuilding the chain around it compiled the whole graph
+ * twice, and the world stayed black behind the HUD for both compiles.
+ */
+let cachedTable: IGradeTable | undefined;
 
 /** The starter's game.ts connects its existing completed frame-window callback here. */
 export function observeQualityWindow(window: IQualityWindow): void {
@@ -73,7 +79,7 @@ export function setupPost(
   let disposed = false;
   let disposeGraph: (() => void) | undefined;
   let medium: FogMedium | undefined;
-  let table: IGradeTable | undefined;
+  let table: IGradeTable | undefined = cachedTable;
   // The opt-in `traa` stage publishes its provider here once the chain has built it, so `debug()`
   // reports the live reconstruction state and a scene can reset history on a teleport.
   let temporal: TemporalAAProvider | undefined;
@@ -113,8 +119,9 @@ export function setupPost(
     environment.onTierChanged?.(policy.tier);
   }
   apply();
-  // The table is a file, so it lands after the chain that would read it. Until then both stages
-  // are refused with a reason rather than grading nothing, and the chain is rebuilt once it does.
+  // The table is a file, so on the first entry it lands after the chain that would read it. Until
+  // then both stages are refused with a reason rather than grading nothing, and the chain is
+  // rebuilt once it does. Later entries start with the table and never rebuild.
   // The loader parses `FloatType`, because the default 8-bit load *truncates* `value * 255` into a
   // `Uint8Array`. An identity table then reads low by up to 0.875 of a step, and the round trip
   // through the grade is never the frame the game drew. Parsed floats keep the file's own numbers.
@@ -122,20 +129,20 @@ export function setupPost(
   // without the optional `float32-filterable` feature, so the lookup would sample the nearest of
   // the nine cells. The arithmetic in `__tests__/grade.spec.ts` runs on those half floats.
   const tableLoader = new LUTCubeLoader().setType(FloatType);
-  void tableLoader.loadAsync(GRADE_TABLE_URL).then(
-    (loaded) => {
-      table?.texture.dispose();
-      table = { size: loaded.size, texture: filterableTable(loaded.texture3D) };
-      if (!disposed) apply();
-    },
-    (error: unknown) => {
-      // A missing table is this game's file, not the harness's: name it and leave the frame
-      // ungraded rather than reporting a stage as applied that never ran.
-      console.error(
-        `TN_GRADE_TABLE ${GRADE_TABLE_URL}: ${error instanceof Error ? error.message : String(error)}`,
-      );
-    },
-  );
+  if (table === undefined)
+    void tableLoader.loadAsync(GRADE_TABLE_URL).then(
+      (loaded) => {
+        table = cachedTable = { size: loaded.size, texture: filterableTable(loaded.texture3D) };
+        if (!disposed) apply();
+      },
+      (error: unknown) => {
+        // A missing table is this game's file, not the harness's: name it and leave the frame
+        // ungraded rather than reporting a stage as applied that never ran.
+        console.error(
+          `TN_GRADE_TABLE ${GRADE_TABLE_URL}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      },
+    );
   const source = environment.tier === undefined ? "platform" : "override";
   console.info(
     `TN_QUALITY_TIER ${policy.tier} mobile=${environment.mobile === true} software=${
@@ -166,9 +173,8 @@ export function setupPost(
       disposeGraph = undefined;
       medium?.dispose();
       medium = undefined;
-      // The table outlives any one chain — a tier change rebuilds the graph around the same one —
-      // so it is released here and not by a stage that would take it with the first replacement.
-      table?.texture.dispose();
+      // The table outlives any one chain and any one scene — a tier change or a restart builds a
+      // graph around the same one — so no stage and no controller releases it.
       table = undefined;
       temporal = undefined;
       if (active === controller) active = undefined;
