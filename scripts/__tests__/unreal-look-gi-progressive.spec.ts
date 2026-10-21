@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import {
   BoxGeometry,
   Color,
+  DoubleSide,
   Group,
   type Intersection,
   Mesh,
@@ -143,6 +144,37 @@ describe("progressive GI bake", () => {
     expect(texture?.version).toBeGreaterThan(version);
     expect((texture?.image.data as Uint16Array).some((v, i) => v !== before[i])).toBe(true);
     expect((room.children[0] as Mesh).material).toBe(material);
+  });
+
+  it("bakes the surfaces the scene authored, whatever the node twins it swapped in say", () => {
+    // A progressive bake runs after the cache swapped every material for its node twin. A twin that lost a field (the
+    // native engine keeps them as prototype accessors a plain copy misses) must not change the light: before the fix the
+    // bake read the twin's colour and sides, and a room of white twins came out 4 times too bright.
+    const whole = sunlitRoom();
+    installGi(rayContext(whole), whole, { bounces: 3, sun: SUN });
+    const wanted = Float32Array.from(giCache.field?.values ?? []);
+
+    const room = sunlitRoom();
+    const frames: (() => void)[] = [];
+    installGi(rayContext(room), room, {
+      bounces: 3,
+      sun: SUN,
+      progressive: { previewRays: 16, budgetMs: 5, defer: (run) => void frames.push(run) },
+    });
+    room.traverse((object) => {
+      const twin = (object as Mesh).material as MeshStandardMaterial | undefined;
+      if (twin === undefined) return;
+      twin.color = new Color(1, 1, 1);
+      twin.side = DoubleSide;
+    });
+    let steps = 0;
+    while (frames.length > 0 && steps < 100000) {
+      frames.shift()?.();
+      steps += 1;
+    }
+    const got = giCache.field?.values ?? new Float32Array(0);
+    expect(got.length).toBe(wanted.length);
+    expect(got.every((v, i) => v === wanted[i])).toBe(true);
   });
 
   it("bakes in one call when the rays are the game's own, because slicing needs the flat ones", () => {

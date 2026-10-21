@@ -1315,6 +1315,34 @@ export function installGi(
     });
   });
 
+  /**
+   * What the bake reads of each mesh's material (albedo, emission), taken now. The cache swaps a material for its node
+   * twin before a progressive bake runs, and the light must not depend on what a twin holds: a twin that lost its colour
+   * made the room 4 times too bright. `installMaterials` runs after this.
+   */
+  const emitterIds = new Set(emitters.map((e) => e.id));
+  const surfaces = new Map<number, { albedo: number[]; emissive: number[] }>();
+  const surfaceOf = (object: Object3D): { albedo: number[]; emissive: number[] } => {
+    const known = surfaces.get(object.id);
+    if (known !== undefined) return known;
+    const m = (object as Mesh).material as MeshStandardMaterial;
+    const k = 1 - (m.metalness ?? 0);
+    const e = [m.emissive.r, m.emissive.g, m.emissive.b];
+    const data = {
+      albedo: [m.color.r * k, m.color.g * k, m.color.b * k],
+      emissive: emitterIds.has(object.id)
+        ? [0, 0, 0]
+        : [0, 1, 2].map((c) => (e[c] ?? 0) * (m.emissiveIntensity ?? 1)),
+    };
+    surfaces.set(object.id, data);
+    return data;
+  };
+  root.traverse((object) => {
+    const material = (object as Mesh).material as Partial<MeshStandardMaterial> | undefined;
+    if ((object as { isMesh?: boolean }).isMesh && material?.color && material.emissive)
+      surfaceOf(object);
+  });
+
   /** One bake at the given quality. It yields only when `slice.deadline` has passed. */
   function* bake(params: IBakeParams): Generator<void, IBaked> {
     const phases: Record<string, number> = {};
@@ -1430,25 +1458,6 @@ export function installGi(
       return lit;
     };
 
-    const emitterIds = new Set(emitters.map((e) => e.id));
-
-    const materialData = new Map<number, { albedo: number[]; emissive: number[] }>();
-    const dataOf = (object: Object3D): { albedo: number[]; emissive: number[] } => {
-      const known = materialData.get(object.id);
-      if (known !== undefined) return known;
-      const m = (object as Mesh).material as MeshStandardMaterial;
-      const k = 1 - (m.metalness ?? 0);
-      const e = [m.emissive.r, m.emissive.g, m.emissive.b];
-      const data = {
-        albedo: [m.color.r * k, m.color.g * k, m.color.b * k],
-        emissive: emitterIds.has(object.id)
-          ? [0, 0, 0]
-          : [0, 1, 2].map((c) => (e[c] ?? 0) * (m.emissiveIntensity ?? 1)),
-      };
-      materialData.set(object.id, data);
-      return data;
-    };
-
     const centreOf = (probe: number, into: Vector3): Vector3 =>
       into.set(
         grid.origin.x + ((probe % grid.nx) + 0.5) * grid.cell,
@@ -1510,7 +1519,7 @@ export function installGi(
           if (face !== undefined && face !== null) backfaces[probe] = (backfaces[probe] ?? 0) + 1;
         }
         [hitNormal[0], hitNormal[1], hitNormal[2]] = [nx, ny, nz];
-        const { albedo, emissive } = dataOf(hit.object);
+        const { albedo, emissive } = surfaceOf(hit.object);
         ray.base.set(
           params.bounces > 0 ? surface(hit.object, hitAt, hitNormal, albedo, emissive) : [0, 0, 0],
           i * 3,
@@ -1883,7 +1892,9 @@ export function installGi(
   spread(bake(previewParams), progressive.budgetMs * 2, (baked) => {
     publish(baked, "preview", previewParams.bounces);
     spread(bake(full), progressive.budgetMs, (final) => {
-      progressive.onConverged?.(publish(final, "final", full.bounces));
+      // Published whether or not anyone listens: an optional call would skip its argument too.
+      const report = publish(final, "final", full.bounces);
+      progressive.onConverged?.(report);
     });
   });
   return {

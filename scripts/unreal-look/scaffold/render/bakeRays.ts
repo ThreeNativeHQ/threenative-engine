@@ -277,6 +277,9 @@ function build(root: Object3D): IFlatRays | undefined {
   if (count > 0) split(0, count);
 
   const objects = meshes;
+  // The sides the rays cull by are those of the materials the scene authored: the GI cache swaps a mesh's material for a
+  // node twin after this is built, and a twin that lost its `side` must not change what a ray hits.
+  const materials = meshes.map((mesh) => mesh.material);
   const hit = {
     distance: 0,
     point: new Vector3(),
@@ -339,7 +342,7 @@ function build(root: Object3D): IFlatRays | undefined {
         }
         for (let i = start[node] ?? 0; i < (start[node] ?? 0) + count; i += 1) {
           const t = order[i] ?? 0;
-          const material = objects[owner[t] ?? 0]?.material as Material | Material[];
+          const material = materials[owner[t] ?? 0] as Material | Material[];
           const side = rays.doubleSided
             ? 2
             : ((Array.isArray(material) ? material[slot[t] ?? 0] : material)?.side ?? 0);
