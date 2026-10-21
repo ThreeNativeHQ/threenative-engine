@@ -31,7 +31,7 @@ import {
 } from "./atmosphere.js";
 import { bakeCloudRadiance } from "./clouds.js";
 import { skyRadiance } from "./giCache.js";
-import { atmosphereFogColour, createGpuSky } from "./gpuSky.js";
+import { atmosphereFogColour, createGpuSky, distantFogColour } from "./gpuSky.js";
 import { HEIGHT_FOG, type HeightFogParams, heightFogNode } from "./heightFog.js";
 
 /**
@@ -221,7 +221,9 @@ export function setupSky(
   sky.mapping = EquirectangularReflectionMapping;
   sky.colorSpace = SRGBColorSpace;
   const ambient = sky.userData.clearRadiance
-    ? atmosphereFogColour(sky.userData.clearRadiance)
+    ? gpu
+      ? distantFogColour(SUN_DIRECTION)
+      : atmosphereFogColour(sky.userData.clearRadiance)
     : skyAmbient(sky);
   const fogColor = (ambient ?? new Color(0xacb1c1)).multiply(AMBIENT_SCALE);
   scene.background = (ambient === undefined || !fogged ? undefined : voidSky(sky, fogColor)) ?? sky;

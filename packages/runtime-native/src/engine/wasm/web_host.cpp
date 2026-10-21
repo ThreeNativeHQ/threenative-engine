@@ -7,6 +7,7 @@
 #include "engine/renderer/render_database.h"
 #include "engine/abi/binding.h"
 #include "engine/renderer/render_target_pass.h"
+#include "engine/renderer/probes/capture.h"
 #include "engine/renderer/compute.h"
 #include "engine/scene/geometry.h"
 #include "engine/shader/graph/graph.h"
@@ -336,6 +337,33 @@ extern "C" uint32_t tnw_web_read_target(const tn_handle_t* targetHandle, uint32_
                                                         : "TN_WASM_READ_TARGET: region outside the target"), 0;
     }
     return id;
+}
+
+/** Starts one HDR cube face. -2 means environment pending, -1 refusal, otherwise a read id. */
+extern "C" int32_t tnw_web_capture_face(const tn_handle_t* rootHandle, double x, double y, double z,
+                                        uint32_t size, uint32_t face) {
+    tnw_web_poll();
+    auto* root = rootOf(rootHandle);
+    if (state != Ready || !root) return refuse("TN_REFLECTION_CAPTURE_SCENE"), -1;
+    flushCompute();
+    const uint32_t id = ++nextTargetRead;
+    targetReads[id] = {};
+    try {
+        const auto started = probes::captureFace(*renderer, *root, Vector3{x, y, z}, size, face, 0.01, 2000,
+            [id](GpuStatus status, std::vector<float> rgb) {
+                auto& read = targetReads.at(id);
+                read.status = status == GpuStatus::Ok ? 1 : -1;
+                read.bytes.resize(rgb.size() * sizeof(float));
+                std::memcpy(read.bytes.data(), rgb.data(), read.bytes.size());
+            });
+        if (started == GpuStatus::Ok) return int32_t(id);
+        targetReads.erase(id);
+        if (started == GpuStatus::Pending) return -2;
+        return refuse("TN_REFLECTION_CAPTURE_FACE"), -1;
+    } catch (const std::exception& error) {
+        targetReads.erase(id);
+        return refuse(error.what()), -1;
+    }
 }
 
 /** The read's state (0 pending, 1 delivered, -1 failed); delivered bytes are copied to `out` and the read ends. */

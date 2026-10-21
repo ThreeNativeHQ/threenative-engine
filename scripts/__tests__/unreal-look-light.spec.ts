@@ -1,12 +1,17 @@
 import { describe, expect, it } from "vitest";
 import {
   EMISSIVE_UNITS,
+  SKY_TO_SUN,
   SUN_ILLUMINANCE,
   SUN_KELVIN,
+  VIEW_DISTANCE_SKY_LIGHT_FIT,
   bakeSkyRadiance,
+  distantSkyLight,
   sunTransmittance,
   temperatureColour,
+  viewDistanceSkyLight,
 } from "../unreal-look/scaffold/render/atmosphere.js";
+import { filmicToneMap } from "../unreal-look/scaffold/render/tonemap.js";
 
 describe("the harness lighting model against Unreal 5.8.3 frames (PRD-632, PRD-633)", () => {
   it("the 6500 K tint has unit luminance and Unreal's measured channel ratios", () => {
@@ -63,5 +68,61 @@ describe("the harness lighting model against Unreal 5.8.3 frames (PRD-632, PRD-6
     expect(hr).toBeGreaterThan((zr ?? 0) * 3);
     expect(gr).toBeLessThan((hr ?? 0) * 0.1);
     expect(sky.every((v) => Number.isFinite(v) && v >= 0)).toBe(true);
+  });
+
+  it("the distant sky light, that fog and clouds are lit with, stays near the Unreal-derived colour", () => {
+    // Unreal L3 sea at a fixed exposure, divided by the sun's tint and illuminance and SKY_TO_SUN
+    // (the colour height fog takes from GetViewDistanceSkyLightColor), per unit sun.
+    const unreal = {
+      60: [0.00929, 0.01971, 0.03803],
+      15: [0.00676, 0.01132, 0.01942],
+    } as const;
+    for (const deg of [60, 15] as const) {
+      const rad = (deg * Math.PI) / 180;
+      const [r, g, b] = distantSkyLight({ x: Math.cos(rad), y: Math.sin(rad), z: 0 });
+      expect(b).toBeGreaterThan(g);
+      expect(g).toBeGreaterThan(r);
+      // The gap is the atmosphere's known red excess at high sun (1.36 at 60 degrees), which the
+      // tone curve's gamut expansion removes from the picture. A wider gap means the model moved.
+      [r, g, b].forEach((v, c) => {
+        const expected = unreal[deg][c];
+        if (expected === undefined) throw new RangeError(`Invalid colour channel ${c}`);
+        const ratio = v / expected;
+        expect(ratio, `${deg} deg channel ${c}`).toBeGreaterThan(0.95);
+        expect(ratio, `${deg} deg channel ${c}`).toBeLessThan(1.45);
+      });
+    }
+  });
+
+  it("the distant sky light dims and reddens toward sunset and stays positive", () => {
+    const at = (deg: number) => {
+      const rad = (deg * Math.PI) / 180;
+      return distantSkyLight({ x: Math.cos(rad), y: Math.sin(rad), z: 0 });
+    };
+    const [r60, , b60] = at(60);
+    const [r4, , b4] = at(4);
+    expect(b4).toBeLessThan(b60);
+    expect(b4 / r4).toBeLessThan(b60 / r60);
+    expect(at(4).every((v) => Number.isFinite(v) && v > 0)).toBe(true);
+  });
+
+  it("the fogged void is Unreal's L3 void within 3 levels of 255 at both suns (fixed exposure)", () => {
+    // Unreal L3 sea, cols 64-154 and rows 272-292 of the exterior pose: the fog's own colour.
+    const unreal = { 60: [113, 154, 196], 15: [81, 111, 152] } as const;
+    const tint = temperatureColour(SUN_KELVIN);
+    const encode = (v: number) =>
+      255 * (v <= 0.0031308 ? v * 12.92 : 1.055 * v ** (1 / 2.4) - 0.055);
+    for (const deg of [60, 15] as const) {
+      const rad = (deg * Math.PI) / 180;
+      const light = viewDistanceSkyLight({ x: Math.cos(rad), y: Math.sin(rad), z: 0 });
+      const fog = light.map((v, c) => v * (tint[c] ?? 1) * SUN_ILLUMINANCE * SKY_TO_SUN);
+      const shown = filmicToneMap(fog as [number, number, number]).map(encode);
+      shown.forEach((v, c) => {
+        const expected = unreal[deg][c];
+        if (expected === undefined) throw new RangeError(`Invalid colour channel ${c}`);
+        expect(Math.abs(v - expected), `${deg} deg channel ${c}`).toBeLessThan(3);
+      });
+    }
+    expect(VIEW_DISTANCE_SKY_LIGHT_FIT.every((v) => v > 0 && v <= 1)).toBe(true);
   });
 });

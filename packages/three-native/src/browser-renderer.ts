@@ -10,6 +10,7 @@ import type { PassDraw } from "./pass-node.js";
 import { defineRenderTargets } from "./render-target.js";
 import { ShadowMap } from "./shadow-map.js";
 import { syncVirtualShadowLods } from "./shadow-node.js";
+import { defineSphereReflectionCapture } from "./sphere-reflection-capture.js";
 import { readStorageBytes } from "./storage.js";
 import type { INodeFrame } from "./temp-node.js";
 import { defineToneMappingLibrary } from "./tone-mapping.js";
@@ -26,7 +27,8 @@ type HostCall =
   | "_tnw_web_frame"
   | "_tnw_web_render_target"
   | "_tnw_web_read_target"
-  | "_tnw_web_read_target_take";
+  | "_tnw_web_read_target_take"
+  | "_tnw_web_capture_face";
 
 export type WebHostModule = Record<HostCall, (...args: number[]) => number> & {
   readonly specialHTMLTargets: Record<string, unknown>;
@@ -74,6 +76,7 @@ export function defineWebRenderer(
     surface: () => { width: number; height: number },
     draw: PassDraw,
   ) => void = () => {},
+  DataTexture?: Parameters<typeof defineSphereReflectionCapture>[1],
 ): new (
   parameters?: Record<string, unknown>,
 ) => object {
@@ -572,6 +575,30 @@ export function defineWebRenderer(
       module._free(out);
     }
   };
+  if (DataTexture !== undefined)
+    Object.assign(Renderer.prototype, {
+      // biome-ignore lint/style/useNamingConvention: capture API uses the requested Unreal actor name.
+      SphereReflectionCapture: defineSphereReflectionCapture(async (scene, x, y, z, size, face) => {
+        beforeRender();
+        writeHandle(0, scene, "scene");
+        const id = module._tnw_web_capture_face(handles, x, y, z, size, face);
+        if (id === -2) return null;
+        if (id < 0) check(1);
+        const bytes = size * size * 3 * 4;
+        const out = module._malloc(bytes) >>> 0;
+        try {
+          for (;;) {
+            module._tnw_web_poll();
+            const status = module._tnw_web_read_target_take(id, out, bytes);
+            if (status === 1) return new Float32Array(module.HEAPU8.slice(out, out + bytes).buffer);
+            if (status < 0) throw new Error("TN_REFLECTION_CAPTURE_READ");
+            await new Promise((resolve) => setTimeout(resolve, 0));
+          }
+        } finally {
+          module._free(out);
+        }
+      }, DataTexture),
+    });
   defineRenderTargets(Renderer.prototype, (renderer) => ({
     draw: (target, root, camera) =>
       (renderer as { [DRAW_TARGET](t: unknown, r: unknown, c: unknown): void })[DRAW_TARGET](

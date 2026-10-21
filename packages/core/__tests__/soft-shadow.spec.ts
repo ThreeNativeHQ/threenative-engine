@@ -93,7 +93,7 @@ describe("source-radius lamp shadows (PRD-650)", () => {
       [Number.NaN, 2, 4],
       [0.05, 0, 4],
       [0.05, 2, Number.POSITIVE_INFINITY],
-    ] as const)
+    ] satisfies Parameters<typeof lampPenumbraTangent>[])
       expect(() => lampPenumbraTangent(...args)).toThrow(RangeError);
   });
 

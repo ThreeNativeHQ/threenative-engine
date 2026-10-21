@@ -114,7 +114,14 @@ interface IGather {
  * `iso` swaps the phase functions for the isotropic one, as the multiple-scattering pass does.
  * `multi` adds the multiple-scattering luminance at each sample.
  */
-function march(r0: number, dir: Vec3, sun: Vec3, iso: boolean, multi: Multi | undefined): IGather {
+function march(
+  r0: number,
+  dir: Vec3,
+  sun: Vec3,
+  iso: boolean,
+  multi: Multi | undefined,
+  ground = iso,
+): IGather {
   const out: IGather = { radiance: [0, 0, 0], transfer: [0, 0, 0] };
   const mu0 = dir[1];
   const groundT = mu0 < 0 ? hitSphere(r0, mu0, BOTTOM_KM, false) : undefined;
@@ -155,7 +162,7 @@ function march(r0: number, dir: Vec3, sun: Vec3, iso: boolean, multi: Multi | un
   // The sky pass draws no ground luminance (Unreal's sky render passes Ground = false), so the nadir
   // is only the in-scatter up to the planet, near black. The multiple-scattering pass does bounce
   // light off the ground (Ground = true), so `iso` keeps it.
-  if (iso && groundT !== undefined) {
+  if (ground && groundT !== undefined) {
     const p = at(groundT);
     const rr = Math.hypot(p[0], p[1], p[2]);
     const cosSun = dot(p, sun) / rr;
@@ -224,6 +231,48 @@ function multipleScatteringTable(): Multi {
       return a * (1 - fu) + b * fu;
     }) as unknown as Rgb;
   };
+}
+
+/**
+ * Unreal's distant sky light: the mean radiance over the whole sphere seen from `altitudeKm`
+ * (r.SkyAtmosphere.DistantSkyLightLUT.Altitude, 6 km), isotropic phase, no ground bounce, the
+ * multiple-scattering term included (RenderDistantSkyLightLutCS in
+ * Engine/Shaders/Private/SkyAtmosphere.usf). Height fog and volumetric clouds both light with it
+ * (GetViewDistanceSkyLightColor). Per unit sun illuminance, like `bakeSkyRadiance`.
+ */
+export const DISTANT_SKY_LIGHT_ALTITUDE_KM = 6;
+export function distantSkyLight(toSun: { x: number; y: number; z: number }): Rgb {
+  const sun: Vec3 = [toSun.x, toSun.y, toSun.z];
+  const multi = multipleScatteringTable();
+  const count = 64;
+  const sum: [number, number, number] = [0, 0, 0];
+  for (let i = 0; i < count; i += 1) {
+    const y = 1 - (2 * (i + 0.5)) / count;
+    const ring = Math.sqrt(1 - y * y);
+    const phi = i * Math.PI * (3 - Math.sqrt(5));
+    const dir: Vec3 = [Math.cos(phi) * ring, y, Math.sin(phi) * ring];
+    const ray = march(BOTTOM_KM + DISTANT_SKY_LIGHT_ALTITUDE_KM, dir, sun, true, multi, false);
+    for (let c = 0; c < 3; c += 1) sum[c] = (sum[c] ?? 0) + (ray.radiance[c] ?? 0) / count;
+  }
+  return sum;
+}
+
+/**
+ * Measured, not derived: the fixed-exposure Unreal L3 void (height fog fogged to opaque, so it is
+ * the fog's inscattering colour and nothing else) over `distantSkyLight`, per channel, through the
+ * same tone curve. 0.811 / 0.867 / 0.930 at a 60 degree sun and 0.799 / 0.870 / 0.921 at 15, so one
+ * constant holds across the sun. The clear sky matches the Unreal L2 frame within a few levels
+ * with no such factor, so the cause sits in how Unreal builds this one light. Cloud ambient and
+ * fog both read it, as in Unreal (GetViewDistanceSkyLightColor).
+ */
+export const VIEW_DISTANCE_SKY_LIGHT_FIT: Rgb = [0.805, 0.869, 0.926];
+
+/** The light height fog and clouds take from the sky, per unit sun illuminance. */
+export function viewDistanceSkyLight(toSun: { x: number; y: number; z: number }): Rgb {
+  const light = distantSkyLight(toSun);
+  return [0, 1, 2].map(
+    (c) => (light[c] ?? 0) * (VIEW_DISTANCE_SKY_LIGHT_FIT[c] ?? 1),
+  ) as unknown as Rgb;
 }
 
 /**

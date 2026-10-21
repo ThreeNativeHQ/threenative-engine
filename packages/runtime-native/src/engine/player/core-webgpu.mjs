@@ -15,13 +15,14 @@ for (const name of ["DirectionalLightShadow", "PointLightShadow", "SpotLightShad
     });
   }
 }
-import { BufferAttribute, Color, Material, NormalBlending } from "./core-three.mjs";
+import { BufferAttribute, Color, DataTexture, Material, NormalBlending } from "./core-three.mjs";
 import { unsupportedExport } from "../../../../three-native/src/refused.ts";
 import { PassNode, StorageBufferAttribute, StorageInstancedBufferAttribute, syncUniforms, updateSecondaryPasses } from "./core-tsl.mjs";
 import { readStorageBytes } from "../../../../three-native/src/storage.ts";
 import { GAME_SPANS } from "../../../../core/src/profiling/Spans.ts";
 import { defineToneMappingLibrary } from "../../../../three-native/src/tone-mapping.ts";
 import { ShadowMap } from "../../../../three-native/src/shadow-map.ts";
+import { defineSphereReflectionCapture } from "../../../../three-native/src/sphere-reflection-capture.ts";
 import { defineRenderTargets } from "../../../../three-native/src/render-target.ts";
 import { defineQuadMesh } from "../../../../three-native/src/quad-mesh.ts";
 
@@ -232,3 +233,11 @@ export const NodeMaterial = globalThis.NodeMaterial;
 Object.setPrototypeOf(NodeMaterial.prototype, Material.prototype);
 NodeMaterial.prototype.isNodeMaterial = true;
 export const RendererUtils = unsupportedExport("RendererUtils");
+
+WebGPURenderer.prototype.SphereReflectionCapture = defineSphereReflectionCapture(
+  async (scene, x, y, z, size, face) => {
+    syncUniforms();
+    const bytes = await globalThis.tn.captureFace(scene, x, y, z, size, face);
+    return bytes === null ? null : new Float32Array(bytes.buffer, bytes.byteOffset, bytes.byteLength / 4);
+  }, DataTexture,
+);

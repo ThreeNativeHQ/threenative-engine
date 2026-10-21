@@ -262,7 +262,8 @@ export async function captureThreeNative(options: IThreeNativeCaptureOptions): P
             },
           );
           await page.addStyleTag({ content: HIDE_UI });
-          await page.waitForSelector('[data-threenative-startup="ready"]', { timeout: 300_000 });
+          // The GI cache bake runs inside startup: 110-250 s measured, longer on a loaded host.
+          await page.waitForSelector('[data-threenative-startup="ready"]', { timeout: 600_000 });
           const readyMs = Date.now() - started;
           await page.waitForFunction(() => "__tnRef" in window, undefined, { timeout: 240_000 });
           // Page start to the scene being ready; the GI cache bake (TN_GI_CACHE) runs inside this.

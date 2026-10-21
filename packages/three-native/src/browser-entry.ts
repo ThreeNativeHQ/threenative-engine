@@ -200,6 +200,7 @@ export async function bindWebEngine(
       },
       runtime.tsl,
       (surface, draw) => drawSecondaryPasses(surface, draw),
+      bound.DataTexture as never,
     );
   // A GLB through the engine's own glTF loader, for the web GLTFLoader (addons/gltf-loader-web.ts).
   const { loadGltf } = runtime;

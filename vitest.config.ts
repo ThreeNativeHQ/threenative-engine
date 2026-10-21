@@ -11,7 +11,12 @@ export default defineConfig({
       // Resolve it from core, the way scripts/unreal-look/compare.ts does.
       name: "scripts-resolve-three-from-core",
       enforce: "pre",
-      async resolveId(source, importer, options) {
+      async resolveId(
+        this: { resolve(source: string, importer: string, options: object): Promise<unknown> },
+        source: string,
+        importer: string | undefined,
+        options: object,
+      ) {
         if (!/^three(\/|$)/.test(source) || !importer?.startsWith(path.join(root, "scripts/")))
           return null;
         return this.resolve(source, path.join(root, "packages/core/package.json"), {

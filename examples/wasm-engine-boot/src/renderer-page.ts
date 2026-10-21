@@ -56,7 +56,7 @@ import {
   viewportLinearDepth,
   viewportSharedTexture,
 } from "three/tsl";
-import { MeshBasicNodeMaterial, QuadMesh, WebGPURenderer } from "three/webgpu";
+import { MeshBasicNodeMaterial, type Node, QuadMesh, WebGPURenderer } from "three/webgpu";
 
 const SOFTWARE = /swiftshader|llvmpipe|lavapipe|softwarerasterizer|software adapter|basic render/iu;
 const probe = {
@@ -371,7 +371,7 @@ try {
   loopedTexture.colorNode = Fn(() => {
     const sum = vec3(0).toVar();
     Loop(3, () => {
-      sum.addAssign(texture(swatch).sample(uv()).level(0).rgb.mul(0.5));
+      sum.addAssign(texture(swatch).sample(uv()).level(float(0)).rgb.mul(0.5));
     });
     return vec4(sum, 1);
   })();
@@ -477,7 +477,7 @@ try {
   // A refused offscreen draw fails that draw and leaves the host running: the world still draws after it.
   // vec2 of a vec3 and a float is four components, a graph the engine refuses to lower.
   const unlowerable = new MeshBasicNodeMaterial();
-  unlowerable.colorNode = vec4(vec2(vec3(1, 0, 0), 1), 0, 1);
+  unlowerable.colorNode = vec4(vec2(vec3(1, 0, 0) as unknown as Node<"float">, 1), 0, 1);
   skyScene.backgroundNode = unlowerable.colorNode;
   try {
     await drawSky();

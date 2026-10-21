@@ -31,7 +31,7 @@ export const GI_LAYERS: Readonly<Record<string, string>> = {
   L9: "L9-Epic",
 };
 
-async function patchGi(target: string, scenes: readonly string[]): Promise<void> {
+export async function patchGi(target: string, scenes: readonly string[]): Promise<void> {
   await cp(
     path.join(SCAFFOLD_DIR, "CalibrationScene.ts.in"),
     path.join(target, "src/scenes/CalibrationScene.ts"),

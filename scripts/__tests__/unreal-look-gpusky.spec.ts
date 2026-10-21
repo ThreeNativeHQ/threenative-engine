@@ -189,7 +189,7 @@ describe("GPU Unreal sky", () => {
   it("keeps CPU and GPU environment fog colours independent of clouds", async () => {
     // CPU environment writes need only an ImageData canvas; no browser or GPU.
     class Canvas {
-      pixels = new Uint8ClampedArray(0);
+      pixels: Uint8ClampedArray = new Uint8ClampedArray(0);
       constructor(
         readonly width: number,
         readonly height: number,

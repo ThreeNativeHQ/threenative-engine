@@ -18,6 +18,7 @@ import {
   gridOver,
   installGi,
   skyRadiance,
+  sphereShare,
 } from "../unreal-look/scaffold/render/giCache.js";
 
 /** The bake's ray query over a group, as the game's `ctx.raycast` answers it. */
@@ -206,7 +207,7 @@ describe("the world-space GI cache against closed forms (PRD-631 L7)", () => {
     expect(covered.share[0]).toBeLessThan(open.share[0] ?? 1);
   });
 
-  it("a small emissive sphere lights a distant probe by L (r / d)^2 cos, not by the few rays that happen to hit it", () => {
+  it("a small emissive sphere's direct light leaves the cache, which keeps only what it bounces", () => {
     // 8 m away the sphere subtends 0.012 sr and one of a probe's 96 rays stands for 0.13 sr: the rays alone over- or
     // under-read by an order of magnitude, the same way for every neighbour, which lit a wall 4 to 7 times too bright.
     const radiance = 10;
@@ -236,12 +237,42 @@ describe("the world-space GI cache against closed forms (PRD-631 L7)", () => {
       const toward = new Vector3(0, 0, 0).sub(at);
       const distance = toward.length();
       toward.normalize();
-      // The -x face looks at the lamp and reads cos = |toward.x|.
+      // The -x face looks at the lamp: its direct light, L (r / d)^2 cos, is read per pixel by `emitterLight` and
+      // must not also sit in the 0.5 m field (it would count twice, and a cell cannot hold a glow within 0.3 m).
       const face = texelAt(at).faces[1] as number[];
-      const expected = radiance * (radius / distance) ** 2 * Math.abs(toward.x);
-      expect((face[0] as number) / expected).toBeGreaterThan(0.8);
-      expect((face[0] as number) / expected).toBeLessThan(1.25);
+      const direct = radiance * (radius / distance) ** 2 * Math.abs(toward.x);
+      expect(Math.abs(face[0] as number)).toBeLessThan(direct * 0.05);
     }
+  });
+
+  it("a sphere above the horizon lights a surface by (r / d)^2 cos; one cut by the horizon fades to zero smoothly", () => {
+    const sin2 = 0.25;
+    // Wholly above the horizon: the closed form.
+    expect(sphereShare(sin2, 1)).toBeCloseTo(0.25, 6);
+    expect(sphereShare(sin2, 0.9)).toBeCloseTo(0.225, 6);
+    // Wholly below: nothing.
+    expect(sphereShare(sin2, -0.6)).toBe(0);
+    // Continuous where the horizon starts to cut it (cos = sin of the angular radius).
+    const edge = Math.sqrt(sin2);
+    expect(sphereShare(sin2, edge - 1e-4)).toBeCloseTo(sphereShare(sin2, edge + 1e-4), 3);
+    expect(sphereShare(sin2, -edge + 1e-4)).toBeCloseTo(0, 3);
+    // Monotonic as the sphere sinks, and above zero while any of it shows.
+    let last = Number.POSITIVE_INFINITY;
+    for (let cos = 0.99; cos > -edge + 0.02; cos -= 0.01) {
+      const share = sphereShare(sin2, cos);
+      expect(share).toBeLessThanOrEqual(last + 1e-9);
+      expect(share).toBeGreaterThan(0);
+      last = share;
+    }
+    // A sphere resting on a floor touches every floor point's horizon (cos = r / d = sin), so the floor reads
+    // (r / d)^3: half a radius from the contact point, d^2 = 1.25 r^2.
+    const d = Math.sqrt(1.25);
+    expect(sphereShare(1 / 1.25, 1 / d)).toBeCloseTo((1 / d) ** 3, 4);
+    // Partly cut by the horizon, the part still above it gives more than (r / d)^2 cos (which reaches zero while
+    // half the sphere still shows) and less than the whole sphere overhead.
+    expect(sphereShare(0.8, 0.447)).toBeGreaterThan(0.8 * 0.447);
+    expect(sphereShare(0.8, 0.447)).toBeLessThan(0.8);
+    expect(sphereShare(0.25, 0)).toBeGreaterThan(0);
   });
 
   describe("a scene with no sky and no sun, lit by one point light", () => {

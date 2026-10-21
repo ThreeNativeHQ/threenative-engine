@@ -136,15 +136,24 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
         // Unreal's lamp shadow has no near plane: three's 0.5 m default clipped cornell's shade, 0.3 m
         // from the lamp. Diagnosis knobs: shadowNear, shadowMap (texels), shadowBias, shadowNormalBias.
         point.shadow.camera.near = Number(params.get("shadowNear") ?? 0.02);
-        const mapSize = Number(params.get("shadowMap") ?? point.shadow.mapSize.x);
+        // 1024 texels a cube face: at three's 512 the edge of the tall box's shadow on the red wall
+        // steps where its penumbra is narrow (cornell corner, 2026-10-20); PRD-650 Phase 1 makes the
+        // size follow the lamp's footprint. The lamp cache draws a still lamp's map once.
+        const mapSize = Number(params.get("shadowMap") ?? 1024);
         point.shadow.mapSize.set(mapSize, mapSize);
         point.shadow.bias = Number(params.get("shadowBias") ?? point.shadow.bias);
         point.shadow.normalBias = Number(params.get("shadowNormalBias") ?? point.shadow.normalBias);
         scene.add(point);
         lights.push(point);
-        if ((light.sourceRadiusM ?? 0) > 0) {
+        // Diagnosis knobs: sourceRadius=0 leaves the shadow on the hard filter (the filter's cost arm); blockers and
+        // samples set the filter's tap counts (default 16 each).
+        if ((light.sourceRadiusM ?? 0) > 0 && params.get("sourceRadius") !== "0") {
           // The lamp's radius softens its shadow as Unreal's does (PRD-650); its highlight stays a point's.
-          point.shadow.filterNode = sourceRadiusShadowFilter({ sourceRadius: light.sourceRadiusM ?? 0 });
+          point.shadow.filterNode = sourceRadiusShadowFilter({
+            sourceRadius: light.sourceRadiusM ?? 0,
+            blockerSamples: Number(params.get("blockers") ?? 16),
+            filterSamples: Number(params.get("samples") ?? 16),
+          });
           unsupported.push({
             actor: light.name,
             property: "sourceRadiusM",
@@ -212,6 +221,13 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
       gi: giCache,
       renderer: ctx.renderer.raw,
       disposePost: () => this.#dispose?.(),
+      // Diagnosis: a lamp filter with other tap counts, for in-page paired cost runs (PRD-650).
+      lampFilter: (blockers: number, samples: number) =>
+        sourceRadiusShadowFilter({
+          sourceRadius: DATA.lights[0]?.sourceRadiusM ?? 0,
+          blockerSamples: blockers,
+          filterSamples: samples,
+        }),
       // What the frame was drawn with, for the capture report: a wrong unit shows here first.
       probe: () => {
         const r = ctx.renderer.raw as unknown as { toneMapping: number; toneMappingExposure: number };
