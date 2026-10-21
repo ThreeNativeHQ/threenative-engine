@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import {
   BoxGeometry,
   Color,
+  DataTexture,
   DoubleSide,
   Group,
   type Intersection,
@@ -11,7 +12,7 @@ import {
   Vector3,
 } from "three";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { giCache, installGi } from "../unreal-look/scaffold/render/giCache.js";
+import { giCache, installGi, skyRadiance } from "../unreal-look/scaffold/render/giCache.js";
 
 const SUN = {
   color: new Color(1, 1, 1),
@@ -173,6 +174,41 @@ describe("progressive GI bake", () => {
       steps += 1;
     }
     const got = giCache.field?.values ?? new Float32Array(0);
+    expect(got.length).toBe(wanted.length);
+    expect(got.every((v, i) => v === wanted[i])).toBe(true);
+  });
+
+  it("a mapped wall bakes its texel in the progressive bake too, though the cache swapped its material before the rays ran", () => {
+    // The Surface Cache (PRD-639) finds a hit's map through the material the scene authored. A progressive bake runs after
+    // the cache swapped that material for its node twin, so a lookup by the object's current material finds nothing and
+    // the wall bakes its white colour factor: the closed furnace of the one-shot test, three times too bright.
+    const furnace = (progressive: boolean) => {
+      const material = new MeshStandardMaterial({
+        color: new Color(1, 1, 1),
+        map: new DataTexture(new Uint8Array([77, 77, 77, 255]), 1, 1),
+        emissive: new Color(2, 2, 2),
+        side: DoubleSide,
+      });
+      const room = new Group().add(new Mesh(new BoxGeometry(6, 6, 6).scale(-1, -1, -1), material));
+      skyRadiance.current = { data: new Float32Array(6), width: 2, height: 1, scale: [1, 1, 1] };
+      const frames: (() => void)[] = [];
+      installGi(rayContext(room), room, {
+        bounces: 3,
+        sun: { color: new Color(0, 0, 0), intensity: 0, direction: new Vector3(0, 1, 0) },
+        surfaceCache: true,
+        ...(progressive
+          ? { progressive: { previewRays: 16, budgetMs: 5, defer: (run) => void frames.push(run) } }
+          : {}),
+      });
+      for (let steps = 0; frames.length > 0 && steps < 100000; steps += 1) frames.shift()?.();
+      return Float32Array.from(giCache.field?.values ?? []);
+    };
+    const wanted = furnace(false);
+    // The wall's map is 77 / 255: three passes read 2 (1 - t^3) / (1 - t) = 2.8 where the flat white factor reads 6.
+    const brightest = wanted.reduce((most, v) => Math.max(most, v), 0);
+    expect(brightest).toBeGreaterThan(2.5);
+    expect(brightest).toBeLessThan(3.5);
+    const got = furnace(true);
     expect(got.length).toBe(wanted.length);
     expect(got.every((v, i) => v === wanted[i])).toBe(true);
   });

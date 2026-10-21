@@ -112,7 +112,7 @@ def poses_of(scene):
 
 # --- build -------------------------------------------------------------------
 def import_texture(ref, folder, path):
-    """A scene texture: imported uncompressed, clamped and with a plain box mip chain, so a mask keeps its edge."""
+    """A mask texture (PRD-651): imported uncompressed, clamped and with a plain box mip chain, so a mask keeps its edge."""
     task = unreal.AssetImportTask()
     task.filename = path
     task.destination_path = folder
@@ -144,9 +144,30 @@ def set_masked(mi, values):
     mi.set_editor_property("base_property_overrides", overrides)
 
 
+def texture(ref, folder, name, path):
+    """Imports an image file beside scene.py as an sRGB Texture2D (PRD-639: a material's albedo texels)."""
+    if not os.path.exists(path):
+        raise FileNotFoundError(f"texture {name}: {path} is missing")
+    task = unreal.AssetImportTask()
+    task.set_editor_property("filename", path)
+    task.set_editor_property("destination_path", folder)
+    task.set_editor_property("destination_name", name)
+    task.set_editor_property("replace_existing", True)
+    task.set_editor_property("automated", True)
+    task.set_editor_property("save", True)
+    ref.asset_tools.import_asset_tasks([task])
+    asset = unreal.load_asset(f"{folder}/{name}")
+    if not isinstance(asset, unreal.Texture2D):
+        raise RuntimeError(f"texture {name}: the import made no Texture2D from {path}")
+    return asset
+
+
 def material(ref, folder, name, values, proxy=PROXY, textures=None):
     mi = ref.asset_tools.create_asset(name, folder, unreal.MaterialInstanceConstant, unreal.MaterialInstanceConstantFactoryNew())
     mel.set_material_instance_parent(mi, unreal.load_asset(proxy))
+    if "baseColorTexture" in values:
+        # The proxy's "Base Color Texture" multiplies "Base Color Factor", as glTF's baseColorTexture does.
+        mel.set_material_instance_texture_parameter_value(mi, "Base Color Texture", (textures or {})[values["baseColorTexture"]])
     r, g, b = values["baseColor"]
     mel.set_material_instance_vector_parameter_value(mi, "Base Color Factor", unreal.LinearColor(r, g, b, 1.0))
     if "texture" in values:
@@ -305,10 +326,14 @@ def build(ref, name):
     if len(region_material) > len(ID_COLORS):
         raise ValueError(f"scene {name}: more regions than region-ID colours")
     base = root(name)
-    textures = {
+    # Two ways to bind a texture, side by side. A scene's "textures" names image files and a material binds one
+    # by that name as "baseColorTexture" (PRD-639: an sRGB albedo, as the glTF exporter writes it). A masked
+    # material names its file as "texture" (PRD-651: uncompressed and clamped, so the cut keeps its edge).
+    textures = {t: texture(ref, f"{base}/Textures", f"T_{t}", os.path.join(scene_dir(name), file)) for t, file in scene.get("textures", {}).items()}
+    textures.update({
         f: import_texture(ref, f"{base}/Textures", os.path.join(scene_dir(name), f))
         for f in sorted({m["texture"] for m in scene["materials"].values() if "texture" in m})
-    }
+    })
     named = {m: material(ref, f"{base}/Materials", f"MI_{m}", v, textures=textures) for m, v in scene["materials"].items()}
     regions = {r: ID_COLORS[i] for i, r in enumerate(region_material)}
     # Linear base colour id/255: Unreal display-encodes it, and compare.ts accepts both forms. A masked
@@ -466,9 +491,13 @@ def material_values(mi):
         c = mel.get_material_instance_vector_parameter_value(mi, param)
         return [round(c.r, 6), round(c.g, 6), round(c.b, 6)]
 
+    # The proxy parent's default is its own white texture: only a texture the scene bound counts (PRD-639).
+    bound = mel.get_material_instance_texture_parameter_value(mi, "Base Color Texture")
+    textured = bound is not None and not bound.get_name().startswith("T_GLTF_Default")
     values = {
         "name": mi.get_name(),
         "baseColor": vector("Base Color Factor"),
+        **({"baseColorTexture": bound.get_name().removeprefix("T_")} if textured else {}),
         "roughness": round(mel.get_material_instance_scalar_parameter_value(mi, "Roughness Factor"), 6),
         "metallic": round(mel.get_material_instance_scalar_parameter_value(mi, "Metallic Factor"), 6),
         "emissive": vector("Emissive Factor"),
@@ -482,6 +511,8 @@ def material_values(mi):
         values["alphaMode"] = "MASK"
         values["alphaCutoff"] = round(overrides.get_editor_property("opacity_mask_clip_value"), 6)
         values["doubleSided"] = bool(overrides.get_editor_property("override_two_sided") and overrides.get_editor_property("two_sided"))
+        # A masked material names its texture as "texture" (PRD-651), not as "baseColorTexture" (PRD-639).
+        values.pop("baseColorTexture", None)
     return values
 
 

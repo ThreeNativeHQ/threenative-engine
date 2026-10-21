@@ -74,6 +74,8 @@ so the surface BRDF itself needs no change.
 - [ ] GTAO reaches the lighting through `builtinAOContext` with multi-bounce, and the composite multiply is gone. proof: `pnpm unreal-look:compare --layer L6`.
 - [ ] A visual judge subagent returns IMPROVEMENT against the current starter on the sunlit-crease and room-interior cells. proof: judge verdict recorded here.
 
+- [x] The floor under a sphere keeps a soft contact gradient at L9: the SSGI-over-cache correction takes the contact occlusion's factor, so GTAO and the gather no longer subtract the same light twice. proof: `TN_UNREAL_LOOK_WORK=<dir> pnpm unreal-look:capture --engine threenative --layers L9 --cells sun15/spheres,sun60/spheres`, two runs per arm. sun15 chrome-sphere foot (900..1040 x 478..502 px): clipped pixels 50.6 % -> 0.0 %, mean luma 19.2 -> 38.2 (Unreal 40.3), darkest row 4.3 -> 26.6 (Unreal 32.5). Whole-frame MAE to Unreal, 12 L9 cells: unchanged (noise floor 0.2), interior sun60 10.14 -> 9.64. Judge verdict (fresh read-only Sonnet): IMPROVEMENT overall; chrome foot IMPROVEMENT, the other rows NEUTRAL (comment on PR #541, commit d8da3737d).
+
 #### Phase 3: Every AO template, native included
 **Status:** NOT STARTED
 **Files:** `packages/create-threenative/templates/*/src/render/worldEnvironment.ts`, `packages/runtime-native/conformance/scenes/shared/ao-indirect-only.js` (new), `packages/runtime-native/conformance/registry.json`
@@ -92,3 +94,4 @@ so the surface BRDF itself needs no change.
   `ProbeVolume` (static bake) is the candidate for interior sky occlusion; the AO change in this PRD
   only stops AO from darkening direct light.
 - 2026-10-20 (GI set for PR #541): with dynamic GI on (L7 and up), Unreal replaces SSAO with Lumen Short Range AO. That AO is [PRD-640](../gi/PRD-640-pixels-gather-bounce-light-from-screen-probes-and-the-radiance-cache-answers-the-rest.md) Phase 3 (`ShortRangeAO`). GTAO on indirect light, from this PRD, stays the AO of the `low` tier ([PRD-644](../gi/PRD-644-the-gi-tier-follows-unreal-quality-levels-and-the-measured-gpu-time.md)).
+- 2026-10-21 (look lane, spheres): the ring of black under each sphere at L9 was a stacking bug, not a GTAO radius. The chain runs the contact stage first, then the SSGI gather over the cache, whose correction `albedo * (hit - cache)` is added unscaled. Ablation at sun15, chrome foot, floor luma: GTAO only 13 to 19, SSGI only no ring, both 0 (50.6 % clipped), both with the correction clamped at 0 or scaled by the contact term 11 to 20 (Unreal 11 to 17). The harness `worldEnvironment.ts` now scales the correction by the contact term. This is a stopgap inside the composite multiply: Phase 2 moves GTAO onto indirect light, which removes the stacking at its root.

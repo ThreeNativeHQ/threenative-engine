@@ -101,6 +101,54 @@ describe("bakeRays", () => {
     expect(hits).toBeGreaterThan(1000);
   });
 
+  it("answers the hit's UV as three's raycaster does, so a texture is read where the ray lands (PRD-639)", () => {
+    const root = scene();
+    const reference = stock(root);
+    const rays = bakeRays(root);
+    if (rays === undefined) throw new Error("the scene should flatten");
+    const next = lcg(23);
+    const origin = new Vector3();
+    const direction = new Vector3();
+    let compared = 0;
+    for (let i = 0; i < 4000; i += 1) {
+      origin.set(next() * 10 - 5, next() * 5, next() * 10 - 5);
+      direction.set(next() - 0.5, next() - 0.5, next() - 0.5).normalize();
+      const want = reference.raycast({ origin, direction, far: 1000 });
+      const wantUv = want?.uv?.clone();
+      const got = rays.raycast({ origin, direction, far: 1000 });
+      if (wantUv === undefined) continue;
+      compared += 1;
+      expect(got?.uv, `ray ${i} should carry a uv`).toBeDefined();
+      expect(got?.uv?.distanceTo(wantUv), `ray ${i} uv`).toBeLessThan(1e-4);
+    }
+    expect(compared).toBeGreaterThan(500);
+  });
+
+  it("answers the material slot of the hit triangle", () => {
+    const root = new Group();
+    const geometry = new BoxGeometry(1, 1, 1);
+    const first = new MeshStandardMaterial();
+    const second = new MeshStandardMaterial();
+    const mesh = new Mesh(geometry, [first, second, first, first, first, first]);
+    root.add(mesh);
+    root.updateMatrixWorld(true);
+    const rays = bakeRays(root);
+    if (rays === undefined) throw new Error("the scene should flatten");
+    // BoxGeometry groups: +x, -x, +y, -y, +z, -z. A ray from +x along -x lands on group 0, one from -x on group 1.
+    const fromPlusX = rays.raycast({
+      origin: new Vector3(5, 0, 0),
+      direction: new Vector3(-1, 0, 0),
+      far: 20,
+    });
+    expect(fromPlusX?.face?.materialIndex).toBe(0);
+    const fromMinusX = rays.raycast({
+      origin: new Vector3(-5, 0, 0),
+      direction: new Vector3(1, 0, 0),
+      far: 20,
+    });
+    expect(fromMinusX?.face?.materialIndex).toBe(1);
+  });
+
   it("reads the material side per ray, so a bake that switches it to double-sided sees the back faces", () => {
     const root = new Group();
     const material = new MeshStandardMaterial({ side: FrontSide });

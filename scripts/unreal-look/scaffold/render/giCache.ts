@@ -25,6 +25,11 @@
 // A fixed-world bake: move a wall and bake again. Resolution is one metre, so contact-scale light is
 // the screen-space tier's job.
 import {
+  type ISurfaceCacheOptions,
+  type ISurfaceCacheReport,
+  SurfaceCache,
+} from "@threenative/core";
+import {
   Box3,
   type Color,
   Data3DTexture,
@@ -32,6 +37,7 @@ import {
   HalfFloatType,
   type Intersection,
   LinearFilter,
+  type Material,
   type Mesh,
   type MeshStandardMaterial,
   type Object3D,
@@ -106,6 +112,11 @@ export interface IGiOptions {
    * direction. Set, in metres, the cache does that and carries no surface light. Unset, it gathers radiance.
    */
   readonly skyShadowDistance?: number;
+  /**
+   * Unreal's `r.SkylightIntensityMultiplier`: a factor on the sky's radiance in the bake. Its Low tier of global
+   * illumination sets 0.8 (Engine/Config/BaseScalability.ini, `[GlobalIlluminationQuality@0]`). Unset is 1.
+   */
+  readonly skyIntensity?: number;
   /** Cast the bake's rays through `ctx.raycast` instead of the flat triangle hierarchy: the slow path, kept for an A/B. */
   readonly stockRays?: boolean;
   /**
@@ -122,6 +133,12 @@ export interface IGiOptions {
     readonly defer?: (run: () => void, gapMs: number) => void;
     readonly onConverged?: (report: IGiReport) => void;
   };
+  /**
+   * The Surface Cache (PRD-639): a ray that lands on a mapped material returns the map's texel at the hit UV, for the
+   * albedo and for the emission, instead of the material's flat colour (a loaded asset's colour factor is often white
+   * under a brick map). Unset, every hit returns the flat colour. `true` takes the cache's defaults.
+   */
+  readonly surfaceCache?: boolean | ISurfaceCacheOptions;
 }
 
 export interface IGiReport {
@@ -151,6 +168,8 @@ export interface IGiReport {
     readonly longestMs: number;
     readonly publishMs: number;
   };
+  /** What the Surface Cache held, when the bake used one. */
+  readonly surfaceCache?: ISurfaceCacheReport;
 }
 
 const CELL = 0.5;
@@ -1289,11 +1308,16 @@ export function installGi(
   const sun = options.sun;
   if (skyRadiance.current === undefined && sun === undefined && lights.length === 0)
     return undefined;
-  const sky = skyRadiance.current ?? {
+  const baked = skyRadiance.current ?? {
     data: new Float32Array(3),
     width: 1,
     height: 1,
     scale: [1, 1, 1],
+  };
+  const skyGain = options.skyIntensity ?? 1;
+  const sky = {
+    ...baked,
+    scale: baked.scale.map((c) => c * skyGain) as [number, number, number],
   };
   const started = performance.now();
   // The bake's own ray query; `stockRays` keeps the game's `ctx.raycast` for an A/B.
@@ -1366,6 +1390,46 @@ export function installGi(
     if ((object as { isMesh?: boolean }).isMesh && material?.color && material.emissive)
       surfaceOf(object);
   });
+
+  // The Surface Cache reads a map where a ray lands; a material without one returns the numbers `surfaceOf` does. The
+  // slots are taken now, per object, like `surfaceOf`: a progressive bake runs after the cache swapped each material
+  // for its node twin, and a lookup by the object's current material would miss.
+  const slotOf = new Map<number, number>();
+  const cacheMaterials: Material[] = [];
+  if (options.surfaceCache) {
+    const slotOfMaterial = new Map<Material, number>();
+    root.traverse((object) => {
+      const mesh = object as Mesh;
+      const material = mesh.material;
+      if (!(mesh as { isMesh?: boolean }).isMesh || Array.isArray(material)) return;
+      let slot = slotOfMaterial.get(material);
+      if (slot === undefined) {
+        slot = cacheMaterials.length;
+        slotOfMaterial.set(material, slot);
+        cacheMaterials.push(material);
+      }
+      slotOf.set(object.id, slot);
+    });
+  }
+  const surfaceCache =
+    options.surfaceCache && cacheMaterials.length > 0
+      ? SurfaceCache.from(
+          cacheMaterials as never,
+          options.surfaceCache === true ? {} : options.surfaceCache,
+        )
+      : undefined;
+  const sampled = { albedo: [0, 0, 0], emissive: [0, 0, 0] };
+  /** The albedo and emission a ray that landed on `hit` returns. */
+  const dataAt = (hit: Intersection): { albedo: number[]; emissive: number[] } => {
+    if (surfaceCache === undefined || hit.uv === undefined) return surfaceOf(hit.object);
+    const slot = slotOf.get(hit.object.id);
+    if (slot === undefined) return surfaceOf(hit.object);
+    surfaceCache.albedo(slot, hit.uv.x, hit.uv.y, sampled.albedo);
+    // An emitter small enough for `emitterLight` carries no emission of its own in the rays.
+    if (emitterIds.has(hit.object.id)) sampled.emissive.fill(0);
+    else surfaceCache.emissive(slot, hit.uv.x, hit.uv.y, sampled.emissive);
+    return sampled;
+  };
 
   /** One bake at the given quality. It yields only when `slice.deadline` has passed. */
   function* bake(params: IBakeParams): Generator<void, IBaked> {
@@ -1568,7 +1632,7 @@ export function installGi(
         hitNormal[0] = nx;
         hitNormal[1] = ny;
         hitNormal[2] = nz;
-        const { albedo, emissive } = surfaceOf(hit.object);
+        const { albedo, emissive } = dataAt(hit);
         // A bake without bounces keeps no surface light: `base` stays at its zeros.
         if (params.bounces > 0) {
           const lit = surface(hit.object, hitAt, hitNormal, albedo, emissive);
@@ -1856,7 +1920,8 @@ export function installGi(
       const mesh = object as Mesh;
       if (!(mesh as { isMesh?: boolean }).isMesh) return;
       const source = mesh.material as MeshStandardMaterial;
-      // Meshes that share a material keep sharing its twin.
+      // Meshes that share a material keep sharing its twin. The twin keeps the maps, or a textured wall bakes its
+      // texel and then draws its colour factor (PRD-639).
       let material = twins.get(source);
       if (material === undefined) {
         const { node, visibility } = readFor(source.roughness);
@@ -1892,6 +1957,7 @@ export function installGi(
       milliseconds: Math.round(Object.values(baked.phases).reduce((n, v) => n + v, 0)),
       phases: baked.phases,
       pass,
+      ...(surfaceCache === undefined ? {} : { surfaceCache: surfaceCache.report }),
       ...(slicing.count === 0
         ? {}
         : {
@@ -1903,6 +1969,8 @@ export function installGi(
           }),
     };
     console.info(`TN_GI_CACHE ${JSON.stringify(report)}`);
+    if (surfaceCache !== undefined && pass === "final")
+      console.info(`TN_SURFACE_CACHE ${JSON.stringify(surfaceCache.report)}`);
     return report;
   };
 

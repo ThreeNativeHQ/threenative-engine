@@ -13,6 +13,7 @@
 // you turned off. What it does not own: any colour, and any strength that is not a quality
 // tier. Those are arguments, supplied by `postprocessing.ts`, yours to change.
 
+import { RENDER_CHAIN_TIERS } from "@threenative/core";
 import {
   ACESFilmicToneMapping,
   AgXToneMapping,
@@ -72,6 +73,12 @@ function harnessLayer(): number {
   return /^L\d$/.test(layer) ? Number(layer.slice(1)) : 9;
 }
 
+/** Diagnosis: `?dn=N` runs N denoise passes over the SSGI gather at any layer, for an A/B against the tier's count. */
+function harnessDenoisePasses(): number | undefined {
+  const value = new URLSearchParams(globalThis.location?.search ?? "").get("dn");
+  return value === null ? undefined : Number(value);
+}
+
 /** Godot's `Viewport.screen_space_aa`: which post-process antialiasing smooths the frame's edges. */
 export type ScreenSpaceAA = "smaa" | "fxaa" | "disabled";
 
@@ -104,6 +111,13 @@ const TONEMAP: Record<TonemapMode, number> = {
 export interface IWorldEnvironmentOptions {
   /** World-pass MSAA samples. Omit to inherit the renderer; 0 leaves post AA in charge. */
   readonly samples?: number;
+  /**
+   * How bounce light reaches a pixel, Unreal's `r.Lumen.FinalGatherMethod` by the quality tier's name
+   * (`giPreset`). The screen-space gather runs only for `screenProbeGather`; the world cache is
+   * installed by the scene (`giCache.ts`) for `irradianceField` and `screenProbeGather`. Omit it and
+   * the harness layer decides.
+   */
+  readonly finalGatherMethod?: "none" | "irradianceField" | "screenProbeGather";
   /** Screen-space indirect diffuse light. Godot calls this `ssil_enabled`. */
   readonly ssgiEnabled?: boolean;
   readonly ssgiQuality?: SsgiQuality;
@@ -130,6 +144,11 @@ export interface IWorldEnvironmentOptions {
   readonly ssrResolutionScale?: number;
   /** Spatial denoise over the SSGI result. Off is noisier and cheaper. */
   readonly denoiseEnabled?: boolean;
+  /**
+   * Denoise passes over the SSGI gather, each turning the tap pattern by its index. The default is the render chain
+   * tier's `denoiseIterations` (high 3, medium 2, low 1): one pass left the sunlit room's walls grainy at `high`.
+   */
+  readonly giDenoisePasses?: number;
   /** Raymarched shafts. Needs `godraysLight`, and that light must cast shadows. */
   readonly godraysEnabled?: boolean;
   /** How dense the participating medium is. Higher is foggier — and the whole frame brighter. */
@@ -541,14 +560,17 @@ export class WorldEnvironment {
         `Unknown render chain tier '${String(renderChainTier)}'. Use high, medium, low, or off.`,
       );
     }
+    const finalGatherMethod =
+      options.finalGatherMethod ?? (harnessLayer() >= 7 ? "screenProbeGather" : "none");
     this.#options = {
       samples: options.samples,
       // A kit with no stages of its own is the common case, so both default to empty rather
       // than to a branch every call site has to remember.
       authoredStageNames: options.authoredStageNames ?? [],
       authoredStages: options.authoredStages ?? (() => []),
+      finalGatherMethod,
       // Harness: Unreal's global illumination enters at ladder layer L7, so the capture's layer decides.
-      ssgiEnabled: options.ssgiEnabled ?? harnessLayer() >= 7,
+      ssgiEnabled: options.ssgiEnabled ?? finalGatherMethod === "screenProbeGather",
       ssgiQuality: quality,
       ssgiIntensity: options.ssgiIntensity ?? 1,
       ssgiRadius: options.ssgiRadius ?? 4,
@@ -557,6 +579,10 @@ export class WorldEnvironment {
       ssrMaxDistance: options.ssrMaxDistance ?? 30,
       ssrResolutionScale: options.ssrResolutionScale ?? 1,
       denoiseEnabled: options.denoiseEnabled ?? true,
+      giDenoisePasses:
+        options.giDenoisePasses ??
+        harnessDenoisePasses() ??
+        RENDER_CHAIN_TIERS[renderChainTier].denoiseIterations,
       godraysEnabled: options.godraysEnabled ?? false,
       godraysDensity: options.godraysDensity ?? 0.7,
       godraysFloor: options.godraysFloor ?? 0,
@@ -760,11 +786,22 @@ export class WorldEnvironment {
       sample(texture);
       return texture;
     };
-    const giDenoise = (node: ChainNode): ChainNode =>
-      options.denoiseEnabled ? denoised(denoise(node, depth(), normal(), view)) : node;
+    const giDenoise = (node: ChainNode): ChainNode => {
+      if (!options.denoiseEnabled) return node;
+      let result = node;
+      for (let pass = 0; pass < options.giDenoisePasses; pass += 1) {
+        const filter = denoise(result, depth(), normal(), view) as unknown as {
+          index: { value: number };
+        };
+        filter.index.value = pass;
+        result = denoised(filter as unknown as ReturnType<typeof denoise>);
+      }
+      return result;
+    };
 
     let releaseBloom = (): void => {};
     let releaseAo = (): void => {};
+    let contactOcclusion: ChainNode | undefined;
     let releaseAa = (): void => {};
     const stages: ChainStage[] = [
       stage({
@@ -821,13 +858,21 @@ export class WorldEnvironment {
           // The gathered light is incident radiance (E / pi). The surface returns it times its own
           // albedo, which the scene pass writes as the `diffuseColor` target, and a metal returns none
           // of it as diffuse. `ssgiIntensity` is the game's dial on that term.
-          const occlusion = giDenoise(gi.getAONode());
+          // The owned engine's gather answers occlusion with a constant 1 (GTAO is its own stage): nothing to denoise.
+          const occlusion = wasmEngine ? gi.getAONode() : giDenoise(gi.getAONode());
           const indirect = giDenoise(gi.getGINode());
           const reflected = albedo()
             .rgb.mul(float(1).sub(metal().r))
             .mul(indirect.rgb)
             .mul(options.ssgiIntensity);
-          return base.mul(occlusion.r).add(vec4(reflected, 0));
+          // The contact term multiplied the frame before this stage ran, and the correction below is the one
+          // part of the light that frame never carried: it takes the same factor, or a hit darker than the
+          // cache subtracts more than the frame still holds and a lit floor under a sphere clips to black.
+          return base
+            .mul(occlusion.r)
+            .add(
+              vec4(contactOcclusion === undefined ? reflected : reflected.mul(contactOcclusion), 0),
+            );
         },
       }),
       stage({
@@ -853,6 +898,7 @@ export class WorldEnvironment {
           resolutionSubrect?.retain(retained, [retained._aoRenderTarget]);
           sample(contact.getTextureNode());
           releaseAo = () => {
+            contactOcclusion = undefined;
             resolutionSubrect?.release(retained);
             contact.dispose();
           };
@@ -884,6 +930,7 @@ export class WorldEnvironment {
             };
           }
           const occlusion = filter ? denoised(filter) : contact;
+          contactOcclusion = occlusion.r;
           return input.mul(occlusion.r);
         },
       }),
@@ -1280,6 +1327,7 @@ export class WorldEnvironment {
       `TN_WORLD_ENVIRONMENT:${JSON.stringify({
         denoise: options.denoiseEnabled,
         exposure: options.exposure,
+        finalGatherMethod: options.finalGatherMethod,
         marker: "TN_WORLD_ENVIRONMENT",
         screenSpaceAA: options.screenSpaceAA,
         ssgiQuality: options.ssgiQuality,
