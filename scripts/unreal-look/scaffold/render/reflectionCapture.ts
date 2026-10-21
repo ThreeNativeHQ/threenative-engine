@@ -44,7 +44,8 @@ export async function captureReflections(
       textures.push(texture);
       // Each mesh needs its own material when imported meshes share one source material.
       const source = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-      const materials = source.map((material: MeshStandardMaterial) => {
+      // installGi swaps in MeshStandardNodeMaterial, which shares these fields but not the class.
+      const materials = (source as MeshStandardMaterial[]).map((material) => {
         if (!(material.metalness >= 0.9 && material.roughness <= 0.3)) return material;
         const local = used.has(material) ? material.clone() : material;
         used.add(material);

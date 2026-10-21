@@ -106,6 +106,7 @@
     "@playwright/test": "1.62.1",
     "@types/node": "20.19.43",
     "@types/pngjs": "6.0.5",
+    "@types/three": "catalog:",
     "@vitest/coverage-v8": "catalog:",
     "draco3dgltf": "^1.5.7",
     "es-module-lexer": "catalog:",

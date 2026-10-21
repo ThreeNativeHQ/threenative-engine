@@ -709,7 +709,7 @@ function irradianceAt(
     // (sun60) and 0.106 -> 0.080 (sun15), the worst patch 1.36x -> 1.24x, and a flat wall is as smooth.
     const at = position
       .add(n.mul(grid.cell * 0.5))
-      .sub(grid.origin)
+      .sub(vec3(grid.origin))
       .div(grid.cell);
     const [ax, ay, az] = [
       clamp(at.x, 0.5, grid.nx - 0.5).sub(0.5),
