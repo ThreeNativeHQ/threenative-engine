@@ -25,11 +25,12 @@ import {
   Vector3,
 } from "three";
 import { EMISSIVE_UNITS } from "../render/atmosphere.js";
+import { installGi } from "../render/giCache.js";
 import { setupLighting } from "../render/lighting.js";
 import { setupPost } from "../render/postprocessing.js";
 import { qualityPreset } from "../render/quality.js";
+import { captureReflections } from "../render/reflectionCapture.js";
 import { SUN_DIRECTION, setupSky } from "../render/sky.js";
-import { installGi } from "../render/giCache.js";
 import { WorldEnvironment } from "../render/worldEnvironment.js";
 import type { GameState } from "../state.js";
 import { Play } from "./Play.js";
@@ -65,6 +66,7 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
   #model: Group | undefined;
   #sky: Texture | undefined;
   #dispose: (() => void) | undefined;
+  #reflectionsDispose: (() => void) | undefined;
 
   override async load(ctx: GameCtx): Promise<void> {
     const file = LAYER === "ID" ? "unreal-reference/scene-id.glb" : "unreal-reference/scene.glb";
@@ -87,6 +89,7 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
     const scene = ctx.scene;
     const camera = ctx.camera as PerspectiveCamera;
     const raw = ctx.renderer.raw as unknown as { toneMapping: number };
+    let reflections: Promise<() => void> | undefined;
 
     if (level <= 0) {
       // ID and L0: unlit base colour, no post. Unreal: ShowFlag.Lighting 0, post off.
@@ -131,7 +134,10 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
         const reach = bounds.radius;
         key.target.position.copy(bounds.center);
         scene.add(key.target);
-        key.position.copy(SUN_DIRECTION).multiplyScalar(reach + 1).add(bounds.center);
+        key.position
+          .copy(SUN_DIRECTION)
+          .multiplyScalar(reach + 1)
+          .add(bounds.center);
         // The native atlas holds every page of every level, then every level's mover map, in one
         // square texture that must fit the device's 8192 texel limit: four 2048 levels take 4224
         // and four 512 mover maps 2064 more. The scene has no moving caster.
@@ -143,7 +149,13 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
           });
       }
       if (level >= 2) {
-        setupSky(scene, sky, ctx.renderer.softwareAdapter !== undefined, level >= 3, level >= 4 && !OFF.has("clouds"));
+        setupSky(
+          scene,
+          sky,
+          ctx.renderer.softwareAdapter !== undefined,
+          level >= 3,
+          level >= 4 && !OFF.has("clouds"),
+        );
         if (level < 3) {
           scene.fog = null;
           (scene as unknown as { fogNode: unknown }).fogNode = null;
@@ -161,6 +173,12 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
           ...(level < 7 ? { skyShadowDistance: 10 } : {}),
           sun: { color: key.color, intensity: key.intensity, direction: SUN_DIRECTION },
         });
+      if (TUNED && level >= 8)
+        reflections = captureReflections(
+          ctx.renderer.raw as unknown as Parameters<typeof captureReflections>[0],
+          scene,
+          model,
+        );
       if (level >= 9) {
         // setupPost reads the `high` preset by reference, so the ablation switches go there.
         for (const name of OFF) Object.assign(qualityPreset("high"), STAGE_OFF[name]);
@@ -183,11 +201,13 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
     }
 
     const target = new Vector3();
-    (window as unknown as { __tnRef: unknown }).__tnRef = {
+    const reference = {
       layer: LAYER,
       // Only the owned engine's renderer carries `info.engine`; the capture refuses anything else.
       engine:
-        "engine" in (ctx.renderer.raw as unknown as { info: object }).info ? "threenative" : "threejs",
+        "engine" in (ctx.renderer.raw as unknown as { info: object }).info
+          ? "threenative"
+          : "threejs",
       pose(pose: Pose): void {
         const aspect = innerWidth / innerHeight;
         const half = (pose.hfovDeg * Math.PI) / 360;
@@ -200,10 +220,29 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
         camera.updateProjectionMatrix();
       },
     };
+    const publishReference = () => {
+      (window as unknown as { __tnRef: unknown }).__tnRef = reference;
+    };
+    if (reflections === undefined) publishReference();
+    else {
+      const ready = reflections.then(async (dispose) => {
+        this.#reflectionsDispose = dispose;
+        const renderer = ctx.renderer.raw as unknown as {
+          prepareEnvironmentAsync?(scene: unknown, camera: unknown): Promise<boolean>;
+        };
+        if ((await renderer.prepareEnvironmentAsync?.(scene, camera)) === false)
+          throw new Error("TN_REFLECTION_CAPTURE_PMREM");
+        publishReference();
+      });
+      ctx.startup.hold("reflection-capture", ready, 180_000);
+      void ready.catch((error) => console.error("TN_REFLECTION_CAPTURE_FAILED", error));
+    }
     return () => undefined;
   }
 
   override exit(ctx: GameCtx): void {
+    this.#reflectionsDispose?.();
+    this.#reflectionsDispose = undefined;
     this.#dispose?.();
     this.#dispose = undefined;
     super.exit(ctx);

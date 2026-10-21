@@ -1,3 +1,4 @@
+#include "engine/renderer/probes/capture.h"
 // tn-native-engine-player-v8 (PRD-531 phase 3): the native-engine desktop player with a game on V8.
 // It links the V8 adapter, so it is a JS artifact and never an engine target; the JS-free player
 // stays tn-native-engine-player. The window, loop, mailbox, render and screenshot path are the same
@@ -288,6 +289,7 @@ class V8Game {
     double frameClockMs_ = 0;
     static void setPost(const v8::FunctionCallbackInfo<v8::Value>& info);
     static void renderTarget(const v8::FunctionCallbackInfo<v8::Value>& info);
+    static void captureFace(const v8::FunctionCallbackInfo<v8::Value>& info);
     static void readTarget(const v8::FunctionCallbackInfo<v8::Value>& info);
     static void readFrame(const v8::FunctionCallbackInfo<v8::Value>& info);
     /** PRD-620: `tn.compute(node | [node])`, `tn.readStorage(attribute)` and `tn.deleteStorage(attribute)`. */
@@ -822,6 +824,43 @@ void V8Game::readTarget(const v8::FunctionCallbackInfo<v8::Value>& info) {
     else if (started != GpuStatus::Ok) reject("TN_NATIVE_READ_TARGET: region outside the target");
 }
 
+// One real-scene HDR reflection face, using the probe renderer on the player's device.
+void V8Game::captureFace(const v8::FunctionCallbackInfo<v8::Value>& info) {
+    auto& game = *static_cast<V8Game*>(info.Data().As<v8::External>()->Value());
+    auto* isolate = info.GetIsolate();
+    auto ctx = isolate->GetCurrentContext();
+    auto resolver = v8::Promise::Resolver::New(ctx).ToLocalChecked();
+    info.GetReturnValue().Set(resolver->GetPromise());
+    const auto reject = [&](const std::string& message) {
+        resolver->Reject(ctx, v8::Exception::Error(v8str(isolate, message))).Check();
+    };
+    auto* root = info.Length() == 6 ? game.engineObject(info[0], "Object3D") : nullptr;
+    if (!root || !game.renderer_) return reject("TN_REFLECTION_CAPTURE_SCENE");
+    double values[5];
+    for (int i = 0; i < 5; ++i) {
+        if (!info[i + 1]->IsNumber()) return reject("TN_REFLECTION_CAPTURE_INPUT");
+        values[i] = info[i + 1].As<v8::Number>()->Value();
+        if (!std::isfinite(values[i])) return reject("TN_REFLECTION_CAPTURE_INPUT");
+    }
+    if (values[3] < 1 || values[3] > 1024 || std::floor(values[3]) != values[3] ||
+        values[4] < 0 || values[4] >= 6 || std::floor(values[4]) != values[4])
+        return reject("TN_REFLECTION_CAPTURE_INPUT");
+    auto pending = std::make_shared<v8::Global<v8::Promise::Resolver>>(isolate, resolver);
+    game.idleRenderer();
+    game.flushCompute();
+    try {
+        const auto started = probes::captureFace(*game.renderer_, *static_cast<Object3D*>(root->ptr.get()),
+            Vector3{values[0], values[1], values[2]}, uint32_t(values[3]), uint32_t(values[4]), 0.01, 2000,
+            [&game, pending](GpuStatus status, std::vector<float> rgb) {
+                std::vector<uint8_t> bytes(rgb.size() * sizeof(float));
+                std::memcpy(bytes.data(), rgb.data(), bytes.size());
+                game.settleRead(*pending, status, bytes);
+            });
+        if (started == GpuStatus::Pending) resolver->Resolve(ctx, v8::Null(isolate)).Check();
+        else if (started != GpuStatus::Ok) reject("TN_REFLECTION_CAPTURE_FACE");
+    } catch (const std::exception& error) { reject(error.what()); }
+}
+
 // The scene walk stays on the isolate's thread; only owned pipeline descriptors reach workers.
 void V8Game::compileAsync(const v8::FunctionCallbackInfo<v8::Value>& info) {
     auto& game = *static_cast<V8Game*>(info.Data().As<v8::External>()->Value());
@@ -1119,6 +1158,7 @@ bool V8Game::start(const std::string& path, std::string& error) {
     host->Set(ctx, v8str(isolate_, "setPostGraph"), v8::Function::New(ctx, &setPost, self).ToLocalChecked()).Check();
     host->Set(ctx, v8str(isolate_, "renderTarget"), v8::Function::New(ctx, &renderTarget, self).ToLocalChecked()).Check();
     host->Set(ctx, v8str(isolate_, "compileAsync"), v8::Function::New(ctx, &compileAsync, self).ToLocalChecked()).Check();
+    host->Set(ctx, v8str(isolate_, "captureFace"), v8::Function::New(ctx, &captureFace, self).ToLocalChecked()).Check();
     host->Set(ctx, v8str(isolate_, "readTarget"), v8::Function::New(ctx, &readTarget, self).ToLocalChecked()).Check();
     host->Set(ctx, v8str(isolate_, "readFrame"), v8::Function::New(ctx, &readFrame, self).ToLocalChecked()).Check();
     host->Set(ctx, v8str(isolate_, "compute"), v8::Function::New(ctx, &compute, self).ToLocalChecked()).Check();

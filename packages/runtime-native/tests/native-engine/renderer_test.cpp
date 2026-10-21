@@ -893,6 +893,7 @@ void emissivePass(bool requirePixels) {
             pixels = std::move(bytes); done = true;
         });
         CHECK(status == GpuStatus::Ok);
+        if (status != GpuStatus::Ok) continue;
         for (int i = 0; i < 4000 && !done; ++i) {
             renderer.poll(); events.drain();
             if (!done) std::this_thread::sleep_for(std::chrono::milliseconds(1));
