@@ -46,6 +46,40 @@ PRD's "Tried and rejected" or "Decisions" section, for example
 
 ## Levers
 
+### 2026-10-21 — GI bake rays go through one flat world-space triangle BVH — KEEP
+- Where: Unreal-look harness (game layer), `scripts/unreal-look/scaffold/render/bakeRays.ts` and `giCache.ts`, commit `c02b5ce7b` on `lane/perf`.
+- Result: exterior L9 bake in the browser 248.8 / 231.6 s → 17.9 / 11.8 s on the same page; trace phase 221 s → 14 s. Node, 13,182 triangles: `ScenePicker` with the old `weightsAt` 33.3 s, stock `Raycaster` 24.5 s, `bakeRays` 12.4 s, `bakeRays` with the allocation-free `weightsAt` about 5 s. Spec `unreal-look-bake-rays.spec.ts` pins hits against the stock raycaster.
+- Cause: the bake cast its rays through the game's `ctx.raycast`, which tests meshes one by one per ray. The bake was 87 to 92% of L9 startup (PRD-636), so the trace phase dominated.
+- Insight: after the BVH the probe-weight lookup (`weightsAt`) was the next cost: removing its per-call allocations cut the Node bake from 12.4 s to about 5 s.
+
+### 2026-10-21 — The flat bake rays expand instanced meshes instead of falling back to `ctx.raycast` — KEEP
+- Where: `scaffold/render/bakeRays.ts` (`instanceFrame`, `MAX_TRIANGLES`), spec `unreal-look-bake-rays.spec.ts` (red against the previous file, green now).
+- Result: cornell L7 in the browser, same page: bake 125.3 s in one 116 s task (trace 98.8 s, stock rays) → 16.2 s (trace 13.7 s) and a preview 13 s after load on a software adapter. The preview and the final cache now come in slices; before, the page stayed blank for the whole bake.
+- Cause: the asset cook merges equal meshes into `EXT_mesh_gpu_instancing` (cornell: `instance 1 batch(es) / 2 instance(s)`), the engine loads an `InstancedMesh`, and `bakeRays` refused every instanced mesh. A refusal also switches the progressive bake off, because slicing needs the flat rays. The refusal was silent; `TN_GI_STOCK_RAYS` now names the reason.
+- Insight: a fallback that is 8 times slower and turns off the other lever must say so on the console. The scene that exposed it was a 96-triangle box, not a heavy one.
+
+### 2026-10-21 — The GI bake runs in slices after the first frame (progressive) — KEEP
+- Where: `giCache.ts` (`progressive` option, `pass: "pending" | "preview" | "final"`), `Reference.ts.in`, commits `5c36185a0`, `bf0595eb5`.
+- Result: sunlit-room L6, Playwright Chromium on NVIDIA, host load about 3.5: first frame 9.1 s against 16.0 s one-shot, longest task after the first frame 77 ms against 12.4 s, converged field at 31 s against 13.4 s. The settled frames match the one-shot frames with a pixel diff of exactly 0. Visual judge NEUTRAL.
+- Cause: the one-shot bake was one synchronous job inside the scene `enter`, so the page showed nothing for the whole bake.
+- Insight: a convergence time that is longer than the one-shot time is the price of a responsive page. Report both numbers and the first-frame time together.
+
+### 2026-10-21 — Bake slices are paced by `setTimeout`, not by `requestAnimationFrame` — KEEP
+- Where: `giCache.ts` (`defer`, a slice of `budgetMs` and an idle gap of equal length), commit `df03ca89b`.
+- Result: the owner's Brave 153 on `:0` showed rAF at about 1.1 per second although the main thread was idle and the GPU was at 13%. With one slice per frame the preview took 89 s. With the clock pacing the preview lands 4 s after load and the bake converges in 36 to 50 s (cornell L7 and sunlit-room L6).
+- Cause: the compositor throttles an off-screen or occluded window, so presented frames are not a clock. Xvfb runs at about 10 fps and hid the fault.
+- Insight: pace background work by the clock and check it in the browser the owner uses, not only in the harness browser.
+
+### 2026-10-21 — Cloud noise textures: hoisted lattice weights, no `Math.min` — KEEP
+- Where: `scaffold/render/clouds.ts` (`lattice1d`, `valueNoise`, `worleyInverted`), commit `248a1b991`.
+- Result: Node, 4 seeds, loaded host: 1483 / 1280 / 1350 / 1298 ms → 672 / 566 / 594 / 562 ms (2.3×). Output is bit-identical: the spec `unreal-look-cloud-textures.spec.ts` pins the sha256 of the seed-631 textures and passed before and after.
+- Cause: the per-texel wrap and weight work ran once per axis per neighbour.
+
+### 2026-10-21 — Native standard program refused the `envMap` slot — FIX (engine)
+- Where: `packages/runtime-native/src/engine/renderer/render_database.cpp`, commit `a47d9acf3`, native test `env_map_slot_is_read` (red before, green after).
+- Result: L8 and L9 pages no longer lose the renderer (`TN_NATIVE_MATERIAL_UNSPECIFIED envMap is not read`, then `TN_WASM_RENDERER_LOST`).
+- Cause: the refusal loop skipped `map` and `normalMap` only, but the reflection capture sets `envMap` on metal materials.
+
 ### 2026-10-15 — Game thread pinned to the CPPC top-ranked core — REJECT
 - Where: PRD-610 AC-20, commit `6878c53ff` (superseded by `61c7c1d06` and `c4be636dc`, same `ThreadPlacement` in `player/run.cpp`).
 - Result: `q-place-auto-1` 10.65 / 11.07 / 15.56 ms against `q-place-off-1` 8.67 / 9.26 / 10.98 ms (IPC 0.46); load 12 to 16.

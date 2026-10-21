@@ -4,11 +4,16 @@ import {
   DoubleSide,
   FrontSide,
   Group,
+  InstancedMesh,
   type Intersection,
+  Matrix3,
+  Matrix4,
   Mesh,
   MeshStandardMaterial,
   PlaneGeometry,
+  Quaternion,
   Raycaster,
+  SkinnedMesh,
   SphereGeometry,
   Vector3,
 } from "three";
@@ -115,11 +120,79 @@ describe("bakeRays", () => {
     expect(rays.raycast(ray)).toBeUndefined();
   });
 
+  it("expands an instanced mesh: every copy is hit as three hits it, and the shading's normal follows the copy", () => {
+    const root = new Group();
+    const copies = 6;
+    const instanced = new InstancedMesh(
+      new BoxGeometry(1, 1, 1),
+      new MeshStandardMaterial(),
+      copies,
+    );
+    const next = lcg(3);
+    const placed = new Matrix4();
+    for (let i = 0; i < copies; i += 1) {
+      placed.compose(
+        new Vector3(next() * 6 - 3, next() * 3, next() * 6 - 3),
+        new Quaternion().setFromAxisAngle(
+          new Vector3(next(), next(), next()).normalize(),
+          next() * 6,
+        ),
+        // One copy is mirrored and every copy is stretched unevenly.
+        new Vector3(next() + 0.5, i === 2 ? -(next() + 0.5) : next() + 0.5, next() + 0.5),
+      );
+      instanced.setMatrixAt(i, placed);
+    }
+    root.add(instanced);
+    root.rotation.set(0.4, 1.1, -0.3);
+    root.position.set(1, 0.5, -2);
+    root.updateMatrixWorld(true);
+    const reference = stock(root);
+    const rays = bakeRays(root);
+    if (rays === undefined) throw new Error("flat rays expected for an instanced mesh");
+    const next2 = lcg(5);
+    const origin = new Vector3();
+    const direction = new Vector3();
+    const toWorld = new Vector3();
+    let hits = 0;
+    for (let i = 0; i < 3000; i += 1) {
+      origin.set(next2() * 10 - 5, next2() * 5 - 1, next2() * 10 - 5);
+      direction.set(next2() - 0.5, next2() - 0.5, next2() - 0.5).normalize();
+      const want = reference.raycast({ origin, direction, far: 1000 }) as
+        | (Intersection & { instanceId?: number })
+        | undefined;
+      const got = rays.raycast({ origin, direction, far: 1000 });
+      if (want === undefined) {
+        expect(got, `ray ${i} should miss`).toBeUndefined();
+        continue;
+      }
+      hits += 1;
+      expect(got, `ray ${i} should hit`).toBeDefined();
+      expect(got?.distance).toBeCloseTo(want.distance, 4);
+      expect(got?.object).toBe(instanced);
+      // The world normal of the copy's face: the copy's inverse transpose on the geometry's normal, then the mesh's matrix.
+      const copy = new Matrix4();
+      instanced.getMatrixAt(want.instanceId as number, copy);
+      const expected = (want.face?.normal as Vector3)
+        .clone()
+        .applyMatrix3(normalOf(copy))
+        .normalize()
+        .transformDirection(instanced.matrixWorld);
+      toWorld
+        .copy(got?.face?.normal as Vector3)
+        .transformDirection((got?.object as Mesh).matrixWorld);
+      expect(toWorld.distanceTo(expected)).toBeLessThan(1e-4);
+    }
+    expect(hits).toBeGreaterThan(100);
+  });
+
   it("keeps the stock query for a scene it cannot flatten", () => {
     const root = new Group();
-    const mesh = new Mesh(new BoxGeometry(1, 1, 1), new MeshStandardMaterial());
-    (mesh as unknown as { isInstancedMesh: boolean }).isInstancedMesh = true;
-    root.add(mesh);
+    root.add(new SkinnedMesh(new BoxGeometry(1, 1, 1), new MeshStandardMaterial()));
     expect(bakeRays(root)).toBeUndefined();
   });
 });
+
+/** The inverse transpose of a matrix's upper 3 x 3: the matrix that carries a normal with the surface. */
+function normalOf(matrix: Matrix4) {
+  return new Matrix3().getNormalMatrix(matrix);
+}

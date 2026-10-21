@@ -1,5 +1,5 @@
-import type { Intersection, Material, Mesh, Object3D } from "three";
-import { Vector3 } from "three";
+import type { InstancedMesh, Intersection, Material, Mesh, Object3D } from "three";
+import { Matrix4, Vector3 } from "three";
 import type { IRayContext } from "./giCache.js";
 
 /**
@@ -13,6 +13,8 @@ import type { IRayContext } from "./giCache.js";
  */
 const LEAF = 4;
 const PAD = 1e-4;
+/** An instanced mesh is expanded into world-space triangles: past this many, the bake keeps the stock query. */
+const MAX_TRIANGLES = 4_000_000;
 
 /** The flat query, with a switch that makes every material double-sided for the rays that follow. */
 export interface IFlatRays extends IRayContext {
@@ -24,10 +26,49 @@ export function bakeRays(root: Object3D): IFlatRays | undefined {
   return build(root);
 }
 
+/**
+ * Writes instance `instance`'s world matrix (the mesh's times its own) into `world`, and returns the inverse transpose
+ * of the instance's 3 x 3: its columns are the cross products of the other two columns over the determinant.
+ */
+function instanceFrame(
+  mesh: InstancedMesh,
+  instance: number,
+  scratch: Matrix4,
+  world: Float64Array,
+): number[] {
+  mesh.getMatrixAt(instance, scratch);
+  const i = scratch.elements;
+  const base = mesh.matrixWorld.elements;
+  for (let c = 0; c < 4; c += 1)
+    for (let r = 0; r < 4; r += 1) {
+      let sum = 0;
+      for (let k = 0; k < 4; k += 1) sum += (base[k * 4 + r] ?? 0) * (i[c * 4 + k] ?? 0);
+      world[c * 4 + r] = sum;
+    }
+  const [a0, a1, a2] = [0, 4, 8].map((o) => [i[o] ?? 0, i[o + 1] ?? 0, i[o + 2] ?? 0]) as [
+    number[],
+    number[],
+    number[],
+  ];
+  const cross = (u: number[], v: number[]) => [
+    (u[1] ?? 0) * (v[2] ?? 0) - (u[2] ?? 0) * (v[1] ?? 0),
+    (u[2] ?? 0) * (v[0] ?? 0) - (u[0] ?? 0) * (v[2] ?? 0),
+    (u[0] ?? 0) * (v[1] ?? 0) - (u[1] ?? 0) * (v[0] ?? 0),
+  ];
+  const [c0, c1, c2] = [cross(a1, a2), cross(a2, a0), cross(a0, a1)] as [
+    number[],
+    number[],
+    number[],
+  ];
+  const det =
+    (a0[0] ?? 0) * (c0[0] ?? 0) + (a0[1] ?? 0) * (c0[1] ?? 0) + (a0[2] ?? 0) * (c0[2] ?? 0);
+  return [...c0, ...c1, ...c2].map((v) => v / (det === 0 ? 1 : det));
+}
+
 function build(root: Object3D): IFlatRays | undefined {
   root.updateMatrixWorld(true);
   const meshes: Mesh[] = [];
-  let unsupported = false;
+  let unsupported: string | undefined;
   root.traverse((object) => {
     const mesh = object as Mesh & {
       isInstancedMesh?: boolean;
@@ -37,22 +78,36 @@ function build(root: Object3D): IFlatRays | undefined {
     if (!mesh.isMesh) return;
     // Deformed meshes keep the stock path: their rest positions are not where the ray should hit.
     if (
-      mesh.isInstancedMesh === true ||
       mesh.isSkinnedMesh === true ||
       mesh.isBatchedMesh === true ||
       (mesh.morphTargetInfluences?.length ?? 0) > 0
     )
-      unsupported = true;
+      unsupported ??= mesh.name || mesh.type;
     if (mesh.layers.isEnabled(0)) meshes.push(mesh);
   });
-  if (unsupported) return undefined;
+  if (unsupported !== undefined) {
+    // The bake then casts through `ctx.raycast` and cannot be sliced: say so, it is 10 times slower.
+    console.warn(
+      `TN_GI_STOCK_RAYS the mesh '${unsupported}' is deformed: the bake runs in one call`,
+    );
+    return undefined;
+  }
 
+  // An instanced mesh counts once per instance: the hierarchy holds every copy in world space.
+  const instancesOf = (mesh: Mesh): number => {
+    const instanced = mesh as Partial<InstancedMesh>;
+    return instanced.isInstancedMesh === true ? (instanced.count ?? 0) : 1;
+  };
   let count = 0;
   for (const mesh of meshes) {
     const index = mesh.geometry.index;
     const position = mesh.geometry.attributes.position;
     if (position === undefined) continue;
-    count += Math.floor((index?.count ?? position.count) / 3);
+    count += Math.floor((index?.count ?? position.count) / 3) * instancesOf(mesh);
+  }
+  if (count > MAX_TRIANGLES) {
+    console.warn(`TN_GI_STOCK_RAYS ${count} triangles after instancing: the bake runs in one call`);
+    return undefined;
   }
   // Per triangle: three world-space corners, the local face normal, the owner mesh and its material slot.
   const corners = new Float64Array(count * 9);
@@ -60,69 +115,99 @@ function build(root: Object3D): IFlatRays | undefined {
   const owner = new Uint32Array(count);
   const slot = new Uint16Array(count);
   let filled = 0;
+  const scratch = new Matrix4();
+  const world = new Float64Array(16);
   meshes.forEach((mesh, meshIndex) => {
     const geometry = mesh.geometry;
     const position = geometry.attributes.position;
     if (position === undefined) return;
     const index = geometry.index;
-    const m = mesh.matrixWorld.elements;
-    // A mirroring matrix reverses the winding the ray test culls by: restore it.
-    const mirrored =
-      (m[0] ?? 0) * ((m[5] ?? 0) * (m[10] ?? 0) - (m[6] ?? 0) * (m[9] ?? 0)) -
-        (m[4] ?? 0) * ((m[1] ?? 0) * (m[10] ?? 0) - (m[2] ?? 0) * (m[9] ?? 0)) +
-        (m[8] ?? 0) * ((m[1] ?? 0) * (m[6] ?? 0) - (m[2] ?? 0) * (m[5] ?? 0)) <
-      0;
+    const instanced = (mesh as Partial<InstancedMesh>).isInstancedMesh === true;
     const groups = geometry.groups;
     const local = [0, 0, 0, 0, 0, 0, 0, 0, 0];
     const triangles = Math.floor((index?.count ?? position.count) / 3);
-    for (let t = 0; t < triangles; t += 1) {
-      for (let k = 0; k < 3; k += 1) {
-        const v = index === null ? t * 3 + k : index.getX(t * 3 + k);
-        local[k * 3] = position.getX(v);
-        local[k * 3 + 1] = position.getY(v);
-        local[k * 3 + 2] = position.getZ(v);
+    for (let instance = 0, copies = instancesOf(mesh); instance < copies; instance += 1) {
+      // The copy's world matrix is the mesh's times its own; its rotation also turns the local face normal, because
+      // the shading reads that normal through the mesh's matrix alone (`hit.object` is the whole instanced mesh).
+      const cofactor = instanced
+        ? instanceFrame(mesh as InstancedMesh, instance, scratch, world)
+        : undefined;
+      const m = instanced ? world : mesh.matrixWorld.elements;
+      // A mirroring matrix reverses the winding the ray test culls by: restore it.
+      const mirrored =
+        (m[0] ?? 0) * ((m[5] ?? 0) * (m[10] ?? 0) - (m[6] ?? 0) * (m[9] ?? 0)) -
+          (m[4] ?? 0) * ((m[1] ?? 0) * (m[10] ?? 0) - (m[2] ?? 0) * (m[9] ?? 0)) +
+          (m[8] ?? 0) * ((m[1] ?? 0) * (m[6] ?? 0) - (m[2] ?? 0) * (m[5] ?? 0)) <
+        0;
+      for (let t = 0; t < triangles; t += 1) {
+        for (let k = 0; k < 3; k += 1) {
+          const v = index === null ? t * 3 + k : index.getX(t * 3 + k);
+          local[k * 3] = position.getX(v);
+          local[k * 3 + 1] = position.getY(v);
+          local[k * 3 + 2] = position.getZ(v);
+        }
+        const [ax, ay, az, bx, by, bz, cx, cy, cz] = local as [
+          number,
+          number,
+          number,
+          number,
+          number,
+          number,
+          number,
+          number,
+          number,
+        ];
+        // Three's Triangle.getNormal: (c - b) x (a - b), normalised.
+        const [ux, uy, uz] = [cx - bx, cy - by, cz - bz];
+        const [wx, wy, wz] = [ax - bx, ay - by, az - bz];
+        let [nx, ny, nz] = [uy * wz - uz * wy, uz * wx - ux * wz, ux * wy - uy * wx];
+        const length = Math.hypot(nx, ny, nz);
+        if (length > 0) [nx, ny, nz] = [nx / length, ny / length, nz / length];
+        if (cofactor !== undefined) {
+          const [c0, c1, c2, c3, c4, c5, c6, c7, c8] = cofactor as [
+            number,
+            number,
+            number,
+            number,
+            number,
+            number,
+            number,
+            number,
+            number,
+          ];
+          [nx, ny, nz] = [
+            c0 * nx + c3 * ny + c6 * nz,
+            c1 * nx + c4 * ny + c7 * nz,
+            c2 * nx + c5 * ny + c8 * nz,
+          ];
+          const turned = Math.hypot(nx, ny, nz);
+          if (turned > 0) [nx, ny, nz] = [nx / turned, ny / turned, nz / turned];
+        }
+        const o = filled * 9;
+        for (let k = 0; k < 3; k += 1) {
+          const [x, y, z] = [local[k * 3] ?? 0, local[k * 3 + 1] ?? 0, local[k * 3 + 2] ?? 0];
+          // Swapping corners 1 and 2 restores the local winding under a mirror.
+          const target = mirrored && k > 0 ? 3 - k : k;
+          corners[o + target * 3] =
+            (m[0] ?? 0) * x + (m[4] ?? 0) * y + (m[8] ?? 0) * z + (m[12] ?? 0);
+          corners[o + target * 3 + 1] =
+            (m[1] ?? 0) * x + (m[5] ?? 0) * y + (m[9] ?? 0) * z + (m[13] ?? 0);
+          corners[o + target * 3 + 2] =
+            (m[2] ?? 0) * x + (m[6] ?? 0) * y + (m[10] ?? 0) * z + (m[14] ?? 0);
+        }
+        normals[filled * 3] = nx;
+        normals[filled * 3 + 1] = ny;
+        normals[filled * 3 + 2] = nz;
+        owner[filled] = meshIndex;
+        let materialIndex = 0;
+        if (Array.isArray(mesh.material)) {
+          const first = t * 3;
+          const group = groups.find((g) => first >= g.start && first < g.start + g.count);
+          materialIndex = group?.materialIndex ?? 0;
+        }
+        slot[filled] = materialIndex;
+        filled += 1;
       }
-      const [ax, ay, az, bx, by, bz, cx, cy, cz] = local as [
-        number,
-        number,
-        number,
-        number,
-        number,
-        number,
-        number,
-        number,
-        number,
-      ];
-      // Three's Triangle.getNormal: (c - b) x (a - b), normalised.
-      const [ux, uy, uz] = [cx - bx, cy - by, cz - bz];
-      const [wx, wy, wz] = [ax - bx, ay - by, az - bz];
-      let [nx, ny, nz] = [uy * wz - uz * wy, uz * wx - ux * wz, ux * wy - uy * wx];
-      const length = Math.hypot(nx, ny, nz);
-      if (length > 0) [nx, ny, nz] = [nx / length, ny / length, nz / length];
-      const o = filled * 9;
-      for (let k = 0; k < 3; k += 1) {
-        const [x, y, z] = [local[k * 3] ?? 0, local[k * 3 + 1] ?? 0, local[k * 3 + 2] ?? 0];
-        // Swapping corners 1 and 2 restores the local winding under a mirror.
-        const target = mirrored && k > 0 ? 3 - k : k;
-        corners[o + target * 3] =
-          (m[0] ?? 0) * x + (m[4] ?? 0) * y + (m[8] ?? 0) * z + (m[12] ?? 0);
-        corners[o + target * 3 + 1] =
-          (m[1] ?? 0) * x + (m[5] ?? 0) * y + (m[9] ?? 0) * z + (m[13] ?? 0);
-        corners[o + target * 3 + 2] =
-          (m[2] ?? 0) * x + (m[6] ?? 0) * y + (m[10] ?? 0) * z + (m[14] ?? 0);
-      }
-      normals[filled * 3] = nx;
-      normals[filled * 3 + 1] = ny;
-      normals[filled * 3 + 2] = nz;
-      owner[filled] = meshIndex;
-      let materialIndex = 0;
-      if (Array.isArray(mesh.material)) {
-        const first = t * 3;
-        const group = groups.find((g) => first >= g.start && first < g.start + g.count);
-        materialIndex = group?.materialIndex ?? 0;
-      }
-      slot[filled] = materialIndex;
-      filled += 1;
     }
   });
 
