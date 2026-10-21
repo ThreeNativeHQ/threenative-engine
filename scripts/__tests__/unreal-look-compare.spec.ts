@@ -16,6 +16,7 @@ import {
   masks,
   parseArgs,
   quantiles,
+  readLocks,
   runCheck,
   runComparison,
   seedLocks,
@@ -432,6 +433,17 @@ describe("Unreal reference comparison", () => {
         expect(() => runCheck({ referenceDir: locked(locks) })).toThrow(
           /^TN_UNREAL_LOOK_(BAD_INPUT|MISSING_CELL)/,
         );
+    });
+    it("re-seeds only the --layer layers and keeps the other locks", () => {
+      const root = locked([lock({ layer: "L2", since: "old0000" }), lock({ since: "old0000" })]);
+      writeFileSync(
+        path.join(root, "thresholds.json"),
+        JSON.stringify({ layers: { L1: { dP50: 100 } } }),
+      );
+      runComparison({ referenceDir: root, layers: ["L1"], writeLocks: "new1234" });
+      const after = readLocks(path.join(root, "parity-locks.json"));
+      expect(after.filter((l) => l.layer === "L2").map((l) => l.since)).toEqual(["old0000"]);
+      expect(after.filter((l) => l.layer === "L1").map((l) => l.since)).toEqual(["new1234"]);
     });
     it("seeds only the cells and metrics that hold", () => {
       const root = locked([lock()]);

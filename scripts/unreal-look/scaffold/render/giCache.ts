@@ -60,6 +60,7 @@ import {
   vec3,
 } from "three/tsl";
 import { MeshStandardNodeMaterial, type Node } from "three/webgpu";
+import { bakeRays } from "./bakeRays.js";
 
 /** What the bake needs of the game's context: the scene ray query (`ICtx.raycast`). */
 export interface IRayContext {
@@ -105,6 +106,8 @@ export interface IGiOptions {
    * direction. Set, in metres, the cache does that and carries no surface light. Unset, it gathers radiance.
    */
   readonly skyShadowDistance?: number;
+  /** Cast the bake's rays through `ctx.raycast` instead of the flat triangle hierarchy: the slow path, kept for an A/B. */
+  readonly stockRays?: boolean;
 }
 
 export interface IGiReport {
@@ -117,6 +120,8 @@ export interface IGiReport {
   readonly solid: number;
   readonly bounces: number;
   readonly milliseconds: number;
+  /** Milliseconds per bake phase, in order, so a cost is attributed before it is cut. */
+  readonly phases: Readonly<Record<string, number>>;
 }
 
 const CELL = 0.5;
@@ -313,32 +318,46 @@ const cornerWeight = new Float64Array(8);
  */
 function weightsAt(field: IField, point: Vector3, sees?: (probe: number) => boolean): void {
   const { grid } = field;
-  const dims = [grid.nx, grid.ny, grid.nz];
-  const f = [
-    (point.x - grid.origin.x) / grid.cell - 0.5,
-    (point.y - grid.origin.y) / grid.cell - 0.5,
-    (point.z - grid.origin.z) / grid.cell - 0.5,
-  ].map((v, a) => Math.min((dims[a] ?? 1) - 1, Math.max(0, v)));
-  const lo = f.map((v) => Math.floor(v));
-  const t = f.map((v, a) => v - (lo[a] ?? 0));
-  const stride = [1, grid.nx, grid.nx * grid.ny];
-  const coordinate = (corner: number, a: number): number =>
-    Math.min((dims[a] ?? 1) - 1, (lo[a] ?? 0) + ((corner >> a) & 1));
-  const probeOf = (corner: number): number =>
-    coordinate(corner, 0) + grid.nx * (coordinate(corner, 1) + grid.ny * coordinate(corner, 2));
+  const [nx, ny, nz] = [grid.nx, grid.ny, grid.nz];
+  // No arrays or closures before the fast path: this runs for every ray of every bounce pass and every texel.
+  const fx = Math.min(nx - 1, Math.max(0, (point.x - grid.origin.x) / grid.cell - 0.5));
+  const fy = Math.min(ny - 1, Math.max(0, (point.y - grid.origin.y) / grid.cell - 0.5));
+  const fz = Math.min(nz - 1, Math.max(0, (point.z - grid.origin.z) / grid.cell - 0.5));
+  const [lx, ly, lz] = [Math.floor(fx), Math.floor(fy), Math.floor(fz)];
+  const [tx, ty, tz] = [fx - lx, fy - ly, fz - lz];
+  const [hx, hy, hz] = [
+    Math.min(nx - 1, lx + 1),
+    Math.min(ny - 1, ly + 1),
+    Math.min(nz - 1, lz + 1),
+  ];
   let best = -1;
   let bestWeight = -1;
   let cut = false;
   for (let corner = 0; corner < 8; corner += 1) {
-    let w = 1;
-    for (let a = 0; a < 3; a += 1) w *= (corner >> a) & 1 ? (t[a] ?? 0) : 1 - (t[a] ?? 0);
-    cornerProbe[corner] = probeOf(corner);
+    const w = (corner & 1 ? tx : 1 - tx) * (corner & 2 ? ty : 1 - ty) * (corner & 4 ? tz : 1 - tz);
+    const probe =
+      (corner & 1 ? hx : lx) + nx * ((corner & 2 ? hy : ly) + ny * (corner & 4 ? hz : lz));
+    cornerProbe[corner] = probe;
     cornerWeight[corner] = w;
-    if (field.valid[probeOf(corner)] !== 1) cut = true;
+    if (field.valid[probe] !== 1) cut = true;
     for (let a = 0; a < 3; a += 1)
-      if (!((corner >> a) & 1) && field.links[probeOf(corner) * 3 + a] !== 1) cut = true;
-    if (field.valid[probeOf(corner)] === 1 && w > bestWeight) [best, bestWeight] = [corner, w];
+      if (!((corner >> a) & 1) && field.links[probe * 3 + a] !== 1) cut = true;
+    if (field.valid[probe] === 1 && w > bestWeight) [best, bestWeight] = [corner, w];
   }
+  // No wall, no solid around the cell: every corner is reachable, so only the renormalisation below remains.
+  if (!cut) {
+    let total = 0;
+    for (let corner = 0; corner < 8; corner += 1) total += cornerWeight[corner] ?? 0;
+    for (let corner = 0; corner < 8; corner += 1)
+      cornerWeight[corner] = (cornerWeight[corner] ?? 0) / total;
+    return;
+  }
+  const stride = [1, nx, nx * ny];
+  const lo = [lx, ly, lz];
+  const dims = [nx, ny, nz];
+  const coordinate = (corner: number, a: number): number =>
+    Math.min((dims[a] ?? 1) - 1, (lo[a] ?? 0) + ((corner >> a) & 1));
+  const probeOf = (corner: number): number => cornerProbe[corner] ?? 0;
   if (cut && sees !== undefined && best >= 0 && !sees(probeOf(best))) {
     const order = [0, 1, 2, 3, 4, 5, 6, 7]
       .filter((c) => c !== best && field.valid[probeOf(c)] === 1)
@@ -1095,7 +1114,7 @@ export function emitterLight(
 }
 
 export function installGi(
-  ctx: IRayContext,
+  gameCtx: IRayContext,
   root: Object3D,
   options: IGiOptions,
 ): IGiReport | undefined {
@@ -1110,6 +1129,15 @@ export function installGi(
     scale: [1, 1, 1],
   };
   const started = performance.now();
+  // The bake's own ray query; `stockRays` keeps the game's `ctx.raycast` for an A/B.
+  const ctx = options.stockRays === true ? gameCtx : bakeRays(root, gameCtx);
+  const phases: Record<string, number> = {};
+  let phaseStart = started;
+  const phase = (name: string): void => {
+    const now = performance.now();
+    phases[name] = Math.round(now - phaseStart);
+    phaseStart = now;
+  };
   root.updateMatrixWorld(true);
   const grid = gridOver(root);
   const far = Math.hypot(grid.nx, grid.ny, grid.nz) * grid.cell;
@@ -1349,6 +1377,7 @@ export function installGi(
     end[probe] = used;
   }
 
+  phase("trace");
   // Which probes see which: one ray along each positive axis to the neighbour, and whether a probe is inside a solid.
   const links = new Uint8Array(probes * 3);
   const valid = new Uint8Array(probes).fill(1);
@@ -1376,6 +1405,7 @@ export function installGi(
     }
   }
 
+  phase("links");
   /**
    * Per probe, six faces of RGB: what the emitters add, E / pi = L (r / d)^2 max(0, n.l) for a sphere that is
    * wholly above the face's horizon, seen through one ray to its centre.
@@ -1409,6 +1439,7 @@ export function installGi(
     }
   }
 
+  phase("emitters");
   // Gather: each pass sums what the rays carry into six faces per probe.
   const shadowing = options.skyShadowDistance !== undefined;
   /** Per probe and face, the share of the cosine-weighted rays that leave the scene (see `IField.sky`). */
@@ -1481,8 +1512,10 @@ export function installGi(
   // The bounces above carry the emitters' light; what a surface reads directly from them is exact per pixel (see
   // `emitterLight`), because a 0.5 m cell cannot hold a glow that falls off within 0.3 m of the source.
   for (let i = 0; i < values.length; i += 1) values[i] = (values[i] ?? 0) - (emitted[i] ?? 0);
+  phase("gather");
   for (let pass = 0; pass < SMOOTH_PASSES; pass += 1)
     values = smooth({ grid, values, links, valid });
+  phase("smooth");
 
   if (options.bounces > 0) {
     const floor = groundRadiance({ grid, values, links, valid }, ray, first, end, grid.origin.y);
@@ -1505,7 +1538,9 @@ export function installGi(
         undefined
     );
   });
+  phase("resample");
   const cut = linkMasks({ grid, values, links, valid }, fine.grid, ctx, root);
+  phase("linkMasks");
   traced += cut.rays;
   giCache.field = { grid: fine.grid, values: fine.values, sky: fine.sky };
   const read = irradianceAt(fine.values, fine.grid, cut.masks, fine.sky, cut.solid);
@@ -1549,6 +1584,7 @@ export function installGi(
     material.emissive.copy(source.emissive);
     material.emissiveIntensity = source.emissiveIntensity;
     material.side = source.side;
+    material.shadowSide = source.shadowSide;
     (material as unknown as { irradianceNode: unknown }).irradianceNode = node;
     (material as unknown as { aoNode: unknown }).aoNode = visibility;
     mesh.material = material;
@@ -1562,6 +1598,7 @@ export function installGi(
     shadowRays,
     bounces: options.bounces,
     milliseconds: Math.round(performance.now() - started),
+    phases,
   };
   console.info(`TN_GI_CACHE ${JSON.stringify(report)}`);
   return report;

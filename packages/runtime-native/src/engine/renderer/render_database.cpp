@@ -421,7 +421,9 @@ RenderDatabase::Record& RenderDatabase::record(const Mesh& mesh, Record& r, bool
         // A decoded map the standard program does not read is refused by name, never drawn without it.
         // (A placeholder with no image was already refused where models load.)
         for (const auto& [slot, texture] : material->maps) {
-            if (!texture || !texture->sampleable() || slot == "map" || slot == "normalMap") continue;
+            // envMap is read through the PMREM path below (a sphere reflection capture sets it).
+            if (!texture || !texture->sampleable() || slot == "map" || slot == "normalMap" || slot == "envMap")
+                continue;
             const auto pbr = std::find(std::begin(shader::kPbrMapNames), std::end(shader::kPbrMapNames), slot);
             if (pbr - std::begin(shader::kPbrMapNames) < pbrMapsRead(*material)) continue;
             diagnostics_.push_back("TN_NATIVE_MATERIAL_UNSUPPORTED " + std::string(material->typeName()) + ": " + slot +
@@ -1346,7 +1348,7 @@ const std::vector<DrawItem>& RenderDatabase::prepare(Object3D& scene, Camera& ca
             if (mesh) continue;
             const Object3D* target = nullptr;
             if (type == typeid(DirectionalLight)) target = static_cast<const DirectionalLight*>(child)->target.get();
-            if (type == typeid(SpotLight)) target = static_cast<const SpotLight*>(child)->target;
+            if (type == typeid(SpotLight)) target = static_cast<const SpotLight*>(child)->target.get();
             const bool light = type == typeid(Light) || type == typeid(AmbientLight) ||
                                type == typeid(PointLight) || type == typeid(HemisphereLight) ||
                                (target && typeid(*target) == typeid(Object3D) && target->parent == nullptr);

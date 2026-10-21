@@ -374,7 +374,13 @@ def capture():
         name = f"ID_{pose['name']}" if layer["name"] == "ID" else f"{layer['name']}_{sun['name']}_{pose['name']}"
         # Lumen, the virtual shadow maps and TSR settle in about 2 s; eye adaptation
         # (L9) needs about 10 s of game time at 1 stop/s darkening.
-        warm_up = 300 if layer["cvars"].get("r.DefaultFeature.AutoExposure") else 90
+        # Ambient occlusion (L6 and above) is temporal: 90 frames left one L6 cell 1.49% apart between two runs,
+        # and 300 frames made all 12 cells agree to 0 (PRD-631 noise floor).
+        temporal = layer["cvars"].get("r.DefaultFeature.AutoExposure") or layer["cvars"].get("r.AmbientOcclusionLevels", 0) != 0
+        warm_up = 300 if temporal else 90
+        # TN_UE_WARMUP=<frames> overrides it: the noise-floor runs ask whether a temporal layer settles.
+        if os.environ.get("TN_UE_WARMUP"):
+            warm_up = int(os.environ["TN_UE_WARMUP"])
         for kind in ("png",) if layer["name"] == "ID" else ("png", "exr"):
             add_job(
                 q, name, f"{ROOT}/Ref_{sun['name']}", f"{ROOT}/Sequences/Seq_{pose['name']}",
@@ -398,6 +404,7 @@ def run_gi(scene):
         build_cameras=build_cameras, asset_tools=asset_tools, level_subsystem=level_subsystem,
         actor_subsystem=actor_subsystem, LAYERS=LAYERS,
         sun_rotation=sun_rotation, TEMPLATE_MAP=TEMPLATE_MAP,  # PRD-649 template-lit shadow scenes
+        look_rotation=look_rotation,  # PRD-649 spot lights
     )
     if MODE == "build":
         gi.build(ref, scene)

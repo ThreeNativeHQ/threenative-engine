@@ -9,8 +9,8 @@ DirectionalLight::DirectionalLight(Color c, double i)
 }
 
 SpotLight::SpotLight(Color c, double i, double d, double a, double p, double decayValue)
-    : Light(c, i), distance(d), angle(a), penumbra(p), decay(decayValue), ownTarget(std::make_unique<Object3D>()),
-      target(ownTarget.get()) {
+    : Light(c, i), distance(d), angle(a), penumbra(p), decay(decayValue),
+      target(std::make_shared<Object3D>()) {
     position.copy(Object3D::defaultUp); // three: this.position.copy( Object3D.DEFAULT_UP )
     updateMatrix();
 }

@@ -7,6 +7,12 @@
       "owner": "PRD-649",
       "serves": ["PRD-634", "PRD-652"],
       "poses": ["heights", "contact", "ramp"]
+    },
+    {
+      "name": "lamp-room",
+      "owner": "PRD-649",
+      "serves": ["PRD-650"],
+      "poses": ["spot", "spot-soft", "point", "rod"]
     }
   ],
   "variants": [
