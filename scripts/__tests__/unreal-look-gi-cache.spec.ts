@@ -207,6 +207,23 @@ describe("the world-space GI cache against closed forms (PRD-631 L7)", () => {
     expect(covered.share[0]).toBeLessThan(open.share[0] ?? 1);
   });
 
+  it("the material the cache installs keeps the caster faces the scene chose (shadowSide)", () => {
+    // The seam-leak arm shadowSide=front rendered byte-identical to the base: the swap dropped the field.
+    const floor = new Mesh(
+      new PlaneGeometry(40, 40).rotateX(-Math.PI / 2),
+      new MeshStandardMaterial({ color: new Color(0.2, 0.2, 0.2), side: DoubleSide }),
+    );
+    const roof = new Mesh(
+      new BoxGeometry(12, 0.2, 12).translate(0, 3.1, 0),
+      new MeshStandardMaterial({ color: new Color(0.5, 0.5, 0.5) }),
+    );
+    (roof.material as MeshStandardMaterial).shadowSide = DoubleSide;
+    const scene = new Group().add(floor, roof);
+    skyRadiance.current = { data: new Float32Array(6), width: 2, height: 1, scale: [1, 1, 1] };
+    installGi(rayContext(scene), scene, { bounces: 1, sun: noSun });
+    expect((roof.material as MeshStandardMaterial).shadowSide).toBe(DoubleSide);
+    expect((floor.material as MeshStandardMaterial).shadowSide ?? null).toBeNull();
+  });
   it("a small emissive sphere's direct light leaves the cache, which keeps only what it bounces", () => {
     // 8 m away the sphere subtends 0.012 sr and one of a probe's 96 rays stands for 0.13 sr: the rays alone over- or
     // under-read by an order of magnitude, the same way for every neighbour, which lit a wall 4 to 7 times too bright.
