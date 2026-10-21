@@ -43,7 +43,7 @@ Integration: unchanged. This PRD adds proof rows; a fix found by a failing row c
 #### Phase 1: Ocean and atmosphere rows
 **Status:** NOT STARTED
 **Files:** `packages/runtime-native/conformance/registry.json`, `conformance/scenes/shared/atmosphere-luts.js` (new), `conformance/scenes/shared/daylight.js` (new)
-- [ ] `spectral-ocean` is registered and passes on desktop: displacement visible, readback lag reported and bounded. proof: `pnpm parity --target desktop --only-tests spectral-ocean`.
+- [x] `spectral-ocean` is registered and passes on desktop: displacement visible, readback lag reported and bounded. proof: `pnpm parity --target desktop --only-tests spectral-ocean`. **Result:** registered in PRD-648's branch (the row's `readbackFloats` assertion was stale: the CPU copy holds height and velocity pairs). Pass on web and on desktop (legacy host, RTX 2080) with 0 pixel mismatch, 0 delta E, 2 to 7 stale frames. CI's `desktop-parity` lane has not run on it.
 - [ ] `atmosphere-luts` passes on the browser reference: transmittance texels match the CPU reference within half-float precision. proof: `pnpm parity --target web --only-tests atmosphere-luts`.
 - [ ] `atmosphere-luts` passes on desktop under the same assertion. proof: `pnpm parity --target desktop --only-tests atmosphere-luts`.
 - [ ] `daylight` passes on desktop: sky, sun and haze within tolerance of the browser reference. proof: `pnpm parity --target desktop --only-tests daylight`.
