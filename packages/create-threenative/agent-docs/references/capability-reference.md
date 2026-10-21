@@ -2597,6 +2597,22 @@ export function staticTransformCensus(): IStaticTransformCensus { … }
 invalidateStatic(drawbridge);
 ```
 
+### `TracedReflections`
+
+`class` — Reflection rays against the scene's triangles, in TSL. For a smooth surface, a ray finds what the screen cannot show (a room behind the camera, the far side of an object) and returns the hit's position, normal and material. The game lights the hit in its own stage. The kernel is plain TSL: float textures and a loop, no storage buffer.
+
+```ts
+export class TracedReflections { … }
+```
+
+- **Use when:** reflect what is behind the camera in a mirror or a chrome sphere · make a glossy or wet floor reflect objects that are off screen · trace a shadow ray from a reflected surface toward the sun
+- **Constraints:** the pack is a snapshot of the static triangles taken when the object is built: build a new one after geometry moves · instanced, skinned, batched and morphing meshes are not in the pack; report.skippedMoving counts them · trace only pixels at or below maxRoughnessToTrace (0.4, Unreal's cut-off): each ray walks the tree · a ray visits at most maxSteps tree nodes, then reports a miss; hit light, the miss colour and the blend with the frame stay in the game's src/render/ · the pack needs a device with float32-filterable
+- **Overrides:** maxRoughnessToTrace, roughnessFadeLength and maxSteps are game-owned choices
+
+```ts
+const traced = new TracedReflections(ctx.scene); const hit = traced.trace({ origin, direction, far: 30 }); // light hit.albedo at hit.position in the stage
+```
+
 ### `TracerPool3D`
 
 `class` — Pool travelling bullet-streak meshes for hitscan shots.

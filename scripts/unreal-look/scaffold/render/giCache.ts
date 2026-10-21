@@ -108,6 +108,11 @@ export interface IGiOptions {
   readonly skyShadowDistance?: number;
   /** Cast the bake's rays through `ctx.raycast` instead of the flat triangle hierarchy: the slow path, kept for an A/B. */
   readonly stockRays?: boolean;
+  /**
+   * Paint the lit ground into the environment's lower half, so a mirror reflects a floor where the screen shows none
+   * (default true). Off when reflection rays walk the scene's triangles and find the floor themselves.
+   */
+  readonly paintGround?: boolean;
 }
 
 export interface IGiReport {
@@ -1554,7 +1559,7 @@ export function installGi(
     values = smooth({ grid, values, links, valid });
   phase("smooth");
 
-  if (options.bounces > 0) {
+  if (options.bounces > 0 && options.paintGround !== false) {
     const floor = groundRadiance({ grid, values, links, valid }, ray, first, end, grid.origin.y);
     if (floor !== undefined) paintGround(root, floor);
   }

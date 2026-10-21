@@ -8,6 +8,7 @@ import {
   type ICtx,
   Scene,
   type SceneFrame,
+  TracedReflections,
   VirtualShadowNode,
   sourceAngleShadowFilter,
 } from "@threenative/core";
@@ -34,6 +35,7 @@ import { setupLighting } from "../render/lighting.js";
 import { setupPost } from "../render/postprocessing.js";
 import { qualityPreset } from "../render/quality.js";
 import { captureReflections } from "../render/reflectionCapture.js";
+import { reflectionTrace } from "../render/reflectionTrace.js";
 import { SUN_DIRECTION, setupSky } from "../render/sky.js";
 import { WorldEnvironment } from "../render/worldEnvironment.js";
 import type { GameState } from "../state.js";
@@ -49,8 +51,9 @@ const [elevationDeg = 60, azimuthDeg = 25] = (params.get("sun") ?? "60,25").spli
 const level = LAYER === "ID" ? -1 : Number(LAYER.slice(1));
 // `baseline=1` captures the template look as it ships; otherwise the tuning in progress applies.
 const TUNED = params.get("baseline") !== "1";
-// `off=vsm,gpusky,clouds,gi,reflcap,bloom,localexposure,autoexposure,ssgi,ssr,gtao` switches one L9 stage off, to
-// attribute frame cost by ablation (PRD-636 performance). `gpusky` is read in `render/sky.ts`.
+// `off=vsm,gpusky,clouds,gi,reflcap,traced,bloom,localexposure,autoexposure,ssgi,ssr,gtao` switches one L9 stage off, to
+// attribute frame cost by ablation (PRD-636 performance). `gpusky` is read in `render/sky.ts`. `traced` is the
+// scene-triangle reflection trace (PRD-642): off, the screen march, the cube capture and the floor paint answer.
 const OFF = new Set((params.get("off") ?? "").split(",").filter(Boolean));
 // What each stage name turns off in the template's `high` preset.
 const STAGE_OFF: Record<string, Record<string, boolean>> = {
@@ -188,10 +191,17 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
         scene.background = new Color(0x000000);
         scene.environment = null;
       }
+      // PRD-642: from L8 a reflection ray walks the scene's triangles (core's TracedReflections), so the painted
+      // floor, which stood in for what the screen cannot see, is not needed. The cube capture stays: a ray that
+      // misses sees the sky, and the capture draws the sky at a finer grain than the 64 x 32 environment.
+      const tracing = TUNED && level >= 8 && !OFF.has("traced");
+      if (tracing) reflectionTrace.current = new TracedReflections(model);
       // PRD-631: indirect diffuse from a world-space light cache of the sky and, from L7 (Unreal's
       // global illumination), the sun a surface returns (render/giCache.ts).
       if (TUNED && level >= 2 && !OFF.has("gi"))
         installGi(ctx, model, {
+          // Diagnosis knob paint=1: paint the lit floor into the environment even while reflections are traced.
+          paintGround: !tracing || params.get("paint") === "1",
           // Diagnosis knob stockRays=1: cast the bake through ctx.raycast, the slow path (an A/B).
           stockRays: params.get("stockRays") === "1",
           bounces: level >= 7 ? 5 : 0,
@@ -276,6 +286,8 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
   override exit(ctx: GameCtx): void {
     this.#reflectionsDispose?.();
     this.#reflectionsDispose = undefined;
+    reflectionTrace.current?.dispose();
+    reflectionTrace.current = undefined;
     this.#dispose?.();
     this.#dispose = undefined;
     super.exit(ctx);

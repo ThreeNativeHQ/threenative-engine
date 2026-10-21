@@ -60,6 +60,7 @@ import { AutoExposureNode, applyExposure } from "./autoExposure.js";
 import { type IExposureSettings, exposureSettings } from "./exposure.js";
 import { cacheFallback } from "./giCache.js";
 import { LocalExposureNode } from "./localExposure.js";
+import { reflectionTrace, tracedReflections } from "./reflectionTrace.js";
 import { installFilmicToneMapping } from "./tonemap.js";
 import { UnrealBloomNode } from "./unrealBloom.js";
 
@@ -946,6 +947,25 @@ export class WorldEnvironment {
           // reflections onto a second copy builds two parallel graphs, and the frame comes
           // out as the bare background colour.
           const base = convertToTexture(input);
+          // A registered trace (`reflectionTrace`) finds the hit among the scene's triangles, so a ray that leaves
+          // the frame, or reaches the far side of an object, hits the right surface. It replaces the screen march.
+          const trace = reflectionTrace.current;
+          if (trace !== undefined) {
+            const traced = tracedReflections({
+              trace,
+              camera: view,
+              ...(target.godraysLight === undefined ? {} : { sun: target.godraysLight }),
+              base,
+              depth: depth(),
+              normal: normal(),
+              metalness: metal(),
+              roughness: rough(),
+              ...(options.ssgiEnabled ? { albedo: albedo() } : {}),
+              gain,
+              resolutionScale: options.ssrResolutionScale,
+            });
+            return base.add(traced.mul(trace.weight(rough().g)));
+          }
           const reflections = ssr(base, depth(), normal() as unknown as Parameters<typeof ssr>[2], {
             camera: view,
             metalnessNode: metal().r,
