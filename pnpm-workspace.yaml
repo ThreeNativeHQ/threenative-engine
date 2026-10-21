@@ -37,6 +37,11 @@ catalog:
   '@typescript/typescript6': 6.0.2
   vite: 8.2.0
   vitest: 4.1.10
+  eslint: 10.13.0
+  '@typescript-eslint/parser': 8.72.0
+  '@typescript-eslint/eslint-plugin': 8.72.0
+  eslint-plugin-react-hooks: 7.1.1
+  '@eslint-community/eslint-plugin-eslint-comments': 4.8.1
   esbuild: 0.27.0
   es-module-lexer: 2.3.1
   publint: 0.3.22

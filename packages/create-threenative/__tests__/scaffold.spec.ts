@@ -193,6 +193,8 @@ const BUG_REPORT_SKILL_PATHS = [
 // an Engine section, and seven templates pin the legacy engine (slice 8). Measured from the committed branch head, with no sibling edits in the tree.
 // Recomputed 2026-10-18 through all thirteen actual createProject trees after release-cohort preparation and Sailing motion repair.
 // Re-measured all 13 trees for the SMAA mip0 patch; restoring only copied patch bytes recovers every prior hash.
+// Re-measured 2026-10-20 (PRD-626): every tree gains eslint.config.js and biome.json, three scripts and
+// two dev dependencies, and the pristine sources lose the unused bindings the new lint found.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // PRD-637 0.3.6 cohort: the template pins moved, so all thirteen trees were re-measured by this test.
   // PRD-637: every tree gains the npm `@vitejs/devtools` override, and `starter` also moves (grade
@@ -269,23 +271,23 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-10-18 merging develop f30f9b6d3 (PRD-478) into PR #493: the merged Three patch moves every tree.
   // Recomputed 2026-10-16 for PRD-617: puzzle's boot-failure scenario asserts the engine-neutral
   // boot-failure text both engines now show, so only puzzle's tree moves.
-  "action-rpg": "be8ab8f13dd28ee3086274521ab1fb7c2cc148f692fc8894b1ef3b494132fe0f",
-  minimal: "136a29554bb1010c8d46cf2407706535ea98b6b668c5539ce128360b50ffc889",
-  platformer: "315fbe53bc456c8542d409b256a77d4efcd9124624ea82b0462083301d67af54",
-  puzzle: "687ff478e9dc530fe597e3791c1b714c604c510688bf35e4a834d2399380ad87",
-  racing: "693a730f3857e1c124b046e78ce8f05b69525aad41f84609a279e076db237d14",
-  rain: "5e89648da3d89c9c9b60f1423f778494fff950420dbe8d401d0e59196c634362",
-  rts: "99d5d0cc45a7131250bd581aabb42aa1131d5a090b95861be3c16e8eaff449ea",
-  runner: "cba600e53a0242809a6bc1262a6fac066e9a9c4125867250c761ed0bc3c1f6ea",
+  "action-rpg": "c4c575e4fe3b64e97c8917a6464045e4830d46ebfb5e4aba394fa5900e7fe2dc",
+  minimal: "0b5e079ecabccff2e8ff83cd9c09263d78efd654d93108517e601e7fbc508260",
+  platformer: "cfda80a7341cbb2b9af0135cbdefbdcf44ae2de47a99299f338bda1952736da6",
+  puzzle: "a9bbb0ce09f394efc284b925054d32cf82cd273012183f387defe1e5b18ac686",
+  racing: "9a4ff07adfd15718791e7435112ed072b11b05b65135fb02454479821cf0b930",
+  rain: "a6e15f800507129456ebc7cb7edbb71934d556d8118bc8d8f30f9633c16c6966",
+  rts: "4f63d47422bebf7f541efb5be294ac4bc82d0c96ac75da2527336febb5087558",
+  runner: "b4b7dba6506b77182cee6d87ad5e4d8d22fde3647f4fd80913b4fa84051c720b",
   // Finite-height readiness plus hull, sail, and buoy interpolation from the current swell pose.
-  sailing: "3981069bd2ff997ff34862f77fb7e885b46b94df88be7aafab5ed147b0dea17a",
-  shooter: "abc85ff36707c7d5dd833637940de8afc6f283f32d978c72575b9c092998d01a",
-  snow: "a93e8c2b0fe28c9722f299db89c9c542348587764d9b2fb1011b35e786b2a3ac",
+  sailing: "9d23a60dd3ae1e157f1f1f3c4f81a8388542010838814950c3ac90041790abd1",
+  shooter: "396efe81c8223a9366faec4dee27816b976563b10a496f1de7188018c52267c4",
+  snow: "9ce53cbc8c15f9863338f1ff1dfb5b62a46533a2c33152e5ffe7d44d9811b1c7",
   // Measured 2026-10-16 through createProject after starter's completed-work quality fallback fix.
   // Recomputed 2026-10-16: starter's adaptiveQuality split its policy resolution into qualityPolicy.ts
   // to stay under the 200-line render-file cap; only starter's tree moves.
-  starter: "b3fd8ba960c712e8c2eab62f400f6f0b64aef62e485b1b67f9dbc6438382e935",
-  "tower-defense": "af7db885838a0dc6276e9a5e2ccf2225c5adf1a0c3edb1c694dd55e98015655c",
+  starter: "744985a8fea4eb6c3705872cee3f502b49041b7403744dd7a4e2cac1ddee47e5",
+  "tower-defense": "001bbe3d04ed6932243de0330f16443c49d7a7d88b962cfa5c9c878772458fcc",
 };
 
 const GENERATED_SCAFFOLD_METADATA =
@@ -367,6 +369,8 @@ const STARTER_PATHS = [
   ".codex/hooks.json",
   "kit.json",
   "package.json",
+  "eslint.config.js",
+  "biome.json",
   "patches/three@0.185.1.patch",
   "patches/vite@8.2.0.patch",
   "patches/@tailwindcss__node@4.3.3.patch",
@@ -579,6 +583,44 @@ describe("create-threenative", () => {
         }
       }
       expect(actual).toEqual(PRD_201_PARENT_SCAFFOLD_HASHES);
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  it("ships the quality gate as two thin root configs and three scripts in every template", async () => {
+    const root = await makeTempDir("threenative-quality-config-");
+    try {
+      for (const template of ALL_TEMPLATES) {
+        const { target } = await createProject(
+          { install: false, target: template, template },
+          root,
+        );
+        const nonblank = (
+          await Promise.all(
+            ["eslint.config.js", "biome.json"].map((name) =>
+              readFile(path.join(target, name), "utf8"),
+            ),
+          )
+        )
+          .join("\n")
+          .split("\n")
+          .filter((line) => line.trim() !== "").length;
+        expect(nonblank, `${template} config lines`).toBeLessThanOrEqual(80);
+        const manifest = JSON.parse(await readFile(path.join(target, "package.json"), "utf8")) as {
+          devDependencies: Record<string, string>;
+          scripts: Record<string, string>;
+        };
+        expect(manifest.scripts.check, template).toBe(
+          "pnpm typecheck && pnpm lint && pnpm format:check",
+        );
+        expect(manifest.scripts.lint, template).toBe("eslint src");
+        expect(manifest.scripts["format:check"], template).toBe("biome format src");
+        expect(manifest.scripts.test, template).toMatch(/^pnpm check && /u);
+        expect(manifest.devDependencies.eslint, template).toMatch(/^\d/u);
+        expect(manifest.devDependencies["@biomejs/biome"], template).toMatch(/^\d/u);
+        expect(Object.values(manifest.scripts).join(" "), template).not.toContain("npx");
+      }
     } finally {
       await rm(root, { force: true, recursive: true });
     }

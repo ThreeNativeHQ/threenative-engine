@@ -29,7 +29,7 @@ const jobs = TEMPLATE_NAMES.map((template: string, i: number) => ({
   run_attempt: 2,
   status: "completed",
   conclusion: "success",
-  steps: [{ name: "Typecheck pristine template", status: "completed", conclusion: "success" }],
+  steps: [{ name: "Check pristine template", status: "completed", conclusion: "success" }],
 }));
 const listing = { totalCount: jobs.length, jobs };
 describe("pristine template compiler ownership", () => {
@@ -47,8 +47,8 @@ describe("pristine template compiler ownership", () => {
       "working-directory: /tmp",
     ].map((field) => ({
       workflow: workflow.replace(
-        '          pnpm --dir "$target" run typecheck\n',
-        `          pnpm --dir "$target" run typecheck\n        ${field}\n`,
+        '          pnpm --dir "$target" run check\n',
+        `          pnpm --dir "$target" run check\n        ${field}\n`,
       ),
     })),
     { templates: [...TEMPLATE_NAMES, "new-template"] },
@@ -58,8 +58,8 @@ describe("pristine template compiler ownership", () => {
     { plan: { ...plan, templateMatrix: { template: ["starter"] } } },
     {
       workflow: workflow.replace(
-        "      - name: Typecheck pristine template\n",
-        "      - name: Typecheck pristine template\n        if: false\n",
+        "      - name: Check pristine template\n",
+        "      - name: Check pristine template\n        if: false\n",
       ),
     },
     {
@@ -70,7 +70,7 @@ describe("pristine template compiler ownership", () => {
     },
     {
       workflow: workflow.replace(
-        '          pnpm --dir "$target" run typecheck',
+        '          pnpm --dir "$target" run check',
         "          echo skipped compiler",
       ),
     },
@@ -91,10 +91,10 @@ describe("pristine template compiler ownership", () => {
   it.each([
     { steps: [] },
     {
-      steps: [{ name: "Typecheck pristine template", status: "completed", conclusion: "skipped" }],
+      steps: [{ name: "Check pristine template", status: "completed", conclusion: "skipped" }],
     },
     {
-      steps: [{ name: "Typecheck pristine template", status: "completed", conclusion: "failure" }],
+      steps: [{ name: "Check pristine template", status: "completed", conclusion: "failure" }],
     },
   ])("rejects absent or unsuccessful compiler steps %j", ({ steps }) => {
     expect(() =>

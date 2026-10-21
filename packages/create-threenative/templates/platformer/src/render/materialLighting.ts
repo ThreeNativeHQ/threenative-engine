@@ -1,15 +1,6 @@
 // Generated for you. Scene-owned material assignments; no engine appearance hooks.
-import {
-  type Camera,
-  type DirectionalLight,
-  Material,
-  Mesh,
-  MeshStandardMaterial,
-  type Object3D,
-  type Scene,
-  type Texture,
-} from "three";
-import { type IBacklightControls, backlightMaterial } from "./backlightMaterial.js";
+import type { Camera, DirectionalLight, Object3D, Scene, Texture } from "three";
+import type { IBacklightControls } from "./backlightMaterial.js";
 import {
   type IEnvironmentMeasurement,
   measureEnvironment,

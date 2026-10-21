@@ -7,7 +7,7 @@
 // The shader is the coast: terrain, road, sea, the rail and cabin on it, wet reflections and the
 // fog that closes the distance. It is raymarched, so it is one full-screen quad and one function
 // call — see src/render/world.ts for the uniforms and the camera basis it expects.
-import { DataTexture, Vector2, Vector3, Vector4 } from "three";
+import { DataTexture, Vector3 } from "three";
 import {
   Break,
   Fn,
@@ -33,7 +33,6 @@ import {
   mix,
   mul,
   normalize,
-  oneMinus,
   pow,
   property,
   reflect,
@@ -318,7 +317,7 @@ export const trace = /*@__PURE__*/ Fn(
     const t = float(0.25).toVar();
     const mat = float(-1).toVar();
 
-    Loop({ start: int(0), end: 148 }, ({ i }) => {
+    Loop({ start: int(0), end: 148 }, () => {
       If(t.greaterThan(limit).or(t.greaterThan(1850)), () => {
         Break();
       });
@@ -431,7 +430,7 @@ export const surfaceLight = /*@__PURE__*/ Fn(
       const dist2 = dot(l, l).toVar();
       l.assign(normalize(l));
       const ndl = max(dot(n, l), 0).toVar();
-      const cone = smoothstep(0.1, 0.62, l.y.negate())
+      const _cone = smoothstep(0.1, 0.62, l.y.negate())
         .mul(smoothstep(-0.1, 0.1, l.y))
         .toVar();
       const atten = div(48, add(1, dist2)).toVar();
@@ -502,7 +501,7 @@ export const reflected = /*@__PURE__*/ Fn(
     If(uReflect.notEqual(0), () => {
       const t = float(0.5).toVar();
 
-      Loop({ start: int(0), end: 36 }, ({ i }) => {
+      Loop({ start: int(0), end: 36 }, () => {
         If(t.greaterThan(280), () => {
           Break();
         });

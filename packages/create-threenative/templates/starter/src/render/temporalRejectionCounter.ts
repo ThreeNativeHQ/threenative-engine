@@ -105,8 +105,8 @@ export function createTemporalRejectionCounter(
         size.value.set(width, height);
         dispatched = count.compute(pixels);
       }
-      renderer.compute(reset);
-      renderer.compute(dispatched as NonNullable<typeof dispatched>);
+      void renderer.compute(reset);
+      void renderer.compute(dispatched as NonNullable<typeof dispatched>);
       if (inFlight !== undefined) return;
       const dispatchedFrame = frame;
       const expected = pixels;

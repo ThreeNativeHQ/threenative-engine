@@ -44,7 +44,7 @@ bridge; avoid DOM globals, dynamic `import()`, and raw physics handles. **Report
 ```sh
 pnpm dev
 pnpm build
-pnpm test
+pnpm test   # runs `pnpm check` first: typecheck, ESLint, Biome format
 pnpm test:native
 ```
 
