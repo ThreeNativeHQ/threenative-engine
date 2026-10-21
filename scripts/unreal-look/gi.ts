@@ -4,7 +4,7 @@
  *   pnpm unreal-look:capture --engine unreal --scene gi | gi:cornell[,gi:<name>...]
  *     --check-cvars          first resolve every variant console variable in the editor
  *     --variants L7-Epic,ID  limit the variants (default: every variant in gi/scenes.json)
- *     --warm-up 90,180       render warm-up frames per run (default 90)
+ *     --warm-up 180,360      render warm-up frames per run (default 180: sunlit-room is still 1% dark at 90)
  *     --runs 2               repeat each run; run 2 lands in "<variant>#2" (the noise floor)
  *     --rebuild              author and export the scene again even if its level exists
  *   pnpm unreal-look:compare --scene gi:cornell --unreal-vs-unreal [--write-stats]
@@ -22,7 +22,7 @@
  * the editor log. Every check fails closed.
  */
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import path from "node:path";
 import {
@@ -36,7 +36,7 @@ import {
   masks,
   measure,
 } from "./compare.js";
-import { floorEdges, linearLuminance, matchedWidths } from "./penumbra.js";
+import { contactGap, linearLuminance, pairedPenumbra } from "./penumbra.js";
 
 const REPO_ROOT = path.resolve(import.meta.dirname, "../..");
 const REFERENCE = path.join(REPO_ROOT, "tools/unreal-reference");
@@ -54,10 +54,17 @@ type Vec3 = [number, number, number];
 export interface ISceneMaterial {
   name: string;
   baseColor: Vec3;
+  /** The albedo texture the material binds (PRD-639): scene.glb carries it as `baseColorTexture`. */
+  baseColorTexture?: string;
   roughness: number;
   metallic: number;
   emissive: Vec3;
   emissiveStrength: number;
+  /** A masked, two-sided material with a base colour texture (PRD-651 leaf cards): all four or none. */
+  texture?: string;
+  alphaMode?: "MASK";
+  alphaCutoff?: number;
+  doubleSided?: boolean;
 }
 export interface ISceneJson {
   scene: string;
@@ -67,8 +74,13 @@ export interface ISceneJson {
     class: string;
     position: Vec3;
     rotationYDeg: number;
-    /** A tilt about +X in degrees (PRD-649 ramps); a mesh carries this or rotationYDeg, never both. */
+    /**
+     * A tilt about +X in degrees (PRD-649 ramps and leaf cards). With a rotationYDeg too, the tilt is
+     * turned first, then the yaw about the vertical: R = Ry(rotationYDeg) * Rx(rotationXDeg).
+     */
     rotationXDeg?: number;
+    /** The region the mesh belongs to when it shares one with others (the leaf cards); default: its name. */
+    region?: string;
     size: Vec3;
     material: ISceneMaterial;
   }[];
@@ -80,6 +92,10 @@ export interface ISceneJson {
     units: string;
     attenuationRadiusM: number;
     sourceRadiusM?: number;
+    /** A SpotLight (PRD-649 lamp-room): the point it looks at, and its cone angles in degrees. */
+    target?: Vec3;
+    innerConeDeg?: number;
+    outerConeDeg?: number;
   }[];
   exposure: { ev100: number; exposureScale: number } | null;
   /** `sun`: a template-lit scene's poses run once per sun, named `<sun>-<pose>` (PRD-649). */
@@ -103,10 +119,16 @@ interface IGltf {
     name?: string;
     pbrMetallicRoughness?: {
       baseColorFactor?: number[];
+      baseColorTexture?: { index: number };
       metallicFactor?: number;
       roughnessFactor?: number;
     };
     emissiveFactor?: number[];
+    alphaMode?: string;
+    alphaCutoff?: number;
+    doubleSided?: boolean;
+    /** KHR_materials_emissive_strength: the glTF exporter splits an emissive above 1 into factor and strength. */
+    extensions?: { KHR_materials_emissive_strength?: { emissiveStrength?: number } };
   }[];
 }
 interface IVariant {
@@ -222,6 +244,38 @@ const LIGHT_UNITS: Record<string, readonly string[]> = {
   RectLight: ["lumens", "candelas", "nits"],
 };
 
+/** The quaternion [x, y, z, w] of Ry(turnDeg) * Rx(tiltDeg): turn the tilted mesh about the vertical. */
+export function tiltThenTurn(tiltDeg: number, turnDeg: number): number[] {
+  const [sx = 0, cx = 1] = [
+    Math.sin((tiltDeg * Math.PI) / 360),
+    Math.cos((tiltDeg * Math.PI) / 360),
+  ];
+  const [sy = 0, cy = 1] = [
+    Math.sin((turnDeg * Math.PI) / 360),
+    Math.cos((turnDeg * Math.PI) / 360),
+  ];
+  return [cy * sx, sy * cx, 0 - sy * sx, cy * cx];
+}
+
+/**
+ * A masked, two-sided material (leaf cards) must arrive as glTF alphaMode MASK with its cutoff, both
+ * sides and a base colour texture. Any other material must stay opaque.
+ */
+function maskedStateDiffers(
+  want: ISceneMaterial,
+  got: NonNullable<IGltf["materials"]>[number],
+): boolean {
+  const masked = want.alphaMode === "MASK";
+  if ((got.alphaMode ?? "OPAQUE") !== (masked ? "MASK" : "OPAQUE")) return true;
+  return (
+    masked &&
+    (Math.abs((got.alphaCutoff ?? 0.5) - (want.alphaCutoff ?? Number.NaN)) > 1e-3 ||
+      (got.doubleSided ?? false) !== want.doubleSided ||
+      got.pbrMetallicRoughness?.baseColorTexture === undefined ||
+      want.texture === undefined)
+  );
+}
+
 function near(a: readonly number[], b: readonly number[], tolerance: number): boolean {
   return (
     a.length === b.length && a.every((v, i) => Math.abs(v - (b[i] ?? Number.NaN)) <= tolerance)
@@ -257,13 +311,9 @@ export function validateSceneExport(scene: ISceneJson, gltf: IGltf): void {
     const node = nodes[index] ?? fail("SCENE_EXPORT", actor.name);
     if (!near(node.translation ?? [0, 0, 0], actor.position, 1e-3))
       fail("SCENE_EXPORT", `${actor.name}: position differs between scene.json and scene.glb`);
-    // One rotation, about +Y or (PRD-649's ramps) about +X.
-    const tilt = actor.rotationXDeg ?? 0;
-    const half = ((tilt || actor.rotationYDeg) * Math.PI) / 360;
+    // A tilt about +X (PRD-649's ramps), a turn about +Y, or both: the tilt first, then the turn.
     const q = node.rotation ?? [0, 0, 0, 1];
-    const expected = tilt
-      ? [Math.sin(half), 0, 0, Math.cos(half)]
-      : [0, Math.sin(half), 0, Math.cos(half)];
+    const expected = tiltThenTurn(actor.rotationXDeg ?? 0, actor.rotationYDeg);
     if (
       !near(q, expected, 1e-3) &&
       !near(
@@ -283,19 +333,43 @@ export function validateSceneExport(scene: ISceneJson, gltf: IGltf): void {
     // glTF defaults (2.0 spec, section 5.19) for factors the exporter leaves out.
     const pbr = material.pbrMetallicRoughness ?? {};
     const want = actor.material;
+    // The albedo texture is checked both ways: a texture one file names and the other lacks is a different scene.
+    // scene.json names it as `baseColorTexture` (PRD-639) or, on a masked material, as `texture` (PRD-651); the
+    // masked-state check below holds a masked material to its texture.
+    if (want.baseColorTexture !== undefined && pbr.baseColorTexture === undefined)
+      fail(
+        "SCENE_EXPORT",
+        `${actor.name}: scene.json names the texture ${want.baseColorTexture}, scene.glb has none`,
+      );
+    if (
+      want.baseColorTexture === undefined &&
+      want.texture === undefined &&
+      pbr.baseColorTexture !== undefined
+    )
+      fail(
+        "SCENE_EXPORT",
+        `${actor.name}: scene.glb textures the material, scene.json does not name a texture`,
+      );
     if (
       !near((pbr.baseColorFactor ?? [1, 1, 1, 1]).slice(0, 3), want.baseColor, 1e-3) ||
       Math.abs((pbr.roughnessFactor ?? 1) - want.roughness) > 1e-3 ||
       Math.abs((pbr.metallicFactor ?? 1) - want.metallic) > 1e-3 ||
       !near(
-        material.emissiveFactor ?? [0, 0, 0],
+        (material.emissiveFactor ?? [0, 0, 0]).map(
+          (c) => c * (material.extensions?.KHR_materials_emissive_strength?.emissiveStrength ?? 1),
+        ),
         want.emissive.map((c) => c * want.emissiveStrength),
-        1e-3,
+        1e-3 * Math.max(1, want.emissiveStrength),
       )
     )
       fail(
         "SCENE_EXPORT",
         `${actor.name}: material ${want.name} differs between scene.json and scene.glb`,
+      );
+    if (maskedStateDiffers(want, material))
+      fail(
+        "SCENE_EXPORT",
+        `${actor.name}: masked state of material ${want.name} differs between scene.json and scene.glb`,
       );
   }
   nodes.forEach((node, i) => {
@@ -310,20 +384,33 @@ export function validateSceneExport(scene: ISceneJson, gltf: IGltf): void {
       fail("SCENE_EXPORT", `${light.name}: intensity has no unit a ${light.class} takes`);
     if (!(light.intensity > 0) || !(light.attenuationRadiusM > 0))
       fail("SCENE_EXPORT", `${light.name}: intensity and attenuation radius must be positive`);
+    if (
+      light.class === "SpotLight" &&
+      !(
+        light.target &&
+        (light.innerConeDeg ?? -1) >= 0 &&
+        (light.outerConeDeg ?? 0) > (light.innerConeDeg ?? 0)
+      )
+    )
+      fail(
+        "SCENE_EXPORT",
+        `${light.name}: a spot light needs a target and 0 <= inner < outer cone`,
+      );
   }
   // A template-lit scene (PRD-649) keeps the default level's exposure, as the PRD-631 reference does.
   if (scene.template !== "default" && (!scene.exposure || !Number.isFinite(scene.exposure.ev100)))
     fail("SCENE_EXPORT", `${scene.scene}: no fixed EV100`);
+  // A mesh is in the region it names (default: its own name). Cards share one: Leaves, Grass.
   const colors = Object.values(scene.regions).map((c) => c.join(","));
+  const used = [...new Set(scene.meshes.map((m) => m.region ?? m.name))];
   if (
-    Object.keys(scene.regions).sort().join() !==
-      scene.meshes
-        .map((m) => m.name)
-        .sort()
-        .join() ||
+    Object.keys(scene.regions).sort().join() !== used.sort().join() ||
     new Set(colors).size !== colors.length
   )
-    fail("SCENE_EXPORT", `${scene.scene}: regions must name every mesh once, in distinct colours`);
+    fail(
+      "SCENE_EXPORT",
+      `${scene.scene}: regions must be the regions of the meshes, each in its own colour`,
+    );
 }
 
 export function readScene(name: string): { scene: ISceneJson; gltf: IGltf } {
@@ -359,8 +446,11 @@ function flag(args: readonly string[], name: string): string | undefined {
   return index === -1 ? undefined : args[index + 1];
 }
 
+/** Warm-up frames of the reference capture: Lumen has converged by here (180 against 360 and 720 sit inside the noise floor). */
+export const REFERENCE_WARM_UP = 180;
+
 export function folderName(variant: string, warmUp: number, run: number): string {
-  return `${variant}${warmUp === 90 ? "" : `@${warmUp}`}${run === 1 ? "" : `#${run}`}`;
+  return `${variant}${warmUp === REFERENCE_WARM_UP ? "" : `@${warmUp}`}${run === 1 ? "" : `#${run}`}`;
 }
 
 type RunUnreal = (mode: string, out: string, env?: Record<string, string>) => Promise<number>;
@@ -376,7 +466,7 @@ export async function captureGi(args: readonly string[], runUnreal: RunUnreal): 
   const only = flag(args, "--variants")?.split(",");
   const variants = reg.variants.filter((v) => !only || only.includes(v.name));
   if (only && variants.length !== only.length) fail("BAD_INPUT", `unknown variant in ${only}`);
-  const warmUps = (flag(args, "--warm-up") ?? "90").split(",").map(Number);
+  const warmUps = (flag(args, "--warm-up") ?? String(REFERENCE_WARM_UP)).split(",").map(Number);
   if (!warmUps.every((w) => Number.isInteger(w) && w > 0)) fail("BAD_INPUT", "--warm-up");
   const runs = Number(flag(args, "--runs") ?? 1);
   const out = path.resolve(flag(args, "--out") ?? path.join(REFERENCE, "captures", "unreal"));
@@ -415,7 +505,7 @@ export async function captureGi(args: readonly string[], runUnreal: RunUnreal): 
     const { scene, gltf } = readScene(name);
     validateSceneExport(scene, gltf);
     for (const variant of variants)
-      for (const warmUp of variant.name === "ID" ? [90] : warmUps)
+      for (const warmUp of variant.name === "ID" ? [REFERENCE_WARM_UP] : warmUps)
         for (let run = 1; run <= (variant.name === "ID" ? 1 : runs); run++) {
           const env = {
             TN_UE_SCENE: name,
@@ -471,6 +561,20 @@ export function relativeChange(a: IStats, b: IStats): number {
   return 2 ** Math.abs(b.ev50 - a.ev50) - 1;
 }
 
+/** The committed Unreal statistics of a scene (`--write-stats`): the stand-in for its captures when they are absent. */
+function readStatsFile(name: string): { cells: Record<string, Record<string, IStats>> } {
+  const file = path.join(sceneDir(name), "reference-stats.json");
+  if (!existsSync(file))
+    fail(
+      "MISSING_CELL",
+      `${name}: no Unreal captures and no ${file} (run capture, then compare --write-stats)`,
+    );
+  const data = JSON.parse(readFileSync(file, "utf8")) as { cells?: unknown };
+  if (!data.cells || typeof data.cells !== "object" || !Object.keys(data.cells).length)
+    fail("BAD_INPUT", `${file}: no cells`);
+  return data as { cells: Record<string, Record<string, IStats>> };
+}
+
 /** The Unreal variant each ThreeNative layer is judged against (capture-gi-threenative.ts). */
 const UNREAL_VARIANT: Readonly<Record<string, string>> = {
   L1: "L1",
@@ -518,25 +622,48 @@ export function compareGiToUnreal(
     : undefined;
   const unreal = path.join(root, "unreal", sceneKey(name));
   const tn = path.join(root, "threenative", sceneKey(name));
+  // Without Unreal captures the committed statistics and ID frames stand in for them (PRD-638 AC-2).
+  const offline = !existsSync(unreal);
+  const cached = offline ? readStatsFile(name) : undefined;
   const rows: IRow[] = [];
   for (const layer of layers) {
     // A shadow scene names its Unreal variants after their layers (shadow/scenes.json).
     const variant = name.startsWith("shadow:") ? layer : unrealVariant(layer, unrealLevel);
     for (const pose of scene.poses) {
-      const reference = masks(image(path.join(unreal, "ID", `${pose.name}.png`)), scene.regions);
       const own = masks(image(path.join(tn, "ID", `${pose.name}.png`)), scene.regions);
+      const reference = masks(
+        image(
+          offline
+            ? path.join(sceneDir(name), "id", `${pose.name}.png`)
+            : path.join(unreal, "ID", `${pose.name}.png`),
+        ),
+        scene.regions,
+      );
+      const statsCell = cached?.cells[`${variant}/${pose.name}`];
       const regions = Object.keys(reference.regions).filter(
-        (r) => r !== "Sky" && reference.regions[r]?.some(Boolean),
+        (r) =>
+          r !== "Sky" &&
+          reference.regions[r]?.some(Boolean) &&
+          (statsCell === undefined || statsCell[r] !== undefined),
       );
       const exr = path.join(unreal, variant, `${pose.name}.exr`);
       const cell = compareCells({
         layer,
         cell: `${name}/${pose.name}`,
-        unreal: image(path.join(unreal, variant, `${pose.name}.png`)),
+        ...(cached
+          ? {
+              reference:
+                cached.cells[`${variant}/${pose.name}`] ??
+                fail(
+                  "MISSING_CELL",
+                  `${name}: reference-stats.json has no ${variant}/${pose.name}`,
+                ),
+            }
+          : { unreal: image(path.join(unreal, variant, `${pose.name}.png`)) }),
         threenative: image(path.join(tn, layer, `${pose.name}.png`)),
         masks: reference,
         regions,
-        ...(existsSync(exr) ? { unrealExr: image(exr) } : {}),
+        ...(!offline && existsSync(exr) ? { unrealExr: image(exr) } : {}),
         ...(thresholds ? { thresholds } : {}),
       });
       for (const row of cell) {
@@ -549,6 +676,9 @@ export function compareGiToUnreal(
   }
   return rows;
 }
+
+/** Cells whose lamp has a source radius: the edge is tens of pixels wide, so it reads at this scale (PRD-650). */
+const WIDE_PENUMBRA: Record<string, number> = { "shadow:lamp-room/spot-soft": 2.5 };
 
 export interface IPenumbraRow {
   readonly layer: string;
@@ -563,8 +693,8 @@ export interface IPenumbraRow {
 
 /**
  * Shadow-edge width of a ThreeNative layer against its Unreal variant on the Floor region
- * (PRD-634, PRD-652): the metric `--metric penumbra` prints for a calibration scene. A cell with
- * no edge in both frames has no row.
+ * (PRD-634, PRD-649, PRD-652): the metric `--metric penumbra` prints for a calibration scene. A wide
+ * lamp edge reads at its own scale (`WIDE_PENUMBRA`). A cell with no edge in both frames has no row.
  */
 export function penumbraRows(
   name: string,
@@ -588,25 +718,59 @@ export function penumbraRows(
       const [a, b] = frames as [IImage, IImage];
       if (a.width !== b.width || a.height !== b.height)
         fail("SIZE_MISMATCH", `${name}/${pose.name}: ${layer} and ${variant} differ in size`);
-      const edges = (frame: IImage) =>
-        floorEdges(
-          linearLuminance(frame.data, frame.width * frame.height),
-          frame.width,
-          frame.height,
-          floor,
-        );
-      const m = matchedWidths(edges(a), edges(b));
-      if (m.matched > 0)
+      const m = pairedPenumbra(a, b, floor, WIDE_PENUMBRA[`${name}/${pose.name}`]);
+      if (m)
         rows.push({
           layer,
           cell: `${name}/${pose.name}`,
           matched: m.matched,
           unrealPx: m.unreal,
           threenativePx: m.other,
-          ratio: m.other / m.unreal,
+          ratio: m.ratio,
         });
     }
   }
+  return rows;
+}
+
+/** Lit floor between each box and its own shadow, per pose and arm, in pixel rows (PRD-649). */
+export function contactRows(
+  name: string,
+  layer: string,
+  root: string,
+): { cell: string; box: string; unreal: number | undefined; other: number | undefined }[] {
+  const { scene } = readScene(name);
+  const unreal = path.join(root, "unreal", sceneKey(name));
+  const tn = path.join(root, "threenative", sceneKey(name));
+  const variant = name.startsWith("shadow:") ? layer : (UNREAL_VARIANT[layer] ?? layer);
+  const gap = (dir: string, shade: string, pose: string, box: string) => {
+    // An arm that is not captured yet reads as no value, not as a failure.
+    if (!existsSync(path.join(dir, shade, `${pose}.png`))) return undefined;
+    const id = masks(image(path.join(dir, "ID", `${pose}.png`)), scene.regions);
+    const caster = id.regions[box];
+    const floor = id.regions.Floor;
+    if (!caster || !floor || !caster.some(Boolean)) return undefined;
+    const shaded = image(path.join(dir, shade, `${pose}.png`));
+    return contactGap(
+      linearLuminance(shaded.data, shaded.width * shaded.height),
+      shaded.width,
+      shaded.height,
+      caster,
+      floor,
+    );
+  };
+  const rows = [];
+  for (const pose of scene.poses)
+    for (const box of Object.keys(scene.regions).filter((r) => r.startsWith("Box_"))) {
+      const ue = gap(unreal, variant, pose.name, box);
+      if (ue === undefined) continue;
+      rows.push({
+        cell: `${name}/${pose.name}`,
+        box,
+        unreal: ue,
+        other: gap(tn, layer, pose.name, box),
+      });
+    }
   return rows;
 }
 
@@ -641,6 +805,16 @@ export function compareGi(args: readonly string[]): number {
     );
     const levelFlag = flag(args, "--unreal-level");
     const unrealLevel = levelFlag === undefined ? undefined : Number(levelFlag);
+    if (flag(args, "--metric") === "contact") {
+      console.log("| cell | box | UE gap rows | TN gap rows |\n|---|---|---:|---:|");
+      for (const name of names)
+        for (const layer of layerFlag.split(","))
+          for (const r of contactRows(name, layer, root))
+            console.log(
+              `| ${r.cell} ${layer} | ${r.box} | ${r.unreal ?? "—"} | ${r.other ?? "—"} |`,
+            );
+      return 0;
+    }
     if (flag(args, "--metric") === "penumbra")
       return printPenumbra(names, layerFlag.split(","), root, unrealLevel);
     const rows = names.flatMap((name) =>
@@ -682,16 +856,17 @@ export function compareGi(args: readonly string[]): number {
           );
       }
       if (!args.includes("--unreal-vs-unreal")) continue;
-      // Convergence: 90 against 180 warm-up frames. Noise floor: two runs at 180.
-      const at90 = regionStats(path.join(base, "L7-Epic"), pose.name, regionMasks);
-      const at180 = regionStats(path.join(base, "L7-Epic@180"), pose.name, regionMasks);
-      const again = existsSync(path.join(base, "L7-Epic@180#2"))
-        ? regionStats(path.join(base, "L7-Epic@180#2"), pose.name, regionMasks)
+      // Convergence: the reference warm-up against twice as many frames. Noise floor: two runs at the reference warm-up.
+      const longer = REFERENCE_WARM_UP * 2;
+      const atReference = regionStats(path.join(base, "L7-Epic"), pose.name, regionMasks);
+      const atLonger = regionStats(path.join(base, `L7-Epic@${longer}`), pose.name, regionMasks);
+      const again = existsSync(path.join(base, "L7-Epic#2"))
+        ? regionStats(path.join(base, "L7-Epic#2"), pose.name, regionMasks)
         : undefined;
-      for (const [region, a] of Object.entries(at90)) {
-        const b = at180[region] ?? fail("EMPTY_MASK", `${region} missing at 180 frames`);
+      for (const [region, a] of Object.entries(atReference)) {
+        const b = atLonger[region] ?? fail("EMPTY_MASK", `${region} missing at ${longer} frames`);
         const change = relativeChange(a, b);
-        const noise = again?.[region] ? relativeChange(b, again[region]) : null;
+        const noise = again?.[region] ? relativeChange(a, again[region]) : null;
         if (noise !== null) noiseFloor = Math.max(noiseFloor, noise);
         const pass = change < CONVERGENCE;
         failed ||= !pass;
@@ -702,11 +877,18 @@ export function compareGi(args: readonly string[]): number {
     }
     if (rows.length) {
       console.log(
-        `\n### ${name}: Lumen convergence, L7 Epic, 90 vs 180 warm-up frames (limit ${CONVERGENCE * 100}%)\n\n| scene | pose | region | EV50 @90 | EV50 @180 | change | run-to-run @180 | verdict |\n|---|---|---|---:|---:|---:|---:|---|\n${rows.join("\n")}\n\nnoise floor (largest run-to-run change at 180 frames): ${(noiseFloor * 100).toFixed(2)}%`,
+        `\n### ${name}: Lumen convergence, L7 Epic, ${REFERENCE_WARM_UP} vs ${REFERENCE_WARM_UP * 2} warm-up frames (limit ${CONVERGENCE * 100}%)\n\n| scene | pose | region | EV50 @${REFERENCE_WARM_UP} | EV50 @${REFERENCE_WARM_UP * 2} | change | run-to-run @${REFERENCE_WARM_UP} | verdict |\n|---|---|---|---:|---:|---:|---:|---|\n${rows.join("\n")}\n\nnoise floor (largest run-to-run change at ${REFERENCE_WARM_UP} frames): ${(noiseFloor * 100).toFixed(2)}%`,
       );
     }
     if (args.includes("--write-stats")) {
       if (!Object.keys(stats).length) fail("MISSING_CELL", `${name}: no captured variant`);
+      // The ID frames are the region masks: a few kilobytes each, and what makes the offline compare exact.
+      mkdirSync(path.join(sceneDir(name), "id"), { recursive: true });
+      for (const pose of scene.poses)
+        copyFileSync(
+          path.join(base, "ID", `${pose.name}.png`),
+          path.join(sceneDir(name), "id", `${pose.name}.png`),
+        );
       writeFileSync(
         path.join(sceneDir(name), "reference-stats.json"),
         `${JSON.stringify({ generatedAt: new Date().toISOString(), scene: name, resolution: scene.resolution, cells: stats }, null, 2)}\n`,

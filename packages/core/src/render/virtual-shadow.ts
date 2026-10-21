@@ -3,8 +3,10 @@ import {
   type BufferGeometry,
   type Camera,
   type DirectionalLight,
+  FrontSide,
   Frustum,
   type InstancedMesh,
+  type Material,
   Matrix4,
   type Mesh,
   Object3D,
@@ -27,9 +29,11 @@ import {
   float,
   getShadowMaterial,
   length,
+  lightShadowMatrix,
   max,
   min,
   mix,
+  normalWorld,
   positionWorld,
   property,
   reference,
@@ -52,6 +56,7 @@ import {
 import { lodChainOf } from "../model-lod.js";
 import { shadowRedrawGpuMs } from "../render-pass-budget.js";
 import { DEFAULT_TARGET_FPS } from "../target-fps.js";
+import { isLeafReceiver } from "./soft-shadow.js";
 import {
   DirectionalClipmap,
   type IBoundsLike,
@@ -2053,6 +2058,32 @@ export class VirtualShadowNode extends ShadowBaseNode {
    * what a draw submits, and the renderer's own per-draw function is not ours to wrap.
    */
   #renderLevel(frame: NodeFrame, level: ILevel, mover: boolean, index = 0): void {
+    // A front-sided caster with no shadowSide of its own draws its front faces into a virtual page,
+    // as Unreal's sun does. three derives BackSide for it, and the back face of a wall box is the
+    // room's own inner surface: the stored depth sat on the receiver and the sun leaked along every
+    // inner seam. The material is put back once the level has drawn, so the main pass and a
+    // classic lamp see it as authored; a shadowSide the author set is never touched.
+    const claimed: Material[] = [];
+    for (const mesh of this.#casterTable) {
+      const material = mesh.material;
+      if (
+        mesh.castShadow === false ||
+        Array.isArray(material) ||
+        material.shadowSide !== null ||
+        material.side !== FrontSide
+      )
+        continue;
+      material.shadowSide = FrontSide;
+      claimed.push(material);
+    }
+    try {
+      this.#drawLevel(frame, level, mover, index);
+    } finally {
+      for (const material of claimed) material.shadowSide = null;
+    }
+  }
+
+  #drawLevel(frame: NodeFrame, level: ILevel, mover: boolean, index = 0): void {
     // quality-allow: Three exposes updateShadow only on its internal rendering shadow node.
     const node = (mover ? level.moverNode : level.node) as unknown as IRenderingShadowNode;
     // The level's own keys, selected against this map's own three numbers, before the render that
@@ -2480,6 +2511,21 @@ export class VirtualShadowNode extends ShadowBaseNode {
       const moverNode = registeredOnCreate(
         shadow(light as unknown as DirectionalLight, moverShadow), // quality-allow: the stock node reads only position, target and shadow
       );
+      // A receiver marked twoSidedFoliage looks its shadow up where it stands: the normal bias is
+      // taken back out of the shadow position, in this level's map and in its mover map (PRD-651).
+      for (const stockNode of [node, moverNode]) {
+        const stock = stockNode as typeof node & {
+          setupShadowCoord: (builder: NodeBuilder, position: Node<"vec4">) => Node<"vec3">;
+        };
+        const coord = stock.setupShadowCoord;
+        stock.setupShadowCoord = (builder, position) => {
+          if (!isLeafReceiver(builder.material as Parameters<typeof isLeafReceiver>[0]))
+            return coord.call(stock, builder, position);
+          const bias = rendered(reference("normalBias", "float", levelShadow));
+          const offset = lightShadowMatrix(light as never).mul(vec4(normalWorld.mul(bias), 0));
+          return coord.call(stock, builder, position.sub(offset));
+        };
+      }
       if (this.options.receiverPlaneBias) {
         for (const entry of [
           { node, map: levelShadow },

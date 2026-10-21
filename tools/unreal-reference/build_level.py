@@ -404,6 +404,7 @@ def run_gi(scene):
         build_cameras=build_cameras, asset_tools=asset_tools, level_subsystem=level_subsystem,
         actor_subsystem=actor_subsystem, LAYERS=LAYERS,
         sun_rotation=sun_rotation, TEMPLATE_MAP=TEMPLATE_MAP,  # PRD-649 template-lit shadow scenes
+        look_rotation=look_rotation,  # PRD-649 spot lights
     )
     if MODE == "build":
         gi.build(ref, scene)

@@ -4,12 +4,25 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { describe, expect, it } from "vitest";
 
-/** The scaffold copies the starter's `rendererGate.ts` beside `quality.ts`, which re-exports it. */
-async function loadQuality(): Promise<typeof import("../unreal-look/scaffold/render/quality.js")> {
+/**
+ * The scaffold copies the starter's `rendererGate.ts` beside `quality.ts`, which re-exports it. The
+ * return type names only what this spec reads: a `typeof import()` of `quality.ts` would pull the
+ * scaffold's own imports (`./grade.js`, `./rendererGate.js`) into the repository typecheck.
+ */
+async function loadQuality(): Promise<{
+  giPreset(tier: string): object;
+  shadowPreset(tier: string): object;
+}> {
   const dir = mkdtempSync(join(tmpdir(), "tn-gi-tier-"));
-  copyFileSync(join(__dirname, "../unreal-look/scaffold/render/quality.ts"), join(dir, "quality.ts"));
   copyFileSync(
-    join(__dirname, "../../packages/create-threenative/templates/starter/src/render/rendererGate.ts"),
+    join(__dirname, "../unreal-look/scaffold/render/quality.ts"),
+    join(dir, "quality.ts"),
+  );
+  copyFileSync(
+    join(
+      __dirname,
+      "../../packages/create-threenative/templates/starter/src/render/rendererGate.ts",
+    ),
     join(dir, "rendererGate.ts"),
   );
   return import(/* @vite-ignore */ pathToFileURL(join(dir, "quality.ts")).href);
@@ -29,7 +42,10 @@ describe("GI tier table (PRD-644)", () => {
   it("medium and high keep distance field AO and the full sky light", async () => {
     const { giPreset } = await loadQuality();
     for (const tier of ["medium", "high"]) {
-      expect(giPreset(tier)).toMatchObject({ distanceFieldAO: true, skylightIntensityMultiplier: 1 });
+      expect(giPreset(tier)).toMatchObject({
+        distanceFieldAO: true,
+        skylightIntensityMultiplier: 1,
+      });
     }
   });
 

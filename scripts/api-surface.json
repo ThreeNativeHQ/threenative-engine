@@ -218,6 +218,8 @@
         "@threenative/core#SpriteAnimator3D": "export class SpriteAnimator3D { … }",
         "@threenative/core#stageGpuReading": "export function stageGpuReading(renderer: unknown): IStageGpuReading | undefined { … }",
         "@threenative/core#staticTransformCensus": "export function staticTransformCensus(): IStaticTransformCensus { … }",
+        "@threenative/core#SurfaceCache": "export class SurfaceCache { … }",
+        "@threenative/core#SurfaceLights": "export class SurfaceLights { … }",
         "@threenative/core#TracerPool3D": "export class TracerPool3D { … }",
         "@threenative/core#unlitFoliageWarning": "export function unlitFoliageWarning( scene: Object3D & { … }",
         "@threenative/core#unmarkStatic": "export function unmarkStatic(root: Object3D): void { … }",

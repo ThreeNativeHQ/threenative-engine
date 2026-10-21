@@ -1,7 +1,9 @@
 import {
   DepthTexture,
   DirectionalLight,
+  DoubleSide,
   LessEqualCompare,
+  MeshStandardMaterial,
   PerspectiveCamera,
   PointLight,
   SpotLight,
@@ -9,8 +11,11 @@ import {
 import { float, vec3 } from "three/tsl";
 import { describe, expect, it } from "vitest";
 import {
+  LEAF_MIN_SOURCE_TANGENT,
+  isLeafReceiver,
   lampPenumbraTangent,
   penumbraUv,
+  receiverSourceTangent,
   sourceAngleShadowFilter,
   sourceRadiusShadowFilter,
 } from "../src/render/soft-shadow.js";
@@ -134,5 +139,39 @@ describe("source-radius lamp shadows (PRD-650)", () => {
         Symbol.for("threenative.sourceRadiusShadowFilter")
       ],
     ).toEqual({ sourceRadius: 0.05, blockerSamples: 16, filterSamples: 16 });
+  });
+});
+
+describe("leaf receivers (PRD-651)", () => {
+  const foliage = (extra: Record<string, unknown> = {}) =>
+    new MeshStandardMaterial({ side: DoubleSide, alphaTest: 0.5, ...extra });
+
+  it("names a receiver marked twoSidedFoliage, and only that", () => {
+    const marked = foliage();
+    marked.twoSidedFoliage = true;
+    expect(isLeafReceiver(marked)).toBe(true);
+    // The marker alone is the shading model: it needs no second side and no cut.
+    const bare = new MeshStandardMaterial();
+    bare.twoSidedFoliage = true;
+    expect(isLeafReceiver(bare)).toBe(true);
+    // Two sides and a cut are a default lit card in Unreal, which keeps the normal bias.
+    expect(isLeafReceiver(foliage())).toBe(false);
+    expect(isLeafReceiver(foliage({ alphaTestNode: float(0.4) }))).toBe(false);
+    const off = foliage();
+    off.twoSidedFoliage = false;
+    expect(isLeafReceiver(off)).toBe(false);
+    expect(isLeafReceiver(null)).toBe(false);
+    expect(isLeafReceiver(undefined)).toBe(false);
+  });
+
+  it("widens the sun's source to 5 degrees on a leaf and leaves a wider one alone", () => {
+    const sun = Math.tan(0.0047); // Unreal's default sun, 0.27 degrees
+    const leaf = foliage();
+    leaf.twoSidedFoliage = true;
+    expect(LEAF_MIN_SOURCE_TANGENT).toBeCloseTo(Math.tan((5 * Math.PI) / 180), 12);
+    expect(receiverSourceTangent(leaf, sun)).toBe(LEAF_MIN_SOURCE_TANGENT);
+    expect(receiverSourceTangent(foliage(), sun)).toBe(sun);
+    expect(receiverSourceTangent(leaf, 0.2)).toBe(0.2);
+    expect(receiverSourceTangent(undefined, sun)).toBe(sun);
   });
 });

@@ -4,9 +4,9 @@ prd_contract: v1
 
 # PRD-647 — A visual judge calibrates GI against the Unreal scenes until parity
 
-**Status:** NOT STARTED
-**Priority:** P1 — no box is ticked: no repeatable loop puts an Unreal calibration frame, the ThreeNative frame before a change and the frame after it in front of a judge, and nothing records how far each scene still is from parity.
-**Complexity:** 5 (MEDIUM) — 1–5 files: a calibrate command, a sheet layout, per-scene criteria, a scoreboard, specs (+1), new state: a parity scoreboard with history per commit (+2), a fresh judge subagent per round (+1), every GI PRD consumes it (+1); risk override: none
+**Status:** PARTIAL — the judge command ships (Phase 1, first box); `calibrate`, the sheets, the scoreboard and the parity rule are open
+**Priority:** P1 — the judge command works, but no command captures a calibration round, lays out the sheets or records how far each scene still is from parity: `calibrate`, the criteria, the scoreboard and the parity rule are open.
+**Complexity:** 5 (MEDIUM) — 1–5 files: a calibrate command, a sheet layout, per-scene criteria, a scoreboard, specs (+1), new state: a parity scoreboard with history per commit (+2), a fresh judge session per round (+1), every GI PRD consumes it (+1); risk override: none
 **Owner:** João
 **Depends on:** [PRD-638](PRD-638-calibration-scenes-are-built-in-unreal-and-captured-as-the-gi-target.md) Phase 1 (the Unreal frames) and [PRD-646](PRD-646-threenative-recreates-each-unreal-calibration-scene-exactly.md) Phase 2 (a recreated scene whose direct light already matches). Every GI PRD in [`gi/`](./) and [`../rendering/`](../rendering/) records its visual verdict through this loop.
 
@@ -26,6 +26,14 @@ prd_contract: v1
 
 ## Solution
 
+0. **`pnpm unreal-look:judge` (Phase 1, shipped).** The judge every lane and `calibrate` call. It takes a
+   criteria file and BEFORE, AFTER and UNREAL frame sets, starts a fresh read-only `claude -p` session
+   (Sonnet, Read tool only, no project files), and writes the verdict to the lane's own `--out` file. A judge
+   started with the Agent tool handed its report to the coordinator and the lane lost the verdict. The
+   command pairs frames by path and refuses a layer that differs between the engines, a missing frame and
+   a single run per arm. It fails closed when the judge answers for fewer or more frames than the round
+   holds, uses an answer outside the two scales, returns text that is not a verdict, or did not open every
+   image. `--out` always holds the latest attempt, `"status": "COMPLETE"` or `"FAILED"`.
 1. **`pnpm unreal-look:calibrate --scene gi:<name> --tier <low|medium|high> --before <commit>` (Phase 1).**
    One command runs a calibration round. It captures the ThreeNative cells of the scene twice per
    arm on the owned engine (before and after), runs the numeric compare against the Unreal level of
@@ -81,7 +89,8 @@ scoreboard is a workflow input, so it is allowed under the evidence rules in `do
 
 #### Phase 1: One round on one scene
 **Status:** NOT STARTED
-**Files:** `scripts/unreal-look/calibrate.ts` (new), `package.json` (the `unreal-look:calibrate` script), `scripts/unreal-look/compare.ts`, `tools/unreal-reference/gi/cornell/criteria.md` (new), `scripts/__tests__/unreal-look-calibrate.spec.ts` (new)
+**Files:** `scripts/unreal-look/judge.ts` (new), `scripts/unreal-look/judgeVerdict.ts` (new), `scripts/__tests__/unreal-look-judge.spec.ts` (new), `scripts/unreal-look/calibrate.ts` (new), `package.json` (the `unreal-look:judge` and `unreal-look:calibrate` scripts), `scripts/unreal-look/compare.ts`, `tools/unreal-reference/gi/cornell/criteria.md` (new), `scripts/__tests__/unreal-look-calibrate.spec.ts` (new)
+- [x] `pnpm unreal-look:judge` runs a fresh read-only Sonnet judge on BEFORE, AFTER and UNREAL sets and a criteria file, returns IMPROVEMENT, NEUTRAL or REGRESSION per frame and overall plus MATCH, CLOSE or FAR against Unreal, and fails closed on a missing frame, a mismatched layer, a missing or unparseable verdict and a judge that did not open every image. proof: `pnpm exec vitest run scripts/__tests__/unreal-look-judge.spec.ts` (32 passed, no live model call) and one live round on the surface lane's `judge1` frames: `pnpm unreal-look:judge --criteria ~/.cache/tmp-tn/surface/judge1/criteria.md --before <run1> --before <run2> --after <run1> --after <run2> --unreal <dir> --out <verdict.json>` returned `COMPLETE` for 4 frames, 20 images read, claude-sonnet-5-5, $0.17, 28 s, exit 0.
 - [ ] `calibrate` fails closed on a missing cell, one run per arm, an unnamed engine or adapter, and a red direct-light check. proof: `pnpm exec vitest run scripts/__tests__/unreal-look-calibrate.spec.ts`.
 - [ ] The `cornell` sheets show UNREAL, ENGINE BEFORE and ENGINE AFTER with engine, adapter, commit, tier and pose burned in. proof: `pnpm unreal-look:calibrate --scene gi:cornell --tier high --before HEAD`.
 
@@ -101,3 +110,11 @@ scoreboard is a workflow input, so it is allowed under the evidence rules in `do
 
 - 2026-10-20 (owner): the visual judge on the Unreal calibration scenes is the measure of the GI
   sub-epic until parity. Numbers locate a gap, and the judge decides whether it is closed.
+- 2026-10-21 (judge lane): the judge is a command, not an Agent-tool subagent, because the Agent tool hands
+  the report to the coordinator and the lane loses its verdict. The session runs `claude -p --safe-mode
+  --tools Read` on Sonnet at high effort, so the judge sees the prompt and the images and nothing else, and
+  the command reads the stream to check that every image was opened. The layer of a frame is read from its
+  path (`L9/L9_sun60_exterior.png`, `sunlit-room/L7/sun60-window.png`). Unreal GI variants pair as
+  `L7-Epic` with L7, `L9-Epic` with L9 and `L7-Low` with ThreeNative L6 (`GI_LAYERS` in
+  `capture-gi-threenative.ts`). `L7-Medium` pairs with nothing until PRD-644 pairs the tiers. The judge
+  answers both scales (against BEFORE and against UNREAL) in one session.
