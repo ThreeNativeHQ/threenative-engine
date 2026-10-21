@@ -33,7 +33,7 @@ import {
   masks,
   measure,
 } from "./compare.js";
-import { pairedPenumbra } from "./penumbra.js";
+import { contactGap, linearLuminance, pairedPenumbra } from "./penumbra.js";
 
 const REPO_ROOT = path.resolve(import.meta.dirname, "../..");
 const REFERENCE = path.join(REPO_ROOT, "tools/unreal-reference");
@@ -77,6 +77,10 @@ export interface ISceneJson {
     units: string;
     attenuationRadiusM: number;
     sourceRadiusM?: number;
+    /** A SpotLight (PRD-649 lamp-room): the point it looks at, and its cone angles in degrees. */
+    target?: Vec3;
+    innerConeDeg?: number;
+    outerConeDeg?: number;
   }[];
   exposure: { ev100: number; exposureScale: number } | null;
   /** `sun`: a template-lit scene's poses run once per sun, named `<sun>-<pose>` (PRD-649). */
@@ -307,6 +311,18 @@ export function validateSceneExport(scene: ISceneJson, gltf: IGltf): void {
       fail("SCENE_EXPORT", `${light.name}: intensity has no unit a ${light.class} takes`);
     if (!(light.intensity > 0) || !(light.attenuationRadiusM > 0))
       fail("SCENE_EXPORT", `${light.name}: intensity and attenuation radius must be positive`);
+    if (
+      light.class === "SpotLight" &&
+      !(
+        light.target &&
+        (light.innerConeDeg ?? -1) >= 0 &&
+        (light.outerConeDeg ?? 0) > (light.innerConeDeg ?? 0)
+      )
+    )
+      fail(
+        "SCENE_EXPORT",
+        `${light.name}: a spot light needs a target and 0 <= inner < outer cone`,
+      );
   }
   // A template-lit scene (PRD-649) keeps the default level's exposure, as the PRD-631 reference does.
   if (scene.template !== "default" && (!scene.exposure || !Number.isFinite(scene.exposure.ev100)))
@@ -523,6 +539,9 @@ export function compareGiToUnreal(name: string, layers: readonly string[], root:
   return rows;
 }
 
+/** Cells whose lamp has a source radius: the edge is tens of pixels wide, so it reads at this scale (PRD-650). */
+const WIDE_PENUMBRA: Record<string, number> = { "shadow:lamp-room/spot-soft": 2.5 };
+
 /** Floor shadow-edge width, Unreal against ThreeNative, per pose of one scene and layer (PRD-649). */
 export function penumbraRows(
   name: string,
@@ -542,9 +561,51 @@ export function penumbraRows(
       image(path.join(unreal, variant, `${pose.name}.png`)),
       image(path.join(tn, layer, `${pose.name}.png`)),
       floor,
+      WIDE_PENUMBRA[`${name}/${pose.name}`],
     );
     if (m) rows.push({ cell: `${name}/${pose.name}`, ...m });
   }
+  return rows;
+}
+
+/** Lit floor between each box and its own shadow, per pose and arm, in pixel rows (PRD-649). */
+export function contactRows(
+  name: string,
+  layer: string,
+  root: string,
+): { cell: string; box: string; unreal: number | undefined; other: number | undefined }[] {
+  const { scene } = readScene(name);
+  const unreal = path.join(root, "unreal", sceneKey(name));
+  const tn = path.join(root, "threenative", sceneKey(name));
+  const variant = name.startsWith("shadow:") ? layer : (UNREAL_VARIANT[layer] ?? layer);
+  const gap = (dir: string, shade: string, pose: string, box: string) => {
+    // An arm that is not captured yet reads as no value, not as a failure.
+    if (!existsSync(path.join(dir, shade, `${pose}.png`))) return undefined;
+    const id = masks(image(path.join(dir, "ID", `${pose}.png`)), scene.regions);
+    const caster = id.regions[box];
+    const floor = id.regions.Floor;
+    if (!caster || !floor || !caster.some(Boolean)) return undefined;
+    const shaded = image(path.join(dir, shade, `${pose}.png`));
+    return contactGap(
+      linearLuminance(shaded.data, shaded.width * shaded.height),
+      shaded.width,
+      shaded.height,
+      caster,
+      floor,
+    );
+  };
+  const rows = [];
+  for (const pose of scene.poses)
+    for (const box of Object.keys(scene.regions).filter((r) => r.startsWith("Box_"))) {
+      const ue = gap(unreal, variant, pose.name, box);
+      if (ue === undefined) continue;
+      rows.push({
+        cell: `${name}/${pose.name}`,
+        box,
+        unreal: ue,
+        other: gap(tn, layer, pose.name, box),
+      });
+    }
   return rows;
 }
 
@@ -557,6 +618,16 @@ export function compareGi(args: readonly string[]): number {
       value,
       registry(familyOf(value)).scenes.map((s) => s.name),
     );
+    if (flag(args, "--metric") === "contact") {
+      console.log("| cell | box | UE gap rows | TN gap rows |\n|---|---|---:|---:|");
+      for (const name of names)
+        for (const layer of layerFlag.split(","))
+          for (const r of contactRows(name, layer, root))
+            console.log(
+              `| ${r.cell} ${layer} | ${r.box} | ${r.unreal ?? "—"} | ${r.other ?? "—"} |`,
+            );
+      return 0;
+    }
     if (flag(args, "--metric") === "penumbra") {
       const show = (v: number) => Number(v.toPrecision(4));
       console.log(

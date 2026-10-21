@@ -290,9 +290,8 @@ class Builder {
             const double outer = number(member(spot, "outerConeAngle"), 3.141592653589793 / 4);
             auto cone = std::make_shared<SpotLight>(color, 1, range, outer,
                 1 - number(member(spot, "innerConeAngle"), 0) / outer);
-            // Object3D owns shared children, so replace SpotLight's constructor-owned target.
             auto target = std::make_shared<Object3D>(); target->position.set(0, 0, -1);
-            cone->ownTarget.reset(); cone->target = target.get(); cone->add(*target); light = cone;
+            cone->target = target; cone->add(*target); light = cone;
         } else { refuse("TN_NATIVE_GLTF_LIGHT_INVALID " + type); return nullptr; }
         light->position.set(0, 0, 0);
         light->intensity = number(member(def, "intensity"), 1);

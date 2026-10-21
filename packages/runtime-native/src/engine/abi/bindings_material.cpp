@@ -510,9 +510,8 @@ void registerLightShadow(ClassBinding& b, bool spot) {
         return memberAlias(store, self, as<LightShadow>(self)->mapSize, "Vector2");
     });
     fixedMember(b, "camera", [](void* self, const Args&, Store& store) {
-        Camera* camera = as<LightShadow>(self)->camera.get();
-        return store.adoptAlias(dynamic_cast<OrthographicCamera*>(camera) ? "OrthographicCamera" : "PerspectiveCamera",
-                                camera, self);
+        const std::shared_ptr<Object3D> camera = as<LightShadow>(self)->camera;
+        return store.share(std::string(camera->type()), camera);
     });
 }
 
@@ -576,9 +575,12 @@ void registerSpotLight(ClassBinding& b) {
     b.members["target"] = [](void* self, const Args&, Store& store) -> Value {
         SpotLight* light = as<SpotLight>(self);
         if (light->target == nullptr) return Value{};
-        return store.adoptAlias("Object3D", light->target, self);
+        return store.share(std::string(light->target->type()), light->target);
     };
-    b.fixedMembers.insert("target"); // the light owns its target for its whole life
+    b.setters["target"] = [](void* self, const Value& value, Store& store) {
+        Object3D& target = objectArg(store, value);
+        as<SpotLight>(self)->target = std::shared_ptr<Object3D>(store.find(value)->ptr, &target);
+    };
     shadowBindings<SpotLight, PerspectiveCamera>(b, "SpotLightShadow", {"near", "far"}, {&PerspectiveCamera::near, &PerspectiveCamera::far});
 }
 

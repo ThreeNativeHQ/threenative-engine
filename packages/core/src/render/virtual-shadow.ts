@@ -3,8 +3,10 @@ import {
   type BufferGeometry,
   type Camera,
   type DirectionalLight,
+  FrontSide,
   Frustum,
   type InstancedMesh,
+  type Material,
   Matrix4,
   type Mesh,
   Object3D,
@@ -2047,6 +2049,32 @@ export class VirtualShadowNode extends ShadowBaseNode {
    * what a draw submits, and the renderer's own per-draw function is not ours to wrap.
    */
   #renderLevel(frame: NodeFrame, level: ILevel, mover: boolean, index = 0): void {
+    // A front-sided caster with no shadowSide of its own draws its front faces into a virtual page,
+    // as Unreal's sun does. three derives BackSide for it, and the back face of a wall box is the
+    // room's own inner surface: the stored depth sat on the receiver and the sun leaked along every
+    // inner seam. The material is put back once the level has drawn, so the main pass and a
+    // classic lamp see it as authored; a shadowSide the author set is never touched.
+    const claimed: Material[] = [];
+    for (const mesh of this.#casterTable) {
+      const material = mesh.material;
+      if (
+        mesh.castShadow === false ||
+        Array.isArray(material) ||
+        material.shadowSide !== null ||
+        material.side !== FrontSide
+      )
+        continue;
+      material.shadowSide = FrontSide;
+      claimed.push(material);
+    }
+    try {
+      this.#drawLevel(frame, level, mover, index);
+    } finally {
+      for (const material of claimed) material.shadowSide = null;
+    }
+  }
+
+  #drawLevel(frame: NodeFrame, level: ILevel, mover: boolean, index = 0): void {
     // quality-allow: Three exposes updateShadow only on its internal rendering shadow node.
     const node = (mover ? level.moverNode : level.node) as unknown as IRenderingShadowNode;
     // The level's own keys, selected against this map's own three numbers, before the render that
