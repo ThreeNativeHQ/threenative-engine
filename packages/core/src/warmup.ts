@@ -1142,6 +1142,9 @@ export async function warmUpScene(
       .then(async () => {
         const pass = await renderWarmPassesOnce();
         if (pass === undefined) {
+          // Skipped because the budget ran out first: lazy work, like any compile that never
+          // started. Rejecting here failed a held startup whose compile merely ran long.
+          if (passError === undefined && now() >= startedAt + budgetMs) return;
           throw passError ?? new Error("covered world warm render did not settle");
         }
       });

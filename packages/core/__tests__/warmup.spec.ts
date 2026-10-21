@@ -106,6 +106,44 @@ describe("scene warm-up", () => {
     expect(compileCalls).toBe(1);
   }, 10_000);
 
+  test("settles a timed-out compile whose covered pass the expired budget skipped", async () => {
+    // The compile outran the held budget, so the covered pass never started: that is lazy work,
+    // not a failure. It rejected with "covered world warm render did not settle", and the held
+    // gate turned a slow compile into TN_STARTUP_STALLED: the forest's endless loading screen.
+    let clock = 0;
+    const time = vi.spyOn(performance, "now").mockImplementation(() => clock);
+    try {
+      let resolveCompile: () => void = () => undefined;
+      const warmUpWorldPass = vi.fn();
+      const result = await warmUpSceneWithCompletion(
+        {
+          compileAsync: () =>
+            new Promise<void>((resolve) => {
+              resolveCompile = resolve;
+            }),
+          warmUpWorldPass,
+        },
+        sceneOf(1) as never,
+        {} as never,
+        {
+          budgetMs: 10,
+          granularity: "scene",
+          yieldFrame: () => {
+            clock += 20;
+            return Promise.resolve();
+          },
+        },
+      );
+
+      expect(result.report.timedOut).toBe(true);
+      expect(warmUpWorldPass).not.toHaveBeenCalled();
+      resolveCompile();
+      await expect(result.completion).resolves.toBeUndefined();
+    } finally {
+      time.mockRestore();
+    }
+  }, 10_000);
+
   test("preserves a timed-out compile rejection for the held startup gate", async () => {
     let rejectCompile: (error: Error) => void = () => undefined;
     let compileCalls = 0;
