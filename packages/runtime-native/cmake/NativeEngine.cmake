@@ -130,7 +130,15 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_renderer_alpha_test=alpha_test
         native_engine_renderer_mipmaps_share_one_submit=mipmaps_share_one_submit
         native_engine_traa_alpha=traa_alpha
-        native_engine_traa_reset_seed=traa_reset_seed)
+        native_engine_traa_reset_seed=traa_reset_seed
+        native_engine_traa_camera_velocity=traa_camera_velocity
+        native_engine_traa_feeds_the_chain=traa_feeds_the_chain
+        native_engine_velocity_needs_traa=velocity_needs_traa
+        native_engine_traa_replaces_multisampling=traa_replaces_multisampling
+        native_engine_traa_converges_edges=traa_converges_edges
+        native_engine_traa_late_resolve=traa_late_resolve
+        native_engine_sibling_reads_the_live_scene=sibling_reads_the_live_scene
+        native_engine_renderer_output_screen_size=output_screen_size)
     target_link_libraries(tn-native-engine-renderer-test PRIVATE tn_engine_renderer tn_host_services)
 
     # A texture's retirement reaches every renderer that caches it, and a probe capture waits for a
