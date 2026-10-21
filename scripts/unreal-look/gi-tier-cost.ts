@@ -18,9 +18,9 @@ import { spawn } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { type Browser, type Page, chromium } from "@playwright/test";
-import { WEBGPU_BROWSER_ARGS } from "../../packages/playtest/src/runner/browser.js";
+import type { Browser, Page } from "@playwright/test";
 import { assertVisualPortAvailable, stopVisualServer } from "../visual-gate.js";
+import { launchWebgpuBrowser } from "./browser.js";
 import { patchGi } from "./capture-gi-threenative.js";
 import { HIDE_UI, freePort, scaffold, waitForServer } from "./capture-threenative.js";
 import { familyOf, readScene, registry, sceneNames } from "./gi.js";
@@ -155,7 +155,7 @@ export async function main(args: readonly string[]): Promise<number> {
   try {
     const origin = `http://127.0.0.1:${port}/`;
     await waitForServer(origin, server);
-    const browser = await chromium.launch({ args: [...WEBGPU_BROWSER_ARGS], headless: false });
+    const browser = await launchWebgpuBrowser();
     try {
       const count = Number(flag(args, "--windows") ?? 3);
       const shadowTiers = flag(args, "--shadow-tiers")?.split(",") ?? [];
