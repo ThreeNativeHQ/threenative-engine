@@ -19,6 +19,7 @@ import {
   type Object3D,
   type PerspectiveCamera,
   PointLight,
+  SpotLight,
   Vector3,
 } from "three";
 import { giCache, installGi } from "../render/giCache.js";
@@ -129,17 +130,31 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
         mesh.receiveShadow = shadows;
         if (side !== undefined) for (const m of [mesh.material].flat()) m.shadowSide = side;
       }
-      const lights: PointLight[] = [];
+      const lights: (PointLight | SpotLight)[] = [];
       for (const light of DATA.lights) {
-        if (light.class !== "PointLight")
+        if (light.class !== "PointLight" && light.class !== "SpotLight")
           throw new Error(`TN_CALIBRATION_SCENE_LIGHT: ${light.name} ${light.class}`);
         const [r = 1, g = 1, b = 1] = light.color;
-        const point = new PointLight(
-          new Color().setRGB(r, g, b),
-          candela(light.intensity, light.units) * LIGHT_SCALE,
-          light.attenuationRadiusM,
-          2,
-        );
+        const colour = new Color().setRGB(r, g, b);
+        const cd = candela(light.intensity, light.units) * LIGHT_SCALE;
+        // A spot looks at its target through the outer cone; three's penumbra is the share of the cone that
+        // fades, Unreal's inner cone the part that does not (PRD-649 lamp-room).
+        const outer = ((light.outerConeDeg ?? 0) * Math.PI) / 180;
+        const point =
+          light.class === "SpotLight"
+            ? new SpotLight(
+                colour,
+                cd,
+                light.attenuationRadiusM,
+                outer,
+                ((light.outerConeDeg ?? 0) - (light.innerConeDeg ?? 0)) / (light.outerConeDeg ?? 1),
+                2,
+              )
+            : new PointLight(colour, cd, light.attenuationRadiusM, 2);
+        if (point instanceof SpotLight) {
+          point.target.position.fromArray(light.target ?? [0, 0, 0]);
+          scene.add(point.target);
+        }
         point.name = light.name;
         point.position.fromArray(light.position);
         point.castShadow = shadows && light.castShadows;
@@ -221,7 +236,7 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
       console.info(`TN_CALIBRATION_SCENE unsupported ${u.actor}.${u.property}: ${u.reason}`);
 
     const target = new Vector3();
-    (window as unknown as { __tnRef: unknown }).__tnRef = {
+    const reference = {
       layer: LAYER,
       scene: NAME,
       unsupported,
@@ -267,6 +282,11 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
         camera.updateProjectionMatrix();
       },
     };
+    (window as unknown as { __tnRef: unknown }).__tnRef = reference;
+    // Start at the capture's first pose (or ?pose=<name>), not at the framework camera's origin.
+    const poses = (DATA.poses ?? []) as (Pose & { name: string })[];
+    const start = poses.find((pose) => pose.name === params.get("pose")) ?? poses[0];
+    if (start !== undefined) reference.pose(start);
     return () => undefined;
   }
 

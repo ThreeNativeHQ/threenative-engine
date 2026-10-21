@@ -209,6 +209,16 @@ describe("GI calibration scene export (PRD-638 AC-3)", () => {
     expect(() => validateSceneExport(scene, gltf)).toThrow(/Lamp: intensity has no unit/);
   });
 
+  it("accepts a spot light with a target and cones, and fails on one without", () => {
+    const { scene, gltf } = fixture();
+    Object.assign(scene.lights[0] ?? {}, { class: "SpotLight" });
+    expect(() => validateSceneExport(scene, gltf)).toThrow(/Lamp: a spot light needs a target/);
+    Object.assign(scene.lights[0] ?? {}, { target: [0, 0, 0], innerConeDeg: 20, outerConeDeg: 35 });
+    expect(() => validateSceneExport(scene, gltf)).not.toThrow();
+    Object.assign(scene.lights[0] ?? {}, { innerConeDeg: 40 });
+    expect(() => validateSceneExport(scene, gltf)).toThrow(/inner < outer cone/);
+  });
+
   it("fails when a material or a transform differs", () => {
     const { scene, gltf } = fixture();
     Object.assign(scene.meshes[0]?.material ?? {}, { roughness: 0.5 });
