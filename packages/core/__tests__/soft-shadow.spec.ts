@@ -1,6 +1,9 @@
 import {
+  BackSide,
   DepthTexture,
   DirectionalLight,
+  DoubleSide,
+  FrontSide,
   LessEqualCompare,
   PerspectiveCamera,
   PointLight,
@@ -9,8 +12,11 @@ import {
 import { float, vec3 } from "three/tsl";
 import { describe, expect, it } from "vitest";
 import {
+  LEAF_MIN_SOURCE_TANGENT,
+  isLeafReceiver,
   lampPenumbraTangent,
   penumbraUv,
+  receiverSourceTangent,
   sourceAngleShadowFilter,
   sourceRadiusShadowFilter,
 } from "../src/render/soft-shadow.js";
@@ -134,5 +140,31 @@ describe("source-radius lamp shadows (PRD-650)", () => {
         Symbol.for("threenative.sourceRadiusShadowFilter")
       ],
     ).toEqual({ sourceRadius: 0.05, blockerSamples: 16, filterSamples: 16 });
+  });
+});
+
+describe("leaf receivers (PRD-651)", () => {
+  it("names a two-sided receiver cut by an alpha test, by number or by node", () => {
+    expect(isLeafReceiver({ side: DoubleSide, alphaTest: 0.5 })).toBe(true);
+    expect(isLeafReceiver({ side: DoubleSide, alphaTest: 0, alphaTestNode: float(0.4) })).toBe(
+      true,
+    );
+    // One side, no cut, or neither: an ordinary receiver.
+    expect(isLeafReceiver({ side: FrontSide, alphaTest: 0.5 })).toBe(false);
+    expect(isLeafReceiver({ side: BackSide, alphaTest: 0.5 })).toBe(false);
+    expect(isLeafReceiver({ side: DoubleSide, alphaTest: 0 })).toBe(false);
+    expect(isLeafReceiver({ side: DoubleSide, alphaTestNode: null })).toBe(false);
+    expect(isLeafReceiver(null)).toBe(false);
+    expect(isLeafReceiver(undefined)).toBe(false);
+  });
+
+  it("widens the sun's source to 5 degrees on a leaf and leaves a wider one alone", () => {
+    const sun = Math.tan(0.0047); // Unreal's default sun, 0.27 degrees
+    const leaf = { side: DoubleSide, alphaTest: 0.5 };
+    expect(LEAF_MIN_SOURCE_TANGENT).toBeCloseTo(Math.tan((5 * Math.PI) / 180), 12);
+    expect(receiverSourceTangent(leaf, sun)).toBe(LEAF_MIN_SOURCE_TANGENT);
+    expect(receiverSourceTangent({ side: FrontSide, alphaTest: 0.5 }, sun)).toBe(sun);
+    expect(receiverSourceTangent(leaf, 0.2)).toBe(0.2);
+    expect(receiverSourceTangent(undefined, sun)).toBe(sun);
   });
 });

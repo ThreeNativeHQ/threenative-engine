@@ -89,13 +89,40 @@ from the game. The engine only makes the shadow follow them.
 - [ ] AC-2 holds. proof: the AC-2 commands.
 
 #### Phase 3: Leaf receivers
-**Status:** NOT STARTED
-**Files:** `packages/core/src/render/soft-shadow.ts`, `packages/runtime-native/src/engine/shader/standard.cpp`
-- [ ] A two-sided alpha-tested receiver skips the normal bias and widens its source to the 5° minimum, on both engines. proof: `pnpm exec vitest run packages/core/__tests__/soft-shadow.spec.ts` and `pnpm parity --target desktop --only-tests leaf-receiver`.
+**Status:** IN PROGRESS — the rule is on both engines; the parity run and AC-1 are open
+**Files:** `packages/core/src/render/soft-shadow.ts`, `packages/core/src/render/virtual-shadow.ts`, `packages/runtime-native/src/engine/shader/standard.cpp`, `packages/runtime-native/src/engine/renderer/renderer.cpp`
+- [x] A two-sided alpha-tested receiver skips the normal bias and widens its source to the 5° minimum, on both engines. proof: red-green native test `native_engine_leaf_receiver`, and `pnpm exec vitest run packages/core/__tests__/soft-shadow.spec.ts packages/core/__tests__/virtual-shadow.spec.ts`. — 2026-10-21: native red with the rule off (leaf edge 0.585 m = the biased edge, source width 0.079 m on both receivers), green with it (leaf edge 0.972 m = the unbiased edge, ordinary 0.585 m, two-sided without a cut 0.585 m; penumbra 0.079 m ordinary against 0.543 m on the leaf); the browser unit tests pass 131/131 and the new `VirtualShadowNode` position test fails when the override is switched off. Scope in the browser: the virtual shadow levels and `sourceAngleShadowFilter`; the stock three PCF path keeps three's normal bias (see Decisions).
+- [ ] Browser and native match on the leaf receiver. proof: `pnpm parity --target desktop --only-tests leaf-receiver`. Scene and registry row exist (`conformance/scenes/shared/leaf-receiver.js`); not run: this lane has no desktop runtime binary (`pnpm native:build` needs the V8 download).
 - [ ] AC-1 holds, with the sheets posted on the PR. proof: the AC-1 command.
 **Verification:** AC-1 and AC-2.
 
 ## Decisions
+
+- 2026-10-21 (leaf lane): the leaf test reads the material only: `side = DoubleSide` and an alpha test
+  by number or by node. The game marks nothing, so every cut two-sided receiver is a leaf. Native
+  keys the shader variant on it (`VertexVariant::leafReceiver`); the browser reads `builder.material`
+  when the node builds.
+- 2026-10-21 (leaf lane): the browser takes the rule where the engine owns the node: the virtual
+  shadow levels (position without the normal bias) and `sourceAngleShadowFilter` (5° minimum). The
+  stock three PCF path applies its normal bias before the material is known. A fix there needs a
+  patch to three, which is the last resort, so that path keeps the bias. The templates' sun shadow
+  runs through `VirtualShadowNode`, so the default look is covered.
+- 2026-10-21 (leaf lane): Unreal widens the source "as opacity falls". A cut leaf has opacity 0 or 1
+  after the cut, so only the 5° minimum applies.
+- 2026-10-21 (leaf lane): the shared scene is `tools/unreal-reference/shadow/foliage/` (owner
+  PRD-649, serves PRD-643): 8 two-sided cut leaf cards, 12 grass cards, a trunk and a pawn box, two
+  suns, poses `canopy` and `grass`.
+
+- 2026-10-21 (leaf lane): the foliage drew as solid quads at L7 and above because the GI cache
+  (`scripts/unreal-look/scaffold/render/giCache.ts`, generated user source, so the game layer)
+  swapped each material for a node material that kept six fields: the map and the alpha test were
+  lost. `nodeTwin` now copies every settable field into the matching node class, as three's
+  `fromMaterial` does. The native engine holds a material's fields as accessors on the class, which
+  `for in` never lists (`packages/three-native/src/browser-backend.ts`), so three's own copy loop
+  copies nothing there and every wall came back white on the first try. The copy therefore walks
+  the prototype descriptors. A native engine fix (list the accessors as enumerable, with a native
+  test) is open and would also serve any game that copies a material. The native engine has no
+  physical node class, so a physical source is lit as a standard one there (the old behaviour).
 
 - 2026-10-20 (slicing): the masked-caster fault is an engine bug (`packages/runtime-native/`), not
   a game one. Every game with leaves on the default engine has it, so it is fixed in the engine.
