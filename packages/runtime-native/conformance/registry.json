@@ -627,6 +627,19 @@
       "required": true
     },
     {
+      "id": "virtual-sun-seam",
+      "title": "virtual sun draws front-face casters",
+      "category": "shadows",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/virtual-sun-seam.js",
+      "tolerance": {
+        "pixelMismatchRatio": 0.08,
+        "perceptualDeltaE": 10.0
+      },
+      "desktopGate": false,
+      "required": true
+    },
+    {
       "id": "40-texture-png",
       "title": "texture png",
       "category": "assets",

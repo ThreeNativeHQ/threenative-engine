@@ -2,7 +2,8 @@
 // (PRD-631). It is scene setup only: every look decision comes from the copy's own
 // `src/render/`, and a layer below L9 only switches a system off. The URL picks the cell:
 //   ?tnRef=<ID|L0..L9>&sun=<elevation>,<azimuth>
-// and `window.__tnRef.pose(...)` frames one camera pose.
+// and `window.__tnRef.pose(...)` frames one camera pose. Until then the page shows the first
+// capture pose, or `?pose=<name>`.
 import {
   type ICtx,
   Scene,
@@ -37,6 +38,7 @@ import { SUN_DIRECTION, setupSky } from "../render/sky.js";
 import { WorldEnvironment } from "../render/worldEnvironment.js";
 import type { GameState } from "../state.js";
 import { Play } from "./Play.js";
+import { POSES } from "./referencePoses.js";
 
 type GameCtx = ICtx<GameState, IPhysicsContext>;
 type Pose = { position: number[]; target: number[]; hfovDeg: number };
@@ -114,14 +116,12 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
       const { key } = setupLighting(scene, ctx.renderer.raw as Parameters<typeof setupLighting>[1]);
       // Diagnosis knob sunShadow=0: the sun casts no shadow (is a seam line a shadow leak at all?).
       key.castShadow = level >= 5 && params.get("sunShadow") !== "0";
-      // Diagnosis knob shadowSide=front|back|double: the caster faces; unset keeps three's derived side.
-      // Back-face casters store the occluder depth on the far face of a wall, which is the room's
-      // own inner surface, so sun light leaks along every inner seam of the slab boxes. The virtual
-      // map's receiver-plane bias holds front-face acne, so the tuned arm draws front faces; the
-      // classic map leaks a wedge at the door with front faces, so it keeps three's derived side.
-      const casterSide =
-        { front: FrontSide, back: BackSide, double: DoubleSide }[params.get("shadowSide") ?? ""] ??
-        (TUNED && !OFF.has("vsm") ? FrontSide : undefined);
+      // Diagnosis knob shadowSide=front|back|double: the caster faces. Unset keeps the engine's rule:
+      // a virtual page draws front faces, the classic map three's derived side. shadowSide=back is the
+      // BEFORE arm of the sun-seam fix, where back faces store the depth on a wall's inner surface.
+      const casterSide = { front: FrontSide, back: BackSide, double: DoubleSide }[
+        params.get("shadowSide") ?? ""
+      ];
       // Unreal's static meshes cast and receive shadows by default; three's meshes do neither
       // until asked. Both arms (baseline and tuned) need this, so it is not tuning.
       const emissiveSeen = new Set<unknown>();
@@ -165,6 +165,8 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
             clipExtents: [reach / 4, reach / 2, reach, 2 * reach],
             mapSize: 2048,
             moverMapSize: 512,
+            // Diagnosis knob recvBias=0: authored bias only (does the seam line come from the plane slope?).
+            receiverPlaneBias: params.get("recvBias") !== "0",
           });
       }
       if (level >= 2) {
@@ -243,6 +245,11 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
         camera.updateProjectionMatrix();
       },
     };
+    // Start at the capture's first pose (or ?pose=<name>). The framework camera starts at the
+    // origin, inside the floor plane, where the floor draws as a 1-px line across the frame.
+    const poses = POSES[params.get("model") ?? ""] ?? [];
+    const start = poses.find((pose) => pose.name === params.get("pose")) ?? poses[0];
+    if (start !== undefined) reference.pose(start);
     const publishReference = () => {
       (window as unknown as { __tnRef: unknown }).__tnRef = reference;
     };

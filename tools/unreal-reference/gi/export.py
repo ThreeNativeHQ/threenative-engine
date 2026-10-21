@@ -154,6 +154,9 @@ def spawn_light(ref, light):
         raise ValueError(f"light {light['name']}: unknown class {light['class']}")
     actor = ref.actor_subsystem.spawn_actor_from_class(classes[light["class"]], ref.to_unreal(light["position"]))
     actor.set_actor_label(light["name"])
+    if light["class"] == "SpotLight":
+        # PRD-649 lamp-room: a spot shines along its forward vector, toward `target` (three.js frame).
+        actor.set_actor_rotation(ref.look_rotation(light["position"], light["target"]), False)
     actor.root_component.set_mobility(unreal.ComponentMobility.MOVABLE)
     component = actor.get_component_by_class(unreal.LocalLightComponent)
     units = {"lumens": unreal.LightUnits.LUMENS, "candelas": unreal.LightUnits.CANDELAS}
@@ -166,6 +169,9 @@ def spawn_light(ref, light):
     component.set_editor_property("cast_shadows", light["castShadows"])
     if light["class"] != "RectLight":
         component.set_editor_property("source_radius", light["sourceRadiusM"] * 100.0)
+    if light["class"] == "SpotLight":
+        component.set_editor_property("inner_cone_angle", light["innerConeDeg"])
+        component.set_editor_property("outer_cone_angle", light["outerConeDeg"])
 
 
 def exposure_volume(ref, ev100):
@@ -322,6 +328,12 @@ def describe_level(ref, name, scene, regions):
             }
             if cls != "RectLight":
                 light["sourceRadiusM"] = c.get_editor_property("source_radius") / 100.0
+            if cls == "SpotLight":
+                # One metre along the actor's forward vector is the target; the cone angles are Unreal's.
+                ahead = actor.get_actor_location() + actor.get_actor_forward_vector() * 100.0
+                light["target"] = to_three(ahead)
+                light["innerConeDeg"] = round(c.get_editor_property("inner_cone_angle"), 6)
+                light["outerConeDeg"] = round(c.get_editor_property("outer_cone_angle"), 6)
             lights.append(light)
         elif cls == "DirectionalLight":
             # A template-lit scene: the default sun, read back; its rotation is the last sun's level.

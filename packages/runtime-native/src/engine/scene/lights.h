@@ -35,8 +35,9 @@ public:
  */
 class LightShadow {
 public:
-    explicit LightShadow(std::unique_ptr<Camera> camera) : camera(std::move(camera)) {}
-    std::unique_ptr<Camera> camera;
+    explicit LightShadow(std::shared_ptr<Camera> camera) : camera(std::move(camera)) {}
+    /** Shared like any Object3D: a scene, a LOD or a Raycaster that holds it keeps it alive past the light. */
+    std::shared_ptr<Camera> camera;
     std::shared_ptr<const shadows::AtlasOptions> virtualShadow;
     std::optional<std::array<double, 3>> sourceAngleFilter;
     // sourceRadiusShadowFilter on a lamp: {sourceRadius m, blockerSamples, filterSamples}.
@@ -69,7 +70,7 @@ public:
     /** The light points from its position towards target's world position; not in the scene by default. */
     std::shared_ptr<Object3D> target;
     /** DirectionalLightShadow: an OrthographicCamera(-5, 5, 5, -5, 0.5, 500). */
-    LightShadow shadow{std::make_unique<OrthographicCamera>(-5, 5, 5, -5, 0.5, 500)};
+    LightShadow shadow{std::make_shared<OrthographicCamera>(-5, 5, 5, -5, 0.5, 500)};
 };
 
 /** three's PointLight: light from its world position; `distance` 0 is no cutoff; `decay` 2 is physical. */
@@ -81,7 +82,7 @@ public:
     double distance;
     double decay;
     /** PointLightShadow: a PerspectiveCamera(90, 1, 0.5, 500) turned to each cube face. */
-    LightShadow shadow{std::make_unique<PerspectiveCamera>(90, 1, 0.5, 500)};
+    LightShadow shadow{std::make_shared<PerspectiveCamera>(90, 1, 0.5, 500)};
 };
 
 /** three's SpotLight: a point light limited to a cone towards `target` (off the scene by default). */
@@ -94,10 +95,10 @@ public:
     double angle;    // radians, the cone's half angle; three's default is PI / 3
     double penumbra; // 0..1, the fraction of the cone that fades
     double decay;
-    std::unique_ptr<Object3D> ownTarget;
-    Object3D* target;
+    /** Shared like a DirectionalLight's, so a scene that holds it as a child can hand it to a walk. */
+    std::shared_ptr<Object3D> target;
     /** SpotLightShadow: a PerspectiveCamera(50, 1, 0.5, 500) fitted to the cone each frame. */
-    LightShadow shadow{std::make_unique<PerspectiveCamera>(50, 1, 0.5, 500)};
+    LightShadow shadow{std::make_shared<PerspectiveCamera>(50, 1, 0.5, 500)};
 };
 
 class HemisphereLight : public Light {
