@@ -56,6 +56,8 @@ Recorded on the phase boxes below.
 
 - 2026-10-21 (agent): the material target is planned only when a post *pass* reads it, as the `normal` target already is. A graph whose output program samples `metalness` directly, with no pass, gets no target. SSR, the consumer, is a pass. Making output-only reads plan the targets (for `normal` too) is a follow-up, not this PRD.
 - 2026-10-21 (agent): the first pirate run failed with `TN_WASM_GLTF_UNAVAILABLE` because the local `third_party/` had no cgltf, so the proof Wasm build left the glTF loader out. That is the build machine, not an engine gap: `node scripts/download-deps.mjs --only cgltf` fixed it, and the proofs since then link cgltf.
+- 2026-10-21 (agent): a sandbox game's own `pnpm test` can fail on assertions the game owns. A game box counts as proven when the native run fails no assertion that the `engine: "threejs"` reference run of the same installed copy passes (reference only, never shipped). Fixing a game's stale scenarios belongs to PRD-637, not to the engine.
+- 2026-10-21 (agent): `grove` ships its own `patches/three@0.185.1.patch`, which conflicts with core's three patch at install (`TN_THREE_PATCH_PARTIAL`, hunk 21). The proof copy drops that game patch; the original game is untouched.
 - 2026-10-21 (agent): the `modelWorldMatrix` player case draws `tn.scene` directly. On the V8 player, `RenderPipeline.outputNode = pass(scene, camera)` throws `TN_NATIVE_POST_INVALID`; that path is a follow-up, not this PRD.
 
 ## Execution Phases
@@ -63,8 +65,7 @@ Recorded on the phase boxes below.
 #### Phase 1: StorageTexture runs on the native engine
 **Status:** IN PROGRESS
 - [x] A compute kernel writes a `StorageTexture` with `textureStore`, a second kernel samples it, and readback matches the written values. proof: `ctest -R native_engine_player_compute` (desktop V8 + Dawn). — 2026-10-21, RTX 2080 Dawn/Vulkan headless: `native_engine_player_{compute,compute_ops,imports,tsl_values}` 4/4 passed; the case also checks a material read (64,128,96,255) and the `TN_NATIVE_STORAGE_TEXTURE_FORMAT` refusal.
-- [ ] `first-light` runs its own playtests on the Wasm engine with the `Atmosphere` sky. proof: `pnpm sandbox` tarballs, `pnpm test` in the game.
-  Left: the StorageTexture error is gone. The next two gaps are fixed in the engine: TSL nodes now report `isNode` (core `Atmosphere.radiance` branches on it), `PassNode.getViewZNode()` exists, and a graph read of the scene `depth` binds `texture_depth_2d` (player case: linear depth 0.4 read back as sRGB 170 through the output and a post pass). The game rerun on a Wasm build with those fixes is pending.
+- [x] `first-light` runs its own playtests on the Wasm engine with the `Atmosphere` sky. proof: `pnpm sandbox` tarballs, `pnpm test` in the game. — 2026-10-21, tarballs from 7cc883482, Wasm 3,648.61 kB, headed `--browser-recipe webgpu`, nvidia/turing: all 4 scenarios run with the sky and aerial perspective and no console errors; `first-light-signal` passes; `pnpm test` exits 1 on the same 4 assertions as the `engine: "threejs"` reference run of the same copy (`sunAzimuth`/`sunTransmittanceRed`, which the game never writes; the `play` draw and triangle budgets; `survives` movement). See Decisions.
 
 #### Phase 2: The scene pass has metalness and roughness targets
 **Status:** IN PROGRESS
@@ -74,9 +75,7 @@ Recorded on the phase boxes below.
 
 #### Phase 3: Small gaps
 **Status:** NOT STARTED
-- [ ] Texture `clone()` returns an independent texture on the engine. proof: player test, then `soul-cave` past `water.ts`.
-  Left: player test passes (`native_engine_player_imports`, RTX 2080, clone keeps the class and image, sampler and transform fields stay independent); the `soul-cave` run is pending.
+- [x] Texture `clone()` returns an independent texture on the engine. proof: player test, then `soul-cave` past `water.ts`. — 2026-10-21: `native_engine_player_imports` passed (RTX 2080); `soul-cave` on tarballs from 7cc883482: `pnpm test` exit 0, 3 scenarios, every assertion passed, nvidia/turing.
 - [ ] TSL `modelWorldMatrix` resolves in a material. proof: player test, then `grove` playtest.
   Left: player test passes (two parented quads read their world translation through `modelWorldMatrix.mul(vec4(0,0,0,1)).x` and `.element(3).y`); the `grove` run is pending.
-- [ ] glTF `KHR_materials_emissive_strength` scales the emissive. proof: player test, then `rigged-run` playtest.
-  Left: player test passes with cgltf linked (inline GLB sets `emissiveIntensity`, defaults to 1, an unknown required extension still fails by name); the `rigged-run` run is pending.
+- [x] glTF `KHR_materials_emissive_strength` scales the emissive. proof: player test, then `rigged-run` playtest. — 2026-10-21: `native_engine_player_imports` passed with cgltf linked (RTX 2080); `rigged-run` on tarballs from 7cc883482 loads its GLB, `rigged-character` and `rigged-character-desktop` pass, and the other 4 scenarios fail the same assertions as its `engine: "threejs"` reference run (no engine-only failure).

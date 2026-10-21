@@ -27,7 +27,7 @@ export const {
   floor, fract, sqrt, exp, exp2, log2, normalize, length, min, max, pow, step, dot,
   distance, cross, mix, clamp, smoothstep, select, positionLocal, positionWorld,
   normalViewGeometry, instanceIndex, cameraViewMatrix, modelWorldMatrix, ivec2, uvec2, nodeObject, reflect, textureLoad,
-  mx_noise_float, mx_worley_noise_vec2, pmremTexture, texture3D,
+  mx_noise_float, mx_worley_noise_float, mx_worley_noise_vec2, pmremTexture, texture3D,
   convertToTexture, screenUV, materialColor, materialEmissive, materialMetalness, materialRoughness,
   cameraPosition, cameraProjectionMatrix, cameraWorldMatrix, positionGeometry, normalWorld, varying,
   cameraNear, cameraFar, screenSize, depth, viewportSharedTexture, viewportDepthTexture, linearDepth, viewportLinearDepth,

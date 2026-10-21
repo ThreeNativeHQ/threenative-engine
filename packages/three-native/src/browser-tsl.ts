@@ -138,6 +138,7 @@ const FUNCTIONS = [
   "logarithmicDepthToViewZ",
   "oneMinus",
   "mx_noise_float",
+  "mx_worley_noise_float",
   "mx_worley_noise_vec2",
   "pmremTexture",
   "reflector",

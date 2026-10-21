@@ -53,7 +53,7 @@ import { clone as cloneByExamplesPath } from "three/examples/jsm/utils/SkeletonU
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import { DecalGeometry } from "three/addons/geometries/DecalGeometry.js";
 import { Material } from "three";
-import { vec3, float, clamp, texture, uv, Fn, color, nodeObject, ivec2, reflect, textureLoad, cameraViewMatrix, mx_noise_float, mx_worley_noise_vec2, pmremTexture, reflector, screenUV, storage, instanceIndex, normalLocal } from "three/tsl";
+import { vec3, float, clamp, texture, uv, Fn, color, nodeObject, ivec2, reflect, textureLoad, cameraViewMatrix, mx_noise_float, mx_worley_noise_float, mx_worley_noise_vec2, pmremTexture, reflector, screenUV, storage, instanceIndex, normalLocal } from "three/tsl";
 function check(condition, name) { if (!condition) throw Error("IMPORT_CHECK: " + name); }
 check(globalThis.__THREENATIVE_NATIVE__.platform.runtime === "native", "native platform marker");
 const camera = new THREE.PerspectiveCamera();
@@ -241,7 +241,7 @@ basic.colorNode = color(new THREE.Color(0.1, 0.2, 0.3));
 basic.colorNode = color(0.1, 0.2, 0.3);
 basic.colorNode = reflect(vec3(1, -1, 0), vec3(0, 1, 0));
 basic.colorNode = textureLoad(source, ivec2(0, 0)).rgb;
-basic.colorNode = vec3(mx_noise_float(uv().mul(4), 0.5, 0.5), mx_worley_noise_vec2(uv().mul(3), 0.9).x, 0);
+basic.colorNode = vec3(mx_noise_float(uv().mul(4), 0.5, 0.5).add(mx_worley_noise_float()), mx_worley_noise_vec2(uv().mul(3), 0.9).x, 0);
 const sky = new THREE.DataTexture(new Uint8Array(64 * 32 * 4), 64, 32);
 sky.mapping = THREE.EquirectangularReflectionMapping;
 basic.colorNode = pmremTexture(sky, vec3(0, 1, 0), float(0.5));

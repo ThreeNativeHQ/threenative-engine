@@ -511,15 +511,15 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
     }
     // MaterialX noise (three's MaterialXNodes.js over mx_noise.js; the WGSL is materialx_noise.h).
     // mx_noise_float(texcoord = uv(), amplitude = 1, pivot = 0) is perlin * amplitude + pivot, and
-    // mx_worley_noise_vec2(texcoord = uv(), jitter = 1) uses metric 1, as three's wrapper does.
-    if (!method && (name == "mx_noise_float" || name == "mx_worley_noise_vec2")) {
-        const bool worley = name == "mx_worley_noise_vec2";
+    // mx_worley_noise_float/vec2(texcoord = uv(), jitter = 1) uses metric 1, as three's wrapper does.
+    if (!method && (name == "mx_noise_float" || name == "mx_worley_noise_float" || name == "mx_worley_noise_vec2")) {
+        const bool worley = name != "mx_noise_float";
         if (args.size() > (worley ? 2u : 3u)) throw std::runtime_error("too many arguments");
         auto node = std::make_shared<g::NodeData>();
         node->kind = g::Kind::Math;
-        node->name = worley ? "mx_worley_noise_vec2" : "mx_perlin_noise_float";
+        node->name = worley ? std::string(name) : "mx_perlin_noise_float";
         node->args = {args.empty() ? g::uv() : arg(0)};
-        node->type = worley ? Type::vec(2) : Type::f32();
+        node->type = name == "mx_worley_noise_vec2" ? Type::vec(2) : Type::f32();
         if (worley) {
             node->args.push_back(args.size() > 1 ? g::float_(arg(1)) : g::float_(1));
             node->args.push_back(g::int_(1));

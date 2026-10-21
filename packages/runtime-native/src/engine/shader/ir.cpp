@@ -371,16 +371,16 @@ ExprId Program::call(std::string_view function, const std::vector<ExprId>& args,
     // MaterialX noise (materialx_noise.h): three's overload is chosen by the coordinate, vec2 (`_0`)
     // or vec3 (`_1`), and the WGSL function carries that number.
     std::string library;
-    if (function == "mx_perlin_noise_float" || function == "mx_worley_noise_vec2") {
+    if (function == "mx_perlin_noise_float" || function == "mx_worley_noise_float" || function == "mx_worley_noise_vec2") {
         known = true;
-        const bool worley = function == "mx_worley_noise_vec2";
+        const bool worley = function != "mx_perlin_noise_float";
         const bool coordinate = !args.empty() && (type(0) == Type::vec(2) || type(0) == Type::vec(3));
         if (args.size() != (worley ? 3u : 1u) || !coordinate)
             error = worley ? "takes a vec2 or vec3, a float jitter and an int metric" : "takes a vec2 or vec3";
         else if (worley && (type(1) != Type::f32() || type(2) != Type::i32()))
             error = "takes a vec2 or vec3, a float jitter and an int metric";
         else {
-            result = worley ? Type::vec(2) : Type::f32();
+            result = function == "mx_worley_noise_vec2" ? Type::vec(2) : Type::f32();
             library = std::string(function) + (type(0) == Type::vec(2) ? "_0" : "_1");
         }
     }

@@ -614,7 +614,7 @@ void Tsl::install(v8::Local<v8::Context> context, v8::Local<v8::Object> target) 
                              "smoothstep", "select", "nodeObject", "color", "ivec2", "uvec2", "storageTexture", "textureStore", "textureLoad", "reflect", "convertToTexture", "rtt",
                              "dFdx", "dFdy", "lengthSq", "viewportSharedTexture", "viewportDepthTexture", "linearDepth",
                              "ao", "denoise", "smaa", "bloom", "traa", "film", "lut3D", "renderOutput", "pipelineOutput", "struct", "luminance", "viewZToOrthographicDepth", "viewZToPerspectiveDepth", "logarithmicDepthToViewZ", "oneMinus", "varying", "setUniform",
-                             "mx_noise_float", "mx_worley_noise_vec2", "pmremTexture", "reflector", "transformDirection",
+                             "mx_noise_float", "mx_worley_noise_float", "mx_worley_noise_vec2", "pmremTexture", "reflector", "transformDirection",
                              "atomicAdd", "atomicStore", "atomicLoad", "lightShadowMatrix", "wgslFunction", "texture3D", "getViewPosition", "transformNormalToView", "property"})
         module->Set(context, str(isolate_, name), function(context, name, false)->GetFunction(context).ToLocalChecked())
             .Check();

@@ -131,3 +131,20 @@ describe("Wasm TSL fog", () => {
     expect(runtime.call).toHaveBeenCalledWith("vec4", null, expect.any(Array));
   });
 });
+
+describe("Wasm MaterialX scalar Worley noise", () => {
+  it("forwards omitted arguments and explicit zero jitter to the shared engine call", () => {
+    const { tsl, runtime } = setup();
+    const noise = (
+      tsl as unknown as { mx_worley_noise_float(position?: INode, jitter?: number): INode }
+    ).mx_worley_noise_float;
+    expect(noise()[TSL_NODE]).toBeGreaterThan(0);
+    expect(runtime.call).toHaveBeenLastCalledWith("mx_worley_noise_float", null, []);
+    const point = tsl.vec2(0.25, -0.75);
+    expect(noise(point, 0)[TSL_NODE]).toBeGreaterThan(0);
+    expect(runtime.call).toHaveBeenLastCalledWith("mx_worley_noise_float", null, [
+      { kind: "node", node: point[TSL_NODE] },
+      { kind: "number", number: 0 },
+    ]);
+  });
+});

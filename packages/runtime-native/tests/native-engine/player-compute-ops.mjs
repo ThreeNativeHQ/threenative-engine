@@ -9,7 +9,7 @@ assert(executable, "Usage: player-compute-ops.mjs <tn-native-engine-player-v8>")
 
 const { verdict, output } = await runComputeGame(executable, `
 import { BufferAttribute, InstancedMesh, Matrix4, Mesh, OrthographicCamera, PerspectiveCamera, PlaneGeometry, RenderTarget, Scene, Sprite, UnsignedByteType } from "three";
-import { Break, Continue, Fn, If, Loop, Return, all, and, any, deltaTime, float, instanceIndex, instancedArray, log, mod, not, or, positionLocal, select, storage, time, uint, uniform, vec2, vec3 } from "three/tsl";
+import { Break, Continue, Fn, If, Loop, Return, all, and, any, deltaTime, float, instanceIndex, instancedArray, log, mod, mx_worley_noise_float, not, or, positionLocal, select, storage, time, uint, uniform, vec2, vec3 } from "three/tsl";
 import { MeshBasicNodeMaterial, SpriteNodeMaterial, WebGPURenderer } from "three/webgpu";
 
 const faults = [];
@@ -33,6 +33,22 @@ async function run() {
   const renderer = new WebGPURenderer({ canvas: { width: 8, height: 8 } });
   const words = async (buffer) => new Uint32Array(await renderer.getArrayBufferAsync(buffer.value));
   const floats = async (buffer) => new Float32Array(await renderer.getArrayBufferAsync(buffer.value));
+
+  // r185 mx_noise.js evaluated in Node: bjfinal/hash -> cell noise -> minimum squared
+  // Worley distance. MaterialXNodes.js passes metric 1; defaults and explicit jitter agree.
+  const worley = instancedArray(6, "float");
+  renderer.compute(Fn(() => {
+    worley.element(0).assign(mx_worley_noise_float(vec2(0.25, -0.75)));
+    worley.element(1).assign(mx_worley_noise_float(vec3(0.25, -0.75, 1.5)));
+    worley.element(2).assign(mx_worley_noise_float(vec2(0.25, -0.75), 0.6));
+    worley.element(3).assign(mx_worley_noise_float(vec3(0.25, -0.75, 1.5), 0.6));
+    worley.element(4).assign(mx_worley_noise_float(vec2(0.25, -0.75), 0));
+    worley.element(5).assign(mx_worley_noise_float(vec3(0.25, -0.75, 1.5), 0));
+  })().compute(1));
+  const expectedWorley = [0.13346224772102191, 0.45484816345404055, 0.22986400830291198, 0.31808932990701355, 0.125, 0.125];
+  const actualWorley = await floats(worley);
+  if (actualWorley.length !== expectedWorley.length || actualWorley.some((value, i) => !Number.isFinite(value) || Math.abs(value - expectedWorley[i]) > 1e-6))
+    faults.push("worley got [" + actualWorley + "] want [" + expectedWorley + "]");
 
   // If / ElseIf / ElseIf / Else, with the comparisons, and, or and a uint index.
   const classes = instancedArray(8, "uint");
