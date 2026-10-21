@@ -200,6 +200,8 @@ const BUG_REPORT_SKILL_PATHS = [
 // Measured after merging develop f30f9b6d3 and regenerating the combined Three patch.
 // Measured through all thirteen createProject trees after the interleaved settled-cache repair.
 // Re-measured all 13 actual no-install trees after merging develop 4d8efabac (PRD-626 quality and 0.3.6 pins) into PR #483.
+// Re-measured after 926497874 carried develop's SMAANode hunk into the generated Three patch; overlaying
+// the parent patch recovers all thirteen prior hashes.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // PRD-563: every kit's render/quality.ts and scenes carry the GPU-class start tier.
   // Measured by the actual thirteen-tree createProject equality test on the Oct 6
@@ -251,22 +253,22 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // PRD-619: all kits name interpolation; starter adds the live-clock motion proof.
   // Measured through createProject on the combined develop + PR483 merge tree.
   // Re-measured 2026-10-18 through all thirteen createProject trees after merging develop and regenerating the combined Three patch.
-  "action-rpg": "78a3383d9cc8351172b3508978a9fe8d960d3a412c3a8f7467a562b6aa9a8fed",
-  minimal: "c8237b13651ef0785021beeb2177ed96aac22a6ec559c2a3df278141244ad648",
-  platformer: "d436607f14f3a59f11b83765d16b344507f190d3229cdcb1369da7f91a616e24",
-  puzzle: "8756902e042ee52fda62afb074eae42fe486d15e5931989edeaec3e9925e72a8",
-  racing: "f5f16fcfb51e7b88d8b39f6ab6ca1da247c88f642f09fad9296671dc5f8dfcac",
-  rain: "6605a1e5f314491d11325654b746ba5d20472a02c9ab71e1c979b8e7517f822b",
-  rts: "4e0832fcbaa11cee628e96e376e845851cdf35718aa1dbe48cc728f4355fad88",
-  runner: "973190e163dd997c539e45b4f19b347917c335b3ff443e809a6a5517d0bb9944",
+  "action-rpg": "b4c9ed280ae2ba6f272ea6e2f9530eec9fdd8071349c7dde1aaf22f2ed0dddc8",
+  minimal: "5420d96a3d5af5af6d2e777dcb24c9fd7b39a31bd1dde865a77b1c4b704ba4be",
+  platformer: "fa5659e142d8b397c127b248ae3c287cd24e6097da68d081eb6fdbdd4dc2c286",
+  puzzle: "4bea5555d171d79d3f46f2b1b89304b5e4d582c247a3e97f48a2575e0c236e3c",
+  racing: "ca9924d42c517ab28c9487f6bd336c761bce569e8857561070312a46110d0b82",
+  rain: "37c7631fa34e2092a9efede88eae42bae03b9a623ddc89778b9bf3ade446e5aa",
+  rts: "fc1c6c0a7da6675cdcfaa7e08bf01e36f4f3becfa99caa74b83d3f859d0b2446",
+  runner: "acad2edfdd227e48cd5ac3e9ea194d96fa4f65526908cd05108e503dd86155f5",
 
   // Initial finite-height readiness plus its scene-owned lifecycle helper and mirrored docs.
-  sailing: "4accc05b1249b35cd29cb261bad97f19f660f9becb7d73560c2ec0a8b1aa5076",
-  shooter: "e6a2aedc855c406297c41f407c2a7b4b5b16d6eac33edafa631acec88bd1cd4c",
-  snow: "f54ff5dd29b63d19ea9635d62c10ce106af58cc947d20283464c6f4a7c946600",
+  sailing: "121d01ba7951801cc060e9fe895b8ab6796fc030958012e5e93fc48288473a8d",
+  shooter: "f271afa43a3c776ef9c8393048578612e93ccf95f660421968c055677f84cf4d",
+  snow: "eac050e9c3319a5e12879082673f5f47e302a321ec4426c1fc49807cc8946a72",
   // Merged input heading, quaternion facing and progress import; measured through actual scaffold.
-  starter: "452a1188582ffdd392592e0fc0ef0312af216f0c1e5e959244de7b3c279f76ee",
-  "tower-defense": "11bda3c3f2efab4a134e32d488ab4b6b75b01c926deced29731f38303f1807e1",
+  starter: "448a4c83b9323f5025bf6e21d515fc9644e08ec610332ed824a376437995bf36",
+  "tower-defense": "e7a8635dd37d919585ad8ea242e0e585a69dca4a83fd86e7a15bfe08f408cdd0",
 };
 
 const GENERATED_SCAFFOLD_METADATA =
