@@ -765,6 +765,7 @@ export class WorldEnvironment {
 
     let releaseBloom = (): void => {};
     let releaseAo = (): void => {};
+    let contactOcclusion: ChainNode | undefined;
     let releaseAa = (): void => {};
     const stages: ChainStage[] = [
       stage({
@@ -827,7 +828,14 @@ export class WorldEnvironment {
             .rgb.mul(float(1).sub(metal().r))
             .mul(indirect.rgb)
             .mul(options.ssgiIntensity);
-          return base.mul(occlusion.r).add(vec4(reflected, 0));
+          // The contact term multiplied the frame before this stage ran, and the correction below is the one
+          // part of the light that frame never carried: it takes the same factor, or a hit darker than the
+          // cache subtracts more than the frame still holds and a lit floor under a sphere clips to black.
+          return base
+            .mul(occlusion.r)
+            .add(
+              vec4(contactOcclusion === undefined ? reflected : reflected.mul(contactOcclusion), 0),
+            );
         },
       }),
       stage({
@@ -853,6 +861,7 @@ export class WorldEnvironment {
           resolutionSubrect?.retain(retained, [retained._aoRenderTarget]);
           sample(contact.getTextureNode());
           releaseAo = () => {
+            contactOcclusion = undefined;
             resolutionSubrect?.release(retained);
             contact.dispose();
           };
@@ -884,6 +893,7 @@ export class WorldEnvironment {
             };
           }
           const occlusion = filter ? denoised(filter) : contact;
+          contactOcclusion = occlusion.r;
           return input.mul(occlusion.r);
         },
       }),
