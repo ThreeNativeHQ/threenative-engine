@@ -65,6 +65,8 @@ interface IRawDisplaySlot {
   hot?: { skeleton: Skeleton; world: Matrix4; evaluation: number };
   expectedCurrent?: Float32Array;
   expectedPrevious?: Float32Array;
+  /** The bones' own `children` arrays and their summed length at the last full attachment scan. */
+  children?: { skeleton: Skeleton; lists: Object3D[][]; total: number };
 }
 
 /** Evaluations a captured RAW packet is reused before every source field is read again. */
@@ -626,7 +628,7 @@ export class SkinnedBatch {
     )
       return false;
     const state = animationRateStateOf(rig);
-    if (boneAttached(hot.skeleton)) {
+    if (this.#attached(display, hot.skeleton, false)) {
       this.#retireAttached(slot, display);
       return false;
     }
@@ -703,7 +705,7 @@ export class SkinnedBatch {
           !display.retired &&
           skeleton instanceof Skeleton &&
           this.#rawRate(state) &&
-          boneAttached(skeleton)
+          this.#attached(display, skeleton, (display.trusted ?? 0) <= 0)
         )
           this.#retireAttached(slot, display);
         const repeatedRefresh = !held && display.writeFrame === this.#frame;
@@ -778,6 +780,32 @@ export class SkinnedBatch {
     } finally {
       endSpan(SPANS.skinnedWrite);
     }
+  }
+
+  /**
+   * Whether the slot's bones hold an attachment. An `add` or `remove` under a bone changes its
+   * `children` length, so a write reads only the cached lengths; the full scan runs when they move,
+   * when the skeleton changes, and on every full packet read (`rescan`).
+   */
+  #attached(display: IRawDisplaySlot, skeleton: Skeleton, rescan: boolean): boolean {
+    const cache = display.children;
+    if (!rescan && cache?.skeleton === skeleton) {
+      const lists = cache.lists;
+      let total = 0;
+      for (let i = 0; i < lists.length; i += 1) total += (lists[i] as Object3D[]).length;
+      if (total === cache.total) return false;
+    }
+    if (boneAttached(skeleton)) return true;
+    const bones = skeleton.bones;
+    const lists: Object3D[][] = [];
+    let total = 0;
+    for (let b = 0; b < bones.length; b += 1) {
+      const children = (bones[b] as Bone).children;
+      lists.push(children);
+      total += children.length;
+    }
+    display.children = { skeleton, lists, total };
+    return false;
   }
 
   /** An attachment retires the slot for good and hands the bones back exact this frame. */

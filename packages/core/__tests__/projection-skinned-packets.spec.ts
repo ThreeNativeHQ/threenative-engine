@@ -809,6 +809,34 @@ describe("SkinnedBatch owned scalar display packets", () => {
         }
       });
 
+      it("sees an attachment made between held ticks on the next write, and ignores one removed again", () => {
+        const kept = near();
+        const swapped = near();
+        try {
+          const now = untilStale(kept);
+          untilStale(swapped);
+          const keptRate = present(animationRateStates.get(kept.mesh));
+          const swappedRate = present(animationRateStates.get(swapped.mesh));
+          expect(keptRate.evaluated).toBe(false);
+          // Between ticks: one rig gains a child for good, the other gains one and loses it again.
+          present(kept.bones[5]).add(new Object3D());
+          const brief = new Object3D();
+          present(swapped.bones[5]).add(brief);
+          present(swapped.bones[5]).remove(brief);
+          kept.frame();
+          swapped.frame();
+          expect(keptRate.gpuPose).toBe(false);
+          expect(kept.receipt().slots[0].retired).toBe(true);
+          exact(kept, (now + 1) / 60);
+          expect(swappedRate.gpuPose).toBe(true);
+          expect(swapped.receipt().slots[0].retired).toBe(false);
+          expect(swapped.receipt().slots[0].currentRaw).toBe(true);
+        } finally {
+          kept.close();
+          swapped.close();
+        }
+      });
+
       it("hands a near rig's bones back exact on release and on dispose", () => {
         for (const leave of ["release", "dispose"] as const) {
           const f = near();
