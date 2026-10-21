@@ -419,10 +419,11 @@ RenderDatabase::Record& RenderDatabase::record(const Mesh& mesh, Record& r, bool
             return r;
         }
         // A decoded map the standard program does not read is refused by name, never drawn without it.
-        // (A placeholder with no image was already refused where models load.) envMap is the environment
-        // the draw samples (item.envMap below), not a PbrMap.
+        // (A placeholder with no image was already refused where models load.)
         for (const auto& [slot, texture] : material->maps) {
-            if (!texture || !texture->sampleable() || slot == "map" || slot == "normalMap" || slot == "envMap") continue;
+            // envMap is read through the PMREM path below (a sphere reflection capture sets it).
+            if (!texture || !texture->sampleable() || slot == "map" || slot == "normalMap" || slot == "envMap")
+                continue;
             const auto pbr = std::find(std::begin(shader::kPbrMapNames), std::end(shader::kPbrMapNames), slot);
             if (pbr - std::begin(shader::kPbrMapNames) < pbrMapsRead(*material)) continue;
             diagnostics_.push_back("TN_NATIVE_MATERIAL_UNSUPPORTED " + std::string(material->typeName()) + ": " + slot +
