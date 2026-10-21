@@ -13,6 +13,7 @@
 // you turned off. What it does not own: any colour, and any strength that is not a quality
 // tier. Those are arguments, supplied by `postprocessing.ts`, yours to change.
 
+import { RENDER_CHAIN_TIERS } from "@threenative/core";
 import {
   ACESFilmicToneMapping,
   AgXToneMapping,
@@ -70,6 +71,12 @@ const REFLECTION_FADE = 0.1;
 function harnessLayer(): number {
   const layer = new URLSearchParams(globalThis.location?.search ?? "").get("tnRef") ?? "L9";
   return /^L\d$/.test(layer) ? Number(layer.slice(1)) : 9;
+}
+
+/** Diagnosis: `?dn=N` runs N denoise passes over the SSGI gather at any layer, for an A/B against the tier's count. */
+function harnessDenoisePasses(): number | undefined {
+  const value = new URLSearchParams(globalThis.location?.search ?? "").get("dn");
+  return value === null ? undefined : Number(value);
 }
 
 /** Godot's `Viewport.screen_space_aa`: which post-process antialiasing smooths the frame's edges. */
@@ -130,6 +137,11 @@ export interface IWorldEnvironmentOptions {
   readonly ssrResolutionScale?: number;
   /** Spatial denoise over the SSGI result. Off is noisier and cheaper. */
   readonly denoiseEnabled?: boolean;
+  /**
+   * Denoise passes over the SSGI gather, each turning the tap pattern by its index. The default is the render chain
+   * tier's `denoiseIterations` (high 3, medium 2, low 1): one pass left the sunlit room's walls grainy at `high`.
+   */
+  readonly giDenoisePasses?: number;
   /** Raymarched shafts. Needs `godraysLight`, and that light must cast shadows. */
   readonly godraysEnabled?: boolean;
   /** How dense the participating medium is. Higher is foggier — and the whole frame brighter. */
@@ -557,6 +569,10 @@ export class WorldEnvironment {
       ssrMaxDistance: options.ssrMaxDistance ?? 30,
       ssrResolutionScale: options.ssrResolutionScale ?? 1,
       denoiseEnabled: options.denoiseEnabled ?? true,
+      giDenoisePasses:
+        options.giDenoisePasses ??
+        harnessDenoisePasses() ??
+        RENDER_CHAIN_TIERS[renderChainTier].denoiseIterations,
       godraysEnabled: options.godraysEnabled ?? false,
       godraysDensity: options.godraysDensity ?? 0.7,
       godraysFloor: options.godraysFloor ?? 0,
@@ -760,8 +776,18 @@ export class WorldEnvironment {
       sample(texture);
       return texture;
     };
-    const giDenoise = (node: ChainNode): ChainNode =>
-      options.denoiseEnabled ? denoised(denoise(node, depth(), normal(), view)) : node;
+    const giDenoise = (node: ChainNode): ChainNode => {
+      if (!options.denoiseEnabled) return node;
+      let result = node;
+      for (let pass = 0; pass < options.giDenoisePasses; pass += 1) {
+        const filter = denoise(result, depth(), normal(), view) as unknown as {
+          index: { value: number };
+        };
+        filter.index.value = pass;
+        result = denoised(filter as unknown as ReturnType<typeof denoise>);
+      }
+      return result;
+    };
 
     let releaseBloom = (): void => {};
     let releaseAo = (): void => {};
@@ -821,7 +847,8 @@ export class WorldEnvironment {
           // The gathered light is incident radiance (E / pi). The surface returns it times its own
           // albedo, which the scene pass writes as the `diffuseColor` target, and a metal returns none
           // of it as diffuse. `ssgiIntensity` is the game's dial on that term.
-          const occlusion = giDenoise(gi.getAONode());
+          // The owned engine's gather answers occlusion with a constant 1 (GTAO is its own stage): nothing to denoise.
+          const occlusion = wasmEngine ? gi.getAONode() : giDenoise(gi.getAONode());
           const indirect = giDenoise(gi.getGINode());
           const reflected = albedo()
             .rgb.mul(float(1).sub(metal().r))

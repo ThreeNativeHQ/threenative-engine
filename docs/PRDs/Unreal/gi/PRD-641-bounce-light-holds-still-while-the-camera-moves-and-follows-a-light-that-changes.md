@@ -4,8 +4,8 @@ prd_contract: v1
 
 # PRD-641 — Bounce light holds still while the camera moves and follows a light that changes
 
-**Status:** NOT STARTED
-**Priority:** P2 — no box is ticked: no gate measures GI flicker, lag or smear, and the GI gather keeps no history of its own.
+**Status:** IN PROGRESS
+**Priority:** P2 — one box is ticked (Phase 0, the spatial denoise): no gate measures GI flicker, lag or smear, and the GI gather keeps no history of its own.
 **Complexity:** 6 (MEDIUM) — 1–5 files: the gather history, the light revision, specs, one conformance scene (+1), state across frames: history targets and a light revision (+2), velocity reuse from PRD-269 (+0), native proof (+1), a measured tuning loop against Unreal's motion series (+2); risk override: none
 **Owner:** João
 **Depends on:** [PRD-638](PRD-638-calibration-scenes-are-built-in-unreal-and-captured-as-the-gi-target.md) Phase 3 (the motion pipeline and metrics) and [PRD-647](PRD-647-a-visual-judge-calibrates-gi-against-the-unreal-scenes-until-parity.md) (the calibration round). This PRD authors the `neon` motion run. [PRD-640](PRD-640-pixels-gather-bounce-light-from-screen-probes-and-the-radiance-cache-answers-the-rest.md) (the gather whose history this is; if PRD-640 declines its Phase 2, the history goes on `ssgi`). [PRD-603](../rendering/PRD-603-probes-refresh-by-tracing-the-packed-scene-not-by-drawing-it-six-times.md) Phase 3 (the lighting-step rule of the radiance cache).
@@ -81,6 +81,13 @@ modes of PRD-646 gain `framesAccumulated` and `fastUpdateAmount`.
 | Light revision and fast update | Every GI light the game adds | New. Feeds the PRD-603 stale queue | AC-2 |
 
 ## Execution Phases
+
+#### Phase 0: The gather's spatial denoise runs the passes its tier declares
+**Status:** IN PROGRESS
+**Files:** `scripts/unreal-look/scaffold/render/worldEnvironment.ts`, `scripts/unreal-look/capture-gi-threenative.ts`, `scripts/unreal-look/capture.ts`
+- [x] The `ssgi` stage denoises its gather with `RENDER_CHAIN_TIERS[tier].denoiseIterations` passes (3 at `high`). It ran one pass whatever the tier said. It no longer denoises the owned engine's constant occlusion. proof: `pnpm unreal-look:capture --engine threenative --scene gi:sunlit-room --layers L7,L9 --reuse`, then the wall grain share (mean absolute difference from a 9x9 box, as a share of the wall level) of the `sun60-window` pose — Result 2026-10-21: L7 left, right and back wall 0.023, 0.061 and 0.042 before and 0.0069, 0.0099 and 0.0093 after (Unreal L7-Epic 0.0108, 0.0104 and 0.0128). L9 0.010, 0.021 and 0.016 before and 0.0043, 0.0047 and 0.0048 after (Unreal L9-Epic 0.0054, 0.0052 and 0.0052). Mean wall luminance changes by less than 1.1%. Two runs per arm: L7 identical, L9 within 13 levels at a few pixels. A fresh read-only judge (criteria written first) returns IMPROVEMENT overall: L7 and L9 `sun60-window` IMPROVEMENT, L7 `sun15-door` IMPROVEMENT, L9 `sun15-door` NEUTRAL leaning IMPROVEMENT. Frames are on PR #541. Still open: blotches 10 to 40 px wide stay about 2 to 4 times Unreal's (coarse share 0.012, 0.017 and 0.046 against 0.006, 0.005 and 0.023 at L7). Phase 2 is the lever for those.
+- [ ] The GPU time of the extra passes is measured at L9 and recorded here. proof: `pnpm unreal-look:capture --engine threenative --scene gi:sunlit-room --layers L9 --reuse --measure 6` with `TN_GI_URL_EXTRA='&dn=1'` and without, read from the `TN_FRAME_BUDGET` windows, exclusive GPU slot — Evidence: pending.
+**Verification:** the fresh judge round above.
 
 #### Phase 1: The motion targets
 **Status:** NOT STARTED

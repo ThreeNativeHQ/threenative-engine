@@ -51,6 +51,8 @@ type Vec3 = [number, number, number];
 export interface ISceneMaterial {
   name: string;
   baseColor: Vec3;
+  /** The albedo texture the material binds (PRD-639): scene.glb carries it as `baseColorTexture`. */
+  baseColorTexture?: string;
   roughness: number;
   metallic: number;
   emissive: Vec3;
@@ -122,6 +124,8 @@ interface IGltf {
     alphaMode?: string;
     alphaCutoff?: number;
     doubleSided?: boolean;
+    /** KHR_materials_emissive_strength: the glTF exporter splits an emissive above 1 into factor and strength. */
+    extensions?: { KHR_materials_emissive_strength?: { emissiveStrength?: number } };
   }[];
 }
 interface IVariant {
@@ -326,14 +330,33 @@ export function validateSceneExport(scene: ISceneJson, gltf: IGltf): void {
     // glTF defaults (2.0 spec, section 5.19) for factors the exporter leaves out.
     const pbr = material.pbrMetallicRoughness ?? {};
     const want = actor.material;
+    // The albedo texture is checked both ways: a texture one file names and the other lacks is a different scene.
+    // scene.json names it as `baseColorTexture` (PRD-639) or, on a masked material, as `texture` (PRD-651); the
+    // masked-state check below holds a masked material to its texture.
+    if (want.baseColorTexture !== undefined && pbr.baseColorTexture === undefined)
+      fail(
+        "SCENE_EXPORT",
+        `${actor.name}: scene.json names the texture ${want.baseColorTexture}, scene.glb has none`,
+      );
+    if (
+      want.baseColorTexture === undefined &&
+      want.texture === undefined &&
+      pbr.baseColorTexture !== undefined
+    )
+      fail(
+        "SCENE_EXPORT",
+        `${actor.name}: scene.glb textures the material, scene.json does not name a texture`,
+      );
     if (
       !near((pbr.baseColorFactor ?? [1, 1, 1, 1]).slice(0, 3), want.baseColor, 1e-3) ||
       Math.abs((pbr.roughnessFactor ?? 1) - want.roughness) > 1e-3 ||
       Math.abs((pbr.metallicFactor ?? 1) - want.metallic) > 1e-3 ||
       !near(
-        material.emissiveFactor ?? [0, 0, 0],
+        (material.emissiveFactor ?? [0, 0, 0]).map(
+          (c) => c * (material.extensions?.KHR_materials_emissive_strength?.emissiveStrength ?? 1),
+        ),
         want.emissive.map((c) => c * want.emissiveStrength),
-        1e-3,
+        1e-3 * Math.max(1, want.emissiveStrength),
       )
     )
       fail(
