@@ -15,15 +15,17 @@
  * `cold` clears the dev server's dependency cache and uses a fresh browser profile; `warm` reuses both.
  * Hold the capture lock for the whole run, as for any GPU capture.
  */
-import { spawn } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { cp, mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { promisify } from "node:util";
 import { chromium } from "@playwright/test";
 import { WEBGPU_BROWSER_ARGS } from "../../packages/playtest/src/runner/browser.js";
 import { assertVisualPortAvailable, stopVisualServer } from "../visual-gate.js";
 import { HIDE_UI, freePort, scaffold, waitForServer } from "./capture-threenative.js";
 
+const execFileAsync = promisify(execFile);
 const REPO_ROOT = path.resolve(import.meta.dirname, "../..");
 
 const flag = (name: string, fallback: string): string => {
@@ -33,7 +35,7 @@ const flag = (name: string, fallback: string): string => {
 
 // Runs in the page before any script: timestamps of the first frames after the scene is ready.
 const PROBE = `(() => {
-  const t = { frames: [], ready: null, converged: null, scriptStart: performance.now(), longTasks: [], gaps: [], firstFrame: null };
+  const t = { frames: [], ready: null, converged: null, scriptStart: performance.now(), longTasks: [], gaps: [], firstFrame: null, scene: null };
   window.__tnStartup = t;
   // Main-thread stalls: every task over 50 ms, and the longest gap between two animation frames until the GI converges.
   try {
@@ -49,6 +51,8 @@ const PROBE = `(() => {
   const tick = () => {
     const now = performance.now();
     if (t.firstFrame === null) t.firstFrame = now;
+    // The scene has entered (the page publishes __tnRef at the end of enter): the first frame it draws is the next one.
+    if (t.scene === null && window.__tnRef) t.scene = now;
     if (t.converged === null && last !== null) t.gaps.push([Math.round(last), Math.round(now - last)]);
     last = now;
     if (t.ready !== null && t.frames.length < 61) t.frames.push(performance.now());
@@ -130,8 +134,13 @@ async function main(): Promise<void> {
       });
       await page.addInitScript(PROBE);
       // At document start, so a page that reloads (a dev server re-optimising its dependencies) is still hidden.
+      // The document element does not exist yet when the script runs on some navigations: wait for it.
       await page.addInitScript(
-        `document.documentElement.appendChild(Object.assign(document.createElement("style"), { textContent: ${JSON.stringify(HIDE_UI)} }));`,
+        `(() => {
+          const hide = () => document.documentElement.appendChild(Object.assign(document.createElement("style"), { textContent: ${JSON.stringify(HIDE_UI)} }));
+          if (document.documentElement) hide();
+          else new MutationObserver((_, observer) => { if (document.documentElement) { observer.disconnect(); hide(); } }).observe(document, { childList: true });
+        })();`,
       );
       const markers: { atMs: number; text: string }[] = [];
       const begin = Date.now();
@@ -164,7 +173,35 @@ async function main(): Promise<void> {
         await cdp.send("Profiler.setSamplingInterval", { interval: 1000 });
         await cdp.send("Profiler.start");
       }
+      // `--strip 3,5,30,89`: a picture of the display at each of these seconds after the navigation, on the first
+      // run of an arm. It is the X server's picture, not page.screenshot, so a page whose main thread is blocked
+      // (the one-shot bake) shows what a viewer sees: its last painted frame. Needs a display of its own (Xvfb).
+      const stripAt =
+        flag("--strip", "") === "" || index > 0 ? [] : flag("--strip", "").split(",").map(Number);
+      let viewport: string | undefined;
+      if (stripAt.length > 0) {
+        await page.goto("about:blank");
+        const [x, y, w, h] = (await page.evaluate(
+          "[screenX + (outerWidth - innerWidth) / 2, screenY + outerHeight - innerHeight, innerWidth, innerHeight]",
+        )) as number[];
+        viewport = `${w}x${h}+${Math.round(x as number)}+${Math.round(y as number)}`;
+      }
       const load0 = Date.now();
+      const strip = Promise.all(
+        stripAt.map(async (second) => {
+          await new Promise((resolve) =>
+            setTimeout(resolve, Math.max(0, load0 + second * 1000 - Date.now())),
+          );
+          await execFileAsync("import", [
+            "-window",
+            "root",
+            "-crop",
+            viewport as string,
+            "+repage",
+            path.join(out, `${kind}-strip-${String(second).padStart(3, "0")}s.png`),
+          ]);
+        }),
+      );
       await page.goto(load, { waitUntil: "domcontentloaded" });
       // A start that failed (or a lost GPU device, which a shared GPU makes common) never sets the marker: stop on the page's own report instead of the timeout.
       await Promise.race([
@@ -185,9 +222,11 @@ async function main(): Promise<void> {
         converged: number;
         scriptStart: number;
         firstFrame: number;
+        scene: number;
         longTasks: [number, number][];
         gaps: [number, number][];
       };
+      await strip;
       if (shots !== undefined) {
         await page.evaluate(`window.__tnRef.pose(${pose})`);
         await page.evaluate(
@@ -207,13 +246,17 @@ async function main(): Promise<void> {
           `TN_STARTUP_BENCH_ADAPTER: ${JSON.stringify(adapter)} is not the NVIDIA GPU`,
         );
       const worst = (rows: [number, number][]) => rows.reduce((m, r) => Math.max(m, r[1]), 0);
-      const gi = markers.find((m) => m.text.startsWith("TN_GI_CACHE"));
+      const gis = markers.filter((m) => m.text.startsWith("TN_GI_CACHE"));
+      const parse = (m: { text: string } | undefined) =>
+        m === undefined ? null : JSON.parse(m.text.replace(/^TN_GI_CACHE /, ""));
       const result = {
         label: `${kind}${index + 1}`,
         kind,
         layer,
         sun,
         adapter,
+        display: process.env.DISPLAY,
+        query: process.env.TN_UNREAL_LOOK_QUERY ?? "",
         load: readFileSync("/proc/loadavg", "utf8").split(" ").slice(0, 3),
         navigationToScriptMs: Math.round(marks.scriptStart),
         readyMs: Math.round(marks.ready),
@@ -221,11 +264,15 @@ async function main(): Promise<void> {
         frame60Ms: Math.round(marks.frames[60] ?? Number.NaN),
         giConvergedMs: Math.round(marks.converged),
         firstFrameMs: Math.round(marks.firstFrame),
+        sceneMs: Math.round(marks.scene),
         // Until the GI converged: the longest task and the longest gap between two frames (a slice shows as a gap).
         longestTaskMs: worst(marks.longTasks),
         longestFrameGapMs: worst(marks.gaps),
         longTasks: marks.longTasks.slice(0, 200),
-        giCache: gi === undefined ? null : JSON.parse(gi.text.replace(/^TN_GI_CACHE /, "")),
+        // The first report is the preview of a progressive bake (the only one of a one-shot bake), the last the final.
+        giPreviewAtMs: gis[0]?.atMs ?? null,
+        giPreview: parse(gis[0]),
+        giCache: parse(gis.at(-1)),
         markers,
         startedAt: new Date(load0).toISOString(),
       };
