@@ -118,10 +118,19 @@ async function main(): Promise<void> {
       const markers: { atMs: number; text: string }[] = [];
       const begin = Date.now();
       let failed: string | undefined;
+      // A page that never reaches ready says why on its own console: echo errors as they happen.
+      page.on("pageerror", (error) =>
+        console.error(`PAGE_ERROR +${Date.now() - begin} ms ${error.message.slice(0, 400)}`),
+      );
       page.on("console", (message) => {
-        if (message.text().includes("TN_START_FAILED")) failed = message.text().slice(0, 400);
+        if (message.type() === "error" && !message.text().startsWith("Failed to load resource"))
+          console.error(
+            `PAGE_CONSOLE_ERROR +${Date.now() - begin} ms ${message.text().slice(0, 400)}`,
+          );
+        if (/TN_START_FAILED|TN_WASM_RENDERER_LOST/.test(message.text()))
+          failed = message.text().slice(0, 400);
         if (
-          /^(TN_GI_CACHE|TN_REFLECTION_CAPTURE|GPU sky|CPU environment sky|TN_AUTO_EXPOSURE|TN_STARTUP_WARMUP|TN_FRAME_HITCH|TN_WARMUP)/.test(
+          /^(TN_GI_CACHE|TN_GI_STOCK_RAYS|TN_REFLECTION_CAPTURE|GPU sky|CPU environment sky|TN_AUTO_EXPOSURE|TN_STARTUP_WARMUP|TN_FRAME_HITCH|TN_WARMUP)/.test(
             message.text(),
           )
         )
@@ -140,7 +149,7 @@ async function main(): Promise<void> {
       const load0 = Date.now();
       await page.goto(load, { waitUntil: "domcontentloaded" });
       await page.addStyleTag({ content: HIDE_UI });
-      // A start that failed never sets the marker: stop on the page's own report instead of the timeout.
+      // A start that failed (or a lost GPU device, which a shared GPU makes common) never sets the marker: stop on the page's own report instead of the timeout.
       await Promise.race([
         page.waitForSelector('[data-threenative-startup="ready"]', { timeout: 900_000 }),
         (async () => {
