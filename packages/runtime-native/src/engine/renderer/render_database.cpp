@@ -1348,7 +1348,7 @@ const std::vector<DrawItem>& RenderDatabase::prepare(Object3D& scene, Camera& ca
             if (mesh) continue;
             const Object3D* target = nullptr;
             if (type == typeid(DirectionalLight)) target = static_cast<const DirectionalLight*>(child)->target.get();
-            if (type == typeid(SpotLight)) target = static_cast<const SpotLight*>(child)->target;
+            if (type == typeid(SpotLight)) target = static_cast<const SpotLight*>(child)->target.get();
             const bool light = type == typeid(Light) || type == typeid(AmbientLight) ||
                                type == typeid(PointLight) || type == typeid(HemisphereLight) ||
                                (target && typeid(*target) == typeid(Object3D) && target->parent == nullptr);

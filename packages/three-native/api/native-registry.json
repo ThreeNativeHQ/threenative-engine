@@ -7343,6 +7343,7 @@
         "shadow.normalBias",
         "shadow.radius",
         "static",
+        "target",
         "up.x",
         "up.y",
         "up.z",
@@ -7376,7 +7377,6 @@
         "rotation",
         "scale",
         "shadow",
-        "target",
         "up"
       ],
       "fields": {
