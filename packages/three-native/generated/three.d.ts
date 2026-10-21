@@ -2421,6 +2421,7 @@ backgroundIntensity: number;
 backgroundRotation: Euler;
 environmentIntensity: number;
 environmentRotation: Euler;
+backgroundNode: Node | null | undefined;
 
   copy(source: Scene, recursive?: boolean): this;
 }

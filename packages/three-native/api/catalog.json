@@ -8741,7 +8741,10 @@
           "name": "shadowSide",
           "type": "Side | null",
           "mutable": true,
-          "lifetime": "owned"
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
         },
         {
           "name": "colorWrite",
@@ -11218,8 +11221,7 @@
           "mutable": true,
           "lifetime": "owned",
           "status": {
-            "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "kind": "supported"
           }
         },
         {
@@ -12324,8 +12326,7 @@
           "mutable": true,
           "lifetime": "owned",
           "status": {
-            "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "kind": "supported"
           }
         },
         {
