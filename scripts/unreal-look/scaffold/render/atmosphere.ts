@@ -260,12 +260,12 @@ export function distantSkyLight(toSun: { x: number; y: number; z: number }): Rgb
 /**
  * Measured, not derived: the fixed-exposure Unreal L3 void (height fog fogged to opaque, so it is
  * the fog's inscattering colour and nothing else) over `distantSkyLight`, per channel, through the
- * same tone curve. 0.811 / 0.867 / 0.930 at a 60 degree sun and 0.799 / 0.870 / 0.921 at 15, so one
- * constant holds across the sun. The clear sky matches the Unreal L2 frame within a few levels
+ * same tone curve (no gamut expansion, as a fresh Unreal frame has none). 0.739 / 0.871 / 0.954 at a 60
+ * degree sun and 0.782 / 0.871 / 0.928 at 15, so one constant holds across the sun within 1.6 levels. The clear sky matches the Unreal L2 frame within a few levels
  * with no such factor, so the cause sits in how Unreal builds this one light. Cloud ambient and
  * fog both read it, as in Unreal (GetViewDistanceSkyLightColor).
  */
-export const VIEW_DISTANCE_SKY_LIGHT_FIT: Rgb = [0.805, 0.869, 0.926];
+export const VIEW_DISTANCE_SKY_LIGHT_FIT: Rgb = [0.76, 0.871, 0.941];
 
 /** The light height fog and clouds take from the sky, per unit sun illuminance. */
 export function viewDistanceSkyLight(toSun: { x: number; y: number; z: number }): Rgb {

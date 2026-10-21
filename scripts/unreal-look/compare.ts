@@ -5,7 +5,7 @@ import { pathToFileURL } from "node:url";
 import { PNG } from "pngjs";
 import { curveShape, exposureCurve } from "./exposureCurve.js";
 import { compareGi } from "./gi.js";
-import { floorEdges, linearLuminance, matchedWidths } from "./penumbra.js";
+import { linearLuminance, pairedPenumbra } from "./penumbra.js";
 // Three.js belongs to core's dependency graph; root scripts do not install a second copy.
 const coreRequire = createRequire(new URL("../../packages/core/package.json", import.meta.url));
 const { FloatType } = await import(pathToFileURL(coreRequire.resolve("three")).href);
@@ -83,7 +83,7 @@ export interface IOptions {
   writeThresholds?: boolean;
   /** `--check`: fail on any locked cell of parity-locks.json that no longer holds. */
   check?: boolean;
-  /** `--write-locks <since>`: seed parity-locks.json with every cell and metric that holds now. */
+  /** `--write-locks <since>`: seed parity-locks.json with every cell and metric that holds now (only the `--layer` layers when given). */
   writeLocks?: string;
   /** `--lock-metric iou,...`: seed only these metrics (default: every metric that holds). */
   lockMetrics?: string[];
@@ -911,22 +911,14 @@ export function runComparison(options: IOptions = {}) {
         }
         if (options.metric === "penumbra" && layer === "L5" && a) {
           // Shadow-edge width on the floor (PRD-634): rows where both arms hold an edge.
-          const floor = required(base.regions.Floor);
-          const edges = (image: IImage) =>
-            floorEdges(
-              linearLuminance(image.data, image.width * image.height),
-              image.width,
-              image.height,
-              floor,
-            );
-          const m = matchedWidths(edges(a), edges(b));
-          if (m.matched > 0)
+          const m = pairedPenumbra(a, b, required(base.regions.Floor));
+          if (m)
             penumbra.push({
               cell,
               matched: m.matched,
               unrealPx: m.unreal,
               threenativePx: m.other,
-              ratio: m.other / m.unreal,
+              ratio: m.ratio,
             });
         }
         if (options.unrealVsUnreal)
@@ -954,7 +946,13 @@ export function runComparison(options: IOptions = {}) {
       (options.lockMetrics ?? LOCK_METRICS) as LockMetric[],
     );
     if (!seeded.length) fail("BAD_INPUT", "no cell holds its thresholds; nothing to lock");
-    writeJson(path.join(dir, "parity-locks.json"), { locks: seeded });
+    // `--layer L7,L8` re-seeds only those layers and keeps every other layer's locks as they are.
+    const lockFile = path.join(dir, "parity-locks.json");
+    const kept =
+      options.layers && existsSync(lockFile)
+        ? readLocks(lockFile).filter((lock) => !options.layers?.includes(lock.layer))
+        : [];
+    writeJson(lockFile, { locks: [...kept, ...seeded] });
   }
   if (options.writeThresholds)
     writeJson(thresholdFile, {

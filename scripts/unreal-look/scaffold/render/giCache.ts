@@ -1734,6 +1734,7 @@ export function installGi(
       material.emissive.copy(source.emissive);
       material.emissiveIntensity = source.emissiveIntensity;
       material.side = source.side;
+      material.shadowSide = source.shadowSide;
       (material as unknown as { irradianceNode: unknown }).irradianceNode = node;
       (material as unknown as { aoNode: unknown }).aoNode = visibility;
       mesh.material = material;
