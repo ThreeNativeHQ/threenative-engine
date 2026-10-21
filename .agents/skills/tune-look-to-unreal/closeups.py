@@ -1,6 +1,6 @@
 """Per-element close-ups: the same crop of every arm, side by side, one row per scene element.
 
-  python3 -I closeups.py <out.png> --layer L9 --sun sun60 <dir>=<label> [<dir>=<label> ...]
+  python3 -I closeups.py <out.png> --layer L9 --sun sun60 [--poses a,b] [--only Sky,Box_Red] <dir>=<label> [<dir>=<label> ...]
 
 The crop box of each element comes from Unreal's region ID frame for that pose
 (captures/unreal/ID/ID_<pose>.png, colours in tools/unreal-reference/regions.json); the cameras
@@ -57,12 +57,16 @@ def main():
     parser.add_argument("--layer", default="L9")
     parser.add_argument("--sun", default="sun60")
     parser.add_argument("--poses", default="exterior,spheres,interior,backlit")
+    parser.add_argument("--only", default="", help="comma list of element names, default every element")
     parser.add_argument("arms", nargs="+")
     args = parser.parse_args()
+    only = set(filter(None, args.only.split(",")))
     arms = [arm.split("=", 1) for arm in args.arms]
     rows = []
     for pose in args.poses.split(","):
         for name, box in sorted(boxes(pose).items()):
+            if only and name not in only:
+                continue
             rows.append((pose, name, box))
     label_font = font(20)
     sheet = Image.new("RGB", (len(arms) * CROP, len(rows) * CROP), "black")

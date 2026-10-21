@@ -606,6 +606,17 @@ void sceneEnvironment() {
     scene.backgroundTexture = sky;
     OrthographicCamera ortho(-4, 4, 3, -3, 0.1, 100);
     draws = database.prepare(scene, ortho, lights); CHECK(draws[0].matrixWorld[0] == 9);
+    // A material envMap (a sphere reflection capture) replaces the scene environment for that mesh and is not refused.
+    Scene mirrorScene; mirrorScene.environment = sky;
+    auto mirror = std::make_shared<Material>(MaterialType::Standard);
+    auto probe = std::make_shared<DataTexture>(); probe->mapping = 303; probe->width = 128; probe->height = 64;
+    probe->data.resize(128 * 64 * 4, 128); probe->needsUpdate();
+    mirror->maps["envMap"] = probe; mirror->envMapIntensity = 0.5;
+    auto mirrorMesh = std::make_shared<Mesh>(makeSphereGeometry(), mirror); mirrorScene.add(*mirrorMesh);
+    RenderDatabase mirrorDatabase;
+    draws = mirrorDatabase.prepare(mirrorScene, camera, lights);
+    CHECK(draws.size() == 1 && draws[0].envMap == probe.get() && draws[0].envMapIntensity == 0.5);
+    for (const auto& line : mirrorDatabase.diagnostics()) CHECK(line.find("envMap") == std::string::npos);
 }
 
 std::vector<uint8_t> read(Renderer& r, EventQueue& events) {

@@ -218,7 +218,7 @@ export async function captureThreeNative(options: IThreeNativeCaptureOptions): P
         if (
           message.type() === "error" ||
           message.type() === "warning" ||
-          /^(TN_(INDIRECT_LIGHT|PROBE_VOLUME|NATIVE_|RENDER_CHAIN|SSR|SSGI|GI_CACHE|SKY_OCCLUSION|AUTO_EXPOSURE|VIRTUAL_SHADOW)|GPU sky|CPU environment sky)/.test(
+          /^(TN_(INDIRECT_LIGHT|PROBE_VOLUME|REFLECTION_CAPTURE|NATIVE_|RENDER_CHAIN|SSR|SSGI|GI_CACHE|SKY_OCCLUSION|AUTO_EXPOSURE|VIRTUAL_SHADOW)|GPU sky|CPU environment sky)/.test(
             message.text(),
           )
         )

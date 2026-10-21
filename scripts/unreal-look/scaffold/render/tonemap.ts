@@ -23,7 +23,10 @@ export interface IFilmicCurve {
   readonly blackClip: number;
   readonly whiteClip: number;
   readonly blueCorrection: number;
-  /** Unreal's "Expand Gamut" (project default 1): bright, saturated colour is pushed toward a wider gamut. */
+  /**
+   * Unreal's "Expand Gamut": bright, saturated colour is pushed toward a wider gamut. Off by default: a per-pixel
+   * fit against Unreal's own L1 and L2 frames found no expansion in a fresh project (PRD-632). 1 is the override.
+   */
   readonly expandGamut: number;
 }
 
@@ -35,7 +38,7 @@ export const FILMIC_CURVE: IFilmicCurve = {
   blackClip: 0,
   whiteClip: 0.04,
   blueCorrection: 0.6,
-  expandGamut: 1,
+  expandGamut: 0,
 };
 
 type Vec3 = readonly [number, number, number];
