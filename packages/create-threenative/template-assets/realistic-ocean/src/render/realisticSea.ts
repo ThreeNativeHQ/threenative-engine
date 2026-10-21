@@ -59,13 +59,19 @@ import {
  * straighter-crested train that does not care where the wind is blowing; `waveHeight` scales the
  * whole thing so the sea is as tall as you say it is, whatever the grid resolution.
  */
+// web-ocean's own sea: a 7 m/s wind sea over 90 km and a 1.8 m, 120 m swell. Directions are set
+// against the sailing kit's sun (bearing -0.6 rad) the way web-ocean sets them against its own:
+// the wind sea runs 204 degrees from the sun's bearing, the swell straight away from it, so
+// looking into the sun is looking along the crests' faces, where glitter and backlight are.
 export const SEA_STATE: ISeaState = {
-  wind: { speed: 11, direction: 0.55, fetch: 80_000, peakEnhancement: 3.3 },
-  swell: { height: 1.5, direction: -0.3, peakFrequency: 0.62, spreading: 16 },
+  wind: { speed: 7, direction: 2.96, fetch: 90_000, peakEnhancement: 3.3 },
+  swell: { height: 1.8, direction: 2.54, peakFrequency: 0.717, spreading: 48 },
   gravity: 9.81,
   surfaceTension: 7.4e-5,
-  shortWaveCut: 0.04,
-  waveHeight: 2.0,
+  // web-ocean's 1.2 mm. Larger cuts into the ripples the finest cascade exists to carry.
+  shortWaveCut: 0.0012,
+  // The height web-ocean's own spectrum has at these inputs, unscaled: 2.3 m.
+  waveHeight: 2.3,
 };
 
 /**
@@ -82,7 +88,7 @@ export const SEA = {
   resolution: 128,
   // Horizontal displacement scale. Above zero sharpens crests, which is also what folds them into
   // whitecaps, so it is the foam's input as much as the shape's.
-  choppiness: 1.3,
+  choppiness: 1.25,
   seed: 20_261_020,
   // 128 across a 256 m patch is one height every two metres. See `SEA_CASCADES`.
   readbackResolution: 128,
@@ -109,21 +115,35 @@ export const FOAM = {
 
 /** Looks: colours are linear RGB, sizes are metres. */
 export const LOOK = {
-  deep: 0x0d3f58,
-  shallow: 0x2a7a96,
+  // web-ocean's coastal body colour (turbidity 1.6), lit the way a standard material lights it:
+  // its scatter times 1.6 on the crests, half that in the troughs.
+  deep: 0x275a62,
+  shallow: 0x397d88,
   foam: 0xe6eef0,
-  /** Light coming through a thin backlit crest. */
-  subsurface: 0x2f9a78,
-  /** Radiance of the sun for the crest glow only. The scene's own light lights everything else. */
-  sunRadiance: [16, 14, 10] as readonly [number, number, number],
+  /** Light coming through a thin backlit crest, and how strongly. */
+  subsurface: 0x356252,
+  subsurfaceGain: 2.6,
+  /**
+   * Radiance of the sun for the crest glow only, until `setSun` is given the scene's key light.
+   * The scene's own light lights everything else.
+   */
+  sunRadiance: [3.4, 3.1, 2.5] as readonly [number, number, number],
   /** Fraction of the mirrored hull and marks that shows. A render target is written linear. */
   mirrorGain: 0.55,
   /** Image-based reflection scale on the standard material. */
-  environmentIntensity: 0.55,
-  /** The glitter path never narrows past this roughness, however flat the resolved water. */
-  roughnessFloor: 0.06,
-  /** Where the sea stops being a skin of ripples and becomes sub-pixel slope, in metres of pixel. */
-  slopeTable: { count: 64, nearest: 0.02, farthest: 400 },
+  environmentIntensity: 1,
+  /**
+   * Mean-square slope of the capillary ripples no cascade carries, at any distance, plus what
+   * grows in with distance (`far`, from `from` to `to` metres). Without it a near pixel is a
+   * mirror: the sun lands on a few facets as pinpoints and the glitter path never forms.
+   */
+  capillarySlope: { near: 0.0048, far: 0.007, from: 30, to: 500 },
+  /**
+   * Where the sea stops being a skin of ripples and becomes sub-pixel slope, in metres of pixel.
+   * The nearest footprint is the finest cascade's texel, measured off the sea: a pixel finer than
+   * that still cannot see the ripples no cascade carries.
+   */
+  slopeTable: { count: 64, farthest: 400 },
 } as const;
 
 /** The disc's geometry: rings of quads whose spacing grows with radius, centred on the ship. */
@@ -248,13 +268,14 @@ export function createRealisticWaterMesh(
   const sunRadiance = uniform(new Vector3(...LOOK.sunRadiance));
 
   // The glitter table: the slope carried by everything a pixel is too far away to resolve.
+  const slopeTable = { ...LOOK.slopeTable, nearest: texel(cascadeCount - 1) };
   const table = slopeVarianceTable(
     seaEnergy(
       state,
       size,
       ocean.cascades.map((_, c) => patch(c)),
     ),
-    LOOK.slopeTable,
+    slopeTable,
   );
   // A uniform array, not a storage buffer: a device made with the default limits allows eight
   // storage buffers in the fragment stage, and the slope and foam grids below already use seven.
@@ -287,7 +308,10 @@ export function createRealisticWaterMesh(
   }
   material.positionNode = positionLocal.add(offset);
 
-  const footprint = positionWorld.dFdx().length().max(positionWorld.dFdy().length());
+  // The pixel's size on the water as the square root of its area. At a grazing view a pixel is a
+  // long thin strip: its long side would fade every crest running across the view and spend it as
+  // roughness in all directions, which widens the glitter path sideways and blurs the far sea.
+  const footprint = positionWorld.dFdx().length().mul(positionWorld.dFdy().length()).sqrt();
 
   // What a pixel can resolve: each cascade contributes its slope while the pixel is finer than the
   // cascade's own texel, and is faded out above that. The fade is not a loss: the table below hands
@@ -326,10 +350,10 @@ export function createRealisticWaterMesh(
   // The unresolved slope, as roughness. `alpha = sqrt(mean-square slope)`, and three's roughness is
   // `sqrt(alpha)`, so the fourth root of the table entry.
   const tableIndex = footprint
-    .max(LOOK.slopeTable.nearest)
-    .div(LOOK.slopeTable.nearest)
+    .max(slopeTable.nearest)
+    .div(slopeTable.nearest)
     .log()
-    .div(Math.log(LOOK.slopeTable.farthest / LOOK.slopeTable.nearest))
+    .div(Math.log(slopeTable.farthest / slopeTable.nearest))
     .clamp(0, 1)
     .mul(LOOK.slopeTable.count - 1);
   const lower = tableIndex.floor();
@@ -422,16 +446,31 @@ export function createRealisticWaterMesh(
   const reference = float(state.waveHeight ?? 1);
   const shade = smoothstep(reference.mul(-0.45), reference.mul(0.4), height);
   const water = mix(color(LOOK.deep), color(LOOK.shallow), shade);
-  material.colorNode = cheap ? water : mix(water, color(LOOK.foam), foamMask.mul(0.95));
+  const toEye = eye.normalize();
+  const fresnelOf = (normal: Node<"vec3">) =>
+    pow(oneMinus(saturate(dot(normal, toEye))), float(5))
+      .mul(0.97963)
+      .add(0.02037);
+  // Light that enters the water is light the surface did not reflect: the body is lit by what
+  // Fresnel leaves, so at a grazing view the sea is its reflection, not its colour. Taken from a
+  // partly smoothed normal, because the ripples finer than a pixel still face the eye.
+  const transmitted = oneMinus(fresnelOf(mix(normalWorld, vec3(0, 1, 0), 0.45).normalize()));
+  material.colorNode = cheap
+    ? water
+    : mix(water.mul(transmitted), color(LOOK.foam), foamMask.mul(0.95));
 
   if (!cheap) {
     // Light coming through a thin backlit crest: it needs a face turned away from the sun, a
-    // height near the surface and the eye on the far side, and it fades with distance.
-    const toEye = eye.normalize();
+    // height near the surface and the eye looking nearly into the sun, and it fades with distance.
     const crest = saturate(height.sub(reference.mul(0.05)).div(reference.mul(0.8)));
-    const toSun = max(dot(sunDirection, toEye.negate()), 0);
-    const thin = smoothstep(float(0.78), float(0.25), dot(sunDirection, normalWorld));
-    const glow = crest.mul(crest).mul(toSun).mul(thin).mul(distance.div(-1200).exp());
+    const toSun = pow(max(dot(sunDirection, toEye.negate()), 0), float(4));
+    const thin = pow(saturate(dot(sunDirection, normalWorld).mul(-0.5).add(0.5)), float(3));
+    const glow = crest
+      .mul(crest)
+      .mul(toSun)
+      .mul(thin)
+      .mul(distance.div(-600).exp())
+      .mul(LOOK.subsurfaceGain);
     const tint = new Color(LOOK.subsurface);
     const subsurface = vec3(tint.r, tint.g, tint.b)
       .mul(sunRadiance)
@@ -440,8 +479,7 @@ export function createRealisticWaterMesh(
 
     // The hull, the marks and the headland, in the water, sharp: the one thing a prefiltered
     // environment cannot do. Fresnel decides how much, as it does for the sky.
-    const facing = saturate(dot(normalWorld, toEye));
-    const fresnel = pow(oneMinus(facing), float(5)).mul(0.97963).add(0.02037);
+    const fresnel = fresnelOf(normalWorld);
     material.emissiveNode =
       mirror === undefined
         ? subsurface
@@ -457,8 +495,10 @@ export function createRealisticWaterMesh(
   // Roughness is spent, not lost: the unresolved slope reappears here, and broken water is not a
   // mirror either.
   if (!cheap) {
-    const filtered = unresolved.max(0).sqrt().sqrt();
-    material.roughnessNode = max(max(filtered, float(LOOK.roughnessFloor)), foamMask.mul(0.9));
+    const { near, far, from, to } = LOOK.capillarySlope;
+    const capillary = smoothstep(float(from), float(to), distance).mul(far).add(near);
+    const filtered = unresolved.max(0).add(capillary).sqrt().sqrt();
+    material.roughnessNode = max(filtered, foamMask.mul(0.9));
   }
 
   const mesh = new Mesh(geometry, material);

@@ -35,7 +35,7 @@ const EDITS: readonly (readonly [original: string, adopted: string])[] = [
   ],
   [
     "    const sea = createWaterMesh(ocean, new WaterSurface3D(SEA_MIRROR), { software });",
-    "    const sea = createRealisticWaterMesh(ocean, maps, new WaterSurface3D(SEA_MIRROR), { software });\n    sea.setSun([SUN_DIRECTION.x, SUN_DIRECTION.y, SUN_DIRECTION.z]);",
+    "    const sea = createRealisticWaterMesh(ocean, maps, new WaterSurface3D(SEA_MIRROR), { software });\n    sea.setSun(\n      [SUN_DIRECTION.x, SUN_DIRECTION.y, SUN_DIRECTION.z],\n      [sun.color.r * sun.intensity, sun.color.g * sun.intensity, sun.color.b * sun.intensity],\n    );",
   ],
 ];
 
@@ -82,14 +82,80 @@ const POSE_HOOK = `  camera.lookAt(target.x + forwardX * LEAD, target.y + AIM, t
   // Capture instrumentation (scripts/realistic-ocean-consumer.ts --capture-hook), identical on both
   // arms: a pose set before load, as \`yaw\` degrees from the sun's bearing, so a frame can be
   // repeated exactly. Never part of the scaffold or of the bundle.
-  const pose = (globalThis as { __TN_OCEAN_POSE?: { x: number; y: number; z: number; yaw: number; pitch: number } }).__TN_OCEAN_POSE;
+  const pose = (globalThis as { __TN_OCEAN_POSE?: { x: number; y: number; z: number; yaw: number; pitch: number; fov?: number } }).__TN_OCEAN_POSE;
   if (pose !== undefined) {
     const sunYaw = Math.atan2(-SUN_DIRECTION.x, -SUN_DIRECTION.z);
     camera.position.set(pose.x, pose.y, pose.z);
     camera.rotation.order = "YXZ";
     camera.rotation.set((pose.pitch * Math.PI) / 180, sunYaw + (pose.yaw * Math.PI) / 180, 0);
+    if (pose.fov !== undefined && camera.fov !== pose.fov) {
+      camera.fov = pose.fov;
+      camera.updateProjectionMatrix();
+    }
   }
 }`;
+
+/**
+ * The reference's conditions, for a like-for-like capture: web-ocean lights its sea with a sun
+ * 2.6 degrees up and a warm hazy sky, the sailing kit with a photograph whose sun is 48 degrees
+ * up, so their water cannot be compared as shipped. This swaps in a low-sun photograph
+ * (`scripts/realistic-ocean-sky.py` makes it from a Poly Haven HDR and measures its sun) and
+ * re-aims the sun, the fog and the key light at it. Capture instrumentation only, applied to both
+ * arms alike.
+ */
+export const MATCHED_SKY = {
+  /**
+   * Poly Haven "Qwantani Sunset (Pure Sky)", CC0, 4k HDR, encoded at 0.25 (white = 4) and drawn
+   * at half its radiance, so the horizon haze stays inside an sRGB fog colour.
+   */
+  range: 2,
+  /** Unit vector toward its sun, read off the file by the script: 6.1 degrees up. */
+  sun: [0.8043, 0.1062, 0.5846] as const,
+  /** Its horizon band away from the sun, times `range`. */
+  skyLow: "0xc6bdb4",
+  /** Its sun's own colour, and its irradiance integrated off the file, times the same half. */
+  sunColor: "0xff9f2b",
+  sunIntensity: 3.66,
+  /** web-ocean's marine haze floor (1.1e-4 per metre) as FogExp2: the same 90% at a kilometre. */
+  fogDensity: 0.00032,
+  /** The same floor as the height term's sea-level density, per metre. */
+  hazeDensity: 0.00011,
+};
+
+export async function matchReferenceScene(target: string, skyJpg: string): Promise<void> {
+  const edit = async (relative: string, edits: readonly (readonly [string, string])[]) => {
+    const file = path.join(target, relative);
+    let source = await readFile(file, "utf8");
+    for (const [from, to] of edits) source = replaceOnce(source, from, to);
+    await writeFile(file, source);
+  };
+  const [x, y, z] = MATCHED_SKY.sun;
+  await edit("src/render/sky.ts", [
+    ["const SKY_RANGE = 2.5;", `const SKY_RANGE = ${MATCHED_SKY.range};`],
+    [
+      "const SUN_IN_PHOTO = new Vector3(0.555, 0.742, 0.38);",
+      `const SUN_IN_PHOTO = new Vector3(${x}, ${y}, ${z});`,
+    ],
+    [
+      "const EYE_LEVEL = { density: 0.003,",
+      `const EYE_LEVEL = { density: ${MATCHED_SKY.fogDensity},`,
+    ],
+  ]);
+  await edit("src/render/heightFog.ts", [
+    ["  density: 0.0018,", `  density: ${MATCHED_SKY.hazeDensity},`],
+  ]);
+  await edit("src/render/palette.ts", [
+    ["skyLow: 0xacb1c1,", `skyLow: ${MATCHED_SKY.skyLow},`],
+    ["player: 0xffe6b8,", `player: ${MATCHED_SKY.sunColor},`],
+  ]);
+  await edit("src/render/lighting.ts", [
+    [
+      "new DirectionalLight(palette.player, 3.4);",
+      `new DirectionalLight(palette.player, ${MATCHED_SKY.sunIntensity});`,
+    ],
+  ]);
+  await cp(skyJpg, path.join(target, "assets/sky.jpg"));
+}
 
 /** Patch a consumer's camera so a capture script can pose it. Fails closed on a changed template. */
 export async function addCapturePose(target: string): Promise<void> {
@@ -125,9 +191,13 @@ async function main(): Promise<void> {
   const args = process.argv.slice(2);
   const rootIndex = args.indexOf("--root");
   const root = path.resolve(rootIndex >= 0 ? (args[rootIndex + 1] as string) : "ocean-consumer");
+  const matchIndex = args.indexOf("--match-reference");
+  const matchSky = matchIndex >= 0 ? path.resolve(args[matchIndex + 1] as string) : undefined;
   if (args.includes("--patch-only")) {
-    await addCapturePose(path.join(root, "sailing-incumbent"));
-    await addCapturePose(path.join(root, "sailing-realistic"));
+    for (const arm of ["sailing-incumbent", "sailing-realistic"]) {
+      await addCapturePose(path.join(root, arm));
+      if (matchSky !== undefined) await matchReferenceScene(path.join(root, arm), matchSky);
+    }
     return;
   }
   await mkdir(root, { recursive: true });
@@ -152,6 +222,10 @@ async function main(): Promise<void> {
   if (args.includes("--capture-hook")) {
     await addCapturePose(incumbent.target);
     await addCapturePose(candidate);
+  }
+  if (matchSky !== undefined) {
+    await matchReferenceScene(incumbent.target, matchSky);
+    await matchReferenceScene(candidate, matchSky);
   }
   process.stdout.write(
     `TN_REALISTIC_CONSUMER incumbent=${incumbent.target} realistic=${candidate}\n`,

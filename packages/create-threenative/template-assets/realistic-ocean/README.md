@@ -62,7 +62,11 @@ with
 const ocean = ctx.add(createRealisticSea());
 const maps = ctx.add(createRealisticMaps(ocean));
 const sea = createRealisticWaterMesh(ocean, maps, new WaterSurface3D(SEA_MIRROR), { software });
-sea.setSun([SUN_DIRECTION.x, SUN_DIRECTION.y, SUN_DIRECTION.z]);
+sea.setSun(
+  [SUN_DIRECTION.x, SUN_DIRECTION.y, SUN_DIRECTION.z],
+  // The key light's radiance, so light through the crests is the scene's own sun.
+  [sun.color.r * sun.intensity, sun.color.g * sun.intensity, sun.color.b * sun.intensity],
+);
 ```
 
 `scripts/realistic-ocean-consumer.ts` in the engine repository applies these edits, including the `#sea` field type and the removed `createOcean` and `createWaterMesh` imports, to a fresh

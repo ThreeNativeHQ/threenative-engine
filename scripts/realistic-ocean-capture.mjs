@@ -4,6 +4,7 @@
 //   upstream   Noniv/web-ocean's ocean.html at the pinned commit, as its README poses them
 // usage: node realistic-ocean-capture.mjs --arm <incumbent|realistic|upstream> --url <url> --out <dir>
 //          [--runs 2] [--poses low,oblique,elevated] [--width 1280] [--height 720] [--hide <css selector>]
+//          [--match]     game arms only: web-ocean's own poses and lens (see MATCHED)
 //          [--pin <ms>]  game arms only: drive the page on a fake clock and capture exactly <ms> of frames
 //                        (16.67 ms each) after the game reports ready, so every arm and run shows the same sea time
 // Every frame records the adapter it ran on: a software adapter's picture is not evidence.
@@ -50,6 +51,16 @@ const UPSTREAM = {
   // web-ocean's own low sun is already on the horizon in its low view.
   sunpath: "0,2.4,0,0,-3",
 };
+// --match: the game arms take web-ocean's own camera instead, for a build made with
+// `realistic-ocean-consumer.ts --match-reference` (its low sun). web-ocean's sun stands 4 degrees
+// right of its yaw 0, and its lens is 58 degrees tall.
+const MATCHED = Object.fromEntries(
+  Object.entries(UPSTREAM).map(([name, cam]) => {
+    const [x, y, z, yaw, pitch] = cam.split(",").map(Number);
+    return [name, { x, y, z, yaw: 4 - yaw, pitch, fov: 58 }];
+  }),
+);
+if (args.includes("--match")) Object.assign(POSES, MATCHED);
 
 mkdirSync(out, { recursive: true });
 const browser = await chromium.launch({
