@@ -289,6 +289,24 @@ describe("the world-space GI cache against closed forms (PRD-631 L7)", () => {
     expect((pane as unknown as { aoNode: unknown }).aoNode).toBeDefined();
   });
 
+  it("the twoSidedFoliage marker survives the swap, and an unmarked material stays unmarked (PRD-651)", () => {
+    // three declares no such field, so the twin has no key to copy it into: the swap carries it by name.
+    const marked = new MeshStandardMaterial({ side: DoubleSide, alphaTest: 0.5 });
+    marked.twoSidedFoliage = true;
+    const plain = new MeshStandardMaterial({ side: DoubleSide, alphaTest: 0.5 });
+    const leaf = new Mesh(new PlaneGeometry(1, 1), marked);
+    const card = new Mesh(new PlaneGeometry(1, 1).translate(3, 0, 0), plain);
+    const floor = new Mesh(
+      new PlaneGeometry(40, 40).rotateX(-Math.PI / 2),
+      new MeshStandardMaterial(),
+    );
+    const scene = new Group().add(leaf, card, floor);
+    skyRadiance.current = { data: new Float32Array(6), width: 2, height: 1, scale: [1, 1, 1] };
+    installGi(rayContext(scene), scene, { bounces: 1, sun: noSun });
+    expect((leaf.material as MeshStandardMaterial).twoSidedFoliage).toBe(true);
+    expect((card.material as MeshStandardMaterial).twoSidedFoliage ?? false).toBe(false);
+  });
+
   it("a material whose fields are accessors on its class, as the native engine's are, swaps with them intact", () => {
     // The native engine binds a material's fields as accessors on the class prototype, which a `for in` never lists:
     // a copy by enumeration took nothing, and every leaf and wall came back white.

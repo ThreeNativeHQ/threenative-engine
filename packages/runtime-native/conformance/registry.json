@@ -602,7 +602,7 @@
     },
     {
       "id": "leaf-receiver",
-      "title": "two-sided alpha-tested receiver skips the normal bias",
+      "title": "twoSidedFoliage receiver skips the normal bias",
       "category": "shadows",
       "status": "implemented",
       "scene": "conformance/scenes/shared/leaf-receiver.js",

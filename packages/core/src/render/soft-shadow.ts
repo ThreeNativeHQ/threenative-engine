@@ -1,7 +1,6 @@
 import {
   type CubeTexture,
   type DepthTexture,
-  DoubleSide,
   GreaterEqualCompare,
   LessEqualCompare,
   type LightShadow,
@@ -30,20 +29,28 @@ import type { Node } from "three/webgpu";
 /** tan(5 degrees): Unreal's `r.Shadow.Virtual.SubsurfaceShadowMinSourceAngle`, the sun's least source on a leaf. */
 export const LEAF_MIN_SOURCE_TANGENT = Math.tan((5 * Math.PI) / 180);
 
+declare module "three" {
+  // biome-ignore lint/style/useNamingConvention: a module augmentation keeps three's own class name.
+  interface Material {
+    /**
+     * Unreal's Two Sided Foliage shading model (PRD-651). The receiver looks its shadow up where it
+     * stands, without the normal bias, and sees a sun of at least 5 degrees. The default is off: a
+     * card with two sides and a cut is a default lit material in Unreal, and keeps the normal bias.
+     */
+    twoSidedFoliage?: boolean;
+  }
+}
+
 /**
- * A two-sided, alpha-tested receiver: a leaf card (PRD-651). Unreal's two-sided-foliage and subsurface
- * receivers skip the normal bias and widen the sun's source to a 5 degree minimum, because a thin leaf
- * biased along its normal either shades itself or lets light through. The test reads the material only:
- * the game marks nothing.
+ * A receiver marked `twoSidedFoliage` (PRD-651). Unreal gives its Two Sided Foliage and subsurface
+ * pixels no normal bias and a sun source of at least 5 degrees, because a thin leaf biased along its
+ * normal either shades itself or lets light through. The sides and the cut do not choose this: Unreal
+ * reads the shading model, so the rule reads the marker and never infers it.
  */
 export function isLeafReceiver(
-  material: { side?: number; alphaTest?: number; alphaTestNode?: unknown } | null | undefined,
+  material: { readonly twoSidedFoliage?: boolean } | null | undefined,
 ): boolean {
-  if (material === null || material === undefined) return false;
-  const cut =
-    (material.alphaTest ?? 0) > 0 ||
-    (material.alphaTestNode !== undefined && material.alphaTestNode !== null);
-  return material.side === DoubleSide && cut;
+  return material?.twoSidedFoliage === true;
 }
 
 /** The tangent of the source angle a receiver sees: a leaf receiver sees at least 5 degrees. */
@@ -159,7 +166,7 @@ export function sourceAngleShadowFilter({
     const linearDepth = (depth: Node<"float">) => (reversed ? depth.oneMinus() : depth);
     return Fn(
       (_inputs: unknown, builder: { readonly material?: Parameters<typeof isLeafReceiver>[0] }) => {
-        // A leaf receiver (a two-sided cut card) sees the sun at 5 degrees at least; the node is built per material.
+        // A receiver marked twoSidedFoliage sees the sun at 5 degrees at least; the node is built per material.
         const reach = receiverSourceTangent(builder.material, tangent);
         const receiver = linearDepth(shadowCoord.z);
         // Near-plane distance bounds the largest possible caster/receiver gap.

@@ -2483,7 +2483,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
       const moverNode = registeredOnCreate(
         shadow(light as unknown as DirectionalLight, moverShadow), // quality-allow: the stock node reads only position, target and shadow
       );
-      // A leaf receiver (two-sided, cut by alpha) looks its shadow up where it stands: the normal bias is
+      // A receiver marked twoSidedFoliage looks its shadow up where it stands: the normal bias is
       // taken back out of the shadow position, in this level's map and in its mover map (PRD-651).
       for (const stockNode of [node, moverNode]) {
         const stock = stockNode as typeof node & {
