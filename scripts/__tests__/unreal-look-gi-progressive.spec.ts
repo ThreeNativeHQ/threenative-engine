@@ -95,8 +95,15 @@ describe("progressive GI bake", () => {
 
     // The provisional bake lands after some frames, cheaper than the full one, in the same texture.
     let steps = 0;
-    while (giCache.field === staleField && steps < 100000) {
+    /** The longest a slice held the thread: the page is never frozen for more than this by the bake. */
+    let longest = 0;
+    const runSlice = (): void => {
+      const at = performance.now();
       frames.shift()?.();
+      longest = Math.max(longest, performance.now() - at);
+    };
+    while (giCache.field === staleField && steps < 100000) {
+      runSlice();
       steps += 1;
     }
     expect(giCache.field).not.toBe(staleField);
@@ -109,10 +116,13 @@ describe("progressive GI bake", () => {
     // The full bake is spread over frames, each doing a slice of the work.
     steps = 0;
     while (converged === undefined && steps < 100000) {
-      frames.shift()?.();
+      runSlice();
       steps += 1;
     }
     expect(steps).toBeGreaterThan(3);
+    // One call takes seconds on this scene; a slice that yields at its loop boundaries stays far under that (Node: 41 ms
+    // at a 5 ms budget, the page's own long-task log: 56 ms). The bound is loose so a loaded host does not flake it.
+    expect(longest).toBeLessThan(250);
     expect(frames.length).toBe(0);
     expect((converged as { pass: string }).pass).toBe("final");
     expect((converged as { rays: number }).rays).toBe(reference?.rays);
