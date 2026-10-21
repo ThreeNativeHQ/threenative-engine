@@ -24,6 +24,32 @@ function assertNativeRayTracingGate(body) {
   assert.match(body, /return engine->newUndefined\(\);/u);
 }
 
+function assertBatchGate(body) {
+  const gate = body.indexOf("found.rayBatch");
+  const firstRead = body.indexOf("getArrayBufferData");
+  if (gate < 0 || firstRead < gate) {
+    throw new Error("RED observed: traceRayBatch reads caller memory before the capability check");
+  }
+  for (const code of [
+    "TN_NATIVE_RAYTRACING_UNAVAILABLE",
+    "TN_NATIVE_RAYTRACING_BATCH_INVALID",
+    "TN_NATIVE_RAYTRACING_BATCH_FAILED",
+  ]) {
+    assert.ok(body.includes(code), `traceRayBatch must name ${code}`);
+  }
+}
+
+test("native traceRayBatch checks the batch capability before it reads caller memory", () => {
+  assertBatchGate(nativeDefinition("js_traceRayBatch").text);
+});
+
+test("negative control: dropping the capability check makes the batch contract red", () => {
+  const body = nativeDefinition("js_traceRayBatch").text;
+  const mutated = body.replace("if (!found.rayBatch) {", "if (false) {");
+  assert.notEqual(mutated, body, "the mutation must remove the live capability check");
+  assert.throws(() => assertBatchGate(mutated), /RED observed: traceRayBatch reads caller memory/u);
+});
+
 test("native traceRays refuses before any backend can report success", () => {
   assertNativeRayTracingGate(nativeDefinition("js_traceRays").text);
 });

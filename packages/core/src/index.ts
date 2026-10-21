@@ -1305,7 +1305,8 @@ export type {
  * @situation choose touch controls for a mobile device
  * @situation can I raytrace on native
  * @constraint only use the returned platform facts; native globals are host-owned
- * @constraint ray tracing is unavailable on native until buffer-to-texture copy-out interop exists; `mystralRT.traceRays` refuses instead of resolving success without a readable result
+ * @constraint image ray tracing is unavailable on native until buffer-to-texture copy-out interop exists; `mystralRT.traceRays` refuses instead of resolving success without a readable result
+ * @constraint a native desktop host with ray tracing hardware traces ray batches with `mystralRT.traceRayBatch`, which writes hit records into a typed array you own; read `mystralRT.capabilities().rayBatch` first, and keep the software BVH trace for the web and every other host
  * @example if (isMobile()) showTouchControls();
  */
 export { getPlatform, isMobile, isNative, isTouchscreenAvailable, isWeb } from "./platform.js";

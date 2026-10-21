@@ -1410,7 +1410,7 @@ export function getPlatform(): Readonly<IPlatformInfo> { … }
 ```
 
 - **Use when:** branch a portable game on web or native · choose touch controls for a mobile device · can I raytrace on native
-- **Constraints:** only use the returned platform facts; native globals are host-owned · ray tracing is unavailable on native until buffer-to-texture copy-out interop exists; `mystralRT.traceRays` refuses instead of resolving success without a readable result
+- **Constraints:** only use the returned platform facts; native globals are host-owned · image ray tracing is unavailable on native until buffer-to-texture copy-out interop exists; `mystralRT.traceRays` refuses instead of resolving success without a readable result · a native desktop host with ray tracing hardware traces ray batches with `mystralRT.traceRayBatch`, which writes hit records into a typed array you own; read `mystralRT.capabilities().rayBatch` first, and keep the software BVH trace for the web and every other host
 
 ```ts
 if (isMobile()) showTouchControls();
@@ -1553,7 +1553,7 @@ export function isMobile(): boolean { … }
 ```
 
 - **Use when:** branch a portable game on web or native · choose touch controls for a mobile device · can I raytrace on native
-- **Constraints:** only use the returned platform facts; native globals are host-owned · ray tracing is unavailable on native until buffer-to-texture copy-out interop exists; `mystralRT.traceRays` refuses instead of resolving success without a readable result
+- **Constraints:** only use the returned platform facts; native globals are host-owned · image ray tracing is unavailable on native until buffer-to-texture copy-out interop exists; `mystralRT.traceRays` refuses instead of resolving success without a readable result · a native desktop host with ray tracing hardware traces ray batches with `mystralRT.traceRayBatch`, which writes hit records into a typed array you own; read `mystralRT.capabilities().rayBatch` first, and keep the software BVH trace for the web and every other host
 
 ```ts
 if (isMobile()) showTouchControls();
@@ -1568,7 +1568,7 @@ export function isNative(): boolean { … }
 ```
 
 - **Use when:** branch a portable game on web or native · choose touch controls for a mobile device · can I raytrace on native
-- **Constraints:** only use the returned platform facts; native globals are host-owned · ray tracing is unavailable on native until buffer-to-texture copy-out interop exists; `mystralRT.traceRays` refuses instead of resolving success without a readable result
+- **Constraints:** only use the returned platform facts; native globals are host-owned · image ray tracing is unavailable on native until buffer-to-texture copy-out interop exists; `mystralRT.traceRays` refuses instead of resolving success without a readable result · a native desktop host with ray tracing hardware traces ray batches with `mystralRT.traceRayBatch`, which writes hit records into a typed array you own; read `mystralRT.capabilities().rayBatch` first, and keep the software BVH trace for the web and every other host
 
 ```ts
 if (isMobile()) showTouchControls();
@@ -1598,7 +1598,7 @@ export function isTouchscreenAvailable(): boolean { … }
 ```
 
 - **Use when:** branch a portable game on web or native · choose touch controls for a mobile device · can I raytrace on native
-- **Constraints:** only use the returned platform facts; native globals are host-owned · ray tracing is unavailable on native until buffer-to-texture copy-out interop exists; `mystralRT.traceRays` refuses instead of resolving success without a readable result
+- **Constraints:** only use the returned platform facts; native globals are host-owned · image ray tracing is unavailable on native until buffer-to-texture copy-out interop exists; `mystralRT.traceRays` refuses instead of resolving success without a readable result · a native desktop host with ray tracing hardware traces ray batches with `mystralRT.traceRayBatch`, which writes hit records into a typed array you own; read `mystralRT.capabilities().rayBatch` first, and keep the software BVH trace for the web and every other host
 
 ```ts
 if (isMobile()) showTouchControls();
@@ -1613,7 +1613,7 @@ export function isWeb(): boolean { … }
 ```
 
 - **Use when:** branch a portable game on web or native · choose touch controls for a mobile device · can I raytrace on native
-- **Constraints:** only use the returned platform facts; native globals are host-owned · ray tracing is unavailable on native until buffer-to-texture copy-out interop exists; `mystralRT.traceRays` refuses instead of resolving success without a readable result
+- **Constraints:** only use the returned platform facts; native globals are host-owned · image ray tracing is unavailable on native until buffer-to-texture copy-out interop exists; `mystralRT.traceRays` refuses instead of resolving success without a readable result · a native desktop host with ray tracing hardware traces ray batches with `mystralRT.traceRayBatch`, which writes hit records into a typed array you own; read `mystralRT.capabilities().rayBatch` first, and keep the software BVH trace for the web and every other host
 
 ```ts
 if (isMobile()) showTouchControls();
