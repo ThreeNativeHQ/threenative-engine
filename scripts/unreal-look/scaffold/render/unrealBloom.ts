@@ -13,6 +13,10 @@
 //
 // Each stage blurs one level of the downsample chain (stage 6 the 1/64 level, stage 1 the 1/2 level)
 // and adds the stage below it, upsampled, so the result is at half resolution.
+//
+// The cost follows Unreal's: PostProcessWeightedSampleSum.cpp (Compute1DGaussianFilterKernel, the
+// bilinear optimisation) reads two texels with one tap, so a radius of R texels takes R + 1 taps per
+// axis, and the loop runs only that many. A fixed 63 tap loop cost about 10 ms of GPU at 1080p.
 import { HalfFloatType, LinearFilter, RenderTarget, Vector2 } from "three";
 import { Fn, Loop, float, nodeObject, texture, uniform, uv, vec2, vec3, vec4 } from "three/tsl";
 import {
@@ -59,6 +63,63 @@ export function bloomRadius(width: number, size: number): number {
   return Math.min(Math.max(radius, 1e-4), MAX_RADIUS);
 }
 
+/** The chain level (1 = half resolution) of the stage with this size index. Stage 1 is level 1. */
+const levelSize = (extent: number, level: number): number =>
+  Math.max(1, Math.ceil(extent / 2 ** level));
+
+/** One bilinear tap of a stage: `offset` in texels from the centre, `weight` of the two texels it reads. */
+export interface IBloomTap {
+  readonly offset: number;
+  readonly weight: number;
+}
+
+/**
+ * Compute1DGaussianFilterKernel: taps from -R to R in steps of two, each pairing texel i with i + 1 (the last
+ * tap sits on a texel centre). Weights sum to one. The GPU stage computes the same pairs per tap.
+ */
+export function bloomKernel(radius: number): IBloomTap[] {
+  const sigma = Math.min(Math.max(radius, 1e-4), MAX_RADIUS);
+  const reach = Math.min(Math.ceil(sigma), MAX_RADIUS);
+  const gauss = (x: number): number => Math.exp(SHAPE * (x / sigma) ** 2);
+  const taps: IBloomTap[] = [];
+  let total = 0;
+  for (let i = -reach; i <= reach; i += 2) {
+    const w0 = gauss(i);
+    const w1 = i === reach ? 0 : gauss(i + 1);
+    taps.push({ offset: i + w1 / (w0 + w1), weight: w0 + w1 });
+    total += w0 + w1;
+  }
+  return taps.map((t) => ({ offset: t.offset, weight: t.weight / total }));
+}
+
+export interface IBloomStageSize {
+  /** Chain level this stage blurs. */
+  readonly level: number;
+  readonly width: number;
+  readonly height: number;
+  readonly radius: number;
+  /** Bilinear taps per axis: the loop count. */
+  readonly taps: number;
+}
+
+/** The six stages, widest (level 6) first, for a drawing buffer of `width` by `height`. */
+export function bloomSchedule(width: number, height: number): IBloomStageSize[] {
+  const { sizes } = unrealBloomSettings;
+  return Array.from({ length: STAGES }, (_, order) => {
+    const index = STAGES - 1 - order;
+    const level = index + 1;
+    const w = levelSize(width, level);
+    const radius = bloomRadius(w, sizes[index] ?? 0);
+    return {
+      level,
+      width: w,
+      height: levelSize(height, level),
+      radius,
+      taps: Math.min(Math.ceil(radius), MAX_RADIUS) + 1,
+    };
+  });
+}
+
 interface IStage {
   readonly size: number;
   readonly tint: number;
@@ -69,9 +130,12 @@ interface IStage {
   readonly out: RenderTarget;
   readonly acrossMaterial: NodeMaterial;
   readonly outMaterial: NodeMaterial;
-  readonly radius: ReturnType<typeof uniform<number>>;
-  readonly norm: ReturnType<typeof uniform<number>>;
-  readonly texel: ReturnType<typeof uniform<Vector2>>;
+  readonly radius: ReturnType<typeof uniform<"float">>;
+  /** ceil(radius), the kernel's integer reach. */
+  readonly reach: ReturnType<typeof uniform<"float">>;
+  readonly taps: ReturnType<typeof uniform<"int">>;
+  readonly norm: ReturnType<typeof uniform<"float">>;
+  readonly texel: ReturnType<typeof uniform<"vec2">>;
 }
 
 /** Owns scratch targets only. Never draws the world or installs another output transform. */
@@ -102,7 +166,7 @@ export class UnrealBloomNode extends TempNode<"vec3"> {
       this.#downTargets.push(target);
       this.#downTextures.push(texture(target.texture));
       const source = level === 1 ? input : (this.#downTextures[level - 2] as ColourTexture);
-      const step = this.#downTexel[level - 1] as ReturnType<typeof uniform<Vector2>>;
+      const step = this.#downTexel[level - 1] as ReturnType<typeof uniform<"vec2">>;
       const material = new NodeMaterial();
       material.fragmentNode = Fn(() => {
         const c = uv();
@@ -129,6 +193,8 @@ export class UnrealBloomNode extends TempNode<"vec3"> {
       const across = scratch();
       const out = scratch();
       const radius = uniform(1);
+      const reach = uniform(1);
+      const taps = uniform(1, "int");
       const norm = uniform(1);
       const texel = uniform(new Vector2(1, 1));
       const downSource = this.#downTextures[level - 1] as ColourTexture;
@@ -138,21 +204,26 @@ export class UnrealBloomNode extends TempNode<"vec3"> {
         Fn(() => {
           const c = uv();
           const sum = vec3(0).toVar();
-          Loop(2 * MAX_RADIUS + 1, ({ i }) => {
-            const offset = float(i).sub(MAX_RADIUS);
-            const t = offset.div(radius);
-            const weight = offset
-              .abs()
-              .lessThanEqual(radius.ceil())
-              .select(t.mul(t).mul(SHAPE).exp(), 0);
+          // Tap k pairs texels at -reach + 2k and one further (Compute1DGaussianFilterKernel).
+          Loop({ start: 0, end: taps, type: "int" }, ({ i }) => {
+            const first = float(i).mul(2).sub(reach);
+            const w0 = first.div(radius).pow(2).mul(SHAPE).exp();
+            const w1 = first
+              .lessThan(reach)
+              .select(first.add(1).div(radius).pow(2).mul(SHAPE).exp(), float(0));
+            const weight = w0.add(w1);
+            const offset = first.add(w1.div(weight));
             const at =
               axis === 0
                 ? c.add(vec2(offset.mul(texel.x), 0))
                 : c.add(vec2(0, offset.mul(texel.y)));
-            sum.addAssign(source.sample(at).level(0).rgb.mul(weight));
+            sum.addAssign(source.sample(at).level(float(0)).rgb.mul(weight));
           });
           const blurred = sum.mul(norm.mul(tint));
-          return vec4(add === undefined ? blurred : blurred.add(add.sample(c).level(0).rgb), 1);
+          return vec4(
+            add === undefined ? blurred : blurred.add(add.sample(c).level(float(0)).rgb),
+            1,
+          );
         })();
       const acrossMaterial = new NodeMaterial();
       acrossMaterial.fragmentNode = blur(downSource, 0, 1);
@@ -173,6 +244,8 @@ export class UnrealBloomNode extends TempNode<"vec3"> {
         acrossMaterial,
         outMaterial,
         radius,
+        reach,
+        taps,
         norm,
         texel,
       });
@@ -198,8 +271,8 @@ export class UnrealBloomNode extends TempNode<"vec3"> {
     if (renderer === null) throw new Error("Bloom requires a renderer.");
     renderer.getDrawingBufferSize(this.#size);
     const sizeAt = (level: number): [number, number] => [
-      Math.max(1, Math.ceil(this.#size.x / 2 ** level)),
-      Math.max(1, Math.ceil(this.#size.y / 2 ** level)),
+      levelSize(this.#size.x, level),
+      levelSize(this.#size.y, level),
     ];
     for (const [i, target] of this.#downTargets.entries()) {
       const [w, h] = sizeAt(i + 1);
@@ -207,16 +280,18 @@ export class UnrealBloomNode extends TempNode<"vec3"> {
       const [pw, ph] = i === 0 ? [this.#size.x, this.#size.y] : sizeAt(i);
       this.#downTexel[i]?.value.set(0.5 / pw, 0.5 / ph);
     }
-    for (const stage of this.#stages) {
-      const [w, h] = sizeAt(stage.level);
+    const schedule = bloomSchedule(this.#size.x, this.#size.y);
+    for (const [order, stage] of this.#stages.entries()) {
+      const { width: w, height: h, radius, taps } = schedule[order] as IBloomStageSize;
       stage.across.setSize(w, h);
       stage.out.setSize(w, h);
-      const radius = bloomRadius(w, stage.size);
-      stage.radius.value = radius;
+      stage.radius.value = Math.max(radius, 1e-4);
+      stage.reach.value = taps - 1;
+      stage.taps.value = taps;
       stage.texel.value.set(1 / w, 1 / h);
       let total = 0;
-      for (let o = -Math.ceil(radius); o <= Math.ceil(radius); o++)
-        total += Math.exp(SHAPE * (o / radius) ** 2);
+      for (let o = -(taps - 1); o <= taps - 1; o++)
+        total += Math.exp(SHAPE * (o / stage.radius.value) ** 2);
       stage.norm.value = 1 / total;
     }
     this.#rendererState ??= RendererUtils.saveRendererState(renderer);

@@ -13,7 +13,7 @@
 // `"filmic"`. `"aces"` stays available as the named override. `filmicToneMap()` is the same
 // curve on plain numbers, so a test or a capture script can apply it to a scene-linear image.
 import { CustomToneMapping, Matrix3 } from "three";
-import { clamp, dot, exp, log, max, mix, step, vec3 } from "three/tsl";
+import { clamp, dot, exp, exp2, float, log, max, mix, step, vec3 } from "three/tsl";
 import type { Node } from "three/webgpu";
 
 export interface IFilmicCurve {
@@ -23,6 +23,8 @@ export interface IFilmicCurve {
   readonly blackClip: number;
   readonly whiteClip: number;
   readonly blueCorrection: number;
+  /** Unreal's "Expand Gamut" (project default 1): bright, saturated colour is pushed toward a wider gamut. */
+  readonly expandGamut: number;
 }
 
 /** Unreal 5.8.3 project defaults. Change these numbers to change the curve. */
@@ -33,6 +35,7 @@ export const FILMIC_CURVE: IFilmicCurve = {
   blackClip: 0,
   whiteClip: 0.04,
   blueCorrection: 0.6,
+  expandGamut: 1,
 };
 
 type Vec3 = readonly [number, number, number];
@@ -134,7 +137,42 @@ export const BLUE_CORRECTION_INVERSE_AP1 = blueAP1
   .transpose()
   .toArray() as unknown as Mat3;
 
+// Gamut expansion, in AP1 -> AP1: the sRGB gamut re-expressed in a wider set of primaries (CIE xy
+// red 0.6965 0.3065, green 0.245 0.718, blue 0.1302 0.0456, white 0.3127 0.329), between P3 and
+// AP1. It is what Unreal's colour LUT mixes in by `expandAmount()`. Measured: without it the clear
+// sky at a 60 degree sun carries 27% too much red against the Unreal L2 frame, with it 3%.
+const EXPAND_AP1: Mat3 = [
+  1.3701908756, -0.329206602, -0.063670572, -0.0834440781, 1.0971191726, -0.0108611106,
+  -0.0257999545, -0.098656895, 1.2039833339,
+];
+
+/**
+ * How much of the expansion a colour gets: more for saturated colour, and for brighter colour
+ * (luminance squared), none for grey. `chroma` is the colour over its luminance.
+ */
+export function expandAmount(chromaDistanceSquared: number, luma: number, gamut: number): number {
+  return (1 - 2 ** (-4 * chromaDistanceSquared)) * (1 - 2 ** (-4 * gamut * luma * luma));
+}
+
 const AP1_LUMA: Vec3 = [0.2722287168, 0.6740817658, 0.0536895174];
+
+function expandAp1(ap1: Vec3, gamut: number): Vec3 {
+  const luma = ap1[0] * AP1_LUMA[0] + ap1[1] * AP1_LUMA[1] + ap1[2] * AP1_LUMA[2];
+  if (luma <= 0) return ap1;
+  const d2 = ap1.reduce((sum, v) => sum + (v / luma - 1) ** 2, 0);
+  const amount = expandAmount(d2, luma, gamut);
+  const wide = multiply(EXPAND_AP1, ap1);
+  return ap1.map((v, i) => v + ((wide[i] ?? 0) - v) * amount) as unknown as Vec3;
+}
+
+/** The gamut expansion alone, scene-linear sRGB in and out (negative results clip to zero). */
+export function expandGamutLinear(
+  rgb: readonly [number, number, number],
+  gamut = FILMIC_CURVE.expandGamut,
+): [number, number, number] {
+  const [x, y, z] = multiply(AP1_TO_SRGB, expandAp1(multiply(SRGB_TO_AP1, rgb), gamut));
+  return [Math.max(0, x), Math.max(0, y), Math.max(0, z)];
+}
 const PRE_SATURATION = 0.96;
 const POST_SATURATION = 0.93;
 const MID_GREY = 0.18;
@@ -219,8 +257,9 @@ export function filmicToneMap(
   c: IFilmicCurve = FILMIC_CURVE,
 ): [number, number, number] {
   const [r, g, b] = rgb.map((v) => Math.max(0, v * exposure)) as unknown as Vec3;
-  let ap1 = multiply(SRGB_TO_AP1, [r, g, b]);
+  let ap1: Vec3 = multiply(SRGB_TO_AP1, [r, g, b]);
   // Order: Engine/Shaders/Private/PostProcessCombineLUTs.usf and TonemapCommon.ush.
+  if (c.expandGamut !== 0) ap1 = expandAp1(ap1, c.expandGamut);
   if (c.blueCorrection !== 0) ap1 = correctBlue(ap1, BLUE_CORRECTION_AP1, c.blueCorrection);
   const pre = saturate(ap1, PRE_SATURATION);
   const toned = saturate(
@@ -251,6 +290,14 @@ export function filmicToneMappingNode(
   const luma = vec3(...AP1_LUMA);
   return (color, exposure) => {
     let ap1: Node<"vec3"> = apply(SRGB_TO_AP1, max(color.mul(exposure), vec3(0)));
+    if (c.expandGamut !== 0) {
+      const luma = max(dot(ap1, vec3(...AP1_LUMA)), 1e-10);
+      const chroma = ap1.div(luma).sub(1);
+      const amount = float(1)
+        .sub(exp2(dot(chroma, chroma).mul(-4)))
+        .mul(float(1).sub(exp2(luma.mul(luma).mul(-4 * c.expandGamut))));
+      ap1 = mix(ap1, apply(EXPAND_AP1, ap1), amount);
+    }
     if (c.blueCorrection !== 0) ap1 = mix(ap1, apply(BLUE_CORRECTION_AP1, ap1), c.blueCorrection);
     const pre = mix(vec3(dot(ap1, luma)), ap1, PRE_SATURATION);
     const logValue = log(max(pre, vec3(1e-10))).div(LOG10);

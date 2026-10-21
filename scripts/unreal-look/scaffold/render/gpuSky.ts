@@ -62,6 +62,7 @@ import {
   sunLight,
   sunTransmittance,
   temperatureColour,
+  viewDistanceSkyLight,
 } from "./atmosphere.js";
 import {
   CLOUD_BOTTOM_KM,
@@ -468,7 +469,7 @@ export class GpuSkyNode extends TempNode<"vec3"> {
           If(d.y.greaterThan(0).and(entry.lessThanEqual(350)), () => {
             const length = exit(float(R0), d.y, BOTTOM_KM + CLOUD_TOP_KM)
               .sub(entry)
-              .min(50);
+              .min(CLOUD_MODEL.tracingKm);
             const steps = clamp(
               length.mul(1000 / CLOUD_MODEL.viewStepMetres).ceil(),
               CLOUD_MODEL.minViewSteps,
@@ -542,7 +543,7 @@ export class GpuSkyNode extends TempNode<"vec3"> {
                         .mul(o.scatter)
                         .mul(float(1 / (4 * PI)).add(phase.sub(1 / (4 * PI)).mul(o.anisotropy))),
                     );
-                  const source = transmission(rr, p.dot(this.sun).div(rr))
+                  const source = this.#light
                     .mul(direct)
                     .add(this.#ambient.mul(CLOUD_MATERIAL.skyOcclusion));
                   const stepT = extinction.mul(dt).negate().exp();
@@ -694,6 +695,19 @@ export function atmosphereFogColour(clear: {
   );
 }
 
+/** Height fog and void colour: Unreal's distant sky light, scaled to scene radiance like the sky. */
+export function distantFogColour(sun: Vector3): Color {
+  const tint = temperatureColour(SUN_KELVIN);
+  const light = viewDistanceSkyLight(sun);
+  return new Color(
+    ...([0, 1, 2].map((c) => (light[c] ?? 0) * (tint[c] ?? 1) * SUN_ILLUMINANCE * SKY_TO_SUN) as [
+      number,
+      number,
+      number,
+    ]),
+  );
+}
+
 /** CPU pixels are still needed by the owned PMREM and the world-space GI ray cache.
  * Renderer::beginEnvironment rejects GPU-only textures (renderer.cpp: decoded RGBA pixels).
  * At 64x32 this avoids the full 256x128 bake; both paths use the same radiometric scale.
@@ -725,27 +739,21 @@ export function createGpuSky(
     ];
     skyRadiance.current = { data, width: w, height: h, scale };
     const image = context.createImageData(w, h);
-    const ambient = [0, 0, 0];
-    let weights = 0;
     for (let y = 0; y < h; y++) {
-      const theta = ((y + 0.5) / h) * PI;
-      const weight = Math.sin(theta) * Math.max(0, Math.cos(theta));
       for (let x = 0; x < w; x++) {
         for (let c = 0; c < 3; c++) {
           const value = data[(y * w + x) * 3 + c] ?? 0;
-          ambient[c] = (ambient[c] ?? 0) + (clear[(y * w + x) * 3 + c] ?? 0) * weight;
           const v = Math.min(1, (value * (scale[c] ?? 1)) / 4);
           image.data[(y * w + x) * 4 + c] = Math.round(
             255 * (v <= 0.0031308 ? v * 12.92 : 1.055 * v ** (1 / 2.4) - 0.055),
           );
         }
-        weights += weight;
         image.data[(y * w + x) * 4 + 3] = 255;
       }
     }
     context.putImageData(image, 0, 0);
     environment.needsUpdate = true;
-    node.setAmbient(ambient.map((v) => v / weights));
+    node.setAmbient(viewDistanceSkyLight(sun));
     console.info(`CPU environment sky 64x32: ${(performance.now() - start).toFixed(1)} ms`);
   };
   const node = new GpuSkyNode(sun, scene, fogged, clouds, refresh, fog);

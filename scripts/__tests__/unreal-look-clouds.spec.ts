@@ -1,6 +1,7 @@
 import { performance } from "node:perf_hooks";
 import { describe, expect, it } from "vitest";
 import {
+  CLOUD_MODEL,
   PATTERN_SIZE,
   bakeCloudRadiance,
   cloudDensityField,
@@ -137,5 +138,11 @@ describe("Unreal reference CPU clouds", () => {
     }
     console.log(`CPU clouds ${width}x${height}: ${elapsed.toFixed(1)} ms`);
     expect(elapsed).toBeLessThan(300);
+  });
+
+  it("marches up to the reference level's TracingMaxDistance, 200 km, after the layer entry", () => {
+    // Unreal's component default is 50 km; the reference level sets TracingMaxDistance and
+    // TracingStartMaxDistance to 200 (VolumetricCloudComponent.cpp, TracingMaxDistanceMode 0).
+    expect(CLOUD_MODEL.tracingKm).toBe(200);
   });
 });

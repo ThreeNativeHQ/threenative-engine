@@ -40,6 +40,8 @@ export const CLOUD_MODEL = {
   minViewSteps: 32,
   maxViewSteps: 192,
   lightSteps: 6,
+  // TracingMaxDistance, taken from the layer entry point (TracingMaxDistanceMode 0, the default).
+  tracingKm: 200,
   // TracingMaxDistance of the reference actor is 200 km (tools/unreal-reference/template-actors.json).
   horizonFadeStartKm: 150,
   horizonFadeEndKm: 200,
@@ -446,7 +448,10 @@ export function bakeCloudRadiance(
     const horizontal = Math.cos(elevation);
     const entry = sphereExit(CAMERA, dy, PLANET + CLOUD_BOTTOM_KM);
     if (entry > 350) continue;
-    const length = Math.min(50, sphereExit(CAMERA, dy, PLANET + CLOUD_TOP_KM) - entry);
+    const length = Math.min(
+      CLOUD_MODEL.tracingKm,
+      sphereExit(CAMERA, dy, PLANET + CLOUD_TOP_KM) - entry,
+    );
     const steps = Math.min(
       CLOUD_MODEL.maxViewSteps,
       Math.max(CLOUD_MODEL.minViewSteps, Math.ceil((length * 1000) / CLOUD_MODEL.viewStepMetres)),
