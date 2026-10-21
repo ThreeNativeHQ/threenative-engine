@@ -24,20 +24,29 @@ def font(size):
     return ImageFont.load_default(size)
 
 
+def fitted(draw, text, size):
+    """The bold font at the largest size, down to 12 px, at which the text fits inside its tile."""
+    while size >= 12:
+        candidate = font(size)
+        if draw.textlength(text, font=candidate) <= W - 20:
+            return candidate
+        size -= 1
+    raise SystemExit(f"TN_GI_SHEET_LABEL_TOO_LONG: {text}")
+
+
 def sheet(spec):
     rows = spec["rows"]
     columns = max(len(row) for row in rows)
     image = Image.new("RGB", (W * columns, (H + BAR) * len(rows)), (0, 0, 0))
     draw = ImageDraw.Draw(image)
-    big, small = font(25), font(17)
     for r, row in enumerate(rows):
         for c, tile in enumerate(row):
             if not os.path.exists(tile["file"]):
                 raise SystemExit(f"TN_GI_SHEET_MISSING: {tile['file']}")
             x, y = c * W, r * (H + BAR)
             image.paste(Image.open(tile["file"]).convert("RGB").resize((W, H)), (x, y + BAR))
-            draw.text((x + 10, y + 6), tile["label"], font=big, fill=(255, 255, 0))
-            draw.text((x + 10, y + 42), tile["sub"], font=small, fill=(255, 255, 255))
+            draw.text((x + 10, y + 6), tile["label"], font=fitted(draw, tile["label"], 25), fill=(255, 255, 0))
+            draw.text((x + 10, y + 42), tile["sub"], font=fitted(draw, tile["sub"], 17), fill=(255, 255, 255))
     os.makedirs(os.path.dirname(os.path.abspath(spec["out"])), exist_ok=True)
     image.save(spec["out"])
     print(f"wrote {spec['out']} {image.size[0]}x{image.size[1]}")
