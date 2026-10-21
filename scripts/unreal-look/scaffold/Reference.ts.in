@@ -114,14 +114,12 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
       const { key } = setupLighting(scene, ctx.renderer.raw as Parameters<typeof setupLighting>[1]);
       // Diagnosis knob sunShadow=0: the sun casts no shadow (is a seam line a shadow leak at all?).
       key.castShadow = level >= 5 && params.get("sunShadow") !== "0";
-      // Diagnosis knob shadowSide=front|back|double: the caster faces; unset keeps three's derived side.
-      // Back-face casters store the occluder depth on the far face of a wall, which is the room's
-      // own inner surface, so sun light leaks along every inner seam of the slab boxes. The virtual
-      // map's receiver-plane bias holds front-face acne, so the tuned arm draws front faces; the
-      // classic map leaks a wedge at the door with front faces, so it keeps three's derived side.
-      const casterSide =
-        { front: FrontSide, back: BackSide, double: DoubleSide }[params.get("shadowSide") ?? ""] ??
-        (TUNED && !OFF.has("vsm") ? FrontSide : undefined);
+      // Diagnosis knob shadowSide=front|back|double: the caster faces. Unset keeps the engine's rule:
+      // a virtual page draws front faces, the classic map three's derived side. shadowSide=back is the
+      // BEFORE arm of the sun-seam fix, where back faces store the depth on a wall's inner surface.
+      const casterSide = { front: FrontSide, back: BackSide, double: DoubleSide }[
+        params.get("shadowSide") ?? ""
+      ];
       // Unreal's static meshes cast and receive shadows by default; three's meshes do neither
       // until asked. Both arms (baseline and tuned) need this, so it is not tuning.
       const emissiveSeen = new Set<unknown>();
