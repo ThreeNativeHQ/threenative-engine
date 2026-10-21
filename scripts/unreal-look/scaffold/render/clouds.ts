@@ -121,32 +121,52 @@ function rng(seed: number): () => number {
   };
 }
 
+/** Per output texel along one axis: the two lattice indices it blends (wrapped) and the smoothed weight of the second. */
+function lattice1d(
+  cells: number,
+  size: number,
+): { lo: Int32Array; hi: Int32Array; w: Float64Array } {
+  const lo = new Int32Array(size);
+  const hi = new Int32Array(size);
+  const w = new Float64Array(size);
+  for (let i = 0; i < size; i++) {
+    const f = ((i + 0.5) / size) * cells - 0.5;
+    const at = Math.floor(f);
+    lo[i] = mod(at, cells);
+    hi[i] = mod(at + 1, cells);
+    w[i] = smooth(f - at);
+  }
+  return { lo, hi, w };
+}
+
 /** Periodic value noise on a size^dims grid with `cells` lattice cells per axis. */
 function valueNoise(cells: number, size: number, dims: 2 | 3, next: () => number): Float32Array {
   const lattice = Float32Array.from({ length: cells ** dims }, next);
   const out = new Float32Array(size ** dims);
   const depth = dims === 3 ? size : 1;
+  // The wrap and the weight depend on one coordinate each, so they are worked out once per axis, not per texel.
+  const axis = lattice1d(cells, size);
+  const zAxis =
+    dims === 3 ? axis : { lo: new Int32Array(1), hi: new Int32Array(1), w: new Float64Array(1) };
   for (let z = 0; z < depth; z++) {
-    const fz = ((z + 0.5) / size) * cells - 0.5;
-    const iz = Math.floor(fz);
-    const wz = smooth(fz - iz);
+    const wz = zAxis.w[z] as number;
     for (let y = 0; y < size; y++) {
-      const fy = ((y + 0.5) / size) * cells - 0.5;
-      const iy = Math.floor(fy);
-      const wy = smooth(fy - iy);
+      const wy = axis.w[y] as number;
       for (let x = 0; x < size; x++) {
-        const fx = ((x + 0.5) / size) * cells - 0.5;
-        const ix = Math.floor(fx);
-        const wx = smooth(fx - ix);
+        const wx = axis.w[x] as number;
         let sum = 0;
         for (let c = 0; c < (dims === 3 ? 2 : 1); c++)
           for (let b = 0; b < 2; b++)
             for (let a = 0; a < 2; a++) {
               const at =
-                mod(ix + a, cells) +
-                cells * (mod(iy + b, cells) + (dims === 3 ? cells * mod(iz + c, cells) : 0));
+                (a ? (axis.hi[x] as number) : (axis.lo[x] as number)) +
+                cells *
+                  ((b ? (axis.hi[y] as number) : (axis.lo[y] as number)) +
+                    (dims === 3
+                      ? cells * (c ? (zAxis.hi[z] as number) : (zAxis.lo[z] as number))
+                      : 0));
               sum +=
-                (lattice[at] ?? 0) *
+                (lattice[at] as number) *
                 (a ? wx : 1 - wx) *
                 (b ? wy : 1 - wy) *
                 (dims === 3 ? (c ? wz : 1 - wz) : 1);
@@ -162,26 +182,43 @@ function valueNoise(cells: number, size: number, dims: 2 | 3, next: () => number
 function worleyInverted(cells: number, size: number, next: () => number): Float32Array {
   const points = Float32Array.from({ length: cells ** 3 * 3 }, next);
   const out = new Float32Array(size ** 3);
+  // Per output coordinate: the point in lattice units, its cell, and the wrapped cells of the three it neighbours.
+  const along = (): { p: Float64Array; cell: Int32Array; wrapped: Int32Array } => {
+    const p = new Float64Array(size);
+    const cell = new Int32Array(size);
+    const wrapped = new Int32Array(size * 3);
+    for (let i = 0; i < size; i++) {
+      p[i] = ((i + 0.5) / size) * cells;
+      cell[i] = Math.floor(p[i] as number);
+      for (let o = -1; o <= 1; o++) wrapped[i * 3 + o + 1] = mod((cell[i] as number) + o, cells);
+    }
+    return { p, cell, wrapped };
+  };
+  const axis = along();
   for (let z = 0; z < size; z++)
     for (let y = 0; y < size; y++)
       for (let x = 0; x < size; x++) {
-        const px = ((x + 0.5) / size) * cells;
-        const py = ((y + 0.5) / size) * cells;
-        const pz = ((z + 0.5) / size) * cells;
-        const cx = Math.floor(px);
-        const cy = Math.floor(py);
-        const cz = Math.floor(pz);
+        const px = axis.p[x] as number;
+        const py = axis.p[y] as number;
+        const pz = axis.p[z] as number;
+        const cx = axis.cell[x] as number;
+        const cy = axis.cell[y] as number;
+        const cz = axis.cell[z] as number;
         let best = 9;
         for (let k = -1; k <= 1; k++)
           for (let j = -1; j <= 1; j++)
             for (let i = -1; i <= 1; i++) {
               const at =
                 3 *
-                (mod(cx + i, cells) + cells * (mod(cy + j, cells) + cells * mod(cz + k, cells)));
-              const dx = cx + i + (points[at] ?? 0) - px;
-              const dy = cy + j + (points[at + 1] ?? 0) - py;
-              const dz = cz + k + (points[at + 2] ?? 0) - pz;
-              best = Math.min(best, dx * dx + dy * dy + dz * dz);
+                ((axis.wrapped[x * 3 + i + 1] as number) +
+                  cells *
+                    ((axis.wrapped[y * 3 + j + 1] as number) +
+                      cells * (axis.wrapped[z * 3 + k + 1] as number)));
+              const dx = cx + i + (points[at] as number) - px;
+              const dy = cy + j + (points[at + 1] as number) - py;
+              const dz = cz + k + (points[at + 2] as number) - pz;
+              const d = dx * dx + dy * dy + dz * dz;
+              if (d < best) best = d;
             }
         out[x + size * (y + size * z)] = 1 - Math.sqrt(best);
       }
