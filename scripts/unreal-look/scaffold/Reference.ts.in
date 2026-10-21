@@ -79,9 +79,13 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
       : LAYER === "ID"
         ? "unreal-reference/scene-id.glb"
         : "unreal-reference/scene.glb";
+    // The photograph is only the sky of a page that cannot draw one: the GPU sky and the canvas bake both need an
+    // OffscreenCanvas. Decoding and uploading its 4096 x 2048 pixels held the main thread for about 3 s at load (`?skyPhoto=1` loads it, for an A/B).
     const [model, sky] = await Promise.all([
       ctx.assets.model<{ scene: Group }>(file),
-      ctx.assets.texture("sky.jpg"),
+      typeof OffscreenCanvas === "undefined" || params.get("skyPhoto") === "1"
+        ? ctx.assets.texture("sky.jpg")
+        : undefined,
     ]);
     this.#model = model.scene;
     this.#sky = sky;
@@ -90,7 +94,7 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
   override enter(ctx: GameCtx): SceneFrame<GameState, IPhysicsContext> {
     const model = this.#model;
     const sky = this.#sky;
-    if (model === undefined || sky === undefined) throw new Error("TN_REF_NOT_LOADED");
+    if (model === undefined) throw new Error("TN_REF_NOT_LOADED");
     const el = (elevationDeg * Math.PI) / 180;
     const az = (azimuthDeg * Math.PI) / 180;
     SUN_DIRECTION.set(Math.sin(az) * Math.cos(el), Math.sin(el), Math.cos(az) * Math.cos(el));

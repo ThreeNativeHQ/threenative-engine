@@ -206,7 +206,7 @@ function tintSun(): void {
  */
 export function setupSky(
   scene: Scene,
-  photo: Texture,
+  photo: Texture | undefined,
   software = false,
   fogged = true,
   clouds = false,
@@ -217,6 +217,8 @@ export function setupSky(
       ? undefined
       : createGpuSky(scene, SUN_DIRECTION, fogged, clouds, UNREAL_FOG);
   const sky = gpu?.environment ?? atmosphereSky(clouds) ?? photo;
+  if (sky === undefined)
+    throw new Error("TN_SKY_UNAVAILABLE: no GPU sky, no canvas bake and no photograph");
   tintSun();
   sky.mapping = EquirectangularReflectionMapping;
   sky.colorSpace = SRGBColorSpace;
