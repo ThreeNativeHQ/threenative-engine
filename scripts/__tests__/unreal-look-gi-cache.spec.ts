@@ -2,14 +2,17 @@ import { readFileSync } from "node:fs";
 import {
   BoxGeometry,
   Color,
+  DataTexture,
   DoubleSide,
   Group,
   type Intersection,
   Mesh,
+  MeshPhysicalMaterial,
   MeshStandardMaterial,
   PlaneGeometry,
   Raycaster,
   SphereGeometry,
+  Texture,
   Vector3,
 } from "three";
 import { describe, expect, it } from "vitest";
@@ -182,6 +185,41 @@ describe("the world-space GI cache against closed forms (PRD-631 L7)", () => {
     }
   });
 
+  it("a ray that lands on a mapped wall returns the map's texel, not the colour factor (PRD-639 Surface Cache)", () => {
+    // The same closed furnace, with a white colour factor under a 0.302 grey map, as a loaded asset has it. Flat, the
+    // wall bounces white and the series runs on rho = 1; with the Surface Cache it follows the texel, rho = 77 / 255.
+    const texel = 77 / 255;
+    const furnace = (surfaceCache: boolean) => {
+      const material = new MeshStandardMaterial({
+        color: new Color(1, 1, 1),
+        map: new DataTexture(new Uint8Array([77, 77, 77, 255]), 1, 1),
+        emissive: new Color(2, 2, 2),
+        side: DoubleSide,
+      });
+      const room = new Group().add(new Mesh(new BoxGeometry(6, 6, 6).scale(-1, -1, -1), material));
+      skyRadiance.current = { data: new Float32Array(6), width: 2, height: 1, scale: [1, 1, 1] };
+      installGi(rayContext(room), room, { bounces: 3, sun: noSun, surfaceCache });
+      return texelAt(new Vector3(0.3, 0.2, -0.4)).faces[0]?.[0] ?? 0;
+    };
+    const expected = (2 * (1 - texel ** 3)) / (1 - texel);
+    expect(furnace(true) / expected).toBeCloseTo(1, 1);
+    // Flat: rho = 1, so three passes read 2 x 3 = 6, three times the textured light.
+    expect(furnace(false) / (2 * 3)).toBeCloseTo(1, 1);
+  });
+
+  it("the material the cache installs keeps its maps, so a textured wall is drawn with its texture (PRD-639)", () => {
+    const map = new DataTexture(new Uint8Array([77, 77, 77, 255]), 1, 1);
+    const material = new MeshStandardMaterial({
+      map,
+      emissive: new Color(1, 1, 1),
+      side: DoubleSide,
+    });
+    const room = new Group().add(new Mesh(new BoxGeometry(6, 6, 6).scale(-1, -1, -1), material));
+    skyRadiance.current = { data: new Float32Array(6), width: 2, height: 1, scale: [1, 1, 1] };
+    installGi(rayContext(room), room, { bounces: 1, sun: noSun });
+    expect(((room.children[0] as Mesh).material as MeshStandardMaterial).map).toBe(map);
+  });
+
   it("the share of the environment a face sees is 1 in the open and falls under a roof", () => {
     // A 40 m floor, and a 12 m roof 3 m up. Open: every ray leaves for the sky or lands on open ground.
     const floor = new Mesh(
@@ -224,6 +262,129 @@ describe("the world-space GI cache against closed forms (PRD-631 L7)", () => {
     expect((roof.material as MeshStandardMaterial).shadowSide).toBe(DoubleSide);
     expect((floor.material as MeshStandardMaterial).shadowSide ?? null).toBeNull();
   });
+  it("the material the cache installs is the source's node twin: class, maps, cut-out, sides and blending carry over", () => {
+    // A leaf card is a textured, alpha-tested, two-sided standard material; a glass pane is a physical one. A field-by-field
+    // swap dropped the cut-out, so a leaf drew as a whole quad. Three's own fromMaterial copies every key into the matching class.
+    const map = new Texture();
+    const alphaMap = new Texture();
+    const normalMap = new Texture();
+    const roughnessMap = new Texture();
+    const leaf = new Mesh(
+      new PlaneGeometry(1, 1),
+      new MeshStandardMaterial({
+        map,
+        alphaMap,
+        normalMap,
+        roughnessMap,
+        alphaTest: 0.5,
+        side: DoubleSide,
+        transparent: true,
+        opacity: 0.8,
+        vertexColors: true,
+        roughness: 0.6,
+        metalness: 0.2,
+      }),
+    );
+    const glass = new Mesh(
+      new PlaneGeometry(1, 1).translate(3, 0, 0),
+      new MeshPhysicalMaterial({
+        map,
+        clearcoat: 0.7,
+        transmission: 0.4,
+        ior: 1.3,
+        roughness: 0.1,
+      }),
+    );
+    const floor = new Mesh(
+      new PlaneGeometry(40, 40).rotateX(-Math.PI / 2),
+      new MeshStandardMaterial({ side: DoubleSide }),
+    );
+    const scene = new Group().add(leaf, glass, floor);
+    skyRadiance.current = { data: new Float32Array(6), width: 2, height: 1, scale: [1, 1, 1] };
+    installGi(rayContext(scene), scene, { bounces: 1, sun: noSun });
+    const kept = leaf.material as MeshStandardMaterial;
+    expect(kept.constructor.name).toBe("MeshStandardNodeMaterial");
+    expect([kept.map, kept.alphaMap, kept.normalMap, kept.roughnessMap]).toEqual([
+      map,
+      alphaMap,
+      normalMap,
+      roughnessMap,
+    ]);
+    expect([kept.alphaTest, kept.side, kept.transparent, kept.opacity, kept.vertexColors]).toEqual([
+      0.5,
+      DoubleSide,
+      true,
+      0.8,
+      true,
+    ]);
+    expect([kept.roughness, kept.metalness]).toEqual([0.6, 0.2]);
+    const pane = glass.material as MeshPhysicalMaterial;
+    expect(pane.constructor.name).toBe("MeshPhysicalNodeMaterial");
+    expect([pane.map, pane.clearcoat, pane.transmission, pane.ior]).toEqual([map, 0.7, 0.4, 1.3]);
+    expect((kept as unknown as { irradianceNode: unknown }).irradianceNode).toBeDefined();
+    expect((pane as unknown as { aoNode: unknown }).aoNode).toBeDefined();
+  });
+
+  it("a material whose fields are accessors on its class, as the native engine's are, swaps with them intact", () => {
+    // The native engine binds a material's fields as accessors on the class prototype, which a `for in` never lists:
+    // a copy by enumeration took nothing, and every leaf and wall came back white.
+    const map = new Texture();
+    const fields = (): Map<string, unknown> =>
+      new Map<string, unknown>(
+        Object.entries({
+          color: new Color(1, 0, 0),
+          emissive: new Color(0, 0, 0),
+          emissiveIntensity: 1,
+          roughness: 0.6,
+          metalness: 0,
+          map,
+          alphaTest: 0.5,
+          transparent: true,
+          opacity: 0.8,
+          side: DoubleSide,
+          shadowSide: null,
+        }),
+      );
+    class HeldMaterial {
+      readonly isMaterial = false;
+      constructor(public held = fields()) {}
+      get type() {
+        return "MeshStandardMaterial";
+      }
+    }
+    for (const key of fields().keys()) {
+      Object.defineProperty(HeldMaterial.prototype, key, {
+        get(this: HeldMaterial) {
+          return this.held.get(key);
+        },
+        set(this: HeldMaterial, value: unknown) {
+          this.held.set(key, value);
+        },
+      });
+    }
+    const leaf = new Mesh(
+      new PlaneGeometry(1, 1),
+      new HeldMaterial() as unknown as MeshStandardMaterial,
+    );
+    const floor = new Mesh(
+      new PlaneGeometry(40, 40).rotateX(-Math.PI / 2),
+      new MeshStandardMaterial({ side: DoubleSide }),
+    );
+    const scene = new Group().add(leaf, floor);
+    skyRadiance.current = { data: new Float32Array(6), width: 2, height: 1, scale: [1, 1, 1] };
+    installGi(rayContext(scene), scene, { bounces: 1, sun: noSun });
+    const kept = leaf.material as MeshStandardMaterial;
+    expect(kept.constructor.name).toBe("MeshStandardNodeMaterial");
+    expect(kept.map).toBe(map);
+    expect([kept.alphaTest, kept.side, kept.transparent, kept.opacity]).toEqual([
+      0.5,
+      DoubleSide,
+      true,
+      0.8,
+    ]);
+    expect([kept.color.r, kept.color.g, kept.color.b, kept.roughness]).toEqual([1, 0, 0, 0.6]);
+  });
+
   it("a small emissive sphere's direct light leaves the cache, which keeps only what it bounces", () => {
     // 8 m away the sphere subtends 0.012 sr and one of a probe's 96 rays stands for 0.13 sr: the rays alone over- or
     // under-read by an order of magnitude, the same way for every neighbour, which lit a wall 4 to 7 times too bright.

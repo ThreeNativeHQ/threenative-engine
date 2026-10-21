@@ -2186,6 +2186,7 @@ Renderer::Program& Renderer::depthProgram(const shader::VertexVariant& variant, 
     kind.instanceColor = false;
     kind.vertexColors = 0;
     kind.invariantPosition = false;  // the shadow depth pass shares its vertex stage with nothing
+    kind.leafReceiver = false;       // a depth pass receives no shadow
     const auto positionGraph = kind.nodes.positionNode;
     kind.nodes = {};
     kind.nodes.positionNode = positionGraph; // a depth pass reads no colour
@@ -2725,6 +2726,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         v.sprite = item.sprite;
         v.backSide = item.side == 1;
         v.doubleSide = item.side == 2;
+        v.leafReceiver = v.doubleSide && item.receiveShadow && item.material && item.material->alphaTest > 0;
         v.flatShading = item.flatShading;
         v.vertexColors = item.colors ? item.colorSize : 0;
         v.instanced = item.instanceMatrices != nullptr;
@@ -3047,7 +3049,11 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             Program& program = *cachedDepth;
             // material.shadowSide names the faces drawn; when null, three's _shadowSide: a front-sided
             // caster draws its back faces, a back-sided one its front faces, a double-sided one both.
-            const uint8_t faces = item.shadowSide != 255 ? item.shadowSide : item.side == 2 ? 2 : item.side == 1 ? 0 : 1;
+            // A virtual page draws the front faces of a front-sided caster too, as Unreal's sun does:
+            // the back face of a wall box is the room's own inner surface, and its depth leaks the sun
+            // along every seam.
+            const uint8_t derived = item.side == 2 ? 2 : item.side == 1 || virtualMap ? 0 : 1;
+            const uint8_t faces = item.shadowSide != 255 ? item.shadowSide : derived;
             const WGPUCullMode cull =
                 faces == 2 ? WGPUCullMode_None : faces == 0 ? WGPUCullMode_Back : WGPUCullMode_Front;
             PipelineTarget target{WGPUTextureFormat_Undefined, WGPUTextureFormat_Depth24Plus, cull};
@@ -3059,7 +3065,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 compilation->push_back(pipelines_->getAsync(program.vertex, depthFragment, target));
                 continue;
             }
-            const uint64_t depthTargetKey = drawTargetKey(item, program.vertex);
+            const uint64_t depthTargetKey = drawTargetKey(item, program.vertex) * 3 + (faces == 2 ? 0 : faces == 0 ? 1 : 2);  // a virtual page and a lamp cull one caster differently
             WGPURenderPipeline pipeline;
             if (cache && cache->depthPipeline && cache->depthTargetKey == depthTargetKey) {
                 pipeline = static_cast<WGPURenderPipeline>(cache->depthPipeline);

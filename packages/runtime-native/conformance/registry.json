@@ -629,6 +629,19 @@
       "required": true
     },
     {
+      "id": "leaf-receiver",
+      "title": "two-sided alpha-tested receiver skips the normal bias",
+      "category": "shadows",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/leaf-receiver.js",
+      "tolerance": {
+        "pixelMismatchRatio": 0.08,
+        "perceptualDeltaE": 10.0
+      },
+      "desktopGate": false,
+      "required": true
+    },
+    {
       "id": "soft-shadow-source-radius",
       "title": "lamp source-radius soft shadow",
       "category": "shadows",
@@ -639,6 +652,45 @@
         "perceptualDeltaE": 10.0
       },
       "desktopGate": false,
+      "required": true
+    },
+    {
+      "id": "surface-cache-albedo",
+      "title": "surface cache albedo and emission at a hit",
+      "category": "materials",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/surface-cache-albedo.js",
+      "tolerance": {
+        "pixelMismatchRatio": 0.02,
+        "perceptualDeltaE": 5.0
+      },
+      "desktopGate": true,
+      "required": true
+    },
+    {
+      "id": "virtual-sun-seam",
+      "title": "virtual sun draws front-face casters",
+      "category": "shadows",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/virtual-sun-seam.js",
+      "tolerance": {
+        "pixelMismatchRatio": 0.08,
+        "perceptualDeltaE": 10.0
+      },
+      "desktopGate": false,
+      "required": true
+    },
+    {
+      "id": "shadow-filter-step",
+      "title": "shadow filter steps down a tier under frame pressure",
+      "category": "shadows",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/shadow-filter-step.js",
+      "tolerance": {
+        "pixelMismatchRatio": 0.08,
+        "perceptualDeltaE": 10.0
+      },
+      "desktopGate": true,
       "required": true
     },
     {
@@ -1136,6 +1188,21 @@
       "category": "lighting-gi",
       "status": "implemented",
       "scene": "conformance/scenes/shared/probe-volume-sample.js",
+      "browserRecipe": "webgpu",
+      "requiresHardwareAdapter": true,
+      "tolerance": {
+        "pixelMismatchRatio": 0.08,
+        "perceptualDeltaE": 10.0
+      },
+      "desktopGate": true,
+      "required": true
+    },
+    {
+      "id": "gi-tier-medium",
+      "title": "medium GI tier: irradiance field and budget watcher",
+      "category": "lighting-gi",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/gi-tier-medium.js",
       "browserRecipe": "webgpu",
       "requiresHardwareAdapter": true,
       "tolerance": {

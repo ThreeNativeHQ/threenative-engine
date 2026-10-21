@@ -2,9 +2,15 @@
 // (PRD-646). It recreates a PRD-638 calibration scene: geometry and materials from the scene.glb
 // that Unreal exported, lights and exposure from its scene.json (src/scenes/calibrationData.ts).
 // It is scene setup only; every look decision comes from the copy's own `src/render/`.
-//   ?tnGi=<scene>&layer=<ID|L1..L9>
+//   ?tnGi=<scene>&layer=<ID|L1..L9>&tier=<low|medium|high>
 // and `window.__tnRef.pose(...)` frames one camera pose, as in Reference.ts.
-import { type ICtx, Scene, type SceneFrame, sourceRadiusShadowFilter } from "@threenative/core";
+import {
+  type ICtx,
+  Scene,
+  type SceneFrame,
+  type ShadowFilterTier,
+  sourceRadiusShadowFilter,
+} from "@threenative/core";
 import type { IPhysicsContext } from "@threenative/physics";
 import {
   BackSide,
@@ -14,14 +20,25 @@ import {
   type Group,
   Mesh,
   MeshBasicMaterial,
+  type MeshStandardMaterial,
   NoToneMapping,
   type Object3D,
   type PerspectiveCamera,
   PointLight,
+  SRGBColorSpace,
+  SpotLight,
   Vector3,
 } from "three";
 import { giCache, installGi } from "../render/giCache.js";
-import { qualityPreset } from "../render/quality.js";
+import { watchGi } from "../render/giTier.js";
+import { watchShadowTier } from "../render/shadowTier.js";
+import {
+  type FinalGatherMethod,
+  giPreset,
+  qualityPreset,
+  resolveQualityTier,
+  shadowPreset,
+} from "../render/quality.js";
 import { WorldEnvironment } from "../render/worldEnvironment.js";
 import type { GameState } from "../state.js";
 import { SCENES } from "./calibrationData.js";
@@ -34,6 +51,13 @@ const params = new URLSearchParams(location.search);
 const NAME = params.get("tnGi") ?? "";
 const LAYER = params.get("layer") ?? "L7";
 const level = LAYER === "ID" ? -1 : Number(LAYER.slice(1));
+// The quality tier the cell is drawn at (default high, Unreal's Epic): its GI method and shadow filter come
+// from `render/quality.ts` (PRD-644, PRD-652). GI enters at L7; below it there is none, as in Unreal's ladder.
+const TIER = resolveQualityTier({ tier: params.get("tier") ?? "high" });
+const GI_METHOD = level >= 7 ? giPreset(TIER).finalGatherMethod : "none";
+// Unreal's GI and shadow levels are separate scalability groups: `shadowTier=` draws the shadows at another tier.
+const SHADOW_TIER = resolveQualityTier({ tier: params.get("shadowTier") ?? TIER });
+const SHADOW = shadowPreset(SHADOW_TIER);
 const DATA = SCENES[NAME];
 // Diagnosis only: scales every light, so a capture can bracket a unit error. Unset in every judged capture.
 const LIGHT_SCALE = Number(params.get("lightScale") ?? 1);
@@ -55,6 +79,8 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
   static override readonly initialState: GameState = Play.initialState;
   #model: Group | undefined;
   #dispose: (() => void) | undefined;
+  #gi: ReturnType<typeof watchGi> | undefined;
+  #shadow: ReturnType<typeof watchShadowTier> | undefined;
 
   override async load(ctx: GameCtx): Promise<void> {
     if (DATA === undefined) throw new Error(`TN_CALIBRATION_SCENE_UNKNOWN: ${NAME}`);
@@ -74,12 +100,18 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
     const raw = ctx.renderer.raw as unknown as { toneMapping: number };
     // Every scene.json property this recreation does not carry, with the PRD that owns it.
     const unsupported: { actor: string; property: string; reason: string }[] = [];
+    // Draws the lamps' shadows at another tier: what a `ShadowFilterBudget` step does, callable from the page.
+    let setShadowTier = (_tier: ShadowFilterTier): void => undefined;
     // The region a mesh belongs to: the scene.glb node named after the Unreal actor, or, when the
-    // asset pipeline flattened the nodes away, the mesh named after its static mesh, SM_<actor>.
+    // asset pipeline flattened the nodes away, the mesh named after its static mesh, SM_<actor>. An
+    // actor shares its region with others when scene.json names one (the leaf cards: Leaves).
+    const regionByActor = new Map<string, string>(
+      (DATA.meshes as { name: string; region?: string }[]).map((m) => [m.name, m.region ?? m.name]),
+    );
     const regionOf = (object: Object3D): string | undefined => {
       for (let o: Object3D | null = object; o !== null; o = o.parent) {
-        const name = o.name.replace(/^SM_/, "");
-        if (name in DATA.regions) return name;
+        const region = regionByActor.get(o.name.replace(/^SM_/, ""));
+        if (region !== undefined) return region;
       }
       return undefined;
     };
@@ -97,9 +129,14 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
       // colour id / 255 as linear, display-encoded on output.
       for (const mesh of meshes) {
         const [r = 0, g = 0, b = 0] = DATA.regions[regionOf(mesh) ?? ""] ?? [];
+        const source = mesh.material as MeshStandardMaterial;
         mesh.material = new MeshBasicMaterial({
           color: new Color().setRGB(r / 255, g / 255, b / 255),
           toneMapped: false,
+          // A masked region (leaf cards) keeps its cut and both sides: the map is white, so the colour stays the ID.
+          ...(source.alphaTest > 0
+            ? { map: source.map, alphaTest: source.alphaTest, side: source.side }
+            : {}),
         });
       }
       raw.toneMapping = NoToneMapping;
@@ -119,20 +156,38 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
         mesh.receiveShadow = shadows;
         if (side !== undefined) for (const m of [mesh.material].flat()) m.shadowSide = side;
       }
-      const lights: PointLight[] = [];
+      const lights: (PointLight | SpotLight)[] = [];
+      const lamps: { point: PointLight | SpotLight; radius: number; casts: boolean }[] = [];
       for (const light of DATA.lights) {
-        if (light.class !== "PointLight")
+        if (light.class !== "PointLight" && light.class !== "SpotLight")
           throw new Error(`TN_CALIBRATION_SCENE_LIGHT: ${light.name} ${light.class}`);
         const [r = 1, g = 1, b = 1] = light.color;
-        const point = new PointLight(
-          new Color().setRGB(r, g, b),
-          candela(light.intensity, light.units) * LIGHT_SCALE,
-          light.attenuationRadiusM,
-          2,
-        );
+        // scene.json holds Unreal's `light_color`, an FColor: Unreal reads its bytes as sRGB and lights with the linear
+        // value (neon-corridor L1 EXR: a [1, 0.85, 0.65] lamp lights a grey wall at G/R 0.70 and B/R 0.41, the
+        // decoded (1, 0.69, 0.38), not the raw numbers). A white lamp reads the same either way.
+        const colour = new Color().setRGB(r, g, b, SRGBColorSpace);
+        const cd = candela(light.intensity, light.units) * LIGHT_SCALE;
+        // A spot looks at its target through the outer cone; three's penumbra is the share of the cone that
+        // fades, Unreal's inner cone the part that does not (PRD-649 lamp-room).
+        const outer = ((light.outerConeDeg ?? 0) * Math.PI) / 180;
+        const point =
+          light.class === "SpotLight"
+            ? new SpotLight(
+                colour,
+                cd,
+                light.attenuationRadiusM,
+                outer,
+                ((light.outerConeDeg ?? 0) - (light.innerConeDeg ?? 0)) / (light.outerConeDeg ?? 1),
+                2,
+              )
+            : new PointLight(colour, cd, light.attenuationRadiusM, 2);
+        if (point instanceof SpotLight) {
+          point.target.position.fromArray(light.target ?? [0, 0, 0]);
+          scene.add(point.target);
+        }
         point.name = light.name;
         point.position.fromArray(light.position);
-        point.castShadow = shadows && light.castShadows;
+        lamps.push({ point, radius: light.sourceRadiusM ?? 0, casts: shadows && light.castShadows });
         // Unreal's lamp shadow has no near plane: three's 0.5 m default clipped cornell's shade, 0.3 m
         // from the lamp. Diagnosis knobs: shadowNear, shadowMap (texels), shadowBias, shadowNormalBias.
         point.shadow.camera.near = Number(params.get("shadowNear") ?? 0.02);
@@ -145,23 +200,34 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
         point.shadow.normalBias = Number(params.get("shadowNormalBias") ?? point.shadow.normalBias);
         scene.add(point);
         lights.push(point);
-        // Diagnosis knobs: sourceRadius=0 leaves the shadow on the hard filter (the filter's cost arm); blockers and
-        // samples set the filter's tap counts (default 16 each).
-        if ((light.sourceRadiusM ?? 0) > 0 && params.get("sourceRadius") !== "0") {
-          // The lamp's radius softens its shadow as Unreal's does (PRD-650); its highlight stays a point's.
-          point.shadow.filterNode = sourceRadiusShadowFilter({
-            sourceRadius: light.sourceRadiusM ?? 0,
-            blockerSamples: Number(params.get("blockers") ?? 16),
-            filterSamples: Number(params.get("samples") ?? 16),
-          });
+        if ((light.sourceRadiusM ?? 0) > 0 && params.get("sourceRadius") !== "0")
           unsupported.push({
             actor: light.name,
             property: "sourceRadiusM",
             reason: "a punctual light has no area: highlights stay hard (PRD-634)",
           });
-        }
       }
-      if (level >= 7) {
+      // A shadow tier decides whether a lamp casts and what its filter samples; `ShadowFilterBudget` moves
+      // it with the frame time when the URL asks for shadowAuto=1 (PRD-652). Diagnosis knobs: sourceRadius=0
+      // leaves the shadow on the hard filter (the filter's cost arm); blockers and samples set the tap counts.
+      const applyShadowTier = (next: ShadowFilterTier) => {
+        const preset = shadowPreset(next);
+        for (const { point, radius, casts } of lamps) {
+          point.castShadow = casts && preset.castShadows;
+          // The lamp's radius softens its shadow as Unreal's does (PRD-650); its highlight stays a point's.
+          if (radius > 0 && params.get("sourceRadius") !== "0")
+            // three's WebGPU ShadowNode reads `shadow.filterNode`; its types do not declare it yet.
+            (point.shadow as unknown as { filterNode: unknown }).filterNode = sourceRadiusShadowFilter({
+              sourceRadius: radius,
+              blockerSamples: Number(params.get("blockers") ?? preset.filter.blockerSamples),
+              filterSamples: Number(params.get("samples") ?? preset.filter.filterSamples),
+            });
+        }
+      };
+      applyShadowTier(SHADOW_TIER);
+      setShadowTier = applyShadowTier;
+      if (shadows) this.#shadow = watchShadowTier(ctx, { tier: SHADOW_TIER, apply: applyShadowTier });
+      if (GI_METHOD !== "none") {
         // Diagnosis: ?giSkip=<region> bakes with that region black, to measure its share of the bounce.
         const skipped = meshes.filter((m) => regionOf(m) === params.get("giSkip"));
         const kept = skipped.map((m) => (m.material as unknown as { color: Color }).color.clone());
@@ -173,7 +239,10 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
         const gi = installGi(ctx, model, {
           // Diagnosis: ?bounces=N brackets how much of the indirect light the later bounces carry.
           bounces: Number(params.get("bounces") ?? 5),
-          lights: lights.map((l) => ({
+          // The Surface Cache is on: a ray reads the map where it lands (PRD-639). Diagnosis: ?giMaps=0 returns the
+          // flat colour factor, ?giLights=0 leaves the lamps out of what a ray returns (the direct frame keeps them).
+          surfaceCache: params.get("giMaps") !== "0",
+          lights: (params.get("giLights") === "0" ? [] : lights).map((l) => ({
             position: l.position,
             color: l.color,
             intensity: l.intensity,
@@ -189,30 +258,45 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
       }
       // The template's `high` chain with the L9-only stages off, as Reference.ts runs below L9.
       // Exposure is the scene's fixed EV100: Unreal's manual exposure, 0.18 / 2^EV100.
-      const world = new WorldEnvironment({
-        ...qualityPreset("high"),
-        autoExposureEnabled: false,
-        bloomEnabled: false,
-        // Diagnosis: ?gtao=0 takes the contact occlusion out, to tell its darkening from the shadow's.
-        gtaoEnabled: level >= 6 && params.get("gtao") !== "0",
-        // Diagnosis: ?ssgi=0|1 and ?ssgiIntensity=N bracket the screen-space gather over the cache.
-        ...(params.get("ssgi") === null ? {} : { ssgiEnabled: params.get("ssgi") === "1" }),
-        ...(params.get("ssgiIntensity") === null ? {} : { ssgiIntensity: Number(params.get("ssgiIntensity")) }),
-        // Unreal's L7 is its Epic tier, so the gather takes the template's top sample budget.
-        ssgiQuality: (params.get("ssgiQuality") ?? "high") as "high",
-        // Diagnosis: ?ssgiScale=N gathers at a fraction of the frame (PRD-640 cost gate).
-        ...(params.get("ssgiScale") === null ? {} : { ssgiResolutionScale: Number(params.get("ssgiScale")) }),
-        vignetteAmount: 0,
-        exposure: EXPOSURE,
-      });
-      this.#dispose = world.apply(ctx.renderer, scene, camera, {}).dispose;
+      const build = (method: FinalGatherMethod) => {
+        this.#dispose?.();
+        const world = new WorldEnvironment({
+          ...qualityPreset("high"),
+          autoExposureEnabled: false,
+          bloomEnabled: false,
+          // Diagnosis: ?gtao=0 takes the contact occlusion out, to tell its darkening from the shadow's.
+          gtaoEnabled: level >= 6 && params.get("gtao") !== "0",
+          finalGatherMethod: method,
+          // Diagnosis: ?ssgi=0|1 and ?ssgiIntensity=N bracket the screen-space gather over the cache.
+          ...(params.get("ssgi") === null ? {} : { ssgiEnabled: params.get("ssgi") === "1" }),
+          ...(params.get("ssgiIntensity") === null ? {} : { ssgiIntensity: Number(params.get("ssgiIntensity")) }),
+          // Unreal's L7 is its Epic tier, so the gather takes the template's top sample budget.
+          ssgiQuality: (params.get("ssgiQuality") ?? "high") as "high",
+          // Diagnosis: ?ssgiScale=N gathers at a fraction of the frame (PRD-640 cost gate).
+          ...(params.get("ssgiScale") === null ? {} : { ssgiResolutionScale: Number(params.get("ssgiScale")) }),
+          vignetteAmount: 0,
+          exposure: EXPOSURE,
+        });
+        this.#dispose = world.apply(ctx.renderer, scene, camera, {}).dispose;
+      };
+      build(GI_METHOD);
+      // The tier's method moves with the measured GI time when the URL asks for giAuto=1 (PRD-644).
+      if (GI_METHOD !== "none")
+        this.#gi = watchGi(ctx, { tier: TIER, method: GI_METHOD, rebuild: build });
     }
     for (const u of unsupported)
       console.info(`TN_CALIBRATION_SCENE unsupported ${u.actor}.${u.property}: ${u.reason}`);
 
     const target = new Vector3();
-    (window as unknown as { __tnRef: unknown }).__tnRef = {
+    const reference = {
       layer: LAYER,
+      tier: TIER,
+      finalGatherMethod: GI_METHOD,
+      shadowQuality: SHADOW.shadowQuality,
+      // The GI and shadow watchers' newest windows, for the perf run (PRD-644 AC-2, PRD-652).
+      giBudget: () => this.#gi?.lastReport(),
+      shadowBudget: () => this.#shadow?.lastReport(),
+      setShadowTier: (tier: string) => setShadowTier(resolveQualityTier({ tier })),
       scene: NAME,
       unsupported,
       // The live scene, renderer and GI cache, for in-page diagnosis.
@@ -257,6 +341,11 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
         camera.updateProjectionMatrix();
       },
     };
+    (window as unknown as { __tnRef: unknown }).__tnRef = reference;
+    // Start at the capture's first pose (or ?pose=<name>), not at the framework camera's origin.
+    const poses = (DATA.poses ?? []) as (Pose & { name: string })[];
+    const start = poses.find((pose) => pose.name === params.get("pose")) ?? poses[0];
+    if (start !== undefined) reference.pose(start);
     return () => undefined;
   }
 
