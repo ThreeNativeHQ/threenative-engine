@@ -42,7 +42,8 @@ const UPSTREAM_SOURCES = new Set(["three", "three/webgpu", "three/tsl"]);
 /**
  * A value that throws `diagnostic` on any call, construction or property access. Its `prototype`
  * alone reads, so a module may declare a subclass (core's `VirtualShadowNode extends ShadowBaseNode`)
- * and fail only when it constructs one.
+ * and fail only when it constructs one. `Symbol.hasInstance` reads as absent, so `x instanceof Sub`
+ * is the ordinary prototype check (always false here) instead of a throw on every caller.
  */
 function refused(name: string, diagnostic: string): unknown {
   const fail = (): never => {
@@ -51,7 +52,8 @@ function refused(name: string, diagnostic: string): unknown {
   return new Proxy(function refusedExport() {}, {
     apply: fail,
     construct: fail,
-    get: (target, key) => (key === "prototype" ? target.prototype : fail()),
+    get: (target, key) =>
+      key === "prototype" ? target.prototype : key === Symbol.hasInstance ? undefined : fail(),
     set: fail,
     has: fail,
     ownKeys: fail,
