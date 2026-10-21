@@ -721,9 +721,9 @@ static ExprId vogelDisk(Program& f, Tsl& t, int i, ExprId phi) {
     return f.mul(f.construct(Type::vec(2), {f.call("cos", {theta}), f.call("sin", {theta})}), r);
 }
 
-// A two-sided, alpha-tested receiver (a leaf card, PRD-651) looks its shadow up where it stands: Unreal's
-// subsurface and two-sided-foliage receivers skip the normal bias, and a thin leaf biased along its normal
-// either self-shadows or lets light through. The sun's source also widens to a 5 degree minimum there.
+// A receiver marked twoSidedFoliage (PRD-651) looks its shadow up where it stands: Unreal's subsurface and
+// two-sided-foliage receivers skip the normal bias, and a thin leaf biased along its normal either
+// self-shadows or lets light through. The sun's source also widens to a 5 degree minimum there.
 static ExprId shadowWorld(Program& f, ExprId positionWorld, ExprId normalWorld, const std::string& at, bool leaf) {
     if (leaf) return positionWorld;
     return f.add(positionWorld, f.mul(normalWorld, f.uniform(at + "ShadowNormalBias", Type::f32())));
