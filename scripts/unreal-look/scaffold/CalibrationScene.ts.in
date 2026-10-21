@@ -269,6 +269,7 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
       unsupported,
       // The live scene, renderer and GI cache, for in-page diagnosis.
       world: scene,
+      camera,
       gi: giCache,
       renderer: ctx.renderer.raw,
       disposePost: () => this.#dispose?.(),

@@ -10,11 +10,15 @@
  * `--windows` windows is the tier's cost. Run it under the exclusive GPU slot: other GPU work moves the
  * numbers. The report prints the passes that resolved, so a wrong stage name reads as an empty list.
  *
+ * The owned engine times the whole frame only: it has no per-pass timestamp pool, so `GIBudget` resolves no stage
+ * there (`stagesSeen` is empty). `frame` is then the cost: the whole frame's GPU time per distinct sample after 120
+ * rendered frames of warm-up, and `giDeltaMs` is a tier's frame mean minus the `low` tier's, which draws no GI.
+ *
  * The GI tiers draw their shadows at `high`, as the Unreal GI cells do. `--shadow-tiers` instead draws the GI at
  * `medium` (no screen-space gather) and the shadows at each listed tier, so `frameMs` is the whole frame's GPU
  * time at that shadow tier.
  */
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -42,6 +46,69 @@ const flag = (args: readonly string[], name: string): string | undefined => {
 
 const mean = (values: readonly number[]): number =>
   values.length === 0 ? Number.NaN : values.reduce((a, b) => a + b, 0) / values.length;
+
+/**
+ * The whole frame's resolved GPU milliseconds, one per distinct sample, keyed by the engine's frame id. The page
+ * draws the pose in a tight loop beside its own: the host draws nothing while two frames are on the GPU, so the
+ * GPU stays busy. A GPU that idles between frames drops to a low clock, and every pass then reads 2 to 5 times
+ * dearer (a `low` frame read 14.9 ms at P5 and 3.2 ms boosted). The warm-up is 240 drawn frames and 4 s.
+ */
+const FRAME_SAMPLER = `(async (want) => {
+  const w = window.__tnRef;
+  const r = w.renderer;
+  const seen = new Map();
+  const note = () => {
+    const ids = r.backend && r.backend.getTimestampFrames ? r.backend.getTimestampFrames("render") : undefined;
+    const id = ids ? ids[ids.length - 1] : undefined;
+    const ms = r.info && r.info.render ? r.info.render.timestamp : undefined;
+    if (Number.isInteger(id) && typeof ms === "number" && ms > 0 && !seen.has(id)) seen.set(id, ms);
+  };
+  const tick = () => new Promise((done) => setTimeout(done, 0));
+  const t0 = performance.now();
+  const f0 = r.info.frame;
+  while ((r.info.frame - f0 < 240 || performance.now() - t0 < 4000) && performance.now() - t0 < 60000) {
+    r.render(w.world, w.camera);
+    await tick();
+  }
+  while (seen.size < want && performance.now() - t0 < 180000) {
+    r.render(w.world, w.camera);
+    note();
+    await tick();
+  }
+  return {
+    ms: [...seen.values()],
+    pixelRatio: r.getPixelRatio ? r.getPixelRatio() : null,
+    size: [r.domElement.width, r.domElement.height],
+  };
+})`;
+
+/** The GPU clock state right after a saturated run, so a reader can see the sample was taken boosted. */
+function gpuState(): string {
+  try {
+    return execFileSync(
+      "nvidia-smi",
+      [
+        "--query-gpu=pstate,clocks.sm,clocks.mem,utilization.gpu,power.draw,temperature.gpu",
+        "--format=csv,noheader",
+      ],
+      { encoding: "utf8", timeout: 10_000 },
+    ).trim();
+  } catch {
+    return "unavailable";
+  }
+}
+
+function frameStats(ms: readonly number[]): object {
+  const sorted = [...ms].sort((a, b) => a - b);
+  const at = (q: number): number =>
+    sorted[Math.min(sorted.length - 1, Math.floor(q * sorted.length))] ?? Number.NaN;
+  return {
+    mean: Number(mean(ms).toFixed(3)),
+    median: Number(at(0.5).toFixed(3)),
+    p95: Number(at(0.95).toFixed(3)),
+    samples: ms.length,
+  };
+}
 
 /** Opens the scene at a tier, checks the adapter is a real GPU and returns the page ready to watch. */
 async function openTier(
@@ -94,7 +161,7 @@ function summarize(adapter: Record<string, string>, kept: readonly IWindow[]): o
     budgetMs: first?.budgetMs ?? null,
     frameMs: Number(mean(resolved.map((w) => w.frameMs ?? 0)).toFixed(3)),
     giMs: Number(giMs.toFixed(3)),
-    insideBudget: first === undefined ? null : giMs <= first.budgetMs,
+    insideBudget: first === undefined || resolved.length === 0 ? null : giMs <= first.budgetMs,
     method: first?.finalGatherMethod ?? null,
     passes: first?.passes ?? [],
     stagesSeen: first?.stagesSeen ?? [],
@@ -110,7 +177,8 @@ async function measureTier(
   pose: unknown,
   count: number,
   shadowTier = "high",
-): Promise<object> {
+  frames = 600,
+): Promise<Record<string, unknown>> {
   const { adapter, errors, page } = await openTier(
     browser,
     `${origin}?tnGi=${name}&layer=L7&tier=${tier}&shadowTier=${shadowTier}`,
@@ -118,12 +186,34 @@ async function measureTier(
   );
   try {
     const method = (await page.evaluate("window.__tnRef.finalGatherMethod")) as string;
+    const sampled = (await page.evaluate(`${FRAME_SAMPLER}(${frames})`)) as {
+      ms: number[];
+      pixelRatio: number | null;
+      size: number[];
+    };
+    const frame = {
+      ...frameStats(sampled.ms),
+      gpu: gpuState(),
+      pixelRatio: sampled.pixelRatio,
+      size: sampled.size,
+    };
     // No GI pass runs at `none`, so the tier costs no GI time by construction.
     if (method === "none")
-      return { adapter, budgetMs: 0, giMs: 0, insideBudget: true, method, windows: 0 };
-    return summarize(adapter, await collectWindows(page, errors, count));
+      return { adapter, budgetMs: 0, frame, giMs: 0, insideBudget: true, method, windows: 0 };
+    return { ...summarize(adapter, await collectWindows(page, errors, count)), frame };
   } finally {
     await page.close();
+  }
+}
+
+/** Every tier's frame mean minus the `low` tier's, which draws no GI: what the tier's GI costs when no pass is named. */
+function addDeltas(report: Record<string, Record<string, unknown>>): void {
+  const base = (report.low?.frame as { mean: number } | undefined)?.mean;
+  for (const [tier, entry] of Object.entries(report)) {
+    const frame = entry.frame as { mean: number } | undefined;
+    if (base !== undefined && frame !== undefined && tier !== "low")
+      entry.giDeltaMs = Number((frame.mean - base).toFixed(3));
+    console.info(`TN_GI_TIER_COST ${tier} ${JSON.stringify(entry)}`);
   }
 }
 
@@ -151,7 +241,7 @@ export async function main(args: readonly string[]): Promise<number> {
       stdio: ["ignore", "inherit", "inherit"],
     },
   );
-  const report: Record<string, object> = {};
+  const report: Record<string, Record<string, unknown>> = {};
   try {
     const origin = `http://127.0.0.1:${port}/`;
     await waitForServer(origin, server);
@@ -161,8 +251,8 @@ export async function main(args: readonly string[]): Promise<number> {
       const shadowTiers = flag(args, "--shadow-tiers")?.split(",") ?? [];
       for (const tier of shadowTiers.length > 0 ? [] : tiers) {
         report[tier] = await measureTier(browser, origin, name, tier, pose, count);
-        console.info(`TN_GI_TIER_COST ${tier} ${JSON.stringify(report[tier])}`);
       }
+      addDeltas(report);
       for (const shadowTier of shadowTiers) {
         const key = `shadow-${shadowTier}`;
         report[key] = await measureTier(browser, origin, name, "medium", pose, count, shadowTier);
