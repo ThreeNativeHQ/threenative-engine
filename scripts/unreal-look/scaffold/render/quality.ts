@@ -116,7 +116,8 @@ const shared: IWorldEnvironmentOptions = {
   // the value used while the meter is off.
   exposure: 1,
   tonemapMode: "filmic",
-  vignetteAmount: 0.22,
+  // Unreal's VignetteIntensity, cosine-fourth law (Scene.cpp, FPostProcessSettings constructor).
+  vignetteAmount: 0.4,
 };
 
 /**
@@ -135,6 +136,9 @@ const high: IWorldEnvironmentOptions = {
   // GTAO off, thin and soft at 0.12). The L6 arm keeps Unreal's SSAO radius in Reference.ts.in.
   gtaoRadius: 0.12,
   renderChainTier: "high",
+  // Unreal turns motion blur on for a high end PC only (HardwareTargetingModule.cpp), so the desktop tier has it
+  // and `medium` and `low` do not. It needs the chain's velocity, which costs one more scene pass target.
+  motionBlurEnabled: true,
   // Temporal AA is opt-in and no shipped tier names it: add `authoredStageNames: ["traa"]` here to
   // reconstruct at the display raster, and read `setupPost(...).debug().temporal` for the reset and
   // raster state it reports. Its rejection fraction, ghosting and frame-time cost are unqualified.
@@ -147,13 +151,21 @@ const high: IWorldEnvironmentOptions = {
 // SMAA owns medium edges; another four-sample world resolve adds mobile bandwidth.
 const medium: IWorldEnvironmentOptions = {
   ...high,
+  motionBlurEnabled: false,
   gtaoSamples: 8,
   renderChainTier: "medium",
   samples: 0,
 };
 
-/** What a phone gets: bloom, vignette and the tone curve, nothing screen-space. */
-const low: IWorldEnvironmentOptions = { ...shared, renderChainTier: "low" };
+/**
+ * What a phone gets: bloom, vignette and the tone curve, nothing screen-space. Unreal's default device profile turns
+ * local exposure off on mobile (BaseDeviceProfiles.ini), so this does too.
+ */
+const low: IWorldEnvironmentOptions = {
+  ...shared,
+  localExposureEnabled: false,
+  renderChainTier: "low",
+};
 
 const QUALITY_PRESETS: Record<QualityTier, IWorldEnvironmentOptions> = { high, low, medium };
 
@@ -161,23 +173,16 @@ const QUALITY_PRESETS: Record<QualityTier, IWorldEnvironmentOptions> = { high, l
  * This game's colour grade and grain, per tier. The table itself lives in `public/grade.cube` and
  * the maths in `grade.ts`; these are the four numbers the look is dialled with.
  *
- * **The grain default is 1/255, and that is the point.** `film()` scales its noise by
- * the pixel's own value, so on mid-grey concrete this moves a channel by well under half an 8-bit
- * step — below what the framebuffer can show. It shipped at 0.12, and a blind judge called the
- * result "grain clearly visible as speckle over sky and flat walls and behind HUD text". A default
- * must never degrade the look, so raise this number when you want the film look: 0.12 is a visible
- * grain, 0.3 a heavy one.
- *
- * A zero refuses its stage rather than running it at zero strength, so `low` — a phone, where a
- * moving grain is the first thing to go — reports `grain` as refused with its reason instead of
- * reading as applied. The grade survives there: it is one texture fetch and the frame is the
- * same frame without it. `high` keeps a non-zero grain on purpose, so `TN_RENDER_CHAIN` can still
- * name it as applied there rather than reporting the stage a default deliberately declined to run.
+ * **Both are off, as in a fresh Unreal project** (Scene.cpp: every saturation, contrast, gamma and
+ * gain is 1, `FilmGrainIntensity` is 0), and a zero refuses its stage, so `TN_RENDER_CHAIN` reports
+ * `grade` and `grain` as refused with their reason instead of running them at zero strength.
+ * Turn the art direction back on with `gradeIntensity: 1` (the `grade.cube` LUT) and a grain
+ * between 1/255 (`0.0039`, below one 8-bit step on mid grey) and `0.12` (a visible film grain).
  */
 const GRADE_PRESETS: Record<QualityTier, IGradeSettings> = {
-  high: { gradeIntensity: 1, grainAnimated: true, grainIntensity: 0.0039, tier: "high" },
-  medium: { gradeIntensity: 1, grainAnimated: false, grainIntensity: 0.0039, tier: "medium" },
-  low: { gradeIntensity: 1, grainAnimated: false, grainIntensity: 0, tier: "low" },
+  high: { gradeIntensity: 0, grainAnimated: true, grainIntensity: 0, tier: "high" },
+  medium: { gradeIntensity: 0, grainAnimated: false, grainIntensity: 0, tier: "medium" },
+  low: { gradeIntensity: 0, grainAnimated: false, grainIntensity: 0, tier: "low" },
 };
 
 /** The stages and strengths a tier turns on. Throws on a name that is not a tier. */

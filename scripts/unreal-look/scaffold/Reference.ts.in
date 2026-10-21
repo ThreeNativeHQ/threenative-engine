@@ -47,17 +47,26 @@ const [elevationDeg = 60, azimuthDeg = 25] = (params.get("sun") ?? "60,25").spli
 const level = LAYER === "ID" ? -1 : Number(LAYER.slice(1));
 // `baseline=1` captures the template look as it ships; otherwise the tuning in progress applies.
 const TUNED = params.get("baseline") !== "1";
-// `off=vsm,gpusky,clouds,gi,reflcap,bloom,localexposure,autoexposure,ssgi,ssr,gtao` switches one L9 stage off, to
+// `off=vsm,gpusky,clouds,gi,reflcap,bloom,localexposure,autoexposure,ssgi,ssr,gtao,vignette,motionblur` switches one L9 stage off, to
 // attribute frame cost by ablation (PRD-636 performance). `gpusky` is read in `render/sky.ts`.
+// `pan=<rad/s>` turns the camera about the vertical axis after each pose, to give the velocity pass something to blur.
+const PAN = Number(params.get("pan") ?? 0);
+const UP = new Vector3(0, 1, 0);
+let panToken = 0;
 const OFF = new Set((params.get("off") ?? "").split(",").filter(Boolean));
 // What each stage name turns off in the template's `high` preset.
-const STAGE_OFF: Record<string, Record<string, boolean>> = {
-  autoexposure: { autoExposureEnabled: false, localExposureEnabled: false },
+const STAGE_OFF: Record<string, Record<string, boolean | number>> = {
+  autoexposure: { autoExposureEnabled: false },
   bloom: { bloomEnabled: false, unrealBloomEnabled: false },
   gtao: { gtaoEnabled: false },
   localexposure: { localExposureEnabled: false },
+  motionblur: { motionBlurEnabled: false },
   ssgi: { ssgiEnabled: false },
   ssr: { ssrEnabled: false },
+  // Three's own bloom at its best fit to Unreal's: no threshold, radius 0 (the heaviest weight on the narrowest mip)
+  // and 8.94 percent of the frame's energy (Unreal's tint sum 0.7951 / 6 x intensity 0.675 over the node's weight sum 3).
+  stockbloom: { bloomRadius: 0, bloomStrength: 0.0298, bloomThreshold: 0, unrealBloomEnabled: false },
+  vignette: { vignetteAmount: 0 },
 };
 // Unreal 5.8.3's sun source angle, from the live level dump (tools/unreal-reference/template-actors.json),
 // is the sun's apex angle (its angular diameter). `sourceAngleShadowFilter` takes the angular radius,
@@ -212,6 +221,7 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
           ...qualityPreset("high"),
           autoExposureEnabled: false,
           bloomEnabled: false,
+          localExposureEnabled: false,
           gtaoEnabled: level >= 6,
           // Unreal's SSAO at L6 (r.AmbientOcclusionRadius 40 cm); Lumen's short-range AO is thinner from L7.
           ...(level < 7 ? { gtaoRadius: 0.35 } : {}),
@@ -241,6 +251,19 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
         camera.position.fromArray(pose.position);
         camera.lookAt(target.fromArray(pose.target));
         camera.updateProjectionMatrix();
+        // `pan=<rad/s>` turns the camera about the vertical axis from this pose on: the motion blur proof.
+        if (PAN === 0) return;
+        const token = ++panToken;
+        const origin = camera.position.clone();
+        const offset = target.clone().sub(origin);
+        const start = performance.now();
+        const spin = () => {
+          if (token !== panToken) return;
+          const angle = (PAN * (performance.now() - start)) / 1000;
+          camera.lookAt(origin.clone().add(offset.clone().applyAxisAngle(UP, angle)));
+          requestAnimationFrame(spin);
+        };
+        requestAnimationFrame(spin);
       },
     };
     const publishReference = () => {

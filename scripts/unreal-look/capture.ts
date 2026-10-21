@@ -12,7 +12,7 @@
  *     --measure <seconds>  hold each cell that long and write its TN_FRAME_BUDGET log (read it with
  *                          `playtest perf --file`); no screenshot
  *     --size 1920x1080     viewport override (the cells use poses.json's 1280x720); start Xvfb that large
- *     --off vsm,gpusky,...   L9 stage ablation: vsm gpusky clouds gi reflcap bloom localexposure autoexposure ssgi ssr gtao
+ *     --off vsm,gpusky,...   L9 stage ablation: vsm gpusky clouds gi reflcap bloom localexposure autoexposure ssgi ssr gtao vignette motionblur stockbloom
  *   --layers L0,L1,ID      limit the layers (default: every layer plus the region-id frames)
  *   --cells sun60/exterior limit the (sun, pose) cells
  *   --scene gi[:<name>,...] a PRD-638 GI calibration scene instead (flags: scripts/unreal-look/gi.ts)
