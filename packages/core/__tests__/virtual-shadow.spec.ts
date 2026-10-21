@@ -524,6 +524,38 @@ describe("VirtualShadowNode", () => {
     expect(() => new VirtualShadowNode(light, { lightDistance: -1 })).toThrow(/lightDistance/u);
   });
 
+  it("should halve the finest level's texel for a resolution bias of -1 and keep the outer reach", () => {
+    const { camera, light } = world();
+    const node = setupNode(light, {
+      clipExtents: [8, 32, 128],
+      mapSize: 64,
+      resolutionLodBiasDirectional: -1,
+    });
+    // Unreal's ResolutionLodBiasDirectional: -1 doubles the finest resolution, -1.5 is 2.83 times finer.
+    expect(node.options.clipExtents).toEqual([4, 32, 128]);
+    expect(node.options.resolutionLodBiasDirectional).toBe(-1);
+    settle(node, camera);
+    expect(node.levelLights).toHaveLength(3);
+    const finer = setupNode(light, {
+      clipExtents: [8, 32, 128],
+      resolutionLodBiasDirectional: -1.5,
+    });
+    expect(finer.options.clipExtents[0]).toBeCloseTo(8 / 2 ** 1.5, 9);
+    expect(finer.options.clipExtents.slice(1)).toEqual([32, 128]);
+    // The default leaves the ladder as it was.
+    expect(setupNode(light, { clipExtents: [8, 32] }).options.clipExtents).toEqual([8, 32]);
+  });
+
+  it("should reject a resolution bias that is not finite or that pushes the finest level past the next", () => {
+    const { light } = world();
+    expect(
+      () => new VirtualShadowNode(light, { resolutionLodBiasDirectional: Number.NaN }),
+    ).toThrow(/resolutionLodBiasDirectional/u);
+    expect(
+      () => new VirtualShadowNode(light, { clipExtents: [8, 12], resolutionLodBiasDirectional: 1 }),
+    ).toThrow(/resolutionLodBiasDirectional/u);
+  });
+
   it("should build one cached level per clip extent and add its lights beside the source light", () => {
     const { camera, light, scene } = world();
     const node = setupNode(light, { clipExtents: [8, 32, 128] });

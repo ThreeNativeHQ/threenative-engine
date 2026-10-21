@@ -100,7 +100,8 @@ export async function main(args: readonly string[]): Promise<number> {
   const out = path.resolve(flag(args, "--out") ?? path.join(REFERENCE, "captures", engine));
   const known = layerNames();
   const layers = (flag(args, "--layers")?.split(",") ?? known).filter(Boolean);
-  for (const layer of layers)
+  // A calibration scene names its own layers (`GI_LAYERS`, validated where it captures).
+  for (const layer of flag(args, "--scene") === undefined ? layers : [])
     if (!known.includes(layer)) throw new Error(`TN_UNREAL_LOOK_BAD_INPUT: unknown layer ${layer}`);
   const cellsFlag = flag(args, "--cells");
   const cells = cellsFlag === undefined ? undefined : new Set(cellsFlag.split(","));
@@ -116,6 +117,7 @@ export async function main(args: readonly string[]): Promise<number> {
         (familyOf(value) === "shadow" ? ["ID", "L5", "L9"] : ["ID", "L1", "L7"]),
       out: path.resolve(flag(args, "--out") ?? path.join(REFERENCE, "captures", "threenative")),
       reuse: args.includes("--reuse"),
+      ...(flag(args, "--measure") ? { measureSeconds: Number(flag(args, "--measure")) } : {}),
     });
     return count > 0 ? 0 : 1;
   }
