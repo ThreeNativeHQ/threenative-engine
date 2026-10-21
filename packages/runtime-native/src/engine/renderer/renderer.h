@@ -37,6 +37,7 @@ using Matrix = std::array<double, 16>;  // column-major, as three's Matrix4.elem
 
 class SkinnedMesh;
 class Bone;
+class PerspectiveCamera;
 struct GpuJointScene {
     struct Rig {
         std::weak_ptr<SkinnedMesh> mesh;
@@ -343,6 +344,9 @@ public:
     const std::vector<std::string>& diagnostics() const { return diagnostics_; }
     /** Separate capture targets: probe work never resizes the presented frame or its post history. */
     Renderer& probeCaptureRenderer();
+    /** The face camera of a probe capture, shared so a render callback that keeps its handle is safe. The
+     *  capture creates it on the first face and poses it again for each one. */
+    std::shared_ptr<PerspectiveCamera>& probeCaptureCamera() { return probeCamera_; }
     /** Another renderer on this device, with its own targets: a reflection pass draws into one. */
     /** A renderer on the same device for a render target or a reflection: it shares this one's map
      *  textures, geometry copies, and layout and pipeline caches, as three's one renderer does. */
@@ -759,6 +763,7 @@ private:
 
     WGPUInstance instance_;
     std::unique_ptr<Renderer> probeCapture_;
+    std::shared_ptr<PerspectiveCamera> probeCamera_;
     WGPUDevice device_;
     WGPUQueue queue_;
     // Mip passes recorded since the last submit: one encoder for every texture uploaded in between,

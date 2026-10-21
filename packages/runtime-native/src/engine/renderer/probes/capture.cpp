@@ -46,7 +46,14 @@ GpuStatus captureFace(Renderer& renderer, Object3D& scene, const Vector3& positi
     // below maps raster camera right to the reference's cube sampler U axis.
     static const Vector3 directions[] = {{1, 0, 0}, {-1, 0, 0}, {0, 1, 0}, {0, -1, 0}, {0, 0, 1}, {0, 0, -1}};
     static const Vector3 ups[] = {{0, 1, 0}, {0, 1, 0}, {0, 0, -1}, {0, 0, 1}, {0, 1, 0}, {0, 1, 0}};
-    PerspectiveCamera camera(90, 1, near, far);
+    // The capture renderer owns the face camera and poses it again for each face: a JS onBeforeRender
+    // gets the same shared object three would hand it, and its handle stays valid after the capture.
+    auto& owned = capture.probeCaptureCamera();
+    if (!owned) owned = std::make_shared<PerspectiveCamera>(90, 1, near, far);
+    PerspectiveCamera& camera = *owned;
+    camera.near = near;
+    camera.far = far;
+    camera.updateProjectionMatrix();
     camera.position.copy(position);
     camera.up = ups[face];
     auto target = camera.position.clone().add(directions[face]);
