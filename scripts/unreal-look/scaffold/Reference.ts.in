@@ -142,7 +142,8 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
       if (TUNED) {
         if (!OFF.has("vsm"))
           (key.shadow as unknown as { filterNode: unknown }).filterNode = sourceAngleShadowFilter({
-            sourceAngleRad: SUN_SOURCE_ANGLE_RAD,
+            // Diagnosis knob vsmAngle: a factor on the angular radius (1 = Unreal's measured value).
+            sourceAngleRad: SUN_SOURCE_ANGLE_RAD * Number(params.get("vsmAngle") ?? 1),
           });
         // Unreal's directional light shadows the whole view with camera-centred virtual shadow
         // maps. `VirtualShadowNode` is that: nested clip levels around the camera, each twice
