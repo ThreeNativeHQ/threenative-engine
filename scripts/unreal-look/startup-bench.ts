@@ -239,10 +239,15 @@ async function main(): Promise<void> {
         );
         if (exposures().at(-1)?.text.includes('"applied":true') === true) {
           const deadline = Date.now() + 240_000;
-          const settledSince = () =>
-            exposures().some((m) => m.atMs > poseAt && m.text.includes('"settled":true'));
-          while (!settledSince() && Date.now() < deadline) await page.waitForTimeout(500);
-          exposureSettled = settledSince();
+          // Three readings in a row after the pose: one right after it can still be the old view's.
+          const settledNow = () => {
+            const last = exposures()
+              .filter((m) => m.atMs > poseAt)
+              .slice(-3);
+            return last.length === 3 && last.every((m) => m.text.includes('"settled":true'));
+          };
+          while (!settledNow() && Date.now() < deadline) await page.waitForTimeout(500);
+          exposureSettled = settledNow();
         }
         await page.screenshot({ path: path.join(out, `${kind}${index + 1}.png`) });
       }
