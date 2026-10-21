@@ -64,7 +64,7 @@ from the game. The engine only makes the shadow follow them.
 
 ## Acceptance Criteria
 
-- [ ] AC-1 [local]: On `foliage/canopy` at `high`, a PRD-647 round returns no REGRESSION against BEFORE and MATCH or CLOSE against Unreal, with the leaf gaps visible in the ground shadow. proof: `pnpm unreal-look:calibrate --scene shadow:foliage --tier high --before <commit>` — Evidence: pending.
+- [ ] AC-1 [local]: On `wildwood/canopy` (real Fab vegetation, see Decisions) at `high`, a PRD-647 round returns no REGRESSION against BEFORE and MATCH or CLOSE against Unreal, with the leaf gaps visible in the ground shadow. proof: `pnpm unreal-look:calibrate --scene shadow:wildwood --tier high --before <commit>` — Evidence: pending.
 - [ ] AC-2 [local]: In the `wind` run, the near-ground tree shadow moves with the tree, and the GPU cost of wind stays within PRD-488's 0.25 ms against wind off on the RTX 2080. proof: `pnpm unreal-look:calibrate --scene shadow:foliage --run wind` and `TN_FRAME_BUDGET` windows from `playtest perf` — Evidence: pending.
 
 ## Integration Ledger
@@ -100,6 +100,12 @@ from the game. The engine only makes the shadow follow them.
 **Verification:** AC-1 and AC-2.
 
 ## Decisions
+
+- 2026-10-21 (wildwood lane, owner): AC-1 judges real vegetation. The owner asked three times for the Fab
+  GLBs of the sandbox wildwood game in place of procedural cards. `shadow:wildwood` (PRD-649) is the AC-1
+  scene: a pine, a broadleaf tree, a bush, ferns, grass and flowers, placed from one manifest in both
+  engines. The files stay out of the repository (`TN_WILDWOOD_ASSETS`). `foliage` stays as the
+  procedural control and keeps the `wind` run of AC-2.
 
 - 2026-10-21 (leaf lane, correction of the first Phase 3 commit): the rule first read the sides and the cut
   (`side = DoubleSide` and an alpha test) and the game marked nothing. That was wrong. Unreal takes

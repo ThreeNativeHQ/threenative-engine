@@ -44,9 +44,10 @@ SCENE = {
     "fog": None,
     "ev100": 3,
     "poses": [
-        # Both trees and the dappled ground under them, from the sun side.
-        {"name": "canopy", "position": [12.0, 4.5, 9.0], "target": [0.5, 4.0, -3.5], "hfovDeg": 72,
-         "perSun": {"sun15": {"position": [8.0, 7.0, 12.0], "target": [-8.0, 1.0, -3.0], "hfovDeg": 72}}},
+        # Both trees whole and the dappled ground under them, from the sun side and above. At sun 15 the
+        # shadows run 37 m, so the camera rises to show their length.
+        {"name": "canopy", "position": [10.0, 7.0, 13.0], "target": [-0.5, 3.2, -3.0], "hfovDeg": 76,
+         "perSun": {"sun15": {"position": [12.0, 10.0, 15.0], "target": [-3.0, 1.5, -3.0], "hfovDeg": 76}}},
         # The bush and the two ferns, with the shadow of the trees across them.
         {"name": "shrub", "position": [4.5, 1.6, 5.5], "target": [1.0, 0.5, 1.0], "hfovDeg": 62},
         # The grass and flower clumps near the ground.
