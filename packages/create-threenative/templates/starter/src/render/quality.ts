@@ -92,10 +92,10 @@ export function resolveQualityTier(
 }
 
 /**
- * The look every tier shares: a wide, faint glow on what is genuinely brighter than white — the
- * sun disk, the visor — rather than a haze over the frame (a threshold under 1 blooms lit grey
- * platforms and flattens contrast), a corner falloff, and the shared chain's SMAA. Antialiasing is
- * on in every tier that installs a chain; see `screenSpaceAA` in `worldEnvironment.ts`.
+ * The look every tier shares is a fresh Unreal 5.8.3 project's: its bloom, local exposure and
+ * cosine-fourth vignette, plus the shared chain's SMAA (`screenSpaceAA` in `worldEnvironment.ts`).
+ * Each has a named override: `unrealBloomEnabled: false` (then `bloomStrength`, `bloomRadius` and
+ * `bloomThreshold` apply), `localExposureEnabled: false` and `vignetteAmount: 0`.
  *
  * No screen-space reflections and no sharpen here, on purpose. Every surface already reflects the
  * captured sky (`sky.ts`), and SSR on rough floors traced speckle into the grid; RCAS then rang the
@@ -103,14 +103,13 @@ export function resolveQualityTier(
  */
 const shared: IWorldEnvironmentOptions = {
   autoExposureEnabled: false,
-  // Bloom cost: ~4.6 ms in the reference ablation — the second most expensive stage there.
+  // Bloom cost: unmeasured here; PRD-636 records it in ms.
   bloomEnabled: true,
-  bloomRadius: 0.6,
-  bloomStrength: 0.22,
-  bloomThreshold: 1,
   exposure: 0.62,
   tonemapMode: "aces",
-  vignetteAmount: 0.22,
+  // The Unreal bloom is the one `bloomEnabled` runs. Cost: unmeasured.
+  unrealBloomEnabled: true,
+  vignetteAmount: 0.4,
 };
 
 /**
@@ -124,6 +123,10 @@ const high: IWorldEnvironmentOptions = {
   // GTAO, full resolution plus denoise: unmeasured on its own here; read `TN_FRAME_BUDGET`.
   gtaoEnabled: true,
   gtaoRadius: 0.35,
+  // Measures against `exposure` while auto exposure is off. Cost: unmeasured.
+  localExposureEnabled: true,
+  // Unreal enables motion blur on high-end PCs only. It needs the chain's velocity. Cost: unmeasured.
+  motionBlurEnabled: true,
   renderChainTier: "high",
   // Temporal AA is opt-in and no shipped tier names it: add `authoredStageNames: ["traa"]` here to
   // reconstruct at the display raster, and read `setupPost(...).debug().temporal` for the reset and
@@ -138,36 +141,26 @@ const high: IWorldEnvironmentOptions = {
 const medium: IWorldEnvironmentOptions = {
   ...high,
   gtaoSamples: 8,
+  motionBlurEnabled: false,
   renderChainTier: "medium",
   samples: 0,
 };
 
-/** What a phone gets: bloom, vignette and the tone curve, nothing screen-space. */
+/** What a phone gets: bloom, vignette and the tone curve. Unreal's mobile profile has no local exposure. */
 const low: IWorldEnvironmentOptions = { ...shared, renderChainTier: "low" };
 
 const QUALITY_PRESETS: Record<QualityTier, IWorldEnvironmentOptions> = { high, low, medium };
 
 /**
- * This game's colour grade and grain, per tier. The table itself lives in `public/grade.cube` and
- * the maths in `grade.ts`; these are the four numbers the look is dialled with.
- *
- * **The grain default is 1/255, and that is the point.** `film()` scales its noise by
- * the pixel's own value, so on mid-grey concrete this moves a channel by well under half an 8-bit
- * step — below what the framebuffer can show. It shipped at 0.12, and a blind judge called the
- * result "grain clearly visible as speckle over sky and flat walls and behind HUD text". A default
- * must never degrade the look, so raise this number when you want the film look: 0.12 is a visible
- * grain, 0.3 a heavy one.
- *
- * A zero refuses its stage rather than running it at zero strength, so `low` — a phone, where a
- * moving grain is the first thing to go — reports `grain` as refused with its reason instead of
- * reading as applied. The grade survives there: it is one texture fetch and the frame is the
- * same frame without it. `high` keeps a non-zero grain on purpose, so `TN_RENDER_CHAIN` can still
- * name it as applied there rather than reporting the stage a default deliberately declined to run.
+ * This game's colour grade and grain, per tier (`grade.ts`, `public/grade.cube`). **Both are off, as in
+ * a fresh Unreal project** (Scene.cpp: neutral grade, `FilmGrainIntensity` 0). A zero refuses its stage
+ * and `TN_RENDER_CHAIN` says why. Turn them on with `gradeIntensity: 1` and a `grainIntensity` from
+ * 0.0039 (under one 8-bit step on mid grey) to 0.12 (a visible film grain).
  */
 const GRADE_PRESETS: Record<QualityTier, IGradeSettings> = {
-  high: { gradeIntensity: 1, grainAnimated: true, grainIntensity: 0.0039, tier: "high" },
-  medium: { gradeIntensity: 1, grainAnimated: false, grainIntensity: 0.0039, tier: "medium" },
-  low: { gradeIntensity: 1, grainAnimated: false, grainIntensity: 0, tier: "low" },
+  high: { gradeIntensity: 0, grainAnimated: true, grainIntensity: 0, tier: "high" },
+  medium: { gradeIntensity: 0, grainAnimated: false, grainIntensity: 0, tier: "medium" },
+  low: { gradeIntensity: 0, grainAnimated: false, grainIntensity: 0, tier: "low" },
 };
 
 /** The stages and strengths a tier turns on. Throws on a name that is not a tier. */

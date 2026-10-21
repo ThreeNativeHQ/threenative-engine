@@ -13,9 +13,7 @@ import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import os from "node:os";
 import path from "node:path";
-import { chromium } from "@playwright/test";
 import { createProject } from "../../packages/create-threenative/src/index.js";
-import { WEBGPU_BROWSER_ARGS } from "../../packages/playtest/src/runner/browser.js";
 import {
   LOCAL_FRAMEWORK_PACKAGES,
   assertVisualPortAvailable,
@@ -23,6 +21,7 @@ import {
   stopVisualServer,
 } from "../visual-gate.js";
 import { workspacePackages } from "../workspace-packages.js";
+import { launchWebgpuBrowser } from "./browser.js";
 
 const REPO_ROOT = path.resolve(import.meta.dirname, "../..");
 const REFERENCE = path.join(REPO_ROOT, "tools/unreal-reference");
@@ -275,7 +274,7 @@ export async function captureThreeNative(options: IThreeNativeCaptureOptions): P
     const origin = `http://127.0.0.1:${port}/`;
     await waitForServer(origin, server);
     const [width, height] = options.size ?? poses.resolution;
-    const browser = await chromium.launch({ args: [...WEBGPU_BROWSER_ARGS], headless: false });
+    const browser = await launchWebgpuBrowser();
     try {
       const page = await browser.newPage({ viewport: { width, height }, deviceScaleFactor: 1 });
       const errors: string[] = [];

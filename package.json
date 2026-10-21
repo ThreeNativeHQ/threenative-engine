@@ -90,6 +90,7 @@
     "unreal-look:curve": "tsx scripts/unreal-look/curve.ts",
     "unreal-look:gi-cost": "tsx scripts/unreal-look/gi-tier-cost.ts",
     "unreal-look:judge": "tsx scripts/unreal-look/judge.ts",
+    "unreal-look:stage-effect": "tsx scripts/unreal-look/stage-effect.ts",
     "verify:golden-path": "sh scripts/xvfb.sh tsx scripts/verify-golden-path.ts",
     "visuals": "sh scripts/xvfb.sh tsx scripts/visual-gate.ts",
     "visuals:ab": "sh scripts/xvfb.sh tsx scripts/visual-ab.ts",
