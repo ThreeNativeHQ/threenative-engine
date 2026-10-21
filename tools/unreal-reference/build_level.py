@@ -375,6 +375,9 @@ def capture():
         # Lumen, the virtual shadow maps and TSR settle in about 2 s; eye adaptation
         # (L9) needs about 10 s of game time at 1 stop/s darkening.
         warm_up = 300 if layer["cvars"].get("r.DefaultFeature.AutoExposure") else 90
+        # TN_UE_WARMUP=<frames> overrides it: the noise-floor runs ask whether a temporal layer settles.
+        if os.environ.get("TN_UE_WARMUP"):
+            warm_up = int(os.environ["TN_UE_WARMUP"])
         for kind in ("png",) if layer["name"] == "ID" else ("png", "exr"):
             add_job(
                 q, name, f"{ROOT}/Ref_{sun['name']}", f"{ROOT}/Sequences/Seq_{pose['name']}",
