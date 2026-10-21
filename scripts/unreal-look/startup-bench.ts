@@ -74,6 +74,20 @@ async function main(): Promise<void> {
   const work = process.env.TN_UNREAL_LOOK_WORK;
   if (work === undefined) throw new Error("TN_UNREAL_LOOK_WORK: set a work directory of your own");
   const target = await scaffold(work, true, false);
+  if (process.argv.includes("--no-compact")) {
+    // The GI capture's setting: the cook keeps each mesh as it is authored, with no joining and no instancing.
+    const config = path.join(target, "threenative.config.ts");
+    const source = readFileSync(config, "utf8");
+    const anchor = '  nativeEntry: "src/game.ts",';
+    if (!source.includes("compact: false")) {
+      if (!source.includes(anchor))
+        throw new Error(`TN_STARTUP_BENCH: '${anchor}' not in ${config}`);
+      await writeFile(
+        config,
+        source.replace(anchor, `${anchor}\n  assets: { models: { compact: false } },`),
+      );
+    }
+  }
   if (model !== "") {
     // `model=<folder>` loads a calibration scene's glb: it has to be an asset before the dev server lists them.
     const to = path.join(target, "assets/unreal-reference/gi", model);
@@ -115,6 +129,10 @@ async function main(): Promise<void> {
         deviceScaleFactor: 1,
       });
       await page.addInitScript(PROBE);
+      // At document start, so a page that reloads (a dev server re-optimising its dependencies) is still hidden.
+      await page.addInitScript(
+        `document.documentElement.appendChild(Object.assign(document.createElement("style"), { textContent: ${JSON.stringify(HIDE_UI)} }));`,
+      );
       const markers: { atMs: number; text: string }[] = [];
       const begin = Date.now();
       let failed: string | undefined;
@@ -148,7 +166,6 @@ async function main(): Promise<void> {
       }
       const load0 = Date.now();
       await page.goto(load, { waitUntil: "domcontentloaded" });
-      await page.addStyleTag({ content: HIDE_UI });
       // A start that failed (or a lost GPU device, which a shared GPU makes common) never sets the marker: stop on the page's own report instead of the timeout.
       await Promise.race([
         page.waitForSelector('[data-threenative-startup="ready"]', { timeout: 900_000 }),
