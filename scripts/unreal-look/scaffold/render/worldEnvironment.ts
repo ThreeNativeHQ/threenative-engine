@@ -529,7 +529,6 @@ export class WorldEnvironment {
 
   constructor(options: IWorldEnvironmentOptions = {}) {
     const quality = options.ssgiQuality ?? "medium";
-    console.info(`TN_CALIBRATION_DIAG ctor ${JSON.stringify({ q: options.ssgiQuality, scale: options.ssgiResolutionScale })} ${(new Error().stack ?? "").split("\n").slice(2, 9).map((l) => l.trim().replace(/\(.*[\\/]/, "(")).join(" | ")}`);
     if (SSGI_QUALITY[quality] === undefined) {
       // Fail closed. A typo'd tier that silently became "medium" is a quality setting
       // nobody can trust afterwards.
@@ -801,7 +800,6 @@ export class WorldEnvironment {
             wasmEngine ? { camera: view, fallback } : view,
           );
           const tier = SSGI_QUALITY[options.ssgiQuality];
-          console.info(`TN_CALIBRATION_DIAG ssgi ${JSON.stringify({ q: options.ssgiQuality, tier, scale: options.ssgiResolutionScale, dr: options.ssgiDenoiseRadius, dn: options.denoiseEnabled, wasm: wasmEngine })}`);
           gi.sliceCount.value = tier.sliceCount;
           gi.stepCount.value = tier.stepCount;
           gi.radius.value = options.ssgiRadius;

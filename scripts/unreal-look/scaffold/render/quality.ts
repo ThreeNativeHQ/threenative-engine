@@ -180,6 +180,17 @@ const GRADE_PRESETS: Record<QualityTier, IGradeSettings> = {
   low: { gradeIntensity: 1, grainAnimated: false, grainIntensity: 0, tier: "low" },
 };
 
+/**
+ * Harness: the screen-space gather Unreal's L7 (Epic) is judged against: 32 rays a pixel at half resolution, denoised
+ * over 16 gather pixels. A calibration tool, not a shipping tier (PRD-640 Phase 1: about 31 ms at 1080p). Every harness
+ * scene that renders global illumination spreads it, so no scene falls back to the `high` preset's 2-slice gather.
+ */
+export const EPIC_SSGI: IWorldEnvironmentOptions = {
+  ssgiDenoiseRadius: 16,
+  ssgiQuality: "epic",
+  ssgiResolutionScale: 0.5,
+};
+
 /** The stages and strengths a tier turns on. Throws on a name that is not a tier. */
 export function qualityPreset(tier: string): IWorldEnvironmentOptions {
   const preset = QUALITY_PRESETS[tier as QualityTier];

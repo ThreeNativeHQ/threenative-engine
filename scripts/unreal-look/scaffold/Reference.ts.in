@@ -31,7 +31,7 @@ import { EMISSIVE_UNITS } from "../render/atmosphere.js";
 import { installGi } from "../render/giCache.js";
 import { setupLighting } from "../render/lighting.js";
 import { setupPost } from "../render/postprocessing.js";
-import { qualityPreset } from "../render/quality.js";
+import { EPIC_SSGI, qualityPreset } from "../render/quality.js";
 import { captureReflections } from "../render/reflectionCapture.js";
 import { SUN_DIRECTION, setupSky } from "../render/sky.js";
 import { WorldEnvironment } from "../render/worldEnvironment.js";
@@ -186,7 +186,8 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
           ...(level < 7 ? { skyShadowDistance: 10 } : {}),
           sun: { color: key.color, intensity: key.intensity, direction: SUN_DIRECTION },
         });
-      if (TUNED && level >= 8)
+      // Diagnosis: ?off=reflections skips the sphere capture (the capture needs engine envMap support).
+      if (TUNED && level >= 8 && !OFF.has("reflections"))
         reflections = captureReflections(
           ctx.renderer.raw as unknown as Parameters<typeof captureReflections>[0],
           scene,
@@ -202,6 +203,14 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
         // authored grade and grain, auto exposure. AO enters at L6, as in the Unreal ladder.
         const world = new WorldEnvironment({
           ...qualityPreset("high"),
+          // The Epic gather is opt-in here: on the sunlit room it smooths the walls but lights the wall under the sill
+          // 30 levels above Unreal (PRD-638 judge round 2026-10-21), so the default stays medium until PRD-640's probes land.
+          ...(params.get("ssgiQuality") === "epic" ? EPIC_SSGI : {}),
+          // Diagnosis: ?ssgiQuality=<tier>, ?ssgiScale=N, ?ssgiIntensity=N and ?ssgiDenoise=N bracket the gather.
+          ...(params.get("ssgiQuality") === null ? {} : { ssgiQuality: params.get("ssgiQuality") as "epic" }),
+          ...(params.get("ssgiScale") === null ? {} : { ssgiResolutionScale: Number(params.get("ssgiScale")) }),
+          ...(params.get("ssgiIntensity") === null ? {} : { ssgiIntensity: Number(params.get("ssgiIntensity")) }),
+          ...(params.get("ssgiDenoise") === null ? {} : { ssgiDenoiseRadius: Number(params.get("ssgiDenoise")) }),
           autoExposureEnabled: false,
           bloomEnabled: false,
           gtaoEnabled: level >= 6,
