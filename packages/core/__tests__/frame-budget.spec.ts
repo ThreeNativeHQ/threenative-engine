@@ -76,6 +76,34 @@ describe("frame budget simulation clock", () => {
     expect(budget.window().frames).toBe(60);
     expect(budget.window().simulatedSeconds).toBeCloseTo(10 / 60);
   });
+
+  it("keeps tick windows on a live clock once the simulation advances, frames while it is held", () => {
+    // A slow software adapter left startup 0.7 s before a frame-counted first window closed, so its
+    // last compile landed in the second window that a perf protocol measures.
+    let tick = 0;
+    const report = vi.fn();
+    const budget = new FrameBudget({
+      simulation: { tick: () => tick, step: 1 / 60, clockFrozen: false },
+      reportEvery: 60,
+      report,
+    });
+    for (let frame = 0; frame < 60; frame += 1) {
+      budget.beginFrame(frame * 16, frame * 16);
+      if (frame % 6 === 0) tick += 1;
+      budget.endFrame(frame * 16 + 1);
+    }
+    expect(report).not.toHaveBeenCalled();
+    const held = new FrameBudget({
+      simulation: { tick: () => 0, step: 1 / 60, clockFrozen: false },
+      reportEvery: 60,
+      report,
+    });
+    for (let frame = 0; frame < 60; frame += 1) {
+      held.beginFrame(frame * 16, frame * 16);
+      held.endFrame(frame * 16 + 1);
+    }
+    expect(report).toHaveBeenCalledOnce();
+  });
 });
 
 /**

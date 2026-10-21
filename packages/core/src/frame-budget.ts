@@ -434,12 +434,12 @@ export interface IFrameBudgetWindow {
 export interface IFrameBudgetSimulation {
   readonly tick: () => number;
   readonly step: number;
-  /** False selects presented-frame windows; frozen or unspecified clocks use simulation ticks. */
+  /** False counts presented frames while the simulation has not advanced in the window. */
   readonly clockFrozen?: boolean;
 }
 
 export interface IFrameBudgetOptions {
-  /** Simulation ticks per window unless the clock is live or absent, then presented frames. Default 300. */
+  /** Simulation ticks per window; presented frames without a clock or while a live one is held. Default 300. */
   readonly reportEvery?: number;
   /** Minimum measured rendered frames per report window. Default 1. */
   readonly minFrames?: number;
@@ -1326,11 +1326,17 @@ export class FrameBudget {
   }
 
   #maybeReport(): void {
-    // Live clocks must keep reporting even while simulation is held or has not advanced.
-    const elapsed =
-      this.#simulation === undefined || this.#simulation.clockFrozen === false
-        ? this.#framesInWindow
+    // A window counts simulation ticks, so the first one spans startup plus `reportEvery` ticks of
+    // play. A live clock whose simulation has not advanced in this window counts presented frames,
+    // so a held game still reports.
+    const ticks =
+      this.#simulation === undefined
+        ? 0
         : this.#simulation.tick() - (this.#windowStartTick ?? this.#simulation.tick());
+    const elapsed =
+      this.#simulation === undefined || (this.#simulation.clockFrozen === false && ticks === 0)
+        ? this.#framesInWindow
+        : ticks;
     if (elapsed < this.reportEvery || this.#framesInWindow < this.minFrames) return;
     const completed = this.window();
     this.#report(`${FRAME_BUDGET_MARKER}:${JSON.stringify(completed)}`);
