@@ -136,7 +136,10 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
         // Unreal's lamp shadow has no near plane: three's 0.5 m default clipped cornell's shade, 0.3 m
         // from the lamp. Diagnosis knobs: shadowNear, shadowMap (texels), shadowBias, shadowNormalBias.
         point.shadow.camera.near = Number(params.get("shadowNear") ?? 0.02);
-        const mapSize = Number(params.get("shadowMap") ?? point.shadow.mapSize.x);
+        // 1024 texels a cube face: at three's 512 the edge of the tall box's shadow on the red wall
+        // steps where its penumbra is narrow (cornell corner, 2026-10-20); PRD-650 Phase 1 makes the
+        // size follow the lamp's footprint. The lamp cache draws a still lamp's map once.
+        const mapSize = Number(params.get("shadowMap") ?? 1024);
         point.shadow.mapSize.set(mapSize, mapSize);
         point.shadow.bias = Number(params.get("shadowBias") ?? point.shadow.bias);
         point.shadow.normalBias = Number(params.get("shadowNormalBias") ?? point.shadow.normalBias);

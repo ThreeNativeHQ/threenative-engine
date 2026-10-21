@@ -12,8 +12,11 @@ import {
 } from "@threenative/core";
 import type { IPhysicsContext } from "@threenative/physics";
 import {
+  BackSide,
   Box3,
   Color,
+  DoubleSide,
+  FrontSide,
   type Group,
   Mesh,
   MeshBasicMaterial,
@@ -106,13 +109,17 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
       raw.toneMapping = NoToneMapping;
     } else {
       const { key } = setupLighting(scene, ctx.renderer.raw as Parameters<typeof setupLighting>[1]);
-      key.castShadow = level >= 5;
+      // Diagnosis knob sunShadow=0: the sun casts no shadow (is a seam line a shadow leak at all?).
+      key.castShadow = level >= 5 && params.get("sunShadow") !== "0";
+      // Diagnosis knob shadowSide=front|back|double: the caster faces; unset keeps three's derived side.
+      const casterSide = { front: FrontSide, back: BackSide, double: DoubleSide }[params.get("shadowSide") ?? ""];
       // Unreal's static meshes cast and receive shadows by default; three's meshes do neither
       // until asked. Both arms (baseline and tuned) need this, so it is not tuning.
       const emissiveSeen = new Set<unknown>();
       model.traverse((object) => {
         if (object instanceof Mesh) {
           object.castShadow = true;
+          if (casterSide !== undefined) for (const m of [object.material].flat()) m.shadowSide = casterSide;
           object.receiveShadow = true;
           // Unreal's emissive is radiance as it stands, the sun is lux / pi (EMISSIVE_UNITS).
           const material = object.material as MeshStandardMaterial;
