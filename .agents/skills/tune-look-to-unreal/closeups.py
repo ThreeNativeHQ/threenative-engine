@@ -1,6 +1,6 @@
 """Per-element close-ups: the same crop of every arm, side by side, one row per scene element.
 
-  python3 -I closeups.py <out.png> --layer L9 --sun sun60 <dir>=<label> [<dir>=<label> ...]
+  python3 -I closeups.py <out.png> --layer L9 --sun sun60 [--poses a,b] [--only Sky,Box_Red] <dir>=<label> [<dir>=<label> ...]
 
 The crop box of each element comes from Unreal's region ID frame for that pose
 (captures/unreal/ID/ID_<pose>.png, colours in tools/unreal-reference/regions.json); the cameras
