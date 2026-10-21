@@ -85,7 +85,7 @@ export function sampleHeightField(ocean, patchSize, samplesPerSide) {
  * ocean in a screenshot.
  */
 export function assertSpectralOceanProof(ocean, field, steps) {
-  if (ocean?.readbackFloats !== OCEAN.readbackResolution ** 2) {
+  if (ocean?.readbackFloats !== OCEAN.readbackResolution ** 2 * 2) {
     throw new Error("spectral ocean proof requires the height query to be switched on.");
   }
   if (ocean.steps !== steps) {

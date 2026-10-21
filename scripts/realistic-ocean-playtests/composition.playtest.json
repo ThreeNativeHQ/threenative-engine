@@ -1,0 +1,46 @@
+{
+  "name": "realistic-ocean-composition",
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": { "width": 1280, "height": 720 },
+  "warmupFrames": 40,
+  "subject": "player",
+  "steps": [
+    {
+      "kind": "input",
+      "label": "sail-out",
+      "press": ["ArrowUp"],
+      "holdTicks": 900,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "turn-to-port",
+      "press": ["ArrowUp", "ArrowLeft"],
+      "holdTicks": 600,
+      "release": false
+    },
+    { "kind": "wait", "label": "settle", "waitTicks": 120, "release": true }
+  ],
+  "assert": {
+    "diagnostics": { "noConsoleErrors": true, "runtimeReady": true },
+    "components": [
+      { "entity": "player", "component": "oceanSteps", "gte": 600, "changed": true },
+      {
+        "entity": "player",
+        "component": "seaHeight",
+        "changed": true,
+        "allowTrivial": "The sampled ocean must evolve while the camera travels: a frozen sea cannot show foam persistence or composition through motion."
+      }
+    ],
+    "movement": { "entity": "player", "minDistance": 10 },
+    "tone": [
+      {
+        "mean": { "min": 40, "max": 215 },
+        "p99": { "max": 252 },
+        "blackFraction": { "max": 0.2 },
+        "clipFraction": { "max": 0.08 }
+      }
+    ]
+  }
+}
