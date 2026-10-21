@@ -150,3 +150,45 @@ export function pairedPenumbra(
   const m = matchedWidths(edges(unreal), edges(other));
   return m.matched > 0 ? { ...m, ratio: m.other / m.unreal } : undefined;
 }
+
+// Rows scanned under a caster's lowest pixel for its shadow. A column whose floor stays lit for
+// longer is on the sun side of the caster, not the shadow side.
+const GAP_WINDOW = 80;
+const SHADOW_LEVEL = 0.5;
+
+/**
+ * Lit floor between a caster and its own shadow, in pixel rows (PRD-649). A box resting on the floor
+ * reads 0: the shadow starts at its base. A lifted box shows the floor between its base and the
+ * shadow, so the reading grows with the gap. Each column the caster covers is scanned downward from
+ * the caster's lowest pixel across floor pixels until one is darker than half the lit floor (the
+ * 75th percentile of the floor); a column that meets a non-floor pixel or no shadow in the window is
+ * skipped. The reading is the median over columns, undefined when no column reaches a shadow.
+ */
+export function contactGap(
+  lum: ArrayLike<number>,
+  width: number,
+  height: number,
+  caster: ArrayLike<number>,
+  floor: ArrayLike<number>,
+): number | undefined {
+  const lit: number[] = [];
+  for (let i = 0; i < width * height; i++) if (floor[i]) lit.push(lum[i] ?? 0);
+  lit.sort((a, b) => a - b);
+  const level = (lit[Math.floor(lit.length * 0.75)] ?? 0) * SHADOW_LEVEL;
+  if (level <= 0) return undefined;
+  const gaps: number[] = [];
+  for (let x = 0; x < width; x++) {
+    let bottom = -1;
+    for (let y = height - 1; y >= 0 && bottom < 0; y--) if (caster[y * width + x]) bottom = y;
+    if (bottom < 0) continue;
+    for (let y = bottom + 1; y < Math.min(height, bottom + 1 + GAP_WINDOW); y++) {
+      if (!floor[y * width + x]) break;
+      if ((lum[y * width + x] ?? 0) < level) {
+        gaps.push(y - bottom - 1);
+        break;
+      }
+    }
+  }
+  gaps.sort((a, b) => a - b);
+  return gaps[Math.floor(gaps.length / 2)];
+}
