@@ -59,7 +59,9 @@ flowchart LR
    layer that differs between the engines, a missing frame and a single run per arm. It checks that the
    judge opened every image and answered every frame. It writes IMPROVEMENT, NEUTRAL or REGRESSION per
    frame and overall, and MATCH, CLOSE or FAR against Unreal. Exit 2 means REGRESSION (or no overall
-   IMPROVEMENT under `--expect improvement`): fix the cause and judge again. `--dry-run` checks the
+   IMPROVEMENT under `--expect improvement`): fix the cause and judge again. A GI capture folder
+   holds ID, L1 and L7 frames side by side: `--layer L7` judges one layer and `--tier medium` pairs
+   it with the Unreal Medium frames (the default is high, Unreal Epic). `--dry-run` checks the
    pairing without a session; `--help` lists the layout rules.
 7. **Post.** Commit the images to the orphan `PRD-<n>-screenshots` branch with plumbing (no
    checkout): `git hash-object -w`, `git mktree`, `git commit-tree -p <previous>`, then

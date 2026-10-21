@@ -28,6 +28,8 @@ import {
   type Expect,
   type IFrame,
   type IJudgeRun,
+  type Tier,
+  UNREAL_LEVEL,
   VERDICT_SCHEMA,
   blockedBy,
   buildPrompt,
@@ -38,15 +40,17 @@ import {
 } from "./judgeVerdict.js";
 
 const USAGE =
-  "pnpm unreal-look:judge --criteria <file> --out <verdict.json> --before <dir> [--before <dir>] --after <dir> [--after <dir>] --unreal <dir> [--min-runs 2] [--expect improvement] [--model sonnet] [--effort high] [--max-budget-usd 5] [--timeout-min 20] [--dry-run]";
+  "pnpm unreal-look:judge --criteria <file> --out <verdict.json> --before <dir> [--before <dir>] --after <dir> [--after <dir>] --unreal <dir> [--layer L7] [--tier high] [--min-runs 2] [--expect improvement] [--model sonnet] [--effort high] [--max-budget-usd 5] [--timeout-min 20] [--dry-run]";
 const HELP = `${USAGE}
 
 A round is three sets of PNG frames, paired by their path inside each set:
   --before, --after  one folder per run, two runs per arm (--min-runs 1 writes the lower count to the verdict)
   --unreal           the Unreal reference tree; frames in it that the round does not need are ignored
+  --layer L7         judge only the frames at this layer (repeat or use commas): a capture folder holds ID, L1 and L7 side by side
+  --tier high        the ThreeNative GI tier, which picks the Unreal variant: high is Epic, medium is Medium, low is Low
 The path of every frame names exactly one layer (L9/L9_sun60_exterior.png, sunlit-room/L7/sun60-window.png),
-and the layer must be the same in all sets. Unreal GI variants pair as L7-Epic with L7, L9-Epic with L9
-and L7-Low with ThreeNative L6. A round holds at most 24 frames.
+and the layer must be the same in all sets. At tier high the Unreal variants pair as L7-Epic with L7 and
+L9-Epic with L9, and L7-Low with ThreeNative L6 above tier low. A round holds at most 24 frames.
 The judge returns IMPROVEMENT, NEUTRAL or REGRESSION per frame and overall (AFTER against BEFORE), and
 MATCH, CLOSE or FAR (AFTER against UNREAL). The verdict goes to --out and to the terminal.
 Exit 0: complete verdict, nothing blocked. Exit 2: complete verdict with a REGRESSION (or no overall
@@ -141,6 +145,8 @@ interface IOptions {
   after: string[];
   unreal: string;
   minRuns: number;
+  tier: Tier;
+  layers?: string[];
   expect: Expect;
   model: string;
   effort: string;
@@ -162,6 +168,8 @@ function parse(args: string[]): IOptions {
         after: { type: "string", multiple: true },
         unreal: { type: "string" },
         "min-runs": { type: "string" },
+        tier: { type: "string" },
+        layer: { type: "string", multiple: true },
         expect: { type: "string" },
         model: { type: "string" },
         effort: { type: "string" },
@@ -191,6 +199,11 @@ function parse(args: string[]): IOptions {
       fail("BAD_INPUT", `--${name} must be a positive number`);
     return value;
   };
+  const tier = values.tier ?? "high";
+  if (!(tier in UNREAL_LEVEL)) fail("BAD_INPUT", "--tier is high, medium or low");
+  const layers = (Array.isArray(values.layer) ? values.layer : []).flatMap((value) =>
+    String(value).split(","),
+  );
   const expect = values.expect ?? "preserve";
   if (expect !== "preserve" && expect !== "improvement")
     fail("BAD_INPUT", "--expect is improvement (or leave it out)");
@@ -201,6 +214,8 @@ function parse(args: string[]): IOptions {
     after: list("after").map((dir) => path.resolve(dir)),
     unreal: path.resolve(text("unreal")),
     minRuns: number("min-runs", 2),
+    tier: tier as Tier,
+    ...(layers.length > 0 ? { layers } : {}),
     expect,
     model: typeof values.model === "string" ? values.model : "sonnet",
     effort: typeof values.effort === "string" ? values.effort : "high",
@@ -262,7 +277,10 @@ async function judge(o: IOptions, run: IRunner): Promise<number> {
       "BAD_INPUT",
       `criteria file ${o.criteria} is empty: write the criteria before the judge sees a frame`,
     );
-  const frames = collectFrames({ before: o.before, after: o.after, unreal: o.unreal }, o.minRuns);
+  const frames = collectFrames(
+    { before: o.before, after: o.after, unreal: o.unreal },
+    { minRuns: o.minRuns, tier: o.tier, ...(o.layers ? { layers: o.layers } : {}) },
+  );
   if (o.dryRun) {
     console.log(
       `${frameTable(frames)}\ndry run: ${frames.length} frames paired, no judge session started`,
@@ -291,6 +309,7 @@ async function judge(o: IOptions, run: IRunner): Promise<number> {
     imagesRead: judged.imagesRead,
     criteria: { file: o.criteria, sha256: createHash("sha256").update(criteria).digest("hex") },
     expect: o.expect,
+    tier: o.tier,
     runs: { before: o.before.length, after: o.after.length },
     sets: { before: o.before, after: o.after, unreal: o.unreal },
     frames: judged.frames.map((entry) => {

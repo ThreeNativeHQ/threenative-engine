@@ -58,16 +58,26 @@ export function fail(code: string, message: string): never {
 }
 
 const LAYER = /(?<![A-Za-z0-9])(ID|L\d)(?:-(Epic|Medium|Low))?(?![A-Za-z0-9])/g;
-/**
- * The Unreal GI variants that pair with a ThreeNative layer (GI_LAYERS in capture-gi-threenative.ts).
- * ThreeNative L6 is shadows and AO without GI, which Unreal draws as L7 at GI quality Low. A variant
- * that is not listed (L7-Medium, until PRD-644 pairs tiers) pairs with nothing and is skipped.
- */
-const UNREAL_PAIRS: Readonly<Record<string, string>> = {
-  "L7-Low": "L6",
-  "L7-Epic": "L7",
-  "L9-Epic": "L9",
+/** ThreeNative's GI tiers; each is judged against one Unreal quality level (PRD-644). */
+export type Tier = "low" | "medium" | "high";
+export const UNREAL_LEVEL: Readonly<Record<Tier, string>> = {
+  low: "Low",
+  medium: "Medium",
+  high: "Epic",
 };
+/**
+ * The Unreal GI variants that pair with a ThreeNative layer at a tier (GI_LAYERS in
+ * capture-gi-threenative.ts). ThreeNative L6 is shadows and AO without GI, which Unreal draws as L7 at
+ * GI quality Low, so L7-Low pairs with L6 at every tier above low. Unreal has an L9 only at Epic. A
+ * variant that is not listed pairs with nothing and is skipped.
+ */
+function unrealPairs(tier: Tier): Readonly<Record<string, string>> {
+  return {
+    ...(tier === "low" ? {} : { "L7-Low": "L6" }),
+    [`L7-${UNREAL_LEVEL[tier]}`]: "L7",
+    ...(tier === "high" ? { "L9-Epic": "L9" } : {}),
+  };
+}
 const slug = (id: string) => id.replace(/(?<![A-Za-z0-9])(?:ID|L\d)(?![A-Za-z0-9])/g, "{L}");
 
 interface IListed {
@@ -83,7 +93,7 @@ const isPng = (entry: Dirent, file: string) =>
     (entry.isSymbolicLink() && statSync(file, { throwIfNoEntry: false })?.isFile() === true));
 
 /** A PNG's id and its one layer; undefined for an Unreal variant that pairs with nothing. */
-function nameFrame(root: string, file: string, unreal: boolean) {
+function nameFrame(root: string, file: string, pairs?: Readonly<Record<string, string>>) {
   const seen = { layers: new Set<string>(), name: "", paired: true };
   const id = path
     .relative(root, file)
@@ -91,7 +101,7 @@ function nameFrame(root: string, file: string, unreal: boolean) {
     .join("/")
     .replace(/\.png$/i, "")
     .replace(LAYER, (token, layer: string, variant?: string) => {
-      const mapped = unreal && variant !== undefined ? UNREAL_PAIRS[token] : layer;
+      const mapped = pairs && variant !== undefined ? pairs[token] : layer;
       if (mapped === undefined) seen.paired = false;
       else seen.layers.add(mapped);
       seen.name ||= token;
@@ -107,19 +117,27 @@ function nameFrame(root: string, file: string, unreal: boolean) {
   return { id, frame: { layer: layers[0] as string, name: seen.name, file } };
 }
 
-function listFrames(root: string, unreal: boolean): Listing {
+function listFrames(root: string, pairs?: Readonly<Record<string, string>>): Listing {
   if (!existsSync(root) || !statSync(root).isDirectory())
     fail("BAD_INPUT", `${root} is not a folder`);
   const frames: Listing = new Map();
+  let skipped = 0;
   for (const entry of readdirSync(root, { withFileTypes: true, recursive: true })) {
     const file = path.join(entry.parentPath, entry.name);
-    const named = isPng(entry, file) ? nameFrame(root, file, unreal) : undefined;
-    if (named === undefined) continue;
-    if (frames.has(named.id))
+    if (!isPng(entry, file)) continue;
+    const named = nameFrame(root, file, pairs);
+    if (named === undefined) skipped += 1;
+    else if (frames.has(named.id))
       fail("AMBIGUOUS_FRAME", `${file} and ${frames.get(named.id)?.file} are one frame`);
-    frames.set(named.id, named.frame);
+    else frames.set(named.id, named.frame);
   }
-  if (frames.size === 0) fail("BAD_INPUT", `${root} holds no PNG frames`);
+  if (frames.size === 0)
+    fail(
+      "BAD_INPUT",
+      skipped === 0
+        ? `${root} holds no PNG frames`
+        : `${root} holds ${skipped} PNG frame(s), and none pairs with a ThreeNative layer at this tier (${Object.keys(pairs ?? {}).join(", ")})`,
+    );
   return frames;
 }
 
@@ -143,9 +161,18 @@ function absent(arm: string, listed: Listing, id: string): { code: string; text:
     };
   const hint =
     arm === "unreal"
-      ? " (Unreal variants other than L7-Low, L7-Epic and L9-Epic are not paired)"
+      ? " (an Unreal variant pairs only with its own tier: L7-Epic and L9-Epic at high, L7-Medium at medium, L7-Low at low, and L7-Low with L6 above low)"
       : "";
   return { code: "MISSING_FRAME", text: `${arm} has no ${id}${hint}` };
+}
+
+export interface ICollectOptions {
+  /** Runs per arm the owner rule asks for. */
+  minRuns?: number;
+  /** The tier decides which Unreal variant a layer pairs with. */
+  tier?: Tier;
+  /** Judge only the frames at these layers (a capture folder holds ID, L1 and L7 frames side by side). */
+  layers?: readonly string[];
 }
 
 /**
@@ -155,18 +182,27 @@ function absent(arm: string, listed: Listing, id: string): { code: string; text:
  */
 export function collectFrames(
   sets: { before: string[]; after: string[]; unreal: string },
-  minRuns = 2,
+  { minRuns = 2, tier = "high", layers }: ICollectOptions = {},
 ): IFrame[] {
   checkRuns("before", sets.before, minRuns);
   checkRuns("after", sets.after, minRuns);
-  const before = sets.before.map((dir) => listFrames(dir, false));
-  const after = sets.after.map((dir) => listFrames(dir, false));
-  const unreal = listFrames(sets.unreal, true);
-  const wanted = [...new Set([...before, ...after].flatMap((listed) => [...listed.keys()]))].sort();
+  const before = sets.before.map((dir) => listFrames(dir));
+  const after = sets.after.map((dir) => listFrames(dir));
+  const unreal = listFrames(sets.unreal, unrealPairs(tier));
+  const judged = (listed: IListed) => layers === undefined || layers.includes(listed.layer);
+  const wanted = [
+    ...new Set(
+      [...before, ...after].flatMap((listed) =>
+        [...listed].filter(([, frame]) => judged(frame)).map(([id]) => id),
+      ),
+    ),
+  ].sort();
+  if (wanted.length === 0)
+    fail("BAD_INPUT", `no frame at layer ${layers?.join(" or ")} in the BEFORE and AFTER folders`);
   if (wanted.length > MAX_FRAMES)
     fail(
       "TOO_MANY_FRAMES",
-      `${wanted.length} frames: a round judges at most ${MAX_FRAMES}, so judge each layer or scene on its own`,
+      `${wanted.length} frames: a round judges at most ${MAX_FRAMES}, so judge each layer or scene on its own (--layer)`,
     );
   const arms: [string, Listing][] = [
     ...before.map((listed, i): [string, Listing] => [`before run ${i + 1}`, listed]),

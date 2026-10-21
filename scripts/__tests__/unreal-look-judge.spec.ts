@@ -146,7 +146,7 @@ describe("collectFrames", () => {
       /TOO_FEW_RUNS.*--before has 1/,
     );
     expect(() => collectFrames(f.sets(["before1", "before1"]))).toThrow(/same folder twice/);
-    expect(collectFrames(f.sets(["before1"], ["after1"]), 1)).toHaveLength(1);
+    expect(collectFrames(f.sets(["before1"], ["after1"]), { minRuns: 1 })).toHaveLength(1);
   });
 
   it("refuses a missing folder and a folder with no PNG", () => {
@@ -175,6 +175,85 @@ describe("collectFrames", () => {
     expect(collectFrames(f.sets()).map((frame) => frame.id)).toEqual(["L9/a", "L9/b"]);
     const many = filled(Array.from({ length: 25 }, (_, i) => `L9/f${i}.png`));
     expect(() => collectFrames(many.sets())).toThrow(/TOO_MANY_FRAMES.*25/);
+  });
+
+  describe("tiers (PRD-644)", () => {
+    const unreal = [
+      "sunlit-room/L7-Epic/sun60-window.png",
+      "sunlit-room/L7-Medium/sun60-window.png",
+      "sunlit-room/L7-Low/sun60-window.png",
+    ];
+    const named = (tier: "low" | "medium" | "high", files: string[]) => {
+      const f = filled(files, unreal);
+      return collectFrames(f.sets(), { tier }).map((frame) => [frame.id, frame.unrealName]);
+    };
+
+    it("judges L7 against the Unreal level of its own tier", () => {
+      const file = ["sunlit-room/L7/sun60-window.png"];
+      const id = "sunlit-room/L7/sun60-window";
+      expect(named("high", file)).toEqual([[id, "L7-Epic"]]);
+      expect(named("medium", file)).toEqual([[id, "L7-Medium"]]);
+      expect(named("low", file)).toEqual([[id, "L7-Low"]]);
+    });
+
+    it("keeps L6 against L7-Low above tier low, and gives L6 no partner at tier low", () => {
+      const file = ["sunlit-room/L6/sun60-window.png"];
+      expect(named("high", file)).toEqual([["sunlit-room/L6/sun60-window", "L7-Low"]]);
+      expect(named("medium", file)).toEqual([["sunlit-room/L6/sun60-window", "L7-Low"]]);
+      const f = filled(file, unreal);
+      expect(() => collectFrames(f.sets(), { tier: "low" })).toThrow(
+        /LAYER_MISMATCH.*unreal holds sunlit-room\/L7\/sun60-window, not sunlit-room\/L6\/sun60-window/,
+      );
+    });
+
+    it("pairs L9 with Unreal Epic only, so a tier below high has no L9 partner", () => {
+      const f = filled(["L9/L9_sun60_exterior.png"], ["L9-Epic/L9_sun60_exterior.png"]);
+      expect(collectFrames(f.sets(), { tier: "high" })[0]?.unrealName).toBe("L9-Epic");
+      expect(() => collectFrames(f.sets(), { tier: "medium" })).toThrow(
+        /BAD_INPUT.*none pairs with a ThreeNative layer at this tier \(L7-Low, L7-Medium\)/,
+      );
+    });
+
+    it("defaults to high, the tier the PRD-647 baselines use", () => {
+      const f = filled(["sunlit-room/L7/sun60-window.png"], unreal);
+      expect(collectFrames(f.sets())[0]?.unrealName).toBe("L7-Epic");
+    });
+  });
+
+  describe("layers", () => {
+    const sides = ["cornell/ID/cornell.png", "cornell/L1/cornell.png", "cornell/L7/cornell.png"];
+    const unreal = [
+      "cornell/ID/cornell.png",
+      "cornell/L1/cornell.png",
+      "cornell/L7-Epic/cornell.png",
+    ];
+
+    it("judges only the frames at the layers asked for and ignores the rest of the folder", () => {
+      const f = filled(sides, unreal);
+      expect(collectFrames(f.sets(), { layers: ["L7"] }).map((frame) => frame.id)).toEqual([
+        "cornell/L7/cornell",
+      ]);
+      expect(collectFrames(f.sets(), { layers: ["L1", "L7"] }).map((frame) => frame.id)).toEqual([
+        "cornell/L1/cornell",
+        "cornell/L7/cornell",
+      ]);
+    });
+
+    it("fails closed when no frame sits at the layer asked for", () => {
+      const f = filled(sides, unreal);
+      expect(() => collectFrames(f.sets(), { layers: ["L9"] })).toThrow(/BAD_INPUT.*L9/);
+    });
+
+    it("still refuses a layer whose Unreal partner is at another layer, or missing", () => {
+      const other = filled(sides, ["cornell/L1/cornell.png"]);
+      expect(() => collectFrames(other.sets(), { layers: ["L7"] })).toThrow(
+        /LAYER_MISMATCH.*unreal holds cornell\/L1\/cornell, not cornell\/L7\/cornell/,
+      );
+      const gone = filled(sides, ["cornell/L7-Epic/other.png"]);
+      expect(() => collectFrames(gone.sets(), { layers: ["L7"] })).toThrow(
+        /MISSING_FRAME.*unreal has no cornell\/L7\/cornell/s,
+      );
+    });
   });
 });
 
@@ -506,6 +585,21 @@ describe("main", () => {
     expect(run).not.toHaveBeenCalled();
     expect(existsSync(path.join(f.root, "out/verdict.json"))).toBe(false);
     expect(log.mock.calls.flat().join("\n")).toMatch(/L9\/a/);
+  });
+
+  it("takes the tier and the layers from the command line and records the tier", async () => {
+    const files = ["cornell/ID/cornell.png", "cornell/L7/cornell.png"];
+    const f = filled(files, ["cornell/ID/cornell.png", "cornell/L7-Medium/cornell.png"]);
+    const log = silence();
+    const args = argv(f, ["--tier", "medium", "--layer", "L7"]);
+    const run = vi.fn(async () => stream());
+    expect(await main([...args, "--dry-run"], run)).toBe(0);
+    expect(log.mock.calls.flat().join("\n")).toMatch(/cornell\/L7\/cornell.*L7-Medium/s);
+    expect(run).not.toHaveBeenCalled();
+    await expect(main(argv(f, ["--tier", "ultra"]), run)).rejects.toThrow(/BAD_INPUT.*--tier/);
+    await expect(main(argv(f, ["--tier", "low", "--layer", "L7"]), run)).rejects.toThrow(
+      /MISSING_FRAME.*unreal.*L7-Low|LAYER_MISMATCH/s,
+    );
   });
 
   it("prints the usage and the layout rules on --help", async () => {
