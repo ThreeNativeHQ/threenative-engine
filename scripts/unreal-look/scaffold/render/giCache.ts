@@ -141,6 +141,16 @@ export interface IGiReport {
    * cache; `final` is the full one.
    */
   readonly pass: "pending" | "preview" | "final";
+  /**
+   * A progressive bake's own account of how long it held the thread: its slices so far (count, and the longest one) and
+   * the time this report's publish took on the thread (the resample into the texture's data; the GPU copy follows at
+   * the next render), all in milliseconds.
+   */
+  readonly slices?: {
+    readonly count: number;
+    readonly longestMs: number;
+    readonly publishMs: number;
+  };
 }
 
 const CELL = 0.5;
@@ -1778,7 +1788,9 @@ export function installGi(
   };
 
   let reader: ReturnType<typeof irradianceAt> | undefined;
+  const slicing = { count: 0, longestMs: 0 };
   const publish = (baked: IBaked, pass: "preview" | "final", bounces: number): IGiReport => {
+    const publishStart = performance.now();
     const { fine, cut } = baked;
     if (baked.floor !== undefined) paintGround(root, baked.floor);
     giCache.field = { grid: fine.grid, values: fine.values, sky: fine.sky };
@@ -1798,6 +1810,15 @@ export function installGi(
       milliseconds: Math.round(Object.values(baked.phases).reduce((n, v) => n + v, 0)),
       phases: baked.phases,
       pass,
+      ...(slicing.count === 0
+        ? {}
+        : {
+            slices: {
+              count: slicing.count,
+              longestMs: Math.round(slicing.longestMs),
+              publishMs: Math.round(performance.now() - publishStart),
+            },
+          }),
     };
     console.info(`TN_GI_CACHE ${JSON.stringify(report)}`);
     return report;
@@ -1846,9 +1867,12 @@ export function installGi(
   /** Runs a bake in slices of `budgetMs` (no task is held longer), then hands the result on. */
   const spread = <T>(run: Generator<void, T>, budgetMs: number, done: (value: T) => void): void => {
     const step = (): void => {
-      slice.deadline = performance.now() + budgetMs;
+      const at = performance.now();
+      slice.deadline = at + budgetMs;
       const next = run.next();
       slice.deadline = Number.POSITIVE_INFINITY;
+      slicing.count += 1;
+      slicing.longestMs = Math.max(slicing.longestMs, performance.now() - at);
       if (next.done) done(next.value);
       else defer(step, budgetMs);
     };

@@ -123,6 +123,13 @@ describe("progressive GI bake", () => {
     // One call takes seconds on this scene; a slice that yields at its loop boundaries stays far under that (Node: 41 ms
     // at a 5 ms budget, the page's own long-task log: 56 ms). The bound is loose so a loaded host does not flake it.
     expect(longest).toBeLessThan(250);
+    // The bake's own account says the same, so the browser log carries it without a timer outside the page.
+    const slices = (
+      converged as { slices?: { count: number; longestMs: number; publishMs: number } }
+    ).slices;
+    expect(slices?.count).toBeGreaterThan(3);
+    expect(slices?.longestMs).toBeLessThan(250);
+    expect(slices?.publishMs).toBeLessThan(250);
     expect(frames.length).toBe(0);
     expect((converged as { pass: string }).pass).toBe("final");
     expect((converged as { rays: number }).rays).toBe(reference?.rays);
