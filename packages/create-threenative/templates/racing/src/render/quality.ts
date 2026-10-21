@@ -104,25 +104,24 @@ export function resolveQualityTier(
 }
 
 /**
- * The look every tier shares: a wide, faint glow on what is genuinely brighter than white — the sun
- * disk, the visor — rather than a haze over the frame (a threshold under 1 blooms lit grey walls and
- * flattens contrast), and a corner falloff. Antialiasing is on in every tier that installs a chain;
- * see `screenSpaceAA` in `worldEnvironment.ts`.
+ * The look every tier shares is a fresh Unreal 5.8.3 project's: its bloom, local exposure and
+ * cosine-fourth vignette, plus the shared chain's SMAA (`screenSpaceAA` in `worldEnvironment.ts`).
+ * Each has a named override: `unrealBloomEnabled: false` (then `bloomStrength`, `bloomRadius` and
+ * `bloomThreshold` apply), `localExposureEnabled: false` and `vignetteAmount: 0`.
  *
  * No screen-space reflections and no sharpen here, on purpose. Every surface already reflects the
  * captured sky (`sky.ts`), and SSR on rough tarmac traced speckle into the road; RCAS then rang the
  * smooth sky gradient into visible bands. Both are one line to turn back on for a glossy scene.
  */
 const shared: IWorldEnvironmentOptions = {
-  // Bloom: ~4.6 ms in the reference ablation — the second most expensive stage there.
+  // Bloom cost: unmeasured here; PRD-636 records it in ms.
   bloomEnabled: true,
-  bloomRadius: 0.55,
-  bloomStrength: 0.26,
-  bloomThreshold: 1,
   autoExposureEnabled: false,
   exposure: 0.66,
   tonemapMode: "aces",
-  vignetteAmount: 0.26,
+  // The Unreal bloom is the one `bloomEnabled` runs. Cost: unmeasured.
+  unrealBloomEnabled: true,
+  vignetteAmount: 0.4,
 };
 
 /**
@@ -135,12 +134,21 @@ const high: IWorldEnvironmentOptions = {
   // GTAO, full resolution plus denoise: unmeasured on its own here; read `TN_FRAME_BUDGET`.
   gtaoEnabled: true,
   gtaoRadius: 0.35,
+  // Measures against `exposure` while auto exposure is off. Cost: unmeasured.
+  localExposureEnabled: true,
+  // Unreal enables motion blur on high-end PCs only. It needs the chain's velocity. Cost: unmeasured.
+  motionBlurEnabled: true,
 };
 
 /** The rung in between: the same occlusion at half the directions. Saving unmeasured. */
-const medium: IWorldEnvironmentOptions = { ...high, gtaoSamples: 8, renderChainTier: "medium" };
+const medium: IWorldEnvironmentOptions = {
+  ...high,
+  gtaoSamples: 8,
+  motionBlurEnabled: false,
+  renderChainTier: "medium",
+};
 
-/** What a phone gets: bloom, vignette and the tone curve, nothing screen-space. */
+/** What a phone gets: bloom, vignette and the tone curve. Unreal's mobile profile has no local exposure. */
 const low: IWorldEnvironmentOptions = { ...shared, renderChainTier: "low" };
 
 const QUALITY_PRESETS: Record<QualityTier, IWorldEnvironmentOptions> = { high, low, medium };
