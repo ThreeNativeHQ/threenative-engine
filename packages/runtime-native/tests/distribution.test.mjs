@@ -307,7 +307,7 @@ test('the native release workflow covers every exported prebuilt key', () => {
     'utf8',
   );
   assert.match(workflow, /generateReleaseManifest/u);
-  assert.match(workflow, /RELEASE_SHA: \$\{\{ needs\.validate-tag\.outputs\.candidate_sha \}\}/u);
+  assert.match(workflow, /RELEASE_SHA: \$\{\{ steps\.release\.outputs\.sha \}\}/u);
   assert.deepEqual(Object.keys(PREBUILT_ASSET_NAMES).sort(), [...PREBUILT_KEYS].sort());
 });
 
