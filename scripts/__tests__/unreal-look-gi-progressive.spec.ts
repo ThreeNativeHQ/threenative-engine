@@ -63,7 +63,10 @@ describe("progressive GI bake", () => {
     expect(reference?.pass).toBe("final");
 
     const frames: (() => void)[] = [];
-    vi.stubGlobal("requestAnimationFrame", (f: () => void) => frames.push(f));
+    // The bake is paced by the clock: a page that presents one frame a second must not stretch it.
+    vi.stubGlobal("requestAnimationFrame", () => {
+      throw new Error("the bake waited for a frame");
+    });
     const room = sunlitRoom();
     const staleField = giCache.field;
     let converged: unknown;
@@ -73,6 +76,7 @@ describe("progressive GI bake", () => {
       progressive: {
         previewRays: 16,
         budgetMs: 5,
+        defer: (run) => void frames.push(run),
         onConverged: (r) => {
           converged = r;
         },
@@ -127,12 +131,11 @@ describe("progressive GI bake", () => {
   it("bakes in one call when the rays are the game's own, because slicing needs the flat ones", () => {
     const room = sunlitRoom();
     const frames: (() => void)[] = [];
-    vi.stubGlobal("requestAnimationFrame", (f: () => void) => frames.push(f));
     const report = installGi(rayContext(room), room, {
       bounces: 1,
       stockRays: true,
       sun: SUN,
-      progressive: { previewRays: 16, budgetMs: 1 },
+      progressive: { previewRays: 16, budgetMs: 1, defer: (run) => void frames.push(run) },
     });
     expect(report?.pass).toBe("final");
     expect(frames.length).toBe(0);

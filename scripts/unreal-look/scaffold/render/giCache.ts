@@ -111,13 +111,15 @@ export interface IGiOptions {
   /**
    * Draw the first frame at once and fill the cache over the following frames, as Lumen fills its probes over frames
    * instead of before the first one. `installGi` installs the materials over a black cache and returns a `pending`
-   * report. A provisional bake (`previewRays` rays per probe, one bounce) then runs in slices of `budgetMs` per frame
+   * report. A provisional bake (`previewRays` rays per probe, one bounce) then runs in slices of `budgetMs` on the clock
    * (twice that), and the full bake after it. Each rewrites the texture the materials already read; `onConverged`
    * gets the full bake's report. No frame is held longer than a slice. Needs the flat rays.
    */
   readonly progressive?: {
     readonly previewRays: number;
     readonly budgetMs: number;
+    /** Runs a slice after `gapMs` of idle time. The clock by default (`setTimeout`); a test hands in its own queue. */
+    readonly defer?: (run: () => void, gapMs: number) => void;
     readonly onConverged?: (report: IGiReport) => void;
   };
 }
@@ -1799,20 +1801,22 @@ export function installGi(
   );
   giCache.texture = reader.texture;
   install(reader.read, emitters);
-  const onFrame =
-    typeof requestAnimationFrame === "function"
-      ? requestAnimationFrame
-      : (f: () => void) => setTimeout(f, 0);
-  /** Runs a bake `budgetMs` per frame (no frame is held longer), then hands the result on. */
+  // Paced by the clock, not by frames: a page that presents one frame a second (a slow present path, a busy
+  // compositor) must not stretch the bake to hundreds of seconds. Each slice is followed by an idle gap as long
+  // as the slice, so input and frames still get half of the main thread.
+  const defer =
+    progressive.defer ?? ((run: () => void, gapMs: number) => void setTimeout(run, gapMs));
+  /** Runs a bake in slices of `budgetMs` (no task is held longer), then hands the result on. */
   const spread = <T>(run: Generator<void, T>, budgetMs: number, done: (value: T) => void): void => {
     const step = (): void => {
       slice.deadline = performance.now() + budgetMs;
       const next = run.next();
       slice.deadline = Number.POSITIVE_INFINITY;
       if (next.done) done(next.value);
-      else onFrame(step);
+      else defer(step, budgetMs);
     };
-    onFrame(step);
+    // After the first frame, not before it.
+    defer(step, 0);
   };
   // The preview takes the frames twice as hungrily: the sooner it lands, the sooner the room is lit.
   spread(bake(previewParams), progressive.budgetMs * 2, (baked) => {
