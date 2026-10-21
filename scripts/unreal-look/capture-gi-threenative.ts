@@ -16,7 +16,8 @@ import { chromium } from "@playwright/test";
 import { WEBGPU_BROWSER_ARGS } from "../../packages/playtest/src/runner/browser.js";
 import { assertVisualPortAvailable, stopVisualServer } from "../visual-gate.js";
 import { HIDE_UI, freePort, scaffold, waitForServer } from "./capture-threenative.js";
-import { readScene, sceneDir, sceneKey } from "./gi.js";
+import { isManifestScene, readScene, sceneDir, sceneKey } from "./gi.js";
+import { composeForThreeNative } from "./wildwood.js";
 
 const REPO_ROOT = path.resolve(import.meta.dirname, "../..");
 const SCAFFOLD_DIR =
@@ -29,6 +30,8 @@ export const GI_LAYERS: Readonly<Record<string, string>> = {
   // Shadows and AO without GI: the pair of Unreal with Lumen GI off.
   L6: "L7-Low",
   L7: "L7-Epic",
+  // Reflections: only a shadow scene with an L8 variant (wildwood) is captured here (PRD-651).
+  L8: "L8",
   // GI at one quality tier, against the Unreal level it follows (PRD-644): Low 0, Medium 1, Epic 3.
   "L7-low": "L7-Low",
   "L7-medium": "L7-Medium",
@@ -76,10 +79,17 @@ export async function patchGi(target: string, scenes: readonly string[]): Promis
   const dataFile = path.join(target, "src/scenes/calibrationData.ts");
   const data = existsSync(dataFile) ? calibrationScenes(await readFile(dataFile, "utf8")) : {};
   for (const name of scenes) {
-    data[name] = readScene(name).scene;
+    const { scene } = readScene(name);
+    data[name] = scene;
     const dir = path.join(target, "assets/unreal-reference/gi", sceneKey(name));
     await mkdir(dir, { recursive: true });
-    await cp(path.join(sceneDir(name), "scene.glb"), path.join(dir, "scene.glb"));
+    // A scene of real assets has no committed scene.glb: it is composed from the verified asset files (PRD-651).
+    if (isManifestScene(name))
+      await writeFile(
+        path.join(dir, "scene.glb"),
+        await composeForThreeNative(sceneDir(name), scene as never, sceneKey(name)),
+      );
+    else await cp(path.join(sceneDir(name), "scene.glb"), path.join(dir, "scene.glb"));
   }
   await writeFile(
     dataFile,

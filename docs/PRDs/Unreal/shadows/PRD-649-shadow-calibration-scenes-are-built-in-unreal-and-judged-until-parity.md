@@ -69,8 +69,11 @@ them in `tools/unreal-reference/gi/<scene>/`.
 | `horizon` (runs) | `walk`: the camera moves 10 m in 3 s; `sunturn`: the sun azimuth turns 10° in 3 s | as above | — | PRD-634 (stability) |
 | `foliage` (the `gi:` scene of [PRD-643](../gi/PRD-643-glass-fog-and-leaves-take-the-bounce-light-too.md)) | Adds a leaf-card tree over open ground and card grass at a capsule's feet | Sun at 60° and 15° | `canopy`, `grass` | [PRD-651](PRD-651-leaves-cast-leaf-shadows-that-sway-near-the-camera.md) |
 | `foliage` (run) | `wind`: the tree sways for 180 frames on a still camera | as above | — | PRD-651 |
+| `wildwood` | Real vegetation, the Fab GLBs of the sandbox wildwood game: a pine, a broadleaf tree, a bush, two fern clumps, three grass clumps and two flower clumps on a flat floor. The files are not in the repository | Sun at 60° and 15° | `canopy`, `shrub`, `ground` | [PRD-651](PRD-651-leaves-cast-leaf-shadows-that-sway-near-the-camera.md), PRD-643 |
 
    Whichever of PRD-643 or PRD-651 starts first authors `foliage` with both PRDs' elements.
+   The owner asked for real vegetation (2026-10-21), so the judge takes `wildwood` as the foliage
+   target. `foliage` stays as the procedural control and keeps the `wind` run.
 5. **Unreal ablation frames (Phase 2).** Like the Lumen diagnosis views of PRD-638, three Unreal
    captures separate the parts of the default look before any ThreeNative code chases them:
    - `horizon` with `r.DistanceFieldShadowing 0` and `1`: does a distance-field far shadow show?
@@ -81,7 +84,10 @@ them in `tools/unreal-reference/gi/<scene>/`.
 **Images.** As in PRD-647: sheets in the run's scratch folder, posted on the PR through the orphan
 `PRD-<n>-screenshots` branch with UNREAL | ENGINE BEFORE | ENGINE AFTER and the engine named on
 each frame. Only `scene.py`, `scene.glb`, `scene.json`, `criteria.md`, `scenes.json` and
-`parity.json` are tracked.
+`parity.json` are tracked. `wildwood` tracks `manifest.json` in place of `scene.glb`, and no Fab model,
+texture or frame of them is tracked: Unreal frames of these models go to the gitignored
+`tools/unreal-reference/captures/` (or to `--out` in the run's work folder), and the sheets go to the
+screenshots branch only.
 
 ## Acceptance Criteria
 
@@ -107,7 +113,7 @@ each frame. Only `scene.py`, `scene.glb`, `scene.json`, `criteria.md`, `scenes.j
 
 #### Phase 2: The lamp, horizon and foliage scenes, and the ablations
 **Status:** NOT STARTED
-**Files:** `tools/unreal-reference/shadow/lamp-room/` (new), `tools/unreal-reference/shadow/horizon/` (new), `tools/unreal-reference/gi/foliage/` (shared with PRD-643), `scripts/unreal-look/compare.ts` (the `--ablation` pair)
+**Files:** `tools/unreal-reference/shadow/lamp-room/` (new), `tools/unreal-reference/shadow/horizon/` (new), `tools/unreal-reference/gi/foliage/` (shared with PRD-643), `tools/unreal-reference/shadow/wildwood/` (new), `scripts/unreal-look/wildwood.ts` (new), `scripts/unreal-look/compare.ts` (the `--ablation` pair)
 - [ ] Unreal captures `lamp-room` and its `swing` run. proof: `pnpm unreal-look:capture --engine unreal --scene shadow:lamp-room`. Open: `lamp-room` is built and captured at L5 and L9 for its four poses (2026-10-21, "shadow:lamp-room ID cells=4 readback ok", exit 0); the `swing` run is not authored, so the box stays open.
 - [ ] Unreal captures `horizon` with its `walk` and `sunturn` runs. proof: `pnpm unreal-look:capture --engine unreal --scene shadow:horizon`.
 - [ ] The three ablation pairs are captured, and each result is recorded under `## Decisions` with its region deltas. proof: `pnpm unreal-look:compare --scene shadow:<name> --ablation <cvar>`.
@@ -129,3 +135,19 @@ each frame. Only `scene.py`, `scene.glb`, `scene.json`, `criteria.md`, `scenes.j
   floor edge widths per pose. BEFORE baseline on `penumbra-lab` (TN / UE, median 10 to 90 percent width):
   sun 60 heights 0.64, contact 1.08, ramp 1.33; sun 15 1.14, 2.20, 2.74; sun 4 1.71, 3.27, 1.92. Two runs agree.
   `lamp-room` adds SpotLight to the pipeline (target and cone angles in scene.json, `validateSceneExport`).
+- 2026-10-21 (wildwood lane, owner): the vegetation target uses real assets. The owner asked three
+  times for the Fab GLBs of the sandbox wildwood game in place of procedural cards.
+  `shadow:wildwood` places them from `tools/unreal-reference/shadow/wildwood/manifest.json`. The
+  repository is public and the files are licensed, so the manifest names each file with its sha256
+  and each instance with its transform, and the files come from `TN_WILDWOOD_ASSETS`. A missing
+  root, a missing file or a changed hash stops the run before any engine starts
+  (`scripts/unreal-look/wildwood.ts`, `scripts/__tests__/unreal-look-wildwood.spec.ts`).
+- 2026-10-21 (wildwood lane): Unreal imports each file with its own glTF importer (Interchange),
+  from a decoded copy, because that importer has no `EXT_meshopt_compression` and the files carry it.
+  The copy holds the same triangles, UVs, textures and materials. Interchange draws a masked
+  material through sorted translucency, which does not cut a shadow. The build therefore rebuilds
+  each slot on the exporter's glTF master as Masked and two-sided with the file's own cutoff, and it
+  keeps the importer's textures. `scene.json` reports each slot, and the capture compares it with the
+  file's JSON before any frame is rendered. ThreeNative loads one GLB composed from the same decoded
+  copies (the floor box of `scene.json`, one node per manifest instance), so both engines read the
+  same triangles and the same textures.

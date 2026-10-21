@@ -137,6 +137,13 @@ def import_texture(ref, folder, path):
     return texture
 
 
+def set_two_sided(mi, two_sided):
+    overrides = mi.get_editor_property("base_property_overrides")
+    overrides.set_editor_property("override_two_sided", True)
+    overrides.set_editor_property("two_sided", two_sided)
+    mi.set_editor_property("base_property_overrides", overrides)
+
+
 def set_masked(mi, values):
     """Masked blend, a clip value and the two-sided flag, as base property overrides on the instance."""
     overrides = mi.get_editor_property("base_property_overrides")
@@ -144,9 +151,8 @@ def set_masked(mi, values):
     overrides.set_editor_property("blend_mode", unreal.BlendMode.BLEND_MASKED)
     overrides.set_editor_property("override_opacity_mask_clip_value", True)
     overrides.set_editor_property("opacity_mask_clip_value", values["alphaCutoff"])
-    overrides.set_editor_property("override_two_sided", True)
-    overrides.set_editor_property("two_sided", values["doubleSided"])
     mi.set_editor_property("base_property_overrides", overrides)
+    set_two_sided(mi, values["doubleSided"])
 
 
 def texture(ref, folder, name, path):
@@ -280,8 +286,8 @@ def glb_slot_material(ref, folder, name, source):
     if base is None:
         raise ValueError(f"{source.get_name()}: no base colour texture")
     masked = scalars.get("AlphaMode", 0.0) == 1.0
-    if scalars.get("AlphaMode", 0.0) == 2.0 or (two_sided and not masked):
-        raise ValueError(f"{source.get_name()}: only opaque and masked glTF materials are rebuilt (alpha mode blend or a two-sided opaque slot)")
+    if scalars.get("AlphaMode", 0.0) == 2.0:
+        raise ValueError(f"{source.get_name()}: only opaque and masked glTF materials are rebuilt, this one blends")
     tint = vectors.get("BaseColorFactor", unreal.LinearColor(1.0, 1.0, 1.0, 1.0))
     values = {
         "baseColor": [tint.r, tint.g, tint.b], "baseColorTexture": "base",
@@ -291,6 +297,8 @@ def glb_slot_material(ref, folder, name, source):
     if masked:
         values.update(alphaMode="MASK", alphaCutoff=scalars.get("AlphaCutoff", 0.5), doubleSided=two_sided)
     mi = material(ref, folder, name, values, textures={"base": base})
+    if two_sided and not masked:
+        set_two_sided(mi, True)
     for tex in textures.values():
         # A mask must be resident at the first frame; the importer's compression and mips stay as imported.
         tex.set_editor_property("never_stream", True)
@@ -300,6 +308,13 @@ def glb_slot_material(ref, folder, name, source):
             mel.set_material_instance_texture_parameter_value(mi, param, textures[key])
     mel.update_material_instance(mi)
     unreal.EditorAssetLibrary.save_loaded_asset(mi)
+    normal = textures.get("NormalTexture")
+    ref.log(
+        f"wildwood slot {name} masked={masked} cutoff={scalars.get('AlphaCutoff')} two_sided={two_sided} "
+        f"base={base.get_name()} normal={normal.get_name() if normal else None} "
+        f"normal_flip_green={normal.get_editor_property('flip_green_channel') if normal else None} "
+        f"base_srgb={base.get_editor_property('srgb')} base_compression={base.get_editor_property('compression_settings')}"
+    )
     return mi, base, masked, scalars.get("AlphaCutoff", 0.5), two_sided
 
 
@@ -332,6 +347,8 @@ def glb_id_material(ref, folder, name, master, rgb, mask, cutoff, two_sided):
     if mask is not None:
         mel.set_material_instance_texture_parameter_value(mi, "Mask Texture", mask)
         set_masked(mi, {"alphaCutoff": cutoff, "doubleSided": two_sided})
+    elif two_sided:
+        set_two_sided(mi, True)
     mel.update_material_instance(mi)
     unreal.EditorAssetLibrary.save_loaded_asset(mi)
     return mi
@@ -410,7 +427,7 @@ def describe_glb(actor, inst):
     mesh = component.static_mesh
     box = mesh.get_bounding_box()
     scale = actor.get_actor_scale3d()
-    slots = [glb_slot_values(component.get_material(i)) for i in range(len(mesh.static_materials))]
+    slots = [dict(glb_slot_values(component.get_material(i)), slot=str(mesh.static_materials[i].material_slot_name)) for i in range(len(mesh.static_materials))]
     return {
         "name": inst["name"],
         "class": "StaticMeshActor",
