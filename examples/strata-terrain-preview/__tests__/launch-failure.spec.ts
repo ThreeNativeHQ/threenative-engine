@@ -21,7 +21,9 @@ function page(webdriver = false) {
           };
           return element;
         },
-        body: { append: (element: { textContent: string | null; role?: string }) => shown.push(element) },
+        body: {
+          append: (element: { textContent: string | null; role?: string }) => shown.push(element),
+        },
       },
       location: { reload: () => reloads++ },
       navigator: { webdriver },
