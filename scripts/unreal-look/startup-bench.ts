@@ -104,11 +104,13 @@ async function main(): Promise<void> {
   await mkdir(out, { recursive: true });
   const port = await freePort();
   await assertVisualPortAvailable(port);
-  const server = spawn(
-    "pnpm",
-    ["dev", "--host", "127.0.0.1", "--port", String(port), "--strictPort"],
-    { cwd: target, detached: true, stdio: ["ignore", "inherit", "inherit"] },
-  );
+  const startServer = () =>
+    spawn("pnpm", ["dev", "--host", "127.0.0.1", "--port", String(port), "--strictPort"], {
+      cwd: target,
+      detached: true,
+      stdio: ["ignore", "inherit", "inherit"],
+    });
+  let server = startServer();
   try {
     const origin = `http://127.0.0.1:${port}/`;
     await waitForServer(origin, server);
@@ -120,8 +122,12 @@ async function main(): Promise<void> {
     for (const [index, kind] of runs.entries()) {
       if (kind === "cold") {
         await browser.close();
-        // The dev server's pre-bundled dependencies are part of a cold start.
+        // The dev server's pre-bundled dependencies are part of a cold start. A server that is running keeps its
+        // optimizer state in memory and serves nothing once the files are gone (a page that never loads): start it again.
+        await stopVisualServer(server);
         await rm(path.join(target, "node_modules/.vite"), { recursive: true, force: true });
+        server = startServer();
+        await waitForServer(origin, server);
         browser = await chromium.launch({
           args: [...WEBGPU_BROWSER_ARGS],
           headless: false,
@@ -262,6 +268,11 @@ async function main(): Promise<void> {
         throw new Error(
           `TN_STARTUP_BENCH_ADAPTER: ${JSON.stringify(adapter)} is not the NVIDIA GPU`,
         );
+      // The engine's own milestones (load started, scene entered, compile settled, framework ready, ready), on the same
+      // performance.now base as the numbers above. `null` when the page did not install the playtest bridge.
+      const timeline = await page.evaluate(
+        "(() => { const bridge = window.__THREENATIVE_PLAYTEST_BRIDGE__; return bridge?.ready().startup?.timeline ?? null; })()",
+      );
       const worst = (rows: [number, number][]) => rows.reduce((m, r) => Math.max(m, r[1]), 0);
       const gis = markers.filter((m) => m.text.startsWith("TN_GI_CACHE"));
       const parse = (m: { text: string } | undefined) =>
@@ -282,6 +293,7 @@ async function main(): Promise<void> {
         giConvergedMs: Math.round(marks.converged),
         firstFrameMs: Math.round(marks.firstFrame),
         sceneMs: Math.round(marks.scene),
+        timeline,
         // Until the GI converged: the longest task and the longest gap between two frames (a slice shows as a gap).
         longestTaskMs: worst(marks.longTasks),
         longestFrameGapMs: worst(marks.gaps),
