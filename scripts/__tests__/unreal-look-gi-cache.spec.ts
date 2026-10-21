@@ -13,7 +13,12 @@ import {
   Vector3,
 } from "three";
 import { describe, expect, it } from "vitest";
-import { giCache, installGi, skyRadiance } from "../unreal-look/scaffold/render/giCache.js";
+import {
+  giCache,
+  gridOver,
+  installGi,
+  skyRadiance,
+} from "../unreal-look/scaffold/render/giCache.js";
 
 /** The bake's ray query over a group, as the game's `ctx.raycast` answers it. */
 const rayContext = (root: Group) => {
@@ -392,5 +397,30 @@ describe("the world-space GI cache against closed forms (PRD-631 L7)", () => {
     skyRadiance.current = undefined;
     const scene = new Group().add(new Mesh(new PlaneGeometry(2, 2), new MeshStandardMaterial()));
     expect(installGi(rayContext(scene), scene, { bounces: 1 })).toBeUndefined();
+  });
+
+  it("the reference scene keeps the probe count it had at 1 m; the sunlit room keeps its 0.5 m cell", () => {
+    // tools/unreal-reference/scene.glb: the 40 m floor and the bounds of its eleven other meshes. The floor is under 20x
+    // their area, so the grid spans the whole scene. A budget on the volume alone baked 33327 probes there (L9 startup
+    // 344 s against 112 s); at 1 m the grid held 42 x 5 x 42 = 8820.
+    const box = (min: Vector3, max: Vector3) => {
+      const mesh = new Mesh(
+        new BoxGeometry(max.x - min.x, max.y - min.y, max.z - min.z),
+        new MeshStandardMaterial(),
+      );
+      mesh.position.copy(min).add(max).multiplyScalar(0.5);
+      return mesh;
+    };
+    const reference = new Group().add(
+      box(new Vector3(-20, 0, -20), new Vector3(20, 0, 20)),
+      box(new Vector3(-13.1, 0, -11.1), new Vector3(13, 3.2, 8.15)),
+    );
+    reference.updateMatrixWorld(true);
+    const grid = gridOver(reference);
+    expect(grid.nx * grid.ny * grid.nz).toBeLessThanOrEqual(8820);
+    expect(grid.cell).toBeLessThan(1.02);
+    const room = sunlitRoom();
+    room.updateMatrixWorld(true);
+    expect(gridOver(room).cell).toBe(0.5);
   });
 });

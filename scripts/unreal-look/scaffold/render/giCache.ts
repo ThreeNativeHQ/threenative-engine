@@ -127,7 +127,12 @@ const SMOOTH_PASSES = 4;
  * lit a halo round the sunlit room's window (sill 2.45x the path trace at sun 15; 1.58x with the stop).
  */
 const SMOOTH_EDGE = 0.7;
-const MAX_POINTS = 24000;
+/**
+ * The most coarse probes a bake takes, counted as the grid holds them (`nx * ny * nz`, padding included). 8820 is the
+ * reference scene's 40 m ground at the old 1 m cell. A budget on the volume alone let the 0.5 m cell bake 33327
+ * probes there, and L9 took 344 s to start instead of 112 s.
+ */
+const MAX_POINTS = 8820;
 /** Rays every probe shoots, and the extra rays a probe that is mostly enclosed shoots. */
 /** An element that exists by construction (a fixed-length array indexed by a loop over its length). */
 const nth = <T>(list: readonly T[], index: number): T => list[index] as T;
@@ -205,10 +210,15 @@ function sceneBounds(root: Object3D): Box3 {
     );
 }
 
-function gridOver(root: Object3D): IGrid {
+export function gridOver(root: Object3D): IGrid {
   const bounds = sceneBounds(root);
   const size = bounds.getSize(new Vector3());
-  const cell = Math.max(CELL, Math.cbrt((size.x * size.y * size.z) / MAX_POINTS));
+  const count = (cell: number) =>
+    (Math.ceil(size.x / cell) + 2) *
+    (Math.ceil(size.y / cell) + 1) *
+    (Math.ceil(size.z / cell) + 2);
+  let cell = Math.max(CELL, Math.cbrt((size.x * size.y * size.z) / MAX_POINTS));
+  while (count(cell) > MAX_POINTS) cell *= 1.01;
   return {
     origin: new Vector3(bounds.min.x - cell, bounds.min.y, bounds.min.z - cell),
     cell,
