@@ -28,8 +28,32 @@ export const GI_LAYERS: Readonly<Record<string, string>> = {
   // Shadows and AO without GI: the pair of Unreal with Lumen GI off.
   L6: "L7-Low",
   L7: "L7-Epic",
+  // GI at one quality tier, against the Unreal level it follows (PRD-644): Low 0, Medium 1, Epic 3.
+  "L7-low": "L7-Low",
+  "L7-medium": "L7-Medium",
+  "L7-high": "L7-Epic",
+  // The shadow family names its Unreal variants after their layers: sg.ShadowQuality 0 and 1 (PRD-652).
+  "L5-Low": "L5-Low",
+  "L5-Medium": "L5-Medium",
   L9: "L9-Epic",
 };
+
+/**
+ * `&tier=<tier>` for a tier layer, nothing otherwise. A GI tier layer (`L7-low`) is judged against the
+ * Unreal level of the GI group alone, whose shadows stay at Epic, so it adds `&shadowTier=high`; a shadow
+ * tier layer (`L5-Low`) has no GI and follows the tier for its shadows.
+ */
+export function tierQuery(layer: string): string {
+  const { layer: base, tier } = layerQuery(layer);
+  if (tier === undefined) return "";
+  return base === "L7" ? `&tier=${tier}&shadowTier=high` : `&tier=${tier}`;
+}
+
+/** The query pair a capture layer names: `L7-medium` is layer `L7` at tier `medium`; `L7` keeps the default tier. */
+export function layerQuery(layer: string): { layer: string; tier?: string } {
+  const [base = layer, tier] = layer.split("-");
+  return tier === undefined ? { layer: base } : { layer: base, tier: tier.toLowerCase() };
+}
 
 export async function patchGi(target: string, scenes: readonly string[]): Promise<void> {
   await cp(
@@ -144,13 +168,13 @@ export async function captureGiThreeNative(options: {
           const visits: { query: string; key: string; poses: typeof scene.poses }[] =
             scene.template === "default" && layer !== "ID"
               ? (scene.suns ?? []).map((sun) => ({
-                  query: `tnRef=${layer}&sun=${sun.elevationDeg},${sun.azimuthDeg}&model=${sceneKey(name)}`,
+                  query: `tnRef=${layerQuery(layer).layer}${tierQuery(layer)}&sun=${sun.elevationDeg},${sun.azimuthDeg}&model=${sceneKey(name)}`,
                   key: `${name}/${layer}/${sun.name}`,
                   poses: scene.poses.filter((pose) => pose.sun === sun.name),
                 }))
               : [
                   {
-                    query: `tnGi=${name}&layer=${layer}`,
+                    query: `tnGi=${name}&layer=${layerQuery(layer).layer}${tierQuery(layer)}`,
                     key: `${name}/${layer}`,
                     poses: scene.poses,
                   },

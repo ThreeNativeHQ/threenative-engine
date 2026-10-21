@@ -9,6 +9,9 @@
  *     --rebuild              author and export the scene again even if its level exists
  *   pnpm unreal-look:compare --scene gi:cornell --unreal-vs-unreal [--write-stats]
  *   pnpm unreal-look:compare --scene gi:cornell --layer L1[,L7]   ThreeNative against Unreal, per region
+ *   pnpm unreal-look:compare --scene gi:cornell --layer L7-low,L7-medium,L7-high   each quality tier against its Unreal level (PRD-644)
+ *   pnpm unreal-look:compare --scene gi:cornell --layer L7 --unreal-level 0|1|3    one capture against another level's frame
+ *   pnpm unreal-look:compare --scene shadow:penumbra-lab --layer L5-Low --metric penumbra   shadow edge width, TN / Unreal (PRD-652)
  *
  * PRD-649: `--scene shadow | shadow:<name>` runs the same pipeline on the shadow family, whose scenes
  * live in tools/unreal-reference/shadow/<name>/ with their own shadow/scenes.json. A `gi:` id keeps its
@@ -560,15 +563,41 @@ const UNREAL_VARIANT: Readonly<Record<string, string>> = {
   L1: "L1",
   L6: "L7-Low",
   L7: "L7-Epic",
+  // A quality tier names the Unreal level it follows (scaffold/render/quality.ts, PRD-644).
+  "L7-low": "L7-Low",
+  "L7-medium": "L7-Medium",
+  "L7-high": "L7-Epic",
   L9: "L9-Epic",
 };
+
+/** `sg.GlobalIlluminationQuality` of the GI variants a calibration scene is captured at in Unreal. */
+const UNREAL_LEVEL_VARIANT: Readonly<Record<number, string>> = {
+  0: "L7-Low",
+  1: "L7-Medium",
+  3: "L7-Epic",
+};
+
+/**
+ * The Unreal variant a ThreeNative layer is judged against. `unrealLevel` (0 Low, 1 Medium, 3 Epic)
+ * overrides the layer's own pair, to hold one capture against another level's frame.
+ */
+export function unrealVariant(layer: string, unrealLevel?: number): string {
+  if (unrealLevel !== undefined)
+    return UNREAL_LEVEL_VARIANT[unrealLevel] ?? fail("BAD_INPUT", `unreal level ${unrealLevel}`);
+  return UNREAL_VARIANT[layer] ?? fail("BAD_INPUT", `GI layer ${layer}`);
+}
 
 /**
  * ThreeNative against Unreal for one scene: region statistics of every (layer, pose), with the
  * Unreal ID frame as the mask and the IoU of the two ID frames per region. A row passes against
  * tools/unreal-reference/thresholds.json when that file exists (PRD-631); otherwise it reports.
  */
-export function compareGiToUnreal(name: string, layers: readonly string[], root: string): IRow[] {
+export function compareGiToUnreal(
+  name: string,
+  layers: readonly string[],
+  root: string,
+  unrealLevel?: number,
+): IRow[] {
   const { scene } = readScene(name);
   const thresholdFile = path.join(REFERENCE, "thresholds.json");
   const thresholds = existsSync(thresholdFile)
@@ -579,9 +608,7 @@ export function compareGiToUnreal(name: string, layers: readonly string[], root:
   const rows: IRow[] = [];
   for (const layer of layers) {
     // A shadow scene names its Unreal variants after their layers (shadow/scenes.json).
-    const variant = name.startsWith("shadow:")
-      ? layer
-      : (UNREAL_VARIANT[layer] ?? fail("BAD_INPUT", `GI layer ${layer}`));
+    const variant = name.startsWith("shadow:") ? layer : unrealVariant(layer, unrealLevel);
     for (const pose of scene.poses) {
       const reference = masks(image(path.join(unreal, "ID", `${pose.name}.png`)), scene.regions);
       const own = masks(image(path.join(tn, "ID", `${pose.name}.png`)), scene.regions);
@@ -613,28 +640,55 @@ export function compareGiToUnreal(name: string, layers: readonly string[], root:
 /** Cells whose lamp has a source radius: the edge is tens of pixels wide, so it reads at this scale (PRD-650). */
 const WIDE_PENUMBRA: Record<string, number> = { "shadow:lamp-room/spot-soft": 2.5 };
 
-/** Floor shadow-edge width, Unreal against ThreeNative, per pose of one scene and layer (PRD-649). */
+export interface IPenumbraRow {
+  readonly layer: string;
+  readonly cell: string;
+  /** Floor rows where both frames hold a shadow edge. */
+  readonly matched: number;
+  readonly unrealPx: number;
+  readonly threenativePx: number;
+  /** ThreeNative edge width over Unreal's: PRD-634 holds it within 1.25. */
+  readonly ratio: number;
+}
+
+/**
+ * Shadow-edge width of a ThreeNative layer against its Unreal variant on the Floor region
+ * (PRD-634, PRD-649, PRD-652): the metric `--metric penumbra` prints for a calibration scene. A wide
+ * lamp edge reads at its own scale (`WIDE_PENUMBRA`). A cell with no edge in both frames has no row.
+ */
 export function penumbraRows(
   name: string,
-  layer: string,
+  layers: readonly string[],
   root: string,
-): { cell: string; matched: number; unreal: number; other: number; ratio: number }[] {
+  unrealLevel?: number,
+): IPenumbraRow[] {
   const { scene } = readScene(name);
   const unreal = path.join(root, "unreal", sceneKey(name));
   const tn = path.join(root, "threenative", sceneKey(name));
-  const variant = name.startsWith("shadow:") ? layer : (UNREAL_VARIANT[layer] ?? layer);
-  const rows = [];
-  for (const pose of scene.poses) {
-    const floor = masks(image(path.join(unreal, "ID", `${pose.name}.png`)), scene.regions).regions
-      .Floor;
-    if (!floor) fail("EMPTY_MASK", `${name}: the scene has no Floor region`);
-    const m = pairedPenumbra(
-      image(path.join(unreal, variant, `${pose.name}.png`)),
-      image(path.join(tn, layer, `${pose.name}.png`)),
-      floor,
-      WIDE_PENUMBRA[`${name}/${pose.name}`],
-    );
-    if (m) rows.push({ cell: `${name}/${pose.name}`, ...m });
+  const rows: IPenumbraRow[] = [];
+  for (const layer of layers) {
+    const variant = name.startsWith("shadow:") ? layer : unrealVariant(layer, unrealLevel);
+    for (const pose of scene.poses) {
+      const floor = masks(image(path.join(unreal, "ID", `${pose.name}.png`)), scene.regions).regions
+        .Floor;
+      if (floor === undefined) fail("BAD_INPUT", `${name} has no Floor region`);
+      const frames = [path.join(unreal, variant), path.join(tn, layer)].map((folder) =>
+        image(path.join(folder, `${pose.name}.png`)),
+      );
+      const [a, b] = frames as [IImage, IImage];
+      if (a.width !== b.width || a.height !== b.height)
+        fail("SIZE_MISMATCH", `${name}/${pose.name}: ${layer} and ${variant} differ in size`);
+      const m = pairedPenumbra(a, b, floor, WIDE_PENUMBRA[`${name}/${pose.name}`]);
+      if (m)
+        rows.push({
+          layer,
+          cell: `${name}/${pose.name}`,
+          matched: m.matched,
+          unrealPx: m.unreal,
+          threenativePx: m.other,
+          ratio: m.ratio,
+        });
+    }
   }
   return rows;
 }
@@ -680,6 +734,26 @@ export function contactRows(
   return rows;
 }
 
+/** Prints the `--metric penumbra` table and returns 1 when any edge is wider than PRD-634 allows. */
+function printPenumbra(
+  names: readonly string[],
+  layers: readonly string[],
+  root: string,
+  unrealLevel: number | undefined,
+): number {
+  const f2 = (v: number) => v.toFixed(2);
+  const rows = names.flatMap((name) => penumbraRows(name, layers, root, unrealLevel));
+  console.log(
+    `| layer | cell | edges | Unreal px | TN px | TN / Unreal |\n|---|---|---:|---:|---:|---:|\n${rows
+      .map(
+        (r) =>
+          `| ${r.layer} | ${r.cell} | ${r.matched} | ${f2(r.unrealPx)} | ${f2(r.threenativePx)} | ${f2(r.ratio)} |`,
+      )
+      .join("\n")}`,
+  );
+  return rows.some((r) => r.ratio > 1.25) ? 1 : 0;
+}
+
 export function compareGi(args: readonly string[]): number {
   const layerFlag = flag(args, "--layer");
   if (layerFlag !== undefined) {
@@ -689,6 +763,8 @@ export function compareGi(args: readonly string[]): number {
       value,
       registry(familyOf(value)).scenes.map((s) => s.name),
     );
+    const levelFlag = flag(args, "--unreal-level");
+    const unrealLevel = levelFlag === undefined ? undefined : Number(levelFlag);
     if (flag(args, "--metric") === "contact") {
       console.log("| cell | box | UE gap rows | TN gap rows |\n|---|---|---:|---:|");
       for (const name of names)
@@ -699,20 +775,11 @@ export function compareGi(args: readonly string[]): number {
             );
       return 0;
     }
-    if (flag(args, "--metric") === "penumbra") {
-      const show = (v: number) => Number(v.toPrecision(4));
-      console.log(
-        "| cell | matched edge rows | UE width px | TN width px | TN / UE |\n|---|---:|---:|---:|---:|",
-      );
-      for (const name of names)
-        for (const layer of layerFlag.split(","))
-          for (const r of penumbraRows(name, layer, root))
-            console.log(
-              `| ${r.cell} ${layer} | ${r.matched} | ${show(r.unreal)} | ${show(r.other)} | ${show(r.ratio)} |`,
-            );
-      return 0;
-    }
-    const rows = names.flatMap((name) => compareGiToUnreal(name, layerFlag.split(","), root));
+    if (flag(args, "--metric") === "penumbra")
+      return printPenumbra(names, layerFlag.split(","), root, unrealLevel);
+    const rows = names.flatMap((name) =>
+      compareGiToUnreal(name, layerFlag.split(","), root, unrealLevel),
+    );
     const f = (v: number | null, d = 3) => (v === null ? "—" : v.toFixed(d));
     console.log(
       `| layer | cell | region | Unreal p50 | TN p50 | dP50 | ΔE2000 | ID IoU | verdict |\n|---|---|---|---:|---:|---:|---:|---:|---|\n${rows
