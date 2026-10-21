@@ -37,6 +37,12 @@ export interface IShadowFilterBudgetOptions {
   readonly explicit?: boolean;
   /** The frame period in milliseconds the whole frame's GPU time is held to, such as 1000 / 60. */
   readonly frameBudgetMs: number;
+  /**
+   * Names of render passes another watcher answers for, such as the `SSGI` pass a `GIBudget` steps.
+   * Their GPU time leaves the frame before it is held to the period, so a slow gather does not cost
+   * the shadows their samples. Default none.
+   */
+  readonly excludeStages?: readonly string[];
   /** Frames per window. Default 120. */
   readonly windowFrames?: number;
   /** Resolved frames a window needs before it may move the tier. Default 8. */
@@ -66,7 +72,7 @@ export interface IShadowFilterBudgetOptions {
  * @situation shadow quality tier that follows the hardware
  * @constraint the game rebuilds its filter with the tier's sample counts on each step; this class draws nothing
  * @constraint timestamp queries are needed: without them every window is unobserved and the tier holds
- * @constraint the signal is the whole frame's GPU time, so a frame slow for another reason also steps the filter down
+ * @constraint the signal is the whole frame's GPU time, so a frame slow for another reason also steps the filter down; name that reason's passes in `excludeStages`
  * @override explicit: true keeps the game's own sample counts and reports an exceeded period
  * @alias shadow quality
  * @alias virtual shadow map scalability
@@ -129,7 +135,9 @@ export class ShadowFilterBudget {
     const reading = this.#read(renderer);
     if (reading === undefined || reading.frame === this.#lastFrame) return this.observe(undefined);
     this.#lastFrame = reading.frame;
-    return this.observe(reading.total);
+    let ms = reading.total;
+    for (const name of this.#options.excludeStages ?? []) ms -= reading.stages[name] ?? 0;
+    return this.observe(Math.max(0, ms));
   }
 
   #toReport(window: IBudgetWindow<ShadowFilterTier>): IShadowFilterReport {

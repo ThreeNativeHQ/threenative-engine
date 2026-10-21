@@ -74,6 +74,18 @@ describe("ShadowFilterBudget", () => {
     expect(last).toMatchObject({ stepped: "medium", windowMs: 30 });
   });
 
+  it("leaves out the stages another watcher answers for", () => {
+    let reading: IStageGpuReading | undefined;
+    const { target } = budget({ excludeStages: ["SSGI"], read: () => reading });
+    let last: ReturnType<ShadowFilterBudget["observeRenderer"]>;
+    for (let frame = 0; frame < 10; frame++) {
+      reading = { frame: 1 + frame, stages: { AO: 1, SSGI: 20 }, total: 30 };
+      last = target.observeRenderer({});
+    }
+    // A 30 ms frame, 20 ms of it the gather: the filter is held to the 10 ms that remain.
+    expect(last).toMatchObject({ stepped: undefined, tier: "high", windowMs: 10 });
+  });
+
   it("rejects a tier outside low, medium and high", () => {
     expect(() => budget({ tier: "epic" as never })).toThrow(/start/);
   });

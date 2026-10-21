@@ -3089,7 +3089,8 @@
       "constraints": [
         "the game rebuilds its filter with the tier's sample counts on each step; this class draws nothing",
         "timestamp queries are needed: without them every window is unobserved and the tier holds",
-        "the signal is the whole frame's GPU time, so a frame slow for another reason also steps the filter down"
+        "the signal is the whole frame's GPU time, so a frame slow for another reason also steps the filter down",
+        "the signal is the whole frame's GPU time, so a frame slow for another reason also steps the filter down; name that reason's passes in `excludeStages`"
       ],
       "example": "const filter = new ShadowFilterBudget({ tier: \"high\", frameBudgetMs: 1000 / 60, onStep: (tier) => { light.shadow.filterNode = filterFor(tier); } });\nctx.beforeRender(() => filter.observeRenderer(ctx.renderer.raw));",
       "importPath": "@threenative/core",

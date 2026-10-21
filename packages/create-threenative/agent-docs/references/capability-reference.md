@@ -2391,7 +2391,7 @@ export class ShadowFilterBudget { … }
 ```
 
 - **Use when:** soft shadow filter costs too much on a weak GPU · step the shadow filter samples from measured frame time · shadow quality tier that follows the hardware
-- **Constraints:** the game rebuilds its filter with the tier's sample counts on each step; this class draws nothing · timestamp queries are needed: without them every window is unobserved and the tier holds · the signal is the whole frame's GPU time, so a frame slow for another reason also steps the filter down
+- **Constraints:** the game rebuilds its filter with the tier's sample counts on each step; this class draws nothing · timestamp queries are needed: without them every window is unobserved and the tier holds · the signal is the whole frame's GPU time, so a frame slow for another reason also steps the filter down · the signal is the whole frame's GPU time, so a frame slow for another reason also steps the filter down; name that reason's passes in `excludeStages`
 - **Overrides:** explicit: true keeps the game's own sample counts and reports an exceeded period
 
 ```ts
