@@ -1,6 +1,6 @@
 {
   "name": "@threenative/procedural-animals",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "license": "MIT",
   "description": "Optional, bake-first procedural animal content for ThreeNative.",
   "homepage": "https://github.com/ThreeNativeHQ/threenative#readme",
