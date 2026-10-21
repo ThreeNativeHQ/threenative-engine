@@ -11,9 +11,8 @@ import { spawn } from "node:child_process";
 import { cp, mkdir, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { chromium } from "@playwright/test";
-import { WEBGPU_BROWSER_ARGS } from "../../packages/playtest/src/runner/browser.js";
 import { assertVisualPortAvailable, stopVisualServer } from "../visual-gate.js";
+import { launchWebgpuBrowser } from "./browser.js";
 import { HIDE_UI, freePort, scaffold, waitForServer } from "./capture-threenative.js";
 import { readScene, sceneDir, sceneKey } from "./gi.js";
 
@@ -108,7 +107,7 @@ export async function captureGiThreeNative(options: {
   try {
     const origin = `http://127.0.0.1:${port}/`;
     await waitForServer(origin, server);
-    const browser = await chromium.launch({ args: [...WEBGPU_BROWSER_ARGS], headless: false });
+    const browser = await launchWebgpuBrowser();
     try {
       const report: Record<string, unknown> = {};
       for (const name of options.scenes) {

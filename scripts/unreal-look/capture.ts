@@ -7,11 +7,13 @@
  *     --check-cvars        only resolve every console variable in layers.json; exit 1 on a miss
  *     --dump-actors        only build the levels and write template-actors.json
  *   --engine threenative   scaffold the starter and capture the same cells headed on WebGPU
+ *                          The browser opens on its own private Xvfb, whatever DISPLAY the shell exports
+ *                          (browser.ts). TN_PLAYTEST_HOST_DISPLAY=1 opens it on the session display instead.
  *     --reuse              keep the scaffold and its install; re-copy the template source
  *     --baseline           skip scripts/unreal-look/scaffold/render/ (the template look as shipped)
  *     --measure <seconds>  hold each cell that long and write its TN_FRAME_BUDGET log (read it with
  *                          `playtest perf --file`); no screenshot
- *     --size 1920x1080     viewport override (the cells use poses.json's 1280x720); start Xvfb that large
+ *     --size 1920x1080     viewport override (the cells use poses.json's 1280x720); set TN_XVFB_SCREEN that large
  *     --off vsm,gpusky,...   L9 stage ablation: vsm gpusky clouds gi reflcap bloom localexposure autoexposure ssgi ssr gtao vignette motionblur stockbloom
  *   --layers L0,L1,ID      limit the layers (default: every layer plus the region-id frames)
  *   --cells sun60/exterior limit the (sun, pose) cells
