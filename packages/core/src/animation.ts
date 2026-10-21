@@ -17,6 +17,7 @@ import {
   animationPacketMethodsPristine,
   animationPacketReaders,
   animationPacketTime,
+  animationPacketTimeReaders,
 } from "./animation-packet-state.js";
 import { clipTrackBindings } from "./clip-audit.js";
 import { type IAnimationRateState, animationRateStates } from "./render-camera-cull.js";
@@ -342,6 +343,7 @@ class LoopAwareAnimationMixer extends AnimationMixer<AnimationMixerEventMap> {
 
 export class AnimationPlayer {
   readonly #packetReader = () => this.#readPacketState();
+  readonly #packetTimeReader = () => this.#trustedPacketTime();
   /** The action and clip the last full packet validation accepted, reused for a bounded number of reads. */
   #packetTrust: { action: AnimationAction; clip: AnimationClip; left: number } | undefined;
   readonly mixer: AnimationMixer;
@@ -387,6 +389,13 @@ export class AnimationPlayer {
   #strideRoot: Object3D;
   #lastRootPosition = new Vector3();
   #hasLastRootPosition = false;
+  /**
+   * The clip whose last stride measurement could not change any time scale: it is not locomotion,
+   * or the game declined stride sync. While it is still playing, a held tick only banks its `dt`
+   * and the next evaluation measures the whole interval, so a held rig pays no world-matrix walk.
+   */
+  #strideReportOnlyFor: string | undefined;
+  #strideDtDebt = 0;
   // The last update's numbers, kept as scalars so a frame that never reads `.stride` builds no
   // report. A read materializes a fresh snapshot, so a retained report never changes under it.
   #strideGroundSpeed = 0;
@@ -445,6 +454,7 @@ export class AnimationPlayer {
         );
     }
     animationPacketReaders.set(this.root, this.#packetReader);
+    animationPacketTimeReaders.set(this.root, this.#packetTimeReader);
     animationRateStates.set(this.root, this.#rateState);
     this.root.userData[ANIMATION_RATE_STATE_KEY] = this.#rateState;
   }
@@ -675,6 +685,7 @@ export class AnimationPlayer {
       this.#strideSynced = false;
       this.#strideOverridden = false;
       this.#strideInPlace = measured.inPlace;
+      this.#strideReportOnlyFor = this.#blendTargets === undefined ? name : undefined;
       return;
     }
     const wanted =
@@ -692,6 +703,7 @@ export class AnimationPlayer {
     this.#strideSynced = applies;
     this.#strideOverridden = !this.#strideSync;
     this.#strideInPlace = measured.inPlace;
+    this.#strideReportOnlyFor = !applies && this.#blendTargets === undefined ? name : undefined;
   }
 
   /**
@@ -998,8 +1010,54 @@ export class AnimationPlayer {
       (this.#updateFrame + this.#staggerOffset) % rate === 0 ||
       this.#skippedFrames >= rate;
     if (this.#evaluated) this.#evaluate(dt);
-    // Measure the body's movement on every tick, including skipped pose evaluations.
-    this.#syncStride(dt);
+    // Measure the body's movement on every tick, including skipped pose evaluations. A held tick of
+    // a clip whose measurement only reports banks its dt: the average speed over the interval is
+    // the same number, measured once.
+    if (
+      !this.#evaluated &&
+      this.#strideReportOnlyFor !== undefined &&
+      this.#strideReportOnlyFor === this.#current &&
+      this.#blendTargets === undefined &&
+      dt > 0
+    ) {
+      this.#strideDtDebt += dt;
+      return;
+    }
+    if (dt > 0) {
+      const interval = dt + this.#strideDtDebt;
+      this.#strideDtDebt = 0;
+      this.#syncStride(interval);
+    } else this.#syncStride(dt);
+  }
+
+  /**
+   * The playhead a trusted packet reads, as a bare number: the same checks as the trusted branch
+   * of `#readPacketState` without building a state object. Undefined sends the caller to the full
+   * read, which also renews the trust.
+   */
+  #trustedPacketTime(): number | undefined {
+    const trust = this.#packetTrust;
+    if (
+      trust === undefined ||
+      trust.left <= 0 ||
+      this.#evaluating ||
+      this.#actions.size !== 1 ||
+      this.#mode !== "loop" ||
+      this.#finished ||
+      this.#fadeOut.length !== 0 ||
+      this.#blendTargets !== undefined ||
+      this.#timeScaleInterpolations.size !== 0
+    )
+      return undefined;
+    const name = this.#current ?? "";
+    const action = this.#actions.get(name);
+    if (action !== trust.action || this.#clips.get(name) !== trust.clip) return undefined;
+    trust.left -= 1;
+    return animationPacketTime(
+      action.time,
+      this.#pendingActionTimes.get(action) ?? 0,
+      trust.clip.duration,
+    );
   }
 
   #readPacketState(): IAnimationPacketState | undefined {
@@ -1206,6 +1264,8 @@ export class AnimationPlayer {
 
   #resetStride(): void {
     this.#hasLastRootPosition = false;
+    this.#strideReportOnlyFor = undefined;
+    this.#strideDtDebt = 0;
     this.#strideGroundSpeed = 0;
     this.#strideRate = 1;
     this.#strideSynced = false;
@@ -1223,6 +1283,8 @@ export class AnimationPlayer {
     this.#preparation = undefined;
     if (animationPacketReaders.get(this.root) === this.#packetReader)
       animationPacketReaders.delete(this.root);
+    if (animationPacketTimeReaders.get(this.root) === this.#packetTimeReader)
+      animationPacketTimeReaders.delete(this.root);
     if (animationRateStates.get(this.root) === this.#rateState)
       animationRateStates.delete(this.root);
     if (this.root.userData[ANIMATION_RATE_STATE_KEY] === this.#rateState)

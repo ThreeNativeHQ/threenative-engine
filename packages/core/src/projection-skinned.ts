@@ -39,6 +39,7 @@ import {
   StorageBufferAttribute,
 } from "three/webgpu";
 
+import { animationPacketTimeReaders } from "./animation-packet-state.js";
 import {
   type IAnimationPosePacket,
   type IAnimationPoseVersion,
@@ -59,6 +60,8 @@ interface IRawDisplaySlot {
   writeFrame?: number;
   /** Evaluations that may reuse the captured packet before the next full source re-read. */
   trusted?: number;
+  /** What the last full write saw, so a held tick can prove nothing moved with three comparisons. */
+  hot?: { skeleton: Skeleton; world: Matrix4; evaluation: number };
   expectedCurrent?: Float32Array;
   expectedPrevious?: Float32Array;
 }
@@ -571,6 +574,54 @@ export class SkinnedBatch {
     if (rig === undefined) return;
     this.#writtenEvaluations.delete(rig);
     this.#writtenWorldMatrices.delete(rig);
+    const display = this.#rawSlots.get(slot);
+    if (display) display.hot = undefined;
+  }
+
+  /**
+   * A held tick of a trusted RAW rig: the pose, the skeleton and the world matrix are the ones the
+   * last full write saw, so the only thing that moved is the playhead. Anything else, an observed
+   * batch included, takes the full path.
+   */
+  #writeHeld(slot: number, rig: SkinnedMesh): boolean {
+    const display = this.#rawSlots.get(slot);
+    const hot = display?.hot;
+    if (
+      display === undefined ||
+      hot === undefined ||
+      display.current === undefined ||
+      display.retired ||
+      this.#observed ||
+      (display.trusted ?? 0) <= 0
+    )
+      return false;
+    const state = animationRateStateOf(rig);
+    if (
+      state === undefined ||
+      state.evaluated ||
+      state.evaluation !== hot.evaluation ||
+      (state.effectiveRate ?? 1) <= 1 ||
+      rig.skeleton !== hot.skeleton ||
+      !hot.world.equals(rig.matrixWorld) ||
+      !skeletonUpdateIntact(hot.skeleton) ||
+      (this.#skeletonOwners.get(hot.skeleton)?.size ?? 0) > 1 ||
+      this.#fresh.includes(slot)
+    )
+      return false;
+    const time = animationPacketTimeReaders.get(rig)?.();
+    if (time === undefined) return false;
+    this.#prepareRawFrame();
+    display.writeFrame = this.#frame;
+    this.#rawMeta[slot * 4] = 1;
+    this.#rawMeta[slot * 4 + 1] = time;
+    this.#markRawDirty();
+    return true;
+  }
+
+  /** A packet at the playhead the meta row holds: held ticks move the meta, not the packet. */
+  #timed(packet: IAnimationPosePacket, slot: number, previous: boolean): IAnimationPosePacket {
+    const time = this.#rawMeta[slot * 4 + (previous ? 3 : 1)] as number;
+    return time === packet.time ? packet : { ...packet, time };
   }
 
   /**
@@ -581,6 +632,7 @@ export class SkinnedBatch {
   write(slot: number, rig: SkinnedMesh): void {
     beginSpan(SPANS.skinnedWrite);
     try {
+      if (this.#writeHeld(slot, rig)) return;
       this.#checkObservedEdits(slot);
       const state = animationRateStateOf(rig);
       // Named rate1 and ordinary stock owners never pay the capture/query path.
@@ -642,6 +694,14 @@ export class SkinnedBatch {
           const world = this.#writtenWorldMatrices.get(rig) ?? new Matrix4();
           world.copy(rig.matrixWorld);
           this.#writtenWorldMatrices.set(rig, world);
+          if (skeleton instanceof Skeleton) {
+            const hot = display.hot;
+            if (hot) {
+              hot.skeleton = skeleton;
+              hot.world = world;
+              hot.evaluation = state.evaluation;
+            } else display.hot = { skeleton, world, evaluation: state.evaluation };
+          }
           this.#syncObserved(slot, display);
           return;
         }
@@ -750,7 +810,7 @@ export class SkinnedBatch {
     if (!this.#observed) return;
     const offset = slot * this.bones * 16;
     if (display.current) {
-      const matrix = evaluateAnimationPosePacket(display.current);
+      const matrix = evaluateAnimationPosePacket(this.#timed(display.current, slot, false));
       this.#current.set(matrix, offset);
       display.expectedCurrent = matrix;
     } else display.expectedCurrent = this.#current.slice(offset, offset + this.bones * 16);
@@ -764,14 +824,21 @@ export class SkinnedBatch {
     this.#prepareRawFrame();
     for (const [slot, display] of this.#rawSlots) {
       const offset = slot * this.bones * 16;
-      if (display.current) this.#current.set(evaluateAnimationPosePacket(display.current), offset);
+      if (display.current)
+        this.#current.set(
+          evaluateAnimationPosePacket(this.#timed(display.current, slot, false)),
+          offset,
+        );
       const previous =
         display.previous ??
         (!this.#fresh.includes(slot) && this.#rawMeta[slot * 4 + 2] === 1
           ? display.current
           : undefined);
       if (previous && this.#previous)
-        this.#previous.set(evaluateAnimationPosePacket(previous), offset);
+        this.#previous.set(
+          evaluateAnimationPosePacket(this.#timed(previous, slot, previous === display.previous)),
+          offset,
+        );
       display.expectedCurrent = this.#current.slice(offset, offset + this.bones * 16);
       display.expectedPrevious = this.#previous?.slice(offset, offset + this.bones * 16);
     }

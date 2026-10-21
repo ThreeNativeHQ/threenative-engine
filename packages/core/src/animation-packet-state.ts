@@ -16,6 +16,9 @@ export const animationPacketReaders = new WeakMap<
   () => IAnimationPacketState | undefined
 >();
 
+/** The trusted playhead as a bare number, for a caller that only needs the time between full reads. */
+export const animationPacketTimeReaders = new WeakMap<Object3D, () => number | undefined>();
+
 export function readAnimationPacketState(object: Object3D): IAnimationPacketState | undefined {
   for (let node: Object3D | null = object; node !== null; node = node.parent) {
     const reader = animationPacketReaders.get(node);

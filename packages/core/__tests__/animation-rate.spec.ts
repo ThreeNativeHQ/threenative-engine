@@ -49,6 +49,27 @@ function rendered(result: AnimationPlayer, z = -100) {
 }
 
 describe("AnimationPlayer update rate", () => {
+  it("measures a report-only stride once per evaluation and reports the interval's average speed", () => {
+    const fast = player(4);
+    const stock = player(1);
+    const walk = (rig: AnimationPlayer, ticks: number) => {
+      const spy = vi.spyOn(rig.root, "getWorldPosition");
+      for (let tick = 0; tick < ticks; tick++) {
+        rig.root.position.x += 1 / 60;
+        rig.update(1 / 60);
+      }
+      const calls = spy.mock.calls.length;
+      spy.mockRestore();
+      return calls;
+    };
+    walk(fast, 1);
+    walk(stock, 1);
+    // 16 ticks at rate 4 are four evaluations: the three held ticks between them bank their dt.
+    expect(walk(stock, 16)).toBe(16);
+    expect(walk(fast, 16)).toBe(4);
+    expect(fast.stride.groundSpeed).toBeCloseTo(1, 5);
+    expect(fast.stride.groundSpeed).toBeCloseTo(stock.stride.groundSpeed, 5);
+  });
   it("records named rate1 independently of distant cull policy", () => {
     const rig = player(1);
     const view = rendered(rig, -120);

@@ -244,6 +244,47 @@ describe("SkinnedBatch owned scalar display packets", () => {
       f.close();
     }
   });
+  it("advances a trusted held rig by its playhead alone, with no packet read or state build", () => {
+    const f = fixture();
+    try {
+      f.draw();
+      f.held();
+      const before = f.receipt().slots[0];
+      const query = vi.spyOn(pose, "readAnimationPosePacketTime");
+      const capture = vi.spyOn(pose, "readAnimationPosePacket");
+      const refresh = vi.spyOn(pose, "refreshAnimationPosePacket");
+      try {
+        const rate = present(animationRateStates.get(f.mesh));
+        let ticks = 0;
+        // Step to the next held tick; an evaluation in between takes the refresh path by design.
+        do {
+          f.tick();
+          if (rate.evaluated) {
+            f.draw();
+            query.mockClear();
+            capture.mockClear();
+            refresh.mockClear();
+          }
+        } while (rate.evaluated && ++ticks < 8);
+        expect(rate.evaluated).toBe(false);
+        const reference = f.receipt().slots[0];
+        f.draw();
+        const after = f.receipt().slots[0];
+        expect(after.currentRaw).toBe(true);
+        expect(after.currentTime).toBeGreaterThan(reference.currentTime);
+        expect(before.currentRaw).toBe(true);
+        expect(query).not.toHaveBeenCalled();
+        expect(capture).not.toHaveBeenCalled();
+        expect(refresh).not.toHaveBeenCalled();
+      } finally {
+        query.mockRestore();
+        capture.mockRestore();
+        refresh.mockRestore();
+      }
+    } finally {
+      f.close();
+    }
+  });
   it("first public observation preserves actual mutable arrays and stock fresh/end semantics", () => {
     const f = fixture();
     try {
