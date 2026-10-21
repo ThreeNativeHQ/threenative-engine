@@ -125,8 +125,9 @@ scoreboard is a workflow input, so it is allowed under the evidence rules in `do
   the command reads the stream to check that every image was opened. The layer of a frame is read from its
   path (`L9/L9_sun60_exterior.png`, `sunlit-room/L7/sun60-window.png`). Unreal GI variants pair as
   `L7-Epic` with L7, `L9-Epic` with L9 and `L7-Low` with ThreeNative L6 (`GI_LAYERS` in
-  `capture-gi-threenative.ts`). `L7-Medium` pairs with nothing until PRD-644 pairs the tiers. The judge
-  answers both scales (against BEFORE and against UNREAL) in one session.
+  `capture-gi-threenative.ts`). `--tier medium` pairs `L7-Medium` with the ThreeNative `L7-medium` layer and
+  `--tier low` pairs `L7-Low` with `L7-low` (the PRD-644 tier layers). The judge answers both scales (against
+  BEFORE and against UNREAL) in one session.
 - 2026-10-21 (judge lane): the scoreboard is a folder, `tools/unreal-reference/gi/parity/`, with one JSON
   file per round, not one `parity.json` that every round appends to. Sixteen lanes run rounds, and two
   branches that append to one file conflict at the merge. The scoreboard is still a workflow input, so it
@@ -148,4 +149,19 @@ scoreboard is a workflow input, so it is allowed under the evidence rules in `do
   until PRD-646 Phase 2 closes.
 - 2026-10-21 (judge lane): a tier layer (`L7-medium`, `L7-low`) is a PRD-644 capture layer. `calibrate` fails
   closed before any GPU time when `GI_LAYERS` lacks the layer, and the judge refuses ThreeNative frames from
-  a different tier than `--tier`. High uses the default `L7` layer.
+  a different tier than `--tier`. High captures `L7-high`, which pins the tier. The plain `L7` layer keeps the
+  engine default tier, and a GPU that measures slow may lower it.
+- 2026-10-21 (judge lane): the epic already held a judge brief and per-scene criteria for `cornell` and
+  `sunlit-room` (9e4e565ff), written from the Unreal frames. The lane kept those files and dropped its own
+  copies. The brief gained one rule (other layers own bloom, exposure, anti-aliasing, shadow edges,
+  reflections and the lamp shape) and one section that says a headless round reads raw frames and answers
+  through the schema.
+- 2026-10-21 (judge lane): a multi-sun scene such as `sunlit-room` reports its engine per sun
+  (`sunlit-room/L1/sun60`), not per layer. `calibrate` reads every entry of a layer and fails closed when one
+  is missing or is not the owned engine. A run folder that already verifies is kept: the stamp names the
+  folder, so the same inputs were captured. A round that died on the second run resumes there.
+- 2026-10-21 (judge lane): `compareGiToUnreal` (`scripts/unreal-look/gi.ts`) hands the whole
+  `thresholds.json` to `compareCells` as one flat object. The per-layer limits sit under `layers.<name>`, so
+  no limit applies, and the IoU is set after the row was judged. All 24 rows of a live `cornell` compare carry
+  `pass: null`, so the GI compare reports and does not gate. `calibrate` applies `layers.L7` itself. The
+  harness fix belongs to the PRD-631 owner: it changes the exit code of every GI compare.

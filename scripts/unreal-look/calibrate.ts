@@ -12,6 +12,8 @@
  *     --dry-run                   check the inputs and print the plan
  *     --store <dir>               arms and rounds (default $TN_UNREAL_LOOK_ROUNDS)
  *     --scoreboard <dir>          default tools/unreal-reference/gi/parity
+ *   pnpm unreal-look:calibrate --status [--scene gi:<name>] [--tier <tier>] [--scoreboard <dir>]
+ *                                 where each scene stands: its latest round, gap list and parity (no GPU)
  *
  * Captures the ThreeNative cells (ID, L1 and the tier's L7 layer) once per run on the owned engine, keeps
  * them in the store under a stamp of everything that decides the pixels, so an arm is never captured
@@ -38,6 +40,7 @@ import {
   type IArmRef,
   type IMeasured,
   type IRegion,
+  type IRound,
   type IThresholdFile,
   adapterName,
   averageRuns,
@@ -61,7 +64,7 @@ const REFERENCE = path.join(REPO_ROOT, "tools/unreal-reference");
 const GI = path.join(REFERENCE, "gi");
 
 const USAGE =
-  "pnpm unreal-look:calibrate --scene gi:<name> --tier <low|medium|high> --before <commit> --unreal <dir> [--runs 2] [--expect improvement] [--capture-only] [--allow-red-direct-light] [--dry-run] [--store <dir>] [--scoreboard <dir>]";
+  "pnpm unreal-look:calibrate --scene gi:<name> --tier <low|medium|high> --before <commit> --unreal <dir> [--runs 2] [--expect improvement] [--capture-only] [--allow-red-direct-light] [--dry-run] [--store <dir>] [--scoreboard <dir>]\n  pnpm unreal-look:calibrate --status [--scene gi:<name>] [--tier <tier>] [--scoreboard <dir>]";
 
 /** One captured arm of the store: the runs of one tree (stamp) at one scene and tier. */
 export interface IArm {
@@ -211,6 +214,14 @@ function findArm(
 const frame = (run: string, scene: string, layer: string, pose: string) =>
   path.join(run, scene, layer, `${pose}.png`);
 
+/** The engine a capture reports for a layer: one `<scene>/<layer>` entry, or one per sun (`<scene>/<layer>/<sun>`). */
+function enginesOf(info: Record<string, { engine?: string }>, scene: string, layer: string) {
+  const own = `${scene}/${layer}`;
+  return Object.entries(info)
+    .filter(([key]) => key === own || key.startsWith(`${own}/`))
+    .map(([, entry]) => entry.engine);
+}
+
 /** Every frame of a run must exist, and the run must name an engine and a GPU adapter. */
 function verifyRun(
   run: string,
@@ -224,10 +235,11 @@ function verifyRun(
   const info = JSON.parse(readFileSync(file, "utf8")) as Record<string, { engine?: string }>;
   const adapter = adapterName((info as Record<string, unknown>).adapter);
   for (const layer of layers) {
-    if (layer !== "ID" && info[`${scene}/${layer}`]?.engine !== "threenative")
+    const engines = layer === "ID" ? [] : enginesOf(info, scene, layer);
+    if (layer !== "ID" && (engines.length === 0 || engines.some((e) => e !== "threenative")))
       fail(
         "WRONG_ENGINE",
-        `${scene}/${layer} did not draw on the owned engine (engine ${String(info[`${scene}/${layer}`]?.engine)})`,
+        `${scene}/${layer} did not draw on the owned engine (engine ${engines.map(String).join(", ") || "undefined"})`,
       );
     for (const pose of poses)
       if (!existsSync(frame(run, scene, layer, pose)))
@@ -235,6 +247,15 @@ function verifyRun(
   }
   return { engine: "threenative", adapter };
 }
+
+const verifies = (check: () => unknown): boolean => {
+  try {
+    check();
+    return true;
+  } catch {
+    return false;
+  }
+};
 
 async function ensureArm(
   deps: IDeps,
@@ -255,7 +276,9 @@ async function ensureArm(
   let seen = { engine: "", adapter: "" };
   for (let n = 1; n <= o.runs; n += 1) {
     const out = path.join(dir, `run${n}`);
-    await deps.capture({ scene: o.scene, layers, out });
+    // The stamp names the folder, so a run that verifies came from these inputs: a failed attempt resumes.
+    if (!verifies(() => verifyRun(out, o.scene, layers, poses)))
+      await deps.capture({ scene: o.scene, layers, out });
     seen = verifyRun(out, o.scene, layers, poses);
     runs.push(`run${n}`);
   }
@@ -418,10 +441,59 @@ function directLightOf(deps: IDeps, o: IOptions, after: { arm: IArm; dir: string
   return { ...directLight, overridden: true };
 }
 
+/** Where each scene stands: the latest round of every scene and tier on the scoreboard, with its gaps and parity. */
+function status(args: string[], deps: IDeps): number {
+  let values: ReturnType<typeof parseArgs>["values"];
+  try {
+    values = parseArgs({
+      args,
+      strict: true,
+      allowPositionals: false,
+      options: {
+        status: { type: "boolean" },
+        scene: { type: "string" },
+        tier: { type: "string" },
+        scoreboard: { type: "string" },
+      },
+    }).values;
+  } catch (error) {
+    return fail("BAD_INPUT", `${(error as Error).message}\n${USAGE}`);
+  }
+  const scene = typeof values.scene === "string" ? values.scene.replace(/^gi:/, "") : undefined;
+  const tier = typeof values.tier === "string" ? values.tier : undefined;
+  if (tier !== undefined) tierLayer(tier);
+  const dir = path.resolve(String(values.scoreboard ?? path.join(GI, "parity")));
+  const rounds = readRounds(dir).filter(
+    (round) =>
+      (scene === undefined || round.scene === scene) && (tier === undefined || round.tier === tier),
+  );
+  if (rounds.length === 0) {
+    deps.log(
+      `no round on the scoreboard (${dir}) for ${scene ?? "any scene"} at ${tier ?? "any tier"}`,
+    );
+    return 0;
+  }
+  const groups = new Map<string, IRound[]>();
+  for (const round of rounds) {
+    const key = `${round.scene} ${round.tier}`;
+    groups.set(key, [...(groups.get(key) ?? []), round]);
+  }
+  for (const [, group] of [...groups].sort(([a], [b]) => a.localeCompare(b))) {
+    const [latest] = [...group].sort((a, b) => b.date.localeCompare(a.date));
+    if (latest === undefined) continue;
+    const poses = latest.cells.map((cell) => cell.pose);
+    deps.log(
+      `${group.length} round(s)\n${report(latest, parity(group, latest.scene, latest.tier, poses))}\n`,
+    );
+  }
+  return 0;
+}
+
 export async function main(
   args = process.argv.slice(2),
   deps: IDeps = defaultDeps(),
 ): Promise<number> {
+  if (args.includes("--status")) return status(args, deps);
   if (args.includes("--help")) {
     deps.log(
       `${USAGE}\n\nOne calibration round on a GI scene: capture, numbers, sheets, a fresh judge, the scoreboard.`,

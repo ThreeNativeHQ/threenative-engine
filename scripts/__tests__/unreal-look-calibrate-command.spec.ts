@@ -46,6 +46,10 @@ function world(options: { omitUnreal?: string } = {}) {
     judgeCode: 0,
     verdict: undefined as unknown,
     layers: ["ID", "L1", "L7", "L7-high", "L7-medium", "L7-low"],
+    /** A multi-sun scene reports one engine per sun: `<scene>/<layer>/<sun>` (the sunlit-room scene). */
+    suns: undefined as Record<string, string> | undefined,
+    /** The run folder whose capture dies before it writes anything. */
+    dieOn: undefined as string | undefined,
   };
   const calls = {
     capture: [] as { layers: string[]; out: string }[],
@@ -53,6 +57,15 @@ function world(options: { omitUnreal?: string } = {}) {
     sheet: [] as string[],
   };
   const log: string[] = [];
+  const report = (job: { scene: string; layers: string[] }): Record<string, unknown> => {
+    const out: Record<string, unknown> = { adapter: behaviour.adapter };
+    const engines = behaviour.suns
+      ? Object.entries(behaviour.suns).map(([sun, engine]) => [`/${sun}`, engine] as const)
+      : [["", behaviour.engine] as const];
+    for (const layer of job.layers)
+      for (const [suffix, engine] of engines) out[`${job.scene}/${layer}${suffix}`] = { engine };
+    return out;
+  };
   const deps: IDeps = {
     captureLayers: async () => behaviour.layers,
     state: async () => ({ ...state }),
@@ -63,6 +76,7 @@ function world(options: { omitUnreal?: string } = {}) {
     },
     capture: async (job) => {
       calls.capture.push({ layers: job.layers, out: job.out });
+      if (path.basename(job.out) === behaviour.dieOn) throw new Error("the browser crashed");
       for (const layer of job.layers)
         for (const pose of POSES) {
           const file = path.join(job.out, job.scene, layer, `${pose}.png`);
@@ -70,10 +84,7 @@ function world(options: { omitUnreal?: string } = {}) {
           mkdirSync(path.dirname(file), { recursive: true });
           writeFileSync(file, PIXEL);
         }
-      const report: Record<string, unknown> = { adapter: behaviour.adapter };
-      for (const layer of job.layers)
-        report[`${job.scene}/${layer}`] = { engine: behaviour.engine };
-      writeFileSync(path.join(job.out, "gi-capture.json"), JSON.stringify(report));
+      writeFileSync(path.join(job.out, "gi-capture.json"), JSON.stringify(report(job)));
     },
     compare: (scene, layer): IMeasured[] =>
       POSES.map((pose) => ({
@@ -198,6 +209,33 @@ describe("main", () => {
     for (const w of [missing, unnamed, software, wrong]) expect(w.calls.judge).toEqual([]);
   });
 
+  it("reads the engine of a multi-sun scene from its per-sun keys, and fails closed when one sun is off the owned engine", async () => {
+    const w = world();
+    w.behaviour.suns = { sun60: "threenative", sun15: "threenative" };
+    expect(await main(w.argv(["--capture-only"]), w.deps)).toBe(0);
+    expect(w.calls.capture).toHaveLength(2);
+    const wrong = world();
+    wrong.behaviour.suns = { sun60: "threenative", sun15: "threejs" };
+    await expect(main(wrong.argv(), wrong.deps)).rejects.toThrow(
+      /WRONG_ENGINE.*cornell\/L1.*threejs/,
+    );
+    const none = world();
+    none.behaviour.suns = {};
+    await expect(main(none.argv(), none.deps)).rejects.toThrow(
+      /WRONG_ENGINE.*cornell\/L1.*undefined/,
+    );
+  });
+
+  it("keeps a run that already verifies, so a failed attempt resumes at the run that died", async () => {
+    const w = world();
+    w.behaviour.dieOn = "run2";
+    await expect(main(w.argv(["--capture-only"]), w.deps)).rejects.toThrow(/browser crashed/);
+    expect(w.calls.capture.map((c) => path.basename(c.out))).toEqual(["run1", "run2"]);
+    w.behaviour.dieOn = undefined;
+    expect(await main(w.argv(["--capture-only"]), w.deps)).toBe(0);
+    expect(w.calls.capture.map((c) => path.basename(c.out))).toEqual(["run1", "run2", "run2"]);
+  });
+
   it("runs the baseline round on one arm: two runs, numbers, sheets, a judge, a scoreboard entry", async () => {
     const w = world();
     const code = await main(w.argv(), w.deps);
@@ -247,6 +285,26 @@ describe("main", () => {
     ]);
     expect(first[2].sub).toBe("aaaaaaa · nvidia turing · run1");
     expect(spec.sheets[0].rows).toHaveLength(2);
+  });
+
+  it("--status prints the latest round, the gap list and the parity of each scene, and needs no capture", async () => {
+    const w = world();
+    const board = ["--scoreboard", path.join(w.root, "parity")];
+    expect(await main(["--status", ...board], w.deps)).toBe(0);
+    expect(w.log.join("\n")).toMatch(/no round on the scoreboard .* any scene at any tier/);
+    expect(await main(w.argv(), w.deps)).toBe(0);
+    w.log.length = 0;
+    const captures = w.calls.capture.length;
+    expect(await main(["--status", ...board], w.deps)).toBe(0);
+    const text = w.log.join("\n");
+    expect(text).toMatch(/1 round\(s\)\nROUND .*-cornell-high-1111111/);
+    expect(text).toMatch(/GAP LIST/);
+    expect(text).toMatch(/PARITY cornell high: OPEN/);
+    expect(w.calls.capture).toHaveLength(captures);
+    w.log.length = 0;
+    await main(["--status", ...board, "--scene", "gi:cornell", "--tier", "medium"], w.deps);
+    expect(w.log.join("\n")).toMatch(/no round .* for cornell at medium/);
+    await expect(main(["--status", "--tier", "ultra"], w.deps)).rejects.toThrow(/BAD_INPUT.*ultra/);
   });
 
   it("never captures an arm twice: the second round reuses the stored runs", async () => {
