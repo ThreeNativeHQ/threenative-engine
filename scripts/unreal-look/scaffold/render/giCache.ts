@@ -346,6 +346,16 @@ function weightsAt(field: IField, point: Vector3, sees?: (probe: number) => bool
   let sum = 0;
   for (let corner = 0; corner < 8; corner += 1) {
     if (corner !== best && !reaches(corner)) cornerWeight[corner] = 0;
+    // Every other probe it blends must be in sight too: under the sunlit room's window, a texel below the sill took the
+    // probe 5 cm over the sun-lit sill top, round the sill through the opening, and read 3.7x the path trace.
+    if (
+      cut &&
+      sees !== undefined &&
+      corner !== best &&
+      (cornerWeight[corner] ?? 0) > 0 &&
+      !sees(probeOf(corner))
+    )
+      cornerWeight[corner] = 0;
     sum += cornerWeight[corner] ?? 0;
   }
   if (sum <= 1e-9) {
