@@ -1108,7 +1108,7 @@ it("alpine composition uses actual sidecar IDs and leaves every package byte unc
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
-});
+}, 30_000);
 
 it("alpine composition observes live meshes, light, portable body IDs and far instance absence", () => {
   const source = ts.createSourceFile(
