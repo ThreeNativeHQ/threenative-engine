@@ -1,0 +1,357 @@
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { PNG } from "pngjs";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { type IDeps, main } from "../unreal-look/calibrate.js";
+import type { IMeasured } from "../unreal-look/calibrateRound.js";
+
+const roots: string[] = [];
+afterEach(() => {
+  vi.restoreAllMocks();
+  for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
+});
+
+const PIXEL = PNG.sync.write(new PNG({ width: 1, height: 1 }));
+const POSES = ["cornell", "corner"];
+const COMMIT = "a".repeat(40);
+const ADAPTER = { vendor: "nvidia", architecture: "turing", device: "", description: "" };
+
+/** A temp world: an Unreal tree, a store, a scoreboard, and fakes for everything that needs a GPU or a model. */
+function world(options: { omitUnreal?: string } = {}) {
+  const root = mkdtempSync(path.join(tmpdir(), "unreal-look-calibrate-"));
+  roots.push(root);
+  const unreal = path.join(root, "unreal");
+  for (const variant of ["ID", "L1", "L7-Epic", "L7-Medium", "L7-Low"])
+    for (const pose of POSES) {
+      const file = path.join(unreal, "cornell", variant, `${pose}.png`);
+      if (file.endsWith(options.omitUnreal ?? "\0")) continue;
+      mkdirSync(path.dirname(file), { recursive: true });
+      writeFileSync(file, PIXEL);
+    }
+  const state = { commit: COMMIT, dirty: false, stamp: "1".repeat(64) };
+  const behaviour = {
+    adapter: ADAPTER as unknown,
+    engine: "threenative",
+    skip: undefined as string | undefined,
+    directLightOk: true,
+    judgeCode: 0,
+    verdict: undefined as unknown,
+    layers: ["ID", "L1", "L7", "L7-medium", "L7-low"],
+  };
+  const calls = {
+    capture: [] as { layers: string[]; out: string }[],
+    judge: [] as string[][],
+    sheet: [] as string[],
+  };
+  const log: string[] = [];
+  const deps: IDeps = {
+    captureLayers: async () => behaviour.layers,
+    state: async () => ({ ...state }),
+    resolve: (ref) => {
+      if (ref === "HEAD") return state.commit;
+      if (/^[0-9a-f]{40}$/.test(ref)) return ref;
+      throw new Error(`unknown ref ${ref}`);
+    },
+    capture: async (job) => {
+      calls.capture.push({ layers: job.layers, out: job.out });
+      for (const layer of job.layers)
+        for (const pose of POSES) {
+          const file = path.join(job.out, job.scene, layer, `${pose}.png`);
+          if (file.endsWith(behaviour.skip ?? "\0")) continue;
+          mkdirSync(path.dirname(file), { recursive: true });
+          writeFileSync(file, PIXEL);
+        }
+      const report: Record<string, unknown> = { adapter: behaviour.adapter };
+      for (const layer of job.layers)
+        report[`${job.scene}/${layer}`] = { engine: behaviour.engine };
+      writeFileSync(path.join(job.out, "gi-capture.json"), JSON.stringify(report));
+    },
+    compare: (scene, layer): IMeasured[] =>
+      POSES.map((pose) => ({
+        cell: `${scene}/${pose}`,
+        region: "Back",
+        deltaE: layer === "L1" && !behaviour.directLightOk ? 4 : 0.4,
+        dP50: 0.004,
+        dEv50: 0.01,
+        iou: 0.99,
+      })),
+    judge: async (args) => {
+      calls.judge.push(args);
+      const out = args[args.indexOf("--out") + 1] as string;
+      const frames = POSES.map((pose) => ({
+        id: `cornell/L7/${pose}`,
+        verdict: "NEUTRAL",
+        vsUnreal: pose === "corner" ? "MATCH" : "CLOSE",
+        reasons: "same lighting",
+        differences: pose === "corner" ? "" : "the red tint is weaker",
+      }));
+      writeFileSync(
+        out,
+        JSON.stringify(
+          behaviour.verdict ?? {
+            status: "COMPLETE",
+            model: "claude-sonnet-5-5",
+            sessionId: "s1",
+            costUsd: 0.3,
+            durationMs: 5000,
+            criteria: { sha256: "abc" },
+            frames,
+            overall: { verdict: "NEUTRAL", vsUnreal: "CLOSE", reasons: "one cell is close" },
+          },
+        ),
+      );
+      return behaviour.judgeCode;
+    },
+    sheet: async (spec) => {
+      calls.sheet.push(spec);
+    },
+    now: () => new Date("2026-10-21T14:05:12.000Z"),
+    log: (line) => log.push(line),
+  };
+  const argv = (
+    extra: string[] = [],
+    base = ["--scene", "gi:cornell", "--tier", "high", "--before", "HEAD"],
+  ) => [
+    ...base,
+    "--unreal",
+    unreal,
+    "--store",
+    path.join(root, "store"),
+    "--scoreboard",
+    path.join(root, "parity"),
+    ...extra,
+  ];
+  return { root, deps, state, behaviour, calls, log, argv, unreal };
+}
+
+describe("main", () => {
+  it("prints the usage on --help", async () => {
+    const w = world();
+    expect(await main(["--help"], w.deps)).toBe(0);
+    expect(w.log.join("\n")).toMatch(/unreal-look:calibrate --scene gi:<name> --tier/);
+  });
+
+  it("refuses a bad scene, tier, run count, expectation or a missing --before", async () => {
+    const w = world();
+    const run = (extra: string[], base?: string[]) => main(w.argv(extra, base), w.deps);
+    await expect(run([], ["--tier", "high", "--before", "HEAD"])).rejects.toThrow(
+      /BAD_INPUT.*--scene/,
+    );
+    await expect(
+      run([], ["--scene", "gi:nowhere", "--tier", "high", "--before", "HEAD"]),
+    ).rejects.toThrow(/BAD_INPUT.*nowhere/);
+    await expect(
+      run([], ["--scene", "shadow:lamp-room", "--tier", "high", "--before", "HEAD"]),
+    ).rejects.toThrow(/BAD_INPUT/);
+    await expect(
+      run([], ["--scene", "gi:cornell", "--tier", "ultra", "--before", "HEAD"]),
+    ).rejects.toThrow(/BAD_INPUT.*ultra/);
+    await expect(run(["--runs", "1"])).rejects.toThrow(/TOO_FEW_RUNS/);
+    await expect(run(["--expect", "better"])).rejects.toThrow(/BAD_INPUT.*--expect/);
+    await expect(run([], ["--scene", "gi:cornell", "--tier", "high"])).rejects.toThrow(
+      /BAD_INPUT.*--before/,
+    );
+    expect(w.calls.capture).toEqual([]);
+  });
+
+  it("fails before any capture when the harness lacks the tier layer or Unreal lacks a frame", async () => {
+    const w = world();
+    w.behaviour.layers = ["ID", "L1", "L7"];
+    await expect(
+      main(w.argv(["--tier", "medium"], ["--scene", "gi:cornell", "--before", "HEAD"]), w.deps),
+    ).rejects.toThrow(/BAD_INPUT|NO_TIER_LAYER/);
+    await expect(
+      main(w.argv([], ["--scene", "gi:cornell", "--tier", "medium", "--before", "HEAD"]), w.deps),
+    ).rejects.toThrow(/NO_TIER_LAYER.*L7-medium/);
+    const lacking = world({ omitUnreal: "L7-Epic/corner.png" });
+    await expect(main(lacking.argv(), lacking.deps)).rejects.toThrow(
+      /MISSING_CELL.*L7-Epic\/corner.png/,
+    );
+    expect(w.calls.capture).toEqual([]);
+    expect(lacking.calls.capture).toEqual([]);
+  });
+
+  it("captures ID, L1 and the tier layer twice, and fails closed on a missing cell, an unnamed adapter or the wrong engine", async () => {
+    const missing = world();
+    missing.behaviour.skip = "L7/corner.png";
+    await expect(main(missing.argv(), missing.deps)).rejects.toThrow(
+      /MISSING_CELL.*L7\/corner.png/,
+    );
+    const unnamed = world();
+    unnamed.behaviour.adapter = { vendor: "", architecture: "", device: "", description: "" };
+    await expect(main(unnamed.argv(), unnamed.deps)).rejects.toThrow(/UNNAMED_ADAPTER/);
+    const software = world();
+    software.behaviour.adapter = { vendor: "google", description: "SwiftShader" };
+    await expect(main(software.argv(), software.deps)).rejects.toThrow(/SOFTWARE_ADAPTER/);
+    const wrong = world();
+    wrong.behaviour.engine = "threejs";
+    await expect(main(wrong.argv(), wrong.deps)).rejects.toThrow(/WRONG_ENGINE.*cornell\/L1/);
+    for (const w of [missing, unnamed, software, wrong]) expect(w.calls.judge).toEqual([]);
+  });
+
+  it("runs the baseline round on one arm: two runs, numbers, sheets, a judge, a scoreboard entry", async () => {
+    const w = world();
+    const code = await main(w.argv(), w.deps);
+    expect(code).toBe(0);
+    expect(w.calls.capture.map((c) => [c.layers, path.basename(c.out)])).toEqual([
+      [["ID", "L1", "L7"], "run1"],
+      [["ID", "L1", "L7"], "run2"],
+    ]);
+    const args = w.calls.judge[0] as string[];
+    const values = (flag: string) => args.flatMap((a, i) => (a === flag ? [args[i + 1]] : []));
+    expect(values("--before").map((d) => path.basename(String(d)))).toEqual(["run1", "run2"]);
+    expect(values("--after")).toEqual(values("--before"));
+    expect(values("--tier")).toEqual(["high"]);
+    expect(values("--layer")).toEqual(["L7"]);
+    expect(values("--unreal")).toEqual([w.unreal]);
+    const criteria = readFileSync(String(values("--criteria")[0]), "utf8");
+    expect(criteria).toMatch(/Criteria for cornell at tier high/);
+    expect(criteria).toMatch(/Numbers \(where to look; decide from the images\)/);
+
+    const files = readdirSync(path.join(w.root, "parity"));
+    expect(files).toEqual(["20261021T140512Z-cornell-high-1111111.json"]);
+    const round = JSON.parse(readFileSync(path.join(w.root, "parity", files[0] as string), "utf8"));
+    expect(round).toMatchObject({
+      scene: "cornell",
+      tier: "high",
+      engine: "threenative",
+      adapter: "nvidia turing",
+      directLight: { pass: true, overridden: false },
+    });
+    expect(
+      round.cells.map((c: { pose: string; vsUnreal: string }) => [c.pose, c.vsUnreal]),
+    ).toEqual([
+      ["cornell", "CLOSE"],
+      ["corner", "MATCH"],
+    ]);
+    const text = w.log.join("\n");
+    expect(text).toMatch(/GAP LIST[\s\S]*cornell CLOSE/);
+    expect(text).toMatch(/PARITY cornell high: OPEN/);
+
+    const spec = JSON.parse(readFileSync(String(w.calls.sheet[0]), "utf8"));
+    expect(spec.sheets).toHaveLength(2);
+    const [first] = spec.sheets[0].rows;
+    expect(first.map((tile: { label: string }) => tile.label)).toEqual([
+      "UNREAL 5.8.3 · L7-Epic · cornell",
+      "WASM ENGINE BEFORE · L7 · high · cornell",
+      "WASM ENGINE AFTER · L7 · high · cornell",
+    ]);
+    expect(first[2].sub).toBe("aaaaaaa · nvidia turing · run1");
+    expect(spec.sheets[0].rows).toHaveLength(2);
+  });
+
+  it("never captures an arm twice: the second round reuses the stored runs", async () => {
+    const w = world();
+    await main(w.argv(), w.deps);
+    const captures = w.calls.capture.length;
+    await main(w.argv(), w.deps);
+    expect(w.calls.capture).toHaveLength(captures);
+    expect(w.log.join("\n")).toMatch(/reusing 2 runs/);
+  });
+
+  it("finds the BEFORE arm of another commit in the store, and says how to make one when it is missing", async () => {
+    const w = world();
+    const earlier = "b".repeat(40);
+    await expect(
+      main(w.argv([], ["--scene", "gi:cornell", "--tier", "high", "--before", earlier]), w.deps),
+    ).rejects.toThrow(/NO_BEFORE.*bbbbbbb.*--capture-only/s);
+    expect(w.calls.capture).toEqual([]);
+    // The tree at the earlier commit captures its arm once.
+    w.state.commit = earlier;
+    w.state.stamp = "2".repeat(64);
+    expect(
+      await main(w.argv(["--capture-only"], ["--scene", "gi:cornell", "--tier", "high"]), w.deps),
+    ).toBe(0);
+    expect(w.calls.judge).toEqual([]);
+    expect(readdirSync(path.join(w.root, "store", "arms"))).toEqual(["222222222222"]);
+    // The change is made: a new commit and stamp.
+    w.state.commit = COMMIT;
+    w.state.stamp = "1".repeat(64);
+    expect(
+      await main(
+        w.argv([], ["--scene", "gi:cornell", "--tier", "high", "--before", earlier]),
+        w.deps,
+      ),
+    ).toBe(0);
+    const args = w.calls.judge[0] as string[];
+    const before = args.flatMap((a, i) => (a === "--before" ? [String(args[i + 1])] : []));
+    const after = args.flatMap((a, i) => (a === "--after" ? [String(args[i + 1])] : []));
+    expect(before[0]).toContain("222222222222");
+    expect(after[0]).toContain("111111111111");
+    const round = JSON.parse(
+      readFileSync(
+        path.join(w.root, "parity", readdirSync(path.join(w.root, "parity"))[0] as string),
+        "utf8",
+      ),
+    );
+    expect(round.before).toMatchObject({ commit: earlier, dirty: false });
+    expect(round.after).toMatchObject({ commit: COMMIT });
+  });
+
+  it("stops on red direct light unless the override is given, and records the override", async () => {
+    const w = world();
+    w.behaviour.directLightOk = false;
+    await expect(main(w.argv(), w.deps)).rejects.toThrow(/DIRECT_LIGHT_RED.*PRD-646/s);
+    expect(w.calls.judge).toEqual([]);
+    expect(existsSync(path.join(w.root, "parity"))).toBe(false);
+    expect(await main(w.argv(["--allow-red-direct-light"]), w.deps)).toBe(0);
+    const [file] = readdirSync(path.join(w.root, "parity"));
+    const round = JSON.parse(readFileSync(path.join(w.root, "parity", String(file)), "utf8"));
+    expect(round.directLight).toMatchObject({ pass: false, overridden: true });
+    expect(w.log.join("\n")).toMatch(/direct light RED.*overridden/s);
+  });
+
+  it("returns the judge's exit code 2 for a REGRESSION and still records the round", async () => {
+    const w = world();
+    w.behaviour.judgeCode = 2;
+    expect(await main(w.argv(), w.deps)).toBe(2);
+    expect(readdirSync(path.join(w.root, "parity"))).toHaveLength(1);
+  });
+
+  it("writes no scoreboard entry when the verdict file is not complete or misses a cell", async () => {
+    const failed = world();
+    failed.behaviour.verdict = { status: "FAILED", error: "boom" };
+    await expect(main(failed.argv(), failed.deps)).rejects.toThrow(/BAD_VERDICT.*FAILED/);
+    expect(existsSync(path.join(failed.root, "parity"))).toBe(false);
+    const partial = world();
+    partial.behaviour.verdict = {
+      status: "COMPLETE",
+      frames: [
+        {
+          id: "cornell/L7/cornell",
+          verdict: "NEUTRAL",
+          vsUnreal: "MATCH",
+          reasons: "x",
+          differences: "",
+        },
+      ],
+      overall: { verdict: "NEUTRAL", vsUnreal: "MATCH", reasons: "x" },
+    };
+    await expect(main(partial.argv(), partial.deps)).rejects.toThrow(/MISSING_CELL.*corner/);
+  });
+
+  it("captures an arm and stops on --capture-only, and plans without a capture on --dry-run", async () => {
+    const w = world();
+    expect(
+      await main(w.argv(["--capture-only"], ["--scene", "gi:cornell", "--tier", "high"]), w.deps),
+    ).toBe(0);
+    expect(w.calls.capture).toHaveLength(2);
+    expect(w.calls.judge).toEqual([]);
+    const fresh = world();
+    expect(await main(fresh.argv(["--dry-run"]), fresh.deps)).toBe(0);
+    expect(fresh.calls.capture).toEqual([]);
+    expect(fresh.calls.judge).toEqual([]);
+    expect(fresh.log.join("\n")).toMatch(
+      /dry run: cornell tier high layer L7, 2 poses \(cornell, corner\)/,
+    );
+  });
+});

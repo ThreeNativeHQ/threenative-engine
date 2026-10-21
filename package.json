@@ -85,6 +85,7 @@
     "test:tone": "sh scripts/xvfb.sh tsx scripts/verify-tone-exposure.ts",
     "test:vfx-gallery": "pnpm --filter @threenative/playtest build && pnpm --filter @threenative/core build && pnpm --filter vfx-gallery build && tsx scripts/vfx-gallery-visual.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json && pnpm -r --if-present run typecheck",
+    "unreal-look:calibrate": "tsx scripts/unreal-look/calibrate.ts",
     "unreal-look:capture": "tsx scripts/unreal-look/capture.ts",
     "unreal-look:compare": "tsx scripts/unreal-look/compare.ts",
     "unreal-look:curve": "tsx scripts/unreal-look/curve.ts",

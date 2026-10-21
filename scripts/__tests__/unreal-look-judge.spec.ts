@@ -214,6 +214,17 @@ describe("collectFrames", () => {
       );
     });
 
+    it("takes the tier of a ThreeNative tier layer (L7-medium) and fails closed on another tier", () => {
+      const mediumFrames = ["sunlit-room/L7-medium/sun60-window.png"];
+      const f = filled(mediumFrames, unreal);
+      const [frame] = collectFrames(f.sets(), { tier: "medium" });
+      expect(frame).toMatchObject({ id: "sunlit-room/L7/sun60-window", unrealName: "L7-Medium" });
+      expect(() => collectFrames(f.sets(), { tier: "high" })).toThrow(
+        /TIER_MISMATCH.*before run 1.*medium tier.*tier high/s,
+      );
+      expect(() => collectFrames(f.sets(), { tier: "low" })).toThrow(/TIER_MISMATCH/);
+    });
+
     it("defaults to high, the tier the PRD-647 baselines use", () => {
       const f = filled(["sunlit-room/L7/sun60-window.png"], unreal);
       expect(collectFrames(f.sets())[0]?.unrealName).toBe("L7-Epic");
