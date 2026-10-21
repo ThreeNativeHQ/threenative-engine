@@ -588,6 +588,32 @@
       "required": true
     },
     {
+      "id": "masked-shadow-caster",
+      "title": "alpha-tested caster casts its cut",
+      "category": "shadows",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/masked-shadow-caster.js",
+      "tolerance": {
+        "pixelMismatchRatio": 0.08,
+        "perceptualDeltaE": 10.0
+      },
+      "desktopGate": false,
+      "required": true
+    },
+    {
+      "id": "soft-shadow-source-radius",
+      "title": "lamp source-radius soft shadow",
+      "category": "shadows",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/soft-shadow-source-radius.js",
+      "tolerance": {
+        "pixelMismatchRatio": 0.08,
+        "perceptualDeltaE": 10.0
+      },
+      "desktopGate": false,
+      "required": true
+    },
+    {
       "id": "40-texture-png",
       "title": "texture png",
       "category": "assets",
