@@ -112,6 +112,11 @@ export interface IGiOptions {
    * direction. Set, in metres, the cache does that and carries no surface light. Unset, it gathers radiance.
    */
   readonly skyShadowDistance?: number;
+  /**
+   * Unreal's `r.SkylightIntensityMultiplier`: a factor on the sky's radiance in the bake. Its Low tier of global
+   * illumination sets 0.8 (Engine/Config/BaseScalability.ini, `[GlobalIlluminationQuality@0]`). Unset is 1.
+   */
+  readonly skyIntensity?: number;
   /** Cast the bake's rays through `ctx.raycast` instead of the flat triangle hierarchy: the slow path, kept for an A/B. */
   readonly stockRays?: boolean;
   /**
@@ -1173,11 +1178,16 @@ export function installGi(
   const sun = options.sun;
   if (skyRadiance.current === undefined && sun === undefined && lights.length === 0)
     return undefined;
-  const sky = skyRadiance.current ?? {
+  const baked = skyRadiance.current ?? {
     data: new Float32Array(3),
     width: 1,
     height: 1,
     scale: [1, 1, 1],
+  };
+  const skyGain = options.skyIntensity ?? 1;
+  const sky = {
+    ...baked,
+    scale: baked.scale.map((c) => c * skyGain) as [number, number, number],
   };
   const started = performance.now();
   // The bake's own ray query; `stockRays` keeps the game's `ctx.raycast` for an A/B.
