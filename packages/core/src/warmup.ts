@@ -764,14 +764,19 @@ function nodeHasReflector(root: unknown, depth: number): boolean {
 
 function hasReflector(scene: Object3D): boolean {
   const stack: Object3D[] = [scene];
+  // A material is read once however many objects draw with it: on the engine, every field of its
+  // values is a call into the host.
+  const read = new Set<object>();
   while (stack.length > 0) {
     const object = stack.pop() as Object3D & { material?: unknown };
     const material = object.material;
     if (
       typeof material === "object" &&
       material !== null &&
-      (material as { isNodeMaterial?: boolean }).isNodeMaterial === true
+      (material as { isNodeMaterial?: boolean }).isNodeMaterial === true &&
+      !read.has(material)
     ) {
+      read.add(material);
       for (const value of Object.values(material as Record<string, unknown>)) {
         if (nodeHasReflector(value, 0)) return true;
       }
