@@ -87,6 +87,30 @@ export function referencePoses(reference = REFERENCE): Record<string, readonly I
   return poses;
 }
 
+/**
+ * The ID layer is a classification image, not a picture: a multisampled edge blends two region colours
+ * into a third pixel, and some pairs blend into the colour of a third region (the cornell lamp shade
+ * read as 372 pixels of the green wall's edge). Unreal draws its ID frames aliased, so the page draws
+ * the ID layer on a single-sampled surface too: `?layer=ID` (calibration scenes) and `?tnRef=ID`
+ * (the reference scene) switch `renderer.antialias` off. Idempotent, so a reused scaffold gets it too.
+ */
+export const ID_LAYER_ANTIALIAS =
+  'antialias: !/[?&](layer|tnRef)=ID(&|$)/.test(globalThis.location?.search ?? ""),';
+async function idLayerIsAliased(target: string): Promise<void> {
+  const config = path.join(target, "threenative.config.ts");
+  const source = await readFile(config, "utf8");
+  if (source.includes(ID_LAYER_ANTIALIAS)) return;
+  await writeFile(
+    config,
+    replaceOnce(
+      source,
+      "alphaAntialiasing: true,",
+      `alphaAntialiasing: true,\n    ${ID_LAYER_ANTIALIAS}`,
+      config,
+    ),
+  );
+}
+
 /** Applies the harness patches to a scaffolded starter; fails closed when the template moved. */
 async function patchScaffold(target: string, fresh: boolean, baseline: boolean): Promise<void> {
   // The look under tuning: these files replace the template's own in the copy only. A tuned
@@ -118,6 +142,7 @@ async function patchScaffold(target: string, fresh: boolean, baseline: boolean):
   await mkdir(path.join(target, "assets/unreal-reference"), { recursive: true });
   for (const file of ["scene.glb", "scene-id.glb"])
     await cp(path.join(REFERENCE, file), path.join(target, "assets/unreal-reference", file));
+  await idLayerIsAliased(target);
   if (!fresh) return;
   const game = path.join(target, "src/game.ts");
   let source = await readFile(game, "utf8");
