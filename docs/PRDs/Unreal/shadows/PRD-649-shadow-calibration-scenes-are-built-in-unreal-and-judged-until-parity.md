@@ -103,12 +103,12 @@ each frame. Only `scene.py`, `scene.glb`, `scene.json`, `criteria.md`, `scenes.j
 **Files:** `scripts/unreal-look/capture.ts`, `scripts/unreal-look/compare.ts`, `scripts/unreal-look/penumbra.ts`, `tools/unreal-reference/shadow/scenes.json` (new), `tools/unreal-reference/shadow/penumbra-lab/` (new), `scripts/__tests__/unreal-look-calibrate.spec.ts`
 - [ ] `--scene shadow:<name>` resolves a scene of either family, and fails closed on an unknown name, a missing `criteria.md` and an L5 cell captured with GI on. proof: `pnpm exec vitest run scripts/__tests__/unreal-look-calibrate.spec.ts`.
 - [ ] The contact-gap metric reads 0 for a box resting on the floor and grows with the gap on a lifted box, in Unreal frames of `penumbra-lab/contact`. proof: `pnpm unreal-look:compare --scene shadow:penumbra-lab --metric contact`.
-- [ ] Unreal captures `penumbra-lab` at L5 and L9 for every pose and sun, with a region-ID frame. proof: `UE_ROOT=<install> pnpm unreal-look:capture --engine unreal --scene shadow:penumbra-lab`.
+- [x] Unreal captures `penumbra-lab` at L5 and L9 for every pose and sun, with a region-ID frame. proof: `UE_ROOT=<install> pnpm unreal-look:capture --engine unreal --scene shadow:penumbra-lab`. Evidence: 2026-10-20 commit bd369168d, "L5 cells=18 readback ok" and "L9 cells=18 readback ok"; copied captures read back by `compare --metric penumbra` on 2026-10-21 (9 poses).
 
 #### Phase 2: The lamp, horizon and foliage scenes, and the ablations
 **Status:** NOT STARTED
 **Files:** `tools/unreal-reference/shadow/lamp-room/` (new), `tools/unreal-reference/shadow/horizon/` (new), `tools/unreal-reference/gi/foliage/` (shared with PRD-643), `scripts/unreal-look/compare.ts` (the `--ablation` pair)
-- [ ] Unreal captures `lamp-room` and its `swing` run. proof: `pnpm unreal-look:capture --engine unreal --scene shadow:lamp-room`.
+- [ ] Unreal captures `lamp-room` and its `swing` run. proof: `pnpm unreal-look:capture --engine unreal --scene shadow:lamp-room`. Open: `lamp-room` is built and captured at L5 and L9 for its four poses (2026-10-21, "shadow:lamp-room ID cells=4 readback ok", exit 0); the `swing` run is not authored, so the box stays open.
 - [ ] Unreal captures `horizon` with its `walk` and `sunturn` runs. proof: `pnpm unreal-look:capture --engine unreal --scene shadow:horizon`.
 - [ ] The three ablation pairs are captured, and each result is recorded under `## Decisions` with its region deltas. proof: `pnpm unreal-look:compare --scene shadow:<name> --ablation <cvar>`.
 
@@ -125,3 +125,7 @@ each frame. Only `scene.py`, `scene.glb`, `scene.json`, `criteria.md`, `scenes.j
   parity, with screenshots on the PR. One scene may hold several PRDs' features.
 - 2026-10-20 (slicing): this PRD extends the PRD-638/646/647 pipeline with a family and does not
   copy it. Shadows are judged at L5, not L7, so a GI change cannot pass as a shadow change.
+- 2026-10-21 (lane): `pnpm unreal-look:compare --scene shadow:<name> --layer L5 --metric penumbra` prints the
+  floor edge widths per pose. BEFORE baseline on `penumbra-lab` (TN / UE, median 10 to 90 percent width):
+  sun 60 heights 0.64, contact 1.08, ramp 1.33; sun 15 1.14, 2.20, 2.74; sun 4 1.71, 3.27, 1.92. Two runs agree.
+  `lamp-room` adds SpotLight to the pipeline (target and cone angles in scene.json, `validateSceneExport`).
