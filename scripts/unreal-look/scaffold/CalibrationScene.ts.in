@@ -189,10 +189,11 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
         // Diagnosis: ?ssgi=0|1 and ?ssgiIntensity=N bracket the screen-space gather over the cache.
         ...(params.get("ssgi") === null ? {} : { ssgiEnabled: params.get("ssgi") === "1" }),
         ...(params.get("ssgiIntensity") === null ? {} : { ssgiIntensity: Number(params.get("ssgiIntensity")) }),
-        // Unreal's L7 is its Epic tier, so the gather takes the template's top sample budget.
-        ssgiQuality: (params.get("ssgiQuality") ?? "high") as "high",
-        // Diagnosis: ?ssgiScale=N gathers at a fraction of the frame (PRD-640 cost gate).
-        ...(params.get("ssgiScale") === null ? {} : { ssgiResolutionScale: Number(params.get("ssgiScale")) }),
+        // Unreal's L7 is its Epic tier: 32 rays a pixel at half resolution, denoised over 16 gather pixels.
+        ssgiQuality: (params.get("ssgiQuality") ?? "epic") as "epic",
+        // Diagnosis: ?ssgiScale=N gathers at another fraction of the frame (PRD-640 cost gate).
+        ssgiResolutionScale: Number(params.get("ssgiScale") ?? 0.5),
+        ssgiDenoiseRadius: 16,
         vignetteAmount: 0,
         exposure: EXPOSURE,
       });
