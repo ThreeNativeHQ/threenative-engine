@@ -209,7 +209,10 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
             moverMapSize: 512,
             // Diagnosis knob recvBias=0: authored bias only (does the seam line come from the plane slope?).
             receiverPlaneBias: params.get("recvBias") !== "0",
-            resolutionLodBiasDirectional: SHADOW.resolutionLodBiasDirectional,
+            // Diagnosis knob shadowBias=N brackets the tier's directional resolution bias (PRD-652).
+            resolutionLodBiasDirectional: Number(
+              params.get("shadowBias") ?? SHADOW.resolutionLodBiasDirectional,
+            ),
           });
       }
       if (level >= 2) {

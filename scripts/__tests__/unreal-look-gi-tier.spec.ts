@@ -9,7 +9,10 @@ import { describe, expect, it } from "vitest";
  * return type names only what this spec reads: a `typeof import()` of `quality.ts` would pull the
  * scaffold's own imports (`./grade.js`, `./rendererGate.js`) into the repository typecheck.
  */
-async function loadQuality(): Promise<{ giPreset(tier: string): object }> {
+async function loadQuality(): Promise<{
+  giPreset(tier: string): object;
+  shadowPreset(tier: string): object;
+}> {
   const dir = mkdtempSync(join(tmpdir(), "tn-gi-tier-"));
   copyFileSync(
     join(__dirname, "../unreal-look/scaffold/render/quality.ts"),
@@ -49,5 +52,30 @@ describe("GI tier table (PRD-644)", () => {
   it("throws on a name that is not a tier", async () => {
     const { giPreset } = await loadQuality();
     expect(() => giPreset("ultra")).toThrow();
+  });
+});
+
+describe("shadow tier table (PRD-652)", () => {
+  it("low casts no shadow, as Unreal sg.ShadowQuality 0 draws none", async () => {
+    const { shadowPreset } = await loadQuality();
+    expect(shadowPreset("low")).toMatchObject({ castShadows: false, shadowQuality: 0 });
+  });
+
+  it("medium casts with 4 + 4 taps and keeps the sun clip levels", async () => {
+    const { shadowPreset } = await loadQuality();
+    expect(shadowPreset("medium")).toMatchObject({
+      castShadows: true,
+      filter: { blockerSamples: 4, filterSamples: 4 },
+      resolutionLodBiasDirectional: 0,
+    });
+  });
+
+  it("high keeps the pre-change sun look: 16 + 16 taps and no resolution bias", async () => {
+    const { shadowPreset } = await loadQuality();
+    expect(shadowPreset("high")).toMatchObject({
+      castShadows: true,
+      filter: { blockerSamples: 16, filterSamples: 16 },
+      resolutionLodBiasDirectional: 0,
+    });
   });
 });
