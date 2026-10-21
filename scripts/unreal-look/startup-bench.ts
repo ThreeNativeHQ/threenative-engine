@@ -118,6 +118,15 @@ async function main(): Promise<void> {
           markers.push({ atMs: Date.now() - begin, text: message.text().slice(0, 600) });
       });
       const load = `${origin}?tnRef=${layer}&sun=${sun}${model === "" ? "" : `&model=${model}`}${process.env.TN_UNREAL_LOOK_QUERY ?? ""}`;
+      // `--profile`: a Chrome CPU profile of the load, up to the ready marker, for the table of what the main thread did.
+      const cdp = process.argv.includes("--profile")
+        ? await page.context().newCDPSession(page)
+        : undefined;
+      if (cdp !== undefined) {
+        await cdp.send("Profiler.enable");
+        await cdp.send("Profiler.setSamplingInterval", { interval: 1000 });
+        await cdp.send("Profiler.start");
+      }
       const load0 = Date.now();
       await page.goto(load, { waitUntil: "domcontentloaded" });
       await page.addStyleTag({ content: HIDE_UI });
@@ -149,6 +158,10 @@ async function main(): Promise<void> {
           "new Promise((resolve) => { let n = 0; const tick = () => (++n >= 90 ? resolve() : requestAnimationFrame(tick)); requestAnimationFrame(tick); })",
         );
         await page.screenshot({ path: path.join(out, `${kind}${index + 1}.png`) });
+      }
+      if (cdp !== undefined) {
+        const { profile } = (await cdp.send("Profiler.stop")) as { profile: unknown };
+        await writeFile(path.join(out, `${kind}${index + 1}.cpuprofile`), JSON.stringify(profile));
       }
       const adapter = (await page.evaluate(
         "navigator.gpu.requestAdapter().then((a) => ({ vendor: a.info.vendor, architecture: a.info.architecture, fallback: a.isFallbackAdapter }))",
