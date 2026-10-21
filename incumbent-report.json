@@ -1,11 +1,22 @@
 {
   "arm": "incumbent",
-  "url": "http://127.0.0.1:8091/",
+  "url": "http://127.0.0.1:8191/",
   "width": 1280,
   "height": 720,
   "runs": 2,
   "pin": 8000,
   "frames": [
+    {
+      "file": "incumbent-sunpath-run1.png",
+      "pose": "sunpath",
+      "run": 1,
+      "adapter": {
+        "vendor": "intel",
+        "architecture": "gen-12lp",
+        "device": ""
+      },
+      "errors": []
+    },
     {
       "file": "incumbent-low-run1.png",
       "pose": "low",
@@ -40,9 +51,9 @@
       "errors": []
     },
     {
-      "file": "incumbent-sunpath-run1.png",
+      "file": "incumbent-sunpath-run2.png",
       "pose": "sunpath",
-      "run": 1,
+      "run": 2,
       "adapter": {
         "vendor": "intel",
         "architecture": "gen-12lp",
@@ -75,17 +86,6 @@
     {
       "file": "incumbent-elevated-run2.png",
       "pose": "elevated",
-      "run": 2,
-      "adapter": {
-        "vendor": "intel",
-        "architecture": "gen-12lp",
-        "device": ""
-      },
-      "errors": []
-    },
-    {
-      "file": "incumbent-sunpath-run2.png",
-      "pose": "sunpath",
       "run": 2,
       "adapter": {
         "vendor": "intel",

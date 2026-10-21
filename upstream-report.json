@@ -1,13 +1,14 @@
 {
   "arm": "upstream",
-  "url": "http://127.0.0.1:8093/ocean.html",
+  "url": "http://127.0.0.1:8193/ocean.html?t=8",
   "width": 1280,
   "height": 720,
   "runs": 2,
+  "pin": 0,
   "frames": [
     {
-      "file": "upstream-low-run1.png",
-      "pose": "low",
+      "file": "upstream-sunpath-run1.png",
+      "pose": "sunpath",
       "run": 1,
       "adapter": {
         "vendor": "intel",
@@ -17,6 +18,17 @@
       "errors": [
         "Failed to load resource: the server responded with a status of 404 (File not found)"
       ]
+    },
+    {
+      "file": "upstream-low-run1.png",
+      "pose": "low",
+      "run": 1,
+      "adapter": {
+        "vendor": "intel",
+        "architecture": "gen-12lp",
+        "device": ""
+      },
+      "errors": []
     },
     {
       "file": "upstream-oblique-run1.png",
@@ -41,9 +53,9 @@
       "errors": []
     },
     {
-      "file": "upstream-sunpath-run1.png",
+      "file": "upstream-sunpath-run2.png",
       "pose": "sunpath",
-      "run": 1,
+      "run": 2,
       "adapter": {
         "vendor": "intel",
         "architecture": "gen-12lp",
@@ -76,17 +88,6 @@
     {
       "file": "upstream-elevated-run2.png",
       "pose": "elevated",
-      "run": 2,
-      "adapter": {
-        "vendor": "intel",
-        "architecture": "gen-12lp",
-        "device": ""
-      },
-      "errors": []
-    },
-    {
-      "file": "upstream-sunpath-run2.png",
-      "pose": "sunpath",
       "run": 2,
       "adapter": {
         "vendor": "intel",
