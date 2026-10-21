@@ -12769,6 +12769,15 @@
           "status": {
             "kind": "supported"
           }
+        },
+        {
+          "name": "twoSidedFoliage",
+          "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
         }
       ],
       "methods": [
@@ -13294,6 +13303,15 @@
         {
           "name": "irradianceNode",
           "type": "Node | null",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "twoSidedFoliage",
+          "type": "boolean",
           "mutable": true,
           "lifetime": "owned",
           "status": {
@@ -27145,6 +27163,15 @@
           "status": {
             "kind": "supported"
           }
+        },
+        {
+          "name": "twoSidedFoliage",
+          "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
         }
       ],
       "methods": [
@@ -27450,6 +27477,15 @@
         },
         {
           "name": "colorWrite",
+          "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "twoSidedFoliage",
           "type": "boolean",
           "mutable": true,
           "lifetime": "owned",
@@ -28286,7 +28322,7 @@
         {
           "name": "target",
           "type": "Object3D",
-          "mutable": false,
+          "mutable": true,
           "lifetime": "owned",
           "status": {
             "kind": "supported"

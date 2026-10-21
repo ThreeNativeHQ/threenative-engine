@@ -323,13 +323,16 @@ function shadowCoordCode(material: Material): string {
   return flow.code;
 }
 
-it("takes the normal bias back out of a leaf receiver's shadow position (PRD-651)", () => {
+it("takes the normal bias back out of a twoSidedFoliage receiver's shadow position (PRD-651)", () => {
   const ordinary = shadowCoordCode(new MeshStandardMaterial());
-  const oneSidedCut = shadowCoordCode(new MeshStandardMaterial({ alphaTest: 0.5 }));
-  const leaf = shadowCoordCode(new MeshStandardMaterial({ alphaTest: 0.5, side: DoubleSide }));
-  // An ordinary receiver and a one-sided cut card keep the stock coordinate; a leaf subtracts the
-  // light-space image of normalWorld * normalBias, so its code holds the light's shadow matrix.
-  expect(oneSidedCut).toBe(ordinary);
+  // Two sides and a cut are a default lit card in Unreal: they keep the stock coordinate.
+  const plainCut = shadowCoordCode(new MeshStandardMaterial({ alphaTest: 0.5, side: DoubleSide }));
+  const marked = new MeshStandardMaterial({ alphaTest: 0.5, side: DoubleSide });
+  marked.twoSidedFoliage = true;
+  const leaf = shadowCoordCode(marked);
+  // A marked leaf subtracts the light-space image of normalWorld * normalBias, so its code holds the
+  // light's shadow matrix.
+  expect(plainCut).toBe(ordinary);
   expect(leaf).not.toBe(ordinary);
   expect(leaf.length).toBeGreaterThan(ordinary.length);
 });
