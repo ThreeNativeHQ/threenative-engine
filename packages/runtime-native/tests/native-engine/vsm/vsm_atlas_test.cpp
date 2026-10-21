@@ -83,6 +83,15 @@ void binding() {
     bool wide = true;
     try { set(&light.shadow, options, store); } catch (const Unsupported&) { wide = false; }
     CHECK(wide);
+    // The ground-fitted window ratio crosses the facade; a ratio outside (0, 1] is refused.
+    auto fitted = options;
+    fitted.fields.emplace_back("minWindowAspect", Value::of(0.2));
+    set(&light.shadow, fitted, store);
+    CHECK(light.shadow.virtualShadow && light.shadow.virtualShadow->minWindowAspect == 0.2);
+    fitted.fields.back().second = Value::of(0.0);
+    bool flat = false;
+    try { set(&light.shadow, fitted, store); } catch (const Unsupported&) { flat = true; }
+    CHECK(flat);
     set(&light.shadow, Value{}, store);
     CHECK(!light.shadow.virtualShadow);
     // The filter without the node is refused whichever was set first, and says the fix.
@@ -344,4 +353,54 @@ void sampling() {
     }
 }
 
-TN_TEST_MAIN({"atlas", atlas}, {"continuous_invalidation", continuousInvalidation}, {"sampling", sampling})
+// A low sun stretches a texel along the light's V axis over 1 / sin(elevation) of floor, so a window
+// as high as it is wide would blur every floor shadow edge that many times more than a high sun does.
+// With `minWindowAspect` the window's light-space height is sin(elevation) of its width, never less.
+void groundWindow() {
+    constexpr double kPi = 3.14159265358979323846;
+    std::string error;
+    AtlasOptions options;
+    options.clipExtents = {8, 24}; options.mapSize = 256; options.pageTexels = 64;
+    options.refreshStep = {0}; options.lightDistance = 20; options.depthRange = 40;
+    options.minWindowAspect = 0.1;
+    const double elevation = 15 * kPi / 180, sinEl = std::sin(elevation);
+    const Vector3 eye(0, 0, 0), sun(std::cos(elevation), sinEl, 0);
+    auto atlas = PageAtlas::create(options, error);
+    CHECK(atlas.has_value());
+    if (!atlas) return;
+    const auto pages = atlas->update(eye, sun);
+    CHECK(pages.size() == 16);
+    for (const auto& page : pages) {
+        // The page camera is `vScale` as high as it is wide: elements 0 and 5 are 2 / width and 2 / height.
+        CHECK(std::abs(page.projection.elements[0] / page.projection.elements[5] - sinEl) < 1e-9);
+        // It still lands on its own tile: the page centre projects to the middle of its padded viewport.
+        Vector3 center = page.axisU;
+        center.multiplyScalar((page.lowU + page.highU) / 2).addScaledVector(page.axisV, (page.lowV + page.highV) / 2);
+        center.applyMatrix4(page.view).applyMatrix4(page.projection);
+        CHECK(std::abs(center.x) < 1e-9 && std::abs(center.y) < 1e-9);
+    }
+    // The shader's V row is the unit V over the ratio, so its dot product counts pages along the height.
+    const auto& table = atlas->table();
+    for (int level = 0; level < 2; ++level) {
+        const float* row = table.data() + level * 36 + 24;
+        CHECK(std::abs(std::sqrt(row[0] * row[0] + row[1] * row[1] + row[2] * row[2]) - 1 / sinEl) < 1e-4);
+    }
+    // One metre of floor along the sun's azimuth is one page-grid unit, as one metre across it is.
+    const auto along = atlas->clipmap().project(Vector3(1, 0, 0)), across = atlas->clipmap().project(Vector3(0, 0, 1));
+    CHECK(std::abs(std::abs(along.v) - 1) < 1e-9 && std::abs(std::abs(across.u) - 1) < 1e-9);
+    // Under minWindowAspect the height stops shrinking, an overhead sun stays square, and 1 keeps every sun square.
+    auto aspectOf = [&](const Vector3& towards, double minimum) {
+        auto o = options; o.minWindowAspect = minimum;
+        auto a = PageAtlas::create(o, error);
+        const auto p = a->update(eye, towards);
+        return p.front().projection.elements[0] / p.front().projection.elements[5];
+    };
+    const double low = 4 * kPi / 180;
+    CHECK(std::abs(aspectOf(Vector3(std::cos(low), std::sin(low), 0), 0.25) - 0.25) < 1e-9);
+    CHECK(std::abs(aspectOf(Vector3(std::cos(low), std::sin(low), 0), 1) - 1) < 1e-9);
+    CHECK(std::abs(aspectOf(Vector3(0.1, 1, 0), 0.25) - 1) < 1e-9);
+    options.minWindowAspect = 0;
+    CHECK(!PageAtlas::create(options, error));
+}
+
+TN_TEST_MAIN({"atlas", atlas}, {"continuous_invalidation", continuousInvalidation}, {"sampling", sampling}, {"ground_window", groundWindow})

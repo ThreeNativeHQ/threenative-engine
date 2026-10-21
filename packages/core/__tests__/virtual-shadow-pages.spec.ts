@@ -190,6 +190,48 @@ describe("DirectionalClipmap", () => {
     expect(dot(cross(clipmap.basisU, clipmap.basisV), clipmap.basisW)).toBeCloseTo(1, 9);
   });
 
+  it("fits a low sun's window to the ground: the light-space height shrinks by sin(elevation)", () => {
+    // A texel along the light's V axis covers 1 / sin(elevation) metres of floor, so a square
+    // window would make every low-sun shadow edge that many times blurrier across the floor.
+    const elevation = (15 * Math.PI) / 180;
+    const clipmap = new DirectionalClipmap({
+      direction: { x: Math.cos(elevation), y: Math.sin(elevation), z: 0 },
+      clipExtents: [16],
+      pagesPerAxis: 8,
+      minAspect: 0.1,
+    });
+    expect(clipmap.vScale).toBeCloseTo(Math.sin(elevation), 9);
+    // One metre of floor along the sun's azimuth is one page-grid unit, as one metre across it is.
+    const along = clipmap.project({ x: 1, y: 0, z: 0 });
+    const across = clipmap.project({ x: 0, y: 0, z: 1 });
+    expect(Math.abs(along.v)).toBeCloseTo(1, 9);
+    expect(Math.abs(across.u)).toBeCloseTo(1, 9);
+    // The inverse still lands on the same world point.
+    const back = clipmap.unproject(clipmap.project({ x: 3, y: 0, z: -2 }));
+    expect(back.x).toBeCloseTo(3, 9);
+    expect(back.y).toBeCloseTo(0, 9);
+    expect(back.z).toBeCloseTo(-2, 9);
+  });
+
+  it("never lets the height fall under minAspect, and keeps a high sun square", () => {
+    const at = (degrees: number, minAspect: number) =>
+      new DirectionalClipmap({
+        direction: {
+          x: Math.cos((degrees * Math.PI) / 180),
+          y: Math.sin((degrees * Math.PI) / 180),
+          z: 0,
+        },
+        clipExtents: [16],
+        pagesPerAxis: 8,
+        minAspect,
+      }).vScale;
+    expect(at(4, 0.25)).toBe(0.25);
+    expect(at(4, 1)).toBe(1);
+    expect(at(60, 0.25)).toBeCloseTo(Math.sin((60 * Math.PI) / 180), 9);
+    expect(at(89, 0.25)).toBe(1);
+    expect(() => at(30, 0)).toThrow(/minAspect/u);
+  });
+
   it("snaps clip windows to whole page increments", () => {
     const clipmap = verticalClipmap([16]);
     clipmap.updateCenter({ x: 0.2, y: 2, z: -0.2 });

@@ -29,6 +29,8 @@ struct AtlasOptions {
     std::vector<double> invalidationDelay{0};
     bool adaptiveRefresh = false, adaptiveCasterGate = false, followViewFocus = false, shadowLodBias = false;
     bool receiverPlaneBias = true, partialRedraw = true;
+    /** See DirectionalClipmapOptions::minAspect; core passes its own default (0.25), this keeps tests square. */
+    double minWindowAspect = 1;
 };
 
 struct AtlasPage {
@@ -69,6 +71,7 @@ public:
                             double extent, const std::vector<Box3>& receivers);
     void invalidateAll();
     const AtlasOptions& options() const { return options_; }
+    const DirectionalClipmap& clipmap() const { return *clipmap_; }
     const std::vector<float>& table() const { return table_; }
     int tiles() const { return options_.mapSize / options_.pageTexels; }
     int stride() const { return options_.pageTexels + 2 * options_.border; }

@@ -248,6 +248,15 @@ export interface IDirectionalClipmapOptions {
    * for every level, or one per level finest first, the last entry standing in for the rest.
    */
   readonly refreshStep?: number | readonly number[];
+  /**
+   * The smallest ratio of a window's light-space height to its width, `(0, 1]`, default 1. A low
+   * sun stretches a texel along the light's V axis by `1 / sin(elevation)` of floor, so a window
+   * the same height as it is wide would make every shadow edge across the floor that much blurrier.
+   * A ratio below 1 shrinks the height to `sin(elevation)`, never under this value, and the texels
+   * then cover the same floor area at any sun height. A sun within 18 degrees of the zenith keeps
+   * square windows. Page coordinates stay square: `v` counts pages in that shrunken height.
+   */
+  readonly minAspect?: number;
 }
 
 function dot(a: IVector3Like, b: IVector3Like): number {
@@ -299,6 +308,9 @@ export class DirectionalClipmap {
   basisU: IVector3Like;
   basisV: IVector3Like;
   basisW: IVector3Like;
+  /** Window height over width: `v` is metres along `basisV` divided by this. 1 is a square window. */
+  vScale = 1;
+  readonly minAspect: number;
   centerWorld: IVector3Like = { x: 0, y: 0, z: 0 };
   centerLight: ILightSpacePoint = { u: 0, v: 0, w: 0 };
   #windows: IClipWindow[] = [];
@@ -314,8 +326,13 @@ export class DirectionalClipmap {
     pagesPerAxis,
     selectionGuard = 0.9,
     refreshStep = 0.125,
+    minAspect = 1,
   }: IDirectionalClipmapOptions) {
     assertFiniteVector("direction", direction);
+    if (!Number.isFinite(minAspect) || minAspect <= 0 || minAspect > 1) {
+      throw new RangeError(`minAspect must be in the range (0, 1], got ${String(minAspect)}`);
+    }
+    this.minAspect = minAspect;
     assertPositiveInteger("pagesPerAxis", pagesPerAxis);
     if (!Array.isArray(clipExtents) || clipExtents.length === 0) {
       throw new TypeError("clipExtents must be a non-empty array");
@@ -384,6 +401,12 @@ export class DirectionalClipmap {
       Math.abs(this.basisW.y) > 0.95 ? { x: 0, y: 0, z: 1 } : { x: 0, y: 1, z: 0 };
     this.basisU = normalize(cross(this.basisW, reference));
     this.basisV = normalize(cross(this.basisW, this.basisU));
+    // Only a sun low enough that V is the ground's slope axis: near the zenith the basis turns to
+    // the +z reference and V is no longer the direction a floor texel stretches along.
+    this.vScale =
+      Math.abs(this.basisW.y) > 0.95
+        ? 1
+        : Math.min(1, Math.max(this.minAspect, Math.abs(this.basisW.y)));
     if (!unchanged) this.#windows = [];
     this.updateCenter(this.centerWorld);
     return !unchanged;
@@ -393,7 +416,7 @@ export class DirectionalClipmap {
     assertFiniteVector("worldPoint", worldPoint);
     return {
       u: dot(worldPoint, this.basisU),
-      v: dot(worldPoint, this.basisV),
+      v: dot(worldPoint, this.basisV) / this.vScale,
       w: dot(worldPoint, this.basisW),
     };
   }
@@ -402,10 +425,11 @@ export class DirectionalClipmap {
     if (![u, v, w].every(Number.isFinite)) {
       throw new TypeError("light-space coordinates must be finite");
     }
+    const along = v * this.vScale;
     return {
-      x: this.basisU.x * u + this.basisV.x * v + this.basisW.x * w,
-      y: this.basisU.y * u + this.basisV.y * v + this.basisW.y * w,
-      z: this.basisU.z * u + this.basisV.z * v + this.basisW.z * w,
+      x: this.basisU.x * u + this.basisV.x * along + this.basisW.x * w,
+      y: this.basisU.y * u + this.basisV.y * along + this.basisW.y * w,
+      z: this.basisU.z * u + this.basisV.z * along + this.basisW.z * w,
     };
   }
 

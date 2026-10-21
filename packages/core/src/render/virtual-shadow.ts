@@ -211,6 +211,15 @@ export interface IVirtualShadowOptions {
    * Default true; false keeps eye follow for every camera. Walking cameras keep eye follow.
    */
   readonly followViewFocus?: boolean;
+  /**
+   * The smallest ratio of a level's light-space height to its width, `(0, 1]`, default 0.25. A low
+   * sun stretches a shadow texel along the floor by `1 / sin(elevation)`, so a square level would
+   * blur every shadow edge across the floor that much more at sunset than at noon. The height
+   * shrinks to `sin(elevation)` instead, never under this value, and a texel then covers the same
+   * floor area at any sun height. The cost is vertical reach: a wall taller than a level's height is
+   * read from a wider level. `1` restores square levels.
+   */
+  readonly minWindowAspect?: number;
   /** Measure receiver-plane slope across each level's texel footprint to prevent coarse acne.
    * Default true; false preserves only the authored bias. Custom filterNode owns its footprint.
    */
@@ -457,6 +466,8 @@ export const VIRTUAL_SHADOW_SMALL_CASTER_LAYER = 26;
  */
 export const VIRTUAL_SHADOW_KEY_LAYER = 25;
 const DEFAULT_CLIP_EXTENTS: readonly number[] = [16, 48, 144];
+/** A level is never shorter than a quarter of its width: a 14.5 degree sun is where the fit ends. */
+const DEFAULT_MIN_WINDOW_ASPECT = 0.25;
 const DEFAULT_MARKER_EVERY = 300;
 /** Frames between markers while `?tnShadowStats=1` is on the URL: about a second a walk is long. */
 const STATS_QUERY_EVERY = 60;
@@ -890,6 +901,7 @@ interface IRenderingShadowNode {
  * @constraint `trackCaster(object)` is the override that pins an object as a mover for good (it enables layer `VIRTUAL_SHADOW_MOVER_LAYER` on the object and its descendants), and `pinStatic(object)` opts an object out of detection; tracking or untracking refreshes only that object's region
  * @override bias, biasNode, normalBias, intensity, radius, blurSamples, mapType and filterNode stay on `light.shadow`; mapSize and the other options here have defaults
  * @override followViewFocus: false keeps eye follow; receiverPlaneBias: false uses only authored bias
+ * @override minWindowAspect: a level is as high as `sin(sun elevation)` times its width, never under this (default 0.25), so a low sun's floor shadows keep the texel density of a high sun's; 1 keeps square levels
  * @example
  * const sun = new DirectionalLight(0xffffff, 3);
  * sun.castShadow = true;
@@ -951,6 +963,8 @@ export class VirtualShadowNode extends ShadowBaseNode {
   #basisV: UniformNode<"vec3", Vector3> = uniform(new Vector3(0, 0, 1)).setGroup(renderGroup);
   #basisW: UniformNode<"vec3", Vector3> = uniform(new Vector3(0, 1, 0)).setGroup(renderGroup);
   #receiverSlope = property("float", `virtualShadowReceiverSlope${String(this.id)}`);
+  /** The window height ratio the level cameras were last fitted to. */
+  #frustumScale = 1;
   #frame = 0;
   /** 1 while this node is inside `#updateFrame`; a level render re-enters `updateBefore`. */
   #updating = false;
@@ -1092,6 +1106,12 @@ export class VirtualShadowNode extends ShadowBaseNode {
         `TN_VIRTUAL_SHADOW_INVALID: minCasterTexels must be zero or positive, got ${String(minCasterTexels)}.`,
       );
     }
+    const minWindowAspect = options.minWindowAspect ?? DEFAULT_MIN_WINDOW_ASPECT;
+    if (!Number.isFinite(minWindowAspect) || minWindowAspect <= 0 || minWindowAspect > 1) {
+      throw new RangeError(
+        `TN_VIRTUAL_SHADOW_INVALID: minWindowAspect must be in the range (0, 1], got ${String(minWindowAspect)}.`,
+      );
+    }
     const staticAfterFrames = options.staticAfterFrames ?? DEFAULT_STATIC_AFTER_FRAMES;
     if (!Number.isInteger(staticAfterFrames) || staticAfterFrames <= 0) {
       throw new RangeError(
@@ -1179,6 +1199,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
       pagesPerAxis: mapSize,
       refreshStep: steps,
       selectionGuard: guardedExtent,
+      minAspect: minWindowAspect,
     });
     this.tracker = new ShadowInvalidationTracker(this.clipmap);
     const marker = options.marker ?? DEFAULT_MARKER_EVERY;
@@ -1194,6 +1215,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
       lightDistance: options.lightDistance ?? 200,
       mapSize,
       minCasterTexels,
+      minWindowAspect,
       moverMapSize,
       markerEvery: marker === false ? 0 : marker === true ? DEFAULT_MARKER_EVERY : marker,
       refreshStep: steps,
@@ -2377,6 +2399,20 @@ export class VirtualShadowNode extends ShadowBaseNode {
     drawnSpan.high = measured.high;
   }
 
+  /** A level's cameras are as wide as its extent and as high as the window's ratio makes them. */
+  #fitFrusta(): void {
+    const scale = this.clipmap.vScale;
+    if (scale === this.#frustumScale) return;
+    this.#frustumScale = scale;
+    for (const level of this.#levels) {
+      for (const map of [level.shadow, level.moverShadow]) {
+        map.camera.top = level.extent * scale;
+        map.camera.bottom = -level.extent * scale;
+        map.camera.updateProjectionMatrix();
+      }
+    }
+  }
+
   /** Put a level's camera on its window with the depth it last derived, and hold both maps to it. */
   #place(level: ILevel, centre: IVector3Like): void {
     const { basisW } = this.clipmap;
@@ -2417,8 +2453,8 @@ export class VirtualShadowNode extends ShadowBaseNode {
       levelShadow.mapSize.set(this.options.mapSize, this.options.mapSize);
       levelShadow.camera.left = -extent;
       levelShadow.camera.right = extent;
-      levelShadow.camera.top = extent;
-      levelShadow.camera.bottom = -extent;
+      levelShadow.camera.top = extent * this.clipmap.vScale;
+      levelShadow.camera.bottom = -extent * this.clipmap.vScale;
       levelShadow.camera.near = 1;
       levelShadow.camera.far = this.options.lightDistance + this.options.depthRange;
       levelShadow.camera.updateProjectionMatrix();
@@ -2623,9 +2659,11 @@ export class VirtualShadowNode extends ShadowBaseNode {
         const received = vec3(shadowPositionWorld as never);
         const normal = dFdx(received).cross(dFdy(received)).toVar();
         const along = max(abs(normal.dot(this.#basisW)), max(length(normal).mul(0.0001), 1e-12));
+        // `basisV` is the unit V over the window ratio, and a texel is that ratio shorter along V,
+        // so the depth change across one texel along V is |n.V| * ratio = |n.basisV| * ratio^2.
         this.#receiverSlope.assign(
           abs(normal.dot(basisU))
-            .add(abs(normal.dot(basisV)))
+            .add(abs(normal.dot(basisV)).div(basisV.dot(basisV)))
             .div(along),
         );
       }
@@ -2791,6 +2829,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
       y: _direction.y,
       z: _direction.z,
     });
+    this.#fitFrusta();
     camera.updateMatrixWorld(true);
     const cameraPosition = _center.setFromMatrixPosition(camera.matrixWorld);
     // The engine's own frame clock, in seconds. This is what a level's invalidation delay is
@@ -2802,7 +2841,10 @@ export class VirtualShadowNode extends ShadowBaseNode {
     this.#centerU.value = this.clipmap.centerLight.u;
     this.#centerV.value = this.clipmap.centerLight.v;
     this.#basisU.value.set(this.clipmap.basisU.x, this.clipmap.basisU.y, this.clipmap.basisU.z);
-    this.#basisV.value.set(this.clipmap.basisV.x, this.clipmap.basisV.y, this.clipmap.basisV.z);
+    // The axis whose dot product is `v`: the unit V stretched by the window's height ratio.
+    const vScale = this.clipmap.vScale;
+    const basisV = this.clipmap.basisV;
+    this.#basisV.value.set(basisV.x / vScale, basisV.y / vScale, basisV.z / vScale);
     this.#basisW.value.set(this.clipmap.basisW.x, this.clipmap.basisW.y, this.clipmap.basisW.z);
     // A caster that stopped casting, or stopped being visible, changed what the levels hold without
     // changing the tree, so nothing else on the frame would say so. Asked here, before this frame's
@@ -2856,7 +2898,11 @@ export class VirtualShadowNode extends ShadowBaseNode {
         admission: region.admission === true,
         u: projectBounds(region, this.clipmap.basisU),
         urgent: region.urgent === true,
-        v: projectBounds(region, this.clipmap.basisV),
+        v: projectBounds(region, {
+          x: basisV.x / vScale,
+          y: basisV.y / vScale,
+          z: basisV.z / vScale,
+        }),
       });
     }
     this.#regions.length = 0;

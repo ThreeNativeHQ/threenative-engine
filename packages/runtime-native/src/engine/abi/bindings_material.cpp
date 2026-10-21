@@ -457,6 +457,7 @@ void registerLightShadow(ClassBinding& b, bool spot) {
             }
             else if (key == "expensiveRefreshShare") options.expensiveRefreshShare = number(v);
             else if (key == "minCasterTexels") options.minCasterTexels = number(v);
+            else if (key == "minWindowAspect") options.minWindowAspect = number(v);
             else if (key == "partialRedraw") options.partialRedraw = flag(v);
             else if (key == "receiverPlaneBias") options.receiverPlaneBias = flag(v);
         }

@@ -957,7 +957,11 @@ static ExprId virtualShadowFactor(Program& f, Tsl& t, std::size_t index, int lev
         const ExprId uv = f.construct(Type::vec(2), {f.swizzle(projected, "x"), t.oneMinus(f.swizzle(projected, "y"))});
         const ExprId along = f.call("max", {f.call("abs", {t.dot(plane, axisW)}),
             f.call("max", {f.mul(f.call("length", {plane}), t.f(0.0001f)), t.f(1e-12f)})});
-        const ExprId slope = f.div(f.add(f.call("abs", {t.dot(plane, axisU)}), f.call("abs", {t.dot(plane, axisV)})), along);
+        // The V row is the unit V over the window's height ratio (length 1 / ratio), and a texel along V is
+        // that ratio shorter than one along U, so the depth change across a V texel is |n.V| * ratio, which
+        // is |n.row| / |row|^2.
+        const ExprId vSlope = f.div(f.call("abs", {t.dot(plane, axisV)}), t.dot(axisV, axisV));
+        const ExprId slope = f.div(f.add(f.call("abs", {t.dot(plane, axisU)}), vSlope), along);
         const ExprId radius = f.uniform(at + "ShadowRadius", Type::f32());
         const ExprId footprint = f.add(f.call("max", {radius, t.f(0)}), t.f(1));
         // table entry.w carries receiverPlaneBias so changing the policy never changes a program.
@@ -1033,10 +1037,17 @@ static ExprId virtualShadowFactor(Program& f, Tsl& t, std::size_t index, int lev
             const ExprId texelBias = f.mul(f.mul(f.div(f.mul(slope, planeWidth), mapSize), f.div(mapSize, resolution)), planeOn);
             auto tapZ = [&](ExprId offset) {
                 const ExprId tilt = f.add(f.mul(f.div(f.call("abs", {t.dot(plane, axisU)}), along), f.call("abs", {f.swizzle(offset, "x")})),
-                                          f.mul(f.div(f.call("abs", {t.dot(plane, axisV)}), along), f.call("abs", {f.swizzle(offset, "y")})));
+                                          f.mul(f.div(vSlope, along), f.call("abs", {f.swizzle(offset, "y")})));
                 return f.sub(baseZ, f.add(texelBias, f.mul(f.mul(tilt, planeWidth), planeOn)));
             };
-            const ExprId search = f.call("max", {texel, f.div(f.mul(f.mul(baseZ, span), tangent), width)});
+            // The disc is physical: `radius` metres across the light in both axes. A UV step along V is the
+            // window's height ratio shorter than one along U, so the V half of every offset is longer in UV.
+            const ExprId aspect = f.div(t.f(1), f.call("length", {axisV}));
+            auto uvRadius = [&](ExprId metres) {
+                return f.construct(Type::vec(2), {f.call("max", {texel, f.div(metres, width)}),
+                                                  f.call("max", {texel, f.div(f.div(metres, width), aspect)})});
+            };
+            const ExprId search = uvRadius(f.mul(f.mul(baseZ, span), tangent));
             const VarId blockerSum = f.var(Type::f32(), t.f(0)), blockerCount = f.var(Type::f32(), t.f(0));
             f.Loop(f.construct(Type::i32(), {blockers}), [&](ExprId i) {
                 const ExprId offset = f.mul(disk(i, blockers), search);
@@ -1051,7 +1062,10 @@ static ExprId virtualShadowFactor(Program& f, Tsl& t, std::size_t index, int lev
             // Where the blockers touch the receiver the penumbra is under a texel: each tap is then the
             // hardware's bilinear compare, so the edge is about one texel wide and not stair-stepped,
             // and the floor of the disk is half a texel.
-            const ExprId penumbra = f.call("max", {f.mul(texel, t.f(0.5f)), f.div(f.mul(gap, tangent), width)});
+            const ExprId penumbraMetres = f.mul(gap, tangent);
+            const ExprId penumbra = f.construct(Type::vec(2), {
+                f.call("max", {f.mul(texel, t.f(0.5f)), f.div(penumbraMetres, width)}),
+                f.call("max", {f.mul(texel, t.f(0.5f)), f.div(f.div(penumbraMetres, width), aspect)})});
             auto compareAt = [&](ExprId atUv, ExprId z) {
                 const ExprId clamped = f.call("clamp", {atUv, f.construct(Type::vec(2), {t.f(0)}), f.construct(Type::vec(2), {t.f(1)})});
                 const ExprId grid = f.mul(clamped, tiles);
