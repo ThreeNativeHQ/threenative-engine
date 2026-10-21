@@ -229,19 +229,34 @@ export interface IGiTier {
   readonly finalGatherMethod: FinalGatherMethod;
   /** Read-only report: the `sg.GlobalIlluminationQuality` this tier follows. */
   readonly globalIlluminationQuality: 0 | 1 | 3;
+  /**
+   * `r.DistanceFieldAO`: whether the scene's distance fields shadow the sky light. Unreal's Low turns it off, so
+   * the sky light reaches the inside of a room unoccluded (measured on `sunlit-room`, PRD-644 `## Decisions`).
+   */
+  readonly distanceFieldAO: boolean;
+  /** `r.SkylightIntensityMultiplier`: Unreal suppresses the sky light to 0.8 at Low, where DFAO is off. */
+  readonly skylightIntensityMultiplier: number;
 }
 
-/** The Unreal level each method runs at (BaseScalability.ini `[GlobalIlluminationQuality@n]`). */
-const GI_QUALITY: Record<FinalGatherMethod, 0 | 1 | 3> = {
-  irradianceField: 1,
-  none: 0,
-  screenProbeGather: 3,
+/** What each method's Unreal level sets (BaseScalability.ini `[GlobalIlluminationQuality@n]`, lines 318-460). */
+const GI_LEVELS: Record<FinalGatherMethod, Omit<IGiTier, "finalGatherMethod">> = {
+  irradianceField: {
+    distanceFieldAO: true,
+    globalIlluminationQuality: 1,
+    skylightIntensityMultiplier: 1,
+  },
+  none: { distanceFieldAO: false, globalIlluminationQuality: 0, skylightIntensityMultiplier: 0.8 },
+  screenProbeGather: {
+    distanceFieldAO: true,
+    globalIlluminationQuality: 3,
+    skylightIntensityMultiplier: 1,
+  },
 };
 
 /** The GI method and Unreal level of a tier. Throws on a name that is not a tier. */
 export function giPreset(tier: string): IGiTier {
   const finalGatherMethod = qualityPreset(tier).finalGatherMethod as FinalGatherMethod;
-  return { finalGatherMethod, globalIlluminationQuality: GI_QUALITY[finalGatherMethod] };
+  return { finalGatherMethod, ...GI_LEVELS[finalGatherMethod] };
 }
 
 export interface IShadowFilter {

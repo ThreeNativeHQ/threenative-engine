@@ -230,8 +230,13 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
           // Diagnosis knob stockRays=1: cast the bake through ctx.raycast, the slow path (an A/B).
           stockRays: params.get("stockRays") === "1",
           bounces: GI_METHOD === "none" ? 0 : 5,
-          // Unreal without GI (below L7, or the Low tier) shadows its sky light with distance fields, up to 10 m.
-          ...(GI_METHOD === "none" ? { skyShadowDistance: 10 } : {}),
+          // The tier's sky light multiplier (Unreal's Low sets 0.8). Diagnosis knob skyMul=N brackets it.
+          skyIntensity: level >= 7 ? Number(params.get("skyMul") ?? GI.skylightIntensityMultiplier) : 1,
+          // Unreal without GI shadows its sky light with distance fields, up to 10 m. Its Low tier (L7) turns
+          // distance field AO off, so the sky light reaches an interior unoccluded: 0 m shadows nothing.
+          ...(GI_METHOD === "none"
+            ? { skyShadowDistance: level >= 7 && !GI.distanceFieldAO ? 0 : 10 }
+            : {}),
           sun: { color: key.color, intensity: key.intensity, direction: SUN_DIRECTION },
         });
       if (TUNED && level >= 8 && !OFF.has("reflcap"))

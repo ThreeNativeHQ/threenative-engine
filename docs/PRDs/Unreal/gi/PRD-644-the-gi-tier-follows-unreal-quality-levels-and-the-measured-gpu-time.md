@@ -75,7 +75,7 @@ prd_contract: v1
 
 ## Acceptance Criteria
 
-- [ ] AC-1 [local]: Each ThreeNative tier matches its own Unreal level within the PRD-631 thresholds on every registered calibration scene at L7: `low` against Low, `medium` against Medium, `high` against Epic. proof: `pnpm unreal-look:compare --scene gi --layer L7 --unreal-level 0|1|3` — Evidence: pending.
+- [ ] AC-1 [local]: Each ThreeNative tier matches its own Unreal level within the PRD-631 thresholds on every registered calibration scene at L7: `low` against Low, `medium` against Medium, `high` against Epic. proof: `pnpm unreal-look:compare --scene gi --layer L7 --unreal-level 0|1|3` — Evidence: open, measured 2026-10-21. `high` is byte-identical to the pre-change `L7` in all 8 poses (maximum difference 0). `medium` removes the screen-space stipple and keeps the pre-change dE (`sunlit-room` 4.77 to 4.60, `cornell` 10.10 to 8.53). `low` lifts `sunlit-room` from a black interior to the Unreal Low look (mean dE 36.60 to 10.54, `cornell` 2.97 to 0.83). `low` stays open for one gap: its ceilings read 0 to 1 where Unreal Low reads 72 to 112 (dE 24 to 38), see `## Decisions`.
 - [ ] AC-2 [local]: On the RTX 2080 browser lane at 1920 × 1080, the GI stages of each tier stay inside that tier's budget after 120 warm-up frames. proof: `node packages/playtest/dist/runner/cli.js perf` on the harness, per tier — Evidence: pending.
 - [ ] AC-3 [local]: The `medium` tier runs on the Android emulator with `TN_GI.method` `irradianceField` and a non-blank frame, labelled as an emulator result. proof: `node packages/playtest/dist/runner/cli.js <scenario> --target android` — Evidence: pending.
 
@@ -158,3 +158,20 @@ these criteria, per frame and overall.
   `L6` BEFORE frames carry that stray SSGI, so a BEFORE of `low` is the pre-change `L6` and says so on the sheet.
 - 2026-10-21 (tier-lane, high tier): `high` is pixel-neutral. Its cornell L7 frames match the pre-change L7 frames
   with 0.00 mean difference.
+- 2026-10-21 (tier-lane, low tier sky light): Unreal Low turns off distance field AO and sets
+  `r.SkylightIntensityMultiplier` to 0.8 (`Engine/Config/BaseScalability.ini`, `[GlobalIlluminationQuality@0]`).
+  The tier table now carries both (`distanceFieldAO`, `skylightIntensityMultiplier` in `giPreset`). With AO off the sky
+  light reaches an interior unoccluded, so the harness passes `skyShadowDistance: 0` and `skyIntensity: 0.8` to
+  `installGi`. Red first: `unreal-look-gi-tier.spec.ts` failed on the missing fields, then 3 passed.
+- 2026-10-21 (tier-lane, multiplier A/B): the multiplier is Unreal's own value, so it stays at 0.8. The A/B on
+  `sunlit-room` `low` (`?skyMul=1` against 0.8): mean dE 6.74 at 1.0 and 6.92 at 0.8, mean dP50 0.138 and 0.115, over the
+  32 regions that exclude ceiling and ground. The sun60 poses favour 1.0 (5.74 against 8.21) and the sun15 poses favour 0.8
+  (5.62 against 7.74). No single value fits both, so the Unreal value wins.
+- 2026-10-21 (tier-lane, low tier ceiling, open): Unreal Low lights the ceiling of `sunlit-room` (p50 72 to 112) and
+  ThreeNative draws it black (0 to 1). The Unreal sky light is `SLS_CAPTURED_SCENE` with real-time capture
+  (`tools/unreal-reference/template-actors.json`), so its cube map may hold the lit room and not only the sky. The harness sky
+  bake keeps a dark nadir (`bakeSkyRadiance`, `atmosphere.ts`). The sky and GI lanes own how that radiance looks, so
+  this lane adds no ceiling term. The gap is named on the sheet.
+- 2026-10-21 (tier-lane, BEFORE arms): the `sunlit-room` BEFORE of `medium` and `high` is the pre-change `L7`, captured
+  from the base scaffold (`work-base`, 6 poses, `sun60` frames repeat the first base run with mean difference 0.00 to
+  0.04). The BEFORE of `low` is the pre-change `L6`, because the old `L7` carried the stray SSGI.
