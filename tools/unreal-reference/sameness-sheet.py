@@ -11,7 +11,7 @@ engine's frame redrawn in the exact colour of each object, so equal objects have
 One row per pose. Columns: UNREAL 5.8.3 · ID | WASM ENGINE · ID | OVERLAP · ID (white: the engines draw
 a failing object differently). With --before <root>, a second gate run on the same Unreal frames:
 WASM ENGINE BEFORE · ID | WASM ENGINE AFTER · ID | UNREAL 5.8.3 · ID | OVERLAP AFTER · ID.
---crop adds a row per pose with that region (full-frame pixels) enlarged to the width of a cell.
+--crop adds a row per pose (headed "zoom") with that region (full-frame pixels) enlarged to the width of a cell.
 Every header names the layer (ID) and the scene and pose, so a reader knows what each frame is.
 """
 
@@ -83,7 +83,15 @@ def main():
     row_h = H + crop_h
     sheet = Image.new("RGB", (W * len(columns), row_h * len(poses)), (0, 0, 0))
     draw = ImageDraw.Draw(sheet)
-    big = font(26)
+
+    def fit(label):
+        """The largest face at which the label stays inside its column: a header must never be cut off."""
+        for size in range(26, 11, -1):
+            face = font(size)
+            if draw.textlength(label, font=face) <= W - 20:
+                return face
+        return font(12)
+
     for row, pose in enumerate(poses):
         for col, (header, root, kind) in enumerate(columns):
             image = frame(root, args.scene, pose, kind)
@@ -93,10 +101,11 @@ def main():
                 cells.append((image.crop((x, y, x + w, y + h)).resize((W, crop_h), Image.NEAREST), H))
             for cell, top in cells:
                 sheet.paste(cell, (col * W, row * row_h + top))
-                label = header + (f"  crop {args.crop}" if top else f"  {args.scene}/{pose}")
+                label = header + ("  zoom" if top else f"  {args.scene}/{pose}")
+                face = fit(label)
                 tx, ty = col * W + 10, row * row_h + top + 8
-                draw.rectangle(draw.textbbox((tx, ty), label, font=big), fill=(0, 0, 0))
-                draw.text((tx, ty), label, font=big, fill=(255, 255, 0))
+                draw.rectangle(draw.textbbox((tx, ty), label, font=face), fill=(0, 0, 0))
+                draw.text((tx, ty), label, font=face, fill=(255, 255, 0))
     os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
     sheet.save(args.out)
     print(f"wrote {args.out} {sheet.size[0]}x{sheet.size[1]}")

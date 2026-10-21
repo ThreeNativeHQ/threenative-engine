@@ -9,6 +9,7 @@ import {
   idLayerIsAliased,
 } from "../unreal-look/capture-threenative.js";
 import { decode, main, masks } from "../unreal-look/compare.js";
+import { depthTieNotes, depthTies } from "../unreal-look/depth-ties.js";
 import { readScene } from "../unreal-look/gi.js";
 import {
   EDGE_FAR_LIMIT,
@@ -453,5 +454,99 @@ describe("sameness gate: the command", () => {
     expect(readFileSync(path.join(root, "overlap/cornell/ID/cornell.png")).length).toBeGreaterThan(
       0,
     );
+  });
+});
+
+describe("depth ties: slabs that share a face a camera can see", () => {
+  const slab = (name: string, position: number[], size: number[], extra = {}) =>
+    ({ name, position, size, rotationYDeg: 0, ...extra }) as never;
+  // The cornell box before PRD-646 fixed it: the side wall was as tall as the floor and the ceiling
+  // together, so its front face at z = 0 overlapped the front face of each of them.
+  const slabs = (wallHeight: number) => [
+    slab("Floor", [0, -0.1, -2.85], [5.9, 0.2, 5.7]),
+    slab("Wall_Red", [-2.85, 2.75, -2.85], [0.2, wallHeight, 5.7]),
+  ];
+  const camera = { name: "cornell", position: [0, 2.75, 6] as [number, number, number] };
+  const scene = (meshes: unknown[], poses = [camera]) => ({ meshes, poses }) as never;
+
+  it("names the four corner squares of the old cornell box", () => {
+    expect(depthTies(scene(slabs(5.9)))).toEqual([
+      "Floor / Wall_Red share the z+ face at 0.000 m (0.040 m2), seen from cornell",
+    ]);
+  });
+
+  it("finds none when the wall ends at the ceiling", () => {
+    expect(depthTies(scene(slabs(5.5)))).toEqual([]);
+  });
+
+  it("ignores a face that no pose camera is on the side of", () => {
+    // The camera is inside the box: the outer faces of floor and wall are coplanar and never seen.
+    const inside = { name: "inside", position: [0, 1, -2] as [number, number, number] };
+    expect(depthTies(scene(slabs(5.5), [inside]))).toEqual([]);
+    expect(depthTies(scene(slabs(5.9), [inside]))).toEqual([]);
+  });
+
+  it("skips a turned mesh, a tilted mesh and a model instance", () => {
+    const [floor, wall] = slabs(5.9) as unknown as Record<string, unknown>[];
+    for (const odd of [
+      { rotationYDeg: 17 },
+      { rotationXDeg: 15 },
+      { size: undefined, asset: "pine01" },
+    ])
+      expect(depthTies(scene([floor, { ...wall, ...odd }]))).toEqual([]);
+  });
+
+  it("measures a slab turned a quarter about the vertical by its turned footprint", () => {
+    const [floor, wall] = slabs(5.9) as unknown as { size: number[]; position: number[] }[];
+    const [w, h, d] = wall?.size ?? [];
+    expect(
+      depthTies(
+        scene([
+          floor,
+          { ...wall, size: [d, h, w], rotationYDeg: 90 },
+          slab("Far", [9, 9, 9], [1, 1, 1]),
+        ]),
+      ),
+    ).toHaveLength(1);
+  });
+
+  it("prefixes each tie with its scene, and skips a scene without one", () => {
+    const read = (name: string) => scene(slabs(name === "cornell" ? 5.9 : 5.5));
+    expect(depthTieNotes(["cornell", "sunlit-room"], read)).toEqual([
+      "possible cause, cornell: Floor / Wall_Red share the z+ face at 0.000 m (0.040 m2), seen from cornell",
+    ]);
+  });
+
+  it("prints the ties of a failing scene under the tables, and nothing for a passing one", () => {
+    const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const cornell = scene(slabs(5.9));
+    const root = tempRoot();
+    const names = ["cornell", "corner"];
+    for (const engine of ["unreal", "threenative"])
+      for (const pose of names) {
+        const file = path.join(root, engine, "cornell", "ID", `${pose}.png`);
+        mkdirSync(path.dirname(file), { recursive: true });
+        // ThreeNative draws object B nowhere: the pose fails.
+        writeFileSync(
+          file,
+          PNG.sync.write(
+            frame(engine === "unreal" ? ["AB"] : ["A."], { A: [255, 0, 0], B: [0, 255, 0] }),
+          ),
+        );
+      }
+    runSameness(["--scene", "gi:cornell", "--captures", root], () => cornell);
+    expect(log.mock.calls.flat().join("\n")).toContain(
+      "possible cause, cornell: Floor / Wall_Red share the z+ face at 0.000 m (0.040 m2)",
+    );
+    log.mockClear();
+    runSameness(["--scene", "gi:cornell", "--captures", root], () => scene(slabs(5.5)));
+    expect(log.mock.calls.flat().join("\n")).not.toContain("possible cause");
+    log.mockRestore();
+  });
+
+  it("finds no tie in the committed scenes whose slabs a camera sees whole", () => {
+    // lamp-room keeps four 0.1 m squares at its open front. The gate passes there, so it is left as it is.
+    for (const name of ["gi:cornell", "gi:sunlit-room", "shadow:penumbra-lab"])
+      expect(depthTies(readScene(name).scene), name).toEqual([]);
   });
 });

@@ -19,13 +19,15 @@
  * engine draws, and a frame with more pixels of no ID colour than the limit all fail. Three frames per
  * pose go to <root>/overlap/ for the sheet of a mismatch (tools/unreal-reference/sameness-sheet.py): the
  * overlap with the disagreements of the failing objects marked, and each engine's frame redrawn in the
- * exact colour of each object.
+ * exact colour of each object. Under a failing scene it names the depth ties of its slabs
+ * (depth-ties.ts), the first cause to rule out.
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { PNG } from "pngjs";
 import { type IImage, type IMasks, decode, iou, known, masks } from "./compare.js";
-import { familyOf, readScene, registry, sceneKey, sceneNames } from "./gi.js";
+import { depthTieNotes } from "./depth-ties.js";
+import { type ISceneJson, familyOf, readScene, registry, sceneKey, sceneNames } from "./gi.js";
 
 const REPO_ROOT = path.resolve(import.meta.dirname, "../..");
 const REFERENCE = path.join(REPO_ROOT, "tools/unreal-reference");
@@ -492,7 +494,10 @@ export function samenessTables(report: ISamenessReport): string {
   ].join("\n");
 }
 
-export function runSameness(args: readonly string[]): number {
+export function runSameness(
+  args: readonly string[],
+  read: (name: string) => Pick<ISceneJson, "meshes" | "poses"> = (name) => readScene(name).scene,
+): number {
   const root = path.resolve(flag(args, "--captures") ?? path.join(REFERENCE, "captures"));
   const report = samenessReport(samenessInputs(flag(args, "--scene")), root);
   console.log(samenessTables(report));
@@ -501,5 +506,10 @@ export function runSameness(args: readonly string[]): number {
   console.log(
     `\nsameness: ${report.rows.length} objects in ${report.cells.length} poses, farthest edge ${Number.isFinite(worst.gap) ? worst.gap : "∞"} px (${worst.scene}/${worst.pose}/${worst.object}), ${failing.length} poses fail (more than ${report.allowed} px beyond ${report.limit} px, or an object one engine lacks); overlap frames in ${path.join(root, "overlap")}`,
   );
+  for (const note of depthTieNotes(
+    [...new Set(failing.map((c) => c.scene))].filter((name) => name !== "reference"),
+    read,
+  ))
+    console.log(note);
   return failing.length === 0 ? 0 : 1;
 }
