@@ -305,6 +305,8 @@ describe("watchAssets", () => {
         cwd: root,
         debounceMs: DEBOUNCE_MS,
         onChange: recorder.onChange,
+        // A decoder-capable page (`engine: "threejs"`) names its decoders; the default has none.
+        runtimeDecoders: { ktx2: true, meshopt: true },
         transcoder: basisTranscoderPaths(),
       }),
     );
@@ -358,6 +360,28 @@ describe("watchAssets", () => {
     expect(requireEntry(updatedEntries, "rock.png").format).toBe("etc1s");
     expect(updatedEntries["shield.png"]).toEqual(initialEntries["shield.png"]);
     expect((await stat(knightPath)).mtimeMs).toBe(knightMtimeBefore);
+  });
+
+  it("should cook loadable models for the default engine when the caller names no decoders", async () => {
+    // A pre-0.3.5 vite config calls watchAssets without runtimeDecoders. The default web engine
+    // decodes no Meshopt, so a Meshopt model from that dev loop would refuse to load.
+    const root = await makeTempDir("threenative-watch-default-decoders-");
+    await mkdir(path.join(root, "assets"));
+    const { buildFixtureGlb } = await import("../../../test-support/generate-fixture-model.js");
+    await writeFile(
+      path.join(root, "assets", "post.glb"),
+      await buildFixtureGlb({ textured: false }),
+    );
+    const recorder = createBurstRecorder();
+    openHandles.push(
+      watchAssets({ cwd: root, debounceMs: DEBOUNCE_MS, onChange: recorder.onChange }),
+    );
+    await openHandles[0]?.ready;
+    const manifest = JSON.parse(
+      await readFile(path.join(root, "public", "assets.manifest.json"), "utf8"),
+    ) as { entries: Record<string, { extensions?: string[] }> };
+    expect(manifest.entries["post.glb"]).toBeDefined();
+    expect(manifest.entries["post.glb"]?.extensions ?? []).not.toContain("EXT_meshopt_compression");
   });
 
   it("should keep the last manifest readable while publishing a replacement", async () => {
@@ -520,6 +544,7 @@ describe("watchAssets", () => {
         cwd: root,
         debounceMs: DEBOUNCE_MS,
         onChange: recorder.onChange,
+        runtimeDecoders: { ktx2: true, meshopt: true },
         transcoder: basisTranscoderPaths(),
       }),
     );

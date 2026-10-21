@@ -1,0 +1,178 @@
+{
+  "name": "math-core-quaternion",
+  "threeVersion": "0.185.1",
+  "adaptedFrom": "three@0.185.1 test/unit/src/math/Quaternion.tests.js — every public method that does not evaluate a sine or a cosine",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "q07",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:3fc76c8b43958106,n:3fd75c28f5c28f5c,n:3fe189374bc6a7f0,n:3fe75c28f5c28f5c",
+      "decimal": "0.183, 0.365, 0.548, 0.73"
+    },
+    {
+      "index": 1,
+      "id": "q08",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:0000000000000000,n:0000000000000000,n:0000000000000000,n:3ff0000000000000",
+      "decimal": "0, 0, 0, 1"
+    },
+    {
+      "index": 2,
+      "id": "q09",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:3fe0000000000000,n:3fe0000000000000,n:3fe0000000000000,n:3fe0000000000000",
+      "decimal": "0.5, 0.5, 0.5, 0.5"
+    },
+    {
+      "index": 3,
+      "id": "r10",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:3fe0000000000000,n:3fe0000000000000,n:3fe0000000000000,n:3fe0000000000000",
+      "decimal": "0.5, 0.5, 0.5, 0.5"
+    },
+    {
+      "index": 4,
+      "id": "q11",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:bfc76c8b43958106,n:bfd75c28f5c28f5c,n:bfe189374bc6a7f0,n:3fe75c28f5c28f5c",
+      "decimal": "-0.183, -0.365, -0.548, 0.73"
+    },
+    {
+      "index": 5,
+      "id": "q12",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:bfc76c8b43958106,n:bfd75c28f5c28f5c,n:bfe189374bc6a7f0,n:3fe75c28f5c28f5c",
+      "decimal": "-0.183, -0.365, -0.548, 0.73"
+    },
+    {
+      "index": 6,
+      "id": "q13",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:3fc76cca352511ba,n:3fd75c67bb4b701a,n:3fe189666aeefc7c,n:3fe75c67bb4b701a",
+      "decimal": "0.18300750346146605, 0.3650149659204104, 0.5480224693818765, 0.7300299318408208"
+    },
+    {
+      "index": 7,
+      "id": "q14",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:3f8466362e6cfaa6,n:bfcf566b8cfefd5c,n:3fe0b9b69666ad5f,n:3fea214be0250d81",
+      "decimal": "0.009960578243064799, -0.2448248327691357, 0.5226700723191405, 0.8165645006014729"
+    },
+    {
+      "index": 8,
+      "id": "q15",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:0000000000000000,n:0000000000000000,n:3fe6a09e667f3bcc,n:3fe6a09e667f3bcc",
+      "decimal": "0, 0, 0.7071067811865475, 0.7071067811865475"
+    },
+    {
+      "index": 9,
+      "id": "q16",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:3fd75c28f5c28f5c,n:3fe75c28f5c28f5c,n:3fe189374bc6a7f0,n:bfc76c8b43958108",
+      "decimal": "0.365, 0.73, 0.548, -0.18300000000000005"
+    },
+    {
+      "index": 10,
+      "id": "q17",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:3fe189374bc6a7f0,n:3fd75c28f5c28f5c,n:3fe75c28f5c28f5c,n:bfc76c8b43958108",
+      "decimal": "0.548, 0.365, 0.73, -0.18300000000000005"
+    },
+    {
+      "index": 11,
+      "id": "q18",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:3fe0000000000000,n:bfe0000000000000,n:3fe0000000000000,n:3fe0000000000000",
+      "decimal": "0.5, -0.5, 0.5, 0.5"
+    },
+    {
+      "index": 12,
+      "id": "q19",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:bf72fbb8871e9860,n:3fc2f96d2f6e197b,n:3fe3cbe6ec0abaf7,n:3fe8b039a8f47e86",
+      "decimal": "-0.004634590923080578, 0.14823689285203642, 0.6186403856462154, 0.7715118694213323"
+    },
+    {
+      "index": 13,
+      "id": "q20",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:bfd1517a7bdb3894,n:bfd1517a7bdb3894,n:3fe4e7ae9144f0fc,n:3fe4e7ae9144f0fc",
+      "decimal": "-0.27059805007309845, -0.27059805007309845, 0.6532814824381883, 0.6532814824381883"
+    },
+    {
+      "index": 14,
+      "id": "q21",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:3fc38002feb5d984,n:3fd527bd49366271,n:3fe20787252c5216,n:3fe7bb650a1a0ced",
+      "decimal": "0.1523441070273287, 0.33055050038959793, 0.5634189344442031, 0.7416253278064723"
+    },
+    {
+      "index": 15,
+      "id": "r23",
+      "kind": "number",
+      "value": "n:3fed374bc6a7ef9e",
+      "decimal": "0.913"
+    },
+    {
+      "index": 16,
+      "id": "r25",
+      "kind": "number",
+      "value": "n:3fefff540895d0b7",
+      "decimal": "0.999918"
+    },
+    {
+      "index": 17,
+      "id": "r27",
+      "kind": "number",
+      "value": "n:3fefffaa03d762ae",
+      "decimal": "0.9999589991594655"
+    },
+    {
+      "index": 18,
+      "id": "r29",
+      "kind": "number",
+      "value": "n:40032794f065701b",
+      "decimal": "2.3943270474392313"
+    },
+    {
+      "index": 19,
+      "id": "r31",
+      "kind": "boolean",
+      "value": "b:0",
+      "decimal": "false"
+    },
+    {
+      "index": 20,
+      "id": "arr1",
+      "kind": "numbers",
+      "value": "n:3fc76c8b43958106,n:3fd75c28f5c28f5c,n:3fe189374bc6a7f0,n:3fe75c28f5c28f5c",
+      "decimal": "0.183, 0.365, 0.548, 0.73"
+    },
+    {
+      "index": 21,
+      "id": "q33",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:3fc76c8b43958106,n:3fd75c28f5c28f5c,n:3fe189374bc6a7f0,n:3fe75c28f5c28f5c",
+      "decimal": "0.183, 0.365, 0.548, 0.73"
+    }
+  ]
+}

@@ -1,6 +1,7 @@
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
+import * as cpuWindow from "../src/runner/linuxCpuWindow.js";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
 import { playtestDiagnostic } from "../src/index.js";
 import { runDevicePlaytest } from "../src/runner/androidRunner.js";
@@ -77,4 +78,46 @@ test.each(["alive", "dead", "capture-fails", "write-fails", "request-write-fails
       if (mode !== "write-fails" && mode !== "outer-write-fails") expect(JSON.parse(await readFile(join(artifactDirectory, "console.json"), "utf8"))).toEqual(consoleEntries);
     }
   } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+
+test.each(["native", "legacy"])("CPU window failure releases only the %s engine render hold", async (engine) => {
+  const root = await makeTempDir("device-render-hold-");
+  const calls: Array<{ method: string; argument?: unknown }> = [];
+  let held = false;
+  const measure = vi.spyOn(cpuWindow, "measureCpuWindow").mockImplementation(async (_label, _owner, bridge) => {
+    expect(held).toBe(engine === "native");
+    await bridge.sample({});
+    expect(held).toBe(engine === "native");
+    throw new Error("CPU window fixture failed after first sample");
+  });
+  vi.stubEnv("TN_PLAYTEST_CPU_WINDOW_LABELS", '["pose"]');
+  const transport: IDevicePlaytestTransport = {
+    capabilities: ["browser.console"], start: async () => undefined, waitForBridge: async () => true,
+    close: async () => undefined,
+    call: async <T>(method: string, argument?: unknown): Promise<T> => {
+      calls.push({ method, argument });
+      if (method === "_holdAutomaticRender") held = argument === true;
+      const result = method === "describe"
+        ? { capabilities: ["runtime.fixedStep", "runtime.diagnostics", "runtime.network"], limits: { maxEntitiesPerSample: 100, maxEventsPerDrain: 1000, maxPayloadBytes: 1000000, operationTimeoutMs: 5000 }, name: "fixture", protocolVersion: 1, ...(engine === "native" ? { profile: { engine: "native" } } : {}) }
+        : method === "ready" ? { ready: true }
+        : method === "sample" ? { clock: { mode: "fixed-step", tick: 0 }, diagnostics: [], entities: [], network: { entries: [], requests: 0 }, resources: {} }
+        : null;
+      return result as T;
+    },
+  };
+  try {
+    await writeFile(join(root, "scenario.json"), JSON.stringify({ schemaVersion: 1, name: "hold", target: "web", awaitStartup: false, warmupFrames: 0, artifacts: { screenshots: false }, assert: { diagnostics: { noConsoleErrors: true } }, steps: [{ kind: "wait", label: "pose", waitTicks: 1000 }], viewport: { width: 640, height: 360 } }));
+    await expect(runDevicePlaytest({ projectPath: root, scenarioPath: "scenario.json", artifactDirectory: join(root, "artifacts"), target: "desktop", timeoutMs: 1000, headless: true, trace: false, url: "unused" }, {
+      name: "desktop", processName: "fixture", mailboxPaths: { request: "request", response: "response" }, transport,
+      driver: { prepare: async () => undefined, isAlive: async () => true, screenshot: async () => undefined, captureConsole: async () => [], stop: async () => { expect(held).toBe(false); } },
+    })).rejects.toThrow("CPU window fixture failed after first sample");
+    expect(measure).toHaveBeenCalledOnce();
+    expect(calls.filter(({ method }) => method === "_holdAutomaticRender").map(({ argument }) => argument)).toEqual(engine === "native" ? [true, false] : []);
+    expect(held).toBe(false);
+  } finally {
+    measure.mockRestore();
+    vi.unstubAllEnvs();
+    await rm(root, { recursive: true, force: true });
+  }
 });

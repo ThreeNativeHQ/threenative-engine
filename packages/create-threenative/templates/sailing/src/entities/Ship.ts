@@ -9,7 +9,7 @@ import {
 import { Euler, Group, MathUtils, type Object3D, Quaternion, Vector3 } from "three";
 import { measureHull, prepareShipConventions } from "../conventions.js";
 import { createMaterials } from "../render/materials.js";
-import { surfaceHeight } from "../render/ocean.js";
+import { createHeightReconciler, surfaceHeight } from "../render/ocean.js";
 import { SHIP_SAILS, createSails, createShipModel } from "../render/props.js";
 import type { ITouchInput } from "../render/touch-controls.js";
 import type { GameState } from "../state.js";
@@ -67,6 +67,13 @@ const FREEBOARD_TRIM = 0;
 const SAIL_PRESS = 12;
 
 export class Ship {
+  readonly renderMotion = {
+    frames: 0,
+    fractionalFrames: 0,
+    readbacks: 0,
+    maxJitterPixels: 0,
+    verticalRange: 0,
+  };
   /** The physics body's transform. Heave comes from here; attitude does not. */
   readonly mesh = new Group();
   /** What the player sees: the body's position, with an attitude taken from the swell. */
@@ -103,6 +110,9 @@ export class Ship {
   #elapsed = 0;
   #immersion = 0.5;
   #seaHeight = 0;
+  readonly #readHeight = createHeightReconciler();
+  #heightCorrection = 0;
+  #maxHeightCorrection = 0;
   #staleFrames = -1;
   readonly #ocean: SpectralOcean;
   /** Half the hull's length and beam, measured off `ship.glb` rather than assumed. */
@@ -166,6 +176,7 @@ export class Ship {
       body.castShadow = true;
       body.scale.setScalar(this.#normaliseFactor);
       ctx.add(body);
+      ctx.interpolate(body);
       this.#sails.push({
         anchor: new Vector3(sail.x, sail.y, sail.z),
         body,
@@ -190,6 +201,7 @@ export class Ship {
     this.visual.add(model);
     ctx.add(this.mesh);
     ctx.add(this.visual);
+    ctx.interpolate(this.visual);
 
     this.body = new RigidBody3D({
       collisionLayer: 1,
@@ -306,7 +318,6 @@ export class Ship {
     // off the canvas: the sails go slack, the ship loses way, and the two happen together — which
     // is the feedback that makes `S` read as spilling wind rather than as a brake pedal. A quarter
     // of the press stays because a square course does not vanish when it is not drawing.
-    this.#trimSails(press * (0.25 + 0.75 * Math.max(0, throttle)));
     // Hard over is about thirty-five degrees on a real ship, and the blade eases across rather
     // than snapping: a rudder that teleports between its stops is the tell that the helm is a
     // number rather than a thing hanging in the water.
@@ -315,6 +326,7 @@ export class Ship {
       this.#rudder.rotation.y += (blade - this.#rudder.rotation.y) * Math.min(1, deltaTime * 6);
     }
     this.#rideTheSwell(deltaTime);
+    this.#trimSails(press * (0.25 + 0.75 * Math.max(0, throttle)));
   }
 
   /**
@@ -328,12 +340,12 @@ export class Ship {
    * moving ship reads as a bug.
    */
   #trimSails(press: number): void {
+    this.visual.updateMatrixWorld(true);
     for (const sail of this.#sails) {
       // Through the **model's** matrix, not the visual's. The yard coordinates in `SHIP_SAILS`
       // are in the hull's own authored units, and the model sits inside `visual` carrying the
       // metre normalisation and the freeboard trim: read through `visual` alone, a yard at y=4.27
       // put the sail 4.27 *metres* above the sea with the masts bare underneath it.
-      this.#model.updateMatrixWorld(true);
       sail.body.position.copy(sail.anchor).applyMatrix4(this.#model.matrixWorld);
       sail.body.quaternion.copy(this.visual.quaternion).multiply(REST.setFromEuler(sail.rest));
       const gust = 1 + Math.sin(this.#elapsed * 1.7 + sail.anchor.z) * 0.16;
@@ -362,13 +374,9 @@ export class Ship {
     // sea level for those frames is the whole handling this needs — a boat sitting flat at y = 0
     // for the first fraction of a second is invisible, and throwing is not.
     //
-    // Every probe is taken **upwind** by however far the swell will have run during the copy's
-    // age. `sampleHeight` hands back a height from a GPU copy that is `staleFrames` old, and a
-    // hull floated straight onto that number rides water the renderer stopped drawing several
-    // frames ago: the ship visibly cut down through a crest and hung above the following trough,
-    // and the waterline reading swung between a third and two thirds of the hull between two
-    // captures a second apart. Deep-water waves travel, so reading the stale field a little
-    // upwind reads what this patch of sea is about to become.
+    // Each copy carries the vertical velocity measured at the same grid point. Predict in time,
+    // not by shifting along one wind speed: the cascades contain waves with different speeds,
+    // so that spatial guess jumped whenever a newer GPU copy replaced it.
     const heightAt = (sampleX: number, sampleZ: number): number =>
       surfaceHeight(this.#ocean, sampleX, sampleZ, deltaTime) ?? 0;
     // Sampled across the hull's real length and beam, not a token metre. The height copy is a
@@ -395,7 +403,15 @@ export class Ship {
       z + starboard.z * this.#halfBeam,
     );
     const portHeight = heightAt(x - starboard.x * this.#halfBeam, z - starboard.z * this.#halfBeam);
-    const hereHeight = heightAt(x, z);
+    const sample = this.#ocean.sampleHeight(x, z);
+    const here =
+      sample === undefined ? undefined : this.#readHeight(sample, this.#ocean.steps, deltaTime);
+    const hereHeight = here?.height ?? 0;
+    this.#heightCorrection = here?.correction ?? 0;
+    this.#maxHeightCorrection = Math.max(
+      this.#maxHeightCorrection,
+      Math.abs(this.#heightCorrection),
+    );
     this.#seaHeight = hereHeight;
     this.#staleFrames = this.#ocean.sampleHeight(x, z)?.staleFrames ?? -1;
     // The ship's bow is at **-Z**, so a positive `rotation.x` lifts it — which means the pitch is
@@ -430,13 +446,10 @@ export class Ship {
     const blend = Math.min(1, Math.max(0, deltaTime) * 3.2);
     this.visual.position.x = this.mesh.position.x;
     this.visual.position.z = this.mesh.position.z;
-    // The design waterline sits **on** the surface, not eased towards it.
-    //
-    // Easing at 3.2 per second is a third of a second of lag, and against a sea whose surface
-    // rises at three metres a second that is nearly half a metre of hull hanging in the air over
-    // its own trough — most of this ship's draught. A boat this size has no such lag: it is a
-    // float, and a float is wherever the water is. The inertia that *is* real lives in the
-    // attitude below, where a hull's mass genuinely resists being rolled.
+    // The design waterline follows the reconciled surface prediction. Each new GPU copy's
+    // height/velocity correction completes over its measured copy interval; the wave keeps its
+    // measured velocity. The correction's size is reported in debug so a smooth-looking hull
+    // cannot hide a large waterline error. The hull's attitude retains its own inertia below.
     this.visual.position.y = hereHeight;
     // `YXZ`: yaw, then pitch and roll about the ship's **own** axes. In the default `XYZ` order
     // the pitch is applied in world space and the heel goes wherever the heading happens to point
@@ -525,6 +538,11 @@ export class Ship {
   debug(): Record<string, unknown> {
     const velocity = this.body.linearVelocity;
     return {
+      renderFrames: this.renderMotion.frames,
+      fractionalRenderFrames: this.renderMotion.fractionalFrames,
+      renderedReadbacks: this.renderMotion.readbacks,
+      maxRenderJitterPixels: this.renderMotion.maxJitterPixels,
+      renderedHullVerticalRange: this.renderMotion.verticalRange,
       capsized: this.#capsized,
       linearVelocity: [velocity.x, velocity.y, velocity.z],
       normaliseFactor: this.#normaliseFactor,
@@ -542,6 +560,8 @@ export class Ship {
       // arithmetic, and a screenshot cannot tell a canvas that was never sampled from a still one.
       sailSamples: this.sailSamples,
       floatGap: this.visual.position.y - this.#seaHeight,
+      surfacePredictionCorrection: this.#heightCorrection,
+      maxSurfacePredictionCorrection: this.#maxHeightCorrection,
       readbackStaleFrames: this.#staleFrames,
       oceanSteps: this.#ocean.steps,
       submergedFraction: this.buoyancy.submergedFraction,

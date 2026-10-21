@@ -24,6 +24,11 @@ export default defineConfig({
     // `make-sandbox` (6.3s measured) and `template-runtime-cost` (2.1s measured) both hit
     // "Test timed out in 30000ms". The budget is a hang detector, not a schedule.
     testTimeout: 60_000,
+    // Hooks are mostly temp-tree cleanup, and the 10s default is the same hang detector set for
+    // an idle box. On a loaded tn-local runner `rm` of a temp tree passed 10s in
+    // three-patch-upgrade, cpu-bench-cli and make-sandbox (main runs 39217177505, 39226537203)
+    // with every test green, so hooks get the test budget.
+    hookTimeout: 60_000,
     // Several specs drive real headless Chromium plus dev servers (generated-shooter-input,
     // e2e-runner, golden-path). Uncapped worker pools on large machines starve their input
     // timing and fail them nondeterministically; a ceiling keeps those runs honest.

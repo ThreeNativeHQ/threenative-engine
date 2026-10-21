@@ -82,6 +82,41 @@ export const SPANS = {
 
 export type SpanId = (typeof SPANS)[keyof typeof SPANS];
 
+/**
+ * Native game-JS spans use the player's monotonic clock, independent of the simulation clock. They
+ * follow {@link SPANS} in one id space (`__tnGameSpan` takes either), so a new render span moves
+ * every id here; the engine player's name table (`run.cpp` `kGameSpanNames`) is pinned to these
+ * numbers by `native-engine-game-spans.spec.ts`. `hostUpdate`, `hostFrame`, `gc` and `view` are
+ * opened by the host itself and have no id here.
+ */
+export const GAME_SPANS = {
+  input: 16,
+  scheduler: 17,
+  plugins: 18,
+  sceneCallbacks: 19,
+  entities: 20,
+  afterPhysics: 21,
+  mixer: 22,
+  stride: 23,
+  blend: 24,
+  transport: 25,
+  publish: 26,
+  playtest: 27,
+  ui: 30,
+  loop: 33,
+  state: 34,
+  contacts: 35,
+  transitions: 36,
+  objectGraph: 37,
+  physicsStep: 38,
+  physicsRead: 39,
+  physicsApply: 40,
+  characterMove: 41,
+  animationPlay: 42,
+  inputVector: 43,
+  graphVisit: 44,
+} as const;
+
 /** Names, indexed by id. The only place a span name is a string. */
 export const SPAN_NAMES: readonly string[] = [
   "compute",
@@ -450,17 +485,27 @@ export function spanNow(): number {
   return globalThis.performance?.now() ?? Date.now();
 }
 
+/** Player sink only; does not alter the render recorder. No clock read or allocation when off. */
+export function nativeSpan(id: number, action: number): void {
+  (globalThis as { __tnGameSpan?: (id: number, action: number) => number }).__tnGameSpan?.(
+    id,
+    action,
+  );
+}
+
 /**
  * Opens a span. One guarded return when spans are off — no clock read, no allocation, no branch on
- * anything but the recorder's own presence.
+ * anything but the recorder's own presence. The opt-in native wall-time sink sees it first.
  */
 export function beginSpan(id: SpanId): void {
+  nativeSpan(id, 0);
   const active = spanRecorder();
   if (active === undefined) return;
   active.begin(id, spanNow());
 }
 
 export function endSpan(id: SpanId): void {
+  nativeSpan(id, 1);
   const active = spanRecorder();
   if (active === undefined) return;
   active.end(id, spanNow());

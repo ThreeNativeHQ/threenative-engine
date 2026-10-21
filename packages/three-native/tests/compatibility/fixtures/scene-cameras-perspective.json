@@ -1,0 +1,233 @@
+{
+  "name": "scene-cameras-perspective",
+  "adaptedFrom": "three@0.185.1 test/unit/src/cameras/PerspectiveCamera.tests.js \u2014 constructor arguments, zoom, aspect, the film skew, setViewOffset/clearViewOffset and updateProjectionMatrix",
+  "tolerance": {
+    "abs": 0
+  },
+  "ops": [
+    {
+      "op": "new",
+      "id": "default",
+      "class": "PerspectiveCamera",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "camera",
+      "class": "PerspectiveCamera",
+      "args": [50, 1.5, 0.1, 2000]
+    },
+    {
+      "op": "call",
+      "id": "camera",
+      "method": "setFocalLength",
+      "args": [35]
+    },
+    {
+      "op": "call",
+      "id": "camera",
+      "method": "getFocalLength",
+      "args": [],
+      "result": "focalBack"
+    },
+    {
+      "op": "call",
+      "id": "camera",
+      "method": "getEffectiveFOV",
+      "args": [],
+      "result": "effective"
+    },
+    {
+      "op": "call",
+      "id": "camera",
+      "method": "getFilmWidth",
+      "args": [],
+      "result": "filmWidth"
+    },
+    {
+      "op": "call",
+      "id": "camera",
+      "method": "getFilmHeight",
+      "args": [],
+      "result": "filmHeight"
+    },
+    {
+      "op": "new",
+      "id": "zoomed",
+      "class": "PerspectiveCamera",
+      "args": [60, 2, 0.5, 500]
+    },
+    {
+      "op": "set",
+      "id": "zoomed",
+      "path": "zoom",
+      "value": 2
+    },
+    {
+      "op": "call",
+      "id": "zoomed",
+      "method": "updateProjectionMatrix",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "offset",
+      "class": "PerspectiveCamera",
+      "args": [45, 1, 1, 100]
+    },
+    {
+      "op": "call",
+      "id": "offset",
+      "method": "setViewOffset",
+      "args": [5760, 1920, 2880, 960, 1920, 1080]
+    },
+    {
+      "op": "call",
+      "id": "offset",
+      "method": "clearViewOffset",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "skewed",
+      "class": "PerspectiveCamera",
+      "args": [35, 0.5, 0.1, 100]
+    },
+    {
+      "op": "set",
+      "id": "skewed",
+      "path": "filmOffset",
+      "value": 3
+    },
+    {
+      "op": "call",
+      "id": "skewed",
+      "method": "updateProjectionMatrix",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "sized",
+      "class": "PerspectiveCamera",
+      "args": [50, 1, 0.1, 100]
+    },
+    {
+      "op": "new",
+      "id": "viewSize",
+      "class": "Vector2",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "sized",
+      "method": "getViewSize",
+      "args": [
+        10,
+        {
+          "ref": "viewSize"
+        }
+      ]
+    },
+    {
+      "op": "set",
+      "id": "sized",
+      "path": "position.x",
+      "value": 2
+    },
+    {
+      "op": "set",
+      "id": "sized",
+      "path": "position.y",
+      "value": 3
+    },
+    {
+      "op": "call",
+      "id": "sized",
+      "method": "updateMatrixWorld",
+      "args": [true]
+    }
+  ],
+  "observe": [
+    {
+      "id": "default",
+      "path": "projectionMatrix.elements",
+      "kind": "numbers"
+    },
+    {
+      "id": "default",
+      "path": "projectionMatrixInverse.elements",
+      "kind": "numbers"
+    },
+    {
+      "id": "camera",
+      "path": "fov",
+      "kind": "number"
+    },
+    {
+      "id": "camera",
+      "path": "projectionMatrix.elements",
+      "kind": "numbers"
+    },
+    {
+      "id": "camera",
+      "path": "projectionMatrixInverse.elements",
+      "kind": "numbers"
+    },
+    {
+      "id": "focalBack",
+      "kind": "number"
+    },
+    {
+      "id": "effective",
+      "kind": "number"
+    },
+    {
+      "id": "filmWidth",
+      "kind": "number"
+    },
+    {
+      "id": "filmHeight",
+      "kind": "number"
+    },
+    {
+      "id": "zoomed",
+      "path": "projectionMatrix.elements",
+      "kind": "numbers"
+    },
+    {
+      "id": "zoomed",
+      "path": "aspect",
+      "kind": "number"
+    },
+    {
+      "id": "offset",
+      "path": "aspect",
+      "kind": "number"
+    },
+    {
+      "id": "offset",
+      "path": "projectionMatrix.elements",
+      "kind": "numbers"
+    },
+    {
+      "id": "skewed",
+      "path": "projectionMatrix.elements",
+      "kind": "numbers"
+    },
+    {
+      "id": "viewSize",
+      "method": "toArray",
+      "kind": "numbers"
+    },
+    {
+      "id": "sized",
+      "path": "matrixWorldInverse.elements",
+      "kind": "numbers"
+    },
+    {
+      "id": "sized",
+      "path": "matrixWorld.elements",
+      "kind": "numbers"
+    }
+  ]
+}

@@ -877,7 +877,7 @@ export function handleLine(line: string, manifestFile: string): string | undefin
         capabilities: { tools: { listChanged: false } },
         instructions: AUTHORING_INSTRUCTIONS,
         protocolVersion: "2025-06-18",
-        serverInfo: { name: "threenative-engine-mcp", version: "0.2.4" },
+        serverInfo: { name: "threenative-engine-mcp", version: "0.2.6" },
       });
     }
     if (request.method === "tools/list") {

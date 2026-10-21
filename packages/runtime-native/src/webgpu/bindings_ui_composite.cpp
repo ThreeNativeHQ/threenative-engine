@@ -30,8 +30,10 @@
 #include "mystral/webgpu/checked_handle.h"
 
 #include <chrono>
+#include <cstdio>
 #include <cstdlib>
 #include <iostream>
+#include <sstream>
 #include <string>
 
 #if defined(MYSTRAL_WEBGPU_WGPU) || defined(MYSTRAL_WEBGPU_DAWN)
@@ -303,6 +305,17 @@ bool ensureUiTexture(BindingsState* state, uint32_t width, uint32_t height,
 }
 
 /**
+ * Write one whole marker line under a single stdio lock. The web thread's `TN_UI_SNAPSHOT` lines
+ * arrive through `puts` on the same `stdout`, and a marker chained through `std::cout <<` takes the
+ * lock once per fragment, so a snapshot line landed inside a composite marker and made it
+ * unparseable (release run 39247695392).
+ */
+void writeMarkerLine(const std::string& line) {
+    std::fputs(line.c_str(), stdout);
+    std::fflush(stdout);
+}
+
+/**
  * One line per composited frame, only when `TN_UI_COMPOSITE_TRACE` is set.
  *
  * `TN_UI_COMPOSITE` aggregates a second, which is enough for a rate and useless for a gap: a
@@ -317,9 +330,11 @@ bool ensureUiTexture(BindingsState* state, uint32_t width, uint32_t height,
 void traceUiComposite(uint64_t counter, bool uploaded) {
     static const bool enabled = std::getenv("TN_UI_COMPOSITE_TRACE") != nullptr;
     if (!enabled) return;
-    std::cout << "TN_UI_COMPOSITE_TRACE:{\"atMs\":" << coldStartNowMs()
-              << ",\"counter\":" << counter
-              << ",\"uploaded\":" << (uploaded ? "true" : "false") << "}" << std::endl;
+    std::ostringstream line;
+    line << "TN_UI_COMPOSITE_TRACE:{\"atMs\":" << coldStartNowMs()
+         << ",\"counter\":" << counter
+         << ",\"uploaded\":" << (uploaded ? "true" : "false") << "}\n";
+    writeMarkerLine(line.str());
 }
 
 /** Upload the page's frame, or skip it because the page has not changed since the last one. */
@@ -377,17 +392,18 @@ void reportUiComposite(BindingsState* state, const platform::UiOverlayFrame& fra
     // The very first line has no interval behind it; report it anyway, with the totals, so a run
     // that lasts under a second still says the UI composited at all.
     last = now;
-    std::cout << "TN_UI_COMPOSITE:{\"atMs\":" << coldStartNowMs()
-              << ",\"uploads\":" << uploads << ",\"skipped\":" << skipped
-              << ",\"uploadsPerSecond\":" << deltaUploads << ",\"skippedPerSecond\":" << deltaSkipped
-              // Quoted, because every other field here is JSON and this one used to be the only
-              // thing making the whole payload unparseable: `"frame":1280x720` is not a value.
-              << ",\"frame\":\"" << frame.width << "x" << frame.height << "\""
-              << ",\"counter\":" << frame.counter
-              << ",\"uploadedCounter\":" << state->ui.uploadedCounter
-              << ",\"format\":" << static_cast<int>(state->ui.pipelineFormat)
-              << ",\"target\":" << static_cast<int>(state->presentation.surfaceFormat) << "}"
-              << std::endl;
+    std::ostringstream line;
+    line << "TN_UI_COMPOSITE:{\"atMs\":" << coldStartNowMs()
+         << ",\"uploads\":" << uploads << ",\"skipped\":" << skipped
+         << ",\"uploadsPerSecond\":" << deltaUploads << ",\"skippedPerSecond\":" << deltaSkipped
+         // Quoted, because every other field here is JSON and this one used to be the only
+         // thing making the whole payload unparseable: `"frame":1280x720` is not a value.
+         << ",\"frame\":\"" << frame.width << "x" << frame.height << "\""
+         << ",\"counter\":" << frame.counter
+         << ",\"uploadedCounter\":" << state->ui.uploadedCounter
+         << ",\"format\":" << static_cast<int>(state->ui.pipelineFormat)
+         << ",\"target\":" << static_cast<int>(state->presentation.surfaceFormat) << "}\n";
+    writeMarkerLine(line.str());
 }
 
 /**

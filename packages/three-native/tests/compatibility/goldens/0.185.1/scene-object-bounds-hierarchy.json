@@ -1,0 +1,344 @@
+{
+  "name": "scene-object-bounds-hierarchy",
+  "threeVersion": "0.185.1",
+  "adaptedFrom": "three@0.185.1 Box3.expandByObject, InstancedMesh.computeBoundingBox and SkinnedMesh.applyBoneTransform: hierarchy updates, cached versus precise bounds and explicit recomputation",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "conservative",
+      "kind": "number",
+      "path": "min.x",
+      "value": "n:401b39ea689b0f8f",
+      "decimal": "6.8065582604066455"
+    },
+    {
+      "index": 1,
+      "id": "conservative",
+      "kind": "number",
+      "path": "min.y",
+      "value": "n:3ff0a88bc5da7d08",
+      "decimal": "1.041148922791594"
+    },
+    {
+      "index": 2,
+      "id": "conservative",
+      "kind": "number",
+      "path": "min.z",
+      "value": "n:0000000000000000",
+      "decimal": "0"
+    },
+    {
+      "index": 3,
+      "id": "conservative",
+      "kind": "number",
+      "path": "max.x",
+      "value": "n:402782a500cb6faa",
+      "decimal": "11.755165123780746"
+    },
+    {
+      "index": 4,
+      "id": "conservative",
+      "kind": "number",
+      "path": "max.y",
+      "value": "n:40165dcc10ebafbc",
+      "decimal": "5.591598762879524"
+    },
+    {
+      "index": 5,
+      "id": "conservative",
+      "kind": "number",
+      "path": "max.z",
+      "value": "n:4010000000000000",
+      "decimal": "4"
+    },
+    {
+      "index": 6,
+      "id": "precise",
+      "kind": "number",
+      "path": "min.x",
+      "value": "n:40207d5aff349056",
+      "decimal": "8.244834876219254"
+    },
+    {
+      "index": 7,
+      "id": "precise",
+      "kind": "number",
+      "path": "min.y",
+      "value": "n:3ff0a88bc5da7d08",
+      "decimal": "1.041148922791594"
+    },
+    {
+      "index": 8,
+      "id": "precise",
+      "kind": "number",
+      "path": "min.z",
+      "value": "n:3ff8000000000000",
+      "decimal": "1.5"
+    },
+    {
+      "index": 9,
+      "id": "precise",
+      "kind": "number",
+      "path": "max.x",
+      "value": "n:402782a500cb6faa",
+      "decimal": "11.755165123780746"
+    },
+    {
+      "index": 10,
+      "id": "precise",
+      "kind": "number",
+      "path": "max.y",
+      "value": "n:401287ef02624efe",
+      "decimal": "4.632747685671118"
+    },
+    {
+      "index": 11,
+      "id": "precise",
+      "kind": "number",
+      "path": "max.z",
+      "value": "n:3ff8000000000000",
+      "decimal": "1.5"
+    },
+    {
+      "index": 12,
+      "id": "hierarchy",
+      "kind": "number",
+      "path": "min.x",
+      "value": "n:4030ce7a9a26c3e4",
+      "decimal": "16.806558260406646"
+    },
+    {
+      "index": 13,
+      "id": "hierarchy",
+      "kind": "number",
+      "path": "min.y",
+      "value": "n:3ff0a88bc5da7d08",
+      "decimal": "1.041148922791594"
+    },
+    {
+      "index": 14,
+      "id": "hierarchy",
+      "kind": "number",
+      "path": "min.z",
+      "value": "n:0000000000000000",
+      "decimal": "0"
+    },
+    {
+      "index": 15,
+      "id": "hierarchy",
+      "kind": "number",
+      "path": "max.x",
+      "value": "n:4035c1528065b7d5",
+      "decimal": "21.755165123780746"
+    },
+    {
+      "index": 16,
+      "id": "hierarchy",
+      "kind": "number",
+      "path": "max.y",
+      "value": "n:40165dcc10ebafbc",
+      "decimal": "5.591598762879524"
+    },
+    {
+      "index": 17,
+      "id": "hierarchy",
+      "kind": "number",
+      "path": "max.z",
+      "value": "n:4010000000000000",
+      "decimal": "4"
+    },
+    {
+      "index": 18,
+      "id": "preciseHierarchy",
+      "kind": "number",
+      "path": "min.x",
+      "value": "n:40323ead7f9a482b",
+      "decimal": "18.244834876219254"
+    },
+    {
+      "index": 19,
+      "id": "preciseHierarchy",
+      "kind": "number",
+      "path": "min.y",
+      "value": "n:3ff0a88bc5da7d08",
+      "decimal": "1.041148922791594"
+    },
+    {
+      "index": 20,
+      "id": "preciseHierarchy",
+      "kind": "number",
+      "path": "min.z",
+      "value": "n:3ff8000000000000",
+      "decimal": "1.5"
+    },
+    {
+      "index": 21,
+      "id": "preciseHierarchy",
+      "kind": "number",
+      "path": "max.x",
+      "value": "n:4035c1528065b7d5",
+      "decimal": "21.755165123780746"
+    },
+    {
+      "index": 22,
+      "id": "preciseHierarchy",
+      "kind": "number",
+      "path": "max.y",
+      "value": "n:401287ef02624efe",
+      "decimal": "4.632747685671118"
+    },
+    {
+      "index": 23,
+      "id": "preciseHierarchy",
+      "kind": "number",
+      "path": "max.z",
+      "value": "n:3ff8000000000000",
+      "decimal": "1.5"
+    },
+    {
+      "index": 24,
+      "id": "expanded",
+      "kind": "number",
+      "path": "min.x",
+      "value": "n:c059000000000000",
+      "decimal": "-100"
+    },
+    {
+      "index": 25,
+      "id": "expanded",
+      "kind": "number",
+      "path": "min.y",
+      "value": "n:3ff0a88bc5da7d08",
+      "decimal": "1.041148922791594"
+    },
+    {
+      "index": 26,
+      "id": "expanded",
+      "kind": "number",
+      "path": "min.z",
+      "value": "n:3ff8000000000000",
+      "decimal": "1.5"
+    },
+    {
+      "index": 27,
+      "id": "expanded",
+      "kind": "number",
+      "path": "max.x",
+      "value": "n:4035c1528065b7d5",
+      "decimal": "21.755165123780746"
+    },
+    {
+      "index": 28,
+      "id": "expanded",
+      "kind": "number",
+      "path": "max.y",
+      "value": "n:4034000000000000",
+      "decimal": "20"
+    },
+    {
+      "index": 29,
+      "id": "expanded",
+      "kind": "number",
+      "path": "max.z",
+      "value": "n:403e000000000000",
+      "decimal": "30"
+    },
+    {
+      "index": 30,
+      "id": "empty",
+      "kind": "number",
+      "path": "min.x",
+      "value": "n:7ff0000000000000",
+      "decimal": "Infinity"
+    },
+    {
+      "index": 31,
+      "id": "empty",
+      "kind": "number",
+      "path": "min.y",
+      "value": "n:7ff0000000000000",
+      "decimal": "Infinity"
+    },
+    {
+      "index": 32,
+      "id": "empty",
+      "kind": "number",
+      "path": "min.z",
+      "value": "n:7ff0000000000000",
+      "decimal": "Infinity"
+    },
+    {
+      "index": 33,
+      "id": "empty",
+      "kind": "number",
+      "path": "max.x",
+      "value": "n:fff0000000000000",
+      "decimal": "-Infinity"
+    },
+    {
+      "index": 34,
+      "id": "empty",
+      "kind": "number",
+      "path": "max.y",
+      "value": "n:fff0000000000000",
+      "decimal": "-Infinity"
+    },
+    {
+      "index": 35,
+      "id": "empty",
+      "kind": "number",
+      "path": "max.z",
+      "value": "n:fff0000000000000",
+      "decimal": "-Infinity"
+    },
+    {
+      "index": 36,
+      "id": "attributeBox",
+      "kind": "number",
+      "path": "min.x",
+      "value": "n:bff0000000000000",
+      "decimal": "-1"
+    },
+    {
+      "index": 37,
+      "id": "attributeBox",
+      "kind": "number",
+      "path": "min.y",
+      "value": "n:0000000000000000",
+      "decimal": "0"
+    },
+    {
+      "index": 38,
+      "id": "attributeBox",
+      "kind": "number",
+      "path": "min.z",
+      "value": "n:0000000000000000",
+      "decimal": "0"
+    },
+    {
+      "index": 39,
+      "id": "attributeBox",
+      "kind": "number",
+      "path": "max.x",
+      "value": "n:3ff0000000000000",
+      "decimal": "1"
+    },
+    {
+      "index": 40,
+      "id": "attributeBox",
+      "kind": "number",
+      "path": "max.y",
+      "value": "n:3ff0000000000000",
+      "decimal": "1"
+    },
+    {
+      "index": 41,
+      "id": "attributeBox",
+      "kind": "number",
+      "path": "max.z",
+      "value": "n:0000000000000000",
+      "decimal": "0"
+    }
+  ]
+}

@@ -1,0 +1,31 @@
+{
+  "name": "buffer-version-needs-update",
+  "adaptedFrom": "three@0.185.1 src/core/BufferAttribute.js — `needsUpdate = true` bumps `version` once per set and leaves `updateRanges` alone",
+  "tolerance": { "abs": 0 },
+  "ops": [
+    { "op": "new", "id": "box", "class": "BoxGeometry", "args": [1, 1, 1] },
+    {
+      "op": "call",
+      "id": "box",
+      "method": "getAttribute",
+      "args": ["position"],
+      "result": "fresh"
+    },
+    { "op": "new", "id": "box2", "class": "BoxGeometry", "args": [1, 1, 1] },
+    {
+      "op": "call",
+      "id": "box2",
+      "method": "getAttribute",
+      "args": ["position"],
+      "result": "bumped"
+    },
+    { "op": "set", "id": "bumped", "path": "needsUpdate", "value": true },
+    { "op": "set", "id": "bumped", "path": "needsUpdate", "value": true },
+    { "op": "call", "id": "bumped", "method": "addUpdateRange", "args": [1, 2] }
+  ],
+  "observe": [
+    { "id": "fresh", "path": "version", "kind": "number" },
+    { "id": "bumped", "path": "version", "kind": "number" },
+    { "id": "bumped", "path": "updateRanges", "kind": "json" }
+  ]
+}

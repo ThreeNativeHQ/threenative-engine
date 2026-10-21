@@ -1,0 +1,51 @@
+{
+  "name": "textures-data-wraps",
+  "threeVersion": "0.185.1",
+  "adaptedFrom": "original — one four-colour 2x2 DataTexture per wrap mode (ClampToEdgeWrapping, RepeatWrapping, MirroredRepeatWrapping), NearestFilter, sampled over uv -0.75..1.75 so each mode's out-of-range rule shows",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "clampTex",
+      "kind": "number",
+      "path": "wrapS",
+      "value": "n:408f480000000000",
+      "decimal": "1001"
+    },
+    {
+      "index": 1,
+      "id": "repeatTex",
+      "kind": "number",
+      "path": "wrapS",
+      "value": "n:408f400000000000",
+      "decimal": "1000"
+    },
+    {
+      "index": 2,
+      "id": "mirrorTex",
+      "kind": "number",
+      "path": "wrapS",
+      "value": "n:408f500000000000",
+      "decimal": "1002"
+    },
+    {
+      "index": 3,
+      "id": "scene",
+      "kind": "pixels",
+      "value": "s:bac0c854b0b73b42721a0f63e88f12d25b29dee8d30cc09af446fb25bba3dd7d",
+      "decimal": "bac0c854b0b73b42721a0f63e88f12d25b29dee8d30cc09af446fb25bba3dd7d"
+    }
+  ],
+  "render": {
+    "png": "textures-data-wraps.png",
+    "pngSha256": "bac0c854b0b73b42721a0f63e88f12d25b29dee8d30cc09af446fb25bba3dd7d",
+    "width": 320,
+    "height": 128,
+    "adapter": {
+      "architecture": "turing",
+      "description": "",
+      "device": "",
+      "vendor": "nvidia"
+    }
+  }
+}

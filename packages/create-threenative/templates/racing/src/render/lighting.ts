@@ -39,6 +39,9 @@ export function setupLighting(
   key.shadow.bias = -0.0002;
   key.shadow.normalBias = 0.005;
   scene.add(key);
+  // Race.ts moves the target with the car, and three reads its matrixWorld as it stands: only a scene
+  // traversal refreshes it, so a target outside the scene stays at the origin and aims the sun there.
+  scene.add(key.target);
   // The key light is returned because `WorldEnvironment`'s godrays stage raymarches against its
   // shadow map, so `setupPost` needs the light itself.
   return { key };

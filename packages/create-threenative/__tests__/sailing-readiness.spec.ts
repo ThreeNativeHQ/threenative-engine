@@ -96,6 +96,7 @@ function harness(startup = new StartupReadiness({ stableFrames: 1 })) {
     add: <T>(object: T): T => object,
     camera: {},
     entities: { add: <T>(_id: string, entity: T): T => entity },
+    interpolate: () => () => undefined,
     input: { justPressed: () => false, raw: { pointers: new Map() } },
     physics: {},
     renderer: { raw: {} },

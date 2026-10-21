@@ -7,6 +7,8 @@ interface ICaptureFixtureState {
   blank: boolean;
   software: boolean;
   contextHangs: boolean;
+  startupConsoleError: boolean;
+  consoleListener?: (entry: { type(): string; text(): string }) => void;
   lockError?: Error;
   serverError?: Error;
   startupError?: Error;
@@ -14,7 +16,7 @@ interface ICaptureFixtureState {
 }
 
 export const state: ICaptureFixtureState = {
-  target: "web", events: [], capabilities: ["runtime.startup"], blank: false, software: false, contextHangs: false,
+  target: "web", events: [], capabilities: ["runtime.startup"], blank: false, software: false, contextHangs: false, startupConsoleError: false,
 };
 export function resetCaptureFixture(): void {
   state.events.length = 0;
@@ -23,6 +25,8 @@ export function resetCaptureFixture(): void {
   state.blank = false;
   state.software = false;
   state.contextHangs = false;
+  state.startupConsoleError = false;
+  delete state.consoleListener;
   delete state.lockError;
   delete state.serverError;
   delete state.startupError;
@@ -40,6 +44,9 @@ export const chromium = {
       if (state.contextHangs) return new Promise<never>(() => undefined);
       return { newPage: async () => ({
         addInitScript: async () => undefined,
+        on: (event: string, listener: unknown) => {
+          if (event === "console") state.consoleListener = listener as NonNullable<ICaptureFixtureState["consoleListener"]>;
+        },
         screenshot: async () => { state.events.push("screenshot"); return Buffer.from("fixture pixels"); },
       }) };
     } };
@@ -57,7 +64,15 @@ export function resolveBrowserArguments(args: readonly string[] | undefined): st
 export function softwareAdapterName(adapter: Readonly<Record<string, string>>): string | undefined {
   return Object.values(adapter).find((value) => /swiftshader/i.test(value));
 }
-export async function openRunnerPage() { return { description: { capabilities: state.capabilities } }; }
+export async function openRunnerPage() {
+  if (state.startupConsoleError) {
+    state.events.push("startup-console-error");
+    state.consoleListener?.({ type: () => "error", text: () => "startup compile error, later recovered" });
+    state.consoleListener?.({ type: () => "assert", text: () => "startup assertion failed" });
+    state.startupConsoleError = false;
+  }
+  return { description: { capabilities: state.capabilities } };
+}
 export async function teardownBrowserSession(_page: unknown, _context: unknown, browser: unknown, launch: Promise<unknown> | undefined): Promise<void> {
   if (browser !== undefined || launch !== undefined) state.events.push("close-browser");
 }

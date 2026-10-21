@@ -3,7 +3,12 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { makeTempDir } from "../../test-support/temp-dir.js";
 import type { RegistryLookup } from "../check-publish-state.js";
-import { assertOneZeroGatesClosed, nextPatch, selectReleaseVersions } from "../prepare-release.js";
+import {
+  assertOneZeroGatesClosed,
+  nextPatch,
+  selectReleaseVersions,
+  syncSourceVersions,
+} from "../prepare-release.js";
 
 describe("release preparation", () => {
   it("increments only the patch component", () => {
@@ -51,6 +56,40 @@ describe("release preparation", () => {
         state: "unreachable",
       })),
     ).toThrow(/TN_RELEASE_REGISTRY_UNREACHABLE/u);
+  });
+
+  it("writes the core bump into the checked-in replay assertion", async () => {
+    const repo = await makeTempDir("threenative-replay-pin-");
+    const replay = "examples/abyss-framework/playtests/replay.playtest.json";
+    const sourceRoot = path.resolve(import.meta.dirname, "../..");
+    const copied = [
+      "packages/core/src/index.ts",
+      "packages/create-threenative/src/doctor.ts",
+      "packages/engine-mcp/src/index.ts",
+      "packages/engine-mcp/__tests__/server.spec.ts",
+      "packages/blender-mcp/src/index.ts",
+      "packages/core/mcp/servers.mjs",
+      "packages/create-threenative/engine-mcp-tools.json",
+      replay,
+    ];
+    for (const relative of copied) {
+      const target = path.join(repo, relative);
+      fs.mkdirSync(path.dirname(target), { recursive: true });
+      fs.copyFileSync(path.join(sourceRoot, relative), target);
+    }
+    const versions = new Map([
+      ["@threenative/core", "9.9.9"],
+      ["threenative-engine-mcp", "9.9.9"],
+      ["threenative-blender-mcp", "9.9.9"],
+    ]);
+
+    syncSourceVersions(repo, versions);
+
+    const scenario = JSON.parse(fs.readFileSync(path.join(repo, replay), "utf8")) as {
+      assert: { movement?: unknown; world: { runtime: { core: string } } };
+    };
+    expect(scenario.assert.world.runtime.core).toBe("9.9.9");
+    expect(scenario.assert.movement).toBeDefined();
   });
 });
 

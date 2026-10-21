@@ -101,7 +101,7 @@ describe("local native payload assembler", () => {
         ).version
       }`,
     );
-    expect(staged.repository).toBe("ThreeNativeHQ/threenative");
+    expect(staged.repository).toBe("ThreeNativeHQ/threenative-engine");
     expect(staged.manifest.requiredKeys).toEqual(["linux-x64", "linux-x64-tools"]);
     expect(Object.keys(staged.manifest.artifacts).sort()).toEqual(["linux-x64", "linux-x64-tools"]);
     for (const name of [LINUX_RUNTIME, LINUX_TOOLS]) {

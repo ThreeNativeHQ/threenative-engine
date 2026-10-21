@@ -1,0 +1,51 @@
+{
+  "name": "shadows-point",
+  "threeVersion": "0.185.1",
+  "adaptedFrom": "original — a point light's cube PCF shadow map (six faces, bias, normalBias, a shortened far) on Standard, Lambert and Phong meshes; the box casts but does not receive, and a slab inside the sphere's shadow does neither",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "camera",
+      "kind": "numbers",
+      "path": "projectionMatrix.elements",
+      "value": "n:3ff9bbecddd39c58,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:400127f33e8d12e5,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:bff0083340520083,n:bff0000000000000,n:0000000000000000,n:0000000000000000,n:bfc9a02900419a02,n:0000000000000000",
+      "decimal": "1.608380190382169, 0, 0, 0, 0, 2.1445069205095586, 0, 0, 0, 0, -1.002002002002002, -1, 0, 0, -0.20020020020020018, 0"
+    },
+    {
+      "index": 1,
+      "id": "bulb",
+      "kind": "numbers",
+      "path": "matrixWorld.elements",
+      "value": "n:3ff0000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:3ff0000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:3ff0000000000000,n:0000000000000000,n:bfd999999999999a,n:4006666666666666,n:bff999999999999a,n:3ff0000000000000",
+      "decimal": "1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -0.4, 2.8, -1.6, 1"
+    },
+    {
+      "index": 2,
+      "id": "bulb",
+      "kind": "number",
+      "path": "shadow.bias",
+      "value": "n:bf60624dd2f1a9fc",
+      "decimal": "-0.002"
+    },
+    {
+      "index": 3,
+      "id": "scene",
+      "kind": "pixels",
+      "value": "s:261f9b6d7f83df9db87d4079425d44655a5cb8b747c50da4f0a587ef068aada6",
+      "decimal": "261f9b6d7f83df9db87d4079425d44655a5cb8b747c50da4f0a587ef068aada6"
+    }
+  ],
+  "render": {
+    "png": "shadows-point.png",
+    "pngSha256": "261f9b6d7f83df9db87d4079425d44655a5cb8b747c50da4f0a587ef068aada6",
+    "width": 320,
+    "height": 240,
+    "adapter": {
+      "architecture": "turing",
+      "description": "",
+      "device": "",
+      "vendor": "nvidia"
+    }
+  }
+}

@@ -203,12 +203,18 @@ test("performance bounds pass against observed frame cost and renderer counts", 
   expect(evaluated.diagnostics).toEqual([]);
 });
 
+/** The frame budget's phase split and the presentation completion ride along on every sample. */
+const withoutPhaseAndCompletion = (sample: object): Record<string, unknown> => {
+  const { completedAtMs: _completedAtMs, phases: _phases, sequence: _sequence, ...rest } = sample as Record<string, unknown>;
+  return rest;
+};
+
 test("the permanent regressed-scene control drives the render loop and turns red", async () => {
   const loaded = await scenario({ maxDrawCalls: DECLARED_MAX_DRAW_CALLS, maxTriangles: DECLARED_MAX_TRIANGLES });
   const snapshot = await renderControl(REGRESSED_MESH_COUNT, true);
   const result = buildReport(CONFIG, loaded, undefined, snapshot, [], []);
 
-  expect((snapshot.runtimeDiagnosticsSeries ?? []).map(({ phases: _phases, ...sample }) => sample)).toEqual([
+  expect((snapshot.runtimeDiagnosticsSeries ?? []).map(withoutPhaseAndCompletion)).toEqual([
     { drawCalls: REGRESSED_MESH_COUNT, frameMs: 16, triangles: REGRESSED_MESH_COUNT * 12 },
     { drawCalls: REGRESSED_MESH_COUNT, frameMs: 16, triangles: REGRESSED_MESH_COUNT * 12 },
   ]);
@@ -227,7 +233,7 @@ test("the permanent regressed-scene control fails closed when renderer counts di
 
   // The engine frame budget rides along on every sample; this control is about the renderer
   // counts disappearing, so compare the sample without its phase split.
-  expect((snapshot.runtimeDiagnosticsSeries ?? []).map(({ phases: _phases, ...sample }) => sample)).toEqual([
+  expect((snapshot.runtimeDiagnosticsSeries ?? []).map(withoutPhaseAndCompletion)).toEqual([
     { frameMs: 16 },
     { frameMs: 16 },
   ]);

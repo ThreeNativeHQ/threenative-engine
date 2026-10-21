@@ -1,0 +1,169 @@
+{
+  "name": "math-core-plain-vector-arguments",
+  "adaptedFrom": "three@0.185.1 src/math/Vector{2,3,4}.js \u2014 a plain {x, y, z} object passed where a vector is read (copy, add, distanceTo, lerpVectors), as Midway's AudioBus.playAt passes one to position.copy",
+  "tolerance": {
+    "abs": 0
+  },
+  "ops": [
+    {
+      "op": "new",
+      "id": "v",
+      "class": "Vector3",
+      "args": [0, 0, 0]
+    },
+    {
+      "op": "call",
+      "id": "v",
+      "method": "copy",
+      "args": [
+        {
+          "record": {
+            "x": 1.5,
+            "y": -2,
+            "z": 3.25
+          }
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "w",
+      "class": "Vector3",
+      "args": [1, 1, 1]
+    },
+    {
+      "op": "call",
+      "id": "w",
+      "method": "add",
+      "args": [
+        {
+          "record": {
+            "x": 0.5,
+            "y": -1,
+            "z": 2
+          }
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "d",
+      "class": "Vector3",
+      "args": [0, 0, 0]
+    },
+    {
+      "op": "call",
+      "id": "d",
+      "method": "distanceTo",
+      "args": [
+        {
+          "record": {
+            "x": 3,
+            "y": 4,
+            "z": 0
+          }
+        }
+      ],
+      "result": "dist"
+    },
+    {
+      "op": "new",
+      "id": "m",
+      "class": "Vector3",
+      "args": [0, 0, 0]
+    },
+    {
+      "op": "call",
+      "id": "m",
+      "method": "lerpVectors",
+      "args": [
+        {
+          "record": {
+            "x": 0,
+            "y": 0,
+            "z": 0
+          }
+        },
+        {
+          "record": {
+            "x": 2,
+            "y": 4,
+            "z": 8
+          }
+        },
+        0.25
+      ]
+    },
+    {
+      "op": "new",
+      "id": "p",
+      "class": "Vector2",
+      "args": [0, 0]
+    },
+    {
+      "op": "call",
+      "id": "p",
+      "method": "copy",
+      "args": [
+        {
+          "record": {
+            "x": 9,
+            "y": -3
+          }
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "q",
+      "class": "Vector4",
+      "args": [0, 0, 0, 0]
+    },
+    {
+      "op": "call",
+      "id": "q",
+      "method": "copy",
+      "args": [
+        {
+          "record": {
+            "x": 1,
+            "y": 2,
+            "z": 3,
+            "w": 4
+          }
+        }
+      ]
+    }
+  ],
+  "observe": [
+    {
+      "id": "v",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "w",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "m",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "p",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "q",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "dist",
+      "kind": "number"
+    }
+  ]
+}

@@ -1,0 +1,112 @@
+{
+  "name": "lights-props-ambient",
+  "threeVersion": "0.185.1",
+  "adaptedFrom": "original — AmbientLight: a hex colour argument through ColorManagement, intensity and the Object3D members",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "fresh",
+      "kind": "string",
+      "path": "type",
+      "value": "s:AmbientLight",
+      "decimal": "AmbientLight"
+    },
+    {
+      "index": 1,
+      "id": "fresh",
+      "kind": "number",
+      "path": "color.r",
+      "value": "n:3ff0000000000000",
+      "decimal": "1"
+    },
+    {
+      "index": 2,
+      "id": "fresh",
+      "kind": "number",
+      "path": "color.g",
+      "value": "n:3ff0000000000000",
+      "decimal": "1"
+    },
+    {
+      "index": 3,
+      "id": "fresh",
+      "kind": "number",
+      "path": "color.b",
+      "value": "n:3ff0000000000000",
+      "decimal": "1"
+    },
+    {
+      "index": 4,
+      "id": "fresh",
+      "kind": "number",
+      "path": "intensity",
+      "value": "n:3ff0000000000000",
+      "decimal": "1"
+    },
+    {
+      "index": 5,
+      "id": "l",
+      "kind": "string",
+      "path": "type",
+      "value": "s:AmbientLight",
+      "decimal": "AmbientLight"
+    },
+    {
+      "index": 6,
+      "id": "l",
+      "kind": "number",
+      "path": "color.r",
+      "value": "n:3fd9ba01028373e8",
+      "decimal": "0.4019777798219466"
+    },
+    {
+      "index": 7,
+      "id": "l",
+      "kind": "number",
+      "path": "color.g",
+      "value": "n:3fdfcdc00c8331ce",
+      "decimal": "0.4969329950515914"
+    },
+    {
+      "index": 8,
+      "id": "l",
+      "kind": "number",
+      "path": "color.b",
+      "value": "n:3fd21f1be500411b",
+      "decimal": "0.28314874041918053"
+    },
+    {
+      "index": 9,
+      "id": "l",
+      "kind": "number",
+      "path": "intensity",
+      "value": "n:4004000000000000",
+      "decimal": "2.5"
+    },
+    {
+      "index": 10,
+      "id": "l",
+      "kind": "number",
+      "path": "position.x",
+      "value": "n:3ff8000000000000",
+      "decimal": "1.5"
+    },
+    {
+      "index": 11,
+      "id": "l",
+      "kind": "number",
+      "path": "position.y",
+      "value": "n:0000000000000000",
+      "decimal": "0"
+    },
+    {
+      "index": 12,
+      "id": "l",
+      "kind": "number",
+      "path": "position.z",
+      "value": "n:0000000000000000",
+      "decimal": "0"
+    }
+  ]
+}

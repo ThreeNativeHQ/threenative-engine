@@ -1,0 +1,55 @@
+{
+  "name": "math-core-plain-vector-arguments",
+  "threeVersion": "0.185.1",
+  "adaptedFrom": "three@0.185.1 src/math/Vector{2,3,4}.js — a plain {x, y, z} object passed where a vector is read (copy, add, distanceTo, lerpVectors), as Midway's AudioBus.playAt passes one to position.copy",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "v",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:3ff8000000000000,n:c000000000000000,n:400a000000000000",
+      "decimal": "1.5, -2, 3.25"
+    },
+    {
+      "index": 1,
+      "id": "w",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:3ff8000000000000,n:0000000000000000,n:4008000000000000",
+      "decimal": "1.5, 0, 3"
+    },
+    {
+      "index": 2,
+      "id": "m",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:3fe0000000000000,n:3ff0000000000000,n:4000000000000000",
+      "decimal": "0.5, 1, 2"
+    },
+    {
+      "index": 3,
+      "id": "p",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:4022000000000000,n:c008000000000000",
+      "decimal": "9, -3"
+    },
+    {
+      "index": 4,
+      "id": "q",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:3ff0000000000000,n:4000000000000000,n:4008000000000000,n:4010000000000000",
+      "decimal": "1, 2, 3, 4"
+    },
+    {
+      "index": 5,
+      "id": "dist",
+      "kind": "number",
+      "value": "n:4014000000000000",
+      "decimal": "5"
+    }
+  ]
+}

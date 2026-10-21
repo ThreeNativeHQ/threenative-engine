@@ -522,7 +522,9 @@ test('iOS CLI forwards the declared orientation before host validation', async (
 test('the published package includes the iOS packager without C++ source', () => {
   const manifest = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
   assert.ok(manifest.files.includes('scripts/package-ios.mjs'));
-  assert.ok(!manifest.files.some((path) => /^(?:src|include|cmake|ios\/main\.mm)/u.test(path)));
+  // The engine player's JavaScript sources ship for the desktop bundler; they are not C++.
+  const shipped = manifest.files.filter((path) => path !== 'src/engine/player/*.mjs');
+  assert.ok(!shipped.some((path) => /^(?:src|include|cmake|ios\/main\.mm)/u.test(path)));
 });
 
 test('release lane locks and launches the packed simulator host with physics controls', () => {
@@ -533,7 +535,7 @@ test('release lane locks and launches the packed simulator host with physics con
   for (const token of [
     'build-ios-simulator:',
     'generateReleaseManifest',
-    'RELEASE_SHA: ${{ needs.validate-tag.outputs.candidate_sha }}',
+    'RELEASE_SHA: ${{ steps.release.outputs.sha }}',
     'clean-consumer-ios:',
     'build --target ios',
     'physics-wrong-height.playtest.json',
@@ -550,10 +552,10 @@ test('release lane locks and launches the packed simulator host with physics con
   assert.equal(PREBUILT_ASSET_NAMES['ios-simulator-arm64'], 'threenative-ios-simulator-arm64.zip');
   assert.match(workflow, /^permissions:\n {2}contents: read$/mu);
   assert.match(workflow, /publish:[\s\S]*permissions:\n {6}contents: write/u);
-  assert.match(workflow, /gh release create[\s\S]*--prerelease[\s\S]*--latest=false/u);
+  assert.match(workflow, /--prerelease --latest=false[\s\S]*gh release create "\$RELEASE_TAG"/u);
   assert.match(
     workflow,
-    /finalize:[\s\S]*needs: \[validate-tag, clean-consumer, clean-consumer-windows\]/u,
+    /finalize:[\s\S]*needs: \[validate-tag, publish, clean-consumer, clean-consumer-windows\]/u,
   );
   assert.match(workflow, /cleanup-failed-release:[\s\S]*gh release delete/u);
 });

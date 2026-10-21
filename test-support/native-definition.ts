@@ -147,22 +147,24 @@ export function nativeBindingDefinition(
       `native binding lookup needs bare surface and method names, got ${surface}.${name}`,
     );
   }
+  const files = options.readFiles?.() ?? nativeSourceFiles(options.root ?? NATIVE_SOURCE_ROOT);
+  const snapshot: INativeDefinitionOptions = { readFiles: () => files };
   const pending = ["installWebGPUBindingTables"];
   const visited = new Set<string>();
   while (pending.length > 0) {
     const symbol = pending.shift();
     if (symbol === undefined || visited.has(symbol)) continue;
     visited.add(symbol);
-    const definition = nativeDefinition(symbol, options);
+    const definition = nativeDefinition(symbol, snapshot);
     const row = definition.text.match(
       new RegExp(`\\{"${surface}",\\s*"${name}"[\\s\\S]*?&([A-Za-z_][A-Za-z0-9_]*)`, "u"),
     );
-    if (row?.[1]) return nativeDefinition(row[1], options);
+    if (row?.[1]) return nativeDefinition(row[1], snapshot);
     for (const reference of definition.text.matchAll(/&([A-Za-z_][A-Za-z0-9_]*)/gu)) {
       const referencedSymbol = reference[1];
       if (referencedSymbol === undefined) continue;
       try {
-        nativeDefinition(referencedSymbol, options);
+        nativeDefinition(referencedSymbol, snapshot);
         pending.push(referencedSymbol);
       } catch {
         // Binding rows also reference backend handles and data members; only definitions recurse.

@@ -616,6 +616,30 @@ describe("pnpm tsx scripts/verify-registry-install.ts", () => {
     expect(report.steps.find((step) => step.name === "npm:native")?.detail).toMatch(/300 frames/u);
   });
 
+  it("accepts the engine player's playtest report and refuses an empty one (PRD-637)", async () => {
+    const withReport = (gateReport: object) => async () =>
+      verifyRegistryInstall({
+        mcp: happyMcpRunner(),
+        parent: await tempRoot(),
+        run: (command, args, cwd) => {
+          if (command === "node" && args[0]?.endsWith("verify-starter-desktop.mjs")) {
+            const artifacts = path.join(cwd, "artifacts", "native");
+            fs.mkdirSync(artifacts, { recursive: true });
+            fs.writeFileSync(
+              path.join(artifacts, "starter-desktop-report.json"),
+              JSON.stringify(gateReport),
+            );
+            return "starter desktop gate passed: engine player";
+          }
+          return happyRunner()(command, args, cwd);
+        },
+      });
+    const passing = await withReport({ assertions: 5, gate: "consumer-playtest", pass: true })();
+    expect(passing.steps.find((step) => step.name === "npm:native")).toMatchObject({ ok: true });
+    const empty = await withReport({ assertions: 0, gate: "consumer-playtest", pass: true })();
+    expect(empty.steps.find((step) => step.name === "npm:native")).toMatchObject({ ok: false });
+  });
+
   it("fails when doctor text omits the target census", async () => {
     const report = await verifyRegistryInstall({
       mcp: happyMcpRunner(),
@@ -1110,6 +1134,14 @@ describe("the PRD-446 upgrade proof", () => {
         args.some((argument) => argument.endsWith(".tgz"))
       ) {
         seen.installs.push([command, ...args]);
+        // A cohort package reached only through another one resolves from these overrides, not
+        // from the command line, so a missing one is a registry fetch of an unpublished version.
+        const { pnpm } = JSON.parse(fs.readFileSync(path.join(cwd, "package.json"), "utf8")) as {
+          pnpm?: { overrides?: Record<string, string> };
+        };
+        for (const [name, tarball] of Object.entries(candidate.tarballs))
+          if (pnpm?.overrides?.[name] !== `file:${tarball}`)
+            throw new Error(`${name} is not overridden to its packed tarball`);
         installCandidate(cwd, options.version ?? CORE_VERSION);
         writePnpmLockfile(
           cwd,

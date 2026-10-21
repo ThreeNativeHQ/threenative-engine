@@ -245,7 +245,7 @@ void compositeCanvas2DToWebGPU(BindingsState* state) {
 
     // Get surface texture
     WGPUSurfaceTexture surfaceTexture;
-    wgpuSurfaceGetCurrentTexture(state->surface, &surfaceTexture);
+    acquirePresentationSurface(state->surface, &surfaceTexture);
     if (!wgpuSurfaceTextureStatusIsSuccess(surfaceTexture.status)) {
         return;
     }

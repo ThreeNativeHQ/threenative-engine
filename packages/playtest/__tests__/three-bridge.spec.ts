@@ -500,3 +500,29 @@ test("dispose restores a previously installed bridge instead of deleting it", ()
   first.dispose();
   expect((globalThis as Record<string, unknown>).__THREENATIVE_PLAYTEST_BRIDGE__).toBeUndefined();
 });
+
+test("a runtime render-only provider is advertised and serviced, and absent otherwise", async () => {
+  // A driven native loop presents nothing between ticks, so a desktop screenshot needs an explicit
+  // render-only frame. The bridge owns the operation; the capability is the runner's signal that
+  // the operation exists, so a capture that needs one is never sent to a bridge that lacks it.
+  let rendered = 0;
+  const withRender = installThreePlaytestBridge({
+    camera: new PerspectiveCamera(),
+    fixedStep: () => undefined,
+    renderCurrent: () => {
+      rendered += 1;
+    },
+    renderer,
+    scene: new Scene(),
+    tick: () => 0,
+  });
+  expect((await withRender.bridge.describe()).capabilities).toContain("runtime.renderOnly");
+  await withRender.bridge.renderOnly?.();
+  expect(rendered).toBe(1);
+  withRender.dispose();
+
+  const without = installThreePlaytestBridge({ camera: new PerspectiveCamera(), renderer, scene: new Scene() });
+  expect((await without.bridge.describe()).capabilities).not.toContain("runtime.renderOnly");
+  expect(without.bridge.renderOnly).toBeUndefined();
+  without.dispose();
+});

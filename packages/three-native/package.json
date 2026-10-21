@@ -1,0 +1,36 @@
+{
+  "name": "@threenative/three-native",
+  "version": "0.3.6",
+  "license": "MIT",
+  "description": "The native engine's machine-readable compatibility catalog and the generators that adapt it to TypeScript declarations and the C binding ABI.",
+  "keywords": ["threenative", "three", "native", "abi", "gamedev"],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ThreeNativeHQ/threenative.git",
+    "directory": "packages/three-native"
+  },
+  "type": "module",
+  "scripts": {
+    "generate": "pnpm --workspace-root exec tsx packages/three-native/scripts/generate.ts",
+    "sync-native-status": "pnpm --workspace-root exec tsx packages/three-native/scripts/sync-native-status.ts",
+    "test": "publint --strict",
+    "test:reference": "pnpm --workspace-root exec tsx packages/three-native/tests/compatibility/run-reference.ts",
+    "typecheck": "pnpm run generate && tsc --noEmit -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@types/three": "0.185.3",
+    "publint": "0.3.22",
+    "three": "catalog:",
+    "typescript": "catalog:"
+  },
+  "peerDependencies": {
+    "three": "catalog:"
+  },
+  "files": ["src/**/*.ts", "README.md"],
+  "exports": {
+    "./package.json": "./package.json"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

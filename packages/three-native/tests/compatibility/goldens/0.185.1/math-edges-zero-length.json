@@ -1,0 +1,140 @@
+{
+  "name": "math-edges-zero-length",
+  "threeVersion": "0.185.1",
+  "adaptedFrom": "three@0.185.1 test/unit/src/math/*.tests.js — the length-zero branches, where the reference guards its division with `length || 1`",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "v01",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:0000000000000000,n:0000000000000000,n:0000000000000000",
+      "decimal": "0, 0, 0"
+    },
+    {
+      "index": 1,
+      "id": "v01",
+      "kind": "number",
+      "method": "length",
+      "value": "n:0000000000000000",
+      "decimal": "0"
+    },
+    {
+      "index": 2,
+      "id": "v02",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:0000000000000000,n:0000000000000000",
+      "decimal": "0, 0"
+    },
+    {
+      "index": 3,
+      "id": "v03",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:0000000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000",
+      "decimal": "0, 0, 0, 0"
+    },
+    {
+      "index": 4,
+      "id": "v04",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:0000000000000000,n:0000000000000000,n:0000000000000000",
+      "decimal": "0, 0, 0"
+    },
+    {
+      "index": 5,
+      "id": "v05",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:0000000000000000,n:0000000000000000,n:0000000000000000",
+      "decimal": "0, 0, 0"
+    },
+    {
+      "index": 6,
+      "id": "r07",
+      "kind": "number",
+      "value": "n:0000000000000000",
+      "decimal": "0"
+    },
+    {
+      "index": 7,
+      "id": "r08",
+      "kind": "number",
+      "value": "n:0000000000000000",
+      "decimal": "0"
+    },
+    {
+      "index": 8,
+      "id": "q09",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:0000000000000000,n:0000000000000000,n:0000000000000000,n:3ff0000000000000",
+      "decimal": "0, 0, 0, 1"
+    },
+    {
+      "index": 9,
+      "id": "r11",
+      "kind": "number",
+      "value": "n:0000000000000000",
+      "decimal": "0"
+    },
+    {
+      "index": 10,
+      "id": "r13",
+      "kind": "number",
+      "value": "n:3ff921fb54442d18",
+      "decimal": "1.5707963267948966"
+    },
+    {
+      "index": 11,
+      "id": "s14",
+      "kind": "boolean",
+      "method": "isEmpty",
+      "value": "b:1",
+      "decimal": "true"
+    },
+    {
+      "index": 12,
+      "id": "s14",
+      "kind": "number",
+      "path": "radius",
+      "value": "n:bff0000000000000",
+      "decimal": "-1"
+    },
+    {
+      "index": 13,
+      "id": "s14",
+      "kind": "number",
+      "path": "center.x",
+      "value": "n:0000000000000000",
+      "decimal": "0"
+    },
+    {
+      "index": 14,
+      "id": "b15",
+      "kind": "boolean",
+      "method": "isEmpty",
+      "value": "b:1",
+      "decimal": "true"
+    },
+    {
+      "index": 15,
+      "id": "b15",
+      "kind": "number",
+      "path": "min.x",
+      "value": "n:7ff0000000000000",
+      "decimal": "Infinity"
+    },
+    {
+      "index": 16,
+      "id": "b15",
+      "kind": "number",
+      "path": "max.x",
+      "value": "n:fff0000000000000",
+      "decimal": "-Infinity"
+    }
+  ]
+}

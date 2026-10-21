@@ -29,7 +29,17 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       runId,
       runAttempt,
     };
-    const listing = readIntegrationJobs({ repository, runId, runAttempt });
+    // Collecting runs after every selected leg, so each must read as finished; a writer's own
+    // job is still running.
+    const settled =
+      process.argv[2] === "--collect"
+        ? expected.jobs.map((job) => `integration / ${expected.jobNames[job]}`)
+        : [];
+    const listing = readIntegrationJobs(
+      { repository, runId, runAttempt },
+      "CI_INTEGRATION",
+      settled,
+    );
     if (process.argv[2] === "--write") {
       const job = process.env.GITHUB_JOB;
       if (!expected.jobs.includes(job))

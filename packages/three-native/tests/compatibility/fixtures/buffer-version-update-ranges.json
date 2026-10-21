@@ -1,0 +1,33 @@
+{
+  "name": "buffer-version-update-ranges",
+  "adaptedFrom": "three@0.185.1 BufferAttribute.addUpdateRange/clearUpdateRanges — ranges append in call order, clear empties them, and neither bumps version",
+  "tolerance": { "abs": 0 },
+  "ops": [
+    { "op": "new", "id": "box", "class": "BoxGeometry", "args": [1, 1, 1] },
+    {
+      "op": "call",
+      "id": "box",
+      "method": "getAttribute",
+      "args": ["position"],
+      "result": "ranges"
+    },
+    { "op": "call", "id": "ranges", "method": "addUpdateRange", "args": [0, 3] },
+    { "op": "call", "id": "ranges", "method": "addUpdateRange", "args": [6, 3] },
+    { "op": "new", "id": "box2", "class": "BoxGeometry", "args": [1, 1, 1] },
+    {
+      "op": "call",
+      "id": "box2",
+      "method": "getAttribute",
+      "args": ["position"],
+      "result": "cleared"
+    },
+    { "op": "call", "id": "cleared", "method": "addUpdateRange", "args": [2, 4] },
+    { "op": "call", "id": "cleared", "method": "clearUpdateRanges", "args": [] },
+    { "op": "call", "id": "cleared", "method": "addUpdateRange", "args": [5, 1] }
+  ],
+  "observe": [
+    { "id": "ranges", "path": "updateRanges", "kind": "json" },
+    { "id": "cleared", "path": "updateRanges", "kind": "json" },
+    { "id": "ranges", "path": "version", "kind": "number" }
+  ]
+}

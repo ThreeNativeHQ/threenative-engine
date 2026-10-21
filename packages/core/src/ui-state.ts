@@ -3,6 +3,8 @@ import {
   type IUiBridge,
   type IUiMessage,
   UI_INTENT_MESSAGE,
+  postUiState,
+  serializeUiState,
 } from "./ui-bridge.js";
 
 /**
@@ -89,12 +91,15 @@ export function publishUiState<T>(
   let queued = false;
   let lastFrame = "";
 
+  const send = (state: T, frame: string): void => {
+    lastFrame = frame;
+    postUiState(bridge, state, frame);
+  };
+
   const publish = (): void => {
     if (stopped) return;
-    // A published state is by definition JSON-shaped: it has just been serialised for the wire.
-    const state = read() as Record<string, unknown>;
-    lastFrame = JSON.stringify(state);
-    bridge.post({ type: GAME_STATE_MESSAGE, state } as IUiMessage);
+    const state = read();
+    send(state, serializeUiState(state));
   };
 
   const flush = (): void => {
@@ -106,8 +111,10 @@ export function publishUiState<T>(
     if (!bridge.hasPeer()) return;
     // Skip a publication that would carry the bytes the UI already has. A store that writes the
     // same value every tick is common and must not become a message per tick.
-    if (JSON.stringify(read()) === lastFrame) return;
-    publish();
+    const state = read();
+    const frame = serializeUiState(state);
+    if (frame === lastFrame) return;
+    send(state, frame);
   };
 
   const unsubscribe = store.subscribe(() => {

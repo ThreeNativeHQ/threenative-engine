@@ -1,0 +1,127 @@
+{
+  "name": "geometry-attribute-clone",
+  "adaptedFrom": "original — BufferAttribute.clone on a geometry's index and position, as Midway's particle batch copies a PlaneGeometry's into an InstancedBufferGeometry: a new attribute of the same class, itemSize and array type holding a copy of the elements, so an edit to one leaves the other",
+  "tolerance": {
+    "abs": 0
+  },
+  "ops": [
+    {
+      "op": "new",
+      "id": "plane",
+      "class": "PlaneGeometry",
+      "args": [1, 1]
+    },
+    {
+      "op": "call",
+      "id": "plane",
+      "method": "getIndex",
+      "args": [],
+      "result": "index"
+    },
+    {
+      "op": "call",
+      "id": "index",
+      "method": "clone",
+      "args": [],
+      "result": "indexCopy"
+    },
+    {
+      "op": "call",
+      "id": "index",
+      "method": "setX",
+      "args": [0, 3]
+    },
+    {
+      "op": "call",
+      "id": "plane",
+      "method": "getAttribute",
+      "args": ["position"],
+      "result": "position"
+    },
+    {
+      "op": "call",
+      "id": "position",
+      "method": "setUsage",
+      "args": [35048]
+    },
+    {
+      "op": "call",
+      "id": "position",
+      "method": "clone",
+      "args": [],
+      "result": "positionCopy"
+    },
+    {
+      "op": "call",
+      "id": "positionCopy",
+      "method": "setXYZ",
+      "args": [1, 9, 8, 7]
+    },
+    {
+      "op": "new",
+      "id": "instanced",
+      "class": "InstancedBufferAttribute",
+      "args": [
+        {
+          "array": [1, 2, 3, 4, 5, 6],
+          "type": "Float32Array"
+        },
+        3
+      ]
+    },
+    {
+      "op": "call",
+      "id": "instanced",
+      "method": "clone",
+      "args": [],
+      "result": "instancedCopy"
+    }
+  ],
+  "observe": [
+    {
+      "id": "index",
+      "kind": "numbers",
+      "path": "array"
+    },
+    {
+      "id": "indexCopy",
+      "kind": "numbers",
+      "path": "array"
+    },
+    {
+      "id": "indexCopy",
+      "kind": "number",
+      "path": "itemSize"
+    },
+    {
+      "id": "position",
+      "kind": "numbers",
+      "path": "array"
+    },
+    {
+      "id": "positionCopy",
+      "kind": "numbers",
+      "path": "array"
+    },
+    {
+      "id": "positionCopy",
+      "kind": "number",
+      "path": "usage"
+    },
+    {
+      "id": "positionCopy",
+      "kind": "number",
+      "path": "count"
+    },
+    {
+      "id": "instancedCopy",
+      "kind": "numbers",
+      "path": "array"
+    },
+    {
+      "id": "instancedCopy",
+      "kind": "number",
+      "path": "meshPerAttribute"
+    }
+  ]
+}

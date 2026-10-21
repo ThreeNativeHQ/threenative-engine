@@ -71,11 +71,17 @@ export class LocalDeviceMailbox {
  */
 export class DesktopPlaytestDriver implements IDevicePlaytestDriver {
   private child?: ChildProcess;
+  private childClosed?: Promise<void>;
   private mailboxRoot?: string;
   private readonly consoleEntries: Array<{ text: string; type: string }> = [];
   private readonly pendingOutput = { stderr: "", stdout: "" };
 
   constructor(private readonly options: IDesktopPlaytestDriverOptions) {}
+
+  /** The child this driver owns; never inferred from a process-name search. */
+  get processId(): number | undefined {
+    return this.child?.exitCode === null && this.child?.signalCode === null ? this.child.pid : undefined;
+  }
 
   async captureConsole(): Promise<Array<{ text: string; type: string }>> {
     this.flushOutput("stdout");
@@ -136,6 +142,7 @@ export class DesktopPlaytestDriver implements IDevicePlaytestDriver {
       windowsHide: true,
     });
     this.child = child;
+    this.childClosed = new Promise((resolve) => child.once("close", () => resolve()));
     child.stdout?.on("data", (chunk: Buffer | string) => this.recordOutput("stdout", chunk));
     child.stderr?.on("data", (chunk: Buffer | string) => this.recordOutput("stderr", chunk));
     try {
@@ -146,7 +153,16 @@ export class DesktopPlaytestDriver implements IDevicePlaytestDriver {
     }
   }
 
-  async screenshot(path: string): Promise<void> {
+  /**
+   * Capture the running game to `path`, returning once the file is written.
+   *
+   * A deterministic native loop presents nothing between ticks, so the host's copy never happens
+   * on its own. `onRequestAccepted` is invoked exactly once, after the host has consumed the
+   * request file and therefore set its copy flag; the runner points it at the bridge's render-only
+   * operation so the host has a present to copy. It is absent when the bridge offers none, which
+   * leaves the pre-existing behavior.
+   */
+  async screenshot(path: string, onRequestAccepted?: () => Promise<void>): Promise<void> {
     const root = this.mailboxRoot;
     if (root === undefined) throw new Error("Desktop playtest mailbox is unavailable before prepare().");
     if (!(await this.isAlive())) throw new Error("Desktop playtest executable exited before screenshot capture.");
@@ -156,8 +172,8 @@ export class DesktopPlaytestDriver implements IDevicePlaytestDriver {
     // Two phases, because two different things bound them. The host deletes the request file the
     // moment it accepts the request (processPlaytestScreenshotRequest in runtime.cpp), so a file
     // still sitting there past the short wait means an app that never serviced the mailbox at all.
-    // Once it is gone the host is inside its own budget — up to 120 polled frames plus a 5s buffer
-    // map — which a software adapter's present outlasts (endDawnFrame p50 333ms, max 4.3s on arm64
+    // Once it is gone the host is inside its own budget — a 2s capture wait plus a 5s buffer
+    // map — which a software adapter's present can outlast (endDawnFrame p50 333ms, max 4.3s on arm64
     // llvmpipe), so only that phase gets the harness's overall screenshot budget. The sum is the
     // absolute cap, and isAlive() still fails fast inside both.
     const pickupDeadline = Date.now() + (this.options.screenshotTimeoutMs ?? nativeScreenshotTimeoutMs());
@@ -173,6 +189,7 @@ export class DesktopPlaytestDriver implements IDevicePlaytestDriver {
       }
       if (!accepted) {
         accepted = (await new LocalDeviceMailbox().read(request)) === undefined;
+        if (accepted && onRequestAccepted !== undefined) await onRequestAccepted();
         if (!accepted && Date.now() >= pickupDeadline) break;
       }
       await delay(25);
@@ -206,6 +223,7 @@ export class DesktopPlaytestDriver implements IDevicePlaytestDriver {
   async stop(): Promise<void> {
     const child = this.child;
     if (child === undefined) return;
+    let closeTimeout: ReturnType<typeof setTimeout> | undefined;
     try {
       if (!isProcessExited(child) && child.pid !== undefined) {
         terminateProcess(child, "SIGTERM");
@@ -220,7 +238,14 @@ export class DesktopPlaytestDriver implements IDevicePlaytestDriver {
           throw new Error("Desktop playtest executable did not exit after SIGTERM.");
         }
       }
+      await Promise.race([
+        this.childClosed,
+        new Promise<never>((_, reject) => {
+          closeTimeout = setTimeout(() => reject(new Error("Desktop playtest stdout/stderr did not close after exit.")), 1_000);
+        }),
+      ]);
     } finally {
+      clearTimeout(closeTimeout);
       this.flushOutput("stdout");
       this.flushOutput("stderr");
     }
@@ -255,12 +280,12 @@ async function tryReadDesktopScreenshot(path: string): Promise<unknown | undefin
   }
 }
 
-function desktopConsoleType(stream: "stderr" | "stdout", line: string): string {
+export function desktopConsoleType(stream: "stderr" | "stdout", line: string): string {
   const text = line.trimStart();
   // A stream is not a severity: native console.error can use stdout, while GLib/EGL
   // send explicitly labelled warnings to stderr. Keep every line and fail closed on
   // unclassified stderr instead of dropping platform diagnostics to make a run pass.
-  if (/^(?:\[error\]|(?:error|fatal):)/iu.test(text)) return "error";
+  if (/^(?:\[error\]|(?:error|fatal):|\[Playtest\] TN_V8_(?:FRAME|UPDATE)_FAILED:)/iu.test(text)) return "error";
   if (
     /^(?:\[warn(?:ing)?\]|warning:|MESA-EGL:\s*warning:|libEGL\s+warning:|\*\* \([^)]*\): WARNING \*\*:|\([^)]*\): dbind-WARNING \*\*:)/iu.test(
       text,

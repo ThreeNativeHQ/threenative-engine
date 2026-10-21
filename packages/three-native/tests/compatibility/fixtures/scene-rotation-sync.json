@@ -1,0 +1,114 @@
+{
+  "name": "scene-rotation-sync",
+  "adaptedFrom": "original \u2014 three's Euler and Quaternion setters fire _onChangeCallback, so on an Object3D a rotation.x write updates the quaternion and a quaternion.x write updates the rotation (and an order change re-syncs the quaternion); this is how games rotate objects",
+  "tolerance": {
+    "abs": 0
+  },
+  "ops": [
+    {
+      "op": "new",
+      "id": "o",
+      "class": "Object3D",
+      "args": []
+    },
+    {
+      "op": "set",
+      "id": "o",
+      "path": "rotation.x",
+      "value": 1.2
+    },
+    {
+      "op": "set",
+      "id": "o",
+      "path": "rotation.y",
+      "value": -0.7
+    },
+    {
+      "op": "call",
+      "id": "o",
+      "method": "updateMatrix",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "p",
+      "class": "Object3D",
+      "args": []
+    },
+    {
+      "op": "set",
+      "id": "p",
+      "path": "quaternion.x",
+      "value": 0.5
+    },
+    {
+      "op": "set",
+      "id": "p",
+      "path": "quaternion.w",
+      "value": 0.5
+    },
+    {
+      "op": "set",
+      "id": "p",
+      "path": "rotation.order",
+      "value": "YXZ"
+    }
+  ],
+  "observe": [
+    {
+      "id": "o",
+      "path": "quaternion.x",
+      "kind": "number"
+    },
+    {
+      "id": "o",
+      "path": "quaternion.y",
+      "kind": "number"
+    },
+    {
+      "id": "o",
+      "path": "quaternion.z",
+      "kind": "number"
+    },
+    {
+      "id": "o",
+      "path": "quaternion.w",
+      "kind": "number"
+    },
+    {
+      "id": "o",
+      "path": "matrix.elements",
+      "kind": "numbers"
+    },
+    {
+      "id": "p",
+      "path": "rotation.x",
+      "kind": "number"
+    },
+    {
+      "id": "p",
+      "path": "rotation.y",
+      "kind": "number"
+    },
+    {
+      "id": "p",
+      "path": "rotation.z",
+      "kind": "number"
+    },
+    {
+      "id": "p",
+      "path": "quaternion.x",
+      "kind": "number"
+    },
+    {
+      "id": "p",
+      "path": "quaternion.y",
+      "kind": "number"
+    },
+    {
+      "id": "p",
+      "path": "quaternion.w",
+      "kind": "number"
+    }
+  ]
+}

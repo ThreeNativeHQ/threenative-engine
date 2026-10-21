@@ -1,0 +1,446 @@
+{
+  "name": "math-core-matrix3",
+  "adaptedFrom": "three@0.185.1 test/unit/src/math/Matrix3.tests.js \u2014 every public method except the three cosine/sine forms, which need math-core-matrix3-angles",
+  "tolerance": {
+    "abs": 0
+  },
+  "ops": [
+    {
+      "op": "new",
+      "id": "a01",
+      "class": "Matrix3",
+      "args": [2, 3, 5, 7, 11, 13, 17, 19, 23]
+    },
+    {
+      "op": "new",
+      "id": "b02",
+      "class": "Matrix3",
+      "args": [29, 31, 37, 41, 43, 47, 53, 59, 61]
+    },
+    {
+      "op": "new",
+      "id": "m403",
+      "class": "Matrix4",
+      "args": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
+    },
+    {
+      "op": "new",
+      "id": "x04",
+      "class": "Vector3",
+      "args": [2, 0, 0]
+    },
+    {
+      "op": "new",
+      "id": "y05",
+      "class": "Vector3",
+      "args": [0, 3, 0]
+    },
+    {
+      "op": "new",
+      "id": "z06",
+      "class": "Vector3",
+      "args": [0, 0, 4]
+    },
+    {
+      "op": "new",
+      "id": "m07",
+      "class": "Matrix3",
+      "args": [2, 3, 5, 7, 11, 13, 17, 19, 23]
+    },
+    {
+      "op": "new",
+      "id": "m08",
+      "class": "Matrix3",
+      "args": [2, 3, 5, 7, 11, 13, 17, 19, 23]
+    },
+    {
+      "op": "call",
+      "id": "m08",
+      "method": "identity",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "m09",
+      "class": "Matrix3",
+      "args": [2, 3, 5, 7, 11, 13, 17, 19, 23]
+    },
+    {
+      "op": "call",
+      "id": "m09",
+      "method": "copy",
+      "args": [
+        {
+          "ref": "a01"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "m10",
+      "class": "Matrix3",
+      "args": [2, 3, 5, 7, 11, 13, 17, 19, 23]
+    },
+    {
+      "op": "call",
+      "id": "m10",
+      "method": "setFromMatrix4",
+      "args": [
+        {
+          "ref": "m403"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "m11",
+      "class": "Matrix3",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "m11",
+      "method": "extractBasis",
+      "args": [
+        {
+          "ref": "x04"
+        },
+        {
+          "ref": "y05"
+        },
+        {
+          "ref": "z06"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "m12",
+      "class": "Matrix3",
+      "args": [2, 3, 5, 7, 11, 13, 17, 19, 23]
+    },
+    {
+      "op": "call",
+      "id": "m12",
+      "method": "multiply",
+      "args": [
+        {
+          "ref": "a01"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "m13",
+      "class": "Matrix3",
+      "args": [2, 3, 5, 7, 11, 13, 17, 19, 23]
+    },
+    {
+      "op": "call",
+      "id": "m13",
+      "method": "premultiply",
+      "args": [
+        {
+          "ref": "a01"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "m14",
+      "class": "Matrix3",
+      "args": [2, 3, 5, 7, 11, 13, 17, 19, 23]
+    },
+    {
+      "op": "call",
+      "id": "m14",
+      "method": "multiplyMatrices",
+      "args": [
+        {
+          "ref": "a01"
+        },
+        {
+          "ref": "b02"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "m15",
+      "class": "Matrix3",
+      "args": [2, 3, 5, 7, 11, 13, 17, 19, 23]
+    },
+    {
+      "op": "call",
+      "id": "m15",
+      "method": "multiplyScalar",
+      "args": [3]
+    },
+    {
+      "op": "new",
+      "id": "m16",
+      "class": "Matrix3",
+      "args": [2, 3, 5, 7, 11, 13, 17, 19, 23]
+    },
+    {
+      "op": "call",
+      "id": "m16",
+      "method": "transpose",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "m17",
+      "class": "Matrix3",
+      "args": [2, 3, 5, 7, 11, 13, 17, 19, 23]
+    },
+    {
+      "op": "call",
+      "id": "m17",
+      "method": "scale",
+      "args": [2, 3]
+    },
+    {
+      "op": "new",
+      "id": "m18",
+      "class": "Matrix3",
+      "args": [2, 3, 5, 7, 11, 13, 17, 19, 23]
+    },
+    {
+      "op": "call",
+      "id": "m18",
+      "method": "translate",
+      "args": [4, 5]
+    },
+    {
+      "op": "new",
+      "id": "m19",
+      "class": "Matrix3",
+      "args": [2, 3, 5, 7, 11, 13, 17, 19, 23]
+    },
+    {
+      "op": "call",
+      "id": "m19",
+      "method": "makeTranslation",
+      "args": [2, 3]
+    },
+    {
+      "op": "new",
+      "id": "m20",
+      "class": "Matrix3",
+      "args": [2, 3, 5, 7, 11, 13, 17, 19, 23]
+    },
+    {
+      "op": "call",
+      "id": "m20",
+      "method": "makeScale",
+      "args": [2, 3]
+    },
+    {
+      "op": "new",
+      "id": "m21",
+      "class": "Matrix3",
+      "args": [2, 3, 5, 7, 11, 13, 17, 19, 23]
+    },
+    {
+      "op": "call",
+      "id": "m21",
+      "method": "determinant",
+      "args": [],
+      "result": "r22"
+    },
+    {
+      "op": "new",
+      "id": "m23",
+      "class": "Matrix3",
+      "args": [2, 3, 5, 7, 11, 13, 17, 19, 23]
+    },
+    {
+      "op": "call",
+      "id": "m23",
+      "method": "invert",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "m24",
+      "class": "Matrix3",
+      "args": [2, 3, 5, 7, 11, 13, 17, 19, 23]
+    },
+    {
+      "op": "call",
+      "id": "m24",
+      "method": "getNormalMatrix",
+      "args": [
+        {
+          "ref": "m403"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "m25",
+      "class": "Matrix3",
+      "args": [2, 3, 5, 7, 11, 13, 17, 19, 23]
+    },
+    {
+      "op": "call",
+      "id": "m25",
+      "method": "equals",
+      "args": [
+        {
+          "ref": "a01"
+        }
+      ],
+      "result": "r26"
+    },
+    {
+      "op": "new",
+      "id": "s27",
+      "class": "Matrix3",
+      "args": [2, 3, 5, 7, 11, 13, 17, 19, 23]
+    },
+    {
+      "op": "call",
+      "id": "s27",
+      "method": "toArray",
+      "args": [],
+      "result": "arr1"
+    },
+    {
+      "op": "new",
+      "id": "m28",
+      "class": "Matrix3",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "m28",
+      "method": "fromArray",
+      "args": [
+        {
+          "ref": "arr1"
+        }
+      ]
+    }
+  ],
+  "observe": [
+    {
+      "id": "m07",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "m07",
+      "kind": "numbers",
+      "path": "elements"
+    },
+    {
+      "id": "m08",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "m09",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "m10",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "m11",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "x04",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "y05",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "z06",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "m12",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "m13",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "m14",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "m15",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "m16",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "m17",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "m18",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "m19",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "m20",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "r22",
+      "kind": "number"
+    },
+    {
+      "id": "m23",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "m24",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "r26",
+      "kind": "boolean"
+    },
+    {
+      "id": "arr1",
+      "kind": "numbers"
+    },
+    {
+      "id": "m28",
+      "kind": "numbers",
+      "method": "toArray"
+    }
+  ]
+}

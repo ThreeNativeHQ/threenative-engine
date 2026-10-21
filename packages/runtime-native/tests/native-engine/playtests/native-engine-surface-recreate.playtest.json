@@ -1,0 +1,65 @@
+{
+  "schemaVersion": 1,
+  "name": "native-engine-surface-recreate",
+  "target": "desktop",
+  "subject": "player",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 4,
+  "steps": [
+    {
+      "label": "initial-surface",
+      "waitTicks": 1
+    },
+    {
+      "kind": "lifecycle",
+      "lifecycle": {
+        "operation": "background"
+      }
+    },
+    {
+      "kind": "lifecycle",
+      "lifecycle": {
+        "operation": "foreground"
+      }
+    },
+    {
+      "label": "resumed-input",
+      "press": "KeyW",
+      "holdTicks": 8,
+      "release": true
+    }
+  ],
+  "assert": {
+    "movement": {
+      "entity": "player",
+      "minAxisDelta": {
+        "axis": "-z",
+        "min": 0.75
+      }
+    },
+    "resources": [
+      {
+        "id": "surface",
+        "path": "deviceCreations",
+        "equals": 1,
+        "changed": false,
+        "allowTrivial": "The initial device must stay the only device across Android surface recreation."
+      },
+      {
+        "id": "surface",
+        "path": "surfaceCreations",
+        "equals": 2,
+        "changed": true,
+        "atSteps": [
+          {
+            "label": "initial-surface",
+            "equals": 1
+          }
+        ]
+      }
+    ]
+  }
+}

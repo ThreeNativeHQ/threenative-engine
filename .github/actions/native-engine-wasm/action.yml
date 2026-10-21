@@ -1,0 +1,69 @@
+name: Build the product web Wasm engine, or restore the last build of the same sources
+description: >-
+  A game on the default `engine: "native"` runs in the browser on packages/runtime-native/build/web/
+  tn-native-engine-web.{mjs,wasm}. Nothing else builds it, `pnpm pack` drops a missing `files` entry
+  without an error, and a web build without it stops at TN_WASM_ENGINE_MISSING. Run this after
+  `pnpm install` and before anything that builds a web game or packs runtime-native.
+
+inputs:
+  emsdk-version:
+    description: The emsdk tag; keep it equal to TN_EMSDK_VERSION in ci.yml's native-engine job.
+    required: false
+    default: "6.0.11"
+
+runs:
+  using: composite
+  steps:
+    # The emsdk key is the one the native-engine job saves, so a warm cache serves both.
+    - name: Restore the emsdk
+      id: emsdk
+      uses: actions/cache@v4
+      with:
+        path: ${{ github.workspace }}/.cache/emsdk
+        key: native-engine-emsdk-${{ runner.os }}-${{ runner.arch }}-${{ inputs.emsdk-version }}
+    # The key names what the engine is built from and nothing else: the C++ sources, the headers,
+    # the CMake files, the dependency lock and the toolchain version. A key that names too little
+    # serves a stale engine, so an input that could change the bytes belongs here.
+    - name: Restore the built web engine
+      id: wasm
+      uses: actions/cache@v4
+      with:
+        path: ${{ github.workspace }}/packages/runtime-native/build/web
+        key: native-engine-web-wasm-v1-${{ runner.os }}-${{ runner.arch }}-${{ inputs.emsdk-version }}-${{ hashFiles('packages/runtime-native/src/engine/**', 'packages/runtime-native/include/**', 'packages/runtime-native/cmake/**', 'packages/runtime-native/CMakeLists.txt', 'packages/runtime-native/CMakePresets.json', 'packages/runtime-native/native-deps.lock.json', 'packages/runtime-native/scripts/download-deps.mjs') }}
+    - name: Build the web engine
+      if: steps.wasm.outputs.cache-hit != 'true'
+      shell: bash
+      working-directory: packages/runtime-native
+      env:
+        TN_EMSDK_VERSION: ${{ inputs.emsdk-version }}
+      run: |
+        set -euo pipefail
+        sh "$GITHUB_WORKSPACE/scripts/retry-download.sh" sudo apt-get update && sh "$GITHUB_WORKSPACE/scripts/retry-download.sh" sudo apt-get install -y ninja-build
+        if [ '${{ steps.emsdk.outputs.cache-hit }}' != true ]; then
+          git clone --depth 1 --branch "$TN_EMSDK_VERSION" https://github.com/emscripten-core/emsdk.git "$GITHUB_WORKSPACE/.cache/emsdk"
+          sh "$GITHUB_WORKSPACE/scripts/retry-download.sh" "$GITHUB_WORKSPACE/.cache/emsdk/emsdk" install "$TN_EMSDK_VERSION"
+        fi
+        "$GITHUB_WORKSPACE/.cache/emsdk/emsdk" activate "$TN_EMSDK_VERSION"
+        # The web engine reads three pinned sources: stb (images), cgltf (glTF) and libwebp.
+        for dependency in stb cgltf webp-source; do
+          node scripts/download-deps.mjs --only "$dependency"
+        done
+        source "$GITHUB_WORKSPACE/.cache/emsdk/emsdk_env.sh"
+        cmake --preset wasm
+        cmake --build --preset wasm --parallel "$(nproc)"
+    # Fail closed: a partial cache entry or a build that wrote nothing must not reach a pack.
+    - name: Check the web engine exists
+      shell: bash
+      working-directory: packages/runtime-native
+      run: |
+        set -euo pipefail
+        for file in build/web/tn-native-engine-web.mjs build/web/tn-native-engine-web.wasm; do
+          test -s "$file" || { echo "TN_WEB_ENGINE_MISSING: $file was not built" >&2; exit 1; }
+        done
+        wasm_bytes=$(stat -c %s build/web/tn-native-engine-web.wasm)
+        allowed_bytes=4194304
+        if [ "$wasm_bytes" -gt "$allowed_bytes" ]; then
+          echo "TN_WEB_ENGINE_OVER_BUDGET: measured $wasm_bytes bytes, allowed $allowed_bytes bytes" >&2
+          exit 1
+        fi
+        echo "web engine ready: $wasm_bytes byte wasm (allowed $allowed_bytes bytes)"

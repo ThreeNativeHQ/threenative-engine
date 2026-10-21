@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "name": "native-engine-input",
+  "target": "desktop",
+  "subject": "player",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 4,
+  "steps": [
+    {
+      "label": "injected",
+      "press": "KeyW",
+      "holdTicks": 8,
+      "release": true
+    }
+  ],
+  "assert": {
+    "movement": {
+      "entity": "player",
+      "minAxisDelta": {
+        "axis": "-z",
+        "min": 0.75
+      }
+    },
+    "resources": [
+      {
+        "id": "input",
+        "path": "latched",
+        "equals": true
+      },
+      {
+        "id": "input",
+        "path": "injectedTick",
+        "equals": 5
+      },
+      {
+        "id": "input",
+        "path": "seenTick",
+        "equals": 5
+      }
+    ]
+  }
+}

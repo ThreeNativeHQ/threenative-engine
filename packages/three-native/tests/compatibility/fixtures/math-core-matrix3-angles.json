@@ -1,0 +1,62 @@
+{
+  "name": "math-core-matrix3-angles",
+  "adaptedFrom": "three@0.185.1 test/unit/src/math/Matrix3.tests.js \u2014 rotate, makeRotation and setUvTransform",
+  "tolerance": {
+    "abs": 0
+  },
+  "ops": [
+    {
+      "op": "new",
+      "id": "m01",
+      "class": "Matrix3",
+      "args": [2, 3, 5, 7, 11, 13, 17, 19, 23]
+    },
+    {
+      "op": "call",
+      "id": "m01",
+      "method": "rotate",
+      "args": [0.5]
+    },
+    {
+      "op": "new",
+      "id": "m02",
+      "class": "Matrix3",
+      "args": [2, 3, 5, 7, 11, 13, 17, 19, 23]
+    },
+    {
+      "op": "call",
+      "id": "m02",
+      "method": "makeRotation",
+      "args": [0.5]
+    },
+    {
+      "op": "new",
+      "id": "m03",
+      "class": "Matrix3",
+      "args": [2, 3, 5, 7, 11, 13, 17, 19, 23]
+    },
+    {
+      "op": "call",
+      "id": "m03",
+      "method": "setUvTransform",
+      "args": [1, 2, 3, 4, 0.75, 0.5, 0.25]
+    }
+  ],
+  "observe": [
+    {
+      "id": "m01",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "m02",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "m03",
+      "kind": "numbers",
+      "method": "toArray"
+    }
+  ]
+}

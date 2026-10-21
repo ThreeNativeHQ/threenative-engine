@@ -22,13 +22,13 @@ const selected = [
   "ci:typecheck",
 ];
 
-it("lists the 46 eligible HEAVY instances as 29 ci + 13 integration + 4 native", () => {
+it("lists the 47 eligible HEAVY instances as 30 ci + 13 integration + 4 native", () => {
   expect(ADMISSION_NAMESPACES).toEqual(["ci", "integration", "native"]);
-  expect(ADMISSION_INVENTORY).toHaveLength(46);
-  expect(here("ci")).toHaveLength(29);
+  expect(ADMISSION_INVENTORY).toHaveLength(47);
+  expect(here("ci")).toHaveLength(30);
   expect(here("integration")).toHaveLength(13);
   expect(here("native")).toHaveLength(4);
-  expect(new Set(ADMISSION_INVENTORY).size).toBe(46);
+  expect(new Set(ADMISSION_INVENTORY).size).toBe(47);
 });
 
 it("counts each matrix leg as its own instance", () => {
@@ -129,6 +129,27 @@ it("keeps a plan-required instance with an unroutable matrix leg out of the sele
     templateMatrix: { template: [] },
   };
   expect(selectInstances(plan, {})).toEqual([]);
+});
+
+it("selects ci:native-engine exactly once when the plan requires it, and omits it otherwise", () => {
+  const plan = {
+    jobs: { "native-engine": { required: true }, typecheck: { required: true } },
+    unitMatrix: { shard: [] },
+    goldenMatrix: { template: [] },
+    templateMatrix: { template: [] },
+  };
+  const ids = selectInstances(plan, {});
+  expect(ids).toContain("ci:native-engine");
+  expect(ids.filter((id: string) => id === "ci:native-engine")).toHaveLength(1);
+  expect(
+    selectInstances(
+      { ...plan, jobs: { "native-engine": { required: false }, typecheck: { required: true } } },
+      {},
+    ),
+  ).not.toContain("ci:native-engine");
+  expect(selectInstances({ ...plan, jobs: { typecheck: { required: true } } }, {})).not.toContain(
+    "ci:native-engine",
+  );
 });
 
 it("never emits a golden-path leg the inventory does not carry", () => {

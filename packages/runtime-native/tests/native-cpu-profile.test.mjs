@@ -6,12 +6,14 @@
 // proof is AC-1's run on a built host, which this file's shape keeps honest.
 
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn, spawnSync } from "node:child_process";
+import { once } from "node:events";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "vitest";
 import { makeTempDirSync } from "../../../test-support/temp-dir.js";
+import { bundleNativeEngine } from "../scripts/bundle-native-engine.mjs";
 
 function source(relativePath) {
   return readFileSync(fileURLToPath(new URL(relativePath, import.meta.url)), "utf8");
@@ -22,6 +24,121 @@ const v8Engine = source("../src/js/v8_engine.cpp");
 const main = source("../src/cli/main.cpp");
 const bindings = source("../src/webgpu/bindings.cpp");
 const engineHeader = source("../include/mystral/js/engine.h");
+const player = source("../src/engine/player/v8_main.cpp");
+
+test("the engine player accepts both CPU-profile forms and rejects missing paths before startup", () => {
+  assert.match(player, /argument == "--cpu-prof"/u);
+  assert.match(player, /argument\.rfind\("--cpu-prof=", 0\) == 0/u);
+  assert.match(player, /cpuProfilePath\.empty\(\) \|\| cpuProfilePath\.rfind\("--", 0\) == 0/u);
+  assert.match(player, /TN_PLAYER_V8_ARGS: --cpu-prof requires a nonempty file path/u);
+  assert.match(player, /--cpu-prof requires a build compiled with TN_JS_PROFILE=ON/u);
+  assert(player.indexOf("mystral::js::g_cpuProfilePath = cpuProfilePath;") < player.indexOf("if (!game.start(gamePath, error))"));
+  assert.match(player, /g_cpuProfileStopRequested && mystral::js::g_dumpCpuProfile/u);
+  assert.match(player, /std::_Exit\(mystral::js::g_cpuProfileFailed \? 1 : 0\)/u);
+  assert.match(player, /return finish\(status\);/u);
+  assert.match(player, /return mystral::js::g_cpuProfileFailed \? 1 : status;/u);
+});
+
+test("native profile maps retain original game sources through both bundling stages", async () => {
+  const dir = makeTempDirSync("tn-profile-map-");
+  const entry = join(dir, "hot.ts");
+  const outfile = join(dir, "game.js");
+  const original = 'import { Scene } from "three";\nexport function profileHot(value: number) { return Math.sqrt(value); }\nglobalThis.profileHot = profileHot;\nglobalThis.profileScene = new Scene();\n';
+  writeFileSync(entry, original);
+  const result = await bundleNativeEngine({ entry, outfile, boot: false, host: false });
+  const output = readFileSync(outfile, "utf8");
+  const map = JSON.parse(readFileSync(`${outfile}.map`, "utf8"));
+  assert.equal(result.bytes, Buffer.byteLength(output));
+  assert.equal(map.version, 3);
+  assert(map.mappings.length > 0);
+  assert(map.sources.some((name) => name.endsWith("/hot.ts")));
+  assert(map.sourcesContent.includes(original));
+  assert(map.sources.some((name) => name.endsWith("/core-three.mjs")));
+  assert(!map.sources.includes("native-game:game"), "map must resolve the intermediate bundle");
+  assert(!output.includes("sourceMappingURL=data:"), "production bundle must not embed source maps");
+});
+
+// Opt in only after rebuilding the player; an older local binary cannot qualify this change.
+const enginePlayer = process.env.THREENATIVE_ENGINE_PLAYER;
+test.skipIf(!enginePlayer)("the built engine player rejects malformed profile args and flushes both CLI forms", async () => {
+  for (const args of [["--cpu-prof"], ["--cpu-prof="], ["--cpu-prof", ""], ["--cpu-prof", "--check-game"]]) {
+    const result = spawnSync(enginePlayer, ["unused.js", ...args], { encoding: "utf8", timeout: 5_000 });
+    assert.equal(result.status, 2);
+    assert.match(result.stderr, /--cpu-prof requires a nonempty file path/u);
+  }
+  const dir = makeTempDirSync("tn-player-cpu-prof-");
+  const entry = join(dir, "game.ts");
+  const script = join(dir, "game.js");
+  writeFileSync(entry, `
+import { Scene, PerspectiveCamera } from "three";
+globalThis.tn.scene = new Scene();
+globalThis.tn.camera = new PerspectiveCamera();
+const begin = performance.now();
+while (performance.now() - begin < 100) Math.sqrt(performance.now());
+let frames = 0;
+const frame = () => {
+  if (++frames === 1) globalThis.tn.log("PROFILE_FRAME_READY");
+  requestAnimationFrame(frame);
+};
+requestAnimationFrame(frame);
+`);
+  await bundleNativeEngine({ entry, outfile: script, boot: false, host: true });
+  for (const equals of [false, true]) {
+    const out = join(dir, `${equals}.cpuprofile`);
+    const result = spawnSync(enginePlayer, [script, "--check-game", ...(equals ? [`--cpu-prof=${out}`] : ["--cpu-prof", out])],
+      { encoding: "utf8", timeout: 10_000 });
+    assert.equal(result.status, 0, result.stderr);
+    const profile = JSON.parse(readFileSync(out, "utf8"));
+    assert(profile.nodes.length > 0 && profile.samples.length > 0);
+    assert.equal(profile.samples.length, profile.timeDeltas.length);
+    if (process.platform === "linux") {
+      assert.equal(profile.clockBounds?.clock, "CLOCK_MONOTONIC");
+      const [startBefore, startAfter] = profile.clockBounds.start;
+      const [endBefore, endAfter] = profile.clockBounds.end;
+      assert.ok(startBefore <= startAfter && startAfter <= endBefore && endBefore <= endAfter);
+      const low = Math.max(startBefore - profile.startTime, endBefore - profile.endTime);
+      const high = Math.min(startAfter - profile.startTime, endAfter - profile.endTime);
+      assert.ok(low <= high, `profile clocks contradict recorded bounds: [${low}, ${high}]`);
+    }
+  }
+  const result = spawnSync(enginePlayer, [script, "--check-game", `--cpu-prof=${join(dir, "missing", "out.cpuprofile")}`],
+    { encoding: "utf8", timeout: 10_000 });
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /TN_CPU_PROFILE_WRITE_FAILED/u);
+  assert(!result.stdout.includes("startup=passed"));
+
+  const out = join(dir, "sigterm.cpuprofile");
+  const env = { ...process.env, SDL_VIDEODRIVER: "dummy", SDL_AUDIO_DRIVER: "dummy", TN_PLAYER_METRICS: "1" };
+  delete env.TN_PLAYTEST_MAILBOX_ROOT;
+  const child = spawn(enginePlayer, [script, `--cpu-prof=${out}`], {
+    env,
+  });
+  const stopped = once(child, "close");
+  let output = "";
+  let terminated = false;
+  const timer = setTimeout(() => child.kill("SIGKILL"), 5_000);
+  try {
+    child.stdout.on("data", (chunk) => {
+      output += chunk;
+      // A completed frame proves the loop and signal handler are ready, unlike bundle evaluation.
+      if (!terminated && output.includes("PROFILE_FRAME_READY") && output.includes("TN_PLAYER_FRAME:")) {
+        terminated = true;
+        child.kill("SIGTERM");
+      }
+    });
+    child.stderr.on("data", (chunk) => { output += chunk; });
+    const [status, signal] = await stopped;
+    assert(terminated, `player never completed the fixture's first frame: ${output}`);
+    assert.equal(signal, null, output);
+    assert.equal(status, 0, output);
+    const profile = JSON.parse(readFileSync(out, "utf8"));
+    assert(profile.nodes.length > 0 && profile.samples.length > 0);
+    assert.equal(profile.samples.length, profile.timeDeltas.length);
+  } finally {
+    clearTimeout(timer);
+    if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
+  }
+});
 
 test("desktop builds compile the V8 CPU profiler and mobile builds do not", () => {
   // On by default for a desktop build, off for Android and iOS. The option default is computed
@@ -41,7 +158,7 @@ test("--cpu-prof writes the DevTools .cpuprofile itself, escaping every string",
   // profile API and escapes instead.
   assert.doesNotMatch(v8Engine, /profile->Serialize\(/u);
   assert.match(v8Engine, /static void writeJsonString\(std::ostream& out, const char\* text\)/u);
-  assert.match(v8Engine, /writeCpuProfile\(isolate_, profile, temporaryPath\)/u);
+  assert.match(v8Engine, /writeCpuProfile\(isolate_, profile, temporaryPath,/u);
   assert.match(engineHeader, /inline std::string g_cpuProfilePath;/u);
   assert.match(engineHeader, /inline bool g_cpuProfileFailed = false;/u);
 });
@@ -60,6 +177,14 @@ test.skipIf(!existsSync(host))("a profile whose script URL holds a quote and a b
   execFileSync(host, ["run", script, "--no-sdl", "--cpu-prof", out], { stdio: "ignore", timeout: 60_000 });
   const profile = JSON.parse(readFileSync(out, "utf8"));
   assert.equal(profile.samples.length, profile.timeDeltas.length);
+  assert.equal(profile.clockBounds?.clock, "CLOCK_MONOTONIC");
+  const [startBefore, startAfter] = profile.clockBounds.start;
+  const [endBefore, endAfter] = profile.clockBounds.end;
+  assert.ok(startBefore <= startAfter && startAfter <= endBefore && endBefore <= endAfter, "clockBounds out of order");
+  // Each profile time was taken inside its bounds, so one constant offset must place both.
+  const offsetLow = Math.max(profile.startTime - startAfter, profile.endTime - endAfter);
+  const offsetHigh = Math.min(profile.startTime - startBefore, profile.endTime - endBefore);
+  assert.ok(offsetLow <= offsetHigh, `no single offset places the profile inside clockBounds: [${offsetLow}, ${offsetHigh}]`);
   const hot = profile.nodes.find((node) => node.callFrame.functionName === "hot");
   assert.equal(hot?.callFrame.url, 'we"ird\\path.js');
 }, 90_000);

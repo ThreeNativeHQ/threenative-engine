@@ -1,0 +1,32 @@
+{
+  "name": "math-core-vector4-axis-angle",
+  "threeVersion": "0.185.1",
+  "adaptedFrom": "three@0.185.1 test/unit/src/math/Vector4.tests.js — setAxisAngleFromQuaternion and setAxisAngleFromRotationMatrix",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "v03",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:3fd122fc05280cf4,n:3fe116ff873d9fce,n:3fe9a87d89d1a648,n:3ff8144524966294",
+      "decimal": "0.2677602815967497, 0.5340573922558123, 0.801817673852562, 1.5049487523266736"
+    },
+    {
+      "index": 1,
+      "id": "m02",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:3fc1043e5321e600,n:3fede09fe86833c6,n:bfd544ed6fda836d,n:0000000000000000,n:bfe553e2d6238da4,n:3fd546455eaee1fe,n:3fe559ddc1e7967c,n:0000000000000000,n:3fe77891e215336e,n:3fc1018e757928e2,n:3fe5548ecd8dbced,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:3ff0000000000000",
+      "decimal": "0.1329419999999999, 0.93367, -0.3323319999999999, 0, -0.66649, 0.3324139999999999, 0.6672199999999999, 0, 0.733468, 0.13286000000000003, 0.666572, 0, 0, 0, 0, 1"
+    },
+    {
+      "index": 2,
+      "id": "v04",
+      "kind": "numbers",
+      "method": "toArray",
+      "value": "n:3fd1235e9c7349b5,n:3fe11761d99325d5,n:3fe9a91127cccab0,n:3ff81398cd51ec61",
+      "decimal": "0.2677837875209222, 0.5341042756564841, 0.8018880631774064, 1.5047843952477467"
+    }
+  ]
+}

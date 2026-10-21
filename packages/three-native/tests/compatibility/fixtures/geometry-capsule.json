@@ -1,0 +1,73 @@
+{
+  "name": "geometry-capsule",
+  "adaptedFrom": "three@0.185.1 src/geometries/CapsuleGeometry.js — default-ish coarse and non-default subdivided",
+  "tolerance": {
+    "abs": 0
+  },
+  "ops": [
+    {
+      "op": "new",
+      "id": "coarse",
+      "class": "CapsuleGeometry",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "subdivided",
+      "class": "CapsuleGeometry",
+      "args": [1.5, 2, 6, 12, 2]
+    }
+  ],
+  "observe": [
+    {
+      "id": "coarse",
+      "path": "attributes.position.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "coarse",
+      "path": "attributes.normal.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "coarse",
+      "path": "attributes.uv.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "coarse",
+      "path": "index.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "coarse",
+      "path": "parameters",
+      "kind": "json"
+    },
+    {
+      "id": "subdivided",
+      "path": "attributes.position.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "subdivided",
+      "path": "attributes.normal.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "subdivided",
+      "path": "attributes.uv.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "subdivided",
+      "path": "index.array",
+      "kind": "numbers"
+    },
+    {
+      "id": "subdivided",
+      "path": "parameters",
+      "kind": "json"
+    }
+  ]
+}

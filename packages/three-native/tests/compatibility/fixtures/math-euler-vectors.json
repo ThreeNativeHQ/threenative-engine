@@ -1,0 +1,1825 @@
+{
+  "name": "math-euler-vectors",
+  "adaptedFrom": "three@0.185.1 test/unit/src/math/Euler.tests.js \u2014 set, copy, reorder, equals, fromArray, toArray, setFromVector3 and the Vector3 forms",
+  "tolerance": {
+    "abs": 0
+  },
+  "ops": [
+    {
+      "op": "new",
+      "id": "v01",
+      "class": "Vector3",
+      "args": [0.3, -0.4, 1.2]
+    },
+    {
+      "op": "new",
+      "id": "e02",
+      "class": "Euler",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "e02",
+      "method": "setFromVector3",
+      "args": [
+        {
+          "ref": "v01"
+        },
+        "XYZ"
+      ]
+    },
+    {
+      "op": "new",
+      "id": "e03",
+      "class": "Euler",
+      "args": [0.3, -0.4, 1.2, "XYZ"]
+    },
+    {
+      "op": "new",
+      "id": "o04",
+      "class": "Euler",
+      "args": [0.3, -0.4, 1.2, "XYZ"]
+    },
+    {
+      "op": "call",
+      "id": "o04",
+      "method": "copy",
+      "args": [
+        {
+          "ref": "e03"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "o04",
+      "method": "equals",
+      "args": [
+        {
+          "ref": "e03"
+        }
+      ],
+      "result": "r05"
+    },
+    {
+      "op": "new",
+      "id": "r06",
+      "class": "Euler",
+      "args": [0.3, -0.4, 1.2, "XYZ"]
+    },
+    {
+      "op": "call",
+      "id": "r06",
+      "method": "reorder",
+      "args": ["XYZ"]
+    },
+    {
+      "op": "new",
+      "id": "r07",
+      "class": "Euler",
+      "args": [0.3, -0.4, 1.2, "XYZ"]
+    },
+    {
+      "op": "call",
+      "id": "r07",
+      "method": "reorder",
+      "args": ["YXZ"]
+    },
+    {
+      "op": "new",
+      "id": "r08",
+      "class": "Euler",
+      "args": [0.3, -0.4, 1.2, "XYZ"]
+    },
+    {
+      "op": "call",
+      "id": "r08",
+      "method": "reorder",
+      "args": ["ZXY"]
+    },
+    {
+      "op": "new",
+      "id": "r09",
+      "class": "Euler",
+      "args": [0.3, -0.4, 1.2, "XYZ"]
+    },
+    {
+      "op": "call",
+      "id": "r09",
+      "method": "reorder",
+      "args": ["ZYX"]
+    },
+    {
+      "op": "new",
+      "id": "r10",
+      "class": "Euler",
+      "args": [0.3, -0.4, 1.2, "XYZ"]
+    },
+    {
+      "op": "call",
+      "id": "r10",
+      "method": "reorder",
+      "args": ["YZX"]
+    },
+    {
+      "op": "new",
+      "id": "r11",
+      "class": "Euler",
+      "args": [0.3, -0.4, 1.2, "XYZ"]
+    },
+    {
+      "op": "call",
+      "id": "r11",
+      "method": "reorder",
+      "args": ["XZY"]
+    },
+    {
+      "op": "new",
+      "id": "e12",
+      "class": "Euler",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "e12",
+      "method": "setFromVector3",
+      "args": [
+        {
+          "ref": "v01"
+        },
+        "YXZ"
+      ]
+    },
+    {
+      "op": "new",
+      "id": "e13",
+      "class": "Euler",
+      "args": [0.3, -0.4, 1.2, "YXZ"]
+    },
+    {
+      "op": "new",
+      "id": "o14",
+      "class": "Euler",
+      "args": [0.3, -0.4, 1.2, "XYZ"]
+    },
+    {
+      "op": "call",
+      "id": "o14",
+      "method": "copy",
+      "args": [
+        {
+          "ref": "e13"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "o14",
+      "method": "equals",
+      "args": [
+        {
+          "ref": "e13"
+        }
+      ],
+      "result": "r15"
+    },
+    {
+      "op": "new",
+      "id": "r16",
+      "class": "Euler",
+      "args": [0.3, -0.4, 1.2, "YXZ"]
+    },
+    {
+      "op": "call",
+      "id": "r16",
+      "method": "reorder",
+      "args": ["XYZ"]
+    },
+    {
+      "op": "new",
+      "id": "r17",
+      "class": "Euler",
+      "args": [0.3, -0.4, 1.2, "YXZ"]
+    },
+    {
+      "op": "call",
+      "id": "r17",
+      "method": "reorder",
+      "args": ["YXZ"]
+    },
+    {
+      "op": "new",
+      "id": "r18",
+      "class": "Euler",
+      "args": [0.3, -0.4, 1.2, "YXZ"]
+    },
+    {
+      "op": "call",
+      "id": "r18",
+      "method": "reorder",
+      "args": ["ZXY"]
+    },
+    {
+      "op": "new",
+      "id": "r19",
+      "class": "Euler",
+      "args": [0.3, -0.4, 1.2, "YXZ"]
+    },
+    {
+      "op": "call",
+      "id": "r19",
+      "method": "reorder",
+      "args": ["ZYX"]
+    },
+    {
+      "op": "new",
+      "id": "r20",
+      "class": "Euler",
+      "args": [0.3, -0.4, 1.2, "YXZ"]
+    },
+    {
+      "op": "call",
+      "id": "r20",
+      "method": "reorder",
+      "args": ["YZX"]
+    },
+    {
+      "op": "new",
+      "id": "r21",
+      "class": "Euler",
+      "args": [0.3, -0.4, 1.2, "YXZ"]
+    },
+    {
+      "op": "call",
+      "id": "r21",
+      "method": "reorder",
+      "args": ["XZY"]
+    },
+    {
+      "op": "new",
+      "id": "e22",
+      "class": "Euler",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "e22",
+      "method": "setFromVector3",
+      "args": [
+        {
+          "ref": "v01"
+        },
+        "ZXY"
+      ]
+    },
+    {
+      "op": "new",
+      "id": "e23",
+      "class": "Euler",
+      "args": [0.3, -0.4, 1.2, "ZXY"]
+    },
+    {
+      "op": "new",
+      "id": "o24",
+      "class": "Euler",
+      "args": [0.3, -0.4, 1.2, "XYZ"]
+    },
+    {
+      "op": "call",
+      "id": "o24",
+      "method": "copy",
+      "args": [
+        {
+          "ref": "e23"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "o24",
+      "method": "equals",
+      "args": [
+        {
+          "ref": "e23"
+        }
+      ],
+      "result": "r25"
+    },
+    {
+      "op": "new",
+      "id": "r26",
+      "class": "Euler",
+      "args": [0.3, -0.4, 1.2, "ZXY"]
+    },
+    {
+      "op": "call",
+      "id": "r26",
+      "method": "reorder",
+      "args": ["XYZ"]
+    },
+    {
+      "op": "new",
+      "id": "r27",
+      "class": "Euler",
+      "args": [0.3, -0.4, 1.2, "ZXY"]
+    },
+    {
+      "op": "call",
+      "id": "r27",
+      "method": "reorder",
+      "args": ["YXZ"]
+    },
+    {
+      "op": "new",
+      "id": "r28",
+      "class": "Euler",
+      "args": [0.3, -0.4, 1.2, "ZXY"]
+    },
+    {
+      "op": "call",
+      "id": "r28",
+      "method": "reorder",
+      "args": ["ZXY"]
+    },
+    {
+      "op": "new",
+      "id": "r29",
+      "class": "Euler",
+      "args": [0.3, -0.4, 1.2, "ZXY"]
+    },
+    {
+      "op": "call",
+      "id": "r29",
+      "method": "reorder",
+      "args": ["ZYX"]
+    },
+    {
+      "op": "new",
+      "id": "r30",
+      "class": "Euler",
+      "args": [0.3, -0.4, 1.2, "ZXY"]
+    },
+    {
+      "op": "call",
+      "id": "r30",
+      "method": "reorder",
+      "args": ["YZX"]
+    },
+    {
+      "op": "new",
+      "id": "r31",
+      "class": "Euler",
+      "args": [0.3, -0.4, 1.2, "ZXY"]
+    },
+    {
+      "op": "call",
+      "id": "r31",
+      "method": "reorder",
+      "args": ["XZY"]
+    },
+    {
+      "op": "new",
+      "id": "e32",
+      "class": "Euler",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "e32",
+      "method": "setFromVector3",
+      "args": [
+        {
+          "ref": "v01"
+        },
+        "ZYX"
+      ]
+    },
+    {
+      "op": "new",
+      "id": "e33",
+      "class": "Euler",
+      "args": [0.3, -0.4, 1.2, "ZYX"]
+    },
+    {
+      "op": "new",
+      "id": "o34",
+      "class": "Euler",
+      "args": [0.3, -0.4, 1.2, "XYZ"]
+    },
+    {
+      "op": "call",
+      "id": "o34",
+      "method": "copy",
+      "args": [
+        {
+          "ref": "e33"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "o34",
+      "method": "equals",
+      "args": [
+        {
+          "ref": "e33"
+        }
+      ],
+      "result": "r35"
+    },
+    {
+      "op": "new",
+      "id": "r36",
+      "class": "Euler",
+      "args": [0.3, -0.4, 1.2, "ZYX"]
+    },
+    {
+      "op": "call",
+      "id": "r36",
+      "method": "reorder",
+      "args": ["XYZ"]
+    },
+    {
+      "op": "new",
+      "id": "r37",
+      "class": "Euler",
+      "args": [0.3, -0.4, 1.2, "ZYX"]
+    },
+    {
+      "op": "call",
+      "id": "r37",
+      "method": "reorder",
+      "args": ["YXZ"]
+    },
+    {
+      "op": "new",
+      "id": "r38",
+      "class": "Euler",
+      "args": [0.3, -0.4, 1.2, "ZYX"]
+    },
+    {
+      "op": "call",
+      "id": "r38",
+      "method": "reorder",
+      "args": ["ZXY"]
+    },
+    {
+      "op": "new",
+      "id": "r39",
+      "class": "Euler",
+      "args": [0.3, -0.4, 1.2, "ZYX"]
+    },
+    {
+      "op": "call",
+      "id": "r39",
+      "method": "reorder",
+      "args": ["ZYX"]
+    },
+    {
+      "op": "new",
+      "id": "r40",
+      "class": "Euler",
+      "args": [0.3, -0.4, 1.2, "ZYX"]
+    },
+    {
+      "op": "call",
+      "id": "r40",
+      "method": "reorder",
+      "args": ["YZX"]
+    },
+    {
+      "op": "new",
+      "id": "r41",
+      "class": "Euler",
+      "args": [0.3, -0.4, 1.2, "ZYX"]
+    },
+    {
+      "op": "call",
+      "id": "r41",
+      "method": "reorder",
+      "args": ["XZY"]
+    },
+    {
+      "op": "new",
+      "id": "e42",
+      "class": "Euler",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "e42",
+      "method": "setFromVector3",
+      "args": [
+        {
+          "ref": "v01"
+        },
+        "YZX"
+      ]
+    },
+    {
+      "op": "new",
+      "id": "e43",
+      "class": "Euler",
+      "args": [0.3, -0.4, 1.2, "YZX"]
+    },
+    {
+      "op": "new",
+      "id": "o44",
+      "class": "Euler",
+      "args": [0.3, -0.4, 1.2, "XYZ"]
+    },
+    {
+      "op": "call",
+      "id": "o44",
+      "method": "copy",
+      "args": [
+        {
+          "ref": "e43"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "o44",
+      "method": "equals",
+      "args": [
+        {
+          "ref": "e43"
+        }
+      ],
+      "result": "r45"
+    },
+    {
+      "op": "new",
+      "id": "r46",
+      "class": "Euler",
+      "args": [0.3, -0.4, 1.2, "YZX"]
+    },
+    {
+      "op": "call",
+      "id": "r46",
+      "method": "reorder",
+      "args": ["XYZ"]
+    },
+    {
+      "op": "new",
+      "id": "r47",
+      "class": "Euler",
+      "args": [0.3, -0.4, 1.2, "YZX"]
+    },
+    {
+      "op": "call",
+      "id": "r47",
+      "method": "reorder",
+      "args": ["YXZ"]
+    },
+    {
+      "op": "new",
+      "id": "r48",
+      "class": "Euler",
+      "args": [0.3, -0.4, 1.2, "YZX"]
+    },
+    {
+      "op": "call",
+      "id": "r48",
+      "method": "reorder",
+      "args": ["ZXY"]
+    },
+    {
+      "op": "new",
+      "id": "r49",
+      "class": "Euler",
+      "args": [0.3, -0.4, 1.2, "YZX"]
+    },
+    {
+      "op": "call",
+      "id": "r49",
+      "method": "reorder",
+      "args": ["ZYX"]
+    },
+    {
+      "op": "new",
+      "id": "r50",
+      "class": "Euler",
+      "args": [0.3, -0.4, 1.2, "YZX"]
+    },
+    {
+      "op": "call",
+      "id": "r50",
+      "method": "reorder",
+      "args": ["YZX"]
+    },
+    {
+      "op": "new",
+      "id": "r51",
+      "class": "Euler",
+      "args": [0.3, -0.4, 1.2, "YZX"]
+    },
+    {
+      "op": "call",
+      "id": "r51",
+      "method": "reorder",
+      "args": ["XZY"]
+    },
+    {
+      "op": "new",
+      "id": "e52",
+      "class": "Euler",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "e52",
+      "method": "setFromVector3",
+      "args": [
+        {
+          "ref": "v01"
+        },
+        "XZY"
+      ]
+    },
+    {
+      "op": "new",
+      "id": "e53",
+      "class": "Euler",
+      "args": [0.3, -0.4, 1.2, "XZY"]
+    },
+    {
+      "op": "new",
+      "id": "o54",
+      "class": "Euler",
+      "args": [0.3, -0.4, 1.2, "XYZ"]
+    },
+    {
+      "op": "call",
+      "id": "o54",
+      "method": "copy",
+      "args": [
+        {
+          "ref": "e53"
+        }
+      ]
+    },
+    {
+      "op": "call",
+      "id": "o54",
+      "method": "equals",
+      "args": [
+        {
+          "ref": "e53"
+        }
+      ],
+      "result": "r55"
+    },
+    {
+      "op": "new",
+      "id": "r56",
+      "class": "Euler",
+      "args": [0.3, -0.4, 1.2, "XZY"]
+    },
+    {
+      "op": "call",
+      "id": "r56",
+      "method": "reorder",
+      "args": ["XYZ"]
+    },
+    {
+      "op": "new",
+      "id": "r57",
+      "class": "Euler",
+      "args": [0.3, -0.4, 1.2, "XZY"]
+    },
+    {
+      "op": "call",
+      "id": "r57",
+      "method": "reorder",
+      "args": ["YXZ"]
+    },
+    {
+      "op": "new",
+      "id": "r58",
+      "class": "Euler",
+      "args": [0.3, -0.4, 1.2, "XZY"]
+    },
+    {
+      "op": "call",
+      "id": "r58",
+      "method": "reorder",
+      "args": ["ZXY"]
+    },
+    {
+      "op": "new",
+      "id": "r59",
+      "class": "Euler",
+      "args": [0.3, -0.4, 1.2, "XZY"]
+    },
+    {
+      "op": "call",
+      "id": "r59",
+      "method": "reorder",
+      "args": ["ZYX"]
+    },
+    {
+      "op": "new",
+      "id": "r60",
+      "class": "Euler",
+      "args": [0.3, -0.4, 1.2, "XZY"]
+    },
+    {
+      "op": "call",
+      "id": "r60",
+      "method": "reorder",
+      "args": ["YZX"]
+    },
+    {
+      "op": "new",
+      "id": "r61",
+      "class": "Euler",
+      "args": [0.3, -0.4, 1.2, "XZY"]
+    },
+    {
+      "op": "call",
+      "id": "r61",
+      "method": "reorder",
+      "args": ["XZY"]
+    },
+    {
+      "op": "new",
+      "id": "e62",
+      "class": "Euler",
+      "args": [0.3, -0.4, 1.2, "ZYX"]
+    },
+    {
+      "op": "call",
+      "id": "e62",
+      "method": "toArray",
+      "args": [],
+      "result": "r63"
+    },
+    {
+      "op": "new",
+      "id": "v63",
+      "class": "Vector3",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "v63",
+      "method": "fromArray",
+      "args": [
+        {
+          "ref": "r63"
+        }
+      ]
+    },
+    {
+      "op": "new",
+      "id": "s64",
+      "class": "Vector3",
+      "args": [0.3, -0.4, 1.2]
+    },
+    {
+      "op": "call",
+      "id": "s64",
+      "method": "toArray",
+      "args": [],
+      "result": "arr"
+    },
+    {
+      "op": "new",
+      "id": "e65",
+      "class": "Euler",
+      "args": [0.3, -0.4, 1.2, "ZYX"]
+    },
+    {
+      "op": "call",
+      "id": "e65",
+      "method": "fromArray",
+      "args": [
+        {
+          "ref": "arr"
+        }
+      ]
+    }
+  ],
+  "observe": [
+    {
+      "id": "e02",
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "e02",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "e02",
+      "kind": "number",
+      "path": "z"
+    },
+    {
+      "id": "e02",
+      "kind": "string",
+      "path": "order"
+    },
+    {
+      "id": "o04",
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "o04",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "o04",
+      "kind": "number",
+      "path": "z"
+    },
+    {
+      "id": "o04",
+      "kind": "string",
+      "path": "order"
+    },
+    {
+      "id": "r05",
+      "kind": "boolean"
+    },
+    {
+      "id": "r06",
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "r06",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "r06",
+      "kind": "number",
+      "path": "z"
+    },
+    {
+      "id": "r06",
+      "kind": "string",
+      "path": "order"
+    },
+    {
+      "id": "r07",
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "r07",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "r07",
+      "kind": "number",
+      "path": "z"
+    },
+    {
+      "id": "r07",
+      "kind": "string",
+      "path": "order"
+    },
+    {
+      "id": "r08",
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "r08",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "r08",
+      "kind": "number",
+      "path": "z"
+    },
+    {
+      "id": "r08",
+      "kind": "string",
+      "path": "order"
+    },
+    {
+      "id": "r09",
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "r09",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "r09",
+      "kind": "number",
+      "path": "z"
+    },
+    {
+      "id": "r09",
+      "kind": "string",
+      "path": "order"
+    },
+    {
+      "id": "r10",
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "r10",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "r10",
+      "kind": "number",
+      "path": "z"
+    },
+    {
+      "id": "r10",
+      "kind": "string",
+      "path": "order"
+    },
+    {
+      "id": "r11",
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "r11",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "r11",
+      "kind": "number",
+      "path": "z"
+    },
+    {
+      "id": "r11",
+      "kind": "string",
+      "path": "order"
+    },
+    {
+      "id": "e12",
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "e12",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "e12",
+      "kind": "number",
+      "path": "z"
+    },
+    {
+      "id": "e12",
+      "kind": "string",
+      "path": "order"
+    },
+    {
+      "id": "o14",
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "o14",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "o14",
+      "kind": "number",
+      "path": "z"
+    },
+    {
+      "id": "o14",
+      "kind": "string",
+      "path": "order"
+    },
+    {
+      "id": "r15",
+      "kind": "boolean"
+    },
+    {
+      "id": "r16",
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "r16",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "r16",
+      "kind": "number",
+      "path": "z"
+    },
+    {
+      "id": "r16",
+      "kind": "string",
+      "path": "order"
+    },
+    {
+      "id": "r17",
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "r17",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "r17",
+      "kind": "number",
+      "path": "z"
+    },
+    {
+      "id": "r17",
+      "kind": "string",
+      "path": "order"
+    },
+    {
+      "id": "r18",
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "r18",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "r18",
+      "kind": "number",
+      "path": "z"
+    },
+    {
+      "id": "r18",
+      "kind": "string",
+      "path": "order"
+    },
+    {
+      "id": "r19",
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "r19",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "r19",
+      "kind": "number",
+      "path": "z"
+    },
+    {
+      "id": "r19",
+      "kind": "string",
+      "path": "order"
+    },
+    {
+      "id": "r20",
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "r20",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "r20",
+      "kind": "number",
+      "path": "z"
+    },
+    {
+      "id": "r20",
+      "kind": "string",
+      "path": "order"
+    },
+    {
+      "id": "r21",
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "r21",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "r21",
+      "kind": "number",
+      "path": "z"
+    },
+    {
+      "id": "r21",
+      "kind": "string",
+      "path": "order"
+    },
+    {
+      "id": "e22",
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "e22",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "e22",
+      "kind": "number",
+      "path": "z"
+    },
+    {
+      "id": "e22",
+      "kind": "string",
+      "path": "order"
+    },
+    {
+      "id": "o24",
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "o24",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "o24",
+      "kind": "number",
+      "path": "z"
+    },
+    {
+      "id": "o24",
+      "kind": "string",
+      "path": "order"
+    },
+    {
+      "id": "r25",
+      "kind": "boolean"
+    },
+    {
+      "id": "r26",
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "r26",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "r26",
+      "kind": "number",
+      "path": "z"
+    },
+    {
+      "id": "r26",
+      "kind": "string",
+      "path": "order"
+    },
+    {
+      "id": "r27",
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "r27",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "r27",
+      "kind": "number",
+      "path": "z"
+    },
+    {
+      "id": "r27",
+      "kind": "string",
+      "path": "order"
+    },
+    {
+      "id": "r28",
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "r28",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "r28",
+      "kind": "number",
+      "path": "z"
+    },
+    {
+      "id": "r28",
+      "kind": "string",
+      "path": "order"
+    },
+    {
+      "id": "r29",
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "r29",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "r29",
+      "kind": "number",
+      "path": "z"
+    },
+    {
+      "id": "r29",
+      "kind": "string",
+      "path": "order"
+    },
+    {
+      "id": "r30",
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "r30",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "r30",
+      "kind": "number",
+      "path": "z"
+    },
+    {
+      "id": "r30",
+      "kind": "string",
+      "path": "order"
+    },
+    {
+      "id": "r31",
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "r31",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "r31",
+      "kind": "number",
+      "path": "z"
+    },
+    {
+      "id": "r31",
+      "kind": "string",
+      "path": "order"
+    },
+    {
+      "id": "e32",
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "e32",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "e32",
+      "kind": "number",
+      "path": "z"
+    },
+    {
+      "id": "e32",
+      "kind": "string",
+      "path": "order"
+    },
+    {
+      "id": "o34",
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "o34",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "o34",
+      "kind": "number",
+      "path": "z"
+    },
+    {
+      "id": "o34",
+      "kind": "string",
+      "path": "order"
+    },
+    {
+      "id": "r35",
+      "kind": "boolean"
+    },
+    {
+      "id": "r36",
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "r36",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "r36",
+      "kind": "number",
+      "path": "z"
+    },
+    {
+      "id": "r36",
+      "kind": "string",
+      "path": "order"
+    },
+    {
+      "id": "r37",
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "r37",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "r37",
+      "kind": "number",
+      "path": "z"
+    },
+    {
+      "id": "r37",
+      "kind": "string",
+      "path": "order"
+    },
+    {
+      "id": "r38",
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "r38",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "r38",
+      "kind": "number",
+      "path": "z"
+    },
+    {
+      "id": "r38",
+      "kind": "string",
+      "path": "order"
+    },
+    {
+      "id": "r39",
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "r39",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "r39",
+      "kind": "number",
+      "path": "z"
+    },
+    {
+      "id": "r39",
+      "kind": "string",
+      "path": "order"
+    },
+    {
+      "id": "r40",
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "r40",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "r40",
+      "kind": "number",
+      "path": "z"
+    },
+    {
+      "id": "r40",
+      "kind": "string",
+      "path": "order"
+    },
+    {
+      "id": "r41",
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "r41",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "r41",
+      "kind": "number",
+      "path": "z"
+    },
+    {
+      "id": "r41",
+      "kind": "string",
+      "path": "order"
+    },
+    {
+      "id": "e42",
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "e42",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "e42",
+      "kind": "number",
+      "path": "z"
+    },
+    {
+      "id": "e42",
+      "kind": "string",
+      "path": "order"
+    },
+    {
+      "id": "o44",
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "o44",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "o44",
+      "kind": "number",
+      "path": "z"
+    },
+    {
+      "id": "o44",
+      "kind": "string",
+      "path": "order"
+    },
+    {
+      "id": "r45",
+      "kind": "boolean"
+    },
+    {
+      "id": "r46",
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "r46",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "r46",
+      "kind": "number",
+      "path": "z"
+    },
+    {
+      "id": "r46",
+      "kind": "string",
+      "path": "order"
+    },
+    {
+      "id": "r47",
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "r47",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "r47",
+      "kind": "number",
+      "path": "z"
+    },
+    {
+      "id": "r47",
+      "kind": "string",
+      "path": "order"
+    },
+    {
+      "id": "r48",
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "r48",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "r48",
+      "kind": "number",
+      "path": "z"
+    },
+    {
+      "id": "r48",
+      "kind": "string",
+      "path": "order"
+    },
+    {
+      "id": "r49",
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "r49",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "r49",
+      "kind": "number",
+      "path": "z"
+    },
+    {
+      "id": "r49",
+      "kind": "string",
+      "path": "order"
+    },
+    {
+      "id": "r50",
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "r50",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "r50",
+      "kind": "number",
+      "path": "z"
+    },
+    {
+      "id": "r50",
+      "kind": "string",
+      "path": "order"
+    },
+    {
+      "id": "r51",
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "r51",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "r51",
+      "kind": "number",
+      "path": "z"
+    },
+    {
+      "id": "r51",
+      "kind": "string",
+      "path": "order"
+    },
+    {
+      "id": "e52",
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "e52",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "e52",
+      "kind": "number",
+      "path": "z"
+    },
+    {
+      "id": "e52",
+      "kind": "string",
+      "path": "order"
+    },
+    {
+      "id": "o54",
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "o54",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "o54",
+      "kind": "number",
+      "path": "z"
+    },
+    {
+      "id": "o54",
+      "kind": "string",
+      "path": "order"
+    },
+    {
+      "id": "r55",
+      "kind": "boolean"
+    },
+    {
+      "id": "r56",
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "r56",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "r56",
+      "kind": "number",
+      "path": "z"
+    },
+    {
+      "id": "r56",
+      "kind": "string",
+      "path": "order"
+    },
+    {
+      "id": "r57",
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "r57",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "r57",
+      "kind": "number",
+      "path": "z"
+    },
+    {
+      "id": "r57",
+      "kind": "string",
+      "path": "order"
+    },
+    {
+      "id": "r58",
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "r58",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "r58",
+      "kind": "number",
+      "path": "z"
+    },
+    {
+      "id": "r58",
+      "kind": "string",
+      "path": "order"
+    },
+    {
+      "id": "r59",
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "r59",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "r59",
+      "kind": "number",
+      "path": "z"
+    },
+    {
+      "id": "r59",
+      "kind": "string",
+      "path": "order"
+    },
+    {
+      "id": "r60",
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "r60",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "r60",
+      "kind": "number",
+      "path": "z"
+    },
+    {
+      "id": "r60",
+      "kind": "string",
+      "path": "order"
+    },
+    {
+      "id": "r61",
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "r61",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "r61",
+      "kind": "number",
+      "path": "z"
+    },
+    {
+      "id": "r61",
+      "kind": "string",
+      "path": "order"
+    },
+    {
+      "id": "v63",
+      "kind": "numbers",
+      "method": "toArray"
+    },
+    {
+      "id": "e62",
+      "kind": "string",
+      "path": "order"
+    },
+    {
+      "id": "arr",
+      "kind": "numbers"
+    },
+    {
+      "id": "e65",
+      "kind": "number",
+      "path": "x"
+    },
+    {
+      "id": "e65",
+      "kind": "number",
+      "path": "y"
+    },
+    {
+      "id": "e65",
+      "kind": "number",
+      "path": "z"
+    },
+    {
+      "id": "e65",
+      "kind": "string",
+      "path": "order"
+    }
+  ]
+}

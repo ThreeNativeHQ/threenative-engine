@@ -39,9 +39,9 @@ export const MCP_SERVERS = Object.freeze({
  * checkout whose bundle has not been built. */
 export const MCP_PACKAGES = Object.freeze({
   assets: Object.freeze({ name: "threenative-asset-mcp", version: "0.14.0" }),
-  sculpt: Object.freeze({ name: "threenative-sculpt-mcp", version: "0.2.1" }),
-  engine: Object.freeze({ name: "threenative-engine-mcp", version: "0.2.4" }),
-  blender: Object.freeze({ name: "threenative-blender-mcp", version: "0.1.4" }),
+  sculpt: Object.freeze({ name: "threenative-sculpt-mcp", version: "0.2.2" }),
+  engine: Object.freeze({ name: "threenative-engine-mcp", version: "0.2.6" }),
+  blender: Object.freeze({ name: "threenative-blender-mcp", version: "0.1.6" }),
 });
 
 /** How one host spells a stdio MCP server. Hosts agree on what to run and disagree on where to

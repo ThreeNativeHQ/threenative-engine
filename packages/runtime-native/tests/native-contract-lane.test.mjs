@@ -72,6 +72,13 @@ test("should register every native executable with CTest", () => {
   );
 });
 
+test("keeps optional MetaHuman test target out of disabled sanitizer aggregates", () => {
+  assert.match(cmake, /if\(TN_ENABLE_METAHUMAN\)\s*# The synthetic DNA and its reference vectors[\s\S]*add_executable\(threenative-metahuman-bindings-test[\s\S]*endif\(\)/u);
+  assert.match(cmake, /if\(TN_ENABLE_METAHUMAN\)\s*tn_register_contract_test\(threenative-metahuman-bindings-test\)\s*else\(\)\s*tn_register_blocked_test\(threenative-metahuman-bindings-test\s*"TN_ENABLE_METAHUMAN=OFF"\)/u);
+
+  assert.match(cmake, /if\(TN_ENABLE_METAHUMAN\)\s*# The facial rig is the one contract that parses untrusted bytes[\s\S]*tn_mark_sanitizer_contract_test\(threenative-metahuman-bindings-test\)\s*endif\(\)/u);
+});
+
 test("regenerates an existing native build before reading CTest registrations", () => {
   const runner = coverageRunner.slice(
     coverageRunner.indexOf("export function runNativeCtest()"),

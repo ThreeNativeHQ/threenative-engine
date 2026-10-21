@@ -1,0 +1,35 @@
+{
+  "name": "pmrem-texture",
+  "threeVersion": "0.185.1",
+  "adaptedFrom": "original — pmremTexture (three r185 PMREMNode.js): an equirectangular DataTexture sampled through its PMREM by world direction, roughness rising across the sphere",
+  "blocked": null,
+  "observations": [
+    {
+      "index": 0,
+      "id": "camera",
+      "kind": "numbers",
+      "path": "projectionMatrix.elements",
+      "value": "n:3ff9bbecddd39c58,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:400127f33e8d12e5,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:0000000000000000,n:bff0083340520083,n:bff0000000000000,n:0000000000000000,n:0000000000000000,n:bfc9a02900419a02,n:0000000000000000",
+      "decimal": "1.608380190382169, 0, 0, 0, 0, 2.1445069205095586, 0, 0, 0, 0, -1.002002002002002, -1, 0, 0, -0.20020020020020018, 0"
+    },
+    {
+      "index": 1,
+      "id": "scene",
+      "kind": "pixels",
+      "value": "s:30b75ec0a55e19720fc25d0abae0198869da664d2159c531ecfe66ba6233d3cb",
+      "decimal": "30b75ec0a55e19720fc25d0abae0198869da664d2159c531ecfe66ba6233d3cb"
+    }
+  ],
+  "render": {
+    "png": "pmrem-texture.png",
+    "pngSha256": "30b75ec0a55e19720fc25d0abae0198869da664d2159c531ecfe66ba6233d3cb",
+    "width": 320,
+    "height": 240,
+    "adapter": {
+      "architecture": "turing",
+      "description": "",
+      "device": "",
+      "vendor": "nvidia"
+    }
+  }
+}

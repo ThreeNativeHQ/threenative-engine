@@ -1,0 +1,149 @@
+{
+  "name": "particles-sprite",
+  "adaptedFrom": "original \u2014 PRD-527: real core GPUParticles3D with game-supplied SpriteNodeMaterial, ten compute steps, oblique camera and transformed sprite",
+  "tolerance": {
+    "abs": 0
+  },
+  "ops": [
+    {
+      "op": "new",
+      "id": "scene",
+      "class": "Scene",
+      "args": []
+    },
+    {
+      "op": "new",
+      "id": "camera",
+      "class": "PerspectiveCamera",
+      "args": [50, 1.3333333333333333, 0.1, 50]
+    },
+    {
+      "op": "set",
+      "id": "camera",
+      "path": "position.x",
+      "value": 3
+    },
+    {
+      "op": "set",
+      "id": "camera",
+      "path": "position.y",
+      "value": 2
+    },
+    {
+      "op": "set",
+      "id": "camera",
+      "path": "position.z",
+      "value": 7
+    },
+    {
+      "op": "call",
+      "id": "camera",
+      "method": "lookAt",
+      "args": [0, 0, 0]
+    },
+    {
+      "op": "new",
+      "id": "material",
+      "class": "SpriteNodeMaterial",
+      "args": []
+    },
+    {
+      "op": "set",
+      "id": "material",
+      "path": "rotation",
+      "value": 0.3
+    },
+    {
+      "op": "new",
+      "id": "particles",
+      "class": "Sprite",
+      "args": [
+        {
+          "ref": "material"
+        }
+      ]
+    },
+    {
+      "op": "set",
+      "id": "particles",
+      "path": "scale.x",
+      "value": 0.28
+    },
+    {
+      "op": "set",
+      "id": "particles",
+      "path": "scale.y",
+      "value": 0.4
+    },
+    {
+      "op": "set",
+      "id": "particles",
+      "path": "scale.z",
+      "value": 1
+    },
+    {
+      "op": "set",
+      "id": "particles",
+      "path": "center.x",
+      "value": 0.3
+    },
+    {
+      "op": "set",
+      "id": "particles",
+      "path": "position.x",
+      "value": 0.25
+    },
+    {
+      "op": "set",
+      "id": "particles",
+      "path": "rotation.y",
+      "value": 0.25
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "add",
+      "args": [
+        {
+          "ref": "particles"
+        }
+      ]
+    },
+    {
+      "op": "tsl",
+      "id": "particles",
+      "program": "particles-sprite"
+    },
+    {
+      "op": "call",
+      "id": "camera",
+      "method": "updateProjectionMatrix",
+      "args": []
+    },
+    {
+      "op": "call",
+      "id": "scene",
+      "method": "updateMatrixWorld",
+      "args": [true]
+    }
+  ],
+  "observe": [
+    {
+      "id": "scene",
+      "kind": "pixels",
+      "metric": {
+        "maxPixelMismatchRatio": 0.01,
+        "maxPerceptualDeltaE": 0.02
+      }
+    }
+  ],
+  "render": {
+    "scene": "scene",
+    "camera": "camera",
+    "width": 320,
+    "height": 240,
+    "toneMapping": "aces",
+    "toneMappingExposure": 1,
+    "outputColorSpace": "srgb"
+  }
+}

@@ -79,6 +79,8 @@ export interface IWaterSurfaceOptions {
 interface IReflectorPass {
   getVirtualCamera(camera: Camera): Camera;
   updateBefore(frame: IReflectionFrame): void;
+  /** three's NodeUpdateType; `"none"` when the back end draws the pass itself (the native engine). */
+  readonly updateBeforeType?: string;
 }
 interface IReflectionFrame {
   readonly scene: Object3D;
@@ -177,18 +179,21 @@ export class WaterSurface3D {
     // is: the mirror's draws would be filed under the main bundle, and the mirror's own bundles
     // leave the field `null`, so the main bundle's remaining draws are recorded but never listed —
     // a replay refreshes only listed draws, so those keep the camera they were recorded with. The
-    // mirror renders outside the record, and the record gets its bundle back.
-    const mirror = pass.updateBefore.bind(pass);
-    pass.updateBefore = (frame: IReflectionFrame): void => {
-      const host = frame.renderer as { _currentRenderBundle?: unknown };
-      const recording = host._currentRenderBundle;
-      if (recording !== undefined) host._currentRenderBundle = null;
-      try {
-        mirror(frame);
-      } finally {
-        if (recording !== undefined) host._currentRenderBundle = recording;
-      }
-    };
+    // mirror renders outside the record, and the record gets its bundle back. A pass three never
+    // updates (the native engine draws it and records no JS bundle) has no render to guard.
+    if (pass.updateBeforeType !== "none") {
+      const mirror = pass.updateBefore.bind(pass);
+      pass.updateBefore = (frame: IReflectionFrame): void => {
+        const host = frame.renderer as { _currentRenderBundle?: unknown };
+        const recording = host._currentRenderBundle;
+        if (recording !== undefined) host._currentRenderBundle = null;
+        try {
+          mirror(frame);
+        } finally {
+          if (recording !== undefined) host._currentRenderBundle = recording;
+        }
+      };
+    }
     if (reflection.layers !== undefined) {
       const mask = reflection.layers;
       if (!Number.isInteger(mask) || mask < 0)

@@ -1,0 +1,62 @@
+{
+  "name": "scene-transforms-attach",
+  "adaptedFrom": "three@0.185.1 test/unit/src/core/Object3D.tests.js — attach keeps the object's world transform, add re-parents, and remove detaches without touching the transform",
+  "tolerance": { "abs": 0 },
+  "ops": [
+    { "op": "new", "id": "oldParent", "class": "Group", "args": [] },
+    { "op": "set", "id": "oldParent", "path": "position.x", "value": 3 },
+    { "op": "call", "id": "oldParent", "method": "rotateY", "args": [0.7] },
+    { "op": "new", "id": "mover", "class": "Mesh", "args": [] },
+    { "op": "set", "id": "mover", "path": "position.y", "value": 2 },
+    { "op": "set", "id": "mover", "path": "scale.x", "value": 2 },
+    { "op": "call", "id": "oldParent", "method": "add", "args": [{ "ref": "mover" }] },
+    { "op": "call", "id": "oldParent", "method": "updateMatrixWorld", "args": [true] },
+    { "op": "new", "id": "beforeAttach", "class": "Vector3", "args": [] },
+    {
+      "op": "call",
+      "id": "mover",
+      "method": "getWorldPosition",
+      "args": [{ "ref": "beforeAttach" }]
+    },
+
+    { "op": "new", "id": "newParent", "class": "Group", "args": [] },
+    { "op": "set", "id": "newParent", "path": "position.z", "value": -3 },
+    { "op": "call", "id": "newParent", "method": "rotateZ", "args": [0.35] },
+    { "op": "call", "id": "newParent", "method": "updateMatrixWorld", "args": [true] },
+    { "op": "call", "id": "newParent", "method": "attach", "args": [{ "ref": "mover" }] },
+    { "op": "call", "id": "newParent", "method": "updateMatrixWorld", "args": [true] },
+    { "op": "new", "id": "afterAttach", "class": "Vector3", "args": [] },
+    {
+      "op": "call",
+      "id": "mover",
+      "method": "getWorldPosition",
+      "args": [{ "ref": "afterAttach" }]
+    },
+    { "op": "new", "id": "backToLocal", "class": "Vector3", "args": [] },
+    { "op": "call", "id": "mover", "method": "localToWorld", "args": [{ "ref": "backToLocal" }] },
+    { "op": "call", "id": "mover", "method": "worldToLocal", "args": [{ "ref": "backToLocal" }] },
+
+    { "op": "new", "id": "scene", "class": "Scene", "args": [] },
+    { "op": "set", "id": "scene", "path": "backgroundIntensity", "value": 0.5 },
+    { "op": "set", "id": "scene", "path": "backgroundBlurriness", "value": 0.25 },
+    { "op": "call", "id": "scene", "method": "add", "args": [{ "ref": "newParent" }] },
+    { "op": "call", "id": "scene", "method": "updateMatrixWorld", "args": [true] },
+    { "op": "call", "id": "newParent", "method": "remove", "args": [{ "ref": "mover" }] },
+    { "op": "call", "id": "newParent", "method": "updateMatrixWorld", "args": [true] },
+    { "op": "call", "id": "mover", "method": "updateMatrixWorld", "args": [true] }
+  ],
+  "observe": [
+    { "id": "beforeAttach", "method": "toArray", "kind": "numbers" },
+    { "id": "afterAttach", "method": "toArray", "kind": "numbers" },
+    { "id": "backToLocal", "method": "toArray", "kind": "numbers" },
+    { "id": "mover", "path": "matrix.elements", "kind": "numbers" },
+    { "id": "mover", "path": "position.x", "kind": "number" },
+    { "id": "mover", "path": "position.y", "kind": "number" },
+    { "id": "mover", "path": "quaternion.w", "kind": "number" },
+    { "id": "mover", "path": "matrixWorld.elements", "kind": "numbers" },
+    { "id": "newParent", "path": "matrixWorld.elements", "kind": "numbers" },
+    { "id": "scene", "path": "matrixWorld.elements", "kind": "numbers" },
+    { "id": "scene", "path": "backgroundIntensity", "kind": "number" },
+    { "id": "mover", "path": "visible", "kind": "boolean" }
+  ]
+}

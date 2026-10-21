@@ -1,0 +1,12 @@
+{
+  "name": "arrays-identity",
+  "adaptedFrom": "three@0.185.1 BufferGeometry.getAttribute — two reads of the same attribute name hand back one object, so a write through one is seen through the other",
+  "tolerance": { "abs": 0 },
+  "ops": [
+    { "op": "new", "id": "box", "class": "BoxGeometry", "args": [1, 1, 1] },
+    { "op": "call", "id": "box", "method": "getAttribute", "args": ["position"], "result": "p1" },
+    { "op": "call", "id": "box", "method": "getAttribute", "args": ["position"], "result": "p2" },
+    { "op": "set", "id": "p1", "path": "needsUpdate", "value": true }
+  ],
+  "observe": [{ "id": "p2", "path": "version", "kind": "number" }]
+}
