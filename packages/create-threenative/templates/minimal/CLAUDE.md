@@ -45,7 +45,7 @@ bridge; avoid DOM globals, dynamic `import()`, and raw physics handles. **Report
 pnpm dev
 pnpm build
 pnpm build --target desktop
-pnpm test
+pnpm test   # runs `pnpm check` first: typecheck, ESLint, Biome format
 ```
 
 `src/main.ts` boots the canvas; `src/scenes/Play.ts` owns the lifecycle; `src/entities/Player.ts`

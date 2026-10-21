@@ -13,14 +13,12 @@ import {
   type AnimationClip,
   Box3,
   BoxGeometry,
-  Color,
   Group,
   MathUtils,
   Mesh,
   MeshBasicMaterial,
   MeshStandardMaterial,
   type Object3D,
-  Quaternion,
   Vector3,
 } from "three";
 import { scale } from "../render/scale.js";
@@ -1002,7 +1000,7 @@ export class Enemy {
     crouched: boolean,
     dt: number,
     poseLocked = false,
-    armed = false,
+    _armed = false,
   ): void {
     // Ground speed is measured from where the body actually got to this frame, not from the
     // speed constant it was asked for: a blocked step, a corner, or a slow turn all cut it.

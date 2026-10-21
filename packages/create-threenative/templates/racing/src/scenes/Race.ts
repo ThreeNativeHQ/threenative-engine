@@ -1,5 +1,4 @@
 import {
-  type ICtx,
   Scene,
   type SceneFrame,
   afterPhysics,

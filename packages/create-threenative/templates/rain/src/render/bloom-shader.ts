@@ -6,7 +6,7 @@
 // luminance threshold and normalised by the weight it actually accumulated — not by 25, so the
 // frame's corners, where the kernel hangs off the target, cannot dim. Rendered at quarter
 // resolution: see src/render/postprocessing.ts.
-import { DataTexture, Vector2, Vector3, Vector4 } from "three";
+import { DataTexture, Vector2 } from "three";
 import {
   Fn,
   Loop,

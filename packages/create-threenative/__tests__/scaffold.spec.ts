@@ -193,6 +193,8 @@ const BUG_REPORT_SKILL_PATHS = [
 // an Engine section, and seven templates pin the legacy engine (slice 8). Measured from the committed branch head, with no sibling edits in the tree.
 // Recomputed 2026-10-18 through all thirteen actual createProject trees after release-cohort preparation and Sailing motion repair.
 // Re-measured all 13 trees for the SMAA mip0 patch; restoring only copied patch bytes recovers every prior hash.
+// Re-measured 2026-10-20 (PRD-626): every tree gains eslint.config.js and biome.json, three scripts and
+// two dev dependencies, and the pristine sources lose the unused bindings the new lint found.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // PRD-637 0.3.6 cohort: the template pins moved, so all thirteen trees were re-measured by this test.
   // PRD-637: every tree gains the npm `@vitejs/devtools` override, and `starter` also moves (grade
@@ -269,25 +271,23 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-10-18 merging develop f30f9b6d3 (PRD-478) into PR #493: the merged Three patch moves every tree.
   // Recomputed 2026-10-16 for PRD-617: puzzle's boot-failure scenario asserts the engine-neutral
   // boot-failure text both engines now show, so only puzzle's tree moves.
-  // 2026-10-20 merged develop (PRD-478/565 three patch, PRD-629) into PRD-570: all thirteen trees re-measured
-  // through createProject on the merged tree.
-  "action-rpg": "3a1752d4d0d4fa499c0bb542c85ff9ce095767d525b2987cc8e2053383aef168",
-  minimal: "a0ff58412b1082ce81d276f27582ba79668d56360604f7f81b2e66bb1bc1304f",
-  platformer: "7e4d719de8437af799a170362491400f3629f979a3ac75ac98175dd3df39f001",
-  puzzle: "729b6d81b9eb3e251839f7d24b55ffbe4b07e9159952de22af93e02b69c8a08a",
-  racing: "65935ca9b116437a23da89902f30cd61a1faf1a7f297892b8e4a8b19fa0d1f1b",
-  rain: "0a409b853ac51b747afb327b718bce20982bc2c3dfd98859475b507e29fbaa66",
-  rts: "cc70b9ca35239e45c83ca150b22cd976b4dfe7b61f01eade71bece9fd6d59dae",
-  runner: "5061ff93f5c0c5208a5a523a9b6b08a854a28baa8b1e53eac9638804d298184e",
+  "action-rpg": "53b6349d418d73e89e3fdbee53ac07d394ba172f58d6220d42f478a10e7bb7e5",
+  minimal: "6b5857acfb47fcab9cf4e85f2828742ffe13af5bd02dc0a9798864e9f7f594eb",
+  platformer: "8d3f22d6ae0a1fedde1e1e510967797b9f8fa5353dd25185a66c8b31e714f34f",
+  puzzle: "04513a1023b4ab64742fa9f1f4f84adf289ea4798ee6d25525516da1eff3daa6",
+  racing: "1097f2bb4ed30b87c025d76518a4897b9a86f831a2c8dc3b9312f3948f5ef652",
+  rain: "529d7bdb58962f54c1649fb544dce6bca712fd562624e40eeb22eadd7596052e",
+  rts: "e7a2f4a34b9f3104c7d14fe12c9d5c5392b30d2fb401a0b888b6db54f90b6399",
+  runner: "1f7a97f6fadbd168054c377143bd9f58cdb151794ab25cb13ccd2926dfc4182e",
   // Finite-height readiness plus hull, sail, and buoy interpolation from the current swell pose.
-  sailing: "b266025793cb2e62fb7f007b39f33c6ca097f6cec1283987bae48c86ff7c24d3",
-  shooter: "cee93e3317bd59abee3bd11f0b2acd73fe542834ea50ba9b0e1caa0e026b949e",
-  snow: "944fd3779b0bb867ae600e1da471fcbfcfa3aebd1e66b6d45f6cc9669298c115",
+  sailing: "0fb5dc205b5dbf55091183072c4ccc91ff7654befe7c79a889c8b3e623be1805",
+  shooter: "4f8b4cfb3592f195b1bd8791288f34a07e92a7a8cba226b568ffd88dbd5da0a8",
+  snow: "2adffc66e20cdbe0d98b9c508850ced673dc1c26e2d384aaedfc099be59245d9",
   // Measured 2026-10-16 through createProject after starter's completed-work quality fallback fix.
   // Recomputed 2026-10-16: starter's adaptiveQuality split its policy resolution into qualityPolicy.ts
   // to stay under the 200-line render-file cap; only starter's tree moves.
-  starter: "4ef3691fbb1059c825db6904d7b7eebb5a0b869a83779a8c308acb1cff97bb80",
-  "tower-defense": "aa636e91141e9758a3395abb4faf0c018fc4c152647ccf0121b0346dfea79a01",
+  starter: "f932ead4f20edb0b3bda5daf2ed3bff81cecc4a9bde822a60d8704de427efbe6",
+  "tower-defense": "67260abadf6946c6e95f06bcfe70459a08b14118c39887bc15f3ec4874ff7755",
 };
 
 const GENERATED_SCAFFOLD_METADATA =
@@ -369,6 +369,8 @@ const STARTER_PATHS = [
   ".codex/hooks.json",
   "kit.json",
   "package.json",
+  "eslint.config.js",
+  "biome.json",
   "patches/three@0.185.1.patch",
   "patches/vite@8.2.0.patch",
   "patches/@tailwindcss__node@4.3.3.patch",
@@ -581,6 +583,44 @@ describe("create-threenative", () => {
         }
       }
       expect(actual).toEqual(PRD_201_PARENT_SCAFFOLD_HASHES);
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  it("ships the quality gate as two thin root configs and three scripts in every template", async () => {
+    const root = await makeTempDir("threenative-quality-config-");
+    try {
+      for (const template of ALL_TEMPLATES) {
+        const { target } = await createProject(
+          { install: false, target: template, template },
+          root,
+        );
+        const nonblank = (
+          await Promise.all(
+            ["eslint.config.js", "biome.json"].map((name) =>
+              readFile(path.join(target, name), "utf8"),
+            ),
+          )
+        )
+          .join("\n")
+          .split("\n")
+          .filter((line) => line.trim() !== "").length;
+        expect(nonblank, `${template} config lines`).toBeLessThanOrEqual(80);
+        const manifest = JSON.parse(await readFile(path.join(target, "package.json"), "utf8")) as {
+          devDependencies: Record<string, string>;
+          scripts: Record<string, string>;
+        };
+        expect(manifest.scripts.check, template).toBe(
+          "pnpm typecheck && pnpm lint && pnpm format:check",
+        );
+        expect(manifest.scripts.lint, template).toBe("eslint src");
+        expect(manifest.scripts["format:check"], template).toBe("biome format src");
+        expect(manifest.scripts.test, template).toMatch(/^pnpm check && /u);
+        expect(manifest.devDependencies.eslint, template).toMatch(/^\d/u);
+        expect(manifest.devDependencies["@biomejs/biome"], template).toMatch(/^\d/u);
+        expect(Object.values(manifest.scripts).join(" "), template).not.toContain("npx");
+      }
     } finally {
       await rm(root, { force: true, recursive: true });
     }

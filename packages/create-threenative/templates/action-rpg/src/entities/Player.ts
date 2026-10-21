@@ -2,7 +2,6 @@ import { CharacterBody3D, CollisionShape3D } from "@threenative/physics";
 import { Vector3 } from "three";
 import { createSword } from "../render/props.js";
 import type { ITouchInput } from "../render/touch-controls.js";
-import type { GameState } from "../state.js";
 import { Fighter, type GameCtx, type IMannequin } from "./Fighter.js";
 
 export const WORLD_LAYER = 1;

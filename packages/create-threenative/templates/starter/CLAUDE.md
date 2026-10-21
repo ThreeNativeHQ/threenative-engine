@@ -40,7 +40,7 @@ pnpm dev
 pnpm studio
 pnpm build
 pnpm build --target desktop
-pnpm test
+pnpm test   # runs `pnpm check` first: typecheck, ESLint, Biome format
 node tools/look.mjs
 ```
 
