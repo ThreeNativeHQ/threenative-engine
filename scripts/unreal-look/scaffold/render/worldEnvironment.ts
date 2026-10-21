@@ -987,9 +987,13 @@ export class WorldEnvironment {
       stage({
         name: "motionBlur",
         supportsResolutionSubrect: true,
-        available: (chain) =>
-          chain.velocityNode === undefined ? "the scene pass provisions no velocity" : true,
         build: (input, chain) => {
+          // The chain provisions the velocity output after `available` runs and before `build`,
+          // so only `build` can tell whether it got one.
+          if (chain.velocityNode === undefined)
+            throw new Error(
+              "Motion blur requires the scene pass velocity; it is provisioned per request.",
+            );
           const colour = subrectTexture(input);
           const velocity = chain.velocityNode as TextureNode;
           sample(velocity);

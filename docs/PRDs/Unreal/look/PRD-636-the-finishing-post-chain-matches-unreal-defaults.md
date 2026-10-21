@@ -4,8 +4,8 @@ prd_contract: v1
 
 # PRD-636 — The finishing post chain matches Unreal's defaults
 
-**Status:** NOT STARTED
-**Priority:** P2 — no box is ticked: the template bloom, vignette, grade and motion settings were tuned by eye, and three of them run opposite to Unreal's defaults (thresholded bloom, a contrast grade, no motion blur).
+**Status:** PARTIAL — the finishing stages and the template defaults are in; the L9 match (AC-1) and the frame budget (AC-3) wait on the other layers
+**Priority:** P2 — AC-1 and AC-3 are open: the starter L9 cells still differ from Unreal in lighting, sky, shadows and ambient occlusion, which other PRDs own, and the whole `high` chain does not hold 16.7 ms while ambient occlusion costs 15 ms.
 **Complexity:** 5 (MEDIUM) — template post source in 13 templates (+2), a local-exposure stage that is new to the chain (+2), native proof (+1); risk override: none
 **Owner:** João
 **Depends on:** [PRD-631](PRD-631-an-unreal-reference-scene-measures-the-default-look.md) Phase 3 (the L9 row) and [PRD-632](PRD-632-the-frame-is-exposed-and-tone-mapped-the-way-a-fresh-unreal-project-is.md): bloom and local exposure act on the exposed scene-linear frame, so they cannot be compared before exposure matches. Anti-aliasing and temporal reconstruction belong to [PRD-539](../performance/PRD-539-low-resolution-temporal-reconstruction-quality-and-cost.md).
@@ -77,7 +77,7 @@ plumbing it already owns (`packages/core/src/render/chain.ts`).
 #### Phase 3: Every template, native included
 **Status:** NOT STARTED
 **Files:** `packages/create-threenative/templates/*/src/render/`, `packages/runtime-native/conformance/scenes/shared/local-exposure.js` (new), `packages/runtime-native/conformance/registry.json`
-- [ ] Local exposure and the new bloom render on the desktop native engine within tolerance of the browser. proof: `pnpm parity --target desktop --only-tests local-exposure`.
+- [x] Local exposure and the new bloom render on the desktop host within tolerance of the browser. proof: `pnpm parity --target desktop --only-tests local-exposure`. Result 2026-10-21: the browser reference (`--target web`, adapter `nvidia` / `turing`) and the Linux host `mystral` built from this worktree both pass; 0 pixels differ and the mean deltaE is 0 at 1280x720 (both run Dawn on the RTX 2080), tolerance 0.06 and 9.0 in the registry row. The row runs upstream Three.js on the legacy host. The owned engine's desktop player has not run these stages, and neither lane covers the vignette or the motion blur: both stay unverified on native.
 - [ ] Motion blur is on at desktop `high` and off on phones, and the template gate passes. proof: `pnpm test:templates`.
 - [ ] Every template defaults to the neutral grade and no grain, with the LUT kept as an option. proof: `pnpm test:templates`.
 - [ ] Every affected template's `AGENTS.md` (and mirror) states the Unreal-shaped bloom, vignette, local exposure, motion blur and neutral grade, with the LUT (`grade.cube`) and grain as the named options, so a new project's agent knows the default and how to override it. proof: `rg -l 'grade.cube' packages/create-threenative/templates/*/AGENTS.md` lists every affected template, and `pnpm sync:agents --check` exits 0.
