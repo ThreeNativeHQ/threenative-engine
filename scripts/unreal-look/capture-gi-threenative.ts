@@ -120,7 +120,7 @@ export async function captureGiThreeNative(options: {
         page.on("console", (message) => {
           if (
             message.type() === "error" ||
-            /^TN_(CALIBRATION|GI_CACHE|NATIVE_)/.test(message.text())
+            /^TN_(CALIBRATION|GI_CACHE|SURFACE_CACHE|NATIVE_)/.test(message.text())
           )
             console.info(`page: ${message.text().slice(0, 600)}`);
         });
