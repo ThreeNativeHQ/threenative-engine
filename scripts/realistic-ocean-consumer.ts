@@ -105,17 +105,23 @@ const POSE_HOOK = `  camera.lookAt(target.x + forwardX * LEAD, target.y + AIM, t
  */
 export const MATCHED_SKY = {
   /**
-   * Poly Haven "Qwantani Sunset (Pure Sky)", CC0, 4k HDR, encoded at 0.25 (white = 4) and drawn
-   * at half its radiance, so the horizon haze stays inside an sRGB fog colour.
+   * Poly Haven "Qwantani Sunset (Pure Sky)", CC0, 4k HDR, encoded at 0.25 (white = 4). Drawn at
+   * a quarter of its radiance against its own sun at half: its hazy horizon is about 0.6 of the
+   * sun's irradiance, web-ocean's sky about 0.1, and the water reflects that ratio.
    */
-  range: 2,
+  range: 1,
+  /** Lit at the kit's own drawn-to-lit ratio (0.9 of 2.5). */
+  fill: 0.36,
   /** Unit vector toward its sun, read off the file by the script: 6.1 degrees up. */
   sun: [0.8043, 0.1062, 0.5846] as const,
   /** Its horizon band away from the sun, times `range`. */
-  skyLow: "0xc6bdb4",
-  /** Its sun's own colour, and its irradiance integrated off the file, times the same half. */
-  sunColor: "0xff9f2b",
-  sunIntensity: 3.66,
+  skyLow: "0x918a83",
+  /**
+   * The sun: web-ocean's colour, measured off its frame 20 px from the disc (the photograph's own is
+   * a deep orange), at the luminance the photograph's integrated irradiance has, times the half.
+   */
+  sunColor: "0xfff0dd",
+  sunIntensity: 1.9,
   /** web-ocean's marine haze floor (1.1e-4 per metre) as FogExp2: the same 90% at a kilometre. */
   fogDensity: 0.00032,
   /** The same floor as the height term's sea-level density, per metre. */
@@ -132,6 +138,7 @@ export async function matchReferenceScene(target: string, skyJpg: string): Promi
   const [x, y, z] = MATCHED_SKY.sun;
   await edit("src/render/sky.ts", [
     ["const SKY_RANGE = 2.5;", `const SKY_RANGE = ${MATCHED_SKY.range};`],
+    ["const FILL_RANGE = 0.9;", `const FILL_RANGE = ${MATCHED_SKY.fill};`],
     [
       "const SUN_IN_PHOTO = new Vector3(0.555, 0.742, 0.38);",
       `const SUN_IN_PHOTO = new Vector3(${x}, ${y}, ${z});`,

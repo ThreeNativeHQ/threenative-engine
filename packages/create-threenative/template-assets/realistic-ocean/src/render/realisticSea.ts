@@ -130,8 +130,13 @@ export const LOOK = {
   sunRadiance: [3.4, 3.1, 2.5] as readonly [number, number, number],
   /** Fraction of the mirrored hull and marks that shows. A render target is written linear. */
   mirrorGain: 0.55,
-  /** Image-based reflection scale on the standard material. */
-  environmentIntensity: 1,
+  /**
+   * The sky's reflection, as a multiple of the scene's `environmentIntensity`. The sky in the water
+   * has to be as bright as the sky drawn above it, and the sailing kit draws its photograph at 2.5
+   * (`SKY_RANGE`) but lights the scene with it at 0.9 (`FILL_RANGE`): this is that ratio. Change
+   * it with either.
+   */
+  skyReflection: 2.5 / 0.9,
   /**
    * Mean-square slope of the capillary ripples no cascade carries, at any distance, plus what
    * grows in with distance (`far`, from `from` to `to` metres). Without it a near pixel is a
@@ -282,7 +287,6 @@ export function createRealisticWaterMesh(
   const tableBuffer = uniformArray(Array.from(table), "float");
 
   const material = new MeshStandardNodeMaterial({ metalness: 0, roughness: 0.2 });
-  material.envMapIntensity = LOOK.environmentIntensity;
 
   // The rest position of this fragment, straight from the disc's own attribute. `positionLocal` is
   // overwritten by `positionNode`, so reading it in the fragment would hand back the displaced one.
@@ -502,6 +506,18 @@ export function createRealisticWaterMesh(
   }
 
   const mesh = new Mesh(geometry, material);
+  // The scene's environment, read where it is used. three applies `envMapIntensity` only to a
+  // material's own `envMap`; on `scene.environment` it uses the scene's fill level, which is the
+  // wrong number for a mirror. So the sea takes the scene's environment as its own, every frame
+  // it is drawn, and follows the scene if the sky changes.
+  mesh.onBeforeRender = (_renderer, scene) => {
+    if (material.envMap !== scene.environment) {
+      material.envMap = scene.environment;
+      material.needsUpdate = true;
+    }
+    material.envMapRotation.copy(scene.environmentRotation);
+    material.envMapIntensity = scene.environmentIntensity * LOOK.skyReflection;
+  };
   mesh.receiveShadow = true;
   mesh.frustumCulled = false;
   mesh.name = "realistic-sea-surface";
