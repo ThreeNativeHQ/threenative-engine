@@ -127,6 +127,8 @@ public:
     ExprId atomicAdd(uint32_t buffer, ExprId index, ExprId value, Where where = Where::current());
     void store(uint32_t buffer, ExprId index, ExprId value, Where where = Where::current());
     /** A sampled 2D float texture and its sampler, bound together. */
+    uint32_t storageTexture2d(std::string_view name, std::string_view format);
+    void textureStore(uint32_t texture, ExprId coordinate, ExprId value, Where where = Where::current());
     uint32_t texture2d(std::string_view name);
     uint32_t texture3d(std::string_view name);
     uint32_t textureCube(std::string_view name);
@@ -200,7 +202,7 @@ private:
     friend class WgslEmitter;
     friend StageModule buildStage(const Program& program, uint32_t group);
 
-    enum class StmtKind : uint8_t { Eval, Assign, Store, Discard, If, Loop, Output, Break, Continue, Return };
+    enum class StmtKind : uint8_t { Eval, Assign, Store, TextureStore, Discard, If, Loop, Output, Break, Continue, Return };
     struct Stmt {
         StmtKind kind;
         uint32_t a = 0;  // var, buffer, condition, or count
@@ -237,6 +239,8 @@ private:
     std::unordered_map<std::string, uint64_t> nameIndex_;
     std::vector<Var> vars_;
     std::unordered_map<std::string, std::string> authoredFunctions_;
+    struct StorageTexture { std::string name, format; };
+    std::vector<StorageTexture> storageTextures_;
     std::vector<Storage> storage_;
     std::vector<std::string> textures_;
     enum class TextureKind : uint8_t { Float2d, Depth2d, DepthCube, Float3d, FloatCube };

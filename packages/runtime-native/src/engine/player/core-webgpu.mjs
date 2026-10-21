@@ -8,7 +8,8 @@ import { ShadowMap } from "../../../../three-native/src/shadow-map.ts";
 import { defineRenderTargets } from "../../../../three-native/src/render-target.ts";
 import { defineQuadMesh } from "../../../../three-native/src/quad-mesh.ts";
 
-export const { MeshBasicNodeMaterial, MeshStandardNodeMaterial, SpriteNodeMaterial } = globalThis;
+export const { StorageTexture, MeshBasicNodeMaterial, MeshStandardNodeMaterial, SpriteNodeMaterial } = globalThis;
+Object.setPrototypeOf(StorageTexture.prototype, globalThis.Texture.prototype);
 Object.setPrototypeOf(MeshBasicNodeMaterial.prototype, globalThis.MeshBasicMaterial.prototype);
 Object.setPrototypeOf(MeshStandardNodeMaterial.prototype, globalThis.MeshStandardMaterial.prototype);
 Object.setPrototypeOf(SpriteNodeMaterial.prototype, globalThis.SpriteMaterial.prototype);

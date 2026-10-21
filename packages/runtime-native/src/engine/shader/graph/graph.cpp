@@ -236,6 +236,9 @@ ExprId Lowerer::emit(Node node) {
             return program_.sample(program_.texture2d(d.name), expression(d.args[1]));
         case Kind::TextureSize:
             return program_.textureSize(program_.texture2d(d.name), d.args.empty() ? program_.constant(int32_t(0)) : expression(d.args[0]));
+        case Kind::StorageTexture:
+            if (d.args.empty()) throw std::runtime_error("storageTexture requires coordinates when read");
+            return program_.textureLoad(program_.texture2d(d.name), convert(expression(d.args[0]), Type::vec(2, Type::Scalar::I32)), program_.constant(int32_t(0)));
         case Kind::TextureLoad:
             return program_.textureLoad(d.bits == 1 ? program_.textureDepth(d.name) : program_.texture2d(d.name), expression(d.args[0]), d.args.size() < 2 ? program_.constant(int32_t(0)) : expression(d.args[1]));
         case Kind::Constant:
@@ -317,6 +320,15 @@ ExprId Lowerer::emit(Node node) {
             const bool pairwise = d.name == "min" || d.name == "max" || d.name == "pow" || d.name == "step" || d.name == "mod";
             if (ids.size() == 2 && pairwise) {
                 if (ids[0] == kInvalid || ids[1] == kInvalid) return kInvalid;
+                // r185 types a whole JS divisor from the integer index, as the binary operators do.
+                if (d.name == "mod" && d.args[1]->kind == Kind::Constant) {
+                    const auto& divisor = program_.expr(ids[1]);
+                    const Type index = program_.expr(ids[0]).type;
+                    const float value = std::bit_cast<float>(static_cast<uint32_t>(divisor.immediate));
+                    if (divisor.op == Op::Constant && divisor.type == Type::f32() && value == std::floor(value) &&
+                        index.isScalar() && (index.scalar == Type::Scalar::U32 || index.scalar == Type::Scalar::I32))
+                        ids[1] = program_.construct(index, {ids[1]});
+                }
                 const auto a = program_.expr(ids[0]).type, b = program_.expr(ids[1]).type;
                 // A serialized graph converts any mismatch; an authored one only widens a float scalar to the other
                 // operand's lanes (TSL's mod(vec2, float)), so a real type error still reports.
@@ -332,7 +344,11 @@ ExprId Lowerer::emit(Node node) {
         case Kind::Swizzle: return program_.swizzle(expression(d.args[0]), d.lanes);
         case Kind::Join: {
             std::vector<ExprId> ids;
-            for (const Node& part : d.args) ids.push_back(expression(part));
+            for (const Node& part : d.args) {
+                const auto value = expression(part);
+                ids.push_back(d.type.scalar == Type::Scalar::U32 && value != kInvalid
+                    ? convert(value, Type::vec(program_.expr(value).type.rows, Type::Scalar::U32)) : value);
+            }
             // `vec3(0.5)` splats a constant, as the builder's join does.
             if (ids.size() == 1 && ids[0] != kInvalid && program_.expr(ids[0]).op == Op::Constant)
                 ids.assign(d.type.rows, ExprId{ids[0]});  // a copy: assign's value must not alias the vector
@@ -435,6 +451,13 @@ void Lowerer::statement(Node node) {
             if (!s.args.empty()) statement(s.args[0]);
             return;
         case Kind::Call: case Kind::AtomicAdd: (void)expression(node); return;
+        case Kind::TextureStore: {
+            const auto* texture = static_cast<const tn::engine::Texture*>(s.object.get());
+            program_.textureStore(program_.storageTexture2d(s.name, texture->storageFormat()),
+                                  convert(expression(s.args[0]), Type::vec(2, Type::Scalar::U32)),
+                                  convert(expression(s.args[1]), Type::vec(4)));
+            return;
+        }
         case Kind::AtomicStore: {
             const auto& target = *s.args[0];
             program_.store(ensureStorage(target), index(s.args[0]), convert(expression(s.args[1]), target.type));

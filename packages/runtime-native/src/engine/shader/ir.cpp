@@ -484,6 +484,28 @@ void Program::store(uint32_t buffer, ExprId index, ExprId value, Where where) {
     emit(Stmt{StmtKind::Store, buffer, index, value});
 }
 
+uint32_t Program::storageTexture2d(std::string_view name, std::string_view format) {
+    if (format != "rgba16float" && format != "rgba32float" && format != "rgba8unorm") {
+        fail("storageTexture2d", "unsupported storage texture format " + std::string(format), Where::current());
+        return kInvalid;
+    }
+    for (uint32_t i = 0; i < storageTextures_.size(); ++i)
+        if (storageTextures_[i].name == name && storageTextures_[i].format == format) return i;
+    storageTextures_.push_back({std::string(name), std::string(format)});
+    return static_cast<uint32_t>(storageTextures_.size() - 1);
+}
+
+void Program::textureStore(uint32_t texture, ExprId coordinate, ExprId value, Where where) {
+    if (stage_ != Stage::Compute || texture >= storageTextures_.size() || coordinate == kInvalid || value == kInvalid) {
+        fail("textureStore", "requires a compute stage, storage texture, coordinate and value", where); return;
+    }
+    const Type coord = exprs_[coordinate].type;
+    if ((coord != Type::vec(2, Type::Scalar::U32) && coord != Type::vec(2, Type::Scalar::I32)) || exprs_[value].type != Type::vec(4)) {
+        fail("textureStore", "requires an integer vec2 coordinate and a vec4<f32> value", where); return;
+    }
+    emit(Stmt{StmtKind::TextureStore, texture, coordinate, value});
+}
+
 uint32_t Program::texture2d(std::string_view name) {
     // One texture is one binding however often it is sampled, as upstream binds a TextureNode once.
     for (std::size_t i = 0; i < textures_.size(); ++i)
@@ -760,6 +782,9 @@ void Program::dumpBlock(uint32_t block, int depth, std::string& out, std::vector
             case StmtKind::Store:
                 out += indent + "store " + storage_[s.a].name + "[" + describe(s.b, numbering) + "] = " +
                        describe(s.c, numbering) + "\n";
+                break;
+            case StmtKind::TextureStore:
+                out += indent + "textureStore " + storageTextures_[s.a].name + "[" + describe(s.b, numbering) + "] = " + describe(s.c, numbering) + "\n";
                 break;
             case StmtKind::Discard: out += indent + "discard\n"; break;
             case StmtKind::Return: out += indent + "return\n"; break;

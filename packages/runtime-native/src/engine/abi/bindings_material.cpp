@@ -667,6 +667,43 @@ void registerTextureBindings(Registry& classes) {
     registerTextureClass(classes["DataTexture"], true);
     classes["DataTexture"].ctorTakesBytes = true;
     classes["DataTexture"].settersTakeBytes = {"image.data"};
+    auto& storage = classes["StorageTexture"];
+    registerTextureFields(storage);
+    storage.ctor = [](const Args& a, Store&) -> std::shared_ptr<void> {
+        const double width = optional(a, 0, 1), height = optional(a, 1, 1);
+        if (a.size() > 2 || !(width >= 1 && width <= 16384 && height >= 1 && height <= 16384) ||
+            width != std::floor(width) || height != std::floor(height))
+            throw Unsupported{"StorageTexture needs integer extents in [1, 16384]"};
+        auto texture = std::make_shared<Texture>();
+        texture->storageTexture = true;
+        texture->width = uint32_t(width); texture->height = uint32_t(height);
+        texture->minFilter = texture->magFilter = uint16_t(TextureFilter::Linear);
+        return texture;
+    };
+    storage.getters["isStorageTexture"] = [](void*) { return Value::of(true); };
+    storage.getters["mipmapsAutoUpdate"] = [](void* self) { return Value::of(as<Texture>(self)->mipmapsAutoUpdate); };
+    storage.setters["mipmapsAutoUpdate"] = [](void* self, const Value& v) { as<Texture>(self)->mipmapsAutoUpdate = flag(v); };
+    for (const bool isType : {true, false}) {
+        storage.setters[isType ? "type" : "format"] = [isType](void* self, const Value& v) {
+            const double n = number(v);
+            if (!(n >= 0 && n <= UINT16_MAX) || n != std::floor(n))
+                throw Unsupported{"TN_NATIVE_STORAGE_TEXTURE_FORMAT: type/format must be an unsigned 16-bit integer"};
+            auto* texture = as<Texture>(self);
+            (isType ? texture->type : texture->format) = uint16_t(n);
+            texture->needsUpdate();
+        };
+    }
+    storage.methods["setSize"] = [](void* self, const Args& a, Store&) {
+        if (a.size() != 2) throw Unsupported{"StorageTexture.setSize needs width and height"};
+        const double w = number(a[0]), h = number(a[1]);
+        if (!(w >= 1 && w <= 16384 && h >= 1 && h <= 16384) || w != std::floor(w) || h != std::floor(h))
+            throw Unsupported{"StorageTexture needs integer extents in [1, 16384]"};
+        auto* texture = as<Texture>(self);
+        if (texture->width != w || texture->height != h) {
+            texture->width = uint32_t(w); texture->height = uint32_t(h); texture->needsUpdate();
+        }
+        return Value{};
+    };
     auto& depth = classes["DepthTexture"];
     registerTextureFields(depth);
     depth.ctor = [](const Args& a, Store&) -> std::shared_ptr<void> {

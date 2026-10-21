@@ -15,6 +15,7 @@
 #include <mutex>
 #include <string>
 #include <string_view>
+#include <stdexcept>
 #include <utility>
 #include <vector>
 
@@ -157,6 +158,7 @@ public:
     uint32_t width = 0, height = 0;
     uint32_t depth = 1;   // slices of a Data3DTexture, stored one after another
     bool depthTexture = false;
+    bool storageTexture = false, mipmapsAutoUpdate = true;
     bool volume = false;  // three's isData3DTexture: uploaded and sampled as a 3D texture, at any depth
     /**
      * The render target this texture is the colour of (three's `renderTarget.texture`,
@@ -171,6 +173,17 @@ public:
     void needsUpdate() { ++version_; }
     [[nodiscard]] uint32_t version() const { return version_; }
 
+    [[nodiscard]] std::string storageFormat() const {
+        if (format == kTextureRGBAFormat) {
+            if (type == kTextureHalfFloatType) return "rgba16float";
+            if (type == kTextureFloatType) return "rgba32float";
+            if (type == kTextureUnsignedByteType) return "rgba8unorm";
+        }
+        const std::string typeName = type == kTextureHalfFloatType ? "HalfFloatType" : type == kTextureFloatType ? "FloatType"
+                                   : type == kTextureUnsignedByteType ? "UnsignedByteType" : "unknown";
+        throw std::runtime_error("TN_NATIVE_STORAGE_TEXTURE_FORMAT: type=" + std::to_string(type) + " (" + typeName +
+                                 "), format=" + std::to_string(format) + (format == kTextureRGBAFormat ? " (RGBAFormat)" : " (unknown)"));
+    }
     [[nodiscard]] bool isFloat() const { return type == kTextureFloatType; }
     [[nodiscard]] bool isHalfFloat() const { return type == kTextureHalfFloatType; }
     /** Bytes per RGBA texel as stored in `data` and uploaded: RGBA8, RGBA16Float or RGBA32Float. */
@@ -178,7 +191,7 @@ public:
     [[nodiscard]] bool isSRGB() const { return colorSpace == TextureColorSpace::SRGB; }
     [[nodiscard]] bool hasImage() const { return width > 0 && height > 0 && depth > 0 && (!data.empty() || external); }
     /** A material can sample it: an uploaded image, or a render target's last render. */
-    [[nodiscard]] bool sampleable() const { return (depthTexture && width > 0 && height > 0) || hasImage() || !renderTarget.expired(); }
+    [[nodiscard]] bool sampleable() const { return ((depthTexture || storageTexture) && width > 0 && height > 0) || hasImage() || !renderTarget.expired(); }
 
 private:
     uint32_t version_ = 0;

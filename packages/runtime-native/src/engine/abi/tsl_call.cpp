@@ -409,6 +409,14 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
         } else if (!args.empty()) throw std::runtime_error("invalid color argument count");
         return g::vec3({g::float_(value.r), g::float_(value.g), g::float_(value.b)});
     }
+    if (name == "uvec2") {
+        if (args.size() > 2) throw std::runtime_error("invalid uvec2 argument count");
+        auto node = std::make_shared<g::NodeData>();
+        node->kind = g::Kind::Join; node->type = Type::vec(2, Type::Scalar::U32);
+        if (args.empty()) node->args = {g::float_(0)};
+        else for (size_t i = 0; i < args.size(); ++i) node->args.push_back(arg(i));
+        return node;
+    }
     if (name == "ivec2") {
         if (args.size() > 2) throw std::runtime_error("invalid ivec2 argument count");
         auto node = std::make_shared<g::NodeData>();
@@ -563,6 +571,17 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
     if (name == "attribute") {
         arity(2);
         return g::attribute(text(args[0]), type(text(args[1])));
+    }
+    if (!method && name == "storageTexture") {
+        if (args.empty() || args.size() > 3 || args[0].kind != TslArg::Kind::Object || !args[0].object || args[0].cls != "StorageTexture")
+            throw std::runtime_error("storageTexture needs an engine StorageTexture and optional coordinates and value");
+        const auto* texture = static_cast<const engine::Texture*>(args[0].object.get());
+        auto node = std::make_shared<g::NodeData>();
+        node->kind = g::Kind::StorageTexture; node->type = Type::vec(4);
+        node->object = args[0].object; node->name = "nodeMap" + std::to_string(texture->ident.value());
+        node->lanes = texture->storageFormat();
+        for (size_t i = 1; i < args.size(); ++i) node->args.push_back(arg(i));
+        return node;
     }
     if (name == "texture") {
         // three's texture(value, uvNode = uv()): the uv is optional.
@@ -1114,6 +1133,22 @@ bool TslScopes::call(const std::string& name, const TslArg* receiver, const std:
         // keeps the value: the Body lowers its statements, then yields args[0].
         if (!args.empty()) node->args = {input(args[0])};
         out = node;
+        return true;
+    }
+    if (name == "textureStore") {
+        arity(3);
+        auto& statements = open().back().statements;
+        g::Node target;
+        if (args[0].kind == TslArg::Kind::Object) {
+            uint64_t serial = 0;
+            target = tslCall("storageTexture", nullptr, {args[0]}, serial);
+        } else target = input(args[0]);
+        if (!target || target->kind != g::Kind::StorageTexture || !target->object)
+            throw std::runtime_error("textureStore needs a StorageTexture or storageTexture node");
+        auto node = std::make_shared<g::NodeData>(*target);
+        node->kind = g::Kind::TextureStore; node->type = Type{};
+        node->args = {input(args[1]), input(args[2])};
+        statements.push_back(node); out = target;
         return true;
     }
     if (name == "atomicAdd" || name == "atomicStore") {

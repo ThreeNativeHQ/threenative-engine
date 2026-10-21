@@ -1246,6 +1246,7 @@ const Renderer::MaterialTexture* Renderer::materialTexture(const Texture& textur
         }
         return &sampled;
     }
+    if (texture.storageTexture) (void)texture.storageFormat();
     MaterialTexture& record = textures_->records[texture.ident.value()];
     if (record.view != nullptr && record.version == texture.version()) return &record;
     if (record.view) texturesChanged();  // its old view's address may be reused by the new one
@@ -1269,8 +1270,18 @@ const Renderer::MaterialTexture* Renderer::materialTexture(const Texture& textur
     // textures decode before filtering in the GPU, not after filtering in the material/PMREM shader.
     if (texture.isFloat() && !wgpuDeviceHasFeature(device_, WGPUFeatureName_Float32Filterable))
         throw std::runtime_error("TN_NATIVE_TEXTURE_UNSUPPORTED: FloatType requires float32-filterable");
-    const WGPUTextureFormat format = textureFormat(texture);
-    if (texture.hasImage() && texture.volume) {
+    const WGPUTextureFormat format = texture.storageTexture && !texture.isFloat() && !texture.isHalfFloat()
+                                         ? WGPUTextureFormat_RGBA8Unorm : textureFormat(texture);
+    if (texture.storageTexture) {
+        WGPUTextureDescriptor desc{};
+        desc.dimension = WGPUTextureDimension_2D;
+        desc.size = {texture.width, texture.height, 1};
+        desc.format = format;
+        desc.usage = WGPUTextureUsage_TextureBinding | WGPUTextureUsage_StorageBinding | WGPUTextureUsage_CopySrc;
+        desc.sampleCount = desc.mipLevelCount = 1;
+        record.texture = wgpuDeviceCreateTexture(device_, &desc);
+        record.view = wgpuTextureCreateView(record.texture, nullptr);
+    } else if (texture.hasImage() && texture.volume) {
         // A Data3DTexture: one 3D texture of `depth` slices, one level (ponytail: a volume's
         // generateMipmaps is ignored; no corpus game turns it on).
         if (texture.flipY) throw std::runtime_error("TN_NATIVE_TEXTURE_UNSUPPORTED: flipY on a Data3DTexture");
@@ -3759,7 +3770,7 @@ void Renderer::dispatchCompute(const ComputeDispatch& dispatch) {
             computeTime_ = now;
             computeFrame_ = renderId_;
         }
-        graphCompute().record(encoder, dispatch, {now, computeDelta_});
+        graphCompute().record(encoder, dispatch, {now, computeDelta_}, *this);
     } catch (...) {
         wgpuCommandEncoderRelease(encoder);
         throw;

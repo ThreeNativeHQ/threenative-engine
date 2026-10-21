@@ -29178,6 +29178,123 @@
         }
       ],
       "returns": "Node"
+    },
+    {
+      "name": "StorageTexture",
+      "kind": "class",
+      "source": "three/webgpu",
+      "status": {
+        "kind": "supported"
+      },
+      "extends": "Texture",
+      "constructor": [
+        {
+          "name": "width",
+          "type": "number",
+          "optional": true,
+          "default": "1"
+        },
+        {
+          "name": "height",
+          "type": "number",
+          "optional": true,
+          "default": "1"
+        }
+      ],
+      "fields": [
+        {
+          "name": "image",
+          "type": "{ width: number; height: number }",
+          "mutable": true,
+          "lifetime": "owned"
+        },
+        {
+          "name": "isStorageTexture",
+          "type": "true",
+          "mutable": false,
+          "lifetime": "owned"
+        },
+        {
+          "name": "mipmapsAutoUpdate",
+          "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned"
+        }
+      ],
+      "methods": [
+        {
+          "name": "setSize",
+          "overloads": [
+            {
+              "parameters": [
+                {
+                  "name": "width",
+                  "type": "number",
+                  "optional": false
+                },
+                {
+                  "name": "height",
+                  "type": "number",
+                  "optional": false
+                }
+              ],
+              "returns": "void"
+            }
+          ],
+          "async": false
+        }
+      ]
+    },
+    {
+      "name": "uvec2",
+      "kind": "function",
+      "source": "three/tsl",
+      "status": {
+        "kind": "supported"
+      },
+      "parameters": [
+        {
+          "name": "args",
+          "type": "unknown[]",
+          "optional": false,
+          "rest": true
+        }
+      ],
+      "returns": "unknown"
+    },
+    {
+      "name": "storageTexture",
+      "kind": "function",
+      "source": "three/tsl",
+      "status": {
+        "kind": "supported"
+      },
+      "parameters": [
+        {
+          "name": "args",
+          "type": "unknown[]",
+          "optional": false,
+          "rest": true
+        }
+      ],
+      "returns": "unknown"
+    },
+    {
+      "name": "textureStore",
+      "kind": "function",
+      "source": "three/tsl",
+      "status": {
+        "kind": "supported"
+      },
+      "parameters": [
+        {
+          "name": "args",
+          "type": "unknown[]",
+          "optional": false,
+          "rest": true
+        }
+      ],
+      "returns": "unknown"
     }
   ]
 }

@@ -3570,3 +3570,22 @@ export declare function atomicAdd(pointerNode: Node, valueNode: Node | number): 
 
 /** Catalog supported: three/tsl/atomicStore. */
 export declare function atomicStore(pointerNode: Node, valueNode: Node | number): Node;
+
+/** Catalog supported: three/webgpu/StorageTexture. */
+export declare class StorageTexture extends Texture {
+constructor(width?: number, height?: number);
+image: { width: number; height: number };
+readonly isStorageTexture: true;
+mipmapsAutoUpdate: boolean;
+
+  setSize(width: number, height: number): void;
+}
+
+/** Catalog supported: three/tsl/uvec2. */
+export declare function uvec2(...args: unknown[]): unknown;
+
+/** Catalog supported: three/tsl/storageTexture. */
+export declare function storageTexture(...args: unknown[]): unknown;
+
+/** Catalog supported: three/tsl/textureStore. */
+export declare function textureStore(...args: unknown[]): unknown;

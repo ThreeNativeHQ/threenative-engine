@@ -2,7 +2,7 @@ import { type IEngineRef, TSL_NODE, engineRef } from "./browser-backend.js";
 import { markNormalTarget } from "./pass-node.js";
 import { defineQuadMesh } from "./quad-mesh.js";
 import { type IRttClasses, defineRtt } from "./rtt.js";
-import { defineStorage } from "./storage.js";
+import { defineStorage, defineStorageTextures } from "./storage.js";
 import { defineTslExtras } from "./tsl-extras.js";
 import { defineStruct } from "./tsl-struct.js";
 import { type ConstClasses, liveUniforms, uniformLanes, withConstValues } from "./tsl-uniforms.js";
@@ -107,6 +107,8 @@ const FUNCTIONS = [
   "nodeObject",
   "color",
   "ivec2",
+  "uvec2",
+  "storageTexture",
   "textureLoad",
   "reflect",
   "dFdx",
@@ -274,7 +276,11 @@ export function isTslNode(value: unknown): value is ITslNode {
 function takesEngineObject(name: string, index: number): boolean {
   return (
     (index === 0 &&
-      (name === "pmremTexture" || name === "texture3D" || name === "lightShadowMatrix")) ||
+      (name === "pmremTexture" ||
+        name === "texture3D" ||
+        name === "storageTexture" ||
+        name === "textureStore" ||
+        name === "lightShadowMatrix")) ||
     (index < 2 && (name === "reflector" || name === "__rtt"))
   );
 }
@@ -478,11 +484,15 @@ export function defineTsl(
     };
     return Object.assign(inline, { setLayout: () => inline });
   };
-  for (const name of ["atomicAdd", "atomicStore"])
+  for (const name of ["atomicAdd", "atomicStore", "textureStore"])
     exports[name] = (...args: unknown[]) => {
       statement(name);
       return wrap(call(name, null, args));
     };
+  Object.assign(
+    exports,
+    defineStorageTextures(exports as unknown as Parameters<typeof defineStorageTextures>[0]),
+  );
   // r185's Break(), Continue() and Return(): a loop or kernel ends early (statements, like atomicAdd).
   for (const name of ["Break", "Continue", "Return"])
     exports[name] = (...args: unknown[]) => {

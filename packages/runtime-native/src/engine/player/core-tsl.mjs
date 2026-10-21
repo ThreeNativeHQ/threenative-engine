@@ -3,7 +3,7 @@ import { liveUniforms, withConstValues } from "../../../../three-native/src/tsl-
 import { defineReflector } from "../../../../three-native/src/reflector.ts";
 import { definePass, markNormalTarget } from "../../../../three-native/src/pass-node.ts";
 import { BufferAttribute, Color, Object3D, PerspectiveCamera, Vector2, Vector3, Vector4 } from "./core-three.mjs";
-import { defineStorage } from "../../../../three-native/src/storage.ts";
+import { defineStorage, defineStorageTextures } from "../../../../three-native/src/storage.ts";
 import { defineStruct } from "../../../../three-native/src/tsl-struct.ts";
 import { defineTslExtras } from "../../../../three-native/src/tsl-extras.ts";
 
@@ -26,7 +26,7 @@ export const {
   add, sub, mul, div, negate, lessThan, greaterThan, equal, lessThanEqual, greaterThanEqual, and, or, not, all, any, abs, sin, cos,
   floor, fract, sqrt, exp, exp2, log2, normalize, length, min, max, pow, step, dot,
   distance, cross, mix, clamp, smoothstep, select, positionLocal, positionWorld,
-  normalViewGeometry, instanceIndex, cameraViewMatrix, ivec2, nodeObject, reflect, textureLoad,
+  normalViewGeometry, instanceIndex, cameraViewMatrix, ivec2, uvec2, nodeObject, reflect, textureLoad,
   mx_noise_float, mx_worley_noise_vec2, pmremTexture, texture3D,
   convertToTexture, screenUV, materialColor, materialEmissive, materialMetalness, materialRoughness,
   cameraPosition, cameraProjectionMatrix, cameraWorldMatrix, positionGeometry, normalWorld, varying,
@@ -38,6 +38,8 @@ export const {
   atan, mod, fwidth, saturation, mat2, hash, time, deltaTime, transformDirection, normalWorldGeometry,
   getViewPosition, frameGroup, renderGroup, objectGroup, transformNormalToView, property,
 } = globalThis.tsl;
+
+export const { storageTexture, textureStore } = defineStorageTextures(globalThis.tsl);
 
 // three's storage buffers over engine BufferAttributes (shared with the Wasm back end): `storage`,
 // `instancedArray` and `attributeArray` build the engine's storage node, whose kernels `renderer.compute` runs.
