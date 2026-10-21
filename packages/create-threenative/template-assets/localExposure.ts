@@ -53,7 +53,7 @@ import { exposureMeter, exposureSettings } from "./exposure.js";
 type ColourTexture = ReturnType<typeof texture>;
 
 /** The look: change a number here, not the passes below. */
-export const localExposureSettings = {
+const localExposureSettings = {
   /** Scale on how far a bright base sits above middle grey; 1 leaves the global exposure alone. */
   highlightContrastScale: 0.8,
   /** The same for a dark base. */
@@ -160,7 +160,7 @@ export class LocalExposureNode extends TempNode<"float"> {
           const weight = t.mul(t).mul(BLUR_SHAPE).exp();
           const along = mirror((axis === 0 ? c.x : c.y).add(offset.mul(step)));
           const at = axis === 0 ? vec2(along, c.y) : vec2(c.x, along);
-          sum.addAssign(source.sample(at).level(0).r.mul(weight));
+          sum.addAssign(source.sample(at).level(float(0)).r.mul(weight));
         });
         return vec4(sum.div(kernelSum), 0, 0, 1);
       })();
@@ -184,7 +184,7 @@ export class LocalExposureNode extends TempNode<"float"> {
         If(x.lessThan(half.x).and(y.lessThan(half.y)), () => {
           const log = this.#logTexture
             .sample(vec2(x.add(0.5).div(half.x), y.add(0.5).div(half.y)))
-            .level(0).r;
+            .level(float(0)).r;
           const position = log
             .sub(LOG_MIN)
             .div(LOG_SPAN)
@@ -232,7 +232,7 @@ export class LocalExposureNode extends TempNode<"float"> {
       const z = z0.add(dz).min(DEPTH - 1);
       return this.#gridTexture
         .sample(vec2(x.mul(DEPTH).add(z).add(0.5).div(gridSize.x), y.add(0.5).div(gridSize.y)))
-        .level(0).rg;
+        .level(float(0)).rg;
     };
     let grid: Node<"vec2"> = vec2(0);
     for (const dz of [0, 1])
@@ -243,7 +243,7 @@ export class LocalExposureNode extends TempNode<"float"> {
             .mul(dz ? fz : fz.oneMinus());
           grid = grid.add(fetch(dx, dy, dz).mul(weight));
         }
-    const blurred = this.#blurTexture.sample(c).level(0).r;
+    const blurred = this.#blurTexture.sample(c).level(float(0)).r;
     // A cell with no samples (the grid is built from the half resolution image) uses the blur.
     const bilateral = grid.y.lessThan(0.001).select(blurred, grid.x.div(grid.y.max(0.001)));
     const base = mix(bilateral, blurred, settings.blurredLuminanceBlend).add(logExposure);
