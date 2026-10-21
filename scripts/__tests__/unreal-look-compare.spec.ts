@@ -434,6 +434,25 @@ describe("Unreal reference comparison", () => {
           /^TN_UNREAL_LOOK_(BAD_INPUT|MISSING_CELL)/,
         );
     });
+    it("keeps the emissive sphere locked at L9, within the layer's own thresholds", () => {
+      // `--write-locks` re-seeds a layer from the cells that hold now, so a broken cell drops its
+      // lock without a word. A vignette that scaled the alpha dimmed this sphere to dP50 0.118 and
+      // deltaE 6.7, and L9 carried no lock on it. This list says what must stay locked.
+      const locks = readLocks("tools/unreal-reference/parity-locks.json");
+      const limits = JSON.parse(readFileSync("tools/unreal-reference/thresholds.json", "utf8"));
+      for (const metric of ["deltaE", "dP50"] as const) {
+        const found = locks.find(
+          (l) =>
+            l.layer === "L9" &&
+            l.sun === "sun60" &&
+            l.pose === "spheres" &&
+            l.region === "Sphere_Emissive" &&
+            l.metric === metric,
+        );
+        expect(found, `L9 sun60 spheres Sphere_Emissive ${metric}`).toBeDefined();
+        expect(found?.threshold).toBeLessThanOrEqual(limits.layers.L9[metric]);
+      }
+    });
     it("re-seeds only the --layer layers and keeps the other locks", () => {
       const root = locked([lock({ layer: "L2", since: "old0000" }), lock({ since: "old0000" })]);
       writeFileSync(

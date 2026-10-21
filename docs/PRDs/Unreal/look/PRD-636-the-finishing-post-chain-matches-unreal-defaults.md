@@ -73,6 +73,8 @@ plumbing it already owns (`packages/core/src/render/chain.ts`).
 **Status:** NOT STARTED
 **Files:** `packages/create-threenative/templates/starter/src/render/{worldEnvironment,quality,grade}.ts`
 - [ ] Bloom, vignette and local exposure are in place, and AC-1 passes. proof: `pnpm unreal-look:compare --layer L9`.
+- [x] The vignette scales the colour channels only, leaves the alpha unchanged and follows Unreal's cosine-fourth law, in the canonical `worldEnvironment.ts`, its 13 kit copies and the harness scaffold. proof: `pnpm exec vitest run packages/create-threenative/__tests__/vignette.spec.ts`. Result 2026-10-21: 57 of 57 tests fail on `8a1a6156f` (the parent of `4d49b1fcd`: alpha 0.385 comes out where 0.6 goes in, and the corner mask is 0.600 where Unreal gives 0.574). All 57 pass on this commit.
+- [x] The emissive sphere keeps Unreal's brightness at L9: the two `Sphere_Emissive` locks in `tools/unreal-reference/parity-locks.json` hold. proof: `pnpm unreal-look:compare --check --layer L9 --sun 60` on the sun60 spheres frame. Result 2026-10-21 (RTX 2080, headed Xvfb, two runs per arm): frames from the alpha-multiplying vignette break both locks (dP50 0.1181 against 0.0392, deltaE 6.7 against 1). Frames from `7a98e9251` hold both (dP50 0, deltaE 0.919). The run used a reference directory with these two locks only. It captured the spheres pose and copied that frame into the other three poses, which no lock reads.
 
 #### Phase 3: Every template, native included
 **Status:** NOT STARTED
