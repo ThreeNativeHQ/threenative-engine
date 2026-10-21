@@ -13,6 +13,7 @@
 // you turned off. What it does not own: any colour, and any strength that is not a quality
 // tier. Those are arguments, supplied by `postprocessing.ts`, yours to change.
 
+import { RENDER_CHAIN_TIERS } from "@threenative/core";
 import {
   ACESFilmicToneMapping,
   AgXToneMapping,
@@ -71,6 +72,12 @@ const REFLECTION_FADE = 0.1;
 function harnessLayer(): number {
   const layer = new URLSearchParams(globalThis.location?.search ?? "").get("tnRef") ?? "L9";
   return /^L\d$/.test(layer) ? Number(layer.slice(1)) : 9;
+}
+
+/** Diagnosis: `?dn=N` runs N denoise passes over the SSGI gather at any layer, for an A/B against the tier's count. */
+function harnessDenoisePasses(): number | undefined {
+  const value = new URLSearchParams(globalThis.location?.search ?? "").get("dn");
+  return value === null ? undefined : Number(value);
 }
 
 /** Godot's `Viewport.screen_space_aa`: which post-process antialiasing smooths the frame's edges. */
@@ -148,6 +155,11 @@ export interface IWorldEnvironmentOptions {
   readonly ssgiProbeRays?: number;
   /** Screen probes only, diagnosis: 1 draws the probes' weight and trust, 2 the sign of the gathered delta. */
   readonly ssgiProbeDebug?: number;
+  /**
+   * Denoise passes over the SSGI gather, each turning the tap pattern by its index. The default is the render chain
+   * tier's `denoiseIterations` (high 3, medium 2, low 1): one pass left the sunlit room's walls grainy at `high`.
+   */
+  readonly giDenoisePasses?: number;
   /** Raymarched shafts. Needs `godraysLight`, and that light must cast shadows. */
   readonly godraysEnabled?: boolean;
   /** How dense the participating medium is. Higher is foggier — and the whole frame brighter. */
@@ -580,6 +592,10 @@ export class WorldEnvironment {
       ssgiProbeJitter: options.ssgiProbeJitter ?? 1,
       ssgiProbeRays: options.ssgiProbeRays,
       ssgiProbeDebug: options.ssgiProbeDebug ?? 0,
+      giDenoisePasses:
+        options.giDenoisePasses ??
+        harnessDenoisePasses() ??
+        RENDER_CHAIN_TIERS[renderChainTier].denoiseIterations,
       godraysEnabled: options.godraysEnabled ?? false,
       godraysDensity: options.godraysDensity ?? 0.7,
       godraysFloor: options.godraysFloor ?? 0,
@@ -785,11 +801,22 @@ export class WorldEnvironment {
       sample(texture);
       return texture;
     };
-    const giDenoise = (node: ChainNode): ChainNode =>
-      options.denoiseEnabled ? denoised(denoise(node, depth(), normal(), view)) : node;
+    const giDenoise = (node: ChainNode): ChainNode => {
+      if (!options.denoiseEnabled) return node;
+      let result = node;
+      for (let pass = 0; pass < options.giDenoisePasses; pass += 1) {
+        const filter = denoise(result, depth(), normal(), view) as unknown as {
+          index: { value: number };
+        };
+        filter.index.value = pass;
+        result = denoised(filter as unknown as ReturnType<typeof denoise>);
+      }
+      return result;
+    };
 
     let releaseBloom = (): void => {};
     let releaseAo = (): void => {};
+    let contactOcclusion: ChainNode | undefined;
     let releaseAa = (): void => {};
     const stages: ChainStage[] = [
       stage({
@@ -868,7 +895,8 @@ export class WorldEnvironment {
           // The gathered light is incident radiance (E / pi). The surface returns it times its own
           // albedo, which the scene pass writes as the `diffuseColor` target, and a metal returns none
           // of it as diffuse. `ssgiIntensity` is the game's dial on that term.
-          const occlusion = giDenoise(gi.getAONode());
+          // The owned engine's gather answers occlusion with a constant 1 (GTAO is its own stage): nothing to denoise.
+          const occlusion = wasmEngine ? gi.getAONode() : giDenoise(gi.getAONode());
           const indirect = giDenoise(gi.getGINode());
           if (options.denoiseEnabled && options.ssgiDenoiseRadius !== undefined)
             (indirect as unknown as { radius: { value: number } }).radius.value =
@@ -879,9 +907,13 @@ export class WorldEnvironment {
             .mul(options.ssgiIntensity);
           // The gather's own AO leaves emission alone too (see the GTAO stage).
           const emitted = textureNode("emissive").rgb.mul(gain);
+          // The contact term multiplied the frame before this stage ran, and the correction below is the one
+          // part of the light that frame never carried: it takes the same factor, or a hit darker than the
+          // cache subtracts more than the frame still holds and a lit floor under a sphere clips to black.
+          const correction = contactOcclusion === undefined ? reflected : reflected.mul(contactOcclusion);
           return base
             .mul(vec4(occlusion.r, occlusion.r, occlusion.r, 1))
-            .add(vec4(reflected.add(emitted.mul(float(1).sub(occlusion.r))), 0));
+            .add(vec4(correction.add(emitted.mul(float(1).sub(occlusion.r))), 0));
         },
       }),
       stage({
@@ -907,6 +939,7 @@ export class WorldEnvironment {
           resolutionSubrect?.retain(retained, [retained._aoRenderTarget]);
           sample(contact.getTextureNode());
           releaseAo = () => {
+            contactOcclusion = undefined;
             resolutionSubrect?.release(retained);
             contact.dispose();
           };
@@ -938,6 +971,7 @@ export class WorldEnvironment {
             };
           }
           const occlusion = filter ? denoised(filter) : contact;
+          contactOcclusion = occlusion.r;
           // Emission is radiance a surface gives off, not light it receives: AO keeps it, as Unreal's AO darkens only
           // indirect light. The emitted part passes at full weight; the rest takes the occlusion.
           // The chain reads exposed light, so the emitted radiance takes the frame's gain too.

@@ -121,15 +121,19 @@ export async function captureGiThreeNative(options: {
           override?.length === 2 ? (override as [number, number]) : scene.resolution;
         const page = await browser.newPage({ viewport: { width, height }, deviceScaleFactor: 1 });
         const errors: string[] = [];
+        // The frame meter prints to the console; a measured pose keeps the windows between two marks.
+        let meter: string[] = [];
         page.on("pageerror", (error) => errors.push(error.message));
         let meter: string[] = [];
         page.on("console", (message) => {
           if (message.text().startsWith("TN_FRAME_BUDGET")) meter.push(message.text());
           if (
             message.type() === "error" ||
-            /^TN_(CALIBRATION|GI_CACHE|NATIVE_)/.test(message.text())
+            /^TN_(CALIBRATION|GI_CACHE|SURFACE_CACHE|WORLD_ENVIRONMENT|NATIVE_)/.test(
+              message.text(),
+            )
           )
-            console.info(`page: ${message.text().slice(0, 600)}`);
+            console.info(`page: ${message.text().slice(0, 2400)}`);
         });
         await page.goto(origin, { waitUntil: "domcontentloaded" });
         const adapter = await page.evaluate(
@@ -198,6 +202,17 @@ export async function captureGiThreeNative(options: {
               }
               const file = path.join(options.out, sceneKey(name), layer, `${pose.name}.png`);
               await mkdir(path.dirname(file), { recursive: true });
+              if (options.measureSeconds !== undefined) {
+                meter = [];
+                await page.waitForTimeout(options.measureSeconds * 1000);
+                const log = file.replace(/\.png$/u, ".frame-budget.log");
+                await writeFile(log, `${meter.join("\n")}\n`);
+                console.info(
+                  `TN_UNREAL_LOOK measured ${layer}/${pose.name} windows=${meter.length} log=${log}`,
+                );
+                count += 1;
+                continue;
+              }
               await writeFile(file, await page.screenshot({ type: "png" }));
               count += 1;
             }

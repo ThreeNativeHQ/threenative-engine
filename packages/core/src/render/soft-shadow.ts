@@ -1,6 +1,7 @@
 import {
   type CubeTexture,
   type DepthTexture,
+  DoubleSide,
   GreaterEqualCompare,
   LessEqualCompare,
   type LightShadow,
@@ -25,6 +26,33 @@ import {
   vec3,
 } from "three/tsl";
 import type { Node } from "three/webgpu";
+
+/** tan(5 degrees): Unreal's `r.Shadow.Virtual.SubsurfaceShadowMinSourceAngle`, the sun's least source on a leaf. */
+export const LEAF_MIN_SOURCE_TANGENT = Math.tan((5 * Math.PI) / 180);
+
+/**
+ * A two-sided, alpha-tested receiver: a leaf card (PRD-651). Unreal's two-sided-foliage and subsurface
+ * receivers skip the normal bias and widen the sun's source to a 5 degree minimum, because a thin leaf
+ * biased along its normal either shades itself or lets light through. The test reads the material only:
+ * the game marks nothing.
+ */
+export function isLeafReceiver(
+  material: { side?: number; alphaTest?: number; alphaTestNode?: unknown } | null | undefined,
+): boolean {
+  if (material === null || material === undefined) return false;
+  const cut =
+    (material.alphaTest ?? 0) > 0 ||
+    (material.alphaTestNode !== undefined && material.alphaTestNode !== null);
+  return material.side === DoubleSide && cut;
+}
+
+/** The tangent of the source angle a receiver sees: a leaf receiver sees at least 5 degrees. */
+export function receiverSourceTangent(
+  material: Parameters<typeof isLeafReceiver>[0],
+  tangent: number,
+): number {
+  return isLeafReceiver(material) ? Math.max(tangent, LEAF_MIN_SOURCE_TANGENT) : tangent;
+}
 
 /** World-space gap to UV radius; sourceAngleRad is in radians, in [0, PI/2). */
 export function penumbraUv(
@@ -129,39 +157,46 @@ export function sourceAngleShadowFilter({
     const withLayer = (sample: ReturnType<typeof texture>) =>
       isArray ? sample.depth(float(depthLayer)) : sample;
     const linearDepth = (depth: Node<"float">) => (reversed ? depth.oneMinus() : depth);
-    return Fn(() => {
-      const receiver = linearDepth(shadowCoord.z);
-      // Near-plane distance bounds the largest possible caster/receiver gap.
-      const searchRadius = max(texel, vec2(receiver.mul(range).mul(tangent)).div(span)).toVar();
-      const blockerSum = float(0).toVar();
-      const blockerCount = float(0).toVar();
-      // Integer loads read raw depth without interpolated blockers. Both loops load: three r185
-      // gives a depth texture one sampler binding, typed by the first node that registers it, so
-      // a load followed by `.compare()` emitted a plain sampler and failed to compile.
-      const load = (uv: Node<"vec2">) =>
-        linearDepth(
-          withLayer(
-            textureLoad(depthTexture, ivec2(min(max(uv.mul(size).floor(), vec2(0)), size.sub(1)))),
-          ).r,
-        );
-      for (let index = 0; index < blockerSamples; index++) {
-        const depth = load(
-          shadowCoord.xy.add(disk(index, blockerSamples).mul(searchRadius)),
-        ).toVar();
-        If(depth.lessThan(receiver), () => {
-          blockerSum.addAssign(depth);
-          blockerCount.addAssign(1);
-        });
-      }
-      const gap = max(0, receiver.sub(blockerSum.div(max(blockerCount, 1)))).mul(range);
-      const radius = max(texel, vec2(gap.mul(tangent)).div(span)).toVar();
-      const visibility = float(0).toVar();
-      for (let index = 0; index < filterSamples; index++) {
-        const depth = load(shadowCoord.xy.add(disk(index, filterSamples).mul(radius)));
-        visibility.addAssign(step(receiver, depth));
-      }
-      return blockerCount.greaterThan(0).select(visibility.div(filterSamples), float(1));
-    })();
+    return Fn(
+      (_inputs: unknown, builder: { readonly material?: Parameters<typeof isLeafReceiver>[0] }) => {
+        // A leaf receiver (a two-sided cut card) sees the sun at 5 degrees at least; the node is built per material.
+        const reach = receiverSourceTangent(builder.material, tangent);
+        const receiver = linearDepth(shadowCoord.z);
+        // Near-plane distance bounds the largest possible caster/receiver gap.
+        const searchRadius = max(texel, vec2(receiver.mul(range).mul(reach)).div(span)).toVar();
+        const blockerSum = float(0).toVar();
+        const blockerCount = float(0).toVar();
+        // Integer loads read raw depth without interpolated blockers. Both loops load: three r185
+        // gives a depth texture one sampler binding, typed by the first node that registers it, so
+        // a load followed by `.compare()` emitted a plain sampler and failed to compile.
+        const load = (uv: Node<"vec2">) =>
+          linearDepth(
+            withLayer(
+              textureLoad(
+                depthTexture,
+                ivec2(min(max(uv.mul(size).floor(), vec2(0)), size.sub(1))),
+              ),
+            ).r,
+          );
+        for (let index = 0; index < blockerSamples; index++) {
+          const depth = load(
+            shadowCoord.xy.add(disk(index, blockerSamples).mul(searchRadius)),
+          ).toVar();
+          If(depth.lessThan(receiver), () => {
+            blockerSum.addAssign(depth);
+            blockerCount.addAssign(1);
+          });
+        }
+        const gap = max(0, receiver.sub(blockerSum.div(max(blockerCount, 1)))).mul(range);
+        const radius = max(texel, vec2(gap.mul(reach)).div(span)).toVar();
+        const visibility = float(0).toVar();
+        for (let index = 0; index < filterSamples; index++) {
+          const depth = load(shadowCoord.xy.add(disk(index, filterSamples).mul(radius)));
+          visibility.addAssign(step(receiver, depth));
+        }
+        return blockerCount.greaterThan(0).select(visibility.div(filterSamples), float(1));
+      },
+    )();
   };
   // Native virtual maps translate the same filter parameters into atlas-aware depth loads.
   return Object.assign(filter, {

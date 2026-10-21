@@ -2597,6 +2597,38 @@ export function staticTransformCensus(): IStaticTransformCensus { … }
 invalidateStatic(drawbridge);
 ```
 
+### `SurfaceCache`
+
+`class` — The Surface Cache: what a traced global-illumination ray reads where it hits a surface. A material atlas (base colour and emissive maps reduced to small tiles) answers the albedo and the glow at the hit UV; a flat material keeps its colour. `SurfaceLights` adds the scene's point and spot lamps at the hit, the brightest eight.
+
+```ts
+export class SurfaceCache { … }
+```
+
+- **Use when:** give a traced bounce ray the texture colour and glow of the surface it hits · light the hit of a traced ray with the scene's point and spot lamps
+- **Constraints:** the materials are fixed when the cache is built; build a new one when a material or a map changes · a map the cache cannot read (an image the runtime cannot draw to a canvas) returns the flat colour and is listed in `report.fallbacks` · the cache owns no colour, texture or light; the game's materials and lamps are the only source
+- **Overrides:** atlasSize and cardTexelDensityScale size the atlas; maxLights caps the lamps evaluated at a hit
+
+```ts
+const cache = SurfaceCache.from(materials); cache.albedo(slot, hit.uv.x, hit.uv.y, out);
+```
+
+### `SurfaceLights`
+
+`class` — The Surface Cache: what a traced global-illumination ray reads where it hits a surface. A material atlas (base colour and emissive maps reduced to small tiles) answers the albedo and the glow at the hit UV; a flat material keeps its colour. `SurfaceLights` adds the scene's point and spot lamps at the hit, the brightest eight.
+
+```ts
+export class SurfaceLights { … }
+```
+
+- **Use when:** give a traced bounce ray the texture colour and glow of the surface it hits · light the hit of a traced ray with the scene's point and spot lamps
+- **Constraints:** the materials are fixed when the cache is built; build a new one when a material or a map changes · a map the cache cannot read (an image the runtime cannot draw to a canvas) returns the flat colour and is listed in `report.fallbacks` · the cache owns no colour, texture or light; the game's materials and lamps are the only source
+- **Overrides:** atlasSize and cardTexelDensityScale size the atlas; maxLights caps the lamps evaluated at a hit
+
+```ts
+const cache = SurfaceCache.from(materials); cache.albedo(slot, hit.uv.x, hit.uv.y, out);
+```
+
 ### `TracerPool3D`
 
 `class` — Pool travelling bullet-streak meshes for hitscan shots.

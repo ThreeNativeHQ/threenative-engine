@@ -14,10 +14,12 @@ import {
   type Group,
   Mesh,
   MeshBasicMaterial,
+  type MeshStandardMaterial,
   NoToneMapping,
   type Object3D,
   type PerspectiveCamera,
   PointLight,
+  SRGBColorSpace,
   SpotLight,
   Vector3,
 } from "three";
@@ -76,11 +78,15 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
     // Every scene.json property this recreation does not carry, with the PRD that owns it.
     const unsupported: { actor: string; property: string; reason: string }[] = [];
     // The region a mesh belongs to: the scene.glb node named after the Unreal actor, or, when the
-    // asset pipeline flattened the nodes away, the mesh named after its static mesh, SM_<actor>.
+    // asset pipeline flattened the nodes away, the mesh named after its static mesh, SM_<actor>. An
+    // actor shares its region with others when scene.json names one (the leaf cards: Leaves).
+    const regionByActor = new Map<string, string>(
+      (DATA.meshes as { name: string; region?: string }[]).map((m) => [m.name, m.region ?? m.name]),
+    );
     const regionOf = (object: Object3D): string | undefined => {
       for (let o: Object3D | null = object; o !== null; o = o.parent) {
-        const name = o.name.replace(/^SM_/, "");
-        if (name in DATA.regions) return name;
+        const region = regionByActor.get(o.name.replace(/^SM_/, ""));
+        if (region !== undefined) return region;
       }
       return undefined;
     };
@@ -98,9 +104,14 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
       // colour id / 255 as linear, display-encoded on output.
       for (const mesh of meshes) {
         const [r = 0, g = 0, b = 0] = DATA.regions[regionOf(mesh) ?? ""] ?? [];
+        const source = mesh.material as MeshStandardMaterial;
         mesh.material = new MeshBasicMaterial({
           color: new Color().setRGB(r / 255, g / 255, b / 255),
           toneMapped: false,
+          // A masked region (leaf cards) keeps its cut and both sides: the map is white, so the colour stays the ID.
+          ...(source.alphaTest > 0
+            ? { map: source.map, alphaTest: source.alphaTest, side: source.side }
+            : {}),
         });
       }
       raw.toneMapping = NoToneMapping;
@@ -125,7 +136,10 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
         if (light.class !== "PointLight" && light.class !== "SpotLight")
           throw new Error(`TN_CALIBRATION_SCENE_LIGHT: ${light.name} ${light.class}`);
         const [r = 1, g = 1, b = 1] = light.color;
-        const colour = new Color().setRGB(r, g, b);
+        // scene.json holds Unreal's `light_color`, an FColor: Unreal reads its bytes as sRGB and lights with the linear
+        // value (neon-corridor L1 EXR: a [1, 0.85, 0.65] lamp lights a grey wall at G/R 0.70 and B/R 0.41, the
+        // decoded (1, 0.69, 0.38), not the raw numbers). A white lamp reads the same either way.
+        const colour = new Color().setRGB(r, g, b, SRGBColorSpace);
         const cd = candela(light.intensity, light.units) * LIGHT_SCALE;
         // A spot looks at its target through the outer cone; three's penumbra is the share of the cone that
         // fades, Unreal's inner cone the part that does not (PRD-649 lamp-room).
@@ -188,7 +202,10 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
         const gi = installGi(ctx, model, {
           // Diagnosis: ?bounces=N brackets how much of the indirect light the later bounces carry.
           bounces: Number(params.get("bounces") ?? 5),
-          lights: lights.map((l) => ({
+          // The Surface Cache is on: a ray reads the map where it lands (PRD-639). Diagnosis: ?giMaps=0 returns the
+          // flat colour factor, ?giLights=0 leaves the lamps out of what a ray returns (the direct frame keeps them).
+          surfaceCache: params.get("giMaps") !== "0",
+          lights: (params.get("giLights") === "0" ? [] : lights).map((l) => ({
             position: l.position,
             color: l.color,
             intensity: l.intensity,

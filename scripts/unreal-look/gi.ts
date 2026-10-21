@@ -51,10 +51,17 @@ type Vec3 = [number, number, number];
 export interface ISceneMaterial {
   name: string;
   baseColor: Vec3;
+  /** The albedo texture the material binds (PRD-639): scene.glb carries it as `baseColorTexture`. */
+  baseColorTexture?: string;
   roughness: number;
   metallic: number;
   emissive: Vec3;
   emissiveStrength: number;
+  /** A masked, two-sided material with a base colour texture (PRD-651 leaf cards): all four or none. */
+  texture?: string;
+  alphaMode?: "MASK";
+  alphaCutoff?: number;
+  doubleSided?: boolean;
 }
 export interface ISceneJson {
   scene: string;
@@ -64,8 +71,13 @@ export interface ISceneJson {
     class: string;
     position: Vec3;
     rotationYDeg: number;
-    /** A tilt about +X in degrees (PRD-649 ramps); a mesh carries this or rotationYDeg, never both. */
+    /**
+     * A tilt about +X in degrees (PRD-649 ramps and leaf cards). With a rotationYDeg too, the tilt is
+     * turned first, then the yaw about the vertical: R = Ry(rotationYDeg) * Rx(rotationXDeg).
+     */
     rotationXDeg?: number;
+    /** The region the mesh belongs to when it shares one with others (the leaf cards); default: its name. */
+    region?: string;
     size: Vec3;
     material: ISceneMaterial;
   }[];
@@ -104,10 +116,16 @@ interface IGltf {
     name?: string;
     pbrMetallicRoughness?: {
       baseColorFactor?: number[];
+      baseColorTexture?: { index: number };
       metallicFactor?: number;
       roughnessFactor?: number;
     };
     emissiveFactor?: number[];
+    alphaMode?: string;
+    alphaCutoff?: number;
+    doubleSided?: boolean;
+    /** KHR_materials_emissive_strength: the glTF exporter splits an emissive above 1 into factor and strength. */
+    extensions?: { KHR_materials_emissive_strength?: { emissiveStrength?: number } };
   }[];
 }
 interface IVariant {
@@ -223,6 +241,38 @@ const LIGHT_UNITS: Record<string, readonly string[]> = {
   RectLight: ["lumens", "candelas", "nits"],
 };
 
+/** The quaternion [x, y, z, w] of Ry(turnDeg) * Rx(tiltDeg): turn the tilted mesh about the vertical. */
+export function tiltThenTurn(tiltDeg: number, turnDeg: number): number[] {
+  const [sx = 0, cx = 1] = [
+    Math.sin((tiltDeg * Math.PI) / 360),
+    Math.cos((tiltDeg * Math.PI) / 360),
+  ];
+  const [sy = 0, cy = 1] = [
+    Math.sin((turnDeg * Math.PI) / 360),
+    Math.cos((turnDeg * Math.PI) / 360),
+  ];
+  return [cy * sx, sy * cx, 0 - sy * sx, cy * cx];
+}
+
+/**
+ * A masked, two-sided material (leaf cards) must arrive as glTF alphaMode MASK with its cutoff, both
+ * sides and a base colour texture. Any other material must stay opaque.
+ */
+function maskedStateDiffers(
+  want: ISceneMaterial,
+  got: NonNullable<IGltf["materials"]>[number],
+): boolean {
+  const masked = want.alphaMode === "MASK";
+  if ((got.alphaMode ?? "OPAQUE") !== (masked ? "MASK" : "OPAQUE")) return true;
+  return (
+    masked &&
+    (Math.abs((got.alphaCutoff ?? 0.5) - (want.alphaCutoff ?? Number.NaN)) > 1e-3 ||
+      (got.doubleSided ?? false) !== want.doubleSided ||
+      got.pbrMetallicRoughness?.baseColorTexture === undefined ||
+      want.texture === undefined)
+  );
+}
+
 function near(a: readonly number[], b: readonly number[], tolerance: number): boolean {
   return (
     a.length === b.length && a.every((v, i) => Math.abs(v - (b[i] ?? Number.NaN)) <= tolerance)
@@ -258,13 +308,9 @@ export function validateSceneExport(scene: ISceneJson, gltf: IGltf): void {
     const node = nodes[index] ?? fail("SCENE_EXPORT", actor.name);
     if (!near(node.translation ?? [0, 0, 0], actor.position, 1e-3))
       fail("SCENE_EXPORT", `${actor.name}: position differs between scene.json and scene.glb`);
-    // One rotation, about +Y or (PRD-649's ramps) about +X.
-    const tilt = actor.rotationXDeg ?? 0;
-    const half = ((tilt || actor.rotationYDeg) * Math.PI) / 360;
+    // A tilt about +X (PRD-649's ramps), a turn about +Y, or both: the tilt first, then the turn.
     const q = node.rotation ?? [0, 0, 0, 1];
-    const expected = tilt
-      ? [Math.sin(half), 0, 0, Math.cos(half)]
-      : [0, Math.sin(half), 0, Math.cos(half)];
+    const expected = tiltThenTurn(actor.rotationXDeg ?? 0, actor.rotationYDeg);
     if (
       !near(q, expected, 1e-3) &&
       !near(
@@ -284,19 +330,43 @@ export function validateSceneExport(scene: ISceneJson, gltf: IGltf): void {
     // glTF defaults (2.0 spec, section 5.19) for factors the exporter leaves out.
     const pbr = material.pbrMetallicRoughness ?? {};
     const want = actor.material;
+    // The albedo texture is checked both ways: a texture one file names and the other lacks is a different scene.
+    // scene.json names it as `baseColorTexture` (PRD-639) or, on a masked material, as `texture` (PRD-651); the
+    // masked-state check below holds a masked material to its texture.
+    if (want.baseColorTexture !== undefined && pbr.baseColorTexture === undefined)
+      fail(
+        "SCENE_EXPORT",
+        `${actor.name}: scene.json names the texture ${want.baseColorTexture}, scene.glb has none`,
+      );
+    if (
+      want.baseColorTexture === undefined &&
+      want.texture === undefined &&
+      pbr.baseColorTexture !== undefined
+    )
+      fail(
+        "SCENE_EXPORT",
+        `${actor.name}: scene.glb textures the material, scene.json does not name a texture`,
+      );
     if (
       !near((pbr.baseColorFactor ?? [1, 1, 1, 1]).slice(0, 3), want.baseColor, 1e-3) ||
       Math.abs((pbr.roughnessFactor ?? 1) - want.roughness) > 1e-3 ||
       Math.abs((pbr.metallicFactor ?? 1) - want.metallic) > 1e-3 ||
       !near(
-        material.emissiveFactor ?? [0, 0, 0],
+        (material.emissiveFactor ?? [0, 0, 0]).map(
+          (c) => c * (material.extensions?.KHR_materials_emissive_strength?.emissiveStrength ?? 1),
+        ),
         want.emissive.map((c) => c * want.emissiveStrength),
-        1e-3,
+        1e-3 * Math.max(1, want.emissiveStrength),
       )
     )
       fail(
         "SCENE_EXPORT",
         `${actor.name}: material ${want.name} differs between scene.json and scene.glb`,
+      );
+    if (maskedStateDiffers(want, material))
+      fail(
+        "SCENE_EXPORT",
+        `${actor.name}: masked state of material ${want.name} differs between scene.json and scene.glb`,
       );
   }
   nodes.forEach((node, i) => {
@@ -327,16 +397,17 @@ export function validateSceneExport(scene: ISceneJson, gltf: IGltf): void {
   // A template-lit scene (PRD-649) keeps the default level's exposure, as the PRD-631 reference does.
   if (scene.template !== "default" && (!scene.exposure || !Number.isFinite(scene.exposure.ev100)))
     fail("SCENE_EXPORT", `${scene.scene}: no fixed EV100`);
+  // A mesh is in the region it names (default: its own name). Cards share one: Leaves, Grass.
   const colors = Object.values(scene.regions).map((c) => c.join(","));
+  const used = [...new Set(scene.meshes.map((m) => m.region ?? m.name))];
   if (
-    Object.keys(scene.regions).sort().join() !==
-      scene.meshes
-        .map((m) => m.name)
-        .sort()
-        .join() ||
+    Object.keys(scene.regions).sort().join() !== used.sort().join() ||
     new Set(colors).size !== colors.length
   )
-    fail("SCENE_EXPORT", `${scene.scene}: regions must name every mesh once, in distinct colours`);
+    fail(
+      "SCENE_EXPORT",
+      `${scene.scene}: regions must be the regions of the meshes, each in its own colour`,
+    );
 }
 
 export function readScene(name: string): { scene: ISceneJson; gltf: IGltf } {

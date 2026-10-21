@@ -1,0 +1,524 @@
+{
+  "note": "Written by gi/export.py from the Unreal 5.8.3 level /Game/Shadow/foliage/GI_foliage. three.js frame: Y up, metres. Unreal is the authority; scene.py is only the authoring input.",
+  "scene": "shadow:foliage",
+  "resolution": [1280, 720],
+  "meshes": [
+    {
+      "name": "Floor",
+      "class": "StaticMeshActor",
+      "position": [-4.0, -0.1, 0.0],
+      "rotationYDeg": -0.0,
+      "size": [40.0, 0.2, 40.0],
+      "material": {
+        "name": "MI_Floor",
+        "baseColor": [0.8, 0.8, 0.8],
+        "roughness": 1.0,
+        "metallic": 0.0,
+        "emissive": [0.0, 0.0, 0.0],
+        "emissiveStrength": 1.0
+      }
+    },
+    {
+      "name": "Trunk",
+      "class": "StaticMeshActor",
+      "position": [3.0, 1.5, -2.0],
+      "rotationYDeg": -0.0,
+      "size": [0.3, 3.0, 0.3],
+      "material": {
+        "name": "MI_Bark",
+        "baseColor": [0.22, 0.15, 0.09],
+        "roughness": 1.0,
+        "metallic": 0.0,
+        "emissive": [0.0, 0.0, 0.0],
+        "emissiveStrength": 1.0
+      }
+    },
+    {
+      "name": "Pawn",
+      "class": "StaticMeshActor",
+      "position": [3.0, 0.9, 1.0],
+      "rotationYDeg": -0.0,
+      "size": [0.5, 1.8, 0.5],
+      "material": {
+        "name": "MI_Pawn",
+        "baseColor": [0.5, 0.5, 0.5],
+        "roughness": 1.0,
+        "metallic": 0.0,
+        "emissive": [0.0, 0.0, 0.0],
+        "emissiveStrength": 1.0
+      }
+    },
+    {
+      "name": "Leaf_1",
+      "class": "StaticMeshActor",
+      "position": [3.6, 2.5, -2.0],
+      "rotationYDeg": -90.0,
+      "rotationXDeg": 62.0,
+      "region": "Leaves",
+      "size": [1.8, 1.8, 0.0],
+      "material": {
+        "name": "MI_Leaf",
+        "baseColor": [0.1, 0.28, 0.05],
+        "roughness": 1.0,
+        "metallic": 0.0,
+        "emissive": [0.0, 0.0, 0.0],
+        "emissiveStrength": 1.0,
+        "texture": "leaf.png",
+        "alphaMode": "MASK",
+        "alphaCutoff": 0.5,
+        "doubleSided": true
+      }
+    },
+    {
+      "name": "Leaf_2",
+      "class": "StaticMeshActor",
+      "position": [3.71, 3.1, -0.91],
+      "rotationYDeg": -23.0,
+      "rotationXDeg": -55.0,
+      "region": "Leaves",
+      "size": [1.8, 1.8, 0.0],
+      "material": {
+        "name": "MI_Leaf",
+        "baseColor": [0.1, 0.28, 0.05],
+        "roughness": 1.0,
+        "metallic": 0.0,
+        "emissive": [0.0, 0.0, 0.0],
+        "emissiveStrength": 1.0,
+        "texture": "leaf.png",
+        "alphaMode": "MASK",
+        "alphaCutoff": 0.5,
+        "doubleSided": true
+      }
+    },
+    {
+      "name": "Leaf_3",
+      "class": "StaticMeshActor",
+      "position": [2.55, 3.8, -1.0],
+      "rotationYDeg": 44.0,
+      "rotationXDeg": 75.0,
+      "region": "Leaves",
+      "size": [1.8, 1.8, 0.0],
+      "material": {
+        "name": "MI_Leaf",
+        "baseColor": [0.1, 0.28, 0.05],
+        "roughness": 1.0,
+        "metallic": 0.0,
+        "emissive": [0.0, 0.0, 0.0],
+        "emissiveStrength": 1.0,
+        "texture": "leaf.png",
+        "alphaMode": "MASK",
+        "alphaCutoff": 0.5,
+        "doubleSided": true
+      }
+    },
+    {
+      "name": "Leaf_4",
+      "class": "StaticMeshActor",
+      "position": [2.65, 4.5, -1.65],
+      "rotationYDeg": -69.0,
+      "rotationXDeg": -70.0,
+      "region": "Leaves",
+      "size": [1.8, 1.8, 0.0],
+      "material": {
+        "name": "MI_Leaf",
+        "baseColor": [0.1, 0.28, 0.05],
+        "roughness": 1.0,
+        "metallic": 0.0,
+        "emissive": [0.0, 0.0, 0.0],
+        "emissiveStrength": 1.0,
+        "texture": "leaf.png",
+        "alphaMode": "MASK",
+        "alphaCutoff": 0.5,
+        "doubleSided": true
+      }
+    },
+    {
+      "name": "Leaf_5",
+      "class": "StaticMeshActor",
+      "position": [1.63, 2.9, -2.29],
+      "rotationYDeg": -2.0,
+      "rotationXDeg": 50.0,
+      "region": "Leaves",
+      "size": [1.8, 1.8, 0.0],
+      "material": {
+        "name": "MI_Leaf",
+        "baseColor": [0.1, 0.28, 0.05],
+        "roughness": 1.0,
+        "metallic": 0.0,
+        "emissive": [0.0, 0.0, 0.0],
+        "emissiveStrength": 1.0,
+        "texture": "leaf.png",
+        "alphaMode": "MASK",
+        "alphaCutoff": 0.5,
+        "doubleSided": true
+      }
+    },
+    {
+      "name": "Leaf_6",
+      "class": "StaticMeshActor",
+      "position": [2.57, 3.5, -3.12],
+      "rotationYDeg": 65.0,
+      "rotationXDeg": -80.0,
+      "region": "Leaves",
+      "size": [1.8, 1.8, 0.0],
+      "material": {
+        "name": "MI_Leaf",
+        "baseColor": [0.1, 0.28, 0.05],
+        "roughness": 1.0,
+        "metallic": 0.0,
+        "emissive": [0.0, 0.0, 0.0],
+        "emissiveStrength": 1.0,
+        "texture": "leaf.png",
+        "alphaMode": "MASK",
+        "alphaCutoff": 0.5,
+        "doubleSided": true
+      }
+    },
+    {
+      "name": "Leaf_7",
+      "class": "StaticMeshActor",
+      "position": [3.0, 4.1, -2.9],
+      "rotationYDeg": -48.0,
+      "rotationXDeg": 68.0,
+      "region": "Leaves",
+      "size": [1.8, 1.8, 0.0],
+      "material": {
+        "name": "MI_Leaf",
+        "baseColor": [0.1, 0.28, 0.05],
+        "roughness": 1.0,
+        "metallic": 0.0,
+        "emissive": [0.0, 0.0, 0.0],
+        "emissiveStrength": 1.0,
+        "texture": "leaf.png",
+        "alphaMode": "MASK",
+        "alphaCutoff": 0.5,
+        "doubleSided": true
+      }
+    },
+    {
+      "name": "Leaf_8",
+      "class": "StaticMeshActor",
+      "position": [4.26, 3.3, -2.82],
+      "rotationYDeg": 19.0,
+      "rotationXDeg": -48.0,
+      "region": "Leaves",
+      "size": [1.8, 1.8, 0.0],
+      "material": {
+        "name": "MI_Leaf",
+        "baseColor": [0.1, 0.28, 0.05],
+        "roughness": 1.0,
+        "metallic": 0.0,
+        "emissive": [0.0, 0.0, 0.0],
+        "emissiveStrength": 1.0,
+        "texture": "leaf.png",
+        "alphaMode": "MASK",
+        "alphaCutoff": 0.5,
+        "doubleSided": true
+      }
+    },
+    {
+      "name": "Grass_1",
+      "class": "StaticMeshActor",
+      "position": [3.5, 0.25, 1.0],
+      "rotationYDeg": -90.0,
+      "region": "Grass",
+      "size": [0.4, 0.5, 0.0],
+      "material": {
+        "name": "MI_Grass",
+        "baseColor": [0.16, 0.34, 0.06],
+        "roughness": 1.0,
+        "metallic": 0.0,
+        "emissive": [0.0, 0.0, 0.0],
+        "emissiveStrength": 1.0,
+        "texture": "grass.png",
+        "alphaMode": "MASK",
+        "alphaCutoff": 0.5,
+        "doubleSided": true
+      }
+    },
+    {
+      "name": "Grass_2",
+      "class": "StaticMeshActor",
+      "position": [3.62, 0.25, 1.62],
+      "rotationYDeg": -53.0,
+      "region": "Grass",
+      "size": [0.4, 0.5, 0.0],
+      "material": {
+        "name": "MI_Grass",
+        "baseColor": [0.16, 0.34, 0.06],
+        "roughness": 1.0,
+        "metallic": 0.0,
+        "emissive": [0.0, 0.0, 0.0],
+        "emissiveStrength": 1.0,
+        "texture": "grass.png",
+        "alphaMode": "MASK",
+        "alphaCutoff": 0.5,
+        "doubleSided": true
+      }
+    },
+    {
+      "name": "Grass_3",
+      "class": "StaticMeshActor",
+      "position": [3.36, 0.25, 1.63],
+      "rotationYDeg": -16.0,
+      "region": "Grass",
+      "size": [0.4, 0.5, 0.0],
+      "material": {
+        "name": "MI_Grass",
+        "baseColor": [0.16, 0.34, 0.06],
+        "roughness": 1.0,
+        "metallic": 0.0,
+        "emissive": [0.0, 0.0, 0.0],
+        "emissiveStrength": 1.0,
+        "texture": "grass.png",
+        "alphaMode": "MASK",
+        "alphaCutoff": 0.5,
+        "doubleSided": true
+      }
+    },
+    {
+      "name": "Grass_4",
+      "class": "StaticMeshActor",
+      "position": [2.85, 0.25, 1.56],
+      "rotationYDeg": 21.0,
+      "region": "Grass",
+      "size": [0.4, 0.5, 0.0],
+      "material": {
+        "name": "MI_Grass",
+        "baseColor": [0.16, 0.34, 0.06],
+        "roughness": 1.0,
+        "metallic": 0.0,
+        "emissive": [0.0, 0.0, 0.0],
+        "emissiveStrength": 1.0,
+        "texture": "grass.png",
+        "alphaMode": "MASK",
+        "alphaCutoff": 0.5,
+        "doubleSided": true
+      }
+    },
+    {
+      "name": "Grass_5",
+      "class": "StaticMeshActor",
+      "position": [2.53, 0.25, 1.82],
+      "rotationYDeg": 58.0,
+      "region": "Grass",
+      "size": [0.4, 0.5, 0.0],
+      "material": {
+        "name": "MI_Grass",
+        "baseColor": [0.16, 0.34, 0.06],
+        "roughness": 1.0,
+        "metallic": 0.0,
+        "emissive": [0.0, 0.0, 0.0],
+        "emissiveStrength": 1.0,
+        "texture": "grass.png",
+        "alphaMode": "MASK",
+        "alphaCutoff": 0.5,
+        "doubleSided": true
+      }
+    },
+    {
+      "name": "Grass_6",
+      "class": "StaticMeshActor",
+      "position": [2.23, 0.25, 1.21],
+      "rotationYDeg": -85.0,
+      "region": "Grass",
+      "size": [0.4, 0.5, 0.0],
+      "material": {
+        "name": "MI_Grass",
+        "baseColor": [0.16, 0.34, 0.06],
+        "roughness": 1.0,
+        "metallic": 0.0,
+        "emissive": [0.0, 0.0, 0.0],
+        "emissiveStrength": 1.0,
+        "texture": "grass.png",
+        "alphaMode": "MASK",
+        "alphaCutoff": 0.5,
+        "doubleSided": true
+      }
+    },
+    {
+      "name": "Grass_7",
+      "class": "StaticMeshActor",
+      "position": [2.35, 0.25, 1.0],
+      "rotationYDeg": -48.0,
+      "region": "Grass",
+      "size": [0.4, 0.5, 0.0],
+      "material": {
+        "name": "MI_Grass",
+        "baseColor": [0.16, 0.34, 0.06],
+        "roughness": 1.0,
+        "metallic": 0.0,
+        "emissive": [0.0, 0.0, 0.0],
+        "emissiveStrength": 1.0,
+        "texture": "grass.png",
+        "alphaMode": "MASK",
+        "alphaCutoff": 0.5,
+        "doubleSided": true
+      }
+    },
+    {
+      "name": "Grass_8",
+      "class": "StaticMeshActor",
+      "position": [2.65, 0.25, 0.65],
+      "rotationYDeg": -11.0,
+      "region": "Grass",
+      "size": [0.4, 0.5, 0.0],
+      "material": {
+        "name": "MI_Grass",
+        "baseColor": [0.16, 0.34, 0.06],
+        "roughness": 1.0,
+        "metallic": 0.0,
+        "emissive": [0.0, 0.0, 0.0],
+        "emissiveStrength": 1.0,
+        "texture": "grass.png",
+        "alphaMode": "MASK",
+        "alphaCutoff": 0.5,
+        "doubleSided": true
+      }
+    },
+    {
+      "name": "Grass_9",
+      "class": "StaticMeshActor",
+      "position": [2.56, 0.25, 0.24],
+      "rotationYDeg": 26.0,
+      "region": "Grass",
+      "size": [0.4, 0.5, 0.0],
+      "material": {
+        "name": "MI_Grass",
+        "baseColor": [0.16, 0.34, 0.06],
+        "roughness": 1.0,
+        "metallic": 0.0,
+        "emissive": [0.0, 0.0, 0.0],
+        "emissiveStrength": 1.0,
+        "texture": "grass.png",
+        "alphaMode": "MASK",
+        "alphaCutoff": 0.5,
+        "doubleSided": true
+      }
+    },
+    {
+      "name": "Grass_10",
+      "class": "StaticMeshActor",
+      "position": [3.19, 0.25, 0.3],
+      "rotationYDeg": 63.0,
+      "region": "Grass",
+      "size": [0.4, 0.5, 0.0],
+      "material": {
+        "name": "MI_Grass",
+        "baseColor": [0.16, 0.34, 0.06],
+        "roughness": 1.0,
+        "metallic": 0.0,
+        "emissive": [0.0, 0.0, 0.0],
+        "emissiveStrength": 1.0,
+        "texture": "grass.png",
+        "alphaMode": "MASK",
+        "alphaCutoff": 0.5,
+        "doubleSided": true
+      }
+    },
+    {
+      "name": "Grass_11",
+      "class": "StaticMeshActor",
+      "position": [3.29, 0.25, 0.5],
+      "rotationYDeg": -80.0,
+      "region": "Grass",
+      "size": [0.4, 0.5, 0.0],
+      "material": {
+        "name": "MI_Grass",
+        "baseColor": [0.16, 0.34, 0.06],
+        "roughness": 1.0,
+        "metallic": 0.0,
+        "emissive": [0.0, 0.0, 0.0],
+        "emissiveStrength": 1.0,
+        "texture": "grass.png",
+        "alphaMode": "MASK",
+        "alphaCutoff": 0.5,
+        "doubleSided": true
+      }
+    },
+    {
+      "name": "Grass_12",
+      "class": "StaticMeshActor",
+      "position": [3.92, 0.25, 0.75],
+      "rotationYDeg": -43.0,
+      "region": "Grass",
+      "size": [0.4, 0.5, 0.0],
+      "material": {
+        "name": "MI_Grass",
+        "baseColor": [0.16, 0.34, 0.06],
+        "roughness": 1.0,
+        "metallic": 0.0,
+        "emissive": [0.0, 0.0, 0.0],
+        "emissiveStrength": 1.0,
+        "texture": "grass.png",
+        "alphaMode": "MASK",
+        "alphaCutoff": 0.5,
+        "doubleSided": true
+      }
+    }
+  ],
+  "lights": [],
+  "sky": "template",
+  "sun": {
+    "intensityLux": 6.0,
+    "temperatureK": 6500.0,
+    "useTemperature": true,
+    "sourceAngleDeg": 0.7357000112533569,
+    "sourceSoftAngleDeg": 0.0,
+    "castShadows": true,
+    "contactShadowLength": 0.0
+  },
+  "template": "default",
+  "suns": [
+    {
+      "name": "sun60",
+      "elevationDeg": 60,
+      "azimuthDeg": 90
+    },
+    {
+      "name": "sun15",
+      "elevationDeg": 15,
+      "azimuthDeg": 90
+    }
+  ],
+  "templateMeshes": ["SM_SkySphere"],
+  "fog": null,
+  "exposure": null,
+  "poses": [
+    {
+      "name": "sun60-canopy",
+      "position": [8.5, 5.0, 5.0],
+      "target": [1.5, 1.2, -2.0],
+      "hfovDeg": 66,
+      "sun": "sun60"
+    },
+    {
+      "name": "sun60-grass",
+      "position": [5.2, 2.1, 3.4],
+      "target": [2.6, 0.2, 0.9],
+      "hfovDeg": 55,
+      "sun": "sun60"
+    },
+    {
+      "name": "sun15-canopy",
+      "position": [5, 8, 11],
+      "target": [-2.5, 0.5, -2],
+      "hfovDeg": 68,
+      "sun": "sun15"
+    },
+    {
+      "name": "sun15-grass",
+      "position": [5.2, 2.1, 3.4],
+      "target": [1.6, 0.2, 0.9],
+      "hfovDeg": 60,
+      "sun": "sun15"
+    }
+  ],
+  "regions": {
+    "Floor": [255, 0, 0],
+    "Trunk": [0, 255, 0],
+    "Pawn": [0, 0, 255],
+    "Leaves": [255, 255, 0],
+    "Grass": [255, 0, 255]
+  }
+}

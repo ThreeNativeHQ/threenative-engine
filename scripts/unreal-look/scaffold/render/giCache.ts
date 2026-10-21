@@ -25,6 +25,11 @@
 // A fixed-world bake: move a wall and bake again. Resolution is one metre, so contact-scale light is
 // the screen-space tier's job.
 import {
+  type ISurfaceCacheOptions,
+  type ISurfaceCacheReport,
+  SurfaceCache,
+} from "@threenative/core";
+import {
   Box3,
   type Color,
   Data3DTexture,
@@ -32,6 +37,7 @@ import {
   HalfFloatType,
   type Intersection,
   LinearFilter,
+  type Material,
   type Mesh,
   type MeshStandardMaterial,
   type Object3D,
@@ -59,7 +65,7 @@ import {
   uniform,
   vec3,
 } from "three/tsl";
-import { MeshStandardNodeMaterial, type Node } from "three/webgpu";
+import { MeshPhysicalNodeMaterial, MeshStandardNodeMaterial, type Node } from "three/webgpu";
 import { bakeRays } from "./bakeRays.js";
 
 /** What the bake needs of the game's context: the scene ray query (`ICtx.raycast`). */
@@ -108,6 +114,12 @@ export interface IGiOptions {
   readonly skyShadowDistance?: number;
   /** Cast the bake's rays through `ctx.raycast` instead of the flat triangle hierarchy: the slow path, kept for an A/B. */
   readonly stockRays?: boolean;
+  /**
+   * The Surface Cache (PRD-639): a ray that lands on a mapped material returns the map's texel at the hit UV, for the
+   * albedo and for the emission, instead of the material's flat colour (a loaded asset's colour factor is often white
+   * under a brick map). Unset, every hit returns the flat colour. `true` takes the cache's defaults.
+   */
+  readonly surfaceCache?: boolean | ISurfaceCacheOptions;
 }
 
 export interface IGiReport {
@@ -122,6 +134,8 @@ export interface IGiReport {
   readonly milliseconds: number;
   /** Milliseconds per bake phase, in order, so a cost is attributed before it is cut. */
   readonly phases: Readonly<Record<string, number>>;
+  /** What the Surface Cache held, when the bake used one. */
+  readonly surfaceCache?: ISurfaceCacheReport;
 }
 
 const CELL = 0.5;
@@ -1134,6 +1148,43 @@ export function emitterLight(
   return sum;
 }
 
+/** What three's own `fromMaterial` copies, and the engine's identity: never carried to the twin. */
+const NOT_COPIED = /^(?:is[A-Z]|_)|^(?:constructor|id|uuid|version|type)$/;
+
+/**
+ * The node material a source material becomes when the cache lights it, as three's `fromMaterial` makes it: the class that
+ * matches the source type (a node material keeps its class), and every settable field copied, so the maps, the cut-out,
+ * the sides and the blending carry over. three holds a field as an own property and the native engine as an accessor on
+ * the class, which `for in` never lists, so the fields are found by walking the prototype chain's descriptors.
+ */
+function nodeTwin(source: MeshStandardMaterial): MeshStandardMaterial {
+  if ((source as { isNodeMaterial?: boolean }).isNodeMaterial) return source;
+  const twin = (source.type === "MeshPhysicalMaterial"
+    ? physicalTwin()
+    : new MeshStandardNodeMaterial()) as unknown as Record<string, unknown>;
+  for (
+    let at: object | null = source;
+    at !== null && at !== Object.prototype;
+    at = Object.getPrototypeOf(at)
+  )
+    for (const [key, field] of Object.entries(Object.getOwnPropertyDescriptors(at))) {
+      if (NOT_COPIED.test(key) || !(key in twin) || (field.set ? !field.get : !field.writable))
+        continue;
+      const value = (source as unknown as Record<string, unknown>)[key];
+      if (value !== undefined && typeof value !== "function") twin[key] = value;
+    }
+  return twin as unknown as MeshStandardMaterial;
+}
+
+/** The native engine has no physical node class yet (core-webgpu.mjs refuses it): it lights a physical source as a standard one. */
+function physicalTwin() {
+  try {
+    return new MeshPhysicalNodeMaterial();
+  } catch {
+    return new MeshStandardNodeMaterial();
+  }
+}
+
 export function installGi(
   gameCtx: IRayContext,
   root: Object3D,
@@ -1306,6 +1357,37 @@ export function installGi(
     return data;
   };
 
+  // The Surface Cache reads a map where a ray lands; a material without one returns the numbers `dataOf` does.
+  const slotOf = new Map<Material, number>();
+  const cacheMaterials: Material[] = [];
+  root.traverse((object) => {
+    const mesh = object as Mesh;
+    const material = mesh.material;
+    if (!(mesh as { isMesh?: boolean }).isMesh || Array.isArray(material) || slotOf.has(material))
+      return;
+    slotOf.set(material, cacheMaterials.length);
+    cacheMaterials.push(material);
+  });
+  const surfaceCache =
+    options.surfaceCache && cacheMaterials.length > 0
+      ? SurfaceCache.from(
+          cacheMaterials as never,
+          options.surfaceCache === true ? {} : options.surfaceCache,
+        )
+      : undefined;
+  const sampled = { albedo: [0, 0, 0], emissive: [0, 0, 0] };
+  /** The albedo and emission a ray that landed on `hit` returns. */
+  const dataAt = (hit: Intersection): { albedo: number[]; emissive: number[] } => {
+    const slot = slotOf.get((hit.object as Mesh).material as Material);
+    if (surfaceCache === undefined || slot === undefined || hit.uv === undefined)
+      return dataOf(hit.object);
+    surfaceCache.albedo(slot, hit.uv.x, hit.uv.y, sampled.albedo);
+    // An emitter small enough for `emitterLight` carries no emission of its own in the rays.
+    if (emitterIds.has(hit.object.id)) sampled.emissive.fill(0);
+    else surfaceCache.emissive(slot, hit.uv.x, hit.uv.y, sampled.emissive);
+    return sampled;
+  };
+
   const centreOf = (probe: number, into: Vector3): Vector3 =>
     into.set(
       grid.origin.x + ((probe % grid.nx) + 0.5) * grid.cell,
@@ -1367,7 +1449,7 @@ export function installGi(
         if (face !== undefined && face !== null) backfaces[probe] = (backfaces[probe] ?? 0) + 1;
       }
       [hitNormal[0], hitNormal[1], hitNormal[2]] = [nx, ny, nz];
-      const { albedo, emissive } = dataOf(hit.object);
+      const { albedo, emissive } = dataAt(hit);
       ray.base.set(
         options.bounces > 0 ? surface(hit.object, hitAt, hitNormal, albedo, emissive) : [0, 0, 0],
         i * 3,
@@ -1604,21 +1686,21 @@ export function installGi(
     reads.set(roughness, made);
     return made;
   };
+  const twins = new Map<MeshStandardMaterial, MeshStandardMaterial>();
   root.traverse((object) => {
     const mesh = object as Mesh;
     if (!(mesh as { isMesh?: boolean }).isMesh) return;
     const source = mesh.material as MeshStandardMaterial;
-    const { node, visibility } = readFor(source.roughness);
-    const material = new MeshStandardNodeMaterial();
-    material.color.copy(source.color);
-    material.roughness = source.roughness;
-    material.metalness = source.metalness;
-    material.emissive.copy(source.emissive);
-    material.emissiveIntensity = source.emissiveIntensity;
-    material.side = source.side;
-    material.shadowSide = source.shadowSide;
-    (material as unknown as { irradianceNode: unknown }).irradianceNode = node;
-    (material as unknown as { aoNode: unknown }).aoNode = visibility;
+    // Meshes that share a material keep sharing its twin. The twin keeps the maps, or a textured wall bakes its
+    // texel and then draws its colour factor (PRD-639).
+    let material = twins.get(source);
+    if (material === undefined) {
+      const { node, visibility } = readFor(source.roughness);
+      material = nodeTwin(source);
+      (material as unknown as { irradianceNode: unknown }).irradianceNode = node;
+      (material as unknown as { aoNode: unknown }).aoNode = visibility;
+      twins.set(source, material);
+    }
     mesh.material = material;
   });
   const report: IGiReport = {
@@ -1631,7 +1713,10 @@ export function installGi(
     bounces: options.bounces,
     milliseconds: Math.round(performance.now() - started),
     phases,
+    ...(surfaceCache === undefined ? {} : { surfaceCache: surfaceCache.report }),
   };
   console.info(`TN_GI_CACHE ${JSON.stringify(report)}`);
+  if (surfaceCache !== undefined)
+    console.info(`TN_SURFACE_CACHE ${JSON.stringify(surfaceCache.report)}`);
   return report;
 }

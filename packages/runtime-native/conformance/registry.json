@@ -601,6 +601,19 @@
       "required": true
     },
     {
+      "id": "leaf-receiver",
+      "title": "two-sided alpha-tested receiver skips the normal bias",
+      "category": "shadows",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/leaf-receiver.js",
+      "tolerance": {
+        "pixelMismatchRatio": 0.08,
+        "perceptualDeltaE": 10.0
+      },
+      "desktopGate": false,
+      "required": true
+    },
+    {
       "id": "soft-shadow-source-radius",
       "title": "lamp source-radius soft shadow",
       "category": "shadows",
@@ -611,6 +624,19 @@
         "perceptualDeltaE": 10.0
       },
       "desktopGate": false,
+      "required": true
+    },
+    {
+      "id": "surface-cache-albedo",
+      "title": "surface cache albedo and emission at a hit",
+      "category": "materials",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/surface-cache-albedo.js",
+      "tolerance": {
+        "pixelMismatchRatio": 0.02,
+        "perceptualDeltaE": 5.0
+      },
+      "desktopGate": true,
       "required": true
     },
     {
