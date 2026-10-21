@@ -42,8 +42,8 @@ import {
   vec2,
   vec3,
 } from "three/tsl";
-import type { Node } from "three/webgpu";
-import { MeshStandardNodeMaterial } from "three/webgpu";
+import type { Node, NodeBuilder } from "three/webgpu";
+import { MeshStandardNodeMaterial, PhysicalLightingModel } from "three/webgpu";
 import { SeaMaps, sampleBilinear, sampleBilinearFloat } from "./realisticSeaMaps.js";
 import {
   type ISeaState,
@@ -241,6 +241,17 @@ function seaDisc(): BufferGeometry {
   geometry.setIndex(indices);
   geometry.computeBoundingSphere();
   return geometry;
+}
+
+/** three's physical model with the environment's mirror term at `LOOK.skyReflection`. */
+class SeaLightingModel extends PhysicalLightingModel {
+  override indirectSpecular(builder: NodeBuilder): void {
+    const context = builder.context as { radiance: Node<"vec3"> };
+    const radiance = context.radiance;
+    context.radiance = radiance.mul(LOOK.skyReflection);
+    super.indirectSpecular(builder);
+    context.radiance = radiance;
+  }
 }
 
 export interface IRealisticWaterOptions {
@@ -505,19 +516,12 @@ export function createRealisticWaterMesh(
     material.roughnessNode = max(filtered, foamMask.mul(0.9));
   }
 
+  // The sky's mirror image at the brightness the sky is drawn, and the water's body lit by the
+  // scene's fill like every other object. `envMapIntensity` would scale both, so the mirror term
+  // alone is scaled where three adds it.
+  material.setupLightingModel = () => new SeaLightingModel();
+
   const mesh = new Mesh(geometry, material);
-  // The scene's environment, read where it is used. three applies `envMapIntensity` only to a
-  // material's own `envMap`; on `scene.environment` it uses the scene's fill level, which is the
-  // wrong number for a mirror. So the sea takes the scene's environment as its own, every frame
-  // it is drawn, and follows the scene if the sky changes.
-  mesh.onBeforeRender = (_renderer, scene) => {
-    if (material.envMap !== scene.environment) {
-      material.envMap = scene.environment;
-      material.needsUpdate = true;
-    }
-    material.envMapRotation.copy(scene.environmentRotation);
-    material.envMapIntensity = scene.environmentIntensity * LOOK.skyReflection;
-  };
   mesh.receiveShadow = true;
   mesh.frustumCulled = false;
   mesh.name = "realistic-sea-surface";
