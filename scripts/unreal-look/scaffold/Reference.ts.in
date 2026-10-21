@@ -115,7 +115,13 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
       // Diagnosis knob sunShadow=0: the sun casts no shadow (is a seam line a shadow leak at all?).
       key.castShadow = level >= 5 && params.get("sunShadow") !== "0";
       // Diagnosis knob shadowSide=front|back|double: the caster faces; unset keeps three's derived side.
-      const casterSide = { front: FrontSide, back: BackSide, double: DoubleSide }[params.get("shadowSide") ?? ""];
+      // Back-face casters store the occluder depth on the far face of a wall, which is the room's
+      // own inner surface, so sun light leaks along every inner seam of the slab boxes. The virtual
+      // map's receiver-plane bias holds front-face acne, so the tuned arm draws front faces; the
+      // classic map leaks a wedge at the door with front faces, so it keeps three's derived side.
+      const casterSide =
+        { front: FrontSide, back: BackSide, double: DoubleSide }[params.get("shadowSide") ?? ""] ??
+        (TUNED && !OFF.has("vsm") ? FrontSide : undefined);
       // Unreal's static meshes cast and receive shadows by default; three's meshes do neither
       // until asked. Both arms (baseline and tuned) need this, so it is not tuning.
       const emissiveSeen = new Set<unknown>();
@@ -181,6 +187,8 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
       // global illumination), the sun a surface returns (render/giCache.ts).
       if (TUNED && level >= 2 && !OFF.has("gi"))
         installGi(ctx, model, {
+          // Diagnosis knob stockRays=1: cast the bake through ctx.raycast, the slow path (an A/B).
+          stockRays: params.get("stockRays") === "1",
           bounces: level >= 7 ? 5 : 0,
           // Unreal below L7 has no GI: its sky light is shadowed by distance fields, up to 10 m.
           ...(level < 7 ? { skyShadowDistance: 10 } : {}),
