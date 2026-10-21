@@ -137,7 +137,10 @@ describe("ComputeDrivenRegistry", () => {
       const prewarmDraws = loadingDraws;
       game.ctx.canvasLayer.keepWorldRendering = false;
       complete();
-      for (let i = 13; i <= 30; i++) {
+      // The held warm-up yields frames and settlement needs two quiet ones, so run until ready
+      // (bounded); ordinary work must stay held on every frame before that.
+      for (let i = 13; i <= 60 && game.ctx.startup.phase !== "ready"; i++) {
+        expect(ordinary.processed).toBe(0);
         frame(i * 16);
         await Promise.resolve();
       }
