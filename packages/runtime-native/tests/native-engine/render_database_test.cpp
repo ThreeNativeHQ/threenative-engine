@@ -3371,7 +3371,7 @@ void lampSourceRadius() {
     camera.position.set(0, 10, 0.001);
     camera.lookAt(0, 0, 0);
     camera.updateProjectionMatrix();
-    const auto edgeWidth = [&](Light& lamp, LightShadow& shadow, std::optional<std::array<double, 3>> filter) {
+    const auto edgeWidth = [&](Light& lamp, LightShadow& shadow, std::optional<std::array<double, 4>> filter) {
         Scene scene;
         lamp.position.set(0, 4, 0);
         lamp.setCastShadow(true);
@@ -3423,27 +3423,31 @@ void lampSourceRadius() {
         scene.remove(lamp);
         return width;
     };
-    const std::array<double, 3> wide{0.5, 16, 16}, none{0, 16, 16};
+    // {sourceRadius, blockerSamples, filterSamples, penumbraScale}: a scale of 1 is the geometric penumbra.
+    const std::array<double, 4> wide{0.5, 16, 16, 1}, none{0, 16, 16, 1}, resolved{0.5, 16, 16, 0.6};
     PointLight point{Color(1, 1, 1), 60};
     SpotLight spot{Color(1, 1, 1), 60};
     const int pointPcf = edgeWidth(point, point.shadow, std::nullopt), pointHard = edgeWidth(point, point.shadow, none),
-              pointSoft = edgeWidth(point, point.shadow, wide);
+              pointSoft = edgeWidth(point, point.shadow, wide), pointScaled = edgeWidth(point, point.shadow, resolved);
     const int spotPcf = edgeWidth(spot, spot.shadow, std::nullopt), spotHard = edgeWidth(spot, spot.shadow, none),
-              spotSoft = edgeWidth(spot, spot.shadow, wide);
-    std::printf("lamp source radius edge px: point pcf %d, r0 %d, r0.5 %d; spot pcf %d, r0 %d, r0.5 %d\n", pointPcf,
-                pointHard, pointSoft, spotPcf, spotHard, spotSoft);
+              spotSoft = edgeWidth(spot, spot.shadow, wide), spotScaled = edgeWidth(spot, spot.shadow, resolved);
+    std::printf("lamp source radius edge px: point pcf %d, r0 %d, r0.5 %d, r0.5 x0.6 %d; spot pcf %d, r0 %d, r0.5 %d, r0.5 x0.6 %d\n",
+                pointPcf, pointHard, pointSoft, pointScaled, spotPcf, spotHard, spotSoft, spotScaled);
     // A 0.5 m radius: a 1 m penumbra, 16 pixels. A disk light's edge is a circular segment's area, whose
     // 0.15-0.85 band is about 60% of it: 9.5 pixels, sampled here by 16 taps.
     for (const int soft : {pointSoft, spotSoft}) CHECK(soft >= 6 && soft <= 13);
     for (const int hard : {pointPcf, pointHard, spotPcf, spotHard}) CHECK(hard <= 3);
+    // penumbraScale keeps a share of that width: 0.6 of 9.5 pixels is 5.7.
+    for (const auto& [soft, scaled] : {std::pair{pointSoft, pointScaled}, std::pair{spotSoft, spotScaled}})
+        CHECK(scaled >= 4 && scaled <= 8 && scaled * 10 <= soft * 8 && scaled * 10 >= soft * 4);
 }
 
 // PRD-650: a plate's edge thrown on a wall that the lamp sees 40 degrees off the wall's normal (cornell's
 // red wall), the wall in the shadow map too. The wall's own texels nearer the lamp than a receiver are not
 // blockers: the receiver's plane decides, so the edge keeps its geometric width. A 0.5 m disk 3 m above a
 // plate whose edge is 1.2 m out, on a wall 2 m out, throws a 0.15-0.85 band of 8.3 pixels at 16 pixels per
-// metre. The blocker average widens it by up to half; a wall that shades itself narrows it to 1 or 2 pixels.
-// The same edge on a flat floor under the lamp is lampSourceRadius.
+// metre; a wall that shades itself narrows it to 1 or 2 pixels. The same edge on a flat floor under the lamp
+// is lampSourceRadius.
 void lampSourceRadiusWall() {
     mystral::webgpu::Context context;
     CHECK(context.initializeHeadless());
@@ -3454,12 +3458,12 @@ void lampSourceRadiusWall() {
     camera.position.set(8, 1.5, 0);
     camera.lookAt(-2, 1.5, 0);
     camera.updateProjectionMatrix();
-    const auto edgeWidth = [&](Light& lamp, LightShadow& shadow, Object3D* aim) {
+    const auto edgeWidth = [&](Light& lamp, LightShadow& shadow, Object3D* aim, double penumbraScale) {
         Scene scene;
         lamp.position.set(0, 3, 0);
         lamp.setCastShadow(true);
         shadow.mapSize = {1024, 1024};
-        shadow.sourceRadiusFilter = std::array<double, 3>{0.5, 16, 16};
+        shadow.sourceRadiusFilter = std::array<double, 4>{0.5, 16, 16, penumbraScale};
         scene.add(lamp);
         if (aim) scene.add(*aim);
         Mesh wall{makePlaneGeometry(6, 6), std::make_shared<Material>(MaterialType::Standard)};
@@ -3504,9 +3508,89 @@ void lampSourceRadiusWall() {
     PointLight point{Color(1, 1, 1), 60};
     SpotLight spot{Color(1, 1, 1), 60};
     spot.target->position.set(-2, 1.3, 0);  // the edge's height on the wall
-    const int pointWall = edgeWidth(point, point.shadow, nullptr), spotWall = edgeWidth(spot, spot.shadow, spot.target.get());
-    std::printf("lamp source radius wall edge px: point %d, spot %d\n", pointWall, spotWall);
-    for (const int wall : {pointWall, spotWall}) CHECK(wall >= 7 && wall <= 13);
+    const int pointWall = edgeWidth(point, point.shadow, nullptr, 1), spotWall = edgeWidth(spot, spot.shadow, spot.target.get(), 1);
+    const int pointKept = edgeWidth(point, point.shadow, nullptr, 0.6), spotKept = edgeWidth(spot, spot.shadow, spot.target.get(), 0.6);
+    std::printf("lamp source radius wall edge px: point %d, spot %d; at penumbraScale 0.6: point %d, spot %d\n", pointWall,
+                spotWall, pointKept, spotKept);
+    // The plate the lamp sees at a slant has a depth that falls across the search cone, so the blocker average
+    // widens the edge to 1.7 to 2.2 times the geometric width at scale 1. A wall that shades itself is 1 or 2.
+    for (const int wall : {pointWall, spotWall}) CHECK(wall >= 7 && wall <= 20);
+    // The default scale keeps a share of that, never narrower than the self-shaded 1 or 2 pixels.
+    for (const auto& [full, kept] : {std::pair{pointWall, pointKept}, std::pair{spotWall, spotKept}}) CHECK(kept >= 4 && kept < full);
+}
+
+// PRD-650: the soft filter never lights what the hard filter shades. lamp-room's crate stands on the floor
+// under a 5 cm point lamp, and three's shadowSide stores the crate's back faces: on the floor a few
+// centimetres behind its dark face the stored depth lies within centimetres of the receiver, so a blocker
+// there reaches almost nothing. A filter that finds no blocker in reach and calls the receiver lit leaves a
+// bright stripe in the crate's umbra (lamp-room point pose, 2026-10-21). Every floor pixel the hard filter
+// shades below 0.35 of the open floor stays below 0.75 with the soft filter.
+void lampSourceRadiusCrate() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    constexpr int kWidth = 1280, kHeight = 720;
+    renderer.setSize(kWidth, kHeight);
+    PerspectiveCamera camera(36, double(kWidth) / kHeight, 0.05, 50);  // the pose's 60 degree horizontal fov
+    camera.position.set(-0.4, 1.6, 2.2);
+    camera.lookAt(-0.4, 0.3, -0.9);
+    camera.updateProjectionMatrix();
+    const auto render = [&](std::optional<std::array<double, 4>> filter, bool casters) {
+        Scene scene;
+        PointLight lamp{Color(1, 1, 1), 4, 12};
+        lamp.position.set(0.6, 1.5, 0.4);
+        lamp.setCastShadow(true);
+        lamp.shadow.mapSize = {1024, 1024};
+        lamp.shadow.sourceRadiusFilter = filter;
+        auto& shadowCamera = static_cast<PerspectiveCamera&>(*lamp.shadow.camera);
+        shadowCamera.near = 0.02;
+        shadowCamera.updateProjectionMatrix();
+        scene.add(lamp);
+        const auto material = std::make_shared<Material>(MaterialType::Standard);
+        std::vector<std::shared_ptr<Mesh>> meshes;
+        const auto box = [&](double w, double h, double d, double x, double y, double z, double turn = 0) {
+            auto mesh = std::make_shared<Mesh>(makeBoxGeometry(w, h, d), material);
+            mesh->position.set(x, y, z);
+            mesh->rotation.set(0, turn, 0);
+            mesh->setCastShadow(casters);
+            mesh->setReceiveShadow(true);
+            scene.add(*mesh);
+            meshes.push_back(mesh);
+        };
+        box(6.2, 0.2, 4.2, 0, -0.1, 0);                      // Floor
+        box(6.2, 0.2, 4.2, 0, 3.1, 0);                       // Ceiling
+        box(6.2, 3.2, 0.2, 0, 1.5, -2.1);                    // Back
+        box(0.2, 3.2, 4.2, -3.1, 1.5, 0);                    // Wall_L
+        box(0.2, 3.2, 4.2, 3.1, 1.5, 0);                     // Wall_R
+        box(1.0, 0.05, 0.8, -2, 0.8, -0.5);                  // Table_L
+        box(1.0, 0.05, 0.8, 2, 0.8, -0.5);                   // Table_R
+        box(0.5, 0.5, 0.5, -0.4, 0.25, -0.6, M_PI / 9);      // Crate, 20 degrees about +Y
+        box(0.01, 2.0, 0.01, 0.6, 1.0, -1.945);              // Rod
+        scene.updateMatrixWorld(true);
+        RenderDatabase database;
+        database.shadowMapEnabled = true;
+        database.render(renderer, scene, camera);
+        const std::vector<uint8_t> pixels = read(renderer, events);
+        CHECK(pixels.size() == size_t{kWidth} * kHeight * 4);
+        std::vector<double> red(size_t{kWidth} * kHeight);
+        for (size_t i = 0; i < red.size(); ++i) red[i] = pixels[i * 4];
+        scene.remove(lamp);
+        return red;
+    };
+    const std::vector<double> open = render(std::array<double, 4>{0, 16, 16, 1}, false);
+    const std::vector<double> hard = render(std::array<double, 4>{0, 16, 16, 1}, true);
+    const std::vector<double> soft = render(std::array<double, 4>{0.05, 16, 16, 0.6}, true);
+    int shaded = 0, leaked = 0;
+    for (size_t i = 0; i < open.size(); ++i) {
+        if (open[i] < 24) continue;
+        const bool umbra = hard[i] < 0.35 * open[i];
+        shaded += umbra;
+        leaked += umbra && soft[i] > 0.75 * open[i];
+    }
+    std::printf("lamp source radius crate: %d umbra pixels, %d lit by the soft filter\n", shaded, leaked);
+    CHECK(shaded > 5000);  // the room's shadows are there
+    CHECK(leaked <= 40);   // a penumbra's edge may differ by a pixel; a stripe is hundreds
 }
 
 // A box standing on a floor slab under a point lamp shades the floor right behind its far foot. three's
@@ -4668,7 +4752,7 @@ TN_TEST_MAIN({"gpu_joint_production", gpuJointProduction}, {"multi_material_grou
              {"material_unsupported", materialUnsupported}, {"shader_invalid", shaderInvalid}, {"time_uniform", timeUniform}, {"gpu_mipmaps", gpuMipmaps}, {"updates", updates},
              {"multi_camera_layers", multiCameraLayers}, {"render_callback", renderCallback}, {"instanced", instanced},
              {"batched_vs_unbatched", batchedVsUnbatched}, {"skinned_crowd", skinnedCrowdPixels}, {"skinned_decline_cadence", skinnedDeclineCadence}, {"skinned_normalized_weights", skinnedNormalizedWeights}, {"normal_map_tilt", normalMapTilt}, {"unsupported_map_slot", unsupportedMapSlot}, {"env_map_slot_is_read", envMapSlotIsRead}, {"converted_copies_swept", convertedCopiesAreSwept}, {"gpu_timer_covers_offscreen", gpuTimerCoversOffscreen}, {"gpu_timer_covers_shadows", gpuTimerCoversShadows}, {"overlay_over_frame", overlayOverFrame}, {"gpu_timer_is_opt_in", gpuTimerIsOptIn}, {"msaa_edges", msaaEdges}, {"shadow_camera_layers", shadowCameraLayers}, {"flat_shading_needs_no_normals", flatShadingNeedsNoNormals}, {"map_sampleability_changes", mapSampleabilityChanges}, {"batch_caches_stay_put", batchCachesStayPut}, {"frustum_culling", frustumCulling},
-             {"shadow_caster_frustum_culling", shadowCasterFrustumCulling}, {"masked_shadow", maskedShadow}, {"point_shadow_cube_faces", pointShadowCubeFaces}, {"lamp_source_radius", lampSourceRadius}, {"lamp_source_radius_wall", lampSourceRadiusWall}, {"contact_shadow_foot", contactShadowFoot}, {"virtual_sun_contact_foot", virtualSunContactFoot}, {"lamp_cache", lampCache}, {"shadow_lights_follow_hierarchy", shadowLightsFollowHierarchy}, {"records_survive_siblings", recordsSurviveSiblings}, {"steady_frame_hashes_no_record", steadyFrameHashesNoRecord}, {"nested_record_cache", nestedRecordCache}, {"frustum_record_retention", frustumRecordRetention}, {"world_sphere_measured_once", worldSphereMeasuredOnce}, {"reflection_reuse", reflectionReuse})
+             {"shadow_caster_frustum_culling", shadowCasterFrustumCulling}, {"masked_shadow", maskedShadow}, {"point_shadow_cube_faces", pointShadowCubeFaces}, {"lamp_source_radius", lampSourceRadius}, {"lamp_source_radius_wall", lampSourceRadiusWall}, {"lamp_source_radius_crate", lampSourceRadiusCrate}, {"contact_shadow_foot", contactShadowFoot}, {"virtual_sun_contact_foot", virtualSunContactFoot}, {"lamp_cache", lampCache}, {"shadow_lights_follow_hierarchy", shadowLightsFollowHierarchy}, {"records_survive_siblings", recordsSurviveSiblings}, {"steady_frame_hashes_no_record", steadyFrameHashesNoRecord}, {"nested_record_cache", nestedRecordCache}, {"frustum_record_retention", frustumRecordRetention}, {"world_sphere_measured_once", worldSphereMeasuredOnce}, {"reflection_reuse", reflectionReuse})
 
 
 

@@ -181,15 +181,27 @@ it("passes a lamp's source-radius filter and refuses a bad radius", () => {
   const tag = Symbol.for("threenative.sourceRadiusShadowFilter");
   const lamp = (options: object) => Object.assign(() => {}, { [tag]: options });
   expect(
-    shadowFilterOptions(lamp({ sourceRadius: 0.05, blockerSamples: 16, filterSamples: 8 })),
+    shadowFilterOptions(
+      lamp({ sourceRadius: 0.05, blockerSamples: 16, filterSamples: 8, penumbraScale: 0.6 }),
+    ),
   ).toEqual({
     sourceRadius: 0.05,
     blockerSamples: 16,
     filterSamples: 8,
+    penumbraScale: 0.6,
   });
   for (const sourceRadius of [-0.1, Number.NaN, Number.POSITIVE_INFINITY])
     expect(() =>
-      shadowFilterOptions(lamp({ sourceRadius, blockerSamples: 16, filterSamples: 16 })),
+      shadowFilterOptions(
+        lamp({ sourceRadius, blockerSamples: 16, filterSamples: 16, penumbraScale: 1 }),
+      ),
+    ).toThrow("TN_VIRTUAL_SHADOW_INVALID: source-radius filter");
+  // The share of the geometric penumbra is required and bounded; a missing one is not guessed.
+  for (const penumbraScale of [undefined, 0, -1, Number.NaN, 4.5])
+    expect(() =>
+      shadowFilterOptions(
+        lamp({ sourceRadius: 0.05, blockerSamples: 16, filterSamples: 16, penumbraScale }),
+      ),
     ).toThrow("TN_VIRTUAL_SHADOW_INVALID: source-radius filter");
   expect(() => shadowFilterOptions(() => {})).toThrow("TN_VIRTUAL_SHADOW_UNSUPPORTED");
 });

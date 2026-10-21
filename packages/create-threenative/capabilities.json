@@ -2147,12 +2147,12 @@
     {
       "aliases": ["SourceRadius, PCSS, soft lamp shadow"],
       "constraints": [
-        "sourceRadius is required, in metres, 0 or more (0 is one hard tap); forward-depth maps only"
+        "sourceRadius is required, in metres, 0 or more (0 is one hard tap); penumbraScale, the share of the geometric penumbra kept, is in (0, 4] and defaults to 0.6, the width Unreal's lamp ray test resolves; forward-depth maps only"
       ],
       "example": "lamp.shadow.filterNode = sourceRadiusShadowFilter({ sourceRadius: 0.05 });",
       "importPath": "@threenative/core",
       "kind": "function",
-      "overrides": [],
+      "overrides": ["penumbraScale: 1 gives the geometric penumbra of a disk lamp"],
       "package": "@threenative/core",
       "signature": "export function lampPenumbraTangent( sourceRadius: number, blockerDistance: number, receiverDistance: number, ): number { … }",
       "situations": ["soften a lamp's shadow by the lamp's size, as Unreal's SourceRadius does"],
@@ -3200,12 +3200,12 @@
     {
       "aliases": ["SourceRadius, PCSS, soft lamp shadow"],
       "constraints": [
-        "sourceRadius is required, in metres, 0 or more (0 is one hard tap); forward-depth maps only"
+        "sourceRadius is required, in metres, 0 or more (0 is one hard tap); penumbraScale, the share of the geometric penumbra kept, is in (0, 4] and defaults to 0.6, the width Unreal's lamp ray test resolves; forward-depth maps only"
       ],
       "example": "lamp.shadow.filterNode = sourceRadiusShadowFilter({ sourceRadius: 0.05 });",
       "importPath": "@threenative/core",
       "kind": "function",
-      "overrides": [],
+      "overrides": ["penumbraScale: 1 gives the geometric penumbra of a disk lamp"],
       "package": "@threenative/core",
       "signature": "export function sourceRadiusShadowFilter( { … }",
       "situations": ["soften a lamp's shadow by the lamp's size, as Unreal's SourceRadius does"],

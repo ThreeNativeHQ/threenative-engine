@@ -918,8 +918,9 @@ export { sourceAngleShadowFilter } from "./render/soft-shadow.js";
 /**
  * Source-radius blocker search and variable-radius PCF on a spot or point light's shadow map.
  * @situation soften a lamp's shadow by the lamp's size, as Unreal's SourceRadius does
- * @constraint sourceRadius is required, in metres, 0 or more (0 is one hard tap); forward-depth maps only
+ * @constraint sourceRadius is required, in metres, 0 or more (0 is one hard tap); penumbraScale, the share of the geometric penumbra kept, is in (0, 4] and defaults to 0.6, the width Unreal's lamp ray test resolves; forward-depth maps only
  * @alias SourceRadius, PCSS, soft lamp shadow
+ * @override penumbraScale: 1 gives the geometric penumbra of a disk lamp
  * @example lamp.shadow.filterNode = sourceRadiusShadowFilter({ sourceRadius: 0.05 });
  */
 export {

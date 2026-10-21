@@ -825,9 +825,10 @@ constexpr int kLampBlockerPasses = 2;
 
 // sourceRadiusShadowFilter on a lamp (PRD-650): a spot light's 2D map or a point light's cube. A blocker
 // search over the cone from the receiver to the lamp's disk, then a compare filter whose radius, in
-// tangent units (offset over distance), is sourceRadius * (1 / blocker - 1 / receiver), at least half
-// a texel; sourceRadius 0 is one hard tap. Distances are the map's view depths. The fixed Vogel disk
-// matches core's TSL filter. `ShadowSourceRadius` = {sourceRadius, tanHalfFov, blockers, samples}.
+// tangent units (offset over distance), is penumbraScale * sourceRadius * (1 / blocker - 1 / receiver), at
+// least half a texel; sourceRadius 0 is one hard tap. Distances are the map's view depths. The fixed Vogel
+// disk matches core's TSL filter. `ShadowSourceRadius` = {sourceRadius, tanHalfFov, blockers, samples};
+// `ShadowPenumbraScale` is the share of the geometric width the lamp keeps (Unreal's ray test keeps about 0.6).
 static ExprId lampSoftShadowFactor(Program& f, Tsl& t, std::size_t index, ExprId positionWorld, ExprId normalWorld,
                                    bool cube) {
     const std::string at = "light" + std::to_string(index);
@@ -931,9 +932,12 @@ static ExprId lampSoftShadowFactor(Program& f, Tsl& t, std::size_t index, ExprId
         slopeX = f.select(flat, t.f(0), f.mul(f.div(f.sub(f.mul(rx, jyy), f.mul(jxy, ry)), safe), scale));
         slopeY = f.select(flat, t.f(0), f.mul(f.div(f.sub(f.mul(jxx, ry), f.mul(jyx, rx)), safe), scale));
     }
-    // The depth the receiver's plane has at `offset`, in the map's own depth, plus the light's bias.
+    // The receiver's plane as a distance at `offset`, and as the map's own depth plus the light's bias.
+    const auto planeDistance = [&](ExprId offset) {
+        return f.add(distanceR, f.add(f.mul(slopeX, f.swizzle(offset, "x")), f.mul(slopeY, f.swizzle(offset, "y"))));
+    };
     const auto planeReference = [&](ExprId offset) {
-        ExprId plane = f.add(distanceR, f.add(f.mul(slopeX, f.swizzle(offset, "x")), f.mul(slopeY, f.swizzle(offset, "y"))));
+        ExprId plane = planeDistance(offset);
         if (cube) plane = f.mul(plane, axialPerEuclid(offset));
         plane = f.call("max", {plane, near});
         return f.add(f.div(f.mul(far, f.sub(plane, near)), f.mul(plane, f.sub(far, near))), bias);
@@ -946,26 +950,49 @@ static ExprId lampSoftShadowFactor(Program& f, Tsl& t, std::size_t index, ExprId
     // ponytail: the first cone is cut at the near plane and at 0.5 tangent (27 degrees); a lamp with a
     // tiny near plane and a wide disk would need a hierarchical search.
     const ExprId widest = f.call("min", {t.f(0.5f), f.mul(radius, f.sub(f.div(t.f(1), near), f.div(t.f(1), distanceR)))});
+    const ExprId resolve = f.uniform(at + "ShadowPenumbraScale", Type::f32());
+    const auto reach = [&](ExprId blocker, ExprId plane) {  // the tangent radius a blocker's own penumbra covers
+        return f.mul(radius, f.call("max", {t.f(0), f.sub(f.div(t.f(1), blocker), f.div(t.f(1), plane))}));
+    };
     const VarId visibility = f.var(Type::f32(), t.f(1));
-    // The blockers in a cone average to the distance whose penumbra is the next cone; the cone only shrinks
-    // and converges on the edge's own penumbra, so a blocker's nearer bulk stops pulling the average. A
-    // receiver with no blocker in the last cone is lit.
+    // The nearest blocker in a cone has the widest penumbra, and every blocker that shades this receiver lies
+    // inside it, so the cone shrinks to that penumbra until the nearest blocker in it shades the receiver
+    // itself. The last cone averages only the blockers that shade the receiver: a texel counts when its offset
+    // is inside its own penumbra, so a volume's far faces, a wall's own texels and a nearer object off to the
+    // side never pull the width, and a receiver no blocker reaches is lit. The receiver's own ray is a tap of
+    // every cone and always inside the lamp's disk: a back-face map stores the crate's far face within
+    // centimetres of the floor behind it and a thin rod between the cone's taps, and no tap of a Vogel disk
+    // reaches either, yet the ray itself is blocked.
+    const ExprId centre = f.construct(Type::vec(2), {t.f(0)});
     std::function<void(int, ExprId)> pass = [&](int index, ExprId first) {
+        const bool last = index + 1 == kLampBlockerPasses;
         const VarId cone = f.var(Type::f32(), first);
         const VarId blockerSum = f.var(Type::f32(), t.f(0)), blockerCount = f.var(Type::f32(), t.f(0));
-        f.Loop(f.construct(Type::i32(), {blockers}), [&](ExprId i) {
-            const ExprId offset = f.mul(disk(i, blockers), f.load(cone));
+        const VarId nearest = f.var(Type::f32(), t.f(1e30f));
+        const auto visit = [&](ExprId offset, ExprId length) {  // a tap `length` tangent units out
             const ExprId depth = storedDepth(offset);
             f.If(f.less(depth, planeReference(offset)), [&] {
-                f.assign(blockerSum, f.add(f.load(blockerSum), blockerDistance(depth, offset)));
-                f.assign(blockerCount, f.add(f.load(blockerCount), t.f(1)));
+                const ExprId blocker = blockerDistance(depth, offset);
+                if (!last) {
+                    f.assign(nearest, f.call("min", {f.load(nearest), blocker}));
+                    f.assign(blockerCount, f.add(f.load(blockerCount), t.f(1)));
+                    return;
+                }
+                f.If(f.less(length, f.add(reach(blocker, planeDistance(offset)), t.f(1e-7f))), [&] {  // a hard lamp keeps its one tap
+                    f.assign(blockerSum, f.add(f.load(blockerSum), blocker));
+                    f.assign(blockerCount, f.add(f.load(blockerCount), t.f(1)));
+                });
             });
+        };
+        visit(centre, t.f(0));
+        f.Loop(f.construct(Type::i32(), {blockers}), [&](ExprId i) {
+            const ExprId n = f.construct(Type::f32(), {i});
+            visit(f.mul(disk(i, blockers), f.load(cone)), f.mul(f.call("sqrt", {f.div(f.add(n, t.f(0.5f)), blockers)}), f.load(cone)));
         });
         f.If(f.less(t.f(0), f.load(blockerCount)), [&] {
-            const ExprId blocker = f.div(f.load(blockerSum), f.load(blockerCount));
-            const ExprId spread = f.mul(radius, f.call("max", {t.f(0), f.sub(f.div(t.f(1), blocker), f.div(t.f(1), distanceR))}));
-            if (index + 1 < kLampBlockerPasses) return pass(index + 1, f.call("min", {f.load(cone), spread}));
-            const ExprId penumbra = f.select(f.less(t.f(0), radius), f.call("max", {f.mul(texel, t.f(0.5f)), spread}), t.f(0));
+            if (!last) return pass(index + 1, f.call("min", {f.load(cone), reach(f.load(nearest), distanceR)}));
+            const ExprId spread = reach(f.div(f.load(blockerSum), f.load(blockerCount)), distanceR);
+            const ExprId penumbra = f.select(f.less(t.f(0), radius), f.call("max", {f.mul(texel, t.f(0.5f)), f.mul(spread, resolve)}), t.f(0));
             const VarId sum = f.var(Type::f32(), t.f(0));
             f.Loop(f.construct(Type::i32(), {samples}), [&](ExprId i) {
                 const ExprId offset = f.mul(disk(i, samples), penumbra);

@@ -232,7 +232,7 @@ struct DirectLight {
     struct Shadow {
         std::shared_ptr<const shadows::AtlasOptions> virtualShadow;
         std::optional<std::array<double, 3>> sourceAngleFilter;
-        std::optional<std::array<double, 3>> sourceRadiusFilter;
+        std::optional<std::array<double, 4>> sourceRadiusFilter;
         double tanHalfFov = 1;  // a perspective map's: a cube face's is 1
         Matrix view{}, projection{}, matrix{};
         double bias = 0, normalBias = 0, radius = 1, intensity = 1;
@@ -609,7 +609,8 @@ private:
     enum LightField : uint8_t { kLightColor, kLightDirection, kLightPosition, kLightDistance, kLightDecay, kLightAxis,
                                 kLightConeCos, kLightPenumbraCos, kLightShadowMatrix, kLightShadowBias,
                                 kLightShadowNormalBias, kLightShadowRadius, kLightShadowMapSize,
-                                kLightShadowIntensity, kLightShadowNear, kLightShadowFar, kLightShadowSourceRadius, kLightFieldCount };
+                                kLightShadowIntensity, kLightShadowNear, kLightShadowFar, kLightShadowSourceRadius,
+                                kLightShadowPenumbraScale, kLightFieldCount };
     uint64_t renderPrepared(std::span<const DrawItem> items, const CameraState& camera, const LightState& lights,
         std::array<double, 4> clear, std::vector<std::shared_ptr<PipelineCompilation>>* compilation,
         WGPUTextureFormat outputFormat, bool defer = false);

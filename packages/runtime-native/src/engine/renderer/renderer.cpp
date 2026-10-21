@@ -179,7 +179,7 @@ constexpr const char* kLightFieldNames[] = {"Color",       "Direction",        "
                                             "Decay",       "Axis",             "ConeCos",      "PenumbraCos",
                                             "ShadowMatrix", "ShadowBias",      "ShadowNormalBias", "ShadowRadius",
                                             "ShadowMapSize", "ShadowIntensity", "ShadowNear", "ShadowFar",
-                                            "ShadowSourceRadius"};
+                                            "ShadowSourceRadius", "ShadowPenumbraScale"};
 
 constexpr uint64_t kUniformAlign = 256;  // minUniformBufferOffsetAlignment's WebGPU default
 uint64_t aligned(uint64_t size) { return (size + kUniformAlign - 1) / kUniformAlign * kUniformAlign; }
@@ -2922,9 +2922,11 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 put(frameUniforms_, f, slot[kLightShadowIntensity], std::array<double, 1>{l.shadow->intensity});
                 put(frameUniforms_, f, slot[kLightShadowNear], std::array<double, 1>{l.shadow->near});
                 put(frameUniforms_, f, slot[kLightShadowFar], std::array<double, 1>{l.shadow->far});
-                if (const auto& soft = l.shadow->sourceRadiusFilter)
+                if (const auto& soft = l.shadow->sourceRadiusFilter) {
                     put(frameUniforms_, f, slot[kLightShadowSourceRadius],
                         std::array<double, 4>{(*soft)[0], l.shadow->tanHalfFov, (*soft)[1], (*soft)[2]});
+                    put(frameUniforms_, f, slot[kLightShadowPenumbraScale], std::array<double, 1>{(*soft)[3]});
+                }
             }
         }
         put(frameUniforms_, f, fs[kHemisphereSky], lights.hemisphereSky);

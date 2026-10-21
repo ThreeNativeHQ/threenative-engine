@@ -9,6 +9,7 @@ import {
 import { float, vec3 } from "three/tsl";
 import { describe, expect, it } from "vitest";
 import {
+  LAMP_PENUMBRA_SCALE,
   lampPenumbraTangent,
   penumbraUv,
   sourceAngleShadowFilter,
@@ -133,6 +134,24 @@ describe("source-radius lamp shadows (PRD-650)", () => {
       (filter as unknown as Record<symbol, unknown>)[
         Symbol.for("threenative.sourceRadiusShadowFilter")
       ],
-    ).toEqual({ sourceRadius: 0.05, blockerSamples: 16, filterSamples: 16 });
+    ).toEqual({
+      sourceRadius: 0.05,
+      blockerSamples: 16,
+      filterSamples: 16,
+      penumbraScale: LAMP_PENUMBRA_SCALE,
+    });
+    expect(LAMP_PENUMBRA_SCALE).toBe(0.6);
+    for (const penumbraScale of [0, -1, 4.5, Number.NaN])
+      expect(() => sourceRadiusShadowFilter({ sourceRadius: 0.05, penumbraScale })).toThrow(
+        RangeError,
+      );
+    expect(
+      (
+        sourceRadiusShadowFilter({ sourceRadius: 0.05, penumbraScale: 1 }) as unknown as Record<
+          symbol,
+          Record<string, number>
+        >
+      )[Symbol.for("threenative.sourceRadiusShadowFilter")]?.penumbraScale,
+    ).toBe(1);
   });
 });

@@ -1628,7 +1628,8 @@ export function lampPenumbraTangent( sourceRadius: number, blockerDistance: numb
 ```
 
 - **Use when:** soften a lamp's shadow by the lamp's size, as Unreal's SourceRadius does
-- **Constraints:** sourceRadius is required, in metres, 0 or more (0 is one hard tap); forward-depth maps only
+- **Constraints:** sourceRadius is required, in metres, 0 or more (0 is one hard tap); penumbraScale, the share of the geometric penumbra kept, is in (0, 4] and defaults to 0.6, the width Unreal's lamp ray test resolves; forward-depth maps only
+- **Overrides:** penumbraScale: 1 gives the geometric penumbra of a disk lamp
 
 ```ts
 lamp.shadow.filterNode = sourceRadiusShadowFilter({ sourceRadius: 0.05 });
@@ -2486,7 +2487,8 @@ export function sourceRadiusShadowFilter( { … }
 ```
 
 - **Use when:** soften a lamp's shadow by the lamp's size, as Unreal's SourceRadius does
-- **Constraints:** sourceRadius is required, in metres, 0 or more (0 is one hard tap); forward-depth maps only
+- **Constraints:** sourceRadius is required, in metres, 0 or more (0 is one hard tap); penumbraScale, the share of the geometric penumbra kept, is in (0, 4] and defaults to 0.6, the width Unreal's lamp ray test resolves; forward-depth maps only
+- **Overrides:** penumbraScale: 1 gives the geometric penumbra of a disk lamp
 
 ```ts
 lamp.shadow.filterNode = sourceRadiusShadowFilter({ sourceRadius: 0.05 });
