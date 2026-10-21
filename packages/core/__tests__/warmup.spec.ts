@@ -883,6 +883,37 @@ describe("scene warm-up", () => {
     expect(report.passes).toEqual(["main", "reflection"]);
   });
 
+  test("should read a shared node material's values once, however many objects draw with it", async () => {
+    // On the engine each field of a material is a call into the host, so a walk that reads a
+    // material once per object costs the object count times the field count.
+    let reads = 0;
+    const material = { isNodeMaterial: true };
+    Object.defineProperty(material, "roughness", {
+      enumerable: true,
+      get: () => {
+        reads += 1;
+        return 0.5;
+      },
+    });
+    const renderer = {
+      compileAsync: () => Promise.resolve(),
+      render: () => undefined,
+      raw: { shadowMap: { enabled: true } },
+    };
+    const scene = group(
+      "scene",
+      Array.from({ length: 50 }, (_unused, index) => ({
+        children: [],
+        material,
+        name: `shared-${index}`,
+      })),
+    );
+    await warmUpScene(renderer as never, scene as never, {} as never, {
+      yieldFrame: () => Promise.resolve(),
+    });
+    expect(reads).toBe(1);
+  });
+
   test("should not render passes when renderPasses is false", async () => {
     const render = vi.fn();
     const renderer = {

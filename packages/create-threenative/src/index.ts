@@ -129,6 +129,10 @@ export const SHARED_RENDER_SOURCES = [
   path.join("src", "render", "exposureGraph.ts"),
   path.join("src", "render", "exposureReadback.ts"),
   path.join("src", "render", "tonemap.ts"),
+  path.join("src", "render", "localExposure.ts"),
+  path.join("src", "render", "motionBlur.ts"),
+  path.join("src", "render", "unrealBloom.ts"),
+  path.join("src", "render", "vignette.ts"),
 ] as const;
 
 export function canonicalRenderSourcePath(relativePath: string, root = templateRoot()): string {

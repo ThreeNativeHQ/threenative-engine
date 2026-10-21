@@ -33,7 +33,7 @@ import {
 type ColourTexture = ReturnType<typeof texture>;
 
 /** The look: Scene.cpp defaults. Stage 1 is the tightest, stage 6 the widest. */
-export const unrealBloomSettings = {
+const unrealBloomSettings = {
   intensity: 0.675,
   gaussianIntensity: 1,
   /** Every stage size is multiplied by this (a percent of the stage's own image width). */
@@ -58,7 +58,7 @@ function scratch(): RenderTarget {
 }
 
 /** The radius in texels of one stage's Gaussian on an image `width` texels wide (GetBlurRadius). */
-export function bloomRadius(width: number, size: number): number {
+function bloomRadius(width: number, size: number): number {
   const radius = width * size * unrealBloomSettings.sizeScale * 0.01 * 0.5;
   return Math.min(Math.max(radius, 1e-4), MAX_RADIUS);
 }
@@ -66,31 +66,6 @@ export function bloomRadius(width: number, size: number): number {
 /** The chain level (1 = half resolution) of the stage with this size index. Stage 1 is level 1. */
 const levelSize = (extent: number, level: number): number =>
   Math.max(1, Math.ceil(extent / 2 ** level));
-
-/** One bilinear tap of a stage: `offset` in texels from the centre, `weight` of the two texels it reads. */
-export interface IBloomTap {
-  readonly offset: number;
-  readonly weight: number;
-}
-
-/**
- * Compute1DGaussianFilterKernel: taps from -R to R in steps of two, each pairing texel i with i + 1 (the last
- * tap sits on a texel centre). Weights sum to one. The GPU stage computes the same pairs per tap.
- */
-export function bloomKernel(radius: number): IBloomTap[] {
-  const sigma = Math.min(Math.max(radius, 1e-4), MAX_RADIUS);
-  const reach = Math.min(Math.ceil(sigma), MAX_RADIUS);
-  const gauss = (x: number): number => Math.exp(SHAPE * (x / sigma) ** 2);
-  const taps: IBloomTap[] = [];
-  let total = 0;
-  for (let i = -reach; i <= reach; i += 2) {
-    const w0 = gauss(i);
-    const w1 = i === reach ? 0 : gauss(i + 1);
-    taps.push({ offset: i + w1 / (w0 + w1), weight: w0 + w1 });
-    total += w0 + w1;
-  }
-  return taps.map((t) => ({ offset: t.offset, weight: t.weight / total }));
-}
 
 export interface IBloomStageSize {
   /** Chain level this stage blurs. */
@@ -103,7 +78,7 @@ export interface IBloomStageSize {
 }
 
 /** The six stages, widest (level 6) first, for a drawing buffer of `width` by `height`. */
-export function bloomSchedule(width: number, height: number): IBloomStageSize[] {
+function bloomSchedule(width: number, height: number): IBloomStageSize[] {
   const { sizes } = unrealBloomSettings;
   return Array.from({ length: STAGES }, (_, order) => {
     const index = STAGES - 1 - order;
@@ -143,6 +118,8 @@ export class UnrealBloomNode extends TempNode<"vec3"> {
   static get type(): string {
     return "UnrealBloomNode";
   }
+  /** The stages for a drawing buffer of `width` by `height`: the raster each blurs and the taps it loops. */
+  static readonly schedule = bloomSchedule;
   readonly input: ColourTexture;
   readonly #size = new Vector2();
   readonly #quad = new QuadMesh();
