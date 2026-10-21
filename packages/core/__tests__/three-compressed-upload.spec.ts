@@ -102,10 +102,15 @@ it("keeps the private compressed upload lane out of generated patches and instal
     "build/three.webgpu.js",
     "build/three.webgpu.nodes.js",
   ].map((file) => readFileSync(resolve(root, file), "utf8"));
+  // PMREMNode.prepareTextureAsync is the unrelated PMREM preparation seam, not the removed upload lane.
+  const pmremSeam =
+    /PMREMNode\.prepareTextureAsync|static async prepareTextureAsync\( renderer, texture \)/g;
   for (const text of [base, upgrade, targetTexts, ...installed])
     expect(
-      text.match(
-        /prepareTextureAsync|updateTextureAsync|_uploadTail|_pendingUploads|uploadError|_waitForUpload|_uploadSlice|_uploadDisposed/,
-      )?.[0],
+      text
+        .replace(pmremSeam, "")
+        .match(
+          /prepareTextureAsync|updateTextureAsync|_uploadTail|_pendingUploads|uploadError|_waitForUpload|_uploadSlice|_uploadDisposed/,
+        )?.[0],
     ).toBeUndefined();
 });

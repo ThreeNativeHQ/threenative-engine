@@ -5540,6 +5540,20 @@ index f707acc24f5711fdae065ce920b08435b0869c1b..2939a7ab73c74195f357fd145632bafc
  
  		renderer.xr.enabled = currentXR;
  
+diff --git a/examples/jsm/tsl/display/SMAANode.js b/examples/jsm/tsl/display/SMAANode.js
+index 7b550223936eedcbbe782ce0f7cef8d11388181e..0bb036147379173ea3eb51774be72d4587b757b8 100644
+--- a/examples/jsm/tsl/display/SMAANode.js
++++ b/examples/jsm/tsl/display/SMAANode.js
+@@ -156,7 +156,8 @@ class SMAANode extends TempNode {
+ 		 * @private
+ 		 * @type {TextureNode}
+ 		 */
+-		this._edgesTextureUniform = texture( this._renderTargetEdges.texture );
++		// Single-level edges need no implicit derivatives inside the bounded searches (FXC).
++		this._edgesTextureUniform = texture( this._renderTargetEdges.texture ).level( 0 );
+ 
+ 		/**
+ 		 * A uniform texture node representing the weights pass.
 diff --git a/src/materials/nodes/manager/NodeMaterialObserver.js b/src/materials/nodes/manager/NodeMaterialObserver.js
 index 1f4c2546c937c70f013fec3a0580b66ac501ebbb..7e2cb9926878b43aa2b8b3a146e3427711be7210 100644
 --- a/src/materials/nodes/manager/NodeMaterialObserver.js

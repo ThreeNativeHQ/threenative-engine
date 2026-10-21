@@ -370,16 +370,6 @@
       "path": "build/three.webgpu.nodes.js",
       "oldHash": "b344d27b52f8be09a0e6c7fef999c87b16377c9c",
       "newHash": "95669d28b54250a3857dcb7d1b1b0e30dd19e0cb"
-    },
-    {
-      "path": "src/nodes/pmrem/PMREMNode.js",
-      "oldHash": "fc65e547aab918c28a4fa1c615e3cc4f7e8e169f",
-      "newHash": "c4c33cf3060d8c75398000589ed4e3f9a52ec285"
-    },
-    {
-      "path": "src/renderers/common/extras/PMREMGenerator.js",
-      "oldHash": "27df07dd99b46ac85a69f3249d9934334ff10dae",
-      "newHash": "ace19db76fab3f08ed4d581d1e272066a24c34aa"
     }
   ],
   "baseFinalHashes": {
@@ -415,6 +405,7 @@
     "src/renderers/webgpu/utils/WebGPUTextureUtils.js": "57c1eb62f1e0de063f22e08ec879e31d2a3240b6",
     "src/renderers/common/RenderPipeline.js": "ab3085cfdca456ffb3de6945d7e7f693e4ed33ae",
     "src/nodes/pmrem/PMREMNode.js": "c4c33cf3060d8c75398000589ed4e3f9a52ec285",
-    "src/renderers/common/extras/PMREMGenerator.js": "ace19db76fab3f08ed4d581d1e272066a24c34aa"
+    "src/renderers/common/extras/PMREMGenerator.js": "ace19db76fab3f08ed4d581d1e272066a24c34aa",
+    "examples/jsm/tsl/display/SMAANode.js": "0bb036147379173ea3eb51774be72d4587b757b8"
   }
 }

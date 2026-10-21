@@ -186,7 +186,7 @@ describe("assemblePatches", () => {
     await writeFile(join(patchedDir, rel), "// current renderer\n", "utf8");
 
     const { basePatch, upgradePatch } = await assemblePatches({ patchedDir, pin, stockDir });
-    expect(Object.keys(pin.baseFinalHashes)).toHaveLength(31);
+    expect(Object.keys(pin.baseFinalHashes)).toHaveLength(34);
     expect(pin.frozenCompatPairs).toHaveLength(73);
 
     const json = JSON.parse(upgradePatch);

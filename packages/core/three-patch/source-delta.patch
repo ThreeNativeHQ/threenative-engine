@@ -2895,3 +2895,17 @@ index 27df07dd99b46ac85a69f3249d9934334ff10dae..ace19db76fab3f08ed4d581d1e272066
  	_allocateTarget( depthBuffer ) {
  
  		const width = 3 * Math.max( this._cubeSize, 16 * 7 );
+diff --git a/examples/jsm/tsl/display/SMAANode.js b/examples/jsm/tsl/display/SMAANode.js
+index 7b550223936eedcbbe782ce0f7cef8d11388181e..0bb036147379173ea3eb51774be72d4587b757b8 100644
+--- a/examples/jsm/tsl/display/SMAANode.js
++++ b/examples/jsm/tsl/display/SMAANode.js
+@@ -156,7 +156,8 @@ class SMAANode extends TempNode {
+ 		 * @private
+ 		 * @type {TextureNode}
+ 		 */
+-		this._edgesTextureUniform = texture( this._renderTargetEdges.texture );
++		// Single-level edges need no implicit derivatives inside the bounded searches (FXC).
++		this._edgesTextureUniform = texture( this._renderTargetEdges.texture ).level( 0 );
+ 
+ 		/**
+ 		 * A uniform texture node representing the weights pass.

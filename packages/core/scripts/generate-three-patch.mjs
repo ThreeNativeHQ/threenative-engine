@@ -21,6 +21,9 @@ const MAX_BUFFER = 64 * 1024 * 1024;
 const MAX_BUNDLE_BYTES = 8 * 1024 * 1024;
 const HEX40 = /^[a-f0-9]{40}$/u;
 const HEX64 = /^[a-f0-9]{64}$/u;
+// Source trees a pinned target may live in. `build/` is generated; the others are edited.
+const SOURCE_ROOTS = ["src", "examples/jsm"];
+const TARGET_ROOTS = [...SOURCE_ROOTS, "build"];
 
 const err = (message) => new Error(`TN_GENERATE_PATCH: ${message}`);
 
@@ -52,8 +55,7 @@ function validateCompatPairs(pairs) {
   for (const pair of pairs) {
     if (pair === null || typeof pair !== "object")
       throw err("pin.json has an invalid compat pair.");
-    if (!isSafeRelative(pair.path, ["src", "build"]))
-      throw err(`unsafe compat path '${pair.path}'.`);
+    if (!isSafeRelative(pair.path, TARGET_ROOTS)) throw err(`unsafe compat path '${pair.path}'.`);
     if (!HEX40.test(pair.oldHash ?? "") || !HEX40.test(pair.newHash ?? "")) {
       throw err(`invalid compat hash for ${pair.path}.`);
     }
@@ -70,7 +72,7 @@ function validateFinalHashes(finals) {
   const paths = Object.keys(finals);
   if (paths.length === 0) throw err("pin.json baseFinalHashes must be non-empty.");
   for (const rel of paths) {
-    if (!isSafeRelative(rel, ["src", "build"])) throw err(`unsafe final path '${rel}'.`);
+    if (!isSafeRelative(rel, TARGET_ROOTS)) throw err(`unsafe final path '${rel}'.`);
     if (!HEX40.test(finals[rel])) throw err(`invalid final hash for ${rel}.`);
   }
 }
@@ -88,7 +90,7 @@ export function validatePin(pin) {
   return pin;
 }
 
-/** Every `diff --git`/`---`/`+++` path must be an identical, safe `src/` path. */
+/** Every `diff --git`/`---`/`+++` path must be an identical, safe `src/` or `examples/jsm/` path. */
 export function parseSourceDeltaPaths(sourceDelta) {
   const sections = sourceDelta
     .split(/^(?=diff --git )/mu)
@@ -106,8 +108,8 @@ export function parseSourceDeltaPaths(sourceDelta) {
     if (oldHeader?.[1] !== oldPath || newHeader?.[1] !== newPath) {
       throw err(`source delta paths disagree for '${oldPath}'.`);
     }
-    if (!isSafeRelative(oldPath, ["src"]))
-      throw err(`source delta path must be a safe src/ path: '${oldPath}'.`);
+    if (!isSafeRelative(oldPath, SOURCE_ROOTS))
+      throw err(`source delta path must be a safe src/ or examples/jsm/ path: '${oldPath}'.`);
     paths.push(oldPath);
   }
   return paths;
@@ -162,6 +164,7 @@ async function planFromUpstream({ archivePath, pin, scratch, sourceDelta }) {
   const members = [
     `${prefix}/src`,
     `${prefix}/build`,
+    `${prefix}/examples/jsm`,
     `${prefix}/utils/build`,
     `${prefix}/package.json`,
     `${prefix}/package-lock.json`,
@@ -180,6 +183,9 @@ async function planFromUpstream({ archivePath, pin, scratch, sourceDelta }) {
   const stockDir = path.join(scratch, "stock-snapshot");
   await cp(path.join(workDir, "src"), path.join(stockDir, "src"), { recursive: true });
   await cp(path.join(workDir, "build"), path.join(stockDir, "build"), { recursive: true });
+  await cp(path.join(workDir, "examples/jsm"), path.join(stockDir, "examples/jsm"), {
+    recursive: true,
+  });
 
   const deltaFile = path.join(scratch, "delta.patch");
   await writeFile(deltaFile, sourceDelta, "utf8");
