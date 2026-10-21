@@ -835,6 +835,8 @@ private:
     uint32_t sampleCount_ = 1;
     WGPUTexture msaaColor_ = nullptr;
     WGPUTextureView msaaColorView_ = nullptr;
+    WGPUTexture msaaAuxColor_ = nullptr;
+    WGPUTextureView msaaAuxColorView_ = nullptr;
     WGPUTexture msaaDepth_ = nullptr;
     WGPUTextureView msaaDepthView_ = nullptr;
     WGPURenderPipeline depthResolve_ = nullptr;  // built by the first 4x frame

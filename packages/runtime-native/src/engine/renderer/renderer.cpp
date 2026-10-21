@@ -812,6 +812,8 @@ void Renderer::releaseTargets() {
     if (msaaDepth_) wgpuTextureRelease(msaaDepth_);
     if (msaaColorView_) wgpuTextureViewRelease(msaaColorView_);
     if (msaaColor_) wgpuTextureRelease(msaaColor_);
+    if (msaaAuxColorView_) wgpuTextureViewRelease(msaaAuxColorView_);
+    if (msaaAuxColor_) wgpuTextureRelease(msaaAuxColor_);
     if (sceneView_) wgpuTextureViewRelease(sceneView_);
     if (sceneColor_) wgpuTextureRelease(sceneColor_);
     if (normalView_) wgpuTextureViewRelease(normalView_);
@@ -824,6 +826,8 @@ void Renderer::releaseTargets() {
     if (viewportDepth_) wgpuTextureRelease(viewportDepth_);
     colorView_ = depthView_ = msaaColorView_ = msaaDepthView_ = sceneView_ = normalView_ = materialView_ = viewportColorView_ = viewportDepthView_ = nullptr;
     depth_ = msaaColor_ = msaaDepth_ = sceneColor_ = normalTexture_ = materialTexture_ = viewportColor_ = viewportDepth_ = nullptr;
+    msaaAuxColor_ = nullptr;
+    msaaAuxColorView_ = nullptr;
     releaseOutputGroup();  // it binds the scene target
 }
 
@@ -1083,6 +1087,9 @@ void Renderer::setSize(uint32_t width, uint32_t height) {
         msaaDesc.usage = WGPUTextureUsage_RenderAttachment;
         msaaColor_ = wgpuDeviceCreateTexture(device_, &msaaDesc);
         msaaColorView_ = view2d(msaaColor_, WGPUTextureFormat_RGBA16Float);
+        // Sequential depth-Equal passes share this attachment, resolving each result before reuse.
+        msaaAuxColor_ = wgpuDeviceCreateTexture(device_, &msaaDesc);
+        msaaAuxColorView_ = view2d(msaaAuxColor_, WGPUTextureFormat_RGBA16Float);
     }
     WGPUTextureDescriptor viewportDesc = sceneDesc;
     viewportDesc.usage = WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopyDst;
@@ -2866,6 +2873,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             PipelineTarget target{WGPUTextureFormat_RGBA16Float, WGPUTextureFormat_Depth32Float,
                 item.side == 2 ? WGPUCullMode_None : item.side == 1 ? WGPUCullMode_Front : WGPUCullMode_Back};
             target.layout = velocity.pipelineLayout; target.depthWrite = false;
+            target.sampleCount = sampleCount_;
             lineTopology(target, item);
             target.depthCompare = WGPUCompareFunction_Equal; target.frontFace = item.frontFace();
             if (compilation) {
@@ -2903,6 +2911,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             PipelineTarget target{WGPUTextureFormat_RGBA16Float, WGPUTextureFormat_Depth32Float,
                 item.side == 2 ? WGPUCullMode_None : item.side == 1 ? WGPUCullMode_Front : WGPUCullMode_Back};
             target.layout = draw.program->pipelineLayout; target.depthWrite = false;
+            target.sampleCount = sampleCount_;
             target.colorWrite = item.colorWrite;
             target.depthCompare = WGPUCompareFunction_Equal; target.frontFace = item.frontFace();
             target.skinIndex = skinIndexFormat(item);
@@ -2960,6 +2969,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 PipelineTarget target{WGPUTextureFormat_RGBA16Float, WGPUTextureFormat_Depth32Float,
                     item.side == 2 ? WGPUCullMode_None : item.side == 1 ? WGPUCullMode_Front : WGPUCullMode_Back};
                 target.layout = draw.program->pipelineLayout; target.depthWrite = false;
+                target.sampleCount = sampleCount_;
                 target.colorWrite = item.colorWrite;
                 target.depthCompare = WGPUCompareFunction_Equal; target.frontFace = item.frontFace();
                 target.skinIndex = skinIndexFormat(item);
@@ -3530,11 +3540,15 @@ void Renderer::encodeFrame(FrameJob& job) {
     if (normalPass) {
         WGPURenderPassColorAttachment normals{};
         normals.view = normalView_; normals.loadOp = WGPULoadOp_Clear; normals.storeOp = WGPUStoreOp_Store;
+        if (sampleCount_ == 4) {
+            normals.view = msaaAuxColorView_;
+            normals.resolveTarget = normalView_;
+        }
 #if defined(MYSTRAL_WEBGPU_DAWN)
         normals.depthSlice = WGPU_DEPTH_SLICE_UNDEFINED;
 #endif
         WGPURenderPassDepthStencilAttachment normalDepth{};
-        normalDepth.view = depthView_; normalDepth.depthReadOnly = true;
+        normalDepth.view = sampleCount_ == 4 ? msaaDepthView_ : depthView_; normalDepth.depthReadOnly = true;
         WGPURenderPassDescriptor normalDesc{};
         normalDesc.colorAttachmentCount = 1; normalDesc.colorAttachments = &normals;
         normalDesc.depthStencilAttachment = &normalDepth;
@@ -3546,12 +3560,16 @@ void Renderer::encodeFrame(FrameJob& job) {
     if (job.materialPass) {
         WGPURenderPassColorAttachment material{};
         material.view = materialView_; material.loadOp = WGPULoadOp_Clear; material.storeOp = WGPUStoreOp_Store;
+        if (sampleCount_ == 4) {
+            material.view = msaaAuxColorView_;
+            material.resolveTarget = materialView_;
+        }
         material.clearValue = {0, 1, 0, 1};
 #if defined(MYSTRAL_WEBGPU_DAWN)
         material.depthSlice = WGPU_DEPTH_SLICE_UNDEFINED;
 #endif
         WGPURenderPassDepthStencilAttachment materialDepth{};
-        materialDepth.view = depthView_; materialDepth.depthReadOnly = true;
+        materialDepth.view = sampleCount_ == 4 ? msaaDepthView_ : depthView_; materialDepth.depthReadOnly = true;
         WGPURenderPassDescriptor materialDesc{};
         materialDesc.colorAttachmentCount = 1; materialDesc.colorAttachments = &material;
         materialDesc.depthStencilAttachment = &materialDepth;
@@ -3563,11 +3581,15 @@ void Renderer::encodeFrame(FrameJob& job) {
     if (traa_) {
         WGPURenderPassColorAttachment motion{};
         motion.view = traa_->velocityView(); motion.loadOp = WGPULoadOp_Clear; motion.storeOp = WGPUStoreOp_Store;
+        if (sampleCount_ == 4) {
+            motion.view = msaaAuxColorView_;
+            motion.resolveTarget = traa_->velocityView();
+        }
 #if defined(MYSTRAL_WEBGPU_DAWN)
         motion.depthSlice = WGPU_DEPTH_SLICE_UNDEFINED;
 #endif
         WGPURenderPassDepthStencilAttachment motionDepth{};
-        motionDepth.view = depthView_; motionDepth.depthReadOnly = true;
+        motionDepth.view = sampleCount_ == 4 ? msaaDepthView_ : depthView_; motionDepth.depthReadOnly = true;
         WGPURenderPassDescriptor motionDesc{};
         motionDesc.colorAttachmentCount = 1; motionDesc.colorAttachments = &motion;
         motionDesc.depthStencilAttachment = &motionDepth;

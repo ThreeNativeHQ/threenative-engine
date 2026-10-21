@@ -561,11 +561,13 @@ await mkdir(resolve(work, "node_modules/@acme/viz/dist/three"), { recursive: tru
 await writeFile(resolve(work, "node_modules/@acme/viz/dist/three/index.js"), "export const mark = () => {};");
 await writeFile(resolve(work, "viz.ts"), 'import { Scene } from "three"; import { mark } from "./node_modules/@acme/viz/dist/three/index.js"; globalThis.tn.scene = new Scene(); mark();');
 await bundleNativeEngine({ entry: resolve(work, "viz.ts"), outfile: resolve(work, "viz.js"), boot: false });
+for (const antialias of [false, true]) {
 // The post frame reads both names from one packed geometry target, with scalar outputs splatted.
-const materialReadback = await runComputeGame(executable, `
-import { Mesh, MeshStandardMaterial, OrthographicCamera, PlaneGeometry, Scene } from "three";
+for (const target of ["material", "normal"]) {
+const targetReadback = await runComputeGame(executable, `
+import { Mesh, MeshStandardMaterial, OrthographicCamera, PlaneGeometry, Scene, Vector2 } from "three";
 import { RenderPipeline, WebGPURenderer } from "three/webgpu";
-import { convertToTexture, metalness, mrt, output, pass, roughness, vec4 } from "three/tsl";
+import { convertToTexture, metalness, mrt, output, pass, roughness, normalView, vec4 } from "three/tsl";
 let started = false;
 const waiting = [];
 const frames = (count) => new Promise((done) => waiting.push({ count, done }));
@@ -580,26 +582,34 @@ globalThis.tn.onUpdate(() => {
   const scene = new Scene();
   const camera = new OrthographicCamera(-1, 1, 1, -1, 0.1, 10);
   camera.position.z = 1;
-  scene.add(new Mesh(new PlaneGeometry(2, 2), new MeshStandardMaterial({ metalness: 0.25, roughness: 0.75 })));
+  const plane = new Mesh(new PlaneGeometry(2, 2), new MeshStandardMaterial({ metalness: 0.25, roughness: 0.75 }));
+  // A slope distinguishes pixel-centre depth from MSAA sample 0; a flat plane hides the bug.
+  plane.rotation.y = 0.3; scene.add(plane);
   globalThis.tn.scene = scene; globalThis.tn.camera = camera;
-  const renderer = new WebGPURenderer({ canvas: { width: 8, height: 8 } });
+  const renderer = new WebGPURenderer({ canvas: { width: 8, height: 8 }, antialias: ${antialias} });
   const scenePass = pass(scene, camera);
-  scenePass.setMRT(mrt({ output, metalness, roughness }));
+  scenePass.setMRT(mrt({ output, normal: normalView, metalness, roughness }));
   const metal = scenePass.getTextureNode("metalness"), rough = scenePass.getTextureNode("roughness");
   const pipeline = new RenderPipeline(renderer);
   pipeline.outputColorTransform = false;
   // Read inside a post pass, as SSR does: an output-only graph has no pass to plan the targets for.
-  pipeline.outputNode = convertToTexture(vec4(metal.r, rough.g, metal.b, rough.a));
+  const normal = scenePass.getTextureNode("normal");
+  pipeline.outputNode = convertToTexture(${target === "material" ? "vec4(metal.r, rough.g, metal.b, rough.a)" : "vec4(normal.xyz, 1)"});
   pipeline.render();
-  frames(3).then(() => globalThis.tn.readFrame()).then((pixels) => {
-    const at = Math.floor(pixels.length / 8) * 4 + 4;
+  // Pipelines compile asynchronously: read until the post pass has drawn (alpha non-zero), at most 120 frames.
+  const drawn = (left) => frames(3).then(() => globalThis.tn.readFrame()).then((pixels) => pixels.some((v, i) => i % 4 === 3 && v !== 0) || left === 0 ? pixels : drawn(left - 1));
+  drawn(40).then((pixels) => {
+    // The canvas size is a request: read the centre of the buffer the player drew, which the tilted plane covers.
+    const size = renderer.getDrawingBufferSize(new Vector2());
+    const at = (Math.floor(size.y / 2) * size.x + Math.floor(size.x / 2)) * 4;
     const seen = Array.from(pixels.slice(at, at + 4));
-    const ok = seen.length === 4 && [64, 191, 64, 191].every((value, i) => Math.abs(value - seen[i]) <= 2);
-    globalThis.tn.log(ok ? "COMPUTE_OK" : "COMPUTE_BAD material MRT " + seen);
+    const ok = seen.length === 4 && ${JSON.stringify(target === "material" ? [64, 191, 64, 191] : [Math.round(Math.sin(0.3) * 255), 0, Math.round(Math.cos(0.3) * 255), 255])}.every((value, i) => Math.abs(value - seen[i]) <= 2);
+    globalThis.tn.log(ok ? "COMPUTE_OK" : "COMPUTE_BAD ${target} MRT (MSAA=${antialias}) " + seen);
   }).catch((error) => globalThis.tn.log("COMPUTE_ERROR " + error.message));
 });
 `);
-assert.equal(materialReadback.verdict, "COMPUTE_OK", materialReadback.output);
+assert.equal(targetReadback.verdict, "COMPUTE_OK", targetReadback.output);
+}
 
 // Reflect the red front-face centre (0,1,1) across y=0. The camera-to-image line
 // meets the floor at (0,0,2.25); its reflected ray hits (0,1,1), not a tuned screen pixel.
@@ -620,7 +630,7 @@ globalThis.tn.onUpdate(() => {
   if (started) return;
   started = true;
   const scene = new Scene();
-  const renderer = new WebGPURenderer(); renderer.toneMapping = NoToneMapping;
+  const renderer = new WebGPURenderer({ antialias: ${antialias} }); renderer.toneMapping = NoToneMapping;
   const size = renderer.getDrawingBufferSize(new Vector2());
   const camera = new PerspectiveCamera(60, size.x / size.y, 0.1, 50);
   camera.position.set(0,3,6); camera.lookAt(0,0.5,0);
@@ -673,6 +683,8 @@ globalThis.tn.onUpdate(() => {
 });
 `);
 assert.equal(ssrReadback.verdict, "COMPUTE_OK", ssrReadback.output);
+
+}
 
 // Perspective depth must stay a depth resource in both intermediate and output graph programs.
 for (const postPass of [true, false]) {
