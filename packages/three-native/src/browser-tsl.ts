@@ -164,6 +164,7 @@ const CONSTANTS = [
   "positionWorld",
   "normalViewGeometry",
   "cameraViewMatrix",
+  "modelWorldMatrix",
   "instanceIndex",
   "vertexIndex",
   "screenUV",
@@ -182,6 +183,7 @@ const CONSTANTS = [
 ] as const;
 /** Node methods the shared table answers, with the receiver passed apart. */
 const METHODS = [
+  "element",
   "compute",
   "add",
   "sub",
@@ -304,7 +306,8 @@ export function defineTsl(
   sync(frame?: { camera?: unknown; scene?: unknown }): void;
 } {
   const released = new FinalizationRegistry<number>((node) => runtime.release(node));
-  const prototype: Record<string, unknown> = {};
+  // three marks every node with `isNode`; framework code (Atmosphere.radiance) branches on it.
+  const prototype: Record<string, unknown> = { isNode: true };
   const wrap = (node: number): ITslNode => {
     const object = Object.create(prototype) as ITslNode;
     Object.defineProperty(object, TSL_NODE, { value: node, configurable: true });

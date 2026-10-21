@@ -541,6 +541,17 @@ uint32_t Program::textureDepth(std::string_view name, bool cube) {
     return static_cast<uint32_t>(textures_.size() - 1);
 }
 
+bool Program::textureNeedsSampler(uint32_t texture) const {
+    if (textureKinds_[texture] != TextureKind::Depth2d && textureKinds_[texture] != TextureKind::DepthCube) return true;
+    for (const auto& e : exprs_) {
+        if (e.op != Op::Sample && e.op != Op::SampleLevel) continue;
+        const auto sampled = e.op == Op::Sample && e.argc == 2 && e.type == Type::vec(4)
+            ? gatherTexture(e.immediate) : uint32_t(e.immediate);
+        if (sampled == texture) return true;
+    }
+    return false;
+}
+
 ExprId Program::sampleCompare(uint32_t texture, ExprId uv, ExprId reference, Where where) {
     if (uv == kInvalid || reference == kInvalid) return kInvalid;
     if (texture >= textures_.size() || (textureKinds_[texture] == TextureKind::Float2d || textureKinds_[texture] == TextureKind::Float3d || textureKinds_[texture] == TextureKind::FloatCube))

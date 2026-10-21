@@ -319,8 +319,9 @@ WgslModule WgslEmitter::emit(const Program& program, uint32_t group) {
                 : kind == Program::TextureKind::FloatCube ? ": texture_cube<f32>;\n"
                 : depth                                 ? ": texture_depth_2d;\n"
                                                         : ": texture_2d<f32>;\n");
-        out += "@group(" + std::to_string(group) + ") @binding(" + std::to_string(binding++) + ") var smp_" + name +
-               (depth ? ": sampler_comparison;\n" : ": sampler;\n");
+        if (program.textureNeedsSampler(i))
+            out += "@group(" + std::to_string(group) + ") @binding(" + std::to_string(binding++) + ") var smp_" + name +
+                   (depth ? ": sampler_comparison;\n" : ": sampler;\n");
     }
 
     const Stage stage = program.stage_;

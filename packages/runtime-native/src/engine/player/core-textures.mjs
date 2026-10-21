@@ -13,6 +13,14 @@ const NativeCanvasTexture = globalThis.CanvasTexture;
 const sources = new WeakMap();
 const bitmaps = new WeakMap();
 const nativeFlipY = Object.getOwnPropertyDescriptor(NativeTexture.prototype, "flipY").set;
+for (const Native of [NativeTexture, NativeDataTexture, NativeCanvasTexture, NativeVolumeTexture]) {
+  const clone = Native.prototype.clone;
+  Native.prototype.clone = function () {
+    const result = clone.call(this);
+    if (sources.has(this)) sources.set(result, sources.get(this));
+    return result;
+  };
+}
 
 /** The package entry a URL names: `tnpk:<path>` and `<package>#<path>` from `assets.resolve`, or the path. */
 export function logicalPath(url) {

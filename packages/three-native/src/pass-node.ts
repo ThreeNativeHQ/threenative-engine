@@ -48,6 +48,16 @@ interface IPassTsl {
   texture(source: unknown, uv: unknown): unknown;
   uv(): unknown;
   readonly normalView: unknown;
+  readonly cameraNear: IPassMath;
+  readonly cameraFar: IPassMath;
+}
+
+/** The node arithmetic getViewZNode composes. */
+interface IPassMath {
+  readonly x: IPassMath;
+  sub(value: unknown): IPassMath;
+  mul(value: unknown): IPassMath;
+  div(value: unknown): IPassMath;
 }
 
 interface IMRTSlot {
@@ -151,6 +161,7 @@ export function definePass(
     #target: IPassTarget | null = null;
     #offscreen: boolean;
     #disposed = false;
+    #viewZ = new Map<string, unknown>();
 
     constructor(scope: unknown, scene: unknown, camera: unknown) {
       this.#scene = scene;
@@ -256,6 +267,18 @@ export function definePass(
       throw new Error(
         `TN_NATIVE_PASS_TEXTURE_UNSUPPORTED: the native scene pass has no '${name}' target`,
       );
+    }
+
+    /** three's `perspectiveDepthToViewZ(depth, cameraNear, cameraFar)` of a depth target, once per name. */
+    getViewZNode(name = "depth"): unknown {
+      let viewZ = this.#viewZ.get(name);
+      if (viewZ === undefined) {
+        const depth = (this.getTextureNode(name) as IPassMath).x;
+        const { cameraNear: near, cameraFar: far } = tsl;
+        viewZ = near.mul(far).div(far.sub(near).mul(depth).sub(far));
+        this.#viewZ.set(name, viewZ);
+      }
+      return viewZ;
     }
 
     /** Releases an offscreen pass's target and stops drawing it. The frame pass owns nothing to release. */

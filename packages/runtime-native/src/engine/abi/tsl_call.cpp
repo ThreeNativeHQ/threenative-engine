@@ -164,6 +164,20 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
         throw std::runtime_error("struct:get: unknown member " + text(args[0]));
     }
 
+    if (method && name == "element") {
+        arity(1);
+        const auto matrix = lhs();
+        if (matrix->type != Type::mat(4, 4)) throw std::runtime_error("element needs a mat4 node");
+        if (args[0].kind == TslArg::Kind::Number &&
+            (number(args[0]) < 0 || number(args[0]) > 3 || number(args[0]) != std::floor(number(args[0]))))
+            throw std::runtime_error("mat4 element index must be an integer in [0, 3]");
+        const auto index = g::uint_(arg(0));
+        const auto lane = [&](uint32_t column) {
+            return g::select(g::equal(index, g::uint_(column)), g::float_(1), g::float_(0));
+        };
+        return g::mul(matrix, g::vec4({lane(0), lane(1), lane(2), lane(3)}));
+    }
+
     // PRD-540 (Wasm wrappers): the calls a back end without native wrappers makes by name.
     if (!method && name.rfind("constant:", 0) == 0) {
         arity(0);
@@ -1053,6 +1067,7 @@ std::vector<std::pair<std::string, g::Node>> tslConstants() {
             {"positionWorld", g::varying("positionWorld", Type::vec(3))},
             {"normalViewGeometry", g::varying("normalViewGeometry", Type::vec(3))},
             {"cameraViewMatrix", g::uniform("viewMatrix", Type::mat(4, 4))},
+            {"modelWorldMatrix", g::uniform("modelMatrix", Type::mat(4, 4))},
             {"instanceIndex", g::instanceIndex()},
             {"vertexIndex", g::builtin("vertexIndex")},
             {"screenUV", g::screenUV()},

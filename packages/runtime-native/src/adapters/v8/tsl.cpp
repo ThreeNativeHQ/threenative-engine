@@ -272,10 +272,8 @@ void Tsl::call(const Call& call, const v8::FunctionCallbackInfo<v8::Value>& info
         info.GetReturnValue().Set(info.This());
         return;
     }
-    if (name == "element") {
+    if (name == "element" && !self->node) {
         arity(1);
-        if (self->node)
-            throw std::runtime_error("element requires a storage buffer");
         if (self->attribute.kind == abi::TslArg::Kind::Object) {
             const auto element = abi::tslCall("storage:object", nullptr,
                 {self->attribute, abi::TslArg::of(self->elementType), abi::TslArg::of(self->storage.name),
@@ -508,6 +506,8 @@ void Tsl::call(const Call& call, const v8::FunctionCallbackInfo<v8::Value>& info
 void Tsl::install(v8::Local<v8::Context> context, v8::Local<v8::Object> target) {
     const auto node = v8::ObjectTemplate::New(isolate_);
     node->SetInternalFieldCount(2);
+    // three marks every node with `isNode`; framework code (Atmosphere.radiance) branches on it.
+    node->Set(v8::String::NewFromUtf8Literal(isolate_, "isNode"), v8::True(isolate_), v8::ReadOnly);
     for (const char* name : {"add",
                              "sub",
                              "mul",

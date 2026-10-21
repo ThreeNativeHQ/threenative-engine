@@ -486,7 +486,17 @@ void textureVector2(ClassBinding& b, const char* field, Vector2 Owner::*member) 
     });
 }
 
-void registerTextureFields(ClassBinding& b) {
+void registerTextureFields(ClassBinding& b, const char* cls) {
+    b.methods["clone"] = [cls](void* self, const Args&, Store& store) {
+        const auto* texture = as<Texture>(self);
+        std::shared_ptr<Texture> clone;
+        if (const auto* data = dynamic_cast<const DataTexture*>(texture))
+            clone = std::make_shared<DataTexture>(*data);
+        else
+            clone = std::make_shared<Texture>(*texture);
+        clone->needsUpdate();
+        return store.share(cls, std::move(clone));
+    };
     b.getters["image.width"] = [](void* self) { return Value::of(double(as<Texture>(self)->width)); };
     b.getters["image.height"] = [](void* self) { return Value::of(double(as<Texture>(self)->height)); };
     b.getters["name"] = [](void* self) { return string(as<Texture>(self)->name); };
@@ -529,10 +539,11 @@ void registerTextureFields(ClassBinding& b) {
     textureNumber<Texture>(b, "rotation", &Texture::rotation);
     // three's `texture.source`: the texture's own image record, whose version moves with needsUpdate.
     fixedMember(b, "source", [](void* self, const Args&, Store& store) {
-        return store.adoptAlias("Source", self, self);
+        return store.share("Source", as<Texture>(self)->imageSource);
     });
     textureVector2<Texture>(b, "repeat", &Texture::repeat);
     textureVector2<Texture>(b, "offset", &Texture::offset);
+    textureVector2<Texture>(b, "center", &Texture::center);
     b.getters["colorSpace"] = [](void* self) { return string(as<Texture>(self)->isSRGB() ? "srgb" : ""); };
     b.setters["colorSpace"] = [](void* self, const Value& v) {
         if (v.kind != Value::Kind::String) throw Unsupported{"colorSpace must be a string"};
@@ -548,7 +559,7 @@ void checkHalfFloatBits(const std::vector<double>& values) {
             throw Unsupported{"HalfFloatType DataTexture data must be a Uint16Array of binary16 bits"};
 }
 
-void registerTextureClass(ClassBinding& b, bool data) {
+void registerTextureClass(ClassBinding& b, bool data, const char* cls) {
     b.ctor = [data](const Args& a, Store&) -> std::shared_ptr<void> {
         if (!data) return std::static_pointer_cast<void>(std::make_shared<Texture>());
         auto texture = std::make_shared<DataTexture>();
@@ -572,7 +583,7 @@ void registerTextureClass(ClassBinding& b, bool data) {
         }
         return std::static_pointer_cast<void>(texture);
     };
-    registerTextureFields(b);
+    registerTextureFields(b, cls);
     if (!data) return;
     // three's `texture.image.data = array`: new texels of the same size and type, uploaded on the
     // next needsUpdate. The V8 and browser back ends copy an array when it crosses, so a game that
@@ -659,16 +670,16 @@ void registerMaterialBindings(Registry& classes) {
 
 void registerTextureBindings(Registry& classes) {
     ClassBinding& source = classes["Source"];
-    source.getters["version"] = [](void* self) { return Value::of(double(as<Texture>(self)->version())); };
+    source.getters["version"] = [](void* self) { return Value::of(double(as<TextureSource>(self)->version)); };
     source.setters["needsUpdate"] = [](void* self, const Value& v) {
-        if (flag(v)) as<Texture>(self)->needsUpdate();
+        if (flag(v)) ++as<TextureSource>(self)->version;
     };
-    registerTextureClass(classes["Texture"], false);
-    registerTextureClass(classes["DataTexture"], true);
+    registerTextureClass(classes["Texture"], false, "Texture");
+    registerTextureClass(classes["DataTexture"], true, "DataTexture");
     classes["DataTexture"].ctorTakesBytes = true;
     classes["DataTexture"].settersTakeBytes = {"image.data"};
     auto& storage = classes["StorageTexture"];
-    registerTextureFields(storage);
+    registerTextureFields(storage, "StorageTexture");
     storage.ctor = [](const Args& a, Store&) -> std::shared_ptr<void> {
         const double width = optional(a, 0, 1), height = optional(a, 1, 1);
         if (a.size() > 2 || !(width >= 1 && width <= 16384 && height >= 1 && height <= 16384) ||
@@ -705,7 +716,7 @@ void registerTextureBindings(Registry& classes) {
         return Value{};
     };
     auto& depth = classes["DepthTexture"];
-    registerTextureFields(depth);
+    registerTextureFields(depth, "DepthTexture");
     depth.ctor = [](const Args& a, Store&) -> std::shared_ptr<void> {
         const double width = optional(a, 0, 1), height = optional(a, 1, 1), type = optional(a, 2, 1014);
         if (a.size() > 3 || width < 1 || height < 1 || width > 16384 || height > 16384 ||
@@ -773,7 +784,7 @@ void registerTextureBindings(Registry& classes) {
     // (flipped rows, linear filters, a generated mip chain). Each back end reads the canvas
     // (getImageData) and passes (pixels, width, height, mapping, wrapS, wrapT, magFilter, minFilter).
     ClassBinding& canvas = classes["CanvasTexture"];
-    registerTextureClass(canvas, true);
+    registerTextureClass(canvas, true, "CanvasTexture");
     canvas.ctor = [](const Args& a, Store&) -> std::shared_ptr<void> {
         // null pixels: a host that copies the canvas itself on the GPU (the web host) gives it next.
         const bool hosted = a.size() >= 3 && (a[0].kind == Value::Kind::Null || a[0].kind == Value::Kind::Undefined);
@@ -803,7 +814,7 @@ void registerTextureBindings(Registry& classes) {
     // three's Data3DTexture(data, width, height, depth): RGBA texels, `depth` slices of width * height,
     // with DataTexture's defaults (nearest filters, no flip, no mipmaps) and its own wrapR.
     ClassBinding& volume = classes["Data3DTexture"];
-    registerTextureClass(volume, true);
+    registerTextureClass(volume, true, "Data3DTexture");
     volume.ctor = [](const Args& a, Store&) -> std::shared_ptr<void> {
         auto texture = std::make_shared<DataTexture>();
         texture->volume = true;

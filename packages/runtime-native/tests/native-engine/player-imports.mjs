@@ -25,7 +25,7 @@ const constants = ["ACESFilmicToneMapping", "AgXToneMapping", "NeutralToneMappin
   "NoBlending", "NormalBlending", "AdditiveBlending", "PCFShadowMap"];
 const names = ["PerspectiveCamera", "Camera", "Object3D", "Mesh", "PlaneGeometry", "MeshStandardMaterial",
   "SkinnedMesh", "CylinderGeometry", "BufferGeometry", "Float32BufferAttribute", "BufferAttribute",
-  "DataTexture", "Texture", "Color", "PropertyBinding", "getConsoleFunction", "setConsoleFunction", "MathUtils", "Scene", "Raycaster", "Vector3", "Euler", "LOD", "MeshBasicMaterial", "DirectionalLight", "OrthographicCamera", "LatheGeometry", "Vector2", "CatmullRomCurve3", "TubeGeometry", "AnimationClip",
+  "CanvasTexture", "DataTexture", "Texture", "Color", "PropertyBinding", "getConsoleFunction", "setConsoleFunction", "MathUtils", "Scene", "Raycaster", "Vector3", "Euler", "LOD", "MeshBasicMaterial", "DirectionalLight", "OrthographicCamera", "LatheGeometry", "Vector2", "CatmullRomCurve3", "TubeGeometry", "AnimationClip",
   "QuaternionKeyframeTrack", "VectorKeyframeTrack", "NumberKeyframeTrack", "AudioListener", "PositionalAudio", "Audio", "Shape", "Path", "ShapeGeometry",
   "ExtrudeGeometry", "SpriteMaterial", "Line", "LineSegments", "LineBasicMaterial", ...constants];
 const panel = (T) => {
@@ -173,6 +173,23 @@ check(shadowRenderer.shadowMap.enabled && shadowRenderer.shadowMap.type === THRE
 // The settings reach the player with the renderer's others when it draws (tn.setRendererState).
 shadowRenderer.render(new THREE.Scene(), new THREE.PerspectiveCamera());
 check(shadowRenderer.getMaxAnisotropy() === 16, "WebGPU's maximum anisotropy");
+for (const texture of [new THREE.Texture(), new THREE.DataTexture(new Uint8Array([1, 2, 3, 255]), 1, 1), new THREE.CanvasTexture({
+  width: 1, height: 1, getContext: () => ({ getImageData: () => ({ data: new Uint8Array([1, 2, 3, 255]) }) }),
+})]) {
+  texture.name = "shared-image"; texture.repeat.set(2, 3); texture.offset.set(0.1, 0.2);
+  texture.center.set(0.3, 0.4); texture.rotation = 0.5; texture.wrapT = THREE.RepeatWrapping;
+  const clone = texture.clone();
+  check(clone !== texture && clone instanceof texture.constructor && clone.source === texture.source,
+    "texture clone preserves its class and shares its source");
+  check(clone.name === texture.name && clone.repeat.x === 2 && clone.offset.y === 0.2 &&
+    clone.center.x === 0.3 && clone.rotation === 0.5 && clone.wrapT === texture.wrapT &&
+    clone.minFilter === texture.minFilter && clone.flipY === texture.flipY && clone.type === texture.type,
+    "texture clone copies sampler and transform fields");
+  if (texture.image?.data) check(clone.image === texture.image, "texture clone shares its JS image");
+  clone.repeat.set(7, 8); clone.offset.set(0.7, 0.8); clone.center.set(0, 0); clone.wrapS = THREE.RepeatWrapping;
+  check(texture.repeat.x === 2 && texture.offset.y === 0.2 && texture.center.x === 0.3 &&
+    texture.wrapS === THREE.ClampToEdgeWrapping, "texture clone edits are independent");
+}
 paramTexture.anisotropy = 8;
 check(paramTexture.anisotropy === 8 && refuses(() => { paramTexture.anisotropy = 0; }, /anisotropy must be/), "texture anisotropy");
 const sided = new THREE.MeshBasicMaterial(); sided.side = THREE.DoubleSide;
@@ -583,6 +600,144 @@ globalThis.tn.onUpdate(() => {
 });
 `);
 assert.equal(materialReadback.verdict, "COMPUTE_OK", materialReadback.output);
+
+// Perspective depth must stay a depth resource in both intermediate and output graph programs.
+for (const postPass of [true, false]) {
+  const depthReadback = await runComputeGame(executable, `
+import { Mesh, MeshBasicMaterial, NoToneMapping, PerspectiveCamera, PlaneGeometry, Scene } from "three";
+import { RenderPipeline, WebGPURenderer } from "three/webgpu";
+import { convertToTexture, pass, vec4 } from "three/tsl";
+let started = false, remaining = 3;
+globalThis.tn.onUpdate(() => {
+  if (started) return;
+  started = true;
+  const scene = new Scene();
+  const camera = new PerspectiveCamera(60, 1280 / 720, 0.1, 20);
+  camera.position.z = 1;
+  const plane = new Mesh(new PlaneGeometry(20, 20), new MeshBasicMaterial());
+  plane.position.z = -3; scene.add(plane);
+  globalThis.tn.scene = scene; globalThis.tn.camera = camera;
+  const renderer = new WebGPURenderer(); renderer.toneMapping = NoToneMapping;
+  const scenePass = pass(scene, camera);
+  const distance = scenePass.getViewZNode().negate().div(10);
+  const linearDepth = vec4(distance, distance, distance, 1);
+  const pipeline = new RenderPipeline(renderer);
+  pipeline.outputNode = ${postPass ? "convertToTexture(linearDepth)" : "linearDepth"};
+  pipeline.render();
+  globalThis.tn.onFrame(() => {
+    if (--remaining !== 0) return;
+    globalThis.tn.readFrame().then((pixels) => {
+      const at = Math.floor(pixels.length / 8) * 4;
+      const seen = Array.from(pixels.slice(at, at + 4));
+      // Linear distance 4 / 10 is 170 in sRGB-encoded RGBA8.
+      const ok = seen.length === 4 && [170, 170, 170, 255].every((v, i) => Math.abs(v - seen[i]) <= 3);
+      globalThis.tn.log(ok ? "COMPUTE_OK" : "COMPUTE_BAD scene depth (post=${postPass}) " + seen);
+    }).catch((error) => globalThis.tn.log("COMPUTE_ERROR " + error.message));
+  });
+});
+`);
+  assert.equal(depthReadback.verdict, "COMPUTE_OK", depthReadback.output);
+}
+
+const worldMatrixReadback = await runComputeGame(executable, `
+import { Group, Mesh, NoToneMapping, OrthographicCamera, PlaneGeometry, Scene, Vector2 } from "three";
+import { MeshBasicNodeMaterial, WebGPURenderer } from "three/webgpu";
+import { modelWorldMatrix, positionLocal, vec3, vec4 } from "three/tsl";
+let started = false;
+let remaining = 0;
+globalThis.tn.onUpdate(() => {
+  if (started) return;
+  started = true;
+  const scene = new Scene();
+  const camera = new OrthographicCamera(-2, 2, 2, -2, 0.1, 10);
+  camera.position.z = 2;
+  const material = new MeshBasicNodeMaterial();
+  material.positionNode = positionLocal.add(vec3(modelWorldMatrix.element(3).x, 0, 0));
+  material.colorNode = vec3(modelWorldMatrix.mul(vec4(0, 0, 0, 1)).x.add(0.5), modelWorldMatrix.element(3).y, 0);
+  for (const direction of [-1, 1]) {
+    const parent = new Group(); parent.position.set(direction * 0.25, 0.25, 0);
+    const mesh = new Mesh(new PlaneGeometry(0.5, 0.5), material);
+    mesh.position.set(direction * 0.25, 0.25, 0);
+    parent.add(mesh); scene.add(parent);
+  }
+  globalThis.tn.scene = scene; globalThis.tn.camera = camera;
+  const renderer = new WebGPURenderer(); renderer.toneMapping = NoToneMapping;
+  remaining = 3;
+  globalThis.tn.onFrame(() => {
+    if (--remaining !== 0) return;
+    globalThis.tn.readFrame().then((pixels) => {
+      const size = renderer.getDrawingBufferSize(new Vector2());
+      const pixel = (x, y) => Array.from(pixels.slice((Math.floor(y * size.y) * size.x + Math.floor(x * size.x)) * 4,
+        (Math.floor(y * size.y) * size.x + Math.floor(x * size.x)) * 4 + 4));
+      const left = pixel(0.25, 0.375), right = pixel(0.75, 0.375), middle = pixel(0.5, 0.375);
+      const close = (seen, expected) => seen.length === 4 && expected.every((v, i) => Math.abs(seen[i] - v) <= 3);
+      const ok = close(left, [0, 188, 0, 255]) && close(right, [255, 188, 0, 255]) && close(middle, [0, 0, 0, 255]);
+      globalThis.tn.log(ok ? "COMPUTE_OK" : "COMPUTE_BAD modelWorldMatrix " + JSON.stringify({ left, right, middle, size }));
+    }).catch((error) => globalThis.tn.log("COMPUTE_ERROR " + error.message));
+  });
+});
+`);
+assert.equal(worldMatrixReadback.verdict, "COMPUTE_OK", worldMatrixReadback.output);
+
+// A real inline GLB, with a black base so only the scaled red emissive can contribute.
+function emissiveGlb(strength, required = "KHR_materials_emissive_strength") {
+  const positions = Buffer.from(new Float32Array([-1, -1, 0, 1, -1, 0, 0, 1, 0]).buffer);
+  const json = Buffer.from(JSON.stringify({ asset: { version: "2.0" }, scene: 0,
+    scenes: [{ nodes: [0] }], nodes: [{ mesh: 0 }],
+    meshes: [{ primitives: [{ attributes: { POSITION: 0 }, material: 0 }] }],
+    buffers: [{ byteLength: positions.length }], bufferViews: [{ buffer: 0, byteLength: positions.length }],
+    accessors: [{ bufferView: 0, componentType: 5126, count: 3, type: "VEC3", min: [-1, -1, 0], max: [1, 1, 0] }],
+    extensionsUsed: [required], extensionsRequired: [required],
+    materials: [{ pbrMetallicRoughness: { baseColorFactor: [0, 0, 0, 1] }, emissiveFactor: [1, 0, 0],
+      extensions: { KHR_materials_emissive_strength: strength === undefined ? {} : { emissiveStrength: strength } } }],
+  }));
+  const padded = Math.ceil(json.length / 4) * 4;
+  const glb = Buffer.alloc(28 + padded + positions.length, 0x20);
+  glb.writeUInt32LE(0x46546c67, 0); glb.writeUInt32LE(2, 4); glb.writeUInt32LE(glb.length, 8);
+  glb.writeUInt32LE(padded, 12); glb.writeUInt32LE(0x4e4f534a, 16); json.copy(glb, 20);
+  glb.writeUInt32LE(positions.length, 20 + padded); glb.writeUInt32LE(0x004e4942, 24 + padded);
+  positions.copy(glb, 28 + padded);
+  return glb;
+}
+const emissivePackage = resolve(work, "emissive.tnpk");
+await writeFile(emissivePackage, writeNativePackage([
+  { name: "emissive.glb", kind: 6, data: emissiveGlb(2), uploadSize: 0 },
+  { name: "default.glb", kind: 6, data: emissiveGlb(undefined), uploadSize: 0 },
+  { name: "unknown.glb", kind: 6, data: emissiveGlb(2, "UNKNOWN_required_extension"), uploadSize: 0 },
+]));
+await writeFile(entry, `
+import { Scene, PerspectiveCamera } from "three";
+try {
+  for (const [name, expected] of [["emissive.glb", 2], ["default.glb", 1]]) {
+    const model = globalThis.tn.loadAsset("model", name).value;
+    let checked = 0;
+    model.scene.traverse((object) => {
+      if (!object.isMesh) return;
+      checked++;
+      const material = object.material;
+      if (material.emissiveIntensity !== expected || material.emissive.r !== 1 || material.emissive.g !== 0 || material.emissive.b !== 0)
+        throw Error("emissive strength not loaded: " + material.emissiveIntensity);
+    });
+    if (checked !== 1) throw Error("emissive fixture has no mesh");
+  }
+  let refused = "";
+  try { globalThis.tn.loadAsset("model", "unknown.glb"); } catch (error) { refused = error.message; }
+  if (!refused.includes("TN_NATIVE_GLTF_EXTENSION_UNSUPPORTED UNKNOWN_required_extension"))
+    throw Error("unknown required extension did not fail by name: " + refused);
+  globalThis.tn.log("EMISSIVE_STRENGTH_OK");
+} catch (error) {
+  if (${process.argv.includes("--imports-only")} && /TN_NATIVE_GLTF_UNAVAILABLE/.test(error.message))
+    globalThis.tn.log("EMISSIVE_STRENGTH_UNAVAILABLE: built without cgltf");
+  else throw error;
+}
+globalThis.tn.scene = new Scene(); globalThis.tn.camera = new PerspectiveCamera(); globalThis.tn.onUpdate(() => {});
+`);
+await bundleNativeEngine({ entry, outfile, boot: false });
+const emissiveRun = spawnSync(resolve(executable), ["--check-game", outfile], { encoding: "utf8",
+  env: { ...process.env, TN_NATIVE_ASSET_PACKAGE: emissivePackage } });
+assert.equal(emissiveRun.status, 0, `${emissiveRun.stdout}\n${emissiveRun.stderr}`);
+assert.match(emissiveRun.stdout, /EMISSIVE_STRENGTH_(OK|UNAVAILABLE)/);
+console.log(emissiveRun.stdout.match(/EMISSIVE_STRENGTH_[^\n]*/)[0]);
 
 if (process.argv.includes("--imports-only")) {
   console.log("PASS native imports, identity, picking, clone, TSL and audio");

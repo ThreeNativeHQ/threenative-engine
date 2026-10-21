@@ -68,7 +68,8 @@ const std::set<std::string> kThreeExtensions = {
     "KHR_materials_emissive_strength", "EXT_materials_bump", "EXT_texture_webp", "EXT_texture_avif",
     "EXT_meshopt_compression", "KHR_meshopt_compression", "EXT_mesh_gpu_instancing"};
 const std::set<std::string> kSupported = {"KHR_mesh_quantization", "KHR_lights_punctual", "KHR_materials_unlit",
-                                          "KHR_materials_ior", "KHR_materials_specular", "KHR_materials_clearcoat"};
+                                          "KHR_materials_ior", "KHR_materials_specular", "KHR_materials_clearcoat",
+                                          "KHR_materials_emissive_strength"};
 
 class Builder {
   public:
@@ -642,6 +643,8 @@ class Builder {
             }
             if (const Value* emissive = member(def, "emissiveFactor"))
                 material->emissive = Color(number(item(emissive, 0), 0), number(item(emissive, 1), 0), number(item(emissive, 2), 0));
+            if (const Value* strength = member(extensions, "KHR_materials_emissive_strength"))
+                material->emissiveIntensity = number(member(strength, "emissiveStrength"), 1);
             assignTexture(*material, "emissiveMap", member(def, "emissiveTexture"));
             // GLTFMaterialsIorExtension: ior, 1.5 when absent, and 0 read as 1000 (three #26167).
             if (ior) {

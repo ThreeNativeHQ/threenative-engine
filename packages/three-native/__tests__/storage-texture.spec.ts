@@ -73,12 +73,17 @@ describe("native storage textures", () => {
       height?: number,
     ) => {
       isStorageTexture: boolean;
+      image: { width: number; height: number };
       setSize(width: number, height: number): void;
       dispose(): void;
     };
     const texture = new Texture(4, 4);
     expect(texture).toBeInstanceOf(classes.Texture as never);
     expect(texture.isStorageTexture).toBe(true);
+    expect(texture.image.width).toBe(0);
+    expect(texture.image.height).toBe(0);
+    expect(runtime.get).toHaveBeenCalledWith(expect.anything(), "image.width");
+    expect(runtime.get).toHaveBeenCalledWith(expect.anything(), "image.height");
     texture.setSize(8, 2);
     texture.dispose();
     expect(runtime.construct).toHaveBeenCalledWith("StorageTexture", [4, 4]);

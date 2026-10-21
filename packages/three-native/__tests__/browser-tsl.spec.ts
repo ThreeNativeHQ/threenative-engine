@@ -30,6 +30,26 @@ function setup() {
   return { runtime, tsl: defineTsl(runtime).exports as unknown as ITslExports };
 }
 
+describe("Wasm modelWorldMatrix", () => {
+  it("uses one engine-provided mat4 node for multiplication and column selection", () => {
+    const { tsl, runtime } = setup();
+    const exports = tsl as unknown as {
+      modelWorldMatrix: INode & { element(index: number): INode };
+      vec4(...args: number[]): INode;
+    };
+    const matrix = exports.modelWorldMatrix;
+    expect(exports.modelWorldMatrix).toBe(matrix);
+    matrix.mul(exports.vec4(0, 0, 0, 1));
+    matrix.element(3);
+    expect(runtime.call).toHaveBeenCalledWith("constant:modelWorldMatrix", null, []);
+    expect(runtime.call).toHaveBeenCalledWith("mul", matrix[TSL_NODE], expect.any(Array));
+    expect(runtime.call).toHaveBeenCalledWith("element", matrix[TSL_NODE], expect.any(Array));
+    expect(
+      vi.mocked(runtime.call).mock.calls.filter(([name]) => name === "constant:modelWorldMatrix"),
+    ).toHaveLength(1);
+  });
+});
+
 describe("Wasm TSL Fn parameters", () => {
   it("defers the blue-noise style destructuring callback until called", () => {
     const { tsl, runtime } = setup();

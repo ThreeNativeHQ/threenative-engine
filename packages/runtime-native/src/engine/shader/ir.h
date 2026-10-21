@@ -245,6 +245,7 @@ private:
     std::vector<std::string> textures_;
     enum class TextureKind : uint8_t { Float2d, Depth2d, DepthCube, Float3d, FloatCube };
     std::vector<TextureKind> textureKinds_; // per texture
+    bool textureNeedsSampler(uint32_t texture) const;
     struct OutputSlot {
         uint64_t name;
         Type type;

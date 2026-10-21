@@ -882,7 +882,7 @@ void Renderer::setOutput(const OutputState& output) {
             e.buffer.type = WGPUBufferBindingType_Uniform;
             e.buffer.minBindingSize = outputFragment_.uniformBlockSize;
         } else if (b.kind == shader::BindingKind::Texture) {
-            e.texture.sampleType = WGPUTextureSampleType_Float;
+            e.texture.sampleType = b.depth ? WGPUTextureSampleType_Depth : WGPUTextureSampleType_Float;
             e.texture.viewDimension = b.volume ? WGPUTextureViewDimension_3D : WGPUTextureViewDimension_2D;
         } else {
             e.sampler.type = WGPUSamplerBindingType_Filtering;
@@ -1183,6 +1183,8 @@ WGPUBindGroup Renderer::bindGroup(WGPUBindGroupLayout layout, const shader::Stag
             const auto& atlas = probeTextures_.at(b.name.substr(b.kind == shader::BindingKind::Texture ? 2 : 4));
             if (b.kind == shader::BindingKind::Texture) e.textureView = atlas.view;
             else e.sampler = atlas.sampler;
+        } else if (b.kind == shader::BindingKind::Texture && b.name == "t_depth") {
+            e.textureView = depthView_;
         } else if (b.depth) {
             // `t_shadow{i}` / `t_shadowCube{i}` and their samplers: direct light i's shadow map (2D, or a
             // point light's cube) and the comparison sampler.
@@ -2661,6 +2663,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         const shader::StandardMaterial& m = *item.material;
         put(frameUniforms_, f, fs[kDiffuse], std::array<double, 4>{m.color[0], m.color[1], m.color[2], m.opacity});
         put(frameUniforms_, f, fs[kViewMatrix], view);  // normalWorld is derived in the fragment, as three does
+        put(frameUniforms_, f, fs[kModelMatrix], item.matrixWorld);
         // TSL's camera accessors, read by node graphs in either stage.
         const std::array<double, 3> cameraPosition{camera.matrixWorld[12], camera.matrixWorld[13], camera.matrixWorld[14]};
         // three's modelNormalMatrix (transformNormalToView), only for a program that reads it.

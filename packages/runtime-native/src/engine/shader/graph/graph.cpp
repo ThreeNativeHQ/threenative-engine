@@ -240,12 +240,14 @@ ExprId Lowerer::emit(Node node) {
         case Kind::RenderTexture:
             return program_.sample(program_.texture2d(d.name), expression(d.args[1]));
         case Kind::TextureSize:
-            return program_.textureSize(program_.texture2d(d.name), d.args.empty() ? program_.constant(int32_t(0)) : expression(d.args[0]));
+            return program_.textureSize(d.name == "depth" ? program_.textureDepth(d.name) : program_.texture2d(d.name), d.args.empty() ? program_.constant(int32_t(0)) : expression(d.args[0]));
         case Kind::StorageTexture:
             if (d.args.empty()) throw std::runtime_error("storageTexture requires coordinates when read");
             return program_.textureLoad(program_.texture2d(d.name), convert(expression(d.args[0]), Type::vec(2, Type::Scalar::I32)), program_.constant(int32_t(0)));
-        case Kind::TextureLoad:
-            return program_.textureLoad(d.bits == 1 ? program_.textureDepth(d.name) : program_.texture2d(d.name), expression(d.args[0]), d.args.size() < 2 ? program_.constant(int32_t(0)) : expression(d.args[1]));
+        case Kind::TextureLoad: {
+            const auto loaded = program_.textureLoad(d.bits == 1 || d.name == "depth" ? program_.textureDepth(d.name) : program_.texture2d(d.name), expression(d.args[0]), d.args.size() < 2 ? program_.constant(int32_t(0)) : expression(d.args[1]));
+            return d.name == "depth" ? convert(loaded, d.type == Type{} ? Type::vec(4) : d.type) : loaded;
+        }
         case Kind::Constant:
             if (d.type.scalar == Type::Scalar::F32)
                 return program_.constant(std::bit_cast<float>(static_cast<uint32_t>(d.bits)));
@@ -400,12 +402,16 @@ ExprId Lowerer::emit(Node node) {
         case Kind::Texture: {
             const ExprId coordinate = expression(d.args[0]);
             if (coordinate == kInvalid) return kInvalid;
-            if (d.bits == 1) {
+            // A depth texture, or the scene pass's depth resource, reads unfiltered at the clamped texel.
+            if (d.bits == 1 || d.name == "depth") {
                 const auto texture = program_.textureDepth(d.name);
                 const auto size = program_.textureSize(texture, program_.constant(int32_t(0)));
-                const auto texel = program_.construct(Type::vec(2, Type::Scalar::I32), {
-                    program_.mul(coordinate, program_.construct(Type::vec(2), {size}))});
-                return program_.textureLoad(texture, texel, program_.constant(int32_t(0)));
+                const auto extent = program_.construct(Type::vec(2), {size});
+                const auto clamped = program_.call("clamp", {program_.mul(coordinate, extent), program_.constant(0.0f),
+                    program_.sub(extent, program_.construct(Type::vec(2), {program_.constant(1.0f)}))});
+                const auto texel = program_.construct(Type::vec(2, Type::Scalar::I32), {clamped});
+                const auto loaded = program_.textureLoad(texture, texel, program_.constant(int32_t(0)));
+                return d.name == "depth" ? convert(loaded, d.type == Type{} ? Type::vec(4) : d.type) : loaded;
             }
             // TextureNode.level(n): an explicit mip, which a vertex stage needs.
             if (d.args.size() == 2) {

@@ -21188,6 +21188,15 @@
           "status": {
             "kind": "supported"
           }
+        },
+        {
+          "name": "center",
+          "type": "Vector2",
+          "mutable": false,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
         }
       ],
       "methods": [
@@ -21198,6 +21207,19 @@
             {
               "parameters": [],
               "returns": "void"
+            }
+          ],
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "clone",
+          "async": false,
+          "overloads": [
+            {
+              "parameters": [],
+              "returns": "this"
             }
           ],
           "status": {
@@ -29203,12 +29225,6 @@
       ],
       "fields": [
         {
-          "name": "image",
-          "type": "{ width: number; height: number }",
-          "mutable": true,
-          "lifetime": "owned"
-        },
-        {
           "name": "isStorageTexture",
           "type": "true",
           "mutable": false,
@@ -29295,6 +29311,14 @@
         }
       ],
       "returns": "unknown"
+    },
+    {
+      "name": "modelWorldMatrix",
+      "kind": "function",
+      "source": "three/tsl",
+      "status": {
+        "kind": "supported"
+      }
     }
   ]
 }
