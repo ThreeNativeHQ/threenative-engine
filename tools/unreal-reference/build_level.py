@@ -303,6 +303,12 @@ def add_job(queue, layer, sun, pose, kind):
         config.find_or_add_setting_by_class(unreal.MoviePipelineImageSequenceOutput_EXR)
     else:
         config.find_or_add_setting_by_class(unreal.MoviePipelineImageSequenceOutput_PNG)
+    # A Movie Render Queue job raises Lumen to cinematic quality unless this setting says otherwise
+    # (ScreenProbeGather DownsampleFactor 16 to 8, TracingOctahedronResolution 8 to 16). A player gets
+    # the real-time Epic values, so the capture keeps them; TN_UE_CINEMATIC=1 names the cinematic override.
+    # Setting: Engine/Plugins/MovieScene/MovieRenderPipeline/Source/MovieRenderPipelineCore/Public/MoviePipelineGameOverrideSetting.h
+    game = config.find_or_add_setting_by_class(unreal.MoviePipelineGameOverrideSetting)
+    game.cinematic_quality_settings = os.environ.get("TN_UE_CINEMATIC") == "1"
     aa = config.find_or_add_setting_by_class(unreal.MoviePipelineAntiAliasingSetting)
     aa.override_anti_aliasing = False
     aa.render_warm_up_frames = True
