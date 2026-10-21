@@ -17,12 +17,14 @@
  */
 import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { chromium } from "@playwright/test";
 import { WEBGPU_BROWSER_ARGS } from "../../packages/playtest/src/runner/browser.js";
 import { assertVisualPortAvailable, stopVisualServer } from "../visual-gate.js";
 import { HIDE_UI, freePort, scaffold, waitForServer } from "./capture-threenative.js";
+
+const REPO_ROOT = path.resolve(import.meta.dirname, "../..");
 
 const flag = (name: string, fallback: string): string => {
   const at = process.argv.indexOf(name);
@@ -70,6 +72,15 @@ async function main(): Promise<void> {
   const work = process.env.TN_UNREAL_LOOK_WORK;
   if (work === undefined) throw new Error("TN_UNREAL_LOOK_WORK: set a work directory of your own");
   const target = await scaffold(work, true, false);
+  if (model !== "") {
+    // `model=<folder>` loads a calibration scene's glb: it has to be an asset before the dev server lists them.
+    const to = path.join(target, "assets/unreal-reference/gi", model);
+    await mkdir(to, { recursive: true });
+    await cp(
+      path.join(REPO_ROOT, "tools/unreal-reference/gi", model, "scene.glb"),
+      path.join(to, "scene.glb"),
+    );
+  }
   await mkdir(out, { recursive: true });
   const port = await freePort();
   await assertVisualPortAvailable(port);
@@ -96,7 +107,9 @@ async function main(): Promise<void> {
       await page.addInitScript(PROBE);
       const markers: { atMs: number; text: string }[] = [];
       const begin = Date.now();
+      let failed: string | undefined;
       page.on("console", (message) => {
+        if (message.text().includes("TN_START_FAILED")) failed = message.text().slice(0, 400);
         if (
           /^(TN_GI_CACHE|TN_REFLECTION_CAPTURE|GPU sky|CPU environment sky|TN_AUTO_EXPOSURE)/.test(
             message.text(),
@@ -108,7 +121,14 @@ async function main(): Promise<void> {
       const load0 = Date.now();
       await page.goto(load, { waitUntil: "domcontentloaded" });
       await page.addStyleTag({ content: HIDE_UI });
-      await page.waitForSelector('[data-threenative-startup="ready"]', { timeout: 900_000 });
+      // A start that failed never sets the marker: stop on the page's own report instead of the timeout.
+      await Promise.race([
+        page.waitForSelector('[data-threenative-startup="ready"]', { timeout: 900_000 }),
+        (async () => {
+          while (failed === undefined) await page.waitForTimeout(500);
+          throw new Error(failed);
+        })(),
+      ]);
       await page.waitForFunction(
         "window.__tnStartup.frames.length >= 61 && window.__tnStartup.converged !== null",
         undefined,
@@ -130,6 +150,13 @@ async function main(): Promise<void> {
         );
         await page.screenshot({ path: path.join(out, `${kind}${index + 1}.png`) });
       }
+      const adapter = (await page.evaluate(
+        "navigator.gpu.requestAdapter().then((a) => ({ vendor: a.info.vendor, architecture: a.info.architecture, fallback: a.isFallbackAdapter }))",
+      )) as { vendor: string; architecture: string; fallback: boolean };
+      if (adapter.fallback || adapter.vendor !== "nvidia")
+        throw new Error(
+          `TN_STARTUP_BENCH_ADAPTER: ${JSON.stringify(adapter)} is not the NVIDIA GPU`,
+        );
       const worst = (rows: [number, number][]) => rows.reduce((m, r) => Math.max(m, r[1]), 0);
       const gi = markers.find((m) => m.text.startsWith("TN_GI_CACHE"));
       const result = {
@@ -137,6 +164,7 @@ async function main(): Promise<void> {
         kind,
         layer,
         sun,
+        adapter,
         load: readFileSync("/proc/loadavg", "utf8").split(" ").slice(0, 3),
         navigationToScriptMs: Math.round(marks.scriptStart),
         readyMs: Math.round(marks.ready),
