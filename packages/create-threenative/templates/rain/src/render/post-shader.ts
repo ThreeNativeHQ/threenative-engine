@@ -6,7 +6,7 @@
 // five-tap luma-edge antialias over the warped coordinate, the bloom added, the weather exposure,
 // the ACES fit, the cool-shadow/warm-highlight grade, the vignette, gamma 1/2.2 and the dither.
 // Nothing here is a framework default; every constant is the demo's.
-import { DataTexture, Vector2, Vector3, Vector4 } from "three";
+import { DataTexture, Vector2 } from "three";
 import {
   Continue,
   Fn,
@@ -36,7 +36,6 @@ import {
   sub,
   texture,
   uniform,
-  uv,
   vec2,
   vec3,
   vec4,

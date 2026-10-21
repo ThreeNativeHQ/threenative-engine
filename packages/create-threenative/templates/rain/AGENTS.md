@@ -42,7 +42,7 @@ pnpm dev
 pnpm typecheck
 pnpm build:web
 pnpm build:desktop
-pnpm test
+pnpm test   # runs `pnpm check` first: typecheck, ESLint, Biome format
 ```
 
 `src/state.ts` owns weather validation, the four presets, easing (τ 0.67 s), the flash envelope and

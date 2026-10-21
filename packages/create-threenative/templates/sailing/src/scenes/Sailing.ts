@@ -8,7 +8,7 @@ import {
   isTouchscreenAvailable,
 } from "@threenative/core";
 import type { IPhysicsContext } from "@threenative/physics";
-import { type Group, type PerspectiveCamera, type Texture, Vector3 } from "three";
+import { type Group, type PerspectiveCamera, Vector3 } from "three";
 import { Ship } from "../entities/Ship.js";
 import { followShip, setupCamera } from "../render/camera.js";
 import { loadedEnvironmentSample } from "../render/environmentSetup.js";

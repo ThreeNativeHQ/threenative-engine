@@ -1,7 +1,6 @@
 import type { OrthographicCamera } from "three";
 // Experimental finite raw4 estimator. The source pass owns all sample views; this allocates none.
 import {
-  Fn,
   If,
   float,
   getViewPosition,

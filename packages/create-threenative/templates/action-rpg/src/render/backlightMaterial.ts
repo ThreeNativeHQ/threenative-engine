@@ -5,7 +5,6 @@ import {
   type DirectionalLight,
   Material,
   type MeshStandardMaterial,
-  type Object3D,
   type Scene,
   Vector3,
 } from "three";

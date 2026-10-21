@@ -12,10 +12,9 @@ import {
   Group,
   type Material,
   Mesh,
-  type MeshBasicMaterial,
   SphereGeometry,
 } from "three";
-import { flat, toon } from "./materials.js";
+import { toon } from "./materials.js";
 import { C } from "./palette.js";
 
 function mesh(geometry: BufferGeometry, material: Material): Mesh {

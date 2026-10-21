@@ -13,8 +13,11 @@
     "build:ios": "threenative build --target ios",
     "test:native": "pnpm build:desktop && node node_modules/@threenative/runtime-native/scripts/verify-starter-desktop.mjs && node node_modules/@threenative/runtime-native/scripts/verify-starter-desktop.mjs --consumer --target desktop --project .",
     "pretest": "playwright install chromium",
-    "test": "pnpm build:web && threenative-playtest --scenario \"playtests/*.playtest.json\" --browser-recipe webgpu --headed --server-command \"pnpm exec vite preview --host 127.0.0.1 --port $PORT --strictPort\"",
-    "typecheck": "tsc --noEmit -p tsconfig.json"
+    "test": "pnpm check && pnpm build:web && threenative-playtest --scenario \"playtests/*.playtest.json\" --browser-recipe webgpu --headed --server-command \"pnpm exec vite preview --host 127.0.0.1 --port $PORT --strictPort\"",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "check": "pnpm typecheck && pnpm lint && pnpm format:check",
+    "lint": "eslint src",
+    "format:check": "biome format src"
   },
   "dependencies": {
     "@threenative/core": "0.3.6",
@@ -39,7 +42,9 @@
     "tailwindcss": "4.3.3",
     "typescript": "7.0.2",
     "vite": "8.2.0",
-    "@gltf-transform/cli": "4.4.2"
+    "@gltf-transform/cli": "4.4.2",
+    "@biomejs/biome": "1.9.4",
+    "eslint": "10.13.0"
   },
   "optionalDependencies": {
     "@threenative/runtime-native": "0.3.6"

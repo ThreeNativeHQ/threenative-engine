@@ -9,7 +9,6 @@ import {
   CircleGeometry,
   DataTexture,
   Float32BufferAttribute,
-  LinearFilter,
   LinearMipmapLinearFilter,
   RepeatWrapping,
   SRGBColorSpace,
