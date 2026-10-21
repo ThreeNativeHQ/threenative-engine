@@ -2315,21 +2315,16 @@ jobs:
           # Pin the existing resolution override in this temporary scaffold for BOTH arms.
           # Cook and bundle once for QuickJS; both engines use the same prepared assets.
           cp "$target/threenative.config.ts" "$evidence/original-config.ts"
-          cp "$target/src/game.ts" "$evidence/original-game.ts"
           # The cook replaces the consumer whose exact bytes the starter receipt already verified.
           cp -p "$target/dist-native/threenative-starter-native" "$evidence/verified-consumer"
-          trap 'cp -p "$evidence/verified-consumer" "$target/dist-native/threenative-starter-native"; cp "$evidence/original-config.ts" "$target/threenative.config.ts"; cp "$evidence/original-game.ts" "$target/src/game.ts"; restore_v8' EXIT
+          trap 'cp -p "$evidence/verified-consumer" "$target/dist-native/threenative-starter-native"; cp "$evidence/original-config.ts" "$target/threenative.config.ts"; restore_v8' EXIT
           sed -i 's/resolutionScale: "auto"/resolutionScale: 1/' "$target/threenative.config.ts"
-          # Frame-budget windows count presented frames; 300 per window outlasts the 180 s probe at 3 fps.
-          sed -i 's/frameBudget: { onWindow:/frameBudget: { reportEvery: 60, onWindow:/' "$target/src/game.ts"
-          grep -q 'reportEvery: 60' "$target/src/game.ts"
           THREENATIVE_RUNTIME_BINARY="$runtime/build/tn-linux/mystral" \
             pnpm --dir "$target" exec threenative build --target desktop
           cp "$target/.threenative/build/game.js" "$target/dist-native/perf-game.js"
           cp "$target/public/assets.manifest.json" "$evidence/assets.manifest.json"
           cp "$target/threenative.config.ts" "$evidence/paired-config.ts"
           cp "$evidence/original-config.ts" "$target/threenative.config.ts"
-          cp "$evidence/original-game.ts" "$target/src/game.ts"
           # Hosted software Vulkan is intentional here: JS callback durations only, no FPS/GPU claim.
           sh scripts/xvfb.sh node "$runtime/scripts/measure-starter-js-frame-pair.mjs" \
             "$runtime/build/tn-linux/mystral" "$runtime/build/tn-linux/mystral-v8" \

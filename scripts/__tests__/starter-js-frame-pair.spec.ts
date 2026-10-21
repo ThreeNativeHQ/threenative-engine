@@ -200,8 +200,6 @@ for (const failPair of [false, true]) {
     writeFileSync(join(runtime, "build/tn-linux/mystral"), "verified V8 host");
     writeFileSync(join(runtime, "build/tn-linux/CMakeCache.txt"), "TN_ENABLE_CANVAS2D:BOOL=ON\n");
     writeFileSync(join(target, "threenative.config.ts"), 'resolutionScale: "auto"');
-    mkdirSync(join(target, "src"), { recursive: true });
-    writeFileSync(join(target, "src/game.ts"), "frameBudget: { onWindow: observe }");
     const stubs = `
 cmake() {
   case "$*" in
@@ -234,9 +232,6 @@ sh() {
     expect(readFileSync(join(runtime, "build/tn-linux/mystral"), "utf8")).toBe("verified V8 host");
     expect(readFileSync(join(target, "threenative.config.ts"), "utf8")).toBe(
       'resolutionScale: "auto"',
-    );
-    expect(readFileSync(join(target, "src/game.ts"), "utf8")).toBe(
-      "frameBudget: { onWindow: observe }",
     );
     if (!failPair)
       for (const arm of ["quickjs-1", "quickjs-2", "v8-1", "v8-2"]) {
