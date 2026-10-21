@@ -36,7 +36,6 @@ import { ssgi } from "three/addons/tsl/display/SSGINode.js";
 import { ssr } from "three/addons/tsl/display/SSRNode.js";
 import { sharpen } from "three/addons/tsl/display/SharpenNode.js";
 import {
-  clamp,
   color,
   convertToTexture,
   float,

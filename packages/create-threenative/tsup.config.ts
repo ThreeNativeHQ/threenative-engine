@@ -6,7 +6,9 @@ export default defineConfig([
     banner: {
       js: "import { createRequire as __createRequire } from 'node:module';\nconst require = __createRequire(import.meta.url);",
     },
-    entry: ["src/index.ts", "src/threenative.ts"],
+    // quality bundles typescript-eslint: its `require("typescript")` must resolve from this package, whose
+    // `typescript` dependency is the TypeScript 6 compiler API it supports, not the game's TypeScript 7.
+    entry: ["src/index.ts", "src/threenative.ts", "src/quality.ts"],
     format: ["esm"],
     target: "node20",
     dts: true,
