@@ -45,7 +45,7 @@ function world(options: { omitUnreal?: string } = {}) {
     directLightOk: true,
     judgeCode: 0,
     verdict: undefined as unknown,
-    layers: ["ID", "L1", "L7", "L7-medium", "L7-low"],
+    layers: ["ID", "L1", "L7", "L7-high", "L7-medium", "L7-low"],
   };
   const calls = {
     capture: [] as { layers: string[]; out: string }[],
@@ -182,9 +182,9 @@ describe("main", () => {
 
   it("captures ID, L1 and the tier layer twice, and fails closed on a missing cell, an unnamed adapter or the wrong engine", async () => {
     const missing = world();
-    missing.behaviour.skip = "L7/corner.png";
+    missing.behaviour.skip = "L7-high/corner.png";
     await expect(main(missing.argv(), missing.deps)).rejects.toThrow(
-      /MISSING_CELL.*L7\/corner.png/,
+      /MISSING_CELL.*L7-high\/corner.png/,
     );
     const unnamed = world();
     unnamed.behaviour.adapter = { vendor: "", architecture: "", device: "", description: "" };
@@ -203,8 +203,8 @@ describe("main", () => {
     const code = await main(w.argv(), w.deps);
     expect(code).toBe(0);
     expect(w.calls.capture.map((c) => [c.layers, path.basename(c.out)])).toEqual([
-      [["ID", "L1", "L7"], "run1"],
-      [["ID", "L1", "L7"], "run2"],
+      [["ID", "L1", "L7-high"], "run1"],
+      [["ID", "L1", "L7-high"], "run2"],
     ]);
     const args = w.calls.judge[0] as string[];
     const values = (flag: string) => args.flatMap((a, i) => (a === flag ? [args[i + 1]] : []));
@@ -351,7 +351,7 @@ describe("main", () => {
     expect(fresh.calls.capture).toEqual([]);
     expect(fresh.calls.judge).toEqual([]);
     expect(fresh.log.join("\n")).toMatch(
-      /dry run: cornell tier high layer L7, 2 poses \(cornell, corner\)/,
+      /dry run: cornell tier high layer L7-high, 2 poses \(cornell, corner\)/,
     );
   });
 });

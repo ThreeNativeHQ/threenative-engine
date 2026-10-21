@@ -42,9 +42,9 @@ const row = (over: Record<string, unknown> = {}) => ({
 });
 
 describe("tierLayer", () => {
-  it("names the capture layer of each GI tier, high being the default L7", () => {
+  it("names the capture layer of each GI tier", () => {
     expect([tierLayer("high"), tierLayer("medium"), tierLayer("low")]).toEqual([
-      "L7",
+      "L7-high",
       "L7-medium",
       "L7-low",
     ]);

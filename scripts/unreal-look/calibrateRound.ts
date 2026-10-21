@@ -24,12 +24,12 @@ export const GI_LAYER = "L7";
 export const JUDGE_ROUNDS = 2;
 
 const TIER_LAYER: Readonly<Record<Tier, string>> = {
-  high: GI_LAYER,
+  high: `${GI_LAYER}-high`,
   medium: `${GI_LAYER}-medium`,
   low: `${GI_LAYER}-low`,
 };
 
-/** The capture layer of a GI tier: high is the default L7, the others are the tier layers of PRD-644. */
+/** The capture layer of a GI tier (PRD-644): it names the tier instead of leaving it to the engine default. */
 export function tierLayer(tier: string): string {
   if (!Object.hasOwn(TIER_LAYER, tier)) fail("BAD_INPUT", `--tier ${tier}: high, medium or low`);
   return TIER_LAYER[tier as Tier];
