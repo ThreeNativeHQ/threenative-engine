@@ -435,7 +435,12 @@ describe("AnimationPlayer update rate", () => {
     for (let frame = 0; frame < 300; frame += 1) {
       rig.update(1 / 60);
       expect(rig.mixer.time).toBeCloseTo((frame + 1) / 60, 10);
-      expect(rig.updateRateReport).toEqual({ rate: 1, overridden: true, evaluated: true });
+      expect(rig.updateRateReport).toEqual({
+        rate: 1,
+        overridden: true,
+        evaluated: true,
+        boneRate: 1,
+      });
     }
     rig.dispose();
   });

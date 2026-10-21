@@ -76,6 +76,15 @@ interface IAnimationRateStateLike {
   readonly evaluated: boolean;
   readonly effectiveRate?: number;
   readonly evaluation: number;
+  gpuPose?: boolean;
+  syncBones?: () => void;
+}
+
+/** Hands the pose back to the CPU: the player refreshes the bones to the current playhead first. */
+function releaseGpuPose(state: IAnimationRateStateLike | undefined): void {
+  if (state?.gpuPose !== true) return;
+  state.gpuPose = false;
+  state.syncBones?.();
 }
 
 /**
@@ -524,6 +533,7 @@ export class SkinnedBatch {
     const slot = this.instances.get(rig);
     if (slot === undefined) return;
     this.#untrackSkeleton(slot);
+    releaseGpuPose(animationRateStateOf(rig));
     this.instances.delete(rig);
     this.#slotRigs.delete(slot);
     this.#writtenEvaluations.delete(rig);
@@ -683,6 +693,7 @@ export class SkinnedBatch {
           display.trusted = reused ? (display.trusted ?? 0) - 1 : RAW_REVALIDATE_EVALUATIONS;
         }
         if (packet && state) {
+          state.gpuPose = true;
           display.writeFrame = this.#frame;
           if (!held && skeleton instanceof Skeleton)
             this.#rawUpdates.set(skeleton, { frame: this.#frame, version: packet.version });
@@ -705,6 +716,9 @@ export class SkinnedBatch {
           this.#syncObserved(slot, display);
           return;
         }
+        // The next player update sees the flag drop and refreshes the bones; this tick keeps stock's
+        // held semantics, which an observed palette edit relies on.
+        if (state) state.gpuPose = false;
         if (held && display.current)
           this.#current.set(
             evaluateAnimationPoseFallback(display.current.version),
@@ -982,6 +996,7 @@ export class SkinnedBatch {
    */
   dispose(): void {
     this.mesh.removeFromParent();
+    for (const rig of this.#slotRigs.values()) releaseGpuPose(animationRateStateOf(rig));
     this.#currentAttribute.dispose();
     this.#previousAttribute?.dispose();
     for (const attribute of this.#rawAttributes) attribute.dispose();

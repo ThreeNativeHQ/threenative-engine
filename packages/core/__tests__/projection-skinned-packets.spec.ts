@@ -23,7 +23,7 @@ function present<T>(value: T | null | undefined): T {
   return value;
 }
 
-function fixture(velocity = true, rate: 1 | 4 = 4) {
+function fixture(velocity = true, rate: 1 | 4 | "auto" = 4) {
   const scene = new Scene();
   const bones = Array.from({ length: 12 }, (_, i) => {
     const b = new Bone();
@@ -94,7 +94,20 @@ function fixture(velocity = true, rate: 1 | 4 = 4) {
     geometry.dispose();
     mesh.material.dispose();
   };
-  return { scene, mesh, bones, clip, player, batch, tick, draw, receipt, held, close };
+  return {
+    scene,
+    mesh,
+    bones,
+    clip,
+    player,
+    batch,
+    tick,
+    draw,
+    receipt,
+    held,
+    close,
+    mixer: () => player.mixer,
+  };
 }
 
 describe("SkinnedBatch owned scalar display packets", () => {
@@ -578,5 +591,94 @@ describe("SkinnedBatch owned scalar display packets", () => {
     } finally {
       f.close();
     }
+  });
+
+  describe("GPU-evaluated pose", () => {
+    const sway = (t: number) => -0.09 + 0.18 * (t <= 1 ? t : 2 - t);
+    function auto() {
+      const f = fixture(true, "auto");
+      const cull = new RenderCameraCull();
+      const camera = new PerspectiveCamera(60, 1, 0.1, 1000);
+      camera.position.z = 40;
+      camera.updateMatrixWorld(true);
+      const evaluations = vi.spyOn(f.mixer(), "update");
+      const frame = () => {
+        cull.apply(f.scene, camera, 720);
+        f.tick();
+        f.draw();
+        cull.restore();
+      };
+      return {
+        ...f,
+        frame,
+        evaluations,
+        close: () => {
+          evaluations.mockRestore();
+          cull.dispose();
+          f.close();
+        },
+      };
+    }
+    it("refreshes the CPU bones every rate x 4 ticks while the drawn playhead stays exact", () => {
+      const f = auto();
+      try {
+        const rate = present(animationRateStates.get(f.mesh));
+        f.frame();
+        const base = f.evaluations.mock.calls.length;
+        for (let i = 1; i <= 96; i++) {
+          f.frame();
+          expect(rate.gpuPose).toBe(true);
+          const shown = f.receipt().slots[0].currentTime;
+          expect(f.receipt().slots[0].currentRaw).toBe(true);
+          expect(Math.abs(shown - (((i + 1) / 60) % 2))).toBeLessThan(1e-4);
+        }
+        const evaluated = f.evaluations.mock.calls.length - base;
+        expect(rate.effectiveRate).toBeGreaterThan(1);
+        expect(evaluated).toBeLessThanOrEqual(Math.ceil(96 / ((rate.effectiveRate ?? 1) * 4)) + 1);
+        expect(f.player.updateRateReport.boneRate).toBe((rate.effectiveRate ?? 1) * 4);
+      } finally {
+        f.close();
+      }
+    });
+    it("returns to the scheduled rate on the next tick once the GPU pose is dropped", () => {
+      const f = auto();
+      try {
+        for (let i = 0; i < 12; i++) f.frame();
+        const rate = present(animationRateStates.get(f.mesh));
+        rate.gpuPose = false;
+        let waited = 0;
+        while (waited < 16) {
+          f.frame();
+          waited += 1;
+          if (rate.evaluated) break;
+        }
+        expect(waited).toBeLessThanOrEqual(1);
+      } finally {
+        f.close();
+      }
+    });
+    it("hands the bones back exact when the rig leaves the batch", () => {
+      const f = auto();
+      try {
+        for (let i = 0; i < 13; i++) f.frame();
+        const now = 13 / 60;
+        expect(present(f.mesh.skeleton.bones[1]).rotation.z).not.toBeCloseTo(sway(now), 6);
+        f.batch.release(f.mesh);
+        expect(present(f.mesh.skeleton.bones[1]).rotation.z).toBeCloseTo(sway(now), 6);
+        expect(present(animationRateStates.get(f.mesh)).gpuPose).toBe(false);
+      } finally {
+        f.close();
+      }
+    });
+    it("keeps an explicit updateRate on its own interval", () => {
+      const f = fixture(true, 4);
+      try {
+        f.draw();
+        f.held();
+        expect(f.player.updateRateReport.boneRate).toBe(4);
+      } finally {
+        f.close();
+      }
+    });
   });
 });

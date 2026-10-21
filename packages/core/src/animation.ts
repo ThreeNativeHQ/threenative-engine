@@ -61,6 +61,8 @@ export interface IAnimationUpdateRateReport {
   readonly rate: number;
   readonly overridden: boolean;
   readonly evaluated: boolean;
+  /** Frames between CPU bone refreshes: `rate`, or longer while the GPU evaluates the pose. */
+  readonly boneRate: number;
 }
 
 /**
@@ -100,6 +102,11 @@ export interface IStrideReport {
  */
 /** Packet-state reads that reuse the last full validation of the action and mixer internals. */
 const PACKET_REVALIDATE_READS = 256;
+/**
+ * While the GPU evaluates a rig's pose, the CPU bones refresh every this many scheduled
+ * evaluations. The drawn pose stays exact every frame; only bone readers see the longer interval.
+ */
+const GPU_POSE_BONE_REFRESH = 4;
 const STRIDE_RATE_MIN = 0.15;
 const STRIDE_RATE_MAX = 3;
 /** Below this the body is standing, and a measured rate would be noise. */
@@ -355,6 +362,7 @@ export class AnimationPlayer {
     source: undefined,
     evaluated: true,
     evaluation: 0,
+    syncBones: () => this.#flushPending(),
   };
   readonly #staggerOffset = nextAnimationOffset++;
   #updateRate: "auto" | number = "auto";
@@ -474,7 +482,15 @@ export class AnimationPlayer {
       rate: this.#effectiveUpdateRate(),
       overridden: this.#updateRate !== "auto",
       evaluated: this.#evaluated,
+      boneRate: this.#boneRate(this.#effectiveUpdateRate()),
     };
+  }
+
+  /** An explicit `updateRate` keeps the CPU pose on that interval; auto lets the GPU pose stretch it. */
+  #boneRate(rate: number): number {
+    return this.#updateRate === "auto" && rate > 1 && this.#rateState.gpuPose === true
+      ? rate * GPU_POSE_BONE_REFRESH
+      : rate;
   }
 
   #effectiveUpdateRate(): number {
@@ -1005,10 +1021,11 @@ export class AnimationPlayer {
     this.#updateFrame += 1;
     this.#skippedFrames += 1;
     this.#rateState.evaluated = false;
+    const boneRate = this.#boneRate(rate);
     this.#evaluated =
       force ||
-      (this.#updateFrame + this.#staggerOffset) % rate === 0 ||
-      this.#skippedFrames >= rate;
+      (this.#updateFrame + this.#staggerOffset) % boneRate === 0 ||
+      this.#skippedFrames >= boneRate;
     if (this.#evaluated) this.#evaluate(dt);
     // Measure the body's movement on every tick, including skipped pose evaluations. A held tick of
     // a clip whose measurement only reports banks its dt: the average speed over the interval is

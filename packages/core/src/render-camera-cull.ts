@@ -85,6 +85,10 @@ export interface IAnimationRateState {
   source: RenderCameraCull | undefined;
   evaluated: boolean;
   evaluation: number;
+  /** Set by the skinned batch while the GPU evaluates this rig's pose from keyframes and time. */
+  gpuPose?: boolean;
+  /** Set by the player: brings the CPU bones to the current playhead now. */
+  syncBones?: () => void;
 }
 export const animationRateStates = new WeakMap<Object3D, IAnimationRateState>();
 
