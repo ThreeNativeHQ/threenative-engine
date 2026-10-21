@@ -89,9 +89,10 @@ it("preserves the async PMREM API's synchronous fallback on non-WebGPU backends"
   expect(generator._fromTextureAsync).not.toHaveBeenCalled();
 });
 
+// Removing the copied three trees took over 10 s on a loaded CI runner (run 39217177505).
 afterEach(async () => {
   for (const root of roots.splice(0)) await rm(root, { force: true, recursive: true });
-});
+}, 60_000);
 
 async function tempRoot(): Promise<string> {
   const root = await makeTempDir("threenative-three-patch-");

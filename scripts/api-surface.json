@@ -509,7 +509,7 @@
       }
     },
     "create-threenative": {
-      "exports": [".", "./package.json", "./terrain-kit", "./web-brand"],
+      "exports": [".", "./package.json", "./quality", "./terrain-kit", "./web-brand"],
       "symbols": {}
     },
     "threenative-blender-mcp": {

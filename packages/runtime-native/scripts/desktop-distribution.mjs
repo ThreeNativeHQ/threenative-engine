@@ -33,6 +33,20 @@ import { tmpdir } from 'node:os';
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { buildWindowsInstaller } from './windows-installer.mjs';
 
+/**
+ * The file to launch for a desktop artifact. `threenative build --target desktop` writes a
+ * container directory (`dist-native/<name>/` holding the player, `game.js` and a launcher named
+ * `<name>`); an older build wrote the executable itself. Launching the directory exits 126.
+ */
+export function desktopLaunchTarget(artifact, executableName) {
+  return statSync(artifact).isDirectory() ? join(artifact, executableName) : artifact;
+}
+
+/** Whether the launcher's folder holds the owned engine player, which has no `--frames` or `--screenshot`. */
+export function isEnginePlayerLaunch(launch) {
+  return readdirSync(dirname(launch)).some((file) => file.startsWith('tn-native-engine-player'));
+}
+
 export const CONTAINER_MANIFEST = 'threenative-container.json';
 export const CONTAINER_SCHEMA_VERSION = 1;
 export const DESKTOP_TARGETS = ['linux-x64', 'linux-arm64', 'darwin-x64', 'darwin-arm64', 'win32-x64'];

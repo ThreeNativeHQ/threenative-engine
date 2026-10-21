@@ -199,6 +199,7 @@ const BUG_REPORT_SKILL_PATHS = [
 // Final Bindings lifetime patch: restoring the 9a Three patch recovers all thirteen prior hashes.
 // Measured after merging develop f30f9b6d3 and regenerating the combined Three patch.
 // Measured through all thirteen createProject trees after the interleaved settled-cache repair.
+// Re-measured all 13 actual no-install trees after merging develop 4d8efabac (PRD-626 quality and 0.3.6 pins) into PR #483.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // PRD-563: every kit's render/quality.ts and scenes carry the GPU-class start tier.
   // Measured by the actual thirteen-tree createProject equality test on the Oct 6
@@ -250,22 +251,22 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // PRD-619: all kits name interpolation; starter adds the live-clock motion proof.
   // Measured through createProject on the combined develop + PR483 merge tree.
   // Re-measured 2026-10-18 through all thirteen createProject trees after merging develop and regenerating the combined Three patch.
-  "action-rpg": "5f33323efd7260d6ddd3526c2bfe1426a3a9f9bf028aa1e18bf69710b284ab18",
-  minimal: "aab749628f3ec2811c9423353af28c5f289fb6d939e5c68728c365fda287f05e",
-  platformer: "b1044e0d5ab6db8b614cb4b3b6d46f93788e47f17d62a02ec5da34d552e349c4",
-  puzzle: "26ebde51a92d6ee1bc618336e1462acfdcd4676d1a749e9529d965d4cc7f9b5d",
-  racing: "36ba1cedfa6c4b13b5853881f6c3e869d3608991d415593d52fbc2982923e1e1",
-  rain: "83f07293c82210b35eadc76eb9999f06366fc00cd59ffb3472daf908d2c12e38",
-  rts: "361bc55e7608b2a071ce2a2ee3c8ad180e78244c5ad179761fffce0c5529cb7b",
-  runner: "539f42125d6f8b3ffd6f467fea7810fd0cf46e6863174740c9756cae30e88210",
+  "action-rpg": "78a3383d9cc8351172b3508978a9fe8d960d3a412c3a8f7467a562b6aa9a8fed",
+  minimal: "c8237b13651ef0785021beeb2177ed96aac22a6ec559c2a3df278141244ad648",
+  platformer: "d436607f14f3a59f11b83765d16b344507f190d3229cdcb1369da7f91a616e24",
+  puzzle: "8756902e042ee52fda62afb074eae42fe486d15e5931989edeaec3e9925e72a8",
+  racing: "f5f16fcfb51e7b88d8b39f6ab6ca1da247c88f642f09fad9296671dc5f8dfcac",
+  rain: "6605a1e5f314491d11325654b746ba5d20472a02c9ab71e1c979b8e7517f822b",
+  rts: "4e0832fcbaa11cee628e96e376e845851cdf35718aa1dbe48cc728f4355fad88",
+  runner: "973190e163dd997c539e45b4f19b347917c335b3ff443e809a6a5517d0bb9944",
 
   // Initial finite-height readiness plus its scene-owned lifecycle helper and mirrored docs.
-  sailing: "949e71b4c3a3990ffce0eaeb835ce4a3b786a86a3b4879dfb14c7b58bccc1df9",
-  shooter: "277e9258e6d9c8b0dff76d0f412f04f5024ccf8c76831bc4fa2ac5ba8d706d88",
-  snow: "87a5c76122fcc9e3275ae05b047a09836c3c0362a5abff9fe81d04afa7b24d9d",
+  sailing: "4accc05b1249b35cd29cb261bad97f19f660f9becb7d73560c2ec0a8b1aa5076",
+  shooter: "e6a2aedc855c406297c41f407c2a7b4b5b16d6eac33edafa631acec88bd1cd4c",
+  snow: "f54ff5dd29b63d19ea9635d62c10ce106af58cc947d20283464c6f4a7c946600",
   // Merged input heading, quaternion facing and progress import; measured through actual scaffold.
-  starter: "ccd4dbf88a86ced37310206856635a31b3cd9f6468482b081bffa77595463e4d",
-  "tower-defense": "d00f7cd94843b326f451729be2a97fba2af72a6964a2abab2d7a851af897aff2",
+  starter: "452a1188582ffdd392592e0fc0ef0312af216f0c1e5e959244de7b3c279f76ee",
+  "tower-defense": "11bda3c3f2efab4a134e32d488ab4b6b75b01c926deced29731f38303f1807e1",
 };
 
 const GENERATED_SCAFFOLD_METADATA =
@@ -347,6 +348,8 @@ const STARTER_PATHS = [
   ".codex/hooks.json",
   "kit.json",
   "package.json",
+  "eslint.config.js",
+  "biome.json",
   "patches/three@0.185.1.patch",
   "patches/vite@8.2.0.patch",
   "patches/@tailwindcss__node@4.3.3.patch",
@@ -578,6 +581,44 @@ describe("create-threenative", () => {
         }
       }
       expect(actual).toEqual(PRD_201_PARENT_SCAFFOLD_HASHES);
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  it("ships the quality gate as two thin root configs and three scripts in every template", async () => {
+    const root = await makeTempDir("threenative-quality-config-");
+    try {
+      for (const template of ALL_TEMPLATES) {
+        const { target } = await createProject(
+          { install: false, target: template, template },
+          root,
+        );
+        const nonblank = (
+          await Promise.all(
+            ["eslint.config.js", "biome.json"].map((name) =>
+              readFile(path.join(target, name), "utf8"),
+            ),
+          )
+        )
+          .join("\n")
+          .split("\n")
+          .filter((line) => line.trim() !== "").length;
+        expect(nonblank, `${template} config lines`).toBeLessThanOrEqual(80);
+        const manifest = JSON.parse(await readFile(path.join(target, "package.json"), "utf8")) as {
+          devDependencies: Record<string, string>;
+          scripts: Record<string, string>;
+        };
+        expect(manifest.scripts.check, template).toBe(
+          "pnpm typecheck && pnpm lint && pnpm format:check",
+        );
+        expect(manifest.scripts.lint, template).toBe("eslint src");
+        expect(manifest.scripts["format:check"], template).toBe("biome format src");
+        expect(manifest.scripts.test, template).toMatch(/^pnpm check && /u);
+        expect(manifest.devDependencies.eslint, template).toMatch(/^\d/u);
+        expect(manifest.devDependencies["@biomejs/biome"], template).toMatch(/^\d/u);
+        expect(Object.values(manifest.scripts).join(" "), template).not.toContain("npx");
+      }
     } finally {
       await rm(root, { force: true, recursive: true });
     }
@@ -1429,6 +1470,20 @@ describe("create-threenative", () => {
       ) as { overrides?: Record<string, string>; pnpm?: { overrides?: Record<string, string> } };
       expect(manifest.overrides?.sharp, `${template} npm override`).toBe(">=0.35.4");
       expect(manifest.pnpm?.overrides?.sharp, `${template} pnpm override`).toBe(">=0.35.4");
+    }
+  });
+
+  it("keeps Vite's optional devtools peer off the npm 10 crash (PRD-637)", async () => {
+    // `vite@8.2.0+` lists `@vitejs/devtools@^0.4.0` as an optional peer, and 0.4.2+ peers back on
+    // the devtools packages. npm 10 (the npm in Node 20 LTS) dies on that peer set with
+    // `Cannot read properties of null (reading 'edgesOut')`, so a fresh scaffold could not install.
+    // The pin names the last devtools release whose only peer is vite.
+    for (const template of ALL_TEMPLATES) {
+      const manifest = JSON.parse(
+        await readFile(path.join(TEMPLATE_ROOT, template, "package.json"), "utf8"),
+      ) as { devDependencies?: Record<string, string>; overrides?: Record<string, string> };
+      if (manifest.devDependencies?.vite === undefined) continue;
+      expect(manifest.overrides?.["@vitejs/devtools"], `${template} npm override`).toBe("0.4.1");
     }
   });
 

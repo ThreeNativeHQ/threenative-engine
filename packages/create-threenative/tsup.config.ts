@@ -6,7 +6,8 @@ export default defineConfig([
     banner: {
       js: "import { createRequire as __createRequire } from 'node:module';\nconst require = __createRequire(import.meta.url);",
     },
-    entry: ["src/index.ts", "src/threenative.ts", "src/terrain-kit.ts"],
+    // quality bundles typescript-eslint: its `require("typescript")` resolves the TypeScript 6 API from this package.
+    entry: ["src/index.ts", "src/threenative.ts", "src/terrain-kit.ts", "src/quality.ts"],
     format: ["esm"],
     target: "node20",
     dts: true,

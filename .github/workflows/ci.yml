@@ -891,8 +891,13 @@ jobs:
     # Rain relaunches the page for each of its five nonvisual scenarios. On the hosted SwiftShader
     # adapter each launch now takes about 7 minutes, against about 1 minute on develop (runs
     # 38818830914 and 38824021621), so five launches exceed the 30-minute cap. Only rain gets the
-    # larger cap for the existing software fallback; every other leg keeps 30 minutes.
-    timeout-minutes: ${{ matrix.template == 'rain' && 60 || 30 }}
+    # larger cap until that software launch cost is reduced; every other leg keeps 30 minutes.
+    # shooter joined it with the native web engine default (#493): its enemy scenarios take 3 to
+    # 7 minutes each on SwiftShader against about 35 s before (run 39205153764 against
+    # 39099724054), so its 26 scenarios need 55 to 95 minutes with runner load (run 39217177505
+    # finished in 55; run 39226537203 passed all 26 at 86 and was cancelled at 90). Every scenario
+    # and assertion stays.
+    timeout-minutes: ${{ matrix.template == 'shooter' && 120 || matrix.template == 'rain' && 60 || 30 }}
     env:
       TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
       TN_PLAYTEST_ALLOW_SOFTWARE: ${{ (matrix.template == 'rain' && !github.event.pull_request.head.repo.fork && ((!vars.TN_RUNNER_GPU_HEAD || (github.event.pull_request.head.sha || github.event.merge_group.head_sha || (github.event_name == 'push' && github.sha) || '') == vars.TN_RUNNER_GPU_HEAD) && vars.TN_RUNNER_GPU) && '0') || '1' }}
@@ -928,12 +933,12 @@ jobs:
           target: ${{ runner.temp }}/threenative-${{ matrix.template }}
           template: ${{ matrix.template }}
       - uses: ./.github/actions/playwright-chromium
-      - name: Typecheck pristine template
+      - name: Check pristine template
         run: |
           set -euo pipefail
           target="$RUNNER_TEMP/threenative-${{ matrix.template }}"
           pnpm --dir "$target" install
-          pnpm --dir "$target" run typecheck
+          pnpm --dir "$target" run check
       - name: Run the template's GPU-free scenarios
         run: |
           set -euo pipefail

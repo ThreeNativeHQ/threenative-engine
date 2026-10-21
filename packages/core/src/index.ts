@@ -6,7 +6,7 @@
  * unavoidable here — core is bundled for browsers and cannot read `package.json` at runtime — so
  * the spec now asserts this equals the manifest instead of asserting a number somebody typed.
  */
-export const version = "0.3.5";
+export const version = "0.3.6";
 
 /**
  * Play a skinned or sprite animation from game code.
@@ -673,12 +673,14 @@ export {
 export type { IUnlitFoliageWarning } from "./profiling/unlit-foliage-warning.js";
 /**
  * Catch scene state that silently loses environment fill or ignores authored opacity.
- * Printed once after `enter()` as `TN_ENVIRONMENT_TOO_SMALL` or `TN_OPACITY_IGNORED`,
- * with the fix in the same console error line so playtest `noConsoleErrors` rejects it.
+ * After `enter()` the game first applies the opacity convention: a drawn material with
+ * `opacity < 1` turns transparent and one `TN_OPACITY_TRANSPARENT` console warning names it
+ * (override: `alphaHash: true`, or `opacity: 1`). It then prints `TN_ENVIRONMENT_TOO_SMALL`
+ * as a console error with the fix, so playtest `noConsoleErrors` rejects it.
  * @situation audit an equirectangular sky too narrow for three's WebGPU PMREM
  * @situation find visible opaque materials whose authored opacity is ignored
  * @constraint structural scene reads only, one visible-tree walk per entry, at most five material examples
- * @constraint it changes no scene state; environment and transparency remain the game's decisions
+ * @constraint the audit itself changes no scene state; the game loop's opacity convention is the only writer
  * @example renderTrapAudit(ctx.scene); // marker lines with the fixes, or an empty array
  */
 export {

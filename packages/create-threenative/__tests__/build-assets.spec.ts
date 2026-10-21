@@ -110,7 +110,7 @@ describe("threenative build asset compilation", () => {
 
     await build({ cwd: root, target: "web" });
 
-    expect(compiled[0]?.runtimeDecoders).toBeUndefined();
+    expect(compiled[0]?.runtimeDecoders).toEqual({ ktx2: true, meshopt: true });
   });
 
   it("should reject an unavailable desktop runtime before cooking assets", async () => {

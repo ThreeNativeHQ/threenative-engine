@@ -2044,14 +2044,14 @@ if (renderListValidationRequested()) console.log(formatValidationReport(report))
 
 ### `renderTrapAudit`
 
-`function` — Catch scene state that silently loses environment fill or ignores authored opacity. Printed once after `enter()` as `TN_ENVIRONMENT_TOO_SMALL` or `TN_OPACITY_IGNORED`, with the fix in the same console error line so playtest `noConsoleErrors` rejects it.
+`function` — Catch scene state that silently loses environment fill or ignores authored opacity. After `enter()` the game first applies the opacity convention: a drawn material with `opacity < 1` turns transparent and one `TN_OPACITY_TRANSPARENT` console warning names it (override: `alphaHash: true`, or `opacity: 1`). It then prints `TN_ENVIRONMENT_TOO_SMALL` as a console error with the fix, so playtest `noConsoleErrors` rejects it.
 
 ```ts
 export function renderTrapAudit(scene: Object3D & { … }
 ```
 
 - **Use when:** audit an equirectangular sky too narrow for three's WebGPU PMREM · find visible opaque materials whose authored opacity is ignored
-- **Constraints:** structural scene reads only, one visible-tree walk per entry, at most five material examples · it changes no scene state; environment and transparency remain the game's decisions
+- **Constraints:** structural scene reads only, one visible-tree walk per entry, at most five material examples · the audit itself changes no scene state; the game loop's opacity convention is the only writer
 
 ```ts
 renderTrapAudit(ctx.scene); // marker lines with the fixes, or an empty array

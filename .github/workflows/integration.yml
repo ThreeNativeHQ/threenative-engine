@@ -48,7 +48,8 @@ jobs:
     name: exact candidate integration inventory
     if: ${{ !github.event.pull_request.draft }}
     runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER_LIGHT) && 'ubuntu-24.04' || vars.TN_RUNNER_LIGHT }}
-    timeout-minutes: 5
+    # The full-history checkout passed 5 minutes on a loaded light runner (run 39217177505).
+    timeout-minutes: 10
     permissions:
       contents: read
       actions: read

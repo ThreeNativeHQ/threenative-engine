@@ -12,6 +12,7 @@
 
 #include "engine/animation/interpolant.h"
 #include "engine/animation/property_binding.h"
+#include "engine/foundation/prefetch.h"
 
 namespace tn::engine::animation {
 
@@ -64,7 +65,7 @@ class PropertyMixer {
     void apply(int accuIndex);
     /** The two prefetch stages of the mixer's loops (see `PropertyBinding::prefetchNode`). */
     void prefetchData() const {
-        __builtin_prefetch(buffer.data(), 1, 3);
+        TN_PREFETCH(buffer.data(), 1, 3);
         binding.prefetchNode();
     }
     void prefetchColumns() const { binding.prefetchColumns(); }

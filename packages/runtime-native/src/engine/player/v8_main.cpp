@@ -1484,8 +1484,14 @@ int main(int argc, char** argv) {
             checkGame = true;
         // The playtest runner sizes the window with the legacy host's flags. The player reads its surface
         // from TN_PLAYER_WIDTH and TN_PLAYER_HEIGHT (run.cpp validates them), and it always opens windowed.
-        else if ((argument == "--width" || argument == "--height") && i + 1 < argc)
-            setenv(argument == "--width" ? "TN_PLAYER_WIDTH" : "TN_PLAYER_HEIGHT", argv[++i], 1);
+        else if ((argument == "--width" || argument == "--height") && i + 1 < argc) {
+            const char* name = argument == "--width" ? "TN_PLAYER_WIDTH" : "TN_PLAYER_HEIGHT";
+#if defined(_WIN32)
+            _putenv_s(name, argv[++i]);
+#else
+            setenv(name, argv[++i], 1);
+#endif
+        }
         else if (argument == "--windowed") {
         }
         else if (argument == "--check-request" && i + 1 < argc)

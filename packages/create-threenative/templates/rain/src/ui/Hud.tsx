@@ -196,7 +196,7 @@ export function Hud({ send, say, panelOpen, setPanelOpen, state, toast, toastVis
               aria-label="Save scene image"
               className="icon-btn desktop"
               data-tn-interactive
-              onClick={() => captureScene(say)}
+              onClick={() => void captureScene(say)}
               title="Save scene image [P]"
               type="button"
             >

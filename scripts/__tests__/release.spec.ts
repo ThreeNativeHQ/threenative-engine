@@ -273,3 +273,37 @@ describe("pnpm release ordering", () => {
     );
   });
 });
+
+describe("pnpm release --dry-run --lock (PRD-629)", () => {
+  it("answers the prebuilt question from the lock instead of the public release URL", async () => {
+    const { prebuiltFromLock } = await import("../release.js");
+    const root = await makeTempDir("threenative-release-lock-");
+    roots.push(root);
+    const lockPath = path.join(root, "prebuilt-lock.json");
+    fs.writeFileSync(lockPath, JSON.stringify({ artifacts: {}, schemaVersion: 1 }));
+    const options = prebuiltFromLock(lockPath);
+    expect(options.prebuiltProbe?.("https://example.invalid/prebuilt-lock.json")).toBe("present");
+    expect(options.prebuiltLock?.("https://example.invalid/prebuilt-lock.json")).toEqual({
+      artifacts: {},
+      schemaVersion: 1,
+    });
+  });
+
+  it.each([
+    [["--dry-run", "--yes"], /TN_RELEASE_FLAGS_CONFLICT/u],
+    [["--lock"], /TN_RELEASE_LOCK_USAGE/u],
+    [["--dry-run", "--nope"], /TN_RELEASE_UNKNOWN_FLAG/u],
+  ])("refuses %j before touching the network", (args, message) => {
+    let stderr = "";
+    try {
+      execFileSync("pnpm", ["exec", "tsx", "scripts/release.ts", ...args], {
+        cwd: path.resolve(import.meta.dirname, "../.."),
+        encoding: "utf8",
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+    } catch (error) {
+      stderr = String((error as { stderr?: unknown }).stderr);
+    }
+    expect(stderr).toMatch(message);
+  });
+});

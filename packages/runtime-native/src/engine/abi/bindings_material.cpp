@@ -610,9 +610,12 @@ void registerMaterialBindings(Registry& classes) {
             material->fog = false;
             return value;
         };
+        // MSVC cannot parse a qualified class in a pointer-to-member template argument
+        // (`Node shader::MaterialNodes::*`); the alias form is the one registerMeshMaterial uses.
+        using Nodes = shader::MaterialNodes;
         if (node)
-            for (const auto& [slot, field] : std::initializer_list<std::pair<const char*, shader::graph::Node shader::MaterialNodes::*>>{
-                     {"scaleNode", &shader::MaterialNodes::scaleNode}, {"rotationNode", &shader::MaterialNodes::rotationNode}}) {
+            for (const auto& [slot, field] : std::initializer_list<std::pair<const char*, shader::graph::Node Nodes::*>>{
+                     {"scaleNode", &Nodes::scaleNode}, {"rotationNode", &Nodes::rotationNode}}) {
                 b.getters[slot] = [field](void* self) { return Value::shaderNode(as<Material>(self)->nodes.*field); };
                 b.setters[slot] = [field, slot](void* self, const Value& v) {
                     if (v.kind != Value::Kind::Null && (v.kind != Value::Kind::ShaderNode || !v.node))

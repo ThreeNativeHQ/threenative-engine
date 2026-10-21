@@ -20,6 +20,8 @@ import type { IStandalonePlaytestConfig } from "./config.js";
 export const UNHANDLED_REJECTION_PREFIX = "__THREENATIVE_PLAYTEST_UNHANDLED_REJECTION__:";
 /** How long a single screenshot may take before the runner calls it a failure. */
 export const SCREENSHOT_TIMEOUT_MS = 120_000;
+/** How long a blank capture keeps being retaken before the surface is reported blank. */
+export const PRESENTATION_BOUND_MS = 10_000;
 export const MAX_FIXED_STEP_STARTUP_RETRIES = 120;
 export const STOPPED_LOOP_ERROR = "Cannot advance a stopped loop.";
 

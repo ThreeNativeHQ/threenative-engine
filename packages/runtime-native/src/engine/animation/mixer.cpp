@@ -416,9 +416,9 @@ void AnimationAction::update(double t, double deltaTime, double timeDirection, i
             constexpr std::size_t kNear = 2, kMid = 4, kFar = 8;
             const std::size_t n = interpolants_.size();
             const auto objects = [&](std::size_t j) {
-                __builtin_prefetch(propertyBindings_[j], 1, 3);
-                __builtin_prefetch(reinterpret_cast<const char*>(propertyBindings_[j]) + 64, 1, 3);
-                __builtin_prefetch(interpolants_[j].get(), 1, 3);
+                TN_PREFETCH(propertyBindings_[j], 1, 3);
+                TN_PREFETCH(reinterpret_cast<const char*>(propertyBindings_[j]) + 64, 1, 3);
+                TN_PREFETCH(interpolants_[j].get(), 1, 3);
             };
             for (std::size_t k = 0; k != std::min(n, kFar); ++k) objects(k);
             for (std::size_t k = 0; k != std::min(n, kMid); ++k) propertyBindings_[k]->prefetchData();
