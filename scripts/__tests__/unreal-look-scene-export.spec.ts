@@ -146,6 +146,39 @@ describe("GI calibration scene export (PRD-638 AC-3)", () => {
     );
   });
 
+  it("checks a material's albedo texture against scene.glb in both directions (PRD-639)", () => {
+    const textured = fixture();
+    Object.assign(textured.scene.meshes[0]?.material ?? {}, { baseColorTexture: "Brick" });
+    expect(() => validateSceneExport(textured.scene, textured.gltf)).toThrow(
+      /Wall_Red: scene.json names the texture Brick, scene.glb has none/,
+    );
+    const pbr = textured.gltf.materials?.[0]?.pbrMetallicRoughness ?? {};
+    Object.assign(pbr, { baseColorTexture: { index: 0 } });
+    expect(() => validateSceneExport(textured.scene, textured.gltf)).not.toThrow();
+    const flat = fixture();
+    Object.assign(flat.gltf.materials?.[0]?.pbrMetallicRoughness ?? {}, {
+      baseColorTexture: { index: 0 },
+    });
+    expect(() => validateSceneExport(flat.scene, flat.gltf)).toThrow(
+      /Wall_Red: scene.glb textures the material, scene.json does not name a texture/,
+    );
+  });
+
+  it("reads an emissive strength above 1 from KHR_materials_emissive_strength (PRD-639)", () => {
+    const { scene, gltf } = fixture();
+    Object.assign(scene.meshes[0]?.material ?? {}, {
+      emissive: [0, 0.85, 1],
+      emissiveStrength: 40,
+    });
+    const material = gltf.materials?.[0] ?? {};
+    material.emissiveFactor = [0, 0.85, 1];
+    expect(() => validateSceneExport(scene, gltf)).toThrow(/Wall_Red: material MI_Red differs/);
+    material.extensions = { KHR_materials_emissive_strength: { emissiveStrength: 40 } };
+    expect(() => validateSceneExport(scene, gltf)).not.toThrow();
+    material.extensions = { KHR_materials_emissive_strength: { emissiveStrength: 4 } };
+    expect(() => validateSceneExport(scene, gltf)).toThrow(/Wall_Red: material MI_Red differs/);
+  });
+
   it("rejects a file that is not a binary glTF", () => {
     expect(() => readGlbJson(new Uint8Array(32))).toThrow(/not a binary glTF/);
   });

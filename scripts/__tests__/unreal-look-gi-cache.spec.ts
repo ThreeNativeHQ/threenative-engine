@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import {
   BoxGeometry,
   Color,
+  DataTexture,
   DoubleSide,
   Group,
   type Intersection,
@@ -180,6 +181,41 @@ describe("the world-space GI cache against closed forms (PRD-631 L7)", () => {
       for (const face of texelAt(centre).faces)
         for (const channel of face) expect(channel / expected).toBeCloseTo(1, 1);
     }
+  });
+
+  it("a ray that lands on a mapped wall returns the map's texel, not the colour factor (PRD-639 Surface Cache)", () => {
+    // The same closed furnace, with a white colour factor under a 0.302 grey map, as a loaded asset has it. Flat, the
+    // wall bounces white and the series runs on rho = 1; with the Surface Cache it follows the texel, rho = 77 / 255.
+    const texel = 77 / 255;
+    const furnace = (surfaceCache: boolean) => {
+      const material = new MeshStandardMaterial({
+        color: new Color(1, 1, 1),
+        map: new DataTexture(new Uint8Array([77, 77, 77, 255]), 1, 1),
+        emissive: new Color(2, 2, 2),
+        side: DoubleSide,
+      });
+      const room = new Group().add(new Mesh(new BoxGeometry(6, 6, 6).scale(-1, -1, -1), material));
+      skyRadiance.current = { data: new Float32Array(6), width: 2, height: 1, scale: [1, 1, 1] };
+      installGi(rayContext(room), room, { bounces: 3, sun: noSun, surfaceCache });
+      return texelAt(new Vector3(0.3, 0.2, -0.4)).faces[0]?.[0] ?? 0;
+    };
+    const expected = (2 * (1 - texel ** 3)) / (1 - texel);
+    expect(furnace(true) / expected).toBeCloseTo(1, 1);
+    // Flat: rho = 1, so three passes read 2 x 3 = 6, three times the textured light.
+    expect(furnace(false) / (2 * 3)).toBeCloseTo(1, 1);
+  });
+
+  it("the material the cache installs keeps its maps, so a textured wall is drawn with its texture (PRD-639)", () => {
+    const map = new DataTexture(new Uint8Array([77, 77, 77, 255]), 1, 1);
+    const material = new MeshStandardMaterial({
+      map,
+      emissive: new Color(1, 1, 1),
+      side: DoubleSide,
+    });
+    const room = new Group().add(new Mesh(new BoxGeometry(6, 6, 6).scale(-1, -1, -1), material));
+    skyRadiance.current = { data: new Float32Array(6), width: 2, height: 1, scale: [1, 1, 1] };
+    installGi(rayContext(room), room, { bounces: 1, sun: noSun });
+    expect(((room.children[0] as Mesh).material as MeshStandardMaterial).map).toBe(map);
   });
 
   it("the share of the environment a face sees is 1 in the open and falls under a roof", () => {

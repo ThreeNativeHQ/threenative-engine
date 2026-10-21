@@ -173,7 +173,10 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
         const gi = installGi(ctx, model, {
           // Diagnosis: ?bounces=N brackets how much of the indirect light the later bounces carry.
           bounces: Number(params.get("bounces") ?? 5),
-          lights: lights.map((l) => ({
+          // The Surface Cache is on: a ray reads the map where it lands (PRD-639). Diagnosis: ?giMaps=0 returns the
+          // flat colour factor, ?giLights=0 leaves the lamps out of what a ray returns (the direct frame keeps them).
+          surfaceCache: params.get("giMaps") !== "0",
+          lights: (params.get("giLights") === "0" ? [] : lights).map((l) => ({
             position: l.position,
             color: l.color,
             intensity: l.intensity,

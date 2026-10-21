@@ -93,9 +93,30 @@ def poses_of(scene):
 
 
 # --- build -------------------------------------------------------------------
-def material(ref, folder, name, values, proxy=PROXY):
+def texture(ref, folder, name, path):
+    """Imports an image file beside scene.py as an sRGB Texture2D (PRD-639: a material's albedo texels)."""
+    if not os.path.exists(path):
+        raise FileNotFoundError(f"texture {name}: {path} is missing")
+    task = unreal.AssetImportTask()
+    task.set_editor_property("filename", path)
+    task.set_editor_property("destination_path", folder)
+    task.set_editor_property("destination_name", name)
+    task.set_editor_property("replace_existing", True)
+    task.set_editor_property("automated", True)
+    task.set_editor_property("save", True)
+    ref.asset_tools.import_asset_tasks([task])
+    asset = unreal.load_asset(f"{folder}/{name}")
+    if not isinstance(asset, unreal.Texture2D):
+        raise RuntimeError(f"texture {name}: the import made no Texture2D from {path}")
+    return asset
+
+
+def material(ref, folder, name, values, proxy=PROXY, textures=None):
     mi = ref.asset_tools.create_asset(name, folder, unreal.MaterialInstanceConstant, unreal.MaterialInstanceConstantFactoryNew())
     mel.set_material_instance_parent(mi, unreal.load_asset(proxy))
+    if "baseColorTexture" in values:
+        # The proxy's "Base Color Texture" multiplies "Base Color Factor", as glTF's baseColorTexture does.
+        mel.set_material_instance_texture_parameter_value(mi, "Base Color Texture", (textures or {})[values["baseColorTexture"]])
     r, g, b = values["baseColor"]
     mel.set_material_instance_vector_parameter_value(mi, "Base Color Factor", unreal.LinearColor(r, g, b, 1.0))
     mel.set_material_instance_scalar_parameter_value(mi, "Roughness Factor", values["roughness"])
@@ -217,7 +238,8 @@ def build(ref, name):
     if len(scene["boxes"]) > len(ID_COLORS):
         raise ValueError(f"scene {name}: more boxes than region-ID colours")
     base = root(name)
-    named = {m: material(ref, f"{base}/Materials", f"MI_{m}", v) for m, v in scene["materials"].items()}
+    textures = {t: texture(ref, f"{base}/Textures", f"T_{t}", os.path.join(scene_dir(name), file)) for t, file in scene.get("textures", {}).items()}
+    named = {m: material(ref, f"{base}/Materials", f"MI_{m}", v, textures=textures) for m, v in scene["materials"].items()}
     regions = {box["name"]: ID_COLORS[i] for i, box in enumerate(scene["boxes"])}
     # Linear base colour id/255: Unreal display-encodes it, and compare.ts accepts both forms.
     ids = {
@@ -355,9 +377,13 @@ def material_values(mi):
         c = mel.get_material_instance_vector_parameter_value(mi, param)
         return [round(c.r, 6), round(c.g, 6), round(c.b, 6)]
 
+    # The proxy parent's default is its own white texture: only a texture the scene bound counts (PRD-639).
+    bound = mel.get_material_instance_texture_parameter_value(mi, "Base Color Texture")
+    textured = bound is not None and not bound.get_name().startswith("T_GLTF_Default")
     return {
         "name": mi.get_name(),
         "baseColor": vector("Base Color Factor"),
+        **({"baseColorTexture": bound.get_name().removeprefix("T_")} if textured else {}),
         "roughness": round(mel.get_material_instance_scalar_parameter_value(mi, "Roughness Factor"), 6),
         "metallic": round(mel.get_material_instance_scalar_parameter_value(mi, "Metallic Factor"), 6),
         "emissive": vector("Emissive Factor"),
