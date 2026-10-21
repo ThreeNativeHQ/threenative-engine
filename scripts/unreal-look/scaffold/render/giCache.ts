@@ -59,7 +59,7 @@ import {
   uniform,
   vec3,
 } from "three/tsl";
-import { MeshStandardNodeMaterial, type Node } from "three/webgpu";
+import { MeshPhysicalNodeMaterial, MeshStandardNodeMaterial, type Node } from "three/webgpu";
 import { bakeRays } from "./bakeRays.js";
 
 /** What the bake needs of the game's context: the scene ray query (`ICtx.raycast`). */
@@ -1113,6 +1113,43 @@ export function emitterLight(
   return sum;
 }
 
+/** What three's own `fromMaterial` copies, and the engine's identity: never carried to the twin. */
+const NOT_COPIED = /^(?:is[A-Z]|_)|^(?:constructor|id|uuid|version|type)$/;
+
+/**
+ * The node material a source material becomes when the cache lights it, as three's `fromMaterial` makes it: the class that
+ * matches the source type (a node material keeps its class), and every settable field copied, so the maps, the cut-out,
+ * the sides and the blending carry over. three holds a field as an own property and the native engine as an accessor on
+ * the class, which `for in` never lists, so the fields are found by walking the prototype chain's descriptors.
+ */
+function nodeTwin(source: MeshStandardMaterial): MeshStandardMaterial {
+  if ((source as { isNodeMaterial?: boolean }).isNodeMaterial) return source;
+  const twin = (source.type === "MeshPhysicalMaterial"
+    ? physicalTwin()
+    : new MeshStandardNodeMaterial()) as unknown as Record<string, unknown>;
+  for (
+    let at: object | null = source;
+    at !== null && at !== Object.prototype;
+    at = Object.getPrototypeOf(at)
+  )
+    for (const [key, field] of Object.entries(Object.getOwnPropertyDescriptors(at))) {
+      if (NOT_COPIED.test(key) || !(key in twin) || (field.set ? !field.get : !field.writable))
+        continue;
+      const value = (source as unknown as Record<string, unknown>)[key];
+      if (value !== undefined && typeof value !== "function") twin[key] = value;
+    }
+  return twin as unknown as MeshStandardMaterial;
+}
+
+/** The native engine has no physical node class yet (core-webgpu.mjs refuses it): it lights a physical source as a standard one. */
+function physicalTwin() {
+  try {
+    return new MeshPhysicalNodeMaterial();
+  } catch {
+    return new MeshStandardNodeMaterial();
+  }
+}
+
 export function installGi(
   gameCtx: IRayContext,
   root: Object3D,
@@ -1572,21 +1609,20 @@ export function installGi(
     reads.set(roughness, made);
     return made;
   };
+  const twins = new Map<MeshStandardMaterial, MeshStandardMaterial>();
   root.traverse((object) => {
     const mesh = object as Mesh;
     if (!(mesh as { isMesh?: boolean }).isMesh) return;
     const source = mesh.material as MeshStandardMaterial;
-    const { node, visibility } = readFor(source.roughness);
-    const material = new MeshStandardNodeMaterial();
-    material.color.copy(source.color);
-    material.roughness = source.roughness;
-    material.metalness = source.metalness;
-    material.emissive.copy(source.emissive);
-    material.emissiveIntensity = source.emissiveIntensity;
-    material.side = source.side;
-    material.shadowSide = source.shadowSide;
-    (material as unknown as { irradianceNode: unknown }).irradianceNode = node;
-    (material as unknown as { aoNode: unknown }).aoNode = visibility;
+    // Meshes that share a material keep sharing its twin.
+    let material = twins.get(source);
+    if (material === undefined) {
+      const { node, visibility } = readFor(source.roughness);
+      material = nodeTwin(source);
+      (material as unknown as { irradianceNode: unknown }).irradianceNode = node;
+      (material as unknown as { aoNode: unknown }).aoNode = visibility;
+      twins.set(source, material);
+    }
     mesh.material = material;
   });
   const report: IGiReport = {

@@ -17,6 +17,11 @@ PRD-649: a `shadow:<name>` scene lives in ../shadow/<name>/ with ../shadow/scene
 "suns", the template floor deleted, the boxes added, and an unbound post-process volume with no
 overrides, as build_level.py builds the PRD-631 reference. Its poses run once per sun.
 
+A box may be a card ("kind": "card"): a zero-thickness quad, standing upright, that several actors share
+as one static mesh ("mesh"). A material may be masked ("alphaMode": "MASK") and two-sided with a texture
+(PRD-651 leaf cards): the glTF exporter writes it as alphaMode MASK, doubleSided and a base colour texture.
+A box names a "region" to share its region-ID colour with a group of cards (`Leaves`).
+
 Unreal is the source of truth: scene.json holds what the level reports, not what scene.py asked for.
 The proxy materials (/GLTFExporter/Materials/Proxy/M_GLTF_Default) are the exporter's own, so their
 factors reach scene.glb unchanged. This file holds no Unreal code; it drives the editor through its
@@ -86,18 +91,68 @@ def level_path(name, suffix=""):
 
 
 def poses_of(scene):
-    """A template-lit scene runs each pose once per sun, as `<sun>-<pose>`; other scenes as authored."""
+    """A template-lit scene runs each pose once per sun, as `<sun>-<pose>`; other scenes as authored.
+
+    A pose may carry `perSun`: {sun name: values that replace the pose's own for that sun}, for a camera
+    that must stand elsewhere when the shadows fall elsewhere (the foliage canopy at a 15 degree sun).
+    """
     if scene.get("template") != "default":
         return scene["poses"]
-    return [dict(p, name=f"{s['name']}-{p['name']}", sun=s["name"]) for s in scene["suns"] for p in scene["poses"]]
+    return [
+        dict(
+            {k: v for k, v in p.items() if k != "perSun"},
+            **p.get("perSun", {}).get(s["name"], {}),
+            name=f"{s['name']}-{p['name']}",
+            sun=s["name"],
+        )
+        for s in scene["suns"]
+        for p in scene["poses"]
+    ]
 
 
 # --- build -------------------------------------------------------------------
-def material(ref, folder, name, values, proxy=PROXY):
+def import_texture(ref, folder, path):
+    """A scene texture: imported uncompressed, clamped and with a plain box mip chain, so a mask keeps its edge."""
+    task = unreal.AssetImportTask()
+    task.filename = path
+    task.destination_path = folder
+    task.automated = True
+    task.replace_existing = True
+    task.save = False
+    ref.asset_tools.import_asset_tasks([task])
+    texture = unreal.load_asset(str(task.imported_object_paths[0]))
+    if not isinstance(texture, unreal.Texture2D):
+        raise RuntimeError(f"{path}: import made no texture ({task.imported_object_paths})")
+    texture.set_editor_property("compression_settings", unreal.TextureCompressionSettings.TC_EDITOR_ICON)
+    texture.set_editor_property("mip_gen_settings", unreal.TextureMipGenSettings.TMGS_SIMPLE_AVERAGE)
+    texture.set_editor_property("address_x", unreal.TextureAddress.TA_CLAMP)
+    texture.set_editor_property("address_y", unreal.TextureAddress.TA_CLAMP)
+    texture.set_editor_property("never_stream", True)
+    unreal.EditorAssetLibrary.save_loaded_asset(texture)
+    return texture
+
+
+def set_masked(mi, values):
+    """Masked blend, a clip value and the two-sided flag, as base property overrides on the instance."""
+    overrides = mi.get_editor_property("base_property_overrides")
+    overrides.set_editor_property("override_blend_mode", True)
+    overrides.set_editor_property("blend_mode", unreal.BlendMode.BLEND_MASKED)
+    overrides.set_editor_property("override_opacity_mask_clip_value", True)
+    overrides.set_editor_property("opacity_mask_clip_value", values["alphaCutoff"])
+    overrides.set_editor_property("override_two_sided", True)
+    overrides.set_editor_property("two_sided", values["doubleSided"])
+    mi.set_editor_property("base_property_overrides", overrides)
+
+
+def material(ref, folder, name, values, proxy=PROXY, textures=None):
     mi = ref.asset_tools.create_asset(name, folder, unreal.MaterialInstanceConstant, unreal.MaterialInstanceConstantFactoryNew())
     mel.set_material_instance_parent(mi, unreal.load_asset(proxy))
     r, g, b = values["baseColor"]
     mel.set_material_instance_vector_parameter_value(mi, "Base Color Factor", unreal.LinearColor(r, g, b, 1.0))
+    if "texture" in values:
+        mel.set_material_instance_texture_parameter_value(mi, "Base Color Texture", textures[values["texture"]])
+    if values.get("alphaMode") == "MASK":
+        set_masked(mi, values)
     mel.set_material_instance_scalar_parameter_value(mi, "Roughness Factor", values["roughness"])
     mel.set_material_instance_scalar_parameter_value(mi, "Metallic Factor", values["metallic"])
     if "emissive" in values:
@@ -109,16 +164,38 @@ def material(ref, folder, name, values, proxy=PROXY):
     return mi
 
 
+def mesh_key(box):
+    """The static mesh a box uses: its own, or the one its card kind shares (`Leaf`)."""
+    return box.get("mesh", box["name"])
+
+
+def region_of(box):
+    """The region a box belongs to: a card group shares one (`Leaves`), any other box is its own."""
+    return box.get("region", box["name"])
+
+
 def box_mesh(folder, box):
     sx, sy, sz = box["size"]
     mesh = unreal.DynamicMesh()
-    # Unreal X, Y, Z = three.js x, z, y, in centimetres.
-    unreal.GeometryScript_Primitives.append_box(
-        mesh, unreal.GeometryScriptPrimitiveOptions(), unreal.Transform(),
-        sx * 100.0, sz * 100.0, sy * 100.0, 0, 0, 0, unreal.GeometryScriptPrimitiveOriginMode.CENTER,
-    )
+    if box.get("kind") == "card":
+        if sz != 0:
+            raise ValueError(f"card {box['name']}: a card has no thickness, size z must be 0")
+        # A quad that stands upright, as the three.js XY plane does: width along X, height along Z. The
+        # rectangle lies in XY, and a quarter turn about X stands it up. The turn is +90 so that the top
+        # of the texture (V = 0) is the top of the card: with -90 the leaves hung upside down (measured, ID frame).
+        unreal.GeometryScript_Primitives.append_rectangle_xy(
+            mesh, unreal.GeometryScriptPrimitiveOptions(),
+            unreal.Transform(unreal.Vector(0, 0, 0), unreal.Rotator(roll=90.0, pitch=0.0, yaw=0.0), unreal.Vector(1, 1, 1)),
+            sx * 100.0, sy * 100.0, 0, 0,
+        )
+    else:
+        # Unreal X, Y, Z = three.js x, z, y, in centimetres.
+        unreal.GeometryScript_Primitives.append_box(
+            mesh, unreal.GeometryScriptPrimitiveOptions(), unreal.Transform(),
+            sx * 100.0, sz * 100.0, sy * 100.0, 0, 0, 0, unreal.GeometryScriptPrimitiveOriginMode.CENTER,
+        )
     result = unreal.GeometryScript_NewAssetUtils.create_new_static_mesh_asset_from_mesh(
-        mesh, f"{folder}/SM_{box['name']}", unreal.GeometryScriptCreateNewStaticMeshAssetOptions()
+        mesh, f"{folder}/SM_{mesh_key(box)}", unreal.GeometryScriptCreateNewStaticMeshAssetOptions()
     )
     asset = result[0] if isinstance(result, tuple) else result
     if not isinstance(asset, unreal.StaticMesh):
@@ -174,8 +251,9 @@ def spawn_boxes(ref, scene, meshes, materials):
     actors = []
     for box in scene["boxes"]:
         actor = ref.actor_subsystem.spawn_actor_from_object(
-            meshes[box["name"]], ref.to_unreal(box["position"]),
-            # three's +X is Unreal's +X; the axis swap that flips handedness negates both angles.
+            meshes[mesh_key(box)], ref.to_unreal(box["position"]),
+            # three's +X is Unreal's +X: a roll is the same angle about it. The axis swap that flips
+            # handedness negates the yaw. Unreal turns the roll first, then the yaw: a tilt, then a turn.
             unreal.Rotator(roll=box.get("rotationXDeg", 0.0), pitch=0.0, yaw=-box.get("rotationYDeg", 0.0)),
         )
         actor.set_actor_label(box["name"])
@@ -220,18 +298,35 @@ def build(ref, name):
         raise ValueError(f"scene {name}: sky, sun and fog are not authored yet (PRD-638 Phase 2)")
     if template and (scene["lights"] or not scene.get("suns")):
         raise ValueError(f"scene {name}: a template-lit scene names its suns and adds no light")
-    if len(scene["boxes"]) > len(ID_COLORS):
-        raise ValueError(f"scene {name}: more boxes than region-ID colours")
+    region_material = {}
+    for box in scene["boxes"]:
+        if region_material.setdefault(region_of(box), box["material"]) != box["material"]:
+            raise ValueError(f"scene {name}: region {region_of(box)} mixes materials, its ID frame could not tell them apart")
+    if len(region_material) > len(ID_COLORS):
+        raise ValueError(f"scene {name}: more regions than region-ID colours")
     base = root(name)
-    named = {m: material(ref, f"{base}/Materials", f"MI_{m}", v) for m, v in scene["materials"].items()}
-    regions = {box["name"]: ID_COLORS[i] for i, box in enumerate(scene["boxes"])}
-    # Linear base colour id/255: Unreal display-encodes it, and compare.ts accepts both forms.
-    ids = {
-        b: material(ref, f"{base}/Materials", f"MI_ID_{b}", {"baseColor": [c / 255.0 for c in rgb], "roughness": 1.0, "metallic": 0.0}, UNLIT_PROXY)
-        for b, rgb in regions.items()
+    textures = {
+        f: import_texture(ref, f"{base}/Textures", os.path.join(scene_dir(name), f))
+        for f in sorted({m["texture"] for m in scene["materials"].values() if "texture" in m})
     }
-    meshes = {box["name"]: box_mesh(f"{base}/Meshes", box) for box in scene["boxes"]}
-    build_level(ref, level_path(name, "_id"), scene, meshes, ids, False)
+    named = {m: material(ref, f"{base}/Materials", f"MI_{m}", v, textures=textures) for m, v in scene["materials"].items()}
+    regions = {r: ID_COLORS[i] for i, r in enumerate(region_material)}
+    # Linear base colour id/255: Unreal display-encodes it, and compare.ts accepts both forms. A masked
+    # region keeps its cut in the ID frame: the same texture, clip value and sides, unlit.
+    ids = {}
+    for region, rgb in regions.items():
+        spec = scene["materials"][region_material[region]]
+        values = {"baseColor": [c / 255.0 for c in rgb], "roughness": 1.0, "metallic": 0.0}
+        values.update({k: spec[k] for k in ("texture", "alphaMode", "alphaCutoff", "doubleSided") if k in spec})
+        ids[region] = material(ref, f"{base}/Materials", f"MI_ID_{region}", values, UNLIT_PROXY, textures)
+    meshes = {}
+    for box in scene["boxes"]:
+        key = mesh_key(box)
+        if key not in meshes:
+            meshes[key] = box_mesh(f"{base}/Meshes", box)
+        elif box["size"] != next(b for b in scene["boxes"] if mesh_key(b) == key)["size"]:
+            raise ValueError(f"scene {name}: {box['name']} shares mesh {key} with a box of another size")
+    build_level(ref, level_path(name, "_id"), scene, meshes, {b["name"]: ids[region_of(b)] for b in scene["boxes"]}, False)
     lit = {b["name"]: named[b["material"]] for b in scene["boxes"]}
     if template:
         for sun in scene["suns"]:
@@ -267,6 +362,7 @@ def to_three(v):
 def describe_level(ref, name, scene, regions):
     meshes, lights, exposure, sun, template_meshes = [], [], None, None, []
     boxes = {b["name"] for b in scene["boxes"]}
+    region_by_box = {b["name"]: region_of(b) for b in scene["boxes"]}
     for actor in ref.actor_subsystem.get_all_level_actors():
         label, cls = actor.get_actor_label(), actor.get_class().get_name()
         if cls == "StaticMeshActor" and label not in boxes and scene.get("template") == "default":
@@ -274,8 +370,8 @@ def describe_level(ref, name, scene, regions):
             template_meshes.append(label)
         elif cls == "StaticMeshActor":
             rot = actor.get_actor_rotation()
-            if abs(rot.pitch) > 1e-3 or (abs(rot.roll) > 1e-3 and abs(rot.yaw) > 1e-3):
-                raise ValueError(f"{label}: only one rotation, about the vertical or the x axis, is exported")
+            if abs(rot.pitch) > 1e-3:
+                raise ValueError(f"{label}: only a turn about the vertical and a tilt about the x axis are exported")
             component = actor.static_mesh_component
             box = component.static_mesh.get_bounding_box()
             mi = component.get_material(0)
@@ -285,7 +381,10 @@ def describe_level(ref, name, scene, regions):
                 "position": to_three(actor.get_actor_location()),
                 "rotationYDeg": round(-rot.yaw, 6),
                 # A roll is the same angle about three's +X: the glTF export writes it so (penumbra-lab's ramp).
+                # With a yaw too, the tilt is turned first (a leaf card), as the actor's rotation does.
                 **({"rotationXDeg": round(rot.roll, 6)} if abs(rot.roll) > 1e-3 else {}),
+                # A region is the actor's own unless scene.py groups it (the leaf cards).
+                **({"region": region_by_box[label]} if region_by_box.get(label, label) != label else {}),
                 "size": to_three(unreal.Vector(box.max.x - box.min.x, box.max.y - box.min.y, box.max.z - box.min.z)),
                 "material": material_values(mi),
             })
@@ -367,7 +466,7 @@ def material_values(mi):
         c = mel.get_material_instance_vector_parameter_value(mi, param)
         return [round(c.r, 6), round(c.g, 6), round(c.b, 6)]
 
-    return {
+    values = {
         "name": mi.get_name(),
         "baseColor": vector("Base Color Factor"),
         "roughness": round(mel.get_material_instance_scalar_parameter_value(mi, "Roughness Factor"), 6),
@@ -375,6 +474,15 @@ def material_values(mi):
         "emissive": vector("Emissive Factor"),
         "emissiveStrength": round(mel.get_material_instance_scalar_parameter_value(mi, "Emissive Strength"), 6),
     }
+    # A masked material also reports its texture, clip value and sides, read from the instance.
+    overrides = mi.get_editor_property("base_property_overrides")
+    if overrides.get_editor_property("override_blend_mode") and overrides.get_editor_property("blend_mode") == unreal.BlendMode.BLEND_MASKED:
+        texture = mel.get_material_instance_texture_parameter_value(mi, "Base Color Texture")
+        values["texture"] = os.path.basename(texture.get_editor_property("asset_import_data").get_first_filename())
+        values["alphaMode"] = "MASK"
+        values["alphaCutoff"] = round(overrides.get_editor_property("opacity_mask_clip_value"), 6)
+        values["doubleSided"] = bool(overrides.get_editor_property("override_two_sided") and overrides.get_editor_property("two_sided"))
+    return values
 
 
 def write_json(name, value):

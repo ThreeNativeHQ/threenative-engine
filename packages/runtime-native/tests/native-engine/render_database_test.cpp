@@ -8,6 +8,7 @@
 #include "engine/animation/mixer.h"
 #include "engine/renderer/post/traa.h"
 #include "engine/renderer/render_database.h"
+#include "engine/renderer/shadows/virtual/atlas.h"
 #include "engine/renderer/reflector.h"
 #include "engine/renderer/render_target_pass.h"
 #include "engine/shader/graph/graph.h"
@@ -3357,6 +3358,109 @@ void maskedShadow() {
     CHECK(frontFacingLight < 0.05);        // three's shadowSide: a FrontSide caster draws its back faces
 }
 
+// PRD-651: a two-sided, alpha-tested receiver (a leaf card) looks its shadow up where it stands, and a
+// source-angle filter widens to Unreal's 5 degree minimum on it. A plate 1 m above the floor with the sun
+// at 45 degrees throws an edge at x = 1; a normal bias b along the floor's normal moves a biased lookup's
+// edge to x = 1 - b. The floor is the receiver: a leaf skips the bias, a one-sided or uncut floor keeps it.
+void leafReceiver() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(96, 96);
+    OrthographicCamera camera(-3, 3, 3, -3, 0.1, 20);  // 16 pixels per metre
+    camera.position.set(0, 10, 0.001);
+    camera.lookAt(0, 0, 0);
+    camera.updateProjectionMatrix();
+    const auto row = [&](RenderDatabase& database, Scene& scene) {
+        database.render(renderer, scene, camera);
+        std::vector<uint8_t> pixels;
+        bool read = false;
+        renderer.readPixels([&](GpuStatus status, std::vector<uint8_t> px) {
+            if (status == GpuStatus::Ok) pixels = std::move(px);
+            read = true;
+        });
+        for (int i = 0; i < 5000 && !read; ++i) {
+            renderer.poll();
+            events.drain();
+            if (!read) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        CHECK(pixels.size() == size_t{96} * 96 * 4);
+        std::vector<double> out;
+        for (int x = 0; x < 96; ++x) out.push_back(pixels[(size_t{48} * 96 + size_t(x)) * 4]);
+        return out;
+    };
+    // The shadow edge on the middle row in metres (the first pixel brighter than half the lit floor, from
+    // the left, interpolated) and the width between 15 and 85 percent of the lit floor.
+    struct Edge { double at, width; };
+    const auto edgeOf = [](const std::vector<double>& line) {
+        const double lit = line[93], dark = *std::min_element(line.begin(), line.begin() + 80);
+        CHECK(lit - dark > 20);
+        const auto cross = [&](double fraction) {
+            const double level = dark + (lit - dark) * fraction;
+            for (int x = 1; x < 96; ++x)
+                if (line[x - 1] < level && line[x] >= level) return x - 1 + (level - line[x - 1]) / (line[x] - line[x - 1]);
+            return -1.0;
+        };
+        return Edge{(cross(0.5) - 48) / 16.0, (cross(0.85) - cross(0.15)) / 16.0};
+    };
+    // One floor, one plate, a sun at 45 degrees; the receiver's side, cut and the light's bias vary.
+    const auto edge = [&](Side side, double alphaTest, double normalBias, bool filter) {
+        Scene scene;
+        DirectionalLight light{Color(1, 1, 1), 3};
+        light.position.set(-5, 5, 0);
+        light.setCastShadow(true);
+        light.shadow.camera->setLayerMask(double((1 << 0) | (1 << 2)));
+        light.shadow.normalBias = normalBias;
+        if (filter) {
+            auto options = std::make_shared<shadows::AtlasOptions>();
+            options->clipExtents = {8};
+            options->mapSize = 512;
+            options->pageTexels = 128;
+            options->lightDistance = 20;
+            options->depthRange = 40;
+            options->refreshStep = {0};
+            light.shadow.virtualShadow = options;
+            light.shadow.sourceAngleFilter = std::array<double, 3>{0.0047, 16, 16};  // 0.27 degrees, Unreal's sun
+        }
+        scene.add(light);
+        auto material = std::make_shared<Material>(MaterialType::Standard);
+        material->side = side;
+        material->alphaTest = alphaTest;
+        Mesh floor{makePlaneGeometry(6, 6), material};
+        floor.rotation.set(-M_PI / 2, 0, 0);
+        floor.setReceiveShadow(true);
+        scene.add(floor);
+        // The plate covers x < 0 at 1 m (2 m with the filter, so the gap is wide enough to measure).
+        Mesh plate{makeBoxGeometry(3, 0.05, 6), std::make_shared<Material>(MaterialType::Standard)};
+        plate.position.set(-1.5, filter ? 2 : 1, 0);
+        plate.setCastShadow(true);
+        plate.setLayer(2);
+        scene.add(plate);
+        scene.updateMatrixWorld(true);
+        RenderDatabase database;
+        database.shadowMapEnabled = true;
+        // A virtual map is drawn on the first frame and read on the next.
+        std::vector<double> line = row(database, scene);
+        for (int frame = 0; frame < (filter ? 2 : 0); ++frame) line = row(database, scene);
+        return edgeOf(line);
+    };
+    const double bias = 0.4;
+    const Edge unbiased = edge(Side::Front, 0, 0, false);
+    const Edge biased = edge(Side::Front, 0, bias, false);
+    const Edge leaf = edge(Side::Double, 0.5, bias, false);
+    const Edge twoSidedUncut = edge(Side::Double, 0, bias, false);
+    std::printf("leaf receiver bias: unbiased %.3f, biased %.3f, leaf %.3f, two-sided uncut %.3f\n", unbiased.at, biased.at,
+                leaf.at, twoSidedUncut.at);
+    CHECK(unbiased.at - biased.at > 0.3);          // the bias moves an ordinary receiver's edge by about b
+    CHECK(std::abs(leaf.at - unbiased.at) < 0.1);  // a leaf keeps the unbiased edge
+    CHECK(std::abs(twoSidedUncut.at - biased.at) < 0.1);  // two sides without a cut is not a leaf
+    const Edge hard = edge(Side::Front, 0, 0, true);
+    const Edge soft = edge(Side::Double, 0.5, 0, true);
+    std::printf("leaf receiver source: ordinary edge width %.3f m, leaf %.3f m\n", hard.width, soft.width);
+    CHECK(soft.width > hard.width + 0.15);         // the 5 degree minimum widens the leaf's penumbra
+}
+
 // sourceRadiusShadowFilter on a lamp (PRD-650): a plate 2 m under a lamp 4 m above the floor throws an
 // edge whose penumbra is 2 x sourceRadius x (4 - 2) / 2 m wide on the floor. The edge's width, in pixels
 // whose shadowed-to-unshadowed ratio lies between 0.15 and 0.85, follows the radius for a point light's
@@ -4705,8 +4809,9 @@ void gpuJointProduction() {
 TN_TEST_MAIN({"gpu_joint_production", gpuJointProduction}, {"multi_material_groups", multiMaterialGroups}, {"uniform_batch_preparation", uniformBatchPreparation}, {"steady_state", steadyState}, {"color_write_masks_the_draw", colorWriteMasksTheDraw}, {"normal_pass_is_not_tallied", normalPassIsNotTallied}, {"steady_cache_invalidation", steadyCacheInvalidation}, {"render_target", renderTarget}, {"post_texture_resize_keeps_draw_groups", postTextureResizeKeepsDrawGroups}, {"deferred_target_follows_post_rtt", deferredTargetFollowsPostRtt}, {"deferred_target_samples_post_rtt_node", deferredTargetSamplesPostRttNode}, {"screen_size_reaches_the_vertex_stage", screenSizeReachesTheVertexStage}, {"depth_node_sets_fragment_depth", depthNodeSetsFragmentDepth}, {"depth_node_reaches_every_material_program", depthNodeReachesEveryMaterialProgram}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"present_direct", presentDirect}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"directional_target_outside_scene", directionalTargetOutsideScene}, {"scene_fog_node", sceneFogNode}, {"lit_mesh_without_normals", litMeshWithoutNormals}, {"invalidation", invalidation}, {"alpha_scene", alphaScene},
              {"material_unsupported", materialUnsupported}, {"shader_invalid", shaderInvalid}, {"time_uniform", timeUniform}, {"gpu_mipmaps", gpuMipmaps}, {"updates", updates},
              {"multi_camera_layers", multiCameraLayers}, {"render_callback", renderCallback}, {"instanced", instanced},
+             {"virtual_sun_room_seam", virtualSunRoomSeam},
              {"batched_vs_unbatched", batchedVsUnbatched}, {"skinned_crowd", skinnedCrowdPixels}, {"skinned_decline_cadence", skinnedDeclineCadence}, {"skinned_normalized_weights", skinnedNormalizedWeights}, {"normal_map_tilt", normalMapTilt}, {"unsupported_map_slot", unsupportedMapSlot}, {"env_map_slot_is_read", envMapSlotIsRead}, {"converted_copies_swept", convertedCopiesAreSwept}, {"gpu_timer_covers_offscreen", gpuTimerCoversOffscreen}, {"gpu_timer_covers_shadows", gpuTimerCoversShadows}, {"overlay_over_frame", overlayOverFrame}, {"gpu_timer_is_opt_in", gpuTimerIsOptIn}, {"msaa_edges", msaaEdges}, {"shadow_camera_layers", shadowCameraLayers}, {"flat_shading_needs_no_normals", flatShadingNeedsNoNormals}, {"map_sampleability_changes", mapSampleabilityChanges}, {"batch_caches_stay_put", batchCachesStayPut}, {"frustum_culling", frustumCulling},
-             {"shadow_caster_frustum_culling", shadowCasterFrustumCulling}, {"masked_shadow", maskedShadow}, {"point_shadow_cube_faces", pointShadowCubeFaces}, {"lamp_source_radius", lampSourceRadius}, {"contact_shadow_foot", contactShadowFoot}, {"virtual_sun_contact_foot", virtualSunContactFoot}, {"virtual_sun_room_seam", virtualSunRoomSeam}, {"lamp_cache", lampCache}, {"shadow_lights_follow_hierarchy", shadowLightsFollowHierarchy}, {"records_survive_siblings", recordsSurviveSiblings}, {"steady_frame_hashes_no_record", steadyFrameHashesNoRecord}, {"nested_record_cache", nestedRecordCache}, {"frustum_record_retention", frustumRecordRetention}, {"world_sphere_measured_once", worldSphereMeasuredOnce}, {"reflection_reuse", reflectionReuse})
+             {"shadow_caster_frustum_culling", shadowCasterFrustumCulling}, {"masked_shadow", maskedShadow}, {"leaf_receiver", leafReceiver}, {"point_shadow_cube_faces", pointShadowCubeFaces}, {"lamp_source_radius", lampSourceRadius}, {"contact_shadow_foot", contactShadowFoot}, {"virtual_sun_contact_foot", virtualSunContactFoot}, {"lamp_cache", lampCache}, {"shadow_lights_follow_hierarchy", shadowLightsFollowHierarchy}, {"records_survive_siblings", recordsSurviveSiblings}, {"steady_frame_hashes_no_record", steadyFrameHashesNoRecord}, {"nested_record_cache", nestedRecordCache}, {"frustum_record_retention", frustumRecordRetention}, {"world_sphere_measured_once", worldSphereMeasuredOnce}, {"reflection_reuse", reflectionReuse})
 
 
 

@@ -82,6 +82,12 @@ struct VertexVariant {
     bool backSide = false;
     /** material.side is DoubleSide: lit fragments turn the normal toward the viewer on a back face. */
     bool doubleSide = false;
+    /**
+     * A two-sided, alpha-tested receiver (a leaf card, PRD-651): its shadow lookup skips the normal bias and a
+     * source-angle filter widens to the 5 degree minimum, as Unreal's two-sided foliage receivers do. Set on a
+     * lit draw only; it keys a lit program, so a leaf material gets its own.
+     */
+    bool leafReceiver = false;
     /** material.flatShading: the lit fragment's normal is the face normal from the position's screen-space
      *  derivatives (three's setupNormal), and the vertex stage reads no `normal` attribute. */
     bool flatShading = false;
@@ -160,7 +166,7 @@ struct VertexVariant {
     bool operator==(const VertexVariant&) const = default;
     /** A stable key: two variants with the same key build the same program. */
     [[nodiscard]] std::string key() const {
-        return std::to_string(fog) + (background ? "background|" : "") + std::string(sprite ? "sprite|" : "") + (backSide ? "back|" : "") + (doubleSide ? "double|" : "") + (flatShading ? "flat|" : "") + std::to_string(instanced) + std::to_string(instanceColor) + "vc" + std::to_string(vertexColors) + std::to_string(skinned) +
+        return std::to_string(fog) + (background ? "background|" : "") + std::string(sprite ? "sprite|" : "") + (backSide ? "back|" : "") + (doubleSide ? "double|" : "") + (leafReceiver ? "leaf|" : "") + (flatShading ? "flat|" : "") + std::to_string(instanced) + std::to_string(instanceColor) + "vc" + std::to_string(vertexColors) + std::to_string(skinned) +
                std::to_string(skinnedPalette) + (instanceStorage ? "storage" : "") + "m" + std::to_string(morphTargets) + (morphNormals ? "n" : "") +
                (map ? "t" : "") + (normalMap ? "N" : "") + (pbrMaps ? "P" + std::to_string(pbrMaps) : "") + (mapSRGB ? "s" : "") + (environment ? "e" : "") + (clearcoat ? "c" : "") + (invariantPosition ? "i" : "") +
                (positionNode ? "p:" + positionNode->key : "") + "|nodes:" + nodes.key();

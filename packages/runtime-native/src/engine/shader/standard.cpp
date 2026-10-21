@@ -721,6 +721,16 @@ static ExprId vogelDisk(Program& f, Tsl& t, int i, ExprId phi) {
     return f.mul(f.construct(Type::vec(2), {f.call("cos", {theta}), f.call("sin", {theta})}), r);
 }
 
+// A two-sided, alpha-tested receiver (a leaf card, PRD-651) looks its shadow up where it stands: Unreal's
+// subsurface and two-sided-foliage receivers skip the normal bias, and a thin leaf biased along its normal
+// either self-shadows or lets light through. The sun's source also widens to a 5 degree minimum there.
+static ExprId shadowWorld(Program& f, ExprId positionWorld, ExprId normalWorld, const std::string& at, bool leaf) {
+    if (leaf) return positionWorld;
+    return f.add(positionWorld, f.mul(normalWorld, f.uniform(at + "ShadowNormalBias", Type::f32())));
+}
+// tan(5 degrees): Unreal's r.Shadow.Virtual.SubsurfaceShadowMinSourceAngle.
+static constexpr float kLeafMinSourceTangent = 0.08748866f;
+
 // three's ShadowNode for a light's shadow under PCFShadowMap (the default type, with texture compare):
 // shadowPosition = shadowMatrix * (positionWorld + normalWorld * normalBias), divided by w, y flipped,
 // z biased; PCFShadowFilter's five Vogel-disk taps rotated by interleaved gradient noise of the
@@ -745,10 +755,10 @@ static ExprId softShadowSamples(Program& f, Tsl& t, uint32_t map, ExprId uv, Exp
     return f.mul(f.add(f.add(f.add(row1, row2), row3), row4), t.f(1.0f / 9.0f));
 }
 
-static ExprId shadowFactor(Program& f, Tsl& t, std::size_t index, ExprId positionWorld, ExprId normalWorld, bool soft) {
+static ExprId shadowFactor(Program& f, Tsl& t, std::size_t index, ExprId positionWorld, ExprId normalWorld, bool soft, bool leaf) {
     const std::string at = "light" + std::to_string(index);
     const uint32_t map = f.textureDepth("shadow" + std::to_string(index));
-    const ExprId world = f.add(positionWorld, f.mul(normalWorld, f.uniform(at + "ShadowNormalBias", Type::f32())));
+    const ExprId world = shadowWorld(f, positionWorld, normalWorld, at, leaf);
     const ExprId shadowPosition =
         f.mul(f.uniform(at + "ShadowMatrix", Type::mat(4, 4)), f.construct(Type::vec(4), {world, t.f(1)}));
     const ExprId projected = f.div(f.swizzle(shadowPosition, "xyz"), f.swizzle(shadowPosition, "w"));
@@ -784,10 +794,10 @@ static ExprId shadowFactor(Program& f, Tsl& t, std::size_t index, ExprId positio
 // the reference depth is viewZToPerspectiveDepth(-viewZ) + bias; PointShadowFilter's five taps lie in
 // the plane across the direction, sampled from the cube with y negated (WebGPU), then
 // mix(1, shadow, intensity).
-static ExprId pointShadowFactor(Program& f, Tsl& t, std::size_t index, ExprId positionWorld, ExprId normalWorld) {
+static ExprId pointShadowFactor(Program& f, Tsl& t, std::size_t index, ExprId positionWorld, ExprId normalWorld, bool leaf) {
     const std::string at = "light" + std::to_string(index);
     const uint32_t map = f.textureDepth("shadowCube" + std::to_string(index), true);
-    const ExprId world = f.add(positionWorld, f.mul(normalWorld, f.uniform(at + "ShadowNormalBias", Type::f32())));
+    const ExprId world = shadowWorld(f, positionWorld, normalWorld, at, leaf);
     const ExprId shadowPosition = f.swizzle(
         f.mul(f.uniform(at + "ShadowMatrix", Type::mat(4, 4)), f.construct(Type::vec(4), {world, t.f(1)})), "xyz");
     const ExprId absolute = f.call("abs", {shadowPosition});
@@ -827,7 +837,7 @@ static ExprId pointShadowFactor(Program& f, Tsl& t, std::size_t index, ExprId po
 // a texel; sourceRadius 0 is one hard tap. Distances are the map's view depths. The fixed Vogel disk
 // matches core's TSL filter. `ShadowSourceRadius` = {sourceRadius, tanHalfFov, blockers, samples}.
 static ExprId lampSoftShadowFactor(Program& f, Tsl& t, std::size_t index, ExprId positionWorld, ExprId normalWorld,
-                                   bool cube) {
+                                   bool cube, bool leaf) {
     const std::string at = "light" + std::to_string(index);
     const ExprId soft = f.uniform(at + "ShadowSourceRadius", Type::vec(4));
     const ExprId radius = f.swizzle(soft, "x"), tanHalf = f.swizzle(soft, "y");
@@ -838,7 +848,7 @@ static ExprId lampSoftShadowFactor(Program& f, Tsl& t, std::size_t index, ExprId
     const auto distance = [&](ExprId depth) {  // a [0, 1] perspective depth back to its view depth
         return f.div(f.mul(near, far), f.sub(far, f.mul(depth, f.sub(far, near))));
     };
-    const ExprId world = f.add(positionWorld, f.mul(normalWorld, f.uniform(at + "ShadowNormalBias", Type::f32())));
+    const ExprId world = shadowWorld(f, positionWorld, normalWorld, at, leaf);
     const ExprId shadowPosition =
         f.mul(f.uniform(at + "ShadowMatrix", Type::mat(4, 4)), f.construct(Type::vec(4), {world, t.f(1)}));
     const std::string name = (cube ? "shadowCube" : "shadow") + std::to_string(index);
@@ -924,12 +934,12 @@ static ExprId lampSoftShadowFactor(Program& f, Tsl& t, std::size_t index, ExprId
 // VirtualShadowNode's stock PCF filter and coarse-to-fine guarded blending. Physical pages
 // replace only the texture addressing; all coordinates and filter operations remain level-local.
 static ExprId virtualShadowFactor(Program& f, Tsl& t, std::size_t index, int levels,
-                                  ExprId positionWorld, ExprId normalWorld) {
+                                  ExprId positionWorld, ExprId normalWorld, bool leaf) {
     const std::string at = "light" + std::to_string(index);
     const uint32_t map = f.textureDepth("vsm" + std::to_string(index));
     const uint32_t table = f.storageBuffer("vsmTable" + std::to_string(index), Type::vec(4));
     auto row = [&](int i) { return f.loadStorage(table, f.construct(Type::u32(), {f.constant(int32_t(i))})); };
-    const ExprId world = f.add(positionWorld, f.mul(normalWorld, f.uniform(at + "ShadowNormalBias", Type::f32())));
+    const ExprId world = shadowWorld(f, positionWorld, normalWorld, at, leaf);
     const ExprId plane = f.call("cross", {f.call("dFdx", {positionWorld}), f.call("dFdy", {positionWorld})});
     const ExprId phi = noisePhi(f, t);
     // Finest level first: a level that holds the whole weight left skips every coarser one, so a pixel
@@ -996,7 +1006,8 @@ static ExprId virtualShadowFactor(Program& f, Tsl& t, std::size_t index, int lev
         const ExprId filterIndex = f.add(t.f(float(levels * 10)), f.mul(t.f(float(levels)), f.mul(tiles, tiles)));
         const ExprId filter = f.loadStorage(table, f.construct(Type::u32(), {filterIndex}));
         f.If(f.less(t.f(0), f.swizzle(filter, "w")), [&] {
-            const ExprId tangent = f.swizzle(filter, "x"), blockers = f.swizzle(filter, "y"), samples = f.swizzle(filter, "z");
+            const ExprId sourceTangent = f.swizzle(filter, "x"), blockers = f.swizzle(filter, "y"), samples = f.swizzle(filter, "z");
+            const ExprId tangent = leaf ? f.call("max", {sourceTangent, t.f(kLeafMinSourceTangent)}) : sourceTangent;
             const ExprId texel = f.div(t.f(1), resolution), width = f.mul(extent, t.f(2));
             // Match core's integer raw-depth loads, clamped in the virtual level before resolving
             // the physical page. A wide penumbra crosses pages, never a neighbour's atlas tile.
@@ -1111,20 +1122,20 @@ static ExprId virtualShadowFactor(Program& f, Tsl& t, std::size_t index, int lev
 
 // `kind` upper case: the light casts a shadow this mesh receives; `positionWorld` is then read.
 static Incoming incoming(Program& f, Tsl& t, char kind, std::size_t index, ExprId positionView,
-                         ExprId positionWorld = kInvalid, ExprId normalWorld = kInvalid, bool softShadows = false) {
+                         ExprId positionWorld = kInvalid, ExprId normalWorld = kInvalid, bool softShadows = false, bool leaf = false) {
     const std::string at = "light" + std::to_string(index);
     ExprId color = f.uniform(at + "Color", Type::vec(3));
     if (kind >= '1' && kind <= '8') {
-        color = f.mul(color, virtualShadowFactor(f, t, index, kind - '0', positionWorld, normalWorld));
+        color = f.mul(color, virtualShadowFactor(f, t, index, kind - '0', positionWorld, normalWorld, leaf));
         kind = 'd';
     }
     if (kind == 'Q' || kind == 'R') {  // a lamp with sourceRadiusShadowFilter: 'Q' point, 'R' spot
-        color = f.mul(color, lampSoftShadowFactor(f, t, index, positionWorld, normalWorld, kind == 'Q'));
+        color = f.mul(color, lampSoftShadowFactor(f, t, index, positionWorld, normalWorld, kind == 'Q', leaf));
         kind = kind == 'Q' ? 'p' : 's';
     }
     if (kind >= 'A' && kind <= 'Z') {
-        const ExprId shadow = kind == 'P' ? pointShadowFactor(f, t, index, positionWorld, normalWorld)
-                                          : shadowFactor(f, t, index, positionWorld, normalWorld, softShadows);
+        const ExprId shadow = kind == 'P' ? pointShadowFactor(f, t, index, positionWorld, normalWorld, leaf)
+                                          : shadowFactor(f, t, index, positionWorld, normalWorld, softShadows, leaf);
         color = f.mul(color, shadow); // colorNode.mul(shadowNode)
         kind = static_cast<char>(kind - 'A' + 'a');
     }
@@ -1283,7 +1294,7 @@ static StandardPrograms buildStandardProgram(const StandardMaterial& material, b
     const ExprId fragmentView = f.varying("positionView", Type::vec(3));
     ExprId directDiffuse = f.construct(Type::vec(3), {t.f(0)}), directSpecular = directDiffuse;
     for (std::size_t i = 0; i < lights.kinds.size(); ++i) {
-        const Incoming light = incoming(f, t, lights.kinds[i], i, fragmentView, positionWorld, normalWorld, lights.softShadows);
+        const Incoming light = incoming(f, t, lights.kinds[i], i, fragmentView, positionWorld, normalWorld, lights.softShadows, variant.leafReceiver);
         const ExprId irradiance = f.mul(t.saturate(t.dot(n, light.direction)), light.color);
         directDiffuse = f.add(directDiffuse, f.mul(irradiance, brdfLambert));
         directSpecular = f.add(directSpecular, f.mul(irradiance, brdfGgxMultiscatter(t, surface, light.direction)));
@@ -1502,7 +1513,7 @@ StandardPrograms buildLit(bool phong, const VertexVariant& variant, const LightL
     const ExprId shininess = phong ? f.call("max", {f.uniform("shininess", Type::f32()), t.f(1e-4f)}) : kInvalid;
     ExprId directDiffuse = f.construct(Type::vec(3), {t.f(0)}), directSpecular = directDiffuse;
     for (std::size_t i = 0; i < lights.kinds.size(); ++i) {
-        const Incoming light = incoming(f, t, lights.kinds[i], i, fragmentView, positionWorld, normalWorld, lights.softShadows);
+        const Incoming light = incoming(f, t, lights.kinds[i], i, fragmentView, positionWorld, normalWorld, lights.softShadows, variant.leafReceiver);
         const ExprId irradiance = f.mul(t.saturate(t.dot(n, light.direction)), light.color);
         directDiffuse = f.add(directDiffuse, f.mul(irradiance, brdfLambert));
         if (phong)

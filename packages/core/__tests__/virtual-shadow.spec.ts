@@ -4,6 +4,7 @@ import {
   BufferAttribute,
   BufferGeometry,
   DirectionalLight,
+  DoubleSide,
   FloatType,
   Frustum,
   HalfFloatType,
@@ -174,8 +175,11 @@ interface IShaderGraphBuilder extends NodeBuilder {
   flowStagesNode(node: Node, output: "vec4"): { code: string };
 }
 
-function shadowGraphBuilder(reversedDepthBuffer = false): IShaderGraphBuilder {
-  const object = new Mesh(new BoxGeometry(), new MeshBasicMaterial());
+function shadowGraphBuilder(
+  reversedDepthBuffer = false,
+  material: Material = new MeshBasicMaterial(),
+): IShaderGraphBuilder {
+  const object = new Mesh(new BoxGeometry(), material);
   const renderer = {
     backend: {
       isWebGPUBackend: true,
@@ -291,6 +295,44 @@ it.each([false, true])(
     expect(optedOut).not.toContain("dpdx(");
   },
 );
+
+/** The WGSL of one level's shadow coordinate for a receiver of this material, built without a GPU. */
+function shadowCoordCode(material: Material): string {
+  vi.stubGlobal("location", { search: "" });
+  const { light } = world();
+  const node = new VirtualShadowNode(light, { clipExtents: [8, 32], marker: false });
+  const graphBuilder = shadowGraphBuilder(false, material);
+  const outgoingLight = property("vec3", "testOutgoingLight");
+  // The light-space image of the normal reads the camera; a receiver's own normal comes from its
+  // material, so a fixed one stands in for it.
+  (graphBuilder as unknown as { camera: PerspectiveCamera }).camera = new PerspectiveCamera();
+  graphBuilder.context = {
+    lightingModel: new LightingModel(),
+    outgoingLight,
+    setupNormal: () => vec3(0, 1, 0),
+  };
+  node.setup(graphBuilder);
+  const stock = node.levelNodes[0] as unknown as {
+    setupShadowCoord(builder: NodeBuilder, position: Node): Node;
+  };
+  const flow = graphBuilder.flowStagesNode(
+    vec4(stock.setupShadowCoord(graphBuilder, vec4(1, 2, 3, 1)) as never, 1) as never,
+    "vec4",
+  );
+  node.dispose();
+  return flow.code;
+}
+
+it("takes the normal bias back out of a leaf receiver's shadow position (PRD-651)", () => {
+  const ordinary = shadowCoordCode(new MeshStandardMaterial());
+  const oneSidedCut = shadowCoordCode(new MeshStandardMaterial({ alphaTest: 0.5 }));
+  const leaf = shadowCoordCode(new MeshStandardMaterial({ alphaTest: 0.5, side: DoubleSide }));
+  // An ordinary receiver and a one-sided cut card keep the stock coordinate; a leaf subtracts the
+  // light-space image of normalWorld * normalBias, so its code holds the light's shadow matrix.
+  expect(oneSidedCut).toBe(ordinary);
+  expect(leaf).not.toBe(ordinary);
+  expect(leaf.length).toBeGreaterThan(ordinary.length);
+});
 
 describe("virtual shadow level diagnostic", () => {
   it.each([{ transmission: 0.8 }, { alphaTest: 0.5 }])(
