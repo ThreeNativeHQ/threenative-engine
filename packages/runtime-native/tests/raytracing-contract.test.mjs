@@ -124,3 +124,20 @@ test("registry marks the refusal scene as native-unavailable until readback exis
   assert.match(scene, /TN_NATIVE_RAYTRACING_UNAVAILABLE/u);
   assert.match(scene, /native raytracing refusal:/u);
 });
+
+test("registry runs the probe trace row on the desktop lane and the scene names its proof", () => {
+  const registry = JSON.parse(read("conformance/registry.json"));
+  const row = registry.tests.find((entry) => entry.id === "raytracing-probe-trace");
+  assert.deepEqual(
+    { desktopGate: row?.desktopGate, required: row?.required, status: row?.status },
+    { desktopGate: true, required: true, status: "implemented" },
+  );
+  const scene = read("conformance/scenes/shared/raytracing-probe-trace.js");
+  assert.match(scene, /mystralRT/u);
+  assert.match(scene, /traceRayBatch/u);
+  assert.match(scene, /bvhIntersectFirstHit/u);
+  assert.match(scene, /TN_RT_PROBE_TRACE/u);
+  // The web never claims a hardware trace, and a host without one skips with its reason.
+  assert.match(scene, /hardwareTrace: "not claimed"/u);
+  assert.match(scene, /skipped: true, reason/u);
+});

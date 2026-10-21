@@ -1446,6 +1446,19 @@
       "required": true
     },
     {
+      "id": "raytracing-probe-trace",
+      "title": "hardware probe trace matches the BVH trace",
+      "category": "raytracing",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/raytracing-probe-trace.js",
+      "tolerance": {
+        "pixelMismatchRatio": 0.01,
+        "perceptualDeltaE": 3.0
+      },
+      "desktopGate": true,
+      "required": true
+    },
+    {
       "id": "realism-ssgi",
       "title": "realism-effects screen-space global illumination",
       "category": "realism-effects",
