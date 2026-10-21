@@ -2,12 +2,17 @@
  * GPU time of the GI passes at each quality tier (PRD-644 AC-2), from the page's own `GIBudget` windows.
  *
  *   sh <slots>/gpu-slot.sh --exclusive pnpm exec tsx scripts/unreal-look/gi-tier-cost.ts \
- *     --scene gi:cornell [--tiers low,medium,high] [--windows 3] [--reuse] [--out cost.json]
+ *     --scene gi:cornell [--tiers low,medium,high] [--shadow-tiers low,medium,high] [--windows 3] [--reuse] \
+ *     [--out cost.json]
  *
  * Opens the calibration scene at L7 on the owned engine, headed on WebGPU, at 1920 x 1080 with the adapter
  * checked, once per tier. The first window of 120 frames is the warm-up and is dropped; the mean of the next
  * `--windows` windows is the tier's cost. Run it under the exclusive GPU slot: other GPU work moves the
  * numbers. The report prints the passes that resolved, so a wrong stage name reads as an empty list.
+ *
+ * The GI tiers draw their shadows at `high`, as the Unreal GI cells do. `--shadow-tiers` instead draws the GI at
+ * `medium` (no screen-space gather) and the shadows at each listed tier, so `frameMs` is the whole frame's GPU
+ * time at that shadow tier.
  */
 import { spawn } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
@@ -104,10 +109,11 @@ async function measureTier(
   tier: string,
   pose: unknown,
   count: number,
+  shadowTier = "high",
 ): Promise<object> {
   const { adapter, errors, page } = await openTier(
     browser,
-    `${origin}?tnGi=${name}&layer=L7&tier=${tier}`,
+    `${origin}?tnGi=${name}&layer=L7&tier=${tier}&shadowTier=${shadowTier}`,
     pose,
   );
   try {
@@ -151,10 +157,16 @@ export async function main(args: readonly string[]): Promise<number> {
     await waitForServer(origin, server);
     const browser = await chromium.launch({ args: [...WEBGPU_BROWSER_ARGS], headless: false });
     try {
-      for (const tier of tiers) {
-        const count = Number(flag(args, "--windows") ?? 3);
+      const count = Number(flag(args, "--windows") ?? 3);
+      const shadowTiers = flag(args, "--shadow-tiers")?.split(",") ?? [];
+      for (const tier of shadowTiers.length > 0 ? [] : tiers) {
         report[tier] = await measureTier(browser, origin, name, tier, pose, count);
         console.info(`TN_GI_TIER_COST ${tier} ${JSON.stringify(report[tier])}`);
+      }
+      for (const shadowTier of shadowTiers) {
+        const key = `shadow-${shadowTier}`;
+        report[key] = await measureTier(browser, origin, name, "medium", pose, count, shadowTier);
+        console.info(`TN_GI_TIER_COST ${key} ${JSON.stringify(report[key])}`);
       }
     } finally {
       await browser.close();

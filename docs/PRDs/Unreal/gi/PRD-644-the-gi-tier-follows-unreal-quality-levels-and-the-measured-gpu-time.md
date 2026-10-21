@@ -79,6 +79,23 @@ prd_contract: v1
 - [ ] AC-2 [local]: On the RTX 2080 browser lane at 1920 × 1080, the GI stages of each tier stay inside that tier's budget after 120 warm-up frames. proof: `node packages/playtest/dist/runner/cli.js perf` on the harness, per tier — Evidence: pending.
 - [ ] AC-3 [local]: The `medium` tier runs on the Android emulator with `TN_GI.method` `irradianceField` and a non-blank frame, labelled as an emulator result. proof: `node packages/playtest/dist/runner/cli.js <scenario> --target android` — Evidence: pending.
 
+### Visual judge criteria (written 2026-10-21, before any judge ran)
+
+A fresh read-only judge compares `WASM ENGINE BEFORE`, `WASM ENGINE AFTER` and `UNREAL 5.8.3` for the same pose, per
+tier and per calibration scene (`cornell`, `sunlit-room`). The verdict is IMPROVEMENT, NEUTRAL or REGRESSION against
+these criteria, per frame and overall.
+
+- `low` against Unreal `L7-Low`: direct light and shadow only, with no colour bounce from the walls onto the boxes. A
+  room that has a sky opening is lit by the sky light, not black. The stipple noise that the stray SSGI added to the
+  old `L6` frames is gone. REGRESSION: a black interior where Unreal is lit, a colour bleed that Unreal does not show,
+  or visible noise.
+- `medium` against Unreal `L7-Medium`: soft, low-frequency bounce light from the cache, with no black patch, no light
+  leak through a wall and no screen-space noise. ThreeNative may be brighter in shaded corners, and Unreal's black
+  `Box_Short` (an irradiance field artifact) is not required. REGRESSION: a black patch or a leak that BEFORE does
+  not show, or a missing bounce.
+- `high` against the pre-change `L7` and Unreal `L7-Epic`: no visible change. NEUTRAL is the pass.
+- Across tiers: bounce light must rise in the order Unreal's levels do (`low` below `medium`, `medium` at or below `high`).
+
 ## Blocked on
 
 - A physical Android mid-range device for the `medium` frame cost on hardware — unblocked by João attaching one. The emulator result in AC-3 does not claim device cost.
@@ -88,7 +105,7 @@ prd_contract: v1
 | Capability | Reachable consumer/trigger | Replaces / disposition | Evidence |
 |---|---|---|---|
 | Tier table with `finalGatherMethod` | `quality.ts` in the harness, later the templates via PRD-267 | Replaces layer-based GI switches in the harness overlay | AC-1 |
-| `GIBudget` watcher | `ctx.beforeRender(() => gi.observeRenderer(ctx.renderer.raw))` from `worldEnvironment.ts` (`ctx.add` takes only an `Object3D`) | New. Reads the per-pass GPU times that `FrameBudget` already resolves | AC-2 |
+| `GIBudget` watcher | `watchGi` in the harness `render/giTier.ts` calls `ctx.beforeRender(() => gi.observeRenderer(ctx.renderer.raw))` for each scene (`ctx.add` takes only an `Object3D`) | New. Reads the per-pass GPU times that `RenderPassBudget` resolves | AC-2 |
 
 ## Execution Phases
 

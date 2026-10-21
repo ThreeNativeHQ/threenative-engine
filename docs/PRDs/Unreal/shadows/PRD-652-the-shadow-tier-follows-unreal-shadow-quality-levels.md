@@ -69,12 +69,27 @@ manifest entry carries `@alias shadow quality`, `@alias virtual shadow map scala
 - [ ] AC-1 [local]: A PRD-647 round on `penumbra-lab` and `horizon` at each tier, against that tier's Unreal level, returns MATCH or CLOSE on every cell and no REGRESSION against BEFORE. proof: `pnpm unreal-look:calibrate --scene shadow:<name> --tier <low|medium|high> --before <commit>` — Evidence: pending.
 - [x] AC-2 [local]: `engine_search_capabilities` with "shadow quality" returns the tier report entry. proof: `pnpm exec vitest run packages/engine-mcp` (search fixture) — Evidence: `packages/engine-mcp/__tests__/search.spec.ts` 55 passed on 2026-10-21. "shadow quality", "virtual shadow map scalability" and "sg.ShadowQuality" return `ShadowFilterBudget`.
 
+### Visual judge criteria (written 2026-10-21, before any judge ran)
+
+A fresh read-only judge compares `WASM ENGINE BEFORE`, `WASM ENGINE AFTER` and `UNREAL 5.8.3` for the same pose on
+`penumbra-lab` (sun at 60, 15 and 4 degrees), per tier. The verdict is IMPROVEMENT, NEUTRAL or REGRESSION against
+these criteria, per frame and overall.
+
+- `low` against Unreal `L5-Low`: no cast shadow on any receiver, as Unreal draws at `sg.ShadowQuality` 0. Receivers
+  stay lit and nothing else changes. This is an owner-visible deviation from the old look, so it is named on the
+  sheet. REGRESSION: any cast shadow, or a change to a surface that is not a shadow.
+- `medium` against Unreal `L5-Medium`: cast shadows are present with a soft edge. The edge shows no banding or stair
+  step that Unreal Medium does not show, and no acne or peter-panning. REGRESSION: a hard stair-stepped edge, a
+  missing shadow, or acne.
+- `high` against the pre-change `L5` and Unreal `L5` (Epic): no visible change. NEUTRAL is the pass. The finer
+  directional resolution bias (-1.5) must not coarsen any edge.
+
 ## Integration Ledger
 
 | Capability | Reachable consumer/trigger | Replaces / disposition | Evidence |
 |---|---|---|---|
 | Shadow tier table | `templates/*/src/render/quality.ts`, read by `lighting.ts` | Replaces the map-size-only tiers | AC-1 |
-| Filter cost step | The per-pass budget's shadow-filter reading | New; redraw cost keeps its own levers | Phase 2 |
+| Filter cost step | `watchShadowTier` in the harness `render/shadowTier.ts` feeds `ShadowFilterBudget` the whole frame's GPU reading (`stageGpuReading`, the gather's passes left out) from `ctx.beforeRender` | New; redraw cost keeps its own levers | Phase 2 |
 | `shadowQuality` report | `TN_SHADOW_TIER` marker and the manifest | New read-only field | AC-2 |
 
 ## Execution Phases
