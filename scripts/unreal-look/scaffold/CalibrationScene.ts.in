@@ -141,9 +141,15 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
         point.shadow.normalBias = Number(params.get("shadowNormalBias") ?? point.shadow.normalBias);
         scene.add(point);
         lights.push(point);
-        if ((light.sourceRadiusM ?? 0) > 0) {
+        // Diagnosis knobs: sourceRadius=0 leaves the shadow on the hard filter (the filter's cost arm); blockers and
+        // samples set the filter's tap counts (default 16 each).
+        if ((light.sourceRadiusM ?? 0) > 0 && params.get("sourceRadius") !== "0") {
           // The lamp's radius softens its shadow as Unreal's does (PRD-650); its highlight stays a point's.
-          point.shadow.filterNode = sourceRadiusShadowFilter({ sourceRadius: light.sourceRadiusM ?? 0 });
+          point.shadow.filterNode = sourceRadiusShadowFilter({
+            sourceRadius: light.sourceRadiusM ?? 0,
+            blockerSamples: Number(params.get("blockers") ?? 16),
+            filterSamples: Number(params.get("samples") ?? 16),
+          });
           unsupported.push({
             actor: light.name,
             property: "sourceRadiusM",
