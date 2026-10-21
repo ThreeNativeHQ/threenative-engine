@@ -102,6 +102,9 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
     // The GI cache shows a provisional bake at the first frame and converges over the next ones (giProgressive=0
     // bakes it all before the first frame, the old behaviour). The capture waits for `reference.giConverged`.
     let giConverged = true;
+    // Set once the first reflection capture is done: takes the capture again, with the converged cache.
+    let firstCapture: Promise<void> | undefined;
+    let recapture: (() => Promise<void>) | undefined;
 
     if (level <= 0) {
       // ID and L0: unlit base colour, no post. Unreal: ShowFlag.Lighting 0, post off.
@@ -193,7 +196,16 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
                   previewRays: 16,
                   budgetMs: Number(params.get("giBudgetMs") ?? 8),
                   onConverged: () => {
-                    giConverged = true;
+                    // Glossy surfaces reflect a capture of the lit scene: take it again with the full bake.
+                    void (async () => {
+                      try {
+                        await firstCapture;
+                        await recapture?.();
+                      } catch (error) {
+                        console.error("TN_REFLECTION_RECAPTURE_FAILED", error);
+                      }
+                      giConverged = true;
+                    })();
                   },
                 },
               }),
@@ -266,10 +278,21 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
         const renderer = ctx.renderer.raw as unknown as {
           prepareEnvironmentAsync?(scene: unknown, camera: unknown): Promise<boolean>;
         };
+        recapture = async () => {
+          const next = await captureReflections(
+            ctx.renderer.raw as unknown as Parameters<typeof captureReflections>[0],
+            scene,
+            model,
+          );
+          this.#reflectionsDispose?.();
+          this.#reflectionsDispose = next;
+          await renderer.prepareEnvironmentAsync?.(scene, camera);
+        };
         if ((await renderer.prepareEnvironmentAsync?.(scene, camera)) === false)
           throw new Error("TN_REFLECTION_CAPTURE_PMREM");
         publishReference();
       });
+      firstCapture = ready.catch(() => undefined);
       ctx.startup.hold("reflection-capture", ready, 180_000);
       void ready.catch((error) => console.error("TN_REFLECTION_CAPTURE_FAILED", error));
     }
