@@ -36,6 +36,7 @@ import { setupPost } from "../render/postprocessing.js";
 import { watchGi } from "../render/giTier.js";
 import { watchShadowTier } from "../render/shadowTier.js";
 import {
+  EPIC_SSGI,
   type FinalGatherMethod,
   giPreset,
   qualityPreset,
@@ -265,6 +266,26 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
           this.#dispose?.();
           const world = new WorldEnvironment({
             ...qualityPreset("high"),
+            // The Epic gather is opt-in here: on the sunlit room it smooths the walls but lights the wall under the sill
+            // 30 levels above Unreal (PRD-638 judge round 2026-10-21), so the default stays medium until PRD-640's probes land.
+            ...(params.get("ssgiQuality") === "epic" ? EPIC_SSGI : {}),
+            // Diagnosis: ?ssgiQuality=<tier>, ?ssgiScale=N, ?ssgiIntensity=N and ?ssgiDenoise=N bracket the gather.
+            ...(params.get("ssgiQuality") === null ? {} : { ssgiQuality: params.get("ssgiQuality") as "epic" }),
+            ...(params.get("ssgiScale") === null ? {} : { ssgiResolutionScale: Number(params.get("ssgiScale")) }),
+            ...(params.get("ssgiIntensity") === null ? {} : { ssgiIntensity: Number(params.get("ssgiIntensity")) }),
+            ...(params.get("ssgiDenoise") === null ? {} : { ssgiDenoiseRadius: Number(params.get("ssgiDenoise")) }),
+            // Diagnosis: ?probes=1 gathers with screen probes (PRD-640).
+            // 16 x 16 rays per probe: the engine's probes carry no radiance cache, so they trace twice Unreal's real-time 8 x 8
+            // (PRD-640 round 2026-10-21: sunlit-room dP50 0.129 against 0.140 for the per-pixel Epic gather). ?probeRays=N overrides.
+            ...(params.get("probes") === "1"
+              ? {
+                  ssgiScreenProbes: true,
+                  ssgiProbeRays: Number(params.get("probeRays") ?? 16),
+                  ssgiDenoiseRadius: Number(params.get("ssgiDenoise") ?? 16),
+                }
+              : {}),
+            ...(params.get("probeJitter") === null ? {} : { ssgiProbeJitter: Number(params.get("probeJitter")) }),
+            ...(params.get("probeDebug") === null ? {} : { ssgiProbeDebug: Number(params.get("probeDebug")) }),
             autoExposureEnabled: false,
             bloomEnabled: false,
             gtaoEnabled: level >= 6,

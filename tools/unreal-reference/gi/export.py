@@ -8,7 +8,7 @@ own helpers in `ref`. Modes:
            A second level holds the same boxes in flat region-ID colours. Then export scene.glb
            with the glTF exporter and write scene.json from the actors read back from the level.
   capture  one Movie Render Queue job per (pose, kind) for the variant in TN_UE_VARIANT, with
-           TN_UE_WARMUP render warm-up frames (default 90). Every job prints the variant's expect
+           TN_UE_WARMUP render warm-up frames (default 180). Every job prints the variant's expect
            console variables from its start commands, so capture.ts reads the GI level back from
            the editor log.
 
@@ -529,10 +529,10 @@ def capture(ref, name, out):
     if variant is None:
         raise ValueError(f"unknown TN_UE_VARIANT {os.environ.get('TN_UE_VARIANT')}")
     layer = next(l for l in ref.LAYERS if l["name"] == variant["layer"])
-    warm_up = int(os.environ.get("TN_UE_WARMUP", "90"))
+    warm_up = int(os.environ.get("TN_UE_WARMUP", "180"))
     run = int(os.environ.get("TN_UE_RUN", "1"))
     # Same naming as folderName() in scripts/unreal-look/gi.ts.
-    folder = variant["name"] + ("" if warm_up == 90 else f"@{warm_up}") + ("" if run == 1 else f"#{run}")
+    folder = variant["name"] + ("" if warm_up == 180 else f"@{warm_up}") + ("" if run == 1 else f"#{run}")
     cvars = dict(layer["cvars"], **variant["cvars"])
     queue = ref.queue()
     count = 0
