@@ -9,6 +9,10 @@
  *   --engine threenative   scaffold the starter and capture the same cells headed on WebGPU
  *     --reuse              keep the scaffold and its install; re-copy the template source
  *     --baseline           skip scripts/unreal-look/scaffold/render/ (the template look as shipped)
+ *     --measure <seconds>  hold each cell that long and write its TN_FRAME_BUDGET log (read it with
+ *                          `playtest perf --file`); no screenshot
+ *     --size 1920x1080     viewport override (the cells use poses.json's 1280x720); start Xvfb that large
+ *     --off vsm,gpusky,...   L9 stage ablation: vsm gpusky clouds gi bloom localexposure autoexposure ssgi ssr gtao
  *   --layers L0,L1,ID      limit the layers (default: every layer plus the region-id frames)
  *   --cells sun60/exterior limit the (sun, pose) cells
  *   --scene gi[:<name>,...] a PRD-638 GI calibration scene instead (flags: scripts/unreal-look/gi.ts)
@@ -122,6 +126,11 @@ export async function main(args: readonly string[]): Promise<number> {
       cells,
       reuse: args.includes("--reuse"),
       baseline: args.includes("--baseline"),
+      ...(flag(args, "--measure") ? { measureSeconds: Number(flag(args, "--measure")) } : {}),
+      ...(flag(args, "--size")
+        ? { size: flag(args, "--size")?.split("x").map(Number) as [number, number] }
+        : {}),
+      ...(flag(args, "--off") ? { off: flag(args, "--off") } : {}),
     });
     console.info(`TN_UNREAL_LOOK threenative cells=${count} out=${out}`);
     return count > 0 ? 0 : 1;

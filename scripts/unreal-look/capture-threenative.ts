@@ -53,6 +53,12 @@ export interface IThreeNativeCaptureOptions {
   readonly reuse: boolean;
   /** Skip scaffold/render/: capture the template look as it ships (the BEFORE arm). */
   readonly baseline?: boolean;
+  /** Hold each pose this many seconds and write its TN_FRAME_BUDGET windows instead of a screenshot. */
+  readonly measureSeconds?: number;
+  /** Viewport override, `[width, height]`; the Unreal cells use poses.json's resolution. */
+  readonly size?: readonly [number, number];
+  /** Comma list of L9 stages to switch off (`?off=` in Reference.ts.in): a stage ablation. */
+  readonly off?: string;
   readonly port?: number;
 }
 
@@ -196,18 +202,23 @@ export async function captureThreeNative(options: IThreeNativeCaptureOptions): P
   try {
     const origin = `http://127.0.0.1:${port}/`;
     await waitForServer(origin, server);
-    const [width, height] = poses.resolution;
+    const [width, height] = options.size ?? poses.resolution;
     const browser = await chromium.launch({ args: [...WEBGPU_BROWSER_ARGS], headless: false });
     try {
       const page = await browser.newPage({ viewport: { width, height }, deviceScaleFactor: 1 });
       const errors: string[] = [];
+      // The frame meter prints to the console; a measured cell keeps the windows between two marks.
+      let meter: string[] = [];
+      page.on("console", (message) => {
+        if (message.text().startsWith("TN_FRAME_BUDGET")) meter.push(message.text());
+      });
       page.on("pageerror", (error) => errors.push(error.message));
       // Engine markers that say whether a stage ran (probe bake, refusals) belong in the capture log.
       page.on("console", (message) => {
         if (
           message.type() === "error" ||
           message.type() === "warning" ||
-          /^TN_(INDIRECT_LIGHT|PROBE_VOLUME|NATIVE_|RENDER_CHAIN|SSR|SSGI|GI_CACHE|SKY_OCCLUSION|AUTO_EXPOSURE|VIRTUAL_SHADOW)/.test(
+          /^(TN_(INDIRECT_LIGHT|PROBE_VOLUME|NATIVE_|RENDER_CHAIN|SSR|SSGI|GI_CACHE|SKY_OCCLUSION|AUTO_EXPOSURE|VIRTUAL_SHADOW)|GPU sky|CPU environment sky)/.test(
             message.text(),
           )
         )
@@ -243,15 +254,21 @@ export async function captureThreeNative(options: IThreeNativeCaptureOptions): P
               options.cells.has(`${sun.name}/${pose.name}`),
           );
           if (wanted.length === 0) continue;
+          const started = Date.now();
           await page.goto(
-            `${origin}?tnRef=${layer}&sun=${sun.elevationDeg},${sun.azimuthDeg}${options.baseline ? "&baseline=1" : ""}`,
+            `${origin}?tnRef=${layer}&sun=${sun.elevationDeg},${sun.azimuthDeg}${options.baseline ? "&baseline=1" : ""}${options.off ? `&off=${options.off}` : ""}`,
             {
               waitUntil: "domcontentloaded",
             },
           );
           await page.addStyleTag({ content: HIDE_UI });
           await page.waitForSelector('[data-threenative-startup="ready"]', { timeout: 300_000 });
+          const readyMs = Date.now() - started;
           await page.waitForFunction(() => "__tnRef" in window, undefined, { timeout: 240_000 });
+          // Page start to the scene being ready; the GI cache bake (TN_GI_CACHE) runs inside this.
+          console.info(
+            `TN_UNREAL_LOOK startup layer=${layer} ready=${readyMs}ms scene=${Date.now() - started}ms`,
+          );
           const engine = await page.evaluate("window.__tnRef.engine");
           if (engine !== "threenative")
             throw new Error(`TN_UNREAL_LOOK_WRONG_ENGINE: ${layer} drew on ${String(engine)}`);
@@ -270,6 +287,16 @@ export async function captureThreeNative(options: IThreeNativeCaptureOptions): P
             if (errors.length > 0)
               throw new Error(`TN_UNREAL_LOOK_PAGE_ERROR: ${errors.join(" | ")}`);
             const name = layer === "ID" ? `ID_${pose.name}` : `${layer}_${sun.name}_${pose.name}`;
+            if (options.measureSeconds !== undefined) {
+              meter = [];
+              await page.waitForTimeout(options.measureSeconds * 1000);
+              const log = path.join(options.out, layer, `${name}.frame-budget.log`);
+              await mkdir(path.dirname(log), { recursive: true });
+              await writeFile(log, `${meter.join("\n")}\n`);
+              console.info(`TN_UNREAL_LOOK measured ${name} windows=${meter.length} log=${log}`);
+              count += 1;
+              continue;
+            }
             const file = path.join(options.out, layer, `${name}.png`);
             await mkdir(path.dirname(file), { recursive: true });
             await writeFile(file, await page.screenshot({ type: "png" }));

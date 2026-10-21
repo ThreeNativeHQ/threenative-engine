@@ -94,6 +94,13 @@ export function sunTransmittance(elevationRad: number): Rgb {
   return [Math.exp(-depth[0]), Math.exp(-depth[1]), Math.exp(-depth[2])];
 }
 
+/** Fraction of the sun's illuminance that reaches radius `r` where the sun's cosine to local up is `mu`. */
+export function transmittanceToTop(r: number, mu: number): Rgb {
+  const depth = opticalDepthToTop(r, mu);
+  if (depth === undefined) return [0, 0, 0];
+  return [Math.exp(-depth[0]), Math.exp(-depth[1]), Math.exp(-depth[2])];
+}
+
 type Multi = (heightKm: number, cosSun: number) => Rgb;
 
 interface IGather {

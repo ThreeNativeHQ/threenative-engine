@@ -294,6 +294,9 @@ def add_job(queue, name, level, sequence, out_dir, cvars, show_flags, kind, warm
     output.output_directory = unreal.DirectoryPath(out_dir)
     output.file_name_format = "{job_name}"
     width, height = POSES["resolution"]
+    # TN_UE_RESOLUTION=1920x1080 renders at another size (the PRD-640 GPU-time measurement).
+    if os.environ.get("TN_UE_RESOLUTION"):
+        width, height = (int(v) for v in os.environ["TN_UE_RESOLUTION"].split("x"))
     output.output_resolution = unreal.IntPoint(width, height)
     output.override_existing_output = True
     config.find_or_add_setting_by_class(unreal.MoviePipelineDeferredPassBase)
@@ -338,9 +341,17 @@ def render():
         log(f"capture error fatal={fatal} {message}")
         state["success"] = False
 
+    profile_frame = int(os.environ.get("TN_UE_PROFILE_FRAME", "0"))
+
     def tick(delta):
         # Polling is the fail-safe: the queue is done when the subsystem stops rendering.
         state["frames"] += 1
+        # TN_UE_PROFILE_FRAME=N dumps a frame's GPU passes to the log every N ticks while the queue renders. A tick can
+        # fall between two jobs, where no scene draws, so the reader keeps only the profiles with the scene's passes.
+        if profile_frame and state["frames"] % profile_frame == 0 and subsystem.is_rendering():
+            unreal.SystemLibrary.execute_console_command(None, "r.ProfileGPU.ShowUI 0")
+            unreal.SystemLibrary.execute_console_command(None, "ProfileGPU")
+            log(f"profile requested at tick {state['frames']}")
         if state["frames"] > 30 and not subsystem.is_rendering():
             unreal.unregister_slate_post_tick_callback(TICK)
             log(f"capture finished success={state['success']}")

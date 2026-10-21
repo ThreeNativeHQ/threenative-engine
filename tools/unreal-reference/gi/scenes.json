@@ -6,6 +6,11 @@
       "name": "cornell",
       "owner": "PRD-638",
       "poses": ["cornell", "corner"]
+    },
+    {
+      "name": "sunlit-room",
+      "owner": "PRD-638",
+      "poses": ["window", "leak", "door"]
     }
   ],
   "variants": [

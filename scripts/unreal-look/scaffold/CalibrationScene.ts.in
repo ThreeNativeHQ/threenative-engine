@@ -37,6 +37,7 @@ const level = LAYER === "ID" ? -1 : Number(LAYER.slice(1));
 const DATA = SCENES[NAME];
 // Diagnosis only: scales every light, so a capture can bracket a unit error. Unset in every judged capture.
 const LIGHT_SCALE = Number(params.get("lightScale") ?? 1);
+const EXPOSURE = Number(params.get("exposure") ?? DATA?.exposure?.exposureScale ?? 1);
 
 /**
  * Unreal light units to three's. three's punctual light intensity is candela, and its Lambert
@@ -152,8 +153,17 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
         }
       }
       if (level >= 7) {
+        // Diagnosis: ?giSkip=<region> bakes with that region black, to measure its share of the bounce.
+        const skipped = meshes.filter((m) => regionOf(m) === params.get("giSkip"));
+        const kept = skipped.map((m) => (m.material as unknown as { color: Color }).color.clone());
+        for (const m of skipped) {
+          // Materials are shared (every white surface is one MI_White): only this region goes black.
+          m.material = (m.material as MeshBasicMaterial).clone();
+          (m.material as unknown as { color: Color }).color.setScalar(0);
+        }
         const gi = installGi(ctx, model, {
-          bounces: 5,
+          // Diagnosis: ?bounces=N brackets how much of the indirect light the later bounces carry.
+          bounces: Number(params.get("bounces") ?? 5),
           lights: lights.map((l) => ({
             position: l.position,
             color: l.color,
@@ -161,6 +171,7 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
             distance: l.distance,
           })),
         });
+        skipped.forEach((m, i) => (m.material as unknown as { color: Color }).color.copy(kept[i] as Color));
         if (gi === undefined)
           unsupported.push({ actor: NAME, property: "GI", reason: "the GI cache did not bake" });
         // Diagnosis: ?direct=0 switches the lights off after the bake, so the frame holds the indirect
@@ -173,9 +184,17 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
         ...qualityPreset("high"),
         autoExposureEnabled: false,
         bloomEnabled: false,
-        gtaoEnabled: level >= 6,
+        // Diagnosis: ?gtao=0 takes the contact occlusion out, to tell its darkening from the shadow's.
+        gtaoEnabled: level >= 6 && params.get("gtao") !== "0",
+        // Diagnosis: ?ssgi=0|1 and ?ssgiIntensity=N bracket the screen-space gather over the cache.
+        ...(params.get("ssgi") === null ? {} : { ssgiEnabled: params.get("ssgi") === "1" }),
+        ...(params.get("ssgiIntensity") === null ? {} : { ssgiIntensity: Number(params.get("ssgiIntensity")) }),
+        // Unreal's L7 is its Epic tier, so the gather takes the template's top sample budget.
+        ssgiQuality: (params.get("ssgiQuality") ?? "high") as "high",
+        // Diagnosis: ?ssgiScale=N gathers at a fraction of the frame (PRD-640 cost gate).
+        ...(params.get("ssgiScale") === null ? {} : { ssgiResolutionScale: Number(params.get("ssgiScale")) }),
         vignetteAmount: 0,
-        exposure: Number(params.get("exposure") ?? DATA.exposure.exposureScale),
+        exposure: EXPOSURE,
       });
       this.#dispose = world.apply(ctx.renderer, scene, camera, {}).dispose;
     }
@@ -188,7 +207,7 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
       scene: NAME,
       unsupported,
       // The live scene, renderer and GI cache, for in-page diagnosis.
-      scene,
+      world: scene,
       gi: giCache,
       renderer: ctx.renderer.raw,
       disposePost: () => this.#dispose?.(),

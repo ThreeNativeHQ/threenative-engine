@@ -9,12 +9,17 @@ import {
   compareCells,
   decode,
   deriveMasks,
+  deriveThresholds,
   iou,
   lab,
+  main,
   masks,
   parseArgs,
   quantiles,
+  runCheck,
   runComparison,
+  seedLocks,
+  silhouetteIou,
 } from "../unreal-look/compare.js";
 
 const roots: string[] = [];
@@ -287,6 +292,171 @@ describe("Unreal reference comparison", () => {
     expect(report.maxNoise).toBeCloseTo(98 / 30);
     expect(report.noise).toHaveLength(1);
     expect(report.rows[0]?.dEv50).toBe(0);
+  });
+  it("derives per-layer thresholds as the larger of twice the worst noise and the absolute floor", () => {
+    const row = (layer: string, deltaE: number, dP50: number, dEv50: number) =>
+      ({ layer, cell: "c", region: "Floor", deltaE, dP50, dEv50, iou: null }) as never;
+    const derived = deriveThresholds([
+      row("L1", 0.2, 0.001, -0.004),
+      row("L1", 0.9, 0.002, 0.003),
+      row("L7", 2, 0.03, 0.2),
+      row("L7", 1.5, 0.01, -0.5),
+    ]);
+    expect(derived.L1).toEqual({ deltaE: 1.8, dP50: 0.01, dEv: 0.02 });
+    expect(derived.L7).toEqual({ deltaE: 4, dP50: 0.06, dEv: 1 });
+  });
+  it("fails closed when no noise row exists to derive from", () => {
+    expect(() => deriveThresholds([])).toThrow(/^TN_UNREAL_LOOK_BAD_INPUT/);
+  });
+  it("applies a layer's own thresholds over the flat ones", () => {
+    const { root, put } = fixture();
+    for (const engine of ["unreal", "runB"]) {
+      put(`captures/${engine}/ID/ID_exterior.png`, floor());
+      put(`captures/${engine}/L1/L1_sun60_exterior.png`, engine === "unreal" ? display() : floor());
+    }
+    put("captures/unreal/L1/L1_sun60_exterior.exr", exr());
+    put("thresholds.json", JSON.stringify({ iou: 0.98, layers: { L1: { dP50: 100 } } }));
+    expect(
+      runComparison({
+        referenceDir: root,
+        layers: ["L1"],
+        threenative: path.join(root, "captures/runB"),
+      }).summary[0],
+    ).toMatchObject({ evaluatedCount: 1, failCount: 0 });
+    put("thresholds.json", JSON.stringify({ iou: 0.98, layers: { L1: { dP50: 0.01 } } }));
+    expect(
+      runComparison({
+        referenceDir: root,
+        layers: ["L1"],
+        threenative: path.join(root, "captures/runB"),
+      }).summary[0],
+    ).toMatchObject({ evaluatedCount: 1, failCount: 1 });
+  });
+  it("rejects a malformed per-layer threshold", () => {
+    const { root, put } = fixture();
+    put("captures/unreal/ID/ID_exterior.png", floor());
+    put("captures/unreal/L1/L1_sun60_exterior.png", floor());
+    put("captures/threenative/L1/L1_sun60_exterior.png", floor());
+    put("thresholds.json", JSON.stringify({ layers: { L1: { bogus: 1 } } }));
+    expect(() => runComparison({ referenceDir: root, layers: ["L1"] })).toThrow(
+      /^TN_UNREAL_LOOK_BAD_INPUT/,
+    );
+  });
+  it("writes thresholds from an Unreal-vs-Unreal run and refuses any other mode", () => {
+    const { root, put } = fixture();
+    for (const engine of ["unreal", "runB"]) {
+      put(`captures/${engine}/ID/ID_exterior.png`, floor());
+      put(`captures/${engine}/L1/L1_sun60_exterior.png`, engine === "unreal" ? display() : floor());
+      put(`captures/${engine}/L1/L1_sun60_exterior.exr`, exr());
+    }
+    expect(() =>
+      runComparison({ referenceDir: root, layers: ["L1"], writeThresholds: true }),
+    ).toThrow(/^TN_UNREAL_LOOK_BAD_INPUT/);
+    runComparison({
+      referenceDir: root,
+      layers: ["L1"],
+      unrealVsUnreal: path.join(root, "captures/runB"),
+      writeThresholds: true,
+    });
+    const written = JSON.parse(readFileSync(path.join(root, "thresholds.json"), "utf8"));
+    expect(written.iou).toBe(0.98);
+    expect(written.layers.L1.dP50).toBeCloseTo((98 / 30) * 2, 1);
+  });
+  it("scores a silhouette without penalising an anti-aliased edge the other frame does not have", () => {
+    // Five columns: X on the left, Y on the right. The aliased frame cuts at column 3; the
+    // multisampled frame blends column 2 (no region) and cuts the rest at the same place.
+    const colors = { X: [200, 0, 0], Y: [0, 200, 0] };
+    const row = (cells: number[][]) => png(Array.from({ length: 3 }, () => cells).flat(), 5);
+    const sharp = masks(decode(row([colors.X, colors.X, colors.X, colors.Y, colors.Y])), colors);
+    const soft = masks(
+      decode(row([colors.X, colors.X, [100, 100, 0], colors.Y, colors.Y])),
+      colors,
+    );
+    expect(iou(sharp.regions.X as never, soft.regions.X as never)).toBeCloseTo(6 / 9);
+    expect(silhouetteIou(sharp, soft, "X")).toBe(1);
+    expect(silhouetteIou(sharp, soft, "Y")).toBe(1);
+    // A real one-column shift of pure colours still counts.
+    const moved = masks(decode(row([colors.X, colors.X, colors.X, colors.X, colors.Y])), colors);
+    expect(silhouetteIou(sharp, moved, "X")).toBeCloseTo(9 / 12);
+    expect(() => silhouetteIou(sharp, soft, "Missing")).toThrow(/^TN_UNREAL_LOOK_EMPTY_MASK/);
+  });
+  describe("parity locks", () => {
+    const lock = (over: Record<string, unknown> = {}) => ({
+      layer: "L1",
+      sun: "sun60",
+      pose: "exterior",
+      region: "Floor",
+      metric: "dP50",
+      threshold: 100,
+      since: "abc1234",
+      ...over,
+    });
+    function locked(locks: unknown[]) {
+      const { root, put } = fixture();
+      for (const engine of ["unreal", "threenative"]) {
+        put(`captures/${engine}/ID/ID_exterior.png`, floor());
+        put(
+          `captures/${engine}/L1/L1_sun60_exterior.png`,
+          engine === "unreal" ? display() : floor(),
+        );
+        put(`captures/${engine}/L1/L1_sun60_exterior.exr`, exr());
+      }
+      put("parity-locks.json", JSON.stringify({ locks }));
+      return root;
+    }
+    it("passes a locked cell that holds", () => {
+      expect(runCheck({ referenceDir: locked([lock()]) }).failures).toEqual([]);
+    });
+    it("fails a drifted cell and exits 1", () => {
+      const root = locked([lock({ threshold: 0.01 })]);
+      const { failures } = runCheck({ referenceDir: root });
+      expect(failures).toHaveLength(1);
+      expect(failures[0]).toMatch(/L1 sun60 exterior Floor dP50/);
+      main(["--check", "--reference-dir", root]);
+      expect(process.exitCode).toBe(1);
+      process.exitCode = undefined;
+    });
+    it("fails a locked cell the capture does not have", () => {
+      const root = locked([lock({ region: "NoSuchRegion" }), lock({ pose: "interior" })]);
+      const { failures } = runCheck({ referenceDir: root });
+      expect(failures).toHaveLength(2);
+      expect(failures.join("\n")).toMatch(/missing/);
+    });
+    it("fails closed on an empty list, a bad entry and a scene it cannot evaluate", () => {
+      for (const locks of [
+        [],
+        [lock({ metric: "bogus" })],
+        [lock({ since: "" })],
+        [lock({ scene: "gi:x" })],
+      ])
+        expect(() => runCheck({ referenceDir: locked(locks) })).toThrow(
+          /^TN_UNREAL_LOOK_(BAD_INPUT|MISSING_CELL)/,
+        );
+    });
+    it("seeds only the cells and metrics that hold", () => {
+      const root = locked([lock()]);
+      const report = runComparison({ referenceDir: root, layers: ["L1"] });
+      const seeded = seedLocks(
+        report.rows,
+        { layers: { L1: { dP50: 100, deltaE: 0.001 } } },
+        "abc1234",
+      );
+      expect(seeded.map((l) => l.metric)).toEqual(["dP50"]);
+      expect(
+        seedLocks(report.rows, { layers: { L1: { dP50: 100 } } }, "abc1234", ["deltaE"]),
+      ).toEqual([]);
+      expect(parseArgs(["--write-locks", "abc", "--lock-metric", "iou,dP50"])).toEqual({
+        writeLocks: "abc",
+        lockMetrics: ["iou", "dP50"],
+      });
+      expect(seeded[0]).toMatchObject({
+        layer: "L1",
+        sun: "sun60",
+        pose: "exterior",
+        region: "Floor",
+        since: "abc1234",
+      });
+    });
   });
   it("parses repeated and comma-separated filters and rejects missing values", () => {
     expect(

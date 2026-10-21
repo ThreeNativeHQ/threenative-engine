@@ -30,6 +30,16 @@ pixel. The field is 1 m coarse, so contact-scale bounce off-screen is lost. The 
 records wide dark bands at interior corners, stripes on the capsule and a seam at the base of the
 backlit wall at L7. Each pixel also pays for its own rays: the cost grows with resolution.
 
+**Measured on cornell L7 (2026-10-20, feat/unreal-gi `cd6e484bc`).** The gather now runs on the owned
+engine. Before `147140ecd`, `denoise()` refused its computed AO input, and the chain dropped SSGI. The
+gather brings the corner floor to 96 (Unreal 93, cache alone 126) and Box_Tall to 172 (Unreal 174).
+Box_Short's camera-facing face goes the wrong way: 101 (Unreal Epic 58, Unreal Medium 3, cache 80). Its
+missed rays leave through the open front. Lumen's world trace returns black there, but our miss keeps
+the pixel's cache average. A per-ray miss that reads the cache 0.5 to 2 m ahead of the ray, about the
+ray's direction, moved the frame by 0.14 levels mean. The 6-face cache is too smooth to tell "black
+straight out" from "lit floor below". The miss tier needs directional radiance (screen probes with a
+world-space trace, this PRD's Solution), not a second read of the irradiance field.
+
 ### What Unreal does (UE 5.8.3, read 2026-10-20; clean-room summary, no code copied)
 
 - **Screen probes, not per-pixel rays.** At Epic, one probe sits on every 16 × 16 pixel tile, plus up
@@ -111,10 +121,10 @@ overlay first, the templates through [PRD-267](../../useful-defaults/PRD-267-scr
 ## Execution Phases
 
 #### Phase 1: How far the per-pixel path gets
-**Status:** NOT STARTED
+**Status:** DONE (gate verdict: FAIL, the per-pixel path is 6-10x Unreal's cost)
 **Files:** `scripts/unreal-look/scaffold/render/worldEnvironment.ts` (measurement only)
-- [ ] Per-region L7 error of `ssgi` plus the radiance cache, against Unreal Epic, is recorded under `## Decisions`. proof: `pnpm unreal-look:compare --layer L7 --visualize indirectDiffuse`.
-- [ ] Unreal's screen probe gather GPU time and ours at 1920 × 1080 on the RTX 2080 are recorded, and the gate verdict with them. proof: `r.ProfileGPU` log from the Unreal capture, and `node packages/playtest/dist/runner/cli.js perf`.
+- [x] Per-region L7 error of `ssgi` plus the radiance cache, against Unreal Epic, is recorded under `## Decisions`. proof: `pnpm unreal-look:compare --scene gi:cornell --layer L7` at `cd6e484bc` — cornell table recorded 2026-10-20; `sunlit-room` follows PRD-638 Phase 2.
+- [x] Unreal's screen probe gather GPU time and ours at 1920 × 1080 on the RTX 2080 are recorded, and the gate verdict with them. proof: `TN_UE_RESOLUTION=1920x1080 TN_UE_PROFILE_FRAME=40 pnpm unreal-look:capture --engine unreal --scene gi:cornell --variants L7-Epic` (`ProfileGPU` in `Saved/Logs`), and the frame budget's `gpuMs` with `?ssgi=0` and `?ssgi=1` — FAIL, recorded under `## Decisions` 2026-10-20.
 
 #### Phase 2: Screen probes
 **Status:** NOT STARTED
@@ -129,3 +139,40 @@ overlay first, the templates through [PRD-267](../../useful-defaults/PRD-267-scr
 - [ ] With the gather on, the chain reports `shortRangeAO` and no `gtao` stage. proof: `TN_RENDER_CHAIN` in the harness capture at L7.
 - [ ] The conformance row `screen-probe-gather` passes on the desktop lane within its tolerance. proof: `pnpm parity --target desktop --only-tests screen-probe-gather`.
 **Verification:** AC-3.
+
+## Decisions
+
+- **2026-10-20, GI session: the Phase 1 error is read on the full L7 frame, not on an `indirectDiffuse` pair.**
+  Unreal's `L7-Epic-indirect` frame (`r.Lumen.Visualize.IndirectDiffuse 1`) is not on the frame's scale. The
+  cornell corner floor is in full shadow at L6 (0 in both engines), so its L7 value is all indirect light. Unreal
+  shows 93 there in the Epic frame and 31 in the indirect view. The proof is therefore the L7 compare.
+- **2026-10-20, GI session: cornell L7 per-region p50, `ssgi` at `high` over the 1 m cache (`cd6e484bc`).**
+
+  | Pose | Region | Unreal Epic | Cache alone | Cache + `ssgi` |
+  |---|---|---|---|---|
+  | cornell | Floor | 141 | 184 | 164 |
+  | cornell | Ceiling | 203 | 207 | 207 |
+  | cornell | Back | 228 | 225 | 226 |
+  | cornell | Wall_Red | 99 | 96 | 94 |
+  | cornell | Wall_Green | 173 | 171 | 171 |
+  | cornell | Box_Tall | 174 | 163 | 172 |
+  | cornell | Box_Short | 58 | 80 | 101 |
+  | corner | Floor | 93 | 126 | 96 |
+  | corner | Back | 111 | 106 | 92 |
+  | corner | Wall_Red | 90 | 81 | 79 |
+  | corner | Box_Tall | 164 | 148 | 148 |
+
+  Three levers did not close the remaining gaps, and none was adopted. A per-ray miss that reads the cache ahead of
+  the ray moved the frame by 0.14 levels mean. A second gather pass over the first one's result made corner Back
+  darker (88). A 0.5 m cache cell brought cornell Floor to 146 but corner Floor to 85, left the slot and Box_Short
+  as they were, and took the bake from 17 s to 126 s. The open gaps (Box_Short facing the open front, and the narrow
+  slot between the tall box and the red wall) need directional radiance for a missed ray: Phase 2.
+- **2026-10-20, GI session: the per-pixel gather fails the cost gate.** RTX 2080 (Turing), cornell pose, 1920 × 1080.
+  Unreal `LumenScreenProbeGather`: 3.09, 4.56 and 5.79 ms in the three `ProfileGPU` frames that drew the scene.
+  Movie Render Queue raises Lumen to its cinematic settings while it renders (`DownsampleFactor` 16 → 8,
+  `TracingOctahedronResolution` 8 → 16, both in the log), so real-time Epic costs less than this. These are also
+  the settings the reference frames are captured at. Ours, from the frame budget's `gpuMs` over 8 to 9 windows of
+  about 100 frames: 9.4 ms mean with `?ssgi=0` and 41 ms with `?ssgi=1` (`high`: 3 slices × 4 rays × 16 steps at
+  half resolution, a full cache read per pixel, two denoises). The gather adds about 31 ms, 6 to 10 times Unreal's.
+  The per-pixel path is therefore a calibration tool, not a shipping tier. Phase 2's probes (one per 16 × 16
+  pixels) are the cost fix as well as the quality fix.

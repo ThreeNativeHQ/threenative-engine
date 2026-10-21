@@ -42,6 +42,17 @@ export interface IThresholds {
   iou?: number;
   dEv?: number;
 }
+/** thresholds.json: flat keys apply to every layer, `layers.<name>` overrides them for that layer. */
+export interface IThresholdFile extends IThresholds {
+  layers?: Record<string, IThresholds>;
+}
+/** The noise floor is measured, then widened: a threshold is the larger of NOISE_MARGIN times the worst
+ * Unreal-vs-Unreal difference of its layer and one absolute floor that no render noise can be below. */
+export const NOISE_MARGIN = 2;
+/** deltaE: one CIEDE2000 just-noticeable difference. dP50: the 1% target of PRD-631. dEv: 2% luminance. */
+export const NOISE_FLOORS = { deltaE: 1, dP50: 0.01, dEv: 0.02 } as const;
+/** Silhouette overlap is geometry, not render noise: PRD-631 fixes it at 0.98. */
+export const IOU_THRESHOLD = 0.98;
 export interface IRow {
   layer: string;
   cell: string;
@@ -69,7 +80,31 @@ export interface IOptions {
   unrealVsUnreal?: string;
   writeMasks?: boolean;
   writeStats?: boolean;
+  writeThresholds?: boolean;
+  /** `--check`: fail on any locked cell of parity-locks.json that no longer holds. */
+  check?: boolean;
+  /** `--write-locks <since>`: seed parity-locks.json with every cell and metric that holds now. */
+  writeLocks?: string;
+  /** `--lock-metric iou,...`: seed only these metrics (default: every metric that holds). */
+  lockMetrics?: string[];
   sheet?: boolean;
+}
+type LockMetric = "deltaE" | "dP50" | "dEv" | "iou";
+const LOCK_METRICS: readonly LockMetric[] = ["deltaE", "dP50", "dEv", "iou"];
+/**
+ * One cell and metric that matched Unreal once and must keep matching. `scene` is open for other
+ * scenes (the GI session adds `gi:<scene>`); this checker evaluates the reference scene only, so a
+ * lock that names a scene fails closed instead of passing unchecked.
+ */
+export interface IParityLock {
+  layer: string;
+  sun: string;
+  pose: string;
+  region: string;
+  metric: LockMetric;
+  threshold: number;
+  since: string;
+  scene?: string;
 }
 
 function fail(code: string, message: string): never {
@@ -222,6 +257,42 @@ export function iou(a: Mask, b: Mask): number {
   }
   return intersection / union;
 }
+/** Pixels that carry a region in this frame; a multisampled edge pixel belongs to none. */
+const knownCache = new WeakMap<IMasks, Mask>();
+function known(m: IMasks): Mask {
+  let cached = knownCache.get(m);
+  if (!cached) {
+    cached = new Uint8Array(m.width * m.height);
+    for (const region of Object.values(m.regions))
+      for (let i = 0; i < region.length; i++) if (region[i]) cached[i] = 1;
+    knownCache.set(m, cached);
+  }
+  return cached;
+}
+/**
+ * Silhouette overlap of one region between two ID frames. Unreal draws its ID frame aliased and
+ * ThreeNative draws it multisampled, so ThreeNative's blended edge pixels belong to no region while
+ * Unreal's belong to the nearer one (the capsule lost a one-pixel ring, IoU 0.9345 at identical
+ * bounding boxes). A pixel with no region in either frame is left out of both, so an edge costs
+ * nothing, while a pixel two frames give to different regions still does: a shift of more than one
+ * pixel, the width of a blended edge, still shows.
+ */
+export function silhouetteIou(a: IMasks, b: IMasks, region: string): number {
+  dimensions(a, b);
+  const ra = a.regions[region];
+  const rb = b.regions[region];
+  if (!ra || !rb) fail("EMPTY_MASK", `IoU region ${region} is missing`);
+  const ka = known(a);
+  const kb = known(b);
+  const ca = new Uint8Array(ra.length);
+  const cb = new Uint8Array(rb.length);
+  for (let i = 0; i < ra.length; i++)
+    if (ka[i] && kb[i]) {
+      ca[i] = ra[i] as number;
+      cb[i] = rb[i] as number;
+    }
+  return iou(ca, cb);
+}
 export function deriveMasks(base: IMasks, l5: IImage): IMasks {
   dimensions(base, l5);
   const floor = base.regions.Floor;
@@ -274,6 +345,121 @@ export function measure(image: IImage, mask: Mask, exr?: IImage): IStats {
     }) as Lab,
     pixels: display.length,
   };
+}
+export function deriveThresholds(
+  noiseRows: readonly Pick<IRow, "layer" | "deltaE" | "dP50" | "dEv50">[],
+): Record<string, IThresholds> {
+  if (!noiseRows.length) fail("BAD_INPUT", "no Unreal-vs-Unreal rows to derive thresholds from");
+  const out: Record<string, IThresholds> = {};
+  for (const layer of new Set(noiseRows.map((r) => r.layer))) {
+    const rows = noiseRows.filter((r) => r.layer === layer);
+    const worst = (values: (number | null)[]) => {
+      const numbers = values.flatMap((v) => (v === null ? [] : [Math.abs(v)]));
+      return numbers.length ? Math.max(...numbers) : null;
+    };
+    const limit = (noise: number | null, floor: number) =>
+      noise === null ? undefined : Number(Math.max(NOISE_MARGIN * noise, floor).toPrecision(3));
+    const entry: IThresholds = {};
+    const deltaE = limit(worst(rows.map((r) => r.deltaE)), NOISE_FLOORS.deltaE);
+    const dP50 = limit(worst(rows.map((r) => r.dP50)), NOISE_FLOORS.dP50);
+    const dEv = limit(worst(rows.map((r) => r.dEv50)), NOISE_FLOORS.dEv);
+    if (deltaE !== undefined) entry.deltaE = deltaE;
+    if (dP50 !== undefined) entry.dP50 = dP50;
+    if (dEv !== undefined) entry.dEv = dEv;
+    out[layer] = entry;
+  }
+  return out;
+}
+function lockValue(row: IRow, metric: LockMetric): number | null {
+  const value = metric === "dEv" ? row.dEv50 : row[metric];
+  return value === null ? null : metric === "dEv" ? Math.abs(value) : value;
+}
+const holds = (value: number, lock: Pick<IParityLock, "metric" | "threshold">) =>
+  lock.metric === "iou" ? value >= lock.threshold : value <= lock.threshold;
+export function readLocks(file: string): IParityLock[] {
+  const data = object(json(file));
+  if (!Array.isArray(data.locks) || !data.locks.length)
+    fail("BAD_INPUT", `${file}: the lock list is empty; an empty list locks nothing`);
+  return data.locks.map((raw, index) => {
+    const lock = object(raw);
+    const text = (key: string) =>
+      typeof lock[key] === "string" && lock[key] !== ""
+        ? (lock[key] as string)
+        : fail("BAD_INPUT", `lock ${index}: ${key} must be a non-empty string`);
+    if (!LOCK_METRICS.includes(lock.metric as LockMetric))
+      fail("BAD_INPUT", `lock ${index}: unknown metric ${String(lock.metric)}`);
+    if (
+      typeof lock.threshold !== "number" ||
+      !Number.isFinite(lock.threshold) ||
+      lock.threshold < 0
+    )
+      fail("BAD_INPUT", `lock ${index}: threshold must be a non-negative number`);
+    return {
+      layer: text("layer"),
+      sun: text("sun"),
+      pose: text("pose"),
+      region: text("region"),
+      metric: lock.metric as LockMetric,
+      threshold: lock.threshold,
+      since: text("since"),
+      ...(lock.scene === undefined ? {} : { scene: text("scene") }),
+    };
+  });
+}
+export function checkLocks(rows: readonly IRow[], locks: readonly IParityLock[]): string[] {
+  const failures: string[] = [];
+  for (const lock of locks) {
+    const name = `${lock.layer} ${lock.sun} ${lock.pose} ${lock.region} ${lock.metric}`;
+    if (lock.scene !== undefined) {
+      fail(
+        "BAD_INPUT",
+        `${name}: scene ${lock.scene} has no checker here; refusing to pass it unchecked`,
+      );
+    }
+    const row = rows.find(
+      (r) =>
+        r.layer === lock.layer && r.cell === `${lock.sun}_${lock.pose}` && r.region === lock.region,
+    );
+    const value = row ? lockValue(row, lock.metric) : null;
+    if (value === null)
+      failures.push(`${name}: missing from the capture (locked since ${lock.since})`);
+    else if (!holds(value, lock))
+      failures.push(
+        `${name}: ${Number(value.toPrecision(4))} breaks the lock ${lock.metric === "iou" ? ">=" : "<="} ${lock.threshold} (locked since ${lock.since})`,
+      );
+  }
+  return failures;
+}
+/** Every cell and metric that holds against `thresholds` now: the seed for parity-locks.json. */
+export function seedLocks(
+  rows: readonly IRow[],
+  thresholds: IThresholdFile,
+  since: string,
+  metrics: readonly LockMetric[] = LOCK_METRICS,
+): IParityLock[] {
+  const out: IParityLock[] = [];
+  for (const row of rows) {
+    const [sun, pose] = row.cell.split("_");
+    if (row.layer === "ID" || sun === undefined || pose === undefined) continue;
+    const { layers: perLayer, ...flat } = thresholds;
+    const limits = { ...flat, ...perLayer?.[row.layer] };
+    for (const metric of metrics) {
+      const threshold = limits[metric];
+      const value = lockValue(row, metric);
+      if (threshold !== undefined && value !== null && holds(value, { metric, threshold }))
+        out.push({ layer: row.layer, sun, pose, region: row.region, metric, threshold, since });
+    }
+  }
+  return out;
+}
+export function runCheck(options: IOptions = {}) {
+  const dir = options.referenceDir ?? "tools/unreal-reference";
+  const locks = readLocks(path.join(dir, "parity-locks.json"));
+  const report = runComparison({
+    ...options,
+    layers: options.layers ?? [...new Set(locks.map((l) => l.layer))],
+  });
+  return { failures: checkLocks(report.rows, locks), locks: locks.length, report };
 }
 function passes(row: IRow, thresholds?: IThresholds): boolean | null {
   if (!thresholds) return null;
@@ -440,6 +626,11 @@ export function runComparison(options: IOptions = {}) {
   const rootA = options.unreal ?? path.join(dir, "captures/unreal");
   const rootB =
     options.unrealVsUnreal ?? options.threenative ?? path.join(dir, "captures/threenative");
+  if (options.writeThresholds && !options.unrealVsUnreal)
+    fail(
+      "BAD_INPUT",
+      "--write-thresholds derives from the noise floor: add --unreal-vs-unreal <dir>",
+    );
   const offline = !existsSync(rootA);
   const prepareOnly =
     !existsSync(rootB) &&
@@ -501,19 +692,33 @@ export function runComparison(options: IOptions = {}) {
   if (!layers.length) fail("MISSING_CELL", "no layers present");
   if (layers.some((l) => !allLayers.includes(l) && l !== "ID")) fail("BAD_INPUT", "unknown layer");
   const thresholdFile = path.join(dir, "thresholds.json");
-  const thresholds = existsSync(thresholdFile)
-    ? (object(json(thresholdFile)) as IThresholds)
+  const thresholdData = existsSync(thresholdFile)
+    ? (object(json(thresholdFile)) as IThresholdFile)
     : undefined;
-  if (thresholds)
-    for (const [key, value] of Object.entries(thresholds))
+  const checkThresholds = (value: Record<string, unknown>, nested: boolean) => {
+    for (const [key, limit] of Object.entries(value)) {
+      if (key === "layers" && !nested) continue;
       if (
         !["deltaE", "dP50", "iou", "dEv"].includes(key) ||
-        typeof value !== "number" ||
-        !Number.isFinite(value) ||
-        value < 0 ||
-        (key === "iou" && value > 1)
+        typeof limit !== "number" ||
+        !Number.isFinite(limit) ||
+        limit < 0 ||
+        (key === "iou" && limit > 1)
       )
         fail("BAD_INPUT", "invalid thresholds");
+    }
+  };
+  if (thresholdData) {
+    checkThresholds(thresholdData as Record<string, unknown>, false);
+    for (const entry of Object.values(thresholdData.layers ?? {}))
+      checkThresholds(object(entry), true);
+  }
+  const thresholdsFor = (layer: string): IThresholds | undefined => {
+    if (!thresholdData) return undefined;
+    const { layers: perLayer, ...flat } = thresholdData;
+    return { ...flat, ...perLayer?.[layer] };
+  };
+  const thresholds = thresholdData;
   const reference: IReference = {
     generatedAt: new Date().toISOString(),
     resolution: resolution as [number, number],
@@ -612,12 +817,12 @@ export function runComparison(options: IOptions = {}) {
               deltaE: null,
               dP50: null,
               dEv50: null,
-              iou: iou(required(base.regions[region]), required(masksB.regions[region])),
+              iou: silhouetteIou(base, masksB, region),
               pass: null,
             };
             // ID geometry is sun-independent: emit each pose once in ID mode.
             if (sunIndex === 0) {
-              row.pass = passes(row, thresholds);
+              row.pass = passes(row, thresholdsFor(layer));
               rows.push(row);
             }
           }
@@ -659,16 +864,12 @@ export function runComparison(options: IOptions = {}) {
           unrealExr: exrA,
           otherExr: exrB,
           reference: cached?.cells[key],
-          thresholds,
+          thresholds: thresholdsFor(layer),
         });
         if (layer === "L0" && masksB)
           for (const row of cellRows) {
-            if (regions.includes(row.region))
-              row.iou = iou(
-                required(base.regions[row.region]),
-                required(masksB.regions[row.region]),
-              );
-            row.pass = passes(row, thresholds);
+            if (regions.includes(row.region)) row.iou = silhouetteIou(base, masksB, row.region);
+            row.pass = passes(row, thresholdsFor(layer));
           }
         rows.push(...cellRows);
         const wholeA = a ? measure(a, whole, exrA) : cached?.cells[key]?.WholeFrame;
@@ -745,6 +946,21 @@ export function runComparison(options: IOptions = {}) {
     }
   }
   if (options.writeStats) writeJson(path.join(dir, "reference-stats.json"), reference);
+  if (options.writeLocks) {
+    const seeded = seedLocks(
+      rows,
+      thresholdData ?? {},
+      options.writeLocks,
+      (options.lockMetrics ?? LOCK_METRICS) as LockMetric[],
+    );
+    if (!seeded.length) fail("BAD_INPUT", "no cell holds its thresholds; nothing to lock");
+    writeJson(path.join(dir, "parity-locks.json"), { locks: seeded });
+  }
+  if (options.writeThresholds)
+    writeJson(thresholdFile, {
+      iou: thresholdData?.iou ?? IOU_THRESHOLD,
+      layers: { ...thresholdData?.layers, ...deriveThresholds(rows) },
+    });
   for (const [layer, sheet] of sheets)
     writePng(path.join(dir, "captures/sheets", `${layer}.png`), sheet);
   const summary = layers.map((layer) => {
@@ -793,6 +1009,8 @@ export function parseArgs(args: string[]): IOptions {
     const flag = args[i];
     if (flag === "--write-masks") options.writeMasks = true;
     else if (flag === "--write-stats") options.writeStats = true;
+    else if (flag === "--write-thresholds") options.writeThresholds = true;
+    else if (flag === "--check") options.check = true;
     else if (flag === "--sheet") options.sheet = true;
     else {
       if (
@@ -803,6 +1021,9 @@ export function parseArgs(args: string[]): IOptions {
           "--sun",
           "--metric",
           "--unreal-vs-unreal",
+          "--reference-dir",
+          "--write-locks",
+          "--lock-metric",
         ].includes(required(flag))
       )
         fail("BAD_INPUT", `unknown flag ${flag}`);
@@ -821,6 +1042,19 @@ export function parseArgs(args: string[]): IOptions {
         case "--metric":
           options.metric = value;
           break;
+        case "--reference-dir":
+          options.referenceDir = value;
+          break;
+        case "--write-locks":
+          options.writeLocks = value;
+          break;
+        case "--lock-metric": {
+          const metrics = value.split(",");
+          if (metrics.some((m) => !LOCK_METRICS.includes(m as LockMetric)))
+            fail("BAD_INPUT", `unknown lock metric in ${value}`);
+          options.lockMetrics = metrics;
+          break;
+        }
         case "--layer":
           options.layers = [...(options.layers ?? []), ...value.split(",")];
           break;
@@ -837,7 +1071,15 @@ export function main(args = process.argv.slice(2)): void {
     process.exitCode = compareGi(args);
     return;
   }
-  const report = runComparison(parseArgs(args));
+  const options = parseArgs(args);
+  if (options.check) {
+    const { failures, locks } = runCheck(options);
+    for (const failure of failures) console.error(`PARITY LOCK BROKEN ${failure}`);
+    console.log(`${locks - failures.length}/${locks} parity locks hold`);
+    if (failures.length) process.exitCode = 1;
+    return;
+  }
+  const report = runComparison(options);
   const show = (v: number | null) => (v === null ? "—" : Number(v.toPrecision(4)).toString());
   const verdict = (v: boolean | null) => (v === null ? "—" : v ? "PASS" : "FAIL");
   const triplet = (stats: IStats | null, ev = false) =>
