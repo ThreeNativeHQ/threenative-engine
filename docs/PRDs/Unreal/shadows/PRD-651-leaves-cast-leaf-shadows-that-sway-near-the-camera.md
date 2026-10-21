@@ -113,6 +113,17 @@ from the game. The engine only makes the shadow follow them.
   PRD-649, serves PRD-643): 8 two-sided cut leaf cards, 12 grass cards, a trunk and a pawn box, two
   suns, poses `canopy` and `grass`.
 
+- 2026-10-21 (leaf lane): the foliage drew as solid quads at L7 and above because the GI cache
+  (`scripts/unreal-look/scaffold/render/giCache.ts`, generated user source, so the game layer)
+  swapped each material for a node material that kept six fields: the map and the alpha test were
+  lost. `nodeTwin` now copies every settable field into the matching node class, as three's
+  `fromMaterial` does. The native engine holds a material's fields as accessors on the class, which
+  `for in` never lists (`packages/three-native/src/browser-backend.ts`), so three's own copy loop
+  copies nothing there and every wall came back white on the first try. The copy therefore walks
+  the prototype descriptors. A native engine fix (list the accessors as enumerable, with a native
+  test) is open and would also serve any game that copies a material. The native engine has no
+  physical node class, so a physical source is lit as a standard one there (the old behaviour).
+
 - 2026-10-20 (slicing): the masked-caster fault is an engine bug (`packages/runtime-native/`), not
   a game one. Every game with leaves on the default engine has it, so it is fixed in the engine.
 - 2026-10-20 (slicing): Unreal sways foliage in every shadow level by default. ThreeNative sways

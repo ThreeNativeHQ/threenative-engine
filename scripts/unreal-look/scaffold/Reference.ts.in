@@ -188,13 +188,6 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
         scene.background = new Color(0x000000);
         scene.environment = null;
       }
-      // The cache swaps each material for a node material that keeps colour, roughness, metalness, emissive and
-      // sides only (render/giCache.ts), so a cut-out card (leaf, grass) would come back as a whole quad. Put the cut back.
-      const cutOut = new Map<Mesh, MeshStandardMaterial>();
-      model.traverse((object) => {
-        if (object instanceof Mesh && (object.material as MeshStandardMaterial).alphaTest > 0)
-          cutOut.set(object, object.material as MeshStandardMaterial);
-      });
       // PRD-631: indirect diffuse from a world-space light cache of the sky and, from L7 (Unreal's
       // global illumination), the sun a surface returns (render/giCache.ts).
       if (TUNED && level >= 2 && !OFF.has("gi"))
@@ -206,11 +199,6 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
           ...(level < 7 ? { skyShadowDistance: 10 } : {}),
           sun: { color: key.color, intensity: key.intensity, direction: SUN_DIRECTION },
         });
-      for (const [mesh, source] of cutOut) {
-        const material = mesh.material as MeshStandardMaterial;
-        material.map = source.map;
-        material.alphaTest = source.alphaTest;
-      }
       if (TUNED && level >= 8 && !OFF.has("reflcap"))
         reflections = captureReflections(
           ctx.renderer.raw as unknown as Parameters<typeof captureReflections>[0],
