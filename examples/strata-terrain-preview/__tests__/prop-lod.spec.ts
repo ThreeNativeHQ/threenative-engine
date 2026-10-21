@@ -126,6 +126,7 @@ describe("canopy comparison startup", () => {
     const pack = await import("../src/render/pack.js");
     const imports: Record<string, unknown> = {
       "./game.js": { __esModule: true, default: game },
+      "./launchFailure.js": { showLaunchFailures: () => ({ ready: () => undefined }) },
       "./render/biomes.js": { BIOMES: { forest: {}, coastal: {} } },
       "./render/pack.js": pack,
     };
