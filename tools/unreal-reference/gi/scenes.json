@@ -16,6 +16,16 @@
       "name": "neon-corridor",
       "owner": "PRD-639",
       "poses": ["neon", "textured"]
+    },
+    {
+      "name": "glass",
+      "owner": "PRD-643",
+      "poses": ["glass", "glass-edge"]
+    },
+    {
+      "name": "fog",
+      "owner": "PRD-643",
+      "poses": ["fog", "fog-corner"]
     }
   ],
   "variants": [

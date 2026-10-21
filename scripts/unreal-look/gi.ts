@@ -62,9 +62,29 @@ export interface ISceneMaterial {
   emissiveStrength: number;
   /** A masked, two-sided material with a base colour texture (PRD-651 leaf cards): all four or none. */
   texture?: string;
-  alphaMode?: "MASK";
+  alphaMode?: "MASK" | "BLEND";
   alphaCutoff?: number;
   doubleSided?: boolean;
+  /** A translucent material (PRD-643 glass), `alphaMode` BLEND: the alpha of the glTF base colour factor. */
+  opacity?: number;
+  /** The parent material's translucency lighting mode, read from the level: Unreal's default is tlm_volumetric_non_directional. */
+  translucencyLightingMode?: string;
+}
+/** Unreal's exponential height fog as the level reports it (PRD-643). Densities are Unreal's own numbers; distances are metres. */
+export interface ISceneFog {
+  position: Vec3;
+  /** `FogDensity`: the extinction per metre is density / 10 (UE 5.8.3: Renderer/Private/SceneCore.cpp, per centimetre /1000). */
+  density: number;
+  /** `FogHeightFalloff`, per 1000 cm, base 2. */
+  heightFalloff: number;
+  inscatteringLuminance: Vec3;
+  startDistanceM: number;
+  maxOpacity: number;
+  volumetric: boolean;
+  volumetricScatteringDistribution: number;
+  volumetricAlbedo: Vec3;
+  volumetricExtinctionScale: number;
+  volumetricDistanceM: number;
 }
 export interface ISceneJson {
   scene: string;
@@ -92,12 +112,16 @@ export interface ISceneJson {
     units: string;
     attenuationRadiusM: number;
     sourceRadiusM?: number;
+    /** Unreal's `VolumetricScatteringIntensity` (default 1): how much the light scatters in volumetric fog (PRD-643). */
+    volumetricScatteringIntensity?: number;
     /** A SpotLight (PRD-649 lamp-room): the point it looks at, and its cone angles in degrees. */
     target?: Vec3;
     innerConeDeg?: number;
     outerConeDeg?: number;
   }[];
   exposure: { ev100: number; exposureScale: number } | null;
+  /** An exponential height fog the scene carries (PRD-643), `null` or absent when it has none. */
+  fog?: ISceneFog | null;
   /** `sun`: a template-lit scene's poses run once per sun, named `<sun>-<pose>` (PRD-649). */
   poses: { name: string; position: Vec3; target: Vec3; hfovDeg: number; sun?: string }[];
   /** A template-lit scene: Unreal's default level, one level per sun. */
@@ -276,6 +300,23 @@ function maskedStateDiffers(
   );
 }
 
+/**
+ * A translucent material (PRD-643 glass) must arrive as glTF alphaMode BLEND whose base colour factor alpha is its
+ * opacity. A material that is not translucent in scene.json must not arrive as BLEND.
+ */
+function translucentStateDiffers(
+  want: ISceneMaterial,
+  got: NonNullable<IGltf["materials"]>[number],
+): boolean {
+  const blend = want.alphaMode === "BLEND";
+  if ((got.alphaMode === "BLEND") !== blend) return true;
+  return (
+    blend &&
+    Math.abs((got.pbrMetallicRoughness?.baseColorFactor?.[3] ?? 1) - (want.opacity ?? Number.NaN)) >
+      1e-3
+  );
+}
+
 function near(a: readonly number[], b: readonly number[], tolerance: number): boolean {
   return (
     a.length === b.length && a.every((v, i) => Math.abs(v - (b[i] ?? Number.NaN)) <= tolerance)
@@ -366,7 +407,12 @@ export function validateSceneExport(scene: ISceneJson, gltf: IGltf): void {
         "SCENE_EXPORT",
         `${actor.name}: material ${want.name} differs between scene.json and scene.glb`,
       );
-    if (maskedStateDiffers(want, material))
+    if (translucentStateDiffers(want, material))
+      fail(
+        "SCENE_EXPORT",
+        `${actor.name}: translucent state of material ${want.name} differs between scene.json and scene.glb`,
+      );
+    if (want.alphaMode !== "BLEND" && maskedStateDiffers(want, material))
       fail(
         "SCENE_EXPORT",
         `${actor.name}: masked state of material ${want.name} differs between scene.json and scene.glb`,
@@ -396,6 +442,13 @@ export function validateSceneExport(scene: ISceneJson, gltf: IGltf): void {
         "SCENE_EXPORT",
         `${light.name}: a spot light needs a target and 0 <= inner < outer cone`,
       );
+  }
+  const fog = scene.fog;
+  if (fog) {
+    if (!(fog.density > 0) || !(fog.volumetricExtinctionScale > 0))
+      fail("SCENE_EXPORT", `${scene.scene}: fog density and extinction scale must be positive`);
+    if (!fog.volumetricAlbedo.every((c) => c >= 0 && c <= 1))
+      fail("SCENE_EXPORT", `${scene.scene}: fog albedo must lie in 0 to 1`);
   }
   // A template-lit scene (PRD-649) keeps the default level's exposure, as the PRD-631 reference does.
   if (scene.template !== "default" && (!scene.exposure || !Number.isFinite(scene.exposure.ev100)))

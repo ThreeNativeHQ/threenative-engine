@@ -22,6 +22,11 @@ as one static mesh ("mesh"). A material may be masked ("alphaMode": "MASK") and 
 (PRD-651 leaf cards): the glTF exporter writes it as alphaMode MASK, doubleSided and a base colour texture.
 A box names a "region" to share its region-ID colour with a group of cards (`Leaves`).
 
+PRD-643: a material may be translucent ("alphaMode": "BLEND", "opacity"): the proxy material takes the translucent
+blend mode, its opacity is the alpha of the base colour factor, and the glTF exporter writes alphaMode BLEND with that
+alpha. A non-template scene may carry "fog": an exponential height fog actor with volumetric fog (spawn_fog), which
+scene.json reads back from the level. Its lamps light the fog (volumetric scattering intensity 1).
+
 Unreal is the source of truth: scene.json holds what the level reports, not what scene.py asked for.
 The proxy materials (/GLTFExporter/Materials/Proxy/M_GLTF_Default) are the exporter's own, so their
 factors reach scene.glb unchanged. This file holds no Unreal code; it drives the editor through its
@@ -144,6 +149,15 @@ def set_masked(mi, values):
     mi.set_editor_property("base_property_overrides", overrides)
 
 
+def set_translucent(mi):
+    """Translucent blend mode as a base property override on the instance (PRD-643). The translucency lighting mode
+    stays the parent's: Unreal's default, Volumetric NonDirectional, which Lumen lights from the translucency GI volume."""
+    overrides = mi.get_editor_property("base_property_overrides")
+    overrides.set_editor_property("override_blend_mode", True)
+    overrides.set_editor_property("blend_mode", unreal.BlendMode.BLEND_TRANSLUCENT)
+    mi.set_editor_property("base_property_overrides", overrides)
+
+
 def texture(ref, folder, name, path):
     """Imports an image file beside scene.py as an sRGB Texture2D (PRD-639: a material's albedo texels)."""
     if not os.path.exists(path):
@@ -169,7 +183,10 @@ def material(ref, folder, name, values, proxy=PROXY, textures=None):
         # The proxy's "Base Color Texture" multiplies "Base Color Factor", as glTF's baseColorTexture does.
         mel.set_material_instance_texture_parameter_value(mi, "Base Color Texture", (textures or {})[values["baseColorTexture"]])
     r, g, b = values["baseColor"]
-    mel.set_material_instance_vector_parameter_value(mi, "Base Color Factor", unreal.LinearColor(r, g, b, 1.0))
+    # The proxy reads the alpha of "Base Color Factor" as the opacity of a translucent material (glTF baseColorFactor[3]).
+    mel.set_material_instance_vector_parameter_value(mi, "Base Color Factor", unreal.LinearColor(r, g, b, values.get("opacity", 1.0)))
+    if values.get("alphaMode") == "BLEND":
+        set_translucent(mi)
     if "texture" in values:
         mel.set_material_instance_texture_parameter_value(mi, "Base Color Texture", textures[values["texture"]])
     if values.get("alphaMode") == "MASK":
@@ -244,6 +261,8 @@ def spawn_light(ref, light):
     r, g, b = light["color"]
     component.set_editor_property("light_color", unreal.Color(r=round(r * 255), g=round(g * 255), b=round(b * 255), a=255))
     component.set_editor_property("cast_shadows", light["castShadows"])
+    # Unreal's default (1): the light scatters in volumetric fog. Set, so scene.json reads the value the level holds.
+    component.set_editor_property("volumetric_scattering_intensity", light.get("volumetricScatteringIntensity", 1.0))
     if light["class"] != "RectLight":
         component.set_editor_property("source_radius", light["sourceRadiusM"] * 100.0)
     if light["class"] == "SpotLight":
@@ -266,6 +285,17 @@ def exposure_volume(ref, ev100):
     settings.set_editor_property("auto_exposure_bias", -float(ev100))
     volume.set_editor_property("settings", settings)
     return volume
+
+
+def spawn_fog(ref, fog):
+    """PRD-643: an exponential height fog with volumetric fog. Only the density and the switch are set; every other
+    value is the actor's default, and describe_level reads all of them back into scene.json."""
+    actor = ref.actor_subsystem.spawn_actor_from_class(unreal.ExponentialHeightFog, ref.to_unreal(fog["position"]))
+    actor.set_actor_label("Fog")
+    component = actor.get_component_by_class(unreal.ExponentialHeightFogComponent)
+    component.set_editor_property("fog_density", fog["density"])
+    component.set_editor_property("enable_volumetric_fog", fog["volumetric"])
+    return actor
 
 
 def spawn_boxes(ref, scene, meshes, materials):
@@ -307,6 +337,8 @@ def build_level(ref, path, scene, meshes, materials, lights):
     if lights:
         for light in scene["lights"]:
             spawn_light(ref, light)
+        if scene.get("fog"):
+            spawn_fog(ref, scene["fog"])
     exposure_volume(ref, scene["ev100"])
     ref.level_subsystem.save_current_level()
     return actors
@@ -315,10 +347,10 @@ def build_level(ref, path, scene, meshes, materials, lights):
 def build(ref, name):
     scene = load_scene(name)
     template = scene.get("template") == "default"
-    if not template and (scene.get("sky") or scene.get("sun") or scene.get("fog")):
-        raise ValueError(f"scene {name}: sky, sun and fog are not authored yet (PRD-638 Phase 2)")
-    if template and (scene["lights"] or not scene.get("suns")):
-        raise ValueError(f"scene {name}: a template-lit scene names its suns and adds no light")
+    if not template and (scene.get("sky") or scene.get("sun")):
+        raise ValueError(f"scene {name}: sky and sun are not authored yet (PRD-638 Phase 2)")
+    if template and (scene["lights"] or not scene.get("suns") or scene.get("fog")):
+        raise ValueError(f"scene {name}: a template-lit scene names its suns and adds no light or fog")
     region_material = {}
     for box in scene["boxes"]:
         if region_material.setdefault(region_of(box), box["material"]) != box["material"]:
@@ -342,7 +374,8 @@ def build(ref, name):
     for region, rgb in regions.items():
         spec = scene["materials"][region_material[region]]
         values = {"baseColor": [c / 255.0 for c in rgb], "roughness": 1.0, "metallic": 0.0}
-        values.update({k: spec[k] for k in ("texture", "alphaMode", "alphaCutoff", "doubleSided") if k in spec})
+        # A translucent region (PRD-643) is opaque in its ID frame: only a masked cut survives into the unlit material.
+        values.update({k: spec[k] for k in ("texture", "alphaMode", "alphaCutoff", "doubleSided") if k in spec and (k != "alphaMode" or spec[k] == "MASK")})
         ids[region] = material(ref, f"{base}/Materials", f"MI_ID_{region}", values, UNLIT_PROXY, textures)
     meshes = {}
     for box in scene["boxes"]:
@@ -385,7 +418,7 @@ def to_three(v):
 
 
 def describe_level(ref, name, scene, regions):
-    meshes, lights, exposure, sun, template_meshes = [], [], None, None, []
+    meshes, lights, exposure, sun, template_meshes, fog = [], [], None, None, [], None
     boxes = {b["name"] for b in scene["boxes"]}
     region_by_box = {b["name"]: region_of(b) for b in scene["boxes"]}
     for actor in ref.actor_subsystem.get_all_level_actors():
@@ -428,6 +461,8 @@ def describe_level(ref, name, scene, regions):
                 "castShadows": c.get_editor_property("cast_shadows"),
                 "inverseSquaredFalloff": c.get_editor_property("use_inverse_squared_falloff"),
             }
+            if scene.get("fog"):
+                light["volumetricScatteringIntensity"] = c.get_editor_property("volumetric_scattering_intensity")
             if cls != "RectLight":
                 light["sourceRadiusM"] = c.get_editor_property("source_radius") / 100.0
             if cls == "SpotLight":
@@ -437,6 +472,23 @@ def describe_level(ref, name, scene, regions):
                 light["innerConeDeg"] = round(c.get_editor_property("inner_cone_angle"), 6)
                 light["outerConeDeg"] = round(c.get_editor_property("outer_cone_angle"), 6)
             lights.append(light)
+        elif cls == "ExponentialHeightFog" and scene.get("template") != "default":
+            # PRD-643: the fog actor, read back. Densities are Unreal's own numbers (per 1000 cm), distances in metres.
+            c = actor.get_component_by_class(unreal.ExponentialHeightFogComponent)
+            albedo, inscatter = c.get_editor_property("volumetric_fog_albedo"), c.get_editor_property("fog_inscattering_luminance")
+            fog = {
+                "position": to_three(actor.get_actor_location()),
+                "density": round(c.get_editor_property("fog_density"), 6),
+                "heightFalloff": round(c.get_editor_property("fog_height_falloff"), 6),
+                "inscatteringLuminance": [inscatter.r, inscatter.g, inscatter.b],
+                "startDistanceM": c.get_editor_property("start_distance") / 100.0,
+                "maxOpacity": c.get_editor_property("fog_max_opacity"),
+                "volumetric": bool(c.get_editor_property("enable_volumetric_fog")),
+                "volumetricScatteringDistribution": round(c.get_editor_property("volumetric_fog_scattering_distribution"), 6),
+                "volumetricAlbedo": [albedo.r / 255.0, albedo.g / 255.0, albedo.b / 255.0],
+                "volumetricExtinctionScale": c.get_editor_property("volumetric_fog_extinction_scale"),
+                "volumetricDistanceM": c.get_editor_property("volumetric_fog_distance") / 100.0,
+            }
         elif cls == "DirectionalLight":
             # A template-lit scene: the default sun, read back; its rotation is the last sun's level.
             c = actor.get_component_by_class(unreal.DirectionalLightComponent)
@@ -474,7 +526,7 @@ def describe_level(ref, name, scene, regions):
         "sky": "template" if scene.get("template") == "default" else None,
         "sun": sun,
         **({"template": "default", "suns": scene["suns"], "templateMeshes": sorted(template_meshes)} if scene.get("template") == "default" else {}),
-        "fog": None,
+        "fog": fog,
         "exposure": exposure,
         "poses": poses_of(scene),
         "regions": regions,
@@ -505,6 +557,12 @@ def material_values(mi):
     }
     # A masked material also reports its texture, clip value and sides, read from the instance.
     overrides = mi.get_editor_property("base_property_overrides")
+    if overrides.get_editor_property("override_blend_mode") and overrides.get_editor_property("blend_mode") == unreal.BlendMode.BLEND_TRANSLUCENT:
+        # PRD-643: the opacity is the alpha of the base colour factor. The lighting mode is the parent material's.
+        values["alphaMode"] = "BLEND"
+        values["opacity"] = round(mel.get_material_instance_vector_parameter_value(mi, "Base Color Factor").a, 6)
+        parent = mi.get_editor_property("parent")
+        values["translucencyLightingMode"] = enum_name(parent.get_editor_property("translucency_lighting_mode"))
     if overrides.get_editor_property("override_blend_mode") and overrides.get_editor_property("blend_mode") == unreal.BlendMode.BLEND_MASKED:
         texture = mel.get_material_instance_texture_parameter_value(mi, "Base Color Texture")
         values["texture"] = os.path.basename(texture.get_editor_property("asset_import_data").get_first_filename())
