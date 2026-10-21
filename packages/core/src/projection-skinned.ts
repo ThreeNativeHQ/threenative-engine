@@ -39,7 +39,6 @@ import {
   StorageBufferAttribute,
 } from "three/webgpu";
 
-import { animationPacketField } from "./animation-packet-state.js";
 import {
   type IAnimationPosePacket,
   type IAnimationPoseVersion,
@@ -47,6 +46,8 @@ import {
   evaluateAnimationPosePacket,
   readAnimationPosePacket,
   readAnimationPosePacketTime,
+  refreshAnimationPosePacket,
+  skeletonUpdateIntact,
 } from "./animation-pose-packet.js";
 import { SPANS, beginSpan, endSpan } from "./profiling/Spans.js";
 
@@ -56,9 +57,14 @@ interface IRawDisplaySlot {
   previous?: IAnimationPosePacket;
   retired: boolean;
   writeFrame?: number;
+  /** Evaluations that may reuse the captured packet before the next full source re-read. */
+  trusted?: number;
   expectedCurrent?: Float32Array;
   expectedPrevious?: Float32Array;
 }
+
+/** Evaluations a captured RAW packet is reused before every source field is read again. */
+const RAW_REVALIDATE_EVALUATIONS = 256;
 
 const ANIMATION_RATE_SOURCES_KEY = "threenative.animationRateSources";
 const ANIMATION_RATE_STATE_KEY = "threenative.animationRateState";
@@ -591,8 +597,13 @@ export class SkinnedBatch {
           !state.evaluated &&
           this.#writtenEvaluations.get(rig) === state.evaluation &&
           this.#writtenWorldMatrices.get(rig)?.equals(rig.matrixWorld);
-        const skeleton = animationPacketField(rig, "skeleton");
-        const update = skeleton instanceof Skeleton ? this.#method(skeleton, "update") : undefined;
+        const skeleton: unknown = rig.skeleton;
+        const update =
+          skeleton instanceof Skeleton
+            ? skeletonUpdateIntact(skeleton)
+              ? skeletonUpdate
+              : this.#method(skeleton, "update")
+            : undefined;
         const shared =
           skeleton instanceof Skeleton && (this.#skeletonOwners.get(skeleton)?.size ?? 0) > 1;
         // First eligibility on a held tick must wait for a genuine stock refresh.
@@ -607,15 +618,23 @@ export class SkinnedBatch {
           (state?.effectiveRate ?? 1) > 1 &&
           update === skeletonUpdate &&
           !shared
-            ? held && display.current
+            ? display.current && held
               ? readAnimationPosePacketTime(rig, display.current.version)
-              : readAnimationPosePacket(rig)
+              : display.current &&
+                  (display.trusted ?? 0) > 0 &&
+                  this.#writtenWorldMatrices.get(rig)?.equals(rig.matrixWorld) === true
+                ? refreshAnimationPosePacket(rig, display.current.version)
+                : readAnimationPosePacket(rig)
             : undefined;
+        if (packet && state && !held) {
+          const reused = display.current?.version.keys === packet.version.keys;
+          display.trusted = reused ? (display.trusted ?? 0) - 1 : RAW_REVALIDATE_EVALUATIONS;
+        }
         if (packet && state) {
           display.writeFrame = this.#frame;
           if (!held && skeleton instanceof Skeleton)
             this.#rawUpdates.set(skeleton, { frame: this.#frame, version: packet.version });
-          const changed = display.current?.version !== packet.version;
+          const changed = display.current?.version.keys !== packet.version.keys;
           display.current = packet;
           this.#packRaw(slot, packet, false, changed);
           if (this.#fresh.includes(slot)) this.#packRaw(slot, packet, true);
@@ -658,7 +677,7 @@ export class SkinnedBatch {
     if (this.#rawFrame === this.#frame) return;
     this.#rawFrame = this.#frame;
     for (const [slot, display] of this.#rawSlots) {
-      if (display.current && display.previous?.version !== display.current.version) {
+      if (display.current && display.previous?.version.keys !== display.current.version.keys) {
         this.#rawPrevious.set(this.#rawData.subarray(slot * 576, (slot + 1) * 576), slot * 576);
         this.#rawPreviousRoots.set(this.#rawRoots.subarray(slot * 32, (slot + 1) * 32), slot * 32);
       }
@@ -772,7 +791,7 @@ export class SkinnedBatch {
   }
 
   #trackSkeleton(slot: number, rig: Object3D, charged = false): void {
-    const skeleton = animationPacketField(rig, "skeleton");
+    const skeleton = (rig as SkinnedMesh).skeleton as unknown;
     if (this.#ownedSkeletons.get(slot) === skeleton && !charged) return;
     if (this.#ownedSkeletons.get(slot) !== skeleton) this.#untrackSkeleton(slot);
     if (!(skeleton instanceof Skeleton)) return;

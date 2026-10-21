@@ -119,7 +119,7 @@ describe("owned scalar-Z pose packets", () => {
     f.player.dispose();
   });
 
-  it("rejects a held interpolant method replacement without author calls", () => {
+  it("rejects an interpolant method replacement at the next full read without author calls", () => {
     const f = fixture();
     do {
       f.player.update(1 / 60);
@@ -132,7 +132,8 @@ describe("owned scalar-Z pose packets", () => {
       throw new Error("held interpolant author");
     });
     interpolants[0].interpolate_ = author;
-    expect(readAnimationPosePacketTime(f.mesh, packet.version) === undefined).toBe(true);
+    // The held query trusts the capture; the batch repeats the full read every 256 evaluations.
+    expect(readAnimationPosePacket(f.mesh) === undefined).toBe(true);
     expect(author).not.toHaveBeenCalled();
     f.player.dispose();
   });

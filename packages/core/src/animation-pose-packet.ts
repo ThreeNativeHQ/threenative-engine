@@ -7,6 +7,7 @@ import {
   type Vector3,
 } from "three";
 import {
+  type IAnimationPacketState,
   animationPacketField as field,
   readAnimationPacketState,
 } from "./animation-packet-state.js";
@@ -49,7 +50,7 @@ const cache = new WeakMap<
   SkinnedMesh,
   {
     readonly sources: readonly object[];
-    readonly version: IAnimationPoseVersion;
+    version: IAnimationPoseVersion;
     readonly interpolants: readonly object[];
   }
 >();
@@ -64,6 +65,15 @@ const defaults = methods.map(
 );
 const F = Math.fround;
 const skeletonUpdate = Object.getOwnPropertyDescriptor(Skeleton.prototype, "update")?.value;
+
+/** True when this skeleton still runs three's own `update`: no own override, stock prototype. */
+export function skeletonUpdateIntact(skeleton: object): boolean {
+  return (
+    Object.getPrototypeOf(skeleton) === Skeleton.prototype &&
+    !Object.hasOwn(skeleton, "update") &&
+    Skeleton.prototype.update === skeletonUpdate
+  );
+}
 
 function installedMethod(value: object, name: string): unknown {
   for (let owner: object | null = value; owner !== null; owner = Object.getPrototypeOf(owner)) {
@@ -84,10 +94,13 @@ function numbers(value: unknown, length: number): readonly number[] | undefined 
   const array = Array.isArray(value);
   if (!array && !(value instanceof Float32Array)) return undefined;
   if (!array && !(typedBuffer?.call(value) instanceof ArrayBuffer)) return undefined;
-  if ((array ? field(value, "length") : typedLength?.call(value)) !== length) return undefined;
+  // An array's length is a non-configurable data property, and a typed array cannot carry an
+  // element accessor, so both read directly; only plain numbers are accepted.
+  if ((array ? (value as readonly unknown[]).length : typedLength?.call(value)) !== length)
+    return undefined;
   const result: number[] = [];
   for (let i = 0; i < length; i++) {
-    const n = member(value, String(i));
+    const n = (value as ArrayLike<unknown>)[i];
     if (typeof n !== "number" || !Number.isFinite(n)) return undefined;
     result.push(n);
   }
@@ -105,12 +118,14 @@ function matrix(value: unknown): readonly number[] | undefined {
 function rounded(values: readonly number[]): readonly number[] {
   return Object.freeze(values.map(F));
 }
+// `same` and `finiteRaw` walk trees this module built and froze, which cannot carry accessors.
 function same(a: unknown, b: unknown): boolean {
   if (Object.is(a, b)) return true;
   if (!object(a) || !object(b)) return false;
   const keys = Object.keys(a);
   return (
-    keys.length === Object.keys(b).length && keys.every((key) => same(field(a, key), field(b, key)))
+    keys.length === Object.keys(b).length &&
+    keys.every((key) => same((a as never)[key], (b as never)[key]))
   );
 }
 function sameNumbers(a: readonly number[], b: ArrayLike<number>): boolean {
@@ -120,7 +135,7 @@ function sameNumbers(a: readonly number[], b: ArrayLike<number>): boolean {
 }
 function finiteRaw(value: unknown): boolean {
   if (typeof value === "number") return Number.isFinite(F(value));
-  return !object(value) || Object.keys(value).every((key) => finiteRaw(field(value, key)));
+  return !object(value) || Object.keys(value).every((key) => finiteRaw((value as never)[key]));
 }
 function identity(values: readonly number[]): boolean {
   return values.every((v, i) => v === (i % 5 === 0 ? 1 : 0));
@@ -373,13 +388,13 @@ export function readAnimationPosePacket(rig: SkinnedMesh): IAnimationPosePacket 
 }
 
 /** Cheap held query: numeric keys/rest/bind remain owned until the next genuine refresh. */
-export function readAnimationPosePacketTime(
+function savedPacketFor(
   rig: SkinnedMesh,
   version: IAnimationPoseVersion,
-): IAnimationPosePacket | undefined {
+): { saved: NonNullable<ReturnType<typeof cache.get>>; state: IAnimationPacketState } | undefined {
   const saved = cache.get(rig);
   const state = readAnimationPacketState(rig);
-  const skeleton = member(rig, "skeleton");
+  const skeleton = rig.skeleton as Skeleton | undefined;
   if (
     !saved ||
     saved.version !== version ||
@@ -387,23 +402,47 @@ export function readAnimationPosePacketTime(
     state.root !== rig ||
     state.action !== saved.sources[0] ||
     state.clip !== saved.sources[1] ||
-    member(state.clip, "duration") !== version.duration ||
+    state.clip.duration !== version.duration ||
+    !skeleton ||
     skeleton !== saved.sources[2] ||
-    member(skeleton, "bones") !== saved.sources[3] ||
-    !object(skeleton) ||
-    installedMethod(skeleton, "update") !== skeletonUpdate
+    skeleton.bones !== saved.sources[3] ||
+    !skeletonUpdateIntact(skeleton) ||
+    (state.action as unknown as { _interpolants?: unknown })._interpolants !== saved.sources[6]
   )
     return undefined;
-  const interpolants = member(state.action, "_interpolants");
-  if (
-    interpolants !== saved.sources[6] ||
-    member(interpolants, "length") !== 11 ||
-    saved.interpolants.some(
-      (value, i) => member(interpolants, String(i)) !== value || !pristine(value),
-    )
-  )
-    return undefined;
-  return Object.freeze({ raw: true, version, time: state.time });
+  return { saved, state };
+}
+
+export function readAnimationPosePacketTime(
+  rig: SkinnedMesh,
+  version: IAnimationPoseVersion,
+): IAnimationPosePacket | undefined {
+  const found = savedPacketFor(rig, version);
+  // Interpolant methods and element identity were validated by the capture; the batch re-reads
+  // the whole packet every `revalidate` evaluations, so an in-place edit shows up there.
+  return found && Object.freeze({ raw: true, version, time: found.state.time });
+}
+
+/**
+ * A genuine refresh that reuses the captured packet: the same checks as the held query, and the
+ * version is restamped with this evaluation's held time and counter so the CPU fallback and the
+ * dedup bookkeeping read the pose this refresh produced. The numeric payload is shared as is.
+ */
+export function refreshAnimationPosePacket(
+  rig: SkinnedMesh,
+  version: IAnimationPoseVersion,
+): IAnimationPosePacket | undefined {
+  const found = savedPacketFor(rig, version);
+  if (!found) return undefined;
+  const held = (found.state.action as unknown as { time: number }).time;
+  if (typeof held !== "number") return undefined;
+  const next: IAnimationPoseVersion = Object.freeze({
+    ...version,
+    time: held,
+    evaluation: found.state.evaluation,
+  });
+  found.saved.version = next;
+  return Object.freeze({ raw: true, version: next, time: found.state.time });
 }
 
 /** Cached genuine CPU basis for held retirement; no current-time sampling or author calls. */

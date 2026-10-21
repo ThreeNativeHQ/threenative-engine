@@ -97,6 +97,8 @@ export interface IStrideReport {
  * clip reads as a cartoon; at zero it freezes mid-stride while the body drifts, which is worse
  * than a slow cycle. Both ends are a property of the clip set, so both are the game's to move.
  */
+/** Packet-state reads that reuse the last full validation of the action and mixer internals. */
+const PACKET_REVALIDATE_READS = 256;
 const STRIDE_RATE_MIN = 0.15;
 const STRIDE_RATE_MAX = 3;
 /** Below this the body is standing, and a measured rate would be noise. */
@@ -340,6 +342,8 @@ class LoopAwareAnimationMixer extends AnimationMixer<AnimationMixerEventMap> {
 
 export class AnimationPlayer {
   readonly #packetReader = () => this.#readPacketState();
+  /** The action and clip the last full packet validation accepted, reused for a bounded number of reads. */
+  #packetTrust: { action: AnimationAction; clip: AnimationClip; left: number } | undefined;
   readonly mixer: AnimationMixer;
   readonly root: Object3D;
   readonly #rateState: IAnimationRateState = {
@@ -1011,6 +1015,27 @@ export class AnimationPlayer {
       return undefined;
     const action = this.#actions.get(this.#current ?? "");
     const clip = this.#clips.get(this.#current ?? "");
+    const trust = this.#packetTrust;
+    if (trust !== undefined && trust.left > 0 && action === trust.action && clip === trust.clip) {
+      trust.left -= 1;
+      // Between full validations only the playhead is read: plain data fields, no author code.
+      const time = animationPacketTime(
+        action.time,
+        this.#pendingActionTimes.get(action) ?? 0,
+        clip.duration,
+      );
+      if (time === undefined) return undefined;
+      return Object.freeze({
+        root: this.root,
+        mixer: this.mixer,
+        action,
+        clip,
+        time,
+        evaluated: this.#rateState.evaluated,
+        evaluation: this.#rateState.evaluation,
+      });
+    }
+    this.#packetTrust = undefined;
     if (
       action === undefined ||
       clip === undefined ||
@@ -1056,6 +1081,7 @@ export class AnimationPlayer {
       return undefined;
     const time = animationPacketTime(held, this.#pendingActionTimes.get(action) ?? 0, duration);
     if (time === undefined) return undefined;
+    this.#packetTrust = { action, clip, left: PACKET_REVALIDATE_READS };
     return Object.freeze({
       root: this.root,
       mixer: this.mixer,
