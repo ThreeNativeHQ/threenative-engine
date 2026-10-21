@@ -14,6 +14,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <string>
 #include <unordered_map>
 #include <utility>
 
@@ -109,6 +110,63 @@ struct TraceRaysOptions {
     void* outputTexture;        // WebGPU texture to write results to
     void* uniforms;             // Optional uniform buffer
     size_t uniformsSize;        // Size of uniform buffer in bytes
+};
+
+// ============================================================================
+// Ray Batches (GI probe rays)
+// ============================================================================
+
+/**
+ * A ray batch is the readable ray tracing path: rays go in as a flat float array, hit records come
+ * back in caller memory. Nothing in it is a WebGPU resource, so the result is readable by
+ * construction and a caller uploads it with an ordinary queue write.
+ *
+ * Ray record, 8 floats:  origin.xyz, tMin, direction.xyz, tMax. Directions must be unit length,
+ *                        so a hit distance is in world units.
+ * Hit record, 4 words:   t (f32, -1 on a miss), primitiveIndex (u32, kHitMissPrimitive on a miss),
+ *                        b1 (f32), b2 (f32). The weight of vertex 0 is 1 - b1 - b2.
+ *
+ * A hit names a triangle, so the TLAS must resolve to one triangle list: one instance of a BLAS
+ * built from one geometry. The batch refuses any other TLAS by name instead of returning indices
+ * that mean different triangles. Triangles are double sided, as in the software BVH trace.
+ */
+constexpr uint32_t kRayWords = 8;
+constexpr uint32_t kHitWords = 4;
+constexpr uint32_t kHitMissPrimitive = 0xFFFFFFFFu;
+
+struct TraceRayBatchOptions {
+    RTTLASHandle tlas;          // Top-level acceleration structure
+    const float* rays;          // rayCount x kRayWords floats
+    uint32_t rayCount;          // Number of rays in the batch
+    float* hits;                // rayCount x kHitWords words, written by the trace
+};
+
+struct TraceRayBatchResult {
+    bool ok = false;
+    std::string error;          // Names the step that failed when ok is false
+    double gpuMs = 0;           // The trace dispatch alone, from GPU timestamps (0 if unavailable)
+    double totalMs = 0;         // Ray upload + trace + hit readback, wall clock
+};
+
+/**
+ * What a backend found on this machine. Filled when the backend initializes and reported as it
+ * is: a probe or a game reads it to decide, and never assumes it.
+ */
+struct RTCapabilities {
+    std::string backend = "none";
+    std::string deviceName;
+    uint32_t vendorId = 0;
+    uint32_t deviceId = 0;
+    uint32_t apiVersion = 0;            // Vulkan: VK_MAKE_API_VERSION of the device
+    uint32_t driverVersion = 0;
+    uint32_t maxRayRecursionDepth = 0;
+    double timestampPeriodNs = 0;       // Nanoseconds per GPU timestamp tick (0 if unavailable)
+    bool accelerationStructure = false;
+    bool rayQuery = false;
+    bool rayTracingPipeline = false;
+    bool rayBatch = false;              // traceRayBatch works on this device
+    bool imageOutput = false;           // traceRays can write a WebGPU texture (not yet anywhere)
+    std::string reason;                 // Why rayBatch is false; empty when it is true
 };
 
 // ============================================================================
@@ -243,6 +301,27 @@ public:
      * @param options Trace options including TLAS, dimensions, output texture
      */
     virtual void traceRays(const TraceRaysOptions& options) = 0;
+
+    /**
+     * Trace a batch of rays against a TLAS and write one hit record per ray into caller memory.
+     * A backend that has no batch path keeps this default, which refuses by name.
+     */
+    virtual TraceRayBatchResult traceRayBatch(const TraceRayBatchOptions& options) {
+        (void)options;
+        TraceRayBatchResult result;
+        result.error = std::string("the ") + getBackend() + " backend has no ray batch path";
+        return result;
+    }
+
+    /**
+     * What this backend found and what it can do. The default reports the backend name only.
+     */
+    virtual RTCapabilities capabilities() {
+        RTCapabilities found;
+        found.backend = getBackend();
+        found.reason = "the backend reports no capabilities";
+        return found;
+    }
 };
 
 // ============================================================================

@@ -22,10 +22,11 @@
 #include <algorithm>
 #include <fstream>
 #include <array>
+#include <chrono>
 
-// Embedded SPIR-V shaders (generated from GLSL at build time)
-// For now, we include simple inline shaders compiled with glslangValidator
+// Embedded SPIR-V shaders, generated from the GLSL beside them by cmake/CompileRTShaders.cmake
 #include "shaders/rt_shaders_spirv.h"
+#include "shaders/probe_trace_spirv.h"
 
 namespace mystral {
 namespace rt {
@@ -54,7 +55,8 @@ static const std::vector<const char*> REQUIRED_DEVICE_EXTENSIONS = {
 VulkanRTBackend::VulkanRTBackend() = default;
 
 VulkanRTBackend::~VulkanRTBackend() {
-    if (!initialized_) return;
+    // Every release below is guarded by its handle, so a backend whose initialize() failed
+    // halfway frees what it created instead of leaking the instance and the device.
 
     // Wait for device to be idle before cleanup
     if (device_ != VK_NULL_HANDLE) {
@@ -105,6 +107,30 @@ VulkanRTBackend::~VulkanRTBackend() {
     destroyBuffer(cameraUBO_);
     destroyBuffer(sbtBuffer_);
 
+    // Clean up the ray batch kernel (its command buffer goes with the command pool)
+    destroyBuffer(batchRaysStaging_);
+    destroyBuffer(batchRaysDevice_);
+    destroyBuffer(batchHitsDevice_);
+    destroyBuffer(batchHitsStaging_);
+    if (batchFence_ != VK_NULL_HANDLE) {
+        vkDestroyFence(device_, batchFence_, nullptr);
+    }
+    if (timestampPool_ != VK_NULL_HANDLE) {
+        vkDestroyQueryPool(device_, timestampPool_, nullptr);
+    }
+    if (batchPipeline_ != VK_NULL_HANDLE) {
+        vkDestroyPipeline(device_, batchPipeline_, nullptr);
+    }
+    if (batchPipelineLayout_ != VK_NULL_HANDLE) {
+        vkDestroyPipelineLayout(device_, batchPipelineLayout_, nullptr);
+    }
+    if (batchSetLayout_ != VK_NULL_HANDLE) {
+        vkDestroyDescriptorSetLayout(device_, batchSetLayout_, nullptr);
+    }
+    if (batchPool_ != VK_NULL_HANDLE) {
+        vkDestroyDescriptorPool(device_, batchPool_, nullptr);
+    }
+
     // Clean up pipeline
     if (rtPipeline_ != VK_NULL_HANDLE) {
         vkDestroyPipeline(device_, rtPipeline_, nullptr);
@@ -140,68 +166,60 @@ bool VulkanRTBackend::initialize() {
 
     std::cout << "[VulkanRT] Initializing Vulkan ray tracing backend..." << std::endl;
 
-    // Step 1: Create Vulkan instance
+    // The core steps must all succeed: an instance, a device with the acceleration structure
+    // extensions, their function pointers, a command pool and the descriptor pool.
     if (!createInstance()) {
         std::cerr << "[VulkanRT] Failed to create Vulkan instance" << std::endl;
+        initError_ = "no Vulkan 1.2 instance";
         return false;
     }
 
-    // Step 2: Select physical device with RT support
     if (!selectPhysicalDevice()) {
         std::cerr << "[VulkanRT] No RT-capable GPU found" << std::endl;
+        initError_ = "no GPU with VK_KHR_acceleration_structure and VK_KHR_ray_tracing_pipeline";
         return false;
     }
 
-    // Step 3: Create logical device with RT extensions
     if (!createDevice()) {
         std::cerr << "[VulkanRT] Failed to create logical device" << std::endl;
+        initError_ = "vkCreateDevice failed with the ray tracing extensions";
         return false;
     }
 
-    // Step 4: Load extension function pointers
     if (!loadExtensionFunctions()) {
         std::cerr << "[VulkanRT] Failed to load extension functions" << std::endl;
+        initError_ = "a ray tracing function pointer is missing";
         return false;
     }
 
-    // Step 5: Create command pool
     if (!createCommandPool()) {
         std::cerr << "[VulkanRT] Failed to create command pool" << std::endl;
+        initError_ = "vkCreateCommandPool failed";
         return false;
     }
 
-    // Step 6: Create descriptor pool and layout
     if (!createDescriptorPool()) {
         std::cerr << "[VulkanRT] Failed to create descriptor pool" << std::endl;
+        initError_ = "the camera descriptor pool could not be created";
         return false;
     }
 
-    // Step 7: Create RT pipeline
-    if (!createRTPipeline()) {
-        std::cerr << "[VulkanRT] Failed to create RT pipeline" << std::endl;
-        return false;
-    }
-
-    // Step 8: Create Shader Binding Table
-    if (!createShaderBindingTable()) {
-        std::cerr << "[VulkanRT] Failed to create SBT" << std::endl;
-        return false;
-    }
-
-    // Create camera UBO
-    VkDeviceSize uboSize = 2 * 16 * sizeof(float);  // viewInverse + projInverse
-    if (!createBuffer(uboSize,
-                      VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
-                      VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-                      cameraUBO_)) {
-        std::cerr << "[VulkanRT] Failed to create camera UBO" << std::endl;
+    // The two ways to trace are independent. The camera path draws an image, the batch path
+    // returns hit records. A driver can run one and refuse the other, so each keeps its own reason.
+    imagePathReady_ = createImagePath();
+    batchReady_ = createBatchPath();
+    if (!imagePathReady_ && !batchReady_) {
+        initError_ = "the camera path failed (" + imageError_ + ") and the ray batch path failed (" +
+                     batchError_ + ")";
         return false;
     }
 
     initialized_ = true;
     rtSupported_ = true;
 
-    std::cout << "[VulkanRT] Vulkan ray tracing backend initialized successfully" << std::endl;
+    std::cout << "[VulkanRT] Vulkan ray tracing backend initialized (camera path: "
+              << (imagePathReady_ ? std::string("ready") : imageError_) << ", ray batch: "
+              << (batchReady_ ? std::string("ready") : batchError_) << ")" << std::endl;
     return true;
 }
 
@@ -330,6 +348,14 @@ bool VulkanRTBackend::selectPhysicalDevice() {
 
         if (!allExtensionsSupported) continue;
 
+        bool hasRayQueryExtension = false;
+        for (const auto& ext : availableExtensions) {
+            if (strcmp(VK_KHR_RAY_QUERY_EXTENSION_NAME, ext.extensionName) == 0) {
+                hasRayQueryExtension = true;
+                break;
+            }
+        }
+
         // Check for compute queue family
         uint32_t queueFamilyCount = 0;
         vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, nullptr);
@@ -364,8 +390,16 @@ bool VulkanRTBackend::selectPhysicalDevice() {
             vkGetPhysicalDeviceProperties2Fn(device, &props2);
         }
 
-        // Check acceleration structure features
+        // Check acceleration structure, pipeline and ray query features. The ray query struct joins
+        // the chain only when the extension exists: an unknown struct in a query is not defined.
         asFeatures_.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR;
+
+        VkPhysicalDeviceRayTracingPipelineFeaturesKHR rtPipelineFeatures = {};
+        rtPipelineFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_FEATURES_KHR;
+        VkPhysicalDeviceRayQueryFeaturesKHR rayQueryFeatures = {};
+        rayQueryFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_QUERY_FEATURES_KHR;
+        asFeatures_.pNext = &rtPipelineFeatures;
+        rtPipelineFeatures.pNext = hasRayQueryExtension ? &rayQueryFeatures : nullptr;
 
         VkPhysicalDeviceFeatures2 features2 = {};
         features2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
@@ -376,17 +410,41 @@ bool VulkanRTBackend::selectPhysicalDevice() {
         if (vkGetPhysicalDeviceFeatures2Fn) {
             vkGetPhysicalDeviceFeatures2Fn(device, &features2);
         }
+        asFeatures_.pNext = nullptr;
 
         if (!asFeatures_.accelerationStructure) {
             std::cout << "[VulkanRT]   Acceleration structures not supported" << std::endl;
             continue;
         }
+        if (!rtPipelineFeatures.rayTracingPipeline) {
+            std::cout << "[VulkanRT]   Ray tracing pipeline not supported" << std::endl;
+            continue;
+        }
 
         // Found suitable device
         physicalDevice_ = device;
+        rayQuerySupported_ = hasRayQueryExtension && rayQueryFeatures.rayQuery;
+
+        caps_.backend = "vulkan";
+        caps_.deviceName = props.deviceName;
+        caps_.vendorId = props.vendorID;
+        caps_.deviceId = props.deviceID;
+        caps_.apiVersion = props.apiVersion;
+        caps_.driverVersion = props.driverVersion;
+        caps_.maxRayRecursionDepth = rtPipelineProperties_.maxRayRecursionDepth;
+        caps_.timestampPeriodNs = props.limits.timestampPeriod;
+        caps_.accelerationStructure = asFeatures_.accelerationStructure == VK_TRUE;
+        caps_.rayTracingPipeline = true;
+        caps_.rayQuery = rayQuerySupported_;
+        timestampValidBits_ = queueFamilies[queueFamilyIndex_].timestampValidBits;
+        // One ray is kRayWords floats and the kernel addresses a whole batch with one dispatch.
+        maxBatchRays_ = std::min<uint64_t>(
+            props.limits.maxStorageBufferRange / (kRayWords * sizeof(float)),
+            static_cast<uint64_t>(props.limits.maxComputeWorkGroupCount[0]) * 64);
         std::cout << "[VulkanRT] Selected device: " << props.deviceName << std::endl;
         std::cout << "[VulkanRT]   Max ray recursion depth: " << rtPipelineProperties_.maxRayRecursionDepth << std::endl;
         std::cout << "[VulkanRT]   Shader group handle size: " << rtPipelineProperties_.shaderGroupHandleSize << std::endl;
+        std::cout << "[VulkanRT]   Ray query: " << (rayQuerySupported_ ? "yes" : "no") << std::endl;
         return true;
     }
 
@@ -407,9 +465,19 @@ bool VulkanRTBackend::createDevice() {
     queueCreateInfo.pQueuePriorities = &queuePriority;
 
     // Enable required features
+    // Ray query is optional: a device without it still runs the camera path.
+    std::vector<const char*> deviceExtensions = REQUIRED_DEVICE_EXTENSIONS;
+    VkPhysicalDeviceRayQueryFeaturesKHR rayQueryFeatures = {};
+    rayQueryFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_QUERY_FEATURES_KHR;
+    rayQueryFeatures.rayQuery = VK_TRUE;
+    if (rayQuerySupported_) {
+        deviceExtensions.push_back(VK_KHR_RAY_QUERY_EXTENSION_NAME);
+    }
+
     VkPhysicalDeviceBufferDeviceAddressFeatures bufferDeviceAddressFeatures = {};
     bufferDeviceAddressFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BUFFER_DEVICE_ADDRESS_FEATURES;
     bufferDeviceAddressFeatures.bufferDeviceAddress = VK_TRUE;
+    bufferDeviceAddressFeatures.pNext = rayQuerySupported_ ? &rayQueryFeatures : nullptr;
 
     VkPhysicalDeviceRayTracingPipelineFeaturesKHR rtPipelineFeatures = {};
     rtPipelineFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_FEATURES_KHR;
@@ -430,8 +498,8 @@ bool VulkanRTBackend::createDevice() {
     createInfo.pNext = &deviceFeatures2;
     createInfo.queueCreateInfoCount = 1;
     createInfo.pQueueCreateInfos = &queueCreateInfo;
-    createInfo.enabledExtensionCount = static_cast<uint32_t>(REQUIRED_DEVICE_EXTENSIONS.size());
-    createInfo.ppEnabledExtensionNames = REQUIRED_DEVICE_EXTENSIONS.data();
+    createInfo.enabledExtensionCount = static_cast<uint32_t>(deviceExtensions.size());
+    createInfo.ppEnabledExtensionNames = deviceExtensions.data();
 
     if (vkCreateDevice(physicalDevice_, &createInfo, nullptr, &device_) != VK_SUCCESS) {
         std::cerr << "[VulkanRT] Failed to create logical device" << std::endl;
@@ -646,7 +714,7 @@ bool VulkanRTBackend::createRTPipeline() {
     vkDestroyShaderModule(device_, closestHitModule, nullptr);
 
     if (result != VK_SUCCESS) {
-        std::cerr << "[VulkanRT] Failed to create RT pipeline" << std::endl;
+        std::cerr << "[VulkanRT] vkCreateRayTracingPipelinesKHR failed (VkResult " << result << ")" << std::endl;
         return false;
     }
 
@@ -729,7 +797,7 @@ bool VulkanRTBackend::createShaderBindingTable() {
 // ============================================================================
 
 bool VulkanRTBackend::createBuffer(VkDeviceSize size, VkBufferUsageFlags usage,
-                                    VkMemoryPropertyFlags properties, VulkanBuffer& buffer) {
+                                    VkMemoryPropertyFlags properties, VulkanBuffer& buffer, bool strict) {
     buffer.size = size;
 
     VkBufferCreateInfo bufferInfo = {};
@@ -755,7 +823,15 @@ bool VulkanRTBackend::createBuffer(VkDeviceSize size, VkBufferUsageFlags usage,
     allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
     allocInfo.pNext = (usage & VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT) ? &allocFlagsInfo : nullptr;
     allocInfo.allocationSize = memRequirements.size;
-    allocInfo.memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, properties);
+    allocInfo.memoryTypeIndex = findMemoryTypeIndex(memRequirements.memoryTypeBits, properties);
+    if (allocInfo.memoryTypeIndex == UINT32_MAX) {
+        if (strict) {
+            vkDestroyBuffer(device_, buffer.buffer, nullptr);
+            buffer.buffer = VK_NULL_HANDLE;
+            return false;
+        }
+        allocInfo.memoryTypeIndex = 0;  // Fallback (may cause issues)
+    }
 
     if (vkAllocateMemory(device_, &allocInfo, nullptr, &buffer.memory) != VK_SUCCESS) {
         vkDestroyBuffer(device_, buffer.buffer, nullptr);
@@ -789,7 +865,7 @@ void VulkanRTBackend::destroyBuffer(VulkanBuffer& buffer) {
     buffer.size = 0;
 }
 
-uint32_t VulkanRTBackend::findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties) {
+uint32_t VulkanRTBackend::findMemoryTypeIndex(uint32_t typeFilter, VkMemoryPropertyFlags properties) {
     VkPhysicalDeviceMemoryProperties memProperties;
     vkGetPhysicalDeviceMemoryProperties(physicalDevice_, &memProperties);
 
@@ -800,7 +876,12 @@ uint32_t VulkanRTBackend::findMemoryType(uint32_t typeFilter, VkMemoryPropertyFl
         }
     }
 
-    return 0;  // Fallback (may cause issues)
+    return UINT32_MAX;
+}
+
+uint32_t VulkanRTBackend::findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties) {
+    const uint32_t found = findMemoryTypeIndex(typeFilter, properties);
+    return found == UINT32_MAX ? 0 : found;  // Fallback (may cause issues)
 }
 
 // ============================================================================
@@ -1062,6 +1143,14 @@ void VulkanRTBackend::destroyBLAS(RTBLASHandle blas) {
 // TLAS Creation
 // ============================================================================
 
+// A ray batch hit names a triangle, which only means one thing when the TLAS holds one instance of
+// a BLAS built from one geometry.
+static bool resolvesToOneTriangleList(const RTTLASInstance* instances, size_t count) {
+    if (count != 1) return false;
+    const VulkanBLAS* blas = static_cast<const VulkanBLAS*>(instances[0].blas._handle);
+    return blas != nullptr && blas->geometryIds.size() == 1;
+}
+
 RTTLASHandle VulkanRTBackend::createTLAS(const RTTLASInstance* instances, size_t count) {
     if (!initialized_ || count == 0) {
         std::cerr << "[VulkanRT] createTLAS: Not initialized or empty" << std::endl;
@@ -1102,6 +1191,7 @@ RTTLASHandle VulkanRTBackend::createTLAS(const RTTLASInstance* instances, size_t
         vkInst.flags = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
         vkInst.accelerationStructureReference = blasPtr->deviceAddress;
     }
+    tlas->oneTriangleList = resolvesToOneTriangleList(instances, count);
 
     // Create instance buffer
     VkDeviceSize instanceBufferSize = count * sizeof(VkAccelerationStructureInstanceKHR);
@@ -1245,6 +1335,7 @@ void VulkanRTBackend::updateTLAS(RTTLASHandle tlas, const RTTLASInstance* instan
         vkInst.flags = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
         vkInst.accelerationStructureReference = blasPtr->deviceAddress;
     }
+    tlasPtr->oneTriangleList = resolvesToOneTriangleList(instances, count);
 
     // Copy to instance buffer
     void* data;
@@ -1320,8 +1411,9 @@ void VulkanRTBackend::destroyTLAS(RTTLASHandle tlas) {
 // ============================================================================
 
 void VulkanRTBackend::traceRays(const TraceRaysOptions& options) {
-    if (!initialized_) {
-        std::cerr << "[VulkanRT] traceRays: Not initialized" << std::endl;
+    if (!initialized_ || !imagePathReady_) {
+        std::cerr << "[VulkanRT] traceRays: the camera path is not available"
+                  << (imageError_.empty() ? "" : " (" + imageError_ + ")") << std::endl;
         return;
     }
 
@@ -1534,6 +1626,377 @@ void VulkanRTBackend::traceRays(const TraceRaysOptions& options) {
     // TODO: Copy staging buffer data to WebGPU texture
     // This requires WebGPU/Vulkan interop which will be implemented in the next phase
     // For now, the data is in stagingBuffer_ and can be read with vkMapMemory
+}
+
+// ============================================================================
+// Camera Path
+// ============================================================================
+
+bool VulkanRTBackend::createImagePath() {
+    if (!createRTPipeline()) {
+        imageError_ = "the ray tracing pipeline could not be created";
+        return false;
+    }
+
+    if (!createShaderBindingTable()) {
+        imageError_ = "the shader binding table could not be created";
+        return false;
+    }
+
+    VkDeviceSize uboSize = 2 * 16 * sizeof(float);  // viewInverse + projInverse
+    if (!createBuffer(uboSize,
+                      VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+                      VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+                      cameraUBO_)) {
+        imageError_ = "the camera uniform buffer could not be created";
+        return false;
+    }
+
+    return true;
+}
+
+// ============================================================================
+// Ray Batch
+// ============================================================================
+
+bool VulkanRTBackend::createBatchPath() {
+    if (!rayQuerySupported_) {
+        batchError_ = "the device does not expose VK_KHR_ray_query";
+        return false;
+    }
+
+    // Set 0 holds the TLAS, the rays and the hits.
+    std::array<VkDescriptorSetLayoutBinding, 3> bindings = {};
+    bindings[0].binding = 0;
+    bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
+    bindings[0].descriptorCount = 1;
+    bindings[0].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+    bindings[1].binding = 1;
+    bindings[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    bindings[1].descriptorCount = 1;
+    bindings[1].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+    bindings[2] = bindings[1];
+    bindings[2].binding = 2;
+
+    VkDescriptorSetLayoutCreateInfo layoutInfo = {};
+    layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());
+    layoutInfo.pBindings = bindings.data();
+    if (vkCreateDescriptorSetLayout(device_, &layoutInfo, nullptr, &batchSetLayout_) != VK_SUCCESS) {
+        batchError_ = "vkCreateDescriptorSetLayout failed";
+        return false;
+    }
+
+    std::array<VkDescriptorPoolSize, 2> poolSizes = {};
+    poolSizes[0].type = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
+    poolSizes[0].descriptorCount = 1;
+    poolSizes[1].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    poolSizes[1].descriptorCount = 2;
+
+    VkDescriptorPoolCreateInfo poolInfo = {};
+    poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
+    poolInfo.pPoolSizes = poolSizes.data();
+    poolInfo.maxSets = 1;
+    if (vkCreateDescriptorPool(device_, &poolInfo, nullptr, &batchPool_) != VK_SUCCESS) {
+        batchError_ = "vkCreateDescriptorPool failed";
+        return false;
+    }
+
+    VkDescriptorSetAllocateInfo setInfo = {};
+    setInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    setInfo.descriptorPool = batchPool_;
+    setInfo.descriptorSetCount = 1;
+    setInfo.pSetLayouts = &batchSetLayout_;
+    if (vkAllocateDescriptorSets(device_, &setInfo, &batchSet_) != VK_SUCCESS) {
+        batchError_ = "vkAllocateDescriptorSets failed";
+        return false;
+    }
+
+    VkPushConstantRange pushRange = {};
+    pushRange.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+    pushRange.offset = 0;
+    pushRange.size = sizeof(uint32_t);  // rayCount
+
+    VkPipelineLayoutCreateInfo pipelineLayoutInfo = {};
+    pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    pipelineLayoutInfo.setLayoutCount = 1;
+    pipelineLayoutInfo.pSetLayouts = &batchSetLayout_;
+    pipelineLayoutInfo.pushConstantRangeCount = 1;
+    pipelineLayoutInfo.pPushConstantRanges = &pushRange;
+    if (vkCreatePipelineLayout(device_, &pipelineLayoutInfo, nullptr, &batchPipelineLayout_) != VK_SUCCESS) {
+        batchError_ = "vkCreatePipelineLayout failed";
+        return false;
+    }
+
+    VkShaderModule kernel = createShaderModule(
+        std::vector<uint32_t>(probe_trace_spirv, probe_trace_spirv + probe_trace_spirv_size));
+    if (kernel == VK_NULL_HANDLE) {
+        batchError_ = "the ray query kernel was rejected by vkCreateShaderModule";
+        return false;
+    }
+
+    VkComputePipelineCreateInfo pipelineInfo = {};
+    pipelineInfo.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
+    pipelineInfo.stage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    pipelineInfo.stage.stage = VK_SHADER_STAGE_COMPUTE_BIT;
+    pipelineInfo.stage.module = kernel;
+    pipelineInfo.stage.pName = "main";
+    pipelineInfo.layout = batchPipelineLayout_;
+    const VkResult pipelineResult =
+        vkCreateComputePipelines(device_, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &batchPipeline_);
+    vkDestroyShaderModule(device_, kernel, nullptr);
+    if (pipelineResult != VK_SUCCESS) {
+        batchError_ = "vkCreateComputePipelines failed for the ray query kernel (VkResult " +
+                      std::to_string(pipelineResult) + ")";
+        return false;
+    }
+
+    VkCommandBufferAllocateInfo commandInfo = {};
+    commandInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    commandInfo.commandPool = commandPool_;
+    commandInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    commandInfo.commandBufferCount = 1;
+    if (vkAllocateCommandBuffers(device_, &commandInfo, &batchCommands_) != VK_SUCCESS) {
+        batchError_ = "vkAllocateCommandBuffers failed";
+        return false;
+    }
+
+    VkFenceCreateInfo fenceInfo = {};
+    fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+    if (vkCreateFence(device_, &fenceInfo, nullptr, &batchFence_) != VK_SUCCESS) {
+        batchError_ = "vkCreateFence failed";
+        return false;
+    }
+
+    // GPU timestamps are optional: a queue without valid bits still traces, it reports gpuMs = 0.
+    if (timestampValidBits_ > 0 && caps_.timestampPeriodNs > 0) {
+        VkQueryPoolCreateInfo queryInfo = {};
+        queryInfo.sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO;
+        queryInfo.queryType = VK_QUERY_TYPE_TIMESTAMP;
+        queryInfo.queryCount = 2;
+        if (vkCreateQueryPool(device_, &queryInfo, nullptr, &timestampPool_) != VK_SUCCESS) {
+            timestampPool_ = VK_NULL_HANDLE;
+        }
+    }
+
+    return true;
+}
+
+// Grow the four batch buffers to hold rayCount rays. Callers wait for the fence before returning,
+// so the old buffers are idle when they are replaced.
+bool VulkanRTBackend::ensureBatchCapacity(uint32_t rayCount) {
+    if (rayCount <= batchCapacity_) return true;
+
+    const uint64_t capacity = std::min<uint64_t>(
+        std::max<uint64_t>({static_cast<uint64_t>(rayCount), static_cast<uint64_t>(batchCapacity_) * 2, 4096}),
+        maxBatchRays_);
+    const VkDeviceSize rayBytes = capacity * kRayWords * sizeof(float);
+    const VkDeviceSize hitBytes = capacity * kHitWords * sizeof(uint32_t);
+
+    VulkanBuffer raysStaging, raysDevice, hitsDevice, hitsStaging;
+    auto release = [&]() {
+        destroyBuffer(raysStaging);
+        destroyBuffer(raysDevice);
+        destroyBuffer(hitsDevice);
+        destroyBuffer(hitsStaging);
+    };
+
+    const VkMemoryPropertyFlags hostVisible =
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+    bool created =
+        createBuffer(rayBytes, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, hostVisible, raysStaging, true) &&
+        createBuffer(rayBytes, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                     VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, raysDevice, true) &&
+        createBuffer(hitBytes, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+                     VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, hitsDevice, true);
+    if (created) {
+        // The caller reads every hit back, so cached host memory is much faster than write combined.
+        created = createBuffer(hitBytes, VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                               hostVisible | VK_MEMORY_PROPERTY_HOST_CACHED_BIT, hitsStaging, true) ||
+                  createBuffer(hitBytes, VK_BUFFER_USAGE_TRANSFER_DST_BIT, hostVisible, hitsStaging, true);
+    }
+    if (!created ||
+        vkMapMemory(device_, raysStaging.memory, 0, VK_WHOLE_SIZE, 0, &raysStaging.mappedPtr) != VK_SUCCESS ||
+        vkMapMemory(device_, hitsStaging.memory, 0, VK_WHOLE_SIZE, 0, &hitsStaging.mappedPtr) != VK_SUCCESS) {
+        release();
+        return false;
+    }
+
+    destroyBuffer(batchRaysStaging_);
+    destroyBuffer(batchRaysDevice_);
+    destroyBuffer(batchHitsDevice_);
+    destroyBuffer(batchHitsStaging_);
+    batchRaysStaging_ = raysStaging;
+    batchRaysDevice_ = raysDevice;
+    batchHitsDevice_ = hitsDevice;
+    batchHitsStaging_ = hitsStaging;
+    batchCapacity_ = static_cast<uint32_t>(capacity);
+    return true;
+}
+
+TraceRayBatchResult VulkanRTBackend::traceRayBatch(const TraceRayBatchOptions& options) {
+    const auto started = std::chrono::steady_clock::now();
+    TraceRayBatchResult result;
+    auto fail = [&](const std::string& message) {
+        result.ok = false;
+        result.error = "vulkan ray batch: " + message;
+        return result;
+    };
+
+    if (!initialized_ || !batchReady_) {
+        return fail("the batch path is not available (" +
+                    (batchError_.empty() ? std::string("backend not initialized") : batchError_) + ")");
+    }
+
+    VulkanTLAS* tlas = static_cast<VulkanTLAS*>(options.tlas._handle);
+    bool tlasIsLive = false;
+    for (const auto& entry : tlases_) {
+        if (entry.second.get() == tlas) {
+            tlasIsLive = tlas != nullptr;
+            break;
+        }
+    }
+    if (!tlasIsLive) {
+        return fail("the TLAS handle is missing or was destroyed");
+    }
+    if (!tlas->oneTriangleList) {
+        return fail("a hit names one triangle, so the TLAS must hold one instance of a BLAS built from one geometry");
+    }
+
+    if (options.rayCount == 0) {
+        result.ok = true;
+        return result;
+    }
+    if (options.rays == nullptr || options.hits == nullptr) {
+        return fail("rays and hits must not be null");
+    }
+    if (options.rayCount > maxBatchRays_) {
+        return fail("rayCount " + std::to_string(options.rayCount) + " is above the device limit of " +
+                    std::to_string(maxBatchRays_) + " rays");
+    }
+    if (!ensureBatchCapacity(options.rayCount)) {
+        return fail("allocating buffers for " + std::to_string(options.rayCount) + " rays failed");
+    }
+
+    const VkDeviceSize rayBytes = static_cast<VkDeviceSize>(options.rayCount) * kRayWords * sizeof(float);
+    const VkDeviceSize hitBytes = static_cast<VkDeviceSize>(options.rayCount) * kHitWords * sizeof(uint32_t);
+    std::memcpy(batchRaysStaging_.mappedPtr, options.rays, rayBytes);
+
+    // The previous batch finished before it returned, so the set is idle and safe to rewrite.
+    VkWriteDescriptorSetAccelerationStructureKHR tlasWrite = {};
+    tlasWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR;
+    tlasWrite.accelerationStructureCount = 1;
+    tlasWrite.pAccelerationStructures = &tlas->accelerationStructure;
+    VkDescriptorBufferInfo raysInfo = {batchRaysDevice_.buffer, 0, VK_WHOLE_SIZE};
+    VkDescriptorBufferInfo hitsInfo = {batchHitsDevice_.buffer, 0, VK_WHOLE_SIZE};
+
+    std::array<VkWriteDescriptorSet, 3> writes = {};
+    writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[0].pNext = &tlasWrite;
+    writes[0].dstSet = batchSet_;
+    writes[0].dstBinding = 0;
+    writes[0].descriptorCount = 1;
+    writes[0].descriptorType = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
+    writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[1].dstSet = batchSet_;
+    writes[1].dstBinding = 1;
+    writes[1].descriptorCount = 1;
+    writes[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    writes[1].pBufferInfo = &raysInfo;
+    writes[2] = writes[1];
+    writes[2].dstBinding = 2;
+    writes[2].pBufferInfo = &hitsInfo;
+    vkUpdateDescriptorSets(device_, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
+
+    VkCommandBuffer cmd = batchCommands_;
+    vkResetCommandBuffer(cmd, 0);
+    VkCommandBufferBeginInfo beginInfo = {};
+    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    vkBeginCommandBuffer(cmd, &beginInfo);
+
+    const bool timed = timestampPool_ != VK_NULL_HANDLE;
+    if (timed) vkCmdResetQueryPool(cmd, timestampPool_, 0, 2);
+
+    VkMemoryBarrier barrier = {};
+    barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+
+    VkBufferCopy upload = {0, 0, rayBytes};
+    vkCmdCopyBuffer(cmd, batchRaysStaging_.buffer, batchRaysDevice_.buffer, 1, &upload);
+    // The first timestamp lands once the upload is done, so gpuMs covers the trace dispatch alone.
+    if (timed) vkCmdWriteTimestamp(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, timestampPool_, 0);
+
+    barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                         0, 1, &barrier, 0, nullptr, 0, nullptr);
+
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, batchPipeline_);
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, batchPipelineLayout_, 0, 1, &batchSet_,
+                            0, nullptr);
+    vkCmdPushConstants(cmd, batchPipelineLayout_, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(uint32_t),
+                       &options.rayCount);
+    vkCmdDispatch(cmd, (options.rayCount + 63u) / 64u, 1, 1);
+    if (timed) vkCmdWriteTimestamp(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, timestampPool_, 1);
+
+    barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+    barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                         0, 1, &barrier, 0, nullptr, 0, nullptr);
+
+    VkBufferCopy download = {0, 0, hitBytes};
+    vkCmdCopyBuffer(cmd, batchHitsDevice_.buffer, batchHitsStaging_.buffer, 1, &download);
+
+    barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    barrier.dstAccessMask = VK_ACCESS_HOST_READ_BIT;
+    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_HOST_BIT,
+                         0, 1, &barrier, 0, nullptr, 0, nullptr);
+    vkEndCommandBuffer(cmd);
+
+    VkSubmitInfo submitInfo = {};
+    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    submitInfo.commandBufferCount = 1;
+    submitInfo.pCommandBuffers = &cmd;
+    const VkResult submitted = vkQueueSubmit(queue_, 1, &submitInfo, batchFence_);
+    if (submitted != VK_SUCCESS) {
+        batchReady_ = false;
+        batchError_ = "vkQueueSubmit failed (VkResult " + std::to_string(submitted) + ")";
+        return fail(batchError_);
+    }
+    const VkResult waited = vkWaitForFences(device_, 1, &batchFence_, VK_TRUE, 10ull * 1000 * 1000 * 1000);
+    if (waited != VK_SUCCESS) {
+        // The GPU may still own the buffers, so the path stays off until the backend is rebuilt.
+        batchReady_ = false;
+        batchError_ = "vkWaitForFences failed (VkResult " + std::to_string(waited) + ")";
+        return fail(batchError_);
+    }
+    vkResetFences(device_, 1, &batchFence_);
+
+    if (timed) {
+        uint64_t ticks[2] = {0, 0};
+        if (vkGetQueryPoolResults(device_, timestampPool_, 0, 2, sizeof(ticks), ticks, sizeof(uint64_t),
+                                  VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WAIT_BIT) == VK_SUCCESS) {
+            const uint64_t mask = timestampValidBits_ >= 64 ? ~0ull : ((1ull << timestampValidBits_) - 1);
+            result.gpuMs = static_cast<double>((ticks[1] - ticks[0]) & mask) * caps_.timestampPeriodNs * 1e-6;
+        }
+    }
+
+    std::memcpy(options.hits, batchHitsStaging_.mappedPtr, hitBytes);
+
+    result.ok = true;
+    result.totalMs =
+        std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - started).count();
+    return result;
+}
+
+RTCapabilities VulkanRTBackend::capabilities() {
+    RTCapabilities found = caps_;
+    found.rayBatch = initialized_ && batchReady_;
+    // The camera path stops at a host buffer. No texture interop with the WebGPU device exists yet.
+    found.imageOutput = false;
+    found.reason = found.rayBatch ? std::string() : (initialized_ ? batchError_ : initError_);
+    return found;
 }
 
 }  // namespace rt
