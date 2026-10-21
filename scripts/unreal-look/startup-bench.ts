@@ -64,6 +64,8 @@ async function main(): Promise<void> {
   const sun = flag("--sun", "60,25");
   const runs = flag("--runs", "cold,warm,warm").split(",");
   const model = flag("--model", "");
+  // `--executable <path>`: another Chromium (the owner's Brave) instead of the bundled one.
+  const executable = flag("--executable", "");
   const shots = process.argv.includes("--shots") ? true : undefined;
   const pose = flag(
     "--pose",
@@ -92,13 +94,21 @@ async function main(): Promise<void> {
   try {
     const origin = `http://127.0.0.1:${port}/`;
     await waitForServer(origin, server);
-    let browser = await chromium.launch({ args: [...WEBGPU_BROWSER_ARGS], headless: false });
+    let browser = await chromium.launch({
+      args: [...WEBGPU_BROWSER_ARGS],
+      headless: false,
+      ...(executable === "" ? {} : { executablePath: executable }),
+    });
     for (const [index, kind] of runs.entries()) {
       if (kind === "cold") {
         await browser.close();
         // The dev server's pre-bundled dependencies are part of a cold start.
         await rm(path.join(target, "node_modules/.vite"), { recursive: true, force: true });
-        browser = await chromium.launch({ args: [...WEBGPU_BROWSER_ARGS], headless: false });
+        browser = await chromium.launch({
+          args: [...WEBGPU_BROWSER_ARGS],
+          headless: false,
+          ...(executable === "" ? {} : { executablePath: executable }),
+        });
       }
       const page = await browser.newPage({
         viewport: { width: 1280, height: 720 },
@@ -111,7 +121,7 @@ async function main(): Promise<void> {
       page.on("console", (message) => {
         if (message.text().includes("TN_START_FAILED")) failed = message.text().slice(0, 400);
         if (
-          /^(TN_GI_CACHE|TN_REFLECTION_CAPTURE|GPU sky|CPU environment sky|TN_AUTO_EXPOSURE)/.test(
+          /^(TN_GI_CACHE|TN_REFLECTION_CAPTURE|GPU sky|CPU environment sky|TN_AUTO_EXPOSURE|TN_STARTUP_WARMUP|TN_FRAME_HITCH|TN_WARMUP)/.test(
             message.text(),
           )
         )
