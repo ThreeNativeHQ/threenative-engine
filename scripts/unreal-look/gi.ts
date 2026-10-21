@@ -77,6 +77,10 @@ export interface ISceneJson {
     units: string;
     attenuationRadiusM: number;
     sourceRadiusM?: number;
+    /** A SpotLight (PRD-649 lamp-room): the point it looks at, and its cone angles in degrees. */
+    target?: Vec3;
+    innerConeDeg?: number;
+    outerConeDeg?: number;
   }[];
   exposure: { ev100: number; exposureScale: number } | null;
   /** `sun`: a template-lit scene's poses run once per sun, named `<sun>-<pose>` (PRD-649). */
@@ -307,6 +311,18 @@ export function validateSceneExport(scene: ISceneJson, gltf: IGltf): void {
       fail("SCENE_EXPORT", `${light.name}: intensity has no unit a ${light.class} takes`);
     if (!(light.intensity > 0) || !(light.attenuationRadiusM > 0))
       fail("SCENE_EXPORT", `${light.name}: intensity and attenuation radius must be positive`);
+    if (
+      light.class === "SpotLight" &&
+      !(
+        light.target &&
+        (light.innerConeDeg ?? -1) >= 0 &&
+        (light.outerConeDeg ?? 0) > (light.innerConeDeg ?? 0)
+      )
+    )
+      fail(
+        "SCENE_EXPORT",
+        `${light.name}: a spot light needs a target and 0 <= inner < outer cone`,
+      );
   }
   // A template-lit scene (PRD-649) keeps the default level's exposure, as the PRD-631 reference does.
   if (scene.template !== "default" && (!scene.exposure || !Number.isFinite(scene.exposure.ev100)))
