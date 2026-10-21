@@ -288,6 +288,10 @@ export async function captureThreeNative(options: IThreeNativeCaptureOptions): P
             if (errors.length > 0)
               throw new Error(`TN_UNREAL_LOOK_PAGE_ERROR: ${errors.join(" | ")}`);
             const name = layer === "ID" ? `ID_${pose.name}` : `${layer}_${sun.name}_${pose.name}`;
+            // The chain's applied stages and, when temporal AA runs, its reset and history state.
+            console.info(
+              `TN_UNREAL_LOOK debug ${name} ${JSON.stringify(await page.evaluate("window.__tnRef.debug()"))}`,
+            );
             if (options.measureSeconds !== undefined) {
               meter = [];
               await page.waitForTimeout(options.measureSeconds * 1000);
