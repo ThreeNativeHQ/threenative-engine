@@ -83,9 +83,10 @@ struct VertexVariant {
     /** material.side is DoubleSide: lit fragments turn the normal toward the viewer on a back face. */
     bool doubleSide = false;
     /**
-     * A two-sided, alpha-tested receiver (a leaf card, PRD-651): its shadow lookup skips the normal bias and a
-     * source-angle filter widens to the 5 degree minimum, as Unreal's two-sided foliage receivers do. Set on a
-     * lit draw only; it keys a lit program, so a leaf material gets its own.
+     * A receiver whose material is marked twoSidedFoliage (Unreal's shading model, PRD-651): its shadow lookup
+     * skips the normal bias and a source-angle filter widens to the 5 degree minimum, as Unreal's two-sided
+     * foliage receivers do. Two sides and a cut do not set it. Set on a lit draw only; it keys a lit program,
+     * so a marked material gets its own.
      */
     bool leafReceiver = false;
     /** material.flatShading: the lit fragment's normal is the face normal from the position's screen-space

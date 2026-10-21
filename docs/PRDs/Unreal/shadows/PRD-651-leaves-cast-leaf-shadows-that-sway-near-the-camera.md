@@ -36,7 +36,7 @@ prd_contract: v1
 | Masked casters | The shadow depth pixel shader runs the material's clip, so a leaf card casts a leaf | `Engine/Shaders/Private/ShadowDepthPixelShader.usf:48-105` |
 | Wind in the shadow | World position offset runs in every shadow level, unless the primitive sets a disable distance; then a clip level whose distance threshold (about `2^(level − 3)` cm) passes that distance draws the rest pose | `Engine/Shaders/Private/VirtualShadowMaps/VirtualShadowMapPageCacheCommon.ush:26-44`; `r.Shadow.Virtual.Clipmap.WPODisableDistance` 1, `.LodBias` 3 |
 | Cache | A swaying caster invalidates its pages into the dynamic layer, redrawn while it moves | `VirtualShadowMapCacheManager.cpp:85-215`; per-primitive `ShadowCacheInvalidationBehavior` `Auto` (`PrimitiveComponent.cpp:347`) |
-| Leaf receivers | Two-sided-foliage and subsurface pixels skip the normal bias and the screen ray, and widen the sun's source as opacity falls, from a 5° minimum | `Engine/Shaders/Private/VirtualShadowMaps/VirtualShadowMapProjection.usf:352-355,1047-1058`; `r.Shadow.Virtual.SubsurfaceShadowMinSourceAngle` 5 |
+| Leaf receivers | Pixels of the Two Sided Foliage and subsurface shading models skip the normal bias and the screen ray, and widen the sun's source as opacity falls, from a 5° minimum. The two-sided flag of a default lit material is not that shading model | `Engine/Shaders/Private/VirtualShadowMaps/VirtualShadowMapProjection.usf:84-98,352-355,1047-1058`; `r.Shadow.Virtual.SubsurfaceShadowMinSourceAngle` 5 |
 
 ## Solution
 
@@ -52,10 +52,12 @@ prd_contract: v1
    map, as any moving caster does (PRD-572), and the cached static layer stays valid.
    `worldPositionOffsetDisableDistance` (metres, Unreal's name) is the named override, and the
    caster reports it. This amends the PRD-488 rest-pose decision for near levels only.
-3. **A leaf receiver is not over-biased (Phase 3).** A two-sided, alpha-tested receiver skips the
-   normal bias and takes the widened source of Unreal's subsurface rule, so a thin leaf is neither
-   self-shadowed black nor leaking. The leaf's transmitted colour stays in the template's foliage
-   material (`src/render/`), and its bounce light in PRD-643.
+3. **A Two Sided Foliage receiver is not over-biased (Phase 3).** A material marked `twoSidedFoliage`
+   skips the normal bias and takes the widened source of Unreal's subsurface rule, so a thin leaf is
+   neither self-shadowed black nor leaking. The marker is off by default. Unreal reads the shading
+   model, and a two-sided cut card in its default lit model keeps the normal bias, so the engine never
+   infers the marker from the sides or the cut. The leaf's transmitted colour stays in the template's
+   foliage material (`src/render/`), which also sets the marker, and its bounce light is in PRD-643.
 
 **Look is untouched.** The cut threshold, the wind curve, the leaf texture and the leaf colour come
 from the game. The engine only makes the shadow follow them.
@@ -71,7 +73,7 @@ from the game. The engine only makes the shadow follow them.
 |---|---|---|---|
 | Masked shadow depth program | Any `castShadow` mesh with `alphaTest` or an alpha-test node, on the owned engine | Replaces the empty fragment stage for masked materials | Phase 1 |
 | Sway in near shadow levels | `VirtualShadowNode` levels drawing a caster with a wind `positionNode` | Amends PRD-488's rest pose in levels whose texel resolves the sway | AC-2 |
-| Leaf receiver bias rule | Two-sided alpha-tested receivers | Replaces the uniform normal bias for leaves | AC-1 |
+| Leaf receiver bias rule | Receivers whose material sets `twoSidedFoliage` | Replaces the uniform normal bias for those materials only | Phase 3 |
 
 ## Execution Phases
 
@@ -89,19 +91,28 @@ from the game. The engine only makes the shadow follow them.
 - [ ] AC-2 holds. proof: the AC-2 commands.
 
 #### Phase 3: Leaf receivers
-**Status:** IN PROGRESS — the rule is on both engines; the parity run and AC-1 are open
-**Files:** `packages/core/src/render/soft-shadow.ts`, `packages/core/src/render/virtual-shadow.ts`, `packages/runtime-native/src/engine/shader/standard.cpp`, `packages/runtime-native/src/engine/renderer/renderer.cpp`
-- [x] A two-sided alpha-tested receiver skips the normal bias and widens its source to the 5° minimum, on both engines. proof: red-green native test `native_engine_leaf_receiver`, and `pnpm exec vitest run packages/core/__tests__/soft-shadow.spec.ts packages/core/__tests__/virtual-shadow.spec.ts`. — 2026-10-21: native red with the rule off (leaf edge 0.585 m = the biased edge, source width 0.079 m on both receivers), green with it (leaf edge 0.972 m = the unbiased edge, ordinary 0.585 m, two-sided without a cut 0.585 m; penumbra 0.079 m ordinary against 0.543 m on the leaf); the browser unit tests pass 131/131 and the new `VirtualShadowNode` position test fails when the override is switched off. Scope in the browser: the virtual shadow levels and `sourceAngleShadowFilter`; the stock three PCF path keeps three's normal bias (see Decisions).
-- [ ] Browser and native match on the leaf receiver. proof: `pnpm parity --target desktop --only-tests leaf-receiver`. Scene and registry row exist (`conformance/scenes/shared/leaf-receiver.js`); not run: this lane has no desktop runtime binary (`pnpm native:build` needs the V8 download).
-- [ ] AC-1 holds, with the sheets posted on the PR. proof: the AC-1 command.
+**Status:** IN PROGRESS — the rule is on both engines and keyed on the marker; the parity run and the Two Sided Foliage sheet are open
+**Files:** `packages/core/src/render/soft-shadow.ts`, `packages/core/src/render/virtual-shadow.ts`, `packages/runtime-native/src/engine/shader/standard.cpp`, `packages/runtime-native/src/engine/renderer/renderer.cpp`, `packages/runtime-native/src/engine/scene/material.h`
+- [x] A receiver marked `twoSidedFoliage` skips the normal bias and widens its source to the 5° minimum, on both engines. proof: red-green native test `native_engine_leaf_receiver`, and `pnpm exec vitest run packages/core/__tests__/soft-shadow.spec.ts packages/core/__tests__/virtual-shadow.spec.ts`. — 2026-10-21 (first keyed on the sides and the cut, re-keyed on the marker after the Unreal read): native green with the marker (marked leaf edge 0.972 m = the unbiased edge, marker alone 0.972 m; penumbra 0.079 m ordinary against 0.548 m on the marked leaf); the browser unit tests pass 131/131 and the `VirtualShadowNode` position test fails when the override is switched off. Scope in the browser: the virtual shadow levels and `sourceAngleShadowFilter`; the stock three PCF path keeps three's normal bias (see Decisions).
+- [x] A two-sided cut card without the marker keeps the normal bias and the sun's own source, as Unreal's default lit does. proof: the same tests. — 2026-10-21: red first on the sides-and-cut key (native: plain cut edge 0.972 m and penumbra 0.548 m, marker alone 0.585 m; browser: 3 specs red), green on the marker (plain cut edge 0.585 m = the biased edge, penumbra 0.079 m; the plain cut shadow coordinate equals the ordinary one).
+- [ ] Browser and native match on the marked leaf receiver. proof: `pnpm parity --target desktop --only-tests leaf-receiver`. Scene and registry row exist (`conformance/scenes/shared/leaf-receiver.js`, now with the marker set); not run: this lane has no desktop runtime binary (`pnpm native:build` needs the V8 download).
+- [ ] A Two Sided Foliage leaf matches Unreal's Two Sided Foliage leaf, with the sheets posted on the PR. proof: `pnpm unreal-look:compare --scene shadow:foliage` on the Two Sided Foliage variant of the scene, and a PRD-647 round. Not run: the scene's leaves are default lit in Unreal, so the Two Sided Foliage capture is new work (see Decisions).
 **Verification:** AC-1 and AC-2.
 
 ## Decisions
 
-- 2026-10-21 (leaf lane): the leaf test reads the material only: `side = DoubleSide` and an alpha test
-  by number or by node. The game marks nothing, so every cut two-sided receiver is a leaf. Native
-  keys the shader variant on it (`VertexVariant::leafReceiver`); the browser reads `builder.material`
-  when the node builds.
+- 2026-10-21 (leaf lane, correction of the first Phase 3 commit): the rule first read the sides and the cut
+  (`side = DoubleSide` and an alpha test) and the game marked nothing. That was wrong. Unreal takes
+  `bIsSubsurface` from the shading model (`VirtualShadowMapProjection.usf:84-98`), and the two-sided
+  flag of a default lit material does not set it. The `foliage` scene's leaves are default lit in
+  Unreal (a glTF proxy material), so the first key gave ThreeNative soft light bands on shaded leaves
+  where Unreal's are evenly dark (a three-arm crop, rule off and on, is on the PR). The key is now
+  the marker `twoSidedFoliage`, off by default. Native keys the shader variant on it
+  (`VertexVariant::leafReceiver`, from `DrawItem::twoSidedFoliage`); the browser reads
+  `builder.material` when the node builds. The marker is the one field of the owned engine that three
+  does not declare: it is bound on every lit class, listed in `UNDECLARED_FIELDS` of the catalog sync,
+  and the GI cache's node twin carries it. A template's foliage material sets it. PRD-643 Phase 3
+  reuses the same marker for the back-face term.
 - 2026-10-21 (leaf lane): the browser takes the rule where the engine owns the node: the virtual
   shadow levels (position without the normal bias) and `sourceAngleShadowFilter` (5° minimum). The
   stock three PCF path applies its normal bias before the material is known. A fix there needs a

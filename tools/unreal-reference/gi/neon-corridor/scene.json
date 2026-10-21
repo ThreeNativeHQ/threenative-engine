@@ -1,0 +1,178 @@
+{
+  "note": "Written by gi/export.py from the Unreal 5.8.3 level /Game/GI/neon-corridor/GI_neon-corridor. three.js frame: Y up, metres. Unreal is the authority; scene.py is only the authoring input.",
+  "scene": "neon-corridor",
+  "resolution": [1280, 720],
+  "meshes": [
+    {
+      "name": "Floor",
+      "class": "StaticMeshActor",
+      "position": [0.0, -0.1, -4.6],
+      "rotationYDeg": -0.0,
+      "size": [3.4, 0.2, 9.2],
+      "material": {
+        "name": "MI_Concrete",
+        "baseColor": [0.3, 0.3, 0.3],
+        "roughness": 1.0,
+        "metallic": 0.0,
+        "emissive": [0.0, 0.0, 0.0],
+        "emissiveStrength": 1.0
+      }
+    },
+    {
+      "name": "Ceiling",
+      "class": "StaticMeshActor",
+      "position": [0.0, 3.1, -4.6],
+      "rotationYDeg": -0.0,
+      "size": [3.4, 0.2, 9.2],
+      "material": {
+        "name": "MI_Dark",
+        "baseColor": [0.18, 0.18, 0.2],
+        "roughness": 1.0,
+        "metallic": 0.0,
+        "emissive": [0.0, 0.0, 0.0],
+        "emissiveStrength": 1.0
+      }
+    },
+    {
+      "name": "Wall_Left",
+      "class": "StaticMeshActor",
+      "position": [-1.6, 1.5, -4.6],
+      "rotationYDeg": -0.0,
+      "size": [0.2, 3.4, 9.2],
+      "material": {
+        "name": "MI_Grey",
+        "baseColor": [0.55, 0.57, 0.6],
+        "roughness": 1.0,
+        "metallic": 0.0,
+        "emissive": [0.0, 0.0, 0.0],
+        "emissiveStrength": 1.0
+      }
+    },
+    {
+      "name": "Wall_Brick",
+      "class": "StaticMeshActor",
+      "position": [1.6, 1.5, -4.6],
+      "rotationYDeg": -0.0,
+      "size": [0.2, 3.4, 9.2],
+      "material": {
+        "name": "MI_Brick",
+        "baseColor": [1.0, 1.0, 1.0],
+        "baseColorTexture": "Brick",
+        "roughness": 1.0,
+        "metallic": 0.0,
+        "emissive": [0.0, 0.0, 0.0],
+        "emissiveStrength": 1.0
+      }
+    },
+    {
+      "name": "Back",
+      "class": "StaticMeshActor",
+      "position": [0.0, 1.5, -9.1],
+      "rotationYDeg": -0.0,
+      "size": [3.4, 3.4, 0.2],
+      "material": {
+        "name": "MI_Grey",
+        "baseColor": [0.55, 0.57, 0.6],
+        "roughness": 1.0,
+        "metallic": 0.0,
+        "emissive": [0.0, 0.0, 0.0],
+        "emissiveStrength": 1.0
+      }
+    },
+    {
+      "name": "Strip_Cyan",
+      "class": "StaticMeshActor",
+      "position": [-1.2, 2.97, -4.5],
+      "rotationYDeg": -0.0,
+      "size": [0.12, 0.06, 7.0],
+      "material": {
+        "name": "MI_Cyan",
+        "baseColor": [0.0, 0.0, 0.0],
+        "roughness": 1.0,
+        "metallic": 0.0,
+        "emissive": [0.0, 0.85, 1.0],
+        "emissiveStrength": 300.0
+      }
+    },
+    {
+      "name": "Strip_Magenta",
+      "class": "StaticMeshActor",
+      "position": [1.2, 2.97, -4.5],
+      "rotationYDeg": -0.0,
+      "size": [0.12, 0.06, 7.0],
+      "material": {
+        "name": "MI_Magenta",
+        "baseColor": [0.0, 0.0, 0.0],
+        "roughness": 1.0,
+        "metallic": 0.0,
+        "emissive": [1.0, 0.1, 0.8],
+        "emissiveStrength": 300.0
+      }
+    },
+    {
+      "name": "Emitter",
+      "class": "StaticMeshActor",
+      "position": [0.0, 1.4, -5.5],
+      "rotationYDeg": -0.0,
+      "size": [0.05, 0.05, 0.05],
+      "material": {
+        "name": "MI_Amber",
+        "baseColor": [0.0, 0.0, 0.0],
+        "roughness": 1.0,
+        "metallic": 0.0,
+        "emissive": [1.0, 0.7, 0.3],
+        "emissiveStrength": 30000.0
+      }
+    }
+  ],
+  "lights": [
+    {
+      "name": "Lamp",
+      "class": "PointLight",
+      "position": [0.5, 2.55, -6.5],
+      "intensity": 3000.0,
+      "units": "lumens",
+      "attenuationRadiusM": 10.0,
+      "color": [1.0, 0.8509803921568627, 0.6509803921568628],
+      "useTemperature": false,
+      "castShadows": true,
+      "inverseSquaredFalloff": true,
+      "sourceRadiusM": 0.05
+    }
+  ],
+  "sky": null,
+  "sun": null,
+  "fog": null,
+  "exposure": {
+    "method": "aem_manual",
+    "physicalCamera": false,
+    "bias": -4.0,
+    "ev100": 4.0,
+    "lensAttenuation": 0.7799999713897705,
+    "exposureScale": 0.06249999770751366
+  },
+  "poses": [
+    {
+      "name": "neon",
+      "position": [0, 1.5, -0.3],
+      "target": [0, 1.3, -9],
+      "hfovDeg": 75
+    },
+    {
+      "name": "textured",
+      "position": [-1.2, 1.6, -1.0],
+      "target": [1.5, 1.2, -6.5],
+      "hfovDeg": 70
+    }
+  ],
+  "regions": {
+    "Floor": [255, 0, 0],
+    "Ceiling": [0, 255, 0],
+    "Wall_Left": [0, 0, 255],
+    "Wall_Brick": [255, 255, 0],
+    "Back": [255, 0, 255],
+    "Strip_Cyan": [0, 255, 255],
+    "Strip_Magenta": [255, 128, 0],
+    "Emitter": [128, 0, 255]
+  }
+}

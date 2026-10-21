@@ -999,6 +999,26 @@
     {
       "aliases": [],
       "constraints": [
+        "levels are listed cheapest first, and every level needs a finite budget in milliseconds",
+        "a window with too few resolved GPU readings never moves the level"
+      ],
+      "example": "const ladder = new BudgetLadder({ levels: [\"low\", \"high\"], budgetMs: { low: 1, high: 4 }, start: \"high\" }); const window = ladder.observe(gpuMs);",
+      "importPath": "@threenative/core",
+      "kind": "class",
+      "overrides": ["explicit: true keeps the level and only reports a window over budget"],
+      "package": "@threenative/core",
+      "signature": "export class BudgetLadder<L extends string> { … }",
+      "situations": [
+        "step a render stage down when its GPU time stays over budget",
+        "pick a quality level from measured GPU time without oscillating"
+      ],
+      "summary": "A cost ladder for one render stage: a window of measured GPU milliseconds above a level's budget steps the level down, a window under 70% of the next level's budget with room in the frame steps it up, and a level that failed is retried after a growing wait. It decides when to move; the game applies the move.",
+      "supersedes": [],
+      "symbol": "BudgetLadder"
+    },
+    {
+      "aliases": [],
+      "constraints": [
         "call rebuild() after a scene transform or geometry change; the snapshot is static by default",
         "rebuild() is an explicit CPU SAH build proportional to selected triangles; process() is a no-op, and the game pays upstream traversal per shader ray"
       ],
@@ -1845,6 +1865,35 @@
       "symbol": "getPlatform"
     },
     {
+      "aliases": [
+        "global illumination quality",
+        "lumen scalability",
+        "sg.GlobalIlluminationQuality",
+        "final gather method"
+      ],
+      "constraints": [
+        "the game applies each step to its own render chain; this class draws nothing",
+        "the GPU time of a pass is read by the scene name three or the game gave it, so name every GI pass in `stages`",
+        "timestamp queries are needed: without them every window is unobserved and the method holds"
+      ],
+      "example": "const gi = new GIBudget({ method: \"screenProbeGather\", stages: [\"SSGI\"], budgetMs: { none: 0, irradianceField: 1, screenProbeGather: 5 }, onStep: (method) => rebuildChain(method) });\nctx.beforeRender(() => gi.observeRenderer(ctx.renderer.raw));",
+      "importPath": "@threenative/core",
+      "kind": "class",
+      "overrides": [
+        "explicit: true keeps the game's own finalGatherMethod and reports an exceeded budget"
+      ],
+      "package": "@threenative/core",
+      "signature": "export class GIBudget { … }",
+      "situations": [
+        "global illumination costs too much on a weak GPU",
+        "pick the bounce light method from measured GPU time",
+        "quality tier for indirect lighting that follows the hardware"
+      ],
+      "summary": "Steps a game's global illumination method (`none`, `irradianceField`, `screenProbeGather`) down when its GPU time stays over budget over a 120-frame window, and back up when there is room. The game owns what each method draws and applies each step; the budget of each method is the GPU time Unreal spends at the matching `sg.GlobalIlluminationQuality`.",
+      "supersedes": [],
+      "symbol": "GIBudget"
+    },
+    {
       "aliases": [],
       "constraints": [
         "geometry, color, and timing remain supplied by the game",
@@ -2492,6 +2541,20 @@
     },
     {
       "aliases": [],
+      "constraints": ["non-marker lines and malformed markers return `undefined`"],
+      "example": "const report = readGIMarker(line); if (report?.stepped) console.log(report.reason);",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function readGIMarker(line: string): IGIBudgetReport | undefined { … }",
+      "situations": ["inspect which global illumination method ran and why it stepped"],
+      "summary": "Parse a `TN_GI` console line back into its report, or `undefined`.",
+      "supersedes": [],
+      "symbol": "readGIMarker"
+    },
+    {
+      "aliases": [],
       "constraints": [
         "the returned observation is a measurement; it does not own lighting or materials"
       ],
@@ -2550,6 +2613,20 @@
       "summary": "Compose game-provided render nodes in a measured, fail-closed chain. Authored stages use an opaque id and anchor before or after a built-in or another supplied stage; the engine does not need to know the effect's visual vocabulary.",
       "supersedes": [],
       "symbol": "readRenderChainReport"
+    },
+    {
+      "aliases": [],
+      "constraints": ["non-marker lines and malformed markers return `undefined`"],
+      "example": "const report = readShadowTierMarker(line); if (report?.stepped) console.log(report.reason);",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function readShadowTierMarker(line: string): IShadowFilterReport | undefined { … }",
+      "situations": ["inspect which shadow filter tier ran and why it stepped"],
+      "summary": "Parse a `TN_SHADOW_TIER` console line back into its report, or `undefined`.",
+      "supersedes": [],
+      "symbol": "readShadowTierMarker"
     },
     {
       "aliases": [],
@@ -3008,6 +3085,31 @@
       "symbol": "setSpanRecorder"
     },
     {
+      "aliases": ["shadow quality", "virtual shadow map scalability", "sg.ShadowQuality"],
+      "constraints": [
+        "the game rebuilds its filter with the tier's sample counts on each step; this class draws nothing",
+        "timestamp queries are needed: without them every window is unobserved and the tier holds",
+        "the signal is the whole frame's GPU time, so a frame slow for another reason also steps the filter down",
+        "the signal is the whole frame's GPU time, so a frame slow for another reason also steps the filter down; name that reason's passes in `excludeStages`"
+      ],
+      "example": "const filter = new ShadowFilterBudget({ tier: \"high\", frameBudgetMs: 1000 / 60, onStep: (tier) => { light.shadow.filterNode = filterFor(tier); } });\nctx.beforeRender(() => filter.observeRenderer(ctx.renderer.raw));",
+      "importPath": "@threenative/core",
+      "kind": "class",
+      "overrides": [
+        "explicit: true keeps the game's own sample counts and reports an exceeded period"
+      ],
+      "package": "@threenative/core",
+      "signature": "export class ShadowFilterBudget { … }",
+      "situations": [
+        "soft shadow filter costs too much on a weak GPU",
+        "step the shadow filter samples from measured frame time",
+        "shadow quality tier that follows the hardware"
+      ],
+      "summary": "Steps a game's soft-shadow filter down a tier (`low`, `medium`, `high`) when the frame's GPU time stays over its period for a 120-frame window, and back up when there is room. The game owns the sample counts of each tier and rebuilds its filter on each step; the tiers follow Unreal's `sg.ShadowQuality` Low, Medium and Epic.",
+      "supersedes": [],
+      "symbol": "ShadowFilterBudget"
+    },
+    {
       "aliases": [],
       "constraints": [
         "use strideRoot to name the body moved by game code when the rig is parented under it",
@@ -3348,6 +3450,25 @@
     {
       "aliases": [],
       "constraints": [
+        "absent before a whole frame resolves and on an adapter without timestamp queries; the frame number counts each reading once"
+      ],
+      "example": "const reading = stageGpuReading(renderer); const ssgiMs = reading?.stages.SSGI;",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function stageGpuReading(renderer: unknown): IStageGpuReading | undefined { … }",
+      "situations": [
+        "read the GPU cost of one post-processing stage",
+        "tell which render pass takes the GPU time"
+      ],
+      "summary": "Read the GPU milliseconds of each named render pass of the newest resolved frame, such as `SSGI` or `AO`, with the whole frame's total.",
+      "supersedes": [],
+      "symbol": "stageGpuReading"
+    },
+    {
+      "aliases": [],
+      "constraints": [
         "staticness is authored, never guessed; no heuristic watches gameplay and decides for you",
         "it deletes the local and world matrix composes, not the walk itself — three 0.185 recurses into every child regardless",
         "a write deeper inside a frozen subtree must call `invalidateStatic`; `TN_RENDERLIST_VALIDATE=1` is what proves it happened"
@@ -3365,6 +3486,52 @@
       "summary": "Stop recomposing the transforms of a subtree nobody moves. `markStatic(root)` composes the subtree once and freezes it; the engine re-arms a root whose own transform the game changes, and `invalidateStatic(object)` announces a write deeper inside one.",
       "supersedes": [],
       "symbol": "staticTransformCensus"
+    },
+    {
+      "aliases": ["lumen surface cache", "lumen scene", "mesh cards"],
+      "constraints": [
+        "the materials are fixed when the cache is built; build a new one when a material or a map changes",
+        "a map the cache cannot read (an image the runtime cannot draw to a canvas) returns the flat colour and is listed in `report.fallbacks`",
+        "the cache owns no colour, texture or light; the game's materials and lamps are the only source"
+      ],
+      "example": "const cache = SurfaceCache.from(materials); cache.albedo(slot, hit.uv.x, hit.uv.y, out);",
+      "importPath": "@threenative/core",
+      "kind": "class",
+      "overrides": [
+        "atlasSize and cardTexelDensityScale size the atlas; maxLights caps the lamps evaluated at a hit"
+      ],
+      "package": "@threenative/core",
+      "signature": "export class SurfaceCache { … }",
+      "situations": [
+        "give a traced bounce ray the texture colour and glow of the surface it hits",
+        "light the hit of a traced ray with the scene's point and spot lamps"
+      ],
+      "summary": "The Surface Cache: what a traced global-illumination ray reads where it hits a surface. A material atlas (base colour and emissive maps reduced to small tiles) answers the albedo and the glow at the hit UV; a flat material keeps its colour. `SurfaceLights` adds the scene's point and spot lamps at the hit, the brightest eight.",
+      "supersedes": [],
+      "symbol": "SurfaceCache"
+    },
+    {
+      "aliases": ["lumen surface cache", "lumen scene", "mesh cards"],
+      "constraints": [
+        "the materials are fixed when the cache is built; build a new one when a material or a map changes",
+        "a map the cache cannot read (an image the runtime cannot draw to a canvas) returns the flat colour and is listed in `report.fallbacks`",
+        "the cache owns no colour, texture or light; the game's materials and lamps are the only source"
+      ],
+      "example": "const cache = SurfaceCache.from(materials); cache.albedo(slot, hit.uv.x, hit.uv.y, out);",
+      "importPath": "@threenative/core",
+      "kind": "class",
+      "overrides": [
+        "atlasSize and cardTexelDensityScale size the atlas; maxLights caps the lamps evaluated at a hit"
+      ],
+      "package": "@threenative/core",
+      "signature": "export class SurfaceLights { … }",
+      "situations": [
+        "give a traced bounce ray the texture colour and glow of the surface it hits",
+        "light the hit of a traced ray with the scene's point and spot lamps"
+      ],
+      "summary": "The Surface Cache: what a traced global-illumination ray reads where it hits a surface. A material atlas (base colour and emissive maps reduced to small tiles) answers the albedo and the glow at the hit UV; a flat material keeps its colour. `SurfaceLights` adds the scene's point and spot lamps at the hit, the brightest eight.",
+      "supersedes": [],
+      "symbol": "SurfaceLights"
     },
     {
       "aliases": [],

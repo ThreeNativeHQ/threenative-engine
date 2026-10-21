@@ -1588,6 +1588,7 @@ fog: boolean;
 alphaTest: number;
 readonly id: number;
 readonly type: string;
+twoSidedFoliage: boolean;
 
   setValues(values?: MeshStandardMaterialParameters): void;
 
@@ -1653,6 +1654,7 @@ flatShading: boolean;
 colorWrite: boolean;
 aoNode: Node | null;
 irradianceNode: Node | null;
+twoSidedFoliage: boolean;
 
   clone(): this;
 
@@ -3308,6 +3310,7 @@ polygonOffsetFactor: number;
 polygonOffsetUnits: number;
 flatShading: boolean;
 colorWrite: boolean;
+twoSidedFoliage: boolean;
 
   clone(): this;
 
@@ -3347,6 +3350,7 @@ polygonOffsetFactor: number;
 polygonOffsetUnits: number;
 flatShading: boolean;
 colorWrite: boolean;
+twoSidedFoliage: boolean;
 
   clone(): this;
 
@@ -3438,7 +3442,7 @@ distance: number;
 intensity: number;
 penumbra: number;
 color: Color;
-readonly target: Object3D;
+target: Object3D;
 readonly shadow: SpotLightShadow;
 }
 

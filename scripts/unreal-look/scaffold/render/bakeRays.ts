@@ -1,5 +1,5 @@
 import type { Intersection, Material, Mesh, Object3D } from "three";
-import { Vector3 } from "three";
+import { Vector2, Vector3 } from "three";
 import type { IRayContext } from "./giCache.js";
 
 /**
@@ -9,7 +9,8 @@ import type { IRayContext } from "./giCache.js";
  * casts millions of rays, so that walk is most of its time on the Wasm engine. The geometry does not move during
  * a bake, so it is read once here and each ray runs on plain typed arrays. The answers match `ctx.raycast`:
  * the nearest triangle, culled by the material's `side` (read per ray, because `linkMasks` switches it), the
- * object, and the face normal in the object's local space. The hit object is reused between rays.
+ * object, the face normal in the object's local space, the material slot and the UV (PRD-639: a texture is read where
+ * the ray lands). The hit object is reused between rays.
  */
 const LEAF = 4;
 const PAD = 1e-4;
@@ -53,8 +54,9 @@ function build(root: Object3D): IBuilt | undefined {
     if (position === undefined) continue;
     count += Math.floor((index?.count ?? position.count) / 3);
   }
-  // Per triangle: three world-space corners, the local face normal, the owner mesh and its material slot.
+  // Per triangle: three world-space corners, their UVs, the local face normal, the owner mesh and its material slot.
   const corners = new Float64Array(count * 9);
+  const uvs = new Float32Array(count * 6);
   const normals = new Float32Array(count * 3);
   const owner = new Uint32Array(count);
   const slot = new Uint16Array(count);
@@ -72,6 +74,7 @@ function build(root: Object3D): IBuilt | undefined {
         (m[8] ?? 0) * ((m[1] ?? 0) * (m[6] ?? 0) - (m[2] ?? 0) * (m[5] ?? 0)) <
       0;
     const groups = geometry.groups;
+    const uv = geometry.attributes.uv;
     const local = [0, 0, 0, 0, 0, 0, 0, 0, 0];
     const triangles = Math.floor((index?.count ?? position.count) / 3);
     for (let t = 0; t < triangles; t += 1) {
@@ -80,6 +83,12 @@ function build(root: Object3D): IBuilt | undefined {
         local[k * 3] = position.getX(v);
         local[k * 3 + 1] = position.getY(v);
         local[k * 3 + 2] = position.getZ(v);
+        // Stored in the same corner order as the world positions, so a mirrored swap moves both.
+        if (uv !== undefined) {
+          const target = mirrored && k > 0 ? 3 - k : k;
+          uvs[filled * 6 + target * 2] = uv.getX(v);
+          uvs[filled * 6 + target * 2 + 1] = uv.getY(v);
+        }
       }
       const [ax, ay, az, bx, by, bz, cx, cy, cz] = local as [
         number,
@@ -195,6 +204,7 @@ function build(root: Object3D): IBuilt | undefined {
     distance: 0,
     point: new Vector3(),
     face: { a: 0, b: 0, c: 0, normal: new Vector3(), materialIndex: 0 },
+    uv: new Vector2(),
     object: undefined as unknown as Object3D,
   };
   const stack = new Int32Array(64);
@@ -205,6 +215,8 @@ function build(root: Object3D): IBuilt | undefined {
       const [ix, iy, iz] = [1 / dx, 1 / dy, 1 / dz];
       let best = far;
       let found = -1;
+      // The best hit's barycentric weights of its second and third corner, and whether a back-sided test swapped them.
+      let [bestB, bestC, swapped] = [0, 0, false];
       stack[0] = 0;
       let top = 1;
       while (top > 0) {
@@ -294,6 +306,9 @@ function build(root: Object3D): IBuilt | undefined {
           if (distance > best || distance < 0) continue;
           best = distance;
           found = t;
+          bestB = ddqxe2 / ddn;
+          bestC = dde1xq / ddn;
+          swapped = side === 1;
         }
       }
       if (found < 0) return undefined;
@@ -305,6 +320,19 @@ function build(root: Object3D): IBuilt | undefined {
         normals[found * 3 + 2] ?? 0,
       );
       hit.object = objects[owner[found] ?? 0] as Object3D;
+      hit.face.materialIndex = slot[found] ?? 0;
+      // The test's point is a + b (b - a) + c (c - a); a BackSide test swapped its corners a and c, so the weight of
+      // stored corner 0, 1 and 2 follows that swap.
+      const rest = 1 - bestB - bestC;
+      const [w0, w1, w2] = swapped ? [bestC, bestB, rest] : [rest, bestB, bestC];
+      hit.uv.set(
+        (uvs[found * 6] ?? 0) * w0 +
+          (uvs[found * 6 + 2] ?? 0) * w1 +
+          (uvs[found * 6 + 4] ?? 0) * w2,
+        (uvs[found * 6 + 1] ?? 0) * w0 +
+          (uvs[found * 6 + 3] ?? 0) * w1 +
+          (uvs[found * 6 + 5] ?? 0) * w2,
+      );
       return hit as unknown as Intersection;
     },
   };
