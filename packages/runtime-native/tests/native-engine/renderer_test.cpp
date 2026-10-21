@@ -851,9 +851,69 @@ void mipmapsShareOneSubmit() {
     CHECK(five == one);
 }
 
+// Read the HDR target itself, so tone mapping cannot hide a lost emissive term.
+void emissivePass(bool requirePixels) {
+    mystral::webgpu::Context context;
+    const bool initialized = context.initializeHeadless();
+    CHECK(initialized);
+    if (!initialized) return;
+    WGPUAdapterInfo info{};
+    wgpuAdapterGetInfo(context.getAdapter(), &info);
+    const bool rendersPixels = info.backendType != WGPUBackendType_Null;
+    wgpuAdapterInfoFreeMembers(info);
+    if (requirePixels) {
+        CHECK(rendersPixels);
+        if (!rendersPixels) return;
+    }
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(16, 16);
+    renderer.setOutput(OutputState{shader::ToneMapping::Linear, 1, false});
+    namespace g = shader::graph;
+    renderer.setPostGraph(g::bloom(g::texture("emissive", g::uv()), 0, 0, 0));
+    CHECK(renderer.readEmissivePixels([](GpuStatus, std::vector<uint8_t>) {}) == GpuStatus::InvalidHandle);
+    const auto geometry = plane(4, 4);
+    shader::StandardMaterial material;
+    material.emissive = {1, 0.5f, 0};
+    material.emissiveIntensity = 4;
+    DrawItem item;
+    item.key = item.id = 1;
+    item.kind = MaterialKind::Standard;
+    item.positions = &geometry->positions; item.normals = &geometry->normals; item.indices = &geometry->indices;
+    item.material = &material;
+    item.matrixWorld = {1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1};
+    for (int mode = 0; mode < 3; ++mode) {
+        if (mode == 1) material.emissiveIntensity = 0;
+        if (mode == 2) { item.kind = MaterialKind::Basic; material.emissiveIntensity = 4; }
+        renderer.render(std::span<const DrawItem>(&item, 1), camera(1), LightState{}, {0,0,0,0});
+        bool done = false;
+        std::vector<uint8_t> pixels;
+        const auto status = renderer.readEmissivePixels([&](GpuStatus status, std::vector<uint8_t> bytes) {
+            CHECK(status == GpuStatus::Ok);
+            pixels = std::move(bytes); done = true;
+        });
+        CHECK(status == GpuStatus::Ok);
+        for (int i = 0; i < 4000 && !done; ++i) {
+            renderer.poll(); events.drain();
+            if (!done) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        CHECK(done && pixels.size() == 16 * 16 * 8);
+        if (!rendersPixels || pixels.size() != 16 * 16 * 8) continue;
+        const uint16_t expected[] = {uint16_t(mode == 0 ? 0x4400 : 0), uint16_t(mode == 0 ? 0x4000 : 0), 0};
+        for (int lane = 0; lane < 3; ++lane) {
+            const size_t offset = (8 * 16 + 8) * 8 + lane * 2;
+            const uint16_t half = uint16_t(pixels[offset]) | (uint16_t(pixels[offset + 1]) << 8);
+            CHECK(half == expected[lane]);
+        }
+    }
+}
+
+void emissiveTarget() { emissivePass(true); }
+void emissiveValidation() { emissivePass(false); }
+
 }  // namespace
 
-TN_TEST_MAIN({"resize_readback", resizeReadback}, {"output_ramp", outputRamp},
+TN_TEST_MAIN({"resize_readback", resizeReadback}, {"emissive_target", emissiveTarget}, {"emissive_validation", emissiveValidation}, {"output_ramp", outputRamp},
              {"traa_alpha", traaAlpha},
              {"traa_reset_seed", traaResetSeed},
 #if defined(MYSTRAL_WEBGPU_DAWN)

@@ -116,6 +116,8 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     target_link_libraries(tn-native-engine-frame-gpu-timer-test PRIVATE tn_engine_renderer)
     tn_native_engine_test(tn-native-engine-renderer-test tests/native-engine/renderer_test.cpp
         native_engine_renderer_resize_readback=resize_readback
+        native_engine_renderer_emissive_target=emissive_target
+        native_engine_renderer_emissive_validation=emissive_validation
         native_engine_renderer_output_ramp=output_ramp
         native_engine_renderer_lit_reference=lit_reference
         native_engine_renderer_lambert_reference=lambert_reference
