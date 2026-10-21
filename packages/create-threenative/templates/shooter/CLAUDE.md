@@ -47,7 +47,7 @@ result, replacement); never stall the game.
 pnpm dev
 pnpm build
 pnpm build --target desktop
-pnpm test
+pnpm test   # runs `pnpm check` first: typecheck, ESLint, Biome format
 pnpm typecheck
 ```
 

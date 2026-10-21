@@ -2197,6 +2197,23 @@ describe("CI pipeline structure", () => {
     }
   });
 
+  // PRD-626 P3.2: the generated static gate is reached before any scenario or parity capture, and
+  // replaces the typecheck-only step instead of running the compiler a second time.
+  it("runs the generated check once, before the scenarios and the engine parity capture", async () => {
+    const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
+    const lane = requiredJob(ci, "template-nonvisual");
+    const at = (needle: string): number => {
+      const index = lane.indexOf(needle);
+      expect(index, `${needle} is missing from template-nonvisual`).toBeGreaterThan(-1);
+      return index;
+    };
+    const check = at("- name: Check pristine template");
+    expect(check).toBeLessThan(at("- name: Run the template's GPU-free scenarios"));
+    expect(check).toBeLessThan(at("- name: Compare the two engines on one pose"));
+    expect(lane.match(/run check$/gmu)?.length).toBe(1);
+    expect(lane).not.toMatch(/run typecheck$/mu);
+  });
+
   // The obsolete shard arithmetic snapshots are replaced by complete kit/scenario coverage.
   // ci-template-selection.spec.ts checks PR selections and exhaustive queue matrices.
   it("runs the complete classifier output once, without repeated scaffold shards", async () => {

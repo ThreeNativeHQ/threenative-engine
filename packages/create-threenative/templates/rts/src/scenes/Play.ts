@@ -277,7 +277,6 @@ export class Play extends Scene<GameState, undefined> {
     const sim = this.#sim;
     const view = this.#view;
     if (sim === undefined || view === undefined) return;
-    const camera = ctx.camera as OrthographicCamera;
     const size = ctx.viewport.size;
     const raw = ctx.input.raw;
     const keys = raw.keys;

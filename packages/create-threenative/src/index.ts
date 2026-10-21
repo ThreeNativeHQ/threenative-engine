@@ -225,6 +225,14 @@ async function copySharedAssets(target: string, templateRootDirectory: string): 
   }
 }
 
+/** Every generated game gets the same two thin configs; the rules live in `create-threenative/quality`
+ * and the formatter settings in `biome.json`. Fails closed when the package lacks them. */
+async function copyQualityConfig(target: string, templateRootDirectory: string): Promise<void> {
+  const shared = path.join(path.dirname(templateRootDirectory), "template-assets", "quality");
+  if (!existsSync(shared)) throw new Error(`TN_QUALITY_CONFIG_MISSING: ${shared}`);
+  await cp(shared, target, { errorOnExist: true, recursive: true });
+}
+
 function invalidManifest(file: string, reason: string): never {
   throw new Error(`TN_KIT_MANIFEST_INVALID: ${file}: ${reason}`);
 }
@@ -741,6 +749,7 @@ export async function createProject(
     await cp(source, target, { recursive: true, errorOnExist: true });
     await copyTemplateIcon(target, root);
     await copySharedAssets(target, root);
+    await copyQualityConfig(target, root);
     // pnpm pack strips `.gitignore` from published tarballs, so the template carries the asset
     // pipeline's ignore rules under a dotless name and the scaffold installs the real one.
     if (existsSync(path.join(target, "gitignore"))) {

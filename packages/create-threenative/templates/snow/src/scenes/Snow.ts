@@ -410,7 +410,6 @@ export class Snow extends Scene<GameState, IPhysicsContext> {
     let autoExplore = initial.autoExplore;
     let blizzard = initial.blizzard;
     const act = (command: Command): void => {
-      const state = ctx.state.getState();
       if (command === "reset") {
         snow.reset();
         placeBody(ctx, snow, ball, { x: 2.2, z: -2 }, BALL_RADIUS + 0.02);

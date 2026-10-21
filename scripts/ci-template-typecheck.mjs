@@ -2,7 +2,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { validateEventPlan } from "./ci-change-scope.mjs";
 
-export const TEMPLATE_TYPECHECK_STEP = "Typecheck pristine template";
+export const TEMPLATE_TYPECHECK_STEP = "Check pristine template";
 const failure = (reason) => {
   throw new Error(`CI_TEMPLATE_TYPECHECK_${reason}`);
 };
@@ -39,7 +39,7 @@ function completeOwnership({ plan: value, candidateSha, eventName, target, templ
   ];
   if (matches.length !== 1) failure("WORKFLOW_OWNER");
   const body = matches[0][0];
-  const step = `      - name: ${TEMPLATE_TYPECHECK_STEP}\n        run: |\n          set -euo pipefail\n          target="$RUNNER_TEMP/threenative-\${{ matrix.template }}"\n          pnpm --dir "$target" install\n          pnpm --dir "$target" run typecheck\n`;
+  const step = `      - name: ${TEMPLATE_TYPECHECK_STEP}\n        run: |\n          set -euo pipefail\n          target="$RUNNER_TEMP/threenative-\${{ matrix.template }}"\n          pnpm --dir "$target" install\n          pnpm --dir "$target" run check\n`;
   if (
     /^ {4}continue-on-error:/mu.test(body) ||
     !body.includes("    needs: [scope, build-artifacts]\n") ||
@@ -49,7 +49,7 @@ function completeOwnership({ plan: value, candidateSha, eventName, target, templ
     !body.includes("      matrix: ${{ fromJSON(needs.scope.outputs.plan).templateMatrix }}\n") ||
     !body.includes("          ref: ${{ needs.scope.outputs.candidate_sha || github.sha }}\n") ||
     body.split(step).length !== 2 ||
-    body.match(/ {6}- name: Typecheck pristine template\n[\s\S]*?(?= {6}- |$)/u)?.[0] !== step ||
+    body.match(/ {6}- name: Check pristine template\n[\s\S]*?(?= {6}- |$)/u)?.[0] !== step ||
     body.indexOf(step) > body.indexOf("      - name: Run the template's GPU-free scenarios")
   )
     failure("WORKFLOW_OWNER");
