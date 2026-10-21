@@ -129,7 +129,12 @@ export interface IGiOptions {
   readonly progressive?: {
     readonly previewRays: number;
     readonly budgetMs: number;
-    /** Runs a slice after `gapMs` of idle time. The clock by default (`setTimeout`); a test hands in its own queue. */
+    /**
+     * Idle time left after each slice, in milliseconds. The default 0 runs the next slice on the next task: the browser
+     * draws a frame that is due, and handles input, before it, so the bake takes what the frames leave.
+     */
+    readonly gapMs?: number;
+    /** Runs a slice after `gapMs` of idle time. The host's task queue by default; a test hands in its own queue. */
     readonly defer?: (run: () => void, gapMs: number) => void;
     readonly onConverged?: (report: IGiReport) => void;
   };
@@ -365,6 +370,27 @@ function* pause(): Generator<void, void> {
   const left = performance.now();
   yield;
   slice.idle += performance.now() - left;
+}
+
+/**
+ * Runs a callback on a later task of the host: after `gapMs` on the clock, or on the next task when there is no gap. A
+ * message round trip is the next task without the timer's 4 ms floor (the clamp on nested `setTimeout`), and the browser
+ * draws a due frame and handles input before it. A host without `MessageChannel` falls back to the timer.
+ */
+function hostDefer(): (run: () => void, gapMs: number) => void {
+  if (typeof MessageChannel !== "function") return (run, gapMs) => void setTimeout(run, gapMs);
+  const channel = new MessageChannel();
+  const queue: (() => void)[] = [];
+  channel.port1.onmessage = () => queue.shift()?.();
+  // Node keeps a listening port alive until it closes; a page has no such method.
+  (channel.port1 as { unref?: () => void }).unref?.();
+  return (run, gapMs) => {
+    if (gapMs > 0) void setTimeout(run, gapMs);
+    else {
+      queue.push(run);
+      channel.port2.postMessage(0);
+    }
+  };
 }
 
 // --- reading the cache across walls ---------------------------------------------------------
@@ -2046,10 +2072,10 @@ export function installGi(
   giCache.texture = reader.texture;
   install(reader.read, emitters);
   // Paced by the clock, not by frames: a page that presents one frame a second (a slow present path, a busy
-  // compositor) must not stretch the bake to hundreds of seconds. Each slice is followed by an idle gap as long
-  // as the slice, so input and frames still get half of the main thread.
-  const defer =
-    progressive.defer ?? ((run: () => void, gapMs: number) => void setTimeout(run, gapMs));
+  // compositor) must not stretch the bake to hundreds of seconds. A slice is short (`budgetMs`), so a frame or an input
+  // that is due waits for one slice at most, and the idle time the frames leave goes to the bake.
+  const defer = progressive.defer ?? hostDefer();
+  const gapMs = progressive.gapMs ?? 0;
   /** Runs a bake in slices of `budgetMs` (no task is held longer), then hands the result on. */
   const spread = <T>(run: Generator<void, T>, budgetMs: number, done: (value: T) => void): void => {
     const step = (): void => {
@@ -2060,7 +2086,7 @@ export function installGi(
       slicing.count += 1;
       slicing.longestMs = Math.max(slicing.longestMs, performance.now() - at);
       if (next.done) done(next.value);
-      else defer(step, budgetMs);
+      else defer(step, gapMs);
     };
     // After the first frame, not before it.
     defer(step, 0);

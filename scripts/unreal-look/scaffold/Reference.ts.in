@@ -252,8 +252,10 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
             ? {}
             : {
                 progressive: {
-                  previewRays: 16,
+                  previewRays: Number(params.get("giPreviewRays") ?? 32),
                   budgetMs: Number(params.get("giBudgetMs") ?? 8),
+                  // giGapMs=8 leaves the main thread idle as long as each slice (the first progressive pacing, 53% duty).
+                  gapMs: Number(params.get("giGapMs") ?? 0),
                   onConverged: () => {
                     // Glossy surfaces reflect a capture of the lit scene: take it again with the full bake.
                     void (async () => {

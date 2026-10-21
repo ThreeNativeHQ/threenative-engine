@@ -178,6 +178,33 @@ describe("progressive GI bake", () => {
     expect(got.every((v, i) => v === wanted[i])).toBe(true);
   });
 
+  it("paces itself on the host's tasks by default, and converges to the cache a single bake makes", async () => {
+    const whole = sunlitRoom();
+    installGi(rayContext(whole), whole, { bounces: 1, sun: SUN });
+    const wanted = Float32Array.from(giCache.field?.values ?? []);
+
+    const room = sunlitRoom();
+    let converged = false;
+    const first = installGi(rayContext(room), room, {
+      bounces: 1,
+      sun: SUN,
+      progressive: {
+        previewRays: 16,
+        budgetMs: 5,
+        onConverged: () => {
+          converged = true;
+        },
+      },
+    });
+    // Nothing runs inside the call: the first slice waits for a task of the host.
+    expect(first?.pass).toBe("pending");
+    expect(converged).toBe(false);
+    await vi.waitFor(() => expect(converged).toBe(true), { timeout: 120_000, interval: 10 });
+    const got = giCache.field?.values ?? new Float32Array(0);
+    expect(got.length).toBe(wanted.length);
+    expect(got.every((v, i) => v === wanted[i])).toBe(true);
+  }, 180_000);
+
   it("a mapped wall bakes its texel in the progressive bake too, though the cache swapped its material before the rays ran", () => {
     // The Surface Cache (PRD-639) finds a hit's map through the material the scene authored. A progressive bake runs after
     // the cache swapped that material for its node twin, so a lookup by the object's current material finds nothing and
