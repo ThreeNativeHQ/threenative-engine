@@ -121,6 +121,12 @@ const GROUND_MARGIN = 2;
  * 0.060 with none, 0.029 / 0.017 / 0.011 / 0.0085 after 1 to 4; the 1 m grid had 0.011. Area means move under 1%.
  */
 const SMOOTH_PASSES = 4;
+/**
+ * The filter's edge stop, in natural-log units of a neighbour's luminance over the probe's: a neighbour 2x off weighs
+ * 0.61, 4x off 0.14. Probe noise (about 30%) blends; a window probe that sees the sun patch does not. Plain, the filter
+ * lit a halo round the sunlit room's window (sill 2.45x the path trace at sun 15; 1.58x with the stop).
+ */
+const SMOOTH_EDGE = 0.7;
 const MAX_POINTS = 24000;
 /** Rays every probe shoots, and the extra rays a probe that is mostly enclosed shoots. */
 /** An element that exists by construction (a fixed-length array indexed by a loop over its length). */
@@ -380,13 +386,23 @@ function smooth(field: IField): Float32Array {
   const out = new Float32Array(values.length);
   const stride = [1, grid.nx, grid.nx * grid.ny];
   const dims = [grid.nx, grid.ny, grid.nz];
+  const luminance = (probe: number, face: number) => {
+    const o = (probe * 6 + face) * 3;
+    return (
+      0.2126 * (values[o] ?? 0) +
+      0.7152 * (values[o + 1] ?? 0) +
+      0.0722 * (values[o + 2] ?? 0) +
+      1e-6
+    );
+  };
+  const total = new Float64Array(6);
   for (let probe = 0; probe < valid.length; probe += 1) {
     const base = probe * 18;
     if (valid[probe] !== 1) {
       out.set(values.subarray(base, base + 18), base);
       continue;
     }
-    let total = 2;
+    total.fill(2);
     for (let j = 0; j < 18; j += 1) out[base + j] = 2 * (values[base + j] ?? 0);
     const at = [
       probe % grid.nx,
@@ -399,11 +415,18 @@ function smooth(field: IField): Float32Array {
         if (to < 0 || to >= (dims[a] ?? 0)) continue;
         const other = probe + step * (stride[a] ?? 0);
         if (valid[other] !== 1 || links[Math.min(probe, other) * 3 + a] !== 1) continue;
-        total += 1;
-        for (let j = 0; j < 18; j += 1)
-          out[base + j] = (out[base + j] ?? 0) + (values[other * 18 + j] ?? 0);
+        for (let f = 0; f < 6; f += 1) {
+          // Edge-stopping: a neighbour that reads far brighter or darker is a different light, not noise.
+          const ratio = Math.log(luminance(other, f) / luminance(probe, f)) / SMOOTH_EDGE;
+          const w = Math.exp(-0.5 * ratio * ratio);
+          total[f] = (total[f] ?? 0) + w;
+          for (let c = 0; c < 3; c += 1)
+            out[base + f * 3 + c] =
+              (out[base + f * 3 + c] ?? 0) + w * (values[other * 18 + f * 3 + c] ?? 0);
+        }
       }
-    for (let j = 0; j < 18; j += 1) out[base + j] = (out[base + j] ?? 0) / total;
+    for (let j = 0; j < 18; j += 1)
+      out[base + j] = (out[base + j] ?? 0) / (total[Math.floor(j / 3)] ?? 1);
   }
   return out;
 }

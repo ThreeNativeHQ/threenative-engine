@@ -359,6 +359,34 @@ describe("the world-space GI cache against closed forms (PRD-631 L7)", () => {
     expect(deviation / level).toBeLessThan(0.015);
   }, 120_000);
 
+  it("the probe filter keeps the window's light off the sill below it (sunlit-room, sun 15)", () => {
+    // The probes in the window opening see the low sun's patch deep in the room; a plain filter averaged them into the
+    // sill's probes and lit a halo round the window (judge round 10b): sill 2.9 times the path trace, 1.5 unfiltered.
+    const room = sunlitRoom();
+    const [el, az] = [(15 * Math.PI) / 180, (25 * Math.PI) / 180];
+    const sun = new Vector3(Math.cos(el) * Math.sin(az), Math.sin(el), Math.cos(el) * Math.cos(az));
+    const sky = 0.1;
+    skyRadiance.current = {
+      data: new Float32Array(6).fill(sky),
+      width: 2,
+      height: 1,
+      scale: [1, 1, 1],
+    };
+    installGi(rayContext(room), room, {
+      bounces: 5,
+      sun: { color: new Color(1, 1, 1), intensity: Math.PI, direction: sun },
+    });
+    const normal = new Vector3(0, 0, -1);
+    let [traced, cached] = [0, 0];
+    for (let a = 0; a < 4; a += 1)
+      for (let b = 0; b < 3; b += 1) {
+        const point = new Vector3(-0.95 + (1.9 * (a + 0.5)) / 4, 0.1 + (0.65 * (b + 0.5)) / 3, 0);
+        traced += pathTrace(room, sun, sky, point, normal, 6, 300);
+        cached += cacheAt(point, normal);
+      }
+    expect(cached / traced).toBeLessThan(2.2);
+  }, 120_000);
+
   it("returns undefined with no sky, no sun and no lights", () => {
     skyRadiance.current = undefined;
     const scene = new Group().add(new Mesh(new PlaneGeometry(2, 2), new MeshStandardMaterial()));
