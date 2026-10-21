@@ -289,7 +289,9 @@ const SHADOW_TIERS: Record<QualityTier, IShadowTier> = {
   high: {
     castShadows: true,
     filter: { blockerSamples: 16, filterSamples: 16 },
-    resolutionLodBiasDirectional: -1.5,
+    // Unreal Epic sets -1.5 (`[ShadowQuality@3]`). Held at 0: -1.5 changes `sun4-ramp` and no judge has called it
+    // an improvement, so `high` stays the pre-change look (PRD-652 `## Decisions`). `?shadowBias=` brackets it.
+    resolutionLodBiasDirectional: 0,
     shadowQuality: 3,
   },
   low: {
