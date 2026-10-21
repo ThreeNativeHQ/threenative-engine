@@ -85,7 +85,7 @@ from the game. The engine only makes the shadow follow them.
 - [ ] Browser and native match on the masked caster. proof: `pnpm parity --target desktop --only-tests masked-shadow-caster`.
 
 #### Phase 2: Wind reaches the near shadow
-**Status:** NOT STARTED
+**Status:** BLOCKED — the wind node of PRD-488 is not built (PROPOSED) and the PRD-649 `wind` run is not authored; neither exists to build on or to judge against
 **Files:** `packages/core/src/render/virtual-shadow.ts`, `packages/core/__tests__/virtual-shadow.spec.ts`, the native VSM atlas
 - [ ] A caster swaying 5 cm sways in a 2 cm-texel level and draws its rest pose in a 20 cm-texel level, and the override moves that boundary and is reported. proof: `pnpm exec vitest run packages/core/__tests__/virtual-shadow.spec.ts`.
 - [ ] AC-2 holds. proof: the AC-2 commands.
@@ -135,6 +135,11 @@ from the game. The engine only makes the shadow follow them.
   test) is open and would also serve any game that copies a material. The native engine has no
   physical node class, so a physical source is lit as a standard one there (the old behaviour).
 
+- 2026-10-21 (leaf lane): Phase 2 is blocked, not started. The rule reads a caster's sway amplitude from
+  its wind `positionNode`, and no such node exists: `engine_search_capabilities` for foliage wind
+  returns only `SoftBody3D` (cloth), PRD-488 is PROPOSED, and no code under `packages/core/src` displaces
+  foliage. The `wind` run has no Unreal capture either (PRD-649 Phase 2 is NOT STARTED). A guess at the
+  amplitude API would be written twice, so the rule waits for PRD-488. AC-2 stays open for the same reason.
 - 2026-10-20 (slicing): the masked-caster fault is an engine bug (`packages/runtime-native/`), not
   a game one. Every game with leaves on the default engine has it, so it is fixed in the engine.
 - 2026-10-20 (slicing): Unreal sways foliage in every shadow level by default. ThreeNative sways
