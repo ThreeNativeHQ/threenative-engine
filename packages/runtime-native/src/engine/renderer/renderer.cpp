@@ -1087,9 +1087,6 @@ void Renderer::setSize(uint32_t width, uint32_t height) {
         msaaDesc.usage = WGPUTextureUsage_RenderAttachment;
         msaaColor_ = wgpuDeviceCreateTexture(device_, &msaaDesc);
         msaaColorView_ = view2d(msaaColor_, WGPUTextureFormat_RGBA16Float);
-        // Sequential depth-Equal passes share this attachment, resolving each result before reuse.
-        msaaAuxColor_ = wgpuDeviceCreateTexture(device_, &msaaDesc);
-        msaaAuxColorView_ = view2d(msaaAuxColor_, WGPUTextureFormat_RGBA16Float);
     }
     WGPUTextureDescriptor viewportDesc = sceneDesc;
     viewportDesc.usage = WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopyDst;
@@ -3310,6 +3307,16 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     job.source = sourceFrame_;
     job.groupEpoch = groupsChosenAt;
     job.normalPass = normalPass; job.materialPass = materialPass;
+    // At 4x the normal, material and velocity passes draw into one shared multisampled attachment,
+    // resolving each result before reuse; allocated on first use, so a frame without them pays nothing.
+    if (sampleCount_ == 4 && (normalPass || materialPass || traa_) && !msaaAuxColor_) {
+        WGPUTextureDescriptor desc = {};
+        desc.dimension = WGPUTextureDimension_2D; desc.size = {width_, height_, 1};
+        desc.format = WGPUTextureFormat_RGBA16Float; desc.mipLevelCount = 1; desc.sampleCount = 4;
+        desc.usage = WGPUTextureUsage_RenderAttachment;
+        msaaAuxColor_ = wgpuDeviceCreateTexture(device_, &desc);
+        msaaAuxColorView_ = view2d(msaaAuxColor_, WGPUTextureFormat_RGBA16Float);
+    }
     job.camera = camera; job.lights = lights;
     job.pageClear = pageClear;
     job.presentTarget = presentTarget;
