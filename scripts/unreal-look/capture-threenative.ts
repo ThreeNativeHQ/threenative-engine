@@ -79,10 +79,16 @@ export function referencePoses(reference = REFERENCE): Record<string, readonly I
   const poses: Record<string, readonly IPose[]> = {
     "": read(path.join(reference, "poses.json")).poses ?? [],
   };
-  const gi = path.join(reference, "gi");
-  for (const folder of readdirSync(gi).sort()) {
-    const file = path.join(gi, folder, "scene.json");
-    if (existsSync(file)) poses[folder] = read(file).poses ?? [];
+  // The GI scenes keep their bare folder name; the shadow scenes are `shadow/<name>` (PRD-649).
+  for (const [family, prefix] of [
+    ["gi", ""],
+    ["shadow", "shadow/"],
+  ] as const) {
+    const root = path.join(reference, family);
+    for (const folder of readdirSync(root).sort()) {
+      const file = path.join(root, folder, "scene.json");
+      if (existsSync(file)) poses[`${prefix}${folder}`] = read(file).poses ?? [];
+    }
   }
   return poses;
 }
