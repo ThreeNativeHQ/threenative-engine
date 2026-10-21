@@ -3696,6 +3696,115 @@ void virtualSunContactFoot() {
     CHECK(derivedKept > 0.95);  // without the lit floor shadowing itself
 }
 
+// The sunlit room's inner seams under a sun with a virtual shadow map and a source-angle filter. A roofed room
+// (a wall, a floor slab and a roof slab 0.2 m thick, the sun on the open side) is dark wherever the sun cannot
+// reach, so every lit pixel along a seam is a leak. The receivers sit far from the light's near plane (40 m), as
+// under a tall caster, so the filter's blocker search is wide (0.26 m) and its taps compare with the receiver
+// plane's depth at each tap. The roof's gap to the wall, 0.2 m / sin(sun), is far under that search: the sun
+// must still stay out, and a lit surface must not shadow itself. Back faces store the depth on the receiving
+// surface itself and let the sun in along the seam, which the last arm shows (the proof can fail).
+void virtualSunRoomSeam() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(192, 192);
+    struct View { const char* name; double elevation; bool floorView; };
+    const View views[] = {{"wall under the roof, sun 60", 60, false}, {"wall under the roof, sun 15", 15, false},
+                          {"floor at the wall, sun 60", 60, true}, {"floor at the wall, sun 15", 15, true}};
+    // The lit band of a roofed seam in metres, and the least share of an open surface that stays lit.
+    const auto seam = [&](const View& view, std::optional<Side> side) -> std::array<double, 2> {
+        Scene scene;
+        DirectionalLight sun{Color(1, 1, 1), 6};
+        const double elevation = view.elevation * M_PI / 180, azimuth = 25 * M_PI / 180;
+        sun.position.set(40 * std::sin(azimuth) * std::cos(elevation), 40 * std::sin(elevation), 40 * std::cos(azimuth) * std::cos(elevation));
+        sun.setCastShadow(true);
+        sun.shadow.camera->setLayerMask(double((1 << 0) | (1 << 2)));
+        shadows::AtlasOptions atlas;
+        // The coarse level of the sunlit room: 22.4 m across 2048 texels, about 11 mm each.
+        atlas.clipExtents = {11.2}; atlas.mapSize = 2048; atlas.pageTexels = 128;
+        atlas.lightDistance = 40; atlas.depthRange = 40;
+        sun.shadow.virtualShadow = std::make_shared<const shadows::AtlasOptions>(std::move(atlas));
+        sun.shadow.sourceAngleFilter = std::array<double, 3>{0.006421, 16, 16};  // Unreal's sun, 0.7357 degrees across
+        scene.add(sun);
+        auto white = std::make_shared<Material>(MaterialType::Standard);
+        white->shadowSide = side;
+        // The back wall's inner face is the plane z = 0, from the floor top (y = 0) to the roof underside (y = 3).
+        // The room's slabs reach the sun's side far enough that no ray to the room passes round them.
+        Mesh wall{makeBoxGeometry(30, 3.2, 0.2), white};
+        wall.position.set(0, 1.4, -0.1);
+        wall.setCastShadow(true);
+        wall.setReceiveShadow(true);
+        scene.add(wall);
+        Mesh floor{makeBoxGeometry(30, 0.2, 40), white};
+        floor.position.set(0, -0.1, 19.8);
+        floor.setCastShadow(true);
+        floor.setReceiveShadow(true);
+        scene.add(floor);
+        // The roof slab covers the room. Layer 2: the camera sees the wall and floor, the shadow camera sees all.
+        Mesh roof{makeBoxGeometry(30, 0.2, 40), white};
+        roof.position.set(0, 3.1, 19.8);
+        roof.setCastShadow(true);
+        roof.setLayer(2);
+        scene.add(roof);
+        // A 0.4 m square of the wall just under the roof, or of the floor just in front of the wall.
+        OrthographicCamera camera(-0.2, 0.2, 0.2, -0.2, 0.1, 20);
+        if (view.floorView) { camera.up.set(0, 0, -1); camera.position.set(0, 6, 0.2); camera.lookAt(0, 0, 0.2); }
+        else { camera.position.set(0, 2.8, 6); camera.lookAt(0, 2.8, 0); }
+        camera.updateProjectionMatrix();
+        scene.updateMatrixWorld(true);
+        RenderDatabase database;
+        database.shadowMapEnabled = true;
+        const auto frame = [&] {
+            for (int i = 0; i < 3; ++i) database.render(renderer, scene, camera);
+            std::vector<uint8_t> pixels;
+            bool read = false;
+            renderer.readPixels([&](GpuStatus status, std::vector<uint8_t> px) {
+                if (status == GpuStatus::Ok) pixels = std::move(px);
+                read = true;
+            });
+            for (int i = 0; i < 5000 && !read; ++i) {
+                renderer.poll();
+                events.drain();
+                if (!read) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+            CHECK(pixels.size() == size_t{192} * 192 * 4);
+            std::vector<double> red(size_t{192} * 192);
+            for (size_t i = 0; i < red.size(); ++i) red[i] = pixels[i * 4];
+            return red;
+        };
+        const std::vector<double> roofed = frame();
+        roof.setCastShadow(false);
+        const std::vector<double> open = frame();
+        sun.setCastShadow(false);
+        const std::vector<double> free = frame();
+        CHECK(*std::max_element(free.begin(), free.end()) > 24);
+        // Rows with a lit pixel under the roof, and the least lit share of the open surface without it.
+        int leakRows = 0;
+        double kept = 1;
+        for (int y = 0; y < 192; ++y) {
+            bool lit = false;
+            for (int x = 0; x < 192; ++x) {
+                const size_t i = size_t(y) * 192 + x;
+                if (free[i] < 8) continue;
+                lit = lit || roofed[i] > 0.25 * free[i];
+                kept = std::min(kept, open[i] / free[i]);
+            }
+            leakRows += lit;
+        }
+        return {double(leakRows) * 0.4 / 192, kept};
+    };
+    for (const View& view : views) {
+        const auto [leak, kept] = seam(view, std::nullopt);
+        std::printf("virtual sun room seam, %s: lit band %.1f mm, open surface kept %.3f\n", view.name, leak * 1000, kept);
+        CHECK(leak < 0.025);  // under 2 texels: the sun does not come in along the seam
+        CHECK(kept > 0.95);   // and the open surface does not shadow itself
+    }
+    const auto [backLeak, backKept] = seam(views[0], Side::Back);
+    std::printf("virtual sun room seam, back faces, %s: lit band %.1f mm, open surface kept %.3f\n", views[0].name, backLeak * 1000, backKept);
+    CHECK(backLeak > 0.05);  // the proof can fail: back faces put the depth on the wall and the sun comes in
+}
+
 // A point light's cube shadow: five casters around and below the lamp each shade the floor where its
 // shadow lands, through four side faces and the bottom one, and the floor between them stays lit.
 void pointShadowCubeFaces() {
@@ -4597,7 +4706,7 @@ TN_TEST_MAIN({"gpu_joint_production", gpuJointProduction}, {"multi_material_grou
              {"material_unsupported", materialUnsupported}, {"shader_invalid", shaderInvalid}, {"time_uniform", timeUniform}, {"gpu_mipmaps", gpuMipmaps}, {"updates", updates},
              {"multi_camera_layers", multiCameraLayers}, {"render_callback", renderCallback}, {"instanced", instanced},
              {"batched_vs_unbatched", batchedVsUnbatched}, {"skinned_crowd", skinnedCrowdPixels}, {"skinned_decline_cadence", skinnedDeclineCadence}, {"skinned_normalized_weights", skinnedNormalizedWeights}, {"normal_map_tilt", normalMapTilt}, {"unsupported_map_slot", unsupportedMapSlot}, {"env_map_slot_is_read", envMapSlotIsRead}, {"converted_copies_swept", convertedCopiesAreSwept}, {"gpu_timer_covers_offscreen", gpuTimerCoversOffscreen}, {"gpu_timer_covers_shadows", gpuTimerCoversShadows}, {"overlay_over_frame", overlayOverFrame}, {"gpu_timer_is_opt_in", gpuTimerIsOptIn}, {"msaa_edges", msaaEdges}, {"shadow_camera_layers", shadowCameraLayers}, {"flat_shading_needs_no_normals", flatShadingNeedsNoNormals}, {"map_sampleability_changes", mapSampleabilityChanges}, {"batch_caches_stay_put", batchCachesStayPut}, {"frustum_culling", frustumCulling},
-             {"shadow_caster_frustum_culling", shadowCasterFrustumCulling}, {"masked_shadow", maskedShadow}, {"point_shadow_cube_faces", pointShadowCubeFaces}, {"lamp_source_radius", lampSourceRadius}, {"contact_shadow_foot", contactShadowFoot}, {"virtual_sun_contact_foot", virtualSunContactFoot}, {"lamp_cache", lampCache}, {"shadow_lights_follow_hierarchy", shadowLightsFollowHierarchy}, {"records_survive_siblings", recordsSurviveSiblings}, {"steady_frame_hashes_no_record", steadyFrameHashesNoRecord}, {"nested_record_cache", nestedRecordCache}, {"frustum_record_retention", frustumRecordRetention}, {"world_sphere_measured_once", worldSphereMeasuredOnce}, {"reflection_reuse", reflectionReuse})
+             {"shadow_caster_frustum_culling", shadowCasterFrustumCulling}, {"masked_shadow", maskedShadow}, {"point_shadow_cube_faces", pointShadowCubeFaces}, {"lamp_source_radius", lampSourceRadius}, {"contact_shadow_foot", contactShadowFoot}, {"virtual_sun_contact_foot", virtualSunContactFoot}, {"virtual_sun_room_seam", virtualSunRoomSeam}, {"lamp_cache", lampCache}, {"shadow_lights_follow_hierarchy", shadowLightsFollowHierarchy}, {"records_survive_siblings", recordsSurviveSiblings}, {"steady_frame_hashes_no_record", steadyFrameHashesNoRecord}, {"nested_record_cache", nestedRecordCache}, {"frustum_record_retention", frustumRecordRetention}, {"world_sphere_measured_once", worldSphereMeasuredOnce}, {"reflection_reuse", reflectionReuse})
 
 
 
