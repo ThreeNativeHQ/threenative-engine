@@ -27,7 +27,15 @@ import path from "node:path";
 import { PNG } from "pngjs";
 import { type IImage, type IMasks, decode, iou, known, masks } from "./compare.js";
 import { depthTieNotes } from "./depth-ties.js";
-import { type ISceneJson, familyOf, readScene, registry, sceneKey, sceneNames } from "./gi.js";
+import {
+  type ISceneJson,
+  familyOf,
+  readScene,
+  registry,
+  sceneDir,
+  sceneKey,
+  sceneNames,
+} from "./gi.js";
 
 const REPO_ROOT = path.resolve(import.meta.dirname, "../..");
 const REFERENCE = path.join(REPO_ROOT, "tools/unreal-reference");
@@ -72,6 +80,11 @@ export interface ISamenessInput {
   colors: Record<string, readonly number[]>;
   /** The overlap frame this pose writes under the capture root. */
   overlap: string;
+  /**
+   * The committed Unreal frame of this pose (`<scene>/id/<pose>.png`). It stands in for `unreal` when the
+   * capture root holds no Unreal capture of the scene, so the gate runs without the editor (PRD-638 AC-2).
+   */
+  committed?: string;
 }
 export interface ISamenessRow {
   scene: string;
@@ -362,6 +375,8 @@ export interface ISamenessReport {
   }[];
   limit: number;
   allowed: number;
+  /** The scenes whose Unreal frames are the committed ones. */
+  committed: string[];
 }
 
 /** Scores every input pose from the frames under `root`, and writes each pose's overlap frame. */
@@ -372,9 +387,18 @@ export function samenessReport(
   allowed: number = EDGE_FAR_LIMIT,
 ): ISamenessReport {
   if (inputs.length === 0) fail("BAD_INPUT", "the sameness gate selects no pose");
-  const report: ISamenessReport = { rows: [], cells: [], limit, allowed };
+  const report: ISamenessReport = { rows: [], cells: [], limit, allowed, committed: [] };
   for (const input of inputs) {
-    const unreal = load(path.join(root, "unreal", input.unreal), input.colors);
+    // A scene with an Unreal capture in the root is scored on it, a missing pose of it fails closed.
+    const captured = existsSync(
+      path.join(root, "unreal", path.dirname(path.dirname(input.unreal))),
+    );
+    const offline = input.committed !== undefined && !captured;
+    if (offline && !report.committed.includes(input.scene)) report.committed.push(input.scene);
+    const unreal = load(
+      offline ? (input.committed as string) : path.join(root, "unreal", input.unreal),
+      input.colors,
+    );
     const threenative = load(path.join(root, "threenative", input.threenative), input.colors);
     const cell = samenessCell(input, unreal, threenative, limit, allowed);
     const file = path.join(root, "overlap", input.overlap);
@@ -440,6 +464,7 @@ export function samenessInputs(selection?: string): ISamenessInput[] {
       const { scene } = readScene(name);
       for (const pose of scene.poses) {
         const frame = path.join(sceneKey(name), "ID", `${pose.name}.png`);
+        const committed = path.join(sceneDir(name), "id", `${pose.name}.png`);
         inputs.push({
           scene: name,
           pose: pose.name,
@@ -447,6 +472,7 @@ export function samenessInputs(selection?: string): ISamenessInput[] {
           threenative: frame,
           colors: scene.regions,
           overlap: frame,
+          ...(existsSync(committed) ? { committed } : {}),
         });
       }
     }
@@ -506,6 +532,10 @@ export function runSameness(
   console.log(
     `\nsameness: ${report.rows.length} objects in ${report.cells.length} poses, farthest edge ${Number.isFinite(worst.gap) ? worst.gap : "∞"} px (${worst.scene}/${worst.pose}/${worst.object}), ${failing.length} poses fail (more than ${report.allowed} px beyond ${report.limit} px, or an object one engine lacks); overlap frames in ${path.join(root, "overlap")}`,
   );
+  if (report.committed.length > 0)
+    console.log(
+      `Unreal frames of ${report.committed.join(", ")}: the committed ones (<scene>/id), the capture root has no Unreal capture of them.`,
+    );
   for (const note of depthTieNotes(
     [...new Set(failing.map((c) => c.scene))].filter((name) => name !== "reference"),
     read,

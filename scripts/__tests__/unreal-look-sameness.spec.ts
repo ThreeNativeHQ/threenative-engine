@@ -457,6 +457,87 @@ describe("sameness gate: the command", () => {
   });
 });
 
+describe("sameness gate: the committed Unreal frames", () => {
+  const sceneInput = (committed?: string): ISamenessInput => ({
+    scene: "cornell",
+    pose: "cornell",
+    unreal: path.join("cornell", "ID", "cornell.png"),
+    threenative: path.join("cornell", "ID", "cornell.png"),
+    colors: COLORS,
+    overlap: path.join("cornell", "ID", "cornell.png"),
+    ...(committed === undefined ? {} : { committed }),
+  });
+  function frameAt(file: string, png: PNG) {
+    mkdirSync(path.dirname(file), { recursive: true });
+    writeFileSync(file, PNG.sync.write(png));
+  }
+  const good = ["AAAA....", "AAAA.BB.", "AAAA.BB.", "AAAA...."];
+  const lacksB = ["AAAA....", "AAAA....", "AAAA....", "AAAA...."];
+
+  it("scores the committed frame when the root holds no Unreal capture of the scene", () => {
+    const root = tempRoot();
+    const committed = path.join(tempRoot(), "id", "cornell.png");
+    frameAt(committed, frame(good));
+    frameAt(path.join(root, "threenative", "cornell", "ID", "cornell.png"), frame(good));
+    const report = samenessReport([sceneInput(committed)], root);
+    expect(report.cells.map((c) => c.pass)).toEqual([true]);
+    expect(report.committed).toEqual(["cornell"]);
+  });
+
+  it("scores a captured frame before the committed one", () => {
+    const root = tempRoot();
+    const committed = path.join(tempRoot(), "id", "cornell.png");
+    frameAt(committed, frame(good));
+    frameAt(path.join(root, "unreal", "cornell", "ID", "cornell.png"), frame(lacksB));
+    frameAt(path.join(root, "threenative", "cornell", "ID", "cornell.png"), frame(good));
+    const report = samenessReport([sceneInput(committed)], root);
+    expect(report.cells.map((c) => c.pass)).toEqual([false]);
+    expect(report.committed).toEqual([]);
+  });
+
+  it("fails closed on a pose a capture folder lacks, and on a committed frame that is missing", () => {
+    const root = tempRoot();
+    const committed = path.join(tempRoot(), "id", "cornell.png");
+    frameAt(committed, frame(good));
+    frameAt(path.join(root, "threenative", "cornell", "ID", "cornell.png"), frame(good));
+    frameAt(path.join(root, "unreal", "cornell", "ID", "other.png"), frame(good));
+    expect(() => samenessReport([sceneInput(committed)], root)).toThrow(
+      /^TN_UNREAL_LOOK_MISSING_CELL: .*unreal\/cornell\/ID\/cornell\.png$/,
+    );
+    const bare = tempRoot();
+    frameAt(path.join(bare, "threenative", "cornell", "ID", "cornell.png"), frame(good));
+    expect(() => samenessReport([sceneInput(path.join(tempRoot(), "none.png"))], bare)).toThrow(
+      /^TN_UNREAL_LOOK_MISSING_CELL: .*none\.png$/,
+    );
+  });
+
+  it("marks the committed frames of the GI scenes that have them, and none of the reference scene", () => {
+    const inputs = samenessInputs("gi:cornell");
+    expect(inputs.length).toBeGreaterThan(0);
+    for (const i of inputs) {
+      expect(i.committed, i.pose).toMatch(/gi\/cornell\/id\/.+\.png$/);
+      expect(existsSync(i.committed as string), i.pose).toBe(true);
+    }
+    for (const i of samenessInputs("reference")) expect(i.committed).toBeUndefined();
+  });
+
+  it("runs the command on ThreeNative frames alone, and says whose Unreal frames it used", () => {
+    const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    const root = tempRoot();
+    // The committed Unreal frames drawn as the other engine: identical, so every pose passes.
+    for (const input of samenessInputs("gi:cornell"))
+      frameAt(
+        path.join(root, "threenative", input.threenative),
+        PNG.sync.read(readFileSync(input.committed as string)),
+      );
+    expect(runSameness(["--scene", "gi:cornell", "--captures", root])).toBe(0);
+    expect(log.mock.calls.flat().join("\n")).toContain(
+      "Unreal frames of cornell: the committed ones",
+    );
+    log.mockRestore();
+  });
+});
+
 describe("depth ties: slabs that share a face a camera can see", () => {
   const slab = (name: string, position: number[], size: number[], extra = {}) =>
     ({ name, position, size, rotationYDeg: 0, ...extra }) as never;

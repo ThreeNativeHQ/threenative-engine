@@ -28,7 +28,7 @@ export function depthTies(scene: Scene): string[] {
         for (const sign of [-1, 1]) {
           const plane = a.at[axis] + (sign * a.size[axis]) / 2;
           if (Math.abs(plane - (b.at[axis] + (sign * b.size[axis]) / 2)) > EPS) continue;
-          const area = AXES.filter((k) => k !== axis).reduce((product, k) => {
+          const area = AXES.filter((k) => k !== axis).reduce<number>((product, k) => {
             const lo = Math.max(a.at[k] - a.size[k] / 2, b.at[k] - b.size[k] / 2);
             const hi = Math.min(a.at[k] + a.size[k] / 2, b.at[k] + b.size[k] / 2);
             return product * Math.max(0, hi - lo);
