@@ -83,8 +83,11 @@ export class BudgetLadder<L extends string> {
   #frameSamples = 0;
   #frameSum = 0;
   #windowNumber = 0;
-  /** Failure count and the window number before which a level may not be tried again. */
-  readonly #failures = new Map<L, { count: number; retryAt: number }>();
+  /**
+   * Failure count, the window number before which a level may not be tried again, and what the
+   * level cost in its failed window: a retry needs room for that, not for its budget.
+   */
+  readonly #failures = new Map<L, { count: number; retryAt: number; ms: number }>();
 
   constructor(options: IBudgetLadderOptions<L>) {
     if (options.levels.length === 0) throw new RangeError("BudgetLadder levels must not be empty.");
@@ -184,7 +187,7 @@ export class BudgetLadder<L extends string> {
       const lower = this.#index - 1;
       if (this.#explicit || lower < 0)
         return { ...base, stepped: undefined, verdict: "over", windowMs };
-      this.#fail(level);
+      this.#fail(level, windowMs);
       this.#index = lower;
       return { ...base, stepped: this.level, verdict: "over", windowMs };
     }
@@ -203,18 +206,22 @@ export class BudgetLadder<L extends string> {
     return { ...base, stepped: undefined, verdict: "within", windowMs };
   }
 
-  /** The frame has room for the dearer level at its full budget. True when no frame budget is set. */
+  /**
+   * The frame has room for the dearer level at its full budget, or at what it measured when it last
+   * failed if that was more. True when no frame budget is set.
+   */
   #fitsFrame(windowMs: number, upper: L): boolean {
     if (this.#frameBudgetMs === undefined) return true;
     if (this.#frameSamples < this.#minSamples) return false;
     const frameMean = this.#frameSum / this.#frameSamples;
-    return frameMean + (this.#budgetMs[upper] - windowMs) <= this.#frameBudgetMs;
+    const expected = Math.max(this.#budgetMs[upper], this.#failures.get(upper)?.ms ?? 0);
+    return frameMean + (expected - windowMs) <= this.#frameBudgetMs;
   }
 
-  /** The level failed its budget: wait longer each time before trying it again. */
-  #fail(level: L): void {
+  /** The level failed its budget at `ms`: wait longer each time before trying it again. */
+  #fail(level: L, ms: number): void {
     const count = (this.#failures.get(level)?.count ?? 0) + 1;
     const wait = Math.min(MAX_RETRY_WINDOWS, this.#retryWindows * 2 ** (count - 1));
-    this.#failures.set(level, { count, retryAt: this.#windowNumber + wait });
+    this.#failures.set(level, { count, retryAt: this.#windowNumber + wait, ms });
   }
 }

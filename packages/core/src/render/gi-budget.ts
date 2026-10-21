@@ -83,10 +83,11 @@ export interface IGIBudgetOptions {
  *
  * The method starts where the game's quality tier puts it. Over a window of frames (120 by default)
  * above the method's budget, it steps down one method. It steps up only after a window below 70% of
- * the next method's budget, with room for that method in the whole frame, and a method that failed
- * is retried after a longer wait each time. A game that sets `finalGatherMethod` itself keeps it:
- * the report says the budget is exceeded and nothing changes. An adapter without timestamp queries
- * resolves no frame, so the window is reported unobserved and the method holds.
+ * the next method's budget, with room for that method in the whole frame. A method that failed is
+ * retried after a longer wait each time, and only once the frame has room for what it cost then. A
+ * game that sets `finalGatherMethod` itself keeps it: the report says the budget is exceeded and
+ * nothing changes. An adapter without timestamp queries resolves no frame, so the window is reported
+ * unobserved and the method holds.
  *
  * @situation global illumination costs too much on a weak GPU
  * @situation pick the bounce light method from measured GPU time

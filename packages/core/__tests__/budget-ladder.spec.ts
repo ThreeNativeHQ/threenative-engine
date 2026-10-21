@@ -85,6 +85,25 @@ describe("BudgetLadder", () => {
     expect(blind.level).toBe("cheap");
   });
 
+  it("does not climb again until the frame has room for what the level measured when it failed", () => {
+    const target = ladder({ frameBudgetMs: 16.7, retryWindows: 1, start: "mid" });
+    const run = (stageMs: number, frameMs: number) => {
+      let verdict: ReturnType<BudgetLadder<Level>["observe"]>;
+      for (let frame = 0; frame < 10; frame++) verdict = target.observe(stageMs, frameMs);
+      return verdict;
+    };
+    // mid reads 2 ms in an 8 ms frame: full's budget (6) fits, so the ladder climbs.
+    expect(run(2, 8)).toMatchObject({ stepped: "full" });
+    // full reads 12 ms, twice its budget: back to mid.
+    expect(run(12, 20)).toMatchObject({ stepped: "mid", verdict: "over" });
+    // The wait is one window, and full's budget alone would fit (8 + 4 = 12 ms). The 12 ms it
+    // measured does not (8 + 10 = 18 ms), so the ladder stays.
+    for (let index = 0; index < 8; index++) expect(run(2, 8)).toMatchObject({ stepped: undefined });
+    expect(target.level).toBe("mid");
+    // A lighter frame (5 + 10 = 15 ms) has room for it.
+    expect(run(2, 5)).toMatchObject({ stepped: "full", verdict: "under" });
+  });
+
   it("leaves an explicit level alone and says the budget is exceeded", () => {
     const target = ladder({ explicit: true });
     const verdict = window(target, 9);
