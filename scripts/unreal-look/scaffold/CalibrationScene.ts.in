@@ -2,7 +2,7 @@
 // (PRD-646). It recreates a PRD-638 calibration scene: geometry and materials from the scene.glb
 // that Unreal exported, lights and exposure from its scene.json (src/scenes/calibrationData.ts).
 // It is scene setup only; every look decision comes from the copy's own `src/render/`.
-//   ?tnGi=<scene>&layer=<ID|L1..L9>
+//   ?tnGi=<scene>&layer=<ID|L1..L9>&tier=<low|medium|high>
 // and `window.__tnRef.pose(...)` frames one camera pose, as in Reference.ts.
 import { type ICtx, Scene, type SceneFrame, sourceRadiusShadowFilter } from "@threenative/core";
 import type { IPhysicsContext } from "@threenative/physics";
@@ -21,7 +21,14 @@ import {
   Vector3,
 } from "three";
 import { giCache, installGi } from "../render/giCache.js";
-import { qualityPreset } from "../render/quality.js";
+import { watchGi } from "../render/giTier.js";
+import {
+  type FinalGatherMethod,
+  giPreset,
+  qualityPreset,
+  resolveQualityTier,
+  shadowPreset,
+} from "../render/quality.js";
 import { WorldEnvironment } from "../render/worldEnvironment.js";
 import type { GameState } from "../state.js";
 import { SCENES } from "./calibrationData.js";
@@ -34,6 +41,11 @@ const params = new URLSearchParams(location.search);
 const NAME = params.get("tnGi") ?? "";
 const LAYER = params.get("layer") ?? "L7";
 const level = LAYER === "ID" ? -1 : Number(LAYER.slice(1));
+// The quality tier the cell is drawn at (default high, Unreal's Epic): its GI method and shadow filter come
+// from `render/quality.ts` (PRD-644, PRD-652). GI enters at L7; below it there is none, as in Unreal's ladder.
+const TIER = resolveQualityTier({ tier: params.get("tier") ?? "high" });
+const GI_METHOD = level >= 7 ? giPreset(TIER).finalGatherMethod : "none";
+const SHADOW = shadowPreset(TIER);
 const DATA = SCENES[NAME];
 // Diagnosis only: scales every light, so a capture can bracket a unit error. Unset in every judged capture.
 const LIGHT_SCALE = Number(params.get("lightScale") ?? 1);
@@ -55,6 +67,7 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
   static override readonly initialState: GameState = Play.initialState;
   #model: Group | undefined;
   #dispose: (() => void) | undefined;
+  #gi: ReturnType<typeof watchGi> | undefined;
 
   override async load(ctx: GameCtx): Promise<void> {
     if (DATA === undefined) throw new Error(`TN_CALIBRATION_SCENE_UNKNOWN: ${NAME}`);
@@ -151,8 +164,8 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
           // The lamp's radius softens its shadow as Unreal's does (PRD-650); its highlight stays a point's.
           point.shadow.filterNode = sourceRadiusShadowFilter({
             sourceRadius: light.sourceRadiusM ?? 0,
-            blockerSamples: Number(params.get("blockers") ?? 16),
-            filterSamples: Number(params.get("samples") ?? 16),
+            blockerSamples: Number(params.get("blockers") ?? SHADOW.lampFilter.blockerSamples),
+            filterSamples: Number(params.get("samples") ?? SHADOW.lampFilter.filterSamples),
           });
           unsupported.push({
             actor: light.name,
@@ -161,7 +174,7 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
           });
         }
       }
-      if (level >= 7) {
+      if (GI_METHOD !== "none") {
         // Diagnosis: ?giSkip=<region> bakes with that region black, to measure its share of the bounce.
         const skipped = meshes.filter((m) => regionOf(m) === params.get("giSkip"));
         const kept = skipped.map((m) => (m.material as unknown as { color: Color }).color.clone());
@@ -189,23 +202,31 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
       }
       // The template's `high` chain with the L9-only stages off, as Reference.ts runs below L9.
       // Exposure is the scene's fixed EV100: Unreal's manual exposure, 0.18 / 2^EV100.
-      const world = new WorldEnvironment({
-        ...qualityPreset("high"),
-        autoExposureEnabled: false,
-        bloomEnabled: false,
-        // Diagnosis: ?gtao=0 takes the contact occlusion out, to tell its darkening from the shadow's.
-        gtaoEnabled: level >= 6 && params.get("gtao") !== "0",
-        // Diagnosis: ?ssgi=0|1 and ?ssgiIntensity=N bracket the screen-space gather over the cache.
-        ...(params.get("ssgi") === null ? {} : { ssgiEnabled: params.get("ssgi") === "1" }),
-        ...(params.get("ssgiIntensity") === null ? {} : { ssgiIntensity: Number(params.get("ssgiIntensity")) }),
-        // Unreal's L7 is its Epic tier, so the gather takes the template's top sample budget.
-        ssgiQuality: (params.get("ssgiQuality") ?? "high") as "high",
-        // Diagnosis: ?ssgiScale=N gathers at a fraction of the frame (PRD-640 cost gate).
-        ...(params.get("ssgiScale") === null ? {} : { ssgiResolutionScale: Number(params.get("ssgiScale")) }),
-        vignetteAmount: 0,
-        exposure: EXPOSURE,
-      });
-      this.#dispose = world.apply(ctx.renderer, scene, camera, {}).dispose;
+      const build = (method: FinalGatherMethod) => {
+        this.#dispose?.();
+        const world = new WorldEnvironment({
+          ...qualityPreset("high"),
+          autoExposureEnabled: false,
+          bloomEnabled: false,
+          // Diagnosis: ?gtao=0 takes the contact occlusion out, to tell its darkening from the shadow's.
+          gtaoEnabled: level >= 6 && params.get("gtao") !== "0",
+          finalGatherMethod: method,
+          // Diagnosis: ?ssgi=0|1 and ?ssgiIntensity=N bracket the screen-space gather over the cache.
+          ...(params.get("ssgi") === null ? {} : { ssgiEnabled: params.get("ssgi") === "1" }),
+          ...(params.get("ssgiIntensity") === null ? {} : { ssgiIntensity: Number(params.get("ssgiIntensity")) }),
+          // Unreal's L7 is its Epic tier, so the gather takes the template's top sample budget.
+          ssgiQuality: (params.get("ssgiQuality") ?? "high") as "high",
+          // Diagnosis: ?ssgiScale=N gathers at a fraction of the frame (PRD-640 cost gate).
+          ...(params.get("ssgiScale") === null ? {} : { ssgiResolutionScale: Number(params.get("ssgiScale")) }),
+          vignetteAmount: 0,
+          exposure: EXPOSURE,
+        });
+        this.#dispose = world.apply(ctx.renderer, scene, camera, {}).dispose;
+      };
+      build(GI_METHOD);
+      // The tier's method moves with the measured GI time when the URL asks for giAuto=1 (PRD-644).
+      if (GI_METHOD !== "none")
+        this.#gi = watchGi(ctx, { tier: TIER, method: GI_METHOD, rebuild: build });
     }
     for (const u of unsupported)
       console.info(`TN_CALIBRATION_SCENE unsupported ${u.actor}.${u.property}: ${u.reason}`);
@@ -213,6 +234,11 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
     const target = new Vector3();
     (window as unknown as { __tnRef: unknown }).__tnRef = {
       layer: LAYER,
+      tier: TIER,
+      finalGatherMethod: GI_METHOD,
+      shadowQuality: SHADOW.shadowQuality,
+      // The GI watcher's newest window, for the perf run (PRD-644 AC-2).
+      gi: () => this.#gi?.lastReport(),
       scene: NAME,
       unsupported,
       // The live scene, renderer and GI cache, for in-page diagnosis.

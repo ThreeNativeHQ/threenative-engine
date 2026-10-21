@@ -104,6 +104,13 @@ const TONEMAP: Record<TonemapMode, number> = {
 export interface IWorldEnvironmentOptions {
   /** World-pass MSAA samples. Omit to inherit the renderer; 0 leaves post AA in charge. */
   readonly samples?: number;
+  /**
+   * How bounce light reaches a pixel, Unreal's `r.Lumen.FinalGatherMethod` by the quality tier's name
+   * (`giPreset`). The screen-space gather runs only for `screenProbeGather`; the world cache is
+   * installed by the scene (`giCache.ts`) for `irradianceField` and `screenProbeGather`. Omit it and
+   * the harness layer decides.
+   */
+  readonly finalGatherMethod?: "none" | "irradianceField" | "screenProbeGather";
   /** Screen-space indirect diffuse light. Godot calls this `ssil_enabled`. */
   readonly ssgiEnabled?: boolean;
   readonly ssgiQuality?: SsgiQuality;
@@ -541,14 +548,17 @@ export class WorldEnvironment {
         `Unknown render chain tier '${String(renderChainTier)}'. Use high, medium, low, or off.`,
       );
     }
+    const finalGatherMethod =
+      options.finalGatherMethod ?? (harnessLayer() >= 7 ? "screenProbeGather" : "none");
     this.#options = {
       samples: options.samples,
       // A kit with no stages of its own is the common case, so both default to empty rather
       // than to a branch every call site has to remember.
       authoredStageNames: options.authoredStageNames ?? [],
       authoredStages: options.authoredStages ?? (() => []),
+      finalGatherMethod,
       // Harness: Unreal's global illumination enters at ladder layer L7, so the capture's layer decides.
-      ssgiEnabled: options.ssgiEnabled ?? harnessLayer() >= 7,
+      ssgiEnabled: options.ssgiEnabled ?? finalGatherMethod === "screenProbeGather",
       ssgiQuality: quality,
       ssgiIntensity: options.ssgiIntensity ?? 1,
       ssgiRadius: options.ssgiRadius ?? 4,
@@ -1280,6 +1290,7 @@ export class WorldEnvironment {
       `TN_WORLD_ENVIRONMENT:${JSON.stringify({
         denoise: options.denoiseEnabled,
         exposure: options.exposure,
+        finalGatherMethod: options.finalGatherMethod,
         marker: "TN_WORLD_ENVIRONMENT",
         screenSpaceAA: options.screenSpaceAA,
         ssgiQuality: options.ssgiQuality,

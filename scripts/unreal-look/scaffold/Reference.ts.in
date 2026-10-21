@@ -31,7 +31,14 @@ import { EMISSIVE_UNITS } from "../render/atmosphere.js";
 import { installGi } from "../render/giCache.js";
 import { setupLighting } from "../render/lighting.js";
 import { setupPost } from "../render/postprocessing.js";
-import { qualityPreset } from "../render/quality.js";
+import { watchGi } from "../render/giTier.js";
+import {
+  type FinalGatherMethod,
+  giPreset,
+  qualityPreset,
+  resolveQualityTier,
+  shadowPreset,
+} from "../render/quality.js";
 import { captureReflections } from "../render/reflectionCapture.js";
 import { SUN_DIRECTION, setupSky } from "../render/sky.js";
 import { WorldEnvironment } from "../render/worldEnvironment.js";
@@ -45,6 +52,13 @@ const params = new URLSearchParams(location.search);
 const LAYER = params.get("tnRef") ?? "L9";
 const [elevationDeg = 60, azimuthDeg = 25] = (params.get("sun") ?? "60,25").split(",").map(Number);
 const level = LAYER === "ID" ? -1 : Number(LAYER.slice(1));
+// `tier=low|medium|high` (default high, which follows Unreal's Epic) is the quality tier the cell is drawn at:
+// its GI method and shadow filter come from `render/quality.ts` (PRD-644, PRD-652).
+const TIER = resolveQualityTier({ tier: params.get("tier") ?? "high" });
+const GI = giPreset(TIER);
+const SHADOW = shadowPreset(TIER);
+// From L7 the tier's final gather method decides the GI; below it there is none, as in Unreal's ladder.
+const GI_METHOD = level >= 7 ? GI.finalGatherMethod : "none";
 // `baseline=1` captures the template look as it ships; otherwise the tuning in progress applies.
 const TUNED = params.get("baseline") !== "1";
 // `off=vsm,gpusky,clouds,gi,reflcap,bloom,localexposure,autoexposure,ssgi,ssr,gtao` switches one L9 stage off, to
@@ -69,6 +83,7 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
   #model: Group | undefined;
   #sky: Texture | undefined;
   #dispose: (() => void) | undefined;
+  #gi: ReturnType<typeof watchGi> | undefined;
   #reflectionsDispose: (() => void) | undefined;
 
   override async load(ctx: GameCtx): Promise<void> {
@@ -143,6 +158,14 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
         if (!OFF.has("vsm"))
           (key.shadow as unknown as { filterNode: unknown }).filterNode = sourceAngleShadowFilter({
             sourceAngleRad: SUN_SOURCE_ANGLE_RAD,
+            ...SHADOW.sunFilter,
+            // Diagnosis knobs for the tier's sample-count round (PRD-652): sunBlockers and sunSamples.
+            ...(params.get("sunBlockers") === null
+              ? {}
+              : { blockerSamples: Number(params.get("sunBlockers")) }),
+            ...(params.get("sunSamples") === null
+              ? {}
+              : { filterSamples: Number(params.get("sunSamples")) }),
           });
         // Unreal's directional light shadows the whole view with camera-centred virtual shadow
         // maps. `VirtualShadowNode` is that: nested clip levels around the camera, each twice
@@ -165,6 +188,7 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
             clipExtents: [reach / 4, reach / 2, reach, 2 * reach],
             mapSize: 2048,
             moverMapSize: 512,
+            resolutionLodBiasDirectional: SHADOW.resolutionLodBiasDirectional,
           });
       }
       if (level >= 2) {
@@ -189,9 +213,9 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
         installGi(ctx, model, {
           // Diagnosis knob stockRays=1: cast the bake through ctx.raycast, the slow path (an A/B).
           stockRays: params.get("stockRays") === "1",
-          bounces: level >= 7 ? 5 : 0,
-          // Unreal below L7 has no GI: its sky light is shadowed by distance fields, up to 10 m.
-          ...(level < 7 ? { skyShadowDistance: 10 } : {}),
+          bounces: GI_METHOD === "none" ? 0 : 5,
+          // Unreal without GI (below L7, or the Low tier) shadows its sky light with distance fields, up to 10 m.
+          ...(GI_METHOD === "none" ? { skyShadowDistance: 10 } : {}),
           sun: { color: key.color, intensity: key.intensity, direction: SUN_DIRECTION },
         });
       if (TUNED && level >= 8 && !OFF.has("reflcap"))
@@ -208,24 +232,37 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
       } else {
         // The template's own `high` chain with the L9-only stages off: bloom, vignette, the
         // authored grade and grain, auto exposure. AO enters at L6, as in the Unreal ladder.
-        const world = new WorldEnvironment({
-          ...qualityPreset("high"),
-          autoExposureEnabled: false,
-          bloomEnabled: false,
-          gtaoEnabled: level >= 6,
-          // Unreal's SSAO at L6 (r.AmbientOcclusionRadius 40 cm); Lumen's short-range AO is thinner from L7.
-          ...(level < 7 ? { gtaoRadius: 0.35 } : {}),
-          vignetteAmount: 0,
-          // The same ablation switches as L9, for attributing a GI fault below it.
-          ...Object.assign({}, ...[...OFF].map((name) => STAGE_OFF[name] ?? {})),
-        });
-        this.#dispose = world.apply(ctx.renderer, scene, camera, { godraysLight: key }).dispose;
+        const build = (method: FinalGatherMethod) => {
+          this.#dispose?.();
+          const world = new WorldEnvironment({
+            ...qualityPreset("high"),
+            autoExposureEnabled: false,
+            bloomEnabled: false,
+            gtaoEnabled: level >= 6,
+            finalGatherMethod: method,
+            // Unreal's SSAO at L6 (r.AmbientOcclusionRadius 40 cm); Lumen's short-range AO is thinner from L7.
+            ...(level < 7 ? { gtaoRadius: 0.35 } : {}),
+            vignetteAmount: 0,
+            // The same ablation switches as L9, for attributing a GI fault below it.
+            ...Object.assign({}, ...[...OFF].map((name) => STAGE_OFF[name] ?? {})),
+          });
+          this.#dispose = world.apply(ctx.renderer, scene, camera, { godraysLight: key }).dispose;
+        };
+        build(GI_METHOD);
+        // The tier's method moves with the measured GI time when the URL asks for giAuto=1 (PRD-644).
+        if (GI_METHOD !== "none")
+          this.#gi = watchGi(ctx, { tier: TIER, method: GI_METHOD, rebuild: build });
       }
     }
 
     const target = new Vector3();
     const reference = {
       layer: LAYER,
+      tier: TIER,
+      finalGatherMethod: GI_METHOD,
+      shadowQuality: SHADOW.shadowQuality,
+      // The GI watcher's newest window, for the perf run (PRD-644 AC-2).
+      gi: () => this.#gi?.lastReport(),
       // Only the owned engine's renderer carries `info.engine`; the capture refuses anything else.
       engine:
         "engine" in (ctx.renderer.raw as unknown as { info: object }).info

@@ -38,12 +38,16 @@ export type BudgetVerdict = "over" | "within" | "under" | "unobserved";
 
 /** One closed window. */
 export interface IBudgetWindow<L extends string> {
+  /** 1 for the first window the ladder closes. */
+  readonly number: number;
   readonly level: L;
   /** Mean of the resolved readings, or `undefined` for an unobserved window. */
   readonly windowMs: number | undefined;
   /** The budget of the level the window ran at. */
   readonly budgetMs: number;
   readonly samples: number;
+  /** Mean of the whole frame's readings in the window, when the caller supplied them. */
+  readonly frameMs: number | undefined;
   readonly verdict: BudgetVerdict;
   /** The level the ladder moved to when this window moved it. */
   readonly stepped: L | undefined;
@@ -164,7 +168,15 @@ export class BudgetLadder<L extends string> {
     const level = this.level;
     const budgetMs = this.#budgetMs[level];
     const samples = this.#samples;
-    const base = { budgetMs, explicit: this.#explicit, level, samples };
+    const frameMs = this.#frameSamples > 0 ? this.#frameSum / this.#frameSamples : undefined;
+    const base = {
+      budgetMs,
+      explicit: this.#explicit,
+      frameMs,
+      level,
+      number: this.#windowNumber,
+      samples,
+    };
     if (samples < this.#minSamples)
       return { ...base, stepped: undefined, verdict: "unobserved", windowMs: undefined };
     const windowMs = this.#sum / samples;

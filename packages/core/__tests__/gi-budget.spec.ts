@@ -35,6 +35,7 @@ describe("GIBudget", () => {
     const report = run(target, 31);
     expect(report).toMatchObject({
       budgetMs: 6,
+      frameMs: 10,
       finalGatherMethod: "irradianceField",
       globalIlluminationQuality: 1,
       reason: "window 31 ms is over the 6 ms budget: stepped down to irradianceField",
@@ -102,6 +103,36 @@ describe("GIBudget", () => {
     let again: ReturnType<GIBudget["observeRenderer"]>;
     for (let frame = 0; frame < 10; frame++) again = target.observeRenderer({});
     expect(again).toMatchObject({ samples: 0, windowMs: undefined });
+  });
+
+  it("steps only among the methods the game can switch between", () => {
+    const { steps, target } = budget({ methods: ["irradianceField", "screenProbeGather"] });
+    expect(run(target, 31)?.stepped).toBe("irradianceField");
+    // The cheapest listed method holds: `none` is not on the ladder.
+    expect(run(target, 31)?.reason).toBe(
+      "window 31 ms is over the 1 ms budget and irradianceField is the cheapest method",
+    );
+    expect(steps).toEqual(["irradianceField"]);
+    expect(() => budget({ methods: ["screenProbeGather", "none"] })).toThrow(/cheapest first/);
+    expect(() => budget({ methods: ["none", "irradianceField"] })).toThrow(/start/);
+  });
+
+  it("names which of the configured stages resolved, so a wrong stage name is visible", () => {
+    let frame = 0;
+    const { target } = budget({
+      read: () => ({ frame: ++frame, stages: { SSGI: 2, Other: 9 }, total: 12 }),
+      stages: ["SSGI", "Denoise"],
+    });
+    let report: ReturnType<GIBudget["observeRenderer"]>;
+    for (let i = 0; i < 10; i++) report = target.observeRenderer({});
+    expect(report?.stagesSeen).toEqual(["SSGI"]);
+    expect(report).toMatchObject({ passes: ["Other", "SSGI"], window: 1 });
+    const wrong = budget({
+      read: () => ({ frame: ++frame, stages: { Other: 9 }, total: 12 }),
+      stages: ["SSGI"],
+    });
+    for (let i = 0; i < 10; i++) report = wrong.target.observeRenderer({});
+    expect(report).toMatchObject({ stagesSeen: [], windowMs: 0 });
   });
 
   it("fails closed on a method outside the ladder or a missing budget", () => {

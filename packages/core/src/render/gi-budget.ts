@@ -28,9 +28,17 @@ export interface IGIBudgetReport {
   readonly tier: string | undefined;
   /** Mean GI-stage GPU milliseconds over the window, or `undefined` when too few frames resolved. */
   readonly windowMs: number | undefined;
+  /** Mean whole-frame GPU milliseconds over the window, to read the GI share against. */
+  readonly frameMs: number | undefined;
   /** The budget of the method the window ran at. */
   readonly budgetMs: number;
   readonly samples: number;
+  /** 1 for the first window the watcher closes, so a reader can skip the warm-up window. */
+  readonly window: number;
+  /** Which of the named `stages` resolved in the window. Empty when a stage name is wrong: that reads as 0 ms. */
+  readonly stagesSeen: readonly string[];
+  /** Every nested pass name that resolved in the window, to find the name a stage goes by. */
+  readonly passes: readonly string[];
   /** The method the ladder moved to, when this window moved it. */
   readonly stepped: GIMethod | undefined;
   /** The game fixed `finalGatherMethod`: an exceeded budget is reported and nothing changes. */
@@ -41,6 +49,11 @@ export interface IGIBudgetReport {
 export interface IGIBudgetOptions {
   /** The method the game starts at: the tier's `finalGatherMethod`. */
   readonly method: GIMethod;
+  /**
+   * The methods the game can switch between while it runs, cheapest first. Default all three. A game
+   * that baked its world cache at start cannot step to `none` later, so it lists the other two.
+   */
+  readonly methods?: readonly GIMethod[];
   /** The game set `finalGatherMethod` itself: the watcher reports and never changes it. */
   readonly explicit?: boolean;
   /** GPU milliseconds each method may cost: Unreal's measured GI time at the matching level. */
@@ -95,17 +108,25 @@ export class GIBudget {
   readonly #options: IGIBudgetOptions;
   readonly #read: (renderer: unknown) => IStageGpuReading | undefined;
   #lastFrame = -1;
+  readonly #seen = new Set<string>();
+  readonly #passes = new Set<string>();
   #last: IGIBudgetReport | undefined;
   #reportedOver = false;
 
   constructor(options: IGIBudgetOptions) {
     if (options.stages.length === 0)
       throw new RangeError("GIBudget stages must name at least one render pass.");
+    const methods = options.methods ?? GI_METHODS;
+    const order = methods.map((m) => GI_METHODS.indexOf(m));
+    if (order.some((at, i) => at < 0 || (i > 0 && at <= (order[i - 1] ?? -1))))
+      throw new RangeError(
+        `GIBudget methods must be listed cheapest first from ${GI_METHODS.join(", ")}.`,
+      );
     this.#options = options;
     this.#read = options.read ?? stageGpuReading;
     this.#ladder = new BudgetLadder<GIMethod>({
       budgetMs: options.budgetMs,
-      levels: GI_METHODS,
+      levels: methods,
       start: options.method,
       ...(options.explicit === undefined ? {} : { explicit: options.explicit }),
       ...(options.frameBudgetMs === undefined ? {} : { frameBudgetMs: options.frameBudgetMs }),
@@ -136,6 +157,8 @@ export class GIBudget {
     if (window === undefined) return undefined;
     const report = this.#toReport(window);
     this.#last = report;
+    this.#seen.clear();
+    this.#passes.clear();
     this.#emit(report);
     if (window.stepped !== undefined) this.#options.onStep?.(window.stepped, report);
     return report;
@@ -149,8 +172,14 @@ export class GIBudget {
     const reading = this.#read(renderer);
     if (reading === undefined || reading.frame === this.#lastFrame) return this.observe(undefined);
     this.#lastFrame = reading.frame;
+    for (const name of Object.keys(reading.stages)) this.#passes.add(name);
     let ms = 0;
-    for (const name of this.#options.stages) ms += reading.stages[name] ?? 0;
+    for (const name of this.#options.stages) {
+      const stageMs = reading.stages[name];
+      if (stageMs === undefined) continue;
+      this.#seen.add(name);
+      ms += stageMs;
+    }
     return this.observe(ms, reading.total);
   }
 
@@ -178,11 +207,15 @@ export class GIBudget {
       budgetMs: window.budgetMs,
       explicit: window.explicit,
       finalGatherMethod: after,
+      frameMs: window.frameMs === undefined ? undefined : Number(window.frameMs.toFixed(3)),
       globalIlluminationQuality: UNREAL_QUALITY[after],
       reason,
       samples: window.samples,
+      passes: [...this.#passes].sort(),
+      stagesSeen: [...this.#seen],
       stepped: window.stepped,
       tier: this.#options.tier,
+      window: window.number,
       windowMs: ms === undefined ? undefined : Number(ms.toFixed(3)),
     };
   }

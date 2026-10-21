@@ -22,7 +22,7 @@ import {
   seedLocks,
   silhouetteIou,
 } from "../unreal-look/compare.js";
-import { compareGiToUnreal, readScene, unrealVariant } from "../unreal-look/gi.js";
+import { compareGiToUnreal, penumbraRows, readScene, unrealVariant } from "../unreal-look/gi.js";
 
 const roots: string[] = [];
 afterEach(() => {
@@ -492,6 +492,39 @@ describe("Unreal reference comparison", () => {
     it("fails closed on a layer or level that is not in the table", () => {
       expect(() => unrealVariant("L7-ultra")).toThrow(/^TN_UNREAL_LOOK_BAD_INPUT/);
       expect(() => unrealVariant("L7", 2)).toThrow(/^TN_UNREAL_LOOK_BAD_INPUT.*unreal level 2/);
+    });
+    it("measures the shadow edge width of a tier against Unreal's, on the floor mask", () => {
+      const { root, put } = fixture();
+      const { scene } = readScene("shadow:penumbra-lab");
+      const [floor = []] = [scene.regions.Floor];
+      // A floor run 160 px wide with one shadow edge: lit left, shadowed right, the step `blur` px wide.
+      const frame = (blur: number) =>
+        png(
+          Array.from({ length: 200 * 40 }, (_, i) => {
+            const x = (i % 200) - 100;
+            const t = Math.min(1, Math.max(0, x / blur + 0.5));
+            return gray(Math.round(220 - 150 * t));
+          }),
+          200,
+        );
+      const id = png(
+        Array.from({ length: 200 * 40 }, () => floor),
+        200,
+      );
+      for (const pose of scene.poses.map((p) => p.name)) {
+        put(`unreal/shadow/penumbra-lab/ID/${pose}.png`, id);
+        put(`threenative/shadow/penumbra-lab/ID/${pose}.png`, id);
+        put(`unreal/shadow/penumbra-lab/L5-Low/${pose}.png`, frame(2));
+        put(`threenative/shadow/penumbra-lab/L5-Low/${pose}.png`, frame(4));
+      }
+      const rows = penumbraRows("shadow:penumbra-lab", ["L5-Low"], root);
+      expect(rows.length).toBe(scene.poses.length);
+      for (const row of rows) {
+        expect(row.matched).toBeGreaterThan(0);
+        // Twice the blur is about twice the width, the ratio the PRD-634 threshold (1.25) holds.
+        expect(row.ratio).toBeGreaterThan(1.6);
+        expect(row.ratio).toBeLessThan(2.4);
+      }
     });
     it("throws TN_UNREAL_LOOK_MISSING_CELL naming the Unreal frame of the level when it is absent", () => {
       const { root, put } = fixture();
