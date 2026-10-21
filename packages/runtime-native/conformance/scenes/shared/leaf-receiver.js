@@ -3,11 +3,11 @@ import { THREE, assertCondition, startVisualScene } from "./scene-support.js";
 import { assertVirtualShadowProof } from "./virtual-shadow.js";
 
 /**
- * PRD-651: a leaf receiver is not over-biased. A plate casts a straight shadow edge across a floor
- * and across a two-sided, alpha-tested card that lies on the floor. The light's normal bias is large,
- * so the floor's edge moves by it and the leaf card's edge stays where the plate puts it: the edge
- * jogs where the card starts. Both shadows run through `VirtualShadowNode`, the sun's shadow in the
- * templates.
+ * PRD-651: a Two Sided Foliage receiver is not over-biased. A plate casts a straight shadow edge across
+ * a floor and across a two-sided, alpha-tested card that lies on the floor and is marked
+ * `twoSidedFoliage`. The light's normal bias is large, so the floor's edge moves by it and the marked
+ * card's edge stays where the plate puts it: the edge jogs where the card starts. Both shadows run
+ * through `VirtualShadowNode`, the sun's shadow in the templates.
  */
 export function startScene(canvas, dimensions) {
   return startVisualScene(canvas, dimensions, "leaf-receiver", ({ renderer, scene, camera }) => {
@@ -22,11 +22,10 @@ export function startScene(canvas, dimensions) {
     );
     floor.rotation.x = -Math.PI / 2;
     floor.receiveShadow = true;
-    // The leaf: two-sided and cut by alpha, on the +z half, a hair above the floor.
-    const leaf = new THREE.Mesh(
-      new THREE.PlaneGeometry(8, 3),
-      new THREE.MeshStandardMaterial({ color: 0x3a7d44, roughness: 1, side: THREE.DoubleSide, alphaTest: 0.5 }),
-    );
+    // The leaf: two-sided, cut by alpha and marked Two Sided Foliage, on the +z half, a hair above the floor.
+    const leafMaterial = new THREE.MeshStandardMaterial({ color: 0x3a7d44, roughness: 1, side: THREE.DoubleSide, alphaTest: 0.5 });
+    leafMaterial.twoSidedFoliage = true;
+    const leaf = new THREE.Mesh(new THREE.PlaneGeometry(8, 3), leafMaterial);
     leaf.rotation.x = -Math.PI / 2;
     leaf.position.set(1.5, 0.01, 1.6);
     leaf.receiveShadow = true;
@@ -47,7 +46,7 @@ export function startScene(canvas, dimensions) {
     const node = new VirtualShadowNode(light, { clipExtents: [6, 18, 54], mapSize: 1024, marker: false });
     light.shadow.shadowNode = node;
     assertVirtualShadowProof({ renderer, light, node });
-    assertCondition(leaf.material.side === THREE.DoubleSide && leaf.material.alphaTest > 0, "the card must be a leaf receiver");
+    assertCondition(leaf.material.twoSidedFoliage === true, "the card must be a Two Sided Foliage receiver");
 
     scene.add(floor, leaf, plate, light, light.target, new THREE.AmbientLight(0xffffff, 0.15));
     return { floor, leaf, light, node, plate, detail: { normalBias: light.shadow.normalBias } };
