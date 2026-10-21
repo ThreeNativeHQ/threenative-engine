@@ -22,13 +22,13 @@ const selected = [
   "ci:typecheck",
 ];
 
-it("lists the 47 eligible HEAVY instances as 30 ci + 13 integration + 4 native", () => {
+it("lists the 48 eligible HEAVY instances as 31 ci + 13 integration + 4 native", () => {
   expect(ADMISSION_NAMESPACES).toEqual(["ci", "integration", "native"]);
-  expect(ADMISSION_INVENTORY).toHaveLength(47);
-  expect(here("ci")).toHaveLength(30);
+  expect(ADMISSION_INVENTORY).toHaveLength(48);
+  expect(here("ci")).toHaveLength(31);
   expect(here("integration")).toHaveLength(13);
   expect(here("native")).toHaveLength(4);
-  expect(new Set(ADMISSION_INVENTORY).size).toBe(47);
+  expect(new Set(ADMISSION_INVENTORY).size).toBe(48);
 });
 
 it("counts each matrix leg as its own instance", () => {
