@@ -3235,6 +3235,400 @@ void frustumCulling() {
     (void)inside; (void)behind; (void)aside;
 }
 
+// PRD-651: an alpha-tested caster casts its cut, as three's shadow pass does. A leaf card whose map is
+// transparent on one half shades half its footprint on the floor, not the whole card; a FrontSide card
+// facing the light casts nothing (three draws its back faces), and DoubleSide casts from both faces.
+void maskedShadow() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(64, 64);
+    Scene scene;
+    OrthographicCamera camera(-2, 2, 2, -2, 0.1, 20);
+    camera.position.set(0, 10, 0.001);
+    camera.lookAt(0, 0, 0);
+    camera.updateProjectionMatrix();
+    DirectionalLight light{Color(1, 1, 1), 3};
+    light.position.set(0.001, 10, 0);
+    light.setCastShadow(true);
+    light.shadow.camera->setLayerMask(double((1 << 0) | (1 << 2)));
+    scene.add(light);
+    auto floorMaterial = std::make_shared<Material>(MaterialType::Standard);
+    Mesh floor{makePlaneGeometry(4, 4), floorMaterial};
+    floor.rotation.set(-M_PI / 2, 0, 0);
+    floor.setReceiveShadow(true);
+    scene.add(floor);
+    // The card's left texel is transparent, its right opaque; it draws only on the light's layer 2,
+    // so the camera sees the floor under it.
+    auto map = std::make_shared<Texture>();
+    map->width = 2; map->height = 1;
+    map->data = {255, 255, 255, 0, 255, 255, 255, 255};
+    map->needsUpdate();
+    auto leaf = std::make_shared<Material>(MaterialType::Standard);
+    leaf->maps["map"] = map;
+    leaf->alphaTest = 0.5;
+    Mesh card{makePlaneGeometry(2, 2), leaf};
+    card.rotation.set(-M_PI / 2, 0, 0);  // faces the light
+    card.position.y = 1;
+    card.setCastShadow(true);
+    card.setLayer(2);
+    scene.add(card);
+    scene.updateMatrixWorld(true);
+    RenderDatabase database;
+    database.shadowMapEnabled = true;
+    // The fraction of the card's footprint (the centre 32 x 32 pixels) darker than half the lit floor.
+    const auto shadowed = [&] {
+        database.render(renderer, scene, camera);
+        std::vector<uint8_t> pixels;
+        bool read = false;
+        renderer.readPixels([&](GpuStatus status, std::vector<uint8_t> px) {
+            if (status == GpuStatus::Ok) pixels = std::move(px);
+            read = true;
+        });
+        for (int i = 0; i < 5000 && !read; ++i) {
+            renderer.poll();
+            events.drain();
+            if (!read) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        CHECK(pixels.size() == size_t{64} * 64 * 4);
+        const uint8_t lit = pixels[(size_t{2} * 64 + 2) * 4];  // a corner outside the footprint
+        CHECK(lit > 64);
+        int dark = 0;
+        for (int y = 18; y < 46; ++y)
+            for (int x = 18; x < 46; ++x) dark += pixels[(size_t(y) * 64 + x) * 4] < lit / 2;
+        return dark / double(28 * 28);
+    };
+    leaf->side = Side::Double;
+    const double cut = shadowed();
+    leaf->side = Side::Front;
+    const double frontFacingLight = shadowed();
+    leaf->alphaTest = 0;
+    leaf->shadowSide = Side::Front;  // material.shadowSide draws the front face that faces the light
+    const double frontShadowSide = shadowed();
+    leaf->shadowSide.reset();
+    leaf->side = Side::Double;
+    const double solid = shadowed();
+    std::printf("masked shadow: cut %.3f, front side facing the light %.3f, shadowSide front %.3f, solid %.3f\n", cut,
+                frontFacingLight, frontShadowSide, solid);
+    CHECK(frontShadowSide > 0.95);
+    CHECK(solid > 0.95);                   // the card without a cut shades its whole footprint
+    CHECK(std::abs(cut - 0.5) < 0.05);     // the cut card shades its opaque half
+    CHECK(frontFacingLight < 0.05);        // three's shadowSide: a FrontSide caster draws its back faces
+}
+
+// sourceRadiusShadowFilter on a lamp (PRD-650): a plate 2 m under a lamp 4 m above the floor throws an
+// edge whose penumbra is 2 x sourceRadius x (4 - 2) / 2 m wide on the floor. The edge's width, in pixels
+// whose shadowed-to-unshadowed ratio lies between 0.15 and 0.85, follows the radius for a point light's
+// cube and a spot light's map: three's PCF and a radius of 0 stay hard.
+void lampSourceRadius() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(96, 96);
+    OrthographicCamera camera(-3, 3, 3, -3, 0.1, 20);  // 16 pixels per metre
+    camera.position.set(0, 10, 0.001);
+    camera.lookAt(0, 0, 0);
+    camera.updateProjectionMatrix();
+    const auto edgeWidth = [&](Light& lamp, LightShadow& shadow, std::optional<std::array<double, 3>> filter) {
+        Scene scene;
+        lamp.position.set(0, 4, 0);
+        lamp.setCastShadow(true);
+        shadow.mapSize = {1024, 1024};
+        shadow.sourceRadiusFilter = filter;
+        scene.add(lamp);
+        Mesh floor{makePlaneGeometry(6, 6), std::make_shared<Material>(MaterialType::Standard)};
+        floor.rotation.set(-M_PI / 2, 0, 0);
+        floor.setReceiveShadow(true);
+        scene.add(floor);
+        // The plate covers x < 0 at 2 m, on layer 2 only, so the camera sees the floor under it.
+        shadow.camera->setLayerMask(double((1 << 0) | (1 << 2)));
+        Mesh plate{makeBoxGeometry(3, 0.05, 6), std::make_shared<Material>(MaterialType::Standard)};
+        plate.position.set(-1.5, 2, 0);
+        plate.setCastShadow(true);
+        plate.setLayer(2);
+        scene.add(plate);
+        scene.updateMatrixWorld(true);
+        RenderDatabase database;
+        database.shadowMapEnabled = true;
+        const auto row = [&] {
+            database.render(renderer, scene, camera);
+            std::vector<uint8_t> pixels;
+            bool read = false;
+            renderer.readPixels([&](GpuStatus status, std::vector<uint8_t> px) {
+                if (status == GpuStatus::Ok) pixels = std::move(px);
+                read = true;
+            });
+            for (int i = 0; i < 5000 && !read; ++i) {
+                renderer.poll();
+                events.drain();
+                if (!read) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+            CHECK(pixels.size() == size_t{96} * 96 * 4);
+            std::vector<double> red(96);
+            for (int x = 0; x < 96; ++x) red[x] = pixels[(size_t{48} * 96 + x) * 4];
+            return red;
+        };
+        const std::vector<double> shadowed = row();
+        plate.setCastShadow(false);
+        const std::vector<double> open = row();
+        int width = 0, dark = 0;
+        for (int x = 8; x < 88; ++x) {
+            const double ratio = shadowed[x] / std::max(open[x], 1.0);
+            width += ratio > 0.15 && ratio < 0.85;
+            dark += ratio <= 0.15;
+        }
+        CHECK(dark > 10);  // the plate shades the floor
+        scene.remove(lamp);
+        return width;
+    };
+    const std::array<double, 3> wide{0.5, 16, 16}, none{0, 16, 16};
+    PointLight point{Color(1, 1, 1), 60};
+    SpotLight spot{Color(1, 1, 1), 60};
+    const int pointPcf = edgeWidth(point, point.shadow, std::nullopt), pointHard = edgeWidth(point, point.shadow, none),
+              pointSoft = edgeWidth(point, point.shadow, wide);
+    const int spotPcf = edgeWidth(spot, spot.shadow, std::nullopt), spotHard = edgeWidth(spot, spot.shadow, none),
+              spotSoft = edgeWidth(spot, spot.shadow, wide);
+    std::printf("lamp source radius edge px: point pcf %d, r0 %d, r0.5 %d; spot pcf %d, r0 %d, r0.5 %d\n", pointPcf,
+                pointHard, pointSoft, spotPcf, spotHard, spotSoft);
+    // A 0.5 m radius: a 1 m penumbra, 16 pixels. A disk light's edge is a circular segment's area, whose
+    // 0.15-0.85 band is about 60% of it: 9.5 pixels, sampled here by 16 taps.
+    for (const int soft : {pointSoft, spotSoft}) CHECK(soft >= 6 && soft <= 13);
+    for (const int hard : {pointPcf, pointHard, spotPcf, spotHard}) CHECK(hard <= 3);
+}
+
+// A box standing on a floor slab under a point lamp shades the floor right behind its far foot. three's
+// shadowSide draws a front-sided caster's back faces, so there the stored depth is the box's back face
+// at the floor and the strip leaks light (cornell's tall box); the strip's darkest-to-brightest
+// shadowed-to-open ratio. material.shadowSide = FrontSide closes it without acne on the lit floor.
+// PRD-650: a still lamp keeps its map. Over 300 still frames neither lamp draws a caster; a caster
+// moving inside a lamp's range redraws it, one moving outside its range does not, and the kept map
+// still shadows the floor as a fresh one does.
+void lampCache() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(96, 96);
+    OrthographicCamera camera(-4, 4, 4, -4, 0.1, 20);
+    camera.position.set(0, 10, 0.001);
+    camera.lookAt(0, 0, 0);
+    camera.updateProjectionMatrix();
+    Scene scene;
+    PointLight lamp{Color(1, 1, 1), 40, 6};  // range 6 m: the shadow camera's far
+    lamp.position.set(-1.5, 2, 0);
+    lamp.setCastShadow(true);
+    scene.add(lamp);
+    SpotLight spot{Color(1, 1, 1), 40, 6, 0.9};
+    spot.position.set(1.5, 3, 0);
+    spot.target->position.set(1.5, 0, 0);
+    spot.setCastShadow(true);
+    scene.add(spot);
+    scene.add(*spot.target);
+    auto white = std::make_shared<Material>(MaterialType::Standard);
+    Mesh floor{makeBoxGeometry(8, 0.2, 8), white};
+    floor.position.y = -0.1;
+    floor.setReceiveShadow(true);
+    scene.add(floor);
+    Mesh near{makeBoxGeometry(0.6, 0.6, 0.6), white};
+    near.position.set(-1.5, 1, 0);
+    near.setCastShadow(true);
+    scene.add(near);
+    Mesh far{makeBoxGeometry(0.6, 0.6, 0.6), white};
+    far.position.set(30, 1, 0);  // 31 m from the lamp, 28.5 m from the spot: beyond both ranges
+    far.setCastShadow(true);
+    scene.add(far);
+    RenderDatabase database;
+    database.shadowMapEnabled = true;
+    const auto frame = [&] {
+        scene.updateMatrixWorld(true);
+        database.render(renderer, scene, camera);
+        return renderer.lastFrame().shadowDraws;
+    };
+    const auto pixels = [&] {
+        std::vector<uint8_t> out;
+        bool read = false;
+        renderer.readPixels([&](GpuStatus status, std::vector<uint8_t> px) {
+            if (status == GpuStatus::Ok) out = std::move(px);
+            read = true;
+        });
+        for (int i = 0; i < 5000 && !read; ++i) {
+            renderer.poll();
+            events.drain();
+            if (!read) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        CHECK(out.size() == size_t{96} * 96 * 4);
+        return out;
+    };
+    const uint64_t first = frame();
+    CHECK(first > 0);
+    const std::vector<uint8_t> fresh = pixels();
+    uint64_t still = 0;
+    for (int i = 0; i < 300; ++i) still += frame();
+    std::printf("lamp cache: first %llu, 300 still frames %llu\n", (unsigned long long)first, (unsigned long long)still);
+    CHECK(still == 0);
+    const std::vector<uint8_t> kept = pixels();
+    int differ = 0;
+    for (size_t k = 0; k < kept.size(); ++k) differ += std::abs(int(kept[k]) - int(fresh[k])) > 2;
+    std::printf("lamp cache: kept map differs on %d channels\n", differ);
+    CHECK(differ == 0);
+    far.position.x = 31;
+    const uint64_t outside = frame();
+    std::printf("lamp cache: caster moved outside range %llu\n", (unsigned long long)outside);
+    CHECK(outside == 0);
+    near.position.x = -1.2;
+    const uint64_t inside = frame();
+    std::printf("lamp cache: caster moved inside range %llu\n", (unsigned long long)inside);
+    CHECK(inside > 0);
+    CHECK(frame() == 0);
+}
+
+void contactShadowFoot() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(192, 192);
+    // 0.4 m across the box's far foot at x = 2: about 2 mm per pixel.
+    OrthographicCamera camera(-0.2, 0.2, 0.2, -0.2, 0.1, 20);
+    camera.position.set(2, 10, 0.001);
+    camera.lookAt(2, 0, 0);
+    camera.updateProjectionMatrix();
+    const auto strip = [&](std::optional<Side> side, double bias, double normalBias) -> std::array<double, 2> {
+        Scene scene;
+        PointLight lamp{Color(1, 1, 1), 60};
+        lamp.position.set(0, 3, 0);
+        lamp.setCastShadow(true);
+        lamp.shadow.bias = bias;
+        lamp.shadow.normalBias = normalBias;
+        lamp.shadow.camera->setLayerMask(double((1 << 0) | (1 << 2)));
+        scene.add(lamp);
+        auto white = std::make_shared<Material>(MaterialType::Standard);
+        white->shadowSide = side;
+        Mesh floor{makeBoxGeometry(6, 0.2, 6), white};
+        floor.position.y = -0.1;
+        floor.setCastShadow(true);
+        floor.setReceiveShadow(true);
+        scene.add(floor);
+        // The box covers x 1..2 at z -0.5..0.5, 2 m tall, on layer 2: the camera sees the floor at x > 2.
+        Mesh box{makeBoxGeometry(1, 2, 1), white};
+        box.position.set(1.5, 1, 0);
+        box.setCastShadow(true);
+        box.setLayer(2);
+        scene.add(box);
+        scene.updateMatrixWorld(true);
+        RenderDatabase database;
+        database.shadowMapEnabled = true;
+        const auto row = [&] {
+            database.render(renderer, scene, camera);
+            std::vector<uint8_t> pixels;
+            bool read = false;
+            renderer.readPixels([&](GpuStatus status, std::vector<uint8_t> px) {
+                if (status == GpuStatus::Ok) pixels = std::move(px);
+                read = true;
+            });
+            for (int i = 0; i < 5000 && !read; ++i) {
+                renderer.poll();
+                events.drain();
+                if (!read) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+            CHECK(pixels.size() == size_t{192} * 192 * 4);
+            std::vector<double> red(192);
+            for (int x = 0; x < 192; ++x) red[x] = pixels[(size_t{96} * 192 + x) * 4];
+            return red;
+        };
+        const std::vector<double> shadowed = row();
+        box.setCastShadow(false);
+        const std::vector<double> open = row();
+        lamp.setCastShadow(false);
+        const std::vector<double> free = row();
+        // Acne: the lit floor with no box shadow, against the floor with no shadow pass at all.
+        double acne = 1;
+        for (int x = 0; x < 192; ++x) acne = std::min(acne, open[x] / std::max(free[x], 1.0));
+        // Floor x 2.0 .. 2.2 m beyond the foot: pixels 97 .. 191 on one side of the centre, the side
+        // that is darker on average (the camera's x order is not assumed).
+        std::array<double, 2> brightest{}, mean{};
+        for (int i = 1; i <= 95; ++i)
+            for (int side = 0; side < 2; ++side) {
+                const int x = side == 0 ? 96 + i : 96 - i;
+                const double ratio = shadowed[x] / std::max(open[x], 1.0);
+                brightest[side] = std::max(brightest[side], ratio);
+                mean[side] += ratio / 95;
+            }
+        CHECK(*std::max_element(open.begin(), open.end()) > 32);
+        return std::array<double, 2>{mean[0] < mean[1] ? brightest[0] : brightest[1], acne};
+    };
+    const auto [backLeak, backKept] = strip(std::nullopt, 0, 0);
+    const auto [frontLeak, frontKept] = strip(Side::Front, 0, 0);
+    std::printf("contact foot: back faces leak %.3f, lit floor kept %.3f; shadowSide front leak %.3f, kept %.3f\n",
+                backLeak, backKept, frontLeak, frontKept);
+    CHECK(backLeak > 0.5);    // three's derived shadowSide: the far foot leaks
+    CHECK(frontLeak < 0.05);  // shadowSide = FrontSide, the faces Unreal draws: the foot stays dark
+    CHECK(frontKept > 0.95);  // and the lit floor does not shadow itself
+}
+
+// A point light's cube shadow: five casters around and below the lamp each shade the floor where its
+// shadow lands, through four side faces and the bottom one, and the floor between them stays lit.
+void pointShadowCubeFaces() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(96, 96);
+    Scene scene;
+    OrthographicCamera camera(-3, 3, 3, -3, 0.1, 20);
+    camera.position.set(0, 10, 0.001);
+    camera.lookAt(0, 0, 0);
+    camera.updateProjectionMatrix();
+    PointLight lamp{Color(1, 1, 1), 40};
+    lamp.position.set(0, 2, 0);
+    lamp.setCastShadow(true);
+    lamp.shadow.camera->setLayerMask(double((1 << 0) | (1 << 2)));
+    scene.add(lamp);
+    Mesh floor{makePlaneGeometry(6, 6), std::make_shared<Material>(MaterialType::Standard)};
+    floor.rotation.set(-M_PI / 2, 0, 0);
+    floor.setReceiveShadow(true);
+    scene.add(floor);
+    // Casters on layer 2 only: the camera sees the floor under them. A box at (x, 0.5, z) throws its
+    // shadow centre to (x, z) x 2 / 1.5 on the floor.
+    const auto box = makeBoxGeometry(0.4, 0.4, 0.4);
+    std::vector<std::unique_ptr<Mesh>> casters;
+    const double sites[5][2] = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}, {0, 0}};
+    for (const auto& site : sites) {
+        auto& caster = casters.emplace_back(std::make_unique<Mesh>(box, std::make_shared<Material>(MaterialType::Standard)));
+        caster->position.set(site[0], site[0] == 0 && site[1] == 0 ? 1.0 : 0.5, site[1]);
+        caster->setCastShadow(true);
+        caster->setLayer(2);
+        scene.add(*caster);
+    }
+    scene.updateMatrixWorld(true);
+    RenderDatabase database;
+    database.shadowMapEnabled = true;
+    database.render(renderer, scene, camera);
+    std::vector<uint8_t> pixels;
+    bool read = false;
+    renderer.readPixels([&](GpuStatus status, std::vector<uint8_t> px) {
+        if (status == GpuStatus::Ok) pixels = std::move(px);
+        read = true;
+    });
+    for (int i = 0; i < 5000 && !read; ++i) {
+        renderer.poll();
+        events.drain();
+        if (!read) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    CHECK(pixels.size() == size_t{96} * 96 * 4);
+    // 16 pixels per metre; the floor point (x, z) is the pixel 48 + 16 x, 48 + 16 z up to the camera's
+    // axis order, and the five sites are symmetric under it.
+    const auto red = [&](double x, double z) { return pixels[(size_t(48 + 16 * z) * 96 + size_t(48 + 16 * x)) * 4]; };
+    const double reach = 2.0 / 1.5;
+    const unsigned lit = std::min({red(reach, reach), red(-reach, reach), red(reach, -reach), red(-reach, -reach)});
+    std::printf("point shadow: lit %u, +x %u, -x %u, +z %u, -z %u, below %u\n", lit, red(reach, 0), red(-reach, 0),
+                red(0, reach), red(0, -reach), red(0, 0));
+    CHECK(lit > 64);
+    for (const auto& site : sites) CHECK(red(site[0] * reach, site[1] * reach) < lit / 2);
+}
+
 // three.js projectObject frustum-culls shadow casters against each shadow camera frustum.
 void shadowCasterFrustumCulling() {
     Scene scene; PerspectiveCamera camera; LightState lights; RenderDatabase database;
@@ -4075,7 +4469,7 @@ TN_TEST_MAIN({"gpu_joint_production", gpuJointProduction}, {"multi_material_grou
              {"material_unsupported", materialUnsupported}, {"shader_invalid", shaderInvalid}, {"time_uniform", timeUniform}, {"gpu_mipmaps", gpuMipmaps}, {"updates", updates},
              {"multi_camera_layers", multiCameraLayers}, {"render_callback", renderCallback}, {"instanced", instanced},
              {"batched_vs_unbatched", batchedVsUnbatched}, {"skinned_crowd", skinnedCrowdPixels}, {"skinned_decline_cadence", skinnedDeclineCadence}, {"skinned_normalized_weights", skinnedNormalizedWeights}, {"normal_map_tilt", normalMapTilt}, {"unsupported_map_slot", unsupportedMapSlot}, {"converted_copies_swept", convertedCopiesAreSwept}, {"gpu_timer_covers_offscreen", gpuTimerCoversOffscreen}, {"gpu_timer_covers_shadows", gpuTimerCoversShadows}, {"overlay_over_frame", overlayOverFrame}, {"gpu_timer_is_opt_in", gpuTimerIsOptIn}, {"msaa_edges", msaaEdges}, {"shadow_camera_layers", shadowCameraLayers}, {"flat_shading_needs_no_normals", flatShadingNeedsNoNormals}, {"map_sampleability_changes", mapSampleabilityChanges}, {"batch_caches_stay_put", batchCachesStayPut}, {"frustum_culling", frustumCulling},
-             {"shadow_caster_frustum_culling", shadowCasterFrustumCulling}, {"shadow_lights_follow_hierarchy", shadowLightsFollowHierarchy}, {"records_survive_siblings", recordsSurviveSiblings}, {"steady_frame_hashes_no_record", steadyFrameHashesNoRecord}, {"nested_record_cache", nestedRecordCache}, {"frustum_record_retention", frustumRecordRetention}, {"world_sphere_measured_once", worldSphereMeasuredOnce}, {"reflection_reuse", reflectionReuse})
+             {"shadow_caster_frustum_culling", shadowCasterFrustumCulling}, {"masked_shadow", maskedShadow}, {"point_shadow_cube_faces", pointShadowCubeFaces}, {"lamp_source_radius", lampSourceRadius}, {"contact_shadow_foot", contactShadowFoot}, {"lamp_cache", lampCache}, {"shadow_lights_follow_hierarchy", shadowLightsFollowHierarchy}, {"records_survive_siblings", recordsSurviveSiblings}, {"steady_frame_hashes_no_record", steadyFrameHashesNoRecord}, {"nested_record_cache", nestedRecordCache}, {"frustum_record_retention", frustumRecordRetention}, {"world_sphere_measured_once", worldSphereMeasuredOnce}, {"reflection_reuse", reflectionReuse})
 
 
 

@@ -11,8 +11,9 @@
 //     because a room's opening is a small solid angle) and gathers, for the six axis directions, the
 //     cosine-weighted radiance that arrives: an ambient cube, E / pi per face, the radiance a white
 //     Lambert surface returns. A ray that misses sees the sky; one that hits a surface sees what that
-//     surface returns: its albedo times the sun it receives, plus its own emission, plus (from L7) the
-//     light the previous pass cached at that point. Each further bounce re-gathers the same rays.
+//     surface returns: its albedo times the sun and the local lights it receives, plus its own emission,
+//     plus (from L7) the light the previous pass cached at that point. Each further bounce re-gathers the
+//     same rays. A scene without a sky has a black one: rays that miss carry nothing (a box lit by one lamp).
 //   - Probes know which neighbours they can see (one ray per link) and whether they sit inside a solid.
 //     The cache is read through those links, so a surface never takes light from a probe on the other
 //     side of a wall (Lumen weighs probes by what they see for the same reason). The final grid is
@@ -27,6 +28,7 @@ import {
   Box3,
   type Color,
   Data3DTexture,
+  DoubleSide,
   HalfFloatType,
   type Intersection,
   LinearFilter,
@@ -35,6 +37,7 @@ import {
   type Object3D,
   type PerspectiveCamera,
   RGBAFormat,
+  type Side,
   Vector3,
 } from "three";
 import {
@@ -83,7 +86,17 @@ export interface IGiOptions {
   /** Passes that carry surface light back into the cache. 0 is the sky alone (Unreal L2 to L6). */
   readonly bounces: number;
   /** The sun: its colour (tint and air transmittance), intensity, and unit direction toward it. */
-  readonly sun: { readonly color: Color; readonly intensity: number; readonly direction: Vector3 };
+  readonly sun?: { readonly color: Color; readonly intensity: number; readonly direction: Vector3 };
+  /**
+   * Point lights, in three's units: `intensity` is a `PointLight.intensity` (candela), `distance` its cutoff
+   * (0 = none). A surface returns albedo x colour x (intensity / pi) / d^2 x window x cos x visibility, as the sun.
+   */
+  readonly lights?: readonly {
+    readonly position: Vector3;
+    readonly color: Color;
+    readonly intensity: number;
+    readonly distance: number;
+  }[];
   /**
    * Unreal without global illumination (layers L2 to L6) shadows its movable sky light with the scene's
    * distance fields, up to the sky light's occlusion distance (1000 cm,
@@ -100,12 +113,32 @@ export interface IGiReport {
   readonly enclosed: number;
   readonly rays: number;
   readonly shadowRays: number;
+  /** Final-grid texels whose centre lies inside a solid; the reader skips them. */
+  readonly solid: number;
   readonly bounces: number;
   readonly milliseconds: number;
 }
 
-const CELL = 1;
-const MAX_POINTS = 24000;
+const CELL = 0.5;
+/** How far past the rest of the scene the grid covers a ground plane that dwarfs it (`sceneBounds`). */
+const GROUND_MARGIN = 2;
+/**
+ * Passes of `smooth` over the baked probes. Wall roughness on the sunlit room (mean |read - its 1 m box mean| / mean):
+ * 0.060 with none, 0.029 / 0.017 / 0.011 / 0.0085 after 1 to 4; the 1 m grid had 0.011. Area means move under 1%.
+ */
+const SMOOTH_PASSES = 4;
+/**
+ * The filter's edge stop, in natural-log units of a neighbour's luminance over the probe's: a neighbour 2x off weighs
+ * 0.61, 4x off 0.14. Probe noise (about 30%) blends; a window probe that sees the sun patch does not. Plain, the filter
+ * lit a halo round the sunlit room's window (sill 2.45x the path trace at sun 15; 1.58x with the stop).
+ */
+const SMOOTH_EDGE = 0.7;
+/**
+ * The most coarse probes a bake takes, counted as the grid holds them (`nx * ny * nz`, padding included). 8820 is the
+ * reference scene's 40 m ground at the old 1 m cell. A budget on the volume alone let the 0.5 m cell bake 33327
+ * probes there, and L9 took 344 s to start instead of 112 s.
+ */
+const MAX_POINTS = 8820;
 /** Rays every probe shoots, and the extra rays a probe that is mostly enclosed shoots. */
 /** An element that exists by construction (a fixed-length array indexed by a loop over its length). */
 const nth = <T>(list: readonly T[], index: number): T => list[index] as T;
@@ -152,10 +185,46 @@ interface IField {
   readonly sky?: Float32Array;
 }
 
-function gridOver(root: Object3D): IGrid {
-  const bounds = new Box3().setFromObject(root);
+/**
+ * The bounds the probes cover: the scene's, less a ground plane that dwarfs the rest. The sunlit room's 40 m ground
+ * stretched the grid to 1 m probes, 0.9 m under its ceiling: each bounce read the light nearer the sun patch and the
+ * walls came out 1.4 to 1.6 times the path trace.
+ */
+function sceneBounds(root: Object3D): Box3 {
+  const boxes: Box3[] = [];
+  root.traverse((object) => {
+    if ((object as Mesh).isMesh) boxes.push(new Box3().setFromObject(object));
+  });
+  const area = (box: Box3) => (box.max.x - box.min.x) * (box.max.z - box.min.z);
+  const widest = boxes.reduce<Box3 | undefined>(
+    (w, box) => (w === undefined || area(box) > area(w) ? box : w),
+    undefined,
+  );
+  const rest = new Box3();
+  for (const box of boxes) if (box !== widest) rest.union(box);
+  // A 40 m floor under a 12 m roof (11 times its area) is a covered plaza, all of it read; the room's ground is 29 times.
+  if (widest === undefined || rest.isEmpty() || area(widest) < 20 * area(rest))
+    return new Box3().setFromObject(root);
+  // The ground next to the walls stays in the grid; past it a read takes probes 2 m out, in the open.
+  return rest
+    .expandByVector(new Vector3(GROUND_MARGIN, 0, GROUND_MARGIN))
+    .union(
+      new Box3(
+        new Vector3(rest.min.x, widest.min.y, rest.min.z),
+        new Vector3(rest.max.x, widest.max.y, rest.max.z),
+      ),
+    );
+}
+
+export function gridOver(root: Object3D): IGrid {
+  const bounds = sceneBounds(root);
   const size = bounds.getSize(new Vector3());
-  const cell = Math.max(CELL, Math.cbrt((size.x * size.y * size.z) / MAX_POINTS));
+  const count = (cell: number) =>
+    (Math.ceil(size.x / cell) + 2) *
+    (Math.ceil(size.y / cell) + 1) *
+    (Math.ceil(size.z / cell) + 2);
+  let cell = Math.max(CELL, Math.cbrt((size.x * size.y * size.z) / MAX_POINTS));
+  while (count(cell) > MAX_POINTS) cell *= 1.01;
   return {
     origin: new Vector3(bounds.min.x - cell, bounds.min.y, bounds.min.z - cell),
     cell,
@@ -237,9 +306,12 @@ const cornerWeight = new Float64Array(8);
 /**
  * The probes around `point` and their weights, written to `cornerProbe` / `cornerWeight`: the usual
  * trilinear weights, zero for a probe that sits inside a solid and for one the strongest valid probe
- * cannot reach along clear segments (a wall between them), renormalised.
+ * cannot reach along clear segments (a wall between them), renormalised. With `sees`, the strongest probe must also
+ * be visible from the point where a wall cuts the cell: a texel 0.15 m under a 0.2 m roof otherwise started from the
+ * probe above the roof (weight 0.75 against 0.25), read the sky (share 0.46 against 0.01 a row lower) and lit a
+ * band along every ceiling of the sunlit room.
  */
-function weightsAt(field: IField, point: Vector3): void {
+function weightsAt(field: IField, point: Vector3, sees?: (probe: number) => boolean): void {
   const { grid } = field;
   const dims = [grid.nx, grid.ny, grid.nz];
   const f = [
@@ -256,12 +328,22 @@ function weightsAt(field: IField, point: Vector3): void {
     coordinate(corner, 0) + grid.nx * (coordinate(corner, 1) + grid.ny * coordinate(corner, 2));
   let best = -1;
   let bestWeight = -1;
+  let cut = false;
   for (let corner = 0; corner < 8; corner += 1) {
     let w = 1;
     for (let a = 0; a < 3; a += 1) w *= (corner >> a) & 1 ? (t[a] ?? 0) : 1 - (t[a] ?? 0);
     cornerProbe[corner] = probeOf(corner);
     cornerWeight[corner] = w;
+    if (field.valid[probeOf(corner)] !== 1) cut = true;
+    for (let a = 0; a < 3; a += 1)
+      if (!((corner >> a) & 1) && field.links[probeOf(corner) * 3 + a] !== 1) cut = true;
     if (field.valid[probeOf(corner)] === 1 && w > bestWeight) [best, bestWeight] = [corner, w];
+  }
+  if (cut && sees !== undefined && best >= 0 && !sees(probeOf(best))) {
+    const order = [0, 1, 2, 3, 4, 5, 6, 7]
+      .filter((c) => c !== best && field.valid[probeOf(c)] === 1)
+      .sort((a, b) => (cornerWeight[b] ?? 0) - (cornerWeight[a] ?? 0));
+    best = order.find((c) => sees(probeOf(c))) ?? best;
   }
   // Every probe around is inside a solid: nothing to choose between, keep the plain weights.
   if (best < 0) return;
@@ -280,6 +362,16 @@ function weightsAt(field: IField, point: Vector3): void {
   let sum = 0;
   for (let corner = 0; corner < 8; corner += 1) {
     if (corner !== best && !reaches(corner)) cornerWeight[corner] = 0;
+    // Every other probe it blends must be in sight too: under the sunlit room's window, a texel below the sill took the
+    // probe 5 cm over the sun-lit sill top, round the sill through the opening, and read 3.7x the path trace.
+    if (
+      cut &&
+      sees !== undefined &&
+      corner !== best &&
+      (cornerWeight[corner] ?? 0) > 0 &&
+      !sees(probeOf(corner))
+    )
+      cornerWeight[corner] = 0;
     sum += cornerWeight[corner] ?? 0;
   }
   if (sum <= 1e-9) {
@@ -310,8 +402,66 @@ function readField(field: IField, point: Vector3, normal: Vector3, out: number[]
   }
 }
 
+/**
+ * One pass of a spatial filter over the probes, as Lumen filters its probes: each face averages with the same face of
+ * the six neighbours it links to (a clear segment, neither inside a solid), the probe itself counted twice. At 0.5 m
+ * probes and 96 to 240 rays each, the ray noise read as half-metre blotches on a flat wall (judge round 10).
+ */
+function smooth(field: IField): Float32Array {
+  const { grid, values, links, valid } = field;
+  const out = new Float32Array(values.length);
+  const stride = [1, grid.nx, grid.nx * grid.ny];
+  const dims = [grid.nx, grid.ny, grid.nz];
+  const luminance = (probe: number, face: number) => {
+    const o = (probe * 6 + face) * 3;
+    return (
+      0.2126 * (values[o] ?? 0) +
+      0.7152 * (values[o + 1] ?? 0) +
+      0.0722 * (values[o + 2] ?? 0) +
+      1e-6
+    );
+  };
+  const total = new Float64Array(6);
+  for (let probe = 0; probe < valid.length; probe += 1) {
+    const base = probe * 18;
+    if (valid[probe] !== 1) {
+      out.set(values.subarray(base, base + 18), base);
+      continue;
+    }
+    total.fill(2);
+    for (let j = 0; j < 18; j += 1) out[base + j] = 2 * (values[base + j] ?? 0);
+    const at = [
+      probe % grid.nx,
+      Math.floor(probe / grid.nx) % grid.ny,
+      Math.floor(probe / (grid.nx * grid.ny)),
+    ];
+    for (let a = 0; a < 3; a += 1)
+      for (const step of [-1, 1]) {
+        const to = (at[a] ?? 0) + step;
+        if (to < 0 || to >= (dims[a] ?? 0)) continue;
+        const other = probe + step * (stride[a] ?? 0);
+        if (valid[other] !== 1 || links[Math.min(probe, other) * 3 + a] !== 1) continue;
+        for (let f = 0; f < 6; f += 1) {
+          // Edge-stopping: a neighbour that reads far brighter or darker is a different light, not noise.
+          const ratio = Math.log(luminance(other, f) / luminance(probe, f)) / SMOOTH_EDGE;
+          const w = Math.exp(-0.5 * ratio * ratio);
+          total[f] = (total[f] ?? 0) + w;
+          for (let c = 0; c < 3; c += 1)
+            out[base + f * 3 + c] =
+              (out[base + f * 3 + c] ?? 0) + w * (values[other * 18 + f * 3 + c] ?? 0);
+        }
+      }
+    for (let j = 0; j < 18; j += 1)
+      out[base + j] = (out[base + j] ?? 0) / (total[Math.floor(j / 3)] ?? 1);
+  }
+  return out;
+}
+
 /** The field at twice the resolution, every texel read across walls from the coarse probes. */
-function resample(field: IField): { grid: IGrid; values: Float32Array; sky: Float32Array } {
+function resample(
+  field: IField,
+  sees?: (point: Vector3, probe: number) => boolean,
+): { grid: IGrid; values: Float32Array; sky: Float32Array } {
   const { grid } = field;
   const fine: IGrid = {
     origin: grid.origin,
@@ -334,7 +484,7 @@ function resample(field: IField): { grid: IGrid; values: Float32Array; sky: Floa
       fine.origin.y + (y + 0.5) * fine.cell,
       fine.origin.z + (z + 0.5) * fine.cell,
     );
-    weightsAt(field, point);
+    weightsAt(field, point, sees === undefined ? undefined : (probe) => sees(point, probe));
     for (let i = 0; i < 8; i += 1) {
       const w = cornerWeight[i] ?? 0;
       if (w === 0) continue;
@@ -356,15 +506,20 @@ function resample(field: IField): { grid: IGrid; values: Float32Array; sky: Floa
  * The reader blends texels itself and drops the ones a wall separates, because a hardware blend across a wall
  * thinner than a texel (the 0.2 m roof) mixes the lit outside into the room. Most links lie inside open space
  * where the coarse probes already say so; only the ones near a blocked or solid probe get a ray.
+ * A texel whose centre lies inside a solid (most of six axis rays leave through a back face, the coarse bake's own
+ * test) is flagged: its value is an interpolation through the solid, and a floor beside a box that is not aligned
+ * with the grid read it as its nearest texel, a hard-edged bright wedge along the box's foot.
  */
 function linkMasks(
   field: IField,
   fine: IGrid,
   ctx: IRayContext,
   root: Object3D,
-): { masks: Uint8Array; rays: number } {
+): { masks: Uint8Array; solid: Uint8Array; rays: number } {
   const { grid } = field;
   const masks = new Uint8Array(fine.nx * fine.ny * fine.nz);
+  const solid = new Uint8Array(masks.length);
+  const faceNormal = new Vector3();
   const dims = [grid.nx, grid.ny, grid.nz];
   const stride = [1, grid.nx, grid.nx * grid.ny];
   const origin = new Vector3();
@@ -396,6 +551,49 @@ function linkMasks(
     }
     return false;
   };
+  const centre = (index: number) =>
+    [
+      fine.origin.x + ((index % fine.nx) + 0.5) * fine.cell,
+      fine.origin.y + ((Math.floor(index / fine.nx) % fine.ny) + 0.5) * fine.cell,
+      fine.origin.z + (Math.floor(index / (fine.nx * fine.ny)) + 0.5) * fine.cell,
+    ] as const;
+  // The ray query honours each material's side, so a single-sided solid is invisible from inside it: the solid
+  // test sees both sides for its own rays, and every material gets its side back before the link rays.
+  const sides = new Map<{ side: Side }, Side>();
+  root.traverse((object) => {
+    const material = (object as Mesh).material;
+    for (const m of Array.isArray(material) ? material : material === undefined ? [] : [material])
+      sides.set(m, m.side);
+  });
+  for (const m of sides.keys()) m.side = DoubleSide;
+  try {
+    for (let index = 0; index < masks.length; index += 1) {
+      const at = centre(index);
+      if (unsure(...at)) {
+        let backfaces = 0;
+        for (let a = 0; a < 6; a += 1) {
+          rays += 1;
+          origin.set(at[0], at[1], at[2]);
+          const along = axes[a % 3] as readonly [number, number, number];
+          const sign = a < 3 ? 1 : -1;
+          direction.set(along[0] * sign, along[1] * sign, along[2] * sign);
+          const hit = ctx.raycast({
+            origin,
+            direction,
+            far: Number.POSITIVE_INFINITY,
+            targets: root,
+          });
+          const face = hit?.face?.normal;
+          if (hit === undefined || face === undefined || face === null) continue;
+          faceNormal.copy(face).transformDirection(hit.object.matrixWorld);
+          if (faceNormal.dot(direction) > 0) backfaces += 1;
+        }
+        if (backfaces > 6 * SOLID_SHARE) solid[index] = 1;
+      }
+    }
+  } finally {
+    for (const [m, side] of sides) m.side = side;
+  }
   for (let index = 0; index < masks.length; index += 1) {
     const [x, y, z] = [
       index % fine.nx,
@@ -425,7 +623,7 @@ function linkMasks(
     }
     masks[index] = mask;
   }
-  return { masks, rays };
+  return { masks, solid, rays };
 }
 
 const halfView = new DataView(new ArrayBuffer(4));
@@ -440,7 +638,10 @@ function toHalf(value: number): number {
   return sign | (exponent << 10) | ((bits >>> 13) & 0x3ff);
 }
 
-/** Sky visibility is stored in 6 bits next to the 3-bit link mask: alpha = mask + 8 x round(63 x visibility). */
+/**
+ * Sky visibility is stored in 6 bits next to the 3-bit link mask, and the solid flag above them:
+ * alpha = mask + 8 x round(63 x visibility) + 512 x solid (an integer below 2048, exact in a half float).
+ */
 const SKY_STEPS = 63;
 
 function volume(
@@ -448,6 +649,7 @@ function volume(
   grid: IGrid,
   masks: Uint8Array,
   sky: Float32Array,
+  solid: Uint8Array,
 ): Data3DTexture {
   const slices = grid.nz * 6;
   const texels = new Uint16Array(grid.nx * grid.ny * slices * 4);
@@ -462,7 +664,9 @@ function volume(
       for (let c = 0; c < 3; c += 1)
         texels[o + c] = toHalf(values[(probe * 6 + face) * 3 + c] ?? 0);
       texels[o + 3] = toHalf(
-        (masks[probe] ?? 0) + 8 * Math.round(SKY_STEPS * Math.min(1, sky[probe * 6 + face] ?? 0)),
+        (masks[probe] ?? 0) +
+          8 * Math.round(SKY_STEPS * Math.min(1, sky[probe * 6 + face] ?? 0)) +
+          512 * (solid[probe] ?? 0),
       );
     }
   }
@@ -481,8 +685,14 @@ function volume(
  * read point are blended here (not by the hardware) with the weight of a texel set to zero when a wall cuts the way
  * to it from the nearest texel, the walk `weightsAt` does at bake time, on the links `linkMasks` stored in alpha.
  */
-function irradianceAt(values: Float32Array, grid: IGrid, masks: Uint8Array, sky: Float32Array) {
-  const cache = volume(values, grid, masks, sky);
+function irradianceAt(
+  values: Float32Array,
+  grid: IGrid,
+  masks: Uint8Array,
+  sky: Float32Array,
+  solid: Uint8Array,
+) {
+  const cache = volume(values, grid, masks, sky, solid);
   const dims = [grid.nx, grid.ny, grid.nz] as const;
   return (
     position: Node<"vec3">,
@@ -508,7 +718,6 @@ function irradianceAt(values: Float32Array, grid: IGrid, masks: Uint8Array, sky:
     ];
     const lower = [ax.floor(), ay.floor(), az.floor()];
     const fraction = [ax.sub(nth(lower, 0)), ay.sub(nth(lower, 1)), az.sub(nth(lower, 2))];
-    const nearest = fraction.map((f) => f.greaterThan(0.5).select(float(1), float(0)));
     const squares = [n.x.mul(n.x), n.y.mul(n.y), n.z.mul(n.z)];
     const faceIndex = [
       n.x.lessThan(0).select(float(1), float(0)),
@@ -525,7 +734,12 @@ function irradianceAt(values: Float32Array, grid: IGrid, masks: Uint8Array, sky:
       r.z.lessThan(0).select(float(5), float(4)),
     ];
 
-    type Taps = { colour: Node<"vec3">; mask: Node<"float">; sky: Node<"float"> };
+    type Taps = {
+      colour: Node<"vec3">;
+      mask: Node<"float">;
+      sky: Node<"float">;
+      solid: Node<"float">;
+    };
     const taps = new Map<number, Taps>();
     const tap = (corner: number): Taps => {
       const known = taps.get(corner);
@@ -537,6 +751,7 @@ function irradianceAt(values: Float32Array, grid: IGrid, masks: Uint8Array, sky:
       const v = (ty as Node<"float">).add(0.5).div(grid.ny);
       let colour: Node<"vec3"> | undefined;
       let mask: Node<"float"> | undefined;
+      let solidFlag: Node<"float"> | undefined;
       let visible: Node<"float"> | undefined;
       for (let axis = 0; axis < 3; axis += 1) {
         const w = nth(faceIndex, axis)
@@ -547,9 +762,12 @@ function irradianceAt(values: Float32Array, grid: IGrid, masks: Uint8Array, sky:
         const texel = volumeNode.sample(vec3(u, v, w));
         const weighted = texel.rgb.mul(nth(squares, axis));
         colour = colour === undefined ? weighted : colour.add(weighted);
-        // alpha = link mask + 8 x sky steps (see `volume`).
-        const steps = texel.a.add(0.25).div(8).floor();
-        mask ??= texel.a.sub(steps.mul(8));
+        // alpha = link mask + 8 x sky steps + 512 x solid (see `volume`).
+        const inside = texel.a.add(0.25).div(512).floor();
+        const rest = texel.a.sub(inside.mul(512));
+        const steps = rest.add(0.25).div(8).floor();
+        solidFlag ??= inside;
+        mask ??= rest.sub(steps.mul(8));
         const along =
           reflection === undefined
             ? texel
@@ -564,7 +782,8 @@ function irradianceAt(values: Float32Array, grid: IGrid, masks: Uint8Array, sky:
                     .div(grid.nz * 6),
                 ),
               );
-        const shareSteps = along.a.add(0.25).div(8).floor();
+        const alongRest = along.a.sub(along.a.add(0.25).div(512).floor().mul(512));
+        const shareSteps = alongRest.add(0.25).div(8).floor();
         const share = shareSteps.div(SKY_STEPS).mul(nth(squaresR, axis));
         visible = visible === undefined ? share : visible.add(share);
       }
@@ -572,55 +791,77 @@ function irradianceAt(values: Float32Array, grid: IGrid, masks: Uint8Array, sky:
         colour: colour as Node<"vec3">,
         mask: mask as Node<"float">,
         sky: visible as Node<"float">,
+        solid: solidFlag as Node<"float">,
       };
       taps.set(corner, result);
       return result;
     };
-    /** The mask of the corner whose bits are fixed numbers or, for the nearest corner's bits, a 0/1 node. */
-    const maskAt = (
-      bits: readonly (number | Node<"float">)[],
-      axis = 0,
-      corner = 0,
-    ): Node<"float"> => {
-      if (axis === 3) return tap(corner).mask;
-      const bit = nth(bits, axis);
-      if (typeof bit === "number") return maskAt(bits, axis + 1, corner | (bit << axis));
-      return maskAt(bits, axis + 1, corner)
-        .mul(float(1).sub(bit))
-        .add(maskAt(bits, axis + 1, corner | (1 << axis)).mul(bit));
-    };
-    /** 1 when the link along `axis` from a texel with this mask is open. */
-    const open = (mask: Node<"float">, axis: number): Node<"float"> => {
-      const whole = mask
-        .add(0.25)
+    /** 1 when the link along `axis` from texel `corner` (its lower end) is open; each read once. */
+    const links = new Map<number, Node<"float">>();
+    const link = (corner: number, axis: number): Node<"float"> => {
+      const known = links.get(corner * 3 + axis);
+      if (known !== undefined) return known;
+      const whole = tap(corner)
+        .mask.add(0.25)
         .div(2 ** axis)
         .floor();
-      return whole.sub(whole.div(2).floor().mul(2)).lessThan(0.5).select(float(1), float(0));
+      const open = whole.sub(whole.div(2).floor().mul(2)).lessThan(0.5).select(float(1), float(0));
+      links.set(corner * 3 + axis, open);
+      return open;
     };
+    /** Trilinear weight of a corner; a solid texel holds an interpolation through the solid, so next to none. */
+    const weightOf = (corner: number): Node<"float"> =>
+      [0, 1, 2].reduce<Node<"float">>(
+        (w, a) => w.mul((corner >> a) & 1 ? nth(fraction, a) : float(1).sub(nth(fraction, a))),
+        float(1).sub(tap(corner).solid.mul(0.999)),
+      );
 
+    // Every texel starts a walk, the one `weightsAt` takes at bake time from its strongest probe: a corner counts when
+    // the links from the start to it, axis by axis, are open. The walks blend by the start's weight to the fourth
+    // power, so the read stays continuous where the strongest texel changes: one start alone left a hard seam on an
+    // open floor wherever a wall cut the link between the two texels either side of a cell's middle.
     let sum: Node<"vec3"> | undefined;
-    let total: Node<"float"> | undefined;
     let skySum: Node<"float"> | undefined;
-    for (let corner = 0; corner < 8; corner += 1) {
-      let weight: Node<"float"> = float(1);
-      for (let a = 0; a < 3; a += 1) {
-        const c = (corner >> a) & 1;
-        weight = weight.mul(c ? nth(fraction, a) : float(1).sub(nth(fraction, a)));
-        // The step along axis a from the nearest texel: earlier axes already moved to this corner, later ones not yet.
-        const bits = [0, 1, 2].map((k) =>
-          k < a ? (corner >> k) & 1 : k === a ? 0 : nth(nearest, k),
-        );
-        const step = open(maskAt(bits), a);
-        // Differs from the nearest texel along a: nearest bit != c. A texel that does not differ takes no step.
-        const differs = c ? float(1).sub(nth(nearest, a)) : nth(nearest, a);
-        weight = weight.mul(float(1).sub(differs).add(differs.mul(step)));
+    let total: Node<"float"> | undefined;
+    for (let start = 0; start < 8; start += 1) {
+      let walkSum: Node<"vec3"> | undefined;
+      let walkSky: Node<"float"> | undefined;
+      let walkTotal: Node<"float"> | undefined;
+      for (let corner = 0; corner < 8; corner += 1) {
+        let weight = weightOf(corner);
+        for (let a = 0; a < 3; a += 1) {
+          if (((corner >> a) & 1) === ((start >> a) & 1)) continue;
+          // The step along a: earlier axes already moved to this corner, later ones not yet; the link is the lower texel's.
+          const lower = [0, 1, 2].reduce(
+            (index, k) =>
+              index | ((k < a ? (corner >> k) & 1 : k === a ? 0 : (start >> k) & 1) << k),
+            0,
+          );
+          weight = weight.mul(link(lower, a));
+        }
+        const t = tap(corner);
+        walkSum = walkSum === undefined ? t.colour.mul(weight) : walkSum.add(t.colour.mul(weight));
+        walkSky = walkSky === undefined ? t.sky.mul(weight) : walkSky.add(t.sky.mul(weight));
+        walkTotal = walkTotal === undefined ? weight : walkTotal.add(weight);
       }
-      const t = tap(corner);
-      sum = sum === undefined ? t.colour.mul(weight) : sum.add(t.colour.mul(weight));
-      skySum = skySum === undefined ? t.sky.mul(weight) : skySum.add(t.sky.mul(weight));
-      total = total === undefined ? weight : total.add(weight);
+      const own = weightOf(start);
+      const share = own
+        .mul(own)
+        .mul(own)
+        .mul(own)
+        .div(max(walkTotal as Node<"float">, 1e-20));
+      sum =
+        sum === undefined
+          ? (walkSum as Node<"vec3">).mul(share)
+          : sum.add((walkSum as Node<"vec3">).mul(share));
+      skySum =
+        skySum === undefined
+          ? (walkSky as Node<"float">).mul(share)
+          : skySum.add((walkSky as Node<"float">).mul(share));
+      const pow4 = own.mul(own).mul(own).mul(own);
+      total = total === undefined ? pow4 : total.add(pow4);
     }
-    const whole = max(total as Node<"float">, 1e-5);
+    const whole = max(total as Node<"float">, 1e-30);
     return {
       irradiance: (sum as Node<"vec3">).div(whole),
       visibility: (skySum as Node<"float">).div(whole),
@@ -802,7 +1043,8 @@ function environmentShare(
 
 /**
  * Bakes the cache for `root` and gives every standard material under it an `irradianceNode` that
- * reads it. Returns what it did, or undefined when there is no sky to gather (no OffscreenCanvas).
+ * reads it. Returns what it did, or undefined when there is no light at all: no sky (no OffscreenCanvas), no sun
+ * and no local light. Without a sky, rays that miss carry zero.
  */
 /**
  * E / (pi L) at a surface from a sphere of angular radius asin(sqrt(sin2)) whose centre lies at `cos` from the normal:
@@ -857,8 +1099,16 @@ export function installGi(
   root: Object3D,
   options: IGiOptions,
 ): IGiReport | undefined {
-  const sky = skyRadiance.current;
-  if (sky === undefined) return undefined;
+  const lights = options.lights ?? [];
+  const sun = options.sun;
+  if (skyRadiance.current === undefined && sun === undefined && lights.length === 0)
+    return undefined;
+  const sky = skyRadiance.current ?? {
+    data: new Float32Array(3),
+    width: 1,
+    height: 1,
+    scale: [1, 1, 1],
+  };
   const started = performance.now();
   root.updateMatrixWorld(true);
   const grid = gridOver(root);
@@ -884,23 +1134,24 @@ export function installGi(
   const backfaces = new Uint16Array(probes);
 
   const sunRadiance = [0, 1, 2].map(
-    (c) =>
-      ([options.sun.color.r, options.sun.color.g, options.sun.color.b][c] ?? 0) *
-      (options.sun.intensity / Math.PI),
+    (c) => ([sun?.color.r, sun?.color.g, sun?.color.b][c] ?? 0) * ((sun?.intensity ?? 0) / Math.PI),
   );
+  /** Per surface cell, the shadow rays' answers: [sun, ...lights], 1 when lit. */
   const shaded = new Map<string, number[]>();
   let shadowRays = 0;
   let traced = 0;
   const origin = new Vector3();
   const direction = new Vector3();
-  const [sunX, sunY, sunZ] = [
-    options.sun.direction.x,
-    options.sun.direction.y,
-    options.sun.direction.z,
-  ];
+  const [sunX, sunY, sunZ] = [sun?.direction.x ?? 0, sun?.direction.y ?? 0, sun?.direction.z ?? 0];
+  const toLight = new Vector3();
   const colour = [0, 0, 0];
 
-  /** What a surface point returns of the sun (albedo x sun x cos x visibility) plus its emission. */
+  /**
+   * What a surface point returns of the sun and the point lights (albedo x light x cos x visibility) plus its emission.
+   * Only the visibility is shared by a 0.5 m surface cell (a shadow ray each); the cosine and the inverse square are
+   * the point's own. Sharing the whole result let one sample stand for its cell: the cornell shade, 0.3 m above its
+   * lamp, ranges 100 to 13 across a cell, and a sample near the hot spot lit the floor below it 1.8 times too bright.
+   */
   const surface = (
     object: Object3D,
     [px, py, pz]: readonly [number, number, number],
@@ -909,22 +1160,53 @@ export function installGi(
     emissive: number[],
   ): number[] => {
     const key = `${object.id}|${Math.floor(px / SHADE_CELL)}|${Math.floor(py / SHADE_CELL)}|${Math.floor(pz / SHADE_CELL)}|${Math.round(nx)}${Math.round(ny)}${Math.round(nz)}`;
-    const cached = shaded.get(key);
-    if (cached !== undefined) return cached;
-    const cosine = Math.max(0, nx * sunX + ny * sunY + nz * sunZ);
-    let visible = 0;
-    if (cosine > 0) {
-      shadowRays += 1;
-      origin.set(px + nx * 0.02, py + ny * 0.02, pz + nz * 0.02);
-      visible =
-        ctx.raycast({ origin, direction: options.sun.direction, far, targets: root }) === undefined
-          ? 1
-          : 0;
+    let visible = shaded.get(key);
+    origin.set(px + nx * 0.02, py + ny * 0.02, pz + nz * 0.02);
+    if (visible === undefined) {
+      visible = [0];
+      if (sun !== undefined && nx * sunX + ny * sunY + nz * sunZ > 0) {
+        shadowRays += 1;
+        visible[0] =
+          ctx.raycast({ origin, direction: sun.direction, far, targets: root }) === undefined
+            ? 1
+            : 0;
+      }
+      for (const light of lights) {
+        toLight.subVectors(light.position, origin);
+        const d = toLight.length();
+        toLight.divideScalar(d);
+        let open = 0;
+        if (d >= 0.02 && nx * toLight.x + ny * toLight.y + nz * toLight.z > 0) {
+          shadowRays += 1;
+          open =
+            ctx.raycast({ origin, direction: toLight, far: d - 0.02, targets: root }) === undefined
+              ? 1
+              : 0;
+        }
+        visible.push(open);
+      }
+      shaded.set(key, visible);
     }
+    const cosine = Math.max(0, nx * sunX + ny * sunY + nz * sunZ);
     const lit = [0, 1, 2].map(
-      (c) => (albedo[c] ?? 0) * (sunRadiance[c] ?? 0) * cosine * visible + (emissive[c] ?? 0),
+      (c) =>
+        (albedo[c] ?? 0) * (sunRadiance[c] ?? 0) * cosine * (visible[0] ?? 0) + (emissive[c] ?? 0),
     );
-    shaded.set(key, lit);
+    lights.forEach((light, l) => {
+      if (visible[l + 1] !== 1) return;
+      toLight.subVectors(light.position, origin);
+      const d = toLight.length();
+      toLight.divideScalar(d);
+      const cos = Math.max(0, nx * toLight.x + ny * toLight.y + nz * toLight.z);
+      // three's getDistanceAttenuation: inverse square times a window that closes at the cutoff distance.
+      const window =
+        light.distance > 0 ? Math.min(1, Math.max(0, 1 - (d / light.distance) ** 4)) ** 2 : 1;
+      if (cos <= 0 || window <= 0 || d < 0.02) return;
+      const scale = (light.intensity / Math.PI / (d * d)) * window * cos;
+      const tint = [light.color.r, light.color.g, light.color.b];
+      for (let c = 0; c < 3; c += 1)
+        lit[c] = (lit[c] ?? 0) + (albedo[c] ?? 0) * (tint[c] ?? 0) * scale;
+    });
     return lit;
   };
 
@@ -948,7 +1230,7 @@ export function installGi(
     if (bound === null) return;
     const radius = bound.radius * mesh.matrixWorld.getMaxScaleOnAxis();
     // A source wider than a probe cell is sampled well by the rays (a lit room, a glowing panel).
-    if (radius > grid.cell) return;
+    if (radius > Math.max(1, grid.cell)) return;
     emitters.push({
       centre: bound.center.clone().applyMatrix4(mesh.matrixWorld),
       radius,
@@ -1199,17 +1481,34 @@ export function installGi(
   // The bounces above carry the emitters' light; what a surface reads directly from them is exact per pixel (see
   // `emitterLight`), because a 0.5 m cell cannot hold a glow that falls off within 0.3 m of the source.
   for (let i = 0; i < values.length; i += 1) values[i] = (values[i] ?? 0) - (emitted[i] ?? 0);
+  for (let pass = 0; pass < SMOOTH_PASSES; pass += 1)
+    values = smooth({ grid, values, links, valid });
 
   if (options.bounces > 0) {
     const floor = groundRadiance({ grid, values, links, valid }, ray, first, end, grid.origin.y);
     if (floor !== undefined) paintGround(root, floor);
   }
   const environment = environmentShare(grid, ray, first, end, skyShare);
-  const fine = resample({ grid, values, links, valid, sky: environment });
+  const toProbe = new Vector3();
+  const fine = resample({ grid, values, links, valid, sky: environment }, (point, probe) => {
+    toProbe.set(
+      grid.origin.x + ((probe % grid.nx) + 0.5) * grid.cell,
+      grid.origin.y + ((Math.floor(probe / grid.nx) % grid.ny) + 0.5) * grid.cell,
+      grid.origin.z + (Math.floor(probe / (grid.nx * grid.ny)) + 0.5) * grid.cell,
+    );
+    toProbe.sub(point);
+    const d = toProbe.length();
+    traced += 1;
+    return (
+      d < 1e-4 ||
+      ctx.raycast({ origin: point, direction: toProbe.divideScalar(d), far: d, targets: root }) ===
+        undefined
+    );
+  });
   const cut = linkMasks({ grid, values, links, valid }, fine.grid, ctx, root);
   traced += cut.rays;
   giCache.field = { grid: fine.grid, values: fine.values, sky: fine.sky };
-  const read = irradianceAt(fine.values, fine.grid, cut.masks, fine.sky);
+  const read = irradianceAt(fine.values, fine.grid, cut.masks, fine.sky, cut.solid);
   // The screen-space gather's tier below reads the same as a material does, emitters included, so a ray that hits
   // the emitter on screen replaces its direct light instead of adding it twice.
   giCache.irradiance = (position, normal) => {
@@ -1259,6 +1558,7 @@ export function installGi(
     points: probes,
     enclosed: enclosedProbes,
     rays: traced,
+    solid: cut.solid.reduce((n, v) => n + v, 0),
     shadowRays,
     bounces: options.bounces,
     milliseconds: Math.round(performance.now() - started),

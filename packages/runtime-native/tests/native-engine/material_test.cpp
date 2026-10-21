@@ -227,7 +227,8 @@ void aoNode() {
 }
 
 // NodeMaterial.irradianceNode replaces the environment's diffuse irradiance: its uniform enters the fragment of a
-// material that is lit by an environment, and the slot is part of the program key.
+// material that is lit by an environment, or is the whole indirect diffuse without one, and the slot is part of
+// the program key.
 void irradianceNode() {
     namespace g = tn::engine::shader::graph;
     VertexVariant plain;
@@ -240,6 +241,13 @@ void irradianceNode() {
     CHECK(without.ok() && with.ok());
     CHECK(without.code.find("f_nodeIrradiance") == std::string::npos);
     CHECK(with.code.find("f_nodeIrradiance") != std::string::npos);
+    // With no environment (a closed room, no sky) the node is still the material's indirect diffuse: a baked GI
+    // cache must not vanish because scene.environment is null.
+    VertexVariant dark = lit;
+    dark.environment = false;
+    const auto unlitByEnvironment = WgslEmitter::emit(buildStandard(StandardMaterial{}, dark).fragment, 1);
+    CHECK(unlitByEnvironment.ok());
+    CHECK(unlitByEnvironment.code.find("f_nodeIrradiance") != std::string::npos);
 }
 
 // The albedo pass draws a lit draw's diffuse colour through the draw's own bind groups, so the albedo fragment must

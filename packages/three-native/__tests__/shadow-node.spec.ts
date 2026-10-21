@@ -177,6 +177,23 @@ it("validates branded source-angle parameters before either engine ABI sees them
   }
 });
 
+it("passes a lamp's source-radius filter and refuses a bad radius", () => {
+  const tag = Symbol.for("threenative.sourceRadiusShadowFilter");
+  const lamp = (options: object) => Object.assign(() => {}, { [tag]: options });
+  expect(
+    shadowFilterOptions(lamp({ sourceRadius: 0.05, blockerSamples: 16, filterSamples: 8 })),
+  ).toEqual({
+    sourceRadius: 0.05,
+    blockerSamples: 16,
+    filterSamples: 8,
+  });
+  for (const sourceRadius of [-0.1, Number.NaN, Number.POSITIVE_INFINITY])
+    expect(() =>
+      shadowFilterOptions(lamp({ sourceRadius, blockerSamples: 16, filterSamples: 16 })),
+    ).toThrow("TN_VIRTUAL_SHADOW_INVALID: source-radius filter");
+  expect(() => shadowFilterOptions(() => {})).toThrow("TN_VIRTUAL_SHADOW_UNSUPPORTED");
+});
+
 it("transfers registered LOD chain data once and clears its dispatch on disposal", () => {
   class VirtualShadowNode extends ShadowBaseNode {
     static override get type() {

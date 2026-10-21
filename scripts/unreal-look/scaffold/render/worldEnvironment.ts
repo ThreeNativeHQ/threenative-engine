@@ -730,15 +730,12 @@ export class WorldEnvironment {
       exposure !== undefined && options.localExposureEnabled
         ? new LocalExposureNode(colour, exposure.exposureNode)
         : undefined;
-    const exposed =
-      exposure === undefined
-        ? applyExposure(colour, float(options.exposure))
-        : applyExposure(
-            colour,
-            localExposure === undefined
-              ? exposure.exposureNode
-              : exposure.exposureNode.mul(localExposure.gainNode),
-          );
+    // The frame's exposure multiplier. Every chain stage reads pre-exposed light, as Lumen's passes do.
+    const gain = exposure === undefined ? float(options.exposure) : exposure.exposureNode;
+    const exposed = applyExposure(
+      colour,
+      localExposure === undefined ? gain : gain.mul(localExposure.gainNode),
+    );
     let released = false;
     const releaseGraph = (): void => {
       if (released) return;
@@ -779,7 +776,13 @@ export class WorldEnvironment {
           // Harness: on the owned engine the gather also answers for the tier below it (the world-space cache), so
           // a ray that hits returns `hit - cache` and the two never add the same light twice (Lumen's tiering,
           // Engine/Source/Runtime/Renderer/Private/Lumen/LumenScreenProbeGather.cpp).
-          const fallback = wasmEngine ? cacheFallback(view) : undefined;
+          // The cache holds scene light and the gather reads the exposed frame: the fallback takes the same gain,
+          // or every hit returns far less than the miss it replaces and the frame goes black.
+          const cache = wasmEngine ? cacheFallback(view) : undefined;
+          const fallback =
+            cache === undefined
+              ? undefined
+              : (position: Node<"vec3">, normal: Node<"vec3">) => cache(position, normal).mul(gain);
           const gi = (ssgi as unknown as (...args: unknown[]) => ReturnType<typeof ssgi>)(
             base,
             depth(),

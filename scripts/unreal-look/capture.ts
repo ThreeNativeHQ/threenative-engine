@@ -15,6 +15,7 @@
  *     --off vsm,gpusky,...   L9 stage ablation: vsm gpusky clouds gi bloom localexposure autoexposure ssgi ssr gtao
  *   --layers L0,L1,ID      limit the layers (default: every layer plus the region-id frames)
  *   --cells sun60/exterior limit the (sun, pose) cells
+ *   --scene gi[:<name>,...] a PRD-638 GI calibration scene instead (flags: scripts/unreal-look/gi.ts)
  *   --out <dir>            default tools/unreal-reference/captures/<engine>
  */
 import { spawn } from "node:child_process";
@@ -22,7 +23,9 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { mkdir, rm } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { captureGiThreeNative } from "./capture-gi-threenative.js";
 import { captureThreeNative } from "./capture-threenative.js";
+import { captureGi, familyOf, registry, sceneNames } from "./gi.js";
 
 const REPO_ROOT = path.resolve(import.meta.dirname, "../..");
 const REFERENCE = path.join(REPO_ROOT, "tools/unreal-reference");
@@ -40,7 +43,7 @@ function layerNames(): string[] {
 }
 
 /** Runs the editor headless on build_level.py in one mode and returns the script's own exit code. */
-async function runUnreal(
+export async function runUnreal(
   mode: string,
   out: string,
   env: Record<string, string> = {},
@@ -102,6 +105,20 @@ export async function main(args: readonly string[]): Promise<number> {
   const cellsFlag = flag(args, "--cells");
   const cells = cellsFlag === undefined ? undefined : new Set(cellsFlag.split(","));
 
+  if (engine === "unreal" && flag(args, "--scene") !== undefined) return captureGi(args, runUnreal);
+  if (engine === "threenative" && flag(args, "--scene") !== undefined) {
+    const value = flag(args, "--scene") ?? "gi";
+    const known = registry(familyOf(value)).scenes.map((s) => s.name);
+    const count = await captureGiThreeNative({
+      scenes: sceneNames(value, known),
+      layers:
+        flag(args, "--layers")?.split(",") ??
+        (familyOf(value) === "shadow" ? ["ID", "L5", "L9"] : ["ID", "L1", "L7"]),
+      out: path.resolve(flag(args, "--out") ?? path.join(REFERENCE, "captures", "threenative")),
+      reuse: args.includes("--reuse"),
+    });
+    return count > 0 ? 0 : 1;
+  }
   if (engine === "threenative") {
     const count = await captureThreeNative({
       out,

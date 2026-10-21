@@ -178,7 +178,8 @@ constexpr const char* kSlotNames[] = {
 constexpr const char* kLightFieldNames[] = {"Color",       "Direction",        "Position",     "Distance",
                                             "Decay",       "Axis",             "ConeCos",      "PenumbraCos",
                                             "ShadowMatrix", "ShadowBias",      "ShadowNormalBias", "ShadowRadius",
-                                            "ShadowMapSize", "ShadowIntensity", "ShadowNear", "ShadowFar"};
+                                            "ShadowMapSize", "ShadowIntensity", "ShadowNear", "ShadowFar",
+                                            "ShadowSourceRadius"};
 
 constexpr uint64_t kUniformAlign = 256;  // minUniformBufferOffsetAlignment's WebGPU default
 uint64_t aligned(uint64_t size) { return (size + kUniformAlign - 1) / kUniformAlign * kUniformAlign; }
@@ -490,6 +491,9 @@ Renderer::Renderer(WGPUInstance instance, WGPUDevice device, WGPUQueue queue, Ev
     lutSampler_ = wgpuDeviceCreateSampler(device, &sampler);
     sampler.compare = WGPUCompareFunction_LessEqual;
     compareSampler_ = wgpuDeviceCreateSampler(device, &sampler);
+    sampler.compare = WGPUCompareFunction_Undefined;
+    sampler.magFilter = sampler.minFilter = WGPUFilterMode_Nearest;
+    depthValueSampler_ = wgpuDeviceCreateSampler(device, &sampler);
 
     // One triangle covers the frame; the output pass samples the scene target texel for texel.
     const float triangle[6] = {-1, -1, 3, -1, -1, 3};
@@ -818,6 +822,7 @@ Renderer::~Renderer() {
     if (outputLayout_) wgpuBindGroupLayoutRelease(outputLayout_);
     wgpuSamplerRelease(lutSampler_);
     wgpuSamplerRelease(compareSampler_);
+    wgpuSamplerRelease(depthValueSampler_);
     if (linearClampSampler_) wgpuSamplerRelease(linearClampSampler_);
     for (auto& [light, shadow] : virtualShadows_) shadowMaps_.push_back(shadow.map);
     shadowMaps_.insert(shadowMaps_.end(), cubeShadowMaps_.begin(), cubeShadowMaps_.end());
@@ -1248,7 +1253,7 @@ WGPUBindGroup Renderer::bindGroup(WGPUBindGroupLayout layout, const shader::Stag
             if (virtualMap && !virtualShadows_.count(index)) return nullptr;
             if (b.kind == shader::BindingKind::Texture)
                 e.textureView = virtualMap ? virtualShadows_.at(index).map.view : (b.cube ? cubeShadowMaps_ : shadowMaps_).at(index).view;
-            else e.sampler = compareSampler_;
+            else e.sampler = b.values ? depthValueSampler_ : compareSampler_;
         } else if (b.kind == shader::BindingKind::Texture) {
             const auto postView = postTextureView(b.name.substr(2));
             const MaterialTexture* pbrTexture = pbr(b.name, false);
@@ -2006,7 +2011,8 @@ void Renderer::buildLayouts(Program& program, const std::string& key) {
                 e.texture.viewDimension = b.volume ? WGPUTextureViewDimension_3D
                                           : b.cube ? WGPUTextureViewDimension_Cube : WGPUTextureViewDimension_2D;
             } else if (b.kind == shader::BindingKind::Sampler) {
-                e.sampler.type = b.depth ? WGPUSamplerBindingType_Comparison : WGPUSamplerBindingType_Filtering;
+                e.sampler.type = b.values ? WGPUSamplerBindingType_NonFiltering
+                                 : b.depth ? WGPUSamplerBindingType_Comparison : WGPUSamplerBindingType_Filtering;
             } else {
                 throw std::runtime_error("TN_NATIVE_BINDING_UNSUPPORTED: " + b.name);
             }
@@ -2151,7 +2157,7 @@ const shader::StageModule* Renderer::emissiveFragment(Program& program) {
     return program.emissive.get();
 }
 
-Renderer::Program& Renderer::depthProgram(const shader::VertexVariant& variant) {
+Renderer::Program& Renderer::depthProgram(const shader::VertexVariant& variant, bool masked) {
     ++programKeyBuilds_;
     ++programLookups_;
     shader::VertexVariant kind = variant;
@@ -2162,9 +2168,20 @@ Renderer::Program& Renderer::depthProgram(const shader::VertexVariant& variant) 
     kind.nodes = {};
     kind.nodes.positionNode = positionGraph; // a depth pass reads no colour
     kind.nodes.vertexNode = variant.nodes.vertexNode;  // ...but casts where the vertexNode puts it
-    kind.map = false;           // ...nor a diffuse map: no uv passes through the depth program
-    const std::string key = "depth|" + kind.key();
+    // ...nor a diffuse map, unless the caster is alpha-tested: three's shadow pass copies alphaTest and
+    // the map, so a leaf card casts its cut (PRD-651). An opaque caster keeps no fragment stage.
+    kind.map = masked && variant.map;
+    const std::string key = (masked ? "depth-masked|" : "depth|") + kind.key();
     if (const auto found = programs_.find(key); found != programs_.end()) return *found->second;
+    if (masked) {
+        const auto source = shader::buildMaskedDepth(kind);
+        shader::StageModule vertex = shader::buildStage(source.vertex, 0), fragment = shader::buildStage(source.fragment, 1);
+        if (!vertex.wgsl.ok() || !fragment.wgsl.ok()) {
+            const auto& errors = vertex.wgsl.ok() ? fragment.wgsl.errors : vertex.wgsl.errors;
+            throw std::runtime_error("TN_NATIVE_SHADER_INVALID: masked shadow depth program: " + (errors.empty() ? std::string("no reason") : errors.front()));
+        }
+        return add(key, std::move(vertex), std::move(fragment));
+    }
     // three's shadow pass draws with the default positionNode, the same transform as a basic material.
     shader::StageModule vertex = shader::buildStage(shader::buildBasic(kind).vertex, 0);
     if (!vertex.wgsl.ok()) throw std::runtime_error("TN_NATIVE_SHADER_INVALID: shadow depth program");
@@ -2496,7 +2513,9 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             if (const char* refusal = sourceAngleFilterRefusal(*l.shadow)) throw std::runtime_error(refusal);
         const char kind = l.kind == DirectLight::Kind::Directional ? 'd' : l.kind == DirectLight::Kind::Point ? 'p' : 's';
         unshadowedKinds += kind;
-        lightKinds += virtualShadows_.count(i) ? char('0' + virtualShadows_.at(i).atlas.options().clipExtents.size()) : l.shadow ? static_cast<char>(kind - 'a' + 'A') : kind;
+        // A lamp with sourceRadiusShadowFilter reads the soft filter: 'Q' a point light, 'R' a spot light.
+        const char shadowed = l.shadow && l.shadow->sourceRadiusFilter ? (kind == 'p' ? 'Q' : 'R') : static_cast<char>(kind - 'a' + 'A');
+        lightKinds += virtualShadows_.count(i) ? char('0' + virtualShadows_.at(i).atlas.options().clipExtents.size()) : l.shadow ? shadowed : kind;
         if (virtualShadows_.count(i)) {
             auto& shadow = virtualShadows_.at(i);
             if (shadow.map.texture) continue;
@@ -2729,7 +2748,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     const auto drawTargetKey = [&](const DrawItem& item, const shader::StageModule& vertex) {
         uint64_t h = 0xcbf29ce484222325ull;
         const auto mix = [&h](uint64_t v) { h = (h ^ v) * 0x100000001b3ull; };
-        mix(item.side); mix(item.blending); mix(item.transparent); mix(item.depthWrite); mix(item.colorWrite);
+        mix(item.side); mix(item.shadowSide); mix(item.blending); mix(item.transparent); mix(item.depthWrite); mix(item.colorWrite);
         mix(item.depthBias); mix(std::bit_cast<uint32_t>(item.depthBiasSlopeScale));
         mix(item.background); mix(item.frontFace() == WGPUFrontFace_CW);
         mix(static_cast<uint64_t>(item.topology));
@@ -2903,6 +2922,9 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 put(frameUniforms_, f, slot[kLightShadowIntensity], std::array<double, 1>{l.shadow->intensity});
                 put(frameUniforms_, f, slot[kLightShadowNear], std::array<double, 1>{l.shadow->near});
                 put(frameUniforms_, f, slot[kLightShadowFar], std::array<double, 1>{l.shadow->far});
+                if (const auto& soft = l.shadow->sourceRadiusFilter)
+                    put(frameUniforms_, f, slot[kLightShadowSourceRadius],
+                        std::array<double, 4>{(*soft)[0], l.shadow->tanHalfFov, (*soft)[1], (*soft)[2]});
             }
         }
         put(frameUniforms_, f, fs[kHemisphereSky], lights.hemisphereSky);
@@ -2929,6 +2951,8 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         const auto virtualIt = virtualShadows_.find(i);
         const bool virtualMap = virtualIt != virtualShadows_.end();
         const int passCount = compilation ? 1 : virtualMap ? int(virtualPages[i].size()) : shadow.cube ? 6 : 1;
+        const std::size_t firstPass = shadowPasses.size();
+        const bool lamp = lights.direct[i].kind != DirectLight::Kind::Directional && !virtualMap && !compilation;
         for (int face = 0; face < passCount; ++face) {
         const shadows::AtlasPage* page = virtualMap && !compilation ? &virtualPages[i][face] : nullptr;
         const Matrix& view = page ? page->view.elements : shadow.cube ? shadow.faceViews[face] : shadow.view;
@@ -2955,6 +2979,21 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             const DrawItem& item = *selected;
             if (!item.castShadow || item.instanceCount == 0 || !item.positions) continue;
             if ((item.layers & (shadow.layersMask | (virtualMap ? (1u << 29) | (1u << 28) : 0u))) == 0) continue;
+            // A caster wholly beyond the lamp camera's far plane writes no depth: skip it, so it moving
+            // there neither costs a draw nor invalidates the lamp's cached map (PRD-650).
+            if (lamp && shadow.far > 0 && item.shadowObject && !item.positionNode && !item.nodes.positionNode && !item.boneMatrices && !item.morphGeometry) {
+                const Sphere* local = item.shadowObject->type() == "InstancedMesh"
+                    ? static_cast<const InstancedMesh*>(item.shadowObject)->boundingSphere.get()
+                    : item.shadowObject->type() == "Mesh" && static_cast<const Mesh*>(item.shadowObject)->geometry
+                        ? static_cast<const Mesh*>(item.shadowObject)->geometry->boundingSphere.get() : nullptr;
+                if (local) {
+                    Sphere world = *local;
+                    Matrix4 model; model.elements = item.matrixWorld;
+                    world.applyMatrix4(model);
+                    const auto& at = lights.direct[i].position;
+                    if (world.center.distanceTo(Vector3(at[0], at[1], at[2])) - world.radius > shadow.far) continue;
+                }
+            }
             if (page) {
                 const auto& atlas = virtualIt->second.atlas;
                 if (page->mover ? !atlas.isMover(item.key) : !atlas.drawsStatic(item.key)) continue;
@@ -2965,29 +3004,33 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             if (page && !page->mover && !item.positionNode && !item.nodes.positionNode && !item.boneMatrices && !item.morphGeometry &&
                 !item.instanceMatrices && !virtualIt->second.atlas.overlaps(*page, casterBounds.at(i).at(item.key))) continue;
             shader::VertexVariant variant = variantOf(item);
+            const bool masked = item.material->alphaTest > 0;
             DrawCache* cache = item.cache;
             Program* cachedDepth = nullptr;
-            if (cache && cache->depthProgram && cache->variant == variant)
+            if (cache && cache->depthProgram && cache->variant == variant && cache->depthMasked == masked)
                 cachedDepth = static_cast<Program*>(cache->depthProgram);
             else {
-                cachedDepth = &depthProgram(variant);
+                cachedDepth = &depthProgram(variant, masked);
                 if (cache) {
                     cache->variant = variant;  // a shadow-only draw has no main program to set it
                     cache->depthProgram = cachedDepth; cache->depthPipeline = nullptr; cache->depthTargetKey = 0;
+                    cache->depthMasked = masked;
                 }
             }
+            const shader::StageModule* depthFragment = masked ? &cachedDepth->fragment : nullptr;
             Program& program = *cachedDepth;
-            // three's _shadowSide: a front-sided caster draws its back faces, a back-sided one its
-            // front faces, a double-sided one both.
+            // material.shadowSide names the faces drawn; when null, three's _shadowSide: a front-sided
+            // caster draws its back faces, a back-sided one its front faces, a double-sided one both.
+            const uint8_t faces = item.shadowSide != 255 ? item.shadowSide : item.side == 2 ? 2 : item.side == 1 ? 0 : 1;
             const WGPUCullMode cull =
-                item.side == 2 ? WGPUCullMode_None : item.side == 1 ? WGPUCullMode_Back : WGPUCullMode_Front;
+                faces == 2 ? WGPUCullMode_None : faces == 0 ? WGPUCullMode_Back : WGPUCullMode_Front;
             PipelineTarget target{WGPUTextureFormat_Undefined, WGPUTextureFormat_Depth24Plus, cull};
             target.layout = program.pipelineLayout;
             target.frontFace = item.frontFace();
             target.skinIndex = skinIndexFormat(item);
             target.instanceStepMask = instanceStepMask(program.vertex, item);
             if (compilation) {
-                compilation->push_back(pipelines_->getAsync(program.vertex, nullptr, target));
+                compilation->push_back(pipelines_->getAsync(program.vertex, depthFragment, target));
                 continue;
             }
             const uint64_t depthTargetKey = drawTargetKey(item, program.vertex);
@@ -2995,12 +3038,21 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             if (cache && cache->depthPipeline && cache->depthTargetKey == depthTargetKey) {
                 pipeline = static_cast<WGPURenderPipeline>(cache->depthPipeline);
             } else {
-                pipeline = pipelines_->get(program.vertex, nullptr, target);
+                pipeline = pipelines_->get(program.vertex, depthFragment, target);
                 if (!pipeline) throw std::runtime_error("TN_NATIVE_PIPELINE_REFUSED: shadow depth program");
                 if (cache) { cache->depthTargetKey = depthTargetKey; cache->depthPipeline = pipeline; }
             }
             const uint64_t v = frameUniforms_.size();
-            frameUniforms_.resize(v + aligned(program.vertex.uniformBlockSize), 0);
+            const uint64_t f = v + aligned(program.vertex.uniformBlockSize);
+            frameUniforms_.resize(f + aligned(program.fragment.uniformBlockSize), 0);
+            if (masked) {
+                const shader::StandardMaterial& m = *item.material;
+                const auto* fs = program.fragmentSlots;
+                put(frameUniforms_, f, fs[kDiffuse], std::array<double, 4>{m.color[0], m.color[1], m.color[2], m.opacity});
+                put(frameUniforms_, f, fs[kAlphaTest], std::array<double, 1>{m.alphaTest});
+                put(frameUniforms_, f, fs[kOpaque], std::array<double, 1>{0.0});
+                if (item.map) put(frameUniforms_, f, fs[kUvTransform], uvTransformOf(*item.map));
+            }
             put(frameUniforms_, v, program.vertexSlots[kModelMatrix], item.matrixWorld);
             if (item.instanceMatrices) put(frameUniforms_, v, program.vertexSlots[kInstanceBase], std::array<double, 1>{instanceBases.at(drawn)});
             put(frameUniforms_, v, program.vertexSlots[kViewMatrix], view);
@@ -3016,9 +3068,34 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             put(frameUniforms_, v, program.vertexSlots[kCameraProjectionMatrix], page ? page->projection.elements : shadow.projection);
             putSkin(v, program.vertexSlots, item);
             putNodes(frameUniforms_, v, program.vertex, item.nodes, frameTime_, frameDelta_, lights);
-            pass.draws.push_back({&item, &program, pipeline, static_cast<uint32_t>(v), 0});
+            pass.draws.push_back({&item, &program, pipeline, static_cast<uint32_t>(v), static_cast<uint32_t>(masked ? f : 0)});
         }
         }
+        // PRD-650: a lamp keeps last frame's map while nothing it draws changed: its cameras, its map
+        // and each caster's matrix, geometry and cut. A GPU-deformed caster changes every frame.
+        if (!lamp) continue;
+        uint64_t h = 0xcbf29ce484222325ull;
+        const auto mix = [&h](uint64_t v) { h = (h ^ v) * 0x100000001b3ull; };
+        const auto mixMatrix = [&](const Matrix& m) { for (double e : m) mix(std::bit_cast<uint64_t>(e)); };
+        const auto mixStore = [&](const BufferStore* b) { mix(reinterpret_cast<uintptr_t>(b)); if (b) { mix(b->version()); mix(b->epoch()); } };  // three uploads on needsUpdate, not on a write
+        bool animated = false;
+        mixMatrix(shadow.projection);
+        if (shadow.cube) for (const Matrix& m : shadow.faceViews) mixMatrix(m); else mixMatrix(shadow.view);
+        mix(shadow.width); mix(shadow.height);
+        for (std::size_t k = firstPass; k < shadowPasses.size(); ++k) {
+            mix(reinterpret_cast<uintptr_t>(shadowPasses[k].target));
+            for (const Planned& p : shadowPasses[k].draws) {
+                const DrawItem& item = *p.item;
+                animated |= item.positionNode || item.nodes.positionNode || item.boneMatrices || item.morphGeometry || item.gpuJoints;
+                mix(item.key); mixMatrix(item.matrixWorld); mix(item.instanceCount);
+                mixStore(item.positions); mixStore(item.indices); mixStore(item.instanceMatrices); mixStore(item.uvs);
+                mix(reinterpret_cast<uintptr_t>(p.pipeline)); mix(reinterpret_cast<uintptr_t>(item.map));
+                mix(std::bit_cast<uint32_t>(item.material->alphaTest)); mix(std::bit_cast<uint32_t>(item.material->opacity));
+            }
+        }
+        uint64_t& last = lampSignatures_[i];
+        if (!animated && last == h) shadowPasses.erase(shadowPasses.begin() + std::ptrdiff_t(firstPass), shadowPasses.end());
+        else last = animated ? 0 : h;
     }
 
     // One buffer for the frame's uniforms, grown (and its bind groups rebuilt) when it is too small,
@@ -3468,6 +3545,19 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                                .first->second;
         if (cache) { cache->mapGroupKey = groupKey; cache->mapGroup = p.mapGroup; }
     }
+    // A masked caster's depth program samples the caster's map: its group binds that texture (PRD-651).
+    for (ShadowPass& pass : shadowPasses)
+        for (Planned& draw : pass.draws) {
+            if (!draw.item->map || !perDrawFragment(draw.program->fragment)) continue;
+            const MaterialTexture* map = materialTexture(*draw.item->map);
+            const std::string key = "depth|" + std::to_string(reinterpret_cast<uintptr_t>(draw.program)) + "|" +
+                                    std::to_string(reinterpret_cast<uintptr_t>(map->view)) + "|" +
+                                    std::to_string(reinterpret_cast<uintptr_t>(map->sampler));
+            const auto found = mapGroups_.find(key);
+            draw.mapGroup = found != mapGroups_.end() ? found->second
+                : mapGroups_.emplace(key, bindGroup(draw.program->layouts[1], draw.program->fragment, uniformBuffer_,
+                                                    lutView_, lutSampler_, map->view, map->sampler)).first->second;
+        }
     const uint64_t groupsChosenAt = groupEpoch_;
 
     planNormals();

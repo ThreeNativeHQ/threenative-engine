@@ -90,6 +90,7 @@ struct DrawCache {
     uint64_t mapGroupKey = 0;     // the textures/epoch the fragment bind group was built for
     void* program = nullptr;
     void* depthProgram = nullptr;
+    bool depthMasked = false;     // the depth program runs the material's alpha test (PRD-651)
     void* pipeline = nullptr;
     void* depthPipeline = nullptr;
     void* mapGroup = nullptr;
@@ -181,6 +182,7 @@ struct DrawItem {
     bool castShadow = false;    // Object3D.castShadow: drawn into every shadow map
     bool receiveShadow = false; // Object3D.receiveShadow: its lit program reads the shadow maps
     uint8_t side = 0;           // material.side: 0 FrontSide, 1 BackSide, 2 DoubleSide
+    uint8_t shadowSide = 255;   // material.shadowSide, the same codes; 255 is null
     bool flatShading = false;   // material.flatShading: the face normal replaces the vertex normal
     uint8_t blending = 1;       // material.blending: 0 NoBlending, 1 NormalBlending, 2 AdditiveBlending
     // InstancedMesh: one mat4 (16 floats) per instance, an optional rgb per instance, and how many draw.
@@ -229,6 +231,8 @@ struct DirectLight {
     struct Shadow {
         std::shared_ptr<const shadows::AtlasOptions> virtualShadow;
         std::optional<std::array<double, 3>> sourceAngleFilter;
+        std::optional<std::array<double, 3>> sourceRadiusFilter;
+        double tanHalfFov = 1;  // a perspective map's: a cube face's is 1
         Matrix view{}, projection{}, matrix{};
         double bias = 0, normalBias = 0, radius = 1, intensity = 1;
         uint32_t width = 512, height = 512;
@@ -601,7 +605,7 @@ private:
     enum LightField : uint8_t { kLightColor, kLightDirection, kLightPosition, kLightDistance, kLightDecay, kLightAxis,
                                 kLightConeCos, kLightPenumbraCos, kLightShadowMatrix, kLightShadowBias,
                                 kLightShadowNormalBias, kLightShadowRadius, kLightShadowMapSize,
-                                kLightShadowIntensity, kLightShadowNear, kLightShadowFar, kLightFieldCount };
+                                kLightShadowIntensity, kLightShadowNear, kLightShadowFar, kLightShadowSourceRadius, kLightFieldCount };
     uint64_t renderPrepared(std::span<const DrawItem> items, const CameraState& camera, const LightState& lights,
         std::array<double, 4> clear, std::vector<std::shared_ptr<PipelineCompilation>>* compilation,
         WGPUTextureFormat outputFormat, bool defer = false);
@@ -648,7 +652,7 @@ private:
     Program* program(MaterialKind kind, const shader::VertexVariant& variant, const std::string& lights,
                      bool softShadows = false);
     /** The shadow pass's depth-only program for a vertex variant (0 plain, 1 instanced). */
-    Program& depthProgram(const shader::VertexVariant& variant);
+    Program& depthProgram(const shader::VertexVariant& variant, bool masked);
     Program& add(const std::string& key, shader::StageModule vertex, shader::StageModule fragment);
     struct MaterialTexture;
     /** blitTo's pass-through copy into `format`, blended by PipelineTarget's `blend`. */
@@ -814,8 +818,11 @@ private:
         std::map<int, uint64_t> consumedCosts;
     };
     std::map<std::size_t, VirtualShadow> virtualShadows_;
+    /** Each lamp's last drawn map signature (PRD-650): an equal one skips its depth passes. */
+    std::map<std::size_t, uint64_t> lampSignatures_;
     bool virtualCut_ = false;
     WGPUSampler compareSampler_ = nullptr;
+    WGPUSampler depthValueSampler_ = nullptr;  // nearest, no compare: a blocker search's depth reads
     // The viewport textures (three's viewportSharedTexture / viewportDepthTexture): the scene colour
     // and depth copied at the first draw that reads either, created with the scene target.
     WGPUTexture viewportColor_ = nullptr, viewportDepth_ = nullptr;
