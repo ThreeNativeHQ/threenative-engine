@@ -181,6 +181,8 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
       // global illumination), the sun a surface returns (render/giCache.ts).
       if (TUNED && level >= 2 && !OFF.has("gi"))
         installGi(ctx, model, {
+          // Diagnosis knob stockRays=1: cast the bake through ctx.raycast, the slow path (an A/B).
+          stockRays: params.get("stockRays") === "1",
           bounces: level >= 7 ? 5 : 0,
           // Unreal below L7 has no GI: its sky light is shadowed by distance fields, up to 10 m.
           ...(level < 7 ? { skyShadowDistance: 10 } : {}),
