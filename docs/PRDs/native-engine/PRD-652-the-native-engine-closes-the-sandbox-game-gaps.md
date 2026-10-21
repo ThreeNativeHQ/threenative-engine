@@ -55,8 +55,8 @@ Recorded on the phase boxes below.
 ## Execution Phases
 
 #### Phase 1: StorageTexture runs on the native engine
-**Status:** NOT STARTED
-- [ ] A compute kernel writes a `StorageTexture` with `textureStore`, a second kernel samples it, and readback matches the written values. proof: `ctest -R native_engine_player_compute` (desktop V8 + Dawn).
+**Status:** IN PROGRESS
+- [x] A compute kernel writes a `StorageTexture` with `textureStore`, a second kernel samples it, and readback matches the written values. proof: `ctest -R native_engine_player_compute` (desktop V8 + Dawn). — 2026-10-21, RTX 2080 Dawn/Vulkan headless: `native_engine_player_{compute,compute_ops,imports,tsl_values}` 4/4 passed; the case also checks a material read (64,128,96,255) and the `TN_NATIVE_STORAGE_TEXTURE_FORMAT` refusal.
 - [ ] `first-light` runs its own playtests on the Wasm engine with the `Atmosphere` sky. proof: `pnpm sandbox` tarballs, `pnpm test` in the game.
 
 #### Phase 2: The scene pass has metalness and roughness targets

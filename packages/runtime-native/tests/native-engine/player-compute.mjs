@@ -31,7 +31,7 @@ globalThis.tn.onUpdate(() => {
   globalThis.tn.camera = new PerspectiveCamera();
   run().then(
     () => globalThis.tn.log(faults.length === 0 ? "COMPUTE_OK" : "COMPUTE_BAD " + faults.join(" | ")),
-    (error) => globalThis.tn.log("COMPUTE_ERROR " + (error && (error.message + " @@ " + String(error.stack).split(String.fromCharCode(10)).join(" | ")) || error)),
+    (error) => globalThis.tn.log("COMPUTE_ERROR " + (error && error.message || error)),
   );
 });
 
