@@ -45,7 +45,8 @@ const level = LAYER === "ID" ? -1 : Number(LAYER.slice(1));
 // from `render/quality.ts` (PRD-644, PRD-652). GI enters at L7; below it there is none, as in Unreal's ladder.
 const TIER = resolveQualityTier({ tier: params.get("tier") ?? "high" });
 const GI_METHOD = level >= 7 ? giPreset(TIER).finalGatherMethod : "none";
-const SHADOW = shadowPreset(TIER);
+// Unreal's GI and shadow levels are separate scalability groups: `shadowTier=` draws the shadows at another tier.
+const SHADOW = shadowPreset(resolveQualityTier({ tier: params.get("shadowTier") ?? TIER }));
 const DATA = SCENES[NAME];
 // Diagnosis only: scales every light, so a capture can bracket a unit error. Unset in every judged capture.
 const LIGHT_SCALE = Number(params.get("lightScale") ?? 1);
@@ -145,7 +146,7 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
         );
         point.name = light.name;
         point.position.fromArray(light.position);
-        point.castShadow = shadows && light.castShadows;
+        point.castShadow = shadows && light.castShadows && SHADOW.castShadows;
         // Unreal's lamp shadow has no near plane: three's 0.5 m default clipped cornell's shade, 0.3 m
         // from the lamp. Diagnosis knobs: shadowNear, shadowMap (texels), shadowBias, shadowNormalBias.
         point.shadow.camera.near = Number(params.get("shadowNear") ?? 0.02);
@@ -164,8 +165,8 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
           // The lamp's radius softens its shadow as Unreal's does (PRD-650); its highlight stays a point's.
           point.shadow.filterNode = sourceRadiusShadowFilter({
             sourceRadius: light.sourceRadiusM ?? 0,
-            blockerSamples: Number(params.get("blockers") ?? SHADOW.lampFilter.blockerSamples),
-            filterSamples: Number(params.get("samples") ?? SHADOW.lampFilter.filterSamples),
+            blockerSamples: Number(params.get("blockers") ?? SHADOW.filter.blockerSamples),
+            filterSamples: Number(params.get("samples") ?? SHADOW.filter.filterSamples),
           });
           unsupported.push({
             actor: light.name,

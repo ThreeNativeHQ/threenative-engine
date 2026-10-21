@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { PNG } from "pngjs";
 import { afterEach, describe, expect, it } from "vitest";
+import { tierQuery } from "../unreal-look/capture-gi-threenative.js";
 import {
   ciede2000,
   classify,
@@ -488,6 +489,13 @@ describe("Unreal reference comparison", () => {
       expect(unrealVariant("L7", 0)).toBe("L7-Low");
       expect(unrealVariant("L7", 1)).toBe("L7-Medium");
       expect(unrealVariant("L7", 3)).toBe("L7-Epic");
+    });
+    it("draws a GI tier against Epic shadows and a shadow tier against its own", () => {
+      // Unreal's GI and shadow levels are separate scalability groups: the L7-Low frame has Epic shadows.
+      expect(tierQuery("L7-low")).toBe("&tier=low&shadowTier=high");
+      expect(tierQuery("L7-high")).toBe("&tier=high&shadowTier=high");
+      expect(tierQuery("L5-Medium")).toBe("&tier=medium");
+      expect(tierQuery("L7")).toBe("");
     });
     it("fails closed on a layer or level that is not in the table", () => {
       expect(() => unrealVariant("L7-ultra")).toThrow(/^TN_UNREAL_LOOK_BAD_INPUT/);

@@ -38,10 +38,15 @@ export const GI_LAYERS: Readonly<Record<string, string>> = {
   L9: "L9-Epic",
 };
 
-/** `&tier=<tier>` for a tier layer, nothing otherwise. */
-function tierQuery(layer: string): string {
-  const { tier } = layerQuery(layer);
-  return tier === undefined ? "" : `&tier=${tier}`;
+/**
+ * `&tier=<tier>` for a tier layer, nothing otherwise. A GI tier layer (`L7-low`) is judged against the
+ * Unreal level of the GI group alone, whose shadows stay at Epic, so it adds `&shadowTier=high`; a shadow
+ * tier layer (`L5-Low`) has no GI and follows the tier for its shadows.
+ */
+export function tierQuery(layer: string): string {
+  const { layer: base, tier } = layerQuery(layer);
+  if (tier === undefined) return "";
+  return base === "L7" ? `&tier=${tier}&shadowTier=high` : `&tier=${tier}`;
 }
 
 /** The query pair a capture layer names: `L7-medium` is layer `L7` at tier `medium`; `L7` keeps the default tier. */

@@ -53,10 +53,11 @@ const LAYER = params.get("tnRef") ?? "L9";
 const [elevationDeg = 60, azimuthDeg = 25] = (params.get("sun") ?? "60,25").split(",").map(Number);
 const level = LAYER === "ID" ? -1 : Number(LAYER.slice(1));
 // `tier=low|medium|high` (default high, which follows Unreal's Epic) is the quality tier the cell is drawn at:
-// its GI method and shadow filter come from `render/quality.ts` (PRD-644, PRD-652).
+// its GI method and shadow filter come from `render/quality.ts` (PRD-644, PRD-652). Unreal's GI and shadow levels
+// are separate scalability groups, so `shadowTier=` draws the shadows at another tier than the GI.
 const TIER = resolveQualityTier({ tier: params.get("tier") ?? "high" });
 const GI = giPreset(TIER);
-const SHADOW = shadowPreset(TIER);
+const SHADOW = shadowPreset(resolveQualityTier({ tier: params.get("shadowTier") ?? TIER }));
 // From L7 the tier's final gather method decides the GI; below it there is none, as in Unreal's ladder.
 const GI_METHOD = level >= 7 ? GI.finalGatherMethod : "none";
 // `baseline=1` captures the template look as it ships; otherwise the tuning in progress applies.
@@ -128,7 +129,7 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
     } else {
       const { key } = setupLighting(scene, ctx.renderer.raw as Parameters<typeof setupLighting>[1]);
       // Diagnosis knob sunShadow=0: the sun casts no shadow (is a seam line a shadow leak at all?).
-      key.castShadow = level >= 5 && params.get("sunShadow") !== "0";
+      key.castShadow = level >= 5 && params.get("sunShadow") !== "0" && SHADOW.castShadows;
       // Diagnosis knob shadowSide=front|back|double: the caster faces; unset keeps three's derived side.
       // Back-face casters store the occluder depth on the far face of a wall, which is the room's
       // own inner surface, so sun light leaks along every inner seam of the slab boxes. The virtual
@@ -158,7 +159,7 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
         if (!OFF.has("vsm"))
           (key.shadow as unknown as { filterNode: unknown }).filterNode = sourceAngleShadowFilter({
             sourceAngleRad: SUN_SOURCE_ANGLE_RAD,
-            ...SHADOW.sunFilter,
+            ...SHADOW.filter,
             // Diagnosis knobs for the tier's sample-count round (PRD-652): sunBlockers and sunSamples.
             ...(params.get("sunBlockers") === null
               ? {}

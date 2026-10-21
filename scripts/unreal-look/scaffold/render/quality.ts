@@ -252,40 +252,42 @@ export interface IShadowFilter {
 export interface IShadowTier {
   /** Read-only report: the `sg.ShadowQuality` this tier follows. */
   readonly shadowQuality: 0 | 1 | 3;
-  /** The sun's receiver filter taps. One of each is a hard tap, Unreal's `RayCountDirectional` 0. */
-  readonly sunFilter: IShadowFilter;
-  /** A lamp's receiver filter taps. One of each is a hard tap. */
-  readonly lampFilter: IShadowFilter;
+  /**
+   * Whether the sun and the lamps cast dynamic shadows. Unreal draws none at `sg.ShadowQuality` 0
+   * (`r.ShadowQuality=0`), measured on `penumbra-lab` (PRD-652 `## Decisions`), so `low` casts none.
+   */
+  readonly castShadows: boolean;
+  /**
+   * The receiver filter taps of the sun and of every lamp: Unreal's directional and local ray counts
+   * are equal at Medium and Epic, so one pair serves both.
+   */
+  readonly filter: IShadowFilter;
   /** `r.Shadow.Virtual.ResolutionLodBiasDirectional`: -1 halves the finest sun level's texel. */
   readonly resolutionLodBiasDirectional: number;
-  /** `r.Shadow.Virtual.ResolutionLodBiasLocal` and `...LocalMoving`; read by the lamp atlas (PRD-650). */
-  readonly resolutionLodBiasLocal: { readonly still: number; readonly moving: number };
 }
 
 // Sample counts start from Unreal's rays x samples product against Epic's 32, on the filter's own
 // 16 + 16 default: Medium (4 x 2 = 8) is a quarter of Epic, so 4 + 4. The penumbra-lab round
-// (PRD-647 method) sets the final numbers; they are not fitted by eye.
+// (PRD-647 method) sets the final numbers; they are not fitted by eye. `low` draws no shadow, so its
+// taps are never read.
 const SHADOW_TIERS: Record<QualityTier, IShadowTier> = {
   high: {
-    lampFilter: { blockerSamples: 16, filterSamples: 16 },
+    castShadows: true,
+    filter: { blockerSamples: 16, filterSamples: 16 },
     resolutionLodBiasDirectional: -1.5,
-    resolutionLodBiasLocal: { moving: 1, still: 0 },
     shadowQuality: 3,
-    sunFilter: { blockerSamples: 16, filterSamples: 16 },
   },
   low: {
-    lampFilter: { blockerSamples: 1, filterSamples: 1 },
+    castShadows: false,
+    filter: { blockerSamples: 4, filterSamples: 4 },
     resolutionLodBiasDirectional: 0,
-    resolutionLodBiasLocal: { moving: 2, still: 1 },
     shadowQuality: 0,
-    sunFilter: { blockerSamples: 1, filterSamples: 1 },
   },
   medium: {
-    lampFilter: { blockerSamples: 4, filterSamples: 4 },
+    castShadows: true,
+    filter: { blockerSamples: 4, filterSamples: 4 },
     resolutionLodBiasDirectional: 0,
-    resolutionLodBiasLocal: { moving: 2, still: 1 },
     shadowQuality: 1,
-    sunFilter: { blockerSamples: 4, filterSamples: 4 },
   },
 };
 
