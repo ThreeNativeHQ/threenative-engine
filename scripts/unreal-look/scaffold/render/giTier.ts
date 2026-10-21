@@ -17,7 +17,7 @@ export const GI_BUDGET_MS: Readonly<Record<FinalGatherMethod, number>> = {
 };
 
 /** The passes three names for the screen-space gather. Its denoise passes carry the gather's label. */
-const GI_STAGES = ["SSGI"];
+export const GI_STAGES = ["SSGI"];
 
 interface IGiScene {
   readonly renderer: { readonly raw: unknown };

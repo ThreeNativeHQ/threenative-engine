@@ -7,6 +7,7 @@ import {
   type ICtx,
   Scene,
   type SceneFrame,
+  type ShadowFilterTier,
   VirtualShadowNode,
   sourceAngleShadowFilter,
 } from "@threenative/core";
@@ -32,6 +33,7 @@ import { installGi } from "../render/giCache.js";
 import { setupLighting } from "../render/lighting.js";
 import { setupPost } from "../render/postprocessing.js";
 import { watchGi } from "../render/giTier.js";
+import { watchShadowTier } from "../render/shadowTier.js";
 import {
   type FinalGatherMethod,
   giPreset,
@@ -57,7 +59,8 @@ const level = LAYER === "ID" ? -1 : Number(LAYER.slice(1));
 // are separate scalability groups, so `shadowTier=` draws the shadows at another tier than the GI.
 const TIER = resolveQualityTier({ tier: params.get("tier") ?? "high" });
 const GI = giPreset(TIER);
-const SHADOW = shadowPreset(resolveQualityTier({ tier: params.get("shadowTier") ?? TIER }));
+const SHADOW_TIER = resolveQualityTier({ tier: params.get("shadowTier") ?? TIER });
+const SHADOW = shadowPreset(SHADOW_TIER);
 // From L7 the tier's final gather method decides the GI; below it there is none, as in Unreal's ladder.
 const GI_METHOD = level >= 7 ? GI.finalGatherMethod : "none";
 // `baseline=1` captures the template look as it ships; otherwise the tuning in progress applies.
@@ -85,6 +88,7 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
   #sky: Texture | undefined;
   #dispose: (() => void) | undefined;
   #gi: ReturnType<typeof watchGi> | undefined;
+  #shadow: ReturnType<typeof watchShadowTier> | undefined;
   #reflectionsDispose: (() => void) | undefined;
 
   override async load(ctx: GameCtx): Promise<void> {
@@ -115,6 +119,8 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
     const camera = ctx.camera as PerspectiveCamera;
     const raw = ctx.renderer.raw as unknown as { toneMapping: number };
     let reflections: Promise<() => void> | undefined;
+    // Draws the sun's shadow at another tier: what a `ShadowFilterBudget` step does, callable from the page.
+    let setShadowTier = (_tier: ShadowFilterTier): void => undefined;
 
     if (level <= 0) {
       // ID and L0: unlit base colour, no post. Unreal: ShowFlag.Lighting 0, post off.
@@ -156,18 +162,27 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
       });
       // three's WebGPU ShadowNode reads `shadow.filterNode`; its types do not declare it yet.
       if (TUNED) {
-        if (!OFF.has("vsm"))
-          (key.shadow as unknown as { filterNode: unknown }).filterNode = sourceAngleShadowFilter({
-            sourceAngleRad: SUN_SOURCE_ANGLE_RAD,
-            ...SHADOW.filter,
-            // Diagnosis knobs for the tier's sample-count round (PRD-652): sunBlockers and sunSamples.
-            ...(params.get("sunBlockers") === null
-              ? {}
-              : { blockerSamples: Number(params.get("sunBlockers")) }),
-            ...(params.get("sunSamples") === null
-              ? {}
-              : { filterSamples: Number(params.get("sunSamples")) }),
-          });
+        // A shadow tier decides whether the sun casts and what its filter samples; `ShadowFilterBudget`
+        // moves it with the frame time when the URL asks for shadowAuto=1 (PRD-652).
+        const applyShadowTier = (next: ShadowFilterTier) => {
+          const preset = shadowPreset(next);
+          key.castShadow = level >= 5 && params.get("sunShadow") !== "0" && preset.castShadows;
+          if (!OFF.has("vsm"))
+            (key.shadow as unknown as { filterNode: unknown }).filterNode = sourceAngleShadowFilter({
+              sourceAngleRad: SUN_SOURCE_ANGLE_RAD,
+              ...preset.filter,
+              // Diagnosis knobs for the tier's sample-count round (PRD-652): sunBlockers and sunSamples.
+              ...(params.get("sunBlockers") === null
+                ? {}
+                : { blockerSamples: Number(params.get("sunBlockers")) }),
+              ...(params.get("sunSamples") === null
+                ? {}
+                : { filterSamples: Number(params.get("sunSamples")) }),
+            });
+        };
+        applyShadowTier(SHADOW_TIER);
+        setShadowTier = applyShadowTier;
+        if (level >= 5) this.#shadow = watchShadowTier(ctx, { tier: SHADOW_TIER, apply: applyShadowTier });
         // Unreal's directional light shadows the whole view with camera-centred virtual shadow
         // maps. `VirtualShadowNode` is that: nested clip levels around the camera, each twice
         // as wide as the last. The coarsest half-width is the scene's own diameter, so every
@@ -262,8 +277,10 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
       tier: TIER,
       finalGatherMethod: GI_METHOD,
       shadowQuality: SHADOW.shadowQuality,
-      // The GI watcher's newest window, for the perf run (PRD-644 AC-2).
-      gi: () => this.#gi?.lastReport(),
+      // The GI and shadow watchers' newest windows, for the perf run (PRD-644 AC-2, PRD-652).
+      giBudget: () => this.#gi?.lastReport(),
+      shadowBudget: () => this.#shadow?.lastReport(),
+      setShadowTier: (tier: string) => setShadowTier(resolveQualityTier({ tier })),
       // Only the owned engine's renderer carries `info.engine`; the capture refuses anything else.
       engine:
         "engine" in (ctx.renderer.raw as unknown as { info: object }).info

@@ -72,7 +72,7 @@ async function collectWindows(
   const windows = new Map<number, IWindow>();
   const deadline = Date.now() + 240_000;
   while (windows.size < count + 1 && Date.now() < deadline) {
-    const last = (await page.evaluate("window.__tnRef.gi?.() ?? null")) as IWindow | null;
+    const last = (await page.evaluate("window.__tnRef.giBudget?.() ?? null")) as IWindow | null;
     if (last?.window !== undefined) windows.set(last.window, last);
     if (errors.length > 0) throw new Error(`TN_UNREAL_LOOK_PAGE_ERROR: ${errors.join(" | ")}`);
     await page.waitForTimeout(250);

@@ -93,21 +93,21 @@ prd_contract: v1
 ## Execution Phases
 
 #### Phase 1: The tier table matches its Unreal level
-**Status:** NOT STARTED
+**Status:** PARTIAL
 **Files:** `scripts/unreal-look/scaffold/render/quality.ts`, `scripts/unreal-look/scaffold/render/worldEnvironment.ts`, `scripts/unreal-look/compare.ts`
 - [x] The compare tool pairs a ThreeNative tier with its Unreal level and fails closed when the cell of that level is missing. proof: `pnpm exec vitest run scripts/__tests__/unreal-look-compare.spec.ts` — red first (`unrealVariant` absent, `L7-medium` rejected as `GI layer`), then 32 passed on 2026-10-21. `L7-low`, `L7-medium` and `L7-high` pair with `L7-Low`, `L7-Medium` and `L7-Epic`; `--unreal-level 0|1|3` pairs one capture with another level; a missing Unreal frame throws `TN_UNREAL_LOOK_MISSING_CELL` and names `L7-Medium`.
 - [ ] Unreal's GI GPU time at Low, Medium and Epic on the RTX 2080 is recorded under `## Decisions` as the tier budgets. proof: `r.ProfileGPU` logs from `pnpm unreal-look:capture --engine unreal --scene gi`.
 
 #### Phase 2: The measured budget steps the method
-**Status:** NOT STARTED
+**Status:** DONE
 **Files:** `packages/core/src/render/gi-budget.ts` (new), `packages/core/src/index.ts`, `packages/core/__tests__/gi-budget.spec.ts` (new), `packages/engine-mcp/__tests__/search.spec.ts`
 - [x] A window above budget steps the method down once, a window below 70% of the next budget steps it up, and an explicit `finalGatherMethod` never changes. proof: `pnpm exec vitest run packages/core/__tests__/gi-budget.spec.ts packages/core/__tests__/budget-ladder.spec.ts`, with injected GPU readings — 7 and 10 tests passed on 2026-10-21 (step down once, step up below 70% with room in the frame, no climb on a full frame, growing retry wait after a failed step, explicit keeps the method and reports, no timestamps holds the method).
 - [x] A capability search for "global illumination quality" returns `GIBudget`. proof: `pnpm exec vitest run packages/engine-mcp/__tests__/search.spec.ts` — 55 passed on 2026-10-21, including "global illumination quality", "lumen scalability" and "sg.GlobalIlluminationQuality".
 
 #### Phase 3: Desktop host and emulator
-**Status:** NOT STARTED
+**Status:** PARTIAL
 **Files:** `packages/runtime-native/conformance/scenes/shared/gi-tier-medium.js` (new), `packages/runtime-native/conformance/registry.json`
-- [ ] The desktop host renders the `medium` tier within tolerance of the browser. proof: `pnpm parity --target desktop --only-tests gi-tier-medium`.
+- [x] The desktop host renders the `medium` tier within tolerance of the browser. proof: `pnpm parity --target desktop --only-tests gi-tier-medium` — `run-conformance.mjs --target web` then `--target desktop --reference <web capture>` on 2026-10-21: both pass. The desktop frame has pixel mismatch 0 and delta E 0 against the web frame (1280 x 720). The scene also runs `GIBudget` on injected readings: `medium` holds with no frame room, steps to `none` above its 1.5 ms budget, and an explicit method stays and reports the exceeded budget. The desktop binary was the clean `prd-ocean` build (HEAD d0c2635d5), reused read-only, because this worktree has no native build and the lane changes no C++. `registry.json` row `gi-tier-medium`; `conformance-runner.test.mjs` 84 passed.
 **Verification:** AC-3. A PRD-647 round per tier on every registered calibration scene returns no REGRESSION against BEFORE.
 
 ## Decisions
@@ -128,3 +128,16 @@ prd_contract: v1
   work in `stages`.
 - 2026-10-21 (tier-lane, wiring): the ledger said `ctx.add(new GIBudget(...))`. `ctx.add` takes only an `Object3D`,
   so the watcher is fed with `ctx.beforeRender`.
+- 2026-10-21 (tier-lane, retry): a failed method came back as soon as its wait ended and its budget fitted the
+  frame. A gather that measured 31 ms against a 6 ms budget then failed again after every wait. The ladder now keeps
+  the cost a method measured in its failed window and asks the frame for that cost, never less than the budget.
+  A lighter frame lets the method back in (`budget-ladder.ts`, `427fc5fec`, red first).
+- 2026-10-21 (tier-lane, axes): Unreal's GI and shadow levels are separate scalability groups. The `L7-Low`,
+  `L7-Medium` and `L7-Epic` frames change only `sg.GlobalIlluminationQuality`, so their shadows stay at Epic. A GI
+  tier capture therefore adds `shadowTier=high` (`tierQuery` in `capture-gi-threenative.ts`). PRD-652 owns the
+  shadow tiers.
+- 2026-10-21 (tier-lane, stray SSGI): calibration scenes enabled SSGI at every layer, because `harnessLayer()` reads
+  only `tnRef`. `worldEnvironment.ts` now takes `finalGatherMethod` explicitly and it is `none` below L7. The old
+  `L6` BEFORE frames carry that stray SSGI, so a BEFORE of `low` is the pre-change `L6` and says so on the sheet.
+- 2026-10-21 (tier-lane, high tier): `high` is pixel-neutral. Its cornell L7 frames match the pre-change L7 frames
+  with 0.00 mean difference.

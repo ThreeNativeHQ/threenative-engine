@@ -614,6 +614,19 @@
       "required": true
     },
     {
+      "id": "shadow-filter-step",
+      "title": "shadow filter steps down a tier under frame pressure",
+      "category": "shadows",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/shadow-filter-step.js",
+      "tolerance": {
+        "pixelMismatchRatio": 0.08,
+        "perceptualDeltaE": 10.0
+      },
+      "desktopGate": true,
+      "required": true
+    },
+    {
       "id": "40-texture-png",
       "title": "texture png",
       "category": "assets",
@@ -1108,6 +1121,21 @@
       "category": "lighting-gi",
       "status": "implemented",
       "scene": "conformance/scenes/shared/probe-volume-sample.js",
+      "browserRecipe": "webgpu",
+      "requiresHardwareAdapter": true,
+      "tolerance": {
+        "pixelMismatchRatio": 0.08,
+        "perceptualDeltaE": 10.0
+      },
+      "desktopGate": true,
+      "required": true
+    },
+    {
+      "id": "gi-tier-medium",
+      "title": "medium GI tier: irradiance field and budget watcher",
+      "category": "lighting-gi",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/gi-tier-medium.js",
       "browserRecipe": "webgpu",
       "requiresHardwareAdapter": true,
       "tolerance": {
