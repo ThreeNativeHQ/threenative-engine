@@ -36,6 +36,32 @@
       "kinds": ["png", "exr"]
     },
     {
+      "name": "L5-Low",
+      "layer": "L5",
+      "cvars": {
+        "sg.ShadowQuality": 0
+      },
+      "expect": {
+        "r.Shadow.Virtual.Enable": 1,
+        "r.DynamicGlobalIlluminationMethod": 0,
+        "r.Shadow.Virtual.SMRT.RayCountDirectional": 0
+      },
+      "kinds": ["png", "exr"]
+    },
+    {
+      "name": "L5-Medium",
+      "layer": "L5",
+      "cvars": {
+        "sg.ShadowQuality": 1
+      },
+      "expect": {
+        "r.Shadow.Virtual.Enable": 1,
+        "r.DynamicGlobalIlluminationMethod": 0,
+        "r.Shadow.Virtual.SMRT.RayCountDirectional": 4
+      },
+      "kinds": ["png", "exr"]
+    },
+    {
       "name": "L9",
       "layer": "L9",
       "cvars": {

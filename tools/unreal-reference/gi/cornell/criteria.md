@@ -1,39 +1,34 @@
-# cornell: what the judge looks for
+# cornell: what the judge looks at (PRD-647)
 
-Judge the engine against Unreal per pose. The scene is a closed white box with a red left wall, a green
-right wall, a tall box and a short box, and one lamp on the ceiling. Every photon that does not come
-straight from the lamp is bounced light. The regions are `Floor`, `Ceiling`, `Back`, `Wall_Red`,
-`Wall_Green`, `Box_Tall`, `Box_Short` and `Shade`.
+Reference: Unreal 5.8.3 `L7-Epic` (tier `high`), `L7-Medium` (tier `medium`) and `L7-Low` (tier `low`).
+Frames: `tools/unreal-reference/captures/unreal/cornell/<variant>/<pose>.png`. Regions and ID masks:
+`reference-stats.json` and `id/`. Read `../judge-brief.md` first.
 
-## Pose `cornell` (the camera at the open front, looking at the back wall)
+The room is a box open at the camera side, with a red left wall, a green right wall, white floor, ceiling and
+back wall, a tall box and a short box, and one lamp in a recess of the ceiling. There is no sky. The lamp lights
+the top of each box and part of the floor. Everything else is lit by bounce.
 
-1. **Colour bleeding on the back wall.** The `Back` wall takes a pink tint beside the red wall and a green
-   tint beside the green wall, and both fade to neutral white toward the middle. The tint reaches about as
-   far from each side wall as it does in Unreal. A grey or white back wall with no tint is FAR.
-2. **Colour bleeding on the boxes.** The side of `Box_Tall` that faces the red wall is red-tinted. The side
-   of `Box_Short` that faces the green wall is green-tinted.
-3. **Floor.** The `Floor` carries a red cast near the red wall and a green cast near the green wall. The soft
-   dark patches beside the boxes (bounce-lit shadow) have the same depth as in Unreal.
-4. **Ceiling.** The `Ceiling` is lit by bounce only, apart from the lamp pocket. It is brightest near the lamp
-   and falls off smoothly. It shows no blotches, no stripes and no black corners that Unreal lacks.
-5. **Faces that look away from the lamp.** The front of `Box_Short` is dim and warm grey in Unreal: lit by
-   bounce only. It must read dim and warm too, darker than the top of the box and not as bright as a face
-   that the lamp lights directly.
-6. **No noise.** `Back` and `Ceiling` are smooth. Speckle, grain, tiling or blotches that Unreal's frame
-   lacks are a fault at any strength a player can see at full size.
-7. **Contact darkening.** Where the boxes meet the floor and where the walls meet each other the frame
-   darkens softly, with no dark band and no bright halo along the crease.
+## What every pose must show
 
-## Pose `corner` (a close view into the gap between the red wall and the tall box)
+1. **Colour bleeding.** The red wall tints the white surfaces near it (floor, back wall edge, the tall box's left
+   face). The green wall does the same on its side. The tint fades smoothly.
+2. **Soft contact.** Boxes and walls meet the floor with a soft dark crease. No black line and no bright line at
+   any junction.
+3. **Smooth surfaces.** No grain, speckle, streaks or blotches on any wall, the ceiling or the boxes.
+4. **Dark faces stay dark.** A face that the lamp does not reach and that looks at the open side gets only weak
+   bounce. In Unreal the front face of the short box is dark and warm.
 
-8. **Floor strip.** The floor in the gap has a red-brown cast and darkens toward the back corner. The dark
-   fades smoothly, with no band.
-9. **Back corner.** The back wall at the end of the gap is pink-grey and darker than the open back wall in
-   the first pose. It is not black and not as bright as the open wall.
-10. **Red bounce.** The side of `Box_Tall` that faces the red wall shows red bounce light. The shadow of the
-    box on the red wall is dark red, not black.
-11. **Exposure of the whites.** The white surfaces in both poses sit at about the same brightness as
-    Unreal's. A frame that is clearly brighter or darker overall is CLOSE at best.
+## Per pose
 
-Not judged here: bloom and exposure adaptation (L9), how sharp the shadow edges are (PRD-650), the shape of
-the lamp (PRD-634), reflections.
+- **cornell.** The whole box. The ceiling is white with a soft tint at each side and a recess that is darker than
+  the ceiling, with a darker crease under its rim. The back wall is nearly uniform white. The tall box has a
+  red-tinted left face. The short box has a bright top, a dark warm front face (about a third of the brightness
+  of its top), and a green-tinted right face. Each box casts a soft shadow away from the lamp.
+- **corner.** The red wall, the back wall and the floor at the left corner, close up. The red wall is saturated
+  and darkens toward the far corner. The floor is pink from the red wall. The face of the tall box at the right
+  is a light grey with only a weak red tint. Junctions are soft.
+
+## Regions that matter most
+
+`Box_Short`, `Box_Tall`, `Back`, `Ceiling`, `Floor`, `Wall_Red`, `Wall_Green`. A region p50 outside 10 percent of
+Unreal needs a named reason in the verdict.

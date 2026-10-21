@@ -8,6 +8,7 @@ import {
   type ICtx,
   Scene,
   type SceneFrame,
+  type ShadowFilterTier,
   VirtualShadowNode,
   sourceAngleShadowFilter,
 } from "@threenative/core";
@@ -32,7 +33,16 @@ import { EMISSIVE_UNITS } from "../render/atmosphere.js";
 import { installGi } from "../render/giCache.js";
 import { setupLighting } from "../render/lighting.js";
 import { setupPost } from "../render/postprocessing.js";
-import { qualityPreset } from "../render/quality.js";
+import { watchGi } from "../render/giTier.js";
+import { watchShadowTier } from "../render/shadowTier.js";
+import {
+  EPIC_SSGI,
+  type FinalGatherMethod,
+  giPreset,
+  qualityPreset,
+  resolveQualityTier,
+  shadowPreset,
+} from "../render/quality.js";
 import { captureReflections } from "../render/reflectionCapture.js";
 import { SUN_DIRECTION, setupSky } from "../render/sky.js";
 import { WorldEnvironment } from "../render/worldEnvironment.js";
@@ -47,6 +57,15 @@ const params = new URLSearchParams(location.search);
 const LAYER = params.get("tnRef") ?? "L9";
 const [elevationDeg = 60, azimuthDeg = 25] = (params.get("sun") ?? "60,25").split(",").map(Number);
 const level = LAYER === "ID" ? -1 : Number(LAYER.slice(1));
+// `tier=low|medium|high` (default high, which follows Unreal's Epic) is the quality tier the cell is drawn at:
+// its GI method and shadow filter come from `render/quality.ts` (PRD-644, PRD-652). Unreal's GI and shadow levels
+// are separate scalability groups, so `shadowTier=` draws the shadows at another tier than the GI.
+const TIER = resolveQualityTier({ tier: params.get("tier") ?? "high" });
+const GI = giPreset(TIER);
+const SHADOW_TIER = resolveQualityTier({ tier: params.get("shadowTier") ?? TIER });
+const SHADOW = shadowPreset(SHADOW_TIER);
+// From L7 the tier's final gather method decides the GI; below it there is none, as in Unreal's ladder.
+const GI_METHOD = level >= 7 ? GI.finalGatherMethod : "none";
 // `baseline=1` captures the template look as it ships; otherwise the tuning in progress applies.
 const TUNED = params.get("baseline") !== "1";
 // `off=vsm,gpusky,clouds,gi,reflcap,bloom,localexposure,autoexposure,ssgi,ssr,gtao` switches one L9 stage off, to
@@ -71,6 +90,8 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
   #model: Group | undefined;
   #sky: Texture | undefined;
   #dispose: (() => void) | undefined;
+  #gi: ReturnType<typeof watchGi> | undefined;
+  #shadow: ReturnType<typeof watchShadowTier> | undefined;
   #reflectionsDispose: (() => void) | undefined;
 
   override async load(ctx: GameCtx): Promise<void> {
@@ -101,6 +122,8 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
     const camera = ctx.camera as PerspectiveCamera;
     const raw = ctx.renderer.raw as unknown as { toneMapping: number };
     let reflections: Promise<() => void> | undefined;
+    // Draws the sun's shadow at another tier: what a `ShadowFilterBudget` step does, callable from the page.
+    let setShadowTier = (_tier: ShadowFilterTier): void => undefined;
 
     if (level <= 0) {
       // ID and L0: unlit base colour, no post. Unreal: ShowFlag.Lighting 0, post off.
@@ -115,7 +138,7 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
     } else {
       const { key } = setupLighting(scene, ctx.renderer.raw as Parameters<typeof setupLighting>[1]);
       // Diagnosis knob sunShadow=0: the sun casts no shadow (is a seam line a shadow leak at all?).
-      key.castShadow = level >= 5 && params.get("sunShadow") !== "0";
+      key.castShadow = level >= 5 && params.get("sunShadow") !== "0" && SHADOW.castShadows;
       // Diagnosis knob shadowSide=front|back|double: the caster faces. Unset keeps the engine's rule:
       // a virtual page draws front faces, the classic map three's derived side. shadowSide=back is the
       // BEFORE arm of the sun-seam fix, where back faces store the depth on a wall's inner surface.
@@ -143,10 +166,27 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
       });
       // three's WebGPU ShadowNode reads `shadow.filterNode`; its types do not declare it yet.
       if (TUNED) {
-        if (!OFF.has("vsm"))
-          (key.shadow as unknown as { filterNode: unknown }).filterNode = sourceAngleShadowFilter({
-            sourceAngleRad: SUN_SOURCE_ANGLE_RAD,
-          });
+        // A shadow tier decides whether the sun casts and what its filter samples; `ShadowFilterBudget`
+        // moves it with the frame time when the URL asks for shadowAuto=1 (PRD-652).
+        const applyShadowTier = (next: ShadowFilterTier) => {
+          const preset = shadowPreset(next);
+          key.castShadow = level >= 5 && params.get("sunShadow") !== "0" && preset.castShadows;
+          if (!OFF.has("vsm"))
+            (key.shadow as unknown as { filterNode: unknown }).filterNode = sourceAngleShadowFilter({
+              sourceAngleRad: SUN_SOURCE_ANGLE_RAD,
+              ...preset.filter,
+              // Diagnosis knobs for the tier's sample-count round (PRD-652): sunBlockers and sunSamples.
+              ...(params.get("sunBlockers") === null
+                ? {}
+                : { blockerSamples: Number(params.get("sunBlockers")) }),
+              ...(params.get("sunSamples") === null
+                ? {}
+                : { filterSamples: Number(params.get("sunSamples")) }),
+            });
+        };
+        applyShadowTier(SHADOW_TIER);
+        setShadowTier = applyShadowTier;
+        if (level >= 5) this.#shadow = watchShadowTier(ctx, { tier: SHADOW_TIER, apply: applyShadowTier });
         // Unreal's directional light shadows the whole view with camera-centred virtual shadow
         // maps. `VirtualShadowNode` is that: nested clip levels around the camera, each twice
         // as wide as the last. The coarsest half-width is the scene's own diameter, so every
@@ -170,6 +210,10 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
             moverMapSize: 512,
             // Diagnosis knob recvBias=0: authored bias only (does the seam line come from the plane slope?).
             receiverPlaneBias: params.get("recvBias") !== "0",
+            // Diagnosis knob shadowBias=N brackets the tier's directional resolution bias (PRD-652).
+            resolutionLodBiasDirectional: Number(
+              params.get("shadowBias") ?? SHADOW.resolutionLodBiasDirectional,
+            ),
           });
       }
       if (level >= 2) {
@@ -194,9 +238,14 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
         installGi(ctx, model, {
           // Diagnosis knob stockRays=1: cast the bake through ctx.raycast, the slow path (an A/B).
           stockRays: params.get("stockRays") === "1",
-          bounces: level >= 7 ? 5 : 0,
-          // Unreal below L7 has no GI: its sky light is shadowed by distance fields, up to 10 m.
-          ...(level < 7 ? { skyShadowDistance: 10 } : {}),
+          bounces: GI_METHOD === "none" ? 0 : 5,
+          // The tier's sky light multiplier (Unreal's Low sets 0.8). Diagnosis knob skyMul=N brackets it.
+          skyIntensity: level >= 7 ? Number(params.get("skyMul") ?? GI.skylightIntensityMultiplier) : 1,
+          // Unreal without GI shadows its sky light with distance fields, up to 10 m. Its Low tier (L7) turns
+          // distance field AO off, so the sky light reaches an interior unoccluded: 0 m shadows nothing.
+          ...(GI_METHOD === "none"
+            ? { skyShadowDistance: level >= 7 && !GI.distanceFieldAO ? 0 : 10 }
+            : {}),
           sun: { color: key.color, intensity: key.intensity, direction: SUN_DIRECTION },
         });
       if (TUNED && level >= 8 && !OFF.has("reflcap"))
@@ -213,24 +262,59 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
       } else {
         // The template's own `high` chain with the L9-only stages off: bloom, vignette, the
         // authored grade and grain, auto exposure. AO enters at L6, as in the Unreal ladder.
-        const world = new WorldEnvironment({
-          ...qualityPreset("high"),
-          autoExposureEnabled: false,
-          bloomEnabled: false,
-          gtaoEnabled: level >= 6,
-          // Unreal's SSAO at L6 (r.AmbientOcclusionRadius 40 cm); Lumen's short-range AO is thinner from L7.
-          ...(level < 7 ? { gtaoRadius: 0.35 } : {}),
-          vignetteAmount: 0,
-          // The same ablation switches as L9, for attributing a GI fault below it.
-          ...Object.assign({}, ...[...OFF].map((name) => STAGE_OFF[name] ?? {})),
-        });
-        this.#dispose = world.apply(ctx.renderer, scene, camera, { godraysLight: key }).dispose;
+        const build = (method: FinalGatherMethod) => {
+          this.#dispose?.();
+          const world = new WorldEnvironment({
+            ...qualityPreset("high"),
+            // The Epic gather is opt-in here: on the sunlit room it smooths the walls but lights the wall under the sill
+            // 30 levels above Unreal (PRD-638 judge round 2026-10-21), so the default stays medium until PRD-640's probes land.
+            ...(params.get("ssgiQuality") === "epic" ? EPIC_SSGI : {}),
+            // Diagnosis: ?ssgiQuality=<tier>, ?ssgiScale=N, ?ssgiIntensity=N and ?ssgiDenoise=N bracket the gather.
+            ...(params.get("ssgiQuality") === null ? {} : { ssgiQuality: params.get("ssgiQuality") as "epic" }),
+            ...(params.get("ssgiScale") === null ? {} : { ssgiResolutionScale: Number(params.get("ssgiScale")) }),
+            ...(params.get("ssgiIntensity") === null ? {} : { ssgiIntensity: Number(params.get("ssgiIntensity")) }),
+            ...(params.get("ssgiDenoise") === null ? {} : { ssgiDenoiseRadius: Number(params.get("ssgiDenoise")) }),
+            // Diagnosis: ?probes=1 gathers with screen probes (PRD-640).
+            // 16 x 16 rays per probe: the engine's probes carry no radiance cache, so they trace twice Unreal's real-time 8 x 8
+            // (PRD-640 round 2026-10-21: sunlit-room dP50 0.129 against 0.140 for the per-pixel Epic gather). ?probeRays=N overrides.
+            ...(params.get("probes") === "1"
+              ? {
+                  ssgiScreenProbes: true,
+                  ssgiProbeRays: Number(params.get("probeRays") ?? 16),
+                  ssgiDenoiseRadius: Number(params.get("ssgiDenoise") ?? 16),
+                }
+              : {}),
+            ...(params.get("probeJitter") === null ? {} : { ssgiProbeJitter: Number(params.get("probeJitter")) }),
+            ...(params.get("probeDebug") === null ? {} : { ssgiProbeDebug: Number(params.get("probeDebug")) }),
+            autoExposureEnabled: false,
+            bloomEnabled: false,
+            gtaoEnabled: level >= 6,
+            finalGatherMethod: method,
+            // Unreal's SSAO at L6 (r.AmbientOcclusionRadius 40 cm); Lumen's short-range AO is thinner from L7.
+            ...(level < 7 ? { gtaoRadius: 0.35 } : {}),
+            vignetteAmount: 0,
+            // The same ablation switches as L9, for attributing a GI fault below it.
+            ...Object.assign({}, ...[...OFF].map((name) => STAGE_OFF[name] ?? {})),
+          });
+          this.#dispose = world.apply(ctx.renderer, scene, camera, { godraysLight: key }).dispose;
+        };
+        build(GI_METHOD);
+        // The tier's method moves with the measured GI time when the URL asks for giAuto=1 (PRD-644).
+        if (GI_METHOD !== "none")
+          this.#gi = watchGi(ctx, { tier: TIER, method: GI_METHOD, rebuild: build });
       }
     }
 
     const target = new Vector3();
     const reference = {
       layer: LAYER,
+      tier: TIER,
+      finalGatherMethod: GI_METHOD,
+      shadowQuality: SHADOW.shadowQuality,
+      // The GI and shadow watchers' newest windows, for the perf run (PRD-644 AC-2, PRD-652).
+      giBudget: () => this.#gi?.lastReport(),
+      shadowBudget: () => this.#shadow?.lastReport(),
+      setShadowTier: (tier: string) => setShadowTier(resolveQualityTier({ tier })),
       // Only the owned engine's renderer carries `info.engine`; the capture refuses anything else.
       engine:
         "engine" in (ctx.renderer.raw as unknown as { info: object }).info

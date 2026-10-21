@@ -199,7 +199,7 @@ function parse(args: string[]): IOptions {
       fail("BAD_INPUT", `--${name} must be a positive number`);
     return value;
   };
-  const tier = values.tier ?? "high";
+  const tier = String(values.tier ?? "high");
   if (!(tier in UNREAL_LEVEL)) fail("BAD_INPUT", "--tier is high, medium or low");
   const layers = (Array.isArray(values.layer) ? values.layer : []).flatMap((value) =>
     String(value).split(","),

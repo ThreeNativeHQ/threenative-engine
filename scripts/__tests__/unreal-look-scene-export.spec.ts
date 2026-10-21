@@ -1,6 +1,9 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   type ISceneJson,
+  REFERENCE_WARM_UP,
   checkReadback,
   folderName,
   readGlbJson,
@@ -288,7 +291,17 @@ describe("GI capture plumbing", () => {
   });
 
   it("names run folders the way gi/export.py writes them", () => {
-    expect(folderName("L7-Epic", 90, 1)).toBe("L7-Epic");
-    expect(folderName("L7-Epic", 180, 2)).toBe("L7-Epic@180#2");
+    expect(folderName("L7-Epic", REFERENCE_WARM_UP, 1)).toBe("L7-Epic");
+    expect(folderName("L7-Epic", 90, 1)).toBe("L7-Epic@90");
+    expect(folderName("L7-Epic", REFERENCE_WARM_UP, 2)).toBe("L7-Epic#2");
+  });
+
+  it("keeps export.py's default warm-up and folder name in step with REFERENCE_WARM_UP", () => {
+    const source = readFileSync(
+      path.join(import.meta.dirname, "../../tools/unreal-reference/gi/export.py"),
+      "utf8",
+    );
+    expect(source).toContain(`os.environ.get("TN_UE_WARMUP", "${REFERENCE_WARM_UP}")`);
+    expect(source).toContain(`("" if warm_up == ${REFERENCE_WARM_UP} else`);
   });
 });
