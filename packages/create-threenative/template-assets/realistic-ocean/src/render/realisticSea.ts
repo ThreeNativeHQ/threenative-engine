@@ -33,6 +33,7 @@ import {
   V_GGX_SmithCorrelated,
   abs,
   cameraPosition,
+  cameraViewMatrix,
   color,
   diffuseColor,
   dot,
@@ -58,6 +59,7 @@ import {
   uniformArray,
   vec2,
   vec3,
+  vec4,
 } from "three/tsl";
 import type { Node, NodeBuilder } from "three/webgpu";
 import { MeshStandardNodeMaterial, PhysicalLightingModel } from "three/webgpu";
@@ -124,8 +126,13 @@ export const FOAM = {
   /** Seconds for a patch of foam to halve. */
   halfLife: 3,
   /** Jacobian below which water is breaking. */
-  threshold: 0.8,
+  threshold: 0.76,
   gain: 3,
+  /**
+   * Jacobian below which a crest is breaking this frame, before the grids remember it. Stricter
+   * than `threshold`: every steep ripple would otherwise flash white.
+   */
+  freshThreshold: 0.6,
   /** Foam grids ride on these cascades, finest first. The second is the coarse, far one. */
   cascades: [1, 0] as readonly number[],
 } as const;
@@ -296,9 +303,13 @@ class SeaLightingModel extends PhysicalLightingModel {
     }) as unknown as Node<"float">;
     const visibility = V_GGX_SmithCorrelated({ alpha, dotNL, dotNV }) as unknown as Node<"float">;
     const irradiance = lightColor.mul(dotNL);
+    // Light leaving the water's body was scattered from deep below, so it follows the sun's height,
+    // not each ripple's facet. Foam is a surface: it takes its facet, half shaded by its own lumps.
+    const up = cameraViewMatrix.mul(vec4(0, 1, 0, 0)).xyz;
+    const bodyNL = up.dot(lightDirection).clamp();
+    const diffuseNL = mix(bodyNL, dotNL.mul(0.5), this.#foam);
     const lambert = BRDF_Lambert({ diffuseColor: diffuseColor.rgb }) as unknown as Node<"vec3">;
-    // Foam's lumpy surface shades half of a low sun on itself.
-    reflected.directDiffuse.addAssign(irradiance.mul(lambert).mul(mix(1, 0.5, this.#foam)));
+    reflected.directDiffuse.addAssign(lightColor.mul(diffuseNL).mul(lambert));
     reflected.directSpecular.addAssign(irradiance.mul(fresnel.mul(beckmann).mul(visibility)));
   }
 
@@ -467,7 +478,7 @@ export function createRealisticWaterMesh(
     restZ,
   );
   const foamBlend = smoothstep(float(60), float(220), distance);
-  const fresh = saturate(float(FOAM.threshold).sub(jacobian).mul(FOAM.gain));
+  const fresh = saturate(float(FOAM.freshThreshold).sub(jacobian).mul(FOAM.gain));
   // Breaking water is on the crests: foam from the grids is gated to the part of the surface above
   // the mean level, so it sits on tops of waves instead of lying in troughs as confetti.
   const crestGate = smoothstep(
