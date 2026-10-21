@@ -158,10 +158,8 @@ test("--cpu-prof writes the DevTools .cpuprofile itself, escaping every string",
   // profile API and escapes instead.
   assert.doesNotMatch(v8Engine, /profile->Serialize\(/u);
   assert.match(v8Engine, /static void writeJsonString\(std::ostream& out, const char\* text\)/u);
-  assert.match(v8Engine, /writeCpuProfile\(isolate_, profile, temporaryPath\)/u);
+  assert.match(v8Engine, /writeCpuProfile\(isolate_, profile, temporaryPath,/u);
   assert.match(engineHeader, /inline thread_local std::string g_cpuProfilePath;/u);
-assert.match(v8Engine, /writeCpuProfile\(isolate_, profile, temporaryPath,/u);
-  assert.match(engineHeader, /inline std::string g_cpuProfilePath;/u);
   assert.match(engineHeader, /inline bool g_cpuProfileFailed = false;/u);
 });
 
