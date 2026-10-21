@@ -283,6 +283,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_masked_shadow=masked_shadow
         native_engine_point_shadow_cube_faces=point_shadow_cube_faces
         native_engine_lamp_source_radius=lamp_source_radius
+        native_engine_lamp_source_radius_wall=lamp_source_radius_wall
         native_engine_contact_shadow_foot=contact_shadow_foot
         native_engine_virtual_sun_contact_foot=virtual_sun_contact_foot
         native_engine_lamp_cache=lamp_cache

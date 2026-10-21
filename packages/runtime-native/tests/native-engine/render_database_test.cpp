@@ -3438,6 +3438,77 @@ void lampSourceRadius() {
     for (const int hard : {pointPcf, pointHard, spotPcf, spotHard}) CHECK(hard <= 3);
 }
 
+// PRD-650: a plate's edge thrown on a wall that the lamp sees 40 degrees off the wall's normal (cornell's
+// red wall), the wall in the shadow map too. The wall's own texels nearer the lamp than a receiver are not
+// blockers: the receiver's plane decides, so the edge keeps its geometric width. A 0.5 m disk 3 m above a
+// plate whose edge is 1.2 m out, on a wall 2 m out, throws a 0.15-0.85 band of 8.3 pixels at 16 pixels per
+// metre. The blocker average widens it by up to half; a wall that shades itself narrows it to 1 or 2 pixels.
+// The same edge on a flat floor under the lamp is lampSourceRadius.
+void lampSourceRadiusWall() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(96, 96);
+    OrthographicCamera camera(-3, 3, 3, -3, 0.1, 20);
+    camera.position.set(8, 1.5, 0);
+    camera.lookAt(-2, 1.5, 0);
+    camera.updateProjectionMatrix();
+    const auto edgeWidth = [&](Light& lamp, LightShadow& shadow, Object3D* aim) {
+        Scene scene;
+        lamp.position.set(0, 3, 0);
+        lamp.setCastShadow(true);
+        shadow.mapSize = {1024, 1024};
+        shadow.sourceRadiusFilter = std::array<double, 3>{0.5, 16, 16};
+        scene.add(lamp);
+        if (aim) scene.add(*aim);
+        Mesh wall{makePlaneGeometry(6, 6), std::make_shared<Material>(MaterialType::Standard)};
+        wall.rotation.set(0, M_PI / 2, 0);  // faces +x, towards the camera and the lamp
+        wall.position.set(-2, 1.5, 0);
+        wall.setReceiveShadow(true);
+        wall.setCastShadow(true);  // the wall is in the map too: its texels nearer the lamp than a receiver are not blockers
+        wall.material->shadowSide = Side::Double;  // a plane faces the lamp, so a front-face or back-face pass alone would drop it
+        scene.add(wall);
+        // The plate covers x in [-1.2, 0] at 1 m under the lamp, on layer 2 only, so the camera sees the wall.
+        shadow.camera->setLayerMask(double((1 << 0) | (1 << 2)));
+        Mesh plate{makeBoxGeometry(1.2, 0.05, 6), std::make_shared<Material>(MaterialType::Standard)};
+        plate.position.set(-0.6, 2, 0);
+        plate.setCastShadow(true);
+        plate.setLayer(2);
+        scene.add(plate);
+        scene.updateMatrixWorld(true);
+        RenderDatabase database;
+        database.shadowMapEnabled = true;
+        const auto column = [&] {
+            database.render(renderer, scene, camera);
+            const std::vector<uint8_t> pixels = read(renderer, events);
+            CHECK(pixels.size() == size_t{96} * 96 * 4);
+            std::vector<double> red(96);
+            for (int y = 0; y < 96; ++y) red[y] = pixels[(size_t(y) * 96 + 48) * 4];
+            return red;
+        };
+        const std::vector<double> shadowed = column();
+        plate.setCastShadow(false);
+        const std::vector<double> open = column();
+        int width = 0, dark = 0;
+        for (int y = 8; y < 88; ++y) {
+            const double ratio = shadowed[y] / std::max(open[y], 1.0);
+            width += ratio > 0.15 && ratio < 0.85;
+            dark += ratio <= 0.15;
+        }
+        CHECK(dark > 10);  // the plate shades the wall
+        scene.remove(lamp);
+        if (aim) scene.remove(*aim);
+        return width;
+    };
+    PointLight point{Color(1, 1, 1), 60};
+    SpotLight spot{Color(1, 1, 1), 60};
+    spot.target->position.set(-2, 1.3, 0);  // the edge's height on the wall
+    const int pointWall = edgeWidth(point, point.shadow, nullptr), spotWall = edgeWidth(spot, spot.shadow, spot.target.get());
+    std::printf("lamp source radius wall edge px: point %d, spot %d\n", pointWall, spotWall);
+    for (const int wall : {pointWall, spotWall}) CHECK(wall >= 7 && wall <= 13);
+}
+
 // A box standing on a floor slab under a point lamp shades the floor right behind its far foot. three's
 // shadowSide draws a front-sided caster's back faces, so there the stored depth is the box's back face
 // at the floor and the strip leaks light (cornell's tall box); the strip's darkest-to-brightest
@@ -4597,7 +4668,7 @@ TN_TEST_MAIN({"gpu_joint_production", gpuJointProduction}, {"multi_material_grou
              {"material_unsupported", materialUnsupported}, {"shader_invalid", shaderInvalid}, {"time_uniform", timeUniform}, {"gpu_mipmaps", gpuMipmaps}, {"updates", updates},
              {"multi_camera_layers", multiCameraLayers}, {"render_callback", renderCallback}, {"instanced", instanced},
              {"batched_vs_unbatched", batchedVsUnbatched}, {"skinned_crowd", skinnedCrowdPixels}, {"skinned_decline_cadence", skinnedDeclineCadence}, {"skinned_normalized_weights", skinnedNormalizedWeights}, {"normal_map_tilt", normalMapTilt}, {"unsupported_map_slot", unsupportedMapSlot}, {"env_map_slot_is_read", envMapSlotIsRead}, {"converted_copies_swept", convertedCopiesAreSwept}, {"gpu_timer_covers_offscreen", gpuTimerCoversOffscreen}, {"gpu_timer_covers_shadows", gpuTimerCoversShadows}, {"overlay_over_frame", overlayOverFrame}, {"gpu_timer_is_opt_in", gpuTimerIsOptIn}, {"msaa_edges", msaaEdges}, {"shadow_camera_layers", shadowCameraLayers}, {"flat_shading_needs_no_normals", flatShadingNeedsNoNormals}, {"map_sampleability_changes", mapSampleabilityChanges}, {"batch_caches_stay_put", batchCachesStayPut}, {"frustum_culling", frustumCulling},
-             {"shadow_caster_frustum_culling", shadowCasterFrustumCulling}, {"masked_shadow", maskedShadow}, {"point_shadow_cube_faces", pointShadowCubeFaces}, {"lamp_source_radius", lampSourceRadius}, {"contact_shadow_foot", contactShadowFoot}, {"virtual_sun_contact_foot", virtualSunContactFoot}, {"lamp_cache", lampCache}, {"shadow_lights_follow_hierarchy", shadowLightsFollowHierarchy}, {"records_survive_siblings", recordsSurviveSiblings}, {"steady_frame_hashes_no_record", steadyFrameHashesNoRecord}, {"nested_record_cache", nestedRecordCache}, {"frustum_record_retention", frustumRecordRetention}, {"world_sphere_measured_once", worldSphereMeasuredOnce}, {"reflection_reuse", reflectionReuse})
+             {"shadow_caster_frustum_culling", shadowCasterFrustumCulling}, {"masked_shadow", maskedShadow}, {"point_shadow_cube_faces", pointShadowCubeFaces}, {"lamp_source_radius", lampSourceRadius}, {"lamp_source_radius_wall", lampSourceRadiusWall}, {"contact_shadow_foot", contactShadowFoot}, {"virtual_sun_contact_foot", virtualSunContactFoot}, {"lamp_cache", lampCache}, {"shadow_lights_follow_hierarchy", shadowLightsFollowHierarchy}, {"records_survive_siblings", recordsSurviveSiblings}, {"steady_frame_hashes_no_record", steadyFrameHashesNoRecord}, {"nested_record_cache", nestedRecordCache}, {"frustum_record_retention", frustumRecordRetention}, {"world_sphere_measured_once", worldSphereMeasuredOnce}, {"reflection_reuse", reflectionReuse})
 
 
 
