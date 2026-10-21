@@ -41,6 +41,7 @@ import {
   color,
   convertToTexture,
   diffuseColor,
+  emissive,
   float,
   max,
   metalness,
@@ -528,7 +529,7 @@ export class WorldEnvironment {
 
   constructor(options: IWorldEnvironmentOptions = {}) {
     const quality = options.ssgiQuality ?? "medium";
-    console.info(`TN_CALIBRATION_DIAG ctor ${JSON.stringify({ q: options.ssgiQuality, scale: options.ssgiResolutionScale })} ${(new Error().stack ?? "").split("\n").slice(2, 4).join(" | ")}`);
+    console.info(`TN_CALIBRATION_DIAG ctor ${JSON.stringify({ q: options.ssgiQuality, scale: options.ssgiResolutionScale })} ${(new Error().stack ?? "").split("\n").slice(2, 9).map((l) => l.trim().replace(/\(.*[\\/]/, "(")).join(" | ")}`);
     if (SSGI_QUALITY[quality] === undefined) {
       // Fail closed. A typo'd tier that silently became "medium" is a quality setting
       // nobody can trust afterwards.
@@ -698,6 +699,8 @@ export class WorldEnvironment {
         metalness,
         roughness,
         ...(options.ssgiEnabled ? { diffuseColor } : {}),
+        // AO leaves emission alone: an emitter's underside stays its own radiance (Unreal's AO is indirect only).
+        ...(options.gtaoEnabled || options.ssgiEnabled ? { emissive } : {}),
       });
       sceneMrt.setBlendMode("normal", new BlendMode(MaterialBlending));
       scenePass.setMRT(sceneMrt);
@@ -839,7 +842,11 @@ export class WorldEnvironment {
             .rgb.mul(float(1).sub(metal().r))
             .mul(indirect.rgb)
             .mul(options.ssgiIntensity);
-          return base.mul(occlusion.r).add(vec4(reflected, 0));
+          // The gather's own AO leaves emission alone too (see the GTAO stage).
+          const emitted = textureNode("emissive").rgb.mul(gain);
+          return base
+            .mul(occlusion.r)
+            .add(vec4(reflected.add(emitted.mul(float(1).sub(occlusion.r))), 0));
         },
       }),
       stage({
@@ -896,7 +903,11 @@ export class WorldEnvironment {
             };
           }
           const occlusion = filter ? denoised(filter) : contact;
-          return input.mul(occlusion.r);
+          // Emission is radiance a surface gives off, not light it receives: AO keeps it, as Unreal's AO darkens only
+          // indirect light. The emitted part passes at full weight; the rest takes the occlusion.
+          // The chain reads exposed light, so the emitted radiance takes the frame's gain too.
+          const emitted = textureNode("emissive").rgb.mul(gain);
+          return input.mul(occlusion.r).add(vec4(emitted.mul(float(1).sub(occlusion.r)), 0));
         },
       }),
       stage({
