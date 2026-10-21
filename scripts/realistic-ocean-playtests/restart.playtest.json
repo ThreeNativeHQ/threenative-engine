@@ -1,0 +1,84 @@
+{
+  "name": "realistic-ocean-restart-teleport",
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 40,
+  "subject": "player",
+  "steps": [
+    {
+      "kind": "input",
+      "label": "sail-out",
+      "press": ["ArrowUp"],
+      "holdTicks": 600,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "restart-1",
+      "press": ["KeyR"],
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "sail-again",
+      "press": ["ArrowUp"],
+      "holdTicks": 600,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "restart-2",
+      "press": ["KeyR"],
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "settle",
+      "waitTicks": 300,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "runtimeReady": true
+    },
+    "components": [
+      {
+        "entity": "player",
+        "component": "oceanSteps",
+        "gte": 100,
+        "changed": true
+      },
+      {
+        "entity": "player",
+        "component": "seaHeight",
+        "changed": true,
+        "allowTrivial": "The sampled ocean must keep evolving through two scene restarts: a sea that stopped when the scene re-entered cannot satisfy it."
+      }
+    ],
+    "tone": [
+      {
+        "mean": {
+          "min": 40,
+          "max": 215
+        },
+        "p99": {
+          "max": 252
+        },
+        "blackFraction": {
+          "max": 0.2
+        },
+        "clipFraction": {
+          "max": 0.08
+        }
+      }
+    ]
+  }
+}
