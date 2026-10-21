@@ -9,6 +9,7 @@
  *   scriptStart    the first script ran            ready     data-threenative-startup="ready" (scene entered, GI baked)
  *   giBakeMs       TN_GI_CACHE milliseconds        frame1    the first presented frame after ready
  *   frame60        the 60th presented frame after ready
+ *   giConverged    the full GI bake landed (window.__tnRef.giConverged); equals ready when the bake is not progressive
  * `cold` clears the dev server's dependency cache and uses a fresh browser profile; `warm` reuses both.
  * Hold the capture lock for the whole run, as for any GPU capture.
  */
@@ -28,7 +29,7 @@ const flag = (name: string, fallback: string): string => {
 
 // Runs in the page before any script: timestamps of the first frames after the scene is ready.
 const PROBE = `(() => {
-  const t = { frames: [], ready: null, scriptStart: performance.now() };
+  const t = { frames: [], ready: null, converged: null, scriptStart: performance.now() };
   window.__tnStartup = t;
   const watch = new MutationObserver(() => {
     if (t.ready === null && document.querySelector('[data-threenative-startup="ready"]')) t.ready = performance.now();
@@ -36,7 +37,8 @@ const PROBE = `(() => {
   watch.observe(document, { attributes: true, childList: true, subtree: true });
   const tick = () => {
     if (t.ready !== null && t.frames.length < 61) t.frames.push(performance.now());
-    if (t.frames.length < 61) requestAnimationFrame(tick);
+    if (t.converged === null && window.__tnRef && window.__tnRef.giConverged === true) t.converged = performance.now();
+    if (t.frames.length < 61 || t.converged === null) requestAnimationFrame(tick);
   };
   requestAnimationFrame(tick);
 })();`;
@@ -88,12 +90,15 @@ async function main(): Promise<void> {
       await page.goto(load, { waitUntil: "domcontentloaded" });
       await page.addStyleTag({ content: HIDE_UI });
       await page.waitForSelector('[data-threenative-startup="ready"]', { timeout: 900_000 });
-      await page.waitForFunction("window.__tnStartup.frames.length >= 61", undefined, {
-        timeout: 120_000,
-      });
+      await page.waitForFunction(
+        "window.__tnStartup.frames.length >= 61 && window.__tnStartup.converged !== null",
+        undefined,
+        { timeout: 900_000 },
+      );
       const marks = (await page.evaluate("window.__tnStartup")) as {
         frames: number[];
         ready: number;
+        converged: number;
         scriptStart: number;
       };
       const gi = markers.find((m) => m.text.startsWith("TN_GI_CACHE"));
@@ -107,6 +112,7 @@ async function main(): Promise<void> {
         readyMs: Math.round(marks.ready),
         frame1Ms: Math.round(marks.frames[0] ?? Number.NaN),
         frame60Ms: Math.round(marks.frames[60] ?? Number.NaN),
+        giConvergedMs: Math.round(marks.converged),
         giCache: gi === undefined ? null : JSON.parse(gi.text.replace(/^TN_GI_CACHE /, "")),
         markers,
         startedAt: new Date(load0).toISOString(),

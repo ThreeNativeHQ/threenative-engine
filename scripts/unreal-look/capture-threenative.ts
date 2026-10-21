@@ -20,6 +20,7 @@ import {
   packageLocalFramework,
   stopVisualServer,
 } from "../visual-gate.js";
+import { GPU_PASSES, readPasses } from "./gpuPasses.js";
 
 const REPO_ROOT = path.resolve(import.meta.dirname, "../..");
 const REFERENCE = path.join(REPO_ROOT, "tools/unreal-reference");
@@ -207,6 +208,8 @@ export async function captureThreeNative(options: IThreeNativeCaptureOptions): P
     try {
       const page = await browser.newPage({ viewport: { width, height }, deviceScaleFactor: 1 });
       const errors: string[] = [];
+      const passes = process.env.TN_UNREAL_LOOK_GPU_PASSES === "1";
+      if (passes) await page.addInitScript(GPU_PASSES);
       // The frame meter prints to the console; a measured cell keeps the windows between two marks.
       let meter: string[] = [];
       page.on("console", (message) => {
@@ -302,7 +305,14 @@ export async function captureThreeNative(options: IThreeNativeCaptureOptions): P
             const name = layer === "ID" ? `ID_${pose.name}` : `${layer}_${sun.name}_${pose.name}`;
             if (options.measureSeconds !== undefined) {
               meter = [];
-              await page.waitForTimeout(options.measureSeconds * 1000);
+              if (passes) {
+                const rows = await readPasses(page, options.measureSeconds);
+                await mkdir(path.join(options.out, layer), { recursive: true });
+                await writeFile(
+                  path.join(options.out, layer, `${name}.gpu-passes.json`),
+                  `${JSON.stringify(rows ?? null, null, 2)}\n`,
+                );
+              } else await page.waitForTimeout(options.measureSeconds * 1000);
               const log = path.join(options.out, layer, `${name}.frame-budget.log`);
               await mkdir(path.dirname(log), { recursive: true });
               await writeFile(log, `${meter.join("\n")}\n`);
