@@ -128,7 +128,12 @@ ExprId Lowerer::expression(Node node) {
     if (const auto effect = effects_.find(node.get()); effect != effects_.end()) return effect->second;
     const auto found = exprs_.find(node.get());
     if (found != exprs_.end()) return found->second;
-    const ExprId id = emit(node);
+    ExprId id = emit(node);
+    // The scene's two scalar MRT outputs share a packed target; three splats each to RGBA.
+    if (id != kInvalid && (node->kind == Kind::Texture || node->kind == Kind::TextureLoad)) {
+        if (node->name == "metalness") id = program_.swizzle(id, "xxxx");
+        if (node->name == "roughness") id = program_.swizzle(id, "yyyy");
+    }
     exprs_.emplace(node.get(), id);
     if (node->kind == Kind::AtomicAdd) effects_.emplace(node.get(), id);
     return id;

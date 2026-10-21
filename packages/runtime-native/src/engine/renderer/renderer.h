@@ -610,6 +610,7 @@ private:
     struct Program {
         shader::StageModule vertex;
         shader::StageModule fragment;
+        shader::StageModule materialFragment;
         // Explicit layouts: each stage's uniform block is a dynamic-offset slice of the frame's one
         // uniform buffer, so a draw costs a bind-group offset, not a buffer and a bind group of its own.
         WGPUBindGroupLayout layouts[2] = {};
@@ -842,6 +843,8 @@ private:
     WGPUTexture normalTexture_ = nullptr;
     WGPUTextureView normalView_ = nullptr;
     shader::StageModule normalFragment_;
+    WGPUTexture materialTexture_ = nullptr;
+    WGPUTextureView materialView_ = nullptr;
     std::vector<std::string> diagnostics_;
     OutputState output_;
     std::shared_ptr<const shader::PostNode> post_;

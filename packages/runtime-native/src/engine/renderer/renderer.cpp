@@ -441,7 +441,7 @@ struct Renderer::ShadowPass {
 
 struct Renderer::FrameJob {
     uint64_t groupEpoch = 0;  // the group epoch the plan's bind groups were chosen under
-    std::vector<Planned> plan, velocityPlan, normalPlan;
+    std::vector<Planned> plan, velocityPlan, normalPlan, materialPlan;
     std::vector<ShadowPass> shadowPasses;
     WGPURenderPassColorAttachment color{};
     WGPURenderPassDepthStencilAttachment depth{};
@@ -451,7 +451,7 @@ struct Renderer::FrameJob {
     LightState lights;
     WGPUTextureView presentTarget = nullptr;
     WGPUTextureFormat presentFormat = WGPUTextureFormat_Undefined;
-    bool timed = false, normalPass = false;
+    bool timed = false, normalPass = false, materialPass = false;
     uint64_t source = 0;  // the caller frame id this frame's timed sample is reported under
     std::vector<uint64_t> bundleKey;  // the main bundle's inputs, built while the draws' stores were live
 };
@@ -816,12 +816,14 @@ void Renderer::releaseTargets() {
     if (sceneColor_) wgpuTextureRelease(sceneColor_);
     if (normalView_) wgpuTextureViewRelease(normalView_);
     if (normalTexture_) wgpuTextureRelease(normalTexture_);
+    if (materialView_) wgpuTextureViewRelease(materialView_);
+    if (materialTexture_) wgpuTextureRelease(materialTexture_);
     if (viewportColorView_) wgpuTextureViewRelease(viewportColorView_);
     if (viewportColor_) wgpuTextureRelease(viewportColor_);
     if (viewportDepthView_) wgpuTextureViewRelease(viewportDepthView_);
     if (viewportDepth_) wgpuTextureRelease(viewportDepth_);
-    colorView_ = depthView_ = msaaColorView_ = msaaDepthView_ = sceneView_ = normalView_ = viewportColorView_ = viewportDepthView_ = nullptr;
-    depth_ = msaaColor_ = msaaDepth_ = sceneColor_ = normalTexture_ = viewportColor_ = viewportDepth_ = nullptr;
+    colorView_ = depthView_ = msaaColorView_ = msaaDepthView_ = sceneView_ = normalView_ = materialView_ = viewportColorView_ = viewportDepthView_ = nullptr;
+    depth_ = msaaColor_ = msaaDepth_ = sceneColor_ = normalTexture_ = materialTexture_ = viewportColor_ = viewportDepth_ = nullptr;
     releaseOutputGroup();  // it binds the scene target
 }
 
@@ -2027,7 +2029,15 @@ Renderer::Program* Renderer::program(MaterialKind kind, const shader::VertexVari
         const auto& errors = vertex.wgsl.ok() ? fragment.wgsl.errors : vertex.wgsl.errors;
         return refuseBuild(errors.empty() ? "no reason" : errors.front());
     }
-    return &add(key, std::move(vertex), std::move(fragment));
+    // Keep the colour fragment's bindings and offsets, including maps and node uniforms.
+    auto& f = source.fragment;
+    f.output("color", source.materialProperties != shader::kInvalid ? source.materialProperties :
+        f.construct(shader::Type::vec(4), {f.constant(0.f), f.constant(1.f), f.constant(0.f), f.constant(1.f)}));
+    auto materialFragment = shader::buildStage(f, 1);
+    if (!materialFragment.wgsl.ok()) return refuseBuild("post material program");
+    auto& result = add(key, std::move(vertex), std::move(fragment));
+    result.materialFragment = std::move(materialFragment);
+    return &result;
 }
 
 Renderer::Program& Renderer::depthProgram(const shader::VertexVariant& variant) {
@@ -2501,7 +2511,8 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     // Only a frame that draws a second pipeline depth-Equal against the colour pass asks for @invariant
     // positions: the normal pass (it shares the colour vertex stage) and TRAA's velocity pass (its own
     // vertex stage, flagged the same way below). Every other frame is compiled as three's is.
-    const bool invariantPosition = (postEffects_ && postEffects_->reads("normal")) || traa_;
+    const bool invariantPosition = (postEffects_ && (postEffects_->reads("normal") ||
+        postEffects_->reads("metalness") || postEffects_->reads("roughness"))) || traa_;
     auto variantOf = [invariantPosition](const DrawItem& item) {
         shader::VertexVariant v;
         v.invariantPosition = invariantPosition;
@@ -2574,7 +2585,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     FrameJob compileJob;  // a compile plans pipelines only: it never touches a pending frame's job
     if (!compilation && !job_) job_ = std::make_unique<FrameJob>();
     FrameJob& job = compilation ? compileJob : *job_;
-    job.plan.clear(); job.velocityPlan.clear(); job.normalPlan.clear(); job.shadowPasses.clear();
+    job.plan.clear(); job.velocityPlan.clear(); job.normalPlan.clear(); job.materialPlan.clear(); job.shadowPasses.clear();
     std::vector<Planned>& plan = job.plan;
     std::vector<Planned>& velocityPlan = job.velocityPlan;
     plan.reserve(opaque.size());
@@ -2880,6 +2891,43 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     // interpolated view-space normal, depth-tested Equal against the main pass's depth.
     std::vector<Planned>& normalPlan = job.normalPlan;
     const bool normalPass = postEffects_ && postEffects_->reads("normal");
+    const bool materialPass = postEffects_ && (postEffects_->reads("metalness") || postEffects_->reads("roughness"));
+    const auto planMaterials = [&] {
+        if (!materialPass) return;
+        for (const Planned& draw : plan) {
+            const DrawItem& item = *draw.item;
+            if (item.background || item.kind == MaterialKind::Basic || item.transparent || item.sprite || item.material->alphaTest > 0) continue;
+            PipelineTarget target{WGPUTextureFormat_RGBA16Float, WGPUTextureFormat_Depth32Float,
+                item.side == 2 ? WGPUCullMode_None : item.side == 1 ? WGPUCullMode_Front : WGPUCullMode_Back};
+            target.layout = draw.program->pipelineLayout; target.depthWrite = false;
+            target.colorWrite = item.colorWrite;
+            target.depthCompare = WGPUCompareFunction_Equal; target.frontFace = item.frontFace();
+            target.skinIndex = skinIndexFormat(item);
+            target.instanceStepMask = instanceStepMask(draw.program->vertex, item);
+            lineTopology(target, item);
+            if (compilation) {
+                compilation->push_back(pipelines_->getAsync(draw.program->vertex, &draw.program->materialFragment, target));
+                continue;
+            }
+            const auto pipeline = pipelines_->get(draw.program->vertex, &draw.program->materialFragment, target);
+            if (!pipeline) throw std::runtime_error("TN_POST_MATERIAL_PIPELINE_REFUSED");
+            Planned material = draw;
+            material.pipeline = pipeline;
+            job.materialPlan.push_back(material);
+        }
+        if (!compilation) {
+            if (!materialTexture_) {
+                WGPUTextureDescriptor desc = {};
+                desc.dimension = WGPUTextureDimension_2D; desc.size = {width_, height_, 1};
+                desc.format = WGPUTextureFormat_RGBA16Float; desc.mipLevelCount = 1; desc.sampleCount = 1;
+                desc.usage = WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopySrc;
+                materialTexture_ = wgpuDeviceCreateTexture(device_, &desc);
+                materialView_ = view2d(materialTexture_, WGPUTextureFormat_RGBA16Float);
+            }
+            postEffects_->input("metalness", materialView_);
+            postEffects_->input("roughness", materialView_);
+        }
+    };
     const auto planNormals = [&] {
         if (normalPass) {
             if (normalFragment_.wgsl.code.empty()) {
@@ -2953,6 +3001,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     }
     if (compilation) {
         planNormals();
+        planMaterials();
         PipelineTarget target{outputFormat, WGPUTextureFormat_Undefined, WGPUCullMode_None};
         target.layout = outputPipelineLayout_;
         compilation->push_back(pipelines_->getAsync(outputVertex_, &outputFragment_, target));
@@ -3145,6 +3194,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     const uint64_t groupsChosenAt = groupEpoch_;
 
     planNormals();
+    planMaterials();
 
     if (!compilation && gpuJoints_ && (!gpuJoints_->drawUse.empty() || Object3D::poseObserver)) {
         const auto mark = [](const Planned& p) {
@@ -3246,7 +3296,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     job.timed = timed;
     job.source = sourceFrame_;
     job.groupEpoch = groupsChosenAt;
-    job.normalPass = normalPass;
+    job.normalPass = normalPass; job.materialPass = materialPass;
     job.camera = camera; job.lights = lights;
     job.pageClear = pageClear;
     job.presentTarget = presentTarget;
@@ -3489,6 +3539,23 @@ void Renderer::encodeFrame(FrameJob& job) {
         bound = nullptr; boundIndex = nullptr;
         for (const Planned& p : normalPlan) encode(normalEncoder, p, Tally::Extra);
         wgpuRenderPassEncoderEnd(normalEncoder); wgpuRenderPassEncoderRelease(normalEncoder);
+    }
+    if (job.materialPass) {
+        WGPURenderPassColorAttachment material{};
+        material.view = materialView_; material.loadOp = WGPULoadOp_Clear; material.storeOp = WGPUStoreOp_Store;
+        material.clearValue = {0, 1, 0, 1};
+#if defined(MYSTRAL_WEBGPU_DAWN)
+        material.depthSlice = WGPU_DEPTH_SLICE_UNDEFINED;
+#endif
+        WGPURenderPassDepthStencilAttachment materialDepth{};
+        materialDepth.view = depthView_; materialDepth.depthReadOnly = true;
+        WGPURenderPassDescriptor materialDesc{};
+        materialDesc.colorAttachmentCount = 1; materialDesc.colorAttachments = &material;
+        materialDesc.depthStencilAttachment = &materialDepth;
+        auto materialEncoder = beginTimedRenderPass(encoder, &materialDesc);
+        bound = nullptr; boundIndex = nullptr;
+        for (const Planned& p : job.materialPlan) encode(materialEncoder, p, Tally::Extra);
+        wgpuRenderPassEncoderEnd(materialEncoder); wgpuRenderPassEncoderRelease(materialEncoder);
     }
     if (traa_) {
         WGPURenderPassColorAttachment motion{};

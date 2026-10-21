@@ -52,6 +52,10 @@ Recorded on the phase boxes below.
 | `StorageTexture` + `textureStore` | `Atmosphere` LUT bake → `renderer.compute` (`packages/core/src/atmosphere/index.ts:256`) | `TN_NATIVE_UNCATALOGUED_STORAGETEXTURE` refusal deleted | Phase 1 |
 | Scene-pass `metalness`/`roughness` | `scenePass.getTextureNode("metalness")` in SSR stage | `TN_NATIVE_PASS_TEXTURE_UNSUPPORTED` for these names deleted | Phase 2 |
 
+## Decisions
+
+- 2026-10-21 (agent): the material target is planned only when a post *pass* reads it, as the `normal` target already is. A graph whose output program samples `metalness` directly, with no pass, gets no target. SSR, the consumer, is a pass. Making output-only reads plan the targets (for `normal` too) is a follow-up, not this PRD.
+
 ## Execution Phases
 
 #### Phase 1: StorageTexture runs on the native engine
@@ -60,8 +64,8 @@ Recorded on the phase boxes below.
 - [ ] `first-light` runs its own playtests on the Wasm engine with the `Atmosphere` sky. proof: `pnpm sandbox` tarballs, `pnpm test` in the game.
 
 #### Phase 2: The scene pass has metalness and roughness targets
-**Status:** NOT STARTED
-- [ ] After `setMRT(mrt({ output, normal, metalness, roughness }))`, `getTextureNode("metalness")` and `("roughness")` resolve and read back the material values on any channel. proof: `ctest -R native_engine_player_imports`.
+**Status:** IN PROGRESS
+- [x] After `setMRT(mrt({ output, normal, metalness, roughness }))`, `getTextureNode("metalness")` and `("roughness")` resolve and read back the material values on any channel. proof: `ctest -R native_engine_player_imports`. — 2026-10-21, RTX 2080 Dawn/Vulkan headless: a MeshStandardMaterial (metalness 0.25, roughness 0.75) read through a post pass as `vec4(metal.r, rough.g, metal.b, rough.a)` reads back (64, 191, 64, 191) ±2; `native_engine_player_{imports,compute,compute_ops,tsl_values}` 4/4 passed. One packed RGBA16Float geometry pass feeds both names, each sampled as a channel splat.
 - [ ] `pirate-authoring-retest` runs its own playtests on the Wasm engine with SSR on. proof: `pnpm sandbox` tarballs, `pnpm test` in the game.
 - [ ] A fresh visual judge compares the native frames of both games against the same pose on `engine: "threejs"` (reference only) and returns no REGRESSION. proof: headed `--browser-recipe webgpu` captures, judge verdict on the PR.
 

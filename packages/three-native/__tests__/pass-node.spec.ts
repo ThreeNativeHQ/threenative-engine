@@ -35,6 +35,30 @@ describe("native scene pass MRT", () => {
     expect(node.getBlendMode("normal")).toBe(mode);
     expect(node.getBlendMode("output")).toBeUndefined();
   });
+
+  it("exposes each material target only when its own MRT slot is present", () => {
+    const api = definePass(tsl);
+    const scene = api.pass({}, {});
+    for (const name of ["metalness", "roughness"]) {
+      expect(() => scene.getTextureNode(name)).toThrow(/TN_NATIVE_PASS_TEXTURE_UNSUPPORTED/u);
+    }
+    scene.setMRT(api.mrt({ output: api.output, metalness: api.metalness }));
+    expect(scene.getTextureNode("metalness")).toEqual({ source: { name: "metalness" } });
+    expect(() => scene.getTextureNode("roughness")).toThrow(/TN_NATIVE_PASS_TEXTURE_UNSUPPORTED/u);
+    scene.setMRT(api.mrt({ roughness: api.roughness, normal: normalView }));
+    expect(scene.getTextureNode("roughness")).toEqual({ source: { name: "roughness" } });
+    expect(() => scene.getTextureNode("metalness")).toThrow(/TN_NATIVE_PASS_TEXTURE_UNSUPPORTED/u);
+    expect(scene.getTextureNode("normal")).toEqual({ source: { name: "normal" } });
+    expect(scene.getTextureNode()).toEqual({ source: { name: "scene" } });
+    expect(scene.getTextureNode("depth")).toEqual({ source: { name: "depth" } });
+    scene.setMRT(api.mrt({ metalness: api.metalness, roughness: api.roughness }));
+    for (const name of ["metalness", "roughness"]) {
+      expect(scene.getTextureNode(name)).toEqual({ source: { name } });
+    }
+    scene.setMRT(null);
+    expect(() => scene.getTextureNode("roughness")).toThrow(/TN_NATIVE_PASS_TEXTURE_UNSUPPORTED/u);
+    expect(() => scene.getTextureNode("unknown")).toThrow(/TN_NATIVE_PASS_TEXTURE_UNSUPPORTED/u);
+  });
 });
 
 class FakeTarget {

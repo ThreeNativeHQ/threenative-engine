@@ -1,4 +1,4 @@
-// CPU-only integration of the game bundler, native import facade and real V8 player.
+// Integration of the game bundler, native import facade and real V8 player, with a scene MRT readback.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { rmSync } from "node:fs";
@@ -7,6 +7,7 @@ import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { bundleNativeEngine } from "../../scripts/bundle-native-engine.mjs";
+import { runComputeGame } from "./compute-harness.mjs";
 
 const native = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const executable = process.argv[2];
@@ -543,6 +544,46 @@ await mkdir(resolve(work, "node_modules/@acme/viz/dist/three"), { recursive: tru
 await writeFile(resolve(work, "node_modules/@acme/viz/dist/three/index.js"), "export const mark = () => {};");
 await writeFile(resolve(work, "viz.ts"), 'import { Scene } from "three"; import { mark } from "./node_modules/@acme/viz/dist/three/index.js"; globalThis.tn.scene = new Scene(); mark();');
 await bundleNativeEngine({ entry: resolve(work, "viz.ts"), outfile: resolve(work, "viz.js"), boot: false });
+// The post frame reads both names from one packed geometry target, with scalar outputs splatted.
+const materialReadback = await runComputeGame(executable, `
+import { Mesh, MeshStandardMaterial, OrthographicCamera, PlaneGeometry, Scene } from "three";
+import { RenderPipeline, WebGPURenderer } from "three/webgpu";
+import { convertToTexture, metalness, mrt, output, pass, roughness, vec4 } from "three/tsl";
+let started = false;
+const waiting = [];
+const frames = (count) => new Promise((done) => waiting.push({ count, done }));
+globalThis.tn.onFrame(() => {
+  for (const wait of waiting.splice(0)) {
+    if (--wait.count === 0) wait.done(); else waiting.push(wait);
+  }
+});
+globalThis.tn.onUpdate(() => {
+  if (started) return;
+  started = true;
+  const scene = new Scene();
+  const camera = new OrthographicCamera(-1, 1, 1, -1, 0.1, 10);
+  camera.position.z = 1;
+  scene.add(new Mesh(new PlaneGeometry(2, 2), new MeshStandardMaterial({ metalness: 0.25, roughness: 0.75 })));
+  globalThis.tn.scene = scene; globalThis.tn.camera = camera;
+  const renderer = new WebGPURenderer({ canvas: { width: 8, height: 8 } });
+  const scenePass = pass(scene, camera);
+  scenePass.setMRT(mrt({ output, metalness, roughness }));
+  const metal = scenePass.getTextureNode("metalness"), rough = scenePass.getTextureNode("roughness");
+  const pipeline = new RenderPipeline(renderer);
+  pipeline.outputColorTransform = false;
+  // Read inside a post pass, as SSR does: an output-only graph has no pass to plan the targets for.
+  pipeline.outputNode = convertToTexture(vec4(metal.r, rough.g, metal.b, rough.a));
+  pipeline.render();
+  frames(3).then(() => globalThis.tn.readFrame()).then((pixels) => {
+    const at = Math.floor(pixels.length / 8) * 4 + 4;
+    const seen = Array.from(pixels.slice(at, at + 4));
+    const ok = seen.length === 4 && [64, 191, 64, 191].every((value, i) => Math.abs(value - seen[i]) <= 2);
+    globalThis.tn.log(ok ? "COMPUTE_OK" : "COMPUTE_BAD material MRT " + seen);
+  }).catch((error) => globalThis.tn.log("COMPUTE_ERROR " + error.message));
+});
+`);
+assert.equal(materialReadback.verdict, "COMPUTE_OK", materialReadback.output);
+
 if (process.argv.includes("--imports-only")) {
   console.log("PASS native imports, identity, picking, clone, TSL and audio");
   process.exit(0);
@@ -635,11 +676,15 @@ const scenePass = pass(scene, camera);
 let refusedNormal = false;
 try { scenePass.getTextureNode("normal"); } catch (error) { refusedNormal = /TN_NATIVE_PASS_TEXTURE_UNSUPPORTED/.test(error.message); }
 check(refusedNormal, "normals need the MRT that asks for them");
+for (const name of ["metalness", "roughness"]) {
+  let refused = false;
+  try { scenePass.getTextureNode(name); } catch (error) { refused = /TN_NATIVE_PASS_TEXTURE_UNSUPPORTED/.test(error.message); }
+  check(refused, name + " needs its MRT output");
+}
 scenePass.setMRT(mrt({ output, normal: normalView, metalness, roughness }));
 const sceneDepth = scenePass.getTextureNode("depth"), sceneNormal = scenePass.getTextureNode("normal");
-let refusedMetal = false;
-try { scenePass.getTextureNode("metalness"); } catch (error) { refusedMetal = /TN_NATIVE_PASS_TEXTURE_UNSUPPORTED/.test(error.message); }
-check(refusedMetal && scenePass.isPassNode && scenePass.scene === scene, "the native scene pass has colour, depth and normals only");
+check(scenePass.getTextureNode("metalness") && scenePass.getTextureNode("roughness") && scenePass.isPassNode && scenePass.scene === scene,
+  "the native scene pass exposes the material MRT outputs");
 const contact = ao(sceneDepth, sceneNormal, camera);
 contact.radius.value = 0.35; contact.resolutionScale = 0.5;
 check(contact.radius.value === Math.fround(0.35) && contact.resolutionScale === 0.5 && contact.getTextureNode() === contact, "GTAO uniforms");
