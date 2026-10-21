@@ -606,6 +606,17 @@ void sceneEnvironment() {
     scene.backgroundTexture = sky;
     OrthographicCamera ortho(-4, 4, 3, -3, 0.1, 100);
     draws = database.prepare(scene, ortho, lights); CHECK(draws[0].matrixWorld[0] == 9);
+    // A material envMap (a sphere reflection capture) replaces the scene environment for that mesh and is not refused.
+    Scene mirrorScene; mirrorScene.environment = sky;
+    auto mirror = std::make_shared<Material>(MaterialType::Standard);
+    auto probe = std::make_shared<DataTexture>(); probe->mapping = 303; probe->width = 128; probe->height = 64;
+    probe->data.resize(128 * 64 * 4, 128); probe->needsUpdate();
+    mirror->maps["envMap"] = probe; mirror->envMapIntensity = 0.5;
+    auto mirrorMesh = std::make_shared<Mesh>(makeSphereGeometry(), mirror); mirrorScene.add(*mirrorMesh);
+    RenderDatabase mirrorDatabase;
+    draws = mirrorDatabase.prepare(mirrorScene, camera, lights);
+    CHECK(draws.size() == 1 && draws[0].envMap == probe.get() && draws[0].envMapIntensity == 0.5);
+    for (const auto& line : mirrorDatabase.diagnostics()) CHECK(line.find("envMap") == std::string::npos);
 }
 
 std::vector<uint8_t> read(Renderer& r, EventQueue& events) {
@@ -2677,6 +2688,35 @@ void unsupportedMapSlot() {
     CHECK(database.diagnostics().size() == 1);  // the plain mesh beside it is not refused
 }
 
+// PRD-635: a decoded envMap (a sphere reflection capture) is read by the standard program through the PMREM
+// path, so a material that carries one is drawn, not refused with the maps the program does not read.
+void envMapSlotIsRead() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(64, 48);
+    LitScene s;
+    auto mirror = std::make_shared<Material>(MaterialType::Standard);
+    auto env = std::make_shared<DataTexture>();
+    env->width = 128;
+    env->height = 64;
+    env->mapping = 303;  // EquirectangularReflectionMapping; the PMREM needs 64 px or more
+    env->colorSpace = TextureColorSpace::SRGB;
+    env->minFilter = static_cast<uint16_t>(TextureFilter::LinearMipmapLinear);
+    env->magFilter = static_cast<uint16_t>(TextureFilter::Linear);
+    env->data.resize(128 * 64 * 4, 255);
+    env->needsUpdate();
+    mirror->maps["envMap"] = env;
+    Mesh drawn{s.geometry, mirror};
+    drawn.position.x = 1;
+    s.scene.add(drawn);
+    RenderDatabase database;
+    database.render(renderer, s.scene, s.camera);
+    for (const std::string& d : database.diagnostics()) std::fprintf(stderr, "%s\n", d.c_str());
+    CHECK(database.diagnostics().empty());
+}
+
 // PRD-526 review: the float32 copies of quantized attributes follow their sources. A scene that loads and
 // unloads quantized geometry must not keep one copy per geometry it ever saw.
 void convertedCopiesAreSwept() {
@@ -4556,7 +4596,7 @@ void gpuJointProduction() {
 TN_TEST_MAIN({"gpu_joint_production", gpuJointProduction}, {"multi_material_groups", multiMaterialGroups}, {"uniform_batch_preparation", uniformBatchPreparation}, {"steady_state", steadyState}, {"color_write_masks_the_draw", colorWriteMasksTheDraw}, {"normal_pass_is_not_tallied", normalPassIsNotTallied}, {"steady_cache_invalidation", steadyCacheInvalidation}, {"render_target", renderTarget}, {"post_texture_resize_keeps_draw_groups", postTextureResizeKeepsDrawGroups}, {"deferred_target_follows_post_rtt", deferredTargetFollowsPostRtt}, {"deferred_target_samples_post_rtt_node", deferredTargetSamplesPostRttNode}, {"screen_size_reaches_the_vertex_stage", screenSizeReachesTheVertexStage}, {"depth_node_sets_fragment_depth", depthNodeSetsFragmentDepth}, {"depth_node_reaches_every_material_program", depthNodeReachesEveryMaterialProgram}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"present_direct", presentDirect}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"directional_target_outside_scene", directionalTargetOutsideScene}, {"scene_fog_node", sceneFogNode}, {"lit_mesh_without_normals", litMeshWithoutNormals}, {"invalidation", invalidation}, {"alpha_scene", alphaScene},
              {"material_unsupported", materialUnsupported}, {"shader_invalid", shaderInvalid}, {"time_uniform", timeUniform}, {"gpu_mipmaps", gpuMipmaps}, {"updates", updates},
              {"multi_camera_layers", multiCameraLayers}, {"render_callback", renderCallback}, {"instanced", instanced},
-             {"batched_vs_unbatched", batchedVsUnbatched}, {"skinned_crowd", skinnedCrowdPixels}, {"skinned_decline_cadence", skinnedDeclineCadence}, {"skinned_normalized_weights", skinnedNormalizedWeights}, {"normal_map_tilt", normalMapTilt}, {"unsupported_map_slot", unsupportedMapSlot}, {"converted_copies_swept", convertedCopiesAreSwept}, {"gpu_timer_covers_offscreen", gpuTimerCoversOffscreen}, {"gpu_timer_covers_shadows", gpuTimerCoversShadows}, {"overlay_over_frame", overlayOverFrame}, {"gpu_timer_is_opt_in", gpuTimerIsOptIn}, {"msaa_edges", msaaEdges}, {"shadow_camera_layers", shadowCameraLayers}, {"flat_shading_needs_no_normals", flatShadingNeedsNoNormals}, {"map_sampleability_changes", mapSampleabilityChanges}, {"batch_caches_stay_put", batchCachesStayPut}, {"frustum_culling", frustumCulling},
+             {"batched_vs_unbatched", batchedVsUnbatched}, {"skinned_crowd", skinnedCrowdPixels}, {"skinned_decline_cadence", skinnedDeclineCadence}, {"skinned_normalized_weights", skinnedNormalizedWeights}, {"normal_map_tilt", normalMapTilt}, {"unsupported_map_slot", unsupportedMapSlot}, {"env_map_slot_is_read", envMapSlotIsRead}, {"converted_copies_swept", convertedCopiesAreSwept}, {"gpu_timer_covers_offscreen", gpuTimerCoversOffscreen}, {"gpu_timer_covers_shadows", gpuTimerCoversShadows}, {"overlay_over_frame", overlayOverFrame}, {"gpu_timer_is_opt_in", gpuTimerIsOptIn}, {"msaa_edges", msaaEdges}, {"shadow_camera_layers", shadowCameraLayers}, {"flat_shading_needs_no_normals", flatShadingNeedsNoNormals}, {"map_sampleability_changes", mapSampleabilityChanges}, {"batch_caches_stay_put", batchCachesStayPut}, {"frustum_culling", frustumCulling},
              {"shadow_caster_frustum_culling", shadowCasterFrustumCulling}, {"masked_shadow", maskedShadow}, {"point_shadow_cube_faces", pointShadowCubeFaces}, {"lamp_source_radius", lampSourceRadius}, {"contact_shadow_foot", contactShadowFoot}, {"virtual_sun_contact_foot", virtualSunContactFoot}, {"lamp_cache", lampCache}, {"shadow_lights_follow_hierarchy", shadowLightsFollowHierarchy}, {"records_survive_siblings", recordsSurviveSiblings}, {"steady_frame_hashes_no_record", steadyFrameHashesNoRecord}, {"nested_record_cache", nestedRecordCache}, {"frustum_record_retention", frustumRecordRetention}, {"world_sphere_measured_once", worldSphereMeasuredOnce}, {"reflection_reuse", reflectionReuse})
 
 

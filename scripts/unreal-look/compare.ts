@@ -83,7 +83,7 @@ export interface IOptions {
   writeThresholds?: boolean;
   /** `--check`: fail on any locked cell of parity-locks.json that no longer holds. */
   check?: boolean;
-  /** `--write-locks <since>`: seed parity-locks.json with every cell and metric that holds now. */
+  /** `--write-locks <since>`: seed parity-locks.json with every cell and metric that holds now (only the `--layer` layers when given). */
   writeLocks?: string;
   /** `--lock-metric iou,...`: seed only these metrics (default: every metric that holds). */
   lockMetrics?: string[];
@@ -946,7 +946,13 @@ export function runComparison(options: IOptions = {}) {
       (options.lockMetrics ?? LOCK_METRICS) as LockMetric[],
     );
     if (!seeded.length) fail("BAD_INPUT", "no cell holds its thresholds; nothing to lock");
-    writeJson(path.join(dir, "parity-locks.json"), { locks: seeded });
+    // `--layer L7,L8` re-seeds only those layers and keeps every other layer's locks as they are.
+    const lockFile = path.join(dir, "parity-locks.json");
+    const kept =
+      options.layers && existsSync(lockFile)
+        ? readLocks(lockFile).filter((lock) => !options.layers?.includes(lock.layer))
+        : [];
+    writeJson(lockFile, { locks: [...kept, ...seeded] });
   }
   if (options.writeThresholds)
     writeJson(thresholdFile, {

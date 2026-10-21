@@ -267,6 +267,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_renderer_gpu_mipmaps=gpu_mipmaps
         native_engine_renderer_msaa_edges=msaa_edges
         native_engine_unsupported_map_slot=unsupported_map_slot
+        native_engine_env_map_slot_is_read=env_map_slot_is_read
         native_engine_converted_copies_swept=converted_copies_swept
         native_engine_gpu_timer_covers_shadows=gpu_timer_covers_shadows
         native_engine_gpu_timer_covers_offscreen=gpu_timer_covers_offscreen

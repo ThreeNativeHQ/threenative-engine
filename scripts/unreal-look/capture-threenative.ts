@@ -218,7 +218,7 @@ export async function captureThreeNative(options: IThreeNativeCaptureOptions): P
         if (
           message.type() === "error" ||
           message.type() === "warning" ||
-          /^(TN_(INDIRECT_LIGHT|PROBE_VOLUME|NATIVE_|RENDER_CHAIN|SSR|SSGI|GI_CACHE|SKY_OCCLUSION|AUTO_EXPOSURE|VIRTUAL_SHADOW)|GPU sky|CPU environment sky)/.test(
+          /^(TN_(INDIRECT_LIGHT|PROBE_VOLUME|REFLECTION_CAPTURE|NATIVE_|RENDER_CHAIN|SSR|SSGI|GI_CACHE|SKY_OCCLUSION|AUTO_EXPOSURE|VIRTUAL_SHADOW)|GPU sky|CPU environment sky)/.test(
             message.text(),
           )
         )
@@ -256,7 +256,7 @@ export async function captureThreeNative(options: IThreeNativeCaptureOptions): P
           if (wanted.length === 0) continue;
           const started = Date.now();
           await page.goto(
-            `${origin}?tnRef=${layer}&sun=${sun.elevationDeg},${sun.azimuthDeg}${options.baseline ? "&baseline=1" : ""}${options.off ? `&off=${options.off}` : ""}`,
+            `${origin}?tnRef=${layer}&sun=${sun.elevationDeg},${sun.azimuthDeg}${options.baseline ? "&baseline=1" : ""}${options.off ? `&off=${options.off}` : ""}${process.env.TN_UNREAL_LOOK_QUERY ?? ""}`,
             {
               waitUntil: "domcontentloaded",
             },

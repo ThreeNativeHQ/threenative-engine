@@ -47,7 +47,7 @@ const [elevationDeg = 60, azimuthDeg = 25] = (params.get("sun") ?? "60,25").spli
 const level = LAYER === "ID" ? -1 : Number(LAYER.slice(1));
 // `baseline=1` captures the template look as it ships; otherwise the tuning in progress applies.
 const TUNED = params.get("baseline") !== "1";
-// `off=vsm,gpusky,clouds,gi,bloom,localexposure,autoexposure,ssgi,ssr,gtao` switches one L9 stage off, to
+// `off=vsm,gpusky,clouds,gi,reflcap,bloom,localexposure,autoexposure,ssgi,ssr,gtao` switches one L9 stage off, to
 // attribute frame cost by ablation (PRD-636 performance). `gpusky` is read in `render/sky.ts`.
 const OFF = new Set((params.get("off") ?? "").split(",").filter(Boolean));
 // What each stage name turns off in the template's `high` preset.
@@ -187,12 +187,14 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
       // global illumination), the sun a surface returns (render/giCache.ts).
       if (TUNED && level >= 2 && !OFF.has("gi"))
         installGi(ctx, model, {
+          // Diagnosis knob stockRays=1: cast the bake through ctx.raycast, the slow path (an A/B).
+          stockRays: params.get("stockRays") === "1",
           bounces: level >= 7 ? 5 : 0,
           // Unreal below L7 has no GI: its sky light is shadowed by distance fields, up to 10 m.
           ...(level < 7 ? { skyShadowDistance: 10 } : {}),
           sun: { color: key.color, intensity: key.intensity, direction: SUN_DIRECTION },
         });
-      if (TUNED && level >= 8)
+      if (TUNED && level >= 8 && !OFF.has("reflcap"))
         reflections = captureReflections(
           ctx.renderer.raw as unknown as Parameters<typeof captureReflections>[0],
           scene,
