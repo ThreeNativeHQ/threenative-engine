@@ -6,7 +6,8 @@
  * between the 10 % and 90 % crossings of that step, on linear luminance. A row cut is not
  * perpendicular to the edge, so the width includes 1 / cos(edge angle). Both arms share the pose,
  * so the ratio between arms is the comparison. A step weaker than 35 % of the brighter side is not
- * a shadow edge and is skipped.
+ * a shadow edge and is skipped. A lamp with a source radius smears its edge over tens of pixels:
+ * `scale` multiplies the windows, the gap, the run and the widest edge for such a cell (PRD-650).
  */
 export interface IEdge {
   row: number;
@@ -44,16 +45,17 @@ const mean = (a: ArrayLike<number>, from: number, to: number): number => {
 const median = (a: ArrayLike<number>, from: number, to: number): number =>
   [...Array.from(a).slice(from, to)].sort((x, y) => x - y)[Math.floor((to - from) / 2)] ?? 0;
 
-function runEdge(segment: Float64Array): { at: number; width: number } | undefined {
-  if (segment.length < MIN_RUN) return undefined;
+function runEdge(segment: Float64Array, scale: number): { at: number; width: number } | undefined {
+  const [window, gap] = [WINDOW * scale, GAP * scale];
+  if (segment.length < MIN_RUN * scale) return undefined;
   const smooth = segment.map((_, i) =>
     mean(segment, Math.max(0, i - 1), Math.min(segment.length, i + 2)),
   );
   let best = 0;
   let at = -1;
-  for (let i = WINDOW; i < segment.length - WINDOW; i++) {
-    const left = mean(smooth, i - WINDOW, i - GAP);
-    const right = mean(smooth, i + GAP, i + WINDOW);
+  for (let i = window; i < segment.length - window; i++) {
+    const left = mean(smooth, i - window, i - gap);
+    const right = mean(smooth, i + gap, i + window);
     const step = Math.abs(right - left) / Math.max(left, right, 1e-6);
     if (step > best) {
       best = step;
@@ -61,13 +63,13 @@ function runEdge(segment: Float64Array): { at: number; width: number } | undefin
     }
   }
   if (at < 0 || best < MIN_STEP) return undefined;
-  const left = median(segment, at - WINDOW, at - GAP);
-  const right = median(segment, at + GAP, at + WINDOW);
+  const left = median(segment, at - window, at - gap);
+  const right = median(segment, at + gap, at + window);
   if (left === right) return undefined;
   const t = (i: number) => ((segment[i] ?? 0) - left) / (right - left);
   const cross = (level: number): number | undefined => {
     let found: number | undefined;
-    for (let i = at - WINDOW; i < at + WINDOW - 1; i++) {
+    for (let i = at - window; i < at + window - 1; i++) {
       const a = t(i);
       const b = t(i + 1);
       if (
@@ -91,6 +93,7 @@ export function floorEdges(
   width: number,
   height: number,
   floor: ArrayLike<number>,
+  scale = 1,
 ): IEdge[] {
   const edges: IEdge[] = [];
   for (let row = 0; row < height; row += ROW_STEP) {
@@ -102,8 +105,8 @@ export function floorEdges(
       }
       const start = x;
       while (x < width && floor[row * width + x]) x++;
-      const found = runEdge(lum.slice(row * width + start, row * width + x));
-      if (found && found.width < MAX_WIDTH)
+      const found = runEdge(lum.slice(row * width + start, row * width + x), scale);
+      if (found && found.width < MAX_WIDTH * scale)
         edges.push({ row, x: start + found.at, width: found.width });
     }
   }
@@ -139,6 +142,7 @@ export function pairedPenumbra(
   unreal: IPixels,
   other: IPixels,
   floor: ArrayLike<number>,
+  scale = 1,
 ): { matched: number; unreal: number; other: number; ratio: number } | undefined {
   const edges = (image: IPixels) =>
     floorEdges(
@@ -146,6 +150,7 @@ export function pairedPenumbra(
       image.width,
       image.height,
       floor,
+      scale,
     );
   const m = matchedWidths(edges(unreal), edges(other));
   return m.matched > 0 ? { ...m, ratio: m.other / m.unreal } : undefined;
