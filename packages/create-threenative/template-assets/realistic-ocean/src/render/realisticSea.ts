@@ -19,21 +19,28 @@
 import { type ISpectralOceanOptions, SpectralOcean } from "@threenative/core";
 import { BufferGeometry, Color, Float32BufferAttribute, Mesh, Vector2, Vector3 } from "three";
 import {
+  BRDF_Lambert,
+  F_Schlick,
   Fn,
+  V_GGX_SmithCorrelated,
   abs,
   cameraPosition,
   color,
+  diffuseColor,
   dot,
   float,
   max,
   mix,
   mx_noise_float,
+  normalView,
   normalWorld,
   oneMinus,
   positionGeometry,
   positionLocal,
+  positionViewDirection,
   positionWorld,
   pow,
+  roughness,
   saturate,
   smoothstep,
   transformNormalToView,
@@ -243,8 +250,43 @@ function seaDisc(): BufferGeometry {
   return geometry;
 }
 
-/** three's physical model with the environment's mirror term at `LOOK.skyReflection`. */
+/**
+ * three's physical model with two changes. The sun's highlight is Beckmann, the Gaussian slope
+ * distribution sea slopes have: GGX's long tails spread the glitter path into a wide soft band.
+ * The environment's mirror term is at `LOOK.skyReflection`.
+ */
 class SeaLightingModel extends PhysicalLightingModel {
+  override direct(light: Parameters<PhysicalLightingModel["direct"]>[0]): void {
+    const lightDirection = light.lightDirection as Node<"vec3">;
+    const lightColor = light.lightColor as Node<"vec3">;
+    const reflected = light.reflectedLight as unknown as Record<
+      "directDiffuse" | "directSpecular",
+      Node<"vec3">
+    >;
+    const dotNL = normalView.dot(lightDirection).clamp();
+    const dotNV = normalView.dot(positionViewDirection).clamp(1e-4, 1);
+    const half = lightDirection.add(positionViewDirection).normalize();
+    const cos2 = normalView.dot(half).clamp(1e-4, 1).pow(2);
+    const alpha = roughness.pow(2);
+    const meanSquareSlope = alpha.pow(2);
+    const beckmann = cos2
+      .oneMinus()
+      .div(cos2.mul(meanSquareSlope))
+      .negate()
+      .exp()
+      .div(meanSquareSlope.mul(Math.PI).mul(cos2.pow(2)));
+    const fresnel = F_Schlick({
+      f0: float(0.02037),
+      f90: float(1),
+      dotVH: positionViewDirection.dot(half).clamp(),
+    }) as unknown as Node<"float">;
+    const visibility = V_GGX_SmithCorrelated({ alpha, dotNL, dotNV }) as unknown as Node<"float">;
+    const irradiance = lightColor.mul(dotNL);
+    const lambert = BRDF_Lambert({ diffuseColor: diffuseColor.rgb }) as unknown as Node<"vec3">;
+    reflected.directDiffuse.addAssign(irradiance.mul(lambert));
+    reflected.directSpecular.addAssign(irradiance.mul(fresnel.mul(beckmann).mul(visibility)));
+  }
+
   override indirectSpecular(builder: NodeBuilder): void {
     const context = builder.context as { radiance: Node<"vec3"> };
     const radiance = context.radiance;
