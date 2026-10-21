@@ -39,7 +39,7 @@ describe("StartupReadiness", () => {
   });
 
   it.each(["world", "hold"])(
-    "rejects when required %s settlement never arrives",
+    "reveals after the window when required %s settlement never arrives, and says so",
     async (missing) => {
       vi.useFakeTimers();
       try {
@@ -50,24 +50,21 @@ describe("StartupReadiness", () => {
           settled: () => missing !== "world",
         });
         readiness.hold("view", () => resident);
+        const ready = vi.fn();
         const failed = vi.fn();
-        void readiness.whenReady().catch(failed);
+        void readiness.whenReady().then(ready, failed);
         readiness.start();
         readiness.observe(1);
         resident = missing !== "hold";
         readiness.observe(1);
         await vi.advanceTimersByTimeAsync(99);
-        expect(failed).not.toHaveBeenCalled();
+        expect(ready).not.toHaveBeenCalled();
         await vi.advanceTimersByTimeAsync(1);
-        expect(failed).toHaveBeenCalledWith(
-          expect.objectContaining({
-            message: expect.stringContaining("TN_STARTUP_SETTLEMENT_TIMEOUT"),
-          }),
-        );
-        resident = true;
-        readiness.observe(1);
-        readiness.observe(1);
-        expect(readiness.ready).toBe(false);
+        // A slow settlement costs a late shadow or prop, never a game that does not start.
+        expect(ready).toHaveBeenCalledTimes(1);
+        expect(failed).not.toHaveBeenCalled();
+        expect(readiness.ready).toBe(true);
+        expect(readiness.timedOut).toBe("settlement");
       } finally {
         vi.useRealTimers();
       }
@@ -495,25 +492,35 @@ describe("StartupReadiness holds", () => {
     await rejected;
   });
 
-  it("bounds a held warm-up that never settles", async () => {
+  it("bounds a held warm-up that never settles, then still checks settlement", async () => {
     vi.useFakeTimers();
     try {
+      let settled = false;
       const readiness = new StartupReadiness({
         afterHolds: () => new Promise<void>(() => undefined),
-        settled: () => false,
+        settled: () => settled,
         stableFrames: 1,
         stableWindowMs: 20,
       });
-      const ready = readiness.whenReady();
+      const ready = vi.fn();
+      const failed = vi.fn();
+      void readiness.whenReady().then(ready, failed);
       readiness.hold("detail-tier", Promise.resolve());
       readiness.start();
       for (let index = 0; index < 6; index += 1) await Promise.resolve();
       readiness.observe(1);
       for (let index = 0; index < 6; index += 1) await Promise.resolve();
 
-      const rejected = expect(ready).rejects.toThrow("TN_STARTUP_SETTLEMENT_TIMEOUT");
       await vi.advanceTimersByTimeAsync(20);
-      await rejected;
+      expect(ready).not.toHaveBeenCalled();
+      expect(readiness.timedOut).toBe("warmup");
+      settled = true;
+      readiness.observe(1);
+      readiness.observe(1);
+      await Promise.resolve();
+      expect(ready).toHaveBeenCalledTimes(1);
+      expect(failed).not.toHaveBeenCalled();
+      expect(readiness.timedOut).toBe("warmup");
     } finally {
       vi.useRealTimers();
     }

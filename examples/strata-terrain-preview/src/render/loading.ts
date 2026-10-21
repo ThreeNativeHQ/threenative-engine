@@ -241,7 +241,9 @@ export function createLoadingScreen(host: ILoadingHost): ILoadingController {
       logo.position.set(worldX(barX), worldY(Math.max(safeY, barY - safeHeight * 0.2)), 0);
     }
     if (status !== undefined) {
-      status.mesh.scale.set(Math.min(180, safeWidth * 0.32), 48, 1);
+      // Keep the 1000×48 canvas's aspect, or a long error message is squeezed into a smear.
+      const statusWidth = Math.min(1000, safeWidth * 0.9);
+      status.mesh.scale.set(statusWidth, (statusWidth * 48) / 1000, 1);
       status.mesh.position.set(worldX(barX), worldY(Math.min(height, barY + barHeight * 2.5)), 0);
     }
     if (backdropTexture !== undefined)

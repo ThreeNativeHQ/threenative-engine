@@ -630,6 +630,8 @@ it("uploads the status canvas only when its displayed text changes", async () =>
     expect(texture.version).toBe(version + 3);
     expect(drawn.at(-1)).toBe("Forest spawn: missing cell");
     expect(source.canvasLayer.opaque).toBe(true);
+    // The quad keeps the canvas aspect, so the message reads instead of squeezing into a smear.
+    expect(status.scale.x / status.scale.y).toBeCloseTo(canvas.width / canvas.height, 5);
   } finally {
     screen.finish();
     vi.unstubAllGlobals();

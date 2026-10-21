@@ -1274,10 +1274,43 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       timeline.compileSettledMs ??= now();
       timeline.frameworkReadyMs ??= now();
     });
+    // What the gate was still waiting on: logged when it fails and when it reveals late.
+    const settlementDetail = () => ({
+      worldRendered,
+      shadows: [...startupShadows].map((node) => {
+        try {
+          const frame = node.stats.frame;
+          const settled = node.settled;
+          return {
+            frame,
+            settled,
+            pending: frame !== 0 && !settled,
+            pendingInvalidations: node.tracker.pending,
+          };
+        } catch {
+          return { frame: null, settled: null, pending: null, pendingInvalidations: null };
+        }
+      }),
+      pendingHolds: startupReadiness.pendingHolds,
+      compileSettled: startupReadiness.compileSettled,
+      frameworkReady: startupReadiness.frameworkReady,
+      timeline: {
+        loadStartedMs: timeline.loadStartedMs ?? null,
+        enteredMs: timeline.enteredMs ?? null,
+        compileSettledMs: timeline.compileSettledMs ?? null,
+        frameworkReadyMs: timeline.frameworkReadyMs ?? null,
+        readyMs: timeline.readyMs ?? null,
+      },
+    });
     void startupReadiness.whenReady().then(
       () => {
         if (this.#aborted) return;
         stopStallWatch();
+        // A bounded wait ran out and the world was revealed anyway; say what was still pending.
+        if (startupReadiness.timedOut !== undefined)
+          console.warn(
+            `TN_STARTUP_LATE:${JSON.stringify({ timedOut: startupReadiness.timedOut, ...settlementDetail() })}`,
+          );
         // A renderer without first-use compilation settles without running the compile closure
         // below, so the settle stamp is guaranteed here at the latest.
         timeline.compileSettledMs ??= now();
@@ -1303,34 +1336,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         rejectProjection(error);
         reportLaunchFailure({ kind: "stalled", message: String(error) });
         console.info(
-          `TN_STARTUP_SETTLEMENT:${JSON.stringify({
-            worldRendered,
-            shadows: [...startupShadows].map((node) => {
-              try {
-                const frame = node.stats.frame;
-                const settled = node.settled;
-                return {
-                  frame,
-                  settled,
-                  pending: frame !== 0 && !settled,
-                  pendingInvalidations: node.tracker.pending,
-                };
-              } catch {
-                return { frame: null, settled: null, pending: null, pendingInvalidations: null };
-              }
-            }),
-            pendingHolds: startupReadiness.pendingHolds,
-            compileSettled: startupReadiness.compileSettled,
-            frameworkReady: startupReadiness.frameworkReady,
-            timeline: {
-              loadStartedMs: timeline.loadStartedMs ?? null,
-              enteredMs: timeline.enteredMs ?? null,
-              compileSettledMs: timeline.compileSettledMs ?? null,
-              frameworkReadyMs: timeline.frameworkReadyMs ?? null,
-              readyMs: timeline.readyMs ?? null,
-            },
-            failedAtMs: now(),
-          })}`,
+          `TN_STARTUP_SETTLEMENT:${JSON.stringify({ ...settlementDetail(), failedAtMs: now() })}`,
         );
       },
     );

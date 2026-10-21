@@ -3,7 +3,8 @@ export type StartupCompile = () => Promise<void> | void;
 export interface IStartupReadinessOptions {
   /**
    * Final render-owned work (such as shadow maps), checked after warm-up for two quiet frames.
-   * Missing settlement rejects whenReady() after stableWindowMs; readiness stays false.
+   * Settlement still missing after stableWindowMs resolves readiness anyway and sets `timedOut`:
+   * a late shadow costs a pop, never a game that does not start.
    */
   readonly settled?: () => boolean;
   /** Maximum wall-clock time spent waiting for first-use compilation. */
@@ -36,7 +37,8 @@ export interface IStartupReadinessOptions {
    * by the main thread idling on GPU pipeline creation.
    *
    * A rejection fails `whenReady()` so the loading layer can report a first-use failure instead
-   * of revealing a world whose pipeline creation failed. The wait is bounded by `stableWindowMs`.
+   * of revealing a world whose pipeline creation failed. A warm-up still running after
+   * `stableWindowMs` is slow, not failed: the gate moves on to settlement and sets `timedOut`.
    */
   readonly afterHolds?: () => Promise<void> | void;
 }
@@ -105,6 +107,7 @@ export class StartupReadiness {
   #quietFrames = 0;
   #finishing = false;
   #afterHoldsDone = false;
+  #timedOut: "warmup" | "settlement" | undefined;
   #frameWindowDone = false;
   readonly #holds = new Map<string, IHold>();
   #holdBudgetMs: number;
@@ -196,6 +199,11 @@ export class StartupReadiness {
    */
   get frameworkReady(): boolean {
     return this.#frameWindowDone;
+  }
+
+  /** Which bounded post-hold wait ran out, if any; readiness resolved anyway. */
+  get timedOut(): "warmup" | "settlement" | undefined {
+    return this.#timedOut;
   }
 
   /** Labels of holds that have not settled yet, in registration order. */
@@ -400,21 +408,20 @@ export class StartupReadiness {
     for (const hold of this.#holds.values()) if (!hold.settled) return;
     this.#finishing = true;
     const finish = (): void => {
-      if (this.#cancelled || this.#failed) return;
+      if (this.#cancelled || this.#failed || this.#afterHoldsDone) return;
       this.#afterHoldsDone = true;
       if (this.#settled === undefined) {
         this.#ready = true;
         this.#resolveReady();
       } else {
-        // Required world/shadow work must fail closed within the existing frame-window budget.
+        // Bounded by the frame-window budget. A slow machine gets the world with a late shadow,
+        // and `timedOut` says so, instead of a loading screen that never lifts.
         this.#windowTimer = setTimeout(() => {
           this.#windowTimer = undefined;
-          this.#failed = true;
-          this.#rejectReady(
-            new Error(
-              `TN_STARTUP_SETTLEMENT_TIMEOUT: required world/shadow settlement did not complete within ${this.#stableWindowMs}ms.`,
-            ),
-          );
+          if (this.#cancelled || this.#failed || this.#ready) return;
+          this.#timedOut ??= "settlement";
+          this.#ready = true;
+          this.#resolveReady();
         }, this.#stableWindowMs);
       }
     };
@@ -426,12 +433,9 @@ export class StartupReadiness {
     this.#windowTimer = setTimeout(() => {
       this.#windowTimer = undefined;
       if (this.#cancelled || this.#failed || this.#ready) return;
-      this.#failed = true;
-      this.#rejectReady(
-        new Error(
-          `TN_STARTUP_SETTLEMENT_TIMEOUT: startup work after holds did not complete within ${this.#stableWindowMs}ms.`,
-        ),
-      );
+      // A slow warm-up costs first-use hitches, never a game that does not start.
+      this.#timedOut = "warmup";
+      finish();
     }, this.#stableWindowMs);
     let afterHoldsWork: Promise<void> | void;
     try {
@@ -441,11 +445,14 @@ export class StartupReadiness {
     }
     void Promise.resolve(afterHoldsWork).then(
       () => {
+        if (this.#afterHoldsDone) return;
         if (this.#windowTimer !== undefined) clearTimeout(this.#windowTimer);
         this.#windowTimer = undefined;
         finish();
       },
       (error: unknown) => {
+        // A failure after the warm-up already timed out arrives too late to hold the reveal.
+        if (this.#afterHoldsDone) return;
         if (this.#windowTimer !== undefined) clearTimeout(this.#windowTimer);
         this.#windowTimer = undefined;
         if (this.#cancelled || this.#failed || this.#ready) return;

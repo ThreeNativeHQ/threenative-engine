@@ -2181,6 +2181,7 @@ export class WorldCells extends Group implements IComputeDriven {
   #drain(budget: IAdmissionBudget): void {
     const index = 0;
     while (index < this.#jobs.length) {
+      this.#frontNearest();
       const job = this.#jobs[index] as IBuildJob;
       if (this.#resident.get(job.cell.key) !== job.cell || job.asset.levels.length === 0) {
         this.#forget(index, job);
@@ -2215,6 +2216,32 @@ export class WorldCells extends Group implements IComputeDriven {
           this.#refilterOwed = true;
       }
     }
+  }
+
+  /**
+   * Put the unstarted build nearest the follow point at the front, unless a build is mid-way.
+   * Each model's load queues every resident cell at once, so append order is load order: the
+   * spawn cell of the last model to load waited behind the whole ring.
+   */
+  #frontNearest(): void {
+    const front = this.#jobs[0];
+    if (front === undefined || front.next > 0 || front.batches !== undefined) return;
+    const { x, z } = this.#follow.position;
+    let nearest = 0;
+    let best = Number.POSITIVE_INFINITY;
+    for (let i = 0; i < this.#jobs.length; i++) {
+      const job = this.#jobs[i] as IBuildJob;
+      if (job.next > 0 || job.batches !== undefined) continue;
+      const d = Math.hypot(
+        this.#minX + (job.cell.x + 0.5) * this.#cellSize - x,
+        this.#minZ + (job.cell.z + 0.5) * this.#cellSize - z,
+      );
+      if (d < best) {
+        best = d;
+        nearest = i;
+      }
+    }
+    if (nearest > 0) this.#jobs.unshift(...this.#jobs.splice(nearest, 1));
   }
 
   #forget(index: number, job: IBuildJob): void {

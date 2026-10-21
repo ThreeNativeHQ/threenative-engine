@@ -292,6 +292,55 @@ afterEach(() => {
 });
 
 describe("WorldCells admission budget", () => {
+  it("builds the nearest cell first even when its model loads last", async () => {
+    // Each model's load queues every resident cell at once, so append order put the spawn cell of
+    // the last-loaded model behind the whole ring: the forest waited ~25 s for its own feet.
+    stubFixtureFetch();
+    const at = cellCenter(1, 1);
+    let elapsed = 0;
+    let releasePine!: () => void;
+    const pineHeld = new Promise<void>((resolve) => {
+      releasePine = resolve;
+    });
+    const world = await WorldCells.load({
+      admissionBudgetMs: 2,
+      admissionNow: () => {
+        elapsed += UNIT_MS;
+        return elapsed;
+      },
+      budgets,
+      follow: followAt(at.x, at.z),
+      loadModel: async (url) => {
+        if (url.includes("pine")) await pineHeld;
+        return model();
+      },
+      ring: 1,
+      surface,
+      terrain: false,
+      url: "/world/world.json",
+    });
+    try {
+      world.update();
+      await flush();
+      world.update();
+      releasePine();
+      await flush();
+      let readyAt = -1;
+      let frames = 0;
+      for (; frames < 10_000; frames += 1) {
+        world.update();
+        if (readyAt < 0 && world.readinessAt(at, 0).ready) readyAt = frames;
+        const { backlog, deferred } = world.stats().admission;
+        if (backlog === 0 && deferred === 0) break;
+      }
+      expect(readyAt).toBeGreaterThanOrEqual(0);
+      // Nine resident cells share the backlog; the spawn cell's own work is a small part of it.
+      expect(readyAt, JSON.stringify({ readyAt, frames })).toBeLessThan(frames / 3);
+    } finally {
+      world.dispose();
+    }
+  });
+
   it("counts completed admission units but not queued or idle work", async () => {
     const { world } = await makeWorld({ admissionBudgetMs: 1, priced: true });
     try {
