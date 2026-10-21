@@ -94,21 +94,17 @@ export function referencePoses(reference = REFERENCE): Record<string, readonly I
  * the ID layer on a single-sampled surface too: `?layer=ID` (calibration scenes) and `?tnRef=ID`
  * (the reference scene) switch `renderer.antialias` off. Idempotent, so a reused scaffold gets it too.
  */
-export const ID_LAYER_ANTIALIAS =
-  'antialias: !/[?&](layer|tnRef)=ID(&|$)/.test(globalThis.location?.search ?? ""),';
-async function idLayerIsAliased(target: string): Promise<void> {
-  const config = path.join(target, "threenative.config.ts");
-  const source = await readFile(config, "utf8");
-  if (source.includes(ID_LAYER_ANTIALIAS)) return;
-  await writeFile(
-    config,
-    replaceOnce(
-      source,
-      "alphaAntialiasing: true,",
-      `alphaAntialiasing: true,\n    ${ID_LAYER_ANTIALIAS}`,
-      config,
-    ),
-  );
+export const ID_LAYER_QUERY = /[?&](layer|tnRef)=ID(&|$)/;
+export const ID_LAYER_ANTIALIAS = `antialias: !${ID_LAYER_QUERY}.test(globalThis.location?.search ?? ""),`;
+export function idLayerIsAliased(source: string, file: string): string {
+  return source.includes(ID_LAYER_ANTIALIAS)
+    ? source
+    : replaceOnce(
+        source,
+        "alphaAntialiasing: true,",
+        `alphaAntialiasing: true,\n    ${ID_LAYER_ANTIALIAS}`,
+        file,
+      );
 }
 
 /** Applies the harness patches to a scaffolded starter; fails closed when the template moved. */
@@ -142,7 +138,8 @@ async function patchScaffold(target: string, fresh: boolean, baseline: boolean):
   await mkdir(path.join(target, "assets/unreal-reference"), { recursive: true });
   for (const file of ["scene.glb", "scene-id.glb"])
     await cp(path.join(REFERENCE, file), path.join(target, "assets/unreal-reference", file));
-  await idLayerIsAliased(target);
+  const starter = path.join(target, "threenative.config.ts");
+  await writeFile(starter, idLayerIsAliased(await readFile(starter, "utf8"), starter));
   if (!fresh) return;
   const game = path.join(target, "src/game.ts");
   let source = await readFile(game, "utf8");

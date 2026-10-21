@@ -3,6 +3,11 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { PNG } from "pngjs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  ID_LAYER_ANTIALIAS,
+  ID_LAYER_QUERY,
+  idLayerIsAliased,
+} from "../unreal-look/capture-threenative.js";
 import { decode, main, masks } from "../unreal-look/compare.js";
 import { readScene } from "../unreal-look/gi.js";
 import {
@@ -207,6 +212,42 @@ describe("sameness gate: one pose", () => {
     expect([...wide.data.subarray((7 * 60 + 12) * 4, (7 * 60 + 12) * 4 + 3)]).toEqual([
       255, 255, 255,
     ]);
+  });
+});
+
+describe("the ThreeNative ID layer is single-sampled, as Unreal's is", () => {
+  it("names the pages that draw an ID layer, and no other", () => {
+    for (const query of [
+      "?layer=ID",
+      "?tnGi=cornell&layer=ID",
+      "?tnRef=ID&sun=60,25",
+      "?model=x&tnRef=ID",
+    ])
+      expect(ID_LAYER_QUERY.test(query), query).toBe(true);
+    for (const query of [
+      "",
+      "?layer=L9",
+      "?tnRef=L9&sun=60,25",
+      "?layers=ID",
+      "?layer=IDX",
+      "?x=tnRef=ID",
+    ])
+      expect(ID_LAYER_QUERY.test(query), query).toBe(false);
+  });
+
+  it("puts antialias off for those pages in the scaffold's renderer config, once", () => {
+    const config = "renderer: {\n    alphaAntialiasing: true,\n  },";
+    const patched = idLayerIsAliased(config, "threenative.config.ts");
+    expect(patched).toContain(ID_LAYER_ANTIALIAS);
+    expect(ID_LAYER_ANTIALIAS).toContain(String(ID_LAYER_QUERY));
+    expect(idLayerIsAliased(patched, "threenative.config.ts")).toBe(patched);
+    expect(patched.split(ID_LAYER_ANTIALIAS)).toHaveLength(2);
+  });
+
+  it("fails closed when the template's renderer config moved", () => {
+    expect(() => idLayerIsAliased("renderer: {}", "threenative.config.ts")).toThrow(
+      /^TN_UNREAL_LOOK_PATCH/,
+    );
   });
 });
 
