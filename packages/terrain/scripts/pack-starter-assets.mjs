@@ -63,7 +63,9 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   await mkdir(dirname(file), { recursive: true });
   await writeFile(file, archive);
   if (process.argv.includes("--write-manifest")) {
-    const { version } = JSON.parse(await readFile(join(root, "package.json"), "utf8"));
+    // The pack keeps its own version: the release tag addresses the bytes, and a package bump
+    // with unchanged bytes must not need a re-upload. Bump `version` by hand when the bytes change.
+    const { version } = JSON.parse(await readFile(join(root, "starter-assets.json"), "utf8"));
     const tag = `terrain-starter-assets-sha256-${record.sha256}`;
     const url = `https://github.com/ThreeNativeHQ/threenative-engine/releases/download/${tag}/terrain-starter-assets-${version}.tar.gz`;
     await writeFile(

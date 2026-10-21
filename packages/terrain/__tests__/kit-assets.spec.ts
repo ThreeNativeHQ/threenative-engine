@@ -76,10 +76,10 @@ describe("pinned starter assets", () => {
     const manifest = JSON.parse(await readFile(join(root, "starter-assets.json"), "utf8"));
     expect(manifest.sha256).toBe(sha(first.bytes));
     expect(manifest.bytes).toBe(first.bytes.length);
-    const { version } = JSON.parse(await readFile(join(root, "package.json"), "utf8"));
-    expect(manifest.version).toBe(version);
+    // The pack version is its own: a package release with unchanged bytes keeps the pinned URL.
+    expect(manifest.version).toMatch(/^\d+\.\d+\.\d+$/u);
     expect(manifest.url).toBe(
-      `https://github.com/ThreeNativeHQ/threenative-engine/releases/download/terrain-starter-assets-sha256-${manifest.sha256}/terrain-starter-assets-${version}.tar.gz`,
+      `https://github.com/ThreeNativeHQ/threenative-engine/releases/download/terrain-starter-assets-sha256-${manifest.sha256}/terrain-starter-assets-${manifest.version}.tar.gz`,
     );
     expect(first.bytes.readUInt32LE(4)).toBe(0);
   }, 30_000);
