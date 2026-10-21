@@ -64,8 +64,9 @@ describe("bakeRays", () => {
   it("answers every ray as three's raycaster does: the nearest hit, the object, the face normal", () => {
     const root = scene();
     const reference = stock(root);
-    const rays = bakeRays(root, reference);
-    expect(rays).not.toBe(reference);
+    const rays = bakeRays(root);
+    expect(rays).toBeDefined();
+    if (rays === undefined) return;
     const next = lcg(11);
     const origin = new Vector3();
     const direction = new Vector3();
@@ -100,11 +101,18 @@ describe("bakeRays", () => {
     const material = new MeshStandardMaterial({ side: FrontSide });
     root.add(new Mesh(new PlaneGeometry(2, 2), material));
     root.updateMatrixWorld(true);
-    const rays = bakeRays(root, stock(root));
+    const rays = bakeRays(root);
+    if (rays === undefined) throw new Error("flat rays expected");
     const ray = { origin: new Vector3(0, 0, -1), direction: new Vector3(0, 0, 1), far: 10 };
     expect(rays.raycast(ray)).toBeUndefined();
     material.side = DoubleSide;
     expect(rays.raycast(ray)?.distance).toBeCloseTo(1, 6);
+    // The switch gives the same answer without touching the material.
+    material.side = FrontSide;
+    rays.doubleSided = true;
+    expect(rays.raycast(ray)?.distance).toBeCloseTo(1, 6);
+    rays.doubleSided = false;
+    expect(rays.raycast(ray)).toBeUndefined();
   });
 
   it("keeps the stock query for a scene it cannot flatten", () => {
@@ -112,7 +120,6 @@ describe("bakeRays", () => {
     const mesh = new Mesh(new BoxGeometry(1, 1, 1), new MeshStandardMaterial());
     (mesh as unknown as { isInstancedMesh: boolean }).isInstancedMesh = true;
     root.add(mesh);
-    const reference = stock(root);
-    expect(bakeRays(root, reference)).toBe(reference);
+    expect(bakeRays(root)).toBeUndefined();
   });
 });

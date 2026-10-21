@@ -8,22 +8,23 @@ import type { IRayContext } from "./giCache.js";
  * `ctx.raycast` walks the scene graph and calls into the engine for every object on every ray; the GI bake
  * casts millions of rays, so that walk is most of its time on the Wasm engine. The geometry does not move during
  * a bake, so it is read once here and each ray runs on plain typed arrays. The answers match `ctx.raycast`:
- * the nearest triangle, culled by the material's `side` (read per ray, because `linkMasks` switches it), the
+ * the nearest triangle, culled by the material's `side` (read per ray; `doubleSided` overrides it for the link rays), the
  * object, and the face normal in the object's local space. The hit object is reused between rays.
  */
 const LEAF = 4;
 const PAD = 1e-4;
 
-interface IBuilt {
-  readonly rays: IRayContext;
-  readonly triangles: number;
+/** The flat query, with a switch that makes every material double-sided for the rays that follow. */
+export interface IFlatRays extends IRayContext {
+  doubleSided: boolean;
 }
 
-export function bakeRays(root: Object3D, fallback: IRayContext): IRayContext {
-  return build(root)?.rays ?? fallback;
+/** The flat query over `root`, or `undefined` for a scene it cannot flatten: the caller keeps `ctx.raycast`. */
+export function bakeRays(root: Object3D): IFlatRays | undefined {
+  return build(root);
 }
 
-function build(root: Object3D): IBuilt | undefined {
+function build(root: Object3D): IFlatRays | undefined {
   root.updateMatrixWorld(true);
   const meshes: Mesh[] = [];
   let unsupported = false;
@@ -198,7 +199,8 @@ function build(root: Object3D): IBuilt | undefined {
     object: undefined as unknown as Object3D,
   };
   const stack = new Int32Array(64);
-  const rays: IRayContext = {
+  const rays: IFlatRays = {
+    doubleSided: false,
     raycast({ origin, direction, far }): Intersection | undefined {
       const [ox, oy, oz] = [origin.x, origin.y, origin.z];
       const [dx, dy, dz] = [direction.x, direction.y, direction.z];
@@ -253,7 +255,9 @@ function build(root: Object3D): IBuilt | undefined {
         for (let i = start[node] ?? 0; i < (start[node] ?? 0) + count; i += 1) {
           const t = order[i] ?? 0;
           const material = objects[owner[t] ?? 0]?.material as Material | Material[];
-          const side = (Array.isArray(material) ? material[slot[t] ?? 0] : material)?.side ?? 0;
+          const side = rays.doubleSided
+            ? 2
+            : ((Array.isArray(material) ? material[slot[t] ?? 0] : material)?.side ?? 0);
           const c = t * 9;
           // Three's Ray.intersectTriangle, culled by FrontSide (0), reversed for BackSide (1).
           let [ax, ay, az] = [corners[c] ?? 0, corners[c + 1] ?? 0, corners[c + 2] ?? 0];
@@ -308,7 +312,7 @@ function build(root: Object3D): IBuilt | undefined {
       return hit as unknown as Intersection;
     },
   };
-  return { rays, triangles: count };
+  return rays;
 }
 
 /** Quickselect: afterwards `order[k]` holds the k-th triangle by centroid along `axis` within [lo, hi]. */

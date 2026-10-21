@@ -99,6 +99,9 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
     const camera = ctx.camera as PerspectiveCamera;
     const raw = ctx.renderer.raw as unknown as { toneMapping: number };
     let reflections: Promise<() => void> | undefined;
+    // The GI cache shows a provisional bake at the first frame and converges over the next ones (giProgressive=0
+    // bakes it all before the first frame, the old behaviour). The capture waits for `reference.giConverged`.
+    let giConverged = true;
 
     if (level <= 0) {
       // ID and L0: unlit base colour, no post. Unreal: ShowFlag.Lighting 0, post off.
@@ -179,15 +182,28 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
       }
       // PRD-631: indirect diffuse from a world-space light cache of the sky and, from L7 (Unreal's
       // global illumination), the sun a surface returns (render/giCache.ts).
-      if (TUNED && level >= 2 && !OFF.has("gi"))
-        installGi(ctx, model, {
+      if (TUNED && level >= 2 && !OFF.has("gi")) {
+        const gi = installGi(ctx, model, {
           // Diagnosis knob stockRays=1: cast the bake through ctx.raycast, the slow path (an A/B).
           stockRays: params.get("stockRays") === "1",
+          ...(params.get("giProgressive") === "0"
+            ? {}
+            : {
+                progressive: {
+                  previewRays: 16,
+                  budgetMs: Number(params.get("giBudgetMs") ?? 8),
+                  onConverged: () => {
+                    giConverged = true;
+                  },
+                },
+              }),
           bounces: level >= 7 ? 5 : 0,
           // Unreal below L7 has no GI: its sky light is shadowed by distance fields, up to 10 m.
           ...(level < 7 ? { skyShadowDistance: 10 } : {}),
           sun: { color: key.color, intensity: key.intensity, direction: SUN_DIRECTION },
         });
+        giConverged = gi?.pass !== "preview";
+      }
       if (TUNED && level >= 8)
         reflections = captureReflections(
           ctx.renderer.raw as unknown as Parameters<typeof captureReflections>[0],
@@ -220,6 +236,9 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
     const target = new Vector3();
     const reference = {
       layer: LAYER,
+      get giConverged(): boolean {
+        return giConverged;
+      },
       // Only the owned engine's renderer carries `info.engine`; the capture refuses anything else.
       engine:
         "engine" in (ctx.renderer.raw as unknown as { info: object }).info

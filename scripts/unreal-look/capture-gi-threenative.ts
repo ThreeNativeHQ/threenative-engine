@@ -84,6 +84,8 @@ export async function captureGiThreeNative(options: {
   readonly layers: readonly string[];
   readonly out: string;
   readonly reuse: boolean;
+  /** Hold each pose this many seconds and write its TN_FRAME_BUDGET windows instead of a screenshot. */
+  readonly measureSeconds?: number;
 }): Promise<number> {
   for (const layer of options.layers)
     if (!(layer in GI_LAYERS)) throw new Error(`TN_UNREAL_LOOK_BAD_INPUT: GI layer ${layer}`);
@@ -116,8 +118,10 @@ export async function captureGiThreeNative(options: {
         const [width, height] = scene.resolution;
         const page = await browser.newPage({ viewport: { width, height }, deviceScaleFactor: 1 });
         const errors: string[] = [];
+        let meter: string[] = [];
         page.on("pageerror", (error) => errors.push(error.message));
         page.on("console", (message) => {
+          if (message.text().startsWith("TN_FRAME_BUDGET")) meter.push(message.text());
           if (
             message.type() === "error" ||
             /^TN_(CALIBRATION|GI_CACHE|NATIVE_)/.test(message.text())
@@ -155,6 +159,14 @@ export async function captureGiThreeNative(options: {
             await page.addStyleTag({ content: HIDE_UI });
             await page.waitForSelector('[data-threenative-startup="ready"]', { timeout: 300_000 });
             await page.waitForFunction(() => "__tnRef" in window, undefined, { timeout: 240_000 });
+            // A progressive GI bake shows a provisional cache first; a capture is of the converged one.
+            await page.waitForFunction(
+              () =>
+                (window as never as { __tnRef: { giConverged?: boolean } }).__tnRef.giConverged !==
+                false,
+              undefined,
+              { timeout: 900_000 },
+            );
             const engine = await page.evaluate("window.__tnRef.engine");
             if (engine !== "threenative")
               throw new Error(
@@ -172,6 +184,23 @@ export async function captureGiThreeNative(options: {
               );
               if (errors.length > 0)
                 throw new Error(`TN_UNREAL_LOOK_PAGE_ERROR: ${errors.join(" | ")}`);
+              if (options.measureSeconds !== undefined) {
+                meter = [];
+                await page.waitForTimeout(options.measureSeconds * 1000);
+                const log = path.join(
+                  options.out,
+                  sceneKey(name),
+                  layer,
+                  `${pose.name}.frame-budget.log`,
+                );
+                await mkdir(path.dirname(log), { recursive: true });
+                await writeFile(log, `${meter.join("\n")}\n`);
+                console.info(
+                  `TN_UNREAL_LOOK measured ${visit.key}/${pose.name} windows=${meter.length} log=${log}`,
+                );
+                count += 1;
+                continue;
+              }
               const file = path.join(options.out, sceneKey(name), layer, `${pose.name}.png`);
               await mkdir(path.dirname(file), { recursive: true });
               await writeFile(file, await page.screenshot({ type: "png" }));

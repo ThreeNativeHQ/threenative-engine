@@ -83,6 +83,8 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
       }
       return undefined;
     };
+    // False while a progressive GI bake is still converging; the capture waits for true.
+    let giConverged = true;
     const meshes: Mesh[] = [];
     model.traverse((object) => {
       if (object instanceof Mesh) meshes.push(object);
@@ -170,7 +172,20 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
           m.material = (m.material as MeshBasicMaterial).clone();
           (m.material as unknown as { color: Color }).color.setScalar(0);
         }
+        const progressive = params.get("giProgressive") !== "0" && params.get("giSkip") === null;
         const gi = installGi(ctx, model, {
+          ...(progressive
+            ? {
+                // The cache shows a provisional bake first and converges over the next frames.
+                progressive: {
+                  previewRays: 16,
+                  budgetMs: Number(params.get("giBudgetMs") ?? 8),
+                  onConverged: () => {
+                    giConverged = true;
+                  },
+                },
+              }
+            : {}),
           // Diagnosis: ?bounces=N brackets how much of the indirect light the later bounces carry.
           bounces: Number(params.get("bounces") ?? 5),
           lights: lights.map((l) => ({
@@ -180,6 +195,7 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
             distance: l.distance,
           })),
         });
+        giConverged = gi?.pass !== "preview";
         skipped.forEach((m, i) => (m.material as unknown as { color: Color }).color.copy(kept[i] as Color));
         if (gi === undefined)
           unsupported.push({ actor: NAME, property: "GI", reason: "the GI cache did not bake" });
@@ -213,6 +229,9 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
     const target = new Vector3();
     (window as unknown as { __tnRef: unknown }).__tnRef = {
       layer: LAYER,
+      get giConverged(): boolean {
+        return giConverged;
+      },
       scene: NAME,
       unsupported,
       // The live scene, renderer and GI cache, for in-page diagnosis.

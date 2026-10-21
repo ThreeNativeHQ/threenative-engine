@@ -270,6 +270,18 @@ export async function captureThreeNative(options: IThreeNativeCaptureOptions): P
           console.info(
             `TN_UNREAL_LOOK startup layer=${layer} ready=${readyMs}ms scene=${Date.now() - started}ms`,
           );
+          // A progressive GI bake shows a provisional cache first; a capture is of the converged one.
+          await page.waitForFunction(
+            () =>
+              (window as never as { __tnRef: { giConverged?: boolean } }).__tnRef.giConverged !==
+              false,
+            undefined,
+            {
+              timeout: 900_000,
+            },
+          );
+          if (options.measureSeconds === undefined)
+            console.info(`TN_UNREAL_LOOK converged layer=${layer} after=${Date.now() - started}ms`);
           const engine = await page.evaluate("window.__tnRef.engine");
           if (engine !== "threenative")
             throw new Error(`TN_UNREAL_LOOK_WRONG_ENGINE: ${layer} drew on ${String(engine)}`);

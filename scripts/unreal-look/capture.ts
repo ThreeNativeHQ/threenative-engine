@@ -116,6 +116,7 @@ export async function main(args: readonly string[]): Promise<number> {
         (familyOf(value) === "shadow" ? ["ID", "L5", "L9"] : ["ID", "L1", "L7"]),
       out: path.resolve(flag(args, "--out") ?? path.join(REFERENCE, "captures", "threenative")),
       reuse: args.includes("--reuse"),
+      ...(flag(args, "--measure") ? { measureSeconds: Number(flag(args, "--measure")) } : {}),
     });
     return count > 0 ? 0 : 1;
   }
