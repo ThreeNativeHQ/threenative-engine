@@ -109,10 +109,11 @@ export interface IGiOptions {
   /** Cast the bake's rays through `ctx.raycast` instead of the flat triangle hierarchy: the slow path, kept for an A/B. */
   readonly stockRays?: boolean;
   /**
-   * Show a quick provisional cache first and converge to the full one over the following frames, as Lumen fills its
-   * probes over frames instead of before the first one. `installGi` returns the provisional report at once: `previewRays`
-   * rays per probe and one bounce, on the same grid. The full bake then runs in slices of `budgetMs` per frame and
-   * rewrites the texture the materials already read; `onConverged` gets its report. Needs the flat rays.
+   * Draw the first frame at once and fill the cache over the following frames, as Lumen fills its probes over frames
+   * instead of before the first one. `installGi` installs the materials over a black cache and returns a `pending`
+   * report. A provisional bake (`previewRays` rays per probe, one bounce) then runs in slices of `budgetMs` per frame
+   * (twice that), and the full bake after it. Each rewrites the texture the materials already read; `onConverged`
+   * gets the full bake's report. No frame is held longer than a slice. Needs the flat rays.
    */
   readonly progressive?: {
     readonly previewRays: number;
@@ -133,8 +134,11 @@ export interface IGiReport {
   readonly milliseconds: number;
   /** Milliseconds per bake phase, in order, so a cost is attributed before it is cut. */
   readonly phases: Readonly<Record<string, number>>;
-  /** `preview` is the provisional cache of a progressive bake; `final` is the full one. */
-  readonly pass: "preview" | "final";
+  /**
+   * `pending` is a progressive bake that has not published yet (the cache reads black); `preview` is its provisional
+   * cache; `final` is the full one.
+   */
+  readonly pass: "pending" | "preview" | "final";
 }
 
 const CELL = 0.5;
@@ -1233,6 +1237,35 @@ export function installGi(
     bounces: options.bounces,
   };
 
+  // An emissive mesh smaller than a probe cell is a bright point: a few of a probe's rays hit it, each standing for a solid angle
+  // many times the source's own, and every probe shoots the same set, so the whole neighbourhood over-reads by the
+  // same factor (a 5 x 3.14 radiance sphere lit a wall 8 m away at 4 to 7 times the path-traced value). Lumen clamps
+  // and filters such rays; here the source is integrated analytically instead. It is a sphere of its bounding
+  // radius (exact for a sphere), and rays that hit it carry no emission of their own.
+  const emitters: { centre: Vector3; radius: number; radiance: number[]; id: number }[] = [];
+  root.traverse((object) => {
+    const mesh = object as Mesh;
+    const m = mesh.material as MeshStandardMaterial | undefined;
+    if (!(mesh as { isMesh?: boolean }).isMesh || m === undefined) return;
+    const radiance = [m.emissive.r, m.emissive.g, m.emissive.b].map(
+      (v) => v * (m.emissiveIntensity ?? 1),
+    );
+    if ((radiance[0] ?? 0) + (radiance[1] ?? 0) + (radiance[2] ?? 0) <= 0) return;
+    // The tight sphere: a loader may have set one from the bounding box, which is sqrt(3) too large for a sphere.
+    mesh.geometry.computeBoundingSphere();
+    const bound = mesh.geometry.boundingSphere;
+    if (bound === null) return;
+    const radius = bound.radius * mesh.matrixWorld.getMaxScaleOnAxis();
+    // A source wider than a probe cell is sampled well by the rays (a lit room, a glowing panel).
+    if (radius > Math.max(1, grid.cell)) return;
+    emitters.push({
+      centre: bound.center.clone().applyMatrix4(mesh.matrixWorld),
+      radius,
+      radiance,
+      id: mesh.id,
+    });
+  });
+
   /** One bake at the given quality. It yields only when `slice.deadline` has passed. */
   function* bake(params: IBakeParams): Generator<void, IBaked> {
     const phases: Record<string, number> = {};
@@ -1348,34 +1381,6 @@ export function installGi(
       return lit;
     };
 
-    // An emissive mesh smaller than a probe cell is a bright point: a few of a probe's rays hit it, each standing for a solid angle
-    // many times the source's own, and every probe shoots the same set, so the whole neighbourhood over-reads by the
-    // same factor (a 5 x 3.14 radiance sphere lit a wall 8 m away at 4 to 7 times the path-traced value). Lumen clamps
-    // and filters such rays; here the source is integrated analytically instead. It is a sphere of its bounding
-    // radius (exact for a sphere), and rays that hit it carry no emission of their own.
-    const emitters: { centre: Vector3; radius: number; radiance: number[]; id: number }[] = [];
-    root.traverse((object) => {
-      const mesh = object as Mesh;
-      const m = mesh.material as MeshStandardMaterial | undefined;
-      if (!(mesh as { isMesh?: boolean }).isMesh || m === undefined) return;
-      const radiance = [m.emissive.r, m.emissive.g, m.emissive.b].map(
-        (v) => v * (m.emissiveIntensity ?? 1),
-      );
-      if ((radiance[0] ?? 0) + (radiance[1] ?? 0) + (radiance[2] ?? 0) <= 0) return;
-      // The tight sphere: a loader may have set one from the bounding box, which is sqrt(3) too large for a sphere.
-      mesh.geometry.computeBoundingSphere();
-      const bound = mesh.geometry.boundingSphere;
-      if (bound === null) return;
-      const radius = bound.radius * mesh.matrixWorld.getMaxScaleOnAxis();
-      // A source wider than a probe cell is sampled well by the rays (a lit room, a glowing panel).
-      if (radius > Math.max(1, grid.cell)) return;
-      emitters.push({
-        centre: bound.center.clone().applyMatrix4(mesh.matrixWorld),
-        radius,
-        radiance,
-        id: mesh.id,
-      });
-    });
     const emitterIds = new Set(emitters.map((e) => e.id));
 
     const materialData = new Map<number, { albedo: number[]; emissive: number[] }>();
@@ -1775,22 +1780,57 @@ export function installGi(
     extraRays: 0,
     bounces: Math.min(1, full.bounces),
   };
-  const preview = publish(finish(bake(previewParams)), "preview", previewParams.bounces);
-  const converging = bake(full);
+  // The materials are installed now, over a black cache of the final size, so the first frame draws at once and
+  // the graph never changes: each bake below rewrites the texture they already read.
+  const fineGrid: IGrid = {
+    origin: grid.origin,
+    cell: grid.cell / 2,
+    nx: grid.nx * 2,
+    ny: grid.ny * 2,
+    nz: grid.nz * 2,
+  };
+  const texels = fineGrid.nx * fineGrid.ny * fineGrid.nz;
+  reader = irradianceAt(
+    new Float32Array(texels * 18),
+    fineGrid,
+    new Uint8Array(texels),
+    new Float32Array(texels * 6),
+    new Uint8Array(texels),
+  );
+  giCache.texture = reader.texture;
+  install(reader.read, emitters);
   const onFrame =
     typeof requestAnimationFrame === "function"
       ? requestAnimationFrame
       : (f: () => void) => setTimeout(f, 0);
-  const step = (): void => {
-    slice.deadline = performance.now() + progressive.budgetMs;
-    const next = converging.next();
-    slice.deadline = Number.POSITIVE_INFINITY;
-    if (!next.done) {
-      onFrame(step);
-      return;
-    }
-    progressive.onConverged?.(publish(next.value, "final", full.bounces));
+  /** Runs a bake `budgetMs` per frame (no frame is held longer), then hands the result on. */
+  const spread = <T>(run: Generator<void, T>, budgetMs: number, done: (value: T) => void): void => {
+    const step = (): void => {
+      slice.deadline = performance.now() + budgetMs;
+      const next = run.next();
+      slice.deadline = Number.POSITIVE_INFINITY;
+      if (next.done) done(next.value);
+      else onFrame(step);
+    };
+    onFrame(step);
   };
-  onFrame(step);
-  return preview;
+  // The preview takes the frames twice as hungrily: the sooner it lands, the sooner the room is lit.
+  spread(bake(previewParams), progressive.budgetMs * 2, (baked) => {
+    publish(baked, "preview", previewParams.bounces);
+    spread(bake(full), progressive.budgetMs, (final) => {
+      progressive.onConverged?.(publish(final, "final", full.bounces));
+    });
+  });
+  return {
+    cell: grid.cell,
+    points: probes,
+    enclosed: 0,
+    rays: 0,
+    shadowRays: 0,
+    solid: 0,
+    bounces: 0,
+    milliseconds: Math.round(performance.now() - started),
+    phases: {},
+    pass: "pending",
+  };
 }

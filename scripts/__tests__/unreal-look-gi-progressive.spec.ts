@@ -65,6 +65,7 @@ describe("progressive GI bake", () => {
     const frames: (() => void)[] = [];
     vi.stubGlobal("requestAnimationFrame", (f: () => void) => frames.push(f));
     const room = sunlitRoom();
+    const staleField = giCache.field;
     let converged: unknown;
     const first = installGi(rayContext(room), room, {
       bounces: 5,
@@ -77,25 +78,38 @@ describe("progressive GI bake", () => {
         },
       },
     });
-    // At once: the preview, cheaper than the full bake, already readable by the materials.
-    expect(first?.pass).toBe("preview");
-    expect(first?.bounces).toBe(1);
-    expect(first?.rays).toBeLessThan((reference?.rays ?? 0) / 3);
-    const preview = Float32Array.from(giCache.field?.values ?? []);
+    // At once: the materials read a black cache of the final size and nothing is baked yet.
+    expect(first?.pass).toBe("pending");
+    expect(giCache.field).toBe(staleField);
     const texture = giCache.texture;
-    const before = Uint16Array.from(texture?.image.data as Uint16Array);
-    const version = texture?.version ?? 0;
+    expect(texture).toBeDefined();
+    const blank = Uint16Array.from(texture?.image.data as Uint16Array);
+    expect(blank.every((v) => v === 0)).toBe(true);
     const material = (room.children[0] as Mesh).material;
     expect(material).not.toBeInstanceOf(MeshStandardMaterial);
     expect(frames.length).toBe(1);
 
-    // The full bake is spread over frames, each doing a slice of the work.
+    // The provisional bake lands after some frames, cheaper than the full one, in the same texture.
     let steps = 0;
+    while (giCache.field === staleField && steps < 100000) {
+      frames.shift()?.();
+      steps += 1;
+    }
+    expect(giCache.field).not.toBe(staleField);
+    expect(giCache.texture).toBe(texture);
+    const preview = Float32Array.from(giCache.field?.values ?? []);
+    const before = Uint16Array.from(texture?.image.data as Uint16Array);
+    expect(before.some((v) => v !== 0)).toBe(true);
+    const version = texture?.version ?? 0;
+
+    // The full bake is spread over frames, each doing a slice of the work.
+    steps = 0;
     while (converged === undefined && steps < 100000) {
       frames.shift()?.();
       steps += 1;
     }
     expect(steps).toBeGreaterThan(3);
+    expect(frames.length).toBe(0);
     expect((converged as { pass: string }).pass).toBe("final");
     expect((converged as { rays: number }).rays).toBe(reference?.rays);
     // The same computation as the single bake, only cut into slices: the same field, to the bit.

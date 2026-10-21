@@ -195,7 +195,7 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
             distance: l.distance,
           })),
         });
-        giConverged = gi?.pass !== "preview";
+        giConverged = gi === undefined || gi.pass === "final";
         skipped.forEach((m, i) => (m.material as unknown as { color: Color }).color.copy(kept[i] as Color));
         if (gi === undefined)
           unsupported.push({ actor: NAME, property: "GI", reason: "the GI cache did not bake" });

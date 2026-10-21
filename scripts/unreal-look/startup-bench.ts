@@ -9,6 +9,8 @@
  *   scriptStart    the first script ran            ready     data-threenative-startup="ready" (scene entered, GI baked)
  *   giBakeMs       TN_GI_CACHE milliseconds        frame1    the first presented frame after ready
  *   frame60        the 60th presented frame after ready
+ *   firstFrame     the first animation frame of the page; longestFrameGap the longest wait between two frames until giConverged
+ *   --model <folder> [--shots] [--pose <json>]  a calibration scene lit by the reference, and a screenshot of one pose once converged
  *   giConverged    the full GI bake landed (window.__tnRef.giConverged); equals ready when the bake is not progressive
  * `cold` clears the dev server's dependency cache and uses a fresh browser profile; `warm` reuses both.
  * Hold the capture lock for the whole run, as for any GPU capture.
@@ -29,13 +31,24 @@ const flag = (name: string, fallback: string): string => {
 
 // Runs in the page before any script: timestamps of the first frames after the scene is ready.
 const PROBE = `(() => {
-  const t = { frames: [], ready: null, converged: null, scriptStart: performance.now() };
+  const t = { frames: [], ready: null, converged: null, scriptStart: performance.now(), longTasks: [], gaps: [], firstFrame: null };
   window.__tnStartup = t;
+  // Main-thread stalls: every task over 50 ms, and the longest gap between two animation frames until the GI converges.
+  try {
+    new PerformanceObserver((list) => {
+      for (const e of list.getEntries()) t.longTasks.push([Math.round(e.startTime), Math.round(e.duration)]);
+    }).observe({ type: "longtask", buffered: true });
+  } catch {}
+  let last = null;
   const watch = new MutationObserver(() => {
     if (t.ready === null && document.querySelector('[data-threenative-startup="ready"]')) t.ready = performance.now();
   });
   watch.observe(document, { attributes: true, childList: true, subtree: true });
   const tick = () => {
+    const now = performance.now();
+    if (t.firstFrame === null) t.firstFrame = now;
+    if (t.converged === null && last !== null) t.gaps.push([Math.round(last), Math.round(now - last)]);
+    last = now;
     if (t.ready !== null && t.frames.length < 61) t.frames.push(performance.now());
     if (t.converged === null && window.__tnRef && window.__tnRef.giConverged === true) t.converged = performance.now();
     if (t.frames.length < 61 || t.converged === null) requestAnimationFrame(tick);
@@ -48,6 +61,12 @@ async function main(): Promise<void> {
   const layer = flag("--layer", "L9");
   const sun = flag("--sun", "60,25");
   const runs = flag("--runs", "cold,warm,warm").split(",");
+  const model = flag("--model", "");
+  const shots = process.argv.includes("--shots") ? true : undefined;
+  const pose = flag(
+    "--pose",
+    '{"name":"sun15-window","position":[0,1.5,-5.5],"target":[0,1.2,0],"hfovDeg":90}',
+  );
   const work = process.env.TN_UNREAL_LOOK_WORK;
   if (work === undefined) throw new Error("TN_UNREAL_LOOK_WORK: set a work directory of your own");
   const target = await scaffold(work, true, false);
@@ -85,7 +104,7 @@ async function main(): Promise<void> {
         )
           markers.push({ atMs: Date.now() - begin, text: message.text().slice(0, 600) });
       });
-      const load = `${origin}?tnRef=${layer}&sun=${sun}${process.env.TN_UNREAL_LOOK_QUERY ?? ""}`;
+      const load = `${origin}?tnRef=${layer}&sun=${sun}${model === "" ? "" : `&model=${model}`}${process.env.TN_UNREAL_LOOK_QUERY ?? ""}`;
       const load0 = Date.now();
       await page.goto(load, { waitUntil: "domcontentloaded" });
       await page.addStyleTag({ content: HIDE_UI });
@@ -100,7 +119,18 @@ async function main(): Promise<void> {
         ready: number;
         converged: number;
         scriptStart: number;
+        firstFrame: number;
+        longTasks: [number, number][];
+        gaps: [number, number][];
       };
+      if (shots !== undefined) {
+        await page.evaluate(`window.__tnRef.pose(${pose})`);
+        await page.evaluate(
+          "new Promise((resolve) => { let n = 0; const tick = () => (++n >= 90 ? resolve() : requestAnimationFrame(tick)); requestAnimationFrame(tick); })",
+        );
+        await page.screenshot({ path: path.join(out, `${kind}${index + 1}.png`) });
+      }
+      const worst = (rows: [number, number][]) => rows.reduce((m, r) => Math.max(m, r[1]), 0);
       const gi = markers.find((m) => m.text.startsWith("TN_GI_CACHE"));
       const result = {
         label: `${kind}${index + 1}`,
@@ -113,6 +143,11 @@ async function main(): Promise<void> {
         frame1Ms: Math.round(marks.frames[0] ?? Number.NaN),
         frame60Ms: Math.round(marks.frames[60] ?? Number.NaN),
         giConvergedMs: Math.round(marks.converged),
+        firstFrameMs: Math.round(marks.firstFrame),
+        // Until the GI converged: the longest task and the longest gap between two frames (a slice shows as a gap).
+        longestTaskMs: worst(marks.longTasks),
+        longestFrameGapMs: worst(marks.gaps),
+        longTasks: marks.longTasks.slice(0, 200),
         giCache: gi === undefined ? null : JSON.parse(gi.text.replace(/^TN_GI_CACHE /, "")),
         markers,
         startedAt: new Date(load0).toISOString(),

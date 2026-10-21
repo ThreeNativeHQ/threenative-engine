@@ -214,7 +214,7 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
           ...(level < 7 ? { skyShadowDistance: 10 } : {}),
           sun: { color: key.color, intensity: key.intensity, direction: SUN_DIRECTION },
         });
-        giConverged = gi?.pass !== "preview";
+        giConverged = gi === undefined || gi.pass === "final";
       }
       if (TUNED && level >= 8)
         reflections = captureReflections(
