@@ -6,10 +6,12 @@ import {
   Group,
   type Intersection,
   Mesh,
+  MeshPhysicalMaterial,
   MeshStandardMaterial,
   PlaneGeometry,
   Raycaster,
   SphereGeometry,
+  Texture,
   Vector3,
 } from "three";
 import { describe, expect, it } from "vitest";
@@ -224,6 +226,52 @@ describe("the world-space GI cache against closed forms (PRD-631 L7)", () => {
     expect((roof.material as MeshStandardMaterial).shadowSide).toBe(DoubleSide);
     expect((floor.material as MeshStandardMaterial).shadowSide ?? null).toBeNull();
   });
+  it("the material the cache installs is the source's node twin: class, maps, cut-out, sides and blending carry over", () => {
+    // A leaf card is a textured, alpha-tested, two-sided standard material; a glass pane is a physical one. A field-by-field
+    // swap dropped the cut-out, so a leaf drew as a whole quad. Three's own fromMaterial copies every key into the matching class.
+    const map = new Texture();
+    const alphaMap = new Texture();
+    const normalMap = new Texture();
+    const roughnessMap = new Texture();
+    const leaf = new Mesh(
+      new PlaneGeometry(1, 1),
+      new MeshStandardMaterial({
+        map,
+        alphaMap,
+        normalMap,
+        roughnessMap,
+        alphaTest: 0.5,
+        side: DoubleSide,
+        transparent: true,
+        opacity: 0.8,
+        vertexColors: true,
+        roughness: 0.6,
+        metalness: 0.2,
+      }),
+    );
+    const glass = new Mesh(
+      new PlaneGeometry(1, 1).translate(3, 0, 0),
+      new MeshPhysicalMaterial({ map, clearcoat: 0.7, transmission: 0.4, ior: 1.3, roughness: 0.1 }),
+    );
+    const floor = new Mesh(
+      new PlaneGeometry(40, 40).rotateX(-Math.PI / 2),
+      new MeshStandardMaterial({ side: DoubleSide }),
+    );
+    const scene = new Group().add(leaf, glass, floor);
+    skyRadiance.current = { data: new Float32Array(6), width: 2, height: 1, scale: [1, 1, 1] };
+    installGi(rayContext(scene), scene, { bounces: 1, sun: noSun });
+    const kept = leaf.material as MeshStandardMaterial;
+    expect(kept.constructor.name).toBe("MeshStandardNodeMaterial");
+    expect([kept.map, kept.alphaMap, kept.normalMap, kept.roughnessMap]).toEqual([map, alphaMap, normalMap, roughnessMap]);
+    expect([kept.alphaTest, kept.side, kept.transparent, kept.opacity, kept.vertexColors]).toEqual([0.5, DoubleSide, true, 0.8, true]);
+    expect([kept.roughness, kept.metalness]).toEqual([0.6, 0.2]);
+    const pane = glass.material as MeshPhysicalMaterial;
+    expect(pane.constructor.name).toBe("MeshPhysicalNodeMaterial");
+    expect([pane.map, pane.clearcoat, pane.transmission, pane.ior]).toEqual([map, 0.7, 0.4, 1.3]);
+    expect((kept as unknown as { irradianceNode: unknown }).irradianceNode).toBeDefined();
+    expect((pane as unknown as { aoNode: unknown }).aoNode).toBeDefined();
+  });
+
   it("a small emissive sphere's direct light leaves the cache, which keeps only what it bounces", () => {
     // 8 m away the sphere subtends 0.012 sr and one of a probe's 96 rays stands for 0.13 sr: the rays alone over- or
     // under-read by an order of magnitude, the same way for every neighbour, which lit a wall 4 to 7 times too bright.

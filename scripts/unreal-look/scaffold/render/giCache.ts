@@ -59,7 +59,7 @@ import {
   uniform,
   vec3,
 } from "three/tsl";
-import { MeshStandardNodeMaterial, type Node } from "three/webgpu";
+import { MeshPhysicalNodeMaterial, MeshStandardNodeMaterial, type Node } from "three/webgpu";
 import { type IFlatRays, bakeRays } from "./bakeRays.js";
 
 /** What the bake needs of the game's context: the scene ray query (`ICtx.raycast`). */
@@ -1209,6 +1209,26 @@ interface IBaked {
   readonly phases: Record<string, number>;
 }
 
+/**
+ * The node material a source material becomes when the cache lights it, the way three's own `fromMaterial` makes it: the
+ * class that matches the source type (a node material keeps its class), every enumerable key copied, so the maps, the
+ * cut-out, the sides and the blending all carry over. `type` and `uuid` stay the twin's own.
+ */
+function nodeTwin(source: MeshStandardMaterial): MeshStandardMaterial {
+  if ((source as { isNodeMaterial?: boolean }).isNodeMaterial) return source;
+  const twin: MeshStandardMaterial =
+    source.type === "MeshPhysicalMaterial"
+      ? new MeshPhysicalNodeMaterial()
+      : new MeshStandardNodeMaterial();
+  for (const key in source) {
+    if (key === "type" || key === "uuid") continue;
+    (twin as unknown as Record<string, unknown>)[key] = (
+      source as unknown as Record<string, unknown>
+    )[key];
+  }
+  return twin;
+}
+
 export function installGi(
   gameCtx: IRayContext,
   root: Object3D,
@@ -1727,14 +1747,7 @@ export function installGi(
       if (!(mesh as { isMesh?: boolean }).isMesh) return;
       const source = mesh.material as MeshStandardMaterial;
       const { node, visibility } = readFor(source.roughness);
-      const material = new MeshStandardNodeMaterial();
-      material.color.copy(source.color);
-      material.roughness = source.roughness;
-      material.metalness = source.metalness;
-      material.emissive.copy(source.emissive);
-      material.emissiveIntensity = source.emissiveIntensity;
-      material.side = source.side;
-      material.shadowSide = source.shadowSide;
+      const material = nodeTwin(source);
       (material as unknown as { irradianceNode: unknown }).irradianceNode = node;
       (material as unknown as { aoNode: unknown }).aoNode = visibility;
       mesh.material = material;
