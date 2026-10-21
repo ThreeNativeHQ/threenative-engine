@@ -19,7 +19,7 @@
  * the editor log. Every check fails closed.
  */
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import path from "node:path";
 import {
@@ -467,6 +467,20 @@ export function relativeChange(a: IStats, b: IStats): number {
   return 2 ** Math.abs(b.ev50 - a.ev50) - 1;
 }
 
+/** The committed Unreal statistics of a scene (`--write-stats`): the stand-in for its captures when they are absent. */
+function readStatsFile(name: string): { cells: Record<string, Record<string, IStats>> } {
+  const file = path.join(sceneDir(name), "reference-stats.json");
+  if (!existsSync(file))
+    fail(
+      "MISSING_CELL",
+      `${name}: no Unreal captures and no ${file} (run capture, then compare --write-stats)`,
+    );
+  const data = JSON.parse(readFileSync(file, "utf8")) as { cells?: unknown };
+  if (!data.cells || typeof data.cells !== "object" || !Object.keys(data.cells).length)
+    fail("BAD_INPUT", `${file}: no cells`);
+  return data as { cells: Record<string, Record<string, IStats>> };
+}
+
 /** The Unreal variant each ThreeNative layer is judged against (capture-gi-threenative.ts). */
 const UNREAL_VARIANT: Readonly<Record<string, string>> = {
   L1: "L1",
@@ -488,6 +502,9 @@ export function compareGiToUnreal(name: string, layers: readonly string[], root:
     : undefined;
   const unreal = path.join(root, "unreal", sceneKey(name));
   const tn = path.join(root, "threenative", sceneKey(name));
+  // Without Unreal captures the committed statistics and ID frames stand in for them (PRD-638 AC-2).
+  const offline = !existsSync(unreal);
+  const cached = offline ? readStatsFile(name) : undefined;
   const rows: IRow[] = [];
   for (const layer of layers) {
     // A shadow scene names its Unreal variants after their layers (shadow/scenes.json).
@@ -495,20 +512,40 @@ export function compareGiToUnreal(name: string, layers: readonly string[], root:
       ? layer
       : (UNREAL_VARIANT[layer] ?? fail("BAD_INPUT", `GI layer ${layer}`));
     for (const pose of scene.poses) {
-      const reference = masks(image(path.join(unreal, "ID", `${pose.name}.png`)), scene.regions);
       const own = masks(image(path.join(tn, "ID", `${pose.name}.png`)), scene.regions);
+      const reference = masks(
+        image(
+          offline
+            ? path.join(sceneDir(name), "id", `${pose.name}.png`)
+            : path.join(unreal, "ID", `${pose.name}.png`),
+        ),
+        scene.regions,
+      );
+      const statsCell = cached?.cells[`${variant}/${pose.name}`];
       const regions = Object.keys(reference.regions).filter(
-        (r) => r !== "Sky" && reference.regions[r]?.some(Boolean),
+        (r) =>
+          r !== "Sky" &&
+          reference.regions[r]?.some(Boolean) &&
+          (statsCell === undefined || statsCell[r] !== undefined),
       );
       const exr = path.join(unreal, variant, `${pose.name}.exr`);
       const cell = compareCells({
         layer,
         cell: `${name}/${pose.name}`,
-        unreal: image(path.join(unreal, variant, `${pose.name}.png`)),
+        ...(cached
+          ? {
+              reference:
+                cached.cells[`${variant}/${pose.name}`] ??
+                fail(
+                  "MISSING_CELL",
+                  `${name}: reference-stats.json has no ${variant}/${pose.name}`,
+                ),
+            }
+          : { unreal: image(path.join(unreal, variant, `${pose.name}.png`)) }),
         threenative: image(path.join(tn, layer, `${pose.name}.png`)),
         masks: reference,
         regions,
-        ...(existsSync(exr) ? { unrealExr: image(exr) } : {}),
+        ...(!offline && existsSync(exr) ? { unrealExr: image(exr) } : {}),
         ...(thresholds ? { thresholds } : {}),
       });
       for (const row of cell) {
@@ -593,6 +630,13 @@ export function compareGi(args: readonly string[]): number {
     }
     if (args.includes("--write-stats")) {
       if (!Object.keys(stats).length) fail("MISSING_CELL", `${name}: no captured variant`);
+      // The ID frames are the region masks: a few kilobytes each, and what makes the offline compare exact.
+      mkdirSync(path.join(sceneDir(name), "id"), { recursive: true });
+      for (const pose of scene.poses)
+        copyFileSync(
+          path.join(base, "ID", `${pose.name}.png`),
+          path.join(sceneDir(name), "id", `${pose.name}.png`),
+        );
       writeFileSync(
         path.join(sceneDir(name), "reference-stats.json"),
         `${JSON.stringify({ generatedAt: new Date().toISOString(), scene: name, resolution: scene.resolution, cells: stats }, null, 2)}\n`,
