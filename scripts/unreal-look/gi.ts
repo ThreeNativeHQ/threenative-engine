@@ -33,6 +33,7 @@ import {
   masks,
   measure,
 } from "./compare.js";
+import { pairedPenumbra } from "./penumbra.js";
 
 const REPO_ROOT = path.resolve(import.meta.dirname, "../..");
 const REFERENCE = path.join(REPO_ROOT, "tools/unreal-reference");
@@ -522,6 +523,31 @@ export function compareGiToUnreal(name: string, layers: readonly string[], root:
   return rows;
 }
 
+/** Floor shadow-edge width, Unreal against ThreeNative, per pose of one scene and layer (PRD-649). */
+export function penumbraRows(
+  name: string,
+  layer: string,
+  root: string,
+): { cell: string; matched: number; unreal: number; other: number; ratio: number }[] {
+  const { scene } = readScene(name);
+  const unreal = path.join(root, "unreal", sceneKey(name));
+  const tn = path.join(root, "threenative", sceneKey(name));
+  const variant = name.startsWith("shadow:") ? layer : (UNREAL_VARIANT[layer] ?? layer);
+  const rows = [];
+  for (const pose of scene.poses) {
+    const floor = masks(image(path.join(unreal, "ID", `${pose.name}.png`)), scene.regions).regions
+      .Floor;
+    if (!floor) fail("EMPTY_MASK", `${name}: the scene has no Floor region`);
+    const m = pairedPenumbra(
+      image(path.join(unreal, variant, `${pose.name}.png`)),
+      image(path.join(tn, layer, `${pose.name}.png`)),
+      floor,
+    );
+    if (m) rows.push({ cell: `${name}/${pose.name}`, ...m });
+  }
+  return rows;
+}
+
 export function compareGi(args: readonly string[]): number {
   const layerFlag = flag(args, "--layer");
   if (layerFlag !== undefined) {
@@ -531,6 +557,19 @@ export function compareGi(args: readonly string[]): number {
       value,
       registry(familyOf(value)).scenes.map((s) => s.name),
     );
+    if (flag(args, "--metric") === "penumbra") {
+      const show = (v: number) => Number(v.toPrecision(4));
+      console.log(
+        "| cell | matched edge rows | UE width px | TN width px | TN / UE |\n|---|---:|---:|---:|---:|",
+      );
+      for (const name of names)
+        for (const layer of layerFlag.split(","))
+          for (const r of penumbraRows(name, layer, root))
+            console.log(
+              `| ${r.cell} ${layer} | ${r.matched} | ${show(r.unreal)} | ${show(r.other)} | ${show(r.ratio)} |`,
+            );
+      return 0;
+    }
     const rows = names.flatMap((name) => compareGiToUnreal(name, layerFlag.split(","), root));
     const f = (v: number | null, d = 3) => (v === null ? "—" : v.toFixed(d));
     console.log(

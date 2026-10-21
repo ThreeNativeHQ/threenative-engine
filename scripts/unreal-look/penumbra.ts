@@ -127,3 +127,26 @@ export function matchedWidths(
   const mid = (v: number[]) => [...v].sort((x, y) => x - y)[Math.floor(v.length / 2)] ?? Number.NaN;
   return { matched: a.length, unreal: mid(a), other: mid(b) };
 }
+
+interface IPixels {
+  data: ArrayLike<number>;
+  width: number;
+  height: number;
+}
+
+/** The median edge width of both arms on the floor rows where both found an edge (undefined: none). */
+export function pairedPenumbra(
+  unreal: IPixels,
+  other: IPixels,
+  floor: ArrayLike<number>,
+): { matched: number; unreal: number; other: number; ratio: number } | undefined {
+  const edges = (image: IPixels) =>
+    floorEdges(
+      linearLuminance(image.data, image.width * image.height),
+      image.width,
+      image.height,
+      floor,
+    );
+  const m = matchedWidths(edges(unreal), edges(other));
+  return m.matched > 0 ? { ...m, ratio: m.other / m.unreal } : undefined;
+}

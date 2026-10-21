@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { floorEdges, matchedWidths } from "../unreal-look/penumbra.js";
+import { floorEdges, matchedWidths, pairedPenumbra } from "../unreal-look/penumbra.js";
 
 const WIDTH = 160;
 /** One row repeated, lit 1.0 on the left, 0.1 on the right, a linear ramp `ramp` px wide at x = 80. */
@@ -39,5 +39,29 @@ describe("floorEdges", () => {
   it("ignores pixels outside the floor mask", () => {
     const { lum } = image(4);
     expect(floorEdges(lum, WIDTH, 16, new Uint8Array(WIDTH * 16))).toEqual([]);
+  });
+});
+
+describe("pairedPenumbra", () => {
+  /** An RGBA frame of `image(ramp)`'s luminance as grey sRGB. */
+  function frame(ramp: number) {
+    const { lum } = image(ramp);
+    const data = new Uint8Array(lum.length * 4);
+    lum.forEach((v, i) => {
+      const s = v <= 0.0031308 ? v * 12.92 : 1.055 * v ** (1 / 2.4) - 0.055;
+      data.fill(Math.round(s * 255), i * 4, i * 4 + 3);
+      data[i * 4 + 3] = 255;
+    });
+    return { data, width: WIDTH, height: 16 };
+  }
+  const floor = new Uint8Array(WIDTH * 16).fill(1);
+
+  it("reads a ratio of 1 for equal edges and above 1 for the softer arm", () => {
+    expect(pairedPenumbra(frame(6), frame(6), floor)?.ratio).toBeCloseTo(1, 5);
+    expect(pairedPenumbra(frame(3), frame(9), floor)?.ratio).toBeGreaterThan(2);
+  });
+
+  it("reports nothing when the arms share no edge", () => {
+    expect(pairedPenumbra(frame(6), frame(6), new Uint8Array(WIDTH * 16))).toBeUndefined();
   });
 });

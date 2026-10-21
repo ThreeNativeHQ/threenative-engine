@@ -5,7 +5,7 @@ import { pathToFileURL } from "node:url";
 import { PNG } from "pngjs";
 import { curveShape, exposureCurve } from "./exposureCurve.js";
 import { compareGi } from "./gi.js";
-import { floorEdges, linearLuminance, matchedWidths } from "./penumbra.js";
+import { linearLuminance, pairedPenumbra } from "./penumbra.js";
 // Three.js belongs to core's dependency graph; root scripts do not install a second copy.
 const coreRequire = createRequire(new URL("../../packages/core/package.json", import.meta.url));
 const { FloatType } = await import(pathToFileURL(coreRequire.resolve("three")).href);
@@ -911,22 +911,14 @@ export function runComparison(options: IOptions = {}) {
         }
         if (options.metric === "penumbra" && layer === "L5" && a) {
           // Shadow-edge width on the floor (PRD-634): rows where both arms hold an edge.
-          const floor = required(base.regions.Floor);
-          const edges = (image: IImage) =>
-            floorEdges(
-              linearLuminance(image.data, image.width * image.height),
-              image.width,
-              image.height,
-              floor,
-            );
-          const m = matchedWidths(edges(a), edges(b));
-          if (m.matched > 0)
+          const m = pairedPenumbra(a, b, required(base.regions.Floor));
+          if (m)
             penumbra.push({
               cell,
               matched: m.matched,
               unrealPx: m.unreal,
               threenativePx: m.other,
-              ratio: m.other / m.unreal,
+              ratio: m.ratio,
             });
         }
         if (options.unrealVsUnreal)
