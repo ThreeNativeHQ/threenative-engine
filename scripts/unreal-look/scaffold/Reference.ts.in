@@ -159,6 +159,8 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
             clipExtents: [reach / 4, reach / 2, reach, 2 * reach],
             mapSize: 2048,
             moverMapSize: 512,
+            // Diagnosis knob recvBias=0: authored bias only (does the seam line come from the plane slope?).
+            receiverPlaneBias: params.get("recvBias") !== "0",
           });
       }
       if (level >= 2) {
