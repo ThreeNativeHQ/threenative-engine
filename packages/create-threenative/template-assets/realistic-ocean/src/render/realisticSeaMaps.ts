@@ -234,7 +234,7 @@ export class SeaMaps extends Group {
     return maps;
   }
 
-  /** Central differences of the displacement, one texel either side, wrapping at the patch edge. */
+  /** The displacement's derivatives, wrapping at the patch edge. */
   #derivativePass(
     cascade: number,
     slope: StorageBufferNode<"vec4">,
@@ -250,23 +250,23 @@ export class SeaMaps extends Group {
       const y = index.div(grid).floor();
       const at = (cx: Fnode, cy: Fnode) =>
         displacement.element(cy.add(grid).mod(grid).mul(grid).add(cx.add(grid).mod(grid)).toUint());
-      const east = at(x.add(1), y);
-      const west = at(x.sub(1), y);
-      const north = at(x, y.add(1));
-      const south = at(x, y.sub(1));
-      const scale = float(1 / (2 * texel));
+      // Sixth-order central difference. Each cascade carries waves up to its own Nyquist, where a
+      // one-texel difference returns sin(k dx) / (k dx) of the slope: half of it an octave below
+      // Nyquist, which is where the crests' compression and the foam are.
+      const along = (dx: number, dy: number) => {
+        const span = (n: number) =>
+          at(x.add(dx * n), y.add(dy * n)).sub(at(x.sub(dx * n), y.sub(dy * n)));
+        return span(1)
+          .mul(45)
+          .sub(span(2).mul(9))
+          .add(span(3))
+          .mul(1 / (60 * texel));
+      };
+      const ddx = along(1, 0);
+      const ddz = along(0, 1);
       // Slope in the rest frame; the material divides by the Jacobian to get it in the world's.
-      slope
-        .element(instanceIndex)
-        .assign(
-          vec4(
-            east.y.sub(west.y).mul(scale),
-            north.y.sub(south.y).mul(scale),
-            east.x.sub(west.x).mul(scale),
-            north.z.sub(south.z).mul(scale),
-          ),
-        );
-      shear.element(instanceIndex).assign(vec4(north.x.sub(south.x).mul(scale), 0, 0, 0));
+      slope.element(instanceIndex).assign(vec4(ddx.y, ddz.y, ddx.x, ddz.z));
+      shear.element(instanceIndex).assign(vec4(ddz.x, 0, 0, 0));
     })().compute(size * size);
   }
 

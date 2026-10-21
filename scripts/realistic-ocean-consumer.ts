@@ -110,8 +110,8 @@ export const MATCHED_SKY = {
    * sun's irradiance, web-ocean's sky about 0.1, and the water reflects that ratio.
    */
   range: 1,
-  /** Lit at the kit's own drawn-to-lit ratio (0.9 of 2.5). */
-  fill: 0.36,
+  /** Lit at the sky as drawn: sky and sun are one photograph, as web-ocean's are one atmosphere. */
+  fill: 1,
   /** Unit vector toward its sun, read off the file by the script: 6.1 degrees up. */
   sun: [0.8043, 0.1062, 0.5846] as const,
   /** Its horizon band away from the sun, times `range`. */

@@ -17,7 +17,15 @@
 // It composes with the scene it is in. Light, shadow, image-based reflection, fog and tone mapping
 // are the scene's own: this is a standard node material, not a second lighting model.
 import { type ISpectralOceanOptions, SpectralOcean } from "@threenative/core";
-import { BufferGeometry, Color, Float32BufferAttribute, Mesh, Vector2, Vector3 } from "three";
+import {
+  BufferGeometry,
+  Color,
+  Float32BufferAttribute,
+  Mesh,
+  type Scene,
+  Vector2,
+  Vector3,
+} from "three";
 import {
   BRDF_Lambert,
   F_Schlick,
@@ -29,6 +37,7 @@ import {
   diffuseColor,
   dot,
   float,
+  luminance,
   max,
   mix,
   mx_noise_float,
@@ -40,6 +49,7 @@ import {
   positionViewDirection,
   positionWorld,
   pow,
+  reference,
   roughness,
   saturate,
   smoothstep,
@@ -137,13 +147,6 @@ export const LOOK = {
   sunRadiance: [3.4, 3.1, 2.5] as readonly [number, number, number],
   /** Fraction of the mirrored hull and marks that shows. A render target is written linear. */
   mirrorGain: 0.55,
-  /**
-   * The sky's reflection, as a multiple of the scene's `environmentIntensity`. The sky in the water
-   * has to be as bright as the sky drawn above it, and the sailing kit draws its photograph at 2.5
-   * (`SKY_RANGE`) but lights the scene with it at 0.9 (`FILL_RANGE`): this is that ratio. Change
-   * it with either.
-   */
-  skyReflection: 2.5 / 0.9,
   /**
    * Mean-square slope of the capillary ripples no cascade carries, at any distance, plus what
    * grows in with distance (`far`, from `from` to `to` metres). Without it a near pixel is a
@@ -251,11 +254,22 @@ function seaDisc(): BufferGeometry {
 }
 
 /**
- * three's physical model with two changes. The sun's highlight is Beckmann, the Gaussian slope
+ * three's physical model with three changes. Foam takes the sky's light as a bubble layer does,
+ * below. The sun's highlight is Beckmann, the Gaussian slope
  * distribution sea slopes have: GGX's long tails spread the glitter path into a wide soft band.
- * The environment's mirror term is at `LOOK.skyReflection`.
+ * The environment's mirror term is at the brightness the sky is drawn (`scene.backgroundIntensity`):
+ * three scales it by `scene.environmentIntensity`, the fill a scene lights its objects with, which
+ * can be lower. The water's body keeps that fill, like every other object.
  */
 class SeaLightingModel extends PhysicalLightingModel {
+  /** Where the surface is foam, 0 to 1. */
+  readonly #foam: Node<"float">;
+
+  constructor(foam: Node<"float">) {
+    super();
+    this.#foam = foam;
+  }
+
   override direct(light: Parameters<PhysicalLightingModel["direct"]>[0]): void {
     const lightDirection = light.lightDirection as Node<"vec3">;
     const lightColor = light.lightColor as Node<"vec3">;
@@ -283,16 +297,26 @@ class SeaLightingModel extends PhysicalLightingModel {
     const visibility = V_GGX_SmithCorrelated({ alpha, dotNL, dotNV }) as unknown as Node<"float">;
     const irradiance = lightColor.mul(dotNL);
     const lambert = BRDF_Lambert({ diffuseColor: diffuseColor.rgb }) as unknown as Node<"vec3">;
-    reflected.directDiffuse.addAssign(irradiance.mul(lambert));
+    // Foam's lumpy surface shades half of a low sun on itself.
+    reflected.directDiffuse.addAssign(irradiance.mul(lambert).mul(mix(1, 0.5, this.#foam)));
     reflected.directSpecular.addAssign(irradiance.mul(fresnel.mul(beckmann).mul(visibility)));
   }
 
   override indirectSpecular(builder: NodeBuilder): void {
-    const context = builder.context as { radiance: Node<"vec3"> };
+    const context = builder.context as Record<"radiance" | "iblIrradiance", Node<"vec3">>;
     const radiance = context.radiance;
-    context.radiance = radiance.mul(LOOK.skyReflection);
+    const irradiance = context.iblIrradiance;
+    const { scene } = builder as unknown as { scene: Scene };
+    const drawn = reference("backgroundIntensity", "float", scene);
+    const fill = reference("environmentIntensity", "float", scene);
+    context.radiance = radiance.mul(drawn.div(fill.max(1e-4)));
+    // Foam is a layer of bubbles that scatters the whole sky into the eye, about twice what one
+    // Lambert surface returns, and mostly grey: the sky's colour averages out between the bubbles.
+    const scattered = mix(irradiance, vec3(luminance(irradiance)), 0.85).mul(2);
+    context.iblIrradiance = mix(irradiance, scattered, this.#foam);
     super.indirectSpecular(builder);
     context.radiance = radiance;
+    context.iblIrradiance = irradiance;
   }
 }
 
@@ -451,8 +475,11 @@ export function createRealisticWaterMesh(
     float((state.waveHeight ?? 1) * 0.12),
     positionWorld.y,
   );
-  const cover = max(mix(nearFoam, farFoam, foamBlend), fresh.mul(oneMinus(foamBlend))).mul(
-    crestGate,
+  // A crest breaking now is on a crest wherever the swell has carried it, so only the grids' older
+  // foam is gated.
+  const cover = max(
+    mix(nearFoam, farFoam, foamBlend).mul(crestGate),
+    fresh.mul(oneMinus(foamBlend)),
   );
   const pattern = Fn(() => {
     const p = vec2(restX, restZ);
@@ -558,10 +585,8 @@ export function createRealisticWaterMesh(
     material.roughnessNode = max(filtered, foamMask.mul(0.9));
   }
 
-  // The sky's mirror image at the brightness the sky is drawn, and the water's body lit by the
-  // scene's fill like every other object. `envMapIntensity` would scale both, so the mirror term
-  // alone is scaled where three adds it.
-  material.setupLightingModel = () => new SeaLightingModel();
+  // The sun's glint, the sky's mirror image and the foam's light are the sea's own; see the model.
+  material.setupLightingModel = () => new SeaLightingModel(foamMask);
 
   const mesh = new Mesh(geometry, material);
   mesh.receiveShadow = true;
