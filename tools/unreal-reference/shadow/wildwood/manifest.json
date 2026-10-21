@@ -1,0 +1,107 @@
+{
+  "note": "PRD-649 / PRD-651 shadow:wildwood. The assets are the Fab Landscape Pro GLBs of the sandbox wildwood game. They are licensed art, so no model, texture or other Fab binary is committed: this manifest names each file with its sha256, and the files are read from the folder in TN_WILDWOOD_ASSETS (scripts/unreal-look/wildwood.ts). Both engines place the same files at the transforms below: three.js frame, metres, Y up, the ground at y = 0, a turn about the vertical in degrees.",
+  "assets": [
+    {
+      "name": "pine01",
+      "file": "SM_pine01.glb",
+      "sha256": "f6cbcf6bc199e4f699eab1c5205e439dda166794dfe2b5af99baa2d4a9617498"
+    },
+    {
+      "name": "green-tree01",
+      "file": "SM_green-tree01.glb",
+      "sha256": "577b394b07050f9620ed613e719d172875fa4e9daf19c9b4b308130db987dbaa"
+    },
+    {
+      "name": "bush01",
+      "file": "SM_bush01.glb",
+      "sha256": "e29161c093be2e4a1f414b527fced3cedfa0c3b5934613e0ffd7da9704f51b0a"
+    },
+    {
+      "name": "farn01",
+      "file": "SM_FarnGroup01.glb",
+      "sha256": "8ab77f8123538e66d29af316fe493048bf593680ab3003ebf6cba6dcefcc2cf2"
+    },
+    {
+      "name": "grass01",
+      "file": "SM_GrassGroup01.glb",
+      "sha256": "278bfd3a4fc8247456f9d34ba0538c5c421f4dbd86ddbff1d2e5f3d38e033b92"
+    },
+    {
+      "name": "flower01",
+      "file": "SM_FlowerGroup01.glb",
+      "sha256": "9d9c50928aab9464536b66abe5a3e16a1c5a7a6dd6c50e1db178c5c2ba38e05b"
+    }
+  ],
+  "instances": [
+    {
+      "name": "Pine_1",
+      "asset": "pine01",
+      "position": [6.0, 0, -2.0],
+      "rotationYDeg": 0,
+      "scale": 1
+    },
+    {
+      "name": "GreenTree_1",
+      "asset": "green-tree01",
+      "position": [-3.0, 0, -5.0],
+      "rotationYDeg": 35,
+      "scale": 1
+    },
+    {
+      "name": "Bush_1",
+      "asset": "bush01",
+      "position": [1.2, 0, 0.6],
+      "rotationYDeg": 20,
+      "scale": 1
+    },
+    {
+      "name": "Fern_1",
+      "asset": "farn01",
+      "position": [-0.6, 0, 2.2],
+      "rotationYDeg": 0,
+      "scale": 1
+    },
+    {
+      "name": "Fern_2",
+      "asset": "farn01",
+      "position": [2.9, 0, 2.6],
+      "rotationYDeg": 80,
+      "scale": 1
+    },
+    {
+      "name": "Grass_1",
+      "asset": "grass01",
+      "position": [4.4, 0, 3.2],
+      "rotationYDeg": 0,
+      "scale": 1
+    },
+    {
+      "name": "Grass_2",
+      "asset": "grass01",
+      "position": [4.9, 0, 3.7],
+      "rotationYDeg": 40,
+      "scale": 1
+    },
+    {
+      "name": "Grass_3",
+      "asset": "grass01",
+      "position": [3.8, 0, 3.8],
+      "rotationYDeg": 110,
+      "scale": 1
+    },
+    {
+      "name": "Flower_1",
+      "asset": "flower01",
+      "position": [4.6, 0, 2.8],
+      "rotationYDeg": 0,
+      "scale": 1
+    },
+    {
+      "name": "Flower_2",
+      "asset": "flower01",
+      "position": [4.2, 0, 3.4],
+      "rotationYDeg": 60,
+      "scale": 1
+    }
+  ]
+}
