@@ -5,17 +5,27 @@ import {
   filmicToneMap,
 } from "../unreal-look/scaffold/render/tonemap.js";
 
-// Unreal 5.8.3 L2 frame (sky, no clouds, mean over image rows 20-180) against the harness atmosphere
-// at the same sun, both scene-linear sRGB. Before the gamut expansion the harness sky carried 27%
-// too much red at the 60 degree sun and 7% at 15 degrees.
-const SKY = [
-  { sun: 60, unreal: [0.2785, 0.6237, 1.1483], harness: [0.3521, 0.6163, 1.0911] },
-  { sun: 15, unreal: [0.2675, 0.4422, 0.6653], harness: [0.2862, 0.4467, 0.6766] },
+// Unreal 5.8.3 L1 frames (fixed exposure, Box_Red): the scene-linear EXR pixel and the 8-bit PNG pixel of the
+// same texel (tools/unreal-reference/captures/unreal/L1, sun60 exterior). A fresh Unreal frame shows no gamut
+// expansion: a per-pixel fit of the amount over 354 L1 and L2 samples gave 0 (PRD-632 box result).
+const RED_BOX = [
+  { linear: [3.578, 0.116, 0.274], png: [255, 168, 164] },
+  { linear: [1.526, 0.105, 0.142], png: [250, 120, 114] },
 ] as const;
+const srgb8 = (v: number): number =>
+  255 * (v <= 0.0031308 ? v * 12.92 : 1.055 * v ** (1 / 2.4) - 0.055);
 
-describe("Unreal's gamut expansion in the harness tone curve (PRD-633)", () => {
-  it("is on by default, as in a fresh Unreal project", () => {
-    expect(FILMIC_CURVE.expandGamut).toBe(1);
+describe("Unreal's gamut expansion in the harness tone curve (PRD-632)", () => {
+  it("is off by default, because a fresh Unreal frame carries none", () => {
+    expect(FILMIC_CURVE.expandGamut).toBe(0);
+  });
+
+  it("maps a saturated red box to the Unreal pixel within 6 levels", () => {
+    for (const { linear, png } of RED_BOX) {
+      const out = filmicToneMap([...linear]).map(srgb8);
+      for (const [c, level] of out.entries())
+        expect(Math.abs(level - (png[c] as number))).toBeLessThan(6);
+    }
   });
 
   it("leaves greys and dark colour alone", () => {
@@ -29,22 +39,10 @@ describe("Unreal's gamut expansion in the harness tone curve (PRD-633)", () => {
     expect(dark[2] / 0.004).toBeCloseTo(1, 1);
   });
 
-  it("brings the harness sky onto the Unreal sky, red first", () => {
-    for (const { sun, unreal, harness } of SKY) {
-      const raw = harness.map((v, i) => v / (unreal[i] as number));
-      const expanded = expandGamutLinear([...harness]).map((v, i) => v / (unreal[i] as number));
-      // Red was the worst channel; the expansion cuts its error by more than half.
-      expect(Math.abs((expanded[0] as number) - 1)).toBeLessThan(
-        Math.abs((raw[0] as number) - 1) / 2,
-      );
-      for (const ratio of expanded) expect(Math.abs(ratio - 1), `sun ${sun}`).toBeLessThan(0.05);
-    }
-  });
-
-  it("a gamut of 0 switches it off", () => {
+  it("a gamut of 1 is the named override and pulls red toward the wide gamut", () => {
     const sky = [0.3521, 0.6163, 1.0911] as const;
     const off = filmicToneMap(sky, 1, { ...FILMIC_CURVE, expandGamut: 0 });
-    const on = filmicToneMap(sky);
+    const on = filmicToneMap(sky, 1, { ...FILMIC_CURVE, expandGamut: 1 });
     expect(on[0]).toBeLessThan(off[0]);
   });
 });
