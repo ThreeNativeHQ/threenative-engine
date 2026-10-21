@@ -539,6 +539,9 @@ export function compareGiToUnreal(name: string, layers: readonly string[], root:
   return rows;
 }
 
+/** Cells whose lamp has a source radius: the edge is tens of pixels wide, so it reads at this scale (PRD-650). */
+const WIDE_PENUMBRA: Record<string, number> = { "shadow:lamp-room/spot-soft": 2.5 };
+
 /** Floor shadow-edge width, Unreal against ThreeNative, per pose of one scene and layer (PRD-649). */
 export function penumbraRows(
   name: string,
@@ -558,6 +561,7 @@ export function penumbraRows(
       image(path.join(unreal, variant, `${pose.name}.png`)),
       image(path.join(tn, layer, `${pose.name}.png`)),
       floor,
+      WIDE_PENUMBRA[`${name}/${pose.name}`],
     );
     if (m) rows.push({ cell: `${name}/${pose.name}`, ...m });
   }

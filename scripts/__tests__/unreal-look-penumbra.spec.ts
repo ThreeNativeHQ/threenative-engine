@@ -66,6 +66,37 @@ describe("pairedPenumbra", () => {
   });
 });
 
+describe("a wide penumbra (a lamp with a source radius)", () => {
+  const W = 520;
+  /** A grey sRGB frame, 16 rows of one luminance ramp `ramp` px wide, centred on x = 280. */
+  function frame(ramp: number) {
+    const data = new Uint8Array(W * 16 * 4);
+    for (let i = 0; i < W * 16; i++) {
+      const t = Math.min(1, Math.max(0, ((i % W) - (280 - ramp / 2)) / ramp));
+      const v = 1 + (0.1 - 1) * t;
+      data.fill(
+        Math.round((v <= 0.0031308 ? v * 12.92 : 1.055 * v ** (1 / 2.4) - 0.055) * 255),
+        i * 4,
+        i * 4 + 3,
+      );
+      data[i * 4 + 3] = 255;
+    }
+    return { data, width: W, height: 16 };
+  }
+  const floor = new Uint8Array(W * 16).fill(1);
+
+  it("is not an edge at the default scale, and reads 80 percent of the ramp at scale 3", () => {
+    expect(pairedPenumbra(frame(25), frame(25), floor)).toBeUndefined();
+    const m = pairedPenumbra(frame(25), frame(25), floor, 3);
+    expect(m?.unreal).toBeCloseTo(20, 0);
+    expect(m?.ratio).toBeCloseTo(1, 5);
+  });
+
+  it("tells a penumbra twice as wide apart", () => {
+    expect(pairedPenumbra(frame(20), frame(40), floor, 3)?.ratio).toBeCloseTo(2, 1);
+  });
+});
+
 describe("contactGap", () => {
   const W = 40;
   const H = 100;
