@@ -359,9 +359,10 @@ describe("the world-space GI cache against closed forms (PRD-631 L7)", () => {
     expect(deviation / level).toBeLessThan(0.015);
   }, 120_000);
 
-  it("the probe filter keeps the window's light off the sill below it (sunlit-room, sun 15)", () => {
+  it("the window's light stays off the sill below it (sunlit-room, sun 15)", () => {
     // The probes in the window opening see the low sun's patch deep in the room; a plain filter averaged them into the
-    // sill's probes and lit a halo round the window (judge round 10b): sill 2.9 times the path trace, 1.5 unfiltered.
+    // sill's probes and lit a halo round the window (judge round 10b): sill 2.45 times the path trace. Blending a
+    // probe the texel cannot see (5 cm over the sun-lit sill top, round the sill) kept it at 1.58 (judge round 10c).
     const room = sunlitRoom();
     const [el, az] = [(15 * Math.PI) / 180, (25 * Math.PI) / 180];
     const sun = new Vector3(Math.cos(el) * Math.sin(az), Math.sin(el), Math.cos(el) * Math.cos(az));
@@ -384,7 +385,7 @@ describe("the world-space GI cache against closed forms (PRD-631 L7)", () => {
         traced += pathTrace(room, sun, sky, point, normal, 6, 300);
         cached += cacheAt(point, normal);
       }
-    expect(cached / traced).toBeLessThan(2.2);
+    expect(cached / traced).toBeLessThan(1.3);
   }, 120_000);
 
   it("returns undefined with no sky, no sun and no lights", () => {
