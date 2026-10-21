@@ -924,6 +924,8 @@ export class VirtualShadowNode extends ShadowBaseNode {
   #levels: ILevel[] = [];
   /** Core startup cover: drain all due levels without steady-state invalidation delays. */
   startupCovered = false;
+  /** Three's type flag; core's startup gate reads it so the game loop never imports this class. */
+  readonly isVirtualShadowNode = true;
 
   /** Every map is present and no requested/delayed invalidation remains. */
   get settled(): boolean {

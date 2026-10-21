@@ -75,7 +75,7 @@ import { formatProjectionWindow } from "./projection-marker.js";
 import { type IRandom, createRandom } from "./random.js";
 import { RenderCameraCull } from "./render-camera-cull.js";
 import { RenderPassBudget } from "./render-pass-budget.js";
-import { VirtualShadowNode } from "./render/virtual-shadow.js";
+import type { VirtualShadowNode } from "./render/virtual-shadow.js";
 import { SceneRenderProjection } from "./renderProjection.js";
 import {
   resolveMatrixWorldMode,
@@ -1801,8 +1801,10 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
           startupShadows.clear();
           threeScene.traverseVisible((object) => {
             if (!object.castShadow || !object.visible) return;
-            const node: unknown = Reflect.get(object, "shadow")?.shadowNode;
-            if (node instanceof VirtualShadowNode) {
+            // A type flag, not instanceof: a value import would pull the shadow nodes into every
+            // native bundle, where the engine binds none of them.
+            const node = Reflect.get(object, "shadow")?.shadowNode as VirtualShadowNode | undefined;
+            if (node?.isVirtualShadowNode === true) {
               startupShadows.add(node);
               node.startupCovered = startupCoverActive();
             }
