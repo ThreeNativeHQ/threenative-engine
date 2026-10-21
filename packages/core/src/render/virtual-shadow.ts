@@ -29,9 +29,11 @@ import {
   float,
   getShadowMaterial,
   length,
+  lightShadowMatrix,
   max,
   min,
   mix,
+  normalWorld,
   positionWorld,
   property,
   reference,
@@ -54,6 +56,7 @@ import {
 import { lodChainOf } from "../model-lod.js";
 import { shadowRedrawGpuMs } from "../render-pass-budget.js";
 import { DEFAULT_TARGET_FPS } from "../target-fps.js";
+import { isLeafReceiver } from "./soft-shadow.js";
 import {
   DirectionalClipmap,
   type IBoundsLike,
@@ -2480,6 +2483,21 @@ export class VirtualShadowNode extends ShadowBaseNode {
       const moverNode = registeredOnCreate(
         shadow(light as unknown as DirectionalLight, moverShadow), // quality-allow: the stock node reads only position, target and shadow
       );
+      // A leaf receiver (two-sided, cut by alpha) looks its shadow up where it stands: the normal bias is
+      // taken back out of the shadow position, in this level's map and in its mover map (PRD-651).
+      for (const stockNode of [node, moverNode]) {
+        const stock = stockNode as typeof node & {
+          setupShadowCoord: (builder: NodeBuilder, position: Node<"vec4">) => Node<"vec3">;
+        };
+        const coord = stock.setupShadowCoord;
+        stock.setupShadowCoord = (builder, position) => {
+          if (!isLeafReceiver(builder.material as Parameters<typeof isLeafReceiver>[0]))
+            return coord.call(stock, builder, position);
+          const bias = rendered(reference("normalBias", "float", levelShadow));
+          const offset = lightShadowMatrix(light as never).mul(vec4(normalWorld.mul(bias), 0));
+          return coord.call(stock, builder, position.sub(offset));
+        };
+      }
       if (this.options.receiverPlaneBias) {
         for (const entry of [
           { node, map: levelShadow },

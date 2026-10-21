@@ -138,7 +138,10 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
       model.traverse((object) => {
         if (object instanceof Mesh) {
           object.castShadow = true;
-          if (casterSide !== undefined) for (const m of [object.material].flat()) m.shadowSide = casterSide;
+          // A two-sided material (a leaf card) casts from both faces: a card that faces away from the sun still shades.
+          if (casterSide !== undefined)
+            for (const m of [object.material].flat())
+              m.shadowSide = m.side === DoubleSide && !params.has("shadowSide") ? DoubleSide : casterSide;
           object.receiveShadow = true;
           // Unreal's emissive is radiance as it stands, the sun is lux / pi (EMISSIVE_UNITS).
           const material = object.material as MeshStandardMaterial;

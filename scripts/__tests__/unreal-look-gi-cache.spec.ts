@@ -251,7 +251,13 @@ describe("the world-space GI cache against closed forms (PRD-631 L7)", () => {
     );
     const glass = new Mesh(
       new PlaneGeometry(1, 1).translate(3, 0, 0),
-      new MeshPhysicalMaterial({ map, clearcoat: 0.7, transmission: 0.4, ior: 1.3, roughness: 0.1 }),
+      new MeshPhysicalMaterial({
+        map,
+        clearcoat: 0.7,
+        transmission: 0.4,
+        ior: 1.3,
+        roughness: 0.1,
+      }),
     );
     const floor = new Mesh(
       new PlaneGeometry(40, 40).rotateX(-Math.PI / 2),
@@ -262,14 +268,85 @@ describe("the world-space GI cache against closed forms (PRD-631 L7)", () => {
     installGi(rayContext(scene), scene, { bounces: 1, sun: noSun });
     const kept = leaf.material as MeshStandardMaterial;
     expect(kept.constructor.name).toBe("MeshStandardNodeMaterial");
-    expect([kept.map, kept.alphaMap, kept.normalMap, kept.roughnessMap]).toEqual([map, alphaMap, normalMap, roughnessMap]);
-    expect([kept.alphaTest, kept.side, kept.transparent, kept.opacity, kept.vertexColors]).toEqual([0.5, DoubleSide, true, 0.8, true]);
+    expect([kept.map, kept.alphaMap, kept.normalMap, kept.roughnessMap]).toEqual([
+      map,
+      alphaMap,
+      normalMap,
+      roughnessMap,
+    ]);
+    expect([kept.alphaTest, kept.side, kept.transparent, kept.opacity, kept.vertexColors]).toEqual([
+      0.5,
+      DoubleSide,
+      true,
+      0.8,
+      true,
+    ]);
     expect([kept.roughness, kept.metalness]).toEqual([0.6, 0.2]);
     const pane = glass.material as MeshPhysicalMaterial;
     expect(pane.constructor.name).toBe("MeshPhysicalNodeMaterial");
     expect([pane.map, pane.clearcoat, pane.transmission, pane.ior]).toEqual([map, 0.7, 0.4, 1.3]);
     expect((kept as unknown as { irradianceNode: unknown }).irradianceNode).toBeDefined();
     expect((pane as unknown as { aoNode: unknown }).aoNode).toBeDefined();
+  });
+
+  it("a material whose fields are accessors on its class, as the native engine's are, swaps with them intact", () => {
+    // The native engine binds a material's fields as accessors on the class prototype, which a `for in` never lists:
+    // a copy by enumeration took nothing, and every leaf and wall came back white.
+    const map = new Texture();
+    const fields = (): Map<string, unknown> =>
+      new Map<string, unknown>(
+        Object.entries({
+          color: new Color(1, 0, 0),
+          emissive: new Color(0, 0, 0),
+          emissiveIntensity: 1,
+          roughness: 0.6,
+          metalness: 0,
+          map,
+          alphaTest: 0.5,
+          transparent: true,
+          opacity: 0.8,
+          side: DoubleSide,
+          shadowSide: null,
+        }),
+      );
+    class HeldMaterial {
+      readonly isMaterial = false;
+      constructor(public held = fields()) {}
+      get type() {
+        return "MeshStandardMaterial";
+      }
+    }
+    for (const key of fields().keys()) {
+      Object.defineProperty(HeldMaterial.prototype, key, {
+        get(this: HeldMaterial) {
+          return this.held.get(key);
+        },
+        set(this: HeldMaterial, value: unknown) {
+          this.held.set(key, value);
+        },
+      });
+    }
+    const leaf = new Mesh(
+      new PlaneGeometry(1, 1),
+      new HeldMaterial() as unknown as MeshStandardMaterial,
+    );
+    const floor = new Mesh(
+      new PlaneGeometry(40, 40).rotateX(-Math.PI / 2),
+      new MeshStandardMaterial({ side: DoubleSide }),
+    );
+    const scene = new Group().add(leaf, floor);
+    skyRadiance.current = { data: new Float32Array(6), width: 2, height: 1, scale: [1, 1, 1] };
+    installGi(rayContext(scene), scene, { bounces: 1, sun: noSun });
+    const kept = leaf.material as MeshStandardMaterial;
+    expect(kept.constructor.name).toBe("MeshStandardNodeMaterial");
+    expect(kept.map).toBe(map);
+    expect([kept.alphaTest, kept.side, kept.transparent, kept.opacity]).toEqual([
+      0.5,
+      DoubleSide,
+      true,
+      0.8,
+    ]);
+    expect([kept.color.r, kept.color.g, kept.color.b, kept.roughness]).toEqual([1, 0, 0, 0.6]);
   });
 
   it("a small emissive sphere's direct light leaves the cache, which keeps only what it bounces", () => {
