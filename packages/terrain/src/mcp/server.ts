@@ -15,7 +15,7 @@ import {
 } from "./tools.js";
 
 const SERVER_NAME = "threenative-terrain";
-const SERVER_VERSION = "0.1.0";
+const SERVER_VERSION = "0.1.2";
 // The cook must finish inside the 60 s cold budget (PRD-584 AC-2). The child is killed past it.
 const COOK_TIMEOUT_MS = 60_000;
 const COOK_CHILD = fileURLToPath(new URL("./cook-child.js", import.meta.url));
