@@ -6,6 +6,7 @@ import {
   Float32BufferAttribute,
   MeshStandardMaterial,
   NumberKeyframeTrack,
+  Object3D,
   PerspectiveCamera,
   Scene,
   Skeleton,
@@ -595,11 +596,11 @@ describe("SkinnedBatch owned scalar display packets", () => {
 
   describe("GPU-evaluated pose", () => {
     const sway = (t: number) => -0.09 + 0.18 * (t <= 1 ? t : 2 - t);
-    function auto() {
-      const f = fixture(true, "auto");
+    function auto(distance = 40, rate: 1 | "auto" = "auto") {
+      const f = fixture(true, rate);
       const cull = new RenderCameraCull();
       const camera = new PerspectiveCamera(60, 1, 0.1, 1000);
-      camera.position.z = 40;
+      camera.position.z = distance;
       camera.updateMatrixWorld(true);
       const evaluations = vi.spyOn(f.mixer(), "update");
       const frame = () => {
@@ -679,6 +680,167 @@ describe("SkinnedBatch owned scalar display packets", () => {
       } finally {
         f.close();
       }
+    });
+
+    describe("near rigs", () => {
+      const near = (rate: 1 | "auto" = "auto") => auto(4, rate);
+      /** Every bone's local pose and every child's world matrix match the playhead at `t`. */
+      const exact = (f: ReturnType<typeof near>, t: number) => {
+        for (const bone of f.bones.slice(1)) expect(bone.rotation.z).toBeCloseTo(sway(t % 2), 6);
+        for (const bone of f.bones)
+          for (const child of bone.children)
+            if (!(child as Bone).isBone)
+              expect(
+                child.matrixWorld.equals(bone.matrixWorld.clone().multiply(child.matrix)),
+              ).toBe(true);
+      };
+
+      /** Frames a near rig onto the GPU pose until its CPU bones lag the playhead; returns the frame. */
+      const untilStale = (f: ReturnType<typeof near>) => {
+        for (let i = 1; i <= 24; i++) {
+          f.frame();
+          if (i > 8 && Math.abs(present(f.bones[1]).rotation.z - sway((i / 60) % 2)) > 1e-6)
+            return i;
+        }
+        throw Error("bones never lagged the GPU pose");
+      };
+
+      it("refreshes an unattached near rig's bones every 4th evaluation and draws the exact playhead", () => {
+        const f = near();
+        try {
+          const rate = present(animationRateStates.get(f.mesh));
+          f.frame();
+          const base = f.evaluations.mock.calls.length;
+          for (let i = 1; i <= 96; i++) {
+            f.frame();
+            expect(rate.effectiveRate).toBe(1);
+            expect(rate.gpuPose).toBe(true);
+            expect(f.receipt().slots[0].currentRaw).toBe(true);
+            expect(Math.abs(f.receipt().slots[0].currentTime - (((i + 1) / 60) % 2))).toBeLessThan(
+              1e-4,
+            );
+          }
+          expect(f.evaluations.mock.calls.length - base).toBeLessThanOrEqual(Math.ceil(96 / 4) + 1);
+          expect(f.player.updateRateReport.boneRate).toBe(4);
+        } finally {
+          f.close();
+        }
+      });
+
+      it("keeps stock every-tick bones and an exact attachment for a near rig holding a child", () => {
+        const f = near();
+        const weapon = new Object3D();
+        try {
+          weapon.position.set(0.1, 0.2, 0);
+          present(f.bones[11]).add(weapon);
+          for (let i = 1; i <= 24; i++) {
+            f.frame();
+            expect(present(animationRateStates.get(f.mesh)).gpuPose).not.toBe(true);
+            expect(f.receipt().slots[0].currentRaw).toBe(false);
+            exact(f, i / 60);
+          }
+          expect(f.player.updateRateReport.boneRate).toBe(1);
+        } finally {
+          f.close();
+        }
+      });
+
+      it("keeps a far rig holding a child on stock bones at its own rate", () => {
+        const f = auto();
+        try {
+          present(f.bones[6]).add(new Scene());
+          for (let i = 0; i < 24; i++) f.frame();
+          const rate = present(animationRateStates.get(f.mesh));
+          expect(rate.effectiveRate).toBeGreaterThan(1);
+          expect(rate.gpuPose).toBe(false);
+          expect(f.receipt().slots[0].currentRaw).toBe(false);
+          expect(f.player.updateRateReport.boneRate).toBe(rate.effectiveRate);
+        } finally {
+          f.close();
+        }
+      });
+
+      it("keeps a near rig on stock bones while its palette is observed", () => {
+        const f = near();
+        try {
+          void f.batch.palette;
+          for (let i = 1; i <= 12; i++) {
+            f.frame();
+            expect(present(animationRateStates.get(f.mesh)).gpuPose).not.toBe(true);
+            exact(f, i / 60);
+          }
+        } finally {
+          f.close();
+        }
+      });
+
+      it("drops an observed near rig back to stock with exact bones on its next tick", () => {
+        const f = near();
+        try {
+          const now = untilStale(f);
+          expect(present(animationRateStates.get(f.mesh)).gpuPose).toBe(true);
+          void f.batch.palette;
+          for (let i = now + 1; i <= now + 7; i++) {
+            f.frame();
+            expect(present(animationRateStates.get(f.mesh)).gpuPose).toBe(false);
+            exact(f, i / 60);
+          }
+        } finally {
+          f.close();
+        }
+      });
+
+      it("drops a near rig to stock with exact bones on the tick a child is attached", () => {
+        const f = near();
+        try {
+          const now = untilStale(f);
+          const rate = present(animationRateStates.get(f.mesh));
+          expect(rate.gpuPose).toBe(true);
+          present(f.bones[11]).add(new Object3D());
+          for (let i = now + 1; i <= now + 17; i++) {
+            f.frame();
+            expect(rate.gpuPose).toBe(false);
+            expect(f.receipt().slots[0].currentRaw).toBe(false);
+            expect(f.receipt().slots[0].retired).toBe(true);
+            exact(f, i / 60);
+          }
+        } finally {
+          f.close();
+        }
+      });
+
+      it("hands a near rig's bones back exact on release and on dispose", () => {
+        for (const leave of ["release", "dispose"] as const) {
+          const f = near();
+          try {
+            const now = untilStale(f);
+            if (leave === "release") f.batch.release(f.mesh);
+            else f.batch.dispose();
+            exact(f, now / 60);
+            const tip = present(f.bones[11]).matrixWorld.clone();
+            f.scene.updateMatrixWorld(true);
+            expect(present(f.bones[11]).matrixWorld.equals(tip)).toBe(true);
+            expect(present(animationRateStates.get(f.mesh)).gpuPose).toBe(false);
+          } finally {
+            f.close();
+          }
+        }
+      });
+
+      it("keeps an explicit updateRate 1 near rig on stock every-tick bones", () => {
+        const f = near(1);
+        try {
+          for (let i = 1; i <= 12; i++) {
+            f.frame();
+            expect(present(animationRateStates.get(f.mesh)).gpuPose).not.toBe(true);
+            expect(f.receipt().slots[0].currentRaw).toBe(false);
+            exact(f, i / 60);
+          }
+          expect(f.player.updateRateReport.boneRate).toBe(1);
+        } finally {
+          f.close();
+        }
+      });
     });
   });
 });

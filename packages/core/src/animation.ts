@@ -486,29 +486,41 @@ export class AnimationPlayer {
     };
   }
 
-  /** An explicit `updateRate` keeps the CPU pose on that interval; auto lets the GPU pose stretch it. */
+  /**
+   * An explicit `updateRate` keeps the CPU pose on that interval; auto lets the GPU pose stretch it,
+   * a near rig's included once the batch has proven nothing reads its bones between refreshes.
+   */
   #boneRate(rate: number): number {
-    return this.#updateRate === "auto" && rate > 1 && this.#rateState.gpuPose === true
+    const state = this.#rateState;
+    return this.#updateRate === "auto" &&
+      (rate > 1 || state.autoNear === true) &&
+      state.gpuPose === true
       ? rate * GPU_POSE_BONE_REFRESH
       : rate;
   }
 
-  #effectiveUpdateRate(): number {
-    // Public mixer speed overrides and observed events retain ordinary Three.js tick semantics.
-    if (this.mixer.timeScale !== 1) return 1;
-    // Event deadlines and changing blend weights remain exactly on the gameplay tick.
-    if (
+  /** Public speed overrides, observed events and changing weights keep the ordinary Three.js tick. */
+  #fullRateRequired(): boolean {
+    return (
+      this.mixer.timeScale !== 1 ||
       this.#mode === "once" ||
       this.#fadeOut.length > 0 ||
-      this.#blendElapsed < this.#blendDuration
-    )
-      return 1;
-    if (this.mixer instanceof LoopAwareAnimationMixer && this.mixer.hasPublicListeners) return 1;
-    if (this.#timeScaleInterpolations.size > 0) return 1;
+      this.#blendElapsed < this.#blendDuration ||
+      (this.mixer instanceof LoopAwareAnimationMixer && this.mixer.hasPublicListeners) ||
+      this.#timeScaleInterpolations.size > 0
+    );
+  }
+
+  /** The cadence the policy picks when nothing requires full rate. */
+  #policyRate(): number {
     if (this.#updateRate !== "auto") return this.#updateRate;
     const state = this.#rateState;
     if (state.source === undefined) return 1;
     return state.frame === state.source.animationFrame ? state.rate : 8;
+  }
+
+  #effectiveUpdateRate(): number {
+    return this.#fullRateRequired() ? 1 : this.#policyRate();
   }
 
   #observeTimeScaleInterpolation(action: AnimationAction): void {
@@ -1016,8 +1028,15 @@ export class AnimationPlayer {
       const time = action.paused ? 0 : action.timeScale * elapsed;
       this.#pendingActionTimes.set(action, (this.#pendingActionTimes.get(action) ?? 0) + time);
     }
-    const rate = this.#effectiveUpdateRate();
-    this.#rateState.effectiveRate = force ? 1 : rate;
+    const fullRate = force || this.#fullRateRequired();
+    const rate = fullRate ? 1 : this.#policyRate();
+    this.#rateState.effectiveRate = rate;
+    // Only a measured size makes a rig near: without a camera source rate 1 is the stock default.
+    this.#rateState.autoNear =
+      !fullRate &&
+      rate === 1 &&
+      this.#updateRate === "auto" &&
+      this.#rateState.source !== undefined;
     this.#updateFrame += 1;
     this.#skippedFrames += 1;
     this.#rateState.evaluated = false;

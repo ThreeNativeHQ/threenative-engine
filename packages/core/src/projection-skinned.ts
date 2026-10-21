@@ -1,4 +1,5 @@
 import {
+  type Bone,
   InstancedBufferGeometry,
   type Material,
   Matrix4,
@@ -76,15 +77,34 @@ interface IAnimationRateStateLike {
   readonly evaluated: boolean;
   readonly effectiveRate?: number;
   readonly evaluation: number;
+  readonly autoNear?: boolean;
   gpuPose?: boolean;
   syncBones?: () => void;
 }
 
-/** Hands the pose back to the CPU: the player refreshes the bones to the current playhead first. */
-function releaseGpuPose(state: IAnimationRateStateLike | undefined): void {
+/**
+ * Hands the pose back to the CPU: the player refreshes the bones to the current playhead, and the
+ * bones' world matrices follow at once, so anything held by a bone this frame sees the exact pose.
+ */
+function releaseGpuPose(state: IAnimationRateStateLike | undefined, rig?: Object3D): void {
   if (state?.gpuPose !== true) return;
   state.gpuPose = false;
   state.syncBones?.();
+  const bones: unknown = (rig as SkinnedMesh | undefined)?.skeleton?.bones;
+  if (!Array.isArray(bones)) return;
+  for (const bone of bones as Object3D[])
+    if ((bone.parent as Bone | null)?.isBone !== true) bone.updateWorldMatrix(false, true);
+}
+
+/** Whether anything but a bone hangs under a bone: an attachment that reads the CPU pose every tick. */
+function boneAttached(skeleton: Skeleton): boolean {
+  const bones = skeleton.bones;
+  for (let b = 0; b < bones.length; b += 1) {
+    const children = (bones[b] as Bone).children;
+    for (let c = 0; c < children.length; c += 1)
+      if ((children[c] as Bone).isBone !== true) return true;
+  }
+  return false;
 }
 
 /**
@@ -533,7 +553,7 @@ export class SkinnedBatch {
     const slot = this.instances.get(rig);
     if (slot === undefined) return;
     this.#untrackSkeleton(slot);
-    releaseGpuPose(animationRateStateOf(rig));
+    releaseGpuPose(animationRateStateOf(rig), rig);
     this.instances.delete(rig);
     this.#slotRigs.delete(slot);
     this.#writtenEvaluations.delete(rig);
@@ -606,11 +626,15 @@ export class SkinnedBatch {
     )
       return false;
     const state = animationRateStateOf(rig);
+    if (boneAttached(hot.skeleton)) {
+      this.#retireAttached(slot, display);
+      return false;
+    }
     if (
       state === undefined ||
       state.evaluated ||
       state.evaluation !== hot.evaluation ||
-      (state.effectiveRate ?? 1) <= 1 ||
+      !this.#rawRate(state) ||
       rig.skeleton !== hot.skeleton ||
       !hot.world.equals(rig.matrixWorld) ||
       !skeletonUpdateIntact(hot.skeleton) ||
@@ -646,7 +670,7 @@ export class SkinnedBatch {
       this.#checkObservedEdits(slot);
       const state = animationRateStateOf(rig);
       // Named rate1 and ordinary stock owners never pay the capture/query path.
-      if (this.#rawMeta.length && ((state?.effectiveRate ?? 1) > 1 || this.#rawSlots.has(slot))) {
+      if (this.#rawMeta.length && (this.#rawRate(state) || this.#rawSlots.has(slot))) {
         this.#prepareRawFrame();
         this.#trackSkeleton(slot, rig, true);
         let display = this.#rawSlots.get(slot);
@@ -654,11 +678,11 @@ export class SkinnedBatch {
           display = { retired: false };
           this.#rawSlots.set(slot, display);
         }
-        const held =
+        let held =
           state !== undefined &&
           !state.evaluated &&
           this.#writtenEvaluations.get(rig) === state.evaluation &&
-          this.#writtenWorldMatrices.get(rig)?.equals(rig.matrixWorld);
+          this.#writtenWorldMatrices.get(rig)?.equals(rig.matrixWorld) === true;
         const skeleton: unknown = rig.skeleton;
         const update =
           skeleton instanceof Skeleton
@@ -673,11 +697,20 @@ export class SkinnedBatch {
           this.#writeStock(slot, rig, state);
           return;
         }
+        // An attachment under a bone reads the CPU bones every tick, so it keeps the rig on stock.
+        // Checked on every write: a listener on the bones would change their shape for every reader.
+        if (
+          !display.retired &&
+          skeleton instanceof Skeleton &&
+          this.#rawRate(state) &&
+          boneAttached(skeleton)
+        )
+          this.#retireAttached(slot, display);
         const repeatedRefresh = !held && display.writeFrame === this.#frame;
         const packet =
           !repeatedRefresh &&
           !display.retired &&
-          (state?.effectiveRate ?? 1) > 1 &&
+          this.#rawRate(state) &&
           update === skeletonUpdate &&
           !shared
             ? display.current && held
@@ -717,7 +750,15 @@ export class SkinnedBatch {
           return;
         }
         // The next player update sees the flag drop and refreshes the bones; this tick keeps stock's
-        // held semantics, which an observed palette edit relies on.
+        // held semantics, which an observed palette edit relies on. A near rig's bones may be up to
+        // a refresh interval old, so they come back exact now.
+        if (state?.gpuPose === true && (state.effectiveRate ?? 1) <= 1) {
+          releaseGpuPose(state, rig);
+          held =
+            !state.evaluated &&
+            this.#writtenEvaluations.get(rig) === state.evaluation &&
+            this.#writtenWorldMatrices.get(rig)?.equals(rig.matrixWorld) === true;
+        }
         if (state) state.gpuPose = false;
         if (held && display.current)
           this.#current.set(
@@ -725,7 +766,7 @@ export class SkinnedBatch {
             slot * this.bones * 16,
           );
         display.current = undefined;
-        display.retired ||= (state?.effectiveRate ?? 1) > 1 || update !== skeletonUpdate || shared;
+        display.retired ||= this.#rawRate(state) || update !== skeletonUpdate || shared;
         this.#rawMeta[slot * 4] = 0;
         this.#rawMeta[slot * 4 + 1] = 0;
         this.#markRawDirty();
@@ -737,6 +778,18 @@ export class SkinnedBatch {
     } finally {
       endSpan(SPANS.skinnedWrite);
     }
+  }
+
+  /** An attachment retires the slot for good and hands the bones back exact this frame. */
+  #retireAttached(slot: number, display: IRawDisplaySlot): void {
+    display.retired = true;
+    const rig = this.#slotRigs.get(slot);
+    if (rig) releaseGpuPose(animationRateStateOf(rig), rig);
+  }
+
+  /** A held rate, or a near rig nothing on this batch observes. */
+  #rawRate(state: IAnimationRateStateLike | undefined): boolean {
+    return (state?.effectiveRate ?? 1) > 1 || (state?.autoNear === true && !this.#observed);
   }
 
   #method(object: object, key: string): unknown {
@@ -996,7 +1049,7 @@ export class SkinnedBatch {
    */
   dispose(): void {
     this.mesh.removeFromParent();
-    for (const rig of this.#slotRigs.values()) releaseGpuPose(animationRateStateOf(rig));
+    for (const rig of this.#slotRigs.values()) releaseGpuPose(animationRateStateOf(rig), rig);
     this.#currentAttribute.dispose();
     this.#previousAttribute?.dispose();
     for (const attribute of this.#rawAttributes) attribute.dispose();

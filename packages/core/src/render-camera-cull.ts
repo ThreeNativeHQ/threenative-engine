@@ -85,6 +85,11 @@ export interface IAnimationRateState {
   source: RenderCameraCull | undefined;
   evaluated: boolean;
   evaluation: number;
+  /**
+   * Set by the player: the auto policy picked rate 1 from a live projected size and nothing on the
+   * player needs full-rate CPU semantics, so the batch may evaluate this near rig's pose on the GPU.
+   */
+  autoNear?: boolean;
   /** Set by the skinned batch while the GPU evaluates this rig's pose from keyframes and time. */
   gpuPose?: boolean;
   /** Set by the player: brings the CPU bones to the current playhead now. */
