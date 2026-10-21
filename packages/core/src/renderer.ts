@@ -805,7 +805,9 @@ function wrapRenderer(
             pipelineCensus.warmUpScopeSettled(label, target),
         }),
     get warmUpWorldPass() {
-      if (outputPipeline === undefined) return undefined;
+      // The ThreeNative engine refuses RendererUtils, so the pass could not restore the renderer
+      // state it changes there; the engine compiles the output pass at its first frame instead.
+      if (outputPipeline === undefined || !restoresRendererState()) return undefined;
       return (scene: Object3D, camera: Camera, targetScene?: Object3D): void | Promise<void> => {
         const outputRoot = targetScene ?? scene;
         const scoped = targetScene !== undefined && targetScene !== scene;
@@ -1743,6 +1745,15 @@ export async function adapterTextureLimits(): Promise<{ requiredLimits?: Record<
     return Object.keys(requiredLimits).length === 0 ? {} : { requiredLimits };
   } catch {
     return {};
+  }
+}
+
+/** False on the ThreeNative engine, whose RendererUtils throws its catalog diagnostic on access. */
+function restoresRendererState(): boolean {
+  try {
+    return typeof RendererUtils.restoreRendererState === "function";
+  } catch {
+    return false;
   }
 }
 

@@ -238,7 +238,7 @@ export function defineReleaseNoops(classes: Readonly<Record<string, unknown>>): 
     "InstancedMesh",
     ...FLAGGED_CLASSES.filter((n) => n.endsWith("Light")),
   ]) {
-    const cls = classes[name] as { prototype: { dispose?: () => void } } | undefined;
+    const cls = classes[name] as (new () => { dispose?: () => void }) | undefined;
     if (typeof cls === "function") cls.prototype.dispose ??= () => {};
   }
 }
