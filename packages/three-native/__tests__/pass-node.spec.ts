@@ -89,6 +89,19 @@ describe("native scene pass albedo target", () => {
   });
 });
 
+describe("native scene pass emissive target", () => {
+  it("accepts emissive, names its texture, and refuses unknown slots", () => {
+    const api = definePass(tsl);
+    const scenePass = api.pass({}, {});
+    expect(() => scenePass.getTextureNode("emissive")).toThrow(
+      /TN_NATIVE_PASS_TEXTURE_UNSUPPORTED/u,
+    );
+    scenePass.setMRT(api.mrt({ output: api.output, emissive: api.emissive }));
+    expect(scenePass.getTextureNode("emissive")).toEqual({ source: { name: "emissive" } });
+    expect(() => api.mrt({ unknown: api.emissive })).toThrow(/TN_NATIVE_MRT_UNSUPPORTED: unknown/u);
+  });
+});
+
 describe("native scene pass MRT", () => {
   it("accepts the normal target as normalView or as vec4(normalView, 0)", () => {
     expect(mrt({ output, normal: normalView }).outputs.normal).toBe(normalView);

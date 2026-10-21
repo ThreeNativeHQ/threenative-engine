@@ -245,16 +245,19 @@ void irradianceNode() {
 // The albedo pass draws a lit draw's diffuse colour through the draw's own bind groups, so the albedo fragment must
 // keep the lit fragment's layout exactly (every uniform at the same offset, every texture at the same binding) and
 // differ only in what it writes: the diffuse colour, unfogged, alpha 1.
-void albedoOutput() {
+void albedoOutput(bool emission = false) {
     for (int kind = 1; kind < 5; ++kind) {
-        for (int shape = 0; shape < 3; ++shape) {
+        for (int shape = 0; shape < 5; ++shape) {
             VertexVariant lit;
             lit.map = shape >= 1;
             lit.fog = shape == 2 ? 1 : 0;
             lit.instanceColor = shape == 2;
             lit.environment = kind >= 3;
+            if (shape == 3 && kind >= 3) lit.pbrMaps |= 1u << kEmissiveMap;
+            if (shape == 4) lit.nodes.emissiveNode = graph::vec3({graph::float_(4), graph::float_(2), graph::float_(0)});
             VertexVariant albedo = lit;
-            albedo.albedoOutput = true;
+            albedo.albedoOutput = !emission;
+            albedo.emissiveOutput = emission;
             const auto build = [&](const VertexVariant& v) {
                 return kind == 1 ? buildLambert(v) : kind == 2 ? buildPhong(v) : kind == 3 ? buildStandard({}, v) : buildPhysical({}, v);
             };
@@ -278,6 +281,8 @@ void albedoOutput() {
         }
     }
 }
+
+void emissiveOutput() { albedoOutput(true); }
 
 void nodes() {
     namespace g = tn::engine::shader::graph;
@@ -359,6 +364,7 @@ void builds() {
     aoNode();
     irradianceNode();
     albedoOutput();
+    albedoOutput(true);
     VertexVariant storage; storage.instanced = storage.instanceStorage = storage.instanceColor = true;
     CHECK(storage.key() != VertexVariant{}.key());
     for (int kind = 0; kind < 5; ++kind) {
@@ -516,4 +522,4 @@ void bloomPasses() {
 
 }  // namespace
 
-TN_TEST_MAIN({"depth_node_writes_frag_depth", depthNodeWritesFragDepth}, {"unsupported", unsupported}, {"builds", builds}, {"fog", fog}, {"fog_node_mixes_color", fogNodeMixesColor}, {"node_key", nodeKey}, {"bloom_passes", bloomPasses}, {"slots_share_one_lowering", slotsShareOneLowering})
+TN_TEST_MAIN({"depth_node_writes_frag_depth", depthNodeWritesFragDepth}, {"unsupported", unsupported}, {"emissive_output", emissiveOutput}, {"builds", builds}, {"fog", fog}, {"fog_node_mixes_color", fogNodeMixesColor}, {"node_key", nodeKey}, {"bloom_passes", bloomPasses}, {"slots_share_one_lowering", slotsShareOneLowering})

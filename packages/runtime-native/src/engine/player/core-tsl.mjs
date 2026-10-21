@@ -48,7 +48,7 @@ export const { storage, instancedArray, attributeArray, StorageBufferAttribute, 
 // end); the player draws the scene and camera a pass is pointed at.
 // An offscreen `new PassNode(PassNode.COLOR, scene, camera)` owns a RenderTarget that the renderer draws before the
 // frame (updateSecondaryPasses, called from core-webgpu.mjs); only pass() publishes the frame's scene and camera.
-export const { pass, PassNode, updateSecondaryPasses, mrt, output, normalView, metalness, roughness, diffuseColor } = definePass(
+export const { pass, PassNode, updateSecondaryPasses, mrt, output, normalView, metalness, roughness, diffuseColor, emissive } = definePass(
   globalThis.tsl,
   (scene, camera) => {
     globalThis.tn.scene = scene;

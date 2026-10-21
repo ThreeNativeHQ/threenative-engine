@@ -106,6 +106,7 @@ export function definePass(
   const metalness = slot("metalness");
   const roughness = slot("roughness");
   const diffuseColor = slot("diffuseColor");
+  const emissive = slot("emissive");
 
   function mrt(outputs: Record<string, unknown>): IMRTNode {
     const named: Record<string, unknown> = {};
@@ -119,7 +120,7 @@ export function definePass(
         ((value as IMRTSlot | null)?.isMRTSlot !== true || name !== (value as IMRTSlot).name)
       )
         throw new Error(
-          `TN_NATIVE_MRT_UNSUPPORTED: ${name} must be one of output, normal: normalView or vec4(normalView, 0), metalness, roughness, diffuseColor`,
+          `TN_NATIVE_MRT_UNSUPPORTED: ${name} must be one of output, normal: normalView or vec4(normalView, 0), metalness, roughness, diffuseColor, emissive`,
         );
       named[name] = normal ? normalView : value;
     }
@@ -278,6 +279,8 @@ export function definePass(
       // The renderer's albedo pass: each opaque lit draw's diffuse colour in rgb, alpha 1 where it wrote one.
       if (name === "diffuseColor" && this.#mrt?.outputs.diffuseColor === diffuseColor)
         return tsl.texture({ name: "albedo" }, tsl.uv());
+      if (name === "emissive" && this.#mrt?.outputs.emissive === emissive)
+        return tsl.texture({ name: "emissive" }, tsl.uv());
       if (
         (name === "metalness" || name === "roughness") &&
         this.#mrt?.outputs.normal === normalView &&
@@ -328,5 +331,6 @@ export function definePass(
     metalness,
     roughness,
     diffuseColor,
+    emissive,
   };
 }

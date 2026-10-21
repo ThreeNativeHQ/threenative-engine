@@ -153,6 +153,8 @@ struct VertexVariant {
      * groups serve both. Only Renderer::albedoFragment builds it; it is no program key.
      */
     bool albedoOutput = false;
+    /** Select the existing emitted radiance on the lit program layout. */
+    bool emissiveOutput = false;
     MaterialNodes nodes;
     /** Equal variants build the same program: a draw whose variant is unchanged reuses its Program*. */
     bool operator==(const VertexVariant&) const = default;

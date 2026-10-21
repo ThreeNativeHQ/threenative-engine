@@ -445,7 +445,7 @@ struct Renderer::ShadowPass {
 
 struct Renderer::FrameJob {
     uint64_t groupEpoch = 0;  // the group epoch the plan's bind groups were chosen under
-    std::vector<Planned> plan, velocityPlan, normalPlan, albedoPlan;
+    std::vector<Planned> plan, velocityPlan, normalPlan, albedoPlan, emissivePlan;
     std::vector<ShadowPass> shadowPasses;
     std::deque<DrawItem> shadowLodItems;
     WGPURenderPassColorAttachment color{};
@@ -456,7 +456,7 @@ struct Renderer::FrameJob {
     LightState lights;
     WGPUTextureView presentTarget = nullptr;
     WGPUTextureFormat presentFormat = WGPUTextureFormat_Undefined;
-    bool timed = false, normalPass = false, albedoPass = false;
+    bool timed = false, normalPass = false, albedoPass = false, emissivePass = false;
     uint64_t source = 0;  // the caller frame id this frame's timed sample is reported under
     std::vector<uint64_t> bundleKey;  // the main bundle's inputs, built while the draws' stores were live
 };
@@ -851,6 +851,9 @@ void Renderer::releaseTargets() {
     if (albedoView_) wgpuTextureViewRelease(albedoView_);
     if (albedoTexture_) wgpuTextureRelease(albedoTexture_);
     albedoView_ = nullptr; albedoTexture_ = nullptr;
+    if (emissiveView_) wgpuTextureViewRelease(emissiveView_);
+    if (emissiveTexture_) wgpuTextureRelease(emissiveTexture_);
+    emissiveView_ = nullptr; emissiveTexture_ = nullptr;
     if (viewportColorView_) wgpuTextureViewRelease(viewportColorView_);
     if (viewportColor_) wgpuTextureRelease(viewportColor_);
     if (viewportDepthView_) wgpuTextureViewRelease(viewportDepthView_);
@@ -2117,6 +2120,37 @@ const shader::StageModule* Renderer::albedoFragment(Program& program) {
     return program.albedo.get();
 }
 
+const shader::StageModule* Renderer::emissiveFragment(Program& program) {
+    if (program.emissiveBuilt) return program.emissive.get();
+    program.emissiveBuilt = true;
+    if (program.kind == MaterialKind::Basic) return nullptr;  // unlit writes zero
+    shader::VertexVariant variant = program.variant;
+    variant.emissiveOutput = true;
+    const shader::LightLayout layout{program.lightKinds, program.softShadows};
+    try {
+        shader::StandardPrograms source;
+        switch (program.kind) {
+        case MaterialKind::Standard: source = shader::buildStandard(shader::StandardMaterial{}, variant, layout); break;
+        case MaterialKind::Lambert: source = shader::buildLambert(variant, layout); break;
+        case MaterialKind::Phong: source = shader::buildPhong(variant, layout); break;
+        case MaterialKind::Physical: source = shader::buildPhysical(shader::StandardMaterial{}, variant, layout); break;
+        case MaterialKind::Basic: return nullptr;
+        }
+        if (!source.fragment.diagnostics().empty()) return nullptr;
+        auto module = std::make_unique<shader::StageModule>(shader::buildStage(source.fragment, 1));
+        const auto& own = program.fragment;
+        bool same = module->wgsl.ok() && module->uniforms.size() == own.uniforms.size() &&
+                    module->bindings.size() == own.bindings.size() && module->uniformBlockSize == own.uniformBlockSize;
+        for (std::size_t i = 0; same && i < own.uniforms.size(); ++i)
+            same = module->uniforms[i].name == own.uniforms[i].name && module->uniforms[i].offset == own.uniforms[i].offset;
+        if (!same) return nullptr;
+        program.emissive = std::move(module);
+    } catch (const std::exception&) {
+        return nullptr;
+    }
+    return program.emissive.get();
+}
+
 Renderer::Program& Renderer::depthProgram(const shader::VertexVariant& variant) {
     ++programKeyBuilds_;
     ++programLookups_;
@@ -2637,7 +2671,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     // Only a frame that draws a second pipeline depth-Equal against the colour pass asks for @invariant
     // positions: the normal pass (it shares the colour vertex stage) and TRAA's velocity pass (its own
     // vertex stage, flagged the same way below). Every other frame is compiled as three's is.
-    const bool invariantPosition = (postEffects_ && (postEffects_->reads("normal") || postEffects_->reads("albedo"))) || traa_;
+    const bool invariantPosition = (postEffects_ && (postEffects_->reads("normal") || postEffects_->reads("albedo") || postEffects_->reads("emissive"))) || traa_;
     auto variantOf = [invariantPosition](const DrawItem& item) {
         shader::VertexVariant v;
         v.invariantPosition = invariantPosition;
@@ -2710,7 +2744,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     FrameJob compileJob;  // a compile plans pipelines only: it never touches a pending frame's job
     if (!compilation && !job_) job_ = std::make_unique<FrameJob>();
     FrameJob& job = compilation ? compileJob : *job_;
-    job.plan.clear(); job.velocityPlan.clear(); job.normalPlan.clear(); job.albedoPlan.clear(); job.shadowPasses.clear(); job.shadowLodItems.clear();
+    job.plan.clear(); job.velocityPlan.clear(); job.normalPlan.clear(); job.albedoPlan.clear(); job.emissivePlan.clear(); job.shadowPasses.clear(); job.shadowLodItems.clear();
     std::vector<Planned>& plan = job.plan;
     std::vector<Planned>& velocityPlan = job.velocityPlan;
     plan.reserve(opaque.size());
@@ -3174,6 +3208,51 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         }
         if (!compilation) postEffects_->input("albedo", albedoView_);
     };
+    std::vector<Planned>& emissivePlan = job.emissivePlan;
+    const bool emissivePass = postEffects_ && postEffects_->reads("emissive");
+    const auto planEmissive = [&] {
+        if (!emissivePass) return;
+        for (const Planned& draw : plan) {
+            const DrawItem& item = *draw.item;
+            if (item.background || item.kind == MaterialKind::Basic) continue;
+            if (item.transparent || item.sprite || item.material->alphaTest > 0) continue;  // named by the normal pass
+            const shader::StageModule* fragment = emissiveFragment(*draw.program);
+            if (!fragment) {
+                const std::string note = "TN_POST_EMISSIVE_SKIPPED: a draw's program has no emissive fragment on its own layout";
+                if (std::find(diagnostics_.begin(), diagnostics_.end(), note) == diagnostics_.end()) diagnostics_.push_back(note);
+                continue;
+            }
+            PipelineTarget target{WGPUTextureFormat_RGBA16Float, WGPUTextureFormat_Depth32Float,
+                item.side == 2 ? WGPUCullMode_None : item.side == 1 ? WGPUCullMode_Front : WGPUCullMode_Back};
+            target.layout = draw.program->pipelineLayout; target.depthWrite = false;
+            target.colorWrite = item.colorWrite;
+            target.depthCompare = WGPUCompareFunction_Equal; target.frontFace = item.frontFace();
+            if (sampleCount_ == 4) {  // the normal pass's reason: a resolved sample against a pixel-centre interpolation
+                target.depthCompare = WGPUCompareFunction_LessEqual;
+                target.depthBias = -4; target.depthBiasSlopeScale = -1.5f;
+            }
+            target.skinIndex = skinIndexFormat(item);
+            target.instanceStepMask = instanceStepMask(draw.program->vertex, item);
+            if (compilation) {
+                compilation->push_back(pipelines_->getAsync(draw.program->vertex, fragment, target));
+                continue;
+            }
+            const auto pipeline = pipelines_->get(draw.program->vertex, fragment, target);
+            if (!pipeline) throw std::runtime_error("TN_POST_EMISSIVE_PIPELINE_REFUSED");
+            Planned emissive = draw;
+            emissive.pipeline = pipeline;
+            emissivePlan.push_back(emissive);
+        }
+        if (!compilation && !emissiveTexture_) {
+            WGPUTextureDescriptor desc = {};
+            desc.dimension = WGPUTextureDimension_2D; desc.size = {width_, height_, 1};
+            desc.format = WGPUTextureFormat_RGBA16Float; desc.mipLevelCount = 1; desc.sampleCount = 1;
+            desc.usage = WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopySrc;
+            emissiveTexture_ = wgpuDeviceCreateTexture(device_, &desc);
+            emissiveView_ = view2d(emissiveTexture_, WGPUTextureFormat_RGBA16Float);
+        }
+        if (!compilation) postEffects_->input("emissive", emissiveView_);
+    };
     WGPURenderPipeline pageClear = nullptr;
     if (!virtualShadows_.empty()) {
         shader::Program clear(shader::Stage::Vertex);
@@ -3194,6 +3273,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     if (compilation) {
         planNormals();
         planAlbedo();
+        planEmissive();
         PipelineTarget target{outputFormat, WGPUTextureFormat_Undefined, WGPUCullMode_None};
         target.layout = outputPipelineLayout_;
         compilation->push_back(pipelines_->getAsync(outputVertex_, &outputFragment_, target));
@@ -3392,6 +3472,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
 
     planNormals();
     planAlbedo();
+    planEmissive();
 
     if (!compilation && gpuJoints_ && (!gpuJoints_->drawUse.empty() || Object3D::poseObserver)) {
         const auto mark = [](const Planned& p) {
@@ -3496,6 +3577,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     job.groupEpoch = groupsChosenAt;
     job.normalPass = normalPass;
     job.albedoPass = albedoPass;
+    job.emissivePass = emissivePass;
     job.camera = camera; job.lights = lights;
     job.pageClear = pageClear;
     job.presentTarget = presentTarget;
@@ -3520,7 +3602,7 @@ void Renderer::encodeFrame(FrameJob& job) {
     WGPUCommandEncoder encoder = job.encoder;
     WGPURenderPassColorAttachment& color = job.color;
     WGPURenderPassDepthStencilAttachment& depth = job.depth;
-    const bool timed = job.timed, normalPass = job.normalPass, albedoPass = job.albedoPass;
+    const bool timed = job.timed, normalPass = job.normalPass, albedoPass = job.albedoPass, emissivePass = job.emissivePass;
     const uint64_t source = job.source;
     const CameraState& camera = job.camera;
     const LightState& lights = job.lights;
@@ -3766,6 +3848,22 @@ void Renderer::encodeFrame(FrameJob& job) {
         for (const Planned& p : job.albedoPlan) encode(albedoEncoder, p, Tally::Extra);
         wgpuRenderPassEncoderEnd(albedoEncoder); wgpuRenderPassEncoderRelease(albedoEncoder);
     }
+    if (emissivePass) {
+        WGPURenderPassColorAttachment emissive{};
+        emissive.view = emissiveView_; emissive.loadOp = WGPULoadOp_Clear; emissive.storeOp = WGPUStoreOp_Store;
+#if defined(MYSTRAL_WEBGPU_DAWN)
+        emissive.depthSlice = WGPU_DEPTH_SLICE_UNDEFINED;
+#endif
+        WGPURenderPassDepthStencilAttachment emissiveDepth{};
+        emissiveDepth.view = depthView_; emissiveDepth.depthReadOnly = true;
+        WGPURenderPassDescriptor emissiveDesc{};
+        emissiveDesc.colorAttachmentCount = 1; emissiveDesc.colorAttachments = &emissive;
+        emissiveDesc.depthStencilAttachment = &emissiveDepth;
+        auto emissiveEncoder = beginTimedRenderPass(encoder, &emissiveDesc);
+        bound = nullptr; boundIndex = nullptr;
+        for (const Planned& p : job.emissivePlan) encode(emissiveEncoder, p, Tally::Extra);
+        wgpuRenderPassEncoderEnd(emissiveEncoder); wgpuRenderPassEncoderRelease(emissiveEncoder);
+    }
     if (traa_) {
         WGPURenderPassColorAttachment motion{};
         motion.view = traa_->velocityView(); motion.loadOp = WGPULoadOp_Clear; motion.storeOp = WGPUStoreOp_Store;
@@ -3908,6 +4006,7 @@ GpuStatus Renderer::readProbePixels(ReadbackCallback done) { return readRgba16(s
 
 GpuStatus Renderer::readNormalPixels(ReadbackCallback done) { return readRgba16(normalTexture_, std::move(done)); }
 GpuStatus Renderer::readAlbedoPixels(ReadbackCallback done) { return readRgba16(albedoTexture_, std::move(done)); }
+GpuStatus Renderer::readEmissivePixels(ReadbackCallback done) { return readRgba16(emissiveTexture_, std::move(done)); }
 
 GpuStatus Renderer::readRgba16(WGPUTexture texture, ReadbackCallback done) {
     if (!done) return GpuStatus::OutOfRange;
