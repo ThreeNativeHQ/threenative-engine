@@ -14,6 +14,7 @@ import {
   type Group,
   Mesh,
   MeshBasicMaterial,
+  type MeshStandardMaterial,
   NoToneMapping,
   type Object3D,
   type PerspectiveCamera,
@@ -75,11 +76,15 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
     // Every scene.json property this recreation does not carry, with the PRD that owns it.
     const unsupported: { actor: string; property: string; reason: string }[] = [];
     // The region a mesh belongs to: the scene.glb node named after the Unreal actor, or, when the
-    // asset pipeline flattened the nodes away, the mesh named after its static mesh, SM_<actor>.
+    // asset pipeline flattened the nodes away, the mesh named after its static mesh, SM_<actor>. An
+    // actor shares its region with others when scene.json names one (the leaf cards: Leaves).
+    const regionByActor = new Map<string, string>(
+      (DATA.meshes as { name: string; region?: string }[]).map((m) => [m.name, m.region ?? m.name]),
+    );
     const regionOf = (object: Object3D): string | undefined => {
       for (let o: Object3D | null = object; o !== null; o = o.parent) {
-        const name = o.name.replace(/^SM_/, "");
-        if (name in DATA.regions) return name;
+        const region = regionByActor.get(o.name.replace(/^SM_/, ""));
+        if (region !== undefined) return region;
       }
       return undefined;
     };
@@ -97,9 +102,14 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
       // colour id / 255 as linear, display-encoded on output.
       for (const mesh of meshes) {
         const [r = 0, g = 0, b = 0] = DATA.regions[regionOf(mesh) ?? ""] ?? [];
+        const source = mesh.material as MeshStandardMaterial;
         mesh.material = new MeshBasicMaterial({
           color: new Color().setRGB(r / 255, g / 255, b / 255),
           toneMapped: false,
+          // A masked region (leaf cards) keeps its cut and both sides: the map is white, so the colour stays the ID.
+          ...(source.alphaTest > 0
+            ? { map: source.map, alphaTest: source.alphaTest, side: source.side }
+            : {}),
         });
       }
       raw.toneMapping = NoToneMapping;

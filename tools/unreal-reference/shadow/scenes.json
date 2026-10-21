@@ -7,6 +7,12 @@
       "owner": "PRD-649",
       "serves": ["PRD-634", "PRD-652"],
       "poses": ["heights", "contact", "ramp"]
+    },
+    {
+      "name": "foliage",
+      "owner": "PRD-649",
+      "serves": ["PRD-651", "PRD-643"],
+      "poses": ["canopy", "grass"]
     }
   ],
   "variants": [
