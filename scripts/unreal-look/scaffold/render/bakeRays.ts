@@ -8,7 +8,8 @@ import type { IRayContext } from "./giCache.js";
  * `ctx.raycast` walks the scene graph and calls into the engine for every object on every ray; the GI bake
  * casts millions of rays, so that walk is most of its time on the Wasm engine. The geometry does not move during
  * a bake, so it is read once here and each ray runs on plain typed arrays. The answers match `ctx.raycast`:
- * the nearest triangle, culled by the material's `side` (read per ray; `doubleSided` overrides it for the link rays), the
+ * the nearest triangle, culled by the material's `side` (read once, when the query is built; `doubleSided` overrides it
+ * for the link rays), the
  * object, the face normal in the object's local space, the material slot and the UV (PRD-639: a texture is read where
  * the ray lands). The hit object is reused between rays.
  */
@@ -316,8 +317,18 @@ function build(root: Object3D): IFlatRays | undefined {
 
   const objects = meshes;
   // The sides the rays cull by are those of the materials the scene authored: the GI cache swaps a mesh's material for a
-  // node twin after this is built, and a twin that lost its `side` must not change what a ray hits.
-  const materials = meshes.map((mesh) => mesh.material);
+  // node twin after this is built, and a twin that lost its `side` must not change what a ray hits. They are read here,
+  // once per mesh and slot: on the owned engine a material's `side` is a call into the engine, and reading it for each
+  // candidate triangle of every ray took 8 of the 10 seconds of a bake of the sunlit room.
+  const sides = meshes.map((mesh) => {
+    const material = mesh.material as Material | Material[];
+    return Array.isArray(material) ? material.map((m) => m?.side ?? 0) : (material?.side ?? 0);
+  });
+  const sideOfTriangle = new Uint8Array(count);
+  for (let t = 0; t < count; t += 1) {
+    const own = sides[owner[t] ?? 0] ?? 0;
+    sideOfTriangle[t] = typeof own === "number" ? own : (own[slot[t] ?? 0] ?? 0);
+  }
   const hit = {
     distance: 0,
     point: new Vector3(),
@@ -398,11 +409,7 @@ function build(root: Object3D): IFlatRays | undefined {
         const from = start[node] ?? 0;
         for (let i = from; i < from + count; i += 1) {
           const t = order[i] ?? 0;
-          let side = 2;
-          if (!everySide) {
-            const material = materials[owner[t] ?? 0] as Material | Material[];
-            side = (Array.isArray(material) ? material[slot[t] ?? 0] : material)?.side ?? 0;
-          }
+          const side = everySide ? 2 : (sideOfTriangle[t] ?? 0);
           const c = t * 9;
           // Three's Ray.intersectTriangle, culled by FrontSide (0), reversed for BackSide (1).
           let ax = corners[c] ?? 0;

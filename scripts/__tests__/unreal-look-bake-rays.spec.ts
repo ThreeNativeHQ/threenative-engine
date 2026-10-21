@@ -149,7 +149,7 @@ describe("bakeRays", () => {
     expect(fromMinusX?.face?.materialIndex).toBe(1);
   });
 
-  it("reads the material side per ray, so a bake that switches it to double-sided sees the back faces", () => {
+  it("culls by the material sides it read when it was built, and `doubleSided` makes every side count", () => {
     const root = new Group();
     const material = new MeshStandardMaterial({ side: FrontSide });
     root.add(new Mesh(new PlaneGeometry(2, 2), material));
@@ -158,14 +158,49 @@ describe("bakeRays", () => {
     if (rays === undefined) throw new Error("flat rays expected");
     const ray = { origin: new Vector3(0, 0, -1), direction: new Vector3(0, 0, 1), far: 10 };
     expect(rays.raycast(ray)).toBeUndefined();
+    // A side read once: on the owned engine each read is a call into the engine, so a ray makes none.
     material.side = DoubleSide;
-    expect(rays.raycast(ray)?.distance).toBeCloseTo(1, 6);
-    // The switch gives the same answer without touching the material.
+    expect(rays.raycast(ray)).toBeUndefined();
+    expect(bakeRays(root)?.raycast(ray)?.distance).toBeCloseTo(1, 6);
+    // The switch gives the back faces to every material without touching any of them.
     material.side = FrontSide;
     rays.doubleSided = true;
     expect(rays.raycast(ray)?.distance).toBeCloseTo(1, 6);
     rays.doubleSided = false;
     expect(rays.raycast(ray)).toBeUndefined();
+  });
+
+  it("makes no call into the scene's materials while it casts rays", () => {
+    // On the owned engine a material's field is a call into the engine; one per candidate triangle was 8 of the 10
+    // seconds of the sunlit room's bake. The sides are read at build, so a ray touches no material at all.
+    const root = scene();
+    let reads = 0;
+    root.traverse((object) => {
+      const material = (object as Mesh).material as MeshStandardMaterial | undefined;
+      if (material === undefined) return;
+      const side = material.side;
+      Object.defineProperty(material, "side", {
+        get: () => {
+          reads += 1;
+          return side;
+        },
+      });
+    });
+    const rays = bakeRays(root);
+    if (rays === undefined) throw new Error("the scene should flatten");
+    const built = reads;
+    const next = lcg(5);
+    const origin = new Vector3();
+    const direction = new Vector3();
+    for (let i = 0; i < 500; i += 1) {
+      origin.set(next() * 10 - 5, next() * 5, next() * 10 - 5);
+      rays.raycast({
+        origin,
+        direction: direction.set(next() - 0.5, next() - 0.5, next() - 0.5).normalize(),
+        far: 1000,
+      });
+    }
+    expect(reads).toBe(built);
   });
 
   it("expands an instanced mesh: every copy is hit as three hits it, and the shading's normal follows the copy", () => {
