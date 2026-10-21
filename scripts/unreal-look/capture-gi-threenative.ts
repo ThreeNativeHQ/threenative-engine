@@ -153,7 +153,10 @@ export async function captureGiThreeNative(options: {
       const report: Record<string, unknown> = {};
       for (const name of options.scenes) {
         const { scene } = readScene(name);
-        const [width, height] = scene.resolution;
+        // TN_GI_SIZE=1920x1080 re-measures a cost at another resolution (the Xvfb screen must be larger: TN_XVFB_SCREEN).
+        const override = process.env.TN_GI_SIZE?.split("x").map(Number);
+        const [width, height] =
+          override?.length === 2 ? (override as [number, number]) : scene.resolution;
         const page = await browser.newPage({ viewport: { width, height }, deviceScaleFactor: 1 });
         const errors: string[] = [];
         // The frame meter prints to the console; a measured pose keeps the windows between two marks.
@@ -217,6 +220,23 @@ export async function captureGiThreeNative(options: {
               );
               if (errors.length > 0)
                 throw new Error(`TN_UNREAL_LOOK_PAGE_ERROR: ${errors.join(" | ")}`);
+              if (options.measureSeconds !== undefined) {
+                meter = [];
+                await page.waitForTimeout(options.measureSeconds * 1000);
+                const log = path.join(
+                  options.out,
+                  sceneKey(name),
+                  layer,
+                  `${pose.name}.frame-budget.log`,
+                );
+                await mkdir(path.dirname(log), { recursive: true });
+                await writeFile(log, `${meter.join("\n")}\n`);
+                console.info(
+                  `TN_UNREAL_LOOK measured ${name} ${layer} ${pose.name} windows=${meter.length} log=${log}`,
+                );
+                count += 1;
+                continue;
+              }
               const file = path.join(options.out, sceneKey(name), layer, `${pose.name}.png`);
               await mkdir(path.dirname(file), { recursive: true });
               if (options.measureSeconds !== undefined) {

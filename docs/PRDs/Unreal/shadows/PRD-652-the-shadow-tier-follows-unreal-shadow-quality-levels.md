@@ -44,7 +44,7 @@ anything breaks (`Engine/Source/Runtime/Renderer/Private/VirtualShadowMaps/Virtu
    |---|---|---|---|---|---|
    | `low` | 0 Low | one hard tap | one hard tap | 0 | 1 / 2 |
    | `medium` | 1 Medium | source angle, Medium samples | source radius, Medium samples | 0 | 1 / 2 |
-   | `high` | 3 Epic | source angle, Epic samples | source radius, Epic samples | −1.5 | 0 / 1 |
+   | `high` | 3 Epic | source angle, Epic samples | source radius, Epic samples | −1.5, held at 0 (see `## Decisions`) | 0 / 1 |
 
    At level 0, `r.ShadowQuality=0` (`BaseScalability.ini:134`) turns dynamic shadows off, so the `low` tier casts none
    (see `## Decisions`). A resolution bias of −1 halves the finest clip level's texel. The sample counts start from
@@ -66,7 +66,7 @@ manifest entry carries `@alias shadow quality`, `@alias virtual shadow map scala
 
 ## Acceptance Criteria
 
-- [ ] AC-1 [local]: A PRD-647 round on `penumbra-lab` and `horizon` at each tier, against that tier's Unreal level, returns MATCH or CLOSE on every cell and no REGRESSION against BEFORE. proof: `pnpm unreal-look:calibrate --scene shadow:<name> --tier <low|medium|high> --before <commit>` — Evidence: pending.
+- [ ] AC-1 [local]: A PRD-647 round on `penumbra-lab` and `horizon` at each tier, against that tier's Unreal level, returns MATCH or CLOSE on every cell and no REGRESSION against BEFORE. proof: `pnpm unreal-look:calibrate --scene shadow:<name> --tier <low|medium|high> --before <commit>` — Evidence: open, partial 2026-10-21. `penumbra-lab` only, judged by a fresh read-only Sonnet on 4 poses per tier (`sun60-contact`, `sun15-contact`, `sun4-contact`, `sun4-ramp`): `low` IMPROVEMENT (no cast shadow, as Unreal Low), `medium` IMPROVEMENT (soft edges, no acne, no peter-panning), `high` NEUTRAL (byte-identical to the pre-change `L5` in 9 poses, see `## Decisions`). `horizon` is not run, and `calibrate` does not exist yet.
 - [x] AC-2 [local]: `engine_search_capabilities` with "shadow quality" returns the tier report entry. proof: `pnpm exec vitest run packages/engine-mcp` (search fixture) — Evidence: `packages/engine-mcp/__tests__/search.spec.ts` 55 passed on 2026-10-21. "shadow quality", "virtual shadow map scalability" and "sg.ShadowQuality" return `ShadowFilterBudget`.
 
 ### Visual judge criteria (written 2026-10-21, before any judge ran)
@@ -150,3 +150,11 @@ these criteria, per frame and overall.
 - 2026-10-21 (tier-lane, harness watcher): the harness scenes build a `ShadowFilterBudget` and report its newest
   window through `window.__tnRef.shadowBudget()`. The tier is `explicit` unless the URL adds `shadowAuto=1`,
   because a capture must draw the tier it names. `window.__tnRef.setShadowTier(tier)` applies a step from the page.
+- 2026-10-21 (tier-lane, high bias held at 0): the first `high` table set `resolutionLodBiasDirectional` to Unreal Epic's
+  −1.5. The judge returned REGRESSION against the `high` criterion "no visible change": `sun4-ramp` shows a second
+  shadow band, and 3.0% of its pixels differ by more than 8 levels (`sun4-contact` 3.2%, the other 7 poses under 0.5%).
+  A capture with `?shadowBias=0` is byte-identical to the pre-change `L5` in all 9 poses (maximum difference 0), so the
+  bias is the whole cause. Against Unreal's edge width the bias is mixed: 5 poses move closer, 1 stays, 3 move away.
+  No judge has called it an improvement, and the sun look is the shadows lane's, so the table holds 0 and `high` stays
+  the pre-change look. The bias stays an option of `VirtualShadowNode` and a `?shadowBias=` diagnosis knob. The shadows
+  lane may set −1.5 once a judge finds it an improvement.
