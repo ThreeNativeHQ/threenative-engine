@@ -8,7 +8,7 @@ prd_contract: v1
 **Priority:** P2 — AC-1 to AC-3 are open: `Atmosphere.aerialPerspective` mixes every pixel toward one zenith colour, and no template uses the atmosphere at all.
 **Complexity:** 4 (MEDIUM) — 1–5 implementation files (1), a new GPU resource with per-frame view-space state (+2), template adoption (+1); risk override: none
 **Owner:** João
-**Depends on:** [PRD-633](../look/PRD-633-the-sky-is-an-atmosphere-and-it-lights-the-scene.md) puts the atmosphere in the templates; the match proof is the L3 row of [PRD-631](../look/PRD-631-an-unreal-reference-scene-measures-the-default-look.md). Builds on the LUT stack that [PRD-248](../../done/PRD-248-the-atmosphere-is-luts-the-sky-is-the-games.md) shipped. Composes with [PRD-560](../../done/PRD-560-height-fog-follows-the-ground.md) height fog: this PRD is kilometre-scale air, and PRD-560 is ground mist.
+**Depends on:** [PRD-633](../look/PRD-633-the-sky-is-an-atmosphere-and-it-lights-the-scene.md) puts the atmosphere in the templates; the match proof is the L3 row of [PRD-631](../../done/PRD-631-an-unreal-reference-scene-measures-the-default-look.md). Builds on the LUT stack that [PRD-248](../../done/PRD-248-the-atmosphere-is-luts-the-sky-is-the-games.md) shipped. Composes with [PRD-560](../../done/PRD-560-height-fog-follows-the-ground.md) height fog: this PRD is kilometre-scale air, and PRD-560 is ground mist.
 
 ## Context
 
