@@ -16,6 +16,7 @@ import { assertVisualPortAvailable, stopVisualServer } from "../visual-gate.js";
 import { launchWebgpuBrowser } from "./browser.js";
 import { FRAME_GATE, captureMotionFrames } from "./capture-motion-threenative.js";
 import { HIDE_UI, freePort, scaffold, waitForServer } from "./capture-threenative.js";
+import { captureQuery } from "./captureQuery.js";
 import { awaitExposureSettled, metersExposure, watchExposure } from "./exposureSettled.js";
 import { isManifestScene, readScene, sceneDir, sceneKey } from "./gi.js";
 import { GPU_PASSES, readPasses } from "./gpuPasses.js";
@@ -214,14 +215,14 @@ export async function captureGiThreeNative(options: {
           }[] =
             scene.template === "default" && layer !== "ID"
               ? (scene.suns ?? []).map((sun) => ({
-                  query: `tnRef=${layerQuery(layer).layer}${tierQuery(layer)}&sun=${sun.elevationDeg},${sun.azimuthDeg}&model=${sceneKey(name)}${process.env.TN_UNREAL_LOOK_QUERY ?? ""}`,
+                  query: `tnRef=${layerQuery(layer).layer}${tierQuery(layer)}&sun=${sun.elevationDeg},${sun.azimuthDeg}&model=${sceneKey(name)}${captureQuery()}`,
                   key: `${name}/${layer}/${sun.name}`,
                   poses: scene.poses.filter((pose) => pose.sun === sun.name),
                   reference: true,
                 }))
               : [
                   {
-                    query: `tnGi=${name}&layer=${layerQuery(layer).layer}${tierQuery(layer)}${process.env.TN_UNREAL_LOOK_QUERY ?? ""}`,
+                    query: `tnGi=${name}&layer=${layerQuery(layer).layer}${tierQuery(layer)}${captureQuery()}`,
                     key: `${name}/${layer}`,
                     poses: scene.poses,
                     // The calibration scene holds its exposure fixed (Unreal's manual EV100).

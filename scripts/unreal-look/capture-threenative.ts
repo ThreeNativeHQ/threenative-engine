@@ -23,6 +23,7 @@ import {
 import { workspacePackages } from "../workspace-packages.js";
 import { launchWebgpuBrowser } from "./browser.js";
 import { FRAME_GATE } from "./capture-motion-threenative.js";
+import { captureQuery } from "./captureQuery.js";
 import { awaitExposureSettled, metersExposure, watchExposure } from "./exposureSettled.js";
 import { GPU_PASSES, readPasses } from "./gpuPasses.js";
 import { MIN_STEPS, RENDERER_LOST, SETTLE_STEPS, atFixedJitterPhase } from "./jitterPhase.js";
@@ -371,7 +372,7 @@ export async function captureThreeNative(options: IThreeNativeCaptureOptions): P
           if (wanted.length === 0) continue;
           const started = Date.now();
           await page.goto(
-            `${origin}?tnRef=${layer}&sun=${sun.elevationDeg},${sun.azimuthDeg}${options.baseline ? "&baseline=1" : ""}${options.off ? `&off=${options.off}` : ""}${process.env.TN_UNREAL_LOOK_QUERY ?? ""}`,
+            `${origin}?tnRef=${layer}&sun=${sun.elevationDeg},${sun.azimuthDeg}${options.baseline ? "&baseline=1" : ""}${options.off ? `&off=${options.off}` : ""}${captureQuery()}`,
             {
               waitUntil: "domcontentloaded",
             },
@@ -419,7 +420,7 @@ export async function captureThreeNative(options: IThreeNativeCaptureOptions): P
               baseline: options.baseline,
               layer,
               measureSeconds: options.measureSeconds,
-              switches: `${options.off ?? ""}${process.env.TN_UNREAL_LOOK_QUERY ?? ""}`,
+              switches: `${options.off ?? ""}${captureQuery()}`,
             });
             if (metered)
               console.info(
