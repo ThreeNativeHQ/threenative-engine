@@ -791,7 +791,17 @@ function volume(
     const o = (x + grid.nx * (y + grid.ny * (6 * grid.nz + z))) * 4;
     for (let c = 0; c < 3; c += 1) texels[o + c] = toHalf((walls[probe * 3 + c] ?? 0) / 255);
   }
-  const texture = new Data3DTexture(texels, grid.nx, grid.ny, slices);
+  return volumeOver(texels, grid.nx, grid.ny, slices);
+}
+
+/** A texture over `texels`: the cache itself, or a copy that shares them (`giCache.gatherTexture`). */
+function volumeOver(
+  texels: Uint16Array,
+  width: number,
+  height: number,
+  depth: number,
+): Data3DTexture {
+  const texture = new Data3DTexture(texels, width, height, depth);
   texture.format = RGBAFormat;
   texture.type = HalfFloatType;
   texture.minFilter = LinearFilter;
@@ -1953,8 +1963,11 @@ export function installGi(
     return true;
   };
   if (dynamic.length > 0) {
-    giCache.gatherTexture = giCache.volumeTexture?.clone();
-    if (giCache.gatherTexture !== undefined) giCache.gatherTexture.needsUpdate = true;
+    const { volumeTexture } = giCache;
+    if (volumeTexture !== undefined) {
+      const { nx, ny, nz } = fine.grid;
+      giCache.gatherTexture = volumeOver(volumeTexture.image.data as Uint16Array, nx, ny, nz * 7);
+    }
     gameCtx.beforeRender?.(() => giCache.refresh?.());
   }
   const normal = normalWorld.normalize();
