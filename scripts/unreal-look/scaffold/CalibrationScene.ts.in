@@ -323,6 +323,9 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
             // in a scene with no sun and no sky.
             intensity: params.get("giLights") === "0" ? 0 : l.intensity,
             distance: l.distance,
+            // A lamp that changes after the bake changes the bounce light with it (PRD-641 AC-2). ?direct=0 zeroes the
+            // lamps on purpose to leave the indirect frame, so it keeps the bake.
+            ...(params.get("direct") === "0" ? {} : { source: l }),
           })),
         });
         skipped.forEach((m, i) => (m.material as unknown as { color: Color }).color.copy(kept[i] as Color));
