@@ -28,6 +28,7 @@ import {
   max,
   min,
   mix,
+  pow,
   screenCoordinate,
   sign,
   sqrt,
@@ -67,7 +68,18 @@ export interface IFilmicCurve {
    * contour bands. 0 turns it off. Only the tone-mapping node dithers; `filmicToneMap()` stays noise-free.
    */
   readonly dither: number;
+  /**
+   * The largest scene-linear value, after exposure, that one channel can hold when the colour goes into Unreal's
+   * colour LUT (the top of its 14-stop log shaper, `Engine/Shaders/Private/GammaCorrectionCommon.ush`: `LogToLin(1)`
+   * minus `LogToLin(0)`). A channel above it is clipped there, so the sun disc and a hot emitter lose their hue
+   * earlier than an unbounded curve would. 0, the default, leaves the channel unbounded; pass `LUT_CLIP` for Unreal's.
+   */
+  readonly lutClip: number;
 }
+
+// Unreal's log shaper: 14 stops about mid grey 0.18, grey at code 444 of 1023.
+/** Unreal's LUT channel clip, 43.7. Off by default (it moves hot-emitter pixels); `filmicCurve: { lutClip: LUT_CLIP }` turns it on. */
+export const LUT_CLIP = 2 ** ((1 - 444 / 1023) * 14) * 0.18 - 2 ** ((-444 / 1023) * 14) * 0.18;
 
 /** Unreal 5.8.3 project defaults. Change these numbers to change the curve. */
 export const FILMIC_CURVE: IFilmicCurve = {
@@ -81,6 +93,7 @@ export const FILMIC_CURVE: IFilmicCurve = {
   glow: 1,
   redModifier: 1,
   dither: 1,
+  lutClip: 0,
 };
 
 type Vec3 = readonly [number, number, number];
@@ -337,23 +350,304 @@ function saturate(v: Vec3, amount: number): [number, number, number] {
   return [y + (v[0] - y) * amount, y + (v[1] - y) * amount, y + (v[2] - y) * amount];
 }
 
+const at = (v: readonly number[], i: number): number => v[i] ?? 0;
+/** Red, green, blue and a master factor, as Unreal's colour grading panel shows each control. */
+export type Vec4 = readonly [number, number, number, number];
+
+/** One set of Unreal's colour grading controls. */
+export interface IGradeControls {
+  readonly saturation: Vec4;
+  readonly contrast: Vec4;
+  readonly gamma: Vec4;
+  readonly gain: Vec4;
+  readonly offset: Vec4;
+}
+
+/**
+ * Unreal's colour grading and white balance, run in the combined LUT before the film curve
+ * (`Engine/Shaders/Private/PostProcessCombineLUTs.usf:88-140` and `:369-403`; defaults in
+ * `Engine/Source/Runtime/Engine/Private/Scene.cpp:405-433`). Every default below is Unreal's, and at the
+ * defaults none of it costs a shader instruction.
+ */
+export interface IColorGrade {
+  /** Kelvin, 1500 to 15000. 6500 with tint 0 is a no-op. */
+  readonly whiteTemp: number;
+  /** -1 to 1 along the isotherm. */
+  readonly whiteTint: number;
+  /**
+   * `"whiteBalance"`: the temperature is the light the scene was lit by, and it turns neutral.
+   * `"colorTemperature"`: neutral turns into that temperature.
+   */
+  readonly temperatureMode: "whiteBalance" | "colorTemperature";
+  /** 1 is the full film curve, 0 the graded colour with no curve. */
+  readonly toneCurveAmount: number;
+  /** Applied to every pixel, and combined with each range below. */
+  readonly global: IGradeControls;
+  readonly shadows: IGradeControls;
+  readonly midtones: IGradeControls;
+  readonly highlights: IGradeControls;
+  /** Luma (AP1) up to which the shadows range has full weight, fading out by here. */
+  readonly shadowsMax: number;
+  /** Luma where the highlights range starts and where it has full weight. */
+  readonly highlightsMin: number;
+  readonly highlightsMax: number;
+}
+
+const ONES: Vec4 = [1, 1, 1, 1];
+const ZEROS: Vec4 = [0, 0, 0, 0];
+const NEUTRAL_CONTROLS: IGradeControls = {
+  saturation: ONES,
+  contrast: ONES,
+  gamma: ONES,
+  gain: ONES,
+  offset: ZEROS,
+};
+
+/** Unreal 5.8.3 project defaults: a neutral grade. */
+export const COLOR_GRADE: IColorGrade = {
+  whiteTemp: 6500,
+  whiteTint: 0,
+  temperatureMode: "whiteBalance",
+  toneCurveAmount: 1,
+  global: NEUTRAL_CONTROLS,
+  shadows: NEUTRAL_CONTROLS,
+  midtones: NEUTRAL_CONTROLS,
+  highlights: NEUTRAL_CONTROLS,
+  shadowsMax: 0.09,
+  highlightsMin: 0.5,
+  highlightsMax: 1,
+};
+
+type RangeName = "global" | "shadows" | "midtones" | "highlights";
+const RANGES: readonly RangeName[] = ["global", "shadows", "midtones", "highlights"];
+const CONTROLS = ["saturation", "contrast", "gamma", "gain", "offset"] as const;
+
+/** What a game passes: any field, and any control of a range. */
+export type ColorGradeOptions = {
+  readonly [K in keyof IColorGrade]?: K extends RangeName
+    ? Partial<IGradeControls>
+    : IColorGrade[K];
+};
+
+/** Refuses a value Unreal's panel would not allow. */
+function validateGrade(g: IColorGrade): void {
+  if (!(g.whiteTemp >= 1500 && g.whiteTemp <= 15000)) {
+    throw new Error(`colorGrade.whiteTemp must be 1500 to 15000 K, got ${g.whiteTemp}.`);
+  }
+  if (!(Math.abs(g.whiteTint) <= 1))
+    throw new Error(`colorGrade.whiteTint must be -1 to 1, got ${g.whiteTint}.`);
+  if (g.temperatureMode !== "whiteBalance" && g.temperatureMode !== "colorTemperature") {
+    throw new Error(`colorGrade.temperatureMode must be "whiteBalance" or "colorTemperature".`);
+  }
+  if (!(g.toneCurveAmount >= 0 && g.toneCurveAmount <= 1)) {
+    throw new Error(`colorGrade.toneCurveAmount must be 0 to 1, got ${g.toneCurveAmount}.`);
+  }
+  if (!(g.shadowsMax > 0) || !(g.highlightsMin < g.highlightsMax)) {
+    throw new Error("colorGrade needs shadowsMax > 0 and highlightsMin < highlightsMax.");
+  }
+}
+
+/** Fills the defaults and refuses a malformed control, so a typo cannot pass as a neutral grade. */
+export function resolveColorGrade(options: ColorGradeOptions = {}): IColorGrade {
+  const out: Record<string, unknown> = { ...COLOR_GRADE, ...options };
+  for (const range of RANGES) {
+    const given = (options[range] ?? {}) as Partial<IGradeControls>;
+    const merged: Record<string, Vec4> = {};
+    for (const name of CONTROLS) {
+      const v = given[name] ?? NEUTRAL_CONTROLS[name];
+      if (v.length !== 4 || !v.every(Number.isFinite)) {
+        throw new Error(
+          `colorGrade.${range}.${name} needs [red, green, blue, master], got ${JSON.stringify(v)}.`,
+        );
+      }
+      merged[name] = v;
+    }
+    out[range] = merged;
+  }
+  const g = out as unknown as IColorGrade;
+  validateGrade(g);
+  return g;
+}
+
+const same = (a: readonly number[], b: readonly number[]): boolean => a.every((v, i) => v === b[i]);
+const neutralControls = (k: IGradeControls): boolean =>
+  CONTROLS.every((name) => same(k[name], NEUTRAL_CONTROLS[name]));
+const whiteBalanceActive = (g: IColorGrade): boolean =>
+  Math.abs(g.whiteTemp - 6500) > 1e-8 || Math.abs(g.whiteTint) > 1e-8;
+const gradingActive = (g: IColorGrade): boolean => RANGES.some((r) => !neutralControls(g[r]));
+const rangesActive = (g: IColorGrade): boolean =>
+  !neutralControls(g.shadows) || !neutralControls(g.midtones) || !neutralControls(g.highlights);
+
+/** True when the grade changes nothing, so the tone node emits no grade instruction. */
+export function colorGradeIsIdentity(g: IColorGrade): boolean {
+  return !whiteBalanceActive(g) && !gradingActive(g) && g.toneCurveAmount === 1;
+}
+
+// ---- White balance: Planckian locus below 4000 K, daylight locus above, Bradford adaptation. ----
+const SRGB_TO_XYZ: Mat3 = [
+  0.4123907993, 0.3575843394, 0.1804807884, 0.2126390059, 0.7151686788, 0.0721923154, 0.0193308187,
+  0.1191947798, 0.9505321522,
+];
+const XYZ_TO_SRGB: Mat3 = [
+  3.2409699419, -1.5373831776, -0.4986107603, -0.9692436363, 1.8759675015, 0.0415550574,
+  0.0556300797, -0.2039769589, 1.0569715142,
+];
+const BRADFORD: Mat3 = [0.8951, 0.2664, -0.1614, -0.7502, 1.7135, 0.0367, 0.0389, -0.0685, 1.0296];
+const BRADFORD_INVERSE: Mat3 = [
+  0.9869929, -0.1470543, 0.1599627, 0.4323053, 0.5183603, 0.0492912, -0.0085287, 0.0400428,
+  0.9684867,
+];
+const D65_XY: readonly [number, number] = [0.3127, 0.329];
+
+function matMul(a: Mat3, b: Mat3): Mat3 {
+  const out: number[] = [];
+  for (let r = 0; r < 3; r++) {
+    for (let c = 0; c < 3; c++) {
+      out.push(
+        at(a, r * 3) * at(b, c) + at(a, r * 3 + 1) * at(b, 3 + c) + at(a, r * 3 + 2) * at(b, 6 + c),
+      );
+    }
+  }
+  return out as unknown as Mat3;
+}
+
+/** Krystek's rational fit of the Planckian locus in CIE 1960 (u, v) [Krystek 1985], 1000 to 15000 K. */
+function planckianUv(t: number): [number, number] {
+  const u =
+    (0.860117757 + 1.54118254e-4 * t + 1.28641212e-7 * t * t) /
+    (1 + 8.42420235e-4 * t + 7.08145163e-7 * t * t);
+  const v =
+    (0.317398726 + 4.22806245e-5 * t + 4.20481691e-8 * t * t) /
+    (1 - 2.89741816e-5 * t + 1.61456053e-7 * t * t);
+  return [u, v];
+}
+
+function uvToXy([u, v]: readonly [number, number]): [number, number] {
+  const d = 2 * u - 8 * v + 4;
+  return [(3 * u) / d, (2 * v) / d];
+}
+
+/** CIE daylight locus chromaticity. The 1.4388 / 1.438 factor corrects Planck's constant, so 6500 K is D65. */
+function daylightXy(kelvin: number): [number, number] {
+  const inv = 1 / (kelvin * (1.4388 / 1.438));
+  const x =
+    kelvin * (1.4388 / 1.438) <= 7000
+      ? 0.244063 + (0.09911e3 + (2.9678e6 - 4.607e9 * inv) * inv) * inv
+      : 0.23704 + (0.24748e3 + (1.9018e6 - 2.0064e9 * inv) * inv) * inv;
+  return [x, -3 * x * x + 2.87 * x - 0.275];
+}
+
+/** The Planckian chromaticity moved along its isotherm by `tint`, up to 0.05 in (u, v). */
+function isothermXy(t: number, tint: number): [number, number] {
+  const [u, v] = planckianUv(t);
+  const ud =
+    (-1.13758118e9 - 1.91615621e6 * t - 1.53177 * t * t) /
+    (1.41213984e6 + 1189.62 * t + t * t) ** 2;
+  const vd =
+    (1.97471536e9 - 705674 * t - 308.607 * t * t) / (6.19363586e6 - 179.456 * t + t * t) ** 2;
+  const n = Math.hypot(ud, vd);
+  return uvToXy([u + (vd / n) * tint * 0.05, v - (ud / n) * tint * 0.05]);
+}
+
+/** The 3x3 on scene-linear sRGB that Unreal's white balance applies (Bradford von Kries). */
+export function whiteBalanceMatrix(g: IColorGrade): Mat3 {
+  const locus = uvToXy(planckianUv(g.whiteTemp));
+  const white = g.whiteTemp < 4000 ? locus : daylightXy(g.whiteTemp);
+  const iso = isothermXy(g.whiteTemp, g.whiteTint);
+  const lit: [number, number] = [white[0] + iso[0] - locus[0], white[1] + iso[1] - locus[1]];
+  const [from, to] = g.temperatureMode === "whiteBalance" ? [lit, D65_XY] : [D65_XY, lit];
+  const cone = (xy: readonly [number, number]): Vec3 =>
+    multiply(BRADFORD, [xy[0] / xy[1], 1, (1 - xy[0] - xy[1]) / xy[1]]);
+  const [a, b] = [cone(from), cone(to)];
+  const scale: Mat3 = [b[0] / a[0], 0, 0, 0, b[1] / a[1], 0, 0, 0, b[2] / a[2]];
+  return matMul(
+    XYZ_TO_SRGB,
+    matMul(BRADFORD_INVERSE, matMul(scale, matMul(BRADFORD, SRGB_TO_XYZ))),
+  );
+}
+
+// ---- Colour grading, in AP1 (Nuke-style, shadows / midtones / highlights by luma). ----
+interface IEffective {
+  readonly saturation: Vec3;
+  readonly contrast: Vec3;
+  readonly gamma: Vec3;
+  readonly gain: Vec3;
+  readonly offset: Vec3;
+}
+const channels = (f: (i: number) => number): Vec3 => [f(0), f(1), f(2)];
+
+/** One range with the global controls: vectors multiply (master included), offsets add. */
+function effective(range: IGradeControls, global: IGradeControls): IEffective {
+  const product = (name: "saturation" | "contrast" | "gamma" | "gain"): Vec3 => {
+    const w = range[name][3] * global[name][3];
+    return channels((i) => at(range[name], i) * at(global[name], i) * w);
+  };
+  const offset = range.offset[3] + global.offset[3];
+  return {
+    saturation: product("saturation"),
+    contrast: product("contrast"),
+    gamma: product("gamma"),
+    gain: product("gain"),
+    offset: channels((i) => at(range.offset, i) + at(global.offset, i) + offset),
+  };
+}
+
+const smoothstep = (lo: number, hi: number, x: number): number => {
+  const t = Math.min(1, Math.max(0, (x - lo) / (hi - lo)));
+  return t * t * (3 - 2 * t);
+};
+const ap1Luma = (v: Vec3): number => v[0] * AP1_LUMA[0] + v[1] * AP1_LUMA[1] + v[2] * AP1_LUMA[2];
+
+function correct(v: Vec3, e: IEffective): Vec3 {
+  const y = ap1Luma(v);
+  return channels((i) => {
+    const saturated = Math.max(0, y + (at(v, i) - y) * at(e.saturation, i));
+    const contrasted = Math.max(saturated / MID_GREY, 1e-10) ** at(e.contrast, i) * MID_GREY;
+    return contrasted ** (1 / at(e.gamma, i)) * at(e.gain, i) + at(e.offset, i);
+  });
+}
+
+function correctAll(v: Vec3, g: IColorGrade): Vec3 {
+  if (!rangesActive(g)) return correct(v, effective(g.global, NEUTRAL_CONTROLS));
+  const y = ap1Luma(v);
+  const shadows = 1 - smoothstep(0, g.shadowsMax, y);
+  const highlights = smoothstep(g.highlightsMin, g.highlightsMax, y);
+  const s = correct(v, effective(g.shadows, g.global));
+  const m = correct(v, effective(g.midtones, g.global));
+  const h = correct(v, effective(g.highlights, g.global));
+  return channels(
+    (i) => at(s, i) * shadows + at(m, i) * (1 - shadows - highlights) + at(h, i) * highlights,
+  );
+}
+
 /** Scene-linear sRGB in, display-linear sRGB out (before the sRGB transfer), on plain numbers. */
 export function filmicToneMap(
   rgb: readonly [number, number, number],
   exposure = 1,
   c: IFilmicCurve = FILMIC_CURVE,
+  grade: IColorGrade = COLOR_GRADE,
 ): [number, number, number] {
-  const [r, g, b] = rgb.map((v) => Math.max(0, v * exposure)) as unknown as Vec3;
-  let ap1: Vec3 = multiply(SRGB_TO_AP1, [r, g, b]);
+  const exposed = rgb.map((v) => Math.max(0, v * exposure)) as unknown as Vec3;
+  const lit =
+    c.lutClip > 0 ? (exposed.map((v) => Math.min(v, c.lutClip)) as unknown as Vec3) : exposed;
+  const balanced = whiteBalanceActive(grade) ? multiply(whiteBalanceMatrix(grade), lit) : lit;
+  let ap1: Vec3 = multiply(SRGB_TO_AP1, balanced);
   // Order: Engine/Shaders/Private/PostProcessCombineLUTs.usf and TonemapCommon.ush.
   if (c.expandGamut !== 0) ap1 = expandAp1(ap1, c.expandGamut);
+  if (gradingActive(grade)) ap1 = correctAll(ap1, grade);
   if (c.blueCorrection !== 0) ap1 = correctBlue(ap1, BLUE_CORRECTION_AP1, c.blueCorrection);
+  const corrected = ap1;
   if (c.glow !== 0 || c.redModifier !== 0) ap1 = glowAndRed(ap1, c.glow, c.redModifier);
   const pre = saturate(ap1.map((v) => Math.max(0, v)) as unknown as Vec3, PRE_SATURATION);
-  const toned = saturate(
+  let toned: Vec3 = saturate(
     [filmicCurve(pre[0], c), filmicCurve(pre[1], c), filmicCurve(pre[2], c)],
     POST_SATURATION,
   );
+  if (grade.toneCurveAmount !== 1) {
+    toned = channels(
+      (i) => at(corrected, i) + (at(toned, i) - at(corrected, i)) * grade.toneCurveAmount,
+    );
+  }
   const restored =
     c.blueCorrection === 0
       ? toned
@@ -403,21 +697,124 @@ function dithered(linear: Node<"vec3">, steps: number): Node<"vec3"> {
   return toLinear(clamp(toDisplay(linear).add(grain.mul(steps * EIGHT_BIT_STEP)), 0, 1));
 }
 
+// One dot product per row: no row- or column-major convention to get wrong.
+const applyMatrix = (m: Mat3, v: Node<"vec3">) =>
+  vec3(
+    dot(vec3(m[0], m[1], m[2]), v),
+    dot(vec3(m[3], m[4], m[5]), v),
+    dot(vec3(m[6], m[7], m[8]), v),
+  );
+
+/** The glow and the red modifier on an AP1 colour, as TSL. */
+function glowAndRedNode(ap1: Node<"vec3">, c: IFilmicCurve): Node<"vec3"> {
+  const apply = applyMatrix;
+  // The same maths as glowAndRed() above, in AP0. The hue's x argument carries a 1e-10 so a grey stays defined.
+  const ap0 = apply(AP1_TO_AP0, ap1);
+  const [r, g, b] = [ap0.x, ap0.y, ap0.z];
+  const high = max(max(r, g), b);
+  const saturation = max(high, 1e-10)
+    .sub(max(min(min(r, g), b), 1e-10))
+    .div(max(high, 1e-2));
+  const spread = r.mul(r).add(g.mul(g)).add(b.mul(b)).sub(r.mul(g)).sub(g.mul(b)).sub(b.mul(r));
+  const brightness = r
+    .add(g)
+    .add(b)
+    .add(sqrt(max(spread, 0)).mul(1.75))
+    .div(3);
+  const x = saturation.sub(0.4).div(0.2);
+  const tail = max(float(1).sub(abs(x.div(2))), 0);
+  const shaper = float(1)
+    .add(sign(x).mul(float(1).sub(tail.mul(tail))))
+    .div(2);
+  const fade = clamp(float(GLOW_MID).div(max(brightness, 1e-10)).sub(0.5), 0, 1);
+  const lifted = ap0.mul(
+    shaper
+      .mul(fade)
+      .mul(c.glow * GLOW_GAIN)
+      .add(1),
+  );
+  const hue = atan(
+    lifted.y.sub(lifted.z).mul(Math.sqrt(3)),
+    lifted.x.mul(2).sub(lifted.y).sub(lifted.z).add(1e-10),
+  );
+  const edge = clamp(float(1).sub(abs(hue.mul(2 / RED_WIDTH))), 0, 1);
+  const smooth = edge.mul(edge).mul(edge.mul(-2).add(3));
+  const pulled = lifted.x.add(
+    smooth
+      .mul(smooth)
+      .mul(saturation)
+      .mul(float(RED_PIVOT).sub(lifted.x))
+      .mul(c.redModifier * (1 - RED_SCALE)),
+  );
+  return apply(AP0_TO_AP1_ROWS, vec3(pulled, lifted.y, lifted.z));
+}
+
+/** Pre-desaturation and the film curve on an AP1 colour, as TSL; the colour comes back before the post desaturation. */
+function curveNode(ap1: Node<"vec3">, c: IFilmicCurve): Node<"vec3"> {
+  const m = curveMatches(c);
+  const luma = vec3(...AP1_LUMA);
+  const pre = mix(vec3(dot(max(ap1, vec3(0)), luma)), max(ap1, vec3(0)), PRE_SATURATION);
+  const logValue = log(max(pre, vec3(1e-10))).div(LOG10);
+  const straight = logValue.add(m.straightMatch).mul(c.slope);
+  const toeCurve = vec3(-c.blackClip).add(
+    vec3(2 * m.toeScale).div(exp(logValue.sub(m.toeMatch).mul((-2 * c.slope) / m.toeScale)).add(1)),
+  );
+  const shoulderCurve = vec3(1 + c.whiteClip).sub(
+    vec3(2 * m.shoulderScale).div(
+      exp(logValue.sub(m.shoulderMatch).mul((2 * c.slope) / m.shoulderScale)).add(1),
+    ),
+  );
+  // Per channel: the sigmoid below the toe match, the line above it; and the mirror for the
+  // shoulder. step() is the vector form of the comparison; mix() takes only a scalar weight.
+  const blend = (a: Node<"vec3">, b: Node<"vec3">, w: Node<"vec3">) => a.add(b.sub(a).mul(w));
+  const toe = blend(toeCurve, straight, step(vec3(m.toeMatch), logValue));
+  const shoulder = blend(straight, shoulderCurve, step(vec3(m.shoulderMatch), logValue));
+  const linear = clamp(logValue.sub(m.toeMatch).div(m.shoulderMatch - m.toeMatch), 0, 1);
+  const t = m.shoulderMatch < m.toeMatch ? linear.oneMinus() : linear;
+  const toned = blend(toe, shoulder, t.mul(t).mul(t.mul(-2).add(3)));
+  return toned;
+}
+
 /** The same curve as a TSL tone-mapping function, `(color, exposure) => color`. */
 export function filmicToneMappingNode(
   c: IFilmicCurve = FILMIC_CURVE,
+  grade: IColorGrade = COLOR_GRADE,
 ): (color: Node<"vec3">, exposure: Node<"float">) => Node<"vec3"> {
-  const m = curveMatches(c);
-  // One dot product per row: no row- or column-major convention to get wrong.
-  const apply = (m: Mat3, v: Node<"vec3">) =>
-    vec3(
-      dot(vec3(m[0], m[1], m[2]), v),
-      dot(vec3(m[3], m[4], m[5]), v),
-      dot(vec3(m[6], m[7], m[8]), v),
-    );
+  const apply = applyMatrix;
   const luma = vec3(...AP1_LUMA);
+  // The grade is constants, so every vector below is built once, and a control at its default adds no node.
+  const toAp1 = whiteBalanceActive(grade)
+    ? matMul(SRGB_TO_AP1, whiteBalanceMatrix(grade))
+    : SRGB_TO_AP1;
+  const correctNode = (v: Node<"vec3">, e: IEffective): Node<"vec3"> => {
+    const y = dot(v, luma);
+    const saturated = max(y.add(v.sub(y).mul(vec3(...e.saturation))), vec3(0));
+    const contrasted = pow(max(saturated.div(MID_GREY), vec3(1e-10)), vec3(...e.contrast)).mul(
+      MID_GREY,
+    );
+    return pow(contrasted, vec3(1).div(vec3(...e.gamma)))
+      .mul(vec3(...e.gain))
+      .add(vec3(...e.offset));
+  };
+  const smoothstepNode = (lo: number, hi: number, x: Node<"float">) => {
+    const t = clamp(x.sub(lo).div(hi - lo), 0, 1);
+    return t.mul(t).mul(t.mul(-2).add(3));
+  };
+  const gradeNode = (v: Node<"vec3">): Node<"vec3"> => {
+    if (!rangesActive(grade)) return correctNode(v, effective(grade.global, NEUTRAL_CONTROLS));
+    const y = dot(v, luma);
+    const shadows = float(1).sub(smoothstepNode(0, grade.shadowsMax, y));
+    const highlights = smoothstepNode(grade.highlightsMin, grade.highlightsMax, y);
+    const middle = float(1).sub(shadows).sub(highlights);
+    return correctNode(v, effective(grade.shadows, grade.global))
+      .mul(shadows)
+      .add(correctNode(v, effective(grade.midtones, grade.global)).mul(middle))
+      .add(correctNode(v, effective(grade.highlights, grade.global)).mul(highlights));
+  };
   return (color, exposure) => {
-    let ap1: Node<"vec3"> = apply(SRGB_TO_AP1, max(color.mul(exposure), vec3(0)));
+    let lit: Node<"vec3"> = max(color.mul(exposure), vec3(0));
+    if (c.lutClip > 0) lit = min(lit, vec3(c.lutClip));
+    let ap1: Node<"vec3"> = apply(toAp1, lit);
     if (c.expandGamut !== 0) {
       const luma = max(dot(ap1, vec3(...AP1_LUMA)), 1e-10);
       const chroma = ap1.div(luma).sub(1);
@@ -426,70 +823,14 @@ export function filmicToneMappingNode(
         .mul(float(1).sub(exp2(luma.mul(luma).mul(-4 * c.expandGamut))));
       ap1 = mix(ap1, apply(EXPAND_AP1, ap1), amount);
     }
+    if (gradingActive(grade)) ap1 = gradeNode(ap1);
     if (c.blueCorrection !== 0) ap1 = mix(ap1, apply(BLUE_CORRECTION_AP1, ap1), c.blueCorrection);
-    if (c.glow !== 0 || c.redModifier !== 0) {
-      // The same maths as glowAndRed() above, in AP0. The hue's x argument carries a 1e-10 so a grey stays defined.
-      const ap0 = apply(AP1_TO_AP0, ap1);
-      const [r, g, b] = [ap0.x, ap0.y, ap0.z];
-      const high = max(max(r, g), b);
-      const saturation = max(high, 1e-10)
-        .sub(max(min(min(r, g), b), 1e-10))
-        .div(max(high, 1e-2));
-      const spread = r.mul(r).add(g.mul(g)).add(b.mul(b)).sub(r.mul(g)).sub(g.mul(b)).sub(b.mul(r));
-      const brightness = r
-        .add(g)
-        .add(b)
-        .add(sqrt(max(spread, 0)).mul(1.75))
-        .div(3);
-      const x = saturation.sub(0.4).div(0.2);
-      const tail = max(float(1).sub(abs(x.div(2))), 0);
-      const shaper = float(1)
-        .add(sign(x).mul(float(1).sub(tail.mul(tail))))
-        .div(2);
-      const fade = clamp(float(GLOW_MID).div(max(brightness, 1e-10)).sub(0.5), 0, 1);
-      const lifted = ap0.mul(
-        shaper
-          .mul(fade)
-          .mul(c.glow * GLOW_GAIN)
-          .add(1),
-      );
-      const hue = atan(
-        lifted.y.sub(lifted.z).mul(Math.sqrt(3)),
-        lifted.x.mul(2).sub(lifted.y).sub(lifted.z).add(1e-10),
-      );
-      const edge = clamp(float(1).sub(abs(hue.mul(2 / RED_WIDTH))), 0, 1);
-      const smooth = edge.mul(edge).mul(edge.mul(-2).add(3));
-      const pulled = lifted.x.add(
-        smooth
-          .mul(smooth)
-          .mul(saturation)
-          .mul(float(RED_PIVOT).sub(lifted.x))
-          .mul(c.redModifier * (1 - RED_SCALE)),
-      );
-      ap1 = apply(AP0_TO_AP1_ROWS, vec3(pulled, lifted.y, lifted.z));
-    }
-    const pre = mix(vec3(dot(max(ap1, vec3(0)), luma)), max(ap1, vec3(0)), PRE_SATURATION);
-    const logValue = log(max(pre, vec3(1e-10))).div(LOG10);
-    const straight = logValue.add(m.straightMatch).mul(c.slope);
-    const toeCurve = vec3(-c.blackClip).add(
-      vec3(2 * m.toeScale).div(
-        exp(logValue.sub(m.toeMatch).mul((-2 * c.slope) / m.toeScale)).add(1),
-      ),
-    );
-    const shoulderCurve = vec3(1 + c.whiteClip).sub(
-      vec3(2 * m.shoulderScale).div(
-        exp(logValue.sub(m.shoulderMatch).mul((2 * c.slope) / m.shoulderScale)).add(1),
-      ),
-    );
-    // Per channel: the sigmoid below the toe match, the line above it; and the mirror for the
-    // shoulder. step() is the vector form of the comparison; mix() takes only a scalar weight.
-    const blend = (a: Node<"vec3">, b: Node<"vec3">, w: Node<"vec3">) => a.add(b.sub(a).mul(w));
-    const toe = blend(toeCurve, straight, step(vec3(m.toeMatch), logValue));
-    const shoulder = blend(straight, shoulderCurve, step(vec3(m.shoulderMatch), logValue));
-    const linear = clamp(logValue.sub(m.toeMatch).div(m.shoulderMatch - m.toeMatch), 0, 1);
-    const t = m.shoulderMatch < m.toeMatch ? linear.oneMinus() : linear;
-    const toned = blend(toe, shoulder, t.mul(t).mul(t.mul(-2).add(3)));
-    const post = mix(vec3(dot(toned, luma)), toned, POST_SATURATION);
+    const corrected = ap1;
+    if (c.glow !== 0 || c.redModifier !== 0) ap1 = glowAndRedNode(ap1, c);
+    const toned = curveNode(ap1, c);
+    const filmed = mix(vec3(dot(toned, luma)), toned, POST_SATURATION);
+    const post =
+      grade.toneCurveAmount === 1 ? filmed : mix(corrected, filmed, grade.toneCurveAmount);
     const restored =
       c.blueCorrection === 0
         ? post
@@ -506,10 +847,11 @@ export function filmicToneMappingNode(
 export function installFilmicToneMapping(
   raw: unknown,
   c: IFilmicCurve = FILMIC_CURVE,
+  grade: IColorGrade = COLOR_GRADE,
 ): number | undefined {
   const library = (raw as { library?: { addToneMapping?(node: unknown, mode: number): void } })
     .library;
   if (library?.addToneMapping === undefined) return undefined;
-  library.addToneMapping(filmicToneMappingNode(c), CustomToneMapping);
+  library.addToneMapping(filmicToneMappingNode(c, grade), CustomToneMapping);
   return CustomToneMapping;
 }

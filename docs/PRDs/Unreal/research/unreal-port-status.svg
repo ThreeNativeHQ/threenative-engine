@@ -372,7 +372,7 @@
 <rect x="810.7576551391769" y="98" width="89.42896722836485" height="121.59258859661315" rx="2" fill="#4a86d6"><title>Post chain · Depth of field (diaphragm) · Not started</title></rect>
 <text x="813.7576551391769" y="109" class="l">Depth of field…</text>
 <rect x="810.7576551391769" y="220.59258859661315" width="89.42896722836485" height="41.193919921709494" rx="2" fill="#d9961f"><title>Post chain · Tone map + LUT combine · In progress</title></rect>
-<rect x="810.7576551391769" y="258.78650851832265" width="63.34551845342511" height="3" fill="#fff" opacity=".85"/>
+<rect x="810.7576551391769" y="258.78650851832265" width="66.35052407265779" height="3" fill="#fff" opacity=".85"/>
 <text x="813.7576551391769" y="231.59258859661315" class="l">Tone map + LUT…</text>
 <rect x="901.1866223675418" y="98" width="51.15166904223315" height="69.03100946992117" rx="2" fill="#d9961f"><title>Post chain · Motion blur · In progress</title></rect>
 <rect x="901.1866223675418" y="164.03100946992117" width="31.056370489927268" height="3" fill="#fff" opacity=".85"/>
@@ -380,10 +380,10 @@
 <rect x="953.3382914097749" y="98" width="50.177829522034244" height="69.03100946992117" rx="2" fill="#3aa56c"><title>Post chain · TAA (legacy) · Done</title></rect>
 <text x="956.3382914097749" y="109" class="l">TAA (le…</text>
 <rect x="901.1866223675418" y="168.03100946992117" width="65.67977265062837" height="52.521178769420914" rx="2" fill="#d9961f"><title>Post chain · Eye adaptation (histogram, basic) · In progress</title></rect>
-<rect x="901.1866223675418" y="217.5521882393421" width="47.99675693699765" height="3" fill="#fff" opacity=".85"/>
+<rect x="901.1866223675418" y="217.5521882393421" width="49.75740352320331" height="3" fill="#fff" opacity=".85"/>
 <text x="904.1866223675418" y="179.03100946992117" class="l">Eye adapta…</text>
 <rect x="901.1866223675418" y="221.5521882393421" width="65.67977265062837" height="40.23432027898056" rx="2" fill="#d9961f"><title>Post chain · ACES transforms · In progress</title></rect>
-<rect x="901.1866223675418" y="258.78650851832265" width="40.13763884205067" height="3" fill="#fff" opacity=".85"/>
+<rect x="901.1866223675418" y="258.78650851832265" width="44.66224540242729" height="3" fill="#fff" opacity=".85"/>
 <text x="904.1866223675418" y="232.5521882393421" class="l">ACES trans…</text>
 <rect x="967.8663950181701" y="168.03100946992117" width="35.64972591363903" height="50.66255891269435" rx="2" fill="#d9961f"><title>Post chain · Bloom (Gaussian + FFT) · In progress</title></rect>
 <rect x="967.8663950181701" y="215.69356838261552" width="15.948561592943777" height="3" fill="#fff" opacity=".85"/>
