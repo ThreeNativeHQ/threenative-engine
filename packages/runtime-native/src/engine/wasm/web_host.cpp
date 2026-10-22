@@ -141,7 +141,7 @@ void onAdapter(WGPURequestAdapterStatus status, WGPUAdapter adapter, WGPUStringV
     // The features the desktop host asks for (webgpu/context.cpp buildRequiredFeatures), each when
     // the adapter has it: without float32-filterable a linear-filtered FloatType texture is refused.
     std::vector<WGPUFeatureName> features;
-    for (WGPUFeatureName feature : {WGPUFeatureName_TimestampQuery, WGPUFeatureName_Float32Filterable,
+    for (WGPUFeatureName feature : {WGPUFeatureName_TimestampQuery, WGPUFeatureName_Float32Filterable, WGPUFeatureName_Float32Blendable,
                                     WGPUFeatureName_RG11B10UfloatRenderable, WGPUFeatureName_TextureCompressionBC,
                                     WGPUFeatureName_TextureCompressionETC2, WGPUFeatureName_TextureCompressionASTC})
         if (wgpuAdapterHasFeature(adapter, feature)) features.push_back(feature);

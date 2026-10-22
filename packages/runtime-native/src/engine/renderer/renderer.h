@@ -381,6 +381,9 @@ public:
     WGPUTextureView sceneColorView() const { return sceneView_; }
     /** The format the scene colour is drawn and read in: RGBA16Float, or RGBA32Float for a FloatType render target (a 32-bit target is never multisampled). */
     void setSceneFormat(WGPUTextureFormat format);
+    /** True when a blended draw into RGBA32Float is valid on this device (float32-blendable); `forceHalfFloatTargets` says no, for tests. */
+    bool float32Blendable() const { return !forceHalfFloatTargets_ && wgpuDeviceHasFeature(device_, WGPUFeatureName_Float32Blendable); }
+    void forceHalfFloatTargets(bool force) { forceHalfFloatTargets_ = force; }
     WGPUTextureFormat sceneFormat() const { return sceneFormat_; }
     /** Linear filtering, clamped to the edge: three's RenderTarget texture defaults. */
     WGPUSampler linearClampSampler();
@@ -894,6 +897,7 @@ private:
     WGPUTextureView depthView_ = nullptr;
     WGPUTexture sceneColor_ = nullptr;  // linear HDR, what materials draw into
     WGPUTextureFormat sceneFormat_ = WGPUTextureFormat_RGBA16Float;
+    bool forceHalfFloatTargets_ = false;
     WGPUTextureView sceneView_ = nullptr;
     uint32_t sampleCount_ = 1;
     uint32_t requestedSamples_ = 1;  // what the game asked for; sampleCount_ is 1 while a traa() effect is in the post graph
