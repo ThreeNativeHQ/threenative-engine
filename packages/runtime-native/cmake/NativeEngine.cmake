@@ -137,6 +137,8 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_traa_replaces_multisampling=traa_replaces_multisampling
         native_engine_traa_converges_edges=traa_converges_edges
         native_engine_traa_late_resolve=traa_late_resolve
+        native_engine_traa_ghosting=traa_ghosting
+        native_engine_traa_camera_pan=traa_camera_pan
         native_engine_sibling_reads_the_live_scene=sibling_reads_the_live_scene
         native_engine_renderer_output_screen_size=output_screen_size)
     target_link_libraries(tn-native-engine-renderer-test PRIVATE tn_engine_renderer tn_host_services)

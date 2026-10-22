@@ -1061,7 +1061,7 @@ struct BarField {
     BarField() {
         std::vector<float> p;
         std::vector<uint16_t> idx;
-        for (int bar = -12; bar < 12; ++bar) {
+        for (int bar = -40; bar < 40; ++bar) {
             const float x0 = float(bar) * 0.4f, x1 = x0 + 0.2f;
             const auto base = uint16_t(p.size() / 3);
             p.insert(p.end(), {x0, -3, -1, x1, -3, -1, x1, 3, -1, x0, 3, -1});
@@ -1176,6 +1176,12 @@ void traaGhosting() {
     CHECK(rigid.size() == size_t{moved} && instanced.size() == size_t{moved});
     for (size_t i = 0; i < std::min(rigid.size(), instanced.size()); ++i)
         std::fprintf(stderr, "TN_DEBUG ghost, frame %zu of the move: trail %.3f of the sphere's contrast (rigid), %.3f (instanced)\n", i + 1, rigid[i], instanced[i]);
+    if (rigid.size() != size_t{moved} || instanced.size() != size_t{moved}) return;
+    // The trail sums every pixel the sphere has left, so it grows with the move: 0.46 (rigid) and 0.22 (instanced) after 8
+    // frames of one pixel each, and nothing before the third frame. A history that outlives the object (no disocclusion test)
+    // holds the sphere's colour where it was and keeps a whole contrast per pixel it left, which is well above these bounds.
+    CHECK(rigid.front() < 0.05 && instanced.front() < 0.05);
+    CHECK(rigid.back() < 0.7 && instanced.back() < 0.4);
 }
 
 // The same field seen by a camera that slides: the history is read where the camera's own motion moved it, so the bars keep
@@ -1223,10 +1229,15 @@ void traaCameraPan() {
         const double mean = sum / count;
         return std::sqrt(std::max(0.0, squares / count - mean * mean));
     };
-    // One pixel per frame at the bars' depth: 0.1 of a world unit is 1.03 pixels here.
-    const double hard = spread(0, false), still = spread(0, true), slow = spread(0.05, true), fast = spread(0.1, true), quick = spread(0.3, true);
-    std::fprintf(stderr, "TN_DEBUG pan, spread of the red channel: hard %.1f, temporal still %.1f, half a pixel a frame %.1f, a pixel %.1f, three %.1f\n", hard, still, slow, fast, quick);
-    CHECK(hard > 0 && still > 0 && slow > 0 && fast > 0 && quick > 0);
+    // One pixel per frame at the bars' depth: 0.1 of a world unit is 1.03 pixels here. The bars span 32 units, so 40 frames at
+    // up to 0.15 stay inside them.
+    const double hard = spread(0, false), still = spread(0, true), slow = spread(0.05, true), fast = spread(0.1, true), quick = spread(0.15, true);
+    std::fprintf(stderr, "TN_DEBUG pan, spread of the red channel: hard %.1f, temporal still %.1f, half a pixel a frame %.1f, a pixel %.1f, a pixel and a half %.1f\n", hard, still, slow, fast, quick);
+    // The resolve softens the bars' edges (still keeps 78 percent of the hard spread here) and a pan blurs a little more where
+    // the history lands between two texels (half a pixel keeps 62 percent of still, a whole pixel 80). A history read where
+    // the camera was, not where the camera's motion put it, blends neighbouring bars into grey and collapses all three.
+    CHECK(hard > 0 && still > 0.7 * hard);
+    CHECK(slow > 0.5 * still && fast > 0.6 * still && quick > 0.5 * still);
 }
 
 // OrthographicCamera(-2, 2, 1, -1, 0.1, 10) at z = 5, in WebGPU clip z.
