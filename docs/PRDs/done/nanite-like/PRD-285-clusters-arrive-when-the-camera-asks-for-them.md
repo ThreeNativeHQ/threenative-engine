@@ -8,7 +8,9 @@ prd_contract: v1
 [virtual geometry batch](./README.md). This phase defers alone and the batch stays open.**
 
 **Revisit when** a game in this repository or the sandbox holds clustered geometry that does not fit
-in memory on a target it must run on. Owner rule, 2026-10-21: a feature that fails a gate is
+in memory on a target it must run on. The first lever then is per-cluster vertex quantization
+(`UE 5.8.3: Engine/Shaders/Private/Nanite/NaniteDataDecode.ush`): vertex data is about 74% of the
+resident bytes. Owner rule, 2026-10-21: a feature that fails a gate is
 deferred, not declined. The Unreal 5.8.3 reference for the reopened work:
 `Engine/Source/Runtime/Engine/Private/Rendering/NaniteStreamingManager.cpp` sets a 512 MB streaming
 pool (lines 57-61), at most 128 pending pages (line 82) and at most 128 page installs per frame

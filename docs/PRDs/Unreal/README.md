@@ -192,6 +192,35 @@ scope by rule: the repository has no scene format.
 | [PRD-664](vfx/PRD-664-smoke-and-explosions-are-lit-volumes-not-flat-sprites.md) | Smoke and explosions are lit volumes, not flat sprites |
 | [PRD-674](vfx/PRD-674-an-ambient-particle-is-a-function-of-its-age-and-seed-and-costs-no-simulation.md) | An ambient particle is a function of its age and seed, and costs no simulation |
 
+
+## Internals filed from the deep dives (2026-10-22)
+
+Lumen, Nanite, Niagara, virtual shadow maps and TSR were split into internals, with measured lines,
+in [`research/internals/`](research/internals/). An internal counts as covered only when a PRD box
+names its behaviour. The PRDs below cover the gaps that matter to the default look or the frame
+cost. Every other internal carries its reason (deferred, out of scope by rule, or shipped) in its JSON
+file, and the feature map shows it.
+
+| PRD | Outcome |
+| --- | --- |
+| [PRD-684](rendering/PRD-684-screen-probes-fill-the-gaps-at-depth-edges-and-aim-their-rays-where-the-light-comes-from.md) | Screen probes fill the gaps at depth edges and aim their rays where the light comes from |
+| [PRD-685](rendering/PRD-685-a-ray-the-screen-cannot-answer-reads-the-light-that-arrives-from-its-own-direction.md) | A ray the screen cannot answer reads the light that arrives from its own direction |
+| [PRD-686](rendering/PRD-686-a-door-that-moves-blocks-and-bounces-gi-rays-where-it-now-stands.md) | A door that moves blocks and bounces GI rays where it now stands |
+| [PRD-687](rendering/PRD-687-an-agent-sees-what-the-gi-rays-see-in-a-playtest-capture.md) | An agent sees what the GI rays see in a playtest capture |
+| [PRD-694](rendering/PRD-694-traces-and-colliders-see-a-clustered-mesh-at-one-fixed-error-not-at-the-camera-cut.md) | Traces and colliders see a clustered mesh at one fixed error, not at the camera cut |
+| [PRD-695](rendering/PRD-695-a-clustered-mesh-takes-its-own-cut-in-every-view-that-draws-it.md) | A clustered mesh takes its own cut in every view that draws it |
+| [PRD-696](performance/PRD-696-tiny-triangles-of-a-clustered-shadow-caster-rasterize-in-compute.md) | Tiny triangles of a clustered shadow caster rasterize in compute |
+| [PRD-704](vfx/PRD-704-a-spark-streaks-along-its-own-motion-and-a-far-spark-does-not-flicker.md) | A spark streaks along its own motion, and a far spark does not flicker |
+| [PRD-705](vfx/PRD-705-a-sword-swing-leaves-one-connected-trail-not-a-cloud-of-dashes.md) | A sword swing leaves one connected trail, not a cloud of dashes |
+| [PRD-706](vfx/PRD-706-an-effect-starts-on-the-skin-of-a-moving-character.md) | An effect starts on the skin of a moving character |
+| [PRD-714](rendering/PRD-714-the-sun-shadow-keeps-one-texel-per-screen-pixel-when-the-camera-zooms-or-the-window-resizes.md) | The sun shadow keeps its texel size per screen pixel when the camera zooms or the window resizes |
+| [PRD-715](rendering/PRD-715-a-shadow-lookup-stops-sampling-where-no-edge-is-near-and-starts-clear-of-its-own-surface.md) | A shadow lookup stops sampling where no edge is near and starts clear of its own surface |
+| [PRD-716](rendering/PRD-716-a-shadow-caster-that-no-visible-surface-receives-or-another-caster-hides-skips-its-draw.md) | A shadow caster that no visible surface receives, or another caster hides, skips its draw |
+| [PRD-717](performance/PRD-717-a-pixel-a-moving-object-just-uncovered-reprojects-through-the-surface-that-left-it.md) | A pixel a moving object just uncovered reprojects through the surface that left it |
+| [PRD-718](performance/PRD-718-a-surface-that-returns-to-view-takes-back-the-detail-the-history-held-before-it-left.md) | A surface that returns to view takes back the detail the history held before it left |
+| [PRD-719](performance/PRD-719-history-rejection-judges-a-color-change-by-whether-the-display-can-show-it.md) | History rejection judges a color change by whether the display can show it |
+| [PRD-720](performance/PRD-720-the-temporal-resolve-reads-a-wider-input-where-history-fails-and-the-tier-sets-how-wide.md) | The temporal resolve reads a wider input where history fails, and the tier sets how wide |
+
 ## Already shipped, deferred, or out of scope by rule
 
 Owner rule, 2026-10-21: a feature that fails a gate is **deferred** with the condition that reopens

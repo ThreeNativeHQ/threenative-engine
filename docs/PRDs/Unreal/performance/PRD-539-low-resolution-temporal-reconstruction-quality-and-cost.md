@@ -70,6 +70,7 @@ One reconstructor that, at a sub-1.0 internal raster, produces a stable display-
 ### Phase 1 — A reconstructor that clears the unchanged quality gate
 
 - [ ] One-variable control for the `.010` drift loss: the same reconstructor with history at 200% against 100% of output resolution, everything else equal, reports moving- and static-camera edge error for both arms. proof: `sh scripts/xvfb.sh node --import tsx scripts/verify-temporal-motion.ts` run once per arm on hardware WebGPU.
+- [ ] A velocity-clamped history weight (Unreal's TSR keeps about 4 samples of history at 1 px/frame of motion) runs as one gate arm. proof: `sh scripts/xvfb.sh node --import tsx scripts/verify-temporal-motion.ts` run once per arm on hardware WebGPU.
 
 - [ ] Thin fences, foliage, sub-pixel edges, a moving character and an instanced object stay within the pinned temporal thresholds against a full-resolution reference, and the temporal arm beats the spatial arm on the named stability metric. proof: an automated frame-sequence report records edge flicker, rejected-history ratio and image delta for full-res, low-res spatial upscale and temporal reconstruction; `sh scripts/xvfb.sh node --import tsx scripts/verify-temporal-motion.ts` exits 0 on hardware WebGPU with the original thresholds (`edge <.04778` full-res, `<.04687` low-input).
 - [ ] Newly revealed surfaces do not inherit stale colour, and disabling disocclusion rejection fails the check. proof: the same command, `revealRecovery` and `qualityRevealRecovery` true (`<=1%` stale after one frame).

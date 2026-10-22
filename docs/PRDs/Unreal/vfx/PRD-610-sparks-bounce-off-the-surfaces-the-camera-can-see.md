@@ -73,6 +73,7 @@ Reused systems: `renderer.scenePassDepth`, the previous-camera pairing pattern f
 - [ ] Status cases hold for the three refusals, the pairing of depth version and camera, and a missing depth. proof: red-green `pnpm exec vitest run packages/core/__tests__/scene-depth-sampler.spec.ts`
 - [ ] The probe's floor drop meets AC-1 and AC-2 with the sampler. proof: the AC-1 playtest command
 - [ ] The desktop host matches the browser reference for the new row. proof: `pnpm parity`
+- [ ] `runtime.delta` clamps at 0.125 s, Unreal's `MaxDeltaTimePerTick` (`UE 5.8.3: Engine/Plugins/FX/Niagara/Source/Niagara/Public/NiagaraSettings.h:177-181`, applied in `NiagaraSystemSimulation.cpp:1182-1185`). After a 2 s stall, no live spark moves more than 0.125 s of its speed. proof: red-green `pnpm exec vitest run packages/core/__tests__/particles.spec.ts`
 
 #### Phase 3: The action-rpg hit sparks land on the floor
 **Status:** NOT STARTED
