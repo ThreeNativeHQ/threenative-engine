@@ -31,6 +31,7 @@ import {
 } from "three";
 import { giCache, installGi } from "../render/giCache.js";
 import { watchGi } from "../render/giTier.js";
+import { type IGlbMaterialImages, glbMaterialImages } from "../render/glbImages.js";
 import { watchShadowTier } from "../render/shadowTier.js";
 import {
   EPIC_SSGI,
@@ -79,6 +80,7 @@ export function candela(intensity: number, units: string): number {
 export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
   static override readonly initialState: GameState = Play.initialState;
   #model: Group | undefined;
+  #images: Map<string, IGlbMaterialImages> = new Map();
   #dispose: (() => void) | undefined;
   #gi: ReturnType<typeof watchGi> | undefined;
   #shadow: ReturnType<typeof watchShadowTier> | undefined;
@@ -90,6 +92,22 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
       `unreal-reference/gi/${NAME.replace(":", "/")}/scene.glb`,
     );
     this.#model = model.scene;
+    // The engine decodes the scene's maps itself and shows JavaScript only their size. The Surface Cache reads
+    // the same images again from the file (PRD-639).
+    const file = `unreal-reference/gi/${NAME.replace(":", "/")}/scene.glb`;
+    const tried: string[] = [];
+    for (const url of await ctx.assets.resolve(file)) {
+      const response = await fetch(url);
+      tried.push(`${response.status} ${url}`);
+      if (!response.ok) continue;
+      try {
+        this.#images = await glbMaterialImages(await response.arrayBuffer(), new URL(url, location.href).href);
+        break;
+      } catch (error) {
+        tried.push(String(error));
+      }
+    }
+    console.info(`TN_CALIBRATION_IMAGES ${JSON.stringify({ tried, materials: [...this.#images.keys()] })}`);
   }
 
   override enter(ctx: GameCtx): SceneFrame<GameState, IPhysicsContext> {
@@ -242,11 +260,16 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
           bounces: Number(params.get("bounces") ?? 5),
           // The Surface Cache is on: a ray reads the map where it lands (PRD-639). Diagnosis: ?giMaps=0 returns the
           // flat colour factor, ?giLights=0 leaves the lamps out of what a ray returns (the direct frame keeps them).
-          surfaceCache: params.get("giMaps") !== "0",
-          lights: (params.get("giLights") === "0" ? [] : lights).map((l) => ({
+          surfaceCache:
+            params.get("giMaps") !== "0" && {
+              images: (material, slot) => this.#images.get(material.name ?? "")?.[slot],
+            },
+          lights: lights.map((l) => ({
             position: l.position,
             color: l.color,
-            intensity: l.intensity,
+            // Diagnosis: ?giLights=0 keeps the lamp's place but lights nothing. An empty list would stop the bake
+            // in a scene with no sun and no sky.
+            intensity: params.get("giLights") === "0" ? 0 : l.intensity,
             distance: l.distance,
           })),
         });

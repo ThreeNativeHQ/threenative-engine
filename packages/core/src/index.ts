@@ -925,17 +925,26 @@ export {
  * (base colour and emissive maps reduced to small tiles) answers the albedo and the glow at the hit UV; a flat
  * material keeps its colour. `SurfaceLights` adds the scene's point and spot lamps at the hit, the brightest eight.
  * @situation give a traced bounce ray the texture colour and glow of the surface it hits
- * @situation light the hit of a traced ray with the scene's point and spot lamps
  * @alias lumen surface cache
  * @alias lumen scene
  * @alias mesh cards
  * @constraint the materials are fixed when the cache is built; build a new one when a material or a map changes
- * @constraint a map the cache cannot read (an image the runtime cannot draw to a canvas) returns the flat colour and is listed in `report.fallbacks`
+ * @constraint a map whose image the runtime does not show to JavaScript (the owned engine's glTF maps) returns the flat colour and is listed in `report.fallbacks`; the `images` option hands over its pixels
  * @constraint the cache owns no colour, texture or light; the game's materials and lamps are the only source
- * @override atlasSize and cardTexelDensityScale size the atlas; maxLights caps the lamps evaluated at a hit
+ * @override atlasSize and cardTexelDensityScale size the atlas; images supplies the pixels of a map the runtime hides
  * @example const cache = SurfaceCache.from(materials); cache.albedo(slot, hit.uv.x, hit.uv.y, out);
  */
-export { SurfaceCache, SurfaceLights } from "./render/surface-cache.js";
+export { SurfaceCache } from "./render/surface-cache.js";
+/**
+ * The local lamps at the hit of a traced ray: the point and spot lights whose range reaches it, the brightest eight,
+ * one shadow ray each. The Surface Cache gives the hit its colour; this gives it the lamps.
+ * @situation light the hit of a traced ray with the scene's point and spot lamps
+ * @constraint the cap skips the ninth-brightest lamp and every one after it, and counts them in `skipped`
+ * @constraint the caller answers each shadow ray; the class owns no scene
+ * @override maxLights caps the lamps evaluated at one hit
+ * @example const lamps = new SurfaceLights(lights); lamps.shade(point, normal, albedo, out, (i) => !occluded(i));
+ */
+export { SurfaceLights } from "./render/surface-cache.js";
 export type {
   ISurfaceCacheMaterial,
   ISurfaceCacheOptions,

@@ -12,6 +12,7 @@
  *   pnpm unreal-look:compare --scene gi:cornell --layer L7-low,L7-medium,L7-high   each quality tier against its Unreal level (PRD-644)
  *   pnpm unreal-look:compare --scene gi:cornell --layer L7 --unreal-level 0|1|3    one capture against another level's frame
  *   pnpm unreal-look:compare --scene shadow:penumbra-lab --layer L5-Low --metric penumbra   shadow edge width, TN / Unreal (PRD-652)
+ *   pnpm unreal-look:compare --scene gi:sunlit-room --layer L7 --metric blotch [--regions Wall_Left,Wall_Right]   soft blotches on a surface, TN / Unreal (PRD-641)
  *
  * PRD-649: `--scene shadow | shadow:<name>` runs the same pipeline on the shadow family, whose scenes
  * live in tools/unreal-reference/shadow/<name>/ with their own shadow/scenes.json. A `gi:` id keeps its
@@ -25,6 +26,13 @@ import { spawnSync } from "node:child_process";
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import path from "node:path";
+import {
+  type IBlotchBands,
+  blotchBands,
+  blotchVerdict,
+  displayLuma,
+  isFlatRegion,
+} from "./blotch.js";
 import {
   type IImage,
   type IRow,
@@ -796,6 +804,88 @@ export function contactRows(
   return rows;
 }
 
+export interface IBlotchRow {
+  layer: string;
+  cell: string;
+  region: string;
+  unreal: IBlotchBands;
+  threenative: IBlotchBands;
+  /** ThreeNative blotch over Unreal's. */
+  ratio: number;
+  pass: boolean;
+}
+
+/**
+ * Soft blotches of every region of a ThreeNative layer against its Unreal variant (PRD-641): the metric
+ * `--metric blotch` prints. Both arms read the same pixels, the region of the Unreal ID frame, so the
+ * ratio is the comparison. The regions are `only`, or the walls and ceilings (`isFlatRegion`). A region
+ * too small to measure in either arm has no row.
+ */
+export function blotchRows(
+  name: string,
+  layers: readonly string[],
+  root: string,
+  unrealLevel?: number,
+  only?: readonly string[],
+): IBlotchRow[] {
+  const { scene } = readScene(name);
+  const unreal = path.join(root, "unreal", sceneKey(name));
+  const tn = path.join(root, "threenative", sceneKey(name));
+  const rows: IBlotchRow[] = [];
+  for (const layer of layers)
+    for (const pose of scene.poses) {
+      const id = masks(image(path.join(unreal, "ID", `${pose.name}.png`)), scene.regions);
+      const [a, b] = [
+        path.join(unreal, unrealVariant(layer, unrealLevel)),
+        path.join(tn, layer),
+      ].map((folder) => image(path.join(folder, `${pose.name}.png`))) as [IImage, IImage];
+      if (a.width !== b.width || a.height !== b.height)
+        fail(
+          "SIZE_MISMATCH",
+          `${name}/${pose.name}: ${layer} and its Unreal variant differ in size`,
+        );
+      const [lumaA, lumaB] = [displayLuma(a), displayLuma(b)];
+      for (const [region, mask] of Object.entries(id.regions)) {
+        if (only === undefined ? !isFlatRegion(region) : !only.includes(region)) continue;
+        const u = blotchBands(lumaA, a.width, a.height, mask);
+        const t = blotchBands(lumaB, b.width, b.height, mask);
+        if (u && t)
+          rows.push({
+            layer,
+            cell: `${name}/${pose.name}`,
+            region,
+            unreal: u,
+            threenative: t,
+            ...blotchVerdict(t, u),
+          });
+      }
+    }
+  return rows;
+}
+
+/** Prints the `--metric blotch` table and returns 1 when any region is blotchier than PRD-641 allows, or none was measured. */
+function printBlotch(
+  names: readonly string[],
+  layers: readonly string[],
+  root: string,
+  unrealLevel: number | undefined,
+  only: readonly string[] | undefined,
+): number {
+  const pct = (v: number) => `${(v * 100).toFixed(2)}%`;
+  const rows = names.flatMap((name) => blotchRows(name, layers, root, unrealLevel, only));
+  console.log(
+    `| layer | cell | region | Unreal blotch | TN blotch | TN / Unreal | Unreal grain | TN grain | verdict |\n|---|---|---|---:|---:|---:|---:|---:|---|\n${rows
+      .map(
+        (r) =>
+          `| ${r.layer} | ${r.cell} | ${r.region} | ${pct(r.unreal.blotch)} | ${pct(r.threenative.blotch)} | ${r.ratio.toFixed(2)} | ${pct(r.unreal.grain)} | ${pct(r.threenative.grain)} | ${r.pass ? "PASS" : "FAIL"} |`,
+      )
+      .join("\n")}`,
+  );
+  if (rows.length === 0)
+    fail("BAD_INPUT", "no region is large enough to measure: an empty set proves nothing");
+  return rows.some((r) => !r.pass) ? 1 : 0;
+}
+
 /** Prints the `--metric penumbra` table and returns 1 when any edge is wider than PRD-634 allows. */
 function printPenumbra(
   names: readonly string[],
@@ -839,6 +929,14 @@ export function compareGi(args: readonly string[]): number {
     }
     if (flag(args, "--metric") === "penumbra")
       return printPenumbra(names, layerFlag.split(","), root, unrealLevel);
+    if (flag(args, "--metric") === "blotch")
+      return printBlotch(
+        names,
+        layerFlag.split(","),
+        root,
+        unrealLevel,
+        flag(args, "--regions")?.split(","),
+      );
     const rows = names.flatMap((name) =>
       compareGiToUnreal(name, layerFlag.split(","), root, unrealLevel),
     );
