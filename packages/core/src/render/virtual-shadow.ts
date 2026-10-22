@@ -3426,3 +3426,97 @@ export function readVirtualShadowMarker(line: string): IVirtualShadowStats | und
     return undefined;
   }
 }
+
+/**
+ * One frame's shadow passes on the owned engine with the spot and point light maps apart from the
+ * sun's (PRD-650). The sun's draws and the lamps' add up to every shadow draw the renderer submitted.
+ */
+export interface ILampShadowStats {
+  readonly frame: number;
+  readonly shadowDraws: number;
+  /** The sun's maps: its virtual levels or its plain map. `gpuMs` is -1 until a GPU sample resolves. */
+  readonly sun: { readonly draws: number; readonly gpuMs: number };
+  /** The lamp maps the frame redrew (a cube's six faces are one), their draws, and their GPU time. */
+  readonly lamps: { readonly redraws: number; readonly draws: number; readonly gpuMs: number };
+}
+
+export const LAMP_SHADOW_MARKER = "TN_LAMP_SHADOW";
+
+interface ILampShadowCounters {
+  readonly lampRedraws: number;
+  readonly lampDraws: number;
+  readonly shadowDraws: number;
+  readonly sunGpuMs: number;
+  readonly lampGpuMs: number;
+}
+
+const isCount = (n: unknown): n is number => Number.isInteger(n) && (n as number) >= 0;
+const isGpuMs = (n: unknown): n is number => n === -1 || (Number.isFinite(n) && (n as number) >= 0);
+
+function isLampShadowStats(value: unknown): value is ILampShadowStats {
+  const stats = value as Partial<Record<keyof ILampShadowStats, Record<string, unknown>>> | null;
+  if (typeof stats !== "object" || stats === null) return false;
+  const { frame, shadowDraws } = stats as unknown as Record<string, unknown>;
+  const sun = stats.sun;
+  const lamps = stats.lamps;
+  return (
+    isCount(frame) &&
+    isCount(shadowDraws) &&
+    typeof sun === "object" &&
+    sun !== null &&
+    typeof lamps === "object" &&
+    lamps !== null &&
+    isCount(sun.draws) &&
+    isGpuMs(sun.gpuMs) &&
+    isCount(lamps.redraws) &&
+    isCount(lamps.draws) &&
+    isGpuMs(lamps.gpuMs) &&
+    sun.draws + lamps.draws === shadowDraws
+  );
+}
+
+/**
+ * The `TN_LAMP_SHADOW` line for the renderer's last frame, or `undefined` on a renderer that keeps
+ * no lamp counters (three's own).
+ *
+ * @situation log lamp shadow redraws and GPU time apart from the sun's on the owned engine
+ * @constraint counters that do not add up to the frame's shadow draws throw TN_LAMP_SHADOW_INVALID
+ * @example
+ * const line = lampShadowMarker(renderer, frame);
+ * if (line !== undefined) console.info(line);
+ */
+export function lampShadowMarker(
+  renderer: { readonly info?: { readonly engine?: { readonly shadows?: ILampShadowCounters } } },
+  frame: number,
+): string | undefined {
+  const counters = renderer.info?.engine?.shadows;
+  if (counters === undefined) return undefined;
+  const stats: ILampShadowStats = {
+    frame,
+    shadowDraws: counters.shadowDraws,
+    sun: { draws: counters.shadowDraws - counters.lampDraws, gpuMs: counters.sunGpuMs },
+    lamps: { redraws: counters.lampRedraws, draws: counters.lampDraws, gpuMs: counters.lampGpuMs },
+  };
+  if (!isLampShadowStats(stats))
+    throw new Error(`TN_LAMP_SHADOW_INVALID: ${JSON.stringify(counters)} at frame ${frame}`);
+  return `${LAMP_SHADOW_MARKER}:${JSON.stringify(stats)}`;
+}
+
+/**
+ * Parse a `TN_LAMP_SHADOW` line back into its stats, or `undefined`.
+ *
+ * @situation count lamp shadow redraws from a renderer log, for example a moving-caster run
+ * @constraint non-marker lines and markers whose sun and lamp draws do not add up return `undefined`
+ * @example
+ * const stats = readLampShadowMarker(line);
+ * if (stats !== undefined) redraws += stats.lamps.redraws;
+ */
+export function readLampShadowMarker(line: string): ILampShadowStats | undefined {
+  if (!line.startsWith(`${LAMP_SHADOW_MARKER}:`)) return undefined;
+  try {
+    const value: unknown = JSON.parse(line.slice(LAMP_SHADOW_MARKER.length + 1));
+    return isLampShadowStats(value) ? value : undefined;
+  } catch {
+    return undefined;
+  }
+}

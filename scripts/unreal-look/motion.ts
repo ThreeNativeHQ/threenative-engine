@@ -109,6 +109,11 @@ export interface IMotionRun {
   stills?: number[];
   /** The light's intensity is the scene's intensity times `scale`, constant from each key to the next. */
   light?: { name: string; keys: [number, number][] };
+  /**
+   * An actor that moves (PRD-650 `swing`): `[frame, dx, dy, dz]` keys, metres from where the scene puts it,
+   * linear from each key to the next and held before the first and after the last.
+   */
+  actor?: { name: string; keys: [number, number, number, number][] };
   /** The regions the metric reads. The default is every region of the scene. */
   regions?: string[];
 }
@@ -629,6 +634,63 @@ function checkLight(
 }
 
 /** The motion record of a scene.json, checked against the scene it belongs to. Throws on the first fault. */
+function checkActor(actor: NonNullable<IMotionRun["actor"]>, frames: number, scene: IMotionScene, bad: Bad) {
+  if (!(actor.name in scene.regions)) bad(`actor ${actor.name} is not a region of the scene`);
+  if (actor.keys.length < 2) bad("an actor needs 2 keys or more");
+  let last = -1;
+  for (const key of actor.keys) {
+    const [frame = -1] = key;
+    if (key.length !== 4 || !key.every(Number.isFinite)) bad("an actor key is [frame, dx, dy, dz]");
+    if (!Number.isInteger(frame) || frame < 0 || frame >= frames)
+      bad(`key frame ${frame} is outside 0..${frames - 1}`);
+    if (frame <= last) bad("key frames must be in ascending order");
+    last = frame;
+  }
+}
+
+/** Lamp shadow redraws of one frame of a run, from its `TN_LAMP_SHADOW` reading. */
+export interface ILampFrame {
+  frame: number;
+  redraws: number;
+}
+
+/**
+ * AC-2 of PRD-650 over a run that moves an actor: the lamp redraws while nothing moves, before the
+ * first key and more than `settle` frames after the last, and the most frames a moving frame waited
+ * for its lamp redraw (0 when the map is redrawn in the frame the caster moved). Fails closed on a
+ * frame without a reading.
+ */
+export function swingRedraws(
+  run: IMotionRun,
+  frames: readonly ILampFrame[],
+  settle = 10,
+): { stillBefore: number; stillAfter: number; maxLag: number; moving: number } {
+  const keys = run.actor?.keys;
+  if (keys === undefined) fail("BAD_INPUT", "swingRedraws needs a run with an actor");
+  const byFrame = new Map(frames.map((f) => [f.frame, f.redraws]));
+  for (let f = 0; f < run.frames; f++)
+    if (!byFrame.has(f)) fail("MISSING_FRAME", `no lamp shadow reading for frame ${f}`);
+  const first = keys[0]?.[0] ?? 0;
+  const last = keys.at(-1)?.[0] ?? 0;
+  const at = (f: number) => byFrame.get(f) ?? 0;
+  let stillBefore = 0;
+  let stillAfter = 0;
+  let maxLag = 0;
+  let moving = 0;
+  for (let f = 0; f < run.frames; f++) {
+    if (f < first) stillBefore += at(f);
+    if (f > last + settle) stillAfter += at(f);
+    // The actor moves on every frame after the first key up to the last one.
+    if (f > first && f <= last) {
+      moving += 1;
+      let lag = 0;
+      while (f + lag < run.frames && at(f + lag) === 0) lag += 1;
+      maxLag = Math.max(maxLag, lag);
+    }
+  }
+  return { stillBefore, stillAfter, maxLag, moving };
+}
+
 export function validateMotion(motion: Record<string, IMotionRun>, scene: IMotionScene): void {
   for (const [name, run] of Object.entries(motion)) {
     const bad: Bad = (message) => fail("BAD_INPUT", `run ${name}: ${message}`);
@@ -639,6 +701,7 @@ export function validateMotion(motion: Record<string, IMotionRun>, scene: IMotio
     checkCamera(run.camera, run.frames, scene, bad);
     checkStills(run.stills ?? [], run.frames, bad);
     if (run.light) checkLight(run.light, run.frames, scene, bad);
+    if (run.actor) checkActor(run.actor, run.frames, scene, bad);
     for (const region of run.regions ?? [])
       if (!(region in scene.regions)) bad(`region ${region} is not a region of the scene`);
   }

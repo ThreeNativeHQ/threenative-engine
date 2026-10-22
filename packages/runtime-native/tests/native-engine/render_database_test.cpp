@@ -9,6 +9,7 @@
 #include "engine/renderer/post/traa.h"
 #include "engine/renderer/render_database.h"
 #include "engine/renderer/shadows/virtual/atlas.h"
+#include "engine/renderer/shadows/lamp_resolution.h"
 #include "engine/renderer/reflector.h"
 #include "engine/renderer/render_target_pass.h"
 #include "engine/shader/graph/graph.h"
@@ -30,6 +31,7 @@
 #include <cstdlib>
 #include <cmath>
 #include <cstdio>
+#include <numeric>
 #include <string>
 #include <thread>
 
@@ -2847,6 +2849,69 @@ void gpuTimerCoversShadows() {
     }
 }
 
+// PRD-650: the lamp maps' GPU time is its own segment, apart from the sun's, and the segments sum to the frame.
+void gpuTimerSplitsLampShadows() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(96, 96);
+    if (!wgpuDeviceHasFeature(context.getDevice(), WGPUFeatureName_TimestampQuery)) {
+        std::printf("no timestamp-query on this device: nothing to time\n");
+        return;
+    }
+    OrthographicCamera camera(-4, 4, 4, -4, 0.1, 20);
+    camera.position.set(0, 10, 0.001);
+    camera.lookAt(0, 0, 0);
+    camera.updateProjectionMatrix();
+    Scene scene;
+    SpotLight spot{Color(1, 1, 1), 40, 6, 0.9};
+    spot.position.set(1.5, 3, 0);
+    spot.target->position.set(1.5, 0, 0);
+    spot.setCastShadow(true);
+    scene.add(spot);
+    scene.add(*spot.target);
+    DirectionalLight sun{Color(1, 1, 1), 2};
+    sun.position.set(2, 8, 1);
+    sun.setCastShadow(true);
+    scene.add(sun);
+    auto white = std::make_shared<Material>(MaterialType::Standard);
+    Mesh floor{makeBoxGeometry(8, 0.2, 8), white};
+    floor.position.y = -0.1;
+    floor.setReceiveShadow(true);
+    scene.add(floor);
+    Mesh box{makeBoxGeometry(0.6, 0.6, 0.6), white};
+    box.position.set(1.5, 1, 0);
+    box.setCastShadow(true);
+    scene.add(box);
+    RenderDatabase database;
+    database.shadowMapEnabled = true;
+    renderer.setGpuTimer(true);
+    // One frame and its own GPU sample: wait for the frame's readback before the next frame.
+    const auto timed = [&] {
+        const uint64_t before = renderer.gpuSamples();
+        scene.updateMatrixWorld(true);
+        database.render(renderer, scene, camera);
+        const auto until = std::chrono::steady_clock::now() + std::chrono::milliseconds(2000);
+        while (renderer.gpuSamples() == before && std::chrono::steady_clock::now() < until) {
+            renderer.poll();
+            events.drain();
+        }
+        CHECK(renderer.gpuSamples() > before);
+        const auto segments = renderer.lastGpuSegments();
+        CHECK(std::abs(std::accumulate(segments.begin(), segments.end(), 0.0) - renderer.lastGpuMs()) < 1e-9);
+        return segments;
+    };
+    const auto first = timed();
+    std::printf("lamp gpu: first frame sun %.4f ms, lamps %.4f ms (%u maps)\n", first[0], first[kGpuLampShadowSegment], renderer.lastFrame().lampRedraws);
+    CHECK(renderer.lastFrame().lampRedraws == 1);
+    CHECK(first[0] > 0 && first[kGpuLampShadowSegment] > 0);
+    const auto cached = timed();
+    std::printf("lamp gpu: cached frame sun %.4f ms, lamps %.4f ms (%u maps)\n", cached[0], cached[kGpuLampShadowSegment], renderer.lastFrame().lampRedraws);
+    CHECK(renderer.lastFrame().lampRedraws == 0);
+    CHECK(cached[0] > 0 && cached[kGpuLampShadowSegment] == 0);
+}
+
 // Secondary targets and the main scene must resolve as one complete GPU sample.
 void gpuTimerCoversOffscreen() {
     mystral::webgpu::Context context;
@@ -3983,6 +4048,9 @@ void lampCache() {
     };
     const uint64_t first = frame();
     CHECK(first > 0);
+    // Both lamps redraw on the first frame, a cube's six faces as one, and every shadow draw is theirs.
+    CHECK(renderer.lastFrame().lampRedraws == 2);
+    CHECK(renderer.lastFrame().lampShadowDraws == first);
     const std::vector<uint8_t> fresh = pixels();
     uint64_t still = 0;
     for (int i = 0; i < 300; ++i) still += frame();
@@ -4001,7 +4069,87 @@ void lampCache() {
     const uint64_t inside = frame();
     std::printf("lamp cache: caster moved inside range %llu\n", (unsigned long long)inside);
     CHECK(inside > 0);
+    CHECK(renderer.lastFrame().lampRedraws >= 1);  // the box moved inside the point light's range
     CHECK(frame() == 0);
+    // A mixed-light frame: the sun's map redraws, the lamps' stay cached, and the two parts add up.
+    DirectionalLight sun{Color(1, 1, 1), 2};
+    sun.position.set(2, 8, 1);
+    sun.setCastShadow(true);
+    scene.add(sun);
+    const uint64_t mixed = frame();
+    std::printf("lamp cache: mixed frame %llu shadow draws, %u lamp\n", (unsigned long long)mixed, renderer.lastFrame().lampShadowDraws);
+    CHECK(mixed > 0);
+    CHECK(renderer.lastFrame().lampRedraws == 0 && renderer.lastFrame().lampShadowDraws == 0);
+    near.position.x = -1.5;
+    const uint64_t both = frame();
+    std::printf("lamp cache: mixed frame with a moved caster %llu shadow draws, %u lamp, %u lamp maps\n", (unsigned long long)both,
+                renderer.lastFrame().lampShadowDraws, renderer.lastFrame().lampRedraws);
+    CHECK(renderer.lastFrame().lampRedraws >= 1);
+    CHECK(renderer.lastFrame().lampShadowDraws > 0 && renderer.lastFrame().lampShadowDraws < both);
+}
+
+void lampAtlas() {
+    // PRD-650 Phase 1: Unreal's local-light rule picks the map from the pixel footprint.
+    using shadows::LampDemand;
+    CHECK((shadows::lampMapSizes({LampDemand{17}, LampDemand{30}}) == std::vector<uint32_t>{1024, 1024}));
+    CHECK((shadows::lampMapSizes({LampDemand{17, 1}}) == std::vector<uint32_t>{512}));  // moving: one mip coarser
+    // Over the budget one global bias rises: the lamp nearest its next coarser mip (30 texels) steps first.
+    CHECK((shadows::lampMapSizes({LampDemand{17}, LampDemand{30}}, 1024.0 * 1024 + 512 * 512) == std::vector<uint32_t>{1024, 512}));
+    CHECK((shadows::lampMapSizes({LampDemand{17, 0, true}, LampDemand{30}}, 1) == std::vector<uint32_t>{128, 128}));
+
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(256, 256);
+    PerspectiveCamera camera(50, 1, 0.1, 100);
+    Scene scene;
+    SpotLight spot{Color(1, 1, 1), 40, 0, 0.6};
+    spot.position.set(0, 3, 0);
+    spot.target->position.set(0, 0, 0);
+    spot.setCastShadow(true);
+    scene.add(spot);
+    scene.add(*spot.target);
+    auto white = std::make_shared<Material>(MaterialType::Standard);
+    Mesh floor{makeBoxGeometry(60, 0.2, 60), white};
+    floor.position.y = -0.1;
+    floor.setReceiveShadow(true);
+    scene.add(floor);
+    Mesh box{makeBoxGeometry(0.4, 0.4, 0.4), white};
+    box.position.set(0, 1, 0);
+    box.setCastShadow(true);
+    scene.add(box);
+    RenderDatabase database;
+    database.shadowMapEnabled = true;
+    const auto sizeFrom = [&](double away) {
+        camera.position.set(0, 1.2, away);
+        camera.lookAt(0, 0, 0);
+        scene.updateMatrixWorld(true);
+        database.render(renderer, scene, camera);
+        return renderer.lampShadowSize(0);
+    };
+    const uint32_t near = sizeFrom(2), far = sizeFrom(20);
+    std::printf("lamp atlas: 2 m %u, 20 m %u\n", near, far);
+    CHECK(near > far);
+    CHECK(near > 128 && near < 16384);
+    for (int i = 0; i < 12; ++i) sizeFrom(2);
+    const uint32_t still = renderer.lampShadowSize(0);
+    CHECK(still == near);
+    for (int i = 0; i < 3; ++i) {
+        spot.position.x += 0.001;
+        sizeFrom(2);
+    }
+    const uint32_t moving = renderer.lampShadowSize(0);
+    for (int i = 0; i < 12; ++i) sizeFrom(2);
+    const uint32_t settled = renderer.lampShadowSize(0);
+    std::printf("lamp atlas: still %u, moving %u, settled %u\n", still, moving, settled);
+    CHECK(moving * 2 == still);
+    CHECK(settled == still);
+    spot.shadow.mapSize.set(300, 300);
+    sizeFrom(2);
+    CHECK(renderer.lampShadowSize(0) == 300);  // the game's mapSize overrides, and says so
+    CHECK(std::any_of(renderer.diagnostics().begin(), renderer.diagnostics().end(),
+                      [](const std::string& d) { return d.starts_with("TN_LAMP_SHADOW_MAPSIZE_OVERRIDE"); }));
 }
 
 void contactShadowFoot() {
@@ -5078,7 +5226,7 @@ TN_TEST_MAIN({"gpu_joint_production", gpuJointProduction}, {"multi_material_grou
              {"material_unsupported", materialUnsupported}, {"shader_invalid", shaderInvalid}, {"time_uniform", timeUniform}, {"gpu_mipmaps", gpuMipmaps}, {"updates", updates},
              {"multi_camera_layers", multiCameraLayers}, {"render_callback", renderCallback}, {"instanced", instanced},
              {"batched_vs_unbatched", batchedVsUnbatched}, {"skinned_crowd", skinnedCrowdPixels}, {"skinned_decline_cadence", skinnedDeclineCadence}, {"skinned_normalized_weights", skinnedNormalizedWeights}, {"normal_map_tilt", normalMapTilt}, {"unsupported_map_slot", unsupportedMapSlot}, {"env_map_slot_is_read", envMapSlotIsRead}, {"converted_copies_swept", convertedCopiesAreSwept}, {"gpu_timer_covers_offscreen", gpuTimerCoversOffscreen}, {"gpu_timer_splits_the_gather", gpuTimerSplitsTheLabelledGather}, {"gpu_timer_covers_shadows", gpuTimerCoversShadows}, {"overlay_over_frame", overlayOverFrame}, {"gpu_timer_is_opt_in", gpuTimerIsOptIn}, {"msaa_edges", msaaEdges}, {"shadow_camera_layers", shadowCameraLayers}, {"flat_shading_needs_no_normals", flatShadingNeedsNoNormals}, {"map_sampleability_changes", mapSampleabilityChanges}, {"batch_caches_stay_put", batchCachesStayPut}, {"frustum_culling", frustumCulling},
-             {"shadow_caster_frustum_culling", shadowCasterFrustumCulling}, {"masked_shadow", maskedShadow}, {"leaf_receiver", leafReceiver}, {"rough_diffuse", roughDiffuse}, {"point_shadow_cube_faces", pointShadowCubeFaces}, {"lamp_source_radius", lampSourceRadius}, {"lamp_source_radius_wall", lampSourceRadiusWall}, {"lamp_source_radius_crate", lampSourceRadiusCrate}, {"contact_shadow_foot", contactShadowFoot}, {"virtual_sun_contact_foot", virtualSunContactFoot}, {"lamp_cache", lampCache}, {"shadow_lights_follow_hierarchy", shadowLightsFollowHierarchy}, {"records_survive_siblings", recordsSurviveSiblings}, {"steady_frame_hashes_no_record", steadyFrameHashesNoRecord}, {"nested_record_cache", nestedRecordCache}, {"frustum_record_retention", frustumRecordRetention}, {"world_sphere_measured_once", worldSphereMeasuredOnce}, {"reflection_reuse", reflectionReuse})
+             {"shadow_caster_frustum_culling", shadowCasterFrustumCulling}, {"masked_shadow", maskedShadow}, {"leaf_receiver", leafReceiver}, {"rough_diffuse", roughDiffuse}, {"point_shadow_cube_faces", pointShadowCubeFaces}, {"lamp_source_radius", lampSourceRadius}, {"lamp_source_radius_wall", lampSourceRadiusWall}, {"lamp_source_radius_crate", lampSourceRadiusCrate}, {"contact_shadow_foot", contactShadowFoot}, {"virtual_sun_contact_foot", virtualSunContactFoot}, {"lamp_cache", lampCache}, {"lamp_atlas", lampAtlas}, {"gpu_timer_splits_lamp_shadows", gpuTimerSplitsLampShadows}, {"shadow_lights_follow_hierarchy", shadowLightsFollowHierarchy}, {"records_survive_siblings", recordsSurviveSiblings}, {"steady_frame_hashes_no_record", steadyFrameHashesNoRecord}, {"nested_record_cache", nestedRecordCache}, {"frustum_record_retention", frustumRecordRetention}, {"world_sphere_measured_once", worldSphereMeasuredOnce}, {"reflection_reuse", reflectionReuse})
 
 
 

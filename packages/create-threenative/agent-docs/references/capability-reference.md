@@ -1667,6 +1667,22 @@ export function lampPenumbraTangent( sourceRadius: number, blockerDistance: numb
 const tangent = lampPenumbraTangent(0.05, 2, 3);
 ```
 
+### `lampShadowMarker`
+
+`function` — The `TN_LAMP_SHADOW` line for the renderer's last frame, or `undefined` on a renderer that keeps no lamp counters (three's own).
+
+```ts
+export function lampShadowMarker( renderer: { … }
+```
+
+- **Use when:** log lamp shadow redraws and GPU time apart from the sun's on the owned engine
+- **Constraints:** counters that do not add up to the frame's shadow draws throw TN_LAMP_SHADOW_INVALID
+
+```ts
+const line = lampShadowMarker(renderer, frame);
+if (line !== undefined) console.info(line);
+```
+
 ### `loadAll`
 
 `function` — Load a list with bounded concurrency, returning results in the input's order.
@@ -1949,6 +1965,22 @@ export function readGIMarker(line: string): IGIBudgetReport | undefined { … }
 
 ```ts
 const report = readGIMarker(line); if (report?.stepped) console.log(report.reason);
+```
+
+### `readLampShadowMarker`
+
+`function` — Parse a `TN_LAMP_SHADOW` line back into its stats, or `undefined`.
+
+```ts
+export function readLampShadowMarker(line: string): ILampShadowStats | undefined { … }
+```
+
+- **Use when:** count lamp shadow redraws from a renderer log, for example a moving-caster run
+- **Constraints:** non-marker lines and markers whose sun and lamp draws do not add up return `undefined`
+
+```ts
+const stats = readLampShadowMarker(line);
+if (stats !== undefined) redraws += stats.lamps.redraws;
 ```
 
 ### `readProbeVolumeObservation`
