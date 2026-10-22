@@ -12,6 +12,8 @@ import {
   If,
   cross,
   cubeTexture,
+  dFdx,
+  dFdy,
   float,
   ivec2,
   max,
@@ -239,7 +241,20 @@ export interface ISourceRadiusShadowOptions {
   blockerSamples?: number;
   /** Fixed sample count, integer 1–64; default 16. */
   filterSamples?: number;
+  /**
+   * The share of the geometric penumbra the lamp keeps, in (0, 4]; default `LAMP_PENUMBRA_SCALE`.
+   * 1 is the width a disk lamp throws; Unreal's shadow-map ray test samples each ray a few times and
+   * resolves about 0.6 of it at its Epic counts.
+   */
+  penumbraScale?: number;
 }
+
+/**
+ * The default `penumbraScale`. Unreal 5.8.3's local-light ray test (8 rays, 4 samples each at Epic) misses
+ * the thin end of a penumbra: measured against a geometric disk lamp it keeps 0.47 to 0.69 of the width on
+ * the calibration scenes (`lamp-room`, `cornell`), and a simulation of the test at those counts averages 0.6.
+ */
+export const LAMP_PENUMBRA_SCALE = 0.6;
 
 /** A spot light's filter inputs (ShadowNode), or a point light's (PointShadowNode: `bd3D`, `dp`). */
 export interface ISourceRadiusShadowInputs extends ISourceAngleShadowInputs {
@@ -249,10 +264,20 @@ export interface ISourceRadiusShadowInputs extends ISourceAngleShadowInputs {
 
 /**
  * Blocker search followed by variable-radius PCF for a spot light's map or a point light's cube: the
- * penumbra is `lampPenumbraTangent` at the average blocker, at least half a texel. The spot map reads
- * raw depth like `sourceAngleShadowFilter`. A cube has no integer load in WGSL and three r185 gives a
- * depth texture one sampler, so the point light's search compares each tap at four depths between
- * the light and the receiver and takes the blocker from the step where it turns dark.
+ * penumbra is `penumbraScale * lampPenumbraTangent` at the average blocker that shades the receiver, at
+ * least half a texel. The search runs `blockerPasses` times: the nearest blocker in a cone has the widest
+ * penumbra and every blocker that shades the receiver lies inside it, so the cone shrinks to that penumbra;
+ * the last cone averages only the blockers whose own penumbra reaches the receiver, so a volume's far
+ * faces, a wall's own texels and a nearer object off to the side never pull the width. A texel is a blocker
+ * only when it is nearer than the receiver's own plane (read from the screen derivatives), so a tilted wall
+ * that the lamp sees nearer on one side never shades itself, and the filter compares each tap against
+ * that plane too. The receiver's own ray is a tap of every cone and always counts when it is blocked, since
+ * it lies inside the lamp's disk: a back-face map stores a box's far face within centimetres of the floor
+ * behind it, and a thin rod falls between the taps. A receiver no blocker reaches is lit. Distances are
+ * along the receiver's ray, so a cube's faces agree: a face stores the depth along its own axis.
+ * The spot map reads raw depth like `sourceAngleShadowFilter`. A cube has no integer load in WGSL and
+ * three r185 gives a depth texture one sampler, so the point light's search compares each tap at four
+ * depths between the light and the plane and takes the blocker from the step where it turns dark.
  * Ideas only: Unreal VirtualShadowMapProjectionSpot.ush (rays in a cone of SourceRadius / distance);
  * independently written TSL. The owned engine reads the cube's raw depths instead.
  */
@@ -260,14 +285,19 @@ export function sourceRadiusShadowFilter({
   sourceRadius,
   blockerSamples = 16,
   filterSamples = 16,
+  penumbraScale = LAMP_PENUMBRA_SCALE,
 }: ISourceRadiusShadowOptions): (inputs: ISourceRadiusShadowInputs) => Node<"float"> {
   lampPenumbraTangent(sourceRadius, 1, 1);
+  if (!Number.isFinite(penumbraScale) || penumbraScale <= 0 || penumbraScale > 4)
+    throw new RangeError("penumbraScale must be in (0, 4]");
   for (const count of [blockerSamples, filterSamples]) {
     if (!Number.isInteger(count) || count < 1 || count > 64) {
       throw new RangeError("shadow sample counts must be integers in [1, 64]");
     }
   }
   const levels = 4;
+  // ponytail: two passes, as on the owned engine; a third moved the edge by under 3 % in the wall test.
+  const blockerPasses = 2;
   const disk = (index: number, count: number) => {
     const radius = Math.sqrt((index + 0.5) / count);
     const angle = index * Math.PI * (3 - Math.sqrt(5));
@@ -290,16 +320,34 @@ export function sourceRadiusShadowFilter({
     const depthOf = (distance: Node<"float">) =>
       far.mul(distance.sub(near)).div(distance.mul(far.sub(near)));
     const radius = float(sourceRadius);
+    // The lamp's disk seen past a blocker, in tangent units: the penumbra's radius at the receiver.
+    const spreadOf = (blocker: Node<"float">, receiver: Node<"float">) =>
+      radius.mul(max(0, float(1).div(blocker).sub(float(1).div(receiver))));
     const penumbraOf = (blocker: Node<"float">, receiver: Node<"float">, texel: Node<"float">) =>
       sourceRadius === 0
         ? float(0)
-        : max(
-            texel.mul(0.5),
-            radius.mul(max(0, float(1).div(blocker).sub(float(1).div(receiver)))),
-          );
+        : max(texel.mul(0.5), spreadOf(blocker, receiver).mul(penumbraScale));
     // ponytail: the search cone is cut at 0.5 tangent (27 degrees), as on the owned engine.
-    const searchOf = (receiver: Node<"float">) =>
-      min(0.5, radius.mul(float(1).div(near).sub(float(1).div(receiver))));
+    const searchOf = (receiver: Node<"float">) => min(0.5, spreadOf(near, receiver));
+    // d(distance) / d(tap offset): the 2x2 solve of the distance's screen derivatives against those of
+    // the tap coordinates. Called in uniform control flow, before any branch.
+    const slopeOf = (
+      jx: Node<"vec2">,
+      jy: Node<"vec2">,
+      distance: Node<"float">,
+      scale: Node<"float">,
+    ) => {
+      const [rx, ry] = [dFdx(distance), dFdy(distance)];
+      const det = jx.x.mul(jy.y).sub(jx.y.mul(jy.x));
+      const flat = det.abs().lessThan(1e-12);
+      const safe = flat.select(float(1), det);
+      return vec2(
+        rx.mul(jy.y).sub(jx.y.mul(ry)).div(safe),
+        jx.x.mul(ry).sub(jy.x.mul(rx)).div(safe),
+      )
+        .mul(flat.select(float(0), scale))
+        .toVar();
+    };
     if (bd3D && dp) {
       const absDir = bd3D.abs();
       const tangent = cross(
@@ -313,36 +361,84 @@ export function sourceRadiusShadowFilter({
           depthTexture as unknown as CubeTexture,
           bd3D.add(tangent.mul(offset.x).add(bitangent.mul(offset.y))),
         ).compare(reference) as unknown as Node<"float">;
+      // The depth along a tap's cube face over the distance along its ray: the ray's largest component
+      // over its length.
+      const axialPerEuclid = (offset: Node<"vec2">) => {
+        const ray = bd3D.add(tangent.mul(offset.x).add(bitangent.mul(offset.y))).abs();
+        return max(max(ray.x, ray.y), ray.z).div(
+          bd3D.add(tangent.mul(offset.x).add(bitangent.mul(offset.y))).length(),
+        );
+      };
       return Fn(() => {
-        const receiver = distanceOf(dp).toVar();
-        const search = searchOf(receiver);
-        const blockerSum = float(0).toVar();
-        const blockerCount = float(0).toVar();
-        for (let index = 0; index < blockerSamples; index++) {
-          const offset = disk(index, blockerSamples).mul(search);
-          const blocked = tap(offset, dp).oneMinus().toVar();
+        const receiver = distanceOf(dp)
+          .div(axialPerEuclid(vec2(0, 0)))
+          .toVar();
+        const slope = slopeOf(
+          vec2(dFdx(bd3D).dot(tangent), dFdx(bd3D).dot(bitangent)),
+          vec2(dFdy(bd3D).dot(tangent), dFdy(bd3D).dot(bitangent)),
+          receiver,
+          float(1),
+        );
+        // The receiver's plane at a tap offset as a distance along the tap's ray, and as the depth along its face.
+        const planeDistance = (offset: Node<"vec2">) =>
+          max(0, receiver.add(slope.x.mul(offset.x)).add(slope.y.mul(offset.y)));
+        const planeAxial = (offset: Node<"vec2">) =>
+          max(planeDistance(offset).mul(axialPerEuclid(offset)), near);
+        const visibility = float(1).toVar();
+        const cone = searchOf(receiver).toVar();
+        // One search cone: how many blockers, their summed distance, and the nearest. The last cone counts only
+        // the texels whose own penumbra reaches the receiver, and the receiver's own ray, which is inside the
+        // lamp's disk whatever the blocker's reach.
+        const blockerAt = (offset: Node<"vec2">) => {
+          const plane = planeAxial(offset);
+          const blocked = tap(offset, depthOf(plane)).oneMinus().toVar();
           // Darker at more of the levels: the blocker is nearer the light.
           let steps: Node<"float"> = float(0);
-          for (let level = 1; level <= levels; level++) {
-            const at = depthOf(receiver.mul(level / (levels + 1)));
-            steps = steps.add(tap(offset, at).oneMinus());
-          }
-          const blocker = receiver.mul(float(levels + 0.5).sub(steps)).div(levels + 1);
-          blockerSum.addAssign(blocked.mul(blocker));
-          blockerCount.addAssign(blocked);
-        }
-        const visibility = float(1).toVar();
-        If(blockerCount.greaterThan(0), () => {
-          const penumbra = penumbraOf(
-            blockerSum.div(blockerCount),
-            receiver,
-            float(2).div(size),
-          ).toVar();
-          let sum: Node<"float"> = float(0);
-          for (let index = 0; index < filterSamples; index++)
-            sum = sum.add(tap(disk(index, filterSamples).mul(penumbra), dp));
-          visibility.assign(sum.div(filterSamples));
-        });
+          for (let level = 1; level <= levels; level++)
+            steps = steps.add(tap(offset, depthOf(plane.mul(level / (levels + 1)))).oneMinus());
+          const blocker = plane
+            .mul(float(levels + 0.5).sub(steps))
+            .div(levels + 1)
+            .div(axialPerEuclid(offset));
+          return { blocked, blocker };
+        };
+        const search = (last: boolean) => {
+          const sum = float(0).toVar();
+          const count = float(0).toVar();
+          const nearest = float(1e30).toVar();
+          const visit = (offset: Node<"vec2">, own: boolean) => {
+            const { blocked, blocker } = blockerAt(offset);
+            const reaches = offset.length().lessThanEqual(spreadOf(blocker, planeDistance(offset)));
+            const weight = last && !own ? reaches.select(blocked, float(0)) : blocked;
+            sum.addAssign(weight.mul(blocker));
+            count.addAssign(weight);
+            nearest.assign(blocked.greaterThan(0.5).select(min(nearest, blocker), nearest));
+          };
+          visit(vec2(0, 0), true);
+          for (let tapIndex = 0; tapIndex < blockerSamples; tapIndex++)
+            visit(disk(tapIndex, blockerSamples).mul(cone), false);
+          return { sum, count, nearest };
+        };
+        const pass = (index: number) => {
+          const last = index + 1 === blockerPasses;
+          const { sum, count, nearest } = search(last);
+          If(count.greaterThan(0), () => {
+            if (!last) {
+              cone.assign(min(cone, spreadOf(nearest, receiver)));
+              pass(index + 1);
+              return;
+            }
+            const blocker = sum.div(count);
+            const penumbra = penumbraOf(blocker, receiver, float(2).div(size)).toVar();
+            let lit: Node<"float"> = float(0);
+            for (let tapIndex = 0; tapIndex < filterSamples; tapIndex++) {
+              const offset = disk(tapIndex, filterSamples).mul(penumbra);
+              lit = lit.add(tap(offset, depthOf(planeAxial(offset))));
+            }
+            visibility.assign(lit.div(filterSamples));
+          });
+        };
+        pass(0);
         return visibility;
       })();
     }
@@ -354,30 +450,60 @@ export function sourceRadiusShadowFilter({
     const load = (uv: Node<"vec2">) =>
       textureLoad(depthTexture, ivec2(min(max(uv.mul(sizes).floor(), vec2(0)), sizes.sub(1)))).r;
     return Fn(() => {
-      const reference = shadowCoord.z;
-      const receiver = distanceOf(reference).toVar();
-      const search = searchOf(receiver).mul(uvPerTangent);
-      const blockerSum = float(0).toVar();
-      const blockerCount = float(0).toVar();
-      for (let index = 0; index < blockerSamples; index++) {
-        const depth = load(shadowCoord.xy.add(disk(index, blockerSamples).mul(search))).toVar();
-        If(depth.lessThan(reference), () => {
-          blockerSum.addAssign(depth);
-          blockerCount.addAssign(1);
-        });
-      }
+      const receiver = distanceOf(shadowCoord.z).toVar();
+      const slope = slopeOf(dFdx(shadowCoord.xy), dFdy(shadowCoord.xy), receiver, uvPerTangent);
+      // The receiver's plane at a tap offset, as a distance and as a [0, 1] depth.
+      const planeDistance = (offset: Node<"vec2">) =>
+        max(near, receiver.add(slope.x.mul(offset.x)).add(slope.y.mul(offset.y)));
+      const planeDepth = (offset: Node<"vec2">) => depthOf(planeDistance(offset));
       const visibility = float(1).toVar();
-      If(blockerCount.greaterThan(0), () => {
-        const blocker = distanceOf(blockerSum.div(blockerCount));
-        const texel = tanHalf.mul(2).div(size);
-        const penumbra = penumbraOf(blocker, receiver, texel).mul(uvPerTangent).toVar();
+      const cone = searchOf(receiver).toVar();
+      const pass = (index: number) => {
+        const last = index + 1 === blockerPasses;
         const sum = float(0).toVar();
-        for (let index = 0; index < filterSamples; index++)
-          sum.addAssign(
-            step(reference, load(shadowCoord.xy.add(disk(index, filterSamples).mul(penumbra)))),
-          );
-        visibility.assign(sum.div(filterSamples));
-      });
+        const count = float(0).toVar();
+        const nearest = float(1e30).toVar();
+        const visit = (offset: Node<"vec2">, own: boolean) => {
+          const depth = load(shadowCoord.xy.add(offset.mul(uvPerTangent))).toVar();
+          If(depth.lessThan(planeDepth(offset)), () => {
+            const blocker = distanceOf(depth);
+            if (!last) {
+              nearest.assign(min(nearest, blocker));
+              count.addAssign(1);
+              return;
+            }
+            const shade = () => {
+              sum.addAssign(blocker);
+              count.addAssign(1);
+            };
+            // The receiver's own ray is inside the lamp's disk; any other texel shades the receiver only
+            // when its own penumbra reaches it.
+            if (own) shade();
+            else If(offset.length().lessThanEqual(spreadOf(blocker, planeDistance(offset))), shade);
+          });
+        };
+        visit(vec2(0, 0), true);
+        for (let tapIndex = 0; tapIndex < blockerSamples; tapIndex++)
+          visit(disk(tapIndex, blockerSamples).mul(cone), false);
+        If(count.greaterThan(0), () => {
+          if (!last) {
+            cone.assign(min(cone, spreadOf(nearest, receiver)));
+            pass(index + 1);
+            return;
+          }
+          const blocker = sum.div(count);
+          const penumbra = penumbraOf(blocker, receiver, tanHalf.mul(2).div(size)).toVar();
+          const lit = float(0).toVar();
+          for (let tapIndex = 0; tapIndex < filterSamples; tapIndex++) {
+            const offset = disk(tapIndex, filterSamples).mul(penumbra);
+            lit.addAssign(
+              step(planeDepth(offset), load(shadowCoord.xy.add(offset.mul(uvPerTangent)))),
+            );
+          }
+          visibility.assign(lit.div(filterSamples));
+        });
+      };
+      pass(0);
       return visibility;
     })();
   };
@@ -387,6 +513,7 @@ export function sourceRadiusShadowFilter({
       sourceRadius,
       blockerSamples,
       filterSamples,
+      penumbraScale,
     }),
   });
 }

@@ -92,6 +92,12 @@ describe("a wide penumbra (a lamp with a source radius)", () => {
     expect(m?.ratio).toBeCloseTo(1, 5);
   });
 
+  it("reads an edge at a scale whose windows are not whole pixels", () => {
+    const m = pairedPenumbra(frame(10), frame(10), floor, 1.3);
+    expect(m?.unreal).toBeCloseTo(8, 0);
+    expect(m?.ratio).toBeCloseTo(1, 5);
+  });
+
   it("tells a penumbra twice as wide apart", () => {
     expect(pairedPenumbra(frame(20), frame(40), floor, 3)?.ratio).toBeCloseTo(2, 1);
   });

@@ -210,10 +210,10 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
       // Casters and receivers do nothing until the renderer runs a shadow pass (scaffold lighting.ts does
       // this for the reference scene, which this scene does not use).
       (ctx.renderer.raw as unknown as { shadowMap: { enabled: boolean } }).shadowMap.enabled = shadows;
-      // Casters keep three's derived shadowSide (back faces of a front-sided material). With a hard
-      // filter those leak a bright line at a box's far foot (native_engine_contact_shadow_foot); the
-      // lamps' source-radius filter closes it, and front faces instead add acne on the grazing walls
-      // (cornell L6, 2026-10-20). Diagnosis knob: shadowSide=front|back|double|three.
+      // Casters keep three's derived shadowSide (back faces of a front-sided material). Those leak a
+      // bright line at a box's far foot; the owned engine stores a lamp's back faces a few depth steps
+      // nearer, which closes it (native_engine_contact_shadow_foot), and front faces instead add acne on
+      // the grazing walls (cornell L6, 2026-10-20). Diagnosis knob: shadowSide=front|back|double|three.
       const side = { front: FrontSide, back: BackSide, double: DoubleSide }[params.get("shadowSide") ?? "three"];
       for (const mesh of meshes) {
         mesh.castShadow = shadows;

@@ -1654,17 +1654,17 @@ if (isMobile()) showTouchControls();
 
 ### `lampPenumbraTangent`
 
-`function` — Source-radius blocker search and variable-radius PCF on a spot or point light's shadow map.
+`function` — A lamp's penumbra radius in tangent units at a receiver, from the lamp's source radius and the blocker and receiver distances.
 
 ```ts
 export function lampPenumbraTangent( sourceRadius: number, blockerDistance: number, receiverDistance: number, ): number { … }
 ```
 
-- **Use when:** soften a lamp's shadow by the lamp's size, as Unreal's SourceRadius does
-- **Constraints:** sourceRadius is required, in metres, 0 or more (0 is one hard tap); forward-depth maps only
+- **Use when:** measure a lamp shadow's penumbra width without a GPU
+- **Constraints:** sourceRadius is 0 or more; both distances are positive metres; the result is the geometric tangent, before penumbraScale
 
 ```ts
-lamp.shadow.filterNode = sourceRadiusShadowFilter({ sourceRadius: 0.05 });
+const tangent = lampPenumbraTangent(0.05, 2, 3);
 ```
 
 ### `loadAll`
@@ -2566,7 +2566,8 @@ export function sourceRadiusShadowFilter( { … }
 ```
 
 - **Use when:** soften a lamp's shadow by the lamp's size, as Unreal's SourceRadius does
-- **Constraints:** sourceRadius is required, in metres, 0 or more (0 is one hard tap); forward-depth maps only
+- **Constraints:** sourceRadius is required, in metres, 0 or more (0 is one hard tap); penumbraScale, the share of the geometric penumbra kept, is in (0, 4] and defaults to 0.6, the width Unreal's lamp ray test resolves; forward-depth maps only
+- **Overrides:** penumbraScale: 1 gives the geometric penumbra of a disk lamp
 
 ```ts
 lamp.shadow.filterNode = sourceRadiusShadowFilter({ sourceRadius: 0.05 });
