@@ -128,6 +128,11 @@ export interface IGiOptions {
   /** Cast the bake's rays through `ctx.raycast` instead of the flat triangle hierarchy: the slow path, kept for an A/B. */
   readonly stockRays?: boolean;
   /**
+   * Paint the lit ground into the environment's lower half, so a mirror reflects a floor where the screen shows none
+   * (default true). Off when reflection rays walk the scene's triangles and find the floor themselves.
+   */
+  readonly paintGround?: boolean;
+  /**
    * The Surface Cache (PRD-639): a ray that lands on a mapped material returns the map's texel at the hit UV, for the
    * albedo and for the emission, instead of the material's flat colour (a loaded asset's colour factor is often white
    * under a brick map). Unset, every hit returns the flat colour. `true` takes the cache's defaults.
@@ -1680,7 +1685,7 @@ export function installGi(
     values = smooth({ grid, values, links, valid });
   phase("smooth");
 
-  if (options.bounces > 0) {
+  if (options.bounces > 0 && options.paintGround !== false) {
     const floor = groundRadiance({ grid, values, links, valid }, ray, first, end, grid.origin.y);
     if (floor !== undefined) paintGround(root, floor);
   }

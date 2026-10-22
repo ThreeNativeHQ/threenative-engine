@@ -83,7 +83,12 @@ export function candela(intensity: number, units: string): number {
 type MotionCamera =
   | { kind: "pan"; position: number[]; hfovDeg: number; pitchDeg?: number; headingDeg: number[]; sweepFrames: number }
   | { kind: "pose"; pose: string };
-type MotionRun = { frames: number; camera: MotionCamera; light?: { name: string; keys: number[][] } };
+type MotionRun = {
+  frames: number;
+  camera: MotionCamera;
+  light?: { name: string; keys: number[][] };
+  actor?: { name: string; keys: number[][] };
+};
 
 /** The camera of a motion run at a frame, as scene.py keys it: heading 0 looks down -z, a positive heading turns toward +x. */
 export function motionPose(run: MotionRun, frame: number, poses: (Pose & { name: string })[]): Pose {
@@ -102,6 +107,18 @@ export function motionPose(run: MotionRun, frame: number, poses: (Pose & { name:
     target: [x + Math.sin(heading) * Math.cos(pitch), y + Math.sin(pitch), z - Math.cos(heading) * Math.cos(pitch)],
     hfovDeg: camera.hfovDeg,
   };
+}
+
+/** An actor's offset at a frame, from `[frame, dx, dy, dz]` keys: linear between keys, held outside them (PRD-650 swing). */
+export function actorOffset(keys: number[][], frame: number): number[] {
+  const first = keys[0] ?? [0, 0, 0, 0];
+  if (frame <= (first[0] ?? 0)) return first.slice(1);
+  for (let k = 1; k < keys.length; k++) {
+    const [a = 0, ...from] = keys[k - 1] ?? [];
+    const [b = 0, ...to] = keys[k] ?? [];
+    if (frame <= b) return from.map((v, i) => v + ((to[i] ?? v) - v) * ((frame - a) / (b - a)));
+  }
+  return (keys.at(-1) ?? first).slice(1);
 }
 
 /** The scale of a keyed light at a frame: constant from each key to the next, as the Unreal track is. */
@@ -260,11 +277,10 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
         // Unreal's lamp shadow has no near plane: three's 0.5 m default clipped cornell's shade, 0.3 m
         // from the lamp. Diagnosis knobs: shadowNear, shadowMap (texels), shadowBias, shadowNormalBias.
         point.shadow.camera.near = Number(params.get("shadowNear") ?? 0.02);
-        // 1024 texels a cube face: at three's 512 the edge of the tall box's shadow on the red wall
-        // steps where its penumbra is narrow (cornell corner, 2026-10-20); PRD-650 Phase 1 makes the
-        // size follow the lamp's footprint. The lamp cache draws a still lamp's map once.
-        const mapSize = Number(params.get("shadowMap") ?? 1024);
-        point.shadow.mapSize.set(mapSize, mapSize);
+        // The owned engine sizes a lamp's map from the pixels it covers, as Unreal does (PRD-650 Phase 1);
+        // `shadowMap` (texels) is the diagnosis override. The lamp cache draws a still lamp's map once.
+        const mapSize = params.get("shadowMap");
+        if (mapSize !== null) point.shadow.mapSize.set(Number(mapSize), Number(mapSize));
         point.shadow.bias = Number(params.get("shadowBias") ?? point.shadow.bias);
         point.shadow.normalBias = Number(params.get("shadowNormalBias") ?? point.shadow.normalBias);
         scene.add(point);
@@ -377,11 +393,7 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
                 ssgiProbeRays: Number(params.get("probeRays") ?? 16),
                 ssgiDenoiseRadius: Number(params.get("ssgiDenoise") ?? 16),
               }
-            : params.get("probes") === "0"
-              ? { ssgiDenoiseRadius: undefined, ssgiProbeRays: undefined, ssgiScreenProbes: false }
-              : {}),
-          // Diagnosis: ?probeFilter=N sets the spatial filter passes over the probes (PRD-640).
-          ...(params.has("probeFilter") ? { ssgiProbeFilterPasses: Number(params.get("probeFilter")) } : {}),
+            : {}),
           ...(params.get("probeJitter") === null ? {} : { ssgiProbeJitter: Number(params.get("probeJitter")) }),
           ...(params.get("probeDebug") === null ? {} : { ssgiProbeDebug: Number(params.get("probeDebug")) }),
           vignetteAmount: 0,
@@ -399,6 +411,8 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
       console.info(`TN_CALIBRATION_SCENE unsupported ${u.actor}.${u.property}: ${u.reason}`);
 
     const target = new Vector3();
+    // The actors a motion run moves, with the position the scene put them at (PRD-650 swing).
+    const actors = new Map<string, { object: Object3D; rest: Vector3 }>();
     const reference = {
       layer: LAYER,
       tier: TIER,
@@ -459,6 +473,18 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
         if (run === undefined) throw new Error(`TN_CALIBRATION_MOTION_UNKNOWN: ${name}`);
         reference.pose(motionPose(run, frame, (DATA.poses ?? []) as (Pose & { name: string })[]));
         if (run.light !== undefined) setLight(run.light.name, lightScale(run.light.keys, frame));
+        if (run.actor !== undefined) {
+          const name = run.actor.name;
+          let actor = actors.get(name);
+          if (actor === undefined) {
+            const found = model.getObjectByName(name) ?? model.getObjectByName(`SM_${name}`);
+            if (found === undefined) throw new Error(`TN_CALIBRATION_MOTION_ACTOR: ${name}`);
+            actor = { object: found, rest: found.position.clone() };
+            actors.set(name, actor);
+          }
+          const [dx = 0, dy = 0, dz = 0] = actorOffset(run.actor.keys, frame);
+          actor.object.position.copy(actor.rest).add(new Vector3(dx, dy, dz));
+        }
       },
     };
     (window as unknown as { __tnRef: unknown }).__tnRef = reference;

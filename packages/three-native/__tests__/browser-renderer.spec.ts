@@ -263,6 +263,42 @@ describe("the Wasm engine's WebGPURenderer sample count", () => {
     expect(renderer.info.engine.gpuStages).toEqual({});
   });
 
+  it("reports the lamp shadow maps apart from the sun's (PRD-650)", async () => {
+    let gpuSamples = 0;
+    const { Renderer, canvas, scene, camera } = host((field) => {
+      if (field === 7) return 1.5;
+      if (field === 8) return gpuSamples;
+      if (field === 10) return 1;
+      if (field === 19) return 0.25; // the sun's shadow passes
+      if (field === 24) return 0.5; // the lamp shadow passes
+      if (field === 25) return 2; // lamp maps redrawn
+      if (field === 26) return 13; // their draws
+      if (field === 27) return 15; // every shadow draw
+      if (field === 28) return 1024; // the smallest footprint-sized lamp map
+      if (field === 29) return 2048; // and the largest
+      return 0;
+    });
+    const renderer = new Renderer({ canvas, trackTimestamp: true }) as {
+      info: { engine: { shadows: Record<string, number> } };
+      init(): Promise<unknown>;
+      render(scene: unknown, camera: unknown): void;
+    };
+    await renderer.init();
+    renderer.render(scene, camera);
+    expect(renderer.info.engine.shadows).toEqual({
+      lampRedraws: 2,
+      lampDraws: 13,
+      shadowDraws: 15,
+      sunGpuMs: -1,
+      lampGpuMs: -1,
+      lampMapMin: 1024,
+      lampMapMax: 2048,
+    });
+    gpuSamples = 1;
+    renderer.render(scene, camera);
+    expect(renderer.info.engine.shadows).toMatchObject({ sunGpuMs: 0.25, lampGpuMs: 0.5 });
+  });
+
   it("does not claim enabled timestamps when the caller opts out or the device has none", async () => {
     const opted = host((field) => (field === 10 ? 1 : 0));
     const off = new opted.Renderer({ canvas: opted.canvas, trackTimestamp: false }) as {

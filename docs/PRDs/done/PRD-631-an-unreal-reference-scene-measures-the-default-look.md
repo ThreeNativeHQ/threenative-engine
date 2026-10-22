@@ -5,10 +5,10 @@ prd_contract: v1
 # PRD-631 — An Unreal reference scene measures the default look
 
 **Status:** IN PROGRESS
-**Priority:** P1 — no box is ticked: no reference frame exists, so every "Unreal look" PRD in [`../README.md`](../README.md) tunes against memory instead of a measurement.
+**Priority:** P1 — no box is ticked: no reference frame exists, so every "Unreal look" PRD in [`../README.md`](../Unreal/README.md) tunes against memory instead of a measurement.
 **Complexity:** 6 (MEDIUM) — new tool folder and two capture scripts (+2), an external renderer driven headless (+2), cross-engine coordinate and unit mapping (+1), a comparison report that later PRDs gate on (+1); risk override: none
 **Owner:** João
-**Depends on:** None. Every layer PRD in [`../look/`](./) waits on Phase 3 of this PRD.
+**Depends on:** None. Every layer PRD in [`../look/`](../Unreal/look) waits on Phase 3 of this PRD.
 
 ## Context
 
@@ -135,7 +135,7 @@ means anything:
 
 This PRD commits no Unreal code, shader, asset or `.uasset` file. The level is built at run time
 from engine default actors and our own GLB, and the config files are written by us. The frames are
-renders of our own scene. Read [`../README.md`](../README.md) "The licence rule" before you touch
+renders of our own scene. Read [`../README.md`](../Unreal/README.md) "The licence rule" before you touch
 the Unreal tree.
 
 ### The default-on contract that the layer PRDs inherit
@@ -307,18 +307,18 @@ GPU capture/visual judging and desktop V8 execution remain unverified. No enviro
 - 2026-10-19 (gap ownership): a residual that no installed capability closes goes to a PRD. Read
   the Unreal source for the algorithm and cite the path; never copy its code, shaders or comments.
   Existing owners, checked before filing: dynamic off-screen GI —
-  [PRD-603](../rendering/PRD-603-probes-refresh-by-tracing-the-packed-scene-not-by-drawing-it-six-times.md),
-  [PRD-604](../rendering/PRD-604-a-surface-is-lit-only-by-probes-that-can-see-it.md),
-  [PRD-605](../rendering/PRD-605-the-probe-field-follows-the-camera-in-nested-rings.md),
-  [PRD-VQ-09](../../rendering/PRD-VQ-09-incremental-diffuse-relighting.md); off-screen reflections —
-  [PRD-VQ-03](../../rendering/PRD-VQ-03-local-reflection-probes.md); native probes —
-  [PRD-525](../../native-engine/N14-native-render-chain-and-advanced-visuals/PRD-525-n14c-probes-run-native.md);
-  aerial perspective and clouds — [PRD-562](../rendering/PRD-562-aerial-perspective-from-a-froxel-volume.md),
-  [PRD-VQ-08](../rendering/PRD-VQ-08-clouds-and-overhead-transmittance.md). Installed now: `ssgi`, `ssr`,
+  [PRD-603](../Unreal/rendering/PRD-603-probes-refresh-by-tracing-the-packed-scene-not-by-drawing-it-six-times.md),
+  [PRD-604](../Unreal/rendering/PRD-604-a-surface-is-lit-only-by-probes-that-can-see-it.md),
+  [PRD-605](../Unreal/rendering/PRD-605-the-probe-field-follows-the-camera-in-nested-rings.md),
+  [PRD-VQ-09](../rendering/PRD-VQ-09-incremental-diffuse-relighting.md); off-screen reflections —
+  [PRD-VQ-03](../rendering/PRD-VQ-03-local-reflection-probes.md); native probes —
+  [PRD-525](../native-engine/N14-native-render-chain-and-advanced-visuals/PRD-525-n14c-probes-run-native.md);
+  aerial perspective and clouds — [PRD-562](../Unreal/rendering/PRD-562-aerial-perspective-from-a-froxel-volume.md),
+  [PRD-VQ-08](../Unreal/rendering/PRD-VQ-08-clouds-and-overhead-transmittance.md). Installed now: `ssgi`, `ssr`,
   `ProbeVolume` (static bake), `Atmosphere`. A new PRD is filed only for a residual none of these owns.
 - 2026-10-19 (layer ownership after an external visual review): L7 (Lumen GI) and L8 (Lumen
   reflections) had no owner in this epic. Owner rule (absorb, don't duplicate): the epic absorbs
-  [PRD-VQ-03](../../rendering/PRD-VQ-03-local-reflection-probes.md) for L8, starting with the
+  [PRD-VQ-03](../rendering/PRD-VQ-03-local-reflection-probes.md) for L8, starting with the
   installed `ssr`, and the GI owners listed above for L7, starting with the installed `ssgi` and
   `ProbeVolume`. They run after PRD-632 to PRD-636, on this branch and PR.
 - 2026-10-19 (second external review, adjudicated; each claim checked, generic advice filtered for scale):
@@ -340,7 +340,7 @@ GPU capture/visual judging and desktop V8 execution remain unverified. No enviro
   the soft-shadow `filterNode`, `SkyCapture`, auto exposure) becomes engine work in this epic and PR.
   three.js frames captured so far stay as history; new BEFORE/AFTER pairs are engine frames.
   The four templates that still pin three.js (runner, snow, sailing, action-rpg) belong to
-  [PRD-617](../../performance/PRD-617-every-template-runs-on-the-native-engine.md), in progress on
+  [PRD-617](../performance/PRD-617-every-template-runs-on-the-native-engine.md), in progress on
   its own lane; the starter is unpinned and already defaults to the engine.
 - 2026-10-20 (thresholds, `tools/unreal-reference/thresholds.json`): a threshold is the larger of twice the worst Unreal-vs-Unreal difference of its layer and one absolute floor: deltaE 1 (one CIEDE2000 just-noticeable difference), relative dP50 0.01 (this PRD's 1% target), dEv 0.02 (2% luminance). Silhouette IoU is geometry, not render noise, and stays at 0.98. The file holds flat keys for every layer and a `layers` map that overrides them. The noise is near zero (Unreal is deterministic here), so the floors decide every layer except L9:
 

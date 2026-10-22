@@ -24,7 +24,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { Page } from "@playwright/test";
 import { type ISceneJson, REFERENCE_WARM_UP, sceneKey } from "./gi.js";
-import { frameFile, stillJob } from "./motion.js";
+import { type ILampFrame, frameFile, stillJob, swingRedraws } from "./motion.js";
 
 /** Milliseconds between two steps: the engine's GPU frame gate lags about 35 ms under Xvfb. */
 const PACE_MS = 80;
@@ -146,11 +146,24 @@ export async function captureMotionFrames(input: IMotionCaptureInput): Promise<n
   const grab = async (file: string) =>
     writeFile(path.join(dir, file), await page.screenshot({ type: "png" }));
   const started = Date.now();
+  // A run that moves an actor reads the owned engine's lamp shadow counters each frame (PRD-650 AC-2).
+  const lampFrames: (ILampFrame & Record<string, number>)[] = [];
+  const readLamps = async (frame: number) => {
+    const shadows = (await page.evaluate("window.__tnRef.renderer.info.engine?.shadows")) as
+      | { lampRedraws: number; lampDraws: number; shadowDraws: number; lampGpuMs: number }
+      | undefined;
+    if (shadows === undefined)
+      throw new Error(
+        `TN_UNREAL_LOOK_NO_LAMP_COUNTERS: ${run} frame ${frame}: the renderer keeps no lamp shadow counters`,
+      );
+    lampFrames.push({ frame, redraws: shadows.lampRedraws, ...shadows });
+  };
   await at(0);
   for (let i = 0; i < warmUp; i++) await advance(`${run} warm-up ${i}`);
   for (let frame = 0; frame < spec.frames; frame++) {
     await at(frame);
     await advance(`${run} frame ${frame}`);
+    if (spec.actor) await readLamps(frame);
     await grab(frameFile(run, frame));
   }
   const stills = spec.stills ?? [];
@@ -178,6 +191,7 @@ export async function captureMotionFrames(input: IMotionCaptureInput): Promise<n
         finalPaceMs: wait,
         paceMs: pace,
         seconds: (Date.now() - started) / 1000,
+        ...(spec.actor ? { swing: swingRedraws(spec, lampFrames), lampShadow: lampFrames } : {}),
       },
       null,
       2,

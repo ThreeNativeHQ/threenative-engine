@@ -153,6 +153,19 @@ export function defineWebRenderer(
         // The GPU milliseconds of the sample `render.timestamp` reports, by named stage (gpu-stages.ts). A stage that
         // drew no pass is absent; core's `stageGpuReading` hands it to the GI and shadow budgets.
         gpuStages: {} as Record<string, number>,
+        // The last frame's shadow passes, the spot and point light maps apart from the sun's (PRD-650):
+        // lamp maps redrawn and their draws, every shadow draw (the sun's are the rest), and the GPU
+        // milliseconds of each part in the sample `render.timestamp` reports, -1 until one resolves.
+        // `lampMapMin` and `lampMapMax` are the edges of the lamp maps the engine sized from their footprint.
+        shadows: {
+          lampRedraws: 0,
+          lampDraws: 0,
+          shadowDraws: 0,
+          sunGpuMs: -1,
+          lampGpuMs: -1,
+          lampMapMin: 0,
+          lampMapMax: 0,
+        },
       },
       // three's Info: render() adds to drawCalls and triangles, and the caller resets once per frame, so a
       // frame that draws its world and then its overlay reports both (core does this in onBeginFrame).
@@ -373,6 +386,12 @@ export function defineWebRenderer(
       this.info.render.calls += this.info.render.frameCalls;
       this.info.render.drawCalls += this.info.render.frameCalls;
       this.info.render.triangles += module._tnw_web_frame(1);
+      const shadows = this.info.engine.shadows;
+      shadows.lampRedraws = module._tnw_web_frame(25);
+      shadows.lampDraws = module._tnw_web_frame(26);
+      shadows.shadowDraws = module._tnw_web_frame(27);
+      shadows.lampMapMin = module._tnw_web_frame(28);
+      shadows.lampMapMax = module._tnw_web_frame(29);
       const gpuSamples = module._tnw_web_frame(8);
       if (gpuSamples > this.#gpuSamples) {
         this.#gpuSamples = gpuSamples;
@@ -390,6 +409,8 @@ export function defineWebRenderer(
           const shadowMs = module._tnw_web_frame(SHADOW_SEGMENT_FIELD);
           if (shadowMs > 0) stages[SHADOW_STAGE] = shadowMs;
           this.info.engine.gpuStages = stages;
+          this.info.engine.shadows.sunGpuMs = module._tnw_web_frame(19);
+          this.info.engine.shadows.lampGpuMs = module._tnw_web_frame(24);
         }
       }
       const engine = this.info.engine;

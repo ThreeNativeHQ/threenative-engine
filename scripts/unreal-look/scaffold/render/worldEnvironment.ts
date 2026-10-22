@@ -65,6 +65,7 @@ import { cacheFallback } from "./giCache.js";
 import { harnessLayer } from "./harnessLayer.js";
 import { LocalExposureNode } from "./localExposure.js";
 import { motionBlur } from "./motionBlur.js";
+import { reflectionTrace, tracedReflections } from "./reflectionTrace.js";
 import { installFilmicToneMapping } from "./tonemap.js";
 import { UnrealBloomNode } from "./unrealBloom.js";
 import { vignetteMask } from "./vignette.js";
@@ -160,11 +161,6 @@ export interface IWorldEnvironmentOptions {
   readonly ssgiProbeRays?: number;
   /** Screen probes only, diagnosis: 1 draws the probes' weight and trust, 2 the sign of the gathered delta. */
   readonly ssgiProbeDebug?: number;
-  /**
-   * Screen probes only: spatial filter passes over the probes' irradiance, each probe averaged with the probes around it
-   * on the same surface (Unreal's r.Lumen.ScreenProbeGather.SpatialFilterNumPasses). Omit for the engine's 3; 0 turns it off.
-   */
-  readonly ssgiProbeFilterPasses?: number;
   /**
    * Denoise passes over the SSGI gather, each turning the tap pattern by its index. The default is the render chain
    * tier's `denoiseIterations` (high 3, medium 2, low 1): one pass left the sunlit room's walls grainy at `high`.
@@ -624,7 +620,6 @@ export class WorldEnvironment {
       ssgiProbeJitter: options.ssgiProbeJitter ?? 1,
       ssgiProbeRays: options.ssgiProbeRays,
       ssgiProbeDebug: options.ssgiProbeDebug ?? 0,
-      ssgiProbeFilterPasses: options.ssgiProbeFilterPasses,
       giDenoisePasses:
         options.giDenoisePasses ??
         harnessDenoisePasses() ??
@@ -943,9 +938,6 @@ export class WorldEnvironment {
                           ...(options.ssgiProbeRays === undefined
                             ? {}
                             : { tracingOctahedronResolution: options.ssgiProbeRays }),
-                          ...(options.ssgiProbeFilterPasses === undefined
-                            ? {}
-                            : { spatialFilterPasses: options.ssgiProbeFilterPasses }),
                         },
                       }
                     : {}),
@@ -1138,6 +1130,25 @@ export class WorldEnvironment {
           // reflections onto a second copy builds two parallel graphs, and the frame comes
           // out as the bare background colour.
           const base = convertToTexture(input);
+          // A registered trace (`reflectionTrace`) finds the hit among the scene's triangles, so a ray that leaves
+          // the frame, or reaches the far side of an object, hits the right surface. It replaces the screen march.
+          const trace = reflectionTrace.current;
+          if (trace !== undefined) {
+            const traced = tracedReflections({
+              trace,
+              camera: view,
+              ...(target.godraysLight === undefined ? {} : { sun: target.godraysLight }),
+              base,
+              depth: depth(),
+              normal: normal(),
+              metalness: metal(),
+              roughness: rough(),
+              ...(options.ssgiEnabled ? { albedo: albedo() } : {}),
+              gain,
+              resolutionScale: options.ssrResolutionScale,
+            });
+            return base.add(traced.mul(trace.weight(rough().g)));
+          }
           const reflections = ssr(base, depth(), normal() as unknown as Parameters<typeof ssr>[2], {
             camera: view,
             metalnessNode: metal().r,
