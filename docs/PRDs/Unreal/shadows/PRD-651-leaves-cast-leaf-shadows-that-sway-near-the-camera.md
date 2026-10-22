@@ -140,6 +140,28 @@ from the game. The engine only makes the shadow follow them.
   returns only `SoftBody3D` (cloth), PRD-488 is PROPOSED, and no code under `packages/core/src` displaces
   foliage. The `wind` run has no Unreal capture either (PRD-649 Phase 2 is NOT STARTED). A guess at the
   amplitude API would be written twice, so the rule waits for PRD-488. AC-2 stays open for the same reason.
+- 2026-10-21 (leaf lane): at L1 (sun only) a ThreeNative leaf differs from an Unreal leaf in three
+  ways. The `foliage` scene with the sun at 60 degrees gives the numbers. Unreal values come from the
+  scene-linear EXR. ThreeNative values come from the PNG through the inverse tone curve, which
+  reproduces the Unreal PNG from the Unreal EXR to 0.41 rms.
+  1. Unreal shades rough diffuse with the EON model. The Unreal project renders with Substrate, and
+     its rough diffuse is `Diffuse_EON` at 0.4 times the roughness (UE 5.8.3:
+     `Engine/Shaders/Private/BRDF.ush`, `Diffuse_GGX_Rough`). ThreeNative uses Lambert. EON depends on
+     the view direction. On 5 leaf cards the Unreal-to-Lambert ratio varies by 9% to 12% from card to
+     card (standard deviation over mean, per channel). Dividing by the EON-to-Lambert ratio of each
+     card leaves 2% to 4%. The ratio comes from the card normal, the sun and the camera at each pixel,
+     with no fitted parameter. Six grass cards with more than 1000 pixels leave 0.7% in green. At these
+     angles EON is 0.91 to 1.36 times Lambert (floor 1.06 to 1.09, trunk 1.10 to 1.20, grass 1.13 to 1.36).
+  2. ThreeNative adds white light. The standard material's specular term (F0 0.04, roughness 1) adds
+     0.1 per unit of N.L to every channel. That is +4% on leaf green, +16% on red and +35% on blue.
+  3. The red channel of Unreal's green foliage is a further 20% to 25% below the Lambert value of its
+     albedo (leaf mean 0.61, grass 0.68; green 0.84 and 0.83; blue 0.86 and 0.80). The brown trunk and
+     the grey pawn do not show this. Geometry, shadows (L1 has none), the texture (white RGB) and the
+     tone curve do not explain it. The cause is open. One Unreal run of the same colour on an opaque
+     box and on a masked card would tell a material-path cause from a colour cause.
+  The common level of 0.83 may come from the sun calibration, which used Lambert. That is not verified.
+  No code changed. A diffuse model is a look decision (render source) with a native twin. PRD-646
+  AC-2 (the L1 direct-light cell) cannot pass on foliage before it exists.
 - 2026-10-20 (slicing): the masked-caster fault is an engine bug (`packages/runtime-native/`), not
   a game one. Every game with leaves on the default engine has it, so it is fixed in the engine.
 - 2026-10-20 (slicing): Unreal sways foliage in every shadow level by default. ThreeNative sways
