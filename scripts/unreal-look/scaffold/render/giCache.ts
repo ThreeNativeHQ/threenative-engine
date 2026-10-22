@@ -1704,9 +1704,11 @@ export function installGi(
             hasUv = true;
             u = result.u;
             v = result.v;
-            record =
-              recordsByOwner[result.owner] ??
-              (recordsByOwner[result.owner] = recordOf(flat.objects[result.owner] as Object3D));
+            record = recordsByOwner[result.owner];
+            if (record === undefined) {
+              record = recordOf(flat.objects[result.owner] as Object3D);
+              recordsByOwner[result.owner] = record;
+            }
           }
         } else {
           direction.set(dx, dy, dz);
