@@ -1,8 +1,9 @@
 /**
- * Ratchet locks for the GI calibration scenes (PRD-654). An approved round (PRD-647) becomes a floor under
- * its regions, so that no later change makes them worse without anyone seeing it:
+ * Ratchet locks for the GI calibration scenes (PRD-654). An approved round (PRD-647) or an approved capture
+ * becomes a floor under its regions, so that no later change makes them worse without anyone seeing it:
  *
  *   pnpm unreal-look:calibrate --lock <round> [--tighten | --relax]    write tools/unreal-reference/gi/parity-locks.json
+ *   pnpm unreal-look:compare --write-locks <head> --scene gi:<name> --layer L9 --captures <run> --noise <run>,<run>
  *   pnpm unreal-look:compare --check --scene gi:<name> --captures <run1> --captures <run2> [--layer L7-high]
  *
  * A lock holds, per scene, layer, pose and region, the worst dP50 and deltaE and the lowest ID overlap of the
@@ -14,10 +15,15 @@
  * (reference-stats.json), so the check needs no Unreal capture. A lock also records a digest of the committed
  * scene and Unreal reference that it was cut against (`basis`). When another lane rebuilds the scene, the
  * approved bounds no longer apply: the check says so (LOCK_STALE) and a new approved round re-cuts the lock.
+ *
+ * The L9 frames of the owner preview loop come one per head and have no ID frame. A lock for them is cut from
+ * one capture, takes its noise from the pairs of runs of other heads (`--noise`), has no overlap bound, and is
+ * checked on one capture (`runs: 1`). The overlap of a layer is the business of its L7 lock.
  */
 import { createHash } from "node:crypto";
 import {
   existsSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   readdirSync,
@@ -28,7 +34,7 @@ import {
 import os from "node:os";
 import path from "node:path";
 import { type IRow, ciede2000, lab } from "./compare.js";
-import { compareGiToUnreal, sceneDir } from "./gi.js";
+import { compareGiToUnreal, sceneDir, sceneKey } from "./gi.js";
 
 export const GI_LOCK_FILE = path.resolve(
   import.meta.dirname,
@@ -49,17 +55,20 @@ export interface IGiLock {
   layer: string;
   pose: string;
   region: string;
-  /** The approved round that cut the lock. */
+  /** The approved round, or the head of the approved capture, that cut the lock. */
   round: string;
   /** Digest of the committed scene and Unreal reference that the round was measured against (sceneBasis). */
   basis: string;
   maxDP50: number;
   maxDeltaE: number;
-  minIoU: number;
+  /** The lowest ID overlap. Absent when the capture that cut the lock has no ID frame of its own. */
+  minIoU?: number;
   /** Spread of each metric between the two runs of that round. */
   noiseDP50: number;
   noiseDeltaE: number;
-  noiseIoU: number;
+  noiseIoU?: number;
+  /** The captures that cut the lock, when that is one: the check then reads one capture. Absent means two. */
+  runs?: number;
 }
 
 const METRICS = [
@@ -74,11 +83,15 @@ const SIGNIFICANT = 5;
 const SAME = 1e-6;
 /** Two runs of a new capture may differ by the locked noise plus this share of the bound. */
 const AGREE = 1e-4;
+/** A lock that does not say how many captures cut it was cut from the two runs of a round. */
+const ROUND_RUNS = 2;
 
 export const lockKey = (lock: Pick<IGiLock, "scene" | "layer" | "pose" | "region">) =>
   `${lock.scene} ${lock.layer} ${lock.pose} ${lock.region}`;
 const rowKey = (row: Pick<IMeasuredRow, "cell" | "region">) => `${row.cell}\u0000${row.region}`;
 const show = (value: number) => Number(value.toPrecision(4));
+const index = (rows: readonly IMeasuredRow[]) =>
+  new Map(rows.map((row) => [rowKey(row), row] as const));
 
 function significant(value: number, toward: "up" | "down"): number {
   if (value === 0) return 0;
@@ -136,52 +149,106 @@ export function staleLocks(
   );
 }
 
-/** The locks that two runs of an approved round make, one per region of each pose. */
+/** The widest spread of one metric between the runs of any one group, for one region of one pose. */
+function widestSpread(
+  groups: readonly (readonly ReadonlyMap<string, IMeasuredRow>[])[],
+  key: string,
+  name: (typeof METRICS)[number]["name"],
+  what: string,
+): number {
+  return Math.max(
+    ...groups.map((group) => {
+      const values = group.map((map) => finite((map.get(key) as IMeasuredRow)[name], what));
+      return Math.max(...values) - Math.min(...values);
+    }),
+  );
+}
+
+/**
+ * The locks that an approved capture makes, one per region of each pose. Two or more runs measure their own noise.
+ * One run takes it from `noise`: groups of two or more runs of other captures, the widest spread of a group
+ * per region. A capture with no overlap (every `iou` null) gets no overlap bound.
+ */
 export function lockCells(
   round: string,
   scene: string,
   layer: string,
   runs: readonly (readonly IMeasuredRow[])[],
   basis: string,
+  noise: readonly (readonly (readonly IMeasuredRow[])[])[] = [],
 ): IGiLock[] {
-  if (runs.length < 2)
-    fail(
-      "TOO_FEW_RUNS",
-      `${runs.length} run(s): a lock is cut from two runs, so that its noise is measured`,
-    );
-  const maps = runs.map((rows) => new Map(rows.map((row) => [rowKey(row), row] as const)));
+  refuseRuns(runs, noise);
+  const maps = runs.map(index);
   const [first] = maps as [Map<string, IMeasuredRow>];
   for (const map of maps)
     if (map.size !== first.size || [...map.keys()].some((key) => !first.has(key)))
       fail("RUN_MISMATCH", "the runs do not measure the same regions of the same poses");
   if (first.size === 0) fail("RUN_MISMATCH", `${scene} ${layer}: the runs measure no region`);
-  return [...first.values()].map((row) => {
-    if (!row.cell.startsWith(`${scene}/`))
-      fail("BAD_INPUT", `${row.cell} is not a cell of the scene ${scene}`);
-    const at = maps.map((map) => map.get(rowKey(row)) as IMeasuredRow);
-    const step = displayLevel(row.unreal?.p50);
-    const lock: Record<string, string | number> = {
-      scene,
-      layer,
-      pose: row.cell.slice(scene.length + 1),
-      region: row.region,
-      round,
-      basis,
-    };
-    for (const metric of METRICS) {
-      const values = at.map((r) =>
-        finite(r[metric.name], `${row.cell}/${row.region} ${metric.name}`),
-      );
-      const mean = values.reduce((sum, value) => sum + value, 0) / values.length;
-      const noise = Math.max(...values) - Math.min(...values);
-      const level = metric.name === "iou" ? 0 : step[metric.name];
-      lock[metric.limit] = metric.floor
-        ? Math.max(significant(mean - noise, "down"), 0)
-        : significant(mean + noise + level, "up");
-      lock[metric.noise] = significant(noise, "up");
-    }
-    return lock as unknown as IGiLock;
-  });
+  const groups = runs.length > 1 ? [maps] : noise.map((group) => group.map(index));
+  if (groups.flat().some((map) => [...first.keys()].some((key) => !map.has(key))))
+    fail("RUN_MISMATCH", "the noise runs do not measure the regions of the capture");
+  return [...first.values()].map((row) =>
+    cutRow(row, { round, scene, layer, basis, maps, groups }),
+  );
+}
+
+/** A cut takes two runs, or one run and the noise of other captures in groups of two runs. */
+function refuseRuns(runs: readonly unknown[], noise: readonly (readonly unknown[])[]): void {
+  if (runs.length === 0 || (runs.length === 1 && noise.length === 0))
+    fail(
+      "TOO_FEW_RUNS",
+      `${runs.length} run(s): a lock is cut from two runs, so that its noise is measured, or from one run and the noise of other captures (--noise)`,
+    );
+  if (runs.length > 1 && noise.length > 0)
+    fail(
+      "BAD_INPUT",
+      "--noise gives the noise of a single capture; two or more runs measure their own",
+    );
+  if (noise.some((group) => group.length < 2))
+    fail("TOO_FEW_RUNS", "a --noise group is the two runs of one capture");
+}
+
+interface ICut {
+  round: string;
+  scene: string;
+  layer: string;
+  basis: string;
+  /** The runs of the capture, by region. */
+  maps: readonly ReadonlyMap<string, IMeasuredRow>[];
+  /** The runs that measure the noise: the runs of the capture, or each group of `--noise`. */
+  groups: readonly (readonly ReadonlyMap<string, IMeasuredRow>[])[];
+}
+
+/** The lock of one region of one pose. */
+function cutRow(row: IMeasuredRow, { round, scene, layer, basis, maps, groups }: ICut): IGiLock {
+  if (!row.cell.startsWith(`${scene}/`))
+    fail("BAD_INPUT", `${row.cell} is not a cell of the scene ${scene}`);
+  const key = rowKey(row);
+  const at = maps.map((map) => map.get(key) as IMeasuredRow);
+  const step = displayLevel(row.unreal?.p50);
+  const lock: Record<string, string | number> = {
+    scene,
+    layer,
+    pose: row.cell.slice(scene.length + 1),
+    region: row.region,
+    round,
+    basis,
+  };
+  for (const metric of METRICS) {
+    // A capture with no ID frame of its own has no overlap to lock.
+    if (metric.floor && at.every((r) => r.iou === null)) continue;
+    const what = `${row.cell}/${row.region} ${metric.name}`;
+    const values = at.map((r) => finite(r[metric.name], what));
+    const mean = values.reduce((sum, value) => sum + value, 0) / values.length;
+    const spread = widestSpread(groups, key, metric.name, what);
+    const level = metric.name === "iou" ? 0 : step[metric.name];
+    lock[metric.limit] = metric.floor
+      ? Math.max(significant(mean - spread, "down"), 0)
+      : significant(mean + spread + level, "up");
+    lock[metric.noise] = significant(spread, "up");
+  }
+  if (maps.length === 1) lock.runs = 1;
+  return lock as unknown as IGiLock;
 }
 
 export interface IMerge {
@@ -257,6 +324,7 @@ function refuseLooser(looser: readonly string[]): void {
 /**
  * How a fresh lock stands against the stored one: tighter on some bound, and the bounds on which it is looser.
  * Bounds cut against another scene basis are not comparable: the lock is stale and says nothing else.
+ * A bound that the fresh lock does not have is looser, one that only the fresh lock has is tighter.
  */
 function compareBounds(
   was: IGiLock,
@@ -267,19 +335,33 @@ function compareBounds(
   let better = false;
   const looser: string[] = [];
   for (const metric of METRICS) {
-    const tolerance = SAME * Math.abs(was[metric.limit]);
+    const tolerance = SAME * Math.abs(was[metric.limit] ?? 0);
     for (const field of [metric.limit, metric.noise] as const) {
       // A larger noise allows more, so it counts like a ceiling.
-      const tighter =
-        metric.floor && field === metric.limit
-          ? lock[field] - was[field]
-          : was[field] - lock[field];
-      if (tighter > tolerance) better = true;
-      else if (tighter < -tolerance)
-        looser.push(`${key} ${field}: ${was[field]} -> ${lock[field]}`);
+      const step = moved(
+        was[field],
+        lock[field],
+        metric.floor && field === metric.limit,
+        tolerance,
+      );
+      if (step > 0) better = true;
+      else if (step < 0) looser.push(`${key} ${field}: ${was[field]} -> ${lock[field] ?? "none"}`);
     }
   }
   return { better, looser, stale: false };
+}
+
+/** How one bound moved: 1 when tighter, -1 when looser, 0 when it stayed. A bound that only one lock has counts as a step. */
+function moved(
+  before: number | undefined,
+  after: number | undefined,
+  floor: boolean,
+  tolerance: number,
+): number {
+  if (before === undefined || after === undefined)
+    return before === after ? 0 : before === undefined ? 1 : -1;
+  const tighter = floor ? after - before : before - after;
+  return Math.abs(tighter) <= tolerance ? 0 : Math.sign(tighter);
 }
 
 /** A round that no longer measures a cell of a scene and layer it locked is refused, with or without --relax. */
@@ -295,6 +377,10 @@ function refuseDropped(existing: readonly IGiLock[], fresh: readonly IGiLock[]):
       `the round no longer measures ${dropped.length} locked cell(s): ${dropped.slice(0, 5).join("; ")}${dropped.length > 5 ? "; ..." : ""}. A round cannot drop a lock; remove the cell from the lock file by hand in a reviewed commit`,
     );
 }
+
+/** The captures that a check of these locks reads: as many as cut them, so that it sees the same noise. */
+const runsNeeded = (locks: readonly IGiLock[]) =>
+  Math.max(...locks.map((lock) => lock.runs ?? ROUND_RUNS));
 
 /** The ways a capture breaks the locks of one scene and layer, one line each. Throws when it cannot check. */
 export function checkGiLocks(
@@ -316,50 +402,69 @@ export function checkGiLocks(
       "LOCK_STALE",
       `${scene} ${layer}: ${stale.length} of ${own.length} lock(s) were cut against another scene or Unreal reference than the committed one (round ${[...new Set(stale.map((lock) => lock.round))].join(", ")}), so their bounds no longer apply. Approve a round on the current scene, then pnpm unreal-look:calibrate --lock <round> --relax`,
     );
-  if (runs.length < 2)
+  const need = runsNeeded(own);
+  if (runs.length < need)
     fail(
       "TOO_FEW_RUNS",
-      `${runs.length} run(s): the check reads two captures, so that it sees their noise`,
+      `${runs.length} run(s): the locks of ${scene} at ${layer} were cut from ${need}, so the check reads as many captures${need > 1 ? ", so that it sees their noise" : ""}`,
     );
-  const maps = runs.map((rows) => new Map(rows.map((row) => [rowKey(row), row] as const)));
-  const failures: string[] = [];
-  for (const lock of own) {
-    const name = lockKey(lock);
-    const found = maps.map((map) =>
-      map.get(rowKey({ cell: `${lock.scene}/${lock.pose}`, region: lock.region })),
+  const maps = runs.map(index);
+  return own.flatMap((lock) => checkLock(lock, maps));
+}
+
+/** The ways the runs break one lock, one line each. */
+function checkLock(lock: IGiLock, maps: readonly ReadonlyMap<string, IMeasuredRow>[]): string[] {
+  const key = rowKey({ cell: `${lock.scene}/${lock.pose}`, region: lock.region });
+  const found = maps.map((map) => map.get(key));
+  const absent = found.flatMap((row, i) => (row === undefined ? [i + 1] : []));
+  if (absent.length > 0)
+    return [
+      `${lockKey(lock)}: missing from run ${absent.join(" and run ")} (locked by round ${lock.round})`,
+    ];
+  return METRICS.flatMap((metric) => checkMetric(lock, metric, found as IMeasuredRow[]));
+}
+
+/** The ways the runs break one bound of a lock. `found` holds the row of each run. */
+function checkMetric(
+  lock: IGiLock,
+  metric: (typeof METRICS)[number],
+  found: readonly IMeasuredRow[],
+): string[] {
+  const limit = lock[metric.limit];
+  // A lock cut from a capture with no ID frame has no overlap bound.
+  if (limit === undefined) return [];
+  const name = `${lockKey(lock)} ${metric.name}`;
+  const values = found.map((row) => row[metric.name]);
+  if (values.some((value) => typeof value !== "number" || !Number.isFinite(value)))
+    return [`${name}: a run gave no value`];
+  const numbers = values as number[];
+  const failures = numbers.flatMap((value, i) =>
+    (metric.floor ? value < limit * (1 - SAME) : value > limit * (1 + SAME))
+      ? [
+          `${name}: ${show(value)} is ${metric.floor ? "below" : "above"} the lock ${limit} in run ${i + 1} (round ${lock.round})`,
+        ]
+      : [],
+  );
+  const spread = Math.max(...numbers) - Math.min(...numbers);
+  if (spread > (lock[metric.noise] ?? 0) + AGREE * Math.abs(limit))
+    failures.push(
+      `${name}: the runs differ by ${show(spread)}, more than the locked noise ${lock[metric.noise]}`,
     );
-    const absent = found.flatMap((row, i) => (row === undefined ? [i + 1] : []));
-    if (absent.length > 0) {
-      failures.push(
-        `${name}: missing from run ${absent.join(" and run ")} (locked by round ${lock.round})`,
-      );
-      continue;
-    }
-    for (const metric of METRICS) {
-      const limit = lock[metric.limit];
-      const values = found.map((row) => (row as IMeasuredRow)[metric.name]);
-      if (values.some((value) => typeof value !== "number" || !Number.isFinite(value))) {
-        failures.push(`${name} ${metric.name}: a run gave no value`);
-        continue;
-      }
-      const numbers = values as number[];
-      numbers.forEach((value, i) => {
-        if (metric.floor ? value < limit * (1 - SAME) : value > limit * (1 + SAME))
-          failures.push(
-            `${name} ${metric.name}: ${show(value)} is ${metric.floor ? "below" : "above"} the lock ${limit} in run ${i + 1} (round ${lock.round})`,
-          );
-      });
-      const spread = Math.max(...numbers) - Math.min(...numbers);
-      if (spread > lock[metric.noise] + AGREE * Math.abs(limit))
-        failures.push(
-          `${name} ${metric.name}: the runs differ by ${show(spread)}, more than the locked noise ${lock[metric.noise]}`,
-        );
-    }
-  }
   return failures;
 }
 
-const METRIC_FIELDS = METRICS.flatMap((metric) => [metric.limit, metric.noise]);
+const LOCK_FIELDS = [
+  "scene",
+  "layer",
+  "pose",
+  "region",
+  "round",
+  "basis",
+  ...METRICS.flatMap((metric) => [metric.limit, metric.noise]),
+  "runs",
+] as const;
+/** The fields that a lock may leave out: the overlap bound pair, and the capture count. */
+const OPTIONAL_FIELDS = ["minIoU", "noiseIoU", "runs"];
 
 export function readGiLocks(file: string): IGiLock[] {
   const data: unknown = (() => {
@@ -395,19 +500,25 @@ function parseLock(raw: unknown, where: string): IGiLock {
       fail("BAD_INPUT", `${where}: ${field} must be a non-empty string`);
   if (typeof lock.basis !== "string" || !/^[0-9a-f]{12}$/.test(lock.basis))
     fail("BAD_INPUT", `${where}: basis must be the 12 hex digits of sceneBasis`);
-  for (const field of METRIC_FIELDS)
-    if (
-      typeof lock[field] !== "number" ||
-      !Number.isFinite(lock[field]) ||
-      (lock[field] as number) < 0
-    )
-      fail("BAD_INPUT", `${where}: ${field} must be a non-negative number`);
+  parseBounds(lock, where);
   return Object.fromEntries(
-    ["scene", "layer", "pose", "region", "round", "basis", ...METRIC_FIELDS].map((field) => [
-      field,
-      lock[field],
-    ]),
+    LOCK_FIELDS.filter((field) => lock[field] !== undefined).map((field) => [field, lock[field]]),
   ) as unknown as IGiLock;
+}
+
+/** The bounds of a lock are numbers that are not negative. The overlap pair and the capture count may be left out. */
+function parseBounds(lock: Record<string, unknown>, where: string): void {
+  for (const metric of METRICS)
+    for (const field of [metric.limit, metric.noise]) {
+      const value = lock[field];
+      if (value === undefined && OPTIONAL_FIELDS.includes(field)) continue;
+      if (typeof value !== "number" || !Number.isFinite(value) || value < 0)
+        fail("BAD_INPUT", `${where}: ${field} must be a non-negative number`);
+    }
+  if ((lock.minIoU === undefined) !== (lock.noiseIoU === undefined))
+    fail("BAD_INPUT", `${where}: minIoU and noiseIoU go together`);
+  if (lock.runs !== undefined && !(Number.isInteger(lock.runs) && (lock.runs as number) >= 1))
+    fail("BAD_INPUT", `${where}: runs must be a whole number of at least 1`);
 }
 
 export function writeGiLocks(file: string, locks: readonly IGiLock[]): void {
@@ -415,15 +526,47 @@ export function writeGiLocks(file: string, locks: readonly IGiLock[]): void {
 }
 
 /**
- * Run `use` on a compare root that holds one capture folder as its ThreeNative side and no Unreal frames.
- * An error that names a file under that root names the capture folder instead.
+ * Merge `fresh` into the lock file, write it and say what moved. `what` names the cut in the first line.
+ * A refused merge (LOCK_LOOSER, LOCK_STALE, LOCK_DROPPED) throws before the file is written.
  */
-export function withOfflineRoot<T>(run: string, use: (root: string) => T): T {
+export function writeMerged(
+  file: string,
+  fresh: readonly IGiLock[],
+  mode: { tighten?: boolean; relax?: boolean },
+  log: (line: string) => void,
+  what: string,
+): IMerge {
+  const merged = mergeLocks(existsSync(file) ? readGiLocks(file) : [], fresh, mode);
+  writeGiLocks(file, merged.locks);
+  log(
+    `locked ${what}: ${fresh.length} region(s) in ${new Set(fresh.map((lock) => lock.pose)).size} pose(s), ${merged.added.length} added, ${merged.moved.length} moved, ${merged.improved.length} tighter and kept\nwrote ${file} (${merged.locks.length} lock(s))`,
+  );
+  if (merged.improved.length > 0)
+    log(
+      `${merged.improved.length} region(s) are tighter in this cut: pass --tighten to ratchet them`,
+    );
+  if (merged.looser.length > 0)
+    log(`relaxed ${merged.looser.length} bound(s) on purpose:\n  ${merged.looser.join("\n  ")}`);
+  return merged;
+}
+
+/**
+ * Run `use` on a compare root that holds one capture folder as its ThreeNative side and no Unreal frames.
+ * An error that names a file under that root names the capture folder instead. A capture with no ID frames
+ * (`ids` names the scene's folder in it and the committed Unreal ID frames) takes those for its masks.
+ */
+export function withOfflineRoot<T>(
+  run: string,
+  use: (root: string) => T,
+  ids?: { key: string; dir: string },
+): T {
   if (!existsSync(run)) fail("MISSING_CELL", `${run} is not a capture folder`);
   const root = mkdtempSync(path.join(os.tmpdir(), "gi-lock-"));
   const folder = path.resolve(run);
   try {
-    symlinkSync(folder, path.join(root, "threenative"));
+    if (ids === undefined || existsSync(path.join(folder, ids.key, "ID")))
+      symlinkSync(folder, path.join(root, "threenative"));
+    else borrowIds(root, folder, ids);
     return use(root);
   } catch (error) {
     if (error instanceof Error)
@@ -432,6 +575,33 @@ export function withOfflineRoot<T>(run: string, use: (root: string) => T): T {
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+}
+
+/** The ThreeNative side of a compare root: the layer folders of a capture, and the Unreal ID frames in place of its own. */
+function borrowIds(root: string, folder: string, ids: { key: string; dir: string }): void {
+  if (!existsSync(path.join(folder, ids.key)))
+    fail("MISSING_CELL", `${folder} has no frames of ${ids.key}`);
+  const scene = path.join(root, "threenative", ids.key);
+  mkdirSync(scene, { recursive: true });
+  for (const layer of readdirSync(path.join(folder, ids.key)))
+    symlinkSync(path.join(folder, ids.key, layer), path.join(scene, layer));
+  symlinkSync(ids.dir, path.join(scene, "ID"));
+}
+
+/**
+ * The compare rows of one capture folder at one layer, against the committed Unreal statistics. A capture with no
+ * ID frames, such as the L9 frames of the preview loop, takes the committed Unreal ones for its masks, so its overlap
+ * is not measured: every row has `iou: null`.
+ */
+export function compareCapture(scene: string, layer: string, run: string): IMeasuredRow[] {
+  const key = sceneKey(scene);
+  const own = existsSync(path.join(run, key, "ID"));
+  const rows = withOfflineRoot(
+    run,
+    (root) => compareGiToUnreal(scene, [layer], root),
+    own ? undefined : { key, dir: path.join(sceneDir(scene), "id") },
+  );
+  return own ? rows : rows.map((row) => ({ ...row, iou: null }));
 }
 
 export interface ICheckDeps {
@@ -443,8 +613,7 @@ export interface ICheckDeps {
   error(line: string): void;
 }
 export const defaultCheckDeps: ICheckDeps = {
-  compare: (scene, layer, run) =>
-    withOfflineRoot(run, (root) => compareGiToUnreal(scene, [layer], root)),
+  compare: compareCapture,
   basis: (scene) => sceneBasis(scene),
   log: (line) => console.log(line),
   error: (line) => console.error(line),
@@ -462,52 +631,124 @@ function flagValues(args: readonly string[], name: string): string[] {
   return values;
 }
 
+const namesGiScene = (args: readonly string[]) =>
+  args.some((arg, i) => arg === "--scene" && args[i + 1]?.startsWith("gi:"));
+
 /** `--check` with one GI scene is the lock check. `--check` alone is the reference scene's, and `--scene gi` is the GI report. */
 export const isGiCheck = (args: readonly string[]) =>
-  args.includes("--check") &&
-  args.some((arg, i) => arg === "--scene" && args[i + 1]?.startsWith("gi:"));
+  args.includes("--check") && namesGiScene(args);
+
+/** `--write-locks` with one GI scene cuts GI locks. `--write-locks` alone seeds the reference scene's. */
+export const isGiLock = (args: readonly string[]) =>
+  args.includes("--write-locks") && namesGiScene(args);
 
 /** `compare --check --scene gi:<name> --captures <run1> --captures <run2> [--layer L7-high] [--locks <file>]`. */
 export function checkCommand(args: readonly string[], deps: ICheckDeps = defaultCheckDeps): number {
   const [scene] = flagValues(args, "--scene").map((value) => value.replace(/^gi:/, ""));
   if (scene === undefined) fail("BAD_INPUT", "--check with --scene needs one scene: gi:<name>");
   const captures = flagValues(args, "--captures");
-  if (captures.length < 2)
-    fail(
-      "TOO_FEW_RUNS",
-      `${captures.length} --captures folder(s): pass the two runs of the capture`,
-    );
+  if (captures.length < 1)
+    fail("TOO_FEW_RUNS", "no --captures folder: pass the runs of the capture");
   const locks = readGiLocks(flagValues(args, "--locks")[0] ?? GI_LOCK_FILE);
-  const layers = flagValues(args, "--layer").flatMap((value) => value.split(","));
+  let broken = 0;
+  for (const layer of layersToCheck(args, locks, scene)) {
+    const failures = checkLayer(scene, layer, captures, locks, deps);
+    for (const failure of failures) deps.error(`GI LOCK BROKEN ${failure}`);
+    broken += failures.length;
+    const locked = locks.filter((lock) => lock.scene === scene && lock.layer === layer).length;
+    deps.log(
+      `${scene} ${layer}: ${locked} locked region(s) on ${captures.length} run${captures.length === 1 ? "" : "s"}, ${failures.length === 0 ? "every bound holds" : `${failures.length} bound(s) broken`}`,
+    );
+  }
+  return broken === 0 ? 0 : 1;
+}
+
+/** The layers a check covers: the ones `--layer` names, or every layer that the scene has locks at. */
+function layersToCheck(
+  args: readonly string[],
+  locks: readonly IGiLock[],
+  scene: string,
+): string[] {
+  const named = flagValues(args, "--layer").flatMap((value) => value.split(","));
   const wanted =
-    layers.length > 0
-      ? layers
+    named.length > 0
+      ? named
       : [...new Set(locks.filter((l) => l.scene === scene).map((l) => l.layer))];
   if (wanted.length === 0)
     fail(
       "NO_LOCKS",
       `no lock for ${scene}: approve a round with pnpm unreal-look:calibrate --lock <round>`,
     );
-  let broken = 0;
-  for (const layer of wanted) {
-    const own = locks.filter((lock) => lock.scene === scene && lock.layer === layer);
-    let failures: string[];
-    try {
-      failures = checkGiLocks(
-        scene,
-        layer,
-        captures.map((run) => [...deps.compare(scene, layer, run)]),
-        locks,
-        deps.basis(scene),
-      );
-    } catch (error) {
-      failures = [(error as Error).message];
-    }
-    for (const failure of failures) deps.error(`GI LOCK BROKEN ${failure}`);
-    broken += failures.length;
-    deps.log(
-      `${scene} ${layer}: ${own.length} locked region(s) on ${captures.length} runs, ${failures.length === 0 ? "every bound holds" : `${failures.length} bound(s) broken`}`,
+  return wanted;
+}
+
+/** The broken bounds of one layer, one line each. A check that cannot run is one broken line. */
+function checkLayer(
+  scene: string,
+  layer: string,
+  captures: readonly string[],
+  locks: readonly IGiLock[],
+  deps: ICheckDeps,
+): string[] {
+  const own = locks.filter((lock) => lock.scene === scene && lock.layer === layer);
+  const need = own.length > 0 ? runsNeeded(own) : 1;
+  if (captures.length < need)
+    fail(
+      "TOO_FEW_RUNS",
+      `${captures.length} --captures folder(s): the locks of ${scene} at ${layer} were cut from ${need}, so pass as many captures`,
     );
+  try {
+    return checkGiLocks(
+      scene,
+      layer,
+      captures.map((run) => [...deps.compare(scene, layer, run)]),
+      locks,
+      deps.basis(scene),
+    );
+  } catch (error) {
+    return [(error as Error).message];
   }
-  return broken === 0 ? 0 : 1;
+}
+
+/**
+ * `compare --write-locks <head> --scene gi:<name> --layer <layer> --captures <run> [--captures <run>]
+ * [--noise <run>,<run>]... [--tighten | --relax] [--locks <file>]`: cut the locks of one layer from the frames of an
+ * approved capture. `<head>` names the capture (the head that took it) and the lock records it as its round. One
+ * capture takes its noise from the pairs of runs named by `--noise`. No GPU and no model.
+ */
+export function lockCommand(args: readonly string[], deps: ICheckDeps = defaultCheckDeps): number {
+  const [head] = flagValues(args, "--write-locks");
+  const [scene] = flagValues(args, "--scene").map((value) => value.replace(/^gi:/, ""));
+  if (head === undefined || scene === undefined)
+    fail("BAD_INPUT", "--write-locks <head> needs one scene: --scene gi:<name>");
+  const layers = flagValues(args, "--layer").flatMap((value) => value.split(","));
+  const [layer] = layers;
+  if (layer === undefined || layers.length !== 1)
+    fail("BAD_INPUT", "--write-locks cuts one layer: pass --layer <layer>");
+  if (args.includes("--tighten") && args.includes("--relax"))
+    fail("BAD_INPUT", "--tighten and --relax exclude each other");
+  const rowsOf = (run: string) => [...deps.compare(scene, layer, run)];
+  const fresh = lockCells(
+    head,
+    scene,
+    layer,
+    flagValues(args, "--captures").map(rowsOf),
+    deps.basis(scene),
+    flagValues(args, "--noise").map((pair) => pair.split(",").map(rowsOf)),
+  );
+  writeMerged(
+    path.resolve(flagValues(args, "--locks")[0] ?? GI_LOCK_FILE),
+    fresh,
+    { tighten: args.includes("--tighten"), relax: args.includes("--relax") },
+    deps.log,
+    `${scene} ${layer} from ${head}`,
+  );
+  return 0;
+}
+
+/** The exit code of `compare --check --scene gi:<name>` and `compare --write-locks <head> --scene gi:<name>`, and undefined for any other command. */
+export function giCommand(args: readonly string[]): number | undefined {
+  if (isGiCheck(args)) return checkCommand(args);
+  if (isGiLock(args)) return lockCommand(args);
+  return undefined;
 }
