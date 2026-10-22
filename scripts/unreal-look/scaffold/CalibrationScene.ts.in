@@ -343,6 +343,11 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
           ...qualityPreset("high"),
           autoExposureEnabled: false,
           bloomEnabled: false,
+          // Below L9 Unreal draws with ShowFlag.LocalExposure 0 (PRD-631), and the `high` preset turns the stage on
+          // since the finishing chain became the default (ff837b1f2): it lifted L1's dark walls 14 levels.
+          // Diagnosis: ?localExposure=0|1 forces the stage.
+          localExposureEnabled:
+            params.get("localExposure") === null ? level >= 9 : params.get("localExposure") === "1",
           // Diagnosis: ?gtao=0 takes the contact occlusion out, to tell its darkening from the shadow's.
           gtaoEnabled: level >= 6 && params.get("gtao") !== "0",
           finalGatherMethod: method,
