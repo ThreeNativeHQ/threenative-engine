@@ -3,6 +3,7 @@ import {
   type ISnap,
   finish,
   pace,
+  pageData,
   readPrd,
   squarify,
   updateHistory,
@@ -46,5 +47,30 @@ describe("unreal-port-status", () => {
     expect(pace(h)).toBeCloseTo(10);
     expect(finish(h, 60, pace(h))).toBe("2026-11-26");
     expect(finish(h, 60, 0)).toBeNull();
+  });
+
+  describe("port rank", () => {
+    const { rankScore, PORT } = pageData();
+    const row = (vis: number, perf: number, cx: number) => ({ vis, perf, cx });
+
+    it("ranks a cheap high-impact PRD above a costly low-impact one", () => {
+      expect(rankScore(row(5, 4, 4))).toBeGreaterThan(rankScore(row(1, 0, 8)));
+      expect(rankScore(row(3, 2, 4))).toBeGreaterThan(rankScore(row(3, 2, 8)));
+      expect(rankScore(row(0, 3, 5))).toBeGreaterThan(rankScore(row(0, 1, 5)));
+    });
+
+    it("gives every PORT row a visual and a performance score from 0 to 5, and a unique rank to each open one", () => {
+      const open = PORT.filter((p) => p.done < p.total);
+      for (const p of PORT) {
+        for (const k of ["vis", "perf"] as const) expect(p[k]).toBeGreaterThanOrEqual(0);
+        for (const k of ["vis", "perf"] as const) expect(p[k]).toBeLessThanOrEqual(5);
+        expect(["measured", "estimate"]).toContain(p.visSrc);
+        expect(["measured", "estimate"]).toContain(p.perfSrc);
+      }
+      expect(new Set(open.map((p) => p.rank)).size).toBe(open.length);
+      const byRank = [...open].sort((a, b) => a.rank - b.rank);
+      const scores = byRank.map(rankScore);
+      expect(scores).toEqual([...scores].sort((a, b) => b - a));
+    });
   });
 });

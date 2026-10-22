@@ -12,19 +12,19 @@
   --bg: #f5f6f4; --panel: #ffffff; --fg: #1b1f1d; --muted: #5d6662; --line: #d9ddda; --hi: #fff4d6;
   --shipped: #2f8f5b; --partial: #d18a12; --open: #2f6fc4; --deferred: #8b8f93; --notfiled: #c9ccc7;
   --w1: #b8323a; --w2: #d9691f; --w3: #c9a10a; --w4: #3f8f6b; --w5: #5b6f8f;
-  --tile-fg: #ffffff; --accent: #0f6f6a; --gap: #c0392b;
+  --tile-fg: #ffffff; --accent: #0f6f6a; --gap: #c0392b; --vis: #7a4fc4; --perf: #b5590a;
   --display: "Instrument Sans", system-ui, sans-serif; --mono: "JetBrains Mono", ui-monospace, monospace;
 }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
   --bg: #121513; --panel: #1a1e1c; --fg: #e7ebe8; --muted: #9aa49f; --line: #2c322f; --hi: #3a3220;
   --shipped: #3aa56c; --partial: #d9961f; --open: #4a86d6; --deferred: #6c7176; --notfiled: #3b403d;
   --w1: #e0525a; --w2: #ef8a45; --w3: #e3bf2c; --w4: #55b38a; --w5: #8197bb;
-  --tile-fg: #ffffff; --accent: #3bb3aa; --gap: #f0716a; color-scheme: dark } }
+  --tile-fg: #ffffff; --accent: #3bb3aa; --gap: #f0716a; --vis: #a98be6; --perf: #f0a050; color-scheme: dark } }
 :root[data-theme="dark"] {
   --bg: #121513; --panel: #1a1e1c; --fg: #e7ebe8; --muted: #9aa49f; --line: #2c322f; --hi: #3a3220;
   --shipped: #3aa56c; --partial: #d9961f; --open: #4a86d6; --deferred: #6c7176; --notfiled: #3b403d;
   --w1: #e0525a; --w2: #ef8a45; --w3: #e3bf2c; --w4: #55b38a; --w5: #8197bb;
-  --tile-fg: #ffffff; --accent: #3bb3aa; --gap: #f0716a; color-scheme: dark }
+  --tile-fg: #ffffff; --accent: #3bb3aa; --gap: #f0716a; --vis: #a98be6; --perf: #f0a050; color-scheme: dark }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--bg); color: var(--fg); font-family: var(--display); font-size: 15px; line-height: 1.5; }
 .wrap { max-width: 1180px; margin: 0 auto; padding-block: 28px 56px;
@@ -67,7 +67,7 @@ button { font: inherit; color: inherit; }
 .wave h4 { margin: 0 0 4px; font-size: 12px; text-transform: uppercase; letter-spacing: .06em; display: flex; gap: 8px; align-items: center; }
 .wave h4 i { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }
 .wave h4 small { color: var(--muted); font-weight: 500; text-transform: none; letter-spacing: 0; }
-.prd { display: grid; grid-template-columns: 74px minmax(0, 1fr) auto; gap: 10px; align-items: center; width: 100%; text-align: left;
+.prd { display: grid; grid-template-columns: 86px minmax(0, 1fr) auto; gap: 10px; align-items: center; width: 100%; text-align: left;
   background: none; border: 0; border-radius: 6px; padding: 5px 6px; cursor: pointer; }
 .prd:hover { background: var(--bg); }
 .prd.sel { background: var(--hi); }
@@ -75,6 +75,21 @@ button { font: inherit; color: inherit; }
 .prd .t { font-size: 13.5px; line-height: 1.3; }
 .prd .t small { display: block; color: var(--muted); font-size: 12px; }
 .prd .m { font-family: var(--mono); font-size: 11px; color: var(--muted); text-align: right; white-space: nowrap; }
+.prd .rk { display: block; font-family: var(--mono); font-size: 11px; color: var(--muted); font-weight: 500; }
+.badges { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 3px; }
+.bdg { display: inline-flex; align-items: center; gap: 4px; font-family: var(--mono); font-size: 11px; line-height: 1; padding: 3px 6px; border-radius: 4px;
+  border: 1px solid var(--c); background: color-mix(in srgb, var(--c) 14%, transparent); color: var(--fg); white-space: nowrap; }
+.bdg.v { --c: var(--vis); } .bdg.p { --c: var(--perf); }
+.bdg.estimate { border-style: dashed; background: none; }
+.bdg i { font-style: normal; color: var(--muted); font-size: 10px; }
+.bdg .pips { display: inline-flex; gap: 1px; } .bdg .pips u { width: 4px; height: 8px; border-radius: 1px; background: var(--line); text-decoration: none; }
+.bdg .pips u.on { background: var(--c); }
+.sortbar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 0 0 10px; font-size: 13px; color: var(--muted); }
+.sortbar button { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 4px 10px; cursor: pointer; color: var(--fg); }
+.sortbar button[aria-pressed="true"] { border-color: var(--accent); background: var(--hi); font-weight: 600; }
+.rule { margin: 8px 0 0; font-size: 13px; max-width: 80ch; }
+#ptbl { min-width: 820px; } #ptbl th { cursor: pointer; } #ptbl tbody tr { cursor: pointer; } #ptbl tbody tr:hover td { background: var(--bg); }
+#ptbl td.why { color: var(--muted); font-size: 12px; max-width: 260px; }
 .prog { display: block; width: 56px; height: 4px; border-radius: 2px; background: var(--line); margin-top: 3px; margin-left: auto; overflow: hidden; }
 .prog b { display: block; height: 100%; background: var(--shipped); }
 
@@ -208,8 +223,11 @@ tr:last-child td { border-bottom: 0; }
 
   <section>
     <div class="section-head"><div><h2>What to port first</h2>
-      <div class="note">Complexity is each PRD's own rating. Impact is a judgement: share of the default frame, frame time saved, or work unblocked. Select a PRD to open its Unreal system below.</div></div>
+      <div class="note">Complexity is each PRD's own rating. Visual impact and performance impact each run from 0 to 5 and carry a source: a <b>solid</b> badge is measured, a <b>dashed</b> badge with a tilde is an estimate. Select a PRD to open its Unreal system below.</div>
+      <p class="rule"><b>Rank</b> = (visual impact + performance impact) ÷ complexity, highest first. A tie goes to the lower complexity, then the earlier wave. The list keeps its waves, because a wave is a dependency order and a PRD must not rank above the one it waits on; the sort buttons show the plain rank.</p>
+      <p class="note" style="margin:6px 0 0"><b>Visual</b> is measured as the share of parity locks still broken in the PRD's layer (calibration lock board): under 5% scores 0, then 15%, 30%, 45% and 60% step it up. <b>Performance</b> is measured as GPU ms at 1080p on the RTX 2080: under 0.1 ms scores 0, then 0.5, 1, 2 and 4 ms step it up. Everything else is an estimate with its reason in the tooltip.</p></div>
       <div class="legend" id="wave-legend"></div></div>
+    <div class="sortbar" id="sortbar" role="group" aria-label="Sort the PRD list">Sort: <button type="button" data-k="wave" aria-pressed="true">Wave order</button><button type="button" data-k="rank" aria-pressed="false">Rank</button><button type="button" data-k="vis" aria-pressed="false">Visual impact</button><button type="button" data-k="perf" aria-pressed="false">Performance impact</button><button type="button" data-k="cx" aria-pressed="false">Complexity</button></div>
     <div class="port">
       <div class="panel matrix"><svg id="matrix" viewBox="0 0 520 440" role="img" aria-label="Open PRDs plotted by complexity and impact"></svg></div>
       <div class="panel waves" id="waves"></div>
@@ -223,6 +241,14 @@ tr:last-child td { border-bottom: 0; }
       <nav class="panel rail" aria-label="Unreal features"><div class="railtools"><label class="toggle"><input type="checkbox" id="gaponly"> Only features with gaps</label></div><div id="rail"></div></nav>
       <div class="panel detail" id="detail" aria-live="polite"></div>
     </div>
+  </section>
+
+  <section>
+    <div class="section-head"><div><h2>All open PRDs, ranked</h2><div class="note">Select a column header to sort. Select a row to open its Unreal system. <span class="bdg v"><i>V</i> solid</span> and <span class="bdg p"><i>P</i> solid</span> are measured, <span class="bdg v estimate"><i>V</i> dashed</span> and <span class="bdg p estimate"><i>P</i> dashed</span> are estimates.</div></div></div>
+    <div class="panel tablebox"><table id="ptbl"><thead><tr>
+      <th data-k="rank" tabindex="0" style="text-align:right">Rank</th><th data-k="id" tabindex="0">PRD</th><th data-k="layer" tabindex="0">Layer</th>
+      <th data-k="vis" tabindex="0">Visual impact</th><th data-k="perf" tabindex="0">Performance impact</th><th data-k="cx" tabindex="0">Complexity</th>
+      <th data-k="wave" tabindex="0">Wave</th><th data-k="done" tabindex="0">Boxes</th></tr></thead><tbody></tbody></table></div>
   </section>
 
   <section>
@@ -414,94 +440,197 @@ for (const { system, rows } of Object.values(INTERNALS)) {
   });
 }
 
-// ---- Port order: [PRD, title, layer, complexity, estimated?, impact, done, total, wave, waits, why, system]
+// ---- Impact scores per PRD: [visual, performance, visual reason, performance reason]. Each score is 0 to 5.
+// A visual score "Lk" is measured: it comes from the share of parity locks still broken in layer k (LOCKS).
+// A performance score "ms:N" is measured: it comes from N GPU ms (PERF_MS). Any number is an estimate.
+const SCORES = {
+ "631": ["L0", 0, "No parity lock in L0 is broken", "The harness adds no frame cost"],
+ "632": ["L1", 1, "L1 parity gap is small but covers every pixel", "Tone curve and exposure are sub-millisecond"],
+ "633": ["L2", 2, "The sky fills the frame", "Atmosphere lookup tables, about 1 ms"],
+ "636": ["L9", 2, "Finishing chain is close to Unreal", "Several full-screen passes"],
+ "635": ["L6", 2, "Contact darkening at every crease", "One half-resolution pass"],
+ "651": ["L5", 1, "Leaf shadows on every tree", "Adds shadow draws"],
+ "649": [0, 0, "Calibration scenes change no shipped pixel", "No frame cost"],
+ "646": [0, 0, "Calibration scenes change no shipped pixel", "No frame cost"],
+ "603": ["L7", 4, "Foundation of every GI layer", "Every GI ray traces here; the largest GI cost"],
+ "539": [3, 4, "Resolve sharpness sets the detail of every frame", "A cheaper resolve lets the internal resolution drop"],
+ "562": ["L3", 2, "Haze with distance", "Froxel volume, about 1 ms"],
+ "VQ-08": ["L4", 3, "The default Unreal map has clouds", "Cloud ray march, 2 to 3 ms in Unreal"],
+ "634": ["L5", "ms:0.46", "Largest shadow gap to Unreal", "Unreal shadow stage median 0.46 ms"],
+ "604": ["L7", 3, "Unreal Medium GI tier", "Irradiance field gather is the cheap GI tier"],
+ "639": ["L7", 3, "Bounce light takes the colour of what it hits", "Cache update plus a lookup per ray hit"],
+ "640": ["L7", "ms:5.79", "Unreal Epic GI tier, the default", "Unreal 3.09 to 5.79 ms; ThreeNative SSGI stage 15.95 ms"],
+ "641": [2, 1, "Bounce light stops crawling", "Temporal filter is cheap"],
+ "642": ["L8", 4, "Glossy surfaces show what the camera cannot see", "Traced reflections cost 2 to 4 ms in Unreal (estimate)"],
+ "644": [1, "ms:5.79", "Tiers change the look only when one steps down", "Sets which GI tier a frame can afford"],
+ "650": [2, 1, "Interior lamp shadows", "A few lamp shadow maps"],
+ "652": [0, "ms:0.46", "Tiers change the look only when one steps down", "Unreal shadow stage median 0.46 ms"],
+ "643": [1, 1, "Small share of the frame", "Extra GI lookups on a few surfaces"],
+ "605": [1, 2, "Open worlds only", "Clipmap update cost"],
+ "457": [0, 2, "Same shadow pixels", "Only where measured cheaper"],
+ "600": [1, 4, "Same pixels, dense scenes keep detail", "Cluster submit cuts draw cost in dense scenes"],
+ "601": [1, 2, "Far clusters keep their shading", "Follows 600"],
+ "602": [0, 2, "Same shadow pixels", "Fewer shadow draws for dense casters"],
+ "570": [0, 3, "Same pixels", "Crowd skinning cost; a lane is measuring it"],
+ "VQ-10": [1, 1, "Fewer blurry mips under memory pressure", "Saves memory more than time"],
+ "460": [1, 2, "Hides pop-in", "Removes streaming hitches"],
+ "606": [0, 1, "Same pixels", "Shorter travel hitch"],
+ "607": [1, 1, "Closes holes in the world", "Fewer wasted loads"],
+ "611": [0, 2, "Same pixels", "Removes a first-frame hitch"],
+ "610": [2, 1, "Sparks bounce off visible surfaces", "A few particle collision reads"],
+ "660": [1, 2, "Off in a fresh Unreal project", "Fixes the cost of many shadowed lamps"],
+ "661": [0, 2, "Same quality by design", "No Unreal tier turns it on; fewer GI rays"],
+ "662": [2, 1, "Low tier look", "Distance-field AO on the BVH, cheap"],
+ "665": [2, 1, "Light shafts through cloud gaps", "One more cloud lookup"],
+ "663": [1, 1, "Sailing template first", "Few fog volumes"],
+ "664": [2, 2, "Off at Unreal low and medium tiers", "Volume march per effect"],
+ "667": [1, 1, "Off in a fresh Unreal project", "One extra pass on request"],
+ "679": [1, 0, "Additive effects add fog colour today", "No cost change"],
+ "676": [0, 0, "Reads the frame, changes no pixel", "Saves no time itself"],
+ "670": ["L1", 0, "Every rough pixel", "No cost change"],
+ "668": [1, 1, "Per-material opt-in in Unreal", "Extra vertex work where on"],
+ "669": [1, 3, "Far trees change shape slightly", "Cuts far-foliage cost"],
+ "671": [1, 1, "Off in a fresh project", "Strands cost more than cards"],
+ "672": [0, 2, "Same pixels", "Terrain layers shade once"],
+ "674": [0, 2, "Same pixels", "Ambient particles cost no simulation"],
+ "673": [0, 2, "Same pixels", "Fewer placement tests"],
+ "675": [0, 1, "Same pixels", "Tests one streaming budget"],
+ "683": [0, 2, "Same pixels", "Fewer passes and targets"],
+ "682": [0, 2, "Flat areas shade coarser", "Needs a Dawn patch; off in Unreal"],
+ "677": [0, 1, "Off by default in Unreal", "Small blend fix"],
+ "678": [0, 1, "Only a 100K-triangle character needs it", "Small share of scenes"],
+ "695": [1, 1, "Fixes an orthographic camera throw", "Per-view cut costs a little"],
+ "694": [0, 0, "Colliders built before the first frame are empty", "No frame cost"],
+ "685": [2, 1, "Missed rays take the sky direction", "Small lookup"],
+ "684": [2, 1, "Fills depth-edge gaps", "Fewer noisy rays"],
+ "686": [1, 0, "Moving doors block bounce light", "No cost change"],
+ "687": [0, 0, "Reads the frame, changes no pixel", "Saves no time itself"],
+ "696": [0, 2, "Same shadow pixels", "Compute raster for tiny triangles"],
+ "704": [2, 0, "Four effects hand-write streaks today", "No cost change"],
+ "705": [2, 0, "A sword swing draws as a ribbon", "No cost change"],
+ "706": [2, 0, "Effects start on the skin", "No cost change"],
+ "714": [2, 1, "Shadow texels follow the lens", "Same budget"],
+ "715": [2, 1, "Cleaner shadow edges", "Skips flat areas"],
+ "717": [2, 0, "Less ghosting behind movers", "No cost change"],
+ "720": [3, 1, "Sharper disocclusions at low internal resolution", "Wider input reads more"],
+ "716": [0, 2, "Same shadow pixels", "Fewer shadow draws"],
+ "718": [2, 0, "Detail returns when a surface returns", "No cost change"],
+ "719": [2, 0, "Less flicker on bright edges", "No cost change"],
+ "VQ-03": [3, 1, "Interiors reflect their room", "A few probe captures"],
+ "VQ-13": [1, 2, "Needs the Unreal lens model", "One blur pass"],
+ "VQ-09": [2, 2, "Lights relight only the dirty region", "Saves a full relight"],
+ "488": [2, 1, "Leaf shadows that sway", "Vertex work"],
+ "456": [1, 3, "Far cells as merged proxies", "Open worlds draw less"],
+ "459": [1, 2, "Fewer streaming hitches", "One admission budget per frame"],
+ "493": [1, 0, "Blocked on a private game", "No cost change"],
+ "486": [0, 3, "Same pixels", "Crowds draw cheaper characters"],
+};
+// Parity locks broken / all, per layer: the calibration lock board (epic 340abbffd, 2026-10-22). L7 adds L7-high. L9 leaves out 24 stale locks.
+const LOCKS = { L0: [0, 81], L1: [19, 148], L2: [10, 28], L3: [8, 14], L4: [11, 20], L5: [8, 18], L6: [11, 17], L7: [21, 67], L8: [14, 22], L9: [8, 132] };
+// GPU ms at 1080p on the RTX 2080: Unreal GI screen probe gather, top of 3.09 to 5.79 (PRD-644 Decisions); Unreal shadow stage median (PRD-652 Decisions).
+const PERF_MS = { "5.79": 5.79, "0.46": 0.46 };
+const band = (x, cuts) => cuts.filter(c => x >= c).length;
+const visOf = v => typeof v === "string" ? [band(LOCKS[v][0] / LOCKS[v][1], [.05, .15, .30, .45, .60]), "measured"] : [v, "estimate"];
+const perfOf = v => typeof v === "string" ? [band(PERF_MS[v.slice(3)], [.1, .5, 1, 2, 4]), "measured"] : [v, "estimate"];
+// Rank: higher visual and performance impact first, lower complexity first.
+const rankScore = p => (p.vis + p.perf) / p.cx;
+
+// ---- Port order: [PRD, title, layer, complexity, estimated?, done, total, wave, waits, why, system]; the impact scores come from SCORES
 const PORT = [
- ["631","Reference scene + comparison harness","L0",6,0,5,15,15,1,"—","All boxes ticked; close it",null],
- ["632","Filmic tone curve, EV100, auto exposure","L1",6,0,5,4,16,1,"631","Every pixel; later layers compare at matched exposure","post"],
- ["633","Sky atmosphere + sky light","L2",6,0,5,1,11,2,"632","The sky fills the frame and lights the scene","sky"],
- ["636","Finishing post chain","L9",5,0,3,15,28,2,"632","Half done; cheap finish","post"],
- ["635","AO on indirect light only","L6",5,0,3,5,14,2,"632","Low cost, visible at every contact","ao"],
- ["651","Leaf cards cast leaf shadows","L5",6,0,4,5,12,2,"—","Phase 1 is an engine bug","vsm"],
- ["649","Shadow calibration scenes","L5",5,0,4,3,12,2,"646","Unblocks 634, 650, 652","vsm"],
- ["646","Recreate GI calibration scenes","L7",6,0,4,6,15,2,"632","Unblocks every GI verdict","lumen"],
- ["603","RadianceCache traces the packed scene","L7",7,0,5,0,10,2,"—","GI foundation; can start now","lumen"],
- ["539","TSR quality and cost","Perf",6,1,4,0,5,2,"—","A cheaper frame pays for every layer","tsr"],
- ["562","Aerial perspective (froxel volume)","L3",4,0,3,0,8,3,"633","Needs the atmosphere","fog"],
- ["VQ-08","Volumetric clouds + overhead shadow","L4",7,1,3,0,9,3,"633","The default Unreal map has clouds","clouds"],
- ["634","Sun shadows: reach + penumbra","L5",6,0,4,2,14,3,"649","Biggest shadow gap to Unreal","vsm"],
- ["604","IrradianceFieldGather, no leaks","L7",5,0,4,0,10,3,"603","Unreal Medium GI tier","lumen"],
- ["639","SurfaceCache","L7",7,0,4,6,9,3,"603","Two thirds done","lumen"],
- ["640","ScreenProbeGather + ShortRangeAO","L7",8,0,5,2,9,3,"603, 647","Unreal Epic GI tier: the default","lumen"],
- ["641","GI temporal filter","L7",6,0,3,4,13,4,"640","Stability once the gather exists","lumen"],
- ["642","TracedReflections","L8",7,0,4,1,10,4,"603, 639","Needs the surface cache","lumen"],
- ["644","GI tiers follow Unreal quality levels","Perf",6,0,4,5,10,4,"647","Cost per GI tier","lumen"],
- ["650","Lamp shadows","L5",7,0,3,2,11,4,"649","Interiors","vsm"],
- ["652","Shadow tiers","Perf",5,0,3,5,9,4,"634, 650","Cost per shadow tier","vsm"],
- ["643","Glass, fog, leaves take GI","L7",5,0,2,0,8,5,"603, 604","Small share of the frame","lumen"],
- ["605","Radiance cache clipmaps","L7",6,0,3,0,8,5,"603, 604","Open worlds","lumen"],
- ["457","Shadow pages only where cheaper","Perf",5,1,2,0,4,5,"—","Only where measured","vsm"],
- ["600","Nanite: submit visible clusters","Perf",6,0,3,0,8,5,"—","Dense scenes","nanite"],
- ["601","Far clusters keep shading","Perf",4,0,2,0,7,5,"600","Follows 600","nanite"],
- ["602","Cluster shadow casters","Perf",5,0,2,0,8,5,"600","Follows 600","nanite"],
- ["570","Characters cost what the camera sees","Perf",5,0,3,0,10,5,"—","Crowds; a lane is measuring it",null],
- ["VQ-10","Texture mip residency","Perf",5,1,2,0,8,5,"—","When texture memory limits a game","streaming"],
- ["460","Invisible streaming transitions","Perf",6,0,2,0,15,5,"—","Open worlds","wp"],
- ["606","Fast travel ready before reveal","Perf",3,0,2,0,13,5,"—","Open worlds","wp"],
- ["607","Streaming reports and closes holes","Perf",5,0,2,0,11,5,"—","Open worlds","wp"],
- ["611","Hidden effect's first frame is ready","Perf",4,0,2,0,10,5,"—","First-frame hitch","niagara"],
- ["610","Sparks bounce off visible surfaces","VFX",6,0,1,0,12,5,"609","Effect detail","niagara"],
+ ["631","Reference scene + comparison harness","L0",6,0,15,15,1,"—","All boxes ticked; close it",null],
+ ["632","Filmic tone curve, EV100, auto exposure","L1",6,0,4,16,1,"631","Every pixel; later layers compare at matched exposure","post"],
+ ["633","Sky atmosphere + sky light","L2",6,0,1,11,2,"632","The sky fills the frame and lights the scene","sky"],
+ ["636","Finishing post chain","L9",5,0,15,28,2,"632","Half done; cheap finish","post"],
+ ["635","AO on indirect light only","L6",5,0,5,14,2,"632","Low cost, visible at every contact","ao"],
+ ["651","Leaf cards cast leaf shadows","L5",6,0,5,12,2,"—","Phase 1 is an engine bug","vsm"],
+ ["649","Shadow calibration scenes","L5",5,0,3,12,2,"646","Unblocks 634, 650, 652","vsm"],
+ ["646","Recreate GI calibration scenes","L7",6,0,6,15,2,"632","Unblocks every GI verdict","lumen"],
+ ["603","RadianceCache traces the packed scene","L7",7,0,0,10,2,"—","GI foundation; can start now","lumen"],
+ ["539","TSR quality and cost","Perf",6,1,0,5,2,"—","A cheaper frame pays for every layer","tsr"],
+ ["562","Aerial perspective (froxel volume)","L3",4,0,0,8,3,"633","Needs the atmosphere","fog"],
+ ["VQ-08","Volumetric clouds + overhead shadow","L4",7,1,0,9,3,"633","The default Unreal map has clouds","clouds"],
+ ["634","Sun shadows: reach + penumbra","L5",6,0,2,14,3,"649","Biggest shadow gap to Unreal","vsm"],
+ ["604","IrradianceFieldGather, no leaks","L7",5,0,0,10,3,"603","Unreal Medium GI tier","lumen"],
+ ["639","SurfaceCache","L7",7,0,6,9,3,"603","Two thirds done","lumen"],
+ ["640","ScreenProbeGather + ShortRangeAO","L7",8,0,2,9,3,"603, 647","Unreal Epic GI tier: the default","lumen"],
+ ["641","GI temporal filter","L7",6,0,4,13,4,"640","Stability once the gather exists","lumen"],
+ ["642","TracedReflections","L8",7,0,1,10,4,"603, 639","Needs the surface cache","lumen"],
+ ["644","GI tiers follow Unreal quality levels","Perf",6,0,5,10,4,"647","Cost per GI tier","lumen"],
+ ["650","Lamp shadows","L5",7,0,2,11,4,"649","Interiors","vsm"],
+ ["652","Shadow tiers","Perf",5,0,5,9,4,"634, 650","Cost per shadow tier","vsm"],
+ ["643","Glass, fog, leaves take GI","L7",5,0,0,8,5,"603, 604","Small share of the frame","lumen"],
+ ["605","Radiance cache clipmaps","L7",6,0,0,8,5,"603, 604","Open worlds","lumen"],
+ ["457","Shadow pages only where cheaper","Perf",5,1,0,4,5,"—","Only where measured","vsm"],
+ ["600","Nanite: submit visible clusters","Perf",6,0,0,8,5,"—","Dense scenes","nanite"],
+ ["601","Far clusters keep shading","Perf",4,0,0,7,5,"600","Follows 600","nanite"],
+ ["602","Cluster shadow casters","Perf",5,0,0,8,5,"600","Follows 600","nanite"],
+ ["570","Characters cost what the camera sees","Perf",5,0,0,10,5,"—","Crowds; a lane is measuring it",null],
+ ["VQ-10","Texture mip residency","Perf",5,1,0,8,5,"—","When texture memory limits a game","streaming"],
+ ["460","Invisible streaming transitions","Perf",6,0,0,15,5,"—","Open worlds","wp"],
+ ["606","Fast travel ready before reveal","Perf",3,0,0,13,5,"—","Open worlds","wp"],
+ ["607","Streaming reports and closes holes","Perf",5,0,0,11,5,"—","Open worlds","wp"],
+ ["611","Hidden effect's first frame is ready","Perf",4,0,0,10,5,"—","First-frame hitch","niagara"],
+ ["610","Sparks bounce off visible surfaces","VFX",6,0,0,12,5,"609","Effect detail","niagara"],
  // filed 2026-10-21 for the gaps this map found
- ["660","Many shadowed lamps, one fixed budget","Perf",8,0,1,0,8,5,"650","Off in a fresh Unreal project; gate first","megalights"],
- ["661","ReSTIR: fewer GI rays, same quality","Perf",7,0,1,0,7,5,"640, 641","No Unreal tier turns it on; gate first","lumen"],
- ["662","Sky light stops at walls with GI off","L6",6,0,2,0,6,5,"644","Low tier look; DFAO on the BVH","ao"],
- ["665","Clouds shade the haze and fog below","L4",5,0,2,0,7,5,"VQ-08, 562","Light shafts through cloud gaps","clouds"],
- ["663","Local fog volumes","L3",4,0,1,0,6,5,"—","Sailing template first; gate first","fog"],
- ["664","Smoke and explosions as lit volumes","VFX",6,0,1,0,7,5,"—","Off at Unreal low and medium tiers","f-heterogeneous-volumes"],
- ["667","Lens flare and FFT bloom on request","L9",4,0,1,0,7,5,"636","Off in a fresh Unreal project","post"],
- ["679","Fog behind glass and sparks","L3",5,0,3,0,8,2,"—","Additive effects add fog colour today; gate first","fog"],
- ["676","Debug views an agent can read","Perf",5,0,3,0,7,2,"—","Explains frame cost before perf work",null],
- ["670","Rough diffuse like a fresh Unreal project","L1",5,0,3,0,5,2,"632","Substrate is on in Unreal 5.8.3; every rough pixel","f-substrate-materials"],
- ["668","Displacement changes the silhouette","Look",7,0,1,0,6,5,"600","Per-material opt-in in Unreal","nanite"],
- ["669","Far foliage as voxels","Perf",7,0,1,0,7,5,"—","Off in a fresh project; gate first","nanite"],
- ["671","Strand hair","Look",7,0,1,0,6,5,"VQ-15","Off in a fresh project","f-hair-strands"],
- ["672","Terrain layers cached in virtual pages","Perf",8,0,1,0,6,5,"VQ-10","Saves shading time on many-layer terrain","f-virtual-texturing"],
- ["674","Ambient particles cost no simulation","Perf",5,0,2,0,8,4,"—","Rain template draws its own today","niagara"],
- ["673","Cull by grid cell before placement","Perf",6,0,2,0,7,5,"—","Dense placements; gate first","gpuscene"],
- ["675","Named world layers, one streaming budget","Perf",5,0,1,0,6,5,"606","Tests the two-WorldCells claim","wp"],
- ["683","Skip unread passes, share targets","Perf",5,0,1,0,7,5,"523","Render graph outcomes that need no new API","f-rendercore-rdg-"],
- ["682","Coarse shading where the GPU allows","Perf",7,0,1,0,6,5,"—","Off in Unreal; needs a Dawn patch","f-variable-rate-shading"],
- ["677","Clustered glass and water blend right","Perf",3,0,1,0,5,5,"600","Off by default in Unreal","nanite"],
- ["678","Skinned bodies take the cluster cut","Perf",6,0,1,0,7,5,"486","Only a 100K-triangle character needs it","nanite"],
+ ["660","Many shadowed lamps, one fixed budget","Perf",8,0,0,8,5,"650","Off in a fresh Unreal project; gate first","megalights"],
+ ["661","ReSTIR: fewer GI rays, same quality","Perf",7,0,0,7,5,"640, 641","No Unreal tier turns it on; gate first","lumen"],
+ ["662","Sky light stops at walls with GI off","L6",6,0,0,6,5,"644","Low tier look; DFAO on the BVH","ao"],
+ ["665","Clouds shade the haze and fog below","L4",5,0,0,7,5,"VQ-08, 562","Light shafts through cloud gaps","clouds"],
+ ["663","Local fog volumes","L3",4,0,0,6,5,"—","Sailing template first; gate first","fog"],
+ ["664","Smoke and explosions as lit volumes","VFX",6,0,0,7,5,"—","Off at Unreal low and medium tiers","f-heterogeneous-volumes"],
+ ["667","Lens flare and FFT bloom on request","L9",4,0,0,7,5,"636","Off in a fresh Unreal project","post"],
+ ["679","Fog behind glass and sparks","L3",5,0,0,8,2,"—","Additive effects add fog colour today; gate first","fog"],
+ ["676","Debug views an agent can read","Perf",5,0,0,7,2,"—","Explains frame cost before perf work",null],
+ ["670","Rough diffuse like a fresh Unreal project","L1",5,0,0,5,2,"632","Substrate is on in Unreal 5.8.3; every rough pixel","f-substrate-materials"],
+ ["668","Displacement changes the silhouette","Look",7,0,0,6,5,"600","Per-material opt-in in Unreal","nanite"],
+ ["669","Far foliage as voxels","Perf",7,0,0,7,5,"—","Off in a fresh project; gate first","nanite"],
+ ["671","Strand hair","Look",7,0,0,6,5,"VQ-15","Off in a fresh project","f-hair-strands"],
+ ["672","Terrain layers cached in virtual pages","Perf",8,0,0,6,5,"VQ-10","Saves shading time on many-layer terrain","f-virtual-texturing"],
+ ["674","Ambient particles cost no simulation","Perf",5,0,0,8,4,"—","Rain template draws its own today","niagara"],
+ ["673","Cull by grid cell before placement","Perf",6,0,0,7,5,"—","Dense placements; gate first","gpuscene"],
+ ["675","Named world layers, one streaming budget","Perf",5,0,0,6,5,"606","Tests the two-WorldCells claim","wp"],
+ ["683","Skip unread passes, share targets","Perf",5,0,0,7,5,"523","Render graph outcomes that need no new API","f-rendercore-rdg-"],
+ ["682","Coarse shading where the GPU allows","Perf",7,0,0,6,5,"—","Off in Unreal; needs a Dawn patch","f-variable-rate-shading"],
+ ["677","Clustered glass and water blend right","Perf",3,0,0,5,5,"600","Off by default in Unreal","nanite"],
+ ["678","Skinned bodies take the cluster cut","Perf",6,0,0,7,5,"486","Only a 100K-triangle character needs it","nanite"],
   // filed 2026-10-22 from the Lumen and Nanite deep dives
- ["695","Every view takes its own cluster cut","Perf",6,0,2,0,9,2,"—","Phase 1 fixes an orthographic-camera throw","nanite"],
- ["694","Traces and colliders see a fixed cluster error","Perf",4,0,2,0,10,2,"—","Colliders built before the first frame are empty today","nanite"],
- ["685","Directional radiance for missed rays","L7",7,0,4,0,10,3,"640","PRD-640 decision: the miss tier needs direction","lumen"],
- ["684","Adaptive probes and importance sampling","L7",6,0,3,0,10,3,"640, 641","Fills depth-edge gaps; fewer noisy rays","lumen"],
- ["686","Moving doors block GI rays","L7",6,0,3,0,9,3,"603","The traced scene is a static snapshot today","lumen"],
- ["687","GI debug views an agent can read","Perf",5,0,1,0,7,4,"676","PRD-676 leaves GI views out","lumen"],
- ["696","Compute raster for tiny shadow triangles","Perf",7,0,2,0,8,5,"602","Depth-only raster needs only 32-bit atomics","nanite"],
+ ["695","Every view takes its own cluster cut","Perf",6,0,0,9,2,"—","Phase 1 fixes an orthographic-camera throw","nanite"],
+ ["694","Traces and colliders see a fixed cluster error","Perf",4,0,0,10,2,"—","Colliders built before the first frame are empty today","nanite"],
+ ["685","Directional radiance for missed rays","L7",7,0,0,10,3,"640","PRD-640 decision: the miss tier needs direction","lumen"],
+ ["684","Adaptive probes and importance sampling","L7",6,0,0,10,3,"640, 641","Fills depth-edge gaps; fewer noisy rays","lumen"],
+ ["686","Moving doors block GI rays","L7",6,0,0,9,3,"603","The traced scene is a static snapshot today","lumen"],
+ ["687","GI debug views an agent can read","Perf",5,0,0,7,4,"676","PRD-676 leaves GI views out","lumen"],
+ ["696","Compute raster for tiny shadow triangles","Perf",7,0,0,8,5,"602","Depth-only raster needs only 32-bit atomics","nanite"],
   // filed 2026-10-22 from the Niagara deep dive
- ["704","Sparks streak along their motion","VFX",4,0,3,0,8,2,"—","Four effects hand-write streak alignment today","niagara"],
- ["705","Ribbon trails for a sword swing","VFX",5,0,2,0,7,4,"609","180 short sprites draw the arc today","niagara"],
- ["706","Effects start on a moving character's skin","VFX",6,0,2,0,7,5,"609","Effects start at the origin point today","niagara"],
+ ["704","Sparks streak along their motion","VFX",4,0,0,8,2,"—","Four effects hand-write streak alignment today","niagara"],
+ ["705","Ribbon trails for a sword swing","VFX",5,0,0,7,4,"609","180 short sprites draw the arc today","niagara"],
+ ["706","Effects start on a moving character's skin","VFX",6,0,0,7,5,"609","Effects start at the origin point today","niagara"],
   // filed 2026-10-22 from the shadow-map and TSR deep dives
- ["714","Sun shadow texels follow the lens","L5",5,0,3,0,6,2,"457","Fixed clip extents ignore zoom today","vsm"],
- ["715","Shadow filter skips flat areas, starts off its surface","L5",4,0,3,0,6,2,"634","Cheaper, cleaner shadow edges","vsm"],
- ["717","Disoccluded pixels reproject through the surface that left","Perf",6,0,3,0,6,3,"539","Less ghosting behind movers","tsr"],
- ["720","Wider resolve input where history fails","Perf",6,0,4,0,6,3,"539","Sharper disocclusions at low internal resolution","tsr"],
- ["716","Skip casters no visible pixel receives","Perf",7,0,2,0,6,4,"457","Fewer shadow draws","vsm"],
- ["718","History resurrection","Perf",6,0,2,0,6,4,"717","On at Unreal Epic scalability","tsr"],
- ["719","Rejection judged in display space","Perf",6,0,2,0,6,4,"539, 632","Less flicker on bright edges","tsr"],
+ ["714","Sun shadow texels follow the lens","L5",5,0,0,6,2,"457","Fixed clip extents ignore zoom today","vsm"],
+ ["715","Shadow filter skips flat areas, starts off its surface","L5",4,0,0,6,2,"634","Cheaper, cleaner shadow edges","vsm"],
+ ["717","Disoccluded pixels reproject through the surface that left","Perf",6,0,0,6,3,"539","Less ghosting behind movers","tsr"],
+ ["720","Wider resolve input where history fails","Perf",6,0,0,6,3,"539","Sharper disocclusions at low internal resolution","tsr"],
+ ["716","Skip casters no visible pixel receives","Perf",7,0,0,6,4,"457","Fewer shadow draws","vsm"],
+ ["718","History resurrection","Perf",6,0,0,6,4,"717","On at Unreal Epic scalability","tsr"],
+ ["719","Rejection judged in display space","Perf",6,0,0,6,4,"539, 632","Less flicker on bright edges","tsr"],
  // filed outside docs/PRDs/Unreal/
- ["VQ-03","Local reflection probes","L8",5,1,3,0,8,4,"—","Interiors and shaded areas reflect their room, not the sky","refl"],
- ["VQ-13","Cinematic stage: depth of field","Look",6,1,1,0,8,5,"—","Owns DOF; needs Unreal lens model","post"],
- ["VQ-09","Incremental diffuse relight","L7",6,1,3,0,8,4,"—","Light changes relight only the dirty region","lumen"],
- ["488","Foliage moves in the wind","Look",4,0,2,0,8,3,"—","Leaf shadows that sway (PRD-651) need it",null],
- ["456","Distant world cell proxies (HLOD)","Perf",8,0,2,0,6,5,"—","Open worlds: far cells as merged proxies","wp"],
- ["459","One streaming admission budget per frame","Perf",6,0,3,4,16,5,"—","Streaming hitches in open worlds","wp"],
- ["493","Terrain layers past sixteen textures","Look",3,0,1,6,8,5,"—","Blocked on a private game walk","f-landscape"],
- ["486","Characters get a LOD chain","Perf",4,0,2,0,8,5,"—","Crowds","f-anim-budget-animgraphruntime"],
-].map(([id,title,layer,cx,est,impact,done,total,wave,waits,why,sys]) => ({id,title,layer,cx,est,impact,done,total,wave,waits,why,sys}));
+ ["VQ-03","Local reflection probes","L8",5,1,0,8,4,"—","Interiors and shaded areas reflect their room, not the sky","refl"],
+ ["VQ-13","Cinematic stage: depth of field","Look",6,1,0,8,5,"—","Owns DOF; needs Unreal lens model","post"],
+ ["VQ-09","Incremental diffuse relight","L7",6,1,0,8,4,"—","Light changes relight only the dirty region","lumen"],
+ ["488","Foliage moves in the wind","Look",4,0,0,8,3,"—","Leaf shadows that sway (PRD-651) need it",null],
+ ["456","Distant world cell proxies (HLOD)","Perf",8,0,0,6,5,"—","Open worlds: far cells as merged proxies","wp"],
+ ["459","One streaming admission budget per frame","Perf",6,0,4,16,5,"—","Streaming hitches in open worlds","wp"],
+ ["493","Terrain layers past sixteen textures","Look",3,0,6,8,5,"—","Blocked on a private game walk","f-landscape"],
+ ["486","Characters get a LOD chain","Perf",4,0,0,8,5,"—","Crowds","f-anim-budget-animgraphruntime"],
+].map(([id,title,layer,cx,est,done,total,wave,waits,why,sys]) => {
+  const s = SCORES[id];
+  if (!s) throw new Error(`PORT ${id}: no entry in SCORES`);
+  const [vis, visSrc] = visOf(s[0]), [perf, perfSrc] = perfOf(s[1]);
+  return {id,title,layer,cx,est,done,total,wave,waits,why,sys,vis,visSrc,visWhy:s[2],perf,perfSrc,perfWhy:s[3],rank:null};
+});
+PORT.filter(p => p.done < p.total).sort((a, b) => rankScore(b) - rankScore(a) || a.cx - b.cx || a.wave - b.wave || a.id.localeCompare(b.id))
+  .forEach((p, i) => { p.rank = i + 1; });
+
 const WAVES = { 1: "Gate: everything compares against it", 2: "Cheap look layers + foundations, in parallel", 3: "Main look layers", 4: "Finish and tier", 5: "When a game or a measurement asks" };
 
 // ---- Feature table (top level)
@@ -609,9 +738,10 @@ document.getElementById("k-prds").textContent = PORT.filter(p => p.done < p.tota
 document.getElementById("wave-legend").innerHTML = Object.keys(WAVES).map(w => `<span class="pill"><span class="dot" style="background:var(--w${w});border-radius:50%"></span>Wave ${w}</span>`).join("");
 
 function renderMatrix() {
+  const imp = p => Math.max(p.vis, p.perf);
   const W = 520, H = 440, L = 44, R = 12, T = 14, B = 40;
   const x = c => L + (c - 2.5) / (8.5 - 2.5) * (W - L - R);
-  const y = i => T + (5.5 - i) / (5.5 - 0.5) * (H - T - B);
+  const y = i => T + (5.5 - i) / 6 * (H - T - B);
   let s = "";
   // quadrants split at complexity 5.5, impact 3.5
   const qx = x(5.5), qy = y(3.5);
@@ -621,32 +751,63 @@ function renderMatrix() {
   s += `<text class="ql" x="${L + 6}" y="${T + 14}">Quick wins</text><text class="ql" x="${W - R - 6}" y="${T + 14}" text-anchor="end">Big bets</text>`;
   s += `<text class="ql" x="${L + 6}" y="${H - B - 6}">Fill-ins</text><text class="ql" x="${W - R - 6}" y="${H - B - 6}" text-anchor="end">Wait for a game that asks</text>`;
   for (let c = 3; c <= 8; c++) s += `<line x1="${x(c)}" x2="${x(c)}" y1="${T}" y2="${H - B}" stroke="var(--line)"/><text x="${x(c)}" y="${H - B + 16}" text-anchor="middle">${c}</text>`;
-  for (let i = 1; i <= 5; i++) s += `<line x1="${L}" x2="${W - R}" y1="${y(i)}" y2="${y(i)}" stroke="var(--line)"/><text x="${L - 8}" y="${y(i) + 4}" text-anchor="end">${i}</text>`;
+  for (let i = 0; i <= 5; i++) s += `<line x1="${L}" x2="${W - R}" y1="${y(i)}" y2="${y(i)}" stroke="var(--line)"/><text x="${L - 8}" y="${y(i) + 4}" text-anchor="end">${i}</text>`;
   s += `<text x="${(L + W - R) / 2}" y="${H - 6}" text-anchor="middle">Complexity (PRD rating)</text>`;
-  s += `<text transform="translate(12 ${(T + H - B) / 2}) rotate(-90)" text-anchor="middle">Impact</text>`;
+  s += `<text transform="translate(12 ${(T + H - B) / 2}) rotate(-90)" text-anchor="middle">Impact (higher of visual and performance)</text>`;
   // spread points that share a cell on a small ring
-  const cells = d3.group(PORT.filter(p => p.done < p.total), p => p.cx + "," + p.impact);
+  const cells = d3.group(PORT.filter(p => p.done < p.total), p => p.cx + "," + imp(p));
   for (const pts of cells.values()) pts.forEach((p, k) => {
     const n = pts.length, r = n === 1 ? 0 : 13 + n * 1.6, a = (k / n) * 2 * Math.PI - Math.PI / 2;
-    const px = x(p.cx) + r * Math.cos(a), py = y(p.impact) + r * Math.sin(a);
+    const px = x(p.cx) + r * Math.cos(a), py = y(imp(p)) + r * Math.sin(a);
     s += `<g class="pt${selPrd === p.id ? " sel" : ""}" tabindex="0" role="button" data-id="${p.id}" aria-label="PRD-${p.id} ${esc(p.title)}, wave ${p.wave}">
-      <title>PRD-${p.id}: ${esc(p.title)} — complexity ${p.cx}${p.est ? " (est.)" : ""}, impact ${p.impact}, wave ${p.wave}</title>
+      <title>PRD-${p.id}: ${esc(p.title)} — rank ${p.rank}, complexity ${p.cx}${p.est ? " (est.)" : ""}, visual ${p.vis} (${p.visSrc}), performance ${p.perf} (${p.perfSrc}), wave ${p.wave}</title>
       <circle cx="${px}" cy="${py}" r="11" fill="var(--w${p.wave})"/><text x="${px}" y="${py + 3.3}" text-anchor="middle">${p.id.replace("VQ-", "V")}</text></g>`;
   });
   document.getElementById("matrix").innerHTML = s;
 }
-function renderWaves() {
-  document.getElementById("waves").innerHTML = Object.entries(WAVES).map(([w, label]) => `
-    <div class="wave"><h4><i style="background:var(--w${w})"></i>Wave ${w} <small>${label}</small></h4>
-    ${PORT.filter(p => p.wave == w).map(p => `<button type="button" class="prd${selPrd === p.id ? " sel" : ""}" data-id="${p.id}">
-      <span class="id">PRD-${p.id}</span>
-      <span class="t">${esc(p.title)}<small>${esc(p.why)}${p.waits !== "—" ? " · waits on " + esc(p.waits) : ""}</small></span>
-      <span class="m">cx ${p.cx}${p.est ? "*" : ""} · imp ${p.impact}<span class="prog"><b style="width:${(p.done / p.total * 100).toFixed(0)}%"></b></span>${p.done}/${p.total}</span>
-    </button>`).join("")}</div>`).join("");
+const bdg = (k, p) => {
+  const n = p[k], src = p[k + "Src"], why = p[k + "Why"], name = k === "vis" ? "Visual" : "Performance";
+  return `<span class="bdg ${k === "vis" ? "v" : "p"} ${src}" title="${name} impact ${n} of 5, ${src}. ${esc(why)}"><i>${k === "vis" ? "V" : "P"}</i>${src === "estimate" ? "~" : ""}${n}<span class="pips" aria-hidden="true">${[1, 2, 3, 4, 5].map(i => `<u class="${i <= n ? "on" : ""}"></u>`).join("")}</span></span>`;
+};
+const badges = p => `<span class="badges">${bdg("vis", p)}${bdg("perf", p)}</span>`;
+let psort = "wave";
+const SORTS = { rank: (a, b) => (a.rank ?? 1e9) - (b.rank ?? 1e9), vis: (a, b) => b.vis - a.vis || SORTS.rank(a, b), perf: (a, b) => b.perf - a.perf || SORTS.rank(a, b), cx: (a, b) => a.cx - b.cx || SORTS.rank(a, b) };
+function prdBtn(p) {
+  return `<button type="button" class="prd${selPrd === p.id ? " sel" : ""}" data-id="${p.id}">
+      <span class="id">PRD-${p.id}${p.rank ? `<span class="rk">#${p.rank}</span>` : ""}</span>
+      <span class="t">${esc(p.title)}<small>${esc(p.why)}${p.waits !== "—" ? " · waits on " + esc(p.waits) : ""}</small>${badges(p)}</span>
+      <span class="m">cx ${p.cx}${p.est ? "*" : ""}<span class="prog"><b style="width:${(p.done / p.total * 100).toFixed(0)}%"></b></span>${p.done}/${p.total}</span>
+    </button>`;
 }
+function renderWaves() {
+  const flat = psort !== "wave";
+  document.getElementById("waves").innerHTML = flat
+    ? `<div class="wave"><h4>${{ rank: "By rank", vis: "By visual impact", perf: "By performance impact", cx: "By complexity" }[psort]} <small>open PRDs, every wave</small></h4>${PORT.filter(p => p.done < p.total).sort(SORTS[psort]).map(prdBtn).join("")}</div>`
+    : Object.entries(WAVES).map(([w, label]) => `
+    <div class="wave"><h4><i style="background:var(--w${w})"></i>Wave ${w} <small>${label}</small></h4>
+    ${PORT.filter(p => p.wave == w).sort(SORTS.rank).map(prdBtn).join("")}</div>`).join("");
+  document.querySelectorAll("#sortbar button").forEach(b => b.setAttribute("aria-pressed", b.dataset.k === psort));
+}
+document.getElementById("sortbar").addEventListener("click", e => { const b = e.target.closest("button"); if (b) { psort = b.dataset.k; renderWaves(); } });
+let ptK = "rank", ptDir = 1;
+function prdTable() {
+  const rows = PORT.filter(p => p.done < p.total).sort((a, b) => {
+    const x = a[ptK], y = b[ptK];
+    return ((x > y ? 1 : x < y ? -1 : 0) * ptDir) || SORTS.rank(a, b);
+  });
+  document.querySelector("#ptbl tbody").innerHTML = rows.map(p => `<tr data-id="${p.id}" data-s="${p.sys || ""}">
+    <td class="num mono">${p.rank}</td><td><b class="mono">PRD-${p.id}</b><div class="note">${esc(p.title)}</div></td><td>${p.layer}</td>
+    <td>${bdg("vis", p)}<div class="note why">${esc(p.visWhy)}</div></td><td>${bdg("perf", p)}<div class="note why">${esc(p.perfWhy)}</div></td>
+    <td class="mono">${p.cx}${p.est ? "*" : ""}</td><td class="mono">${p.wave}</td><td class="mono">${p.done}/${p.total}</td></tr>`).join("");
+}
+document.querySelectorAll("#ptbl th").forEach(th => {
+  const go = () => { const k = th.dataset.k; ptDir = ptK === k ? -ptDir : (k === "vis" || k === "perf" ? -1 : 1); ptK = k; prdTable(); };
+  th.addEventListener("click", go); th.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(); } });
+});
+document.querySelector("#ptbl tbody").addEventListener("click", e => { const t = e.target.closest("tr"); if (t) onPick({ target: t }); });
 function onPick(e) {
   const t = e.target.closest("[data-id]"); if (!t) return;
-  const p = PORT.find(q => q.id === t.dataset.id); select(p.sys, p.id, true);
+  const p = PORT.find(q => q.id === t.dataset.id); select(p.sys || selSys, p.id, true);
 }
 document.getElementById("waves").addEventListener("click", onPick);
 const mx = document.getElementById("matrix");
@@ -687,6 +848,7 @@ function prdCard(id, subs) {
     <span class="top"><b>PRD-${id}</b><span>${state}${port ? ` · wave ${port.wave}` : ""}</span></span>
     <span class="ttl">${esc(P ? P.t : port ? port.title : "File not found on this branch")}</span>
     ${P && P.n ? `<span class="prog"><b style="width:${(P.d / P.n * 100).toFixed(0)}%"></b></span><span class="cov mono">${P.d}/${P.n} boxes</span>` : ""}
+    ${port ? badges(port) : ""}
     ${covers.length ? `<span class="cov">Covers: ${esc(covers.join(" · "))}</span>` : ""}
     ${P ? `<a href="${GH}${P.r}/${P.p}" target="_blank" rel="noopener">Open the PRD ↗</a>` : elsewhere ? `<span class="cov">${port.done}/${port.total} boxes. The file is on an open PR branch (the Unreal look epic, PR #541).</span>` : ""}</div>`;
 }
@@ -805,6 +967,7 @@ document.querySelectorAll("#tbl th").forEach(th => {
 
 document.querySelector("#tbl tbody").addEventListener("click", e => { const t = e.target.closest("tr"); if (t) select(t.dataset.s, null, true); });
 table();
+prdTable();
 select("lumen", null, false);
 </script>
 </body>
