@@ -110,10 +110,10 @@ these criteria, per frame and overall.
 ## Execution Phases
 
 #### Phase 1: The tier table matches its Unreal level
-**Status:** PARTIAL
+**Status:** DONE
 **Files:** `scripts/unreal-look/scaffold/render/quality.ts`, `scripts/unreal-look/scaffold/render/worldEnvironment.ts`, `scripts/unreal-look/compare.ts`
 - [x] The compare tool pairs a ThreeNative tier with its Unreal level and fails closed when the cell of that level is missing. proof: `pnpm exec vitest run scripts/__tests__/unreal-look-compare.spec.ts` — red first (`unrealVariant` absent, `L7-medium` rejected as `GI layer`), then 32 passed on 2026-10-21. `L7-low`, `L7-medium` and `L7-high` pair with `L7-Low`, `L7-Medium` and `L7-Epic`; `--unreal-level 0|1|3` pairs one capture with another level; a missing Unreal frame throws `TN_UNREAL_LOOK_MISSING_CELL` and names `L7-Medium`.
-- [ ] Unreal's GI GPU time at Low, Medium and Epic on the RTX 2080 is recorded under `## Decisions` as the tier budgets. proof: `r.ProfileGPU` logs from `pnpm unreal-look:capture --engine unreal --scene gi`. Open 2026-10-22: Epic is recorded (3.09, 4.56 and 5.79 ms on three scenes, PRD-640) and Low has no GI pass. Medium is not profiled. The Unreal editor lock was busy, and a Medium budget cannot move a step today, because the irradiance field has no pass of its own (`giTier.ts`).
+- [x] Unreal's GI GPU time at Low, Medium and Epic on the RTX 2080 is recorded under `## Decisions` as the tier budgets. proof: `TN_UE_RESOLUTION=1920x1080 TN_UE_PROFILE_FRAME=40 pnpm unreal-look:capture --engine unreal --scene gi:cornell --variants L7-Medium` inside `ue-gpu.sh`, parsed from `Saved/Logs/ThreeNativeReference.log` on 2026-10-21 (exit 0; `r.ProfileGPU` dumps of frames 54, 134, 214). Low has no GI pass, Epic is 3.09, 4.56 and 5.79 ms (PRD-640), and Medium is in `## Decisions` (2026-10-22, tier2-lane, Unreal Medium GI time).
 
 #### Phase 2: The measured budget steps the method
 **Status:** DONE
@@ -135,6 +135,7 @@ these criteria, per frame and overall.
   shared `budget-ladder.ts`). The game owns what each method draws, so `quality.ts` keeps the tier table and the
   `finalGatherMethod` names. This is the same kind of measured ladder as the `RenderChain` auto tier. `CHARTER.md`
   has no line for it yet. That file is the owner's, so the line stays open.
+- 2026-10-22 (tier2-lane, Unreal Medium GI time): `sg.GlobalIlluminationQuality` 1 runs `LumenIrradianceFieldGather` and no screen probe gather (`r.Lumen.FinalGatherMethod` 1). On the RTX 2080 at 1920 x 1080 (`gi:cornell`, `L7-Medium`, three `ProfileGPU` frames that drew the scene) its inclusive time is 0.61, 2.35 and 1.77 ms. Inside it, `UpdateWorldRadianceCaches` takes 0.32, 0.28 and 0.28 ms, `InterpolateIrradianceProbesToPixels` (960 x 540, downsample 2) takes 0.15, 0.51 and 0.40 ms, and the short-range ambient occlusion horizon search takes 0.15, 1.55 and 1.09 ms. The probe update and the interpolation, which are the part ThreeNative's `irradianceField` method replaces, add up to 0.46, 0.79 and 0.68 ms. Short-range AO is a separate pass in ThreeNative (GTAO). So the Medium GI time of Unreal is 0.5 to 0.8 ms without its AO and 0.6 to 2.4 ms with it, against 3.1 to 5.8 ms for Epic: Medium costs about a fifth of Epic. The spread between the frames was not traced: frame 54 comes first in the run and counts 99 draws, and the cause of its lower AO time was not checked.
 - 2026-10-21 (tier-lane, window): the window value is the mean GI-stage GPU time of 120 frames, not p95, with at
   least 8 resolved frames. A window with fewer resolved frames is "unobserved" and the method holds.
 - 2026-10-21 (tier-lane, hysteresis): the 70% rule alone can flap when two budgets are close, so a step up also needs
