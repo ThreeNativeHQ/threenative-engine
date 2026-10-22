@@ -29,11 +29,11 @@ describe("harnessLayer (PRD-646)", () => {
       expect(layerAt(search)).toBe(9);
   });
 
-  it("keeps the calibration scene's local exposure for L9: Unreal draws L1 to L8 with ShowFlag.LocalExposure 0 (PRD-631)", () => {
+  it("runs the calibration scene's local exposure only from L7: Unreal draws L1 to L8 with ShowFlag.LocalExposure 0 (PRD-631)", () => {
     const source = readFileSync("scripts/unreal-look/scaffold/CalibrationScene.ts.in", "utf8");
     // Without the gate the `high` preset's stage lifted neon-corridor L1's dark walls by 14 levels.
     expect(source).toMatch(
-      /localExposureEnabled:\s*params\.get\("localExposure"\) === null \? level >= 9/u,
+      /localExposureEnabled:\s*params\.get\("localExposure"\) === null \? level >= 7/u,
     );
   });
 });
