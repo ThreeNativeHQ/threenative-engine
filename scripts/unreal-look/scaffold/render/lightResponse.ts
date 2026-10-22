@@ -54,15 +54,13 @@ export function surfaceCacheCycle(areaMetres2: number, factor: number, atlasSize
   return Math.max(1, Math.ceil(texels / perFrame));
 }
 
-/** The scales a light's own field shows: the first bounce reads the surface cache, later bounces read the radiosity. */
-export interface IShownScales {
-  readonly first: readonly number[];
-  readonly rest: readonly number[];
-}
-
 /**
  * One light's response to a change of its colour times intensity, as a scale per channel (1 = the baked light). Call
  * `set` when the light changes and `step` once per rendered frame.
+ *
+ * The bounce light of order `k` (the light after `k` bounces) shows a scale of its own. The first bounce reads the
+ * surface cache's direct lighting. Each later bounce reads the radiosity of the one before, so it lags one radiosity
+ * history more. The gather's pixel history then lags all of them alike.
  */
 export class LightFade {
   private readonly cycle: number;
@@ -71,16 +69,23 @@ export class LightFade {
   private readonly latched: number[][];
   private target = [1, 1, 1];
   private frame = 0;
-  private radiosity = [1, 1, 1];
-  private first = [1, 1, 1];
-  private rest = [1, 1, 1];
+  /** `radiosity[j]` is the direct lighting after `j + 1` radiosity histories, per channel. */
+  private readonly radiosity: number[][];
+  /** Per order, per channel: what the pixel history shows. */
+  private readonly shown: number[][];
 
   constructor(
     response: ILightResponse,
     /** The area of the surfaces that own cards, in square metres. */
     areaMetres2: number,
+    /** The bounces the cache keeps: the number of orders it shows. */
+    readonly orders = 1,
   ) {
     checkLightResponse(response);
+    if (!(orders >= 1) || !Number.isInteger(orders))
+      throw new RangeError(
+        `TN_GI_LIGHT_RESPONSE: orders needs a whole number of 1 or more, got ${orders}`,
+      );
     this.cycle = surfaceCacheCycle(areaMetres2, response.updateFactor, response.atlasSize);
     const radiosityCycle = surfaceCacheCycle(
       areaMetres2,
@@ -91,6 +96,8 @@ export class LightFade {
     this.radiosityRate = 1 / ((1 + response.radiosityFramesAccumulated) * radiosityCycle);
     this.pixelRate = 1 / (1 + response.framesAccumulated);
     this.latched = Array.from({ length: this.cycle }, () => [1, 1, 1]);
+    this.radiosity = Array.from({ length: orders - 1 }, () => [1, 1, 1]);
+    this.shown = Array.from({ length: orders }, () => [1, 1, 1]);
   }
 
   /** Frames the surface cache needs to refresh every texel. */
@@ -102,27 +109,32 @@ export class LightFade {
     this.target = [...scale];
   }
 
-  /** The scales after one more frame. */
-  step(): IShownScales {
+  /** The scale each order shows after one more frame. */
+  step(): readonly (readonly number[])[] {
     this.frame += 1;
-    const refreshed = this.frame % this.cycle;
-    this.latched[refreshed] = [...this.target];
+    this.latched[this.frame % this.cycle] = [...this.target];
     for (let c = 0; c < 3; c += 1) {
+      const move = (from: number, to: number, rate: number): number => from + (to - from) * rate;
       const direct = this.latched.reduce((sum, phase) => sum + (phase[c] ?? 1), 0) / this.cycle;
-      this.radiosity[c] =
-        (this.radiosity[c] ?? 1) + (direct - (this.radiosity[c] ?? 1)) * this.radiosityRate;
-      this.first[c] = (this.first[c] ?? 1) + (direct - (this.first[c] ?? 1)) * this.pixelRate;
-      this.rest[c] =
-        (this.rest[c] ?? 1) + ((this.radiosity[c] ?? 1) - (this.rest[c] ?? 1)) * this.pixelRate;
+      let feed = direct;
+      for (const stage of this.radiosity) {
+        stage[c] = move(stage[c] ?? 1, feed, this.radiosityRate);
+        feed = stage[c] as number;
+      }
+      for (let k = 0; k < this.shown.length; k += 1) {
+        const order = this.shown[k] as number[];
+        const reads = k === 0 ? direct : (this.radiosity[k - 1]?.[c] ?? direct);
+        order[c] = move(order[c] ?? 1, reads, this.pixelRate);
+      }
     }
-    return { first: this.first, rest: this.rest };
+    return this.shown;
   }
 
   /** Every stage shows the scale the light has now (a 1e-3 gap is under a half-float step). */
   get settled(): boolean {
     return this.target.every(
       (t, c) =>
-        [this.first, this.rest, this.radiosity].every((s) => Math.abs((s[c] ?? 1) - t) < 1e-3) &&
+        [...this.shown, ...this.radiosity].every((s) => Math.abs((s[c] ?? 1) - t) < 1e-3) &&
         this.latched.every((phase) => phase[c] === t),
     );
   }
