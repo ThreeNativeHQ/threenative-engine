@@ -1449,6 +1449,23 @@ const gi = new GIBudget({ method: "screenProbeGather", stages: ["SSGI"], budgetM
 ctx.beforeRender(() => gi.observeRenderer(ctx.renderer.raw));
 ```
 
+### `GIVisualize`
+
+`class` — Shows the indirect diffuse light of a frame by itself, the counterpart of Unreal's Lumen `Visualize IndirectDiffuse` mode, so a lighting gap against a reference can be told apart from a scene gap. The game's chain builds the term; this class selects it and fails when the term is missing.
+
+```ts
+export class GIVisualize { … }
+```
+
+- **Use when:** see only the bounce light of a frame · compare indirect lighting alone against Unreal · debug global illumination by looking at the indirect diffuse term
+- **Constraints:** the game's render chain builds the indirectDiffuse node (gathered and cached light times albedo); this class draws nothing else · a mode whose term the chain did not build throws instead of showing the finished frame
+- **Overrides:** mode: "off" returns the finished frame unchanged
+
+```ts
+const view = new GIVisualize({ mode: "indirectDiffuse", beauty: frame, indirectDiffuse: albedo.mul(bounce) });
+pipeline.outputNode = view.node;
+```
+
 ### `GPUParticles3D`
 
 `class` — Dispatch a game-owned particle surface and process function through a pooled system.

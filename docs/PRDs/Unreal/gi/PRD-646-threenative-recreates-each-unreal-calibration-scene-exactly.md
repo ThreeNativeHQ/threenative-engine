@@ -103,7 +103,7 @@ appearance value still comes from the scene data or the tuned render source.
 #### Phase 3: GI alone, and the motion replay
 **Status:** NOT STARTED
 **Files:** `packages/core/src/render/gi-visualize.ts` (new, exports `GIVisualize`), `packages/core/src/index.ts`, `packages/engine-mcp/__tests__/search.spec.ts`, `scripts/unreal-look/scaffold/render/worldEnvironment.ts`, `packages/runtime-native/conformance/scenes/shared/gi-visualize-indirect.js` (new), `packages/runtime-native/conformance/registry.json`
-- [ ] A capability search for "lumen visualize indirect diffuse" returns `GIVisualize`. proof: `pnpm exec vitest run packages/engine-mcp/__tests__/search.spec.ts`.
+- [x] A capability search for "lumen visualize indirect diffuse" returns `GIVisualize`. proof: `pnpm exec vitest run packages/engine-mcp/__tests__/search.spec.ts`. — 58 tests pass, including the new case: "lumen visualize indirect diffuse", "indirect diffuse only" and "r.Lumen.Visualize.IndirectDiffuse" each return `GIVisualize` (`pnpm capabilities:sync` wrote the manifest entry with the three `@alias` lines). `GIVisualize` (`packages/core/src/render/gi-visualize.ts`, 5 unit tests) selects `off` (the frame) or `indirectDiffuse` (the term the chain built), and throws `TN_GI_VISUALIZE_TERM` when the chain built no term and `TN_GI_VISUALIZE_MODE` for an unknown mode.
 - [ ] The `pan` run replays on the owned engine and its series has the same frame count as Unreal's. proof: `pnpm unreal-look:compare --scene gi:cornell --metric motion`.
 - [ ] The `indirectDiffuse` mode renders on the native desktop host within tolerance of the browser. proof: `pnpm parity --target desktop --only-tests gi-visualize-indirect`.
 **Verification:** AC-3.

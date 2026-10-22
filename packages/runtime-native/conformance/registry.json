@@ -1213,6 +1213,21 @@
       "required": true
     },
     {
+      "id": "gi-visualize-indirect",
+      "title": "GIVisualize shows the indirect diffuse term alone",
+      "category": "lighting-gi",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/gi-visualize-indirect.js",
+      "browserRecipe": "webgpu",
+      "requiresHardwareAdapter": true,
+      "tolerance": {
+        "pixelMismatchRatio": 0.05,
+        "perceptualDeltaE": 6.0
+      },
+      "desktopGate": true,
+      "required": true
+    },
+    {
       "id": "80-request-animation-frame",
       "title": "request animation frame cadence",
       "category": "runtime",

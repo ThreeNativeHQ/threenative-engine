@@ -139,6 +139,7 @@
         "@threenative/core#gearClearance": "export function gearClearance(state: IFlightState): number { … }",
         "@threenative/core#getPlatform": "export function getPlatform(): Readonly<IPlatformInfo> { … }",
         "@threenative/core#GIBudget": "export class GIBudget { … }",
+        "@threenative/core#GIVisualize": "export class GIVisualize { … }",
         "@threenative/core#GPUParticles3D": "export class GPUParticles3D extends Sprite implements IComputeDriven { … }",
         "@threenative/core#GPUReadback": "export class GPUReadback { … }",
         "@threenative/core#GPUSceneBVH": "export class GPUSceneBVH extends Group implements IComputeDriven { … }",
