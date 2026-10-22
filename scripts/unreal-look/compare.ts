@@ -5,7 +5,9 @@ import { pathToFileURL } from "node:url";
 import { PNG } from "pngjs";
 import { curveShape, exposureCurve } from "./exposureCurve.js";
 import { compareGi } from "./gi.js";
+import { giCommand } from "./giLocks.js";
 import { linearLuminance, pairedPenumbra } from "./penumbra.js";
+import { runSameness } from "./sameness.js";
 // Three.js belongs to core's dependency graph; root scripts do not install a second copy.
 const coreRequire = createRequire(new URL("../../packages/core/package.json", import.meta.url));
 const { FloatType } = await import(pathToFileURL(coreRequire.resolve("three")).href);
@@ -87,6 +89,8 @@ export interface IOptions {
   writeLocks?: string;
   /** `--lock-metric iou,...`: seed only these metrics (default: every metric that holds). */
   lockMetrics?: string[];
+  /** `--drop-locks`: let `--write-locks` drop a lock whose cell no longer holds (default: it refuses). */
+  dropLocks?: boolean;
   sheet?: boolean;
 }
 type LockMetric = "deltaE" | "dP50" | "dEv" | "iou";
@@ -160,16 +164,22 @@ export function masks(image: IImage, colors: Record<string, readonly number[]>):
   const regions: Record<string, Mask> = {};
   for (const name of ["Sky", ...Object.keys(colors)])
     regions[name] = new Uint8Array(image.width * image.height);
+  // An ID frame holds a few dozen distinct colours: classify each 8-bit colour once.
+  const seen = new Map<number, string | null>();
+  const bytes = image.data instanceof Uint8Array;
   for (let i = 0; i < image.width * image.height; i++) {
     const offset = i * image.channels;
-    const name = classify(
-      [
-        required(image.data[offset]),
-        required(image.data[offset + 1]),
-        required(image.data[offset + 2]),
-      ],
-      colors,
-    );
+    const rgb = [
+      required(image.data[offset]),
+      required(image.data[offset + 1]),
+      required(image.data[offset + 2]),
+    ];
+    const key = ((rgb[0] ?? 0) * 256 + (rgb[1] ?? 0)) * 256 + (rgb[2] ?? 0);
+    let name = bytes ? seen.get(key) : undefined;
+    if (name === undefined) {
+      name = classify(rgb, colors);
+      if (bytes) seen.set(key, name);
+    }
     if (name !== null) required(regions[name])[i] = 1;
   }
   return { width: image.width, height: image.height, regions };
@@ -186,8 +196,21 @@ export function quantiles(
   const sorted = [...values].sort((a, b) => a - b);
   return fractions.map((f) => required(sorted[Math.max(0, Math.ceil(sorted.length * f) - 1)]));
 }
+/**
+ * The median of byte-binned values, interpolated inside its bin: a value v stands for [v - 0.5, v + 0.5). The plain median
+ * moves a whole level when a few pixels cross a bin edge, and one level is 1.5% of a frame whose median is 66 (PRD-631: two
+ * Unreal runs of L7 sun60_interior, p50 66 and 67, mean 0.12% apart and 0.1% of the pixels more than 2 levels apart).
+ */
+export function binnedMedian(values: readonly number[]): number {
+  if (!values.length) fail("EMPTY_MASK", "no measured pixels");
+  if (!values.every(Number.isFinite)) fail("BAD_INPUT", "non-finite pixel measurement");
+  const level = required(quantiles(values, [0.5])[0]);
+  const below = values.filter((v) => v < level).length;
+  const equal = values.filter((v) => v === level).length;
+  return level - 0.5 + (values.length / 2 - below) / equal;
+}
 // packages/playtest/src/capture.ts:75-76: display Rec.709, rounded to byte bins (no sRGB linearization).
-function luminance(image: IImage, i: number): number {
+export function luminance(image: IImage, i: number): number {
   const o = i * image.channels;
   return (
     0.2126 * required(image.data[o]) +
@@ -259,7 +282,7 @@ export function iou(a: Mask, b: Mask): number {
 }
 /** Pixels that carry a region in this frame; a multisampled edge pixel belongs to none. */
 const knownCache = new WeakMap<IMasks, Mask>();
-function known(m: IMasks): Mask {
+export function known(m: IMasks): Mask {
   let cached = knownCache.get(m);
   if (!cached) {
     cached = new Uint8Array(m.width * m.height);
@@ -309,6 +332,15 @@ export function deriveMasks(base: IMasks, l5: IImage): IMasks {
       else lit[i] = 1;
     }
   return { ...base, regions: { ...base.regions, ShadowedFloor: shadow, LitFloor: lit } };
+}
+/** The whole-level display values of `measure`, reduced to their sub-level median. */
+export function displayMedian(image: IImage, mask: Mask): number {
+  if (mask.length !== image.width * image.height) fail("SIZE_MISMATCH", "image and mask differ");
+  const display: number[] = [];
+  for (let i = 0; i < mask.length; i++)
+    if (mask[i] && image.data[i * image.channels + 3] !== 0)
+      display.push(Math.round((luminance(image, i) / 255) * 255));
+  return binnedMedian(display);
 }
 export function measure(image: IImage, mask: Mask, exr?: IImage): IStats {
   if (mask.length !== image.width * image.height) fail("SIZE_MISMATCH", "image and mask differ");
@@ -461,7 +493,17 @@ export function runCheck(options: IOptions = {}) {
   });
   return { failures: checkLocks(report.rows, locks), locks: locks.length, report };
 }
-function passes(row: IRow, thresholds?: IThresholds): boolean | null {
+/** thresholds.json's limits for one layer: the flat keys, overridden by `layers.<name>`. */
+export function layerThresholds(
+  file: IThresholdFile | null | undefined,
+  layer: string,
+): IThresholds | undefined {
+  if (!file) return undefined;
+  const { layers: perLayer, ...flat } = file;
+  return { ...flat, ...perLayer?.[layer] };
+}
+/** The verdict of a row against its limits: null when no limit applies to the row (the caller decides what that means). */
+export function passes(row: IRow, thresholds?: IThresholds): boolean | null {
   if (!thresholds) return null;
   const checks: [number | null, number | undefined, boolean][] = [
     [row.deltaE, thresholds.deltaE, false],
@@ -621,6 +663,35 @@ function sheetPair(sheet: PNG, a: IImage, b: IImage, row: number) {
         sheet.data[dst + 3] = 255;
       }
 }
+/**
+ * A re-seed keeps only the cells that hold now. A cell that broke would lose its lock without a word, so the
+ * re-seed names each lock it would drop and stops, unless `--drop-locks` asks for it.
+ */
+function refuseDroppedLocks(
+  previous: IParityLock[],
+  kept: IParityLock[],
+  seeded: IParityLock[],
+): void {
+  const sameCell = (a: IParityLock, b: IParityLock) =>
+    a.layer === b.layer &&
+    a.sun === b.sun &&
+    a.pose === b.pose &&
+    a.region === b.region &&
+    a.metric === b.metric;
+  const dropped = previous.filter(
+    (lock) => !kept.includes(lock) && !seeded.some((seed) => sameCell(seed, lock)),
+  );
+  if (dropped.length)
+    fail(
+      "LOCK_DROPPED",
+      `--write-locks would drop ${dropped.length} lock(s) whose cell no longer holds: ${dropped
+        .slice(0, 5)
+        .map((lock) => `${lock.layer} ${lock.sun} ${lock.pose} ${lock.region} ${lock.metric}`)
+        .join(
+          "; ",
+        )}${dropped.length > 5 ? "; ..." : ""}. Fix the cell, or pass --drop-locks to drop its lock on purpose`,
+    );
+}
 export function runComparison(options: IOptions = {}) {
   const dir = options.referenceDir ?? "tools/unreal-reference";
   const rootA = options.unreal ?? path.join(dir, "captures/unreal");
@@ -713,11 +784,7 @@ export function runComparison(options: IOptions = {}) {
     for (const entry of Object.values(thresholdData.layers ?? {}))
       checkThresholds(object(entry), true);
   }
-  const thresholdsFor = (layer: string): IThresholds | undefined => {
-    if (!thresholdData) return undefined;
-    const { layers: perLayer, ...flat } = thresholdData;
-    return { ...flat, ...perLayer?.[layer] };
-  };
+  const thresholdsFor = (layer: string) => layerThresholds(thresholdData, layer);
   const thresholds = thresholdData;
   const reference: IReference = {
     generatedAt: new Date().toISOString(),
@@ -732,7 +799,7 @@ export function runComparison(options: IOptions = {}) {
     threenativeP50: number;
     dEv: number;
   }[] = [];
-  const noise: { layer: string; cell: string; dP50: number }[] = [];
+  const noise: { layer: string; cell: string; dP50: number; dP50Binned: number }[] = [];
   const penumbra: {
     cell: string;
     matched: number;
@@ -921,12 +988,15 @@ export function runComparison(options: IOptions = {}) {
               ratio: m.ratio,
             });
         }
-        if (options.unrealVsUnreal)
+        if (options.unrealVsUnreal) {
+          const binnedA = displayMedian(required(a), whole);
           noise.push({
             layer,
             cell,
             dP50: Math.abs(wholeB.p50 - wholeA.p50) / Math.max(wholeA.p50, 1),
+            dP50Binned: Math.abs(displayMedian(b, whole) - binnedA) / Math.max(binnedA, 1),
           });
+        }
         if (options.sheet)
           sheetPair(
             required(sheets.get(layer)),
@@ -948,10 +1018,11 @@ export function runComparison(options: IOptions = {}) {
     if (!seeded.length) fail("BAD_INPUT", "no cell holds its thresholds; nothing to lock");
     // `--layer L7,L8` re-seeds only those layers and keeps every other layer's locks as they are.
     const lockFile = path.join(dir, "parity-locks.json");
-    const kept =
-      options.layers && existsSync(lockFile)
-        ? readLocks(lockFile).filter((lock) => !options.layers?.includes(lock.layer))
-        : [];
+    const previous = existsSync(lockFile) ? readLocks(lockFile) : [];
+    const kept = options.layers
+      ? previous.filter((lock) => !options.layers?.includes(lock.layer))
+      : [];
+    if (!options.dropLocks) refuseDroppedLocks(previous, kept, seeded);
     writeJson(lockFile, { locks: [...kept, ...seeded] });
   }
   if (options.writeThresholds)
@@ -997,6 +1068,8 @@ export function runComparison(options: IOptions = {}) {
           ...rows.flatMap((r) => (r.dP50 === null ? [] : [r.dP50])),
         )
       : null,
+    // The whole-frame cells alone, at sub-level resolution: what the PRD-631 box "two runs agree within 1%" asks.
+    maxNoiseBinned: noise.length ? Math.max(...noise.map((r) => r.dP50Binned)) : null,
   };
   writeJson(path.join(dir, "captures/compare-report.json"), report);
   return report;
@@ -1009,6 +1082,7 @@ export function parseArgs(args: string[]): IOptions {
     else if (flag === "--write-stats") options.writeStats = true;
     else if (flag === "--write-thresholds") options.writeThresholds = true;
     else if (flag === "--check") options.check = true;
+    else if (flag === "--drop-locks") options.dropLocks = true;
     else if (flag === "--sheet") options.sheet = true;
     else {
       if (
@@ -1065,6 +1139,15 @@ export function parseArgs(args: string[]): IOptions {
   return options;
 }
 export function main(args = process.argv.slice(2)): void {
+  if (args.includes("--sameness")) {
+    process.exitCode = runSameness(args);
+    return;
+  }
+  const gi = giCommand(args);
+  if (gi !== undefined) {
+    process.exitCode = gi;
+    return;
+  }
   if (args.includes("--scene")) {
     process.exitCode = compareGi(args);
     return;
@@ -1133,9 +1216,15 @@ export function main(args = process.argv.slice(2)): void {
       );
   }
   if (report.noise.length) {
-    console.log("\n| layer | cell | whole-frame relative p50 difference |\n|---|---|---:|");
-    for (const r of report.noise) console.log(`| ${r.layer} | ${r.cell} | ${show(r.dP50)} |`);
+    console.log(
+      "\n| layer | cell | whole-frame relative p50 difference | at sub-level resolution |\n|---|---|---:|---:|",
+    );
+    for (const r of report.noise)
+      console.log(`| ${r.layer} | ${r.cell} | ${show(r.dP50)} | ${show(r.dP50Binned)} |`);
     console.log(`Maximum relative p50 difference: ${show(report.maxNoise)}`);
+    console.log(
+      `Maximum whole-frame relative p50 difference at sub-level resolution: ${show(report.maxNoiseBinned)}`,
+    );
   }
   if (report.rows.some((r) => r.pass === false)) process.exitCode = 1;
 }

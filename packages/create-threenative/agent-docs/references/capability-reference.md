@@ -1426,7 +1426,7 @@ export function getPlatform(): Readonly<IPlatformInfo> { … }
 ```
 
 - **Use when:** branch a portable game on web or native · choose touch controls for a mobile device · can I raytrace on native
-- **Constraints:** only use the returned platform facts; native globals are host-owned · ray tracing is unavailable on native until buffer-to-texture copy-out interop exists; `mystralRT.traceRays` refuses instead of resolving success without a readable result
+- **Constraints:** only use the returned platform facts; native globals are host-owned · image ray tracing is unavailable on native until buffer-to-texture copy-out interop exists; `mystralRT.traceRays` refuses instead of resolving success without a readable result · a native desktop host with ray tracing hardware traces ray batches with `mystralRT.traceRayBatch`, which writes hit records into a typed array you own; read `mystralRT.capabilities().rayBatch` first, and keep the software BVH trace for the web and every other host · when `mystralRT.capabilities().sharedTransport` is true, `mystralRT.traceRayBatchGpu({ tlas, rays, hits, rayCount })` traces between two GPUBuffers with no copy through CPU memory; `rays` needs the CopySrc usage and `hits` the CopyDst usage, and each call costs CPU time, so measure it against the software trace for your batch size
 
 ```ts
 if (isMobile()) showTouchControls();
@@ -1586,7 +1586,7 @@ export function isMobile(): boolean { … }
 ```
 
 - **Use when:** branch a portable game on web or native · choose touch controls for a mobile device · can I raytrace on native
-- **Constraints:** only use the returned platform facts; native globals are host-owned · ray tracing is unavailable on native until buffer-to-texture copy-out interop exists; `mystralRT.traceRays` refuses instead of resolving success without a readable result
+- **Constraints:** only use the returned platform facts; native globals are host-owned · image ray tracing is unavailable on native until buffer-to-texture copy-out interop exists; `mystralRT.traceRays` refuses instead of resolving success without a readable result · a native desktop host with ray tracing hardware traces ray batches with `mystralRT.traceRayBatch`, which writes hit records into a typed array you own; read `mystralRT.capabilities().rayBatch` first, and keep the software BVH trace for the web and every other host · when `mystralRT.capabilities().sharedTransport` is true, `mystralRT.traceRayBatchGpu({ tlas, rays, hits, rayCount })` traces between two GPUBuffers with no copy through CPU memory; `rays` needs the CopySrc usage and `hits` the CopyDst usage, and each call costs CPU time, so measure it against the software trace for your batch size
 
 ```ts
 if (isMobile()) showTouchControls();
@@ -1601,7 +1601,7 @@ export function isNative(): boolean { … }
 ```
 
 - **Use when:** branch a portable game on web or native · choose touch controls for a mobile device · can I raytrace on native
-- **Constraints:** only use the returned platform facts; native globals are host-owned · ray tracing is unavailable on native until buffer-to-texture copy-out interop exists; `mystralRT.traceRays` refuses instead of resolving success without a readable result
+- **Constraints:** only use the returned platform facts; native globals are host-owned · image ray tracing is unavailable on native until buffer-to-texture copy-out interop exists; `mystralRT.traceRays` refuses instead of resolving success without a readable result · a native desktop host with ray tracing hardware traces ray batches with `mystralRT.traceRayBatch`, which writes hit records into a typed array you own; read `mystralRT.capabilities().rayBatch` first, and keep the software BVH trace for the web and every other host · when `mystralRT.capabilities().sharedTransport` is true, `mystralRT.traceRayBatchGpu({ tlas, rays, hits, rayCount })` traces between two GPUBuffers with no copy through CPU memory; `rays` needs the CopySrc usage and `hits` the CopyDst usage, and each call costs CPU time, so measure it against the software trace for your batch size
 
 ```ts
 if (isMobile()) showTouchControls();
@@ -1631,7 +1631,7 @@ export function isTouchscreenAvailable(): boolean { … }
 ```
 
 - **Use when:** branch a portable game on web or native · choose touch controls for a mobile device · can I raytrace on native
-- **Constraints:** only use the returned platform facts; native globals are host-owned · ray tracing is unavailable on native until buffer-to-texture copy-out interop exists; `mystralRT.traceRays` refuses instead of resolving success without a readable result
+- **Constraints:** only use the returned platform facts; native globals are host-owned · image ray tracing is unavailable on native until buffer-to-texture copy-out interop exists; `mystralRT.traceRays` refuses instead of resolving success without a readable result · a native desktop host with ray tracing hardware traces ray batches with `mystralRT.traceRayBatch`, which writes hit records into a typed array you own; read `mystralRT.capabilities().rayBatch` first, and keep the software BVH trace for the web and every other host · when `mystralRT.capabilities().sharedTransport` is true, `mystralRT.traceRayBatchGpu({ tlas, rays, hits, rayCount })` traces between two GPUBuffers with no copy through CPU memory; `rays` needs the CopySrc usage and `hits` the CopyDst usage, and each call costs CPU time, so measure it against the software trace for your batch size
 
 ```ts
 if (isMobile()) showTouchControls();
@@ -1646,7 +1646,7 @@ export function isWeb(): boolean { … }
 ```
 
 - **Use when:** branch a portable game on web or native · choose touch controls for a mobile device · can I raytrace on native
-- **Constraints:** only use the returned platform facts; native globals are host-owned · ray tracing is unavailable on native until buffer-to-texture copy-out interop exists; `mystralRT.traceRays` refuses instead of resolving success without a readable result
+- **Constraints:** only use the returned platform facts; native globals are host-owned · image ray tracing is unavailable on native until buffer-to-texture copy-out interop exists; `mystralRT.traceRays` refuses instead of resolving success without a readable result · a native desktop host with ray tracing hardware traces ray batches with `mystralRT.traceRayBatch`, which writes hit records into a typed array you own; read `mystralRT.capabilities().rayBatch` first, and keep the software BVH trace for the web and every other host · when `mystralRT.capabilities().sharedTransport` is true, `mystralRT.traceRayBatchGpu({ tlas, rays, hits, rayCount })` traces between two GPUBuffers with no copy through CPU memory; `rays` needs the CopySrc usage and `hits` the CopyDst usage, and each call costs CPU time, so measure it against the software trace for your batch size
 
 ```ts
 if (isMobile()) showTouchControls();
@@ -2700,9 +2700,9 @@ invalidateStatic(drawbridge);
 export class SurfaceCache { … }
 ```
 
-- **Use when:** give a traced bounce ray the texture colour and glow of the surface it hits · light the hit of a traced ray with the scene's point and spot lamps
-- **Constraints:** the materials are fixed when the cache is built; build a new one when a material or a map changes · a map the cache cannot read (an image the runtime cannot draw to a canvas) returns the flat colour and is listed in `report.fallbacks` · the cache owns no colour, texture or light; the game's materials and lamps are the only source
-- **Overrides:** atlasSize and cardTexelDensityScale size the atlas; maxLights caps the lamps evaluated at a hit
+- **Use when:** give a traced bounce ray the texture colour and glow of the surface it hits
+- **Constraints:** the materials are fixed when the cache is built; build a new one when a material or a map changes · a map whose image the runtime does not show to JavaScript (the owned engine's glTF maps) returns the flat colour and is listed in `report.fallbacks`; the `images` option hands over its pixels · the cache owns no colour, texture or light; the game's materials and lamps are the only source
+- **Overrides:** atlasSize and cardTexelDensityScale size the atlas; images supplies the pixels of a map the runtime hides
 
 ```ts
 const cache = SurfaceCache.from(materials); cache.albedo(slot, hit.uv.x, hit.uv.y, out);
@@ -2710,18 +2710,18 @@ const cache = SurfaceCache.from(materials); cache.albedo(slot, hit.uv.x, hit.uv.
 
 ### `SurfaceLights`
 
-`class` — The Surface Cache: what a traced global-illumination ray reads where it hits a surface. A material atlas (base colour and emissive maps reduced to small tiles) answers the albedo and the glow at the hit UV; a flat material keeps its colour. `SurfaceLights` adds the scene's point and spot lamps at the hit, the brightest eight.
+`class` — The local lamps at the hit of a traced ray: the point and spot lights whose range reaches it, the brightest eight, one shadow ray each. The Surface Cache gives the hit its colour; this gives it the lamps.
 
 ```ts
 export class SurfaceLights { … }
 ```
 
-- **Use when:** give a traced bounce ray the texture colour and glow of the surface it hits · light the hit of a traced ray with the scene's point and spot lamps
-- **Constraints:** the materials are fixed when the cache is built; build a new one when a material or a map changes · a map the cache cannot read (an image the runtime cannot draw to a canvas) returns the flat colour and is listed in `report.fallbacks` · the cache owns no colour, texture or light; the game's materials and lamps are the only source
-- **Overrides:** atlasSize and cardTexelDensityScale size the atlas; maxLights caps the lamps evaluated at a hit
+- **Use when:** light the hit of a traced ray with the scene's point and spot lamps
+- **Constraints:** the cap skips the ninth-brightest lamp and every one after it, and counts them in `skipped` · the caller answers each shadow ray; the class owns no scene
+- **Overrides:** maxLights caps the lamps evaluated at one hit
 
 ```ts
-const cache = SurfaceCache.from(materials); cache.albedo(slot, hit.uv.x, hit.uv.y, out);
+const lamps = new SurfaceLights(lights); lamps.shade(point, normal, albedo, out, (i) => !occluded(i));
 ```
 
 ### `TracedReflections`

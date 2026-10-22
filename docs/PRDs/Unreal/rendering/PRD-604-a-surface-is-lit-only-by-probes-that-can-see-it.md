@@ -4,7 +4,7 @@
 **Priority:** P2 — Phase 1 leak measurement, the per-probe distance atlas and the visibility-weighted sampler are all unbuilt.
 **Complexity:** 5 (MEDIUM) — 1–5 implementation files: `probe-volume.ts`, one trace helper, specs, one conformance scene (+1), new GPU data and a new sampler (+2), reuse of the installed `GPUSceneBVH` ray query (+0), native proof (+1), cost risk on a per-pixel path (+1); risk override: none
 **Owner:** unassigned
-**Depends on:** None. Part of the GI set in [`../gi/`](../gi/) (PR #541); the leak cells come from [PRD-638](../gi/PRD-638-calibration-scenes-are-built-in-unreal-and-captured-as-the-gi-target.md) (`leak` pose). Shares a kernel with [PRD-603](PRD-603-probes-refresh-by-tracing-the-packed-scene-not-by-drawing-it-six-times.md) if that PRD lands first (see Solution step 2).
+**Depends on:** None. Part of the GI set in [`../gi/`](../gi/) (PR #541); the leak cells come from [PRD-638](../../done/PRD-638-calibration-scenes-are-built-in-unreal-and-captured-as-the-gi-target.md) (`leak` pose). Shares a kernel with [PRD-603](PRD-603-probes-refresh-by-tracing-the-packed-scene-not-by-drawing-it-six-times.md) if that PRD lands first (see Solution step 2).
 
 ## Context
 
@@ -78,7 +78,7 @@ The ingredients exist. `GPUSceneBVH` (`packages/core/src/gpu-scene-bvh.ts:354`) 
 - [ ] A probe with 10% or more back-face rays is flagged invalid and counted in `TN_PROBE_VOLUME`. proof: `pnpm exec vitest run packages/core/__tests__/probe-volume.spec.ts`
 - [ ] A probe placed 0.1 m inside a wall moves out of it and is valid after the distance pass, and a probe inside a closed solid stays invalid. proof: `pnpm exec vitest run packages/core/__tests__/probe-volume.spec.ts`
 - [ ] On the CPU reference `sampleIrradiance` (`probe-volume.ts:499`), samples in open air at least 2 m from any wall match the trilinear result within 2%, and `visibility: false` returns the old output exactly. proof: `pnpm exec vitest run packages/core/__tests__/probe-volume.spec.ts`
-**Verification:** AC-1 and AC-2 close this phase. The change alters what reaches the screen, so the visual judge from the root `AGENTS.md` runs on the rooms fixture and on the off-screen-emitter fixture. It must return IMPROVEMENT overall on the leak frames and no REGRESSION on the emitter frames. A [PRD-647](../gi/PRD-647-a-visual-judge-calibrates-gi-against-the-unreal-scenes-until-parity.md) round on `cornell` and `sunlit-room` at `medium`, Unreal Medium as the target, runs on the same change. The verdict goes beside AC-1. A NEUTRAL or REGRESSION verdict means fix the cause and judge again.
+**Verification:** AC-1 and AC-2 close this phase. The change alters what reaches the screen, so the visual judge from the root `AGENTS.md` runs on the rooms fixture and on the off-screen-emitter fixture. It must return IMPROVEMENT overall on the leak frames and no REGRESSION on the emitter frames. A [PRD-647](../../done/PRD-647-a-visual-judge-calibrates-gi-against-the-unreal-scenes-until-parity.md) round on `cornell` and `sunlit-room` at `medium`, Unreal Medium as the target, runs on the same change. The verdict goes beside AC-1. A NEUTRAL or REGRESSION verdict means fix the cause and judge again.
 
 #### Phase 3: The same fixture runs on the native host
 **Status:** NOT STARTED

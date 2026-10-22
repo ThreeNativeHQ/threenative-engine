@@ -763,6 +763,46 @@
       "source": "template:racing#AGENTS.md — __PROJECT_NAME__ racing",
       "expect": ["VehicleBody3D"],
       "reject": []
+    },
+    {
+      "id": "request.lumen-surface-cache",
+      "query": "lumen surface cache",
+      "scope": "request",
+      "source": "template:starter#Quality and proof",
+      "expect": ["SurfaceCache"],
+      "reject": []
+    },
+    {
+      "id": "request.lumen-scene",
+      "query": "lumen scene",
+      "scope": "request",
+      "source": "template:starter#Quality and proof",
+      "expect": ["SurfaceCache"],
+      "reject": []
+    },
+    {
+      "id": "request.mesh-cards",
+      "query": "mesh cards",
+      "scope": "request",
+      "source": "template:starter#Quality and proof",
+      "expect": ["SurfaceCache"],
+      "reject": []
+    },
+    {
+      "id": "request.gi-quality-scalability",
+      "query": "lumen scalability sg.GlobalIlluminationQuality final gather method",
+      "scope": "request",
+      "source": "template:starter#AGENTS.md — __PROJECT_NAME__ starter",
+      "expect": ["GIBudget"],
+      "reject": []
+    },
+    {
+      "id": "request.shadow-quality-scalability",
+      "query": "virtual shadow map scalability sg.ShadowQuality",
+      "scope": "request",
+      "source": "template:starter#AGENTS.md — __PROJECT_NAME__ starter",
+      "expect": ["ShadowFilterBudget"],
+      "reject": []
     }
   ]
 }

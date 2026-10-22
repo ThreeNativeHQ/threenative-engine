@@ -284,6 +284,7 @@ PostPass rawPass(const PostEffect& effect, std::string output, const char* body,
     pass.uniforms = effect.parameters;
     pass.temporal = effect.temporal;
     pass.redFormat = effect.kind == "GTAONode";
+    pass.stage = effect.stage;
     StageModule fragment{Stage::Fragment};
     std::string code;
     uint32_t binding = 0, offset = 0;

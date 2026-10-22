@@ -1009,10 +1009,22 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
                         return {};
 }
 
+namespace {
+/** The stage a pass labels itself with (post_effects.h kStage*): a name the renderer times under its own segment. */
+uint8_t stageOf(double value) {
+    if (value != g::kStageNone && value != g::kStageScreenSpaceGi) throw std::runtime_error("unknown GPU stage " + std::to_string(value));
+    return uint8_t(value);
+}
+}  // namespace
+
 double tslEffectParameter(const g::Node& node, const std::string& name, const double* value) {
     if (node && node->rtt) {
         auto& r = *node->rtt;
         if (value && !std::isfinite(*value)) throw std::runtime_error("rtt parameter must be finite");
+        if (name == "stage") {
+            if (value) r.stage = stageOf(*value);
+            return r.stage;
+        }
         if (name == "resolutionScale") {
             if (value) {
                 if (*value <= 0 || *value > 8) throw std::runtime_error("rtt scale must be in (0, 8]");
@@ -1093,6 +1105,10 @@ double tslEffectParameter(const g::Node& node, const std::string& name, const do
             effect.resolutionScale = static_cast<float>(*value);
         }
         return effect.resolutionScale;
+    }
+    if (name == "stage") {
+        if (value) effect.stage = stageOf(*value);
+        return effect.stage;
     }
     const auto found = effect.parameters.find(name);
     if (found == effect.parameters.end() || found->second.size() != 1 || name.front() == '_')
