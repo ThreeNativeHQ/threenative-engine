@@ -6,7 +6,7 @@
  */
 import { TSL_NODE, type TnAbiModule, engineRef } from "./browser-backend.js";
 import { type ITslRuntime, defineTsl, isTslNode } from "./browser-tsl.js";
-import { GPU_STAGES } from "./gpu-stages.js";
+import { GPU_STAGES, SHADOW_SEGMENT_FIELD, SHADOW_STAGE } from "./gpu-stages.js";
 import type { PassDraw } from "./pass-node.js";
 import { defineRenderTargets, targetTexelBytes } from "./render-target.js";
 import { ShadowMap } from "./shadow-map.js";
@@ -387,6 +387,8 @@ export function defineWebRenderer(
             const stageMs = module._tnw_web_frame(GPU_STAGE_FIELD + index);
             if (stageMs > 0) stages[name] = stageMs;
           });
+          const shadowMs = module._tnw_web_frame(SHADOW_SEGMENT_FIELD);
+          if (shadowMs > 0) stages[SHADOW_STAGE] = shadowMs;
           this.info.engine.gpuStages = stages;
         }
       }

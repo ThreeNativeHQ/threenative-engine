@@ -79,6 +79,13 @@ describe("shadow tier table (PRD-652)", () => {
     expect(shadowPreset("low")).toMatchObject({ castShadows: false, shadowQuality: 0 });
   });
 
+  it("budgets each tier's shadow passes at Unreal's measured ShadowDepths time (0 at Low, 0.46 ms at Medium and Epic)", async () => {
+    const { shadowPreset } = await loadQuality();
+    expect(shadowPreset("low")).toMatchObject({ budgetMs: 0 });
+    expect(shadowPreset("medium")).toMatchObject({ budgetMs: 0.46 });
+    expect(shadowPreset("high")).toMatchObject({ budgetMs: 0.46 });
+  });
+
   it("medium casts with 4 + 4 taps and keeps the sun clip levels", async () => {
     const { shadowPreset } = await loadQuality();
     expect(shadowPreset("medium")).toMatchObject({

@@ -205,3 +205,21 @@ these criteria, per frame and overall.
   predecessor-row test requires an alias to add recall.
 - 2026-10-22 (tier-lane, desktop player open): the V8 player's `renderInfo` has no GPU timestamps or stage times, so
   `GIBudget` holds its method there. The web path is the only one claimed.
+- 2026-10-22 (budget-lane, the budgets read their own stage): the fault of the shadow tier (a step down for cost the stage did not
+  cause, PRD-652 `## Decisions`) was in `ShadowFilterBudget` alone. `GIBudget` already feeds the ladder only the GI stages it
+  names (`gi-budget.ts` `observeRenderer`), so a slow frame it did not cause does not move its method. `BudgetLadder` takes the
+  caller's number and holds no frame logic of its own, and no other class uses it. One sibling fault was in the harness: `watchGi`
+  passed no `frameBudgetMs`, so a step up needed no room in the frame, and `irradianceField` (no pass of its own, reads 0 ms) climbed
+  to `screenProbeGather` on a frame that was already over the period (the step cycle above). `watchGi` now passes `1000 / 60` by default.
+  Live, `gi-tier-cost.ts --auto` at P2 clocks (1410 MHz), `gi:cornell`, shared slot: from `high` four windows hold `screenProbeGather`
+  at 2.9 to 3.0 ms SSGI inside the 6 ms budget; from `medium` window 1 reads 0 ms with a 6.5 ms frame inside the period and steps up, then
+  windows 2 to 4 hold at 2.3 to 3.1 ms.
+- 2026-10-22 (budget-lane, AC-1 `low` ceiling, GI side: nothing to add): `sunlit-room` `L7-low` against Unreal `L7-Low`, run 1 at epic
+  head `45568df88` plus this lane: Ceiling p50 1.0 / 1.0 / 1.0 / 0.0 / 0.0 / 0.0 against 112 / 108 / 97 / 84 / 81 / 72 (dE 24 to 39),
+  Floor 114 vs 135, Wall_Left 119 vs 146, Wall_Right 114 vs 139 at sun60 (dP50 0.15 to 0.19). At `low` the method is `none`, so the
+  whole indirect term is the sky-light probe field (`giCache.ts:1602-1631`, `skyShadowDistance: 0`), which carries the sky's
+  radiance per direction and no surface light. The walls' 1.2x deficit and the ceiling's 0.66 ratio (sky2-lane's measurement)
+  both fit one missing term: the sky radiance below the horizon. That cause belongs to
+  [PRD-633](../look/PRD-633-the-sky-is-an-atmosphere-and-it-lights-the-scene.md), which sky2-lane is hunting, so this lane adds no
+  ceiling term. AC-1 stays open on that PRD.
+

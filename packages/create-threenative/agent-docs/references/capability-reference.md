@@ -2384,18 +2384,18 @@ if (spansRequested()) setSpanRecorder(new SpanRecorder());
 
 ### `ShadowFilterBudget`
 
-`class` — Steps a game's soft-shadow filter down a tier (`low`, `medium`, `high`) when the frame's GPU time stays over its period for a 120-frame window, and back up when there is room. The game owns the sample counts of each tier and rebuilds its filter on each step; the tiers follow Unreal's `sg.ShadowQuality` Low, Medium and Epic.
+`class` — Steps a game's soft-shadow tier down (`low`, `medium`, `high`) when the GPU time of its shadow passes stays over the tier's budget for a 120-frame window, and back up when there is room. Only the shadow stages' own time moves the tier, so a frame that is slow for another reason keeps its shadows. The game owns the sample counts of each tier and rebuilds its filter on each step; the tiers follow Unreal's `sg.ShadowQuality` Low, Medium and Epic.
 
 ```ts
 export class ShadowFilterBudget { … }
 ```
 
-- **Use when:** soft shadow filter costs too much on a weak GPU · step the shadow filter samples from measured frame time · shadow quality tier that follows the hardware
-- **Constraints:** the game rebuilds its filter with the tier's sample counts on each step; this class draws nothing · timestamp queries are needed: without them every window is unobserved and the tier holds · the signal is the whole frame's GPU time, so a frame slow for another reason also steps the filter down · the signal is the whole frame's GPU time, so a frame slow for another reason also steps the filter down; name that reason's passes in `excludeStages`
-- **Overrides:** explicit: true keeps the game's own sample counts and reports an exceeded period
+- **Use when:** soft shadow filter costs too much on a weak GPU · step the shadow quality tier from the measured GPU time of the shadow passes · shadow quality tier that follows the hardware
+- **Constraints:** the game rebuilds its filter with the tier's sample counts on each step; this class draws nothing · timestamp queries are needed: without them every window is unobserved and the tier holds · the signal is the GPU time of the shadow passes (the `Shadow` stage), which the receiver filter inside the colour pass is not part of
+- **Overrides:** explicit: true keeps the game's own sample counts and reports an exceeded budget
 
 ```ts
-const filter = new ShadowFilterBudget({ tier: "high", frameBudgetMs: 1000 / 60, onStep: (tier) => { light.shadow.filterNode = filterFor(tier); } });
+const filter = new ShadowFilterBudget({ tier: "high", budgetMs: { low: 0.3, medium: 0.3, high: 0.5 }, onStep: (tier) => { light.shadow.filterNode = filterFor(tier); } });
 ctx.beforeRender(() => filter.observeRenderer(ctx.renderer.raw));
 ```
 

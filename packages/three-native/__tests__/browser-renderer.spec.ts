@@ -233,8 +233,10 @@ describe("the Wasm engine's WebGPURenderer sample count", () => {
   it("reports the sample's labelled stage times beside its whole frame, and leaves a stage that drew nothing out", async () => {
     let gpuSamples = 0;
     let gatherMs = 0;
+    let shadowMs = 0;
     const { Renderer, canvas, scene, camera } = host((field) => {
       if (field === 7) return 12.5;
+      if (field === 19) return shadowMs; // the shadow passes' segment (web_host.cpp)
       if (field === 8) return gpuSamples;
       if (field === 9) return 4;
       if (field === 10) return 1;
@@ -251,10 +253,12 @@ describe("the Wasm engine's WebGPURenderer sample count", () => {
     expect(renderer.info.engine.gpuStages).toEqual({});
     gpuSamples = 1;
     gatherMs = 4.25;
+    shadowMs = 0.75;
     renderer.render(scene, camera);
-    expect(renderer.info.engine.gpuStages).toEqual({ SSGI: 4.25 });
+    expect(renderer.info.engine.gpuStages).toEqual({ SSGI: 4.25, Shadow: 0.75 });
     gpuSamples = 2;
     gatherMs = 0;
+    shadowMs = 0;
     renderer.render(scene, camera);
     expect(renderer.info.engine.gpuStages).toEqual({});
   });

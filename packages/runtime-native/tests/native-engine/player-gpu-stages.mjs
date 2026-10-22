@@ -1,7 +1,8 @@
 // PRD-644 and PRD-652 on the V8 player: the GPU stage times that GIBudget and ShadowFilterBudget read. A render-to-texture
 // pass labelled "SSGI" draws for 120 frames. The player must publish, as the Wasm engine does, the frame's GPU time as
 // `info.render.timestamp`, the labelled pass's time as `info.engine.gpuStages.SSGI`, and the frame the sample belongs to
-// as the last `backend.getTimestampFrames("render")` entry, so core's `stageGpuReading` returns a reading. Timing stays off
+// as the last `backend.getTimestampFrames("render")` entry, so core's `stageGpuReading` returns a reading. The sun's shadow
+// pass reports as `info.engine.gpuStages.Shadow` (PRD-652: `ShadowFilterBudget` reads it). Timing stays off
 // until a reader asks, so the first read of `getTimestampFrames` is what starts it.
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
@@ -34,10 +35,14 @@ const ball = new Mesh(new SphereGeometry(0.8, 48, 24), new MeshStandardMaterial(
 ball.position.y = 0.8;
 const sun = new DirectionalLight(0xffffff, 3);
 sun.position.set(2, 4, 3);
+sun.castShadow = true;
+ball.castShadow = true;
+floor.receiveShadow = true;
 scene.add(floor, ball, sun, new AmbientLight(0xffffff, 0.4));
 globalThis.tn.scene = scene;
 globalThis.tn.camera = camera;
 const renderer = new WebGPURenderer({ canvas: { width: 1280, height: 720 } });
+renderer.shadowMap.enabled = true;
 
 const seen = { before: stageGpuReading(renderer) ?? null };
 let frame = 0;
@@ -100,9 +105,11 @@ assert.equal(seen.frames.length, 1, verdict);
 assert(seen.timestamp > 0, verdict);
 assert(seen.stages.SSGI > 0, verdict);
 assert(seen.stages.SSGI < seen.timestamp, verdict);
+assert(seen.stages.Shadow > 0 && seen.stages.Shadow < seen.timestamp, verdict);
 // The sample belongs to a frame the game has already presented, and core reads the same numbers.
 assert(seen.frames[0] > 0 && seen.frames[0] <= 120, verdict);
 assert.equal(seen.reading?.frame, seen.frames[0], verdict);
 assert.equal(seen.reading?.stages.SSGI, seen.stages.SSGI, verdict);
+assert.equal(seen.reading?.stages.Shadow, seen.stages.Shadow, verdict);
 assert.equal(seen.reading?.total, seen.timestamp, verdict);
-console.log(`PASS the V8 player publishes GPU stage times through info.engine.gpuStages: SSGI ${seen.stages.SSGI.toFixed(3)} ms of ${seen.timestamp.toFixed(3)} ms, frame ${seen.frames[0]}`);
+console.log(`PASS the V8 player publishes GPU stage times through info.engine.gpuStages: SSGI ${seen.stages.SSGI.toFixed(3)} ms, Shadow ${seen.stages.Shadow.toFixed(3)} ms of ${seen.timestamp.toFixed(3)} ms, frame ${seen.frames[0]}`);

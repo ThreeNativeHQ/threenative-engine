@@ -90,12 +90,11 @@ describe("stageGpuReading on the owned engine", () => {
     expect(gi.lastReport()).toMatchObject({ samples: 1, windowMs: undefined });
   });
 
-  it("lets ShadowFilterBudget leave the gather out of the frame it judges", () => {
+  it("lets ShadowFilterBudget read the shadow stage, not the frame the gather slowed", () => {
     const raw = ownedRenderer();
     const steps: string[] = [];
     const shadows = new ShadowFilterBudget({
-      excludeStages: ["SSGI"],
-      frameBudgetMs: 16.7,
+      budgetMs: { high: 1, low: 1, medium: 1 },
       minSamples: 4,
       onStep: (tier) => steps.push(tier),
       report: () => undefined,
@@ -103,12 +102,17 @@ describe("stageGpuReading on the owned engine", () => {
       windowFrames: 10,
     });
     let report: ReturnType<ShadowFilterBudget["observeRenderer"]>;
-    // 25 ms frame, 20 of it the gather: the filter's own 5 ms is well inside the 16.7 ms period.
+    // 25 ms frame, 20 of it the gather: the shadow passes' 0.4 ms is well inside their 1 ms budget.
     for (let frame = 1; frame <= 10; frame++) {
-      sample(raw, frame, 25, { SSGI: 20 });
+      sample(raw, frame, 25, { SSGI: 20, Shadow: 0.4 });
       report = shadows.observeRenderer(raw);
     }
-    expect(report).toMatchObject({ stepped: undefined, tier: "high", windowMs: 5 });
+    expect(report).toMatchObject({
+      stagesSeen: ["Shadow"],
+      stepped: undefined,
+      tier: "high",
+      windowMs: 0.4,
+    });
     expect(steps).toEqual([]);
   });
 });
