@@ -102,6 +102,7 @@ Paths are under `Engine/Source/Runtime/Renderer/Private/VirtualShadowMaps/`.
 ### Phase 2 — Admit sparse pages only behind the measured gate
 
 - [ ] The admitted path renders only demanded dirty pages into bounded physical storage and reuses clean resident pages. It skips instances under a pixel-footprint limit in coarse pages. Under pool pressure it first raises a resolution bias, and it falls back to the cached-level path only at the bias cap or on an unsupported case, never dropping shadows. **proof:** focused specs exercise demand, LRU eviction, invalidation, the footprint limit, the pressure bias and overflow; a forced-small pool preserves a valid shadow through the bias and then the fallback.
+- [ ] Page marking skips back-facing receiver pixels, widens each marked page by a 0.05-page border, and requests a coarser level for out-of-focus pixels, as Unreal's VSM page marking does. **proof:** red-green `pnpm exec vitest run packages/core/__tests__/virtual-shadow-pages.spec.ts` on `ReceiverDemandPass`.
 - [ ] On the Phase-1 winning workload, sparse pages reduce attributable shadow GPU/render p95 without increasing total frame p95 or visible shadow error beyond the pinned threshold. **proof:** paired A/B run on the same adapter records shadow cost, total frame cost, page/level render counts and image delta; if the win gate is missed, sparse mode remains unshipped/disabled.
 
 ### Phase 3 — Establish the local-light boundary honestly

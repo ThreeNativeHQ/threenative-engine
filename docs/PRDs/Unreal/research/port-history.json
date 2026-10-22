@@ -1,0 +1,66 @@
+[
+ {
+  "date": "2026-09-06",
+  "done": 5,
+  "total": 44,
+  "lookDone": 0,
+  "lookTotal": 0,
+  "open": 1
+ },
+ {
+  "date": "2026-09-13",
+  "done": 5,
+  "total": 44,
+  "lookDone": 0,
+  "lookTotal": 0,
+  "open": 1
+ },
+ {
+  "date": "2026-09-20",
+  "done": 12,
+  "total": 52,
+  "lookDone": 0,
+  "lookTotal": 0,
+  "open": 2
+ },
+ {
+  "date": "2026-09-27",
+  "done": 12,
+  "total": 100,
+  "lookDone": 0,
+  "lookTotal": 0,
+  "open": 7
+ },
+ {
+  "date": "2026-10-04",
+  "done": 12,
+  "total": 186,
+  "lookDone": 0,
+  "lookTotal": 32,
+  "open": 18
+ },
+ {
+  "date": "2026-10-11",
+  "done": 102,
+  "total": 318,
+  "lookDone": 0,
+  "lookTotal": 44,
+  "open": 25
+ },
+ {
+  "date": "2026-10-18",
+  "done": 155,
+  "total": 421,
+  "lookDone": 0,
+  "lookTotal": 60,
+  "open": 28
+ },
+ {
+  "date": "2026-10-22",
+  "done": 252,
+  "total": 1001,
+  "lookDone": 39,
+  "lookTotal": 402,
+  "open": 85
+ }
+]
