@@ -17,7 +17,7 @@ function sandbox(unameOutput: string): { bin: string; marker: string } {
   const root = makeTempDirSync("tn-xvfb-");
   const bin = path.join(root, "bin");
   fs.mkdirSync(bin);
-  for (const tool of ["mktemp", "tr", "sleep", "rm", "cat", "sh"]) {
+  for (const tool of ["mktemp", "tr", "sleep", "rm", "cat", "grep", "sh"]) {
     const resolved = spawnSync("command", ["-v", tool], {
       shell: true,
       encoding: "utf8",
@@ -119,7 +119,10 @@ describe.each([
   it("enables COMPOSITE and SHAPE and has the compositor up before the command runs", () => {
     const { bin, xvfbArgs, compositorArgs } = displaySandbox({ compositor: true });
     // The command passes only if the compositor reached its display first.
+    const started = Date.now();
     const result = runScript(bin, ["/bin/sh", "-c", `test -f ${compositorArgs}`]);
+    // A dead xwininfo probe would run out its 5 s bound and still pass; the poll must end on the window.
+    expect(Date.now() - started).toBeLessThan(4_000);
 
     expect(result.status, result.stderr).toBe(0);
     expect(fs.readFileSync(xvfbArgs, "utf8")).toMatch(
