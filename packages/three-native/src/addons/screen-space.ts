@@ -423,7 +423,16 @@ export interface IScreenProbeOptions {
   readonly viewport: { readonly width: number; readonly height: number };
   /** Rays on a side of each probe's octahedron (r.Lumen.ScreenProbeGather.TracingOctahedronResolution; 8 at Epic). */
   readonly tracingOctahedronResolution?: number;
+  /**
+   * Diagnosis: label only this pass group as the `SSGI` GPU stage, so `info.engine.gpuStages.SSGI` times it alone and the
+   * other groups count in the frame. Omit to label every pass; `null` labels none (another stage is being timed).
+   */
+  readonly timedPass?: ScreenProbePass | null;
 }
+
+/** The screen-probe gather's pass groups, in the order they draw. */
+export const SCREEN_PROBE_PASSES = ["trace", "filter", "gather"] as const;
+export type ScreenProbePass = (typeof SCREEN_PROBE_PASSES)[number];
 
 /** Texels on a side of the irradiance octahedron each probe keeps (Unreal's gather resolution 6, bilinear lookup). */
 const IRRADIANCE_SIDE = 6;
@@ -655,11 +664,14 @@ function defineScreenProbes(
     !(factor >= 1) ||
     !(side >= 2) ||
     !(probes.viewport.width > 0) ||
-    !(probes.viewport.height > 0)
+    !(probes.viewport.height > 0) ||
+    (probes.timedPass != null && !SCREEN_PROBE_PASSES.includes(probes.timedPass))
   )
     throw new TypeError(
-      `TN_NATIVE_SCREEN_PROBES: downsampleFactor ${factor}, tracingOctahedronResolution ${side}, viewport ${probes.viewport.width}x${probes.viewport.height}`,
+      `TN_NATIVE_SCREEN_PROBES: downsampleFactor ${factor}, tracingOctahedronResolution ${side}, viewport ${probes.viewport.width}x${probes.viewport.height}, timedPass ${String(probes.timedPass)}`,
     );
+  const stage = (pass: ScreenProbePass): GpuStage | undefined =>
+    probes.timedPass === undefined || probes.timedPass === pass ? GI_STAGE : undefined;
   const tilesX = Math.ceil(probes.viewport.width / factor);
   const tilesY = Math.ceil(probes.viewport.height / factor);
   const tiles = vec2(tilesX, tilesY);
@@ -711,7 +723,7 @@ function defineScreenProbes(
     type: HALF_FLOAT_TYPE,
     minFilter: 1003,
     magFilter: 1003,
-    gpuStage: GI_STAGE,
+    gpuStage: stage("trace"),
   });
 
   // 2. filter: this texel is direction `cell` of probe `tile`'s irradiance octahedron.
@@ -745,7 +757,7 @@ function defineScreenProbes(
   })();
   const filtered = rtt(filterGraph, tilesX * IRRADIANCE_SIDE, tilesY * IRRADIANCE_SIDE, {
     type: HALF_FLOAT_TYPE,
-    gpuStage: GI_STAGE,
+    gpuStage: stage("filter"),
   });
 
   // 3. gather: each pixel blends the four nearest probes it can see.
@@ -817,5 +829,5 @@ function defineScreenProbes(
     });
     return result;
   })();
-  return rtt(gatherGraph, null, null, { type: HALF_FLOAT_TYPE, gpuStage: GI_STAGE });
+  return rtt(gatherGraph, null, null, { type: HALF_FLOAT_TYPE, gpuStage: stage("gather") });
 }

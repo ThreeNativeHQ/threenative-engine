@@ -234,3 +234,57 @@ these criteria, per frame and overall.
   reading, the stage divided by the frame (about 0.27 here). No change is made yet: a share of the frame cannot tell
   a heavy gather from a light frame, and the ladder needs a design round first. Next step: decide between a share of the frame
   and a frame-period budget, then rerun the live step proof at both clock states.
+- 2026-10-22 (gicost-lane, attribution): `timedPass` on the screen probes and `ssgiTimedPass` on the harness chain label
+  one pass group as the `SSGI` stage, so the stage times that group alone. `gi-tier-cost.ts --interleave --arms` pairs
+  the groups in one page. On `gi:cornell` at 1920 x 1080 (GPU mostly at P5, the run overlapped a gpu-prio capture) the
+  6.0 ms stage split into denoise 3.2 ms (3 bilateral passes), trace 1.3 ms, ray-to-irradiance filter 1.1 ms, probe
+  spatial filter 0.5 ms (3 passes) and gather 0.14 ms. The groups sum to 6.2 ms. Clock trap: the same arm reads 2 to 3
+  times dearer at P5 or P8 than at P2, so the report also gives each stage's share of its own frame.
+- 2026-10-22 (gicost-lane, Unreal budget rules): UE 5.8.3 Epic against the `high` tier. Sources:
+  `Engine/Config/BaseScalability.ini` `[GlobalIlluminationQuality@3]`,
+  `Engine/Source/Runtime/Renderer/Private/Lumen/LumenScreenProbeGather.cpp`, `LumenScreenProbeFiltering.cpp`,
+  `LumenScreenProbeTracing.cpp`, `LumenScreenProbeImportanceSampling.cpp`.
+
+  | Rule | Unreal Epic | `high` before | `high` now |
+  |---|---|---|---|
+  | `DownsampleFactor` | 16 px | 16 px | 16 px |
+  | `TracingOctahedronResolution` | 8 (64 rays) | 16 (256 rays) | 8, ported |
+  | Bilateral denoise on the gather | none: probe spatial filter + temporal filter | 3 passes, radius 16 | 1 pass, ported toward Unreal |
+  | `SpatialFilterNumPasses` / half kernel | 3 / 1 | 3 / 1 | 3 / 1 |
+  | `Temporal`, `MaxFramesAccumulated` | on, 10 | no GI history; temporal AA on the frame | unchanged, deferred |
+  | `GatherOctahedronResolutionScale`, `IrradianceFormat` | 1 (8 x 8), 0 (SH3) | 6 x 6 octahedron, cosine sum over every ray | unchanged, deferred |
+  | `NumAdaptiveProbes`, `AdaptiveProbeAllocationFraction` | 8, 0.5 | none | deferred |
+  | `IntegrateDownsampleFactor` | 1 (full resolution) | gather at 0.5 scale | unchanged |
+  | Screen traces | HZB, `MaxIterations` 50 | linear march, 16 steps | unchanged |
+  | `ImportanceSample` | on | uniform octahedron | deferred |
+
+  Deferred rows: the GI temporal filter would replace the last denoise pass, and SH3 irradiance and importance
+  sampling change the filter. Revisit when the GI stage is over budget again or a judge round asks for less noise. The
+  adaptive probes add cost and fix thin geometry. Revisit with a scene that shows that gap. The half-resolution gather is
+  cheaper than Unreal, and the judge sees no gap.
+- 2026-10-22 (gicost-lane, budget rule proposal, not coded): how Unreal lowers cost under load. UE 5.8.3 scales
+  render cost at run time only through `DynamicRenderScaling` budgets: primary resolution
+  (`Engine/Source/Runtime/Engine/Private/DynamicResolution.cpp:132`), translucency resolution
+  (`Renderer/Private/TranslucentRendering.cpp:184`), Nanite primary and shadow rasterisation
+  (`Renderer/Private/Nanite/NaniteCullRaster.cpp:444-445`) and VSM Nanite (`Renderer/Private/VirtualShadowMaps/VirtualShadowMapArray.cpp:845`).
+  No file under `Renderer/Private/Lumen/` declares one: Lumen's quality is the scalability level
+  (`sg.GlobalIlluminationQuality`, `Engine/Private/Scalability.cpp:65`), set by the benchmark or a device profile, and it does not
+  move with load. Lumen gets cheaper only because the screen probes follow the lower resolution. The heuristic compares the GPU
+  frame time with the frame period, not one stage's milliseconds: `r.DynamicRes.FrameTimeBudget` (33.3 ms by default,
+  `DynamicResolution.cpp:36`), a target headroom of 10% (`TargetedGPUHeadRoomPercentage`, `:47`), a 16-frame history (`HistorySize`,
+  `:66`), at least 8 frames between changes (`MinResolutionChangePeriod`, `:78`) and a fast drop after 2 frames over budget
+  (`MaxConsecutiveOverBudgetGPUFrameCount`, `:97`, `:219-299`). A fixed 6 ms GI budget therefore has no Unreal counterpart, and
+  it fails on clock state: at P5 a light frame reads the gather 2.5 times dearer than at boost and steps it down. The proposal:
+  (1) the GI ladder steps only when the whole GPU frame stays over the frame period less 10% headroom for its window,
+  so a GPU that idles at P5 inside the period holds the method; (2) the GI stage's share of the frame names the stage to
+  blame, and the step goes to it only when that share is the largest dynamic one; (3) resolution steps first
+  (`ResolutionScaler`, Unreal's only lever), and the GI method steps only when the scale is at its floor
+  (`r.DynamicRes.MinScreenPercentage`). Step (3) goes past Unreal, because Unreal does not change Lumen at run time. It is a named
+  ThreeNative override and needs the owner's decision. Next step: a design round with the shadow budget (PRD-652), which has the
+  same fixed-ms problem, and then red-first specs on injected frame and stage readings at two clock states.
+- 2026-10-22 (gicost-lane, port, held): on `lane/gicost` the harness `high` tier traces 8 x 8 rays and runs one denoise
+  pass (`quality.ts`, `e503db41d`). It was measured and judged on the screen-probe gather of lane/gather, which the epic
+  reverted (`126f3715a`), so it is not on this branch: it returns with that gather. The current `high` gather is the
+  per-pixel `epic` gather, and its attribution is the next step. Judge (judge.ts, Sonnet, 2 runs per arm, cornell and sunlit-room at L7 and L9, 16 frames): 8 x 8 alone
+  NEUTRAL, 8 x 8 with one pass NEUTRAL, both CLOSE to Unreal on 16 of 16 frames. The templates take it through PRD-267.
+  No C++ changed, so no native build or test ran for it.
