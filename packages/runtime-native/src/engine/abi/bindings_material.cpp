@@ -498,7 +498,7 @@ void registerLightShadow(ClassBinding& b, bool spot) {
         // sourceAngleShadowFilter on a sun (orthographic map), sourceRadiusShadowFilter on a lamp.
         const bool lamp = dynamic_cast<PerspectiveCamera*>(shadow.camera.get()) != nullptr;
         const char* size = lamp ? "sourceRadius" : "sourceAngleRad";
-        if (value.kind != Value::Kind::Record || value.fields.size() < 3 || value.fields.size() > 4 ||
+        if (value.kind != Value::Kind::Record || value.fields.size() < (lamp ? 4u : 3u) || value.fields.size() > 4 ||
             (!lamp && !dynamic_cast<OrthographicCamera*>(shadow.camera.get())))
             throw Unsupported{"TN_VIRTUAL_SHADOW_UNSUPPORTED: filterNode (sourceAngleShadowFilter on a directional "
                               "light, or sourceRadiusShadowFilter on a spot or point light, required)"};
