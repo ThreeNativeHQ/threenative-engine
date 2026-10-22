@@ -28,11 +28,14 @@ const json::Value& get(const json::Value& v, const char* key) {
     const auto* x = v.find(key);
     return x ? *x : empty;
 }
+// The texture a post input reads, through swizzles and conversions; null when it reads none.
+Node textureSource(Node n) {
+    if (n && (n->kind == Kind::Texture || n->kind == Kind::PostEffect || n->kind == Kind::RenderTexture)) return n;
+    if (n && (n->kind == Kind::Swizzle || n->kind == Kind::Convert) && !n->args.empty()) return textureSource(n->args[0]);
+    return nullptr;
+}
 std::string textureName(Node n) {
-    if (n && (n->kind == Kind::Texture || n->kind == Kind::PostEffect || n->kind == Kind::RenderTexture))
-        return n->name;
-    if (n && (n->kind == Kind::Swizzle || n->kind == Kind::Convert) && !n->args.empty())
-        return textureName(n->args[0]);
+    if (const Node source = textureSource(n)) return source->name;
     throw std::runtime_error("TN_TSL_POST_INPUT: expected a depth/normal texture");
 }
 
@@ -814,8 +817,8 @@ PostImage decodedTable(const std::string& name, bool area) {
 }
 
 void requireTexture(const Node& node, const char* what) {
-    try { textureName(node); }
-    catch (const std::exception&) { throw std::runtime_error(std::string("TN_TSL_POST_INPUT: ") + what + " must be a texture node"); }
+    // A check, not a catch: the Wasm build compiles the engine without exception handling.
+    if (!textureSource(node)) throw std::runtime_error(std::string("TN_TSL_POST_INPUT: ") + what + " must be a texture node");
 }
 }  // namespace
 

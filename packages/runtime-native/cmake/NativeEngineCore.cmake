@@ -307,6 +307,11 @@ tn_native_engine_test(tn-native-engine-material-test tests/native-engine/materia
     native_engine_material_bloom_passes=bloom_passes
     native_engine_material_slots_share_one_lowering=slots_share_one_lowering)
 target_link_libraries(tn-native-engine-material-test PRIVATE tn_engine_shader)
+if(EMSCRIPTEN)
+    # ssr_rejects_inputs catches the named TN_TSL_POST_INPUT refusal, so enable Wasm EH on the test only.
+    target_compile_options(tn-native-engine-material-test PRIVATE -fwasm-exceptions)
+    target_link_options(tn-native-engine-material-test PRIVATE -fwasm-exceptions)
+endif()
 tn_native_engine_test(tn-native-engine-tonemap-test tests/native-engine/tonemap_test.cpp
     native_engine_tonemap_operators=operators)
 target_link_libraries(tn-native-engine-tonemap-test PRIVATE tn_engine_shader)
