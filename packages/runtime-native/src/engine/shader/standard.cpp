@@ -841,11 +841,14 @@ static ExprId pointShadowFactor(Program& f, Tsl& t, std::size_t index, ExprId po
     return f.call("mix", {t.f(1), shadow, f.uniform(at + "ShadowIntensity", Type::f32())});
 }
 
+constexpr int kLampBlockerPasses = 2;
+
 // sourceRadiusShadowFilter on a lamp (PRD-650): a spot light's 2D map or a point light's cube. A blocker
 // search over the cone from the receiver to the lamp's disk, then a compare filter whose radius, in
-// tangent units (offset over distance), is sourceRadius * (1 / blocker - 1 / receiver), at least half
-// a texel; sourceRadius 0 is one hard tap. Distances are the map's view depths. The fixed Vogel disk
-// matches core's TSL filter. `ShadowSourceRadius` = {sourceRadius, tanHalfFov, blockers, samples}.
+// tangent units (offset over distance), is penumbraScale * sourceRadius * (1 / blocker - 1 / receiver), at
+// least half a texel; sourceRadius 0 is one hard tap. Distances are the map's view depths. The fixed Vogel
+// disk matches core's TSL filter. `ShadowSourceRadius` = {sourceRadius, tanHalfFov, blockers, samples};
+// `ShadowPenumbraScale` is the share of the geometric width the lamp keeps (Unreal's ray test keeps about 0.6).
 static ExprId lampSoftShadowFactor(Program& f, Tsl& t, std::size_t index, ExprId positionWorld, ExprId normalWorld,
                                    bool cube, bool leaf) {
     const std::string at = "light" + std::to_string(index);
@@ -866,11 +869,13 @@ static ExprId lampSoftShadowFactor(Program& f, Tsl& t, std::size_t index, ExprId
     ExprId receiver, reference, texel;
     std::vector<ExprId> outside;  // conditions under which the receiver is outside the map: unshadowed
     ExprId direction = kInvalid, tangent = kInvalid, bitangent = kInvalid, uv = kInvalid, uvPerTangent = kInvalid;
+    ExprId cubePosition = kInvalid;
     uint32_t values = map;
     if (cube) {
         // PointShadowNode's reference depth and tap plane (pointShadowFactor); a cube face spans 90 degrees.
         values = f.textureDepthCubeValues(name + "values");
         const ExprId position = f.swizzle(shadowPosition, "xyz");
+        cubePosition = position;
         const ExprId absolute = f.call("abs", {position});
         receiver = f.call("max", {f.call("max", {f.swizzle(absolute, "x"), f.swizzle(absolute, "y")}), f.swizzle(absolute, "z")});
         const ExprId negated = f.neg(receiver);
@@ -914,28 +919,109 @@ static ExprId lampSoftShadowFactor(Program& f, Tsl& t, std::size_t index, ExprId
         const ExprId angle = f.mul(n, t.f(2.399963229728653f));
         return f.mul(f.construct(Type::vec(2), {f.call("cos", {angle}), f.call("sin", {angle})}), r);
     };
-    // ponytail: the search cone is cut at the near plane and at 0.5 tangent (27 degrees); a lamp with a
+    // The distances the penumbra reads are Euclidean along the receiver's ray, so a cube's six faces agree:
+    // a face stores the depth along its own axis, which is the distance times the ray's largest component.
+    const ExprId distanceR = cube ? f.call("length", {cubePosition}) : receiver;
+    const auto axialPerEuclid = [&](ExprId offset) {  // largest component of the tap ray over its length
+        const ExprId sample = f.add(direction, f.add(f.mul(tangent, f.swizzle(offset, "x")), f.mul(bitangent, f.swizzle(offset, "y"))));
+        const ExprId absolute = f.call("abs", {sample});
+        const ExprId largest = f.call("max", {f.call("max", {f.swizzle(absolute, "x"), f.swizzle(absolute, "y")}), f.swizzle(absolute, "z")});
+        return f.div(largest, f.call("length", {sample}));
+    };
+    // The receiver's own plane, as its distance against the tap offset (tangent units): the 2x2 solve of the
+    // screen derivatives of the distance against those of the tap coordinates. A texel is a blocker only when it
+    // is nearer than that plane, so a tilted wall, which the lamp sees nearer on one side of the receiver, never
+    // shades itself. Derivatives stay in uniform control flow, before any branch.
+    ExprId slopeX, slopeY;
+    {
+        ExprId jx, jy;
+        if (cube) {
+            const ExprId dx = f.call("dFdx", {direction}), dy = f.call("dFdy", {direction});
+            jx = f.construct(Type::vec(2), {t.dot(dx, tangent), t.dot(dx, bitangent)});
+            jy = f.construct(Type::vec(2), {t.dot(dy, tangent), t.dot(dy, bitangent)});
+        } else {
+            jx = f.call("dFdx", {uv});
+            jy = f.call("dFdy", {uv});
+        }
+        const ExprId rx = f.call("dFdx", {distanceR}), ry = f.call("dFdy", {distanceR});
+        const ExprId jxx = f.swizzle(jx, "x"), jxy = f.swizzle(jx, "y"), jyx = f.swizzle(jy, "x"), jyy = f.swizzle(jy, "y");
+        const ExprId det = f.sub(f.mul(jxx, jyy), f.mul(jxy, jyx));
+        const ExprId flat = f.less(f.call("abs", {det}), t.f(1e-12f));
+        const ExprId scale = cube ? t.f(1) : uvPerTangent;
+        const ExprId safe = f.select(flat, t.f(1), det);
+        slopeX = f.select(flat, t.f(0), f.mul(f.div(f.sub(f.mul(rx, jyy), f.mul(jxy, ry)), safe), scale));
+        slopeY = f.select(flat, t.f(0), f.mul(f.div(f.sub(f.mul(jxx, ry), f.mul(jyx, rx)), safe), scale));
+    }
+    // The receiver's plane as a distance at `offset`, and as the map's own depth plus the light's bias.
+    const auto planeDistance = [&](ExprId offset) {
+        return f.add(distanceR, f.add(f.mul(slopeX, f.swizzle(offset, "x")), f.mul(slopeY, f.swizzle(offset, "y"))));
+    };
+    const auto planeReference = [&](ExprId offset) {
+        ExprId plane = planeDistance(offset);
+        if (cube) plane = f.mul(plane, axialPerEuclid(offset));
+        plane = f.call("max", {plane, near});
+        return f.add(f.div(f.mul(far, f.sub(plane, near)), f.mul(plane, f.sub(far, near))), bias);
+    };
+    // The stored depth as a distance along the receiver's ray.
+    const auto blockerDistance = [&](ExprId depth, ExprId offset) {
+        const ExprId axial = distance(depth);
+        return cube ? f.div(axial, axialPerEuclid(offset)) : axial;
+    };
+    // ponytail: the first cone is cut at the near plane and at 0.5 tangent (27 degrees); a lamp with a
     // tiny near plane and a wide disk would need a hierarchical search.
-    const ExprId search = f.call("min", {t.f(0.5f), f.mul(radius, f.sub(f.div(t.f(1), near), f.div(t.f(1), receiver)))});
-    const VarId blockerSum = f.var(Type::f32(), t.f(0)), blockerCount = f.var(Type::f32(), t.f(0));
-    f.Loop(f.construct(Type::i32(), {blockers}), [&](ExprId i) {
-        const ExprId depth = storedDepth(f.mul(disk(i, blockers), search));
-        f.If(f.less(depth, reference), [&] {
-            f.assign(blockerSum, f.add(f.load(blockerSum), depth));
-            f.assign(blockerCount, f.add(f.load(blockerCount), t.f(1)));
-        });
-    });
+    const ExprId widest = f.call("min", {t.f(0.5f), f.mul(radius, f.sub(f.div(t.f(1), near), f.div(t.f(1), distanceR)))});
+    const ExprId resolve = f.uniform(at + "ShadowPenumbraScale", Type::f32());
+    const auto reach = [&](ExprId blocker, ExprId plane) {  // the tangent radius a blocker's own penumbra covers
+        return f.mul(radius, f.call("max", {t.f(0), f.sub(f.div(t.f(1), blocker), f.div(t.f(1), plane))}));
+    };
     const VarId visibility = f.var(Type::f32(), t.f(1));
-    f.If(f.less(t.f(0), f.load(blockerCount)), [&] {
-        const ExprId blocker = distance(f.div(f.load(blockerSum), f.load(blockerCount)));
-        const ExprId spread = f.mul(radius, f.call("max", {t.f(0), f.sub(f.div(t.f(1), blocker), f.div(t.f(1), receiver))}));
-        const ExprId penumbra = f.select(f.less(t.f(0), radius), f.call("max", {f.mul(texel, t.f(0.5f)), spread}), t.f(0));
-        const VarId sum = f.var(Type::f32(), t.f(0));
-        f.Loop(f.construct(Type::i32(), {samples}), [&](ExprId i) {
-            f.assign(sum, f.add(f.load(sum), f.sampleCompare(map, tapAt(f.mul(disk(i, samples), penumbra)), reference)));
+    // The nearest blocker in a cone has the widest penumbra, and every blocker that shades this receiver lies
+    // inside it, so the cone shrinks to that penumbra until the nearest blocker in it shades the receiver
+    // itself. The last cone averages only the blockers that shade the receiver: a texel counts when its offset
+    // is inside its own penumbra, so a volume's far faces, a wall's own texels and a nearer object off to the
+    // side never pull the width, and a receiver no blocker reaches is lit. The receiver's own ray is a tap of
+    // every cone and always inside the lamp's disk: a back-face map stores the crate's far face within
+    // centimetres of the floor behind it and a thin rod between the cone's taps, and no tap of a Vogel disk
+    // reaches either, yet the ray itself is blocked.
+    const ExprId centre = f.construct(Type::vec(2), {t.f(0)});
+    std::function<void(int, ExprId)> pass = [&](int index, ExprId first) {
+        const bool last = index + 1 == kLampBlockerPasses;
+        const VarId cone = f.var(Type::f32(), first);
+        const VarId blockerSum = f.var(Type::f32(), t.f(0)), blockerCount = f.var(Type::f32(), t.f(0));
+        const VarId nearest = f.var(Type::f32(), t.f(1e30f));
+        const auto visit = [&](ExprId offset, ExprId length) {  // a tap `length` tangent units out
+            const ExprId depth = storedDepth(offset);
+            f.If(f.less(depth, planeReference(offset)), [&] {
+                const ExprId blocker = blockerDistance(depth, offset);
+                if (!last) {
+                    f.assign(nearest, f.call("min", {f.load(nearest), blocker}));
+                    f.assign(blockerCount, f.add(f.load(blockerCount), t.f(1)));
+                    return;
+                }
+                f.If(f.less(length, f.add(reach(blocker, planeDistance(offset)), t.f(1e-7f))), [&] {  // a hard lamp keeps its one tap
+                    f.assign(blockerSum, f.add(f.load(blockerSum), blocker));
+                    f.assign(blockerCount, f.add(f.load(blockerCount), t.f(1)));
+                });
+            });
+        };
+        visit(centre, t.f(0));
+        f.Loop(f.construct(Type::i32(), {blockers}), [&](ExprId i) {
+            const ExprId n = f.construct(Type::f32(), {i});
+            visit(f.mul(disk(i, blockers), f.load(cone)), f.mul(f.call("sqrt", {f.div(f.add(n, t.f(0.5f)), blockers)}), f.load(cone)));
         });
-        f.assign(visibility, f.div(f.load(sum), samples));
-    });
+        f.If(f.less(t.f(0), f.load(blockerCount)), [&] {
+            if (!last) return pass(index + 1, f.call("min", {f.load(cone), reach(f.load(nearest), distanceR)}));
+            const ExprId spread = reach(f.div(f.load(blockerSum), f.load(blockerCount)), distanceR);
+            const ExprId penumbra = f.select(f.less(t.f(0), radius), f.call("max", {f.mul(texel, t.f(0.5f)), f.mul(spread, resolve)}), t.f(0));
+            const VarId sum = f.var(Type::f32(), t.f(0));
+            f.Loop(f.construct(Type::i32(), {samples}), [&](ExprId i) {
+                const ExprId offset = f.mul(disk(i, samples), penumbra);
+                f.assign(sum, f.add(f.load(sum), f.sampleCompare(map, tapAt(offset), planeReference(offset))));
+            });
+            f.assign(visibility, f.div(f.load(sum), samples));
+        });
+    };
+    pass(0, widest);
     ExprId shadow = f.load(visibility);
     for (const ExprId out : outside) shadow = f.select(out, t.f(1), shadow);
     return f.call("mix", {t.f(1), shadow, f.uniform(at + "ShadowIntensity", Type::f32())});

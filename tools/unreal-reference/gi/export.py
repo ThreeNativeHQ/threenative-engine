@@ -261,7 +261,15 @@ def import_glb(ref, folder, name, path):
     meshes = [a for a in (unreal.load_asset(str(p)) for p in task.imported_object_paths) if isinstance(a, unreal.StaticMesh)]
     if len(meshes) != 1:
         raise RuntimeError(f"{path}: the import made {len(meshes)} static meshes, expected 1 ({list(task.imported_object_paths)})")
-    return meshes[0]
+    mesh = meshes[0]
+    # Nanite off. Interchange builds Nanite by default (bBuildNanite = true, Engine/Plugins/Interchange/Runtime/Source/
+    # Pipelines/Public/InterchangeGenericMeshPipeline.h:134), and Nanite drew without the branch stub of GreenTree_1
+    # (647 px, PRD-649). A calibration scene needs the same geometry in both engines, so this is the named override.
+    settings = mesh.get_editor_property("nanite_settings")
+    settings.set_editor_property("enabled", False)
+    mesh.set_editor_property("nanite_settings", settings)
+    unreal.EditorAssetLibrary.save_loaded_asset(mesh)
+    return mesh
 
 
 def parameter_table(values):
@@ -445,8 +453,8 @@ def describe_glb(actor, inst):
         # The mesh's own bounds in metres, three.js frame, before the instance scale.
         "boundsMin": to_three(box.min),
         "boundsMax": to_three(box.max),
-        # LOD 0 of the render data. Interchange builds these meshes with Nanite, which draws the whole mesh
-        # and keeps this coarser fallback for the passes that cannot (3645 against 14927 for the green tree).
+        # LOD 0 of the render data. With Nanite on (Interchange's default) this is the coarser fallback mesh
+        # (3645 against 14927 for the green tree); `import_glb` turns Nanite off, so it holds every source triangle.
         "triangles": mesh.get_num_triangles(0),
         "material": slots[0],
         "slots": slots,

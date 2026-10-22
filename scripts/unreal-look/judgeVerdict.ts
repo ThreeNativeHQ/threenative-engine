@@ -301,7 +301,8 @@ export const VERDICT_SCHEMA = {
   },
 } as const;
 
-export function buildPrompt(criteria: string, frames: readonly IFrame[]): string {
+/** `regions`: the measured table of judgeRegions.ts, when the round has a region limit. */
+export function buildPrompt(criteria: string, frames: readonly IFrame[], regions?: string): string {
   const listing = frames.map((frame) =>
     [
       `### ${frame.id} (layer ${frame.layer})`,
@@ -322,7 +323,17 @@ Every frame shows one pose at one layer in both engines. BEFORE and AFTER are th
 
 ${listing.join("\n\n")}
 
-## How to judge
+${
+  regions === undefined
+    ? ""
+    : `## Measured regions
+
+These numbers were measured on the frames above, per region. dP50 is the relative difference between the region's median in ThreeNative and in Unreal. A region marked OVER is past the limit of the criteria, so its frame is FAR whatever it looks like: name that region in "differences". Use the numbers to find where to look, and do not call a frame CLOSE or MATCH against them.
+
+${regions}
+
+`
+}## How to judge
 
 1. Open every image above with the Read tool before you answer. The answer is checked against the images you opened.
 2. For every frame give two answers.

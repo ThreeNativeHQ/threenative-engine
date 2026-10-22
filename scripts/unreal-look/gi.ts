@@ -740,13 +740,18 @@ function verdict(row: IRow, limits: IThresholds | undefined): boolean {
 export function compareGiToUnreal(
   name: string,
   layers: readonly string[],
-  root: string,
+  root: string | { unreal: string; threenative: string },
   unrealLevel?: number,
   thresholdFile: IThresholdFile | null = readThresholds(),
 ): IRow[] {
   const { scene } = readScene(name);
-  const unreal = path.join(root, "unreal", sceneKey(name));
-  const tn = path.join(root, "threenative", sceneKey(name));
+  // A string is a captures root (`unreal/` and `threenative/` inside it); the pair names each engine's own root.
+  const roots =
+    typeof root === "string"
+      ? { unreal: path.join(root, "unreal"), threenative: path.join(root, "threenative") }
+      : root;
+  const unreal = path.join(roots.unreal, sceneKey(name));
+  const tn = path.join(roots.threenative, sceneKey(name));
   // Without Unreal captures the committed statistics and ID frames stand in for them (PRD-638 AC-2).
   const offline = !existsSync(unreal);
   const cached = offline ? readStatsFile(name) : undefined;

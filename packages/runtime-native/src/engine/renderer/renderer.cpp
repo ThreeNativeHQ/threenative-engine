@@ -180,9 +180,14 @@ constexpr const char* kLightFieldNames[] = {"Color",       "Direction",        "
                                             "Decay",       "Axis",             "ConeCos",      "PenumbraCos",
                                             "ShadowMatrix", "ShadowBias",      "ShadowNormalBias", "ShadowRadius",
                                             "ShadowMapSize", "ShadowIntensity", "ShadowNear", "ShadowFar",
-                                            "ShadowSourceRadius", "SourceRadius"};
+                                            "ShadowSourceRadius", "ShadowPenumbraScale", "SourceRadius"};
 
 constexpr uint64_t kUniformAlign = 256;  // minUniformBufferOffsetAlignment's WebGPU default
+// A lamp stores a caster's back faces. A back face in the receiver's own plane, a crate's bottom face on
+// the floor beside it, ties with that floor to the last bit of the depth, and the tie lights a dotted line
+// along the crate's far foot. The back faces go this many depth steps nearer the lamp, so a tie is a block
+// (native_engine_contact_shadow_foot needs 2; the lamp-room crate, 1).
+constexpr int32_t kLampBackFaceBias = 8;
 uint64_t aligned(uint64_t size) { return (size + kUniformAlign - 1) / kUniformAlign * kUniformAlign; }
 
 WGPUTextureView view2d(WGPUTexture texture, WGPUTextureFormat format) {
@@ -1019,6 +1024,16 @@ void Renderer::setTraa(const TraaOptions& options) {
 
 void Renderer::cutHistory() { if (traa_) traa_->cameraCut(); }
 
+void Renderer::setSceneFormat(WGPUTextureFormat format) {
+    if (format == sceneFormat_) return;
+    sceneFormat_ = format;
+    applySampleCount();
+    if (!width_) return;
+    const uint32_t width = width_, height = height_;
+    width_ = height_ = 0;  // setSize returns early at the same extent
+    setSize(width, height);
+}
+
 void Renderer::setSampleCount(uint32_t samples) {
     if (samples != 1 && samples != 4)
         throw std::runtime_error("TN_NATIVE_SAMPLES_UNSUPPORTED: sampleCount must be 1 or 4");
@@ -1029,7 +1044,7 @@ void Renderer::setSampleCount(uint32_t samples) {
 // Temporal AA replaces multisampling, as one method does in Unreal. The velocity pass tests depth Equal against the
 // colour pass, and 4x multisampling hands it one resolved sample of depth, so Equal fails on every sloped surface.
 void Renderer::applySampleCount() {
-    const uint32_t samples = traa_ ? 1 : requestedSamples_;
+    const uint32_t samples = traa_ || sceneFormat_ == WGPUTextureFormat_RGBA32Float ? 1 : requestedSamples_;  // RGBA32Float cannot resolve
     if (traa_ && requestedSamples_ == 4) {
         const std::string note = "TN_TRAA_MSAA_OFF: temporal AA replaces 4x multisampling, so the scene draws single-sampled";
         if (std::find(diagnostics_.begin(), diagnostics_.end(), note) == diagnostics_.end()) diagnostics_.push_back(note);
@@ -1139,10 +1154,10 @@ void Renderer::setSize(uint32_t width, uint32_t height) {
     depthDesc.sampleCount = 1;
     depth_ = wgpuDeviceCreateTexture(device_, &depthDesc);
     WGPUTextureDescriptor sceneDesc = depthDesc;
-    sceneDesc.format = WGPUTextureFormat_RGBA16Float;
+    sceneDesc.format = sceneFormat_;
     sceneDesc.usage = WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopySrc;
     sceneColor_ = wgpuDeviceCreateTexture(device_, &sceneDesc);
-    sceneView_ = view2d(sceneColor_, WGPUTextureFormat_RGBA16Float);
+    sceneView_ = view2d(sceneColor_, sceneFormat_);
     colorView_ = view2d(gpu_.texture(color_), WGPUTextureFormat_RGBA8Unorm);
     depthView_ = view2d(depth_, WGPUTextureFormat_Depth32Float);
     if (sampleCount_ == 4) {
@@ -1160,7 +1175,7 @@ void Renderer::setSize(uint32_t width, uint32_t height) {
     WGPUTextureDescriptor viewportDesc = sceneDesc;
     viewportDesc.usage = WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopyDst;
     viewportColor_ = wgpuDeviceCreateTexture(device_, &viewportDesc);
-    viewportColorView_ = view2d(viewportColor_, WGPUTextureFormat_RGBA16Float);
+    viewportColorView_ = view2d(viewportColor_, sceneFormat_);
     viewportDesc.format = WGPUTextureFormat_Depth32Float;
     viewportDepth_ = wgpuDeviceCreateTexture(device_, &viewportDesc);
     viewportDepthView_ = view2d(viewportDepth_, WGPUTextureFormat_Depth32Float);
@@ -2830,7 +2845,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         const WGPUCullMode cull = item.side == 2 ? WGPUCullMode_None : item.side == 1 ? WGPUCullMode_Front : WGPUCullMode_Back;
         // three blends unless NoBlending, or NormalBlending on a material that is not transparent.
         const uint8_t blend = item.blending == 0 || (item.blending == 1 && !item.transparent) ? 0 : item.blending;
-        PipelineTarget target{WGPUTextureFormat_RGBA16Float, WGPUTextureFormat_Depth32Float, cull, blend,
+        PipelineTarget target{sceneFormat_, WGPUTextureFormat_Depth32Float, cull, blend,
                               item.depthWrite};
         target.colorWrite = item.colorWrite;
         target.sampleCount = sampleCount_;
@@ -2954,9 +2969,11 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 put(frameUniforms_, f, slot[kLightShadowIntensity], std::array<double, 1>{l.shadow->intensity});
                 put(frameUniforms_, f, slot[kLightShadowNear], std::array<double, 1>{l.shadow->near});
                 put(frameUniforms_, f, slot[kLightShadowFar], std::array<double, 1>{l.shadow->far});
-                if (const auto& soft = l.shadow->sourceRadiusFilter)
+                if (const auto& soft = l.shadow->sourceRadiusFilter) {
                     put(frameUniforms_, f, slot[kLightShadowSourceRadius],
                         std::array<double, 4>{(*soft)[0], l.shadow->tanHalfFov, (*soft)[1], (*soft)[2]});
+                    put(frameUniforms_, f, slot[kLightShadowPenumbraScale], std::array<double, 1>{(*soft)[3]});
+                }
             }
         }
         put(frameUniforms_, f, fs[kHemisphereSky], lights.hemisphereSky);
@@ -2984,7 +3001,8 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         const bool virtualMap = virtualIt != virtualShadows_.end();
         const int passCount = compilation ? 1 : virtualMap ? int(virtualPages[i].size()) : shadow.cube ? 6 : 1;
         const std::size_t firstPass = shadowPasses.size();
-        const bool lamp = lights.direct[i].kind != DirectLight::Kind::Directional && !virtualMap && !compilation;
+        const bool lampMap = lights.direct[i].kind != DirectLight::Kind::Directional && !virtualMap;
+        const bool lamp = lampMap && !compilation;
         for (int face = 0; face < passCount; ++face) {
         const shadows::AtlasPage* page = virtualMap && !compilation ? &virtualPages[i][face] : nullptr;
         const Matrix& view = page ? page->view.elements : shadow.cube ? shadow.faceViews[face] : shadow.view;
@@ -3065,11 +3083,13 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             target.frontFace = item.frontFace();
             target.skinIndex = skinIndexFormat(item);
             target.instanceStepMask = instanceStepMask(program.vertex, item);
+            const bool lampBackFace = lampMap && faces == 1;  // a front-face or double-sided map holds the receiver's own surface: no bias
+            if (lampBackFace) target.depthBias = -kLampBackFaceBias;
             if (compilation) {
                 compilation->push_back(pipelines_->getAsync(program.vertex, depthFragment, target));
                 continue;
             }
-            const uint64_t depthTargetKey = drawTargetKey(item, program.vertex) * 3 + (faces == 2 ? 0 : faces == 0 ? 1 : 2);  // a virtual page and a lamp cull one caster differently
+            const uint64_t depthTargetKey = drawTargetKey(item, program.vertex) * 6 + (faces == 2 ? 0 : faces == 0 ? 1 : 2) + (lampBackFace ? 3 : 0);  // a virtual page and a lamp cull one caster differently
             WGPURenderPipeline pipeline;
             if (cache && cache->depthPipeline && cache->depthTargetKey == depthTargetKey) {
                 pipeline = static_cast<WGPURenderPipeline>(cache->depthPipeline);
@@ -3895,7 +3915,7 @@ void Renderer::encodeFrame(FrameJob& job) {
         if (viewportBundle_) wgpuRenderBundleRelease(viewportBundle_);
         mainBundle_ = viewportBundle_ = nullptr;
         WGPURenderBundleEncoderDescriptor descriptor{};
-        const WGPUTextureFormat color = WGPUTextureFormat_RGBA16Float;
+        const WGPUTextureFormat color = sceneFormat_;
         descriptor.colorFormatCount = 1; descriptor.colorFormats = &color;
         descriptor.depthStencilFormat = WGPUTextureFormat_Depth32Float; descriptor.sampleCount = sampleCount_;
         const auto shadowStats = lastFrame_.shadowSkinned;
@@ -4150,16 +4170,18 @@ void Renderer::outputPass(WGPUCommandEncoder encoder, WGPUTextureView present, W
     wgpuRenderPassEncoderRelease(pass);
 }
 
-GpuStatus Renderer::readProbePixels(ReadbackCallback done) { return readRgba16(sceneColor_, std::move(done)); }
+GpuStatus Renderer::readProbePixels(ReadbackCallback done) {
+    return readRgba16(sceneColor_, std::move(done), sceneFormat_ == WGPUTextureFormat_RGBA32Float ? 16u : 8u);
+}
 
 GpuStatus Renderer::readNormalPixels(ReadbackCallback done) { return readRgba16(normalTexture_, std::move(done)); }
 GpuStatus Renderer::readAlbedoPixels(ReadbackCallback done) { return readRgba16(albedoTexture_, std::move(done)); }
 GpuStatus Renderer::readEmissivePixels(ReadbackCallback done) { return readRgba16(emissiveTexture_, std::move(done)); }
 
-GpuStatus Renderer::readRgba16(WGPUTexture texture, ReadbackCallback done) {
+GpuStatus Renderer::readRgba16(WGPUTexture texture, ReadbackCallback done, uint32_t texelBytes) {
     if (!done) return GpuStatus::OutOfRange;
     if (!texture) return GpuStatus::InvalidHandle;
-    const uint32_t width = width_, height = height_, row = width * 8, pitch = (row + 255u) & ~255u;
+    const uint32_t width = width_, height = height_, row = width * texelBytes, pitch = (row + 255u) & ~255u;
     const Handle staging = gpu_.createBuffer(uint64_t(pitch) * height, WGPUBufferUsage_CopyDst | WGPUBufferUsage_CopySrc);
     WGPUCommandEncoderDescriptor descriptor{};
     auto encoder = wgpuDeviceCreateCommandEncoder(device_, &descriptor);

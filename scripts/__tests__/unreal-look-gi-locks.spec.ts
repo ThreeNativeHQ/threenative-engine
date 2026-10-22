@@ -479,6 +479,8 @@ describe("the committed lock file", () => {
       "cornell L7-high": 12,
       "sunlit-room L9": 40,
       "cornell L9": 12,
+      "sunlit-room L1": 40,
+      "cornell L1": 12,
     });
   });
 
@@ -501,6 +503,24 @@ describe("the committed lock file", () => {
       const floor = lock.minIoU as number;
       expect(region?.iou as number, `${name} iou`).toBeGreaterThanOrEqual(floor - slack(floor));
     }
+  });
+
+  it("cuts the L1 direct-light locks from the two runs of one arm, with an overlap bound, for every pose of the scene", () => {
+    const l1 = locks.filter((lock) => lock.layer === "L1");
+    for (const lock of l1) {
+      expect(lock.round, lockKey(lock)).toMatch(/^arm-[0-9a-f]{12}$/);
+      expect(lock.runs, lockKey(lock)).toBeUndefined();
+      expect(lock.minIoU, lockKey(lock)).toBeDefined();
+    }
+    for (const scene of new Set(l1.map((lock) => lock.scene)))
+      expect(
+        [...new Set(l1.filter((lock) => lock.scene === scene).map((lock) => lock.pose))].sort(),
+        scene,
+      ).toEqual(
+        readScene(`gi:${scene}`)
+          .scene.poses.map((pose) => pose.name)
+          .sort(),
+      );
   });
 
   it("cuts the L9 locks from one capture of a preview head, with no overlap bound, for every pose of the scene", () => {
@@ -538,7 +558,7 @@ describe("sceneBasis", () => {
     expect(sceneBasis("room", scene())).toBe(sceneBasis("room", scene()));
   });
 
-  it("ignores the time the statistics were written, and follows every input that sets a measurement", () => {
+  it("ignores the time the statistics were written and the motion runs, and follows every input that sets a measurement", () => {
     const base = sceneBasis("room", scene());
     expect(
       sceneBasis("room", scene({ generatedAt: "b", resolution: [4, 4], cells: { x: 1 } })),
@@ -555,6 +575,12 @@ describe("sceneBasis", () => {
     const definition = scene();
     writeFileSync(path.join(definition, "scene.json"), '{"regions":[{"name":"Floor"}]}');
     expect(sceneBasis("room", definition)).not.toBe(base);
+    const motion = scene();
+    writeFileSync(
+      path.join(motion, "scene.json"),
+      '{"regions":[],"motion":{"pan":{"frames":180}}}',
+    );
+    expect(sceneBasis("room", motion)).toBe(base);
     const extra = scene();
     writeFileSync(path.join(extra, "id", "p3.png"), "a third pose");
     expect(sceneBasis("room", extra)).not.toBe(base);

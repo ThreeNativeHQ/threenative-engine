@@ -132,6 +132,11 @@ describe("core constraints", () => {
           // them. It reads appearance fields only to compare them; it constructs, sets and chooses
           // nothing, and the surface kept is the package's own.
           file !== "render/material-key.ts" &&
+          // The Surface Cache is a lookup of the game's own materials in texture space: it reads a
+          // material's colour, emissive and map, flattens them into an atlas the trace samples, and
+          // returns them untouched. It names a material only to read it, and it constructs no
+          // material, light, colour or shader and picks no value. The assertions below keep it so.
+          file !== "render/surface-cache.ts" &&
           // The daylight rig wires a sky, a sun, a fill light, haze and the tone curve from values
           // the game must supply — every colour, angle, intensity, density and exposure is a
           // required option. It constructs the objects those values need and chooses none of them.
@@ -201,6 +206,14 @@ describe("core constraints", () => {
     expect(assets).not.toMatch(
       /new\s+\w*Material|new\s+\w*Light|new\s+Color|tonemapping|postprocessing|\.wgsl/iu,
     );
+
+    const surfaceCache = withoutComments(
+      readFileSync(path.join(sourceDirectory, "render/surface-cache.ts"), "utf8"),
+    );
+    expect(surfaceCache).not.toMatch(
+      /new\s+\w*(Material|Light|Texture|Geometry)|new\s+(Color|Scene)|tonemapping|postprocessing|\.wgsl/iu,
+    );
+    expect(surfaceCache).not.toMatch(/\bmaterial\.\w+\s*(=(?!=)|\+=|-=|\*=|\/=|\+\+|--)/u);
 
     const renderTrapAudit = withoutComments(
       readFileSync(path.join(sourceDirectory, "profiling/render-trap-audit.ts"), "utf8"),
