@@ -50,6 +50,7 @@ import {
   getViewPosition,
   max,
   metalness,
+  min,
   mrt,
   normalView,
   output,
@@ -63,6 +64,7 @@ import {
   vec4,
 } from "three/tsl";
 import { BlendMode, type Node, type NodeBuilder, type TextureNode } from "three/webgpu";
+import { AO_MULTIBOUNCE_FIT, UNREAL_AO_MULTIBOUNCE_ALBEDO } from "./aoMultiBounce.js";
 import { UNREAL_AO_REACH_PX } from "./aoReach.js";
 import { AutoExposureNode, applyExposure } from "./autoExposure.js";
 import { type IExposureSettings, exposureSettings } from "./exposure.js";
@@ -248,6 +250,12 @@ export interface IWorldEnvironmentOptions {
   readonly gtaoThickness?: number;
   /** The occlusion denoise's reach in pixels (DenoiseNode's 5 when omitted); 0 leaves the occlusion raw. */
   readonly gtaoDenoiseRadius?: number;
+  /**
+   * The albedo cap of the occlusion's multi-bounce: pale surfaces keep more of the light a crease blocks. Unreal's is
+   * 0.5 (`MaxMultibounceAlbedo`); 0 leaves the occlusion as GTAO computed it. Applies where the cache holds the
+   * indirect light.
+   */
+  readonly gtaoMultiBounceAlbedo?: number;
   /** Fraction of display resolution the occlusion is traced at. */
   readonly gtaoResolutionScale?: number;
   /**
@@ -685,6 +693,7 @@ export class WorldEnvironment {
       gtaoThickness: options.gtaoThickness ?? 1,
       gtaoDenoiseRadius: options.gtaoDenoiseRadius,
       gtaoResolutionScale: options.gtaoResolutionScale ?? 1,
+      gtaoMultiBounceAlbedo: options.gtaoMultiBounceAlbedo ?? UNREAL_AO_MULTIBOUNCE_ALBEDO,
       ssgiResolutionScale: options.ssgiResolutionScale ?? 1,
       sharpenEnabled: options.sharpenEnabled ?? false,
       sharpenStrength: options.sharpenStrength ?? 0.2,
@@ -958,7 +967,7 @@ export class WorldEnvironment {
 
     let releaseBloom = (): void => {};
     let releaseAo = (): void => {};
-    let contactOcclusion: Node<"float"> | undefined;
+    let contactOcclusion: Node | undefined;
     let releaseAa = (): void => {};
     const stages: ChainStage[] = [
       stage({
@@ -1154,7 +1163,29 @@ export class WorldEnvironment {
             };
           }
           const occlusion = filter ? denoised(filter) : contact;
-          contactOcclusion = occlusion.r;
+          // The factor the indirect diffuse light keeps: the occlusion through multi-bounce for the pixel's own albedo
+          // (the diffuse colour target already has the metal's share removed), per channel. The fit is a cubic of the
+          // occlusion with linear coefficients of the capped albedo (Jimenez et al. 2016, as Unreal's composite).
+          const bounce = (): Node<"vec3"> => {
+            const base = min(
+              albedo().rgb.mul(float(1).sub(metal().r)),
+              options.gtaoMultiBounceAlbedo,
+            );
+            const [a, b, c] = [
+              AO_MULTIBOUNCE_FIT.a,
+              AO_MULTIBOUNCE_FIT.b,
+              AO_MULTIBOUNCE_FIT.c,
+            ].map(([slope, offset]) => base.mul(slope).add(offset)) as [
+              Node<"vec3">,
+              Node<"vec3">,
+              Node<"vec3">,
+            ];
+            const x = occlusion.r;
+            return max(vec3(x), a.mul(x).add(b).mul(x).add(c).mul(x));
+          };
+          const keeps =
+            indirectOcclusion && options.gtaoMultiBounceAlbedo > 0 ? bounce() : undefined;
+          contactOcclusion = keeps ?? occlusion.r;
           // Emission is radiance a surface gives off, not light it receives: AO keeps it, as Unreal's AO darkens only
           // indirect light. The emitted part passes at full weight; the rest takes the occlusion.
           // The chain reads exposed light, so the emitted radiance takes the frame's gain too.
@@ -1204,7 +1235,10 @@ export class WorldEnvironment {
                 .mul(cache(position, sceneNormal.normalize()))
                 .mul(frameGain);
               result.assign(
-                max(input.rgb.sub(indirect.mul(float(1).sub(occlusion.r))), composited.rgb),
+                max(
+                  input.rgb.sub(indirect.mul(float(1).sub(keeps ?? occlusion.r))),
+                  composited.rgb,
+                ),
               );
             });
             return vec4(result, input.a);

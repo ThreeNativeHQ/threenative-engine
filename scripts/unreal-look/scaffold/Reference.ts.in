@@ -96,6 +96,7 @@ const GTAO_KNOBS: Record<string, string> = {
   gtaoDistanceFalloff: "gtaoDistanceFalloff",
   gtaoThickness: "gtaoThickness",
   gtaoDenoiseRadius: "gtaoDenoiseRadius",
+  gtaoMultiBounceAlbedo: "gtaoMultiBounceAlbedo",
 };
 const gtaoKnobs = (): Record<string, number> =>
   Object.fromEntries(
