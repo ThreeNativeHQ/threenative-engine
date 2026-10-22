@@ -498,6 +498,37 @@ describe("Unreal reference comparison", () => {
       expect(after.filter((l) => l.layer === "L2").map((l) => l.since)).toEqual(["old0000"]);
       expect(after.filter((l) => l.layer === "L1").map((l) => l.since)).toEqual(["new1234"]);
     });
+    it("refuses a re-seed that would drop a lock, and drops it only on --drop-locks", () => {
+      // The Floor deltaE lock cannot be re-seeded: thresholds.json holds no deltaE limit for L1 here, so
+      // the cell would lose its lock without a word. The re-seed names it and stops.
+      const root = locked([
+        lock({ since: "old0000" }),
+        lock({ metric: "deltaE", threshold: 50, since: "old0000" }),
+      ]);
+      writeFileSync(
+        path.join(root, "thresholds.json"),
+        JSON.stringify({ layers: { L1: { dP50: 100 } } }),
+      );
+      const file = path.join(root, "parity-locks.json");
+      expect(() =>
+        runComparison({ referenceDir: root, layers: ["L1"], writeLocks: "new1234" }),
+      ).toThrow(/^TN_UNREAL_LOOK_LOCK_DROPPED.*1 lock.*L1 sun60 exterior Floor deltaE/s);
+      expect(readLocks(file).map((l) => `${l.metric} ${l.since}`)).toEqual([
+        "dP50 old0000",
+        "deltaE old0000",
+      ]);
+      expect(parseArgs(["--write-locks", "abc", "--drop-locks"])).toEqual({
+        writeLocks: "abc",
+        dropLocks: true,
+      });
+      runComparison({
+        referenceDir: root,
+        layers: ["L1"],
+        writeLocks: "new1234",
+        dropLocks: true,
+      });
+      expect(readLocks(file).map((l) => `${l.metric} ${l.since}`)).toEqual(["dP50 new1234"]);
+    });
     it("seeds only the cells and metrics that hold", () => {
       const root = locked([lock()]);
       const report = runComparison({ referenceDir: root, layers: ["L1"] });

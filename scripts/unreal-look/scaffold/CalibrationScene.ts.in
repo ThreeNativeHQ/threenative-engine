@@ -29,8 +29,11 @@ import {
   SpotLight,
   Vector3,
 } from "three";
+import { texture, uniform, vec4 } from "three/tsl";
+import { MeshBasicNodeMaterial } from "three/webgpu";
 import { giCache, installGi } from "../render/giCache.js";
 import { watchGi } from "../render/giTier.js";
+import { type IGlbMaterialImages, glbMaterialImages } from "../render/glbImages.js";
 import { watchShadowTier } from "../render/shadowTier.js";
 import {
   EPIC_SSGI,
@@ -76,9 +79,41 @@ export function candela(intensity: number, units: string): number {
   throw new Error(`TN_CALIBRATION_SCENE_UNIT: ${units}`);
 }
 
+type MotionCamera =
+  | { kind: "pan"; position: number[]; hfovDeg: number; pitchDeg?: number; headingDeg: number[]; sweepFrames: number }
+  | { kind: "pose"; pose: string };
+type MotionRun = { frames: number; camera: MotionCamera; light?: { name: string; keys: number[][] } };
+
+/** The camera of a motion run at a frame, as scene.py keys it: heading 0 looks down -z, a positive heading turns toward +x. */
+export function motionPose(run: MotionRun, frame: number, poses: (Pose & { name: string })[]): Pose {
+  const camera = run.camera;
+  if (camera.kind === "pose") {
+    const found = poses.find((pose) => pose.name === camera.pose);
+    if (found === undefined) throw new Error(`TN_CALIBRATION_MOTION_POSE: ${camera.pose}`);
+    return found;
+  }
+  const [first = 0, last = 0] = camera.headingDeg;
+  const heading = ((first + (last - first) * Math.min(Math.max(frame / camera.sweepFrames, 0), 1)) * Math.PI) / 180;
+  const pitch = ((camera.pitchDeg ?? 0) * Math.PI) / 180;
+  const [x = 0, y = 0, z = 0] = camera.position;
+  return {
+    position: camera.position,
+    target: [x + Math.sin(heading) * Math.cos(pitch), y + Math.sin(pitch), z - Math.cos(heading) * Math.cos(pitch)],
+    hfovDeg: camera.hfovDeg,
+  };
+}
+
+/** The scale of a keyed light at a frame: constant from each key to the next, as the Unreal track is. */
+export function lightScale(keys: number[][], frame: number): number {
+  let scale = keys[0]?.[1] ?? 1;
+  for (const [at = 0, value = 1] of keys) if (at <= frame) scale = value;
+  return scale;
+}
+
 export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
   static override readonly initialState: GameState = Play.initialState;
   #model: Group | undefined;
+  #images: Map<string, IGlbMaterialImages> = new Map();
   #dispose: (() => void) | undefined;
   #gi: ReturnType<typeof watchGi> | undefined;
   #shadow: ReturnType<typeof watchShadowTier> | undefined;
@@ -90,6 +125,22 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
       `unreal-reference/gi/${NAME.replace(":", "/")}/scene.glb`,
     );
     this.#model = model.scene;
+    // The engine decodes the scene's maps itself and shows JavaScript only their size. The Surface Cache reads
+    // the same images again from the file (PRD-639).
+    const file = `unreal-reference/gi/${NAME.replace(":", "/")}/scene.glb`;
+    const tried: string[] = [];
+    for (const url of await ctx.assets.resolve(file)) {
+      const response = await fetch(url);
+      tried.push(`${response.status} ${url}`);
+      if (!response.ok) continue;
+      try {
+        this.#images = await glbMaterialImages(await response.arrayBuffer(), new URL(url, location.href).href);
+        break;
+      } catch (error) {
+        tried.push(String(error));
+      }
+    }
+    console.info(`TN_CALIBRATION_IMAGES ${JSON.stringify({ tried, materials: [...this.#images.keys()] })}`);
   }
 
   override enter(ctx: GameCtx): SceneFrame<GameState, IPhysicsContext> {
@@ -103,6 +154,10 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
     const unsupported: { actor: string; property: string; reason: string }[] = [];
     // Draws the lamps' shadows at another tier: what a `ShadowFilterBudget` step does, callable from the page.
     let setShadowTier = (_tier: ShadowFilterTier): void => undefined;
+    // Sets a lamp to its scene.json intensity times `scale` (a motion run's light track).
+    let setLight = (name: string, _scale: number): void => {
+      throw new Error(`TN_CALIBRATION_MOTION_LIGHT: ${name}: layer ${LAYER} has no lights`);
+    };
     // The region a mesh belongs to: the scene.glb node named after the Unreal actor, or, when the
     // asset pipeline flattened the nodes away, the mesh named after its static mesh, SM_<actor>. An
     // actor shares its region with others when scene.json names one (the leaf cards: Leaves).
@@ -130,15 +185,20 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
       // colour id / 255 as linear, display-encoded on output.
       for (const mesh of meshes) {
         const [r = 0, g = 0, b = 0] = DATA.regions[regionOf(mesh) ?? ""] ?? [];
-        const source = mesh.material as MeshStandardMaterial;
-        mesh.material = new MeshBasicMaterial({
-          color: new Color().setRGB(r / 255, g / 255, b / 255),
-          toneMapped: false,
-          // A masked region (leaf cards) keeps its cut and both sides: the map is white, so the colour stays the ID.
-          ...(source.alphaTest > 0
-            ? { map: source.map, alphaTest: source.alphaTest, side: source.side }
-            : {}),
-        });
+        const colour = new Color().setRGB(r / 255, g / 255, b / 255);
+        // A slot keeps its sides. A masked slot (leaf cards) keeps its cut too. The ID colour is flat: a real leaf
+        // texture is green, so the node material takes only the texture's alpha, where a `map` would tint it (PRD-651).
+        const flat = (source: MeshStandardMaterial) => {
+          if (!(source.alphaTest > 0 && source.map))
+            return new MeshBasicMaterial({ color: colour, side: source.side, toneMapped: false });
+          const masked = new MeshBasicNodeMaterial({ side: source.side, toneMapped: false });
+          masked.colorNode = vec4(uniform(colour), texture(source.map).a);
+          masked.alphaTest = source.alphaTest;
+          return masked;
+        };
+        mesh.material = Array.isArray(mesh.material)
+          ? mesh.material.map((m) => flat(m as MeshStandardMaterial))
+          : flat(mesh.material as MeshStandardMaterial);
       }
       raw.toneMapping = NoToneMapping;
     } else {
@@ -208,6 +268,13 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
             reason: "a punctual light has no area: highlights stay hard (PRD-634)",
           });
       }
+      setLight = (name, scale) => {
+        const index = DATA.lights.findIndex((l: { name: string }) => l.name === name);
+        const light = lights[index];
+        const spec = DATA.lights[index];
+        if (light === undefined || spec === undefined) throw new Error(`TN_CALIBRATION_MOTION_LIGHT: ${name}`);
+        light.intensity = candela(spec.intensity, spec.units) * LIGHT_SCALE * scale;
+      };
       // A shadow tier decides whether a lamp casts and what its filter samples; `ShadowFilterBudget` moves
       // it with the frame time when the URL asks for shadowAuto=1 (PRD-652). Diagnosis knobs: sourceRadius=0
       // leaves the shadow on the hard filter (the filter's cost arm); blockers and samples set the tap counts.
@@ -242,11 +309,16 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
           bounces: Number(params.get("bounces") ?? 5),
           // The Surface Cache is on: a ray reads the map where it lands (PRD-639). Diagnosis: ?giMaps=0 returns the
           // flat colour factor, ?giLights=0 leaves the lamps out of what a ray returns (the direct frame keeps them).
-          surfaceCache: params.get("giMaps") !== "0",
-          lights: (params.get("giLights") === "0" ? [] : lights).map((l) => ({
+          surfaceCache:
+            params.get("giMaps") !== "0" && {
+              images: (material, slot) => this.#images.get(material.name ?? "")?.[slot],
+            },
+          lights: lights.map((l) => ({
             position: l.position,
             color: l.color,
-            intensity: l.intensity,
+            // Diagnosis: ?giLights=0 keeps the lamp's place but lights nothing. An empty list would stop the bake
+            // in a scene with no sun and no sky.
+            intensity: params.get("giLights") === "0" ? 0 : l.intensity,
             distance: l.distance,
           })),
         });
@@ -354,6 +426,13 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
         camera.position.fromArray(pose.position);
         camera.lookAt(target.fromArray(pose.target));
         camera.updateProjectionMatrix();
+      },
+      // PRD-638 motion runs: the harness steps the frame loop itself and asks for the camera and the lamps of one frame.
+      motionFrame(name: string, frame: number): void {
+        const run = (DATA.motion ?? {})[name] as MotionRun | undefined;
+        if (run === undefined) throw new Error(`TN_CALIBRATION_MOTION_UNKNOWN: ${name}`);
+        reference.pose(motionPose(run, frame, (DATA.poses ?? []) as (Pose & { name: string })[]));
+        if (run.light !== undefined) setLight(run.light.name, lightScale(run.light.keys, frame));
       },
     };
     (window as unknown as { __tnRef: unknown }).__tnRef = reference;

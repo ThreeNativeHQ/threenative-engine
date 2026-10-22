@@ -66,6 +66,7 @@ from the game. The engine only makes the shadow follow them.
 
 - [x] AC-1 [local]: On `foliage/canopy` at `high`, a PRD-647 round returns no REGRESSION against BEFORE and MATCH or CLOSE against Unreal, with the leaf gaps visible in the ground shadow. proof: `pnpm unreal-look:capture --engine threenative --scene shadow:foliage --layers L5,L9 --reuse` for BEFORE and AFTER (two runs per arm), then `pnpm unreal-look:judge --layer L5` and `--layer L9` — Evidence: 2026-10-21 (b6c4f9d7f): both rounds return IMPROVEMENT on all four cells (sun 15 and sun 60, canopy and grass) and CLOSE against Unreal on all four. A third round, the old receiver key against the marker, returns IMPROVEMENT on all four cells (CLOSE, CLOSE, FAR, CLOSE against Unreal: the FAR cell is the fill level of shaded leaves, not the receiver rule). Floor shadow IoU against Unreal rose from 0.56 to 0.70 (BEFORE) to 0.77 to 0.90 (AFTER). Sheets and numbers: PR 541 comment 6325847354. Still wrong there: paler shadows, edges softer than Unreal's, shadow area 20% smaller.
 - [ ] AC-2 [local]: In the `wind` run, the near-ground tree shadow moves with the tree, and the GPU cost of wind stays within PRD-488's 0.25 ms against wind off on the RTX 2080. proof: `pnpm unreal-look:calibrate --scene shadow:foliage --run wind` and `TN_FRAME_BUDGET` windows from `playtest perf` — Evidence: pending.
+- [ ] AC-3 [local]: On `wildwood/closeup` (real Fab vegetation, see Decisions) at `high`, a PRD-647 round returns no REGRESSION against BEFORE and MATCH or CLOSE against Unreal, with the leaf gaps visible in the ground shadow. proof: `pnpm unreal-look:calibrate --scene shadow:wildwood --tier high --before <commit>` — Evidence: open. 2026-10-21, lean scene on PR #541 (issuecomment-6329578609), judge against Unreal without a BEFORE arm: `sun60-closeup` reads CLOSE at L5, FAR at L7 and CLOSE at L9. The leaf gaps are visible in the ground shadow in all three rounds. The `calibrate` round itself is not run.
 
 ## Integration Ledger
 
@@ -97,9 +98,16 @@ from the game. The engine only makes the shadow follow them.
 - [x] A two-sided cut card without the marker keeps the normal bias and the sun's own source, as Unreal's default lit does. proof: the same tests, and the rule-on against rule-off sheet on PR 541 (comment 6325847354, judge IMPROVEMENT against the old key). — 2026-10-21: red first on the sides-and-cut key (native: plain cut edge 0.972 m and penumbra 0.548 m, marker alone 0.585 m; browser: 3 specs red), green on the marker (plain cut edge 0.585 m = the biased edge, penumbra 0.079 m; the plain cut shadow coordinate equals the ordinary one).
 - [ ] Browser and native match on the marked leaf receiver. proof: `pnpm parity --target desktop --only-tests leaf-receiver`. Scene and registry row exist (`conformance/scenes/shared/leaf-receiver.js`, now with the marker set); not run: this lane has no desktop runtime binary (`pnpm native:build` needs the V8 download).
 - [ ] A Two Sided Foliage leaf matches Unreal's Two Sided Foliage leaf, with the sheets posted on the PR. proof: `pnpm unreal-look:compare --scene shadow:foliage` on the Two Sided Foliage variant of the scene, and a PRD-647 round. Not run: the scene's leaves are default lit in Unreal, so the Two Sided Foliage capture is new work (see Decisions).
-**Verification:** AC-1 and AC-2.
+**Verification:** AC-1, AC-2 and AC-3.
 
 ## Decisions
+
+- 2026-10-21 (wildwood lane, owner): AC-3 judges real vegetation. The owner asked three times for the Fab
+  GLBs of the sandbox wildwood game in place of procedural cards. `shadow:wildwood` (PRD-649) is the AC-3
+  scene: one broadleaf tree, one bush and one fern clump, placed from one manifest in both
+  engines. The files stay out of the repository (`TN_WILDWOOD_ASSETS`). The leaf lane ticked AC-1 on the
+  procedural `foliage/canopy` scene (b6c4f9d7f) and that result stands. `foliage` stays as the
+  procedural control and keeps the `wind` run of AC-2.
 
 - 2026-10-21 (leaf lane, correction of the first Phase 3 commit): the rule first read the sides and the cut
   (`side = DoubleSide` and an alpha test) and the game marked nothing. That was wrong. Unreal takes

@@ -24,6 +24,62 @@ function assertNativeRayTracingGate(body) {
   assert.match(body, /return engine->newUndefined\(\);/u);
 }
 
+function assertBatchGate(body) {
+  const gate = body.indexOf("found.rayBatch");
+  const firstRead = body.indexOf("getArrayBufferData");
+  if (gate < 0 || firstRead < gate) {
+    throw new Error("RED observed: traceRayBatch reads caller memory before the capability check");
+  }
+  for (const code of [
+    "TN_NATIVE_RAYTRACING_UNAVAILABLE",
+    "TN_NATIVE_RAYTRACING_BATCH_INVALID",
+    "TN_NATIVE_RAYTRACING_BATCH_FAILED",
+  ]) {
+    assert.ok(body.includes(code), `traceRayBatch must name ${code}`);
+  }
+}
+
+// Dawn duplicates an imported fd, so the importer closes its own copy. Without this, every call leaked two fds.
+function assertImportedFdIsClosed(transport) {
+  if (!/WGPUSharedFence fence = wgpuDeviceImportSharedFence\(device, &descriptor\);\s*close\(fd\);/u.test(transport)) {
+    throw new Error("RED observed: the imported fence fd is not closed");
+  }
+}
+
+// A host-memory batch must not reuse the fence or the buffers of a shared trace still in flight.
+function assertStagedBatchWaitsForSharedTrace(vulkan) {
+  const staged = vulkan.slice(vulkan.indexOf("TraceRayBatchResult VulkanRTBackend::traceRayBatch("));
+  if (!/reclaimSharedTrace\(\)/u.test(staged.slice(0, staged.indexOf("VulkanTLAS* tlas")))) {
+    throw new Error("RED observed: traceRayBatch does not wait for a shared trace in flight");
+  }
+}
+
+function assertGpuBatchGate(body) {
+  const gate = body.indexOf("!found.rayBatch || !found.sharedTransport || !shared.available");
+  const firstRead = body.indexOf("_bufferId");
+  if (gate < 0 || firstRead < gate) {
+    throw new Error("RED observed: traceRayBatchGpu reads a GPUBuffer before the transport check");
+  }
+  for (const code of [
+    "TN_NATIVE_RAYTRACING_UNAVAILABLE",
+    "TN_NATIVE_RAYTRACING_BATCH_INVALID",
+    "TN_NATIVE_RAYTRACING_BATCH_FAILED",
+  ]) {
+    assert.ok(body.includes(code), `traceRayBatchGpu must name ${code}`);
+  }
+}
+
+test("native traceRayBatch checks the batch capability before it reads caller memory", () => {
+  assertBatchGate(nativeDefinition("js_traceRayBatch").text);
+});
+
+test("negative control: dropping the capability check makes the batch contract red", () => {
+  const body = nativeDefinition("js_traceRayBatch").text;
+  const mutated = body.replace("if (!found.rayBatch) {", "if (false) {");
+  assert.notEqual(mutated, body, "the mutation must remove the live capability check");
+  assert.throws(() => assertBatchGate(mutated), /RED observed: traceRayBatch reads caller memory/u);
+});
+
 test("native traceRays refuses before any backend can report success", () => {
   assertNativeRayTracingGate(nativeDefinition("js_traceRays").text);
 });
@@ -97,4 +153,76 @@ test("registry marks the refusal scene as native-unavailable until readback exis
   assert.match(scene, /globalThis\.mystralRT/u);
   assert.match(scene, /TN_NATIVE_RAYTRACING_UNAVAILABLE/u);
   assert.match(scene, /native raytracing refusal:/u);
+});
+
+test("registry runs the probe trace row on the desktop lane and the scene names its proof", () => {
+  const registry = JSON.parse(read("conformance/registry.json"));
+  const row = registry.tests.find((entry) => entry.id === "raytracing-probe-trace");
+  assert.deepEqual(
+    { desktopGate: row?.desktopGate, required: row?.required, status: row?.status },
+    { desktopGate: true, required: true, status: "implemented" },
+  );
+  const scene = read("conformance/scenes/shared/raytracing-probe-trace.js");
+  assert.match(scene, /mystralRT/u);
+  assert.match(scene, /traceRayBatch/u);
+  assert.match(scene, /bvhIntersectFirstHit/u);
+  assert.match(scene, /TN_RT_PROBE_TRACE/u);
+  // The web never claims a hardware trace, and a host without one skips with its reason.
+  assert.match(scene, /hardwareTrace: "not claimed"/u);
+  assert.match(scene, /skipped: true, reason/u);
+});
+
+test("native traceRayBatchGpu checks the shared transport before it reads a GPUBuffer", () => {
+  assertGpuBatchGate(nativeDefinition("js_traceRayBatchGpu").text);
+});
+
+test("negative control: dropping the shared transport check makes the GPU batch contract red", () => {
+  const body = nativeDefinition("js_traceRayBatchGpu").text;
+  const mutated = body.replace("if (!found.rayBatch || !found.sharedTransport || !shared.available) {", "if (false) {");
+  assert.notEqual(mutated, body, "the mutation must remove the live transport check");
+  assert.throws(() => assertGpuBatchGate(mutated), /RED observed: traceRayBatchGpu reads a GPUBuffer/u);
+});
+
+test("capabilities report the shared transport and why it is off", () => {
+  const body = nativeDefinition("js_capabilities").text;
+  assert.match(body, /"sharedTransport"/u);
+  assert.match(body, /"sharedTransportReason"/u);
+  assert.match(body, /webgpu::sharedTraceStatus\(\)/u);
+});
+
+test("the shared transport imports its two fences once and closes the fd copies it holds", () => {
+  const transport = read("src/webgpu/shared_trace.cpp");
+  assertImportedFdIsClosed(transport);
+  assert.equal(transport.match(/importFence\(/gu)?.length, 3, "one definition and the two attach-time imports");
+  // A failure after the trace is submitted leaves a semaphore signaled with no waiter, so the transport stops.
+  assert.match(transport, /g\.broken = message/u);
+  // The first call has no earlier trace to wait for.
+  assert.match(transport, /g\.raysFreePending \? g\.raysFree : nullptr/u);
+});
+
+test("the Vulkan backend keeps its trace semaphores for the life of the shared images", () => {
+  const vulkan = read("src/raytracing/vulkan_rt.cpp");
+  const trace = vulkan.slice(vulkan.indexOf("SharedTraceResult VulkanRTBackend::traceShared("));
+  assert.doesNotMatch(trace.slice(0, trace.indexOf("#else  // _WIN32")), /vkCreateSemaphore|vkGetSemaphoreFdKHR_/u);
+  assertStagedBatchWaitsForSharedTrace(vulkan);
+});
+
+test("negative control: the two bugs the first smoke found make the transport contract red", () => {
+  const transport = read("src/webgpu/shared_trace.cpp");
+  const noClose = transport.replace("    close(fd);\n    return fence;", "    return fence;");
+  assert.notEqual(noClose, transport, "the mutation must remove the close");
+  assert.throws(() => assertImportedFdIsClosed(noClose), /RED observed: the imported fence fd is not closed/u);
+
+  const vulkan = read("src/raytracing/vulkan_rt.cpp");
+  const noReclaim = vulkan.replace("    reclaimSharedTrace();\n    if (!batchReady_) return fail(\"the batch path is not available (\"", "    if (!batchReady_) return fail(\"the batch path is not available (\"");
+  assert.notEqual(noReclaim, vulkan, "the mutation must remove the reclaim");
+  assert.throws(() => assertStagedBatchWaitsForSharedTrace(noReclaim), /RED observed: traceRayBatch does not wait/u);
+});
+
+test("the scene proves the GPU transport against the exact trace, before and after the timed calls", () => {
+  const scene = read("conformance/scenes/shared/raytracing-probe-trace.js");
+  assert.match(scene, /traceRayBatchGpu/u);
+  assert.match(scene, /capabilities\.sharedTransport === true/u);
+  assert.match(scene, /parityAfterTimedCalls/u);
+  assert.match(scene, /TN_RT_GPU_TRANSPORT_ERROR/u);
 });
