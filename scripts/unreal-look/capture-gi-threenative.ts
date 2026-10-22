@@ -19,6 +19,7 @@ import { HIDE_UI, freePort, scaffold, waitForServer } from "./capture-threenativ
 import { awaitExposureSettled, metersExposure, watchExposure } from "./exposureSettled.js";
 import { isManifestScene, readScene, sceneDir, sceneKey } from "./gi.js";
 import { GPU_PASSES, readPasses } from "./gpuPasses.js";
+import { MIN_STEPS, RENDERER_LOST, SETTLE_STEPS, atFixedJitterPhase } from "./jitterPhase.js";
 import { composeForThreeNative } from "./wildwood.js";
 
 const REPO_ROOT = path.resolve(import.meta.dirname, "../..");
@@ -172,10 +173,12 @@ export async function captureGiThreeNative(options: {
         const [width, height] =
           override?.length === 2 ? (override as [number, number]) : scene.resolution;
         const page = await browser.newPage({ viewport: { width, height }, deviceScaleFactor: 1 });
-        if (options.motion !== undefined) await page.addInitScript(FRAME_GATE);
         // TN_UNREAL_LOOK_GPU_PASSES=1 with --measure: per-pass GPU time of the drawn frames, beside the frame-budget log.
         const passes = process.env.TN_UNREAL_LOOK_GPU_PASSES === "1";
         if (passes) await page.addInitScript(GPU_PASSES);
+        // The motion run steps the loop itself; a still holds it to land on one jitter phase (jitterPhase.ts).
+        if (options.motion !== undefined || options.measureSeconds === undefined)
+          await page.addInitScript(FRAME_GATE);
         const errors: string[] = [];
         // The frame meter prints to the console; a measured pose keeps the windows between two marks.
         let meter: string[] = [];
@@ -184,6 +187,7 @@ export async function captureGiThreeNative(options: {
         const exposure = watchExposure(page);
         page.on("console", (message) => {
           if (message.text().startsWith("TN_FRAME_BUDGET")) meter.push(message.text());
+          if (RENDERER_LOST.test(message.text())) errors.push(message.text());
           if (
             message.type() === "error" ||
             /^TN_(CALIBRATION|GI_CACHE|SURFACE_CACHE|WORLD_ENVIRONMENT|NATIVE_)/.test(
@@ -271,14 +275,14 @@ export async function captureGiThreeNative(options: {
               // Auto exposure (L9) closes at 1 stop/s like Unreal's: 45 frames are well short of that, so the frame waits
               // until the last three readings after the pose are at rest and fails closed when they never are.
               // The calibration scene holds its exposure fixed (Unreal's manual EV100) and prints no reading.
-              if (
+              const metered =
                 visit.reference &&
                 metersExposure({
                   layer: layerQuery(layer).layer,
                   measureSeconds: options.measureSeconds,
                   switches: extra,
-                })
-              )
+                });
+              if (metered)
                 console.info(
                   `TN_UNREAL_LOOK exposure ${pose.name} at rest after ${await awaitExposureSettled(page, exposure, poseAt)} ms of waiting`,
                 );
@@ -319,7 +323,14 @@ export async function captureGiThreeNative(options: {
                 count += 1;
                 continue;
               }
-              await writeFile(file, await page.screenshot({ type: "png" }));
+              await atFixedJitterPhase(
+                page,
+                async () => writeFile(file, await page.screenshot({ type: "png" })),
+                { minSteps: metered ? SETTLE_STEPS : MIN_STEPS },
+              );
+              // A device lost while the frame was held leaves a black PNG: the frame fails, it is not kept.
+              if (errors.length > 0)
+                throw new Error(`TN_UNREAL_LOOK_PAGE_ERROR: ${errors.join(" | ")}`);
               count += 1;
             }
           }

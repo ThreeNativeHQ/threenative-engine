@@ -579,6 +579,7 @@ extern "C" int tnw_web_load_gltf(tn_context_t* context, const uint8_t* bytes, ui
  * the post graph (13), the frames it has begun (14), 1 when the next resolve has history (15), and the last
  * sub-pixel jitter in pixels, x (16) and y (17). Then the samples the scene draws with (18): 1 while the temporal pass
  * replaces the multisampling the renderer asked for.
+ * The temporal pass's counted frame follows the lamp fields, 30 to 33.
  */
 extern "C" double tnw_web_frame(int field) {
     if (!renderer) return 0;
@@ -619,6 +620,12 @@ extern "C" double tnw_web_frame(int field) {
         // 28 and 29: the smallest and largest edge of the lamp maps the footprint sized (0 without one).
         case 28: return double(renderer->lampShadowExtent()[0]);
         case 29: return double(renderer->lampShadowExtent()[1]);
+        // 30 to 33: the temporal resolve's newest counted frame (one in 16): the pixels whose history it discarded, the
+        // pixels whose history it pulled into the colour neighbourhood, the pixel count of that frame and its frame number.
+        case 30: return double(renderer->temporalStatus().rejected);
+        case 31: return double(renderer->temporalStatus().clamped);
+        case 32: return double(renderer->temporalStatus().pixels);
+        case 33: return double(renderer->temporalStatus().countedFrame);
         default: return 0;
     }
 }

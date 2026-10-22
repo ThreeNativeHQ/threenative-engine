@@ -1030,12 +1030,31 @@ void Renderer::setPostInput(const std::string& name, WGPUTextureView view) {
 
 void Renderer::setTraa(const TraaOptions& options) {
     traa_ = std::make_unique<TraaPass>(device_, queue_, options);
+    if (!traaStats_.type)
+        traaStats_ = gpu_.createBuffer(8, WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst | WGPUBufferUsage_CopySrc);
+    traa_->setStatsBuffer(gpu_.buffer(traaStats_));
     if (width_ && height_) traa_->resize(width_, height_);
     releaseOutputGroup();
     applySampleCount();
 }
 
 void Renderer::cutHistory() { if (traa_) traa_->cameraCut(); }
+
+// The frame before this one counted what its resolve did with the history, and its commands are submitted: ask for the two
+// counters. They land on the event queue, so the newest counted frame is a few frames old by the time a reader sees it.
+void Renderer::readTraaCounts() {
+    const auto measure = traa_ ? traa_->takeMeasure() : std::nullopt;
+    if (!measure) return;
+    gpu_.readBuffer(traaStats_, 0, 8, [counts = traaCounts_, measure = *measure](GpuStatus status, std::vector<uint8_t> bytes) {
+        if (status != GpuStatus::Ok || bytes.size() != 8) return;
+        uint32_t values[2];
+        std::memcpy(values, bytes.data(), sizeof values);
+        counts->rejected = values[0];
+        counts->clamped = values[1];
+        counts->pixels = measure.pixels;
+        counts->frame = measure.frame;
+    });
+}
 
 void Renderer::setSceneFormat(WGPUTextureFormat format) {
     if (format == sceneFormat_) return;
@@ -2402,8 +2421,10 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         camera.projectionMatrix = traa_->begin(camera.projectionMatrix, camera.matrixWorld, camera.matrixWorldInverse,
                                                manualView ? &inputCamera.projectionMatrix : nullptr);
     if (!compilation) {
+        readTraaCounts();
         const auto status = traa_ ? traa_->status() : TraaPass::Status{};
-        temporalStatus_ = {traa_ != nullptr, status.historyValid, status.frame, status.jitterX, status.jitterY};
+        temporalStatus_ = {traa_ != nullptr, status.historyValid, status.frame, status.jitterX, status.jitterY,
+                           traaCounts_->rejected, traaCounts_->clamped, traaCounts_->pixels, traaCounts_->frame};
     }
     const Matrix& view = camera.matrixWorldInverse;
     geometry_->cache.sweep();  // GPU copies of attributes released since the last frame

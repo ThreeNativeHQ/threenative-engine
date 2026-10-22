@@ -22,8 +22,10 @@ import {
 } from "../visual-gate.js";
 import { workspacePackages } from "../workspace-packages.js";
 import { launchWebgpuBrowser } from "./browser.js";
+import { FRAME_GATE } from "./capture-motion-threenative.js";
 import { awaitExposureSettled, metersExposure, watchExposure } from "./exposureSettled.js";
 import { GPU_PASSES, readPasses } from "./gpuPasses.js";
+import { MIN_STEPS, RENDERER_LOST, SETTLE_STEPS, atFixedJitterPhase } from "./jitterPhase.js";
 
 const REPO_ROOT = path.resolve(import.meta.dirname, "../..");
 const REFERENCE = path.join(REPO_ROOT, "tools/unreal-reference");
@@ -316,11 +318,14 @@ export async function captureThreeNative(options: IThreeNativeCaptureOptions): P
       const errors: string[] = [];
       const passes = process.env.TN_UNREAL_LOOK_GPU_PASSES === "1";
       if (passes) await page.addInitScript(GPU_PASSES);
+      // A still holds the loop to land on one jitter phase (jitterPhase.ts); a measured cell keeps the browser's frames.
+      if (options.measureSeconds === undefined) await page.addInitScript(FRAME_GATE);
       const exposure = watchExposure(page);
       // The frame meter prints to the console; a measured cell keeps the windows between two marks.
       let meter: string[] = [];
       page.on("console", (message) => {
         if (message.text().startsWith("TN_FRAME_BUDGET")) meter.push(message.text());
+        if (RENDERER_LOST.test(message.text())) errors.push(message.text());
       });
       page.on("pageerror", (error) => errors.push(error.message));
       // Engine markers that say whether a stage ran (probe bake, refusals) belong in the capture log.
@@ -410,14 +415,13 @@ export async function captureThreeNative(options: IThreeNativeCaptureOptions): P
             );
             // The frame count above is a floor: a frame is taken once the readings say the exposure came to rest
             // (two runs of one cell otherwise differ by the distance each stopped short, PRD-631).
-            if (
-              metersExposure({
-                baseline: options.baseline,
-                layer,
-                measureSeconds: options.measureSeconds,
-                switches: `${options.off ?? ""}${process.env.TN_UNREAL_LOOK_QUERY ?? ""}`,
-              })
-            )
+            const metered = metersExposure({
+              baseline: options.baseline,
+              layer,
+              measureSeconds: options.measureSeconds,
+              switches: `${options.off ?? ""}${process.env.TN_UNREAL_LOOK_QUERY ?? ""}`,
+            });
+            if (metered)
               console.info(
                 `TN_UNREAL_LOOK exposure ${pose.name} at rest after ${await awaitExposureSettled(page, exposure, poseAt)} ms of waiting`,
               );
@@ -447,7 +451,14 @@ export async function captureThreeNative(options: IThreeNativeCaptureOptions): P
             }
             const file = path.join(options.out, layer, `${name}.png`);
             await mkdir(path.dirname(file), { recursive: true });
-            await writeFile(file, await page.screenshot({ type: "png" }));
+            await atFixedJitterPhase(
+              page,
+              async () => writeFile(file, await page.screenshot({ type: "png" })),
+              { minSteps: metered ? SETTLE_STEPS : MIN_STEPS },
+            );
+            // A device lost while the frame was held leaves a black PNG: the frame fails, it is not kept.
+            if (errors.length > 0)
+              throw new Error(`TN_UNREAL_LOOK_PAGE_ERROR: ${errors.join(" | ")}`);
             // Names the cell the preceding page: TN_AUTO_EXPOSURE reports belong to.
             console.info(`TN_UNREAL_LOOK cell ${name}`);
             count += 1;

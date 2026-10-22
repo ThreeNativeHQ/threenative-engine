@@ -94,6 +94,12 @@ assert.equal(temporal.temporal.active, true, verdict);
 assert.equal(temporal.temporal.historyValid, true, verdict);
 assert(temporal.temporal.frame >= 60, verdict);
 assert(temporal.temporal.jitter.some((offset) => offset !== 0), verdict);
+// One frame in 16 is counted: the pixels whose history the resolve discarded or clipped, of the frame's pixels.
+assert.equal(temporal.temporal.pixels, 1280 * 720, verdict);
+assert(temporal.temporal.countedFrame >= 16 && temporal.temporal.countedFrame % 16 === 0, verdict);
+assert(temporal.temporal.rejected < temporal.temporal.pixels / 10, verdict);
+assert(temporal.temporal.clamped < temporal.temporal.pixels / 2, verdict);
+assert.equal(plain.temporal.pixels, 0, verdict);
 assert.equal(temporal.samples, 1, verdict);
 assert.doesNotMatch(output, /TN_TRAA_[A-Z_]*UNSUPPORTED/u, output.slice(-2000));
 console.log("PASS temporal anti-aliasing runs live on the V8 player and replaces multisampling");
