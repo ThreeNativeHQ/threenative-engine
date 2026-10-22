@@ -130,11 +130,16 @@ const high: IWorldEnvironmentOptions = {
   ...shared,
   // GTAO, full resolution plus denoise: unmeasured on its own here; read `TN_FRAME_BUDGET`.
   gtaoEnabled: true,
-  // Contact scale. Unreal's Lumen (L7 up) has no wide screen-space AO: its short-range AO is a thin line in every
-  // corner, and the world cache already carries the room-scale occlusion. At 0.35 m the same GTAO darkened a band
-  // about 30 px wide along every interior corner and under the sunlit patch (ablation, abl4 and abl5: gone with
-  // GTAO off, thin and soft at 0.12). The L6 arm keeps Unreal's SSAO radius in Reference.ts.in.
-  gtaoRadius: 0.12,
+  // Contact scale. Unreal's Lumen (L7 up) has no wide screen-space AO: its short-range AO searches 32 px of the screen
+  // (aoReach.ts), so the radius is left to that rule. At a fixed 0.35 m the same GTAO darkened a band about 30 px wide
+  // along every interior corner and under the sunlit patch. The L6 arm keeps Unreal's SSAO radius in Reference.ts.in.
+  // Its steps sit at the squared fraction of the reach (`gtaoDistanceExponent` 2), 3 steps per direction
+  // (`gtaoSamples` 7: three directions, the node's count below 30 samples; Unreal takes 2 slices of 3 steps).
+  gtaoDistanceExponent: 2,
+  gtaoSamples: 7,
+  // Unreal weighs every step alike: the horizon is the largest over the steps (LumenScreenSpaceBentNormal.usf:271),
+  // with no 2 / (step + 2) falloff. The node's falloff narrowed the contact band to about 8 px against Unreal's 13.
+  gtaoDistanceFalloff: 0,
   // Epic: Unreal's screen probe gather (`sg.GlobalIlluminationQuality` 3). See `giPreset`.
   finalGatherMethod: "screenProbeGather",
   renderChainTier: "high",
@@ -151,14 +156,12 @@ const high: IWorldEnvironmentOptions = {
 };
 
 /**
- * The rung in between: the same occlusion at half the directions. Saving unmeasured, and the
- * chain's own antialiasing one notch cheaper.
+ * The rung in between: the same occlusion, and the chain's own antialiasing one notch cheaper.
  */
 // Temporal AA owns medium edges (it comes with `...high`); another four-sample world resolve adds mobile bandwidth.
 const medium: IWorldEnvironmentOptions = {
   ...high,
   motionBlurEnabled: false,
-  gtaoSamples: 8,
   // Medium: world-space probes only (`sg.GlobalIlluminationQuality` 1).
   finalGatherMethod: "irradianceField",
   renderChainTier: "medium",
