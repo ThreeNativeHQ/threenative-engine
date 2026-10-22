@@ -329,14 +329,14 @@ describe("core constraints", () => {
     expect(roughDiffuse.match(/#[0-9a-f]{6}\b|0x[0-9a-f]{6}\b/giu)).toBeNull();
 
     // The surface cache reads the game's maps and colours and writes none of them.
-    const surfaceCache = readFileSync(
+    const surfaceCacheRaw = readFileSync(
       path.join(sourceDirectory, "render/surface-cache.ts"),
       "utf8",
     );
-    expect(surfaceCache).not.toMatch(
+    expect(surfaceCacheRaw).not.toMatch(
       /new\s+\w*Material|new\s+\w*Light|new\s+\w*Color|tonemapping|postprocessing|\.wgsl/iu,
     );
-    expect(surfaceCache).not.toMatch(
+    expect(surfaceCacheRaw).not.toMatch(
       /\.(color|map|roughness|metalness|emissive|opacity|envMap)\b\s*(=[^=]|\?\?=)/iu,
     );
 
