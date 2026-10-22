@@ -29,6 +29,11 @@ import { HIDE_UI, freePort, scaffold, waitForServer } from "./capture-threenativ
 const execFileAsync = promisify(execFile);
 const REPO_ROOT = path.resolve(import.meta.dirname, "../..");
 
+// The bench times the progressive GI bake (opt-in on the scaffold, PRD-649) unless the run names its own giProgressive.
+const BENCH_QUERY = /[?&]giProgressive=/u.test(process.env.TN_UNREAL_LOOK_QUERY ?? "")
+  ? (process.env.TN_UNREAL_LOOK_QUERY ?? "")
+  : `&giProgressive=1${process.env.TN_UNREAL_LOOK_QUERY ?? ""}`;
+
 const flag = (name: string, fallback: string): string => {
   const at = process.argv.indexOf(name);
   return at >= 0 ? (process.argv[at + 1] ?? fallback) : fallback;
@@ -160,7 +165,7 @@ async function main(): Promise<void> {
         )
           markers.push({ atMs: Date.now() - begin, text: message.text().slice(0, 600) });
       });
-      const load = `${origin}?tnRef=${layer}&sun=${sun}${model === "" ? "" : `&model=${model}`}${process.env.TN_UNREAL_LOOK_QUERY ?? ""}`;
+      const load = `${origin}?tnRef=${layer}&sun=${sun}${model === "" ? "" : `&model=${model}`}${BENCH_QUERY}`;
       // `--profile`: a Chrome CPU profile of the load, up to the ready marker, for the table of what the main thread did.
       const cdp = process.argv.includes("--profile")
         ? await page.context().newCDPSession(page)
@@ -290,7 +295,7 @@ async function main(): Promise<void> {
         sun,
         adapter,
         display: process.env.DISPLAY,
-        query: process.env.TN_UNREAL_LOOK_QUERY ?? "",
+        query: BENCH_QUERY,
         load: readFileSync("/proc/loadavg", "utf8").split(" ").slice(0, 3),
         navigationToScriptMs: Math.round(marks.scriptStart),
         readyMs: Math.round(marks.ready),

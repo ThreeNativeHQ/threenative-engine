@@ -288,7 +288,7 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
           m.material = (m.material as MeshBasicMaterial).clone();
           (m.material as unknown as { color: Color }).color.setScalar(0);
         }
-        const progressive = params.get("giProgressive") !== "0" && params.get("giSkip") === null;
+        const progressive = params.get("giProgressive") === "1" && params.get("giSkip") === null;
         const gi = installGi(ctx, model, {
           ...(progressive
             ? {
