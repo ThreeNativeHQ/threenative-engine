@@ -13,7 +13,7 @@
 // you turned off. What it does not own: any colour, and any strength that is not a quality
 // tier. Those are arguments, supplied by `postprocessing.ts`, yours to change.
 
-import { RENDER_CHAIN_TIERS } from "@threenative/core";
+import { GIVisualize, type GIVisualizeMode, RENDER_CHAIN_TIERS } from "@threenative/core";
 import {
   ACESFilmicToneMapping,
   AgXToneMapping,
@@ -45,6 +45,7 @@ import {
   diffuseColor,
   emissive,
   float,
+  getViewPosition,
   max,
   metalness,
   mrt,
@@ -77,6 +78,15 @@ const REFLECTION_FADE = 0.1;
 function harnessDenoisePasses(): number | undefined {
   const value = new URLSearchParams(globalThis.location?.search ?? "").get("dn");
   return value === null ? undefined : Number(value);
+}
+
+/**
+ * Diagnosis (PRD-646): `?giVisualize=indirectDiffuse` draws the bounce light alone, the pair of Unreal's
+ * `r.Lumen.Visualize.IndirectDiffuse`. It needs the gather, so it applies at ladder layer L7 and above.
+ */
+function harnessGiVisualize(): GIVisualizeMode {
+  const mode = new URLSearchParams(globalThis.location?.search ?? "").get("giVisualize") ?? "off";
+  return mode as GIVisualizeMode;
 }
 
 /** Godot's `Viewport.screen_space_aa`: which post-process antialiasing smooths the frame's edges. */
@@ -155,6 +165,8 @@ export interface IWorldEnvironmentOptions {
    * rays: Unreal's ScreenProbeGather at its Epic settings (PRD-640). Owned engine only; elsewhere the per-pixel gather runs.
    */
   readonly ssgiScreenProbes?: boolean;
+  /** Shows one lighting term alone (`GIVisualize`); `off` draws the finished frame. Needs the gather (`ssgiEnabled`). */
+  readonly giVisualize?: GIVisualizeMode;
   /** Screen probes only: 0 keeps every probe's rays on the same octahedron, 1 (default) offsets them per probe. */
   readonly ssgiProbeJitter?: number;
   /** Screen probes only: rays on a side of each probe's octahedron. Omit for 8 (Unreal's real-time Epic; its cinematic setting is 16). */
@@ -598,6 +610,14 @@ export class WorldEnvironment {
     }
     const finalGatherMethod =
       options.finalGatherMethod ?? (harnessLayer() >= 7 ? "screenProbeGather" : "none");
+    const giVisualize = options.giVisualize ?? harnessGiVisualize();
+    if (
+      giVisualize !== "off" &&
+      !(options.ssgiEnabled ?? finalGatherMethod === "screenProbeGather")
+    )
+      throw new Error(
+        `TN_GI_VISUALIZE_NEEDS_GATHER: giVisualize '${giVisualize}' shows a term of the gather, and this chain does not run it.`,
+      );
     this.#options = {
       samples: options.samples,
       // A kit with no stages of its own is the common case, so both default to empty rather
@@ -617,6 +637,7 @@ export class WorldEnvironment {
       denoiseEnabled: options.denoiseEnabled ?? true,
       ssgiDenoiseRadius: options.ssgiDenoiseRadius,
       ssgiScreenProbes: options.ssgiScreenProbes ?? false,
+      giVisualize,
       ssgiProbeJitter: options.ssgiProbeJitter ?? 1,
       ssgiProbeRays: options.ssgiProbeRays,
       ssgiProbeDebug: options.ssgiProbeDebug ?? 0,
@@ -999,9 +1020,22 @@ export class WorldEnvironment {
           // cache subtracts more than the frame still holds and a lit floor under a sphere clips to black.
           const correction =
             contactOcclusion === undefined ? reflected : reflected.mul(contactOcclusion);
-          return base
+          const beauty = base
             .mul(vec4(occlusion.r, occlusion.r, occlusion.r, 1))
             .add(vec4(correction.add(emitted.mul(float(1).sub(occlusion.r))), 0));
+          if (options.giVisualize === "off") return beauty;
+          // The bounce light alone: the surface's albedo times what the cache holds at the pixel and what the gather
+          // added to it. The frame's own copy of the cache term sits in the material, so it is read again here.
+          const at = uv();
+          const cached = cache?.(
+            getViewPosition(at, depth().sample(at).r, uniform(view.projectionMatrixInverse)),
+            normal().sample(at).rgb.normalize(),
+          );
+          const bounce = (
+            cached === undefined ? indirect.rgb : cached.mul(gain).add(indirect.rgb)
+          ).mul(options.ssgiIntensity);
+          const indirectDiffuse = albedo().rgb.mul(float(1).sub(metal().r)).mul(bounce);
+          return new GIVisualize({ mode: options.giVisualize, beauty, indirectDiffuse }).node;
         },
       }),
       stage({

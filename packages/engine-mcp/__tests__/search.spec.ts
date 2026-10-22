@@ -32,6 +32,13 @@ describe("threenative-engine-mcp", () => {
     expect(symbols("sg.ShadowQuality")).toContain("ShadowFilterBudget");
   });
 
+  it("finds the indirect diffuse visualize mode by Unreal's names", () => {
+    const symbols = (situation: string) => searchResults(situation).map((r) => r.symbol);
+    expect(symbols("lumen visualize indirect diffuse")).toContain("GIVisualize");
+    expect(symbols("indirect diffuse only")).toContain("GIVisualize");
+    expect(symbols("r.Lumen.Visualize.IndirectDiffuse")).toContain("GIVisualize");
+  });
+
   it("exposes exactly the two read-only capability tools", () => {
     expect(toolDefinitions().map((tool) => tool.name)).toEqual([
       "engine_search_capabilities",

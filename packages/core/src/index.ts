@@ -633,6 +633,25 @@ export type { BudgetVerdict, IBudgetLadderOptions, IBudgetWindow } from "./rende
  */
 export { GI_METHODS, GIBudget } from "./render/gi-budget.js";
 /**
+ * Shows the indirect diffuse light of a frame by itself, the counterpart of Unreal's Lumen
+ * `Visualize IndirectDiffuse` mode, so a lighting gap against a reference can be told apart from a scene gap.
+ * The game's chain builds the term; this class selects it and fails when the term is missing.
+ * @situation see only the bounce light of a frame
+ * @situation compare indirect lighting alone against Unreal
+ * @situation debug global illumination by looking at the indirect diffuse term
+ * @constraint the game's render chain builds the indirectDiffuse node (gathered and cached light times albedo); this class draws nothing else
+ * @constraint a mode whose term the chain did not build throws instead of showing the finished frame
+ * @override mode: "off" returns the finished frame unchanged
+ * @alias lumen visualize
+ * @alias indirect diffuse only
+ * @alias r.Lumen.Visualize.IndirectDiffuse
+ * @example
+ * const view = new GIVisualize({ mode: "indirectDiffuse", beauty: frame, indirectDiffuse: albedo.mul(bounce) });
+ * pipeline.outputNode = view.node;
+ */
+export { GI_VISUALIZE_MODES, GIVisualize } from "./render/gi-visualize.js";
+export type { GIVisualizeMode, IGIVisualizeOptions } from "./render/gi-visualize.js";
+/**
  * Steps a game's soft-shadow tier down (`low`, `medium`, `high`) when the GPU time of its shadow
  * passes stays over the tier's budget for a 120-frame window, and back up when there is room. Only
  * the shadow stages' own time moves the tier, so a frame that is slow for another reason keeps its

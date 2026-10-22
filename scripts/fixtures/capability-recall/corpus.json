@@ -789,6 +789,14 @@
       "reject": []
     },
     {
+      "id": "request.gi-visualize",
+      "query": "lumen visualize indirect diffuse only r.Lumen.Visualize.IndirectDiffuse",
+      "scope": "request",
+      "source": "template:starter#Quality and proof",
+      "expect": ["GIVisualize"],
+      "reject": []
+    },
+    {
       "id": "request.lumen-scene",
       "query": "lumen scene",
       "scope": "request",
