@@ -577,6 +577,41 @@ describe("scene warm-up", () => {
     expect(drawn).toBe(1);
   });
 
+  test("should wait on a 1-texel readback when the engine has no device queue to drain", async () => {
+    // The Wasm engine compiles a pipeline in the GPU process when the first frame using it runs;
+    // the readback resolves only after every frame submitted before it, so it is the drain.
+    let release: () => void = () => undefined;
+    const raw = {
+      info: { engine: { frameGateSkips: 0 } },
+      render: vi.fn(),
+      getRenderTarget: vi.fn(() => null),
+      setRenderTarget: vi.fn(),
+      readRenderTargetPixelsAsync: vi.fn(
+        () =>
+          new Promise<void>((resolve) => {
+            release = resolve;
+          }),
+      ),
+    };
+    let settled = false;
+    const warmed = warmUpScene(
+      { compileAsync: vi.fn(async () => undefined), warmUpWorldPass: vi.fn(), raw },
+      sceneOf(1) as never,
+      {} as never,
+      { yieldFrame: () => Promise.resolve() },
+    ).then(() => {
+      settled = true;
+    });
+    await vi.waitFor(() => expect(raw.readRenderTargetPixelsAsync).toHaveBeenCalledTimes(1));
+    await Promise.resolve();
+    expect(settled).toBe(false);
+    release();
+    await warmed;
+
+    expect(raw.readRenderTargetPixelsAsync.mock.calls[0]?.slice(1)).toEqual([0, 0, 1, 1]);
+    expect(raw.setRenderTarget).toHaveBeenLastCalledWith(null);
+  });
+
   test("should still use the covered output pass when the async compile fails", async () => {
     const warmUpWorldPass = vi.fn();
     const report = await warmUpScene(
