@@ -1110,6 +1110,24 @@ export async function waitForNativeMarker(child, output, marker, timeoutMs, fail
   throw new Error(`Native process timed out waiting for ${marker}.`);
 }
 
+async function attachNativeWallClock(child, mailboxRoot, timeoutMs) {
+  const request = join(mailboxRoot, "tn-playtest-request.json");
+  const response = join(mailboxRoot, "tn-playtest-response.json");
+  writeFileSync(`${request}.tmp`, JSON.stringify({ id: "clock", method: "_setClockMode", argument: "wall-clock" }), "utf8");
+  renameSync(`${request}.tmp`, request);
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() <= deadline) {
+    const answer = existsSync(response) ? readFileSync(response, "utf8") : "";
+    if (answer.includes('"id":"clock"')) {
+      if (answer.includes('"error"')) throw new Error(`TN_PARITY_OWNED_CLOCK: ${answer}`);
+      return;
+    }
+    if (child.exitCode !== null || child.signalCode !== null) throw new Error("Native process exited before it took the wall clock");
+    await wait(25);
+  }
+  throw new Error("TN_PARITY_OWNED_CLOCK: the player did not answer _setClockMode");
+}
+
 async function waitForNativeScreenshot(child, outputPath, timeoutMs) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() <= deadline) {
@@ -1333,6 +1351,10 @@ async function runDesktopOwned(test, bundlePath, result, player, captureRoot) {
       Number(process.env.TN_PARITY_OWNED_READY_MS ?? 120_000),
       "[ThreeNative conformance] failed:",
     );
+    // A player with a mailbox holds its loop until the runner's first request, then steps only when
+    // asked, so the settle below drew no frame and the capture was the first one (a post chain whose
+    // passes fill on later frames read as missing). Attach on the wall clock, as a game runs.
+    await attachNativeWallClock(child, mailboxRoot, 30_000);
     // Frames the scene needs to settle: the legacy lane waits for frame `nativeFrames` (300).
     await wait(Number(process.env.TN_PARITY_OWNED_SETTLE_MS ?? 3_000));
     writeNativeScreenshotRequest(mailboxRoot, screenshot);
