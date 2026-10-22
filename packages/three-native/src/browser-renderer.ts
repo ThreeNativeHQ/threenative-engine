@@ -593,7 +593,8 @@ export function defineWebRenderer(
     writeHandle(24, target, "render target");
     const id = module._tnw_web_read_target(handles + 24, x, y, width, height);
     if (id === 0) check(1);
-    const size = width * height * targetTexelBytes((target as { texture: { type: number } }).texture.type);
+    const size =
+      width * height * targetTexelBytes((target as { texture: { type: number } }).texture.type);
     const out = module._malloc(size) >>> 0;
     try {
       for (;;) {
