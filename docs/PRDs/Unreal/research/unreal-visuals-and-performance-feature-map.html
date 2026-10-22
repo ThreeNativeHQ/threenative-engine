@@ -10,17 +10,17 @@
 /* Layout: one column. Look ladder strip, then an area-true treemap of LOC, then a ranked table. */
 :root {
   --bg: #f5f6f4; --panel: #ffffff; --fg: #1b1f1d; --muted: #5d6662; --line: #d9ddda;
-  --shipped: #2f8f5b; --partial: #d18a12; --open: #2f6fc4; --declined: #8b8f93; --notfiled: #c9ccc7;
+  --shipped: #2f8f5b; --partial: #d18a12; --open: #2f6fc4; --deferred: #8b8f93; --notfiled: #c9ccc7;
   --tile-fg: #ffffff; --accent: #0f6f6a;
   --display: "Instrument Sans", system-ui, sans-serif; --mono: "JetBrains Mono", ui-monospace, monospace;
 }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
   --bg: #121513; --panel: #1a1e1c; --fg: #e7ebe8; --muted: #9aa49f; --line: #2c322f;
-  --shipped: #3aa56c; --partial: #d9961f; --open: #4a86d6; --declined: #6c7176; --notfiled: #3b403d;
+  --shipped: #3aa56c; --partial: #d9961f; --open: #4a86d6; --deferred: #6c7176; --notfiled: #3b403d;
   --tile-fg: #ffffff; --accent: #3bb3aa; color-scheme: dark } }
 :root[data-theme="dark"] {
   --bg: #121513; --panel: #1a1e1c; --fg: #e7ebe8; --muted: #9aa49f; --line: #2c322f;
-  --shipped: #3aa56c; --partial: #d9961f; --open: #4a86d6; --declined: #6c7176; --notfiled: #3b403d;
+  --shipped: #3aa56c; --partial: #d9961f; --open: #4a86d6; --deferred: #6c7176; --notfiled: #3b403d;
   --tile-fg: #ffffff; --accent: #3bb3aa; color-scheme: dark }
 body { margin: 0; background: var(--bg); color: var(--fg); font-family: var(--display); font-size: 15px; line-height: 1.5; }
 .wrap { max-width: 1180px; margin: 0 auto; padding-block: 28px 56px;
@@ -40,7 +40,7 @@ h2 { font-size: 19px; margin: 0 0 4px; text-wrap: balance; }
 .legend button:focus-visible, .toggle input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .dot { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
 .s-shipped { background: var(--shipped); } .s-partial { background: var(--partial); } .s-open { background: var(--open); }
-.s-declined { background: var(--declined); } .s-notfiled { background: var(--notfiled); }
+.s-deferred { background: var(--deferred); } .s-notfiled { background: var(--notfiled); }
 .section-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: end; gap: 10px; margin-bottom: 10px; }
 .toggle { font-size: 13px; color: var(--muted); display: inline-flex; gap: 6px; align-items: center; }
 
@@ -132,11 +132,11 @@ tr:last-child td { border-bottom: 0; }
 <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
 <script>
 const STATUS = {
-  shipped: "Shipped", partial: "Partial", open: "Open", declined: "Declined", notfiled: "Not filed"
+  shipped: "Shipped", partial: "Partial", open: "Open", deferred: "Deferred", notfiled: "Not filed"
 };
 // name, area, cpp, shader, complexity, port, status, note, big (tool-heavy)
 const F = [
- ["Lumen GI + reflections","Lighting & GI",45712,33515,10,"Very high","partial","PRD-638, 647 done. PRD-603–605, 639–644, 646 open. HW ray tracing declined (PRD-645). #541 adds giCache.ts CPU reference."],
+ ["Lumen GI + reflections","Lighting & GI",45712,33515,10,"Very high","partial","PRD-638, 647 done. PRD-603–605, 639–644, 646 open. HW ray tracing deferred (PRD-645) until WebGPU exposes ray tracing. #541 adds giCache.ts CPU reference."],
  ["Distance fields","Lighting & GI",10870,6189,7,"High","notfiled","GPUSceneBVH gives the trace instead."],
  ["Deferred shading + clustered lights","Lighting & GI",16918,8254,6,"n/a","shipped","Covered by three.js and the owned C++ engine. Not a port target."],
  ["Reflection captures + SSR","Lighting & GI",7226,4842,5,"Medium","open","PRD-VQ-03 (low/medium), PRD-642 (high)."],
@@ -144,7 +144,7 @@ const F = [
  ["Substrate materials","Lighting & GI",12154,16982,8,"High","notfiled","three.js r185 already matches Unreal default lit."],
  ["MegaLights","Lighting & GI",10136,9857,8,"High","notfiled","Off in a fresh Unreal project."],
  ["Virtual shadow maps","Shadows",11261,10692,9,"High","partial","Sun clipmap, page cache, mover maps shipped (PRD-538, 572). PRD-634, 649–652, 457 open."],
- ["Classic shadows (CSM, contact)","Shadows",18513,2411,6,"Medium","declined","Contact shadows declined (PRD-561). Off by default in Unreal."],
+ ["Classic shadows (CSM, contact)","Shadows",18513,2411,6,"Medium","shipped","CSM replaced by the shipped virtual shadow map. Contact shadows deferred (PRD-561): off in a fresh Unreal project; revisit when a light needs a contact-shadow length."],
  ["Sky atmosphere","Sky & volumes",2666,2318,6,"Medium","open","PRD-633, in PR #541."],
  ["Volumetric clouds","Sky & volumes",3449,2695,7,"Medium","partial","Template clouds in rain. PRD-VQ-08 open."],
  ["Height + volumetric fog","Sky & volumes",6663,4050,5,"Medium","partial","Height fog done (PRD-560). Aerial perspective PRD-562 open."],
@@ -157,11 +157,11 @@ const F = [
  ["Motion blur","Post & temporal",1518,2552,5,"Low","open","PRD-636."],
  ["Depth of field","Post & temporal",4160,8194,7,"Medium","notfiled","Not in the default look."],
  ["Denoisers","Post & temporal",5800,10068,7,"High","notfiled","Unreal has no virtual-shadow denoiser."],
- ["Nanite","Geometry & scene",27571,28101,10,"Very high","open","PRD-600–602. Persistent culling, software raster, page streaming declined."],
+ ["Nanite","Geometry & scene",27571,28101,10,"Very high","open","PRD-600–602. Persistent culling, software raster and page streaming deferred until WebGPU adds forward-progress guarantees and 64-bit image atomics, or a measurement shows the gain."],
  ["GPU scene + instance culling","Geometry & scene",12019,2420,7,"Medium","shipped","world-gpu-scene.ts: cull and LOD into indirect draws."],
- ["Visibility + HZB occlusion","Geometry & scene",10140,3178,6,"Medium","declined","HZB declined on measurement (PRD-489, would-cull share 0.013)."],
+ ["Visibility + HZB occlusion","Geometry & scene",10140,3178,6,"Medium","deferred","HZB deferred (PRD-489): our scenes would cull 1.3%. Unreal has it for dense cities and interiors; revisit when a scene like that shows a high would-cull share."],
  ["Mesh draw commands","Geometry & scene",12081,0,7,"Medium","shipped","Owned C++ engine area."],
- ["Virtual texturing","Geometry & scene",15462,1851,8,"High","declined","Runtime VT declined by rule. Mip residency PRD-VQ-10 open."],
+ ["Virtual texturing","Geometry & scene",15462,1851,8,"High","deferred","Runtime VT deferred until texture memory limits a game. Mip residency PRD-VQ-10 open first."],
  ["Dynamic resolution","Geometry & scene",847,0,4,"Low","shipped","PRD-384, 563, 564 done."],
  ["PSO precache","Geometry & scene",8895,0,6,"Medium","shipped","Pipeline warm-up and native disk cache."],
  ["Variable rate shading","Geometry & scene",1799,583,4,"n/a","notfiled","No WebGPU API."],
@@ -169,12 +169,12 @@ const F = [
  ["Texture + mesh streaming","World, anim, VFX",20414,0,7,"Medium","open","PRD-VQ-10."],
  ["Anim budget + AnimGraphRuntime","World, anim, VFX",29104,0,6,"Medium","open","PRD-570 (prd:75), PRD-486."],
  ["GPU skinning","World, anim, VFX",6782,1207,5,"Low","shipped","Through three.js and the owned engine."],
- ["Niagara runtime","World, anim, VFX",255512,0,9,"High","partial","GPUParticles3D. PRD-569, 609 done. PRD-610, 611 open. Graph editor declined.",1],
+ ["Niagara runtime","World, anim, VFX",255512,0,9,"High","partial","GPUParticles3D. PRD-569, 609 done. PRD-610, 611 open. Graph editor out of scope: the repo rules close editors.",1],
  ["Landscape","World, anim, VFX",86937,2567,8,"High","partial","PRD-566, 567 done. PRD-493 open.",1],
  ["World Partition + HLOD","World, anim, VFX",70618,0,9,"High","partial","WorldCells, streaming.ts. PRD-456, 459, 460, 606, 607 open.",1],
- ["RenderCore (RDG)","Foundation",103555,0,9,"n/a","declined","RDG, bindless, async compute: no WebGPU API.",1],
+ ["RenderCore (RDG)","Foundation",103555,0,9,"n/a","deferred","RDG, bindless and async compute deferred until WebGPU exposes them.",1],
  ["RHI","Foundation",67546,0,8,"n/a","shipped","WebGPU and the owned C++ engine fill this role.",1],
- ["HW ray tracing + path tracer","Foundation",24257,29756,9,"High","declined","Declined for GI (PRD-645)."],
+ ["HW ray tracing + path tracer","Foundation",24257,29756,9,"High","deferred","Deferred for GI (PRD-645): the trace is 13x faster, but the WebGPU-to-Vulkan hand-off costs more. Unreal has no hand-off because it drives D3D12 and Vulkan directly. Revisit when WebGPU exposes ray tracing."],
  ["Hair strands","Foundation",17639,28297,9,"High","notfiled","Off by default."],
 ].map(([name,area,cpp,shd,cx,port,status,note,big]) => ({name,area,cpp,shd,loc:cpp+shd,cx,port,status,note,big:!!big}));
 
@@ -238,7 +238,7 @@ tm.addEventListener("focusout", () => tip.hidden = true);
 new ResizeObserver(draw).observe(tm);
 
 // table
-const ORDER = { shipped: 0, partial: 1, open: 2, declined: 3, notfiled: 4 };
+const ORDER = { shipped: 0, partial: 1, open: 2, deferred: 3, notfiled: 4 };
 const PORT = { "Low": 0, "Medium": 1, "High": 2, "Very high": 3, "n/a": -1 };
 let sortK = "loc", dir = -1;
 function table() {

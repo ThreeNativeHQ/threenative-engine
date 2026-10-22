@@ -25,7 +25,7 @@ structures, coupling with other systems, and temporal state. **Port cost** is th
 the idea for WebGPU and the owned C++ engine under the licence rule (ideas only, no code).
 
 **Status** values: **Shipped** (in `develop`), **Partial** (part shipped, PRDs open),
-**Open** (filed PRDs, no main work landed), **Declined** (closed on measurement or by rule),
+**Open** (filed PRDs, no main work landed), **Deferred** (built or measured, not worth it yet; each row names when to revisit),
 **Not filed** (off in a fresh Unreal project, or no game asks for it).
 
 ## The map
@@ -59,7 +59,7 @@ flowchart LR
 
 | Feature | C++ | Shader | Total LOC | Complexity | Port cost | ThreeNative status |
 | --- | ---: | ---: | ---: | :---: | --- | --- |
-| Lumen (GI, reflections, surface cache, radiance cache, screen probes) | 45,712 | 33,515 | **79,227** | 10 | Very high | **Partial.** PRD-638, PRD-647 done; PRD-603 to 605, 639 to 644, 646 open; hardware ray tracing declined (PRD-645). PR #541 adds the `giCache.ts` CPU reference |
+| Lumen (GI, reflections, surface cache, radiance cache, screen probes) | 45,712 | 33,515 | **79,227** | 10 | Very high | **Partial.** PRD-638, PRD-647 done; PRD-603 to 605, 639 to 644, 646 open; hardware ray tracing deferred (PRD-645) until WebGPU exposes ray tracing. PR #541 adds the `giCache.ts` CPU reference |
 | Distance fields (global and mesh SDF) | 10,870 | 6,189 | 17,059 | 7 | High | **Not filed.** `GPUSceneBVH` gives the trace instead |
 | Deferred shading, clustered lights, base pass | 16,918 | 8,254 | 25,172 | 6 | n/a | Covered by three.js and the owned engine; not a port target |
 | Reflection captures and SSR | 7,226 | 4,842 | 12,068 | 5 | Medium | **Open.** PRD-VQ-03 (low, medium), PRD-642 (high) |
@@ -72,7 +72,7 @@ flowchart LR
 | Feature | C++ | Shader | Total LOC | Complexity | Port cost | ThreeNative status |
 | --- | ---: | ---: | ---: | :---: | --- | --- |
 | Virtual shadow maps (pages, clipmaps, cache, SMRT) | 11,261 | 10,692 | **21,953** | 9 | High | **Partial.** Sun clipmap, page cache, mover maps shipped (PRD-538, 572). PRD-634, 649 to 652, 457 open |
-| Classic shadows (CSM, projected, contact) | 18,513 | 2,411 | 20,924 | 6 | Medium | **Shipped/Declined.** Contact shadows declined (PRD-561) |
+| Classic shadows (CSM, projected, contact) | 18,513 | 2,411 | 20,924 | 6 | Medium | **Shipped.** The virtual shadow map replaced CSM. Contact shadows deferred (PRD-561): off in a fresh Unreal project; revisit when a light needs a contact-shadow length |
 
 ## 3. Sky, atmosphere and volumes
 
@@ -100,11 +100,11 @@ flowchart LR
 
 | Feature | C++ | Shader | Total LOC | Complexity | Port cost | ThreeNative status |
 | --- | ---: | ---: | ---: | :---: | --- | --- |
-| Nanite (clusters, culling, raster, streaming) | 27,571 | 28,101 | **55,672** | 10 | Very high | **Open.** PRD-600 to 602. Persistent culling, software raster and page streaming declined |
+| Nanite (clusters, culling, raster, streaming) | 27,571 | 28,101 | **55,672** | 10 | Very high | **Open.** PRD-600 to 602. Persistent culling, software raster and page streaming deferred until WebGPU adds forward-progress guarantees and 64-bit image atomics, or a measurement shows the gain |
 | GPU scene and instance culling | 12,019 | 2,420 | 14,439 | 7 | Medium | **Shipped.** `world-gpu-scene.ts` cull and LOD into indirect draws |
-| Visibility, occlusion, HZB | 10,140 | 3,178 | 13,318 | 6 | Medium | **Declined.** HZB occlusion (PRD-489, would-cull share 0.013) |
+| Visibility, occlusion, HZB | 10,140 | 3,178 | 13,318 | 6 | Medium | **Deferred.** HZB occlusion (PRD-489): our scenes would cull 1.3%. Unreal has it for dense cities and interiors; revisit when a scene like that shows a high would-cull share |
 | Mesh draw commands and pass processors | 12,081 | 0 | 12,081 | 7 | Medium | Owned C++ engine area |
-| Virtual texturing | 15,462 | 1,851 | 17,313 | 8 | High | **Declined** (runtime VT, by rule). Mip residency PRD-VQ-10 open |
+| Virtual texturing | 15,462 | 1,851 | 17,313 | 8 | High | **Deferred.** Runtime VT waits until texture memory limits a game. Mip residency PRD-VQ-10 open first |
 | Dynamic resolution | 847 | 0 | 847 | 4 | Low | **Shipped.** PRD-384, 563, 564 |
 | PSO precache | 8,895 | 0 | 8,895 | 6 | Medium | **Shipped.** Pipeline warm-up and the native disk cache |
 | Variable rate shading | 1,799 | 583 | 2,382 | 4 | n/a | **Not filed.** No WebGPU API |
@@ -114,7 +114,7 @@ flowchart LR
 
 | Feature | C++ | Shader | Total LOC | Complexity | Port cost | ThreeNative status |
 | --- | ---: | ---: | ---: | :---: | --- | --- |
-| Niagara runtime (+ shader, vertex factories) | 255,512 | in C++ | **255,512** | 9 | High | **Partial.** `GPUParticles3D`; PRD-569, 609 done; PRD-610, 611 (`vfx/`) open; graph editor declined |
+| Niagara runtime (+ shader, vertex factories) | 255,512 | in C++ | **255,512** | 9 | High | **Partial.** `GPUParticles3D`; PRD-569, 609 done; PRD-610, 611 (`vfx/`) open; graph editor out of scope (the repo rules close editors) |
 | Landscape (incl. editor code in runtime) | 86,937 | 2,567 | 89,504 | 8 | High | **Partial.** PRD-566, 567 done; PRD-493 open |
 | World Partition and HLOD (incl. editor code) | 70,618 | 0 | 70,618 | 9 | High | **Partial.** `WorldCells`, `streaming.ts`; PRD-456, 459, 460, 606, 607 open |
 | Texture and mesh streaming | 20,414 | 0 | 20,414 | 7 | Medium | **Open.** PRD-VQ-10 |
@@ -125,9 +125,9 @@ flowchart LR
 
 | Feature | LOC | Complexity | ThreeNative status |
 | --- | ---: | :---: | --- |
-| RenderCore (RDG, shader maps) | 103,555 | 9 | **Declined by rule** (RDG, bindless, async compute have no WebGPU API) |
+| RenderCore (RDG, shader maps) | 103,555 | 9 | **Deferred** until WebGPU exposes RDG-class features (bindless, async compute) |
 | RHI (GPU abstraction) | 67,546 | 8 | WebGPU and the owned C++ engine fill this role |
-| Hardware ray tracing and path tracer | 54,013 | 9 | **Declined** for GI (PRD-645) |
+| Hardware ray tracing and path tracer | 54,013 | 9 | **Deferred** for GI (PRD-645): the trace is 13x faster, but the WebGPU-to-Vulkan hand-off costs more. Revisit when WebGPU exposes ray tracing |
 | Hair strands | 45,936 | 9 | **Not filed** |
 
 ## What this says
@@ -139,8 +139,8 @@ flowchart LR
    open. The GI set rebuilds it on `GPUSceneBVH`, not on distance fields.
 3. **The cheap layers come first.** Tone, exposure, AO, bloom and motion blur are 2.7K to 7.3K lines
    each and rated 3 to 5. PRD-632, 635 and 636 close most of the L1 and L9 gap.
-4. **Most performance mechanisms are shipped or declined.** GPU scene culling, dynamic resolution
-   and PSO warm-up are shipped. HZB, runtime VT and RDG-class features are declined. The open
+4. **Most performance mechanisms are shipped or deferred.** GPU scene culling, dynamic resolution
+   and PSO warm-up are shipped. HZB, runtime VT and RDG-class features are deferred, each with a revisit condition. The open
    performance work is Nanite clusters (PRD-600 to 602), streaming and character cost.
 5. **Size does not equal value.** Niagara (255K) and Landscape (90K) are large because they carry
    tools. The runtime ideas ThreeNative needs are a small part of each.
