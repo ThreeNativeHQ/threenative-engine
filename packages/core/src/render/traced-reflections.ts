@@ -22,6 +22,7 @@ import {
 } from "three/tsl";
 import type { Node } from "three/webgpu";
 import {
+  EDGE_TOLERANCE,
   type ITraceScene,
   type ITraceSceneReport,
   MATERIAL_TEXELS,
@@ -251,10 +252,10 @@ export class TracedReflections {
                   const t = dot(edge2, q).mul(inverseDet);
                   If(
                     u
-                      .greaterThanEqual(0)
-                      .and(u.lessThanEqual(1))
-                      .and(v.greaterThanEqual(0))
-                      .and(u.add(v).lessThanEqual(1))
+                      .greaterThanEqual(-EDGE_TOLERANCE)
+                      .and(u.lessThanEqual(1 + EDGE_TOLERANCE))
+                      .and(v.greaterThanEqual(-EDGE_TOLERANCE))
+                      .and(u.add(v).lessThanEqual(1 + EDGE_TOLERANCE))
                       .and(t.greaterThan(nearT))
                       .and(t.lessThan(best)),
                     () => {

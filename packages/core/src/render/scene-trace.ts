@@ -47,6 +47,12 @@ const SIDE_BOTH = 2;
 /** Three's `BackSide`. */
 const BACK_SIDE = 1;
 const EPSILON = 1e-9;
+/**
+ * A ray this far outside a triangle's edge (barycentric units) still counts as inside. Float32 leaves hairline cracks
+ * between two triangles that share an edge, and a ray through one passes between both: a pinhole in a reflection, a
+ * leak of sun through a shadow. The tolerance is a hundredth of a millimetre on a metre-wide triangle.
+ */
+export const EDGE_TOLERANCE = 1e-5;
 
 export interface ITraceSceneOptions {
   /** Which meshes join the pack. Default: every mesh under a visible parent chain. */
@@ -466,14 +472,14 @@ export function traceScene(
       const s = [o[0] - ax, o[1] - ay, o[2] - az];
       const u =
         ((s[0] ?? 0) * (p[0] ?? 0) + (s[1] ?? 0) * (p[1] ?? 0) + (s[2] ?? 0) * (p[2] ?? 0)) / det;
-      if (u < 0 || u > 1) continue;
+      if (u < -EDGE_TOLERANCE || u > 1 + EDGE_TOLERANCE) continue;
       const q = [
         (s[1] ?? 0) * (e1[2] ?? 0) - (s[2] ?? 0) * (e1[1] ?? 0),
         (s[2] ?? 0) * (e1[0] ?? 0) - (s[0] ?? 0) * (e1[2] ?? 0),
         (s[0] ?? 0) * (e1[1] ?? 0) - (s[1] ?? 0) * (e1[0] ?? 0),
       ];
       const v = (dir[0] * (q[0] ?? 0) + dir[1] * (q[1] ?? 0) + dir[2] * (q[2] ?? 0)) / det;
-      if (v < 0 || u + v > 1) continue;
+      if (v < -EDGE_TOLERANCE || u + v > 1 + EDGE_TOLERANCE) continue;
       const t =
         ((e2[0] ?? 0) * (q[0] ?? 0) + (e2[1] ?? 0) * (q[1] ?? 0) + (e2[2] ?? 0) * (q[2] ?? 0)) /
         det;

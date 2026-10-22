@@ -1,6 +1,8 @@
 import {
   BackSide,
   BoxGeometry,
+  BufferAttribute,
+  BufferGeometry,
   DoubleSide,
   Group,
   InstancedMesh,
@@ -171,6 +173,55 @@ describe("traceScene", () => {
     expect(traceScene(pack, origin, direction, distance - 0.01)).toBeUndefined();
     const any = traceScene(pack, origin, direction, Number.POSITIVE_INFINITY, true);
     expect(any?.distance).toBeGreaterThanOrEqual(distance - 1e-6);
+  });
+
+  it("closes a hairline gap between two triangles, and still misses a wide one", () => {
+    // Float32 leaves cracks between triangles that share an edge: a ray through one passes between both.
+    const quad = (gap: number): Group => {
+      const half = gap / 2;
+      const geometry = new BufferGeometry();
+      geometry.setAttribute(
+        "position",
+        new BufferAttribute(
+          // Triangle A fills x + y <= 1. Triangle B is the other half of the square, moved out by the gap.
+          new Float32Array([
+            0,
+            0,
+            0,
+            1,
+            0,
+            0,
+            0,
+            1,
+            0,
+            1 + half,
+            half,
+            0,
+            1 + half,
+            1 + half,
+            0,
+            half,
+            1 + half,
+            0,
+          ]),
+          3,
+        ),
+      );
+      geometry.computeVertexNormals();
+      const group = new Group();
+      group.add(new Mesh(geometry, new MeshStandardMaterial()));
+      group.updateMatrixWorld(true);
+      return group;
+    };
+    const through = (gap: number) =>
+      traceScene(
+        packTraceScene(quad(gap)),
+        new Vector3(0.5 + gap / 4, 0.5 + gap / 4, 5),
+        new Vector3(0, 0, -1),
+      );
+    expect(through(0)).toBeDefined();
+    expect(through(2e-6)).toBeDefined();
+    expect(through(2e-3)).toBeUndefined();
   });
 
   it("faces the interpolated vertex normal toward the ray", () => {
