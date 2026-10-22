@@ -820,6 +820,21 @@ describe("capability manifest generator", () => {
       "lumen surface cache": { ids: ["request.lumen-surface-cache"], owners: ["SurfaceCache"] },
       "lumen scene": { ids: ["request.lumen-scene"], owners: ["SurfaceCache"] },
       "mesh cards": { ids: ["request.mesh-cards"], owners: ["SurfaceCache"] },
+      "lumen visualize": {
+        baselineAlreadyRecalled: true,
+        ids: ["request.gi-visualize"],
+        owners: ["GIVisualize"],
+      },
+      "indirect diffuse only": {
+        baselineAlreadyRecalled: true,
+        ids: ["request.gi-visualize"],
+        owners: ["GIVisualize"],
+      },
+      "r.Lumen.Visualize.IndirectDiffuse": {
+        baselineAlreadyRecalled: true,
+        ids: ["request.gi-visualize"],
+        owners: ["GIVisualize"],
+      },
     } as const;
 
     expect([...new Set(aliases)].sort()).toEqual(Object.keys(predecessorRows).sort());

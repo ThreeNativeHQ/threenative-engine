@@ -1,7 +1,7 @@
-import { describe, expect, it } from "vitest";
 import { vec3, vec4 } from "three/tsl";
 import type { Node } from "three/webgpu";
-import { GI_VISUALIZE_MODES, GIVisualize } from "../src/render/gi-visualize.js";
+import { describe, expect, it } from "vitest";
+import { GIVisualize, GI_VISUALIZE_MODES } from "../src/render/gi-visualize.js";
 
 const beauty = vec4(1, 0.5, 0.25, 1) as unknown as Node<"vec4">;
 const indirect = vec3(0.1, 0.2, 0.3) as unknown as Node<"vec3">;
