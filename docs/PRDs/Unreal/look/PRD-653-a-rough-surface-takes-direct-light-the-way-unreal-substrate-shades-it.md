@@ -8,7 +8,7 @@ prd_contract: v1
 **Priority:** P1 — the stock-versus-native parity box, the harness pick and the judged L1/L7/L9 sheet are open: every lit cell of the Unreal look shifts with this change, and the parity locks cannot settle before it lands.
 **Complexity:** 6 (MEDIUM) — about 8 engine files across the TSL and C++ halves (+2), a new core module (+2), TypeScript and native C++ build boundaries (+2); risk override: none, because Phase 3 measures every shifted cell.
 **Owner:** João
-**Depends on:** [PRD-631](PRD-631-an-unreal-reference-scene-measures-the-default-look.md). Related: [PRD-635](PRD-635-ambient-occlusion-darkens-only-the-light-that-comes-from-around.md) (its 2026-10-19 BRDF decision is superseded below), [PRD-646](../gi/PRD-646-threenative-recreates-each-unreal-calibration-scene-exactly.md) (unit mapping and light falloff), [PRD-651](../shadows/PRD-651-leaves-cast-leaf-shadows-that-sway-near-the-camera.md) (foliage).
+**Depends on:** [PRD-631](../../done/PRD-631-an-unreal-reference-scene-measures-the-default-look.md). Related: [PRD-635](PRD-635-ambient-occlusion-darkens-only-the-light-that-comes-from-around.md) (its 2026-10-19 BRDF decision is superseded below), [PRD-646](../gi/PRD-646-threenative-recreates-each-unreal-calibration-scene-exactly.md) (unit mapping and light falloff), [PRD-651](../shadows/PRD-651-leaves-cast-leaf-shadows-that-sway-near-the-camera.md) (foliage).
 
 ## Context
 

@@ -8,7 +8,7 @@ prd_contract: v1
 **Priority:** P2 — template integration and native parity remain open: the starter's sun shadow ends 14 m from the player and has the same edge width everywhere, while Unreal's default shadows cover the view and widen with the gap between caster and receiver.
 **Complexity:** 6 (MEDIUM) — a shadow-filter mechanism in core (+2), the shadow method choice across 13 templates (+2), native proof of both (+2); risk override: the templates already reverted a virtual-shadow default once (level-boundary artefacts), so Phase 1 measures before anything changes.
 **Owner:** João
-**Depends on:** [PRD-631](PRD-631-an-unreal-reference-scene-measures-the-default-look.md) Phase 3 (the L5 row). Coordinates with [PRD-457](../rendering/PRD-457-virtual-shadows-scale-by-measurement.md), which owns virtual-shadow page cost. Builds on [PRD-572](../../done/PRD-572-shadow-casters-sort-themselves-into-static-and-moving.md) and [PRD-538](../../done/PRD-538-shadow-maps-redraw-only-what-streamed-in.md).
+**Depends on:** [PRD-631](../../done/PRD-631-an-unreal-reference-scene-measures-the-default-look.md) Phase 3 (the L5 row). Coordinates with [PRD-457](../rendering/PRD-457-virtual-shadows-scale-by-measurement.md), which owns virtual-shadow page cost. Builds on [PRD-572](../../done/PRD-572-shadow-casters-sort-themselves-into-static-and-moving.md) and [PRD-538](../../done/PRD-538-shadow-maps-redraw-only-what-streamed-in.md).
 
 ## Context
 
