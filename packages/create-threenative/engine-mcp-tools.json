@@ -1,6 +1,6 @@
 {
   "comment": "The engine capability MCP surface shipped through @threenative/core. The golden path also calls a mechanically explicit cross-system request so a packaged consumer proves full-request discovery without repository source.",
-  "version": "0.2.5",
+  "version": "0.2.6",
   "tools": ["engine_capability_detail", "engine_search_capabilities"],
   "inputSchemas": {
     "engine_search_capabilities": {

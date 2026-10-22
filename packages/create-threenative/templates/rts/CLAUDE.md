@@ -45,7 +45,7 @@ bridge; avoid DOM globals, dynamic `import()`, and raw physics handles. **Report
 pnpm dev
 pnpm build
 pnpm build --target desktop
-pnpm test
+pnpm test   # runs `pnpm check` first: typecheck, ESLint, Biome format
 ```
 
 `src/sim/` is the whole ruleset — terrain, A*, economy, construction, production, combat, vision and a

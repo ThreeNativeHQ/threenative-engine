@@ -151,7 +151,19 @@ export interface IGameRuntimeObservations {
 }
 
 export interface IGamePluginRuntime {
+  /**
+   * Runs `ticks` fixed steps and returns how many ran. Fewer than asked when a `goto()` began
+   * inside the batch: the ticks after it belong to the destination scene, which does not exist
+   * until `sceneTransition()` settles.
+   */
   readonly fixedStep: (ticks: number, options?: { render?: boolean }) => number;
+  /**
+   * The `goto()` in flight, or undefined when no scene is loading. Settles once the destination
+   * scene has loaded and entered, and never rejects: a failed load is reported as a launch
+   * failure. A runner that counts ticks awaits it before spending more, exactly as it awaits
+   * `holdStart` at boot, so a restart cannot be outrun by the ticks that follow it.
+   */
+  readonly sceneTransition?: () => Promise<void> | undefined;
   /** Completed scene updates and primary world render requests, independent of budget windows. */
   readonly frameCounts?: () => { updates: number; renders: number };
   /**
@@ -2072,7 +2084,13 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       readonly resolveEntered: () => void;
     }> = [];
     const runtime: IGamePluginRuntime = {
-      fixedStep: (ticks, options) => gameLoop.advance(ticks, options),
+      fixedStep: (ticks, options) =>
+        gameLoop.advance(ticks, { ...options, until: () => this.#pendingSceneEnter !== undefined }),
+      sceneTransition: () =>
+        this.#pendingSceneEnter?.then(
+          () => undefined,
+          () => undefined,
+        ),
       frameCounts: () => ({ updates, renders }),
       frameBudgetWindow: () => this.#frameBudget?.window(),
       freezeClock: () => gameLoop.freezeClock(),

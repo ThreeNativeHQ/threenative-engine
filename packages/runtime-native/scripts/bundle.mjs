@@ -328,6 +328,8 @@ void game.start().catch((error) => console.error(
     },
   };
   mkdirSync(dirname(absoluteOutput), { recursive: true });
+  // Read by the project's own `createWebBrandPlugin`: this bundle is not a browser's.
+  process.env.THREENATIVE_NATIVE_BUNDLE = target;
   await build({
     root: absoluteProject,
     define: { 'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV) },
