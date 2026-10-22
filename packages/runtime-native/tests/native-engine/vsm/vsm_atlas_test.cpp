@@ -56,6 +56,18 @@ void binding() {
     bool accepted = true;
     try { set(&light.shadow, defaults, store); } catch (const Unsupported&) { accepted = false; }
     CHECK(accepted);
+    // Core sends one size per level, and the texel rule's switch with its bias and page budget.
+    const Value perLevel = Value::record({{"clipExtents", Value::list({8, 24})}, {"mapSize", Value::list({256, 512})},
+        {"autoMapSize", Value::of(true)}, {"resolutionLodBiasDirectional", Value::of(-1.0)},
+        {"maxPhysicalPages", Value::of(2048.0)}, {"lightDistance", Value::of(20.0)}, {"depthRange", Value::of(40.0)}});
+    DirectionalLight sized;
+    set(&sized.shadow, perLevel, store);
+    const auto& rule = *sized.shadow.virtualShadow;
+    CHECK((rule.levelMapSizes == std::vector<int>{256, 512}) && rule.pageTexels == 128);
+    CHECK(rule.autoMapSize && rule.resolutionLodBias == -1 && rule.maxPhysicalPages == 2048);
+    bool refusedPages = false;
+    try { set(&sized.shadow, Value::record({{"maxPhysicalPages", Value::of(0.0)}}), store); } catch (const Unsupported&) { refusedPages = true; }
+    CHECK(refusedPages);
     auto bad = options;
     bad.fields.emplace_back("autoDepth", Value::of(true));
     set(&light.shadow, bad, store);
@@ -526,7 +538,7 @@ void packing() {
     if (!atlas) return;
     std::printf("packing: atlas edge %d\n", atlas->edge());
     CHECK(atlas->edge() <= 8192);
-    const int slots = atlas->tiles() * atlas->tiles() * 6, mover = options.moverMapSize + 2 * options.border;
+    const int slots = atlas->pageCount(), mover = options.moverMapSize + 2 * options.border;
     int lastStatic = 0;
     for (int slot = 0; slot < slots; ++slot) lastStatic = std::max(lastStatic, atlas->origin(slot).second + atlas->stride());
     for (int l = 0; l < 6; ++l) {
@@ -540,4 +552,49 @@ void packing() {
     }
 }
 
-TN_TEST_MAIN({"atlas", atlas}, {"packing", packing}, {"continuous_invalidation", continuousInvalidation}, {"sampling", sampling}, {"ground_window", groundWindow}, {"lod_rung", lodRung})
+// Unreal's texel rule sizes each level, and a level's page table starts where the last one's ends. The
+// numbers are core's `clipmapMapSizes` spec: hfov 60 at 1280 px, guards 0.9 - 0.125.
+void mapSizes() {
+    AtlasOptions options;
+    options.clipExtents = {7, 14, 28, 56}; options.moverMapSize = 512;
+    const double tan30 = std::tan(M_PI / 6);
+    const auto sizes = clipmapMapSizes(options, tan30, 1280, 8192);
+    std::printf("map sizes: %d %d %d %d\n", sizes[0], sizes[1], sizes[2], sizes[3]);
+    CHECK((sizes == std::vector<int>{2944, 2944, 2944, 2944}));
+    options.clipExtents = {4, 8, 32};
+    CHECK((clipmapMapSizes(options, tan30, 1280, 8192) == std::vector<int>{2944, 2944, 4096}));
+    CHECK((clipmapMapSizes(options, tan30, 640, 8192) == std::vector<int>{1536, 1536, 2944}));
+    options.clipExtents = {7, 14, 28, 56};
+    options.maxPhysicalPages = 1000;
+    CHECK((clipmapMapSizes(options, tan30, 1280, 8192) == std::vector<int>{1792, 1792, 1792, 1792}));
+    // The packed atlas must fit the device's edge too: 2944 texels need 49 slots of 132 (6468).
+    options.maxPhysicalPages = 4096;
+    const auto fitted = clipmapMapSizes(options, tan30, 1280, 6000);
+    options.levelMapSizes = fitted;
+    std::string error;
+    auto atlas = PageAtlas::create(options, error);
+    CHECK(atlas.has_value());
+    if (!atlas) return;
+    std::printf("map sizes: %d under a 6000 edge, atlas %d\n", fitted[0], atlas->edge());
+    CHECK(fitted[0] < 2944 && atlas->edge() <= 6000);
+
+    // Two levels of 2 and 4 tiles: level 1's entries start after level 0's 4, not at 1 x 16.
+    AtlasOptions mixed;
+    mixed.clipExtents = {8, 24}; mixed.mapSize = 256; mixed.levelMapSizes = {128, 256}; mixed.pageTexels = 64;
+    auto plan = PageAtlas::create(mixed, error);
+    CHECK(plan.has_value());
+    if (!plan) return;
+    CHECK(plan->tiles(0) == 2 && plan->tiles(1) == 4 && plan->pageCount() == 20 && plan->pageBase(1) == 4);
+    plan->update(Vector3(0, 0, 0), Vector3(0, 1, 1));
+    plan->update(Vector3(0, 0, 0), Vector3(0, 1, 1));
+    const auto& table = plan->table();
+    CHECK(table.size() == std::size_t(2 * 9 + 20 + 2) * 4);
+    CHECK(table[23] == 128 && table[27] == 2 && table[36 + 23] == 256 && table[36 + 27] == 4);
+    // Every page of both levels is mapped, so every entry carries its slot (z = 1).
+    for (int entry = 0; entry < 20; ++entry) CHECK(table[std::size_t(18 + entry) * 4 + 2] == 1);
+    AtlasOptions bad = mixed;
+    bad.levelMapSizes = {128, 200};
+    CHECK(!PageAtlas::create(bad, error));
+}
+
+TN_TEST_MAIN({"atlas", atlas}, {"packing", packing}, {"map_sizes", mapSizes}, {"continuous_invalidation", continuousInvalidation}, {"sampling", sampling}, {"ground_window", groundWindow}, {"lod_rung", lodRung})
