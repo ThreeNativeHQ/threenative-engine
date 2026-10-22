@@ -32,10 +32,8 @@ function sample(raw: IOwnedRenderer, frame: number, total: number, stages: Recor
 }
 
 const GI_OPTIONS = {
-  budgetMs: { irradianceField: 1, none: 0, screenProbeGather: 6 },
-  frameBudgetMs: 16.7,
+  framePeriodMs: 16.7,
   method: "screenProbeGather",
-  minSamples: 4,
   report: () => undefined,
   stages: ["SSGI"],
   tier: "high",
@@ -65,21 +63,21 @@ describe("stageGpuReading on the owned engine", () => {
     ).toBeUndefined();
   });
 
-  it("lets GIBudget step down from the owned engine's SSGI time", () => {
+  it("lets GIBudget read the owned engine's SSGI time against the frame", () => {
     const raw = ownedRenderer();
-    const steps: string[] = [];
-    const gi = new GIBudget({ ...GI_OPTIONS, onStep: (method) => steps.push(method) });
+    const gi = new GIBudget({ ...GI_OPTIONS });
     let report: ReturnType<GIBudget["observeRenderer"]>;
     for (let frame = 1; frame <= 10; frame++) {
       sample(raw, frame, 40, { SSGI: 31 });
       report = gi.observeRenderer(raw);
     }
     expect(report).toMatchObject({
+      finalGatherMethod: "screenProbeGather",
+      frameMs: 40,
       stagesSeen: ["SSGI"],
-      stepped: "irradianceField",
+      verdict: "over",
       windowMs: 31,
     });
-    expect(steps).toEqual(["irradianceField"]);
   });
 
   it("counts a sample once however many loop frames wait for the next one", () => {
@@ -87,22 +85,21 @@ describe("stageGpuReading on the owned engine", () => {
     const gi = new GIBudget({ ...GI_OPTIONS });
     sample(raw, 1, 40, { SSGI: 31 });
     for (let loop = 0; loop < 10; loop++) gi.observeRenderer(raw);
-    expect(gi.lastReport()).toMatchObject({ samples: 1, windowMs: undefined });
+    expect(gi.lastReport()).toMatchObject({ samples: 1, windowMs: 31 });
   });
 
   it("lets ShadowFilterBudget read the shadow stage, not the frame the gather slowed", () => {
     const raw = ownedRenderer();
     const steps: string[] = [];
     const shadows = new ShadowFilterBudget({
-      budgetMs: { high: 1, low: 1, medium: 1 },
-      minSamples: 4,
+      framePeriodMs: 16.7,
       onStep: (tier) => steps.push(tier),
       report: () => undefined,
       tier: "high",
       windowFrames: 10,
     });
     let report: ReturnType<ShadowFilterBudget["observeRenderer"]>;
-    // 25 ms frame, 20 of it the gather: the shadow passes' 0.4 ms is well inside their 1 ms budget.
+    // 25 ms frame, 20 of it the gather: the shadow passes' 0.4 ms cannot absorb the 10 ms overage.
     for (let frame = 1; frame <= 10; frame++) {
       sample(raw, frame, 25, { SSGI: 20, Shadow: 0.4 });
       report = shadows.observeRenderer(raw);
