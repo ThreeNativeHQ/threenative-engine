@@ -394,6 +394,7 @@ it("hands the owned engine's TSL only uniform values and functions it takes (PRD
 it("compares two values of one type and selects on a bool scalar, as the owned engine's IR requires (PRD-643)", () => {
   const comparison = new Set(["==", "!=", "<", ">", "<=", ">="]);
   const wrong: string[] = [];
+  const seen = { comparisons: 0, selects: 0 };
   const generateOperator = OperatorNode.prototype.generate;
   const generateConditional = ConditionalNode.prototype.generate;
   OperatorNode.prototype.generate = function (
@@ -402,6 +403,7 @@ it("compares two values of one type and selects on a bool scalar, as the owned e
     output?: string | null,
   ) {
     if (comparison.has(this.op)) {
+      seen.comparisons += 1;
       const a = this.aNode.getNodeType(builder);
       const b = this.bNode.getNodeType(builder);
       if (a !== b) wrong.push(`${a} ${this.op} ${b}`);
@@ -413,6 +415,7 @@ it("compares two values of one type and selects on a bool scalar, as the owned e
     builder: NodeBuilder,
     output?: string | null,
   ) {
+    seen.selects += 1;
     const type = this.condNode.getNodeType(builder);
     if (type !== "bool") wrong.push(`select on ${type}`);
     return generateConditional.call(this, builder, output);
@@ -424,6 +427,9 @@ it("compares two values of one type and selects on a bool scalar, as the owned e
     ConditionalNode.prototype.generate = generateConditional;
   }
   expect(wrong).toEqual([]);
+  // Fail closed: a three upgrade that renames either method would otherwise leave this check empty.
+  expect(seen.comparisons).toBeGreaterThan(0);
+  expect(seen.selects).toBeGreaterThan(0);
 });
 
 /**
