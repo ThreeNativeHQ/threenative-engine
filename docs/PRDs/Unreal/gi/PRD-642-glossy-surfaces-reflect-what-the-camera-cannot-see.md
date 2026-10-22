@@ -236,3 +236,17 @@ The experiment build (knobs `kd`, `ki`, `ms`, `sr` and the screen reuse stage) i
 
 Also: a TSL `mix(miss, shaded, hit.hit)` carries the undefined hit fields into the pixel on a miss (0 times NaN is NaN), which painted white rings on the mirror in the first
 conformance capture. Use `select` on `hit.hit`; the scene does.
+
+### D8 — AC-1 after the sky and BRDF lines merged (2026-10-22, reflect2-lane)
+
+Merged tree: epic `be61f9bc6` (held sky `c571a3727`, `roughDiffuse`, gamut, gather) plus `lane/reflect`; fresh Wasm pair from the preview lane, scaffold repacked,
+NVIDIA, headed, two runs (agree within 0.01 deltaE). Median Lab deltaE and dP50 to Unreal at L8 (limit 1 and 0.01), D6 code on the old epic then the merged tree:
+
+| Region | sun60 spheres | sun15 spheres | sun04 spheres |
+|---|---|---|---|
+| Sphere_Chrome | 0.93 / 0.000 to 1.22 / 0.010 | 3.26 / 0.080 to 2.73 / 0.069 | 3.53 / 0.176 to 3.57 / 0.157 |
+| Sphere_SmoothDielectric | 1.05 / 0.022 to 0.97 / 0.017 | 2.70 / 0.036 to 1.59 / 0.027 | 8.36 / 0.153 to 4.88 / 0.100 |
+
+The sky and BRDF lines closed about half of the SmoothDielectric gap and 0.5 of the chrome gap at sun15, and none at sun04. AC-1 stays open for the chrome at sun15 and sun04
+(and sun60 by 0.22 deltaE). What remains is the hit light of D7: the reflected floor lower third (Unreal 55, ours 66 to 79 at sun15) and the reflected rough metal
+(Unreal 40, ours 49 to 128), which the sky cannot change. Next step, in order: the radiance cache shaded-side bounce (gi lane), then retry D7 with Unreal's metal albedo and the screen reuse.
