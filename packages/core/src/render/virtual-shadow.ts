@@ -29,9 +29,11 @@ import {
   float,
   getShadowMaterial,
   length,
+  lightShadowMatrix,
   max,
   min,
   mix,
+  normalWorld,
   positionWorld,
   property,
   reference,
@@ -54,6 +56,7 @@ import {
 import { lodChainOf } from "../model-lod.js";
 import { shadowRedrawGpuMs } from "../render-pass-budget.js";
 import { DEFAULT_TARGET_FPS } from "../target-fps.js";
+import { isLeafReceiver } from "./soft-shadow.js";
 import {
   DirectionalClipmap,
   type IBoundsLike,
@@ -98,6 +101,15 @@ export interface IVirtualShadowOptions {
    * increasing. Default `[16, 48, 144]`: three windows, each three times wider than the last.
    */
   readonly clipExtents?: readonly number[];
+  /**
+   * Resolution bias of the finest level, in stops, default 0. Each stop doubles the finest level's
+   * texel size: `-1` halves it (twice the resolution), `-1.5` is 2.83 times finer, and a positive
+   * bias coarsens it. The finest window scales by `2 ** bias` and every coarser level keeps its
+   * extent, so the clipmap reaches as far as before. Mirrors Unreal's
+   * `r.Shadow.Virtual.ResolutionLodBiasDirectional`; a quality tier sets it. A bias that would push
+   * the finest window past the next level throws.
+   */
+  readonly resolutionLodBiasDirectional?: number;
   /** Texels per level edge. Default: the light's `shadow.mapSize.width`. */
   readonly mapSize?: number;
   /**
@@ -1065,7 +1077,25 @@ export class VirtualShadowNode extends ShadowBaseNode {
 
   constructor(light: DirectionalLight, options: IVirtualShadowOptions = {}) {
     super(light);
-    const clipExtents = options.clipExtents ?? DEFAULT_CLIP_EXTENTS;
+    const bias = options.resolutionLodBiasDirectional ?? 0;
+    if (!Number.isFinite(bias)) {
+      throw new RangeError(
+        `TN_VIRTUAL_SHADOW_INVALID: resolutionLodBiasDirectional must be finite, got ${String(bias)}.`,
+      );
+    }
+    const authoredExtents = options.clipExtents ?? DEFAULT_CLIP_EXTENTS;
+    const clipExtents = authoredExtents.map((extent, level) =>
+      level === 0 ? extent * 2 ** bias : extent,
+    );
+    if (
+      bias !== 0 &&
+      clipExtents.length > 1 &&
+      (clipExtents[0] as number) >= (clipExtents[1] as number)
+    ) {
+      throw new RangeError(
+        `TN_VIRTUAL_SHADOW_INVALID: resolutionLodBiasDirectional ${String(bias)} widens the finest level to ${String(clipExtents[0])}, past the next level at ${String(clipExtents[1])}.`,
+      );
+    }
     const mapSize = options.mapSize ?? light.shadow.mapSize.width;
     if (!Number.isInteger(mapSize) || mapSize <= 0) {
       throw new RangeError(
@@ -1190,6 +1220,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
       adaptiveCasterGate: options.adaptiveCasterGate ?? true,
       adaptiveRefresh: options.adaptiveRefresh ?? true,
       clipExtents: [...clipExtents],
+      resolutionLodBiasDirectional: bias,
       depthRange: options.depthRange ?? 400,
       expensiveRefreshShare,
       invalidationDelay,
@@ -2480,6 +2511,21 @@ export class VirtualShadowNode extends ShadowBaseNode {
       const moverNode = registeredOnCreate(
         shadow(light as unknown as DirectionalLight, moverShadow), // quality-allow: the stock node reads only position, target and shadow
       );
+      // A receiver marked twoSidedFoliage looks its shadow up where it stands: the normal bias is
+      // taken back out of the shadow position, in this level's map and in its mover map (PRD-651).
+      for (const stockNode of [node, moverNode]) {
+        const stock = stockNode as typeof node & {
+          setupShadowCoord: (builder: NodeBuilder, position: Node<"vec4">) => Node<"vec3">;
+        };
+        const coord = stock.setupShadowCoord;
+        stock.setupShadowCoord = (builder, position) => {
+          if (!isLeafReceiver(builder.material as Parameters<typeof isLeafReceiver>[0]))
+            return coord.call(stock, builder, position);
+          const bias = rendered(reference("normalBias", "float", levelShadow));
+          const offset = lightShadowMatrix(light as never).mul(vec4(normalWorld.mul(bias), 0));
+          return coord.call(stock, builder, position.sub(offset));
+        };
+      }
       if (this.options.receiverPlaneBias) {
         for (const entry of [
           { node, map: levelShadow },

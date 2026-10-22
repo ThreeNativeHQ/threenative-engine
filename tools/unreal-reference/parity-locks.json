@@ -2521,6 +2521,42 @@
       "since": "ef8871272"
     },
     {
+      "layer": "L9",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Sphere_Emissive",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "7a98e9251"
+    },
+    {
+      "layer": "L9",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Sphere_Emissive",
+      "metric": "dP50",
+      "threshold": 0.0392,
+      "since": "7a98e9251"
+    },
+    {
+      "layer": "L9",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "Sphere_Emissive",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "7a98e9251"
+    },
+    {
+      "layer": "L9",
+      "sun": "sun15",
+      "pose": "spheres",
+      "region": "Sphere_Emissive",
+      "metric": "dP50",
+      "threshold": 0.0392,
+      "since": "7a98e9251"
+    },
+    {
       "layer": "L7",
       "sun": "sun15",
       "pose": "spheres",

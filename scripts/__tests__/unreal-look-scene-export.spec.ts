@@ -1,10 +1,14 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   type ISceneJson,
+  REFERENCE_WARM_UP,
   checkReadback,
   folderName,
   readGlbJson,
   sceneNames,
+  tiltThenTurn,
   validateSceneExport,
 } from "../unreal-look/gi.js";
 
@@ -104,6 +108,79 @@ describe("GI calibration scene export (PRD-638 AC-3)", () => {
     expect(() => validateSceneExport(scene, gltf)).not.toThrow();
     node.rotation = [-Math.sin(half), 0, 0, Math.cos(half)];
     expect(() => validateSceneExport(scene, gltf)).toThrow(/Wall_Red: rotation differs/);
+  });
+
+  it("checks a tilt turned about the vertical, in that order (PRD-649 leaf cards)", () => {
+    const { scene, gltf } = fixture();
+    Object.assign(scene.meshes[0] ?? {}, { rotationYDeg: -23, rotationXDeg: 62 });
+    const node = gltf.nodes?.[0] ?? {};
+    node.rotation = tiltThenTurn(62, -23);
+    expect(() => validateSceneExport(scene, gltf)).not.toThrow();
+    // The turn first, then the tilt, is another rotation: scene.glb must not match it.
+    node.rotation = tiltThenTurn(-23, 62);
+    expect(() => validateSceneExport(scene, gltf)).toThrow(/Wall_Red: rotation differs/);
+    // A single angle keeps the old forms: a turn is about +Y, a tilt about +X.
+    const [tx = 1, ty = 1, tz = 1, tw = 0] = tiltThenTurn(0, 17);
+    expect([tx, tz]).toEqual([0, 0]);
+    expect(ty).toBeCloseTo(Math.sin((17 * Math.PI) / 360));
+    expect(tw).toBeCloseTo(Math.cos((17 * Math.PI) / 360));
+    const [ux = 1, uy = 1, uz = 1, uw = 0] = tiltThenTurn(15, 0);
+    expect([uy, uz]).toEqual([0, 0]);
+    expect(ux).toBeCloseTo(Math.sin((15 * Math.PI) / 360));
+    expect(uw).toBeCloseTo(Math.cos((15 * Math.PI) / 360));
+  });
+
+  it("lets cards share one region, and fails on a region no mesh uses (PRD-649 foliage)", () => {
+    const { scene, gltf } = fixture();
+    const first = scene.meshes[0];
+    if (first === undefined) throw new Error("fixture has no mesh");
+    scene.meshes = [
+      { ...first, name: "Wall_Red", region: "Walls" },
+      { ...first, name: "Wall_Two", region: "Walls" },
+    ];
+    scene.regions = { Walls: [255, 0, 0] };
+    gltf.nodes?.push({
+      name: "Wall_Two",
+      translation: [-2.85, 2.75, -2.85],
+      rotation: gltf.nodes?.[0]?.rotation ?? [0, 0, 0, 1],
+      mesh: 0,
+    });
+    expect(() => validateSceneExport(scene, gltf)).not.toThrow();
+    scene.regions = { Walls: [255, 0, 0], Unused: [0, 255, 0] };
+    expect(() => validateSceneExport(scene, gltf)).toThrow(
+      /regions must be the regions of the meshes/,
+    );
+    scene.regions = { Wall_Red: [255, 0, 0] };
+    expect(() => validateSceneExport(scene, gltf)).toThrow(
+      /regions must be the regions of the meshes/,
+    );
+  });
+
+  it("holds a masked, two-sided material to alphaMode MASK, its cutoff and a texture", () => {
+    const { scene, gltf } = fixture();
+    Object.assign(scene.meshes[0]?.material ?? {}, {
+      texture: "leaf.png",
+      alphaMode: "MASK",
+      alphaCutoff: 0.5,
+      doubleSided: true,
+    });
+    const material = gltf.materials?.[0] ?? {};
+    expect(() => validateSceneExport(scene, gltf)).toThrow(
+      /masked state of material MI_Red differs/,
+    );
+    Object.assign(material, { alphaMode: "MASK", alphaCutoff: 0.5, doubleSided: true });
+    expect(() => validateSceneExport(scene, gltf)).toThrow(/masked state/);
+    Object.assign(material.pbrMetallicRoughness ?? {}, { baseColorTexture: { index: 0 } });
+    expect(() => validateSceneExport(scene, gltf)).not.toThrow();
+    material.doubleSided = false;
+    expect(() => validateSceneExport(scene, gltf)).toThrow(/masked state/);
+    material.doubleSided = true;
+    material.alphaCutoff = 0.25;
+    expect(() => validateSceneExport(scene, gltf)).toThrow(/masked state/);
+    // An opaque scene.json material against a masked scene.glb one fails too.
+    material.alphaCutoff = 0.5;
+    Object.assign(scene.meshes[0]?.material ?? {}, { alphaMode: undefined });
+    expect(() => validateSceneExport(scene, gltf)).toThrow(/masked state/);
   });
 
   it("fails on a mesh that scene.glb lacks, naming the actor", () => {
@@ -214,7 +291,17 @@ describe("GI capture plumbing", () => {
   });
 
   it("names run folders the way gi/export.py writes them", () => {
-    expect(folderName("L7-Epic", 90, 1)).toBe("L7-Epic");
-    expect(folderName("L7-Epic", 180, 2)).toBe("L7-Epic@180#2");
+    expect(folderName("L7-Epic", REFERENCE_WARM_UP, 1)).toBe("L7-Epic");
+    expect(folderName("L7-Epic", 90, 1)).toBe("L7-Epic@90");
+    expect(folderName("L7-Epic", REFERENCE_WARM_UP, 2)).toBe("L7-Epic#2");
+  });
+
+  it("keeps export.py's default warm-up and folder name in step with REFERENCE_WARM_UP", () => {
+    const source = readFileSync(
+      path.join(import.meta.dirname, "../../tools/unreal-reference/gi/export.py"),
+      "utf8",
+    );
+    expect(source).toContain(`os.environ.get("TN_UE_WARMUP", "${REFERENCE_WARM_UP}")`);
+    expect(source).toContain(`("" if warm_up == ${REFERENCE_WARM_UP} else`);
   });
 });

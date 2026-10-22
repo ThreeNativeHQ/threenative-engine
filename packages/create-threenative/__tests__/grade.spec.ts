@@ -274,15 +274,20 @@ const available = (
     ?.available?.(undefined as never);
 
 describe("starter grade tiers", () => {
-  it("runs grade and grain at high", () => {
-    const settings = gradePreset("high");
-    expect(available("grade", settings, true)).toBe(true);
-    expect(available("grain", settings, true)).toBe(true);
+  it("ships neutral at every tier, and one number turns each stage back on", () => {
+    // A fresh Unreal project has every saturation, contrast, gamma and gain at 1 and no film grain
+    // (Scene.cpp), so the default frame is ungraded and ungrained. The LUT and the grain are the named options.
+    for (const tier of ["low", "medium", "high"] as const) {
+      const settings = gradePreset(tier);
+      expect(available("grade", settings, true), tier).toBe("gradeIntensity:0");
+      expect(available("grain", settings, true), tier).toBe("grainIntensity:0");
+      expect(available("grade", { ...settings, gradeIntensity: 1 }, true), tier).toBe(true);
+      expect(available("grain", { ...settings, grainIntensity: 0.0039 }, true), tier).toBe(true);
+    }
   });
 
-  it("refuses grain at low with a reason, and refuses grade while the table is still loading", () => {
-    const settings = gradePreset("low");
-    expect(available("grain", settings, true)).toBe("grainIntensity:0");
+  it("refuses the grade while its table is still loading", () => {
+    const settings = { ...gradePreset("low"), gradeIntensity: 1 };
     expect(available("grade", settings, false)).toBe("lut:pending");
     expect(available("grade", settings, true)).toBe(true);
   });
@@ -296,22 +301,15 @@ describe("starter grade tiers", () => {
     );
   });
 
-  it("keeps the shipped grain below what an 8-bit frame can show", () => {
-    // `film()` returns `base + base * clamp(noise + 0.1, 0, 1)`, so its largest move on a pixel is
-    // that pixel's own value times the intensity — at white, the intensity alone. It shipped at
-    // 0.12 and a blind judge named the result: "grain clearly visible as speckle over sky and flat
-    // walls". A default must not degrade the look, so the number stays under one step; it stays
-    // above zero so `TN_RENDER_CHAIN` can still name grain as applied at `high`.
-    for (const tier of ["low", "medium", "high"] as const) {
-      const intensity = gradePreset(tier).grainIntensity;
-      expect(intensity * 255, tier).toBeLessThanOrEqual(1);
-    }
-    expect(gradePreset("high").grainIntensity).toBeGreaterThan(0);
+  it("ships no grain at any tier", () => {
+    // `film()` returns `base + base * clamp(noise + 0.1, 0, 1)`, so grain at 0.12 reads as speckle over sky and
+    // flat walls and 1/255 sits under one 8-bit step. Unreal's default is none, so the default is zero.
+    for (const tier of ["low", "medium", "high"] as const)
+      expect(gradePreset(tier).grainIntensity, tier).toBe(0);
   });
 
   it("keeps every tier's presets reachable by name and unknown names fatal", () => {
     for (const tier of ["low", "medium", "high"] as const) {
-      expect(gradePreset(tier).gradeIntensity).toBeGreaterThan(0);
       expect(gradePreset(tier).tier).toBe(tier);
       expect(qualityPreset(tier)).toBeTruthy();
       expect(resolveQualityTier({ tier })).toBe(tier);
