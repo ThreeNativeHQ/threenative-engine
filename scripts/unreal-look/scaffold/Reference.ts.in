@@ -231,6 +231,15 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
         // The native atlas holds every page of every level, then every level's mover map, in one
         // square texture that must fit the device's 8192 texel limit: four 2048 levels take 4224
         // and four 512 mover maps 2064 more. The scene has no moving caster.
+        // Candidate knob sunBox=reach (PRD-634 Phase 1, with off=vsm): the one stock map widened to the scene.
+        if (OFF.has("vsm") && params.get("sunBox") === "reach") {
+          const box = key.shadow.camera;
+          box.left = box.bottom = -reach;
+          box.right = box.top = reach;
+          box.near = 0.5;
+          box.far = 2 * reach + 2;
+          box.updateProjectionMatrix();
+        }
         if (!OFF.has("vsm"))
           key.shadow.shadowNode = new VirtualShadowNode(key, {
             clipExtents: [reach / 4, reach / 2, reach, 2 * reach],
