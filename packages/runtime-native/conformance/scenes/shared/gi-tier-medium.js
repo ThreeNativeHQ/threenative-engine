@@ -1,5 +1,6 @@
 import * as THREE from "three/webgpu";
 import { color, normalWorld, positionWorld } from "three/tsl";
+import { SOFTWARE_ADAPTER } from "../../../../core/src/gpu-class.ts";
 import { GIBudget } from "../../../../core/src/render/gi-budget.ts";
 import { ProbeVolume } from "../../../../core/src/render/probe-volume.ts";
 import { assertCondition, startVisualScene } from "./scene-support.js";
@@ -23,6 +24,14 @@ function nextFrame() {
 async function waitForSubmittedWork(renderer) {
   const wait = renderer.backend?.device?.queue?.onSubmittedWorkDone;
   if (typeof wait === "function") await wait.call(renderer.backend.device.queue);
+}
+
+/** The adapter's four `adapter.info` fields, and the one that names a CPU rasteriser (as `createRenderer` reads them). */
+async function readAdapter(renderer) {
+  const gpu = renderer.backend?.gpu ?? globalThis.navigator?.gpu;
+  const info = (await gpu?.requestAdapter?.())?.info ?? {};
+  const fields = Object.fromEntries(["architecture", "description", "device", "vendor"].map((name) => [name, String(info[name] ?? "")]));
+  return { fields, software: Object.values(fields).find((value) => SOFTWARE_ADAPTER.test(value)) };
 }
 
 /** Feeds `frames` identical readings: the GI stage time and the whole frame's time. */
@@ -75,13 +84,14 @@ export async function startScene(canvas, dimensions) {
       const budget = verifyBudget();
       const volume = new ProbeVolume({
         bounds: VOLUME_BOUNDS,
-        bakeBudgetMs: 16
+        bakeBudgetMs: 16,
         cubemapSize: 8,
         density: 0.5,
         maxWorkItemsPerFrame: 1,
       });
       scene.add(volume);
-      const host = { kind: "webgpu", raw: renderer };
+      const adapter = await readAdapter(renderer);
+      const host = { kind: "webgpu", raw: renderer, ...(adapter.software === undefined ? {} : { softwareAdapter: adapter.software }) };
       volume.attachRenderer(host);
 
       const wallMaterial = new THREE.MeshBasicNodeMaterial();
@@ -100,8 +110,10 @@ export async function startScene(canvas, dimensions) {
 
       const bake = volume.requestBake(scene);
       let bakeFrames = 0;
+      let maxBakeCost = 0;
       while (volume.observation.status === "baking") {
         volume.process(host);
+        maxBakeCost = Math.max(maxBakeCost, volume.observation.bakeCostMs);
         renderer.render(scene, camera);
         await waitForSubmittedWork(renderer);
         bakeFrames += 1;
@@ -113,9 +125,13 @@ export async function startScene(canvas, dimensions) {
       await bake;
       assertCondition(volume.observation.status === "ready", "probe volume bake must complete");
 
+      console.log(`TN_GI_TIER_MEDIUM:${JSON.stringify({ adapter: adapter.fields, atlasTarget: volume.atlasTarget, bakeFrames, maxBakeCostMs: maxBakeCost, softwareAdapter: adapter.software ?? null })}`);
       return {
         detail: {
           budget,
+          adapter: adapter.fields,
+          atlasTarget: volume.atlasTarget,
+          maxBakeCostMs: maxBakeCost,
           method: "irradianceField",
           probeCount: volume.probeCount,
           status: volume.observation.status,
