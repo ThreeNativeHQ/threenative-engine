@@ -55,6 +55,7 @@ import {
   runCommand,
   validateWindowedSurfaceOutput,
   validateWorldGpuReadbackOutput,
+  waitForNativeMarker,
   temporalCaptureLabel,
   unexpectedBlockedRows,
   expiredExclusions,
@@ -594,6 +595,20 @@ test("the desktop lane names its engine and refuses an unknown one", () => {
   const android = run(["--target", "android", "--engine", "threenative", "--dry-run"]);
   assert.notEqual(android.status, 0);
   assert.match(android.stderr, /use --target web\|desktop/u);
+});
+
+test("a scene that throws on the owned player is reported at once, not after the ready timeout", async () => {
+  const child = { exitCode: null, signalCode: null };
+  const output = {
+    error: null,
+    stderr: "[ThreeNative conformance] failed: Error: TN_NATIVE_UNSUPPORTED_MESHPHYSICALNODEMATERIAL",
+    stdout: "",
+  };
+  const started = Date.now();
+  await expect(
+    waitForNativeMarker(child, output, "TN_CONFORMANCE_READY:row", 60_000, "[ThreeNative conformance] failed:"),
+  ).rejects.toThrow(/Native scene failed before TN_CONFORMANCE_READY:row: .*MESHPHYSICALNODEMATERIAL/u);
+  expect(Date.now() - started).toBeLessThan(5_000);
 });
 
 test("the owned web lane refuses to bundle without the Wasm engine", async () => {

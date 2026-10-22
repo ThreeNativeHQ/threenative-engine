@@ -290,7 +290,7 @@ adds a `shadow:` family to the GI pipeline (PRD-638, PRD-646, PRD-647) and does 
 | --- | --- | --- | --- |
 | Calibration scenes | [PRD-649](shadows/PRD-649-shadow-calibration-scenes-are-built-in-unreal-and-judged-until-parity.md) | `penumbra-lab`, `lamp-room`, `horizon` and the shared `foliage` scene, judged at L5 | PRD-638 Phase 1, PRD-646 Phase 2, PRD-647 |
 | Sun penumbra and reach | [PRD-634](look/PRD-634-sun-shadows-reach-the-horizon-and-soften-with-distance-from-the-caster.md) | Sun shadows reach the horizon and soften with the caster gap | PRD-649 for its stability runs |
-| Lamp shadows | [PRD-650](../done/PRD-650-a-lamp-shadow-is-as-sharp-as-the-pixels-it-covers-and-softens-with-the-lamp-size.md) | A lamp's shadow is as sharp as the pixels it covers, cached, and softened by `sourceRadius` | PRD-649 Phase 2 |
+| Lamp shadows | [PRD-650](shadows/PRD-650-a-lamp-shadow-is-as-sharp-as-the-pixels-it-covers-and-softens-with-the-lamp-size.md) | A lamp's shadow is as sharp as the pixels it covers, cached, and softened by `sourceRadius` | PRD-649 Phase 2 |
 | Leaf shadows | [PRD-651](shadows/PRD-651-leaves-cast-leaf-shadows-that-sway-near-the-camera.md) | Leaf cards cast leaf shadows on the owned engine, and sway near the camera | PRD-649 Phase 2; PRD-488 for wind |
 | Tiers | [PRD-652](shadows/PRD-652-the-shadow-tier-follows-unreal-shadow-quality-levels.md) | `low`, `medium`, `high` follow Unreal Low, Medium, Epic | PRD-649 Phase 3, PRD-634, PRD-650 |
 | Page cost | [PRD-457](rendering/PRD-457-virtual-shadows-scale-by-measurement.md) | Sparse pages only where measured cheaper | — |

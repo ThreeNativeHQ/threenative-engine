@@ -1090,10 +1090,15 @@ function writeNativeScreenshotRequest(mailboxRoot, screenshot) {
   renameSync(temporary, request);
 }
 
-async function waitForNativeMarker(child, output, marker, timeoutMs) {
+export async function waitForNativeMarker(child, output, marker, timeoutMs, failMarker = null) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() <= deadline) {
     if (output.stdout.includes(marker) || output.stderr.includes(marker)) return;
+    if (failMarker !== null) {
+      const text = `${output.stdout}\n${output.stderr}`;
+      const at = text.indexOf(failMarker);
+      if (at !== -1) throw new Error(`Native scene failed before ${marker}: ${text.slice(at, at + 1500)}`);
+    }
     if (output.error) throw output.error;
     if (child.exitCode !== null || child.signalCode !== null) {
       throw new Error(
@@ -1326,6 +1331,7 @@ async function runDesktopOwned(test, bundlePath, result, player, captureRoot) {
       output,
       `TN_CONFORMANCE_READY:${test.id}`,
       Number(process.env.TN_PARITY_OWNED_READY_MS ?? 120_000),
+      "[ThreeNative conformance] failed:",
     );
     // Frames the scene needs to settle: the legacy lane waits for frame `nativeFrames` (300).
     await wait(Number(process.env.TN_PARITY_OWNED_SETTLE_MS ?? 3_000));
