@@ -140,6 +140,51 @@ content or `.uasset` is committed, and the frames are renders of our scenes.
 
 ## Decisions
 
+- 2026-10-21 (motion lane, Phase 3): the Unreal motion variant is `L7-Epic-motion`: `L7-Epic` plus
+  `r.BackbufferQuantizationDitheringOverride 16`. The tone mapper's 8-bit dither would otherwise show as flicker on a
+  still camera, and the flicker metric must see only the GI. The render stays real-time Lumen (not cinematic)
+  with the project's temporal anti-aliasing, as the pose captures do. `L7-Medium-motion` adds
+  `sg.GlobalIlluminationQuality 1` and is captured on request (`--variants L7-Medium-motion`) for the PRD-641 Medium target.
+- 2026-10-21 (motion lane): the metric reads display luminance of the PNG bytes (Rec.709 weights, no
+  linearisation, as `packages/playtest/src/capture.ts` does). Both engines use the Unreal ID frames of the same run
+  for the region masks, eroded by 2 px, so one mask measures both engines. A region needs 200 px in a frame and 30 frames in a run. Anything less throws
+  `TN_UNREAL_LOOK_EMPTY_MASK`. A missing frame, a frame count that differs from `scene.json` and a frame of another size
+  also throw. The report never shows a number for an input it could not read.
+- 2026-10-21 (motion lane): definitions. Flicker is the mean absolute change of a region between two consecutive
+  frames, over a window where nothing moves (`switch`: frames 10 to 59, `pan`: after the sweep plus 30 frames, to the
+  last frame), as a share of the region level: `flicker px` per pixel and `flicker p50` on the region median.
+  `lag90` is the number of frames after the switch until the region median is within 10% of the change from its final
+  level. `settle` is the first frame after which it stays within 5%. `overshoot` is the largest excursion past the final
+  level, as a share of the change. `residual` is the distance of the last 15 frames from the target, which for ThreeNative
+  is Unreal's final level, so a lamp that never goes dark shows `lag90 never`. Ghosting is the gap between a frame of the sweep and a
+  converged still of the same pose (a one-frame sequence rendered after the same warm-up), as a share of the still.
+- 2026-10-21 (motion lane): the `pan` run measures `Ceiling`, `Back`, `Wall_Green` and `Box_Tall`. The camera stands at
+  the open front (z 0.5), so `Shade` is never in view (an `EMPTY_MASK` on the first measurement) and `Wall_Red`, `Floor`
+  and `Box_Short` leave the view before the hold. The extreme frames of the sweep look past the walls at black void.
+  The `switch` run measures all eight regions from the `cornell` pose.
+- 2026-10-21 (motion lane): the ThreeNative capture replaces `requestAnimationFrame` with a gate. A step runs the queued
+  callbacks once, in one real frame, and waits for the draw. The owned engine refuses a
+  render while two frames are still on the GPU (`kMaxFramesOnGpu` in `web_host.cpp`) and counts it in `frameGateSkips`. A
+  refused step drew nothing, so it is repeated, and a step that did both or neither stops the capture
+  (`TN_UNREAL_LOOK_FRAME_STEP`). `renderer.info.frame` counts every `render()` call that passes the gate, overlay
+  renders included, so a step may count two draws. The capture records `drawsPerStep` and the number of repeated steps.
+- 2026-10-21 (motion lane): while it holds the loop the gate owns `performance.now()`. The clock moves 1/30 s a step
+  (`STEP_MS`, the rate of Unreal's motion sequences) and stands still between steps. Three reads `deltaTime` from it, and
+  the starter's motion blur lasts (1/30 s) over `deltaTime` (`motionBlur.ts`), so the first capture, whose clock followed
+  the 80 to 400 ms pacing wait, ran the blur at a tenth of its length: the edge of the tall box was a 1 px step in the
+  moving frame, where Unreal's frame has a 12 px ramp. That capture's pan run is not used. Its switch run has a still
+  camera and stays. The two clock specs failed first (`expected 1000 to be close to 1033.33`).
+- 2026-10-21 (motion lane): the ghost has a second reading, `low`. The per-pixel gap counts grain and motion blur as
+  ghosting, so a temporal accumulation that lowers the noise and adds a trail would look the same. `low` is the same
+  gap after both frames pass a box mean of radius 8 (a window of 17 px, 1.3% of the frame width), inside the pixels whose
+  whole window is in the region in both frames. It reads a broad patch of old light. It is `null` when no pixel keeps
+  such a window. `--low-radius` sets the radius. A saved Unreal report made before `low` existed fails closed in
+  `--unreal-report`. The 12 new metric specs failed first.
+- 2026-10-21 (motion lane): the report layer, `FRAME_GATE` and `captureMotionFrames` specs were written after their
+  code. They pass at once and are not red-first. The metric's own 38 specs were red first (stub that throws: 38 of 38 failed).
+  The machine ran at a load of 30 to 100 while the runs were measured, so a measurement of 180 PNG frames took about ten
+  minutes and a GPU slot took more than 30 minutes.
+
 - 2026-10-21 (GI lane): the Unreal reference warms up for 180 frames, not 90. The real-time re-capture
   (`DownsampleFactor` 16, `TracingOctahedronResolution` 8 in the log) showed `sunlit-room` still 1% dark at
   90 frames, while 180, 360 and 720 agree inside the 0.22% noise floor. Only `L7-Epic` was captured at 180 and
