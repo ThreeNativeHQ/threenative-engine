@@ -20,6 +20,7 @@
 // in `sky.ts`, not in this file.
 //
 import type { IGradeSettings } from "./grade.js";
+import type { ILightResponse } from "./lightResponse.js";
 import type { IWorldEnvironmentOptions } from "./worldEnvironment.js";
 
 /**
@@ -254,7 +255,24 @@ export interface IGiTier {
   readonly distanceFieldAO: boolean;
   /** `r.SkylightIntensityMultiplier`: Unreal suppresses the sky light to 0.8 at Low, where DFAO is off. */
   readonly skylightIntensityMultiplier: number;
+  /**
+   * How a changed light reaches the bounce light (PRD-641 AC-2): the cvars of the surface cache refresh, the radiosity
+   * history and the screen probe history, and the atlas the cache cards fill (`lightResponse.ts` names each source).
+   * Medium has no screen history: its irradiance field is the world cache itself (BaseScalability.ini, comment at
+   * `[GlobalIlluminationQuality@1]`). Unreal Medium answers faster than this predicts (cornell lag90 9 to 27 frames),
+   * an open finding that no constant is fitted to. Low bakes no cache, so its entry is never read.
+   */
+  readonly lightResponse: ILightResponse;
 }
+
+/** Medium: `[GlobalIlluminationQuality@1]` lines 326-345 (update factors 128, atlas 2048) and no screen probe history. */
+const MEDIUM_RESPONSE: ILightResponse = {
+  updateFactor: 128,
+  radiosityUpdateFactor: 128,
+  radiosityFramesAccumulated: 4,
+  framesAccumulated: 0,
+  atlasSize: 2048,
+};
 
 /** What each method's Unreal level sets (BaseScalability.ini `[GlobalIlluminationQuality@n]`, lines 318-460). */
 const GI_LEVELS: Record<FinalGatherMethod, Omit<IGiTier, "finalGatherMethod">> = {
@@ -262,12 +280,25 @@ const GI_LEVELS: Record<FinalGatherMethod, Omit<IGiTier, "finalGatherMethod">> =
     distanceFieldAO: true,
     globalIlluminationQuality: 1,
     skylightIntensityMultiplier: 1,
+    lightResponse: MEDIUM_RESPONSE,
   },
-  none: { distanceFieldAO: false, globalIlluminationQuality: 0, skylightIntensityMultiplier: 0.8 },
+  none: {
+    distanceFieldAO: false,
+    globalIlluminationQuality: 0,
+    skylightIntensityMultiplier: 0.8,
+    lightResponse: MEDIUM_RESPONSE,
+  },
   screenProbeGather: {
     distanceFieldAO: true,
     globalIlluminationQuality: 3,
     skylightIntensityMultiplier: 1,
+    lightResponse: {
+      updateFactor: 32,
+      radiosityUpdateFactor: 64,
+      radiosityFramesAccumulated: 4,
+      framesAccumulated: 10,
+      atlasSize: 4096,
+    },
   },
 };
 

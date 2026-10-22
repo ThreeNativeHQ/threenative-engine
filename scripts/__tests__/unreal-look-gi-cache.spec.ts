@@ -22,7 +22,9 @@ import {
   installGi,
   skyRadiance,
   sphereShare,
+  surfaceArea,
 } from "../unreal-look/scaffold/render/giCache.js";
+import { type ILightResponse, LightFade } from "../unreal-look/scaffold/render/lightResponse.js";
 
 /** The bake's ray query over a group, as the game's `ctx.raycast` answers it. */
 const rayContext = (root: Group) => {
@@ -599,6 +601,91 @@ describe("the world-space GI cache against closed forms (PRD-631 L7)", () => {
       it("refresh reports nothing to do while no light changed", () => {
         live();
         expect(giCache.refresh?.()).toBe(false);
+      });
+
+      describe("with Unreal's response in frames (PRD-641 AC-2)", () => {
+        /** Epic: the cvars of `[GlobalIlluminationQuality@3]`, as `quality.ts` names them. */
+        const epic: ILightResponse = {
+          updateFactor: 32,
+          radiosityUpdateFactor: 64,
+          radiosityFramesAccumulated: 4,
+          framesAccumulated: 10,
+          atlasSize: 4096,
+        };
+        /** The probe's total over the refreshes that follow a switch-off, one entry per rendered frame. */
+        const fade = (bounces: number, lightResponse: ILightResponse = epic) => {
+          skyRadiance.current = undefined;
+          const scene = sceneOf(true);
+          const source = { intensity: 100, color: new Color(1, 1, 1) };
+          installGi(rayContext(scene), scene, {
+            bounces,
+            lights: [{ ...lamp, source }],
+            lightResponse,
+          });
+          const total = () =>
+            texelAt(new Vector3(0.5, 0.5, 0.5))
+              .faces.flat()
+              .reduce((a, b) => a + b, 0);
+          const baked = total();
+          source.intensity = 0;
+          const totals: number[] = [];
+          for (let frame = 0; frame < 400; frame += 1) {
+            giCache.refresh?.();
+            totals.push(total() / baked);
+          }
+          return totals;
+        };
+
+        it("does not step: the light is still there on the first frame and gone after the history", () => {
+          const totals = fade(3);
+          expect(totals[0]).toBeGreaterThan(0.9);
+          expect(totals[399]).toBeLessThan(1e-3);
+        });
+
+        it("falls and never rises", () => {
+          const totals = fade(3);
+          for (let i = 1; i < totals.length; i += 1)
+            expect(totals[i] as number).toBeLessThanOrEqual((totals[i - 1] as number) + 1e-6);
+        });
+
+        it("fades between the first-bounce curve and the last-bounce curve of the model", () => {
+          const bounces = 3;
+          const totals = fade(bounces);
+          const model = new LightFade(epic, surfaceArea(sceneOf(true)), bounces);
+          model.set([0, 0, 0]);
+          model.step();
+          for (let frame = 1; frame < 40; frame += 1) {
+            const shown = model.step();
+            const [fast, slow] = [shown[0]?.[0] as number, shown[bounces - 1]?.[0] as number];
+            expect(totals[frame]).toBeGreaterThan(fast - 0.01);
+            expect(totals[frame]).toBeLessThan(slow + 0.01);
+          }
+        });
+
+        it("an instant response follows on the first frame, as an unset one does", () => {
+          const instant: ILightResponse = {
+            updateFactor: 1,
+            radiosityUpdateFactor: 1,
+            radiosityFramesAccumulated: 0,
+            framesAccumulated: 0,
+            atlasSize: 4096,
+          };
+          expect(fade(3, instant)[0]).toBeLessThan(1e-3);
+        });
+
+        it("refuses a factor under 1 and a negative history", () => {
+          expect(() => fade(3, { ...epic, updateFactor: 0 })).toThrow(/TN_GI_LIGHT_RESPONSE/u);
+          expect(() => fade(3, { ...epic, framesAccumulated: -1 })).toThrow(
+            /TN_GI_LIGHT_RESPONSE/u,
+          );
+        });
+      });
+
+      it("measures the surface of the scene for the cache's cards: a box of 2 x 3 x 4 is 52 m2", () => {
+        const box = new Group().add(new Mesh(new BoxGeometry(2, 3, 4), new MeshStandardMaterial()));
+        expect(surfaceArea(box)).toBeCloseTo(52, 4);
+        box.scale.setScalar(2);
+        expect(surfaceArea(box)).toBeCloseTo(208, 3);
       });
     });
   });
