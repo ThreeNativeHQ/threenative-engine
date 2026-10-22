@@ -11,6 +11,18 @@ if [[ "${TN_SKIP_CAPABILITY_SYNC:-}" == "1" ]]; then
 fi
 
 staged=$(git diff --cached --name-only --diff-filter=ACMR)
+
+# A PRD or the Unreal feature map changed: refresh the port status the README and the map show.
+if grep -Eq '^(docs/PRDs/.*PRD-[^/]*\.md|docs/PRDs/Unreal/research/unreal-visuals-and-performance-feature-map\.html|docs/PRDs/Unreal/research/internals/[^/]+\.json|scripts/unreal-port-status\.ts)$' <<<"$staged"; then
+  if [[ -x node_modules/.bin/tsx ]]; then
+    pnpm --silent unreal:status
+  else
+    echo "pre-commit: no node_modules here, Unreal port status not refreshed (pnpm check:docs will flag it)"
+  fi
+  git add -- README.md docs/PRDs/Unreal/research/unreal-visuals-and-performance-feature-map.html \
+    docs/PRDs/Unreal/research/unreal-port-status.svg docs/PRDs/Unreal/research/unreal-port-progress.svg \
+    docs/PRDs/Unreal/research/port-history.json
+fi
 if ! grep -Eq '^(packages/[^/]+/(src/.*|package\.json)|scripts/(build-capability-manifest|check-capability-docs|realism-effects-coverage|render-chain-capabilities)\.ts|pnpm-workspace\.yaml)$' <<<"$staged"; then
   exit 0
 fi
