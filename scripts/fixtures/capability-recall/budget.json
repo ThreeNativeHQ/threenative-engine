@@ -79,10 +79,12 @@
     "request.drive-a-racing-kart",
     "request.vehicle-suspension-grip",
     "request.vehicle-pedals-steering",
-    "request.vehicle-rescue-respawn"
+    "request.vehicle-rescue-respawn",
+    "request.gi-quality-scalability",
+    "request.shadow-quality-scalability"
   ],
   "rejectHits": 16,
-  "rowCount": 87,
+  "rowCount": 89,
   "rowIds": [
     "brief.endless-runner.1",
     "brief.endless-runner.2",
@@ -170,7 +172,9 @@
     "request.drive-a-racing-kart",
     "request.vehicle-suspension-grip",
     "request.vehicle-pedals-steering",
-    "request.vehicle-rescue-respawn"
+    "request.vehicle-rescue-respawn",
+    "request.gi-quality-scalability",
+    "request.shadow-quality-scalability"
   ],
   "version": 1,
   "zeroResultRate": 0.05747126436781609,

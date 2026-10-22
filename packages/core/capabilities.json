@@ -1865,12 +1865,7 @@
       "symbol": "getPlatform"
     },
     {
-      "aliases": [
-        "global illumination quality",
-        "lumen scalability",
-        "sg.GlobalIlluminationQuality",
-        "final gather method"
-      ],
+      "aliases": ["lumen scalability", "sg.GlobalIlluminationQuality", "final gather method"],
       "constraints": [
         "the game applies each step to its own render chain; this class draws nothing",
         "the GPU time of a pass is read by the scene name three or the game gave it, so name every GI pass in `stages`",
@@ -3085,7 +3080,7 @@
       "symbol": "setSpanRecorder"
     },
     {
-      "aliases": ["shadow quality", "virtual shadow map scalability", "sg.ShadowQuality"],
+      "aliases": ["virtual shadow map scalability", "sg.ShadowQuality"],
       "constraints": [
         "the game rebuilds its filter with the tier's sample counts on each step; this class draws nothing",
         "timestamp queries are needed: without them every window is unobserved and the tier holds",
