@@ -77,7 +77,11 @@ const opaqueIds = new WeakMap<object, number>();
 let nextOpaqueId = 1;
 
 function isTextureValue(value: unknown): boolean {
-  return value !== null && (value as { isTexture?: boolean }).isTexture === true;
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    (value as { isTexture?: boolean }).isTexture === true
+  );
 }
 
 /**
