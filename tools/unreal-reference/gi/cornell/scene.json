@@ -164,6 +164,32 @@
       "hfovDeg": 70
     }
   ],
+  "motion": {
+    "pan": {
+      "frames": 180,
+      "camera": {
+        "kind": "pan",
+        "position": [0, 2.75, 0.5],
+        "hfovDeg": 90,
+        "pitchDeg": 0,
+        "headingDeg": [-45, 45],
+        "sweepFrames": 60
+      },
+      "stills": [0, 15, 30, 45, 60],
+      "regions": ["Ceiling", "Back", "Wall_Green", "Box_Tall"]
+    },
+    "switch": {
+      "frames": 180,
+      "camera": {
+        "kind": "pose",
+        "pose": "cornell"
+      },
+      "light": {
+        "name": "Lamp",
+        "keys": [[0, 1.0], [60, 0.0]]
+      }
+    }
+  },
   "regions": {
     "Floor": [255, 0, 0],
     "Ceiling": [0, 255, 0],

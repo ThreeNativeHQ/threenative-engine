@@ -16,6 +16,7 @@
  *   --layers L0,L1,ID      limit the layers (default: every layer plus the region-id frames)
  *   --cells sun60/exterior limit the (sun, pose) cells
  *   --scene gi[:<name>,...] a PRD-638 GI calibration scene instead (flags: scripts/unreal-look/gi.ts)
+ *     --motion pan|switch  its motion run, frame by frame (both engines; scripts/unreal-look/motion-run.ts)
  *   --out <dir>            default tools/unreal-reference/captures/<engine>
  */
 import { spawn } from "node:child_process";
@@ -110,11 +111,18 @@ export async function main(args: readonly string[]): Promise<number> {
   if (engine === "threenative" && flag(args, "--scene") !== undefined) {
     const value = flag(args, "--scene") ?? "gi";
     const known = registry(familyOf(value)).scenes.map((s) => s.name);
+    const motion = flag(args, "--motion");
     const count = await captureGiThreeNative({
       scenes: sceneNames(value, known),
+      // A motion run is drawn at L7 only: its ID frames are Unreal's, the same camera.
       layers:
         flag(args, "--layers")?.split(",") ??
-        (familyOf(value) === "shadow" ? ["ID", "L5", "L9"] : ["ID", "L1", "L7"]),
+        (motion !== undefined
+          ? ["L7"]
+          : familyOf(value) === "shadow"
+            ? ["ID", "L5", "L9"]
+            : ["ID", "L1", "L7"]),
+      ...(motion === undefined ? {} : { motion }),
       out: path.resolve(flag(args, "--out") ?? path.join(REFERENCE, "captures", "threenative")),
       reuse: args.includes("--reuse"),
       ...(flag(args, "--measure") ? { measureSeconds: Number(flag(args, "--measure")) } : {}),

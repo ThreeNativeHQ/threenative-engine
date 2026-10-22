@@ -7,11 +7,15 @@
  *     --warm-up 180,360      render warm-up frames per run (default 180: sunlit-room is still 1% dark at 90)
  *     --runs 2               repeat each run; run 2 lands in "<variant>#2" (the noise floor)
  *     --rebuild              author and export the scene again even if its level exists
+ *     --motion pan|switch    render a motion run (scene.py "motion") instead of the poses: every frame as
+ *                            <run>.NNNN.png and one converged still per listed frame, for the variants that
+ *                            say motion (L7-Epic-motion, ID) into captures/unreal/<scene>/motion/<run>/<variant>/
  *   pnpm unreal-look:compare --scene gi:cornell --unreal-vs-unreal [--write-stats]
  *   pnpm unreal-look:compare --scene gi:cornell --layer L1[,L7]   ThreeNative against Unreal, per region
  *   pnpm unreal-look:compare --scene gi:cornell --layer L7-low,L7-medium,L7-high   each quality tier against its Unreal level (PRD-644)
  *   pnpm unreal-look:compare --scene gi:cornell --layer L7 --unreal-level 0|1|3    one capture against another level's frame
  *   pnpm unreal-look:compare --scene shadow:penumbra-lab --layer L5-Low --metric penumbra   shadow edge width, TN / Unreal (PRD-652)
+ *   pnpm unreal-look:compare --scene gi:cornell --metric motion [--engine unreal|threenative] [--run pan|switch]   flicker, lag and ghosting (PRD-638)
  *
  * PRD-649: `--scene shadow | shadow:<name>` runs the same pipeline on the shadow family, whose scenes
  * live in tools/unreal-reference/shadow/<name>/ with their own shadow/scenes.json. A `gi:` id keeps its
@@ -36,6 +40,8 @@ import {
   masks,
   measure,
 } from "./compare.js";
+import { captureMotionRun, compareMotion } from "./motion-run.js";
+import { type IMotionRun, validateMotion } from "./motion.js";
 import { contactGap, linearLuminance, pairedPenumbra } from "./penumbra.js";
 
 const REPO_ROOT = path.resolve(import.meta.dirname, "../..");
@@ -103,6 +109,8 @@ export interface ISceneJson {
   /** A template-lit scene: Unreal's default level, one level per sun. */
   template?: "default";
   suns?: { name: string; elevationDeg: number; azimuthDeg: number }[];
+  /** PRD-638 motion runs, as authored in scene.py (`pan`, `switch`): a Level Sequence per run. */
+  motion?: Record<string, IMotionRun>;
   regions: Record<string, Vec3>;
 }
 interface IGltf {
@@ -135,6 +143,10 @@ interface IVariant {
   name: string;
   layer: string;
   level?: string;
+  /** A motion run captures the variants that say so when --variants is not given. */
+  motion?: boolean;
+  /** Only a motion run captures it by default: it holds no pose frames. */
+  motionOnly?: boolean;
   cvars: Record<string, number>;
   expect: Record<string, number>;
   kinds: ("png" | "exr")[];
@@ -411,6 +423,7 @@ export function validateSceneExport(scene: ISceneJson, gltf: IGltf): void {
       "SCENE_EXPORT",
       `${scene.scene}: regions must be the regions of the meshes, each in its own colour`,
     );
+  if (scene.motion) validateMotion(scene.motion, scene);
 }
 
 export function readScene(name: string): { scene: ISceneJson; gltf: IGltf } {
@@ -464,7 +477,10 @@ export async function captureGi(args: readonly string[], runUnreal: RunUnreal): 
     reg.scenes.map((s) => s.name),
   );
   const only = flag(args, "--variants")?.split(",");
-  const variants = reg.variants.filter((v) => !only || only.includes(v.name));
+  const motion = flag(args, "--motion");
+  const variants = reg.variants.filter((v) =>
+    only ? only.includes(v.name) : motion !== undefined || !v.motionOnly,
+  );
   if (only && variants.length !== only.length) fail("BAD_INPUT", `unknown variant in ${only}`);
   const warmUps = (flag(args, "--warm-up") ?? String(REFERENCE_WARM_UP)).split(",").map(Number);
   if (!warmUps.every((w) => Number.isInteger(w) && w > 0)) fail("BAD_INPUT", "--warm-up");
@@ -486,7 +502,11 @@ export async function captureGi(args: readonly string[], runUnreal: RunUnreal): 
       family === "gi" ? "GI" : "Shadow",
       sceneKey(name).replace(/^shadow\//, ""),
     );
-    if (args.includes("--rebuild") || !existsSync(content)) {
+    // A level built before the motion runs existed has no sequence for them.
+    const stale =
+      motion !== undefined &&
+      !existsSync(path.join(content, "Sequences", `Seq_motion_${motion}.uasset`));
+    if (args.includes("--rebuild") || !existsSync(content) || stale) {
       await rm(content, { recursive: true, force: true });
       if ((await runUnreal("build", out, { TN_UE_SCENE: name })) !== 0) return 1;
       // A build whose Python failed exits 0 and leaves its Content: remove it, or the next run skips it.
@@ -504,6 +524,14 @@ export async function captureGi(args: readonly string[], runUnreal: RunUnreal): 
     }
     const { scene, gltf } = readScene(name);
     validateSceneExport(scene, gltf);
+    if (motion !== undefined) {
+      const chosen = only ? variants : variants.filter((v) => v.motion);
+      const input = { name, scene, variants: chosen, out, warmUps, runs, motion, log: LOG };
+      const done = await captureMotionRun(input, runUnreal);
+      if (done < 0) return 1;
+      cells += done;
+      continue;
+    }
     for (const variant of variants)
       for (const warmUp of variant.name === "ID" ? [REFERENCE_WARM_UP] : warmUps)
         for (let run = 1; run <= (variant.name === "ID" ? 1 : runs); run++) {
@@ -795,6 +823,7 @@ function printPenumbra(
 }
 
 export function compareGi(args: readonly string[]): number {
+  if (flag(args, "--metric") === "motion") return compareMotion(args);
   const layerFlag = flag(args, "--layer");
   if (layerFlag !== undefined) {
     const root = path.resolve(flag(args, "--captures") ?? path.join(REFERENCE, "captures"));
