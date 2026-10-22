@@ -254,6 +254,13 @@ export interface IGiTier {
   readonly distanceFieldAO: boolean;
   /** `r.SkylightIntensityMultiplier`: Unreal suppresses the sky light to 0.8 at Low, where DFAO is off. */
   readonly skylightIntensityMultiplier: number;
+  /**
+   * How many frames a changed light takes to reach the bounce light: `r.LumenScene.DirectLighting.UpdateFactor` (the
+   * surface cache refreshes `1 / factor` of its texels a frame) and, where the screen probe gather runs,
+   * `r.Lumen.ScreenProbeGather.Temporal.MaxFramesAccumulated` (the pixel history). Medium has no screen history: its
+   * irradiance field is the world cache itself (BaseScalability.ini, comment at `[GlobalIlluminationQuality@1]`).
+   */
+  readonly lightResponse: { readonly updateFactor: number; readonly framesAccumulated: number };
 }
 
 /** What each method's Unreal level sets (BaseScalability.ini `[GlobalIlluminationQuality@n]`, lines 318-460). */
@@ -262,12 +269,19 @@ const GI_LEVELS: Record<FinalGatherMethod, Omit<IGiTier, "finalGatherMethod">> =
     distanceFieldAO: true,
     globalIlluminationQuality: 1,
     skylightIntensityMultiplier: 1,
+    lightResponse: { updateFactor: 128, framesAccumulated: 0 },
   },
-  none: { distanceFieldAO: false, globalIlluminationQuality: 0, skylightIntensityMultiplier: 0.8 },
+  none: {
+    distanceFieldAO: false,
+    globalIlluminationQuality: 0,
+    skylightIntensityMultiplier: 0.8,
+    lightResponse: { updateFactor: 128, framesAccumulated: 0 },
+  },
   screenProbeGather: {
     distanceFieldAO: true,
     globalIlluminationQuality: 3,
     skylightIntensityMultiplier: 1,
+    lightResponse: { updateFactor: 32, framesAccumulated: 10 },
   },
 };
 

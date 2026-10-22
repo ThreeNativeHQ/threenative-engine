@@ -310,6 +310,9 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
         const gi = installGi(ctx, model, {
           // Diagnosis: ?bounces=N brackets how much of the indirect light the later bounces carry.
           bounces: Number(params.get("bounces") ?? 5),
+          // A changed light reaches the bounce light as Unreal's tier lets it (PRD-641 AC-2), not in one frame.
+          // Diagnosis: ?giStep=1 follows at once.
+          ...(params.get("giStep") === "1" ? {} : { lightResponse: giPreset(TIER).lightResponse }),
           // The Surface Cache is on: a ray reads the map where it lands (PRD-639). Diagnosis: ?giMaps=0 returns the
           // flat colour factor, ?giLights=0 leaves the lamps out of what a ray returns (the direct frame keeps them).
           surfaceCache:

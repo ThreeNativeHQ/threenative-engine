@@ -556,6 +556,60 @@ describe("the world-space GI cache against closed forms (PRD-631 L7)", () => {
         live();
         expect(giCache.refresh?.()).toBe(false);
       });
+
+      describe("with Unreal's response in frames (PRD-641 AC-2)", () => {
+        /** The probe's total over the refreshes that follow a switch-off, one entry per rendered frame. */
+        const fade = (lightResponse: { updateFactor: number; framesAccumulated: number }) => {
+          skyRadiance.current = undefined;
+          const scene = sceneOf(true);
+          const source = { intensity: 100, color: new Color(1, 1, 1) };
+          installGi(rayContext(scene), scene, {
+            bounces: 1,
+            lights: [{ ...lamp, source }],
+            lightResponse,
+          });
+          const total = () =>
+            texelAt(new Vector3(0.5, 0.5, 0.5))
+              .faces.flat()
+              .reduce((a, b) => a + b, 0);
+          const baked = total();
+          source.intensity = 0;
+          const totals: number[] = [];
+          for (let frame = 0; frame < 400; frame += 1) {
+            giCache.refresh?.();
+            totals.push(total() / baked);
+          }
+          return totals;
+        };
+
+        it("does not step: the light is still there on the first frame and gone after the cycle", () => {
+          const totals = fade({ updateFactor: 32, framesAccumulated: 10 });
+          expect(totals[0]).toBeGreaterThan(0.9);
+          expect(totals[399]).toBeLessThan(1e-3);
+        });
+
+        it("falls and never rises, and a longer cycle and a longer history are slower", () => {
+          const quick = fade({ updateFactor: 8, framesAccumulated: 2 });
+          const slow = fade({ updateFactor: 32, framesAccumulated: 10 });
+          for (let i = 1; i < slow.length; i += 1)
+            expect(slow[i] as number).toBeLessThanOrEqual((slow[i - 1] as number) + 1e-6);
+          const lag = (totals: number[]) => totals.findIndex((v) => v < 0.1);
+          expect(lag(slow)).toBeGreaterThan(lag(quick));
+        });
+
+        it("an update factor of 1 with no history follows at once", () => {
+          expect(fade({ updateFactor: 1, framesAccumulated: 0 })[0]).toBeLessThan(1e-3);
+        });
+
+        it("refuses a factor under 1 and a negative history", () => {
+          expect(() => fade({ updateFactor: 0, framesAccumulated: 10 })).toThrow(
+            /TN_GI_LIGHT_RESPONSE/u,
+          );
+          expect(() => fade({ updateFactor: 32, framesAccumulated: -1 })).toThrow(
+            /TN_GI_LIGHT_RESPONSE/u,
+          );
+        });
+      });
     });
   });
 
