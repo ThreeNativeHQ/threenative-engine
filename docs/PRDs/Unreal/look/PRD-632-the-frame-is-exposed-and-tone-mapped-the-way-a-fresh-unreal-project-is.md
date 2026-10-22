@@ -8,7 +8,7 @@ prd_contract: v1
 **Priority:** P2 — no box is ticked: the templates tone-map with stock three.js ACES at a hand-set exposure, auto exposure is off, and no light carries a physical unit.
 **Complexity:** 6 (MEDIUM) — template render source in 13 templates (+2), a new tone curve that must also run on the native engine (+2), physical light units that change every authored intensity (+2); risk override: none
 **Owner:** João
-**Depends on:** [PRD-631](PRD-631-an-unreal-reference-scene-measures-the-default-look.md) Phase 3 (the L1 and L9 rows). Turns on the histogram meter that [PRD-571](../../BLOCKED/requires-physical-device/PRD-571-exposure-meters-a-histogram-and-ignores-the-sun.md) shipped opt-in.
+**Depends on:** [PRD-631](../../done/PRD-631-an-unreal-reference-scene-measures-the-default-look.md) Phase 3 (the L1 and L9 rows). Turns on the histogram meter that [PRD-571](../../BLOCKED/requires-physical-device/PRD-571-exposure-meters-a-histogram-and-ignores-the-sun.md) shipped opt-in.
 
 ## Context
 

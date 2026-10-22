@@ -8,7 +8,7 @@ prd_contract: v1
 **Priority:** P2 — shipped templates remain unchanged: every template's sky and ambient light come from a fixed photograph, so the sun cannot move and the sky never tints the scene the way Unreal's default level does.
 **Complexity:** 6 (MEDIUM) — template sky source in 13 templates (+2), a core sky-capture mechanism with an amortized refresh (+2), native proof of the LUT sky and the capture (+2); risk override: none
 **Owner:** João
-**Depends on:** [PRD-631](PRD-631-an-unreal-reference-scene-measures-the-default-look.md) Phase 3 (the L2 row) and [PRD-632](PRD-632-the-frame-is-exposed-and-tone-mapped-the-way-a-fresh-unreal-project-is.md) (lux and EV100: an atmosphere sky in nits cannot be compared at a hand-set exposure). Uses the LUTs that [PRD-248](../../done/PRD-248-the-atmosphere-is-luts-the-sky-is-the-games.md) shipped. [PRD-562](../rendering/PRD-562-aerial-perspective-from-a-froxel-volume.md) adds the aerial perspective on top.
+**Depends on:** [PRD-631](../../done/PRD-631-an-unreal-reference-scene-measures-the-default-look.md) Phase 3 (the L2 row) and [PRD-632](PRD-632-the-frame-is-exposed-and-tone-mapped-the-way-a-fresh-unreal-project-is.md) (lux and EV100: an atmosphere sky in nits cannot be compared at a hand-set exposure). Uses the LUTs that [PRD-248](../../done/PRD-248-the-atmosphere-is-luts-the-sky-is-the-games.md) shipped. [PRD-562](../rendering/PRD-562-aerial-perspective-from-a-froxel-volume.md) adds the aerial perspective on top.
 
 ## Context
 

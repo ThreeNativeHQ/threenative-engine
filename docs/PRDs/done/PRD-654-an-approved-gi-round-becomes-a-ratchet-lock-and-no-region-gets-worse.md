@@ -7,7 +7,7 @@ prd_contract: v1
 **Status:** DONE — the lock tooling ships with unit proof, and `sunlit-room` and `cornell` at `high` are locked from rounds on the current scene and the current engine (gi-layer gate, `cf72b5346`). The L9 locks are PRD-655.
 **Complexity:** 4 (MEDIUM) — 1–5 files: a lock module, a check command, a lock file, specs (+1), new state: a committed lock file with a scene digest (+2), one flag on an existing command (+1)
 **Owner:** João
-**Depends on:** [PRD-647](PRD-647-a-visual-judge-calibrates-gi-against-the-unreal-scenes-until-parity.md) (the calibrate command and its rounds) and [PRD-631](../Unreal/look/PRD-631-an-unreal-reference-scene-measures-the-default-look.md) (the compare and its parity locks)
+**Depends on:** [PRD-647](PRD-647-a-visual-judge-calibrates-gi-against-the-unreal-scenes-until-parity.md) (the calibrate command and its rounds) and [PRD-631](PRD-631-an-unreal-reference-scene-measures-the-default-look.md) (the compare and its parity locks)
 
 ## Context
 
