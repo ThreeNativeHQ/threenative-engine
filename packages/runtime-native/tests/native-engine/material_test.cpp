@@ -226,6 +226,24 @@ void aoNode() {
     CHECK(with.code.find("f_nodeAo") != std::string::npos);
 }
 
+// PRD-653: material.roughDiffuse shades direct light with the EON model. The variant key changes, a lamp's Source
+// Radius enters the fragment only for the marked material (a sun has none), and the EON constants appear only there.
+void roughDiffuse() {
+    VertexVariant plain;
+    VertexVariant rough;
+    rough.roughDiffuse = true;
+    CHECK(plain.key() != rough.key());
+    const LightLayout layout{"dp"};  // a sun, then a point lamp
+    const auto without = WgslEmitter::emit(buildStandard(StandardMaterial{}, plain, layout).fragment, 1);
+    const auto with = WgslEmitter::emit(buildStandard(StandardMaterial{}, rough, layout).fragment, 1);
+    CHECK(without.ok() && with.ok());
+    CHECK(without.code.find("light1SourceRadius") == std::string::npos);
+    CHECK(with.code.find("f_light1SourceRadius") != std::string::npos);
+    CHECK(with.code.find("light0SourceRadius") == std::string::npos);
+    CHECK(with.code.find("0.189468") != std::string::npos);
+    CHECK(without.code.find("0.189468") == std::string::npos);
+}
+
 // NodeMaterial.irradianceNode replaces the environment's diffuse irradiance: its uniform enters the fragment of a
 // material that is lit by an environment, or is the whole indirect diffuse without one, and the slot is part of
 // the program key.
@@ -530,4 +548,4 @@ void bloomPasses() {
 
 }  // namespace
 
-TN_TEST_MAIN({"depth_node_writes_frag_depth", depthNodeWritesFragDepth}, {"unsupported", unsupported}, {"emissive_output", emissiveOutput}, {"builds", builds}, {"fog", fog}, {"fog_node_mixes_color", fogNodeMixesColor}, {"node_key", nodeKey}, {"bloom_passes", bloomPasses}, {"slots_share_one_lowering", slotsShareOneLowering})
+TN_TEST_MAIN({"depth_node_writes_frag_depth", depthNodeWritesFragDepth}, {"unsupported", unsupported}, {"emissive_output", emissiveOutput}, {"builds", builds}, {"fog", fog}, {"rough_diffuse", roughDiffuse}, {"fog_node_mixes_color", fogNodeMixesColor}, {"node_key", nodeKey}, {"bloom_passes", bloomPasses}, {"slots_share_one_lowering", slotsShareOneLowering})

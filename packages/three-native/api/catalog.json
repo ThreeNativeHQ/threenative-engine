@@ -12778,6 +12778,15 @@
           "status": {
             "kind": "supported"
           }
+        },
+        {
+          "name": "roughDiffuse",
+          "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
         }
       ],
       "methods": [
@@ -13311,6 +13320,15 @@
         },
         {
           "name": "twoSidedFoliage",
+          "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "roughDiffuse",
           "type": "boolean",
           "mutable": true,
           "lifetime": "owned",
@@ -17283,6 +17301,15 @@
           "name": "shadow",
           "type": "PointLightShadow",
           "mutable": false,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "sourceRadius",
+          "type": "number",
+          "mutable": true,
           "lifetime": "owned",
           "status": {
             "kind": "supported"
@@ -28332,6 +28359,15 @@
           "name": "shadow",
           "type": "SpotLightShadow",
           "mutable": false,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "sourceRadius",
+          "type": "number",
+          "mutable": true,
           "lifetime": "owned",
           "status": {
             "kind": "supported"
