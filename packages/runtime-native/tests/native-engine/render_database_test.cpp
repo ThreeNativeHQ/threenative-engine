@@ -1252,22 +1252,34 @@ void timeUniform() {
 }
 
 // A FloatType target keeps float32: auto exposure feeds its last value back through one, and a half
-// float rounded each frame stalled the adaptation 0.006 to 0.009 stops short of its target.
-void floatRenderTargetKeepsFloat32() {
+// float rounded each frame stalled the adaptation 0.006 to 0.009 stops short of its target. A device
+// without float32-blendable stores it as half instead (blending into RGBA32Float would fail validation),
+// reports that on the target, and a read still returns float32 rows.
+void drawFloatTarget(bool forceHalf) {
     mystral::webgpu::Context context;
     CHECK(context.initializeHeadless());
     EventQueue events;
     Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.forceHalfFloatTargets(forceHalf);
     renderer.setSize(64, 64);
+    const bool expectFloat32 = !forceHalf && wgpuDeviceHasFeature(context.getDevice(), WGPUFeatureName_Float32Blendable);
     const auto target = RenderTarget::make(4, 4, kTextureFloatType);
     Scene inner;
     OrthographicCamera innerCamera(-1, 1, 1, -1, 0.1, 10);
     innerCamera.position.z = 5;
     innerCamera.updateMatrixWorld();
+    // A half-transparent blue square over the whole target: a blended draw into the FloatType target.
+    auto blue = std::make_shared<Material>(MaterialType::Basic);
+    blue->color.setRGB(0, 0, 1);
+    blue->transparent = true;
+    blue->opacity = 0.5;
+    Mesh square(makePlaneGeometry(4, 4), blue);
+    inner.add(square);
     inner.updateMatrixWorld(true);
     // 1 + 2^-12 and 2^-12 + 2^-24 need more than half float's 11 significant bits.
     const double high = 1.0 + std::ldexp(1.0, -12), low = std::ldexp(1.0, -12) + std::ldexp(1.0, -24);
     CHECK(renderToTarget(renderer, *target, inner, innerCamera, {high, low, 0.5, 1}, false).empty());
+    CHECK(target->halfPrecision == !expectFloat32);
     std::vector<uint8_t> region;
     bool done = false;
     CHECK(readRenderTarget(*target, 0, 0, 4, 4, [&](GpuStatus status, std::vector<uint8_t> bytes) {
@@ -1280,14 +1292,22 @@ void floatRenderTargetKeepsFloat32() {
         events.drain();
         if (!done) std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
-    CHECK(region.size() == size_t{4} * 4 * 16);  // RGBA32Float rows
+    CHECK(region.size() == size_t{4} * 4 * 16);  // float32 rows either way
     if (region.size() == size_t{4} * 4 * 16) {
         float texel[4];
         std::memcpy(texel, region.data() + (size_t{1} * 4 + 1) * 16, sizeof texel);
-        std::fprintf(stderr, "float target: %.9g %.9g %.9g\n", texel[0], texel[1], texel[2]);
-        CHECK(texel[0] == float(high) && texel[1] == float(low) && texel[2] == 0.5f);
+        std::fprintf(stderr, "float target (%s): %.9g %.9g %.9g\n", expectFloat32 ? "float32" : "half", texel[0], texel[1], texel[2]);
+        // Half-opaque blue over (high, low, 0.5): red and green keep half of the clear, blue mixes toward 1.
+        const float red = float(high) * 0.5f, green = float(low) * 0.5f, blueMix = 0.75f;
+        const float tolerance = expectFloat32 ? 1e-6f : 2e-3f;
+        CHECK(std::abs(texel[0] - red) <= tolerance && std::abs(texel[1] - green) <= tolerance &&
+              std::abs(texel[2] - blueMix) <= tolerance);
+        if (expectFloat32) CHECK(texel[0] == red);  // the half rounding of 1 + 2^-12 halved would differ
     }
 }
+
+void floatRenderTargetKeepsFloat32() { drawFloatTarget(false); }
+void floatRenderTargetFallsBackToHalf() { drawFloatTarget(true); }
 
 // PRD-551: a game's RenderTarget. A render into it writes the linear scene colour (no tone mapping, no
 // output transform, as r185 writes a target); readRenderTarget returns a region of it; a material whose
@@ -4800,7 +4820,7 @@ void gpuJointProduction() {
     }
 }
 
-TN_TEST_MAIN({"gpu_joint_production", gpuJointProduction}, {"multi_material_groups", multiMaterialGroups}, {"uniform_batch_preparation", uniformBatchPreparation}, {"steady_state", steadyState}, {"color_write_masks_the_draw", colorWriteMasksTheDraw}, {"normal_pass_is_not_tallied", normalPassIsNotTallied}, {"steady_cache_invalidation", steadyCacheInvalidation}, {"render_target", renderTarget}, {"float_render_target_keeps_float32", floatRenderTargetKeepsFloat32}, {"post_texture_resize_keeps_draw_groups", postTextureResizeKeepsDrawGroups}, {"deferred_target_follows_post_rtt", deferredTargetFollowsPostRtt}, {"deferred_target_samples_post_rtt_node", deferredTargetSamplesPostRttNode}, {"screen_size_reaches_the_vertex_stage", screenSizeReachesTheVertexStage}, {"depth_node_sets_fragment_depth", depthNodeSetsFragmentDepth}, {"depth_node_reaches_every_material_program", depthNodeReachesEveryMaterialProgram}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"present_direct", presentDirect}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"directional_target_outside_scene", directionalTargetOutsideScene}, {"scene_fog_node", sceneFogNode}, {"lit_mesh_without_normals", litMeshWithoutNormals}, {"invalidation", invalidation}, {"alpha_scene", alphaScene},
+TN_TEST_MAIN({"gpu_joint_production", gpuJointProduction}, {"multi_material_groups", multiMaterialGroups}, {"uniform_batch_preparation", uniformBatchPreparation}, {"steady_state", steadyState}, {"color_write_masks_the_draw", colorWriteMasksTheDraw}, {"normal_pass_is_not_tallied", normalPassIsNotTallied}, {"steady_cache_invalidation", steadyCacheInvalidation}, {"render_target", renderTarget}, {"float_render_target_keeps_float32", floatRenderTargetKeepsFloat32}, {"float_render_target_falls_back_to_half", floatRenderTargetFallsBackToHalf}, {"post_texture_resize_keeps_draw_groups", postTextureResizeKeepsDrawGroups}, {"deferred_target_follows_post_rtt", deferredTargetFollowsPostRtt}, {"deferred_target_samples_post_rtt_node", deferredTargetSamplesPostRttNode}, {"screen_size_reaches_the_vertex_stage", screenSizeReachesTheVertexStage}, {"depth_node_sets_fragment_depth", depthNodeSetsFragmentDepth}, {"depth_node_reaches_every_material_program", depthNodeReachesEveryMaterialProgram}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"present_direct", presentDirect}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"directional_target_outside_scene", directionalTargetOutsideScene}, {"scene_fog_node", sceneFogNode}, {"lit_mesh_without_normals", litMeshWithoutNormals}, {"invalidation", invalidation}, {"alpha_scene", alphaScene},
              {"material_unsupported", materialUnsupported}, {"shader_invalid", shaderInvalid}, {"time_uniform", timeUniform}, {"gpu_mipmaps", gpuMipmaps}, {"updates", updates},
              {"multi_camera_layers", multiCameraLayers}, {"render_callback", renderCallback}, {"instanced", instanced},
              {"batched_vs_unbatched", batchedVsUnbatched}, {"skinned_crowd", skinnedCrowdPixels}, {"skinned_decline_cadence", skinnedDeclineCadence}, {"skinned_normalized_weights", skinnedNormalizedWeights}, {"normal_map_tilt", normalMapTilt}, {"unsupported_map_slot", unsupportedMapSlot}, {"env_map_slot_is_read", envMapSlotIsRead}, {"converted_copies_swept", convertedCopiesAreSwept}, {"gpu_timer_covers_offscreen", gpuTimerCoversOffscreen}, {"gpu_timer_splits_the_gather", gpuTimerSplitsTheLabelledGather}, {"gpu_timer_covers_shadows", gpuTimerCoversShadows}, {"overlay_over_frame", overlayOverFrame}, {"gpu_timer_is_opt_in", gpuTimerIsOptIn}, {"msaa_edges", msaaEdges}, {"shadow_camera_layers", shadowCameraLayers}, {"flat_shading_needs_no_normals", flatShadingNeedsNoNormals}, {"map_sampleability_changes", mapSampleabilityChanges}, {"batch_caches_stay_put", batchCachesStayPut}, {"frustum_culling", frustumCulling},
