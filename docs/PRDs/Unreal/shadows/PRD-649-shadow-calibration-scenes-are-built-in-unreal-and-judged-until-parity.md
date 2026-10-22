@@ -8,7 +8,7 @@ prd_contract: v1
 **Priority:** P1 — no box is ticked: no Unreal-authored scene isolates penumbra growth, contact, lamp shadows, leaf shadows or shadow stability under motion, so PRD-650 to PRD-652 and the open PRD-634 boxes have no Unreal target to be judged against.
 **Complexity:** 5 (MEDIUM) — 1–5 files: a scene family switch, three `scene.py` scripts, shadow metrics in compare (+1), three new Unreal scenes and their recreation (+2), every shadow PRD consumes the scoreboard (+2); risk override: none
 **Owner:** João
-**Depends on:** [PRD-638](../gi/PRD-638-calibration-scenes-are-built-in-unreal-and-captured-as-the-gi-target.md) Phase 1 (the scene pipeline), [PRD-646](../gi/PRD-646-threenative-recreates-each-unreal-calibration-scene-exactly.md) Phase 2 (the recreation) and [PRD-647](../../done/PRD-647-a-visual-judge-calibrates-gi-against-the-unreal-scenes-until-parity.md) Phases 1 and 2 (the calibrate command, the judge and the scoreboard). This PRD adds a scene family to that pipeline. It does not build a second pipeline.
+**Depends on:** [PRD-638](../../done/PRD-638-calibration-scenes-are-built-in-unreal-and-captured-as-the-gi-target.md) Phase 1 (the scene pipeline), [PRD-646](../gi/PRD-646-threenative-recreates-each-unreal-calibration-scene-exactly.md) Phase 2 (the recreation) and [PRD-647](../../done/PRD-647-a-visual-judge-calibrates-gi-against-the-unreal-scenes-until-parity.md) Phases 1 and 2 (the calibrate command, the judge and the scoreboard). This PRD adds a scene family to that pipeline. It does not build a second pipeline.
 
 ## Context
 
@@ -108,7 +108,7 @@ screenshots branch only.
 **Status:** NOT STARTED
 **Files:** `scripts/unreal-look/capture.ts`, `scripts/unreal-look/compare.ts`, `scripts/unreal-look/penumbra.ts`, `tools/unreal-reference/shadow/scenes.json` (new), `tools/unreal-reference/shadow/penumbra-lab/` (new), `scripts/__tests__/unreal-look-calibrate.spec.ts`
 - [ ] `--scene shadow:<name>` resolves a scene of either family, and fails closed on an unknown name, a missing `criteria.md` and an L5 cell captured with GI on. proof: `pnpm exec vitest run scripts/__tests__/unreal-look-calibrate.spec.ts`.
-- [ ] The contact-gap metric reads 0 for a box resting on the floor and grows with the gap on a lifted box, in Unreal frames of `penumbra-lab/contact`. proof: `pnpm unreal-look:compare --scene shadow:penumbra-lab --metric contact`. Open: `contactGap` and `--layer L5 --metric contact` ship (unit cases: 0, 4, 12 rows for a gap of 0, 4, 12; nothing when the floor stays lit). On Unreal's L5 frames a resting `Box_0` reads 0 in 4 of 5 poses and a lifted `Box_0p25` reads 63 (sun15 heights) and 48 (sun60 contact), but `Box_0` reads 9 in sun60 contact and `Box_0p25` reads 0 in sun60 and sun4 heights, where the shadow does not fall below the box in the image. The scan runs down the image, so it holds only when the shadow side faces the camera. A pose per box that faces the shadow side closes the box.
+- [ ] The contact-gap metric reads 0 for a box resting on the floor and grows with the gap on a lifted box, in Unreal frames of `penumbra-lab/contact`. proof: `pnpm unreal-look:compare --scene shadow:penumbra-lab --metric contact`. Open: `contactGap` and `--layer L5 --metric contact` ship (unit cases: 0, 4, 12 rows for a gap of 0, 4, 12; nothing when the floor stays lit). On Unreal's L5 frames a resting `Box_0` reads 0 in 4 of 5 poses and a lifted `Box_0p25` reads 63 (sun15 heights) and 48 (sun60 contact), but `Box_0` reads 9 in sun60 contact and `Box_0p25` reads 0 in sun60 and sun4 heights, where the shadow does not fall below the box in the image. The scan runs down the image, so it holds only when the shadow side faces the camera. A pose per box that faces the shadow side closes the box. Numbers on the ThreeNative frames (2026-10-21, two runs agree, PR #541 comment 6332495123): lifted boxes read 38 against Unreal's 37 (sun60-heights Box_1), 48 against 48 (sun60-contact Box_0p25) and 0 against 0; ThreeNative has no reading on sun15-heights Box_0p25 (Unreal 63) and sun60-contact Box_0, so the box stays open.
 - [x] Unreal captures `penumbra-lab` at L5 and L9 for every pose and sun, with a region-ID frame. proof: `UE_ROOT=<install> pnpm unreal-look:capture --engine unreal --scene shadow:penumbra-lab`. Evidence: 2026-10-20 commit bd369168d, "L5 cells=18 readback ok" and "L9 cells=18 readback ok"; copied captures read back by `compare --metric penumbra` on 2026-10-21 (9 poses).
 
 #### Phase 2: The lamp, horizon and foliage scenes, and the ablations
@@ -118,7 +118,7 @@ screenshots branch only.
 - [ ] Unreal captures `horizon` with its `walk` and `sunturn` runs. proof: `pnpm unreal-look:capture --engine unreal --scene shadow:horizon`.
 - [ ] The three ablation pairs are captured, and each result is recorded under `## Decisions` with its region deltas. proof: `pnpm unreal-look:compare --scene shadow:<name> --ablation <cvar>`.
 - [x] Unreal and ThreeNative capture the lean `wildwood` scene from the three real Fab GLBs at L5, L7 and L9, with two suns, two poses and two runs per arm. proof: `UE_ROOT=<install> pnpm unreal-look:capture --engine unreal --scene shadow:wildwood` and `pnpm unreal-look:capture --engine threenative --scene shadow:wildwood`. Evidence: 2026-10-21 at 487219145: Unreal exit 0 (cells=52: L5, L7 and L9 twice, ID once), ThreeNative run 1 cells=16 and run 2 cells=12, both rc 0; sheets, region tables and IoU on PR #541 (issuecomment-6329578609).
-- [ ] The lean `wildwood` ID frames pass the sameness gate in every pose. proof: `pnpm unreal-look:compare --sameness --scene shadow:wildwood --captures <root>`. Open: FAIL in 4 of 4 poses (2026-10-21). The ID frames agree on 98.75 percent of the pixels and no pixel lacks an ID colour. The farthest edge is 37 px (`GreenTree_1`, closeup) and 32 px (`Floor`, closeup). ThreeNative draws a branch stub that Unreal does not (647 px). With that region made identical the tree reads 15 px. scenes-lane sets the foliage limit.
+- [x] The lean `wildwood` ID frames pass the sameness gate in every pose. proof: `pnpm unreal-look:compare --sameness --scene shadow:wildwood --captures <root>`. Evidence: 2026-10-21, Unreal imported with Nanite off against the ThreeNative ID frames at the epic head 0453b549f: 16 objects in 4 poses, farthest edge 1 px, 0 poses fail, 99.38 to 99.74 percent of the pixels agree, lowest IoU 0.9488 (`GreenTree_1`, medium). With Nanite on the same gate failed in 4 of 4 poses (farthest edge 37 px).
 
 #### Phase 3: Recreation and the baseline round
 **Status:** NOT STARTED
@@ -168,3 +168,13 @@ screenshots branch only.
   global illumination on (floor 5th over 95th percentile, `sun60-closeup`: Unreal 0.63, ThreeNative
   0.84 at L7; 0.38 and 0.57 at L9). Leaf gaps are visible in the ground shadow in every round. The
   symptoms are with leaf-lane (PRD-643). The sameness gate fails; see its box in Phase 2.
+- 2026-10-21 (wildwood lane): Unreal omitted a short branch that ThreeNative draws in the lean `wildwood`
+  frames (647 px at `sun60-closeup`). The source GLB holds it as opaque geometry and the Unreal import
+  keeps all 14927 triangles, so Nanite was the suspect. Decision: `import_glb` of `export.py` turns Nanite
+  off (`nanite_settings.enabled = False`). With Nanite off the sameness gate passes in 4 of 4 poses
+  (farthest edge 1 px). The stock default is Nanite on: `bBuildNanite = true` in
+  `Engine/Plugins/Interchange/Runtime/Source/Pipelines/Public/InterchangeGenericMeshPipeline.h:134`, and
+  `NaniteTriangleThreshold = 0` enables it for every mesh. So Nanite off is a named override of the
+  harness, taken because the calibration needs the same triangles in both engines and Nanite drops thin
+  branches. The lighting rows move little: the tree dP50 changes by at most 0.10 between the two imports (L5, sun15-closeup, 0.15 to 0.25).
+  All Unreal frames of this scene are Nanite off from 2026-10-21 20:00 on.

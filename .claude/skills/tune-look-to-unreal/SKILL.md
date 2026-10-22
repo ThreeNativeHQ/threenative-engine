@@ -49,7 +49,9 @@ flowchart LR
    **Same scene first.** A look gap means nothing while the two engines draw different geometry.
    `pnpm unreal-look:compare --sameness [--scene reference|gi|shadow|gi:<name>|shadow:<name>] [--captures <root>]`
    scores every object of every pose from the `ID` frames: it prints IoU and the pixels that lie more than
-   1 px from the other engine's object, and exits 1 when a pose fails (PRD-646). Fix a failing object at its
+   1 px from the other engine's object (a feature under 3 px is counted apart as `thin`, a pixel the other
+   engine draws with no ID colour as `no-ID`), lists the objects no pose shows, and exits 1 when a pose
+   fails (PRD-646). Fix a failing object at its
    source in the scene (`tools/unreal-reference/**/scene.py`, `scene.json`) or the recreation, never in the
    threshold. `python3 -I tools/unreal-reference/sameness-sheet.py <out.png> --captures <root> --scene <scene>`
    draws the engines' frames and the overlap.
@@ -61,6 +63,7 @@ flowchart LR
    must hold and what Unreal shows there (AFTER closer to UNREAL than BEFORE on the named gap, with
    no new artefact: hue cast, banding, clipping, missing object). Then run the judge command:
    `pnpm unreal-look:judge --criteria <criteria.md> --out <verdict.json> --before <run1> --before <run2> --after <run1> --after <run2> --unreal tools/unreal-reference/captures/unreal`
+   Add `--region-limit <dP50>` (the limit of the criteria file) to a round that has measurable regions: the judge then sees the per-region numbers and a frame with a region past the limit cannot read CLOSE or MATCH.
    It starts a fresh read-only Sonnet session (`claude -p`, Read tool only) that did not write the
    change, so the verdict stays with the lane that ran it. It pairs the frames by path and refuses a
    layer that differs between the engines, a missing frame and a single run per arm. It checks that the
@@ -87,7 +90,10 @@ flowchart LR
    runs the same check on any two capture folders. A lock tightens only with `--tighten` and loosens
    only with `--relax`, and a round cannot drop a locked region. When another lane rebuilds the scene
    or its Unreal reference, the check reports LOCK_STALE until a new approved round re-cuts the lock
-   with `--lock <round id> --relax`.
+   with `--lock <round id> --relax`. The L9 final frames have locks too (PRD-655), cut from one capture
+   of a head: `pnpm unreal-look:compare --write-locks <head> --scene gi:<name> --layer L9 --captures <run>
+   --noise <run>,<run>`, where each `--noise` pair is the two runs of another head. The check takes
+   `--layer L9` and one capture, and a lane runs it on the L9 frames of its head before it queues a SHA.
 7. **Post.** Commit the images to the orphan `PRD-<n>-screenshots` branch with plumbing (no
    checkout): `git hash-object -w`, `git mktree`, `git commit-tree -p <previous>`, then
    `git push origin "${commit}:refs/heads/PRD-<n>-screenshots"`. Comment on the PR with the raw

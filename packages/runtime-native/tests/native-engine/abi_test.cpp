@@ -1217,6 +1217,12 @@ void tsl_effect_parameter() {
     CHECK(tn_tsl_effect_parameter(ctx, &ao, "radius", nullptr, &out, &d.value) == TN_OK && out == 0.5);
     CHECK(tn_tsl_effect_parameter(ctx, &ao, "noSuchUniform", nullptr, &out, &d.value) != TN_OK);
     tn_diagnostic_release(&d.value);
+    // A live effect carries a GPU stage too (post_effects.h kStage*): 1 labels it, 7 is no stage.
+    const double gatherStage = 1, noStage = 7;
+    CHECK(tn_tsl_effect_parameter(ctx, &ao, "stage", &gatherStage, &out, &d.value) == TN_OK && out == 1);
+    CHECK(tn_tsl_effect_parameter(ctx, &ao, "stage", nullptr, &out, &d.value) == TN_OK && out == 1);
+    CHECK(tn_tsl_effect_parameter(ctx, &ao, "stage", &noStage, &out, &d.value) != TN_OK);
+    tn_diagnostic_release(&d.value);
     CHECK(tn_tsl_call(ctx, "uv", nullptr, nullptr, 0, &plain, &d.value) == TN_OK);
     CHECK(tn_tsl_effect_parameter(ctx, &plain, "radius", nullptr, &out, &d.value) != TN_OK);  // not an effect
     tn_diagnostic_release(&d.value);
@@ -2184,6 +2190,16 @@ void starter_post_bindings() {
     CHECK(tn::abi::tslEffectParameter(rtt, "textureNeedsUpdate", &yes) == yes);
     passes = g::postPasses(rtt);
     CHECK(passes[0].width == 80 && passes[0].resolutionScale == 0.5 && !passes[0].autoUpdate);
+    // The author labels a pass with a GPU stage; the pass carries it, and an unknown stage is refused.
+    const double gather = g::kStageScreenSpaceGi, unknown = 7;
+    CHECK(passes[0].stage == g::kStageNone);
+    CHECK(tn::abi::tslEffectParameter(rtt, "stage", &gather) == gather);
+    CHECK(tn::abi::tslEffectParameter(rtt, "stage", nullptr) == gather);
+    CHECK(g::postPasses(rtt)[0].stage == g::kStageScreenSpaceGi);
+    bool stageRefused = false;
+    try { tn::abi::tslEffectParameter(rtt, "stage", &unknown); } catch (const std::exception&) { stageRefused = true; }
+    CHECK(stageRefused);
+    CHECK(tn::abi::tslEffectParameter(rtt, "stage", nullptr) == gather);
     const auto actualTarget = tn::engine::RenderTarget::make(64, 32, 1016);
     CHECK(actualTarget->texture->minFilter == 1006);
     const auto quad = std::make_shared<tn::engine::Mesh>();

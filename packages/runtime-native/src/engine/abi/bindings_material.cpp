@@ -481,21 +481,24 @@ void registerLightShadow(ClassBinding& b, bool spot) {
         // sourceAngleShadowFilter on a sun (orthographic map), sourceRadiusShadowFilter on a lamp.
         const bool lamp = dynamic_cast<PerspectiveCamera*>(shadow.camera.get()) != nullptr;
         const char* size = lamp ? "sourceRadius" : "sourceAngleRad";
-        if (value.kind != Value::Kind::Record || value.fields.size() != 3 ||
+        if (value.kind != Value::Kind::Record || value.fields.size() != (lamp ? 4u : 3u) ||
             (!lamp && !dynamic_cast<OrthographicCamera*>(shadow.camera.get())))
             throw Unsupported{"TN_VIRTUAL_SHADOW_UNSUPPORTED: filterNode (sourceAngleShadowFilter on a directional "
                               "light, or sourceRadiusShadowFilter on a spot or point light, required)"};
-        double extent = -1, blockers = 0, samples = 0;
+        double extent = -1, blockers = 0, samples = 0, penumbraScale = lamp ? -1 : 1;  // a lamp must name its share
         for (const auto& [key, v] : value.fields) {
             if (key == size) extent = number(v);
             else if (key == "blockerSamples") blockers = number(v);
             else if (key == "filterSamples") samples = number(v);
+            else if (lamp && key == "penumbraScale") penumbraScale = number(v);
         }
         if (!std::isfinite(extent) || extent < 0 || (!lamp && extent >= 1.5707963267948966) ||
             !std::isfinite(blockers) || blockers < 1 || blockers > 64 || blockers != std::floor(blockers) ||
-            !std::isfinite(samples) || samples < 1 || samples > 64 || samples != std::floor(samples))
+            !std::isfinite(samples) || samples < 1 || samples > 64 || samples != std::floor(samples) ||
+            !std::isfinite(penumbraScale) || penumbraScale <= 0 || penumbraScale > 4)
             throw Unsupported{lamp ? "TN_VIRTUAL_SHADOW_INVALID: source-radius filter" : "TN_VIRTUAL_SHADOW_INVALID: source-angle filter"};
-        (lamp ? shadow.sourceRadiusFilter : shadow.sourceAngleFilter) = std::array<double, 3>{extent, blockers, samples};
+        if (lamp) shadow.sourceRadiusFilter = std::array<double, 4>{extent, blockers, samples, penumbraScale};
+        else shadow.sourceAngleFilter = std::array<double, 3>{extent, blockers, samples};
     };
     if (spot) {
         b.getters["focus"] = [](void* self) { return Value::of(as<LightShadow>(self)->focus); };

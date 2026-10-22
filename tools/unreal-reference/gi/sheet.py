@@ -81,8 +81,14 @@ def main():
             sheet.paste(frame.resize((W, H), Image.LANCZOS), (col * W, row * H))
             text = f"{label} · {pose}" if shadow else f"{label}"
             x, y = col * W + 12, row * H + 10
-            draw.rectangle(draw.textbbox((x, y), text, font=big), fill=(0, 0, 0))
-            draw.text((x, y), text, font=big, fill=(255, 255, 0))
+            # The label keeps its whole text: the font shrinks until the text fits the tile.
+            size = 30
+            label_font = big
+            while draw.textlength(text, font=label_font) > W - 24 and size > 12:
+                size -= 1
+                label_font = font(size)
+            draw.rectangle(draw.textbbox((x, y), text, font=label_font), fill=(0, 0, 0))
+            draw.text((x, y), text, font=label_font, fill=(255, 255, 0))
             small = font(22)
             caption = f"{args.scene}/{pose}" + (" (close-up)" if crop else "")
             draw.rectangle(draw.textbbox((x, y + 38), caption, font=small), fill=(0, 0, 0))

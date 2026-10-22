@@ -491,7 +491,7 @@ describe("main", () => {
       w.log.length = 0;
       expect(await main(lock(better), w.deps)).toBe(0);
       expect(read()[0]).toMatchObject({ maxDP50: 0.004 });
-      expect(w.log.join("\n")).toMatch(/2 region\(s\) are tighter in this round: pass --tighten/);
+      expect(w.log.join("\n")).toMatch(/2 region\(s\) are tighter in this cut: pass --tighten/);
       expect(await main(lock(better, ["--tighten"]), w.deps)).toBe(0);
       expect(read()[0]).toMatchObject({ maxDP50: 0.002, round: better });
       const worse = await roundWith("3", { dP50: 0.01 });
@@ -525,6 +525,22 @@ describe("main", () => {
       w.log.length = 0;
       await roundWith("4", { dP50: 0.009 }, 0, ["--locks", path.join(w.root, "elsewhere.json")]);
       expect(w.log.join("\n")).not.toMatch(/GI lock/i);
+    });
+
+    it("checks the L1 direct-light locks of its AFTER arm as well, and a worse direct light exits 2", async () => {
+      const { w, lock, roundWith, locks } = await setup();
+      await main(lock(await roundWith("1")), w.deps);
+      const data = JSON.parse(readFileSync(locks, "utf8"));
+      data.locks.push(...data.locks.map((entry: object) => ({ ...entry, layer: "L1" })));
+      writeFileSync(locks, JSON.stringify(data));
+      w.log.length = 0;
+      await roundWith("2", { dP50: 0.002 }, 0, ["--locks", locks]);
+      expect(w.log.join("\n")).toMatch(
+        /GI locks hold: every locked region of cornell at L1 is inside its bound/,
+      );
+      w.log.length = 0;
+      await roundWith("3", { dP50: 0.01 }, 2, ["--locks", locks]);
+      expect(w.log.join("\n")).toMatch(/cornell L1 cornell Back dP50: 0\.01 is above the lock/);
     });
 
     it("treats a lock cut against another scene basis as stale: a round logs it and passes, --lock needs --relax", async () => {

@@ -37,6 +37,7 @@ using Matrix = std::array<double, 16>;  // column-major, as three's Matrix4.elem
 
 class SkinnedMesh;
 class Bone;
+class PerspectiveCamera;
 struct GpuJointScene {
     struct Rig {
         std::weak_ptr<SkinnedMesh> mesh;
@@ -232,7 +233,7 @@ struct DirectLight {
     struct Shadow {
         std::shared_ptr<const shadows::AtlasOptions> virtualShadow;
         std::optional<std::array<double, 3>> sourceAngleFilter;
-        std::optional<std::array<double, 3>> sourceRadiusFilter;
+        std::optional<std::array<double, 4>> sourceRadiusFilter;
         double tanHalfFov = 1;  // a perspective map's: a cube face's is 1
         Matrix view{}, projection{}, matrix{};
         double bias = 0, normalBias = 0, radius = 1, intensity = 1;
@@ -344,6 +345,9 @@ public:
     const std::vector<std::string>& diagnostics() const { return diagnostics_; }
     /** Separate capture targets: probe work never resizes the presented frame or its post history. */
     Renderer& probeCaptureRenderer();
+    /** The face camera of a probe capture, shared so a render callback that keeps its handle is safe. The
+     *  capture creates it on the first face and poses it again for each one. */
+    std::shared_ptr<PerspectiveCamera>& probeCaptureCamera() { return probeCamera_; }
     /** Another renderer on this device, with its own targets: a reflection pass draws into one. */
     /** A renderer on the same device for a render target or a reflection: it shares this one's map
      *  textures, geometry copies, and layout and pipeline caches, as three's one renderer does. */
@@ -373,6 +377,9 @@ public:
     void setPostSource(const Renderer* main) { postSource_ = main; }
     WGPUTextureView sceneDepthView() const { return depthView_; }
     WGPUTextureView sceneColorView() const { return sceneView_; }
+    /** The format the scene colour is drawn and read in: RGBA16Float, or RGBA32Float for a FloatType render target (a 32-bit target is never multisampled). */
+    void setSceneFormat(WGPUTextureFormat format);
+    WGPUTextureFormat sceneFormat() const { return sceneFormat_; }
     /** Linear filtering, clamped to the edge: three's RenderTarget texture defaults. */
     WGPUSampler linearClampSampler();
     void setVirtualShadow(std::size_t light, const shadows::AtlasOptions& options);
@@ -574,7 +581,7 @@ public:
      * The last timed frame's GPU time by segment, in ms: shadow passes (0 when the frame drew none),
      * scene pass, other passes (offscreen, compute, post, TRAA), output pass.
      */
-    std::array<double, 4> lastGpuSegments() const { return timing_->segments; }
+    std::array<double, kGpuSegments> lastGpuSegments() const { return timing_->segments; }
     /** How many GPU times have come back, so a caller samples each one once. */
     uint64_t gpuSamples() const { return timing_->samples; }
     /** Timestamp pairs in the most recently resolved complete frame. */
@@ -624,7 +631,8 @@ private:
     enum LightField : uint8_t { kLightColor, kLightDirection, kLightPosition, kLightDistance, kLightDecay, kLightAxis,
                                 kLightConeCos, kLightPenumbraCos, kLightShadowMatrix, kLightShadowBias,
                                 kLightShadowNormalBias, kLightShadowRadius, kLightShadowMapSize,
-                                kLightShadowIntensity, kLightShadowNear, kLightShadowFar, kLightShadowSourceRadius, kLightFieldCount };
+                                kLightShadowIntensity, kLightShadowNear, kLightShadowFar, kLightShadowSourceRadius,
+                                kLightShadowPenumbraScale, kLightFieldCount };
     uint64_t renderPrepared(std::span<const DrawItem> items, const CameraState& camera, const LightState& lights,
         std::array<double, 4> clear, std::vector<std::shared_ptr<PipelineCompilation>>* compilation,
         WGPUTextureFormat outputFormat, bool defer = false);
@@ -772,12 +780,13 @@ private:
     void rebuildGroups();
     void releaseTargets();
     void resolveDepth(WGPUCommandEncoder encoder);  // 4x: depth_ takes sample 0 of msaaDepth_
-    GpuStatus readRgba16(WGPUTexture texture, ReadbackCallback done);
+    GpuStatus readRgba16(WGPUTexture texture, ReadbackCallback done, uint32_t texelBytes = 8);
     void releaseOutputGroup();
     void outputPass(WGPUCommandEncoder encoder, WGPUTextureView present, WGPUTextureFormat presentFormat);
 
     WGPUInstance instance_;
     std::unique_ptr<Renderer> probeCapture_;
+    std::shared_ptr<PerspectiveCamera> probeCamera_;
     WGPUDevice device_;
     WGPUQueue queue_;
     // Mip passes recorded since the last submit: one encoder for every texture uploaded in between,
@@ -882,6 +891,7 @@ private:
     WGPUTextureView colorView_ = nullptr;
     WGPUTextureView depthView_ = nullptr;
     WGPUTexture sceneColor_ = nullptr;  // linear HDR, what materials draw into
+    WGPUTextureFormat sceneFormat_ = WGPUTextureFormat_RGBA16Float;
     WGPUTextureView sceneView_ = nullptr;
     uint32_t sampleCount_ = 1;
     uint32_t requestedSamples_ = 1;  // what the game asked for; sampleCount_ is 1 while a traa() effect is in the post graph
@@ -978,7 +988,7 @@ private:
     // renderer is gone (wgpu does at teardown), and it must then find nothing to write into.
     struct Timing {
         double lastMs = -1;
-        std::array<double, 4> segments{};  // shadow passes, scene pass, other passes, output pass, in ms
+        std::array<double, kGpuSegments> segments{};  // shadow passes, scene pass, other passes, output pass, screen-space gather, in ms
         uint32_t passes = 0;
         uint64_t samples = 0;
         uint64_t source = 0;  // the caller frame id the successful sample was submitted with

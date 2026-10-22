@@ -72,7 +72,7 @@ is a partial patch. `game.goto("<scene-name>")` also rebuilds the scene, but it 
 state. Seeded randomness is deterministic only when `defineGame({ seed })` is configured.
 
 WebGPU reports `TN_GPU_CLASS` once per launch. Automatic `render.resolutionScale` starts at 0.85 for `mobile-low`, otherwise 1; a numeric value pins it. `TN_FRAME_BUDGET` reports the actual scale under both policies. `src/render/quality.ts` owns `low`, `medium`, `high` (the engine chain: no built-in stage at any tier); the GPU family from `ctx.renderer.gpuClass` sets the start (`discrete` `high`, `integrated` and `mobile-high` `medium`, other phones `low`); `isMobile()` chooses `low`, otherwise `high` when the family is `unknown`; override with `setupPost(..., { tier: "low" })`. Unknown tiers throw and `TN_QUALITY_TIER` reports
-the source. The player's four tiers are `STUDY_TIERS` in the same file. The bridge flushes about 100 ms; a control flushes it at once.
+the source. Rain keeps 4x multisampling: `temporalAA` is off in `quality.ts`, because the study draws its own single post pass. The player's four tiers are `STUDY_TIERS` in the same file. The bridge flushes about 100 ms; a control flushes it at once.
 
 When an animation looks wrong, measure it before rewriting it. `clipPoseError` scores a
 retargeted clip against its source per bone in degrees — whole quaternions relative to each rig's

@@ -46,8 +46,8 @@ const median = (a: ArrayLike<number>, from: number, to: number): number =>
   [...Array.from(a).slice(from, to)].sort((x, y) => x - y)[Math.floor((to - from) / 2)] ?? 0;
 
 function runEdge(segment: Float64Array, scale: number): { at: number; width: number } | undefined {
-  const [window, gap] = [WINDOW * scale, GAP * scale];
-  if (segment.length < MIN_RUN * scale) return undefined;
+  const [window, gap] = [Math.round(WINDOW * scale), Math.round(GAP * scale)];
+  if (segment.length < Math.round(MIN_RUN * scale)) return undefined;
   const smooth = segment.map((_, i) =>
     mean(segment, Math.max(0, i - 1), Math.min(segment.length, i + 2)),
   );

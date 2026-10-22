@@ -59,12 +59,11 @@ import {
   GI_LOCK_FILE,
   checkGiLocks,
   lockCells,
-  mergeLocks,
   readGiLocks,
   sceneBasis,
   staleLocks,
   withOfflineRoot,
-  writeGiLocks,
+  writeMerged,
 } from "./giLocks.js";
 import { main as judgeMain } from "./judge.js";
 import { type Expect, type Tier, UNREAL_LEVEL } from "./judgeVerdict.js";
@@ -313,13 +312,11 @@ async function ensureArm(
   return { arm, dir, captured: true };
 }
 
-function link(target: string, name: string, source: string): void {
-  mkdirSync(target, { recursive: true });
-  const at = path.join(target, name);
-  if (!existsSync(at)) symlinkSync(source, at);
-}
-
-/** The compare rows of every run of an arm at one layer, as regions checked against the layer's thresholds. */
+/**
+ * The compare rows of every run of an arm at one layer, as regions checked against the layer's thresholds.
+ * The rows read the committed Unreal statistics, the same reference `--lock` re-measures, so a local Unreal
+ * tree that is older than the committed reference changes the judge's images but not the numbers.
+ */
 function regionsOf(
   deps: IDeps,
   o: IOptions,
@@ -330,24 +327,23 @@ function regionsOf(
 ): IRegion[] {
   const limits = lightLimits(readThresholds(), limitLayer);
   const runs = arm.runs.map((run) => {
-    const root = path.join(dir, "compare", run);
-    link(root, "unreal", o.unreal);
-    link(root, "threenative", path.join(dir, run));
-    return deps.compare(o.scene, layer, root).map((row): IRegion => {
-      if (row.deltaE === null || row.dP50 === null || row.iou === null)
-        return fail("MISSING_METRIC", `${row.cell}/${row.region}: the compare gave no value`);
-      const { pass, ratio } = evaluate(row, limits);
-      return {
-        pose: row.cell.slice(o.scene.length + 1),
-        region: row.region,
-        dP50: row.dP50,
-        deltaE: row.deltaE,
-        dEv: row.dEv50 === null ? null : Math.abs(row.dEv50),
-        iou: row.iou,
-        pass,
-        ratio,
-      };
-    });
+    return withOfflineRoot(path.join(dir, run), (root) => deps.compare(o.scene, layer, root)).map(
+      (row): IRegion => {
+        if (row.deltaE === null || row.dP50 === null || row.iou === null)
+          return fail("MISSING_METRIC", `${row.cell}/${row.region}: the compare gave no value`);
+        const { pass, ratio } = evaluate(row, limits);
+        return {
+          pose: row.cell.slice(o.scene.length + 1),
+          region: row.region,
+          dP50: row.dP50,
+          deltaE: row.deltaE,
+          dEv: row.dEv50 === null ? null : Math.abs(row.dEv50),
+          iou: row.iou,
+          pass,
+          ratio,
+        };
+      },
+    );
   });
   return averageRuns(runs);
 }
@@ -644,19 +640,7 @@ function lockRound(args: string[], deps: IDeps): number {
       `${mismatch}: the arm no longer measures what ${id} recorded; lock a round that the store still reproduces`,
     );
   const fresh = lockCells(round.id, round.scene, layer, runs, sceneBasis(round.scene));
-  const merged = mergeLocks(existsSync(file) ? readGiLocks(file) : [], fresh, { tighten, relax });
-  writeGiLocks(file, merged.locks);
-  deps.log(
-    `locked ${round.scene} ${layer} from ${id}: ${fresh.length} region(s) in ${round.cells.length} pose(s), ${merged.added.length} added, ${merged.moved.length} moved, ${merged.improved.length} tighter and kept\nwrote ${file} (${merged.locks.length} lock(s))`,
-  );
-  if (merged.improved.length > 0)
-    deps.log(
-      `${merged.improved.length} region(s) are tighter in this round: pass --tighten to ratchet them`,
-    );
-  if (merged.looser.length > 0)
-    deps.log(
-      `relaxed ${merged.looser.length} bound(s) on purpose:\n  ${merged.looser.join("\n  ")}`,
-    );
+  writeMerged(file, fresh, { tighten, relax }, deps.log, `${round.scene} ${layer} from ${id}`);
   return 0;
 }
 
@@ -714,7 +698,8 @@ export async function main(
 
   const before = stored ?? after;
   const regions = regionsOf(deps, o, after.dir, after.arm, layer, GI_LAYER);
-  const broken = checkLocks(deps, o, after, layer);
+  // The arm holds the L1 frames (GI off) too: the direct-light locks ride on every round.
+  const broken = checkLocks(deps, o, after, layer) + checkLocks(deps, o, after, "L1");
 
   const date = deps.now().toISOString();
   const id = roundId(date, o.scene, o.tier, state.stamp);

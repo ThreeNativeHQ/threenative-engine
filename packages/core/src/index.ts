@@ -601,7 +601,6 @@ export type { BudgetVerdict, IBudgetLadderOptions, IBudgetWindow } from "./rende
  * @constraint the GPU time of a pass is read by the scene name three or the game gave it, so name every GI pass in `stages`
  * @constraint timestamp queries are needed: without them every window is unobserved and the method holds
  * @override explicit: true keeps the game's own finalGatherMethod and reports an exceeded budget
- * @alias global illumination quality
  * @alias lumen scalability
  * @alias sg.GlobalIlluminationQuality
  * @alias final gather method
@@ -622,7 +621,6 @@ export { GI_METHODS, GIBudget } from "./render/gi-budget.js";
  * @constraint timestamp queries are needed: without them every window is unobserved and the tier holds
  * @constraint the signal is the whole frame's GPU time, so a frame slow for another reason also steps the filter down
  * @override explicit: true keeps the game's own sample counts and reports an exceeded period
- * @alias shadow quality
  * @alias virtual shadow map scalability
  * @alias sg.ShadowQuality
  * @example
@@ -1036,14 +1034,19 @@ export { sourceAngleShadowFilter } from "./render/soft-shadow.js";
 /**
  * Source-radius blocker search and variable-radius PCF on a spot or point light's shadow map.
  * @situation soften a lamp's shadow by the lamp's size, as Unreal's SourceRadius does
- * @constraint sourceRadius is required, in metres, 0 or more (0 is one hard tap); forward-depth maps only
- * @alias SourceRadius, PCSS, soft lamp shadow
+ * @constraint sourceRadius is required, in metres, 0 or more (0 is one hard tap); penumbraScale, the share of the geometric penumbra kept, is in (0, 4] and defaults to 0.6, the width Unreal's lamp ray test resolves; forward-depth maps only
+ * @alias PCSS soft shadows
+ * @override penumbraScale: 1 gives the geometric penumbra of a disk lamp
  * @example lamp.shadow.filterNode = sourceRadiusShadowFilter({ sourceRadius: 0.05 });
  */
-export {
-  lampPenumbraTangent,
-  sourceRadiusShadowFilter,
-} from "./render/soft-shadow.js";
+export { sourceRadiusShadowFilter } from "./render/soft-shadow.js";
+/**
+ * A lamp's penumbra radius in tangent units at a receiver, from the lamp's source radius and the blocker and receiver distances.
+ * @situation measure a lamp shadow's penumbra width without a GPU
+ * @constraint sourceRadius is 0 or more; both distances are positive metres; the result is the geometric tangent, before penumbraScale
+ * @example const tangent = lampPenumbraTangent(0.05, 2, 3);
+ */
+export { lampPenumbraTangent } from "./render/soft-shadow.js";
 /**
  * Convert world-space caster gap to a shadow UV radius, floored at one texel.
  * @situation measure a source-angle shadow's filter radius without a GPU

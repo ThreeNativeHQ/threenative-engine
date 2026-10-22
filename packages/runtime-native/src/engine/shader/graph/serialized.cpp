@@ -204,7 +204,9 @@ public:
         }
         else if (kind == "UVNode" && field(record, "name").string() == "0") result = uv();
         else if (kind == "ScreenNode" && operation == "uv") result = uv();
-        else if ((kind == "TextureNode" || kind == "PassTextureNode" || kind == "PassMultipleTextureNode") && ((args.size() <= 1 && operation.empty()) || (args.size() <= 2 && operation == "load"))) {
+        // The drawing buffer, as `screenSize` is in a graph the facade builds (abi/tsl_call.cpp): the renderer fills it.
+        else if (kind == "ScreenNode" && operation == "size") result = uniform("screenSize", Type::vec(2));
+        else if ((kind == "TextureNode" || kind == "PassTextureNode" || kind == "PassMultipleTextureNode") && ((args.size() <= 1 && operation.empty()) || (args.size() <= 2 && (operation == "load" || operation == "level")))) {
             const std::string name = field(record, "name").string();
             if (name.empty()) return fail("TN_TSL_EXPORT_INVALID: texture name");
             std::string resource = name == "output" ? "scene" : name;
@@ -213,6 +215,11 @@ public:
                 if (index(dependency, records_.size(), child) && nodes_[child] && (nodes_[child]->kind == Kind::PostEffect || nodes_[child]->kind == Kind::RenderTexture)) resource = nodes_[child]->name;
             }
             auto sample = std::const_pointer_cast<NodeData>(texture(resource, args.empty() ? uv() : args[0]));
+            // An explicit mip is a second argument; the exporter writes `level` only with the uv it reads at.
+            if (operation == "level") {
+                if (args.size() != 2) return fail("TN_TSL_EXPORT_INVALID: texture level");
+                sample->args.push_back(args[1]);
+            }
             if (operation == "load") {
                 sample->kind = Kind::TextureLoad;
                 if (args.empty()) {
@@ -223,7 +230,11 @@ public:
             }
             for (const auto& dependency : dependencies.items()) {
                 size_t child = 0;
-                if (index(dependency, records_.size(), child) && nodes_[child] && nodes_[child]->kind == Kind::PostEffect) sample->args.push_back(nodes_[child]);
+                if (index(dependency, records_.size(), child) && nodes_[child] && nodes_[child]->kind == Kind::PostEffect) {
+                    // The effect rides as the second argument, where the lowering reads an explicit mip.
+                    if (operation == "level") return fail("TN_TSL_UNSUPPORTED: TextureNode/level of a post effect");
+                    sample->args.push_back(nodes_[child]);
+                }
             }
             for (const auto& dependency : dependencies.items()) {
                 size_t child = 0;
