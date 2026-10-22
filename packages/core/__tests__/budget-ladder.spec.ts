@@ -56,6 +56,26 @@ describe("BudgetLadder", () => {
     expect(target.level).toBe("full");
   });
 
+  it("keeps its level when a stage reading of 0 ms sits beside 2 slow frames after fast ones", () => {
+    // Found live, 2026-10-22: the plain mean of the 16 frames fell under the target, so a stage that
+    // reads 0 ms (its pass is absent) passed the absorb test and stepped on a hitch.
+    const target = ladder();
+    feed(target, 0, 10, 14);
+    const windows = feed(target, 0, 25, 6);
+    expect(windows.every((w) => w.stepped === undefined)).toBe(true);
+    expect(windows.some((w) => w.notBlamed)).toBe(true);
+    expect(target.level).toBe("full");
+  });
+
+  it("sizes the overage on the frames the rule read, not on the whole history", () => {
+    // 14 frames at 10 ms, then 2 at 25 ms: the rule reads the 2. This stage (12 ms of each) absorbs
+    // the 10 ms overage of those two, so the step is right even though the 16-frame mean is 11.9 ms.
+    const target = ladder();
+    feed(target, 1, 10, 14);
+    const windows = feed(target, 12, 25, 2);
+    expect(windows.at(-1)).toMatchObject({ panic: true, stepped: "mid" });
+  });
+
   it("reads the frame, not the stage: one stage reading holds at boost and steps at P5", () => {
     // The same 8 ms of stage time: a 9 ms frame at boost is far inside the period, a 22 ms one is not.
     const boost = ladder();

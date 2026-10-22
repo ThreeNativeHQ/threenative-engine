@@ -51,6 +51,8 @@ interface IWindow {
   readonly periodMs: number;
   readonly targetMs: number;
   readonly share?: number;
+  /** The drawing buffer's width when the window closed: the primary resolution scale shows here. */
+  readonly drawingWidth?: number;
   readonly verdict?: string;
   readonly stagesSeen: readonly string[];
   readonly passes: readonly string[];
@@ -170,7 +172,9 @@ async function collectWindows(
   const windows = new Map<number, IWindow>();
   const deadline = Date.now() + 240_000;
   while (windows.size < count + 1 && Date.now() < deadline) {
-    const last = (await page.evaluate("window.__tnRef.giBudget?.() ?? null")) as IWindow | null;
+    const last = (await page.evaluate(
+      "(() => { const r = window.__tnRef.giBudget?.() ?? null; return r && { ...r, drawingWidth: window.__tnRef.renderer.domElement.width }; })()",
+    )) as IWindow | null;
     if (last?.window !== undefined) windows.set(last.window, last);
     if (errors.length > 0) throw new Error(`TN_UNREAL_LOOK_PAGE_ERROR: ${errors.join(" | ")}`);
     await page.waitForTimeout(250);
@@ -232,8 +236,7 @@ async function measureTier(
       ),
     };
     // No GI pass runs at `none`, so the tier costs no GI time by construction.
-    if (method === "none")
-      return { adapter, frame, giMs: 0, method, windows: 0 };
+    if (method === "none") return { adapter, frame, giMs: 0, method, windows: 0 };
     return { ...summarize(adapter, await collectWindows(page, errors, count)), frame };
   } finally {
     await page.close();

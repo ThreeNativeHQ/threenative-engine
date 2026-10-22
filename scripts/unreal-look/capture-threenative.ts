@@ -176,6 +176,9 @@ export async function patchScaffold(
   // One drawing pixel per display pixel, so both engines rasterise the same grid.
   // The scene renders on the template's default engine, the owned C++ Wasm engine (owner,
   // 2026-10-19); upstream three is never pinned here.
+  // TN_UNREAL_LOOK_RESOLUTION_AUTO=1 keeps the template's "auto" scale, so a perf run can show the primary
+  // resolution scale answer a frame over its period (PRD-644 `## Decisions`). A capture never sets it.
+  if (process.env.TN_UNREAL_LOOK_RESOLUTION_AUTO === "1") return;
   await writeFile(
     config,
     replaceOnce(

@@ -158,7 +158,8 @@ export class BudgetLadder<L extends string> {
     const decision = this.#rule.observe(frameMs);
     const from = this.level;
     let stepped: L | undefined;
-    if (decision.direction === "down") stepped = this.#down(decision.panic);
+    if (decision.direction === "down")
+      stepped = this.#down(decision.panic, decision.frames, decision.meanMs);
     else if (decision.direction === "up") stepped = this.#up();
     if (stepped !== undefined) {
       this.#rule.reset();
@@ -168,16 +169,17 @@ export class BudgetLadder<L extends string> {
     return this.#frames < this.#windowFrames ? undefined : this.#close(from, undefined);
   }
 
-  #down(panic: boolean): L | undefined {
+  #down(panic: boolean, frames: number, meanMs: number | undefined): L | undefined {
     const lower = this.#index - 1;
-    if (this.#explicit || lower < 0) return undefined;
-    // The stage steps only when zero cost would fit the frame: the mean overage of the frames the
-    // rule read must not exceed the mean stage time of the same frames.
-    const frame = mean(this.#recent.map((r) => r.frame));
-    const stages = this.#recent.flatMap((r) => (r.stage === undefined ? [] : [r.stage]));
-    if (frame === undefined || stages.length === 0) return undefined;
+    if (this.#explicit || lower < 0 || meanMs === undefined) return undefined;
+    // The stage steps only when zero cost would fit the frame: the overage of the frames the rule read
+    // (the newest `frames` of them, which are 2 on a panic) must not exceed the stage time of the same frames.
+    const read = this.#recent.slice(-frames);
+    const stages = read.flatMap((r) => (r.stage === undefined ? [] : [r.stage]));
+    if (stages.length === 0) return undefined;
     const stage = mean(stages) as number;
-    if (stage < frame - this.#rule.targetMs) {
+    const overage = meanMs - this.#rule.targetMs;
+    if (!(stage >= overage && overage > 0)) {
       this.#notBlamed = true;
       return undefined;
     }
