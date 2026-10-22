@@ -120,7 +120,13 @@ export function shadowFilterOptions(value: unknown): Record<string, number> | nu
     );
   const config = options as Record<string, unknown>;
   const size = angle ? "sourceAngleRad" : "sourceRadius";
-  const { [size]: extent, blockerSamples, filterSamples, penumbraScale, minPenumbraPixels } = config;
+  const {
+    [size]: extent,
+    blockerSamples,
+    filterSamples,
+    penumbraScale,
+    minPenumbraPixels,
+  } = config;
   if (
     typeof extent !== "number" ||
     !Number.isFinite(extent) ||
