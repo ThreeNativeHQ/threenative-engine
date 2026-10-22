@@ -76,17 +76,56 @@ The subsurface colour, the AO factor and the fog density are look values in game
 | Fog reads the radiance cache | The VQ-07 volumetric fog froxel pass | Adds a GI term to the sun and sky terms | AC-1 |
 | Two-sided foliage back face | Materials marked `twoSidedFoliage` | New | AC-2 |
 
+## Decisions
+
+Lane glassfog, 2026-10-21. The engine owns the mechanism. The harness render source owns the look.
+
+1. **The lane builds `glass` and `fog`, not `foliage`.** Two scenes isolate the two materials that Phase 1
+   names, and each scene has one cause. `foliage` waits for the `shadow:wildwood` scene (lane wildwood).
+   The Phase 3 box and AC-2 stay open until that scene lands.
+2. **Unreal's default translucent material takes the translucency volume, the same in every direction.**
+   The lighting mode is Volumetric NonDirectional (UE 5.8.3: `Engine/Shaders/Private/TranslucencyVolumeCommon.ush`,
+   `GetVolumeLightingNonDirectional`). The read is the L0 term times 0.886227, which is the irradiance averaged over
+   every normal. A lamp therefore gives a pane one quarter of what a surface that faces the lamp receives.
+   A translucent-only material casts no dynamic shadow (`Engine/Source/Runtime/Engine/Public/MaterialShared.h`,
+   `ShouldCastDynamicShadows`), so the pane needs no shadow term. The harness reports any other mode as
+   unsupported (`translucencyLightingMode`).
+3. **The look is harness source. The mechanism is engine source.** `scripts/unreal-look/scaffold/render/translucency.ts`
+   swaps each unmapped translucent material for an unlit twin. The twin keeps the blending, opacity, sides and
+   depth write, and takes its colour from the light. The lamps are read live as point lights, unshadowed, at one
+   quarter. A spot light throws `TN_TRANSLUCENT_LIGHT`. `giCache.meanRadiance` adds the room's bounce light.
+   `ProbeVolume.sampleNonDirectional` (`packages/core/src/render/probe-volume.ts`) is the engine read: one atlas
+   fetch of the L0 term, not the seven fetches of `sampleNode`.
+4. **Fog takes the same mean field.** The starter's volumetric fog gains `ambientNode`, a function of the step's world
+   position. It adds to `ambient` and carries no phase term, because a radiance that is the same in every direction
+   integrates to itself over a phase function. The harness passes `giCache.meanRadiance` from L7.
+5. **The owned engine refused three things in the fog pass. The lane fixed all three in the template.** The TSL
+   front end refuses a Matrix4 value for `uniform` (`TN_TSL uniform: argument 0 ...`). The catalog lists
+   `getViewPosition` as unsupported on the Wasm engine (`TN_NATIVE_UNSUPPORTED_GETVIEWPOSITION`), but the native
+   host implements it (`packages/runtime-native/src/engine/abi/tsl_call.cpp:268`). The shader IR compares two values
+   of one type and selects on a bool scalar (`packages/runtime-native/src/engine/shader/ir.cpp`, `less`, `select`,
+   `greaterEqual`), where three broadcasts a scalar against a vector (`TN_TSL_TYPE: greaterEqual: takes two equal
+   numeric values`). The template now builds the camera matrices from four live `vec4` columns, has its own
+   `viewPosition` helper, and writes both comparisons as same-type nodes and the ray sign as arithmetic. Two specs in
+   `vq-volumetric-fog.spec.ts` fail when a refused value, call, comparison or select returns. The three engine gaps
+   stay open as engine work.
+6. **BEFORE is the epic head plus the fog start fixes.** The epic head cannot start the fog scene on the owned
+   engine, so a BEFORE without those fixes has no fog frame to compare.
+7. **Native proof is the conformance row `translucency-gi`.** `ProbeVolume` is JavaScript on both engines, so the
+   lane adds no C++. The row draws a translucent pane that reads `sampleNonDirectional` beside an opaque panel that reads the directional `sampleNode` of the same volume. The runner compares web with desktop.
+
 ## Execution Phases
 
 #### Phase 1: What takes no GI
-**Status:** NOT STARTED
-**Files:** `tools/unreal-reference/gi/foliage/{scene.py,criteria.md}` (new), `tools/unreal-reference/gi/scenes.json`
-- [ ] `foliage` is ready to calibrate: authored and captured in Unreal, recreated with direct light matching (PRD-646), and its PRD-647 criteria written. proof: `pnpm unreal-look:capture --engine unreal --scene gi:foliage --check-cvars` and `pnpm unreal-look:compare --scene gi:foliage --layer L1`.
-- [ ] The materials and fog froxels that take no GI on the `foliage` scene are listed under `## Decisions`, with the per-region error against Unreal Epic. proof: `pnpm unreal-look:compare --scene gi:foliage --layer L7`.
+**Status:** IN PROGRESS (glass and fog; `foliage` waits for the `shadow:wildwood` scene)
+**Files:** `tools/unreal-reference/gi/{glass,fog}/{scene.py,criteria.md}` (new), `tools/unreal-reference/gi/foliage/{scene.py,criteria.md}` (new, open), `tools/unreal-reference/gi/scenes.json`
+- [ ] `glass` and `fog` are ready to calibrate: built and captured in Unreal, recreated with direct light matching (PRD-646), their silhouettes agree, and their PRD-647 criteria are written. proof: `pnpm unreal-look:capture --engine unreal --scene gi:glass,gi:fog --check-cvars` and `pnpm unreal-look:compare --sameness --scene gi:glass,gi:fog`.
+- [ ] The materials and fog froxels that take no GI on `glass` and `fog` are listed under `## Decisions`, with the per-region error against Unreal Epic. proof: `pnpm unreal-look:compare --scene gi:glass,gi:fog --layer L7`.
+- [ ] `foliage` is ready to calibrate: authored and captured in Unreal, recreated with direct light matching (PRD-646), and its PRD-647 criteria written. It reuses the `shadow:wildwood` scene when that lands. proof: `pnpm unreal-look:capture --engine unreal --scene gi:foliage --check-cvars` and `pnpm unreal-look:compare --scene gi:foliage --layer L1`.
 
 #### Phase 2: Glass and fog
-**Status:** NOT STARTED
-**Files:** `packages/core/src/render/probe-volume.ts`, the VQ-07 fog pass, `packages/core/__tests__/probe-volume.spec.ts`
+**Status:** IN PROGRESS
+**Files:** `packages/core/src/render/probe-volume.ts`, the VQ-07 fog pass (`packages/create-threenative/templates/starter/src/render/volumetricFog*.ts`), `scripts/unreal-look/scaffold/render/{translucency,giCache}.ts`, `packages/core/__tests__/probe-volume.spec.ts`
 - [ ] A translucent pixel and a fog froxel read the same irradiance as an opaque pixel at the same point. proof: `pnpm exec vitest run packages/core/__tests__/probe-volume.spec.ts`.
 - [ ] The per-pixel read on a full-screen glass pane costs no more than 0.5 ms at 1920 × 1080, or the froxel decision is recorded. proof: `node packages/playtest/dist/runner/cli.js perf` on the harness.
 

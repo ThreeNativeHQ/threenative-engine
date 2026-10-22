@@ -100,9 +100,10 @@ export function fogTransport(inputs: IFogTransportInputs): Node<"vec4"> {
     const toSurface = endpoint.sub(origin).toVar();
     const distance = toSurface.length().max(0.000001).toVar();
     const direction = toSurface.div(distance).toVar();
-    const safeDirection = direction
-      .greaterThanEqual(0)
-      .select(direction.abs().max(0.000001), direction.abs().max(0.000001).negate());
+    // Arithmetic, not a vector select: the owned engine's shader IR takes a bool scalar in a select and
+    // two values of one type in a comparison, where three's WGSL builder broadcasts both.
+    const sign = direction.sign();
+    const safeDirection = direction.abs().max(0.000001).mul(sign.add(sign.abs().oneMinus()));
     const near = distance.toVar();
     const far = float(0).toVar();
     for (const volume of bounds) {
@@ -155,13 +156,19 @@ export function fogTransport(inputs: IFogTransportInputs): Node<"vec4"> {
           const coordinate = projected.xyz.div(projected.w).toVar();
           // Outside the finite shadow map, Three treats the directional source as unshadowed.
           const visibility = float(1).toVar();
-          If(coordinate.greaterThanEqual(0).all().and(coordinate.lessThanEqual(1).all()), () => {
-            visibility.assign(
-              texture(shadowDepth, vec2(coordinate.x, coordinate.y.oneMinus())).compare(
-                coordinate.z.add(reference("bias", "float", sun.shadow)),
-              ),
-            );
-          });
+          If(
+            coordinate
+              .greaterThanEqual(vec3(0))
+              .all()
+              .and(coordinate.lessThanEqual(vec3(1)).all()),
+            () => {
+              visibility.assign(
+                texture(shadowDepth, vec2(coordinate.x, coordinate.y.oneMinus())).compare(
+                  coordinate.z.add(reference("bias", "float", sun.shadow)),
+                ),
+              );
+            },
+          );
           illumination.addAssign(
             sunRadiance.mul(phase(direction.dot(sunDirection))).mul(visibility),
           );

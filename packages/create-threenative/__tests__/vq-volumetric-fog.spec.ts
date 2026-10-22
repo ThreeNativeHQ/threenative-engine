@@ -19,7 +19,13 @@ import {
   Vector3,
 } from "three";
 import { pass, texture3D } from "three/tsl";
-import { type Node, WGSLNodeBuilder } from "three/webgpu";
+import {
+  ConditionalNode,
+  type Node,
+  type NodeBuilder,
+  OperatorNode,
+  WGSLNodeBuilder,
+} from "three/webgpu";
 import { describe, expect, it, vi } from "vitest";
 import { setupSky } from "../templates/starter/src/render/sky.js";
 import {
@@ -355,18 +361,69 @@ it("scatters a field read at every step when the air is given an ambient node (P
   expect(lit.search(read)).toBeGreaterThan(lit.indexOf("for ("));
 });
 
+/** Builds the transport and the composed fog, at full and at half resolution (the half-resolution compose adds a depth test). */
+function buildBothGraphs(): void {
+  for (const resolutionScale of [1, 0.5]) {
+    const camera = new PerspectiveCamera();
+    const fog = required(
+      createVolumetricFog(new Scene(), camera, { ...settings(), resolutionScale }),
+    );
+    const scenePass = pass(new Scene(), camera);
+    const composed = fog.compose(scenePass);
+    // A TSL function body runs when the shader builds, so build both graphs the game draws.
+    fragmentCode(camera, required(fog.transport), "vec4");
+    fragmentCode(camera, composed, "vec4");
+    fog.dispose();
+    scenePass.dispose();
+  }
+}
+
 it("hands the owned engine's TSL only uniform values and functions it takes (PRD-643)", () => {
   refused.length = 0;
-  const camera = new PerspectiveCamera();
-  const fog = required(createVolumetricFog(new Scene(), camera, settings()));
-  const scenePass = pass(new Scene(), camera);
-  const composed = fog.compose(scenePass);
-  // A TSL function body runs when the shader builds, so build both graphs the game draws.
-  fragmentCode(camera, required(fog.transport), "vec4");
-  fragmentCode(camera, composed, "vec4");
+  buildBothGraphs();
   expect(refused).toEqual([]);
-  fog.dispose();
-  scenePass.dispose();
+});
+
+/**
+ * The owned engine's shader IR compares two values of one type and selects on a bool scalar
+ * (packages/runtime-native/src/engine/shader/ir.cpp: `less`, `equal`, `select`, `greaterEqual`). Three's WGSL builder
+ * broadcasts a scalar against a vector, so the stock path builds what the owned engine refuses at its first draw:
+ * `TN_TSL_TYPE: greaterEqual: takes two equal numeric values`. Every comparison and select the fog builds is checked
+ * as it generates.
+ */
+it("compares two values of one type and selects on a bool scalar, as the owned engine's IR requires (PRD-643)", () => {
+  const comparison = new Set(["==", "!=", "<", ">", "<=", ">="]);
+  const wrong: string[] = [];
+  const generateOperator = OperatorNode.prototype.generate;
+  const generateConditional = ConditionalNode.prototype.generate;
+  OperatorNode.prototype.generate = function (
+    this: OperatorNode,
+    builder: NodeBuilder,
+    output?: string | null,
+  ) {
+    if (comparison.has(this.op)) {
+      const a = this.aNode.getNodeType(builder);
+      const b = this.bNode.getNodeType(builder);
+      if (a !== b) wrong.push(`${a} ${this.op} ${b}`);
+    }
+    return generateOperator.call(this, builder, output);
+  };
+  ConditionalNode.prototype.generate = function (
+    this: ConditionalNode<string>,
+    builder: NodeBuilder,
+    output?: string | null,
+  ) {
+    const type = this.condNode.getNodeType(builder);
+    if (type !== "bool") wrong.push(`select on ${type}`);
+    return generateConditional.call(this, builder, output);
+  };
+  try {
+    buildBothGraphs();
+  } finally {
+    OperatorNode.prototype.generate = generateOperator;
+    ConditionalNode.prototype.generate = generateConditional;
+  }
+  expect(wrong).toEqual([]);
 });
 
 /**
