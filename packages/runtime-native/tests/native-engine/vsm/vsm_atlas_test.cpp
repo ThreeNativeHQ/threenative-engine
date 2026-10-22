@@ -179,6 +179,9 @@ void policies() {
     atlas->updateCasters({caster});
     atlas->update(eye, sun);
     caster.deforming = false;
+    // Unreal's rule: static only after MORE than staticAfterFrames quiet frames (here 2).
+    atlas->updateCasters({caster});
+    CHECK(!atlas->drawsStatic(1));
     atlas->updateCasters({caster});
     CHECK(!atlas->drawsStatic(1));
     atlas->updateCasters({caster});

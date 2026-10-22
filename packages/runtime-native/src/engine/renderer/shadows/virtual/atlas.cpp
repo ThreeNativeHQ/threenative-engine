@@ -222,7 +222,8 @@ void PageAtlas::updateCasters(const std::vector<CasterState>& casters) {
         if (moving) {
             if (!m.moving && !inserted) invalidate(m.caster.bounds, true);
             m.moving = true; m.quiet = 0; m.settling = 0;
-        } else if (m.moving && (caster.pinned || ++m.quiet >= options_.staticAfterFrames)) {
+        } else if (m.moving && (caster.pinned || ++m.quiet > options_.staticAfterFrames)) {
+            // UE 5.8.3 VirtualShadowMapCacheManager.cpp:1810: static once the age exceeds the threshold.
             m.moving = false;
             m.settling = 0;
             for (int l = 0; l < int(levels_.size()); ++l)

@@ -245,8 +245,8 @@ export interface IVirtualShadowOptions {
    */
   readonly partialRedraw?: boolean;
   /**
-   * Quiet frames before an automatically detected mover goes back into the cached levels, default
-   * 100 (Unreal's `FramesStaticThreshold`). A caster whose world matrix, instance matrix or
+   * Quiet frames an automatically detected mover must exceed before it goes back into the cached
+   * levels, default 100 (Unreal's `FramesStaticThreshold`: it settles on quiet frame 101). A caster whose world matrix, instance matrix or
    * deformation changed is drawn through the mover maps without a `trackCaster` call; this is how
    * long it must hold still before its shadow is baked into the cache again. Positive integer.
    */
@@ -1595,7 +1595,8 @@ export class VirtualShadowNode extends ShadowBaseNode {
       if (!moved && !deforms(mesh)) {
         if (state.phase === MOTION_MOVER) {
           state.quiet += 1;
-          if (state.quiet >= quietFrames) this.#settle(mesh, state);
+          // UE 5.8.3 UpdateCachePrimitiveAsDynamic: static once the invalidation age is MORE than the threshold.
+          if (state.quiet > quietFrames) this.#settle(mesh, state);
         }
         continue;
       }

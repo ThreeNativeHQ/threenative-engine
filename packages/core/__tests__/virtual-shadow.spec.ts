@@ -3568,7 +3568,9 @@ describe("VirtualShadowNode adaptive caster gate", () => {
  * every frame, so a game that never calls `trackCaster` still gets a shadow that follows a mover.
  */
 describe("VirtualShadowNode automatic movers", () => {
-  const OPTIONS = { clipExtents: [8, 32], mapSize: 64, staticAfterFrames: 3 };
+  // Unreal's rule: a caster turns static once more than `FramesStaticThreshold` frames passed
+  // without an invalidation, so a threshold of 2 settles on the third quiet frame.
+  const OPTIONS = { clipExtents: [8, 32], mapSize: 64, staticAfterFrames: 2 };
 
   function scene20(): ReturnType<typeof world> & { node: VirtualShadowNode; mesh: Mesh } {
     const built = world();
