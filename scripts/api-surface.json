@@ -220,6 +220,7 @@
         "@threenative/core#staticTransformCensus": "export function staticTransformCensus(): IStaticTransformCensus { … }",
         "@threenative/core#SurfaceCache": "export class SurfaceCache { … }",
         "@threenative/core#SurfaceLights": "export class SurfaceLights { … }",
+        "@threenative/core#TracedReflections": "export class TracedReflections { … }",
         "@threenative/core#TracerPool3D": "export class TracerPool3D { … }",
         "@threenative/core#unlitFoliageWarning": "export function unlitFoliageWarning( scene: Object3D & { … }",
         "@threenative/core#unmarkStatic": "export function unmarkStatic(root: Object3D): void { … }",

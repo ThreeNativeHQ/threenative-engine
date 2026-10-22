@@ -1226,6 +1226,23 @@
       "required": true
     },
     {
+      "id": "traced-reflections",
+      "title": "traced reflections: a mirror shows walls behind the camera",
+      "category": "lighting-gi",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/traced-reflections.js",
+      "owner": "PRD-642",
+      "browserRecipe": "webgpu",
+      "requiresHardwareAdapter": true,
+      "tolerance": {
+        "pixelMismatchRatio": 0.08,
+        "perceptualDeltaE": 10.0
+      },
+      "desktopGate": true,
+      "required": true,
+      "reason": "TracedReflections packs the scene's triangles into float textures and walks them in a TSL loop; a host that drops the textureLoad, the loop over a leaf's triangles or the float textures leaves the mirror flat. The red, green and yellow walls sit outside the frustum, so only a ray that leaves the screen can paint them on the sphere."
+    },
+    {
       "id": "80-request-animation-frame",
       "title": "request animation frame cadence",
       "category": "runtime",
