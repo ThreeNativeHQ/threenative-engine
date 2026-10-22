@@ -36,11 +36,9 @@ const encode = (v: number): number =>
   );
 
 const layer = flag("--layer") ?? "L1";
-// `--gamut <n>` overrides the curve's Expand Gamut amount, to test one parameter of the curve alone.
-const curve = {
-  ...FILMIC_CURVE,
-  ...(flag("--gamut") ? { expandGamut: Number(flag("--gamut")) } : {}),
-};
+// Unreal's EXR is taken after its Expand Gamut step (PostProcessCombineLUTs.usf runs the expansion before the
+// no-tone-curve output), so the curve must not expand it again: 0 unless `--gamut <n>` asks for another amount.
+const curve = { ...FILMIC_CURVE, expandGamut: Number(flag("--gamut") ?? 0) };
 const unreal = path.resolve(flag("--unreal") ?? path.join(REFERENCE, "captures/unreal"));
 const out = path.resolve(flag("--out") ?? path.join(REFERENCE, "captures/curve", layer));
 const poses = JSON.parse(readFileSync(path.join(REFERENCE, "poses.json"), "utf8")) as {
