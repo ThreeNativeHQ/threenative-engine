@@ -63,7 +63,7 @@ them in `tools/unreal-reference/gi/<scene>/`.
 | Scene | What it isolates | Light | Poses | Serves |
 | --- | --- | --- | --- | --- |
 | `penumbra-lab` | 0.5 m boxes at 0, 0.25, 1, 4 and 10 m over a white floor; a 2 cm pole; a 15° ramp for acne; a 1 m step | Sun at 60°, 15° and 4°; sky light | `heights`, `contact`, `ramp` | [PRD-634](../look/PRD-634-sun-shadows-reach-the-horizon-and-soften-with-distance-from-the-caster.md), [PRD-652](PRD-652-the-shadow-tier-follows-unreal-shadow-quality-levels.md) |
-| `lamp-room` | A 6 × 4 × 3 m room with box furniture, a 1 cm rod 5 cm from a wall | A spot light at source radius 0 and 10 cm, a point light at 5 cm; no sun, no sky | `spot`, `spot-soft`, `point`, `rod` | [PRD-650](../../done/PRD-650-a-lamp-shadow-is-as-sharp-as-the-pixels-it-covers-and-softens-with-the-lamp-size.md), PRD-652 |
+| `lamp-room` | A 6 × 4 × 3 m room with box furniture, a 1 cm rod 5 cm from a wall | A spot light at source radius 0 and 10 cm, a point light at 5 cm; no sun, no sky | `spot`, `spot-soft`, `point`, `rod` | [PRD-650](PRD-650-a-lamp-shadow-is-as-sharp-as-the-pixels-it-covers-and-softens-with-the-lamp-size.md), PRD-652 |
 | `lamp-room` (run) | `swing`: a box crosses the spot cone in frames 60 to 120, then stops | as above | — | PRD-650 |
 | `horizon` | A 2 × 2 km heightfield with hills; 30 m towers at 50, 300 and 1500 m | Sun at 15°; sky light | `near`, `far` | PRD-634, [PRD-457](../rendering/PRD-457-virtual-shadows-scale-by-measurement.md), PRD-652 |
 | `horizon` (runs) | `walk`: the camera moves 10 m in 3 s; `sunturn`: the sun azimuth turns 10° in 3 s | as above | — | PRD-634 (stability) |
