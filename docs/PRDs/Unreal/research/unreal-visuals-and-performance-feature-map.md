@@ -28,6 +28,95 @@ the idea for WebGPU and the owned C++ engine under the licence rule (ideas only,
 **Open** (filed PRDs, no main work landed), **Deferred** (built or measured, not worth it yet; each row names when to revisit),
 **Not filed** (off in a fresh Unreal project, or no game asks for it).
 
+## Port order: complexity against impact
+
+This section ranks the open Unreal PRDs from `docs/PRDs/Unreal/` on PR #541 (`feat/unreal-look-epic`),
+as of 2026-10-21. It leaves out the asset PRDs (PRD-352, PRD-487) and PRD-316.
+
+- **Complexity** is the PRD's own `**Complexity:**` line (1 to 10). "est." marks a PRD without one.
+- **Impact** (1 to 5) is a judgement: how much of the default frame it changes, how much frame
+  time it saves, or how much later work it unblocks.
+- **Done** is ticked boxes over all boxes in the PRD file.
+- **Wave** respects the "Waits on" order in [`../README.md`](../README.md). PRDs in one wave can
+  run in parallel.
+
+```mermaid
+quadrantChart
+  title Open Unreal PRDs, complexity against impact
+  x-axis Low complexity --> High complexity
+  y-axis Low impact --> High impact
+  quadrant-1 Big bets
+  quadrant-2 Quick wins
+  quadrant-3 Fill-ins
+  quadrant-4 Wait for a game that asks
+  "632 tone+exposure": [0.50, 0.95]
+  "633 sky": [0.52, 0.92]
+  "636 post": [0.38, 0.55]
+  "635 AO": [0.40, 0.52]
+  "562 aerial": [0.25, 0.55]
+  "603 RadianceCache": [0.68, 0.95]
+  "640 ScreenProbeGather": [0.85, 0.92]
+  "639 SurfaceCache": [0.70, 0.72]
+  "642 reflections": [0.72, 0.75]
+  "634 sun penumbra": [0.55, 0.75]
+  "539 TSR": [0.55, 0.70]
+  "651 leaf shadows": [0.53, 0.78]
+  "600 Nanite": [0.58, 0.48]
+  "610 sparks": [0.60, 0.15]
+  "606 fast travel": [0.20, 0.30]
+```
+
+| Wave | PRD | What it ports | Layer | Complexity | Impact | Done | Waits on | Why this wave |
+| --- | --- | --- | --- | :---: | :---: | ---: | --- | --- |
+| 1 | PRD-631 | Unreal reference scene and the comparison harness | L0 | 6 | 5 | 15/15 | — | All boxes ticked; close it |
+| 1 | PRD-632 | Filmic tone curve, EV100, auto exposure | L1 | 6 | 5 | 4/16 | PRD-631 | Every pixel. Every later layer compares at matched exposure |
+| 2 | PRD-633 | Sky atmosphere and sky light capture | L2 | 6 | 5 | 1/11 | PRD-632 | The sky fills the frame and lights the scene |
+| 2 | PRD-636 | Finishing post: bloom, vignette, local exposure, motion blur | L9 | 5 | 3 | 15/28 | PRD-632 | Half done; a cheap finish |
+| 2 | PRD-635 | AO on indirect light only | L6 | 5 | 3 | 5/14 | PRD-632 | Low cost, visible in every contact area |
+| 2 | PRD-651 | Leaf cards cast leaf shadows | L5 | 6 | 4 | 5/12 | — | Phase 1 is an engine bug on the default engine |
+| 2 | PRD-649 | Shadow calibration scenes | L5 | 5 | 4 | 3/12 | PRD-646 | Unblocks PRD-634, 650, 652 |
+| 2 | PRD-646 | ThreeNative recreates the GI calibration scenes | L7 | 6 | 4 | 6/15 | PRD-632 | Unblocks every GI verdict |
+| 2 | PRD-603 | `RadianceCache` traces the packed scene | L7 | 7 | 5 | 0/10 | — | The GI foundation; README says it can start now |
+| 2 | PRD-539 | TSR quality and cost at low resolution | Perf | 6 est. | 4 | 0/5 | — | Independent. Lower render resolution pays for every other layer |
+| 3 | PRD-562 | Aerial perspective from a froxel volume | L3 | 4 | 3 | 0/8 | PRD-633 | Needs the atmosphere |
+| 3 | PRD-VQ-08 | Volumetric clouds and overhead transmittance | L4 | 7 est. | 3 | 0/9 | PRD-633 | The default Unreal map has clouds |
+| 3 | PRD-634 | Sun shadows: reach and source-angle penumbra | L5 | 6 | 4 | 2/14 | PRD-649 | The biggest shadow difference from Unreal |
+| 3 | PRD-604 | `IrradianceFieldGather`: no light leaks through walls | L7 | 5 | 4 | 0/10 | PRD-603 | Unreal Medium GI tier |
+| 3 | PRD-639 | `SurfaceCache`: rays see texture, glow and lights | L7 | 7 | 4 | 6/9 | PRD-603 | Two thirds done |
+| 3 | PRD-640 | `ScreenProbeGather` and `ShortRangeAO` | L7 | 8 | 5 | 2/9 | PRD-603, 647 | Unreal Epic GI tier; the default |
+| 4 | PRD-641 | GI temporal filter | L7 | 6 | 3 | 4/13 | PRD-640 | Stability after the gather exists |
+| 4 | PRD-642 | `TracedReflections` | L8 | 7 | 4 | 1/10 | PRD-603, 639 | Needs the surface cache |
+| 4 | PRD-644 | GI tiers follow Unreal quality levels | Perf | 6 | 4 | 5/10 | PRD-647 | Sets the cost of each GI tier |
+| 4 | PRD-650 | Lamp shadows sharp to the pixel, soft by size | L5 | 7 | 3 | 2/11 | PRD-649 | Interiors |
+| 4 | PRD-652 | Shadow tiers follow Unreal quality levels | Perf | 5 | 3 | 5/9 | PRD-634, 650 | Cost of each shadow tier |
+| 5 | PRD-643 | Glass, fog and leaves take the bounce light | L7 | 5 | 2 | 0/8 | PRD-603, 604 | Small share of the frame |
+| 5 | PRD-605 | Radiance cache clipmaps follow the camera | L7 | 6 | 3 | 0/8 | PRD-603, 604 | Open worlds |
+| 5 | PRD-457 | Virtual shadow pages only where cheaper | Perf | 5 est. | 2 | 0/4 | — | Only where measured |
+| 5 | PRD-600 | Nanite: submit only visible clusters | Perf | 6 | 3 | 0/8 | — | Dense scenes |
+| 5 | PRD-601 | Far clusters keep source shading | Perf | 4 | 2 | 0/7 | PRD-600 | Follows PRD-600 |
+| 5 | PRD-602 | Cluster shadow casters at shadow-texel detail | Perf | 5 | 2 | 0/8 | PRD-600 | Follows PRD-600 |
+| 5 | PRD-570 | Characters cost what the camera sees | Perf | 5 | 3 | 0/10 | — | Crowds; a lane is measuring it |
+| 5 | PRD-VQ-10 | Texture mip residency | Perf | 5 est. | 2 | 0/8 | — | When texture memory limits a game |
+| 5 | PRD-460 | Invisible streaming transitions | Perf | 6 | 2 | 0/15 | — | Open worlds |
+| 5 | PRD-606 | Fast-travel destination ready before reveal | Perf | 3 | 2 | 0/13 | — | Open worlds |
+| 5 | PRD-607 | Streaming reports holes and spends to close them | Perf | 5 | 2 | 0/11 | — | Open worlds |
+| 5 | PRD-611 | Hidden GPU effect draws its first frame ready | Perf | 4 | 2 | 0/10 | — | First-frame hitch |
+| 5 | PRD-610 | Sparks bounce off visible surfaces | VFX | 6 | 1 | 0/12 | PRD-609 | Effect detail |
+
+The rule behind the order: **the default look first, by layer, cheapest proof first.** L1 gates every
+comparison. Sky, post and AO are cheap and change most of the frame. GI is the biggest visual gap,
+so its foundation (PRD-603, PRD-646) starts in wave 2, in parallel. Pure performance ports
+(Nanite, streaming, residency) wait for a game or a measurement that asks for them. TSR is the
+exception, because a cheaper frame pays for every look layer.
+
+## Subsystems inside each system
+
+The HTML page splits 15 systems into their subsystems, with measured lines, what each one does and
+the PRD that ports it: Lumen (11 parts), Nanite (11), virtual shadow maps (8), TSR (8), the post
+chain (9), sky atmosphere, clouds, fog, AO, reflections, GPU scene, streaming, World Partition,
+Niagara and MegaLights. Select a PRD in the port order, or a tile marked with a triangle, to open
+its system.
+
 ## The map
 
 ```mermaid
@@ -62,8 +151,8 @@ flowchart LR
 | Lumen (GI, reflections, surface cache, radiance cache, screen probes) | 45,712 | 33,515 | **79,227** | 10 | Very high | **Partial.** PRD-638, PRD-647 done; PRD-603 to 605, 639 to 644, 646 open; hardware ray tracing deferred (PRD-645) until WebGPU exposes ray tracing. PR #541 adds the `giCache.ts` CPU reference |
 | Distance fields (global and mesh SDF) | 10,870 | 6,189 | 17,059 | 7 | High | **Not filed.** `GPUSceneBVH` gives the trace instead |
 | Deferred shading, clustered lights, base pass | 16,918 | 8,254 | 25,172 | 6 | n/a | Covered by three.js and the owned engine; not a port target |
-| Reflection captures and SSR | 7,226 | 4,842 | 12,068 | 5 | Medium | **Open.** PRD-VQ-03 (low, medium), PRD-642 (high) |
-| Ambient occlusion (SSAO, GTAO) | 4,501 | 2,363 | 6,864 | 4 | Low | **Open.** PRD-635 (PR #541) |
+| Reflection captures and SSR | 7,226 | 4,842 | 12,068 | 5 | Medium | **Partial.** The SSR stage ships. Captures PRD-VQ-03 (low, medium), traced reflections PRD-642 (high) |
+| Ambient occlusion (SSAO, GTAO) | 4,501 | 2,363 | 6,864 | 4 | Low | **Partial.** GTAO ships in the templates. PRD-635 (PR #541) applies it to indirect light only |
 | Substrate materials | 12,154 | 16,982 | 29,136 | 8 | High | **Not filed.** three.js r185 already matches Unreal default lit |
 | MegaLights | 10,136 | 9,857 | 19,993 | 8 | High | **Not filed.** Off in a fresh project |
 
@@ -88,7 +177,7 @@ flowchart LR
 | Feature | C++ | Shader | Total LOC | Complexity | Port cost | ThreeNative status |
 | --- | ---: | ---: | ---: | :---: | --- | --- |
 | TSR (temporal super resolution) | 3,780 | 10,851 | **14,631** | 9 | High | **Partial.** Catmull-Rom history done (PRD-455); PRD-539 open |
-| TAA | 1,531 | 2,463 | 3,994 | 5 | Low | Superseded by the TSR work |
+| TAA | 1,531 | 2,463 | 3,994 | 5 | Low | **Shipped.** Template temporal AA |
 | Tone map, LUT, ACES | 2,237 | 5,079 | 7,316 | 4 | Low | **Partial.** LUT grade done (PRD-492); filmic curve PRD-632 open (PR #541) |
 | Exposure (eye adaptation, histogram, local) | 3,147 | 1,971 | 5,118 | 5 | Low | **Partial.** Template auto exposure; PRD-571 blocked on a device; PRD-632, 636 open |
 | Bloom and lens flare | 1,797 | 932 | 2,729 | 3 | Low | **Partial.** Bloom exists; PRD-636 open |
