@@ -302,6 +302,9 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
           ],
           albedo: new Color().setRGB(ar, ag, ab, SRGBColorSpace),
           ambient: new Color(0, 0, 0),
+          // From L7 the air also scatters the room's bounce light: the cache's mean radiance, the same in every direction
+          // (Unreal adds the Lumen translucency volume to every fog sample).
+          ...(giCache.meanRadiance === undefined ? {} : { ambientNode: giCache.meanRadiance }),
           anisotropy: fogData.volumetricScatteringDistribution,
           points: lights.filter((l): l is PointLight => l instanceof PointLight && !l.castShadow),
           environment: { aerialPerspective: false, godRays: false },

@@ -737,6 +737,76 @@ function volume(
 }
 
 /**
+ * Per texel, the mean of its six faces (E / pi averaged over the sphere): the radiance a point with no facing receives
+ * from every direction. A texel inside a solid holds no light, so it takes the mean of the open texels beside it, a pass
+ * at a time, and a filter that reaches into a wall blends air with air.
+ */
+export function meanField(values: Float32Array, grid: IGrid, solid: Uint8Array): Float32Array {
+  const { nx, ny, nz } = grid;
+  const count = nx * ny * nz;
+  const mean = new Float32Array(count * 3);
+  for (let i = 0; i < count; i += 1)
+    for (let c = 0; c < 3; c += 1) {
+      let sum = 0;
+      for (let face = 0; face < 6; face += 1) sum += values[(i * 6 + face) * 3 + c] ?? 0;
+      mean[i * 3 + c] = sum / 6;
+    }
+  let open = Uint8Array.from(solid, (flag) => 1 - flag);
+  const beside = (index: number): number[] => {
+    const [x, y, z] = [index % nx, Math.floor(index / nx) % ny, Math.floor(index / (nx * ny))];
+    return [
+      x > 0 ? index - 1 : -1,
+      x < nx - 1 ? index + 1 : -1,
+      y > 0 ? index - nx : -1,
+      y < ny - 1 ? index + nx : -1,
+      z > 0 ? index - nx * ny : -1,
+      z < nz - 1 ? index + nx * ny : -1,
+    ].filter((n) => n >= 0);
+  };
+  for (let pass = 0; pass < nx + ny + nz && open.some((flag) => flag === 0); pass += 1) {
+    const next = open.slice();
+    for (let i = 0; i < count; i += 1) {
+      if (open[i] === 1) continue;
+      const near = beside(i).filter((n) => open[n] === 1);
+      if (near.length === 0) continue;
+      for (let c = 0; c < 3; c += 1)
+        mean[i * 3 + c] = near.reduce((sum, n) => sum + (mean[n * 3 + c] ?? 0), 0) / near.length;
+      next[i] = 1;
+    }
+    open = next;
+  }
+  return mean;
+}
+
+/**
+ * `meanField` as a TSL function of a world position. Unreal lights a translucent surface (the default lighting mode,
+ * Volumetric NonDirectional) and every fog sample from its translucency volume, filled with the radiance cache's L0 term,
+ * the same in every direction (UE 5.8.3: Engine/Shaders/Private/BasePassPixelShader.usf, GetSkyLighting;
+ * Engine/Shaders/Private/VolumetricFog.usf, the LUMEN_GI permutation).
+ */
+function meanRadianceAt(
+  values: Float32Array,
+  grid: IGrid,
+  solid: Uint8Array,
+): (position: Node<"vec3">) => Node<"vec3"> {
+  const { nx, ny, nz } = grid;
+  const mean = meanField(values, grid, solid);
+  const texels = new Uint16Array(nx * ny * nz * 4);
+  for (let i = 0; i < nx * ny * nz; i += 1)
+    for (let c = 0; c < 3; c += 1) texels[i * 4 + c] = toHalf(mean[i * 3 + c] ?? 0);
+  const texture = new Data3DTexture(texels, nx, ny, nz);
+  texture.format = RGBAFormat;
+  texture.type = HalfFloatType;
+  texture.minFilter = LinearFilter;
+  texture.magFilter = LinearFilter;
+  texture.unpackAlignment = 1;
+  texture.needsUpdate = true;
+  const size = vec3(nx * grid.cell, ny * grid.cell, nz * grid.cell);
+  // Texel i has its centre at i + 0.5 cells from the origin, so the unit-cube coordinate is the plain quotient.
+  return (position) => texture3D(texture).sample(position.sub(vec3(grid.origin)).div(size)).rgb;
+}
+
+/**
  * The ambient-cube read as a TSL function of a world position and unit normal: E / pi. The eight texels around the
  * read point are blended here (not by the hardware) with the weight of a texel set to zero when a wall cuts the way
  * to it from the nearest texel, the walk `weightsAt` does at bake time, on the links `linkMasks` stored in alpha.
@@ -936,6 +1006,11 @@ export const giCache: {
    * environment shares, and whether the texel's centre lies inside a solid (a read gives it no weight).
    */
   field?: { grid: IGrid; values: Float32Array; sky: Float32Array; solid: Uint8Array };
+  /**
+   * The cache's mean over every direction (E / pi averaged over the sphere) at a world position: what a point with no
+   * side facing the light receives. A translucent surface and a fog sample read it (see `meanRadianceAt`).
+   */
+  meanRadiance?: (position: Node<"vec3">) => Node<"vec3">;
 } = {};
 
 /**
@@ -1200,11 +1275,36 @@ function physicalTwin() {
   }
 }
 
+/**
+ * `bakeGi` with the translucent surfaces out of the bake. Unreal's Lumen scene holds none (a translucent material is not
+ * a card: UE 5.8.3, Engine/Source/Runtime/Renderer/Private/Lumen/LumenSceneRendering.cpp, `bOpaqueOrMasked`), so a ray
+ * passes a pane of glass and the pane neither shades a probe nor bounces light. Layer 0 is what every ray query tests, and
+ * the bake is synchronous, so the layer is off only while it runs.
+ */
 export function installGi(
   gameCtx: IRayContext,
   root: Object3D,
   options: IGiOptions,
 ): IGiReport | undefined {
+  const glass: Mesh[] = [];
+  root.traverse((object) => {
+    const mesh = object as Mesh;
+    if (
+      mesh.isMesh &&
+      [mesh.material].flat().some((m) => m.transparent) &&
+      mesh.layers.isEnabled(0)
+    )
+      glass.push(mesh);
+  });
+  for (const mesh of glass) mesh.layers.disable(0);
+  try {
+    return bakeGi(gameCtx, root, options);
+  } finally {
+    for (const mesh of glass) mesh.layers.enable(0);
+  }
+}
+
+function bakeGi(gameCtx: IRayContext, root: Object3D, options: IGiOptions): IGiReport | undefined {
   const lights = options.lights ?? [];
   const sun = options.sun;
   if (skyRadiance.current === undefined && sun === undefined && lights.length === 0)
@@ -1685,6 +1785,8 @@ export function installGi(
     const light = emitterLight(emitters, position, normal);
     return light === undefined ? base : base.add(light);
   };
+  const mean = meanRadianceAt(fine.values, fine.grid, cut.solid);
+  giCache.meanRadiance = mean;
   const normal = normalWorld.normalize();
   const incident = positionWorld.sub(cameraPosition).normalize();
   /**
@@ -1715,7 +1817,10 @@ export function installGi(
     // texel and then draws its colour factor (PRD-639).
     let material = twins.get(source);
     if (material === undefined) {
-      const { node, visibility } = readFor(source.roughness);
+      // A translucent surface has no side that faces the light: it reads the mean, whichever way it looks.
+      const { node, visibility } = source.transparent
+        ? { node: mean(positionWorld), visibility: float(1) }
+        : readFor(source.roughness);
       material = nodeTwin(source);
       (material as unknown as { irradianceNode: unknown }).irradianceNode = node;
       (material as unknown as { aoNode: unknown }).aoNode = visibility;
