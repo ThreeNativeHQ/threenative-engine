@@ -1,0 +1,162 @@
+{
+  "status": "COMPLETE",
+  "judgedAt": "2026-10-22T15:21:58.608Z",
+  "model": "claude-sonnet-5-5",
+  "effort": "high",
+  "sessionId": "95791463-e319-4655-9a87-1bbcbf890d9b",
+  "costUsd": 0.2396216,
+  "durationMs": 36776,
+  "imagesRead": 30,
+  "criteria": {
+    "file": "/home/joao/.cache/tmp-tn/sky2/lens-criteria.md",
+    "sha256": "413b61b4de97420b98f8a38729bf6afbad50f45beb789cd1d55710fa3f26935c"
+  },
+  "expect": "improvement",
+  "tier": "high",
+  "runs": {
+    "before": 2,
+    "after": 2
+  },
+  "sets": {
+    "before": [
+      "/home/joao/.cache/tmp-tn/sky2/cap/lensB1",
+      "/home/joao/.cache/tmp-tn/sky2/cap/lensB2"
+    ],
+    "after": [
+      "/home/joao/.cache/tmp-tn/sky2/cap/lensA1",
+      "/home/joao/.cache/tmp-tn/sky2/cap/lensA2"
+    ],
+    "unreal": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/unreal-sky2/tools/unreal-reference/captures/unreal"
+  },
+  "frames": [
+    {
+      "id": "L9/L9_sun04_exterior",
+      "verdict": "NEUTRAL",
+      "vsUnreal": "CLOSE",
+      "reasons": "I compared the sun-lit floor in the foreground, the lit faces of the right wall and the left room, and the sky above the horizon. BEFORE run 1 and run 2 look the same. AFTER run 1 and run 2 look the same. AFTER may have a slightly darker orange floor and wall face, which would fit the intended floor correction, but I could not tell it from capture noise. The sky, clouds and horizon band look unchanged. The long shadow wedge, the sphere highlights and the glowing sphere keep the same shape. I saw no banding and no blown-out region.",
+      "differences": "Unreal's clouds are laid out differently. They are paler and creamier and cover more of the sky. TN's clouds are pinker. The TN floor is a more saturated orange-brown than Unreal's floor. The shadow wedge in TN looks a little greyer-purple. The overall lighting is the same.",
+      "layer": "L9",
+      "unreal": "L9",
+      "files": {
+        "before": [
+          "/home/joao/.cache/tmp-tn/sky2/cap/lensB1/L9/L9_sun04_exterior.png",
+          "/home/joao/.cache/tmp-tn/sky2/cap/lensB2/L9/L9_sun04_exterior.png"
+        ],
+        "after": [
+          "/home/joao/.cache/tmp-tn/sky2/cap/lensA1/L9/L9_sun04_exterior.png",
+          "/home/joao/.cache/tmp-tn/sky2/cap/lensA2/L9/L9_sun04_exterior.png"
+        ],
+        "unreal": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/unreal-sky2/tools/unreal-reference/captures/unreal/L9/L9_sun04_exterior.png"
+      }
+    },
+    {
+      "id": "L9/L9_sun15_exterior",
+      "verdict": "NEUTRAL",
+      "vsUnreal": "CLOSE",
+      "reasons": "I compared the floor, the right wall face, the sky gradient and the left room's interior. BEFORE and AFTER are visually identical. I saw no change in floor brightness, sky blue or cloud tone beyond what two runs of one arm already differ by. The shadows are unchanged. No banding or new artefact appeared. I could not see the sky moving toward Unreal.",
+      "differences": "The Unreal sky has more cloud cover and a slightly lighter blue. The TN sky is a little deeper blue with different cloud shapes. The TN floor is a bit greyer-tan. Unreal's floor is a touch warmer, and Unreal's shadow wedge is a bit darker and bluer. The lighting character is the same.",
+      "layer": "L9",
+      "unreal": "L9",
+      "files": {
+        "before": [
+          "/home/joao/.cache/tmp-tn/sky2/cap/lensB1/L9/L9_sun15_exterior.png",
+          "/home/joao/.cache/tmp-tn/sky2/cap/lensB2/L9/L9_sun15_exterior.png"
+        ],
+        "after": [
+          "/home/joao/.cache/tmp-tn/sky2/cap/lensA1/L9/L9_sun15_exterior.png",
+          "/home/joao/.cache/tmp-tn/sky2/cap/lensA2/L9/L9_sun15_exterior.png"
+        ],
+        "unreal": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/unreal-sky2/tools/unreal-reference/captures/unreal/L9/L9_sun15_exterior.png"
+      }
+    },
+    {
+      "id": "L9/L9_sun15_spheres",
+      "verdict": "NEUTRAL",
+      "vsUnreal": "CLOSE",
+      "reasons": "I compared the capsule's lit side and terminator, the floor in light and in shadow, the chrome sphere, the red cube and the sky at the top. The BEFORE and AFTER runs match. AFTER may be a hair darker on the floor and the capsule, but this is at capture-noise level. The shadow shape, the specular dots and the cube shading are unchanged. I saw no new banding and no clipping.",
+      "differences": "Unreal's sky is more overcast. The chrome sphere reflects a different cloud layout, and Unreal's reflection shows a more greenish tint on the white cube. The Unreal capsule has a slightly crisper terminator. The TN sky is bluer and has fewer cloud details. Floor and shadow tones are close.",
+      "layer": "L9",
+      "unreal": "L9",
+      "files": {
+        "before": [
+          "/home/joao/.cache/tmp-tn/sky2/cap/lensB1/L9/L9_sun15_spheres.png",
+          "/home/joao/.cache/tmp-tn/sky2/cap/lensB2/L9/L9_sun15_spheres.png"
+        ],
+        "after": [
+          "/home/joao/.cache/tmp-tn/sky2/cap/lensA1/L9/L9_sun15_spheres.png",
+          "/home/joao/.cache/tmp-tn/sky2/cap/lensA2/L9/L9_sun15_spheres.png"
+        ],
+        "unreal": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/unreal-sky2/tools/unreal-reference/captures/unreal/L9/L9_sun15_spheres.png"
+      }
+    },
+    {
+      "id": "L9/L9_sun60_exterior",
+      "verdict": "NEUTRAL",
+      "vsUnreal": "CLOSE",
+      "reasons": "I compared the grey floor, the right wall face, the small shadow at the wall's foot, the left room's interior and the sky. BEFORE and AFTER look the same. I saw no shift in floor brightness or in sky tone. The shadow shapes, the sphere highlights and the glowing sphere are unchanged. No banding or blow-out appeared. The sky moving toward Unreal is not visible by eye.",
+      "differences": "Unreal has denser white clouds in a different layout. The TN sky is slightly more saturated blue. The Unreal floor is a slightly warmer beige-grey. The left room's inside looks slightly brighter in Unreal, with a visible light-coloured floor patch. The overall lighting is the same.",
+      "layer": "L9",
+      "unreal": "L9",
+      "files": {
+        "before": [
+          "/home/joao/.cache/tmp-tn/sky2/cap/lensB1/L9/L9_sun60_exterior.png",
+          "/home/joao/.cache/tmp-tn/sky2/cap/lensB2/L9/L9_sun60_exterior.png"
+        ],
+        "after": [
+          "/home/joao/.cache/tmp-tn/sky2/cap/lensA1/L9/L9_sun60_exterior.png",
+          "/home/joao/.cache/tmp-tn/sky2/cap/lensA2/L9/L9_sun60_exterior.png"
+        ],
+        "unreal": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/unreal-sky2/tools/unreal-reference/captures/unreal/L9/L9_sun60_exterior.png"
+      }
+    },
+    {
+      "id": "L9/L9_sun60_interior",
+      "verdict": "NEUTRAL",
+      "vsUnreal": "CLOSE",
+      "reasons": "I compared the back wall, both side walls, the ceiling, the floor and the wall-to-wall edge lines. AFTER's side walls and ceiling may be slightly dimmer than BEFORE's, which fits the accepted rise in Room dP50. The change is only just visible and is no larger than the difference between runs. The frame does not look worse to the eye. I saw no new artefact, banding or clipping. The thin bright seam lines at the corners are the same in both arms.",
+      "differences": "The Unreal room is brighter and bluer, with white-blue walls and a blue-grey floor, and it has soft corners. The TN room is greyer and more purple-grey, with a darker floor and bright thin seam lines at the corners and the ceiling edge. The sky-light gap is the known one that skylight-lane owns.",
+      "layer": "L9",
+      "unreal": "L9",
+      "files": {
+        "before": [
+          "/home/joao/.cache/tmp-tn/sky2/cap/lensB1/L9/L9_sun60_interior.png",
+          "/home/joao/.cache/tmp-tn/sky2/cap/lensB2/L9/L9_sun60_interior.png"
+        ],
+        "after": [
+          "/home/joao/.cache/tmp-tn/sky2/cap/lensA1/L9/L9_sun60_interior.png",
+          "/home/joao/.cache/tmp-tn/sky2/cap/lensA2/L9/L9_sun60_interior.png"
+        ],
+        "unreal": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/unreal-sky2/tools/unreal-reference/captures/unreal/L9/L9_sun60_interior.png"
+      }
+    },
+    {
+      "id": "L9/L9_sun60_spheres",
+      "verdict": "NEUTRAL",
+      "vsUnreal": "CLOSE",
+      "reasons": "I compared the capsule's lit body and terminator, the floor, the cast shadows, the red cube, the chrome sphere and the sky. BEFORE and AFTER look the same. I saw no change in the floor, the shadow density or the highlights. No banding or new artefact appeared.",
+      "differences": "The Unreal sky has denser clouds that look more overcast. The chrome sphere reflects a different cloud layout, and the Unreal cube has a green-tinted side. The TN sky is slightly more saturated blue. The floor and shadow tones are close. The Unreal floor is a little warmer.",
+      "layer": "L9",
+      "unreal": "L9",
+      "files": {
+        "before": [
+          "/home/joao/.cache/tmp-tn/sky2/cap/lensB1/L9/L9_sun60_spheres.png",
+          "/home/joao/.cache/tmp-tn/sky2/cap/lensB2/L9/L9_sun60_spheres.png"
+        ],
+        "after": [
+          "/home/joao/.cache/tmp-tn/sky2/cap/lensA1/L9/L9_sun60_spheres.png",
+          "/home/joao/.cache/tmp-tn/sky2/cap/lensA2/L9/L9_sun60_spheres.png"
+        ],
+        "unreal": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/unreal-sky2/tools/unreal-reference/captures/unreal/L9/L9_sun60_spheres.png"
+      }
+    }
+  ],
+  "overall": {
+    "verdict": "NEUTRAL",
+    "vsUnreal": "CLOSE",
+    "reasons": "In all six frames BEFORE and AFTER look the same by eye. I could not tell the 4%, 9% and 17% floor-brightness change from capture noise. I also could not see the sky moving toward Unreal's brighter sky. Nothing got worse: shadows, specular highlights and the glowing sphere are unchanged, and I saw no banding, new artefacts or blown-out regions. The interior room looks slightly dimmer at most, and it is not visibly worse. I could not confirm an IMPROVEMENT because the intended changes are too small for a visual read. The remaining gaps to Unreal are cloud layout and density, a slightly warmer Unreal floor, and the bluer, brighter Unreal interior."
+  },
+  "blockedBy": [
+    "improvement was promised and the overall verdict is NEUTRAL"
+  ],
+  "file": "/home/joao/.cache/tmp-tn/sky2/lens-verdict-L9.json"
+}

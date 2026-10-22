@@ -1,0 +1,160 @@
+{
+  "status": "COMPLETE",
+  "judgedAt": "2026-10-22T15:22:00.611Z",
+  "model": "claude-sonnet-5-5",
+  "effort": "high",
+  "sessionId": "ce3459b0-0c4d-4682-8157-b41a0f1844e8",
+  "costUsd": 0.2398651,
+  "durationMs": 38852,
+  "imagesRead": 30,
+  "criteria": {
+    "file": "/home/joao/.cache/tmp-tn/sky2/lens-criteria.md",
+    "sha256": "413b61b4de97420b98f8a38729bf6afbad50f45beb789cd1d55710fa3f26935c"
+  },
+  "expect": "improvement",
+  "tier": "high",
+  "runs": {
+    "before": 2,
+    "after": 2
+  },
+  "sets": {
+    "before": [
+      "/home/joao/.cache/tmp-tn/sky2/cap/lensB1",
+      "/home/joao/.cache/tmp-tn/sky2/cap/lensB2"
+    ],
+    "after": [
+      "/home/joao/.cache/tmp-tn/sky2/cap/lensA1",
+      "/home/joao/.cache/tmp-tn/sky2/cap/lensA2"
+    ],
+    "unreal": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/unreal-sky2/tools/unreal-reference/captures/unreal"
+  },
+  "frames": [
+    {
+      "id": "L1/L1_sun04_exterior",
+      "verdict": "IMPROVEMENT",
+      "vsUnreal": "CLOSE",
+      "reasons": "Floor is the changed region. BEFORE runs are lighter (near-field floor about 85 grey, mid-floor visibly paler). AFTER runs are darker, with the near floor about 72 and the gradient shaped like Unreal's. The right wall face went from near-white to a light grey that matches Unreal's. Both BEFORE runs agree and both AFTER runs agree, so the shift is not capture noise. Shadow edge beside the right wall, cube and sphere shapes are unchanged. No banding and no blown-out area. The sky is black in all frames, so it is not a test here.",
+      "differences": "The black sphere's specular dot is a bit larger and brighter in ThreeNative than Unreal's small dot. The far floor near the horizon is a touch lighter than Unreal's. The sphere row has slightly different edge shading.",
+      "layer": "L1",
+      "unreal": "L1",
+      "files": {
+        "before": [
+          "/home/joao/.cache/tmp-tn/sky2/cap/lensB1/L1/L1_sun04_exterior.png",
+          "/home/joao/.cache/tmp-tn/sky2/cap/lensB2/L1/L1_sun04_exterior.png"
+        ],
+        "after": [
+          "/home/joao/.cache/tmp-tn/sky2/cap/lensA1/L1/L1_sun04_exterior.png",
+          "/home/joao/.cache/tmp-tn/sky2/cap/lensA2/L1/L1_sun04_exterior.png"
+        ],
+        "unreal": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/unreal-sky2/tools/unreal-reference/captures/unreal/L1/L1_sun04_exterior.png"
+      }
+    },
+    {
+      "id": "L1/L1_sun15_exterior",
+      "verdict": "IMPROVEMENT",
+      "vsUnreal": "CLOSE",
+      "reasons": "Floor and right wall face. BEFORE floor is lighter than Unreal across the near field. AFTER is darker, with the near-bottom floor close to Unreal's mauve-grey, and the right wall is slightly darker like Unreal. The change is modest but identical across both AFTER runs and both BEFORE runs. Shadow shapes, the wall edge and sphere highlights are unchanged. No banding or clipping. The sky is black in all five frames.",
+      "differences": "Near floor in AFTER is slightly lighter than Unreal. Black sphere highlight is larger than Unreal's tiny dot. The sky cannot be compared, since it is black in every frame.",
+      "layer": "L1",
+      "unreal": "L1",
+      "files": {
+        "before": [
+          "/home/joao/.cache/tmp-tn/sky2/cap/lensB1/L1/L1_sun15_exterior.png",
+          "/home/joao/.cache/tmp-tn/sky2/cap/lensB2/L1/L1_sun15_exterior.png"
+        ],
+        "after": [
+          "/home/joao/.cache/tmp-tn/sky2/cap/lensA1/L1/L1_sun15_exterior.png",
+          "/home/joao/.cache/tmp-tn/sky2/cap/lensA2/L1/L1_sun15_exterior.png"
+        ],
+        "unreal": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/unreal-sky2/tools/unreal-reference/captures/unreal/L1/L1_sun15_exterior.png"
+      }
+    },
+    {
+      "id": "L1/L1_sun15_spheres",
+      "verdict": "IMPROVEMENT",
+      "vsUnreal": "CLOSE",
+      "reasons": "Looked at the floor behind and below the capsule, and at the pink cube, box and left sphere. AFTER floor is a little darker and warmer-grey than BEFORE, closer to Unreal's. The pink cube is a little more saturated and less washed out, as in Unreal. The capsule and sphere shading, the specular dot and the shadow under the capsule are the same in both arms. No new artefact. The sky region is black in every frame.",
+      "differences": "Unreal's black sphere highlight is a tiny dot while ThreeNative's is a larger glow. Unreal's floor is a touch darker near the bottom. The left sphere and white sphere edges are darker in Unreal.",
+      "layer": "L1",
+      "unreal": "L1",
+      "files": {
+        "before": [
+          "/home/joao/.cache/tmp-tn/sky2/cap/lensB1/L1/L1_sun15_spheres.png",
+          "/home/joao/.cache/tmp-tn/sky2/cap/lensB2/L1/L1_sun15_spheres.png"
+        ],
+        "after": [
+          "/home/joao/.cache/tmp-tn/sky2/cap/lensA1/L1/L1_sun15_spheres.png",
+          "/home/joao/.cache/tmp-tn/sky2/cap/lensA2/L1/L1_sun15_spheres.png"
+        ],
+        "unreal": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/unreal-sky2/tools/unreal-reference/captures/unreal/L1/L1_sun15_spheres.png"
+      }
+    },
+    {
+      "id": "L1/L1_sun60_exterior",
+      "verdict": "IMPROVEMENT",
+      "vsUnreal": "CLOSE",
+      "reasons": "Floor, right wall face and far wall block. BEFORE floor is a very light grey, about 226. AFTER is a slightly darker, neutral grey, about 218, which matches Unreal. The right wall face went from near-white to a light grey like Unreal's. Contact shadows under the spheres, the wall shadow strip and the capsule shape are the same. No clipping or banding. The sky is black in all frames.",
+      "differences": "Unreal's black sphere shows only a tiny specular dot. The ThreeNative highlight is bigger. The shift is small, so the frames remain nearly alike.",
+      "layer": "L1",
+      "unreal": "L1",
+      "files": {
+        "before": [
+          "/home/joao/.cache/tmp-tn/sky2/cap/lensB1/L1/L1_sun60_exterior.png",
+          "/home/joao/.cache/tmp-tn/sky2/cap/lensB2/L1/L1_sun60_exterior.png"
+        ],
+        "after": [
+          "/home/joao/.cache/tmp-tn/sky2/cap/lensA1/L1/L1_sun60_exterior.png",
+          "/home/joao/.cache/tmp-tn/sky2/cap/lensA2/L1/L1_sun60_exterior.png"
+        ],
+        "unreal": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/unreal-sky2/tools/unreal-reference/captures/unreal/L1/L1_sun60_exterior.png"
+      }
+    },
+    {
+      "id": "L1/L1_sun60_interior",
+      "verdict": "IMPROVEMENT",
+      "vsUnreal": "CLOSE",
+      "reasons": "Back wall, left wall and floor. BEFORE: back wall about 235, left wall about 217, floor about 225, all lighter than Unreal. AFTER: back wall about 228, left wall about 205, floor about 218, which looks very close to Unreal's. To the eye the frame does not look worse; it looks nearer to Unreal. This goes against the accepted worse Room dP50 number, so the number probably reflects a different region or a signed offset. The wall seam, the floor edge and the black void are all unchanged. No banding.",
+      "differences": "Unreal's left wall is a touch flatter and a little more neutral. ThreeNative keeps a faint diagonal gradient on the floor and walls. Residual brightness differences are very small.",
+      "layer": "L1",
+      "unreal": "L1",
+      "files": {
+        "before": [
+          "/home/joao/.cache/tmp-tn/sky2/cap/lensB1/L1/L1_sun60_interior.png",
+          "/home/joao/.cache/tmp-tn/sky2/cap/lensB2/L1/L1_sun60_interior.png"
+        ],
+        "after": [
+          "/home/joao/.cache/tmp-tn/sky2/cap/lensA1/L1/L1_sun60_interior.png",
+          "/home/joao/.cache/tmp-tn/sky2/cap/lensA2/L1/L1_sun60_interior.png"
+        ],
+        "unreal": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/unreal-sky2/tools/unreal-reference/captures/unreal/L1/L1_sun60_interior.png"
+      }
+    },
+    {
+      "id": "L1/L1_sun60_spheres",
+      "verdict": "IMPROVEMENT",
+      "vsUnreal": "CLOSE",
+      "reasons": "Floor, pink cube, white box and sphere shading. BEFORE floor is about 226 and the cube is a pale salmon. AFTER floor is about 218 and the cube is a more saturated coral. Both match Unreal better. The white box face and the left wall block are darker, as in Unreal. Sphere terminators, the capsule's dark band and the shadows are unchanged. No banding or clipping. The sky is black in all frames.",
+      "differences": "ThreeNative's black sphere highlight is a bigger glow, while Unreal's is a small dot. Unreal's pink cube is slightly more saturated again. The shadow side of the spheres is a little softer in ThreeNative.",
+      "layer": "L1",
+      "unreal": "L1",
+      "files": {
+        "before": [
+          "/home/joao/.cache/tmp-tn/sky2/cap/lensB1/L1/L1_sun60_spheres.png",
+          "/home/joao/.cache/tmp-tn/sky2/cap/lensB2/L1/L1_sun60_spheres.png"
+        ],
+        "after": [
+          "/home/joao/.cache/tmp-tn/sky2/cap/lensA1/L1/L1_sun60_spheres.png",
+          "/home/joao/.cache/tmp-tn/sky2/cap/lensA2/L1/L1_sun60_spheres.png"
+        ],
+        "unreal": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/unreal-sky2/tools/unreal-reference/captures/unreal/L1/L1_sun60_spheres.png"
+      }
+    }
+  ],
+  "overall": {
+    "verdict": "IMPROVEMENT",
+    "vsUnreal": "CLOSE",
+    "reasons": "In all six frames both AFTER runs show a darker floor and wall faces than the BEFORE runs, and both runs of each arm agree, so this is a real change and not capture noise. The shift moves the sun-lit floor toward Unreal at sun04, sun15 and sun60. Shape did not change: shadows, specular, sphere terminators and edges are the same. I saw no banding, no blown-out region and no new artefact. The interior at sun60 looks closer to Unreal to the eye, not worse, despite the accepted number. Criterion 2 (the visible sky) cannot be judged: sky pixels are black in every frame, both ThreeNative and Unreal. Remaining gaps are the larger specular glow on the black sphere and small floor tone differences."
+  },
+  "blockedBy": [],
+  "file": "/home/joao/.cache/tmp-tn/sky2/lens-verdict-L1.json"
+}
