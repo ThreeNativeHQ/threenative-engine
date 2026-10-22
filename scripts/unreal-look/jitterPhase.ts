@@ -33,6 +33,26 @@ export const JITTER_SWITCH = "TN_UNREAL_LOOK_JITTER";
 /** The facade's lost-renderer and device-error lines: a frame taken after one is black, so the capture counts them as page errors. */
 export const RENDERER_LOST = /TN_WASM_(RENDERER_LOST|DEVICE_(LOST|ERROR))/;
 
+/**
+ * The page errors in a `TN_WORLD_ENVIRONMENT` report: each post stage the chain dropped because its build threw. A
+ * frame without that stage is not the look the layer asks for. A Wasm pair from before the GTAO screen reach dropped
+ * the contact occlusion this way, and the capture went on: mirror-room Wall_Green read 10.63 deltaE instead of 8.31.
+ * A stage that is off on purpose or refused by the tier is not an error.
+ */
+export function stageBuildFailures(text: string): string[] {
+  const marker = "TN_WORLD_ENVIRONMENT:";
+  if (!text.startsWith(marker)) return [];
+  let stages: { name?: string; reason?: string }[];
+  try {
+    stages = (JSON.parse(text.slice(marker.length)) as { stages?: typeof stages }).stages ?? [];
+  } catch {
+    return ["TN_UNREAL_LOOK_STAGE_BUILD_FAILED unreadable TN_WORLD_ENVIRONMENT report"];
+  }
+  return stages
+    .filter((stage) => stage.reason?.startsWith("build:"))
+    .map((stage) => `TN_UNREAL_LOOK_STAGE_BUILD_FAILED ${stage.name}: ${stage.reason}`);
+}
+
 const halton = (start: number, base: number): number => {
   let index = start;
   let fraction = 1;
