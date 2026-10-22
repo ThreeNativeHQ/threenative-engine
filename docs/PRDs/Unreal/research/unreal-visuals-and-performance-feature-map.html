@@ -39,6 +39,10 @@ h3 { font-size: 16px; margin: 0; }
 .kpis { display: flex; flex-wrap: wrap; gap: 28px; margin-top: 14px; }
 .kpi b { display: block; font-family: var(--mono); font-size: 22px; }
 .kpi span { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .06em; }
+.total { margin-top: 18px; }
+.total .bar { height: 14px; border-radius: 7px; background: var(--notfiled); overflow: hidden; }
+.total .bar b { display: block; height: 100%; background: var(--shipped); }
+.total .lbl { margin-top: 6px; font-family: var(--mono); font-size: 13px; color: var(--muted); }
 .section-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: end; gap: 10px; margin-bottom: 12px; }
 .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; }
 .dot { width: 10px; height: 10px; border-radius: 3px; display: inline-block; flex: none; }
@@ -189,6 +193,10 @@ tr:last-child td { border-bottom: 0; }
       <div class="kpi"><b>~175K</b><span>Lines behind the default look</span></div>
       <div class="kpi"><b id="k-prds">0</b><span>Open PRDs in the port order</span></div>
       <div class="kpi"><b id="k-gaps" style="color:var(--gap)">0</b><span>Subsystems with no PRD</span></div>
+    </div>
+    <div class="total" role="group" aria-label="Total Unreal port progress">
+      <div class="bar"><b id="total-bar" style="width:0%"></b></div>
+      <div class="lbl" id="total-lbl">Total progress: counting boxes</div>
     </div>
   </header>
 
@@ -591,6 +599,13 @@ function select(sys, prd, scroll) {
 
 // ---------- port order
 document.getElementById("k-prds").textContent = PORT.filter(p => p.done < p.total).length;
+{ // total progress over every filed PRD box; a PRD filed under done/ counts as fully ticked
+  let ticked = 0, boxes = 0;
+  for (const p of Object.values(PRDS)) { boxes += p.n; ticked += p.f === "done" ? p.n : p.d; }
+  const pct = boxes ? ticked / boxes * 100 : 0;
+  document.getElementById("total-bar").style.width = pct.toFixed(1) + "%";
+  document.getElementById("total-lbl").textContent = `Total progress: ${pct.toFixed(1)}% (${ticked} of ${boxes} PRD boxes ticked)`;
+}
 document.getElementById("wave-legend").innerHTML = Object.keys(WAVES).map(w => `<span class="pill"><span class="dot" style="background:var(--w${w});border-radius:50%"></span>Wave ${w}</span>`).join("");
 
 function renderMatrix() {
