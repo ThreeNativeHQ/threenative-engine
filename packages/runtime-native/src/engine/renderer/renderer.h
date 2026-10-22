@@ -186,6 +186,7 @@ struct DrawItem {
     uint8_t shadowSide = 255;   // material.shadowSide, the same codes; 255 is null
     bool flatShading = false;   // material.flatShading: the face normal replaces the vertex normal
     bool twoSidedFoliage = false;  // material.twoSidedFoliage: Unreal's Two Sided Foliage receiver (PRD-651)
+    bool roughDiffuse = false;     // material.roughDiffuse: Unreal's Substrate rough diffuse, EON (PRD-653)
     uint8_t blending = 1;       // material.blending: 0 NoBlending, 1 NormalBlending, 2 AdditiveBlending
     // InstancedMesh: one mat4 (16 floats) per instance, an optional rgb per instance, and how many draw.
     BufferStore* instanceMatrices = nullptr;
@@ -224,6 +225,7 @@ struct DirectLight {
     std::array<double, 3> direction{0, 1, 0}; // directional: towards the light; spot: target to light
     std::array<double, 3> position{0, 0, 0};  // point and spot
     double distance = 0, decay = 2;           // point and spot: the cutoff (0 none) and the falloff exponent
+    double sourceRadius = 0;                  // point and spot: Unreal's Source Radius in metres (PRD-653)
     double coneCos = 0, penumbraCos = 0;      // spot: cos(angle) and cos(angle * (1 - penumbra))
     /**
      * Set when the light casts a shadow and the shadow map is on (three's LightShadow after
@@ -232,7 +234,7 @@ struct DirectLight {
      */
     struct Shadow {
         std::shared_ptr<const shadows::AtlasOptions> virtualShadow;
-        std::optional<std::array<double, 3>> sourceAngleFilter;
+        std::optional<std::array<double, 4>> sourceAngleFilter;  // + minPenumbraPixels
         std::optional<std::array<double, 4>> sourceRadiusFilter;
         double tanHalfFov = 1;  // a perspective map's: a cube face's is 1
         Matrix view{}, projection{}, matrix{};
@@ -343,6 +345,23 @@ public:
     std::size_t materialTextureCount() const { return textures_->records.size(); }
     /** What the last frame refused or skipped by name; cleared at the start of each frame. */
     const std::vector<std::string>& diagnostics() const { return diagnostics_; }
+    /** The smallest and largest edge of the lamp maps the footprint sized, {0, 0} without one (PRD-650). */
+    std::array<uint32_t, 2> lampShadowExtent() const {
+        std::array<uint32_t, 2> extent{0, 0};
+        for (const auto& [light, motion] : lampMotion_) {
+            const uint32_t size = lampShadowSize(light);
+            if (!size) continue;
+            extent[0] = extent[0] ? std::min(extent[0], size) : size;
+            extent[1] = std::max(extent[1], size);
+        }
+        return extent;
+    }
+    /** The edge of light `light`'s lamp map as last allocated, 0 without one (PRD-650). */
+    uint32_t lampShadowSize(std::size_t light) const {
+        for (const auto* maps : {&shadowMaps_, &cubeShadowMaps_})
+            if (light < maps->size() && (*maps)[light].width) return (*maps)[light].width;
+        return 0;
+    }
     /** Separate capture targets: probe work never resizes the presented frame or its post history. */
     Renderer& probeCaptureRenderer();
     /** The face camera of a probe capture, shared so a render callback that keeps its handle is safe. The
@@ -379,12 +398,21 @@ public:
     WGPUTextureView sceneColorView() const { return sceneView_; }
     /** The format the scene colour is drawn and read in: RGBA16Float, or RGBA32Float for a FloatType render target (a 32-bit target is never multisampled). */
     void setSceneFormat(WGPUTextureFormat format);
+    /** True when a blended draw into RGBA32Float is valid on this device (float32-blendable); `forceHalfFloatTargets` says no, for tests. */
+    bool float32Blendable() const { return !forceHalfFloatTargets_ && wgpuDeviceHasFeature(device_, WGPUFeatureName_Float32Blendable); }
+    void forceHalfFloatTargets(bool force) { forceHalfFloatTargets_ = force; }
     WGPUTextureFormat sceneFormat() const { return sceneFormat_; }
     /** Linear filtering, clamped to the edge: three's RenderTarget texture defaults. */
     WGPUSampler linearClampSampler();
     void setVirtualShadow(std::size_t light, const shadows::AtlasOptions& options);
-    void syncVirtualShadows(const LightState& lights);
+    /** `tanHalfFov` is the main view's (0 for a pass that is not it): auto-sized atlases measure on it. */
+    void syncVirtualShadows(const LightState& lights, double tanHalfFov = 0);
     bool hasVirtualShadows() const { return !virtualShadows_.empty(); }
+    /** The page plan of light `light`'s virtual shadow, or null. */
+    const shadows::PageAtlas* virtualShadowAtlas(std::size_t light) const {
+        const auto it = virtualShadows_.find(light);
+        return it == virtualShadows_.end() ? nullptr : &it->second.atlas;
+    }
     void cutVirtualShadows() { virtualCut_ = true; }
     void setOutput(const OutputState& output);
     /** A post pass between the scene and the output transform; null draws the scene straight out. */
@@ -549,6 +577,8 @@ public:
         uint32_t shadowDraws = 0;
         /** The triangles those shadow draws submitted; three's Info counts them with the main pass's. */
         uint64_t shadowTriangles = 0;
+        /** Of the shadow draws, the spot and point light maps' (PRD-650): maps redrawn, and their draws. */
+        uint32_t lampRedraws = 0, lampShadowDraws = 0;
         struct SkinnedPass {
             uint32_t batches = 0, draws = 0, exactDraws = 0, instances = 0;
         };
@@ -632,7 +662,7 @@ private:
                                 kLightConeCos, kLightPenumbraCos, kLightShadowMatrix, kLightShadowBias,
                                 kLightShadowNormalBias, kLightShadowRadius, kLightShadowMapSize,
                                 kLightShadowIntensity, kLightShadowNear, kLightShadowFar, kLightShadowSourceRadius,
-                                kLightShadowPenumbraScale, kLightFieldCount };
+                                kLightShadowPenumbraScale, kLightSourceRadius, kLightFieldCount };
     uint64_t renderPrepared(std::span<const DrawItem> items, const CameraState& camera, const LightState& lights,
         std::array<double, 4> clear, std::vector<std::shared_ptr<PipelineCompilation>>* compilation,
         WGPUTextureFormat outputFormat, bool defer = false);
@@ -848,6 +878,9 @@ private:
     std::map<std::size_t, VirtualShadow> virtualShadows_;
     /** Each lamp's last drawn map signature (PRD-650): an equal one skips its depth passes. */
     std::map<std::size_t, uint64_t> lampSignatures_;
+    /** Each lamp's last pose and the frame it last moved: a moving lamp takes a coarser map (PRD-650). */
+    struct LampMotion { uint64_t pose = 0; int64_t movedAt = 0; };
+    std::map<std::size_t, LampMotion> lampMotion_;
     bool virtualCut_ = false;
     WGPUSampler compareSampler_ = nullptr;
     WGPUSampler depthValueSampler_ = nullptr;  // nearest, no compare: a blocker search's depth reads
@@ -892,6 +925,7 @@ private:
     WGPUTextureView depthView_ = nullptr;
     WGPUTexture sceneColor_ = nullptr;  // linear HDR, what materials draw into
     WGPUTextureFormat sceneFormat_ = WGPUTextureFormat_RGBA16Float;
+    bool forceHalfFloatTargets_ = false;
     WGPUTextureView sceneView_ = nullptr;
     uint32_t sampleCount_ = 1;
     uint32_t requestedSamples_ = 1;  // what the game asked for; sampleCount_ is 1 while a traa() effect is in the post graph

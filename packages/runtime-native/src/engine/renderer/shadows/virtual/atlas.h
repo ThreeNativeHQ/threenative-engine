@@ -9,17 +9,44 @@ namespace tn::engine { class BufferGeometry; }
 
 namespace tn::engine::shadows {
 
+/** A caster's AutoLOD chain as a shadow level draws it: the derived rungs (rung 0 is the caster's own
+ *  geometry and is not listed) and each rung's geometric error in the geometry's local units. */
+struct ShadowLodChain {
+    std::vector<std::shared_ptr<BufferGeometry>> rungs;
+    std::vector<double> errors;
+};
+
+/**
+ * The rung (1 to n, 0 for none) a level draws for a caster: the coarsest whose error at `scale` times
+ * the geometry's size stays within `budget` (a texel of the level, times `shadowLodTexels`), and never
+ * one finer than `shown`, the rung the main pass draws. A rung with more error than a texel is a facet
+ * on the shadow's edge.
+ */
+inline int shadowLodRung(const std::vector<double>& errors, int shown, double budget, double scale) {
+    for (int rung = int(errors.size()); rung > shown; --rung)
+        if (errors[std::size_t(rung - 1)] * scale <= budget) return rung;
+    return 0;
+}
+
 // Camera-centred cached depth pages and independently refreshed mover maps.
 struct AtlasControl {
     std::set<uint64_t> pinned, tracked;
     std::vector<Box3> regions;
-    std::map<uint64_t, std::shared_ptr<BufferGeometry>> lods;
+    std::map<uint64_t, ShadowLodChain> lods;
     bool invalidateAll = false;
 };
 struct AtlasOptions {
     std::shared_ptr<AtlasControl> control = std::make_shared<AtlasControl>();
     std::vector<double> clipExtents{16, 48, 144};
     int mapSize = 512, pageTexels = 128, border = 2;
+    /** Texels per edge of each level, finest first, the last standing in for the rest; empty: `mapSize`. */
+    std::vector<int> levelMapSizes;
+    /** The renderer sets `levelMapSizes` by Unreal's texel rule (clipmapMapSizes) on the camera that reads them. */
+    bool autoMapSize = false;
+    /** `r.Shadow.Virtual.ResolutionLodBiasDirectional`, in stops, for the rule. */
+    double resolutionLodBias = 0;
+    /** The rule's budget in pages of `pageTexels²` over all levels (Unreal Epic's MaxPhysicalPages). */
+    int maxPhysicalPages = 4096;
     std::vector<double> selectionGuard{0.9}, refreshStep{0.125};
     bool autoDepth = false;
     double lightDistance = 200, depthRange = 400;
@@ -28,7 +55,11 @@ struct AtlasOptions {
     double expensiveRefreshShare = 0.25;
     std::vector<double> invalidationDelay{0};
     bool adaptiveRefresh = false, adaptiveCasterGate = false, followViewFocus = false, shadowLodBias = false;
+    /** The error, in texels of a level, a coarser AutoLOD rung may have there; infinity draws the coarsest rung. */
+    double shadowLodTexels = 1;
     bool receiverPlaneBias = true, partialRedraw = true;
+    /** See DirectionalClipmapOptions::minAspect; core passes its own default (0.25), this keeps tests square. */
+    double minWindowAspect = 1;
 };
 
 struct AtlasPage {
@@ -61,7 +92,6 @@ public:
     bool drawsStatic(uint64_t key) const;
     void appendMoverPages(std::vector<AtlasPage>& pages) const;
     std::pair<int, int> moverOrigin(int level) const;
-    int staticEdge() const { return slotsPerAxis_ * stride(); }
     void recordCost(int level, double milliseconds, double frameSeconds);
     double refreshStep(int level) const;
     double casterGate(int level) const;
@@ -69,10 +99,18 @@ public:
                             double extent, const std::vector<Box3>& receivers);
     void invalidateAll();
     const AtlasOptions& options() const { return options_; }
+    const DirectionalClipmap& clipmap() const { return *clipmap_; }
     const std::vector<float>& table() const { return table_; }
-    int tiles() const { return options_.mapSize / options_.pageTexels; }
+    int mapSize(int level) const {
+        return options_.levelMapSizes.empty() ? options_.mapSize
+            : options_.levelMapSizes[std::min<std::size_t>(std::size_t(level), options_.levelMapSizes.size() - 1)];
+    }
+    int tiles(int level) const { return mapSize(level) / options_.pageTexels; }
+    /** The table entry of `level`'s first page, counted from the end of the level headers. */
+    int pageBase(int level) const { int base = 0; for (int l = 0; l < level; ++l) base += tiles(l) * tiles(l); return base; }
+    int pageCount() const { return pageBase(int(options_.clipExtents.size())); }
     int stride() const { return options_.pageTexels + 2 * options_.border; }
-    int edge() const { return staticEdge() + int(levels_.size()) * (options_.moverMapSize + 2 * options_.border); }
+    int edge() const { return slotsPerAxis_ * stride(); }
     std::pair<int, int> origin(int slot) const { return {slot % slotsPerAxis_ * stride(), slot / slotsPerAxis_ * stride()}; }
     bool overlaps(const AtlasPage& page, const Box3& bounds) const;
 
@@ -105,8 +143,21 @@ private:
     std::vector<float> table_;
     Vector3 direction_, previousEye_;
     bool started_ = false;
-    int slotsPerAxis_ = 0, nextLevel_ = 0;
+    int slotsPerAxis_ = 0, staticRows_ = 0, nextLevel_ = 0;
     double frame_ = 0, now_ = 0, frameSeconds_ = 1.0 / 60;
 };
+
+/** The smallest square side, in slots, that holds `count` page slots above one mover map per level. */
+int packedSide(int count, int levels, int span);
+
+/**
+ * Unreal's texel-per-pixel rule (core `clipmapMapSizes`): texels per edge of each level, so that a
+ * receiver at the nearest distance a level serves sees a texel of `2^(1 + bias)` of its own pixels
+ * (UE 5.8.3: Engine/Source/Runtime/Renderer/Private/VirtualShadowMaps/VirtualShadowMapClipmap.cpp:245-254,
+ * :363, :452; Engine/Shaders/Private/VirtualShadowMaps/VirtualShadowMapPageMarking.ush:35-39). Past the
+ * page budget, or past `maxEdge` for the packed atlas, the bias rises a quarter stop at a time, as
+ * Unreal's pool does (VirtualShadowMapCacheManager.cpp:703-717). Guards are selection guard minus step.
+ */
+std::vector<int> clipmapMapSizes(const AtlasOptions& options, double tanHalfFov, double viewportWidth, int maxEdge);
 
 } // namespace tn::engine::shadows

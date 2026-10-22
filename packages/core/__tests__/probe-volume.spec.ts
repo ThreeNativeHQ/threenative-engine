@@ -595,6 +595,44 @@ describe("ProbeVolume", () => {
     expect(subject.observation.status).toBe("unbaked");
   });
 
+  it("keeps baking, and reports the overrun, when a CPU rasteriser outruns the render budget", async () => {
+    let nowMs = 0;
+    const subject = volume({
+      bakeBudgetMs: 3,
+      maxWorkItemsPerFrame: 1,
+      now: () => nowMs,
+      report: () => undefined,
+    });
+    const raw = {
+      coordinateSystem: WebGPUCoordinateSystem,
+      copyTextureToTexture: vi.fn(),
+      getRenderTarget: () => null,
+      getActiveCubeFace: () => 0,
+      getActiveMipmapLevel: () => 0,
+      isWebGLRenderer: false,
+      reversedDepthBuffer: false,
+      setRenderTarget: vi.fn(),
+      render: vi.fn(() => {
+        nowMs += 14;
+      }),
+      xr: { enabled: false },
+    };
+    const renderer = {
+      kind: "webgpu" as const,
+      raw,
+      softwareAdapter: "swiftshader",
+    } as unknown as IRendererLike;
+    subject.attachRenderer(renderer);
+    nowMs = 0;
+    const bake = subject.requestBake(new Scene());
+
+    expect(() => subject.process(renderer)).not.toThrow();
+    expect(subject.observation.bakeProgress.completed).toBe(1);
+    expect(subject.observation.bakeCostMs).toBeGreaterThan(subject.observation.bakeBudgetMs);
+    subject.detach();
+    await expect(bake).rejects.toThrow(/detached/u);
+  });
+
   it("fails closed when a later individual work item exceeds its render budget", async () => {
     const bakeBudgetMs = 3;
     let nowMs = 0;
@@ -732,5 +770,96 @@ describe("ProbeVolume", () => {
       ),
     ).toBe(false);
     expect(subject.observation).toMatchObject({ samplingIsolated: false, status: "ready" });
+  });
+
+  describe("atlas render target", () => {
+    const RENDER_ATTACHMENT = 0x10;
+
+    interface IDeviceStub {
+      readonly createTexture: ReturnType<typeof vi.fn>;
+      readonly popErrorScope: ReturnType<typeof vi.fn>;
+      readonly pushErrorScope: ReturnType<typeof vi.fn>;
+    }
+
+    /** A device whose 3D render attachment is rejected (`rejects`) or accepted, like wgpu-native vs Dawn. */
+    function deviceStub(rejects: boolean): IDeviceStub {
+      return {
+        createTexture: vi.fn(() => ({ destroy: vi.fn() })),
+        popErrorScope: vi.fn(async () => (rejects ? { message: "RENDER_ATTACHMENT D3" } : null)),
+        pushErrorScope: vi.fn(),
+      };
+    }
+
+    async function bakeOn(device: IDeviceStub | undefined, options = {}) {
+      const subject = volume({ now: () => 0, report: () => undefined, ...options });
+      const targets: unknown[] = [];
+      const renderer = webgpuRenderer({
+        backend: device === undefined ? undefined : { device },
+        initTexture: vi.fn(),
+        setRenderTarget: vi.fn((target: unknown) => targets.push(target)),
+      });
+      subject.attachRenderer(renderer);
+      const bake = subject.requestBake(new Scene());
+      const progress: number[] = [];
+      for (let frame = 0; frame < 400 && subject.observation.status === "baking"; frame += 1) {
+        subject.process(renderer);
+        progress.push(subject.observation.bakeProgress.completed);
+        await Promise.resolve();
+      }
+      await bake;
+      return {
+        progress,
+        copies: (renderer.raw as { copyTextureToTexture: ReturnType<typeof vi.fn> })
+          .copyTextureToTexture,
+        subject,
+        targets,
+      };
+    }
+
+    const isRenderTarget3D = (target: unknown) =>
+      (target as { isRenderTarget3D?: boolean } | null)?.isRenderTarget3D === true;
+    const zOf = (call: unknown[]) => (call[3] as { z?: number } | undefined)?.z;
+
+    it("renders into a 2D slice target and copies each slice when the device rejects a 3D render attachment", async () => {
+      const device = deviceStub(true);
+      const { copies, subject, targets } = await bakeOn(device);
+      expect(device.createTexture).toHaveBeenCalledWith(
+        expect.objectContaining({ dimension: "3d", usage: expect.any(Number) }),
+      );
+      expect(device.createTexture.mock.calls[0]?.[0].usage & RENDER_ATTACHMENT).toBe(
+        RENDER_ATTACHMENT,
+      );
+      expect(subject.atlasTarget).toBe("copy");
+      expect(subject.observation.status).toBe("ready");
+      expect(targets.some(isRenderTarget3D)).toBe(false);
+      const sliceCopies = copies.mock.calls.filter((call) => zOf(call) !== undefined);
+      expect(sliceCopies.map((call) => zOf(call))).toEqual(
+        Array.from({ length: subject.atlasDepth }, (_, slice) => slice),
+      );
+      expect(samplerTextureDimensions(subject.sampleNode())).toEqual([`3x3x${subject.atlasDepth}`]);
+    });
+
+    it("keeps the 3D render target where the device accepts it", async () => {
+      const { copies, subject, targets } = await bakeOn(deviceStub(false));
+      expect(subject.atlasTarget).toBe("render3d");
+      expect(targets.some(isRenderTarget3D)).toBe(true);
+      expect(copies.mock.calls.some((call) => zOf(call) !== undefined)).toBe(false);
+    });
+
+    it("runs the same bake schedule on both atlas paths, so the native schedule model holds for each", async () => {
+      const options = { maxWorkItemsPerFrame: 3 };
+      const render3d = await bakeOn(undefined, { ...options, atlasTarget: "render3d" });
+      const copy = await bakeOn(undefined, { ...options, atlasTarget: "copy" });
+      expect(copy.progress).toEqual(render3d.progress);
+      expect(copy.progress.at(-1)).toBe(copy.subject.totalWork);
+    });
+
+    it("keeps the 3D render target on a host with no error scopes, and obeys the named override", async () => {
+      expect((await bakeOn(undefined)).subject.atlasTarget).toBe("render3d");
+      const device = deviceStub(false);
+      const forced = await bakeOn(device, { atlasTarget: "copy" });
+      expect(forced.subject.atlasTarget).toBe("copy");
+      expect(device.createTexture).not.toHaveBeenCalled();
+    });
   });
 });

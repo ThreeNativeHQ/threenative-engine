@@ -121,7 +121,11 @@ export function idLayerIsAliased(source: string, file: string): string {
 }
 
 /** Applies the harness patches to a scaffolded starter; fails closed when the template moved. */
-async function patchScaffold(target: string, fresh: boolean, baseline: boolean): Promise<void> {
+export async function patchScaffold(
+  target: string,
+  fresh: boolean,
+  baseline: boolean,
+): Promise<void> {
   // The look under tuning: these files replace the template's own in the copy only. A tuned
   // file moves into the templates once the reference cells match Unreal.
   if (!baseline)
@@ -143,6 +147,11 @@ async function patchScaffold(target: string, fresh: boolean, baseline: boolean):
   await cp(
     path.join(SCAFFOLD_DIR, "Reference.ts.in"),
     path.join(target, "src/scenes/Reference.ts"),
+  );
+  // The render modules that only the overlay has: the baseline arm gets inert stand-ins (the template look).
+  await cp(
+    path.join(SCAFFOLD_DIR, baseline ? "tuningBaseline.ts.in" : "tuning.ts.in"),
+    path.join(target, "src/scenes/tuning.ts"),
   );
   await writeFile(
     path.join(target, "src/scenes/referencePoses.ts"),
@@ -176,6 +185,9 @@ async function patchScaffold(target: string, fresh: boolean, baseline: boolean):
   // One drawing pixel per display pixel, so both engines rasterise the same grid.
   // The scene renders on the template's default engine, the owned C++ Wasm engine (owner,
   // 2026-10-19); upstream three is never pinned here.
+  // TN_UNREAL_LOOK_RESOLUTION_AUTO=1 keeps the template's "auto" scale, so a perf run can show the primary
+  // resolution scale answer a frame over its period (PRD-644 `## Decisions`). A capture never sets it.
+  if (process.env.TN_UNREAL_LOOK_RESOLUTION_AUTO === "1") return;
   await writeFile(
     config,
     replaceOnce(

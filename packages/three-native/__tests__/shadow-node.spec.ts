@@ -139,6 +139,7 @@ it("constructs core's automatic-depth node and installs through the facade sette
     sourceAngleRad: 0.01,
     blockerSamples: 8,
     filterSamples: 12,
+    minPenumbraPixels: 1.5,
   });
   shadow.filterNode = filter;
   expect(shadow.filterNode).toBe(filter);
@@ -149,6 +150,7 @@ it("constructs core's automatic-depth node and installs through the facade sette
       sourceAngleRad: 0.01,
       blockerSamples: 8,
       filterSamples: 12,
+      minPenumbraPixels: 1.5,
     },
   ]);
   shadow.filterNode = null;
@@ -169,12 +171,28 @@ it("validates branded source-angle parameters before either engine ABI sees them
     { sourceAngleRad: 0, blockerSamples: 0, filterSamples: 16 },
     { sourceAngleRad: 0, blockerSamples: 16, filterSamples: 65 },
     { sourceAngleRad: 0, blockerSamples: 1.5, filterSamples: 16 },
+    { sourceAngleRad: 0, blockerSamples: 16, filterSamples: 16, minPenumbraPixels: -1 },
+    { sourceAngleRad: 0, blockerSamples: 16, filterSamples: 16, minPenumbraPixels: 17 },
+    { sourceAngleRad: 0, blockerSamples: 16, filterSamples: 16, minPenumbraPixels: "1" },
   ]) {
     const callback = Object.assign(() => {}, {
       [Symbol.for("threenative.sourceAngleShadowFilter")]: options,
     });
     expect(() => shadowFilterOptions(callback)).toThrow("TN_VIRTUAL_SHADOW_INVALID");
   }
+});
+
+it("passes a sun's pixel floor to the engine only when the filter names one", () => {
+  const tag = Symbol.for("threenative.sourceAngleShadowFilter");
+  const sun = (options: object) => Object.assign(() => {}, { [tag]: options });
+  expect(
+    shadowFilterOptions(
+      sun({ sourceAngleRad: 0.01, blockerSamples: 8, filterSamples: 12, minPenumbraPixels: 2 }),
+    ),
+  ).toEqual({ sourceAngleRad: 0.01, blockerSamples: 8, filterSamples: 12, minPenumbraPixels: 2 });
+  expect(
+    shadowFilterOptions(sun({ sourceAngleRad: 0.01, blockerSamples: 8, filterSamples: 12 })),
+  ).toEqual({ sourceAngleRad: 0.01, blockerSamples: 8, filterSamples: 12 });
 });
 
 it("passes a lamp's source-radius filter and refuses a bad radius", () => {
@@ -224,7 +242,7 @@ it("transfers registered LOD chain data once and clears its dispatch on disposal
   const previous = (globalThis as Record<symbol, unknown>)[key];
   const coarse = new BufferGeometry();
   (globalThis as Record<symbol, unknown>)[key] = new WeakMap([
-    [mesh.geometry, { chain: { levels: [mesh.geometry, coarse] } }],
+    [mesh.geometry, { chain: { levels: [mesh.geometry, coarse], errors: [0, 0.25] } }],
   ]);
   try {
     syncVirtualShadowLods();
@@ -232,7 +250,8 @@ it("transfers registered LOD chain data once and clears its dispatch on disposal
     expect(dispatch).toHaveBeenCalledExactlyOnceWith({
       command: "lod",
       id: mesh.id,
-      geometry: coarse,
+      geometries: [coarse],
+      errors: [0.25],
     });
     detachVirtualShadow(node);
     expect(node.lods.size).toBe(0);

@@ -88,7 +88,7 @@ back to flat colour and why, and lights skipped by the cap.
 
 - [ ] AC-1 [local]: On the `neon-corridor` scene, the L7 cells on the owned engine are within the PRD-631 thresholds of Unreal Epic in every region that Phase 1 found sensitive. proof: `pnpm unreal-look:compare --scene gi:neon-corridor --layer L7` — Evidence 2026-10-21 (not met): with the cache every one of the 10 L7 cells is closer to Unreal and none is within the 0.01 dP50 target. The best cell is the `neon` back wall at 0.048. This scene has no thresholds yet (`--write-thresholds` needs an Unreal-against-Unreal run), so every verdict reads `report`.
 - [ ] AC-2 [local]: The Surface Cache adds no more than 25% to the PRD-603 traced refresh time per probe on the `neon-corridor` scene, on a named WebGPU adapter. proof: the PRD-603 probe-cost playtest on the same scene, with and without `surfaceCache` — Evidence: pending.
-- [x] AC-3 [local; needs a built desktop host]: The new conformance row `surface-cache-albedo` passes on the desktop lane within its tolerance. proof: `pnpm parity --target desktop --only-tests surface-cache-albedo` — Evidence 2026-10-21: web lane pass on the NVIDIA adapter (turing); desktop lane pass against that reference, pixelMismatchRatio 0 and perceptualDeltaE 0 (tolerance 0.02 and 5.0), with `node packages/runtime-native/conformance/run-conformance.mjs --target desktop --only-tests surface-cache-albedo --reference <web run>`. The host was the `tn-linux-jsprofile` build of 2026-09-19, which runs the Three.js engine: it predates the owned engine, and no fresh `pnpm native:build` ran for this row. The row's own assertions (decoded texel, colour factor, metal term, mapped and flat counts) throw before any pixel is read, so the numbers match on that host.
+- [x] AC-3 [local; needs a built desktop host]: The new conformance row `surface-cache-albedo` passes on the desktop lane within its tolerance. proof: `pnpm parity --target desktop --only-tests surface-cache-albedo` — Evidence 2026-10-21: web lane pass on the NVIDIA adapter (turing); desktop lane pass against that reference, pixelMismatchRatio 0 and perceptualDeltaE 0 (tolerance 0.02 and 5.0), with `node packages/runtime-native/conformance/run-conformance.mjs --target desktop --only-tests surface-cache-albedo --reference <web run>`. The host was the `tn-linux-jsprofile` build of 2026-09-19, which runs the Three.js engine: it predates the owned engine, and no fresh `pnpm native:build` ran for this row. The row's own assertions (decoded texel, colour factor, metal term, mapped and flat counts) throw before any pixel is read, so the numbers match on that host. **Owned-engine result 2026-10-22 (parityaudit-lane):** `pnpm parity --target desktop --engine threenative --only-tests surface-cache-albedo` (V8 engine player, RTX 2080, web reference from the same run): pass, pixel mismatch 0, delta E 0 (tolerance 0.02 / 5), no GPU validation error, owned frame viewed. The proof above ran the legacy `mystral` host.
 
 ## Integration Ledger
 
@@ -196,16 +196,18 @@ back to flat colour and why, and lights skipped by the cap.
   The `high` preset turns the stage on since the finishing chain became the default (`ff837b1f2`), and
   `CalibrationScene.ts.in` never turned it off, so it lifted the dark regions. On epic head `2174a4e2f` with a
   fresh Wasm pair, `neon-corridor` L1 read `neon` Floor 78, Wall_Left 69 and Wall_Brick 26 against Unreal 55, 42
-  and 11. With the stage off (`localExposureEnabled: level >= 9`, `?localExposure=0|1` forces it) it reads 60, 51
-  and 13 (Back 122 against 122). The mean dP50 of the 10 surface cells at L1 falls from 0.48 to 0.08. The earlier "above in
-  all 8 cells" came from this lift plus a small real excess in the floor and the left wall. At L7 the gate is
-  neutral: the brick wall moves toward Unreal (dP50 0.37 to 0.25 and 0.44 to 0.36), the back wall moves away
-  (0.00 to 0.05), and the mean dP50 of the 10 surface cells stays at 0.17. Before the gate the local exposure
-  compressed the bright regions, so a level Back at L7 was two errors that cancelled. The sunlit room at L7 shows
-  identical dP50 in every region. Judges (two runs per arm, criteria first): L1 IMPROVEMENT, L7 `neon-corridor`
-  NEUTRAL, L7 `sunlit-room` NEUTRAL. The L7-high locks of the sunlit room keep their bounds (the run-to-run
-  noise bound breaks in 4 to 6 regions with and without the gate, the same kind, so it comes from the head); the
-  cornell locks are stale against the rebuilt scene (`LOCK_STALE`, not from this change).
+  and 11. With the stage off it reads 60, 51 and 13 (Back 122 against 122). The mean dP50 of the 10 surface cells
+  at L1 falls from 0.48 to 0.08. The earlier "above in all 8 cells" came from this lift plus a small real excess in
+  the floor and the left wall. The gate is `localExposureEnabled: level >= 7` (`?localExposure=0|1` forces it).
+  **L7 and L8 keep the stage, on purpose.** A first version switched it off at L7 too. On `neon-corridor` L7 that
+  was neutral (brick wall closer, back wall further, mean dP50 0.17 in both arms) and the sunlit room was
+  identical. On `cornell` L7 on head `93a13713f` it broke 14 bounds of the re-cut L7-high locks (`Back` deltaE 7.49
+  against 4.33, `Wall_Red` dP50 0.133 against 0.056, `Box_Tall` dP50 0.128 against 0.104). The L7 cache is brighter
+  than Unreal's, and the stage's highlight compression hid part of that: a level `Back` at L7 was two errors that
+  cancelled. Open: remove the stage at L7 and L8 in the same change that removes the GI excess (the gather lane).
+  Judges (criteria first, two runs per arm, on the final gate): L1 overall IMPROVEMENT. `neon-corridor` `neon` and
+  `textured` IMPROVEMENT (Wall_Brick dP50 1.36 to 0.18 and 1.07 to 0.07), `sunlit-room` six poses NEUTRAL. The
+  L7 rounds of the first version are on PR #541 and no longer apply.
 - 2026-10-21 (surface2 lane): **A washed-out neon-corridor L1 on the merged head was a stale Wasm pair, not the
   head.** The pair copied at lane spawn (17:16) lacked the C++ of PRD-636 (`b75c036d7`, `a7ad05dba`). With the head's
   JS on that pair, L1 read p50 220 to 245 on the walls against Unreal 42 to 122. A pair built from the head

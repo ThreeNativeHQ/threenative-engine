@@ -61,6 +61,7 @@ import {
   lockCells,
   readGiLocks,
   sceneBasis,
+  splitParity,
   staleLocks,
   withOfflineRoot,
   writeMerged,
@@ -639,8 +640,19 @@ function lockRound(args: string[], deps: IDeps): number {
       "ROUND_MISMATCH",
       `${mismatch}: the arm no longer measures what ${id} recorded; lock a round that the store still reproduces`,
     );
-  const fresh = lockCells(round.id, round.scene, layer, runs, sceneBasis(round.scene));
-  writeMerged(file, fresh, { tighten, relax }, deps.log, `${round.scene} ${layer} from ${id}`);
+  // A lock exists only where the region is at parity with Unreal in every run.
+  const split = splitParity(runs);
+  const fresh = lockCells(round.id, round.scene, layer, split.runs, sceneBasis(round.scene));
+  writeMerged(
+    file,
+    fresh,
+    { tighten, relax },
+    deps.log,
+    `${round.scene} ${layer} from ${id}`,
+    new Set(
+      split.off.map((name) => `${round.scene} ${layer} ${name.slice(round.scene.length + 1)}`),
+    ),
+  );
   return 0;
 }
 

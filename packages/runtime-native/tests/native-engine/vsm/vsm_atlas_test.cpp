@@ -3,10 +3,12 @@
 #include "engine/shader/standard.h"
 #include "engine/shader/package.h"
 #include "engine/abi/bindings.h"
+#include "engine/scene/geometry.h"
 #include "engine/scene/lights.h"
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 using namespace tn::engine;
 using namespace tn::engine::shadows;
@@ -54,6 +56,18 @@ void binding() {
     bool accepted = true;
     try { set(&light.shadow, defaults, store); } catch (const Unsupported&) { accepted = false; }
     CHECK(accepted);
+    // Core sends one size per level, and the texel rule's switch with its bias and page budget.
+    const Value perLevel = Value::record({{"clipExtents", Value::list({8, 24})}, {"mapSize", Value::list({256, 512})},
+        {"autoMapSize", Value::of(true)}, {"resolutionLodBiasDirectional", Value::of(-1.0)},
+        {"maxPhysicalPages", Value::of(2048.0)}, {"lightDistance", Value::of(20.0)}, {"depthRange", Value::of(40.0)}});
+    DirectionalLight sized;
+    set(&sized.shadow, perLevel, store);
+    const auto& rule = *sized.shadow.virtualShadow;
+    CHECK((rule.levelMapSizes == std::vector<int>{256, 512}) && rule.pageTexels == 128);
+    CHECK(rule.autoMapSize && rule.resolutionLodBias == -1 && rule.maxPhysicalPages == 2048);
+    bool refusedPages = false;
+    try { set(&sized.shadow, Value::record({{"maxPhysicalPages", Value::of(0.0)}}), store); } catch (const Unsupported&) { refusedPages = true; }
+    CHECK(refusedPages);
     auto bad = options;
     bad.fields.emplace_back("autoDepth", Value::of(true));
     set(&light.shadow, bad, store);
@@ -66,6 +80,22 @@ void binding() {
     setters.at("filterNode")(&light.shadow, filter, store);
     CHECK(light.shadow.sourceAngleFilter && (*light.shadow.sourceAngleFilter)[0] == 0.01);
     CHECK((*light.shadow.sourceAngleFilter)[1] == 8 && (*light.shadow.sourceAngleFilter)[2] == 12);
+    CHECK((*light.shadow.sourceAngleFilter)[3] == 0);  // no floor unless the record names one
+    auto floored = filter; floored.fields.emplace_back("minPenumbraPixels", Value::of(1.5));
+    setters.at("filterNode")(&light.shadow, floored, store);
+    CHECK((*light.shadow.sourceAngleFilter)[3] == 1.5);
+    auto stray = filter; stray.fields.emplace_back("minPenumbraPixel", Value::of(1.5));
+    bool refusedStray = false;
+    try { setters.at("filterNode")(&light.shadow, stray, store); }
+    catch (const Unsupported& e) { refusedStray = e.reason == "TN_VIRTUAL_SHADOW_INVALID: source-angle filter"; }
+    CHECK(refusedStray && (*light.shadow.sourceAngleFilter)[3] == 1.5);  // an unknown key never passes quietly
+    auto negative = filter; negative.fields.emplace_back("minPenumbraPixels", Value::of(-1.0));
+    bool refusedNegative = false;
+    try { setters.at("filterNode")(&light.shadow, negative, store); }
+    catch (const Unsupported&) { refusedNegative = true; }
+    CHECK(refusedNegative);
+    setters.at("filterNode")(&light.shadow, filter, store);
+    CHECK((*light.shadow.sourceAngleFilter)[3] == 0);
     auto invalidFilter = filter; invalidFilter.fields[0].second = Value::of(-0.1);
     bool invalid = false;
     try { setters.at("filterNode")(&light.shadow, invalidFilter, store); }
@@ -83,6 +113,15 @@ void binding() {
     bool wide = true;
     try { set(&light.shadow, options, store); } catch (const Unsupported&) { wide = false; }
     CHECK(wide);
+    // The ground-fitted window ratio crosses the facade; a ratio outside (0, 1] is refused.
+    auto fitted = options;
+    fitted.fields.emplace_back("minWindowAspect", Value::of(0.2));
+    set(&light.shadow, fitted, store);
+    CHECK(light.shadow.virtualShadow && light.shadow.virtualShadow->minWindowAspect == 0.2);
+    fitted.fields.back().second = Value::of(0.0);
+    bool flat = false;
+    try { set(&light.shadow, fitted, store); } catch (const Unsupported&) { flat = true; }
+    CHECK(flat);
     set(&light.shadow, Value{}, store);
     CHECK(!light.shadow.virtualShadow);
     // The filter without the node is refused whichever was set first, and says the fix.
@@ -127,6 +166,70 @@ void binding() {
     CHECK(threeFields);
     lampSet(&lamp.shadow, Value{}, store);
     CHECK(!lamp.shadow.sourceRadiusFilter);
+    // A caster's chain crosses as its derived geometries and their errors, and reaches the atlas control.
+    struct GeometryStore : Store {
+        Object object{"BufferGeometry", std::make_shared<BufferGeometry>()};
+        bool known = true;
+        Object* find(const Value&) override { return known ? &object : nullptr; }
+        Value adopt(std::string, std::shared_ptr<void>) override { return {}; }
+        Value adoptAlias(std::string, void*, void*) override { return {}; }
+        Value share(std::string, std::shared_ptr<void>) override { return {}; }
+        std::vector<double> numbers(const Value&) override { return {}; }
+    } geometries;
+    DirectionalLight chained;
+    set(&chained.shadow, options, store);
+    const auto lodCommand = [&](std::vector<Value> rungs, std::vector<double> errors) {
+        return Value::record({{"command", Value{Value::Kind::String, 0, "lod"}}, {"id", Value::of(7.0)},
+            {"geometries", Value::array(std::move(rungs))}, {"errors", Value::list(std::move(errors))}});
+    };
+    const Value rung{Value::Kind::Ref, 0, "g"};
+    set(&chained.shadow, lodCommand({rung, rung}, {0.25, 1.0}), geometries);
+    const auto& chains = chained.shadow.virtualShadow->control->lods;
+    CHECK(chains.count(7) == 1 && chains.at(7).rungs.size() == 2 && chains.at(7).errors == std::vector<double>({0.25, 1.0}));
+    const auto refusesLod = [&](Value command, bool known = true) {
+        geometries.known = known;
+        bool refused = false;
+        try { set(&chained.shadow, command, geometries); }
+        catch (const Unsupported& e) { refused = e.reason.find("TN_VIRTUAL_SHADOW_INVALID: lod") == 0; }
+        geometries.known = true;
+        return refused;
+    };
+    CHECK(refusesLod(lodCommand({rung, rung}, {0.25})));      // an error for every rung
+    CHECK(refusesLod(lodCommand({rung}, {-0.25})));           // and none negative
+    CHECK(refusesLod(lodCommand({rung}, {std::nan("")})));    // or unmeasured
+    CHECK(refusesLod(lodCommand({}, {})));                    // a chain has a rung
+    CHECK(refusesLod(lodCommand({rung}, {0.25}), false));     // that the engine holds
+    CHECK(chains.at(7).rungs.size() == 2);                    // a refused chain leaves the held one alone
+    // The texel budget of a coarser rung is one unless the node names it, and a positive number (infinity too).
+    DirectionalLight budgeted;
+    set(&budgeted.shadow, options, store);
+    CHECK(budgeted.shadow.virtualShadow->shadowLodTexels == 1);
+    auto unbounded = options;
+    unbounded.fields.emplace_back("shadowLodTexels", Value::of(std::numeric_limits<double>::infinity()));
+    set(&budgeted.shadow, unbounded, store);
+    CHECK(std::isinf(budgeted.shadow.virtualShadow->shadowLodTexels));
+    for (const double bad : {0.0, -1.0, std::nan("")}) {
+        auto refusedBudget = options;
+        refusedBudget.fields.emplace_back("shadowLodTexels", Value::of(bad));
+        bool refusedBad = false;
+        try { set(&budgeted.shadow, refusedBudget, store); }
+        catch (const Unsupported& e) { refusedBad = e.reason == "TN_VIRTUAL_SHADOW_INVALID: shadowLodTexels"; }
+        CHECK(refusedBad);
+    }
+    CHECK(std::isinf(budgeted.shadow.virtualShadow->shadowLodTexels));  // a refused budget leaves the node alone
+}
+
+// A level draws the coarsest rung one of its texels cannot tell from the full mesh, never one finer than
+// the main pass shows, and the mesh's own geometry (rung 0) where no rung is that accurate.
+void lodRung() {
+    const std::vector<double> errors{0.02, 0.1, 0.5};  // rungs 1 to 3
+    CHECK(shadowLodRung(errors, 0, 0.1, 1) == 2);      // 0.1 fits a texel of 0.1, 0.5 does not
+    CHECK(shadowLodRung(errors, 0, 0.6, 1) == 3);
+    CHECK(shadowLodRung(errors, 0, 0.01, 1) == 0);     // finer than the first rung: the mesh's own
+    CHECK(shadowLodRung(errors, 0, 0.1, 2) == 1);      // twice the size, twice the error: 0.2 and 0.04
+    CHECK(shadowLodRung(errors, 3, 0.6, 1) == 0);      // the main pass already shows the coarsest
+    CHECK(shadowLodRung(errors, 2, 0.1, 1) == 0);      // and a rung that is not coarser than what it shows is no change
+    CHECK(shadowLodRung({}, 0, 1, 1) == 0);
 }
 
 void policies() {
@@ -179,6 +282,9 @@ void policies() {
     atlas->updateCasters({caster});
     atlas->update(eye, sun);
     caster.deforming = false;
+    // Unreal's rule: static only after MORE than staticAfterFrames quiet frames (here 2).
+    atlas->updateCasters({caster});
+    CHECK(!atlas->drawsStatic(1));
     atlas->updateCasters({caster});
     CHECK(!atlas->drawsStatic(1));
     atlas->updateCasters({caster});
@@ -370,4 +476,125 @@ void sampling() {
     }
 }
 
-TN_TEST_MAIN({"atlas", atlas}, {"continuous_invalidation", continuousInvalidation}, {"sampling", sampling})
+// A low sun stretches a texel along the light's V axis over 1 / sin(elevation) of floor, so a window
+// as high as it is wide would blur every floor shadow edge that many times more than a high sun does.
+// With `minWindowAspect` the window's light-space height is sin(elevation) of its width, never less.
+void groundWindow() {
+    constexpr double kPi = 3.14159265358979323846;
+    std::string error;
+    AtlasOptions options;
+    options.clipExtents = {8, 24}; options.mapSize = 256; options.pageTexels = 64;
+    options.refreshStep = {0}; options.lightDistance = 20; options.depthRange = 40;
+    options.minWindowAspect = 0.1;
+    const double elevation = 15 * kPi / 180, sinEl = std::sin(elevation);
+    const Vector3 eye(0, 0, 0), sun(std::cos(elevation), sinEl, 0);
+    auto atlas = PageAtlas::create(options, error);
+    CHECK(atlas.has_value());
+    if (!atlas) return;
+    const auto pages = atlas->update(eye, sun);
+    CHECK(pages.size() == 16);
+    for (const auto& page : pages) {
+        // The page camera is `vScale` as high as it is wide: elements 0 and 5 are 2 / width and 2 / height.
+        CHECK(std::abs(page.projection.elements[0] / page.projection.elements[5] - sinEl) < 1e-9);
+        // It still lands on its own tile: the page centre projects to the middle of its padded viewport.
+        Vector3 center = page.axisU;
+        center.multiplyScalar((page.lowU + page.highU) / 2).addScaledVector(page.axisV, (page.lowV + page.highV) / 2);
+        center.applyMatrix4(page.view).applyMatrix4(page.projection);
+        CHECK(std::abs(center.x) < 1e-9 && std::abs(center.y) < 1e-9);
+    }
+    // The shader's V row is the unit V over the ratio, so its dot product counts pages along the height.
+    const auto& table = atlas->table();
+    for (int level = 0; level < 2; ++level) {
+        const float* row = table.data() + level * 36 + 24;
+        CHECK(std::abs(std::sqrt(row[0] * row[0] + row[1] * row[1] + row[2] * row[2]) - 1 / sinEl) < 1e-4);
+    }
+    // One metre of floor along the sun's azimuth is one page-grid unit, as one metre across it is.
+    const auto along = atlas->clipmap().project(Vector3(1, 0, 0)), across = atlas->clipmap().project(Vector3(0, 0, 1));
+    CHECK(std::abs(std::abs(along.v) - 1) < 1e-9 && std::abs(std::abs(across.u) - 1) < 1e-9);
+    // Under minWindowAspect the height stops shrinking, an overhead sun stays square, and 1 keeps every sun square.
+    auto aspectOf = [&](const Vector3& towards, double minimum) {
+        auto o = options; o.minWindowAspect = minimum;
+        auto a = PageAtlas::create(o, error);
+        const auto p = a->update(eye, towards);
+        return p.front().projection.elements[0] / p.front().projection.elements[5];
+    };
+    const double low = 4 * kPi / 180;
+    CHECK(std::abs(aspectOf(Vector3(std::cos(low), std::sin(low), 0), 0.25) - 0.25) < 1e-9);
+    CHECK(std::abs(aspectOf(Vector3(std::cos(low), std::sin(low), 0), 1) - 1) < 1e-9);
+    CHECK(std::abs(aspectOf(Vector3(0.1, 1, 0), 0.25) - 1) < 1e-9);
+    options.minWindowAspect = 0;
+    CHECK(!PageAtlas::create(options, error));
+}
+
+// The mover maps share the square with the static pages: six 3072-texel levels and their 512 mover maps
+// fit WebGPU's 8192 texture edge, which a mover column beside the pages (10884 texels) did not.
+void packing() {
+    std::string error;
+    AtlasOptions options;
+    options.clipExtents = {1, 2, 4, 8, 16, 32}; options.mapSize = 3072; options.pageTexels = 128;
+    options.moverMapSize = 512;
+    auto atlas = PageAtlas::create(options, error);
+    CHECK(atlas.has_value());
+    if (!atlas) return;
+    std::printf("packing: atlas edge %d\n", atlas->edge());
+    CHECK(atlas->edge() <= 8192);
+    const int slots = atlas->pageCount(), mover = options.moverMapSize + 2 * options.border;
+    int lastStatic = 0;
+    for (int slot = 0; slot < slots; ++slot) lastStatic = std::max(lastStatic, atlas->origin(slot).second + atlas->stride());
+    for (int l = 0; l < 6; ++l) {
+        const auto [x, y] = atlas->moverOrigin(l);
+        CHECK(x + mover <= atlas->edge() && y + mover <= atlas->edge());
+        CHECK(y >= lastStatic);  // below every static page
+        for (int k = 0; k < l; ++k) {
+            const auto [ox, oy] = atlas->moverOrigin(k);
+            CHECK(x >= ox + mover || ox >= x + mover || y >= oy + mover || oy >= y + mover);
+        }
+    }
+}
+
+// Unreal's texel rule sizes each level, and a level's page table starts where the last one's ends. The
+// numbers are core's `clipmapMapSizes` spec: hfov 60 at 1280 px, guards 0.9 - 0.125.
+void mapSizes() {
+    AtlasOptions options;
+    options.clipExtents = {7, 14, 28, 56}; options.moverMapSize = 512;
+    const double tan30 = std::tan(M_PI / 6);
+    const auto sizes = clipmapMapSizes(options, tan30, 1280, 8192);
+    std::printf("map sizes: %d %d %d %d\n", sizes[0], sizes[1], sizes[2], sizes[3]);
+    CHECK((sizes == std::vector<int>{2944, 2944, 2944, 2944}));
+    options.clipExtents = {4, 8, 32};
+    CHECK((clipmapMapSizes(options, tan30, 1280, 8192) == std::vector<int>{2944, 2944, 4096}));
+    CHECK((clipmapMapSizes(options, tan30, 640, 8192) == std::vector<int>{1536, 1536, 2944}));
+    options.clipExtents = {7, 14, 28, 56};
+    options.maxPhysicalPages = 1000;
+    CHECK((clipmapMapSizes(options, tan30, 1280, 8192) == std::vector<int>{1792, 1792, 1792, 1792}));
+    // The packed atlas must fit the device's edge too: 2944 texels need 49 slots of 132 (6468).
+    options.maxPhysicalPages = 4096;
+    const auto fitted = clipmapMapSizes(options, tan30, 1280, 6000);
+    options.levelMapSizes = fitted;
+    std::string error;
+    auto atlas = PageAtlas::create(options, error);
+    CHECK(atlas.has_value());
+    if (!atlas) return;
+    std::printf("map sizes: %d under a 6000 edge, atlas %d\n", fitted[0], atlas->edge());
+    CHECK(fitted[0] < 2944 && atlas->edge() <= 6000);
+
+    // Two levels of 2 and 4 tiles: level 1's entries start after level 0's 4, not at 1 x 16.
+    AtlasOptions mixed;
+    mixed.clipExtents = {8, 24}; mixed.mapSize = 256; mixed.levelMapSizes = {128, 256}; mixed.pageTexels = 64;
+    auto plan = PageAtlas::create(mixed, error);
+    CHECK(plan.has_value());
+    if (!plan) return;
+    CHECK(plan->tiles(0) == 2 && plan->tiles(1) == 4 && plan->pageCount() == 20 && plan->pageBase(1) == 4);
+    plan->update(Vector3(0, 0, 0), Vector3(0, 1, 1));
+    plan->update(Vector3(0, 0, 0), Vector3(0, 1, 1));
+    const auto& table = plan->table();
+    CHECK(table.size() == std::size_t(2 * 9 + 20 + 2) * 4);
+    CHECK(table[23] == 128 && table[27] == 2 && table[36 + 23] == 256 && table[36 + 27] == 4);
+    // Every page of both levels is mapped, so every entry carries its slot (z = 1).
+    for (int entry = 0; entry < 20; ++entry) CHECK(table[std::size_t(18 + entry) * 4 + 2] == 1);
+    AtlasOptions bad = mixed;
+    bad.levelMapSizes = {128, 200};
+    CHECK(!PageAtlas::create(bad, error));
+}
+
+TN_TEST_MAIN({"atlas", atlas}, {"packing", packing}, {"map_sizes", mapSizes}, {"continuous_invalidation", continuousInvalidation}, {"sampling", sampling}, {"ground_window", groundWindow}, {"lod_rung", lodRung})

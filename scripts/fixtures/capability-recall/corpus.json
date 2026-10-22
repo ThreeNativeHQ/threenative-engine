@@ -725,6 +725,22 @@
       "reject": []
     },
     {
+      "id": "request.lumen-reflections",
+      "query": "lumen reflections",
+      "scope": "request",
+      "source": "template:starter#Ownership",
+      "expect": ["TracedReflections"],
+      "reject": []
+    },
+    {
+      "id": "request.dedicated-reflection-rays",
+      "query": "dedicated reflection rays",
+      "scope": "request",
+      "source": "template:starter#Ownership",
+      "expect": ["TracedReflections"],
+      "reject": []
+    },
+    {
       "id": "request.vehicle-suspension-grip",
       "query": "suspension wheel traction tyre grip",
       "scope": "request",
@@ -757,11 +773,27 @@
       "reject": []
     },
     {
+      "id": "request.rough-diffuse-substrate-eon",
+      "query": "Substrate EON, Diffuse_EON, Diffuse_GGX_Rough, rough diffuse, Oren-Nayar",
+      "scope": "request",
+      "source": "sandbox:lamp-room#scenes/CalibrationScene.ts",
+      "expect": ["useRoughDiffuse"],
+      "reject": []
+    },
+    {
       "id": "request.lumen-surface-cache",
       "query": "lumen surface cache",
       "scope": "request",
       "source": "template:starter#Quality and proof",
       "expect": ["SurfaceCache"],
+      "reject": []
+    },
+    {
+      "id": "request.gi-visualize",
+      "query": "lumen visualize indirect diffuse only r.Lumen.Visualize.IndirectDiffuse",
+      "scope": "request",
+      "source": "template:starter#Quality and proof",
+      "expect": ["GIVisualize"],
       "reject": []
     },
     {

@@ -22,6 +22,15 @@ namespace {
 constexpr float kPi = std::numbers::pi_v<float>;
 constexpr float kEpsilon = 1e-6f;  // MathNode EPSILON
 
+// Unreal's Substrate rough diffuse, the EON model (PRD-653). The fit constants are the model's; the 0.4 and the
+// 20 cm are Diffuse_GGX_Rough's (Engine/Shaders/Private/BRDF.ush): EON's roughness is 0.4 x the material's, and
+// a lamp of 20 cm or more is shaded as Lambert, with the weight falling linearly between.
+constexpr float kEonRoughnessScale = 0.4f;
+constexpr float kEonSizeLimit = 0.2f;  // metres
+constexpr float kEonSingleLoss = 1.0f - 1.0f / (1.0f + (0.5f - 2.0f / (3.0f * kPi)));
+constexpr float kEonMultiTilt = 0.262048f;
+constexpr float kEonAlbedoGain = 0.189468f;
+
 struct Tsl {
     Program& p;
     ExprId f(float v) { return p.constant(v); }
@@ -704,6 +713,7 @@ void linkNodeVaryings(StandardPrograms& out, const VertexVariant& variant, ExprI
 struct Incoming {
     ExprId direction;
     ExprId color;
+    ExprId sourceRadius = kInvalid;  // a lamp's Source Radius, metres: read only when lampSize asks (a sun has none)
 };
 
 // interleavedGradientNoise(screenCoordinate.xy) * 2pi, PCF's per-pixel rotation.
@@ -1026,12 +1036,20 @@ static ExprId virtualShadowFactor(Program& f, Tsl& t, std::size_t index, int lev
     const uint32_t table = f.storageBuffer("vsmTable" + std::to_string(index), Type::vec(4));
     auto row = [&](int i) { return f.loadStorage(table, f.construct(Type::u32(), {f.constant(int32_t(i))})); };
     const ExprId world = shadowWorld(f, positionWorld, normalWorld, at, leaf);
-    const ExprId plane = f.call("cross", {f.call("dFdx", {positionWorld}), f.call("dFdy", {positionWorld})});
+    // The receiver's pixel: the world steps one pixel right and one pixel down take (outside every branch,
+    // where a derivative is defined).
+    const ExprId pixelX = f.call("dFdx", {positionWorld}), pixelY = f.call("dFdy", {positionWorld});
+    const ExprId plane = f.call("cross", {pixelX, pixelY});
     const ExprId phi = noisePhi(f, t);
     // Finest level first: a level that holds the whole weight left skips every coarser one, so a pixel
     // inside the finest window reads one level, and one in a blend band reads two. The weights are the
     // coarse-to-fine mix chain unrolled: finest * w0 + (1 - w0) * (next * w1 + ...).
     const VarId accumulated = f.var(Type::f32(), t.f(0)), remaining = f.var(Type::f32(), t.f(1));
+    auto pageBase = [&](int level) {
+        ExprId sum = t.f(0);
+        for (int k = 0; k < level; ++k) { const ExprId n = f.swizzle(row(k*9+6), "w"); sum = f.add(sum, f.mul(n, n)); }
+        return sum;
+    };
     for (int l = 0; l < levels; ++l) {
         const ExprId window = row(l*9+4), u = row(l*9+5), v = row(l*9+6), w = row(l*9+7), params = row(l*9+8);
         const ExprId axisU = f.swizzle(u, "xyz"), axisV = f.swizzle(v, "xyz"), axisW = f.swizzle(w, "xyz");
@@ -1048,19 +1066,30 @@ static ExprId virtualShadowFactor(Program& f, Tsl& t, std::size_t index, int lev
         f.If(f.less(t.f(0), f.mul(f.load(remaining), weight)), [&] {
         const ExprId matrix = f.construct(Type::mat(4, 4), {row(l*9), row(l*9+1), row(l*9+2), row(l*9+3)});
         const ExprId mapSize = f.swizzle(u, "w"), tiles = f.swizzle(v, "w"), span = f.swizzle(w, "w");
+        // Each level's page table follows the last one's, `tiles²` entries long, so levels may differ in size.
+        const ExprId base = pageBase(l), total = pageBase(levels);
         const ExprId projected4 = f.mul(matrix, f.construct(Type::vec(4), {world, t.f(1)}));
         const ExprId projected = f.div(f.swizzle(projected4, "xyz"), f.swizzle(projected4, "w"));
         const ExprId uv = f.construct(Type::vec(2), {f.swizzle(projected, "x"), t.oneMinus(f.swizzle(projected, "y"))});
+        // The pixel's size in this level's uv, per axis (the length of its two steps together): the level's
+        // matrix is orthographic, so it maps a world step to a uv step without the position.
+        const ExprId stepX = f.swizzle(f.mul(matrix, f.construct(Type::vec(4), {pixelX, t.f(0)})), "xy");
+        const ExprId stepY = f.swizzle(f.mul(matrix, f.construct(Type::vec(4), {pixelY, t.f(0)})), "xy");
+        const ExprId pixelUv = f.call("sqrt", {f.add(f.mul(stepX, stepX), f.mul(stepY, stepY))});
         const ExprId along = f.call("max", {f.call("abs", {t.dot(plane, axisW)}),
             f.call("max", {f.mul(f.call("length", {plane}), t.f(0.0001f)), t.f(1e-12f)})});
-        const ExprId slope = f.div(f.add(f.call("abs", {t.dot(plane, axisU)}), f.call("abs", {t.dot(plane, axisV)})), along);
+        // The V row is the unit V over the window's height ratio (length 1 / ratio), and a texel along V is
+        // that ratio shorter than one along U, so the depth change across a V texel is |n.V| * ratio, which
+        // is |n.row| / |row|^2.
+        const ExprId vSlope = f.div(f.call("abs", {t.dot(plane, axisV)}), t.dot(axisV, axisV));
+        const ExprId slope = f.div(f.add(f.call("abs", {t.dot(plane, axisU)}), vSlope), along);
         const ExprId radius = f.uniform(at + "ShadowRadius", Type::f32());
         const ExprId footprint = f.add(f.call("max", {radius, t.f(0)}), t.f(1));
         // table entry.w carries receiverPlaneBias so changing the policy never changes a program.
         const ExprId slopeBias = f.mul(f.div(f.div(f.mul(slope, f.mul(extent, t.f(2))), mapSize), span), footprint);
         const ExprId baseZ = f.add(f.swizzle(projected, "z"), f.uniform(at + "ShadowBias", Type::f32()));
         const ExprId mover = f.loadStorage(table, f.construct(Type::u32(), {
-            f.add(t.f(float(levels * 9 + l)), f.mul(t.f(float(levels)), f.mul(tiles, tiles)))}));
+            f.add(t.f(float(levels * 9 + l)), total)}));
         auto sampleLayer = [&](bool moving) {
         const ExprId resolution = moving ? f.swizzle(mover, "z") : mapSize;
         auto pcf = [&] {
@@ -1070,7 +1099,7 @@ static ExprId virtualShadowFactor(Program& f, Tsl& t, std::size_t index, int lev
                 f.construct(Type::vec(2), {t.f(0)}), f.construct(Type::vec(2), {t.f(1)})});
             const ExprId grid = f.mul(sampleUv, tiles);
             const ExprId tile = f.call("min", {f.call("floor", {grid}), f.construct(Type::vec(2), {f.sub(tiles, t.f(1))})});
-            const ExprId pageIndex = f.add(t.f(float(levels*9)), f.add(f.mul(t.f(float(l)), f.mul(tiles, tiles)),
+            const ExprId pageIndex = f.add(t.f(float(levels*9)), f.add(base,
                 f.add(f.mul(f.swizzle(tile, "y"), tiles), f.swizzle(tile, "x"))));
             const ExprId entry = f.loadStorage(table, f.construct(Type::u32(), {pageIndex}));
             const ExprId local = f.mul(f.sub(grid, tile), f.swizzle(params, "x"));
@@ -1085,7 +1114,7 @@ static ExprId virtualShadowFactor(Program& f, Tsl& t, std::size_t index, int lev
         };
         // The filter replaces the 5-tap PCF where it is on, so a pixel pays for one of the two.
         const VarId filtered = f.var(Type::f32(), t.f(1));
-        const ExprId filterIndex = f.add(t.f(float(levels * 10)), f.mul(t.f(float(levels)), f.mul(tiles, tiles)));
+        const ExprId filterIndex = f.add(t.f(float(levels * 10)), total);
         const ExprId filter = f.loadStorage(table, f.construct(Type::u32(), {filterIndex}));
         f.If(f.less(t.f(0), f.swizzle(filter, "w")), [&] {
             const ExprId sourceTangent = f.swizzle(filter, "x"), blockers = f.swizzle(filter, "y"), samples = f.swizzle(filter, "z");
@@ -1101,7 +1130,7 @@ static ExprId virtualShadowFactor(Program& f, Tsl& t, std::size_t index, int lev
                     return f.textureLoad(map, coordinate, f.constant(int32_t(0)));
                 }
                 const ExprId tile = f.call("floor", {f.div(pixel, f.swizzle(params, "x"))});
-                const ExprId pageIndex = f.add(t.f(float(levels*9)), f.add(f.mul(t.f(float(l)), f.mul(tiles, tiles)),
+                const ExprId pageIndex = f.add(t.f(float(levels*9)), f.add(base,
                     f.add(f.mul(f.swizzle(tile, "y"), tiles), f.swizzle(tile, "x"))));
                 const ExprId entry = f.loadStorage(table, f.construct(Type::u32(), {pageIndex}));
                 const ExprId local = f.sub(pixel, f.mul(tile, f.swizzle(params, "x")));
@@ -1123,17 +1152,24 @@ static ExprId virtualShadowFactor(Program& f, Tsl& t, std::size_t index, int lev
             const ExprId centreGrid = f.mul(centre, tiles);
             const ExprId centreTile = f.call("min", {f.call("floor", {centreGrid}), f.construct(Type::vec(2), {f.sub(tiles, t.f(1))})});
             const ExprId centreEntry = f.loadStorage(table, f.construct(Type::u32(), {f.add(t.f(float(levels*9)),
-                f.add(f.mul(t.f(float(l)), f.mul(tiles, tiles)),
+                f.add(base,
                 f.add(f.mul(f.swizzle(centreTile, "y"), tiles), f.swizzle(centreTile, "x"))))}));
             const ExprId planeOn = f.swizzle(centreEntry, "w");
             const ExprId planeWidth = f.div(width, span);
             const ExprId texelBias = f.mul(f.mul(f.div(f.mul(slope, planeWidth), mapSize), f.div(mapSize, resolution)), planeOn);
             auto tapZ = [&](ExprId offset) {
                 const ExprId tilt = f.add(f.mul(f.div(f.call("abs", {t.dot(plane, axisU)}), along), f.call("abs", {f.swizzle(offset, "x")})),
-                                          f.mul(f.div(f.call("abs", {t.dot(plane, axisV)}), along), f.call("abs", {f.swizzle(offset, "y")})));
+                                          f.mul(f.div(vSlope, along), f.call("abs", {f.swizzle(offset, "y")})));
                 return f.sub(baseZ, f.add(texelBias, f.mul(f.mul(tilt, planeWidth), planeOn)));
             };
-            const ExprId search = f.call("max", {texel, f.div(f.mul(f.mul(baseZ, span), tangent), width)});
+            // The disc is physical: `radius` metres across the light in both axes. A UV step along V is the
+            // window's height ratio shorter than one along U, so the V half of every offset is longer in UV.
+            const ExprId aspect = f.div(t.f(1), f.call("length", {axisV}));
+            auto uvRadius = [&](ExprId metres) {
+                return f.construct(Type::vec(2), {f.call("max", {texel, f.div(metres, width)}),
+                                                  f.call("max", {texel, f.div(f.div(metres, width), aspect)})});
+            };
+            const ExprId search = uvRadius(f.mul(f.mul(baseZ, span), tangent));
             const VarId blockerSum = f.var(Type::f32(), t.f(0)), blockerCount = f.var(Type::f32(), t.f(0));
             f.Loop(f.construct(Type::i32(), {blockers}), [&](ExprId i) {
                 const ExprId offset = f.mul(disk(i, blockers), search);
@@ -1147,13 +1183,22 @@ static ExprId virtualShadowFactor(Program& f, Tsl& t, std::size_t index, int lev
                 f.div(f.load(blockerSum), f.call("max", {f.load(blockerCount), t.f(1)})))}), span);
             // Where the blockers touch the receiver the penumbra is under a texel: each tap is then the
             // hardware's bilinear compare, so the edge is about one texel wide and not stair-stepped,
-            // and the floor of the disk is half a texel.
-            const ExprId penumbra = f.call("max", {f.mul(texel, t.f(0.5f)), f.div(f.mul(gap, tangent), width)});
+            // and the floor of the disk is half a texel. `minPenumbraPixels` (filter.w - 1) adds the
+            // receiver's own pixel, as it lies in this level, in quadrature (the blur of two independent
+            // sources): a contact edge is then never sharper than the screen can show, and does not crawl
+            // as the camera moves. The pixel's reach is capped at 16 texels, since the derivatives of a
+            // quad that straddles a silhouette are the distance between two surfaces.
+            const ExprId penumbraMetres = f.mul(gap, tangent);
+            const ExprId geometric = f.construct(Type::vec(2), {f.div(penumbraMetres, width), f.div(f.div(penumbraMetres, width), aspect)});
+            const ExprId pixels = f.call("min", {f.mul(pixelUv, f.sub(f.swizzle(filter, "w"), t.f(1))),
+                f.construct(Type::vec(2), {f.mul(texel, t.f(16))})});
+            const ExprId penumbra = f.call("max", {f.construct(Type::vec(2), {f.mul(texel, t.f(0.5f))}),
+                f.call("sqrt", {f.add(f.mul(geometric, geometric), f.mul(pixels, pixels))})});
             auto compareAt = [&](ExprId atUv, ExprId z) {
                 const ExprId clamped = f.call("clamp", {atUv, f.construct(Type::vec(2), {t.f(0)}), f.construct(Type::vec(2), {t.f(1)})});
                 const ExprId grid = f.mul(clamped, tiles);
                 const ExprId tile = f.call("min", {f.call("floor", {grid}), f.construct(Type::vec(2), {f.sub(tiles, t.f(1))})});
-                const ExprId pageIndex = f.add(t.f(float(levels*9)), f.add(f.mul(t.f(float(l)), f.mul(tiles, tiles)),
+                const ExprId pageIndex = f.add(t.f(float(levels*9)), f.add(base,
                     f.add(f.mul(f.swizzle(tile, "y"), tiles), f.swizzle(tile, "x"))));
                 const ExprId entry = f.loadStorage(table, f.construct(Type::u32(), {pageIndex}));
                 const ExprId local = f.mul(f.sub(grid, tile), f.swizzle(params, "x"));
@@ -1194,7 +1239,7 @@ static ExprId virtualShadowFactor(Program& f, Tsl& t, std::size_t index, int lev
 
 // `kind` upper case: the light casts a shadow this mesh receives; `positionWorld` is then read.
 static Incoming incoming(Program& f, Tsl& t, char kind, std::size_t index, ExprId positionView,
-                         ExprId positionWorld = kInvalid, ExprId normalWorld = kInvalid, bool softShadows = false, bool leaf = false) {
+                         ExprId positionWorld = kInvalid, ExprId normalWorld = kInvalid, bool softShadows = false, bool leaf = false, bool lampSize = false) {
     const std::string at = "light" + std::to_string(index);
     ExprId color = f.uniform(at + "Color", Type::vec(3));
     if (kind >= '1' && kind <= '8') {
@@ -1219,15 +1264,30 @@ static Incoming incoming(Program& f, Tsl& t, char kind, std::size_t index, ExprI
     const ExprId falloff = f.div(t.f(1), f.call("max", {f.call("pow", {distance, f.uniform(at + "Decay", Type::f32())}), t.f(0.01f)}));
     const ExprId cut = f.mul(falloff, t.pow2(t.saturate(t.oneMinus(t.pow2(t.pow2(f.div(distance, cutoff)))))));
     const ExprId attenuation = f.select(f.less(t.f(0), cutoff), cut, falloff);
-    if (kind == 'p') return {direction, f.mul(color, attenuation)};
+    const ExprId sourceRadius = lampSize ? f.uniform(at + "SourceRadius", Type::f32()) : kInvalid;
+    if (kind == 'p') return {direction, f.mul(color, attenuation), sourceRadius};
     const ExprId angleCos = t.dot(direction, f.call("normalize", {f.uniform(at + "Axis", Type::vec(3))}));
     const ExprId spot = f.call("smoothstep", {f.uniform(at + "ConeCos", Type::f32()), f.uniform(at + "PenumbraCos", Type::f32()), angleCos});
-    return {direction, f.mul(f.mul(color, spot), attenuation)};
+    return {direction, f.mul(f.mul(color, spot), attenuation), sourceRadius};
 }
 
 // NodeMaterial.depthNode: the fragment's own depth (frag_depth), on every material program that takes node slots.
 static void outputDepthNode(Program& f, graph::Lowering& slots, const VertexVariant& variant) {
     if (variant.nodes.depthNode) f.output("fragDepth", slotValue(f, slots, variant.nodes.depthNode, Type::f32(), kInvalid));
+}
+
+// Unreal's rough diffuse for one light (PRD-653), as the factor on Lambert: `albedo / pi * factor` is the EON BRDF
+// (Portsmouth, Kutz and Hill). `r` is the model's roughness; `n`, `v` and `l` are the view-space normal, view
+// and light directions. It is 1 at r = 0. A factor keeps the Lambert term whole where r is 0 and never divides by albedo.
+static ExprId roughDiffuseFactor(Program& f, Tsl& t, ExprId albedo, ExprId r, ExprId n, ExprId v, ExprId l) {
+    const ExprId nov = t.saturate(t.dot(n, v)), nol = t.saturate(t.dot(n, l));
+    const ExprId s = f.sub(t.dot(v, l), f.mul(nov, nol));
+    const ExprId sOverT = f.call("max", {f.div(s, f.call("max", {t.f(kEpsilon), f.call("max", {nov, nol})})), s});
+    const ExprId single = t.oneMinus(f.mul(r, t.f(kEonSingleLoss)));
+    const ExprId front = f.mul(single, f.add(t.f(1), f.mul(r, sOverT)));
+    const ExprId multi = t.oneMinus(f.mul(single, f.add(t.f(1), f.mul(f.mul(r, t.f(kEonMultiTilt)), t.oneMinus(nov)))));
+    const ExprId gain = f.add(t.f(1), f.mul(f.mul(t.f(kEonAlbedoGain), t.oneMinus(albedo)), r));
+    return f.mul(gain, f.add(front, f.mul(f.mul(albedo, gain), multi)));
 }
 
 // The MeshStandardNodeMaterial / MeshPhysicalNodeMaterial body. `physical` swaps setupSpecular's
@@ -1371,9 +1431,17 @@ static StandardPrograms buildStandardProgram(const StandardMaterial& material, b
     // SubstrateEvaluation.ush:881-899 (the SSS_TYPE_TWO_SIDED_WRAP branch); Opacity 1 keeps the light's own shadow.
     const ExprId subsurface = variant.twoSidedFoliage ? f.uniform("subsurfaceColor", Type::vec(3)) : kInvalid;
     for (std::size_t i = 0; i < lights.kinds.size(); ++i) {
-        const Incoming light = incoming(f, t, lights.kinds[i], i, fragmentView, positionWorld, normalWorld, lights.softShadows, variant.leafReceiver);
+        const Incoming light = incoming(f, t, lights.kinds[i], i, fragmentView, positionWorld, normalWorld, lights.softShadows, variant.leafReceiver, variant.roughDiffuse);
         const ExprId irradiance = f.mul(t.saturate(t.dot(n, light.direction)), light.color);
-        directDiffuse = f.add(directDiffuse, f.mul(irradiance, brdfLambert));
+        ExprId diffuseBrdf = brdfLambert;
+        if (variant.roughDiffuse) {
+            // EON's roughness is 0.4 x the material's, fading to Lambert as the lamp's Source Radius reaches 20 cm.
+            ExprId r = f.mul(t.f(kEonRoughnessScale), roughness);
+            if (light.sourceRadius != kInvalid)
+                r = f.mul(r, t.saturate(t.oneMinus(f.mul(light.sourceRadius, t.f(1 / kEonSizeLimit)))));
+            diffuseBrdf = f.mul(brdfLambert, roughDiffuseFactor(f, t, diffuseContribution, r, n, positionViewDirection, light.direction));
+        }
+        directDiffuse = f.add(directDiffuse, f.mul(irradiance, diffuseBrdf));
         directSpecular = f.add(directSpecular, f.mul(irradiance, brdfGgxMultiscatter(t, surface, light.direction)));
         if (subsurface != kInvalid) {
             const ExprId wrap = t.saturate(f.div(f.add(f.neg(t.dot(n, light.direction)), t.f(0.5f)), t.f(2.25f)));

@@ -39,7 +39,8 @@ public:
     /** Shared like any Object3D: a scene, a LOD or a Raycaster that holds it keeps it alive past the light. */
     std::shared_ptr<Camera> camera;
     std::shared_ptr<const shadows::AtlasOptions> virtualShadow;
-    std::optional<std::array<double, 3>> sourceAngleFilter;
+    // sourceAngleShadowFilter on a sun: {sourceAngleRad, blockerSamples, filterSamples, minPenumbraPixels}.
+    std::optional<std::array<double, 4>> sourceAngleFilter;
     // sourceRadiusShadowFilter on a lamp: {sourceRadius m, blockerSamples, filterSamples, penumbraScale}.
     std::optional<std::array<double, 4>> sourceRadiusFilter;
     double intensity = 1;
@@ -81,6 +82,8 @@ public:
     [[nodiscard]] std::string_view type() const override { return "PointLight"; }
     double distance;
     double decay;
+    /** Unreal's Source Radius in metres (PRD-653): a rough diffuse surface blends back to Lambert as the lamp grows. */
+    double sourceRadius = 0;
     /** PointLightShadow: a PerspectiveCamera(90, 1, 0.5, 500) turned to each cube face. */
     LightShadow shadow{std::make_shared<PerspectiveCamera>(90, 1, 0.5, 500)};
 };
@@ -95,6 +98,8 @@ public:
     double angle;    // radians, the cone's half angle; three's default is PI / 3
     double penumbra; // 0..1, the fraction of the cone that fades
     double decay;
+    /** Unreal's Source Radius in metres (PRD-653), as on PointLight. */
+    double sourceRadius = 0;
     /** Shared like a DirectionalLight's, so a scene that holds it as a child can hand it to a walk. */
     std::shared_ptr<Object3D> target;
     /** SpotLightShadow: a PerspectiveCamera(50, 1, 0.5, 500) fitted to the cone each frame. */

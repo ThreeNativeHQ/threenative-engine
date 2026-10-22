@@ -783,18 +783,18 @@ const baseline = boneLengths(character);
 
 ### `BudgetLadder`
 
-`class` — A cost ladder for one render stage: a window of measured GPU milliseconds above a level's budget steps the level down, a window under 70% of the next level's budget with room in the frame steps it up, and a level that failed is retried after a growing wait. It decides when to move; the game applies the move.
+`class` — A cost ladder for one render stage: the whole GPU frame against the frame period moves it, by Unreal's DynamicRenderScaling rule. A frame over the period for 2 frames in a row steps the level down at once, a frame over the period less 10% headroom steps it down after the 8-frame change period, and a frame with room steps it up. A stage steps only when it could absorb the overage at zero cost, and a level that failed is retried after a growing wait. It decides when to move; the game applies the move.
 
 ```ts
 export class BudgetLadder<L extends string> { … }
 ```
 
-- **Use when:** step a render stage down when its GPU time stays over budget · pick a quality level from measured GPU time without oscillating
-- **Constraints:** levels are listed cheapest first, and every level needs a finite budget in milliseconds · a window with too few resolved GPU readings never moves the level
-- **Overrides:** explicit: true keeps the level and only reports a window over budget
+- **Use when:** step a render stage down when the GPU frame goes over the frame period · pick a quality level from measured GPU time without oscillating
+- **Constraints:** levels are listed cheapest first, and the frame period is the game's own display target · a frame without a resolved GPU reading never moves the level
+- **Overrides:** explicit: true keeps the level and only reports a frame over the target
 
 ```ts
-const ladder = new BudgetLadder({ levels: ["low", "high"], budgetMs: { low: 1, high: 4 }, start: "high" }); const window = ladder.observe(gpuMs);
+const ladder = new BudgetLadder({ levels: ["low", "high"], framePeriodMs: 1000 / 60, start: "high" }); const window = ladder.observe(stageMs, frameMs);
 ```
 
 ### `bvhIntersectFirstHit`
@@ -1449,19 +1449,35 @@ if (isMobile()) showTouchControls();
 
 ### `GIBudget`
 
-`class` — Steps a game's global illumination method (`none`, `irradianceField`, `screenProbeGather`) down when its GPU time stays over budget over a 120-frame window, and back up when there is room. The game owns what each method draws and applies each step; the budget of each method is the GPU time Unreal spends at the matching `sg.GlobalIlluminationQuality`.
+`class` — Reports what a game's global illumination costs against the frame period: the GI share of the GPU frame and whether the frame fits its period less 10% headroom. The method (`none`, `irradianceField`, `screenProbeGather`) holds its level while the game runs, as Unreal's Lumen does: a frame over its period gets cheaper through the primary resolution scale, and the GI pass follows the lower resolution. The budget is the frame period, never a GI time in milliseconds, because a stage reading moves with the GPU clock.
 
 ```ts
 export class GIBudget { … }
 ```
 
-- **Use when:** global illumination costs too much on a weak GPU · pick the bounce light method from measured GPU time · quality tier for indirect lighting that follows the hardware
-- **Constraints:** the game applies each step to its own render chain; this class draws nothing · the GPU time of a pass is read by the scene name three or the game gave it, so name every GI pass in `stages` · timestamp queries are needed: without them every window is unobserved and the method holds
-- **Overrides:** explicit: true keeps the game's own finalGatherMethod and reports an exceeded budget
+- **Use when:** global illumination costs too much on a weak GPU · see what share of the GPU frame the bounce light takes · quality tier for indirect lighting that follows the hardware
+- **Constraints:** the method never changes while the game runs: the primary resolution scale is the run-time lever · the GPU time of a pass is read by the scene name three or the game gave it, so name every GI pass in `stages` · timestamp queries are needed: without them every window is unobserved
 
 ```ts
-const gi = new GIBudget({ method: "screenProbeGather", stages: ["SSGI"], budgetMs: { none: 0, irradianceField: 1, screenProbeGather: 5 }, onStep: (method) => rebuildChain(method) });
+const gi = new GIBudget({ method: "screenProbeGather", stages: ["SSGI"], framePeriodMs: 1000 / 60 });
 ctx.beforeRender(() => gi.observeRenderer(ctx.renderer.raw));
+```
+
+### `GIVisualize`
+
+`class` — Shows the indirect diffuse light of a frame by itself, the counterpart of Unreal's Lumen `Visualize IndirectDiffuse` mode, so a lighting gap against a reference can be told apart from a scene gap. The game's chain builds the term; this class selects it and fails when the term is missing.
+
+```ts
+export class GIVisualize { … }
+```
+
+- **Use when:** see only the bounce light of a frame · compare indirect lighting alone against Unreal · debug global illumination by looking at the indirect diffuse term
+- **Constraints:** the game's render chain builds the indirectDiffuse node (gathered and cached light times albedo); this class draws nothing else · a mode whose term the chain did not build throws instead of showing the finished frame
+- **Overrides:** mode: "off" returns the finished frame unchanged
+
+```ts
+const view = new GIVisualize({ mode: "indirectDiffuse", beauty: frame, indirectDiffuse: albedo.mul(bounce) });
+pipeline.outputNode = view.node;
 ```
 
 ### `GPUParticles3D`
@@ -1680,6 +1696,22 @@ export function lampPenumbraTangent( sourceRadius: number, blockerDistance: numb
 
 ```ts
 const tangent = lampPenumbraTangent(0.05, 2, 3);
+```
+
+### `lampShadowMarker`
+
+`function` — The `TN_LAMP_SHADOW` line for the renderer's last frame, or `undefined` on a renderer that keeps no lamp counters (three's own).
+
+```ts
+export function lampShadowMarker( renderer: { … }
+```
+
+- **Use when:** log lamp shadow redraws and GPU time apart from the sun's on the owned engine
+- **Constraints:** counters that do not add up to the frame's shadow draws throw TN_LAMP_SHADOW_INVALID
+
+```ts
+const line = lampShadowMarker(renderer, frame);
+if (line !== undefined) console.info(line);
 ```
 
 ### `loadAll`
@@ -1959,11 +1991,27 @@ const probes = new ProbeVolume({ bounds, density: 0.5 }); ctx.add(probes); void 
 export function readGIMarker(line: string): IGIBudgetReport | undefined { … }
 ```
 
-- **Use when:** inspect which global illumination method ran and why it stepped
+- **Use when:** inspect which global illumination method ran and what the frame cost
 - **Constraints:** non-marker lines and malformed markers return `undefined`
 
 ```ts
-const report = readGIMarker(line); if (report?.stepped) console.log(report.reason);
+const report = readGIMarker(line); if (report?.verdict === "over") console.log(report.reason);
+```
+
+### `readLampShadowMarker`
+
+`function` — Parse a `TN_LAMP_SHADOW` line back into its stats, or `undefined`.
+
+```ts
+export function readLampShadowMarker(line: string): ILampShadowStats | undefined { … }
+```
+
+- **Use when:** count lamp shadow redraws from a renderer log, for example a moving-caster run
+- **Constraints:** non-marker lines and markers whose sun and lamp draws do not add up return `undefined`
+
+```ts
+const stats = readLampShadowMarker(line);
+if (stats !== undefined) console.log(stats.lamps.redraws);
 ```
 
 ### `readProbeVolumeObservation`
@@ -2399,18 +2447,18 @@ if (spansRequested()) setSpanRecorder(new SpanRecorder());
 
 ### `ShadowFilterBudget`
 
-`class` — Steps a game's soft-shadow filter down a tier (`low`, `medium`, `high`) when the frame's GPU time stays over its period for a 120-frame window, and back up when there is room. The game owns the sample counts of each tier and rebuilds its filter on each step; the tiers follow Unreal's `sg.ShadowQuality` Low, Medium and Epic.
+`class` — Steps a game's soft-shadow tier down (`low`, `medium`, `high`) when the whole GPU frame stays over the frame period, and back up when the frame has room, by the settings of Unreal's virtual shadow map budget (a linear model, 5% headroom). A frame that is slow for another reason keeps its shadows: the tier steps only when the shadow passes could absorb the overage. The game owns the sample counts of each tier and rebuilds its filter on each step; the tiers follow Unreal's `sg.ShadowQuality` Low, Medium and Epic.
 
 ```ts
 export class ShadowFilterBudget { … }
 ```
 
-- **Use when:** soft shadow filter costs too much on a weak GPU · step the shadow filter samples from measured frame time · shadow quality tier that follows the hardware
-- **Constraints:** the game rebuilds its filter with the tier's sample counts on each step; this class draws nothing · timestamp queries are needed: without them every window is unobserved and the tier holds · the signal is the whole frame's GPU time, so a frame slow for another reason also steps the filter down · the signal is the whole frame's GPU time, so a frame slow for another reason also steps the filter down; name that reason's passes in `excludeStages`
-- **Overrides:** explicit: true keeps the game's own sample counts and reports an exceeded period
+- **Use when:** soft shadow filter costs too much on a weak GPU · step the shadow quality tier when the GPU frame goes over the frame period · shadow quality tier that follows the hardware
+- **Constraints:** the game rebuilds its filter with the tier's sample counts on each step; this class draws nothing · timestamp queries are needed: without them every window is unobserved and the tier holds · the rule reads the whole GPU frame and the `Shadow` stage, which the receiver filter inside the colour pass is not part of
+- **Overrides:** explicit: true keeps the game's own sample counts and reports an over-budget frame
 
 ```ts
-const filter = new ShadowFilterBudget({ tier: "high", frameBudgetMs: 1000 / 60, onStep: (tier) => { light.shadow.filterNode = filterFor(tier); } });
+const filter = new ShadowFilterBudget({ tier: "high", framePeriodMs: 1000 / 60, onStep: (tier) => { light.shadow.filterNode = filterFor(tier); } });
 ctx.beforeRender(() => filter.observeRenderer(ctx.renderer.raw));
 ```
 
@@ -2740,6 +2788,22 @@ export class SurfaceLights { … }
 const lamps = new SurfaceLights(lights); lamps.shade(point, normal, albedo, out, (i) => !occluded(i));
 ```
 
+### `TracedReflections`
+
+`class` — Reflection rays against the scene's triangles, in TSL. For a smooth surface, a ray finds what the screen cannot show (a room behind the camera, the far side of an object) and returns the hit's position, normal and material. The game lights the hit in its own stage. The kernel is plain TSL: float textures and a loop, no storage buffer.
+
+```ts
+export class TracedReflections { … }
+```
+
+- **Use when:** reflect what is behind the camera in a mirror or a chrome sphere · make a glossy or wet floor reflect objects that are off screen · trace a shadow ray from a reflected surface toward the sun
+- **Constraints:** the pack is a snapshot of the static triangles taken when the object is built: build a new one after geometry moves · instanced, skinned, batched and morphing meshes are not in the pack; report.skippedMoving counts them · trace only pixels at or below maxRoughnessToTrace (0.4, Unreal's cut-off): each ray walks the tree · a ray visits at most maxSteps tree nodes, then reports a miss; hit light, the miss colour and the blend with the frame stay in the game's src/render/ · the pack needs a device with float32-filterable
+- **Overrides:** maxRoughnessToTrace, roughnessFadeLength and maxSteps are game-owned choices
+
+```ts
+const traced = new TracedReflections(ctx.scene); const hit = traced.trace({ origin, direction, far: 30 }); // light hit.albedo at hit.position in the stage
+```
+
 ### `TracerPool3D`
 
 `class` — Pool travelling bullet-streak meshes for hitscan shots.
@@ -2834,6 +2898,22 @@ const hull = await ctx.assets.model("hull.glb");
 ctx.scene.add(hull.scene);
 ```
 
+### `useRoughDiffuse`
+
+`function` — Unreal's Substrate rough diffuse (EON) on standard and physical materials, so direct sun and lamp light meets a rough surface the way Unreal shades it. The same `roughDiffuse` flag works on three's WebGPU renderer and on the owned engine.
+
+```ts
+export function useRoughDiffuse(root: Object3D, enabled = true): number { … }
+```
+
+- **Use when:** shade rough surfaces under a sun or a lamp the way Unreal's Substrate does, not as flat Lambert
+- **Constraints:** direct light only, indirect light stays Lambert; standard and physical materials; a lamp's `sourceRadius` in metres fades the effect to Lambert at 20 cm; a material changed after its first draw needs `needsUpdate`
+- **Overrides:** material.roughDiffuse = false, or useRoughDiffuse(root, false), puts Lambert back
+
+```ts
+useRoughDiffuse(scene);
+```
+
 ### `validateWorldMatrices`
 
 `function` — Prove that nothing a cache skipped changed the picture: `TN_RENDERLIST_VALIDATE=1` recomputes every world matrix the long way, every frame, and throws on the first element that disagrees with what the frame is about to draw.
@@ -2901,7 +2981,7 @@ export class VirtualShadowNode extends ShadowBaseNode { … }
 
 - **Use when:** crisp shadows close to the player across a large outdoor level · shadow map too coarse over a big terrain · one directional light shadow for a whole open world · shadows shimmer when the camera moves
 - **Constraints:** the light must be a DirectionalLight with `castShadow` and a target in the scene · clipExtents are half-widths in world units, finest first, strictly increasing · movers sort themselves: a layer-0 caster whose world matrix, instance matrix or deformation changed draws through the mover maps and leaves the cached levels, and returns to them after `staticAfterFrames` quiet frames; the cache redraws only the region it left · `trackCaster(object)` is the override that pins an object as a mover for good (it enables layer `VIRTUAL_SHADOW_MOVER_LAYER` on the object and its descendants), and `pinStatic(object)` opts an object out of detection; tracking or untracking refreshes only that object's region · call `object.layers.set(VIRTUAL_SHADOW_CASTER_LAYER)` for a mesh that exists only to cast; the level cameras already render that layer and the main camera never does
-- **Overrides:** bias, biasNode, normalBias, intensity, radius, blurSamples, mapType and filterNode stay on `light.shadow`; mapSize and the other options here have defaults, and `marker: false` silences the TN_VIRTUAL_SHADOW line, not the measurement · bias, biasNode, normalBias, intensity, radius, blurSamples, mapType and filterNode stay on `light.shadow`; mapSize and the other options here have defaults · followViewFocus: false keeps eye follow; receiverPlaneBias: false uses only authored bias
+- **Overrides:** bias, biasNode, normalBias, intensity, radius, blurSamples, mapType and filterNode stay on `light.shadow`; mapSize and the other options here have defaults, and `marker: false` silences the TN_VIRTUAL_SHADOW line, not the measurement · bias, biasNode, normalBias, intensity, radius, blurSamples, mapType and filterNode stay on `light.shadow`; mapSize and the other options here have defaults · followViewFocus: false keeps eye follow; receiverPlaneBias: false uses only authored bias · minWindowAspect: below 1, a level is as high as `sin(sun elevation)` times its width, never under this, so a low sun's floor shadows keep the texel density of a high sun's; the default 1 keeps square levels
 
 ```ts
 const sun = new DirectionalLight(0xffffff, 3);

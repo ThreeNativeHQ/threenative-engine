@@ -324,3 +324,24 @@ Android recorded 0 passes, 0 failures, and 67 blocked rows with
 Android multitouch supplemental reached the pre-APK Gradle step and failed because the SDL3
 Android AAR was missing; it did not fail for an SDK/NDK/toolchain or sandbox reason. No Android
 parity row executed. Criterion 1 remains open.
+
+## Follow-up 2026-10-22: the parity lanes run upstream three, not the owned engine
+
+Found by mat4-lane and checked by parityaudit-lane (epic head c82595f3c). `pnpm parity --target web` bundles
+each scene with esbuild against upstream three (revision 185) and runs it in Chromium. `--target desktop`
+bundles the same way and runs the legacy `mystral` host (`nm` shows 0 `tn::binding` symbols in it; its
+stdout carries no engine line). Neither lane loads the owned engine, which is the default on web and
+desktop since 2026-10-15, so a pass there is not owned-engine proof.
+
+Done in this lane: `--engine threenative` runs a row on the owned engine (V8 engine player on desktop,
+Wasm engine in Chromium on web), with specs in `tests/conformance-runner.test.mjs`. The default is still
+upstream three, so no CI lane changed.
+
+Open, not yet boxes because this PRD holds only blocked work (R6):
+- Make the owned engine the default lane for `--target web|desktop`, with `--engine threejs` as the named
+  override. Revisit when every registry row either passes on the owned engine or carries a named, dated
+  exclusion. The registry has 124 rows and only 14 Unreal-epic rows were run on the owned desktop engine (4 pass, 3 fail
+  at run time, 7 stop at the bundle with `TN_NATIVE_ENGINE_UNBOUND`); the other rows are unmeasured. A default
+  flip before that turns the CI parity board red.
+- CI: run the owned-engine lane for the rows that already pass, beside the upstream lane, so a regression
+  in the owned engine shows in a parity ledger.

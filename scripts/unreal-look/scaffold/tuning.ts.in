@@ -1,0 +1,11 @@
+// Written by scripts/unreal-look/capture-threenative.ts as src/scenes/tuning.ts of the tuned arm.
+// Reference.ts reaches the render modules that only the harness overlay has through this file, so that
+// a `--baseline` scaffold (the template's own src/render/) can swap it for tuningBaseline.ts.in.
+export { EMISSIVE_UNITS } from "../render/atmosphere.js";
+export { installGi, markTwoSidedFoliage } from "../render/giCache.js";
+export { watchGi } from "../render/giTier.js";
+export { shadeLikeSubstrate } from "../render/lighting.js";
+export { EPIC_SSGI, type FinalGatherMethod, giPreset, shadowPreset } from "../render/quality.js";
+export { captureReflections } from "../render/reflectionCapture.js";
+export { reflectionTrace } from "../render/reflectionTrace.js";
+export { watchShadowTier } from "../render/shadowTier.js";

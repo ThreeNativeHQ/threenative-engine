@@ -34,6 +34,18 @@ import { MeshBasicNodeMaterial } from "three/webgpu";
 import { giCache, installGi } from "../render/giCache.js";
 import { watchGi } from "../render/giTier.js";
 import { type IGlbMaterialImages, glbMaterialImages } from "../render/glbImages.js";
+import {
+  type MotionRun,
+  type Pose,
+  actorOffset,
+  candela,
+  checkMapped,
+  lightCandela,
+  lightScale,
+  lightUnsupported,
+  motionPose,
+} from "../render/calibrationUnits.js";
+import { shadeLikeSubstrate } from "../render/lighting.js";
 import { watchShadowTier } from "../render/shadowTier.js";
 import {
   EPIC_SSGI,
@@ -43,13 +55,12 @@ import {
   resolveQualityTier,
   shadowPreset,
 } from "../render/quality.js";
-import { WorldEnvironment } from "../render/worldEnvironment.js";
+import { type IWorldEnvironmentOptions, WorldEnvironment } from "../render/worldEnvironment.js";
 import type { GameState } from "../state.js";
 import { SCENES } from "./calibrationData.js";
 import { Play } from "./Play.js";
 
 type GameCtx = ICtx<GameState, IPhysicsContext>;
-type Pose = { position: number[]; target: number[]; hfovDeg: number };
 
 const params = new URLSearchParams(location.search);
 const NAME = params.get("tnGi") ?? "";
@@ -66,49 +77,6 @@ const DATA = SCENES[NAME];
 // Diagnosis only: scales every light, so a capture can bracket a unit error. Unset in every judged capture.
 const LIGHT_SCALE = Number(params.get("lightScale") ?? 1);
 const EXPOSURE = Number(params.get("exposure") ?? DATA?.exposure?.exposureScale ?? 1);
-
-/**
- * Unreal light units to three's. three's punctual light intensity is candela, and its Lambert
- * BRDF carries the same 1 / pi as Unreal's (Engine/Shaders/Private/BRDF.ush, Diffuse_Lambert), so
- * the falloff and the window at the attenuation radius map one to one.
- */
-export function candela(intensity: number, units: string): number {
-  if (units === "candelas") return intensity;
-  // An unshaded point light spreads its lumens over the whole sphere (PointLightComponent.cpp).
-  if (units === "lumens") return intensity / (4 * Math.PI);
-  throw new Error(`TN_CALIBRATION_SCENE_UNIT: ${units}`);
-}
-
-type MotionCamera =
-  | { kind: "pan"; position: number[]; hfovDeg: number; pitchDeg?: number; headingDeg: number[]; sweepFrames: number }
-  | { kind: "pose"; pose: string };
-type MotionRun = { frames: number; camera: MotionCamera; light?: { name: string; keys: number[][] } };
-
-/** The camera of a motion run at a frame, as scene.py keys it: heading 0 looks down -z, a positive heading turns toward +x. */
-export function motionPose(run: MotionRun, frame: number, poses: (Pose & { name: string })[]): Pose {
-  const camera = run.camera;
-  if (camera.kind === "pose") {
-    const found = poses.find((pose) => pose.name === camera.pose);
-    if (found === undefined) throw new Error(`TN_CALIBRATION_MOTION_POSE: ${camera.pose}`);
-    return found;
-  }
-  const [first = 0, last = 0] = camera.headingDeg;
-  const heading = ((first + (last - first) * Math.min(Math.max(frame / camera.sweepFrames, 0), 1)) * Math.PI) / 180;
-  const pitch = ((camera.pitchDeg ?? 0) * Math.PI) / 180;
-  const [x = 0, y = 0, z = 0] = camera.position;
-  return {
-    position: camera.position,
-    target: [x + Math.sin(heading) * Math.cos(pitch), y + Math.sin(pitch), z - Math.cos(heading) * Math.cos(pitch)],
-    hfovDeg: camera.hfovDeg,
-  };
-}
-
-/** The scale of a keyed light at a frame: constant from each key to the next, as the Unreal track is. */
-export function lightScale(keys: number[][], frame: number): number {
-  let scale = keys[0]?.[1] ?? 1;
-  for (const [at = 0, value = 1] of keys) if (at <= frame) scale = value;
-  return scale;
-}
 
 export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
   static override readonly initialState: GameState = Play.initialState;
@@ -155,8 +123,9 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
     // Draws the lamps' shadows at another tier: what a `ShadowFilterBudget` step does, callable from the page.
     let setShadowTier = (_tier: ShadowFilterTier): void => undefined;
     // Rebuilds the chain at another final gather method: what a `GIBudget` step does, callable from the page. The cost
-    // run alternates methods in one page, so every method sees the same GPU clock.
-    let setGatherMethod = (_method: FinalGatherMethod): void => undefined;
+    // run alternates methods in one page, so every method sees the same GPU clock. `arm` overrides the chain options last:
+    // the cost run's paired arms (`gi-tier-cost.ts --arms`) change one knob in the same page.
+    let setGatherMethod = (_method: FinalGatherMethod, _arm?: IWorldEnvironmentOptions): void => undefined;
     // Sets a lamp to its scene.json intensity times `scale` (a motion run's light track).
     let setLight = (name: string, _scale: number): void => {
       throw new Error(`TN_CALIBRATION_MOTION_LIGHT: ${name}: layer ${LAYER} has no lights`);
@@ -178,8 +147,7 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
     model.traverse((object) => {
       if (object instanceof Mesh) meshes.push(object);
     });
-    for (const mesh of meshes)
-      if (regionOf(mesh) === undefined) throw new Error(`TN_CALIBRATION_SCENE_UNMAPPED: ${mesh.name}`);
+    checkMapped(meshes, regionOf);
 
     // PRD-643: a slot that scene.json reports on Unreal's Two Sided Foliage model, with its Subsurface Color, is a
     // twoSidedFoliage material with the same subsurfaceColor here (by the glTF material name, which both engines keep).
@@ -235,17 +203,17 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
         mesh.receiveShadow = shadows;
         if (side !== undefined) for (const m of [mesh.material].flat()) m.shadowSide = side;
       }
+      // PRD-653: direct light meets a rough surface as Unreal's Substrate does. Diagnosis knob roughDiffuse=0 is plain Lambert.
+      if (params.get("roughDiffuse") !== "0") shadeLikeSubstrate(model);
       const lights: (PointLight | SpotLight)[] = [];
       const lamps: { point: PointLight | SpotLight; radius: number; casts: boolean }[] = [];
       for (const light of DATA.lights) {
-        if (light.class !== "PointLight" && light.class !== "SpotLight")
-          throw new Error(`TN_CALIBRATION_SCENE_LIGHT: ${light.name} ${light.class}`);
         const [r = 1, g = 1, b = 1] = light.color;
         // scene.json holds Unreal's `light_color`, an FColor: Unreal reads its bytes as sRGB and lights with the linear
         // value (neon-corridor L1 EXR: a [1, 0.85, 0.65] lamp lights a grey wall at G/R 0.70 and B/R 0.41, the
         // decoded (1, 0.69, 0.38), not the raw numbers). A white lamp reads the same either way.
         const colour = new Color().setRGB(r, g, b, SRGBColorSpace);
-        const cd = candela(light.intensity, light.units) * LIGHT_SCALE;
+        const cd = lightCandela(light) * LIGHT_SCALE;
         // A spot looks at its target through the outer cone; three's penumbra is the share of the cone that
         // fades, Unreal's inner cone the part that does not (PRD-649 lamp-room).
         const outer = ((light.outerConeDeg ?? 0) * Math.PI) / 180;
@@ -267,24 +235,20 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
         point.name = light.name;
         point.position.fromArray(light.position);
         lamps.push({ point, radius: light.sourceRadiusM ?? 0, casts: shadows && light.castShadows });
+        // The lamp's Source Radius also sets how rough diffuse shades it: a lamp of 20 cm or more is Lambert (PRD-653).
+        point.sourceRadius = light.sourceRadiusM ?? 0;
         // Unreal's lamp shadow has no near plane: three's 0.5 m default clipped cornell's shade, 0.3 m
         // from the lamp. Diagnosis knobs: shadowNear, shadowMap (texels), shadowBias, shadowNormalBias.
         point.shadow.camera.near = Number(params.get("shadowNear") ?? 0.02);
-        // 1024 texels a cube face: at three's 512 the edge of the tall box's shadow on the red wall
-        // steps where its penumbra is narrow (cornell corner, 2026-10-20); PRD-650 Phase 1 makes the
-        // size follow the lamp's footprint. The lamp cache draws a still lamp's map once.
-        const mapSize = Number(params.get("shadowMap") ?? 1024);
-        point.shadow.mapSize.set(mapSize, mapSize);
+        // The owned engine sizes a lamp's map from the pixels it covers, as Unreal does (PRD-650 Phase 1);
+        // `shadowMap` (texels) is the diagnosis override. The lamp cache draws a still lamp's map once.
+        const mapSize = params.get("shadowMap");
+        if (mapSize !== null) point.shadow.mapSize.set(Number(mapSize), Number(mapSize));
         point.shadow.bias = Number(params.get("shadowBias") ?? point.shadow.bias);
         point.shadow.normalBias = Number(params.get("shadowNormalBias") ?? point.shadow.normalBias);
         scene.add(point);
         lights.push(point);
-        if ((light.sourceRadiusM ?? 0) > 0 && params.get("sourceRadius") !== "0")
-          unsupported.push({
-            actor: light.name,
-            property: "sourceRadiusM",
-            reason: "a punctual light has no area: highlights stay hard (PRD-634)",
-          });
+        unsupported.push(...lightUnsupported(light, params.get("sourceRadius") === "0"));
       }
       setLight = (name, scale) => {
         const index = DATA.lights.findIndex((l: { name: string }) => l.name === name);
@@ -294,7 +258,7 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
         light.intensity = candela(spec.intensity, spec.units) * LIGHT_SCALE * scale;
       };
       // A shadow tier decides whether a lamp casts and what its filter samples; `ShadowFilterBudget` moves
-      // it with the frame time when the URL asks for shadowAuto=1 (PRD-652). Diagnosis knobs: sourceRadius=0
+      // it with the frame period when the URL asks for shadowAuto=1 (PRD-652). Diagnosis knobs: sourceRadius=0
       // leaves the shadow on the hard filter (the filter's cost arm); blockers and samples set the tap counts.
       const applyShadowTier = (next: ShadowFilterTier) => {
         const preset = shadowPreset(next);
@@ -353,17 +317,19 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
       }
       // The template's `high` chain with the L9-only stages off, as Reference.ts runs below L9.
       // Exposure is the scene's fixed EV100: Unreal's manual exposure, 0.18 / 2^EV100.
-      const build = (method: FinalGatherMethod) => {
+      const build = (method: FinalGatherMethod, arm: IWorldEnvironmentOptions = {}) => {
         this.#dispose?.();
         const world = new WorldEnvironment({
           ...qualityPreset("high"),
           autoExposureEnabled: false,
           bloomEnabled: false,
-          // Below L9 Unreal draws with ShowFlag.LocalExposure 0 (PRD-631), and the `high` preset turns the stage on
-          // since the finishing chain became the default (ff837b1f2): it lifted L1's dark walls 14 levels.
+          // Unreal draws L1 to L8 with ShowFlag.LocalExposure 0 (PRD-631), and the `high` preset turns the stage on
+          // since the finishing chain became the default (ff837b1f2): it lifted neon-corridor L1's dark walls 14
+          // levels. This gate turns it off below L7. L7 and above keep it for now: the GI cache there is brighter than Unreal's, the stage's highlight
+          // compression hides part of that, and switching it off broke 14 cornell L7 locks. Remove it with the GI excess.
           // Diagnosis: ?localExposure=0|1 forces the stage.
           localExposureEnabled:
-            params.get("localExposure") === null ? level >= 9 : params.get("localExposure") === "1",
+            params.get("localExposure") === null ? level >= 7 : params.get("localExposure") === "1",
           // Diagnosis: ?gtao=0 takes the contact occlusion out, to tell its darkening from the shadow's.
           gtaoEnabled: level >= 6 && params.get("gtao") !== "0",
           finalGatherMethod: method,
@@ -390,19 +356,25 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
           ...(params.get("probeDebug") === null ? {} : { ssgiProbeDebug: Number(params.get("probeDebug")) }),
           vignetteAmount: 0,
           exposure: EXPOSURE,
+          ...arm,
         });
         this.#dispose = world.apply(ctx.renderer, scene, camera, {}).dispose;
       };
       build(GI_METHOD);
+      // Diagnosis: ?linear=1 writes the exposed light with no tone curve, so the frame reads as scene-linear (the
+      // light a PRD-646 direct-light gap is measured in). Pair it with ?exposure=N small enough that nothing clips.
+      if (params.get("linear") === "1") raw.toneMapping = NoToneMapping;
       setGatherMethod = build;
-      // The tier's method moves with the measured GI time when the URL asks for giAuto=1 (PRD-644).
+      // The tier's method holds; the GI watcher reports its share of the GPU frame (PRD-644).
       if (GI_METHOD !== "none")
-        this.#gi = watchGi(ctx, { tier: TIER, method: GI_METHOD, rebuild: build });
+        this.#gi = watchGi(ctx, { tier: TIER, method: GI_METHOD });
     }
     for (const u of unsupported)
       console.info(`TN_CALIBRATION_SCENE unsupported ${u.actor}.${u.property}: ${u.reason}`);
 
     const target = new Vector3();
+    // The actors a motion run moves, with the position the scene put them at (PRD-650 swing).
+    const actors = new Map<string, { object: Object3D; rest: Vector3 }>();
     const reference = {
       layer: LAYER,
       tier: TIER,
@@ -412,7 +384,7 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
       giBudget: () => this.#gi?.lastReport(),
       shadowBudget: () => this.#shadow?.lastReport(),
       setShadowTier: (tier: string) => setShadowTier(resolveQualityTier({ tier })),
-      setGatherMethod: (method: FinalGatherMethod) => setGatherMethod(method),
+      setGatherMethod: (method: FinalGatherMethod, arm?: IWorldEnvironmentOptions) => setGatherMethod(method, arm),
       scene: NAME,
       unsupported,
       // The live scene, renderer and GI cache, for in-page diagnosis.
@@ -463,6 +435,18 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
         if (run === undefined) throw new Error(`TN_CALIBRATION_MOTION_UNKNOWN: ${name}`);
         reference.pose(motionPose(run, frame, (DATA.poses ?? []) as (Pose & { name: string })[]));
         if (run.light !== undefined) setLight(run.light.name, lightScale(run.light.keys, frame));
+        if (run.actor !== undefined) {
+          const name = run.actor.name;
+          let actor = actors.get(name);
+          if (actor === undefined) {
+            const found = model.getObjectByName(name) ?? model.getObjectByName(`SM_${name}`);
+            if (found === undefined) throw new Error(`TN_CALIBRATION_MOTION_ACTOR: ${name}`);
+            actor = { object: found, rest: found.position.clone() };
+            actors.set(name, actor);
+          }
+          const [dx = 0, dy = 0, dz = 0] = actorOffset(run.actor.keys, frame);
+          actor.object.position.copy(actor.rest).add(new Vector3(dx, dy, dz));
+        }
       },
     };
     (window as unknown as { __tnRef: unknown }).__tnRef = reference;

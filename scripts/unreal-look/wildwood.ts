@@ -254,7 +254,10 @@ function checkSlot(
   const want = foliage?.[slot.slot];
   if (want === undefined) {
     if (slot.shadingModel !== undefined)
-      fail("SCENE_EXPORT", `${mesh.name}: slot ${slot.slot} is on ${slot.shadingModel}, the manifest names no foliage`);
+      fail(
+        "SCENE_EXPORT",
+        `${mesh.name}: slot ${slot.slot} is on ${slot.shadingModel}, the manifest names no foliage`,
+      );
     return;
   }
   if (slot.shadingModel !== "TwoSidedFoliage")

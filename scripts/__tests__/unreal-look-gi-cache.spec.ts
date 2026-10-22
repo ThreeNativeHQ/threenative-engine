@@ -363,6 +363,25 @@ describe("the world-space GI cache against closed forms (PRD-631 L7)", () => {
     expect(lone.twoSidedFoliage).toBeUndefined();
   });
 
+  it("the roughDiffuse flag survives the swap, and an unflagged material stays unflagged (PRD-653)", () => {
+    // three declares no such field either: the swap carries it by name, so the lit twin shades its direct light with EON.
+    const flagged = new MeshStandardMaterial();
+    flagged.roughDiffuse = true;
+    const wall = new Mesh(new PlaneGeometry(1, 1), flagged);
+    const floor = new Mesh(
+      new PlaneGeometry(40, 40).rotateX(-Math.PI / 2),
+      new MeshStandardMaterial(),
+    );
+    const scene = new Group().add(wall, floor);
+    skyRadiance.current = { data: new Float32Array(6), width: 2, height: 1, scale: [1, 1, 1] };
+    installGi(rayContext(scene), scene, { bounces: 1, sun: noSun });
+    expect((wall.material as MeshStandardMaterial).constructor.name).toBe(
+      "MeshStandardNodeMaterial",
+    );
+    expect((wall.material as MeshStandardMaterial).roughDiffuse).toBe(true);
+    expect((floor.material as MeshStandardMaterial).roughDiffuse ?? false).toBe(false);
+  });
+
   it("a marked leaf with a subsurfaceColor takes the cache's back-face light, and a leaf without one takes none (PRD-643)", () => {
     const tinted = new MeshStandardMaterial({ side: DoubleSide });
     tinted.twoSidedFoliage = true;
@@ -615,6 +634,33 @@ describe("the world-space GI cache against closed forms (PRD-631 L7)", () => {
     const below = texelAt(new Vector3(1.75, 2.35, -3));
     expect(underRoof.share[1]).toBeLessThan(0.1);
     expect(underRoof.share[1]).toBeLessThan((below.share[1] ?? 0) + 0.05);
+  }, 120_000);
+
+  it("a cut link keeps where its wall starts, so a read point can tell the side it is on (sunlit-room)", () => {
+    const room = sunlitRoom();
+    skyRadiance.current = {
+      data: new Float32Array(6).fill(1),
+      width: 2,
+      height: 1,
+      scale: [1, 1, 1],
+    };
+    installGi(rayContext(room), room, { bounces: 1, sun: noSun });
+    const field = giCache.field;
+    if (field === undefined) throw new Error("no field baked");
+    const { grid, walls } = field;
+    const at = (point: Vector3): number =>
+      Math.floor((point.x - grid.origin.x) / grid.cell) +
+      grid.nx *
+        (Math.floor((point.y - grid.origin.y) / grid.cell) +
+          grid.ny * Math.floor((point.z - grid.origin.z) / grid.cell));
+    // The roof's underside is at y 3.0: the link up from the texel just under it meets the wall (3.0 - its centre) / cell of the way.
+    const under = at(new Vector3(1.75, 2.85, -3));
+    const centre =
+      grid.origin.y + (Math.floor((2.85 - grid.origin.y) / grid.cell) + 0.5) * grid.cell;
+    const share = (walls[under * 3 + 1] ?? 0) / 255;
+    expect(Math.abs(share - (3.0 - centre) / grid.cell)).toBeLessThan(0.02);
+    // The link up from a texel a row lower is open: no wall, no position.
+    expect(walls[at(new Vector3(1.75, 2.35, -3)) * 3 + 1]).toBe(0);
   }, 120_000);
 
   it("the sunlit room's walls and ceiling read the path-traced light, not 1.5 times it, and smooth (sunlit-room)", () => {

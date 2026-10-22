@@ -267,6 +267,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_renderer_steady_cache_invalidation=steady_cache_invalidation
         native_engine_render_target=render_target
         native_engine_float_render_target=float_render_target_keeps_float32
+        native_engine_float_render_target_half=float_render_target_falls_back_to_half
         native_engine_renderer_updates=updates
         native_engine_renderer_multi_camera_layers=multi_camera_layers
         native_engine_renderer_callback=render_callback
@@ -295,13 +296,21 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_masked_shadow=masked_shadow
         native_engine_leaf_receiver=leaf_receiver
         native_engine_foliage_transmission=foliage_transmission
+        native_engine_rough_diffuse=rough_diffuse
         native_engine_point_shadow_cube_faces=point_shadow_cube_faces
         native_engine_lamp_source_radius=lamp_source_radius
         native_engine_lamp_source_radius_wall=lamp_source_radius_wall
         native_engine_lamp_source_radius_crate=lamp_source_radius_crate
         native_engine_contact_shadow_foot=contact_shadow_foot
         native_engine_virtual_sun_contact_foot=virtual_sun_contact_foot
+        native_engine_virtual_sun_room_seam=virtual_sun_room_seam
+        native_engine_virtual_sun_pixel_floor=virtual_sun_pixel_floor
+        native_engine_virtual_sun_lod_rung=virtual_sun_lod_rung
+        native_engine_virtual_sun_level_sizes=virtual_sun_level_sizes
+        native_engine_virtual_sun_auto_map_size=virtual_sun_auto_map_size
         native_engine_lamp_cache=lamp_cache
+        native_engine_lamp_atlas=lamp_atlas
+        native_engine_gpu_timer_splits_lamp_shadows=gpu_timer_splits_lamp_shadows
         native_engine_renderer_shadow_lights_follow_hierarchy=shadow_lights_follow_hierarchy
         native_engine_renderer_records_survive_siblings=records_survive_siblings
         native_engine_renderer_steady_frame_hashes_no_record=steady_frame_hashes_no_record
@@ -316,6 +325,10 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     target_compile_definitions(tn-native-engine-render-database-test PRIVATE
         TN_GOLDENS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../three-native/tests/compatibility/goldens/0.185.1"
         TN_NATIVE_LIT_OUT="${CMAKE_CURRENT_BINARY_DIR}/native-lit-render.rgba")
+    # PRD-634: the sun filter's edge widens with the caster gap as the browser's penumbraUv model says.
+    tn_native_engine_test(tn-native-engine-vsm-source-angle-test tests/native-engine/vsm/vsm_source_angle_gpu_test.cpp
+        native_engine_vsm_source_angle_gap=gap_widening)
+    target_link_libraries(tn-native-engine-vsm-source-angle-test PRIVATE tn_engine_renderer tn_host_services)
 
     # PRD-520 phase 2 and PRD-528 phase 1: cooked-package loads for a world (failure codes, cancel
     # against in-flight GPU use, teardown) and render ids within one tick.

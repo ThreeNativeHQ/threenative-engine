@@ -16,6 +16,7 @@ import {
   type RenderTarget,
   Sphere,
   VSMShadowMap,
+  Vector2,
   Vector3,
 } from "three";
 import {
@@ -64,6 +65,7 @@ import {
   type IPageRect,
   type IVector3Like,
   ShadowInvalidationTracker,
+  clipmapMapSizes,
   containsPages,
   pageArea,
   pageSpan,
@@ -102,16 +104,26 @@ export interface IVirtualShadowOptions {
    */
   readonly clipExtents?: readonly number[];
   /**
-   * Resolution bias of the finest level, in stops, default 0. Each stop doubles the finest level's
-   * texel size: `-1` halves it (twice the resolution), `-1.5` is 2.83 times finer, and a positive
-   * bias coarsens it. The finest window scales by `2 ** bias` and every coarser level keeps its
-   * extent, so the clipmap reaches as far as before. Mirrors Unreal's
-   * `r.Shadow.Virtual.ResolutionLodBiasDirectional`; a quality tier sets it. A bias that would push
-   * the finest window past the next level throws.
+   * Resolution bias in stops, default 0. Mirrors Unreal's
+   * `r.Shadow.Virtual.ResolutionLodBiasDirectional`; a quality tier sets it. With the default map
+   * sizes each stop doubles every level's texel: `-1` halves it (twice the resolution), `-1.5` is
+   * 2.83 times finer, a positive bias coarsens it. With an authored `mapSize` the finest window
+   * scales by `2 ** bias` instead and every coarser level keeps its extent; a bias that would push
+   * that window past the next level throws.
    */
   readonly resolutionLodBiasDirectional?: number;
-  /** Texels per level edge. Default: the light's `shadow.mapSize.width`. */
-  readonly mapSize?: number;
+  /**
+   * Texels per level edge: one number for every level, or one per level, finest first. Default:
+   * Unreal's clipmap rule, measured on the camera and viewport that first read the shadow, so a
+   * receiver's texel is at most `2^(1 + bias)` of its own screen pixels (`clipmapMapSizes`). Set it to
+   * hold fixed sizes.
+   */
+  readonly mapSize?: number | readonly number[];
+  /**
+   * The page budget of the default map sizes, in 128² pages over all levels, default 4096 (Unreal's
+   * `r.Shadow.Virtual.MaxPhysicalPages` at Epic). Sizes over it raise the bias until they fit.
+   */
+  readonly maxPhysicalPages?: number;
   /**
    * Texels per edge of each level's mover map — the map tracked casters draw into every frame.
    * Default: `mapSize`, the cached levels' own density, so a caster keeps the edge it had at rest
@@ -225,17 +237,36 @@ export interface IVirtualShadowOptions {
    * Default true; false keeps eye follow for every camera. Walking cameras keep eye follow.
    */
   readonly followViewFocus?: boolean;
+  /**
+   * The smallest ratio of a level's light-space height to its width, `(0, 1]`, default 1 (square levels).
+   * A low sun stretches a shadow texel along the floor by `1 / sin(elevation)`. A value under 1 shrinks
+   * the height to `sin(elevation)` times the width, never under this value, so a texel covers the same
+   * floor area at any sun height. The costs: a wall taller than a level's height is read from a wider
+   * level, a level centred on the eye holds the floor only about `eye height / tan(elevation)` from the
+   * camera, and a wide filter disc (a source angle near 0.7 degrees) crosses the level's top and bottom
+   * edge and leaves a lit patch in a thin shadow (PRD-634, sun 4 ramp), so it is an opt-in.
+   */
+  readonly minWindowAspect?: number;
   /** Measure receiver-plane slope across each level's texel footprint to prevent coarse acne.
    * Default true; false preserves only the authored bias. Custom filterNode owns its footprint.
    */
   readonly receiverPlaneBias?: boolean;
   /**
-   * Draw registered AutoLOD chains with their coarsest geometry past the finest level, default true.
+   * Draw registered AutoLOD chains with a coarser rung past the finest level, default true. A level
+   * takes the coarsest rung whose geometric error is within one of its texels, and never a rung
+   * finer than the main pass shows; where no rung is that accurate the caster keeps its geometry.
    * Alpha-tested and transparent casters keep casting on every level that resolves their bounds;
    * dropping their whole shadow at the fine window edge loses canopy and fences.
    * Geometry swaps are restored before the next level, mover map and main pass.
    */
   readonly shadowLodBias?: boolean;
+  /**
+   * The most error, in texels of a level, that a coarser rung may have on that level, default 1.
+   * A rung within a texel is as good as the full mesh at that resolution; a larger budget draws
+   * fewer triangles and shows facets on a shadow's edge, and `Infinity` draws the coarsest rung on
+   * every level past the finest. Read only with `shadowLodBias`.
+   */
+  readonly shadowLodTexels?: number;
   /**
    * Redraw only the pages an invalidation dirtied, default true. A level whose window did not move
    * and whose asks named under half its pages renders those rectangles alone: pages casters were
@@ -245,8 +276,8 @@ export interface IVirtualShadowOptions {
    */
   readonly partialRedraw?: boolean;
   /**
-   * Quiet frames before an automatically detected mover goes back into the cached levels, default
-   * 100 (Unreal's `FramesStaticThreshold`). A caster whose world matrix, instance matrix or
+   * Quiet frames an automatically detected mover must exceed before it goes back into the cached
+   * levels, default 100 (Unreal's `FramesStaticThreshold`: it settles on quiet frame 101). A caster whose world matrix, instance matrix or
    * deformation changed is drawn through the mover maps without a `trackCaster` call; this is how
    * long it must hold still before its shadow is baked into the cache again. Positive integer.
    */
@@ -471,6 +502,8 @@ export const VIRTUAL_SHADOW_SMALL_CASTER_LAYER = 26;
  */
 export const VIRTUAL_SHADOW_KEY_LAYER = 25;
 const DEFAULT_CLIP_EXTENTS: readonly number[] = [16, 48, 144];
+/** Square levels. A fit to the ground (`0.25`, a 14.5 degree sun is where it ends) is the named override. */
+const DEFAULT_MIN_WINDOW_ASPECT = 1;
 const DEFAULT_MARKER_EVERY = 300;
 /** Frames between markers while `?tnShadowStats=1` is on the URL: about a second a walk is long. */
 const STATS_QUERY_EVERY = 60;
@@ -794,6 +827,28 @@ function instanceDiameter(mesh: Mesh, sphereRadius: number): number {
   return radius * 2 * scale;
 }
 
+/**
+ * The geometry a caster draws into a level past the finest: the coarsest rung of its AutoLOD chain
+ * whose error stays within `budget` (world units: texels of the level times `shadowLodTexels`), and
+ * never finer than the rung the main pass shows, which the viewer already cannot tell apart. Where
+ * no rung is that accurate the mesh keeps what it has. A rung whose error is more than a texel
+ * draws as a facet on the shadow's edge: the coarsest rung of a sphere, 60 mm out, put straight
+ * segments on a 7 mm texel. `undefined` leaves the geometry alone.
+ */
+function shadowLod(mesh: Mesh, budget: number): BufferGeometry | undefined {
+  const chain = lodChainOf(mesh.geometry);
+  if (chain === undefined) return undefined;
+  // The largest instance scale `WorldCells` placed into this batch is on top of the mesh's own.
+  const placed = (mesh as Mesh & { casterInstanceScale?: number }).casterInstanceScale;
+  const scale =
+    mesh.matrixWorld.getMaxScaleOnAxis() * (placed !== undefined && placed > 0 ? placed : 1);
+  const shown = chain.levels.indexOf(mesh.geometry);
+  for (let rung = chain.levels.length - 1; rung > shown; rung -= 1) {
+    if ((chain.errors[rung] as number) * scale <= budget) return chain.levels[rung];
+  }
+  return undefined;
+}
+
 /** Keep each stock node's source-owned settings aligned with the public light shadow. */
 function syncShadowSettings(
   source: DirectionalLight["shadow"],
@@ -904,6 +959,7 @@ interface IRenderingShadowNode {
  * @constraint `trackCaster(object)` is the override that pins an object as a mover for good (it enables layer `VIRTUAL_SHADOW_MOVER_LAYER` on the object and its descendants), and `pinStatic(object)` opts an object out of detection; tracking or untracking refreshes only that object's region
  * @override bias, biasNode, normalBias, intensity, radius, blurSamples, mapType and filterNode stay on `light.shadow`; mapSize and the other options here have defaults
  * @override followViewFocus: false keeps eye follow; receiverPlaneBias: false uses only authored bias
+ * @override minWindowAspect: below 1, a level is as high as `sin(sun elevation)` times its width, never under this, so a low sun's floor shadows keep the texel density of a high sun's; the default 1 keeps square levels
  * @example
  * const sun = new DirectionalLight(0xffffff, 3);
  * sun.castShadow = true;
@@ -915,9 +971,19 @@ export class VirtualShadowNode extends ShadowBaseNode {
   }
 
   readonly options: Required<
-    Omit<IVirtualShadowOptions, "marker" | "refreshStep" | "selectionGuard" | "invalidationDelay">
+    Omit<
+      IVirtualShadowOptions,
+      "marker" | "refreshStep" | "selectionGuard" | "invalidationDelay" | "mapSize"
+    >
   > & {
     readonly markerEvery: number;
+    /**
+     * Texels per level edge, one per level. With `autoMapSize` the node measures them on the first
+     * camera that reads the shadow; until then each level holds the light's `shadow.mapSize.width`.
+     */
+    readonly mapSize: readonly number[];
+    /** The sizes follow Unreal's texel-per-pixel rule, because no `mapSize` was authored. */
+    readonly autoMapSize: boolean;
     /** Per level, finest first; the last entry stands in for every level past it. */
     readonly refreshStep: readonly number[];
     /** The per-level `selectionGuard` each level's own window is drawn with. */
@@ -965,6 +1031,8 @@ export class VirtualShadowNode extends ShadowBaseNode {
   #basisV: UniformNode<"vec3", Vector3> = uniform(new Vector3(0, 0, 1)).setGroup(renderGroup);
   #basisW: UniformNode<"vec3", Vector3> = uniform(new Vector3(0, 1, 0)).setGroup(renderGroup);
   #receiverSlope = property("float", `virtualShadowReceiverSlope${String(this.id)}`);
+  /** The window height ratio the level cameras were last fitted to. */
+  #frustumScale = 1;
   #frame = 0;
   /** 1 while this node is inside `#updateFrame`; a level render re-enters `updateBefore`. */
   #updating = false;
@@ -1084,8 +1152,10 @@ export class VirtualShadowNode extends ShadowBaseNode {
       );
     }
     const authoredExtents = options.clipExtents ?? DEFAULT_CLIP_EXTENTS;
+    const autoMapSize = options.mapSize === undefined;
+    // The rule takes the bias for every level; authored sizes take it on the finest window.
     const clipExtents = authoredExtents.map((extent, level) =>
-      level === 0 ? extent * 2 ** bias : extent,
+      level === 0 && !autoMapSize ? extent * 2 ** bias : extent,
     );
     if (
       bias !== 0 &&
@@ -1096,13 +1166,32 @@ export class VirtualShadowNode extends ShadowBaseNode {
         `TN_VIRTUAL_SHADOW_INVALID: resolutionLodBiasDirectional ${String(bias)} widens the finest level to ${String(clipExtents[0])}, past the next level at ${String(clipExtents[1])}.`,
       );
     }
-    const mapSize = options.mapSize ?? light.shadow.mapSize.width;
-    if (!Number.isInteger(mapSize) || mapSize <= 0) {
+    const sizes = options.mapSize ?? light.shadow.mapSize.width;
+    const mapSize = clipExtents.map(
+      (_, level) =>
+        (typeof sizes === "number" ? sizes : sizes[Math.min(level, sizes.length - 1)]) as number,
+    );
+    for (const size of mapSize) {
+      if (!Number.isInteger(size) || size <= 0) {
+        throw new RangeError(
+          `TN_VIRTUAL_SHADOW_INVALID: mapSize must be a positive integer, got ${String(size)}.`,
+        );
+      }
+    }
+    const maxPhysicalPages = options.maxPhysicalPages ?? 4096;
+    if (!Number.isInteger(maxPhysicalPages) || maxPhysicalPages <= 0) {
       throw new RangeError(
-        `TN_VIRTUAL_SHADOW_INVALID: mapSize must be a positive integer, got ${String(mapSize)}.`,
+        `TN_VIRTUAL_SHADOW_INVALID: maxPhysicalPages must be a positive integer, got ${String(maxPhysicalPages)}.`,
       );
     }
-    const moverMapSize = options.moverMapSize ?? mapSize;
+    const shadowLodTexels = options.shadowLodTexels ?? 1;
+    if (!(shadowLodTexels > 0)) {
+      throw new RangeError(
+        `TN_VIRTUAL_SHADOW_INVALID: shadowLodTexels must be a positive number, got ${String(shadowLodTexels)}.`,
+      );
+    }
+    const moverMapSize =
+      options.moverMapSize ?? (autoMapSize ? light.shadow.mapSize.width : (mapSize[0] as number));
     if (!Number.isInteger(moverMapSize) || moverMapSize <= 0) {
       throw new RangeError(
         `TN_VIRTUAL_SHADOW_INVALID: moverMapSize must be a positive integer, got ${String(moverMapSize)}.`,
@@ -1122,6 +1211,12 @@ export class VirtualShadowNode extends ShadowBaseNode {
     if (!Number.isFinite(minCasterTexels) || minCasterTexels < 0) {
       throw new RangeError(
         `TN_VIRTUAL_SHADOW_INVALID: minCasterTexels must be zero or positive, got ${String(minCasterTexels)}.`,
+      );
+    }
+    const minWindowAspect = options.minWindowAspect ?? DEFAULT_MIN_WINDOW_ASPECT;
+    if (!Number.isFinite(minWindowAspect) || minWindowAspect <= 0 || minWindowAspect > 1) {
+      throw new RangeError(
+        `TN_VIRTUAL_SHADOW_INVALID: minWindowAspect must be in the range (0, 1], got ${String(minWindowAspect)}.`,
       );
     }
     const staticAfterFrames = options.staticAfterFrames ?? DEFAULT_STATIC_AFTER_FRAMES;
@@ -1211,6 +1306,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
       pagesPerAxis: mapSize,
       refreshStep: steps,
       selectionGuard: guardedExtent,
+      minAspect: minWindowAspect,
     });
     this.tracker = new ShadowInvalidationTracker(this.clipmap);
     const marker = options.marker ?? DEFAULT_MARKER_EVERY;
@@ -1226,12 +1322,16 @@ export class VirtualShadowNode extends ShadowBaseNode {
       invalidationDelay,
       lightDistance: options.lightDistance ?? 200,
       mapSize,
+      autoMapSize,
+      maxPhysicalPages,
       minCasterTexels,
+      minWindowAspect,
       moverMapSize,
       markerEvery: marker === false ? 0 : marker === true ? DEFAULT_MARKER_EVERY : marker,
       refreshStep: steps,
       selectionGuard: guardedExtent,
       shadowLodBias: options.shadowLodBias ?? true,
+      shadowLodTexels,
       partialRedraw: options.partialRedraw ?? true,
       staticAfterFrames,
       followViewFocus: options.followViewFocus ?? true,
@@ -1595,7 +1695,8 @@ export class VirtualShadowNode extends ShadowBaseNode {
       if (!moved && !deforms(mesh)) {
         if (state.phase === MOTION_MOVER) {
           state.quiet += 1;
-          if (state.quiet >= quietFrames) this.#settle(mesh, state);
+          // UE 5.8.3 UpdateCachePrimitiveAsDynamic: static once the invalidation age is MORE than the threshold.
+          if (state.quiet > quietFrames) this.#settle(mesh, state);
         }
         continue;
       }
@@ -1748,8 +1849,8 @@ export class VirtualShadowNode extends ShadowBaseNode {
     // budget raises the size a caster must be before it draws here, so it sheds its tiniest props
     // first. The scale starts and usually stays at 1, so a cheap level's gate — and every count
     // taken through it — is byte-identical to the configured one.
-    const gate =
-      ((this.options.minCasterTexels * 2 * level.extent) / this.options.mapSize) * level.gateScale;
+    const texel = (2 * level.extent) / (this.options.mapSize[index] as number);
+    const gate = this.options.minCasterTexels * texel * level.gateScale;
     let gateHidden = 0;
     const clusterLayer = 1 << VIRTUAL_SHADOW_CASTER_LAYER;
     const wideLayer = 1 << VIRTUAL_SHADOW_WIDE_CASTER_LAYER;
@@ -1818,11 +1919,10 @@ export class VirtualShadowNode extends ShadowBaseNode {
       if (mesh.casterPrewarmOwed === true) prewarming = true;
       // Reduce geometry, never the caster's presence: alpha cutouts carry canopy and fences.
       if (biased && mesh.castShadow === true) {
-        const chain = lodChainOf(mesh.geometry);
-        const coarsest = chain?.levels[chain.levels.length - 1];
-        if (coarsest !== undefined && coarsest !== mesh.geometry) {
+        const coarse = shadowLod(mesh, texel * this.options.shadowLodTexels);
+        if (coarse !== undefined) {
           this.#coarsened.push({ geometry: mesh.geometry, mesh });
-          mesh.geometry = coarsest;
+          mesh.geometry = coarse;
         }
       }
       // The same two spheres three's cull uses: an instanced mesh's own, over its instances, or the
@@ -2164,7 +2264,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
     camera.clearViewOffset();
     // quality-allow: the light's own shadow owns this update, and the stock node calls it too.
     level.shadow.updateMatrices(level.light as unknown as DirectionalLight);
-    const size = this.options.mapSize;
+    const size = this.options.mapSize[index] as number;
     const pageSize = this.clipmap.pageWorldSize(index);
     const { rect } = pass;
     const corners = [
@@ -2297,7 +2397,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
         // margin left is held at the step it was given and is not widened at all.
         const margin = Math.max(
           base,
-          1 - at(this.options.selectionGuard, index) - 1 / this.options.mapSize,
+          1 - at(this.options.selectionGuard, index) - 1 / (this.options.mapSize[index] as number),
         );
         const step = Math.min(base * Math.max(1, level.costMs / affordableMs), margin);
         if (step !== level.appliedStep) {
@@ -2436,6 +2536,20 @@ export class VirtualShadowNode extends ShadowBaseNode {
     drawnSpan.high = measured.high;
   }
 
+  /** A level's cameras are as wide as its extent and as high as the window's ratio makes them. */
+  #fitFrusta(): void {
+    const scale = this.clipmap.vScale;
+    if (scale === this.#frustumScale) return;
+    this.#frustumScale = scale;
+    for (const level of this.#levels) {
+      for (const map of [level.shadow, level.moverShadow]) {
+        map.camera.top = level.extent * scale;
+        map.camera.bottom = -level.extent * scale;
+        map.camera.updateProjectionMatrix();
+      }
+    }
+  }
+
   /** Put a level's camera on its window with the depth it last derived, and hold both maps to it. */
   #place(level: ILevel, centre: IVector3Like): void {
     const { basisW } = this.clipmap;
@@ -2448,6 +2562,30 @@ export class VirtualShadowNode extends ShadowBaseNode {
     this.#setDepth(level.shadow.camera, level);
     // The mover map is the same window with the tracked casters in it, so it is the same column.
     this.#setDepth(level.moverShadow.camera, level);
+  }
+
+  /**
+   * Unreal's texel-per-pixel rule (`clipmapMapSizes`) on the camera and viewport that first read the
+   * shadow. Without a perspective camera or a drawing buffer the levels keep the light's map size.
+   */
+  #measureMapSizes(builder: NodeBuilder): void {
+    // quality-allow: three's NodeBuilder declares no camera, but setup runs with the receiver's camera set
+    const camera = (builder as unknown as { camera?: Camera & { isPerspectiveCamera?: boolean } })
+      .camera;
+    const renderer = builder.renderer as { getDrawingBufferSize?(target: Vector2): Vector2 };
+    if (camera?.isPerspectiveCamera !== true || renderer.getDrawingBufferSize === undefined) return;
+    // ponytail: measured once. A resized map re-versions its texture under bound groups (see
+    // registeredOnCreate), so a later fov or viewport change keeps these sizes; resize when that is safe.
+    const sizes = clipmapMapSizes({
+      clipExtents: this.options.clipExtents,
+      selectionGuard: this.options.selectionGuard,
+      resolutionLodBias: this.options.resolutionLodBiasDirectional,
+      tanHalfFov: 1 / (camera.projectionMatrix.elements[0] as number),
+      viewportWidth: renderer.getDrawingBufferSize(new Vector2()).x,
+      maxPhysicalPages: this.options.maxPhysicalPages,
+    });
+    (this.options as { mapSize: readonly number[] }).mapSize = sizes;
+    this.clipmap.setPagesPerAxis(sizes);
   }
 
   /** Hand a level's own cameras the depth it derived, when it is not the depth they already hold. */
@@ -2464,20 +2602,22 @@ export class VirtualShadowNode extends ShadowBaseNode {
     for (let at = 0; at < 4; at += 1) into[at] = row[2 + at * 4] as number;
   }
 
-  #init(): void {
+  #init(builder: NodeBuilder): void {
     if (this.#initialised) return;
     this.#initialised = true;
+    if (this.options.autoMapSize) this.#measureMapSizes(builder);
     const source = this.light as DirectionalLight;
     source.addEventListener("removed", this.#onLightRemoved);
     let shadowColor: ReturnType<typeof getShadowMaterial>["colorNode"] = null;
     this.options.clipExtents.forEach((extent, index) => {
       const levelShadow = source.shadow.clone();
       syncShadowSettings(source.shadow, levelShadow);
-      levelShadow.mapSize.set(this.options.mapSize, this.options.mapSize);
+      const size = this.options.mapSize[index] as number;
+      levelShadow.mapSize.set(size, size);
       levelShadow.camera.left = -extent;
       levelShadow.camera.right = extent;
-      levelShadow.camera.top = extent;
-      levelShadow.camera.bottom = -extent;
+      levelShadow.camera.top = extent * this.clipmap.vScale;
+      levelShadow.camera.bottom = -extent * this.clipmap.vScale;
       levelShadow.camera.near = 1;
       levelShadow.camera.far = this.options.lightDistance + this.options.depthRange;
       levelShadow.camera.updateProjectionMatrix();
@@ -2665,7 +2805,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
         (this.options as { adaptiveRefresh: boolean }).adaptiveRefresh = false;
       }
     }
-    this.#init();
+    this.#init(builder);
     const levels = this.#levels;
     const centerU = this.#centerU;
     const centerV = this.#centerV;
@@ -2697,9 +2837,11 @@ export class VirtualShadowNode extends ShadowBaseNode {
         const received = vec3(shadowPositionWorld as never);
         const normal = dFdx(received).cross(dFdy(received)).toVar();
         const along = max(abs(normal.dot(this.#basisW)), max(length(normal).mul(0.0001), 1e-12));
+        // `basisV` is the unit V over the window ratio, and a texel is that ratio shorter along V,
+        // so the depth change across one texel along V is |n.V| * ratio = |n.basisV| * ratio^2.
         this.#receiverSlope.assign(
           abs(normal.dot(basisU))
-            .add(abs(normal.dot(basisV)))
+            .add(abs(normal.dot(basisV)).div(basisV.dot(basisV)))
             .div(along),
         );
       }
@@ -2740,7 +2882,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
             // Use the existing unused map margin, with at least two texels for guard=1.
             const band = max(
               level.extentUniform.sub(edge),
-              level.extentUniform.mul(4 / this.options.mapSize),
+              level.extentUniform.mul(4 / (this.options.mapSize[index] as number)),
             );
             const weight = smoothstep(edge.sub(band), edge, distance).oneMinus();
             result.assign(mix(result, min(vec4(level.node as never), moverResult(level)), weight));
@@ -2865,6 +3007,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
       y: _direction.y,
       z: _direction.z,
     });
+    this.#fitFrusta();
     camera.updateMatrixWorld(true);
     const cameraPosition = _center.setFromMatrixPosition(camera.matrixWorld);
     // The engine's own frame clock, in seconds. This is what a level's invalidation delay is
@@ -2876,7 +3019,10 @@ export class VirtualShadowNode extends ShadowBaseNode {
     this.#centerU.value = this.clipmap.centerLight.u;
     this.#centerV.value = this.clipmap.centerLight.v;
     this.#basisU.value.set(this.clipmap.basisU.x, this.clipmap.basisU.y, this.clipmap.basisU.z);
-    this.#basisV.value.set(this.clipmap.basisV.x, this.clipmap.basisV.y, this.clipmap.basisV.z);
+    // The axis whose dot product is `v`: the unit V stretched by the window's height ratio.
+    const vScale = this.clipmap.vScale;
+    const basisV = this.clipmap.basisV;
+    this.#basisV.value.set(basisV.x / vScale, basisV.y / vScale, basisV.z / vScale);
     this.#basisW.value.set(this.clipmap.basisW.x, this.clipmap.basisW.y, this.clipmap.basisW.z);
     // A caster that stopped casting, or stopped being visible, changed what the levels hold without
     // changing the tree, so nothing else on the frame would say so. Asked here, before this frame's
@@ -2930,7 +3076,11 @@ export class VirtualShadowNode extends ShadowBaseNode {
         admission: region.admission === true,
         u: projectBounds(region, this.clipmap.basisU),
         urgent: region.urgent === true,
-        v: projectBounds(region, this.clipmap.basisV),
+        v: projectBounds(region, {
+          x: basisV.x / vScale,
+          y: basisV.y / vScale,
+          z: basisV.z / vScale,
+        }),
       });
     }
     this.#regions.length = 0;
@@ -2959,21 +3109,23 @@ export class VirtualShadowNode extends ShadowBaseNode {
     // holds the map it has and is due again on the next frame.
     let budgetSpent = false;
     try {
-      const half = this.clipmap.pagesPerAxis / 2;
       // The window each level's map was actually rendered with. A level that does not get this
       // frame's window keeps this one, and `level.minX/minY` stays put, so it is still "moved" next
       // frame and still due.
-      const centreOf = (window: IClipWindow): { cu: number; cv: number } => ({
-        cu: (window.minX + half) * window.pageWorldSize,
-        cv: (window.minY + half) * window.pageWorldSize,
-      });
+      const centreOf = (window: IClipWindow, level: number): { cu: number; cv: number } => {
+        const half = this.clipmap.pagesAt(level) / 2;
+        return {
+          cu: (window.minX + half) * window.pageWorldSize,
+          cv: (window.minY + half) * window.pageWorldSize,
+        };
+      };
       const finer: { cu: number; cv: number; half: number }[] = [];
       this.#levels.forEach((level, index) => {
         const window = windows[index];
         if (window === undefined) return;
         const windowMoved =
           directionChanged || window.minX !== level.minX || window.minY !== level.minY;
-        const { cu, cv } = centreOf(window);
+        const { cu, cv } = centreOf(window, index);
         // This level's own window against the regions handed to `invalidateRegion`. A window that
         // does not reach a region draws the same shadow either way.
         let regionDirty = false;
@@ -3106,7 +3258,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
           this.#rendersTotal += 1;
           // A window that moved, a region-less ask, or more than half the pages dirty is the whole
           // level; anything else is the rectangles the asks named.
-          const levelPages = this.clipmap.pagesPerAxis ** 2;
+          const levelPages = this.clipmap.pagesAt(index) ** 2;
           passes =
             reason === REASON_MOVE || level.dirtyAll
               ? undefined
@@ -3165,7 +3317,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
           level.mapped.value === 1 && !grant
             ? { minX: level.minX, minY: level.minY, pageWorldSize: window.pageWorldSize }
             : window;
-        const { cu: hu, cv: hv } = centreOf(held as IClipWindow);
+        const { cu: hu, cv: hv } = centreOf(held as IClipWindow, index);
         // Hold all three coordinates of the rendered centre: its derived depth and the mover
         // map's shared sampling matrix are relative to this depth, not the followed camera's.
         const centre = this.clipmap.unproject({
@@ -3210,7 +3362,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
               _proposedDepth[2] !== _drawnDepth[2] ||
               _proposedDepth[3] !== _drawnDepth[3]
             ) {
-              const whole = this.clipmap.pagesPerAxis ** 2 - countedPages;
+              const whole = this.clipmap.pagesAt(index) ** 2 - countedPages;
               this.#pagesDirty += whole;
               this.#pagesRedrawn += whole;
               passes = undefined;
@@ -3422,6 +3574,100 @@ export function readVirtualShadowMarker(line: string): IVirtualShadowStats | und
   try {
     const value: unknown = JSON.parse(line.slice(VIRTUAL_SHADOW_MARKER.length + 1));
     return isVirtualShadowStats(value) ? value : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * One frame's shadow passes on the owned engine with the spot and point light maps apart from the
+ * sun's (PRD-650). The sun's draws and the lamps' add up to every shadow draw the renderer submitted.
+ */
+export interface ILampShadowStats {
+  readonly frame: number;
+  readonly shadowDraws: number;
+  /** The sun's maps: its virtual levels or its plain map. `gpuMs` is -1 until a GPU sample resolves. */
+  readonly sun: { readonly draws: number; readonly gpuMs: number };
+  /** The lamp maps the frame redrew (a cube's six faces are one), their draws, and their GPU time. */
+  readonly lamps: { readonly redraws: number; readonly draws: number; readonly gpuMs: number };
+}
+
+export const LAMP_SHADOW_MARKER = "TN_LAMP_SHADOW";
+
+interface ILampShadowCounters {
+  readonly lampRedraws: number;
+  readonly lampDraws: number;
+  readonly shadowDraws: number;
+  readonly sunGpuMs: number;
+  readonly lampGpuMs: number;
+}
+
+const isCount = (n: unknown): n is number => Number.isInteger(n) && (n as number) >= 0;
+const isGpuMs = (n: unknown): n is number => n === -1 || (Number.isFinite(n) && (n as number) >= 0);
+
+function isLampShadowStats(value: unknown): value is ILampShadowStats {
+  const stats = value as Partial<Record<keyof ILampShadowStats, Record<string, unknown>>> | null;
+  if (typeof stats !== "object" || stats === null) return false;
+  const { frame, shadowDraws } = stats as unknown as Record<string, unknown>;
+  const sun = stats.sun;
+  const lamps = stats.lamps;
+  return (
+    isCount(frame) &&
+    isCount(shadowDraws) &&
+    typeof sun === "object" &&
+    sun !== null &&
+    typeof lamps === "object" &&
+    lamps !== null &&
+    isCount(sun.draws) &&
+    isGpuMs(sun.gpuMs) &&
+    isCount(lamps.redraws) &&
+    isCount(lamps.draws) &&
+    isGpuMs(lamps.gpuMs) &&
+    sun.draws + lamps.draws === shadowDraws
+  );
+}
+
+/**
+ * The `TN_LAMP_SHADOW` line for the renderer's last frame, or `undefined` on a renderer that keeps
+ * no lamp counters (three's own).
+ *
+ * @situation log lamp shadow redraws and GPU time apart from the sun's on the owned engine
+ * @constraint counters that do not add up to the frame's shadow draws throw TN_LAMP_SHADOW_INVALID
+ * @example
+ * const line = lampShadowMarker(renderer, frame);
+ * if (line !== undefined) console.info(line);
+ */
+export function lampShadowMarker(
+  renderer: { readonly info?: { readonly engine?: { readonly shadows?: ILampShadowCounters } } },
+  frame: number,
+): string | undefined {
+  const counters = renderer.info?.engine?.shadows;
+  if (counters === undefined) return undefined;
+  const stats: ILampShadowStats = {
+    frame,
+    shadowDraws: counters.shadowDraws,
+    sun: { draws: counters.shadowDraws - counters.lampDraws, gpuMs: counters.sunGpuMs },
+    lamps: { redraws: counters.lampRedraws, draws: counters.lampDraws, gpuMs: counters.lampGpuMs },
+  };
+  if (!isLampShadowStats(stats))
+    throw new Error(`TN_LAMP_SHADOW_INVALID: ${JSON.stringify(counters)} at frame ${frame}`);
+  return `${LAMP_SHADOW_MARKER}:${JSON.stringify(stats)}`;
+}
+
+/**
+ * Parse a `TN_LAMP_SHADOW` line back into its stats, or `undefined`.
+ *
+ * @situation count lamp shadow redraws from a renderer log, for example a moving-caster run
+ * @constraint non-marker lines and markers whose sun and lamp draws do not add up return `undefined`
+ * @example
+ * const stats = readLampShadowMarker(line);
+ * if (stats !== undefined) console.log(stats.lamps.redraws);
+ */
+export function readLampShadowMarker(line: string): ILampShadowStats | undefined {
+  if (!line.startsWith(`${LAMP_SHADOW_MARKER}:`)) return undefined;
+  try {
+    const value: unknown = JSON.parse(line.slice(LAMP_SHADOW_MARKER.length + 1));
+    return isLampShadowStats(value) ? value : undefined;
   } catch {
     return undefined;
   }

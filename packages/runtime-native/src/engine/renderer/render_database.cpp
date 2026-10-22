@@ -505,6 +505,7 @@ RenderDatabase::Record& RenderDatabase::record(const Mesh& mesh, Record& r, bool
     d.shadowSide = material->shadowSide ? static_cast<uint8_t>(*material->shadowSide) : 255;
     d.flatShading = material->flatShading;
     d.twoSidedFoliage = material->twoSidedFoliage;
+    d.roughDiffuse = material->roughDiffuse;
     d.blending = static_cast<uint8_t>(material->blending);
     r.drawable = d.positions != nullptr;
     return r;
@@ -523,6 +524,7 @@ DrawItem& RenderDatabase::refresh(const Mesh& mesh, Record& r) {
     d.shadowSide = r.material->shadowSide ? static_cast<uint8_t>(*r.material->shadowSide) : 255;
     d.flatShading = r.material->flatShading;
     d.twoSidedFoliage = r.material->twoSidedFoliage;
+    d.roughDiffuse = r.material->roughDiffuse;
     d.blending = static_cast<uint8_t>(r.material->blending);
     d.positionNode = r.material->positionNode;
     d.nodes = r.material->nodes;
@@ -862,6 +864,7 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
             d.position = worldPosition(l);
             d.distance = l.distance;
             d.decay = l.decay;
+            d.sourceRadius = l.sourceRadius;
             if (shadowMapEnabled && l.castShadow())
                 d.shadow = pointShadowOf(l.shadow, d.position, l.distance, effectiveShadowLayersMask(*l.shadow.camera, camera));
             direct_.emplace_back(object.id(), d);
@@ -877,6 +880,7 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
             d.direction = normalized({d.position[0] - to[0], d.position[1] - to[1], d.position[2] - to[2]});
             d.distance = l.distance;
             d.decay = l.decay;
+            d.sourceRadius = l.sourceRadius;
             d.coneCos = std::cos(l.angle);
             d.penumbraCos = std::cos(l.angle * (1 - l.penumbra));
             if (shadowMapEnabled && l.castShadow()) {
@@ -1618,7 +1622,9 @@ uint64_t RenderDatabase::render(Renderer& renderer, Object3D& scene, Camera& cam
     try { prepare(scene, camera, lights_, nullptr, renderer.hasVirtualShadows()); } catch (...) { gpuPreparing_ = false; throw; }
     gpuPreparing_ = false;
     const bool hadVirtual = renderer.hasVirtualShadows();
-    renderer.syncVirtualShadows(lights_);
+    // The main view's tan(hfov / 2) is 1 / P[0]; a reflection pass is another view and measures nothing.
+    const bool mainView = !reflecting_ && dynamic_cast<const PerspectiveCamera*>(&camera) && camera.projectionMatrix.elements[0] > 0;
+    renderer.syncVirtualShadows(lights_, mainView ? 1.0 / camera.projectionMatrix.elements[0] : 0.0);
     if (!hadVirtual && renderer.hasVirtualShadows()) prepare(scene, camera, lights_, nullptr, true);
     const auto preparedScene = profiling ? Clock::now() : Clock::time_point{};
     // Frame-pumped PMREM (PRD-573): until every environment this frame samples is fully baked,

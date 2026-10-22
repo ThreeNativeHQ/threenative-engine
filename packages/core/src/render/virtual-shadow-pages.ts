@@ -235,7 +235,8 @@ export interface IDirectionalClipmapOptions {
   readonly direction: IVector3Like;
   /** Half-width of each level's window in world units, finest first. */
   readonly clipExtents: readonly number[];
-  readonly pagesPerAxis: number;
+  /** Texels per window edge: one value for every level, or one per level finest first. */
+  readonly pagesPerAxis: number | readonly number[];
   /**
    * Fraction of an extent inside which a point selects that level, `(0, 1]`, default 0.9. One value
    * for every level, or one per level finest first, the last entry standing in for the rest.
@@ -248,6 +249,15 @@ export interface IDirectionalClipmapOptions {
    * for every level, or one per level finest first, the last entry standing in for the rest.
    */
   readonly refreshStep?: number | readonly number[];
+  /**
+   * The smallest ratio of a window's light-space height to its width, `(0, 1]`, default 1. A low
+   * sun stretches a texel along the light's V axis by `1 / sin(elevation)` of floor, so a window
+   * the same height as it is wide would make every shadow edge across the floor that much blurrier.
+   * A ratio below 1 shrinks the height to `sin(elevation)`, never under this value, and the texels
+   * then cover the same floor area at any sun height. A sun within 18 degrees of the zenith keeps
+   * square windows. Page coordinates stay square: `v` counts pages in that shrunken height.
+   */
+  readonly minAspect?: number;
 }
 
 function dot(a: IVector3Like, b: IVector3Like): number {
@@ -286,7 +296,8 @@ function cornersOfBounds(bounds: IBoundsLike): IVector3Like[] {
  */
 export class DirectionalClipmap {
   readonly clipExtents: readonly number[];
-  readonly pagesPerAxis: number;
+  /** Texels per window edge, one per level, finest first. */
+  #pages: number[] = [];
   /**
    * Per level, finest first; the last entry stands in for every level past it. Mutable through
    * {@link setRefreshStep} so a level whose own render is expensive can be stepped further, which
@@ -299,6 +310,9 @@ export class DirectionalClipmap {
   basisU: IVector3Like;
   basisV: IVector3Like;
   basisW: IVector3Like;
+  /** Window height over width: `v` is metres along `basisV` divided by this. 1 is a square window. */
+  vScale = 1;
+  readonly minAspect: number;
   centerWorld: IVector3Like = { x: 0, y: 0, z: 0 };
   centerLight: ILightSpacePoint = { u: 0, v: 0, w: 0 };
   #windows: IClipWindow[] = [];
@@ -314,9 +328,13 @@ export class DirectionalClipmap {
     pagesPerAxis,
     selectionGuard = 0.9,
     refreshStep = 0.125,
+    minAspect = 1,
   }: IDirectionalClipmapOptions) {
     assertFiniteVector("direction", direction);
-    assertPositiveInteger("pagesPerAxis", pagesPerAxis);
+    if (!Number.isFinite(minAspect) || minAspect <= 0 || minAspect > 1) {
+      throw new RangeError(`minAspect must be in the range (0, 1], got ${String(minAspect)}`);
+    }
+    this.minAspect = minAspect;
     if (!Array.isArray(clipExtents) || clipExtents.length === 0) {
       throw new TypeError("clipExtents must be a non-empty array");
     }
@@ -364,7 +382,7 @@ export class DirectionalClipmap {
       }
     }
     this.clipExtents = [...clipExtents];
-    this.pagesPerAxis = pagesPerAxis;
+    this.setPagesPerAxis(pagesPerAxis);
     this.refreshStep = clipExtents.map((_, level) => this.#perLevel(steps, level));
     this.selectionGuard = guards;
     this.levelCount = clipExtents.length;
@@ -384,6 +402,12 @@ export class DirectionalClipmap {
       Math.abs(this.basisW.y) > 0.95 ? { x: 0, y: 0, z: 1 } : { x: 0, y: 1, z: 0 };
     this.basisU = normalize(cross(this.basisW, reference));
     this.basisV = normalize(cross(this.basisW, this.basisU));
+    // Only a sun low enough that V is the ground's slope axis: near the zenith the basis turns to
+    // the +z reference and V is no longer the direction a floor texel stretches along.
+    this.vScale =
+      Math.abs(this.basisW.y) > 0.95
+        ? 1
+        : Math.min(1, Math.max(this.minAspect, Math.abs(this.basisW.y)));
     if (!unchanged) this.#windows = [];
     this.updateCenter(this.centerWorld);
     return !unchanged;
@@ -393,7 +417,7 @@ export class DirectionalClipmap {
     assertFiniteVector("worldPoint", worldPoint);
     return {
       u: dot(worldPoint, this.basisU),
-      v: dot(worldPoint, this.basisV),
+      v: dot(worldPoint, this.basisV) / this.vScale,
       w: dot(worldPoint, this.basisW),
     };
   }
@@ -402,10 +426,11 @@ export class DirectionalClipmap {
     if (![u, v, w].every(Number.isFinite)) {
       throw new TypeError("light-space coordinates must be finite");
     }
+    const along = v * this.vScale;
     return {
-      x: this.basisU.x * u + this.basisV.x * v + this.basisW.x * w,
-      y: this.basisU.y * u + this.basisV.y * v + this.basisW.y * w,
-      z: this.basisU.z * u + this.basisV.z * v + this.basisW.z * w,
+      x: this.basisU.x * u + this.basisV.x * along + this.basisW.x * w,
+      y: this.basisU.y * u + this.basisV.y * along + this.basisW.y * w,
+      z: this.basisU.z * u + this.basisV.z * along + this.basisW.z * w,
     };
   }
 
@@ -419,14 +444,29 @@ export class DirectionalClipmap {
     this.refreshStep[level] = step;
   }
 
+  /** Texels per edge of `level`'s window. */
+  pagesAt(level: number): number {
+    return this.#perLevel(this.#pages, level);
+  }
+
+  /** Resize the windows (one value, or one per level); every window is placed afresh. */
+  setPagesPerAxis(pagesPerAxis: number | readonly number[]): void {
+    const pages = typeof pagesPerAxis === "number" ? [pagesPerAxis] : [...pagesPerAxis];
+    if (pages.length === 0) throw new TypeError("pagesPerAxis must not be empty");
+    for (const value of pages) assertPositiveInteger("pagesPerAxis", value);
+    this.#pages = pages;
+    this.#windows = [];
+  }
+
   updateCenter(worldPoint: IVector3Like): readonly IClipWindow[] {
     assertFiniteVector("worldPoint", worldPoint);
     const previousCenter = this.centerLight;
     this.centerWorld = { x: worldPoint.x, y: worldPoint.y, z: worldPoint.z };
     this.centerLight = this.project(worldPoint);
-    const halfPages = Math.floor(this.pagesPerAxis / 2);
     this.#windows = this.clipExtents.map((extent, level) => {
-      const pageWorldSize = (extent * 2) / this.pagesPerAxis;
+      const pages = this.pagesAt(level);
+      const halfPages = Math.floor(pages / 2);
+      const pageWorldSize = (extent * 2) / pages;
       // The step is a drift threshold, never the grid spacing. Changing it alone cannot move a
       // stationary window. When either axis crosses the threshold, recenter the whole window on
       // this level's fixed texel grid; `refreshStep: 0` keeps the old one-page floor addressing.
@@ -458,8 +498,8 @@ export class DirectionalClipmap {
         refreshPages,
         minX,
         minY,
-        maxX: minX + this.pagesPerAxis,
-        maxY: minY + this.pagesPerAxis,
+        maxX: minX + pages,
+        maxY: minY + pages,
       };
     });
     return this.#windows;
@@ -823,5 +863,65 @@ export class ShadowInvalidationTracker {
   clear(): void {
     this.#tracked.clear();
     this.#invalidated.clear();
+  }
+}
+
+/** What {@link clipmapMapSizes} measures: the levels, and the view that reads them. */
+export interface IClipmapSizeRule {
+  /** Half-widths, finest first, as the node holds them. */
+  readonly clipExtents: readonly number[];
+  /** The fraction of each extent a receiver leaves the level at (guard minus refresh step). */
+  readonly selectionGuard: readonly number[];
+  /** `r.Shadow.Virtual.ResolutionLodBiasDirectional`: -1 halves every texel. */
+  readonly resolutionLodBias: number;
+  /** `tan(horizontal fov / 2)` of the camera that reads the shadow. */
+  readonly tanHalfFov: number;
+  /** The camera's viewport width in pixels. */
+  readonly viewportWidth: number;
+  /** Sizes are whole multiples of this. Default 128, the native page. */
+  readonly pageTexels?: number;
+  /** The most pages of `pageTexels²` all levels may hold. Default 4096. */
+  readonly maxPhysicalPages?: number;
+  /** The largest size of one level. Default 4096. */
+  readonly maxMapSize?: number;
+}
+
+/**
+ * Texels per edge of each clip level, from Unreal's clipmap rule. A receiver at distance `d` reads level
+ * `floor(log2(d) + bias + log2(LodScale))` with `LodScale = 0.5 tan(hfov / 2) 16384 / width` (UE 5.8.3:
+ * Engine/Source/Runtime/Renderer/Private/VirtualShadowMaps/VirtualShadowMapClipmap.cpp:245-254,
+ * Engine/Shaders/Private/VirtualShadowMaps/VirtualShadowMapPageMarking.ush:35-39), and that level is
+ * 16384 texels across twice its radius on each side (`HalfLevelDim`, VirtualShadowMapClipmap.cpp:363,
+ * :452), so a texel is `2^bias` to `2^(1 + bias)` of the receiver's own screen pixels. A level here
+ * gets that worst case at the nearest receiver it serves: the guarded edge of the level inside it (the
+ * finest, one level step nearer still). When the sizes outgrow the page budget, the bias rises a
+ * quarter stop at a time until they fit, as Unreal raises its global bias when the page pool is over
+ * budget (VirtualShadowMapCacheManager.cpp:703-717).
+ */
+export function clipmapMapSizes(rule: IClipmapSizeRule): number[] {
+  const { clipExtents, selectionGuard, tanHalfFov, viewportWidth } = rule;
+  const page = rule.pageTexels ?? 128;
+  const maxPages = rule.maxPhysicalPages ?? 4096;
+  const maxSize = rule.maxMapSize ?? 4096;
+  if (!(tanHalfFov > 0) || !(viewportWidth > 0) || !Number.isFinite(rule.resolutionLodBias))
+    throw new RangeError(
+      "clipmapMapSizes needs a positive tanHalfFov and viewportWidth and a finite bias",
+    );
+  const guard = (level: number): number =>
+    selectionGuard[Math.min(level, selectionGuard.length - 1)] as number;
+  const first = clipExtents[0] as number;
+  const inner = clipExtents.map((extent, level) =>
+    level === 0
+      ? guard(0) * first * (clipExtents.length > 1 ? first / (clipExtents[1] as number) : 0.5)
+      : guard(level - 1) * (clipExtents[level - 1] as number),
+  );
+  for (let bias = rule.resolutionLodBias; ; bias += 0.25) {
+    const sizes = clipExtents.map((extent, level) => {
+      const pixel = (2 * (inner[level] as number) * tanHalfFov) / viewportWidth;
+      const texels = Math.ceil((2 * extent) / (2 ** (1 + bias) * pixel) / page) * page;
+      return Math.min(maxSize, Math.max(page, texels));
+    });
+    const pages = sizes.reduce((sum, size) => sum + (size / page) ** 2, 0);
+    if (pages <= maxPages || sizes.every((size) => size === page)) return sizes;
   }
 }

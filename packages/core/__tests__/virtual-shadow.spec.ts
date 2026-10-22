@@ -24,6 +24,7 @@ import {
   Sphere,
   SphereGeometry,
   type Texture,
+  type Vector2,
   Vector3,
 } from "three";
 // @ts-expect-error Three's private texture manager has no public declaration; this test must exercise it directly.
@@ -59,7 +60,9 @@ import {
   lodChainOf,
 } from "../src/model-lod.js";
 import { noteShadowRedrawGpuMs } from "../src/render-pass-budget.js";
+import { clipmapMapSizes } from "../src/render/virtual-shadow-pages.js";
 import {
+  LAMP_SHADOW_MARKER,
   VIRTUAL_SHADOW_CASTER_LAYER,
   VIRTUAL_SHADOW_GATE_MARKER,
   VIRTUAL_SHADOW_MARKER,
@@ -67,6 +70,8 @@ import {
   VIRTUAL_SHADOW_REFRESH_MARKER,
   VIRTUAL_SHADOW_WIDE_CASTER_LAYER,
   VirtualShadowNode,
+  lampShadowMarker,
+  readLampShadowMarker,
   readVirtualShadowMarker,
 } from "../src/render/virtual-shadow.js";
 import { WorldImpostorSurface } from "../src/render/world-impostor-surface.js";
@@ -337,6 +342,46 @@ it("takes the normal bias back out of a twoSidedFoliage receiver's shadow positi
   expect(leaf.length).toBeGreaterThan(ordinary.length);
 });
 
+describe("lamp shadow marker (PRD-650)", () => {
+  // One mixed-light frame on the owned engine: the sun's map and one lamp's cube both drew.
+  const info = {
+    engine: {
+      shadows: { lampRedraws: 1, lampDraws: 7, shadowDraws: 9, sunGpuMs: 0.21, lampGpuMs: 0.34 },
+    },
+  };
+
+  it("reports the lamp maps apart from the sun's, and the two add up to the shadow submissions", () => {
+    const line = lampShadowMarker({ info }, 42);
+    expect(line?.startsWith(`${LAMP_SHADOW_MARKER}:`)).toBe(true);
+    const stats = readLampShadowMarker(line ?? "");
+    expect(stats).toEqual({
+      frame: 42,
+      shadowDraws: 9,
+      sun: { draws: 2, gpuMs: 0.21 },
+      lamps: { redraws: 1, draws: 7, gpuMs: 0.34 },
+    });
+    expect((stats?.sun.draws ?? 0) + (stats?.lamps.draws ?? 0)).toBe(stats?.shadowDraws);
+  });
+
+  it("is silent on a renderer without the counters (three's own)", () => {
+    expect(lampShadowMarker({ info: { engine: {} } }, 0)).toBeUndefined();
+    expect(lampShadowMarker({}, 0)).toBeUndefined();
+  });
+
+  it("fails closed on counters that do not reconcile, and on lines that are not complete markers", () => {
+    const broken = { engine: { shadows: { ...info.engine.shadows, lampDraws: 10 } } };
+    expect(() => lampShadowMarker({ info: broken }, 1)).toThrow(/TN_LAMP_SHADOW_INVALID/);
+    const line = lampShadowMarker({ info }, 3) ?? "";
+    expect(
+      readLampShadowMarker(line.replace('"shadowDraws":9', '"shadowDraws":8')),
+    ).toBeUndefined();
+    expect(readLampShadowMarker(line.replace('"redraws":1', '"redraws":1.5'))).toBeUndefined();
+    expect(readLampShadowMarker(`${LAMP_SHADOW_MARKER}:{bad`)).toBeUndefined();
+    expect(readLampShadowMarker(`${LAMP_SHADOW_MARKER}:{}`)).toBeUndefined();
+    expect(readLampShadowMarker("TN_VIRTUAL_SHADOW:{}")).toBeUndefined();
+  });
+});
+
 describe("virtual shadow level diagnostic", () => {
   it.each([{ transmission: 0.8 }, { alphaTest: 0.5 }])(
     "should declare tint before every use in physical material builds (%j)",
@@ -538,6 +583,7 @@ describe("VirtualShadowNode", () => {
     expect(node.levelLights).toHaveLength(3);
     const finer = setupNode(light, {
       clipExtents: [8, 32, 128],
+      mapSize: 64,
       resolutionLodBiasDirectional: -1.5,
     });
     expect(finer.options.clipExtents[0]).toBeCloseTo(8 / 2 ** 1.5, 9);
@@ -552,8 +598,58 @@ describe("VirtualShadowNode", () => {
       () => new VirtualShadowNode(light, { resolutionLodBiasDirectional: Number.NaN }),
     ).toThrow(/resolutionLodBiasDirectional/u);
     expect(
-      () => new VirtualShadowNode(light, { clipExtents: [8, 12], resolutionLodBiasDirectional: 1 }),
+      () =>
+        new VirtualShadowNode(light, {
+          clipExtents: [8, 12],
+          mapSize: 64,
+          resolutionLodBiasDirectional: 1,
+        }),
     ).toThrow(/resolutionLodBiasDirectional/u);
+  });
+
+  it("should size each level by Unreal's texel-per-pixel rule on the camera that first reads it", () => {
+    const { light } = world();
+    // hfov 60 (aspect 1), a 1280 px drawing buffer: the harness reference view.
+    const camera = new PerspectiveCamera(60, 1, 0.1, 500);
+    const measuring = {
+      ...builder,
+      camera,
+      renderer: {
+        shadowMap: { enabled: true },
+        getDrawingBufferSize: (target: Vector2) => target.set(1280, 720),
+      },
+    } as unknown as NodeBuilder;
+    const rule = { clipExtents: [7, 14, 28, 56], resolutionLodBiasDirectional: -1 };
+    const node = new VirtualShadowNode(light, { marker: false, ...rule });
+    expect(node.options.autoMapSize).toBe(true);
+    // Before a camera reads it, every level holds the light's own map size.
+    expect(node.options.mapSize).toEqual([64, 64, 64, 64]);
+    node.setup(measuring);
+    // The bias acts on every level, not on the finest window, and doubles each size.
+    expect(node.options.clipExtents).toEqual([7, 14, 28, 56]);
+    expect(node.options.mapSize).toEqual(
+      clipmapMapSizes({
+        clipExtents: [7, 14, 28, 56],
+        selectionGuard: [0.775],
+        resolutionLodBias: -1,
+        tanHalfFov: Math.tan(Math.PI / 6),
+        viewportWidth: 1280,
+      }),
+    );
+    expect(node.options.mapSize[0]).toBe(4096);
+    expect(node.clipmap.pagesAt(3)).toBe(4096);
+    const sizes = node.levelLights.map((level) => (level as DirectionalLight).shadow.mapSize.x);
+    expect(sizes).toEqual([4096, 4096, 4096, 4096]);
+    // A named size holds: one number for every level, or one per level.
+    const held = new VirtualShadowNode(light, { marker: false, ...rule, mapSize: [512, 1024] });
+    held.setup(measuring);
+    expect(held.options.autoMapSize).toBe(false);
+    expect(held.options.mapSize).toEqual([512, 1024, 1024, 1024]);
+    expect(held.clipmap.pagesAt(1)).toBe(1024);
+    expect(() => new VirtualShadowNode(light, { mapSize: [512, 0] })).toThrow(/mapSize/u);
+    expect(() => new VirtualShadowNode(light, { maxPhysicalPages: 0 })).toThrow(
+      /maxPhysicalPages/u,
+    );
   });
 
   it("should build one cached level per clip extent and add its lights beside the source light", () => {
@@ -572,6 +668,35 @@ describe("VirtualShadowNode", () => {
     expect(
       scene.children.filter((child) => child.name.startsWith("VirtualShadowLevel")),
     ).toHaveLength(0);
+  });
+
+  it("should fit each level's frustum to the ground when minWindowAspect asks: its height is the width times sin(elevation)", () => {
+    // A low sun stretches a texel over 1 / sin(elevation) of floor along the light's V axis, so a
+    // square frustum blurs every floor shadow edge that many times more than a high sun does.
+    const heights = (degrees: number, options = {}) => {
+      const { camera, light } = world();
+      const elevation = (degrees * Math.PI) / 180;
+      light.position.set(100 * Math.cos(elevation), 100 * Math.sin(elevation), 0);
+      const node = setupNode(light, { clipExtents: [8, 32], ...options });
+      settle(node, camera);
+      const frusta = node.levelLights.map(
+        (level) => (level as DirectionalLight).shadow.camera as OrthographicCamera,
+      );
+      node.dispose();
+      return frusta.map((c) => [c.right - c.left, c.top - c.bottom]);
+    };
+    const fit = { minWindowAspect: 0.25 };
+    const [fine, coarse] = heights(15, fit);
+    expect(fine?.[0]).toBeCloseTo(16, 9);
+    expect(fine?.[1]).toBeCloseTo(16 * Math.sin((15 * Math.PI) / 180), 9);
+    expect(coarse?.[1]).toBeCloseTo(64 * Math.sin((15 * Math.PI) / 180), 9);
+    // Under minWindowAspect the height stops shrinking; an overhead sun stays square.
+    expect(heights(4, fit)[0]?.[1]).toBeCloseTo(16 * 0.25, 9);
+    expect(heights(89, fit)[0]?.[1]).toBeCloseTo(16, 9);
+    expect(() => heights(30, { minWindowAspect: 0 })).toThrow(/minWindowAspect/u);
+    // The default is square at every sun height: a fit is the named override (PRD-634).
+    expect(heights(4)[0]?.[1]).toBeCloseTo(16, 9);
+    expect(heights(15)[0]?.[1]).toBeCloseTo(16, 9);
   });
 
   it("should serve every level from cache while the camera stays inside its texel", () => {
@@ -3048,6 +3173,126 @@ describe("VirtualShadowNode shadow LOD bias and alpha-caster range", () => {
     node.dispose();
   });
 
+  it("should keep a chain rung that a level's texel cannot hide, and draw the coarsest one where it can", async () => {
+    const { camera, light, scene } = world();
+    const mesh = await chained();
+    mesh.castShadow = true;
+    scene.add(mesh);
+    const chain = lodChainOf(mesh.geometry);
+    if (chain === undefined) throw new Error("the plugin registered no chain.");
+    // The 64-texel test map makes a texel `extent / 32`: 0.031 m, 0.0625 m and 0.25 m against rung
+    // errors of 0.05 m and 0.2 m. The first window keeps the mesh's own geometry (a 0.05 m facet is
+    // more than a texel there), the second hides the first rung but not the second, the third both.
+    const node = setupNode(light, { clipExtents: [0.5, 1, 2, 8] });
+    const host = drawHost();
+    watchDraws(node, host, camera, [mesh]);
+    renderAllLevels(node, camera, host);
+
+    expect(host.draws.map((draw) => draw.submitted)).toEqual([
+      mesh.geometry,
+      mesh.geometry,
+      chain.levels[1],
+      chain.levels[2],
+    ]);
+    node.dispose();
+  });
+
+  it("should judge a chain rung's error at the mesh's world scale", async () => {
+    const { camera, light, scene } = world();
+    const mesh = await chained();
+    mesh.castShadow = true;
+    mesh.scale.setScalar(4);
+    scene.add(mesh);
+    mesh.updateMatrixWorld(true);
+    const chain = lodChainOf(mesh.geometry);
+    if (chain === undefined) throw new Error("the plugin registered no chain.");
+    // Four times the size is four times the error: 0.2 m and 0.8 m, so the 0.0625 m texel that hid
+    // the first rung of the unscaled mesh hides neither, and 0.25 m hides only the first.
+    const node = setupNode(light, { clipExtents: [0.5, 2, 8, 40] });
+    const host = drawHost();
+    watchDraws(node, host, camera, [mesh]);
+    renderAllLevels(node, camera, host);
+
+    expect(host.draws.map((draw) => draw.submitted)).toEqual([
+      mesh.geometry,
+      mesh.geometry,
+      chain.levels[1],
+      chain.levels[2],
+    ]);
+    node.dispose();
+  });
+
+  it("should draw the coarsest rung on every coarse level with an unbounded shadowLodTexels", async () => {
+    const { camera, light, scene } = world();
+    const mesh = await chained();
+    mesh.castShadow = true;
+    scene.add(mesh);
+    const chain = lodChainOf(mesh.geometry);
+    if (chain === undefined) throw new Error("the plugin registered no chain.");
+    const node = setupNode(light, {
+      clipExtents: [0.5, 1, 2, 8],
+      shadowLodTexels: Number.POSITIVE_INFINITY,
+    });
+    const host = drawHost();
+    watchDraws(node, host, camera, [mesh]);
+    renderAllLevels(node, camera, host);
+
+    expect(host.draws.map((draw) => draw.submitted)).toEqual([
+      mesh.geometry,
+      chain.levels[2],
+      chain.levels[2],
+      chain.levels[2],
+    ]);
+    node.dispose();
+  });
+
+  it("should scale the rung error a level accepts by shadowLodTexels, and refuse a budget that is not positive", async () => {
+    const { camera, light, scene } = world();
+    const mesh = await chained();
+    mesh.castShadow = true;
+    scene.add(mesh);
+    const chain = lodChainOf(mesh.geometry);
+    if (chain === undefined) throw new Error("the plugin registered no chain.");
+    // Four texels of 0.031 m, 0.0625 m and 0.25 m accept 0.125 m, 0.25 m and 1 m: the first level
+    // that kept the mesh's own geometry now takes the first rung, the others the coarsest.
+    const node = setupNode(light, { clipExtents: [0.5, 1, 2, 8], shadowLodTexels: 4 });
+    const host = drawHost();
+    watchDraws(node, host, camera, [mesh]);
+    renderAllLevels(node, camera, host);
+
+    expect(host.draws.map((draw) => draw.submitted)).toEqual([
+      mesh.geometry,
+      chain.levels[1],
+      chain.levels[2],
+      chain.levels[2],
+    ]);
+    node.dispose();
+    for (const bad of [0, -1, Number.NaN])
+      expect(() => new VirtualShadowNode(light, { shadowLodTexels: bad })).toThrow(
+        "TN_VIRTUAL_SHADOW_INVALID: shadowLodTexels",
+      );
+  });
+
+  it("should never draw a rung finer than the one the main pass shows", async () => {
+    const { camera, light, scene } = world();
+    const mesh = await chained();
+    mesh.castShadow = true;
+    scene.add(mesh);
+    const chain = lodChainOf(mesh.geometry);
+    if (chain === undefined) throw new Error("the plugin registered no chain.");
+    const coarsest = chain.levels[2] as BufferGeometry;
+    // A far mesh the main pass already draws at its coarsest rung: a window whose texel hides only
+    // the first rung must not put the mesh back on it.
+    mesh.geometry = coarsest;
+    const node = setupNode(light, { clipExtents: [0.5, 2, 8] });
+    const host = drawHost();
+    watchDraws(node, host, camera, [mesh]);
+    renderAllLevels(node, camera, host);
+
+    expect(host.draws.map((draw) => draw.submitted)).toEqual([coarsest, coarsest, coarsest]);
+    node.dispose();
+  });
+
   it("should put every level back on full detail with shadowLodBias off", async () => {
     const { camera, light, scene } = world();
     const mesh = await chained();
@@ -3568,7 +3813,9 @@ describe("VirtualShadowNode adaptive caster gate", () => {
  * every frame, so a game that never calls `trackCaster` still gets a shadow that follows a mover.
  */
 describe("VirtualShadowNode automatic movers", () => {
-  const OPTIONS = { clipExtents: [8, 32], mapSize: 64, staticAfterFrames: 3 };
+  // Unreal's rule: a caster turns static once more than `FramesStaticThreshold` frames passed
+  // without an invalidation, so a threshold of 2 settles on the third quiet frame.
+  const OPTIONS = { clipExtents: [8, 32], mapSize: 64, staticAfterFrames: 2 };
 
   function scene20(): ReturnType<typeof world> & { node: VirtualShadowNode; mesh: Mesh } {
     const built = world();

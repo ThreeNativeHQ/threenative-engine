@@ -118,6 +118,8 @@ public:
      *  script) until the game sets one, as in three, so a marked material without it takes no transmitted light. */
     Color subsurfaceColor{0, 0, 0};
     bool hasSubsurfaceColor = false;
+    /** Unreal's Substrate rough diffuse, the EON model (PRD-653): direct light shades the diffuse lobe with EON, not Lambert. */
+    bool roughDiffuse = false;
     Vector2 normalScale{1, 1};
     double aoMapIntensity = 1;
     double bumpScale = 1;  // Standard, Physical (Lambert and Phong declare it too; their programs do not read it yet)

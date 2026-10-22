@@ -211,7 +211,7 @@ export class ShadowPartialProbe {
 
   async #finestColor(): Promise<Uint8Array> {
     const map = this.#shadow.levelNodes[0] as unknown as { shadowMap: RenderTarget };
-    const size = this.#shadow.options.mapSize;
+    const size = this.#shadow.options.mapSize[0] as number;
     return (await (this.#renderer as Renderer).readRenderTargetPixelsAsync(
       map.shadowMap,
       0,
@@ -255,7 +255,7 @@ export class ShadowPartialProbe {
     this.results[`shadowPartial${name}Partial`] = isPartialRedraw(
       now.pagesRedrawn - start.pagesRedrawn,
       now.rendersTotal - start.rendersTotal,
-      this.#shadow.clipmap.pagesPerAxis,
+      this.#shadow.clipmap.pagesAt(0),
     )
       ? 1
       : 0;
@@ -279,7 +279,7 @@ export class ShadowPartialProbe {
   }
 
   async run(): Promise<void> {
-    this.results.shadowPartialMapSize = this.#shadow.options.mapSize;
+    this.results.shadowPartialMapSize = this.#shadow.options.mapSize[0] as number;
     // A visible receiver compiles the shadow node before its frame counter can advance.
     const receiver = this.#box("receiver", -30, 0);
     receiver.castShadow = false;

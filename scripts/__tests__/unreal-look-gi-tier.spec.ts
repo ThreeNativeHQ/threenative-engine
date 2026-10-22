@@ -61,6 +61,12 @@ describe("shadow tier table (PRD-652)", () => {
     expect(shadowPreset("low")).toMatchObject({ castShadows: false, shadowQuality: 0 });
   });
 
+  it("carries no fixed-millisecond budget: the frame period decides, not a stage time that moves with the GPU clock", async () => {
+    const { shadowPreset } = await loadQuality();
+    for (const tier of ["low", "medium", "high"])
+      expect(shadowPreset(tier)).not.toHaveProperty("budgetMs");
+  });
+
   it("medium casts with 4 + 4 taps and keeps the sun clip levels", async () => {
     const { shadowPreset } = await loadQuality();
     expect(shadowPreset("medium")).toMatchObject({

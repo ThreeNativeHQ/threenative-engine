@@ -17,3 +17,13 @@ export function gpuStageId(name: unknown): number {
     );
   return index + 1;
 }
+
+/**
+ * The stage the shadow passes' summed time reports under. The engine times them without a label
+ * (segment 0 of the frame's timing), so the name is fixed here and is the one `@threenative/core`
+ * reads as `SHADOW_STAGE`.
+ */
+export const SHADOW_STAGE = "Shadow";
+
+/** `tnw_web_frame` field of the shadow passes' segment (web_host.cpp). */
+export const SHADOW_SEGMENT_FIELD = 19;
