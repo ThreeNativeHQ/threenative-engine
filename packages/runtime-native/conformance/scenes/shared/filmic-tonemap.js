@@ -47,6 +47,12 @@ export function startScene(canvas, dimensions) {
       );
       return { detail: { curve: "filmic", greys: GREYS.length, primaries: SATURATED.length } };
     },
-    { camera: () => new THREE.OrthographicCamera(-2.2, 2.2, 1.24, -1.24, 0.1, 10) },
+    {
+      camera: () => {
+        const camera = new THREE.OrthographicCamera(-2.2, 2.2, 1.24, -1.24, 0.1, 10);
+        camera.position.set(0, 0, 3);
+        return camera;
+      },
+    },
   );
 }

@@ -251,7 +251,7 @@
       },
       "desktopGate": true,
       "required": true,
-      "reason": "The starter's filmic tone curve (generated template source: a log-domain line with two sigmoids in AP1, two 3x3 matrices, a desaturation) installed as three's CustomToneMapping through the renderer's node library, on the host as well as the browser. The frame is a nine step grey ramp from 0.002 to 16 (toe, line, shoulder) and six saturated primaries (the gamut and blue steps), so a host that drops the custom mapping and falls back to a linear clamp, or runs a matrix with the wrong layout, cannot match the browser reference. Tolerance is a first guess until the first desktop run records a measurement."
+      "reason": "The starter's filmic tone curve (generated template source: a log-domain line with two sigmoids in AP1, two 3x3 matrices, a desaturation) installed as three's CustomToneMapping through the renderer's node library, on the host as well as the browser. The frame is a nine step grey ramp from 0.002 to 16 (toe, line, shoulder) and six saturated primaries (the gamut and blue steps), so a host that drops the custom mapping and falls back to a linear clamp, or runs a matrix with the wrong layout, cannot match the browser reference. Measured 2026-10-22 on the RTX 2080 desktop lane (Chrome reference and the Linux host, both Dawn on the same adapter; host binary from the unreal-brdf lane, built 2026-10-21 19:12, which carries the custom tone mapping): 0 pixels differ and the mean deltaE is 0, and both frames show the nine greys and six primaries, not a blank. The tolerance stays at 0.02 and 3.0 because no software adapter was measured."
     },
     {
       "id": "01-basic-cube",
