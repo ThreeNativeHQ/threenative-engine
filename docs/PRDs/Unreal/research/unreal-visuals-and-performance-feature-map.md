@@ -34,8 +34,12 @@ This section ranks the open Unreal PRDs from `docs/PRDs/Unreal/` on PR #541 (`fe
 as of 2026-10-21. It leaves out the asset PRDs (PRD-352, PRD-487) and PRD-316.
 
 - **Complexity** is the PRD's own `**Complexity:**` line (1 to 10). "est." marks a PRD without one.
-- **Impact** (1 to 5) is a judgement: how much of the default frame it changes, how much frame
-  time it saves, or how much later work it unblocks.
+- **Visual impact** and **performance impact** (each 0 to 5) sit beside every PRD in the
+  [interactive page](unreal-visuals-and-performance-feature-map.html), with their source. A visual score is
+  measured when the PRD's layer has parity locks (the share still broken), a performance score is measured
+  when GPU ms back it, and every other score is an estimate with its reason.
+- **Rank** = (visual impact + performance impact) ÷ complexity, highest first. A tie goes to the
+  lower complexity, then the earlier wave. The chart below keeps the older single impact judgement.
 - **Done** is ticked boxes over all boxes in the PRD file.
 - **Wave** respects the "Waits on" order in [`../README.md`](../README.md). PRDs in one wave can
   run in parallel.
