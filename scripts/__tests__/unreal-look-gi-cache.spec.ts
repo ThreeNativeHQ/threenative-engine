@@ -211,6 +211,30 @@ describe("the world-space GI cache against closed forms (PRD-631 L7)", () => {
     expect(furnace(false) / (2 * 3)).toBeCloseTo(1, 1);
   });
 
+  it("a scene with no maps bakes the same field with and without the Surface Cache (PRD-640)", () => {
+    // The reference scene now always bakes through the Surface Cache; its materials have no maps, so its cache must
+    // not move: a ray returns the colour factor times (1 - metalness) and the emission either way.
+    const room = sunlitRoom();
+    skyRadiance.current = {
+      data: new Float32Array(6).fill(0.1),
+      width: 2,
+      height: 1,
+      scale: [1, 1, 1],
+    };
+    const sun = {
+      color: new Color(1, 1, 1),
+      intensity: Math.PI,
+      direction: new Vector3(0.2, 0.9, 0.4).normalize(),
+    };
+    const bake = (surfaceCache: boolean) => {
+      installGi(rayContext(room), room, { bounces: 2, sun, surfaceCache });
+      return Array.from(giCache.field?.values ?? []);
+    };
+    const flat = bake(false);
+    expect(flat.length).toBeGreaterThan(0);
+    expect(bake(true)).toEqual(flat);
+  }, 120_000);
+
   it("the material the cache installs keeps its maps, so a textured wall is drawn with its texture (PRD-639)", () => {
     const map = new DataTexture(new Uint8Array([77, 77, 77, 255]), 1, 1);
     const material = new MeshStandardMaterial({

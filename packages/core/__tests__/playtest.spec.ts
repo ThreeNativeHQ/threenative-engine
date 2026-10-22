@@ -1685,6 +1685,54 @@ describe("playtest holdUntilAttached", () => {
     }
   });
 
+  it("holds counted ticks while a goto is loading, so a restart cannot be outrun (PRD-637)", async () => {
+    vi.stubGlobal("requestAnimationFrame", () => 1);
+    vi.stubGlobal("cancelAnimationFrame", vi.fn());
+    const updates: string[] = [];
+    let generation = 0;
+    let restartAt = Number.POSITIVE_INFINITY;
+    // `load()` settles on a later macrotask, as asset decoding and GPU readback do, so a runner
+    // that spends its ticks synchronously finishes them before the new world exists.
+    class Play extends Scene<Record<string, unknown>> {
+      readonly #id = ++generation;
+      #seen = 0;
+      override load(): Promise<void> {
+        return this.#id === 1
+          ? Promise.resolve()
+          : new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      override update(ctx: ICtx<Record<string, unknown>>): void {
+        updates.push(`play${this.#id}`);
+        this.#seen += 1;
+        if (this.#id === 1 && this.#seen === restartAt) void ctx.goto("play");
+      }
+    }
+    const game = defineGame({
+      initialState: {},
+      plugins: [playtest()],
+      renderer: stubRenderer(testCanvas()),
+      scenes: { play: Play },
+      start: "play",
+    });
+    await game.start();
+    try {
+      const installed = bridge();
+      restartAt = 3;
+      await installed.advance?.(10);
+      // Three ticks ran in the old scene. The other seven wait for the new one to enter.
+      expect(updates).toEqual([
+        "play1",
+        "play1",
+        "play1",
+        ...Array.from({ length: 7 }, () => "play2"),
+      ]);
+      expect((await installed.sample({})).clock).toEqual({ mode: "fixed-step", tick: 10 });
+    } finally {
+      game.stop();
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("does not hold by default", async () => {
     const canvas = testCanvas();
     const game = defineGame<{ score: number }>({

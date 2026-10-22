@@ -42,7 +42,9 @@ import {
   EMISSIVE_UNITS,
   EPIC_SSGI,
   type FinalGatherMethod,
+  type IGlbMaterialImages,
   captureReflections,
+  fetchGlbMaterialImages,
   giPreset,
   installGi,
   reflectionTrace,
@@ -138,6 +140,7 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
   static override readonly initialState: GameState = Play.initialState;
   #model: Group | undefined;
   #sky: Texture | undefined;
+  #images: Map<string, IGlbMaterialImages> = new Map();
   #dispose: (() => void) | undefined;
   #gi: ReturnType<typeof watchGi> | undefined;
   #shadow: ReturnType<typeof watchShadowTier> | undefined;
@@ -157,6 +160,12 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
     ]);
     this.#model = model.scene;
     this.#sky = sky;
+    // A calibration scene's maps for the GI cache's Surface Cache: the owned engine shows JavaScript only their size.
+    if (folder) {
+      const { images, tried } = await fetchGlbMaterialImages(await ctx.assets.resolve(file));
+      this.#images = images;
+      console.info(`TN_CALIBRATION_IMAGES ${JSON.stringify({ tried, materials: [...images.keys()] })}`);
+    }
   }
 
   override enter(ctx: GameCtx): SceneFrame<GameState, IPhysicsContext> {
@@ -322,8 +331,28 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
         installGi(ctx, model, {
           // Diagnosis knob paint=1: paint the lit floor into the environment even while reflections are traced.
           paintGround: !tracing || params.get("paint") === "1",
+          // PRD-642 Phase 3 (opt in, D10): past the trace's roughness cut-off, specular reads the radiance cache and, past
+          // 0.8, the diffuse GI. Off by default: the cache is an ambient cube per probe, a lobe far wider than a surface at
+          // roughness 0.5 needs, and its shade is brighter than Unreal's, so the read adds light that Unreal's lobes do not.
+          // Diagnosis knob roughSpec=1 turns it on.
+          ...(tracing && params.get("roughSpec") === "1"
+            ? {
+                roughSpecular: (roughness: number) =>
+                  reflectionTrace.current?.routeAt(roughness) ?? {
+                    traced: 1,
+                    roughSpecular: 0,
+                    diffuse: 0,
+                  },
+              }
+            : {}),
           // Diagnosis knob stockRays=1: cast the bake through ctx.raycast, the slow path (an A/B).
           stockRays: params.get("stockRays") === "1",
+          // A ray reads the map where it lands, as Lumen's surface cache holds each card's albedo (UE 5.8.3:
+          // Engine/Shaders/Private/Lumen/SurfaceCache/LumenSurfaceCache.ush, CombineFinalLighting). Without it a leaf
+          // card bounced its white colour factor, not its dark map (PRD-640). Diagnosis knob giMaps=0: the colour factor.
+          surfaceCache: params.get("giMaps") !== "0" && {
+            images: (material, slot) => this.#images.get(material.name ?? "")?.[slot],
+          },
           // Diagnosis knob giBounces=N: the passes that carry surface light back into the cache (0 = the sky alone).
           bounces: GI_METHOD === "none" ? 0 : Number(params.get("giBounces") ?? 5),
           // The tier's sky light multiplier (Unreal's Low sets 0.8). Diagnosis knob skyMul=N brackets it.

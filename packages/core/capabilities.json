@@ -3612,13 +3612,16 @@
       "example": "const traced = new TracedReflections(ctx.scene); const hit = traced.trace({ origin, direction, far: 30 }); // light hit.albedo at hit.position in the stage",
       "importPath": "@threenative/core",
       "kind": "class",
-      "overrides": ["maxRoughnessToTrace, roughnessFadeLength and maxSteps are game-owned choices"],
+      "overrides": [
+        "maxRoughnessToTrace, roughnessFadeLength, maxRoughnessToEvaluateRoughSpecular, roughSpecularFadeLength and maxSteps are game-owned choices"
+      ],
       "package": "@threenative/core",
       "signature": "export class TracedReflections { … }",
       "situations": [
         "reflect what is behind the camera in a mirror or a chrome sphere",
         "make a glossy or wet floor reflect objects that are off screen",
-        "trace a shadow ray from a reflected surface toward the sun"
+        "trace a shadow ray from a reflected surface toward the sun",
+        "split a surface's specular by roughness into traced, radiance-cache and diffuse-GI shares"
       ],
       "summary": "Reflection rays against the scene's triangles, in TSL. For a smooth surface, a ray finds what the screen cannot show (a room behind the camera, the far side of an object) and returns the hit's position, normal and material. The game lights the hit in its own stage. The kernel is plain TSL: float textures and a loop, no storage buffer.",
       "supersedes": [],

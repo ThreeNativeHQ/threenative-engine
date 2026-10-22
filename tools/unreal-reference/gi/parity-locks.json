@@ -1371,6 +1371,18 @@
       "noiseDeltaE": 0,
       "minIoU": 0.99999,
       "noiseIoU": 0
+    },
+    {
+      "scene": "mirror-room",
+      "layer": "L8",
+      "pose": "room",
+      "region": "Mirror",
+      "round": "3791c48e1",
+      "basis": "2519b0e3e122",
+      "maxDP50": 0.0045046,
+      "noiseDP50": 0,
+      "maxDeltaE": 0.91386,
+      "noiseDeltaE": 0
     }
   ]
 }

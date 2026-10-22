@@ -38,10 +38,10 @@ runs:
         TN_EMSDK_VERSION: ${{ inputs.emsdk-version }}
       run: |
         set -euo pipefail
-        sudo apt-get update && sudo apt-get install -y ninja-build
+        sh "$GITHUB_WORKSPACE/scripts/retry-download.sh" sudo apt-get update && sh "$GITHUB_WORKSPACE/scripts/retry-download.sh" sudo apt-get install -y ninja-build
         if [ '${{ steps.emsdk.outputs.cache-hit }}' != true ]; then
           git clone --depth 1 --branch "$TN_EMSDK_VERSION" https://github.com/emscripten-core/emsdk.git "$GITHUB_WORKSPACE/.cache/emsdk"
-          "$GITHUB_WORKSPACE/.cache/emsdk/emsdk" install "$TN_EMSDK_VERSION"
+          sh "$GITHUB_WORKSPACE/scripts/retry-download.sh" "$GITHUB_WORKSPACE/.cache/emsdk/emsdk" install "$TN_EMSDK_VERSION"
         fi
         "$GITHUB_WORKSPACE/.cache/emsdk/emsdk" activate "$TN_EMSDK_VERSION"
         # The web engine reads three pinned sources: stb (images), cgltf (glTF) and libwebp.

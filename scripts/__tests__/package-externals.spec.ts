@@ -143,7 +143,13 @@ function packagesUnderTest(): readonly IPackageUnderTest[] {
  */
 const INLINED_BY_DESIGN: Readonly<Record<string, readonly string[]>> = {
   "@threenative/assets": ["threenative-blender-mcp"],
-  "create-threenative": ["threenative-blender-mcp"],
+  // The ESLint parser and plugin are bundled into `dist/quality.js` so they load the TypeScript 6
+  // API beside the game's `tsc` 7; see PRD-626 Decisions.
+  "create-threenative": [
+    "@typescript-eslint/eslint-plugin",
+    "@typescript-eslint/parser",
+    "threenative-blender-mcp",
+  ],
 };
 
 // A package that ships TypeScript source (three-native) has no built output to inspect.

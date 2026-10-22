@@ -6,3 +6,34 @@
 
 /** Unreal's screen reach in pixels at the display height. */
 export const UNREAL_AO_REACH_PX = 32;
+
+// Diagnosis: the contact occlusion's knobs by URL name on a calibration scene, every layer (PRD-635); Reference.ts.in
+// keeps its own table, because a --baseline scaffold has no aoReach.ts. ?gtaoR=M (metres)
+// and ?gtaoS=N are the short names of gtaoRadius and gtaoScale; ?gtaoReachPx=N sets the screen reach (Unreal's is 32);
+// ?gtaoIndirectOnly=0 lets the whole frame take the occlusion.
+const GTAO_KNOBS: Record<string, string> = {
+  gtaoR: "gtaoRadius",
+  gtaoS: "gtaoScale",
+  gtaoRadius: "gtaoRadius",
+  gtaoReachPx: "gtaoReachPx",
+  gtaoSamples: "gtaoSamples",
+  gtaoScale: "gtaoScale",
+  gtaoDistanceExponent: "gtaoDistanceExponent",
+  gtaoDistanceFalloff: "gtaoDistanceFalloff",
+  gtaoThickness: "gtaoThickness",
+  gtaoDenoiseRadius: "gtaoDenoiseRadius",
+  gtaoMultiBounceAlbedo: "gtaoMultiBounceAlbedo",
+  gtaoIndirectOnly: "gtaoIndirectOnly",
+};
+
+/** The `WorldEnvironment` options that the page URL sets through the knobs above. */
+export function gtaoUrlKnobs(params: URLSearchParams): Record<string, number | boolean> {
+  return Object.fromEntries(
+    Object.entries(GTAO_KNOBS)
+      .filter(([name]) => params.get(name) !== null)
+      .map(([name, option]) => [
+        option,
+        option === "gtaoIndirectOnly" ? params.get(name) !== "0" : Number(params.get(name)),
+      ]),
+  );
+}

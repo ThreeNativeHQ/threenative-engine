@@ -883,12 +883,12 @@ jobs:
           target: ${{ runner.temp }}/threenative-${{ matrix.template }}
           template: ${{ matrix.template }}
       - uses: ./.github/actions/playwright-chromium
-      - name: Typecheck pristine template
+      - name: Check pristine template
         run: |
           set -euo pipefail
           target="$RUNNER_TEMP/threenative-${{ matrix.template }}"
           pnpm --dir "$target" install
-          pnpm --dir "$target" run typecheck
+          pnpm --dir "$target" run check
       - name: Run the template's GPU-free scenarios
         run: |
           set -euo pipefail

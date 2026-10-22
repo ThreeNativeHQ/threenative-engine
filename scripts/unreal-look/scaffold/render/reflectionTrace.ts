@@ -11,7 +11,7 @@
 // takes the sun with one shadow ray, the world-space radiance cache for the bounce, and its own emission.
 
 import type { TracedReflections } from "@threenative/core";
-import type { DirectionalLight, PerspectiveCamera } from "three";
+import type { DirectionalLight, PerspectiveCamera, PointLight, SpotLight } from "three";
 import { HalfFloatType } from "three";
 import {
   Fn,
@@ -19,11 +19,15 @@ import {
   clamp,
   dot,
   float,
+  length,
   max,
   mix,
   normalize,
+  pow,
   reflect,
   rtt,
+  saturate,
+  select,
   smoothstep,
   uniform,
   uv,
@@ -34,7 +38,11 @@ import type { Node, TextureNode } from "three/webgpu";
 import { giCache } from "./giCache.js";
 
 /** The traced scene the reference scene registers, read by the `ssr` stage when it builds. */
-export const reflectionTrace: { current?: TracedReflections } = {};
+export const reflectionTrace: {
+  current?: TracedReflections;
+  /** The scene's point and spot lamps: each lights a hit like the sun (the scene registers them with the trace). */
+  lamps?: readonly (PointLight | SpotLight)[];
+} = {};
 
 export interface ITracedReflectionStage {
   readonly trace: TracedReflections;
@@ -42,6 +50,12 @@ export interface ITracedReflectionStage {
   readonly camera: PerspectiveCamera;
   /** The sun, for the hit's direct light. Unset: a hit takes only the cache and its own emission. */
   readonly sun?: DirectionalLight;
+  /**
+   * The point and spot lamps, for the hit's direct light: each lights a hit through one shadow ray, as the sun does. Unreal's
+   * surface cache takes the direct light of every light in the scene, not only the sun
+   * (Engine/Source/Runtime/Renderer/Private/Lumen/LumenSceneDirectLighting.cpp).
+   */
+  readonly lamps?: readonly (PointLight | SpotLight)[];
   /** The lit frame, the scene pass's depth, view-space normal, metalness (r) and roughness (g). */
   readonly base: TextureNode;
   readonly depth: TextureNode;
@@ -105,6 +119,58 @@ export function tracedReflections(stage: ITracedReflectionStage): Node<"vec4"> {
     live(() => (sun === undefined ? 0 : (sun.color.b * sun.intensity) / Math.PI)),
   );
 
+  const lamps = stage.lamps ?? [];
+  const lampDirect = (
+    lamp: PointLight | SpotLight,
+    hit: ReturnType<typeof trace.trace>,
+  ): Node<"vec3"> => {
+    const lampAt = vec3(
+      live(() => lamp.position.x),
+      live(() => lamp.position.y),
+      live(() => lamp.position.z),
+    );
+    // three's lamp: colour times candela over the squared distance, windowed to its cut-off distance, then the BRDF's 1/PI.
+    const radiance = vec3(
+      live(() => (lamp.color.r * lamp.intensity) / Math.PI),
+      live(() => (lamp.color.g * lamp.intensity) / Math.PI),
+      live(() => (lamp.color.b * lamp.intensity) / Math.PI),
+    );
+    const cutoff = live(() => lamp.distance);
+    const toLamp = lampAt.sub(hit.position);
+    const distance = max(length(toLamp), 0.01);
+    const direction = toLamp.div(distance);
+    const facing = max(dot(hit.normal, direction), 0);
+    const window = select(
+      cutoff.greaterThan(0),
+      pow(saturate(float(1).sub(pow(distance.div(cutoff), 4))), 2),
+      float(1),
+    );
+    let cone: Node<"float"> = float(1);
+    if ("angle" in lamp) {
+      const axis = vec3(
+        live(() => lamp.target.position.x - lamp.position.x),
+        live(() => lamp.target.position.y - lamp.position.y),
+        live(() => lamp.target.position.z - lamp.position.z),
+      );
+      const outerCos = live(() => Math.cos(lamp.angle));
+      const innerCos = live(() => Math.cos(lamp.angle * (1 - lamp.penumbra)));
+      cone = smoothstep(outerCos, innerCos, dot(direction.negate(), normalize(axis)));
+    }
+    const blocked = float(0).toVar();
+    If(facing.greaterThan(0), () => {
+      const shadow = trace.trace({
+        origin: hit.position.add(hit.normal.mul(SHADOW_OFFSET)),
+        direction,
+        far: distance.sub(SHADOW_OFFSET),
+        anyHit: true,
+      });
+      blocked.assign(shadow.hit);
+    });
+    return radiance
+      .mul(facing.mul(window).mul(cone).div(distance.mul(distance)))
+      .mul(float(1).sub(blocked));
+  };
+
   const graph = Fn(() => {
     const coordinate = uv();
     const result = vec4(0, 0, 0, 0).toVar();
@@ -143,7 +209,8 @@ export function tracedReflections(stage: ITracedReflectionStage): Node<"vec4"> {
           });
           blocked.assign(shadow.hit);
         });
-        const direct = sunRadiance.mul(facing).mul(float(1).sub(blocked));
+        const sunDirect = sunRadiance.mul(facing).mul(float(1).sub(blocked));
+        const direct = lamps.reduce((sum, lamp) => sum.add(lampDirect(lamp, hit)), sunDirect);
         const indirect = giCache.irradiance?.(hit.position, hit.normal) ?? vec3(NO_CACHE_RADIANCE);
         // A metal has almost no diffuse colour: the sun and the bounce light it only a little, more the rougher it is
         // (Unreal's reflection hit shows a rough metal as a dark shape, not black and not a lit diffuse one).

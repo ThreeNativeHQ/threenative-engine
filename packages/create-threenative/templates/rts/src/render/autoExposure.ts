@@ -8,7 +8,6 @@ import {
   NodeMaterial,
   NodeUpdateType,
   QuadMesh,
-  type Renderer,
   RendererUtils,
   TempNode,
 } from "three/webgpu";

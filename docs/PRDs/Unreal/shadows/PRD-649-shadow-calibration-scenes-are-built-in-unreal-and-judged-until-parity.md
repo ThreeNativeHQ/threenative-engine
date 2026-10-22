@@ -218,3 +218,18 @@ screenshots branch only.
   constants): `giCell`, `giMax`, `giShadeCell`, `giSkipObject` (bake without one named object). Harness knobs in
   `Reference.ts.in`: `envMul=N`, `giBounces=N`. The new Unreal variant `L5-direct` in `shadow/scenes.json` is opt-in
   (`--variants L5-direct`). The local `CELL` patch was measurement only and is not committed.
+
+- 2026-10-22, bounce-lane: the floor shade and crown excess at L7 was the GI bake's albedo, not the bounce rule.
+  A template-lit scene (`?model=shadow/wildwood`) baked its GI cache with each material's colour factor. The
+  leaf and bark cards have a white factor and a dark map, so each bounce pass returned albedo 1 from the canopy.
+  Lumen's surface cache holds each card's albedo from its material (UE 5.8.3:
+  `Engine/Shaders/Private/Lumen/SurfaceCache/LumenSurfaceCache.ush`, `CombineFinalLighting`). The reference
+  scene now hands the GLB maps to `installGi` as the Surface Cache (`63784936b`; `?giMaps=0` is the old arm).
+  L7 floor shade / sun, scene-linear: sun60 0.213 to 0.090 (Unreal 0.099), sun15 0.238 to 0.190 (Unreal 0.191).
+  Crown, decoded display frames, 5 runs per arm: 2.0 to 3.3x Unreal before, 0.97 to 1.36x at L7 and 0.86 to
+  1.20x at L9 after. Judge IMPROVEMENT at L7 (2 runs) and L9 (5 runs), CLOSE to Unreal: PR #541 comment
+  6347560956. The remaining crown GI term at L7 is about 1.1 to 2x Unreal's (L7 minus L5).
+  Reach: `shadow:foliage` L9 and `shadow:wildwood-backlit` L7/L9 judged NEUTRAL (2 runs per arm); backlit leaves get
+  darker and stay FAR from Unreal's Two Sided Foliage transmission (PRD-643). No parity lock covers these scenes.
+  A 1-pass bake leaves the L7 crown at 0.83 to 1.21x Unreal and the second pass adds the rest (leaf-to-leaf), the next
+  lever for the crown, in `giCache.ts` after its queue (perf2, motion4, leaf2).
