@@ -229,7 +229,7 @@ void registerTypeFields(ClassBinding& b, MaterialType type) {
     // Its Subsurface Color (PRD-643), another engine field: undefined until set, as three reads an unset one.
     b.members["subsurfaceColor"] = [](void* self, const Args&, Store& store) -> Value {
         Material& material = *as<Material>(self);
-        return material.hasSubsurfaceColor ? memberAlias(store, self, material.subsurfaceColor, "Color") : Value{};
+        return material.hasSubsurfaceColor ? memberAlias(store, self, material.subsurfaceColor, "Color") : Value::undefined();
     };
     b.setters["subsurfaceColor"] = [](void* self, const Value& v, Store& store) {
         Material& material = *as<Material>(self);

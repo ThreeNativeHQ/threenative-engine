@@ -1590,6 +1590,7 @@ readonly id: number;
 readonly type: string;
 twoSidedFoliage: boolean;
 roughDiffuse: boolean;
+subsurfaceColor: Color | undefined;
 
   setValues(values?: MeshStandardMaterialParameters): void;
 
@@ -1657,6 +1658,7 @@ aoNode: Node | null;
 irradianceNode: Node | null;
 twoSidedFoliage: boolean;
 roughDiffuse: boolean;
+subsurfaceColor: Color | undefined;
 
   clone(): this;
 
@@ -3314,6 +3316,7 @@ polygonOffsetUnits: number;
 flatShading: boolean;
 colorWrite: boolean;
 twoSidedFoliage: boolean;
+subsurfaceColor: Color | undefined;
 
   clone(): this;
 
@@ -3354,6 +3357,7 @@ polygonOffsetUnits: number;
 flatShading: boolean;
 colorWrite: boolean;
 twoSidedFoliage: boolean;
+subsurfaceColor: Color | undefined;
 
   clone(): this;
 

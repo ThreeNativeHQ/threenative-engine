@@ -12787,6 +12787,15 @@
           "status": {
             "kind": "supported"
           }
+        },
+        {
+          "name": "subsurfaceColor",
+          "type": "Color | undefined",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
         }
       ],
       "methods": [
@@ -13330,6 +13339,15 @@
         {
           "name": "roughDiffuse",
           "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "subsurfaceColor",
+          "type": "Color | undefined",
           "mutable": true,
           "lifetime": "owned",
           "status": {
@@ -27199,6 +27217,15 @@
           "status": {
             "kind": "supported"
           }
+        },
+        {
+          "name": "subsurfaceColor",
+          "type": "Color | undefined",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
         }
       ],
       "methods": [
@@ -27514,6 +27541,15 @@
         {
           "name": "twoSidedFoliage",
           "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "subsurfaceColor",
+          "type": "Color | undefined",
           "mutable": true,
           "lifetime": "owned",
           "status": {

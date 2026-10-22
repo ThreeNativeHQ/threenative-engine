@@ -1,11 +1,10 @@
 import type { Color, Material } from "three";
 import {
-  D_GGX,
   float,
   materialEmissive,
-  materialReference,
   normalView,
   positionViewDirection,
+  uniform,
   vec3,
 } from "three/tsl";
 import type { Node } from "three/webgpu";
@@ -55,10 +54,11 @@ export function foliageTransmission(
   subsurface: Node<"vec3">,
 ): Node<"vec3"> {
   const wrap = normalView.dot(lightDirection).negate().add(0.5).div(2.25).clamp();
-  const scatter = D_GGX({
-    alpha: float(0.6),
-    dotNH: positionViewDirection.dot(lightDirection).negate().clamp(),
-  }) as unknown as Node<"float">;
+  // D_GGX with alpha^2 = 0.36 at saturate(-V.L), written out: the owned engine binds no D_GGX node, and this
+  // module is bundled for both engines.
+  const cosine = positionViewDirection.dot(lightDirection).negate().clamp();
+  const denominator = float(1).sub(cosine.mul(cosine).mul(0.64));
+  const scatter = float(0.36 / Math.PI).div(denominator.mul(denominator));
   return lightColor.mul(wrap.mul(scatter)).mul(subsurface);
 }
 
@@ -96,7 +96,8 @@ export function installFoliageTransmission(classes: Readonly<Record<string, unkn
       const model = setup.call(this, builder);
       if (this.twoSidedFoliage !== true || this.subsurfaceColor === undefined) return model;
       const direct = model.direct.bind(model);
-      const subsurface = materialReference("subsurfaceColor", "color") as unknown as Node<"vec3">;
+      // The material's own Color object: an edit of its r, g or b reaches the uniform.
+      const subsurface = uniform(this.subsurfaceColor) as unknown as Node<"vec3">;
       model.direct = (input, inner) => {
         direct(input, inner);
         input.reflectedLight.directDiffuse.addAssign(
