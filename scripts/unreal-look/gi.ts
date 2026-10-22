@@ -751,6 +751,11 @@ const UNREAL_VARIANT: Readonly<Record<string, string>> = {
   L9: "L9-Epic",
 };
 
+/** The Unreal variant that shows one lighting term of a variant, by `GIVisualize` mode (PRD-646). */
+const VISUALIZE_VARIANT: Readonly<Record<string, Readonly<Record<string, string>>>> = {
+  indirectDiffuse: { "L7-Epic": "L7-Epic-indirect" },
+};
+
 /** `sg.GlobalIlluminationQuality` of the GI variants a calibration scene is captured at in Unreal. */
 const UNREAL_LEVEL_VARIANT: Readonly<Record<number, string>> = {
   0: "L7-Low",
@@ -762,10 +767,20 @@ const UNREAL_LEVEL_VARIANT: Readonly<Record<number, string>> = {
  * The Unreal variant a ThreeNative layer is judged against. `unrealLevel` (0 Low, 1 Medium, 3 Epic)
  * overrides the layer's own pair, to hold one capture against another level's frame.
  */
-export function unrealVariant(layer: string, unrealLevel?: number): string {
-  if (unrealLevel !== undefined)
-    return UNREAL_LEVEL_VARIANT[unrealLevel] ?? fail("BAD_INPUT", `unreal level ${unrealLevel}`);
-  return UNREAL_VARIANT[layer] ?? fail("BAD_INPUT", `GI layer ${layer}`);
+export function unrealVariant(layer: string, unrealLevel?: number, visualize?: string): string {
+  const beauty =
+    unrealLevel !== undefined
+      ? (UNREAL_LEVEL_VARIANT[unrealLevel] ?? fail("BAD_INPUT", `unreal level ${unrealLevel}`))
+      : (UNREAL_VARIANT[layer] ?? fail("BAD_INPUT", `GI layer ${layer}`));
+  if (visualize === undefined) return beauty;
+  // Unreal's diagnosis frames (PRD-646 AC-3): `r.Lumen.Visualize.IndirectDiffuse 1` at the Epic level only.
+  const pair = VISUALIZE_VARIANT[visualize]?.[beauty];
+  if (pair === undefined)
+    fail(
+      "BAD_INPUT",
+      `no Unreal ${visualize} frame for ${beauty} (known: ${Object.keys(VISUALIZE_VARIANT).join(", ")})`,
+    );
+  return pair;
 }
 
 /** tools/unreal-reference/thresholds.json (PRD-631), or null when the file is absent. */
@@ -796,6 +811,7 @@ export function compareGiToUnreal(
   root: string | { unreal: string; threenative: string },
   unrealLevel?: number,
   thresholdFile: IThresholdFile | null = readThresholds(),
+  visualize?: string,
 ): IRow[] {
   const { scene } = readScene(name);
   // A string is a captures root (`unreal/` and `threenative/` inside it); the pair names each engine's own root.
@@ -811,7 +827,9 @@ export function compareGiToUnreal(
   const rows: IRow[] = [];
   for (const layer of layers) {
     // A shadow scene names its Unreal variants after their layers (shadow/scenes.json).
-    const variant = name.startsWith("shadow:") ? layer : unrealVariant(layer, unrealLevel);
+    const variant = name.startsWith("shadow:")
+      ? layer
+      : unrealVariant(layer, unrealLevel, visualize);
     // A quality tier (`L7-high`, `L5-Low`) is judged by the limits of its ladder layer.
     const [ladder = layer] = layer.split("-");
     const limits = layerThresholds(thresholdFile, ladder);
@@ -857,7 +875,8 @@ export function compareGiToUnreal(
         const b = own.regions[row.region];
         row.iou = a && b ? iou(a, b) : 0;
         // The edge limit needs the IoU, which is measured here, so the verdict is read again with it.
-        row.pass = verdict(row, limits);
+        // A diagnosis term has no limits: its rows are reported, and the gap list reads them (PRD-646 AC-3).
+        row.pass = visualize === undefined ? verdict(row, limits) : null;
       }
       rows.push(...cell);
     }
@@ -1096,8 +1115,9 @@ export function compareGi(args: readonly string[]): number {
         unrealLevel,
         flag(args, "--regions")?.split(","),
       );
+    const visualize = flag(args, "--visualize");
     const rows = names.flatMap((name) =>
-      compareGiToUnreal(name, layerFlag.split(","), root, unrealLevel),
+      compareGiToUnreal(name, layerFlag.split(","), root, unrealLevel, undefined, visualize),
     );
     const f = (v: number | null, d = 3) => (v === null ? "—" : v.toFixed(d));
     console.log(

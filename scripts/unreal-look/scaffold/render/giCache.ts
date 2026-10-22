@@ -28,6 +28,7 @@ import {
   type ISurfaceCacheOptions,
   type ISurfaceCacheReport,
   SurfaceCache,
+  addFoliageBackLight,
 } from "@threenative/core";
 import {
   Box3,
@@ -1294,6 +1295,9 @@ function nodeTwin(source: MeshStandardMaterial): MeshStandardMaterial {
   // three declares no `twoSidedFoliage` or `roughDiffuse`, so a three twin has no such key to copy into: carry the markers by name (PRD-651, PRD-653).
   for (const marker of ["twoSidedFoliage", "roughDiffuse"])
     if ((source as unknown as Record<string, unknown>)[marker] === true) twin[marker] = true;
+  // The same for the colour the leaf returns from its back face (PRD-643).
+  const subsurface = (source as { subsurfaceColor?: Color }).subsurfaceColor;
+  if (subsurface !== undefined) twin.subsurfaceColor = subsurface;
   return twin as unknown as MeshStandardMaterial;
 }
 
@@ -1945,6 +1949,16 @@ function bakeGi(gameCtx: IRayContext, root: Object3D, options: IGiOptions): IGiR
     reads.set(roughness, made);
     return made;
   };
+  /** What a two-sided leaf's back face reads (PRD-643): the cache and the emitters along the opposite of the viewer's normal. */
+  let backLight: Node<"vec3"> | undefined;
+  const readBack = (): Node<"vec3"> => {
+    if (backLight !== undefined) return backLight;
+    const away = normal.negate();
+    const lit = read(positionWorld, away).irradiance;
+    const glow = emitterLight(emitters, positionWorld, away);
+    backLight = glow === undefined ? lit : lit.add(glow);
+    return backLight;
+  };
   const twins = new Map<MeshStandardMaterial, MeshStandardMaterial>();
   root.traverse((object) => {
     const mesh = object as Mesh;
@@ -1961,6 +1975,8 @@ function bakeGi(gameCtx: IRayContext, root: Object3D, options: IGiOptions): IGiR
       material = nodeTwin(source);
       (material as unknown as { irradianceNode: unknown }).irradianceNode = node;
       (material as unknown as { aoNode: unknown }).aoNode = visibility;
+      if (material.twoSidedFoliage === true && material.subsurfaceColor !== undefined)
+        addFoliageBackLight(material, readBack());
       twins.set(source, material);
     }
     mesh.material = material;

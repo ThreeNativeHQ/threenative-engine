@@ -229,6 +229,10 @@ std::optional<DirectionalClipmap> DirectionalClipmap::create(const DirectionalCl
             return std::nullopt;
         }
     }
+    if (!(std::isfinite(options.minAspect) && options.minAspect > 0 && options.minAspect <= 1)) {
+        error.assign(kClipmapAspectCode);
+        return std::nullopt;
+    }
 
     DirectionalClipmap clipmap;
     clipmap.clipExtents_ = options.clipExtents;
@@ -249,12 +253,15 @@ std::optional<DirectionalClipmap> DirectionalClipmap::create(const DirectionalCl
     normalize(cross(clipmap.basisW_, u), v);
     clipmap.basisU_ = u;
     clipmap.basisV_ = v;
+    // Only a sun low enough that V is the ground's slope axis: near the zenith the basis turns to the
+    // +z reference and V is no longer the direction a floor texel stretches along.
+    clipmap.vScale_ = std::abs(w.y) > 0.95 ? 1.0 : std::min(1.0, std::max(options.minAspect, std::abs(w.y)));
     clipmap.updateCenter(clipmap.centerWorld_);
     return clipmap;
 }
 
 LightSpacePoint DirectionalClipmap::project(const Vector3& worldPoint) const {
-    return {dot(worldPoint, basisU_), dot(worldPoint, basisV_), dot(worldPoint, basisW_)};
+    return {dot(worldPoint, basisU_), dot(worldPoint, basisV_) / vScale_, dot(worldPoint, basisW_)};
 }
 
 const std::vector<ClipWindow>& DirectionalClipmap::updateCenter(const Vector3& worldPoint) {

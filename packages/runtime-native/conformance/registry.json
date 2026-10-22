@@ -226,6 +226,34 @@
       "reason": "The template's LocalExposureNode (a bilateral grid of log luminance, read as a per pixel gain) and UnrealBloomNode (a downsample chain and six Gaussians) on one frame, on the host as well as the browser. Both are generated template source, so a host that drops a pass, a float render target or a wide loop leaves a game broken where it ships. The frame has a near black half, a bright half, the same mid grey card in each (local exposure moves the two cards by different amounts) and a small bright lamp (the bloom halo), so a stage that silently does nothing on the host cannot match the browser reference. Phones are not registered: local exposure is off on the low tier, as in Unreal's mobile profile. Measured 2026-10-21 on the RTX 2080 desktop lane (Chrome reference and the Linux host, both Dawn on the same adapter): 0 pixels differ and the mean deltaE is 0. The tolerance stays at 0.06 and 9.0 because no software adapter was measured."
     },
     {
+      "id": "filmic-tonemap",
+      "title": "filmic tone curve",
+      "category": "rendering",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/filmic-tonemap.js",
+      "owner": "PRD-632",
+      "browserRecipe": "webgpu",
+      "requiresHardwareAdapter": true,
+      "laneRegistrations": {
+        "browser": {
+          "registered": true,
+          "target": "web",
+          "assertsAdapter": true
+        },
+        "desktop": {
+          "registered": true,
+          "target": "desktop"
+        }
+      },
+      "tolerance": {
+        "pixelMismatchRatio": 0.02,
+        "perceptualDeltaE": 3.0
+      },
+      "desktopGate": true,
+      "required": true,
+      "reason": "The starter's filmic tone curve (generated template source: a log-domain line with two sigmoids in AP1, two 3x3 matrices, a desaturation) installed as three's CustomToneMapping through the renderer's node library, on the host as well as the browser. The frame is a nine step grey ramp from 0.002 to 16 (toe, line, shoulder) and six saturated primaries (the gamut and blue steps), so a host that drops the custom mapping and falls back to a linear clamp, or runs a matrix with the wrong layout, cannot match the browser reference. Measured 2026-10-22 on the RTX 2080 desktop lane (Chrome reference and the Linux host, both Dawn on the same adapter; host binary from the unreal-brdf lane, built 2026-10-21 19:12, which carries the custom tone mapping): 0 pixels differ and the mean deltaE is 0, and both frames show the nine greys and six primaries, not a blank. The tolerance stays at 0.02 and 3.0 because no software adapter was measured."
+    },
+    {
       "id": "01-basic-cube",
       "title": "basic cube",
       "category": "core",
@@ -629,6 +657,19 @@
       "required": true
     },
     {
+      "id": "foliage-back-light",
+      "title": "twoSidedFoliage leaf adds subsurfaceColor x the back-face irradiance",
+      "category": "lighting-gi",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/foliage-back-light.js",
+      "tolerance": {
+        "pixelMismatchRatio": 0.03,
+        "perceptualDeltaE": 4.0
+      },
+      "desktopGate": true,
+      "required": true
+    },
+    {
       "id": "leaf-receiver",
       "title": "twoSidedFoliage receiver skips the normal bias",
       "category": "shadows",
@@ -660,6 +701,19 @@
       "category": "shadows",
       "status": "implemented",
       "scene": "conformance/scenes/shared/soft-shadow-source-radius.js",
+      "tolerance": {
+        "pixelMismatchRatio": 0.08,
+        "perceptualDeltaE": 10.0
+      },
+      "desktopGate": false,
+      "required": true
+    },
+    {
+      "id": "soft-shadow-source-angle",
+      "title": "sun source-angle soft shadow and pixel floor",
+      "category": "shadows",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/soft-shadow-source-angle.js",
       "tolerance": {
         "pixelMismatchRatio": 0.08,
         "perceptualDeltaE": 10.0
@@ -1236,6 +1290,21 @@
       "tolerance": {
         "pixelMismatchRatio": 0.08,
         "perceptualDeltaE": 10.0
+      },
+      "desktopGate": true,
+      "required": true
+    },
+    {
+      "id": "gi-visualize-indirect",
+      "title": "GIVisualize shows the indirect diffuse term alone",
+      "category": "lighting-gi",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/gi-visualize-indirect.js",
+      "browserRecipe": "webgpu",
+      "requiresHardwareAdapter": true,
+      "tolerance": {
+        "pixelMismatchRatio": 0.05,
+        "perceptualDeltaE": 6.0
       },
       "desktopGate": true,
       "required": true

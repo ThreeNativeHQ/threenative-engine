@@ -634,5 +634,45 @@ describe("Unreal reference comparison", () => {
       expect(rows.length).toBeGreaterThan(0);
       expect(new Set(rows.map((r) => r.layer))).toEqual(new Set(["L7-medium"]));
     });
+
+    it("pairs a ThreeNative visualize frame with Unreal's diagnosis frame and reports it without a verdict (PRD-646)", () => {
+      const { root, put } = fixture();
+      const { scene } = readScene("cornell");
+      const [, color = []] = Object.entries(scene.regions)[0] ?? [];
+      const id = png([color, color, color, color]);
+      for (const engine of ["unreal", "threenative"])
+        for (const pose of scene.poses) put(`${engine}/cornell/ID/${pose.name}.png`, id);
+      for (const pose of scene.poses) put(`threenative/cornell/L7/${pose.name}.png`, floor());
+      // The beauty variant is not the pair: the diagnosis frame is `L7-Epic-indirect`.
+      for (const pose of scene.poses) put(`unreal/cornell/L7-Epic/${pose.name}.png`, floor());
+      expect(() =>
+        compareGiToUnreal("cornell", ["L7"], root, undefined, undefined, "indirectDiffuse"),
+      ).toThrow(/^TN_UNREAL_LOOK_MISSING_CELL.*L7-Epic-indirect/);
+      for (const pose of scene.poses)
+        put(`unreal/cornell/L7-Epic-indirect/${pose.name}.png`, floor());
+      const rows = compareGiToUnreal(
+        "cornell",
+        ["L7"],
+        root,
+        undefined,
+        undefined,
+        "indirectDiffuse",
+      );
+      expect(rows.length).toBeGreaterThan(0);
+      expect(new Set(rows.map((r) => r.pass))).toEqual(new Set([null]));
+      // Without the flag the same frames are judged against the layer's limits.
+      expect(compareGiToUnreal("cornell", ["L7"], root).some((r) => r.pass !== null)).toBe(true);
+    });
+
+    it("names the Unreal diagnosis variant of a visualize mode, and fails where Unreal captured none", () => {
+      expect(unrealVariant("L7", undefined, "indirectDiffuse")).toBe("L7-Epic-indirect");
+      expect(unrealVariant("L7-high", undefined, "indirectDiffuse")).toBe("L7-Epic-indirect");
+      expect(() => unrealVariant("L1", undefined, "indirectDiffuse")).toThrow(
+        /^TN_UNREAL_LOOK_BAD_INPUT/,
+      );
+      expect(() => unrealVariant("L7", undefined, "radianceCache")).toThrow(
+        /^TN_UNREAL_LOOK_BAD_INPUT/,
+      );
+    });
   });
 });

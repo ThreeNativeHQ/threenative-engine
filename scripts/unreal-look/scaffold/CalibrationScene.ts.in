@@ -35,6 +35,17 @@ import { MeshBasicNodeMaterial, type Node } from "three/webgpu";
 import { giCache, installGi } from "../render/giCache.js";
 import { watchGi } from "../render/giTier.js";
 import { type IGlbMaterialImages, glbMaterialImages } from "../render/glbImages.js";
+import {
+  type MotionRun,
+  type Pose,
+  actorOffset,
+  candela,
+  checkMapped,
+  lightCandela,
+  lightScale,
+  lightUnsupported,
+  motionPose,
+} from "../render/calibrationUnits.js";
 import { shadeLikeSubstrate } from "../render/lighting.js";
 import { watchShadowTier } from "../render/shadowTier.js";
 import { GLTF_IOR, refractBehind } from "../render/refraction.js";
@@ -54,7 +65,6 @@ import { SCENES } from "./calibrationData.js";
 import { Play } from "./Play.js";
 
 type GameCtx = ICtx<GameState, IPhysicsContext>;
-type Pose = { position: number[]; target: number[]; hfovDeg: number };
 
 const params = new URLSearchParams(location.search);
 const NAME = params.get("tnGi") ?? "";
@@ -71,66 +81,6 @@ const DATA = SCENES[NAME];
 // Diagnosis only: scales every light, so a capture can bracket a unit error. Unset in every judged capture.
 const LIGHT_SCALE = Number(params.get("lightScale") ?? 1);
 const EXPOSURE = Number(params.get("exposure") ?? DATA?.exposure?.exposureScale ?? 1);
-
-/**
- * Unreal light units to three's. three's punctual light intensity is candela, and its Lambert
- * BRDF carries the same 1 / pi as Unreal's (Engine/Shaders/Private/BRDF.ush, Diffuse_Lambert), so
- * the falloff and the window at the attenuation radius map one to one.
- */
-export function candela(intensity: number, units: string): number {
-  if (units === "candelas") return intensity;
-  // An unshaded point light spreads its lumens over the whole sphere (PointLightComponent.cpp).
-  if (units === "lumens") return intensity / (4 * Math.PI);
-  throw new Error(`TN_CALIBRATION_SCENE_UNIT: ${units}`);
-}
-
-type MotionCamera =
-  | { kind: "pan"; position: number[]; hfovDeg: number; pitchDeg?: number; headingDeg: number[]; sweepFrames: number }
-  | { kind: "pose"; pose: string };
-type MotionRun = {
-  frames: number;
-  camera: MotionCamera;
-  light?: { name: string; keys: number[][] };
-  actor?: { name: string; keys: number[][] };
-};
-
-/** The camera of a motion run at a frame, as scene.py keys it: heading 0 looks down -z, a positive heading turns toward +x. */
-export function motionPose(run: MotionRun, frame: number, poses: (Pose & { name: string })[]): Pose {
-  const camera = run.camera;
-  if (camera.kind === "pose") {
-    const found = poses.find((pose) => pose.name === camera.pose);
-    if (found === undefined) throw new Error(`TN_CALIBRATION_MOTION_POSE: ${camera.pose}`);
-    return found;
-  }
-  const [first = 0, last = 0] = camera.headingDeg;
-  const heading = ((first + (last - first) * Math.min(Math.max(frame / camera.sweepFrames, 0), 1)) * Math.PI) / 180;
-  const pitch = ((camera.pitchDeg ?? 0) * Math.PI) / 180;
-  const [x = 0, y = 0, z = 0] = camera.position;
-  return {
-    position: camera.position,
-    target: [x + Math.sin(heading) * Math.cos(pitch), y + Math.sin(pitch), z - Math.cos(heading) * Math.cos(pitch)],
-    hfovDeg: camera.hfovDeg,
-  };
-}
-
-/** An actor's offset at a frame, from `[frame, dx, dy, dz]` keys: linear between keys, held outside them (PRD-650 swing). */
-export function actorOffset(keys: number[][], frame: number): number[] {
-  const first = keys[0] ?? [0, 0, 0, 0];
-  if (frame <= (first[0] ?? 0)) return first.slice(1);
-  for (let k = 1; k < keys.length; k++) {
-    const [a = 0, ...from] = keys[k - 1] ?? [];
-    const [b = 0, ...to] = keys[k] ?? [];
-    if (frame <= b) return from.map((v, i) => v + ((to[i] ?? v) - v) * ((frame - a) / (b - a)));
-  }
-  return (keys.at(-1) ?? first).slice(1);
-}
-
-/** The scale of a keyed light at a frame: constant from each key to the next, as the Unreal track is. */
-export function lightScale(keys: number[][], frame: number): number {
-  let scale = keys[0]?.[1] ?? 1;
-  for (const [at = 0, value = 1] of keys) if (at <= frame) scale = value;
-  return scale;
-}
 
 export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
   static override readonly initialState: GameState = Play.initialState;
@@ -200,8 +150,22 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
     model.traverse((object) => {
       if (object instanceof Mesh) meshes.push(object);
     });
+    checkMapped(meshes, regionOf);
+
+    // PRD-643: a slot that scene.json reports on Unreal's Two Sided Foliage model, with its Subsurface Color, is a
+    // twoSidedFoliage material with the same subsurfaceColor here (by the glTF material name, which both engines keep).
+    const subsurface = new Map<string, [number, number, number]>();
+    for (const mesh of DATA.meshes as { slots?: { slot: string; subsurfaceColor?: number[] }[] }[])
+      for (const slot of mesh.slots ?? [])
+        if (slot.subsurfaceColor?.length === 3)
+          subsurface.set(slot.slot, slot.subsurfaceColor as [number, number, number]);
     for (const mesh of meshes)
-      if (regionOf(mesh) === undefined) throw new Error(`TN_CALIBRATION_SCENE_UNMAPPED: ${mesh.name}`);
+      for (const material of [mesh.material].flat() as MeshStandardMaterial[]) {
+        const colour = subsurface.get(material.name);
+        if (colour === undefined) continue;
+        material.twoSidedFoliage = true;
+        material.subsurfaceColor = new Color(...colour);
+      }
 
     scene.background = new Color(0x000000);
     scene.environment = null;
@@ -249,14 +213,12 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
       const lights: (PointLight | SpotLight)[] = [];
       const lamps: { point: PointLight | SpotLight; radius: number; casts: boolean }[] = [];
       for (const light of DATA.lights) {
-        if (light.class !== "PointLight" && light.class !== "SpotLight")
-          throw new Error(`TN_CALIBRATION_SCENE_LIGHT: ${light.name} ${light.class}`);
         const [r = 1, g = 1, b = 1] = light.color;
         // scene.json holds Unreal's `light_color`, an FColor: Unreal reads its bytes as sRGB and lights with the linear
         // value (neon-corridor L1 EXR: a [1, 0.85, 0.65] lamp lights a grey wall at G/R 0.70 and B/R 0.41, the
         // decoded (1, 0.69, 0.38), not the raw numbers). A white lamp reads the same either way.
         const colour = new Color().setRGB(r, g, b, SRGBColorSpace);
-        const cd = candela(light.intensity, light.units) * LIGHT_SCALE;
+        const cd = lightCandela(light) * LIGHT_SCALE;
         // A spot looks at its target through the outer cone; three's penumbra is the share of the cone that
         // fades, Unreal's inner cone the part that does not (PRD-649 lamp-room).
         const outer = ((light.outerConeDeg ?? 0) * Math.PI) / 180;
@@ -291,12 +253,7 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
         point.shadow.normalBias = Number(params.get("shadowNormalBias") ?? point.shadow.normalBias);
         scene.add(point);
         lights.push(point);
-        if ((light.sourceRadiusM ?? 0) > 0 && params.get("sourceRadius") !== "0")
-          unsupported.push({
-            actor: light.name,
-            property: "sourceRadiusM",
-            reason: "a punctual light has no area: highlights stay hard (PRD-634)",
-          });
+        unsupported.push(...lightUnsupported(light, params.get("sourceRadius") === "0"));
       }
       setLight = (name, scale) => {
         const index = DATA.lights.findIndex((l: { name: string }) => l.name === name);
@@ -516,6 +473,9 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
         };
       };
       build(GI_METHOD);
+      // Diagnosis: ?linear=1 writes the exposed light with no tone curve, so the frame reads as scene-linear (the
+      // light a PRD-646 direct-light gap is measured in). Pair it with ?exposure=N small enough that nothing clips.
+      if (params.get("linear") === "1") raw.toneMapping = NoToneMapping;
       setGatherMethod = build;
       // The tier's method moves with the measured GI time when the URL asks for giAuto=1 (PRD-644).
       if (GI_METHOD !== "none")
