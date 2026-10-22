@@ -89,6 +89,17 @@ describe("native scene pass albedo target", () => {
   });
 });
 
+describe("native scene pass velocity target", () => {
+  it("names the temporal pass's velocity texture without an MRT", () => {
+    const api = definePass({
+      texture: (source: unknown) => ({ source }),
+      uv: () => ({}),
+      normalView,
+    });
+    expect(api.pass({}, {}).getTextureNode("velocity")).toEqual({ source: { name: "velocity" } });
+  });
+});
+
 describe("native scene pass emissive target", () => {
   it("accepts emissive, names its texture, and refuses unknown slots", () => {
     const api = definePass(tsl);
@@ -117,6 +128,12 @@ describe("native scene pass MRT", () => {
     );
     expect(() => mrt({ normal: vec4({}, 0) })).toThrow(/TN_NATIVE_MRT_UNSUPPORTED: normal/u);
     expect(() => mrt({ velocity: {} })).toThrow(/TN_NATIVE_MRT_UNSUPPORTED: velocity/u);
+  });
+
+  it("answers has() for its outputs, as the render chain asks before it provisions velocity", () => {
+    const node = mrt({ output, normal: vec4(normalView, 0) });
+    expect(node.has("normal")).toBe(true);
+    expect(node.has("velocity")).toBe(false);
   });
 
   it("records a blend mode per output without touching the others", () => {

@@ -88,6 +88,54 @@ async function drawn(parameters: Record<string, unknown>) {
   return { samples: renderer.samples, handed: state.mock.calls.at(-1)?.[5] };
 }
 
+describe("the Wasm engine's temporal pass readout", () => {
+  async function readout(fields: Record<number, number>) {
+    const { Renderer, canvas, scene, camera } = host((field) => fields[field] ?? 0);
+    const renderer = new Renderer({ canvas }) as {
+      info: { engine: { temporal: unknown } };
+      init(): Promise<unknown>;
+      render(scene: unknown, camera: unknown): void;
+    };
+    await renderer.init();
+    renderer.render(scene, camera);
+    return renderer.info.engine.temporal;
+  }
+
+  it("reads the engine's frame, history and jitter while a traa() effect is in the graph", async () => {
+    expect(await readout({ 13: 1, 14: 7, 15: 1, 16: 0.25, 17: -0.5 })).toEqual({
+      active: true,
+      frame: 7,
+      historyValid: true,
+      jitter: [0.25, -0.5],
+    });
+  });
+
+  it("reports the samples the scene draws with, which the temporal pass sets to 1", async () => {
+    const { Renderer, canvas, scene, camera } = host((field) => (field === 18 ? 1 : 0));
+    const renderer = new Renderer({ canvas, antialias: true }) as {
+      samples: number;
+      info: { engine: { samples: number } };
+      init(): Promise<unknown>;
+      render(scene: unknown, camera: unknown): void;
+    };
+    await renderer.init();
+    renderer.render(scene, camera);
+    expect({ asked: renderer.samples, drawn: renderer.info.engine.samples }).toEqual({
+      asked: 4,
+      drawn: 1,
+    });
+  });
+
+  it("reports an inactive pass when no traa() effect reached the engine", async () => {
+    expect(await readout({})).toEqual({
+      active: false,
+      frame: 0,
+      historyValid: false,
+      jitter: [0, 0],
+    });
+  });
+});
+
 describe("the Wasm engine's WebGPURenderer sample count", () => {
   it("declares that its surface-owned frame pass cannot retain a target sub-rectangle", () => {
     const { Renderer, canvas } = host();
