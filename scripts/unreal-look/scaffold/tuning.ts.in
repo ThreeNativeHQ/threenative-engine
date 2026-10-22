@@ -8,4 +8,4 @@ export { shadeLikeSubstrate } from "../render/lighting.js";
 export { EPIC_SSGI, type FinalGatherMethod, giPreset, shadowPreset } from "../render/quality.js";
 export { captureReflections } from "../render/reflectionCapture.js";
 export { reflectionTrace } from "../render/reflectionTrace.js";
-export { watchShadowTier } from "../render/shadowTier.js";
+export { unrealSunDiscScale, watchShadowTier } from "../render/shadowTier.js";

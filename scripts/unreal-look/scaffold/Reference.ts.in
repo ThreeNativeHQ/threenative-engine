@@ -48,6 +48,7 @@ import {
   reflectionTrace,
   shadeLikeSubstrate,
   shadowPreset,
+  unrealSunDiscScale,
   watchGi,
   watchShadowTier,
 } from "./tuning.js";
@@ -128,11 +129,6 @@ const STAGE_OFF: Record<string, Record<string, unknown>> = {
 // is the sun's apex angle (its angular diameter). `sourceAngleShadowFilter` takes the angular radius,
 // the half angle: Unreal's shadow rays spread over sin(angle / 2).
 const SUN_SOURCE_ANGLE_RAD = (0.7357 * Math.PI) / 360;
-// Unreal builds the disc of a shadow ray from `cross(N, x)` and `cross(that, N)` and never normalises them
-// (`GetRandomDirectionalLightRayDir`, VirtualShadowMapProjectionDirectional.ush), so the disc is sin(the angle
-// between the sun and the x axis) times the source radius. A sun on the x axis at elevation e casts the
-// penumbra of sin(e) times the nominal angle. `vsmAngle=ue` reproduces that.
-const unrealSourceScale = (sun: { x: number }): number => Math.sqrt(1 - sun.x * sun.x);
 
 export class Reference extends Scene<GameState, IPhysicsContext> {
   static override readonly initialState: GameState = Play.initialState;
@@ -226,13 +222,13 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
           key.castShadow = level >= 5 && params.get("sunShadow") !== "0" && preset.castShadows;
           if (!OFF.has("vsm"))
             (key.shadow as unknown as { filterNode: unknown }).filterNode = sourceAngleShadowFilter({
-              // Diagnosis knob vsmAngle: a factor on the angular radius (1 = Unreal's measured value,
-              // "ue" = Unreal's own scale for this sun, see unrealSourceScale).
+              // Unreal's un-normalised sun disc by default (PRD-634, `unrealSunDiscScale`). Override vsmAngle=N:
+              // N times the nominal angular radius (1 = the normalised disc, the edge before PRD-634).
               sourceAngleRad:
                 SUN_SOURCE_ANGLE_RAD *
-                (params.get("vsmAngle") === "ue"
-                  ? unrealSourceScale(SUN_DIRECTION)
-                  : Number(params.get("vsmAngle") ?? 1)),
+                (params.get("vsmAngle") === null || params.get("vsmAngle") === "ue"
+                  ? unrealSunDiscScale(SUN_DIRECTION)
+                  : Number(params.get("vsmAngle"))),
               ...preset.filter,
               // Diagnosis knob vsmMinPx: the filter disc's floor in screen pixels (absent = the engine's default).
               ...(params.get("vsmMinPx") === null
