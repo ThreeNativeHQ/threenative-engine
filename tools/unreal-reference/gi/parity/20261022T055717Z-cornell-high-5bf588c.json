@@ -1,0 +1,179 @@
+{
+  "version": 1,
+  "id": "20261022T055717Z-cornell-high-5bf588c",
+  "date": "2026-10-22T05:57:17.964Z",
+  "scene": "cornell",
+  "tier": "high",
+  "expect": "preserve",
+  "before": {
+    "commit": "9423155d04db59bed30b36ba952fef9affad5588",
+    "stamp": "5bf588c716d8b34ab4f47c85596f00d5885f36a8886eacca511b48bb6926009b",
+    "dirty": false
+  },
+  "after": {
+    "commit": "9423155d04db59bed30b36ba952fef9affad5588",
+    "stamp": "5bf588c716d8b34ab4f47c85596f00d5885f36a8886eacca511b48bb6926009b",
+    "dirty": false
+  },
+  "engine": "threenative",
+  "adapter": "nvidia turing",
+  "directLight": {
+    "pass": false,
+    "overridden": true,
+    "worst": 8.824
+  },
+  "cells": [
+    {
+      "pose": "cornell",
+      "verdict": "NEUTRAL",
+      "vsUnreal": "CLOSE",
+      "reasons": "BEFORE and AFTER resolve to the same file paths, so they are one capture and the two runs are indistinguishable. I looked at the red and green walls, the back wall, the ceiling recess, both boxes and the floor contacts. There is no grain, speckle, streak or blotch, and no black or bright line at any junction. Colour bleeding is present: the tall box's left face is red, the short box's right face is green, and the floor is pink near the red wall. The short box top is bright and its front face is darker. Box shadows fall away from the lamp, as in Unreal.",
+      "differences": "The short box front face is a grey gradient that is lighter and cooler than Unreal's dark warm face, which is the largest gap. The back wall and tall box front carry a darker grey gradient with a green-grey cast on the right of the back wall. Unreal is nearly uniform white there. The ceiling recess is paler and flatter, with a weaker dark crease under its rim. Floor shadows are slightly softer, and the floor under the green wall has a darker green tint.",
+      "worst": 63.79,
+      "regions": [
+        {
+          "region": "Floor",
+          "dP50": 0.04317,
+          "deltaE": 2.129,
+          "dEv": null,
+          "iou": 0.9977,
+          "pass": false,
+          "ratio": 4.317,
+          "spread": 0
+        },
+        {
+          "region": "Ceiling",
+          "dP50": 0.0297,
+          "deltaE": 1.54,
+          "dEv": null,
+          "iou": 0.9984,
+          "pass": false,
+          "ratio": 2.97,
+          "spread": 0
+        },
+        {
+          "region": "Back",
+          "dP50": 0,
+          "deltaE": 0.5794,
+          "dEv": null,
+          "iou": 1,
+          "pass": true,
+          "ratio": 0.98,
+          "spread": 0
+        },
+        {
+          "region": "Wall_Red",
+          "dP50": 0.04,
+          "deltaE": 1.311,
+          "dEv": null,
+          "iou": 1,
+          "pass": false,
+          "ratio": 4,
+          "spread": 0
+        },
+        {
+          "region": "Wall_Green",
+          "dP50": 0.005747,
+          "deltaE": 0.8624,
+          "dEv": null,
+          "iou": 0.9967,
+          "pass": true,
+          "ratio": 0.9832,
+          "spread": 0
+        },
+        {
+          "region": "Box_Tall",
+          "dP50": 0.00578,
+          "deltaE": 2.688,
+          "dEv": null,
+          "iou": 1,
+          "pass": false,
+          "ratio": 2.689,
+          "spread": 0
+        },
+        {
+          "region": "Box_Short",
+          "dP50": 0.6379,
+          "deltaE": 12.81,
+          "dEv": null,
+          "iou": 1,
+          "pass": false,
+          "ratio": 63.79,
+          "spread": 0
+        },
+        {
+          "region": "Shade",
+          "dP50": 0,
+          "deltaE": 0,
+          "dEv": null,
+          "iou": 1,
+          "pass": true,
+          "ratio": 0.98,
+          "spread": 0
+        }
+      ]
+    },
+    {
+      "pose": "corner",
+      "verdict": "NEUTRAL",
+      "vsUnreal": "CLOSE",
+      "reasons": "Run 1 and run 2 look the same, and BEFORE and AFTER share paths, so there is no change. I looked at the red wall and its shadow, the floor between the wall and the tall box, the back-wall corner, and the tall box faces. The surfaces are smooth, with no grain or leaks. The creases are soft, and the red wall darkens toward the corner. The floor is pink and the tall box face is light grey with a weak red tint.",
+      "differences": "The back-wall strip and the floor are slightly darker and more muddy-brown than Unreal. The tall box's right face is slightly darker and pinker than Unreal's light grey. The red wall shadow region is a little more saturated and darker at the corner. A dark crease runs along the base of the tall box on the floor, which is less visible in Unreal. The floor has a bright patch near the box foot that is weaker in Unreal.",
+      "worst": 18.02,
+      "regions": [
+        {
+          "region": "Floor",
+          "dP50": 0.01075,
+          "deltaE": 0.8999,
+          "dEv": null,
+          "iou": 1,
+          "pass": false,
+          "ratio": 1.075,
+          "spread": 0
+        },
+        {
+          "region": "Back",
+          "dP50": 0.1802,
+          "deltaE": 7.468,
+          "dEv": null,
+          "iou": 1,
+          "pass": false,
+          "ratio": 18.02,
+          "spread": 0
+        },
+        {
+          "region": "Wall_Red",
+          "dP50": 0.1222,
+          "deltaE": 3.61,
+          "dEv": null,
+          "iou": 1,
+          "pass": false,
+          "ratio": 12.22,
+          "spread": 0
+        },
+        {
+          "region": "Box_Tall",
+          "dP50": 0.128,
+          "deltaE": 7.957,
+          "dEv": null,
+          "iou": 1,
+          "pass": false,
+          "ratio": 12.8,
+          "spread": 0
+        }
+      ]
+    }
+  ],
+  "overall": {
+    "verdict": "NEUTRAL",
+    "vsUnreal": "CLOSE",
+    "reasons": "BEFORE and AFTER point to the same capture files, so the change cannot be told apart and the answer is NEUTRAL. Against Unreal the lighting is the same: colour bleeding, soft contacts and smooth surfaces all hold, with no artefacts. The remaining gaps are named. The short box front face is lighter and cooler than Unreal's dark warm face. The back wall and tall box front are greyer and less uniform. The corner pose is a little darker and browner. The numeric report agrees, with Box_Short the furthest region and the corner Back and Box_Tall also outside the limits."
+  },
+  "judge": {
+    "model": "claude-sonnet-5-5",
+    "sessionId": "113b3ecc-fe56-40d7-9284-c238cdb46bf4",
+    "costUsd": 0.0668464,
+    "durationMs": 13349,
+    "criteriaSha256": "9f967c351ddaf9332c2d607268a10eeb5bcbb722b12969321630156aa49778cd"
+  }
+}
