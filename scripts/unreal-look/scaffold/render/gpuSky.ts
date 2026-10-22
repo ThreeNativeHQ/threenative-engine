@@ -60,6 +60,7 @@ import {
   TOP_KM,
   bakeSkyRadiance,
   sunLight,
+  sunLightTransmittance,
   sunTransmittance,
   temperatureColour,
   viewDistanceSkyLight,
@@ -275,6 +276,13 @@ function cloudNoise() {
   };
 }
 
+/**
+ * 1 draws the analytic sun disc, 0 hides it. Unreal draws no disc into a reflection capture, so the
+ * chrome sphere shows the sky and its clouds but no hard flare (SkyAtmosphereRendering.cpp, the
+ * SourceDiskEnabled pass parameter); `captureReflections` switches it off for its faces.
+ */
+export const skyDisc = uniform(1);
+
 /** Cached passes: only texture reads and the analytic disc run at screen resolution. */
 export class GpuSkyNode extends TempNode<"vec3"> {
   static get type(): string {
@@ -338,11 +346,11 @@ export class GpuSkyNode extends TempNode<"vec3"> {
             .sub(r.mul(r))
             .sub(distance.mul(distance))
             .div(r.mul(distance).mul(2));
+          // Unreal's transmittance pass: ten equal segments, each read 0.3 of the way in
+          // (r.SkyAtmosphere.TransmittanceLUT.SampleCount, DEFAULT_SAMPLE_OFFSET in SkyAtmosphere.usf).
           const depth = vec3(0).toVar();
-          Loop(16, ({ i }) => {
-            const a = float(i).div(16).pow(2).mul(distance);
-            const b = float(i).add(1).div(16).pow(2).mul(distance);
-            const t = a.add(b).mul(0.5);
+          Loop(10, ({ i }) => {
+            const t = float(i).add(0.3).div(10).mul(distance);
             const h = r
               .mul(r)
               .add(r.mul(mu).mul(t).mul(2))
@@ -350,7 +358,7 @@ export class GpuSkyNode extends TempNode<"vec3"> {
               .sqrt()
               .sub(BOTTOM_KM)
               .max(0);
-            depth.addAssign(gpuMedium(h).ext.mul(b.sub(a)));
+            depth.addAssign(gpuMedium(h).ext.mul(distance.div(10)));
           });
           return vec4(depth.negate().exp(), 1);
         })(),
@@ -385,10 +393,21 @@ export class GpuSkyNode extends TempNode<"vec3"> {
       const radiance = vec3(0).toVar();
       const transfer = vec3(0).toVar();
       const through = vec3(1).toVar();
-      Loop(48, ({ i }) => {
-        const a = float(i).div(48).pow(2).mul(length);
-        const b = float(i).add(1).div(48).pow(2).mul(length);
-        const p = vec3(0, r, 0).add(d.mul(a.add(b).mul(0.5)));
+      // Unreal's counts: the multiple-scattering pass takes 15 equal segments read 0.3 of the way in; the
+      // sky pass takes 4 to 32 (by the ray's length over 150 km) with segments that grow with the square of
+      // the distance, the last one running on to the end of the ray (SamplingSetup in SkyAtmosphere.usf).
+      const count = iso ? float(15) : mix(float(4), float(32), clamp(length.div(150), 0, 1));
+      const whole = count.floor();
+      const lengthWhole = length.mul(whole).div(count);
+      const body = (i: Scalar) => {
+        const u0 = i.div(whole).pow(2);
+        const u1 = i.add(1).div(whole).pow(2);
+        const a = iso ? i.div(15).mul(length) : lengthWhole.mul(u0);
+        const b = iso
+          ? i.add(1).div(15).mul(length)
+          : u1.greaterThan(1).select(length, lengthWhole.mul(u1));
+        const t = iso ? i.add(0.3).div(15).mul(length) : a.add(b.sub(a).mul(0.3));
+        const p = vec3(0, r, 0).add(d.mul(t));
         const rr = p.length();
         const h = rr.sub(BOTTOM_KM).max(0);
         const mu = p.dot(sun).div(rr);
@@ -409,7 +428,12 @@ export class GpuSkyNode extends TempNode<"vec3"> {
         radiance.addAssign(through.mul(source).mul(integral));
         transfer.addAssign(through.mul(scatter).mul(integral));
         through.mulAssign(stepT);
-      });
+      };
+      if (iso) Loop(15, ({ i }) => body(float(i)));
+      else
+        Loop(32, ({ i }) => {
+          If(float(i).lessThan(count.ceil()), () => body(float(i)));
+        });
       if (iso) {
         const p = vec3(0, r, 0).add(d.mul(length));
         const rr = p.length();
@@ -587,6 +611,7 @@ export class GpuSkyNode extends TempNode<"vec3"> {
     const disc = d
       .dot(this.sun)
       .greaterThanEqual(Math.cos(SUN_RADIUS))
+      .and(skyDisc.greaterThan(0.5))
       .select(
         this.#light
           .mul(this.clouds ? cloud.a : float(1))
@@ -598,7 +623,6 @@ export class GpuSkyNode extends TempNode<"vec3"> {
     // Unreal fogs the sky like any far pixel: the exponential height fog's optical depth along a ray
     // that rises at sin(e) and never ends is density_at_camera / (falloff ln2 sin e), base 2 as in
     // HeightFogCommon.ush. A ray at or below the horizon sees the full depth, so the void is opaque.
-    // Measured on the Unreal L2 and L3 frames: transmittance x sin(e) is 0.105 at 1 to 6 degrees.
     const fog = this.fog ?? HEIGHT_FOG_DEFAULT;
     const density = float(fog.density).mul(
       float(-fog.heightFalloff).mul(cameraPosition.y.sub(fog.fogHeight)).exp2(),
@@ -624,11 +648,9 @@ export class GpuSkyNode extends TempNode<"vec3"> {
     const through = sunTransmittance(Math.asin(this.direction.y));
     this.#light.value.set(...through);
     const tint = temperatureColour(SUN_KELVIN);
-    sunLight.current?.color.setRGB(
-      tint[0] * through[0],
-      tint[1] * through[1],
-      tint[2] * through[2],
-    );
+    // The directional light takes Unreal's coarser CPU estimate; the disc and the clouds read the LUT's.
+    const lit = sunLightTransmittance(Math.asin(this.direction.y));
+    sunLight.current?.color.setRGB(tint[0] * lit[0], tint[1] * lit[1], tint[2] * lit[2]);
     const start = performance.now();
     const state = RendererUtils.resetRendererState(
       renderer,

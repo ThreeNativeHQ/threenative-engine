@@ -6,7 +6,15 @@
 //
 // Harness overlay (PRD-632): the sun is Unreal's default level sun in lux and kelvin, not an
 // intensity matched by eye. `atmosphere.ts` holds the units and the sky that reads the same sun.
-import { Color, DirectionalLight, PCFSoftShadowMap, type Scene, Vector3 } from "three";
+import { useRoughDiffuse } from "@threenative/core";
+import {
+  Color,
+  DirectionalLight,
+  type Object3D,
+  PCFSoftShadowMap,
+  type Scene,
+  Vector3,
+} from "three";
 import { SUN_ILLUMINANCE, SUN_KELVIN, sunLight, temperatureColour } from "./atmosphere.js";
 import { SUN_DIRECTION } from "./sky.js";
 
@@ -46,6 +54,15 @@ export function setupLighting(
   // The key light is returned because `WorldEnvironment`'s godrays stage raymarches against its
   // shadow map, so `setupPost` needs the light itself.
   return { key };
+}
+
+/**
+ * Rough surfaces take the sun and lamps the way Unreal's Substrate shades them (PRD-653): the EON diffuse, brighter than Lambert
+ * facing the light and flatter at grazing angles, not flat Lambert. Indirect light stays Lambert. Call it once for a loaded
+ * model, and delete the call for Lambert everywhere.
+ */
+export function shadeLikeSubstrate(root: Object3D): void {
+  useRoughDiffuse(root);
 }
 
 /** Material conventions are game-owned; each scene gets independent mutable controls. */

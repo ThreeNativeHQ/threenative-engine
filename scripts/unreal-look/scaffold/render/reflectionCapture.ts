@@ -7,6 +7,7 @@ import {
   type Texture,
   Vector3,
 } from "three";
+import { skyDisc } from "./gpuSky.js";
 
 interface IReflectionRenderer {
   /** @alias reflection probe, cube capture */
@@ -36,9 +37,11 @@ export async function captureReflections(
       // 256 texels span about 0.35 degrees at face center; six faces bound static startup work.
       let texture: Texture;
       mesh.visible = false;
+      skyDisc.value = 0;
       try {
         texture = await renderer.SphereReflectionCapture(scene, position, 256);
       } finally {
+        skyDisc.value = 1;
         mesh.visible = visible;
       }
       textures.push(texture);
