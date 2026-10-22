@@ -18,6 +18,13 @@ class PostEffects {
     PostEffects(const PostEffects&) = delete;
     PostEffects& operator=(const PostEffects&) = delete;
     void resize(uint32_t width, uint32_t height);
+    /**
+     * Draws a pass the graph names `host`, in its place in the graph's order: the renderer's own resolve of a texture this
+     * graph drew. `beauty` is that texture, `output` the target the pass writes. Unset, such a pass fails the frame.
+     */
+    using HostPass = std::function<void(WGPUCommandEncoder encoder, WGPUTexture beauty, WGPUTextureView beautyView,
+                                        WGPUTexture output, WGPUTextureView outputView)>;
+    void setHost(HostPass host) { host_ = std::move(host); }
     /** Takes each live effect's current `resolutionScale` (set after install, as three reads it every
      *  frame) and rebuilds the targets when one changed; true when the targets are new. */
     bool syncScales();
@@ -82,6 +89,7 @@ class PostEffects {
     WGPUSampler linear_ = nullptr;
     WGPUSampler compare_ = nullptr;
     uint32_t width_ = 0, height_ = 0;
+    HostPass host_;
     bool captured_ = false;
     float lastTime_ = -1;  // the frame time of the render before, for deltaTime
 };

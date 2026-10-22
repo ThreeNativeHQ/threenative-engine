@@ -37,6 +37,7 @@ import { smaa } from "three/addons/tsl/display/SMAANode.js";
 import { ssgi } from "three/addons/tsl/display/SSGINode.js";
 import { ssr } from "three/addons/tsl/display/SSRNode.js";
 import { sharpen } from "three/addons/tsl/display/SharpenNode.js";
+import { traa } from "three/addons/tsl/display/TRAANode.js";
 import {
   clamp,
   color,
@@ -70,10 +71,14 @@ import { vignetteMask } from "./vignette.js";
 /** Lumen reflections stop at this roughness, fading to nothing over the length below it. */
 const REFLECTION_CUTOFF = 0.4;
 const REFLECTION_FADE = 0.1;
-/** The reference harness's ladder layer, from `?tnRef=L<n>`; 9 (everything on) when there is none. */
+/**
+ * The reference harness's ladder layer: `?tnRef=L<n>` on the reference scene, `?layer=L<n>` (a tier suffix may follow) on
+ * a calibration scene; 9 (everything on) when there is none. A calibration scene's frame below L7 holds no gather.
+ */
 function harnessLayer(): number {
-  const layer = new URLSearchParams(globalThis.location?.search ?? "").get("tnRef") ?? "L9";
-  return /^L\d$/.test(layer) ? Number(layer.slice(1)) : 9;
+  const params = new URLSearchParams(globalThis.location?.search ?? "");
+  const layer = /^L(\d)/.exec(params.get("tnRef") ?? params.get("layer") ?? "")?.[1];
+  return layer === undefined ? 9 : Number(layer);
 }
 
 /** Diagnosis: `?dn=N` runs N denoise passes over the SSGI gather at any layer, for an A/B against the tier's count. */
@@ -271,6 +276,18 @@ export interface IWorldEnvironmentOptions {
    * draws straight to the canvas with its own MSAA and this would be paying twice.
    */
   readonly screenSpaceAA?: ScreenSpaceAA;
+  /**
+   * Temporal antialiasing, Unreal's default method (`r.AntiAliasingMethod` 4, temporal super resolution). Default `false`
+   * here, and `true` in the `high` and `medium` tiers of `quality.ts`.
+   *
+   * The engine jitters the camera by a sub-pixel offset every frame, draws each pixel's motion, and blends the frames
+   * before it into this one. The `traa` stage resolves the finished frame, after the screen-space stages (occlusion,
+   * global illumination, reflections) and ahead of blur, bloom and the grade, so their edges are smoothed with the rest.
+   * It replaces `screenSpaceAA` while it runs: Unreal runs one method too. It runs on the owned engine only. On
+   * `engine: "threejs"` and on a fallback renderer this option is refused with a reason in the applied report and
+   * `screenSpaceAA` stays in charge. Read `debug().temporal` for the live frame, history and jitter.
+   */
+  readonly temporalAA?: boolean;
   /** Godot's `glow_enabled`. */
   readonly bloomEnabled?: boolean;
   readonly bloomStrength?: number;
@@ -538,6 +555,11 @@ export type OutputRenderer = {
        */
       velocity?: {
         pass?: ReturnType<typeof pass>;
+        /** How a host whose scene pass owns the velocity output provides it; the chain's MRT route is the default. */
+        provision?: {
+          texture(scenePass: ReturnType<typeof pass>): Node;
+          attach<T>(node: T, source: unknown): T;
+        };
         rejectionMeasurement?: () => { frame: number; rejectionFraction: number } | undefined;
       };
     };
@@ -627,6 +649,7 @@ export class WorldEnvironment {
       vignetteAmount: options.vignetteAmount ?? 0,
       motionBlurEnabled: options.motionBlurEnabled ?? false,
       screenSpaceAA: options.screenSpaceAA ?? "smaa",
+      temporalAA: options.temporalAA ?? false,
       bloomEnabled: options.bloomEnabled ?? true,
       bloomStrength: options.bloomStrength ?? 0.7,
       bloomRadius: options.bloomRadius ?? 0.5,
@@ -655,6 +678,8 @@ export class WorldEnvironment {
     stages: readonly string[];
     dispose?: () => void;
     exposure?: AutoExposureNode;
+    /** The engine's live temporal state; present only while `temporalAA` runs. */
+    temporalReport?: () => Record<string, unknown>;
   } {
     const options = this.#options;
     const raw = renderer.raw as { toneMapping?: number; toneMappingExposure?: number };
@@ -670,6 +695,33 @@ export class WorldEnvironment {
         );
       }
     }
+
+    // Temporal AA is the owned engine's: it jitters the camera and blends the frames ahead of every stage. Any other
+    // renderer keeps the spatial filter, and the report says why.
+    const engineInfo = (renderer.raw as { info?: object }).info;
+    const ownedEngine = engineInfo !== undefined && "engine" in engineInfo;
+    const temporalRefusal = !options.temporalAA
+      ? undefined
+      : renderer.kind !== "webgpu"
+        ? `renderer:${renderer.kind}`
+        : ownedEngine
+          ? undefined
+          : "engine:threejs";
+    const temporal = options.temporalAA && temporalRefusal === undefined;
+    // What the report names beyond the chain's own: why the temporal stage was refused, and the filter it replaced.
+    const reportWith = (
+      applied: readonly string[],
+      dropped: readonly { name: string; reason: string }[],
+    ): { dropped: readonly { name: string; reason: string }[]; stages: readonly string[] } => ({
+      stages: applied,
+      dropped: [
+        ...dropped,
+        ...(temporalRefusal === undefined ? [] : [{ name: "traa", reason: temporalRefusal }]),
+        ...(temporal && options.screenSpaceAA !== "disabled"
+          ? [{ name: "antialias", reason: "traa resolves the edges" }]
+          : []),
+      ],
+    });
 
     const requested: string[] = (
       [
@@ -694,8 +746,10 @@ export class WorldEnvironment {
         (name === "vignette" && options.vignetteAmount > 0),
     );
     requested.push(...options.authoredStageNames);
+    if (temporal && !requested.includes("traa")) requested.push("traa");
     if (
       options.screenSpaceAA !== "disabled" &&
+      !temporal &&
       (requested.length > 0 || target.baseColour !== undefined)
     )
       requested.push("antialias");
@@ -713,15 +767,16 @@ export class WorldEnvironment {
       !options.localExposureEnabled
     ) {
       raw.toneMappingExposure = options.exposure;
-      this.#reportApplied([], []);
-      return { dropped: [], stages: [] };
+      const report = reportWith([], []);
+      this.#reportApplied(report.stages, report.dropped);
+      return report;
     }
     if (options.autoExposureEnabled && renderer.kind !== "webgpu")
       throw new Error(`Automatic exposure requires WebGPU; renderer:${renderer.kind}`);
     if (requested.length === 0 && renderer.kind !== "webgpu") {
-      const dropped = [{ name: "baseColour", reason: `renderer:${renderer.kind}` }];
-      this.#reportApplied([], dropped);
-      return { dropped, stages: [] };
+      const report = reportWith([], [{ name: "baseColour", reason: `renderer:${renderer.kind}` }]);
+      this.#reportApplied(report.stages, report.dropped);
+      return report;
     }
     const resolutionSubrectRefusal =
       target.baseColour !== undefined
@@ -735,6 +790,13 @@ export class WorldEnvironment {
       );
     raw.toneMappingExposure = 1;
 
+    // The engine counts the frames its temporal pass has resolved, so a graph that never reached it reads `active: false`.
+    const temporalReport = temporal
+      ? (): Record<string, unknown> => ({
+          method: "traa",
+          ...(engineInfo as { engine?: { temporal?: object } }).engine?.temporal,
+        })
+      : undefined;
     const scenePass = pass(scene, camera, { samples: options.samples });
     const resolutionSubrect =
       requested.length === 0 || resolutionSubrectRefusal !== undefined
@@ -1092,8 +1154,26 @@ export class WorldEnvironment {
         },
       }),
       stage({
+        name: "traa",
+        build: (input, chain) => {
+          // The chain places this stage after the screen-space stages and ahead of blur, bloom and the grade, which is
+          // where Unreal resolves too. The engine reads the scene's depth and velocity itself: they are the names
+          // the effect takes, and `depth()` here is that attachment. The input must be a texture the graph drew.
+          if (chain.velocityNode === undefined)
+            throw new Error(
+              "Temporal AA requires the scene pass velocity; it is provisioned per request.",
+            );
+          return traa(convertToTexture(input), depth(), chain.velocityNode as TextureNode, view);
+        },
+      }),
+      stage({
         name: "motionBlur",
         supportsResolutionSubrect: true,
+        // The owned engine draws the velocity for its temporal pass and for nothing else.
+        available: () =>
+          !ownedEngine || temporal
+            ? true
+            : "temporalAA is off: the owned engine draws velocity for the temporal pass",
         build: (input, chain) => {
           // The chain provisions the velocity output after `available` runs and before `build`,
           // so only `build` can tell whether it got one.
@@ -1301,12 +1381,20 @@ export class WorldEnvironment {
     // The kit's own stages, composed after the built-ins. The factory is called with the two
     // things only this file can produce — the scene pass's depth texture and the resolved tier —
     // and returns the complete authored graph plus the subset to run.
+    // A kit stage named in `authoredStageNames` replaces the built-in of its name (the starter's `traa` kit is the
+    // three.js path to the built-in `traa`); one that is not named stays out, so the chain sees each name once.
+    const authored = options.authoredStages({
+      depthNode: depth(),
+      tier: options.renderChainTier,
+      camera,
+    });
+    const named = (name: string): boolean => options.authoredStageNames.includes(name);
+    const replaced = new Set(authored.filter((a) => named(a.name)).map((a) => a.name));
+    const builtIn = stages.filter((s) => !replaced.has(s.name));
+    stages.length = 0;
     stages.push(
-      ...options.authoredStages({
-        depthNode: depth(),
-        tier: options.renderChainTier,
-        camera,
-      }),
+      ...builtIn,
+      ...authored.filter((a) => named(a.name) || !builtIn.some((s) => s.name === a.name)),
     );
 
     // A composed base colour with every stage off still has to reach the frame. The chain
@@ -1329,11 +1417,12 @@ export class WorldEnvironment {
         releaseGraph();
         throw error;
       }
-      this.#reportApplied([], []);
+      const direct = reportWith([], []);
+      this.#reportApplied(direct.stages, direct.dropped);
       return {
         exposure,
-        dropped: [],
-        stages: [],
+        ...direct,
+        temporalReport,
         dispose: () => {
           if (released) return;
           if (installation) installation.dispose();
@@ -1359,6 +1448,16 @@ export class WorldEnvironment {
         // provisions nothing while no requested stage needs velocity.
         velocity: {
           pass: scenePass,
+          // The owned engine's scene pass names the velocity its temporal pass draws. No MRT carries it.
+          ...(ownedEngine
+            ? {
+                provision: {
+                  texture: (velocityPass: typeof scenePass) =>
+                    velocityPass.getTextureNode("velocity"),
+                  attach: <T>(node: T): T => node,
+                },
+              }
+            : {}),
           ...(rejectionMeasurement === undefined ? {} : { rejectionMeasurement }),
         },
       },
@@ -1366,11 +1465,12 @@ export class WorldEnvironment {
       resolutionSubrect,
       worldPass: scenePass,
     });
-    this.#reportApplied(chain.applied.stages, chain.applied.dropped);
+    const chained = reportWith(chain.applied.stages, chain.applied.dropped);
+    this.#reportApplied(chained.stages, chained.dropped);
     return {
       exposure,
-      dropped: chain.applied.dropped,
-      stages: chain.applied.stages,
+      ...chained,
+      temporalReport,
       dispose: () => {
         if (released) return;
         chain.dispose();
@@ -1400,6 +1500,7 @@ export class WorldEnvironment {
       godRays: "godraysEnabled is false",
       motionBlur: "motionBlurEnabled is false",
       sharpen: "sharpenEnabled is false",
+      temporalAA: "temporalAA is false",
       ssgi: "ssgiEnabled is false",
       ssr: "ssrEnabled is false",
       vignette: "vignetteAmount is 0",
@@ -1422,6 +1523,7 @@ export class WorldEnvironment {
         localExposure: options.localExposureEnabled,
         marker: "TN_WORLD_ENVIRONMENT",
         screenSpaceAA: options.screenSpaceAA,
+        temporalAA: options.temporalAA,
         ssgiQuality: options.ssgiQuality,
         stages,
         tonemapMode: options.tonemapMode,

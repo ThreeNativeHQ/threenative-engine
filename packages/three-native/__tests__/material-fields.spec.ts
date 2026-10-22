@@ -90,6 +90,9 @@ function readable(name: string): string[] {
 
 const MATERIALS = Object.keys(registry.classes).filter((name) => name.endsWith("Material"));
 
+/** Fields the engine adds to a material that three has not: a new one needs a line here and a reason. */
+const ENGINE_FIELDS = ["twoSidedFoliage"];
+
 describe("a native material's fields are enumerable", () => {
   it("covers the material classes of the registry", () => {
     expect(MATERIALS).toContain("MeshStandardMaterial");
@@ -106,13 +109,12 @@ describe("a native material's fields are enumerable", () => {
     expect(Object.keys(material).sort()).toEqual(readable(name).sort());
   });
 
-  it("lists three's own field names and no name three does not know", () => {
+  it("lists three's own field names and the engine's own fields, nothing else", () => {
     const material = new (classesOf().MeshStandardMaterial as Constructible)();
     const three = new ThreeStandardMaterial();
     const names = forIn(material);
-    // Every name the engine reads is a name three has, as a field or as an accessor. The one exception is the
-    // engine's Two Sided Foliage marker (PRD-651), which no three type declares.
-    expect(names.filter((key) => !(key in three) && key !== "twoSidedFoliage")).toEqual([]);
+    // Every name is one three has, as a field or as an accessor, or an engine field named here.
+    expect(names.filter((key) => !(key in three) && !ENGINE_FIELDS.includes(key))).toEqual([]);
     // Every field three enumerates that the engine implements is listed.
     const threeFields = new Set(forIn(three));
     expect(names).toEqual(
