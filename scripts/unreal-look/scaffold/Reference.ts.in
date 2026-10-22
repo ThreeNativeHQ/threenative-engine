@@ -342,12 +342,17 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
             ...(params.get("gtaoR") === null ? {} : { gtaoRadius: Number(params.get("gtaoR")) }),
             ...(params.get("gtaoS") === null ? {} : { gtaoScale: Number(params.get("gtaoS")) }),
             vignetteAmount: 0,
+            // Diagnosis: ?exposure=N sets the exposure (pair it with ?linear=1 below).
+            ...(params.get("exposure") === null ? {} : { exposure: Number(params.get("exposure")) }),
             // The same ablation switches as L9, for attributing a GI fault below it.
             ...Object.assign({}, ...[...OFF].map((name) => STAGE_OFF[name] ?? {})),
           });
           this.#dispose = world.apply(ctx.renderer, scene, camera, { godraysLight: key }).dispose;
         };
         build(GI_METHOD);
+        // Diagnosis: ?linear=1 writes the exposed light with no tone curve, so the frame reads as scene-linear (the
+        // light a PRD-646 direct-light gap is measured in), as CalibrationScene does.
+        if (params.get("linear") === "1") raw.toneMapping = NoToneMapping;
         // The tier's method moves with the measured GI time when the URL asks for giAuto=1 (PRD-644).
         if (GI_METHOD !== "none")
           this.#gi = watchGi(ctx, { tier: TIER, method: GI_METHOD, rebuild: build });
