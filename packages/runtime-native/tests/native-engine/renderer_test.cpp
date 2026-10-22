@@ -283,6 +283,15 @@ CameraState camera(double aspect) {
     return c;
 }
 
+// `camera(aspect)` slid 0.02 along x per frame: the world matrix is the inverse of the view matrix.
+CameraState slidingCamera(double aspect, int frame) {
+    CameraState c = camera(aspect);
+    const double x = 0.02 * frame;
+    c.matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, x, 0, 4, 1};
+    c.matrixWorldInverse = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -x, 0, -4, 1};
+    return c;
+}
+
 std::vector<uint8_t> read(Renderer& r, EventQueue& events) {
     std::vector<uint8_t> out;
     bool done = false;
@@ -333,6 +342,305 @@ void traaAlpha() {
             CHECK(temporal[center + 3] == plain[center + 3]);
         }
     }
+}
+
+bool rendersPixels(mystral::webgpu::Context& context) {
+    WGPUAdapterInfo info{};
+    wgpuAdapterGetInfo(context.getAdapter(), &info);
+    const bool pixels = info.backendType != WGPUBackendType_Null;
+    wgpuAdapterInfoFreeMembers(info);
+    return pixels;
+}
+
+// A post graph's last node reads `screenSize` in the output pass (the vignette's aspect ratio does). The pass wrote no
+// value there: the size read zero, the quotient was NaN and the whole frame came out black.
+void outputScreenSize() {
+    namespace g = shader::graph;
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    CHECK(rendersPixels(context));
+    if (!rendersPixels(context)) return;
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(64, 32);
+    renderer.setOutput(OutputState{std::nullopt, 1, false});
+    CameraState camera;
+    camera.projectionMatrix = camera.matrixWorld = camera.matrixWorldInverse =
+        {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+    const auto screen = g::uniform("screenSize", shader::Type::vec(2));
+    const auto aspect = g::div(g::swizzle(screen, "y"), g::swizzle(screen, "x"));  // 32 / 64
+    renderer.setPostGraph(g::vec4({g::mul(g::swizzle(g::texture("scene", g::uv()), "xyz"), g::splat(aspect, 3)), g::float_(1)}));
+    renderer.render({}, camera, LightState{}, {1, 1, 1, 1});
+    const auto pixels = read(renderer, events);
+    CHECK(pixels.size() == 64 * 32 * 4);
+    if (pixels.size() == 64 * 32 * 4)
+        for (const size_t texel : {size_t{0}, size_t{16 * 64 + 32}, size_t{64 * 32 - 1}})
+            for (int c = 0; c < 3; ++c) CHECK(std::abs(int(pixels[texel * 4 + c]) - 128) <= 1);
+}
+
+// The velocity pass leaves out what it holds no previous vertices for (an instanced draw threw TN_TRAA_VELOCITY_UNSUPPORTED
+// and cost the frame). The camera-motion fill gives those pixels the velocity a rigid draw of the same surface writes:
+// the same sphere drawn rigid and drawn as one instance reads the same velocity under a moving camera, and every pixel
+// of the target is a written one (alpha 1).
+void traaCameraVelocity() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    CHECK(rendersPixels(context));
+    if (!rendersPixels(context)) return;
+    const auto ball = sphere(32, 16);
+    shader::StandardMaterial material;
+    BufferStore matrices(Scalar::F32, 16);
+    const float identity[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+    matrices.write(0, identity, sizeof identity);
+    const auto directory = std::filesystem::current_path() /
+        ("traa-camera-velocity-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+    constexpr uint32_t width = 32, height = 24;
+    const auto velocity = [&](bool instanced, bool& noted) {
+        EventQueue events;
+        Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+        renderer.setSize(width, height);
+        renderer.setOutput(OutputState{});
+        renderer.setTraa(TraaOptions{});
+        auto* pass = renderer.traaDebugPass();
+        pass->enableDebugDump();
+        DrawItem item;
+        item.key = item.id = 1; item.kind = MaterialKind::Basic;
+        item.positions = &ball->positions; item.indices = &ball->indices; item.material = &material;
+        item.matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+        if (instanced) { item.instanceMatrices = &matrices; item.instanceCount = 1; }
+        const auto folder = directory / (instanced ? "instanced" : "rigid");
+        noted = false;
+        for (int frame = 0; frame <= 20; ++frame) {
+            renderer.render({&item, 1}, slidingCamera(double(width) / height, frame), LightState{}, {0, 0, 0, 1});
+            for (const auto& note : renderer.diagnostics()) noted = noted || note.rfind("TN_TRAA_VELOCITY_SKIPPED: instanced", 0) == 0;
+            tn::fixture::finishTraaDump(*pass, context.getInstance(), folder);
+        }
+        std::ifstream file(folder / "frame-20-velocity.bin", std::ios::binary);
+        CHECK(file.good());
+        std::vector<float> texels(size_t{width} * height * 4);
+        file.read(reinterpret_cast<char*>(texels.data()), std::streamsize(texels.size() * sizeof(float)));
+        return texels;
+    };
+    bool rigidNoted = false, instancedNoted = false;
+    const auto rigid = velocity(false, rigidNoted);
+    const auto filled = velocity(true, instancedNoted);
+    CHECK(!rigidNoted && instancedNoted);
+    size_t moving = 0;
+    for (size_t texel = 0; texel < size_t{width} * height; ++texel) {
+        CHECK(rigid[texel * 4 + 3] == 1 && filled[texel * 4 + 3] == 1);
+        for (int c = 0; c < 2; ++c) CHECK(std::abs(rigid[texel * 4 + c] - filled[texel * 4 + c]) < 1e-4f);
+        if (std::abs(filled[texel * 4]) > 0.004f) ++moving;
+    }
+    CHECK(moving > 50);  // the sphere's pixels move with the camera, not zero
+}
+
+// The shape a template gives the engine: the temporal effect is the colour convertToTexture hands the stages, and a stage
+// samples the velocity target the temporal pass draws. The effect has to be found inside the render texture (a TRAA the
+// engine never saw leaves the camera unjittered and the velocity undrawn) and a stage's `velocity` input has to be bound.
+// convertToTexture(traa(scene, depth, velocity, camera)): the colour a template's chain starts from.
+shader::graph::Node temporalColour() {
+    namespace g = shader::graph;
+    auto effect = std::make_shared<g::PostEffect>();
+    effect->kind = "TRAANode";
+    effect->output = "scene";
+    effect->inputs = {g::texture("scene", g::uv()), g::texture("depth", g::uv()), g::texture("velocity", g::uv())};
+    effect->parameters = {{"depthThreshold", {0.0005f}}, {"edgeDepthDiff", {0.001f}}, {"maxVelocityLength", {128}},
+                          {"useSubpixelCorrection", {1}}};
+    auto colour = std::make_shared<g::NodeData>();
+    colour->kind = g::Kind::RenderTexture;
+    colour->type = shader::Type::vec(4);
+    colour->name = "native_rtt_1";
+    colour->args = {g::effectNode(effect), g::uv()};
+    return colour;
+}
+
+void traaFeedsTheChain() {
+    namespace g = shader::graph;
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    CHECK(rendersPixels(context));
+    if (!rendersPixels(context)) return;
+    constexpr uint32_t width = 32, height = 24;
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(width, height);
+    renderer.setOutput(OutputState{std::nullopt, 1, false});
+    const auto colour = temporalColour();
+    // Red is the resolved colour. Green is the velocity's x, scaled so the camera's slide reads as a visible level.
+    const auto motion = g::mul(g::swizzle(g::texture("velocity", g::uv()), "x"), g::float_(-50));
+    auto stage = std::make_shared<g::NodeData>();  // convertToTexture(...): a stage that reads the velocity inside its own pass
+    stage->kind = g::Kind::RenderTexture;
+    stage->type = shader::Type::vec(4);
+    stage->name = "native_rtt_2";
+    stage->args = {g::vec4({g::swizzle(colour, "x"), motion, g::float_(0), g::float_(1)}), g::uv()};
+    const auto ball = sphere(32, 16);
+    shader::StandardMaterial material;
+    material.color = {0.5f, 0.5f, 0.5f};
+    DrawItem item;
+    item.key = item.id = 1; item.kind = MaterialKind::Basic;
+    item.positions = &ball->positions; item.indices = &ball->indices; item.material = &material;
+    item.matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+    // The velocity is read where a chain reads it: in the final output graph, and inside a stage's own render texture.
+    const g::Node outputRead = g::vec4({g::swizzle(colour, "x"), motion, g::float_(0), g::float_(1)});
+    for (const g::Node& graph : {outputRead, static_cast<g::Node>(stage)}) {
+        renderer.setPostGraph(graph);
+        CHECK(renderer.traaDebugPass() != nullptr);
+        for (int frame = 0; frame < 8; ++frame)
+            renderer.render({&item, 1}, slidingCamera(double(width) / height, frame), LightState{}, {0, 0, 0, 1});
+        const auto pixels = read(renderer, events);
+        CHECK(pixels.size() == size_t{width} * height * 4);
+        if (pixels.size() != size_t{width} * height * 4) return;
+        const size_t centre = (size_t{height / 2} * width + width / 2) * 4;
+        // The sphere's front is 3 units away: the 0.02 slide moves it P00 * 0.02 / 3 = 0.0107 in NDC, x 50 = 0.536.
+        CHECK(std::abs(int(pixels[centre]) - 128) <= 3);
+        CHECK(std::abs(int(pixels[centre + 1]) - 137) <= 12);
+    }
+}
+
+// A 64x48 frame of an unlit grey sphere on black, which edge pixels it draws partly covered.
+struct EdgeScene {
+    mystral::webgpu::Context context;
+    EventQueue events;
+    std::unique_ptr<Renderer> renderer;
+    std::unique_ptr<Sphere> ball;
+    shader::StandardMaterial material;
+    DrawItem item;
+    static constexpr uint32_t width = 64, height = 48;
+    EdgeScene() {
+        CHECK(context.initializeHeadless());
+        if (!rendersPixels(context)) return;
+        renderer = std::make_unique<Renderer>(context.getInstance(), context.getDevice(), context.getQueue(), events);
+        renderer->setSize(width, height);
+        renderer->setOutput(OutputState{std::nullopt, 1, false});
+        ball = sphere(32, 16);
+        material.color = {0.5f, 0.5f, 0.5f};
+        item.key = item.id = 1; item.kind = MaterialKind::Basic;
+        item.positions = &ball->positions; item.indices = &ball->indices; item.material = &material;
+        item.matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+    }
+    // Draws `frames` frames of the static scene, then counts the pixels whose red channel is neither black (16) nor the
+    // sphere's own level (`high` and above).
+    int partial(int frames, int high = 112) {
+        for (int frame = 0; frame < frames; ++frame)
+            renderer->render({&item, 1}, camera(double(width) / height), LightState{}, {0, 0, 0, 1});
+        const auto pixels = read(*renderer, events);
+        CHECK(pixels.size() == size_t{width} * height * 4);
+        int count = 0, covered = 0;
+        for (size_t i = 0; i + 3 < pixels.size(); i += 4) {
+            count += pixels[i] > 16 && pixels[i] < high;
+            covered += pixels[i] >= high;
+        }
+        CHECK(covered > 200);  // the sphere is on screen
+        return count;
+    }
+};
+
+// A hard level of the red channel: 1 above `0.2`, else 0. The edge sits where the sphere's colour crosses the level.
+shader::graph::Node thresholdOf(shader::graph::Node colour) {
+    namespace g = shader::graph;
+    const auto lit = g::select(g::greaterThan(g::swizzle(colour, "x"), g::float_(0.2)), g::float_(1), g::float_(0));
+    return g::vec4({lit, lit, lit, g::float_(1)});
+}
+
+// A static scene converges to anti-aliased edges. The engine jitters the camera by a sub-pixel offset each frame and blends
+// the frames, so a silhouette pixel settles at the fraction of it the surface covers. An unlit sphere on black has only
+// all-or-nothing edge pixels without the effect.
+void traaConvergesEdges() {
+    namespace g = shader::graph;
+    EdgeScene scene;
+    if (!scene.renderer) return;
+    const int plain = scene.partial(8);
+    const auto red = g::swizzle(temporalColour(), "x");
+    scene.renderer->setPostGraph(g::vec4({red, red, red, g::float_(1)}));
+    const int temporal = scene.partial(60);
+    std::fprintf(stderr, "TN_DEBUG partial edge pixels: plain %d, temporal %d\n", plain, temporal);
+    CHECK(plain < 8);
+    CHECK(temporal > 40);
+}
+
+// The resolve runs over the frame a graph drew, so an effect that comes before it is anti-aliased with the rest. The graph
+// thresholds the scene colour, a hard edge that moves with the camera's jitter. Thresholded after the resolve, which is
+// where the scene's own colour is resolved, the edge stays hard. Resolved after the threshold, the frames blend and the
+// edge pixels take the fraction each frame covered.
+void traaLateResolve() {
+    namespace g = shader::graph;
+    EdgeScene scene;
+    if (!scene.renderer) return;
+    scene.renderer->setPostGraph(thresholdOf(temporalColour()));
+    const int early = scene.partial(60, 240);
+    auto composite = std::make_shared<g::NodeData>();  // convertToTexture(threshold(scene colour))
+    composite->kind = g::Kind::RenderTexture;
+    composite->type = shader::Type::vec(4);
+    composite->name = "native_rtt_30";
+    composite->args = {thresholdOf(g::texture("scene", g::uv())), g::uv()};
+    auto effect = std::make_shared<g::PostEffect>();
+    effect->kind = "TRAANode";
+    effect->output = "native_traa_30";
+    effect->inputs = {composite, g::texture("depth", g::uv()), g::texture("velocity", g::uv())};
+    effect->parameters = {{"depthThreshold", {0.0005f}}, {"edgeDepthDiff", {0.001f}}, {"maxVelocityLength", {128}},
+                          {"useSubpixelCorrection", {1}}};
+    CHECK(g::traaResolvesLate(*effect));
+    const auto red = g::swizzle(g::effectNode(effect), "x");
+    scene.renderer->setPostGraph(g::vec4({red, red, red, g::float_(1)}));
+    const int late = scene.partial(60, 240);
+    std::fprintf(stderr, "TN_DEBUG partial edge pixels: resolved before the threshold %d, after %d\n", early, late);
+    CHECK(early < 8);
+    CHECK(late > 40);
+}
+
+// Temporal AA replaces multisampling, as one method does in Unreal. The velocity pass tests depth Equal against the colour
+// pass, and 4x multisampling hands it one resolved sample of depth: Equal fails on every sloped surface. The engine draws
+// single-sampled while a traa() effect is in the graph, says so once, and returns to the requested count when it leaves.
+void traaReplacesMultisampling() {
+    namespace g = shader::graph;
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    CHECK(rendersPixels(context));
+    if (!rendersPixels(context)) return;
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(32, 24);
+    renderer.setOutput(OutputState{std::nullopt, 1, false});
+    renderer.setSampleCount(4);
+    CHECK(renderer.sampleCount() == 4);
+    renderer.setPostGraph(temporalColour());
+    CHECK(renderer.sampleCount() == 1);
+    const auto& notes = renderer.diagnostics();
+    CHECK(std::count_if(notes.begin(), notes.end(), [](const std::string& note) { return note.rfind("TN_TRAA_MSAA_OFF", 0) == 0; }) == 1);
+    const auto ball = sphere(32, 16);
+    shader::StandardMaterial material;
+    material.color = {0.5f, 0.5f, 0.5f};
+    DrawItem item;
+    item.key = item.id = 1; item.kind = MaterialKind::Basic;
+    item.positions = &ball->positions; item.indices = &ball->indices; item.material = &material;
+    item.matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+    for (int frame = 0; frame < 4; ++frame)
+        renderer.render({&item, 1}, slidingCamera(32.0 / 24, frame), LightState{}, {0, 0, 0, 1});
+    const auto pixels = read(renderer, events);
+    CHECK(pixels.size() == size_t{32} * 24 * 4);
+    if (pixels.size() == size_t{32} * 24 * 4) CHECK(std::abs(int(pixels[(12 * 32 + 16) * 4]) - 128) <= 3);
+    renderer.setPostGraph(nullptr);
+    CHECK(renderer.sampleCount() == 4);
+    renderer.setSampleCount(1);
+    CHECK(renderer.sampleCount() == 1);
+}
+
+// A stage that reads the velocity with no temporal effect in the graph gets a named refusal, not the scene colour.
+void velocityNeedsTraa() {
+    namespace g = shader::graph;
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(16, 16);
+    renderer.setOutput(OutputState{});
+    renderer.setPostGraph(g::vec4({g::swizzle(g::texture("velocity", g::uv()), "x"), g::float_(0), g::float_(0), g::float_(1)}));
+    CameraState view;
+    view.projectionMatrix = view.matrixWorld = view.matrixWorldInverse = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+    bool refused = false;
+    try { renderer.render({}, view, LightState{}, {0, 0, 0, 1}); }
+    catch (const std::runtime_error& error) { refused = std::string(error.what()).find("TN_POST_INPUT_MISSING: velocity") == 0; }
+    CHECK(refused);
 }
 
 // Pin the reset input itself: clipping a flat image could conceal the wrong seed in the output.
@@ -696,6 +1004,53 @@ std::unique_ptr<Sphere> plane(double w, double h) {
     return s;
 }
 
+// A render target's renderer reads the main renderer's scene colour by name (a game's exposure meter does). Temporal AA
+// replaces 4x multisampling by allocating the scene target again, and a bind group built over the old view reads a
+// texture that keeps the last frame drawn into it. The target's next draw must read the live scene.
+void siblingReadsTheLiveScene() {
+    namespace g = shader::graph;
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    CHECK(rendersPixels(context));
+    if (!rendersPixels(context)) return;
+    EventQueue events;
+    Renderer main(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    main.setSize(16, 16);
+    main.setSampleCount(4);
+    main.setOutput(OutputState{std::nullopt, 1, false});
+    const auto board = plane(2, 2);  // fills the clip space under the identity camera
+    shader::StandardMaterial paint, copy;
+    DrawItem wall;
+    wall.key = wall.id = 1; wall.kind = MaterialKind::Basic;
+    wall.positions = &board->positions; wall.indices = &board->indices; wall.material = &paint;
+    wall.matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0.5, 1};
+    DrawItem mirror = wall;
+    mirror.key = mirror.id = 2; mirror.material = &copy;
+    mirror.nodes.fragmentNode = g::texture("scene", g::screenUV());
+    CameraState flat;
+    flat.projectionMatrix = flat.matrixWorld = flat.matrixWorldInverse = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+    const auto target = main.sibling();
+    target->setSize(8, 8);
+    target->setOutput(OutputState{std::nullopt, 1, false});
+    target->setPostSource(&main);
+    // The red channel of what the target's draw read, as renderToTarget draws it each frame.
+    const auto sceneRead = [&](float scene) {
+        paint.color = {scene, scene, scene};
+        main.render({&wall, 1}, flat, LightState{}, {0, 0, 0, 1});
+        target->setSourceAttachments(main.sceneColorView(), main.sceneDepthView());
+        target->render({&mirror, 1}, flat, LightState{}, {0, 0, 0, 1});
+        const auto pixels = read(*target, events);
+        CHECK(pixels.size() == 8 * 8 * 4);
+        return pixels.size() == 8 * 8 * 4 ? int(pixels[(4 * 8 + 4) * 4]) : -1;
+    };
+    const int before = sceneRead(0.2f);
+    main.setSampleCount(1);
+    const int after = sceneRead(0.6f);
+    std::fprintf(stderr, "TN_DEBUG scene read by the target: %d (0.2), %d (0.6)\n", before, after);
+    CHECK(std::abs(before - 51) <= 2);
+    CHECK(std::abs(after - 153) <= 2);
+}
+
 // OrthographicCamera(-2, 2, 1, -1, 0.1, 10) at z = 5, in WebGPU clip z.
 CameraState wideOrtho() {
     CameraState camera;
@@ -917,6 +1272,14 @@ void emissiveValidation() { emissivePass(false); }
 TN_TEST_MAIN({"resize_readback", resizeReadback}, {"emissive_target", emissiveTarget}, {"emissive_validation", emissiveValidation}, {"output_ramp", outputRamp},
              {"traa_alpha", traaAlpha},
              {"traa_reset_seed", traaResetSeed},
+             {"traa_camera_velocity", traaCameraVelocity},
+             {"traa_feeds_the_chain", traaFeedsTheChain},
+             {"velocity_needs_traa", velocityNeedsTraa},
+             {"traa_replaces_multisampling", traaReplacesMultisampling},
+             {"traa_converges_edges", traaConvergesEdges},
+             {"traa_late_resolve", traaLateResolve},
+             {"sibling_reads_the_live_scene", siblingReadsTheLiveScene},
+             {"output_screen_size", outputScreenSize},
 #if defined(MYSTRAL_WEBGPU_DAWN)
              {"traa_validation", traaValidation},
 #endif

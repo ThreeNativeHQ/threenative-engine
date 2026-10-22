@@ -13,9 +13,7 @@ import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import os from "node:os";
 import path from "node:path";
-import { chromium } from "@playwright/test";
 import { createProject } from "../../packages/create-threenative/src/index.js";
-import { WEBGPU_BROWSER_ARGS } from "../../packages/playtest/src/runner/browser.js";
 import {
   LOCAL_FRAMEWORK_PACKAGES,
   assertVisualPortAvailable,
@@ -23,6 +21,8 @@ import {
   stopVisualServer,
 } from "../visual-gate.js";
 import { workspacePackages } from "../workspace-packages.js";
+import { launchWebgpuBrowser } from "./browser.js";
+import { awaitExposureSettled, watchExposure } from "./exposureSettled.js";
 
 const REPO_ROOT = path.resolve(import.meta.dirname, "../..");
 const REFERENCE = path.join(REPO_ROOT, "tools/unreal-reference");
@@ -297,10 +297,11 @@ export async function captureThreeNative(options: IThreeNativeCaptureOptions): P
     const origin = `http://127.0.0.1:${port}/`;
     await waitForServer(origin, server);
     const [width, height] = options.size ?? poses.resolution;
-    const browser = await chromium.launch({ args: [...WEBGPU_BROWSER_ARGS], headless: false });
+    const browser = await launchWebgpuBrowser();
     try {
       const page = await browser.newPage({ viewport: { width, height }, deviceScaleFactor: 1 });
       const errors: string[] = [];
+      const exposure = watchExposure(page);
       // The frame meter prints to the console; a measured cell keeps the windows between two marks.
       let meter: string[] = [];
       page.on("console", (message) => {
@@ -369,6 +370,7 @@ export async function captureThreeNative(options: IThreeNativeCaptureOptions): P
             throw new Error(`TN_UNREAL_LOOK_WRONG_ENGINE: ${layer} drew on ${String(engine)}`);
           if (count === 0) console.info(`TN_UNREAL_LOOK engine=${engine}`);
           for (const pose of wanted) {
+            const poseAt = Date.now();
             await page.evaluate((p) => {
               (window as unknown as { __tnRef: { pose(p: unknown): void } }).__tnRef.pose(p);
             }, pose);
@@ -379,9 +381,18 @@ export async function captureThreeNative(options: IThreeNativeCaptureOptions): P
             await page.evaluate(
               `new Promise((resolve) => { let n = 0; const tick = () => (++n >= ${settle} ? resolve() : requestAnimationFrame(tick)); requestAnimationFrame(tick); })`,
             );
+            // The frame count above is a floor: a frame is taken once the readings say the exposure landed.
+            if (layer === "L9")
+              console.info(
+                `TN_UNREAL_LOOK exposure ${pose.name} settled after ${await awaitExposureSettled(page, exposure, poseAt)} ms of waiting`,
+              );
             if (errors.length > 0)
               throw new Error(`TN_UNREAL_LOOK_PAGE_ERROR: ${errors.join(" | ")}`);
             const name = layer === "ID" ? `ID_${pose.name}` : `${layer}_${sun.name}_${pose.name}`;
+            // The chain's applied stages and, when temporal AA runs, its reset and history state.
+            console.info(
+              `TN_UNREAL_LOOK debug ${name} ${JSON.stringify(await page.evaluate("window.__tnRef.debug()"))}`,
+            );
             if (options.measureSeconds !== undefined) {
               meter = [];
               await page.waitForTimeout(options.measureSeconds * 1000);
