@@ -5,6 +5,7 @@ import { PNG } from "pngjs";
 import { afterEach, describe, expect, it } from "vitest";
 import { tierQuery } from "../unreal-look/capture-gi-threenative.js";
 import {
+  binnedMedian,
   ciede2000,
   classify,
   compareCells,
@@ -295,6 +296,35 @@ describe("Unreal reference comparison", () => {
     expect(report.maxNoise).toBeCloseTo(98 / 30);
     expect(report.noise).toHaveLength(1);
     expect(report.rows[0]?.dEv50).toBe(0);
+  });
+  // A frame whose median is 66 moves 1.5% when a few pixels cross a bin edge (PRD-631: L7 sun60_interior p50 66 vs 67,
+  // L8 sun15_interior 93 vs 92), although the mean moved 0.12% and 0.02%. The sub-level median interpolates inside the bin.
+  it("reports the whole-frame p50 difference at sub-level resolution beside the whole-level one", () => {
+    const { root, put } = fixture();
+    const frame = (levels: number[]) => png(levels.map(gray));
+    for (const engine of ["unreal", "runB"]) {
+      put(`captures/${engine}/ID/ID_exterior.png`, floor());
+      put(
+        `captures/${engine}/L1/L1_sun60_exterior.png`,
+        frame(engine === "unreal" ? [66, 66, 67, 67] : [66, 67, 67, 67]),
+      );
+      put(`captures/${engine}/L1/L1_sun60_exterior.exr`, exr());
+    }
+    const report = runComparison({
+      referenceDir: root,
+      layers: ["L1"],
+      unrealVsUnreal: path.join(root, "captures/runB"),
+    });
+    expect(report.noise[0]?.dP50).toBeCloseTo(1 / 66, 6);
+    expect(report.noise[0]?.dP50Binned).toBeCloseTo(1 / 3 / 66.5, 6);
+    expect(report.maxNoiseBinned).toBeLessThan(0.01);
+    expect(report.maxNoiseBinned).toBeLessThan(report.maxNoise ?? 0);
+  });
+  it("interpolates the median inside its bin and leaves a single level alone", () => {
+    expect(binnedMedian([66, 66, 67, 67])).toBeCloseTo(66.5, 9);
+    expect(binnedMedian([66, 67, 67, 67])).toBeCloseTo(66 + 5 / 6, 9);
+    expect(binnedMedian([10, 10, 10, 10])).toBe(10);
+    expect(() => binnedMedian([])).toThrow(/^TN_UNREAL_LOOK_EMPTY_MASK/);
   });
   it("derives per-layer thresholds as the larger of twice the worst noise and the absolute floor", () => {
     const row = (layer: string, deltaE: number, dP50: number, dEv50: number) =>
