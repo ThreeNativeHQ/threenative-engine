@@ -241,7 +241,7 @@ describe("defineScreenSpaceGi", () => {
           probes: { downsampleFactor: 16, viewport },
         }),
       ),
-    ).toEqual(["SSGI", "SSGI", "SSGI"]);
+    ).toEqual(Array(6).fill("SSGI")); // trace, irradiance, 3 filter passes, gather
     expect(
       stageOfEach((tsl) =>
         defineScreenSpaceReflections(tsl)(chain(), chain(), chain(), { camera }),

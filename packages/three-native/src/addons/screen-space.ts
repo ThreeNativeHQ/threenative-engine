@@ -816,6 +816,7 @@ function defineScreenProbes(
     })();
     smoothed = rtt(spatialGraph, tilesX * IRRADIANCE_SIDE, tilesY * IRRADIANCE_SIDE, {
       type: HALF_FLOAT_TYPE,
+      gpuStage: GI_STAGE,
     });
   }
 
