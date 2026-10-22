@@ -160,6 +160,7 @@ Value Driver::share(std::string cls, std::shared_ptr<void> object) {
 }
 
 std::vector<double> Driver::numbers(const Value& arg) {
+    if (arg.kind == Value::Kind::Numbers) return arg.numbers;  // a typed array argument (`a:Float32Array:...`)
     if (arg.kind != Value::Kind::Ref) return {};
     const auto it = objects_.find(arg.text);
     if (it == objects_.end() || it->second.cls != "\x03value") return {};

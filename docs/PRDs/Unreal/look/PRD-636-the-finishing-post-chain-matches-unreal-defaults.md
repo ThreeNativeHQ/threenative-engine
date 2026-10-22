@@ -8,7 +8,7 @@ prd_contract: v1
 **Priority:** P2 — AC-1 and AC-3 are open: the starter L9 cells still differ from Unreal in lighting, sky, shadows and ambient occlusion, which other PRDs own, and the whole `high` chain does not hold 16.7 ms while ambient occlusion costs 15 ms.
 **Complexity:** 5 (MEDIUM) — template post source in 13 templates (+2), a local-exposure stage that is new to the chain (+2), native proof (+1); risk override: none
 **Owner:** João
-**Depends on:** [PRD-631](PRD-631-an-unreal-reference-scene-measures-the-default-look.md) Phase 3 (the L9 row) and [PRD-632](PRD-632-the-frame-is-exposed-and-tone-mapped-the-way-a-fresh-unreal-project-is.md): bloom and local exposure act on the exposed scene-linear frame, so they cannot be compared before exposure matches. Low-resolution temporal reconstruction belongs to [PRD-539](../performance/PRD-539-low-resolution-temporal-reconstruction-quality-and-cost.md). Phase 4 makes temporal anti-aliasing the default, by owner decision on 2026-10-21.
+**Depends on:** [PRD-631](../../done/PRD-631-an-unreal-reference-scene-measures-the-default-look.md) Phase 3 (the L9 row) and [PRD-632](PRD-632-the-frame-is-exposed-and-tone-mapped-the-way-a-fresh-unreal-project-is.md): bloom and local exposure act on the exposed scene-linear frame, so they cannot be compared before exposure matches. Low-resolution temporal reconstruction belongs to [PRD-539](../performance/PRD-539-low-resolution-temporal-reconstruction-quality-and-cost.md). Phase 4 makes temporal anti-aliasing the default, by owner decision on 2026-10-21.
 
 ## Context
 

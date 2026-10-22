@@ -366,6 +366,31 @@ describe("the world-space GI cache against closed forms (PRD-631 L7)", () => {
     expect((floor.material as MeshStandardMaterial).roughDiffuse ?? false).toBe(false);
   });
 
+  it("a marked leaf with a subsurfaceColor takes the cache's back-face light, and a leaf without one takes none (PRD-643)", () => {
+    const tinted = new MeshStandardMaterial({ side: DoubleSide });
+    tinted.twoSidedFoliage = true;
+    tinted.subsurfaceColor = new Color(0.2, 0.5, 0.1);
+    const bare = new MeshStandardMaterial({ side: DoubleSide });
+    bare.twoSidedFoliage = true;
+    const lone = new MeshStandardMaterial({ side: DoubleSide });
+    lone.subsurfaceColor = new Color(0.2, 0.5, 0.1);
+    const meshes = [tinted, bare, lone].map(
+      (m, i) => new Mesh(new PlaneGeometry(1, 1).translate(3 * i, 0, 0), m),
+    );
+    const floor = new Mesh(
+      new PlaneGeometry(40, 40).rotateX(-Math.PI / 2),
+      new MeshStandardMaterial(),
+    );
+    const scene = new Group().add(...meshes, floor);
+    skyRadiance.current = { data: new Float32Array(6), width: 2, height: 1, scale: [1, 1, 1] };
+    installGi(rayContext(scene), scene, { bounces: 1, sun: noSun });
+    const [a, b, c] = meshes.map((m) => m.material as MeshStandardMaterial);
+    expect((a as MeshStandardMaterial).emissiveNode).toBeTruthy();
+    expect((a as MeshStandardMaterial).subsurfaceColor?.g).toBeCloseTo(0.5);
+    expect((b as MeshStandardMaterial).emissiveNode ?? null).toBeNull();
+    expect((c as MeshStandardMaterial).emissiveNode ?? null).toBeNull();
+  });
+
   it("a material whose fields are accessors on its class, as the native engine's are, swaps with them intact", () => {
     // The native engine binds a material's fields as accessors on the class prototype, which a `for in` never lists:
     // a copy by enumeration took nothing, and every leaf and wall came back white.
@@ -574,60 +599,6 @@ describe("the world-space GI cache against closed forms (PRD-631 L7)", () => {
       it("refresh reports nothing to do while no light changed", () => {
         live();
         expect(giCache.refresh?.()).toBe(false);
-      });
-
-      describe("with Unreal's response in frames (PRD-641 AC-2)", () => {
-        /** The probe's total over the refreshes that follow a switch-off, one entry per rendered frame. */
-        const fade = (lightResponse: { updateFactor: number; framesAccumulated: number }) => {
-          skyRadiance.current = undefined;
-          const scene = sceneOf(true);
-          const source = { intensity: 100, color: new Color(1, 1, 1) };
-          installGi(rayContext(scene), scene, {
-            bounces: 1,
-            lights: [{ ...lamp, source }],
-            lightResponse,
-          });
-          const total = () =>
-            texelAt(new Vector3(0.5, 0.5, 0.5))
-              .faces.flat()
-              .reduce((a, b) => a + b, 0);
-          const baked = total();
-          source.intensity = 0;
-          const totals: number[] = [];
-          for (let frame = 0; frame < 400; frame += 1) {
-            giCache.refresh?.();
-            totals.push(total() / baked);
-          }
-          return totals;
-        };
-
-        it("does not step: the light is still there on the first frame and gone after the cycle", () => {
-          const totals = fade({ updateFactor: 32, framesAccumulated: 10 });
-          expect(totals[0]).toBeGreaterThan(0.9);
-          expect(totals[399]).toBeLessThan(1e-3);
-        });
-
-        it("falls and never rises, and a longer cycle and a longer history are slower", () => {
-          const quick = fade({ updateFactor: 8, framesAccumulated: 2 });
-          const slow = fade({ updateFactor: 32, framesAccumulated: 10 });
-          for (let i = 1; i < slow.length; i += 1)
-            expect(slow[i] as number).toBeLessThanOrEqual((slow[i - 1] as number) + 1e-6);
-          const lag = (totals: number[]) => totals.findIndex((v) => v < 0.1);
-          expect(lag(slow)).toBeGreaterThan(lag(quick));
-        });
-
-        it("an update factor of 1 with no history follows at once", () => {
-          expect(fade({ updateFactor: 1, framesAccumulated: 0 })[0]).toBeLessThan(1e-3);
-        });
-
-        it("refuses a factor under 1 and a negative history", () => {
-          expect(() => fade({ updateFactor: 0, framesAccumulated: 10 })).toThrow(
-            /TN_GI_LIGHT_RESPONSE/u,
-          );
-          expect(() => fade({ updateFactor: 32, framesAccumulated: -1 })).toThrow(
-            /TN_GI_LIGHT_RESPONSE/u,
-          );
-        });
       });
     });
   });

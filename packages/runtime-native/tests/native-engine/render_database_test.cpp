@@ -9,6 +9,7 @@
 #include "engine/renderer/post/traa.h"
 #include "engine/renderer/render_database.h"
 #include "engine/renderer/shadows/virtual/atlas.h"
+#include "engine/renderer/shadows/lamp_resolution.h"
 #include "engine/renderer/reflector.h"
 #include "engine/renderer/render_target_pass.h"
 #include "engine/shader/graph/graph.h"
@@ -30,6 +31,7 @@
 #include <cstdlib>
 #include <cmath>
 #include <cstdio>
+#include <numeric>
 #include <string>
 #include <thread>
 
@@ -1252,22 +1254,34 @@ void timeUniform() {
 }
 
 // A FloatType target keeps float32: auto exposure feeds its last value back through one, and a half
-// float rounded each frame stalled the adaptation 0.006 to 0.009 stops short of its target.
-void floatRenderTargetKeepsFloat32() {
+// float rounded each frame stalled the adaptation 0.006 to 0.009 stops short of its target. A device
+// without float32-blendable stores it as half instead (blending into RGBA32Float would fail validation),
+// reports that on the target, and a read still returns float32 rows.
+void drawFloatTarget(bool forceHalf) {
     mystral::webgpu::Context context;
     CHECK(context.initializeHeadless());
     EventQueue events;
     Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.forceHalfFloatTargets(forceHalf);
     renderer.setSize(64, 64);
+    const bool expectFloat32 = !forceHalf && wgpuDeviceHasFeature(context.getDevice(), WGPUFeatureName_Float32Blendable);
     const auto target = RenderTarget::make(4, 4, kTextureFloatType);
     Scene inner;
     OrthographicCamera innerCamera(-1, 1, 1, -1, 0.1, 10);
     innerCamera.position.z = 5;
     innerCamera.updateMatrixWorld();
+    // A half-transparent blue square over the whole target: a blended draw into the FloatType target.
+    auto blue = std::make_shared<Material>(MaterialType::Basic);
+    blue->color.setRGB(0, 0, 1);
+    blue->transparent = true;
+    blue->opacity = 0.5;
+    Mesh square(makePlaneGeometry(4, 4), blue);
+    inner.add(square);
     inner.updateMatrixWorld(true);
     // 1 + 2^-12 and 2^-12 + 2^-24 need more than half float's 11 significant bits.
     const double high = 1.0 + std::ldexp(1.0, -12), low = std::ldexp(1.0, -12) + std::ldexp(1.0, -24);
     CHECK(renderToTarget(renderer, *target, inner, innerCamera, {high, low, 0.5, 1}, false).empty());
+    CHECK(target->halfPrecision == !expectFloat32);
     std::vector<uint8_t> region;
     bool done = false;
     CHECK(readRenderTarget(*target, 0, 0, 4, 4, [&](GpuStatus status, std::vector<uint8_t> bytes) {
@@ -1280,14 +1294,22 @@ void floatRenderTargetKeepsFloat32() {
         events.drain();
         if (!done) std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
-    CHECK(region.size() == size_t{4} * 4 * 16);  // RGBA32Float rows
+    CHECK(region.size() == size_t{4} * 4 * 16);  // float32 rows either way
     if (region.size() == size_t{4} * 4 * 16) {
         float texel[4];
         std::memcpy(texel, region.data() + (size_t{1} * 4 + 1) * 16, sizeof texel);
-        std::fprintf(stderr, "float target: %.9g %.9g %.9g\n", texel[0], texel[1], texel[2]);
-        CHECK(texel[0] == float(high) && texel[1] == float(low) && texel[2] == 0.5f);
+        std::fprintf(stderr, "float target (%s): %.9g %.9g %.9g\n", expectFloat32 ? "float32" : "half", texel[0], texel[1], texel[2]);
+        // Half-opaque blue over (high, low, 0.5): red and green keep half of the clear, blue mixes toward 1.
+        const float red = float(high) * 0.5f, green = float(low) * 0.5f, blueMix = 0.75f;
+        const float tolerance = expectFloat32 ? 1e-6f : 2e-3f;
+        CHECK(std::abs(texel[0] - red) <= tolerance && std::abs(texel[1] - green) <= tolerance &&
+              std::abs(texel[2] - blueMix) <= tolerance);
+        if (expectFloat32) CHECK(texel[0] == red);  // the half rounding of 1 + 2^-12 halved would differ
     }
 }
+
+void floatRenderTargetKeepsFloat32() { drawFloatTarget(false); }
+void floatRenderTargetFallsBackToHalf() { drawFloatTarget(true); }
 
 // PRD-551: a game's RenderTarget. A render into it writes the linear scene colour (no tone mapping, no
 // output transform, as r185 writes a target); readRenderTarget returns a region of it; a material whose
@@ -2827,6 +2849,69 @@ void gpuTimerCoversShadows() {
     }
 }
 
+// PRD-650: the lamp maps' GPU time is its own segment, apart from the sun's, and the segments sum to the frame.
+void gpuTimerSplitsLampShadows() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(96, 96);
+    if (!wgpuDeviceHasFeature(context.getDevice(), WGPUFeatureName_TimestampQuery)) {
+        std::printf("no timestamp-query on this device: nothing to time\n");
+        return;
+    }
+    OrthographicCamera camera(-4, 4, 4, -4, 0.1, 20);
+    camera.position.set(0, 10, 0.001);
+    camera.lookAt(0, 0, 0);
+    camera.updateProjectionMatrix();
+    Scene scene;
+    SpotLight spot{Color(1, 1, 1), 40, 6, 0.9};
+    spot.position.set(1.5, 3, 0);
+    spot.target->position.set(1.5, 0, 0);
+    spot.setCastShadow(true);
+    scene.add(spot);
+    scene.add(*spot.target);
+    DirectionalLight sun{Color(1, 1, 1), 2};
+    sun.position.set(2, 8, 1);
+    sun.setCastShadow(true);
+    scene.add(sun);
+    auto white = std::make_shared<Material>(MaterialType::Standard);
+    Mesh floor{makeBoxGeometry(8, 0.2, 8), white};
+    floor.position.y = -0.1;
+    floor.setReceiveShadow(true);
+    scene.add(floor);
+    Mesh box{makeBoxGeometry(0.6, 0.6, 0.6), white};
+    box.position.set(1.5, 1, 0);
+    box.setCastShadow(true);
+    scene.add(box);
+    RenderDatabase database;
+    database.shadowMapEnabled = true;
+    renderer.setGpuTimer(true);
+    // One frame and its own GPU sample: wait for the frame's readback before the next frame.
+    const auto timed = [&] {
+        const uint64_t before = renderer.gpuSamples();
+        scene.updateMatrixWorld(true);
+        database.render(renderer, scene, camera);
+        const auto until = std::chrono::steady_clock::now() + std::chrono::milliseconds(2000);
+        while (renderer.gpuSamples() == before && std::chrono::steady_clock::now() < until) {
+            renderer.poll();
+            events.drain();
+        }
+        CHECK(renderer.gpuSamples() > before);
+        const auto segments = renderer.lastGpuSegments();
+        CHECK(std::abs(std::accumulate(segments.begin(), segments.end(), 0.0) - renderer.lastGpuMs()) < 1e-9);
+        return segments;
+    };
+    const auto first = timed();
+    std::printf("lamp gpu: first frame sun %.4f ms, lamps %.4f ms (%u maps)\n", first[0], first[kGpuLampShadowSegment], renderer.lastFrame().lampRedraws);
+    CHECK(renderer.lastFrame().lampRedraws == 1);
+    CHECK(first[0] > 0 && first[kGpuLampShadowSegment] > 0);
+    const auto cached = timed();
+    std::printf("lamp gpu: cached frame sun %.4f ms, lamps %.4f ms (%u maps)\n", cached[0], cached[kGpuLampShadowSegment], renderer.lastFrame().lampRedraws);
+    CHECK(renderer.lastFrame().lampRedraws == 0);
+    CHECK(cached[0] > 0 && cached[kGpuLampShadowSegment] == 0);
+}
+
 // Secondary targets and the main scene must resolve as one complete GPU sample.
 void gpuTimerCoversOffscreen() {
     mystral::webgpu::Context context;
@@ -3518,7 +3603,7 @@ void leafReceiver() {
             options->depthRange = 40;
             options->refreshStep = {0};
             light.shadow.virtualShadow = options;
-            light.shadow.sourceAngleFilter = std::array<double, 3>{0.0047, 16, 16};  // 0.27 degrees, Unreal's sun
+            light.shadow.sourceAngleFilter = std::array<double, 4>{0.0047, 16, 16, 0};  // 0.27 degrees, Unreal's sun
         }
         scene.add(light);
         auto material = std::make_shared<Material>(MaterialType::Standard);
@@ -3963,6 +4048,9 @@ void lampCache() {
     };
     const uint64_t first = frame();
     CHECK(first > 0);
+    // Both lamps redraw on the first frame, a cube's six faces as one, and every shadow draw is theirs.
+    CHECK(renderer.lastFrame().lampRedraws == 2);
+    CHECK(renderer.lastFrame().lampShadowDraws == first);
     const std::vector<uint8_t> fresh = pixels();
     uint64_t still = 0;
     for (int i = 0; i < 300; ++i) still += frame();
@@ -3981,7 +4069,87 @@ void lampCache() {
     const uint64_t inside = frame();
     std::printf("lamp cache: caster moved inside range %llu\n", (unsigned long long)inside);
     CHECK(inside > 0);
+    CHECK(renderer.lastFrame().lampRedraws >= 1);  // the box moved inside the point light's range
     CHECK(frame() == 0);
+    // A mixed-light frame: the sun's map redraws, the lamps' stay cached, and the two parts add up.
+    DirectionalLight sun{Color(1, 1, 1), 2};
+    sun.position.set(2, 8, 1);
+    sun.setCastShadow(true);
+    scene.add(sun);
+    const uint64_t mixed = frame();
+    std::printf("lamp cache: mixed frame %llu shadow draws, %u lamp\n", (unsigned long long)mixed, renderer.lastFrame().lampShadowDraws);
+    CHECK(mixed > 0);
+    CHECK(renderer.lastFrame().lampRedraws == 0 && renderer.lastFrame().lampShadowDraws == 0);
+    near.position.x = -1.5;
+    const uint64_t both = frame();
+    std::printf("lamp cache: mixed frame with a moved caster %llu shadow draws, %u lamp, %u lamp maps\n", (unsigned long long)both,
+                renderer.lastFrame().lampShadowDraws, renderer.lastFrame().lampRedraws);
+    CHECK(renderer.lastFrame().lampRedraws >= 1);
+    CHECK(renderer.lastFrame().lampShadowDraws > 0 && renderer.lastFrame().lampShadowDraws < both);
+}
+
+void lampAtlas() {
+    // PRD-650 Phase 1: Unreal's local-light rule picks the map from the pixel footprint.
+    using shadows::LampDemand;
+    CHECK((shadows::lampMapSizes({LampDemand{17}, LampDemand{30}}) == std::vector<uint32_t>{1024, 1024}));
+    CHECK((shadows::lampMapSizes({LampDemand{17, 1}}) == std::vector<uint32_t>{512}));  // moving: one mip coarser
+    // Over the budget one global bias rises: the lamp nearest its next coarser mip (30 texels) steps first.
+    CHECK((shadows::lampMapSizes({LampDemand{17}, LampDemand{30}}, 1024.0 * 1024 + 512 * 512) == std::vector<uint32_t>{1024, 512}));
+    CHECK((shadows::lampMapSizes({LampDemand{17, 0, true}, LampDemand{30}}, 1) == std::vector<uint32_t>{128, 128}));
+
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(256, 256);
+    PerspectiveCamera camera(50, 1, 0.1, 100);
+    Scene scene;
+    SpotLight spot{Color(1, 1, 1), 40, 0, 0.6};
+    spot.position.set(0, 3, 0);
+    spot.target->position.set(0, 0, 0);
+    spot.setCastShadow(true);
+    scene.add(spot);
+    scene.add(*spot.target);
+    auto white = std::make_shared<Material>(MaterialType::Standard);
+    Mesh floor{makeBoxGeometry(60, 0.2, 60), white};
+    floor.position.y = -0.1;
+    floor.setReceiveShadow(true);
+    scene.add(floor);
+    Mesh box{makeBoxGeometry(0.4, 0.4, 0.4), white};
+    box.position.set(0, 1, 0);
+    box.setCastShadow(true);
+    scene.add(box);
+    RenderDatabase database;
+    database.shadowMapEnabled = true;
+    const auto sizeFrom = [&](double away) {
+        camera.position.set(0, 1.2, away);
+        camera.lookAt(0, 0, 0);
+        scene.updateMatrixWorld(true);
+        database.render(renderer, scene, camera);
+        return renderer.lampShadowSize(0);
+    };
+    const uint32_t near = sizeFrom(2), far = sizeFrom(20);
+    std::printf("lamp atlas: 2 m %u, 20 m %u\n", near, far);
+    CHECK(near > far);
+    CHECK(near > 128 && near < 16384);
+    for (int i = 0; i < 12; ++i) sizeFrom(2);
+    const uint32_t still = renderer.lampShadowSize(0);
+    CHECK(still == near);
+    for (int i = 0; i < 3; ++i) {
+        spot.position.x += 0.001;
+        sizeFrom(2);
+    }
+    const uint32_t moving = renderer.lampShadowSize(0);
+    for (int i = 0; i < 12; ++i) sizeFrom(2);
+    const uint32_t settled = renderer.lampShadowSize(0);
+    std::printf("lamp atlas: still %u, moving %u, settled %u\n", still, moving, settled);
+    CHECK(moving * 2 == still);
+    CHECK(settled == still);
+    spot.shadow.mapSize.set(300, 300);
+    sizeFrom(2);
+    CHECK(renderer.lampShadowSize(0) == 300);  // the game's mapSize overrides, and says so
+    CHECK(std::any_of(renderer.diagnostics().begin(), renderer.diagnostics().end(),
+                      [](const std::string& d) { return d.starts_with("TN_LAMP_SHADOW_MAPSIZE_OVERRIDE"); }));
 }
 
 void contactShadowFoot() {
@@ -4155,6 +4323,263 @@ void virtualSunContactFoot() {
     CHECK(frontLeak < 0.05);    // the faces the sun sees store the depth, so the foot stays dark
     CHECK(derivedLeak < 0.05);  // and a null shadowSide on a virtual page draws them too
     CHECK(derivedKept > 0.95);  // without the lit floor shadowing itself
+}
+
+// The sunlit room's inner seams under a sun with a virtual shadow map and a source-angle filter. A roofed room
+// (a wall, a floor slab and a roof slab 0.2 m thick, the sun on the open side) is dark wherever the sun cannot
+// reach, so every lit pixel along a seam is a leak. The receivers sit far from the light's near plane (40 m), as
+// under a tall caster, so the filter's blocker search is wide (0.26 m) and its taps compare with the receiver
+// plane's depth at each tap. The roof's gap to the wall, 0.2 m / sin(sun), is far under that search: the sun
+// must still stay out, and a lit surface must not shadow itself. Back faces store the depth on the receiving
+// surface itself and let the sun in along the seam, which the last arm shows (the proof can fail).
+void virtualSunRoomSeam() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(192, 192);
+    struct View { const char* name; double elevation; bool floorView; };
+    const View views[] = {{"wall under the roof, sun 60", 60, false}, {"wall under the roof, sun 15", 15, false},
+                          {"floor at the wall, sun 60", 60, true}, {"floor at the wall, sun 15", 15, true}};
+    // The lit band of a roofed seam in metres, and the least share of an open surface that stays lit.
+    const auto seam = [&](const View& view, std::optional<Side> side) -> std::array<double, 2> {
+        Scene scene;
+        DirectionalLight sun{Color(1, 1, 1), 6};
+        const double elevation = view.elevation * M_PI / 180, azimuth = 25 * M_PI / 180;
+        sun.position.set(40 * std::sin(azimuth) * std::cos(elevation), 40 * std::sin(elevation), 40 * std::cos(azimuth) * std::cos(elevation));
+        sun.setCastShadow(true);
+        sun.shadow.camera->setLayerMask(double((1 << 0) | (1 << 2)));
+        shadows::AtlasOptions atlas;
+        // The coarse level of the sunlit room: 22.4 m across 2048 texels, about 11 mm each.
+        atlas.clipExtents = {11.2}; atlas.mapSize = 2048; atlas.pageTexels = 128;
+        atlas.lightDistance = 40; atlas.depthRange = 40;
+        sun.shadow.virtualShadow = std::make_shared<const shadows::AtlasOptions>(std::move(atlas));
+        sun.shadow.sourceAngleFilter = std::array<double, 4>{0.006421, 16, 16, 0};  // Unreal's sun, 0.7357 degrees across
+        scene.add(sun);
+        auto white = std::make_shared<Material>(MaterialType::Standard);
+        white->shadowSide = side;
+        // The back wall's inner face is the plane z = 0, from the floor top (y = 0) to the roof underside (y = 3).
+        // The room's slabs reach the sun's side far enough that no ray to the room passes round them.
+        Mesh wall{makeBoxGeometry(30, 3.2, 0.2), white};
+        wall.position.set(0, 1.4, -0.1);
+        wall.setCastShadow(true);
+        wall.setReceiveShadow(true);
+        scene.add(wall);
+        Mesh floor{makeBoxGeometry(30, 0.2, 40), white};
+        floor.position.set(0, -0.1, 19.8);
+        floor.setCastShadow(true);
+        floor.setReceiveShadow(true);
+        scene.add(floor);
+        // The roof slab covers the room. Layer 2: the camera sees the wall and floor, the shadow camera sees all.
+        Mesh roof{makeBoxGeometry(30, 0.2, 40), white};
+        roof.position.set(0, 3.1, 19.8);
+        roof.setCastShadow(true);
+        roof.setLayer(2);
+        scene.add(roof);
+        // A 0.4 m square of the wall just under the roof, or of the floor just in front of the wall.
+        OrthographicCamera camera(-0.2, 0.2, 0.2, -0.2, 0.1, 20);
+        if (view.floorView) { camera.up.set(0, 0, -1); camera.position.set(0, 6, 0.2); camera.lookAt(0, 0, 0.2); }
+        else { camera.position.set(0, 2.8, 6); camera.lookAt(0, 2.8, 0); }
+        camera.updateProjectionMatrix();
+        scene.updateMatrixWorld(true);
+        RenderDatabase database;
+        database.shadowMapEnabled = true;
+        const auto frame = [&] {
+            for (int i = 0; i < 3; ++i) database.render(renderer, scene, camera);
+            std::vector<uint8_t> pixels;
+            bool read = false;
+            renderer.readPixels([&](GpuStatus status, std::vector<uint8_t> px) {
+                if (status == GpuStatus::Ok) pixels = std::move(px);
+                read = true;
+            });
+            for (int i = 0; i < 5000 && !read; ++i) {
+                renderer.poll();
+                events.drain();
+                if (!read) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+            CHECK(pixels.size() == size_t{192} * 192 * 4);
+            std::vector<double> red(size_t{192} * 192);
+            for (size_t i = 0; i < red.size(); ++i) red[i] = pixels[i * 4];
+            return red;
+        };
+        const std::vector<double> roofed = frame();
+        roof.setCastShadow(false);
+        const std::vector<double> open = frame();
+        sun.setCastShadow(false);
+        const std::vector<double> free = frame();
+        CHECK(*std::max_element(free.begin(), free.end()) > 24);
+        // Rows with a lit pixel under the roof, and the least lit share of the open surface without it.
+        int leakRows = 0;
+        double kept = 1;
+        for (int y = 0; y < 192; ++y) {
+            bool lit = false;
+            for (int x = 0; x < 192; ++x) {
+                const size_t i = size_t(y) * 192 + x;
+                if (free[i] < 8) continue;
+                lit = lit || roofed[i] > 0.25 * free[i];
+                kept = std::min(kept, open[i] / free[i]);
+            }
+            leakRows += lit;
+        }
+        return {double(leakRows) * 0.4 / 192, kept};
+    };
+    for (const View& view : views) {
+        const auto [leak, kept] = seam(view, std::nullopt);
+        std::printf("virtual sun room seam, %s: lit band %.1f mm, open surface kept %.3f\n", view.name, leak * 1000, kept);
+        CHECK(leak < 0.025);  // under 2 texels: the sun does not come in along the seam
+        CHECK(kept > 0.95);   // and the open surface does not shadow itself
+    }
+    const auto [backLeak, backKept] = seam(views[0], Side::Back);
+    std::printf("virtual sun room seam, back faces, %s: lit band %.1f mm, open surface kept %.3f\n", views[0].name, backLeak * 1000, backKept);
+    CHECK(backLeak > 0.05);  // the proof can fail: back faces put the depth on the wall and the sun comes in
+}
+
+// A shadow edge is never narrower than `minPenumbraPixels` of the receiver's pixels: a tall caster's far edge
+// on a floor has a penumbra of a few millimetres and a texel under a pixel, so it is one hard step that crawls
+// as the camera moves. The floor widens the filter disc to the pixel, measured here as the 10 to 90 percent
+// width of the edge in pixels, for a floor of 0, 1 and 2 pixels.
+void virtualSunPixelFloor() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(192, 192);
+    // 3.2 m across 192 pixels: 17 mm each, over twice the 7.8 mm texel of the finest level.
+    OrthographicCamera camera(-1.6, 1.6, 1.6, -1.6, 0.1, 20);
+    camera.position.set(0, 10, 0.001);
+    camera.lookAt(0, 0, 0);
+    camera.updateProjectionMatrix();
+    const auto edgeWidth = [&](double minPixels) {
+        Scene scene;
+        DirectionalLight sun{Color(1, 1, 1), 3};
+        sun.position.set(3, 3, 0);  // 45 degrees: a 0.3 m plate shades the floor 0.3 m before its edge
+        sun.setCastShadow(true);
+        sun.shadow.camera->setLayerMask(double((1 << 0) | (1 << 2)));
+        shadows::AtlasOptions atlas;
+        atlas.clipExtents = {8}; atlas.mapSize = 2048; atlas.pageTexels = 128;
+        atlas.lightDistance = 20; atlas.depthRange = 40;
+        sun.shadow.virtualShadow = std::make_shared<const shadows::AtlasOptions>(std::move(atlas));
+        sun.shadow.sourceAngleFilter = std::array<double, 4>{0.006421, 16, 16, minPixels};
+        scene.add(sun);
+        auto white = std::make_shared<Material>(MaterialType::Standard);
+        Mesh floor{makeBoxGeometry(8, 0.2, 8), white};
+        floor.position.y = -0.1;
+        floor.setCastShadow(true);
+        floor.setReceiveShadow(true);
+        scene.add(floor);
+        // The plate covers x 1..2, 0.3 m tall, on layer 2: the camera sees the floor and the shadow at x < 1.
+        Mesh plate{makeBoxGeometry(1, 0.3, 1), white};
+        plate.position.set(1.5, 0.15, 0);
+        plate.setCastShadow(true);
+        plate.setLayer(2);
+        scene.add(plate);
+        scene.updateMatrixWorld(true);
+        RenderDatabase database;
+        database.shadowMapEnabled = true;
+        for (int frame = 0; frame < 3; ++frame) database.render(renderer, scene, camera);
+        std::vector<uint8_t> pixels;
+        bool read = false;
+        renderer.readPixels([&](GpuStatus status, std::vector<uint8_t> px) {
+            if (status == GpuStatus::Ok) pixels = std::move(px);
+            read = true;
+        });
+        for (int i = 0; i < 5000 && !read; ++i) {
+            renderer.poll();
+            events.drain();
+            if (!read) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        CHECK(pixels.size() == size_t{192} * 192 * 4);
+        std::vector<double> red(192);
+        for (int x = 0; x < 192; ++x) red[x] = pixels[(size_t{96} * 192 + x) * 4];
+        // The floor is lit at x = -1.4 m (pixel 12) and dark inside the strip (pixel 150, x = 0.86 m).
+        const double lit = red[12], dark = red[150];
+        CHECK(lit > 32 && dark < 0.25 * lit);
+        // The strip's lit-side edge sits at x = 0.7 m (pixel 138): find where it falls through 90 and 10 percent.
+        double high = -1, low = -1;
+        for (int x = 120; x < 150; ++x) {
+            const double level = (red[x] - dark) / (lit - dark), next = (red[x + 1] - dark) / (lit - dark);
+            if (level >= 0.9 && next < 0.9) high = x + (level - 0.9) / (level - next);
+            if (level >= 0.1 && next < 0.1) low = x + (level - 0.1) / (level - next);
+        }
+        CHECK(high >= 0 && low >= high);
+        return low - high;
+    };
+    const double none = edgeWidth(0), one = edgeWidth(1), two = edgeWidth(2);
+    std::printf("virtual sun pixel floor: edge width %.2f px at 0, %.2f px at 1, %.2f px at 2\n", none, one, two);
+    CHECK(none < 1.0);            // a hard edge without the floor
+    CHECK(one > none + 0.5);      // each pixel of floor widens the edge, in quadrature with the texel
+    CHECK(two > one + 0.5);
+    CHECK(two < 4.5);             // and never the smear of a wide penumbra
+}
+
+// A clip level past the finest draws a caster's coarse AutoLOD rung only where one texel of the level hides
+// the rung's error. The plate's only rung draws nothing, so the floor behind it is lit when the rung is used
+// and dark when the plate keeps its own geometry. The strip is outside the 0.2 m finest window: level 1, 7.8 mm texels.
+void virtualSunLodRung() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(192, 192);
+    OrthographicCamera camera(-1.6, 1.6, 1.6, -1.6, 0.1, 20);
+    camera.position.set(0, 10, 0.001);
+    camera.lookAt(0, 0, 0);
+    camera.updateProjectionMatrix();
+    const auto stripLight = [&](double rungError, double texels = 1) {
+        Scene scene;
+        DirectionalLight sun{Color(1, 1, 1), 3};
+        sun.position.set(3, 3, 0);
+        sun.setCastShadow(true);
+        sun.shadow.camera->setLayerMask(double((1 << 0) | (1 << 2)));
+        auto white = std::make_shared<Material>(MaterialType::Standard);
+        Mesh floor{makeBoxGeometry(8, 0.2, 8), white};
+        floor.position.y = -0.1;
+        floor.setCastShadow(true);
+        floor.setReceiveShadow(true);
+        scene.add(floor);
+        auto own = makeBoxGeometry(1, 0.3, 1);
+        Mesh plate{own, white};
+        plate.position.set(1.5, 0.15, 0);
+        plate.setCastShadow(true);
+        plate.setLayer(2);
+        scene.add(plate);
+        shadows::AtlasOptions atlas;
+        atlas.clipExtents = {0.2, 8}; atlas.mapSize = 2048; atlas.pageTexels = 128;
+        atlas.lightDistance = 20; atlas.depthRange = 40;
+        atlas.shadowLodBias = true;
+        atlas.shadowLodTexels = texels;
+        auto rung = own->clone();
+        rung->setIndexFromArray({0, 0, 0});
+        atlas.control->lods[plate.id()] = shadows::ShadowLodChain{{rung}, {rungError}};
+        sun.shadow.virtualShadow = std::make_shared<const shadows::AtlasOptions>(std::move(atlas));
+        scene.add(sun);
+        scene.updateMatrixWorld(true);
+        RenderDatabase database;
+        database.shadowMapEnabled = true;
+        for (int frame = 0; frame < 3; ++frame) database.render(renderer, scene, camera);
+        std::vector<uint8_t> pixels;
+        bool read = false;
+        renderer.readPixels([&](GpuStatus status, std::vector<uint8_t> px) {
+            if (status == GpuStatus::Ok) pixels = std::move(px);
+            read = true;
+        });
+        for (int i = 0; i < 5000 && !read; ++i) {
+            renderer.poll();
+            events.drain();
+            if (!read) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        CHECK(pixels.size() == size_t{192} * 192 * 4);
+        // Pixel 12 is lit floor at x = -1.4 m; pixel 150 is x = 0.86 m, inside the plate's shadow (x 0.7 to 2).
+        const double lit = pixels[(size_t{96} * 192 + 12) * 4], strip = pixels[(size_t{96} * 192 + 150) * 4];
+        CHECK(lit > 32);
+        return strip / lit;
+    };
+    const double coarse = stripLight(0.5), fine = stripLight(0.001), unbounded = stripLight(0.5, std::numeric_limits<double>::infinity());
+    std::printf("virtual sun lod rung: strip %.2f of lit with a 0.5 m rung, %.2f with a 1 mm rung, %.2f with a 0.5 m rung and an unbounded budget\n",
+                coarse, fine, unbounded);
+    CHECK(coarse < 0.25);     // 0.5 m of error is 64 texels: the plate keeps its own geometry and casts
+    CHECK(fine > 0.9);        // 1 mm is under a texel: the rung is drawn, and it casts nothing
+    CHECK(unbounded > 0.9);   // shadowLodTexels = infinity draws the coarsest rung on every level, as before
 }
 
 // A point light's cube shadow: five casters around and below the lamp each shade the floor where its
@@ -5054,11 +5479,14 @@ void gpuJointProduction() {
     }
 }
 
-TN_TEST_MAIN({"gpu_joint_production", gpuJointProduction}, {"multi_material_groups", multiMaterialGroups}, {"uniform_batch_preparation", uniformBatchPreparation}, {"steady_state", steadyState}, {"color_write_masks_the_draw", colorWriteMasksTheDraw}, {"normal_pass_is_not_tallied", normalPassIsNotTallied}, {"steady_cache_invalidation", steadyCacheInvalidation}, {"render_target", renderTarget}, {"float_render_target_keeps_float32", floatRenderTargetKeepsFloat32}, {"post_texture_resize_keeps_draw_groups", postTextureResizeKeepsDrawGroups}, {"deferred_target_follows_post_rtt", deferredTargetFollowsPostRtt}, {"deferred_target_samples_post_rtt_node", deferredTargetSamplesPostRttNode}, {"screen_size_reaches_the_vertex_stage", screenSizeReachesTheVertexStage}, {"depth_node_sets_fragment_depth", depthNodeSetsFragmentDepth}, {"depth_node_reaches_every_material_program", depthNodeReachesEveryMaterialProgram}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"present_direct", presentDirect}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"directional_target_outside_scene", directionalTargetOutsideScene}, {"scene_fog_node", sceneFogNode}, {"lit_mesh_without_normals", litMeshWithoutNormals}, {"invalidation", invalidation}, {"alpha_scene", alphaScene},
+TN_TEST_MAIN({"gpu_joint_production", gpuJointProduction}, {"multi_material_groups", multiMaterialGroups}, {"uniform_batch_preparation", uniformBatchPreparation}, {"steady_state", steadyState}, {"color_write_masks_the_draw", colorWriteMasksTheDraw}, {"normal_pass_is_not_tallied", normalPassIsNotTallied}, {"steady_cache_invalidation", steadyCacheInvalidation}, {"render_target", renderTarget}, {"float_render_target_keeps_float32", floatRenderTargetKeepsFloat32}, {"float_render_target_falls_back_to_half", floatRenderTargetFallsBackToHalf}, {"post_texture_resize_keeps_draw_groups", postTextureResizeKeepsDrawGroups}, {"deferred_target_follows_post_rtt", deferredTargetFollowsPostRtt}, {"deferred_target_samples_post_rtt_node", deferredTargetSamplesPostRttNode}, {"screen_size_reaches_the_vertex_stage", screenSizeReachesTheVertexStage}, {"depth_node_sets_fragment_depth", depthNodeSetsFragmentDepth}, {"depth_node_reaches_every_material_program", depthNodeReachesEveryMaterialProgram}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"present_direct", presentDirect}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"directional_target_outside_scene", directionalTargetOutsideScene}, {"scene_fog_node", sceneFogNode}, {"lit_mesh_without_normals", litMeshWithoutNormals}, {"invalidation", invalidation}, {"alpha_scene", alphaScene},
              {"material_unsupported", materialUnsupported}, {"shader_invalid", shaderInvalid}, {"time_uniform", timeUniform}, {"gpu_mipmaps", gpuMipmaps}, {"updates", updates},
              {"multi_camera_layers", multiCameraLayers}, {"render_callback", renderCallback}, {"instanced", instanced},
+             {"virtual_sun_room_seam", virtualSunRoomSeam},
+             {"virtual_sun_pixel_floor", virtualSunPixelFloor},
+             {"virtual_sun_lod_rung", virtualSunLodRung},
              {"batched_vs_unbatched", batchedVsUnbatched}, {"skinned_crowd", skinnedCrowdPixels}, {"skinned_decline_cadence", skinnedDeclineCadence}, {"skinned_normalized_weights", skinnedNormalizedWeights}, {"normal_map_tilt", normalMapTilt}, {"unsupported_map_slot", unsupportedMapSlot}, {"env_map_slot_is_read", envMapSlotIsRead}, {"converted_copies_swept", convertedCopiesAreSwept}, {"gpu_timer_covers_offscreen", gpuTimerCoversOffscreen}, {"gpu_timer_splits_the_gather", gpuTimerSplitsTheLabelledGather}, {"gpu_timer_covers_shadows", gpuTimerCoversShadows}, {"overlay_over_frame", overlayOverFrame}, {"gpu_timer_is_opt_in", gpuTimerIsOptIn}, {"msaa_edges", msaaEdges}, {"shadow_camera_layers", shadowCameraLayers}, {"flat_shading_needs_no_normals", flatShadingNeedsNoNormals}, {"map_sampleability_changes", mapSampleabilityChanges}, {"batch_caches_stay_put", batchCachesStayPut}, {"frustum_culling", frustumCulling},
-             {"shadow_caster_frustum_culling", shadowCasterFrustumCulling}, {"masked_shadow", maskedShadow}, {"leaf_receiver", leafReceiver}, {"rough_diffuse", roughDiffuse}, {"point_shadow_cube_faces", pointShadowCubeFaces}, {"lamp_source_radius", lampSourceRadius}, {"lamp_source_radius_wall", lampSourceRadiusWall}, {"lamp_source_radius_crate", lampSourceRadiusCrate}, {"contact_shadow_foot", contactShadowFoot}, {"virtual_sun_contact_foot", virtualSunContactFoot}, {"lamp_cache", lampCache}, {"shadow_lights_follow_hierarchy", shadowLightsFollowHierarchy}, {"records_survive_siblings", recordsSurviveSiblings}, {"steady_frame_hashes_no_record", steadyFrameHashesNoRecord}, {"nested_record_cache", nestedRecordCache}, {"frustum_record_retention", frustumRecordRetention}, {"world_sphere_measured_once", worldSphereMeasuredOnce}, {"reflection_reuse", reflectionReuse})
+             {"shadow_caster_frustum_culling", shadowCasterFrustumCulling}, {"masked_shadow", maskedShadow}, {"leaf_receiver", leafReceiver}, {"rough_diffuse", roughDiffuse}, {"point_shadow_cube_faces", pointShadowCubeFaces}, {"lamp_source_radius", lampSourceRadius}, {"lamp_source_radius_wall", lampSourceRadiusWall}, {"lamp_source_radius_crate", lampSourceRadiusCrate}, {"contact_shadow_foot", contactShadowFoot}, {"virtual_sun_contact_foot", virtualSunContactFoot}, {"lamp_cache", lampCache}, {"lamp_atlas", lampAtlas}, {"gpu_timer_splits_lamp_shadows", gpuTimerSplitsLampShadows}, {"shadow_lights_follow_hierarchy", shadowLightsFollowHierarchy}, {"records_survive_siblings", recordsSurviveSiblings}, {"steady_frame_hashes_no_record", steadyFrameHashesNoRecord}, {"nested_record_cache", nestedRecordCache}, {"frustum_record_retention", frustumRecordRetention}, {"world_sphere_measured_once", worldSphereMeasuredOnce}, {"reflection_reuse", reflectionReuse})
 
 
 

@@ -1,0 +1,499 @@
+{
+  "version": 1,
+  "id": "20261022T122322Z-sunlit-room-high-5929809",
+  "date": "2026-10-22T12:23:22.225Z",
+  "scene": "sunlit-room",
+  "tier": "high",
+  "expect": "preserve",
+  "before": {
+    "commit": "17d01f3edfa89221f7c03cb3ae17ca7e51c41f9c",
+    "stamp": "59298090c93119b4652630d7b105c87ca66c13a7811d74e401a48edfe4cf07f6",
+    "dirty": false
+  },
+  "after": {
+    "commit": "17d01f3edfa89221f7c03cb3ae17ca7e51c41f9c",
+    "stamp": "59298090c93119b4652630d7b105c87ca66c13a7811d74e401a48edfe4cf07f6",
+    "dirty": false
+  },
+  "engine": "threenative",
+  "adapter": "nvidia turing",
+  "directLight": {
+    "pass": false,
+    "overridden": true,
+    "worst": 8.602
+  },
+  "cells": [
+    {
+      "pose": "sun60-window",
+      "verdict": "NEUTRAL",
+      "vsUnreal": "FAR",
+      "reasons": "The BEFORE and AFTER paths are identical, so this is one capture. I looked at the wall below and above the window, the side walls, the ceiling, the sill glow and the floor patch. The three runs look the same. I did not judge the sky inside the window.",
+      "differences": "The wall below and around the window has visible grain, streaks and blotches, with a vertical streaky smear and a lumpy glow band above the patch. Unreal shows a smooth, soft radial glow. The side walls also look mottled and streaky where Unreal is smooth, and the window-wall junctions are darker. The patch shape and position and the neutral grey colour match. Grain on flat walls is the first-listed failure, so this is a different lighting result at the window wall.",
+      "worst": 23.33,
+      "regions": [
+        {
+          "region": "Floor",
+          "dP50": 0.1111,
+          "deltaE": 1.452,
+          "dEv": null,
+          "iou": 1,
+          "pass": false,
+          "ratio": 11.11,
+          "spread": 0
+        },
+        {
+          "region": "Ceiling",
+          "dP50": 0.05714,
+          "deltaE": 1.435,
+          "dEv": null,
+          "iou": 1,
+          "pass": false,
+          "ratio": 5.714,
+          "spread": 0
+        },
+        {
+          "region": "Wall_Left",
+          "dP50": 0.03333,
+          "deltaE": 0.5815,
+          "dEv": null,
+          "iou": 1,
+          "pass": false,
+          "ratio": 3.333,
+          "spread": 0
+        },
+        {
+          "region": "Wall_Right",
+          "dP50": 0.03571,
+          "deltaE": 0.6577,
+          "dEv": null,
+          "iou": 1,
+          "pass": false,
+          "ratio": 3.571,
+          "spread": 0
+        },
+        {
+          "region": "Front_Left",
+          "dP50": 0.03922,
+          "deltaE": 0.6415,
+          "dEv": null,
+          "iou": 1,
+          "pass": false,
+          "ratio": 3.922,
+          "spread": 0
+        },
+        {
+          "region": "Front_Right",
+          "dP50": 0.04545,
+          "deltaE": 0.7712,
+          "dEv": null,
+          "iou": 1,
+          "pass": false,
+          "ratio": 4.545,
+          "spread": 0
+        },
+        {
+          "region": "Front_Sill",
+          "dP50": 0.1158,
+          "deltaE": 4.208,
+          "dEv": null,
+          "iou": 1,
+          "pass": false,
+          "ratio": 11.58,
+          "spread": 0
+        },
+        {
+          "region": "Front_Head",
+          "dP50": 0.2333,
+          "deltaE": 4.562,
+          "dEv": null,
+          "iou": 1,
+          "pass": false,
+          "ratio": 23.33,
+          "spread": 0
+        },
+        {
+          "region": "Ground",
+          "dP50": 0.008969,
+          "deltaE": 0.6947,
+          "dEv": null,
+          "iou": 1,
+          "pass": true,
+          "ratio": 0.98,
+          "spread": 0
+        }
+      ]
+    },
+    {
+      "pose": "sun60-leak",
+      "verdict": "NEUTRAL",
+      "vsUnreal": "CLOSE",
+      "reasons": "The BEFORE and AFTER paths are identical, so this is one capture. I looked at the corner seam, the ceiling junction, the floor line and the right wall. The three runs look the same.",
+      "differences": "A thin dark line runs down the wall-wall corner and the ceiling and floor junctions are darker and sharper than Unreal's soft darkening. A bright, warm glow patch on the upper right of the right wall is absent in Unreal, which has a gentle gradient there. Overall the engine is neutral grey where Unreal has a slight blue tint. Walls are smooth with no grain.",
+      "worst": 17.95,
+      "regions": [
+        {
+          "region": "Floor",
+          "dP50": 0.1613,
+          "deltaE": 1.489,
+          "dEv": null,
+          "iou": 1,
+          "pass": false,
+          "ratio": 16.13,
+          "spread": 0
+        },
+        {
+          "region": "Ceiling",
+          "dP50": 0.1795,
+          "deltaE": 2.242,
+          "dEv": null,
+          "iou": 0.9999,
+          "pass": false,
+          "ratio": 17.95,
+          "spread": 0
+        },
+        {
+          "region": "Wall_Right",
+          "dP50": 0.09804,
+          "deltaE": 1.343,
+          "dEv": null,
+          "iou": 1,
+          "pass": false,
+          "ratio": 9.804,
+          "spread": 0
+        },
+        {
+          "region": "Back_Right",
+          "dP50": 0,
+          "deltaE": 1.433,
+          "dEv": null,
+          "iou": 1,
+          "pass": false,
+          "ratio": 1.433,
+          "spread": 0
+        }
+      ]
+    },
+    {
+      "pose": "sun60-door",
+      "verdict": "NEUTRAL",
+      "vsUnreal": "CLOSE",
+      "reasons": "The BEFORE and AFTER paths are identical, so this is one capture. I looked at the walls beside the door, the door head, the ceiling and the opening. The three runs look the same.",
+      "differences": "The walls are slightly lighter and warmer-neutral than Unreal's bluish dark grey. The ceiling is a little lighter. The opening is near black in both, but the engine's reveal side is darker than Unreal's. There is a faint dark vertical line at the wall-wall corner. The wall above the opening joins without a line, and the walls are smooth with no grain.",
+      "worst": 44.44,
+      "regions": [
+        {
+          "region": "Floor",
+          "dP50": 0.1538,
+          "deltaE": 1.113,
+          "dEv": null,
+          "iou": 1,
+          "pass": false,
+          "ratio": 15.38,
+          "spread": 0
+        },
+        {
+          "region": "Ceiling",
+          "dP50": 0.2813,
+          "deltaE": 2.844,
+          "dEv": null,
+          "iou": 0.9998,
+          "pass": false,
+          "ratio": 28.13,
+          "spread": 0
+        },
+        {
+          "region": "Wall_Left",
+          "dP50": 0.1905,
+          "deltaE": 2.556,
+          "dEv": null,
+          "iou": 1,
+          "pass": false,
+          "ratio": 19.05,
+          "spread": 0
+        },
+        {
+          "region": "Back_Left",
+          "dP50": 0.1892,
+          "deltaE": 2.534,
+          "dEv": null,
+          "iou": 0.9999,
+          "pass": false,
+          "ratio": 18.92,
+          "spread": 0
+        },
+        {
+          "region": "Back_Right",
+          "dP50": 0.01961,
+          "deltaE": 1.352,
+          "dEv": null,
+          "iou": 1,
+          "pass": false,
+          "ratio": 1.961,
+          "spread": 0
+        },
+        {
+          "region": "Back_Head",
+          "dP50": 0.2609,
+          "deltaE": 3.817,
+          "dEv": null,
+          "iou": 1,
+          "pass": false,
+          "ratio": 26.09,
+          "spread": 0
+        },
+        {
+          "region": "Hall_Back",
+          "dP50": 0.4444,
+          "deltaE": 1.41,
+          "dEv": null,
+          "iou": 1,
+          "pass": false,
+          "ratio": 44.44,
+          "spread": 0
+        }
+      ]
+    },
+    {
+      "pose": "sun15-window",
+      "verdict": "NEUTRAL",
+      "vsUnreal": "CLOSE",
+      "reasons": "The BEFORE and AFTER paths are identical, so this is one capture. I looked at the window wall, the wall above the window, the side walls, the ceiling, the left-wall base and the floor patch. The three runs look the same. I did not judge the sky inside the window.",
+      "differences": "The interior is a little brighter and greyer than Unreal's dark warm brown. The wall above the window and the ceiling are lighter. A thin dark line sits along the wall-wall corners. The floor patch has a slightly feathered or stepped upper edge. Walls are smooth and warm with no visible grain, and there is no pale line at the left-wall base. The window frame glow differs slightly.",
+      "worst": 23.26,
+      "regions": [
+        {
+          "region": "Floor",
+          "dP50": 0.1034,
+          "deltaE": 0.9942,
+          "dEv": null,
+          "iou": 1,
+          "pass": false,
+          "ratio": 10.34,
+          "spread": 0
+        },
+        {
+          "region": "Ceiling",
+          "dP50": 0.125,
+          "deltaE": 1.868,
+          "dEv": null,
+          "iou": 1,
+          "pass": false,
+          "ratio": 12.5,
+          "spread": 0
+        },
+        {
+          "region": "Wall_Left",
+          "dP50": 0.1364,
+          "deltaE": 2.044,
+          "dEv": null,
+          "iou": 1,
+          "pass": false,
+          "ratio": 13.64,
+          "spread": 0
+        },
+        {
+          "region": "Wall_Right",
+          "dP50": 0.1429,
+          "deltaE": 1.678,
+          "dEv": null,
+          "iou": 1,
+          "pass": false,
+          "ratio": 14.29,
+          "spread": 0
+        },
+        {
+          "region": "Front_Left",
+          "dP50": 0.1795,
+          "deltaE": 2.016,
+          "dEv": null,
+          "iou": 1,
+          "pass": false,
+          "ratio": 17.95,
+          "spread": 0
+        },
+        {
+          "region": "Front_Right",
+          "dP50": 0.1212,
+          "deltaE": 1.382,
+          "dEv": null,
+          "iou": 1,
+          "pass": false,
+          "ratio": 12.12,
+          "spread": 0
+        },
+        {
+          "region": "Front_Sill",
+          "dP50": 0.08571,
+          "deltaE": 1.448,
+          "dEv": null,
+          "iou": 1,
+          "pass": false,
+          "ratio": 8.571,
+          "spread": 0
+        },
+        {
+          "region": "Front_Head",
+          "dP50": 0.2326,
+          "deltaE": 3.363,
+          "dEv": null,
+          "iou": 1,
+          "pass": false,
+          "ratio": 23.26,
+          "spread": 0
+        },
+        {
+          "region": "Ground",
+          "dP50": 0.0442,
+          "deltaE": 2.131,
+          "dEv": null,
+          "iou": 1,
+          "pass": false,
+          "ratio": 4.42,
+          "spread": 0
+        }
+      ]
+    },
+    {
+      "pose": "sun15-leak",
+      "verdict": "NEUTRAL",
+      "vsUnreal": "CLOSE",
+      "reasons": "The BEFORE and AFTER paths are identical, so this is one capture. I looked at the corner seam, the ceiling edge, the floor line and the walls. The three runs look the same.",
+      "differences": "A thin dark vertical line sits in the wall-wall corner and a darker band runs along the ceiling and floor lines, where Unreal has a soft gradient. The right wall is slightly brighter and warmer than Unreal and has a brighter patch toward the top right. The ceiling edge is slightly curved at the top. Walls are smooth with no grain. Warm hue and overall level are close.",
+      "worst": 13.64,
+      "regions": [
+        {
+          "region": "Floor",
+          "dP50": 0,
+          "deltaE": 0.1406,
+          "dEv": null,
+          "iou": 1,
+          "pass": true,
+          "ratio": 0.98,
+          "spread": 0
+        },
+        {
+          "region": "Ceiling",
+          "dP50": 0,
+          "deltaE": 0.1063,
+          "dEv": null,
+          "iou": 0.9999,
+          "pass": true,
+          "ratio": 0.9801,
+          "spread": 0
+        },
+        {
+          "region": "Wall_Right",
+          "dP50": 0.1364,
+          "deltaE": 2.137,
+          "dEv": null,
+          "iou": 1,
+          "pass": false,
+          "ratio": 13.64,
+          "spread": 0
+        },
+        {
+          "region": "Back_Right",
+          "dP50": 0.02083,
+          "deltaE": 0.7678,
+          "dEv": null,
+          "iou": 1,
+          "pass": false,
+          "ratio": 2.083,
+          "spread": 0
+        }
+      ]
+    },
+    {
+      "pose": "sun15-door",
+      "verdict": "NEUTRAL",
+      "vsUnreal": "CLOSE",
+      "reasons": "The BEFORE and AFTER paths are the same three captures (run1..3), so the arms are one capture and any difference is noise. I looked at the left wall, the back wall beside and above the door, the door head, the patch edge, the floor and the junctions. The three runs look the same.",
+      "differences": "Left wall and back wall show a mottled, blotchy and slightly streaky texture, plus a faint darker vertical line at the left/back wall corner. Unreal is smooth. The wall-floor junction is a bit darker and wider than Unreal. The patch edge on the left wall is a little crisper but sits in the right place. The door opening interior is slightly lighter and more textured than Unreal's near-black. Warm colour and patch shape match.",
+      "worst": 15.15,
+      "regions": [
+        {
+          "region": "Floor",
+          "dP50": 0.1163,
+          "deltaE": 1.587,
+          "dEv": null,
+          "iou": 1,
+          "pass": false,
+          "ratio": 11.63,
+          "spread": 0
+        },
+        {
+          "region": "Ceiling",
+          "dP50": 0.1149,
+          "deltaE": 3.666,
+          "dEv": null,
+          "iou": 0.9998,
+          "pass": false,
+          "ratio": 11.49,
+          "spread": 0
+        },
+        {
+          "region": "Wall_Left",
+          "dP50": 0.02597,
+          "deltaE": 0.9898,
+          "dEv": null,
+          "iou": 1,
+          "pass": false,
+          "ratio": 2.597,
+          "spread": 0
+        },
+        {
+          "region": "Back_Left",
+          "dP50": 0.05618,
+          "deltaE": 1.683,
+          "dEv": null,
+          "iou": 0.9999,
+          "pass": false,
+          "ratio": 5.618,
+          "spread": 0
+        },
+        {
+          "region": "Back_Right",
+          "dP50": 0.0566,
+          "deltaE": 1.344,
+          "dEv": null,
+          "iou": 1,
+          "pass": false,
+          "ratio": 5.66,
+          "spread": 0
+        },
+        {
+          "region": "Back_Head",
+          "dP50": 0.05556,
+          "deltaE": 1.693,
+          "dEv": null,
+          "iou": 1,
+          "pass": false,
+          "ratio": 5.556,
+          "spread": 0
+        },
+        {
+          "region": "Hall_Back",
+          "dP50": 0.1515,
+          "deltaE": 2.063,
+          "dEv": null,
+          "iou": 1,
+          "pass": false,
+          "ratio": 15.15,
+          "spread": 0
+        }
+      ]
+    }
+  ],
+  "overall": {
+    "verdict": "NEUTRAL",
+    "vsUnreal": "CLOSE",
+    "reasons": "The BEFORE and AFTER paths for every frame are the same three captures, so the answer against BEFORE is NEUTRAL by the headless rule, and runs 1 to 3 look identical. Against Unreal, five poses are CLOSE. The colour, the patch shape and position, the overall level and the falloff are right. The remaining differences are a thin dark line in the wall corners, darker and sharper junctions, and some mottling on the sun15 walls. sun60-window is FAR because the wall below and around the window has grain, streaks and a lumpy glow band, and the side walls are mottled. Unreal is smooth in those places."
+  },
+  "judge": {
+    "model": "claude-sonnet-5-5",
+    "sessionId": "4268d889-603b-4892-a898-c6971cb5e660",
+    "costUsd": 0.2107004,
+    "durationMs": 28896,
+    "criteriaSha256": "4a2d557edde29a374416f288b1486c7d56067993f89092b99405fca4aa998ac6"
+  }
+}

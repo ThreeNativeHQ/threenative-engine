@@ -9,6 +9,7 @@ import {
   Scene,
   type SceneFrame,
   type ShadowFilterTier,
+  TracedReflections,
   VirtualShadowNode,
   sourceAngleShadowFilter,
 } from "@threenative/core";
@@ -29,26 +30,27 @@ import {
   type Texture,
   Vector3,
 } from "three";
-import { EMISSIVE_UNITS } from "../render/atmosphere.js";
-import { installGi } from "../render/giCache.js";
-import { setupLighting, shadeLikeSubstrate } from "../render/lighting.js";
+import { setupLighting } from "../render/lighting.js";
 import { setupPost } from "../render/postprocessing.js";
-import { watchGi } from "../render/giTier.js";
-import { watchShadowTier } from "../render/shadowTier.js";
-import {
-  EPIC_SSGI,
-  type FinalGatherMethod,
-  giPreset,
-  qualityPreset,
-  resolveQualityTier,
-  shadowPreset,
-} from "../render/quality.js";
-import { captureReflections } from "../render/reflectionCapture.js";
+import { qualityPreset, resolveQualityTier } from "../render/quality.js";
 import { SUN_DIRECTION, setupSky } from "../render/sky.js";
 import { WorldEnvironment } from "../render/worldEnvironment.js";
 import type { GameState } from "../state.js";
 import { Play } from "./Play.js";
 import { POSES } from "./referencePoses.js";
+import {
+  EMISSIVE_UNITS,
+  EPIC_SSGI,
+  type FinalGatherMethod,
+  captureReflections,
+  giPreset,
+  installGi,
+  reflectionTrace,
+  shadeLikeSubstrate,
+  shadowPreset,
+  watchGi,
+  watchShadowTier,
+} from "./tuning.js";
 
 type GameCtx = ICtx<GameState, IPhysicsContext>;
 type Pose = { position: number[]; target: number[]; hfovDeg: number };
@@ -68,8 +70,9 @@ const SHADOW = shadowPreset(SHADOW_TIER);
 const GI_METHOD = level >= 7 ? GI.finalGatherMethod : "none";
 // `baseline=1` captures the template look as it ships; otherwise the tuning in progress applies.
 const TUNED = params.get("baseline") !== "1";
-// `off=vsm,gpusky,clouds,gi,reflcap,bloom,localexposure,autoexposure,ssgi,ssr,gtao,vignette,motionblur,smaa,noaa,nomsaa` switches one L9 stage off, to
-// attribute frame cost by ablation (PRD-636 performance). `gpusky` is read in `render/sky.ts`.
+// `off=vsm,gpusky,clouds,gi,reflcap,traced,bloom,localexposure,autoexposure,ssgi,ssr,gtao,vignette,motionblur,smaa,noaa,nomsaa` switches one L9 stage off, to
+// attribute frame cost by ablation (PRD-636 performance). `gpusky` is read in `render/sky.ts`. `traced` is the
+// scene-triangle reflection trace (PRD-642): off, the screen march, the cube capture and the floor paint answer.
 // `pan=<rad/s>` turns the camera about the vertical axis after each pose, to give the velocity pass something to blur.
 // `panStep=<rad>&panArc=<rad>` sweeps it instead: `panStep` per drawn frame, back and forth across `panArc` either side of the
 // pose, so the scene stays in view and every frame moves the same number of pixels whatever the frame rate (ghosting proof).
@@ -99,15 +102,15 @@ const STAGE_OFF: Record<string, Record<string, unknown>> = {
   stockbloom: { bloomRadius: 0, bloomStrength: 0.0298, bloomThreshold: 0, unrealBloomEnabled: false },
   vignette: { vignetteAmount: 0 },
 };
-// Diagnosis: the screen probes' knobs from the URL (PRD-640). `?probeFilter=N` sets the spatial filter passes over the probes
-// (the engine's own is 3, Unreal's).
-const PROBE_KNOBS: Record<string, unknown> = {
-  ...(params.has("probeFilter") ? { ssgiProbeFilterPasses: Number(params.get("probeFilter")) } : {}),
-};
 // Unreal 5.8.3's sun source angle, from the live level dump (tools/unreal-reference/template-actors.json),
 // is the sun's apex angle (its angular diameter). `sourceAngleShadowFilter` takes the angular radius,
 // the half angle: Unreal's shadow rays spread over sin(angle / 2).
 const SUN_SOURCE_ANGLE_RAD = (0.7357 * Math.PI) / 360;
+// Unreal builds the disc of a shadow ray from `cross(N, x)` and `cross(that, N)` and never normalises them
+// (`GetRandomDirectionalLightRayDir`, VirtualShadowMapProjectionDirectional.ush), so the disc is sin(the angle
+// between the sun and the x axis) times the source radius. A sun on the x axis at elevation e casts the
+// penumbra of sin(e) times the nominal angle. `vsmAngle=ue` reproduces that.
+const unrealSourceScale = (sun: { x: number }): number => Math.sqrt(1 - sun.x * sun.x);
 
 export class Reference extends Scene<GameState, IPhysicsContext> {
   static override readonly initialState: GameState = Play.initialState;
@@ -211,8 +214,18 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
           key.castShadow = level >= 5 && params.get("sunShadow") !== "0" && preset.castShadows;
           if (!OFF.has("vsm"))
             (key.shadow as unknown as { filterNode: unknown }).filterNode = sourceAngleShadowFilter({
-              sourceAngleRad: SUN_SOURCE_ANGLE_RAD,
+              // Diagnosis knob vsmAngle: a factor on the angular radius (1 = Unreal's measured value,
+              // "ue" = Unreal's own scale for this sun, see unrealSourceScale).
+              sourceAngleRad:
+                SUN_SOURCE_ANGLE_RAD *
+                (params.get("vsmAngle") === "ue"
+                  ? unrealSourceScale(SUN_DIRECTION)
+                  : Number(params.get("vsmAngle") ?? 1)),
               ...preset.filter,
+              // Diagnosis knob vsmMinPx: the filter disc's floor in screen pixels (absent = the engine's default).
+              ...(params.get("vsmMinPx") === null
+                ? {}
+                : { minPenumbraPixels: Number(params.get("vsmMinPx")) }),
               // Diagnosis knobs for the tier's sample-count round (PRD-652): sunBlockers and sunSamples.
               ...(params.get("sunBlockers") === null
                 ? {}
@@ -238,14 +251,31 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
           .copy(SUN_DIRECTION)
           .multiplyScalar(reach + 1)
           .add(bounds.center);
-        // The native atlas holds every page of every level, then every level's mover map, in one
-        // square texture that must fit the device's 8192 texel limit: four 2048 levels take 4224
-        // and four 512 mover maps 2064 more. The scene has no moving caster.
+        // The native atlas holds every page of every level, with the levels' mover maps in rows under
+        // them, in one square texture that must fit the device's 8192 texel limit: four 2048 levels
+        // and their 512 mover maps take 4620, four 3072 levels 6732. The scene has no moving caster.
+        // vsmMap=3072 puts the sphere row's texel at one screen pixel (PRD-634 Decisions, 2026-10-22).
+        // Candidate knob sunBox=reach (PRD-634 Phase 1, with off=vsm): the one stock map widened to the scene.
+        if (OFF.has("vsm") && params.get("sunBox") === "reach") {
+          const box = key.shadow.camera;
+          box.left = box.bottom = -reach;
+          box.right = box.top = reach;
+          box.near = 0.5;
+          box.far = 2 * reach + 2;
+          box.updateProjectionMatrix();
+        }
         if (!OFF.has("vsm"))
           key.shadow.shadowNode = new VirtualShadowNode(key, {
-            clipExtents: [reach / 4, reach / 2, reach, 2 * reach],
-            mapSize: 2048,
-            moverMapSize: 512,
+            // Diagnosis knobs vsmExt=<divisors of reach, finest first>, vsmMap, vsmMover: the clip levels.
+            clipExtents: (params.get("vsmExt") ?? "4,2,1,0.5").split(",").map((d) => reach / Number(d)),
+            mapSize: Number(params.get("vsmMap") ?? 2048),
+            moverMapSize: Number(params.get("vsmMover") ?? 512),
+            // Diagnosis knob vsmAspect: the smallest light-space height over width of a level (1 = square).
+            ...(params.get("vsmAspect") === null ? {} : { minWindowAspect: Number(params.get("vsmAspect")) }),
+            // Diagnosis knob vsmLod=0: every level draws a chain's own geometry (no shadowLodBias).
+            ...(params.get("vsmLod") === "0" ? { shadowLodBias: false } : {}),
+            // Diagnosis knob vsmLodTexels=N: the rung error a level accepts, in texels (Infinity = the coarsest rung on every level).
+            ...(params.get("vsmLodTexels") === null ? {} : { shadowLodTexels: Number(params.get("vsmLodTexels")) }),
             // Diagnosis knob recvBias=0: authored bias only (does the seam line come from the plane slope?).
             receiverPlaneBias: params.get("recvBias") !== "0",
             // Diagnosis knob shadowBias=N brackets the tier's directional resolution bias (PRD-652).
@@ -270,10 +300,17 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
         scene.background = new Color(0x000000);
         scene.environment = null;
       }
+      // PRD-642: from L8 a reflection ray walks the scene's triangles (core's TracedReflections), so the painted
+      // floor, which stood in for what the screen cannot see, is not needed. The cube capture stays: a ray that
+      // misses sees the sky, and the capture draws the sky at a finer grain than the 64 x 32 environment.
+      const tracing = TUNED && level >= 8 && !OFF.has("traced");
+      if (tracing) reflectionTrace.current = new TracedReflections(model);
       // PRD-631: indirect diffuse from a world-space light cache of the sky and, from L7 (Unreal's
       // global illumination), the sun a surface returns (render/giCache.ts).
       if (TUNED && level >= 2 && !OFF.has("gi")) {
         const gi = installGi(ctx, model, {
+          // Diagnosis knob paint=1: paint the lit floor into the environment even while reflections are traced.
+          paintGround: !tracing || params.get("paint") === "1",
           // Diagnosis knob stockRays=1: cast the bake through ctx.raycast, the slow path (an A/B).
           stockRays: params.get("stockRays") === "1",
           ...(params.get("giProgressive") === "0"
@@ -322,19 +359,6 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
       if (level >= 9) {
         // setupPost reads the `high` preset by reference, so the ablation switches go there.
         for (const name of OFF) Object.assign(qualityPreset("high"), STAGE_OFF[name]);
-        // Diagnosis: ?probes=1 gathers with screen probes at L9 as it does below L9 (PRD-640); ?probes=0 keeps the per-pixel gather.
-        if (params.has("probes"))
-          Object.assign(
-            qualityPreset("high"),
-            params.get("probes") === "1"
-              ? {
-                  ssgiScreenProbes: true,
-                  ssgiProbeRays: Number(params.get("probeRays") ?? 16),
-                  ssgiDenoiseRadius: Number(params.get("ssgiDenoise") ?? 16),
-                }
-              : { ssgiDenoiseRadius: undefined, ssgiProbeRays: undefined, ssgiScreenProbes: false },
-          );
-        Object.assign(qualityPreset("high"), PROBE_KNOBS);
         const post = setupPost(ctx.renderer, scene, camera, { godraysLight: key, tier: "high" });
         postDebug = () => post.debug();
         this.#dispose = () => post.dispose();
@@ -362,10 +386,7 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
                   ssgiProbeRays: Number(params.get("probeRays") ?? 16),
                   ssgiDenoiseRadius: Number(params.get("ssgiDenoise") ?? 16),
                 }
-              : params.get("probes") === "0"
-                ? { ssgiDenoiseRadius: undefined, ssgiProbeRays: undefined, ssgiScreenProbes: false }
-                : {}),
-            ...PROBE_KNOBS,
+              : {}),
             ...(params.get("probeJitter") === null ? {} : { ssgiProbeJitter: Number(params.get("probeJitter")) }),
             ...(params.get("probeDebug") === null ? {} : { ssgiProbeDebug: Number(params.get("probeDebug")) }),
             autoExposureEnabled: false,
@@ -379,12 +400,17 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
             ...(params.get("gtaoR") === null ? {} : { gtaoRadius: Number(params.get("gtaoR")) }),
             ...(params.get("gtaoS") === null ? {} : { gtaoScale: Number(params.get("gtaoS")) }),
             vignetteAmount: 0,
+            // Diagnosis: ?exposure=N sets the exposure (pair it with ?linear=1 below).
+            ...(params.get("exposure") === null ? {} : { exposure: Number(params.get("exposure")) }),
             // The same ablation switches as L9, for attributing a GI fault below it.
             ...Object.assign({}, ...[...OFF].map((name) => STAGE_OFF[name] ?? {})),
           });
           this.#dispose = world.apply(ctx.renderer, scene, camera, { godraysLight: key }).dispose;
         };
         build(GI_METHOD);
+        // Diagnosis: ?linear=1 writes the exposed light with no tone curve, so the frame reads as scene-linear (the
+        // light a PRD-646 direct-light gap is measured in), as CalibrationScene does.
+        if (params.get("linear") === "1") raw.toneMapping = NoToneMapping;
         // The tier's method moves with the measured GI time when the URL asks for giAuto=1 (PRD-644).
         if (GI_METHOD !== "none")
           this.#gi = watchGi(ctx, { tier: TIER, method: GI_METHOD, rebuild: build });
@@ -487,6 +513,8 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
   override exit(ctx: GameCtx): void {
     this.#reflectionsDispose?.();
     this.#reflectionsDispose = undefined;
+    reflectionTrace.current?.dispose();
+    reflectionTrace.current = undefined;
     this.#dispose?.();
     this.#dispose = undefined;
     super.exit(ctx);

@@ -725,6 +725,22 @@
       "reject": []
     },
     {
+      "id": "request.lumen-reflections",
+      "query": "lumen reflections",
+      "scope": "request",
+      "source": "template:starter#Ownership",
+      "expect": ["TracedReflections"],
+      "reject": []
+    },
+    {
+      "id": "request.dedicated-reflection-rays",
+      "query": "dedicated reflection rays",
+      "scope": "request",
+      "source": "template:starter#Ownership",
+      "expect": ["TracedReflections"],
+      "reject": []
+    },
+    {
       "id": "request.vehicle-suspension-grip",
       "query": "suspension wheel traction tyre grip",
       "scope": "request",
@@ -773,6 +789,14 @@
       "reject": []
     },
     {
+      "id": "request.gi-visualize",
+      "query": "lumen visualize indirect diffuse only r.Lumen.Visualize.IndirectDiffuse",
+      "scope": "request",
+      "source": "template:starter#Quality and proof",
+      "expect": ["GIVisualize"],
+      "reject": []
+    },
+    {
       "id": "request.lumen-scene",
       "query": "lumen scene",
       "scope": "request",
@@ -802,6 +826,14 @@
       "scope": "request",
       "source": "template:starter#AGENTS.md — __PROJECT_NAME__ starter",
       "expect": ["ShadowFilterBudget"],
+      "reject": []
+    },
+    {
+      "id": "request.two-sided-foliage",
+      "query": "two sided foliage",
+      "scope": "request",
+      "source": "sandbox:wildwood-backlit#scenes/CalibrationScene.ts",
+      "expect": ["addFoliageBackLight"],
       "reject": []
     }
   ]

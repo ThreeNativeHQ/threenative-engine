@@ -444,6 +444,7 @@ static void reportGrantedFeatures(WGPUDevice device) {
         {WGPUFeatureName_TextureCompressionASTC, "texture-compression-astc"},
         {WGPUFeatureName_IndirectFirstInstance, "indirect-first-instance"},
         {WGPUFeatureName_RG11B10UfloatRenderable, "rg11b10ufloat-renderable"},
+        {WGPUFeatureName_Float32Blendable, "float32-blendable"},
 #if defined(MYSTRAL_WEBGPU_DAWN)
         {WGPUFeatureName_TransientAttachments, "transient-attachments"},
 #endif
@@ -525,6 +526,8 @@ static RequiredFeatures buildRequiredFeatures(WGPUAdapter adapter,
     appendIfSupported(WGPUFeatureName_RG11B10UfloatRenderable, "rg11b10ufloat-renderable");
     // Float LUTs need linear filtering for continuous color grading.
     appendIfSupported(WGPUFeatureName_Float32Filterable, "float32-filterable");
+    // A blended draw into an RGBA32Float render target (a FloatType RenderTarget) needs it.
+    appendIfSupported(WGPUFeatureName_Float32Blendable, "float32-blendable");
 #if defined(MYSTRAL_WEBGPU_DAWN)
     // Comparison control: omit the feature at device creation, preserving ordinary allocations.
     const char* transientControl = std::getenv("TN_TRANSIENT_ATTACHMENTS");

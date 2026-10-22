@@ -8,7 +8,7 @@ prd_contract: v1
 **Priority:** P2 — no box is ticked: the templates' `low`, `medium` and `high` tiers change only the sun map size, while Unreal's shadow levels change the filter, its sample count and the shadow resolution bias, and nothing compares a ThreeNative tier with its Unreal level.
 **Complexity:** 5 (MEDIUM) — 1–5 files: the harness `quality.ts`, the filter options, the native filter (+1), a tier table every template takes (+2), a cost step under GPU pressure (+2); risk override: none
 **Owner:** João
-**Depends on:** [PRD-649](PRD-649-shadow-calibration-scenes-are-built-in-unreal-and-judged-until-parity.md) Phase 3 (the scenes and the scoreboard). Uses the filter of [PRD-634](../look/PRD-634-sun-shadows-reach-the-horizon-and-soften-with-distance-from-the-caster.md) Phase 2 and the lamp atlas of [PRD-650](PRD-650-a-lamp-shadow-is-as-sharp-as-the-pixels-it-covers-and-softens-with-the-lamp-size.md) Phase 1. Mirrors the GI tier of [PRD-644](../gi/PRD-644-the-gi-tier-follows-unreal-quality-levels-and-the-measured-gpu-time.md), with the same tier-to-level map.
+**Depends on:** [PRD-649](PRD-649-shadow-calibration-scenes-are-built-in-unreal-and-judged-until-parity.md) Phase 3 (the scenes and the scoreboard). Uses the filter of [PRD-634](../look/PRD-634-sun-shadows-reach-the-horizon-and-soften-with-distance-from-the-caster.md) Phase 2 and the lamp atlas of [PRD-650](../../done/PRD-650-a-lamp-shadow-is-as-sharp-as-the-pixels-it-covers-and-softens-with-the-lamp-size.md) Phase 1. Mirrors the GI tier of [PRD-644](../gi/PRD-644-the-gi-tier-follows-unreal-quality-levels-and-the-measured-gpu-time.md), with the same tier-to-level map.
 
 ## Context
 
@@ -51,8 +51,8 @@ anything breaks (`Engine/Source/Runtime/Renderer/Private/VirtualShadowMaps/Virtu
    Unreal's rays × samples product and are then set by the PRD-647 round on `penumbra-lab`. They are
    not fitted by eye. Distance-field shadows enter the table only if PRD-649's `horizon` ablation
    shows them in Unreal's default look.
-2. **The filter steps down under GPU pressure (Phase 2).** The receiver filter's GPU time is read
-   from the existing per-pass budget (`packages/core/src/render-pass-budget.ts`). Above the tier's
+2. **The filter steps down under GPU pressure (Phase 2).** The GPU time of the shadow passes is read
+   from the existing per-pass budget (`packages/core/src/render-pass-budget.ts`) as the `Shadow` stage. Above the tier's
    budget over a 120-frame window, the sample count steps down one level. It steps back up only below
    70% of the next level's budget. Redraw cost keeps its existing levers (`adaptiveRefresh`,
    PRD-549). A game that sets the sample counts explicitly keeps them, and the report says so.
@@ -89,7 +89,7 @@ these criteria, per frame and overall.
 | Capability | Reachable consumer/trigger | Replaces / disposition | Evidence |
 |---|---|---|---|
 | Shadow tier table | `templates/*/src/render/quality.ts`, read by `lighting.ts` | Replaces the map-size-only tiers | AC-1 |
-| Filter cost step | `watchShadowTier` in the harness `render/shadowTier.ts` feeds `ShadowFilterBudget` the whole frame's GPU reading (`stageGpuReading`, the gather's passes left out) from `ctx.beforeRender` | New; redraw cost keeps its own levers | Phase 2 |
+| Filter cost step | `watchShadowTier` in the harness `render/shadowTier.ts` feeds `ShadowFilterBudget` the `Shadow` stage of `stageGpuReading` (the shadow passes' own GPU time) from `ctx.beforeRender`, held to Unreal's `ShadowDepths` time per tier | New; redraw cost keeps its own levers | Phase 2 |
 | `shadowQuality` report | `TN_SHADOW_TIER` marker and the manifest | New read-only field | AC-2 |
 
 ## Execution Phases
@@ -104,8 +104,8 @@ these criteria, per frame and overall.
 **Status:** DONE
 **Files:** `packages/core/src/render/shadow-filter-budget.ts` (new), `packages/core/src/render/budget-ladder.ts` (new, shared with PRD-644), `packages/core/src/render-pass-budget.ts`, `packages/core/__tests__/shadow-filter-budget.spec.ts` (new), `packages/core/__tests__/owned-engine-stage-reading.spec.ts` (new)
 - [x] A filter over budget for a 120-frame window steps its samples down one level, steps up only below 70% of the next level's budget, and leaves an explicit setting alone with a report. proof: `pnpm exec vitest run packages/core/__tests__/shadow-filter-budget.spec.ts packages/core/__tests__/budget-ladder.spec.ts` — 5 and 10 tests passed on 2026-10-21 (step down one tier over the period, up below 70%, explicit keeps the counts and reports, no timestamps holds the tier).
-- [x] `ShadowFilterBudget` reads the whole frame's GPU time on the owned engine, with the gather's passes left out. proof: `pnpm exec vitest run packages/core/__tests__/owned-engine-stage-reading.spec.ts` red first (5 failed), then 6 passed on 2026-10-21. Live, 2026-10-22, exclusive GPU window, `pnpm tsx scripts/unreal-look/gi-tier-cost.ts --auto` on the owned Wasm engine: the newest shadow report holds 30 resolved readings, a window of 14.01 ms inside the 16.67 ms period, and the tier `high` stays. A step under load on the owned engine is not shown, because no run passed the period.
-- [x] The step runs on the native engine. proof: `pnpm parity --target desktop --only-tests shadow-filter-step` — `run-conformance.mjs --target web` then `--target desktop --reference <web capture>` on 2026-10-21: both pass. A `ShadowFilterBudget` fed 12 frames of 22 ms against a 16.7 ms period steps `high` to `medium` once, the scene rebuilds both lamp filters with 4 + 4 taps, and an explicit setting stays and reports. The desktop frame shows the 4-tap penumbra steps and has pixel mismatch 0 and delta E 0 against the web frame (1280 x 720). The desktop binary was the clean `prd-ocean` build (HEAD d0c2635d5), reused read-only, because this worktree has no native build and the lane changes no C++. `registry.json` row `shadow-filter-step`; `conformance-runner.test.mjs` 84 passed.
+- [x] `ShadowFilterBudget` reads the GPU time of the shadow passes (the `Shadow` stage) against a per-tier budget, and a slow frame its stage did not cause keeps its tier. proof: `pnpm exec vitest run packages/core/__tests__/shadow-filter-budget.spec.ts packages/core/__tests__/owned-engine-stage-reading.spec.ts packages/core/__tests__/render-pass-budget.spec.ts packages/three-native/__tests__/browser-renderer.spec.ts` — red first on 2026-10-22 (2 of 8 failed: a 0.3 ms shadow stage inside a 19.5 ms frame stepped `high` down, and a 2.5 ms stage inside an 8 ms frame did not; the stage specs failed on the missing `Shadow` stage), then all passed (8, 6, 12 and 22 tests). Native: `node packages/runtime-native/tests/native-engine/player-gpu-stages.mjs <tn-native-engine-player-v8>` prints `PASS ... SSGI 0.004 ms, Shadow 0.007 ms of 0.074 ms` on the V8 player (a sibling lane's player build, the JS stage table comes from the bundle). Live, 2026-10-22, `gi-tier-cost.ts --auto` on the owned Wasm engine at P2 clocks (1410 MHz), `gi:cornell`: the shadow report holds 34 and 30 samples, a frame of 9.9 and 7.9 ms, a shadow window of 0 ms (the sun map is cached, so the steady frame draws no shadow pass) and the tier `high` stays. The receiver filter's own cost is not in this stage (see `## Decisions`, 2026-10-22 budget-lane).
+- [x] The step runs on the native engine. proof: `pnpm parity --target desktop --only-tests shadow-filter-step` — `run-conformance.mjs --target web` then `--target desktop --reference <web capture>` on 2026-10-21: both pass. A `ShadowFilterBudget` fed 12 frames of 22 ms against a 16.7 ms period steps `high` to `medium` once, the scene rebuilds both lamp filters with 4 + 4 taps, and an explicit setting stays and reports. The desktop frame shows the 4-tap penumbra steps and has pixel mismatch 0 and delta E 0 against the web frame (1280 x 720). The desktop binary was the clean `prd-ocean` build (HEAD d0c2635d5), reused read-only, because this worktree has no native build and the lane changes no C++. `registry.json` row `shadow-filter-step`; `conformance-runner.test.mjs` 84 passed. Rerun 2026-10-22 after the budget reads the `Shadow` stage (the scene feeds 2.4 ms of shadow stage in a 22 ms frame against a 1 ms budget): `--target web` then `--target desktop --reference <web capture>` both `pass` (web 9.5 s, desktop 19.8 s, legacy `mystral` host of the `prd-ocean` build reused read-only).
 
 #### Phase 3: Every template
 **Status:** NOT STARTED
@@ -172,3 +172,30 @@ these criteria, per frame and overall.
   `GIBudget` (PRD-644 `## Decisions`): `stageGpuReading` read only the timestamp pool of three. It now also returns the
   frame total (`info.render.timestamp`) and the named stage times of the owned engine. The harness holds the frame
   minus the `SSGI` stage to the period, so a slow gather steps the GI method and not the shadow filter.
+- 2026-10-22 (budget-lane, the budget reads the stage, not the frame): `ShadowFilterBudget` held the whole frame's GPU time
+  to the frame period, so it stepped the tier down for cost that the shadows did not cause (the 19.5 ms frame of
+  tier2-lane's entry above). The cause is the signal, in the class and not in the game: `observeRenderer` fed
+  `reading.total` to the ladder (`shadow-filter-budget.ts`). The class now reads the GPU time of the stages it names
+  (`stages`, default `SHADOW_STAGES` = `["Shadow"]`, as `GIBudget` does with `SSGI`) against a per-tier `budgetMs`, and the
+  whole frame only gates a step up (`frameBudgetMs`). `excludeStages` is gone, because nothing needs to be left out of a
+  signal that holds only the stage. The shadow passes are one named stage on every engine: the owned engine's shadow
+  segment (`tnw_web_frame(19)`, `info.engine.gpuStages.Shadow` in `browser-renderer.ts` and `core-webgpu.mjs`) and three's
+  nested `Shadow Map` passes (`render-pass-budget.ts`, `SHADOW_STAGE`). Red first: `shadow-filter-budget.spec.ts` failed 2 of 8
+  (a 0.3 ms shadow stage inside a 19.5 ms frame stepped `high` down; a 2.5 ms stage inside an 8 ms frame did not), then 8 passed.
+  `render-pass-budget.spec.ts` and `browser-renderer.spec.ts` each failed 1 on the missing `Shadow` stage, then passed.
+  Limit: the receiver filter runs inside the colour pass, so its cost is not in the `Shadow` stage. Medium and Epic differ
+  only by filter taps in the harness, so a `Shadow` reading over budget steps through both to `low`. A stage reading of the
+  filter itself needs its own pass and stays open.
+- 2026-10-22 (budget-lane, the tier budgets are Unreal's own): `ProfileGPU` of Unreal 5.8.3 on `penumbra-lab` at 1920 x 1080 on
+  the RTX 2080 (`TN_UE_PROFILE_FRAME=40`, `ue-gpu.sh`, variants `L5`, `L5-Low`, `L5-Medium`, 3 runs of 18 cells): Low shows no
+  `ShadowDepths` row in any of its 5 scene frames (no shadow pass, `GetShadowQuality() != 0` gates the depth pass,
+  `Engine/Source/Runtime/Renderer/Private/ShadowDepthRendering.cpp:2309`). Medium reads 0.453 to 0.553 ms and Epic 0.424 to 0.471 ms
+  on steady frames (first-draw frames read 0.86 and 2.20 ms and are left out). The pooled median of the 11 steady frames is
+  0.46 ms, so `shadowPreset` carries `budgetMs` 0, 0.46 and 0.46 for `low`, `medium` and `high`.
+- 2026-10-22 (budget-lane, Unreal Low draws no sun shadow): the lane brief said Unreal's Low scalability still draws a sun shadow. The
+  source and the frames say it does not. `[ShadowQuality@0]` sets `r.ShadowQuality=0` (`Engine/Config/BaseScalability.ini:134`).
+  `GetShadowQuality()` (`ShadowRendering.cpp:258`) gates the dynamic shadow setup (`ShadowSetup.cpp:6365`), the light shadow masks
+  (`LightRendering.cpp:626`, `:1434`) and the shadow depth mesh pass for virtual shadow maps too (`ShadowDepthRendering.cpp:2309`).
+  The `penumbra-lab` `L5-Low` frames (variant `sg.ShadowQuality 0`, `r.Shadow.Virtual.Enable 1`) hold no cast shadow of the cube
+  or the bars. The harness `low` tier (`castShadows: false`) already matches Unreal Low, and the tier-lane judge called it IMPROVEMENT
+  on 4 poses. No change is made. A `low` tier that keeps a sun shadow would be a ThreeNative choice against Unreal and needs the owner.

@@ -28,6 +28,7 @@ import {
   type ISurfaceCacheOptions,
   type ISurfaceCacheReport,
   SurfaceCache,
+  addFoliageBackLight,
 } from "@threenative/core";
 import {
   Box3,
@@ -125,17 +126,13 @@ export interface IGiOptions {
    * illumination sets 0.8 (Engine/Config/BaseScalability.ini, `[GlobalIlluminationQuality@0]`). Unset is 1.
    */
   readonly skyIntensity?: number;
-  /**
-   * How fast the bounce light follows a light that changes, in frames (PRD-641 AC-2). Unreal does not step it: the
-   * surface cache refreshes `1 / updateFactor` of its texels each frame (`r.LumenScene.DirectLighting.UpdateFactor`,
-   * Engine/Source/Runtime/Renderer/Private/Lumen/LumenSceneLighting.cpp:40 and :98-125), so a texel meets a changed light
-   * within `updateFactor` frames, and the screen probe gather blends each pixel's history with
-   * `1 / (1 + framesAccumulated)` (`r.Lumen.ScreenProbeGather.Temporal.MaxFramesAccumulated`, default 10,
-   * LumenScreenProbeGather.cpp:229 and LumenScreenProbeGatherTemporal.usf:522). Unset, the cache follows at once.
-   */
-  readonly lightResponse?: { readonly updateFactor: number; readonly framesAccumulated: number };
   /** Cast the bake's rays through `ctx.raycast` instead of the flat triangle hierarchy: the slow path, kept for an A/B. */
   readonly stockRays?: boolean;
+  /**
+   * Paint the lit ground into the environment's lower half, so a mirror reflects a floor where the screen shows none
+   * (default true). Off when reflection rays walk the scene's triangles and find the floor themselves.
+   */
+  readonly paintGround?: boolean;
   /**
    * Draw the first frame at once and fill the cache over the following frames, as Lumen fills its probes over frames
    * instead of before the first one. `installGi` installs the materials over a black cache and returns a `pending`
@@ -1394,6 +1391,9 @@ function nodeTwin(source: MeshStandardMaterial): MeshStandardMaterial {
   // three declares no `twoSidedFoliage` or `roughDiffuse`, so a three twin has no such key to copy into: carry the markers by name (PRD-651, PRD-653).
   for (const marker of ["twoSidedFoliage", "roughDiffuse"])
     if ((source as unknown as Record<string, unknown>)[marker] === true) twin[marker] = true;
+  // The same for the colour the leaf returns from its back face (PRD-643).
+  const subsurface = (source as { subsurfaceColor?: Color }).subsurfaceColor;
+  if (subsurface !== undefined) twin.subsurfaceColor = subsurface;
   return twin as unknown as MeshStandardMaterial;
 }
 
@@ -2082,12 +2082,8 @@ export function installGi(
               l,
               source: light.source,
               baked: [light.color.r, light.color.g, light.color.b].map((c) => c * light.intensity),
-              /** The scale the light was last seen at, per channel. */
               applied: [1, 1, 1],
               field: undefined as Float32Array | undefined,
-              /** Per fine texel and channel: the scale its refresh took last, and the scale the pixel history shows. */
-              latched: undefined as Float32Array | undefined,
-              shown: undefined as Float32Array | undefined,
             },
           ]
         : [],
@@ -2131,25 +2127,8 @@ export function installGi(
       return replay.values;
     };
     const bakedValues = Float32Array.from(fine.values);
-    const response = options.lightResponse;
-    if (
-      response !== undefined &&
-      (!(response.updateFactor >= 1) || !(response.framesAccumulated >= 0))
-    )
-      throw new RangeError(
-        "TN_GI_LIGHT_RESPONSE: updateFactor needs 1 or more and framesAccumulated 0 or more",
-      );
-    const alpha = response === undefined ? 1 : 1 / (1 + response.framesAccumulated);
-    const fineTexels = fine.grid.nx * fine.grid.ny * fine.grid.nz;
-    /** A texel's place in the surface cache's refresh cycle: a fixed spread over `updateFactor` frames. */
-    const phaseOf = (texel: number): number =>
-      response === undefined
-        ? 0
-        : (Math.imul(texel + 1, 2654435761) >>> 0) % Math.round(response.updateFactor);
-    let frame = 0;
-    let settling = false;
     const follow = (): boolean => {
-      frame += 1;
+      let changed = false;
       for (const light of dynamic) {
         const now = [light.source.color.r, light.source.color.g, light.source.color.b].map(
           (c) => c * light.source.intensity,
@@ -2160,31 +2139,13 @@ export function installGi(
         if (scale.every((v, c) => v === light.applied[c])) continue;
         light.applied = scale;
         light.field ??= ownField(light.l);
-        light.latched ??= new Float32Array(fineTexels * 3).fill(1);
-        light.shown ??= new Float32Array(fineTexels * 3).fill(1);
-        settling = true;
+        changed = true;
       }
       const texture = giCache.texture;
-      if (!settling || texture === undefined) return settling;
+      if (!changed || texture === undefined) return changed;
       const texels = texture.image.data as Uint16Array;
       const { nx, ny, nz } = fine.grid;
-      const cycle = response === undefined ? 1 : Math.round(response.updateFactor);
-      let gap = 0;
-      for (const light of dynamic) {
-        const { latched, shown } = light;
-        if (latched === undefined || shown === undefined) continue;
-        for (let probe = 0; probe < fineTexels; probe += 1) {
-          const refreshed = frame % cycle === phaseOf(probe);
-          for (let c = 0; c < 3; c += 1) {
-            const k = probe * 3 + c;
-            const target = light.applied[c] ?? 1;
-            if (response === undefined || refreshed) latched[k] = target;
-            shown[k] = (shown[k] ?? 1) + ((latched[k] ?? 1) - (shown[k] ?? 1)) * alpha;
-            gap = Math.max(gap, Math.abs(target - (shown[k] ?? 1)));
-          }
-        }
-      }
-      for (let probe = 0; probe < fineTexels; probe += 1) {
+      for (let probe = 0; probe < nx * ny * nz; probe += 1) {
         const [x, y, z] = [probe % nx, Math.floor(probe / nx) % ny, Math.floor(probe / (nx * ny))];
         for (let face = 0; face < 6; face += 1) {
           const o = (x + nx * (y + ny * (face * nz + z))) * 4;
@@ -2192,18 +2153,13 @@ export function installGi(
             const j = (probe * 6 + face) * 3 + c;
             let v = bakedValues[j] ?? 0;
             for (const light of dynamic)
-              v += ((light.shown?.[probe * 3 + c] ?? 1) - 1) * (light.field?.[j] ?? 0);
+              v += ((light.applied[c] ?? 1) - 1) * (light.field?.[j] ?? 0);
             fine.values[j] = Math.max(0, v);
             texels[o + c] = toHalf(Math.max(0, v));
           }
         }
       }
       texture.needsUpdate = true;
-      // The history is settled when every texel shows the scale its light has (a 1e-3 gap is under a half-float step).
-      if (gap < 1e-3) {
-        settling = false;
-        for (const light of dynamic) light.shown?.set(light.latched ?? []);
-      }
       return true;
     };
     return { fine, cut, floor, emitters, enclosedProbes, traced, shadowRays, phases, follow };
@@ -2239,6 +2195,16 @@ export function installGi(
       reads.set(roughness, made);
       return made;
     };
+    /** What a two-sided leaf's back face reads (PRD-643): the cache and the emitters along the opposite of the viewer's normal. */
+    let backLight: Node<"vec3"> | undefined;
+    const readBack = (): Node<"vec3"> => {
+      if (backLight !== undefined) return backLight;
+      const away = normal.negate();
+      const lit = read(positionWorld, away).irradiance;
+      const glow = emitterLight(emitters, positionWorld, away);
+      backLight = glow === undefined ? lit : lit.add(glow);
+      return backLight;
+    };
     const twins = new Map<MeshStandardMaterial, MeshStandardMaterial>();
     root.traverse((object) => {
       const mesh = object as Mesh;
@@ -2252,6 +2218,8 @@ export function installGi(
         material = nodeTwin(source);
         (material as unknown as { irradianceNode: unknown }).irradianceNode = node;
         (material as unknown as { aoNode: unknown }).aoNode = visibility;
+        if (material.twoSidedFoliage === true && material.subsurfaceColor !== undefined)
+          addFoliageBackLight(material, readBack());
         twins.set(source, material);
       }
       mesh.material = material;
@@ -2263,7 +2231,7 @@ export function installGi(
   const publish = (baked: IBaked, pass: "preview" | "final", bounces: number): IGiReport => {
     const publishStart = performance.now();
     const { fine, cut } = baked;
-    if (baked.floor !== undefined) paintGround(root, baked.floor);
+    if (baked.floor !== undefined && options.paintGround !== false) paintGround(root, baked.floor);
     giCache.field = { grid: fine.grid, values: fine.values, sky: fine.sky, solid: cut.solid };
     if (reader === undefined) {
       reader = irradianceAt(fine.values, fine.grid, cut.masks, fine.sky, cut.solid);

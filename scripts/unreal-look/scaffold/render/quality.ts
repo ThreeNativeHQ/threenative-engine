@@ -137,13 +137,6 @@ const high: IWorldEnvironmentOptions = {
   gtaoRadius: 0.12,
   // Epic: Unreal's screen probe gather (`sg.GlobalIlluminationQuality` 3). See `giPreset`.
   finalGatherMethod: "screenProbeGather",
-  // The gather is the screen probes, filtered over the neighbouring probes (`SpatialFilterNumPasses` 3). The per-pixel
-  // gather it replaces left streaks and mottling on the walls, and a black line at the seam of abutting boxes under 4x
-  // MSAA (PRD-640 Phase 2b). 16 x 16 rays per probe: the engine's probes carry no radiance cache, so they trace twice
-  // Unreal's real-time 8 x 8. `?probes=0` brings back the per-pixel gather.
-  ssgiDenoiseRadius: 16,
-  ssgiProbeRays: 16,
-  ssgiScreenProbes: true,
   renderChainTier: "high",
   // Unreal turns motion blur on for a high end PC only (HardwareTargetingModule.cpp), so the desktop tier has it
   // and `medium` and `low` do not. It needs the chain's velocity, which costs one more scene pass target.
@@ -261,13 +254,6 @@ export interface IGiTier {
   readonly distanceFieldAO: boolean;
   /** `r.SkylightIntensityMultiplier`: Unreal suppresses the sky light to 0.8 at Low, where DFAO is off. */
   readonly skylightIntensityMultiplier: number;
-  /**
-   * How many frames a changed light takes to reach the bounce light: `r.LumenScene.DirectLighting.UpdateFactor` (the
-   * surface cache refreshes `1 / factor` of its texels a frame) and, where the screen probe gather runs,
-   * `r.Lumen.ScreenProbeGather.Temporal.MaxFramesAccumulated` (the pixel history). Medium has no screen history: its
-   * irradiance field is the world cache itself (BaseScalability.ini, comment at `[GlobalIlluminationQuality@1]`).
-   */
-  readonly lightResponse: { readonly updateFactor: number; readonly framesAccumulated: number };
 }
 
 /** What each method's Unreal level sets (BaseScalability.ini `[GlobalIlluminationQuality@n]`, lines 318-460). */
@@ -276,19 +262,12 @@ const GI_LEVELS: Record<FinalGatherMethod, Omit<IGiTier, "finalGatherMethod">> =
     distanceFieldAO: true,
     globalIlluminationQuality: 1,
     skylightIntensityMultiplier: 1,
-    lightResponse: { updateFactor: 128, framesAccumulated: 0 },
   },
-  none: {
-    distanceFieldAO: false,
-    globalIlluminationQuality: 0,
-    skylightIntensityMultiplier: 0.8,
-    lightResponse: { updateFactor: 128, framesAccumulated: 0 },
-  },
+  none: { distanceFieldAO: false, globalIlluminationQuality: 0, skylightIntensityMultiplier: 0.8 },
   screenProbeGather: {
     distanceFieldAO: true,
     globalIlluminationQuality: 3,
     skylightIntensityMultiplier: 1,
-    lightResponse: { updateFactor: 32, framesAccumulated: 10 },
   },
 };
 
@@ -312,6 +291,12 @@ export interface IShadowTier {
    */
   readonly castShadows: boolean;
   /**
+   * GPU milliseconds the shadow passes may cost at 1920 x 1080 on the RTX 2080: Unreal 5.8.3's own `ShadowDepths` time
+   * at the matching `sg.ShadowQuality`, the median of its steady `ProfileGPU` frames on `penumbra-lab` (PRD-652
+   * `## Decisions`). Unreal Low draws no shadow pass. Medium and Epic read the same time within the noise (0.46 ms).
+   */
+  readonly budgetMs: number;
+  /**
    * The receiver filter taps of the sun and of every lamp: Unreal's directional and local ray counts
    * are equal at Medium and Epic, so one pair serves both.
    */
@@ -326,6 +311,7 @@ export interface IShadowTier {
 // taps are never read.
 const SHADOW_TIERS: Record<QualityTier, IShadowTier> = {
   high: {
+    budgetMs: 0.46,
     castShadows: true,
     filter: { blockerSamples: 16, filterSamples: 16 },
     // Unreal Epic sets -1.5 (`[ShadowQuality@3]`). Held at 0: -1.5 changes `sun4-ramp` and no judge has called it
@@ -334,12 +320,14 @@ const SHADOW_TIERS: Record<QualityTier, IShadowTier> = {
     shadowQuality: 3,
   },
   low: {
+    budgetMs: 0,
     castShadows: false,
     filter: { blockerSamples: 4, filterSamples: 4 },
     resolutionLodBiasDirectional: 0,
     shadowQuality: 0,
   },
   medium: {
+    budgetMs: 0.46,
     castShadows: true,
     filter: { blockerSamples: 4, filterSamples: 4 },
     resolutionLodBiasDirectional: 0,

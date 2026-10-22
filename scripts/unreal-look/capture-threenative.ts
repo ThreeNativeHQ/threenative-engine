@@ -115,7 +115,11 @@ export function idLayerIsAliased(source: string, file: string): string {
 }
 
 /** Applies the harness patches to a scaffolded starter; fails closed when the template moved. */
-async function patchScaffold(target: string, fresh: boolean, baseline: boolean): Promise<void> {
+export async function patchScaffold(
+  target: string,
+  fresh: boolean,
+  baseline: boolean,
+): Promise<void> {
   // The look under tuning: these files replace the template's own in the copy only. A tuned
   // file moves into the templates once the reference cells match Unreal.
   if (!baseline)
@@ -137,6 +141,11 @@ async function patchScaffold(target: string, fresh: boolean, baseline: boolean):
   await cp(
     path.join(SCAFFOLD_DIR, "Reference.ts.in"),
     path.join(target, "src/scenes/Reference.ts"),
+  );
+  // The render modules that only the overlay has: the baseline arm gets inert stand-ins (the template look).
+  await cp(
+    path.join(SCAFFOLD_DIR, baseline ? "tuningBaseline.ts.in" : "tuning.ts.in"),
+    path.join(target, "src/scenes/tuning.ts"),
   );
   await writeFile(
     path.join(target, "src/scenes/referencePoses.ts"),

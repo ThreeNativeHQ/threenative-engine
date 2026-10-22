@@ -260,6 +260,29 @@ export type {
   IGPUSceneBVHOptions,
 } from "./gpu-scene-bvh.js";
 /**
+ * Reflection rays against the scene's triangles, in TSL. For a smooth surface, a ray finds what the screen cannot
+ * show (a room behind the camera, the far side of an object) and returns the hit's position, normal and material.
+ * The game lights the hit in its own stage. The kernel is plain TSL: float textures and a loop, no storage buffer.
+ * @situation reflect what is behind the camera in a mirror or a chrome sphere
+ * @situation make a glossy or wet floor reflect objects that are off screen
+ * @situation trace a shadow ray from a reflected surface toward the sun
+ * @alias lumen reflections
+ * @alias dedicated reflection rays
+ * @constraint the pack is a snapshot of the static triangles taken when the object is built: build a new one after geometry moves
+ * @constraint instanced, skinned, batched and morphing meshes are not in the pack; report.skippedMoving counts them
+ * @constraint trace only pixels at or below maxRoughnessToTrace (0.4, Unreal's cut-off): each ray walks the tree
+ * @constraint a ray visits at most maxSteps tree nodes, then reports a miss; hit light, the miss colour and the blend with the frame stay in the game's src/render/
+ * @constraint the pack needs a device with float32-filterable
+ * @override maxRoughnessToTrace, roughnessFadeLength and maxSteps are game-owned choices
+ * @example const traced = new TracedReflections(ctx.scene); const hit = traced.trace({ origin, direction, far: 30 }); // light hit.albedo at hit.position in the stage
+ */
+export { TracedReflections } from "./render/traced-reflections.js";
+export type {
+  ITracedHit,
+  ITracedRay,
+  ITracedReflectionsOptions,
+} from "./render/traced-reflections.js";
+/**
  * Collapse many copies of one game-authored shape into a single draw, without counting them first.
  *
  * `new InstancedMesh(geometry, material, count)` needs the count before anything is placed, so a
@@ -610,24 +633,48 @@ export type { BudgetVerdict, IBudgetLadderOptions, IBudgetWindow } from "./rende
  */
 export { GI_METHODS, GIBudget } from "./render/gi-budget.js";
 /**
- * Steps a game's soft-shadow filter down a tier (`low`, `medium`, `high`) when the frame's GPU time
- * stays over its period for a 120-frame window, and back up when there is room. The game owns the
- * sample counts of each tier and rebuilds its filter on each step; the tiers follow Unreal's
- * `sg.ShadowQuality` Low, Medium and Epic.
+ * Shows the indirect diffuse light of a frame by itself, the counterpart of Unreal's Lumen
+ * `Visualize IndirectDiffuse` mode, so a lighting gap against a reference can be told apart from a scene gap.
+ * The game's chain builds the term; this class selects it and fails when the term is missing.
+ * @situation see only the bounce light of a frame
+ * @situation compare indirect lighting alone against Unreal
+ * @situation debug global illumination by looking at the indirect diffuse term
+ * @constraint the game's render chain builds the indirectDiffuse node (gathered and cached light times albedo); this class draws nothing else
+ * @constraint a mode whose term the chain did not build throws instead of showing the finished frame
+ * @override mode: "off" returns the finished frame unchanged
+ * @alias lumen visualize
+ * @alias indirect diffuse only
+ * @alias r.Lumen.Visualize.IndirectDiffuse
+ * @example
+ * const view = new GIVisualize({ mode: "indirectDiffuse", beauty: frame, indirectDiffuse: albedo.mul(bounce) });
+ * pipeline.outputNode = view.node;
+ */
+export { GI_VISUALIZE_MODES, GIVisualize } from "./render/gi-visualize.js";
+export type { GIVisualizeMode, IGIVisualizeOptions } from "./render/gi-visualize.js";
+/**
+ * Steps a game's soft-shadow tier down (`low`, `medium`, `high`) when the GPU time of its shadow
+ * passes stays over the tier's budget for a 120-frame window, and back up when there is room. Only
+ * the shadow stages' own time moves the tier, so a frame that is slow for another reason keeps its
+ * shadows. The game owns the sample counts of each tier and rebuilds its filter on each step; the
+ * tiers follow Unreal's `sg.ShadowQuality` Low, Medium and Epic.
  * @situation soft shadow filter costs too much on a weak GPU
- * @situation step the shadow filter samples from measured frame time
+ * @situation step the shadow quality tier from the measured GPU time of the shadow passes
  * @situation shadow quality tier that follows the hardware
  * @constraint the game rebuilds its filter with the tier's sample counts on each step; this class draws nothing
  * @constraint timestamp queries are needed: without them every window is unobserved and the tier holds
- * @constraint the signal is the whole frame's GPU time, so a frame slow for another reason also steps the filter down
- * @override explicit: true keeps the game's own sample counts and reports an exceeded period
+ * @constraint the signal is the GPU time of the shadow passes (the `Shadow` stage), which the receiver filter inside the colour pass is not part of
+ * @override explicit: true keeps the game's own sample counts and reports an exceeded budget
  * @alias virtual shadow map scalability
  * @alias sg.ShadowQuality
  * @example
- * const filter = new ShadowFilterBudget({ tier: "high", frameBudgetMs: 1000 / 60, onStep: (tier) => { light.shadow.filterNode = filterFor(tier); } });
+ * const filter = new ShadowFilterBudget({ tier: "high", budgetMs: { low: 0.3, medium: 0.3, high: 0.5 }, onStep: (tier) => { light.shadow.filterNode = filterFor(tier); } });
  * ctx.beforeRender(() => filter.observeRenderer(ctx.renderer.raw));
  */
-export { SHADOW_FILTER_TIERS, ShadowFilterBudget } from "./render/shadow-filter-budget.js";
+export {
+  SHADOW_FILTER_TIERS,
+  SHADOW_STAGES,
+  ShadowFilterBudget,
+} from "./render/shadow-filter-budget.js";
 /**
  * Parse a `TN_SHADOW_TIER` console line back into its report, or `undefined`.
  * @situation inspect which shadow filter tier ran and why it stepped
@@ -1024,6 +1071,12 @@ export {
   VirtualShadowNode,
 } from "./render/virtual-shadow.js";
 export { readVirtualShadowMarker } from "./render/virtual-shadow.js";
+export {
+  LAMP_SHADOW_MARKER,
+  lampShadowMarker,
+  readLampShadowMarker,
+} from "./render/virtual-shadow.js";
+export type { ILampShadowStats } from "./render/virtual-shadow.js";
 /**
  * Source-angle blocker search and variable-radius PCF on three's shadow map.
  * @situation soften a directional shadow as the caster-receiver gap grows
@@ -1054,6 +1107,13 @@ export { lampPenumbraTangent } from "./render/soft-shadow.js";
  * @example const radius = penumbraUv(10, angle, 40, 2048);
  */
 export { penumbraUv } from "./render/soft-shadow.js";
+/**
+ * Adds subsurfaceColor times the far-face irradiance to a Two Sided Foliage leaf's emissive node.
+ * @situation add bounce light to the far face of a two sided foliage leaf
+ * @constraint the material needs the foliage marker and subsurfaceColor, else nothing is added and false is returned; call once per material
+ * @example addFoliageBackLight(leaf, backIrradiance);
+ */
+export { addFoliageBackLight } from "./render/two-sided-foliage.js";
 export type { ISourceAngleShadowInputs, ISourceAngleShadowOptions } from "./render/soft-shadow.js";
 /**
  * Unreal's Substrate rough diffuse (EON) on standard and physical materials, so direct sun and lamp light meets a rough surface

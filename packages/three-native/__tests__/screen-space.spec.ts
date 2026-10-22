@@ -140,38 +140,12 @@ describe("defineScreenSpaceGi", () => {
         camera,
         probes: { downsampleFactor: 16, viewport },
       });
-      // 80 x 45 probes: 8 x 8 rays each, then 6 x 6 irradiance texels each, three spatial filter passes over those texels,
-      // then the full-frame gather.
+      // 80 x 45 probes: 8 x 8 rays each, then 6 x 6 irradiance texels each, then the full-frame gather.
       expect(sizes).toEqual([
         [640, 360],
         [480, 270],
-        [480, 270],
-        [480, 270],
-        [480, 270],
         [null, null],
       ]);
-    });
-
-    it("runs as many spatial filter passes as it is asked for, none included", () => {
-      for (const [spatialFilterPasses, filterPasses] of [
-        [0, 0],
-        [1, 1],
-        [5, 5],
-      ] as const) {
-        const { tsl } = stubTsl();
-        const sizes: unknown[][] = [];
-        (tsl as unknown as Record<string, unknown>).rtt = (_: unknown, w: unknown, h: unknown) => {
-          sizes.push([w, h]);
-          return chain();
-        };
-        defineScreenSpaceGi(tsl)(chain(), chain(), chain(), {
-          camera,
-          probes: { downsampleFactor: 16, spatialFilterPasses, viewport },
-        });
-        // trace, irradiance, the filter passes, gather
-        expect(sizes).toHaveLength(3 + filterPasses);
-        expect(sizes.slice(2, 2 + filterPasses)).toEqual(Array(filterPasses).fill([480, 270]));
-      }
     });
 
     it("rounds the probe grid up so the last tile still has its probe", () => {
@@ -204,9 +178,6 @@ describe("defineScreenSpaceGi", () => {
         { downsampleFactor: 0, viewport },
         { downsampleFactor: 16, viewport: { width: 0, height: 720 } },
         { downsampleFactor: 16, tracingOctahedronResolution: 1, viewport },
-        { downsampleFactor: 16, spatialFilterPasses: -1, viewport },
-        { downsampleFactor: 16, spatialFilterPasses: 1.5, viewport },
-        { downsampleFactor: 16, spatialFilterPasses: 9, viewport },
       ])
         expect(() =>
           defineScreenSpaceGi(tsl)(chain(), chain(), chain(), { camera, probes }),
@@ -241,7 +212,7 @@ describe("defineScreenSpaceGi", () => {
           probes: { downsampleFactor: 16, viewport },
         }),
       ),
-    ).toEqual(Array(6).fill("SSGI")); // trace, irradiance, 3 filter passes, gather
+    ).toEqual(["SSGI", "SSGI", "SSGI"]);
     expect(
       stageOfEach((tsl) =>
         defineScreenSpaceReflections(tsl)(chain(), chain(), chain(), { camera }),

@@ -417,6 +417,21 @@ if (!uvsTile(uv)) rewriteUvs(uv, transforms.get(source)!);
 
 ## `@threenative/core`
 
+### `addFoliageBackLight`
+
+`function` — Adds subsurfaceColor times the far-face irradiance to a Two Sided Foliage leaf's emissive node.
+
+```ts
+export function addFoliageBackLight(material: Material, backIrradiance: Node<"vec3">): boolean { … }
+```
+
+- **Use when:** add bounce light to the far face of a two sided foliage leaf
+- **Constraints:** the material needs the foliage marker and subsurfaceColor, else nothing is added and false is returned; call once per material · the material needs `twoSidedFoliage = true` and a `subsurfaceColor`, or nothing is added and false is returned; backIrradiance is a vec3 node in the unit of `irradianceNode`; call once per material
+
+```ts
+addFoliageBackLight(leaf, backIrradiance);
+```
+
 ### `addInSlices`
 
 `function` — Attach hundreds of built objects to the scene in slices, presenting a frame between each.
@@ -1449,6 +1464,23 @@ const gi = new GIBudget({ method: "screenProbeGather", stages: ["SSGI"], budgetM
 ctx.beforeRender(() => gi.observeRenderer(ctx.renderer.raw));
 ```
 
+### `GIVisualize`
+
+`class` — Shows the indirect diffuse light of a frame by itself, the counterpart of Unreal's Lumen `Visualize IndirectDiffuse` mode, so a lighting gap against a reference can be told apart from a scene gap. The game's chain builds the term; this class selects it and fails when the term is missing.
+
+```ts
+export class GIVisualize { … }
+```
+
+- **Use when:** see only the bounce light of a frame · compare indirect lighting alone against Unreal · debug global illumination by looking at the indirect diffuse term
+- **Constraints:** the game's render chain builds the indirectDiffuse node (gathered and cached light times albedo); this class draws nothing else · a mode whose term the chain did not build throws instead of showing the finished frame
+- **Overrides:** mode: "off" returns the finished frame unchanged
+
+```ts
+const view = new GIVisualize({ mode: "indirectDiffuse", beauty: frame, indirectDiffuse: albedo.mul(bounce) });
+pipeline.outputNode = view.node;
+```
+
 ### `GPUParticles3D`
 
 `class` — Dispatch a game-owned particle surface and process function through a pooled system.
@@ -1665,6 +1697,22 @@ export function lampPenumbraTangent( sourceRadius: number, blockerDistance: numb
 
 ```ts
 const tangent = lampPenumbraTangent(0.05, 2, 3);
+```
+
+### `lampShadowMarker`
+
+`function` — The `TN_LAMP_SHADOW` line for the renderer's last frame, or `undefined` on a renderer that keeps no lamp counters (three's own).
+
+```ts
+export function lampShadowMarker( renderer: { … }
+```
+
+- **Use when:** log lamp shadow redraws and GPU time apart from the sun's on the owned engine
+- **Constraints:** counters that do not add up to the frame's shadow draws throw TN_LAMP_SHADOW_INVALID
+
+```ts
+const line = lampShadowMarker(renderer, frame);
+if (line !== undefined) console.info(line);
 ```
 
 ### `loadAll`
@@ -1949,6 +1997,22 @@ export function readGIMarker(line: string): IGIBudgetReport | undefined { … }
 
 ```ts
 const report = readGIMarker(line); if (report?.stepped) console.log(report.reason);
+```
+
+### `readLampShadowMarker`
+
+`function` — Parse a `TN_LAMP_SHADOW` line back into its stats, or `undefined`.
+
+```ts
+export function readLampShadowMarker(line: string): ILampShadowStats | undefined { … }
+```
+
+- **Use when:** count lamp shadow redraws from a renderer log, for example a moving-caster run
+- **Constraints:** non-marker lines and markers whose sun and lamp draws do not add up return `undefined`
+
+```ts
+const stats = readLampShadowMarker(line);
+if (stats !== undefined) console.log(stats.lamps.redraws);
 ```
 
 ### `readProbeVolumeObservation`
@@ -2384,18 +2448,18 @@ if (spansRequested()) setSpanRecorder(new SpanRecorder());
 
 ### `ShadowFilterBudget`
 
-`class` — Steps a game's soft-shadow filter down a tier (`low`, `medium`, `high`) when the frame's GPU time stays over its period for a 120-frame window, and back up when there is room. The game owns the sample counts of each tier and rebuilds its filter on each step; the tiers follow Unreal's `sg.ShadowQuality` Low, Medium and Epic.
+`class` — Steps a game's soft-shadow tier down (`low`, `medium`, `high`) when the GPU time of its shadow passes stays over the tier's budget for a 120-frame window, and back up when there is room. Only the shadow stages' own time moves the tier, so a frame that is slow for another reason keeps its shadows. The game owns the sample counts of each tier and rebuilds its filter on each step; the tiers follow Unreal's `sg.ShadowQuality` Low, Medium and Epic.
 
 ```ts
 export class ShadowFilterBudget { … }
 ```
 
-- **Use when:** soft shadow filter costs too much on a weak GPU · step the shadow filter samples from measured frame time · shadow quality tier that follows the hardware
-- **Constraints:** the game rebuilds its filter with the tier's sample counts on each step; this class draws nothing · timestamp queries are needed: without them every window is unobserved and the tier holds · the signal is the whole frame's GPU time, so a frame slow for another reason also steps the filter down · the signal is the whole frame's GPU time, so a frame slow for another reason also steps the filter down; name that reason's passes in `excludeStages`
-- **Overrides:** explicit: true keeps the game's own sample counts and reports an exceeded period
+- **Use when:** soft shadow filter costs too much on a weak GPU · step the shadow quality tier from the measured GPU time of the shadow passes · shadow quality tier that follows the hardware
+- **Constraints:** the game rebuilds its filter with the tier's sample counts on each step; this class draws nothing · timestamp queries are needed: without them every window is unobserved and the tier holds · the signal is the GPU time of the shadow passes (the `Shadow` stage), which the receiver filter inside the colour pass is not part of
+- **Overrides:** explicit: true keeps the game's own sample counts and reports an exceeded budget
 
 ```ts
-const filter = new ShadowFilterBudget({ tier: "high", frameBudgetMs: 1000 / 60, onStep: (tier) => { light.shadow.filterNode = filterFor(tier); } });
+const filter = new ShadowFilterBudget({ tier: "high", budgetMs: { low: 0.3, medium: 0.3, high: 0.5 }, onStep: (tier) => { light.shadow.filterNode = filterFor(tier); } });
 ctx.beforeRender(() => filter.observeRenderer(ctx.renderer.raw));
 ```
 
@@ -2725,6 +2789,22 @@ export class SurfaceLights { … }
 const lamps = new SurfaceLights(lights); lamps.shade(point, normal, albedo, out, (i) => !occluded(i));
 ```
 
+### `TracedReflections`
+
+`class` — Reflection rays against the scene's triangles, in TSL. For a smooth surface, a ray finds what the screen cannot show (a room behind the camera, the far side of an object) and returns the hit's position, normal and material. The game lights the hit in its own stage. The kernel is plain TSL: float textures and a loop, no storage buffer.
+
+```ts
+export class TracedReflections { … }
+```
+
+- **Use when:** reflect what is behind the camera in a mirror or a chrome sphere · make a glossy or wet floor reflect objects that are off screen · trace a shadow ray from a reflected surface toward the sun
+- **Constraints:** the pack is a snapshot of the static triangles taken when the object is built: build a new one after geometry moves · instanced, skinned, batched and morphing meshes are not in the pack; report.skippedMoving counts them · trace only pixels at or below maxRoughnessToTrace (0.4, Unreal's cut-off): each ray walks the tree · a ray visits at most maxSteps tree nodes, then reports a miss; hit light, the miss colour and the blend with the frame stay in the game's src/render/ · the pack needs a device with float32-filterable
+- **Overrides:** maxRoughnessToTrace, roughnessFadeLength and maxSteps are game-owned choices
+
+```ts
+const traced = new TracedReflections(ctx.scene); const hit = traced.trace({ origin, direction, far: 30 }); // light hit.albedo at hit.position in the stage
+```
+
 ### `TracerPool3D`
 
 `class` — Pool travelling bullet-streak meshes for hitscan shots.
@@ -2902,7 +2982,7 @@ export class VirtualShadowNode extends ShadowBaseNode { … }
 
 - **Use when:** crisp shadows close to the player across a large outdoor level · shadow map too coarse over a big terrain · one directional light shadow for a whole open world · shadows shimmer when the camera moves
 - **Constraints:** the light must be a DirectionalLight with `castShadow` and a target in the scene · clipExtents are half-widths in world units, finest first, strictly increasing · movers sort themselves: a layer-0 caster whose world matrix, instance matrix or deformation changed draws through the mover maps and leaves the cached levels, and returns to them after `staticAfterFrames` quiet frames; the cache redraws only the region it left · `trackCaster(object)` is the override that pins an object as a mover for good (it enables layer `VIRTUAL_SHADOW_MOVER_LAYER` on the object and its descendants), and `pinStatic(object)` opts an object out of detection; tracking or untracking refreshes only that object's region · call `object.layers.set(VIRTUAL_SHADOW_CASTER_LAYER)` for a mesh that exists only to cast; the level cameras already render that layer and the main camera never does
-- **Overrides:** bias, biasNode, normalBias, intensity, radius, blurSamples, mapType and filterNode stay on `light.shadow`; mapSize and the other options here have defaults, and `marker: false` silences the TN_VIRTUAL_SHADOW line, not the measurement · bias, biasNode, normalBias, intensity, radius, blurSamples, mapType and filterNode stay on `light.shadow`; mapSize and the other options here have defaults · followViewFocus: false keeps eye follow; receiverPlaneBias: false uses only authored bias
+- **Overrides:** bias, biasNode, normalBias, intensity, radius, blurSamples, mapType and filterNode stay on `light.shadow`; mapSize and the other options here have defaults, and `marker: false` silences the TN_VIRTUAL_SHADOW line, not the measurement · bias, biasNode, normalBias, intensity, radius, blurSamples, mapType and filterNode stay on `light.shadow`; mapSize and the other options here have defaults · followViewFocus: false keeps eye follow; receiverPlaneBias: false uses only authored bias · minWindowAspect: below 1, a level is as high as `sin(sun elevation)` times its width, never under this, so a low sun's floor shadows keep the texel density of a high sun's; the default 1 keeps square levels
 
 ```ts
 const sun = new DirectionalLight(0xffffff, 3);

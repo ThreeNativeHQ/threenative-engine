@@ -1,6 +1,7 @@
 #include "renderer.h"
 #include "engine/renderer/pipeline_cache.h"
 #include "engine/renderer/render_target_pass.h"
+#include "engine/renderer/shadows/lamp_resolution.h"
 
 #include <algorithm>
 #include <bit>
@@ -444,8 +445,9 @@ struct Renderer::Planned {
 
 struct Renderer::ShadowPass {
     WGPUTextureView target;
-    std::size_t virtualLight = 0;
+    std::size_t virtualLight = 0;  // the light the pass draws for
     int virtualLevel = -1;
+    bool lamp = false;  // a spot or point light's own map (PRD-650): counted and timed apart from the sun's
     int x = 0, y = 0, size = 0; // zero: ordinary map; otherwise one atlas page's guarded viewport
     std::vector<Planned> draws;
 };
@@ -2550,6 +2552,92 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     }
 
     if (!compilation) virtualCut_ = false;
+
+    // PRD-650: a lamp's map is as fine as the finest pixel footprint over the visible receivers it
+    // lights (shadows/lamp_resolution.h). A shadow.mapSize other than three's 512² is the game's override.
+    std::map<std::size_t, uint32_t> lampSizes;
+    if (!compilation) {
+        std::vector<std::size_t> autoLamps;
+        std::vector<shadows::LampDemand> demands;
+        Matrix4 view; view.elements = camera.matrixWorldInverse;
+        Matrix4 viewProjection; viewProjection.elements = camera.projectionMatrix; viewProjection.multiply(view);
+        const auto& p = camera.projectionMatrix;
+        const double screenRadius = std::min(1 / (width_ * std::abs(p[0])), 1 / (height_ * std::abs(p[5])));
+        WGPULimits limits = {}; wgpuDeviceGetLimits(device_, &limits);
+        for (std::size_t i = 0; i < lights.direct.size(); ++i) {
+            const DirectLight& l = lights.direct[i];
+            if (!l.shadow || l.kind == DirectLight::Kind::Directional || virtualShadows_.count(i)) continue;
+            const DirectLight::Shadow& s = *l.shadow;
+            if (s.width != 512 || s.height != 512) {
+                const std::string note = "TN_LAMP_SHADOW_MAPSIZE_OVERRIDE: light " + std::to_string(l.id) + " keeps shadow.mapSize " +
+                    std::to_string(s.width) + "x" + std::to_string(s.height) + " instead of its footprint size";
+                if (std::find(diagnostics_.begin(), diagnostics_.end(), note) == diagnostics_.end()) diagnostics_.push_back(note);
+                continue;
+            }
+            // A pose seen for the first time is still: a still lamp draws its first map at its still size.
+            uint64_t pose = 0xcbf29ce484222325ull;
+            for (double e : l.position) pose = (pose ^ std::bit_cast<uint64_t>(e)) * 0x100000001b3ull;
+            for (double e : l.direction) pose = (pose ^ std::bit_cast<uint64_t>(e)) * 0x100000001b3ull;
+            auto [state, seen] = lampMotion_.try_emplace(i, LampMotion{pose, int64_t(id) - shadows::kLampActiveFrames});
+            if (state->second.pose != pose) state->second = {pose, int64_t(id)};
+            shadows::LampDemand demand;
+            demand.mobility = shadows::lampMobility(int64_t(id) - state->second.movedAt);
+            demand.cube = s.cube;
+            while (shadows::lampMipSize(demand.minMip) > limits.maxTextureDimension2D && demand.minMip < shadows::kLampMaxMip) ++demand.minMip;
+            const Vector3 at(l.position[0], l.position[1], l.position[2]);
+            const Vector3 axis = Vector3(-l.direction[0], -l.direction[1], -l.direction[2]).normalize();
+            Matrix4 shadowView; shadowView.elements = s.view;
+            double footprint = INFINITY;
+            const auto visit = [&](const Vector3& point) {
+                Vector4 clip(point.x, point.y, point.z, 1); clip.applyMatrix4(viewProjection);
+                if (!(clip.w > 0) || std::abs(clip.x) > clip.w || std::abs(clip.y) > clip.w || clip.z < 0 || clip.z > clip.w) return;
+                const Vector3 offset = Vector3(point).sub(at);
+                const double reach = offset.length();
+                if ((l.distance > 0 && reach > l.distance) || reach == 0) return;
+                if (l.kind == DirectLight::Kind::Spot && offset.dot(axis) < l.coneCos * reach) return;
+                const double shadowDepth = s.cube ? std::max({std::abs(offset.x), std::abs(offset.y), std::abs(offset.z)})
+                                                  : -Vector3(point).applyMatrix4(shadowView).z;
+                if (!(shadowDepth > s.near)) return;
+                const double sceneDepth = -Vector3(point).applyMatrix4(view).z;
+                footprint = std::min(footprint, shadows::lampFootprint(sceneDepth * -p[11] + p[15], screenRadius, std::abs(s.projection[0]), shadowDepth));
+            };
+            // ponytail: a 5³ grid and the camera's nearest point per receiver box; a depth-buffer reduction
+            // (Unreal's page marking) when a big receiver's grid misses the pixels nearest the camera.
+            const Vector3 eye(camera.matrixWorld[12], camera.matrixWorld[13], camera.matrixWorld[14]);
+            for (const DrawItem& item : items) {
+                if (!item.mainPass || !item.receiveShadow || (item.layers & s.layersMask) == 0) continue;
+                const auto* mesh = dynamic_cast<const Mesh*>(item.shadowObject);
+                if (!mesh || !mesh->geometry) continue;
+                std::shared_ptr<Box3> local = mesh->geometry->boundingBox;
+                if (const auto* instanced = dynamic_cast<const InstancedMesh*>(mesh)) {
+                    if (!instanced->boundingBox) const_cast<InstancedMesh*>(instanced)->computeBoundingBox();
+                    local = instanced->boundingBox;
+                } else if (!local) {
+                    mesh->geometry->computeBoundingBox();
+                    local = mesh->geometry->boundingBox;
+                }
+                if (!local || local->isEmpty()) continue;
+                Matrix4 model; model.elements = item.matrixWorld;
+                Box3 box = *local; box.applyMatrix4(model);
+                if (l.distance > 0 && box.distanceToPoint(at) > l.distance) continue;
+                for (int x = 0; x < 5; ++x) for (int y = 0; y < 5; ++y) for (int z = 0; z < 5; ++z)
+                    visit(Vector3(box.min.x + (box.max.x - box.min.x) * x / 4, box.min.y + (box.max.y - box.min.y) * y / 4,
+                                  box.min.z + (box.max.z - box.min.z) * z / 4));
+                Vector3 nearest; box.clampPoint(eye, nearest);
+                visit(nearest);
+            }
+            demand.footprint = std::isfinite(footprint) ? footprint : 0;
+            autoLamps.push_back(i);
+            demands.push_back(demand);
+        }
+        const auto sizes = shadows::lampMapSizes(demands);
+        for (std::size_t k = 0; k < autoLamps.size(); ++k) lampSizes[autoLamps[k]] = sizes[k];
+    }
+    const auto mapExtent = [&](std::size_t i) {
+        const auto found = lampSizes.find(i);
+        return found != lampSizes.end() ? std::array<uint32_t, 2>{found->second, found->second}
+                                        : std::array<uint32_t, 2>{lights.direct[i].shadow->width, lights.direct[i].shadow->height};
+    };
     std::string lightKinds, unshadowedKinds;
     for (std::size_t i = 0; i < lights.direct.size(); ++i) {
         const DirectLight& l = lights.direct[i];
@@ -2582,7 +2670,8 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         std::vector<ShadowMap>& maps = l.shadow->cube ? cubeShadowMaps_ : shadowMaps_;
         if (maps.size() <= i) maps.resize(i + 1);
         ShadowMap& map = maps[i];
-        if (map.width == l.shadow->width && map.height == l.shadow->height) continue;
+        const auto [mapWidth, mapHeight] = mapExtent(i);
+        if (map.width == mapWidth && map.height == mapHeight) continue;
         if (map.view) wgpuTextureViewRelease(map.view);
         for (WGPUTextureView& face : map.faces) {
             if (face) wgpuTextureViewRelease(face);
@@ -2591,7 +2680,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         if (map.texture) wgpuTextureRelease(map.texture);
         WGPUTextureDescriptor desc = {};
         desc.dimension = WGPUTextureDimension_2D;
-        desc.size = {l.shadow->width, l.shadow->height, l.shadow->cube ? 6u : 1u};
+        desc.size = {mapWidth, mapHeight, l.shadow->cube ? 6u : 1u};
         desc.format = WGPUTextureFormat_Depth24Plus;
         desc.usage = WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_TextureBinding;
         desc.mipLevelCount = 1;
@@ -2614,8 +2703,8 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         } else {
             map.view = view2d(map.texture, WGPUTextureFormat_Depth24Plus);
         }
-        map.width = l.shadow->width;
-        map.height = l.shadow->height;
+        map.width = mapWidth;
+        map.height = mapHeight;
         shadowMapsChanged_ = true;
     }
 
@@ -2631,7 +2720,8 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         table = shadow.atlas.table();
         const auto& filter = lights.direct[i].shadow->sourceAngleFilter;
         table.insert(table.end(), {filter ? float(std::tan((*filter)[0])) : 0.0f,
-            filter ? float((*filter)[1]) : 0.0f, filter ? float((*filter)[2]) : 0.0f, filter ? 1.0f : 0.0f});
+            filter ? float((*filter)[1]) : 0.0f, filter ? float((*filter)[2]) : 0.0f,
+            filter ? 1.0f + float((*filter)[3]) : 0.0f});  // w > 0 is the filter; w - 1 its minimum penumbra, in pixels
     }
     const uint64_t jointPrefix = gpuJoints_ && gpuJoints_->current() ? gpuJoints_->parents.size() * 64 : 0;
     std::vector<float>& bones = storages_["boneMatrices"].data;
@@ -2965,7 +3055,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 put(frameUniforms_, f, slot[kLightShadowNormalBias], std::array<double, 1>{l.shadow->normalBias});
                 put(frameUniforms_, f, slot[kLightShadowRadius], std::array<double, 1>{l.shadow->radius});
                 put(frameUniforms_, f, slot[kLightShadowMapSize],
-                    std::array<double, 2>{double(l.shadow->width), double(l.shadow->height)});
+                    std::array<double, 2>{double(mapExtent(i)[0]), double(mapExtent(i)[1])});
                 put(frameUniforms_, f, slot[kLightShadowIntensity], std::array<double, 1>{l.shadow->intensity});
                 put(frameUniforms_, f, slot[kLightShadowNear], std::array<double, 1>{l.shadow->near});
                 put(frameUniforms_, f, slot[kLightShadowFar], std::array<double, 1>{l.shadow->far});
@@ -3007,6 +3097,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         const shadows::AtlasPage* page = virtualMap && !compilation ? &virtualPages[i][face] : nullptr;
         const Matrix& view = page ? page->view.elements : shadow.cube ? shadow.faceViews[face] : shadow.view;
         ShadowPass& pass = shadowPasses.emplace_back();
+        pass.lamp = lamp; pass.virtualLight = i;
         pass.target = compilation ? nullptr : virtualMap ? virtualIt->second.map.view : shadow.cube ? cubeShadowMaps_[i].faces[face] : shadowMaps_[i].view;
         if (page) {
             const auto& atlas = virtualIt->second.atlas;
@@ -3014,16 +3105,31 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             pass.x = x; pass.y = y; pass.size = page->mover ? atlas.options().moverMapSize + 2 * atlas.options().border : atlas.stride();
             if (!page->mover) { pass.virtualLight = i; pass.virtualLevel = page->level; }
         }
+        // The error a coarser rung may have on this page: its texels in world units, along the window's
+        // wider axis (see PageAtlas::update), times the budget the node allows.
+        const double lodBudget = page && !page->mover
+            ? (page->highU - page->lowU) / double(virtualIt->second.atlas.options().pageTexels + 2 * virtualIt->second.atlas.options().border) *
+                  virtualIt->second.atlas.options().shadowLodTexels : 0;
         for (const auto& [depthKey, drawn] : opaque) {
             const DrawItem* selected = drawn;
             if (page && !page->mover && page->level > 0 && virtualIt->second.atlas.options().shadowLodBias && drawn->shadowObject) {
                 const auto& lods = virtualIt->second.atlas.options().control->lods;
                 const auto lod = lods.find(drawn->shadowObject->id());
-                if (lod != lods.end() && lod->second->index) {
-                    auto& copy = job.shadowLodItems.emplace_back(*drawn);
-                    copy.indices = lod->second->index->store.get();
-                    copy.cache = nullptr;
-                    selected = &copy;
+                if (lod != lods.end()) {
+                    // The coarsest rung whose error this page's budget allows, and never finer
+                    // than the rung the main pass draws (its index buffer is one of the chain's).
+                    const auto& chain = lod->second;
+                    int shown = 0;
+                    for (std::size_t r = 0; r < chain.rungs.size(); ++r)
+                        if (chain.rungs[r]->index && chain.rungs[r]->index->store.get() == drawn->indices) shown = int(r) + 1;
+                    Matrix4 model; model.elements = drawn->matrixWorld;
+                    const int rung = shadows::shadowLodRung(chain.errors, shown, lodBudget, model.getMaxScaleOnAxis());
+                    if (rung > 0 && std::size_t(rung) <= chain.rungs.size() && chain.rungs[std::size_t(rung - 1)]->index) {
+                        auto& copy = job.shadowLodItems.emplace_back(*drawn);
+                        copy.indices = chain.rungs[std::size_t(rung - 1)]->index->store.get();
+                        copy.cache = nullptr;
+                        selected = &copy;
+                    }
                 }
             }
             const DrawItem& item = *selected;
@@ -3137,7 +3243,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         bool animated = false;
         mixMatrix(shadow.projection);
         if (shadow.cube) for (const Matrix& m : shadow.faceViews) mixMatrix(m); else mixMatrix(shadow.view);
-        mix(shadow.width); mix(shadow.height);
+        mix(mapExtent(i)[0]); mix(mapExtent(i)[1]);
         for (std::size_t k = firstPass; k < shadowPasses.size(); ++k) {
             mix(reinterpret_cast<uintptr_t>(shadowPasses[k].target));
             for (const Planned& p : shadowPasses[k].draws) {
@@ -3879,7 +3985,12 @@ void Renderer::encodeFrame(FrameJob& job) {
         WGPURenderPassDescriptor shadowDesc = {};
         shadowDesc.depthStencilAttachment = &shadowDepth;
         const size_t query = passTimer_->segments.size();
-        WGPURenderPassEncoder shadowPass = beginTimedRenderPass(encoder, &shadowDesc, ownsPassTimer_ ? 0 : 2);
+        WGPURenderPassEncoder shadowPass = beginTimedRenderPass(encoder, &shadowDesc, !ownsPassTimer_ ? 2 : shadowPlan.lamp ? kGpuLampShadowSegment : 0);
+        if (shadowPlan.lamp) {
+            // A lamp's map is redrawn when its first face is: a cube's six passes are one redraw.
+            lastFrame_.lampRedraws += &shadowPlan == shadowPasses.data() || (&shadowPlan - 1)->virtualLight != shadowPlan.virtualLight || !(&shadowPlan - 1)->lamp;
+            lastFrame_.lampShadowDraws += uint32_t(shadowPlan.draws.size());
+        }
         if (shadowPlan.virtualLevel >= 0 && passTimer_->segments.size() > query)
             shadowQueries[query] = {virtualShadows_.at(shadowPlan.virtualLight).costs, shadowPlan.virtualLevel};
         if (shadowPlan.size) {
@@ -3921,6 +4032,7 @@ void Renderer::encodeFrame(FrameJob& job) {
         const auto shadowStats = lastFrame_.shadowSkinned;
         const auto shadowDraws = lastFrame_.shadowDraws;
         const auto shadowTriangles = lastFrame_.shadowTriangles;
+        const auto lampRedraws = lastFrame_.lampRedraws, lampShadowDraws = lastFrame_.lampShadowDraws;
         lastFrame_ = FrameStats{};
         const auto record = [&](std::size_t from, std::size_t to) {
             const auto bundle = wgpuDeviceCreateRenderBundleEncoder(device_, &descriptor);
@@ -3939,6 +4051,7 @@ void Renderer::encodeFrame(FrameJob& job) {
         lastFrame_.shadowSkinned = shadowStats;
         lastFrame_.shadowDraws = shadowDraws;
         lastFrame_.shadowTriangles = shadowTriangles;
+        lastFrame_.lampRedraws = lampRedraws; lastFrame_.lampShadowDraws = lampShadowDraws;
         mainBundleKey_ = std::move(job.bundleKey);
     } else {
         lastFrame_.draws = mainBundleStats_.draws;
