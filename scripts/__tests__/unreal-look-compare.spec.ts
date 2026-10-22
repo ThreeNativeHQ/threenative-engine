@@ -436,6 +436,27 @@ describe("Unreal reference comparison", () => {
           /^TN_UNREAL_LOOK_(BAD_INPUT|MISSING_CELL)/,
         );
     });
+    it("keeps the emissive sphere locked at L9 in the sun 60 and sun 15 cells, within the layer's own thresholds", () => {
+      // `--write-locks` re-seeds a layer from the cells that hold now, so a broken cell drops its
+      // lock without a word. A vignette that scaled the alpha dimmed this sphere to dP50 0.118 and
+      // deltaE 6.7 at sun 60 (0.133 and 7.2 at sun 15), and L9 carried no lock on it. This list
+      // says what must stay locked.
+      const locks = readLocks("tools/unreal-reference/parity-locks.json");
+      const limits = JSON.parse(readFileSync("tools/unreal-reference/thresholds.json", "utf8"));
+      for (const sun of ["sun60", "sun15"])
+        for (const metric of ["deltaE", "dP50"] as const) {
+          const found = locks.find(
+            (l) =>
+              l.layer === "L9" &&
+              l.sun === sun &&
+              l.pose === "spheres" &&
+              l.region === "Sphere_Emissive" &&
+              l.metric === metric,
+          );
+          expect(found, `L9 ${sun} spheres Sphere_Emissive ${metric}`).toBeDefined();
+          expect(found?.threshold).toBeLessThanOrEqual(limits.layers.L9[metric]);
+        }
+    });
     it("re-seeds only the --layer layers and keeps the other locks", () => {
       const root = locked([lock({ layer: "L2", since: "old0000" }), lock({ since: "old0000" })]);
       writeFileSync(
@@ -446,6 +467,37 @@ describe("Unreal reference comparison", () => {
       const after = readLocks(path.join(root, "parity-locks.json"));
       expect(after.filter((l) => l.layer === "L2").map((l) => l.since)).toEqual(["old0000"]);
       expect(after.filter((l) => l.layer === "L1").map((l) => l.since)).toEqual(["new1234"]);
+    });
+    it("refuses a re-seed that would drop a lock, and drops it only on --drop-locks", () => {
+      // The Floor deltaE lock cannot be re-seeded: thresholds.json holds no deltaE limit for L1 here, so
+      // the cell would lose its lock without a word. The re-seed names it and stops.
+      const root = locked([
+        lock({ since: "old0000" }),
+        lock({ metric: "deltaE", threshold: 50, since: "old0000" }),
+      ]);
+      writeFileSync(
+        path.join(root, "thresholds.json"),
+        JSON.stringify({ layers: { L1: { dP50: 100 } } }),
+      );
+      const file = path.join(root, "parity-locks.json");
+      expect(() =>
+        runComparison({ referenceDir: root, layers: ["L1"], writeLocks: "new1234" }),
+      ).toThrow(/^TN_UNREAL_LOOK_LOCK_DROPPED.*1 lock.*L1 sun60 exterior Floor deltaE/s);
+      expect(readLocks(file).map((l) => `${l.metric} ${l.since}`)).toEqual([
+        "dP50 old0000",
+        "deltaE old0000",
+      ]);
+      expect(parseArgs(["--write-locks", "abc", "--drop-locks"])).toEqual({
+        writeLocks: "abc",
+        dropLocks: true,
+      });
+      runComparison({
+        referenceDir: root,
+        layers: ["L1"],
+        writeLocks: "new1234",
+        dropLocks: true,
+      });
+      expect(readLocks(file).map((l) => `${l.metric} ${l.since}`)).toEqual(["dP50 new1234"]);
     });
     it("seeds only the cells and metrics that hold", () => {
       const root = locked([lock()]);

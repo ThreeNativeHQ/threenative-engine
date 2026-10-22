@@ -184,6 +184,7 @@ struct DrawItem {
     uint8_t side = 0;           // material.side: 0 FrontSide, 1 BackSide, 2 DoubleSide
     uint8_t shadowSide = 255;   // material.shadowSide, the same codes; 255 is null
     bool flatShading = false;   // material.flatShading: the face normal replaces the vertex normal
+    bool twoSidedFoliage = false;  // material.twoSidedFoliage: Unreal's Two Sided Foliage receiver (PRD-651)
     uint8_t blending = 1;       // material.blending: 0 NoBlending, 1 NormalBlending, 2 AdditiveBlending
     // InstancedMesh: one mat4 (16 floats) per instance, an optional rgb per instance, and how many draw.
     BufferStore* instanceMatrices = nullptr;

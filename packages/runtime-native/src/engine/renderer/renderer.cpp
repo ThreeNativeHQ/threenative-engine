@@ -2726,7 +2726,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         v.sprite = item.sprite;
         v.backSide = item.side == 1;
         v.doubleSide = item.side == 2;
-        v.leafReceiver = v.doubleSide && item.receiveShadow && item.material && item.material->alphaTest > 0;
+        v.leafReceiver = item.receiveShadow && item.twoSidedFoliage;
         v.flatShading = item.flatShading;
         v.vertexColors = item.colors ? item.colorSize : 0;
         v.instanced = item.instanceMatrices != nullptr;

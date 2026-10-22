@@ -29,10 +29,14 @@ import {
   SpotLight,
   Vector3,
 } from "three";
+import { texture, uniform, vec4 } from "three/tsl";
+import { MeshBasicNodeMaterial } from "three/webgpu";
 import { giCache, installGi } from "../render/giCache.js";
 import { watchGi } from "../render/giTier.js";
+import { type IGlbMaterialImages, glbMaterialImages } from "../render/glbImages.js";
 import { watchShadowTier } from "../render/shadowTier.js";
 import {
+  EPIC_SSGI,
   type FinalGatherMethod,
   giPreset,
   qualityPreset,
@@ -78,6 +82,7 @@ export function candela(intensity: number, units: string): number {
 export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
   static override readonly initialState: GameState = Play.initialState;
   #model: Group | undefined;
+  #images: Map<string, IGlbMaterialImages> = new Map();
   #dispose: (() => void) | undefined;
   #gi: ReturnType<typeof watchGi> | undefined;
   #shadow: ReturnType<typeof watchShadowTier> | undefined;
@@ -89,6 +94,22 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
       `unreal-reference/gi/${NAME.replace(":", "/")}/scene.glb`,
     );
     this.#model = model.scene;
+    // The engine decodes the scene's maps itself and shows JavaScript only their size. The Surface Cache reads
+    // the same images again from the file (PRD-639).
+    const file = `unreal-reference/gi/${NAME.replace(":", "/")}/scene.glb`;
+    const tried: string[] = [];
+    for (const url of await ctx.assets.resolve(file)) {
+      const response = await fetch(url);
+      tried.push(`${response.status} ${url}`);
+      if (!response.ok) continue;
+      try {
+        this.#images = await glbMaterialImages(await response.arrayBuffer(), new URL(url, location.href).href);
+        break;
+      } catch (error) {
+        tried.push(String(error));
+      }
+    }
+    console.info(`TN_CALIBRATION_IMAGES ${JSON.stringify({ tried, materials: [...this.#images.keys()] })}`);
   }
 
   override enter(ctx: GameCtx): SceneFrame<GameState, IPhysicsContext> {
@@ -129,15 +150,20 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
       // colour id / 255 as linear, display-encoded on output.
       for (const mesh of meshes) {
         const [r = 0, g = 0, b = 0] = DATA.regions[regionOf(mesh) ?? ""] ?? [];
-        const source = mesh.material as MeshStandardMaterial;
-        mesh.material = new MeshBasicMaterial({
-          color: new Color().setRGB(r / 255, g / 255, b / 255),
-          toneMapped: false,
-          // A masked region (leaf cards) keeps its cut and both sides: the map is white, so the colour stays the ID.
-          ...(source.alphaTest > 0
-            ? { map: source.map, alphaTest: source.alphaTest, side: source.side }
-            : {}),
-        });
+        const colour = new Color().setRGB(r / 255, g / 255, b / 255);
+        // A slot keeps its sides. A masked slot (leaf cards) keeps its cut too. The ID colour is flat: a real leaf
+        // texture is green, so the node material takes only the texture's alpha, where a `map` would tint it (PRD-651).
+        const flat = (source: MeshStandardMaterial) => {
+          if (!(source.alphaTest > 0 && source.map))
+            return new MeshBasicMaterial({ color: colour, side: source.side, toneMapped: false });
+          const masked = new MeshBasicNodeMaterial({ side: source.side, toneMapped: false });
+          masked.colorNode = vec4(uniform(colour), texture(source.map).a);
+          masked.alphaTest = source.alphaTest;
+          return masked;
+        };
+        mesh.material = Array.isArray(mesh.material)
+          ? mesh.material.map((m) => flat(m as MeshStandardMaterial))
+          : flat(mesh.material as MeshStandardMaterial);
       }
       raw.toneMapping = NoToneMapping;
     } else {
@@ -241,11 +267,16 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
           bounces: Number(params.get("bounces") ?? 5),
           // The Surface Cache is on: a ray reads the map where it lands (PRD-639). Diagnosis: ?giMaps=0 returns the
           // flat colour factor, ?giLights=0 leaves the lamps out of what a ray returns (the direct frame keeps them).
-          surfaceCache: params.get("giMaps") !== "0",
-          lights: (params.get("giLights") === "0" ? [] : lights).map((l) => ({
+          surfaceCache:
+            params.get("giMaps") !== "0" && {
+              images: (material, slot) => this.#images.get(material.name ?? "")?.[slot],
+            },
+          lights: lights.map((l) => ({
             position: l.position,
             color: l.color,
-            intensity: l.intensity,
+            // Diagnosis: ?giLights=0 keeps the lamp's place but lights nothing. An empty list would stop the bake
+            // in a scene with no sun and no sky.
+            intensity: params.get("giLights") === "0" ? 0 : l.intensity,
             distance: l.distance,
           })),
         });
@@ -270,10 +301,24 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
           // Diagnosis: ?ssgi=0|1 and ?ssgiIntensity=N bracket the screen-space gather over the cache.
           ...(params.get("ssgi") === null ? {} : { ssgiEnabled: params.get("ssgi") === "1" }),
           ...(params.get("ssgiIntensity") === null ? {} : { ssgiIntensity: Number(params.get("ssgiIntensity")) }),
-          // Unreal's L7 is its Epic tier, so the gather takes the template's top sample budget.
-          ssgiQuality: (params.get("ssgiQuality") ?? "high") as "high",
-          // Diagnosis: ?ssgiScale=N gathers at a fraction of the frame (PRD-640 cost gate).
+          // Unreal's L7 is its Epic tier (render/quality.ts).
+          ...EPIC_SSGI,
+          // Diagnosis: ?ssgiQuality=<tier> and ?ssgiScale=N gather another way (PRD-640 cost gate).
+          ...(params.get("ssgiQuality") === null ? {} : { ssgiQuality: params.get("ssgiQuality") as "epic" }),
           ...(params.get("ssgiScale") === null ? {} : { ssgiResolutionScale: Number(params.get("ssgiScale")) }),
+          ...(params.get("ssgiDenoise") === null ? {} : { ssgiDenoiseRadius: Number(params.get("ssgiDenoise")) }),
+          // Diagnosis: ?probes=1 gathers with screen probes (PRD-640).
+          // 16 x 16 rays per probe: the engine's probes carry no radiance cache, so they trace twice Unreal's real-time 8 x 8
+          // (PRD-640 round 2026-10-21: sunlit-room dP50 0.129 against 0.140 for the per-pixel Epic gather). ?probeRays=N overrides.
+          ...(params.get("probes") === "1"
+            ? {
+                ssgiScreenProbes: true,
+                ssgiProbeRays: Number(params.get("probeRays") ?? 16),
+                ssgiDenoiseRadius: Number(params.get("ssgiDenoise") ?? 16),
+              }
+            : {}),
+          ...(params.get("probeJitter") === null ? {} : { ssgiProbeJitter: Number(params.get("probeJitter")) }),
+          ...(params.get("probeDebug") === null ? {} : { ssgiProbeDebug: Number(params.get("probeDebug")) }),
           vignetteAmount: 0,
           exposure: EXPOSURE,
         });

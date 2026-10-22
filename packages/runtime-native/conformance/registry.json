@@ -630,7 +630,7 @@
     },
     {
       "id": "leaf-receiver",
-      "title": "two-sided alpha-tested receiver skips the normal bias",
+      "title": "twoSidedFoliage receiver skips the normal bias",
       "category": "shadows",
       "status": "implemented",
       "scene": "conformance/scenes/shared/leaf-receiver.js",
@@ -1507,6 +1507,19 @@
       "status": "implemented",
       "availability": "unavailable-until-readback",
       "scene": "conformance/scenes/shared/raytracing-refusal.js",
+      "tolerance": {
+        "pixelMismatchRatio": 0.01,
+        "perceptualDeltaE": 3.0
+      },
+      "desktopGate": true,
+      "required": true
+    },
+    {
+      "id": "raytracing-probe-trace",
+      "title": "hardware probe trace matches the BVH trace",
+      "category": "raytracing",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/raytracing-probe-trace.js",
       "tolerance": {
         "pixelMismatchRatio": 0.01,
         "perceptualDeltaE": 3.0

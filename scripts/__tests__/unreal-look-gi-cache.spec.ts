@@ -127,10 +127,10 @@ function pathTrace(
 }
 
 /** The cache's luminance E / pi at a surface point, read as the material does: half a texel off, trilinear. */
-function cacheAt(point: Vector3, normal: Vector3): number {
+function cacheAt(point: Vector3, normal: Vector3, skipSolid = false): number {
   const field = giCache.field;
   if (field === undefined) throw new Error("no field baked");
-  const { grid, values } = field;
+  const { grid, values, solid } = field;
   const at = point
     .clone()
     .addScaledVector(normal, grid.cell * 0.5)
@@ -142,6 +142,7 @@ function cacheAt(point: Vector3, normal: Vector3): number {
   const faces = [normal.x < 0 ? 1 : 0, normal.y < 0 ? 3 : 2, normal.z < 0 ? 5 : 4];
   const squares = [normal.x ** 2, normal.y ** 2, normal.z ** 2];
   let sum = 0;
+  let total = 0;
   for (let corner = 0; corner < 8; corner += 1) {
     let weight = 1;
     const t = [0, 1, 2].map((a) => {
@@ -150,6 +151,9 @@ function cacheAt(point: Vector3, normal: Vector3): number {
       return (lower[a] ?? 0) + bit;
     });
     const texel = (t[0] ?? 0) + grid.nx * ((t[1] ?? 0) + grid.ny * (t[2] ?? 0));
+    // The material's read gives a texel inside a solid no weight (`weightOf` in `irradianceAt`).
+    if (skipSolid) weight *= 1 - 0.999 * (solid[texel] ?? 0);
+    total += weight;
     for (let a = 0; a < 3; a += 1) {
       const o = (texel * 6 + (faces[a] ?? 0)) * 3;
       sum +=
@@ -158,7 +162,7 @@ function cacheAt(point: Vector3, normal: Vector3): number {
         (0.2126 * (values[o] ?? 0) + 0.7152 * (values[o + 1] ?? 0) + 0.0722 * (values[o + 2] ?? 0));
     }
   }
-  return sum;
+  return skipSolid ? sum / total : sum;
 }
 
 describe("the world-space GI cache against closed forms (PRD-631 L7)", () => {
@@ -323,6 +327,24 @@ describe("the world-space GI cache against closed forms (PRD-631 L7)", () => {
     expect([pane.map, pane.clearcoat, pane.transmission, pane.ior]).toEqual([map, 0.7, 0.4, 1.3]);
     expect((kept as unknown as { irradianceNode: unknown }).irradianceNode).toBeDefined();
     expect((pane as unknown as { aoNode: unknown }).aoNode).toBeDefined();
+  });
+
+  it("the twoSidedFoliage marker survives the swap, and an unmarked material stays unmarked (PRD-651)", () => {
+    // three declares no such field, so the twin has no key to copy it into: the swap carries it by name.
+    const marked = new MeshStandardMaterial({ side: DoubleSide, alphaTest: 0.5 });
+    marked.twoSidedFoliage = true;
+    const plain = new MeshStandardMaterial({ side: DoubleSide, alphaTest: 0.5 });
+    const leaf = new Mesh(new PlaneGeometry(1, 1), marked);
+    const card = new Mesh(new PlaneGeometry(1, 1).translate(3, 0, 0), plain);
+    const floor = new Mesh(
+      new PlaneGeometry(40, 40).rotateX(-Math.PI / 2),
+      new MeshStandardMaterial(),
+    );
+    const scene = new Group().add(leaf, card, floor);
+    skyRadiance.current = { data: new Float32Array(6), width: 2, height: 1, scale: [1, 1, 1] };
+    installGi(rayContext(scene), scene, { bounces: 1, sun: noSun });
+    expect((leaf.material as MeshStandardMaterial).twoSidedFoliage).toBe(true);
+    expect((card.material as MeshStandardMaterial).twoSidedFoliage ?? false).toBe(false);
   });
 
   it("a material whose fields are accessors on its class, as the native engine's are, swaps with them intact", () => {
@@ -600,6 +622,31 @@ describe("the world-space GI cache against closed forms (PRD-631 L7)", () => {
         cached += cacheAt(point, normal);
       }
     expect(cached / traced).toBeLessThan(1.3);
+  }, 120_000);
+
+  it("a surface against a single-sided 0.2 m wall reads like the surface 0.2 m from it, not the lit outside (sunlit-room, sky only)", () => {
+    // Wall_Right is a slab from x 3.0 to 3.2, and a probe centre (x 3.05) lies inside it. The trace casts against
+    // front faces only, so that probe saw no back face, stayed valid, and carried the bright outside. Every texel
+    // read within 5 cm of the wall blended it in: 9 times the floor's light, a lit strip along the whole seam.
+    const room = sunlitRoom();
+    skyRadiance.current = {
+      data: new Float32Array(6).fill(1),
+      width: 2,
+      height: 1,
+      scale: [1, 1, 1],
+    };
+    installGi(rayContext(room), room, { bounces: 0, skyShadowDistance: 10, sun: noSun });
+    const seams: [string, (d: number) => Vector3, Vector3][] = [
+      ["floor", (d) => new Vector3(3 - d, 0, -3), new Vector3(0, 1, 0)],
+      ["back wall", (d) => new Vector3(3 - d, 1.5, -6), new Vector3(0, 0, 1)],
+    ];
+    for (const [name, at, normal] of seams) {
+      const away = cacheAt(at(0.2), normal, true);
+      for (const d of [0.005, 0.02, 0.05])
+        expect(cacheAt(at(d), normal, true) / away, `${name} ${d} m from the wall`).toBeLessThan(
+          1.1,
+        );
+    }
   }, 120_000);
 
   it("returns undefined with no sky, no sun and no lights", () => {
