@@ -19,6 +19,7 @@ import {
   type IFrameStore,
   type IMotionRun,
   type IRegionSeries,
+  boxMean,
   erodeMask,
   flicker,
   frameFile,
@@ -299,7 +300,7 @@ describe("ghosting against a converged still", () => {
 
   it("is zero when the moving frame is the still", () => {
     const ghost = withStill(100, () => 100).stills[4]?.A;
-    expect(ghost).toEqual({ px: 0, p50: 0, pixels: (W / 2) * H });
+    expect(ghost).toEqual({ px: 0, p50: 0, pixels: (W / 2) * H, low: null });
   });
 
   it("is the mean level gap over the still's level", () => {
@@ -344,7 +345,7 @@ describe("ghosting against a converged still", () => {
       ).stills[4]?.A;
     };
     expect(build(0)?.px).toBeGreaterThan(0.1);
-    expect(build(1)).toEqual({ px: 0, p50: 0, pixels: 10 * 2 });
+    expect(build(1)).toEqual({ px: 0, p50: 0, pixels: 10 * 2, low: null });
   });
 
   it("fails when the region is empty in the still", () => {
@@ -360,6 +361,148 @@ describe("ghosting against a converged still", () => {
     expect(() => runSeries(memoryStore(files), options(12, { stills: [4], erode: 0 }))).toThrow(
       /TN_UNREAL_LOOK_EMPTY_MASK.*still-0004/,
     );
+  });
+});
+
+describe("boxMean", () => {
+  const frame = (level: (x: number, y: number) => number, width: number, height: number) => {
+    const image = greyFrame(level, width, height);
+    const luma = new Int16Array(width * height);
+    for (let i = 0; i < luma.length; i++) luma[i] = (image.data as Uint8Array)[i * 4] as number;
+    return luma;
+  };
+
+  it("keeps a flat frame flat, at the border too", () => {
+    const mean = boxMean(
+      frame(() => 100, 9, 7),
+      9,
+      7,
+      2,
+    );
+    expect([...mean].every((v) => Math.abs(v - 100) < 1e-9)).toBe(true);
+  });
+
+  it("spreads one bright pixel over its window and clips the window at the frame edge", () => {
+    const mean = boxMean(
+      frame((x, y) => (x === 2 && y === 2 ? 90 : 0), 5, 5),
+      5,
+      5,
+      1,
+    );
+    const at = (x: number, y: number) => mean[y * 5 + x] as number;
+    expect(at(2, 2)).toBeCloseTo(10, 9);
+    expect(at(1, 1)).toBeCloseTo(10, 9);
+    expect(at(3, 3)).toBeCloseTo(10, 9);
+    expect(at(0, 0)).toBe(0);
+    expect(at(4, 2)).toBe(0);
+    // The corner's window holds four pixels: a bright pixel there weighs 1/4, not 1/9.
+    const corner = boxMean(
+      frame((x, y) => (x === 0 && y === 0 ? 80 : 0), 5, 5),
+      5,
+      5,
+      1,
+    );
+    expect(corner[0]).toBeCloseTo(20, 9);
+  });
+
+  it("refuses a radius that is not a whole number or a luminance of another size", () => {
+    expect(() => boxMean(new Int16Array(12), 4, 3, 0)).toThrow(/TN_UNREAL_LOOK_BAD_INPUT/);
+    expect(() => boxMean(new Int16Array(12), 4, 3, 1.5)).toThrow(/TN_UNREAL_LOOK_BAD_INPUT/);
+    expect(() => boxMean(new Int16Array(11), 4, 3, 1)).toThrow(/TN_UNREAL_LOOK_SIZE_MISMATCH/);
+  });
+});
+
+// The per-pixel ghost counts grain and blur as ghosting. `low` compares the same two frames after a box mean, so
+// it reads the smear of old light (a broad patch) and not the noise of one frame (PRD-638 Decisions).
+describe("low-frequency ghosting", () => {
+  const WW = 48;
+  const HH = 24;
+  const bigId = (): IImage => {
+    const data = new Uint8Array(WW * HH * 4);
+    for (let i = 0; i < WW * HH; i++)
+      data.set([...(i % WW < WW / 2 ? COLORS.A : COLORS.B), 255], i * 4);
+    return { width: WW, height: HH, data, channels: 4 };
+  };
+  const low = (
+    moving: (x: number, y: number) => number,
+    still: (x: number, y: number) => number,
+    extra = {},
+  ) => {
+    const files = new Map<string, IImage>();
+    for (let t = 0; t < 12; t++) {
+      files.set(`L7/${frameFile("pan", t)}`, greyFrame(t === 4 ? moving : () => 100, WW, HH));
+      files.set(`ID/${frameFile("pan", t)}`, bigId());
+    }
+    files.set(`L7/${frameFile(stillJob(4), 0)}`, greyFrame(still, WW, HH));
+    files.set(`ID/${frameFile(stillJob(4), 0)}`, bigId());
+    return runSeries(
+      memoryStore(files),
+      options(12, { stills: [4], erode: 0, lowRadius: 2, ...extra }),
+    ).stills[4];
+  };
+
+  it("is zero when the moving frame is the still", () => {
+    expect(
+      low(
+        () => 100,
+        () => 100,
+      )?.A?.low,
+    ).toBe(0);
+  });
+
+  it("does not see grain: a checker of 40 levels moves the pixels, not the light", () => {
+    const ghost = low(
+      (x, y) => ((x + y) % 2 ? 140 : 60),
+      () => 100,
+    )?.A;
+    expect(ghost?.px).toBeCloseTo(0.4, 6);
+    expect(ghost?.low).toBeLessThan(0.02);
+  });
+
+  it("sees a broad patch of old light: 10 levels over the whole region", () => {
+    expect(
+      low(
+        () => 110,
+        () => 100,
+      )?.A?.low,
+    ).toBeCloseTo(10 / 100, 9);
+  });
+
+  it("keeps the window inside the region: light just outside the region does not count", () => {
+    // Region B is x >= 24 and 100 levels brighter in the moving frame. The windows of region A stop at x = 23.
+    const found = low(
+      (x) => (x >= 24 ? 200 : 100),
+      () => 100,
+    );
+    expect(found?.A?.low).toBe(0);
+    expect(found?.B?.low).toBeCloseTo(1, 9);
+  });
+
+  it("is null when no pixel keeps its whole window inside the region", () => {
+    expect(
+      low(
+        () => 100,
+        () => 100,
+        { lowRadius: 12 },
+      )?.A?.low,
+    ).toBeNull();
+  });
+
+  it("refuses a radius that is not a whole number of 1 or more", () => {
+    expect(() =>
+      low(
+        () => 100,
+        () => 100,
+        { lowRadius: 0 },
+      ),
+    ).toThrow(/TN_UNREAL_LOOK_BAD_INPUT/);
+    expect(() =>
+      low(
+        () => 100,
+        () => 100,
+        { lowRadius: 2.5 },
+      ),
+    ).toThrow(/TN_UNREAL_LOOK_BAD_INPUT/);
   });
 });
 
@@ -674,7 +817,7 @@ describe("a run report (PRD-638)", () => {
     const store = memoryStore(files);
     const unreal = measureRun(store, input("pan", "unreal"));
     expect(unreal.A?.flicker.frames).toBe(19);
-    expect(unreal.A?.ghost?.[10]).toEqual({ px: 0, p50: 0, pixels: 64 });
+    expect(unreal.A?.ghost?.[10]).toEqual({ px: 0, p50: 0, pixels: 64, low: null });
     expect(Object.keys(unreal.B?.ghost ?? {})).toEqual(["10", "20"]);
     const text = formatReports([
       { scene: "mini", run: "pan", engine: "unreal", folder: "u", regions: unreal },
@@ -715,6 +858,21 @@ describe("savedUnreal reuses a saved Unreal report (PRD-638)", () => {
     expect(() => savedUnreal([saved("switch", "unreal", ["B"])], scene, "switch")).toThrow(
       /lacks the regions A/,
     );
+  });
+
+  it("fails closed on a pan report that predates the low ghost", () => {
+    const pan = {
+      ...scene,
+      motion: { pan: { frames: 40, regions: ["A"] } },
+    } as unknown as ISceneJson;
+    const withGhost = (ghost: Record<number, unknown>): IMotionReport => ({
+      ...saved("pan", "unreal", []),
+      regions: { A: { ...region, ghost } as IMotionReport["regions"][string] },
+    });
+    const old = withGhost({ 10: { px: 0.1, p50: 0.1, pixels: 5 } });
+    expect(() => savedUnreal([old], pan, "pan")).toThrow(/TN_UNREAL_LOOK_BAD_INPUT.*low ghost/);
+    const fresh = withGhost({ 10: { px: 0.1, p50: 0.1, pixels: 5, low: 0.02 }, 20: null });
+    expect(Object.keys(savedUnreal([fresh], pan, "pan") ?? {})).toEqual(["A"]);
   });
 });
 

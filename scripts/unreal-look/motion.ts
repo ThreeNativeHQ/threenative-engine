@@ -33,6 +33,11 @@ export interface IGhost {
   /** Gap between the region medians, over the still's median. */
   p50: number;
   pixels: number;
+  /**
+   * The same gap after both frames pass a box mean, inside the pixels whose whole window is in the region: the
+   * smear of old light, without the grain and the blur of one frame. Null when no pixel has such a window.
+   */
+  low: number | null;
 }
 export interface IRunSeries {
   frames: number;
@@ -40,6 +45,9 @@ export interface IRunSeries {
   /** Per still frame, per region: null when the region is not in the camera's view in that frame. */
   stills: Record<number, Record<string, IGhost | null>>;
 }
+/** The default radius of the box mean behind `IGhost.low`: a 17 pixel window, 1.3% of a 1280 pixel frame. */
+export const LOW_RADIUS = 8;
+
 export interface IRunOptions {
   /** `pan`, `switch`: the file name stem of the run's frames. */
   job: string;
@@ -56,6 +64,8 @@ export interface IRunOptions {
   stills?: readonly number[];
   /** Pixels cut off the edge of every region mask before it is measured. */
   erode?: number;
+  /** Radius of the box mean behind `IGhost.low`: a window of 2r+1 pixels a side. */
+  lowRadius?: number | undefined;
 }
 export interface ISwitchOptions {
   /** The first frame without the light. */
@@ -161,6 +171,40 @@ function lumaOf(image: IImage): Int16Array {
     out[i] = image.data[i * image.channels + 3] === 0 ? -1 : Math.round(luminance(image, i));
   return out;
 }
+/** The box mean of display luminance: each pixel's mean over its (2r+1) x (2r+1) window, clipped at the frame edge. */
+export function boxMean(
+  luma: Int16Array,
+  width: number,
+  height: number,
+  radius: number,
+): Float64Array {
+  if (!Number.isInteger(radius) || radius < 1) fail("BAD_INPUT", `box radius ${radius}`);
+  if (luma.length !== width * height) fail("SIZE_MISMATCH", "luminance and size differ");
+  // Summed-area table: sum[(y * (width + 1)) + x] is the sum of the pixels left of x and above y.
+  const stride = width + 1;
+  const sum = new Float64Array(stride * (height + 1));
+  for (let y = 0; y < height; y++) {
+    let row = 0;
+    for (let x = 0; x < width; x++) {
+      row += luma[y * width + x] as number;
+      sum[(y + 1) * stride + x + 1] = (sum[y * stride + x + 1] as number) + row;
+    }
+  }
+  const out = new Float64Array(width * height);
+  for (let y = 0; y < height; y++) {
+    const [y0, y1] = [Math.max(0, y - radius), Math.min(height, y + radius + 1)];
+    for (let x = 0; x < width; x++) {
+      const [x0, x1] = [Math.max(0, x - radius), Math.min(width, x + radius + 1)];
+      const total =
+        (sum[y1 * stride + x1] as number) -
+        (sum[y0 * stride + x1] as number) -
+        (sum[y1 * stride + x0] as number) +
+        (sum[y0 * stride + x0] as number);
+      out[y * width + x] = total / ((x1 - x0) * (y1 - y0));
+    }
+  }
+  return out;
+}
 function histogram(luma: Int16Array, mask: Mask) {
   const bins = new Uint32Array(256);
   let count = 0;
@@ -251,7 +295,7 @@ function absDiff(a: Int16Array, b: Int16Array, ma: Mask, mb: Mask) {
   return { count, sum };
 }
 /** How far the moving frame is from the converged still, inside the mask. */
-function ghost(moving: Int16Array, still: Int16Array, mask: Mask): IGhost {
+function ghost(moving: Int16Array, still: Int16Array, mask: Mask): Omit<IGhost, "low"> {
   const gap = absDiff(moving, still, mask, mask);
   const a = histogram(moving, mask);
   const b = histogram(still, mask);
@@ -264,10 +308,26 @@ function ghost(moving: Int16Array, still: Int16Array, mask: Mask): IGhost {
   };
 }
 
+/** The mean gap of two box-mean frames inside the mask, over the still's mean level; null below `minPixels`. */
+function lowGhost(moving: Float64Array, still: Float64Array, mask: Mask, minPixels: number) {
+  let count = 0;
+  let gap = 0;
+  let level = 0;
+  for (let i = 0; i < mask.length; i++) {
+    if (!mask[i]) continue;
+    gap += Math.abs((moving[i] as number) - (still[i] as number));
+    level += still[i] as number;
+    count++;
+  }
+  return count < minPixels ? null : gap / count / Math.max(level / count, 1);
+}
+
 type Eroded = Record<string, Mask>;
 interface ICursor {
   luma: Int16Array;
   eroded: Eroded;
+  width: number;
+  height: number;
 }
 
 /** The eroded region masks of an ID frame. The last frame's are kept: a still camera repeats its ID frame. */
@@ -315,8 +375,12 @@ function ghostRow(
   still: ICursor,
   minPixels: number,
   where: string,
+  lowRadius: number,
 ): Record<string, IGhost | null> {
   const row: Record<string, IGhost | null> = {};
+  const { width, height } = now;
+  const meanNow = boxMean(now.luma, width, height, lowRadius);
+  const meanStill = boxMean(still.luma, width, height, lowRadius);
   for (const name of Object.keys(now.eroded)) {
     const moving = now.eroded[name] as Mask;
     const fixed = still.eroded[name] as Mask;
@@ -324,17 +388,21 @@ function ghostRow(
       row[name] = null;
       continue;
     }
-    const found = ghost(
-      now.luma,
-      still.luma,
-      moving.map((v, i) => (v && fixed[i] ? 1 : 0)) as Mask,
-    );
+    const both = moving.map((v, i) => (v && fixed[i] ? 1 : 0)) as Mask;
+    const found = ghost(now.luma, still.luma, both);
     if (found.pixels < minPixels)
       fail(
         "EMPTY_MASK",
         `region ${name} has ${found.pixels} pixels in both frames of ${where}, the run needs ${minPixels}`,
       );
-    row[name] = found;
+    // A window may only hold opaque pixels of the region, in both frames.
+    const opaque = both.map((v, i) =>
+      v && (now.luma[i] as number) >= 0 && (still.luma[i] as number) >= 0 ? 1 : 0,
+    ) as Mask;
+    row[name] = {
+      ...found,
+      low: lowGhost(meanNow, meanStill, erodeMask(opaque, width, height, lowRadius), minPixels),
+    };
   }
   return row;
 }
@@ -366,6 +434,12 @@ function checkRegions(
 export function runSeries(store: IFrameStore, options: IRunOptions): IRunSeries {
   const { job, frames, color, id, regions, minPixels } = options;
   const stills = options.stills ?? [];
+  const lowRadius = options.lowRadius ?? LOW_RADIUS;
+  if (!Number.isInteger(lowRadius) || lowRadius < 1)
+    fail(
+      "BAD_INPUT",
+      `run ${job} asks for a box radius of ${lowRadius}, it needs a whole number of 1 or more`,
+    );
   if (!Number.isInteger(frames) || frames < 2)
     fail("BAD_INPUT", `run ${job} declares ${frames} frames, it needs a whole number of 2 or more`);
   checkRun(store, color, job, frames, stills);
@@ -391,15 +465,23 @@ export function runSeries(store: IFrameStore, options: IRunOptions): IRunSeries 
     const file = frameFile(job, t);
     const idImage = read(id, file, size);
     size = idImage;
-    const now = { luma: lumaOf(read(color, file, idImage)), eroded: movingMasks(idImage) };
+    const [width, height] = [idImage.width, idImage.height];
+    const now = {
+      luma: lumaOf(read(color, file, idImage)),
+      eroded: movingMasks(idImage),
+      width,
+      height,
+    };
     addFrame(series, now, before, minPixels);
     if (stills.includes(t)) {
       const stillFile = frameFile(stillJob(t), 0);
       const still = {
         luma: lumaOf(read(color, stillFile, idImage)),
         eroded: stillMasks(read(id, stillFile, idImage)),
+        width,
+        height,
       };
-      ghosts[t] = ghostRow(now, still, minPixels, `${file} and ${id}/${stillFile}`);
+      ghosts[t] = ghostRow(now, still, minPixels, `${file} and ${id}/${stillFile}`, lowRadius);
     }
     before = now;
   }

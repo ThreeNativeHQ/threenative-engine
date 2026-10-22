@@ -5,7 +5,7 @@
  *   pnpm unreal-look:capture --engine threenative --scene gi:cornell --motion pan|switch
  *   pnpm unreal-look:compare --scene gi|gi:cornell --metric motion [--engine unreal|threenative] [--run pan,switch]
  *     [--layer L7] [--unreal-variant L7-Epic-motion] [--tn-folder threenative] [--captures <dir>] [--json <file>]
- *     [--erode 2] [--min-pixels 200] [--gradual Ceiling] [--unreal-report <json from an earlier --json>]
+ *     [--erode 2] [--min-pixels 200] [--low-radius 8] [--gradual Ceiling] [--unreal-report <json from an earlier --json>]
  *
  * Both engines write captures/<engine>/<scene>/motion/<run>/<variant or layer>/<run>.NNNN.png and one
  * still-NNNN.0000.png per still. The ID frames come from Unreal: both engines draw the same camera.
@@ -29,6 +29,7 @@ import {
   type IGhost,
   type IMotionRun,
   type ISwitchResponse,
+  LOW_RADIUS,
   checkRun,
   diskStore,
   flicker,
@@ -148,6 +149,7 @@ export interface IMeasureInput {
   target?: Record<string, number>;
   erode?: number;
   minPixels?: number;
+  lowRadius?: number;
 }
 export interface IRegionReport {
   /** The region's median display level in every frame (one decimal; null where the frame shows too few pixels), for plots. */
@@ -190,6 +192,7 @@ export function measureRun(
     minFrames: spec.camera.kind === "pan" ? MIN_PAN_FRAMES : spec.frames,
     stills,
     erode: input.erode ?? ERODE,
+    lowRadius: input.lowRadius,
   });
   const at = switchFrame(spec);
   const [from, to] = flickerWindow(spec);
@@ -263,7 +266,14 @@ function panRow(
   x: IRegionReport | undefined,
   stills: string[],
 ): string[] {
-  return [name, engine, pct(x?.flicker.px), ...stills.map((s) => pct(x?.ghost?.[Number(s)]?.px))];
+  const ghost = (s: string) => x?.ghost?.[Number(s)];
+  return [
+    name,
+    engine,
+    pct(x?.flicker.px),
+    ...stills.map((s) => pct(ghost(s)?.px)),
+    ...stills.map((s) => pct(ghost(s)?.low ?? undefined)),
+  ];
 }
 
 function runTable(mine: readonly IMotionReport[]): string {
@@ -276,7 +286,13 @@ function runTable(mine: readonly IMotionReport[]): string {
     );
   const stills = Object.keys(first?.ghost ?? {});
   return table(
-    ["region", "engine", "held flicker px", ...stills.map((s) => `ghost@${s}`)],
+    [
+      "region",
+      "engine",
+      "held flicker px",
+      ...stills.map((s) => `ghost@${s}`),
+      ...stills.map((s) => `low@${s}`),
+    ],
     names.flatMap((n) => mine.map((r) => panRow(n, r.engine, r.regions[n], stills))),
   );
 }
@@ -300,6 +316,7 @@ interface IMotionArgs {
   tnFolder: string;
   erode: number;
   minPixels: number;
+  lowRadius: number;
   /** A saved report whose Unreal rows replace measuring Unreal's frames again (`--unreal-report`). */
   unrealReport?: readonly IMotionReport[];
 }
@@ -345,6 +362,7 @@ function motionArgs(args: readonly string[]): IMotionArgs {
     tnFolder: flag(args, "--tn-folder") ?? "threenative",
     erode: Number(flag(args, "--erode") ?? ERODE),
     minPixels: Number(flag(args, "--min-pixels") ?? MIN_PIXELS),
+    lowRadius: Number(flag(args, "--low-radius") ?? LOW_RADIUS),
     ...(report ? { unrealReport: readReport(report) } : {}),
   };
 }
@@ -377,6 +395,14 @@ export function savedUnreal(
       "BAD_INPUT",
       `--unreal-report lacks the regions ${lacks.join(", ")} of ${scene.scene}/${run}`,
     );
+  const old = Object.values(found.regions).some((r) =>
+    Object.values(r.ghost ?? {}).some((g) => g && g.low === undefined),
+  );
+  if (old)
+    fail(
+      "BAD_INPUT",
+      `--unreal-report was measured before the low ghost existed: measure ${scene.scene}/${run} in Unreal again`,
+    );
   return found.regions;
 }
 
@@ -393,6 +419,7 @@ function reportsFor(
     id: motionDir("unreal", sceneId, run, "ID"),
     erode: a.erode,
     minPixels: a.minPixels,
+    lowRadius: a.lowRadius,
   };
   const unrealDir = motionDir("unreal", sceneId, run, a.variant);
   const unreal =
