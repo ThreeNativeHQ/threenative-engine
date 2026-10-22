@@ -25,6 +25,7 @@ import { ShadowMap } from "../../../../three-native/src/shadow-map.ts";
 import { defineSphereReflectionCapture } from "../../../../three-native/src/sphere-reflection-capture.ts";
 import { defineRenderTargets } from "../../../../three-native/src/render-target.ts";
 import { defineQuadMesh } from "../../../../three-native/src/quad-mesh.ts";
+import { GPU_STAGES } from "../../../../three-native/src/gpu-stages.ts";
 
 export const { MeshBasicNodeMaterial, MeshStandardNodeMaterial, SpriteNodeMaterial } = globalThis;
 Object.setPrototypeOf(MeshBasicNodeMaterial.prototype, globalThis.MeshBasicMaterial.prototype);
@@ -43,6 +44,15 @@ class NativeBackend {
   // Pipelines the player's renderer has compiled so far (three counts createRenderPipeline calls on its
   // backend; the engine counts its own pipeline cache). A window's compiles are the difference of two reads.
   pipelineCompiles = () => globalThis.tn.renderInfo().pipelineCompiles;
+  // The frame the newest resolved GPU time belongs to, as the Wasm backend reports it (core's `stageGpuReading` reads it).
+  // The first reader turns the player's frame timing on: an unread timer costs a query resolve and readback per frame.
+  #timing = false;
+  getTimestampFrames(type) {
+    if (type !== "render") return [];
+    if (!this.#timing) globalThis.tn.setGpuTimer((this.#timing = true));
+    const { samples, source } = globalThis.tn.renderInfo().gpuTiming;
+    return samples > 0 ? [source] : [];
+  }
 }
 
 function drawTarget(renderer, target, root, camera, deferred) {
@@ -74,6 +84,8 @@ export class WebGPURenderer {
     render: {
       get drawCalls() { return globalThis.tn.renderInfo().drawCalls; },
       get calls() { return globalThis.tn.renderInfo().drawCalls; },
+      // The newest resolved GPU time of the whole frame in ms, 0 before one has (the timer starts at the first `getTimestampFrames`).
+      get timestamp() { return Math.max(0, globalThis.tn.renderInfo().gpuTiming.ms); },
       get triangles() { return globalThis.tn.renderInfo().triangles; },
     },
     compute: {},
@@ -82,6 +94,14 @@ export class WebGPURenderer {
     engine: {
       get samples() { return globalThis.tn.renderInfo().samples; },
       get temporal() { return globalThis.tn.renderInfo().temporal; },
+      // The GPU ms by named stage (gpu-stages.ts) of that sample; a stage that drew no pass is absent. Segments 0..3 are
+      // the shadow, scene, other and output passes, so the named stages follow them in `GPU_STAGES` order.
+      get gpuStages() {
+        const { segments } = globalThis.tn.renderInfo().gpuTiming;
+        const stages = {};
+        GPU_STAGES.forEach((name, index) => { if (segments[4 + index] > 0) stages[name] = segments[4 + index]; });
+        return stages;
+      },
     },
     frame: 0,
     reset() {},
