@@ -344,11 +344,13 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
           ...qualityPreset("high"),
           autoExposureEnabled: false,
           bloomEnabled: false,
-          // Below L9 Unreal draws with ShowFlag.LocalExposure 0 (PRD-631), and the `high` preset turns the stage on
-          // since the finishing chain became the default (ff837b1f2): it lifted L1's dark walls 14 levels.
+          // Unreal draws L1 to L8 with ShowFlag.LocalExposure 0 (PRD-631), and the `high` preset turns the stage on
+          // since the finishing chain became the default (ff837b1f2): it lifted neon-corridor L1's dark walls 14
+          // levels. This gate turns it off below L7. L7 and above keep it for now: the GI cache there is brighter than Unreal's, the stage's highlight
+          // compression hides part of that, and switching it off broke 14 cornell L7 locks. Remove it with the GI excess.
           // Diagnosis: ?localExposure=0|1 forces the stage.
           localExposureEnabled:
-            params.get("localExposure") === null ? level >= 9 : params.get("localExposure") === "1",
+            params.get("localExposure") === null ? level >= 7 : params.get("localExposure") === "1",
           // Diagnosis: ?gtao=0 takes the contact occlusion out, to tell its darkening from the shadow's.
           gtaoEnabled: level >= 6 && params.get("gtao") !== "0",
           finalGatherMethod: method,
