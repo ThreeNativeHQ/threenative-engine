@@ -312,13 +312,11 @@ async function ensureArm(
   return { arm, dir, captured: true };
 }
 
-function link(target: string, name: string, source: string): void {
-  mkdirSync(target, { recursive: true });
-  const at = path.join(target, name);
-  if (!existsSync(at)) symlinkSync(source, at);
-}
-
-/** The compare rows of every run of an arm at one layer, as regions checked against the layer's thresholds. */
+/**
+ * The compare rows of every run of an arm at one layer, as regions checked against the layer's thresholds.
+ * The rows read the committed Unreal statistics, the same reference `--lock` re-measures, so a local Unreal
+ * tree that is older than the committed reference changes the judge's images but not the numbers.
+ */
 function regionsOf(
   deps: IDeps,
   o: IOptions,
@@ -329,24 +327,23 @@ function regionsOf(
 ): IRegion[] {
   const limits = lightLimits(readThresholds(), limitLayer);
   const runs = arm.runs.map((run) => {
-    const root = path.join(dir, "compare", run);
-    link(root, "unreal", o.unreal);
-    link(root, "threenative", path.join(dir, run));
-    return deps.compare(o.scene, layer, root).map((row): IRegion => {
-      if (row.deltaE === null || row.dP50 === null || row.iou === null)
-        return fail("MISSING_METRIC", `${row.cell}/${row.region}: the compare gave no value`);
-      const { pass, ratio } = evaluate(row, limits);
-      return {
-        pose: row.cell.slice(o.scene.length + 1),
-        region: row.region,
-        dP50: row.dP50,
-        deltaE: row.deltaE,
-        dEv: row.dEv50 === null ? null : Math.abs(row.dEv50),
-        iou: row.iou,
-        pass,
-        ratio,
-      };
-    });
+    return withOfflineRoot(path.join(dir, run), (root) => deps.compare(o.scene, layer, root)).map(
+      (row): IRegion => {
+        if (row.deltaE === null || row.dP50 === null || row.iou === null)
+          return fail("MISSING_METRIC", `${row.cell}/${row.region}: the compare gave no value`);
+        const { pass, ratio } = evaluate(row, limits);
+        return {
+          pose: row.cell.slice(o.scene.length + 1),
+          region: row.region,
+          dP50: row.dP50,
+          deltaE: row.deltaE,
+          dEv: row.dEv50 === null ? null : Math.abs(row.dEv50),
+          iou: row.iou,
+          pass,
+          ratio,
+        };
+      },
+    );
   });
   return averageRuns(runs);
 }

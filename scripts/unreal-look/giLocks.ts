@@ -121,8 +121,9 @@ function finite(value: number | null | undefined, what: string): number {
 
 /**
  * A digest of what a lock is measured against: the committed Unreal statistics, the Unreal ID frames that give
- * the region masks, and the scene definition. The time stamp of the statistics file is left out, so that
- * writing the same statistics again keeps the digest.
+ * the region masks, and the scene definition. The time stamp of the statistics file and the `motion` runs of
+ * the scene definition are left out: neither sets a measurement of a still pose, so writing the same statistics
+ * again or adding a motion run keeps the digest.
  */
 export function sceneBasis(scene: string, dir = sceneDir(scene)): string {
   const stats = JSON.parse(readFileSync(path.join(dir, "reference-stats.json"), "utf8")) as {
@@ -133,7 +134,10 @@ export function sceneBasis(scene: string, dir = sceneDir(scene)): string {
   hash.update(JSON.stringify({ resolution: stats.resolution, cells: stats.cells }));
   for (const name of readdirSync(path.join(dir, "id")).sort())
     hash.update(`\0${name}\0`).update(readFileSync(path.join(dir, "id", name)));
-  hash.update("\0scene.json\0").update(readFileSync(path.join(dir, "scene.json")));
+  const { motion: _motion, ...definition } = JSON.parse(
+    readFileSync(path.join(dir, "scene.json"), "utf8"),
+  ) as { motion?: unknown };
+  hash.update("\0scene.json\0").update(JSON.stringify(definition));
   return hash.digest("hex").slice(0, 12);
 }
 

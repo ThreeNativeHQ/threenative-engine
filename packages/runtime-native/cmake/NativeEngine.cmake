@@ -266,6 +266,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_renderer_color_write_masks_the_draw=color_write_masks_the_draw
         native_engine_renderer_steady_cache_invalidation=steady_cache_invalidation
         native_engine_render_target=render_target
+        native_engine_float_render_target=float_render_target_keeps_float32
         native_engine_renderer_updates=updates
         native_engine_renderer_multi_camera_layers=multi_camera_layers
         native_engine_renderer_callback=render_callback

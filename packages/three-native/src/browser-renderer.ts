@@ -8,7 +8,7 @@ import { TSL_NODE, type TnAbiModule, engineRef } from "./browser-backend.js";
 import { type ITslRuntime, defineTsl, isTslNode } from "./browser-tsl.js";
 import { GPU_STAGES } from "./gpu-stages.js";
 import type { PassDraw } from "./pass-node.js";
-import { defineRenderTargets } from "./render-target.js";
+import { defineRenderTargets, targetTexelBytes } from "./render-target.js";
 import { ShadowMap } from "./shadow-map.js";
 import { syncVirtualShadowLods } from "./shadow-node.js";
 import { defineSphereReflectionCapture } from "./sphere-reflection-capture.js";
@@ -593,7 +593,8 @@ export function defineWebRenderer(
     writeHandle(24, target, "render target");
     const id = module._tnw_web_read_target(handles + 24, x, y, width, height);
     if (id === 0) check(1);
-    const size = width * height * 8;
+    const size =
+      width * height * targetTexelBytes((target as { texture: { type: number } }).texture.type);
     const out = module._malloc(size) >>> 0;
     try {
       for (;;) {
