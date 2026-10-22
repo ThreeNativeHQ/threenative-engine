@@ -129,9 +129,11 @@ export interface IGiOptions {
   readonly progressive?: {
     readonly previewRays: number;
     /**
-     * Bounces of the provisional bake, 2 when unset. One bounce leaves out the warm light a lit floor throws on the
-     * walls: the first frame reads dark and cool. A second one halves the error against the full cache (relative L1 0.151
-     * to 0.077 on the sunlit room) for about 150 ms; more bounces gain little, the rays' noise stays.
+     * Bounces of the provisional bake, the full bake's when unset. Fewer bounces leave out the warm light a lit floor
+     * throws on the walls, and the first frame reads darker and blotchy. On the sunlit room at 32 rays the mean error of
+     * a texel against the full cache (relative, every texel counting alike) is 0.207 with two bounces (16% too dark)
+     * and 0.124 with five. The global L1 hides it (0.077 against 0.070): the dim walls carry little of the sum.
+     * The gather costs about 300 ms more in the browser at five bounces.
      */
     readonly previewBounces?: number;
     readonly budgetMs: number;
@@ -2140,7 +2142,7 @@ export function installGi(
   const previewParams = {
     baseRays: progressive.previewRays,
     extraRays: 0,
-    bounces: Math.min(progressive.previewBounces ?? 2, full.bounces),
+    bounces: Math.min(progressive.previewBounces ?? full.bounces, full.bounces),
   };
   // The materials are installed now, over a black cache of the final size, so the first frame draws at once and
   // the graph never changes: each bake below rewrites the texture they already read.

@@ -270,9 +270,10 @@ describe("progressive GI bake", () => {
     expect(largest).toBeLessThan(0.01);
   });
 
-  it("takes two bounces for the provisional bake, which lands nearer the full cache than one bounce does", () => {
-    // One bounce leaves out the warm light a lit floor throws on the walls, so the first frame reads dark and cool.
-    // Measured on this room at 5 bounces and 32 rays: relative L1 error 0.151 with one bounce, 0.077 with two, 0.070 with five.
+  it("takes the full bake's bounces for the provisional bake, which lands nearer the full cache on the dim walls", () => {
+    // Fewer bounces leave out the warm light a lit floor throws on the walls: the first frame reads dark and blotchy.
+    // The global L1 error hides it (0.077 with two bounces, 0.070 with five: the lit floor carries the sum), so the
+    // error is the mean over texels of |preview - full| / full, every texel counting alike: 0.207 against 0.124.
     const whole = sunlitRoom();
     installGi(rayContext(whole), whole, { bounces: 5, sun: SUN });
     const wanted = Float32Array.from(giCache.field?.values ?? []);
@@ -294,16 +295,23 @@ describe("progressive GI bake", () => {
       expect(giCache.field).not.toBe(stale);
       const got = giCache.field?.values ?? new Float32Array(0);
       let gap = 0;
-      let total = 0;
-      for (let i = 0; i < wanted.length; i += 1) {
-        gap += Math.abs((got[i] ?? 0) - (wanted[i] ?? 0));
-        total += Math.abs(wanted[i] ?? 0);
+      let texels = 0;
+      for (let i = 0; i + 17 < wanted.length; i += 18) {
+        let want = 0;
+        let have = 0;
+        for (let k = 0; k < 18; k += 1) {
+          want += wanted[i + k] ?? 0;
+          have += got[i + k] ?? 0;
+        }
+        if (want < 1e-3) continue;
+        gap += Math.abs(have - want) / want;
+        texels += 1;
       }
-      return gap / total;
+      return gap / texels;
     };
-    const oneBounce = errorOfPreview(1);
+    const twoBounces = errorOfPreview(2);
     const byDefault = errorOfPreview();
-    expect(byDefault).toBeLessThan(oneBounce * 0.7);
-    expect(byDefault).toBeLessThan(0.1);
+    expect(byDefault).toBeLessThan(twoBounces * 0.75);
+    expect(byDefault).toBeLessThan(0.16);
   }, 120_000);
 });
