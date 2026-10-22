@@ -39,6 +39,8 @@ import { ssr } from "three/addons/tsl/display/SSRNode.js";
 import { sharpen } from "three/addons/tsl/display/SharpenNode.js";
 import { traa } from "three/addons/tsl/display/TRAANode.js";
 import {
+  Fn,
+  If,
   clamp,
   color,
   convertToTexture,
@@ -48,6 +50,7 @@ import {
   getViewPosition,
   max,
   metalness,
+  min,
   mrt,
   normalView,
   output,
@@ -57,12 +60,15 @@ import {
   uniform,
   uv,
   vec2,
+  vec3,
   vec4,
 } from "three/tsl";
 import { BlendMode, type Node, type NodeBuilder, type TextureNode } from "three/webgpu";
+import { AO_MULTIBOUNCE_FIT, UNREAL_AO_MULTIBOUNCE_ALBEDO } from "./aoMultiBounce.js";
+import { UNREAL_AO_REACH_PX } from "./aoReach.js";
 import { AutoExposureNode, applyExposure } from "./autoExposure.js";
 import { type IExposureSettings, exposureSettings } from "./exposure.js";
-import { cacheFallback } from "./giCache.js";
+import { cacheFallback, giCache } from "./giCache.js";
 import { harnessLayer } from "./harnessLayer.js";
 import { LocalExposureNode } from "./localExposure.js";
 import { motionBlur } from "./motionBlur.js";
@@ -225,12 +231,31 @@ export interface IWorldEnvironmentOptions {
    * of centimetres and multiplies on top.
    */
   readonly gtaoEnabled?: boolean;
-  /** Occlusion gather radius in world units. Contact scale, not room scale. */
+  /**
+   * Occlusion gather radius in world units, a named override. Left out, the radius follows Unreal's rule
+   * instead: a fixed reach on the screen (`gtaoReachPx`), so a contact is as wide at any distance.
+   */
   readonly gtaoRadius?: number;
+  /** Screen reach of the occlusion in pixels at the display height when `gtaoRadius` is not set. Unreal's is 32. */
+  readonly gtaoReachPx?: number;
   /** Exponent on the occlusion term: higher is a darker, tighter contact. */
   readonly gtaoScale?: number;
   /** Directions sampled per pixel. Cost is linear in this. */
   readonly gtaoSamples?: number;
+  /** Spacing of the samples along a direction: 1 is even, 2 packs them near the pixel, as Unreal's horizon search does. */
+  readonly gtaoDistanceExponent?: number;
+  /** 0 weighs every sample alike, 1 (the node's default) weighs far samples less. */
+  readonly gtaoDistanceFalloff?: number;
+  /** Depth difference in world units beyond which a sample is no occluder. */
+  readonly gtaoThickness?: number;
+  /** The occlusion denoise's reach in pixels (DenoiseNode's 5 when omitted); 0 leaves the occlusion raw. */
+  readonly gtaoDenoiseRadius?: number;
+  /**
+   * The albedo cap of the occlusion's multi-bounce: pale surfaces keep more of the light a crease blocks. Unreal's is
+   * 0.5 (`MaxMultibounceAlbedo`); 0 leaves the occlusion as GTAO computed it. Applies where the cache holds the
+   * indirect light.
+   */
+  readonly gtaoMultiBounceAlbedo?: number;
   /** Fraction of display resolution the occlusion is traced at. */
   readonly gtaoResolutionScale?: number;
   /**
@@ -659,10 +684,16 @@ export class WorldEnvironment {
       godraysSteps: options.godraysSteps ?? 60,
       godraysMaxDensity: options.godraysMaxDensity ?? 0.5,
       gtaoEnabled: options.gtaoEnabled ?? false,
-      gtaoRadius: options.gtaoRadius ?? 0.25,
+      gtaoRadius: options.gtaoRadius,
+      gtaoReachPx: options.gtaoReachPx ?? UNREAL_AO_REACH_PX,
       gtaoScale: options.gtaoScale ?? 1,
       gtaoSamples: options.gtaoSamples ?? 16,
+      gtaoDistanceExponent: options.gtaoDistanceExponent ?? 1,
+      gtaoDistanceFalloff: options.gtaoDistanceFalloff ?? 1,
+      gtaoThickness: options.gtaoThickness ?? 1,
+      gtaoDenoiseRadius: options.gtaoDenoiseRadius,
       gtaoResolutionScale: options.gtaoResolutionScale ?? 1,
+      gtaoMultiBounceAlbedo: options.gtaoMultiBounceAlbedo ?? UNREAL_AO_MULTIBOUNCE_ALBEDO,
       ssgiResolutionScale: options.ssgiResolutionScale ?? 1,
       sharpenEnabled: options.sharpenEnabled ?? false,
       sharpenStrength: options.sharpenStrength ?? 0.2,
@@ -817,6 +848,10 @@ export class WorldEnvironment {
           ...(engineInfo as { engine?: { temporal?: object } }).engine?.temporal,
         })
       : undefined;
+    // Contact occlusion dims the light that comes from around. With the world cache baked the frame's indirect
+    // diffuse is known per pixel, so only that share takes the occlusion and the sun keeps its light, as
+    // Unreal's AO (indirect light only) leaves it. Without a cache (the three.js engine) the whole frame is dimmed.
+    const indirectOcclusion = ownedEngine && giCache.irradiance !== undefined;
     const scenePass = pass(scene, camera, { samples: options.samples });
     const resolutionSubrect =
       requested.length === 0 || resolutionSubrectRefusal !== undefined
@@ -840,7 +875,9 @@ export class WorldEnvironment {
         normal: vec4(normalView, 0),
         metalness,
         roughness,
-        ...(options.ssgiEnabled ? { diffuseColor } : {}),
+        ...(options.ssgiEnabled || (options.gtaoEnabled && indirectOcclusion)
+          ? { diffuseColor }
+          : {}),
         // AO leaves emission alone: an emitter's underside stays its own radiance (Unreal's AO is indirect only).
         ...(options.gtaoEnabled || options.ssgiEnabled ? { emissive } : {}),
       });
@@ -885,10 +922,8 @@ export class WorldEnvironment {
       : undefined;
     // The frame's exposure multiplier. Every chain stage reads pre-exposed light, as Lumen's passes do.
     const gain = exposure === undefined ? float(options.exposure) : exposure.exposureNode;
-    const exposed = applyExposure(
-      colour,
-      localExposure === undefined ? gain : gain.mul(localExposure.gainNode),
-    );
+    const frameGain = localExposure === undefined ? gain : gain.mul(localExposure.gainNode);
+    const exposed = applyExposure(colour, frameGain);
     let released = false;
     const releaseGraph = (): void => {
       if (released) return;
@@ -932,7 +967,7 @@ export class WorldEnvironment {
 
     let releaseBloom = (): void => {};
     let releaseAo = (): void => {};
-    let contactOcclusion: ChainNode | undefined;
+    let contactOcclusion: Node | undefined;
     let releaseAa = (): void => {};
     const stages: ChainStage[] = [
       stage({
@@ -1066,9 +1101,24 @@ export class WorldEnvironment {
           // smooth vertex normal against a faceted depth (a 32-sided capsule) read as one dark stripe per facet and a
           // stair-step band under the cap; the denoiser, GTAO scale and radius did not change them.
           const contact = ao(subrectTexture(depth()), null as never, view);
-          contact.radius.value = options.gtaoRadius;
+          if (options.gtaoRadius !== undefined) {
+            contact.radius.value = options.gtaoRadius;
+          } else {
+            // Unreal's reach is on the screen (see aoReach.ts). The owned engine's GTAO takes it as `reachPx`, in
+            // pixels of the occlusion target; upstream three's GTAONode has no such uniform, so that engine needs
+            // a world radius and refuses the default.
+            const owned = contact as unknown as { reachPx?: { value: number } };
+            if (owned.reachPx === undefined)
+              throw new Error(
+                "TN_AO_REACH_UNSUPPORTED: this engine's GTAO has no screen reach; set gtaoRadius (metres)",
+              );
+            owned.reachPx.value = options.gtaoReachPx * options.gtaoResolutionScale;
+          }
           contact.scale.value = options.gtaoScale;
           contact.samples.value = options.gtaoSamples;
+          contact.distanceExponent.value = options.gtaoDistanceExponent;
+          contact.distanceFallOff.value = options.gtaoDistanceFalloff;
+          contact.thickness.value = options.gtaoThickness;
           contact.resolutionScale = options.gtaoResolutionScale;
           const retained = contact as unknown as {
             setSize(w: number, h: number): void;
@@ -1090,9 +1140,13 @@ export class WorldEnvironment {
           // Denoised with the same depth-aware filter as the GI gather: GTAO's interleaved
           // sampling otherwise reads as a speckled halo around every contact — around feet on a
           // plain floor most of all — which is exactly the "not smooth" a player notices first.
-          const filter = options.denoiseEnabled
-            ? denoise(contact.getTextureNode(), depth(), normal(), view)
-            : undefined;
+          const filter =
+            options.denoiseEnabled && options.gtaoDenoiseRadius !== 0
+              ? denoise(contact.getTextureNode(), depth(), normal(), view)
+              : undefined;
+          if (filter && options.gtaoDenoiseRadius !== undefined)
+            (filter as unknown as { radius: { value: number } }).radius.value =
+              options.gtaoDenoiseRadius;
           if (filter && resolutionSubrect) {
             const denoiser = filter as unknown as {
               textureNode: TextureNode;
@@ -1109,7 +1163,29 @@ export class WorldEnvironment {
             };
           }
           const occlusion = filter ? denoised(filter) : contact;
-          contactOcclusion = occlusion.r;
+          // The factor the indirect diffuse light keeps: the occlusion through multi-bounce for the pixel's own albedo
+          // (the diffuse colour target already has the metal's share removed), per channel. The fit is a cubic of the
+          // occlusion with linear coefficients of the capped albedo (Jimenez et al. 2016, as Unreal's composite).
+          const bounce = (): Node<"vec3"> => {
+            const base = min(
+              albedo().rgb.mul(float(1).sub(metal().r)),
+              options.gtaoMultiBounceAlbedo,
+            );
+            const [a, b, c] = [
+              AO_MULTIBOUNCE_FIT.a,
+              AO_MULTIBOUNCE_FIT.b,
+              AO_MULTIBOUNCE_FIT.c,
+            ].map(([slope, offset]) => base.mul(slope).add(offset)) as [
+              Node<"vec3">,
+              Node<"vec3">,
+              Node<"vec3">,
+            ];
+            const x = occlusion.r;
+            return max(vec3(x), a.mul(x).add(b).mul(x).add(c).mul(x));
+          };
+          const keeps =
+            indirectOcclusion && options.gtaoMultiBounceAlbedo > 0 ? bounce() : undefined;
+          contactOcclusion = keeps ?? occlusion.r;
           // Emission is radiance a surface gives off, not light it receives: AO keeps it, as Unreal's AO darkens only
           // indirect light. The emitted part passes at full weight; the rest takes the occlusion.
           // The chain reads exposed light, so the emitted radiance takes the frame's gain too.
@@ -1118,7 +1194,56 @@ export class WorldEnvironment {
           const composited = input
             .mul(vec4(occlusion.r, occlusion.r, occlusion.r, 1))
             .add(vec4(emitted.mul(float(1).sub(occlusion.r)), 0));
-          return composited;
+          const cache = indirectOcclusion ? cacheFallback(view) : undefined;
+          if (cache === undefined) return composited;
+          // The pixel's view-space position from its depth and the camera's projection terms, read live each
+          // render: the engine has no getViewPosition, and a post quad's own camera nodes are the quad's.
+          const term = (index: number) =>
+            uniform(view.projectionMatrix.elements[index] ?? 0).onRenderUpdate(
+              () => view.projectionMatrix.elements[index] ?? 0,
+            );
+          const [p0, p5, p8, p9, p10, p14] = [
+            term(0),
+            term(5),
+            term(8),
+            term(9),
+            term(10),
+            term(14),
+          ];
+          const compose = Fn(() => {
+            const coordinate = uv();
+            const result = vec3(composited.rgb).toVar();
+            const sceneDepth = depth().sample(coordinate).r;
+            const sceneNormal = normal().sample(coordinate).xyz;
+            // The sky and a draw the normal pass skips (an unlit material) keep the whole-frame multiply.
+            If(sceneDepth.lessThan(1).and(sceneNormal.dot(sceneNormal).greaterThan(0.25)), () => {
+              const viewZ = p14.negate().div(sceneDepth.add(p10));
+              const ndc = vec2(
+                coordinate.x.mul(2).sub(1),
+                float(1).sub(coordinate.y).mul(2).sub(1),
+              );
+              const position = vec3(
+                viewZ.negate().mul(ndc.x.add(p8)).div(p0),
+                viewZ.negate().mul(ndc.y.add(p9)).div(p5),
+                viewZ,
+              );
+              // The indirect diffuse the material added: the cache's irradiance times the albedo, in the frame's
+              // units (the gather's own fallback reads it the same way). Only it takes the occlusion, and the
+              // result is never darker than the whole-frame multiply.
+              const indirect = albedo()
+                .rgb.mul(float(1).sub(metal().r))
+                .mul(cache(position, sceneNormal.normalize()))
+                .mul(frameGain);
+              result.assign(
+                max(
+                  input.rgb.sub(indirect.mul(float(1).sub(keeps ?? occlusion.r))),
+                  composited.rgb,
+                ),
+              );
+            });
+            return vec4(result, input.a);
+          });
+          return compose();
         },
       }),
       stage({

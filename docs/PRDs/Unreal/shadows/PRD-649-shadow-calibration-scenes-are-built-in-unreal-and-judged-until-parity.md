@@ -64,7 +64,7 @@ them in `tools/unreal-reference/gi/<scene>/`.
 | Scene | What it isolates | Light | Poses | Serves |
 | --- | --- | --- | --- | --- |
 | `penumbra-lab` | 0.5 m boxes at 0, 0.25, 1, 4 and 10 m over a white floor; a 2 cm pole; a 15° ramp for acne; a 1 m step | Sun at 60°, 15° and 4°; sky light | `heights`, `contact`, `ramp` | [PRD-634](../look/PRD-634-sun-shadows-reach-the-horizon-and-soften-with-distance-from-the-caster.md), [PRD-652](PRD-652-the-shadow-tier-follows-unreal-shadow-quality-levels.md) |
-| `lamp-room` | A 6 × 4 × 3 m room with box furniture, a 1 cm rod 5 cm from a wall | A spot light at source radius 0 and 10 cm, a point light at 5 cm; no sun, no sky | `spot`, `spot-soft`, `point`, `rod` | [PRD-650](PRD-650-a-lamp-shadow-is-as-sharp-as-the-pixels-it-covers-and-softens-with-the-lamp-size.md), PRD-652 |
+| `lamp-room` | A 6 × 4 × 3 m room with box furniture, a 1 cm rod 5 cm from a wall | A spot light at source radius 0 and 10 cm, a point light at 5 cm; no sun, no sky | `spot`, `spot-soft`, `point`, `rod` | [PRD-650](../../done/PRD-650-a-lamp-shadow-is-as-sharp-as-the-pixels-it-covers-and-softens-with-the-lamp-size.md), PRD-652 |
 | `lamp-room` (run) | `swing`: a box crosses the spot cone in frames 60 to 120, then stops | as above | — | PRD-650 |
 | `horizon` | A 2 × 2 km heightfield with hills; 30 m towers at 50, 300 and 1500 m | Sun at 15°; sky light | `near`, `far` | PRD-634, [PRD-457](../rendering/PRD-457-virtual-shadows-scale-by-measurement.md), PRD-652 |
 | `horizon` (runs) | `walk`: the camera moves 10 m in 3 s; `sunturn`: the sun azimuth turns 10° in 3 s | as above | — | PRD-634 (stability) |
@@ -179,3 +179,42 @@ screenshots branch only.
   harness, taken because the calibration needs the same triangles in both engines and Nanite drops thin
   branches. The lighting rows move little: the tree dP50 changes by at most 0.10 between the two imports (L5, sun15-closeup, 0.15 to 0.25).
   All Unreal frames of this scene are Nanite off from 2026-10-21 20:00 on.
+- 2026-10-22 (wildwood2 lane): what fills the floor shadow of `shadow:wildwood` at L7, by ablation. Metric: the
+  median floor luminance in the shade over the median in the sun, scene-linear, on the same pixels in both
+  engines (the floor pixels that Unreal shades, below a quarter of its 95th percentile, and lights, above half
+  of it). Unreal frames are its `.exr`. ThreeNative frames are `linear=1&exposure=0.12` PNGs: `linear=1` removes the
+  tone curve only, so the PNG is still sRGB-encoded and the script decodes it first (a doubled exposure gives 1.40 times
+  the byte level, not 2.08). **Correction, same day:** the first version of this note and the #541 comment
+  6343291184 compared the encoded bytes, and read 0.485 for ThreeNative against Unreal's 0.099. The numbers below
+  are decoded and replace them. Script: `split-analyze.py` and `abl-analyze.py` in `~/.cache/tmp-tn/wildwood/`.
+
+  | `shade / sun` | sun60-closeup | sun15-closeup |
+  |---|---:|---:|
+  | Unreal 5.8.3, L7 | 0.099 | 0.191 |
+  | ThreeNative, L7 everything on | 0.208 | 0.233 |
+  | Unreal, L5 (sun, sky light, no GI, no AO) | 0.087 | 0.191 |
+  | ThreeNative, L5 | 0.090 | 0.203 |
+  | Unreal, L5 sun only (`L5-direct`: `r.SkylightIntensityMultiplier` 0) | 0.009 | 0.002 |
+  | ThreeNative, sun only (`off=gi,gtao,ssgi&envMul=0`) | 0.021-0.023 | 0.045-0.046 |
+  | ThreeNative L7 `giBounces=0` / `1` / `2` / `5` | 0.082 / 0.084 / 0.162 / 0.208 | 0.185 / 0.187 / 0.213 / 0.233 |
+  | `skyMul=0` / `off=gi` | 0.143 / 0.114 | 0.125 / 0.207 |
+  | `off=gtao` / `off=ssgi` | 0.212 / 0.220 | 0.243 / 0.244 |
+  | `probes=1` / `ssgiQuality=epic` / `tier=medium` | 0.212 / 0.208 / 0.215 | 0.237 / 0.234 / 0.235 |
+  | cell 0.25 m (local patch, not committed) | 0.202 | 0.231 |
+
+  Result. (1) The sun-only shade is small in both engines: ThreeNative 0.02 and 0.045 against Unreal's 0.009 and 0.002.
+  The absolute gap is 0.01 of the sunlit floor at sun60 and 0.04 at sun15, so the direct leak under the crown is real
+  but minor. (2) The sky light matches: at L5 ThreeNative reads 0.090 and 0.203 against Unreal's 0.087 and 0.191.
+  (3) The fault is at L7 at sun60: ThreeNative reads 0.208 against 0.099 (2.1 times), at sun15 0.233 against 0.191
+  (1.2 times). Unreal's GI adds 0.012 to the L5 value at sun60 (0.087 to 0.099), ThreeNative's adds 0.118 (0.090 to
+  0.208). The GI cache adds it in bounce passes 2 to 5 (0.084 to 0.162 to 0.208); the first pass and the sky-only
+  pass add nothing. (4) Cell size (0.25 m), AO, SSGI, the screen-space gather arms and the `medium` tier move the ratio
+  by at most 0.01, so neither cell blur nor the gather method is the cause. Unreal's L7 method is Lumen ScreenProbeGather
+  (`r.DynamicGlobalIlluminationMethod=1`, `sg.GlobalIlluminationQuality 3` = `Engine/Config/BaseScalability.ini:416-438`,
+  set in `tools/unreal-reference/layers.json` L7 and `shadow/scenes.json:98-99`). `tier=low` is not a valid arm (no GI, no sky shadow).
+  Candidates, not measured: the sun bounce of leaf cards that the bake shades from the underside (`surface()` uses
+  `max(0, n.sun)` on the hit normal), and the `SHADE_CELL` 0.5 m share of sun visibility per object. Knobs that
+  perf2-lane needs on `installGi` (none exist; `CELL` at `giCache.ts:160` and `MAX_POINTS` at `giCache.ts:179` are
+  constants): `giCell`, `giMax`, `giShadeCell`, `giSkipObject` (bake without one named object). Harness knobs in
+  `Reference.ts.in`: `envMul=N`, `giBounces=N`. The new Unreal variant `L5-direct` in `shadow/scenes.json` is opt-in
+  (`--variants L5-direct`). The local `CELL` patch was measurement only and is not committed.

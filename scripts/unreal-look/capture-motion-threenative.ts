@@ -39,9 +39,9 @@ const MAX_PACE_MS = 400;
 export const FRAME_GATE = `(() => {
   const real = window.requestAnimationFrame.bind(window);
   const cancelReal = window.cancelAnimationFrame.bind(window);
-  const gate = { manual: false, queue: new Map(), next: 1e9, time: 0, steps: 0 };
+  const gate = { manual: false, queue: new Map(), next: 1e9, time: 0, steps: 0, offset: 0 };
   const realNow = performance.now.bind(performance);
-  performance.now = () => (gate.manual ? gate.time : realNow());
+  performance.now = () => (gate.manual ? gate.time : realNow() + gate.offset);
   window.requestAnimationFrame = (callback) => {
     if (!gate.manual) return real(callback);
     gate.next += 1;
@@ -53,7 +53,7 @@ export const FRAME_GATE = `(() => {
   };
   // Switch to queued frames once the loop's pending browser frame has run and asked for the next one.
   gate.hold = () => new Promise((resolve) => {
-    gate.time = realNow();
+    gate.time = realNow() + gate.offset;
     gate.manual = true;
     const wait = () => (gate.queue.size > 0 ? resolve(gate.queue.size) : real(wait));
     real(wait);
@@ -79,6 +79,13 @@ export const FRAME_GATE = `(() => {
       reject(error);
     }
   }));
+  // Back to the browser's frames: the queued callbacks run on the next real frame and the clock carries on from the last step.
+  gate.release = () => {
+    gate.offset = gate.time - realNow();
+    gate.manual = false;
+    for (const callback of gate.queue.values()) real(callback);
+    gate.queue.clear();
+  };
   window.__tnGate = gate;
 })();`;
 

@@ -260,7 +260,7 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
         light.intensity = candela(spec.intensity, spec.units) * LIGHT_SCALE * scale;
       };
       // A shadow tier decides whether a lamp casts and what its filter samples; `ShadowFilterBudget` moves
-      // it with the frame time when the URL asks for shadowAuto=1 (PRD-652). Diagnosis knobs: sourceRadius=0
+      // it with the frame period when the URL asks for shadowAuto=1 (PRD-652). Diagnosis knobs: sourceRadius=0
       // leaves the shadow on the hard filter (the filter's cost arm); blockers and samples set the tap counts.
       const applyShadowTier = (next: ShadowFilterTier) => {
         const preset = shadowPreset(next);
@@ -380,9 +380,9 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
       // light a PRD-646 direct-light gap is measured in). Pair it with ?exposure=N small enough that nothing clips.
       if (params.get("linear") === "1") raw.toneMapping = NoToneMapping;
       setGatherMethod = build;
-      // The tier's method moves with the measured GI time when the URL asks for giAuto=1 (PRD-644).
+      // The tier's method holds; the GI watcher reports its share of the GPU frame (PRD-644).
       if (GI_METHOD !== "none")
-        this.#gi = watchGi(ctx, { tier: TIER, method: GI_METHOD, rebuild: build });
+        this.#gi = watchGi(ctx, { tier: TIER, method: GI_METHOD });
     }
     for (const u of unsupported)
       console.info(`TN_CALIBRATION_SCENE unsupported ${u.actor}.${u.property}: ${u.reason}`);

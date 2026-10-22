@@ -783,18 +783,18 @@ const baseline = boneLengths(character);
 
 ### `BudgetLadder`
 
-`class` — A cost ladder for one render stage: a window of measured GPU milliseconds above a level's budget steps the level down, a window under 70% of the next level's budget with room in the frame steps it up, and a level that failed is retried after a growing wait. It decides when to move; the game applies the move.
+`class` — A cost ladder for one render stage: the whole GPU frame against the frame period moves it, by Unreal's DynamicRenderScaling rule. A frame over the period for 2 frames in a row steps the level down at once, a frame over the period less 10% headroom steps it down after the 8-frame change period, and a frame with room steps it up. A stage steps only when it could absorb the overage at zero cost, and a level that failed is retried after a growing wait. It decides when to move; the game applies the move.
 
 ```ts
 export class BudgetLadder<L extends string> { … }
 ```
 
-- **Use when:** step a render stage down when its GPU time stays over budget · pick a quality level from measured GPU time without oscillating
-- **Constraints:** levels are listed cheapest first, and every level needs a finite budget in milliseconds · a window with too few resolved GPU readings never moves the level
-- **Overrides:** explicit: true keeps the level and only reports a window over budget
+- **Use when:** step a render stage down when the GPU frame goes over the frame period · pick a quality level from measured GPU time without oscillating
+- **Constraints:** levels are listed cheapest first, and the frame period is the game's own display target · a frame without a resolved GPU reading never moves the level
+- **Overrides:** explicit: true keeps the level and only reports a frame over the target
 
 ```ts
-const ladder = new BudgetLadder({ levels: ["low", "high"], budgetMs: { low: 1, high: 4 }, start: "high" }); const window = ladder.observe(gpuMs);
+const ladder = new BudgetLadder({ levels: ["low", "high"], framePeriodMs: 1000 / 60, start: "high" }); const window = ladder.observe(stageMs, frameMs);
 ```
 
 ### `bvhIntersectFirstHit`
@@ -1449,18 +1449,17 @@ if (isMobile()) showTouchControls();
 
 ### `GIBudget`
 
-`class` — Steps a game's global illumination method (`none`, `irradianceField`, `screenProbeGather`) down when its GPU time stays over budget over a 120-frame window, and back up when there is room. The game owns what each method draws and applies each step; the budget of each method is the GPU time Unreal spends at the matching `sg.GlobalIlluminationQuality`.
+`class` — Reports what a game's global illumination costs against the frame period: the GI share of the GPU frame and whether the frame fits its period less 10% headroom. The method (`none`, `irradianceField`, `screenProbeGather`) holds its level while the game runs, as Unreal's Lumen does: a frame over its period gets cheaper through the primary resolution scale, and the GI pass follows the lower resolution. The budget is the frame period, never a GI time in milliseconds, because a stage reading moves with the GPU clock.
 
 ```ts
 export class GIBudget { … }
 ```
 
-- **Use when:** global illumination costs too much on a weak GPU · pick the bounce light method from measured GPU time · quality tier for indirect lighting that follows the hardware
-- **Constraints:** the game applies each step to its own render chain; this class draws nothing · the GPU time of a pass is read by the scene name three or the game gave it, so name every GI pass in `stages` · timestamp queries are needed: without them every window is unobserved and the method holds
-- **Overrides:** explicit: true keeps the game's own finalGatherMethod and reports an exceeded budget
+- **Use when:** global illumination costs too much on a weak GPU · see what share of the GPU frame the bounce light takes · quality tier for indirect lighting that follows the hardware
+- **Constraints:** the method never changes while the game runs: the primary resolution scale is the run-time lever · the GPU time of a pass is read by the scene name three or the game gave it, so name every GI pass in `stages` · timestamp queries are needed: without them every window is unobserved
 
 ```ts
-const gi = new GIBudget({ method: "screenProbeGather", stages: ["SSGI"], budgetMs: { none: 0, irradianceField: 1, screenProbeGather: 5 }, onStep: (method) => rebuildChain(method) });
+const gi = new GIBudget({ method: "screenProbeGather", stages: ["SSGI"], framePeriodMs: 1000 / 60 });
 ctx.beforeRender(() => gi.observeRenderer(ctx.renderer.raw));
 ```
 
@@ -1992,11 +1991,11 @@ const probes = new ProbeVolume({ bounds, density: 0.5 }); ctx.add(probes); void 
 export function readGIMarker(line: string): IGIBudgetReport | undefined { … }
 ```
 
-- **Use when:** inspect which global illumination method ran and why it stepped
+- **Use when:** inspect which global illumination method ran and what the frame cost
 - **Constraints:** non-marker lines and malformed markers return `undefined`
 
 ```ts
-const report = readGIMarker(line); if (report?.stepped) console.log(report.reason);
+const report = readGIMarker(line); if (report?.verdict === "over") console.log(report.reason);
 ```
 
 ### `readLampShadowMarker`
@@ -2448,18 +2447,18 @@ if (spansRequested()) setSpanRecorder(new SpanRecorder());
 
 ### `ShadowFilterBudget`
 
-`class` — Steps a game's soft-shadow tier down (`low`, `medium`, `high`) when the GPU time of its shadow passes stays over the tier's budget for a 120-frame window, and back up when there is room. Only the shadow stages' own time moves the tier, so a frame that is slow for another reason keeps its shadows. The game owns the sample counts of each tier and rebuilds its filter on each step; the tiers follow Unreal's `sg.ShadowQuality` Low, Medium and Epic.
+`class` — Steps a game's soft-shadow tier down (`low`, `medium`, `high`) when the whole GPU frame stays over the frame period, and back up when the frame has room, by the settings of Unreal's virtual shadow map budget (a linear model, 5% headroom). A frame that is slow for another reason keeps its shadows: the tier steps only when the shadow passes could absorb the overage. The game owns the sample counts of each tier and rebuilds its filter on each step; the tiers follow Unreal's `sg.ShadowQuality` Low, Medium and Epic.
 
 ```ts
 export class ShadowFilterBudget { … }
 ```
 
-- **Use when:** soft shadow filter costs too much on a weak GPU · step the shadow quality tier from the measured GPU time of the shadow passes · shadow quality tier that follows the hardware
-- **Constraints:** the game rebuilds its filter with the tier's sample counts on each step; this class draws nothing · timestamp queries are needed: without them every window is unobserved and the tier holds · the signal is the GPU time of the shadow passes (the `Shadow` stage), which the receiver filter inside the colour pass is not part of
-- **Overrides:** explicit: true keeps the game's own sample counts and reports an exceeded budget
+- **Use when:** soft shadow filter costs too much on a weak GPU · step the shadow quality tier when the GPU frame goes over the frame period · shadow quality tier that follows the hardware
+- **Constraints:** the game rebuilds its filter with the tier's sample counts on each step; this class draws nothing · timestamp queries are needed: without them every window is unobserved and the tier holds · the rule reads the whole GPU frame and the `Shadow` stage, which the receiver filter inside the colour pass is not part of
+- **Overrides:** explicit: true keeps the game's own sample counts and reports an over-budget frame
 
 ```ts
-const filter = new ShadowFilterBudget({ tier: "high", budgetMs: { low: 0.3, medium: 0.3, high: 0.5 }, onStep: (tier) => { light.shadow.filterNode = filterFor(tier); } });
+const filter = new ShadowFilterBudget({ tier: "high", framePeriodMs: 1000 / 60, onStep: (tier) => { light.shadow.filterNode = filterFor(tier); } });
 ctx.beforeRender(() => filter.observeRenderer(ctx.renderer.raw));
 ```
 
