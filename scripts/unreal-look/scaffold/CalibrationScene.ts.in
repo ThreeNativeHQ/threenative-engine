@@ -199,6 +199,21 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
     for (const mesh of meshes)
       if (regionOf(mesh) === undefined) throw new Error(`TN_CALIBRATION_SCENE_UNMAPPED: ${mesh.name}`);
 
+    // PRD-643: a slot that scene.json reports on Unreal's Two Sided Foliage model, with its Subsurface Color, is a
+    // twoSidedFoliage material with the same subsurfaceColor here (by the glTF material name, which both engines keep).
+    const subsurface = new Map<string, [number, number, number]>();
+    for (const mesh of DATA.meshes as { slots?: { slot: string; subsurfaceColor?: number[] }[] }[])
+      for (const slot of mesh.slots ?? [])
+        if (slot.subsurfaceColor?.length === 3)
+          subsurface.set(slot.slot, slot.subsurfaceColor as [number, number, number]);
+    for (const mesh of meshes)
+      for (const material of [mesh.material].flat() as MeshStandardMaterial[]) {
+        const colour = subsurface.get(material.name);
+        if (colour === undefined) continue;
+        material.twoSidedFoliage = true;
+        material.subsurfaceColor = new Color(...colour);
+      }
+
     scene.background = new Color(0x000000);
     scene.environment = null;
     if (level <= 0) {

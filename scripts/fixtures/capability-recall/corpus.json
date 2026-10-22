@@ -819,6 +819,14 @@
       "source": "template:starter#AGENTS.md — __PROJECT_NAME__ starter",
       "expect": ["ShadowFilterBudget"],
       "reject": []
+    },
+    {
+      "id": "request.two-sided-foliage",
+      "query": "two sided foliage",
+      "scope": "request",
+      "source": "sandbox:wildwood-backlit#scenes/CalibrationScene.ts",
+      "expect": ["addFoliageBackLight"],
+      "reject": []
     }
   ]
 }

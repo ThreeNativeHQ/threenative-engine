@@ -536,6 +536,23 @@
     {
       "aliases": [],
       "constraints": [
+        "the material needs the foliage marker and subsurfaceColor, else nothing is added and false is returned; call once per material",
+        "the material needs `twoSidedFoliage = true` and a `subsurfaceColor`, or nothing is added and false is returned; backIrradiance is a vec3 node in the unit of `irradianceNode`; call once per material"
+      ],
+      "example": "addFoliageBackLight(leaf, backIrradiance);",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function addFoliageBackLight(material: Material, backIrradiance: Node<\"vec3\">): boolean { … }",
+      "situations": ["add bounce light to the far face of a two sided foliage leaf"],
+      "summary": "Adds subsurfaceColor times the far-face irradiance to a Two Sided Foliage leaf's emissive node.",
+      "supersedes": [],
+      "symbol": "addFoliageBackLight"
+    },
+    {
+      "aliases": [],
+      "constraints": [
         "the objects, and where each one goes, stay the game's; this decides only when each joins the graph",
         "input order is the attach order and cannot be changed",
         "a false `while` stops the run and is reported as `stopped`, never thrown"

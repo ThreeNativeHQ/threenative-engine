@@ -1088,6 +1088,13 @@ export { lampPenumbraTangent } from "./render/soft-shadow.js";
  * @example const radius = penumbraUv(10, angle, 40, 2048);
  */
 export { penumbraUv } from "./render/soft-shadow.js";
+/**
+ * Adds subsurfaceColor times the far-face irradiance to a Two Sided Foliage leaf's emissive node.
+ * @situation add bounce light to the far face of a two sided foliage leaf
+ * @constraint the material needs the foliage marker and subsurfaceColor, else nothing is added and false is returned; call once per material
+ * @example addFoliageBackLight(leaf, backIrradiance);
+ */
+export { addFoliageBackLight } from "./render/two-sided-foliage.js";
 export type { ISourceAngleShadowInputs, ISourceAngleShadowOptions } from "./render/soft-shadow.js";
 /**
  * Unreal's Substrate rough diffuse (EON) on standard and physical materials, so direct sun and lamp light meets a rough surface
