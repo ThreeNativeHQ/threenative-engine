@@ -67,7 +67,7 @@ A world volume is therefore possible in memory but not in time. The 256 m open-w
 **Implementation:** ring layout from density, camera far and device limits, snapped origins, wrap addressing, stale untraced entry, the finest-ready-ring sampler and the one-cell blend margin. Fail closed: a request larger than the device 3D texture limit throws at construction and names the limit.
 - [ ] After a scroll step, cells that stay keep their values exactly, and cells that enter report stale and read as zero weight, not black light. proof: `pnpm exec vitest run packages/core/__tests__/probe-volume.spec.ts`
 - [ ] On the CPU reference sampler, a point crossing a ring boundary changes by 2% or less per centimeter step. proof: `pnpm exec vitest run packages/core/__tests__/probe-volume.spec.ts`
-**Verification:** AC-2 closes this phase. The change alters what reaches the screen, so the visual judge from the root `AGENTS.md` runs on the fly-through, with one frame taken just after a scroll. A [PRD-647](../gi/PRD-647-a-visual-judge-calibrates-gi-against-the-unreal-scenes-until-parity.md) round on `sunlit-room` at `medium` must return no REGRESSION. A NEUTRAL or REGRESSION verdict means fix the cause and judge again.
+**Verification:** AC-2 closes this phase. The change alters what reaches the screen, so the visual judge from the root `AGENTS.md` runs on the fly-through, with one frame taken just after a scroll. A [PRD-647](../../done/PRD-647-a-visual-judge-calibrates-gi-against-the-unreal-scenes-until-parity.md) round on `sunlit-room` at `medium` must return no REGRESSION. A NEUTRAL or REGRESSION verdict means fix the cause and judge again.
 
 #### Phase 3: Refresh where the camera looks
 **Status:** NOT STARTED
