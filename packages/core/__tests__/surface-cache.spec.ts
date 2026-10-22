@@ -123,6 +123,40 @@ describe("SurfaceCache albedo (PRD-639 Phase 2)", () => {
     ]);
   });
 
+  it("reads the image the game hands over for a map whose own image has no pixels", () => {
+    // The owned engine decodes a glTF's maps itself: JS sees their size and nothing else.
+    const engineTexture = {
+      image: { width: 2, height: 2 },
+      colorSpace: "srgb-linear",
+      flipY: false,
+    };
+    const asked: string[] = [];
+    const materials: ISurfaceCacheMaterial[] = [
+      {
+        name: "Brick",
+        color: { r: 1, g: 1, b: 1 },
+        map: engineTexture,
+        emissiveMap: engineTexture,
+      },
+      { name: "Plain", color: { r: 0.3, g: 0.3, b: 0.3 } },
+    ];
+    const cache = SurfaceCache.from(materials, {
+      images: (material, slot) => {
+        asked.push(`${material.name}.${slot}`);
+        return slot === "map" ? quad() : undefined;
+      },
+    });
+    const out = [0, 0, 0];
+    cache.albedo(0, 0.75, 0.25, out);
+    expect(out).toEqual([0, 1, 0]);
+    expect(asked).toEqual(["Brick.map", "Brick.emissiveMap"]);
+    // `undefined` keeps the texture's own image, which here has no pixels: the flat colour and the reason.
+    expect(cache.report.mappedMaterials).toBe(1);
+    expect(cache.report.fallbacks).toEqual([
+      { material: "Brick", reason: "unreadable-image", detail: "Object 2x2, no OffscreenCanvas" },
+    ]);
+  });
+
   it("reads an image whose data is a plain ArrayBuffer, and names an empty one a closed bitmap", () => {
     const bytes = Uint8Array.from([0, 255, 0, 255]).buffer;
     const cache = SurfaceCache.from([
