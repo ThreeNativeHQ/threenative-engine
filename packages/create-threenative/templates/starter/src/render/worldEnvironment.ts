@@ -48,10 +48,8 @@ import {
   output,
   pass,
   roughness,
-  smoothstep,
   uniform,
   uv,
-  vec2,
   vec4,
 } from "three/tsl";
 import { BlendMode, type Node, type NodeBuilder, type TextureNode } from "three/webgpu";
