@@ -123,6 +123,9 @@ const shared: IWorldEnvironmentOptions = {
  */
 const high: IWorldEnvironmentOptions = {
   ...shared,
+  // Unreal's default anti-aliasing is temporal (`r.AntiAliasingMethod` 4). The engine jitters the camera, draws the motion
+  // and blends the frames; `temporalAA: false` brings back the chain's SMAA, which is what `low` and three.js keep.
+  temporalAA: true,
   // Contact scale, in metres. A crate is 0.92 m, so half a metre gathers the crease where two
   // crates meet and the shadow where one meets the floor, and no further.
   // unmeasured in that ablation — it is not one of the five stages it measured.
@@ -139,6 +142,9 @@ const high: IWorldEnvironmentOptions = {
 /** A machine between the two: the same look with a cheaper occlusion gather. */
 const medium: IWorldEnvironmentOptions = {
   ...shared,
+  // Unreal's default anti-aliasing is temporal (`r.AntiAliasingMethod` 4). The engine jitters the camera, draws the motion
+  // and blends the frames; `temporalAA: false` brings back the chain's SMAA, which is what `low` and three.js keep.
+  temporalAA: true,
   // The chain's own quality tier: without it the renderer keeps its `high` default at this tier.
   renderChainTier: "medium",
   bloomRadius: 0.38,
