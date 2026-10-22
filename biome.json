@@ -12,6 +12,7 @@
       "artifacts/**",
       "examples/strata-terrain-preview/src/world/*.json",
       "examples/strata-terrain-preview/assets/world/*.json",
+      "docs/PRDs/Unreal/research/port-history.json",
       "examples/strata-terrain-preview/local-assets/**",
       "examples/strata-terrain-preview/assets/**",
       "examples/strata-terrain-preview/basis/**",
