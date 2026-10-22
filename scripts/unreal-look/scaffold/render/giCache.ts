@@ -1201,9 +1201,9 @@ function nodeTwin(source: MeshStandardMaterial): MeshStandardMaterial {
     ? physicalTwin()
     : new MeshStandardNodeMaterial()) as unknown as Record<string, unknown>;
   copyFields(source, twin);
-  // three declares no `twoSidedFoliage`, so a three twin has no such key to copy into: carry the marker by name (PRD-651).
-  if ((source as { twoSidedFoliage?: boolean }).twoSidedFoliage === true)
-    twin.twoSidedFoliage = true;
+  // three declares no `twoSidedFoliage` or `roughDiffuse`, so a three twin has no such key to copy into: carry the markers by name (PRD-651, PRD-653).
+  for (const marker of ["twoSidedFoliage", "roughDiffuse"])
+    if ((source as unknown as Record<string, unknown>)[marker] === true) twin[marker] = true;
   return twin as unknown as MeshStandardMaterial;
 }
 

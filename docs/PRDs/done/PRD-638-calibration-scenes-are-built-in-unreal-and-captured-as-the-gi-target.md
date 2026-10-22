@@ -8,7 +8,7 @@ prd_contract: v1
 **Priority:** P1 — no box is ticked: no scene authored in Unreal isolates colour bleed, interior sky light, leaks, emissive light or a moving light, so no GI change can be judged against Unreal. Every PRD in this folder is judged on these scenes.
 **Complexity:** 7 (HIGH) — 1–5 files in the PRD-631 harness plus one scene folder per scene (+1), new system: a scene authoring and export pipeline inside Unreal (+2), new state: Level Sequences for motion runs (+2), external tool: the headless Unreal editor and its glTF exporter (+2); risk override: none
 **Owner:** João
-**Depends on:** [PRD-631](../Unreal/look/PRD-631-an-unreal-reference-scene-measures-the-default-look.md) Phase 1 (the headless Unreal capture). Recreation in ThreeNative is [PRD-646](../Unreal/gi/PRD-646-threenative-recreates-each-unreal-calibration-scene-exactly.md), and the calibration loop that uses the frames is [PRD-647](PRD-647-a-visual-judge-calibrates-gi-against-the-unreal-scenes-until-parity.md).
+**Depends on:** [PRD-631](PRD-631-an-unreal-reference-scene-measures-the-default-look.md) Phase 1 (the headless Unreal capture). Recreation in ThreeNative is [PRD-646](../Unreal/gi/PRD-646-threenative-recreates-each-unreal-calibration-scene-exactly.md), and the calibration loop that uses the frames is [PRD-647](PRD-647-a-visual-judge-calibrates-gi-against-the-unreal-scenes-until-parity.md).
 
 ## Context
 

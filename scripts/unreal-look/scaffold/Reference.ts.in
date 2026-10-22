@@ -31,7 +31,7 @@ import {
 } from "three";
 import { EMISSIVE_UNITS } from "../render/atmosphere.js";
 import { installGi } from "../render/giCache.js";
-import { setupLighting } from "../render/lighting.js";
+import { setupLighting, shadeLikeSubstrate } from "../render/lighting.js";
 import { setupPost } from "../render/postprocessing.js";
 import { watchGi } from "../render/giTier.js";
 import { watchShadowTier } from "../render/shadowTier.js";
@@ -158,6 +158,8 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
       raw.toneMapping = NoToneMapping;
     } else {
       const { key } = setupLighting(scene, ctx.renderer.raw as Parameters<typeof setupLighting>[1]);
+      // PRD-653: the sun meets a rough surface as Unreal's Substrate does. Diagnosis knob off=roughDiffuse is plain Lambert.
+      if (TUNED && !OFF.has("roughDiffuse")) shadeLikeSubstrate(model);
       // Diagnosis knob sunShadow=0: the sun casts no shadow (is a seam line a shadow leak at all?).
       key.castShadow = level >= 5 && params.get("sunShadow") !== "0" && SHADOW.castShadows;
       // Diagnosis knob shadowSide=front|back|double: the caster faces. Unset keeps the engine's rule:

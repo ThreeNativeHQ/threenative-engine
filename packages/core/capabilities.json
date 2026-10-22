@@ -3683,6 +3683,26 @@
       "symbol": "updateModelLods"
     },
     {
+      "aliases": ["Substrate EON, Diffuse_EON, Diffuse_GGX_Rough, rough diffuse, Oren-Nayar"],
+      "constraints": [
+        "direct light only, indirect light stays Lambert; standard and physical materials; a lamp's `sourceRadius` in metres fades the effect to Lambert at 20 cm; a material changed after its first draw needs `needsUpdate`"
+      ],
+      "example": "useRoughDiffuse(scene);",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [
+        "material.roughDiffuse = false, or useRoughDiffuse(root, false), puts Lambert back"
+      ],
+      "package": "@threenative/core",
+      "signature": "export function useRoughDiffuse(root: Object3D, enabled = true): number { … }",
+      "situations": [
+        "shade rough surfaces under a sun or a lamp the way Unreal's Substrate does, not as flat Lambert"
+      ],
+      "summary": "Unreal's Substrate rough diffuse (EON) on standard and physical materials, so direct sun and lamp light meets a rough surface the way Unreal shades it. The same `roughDiffuse` flag works on three's WebGPU renderer and on the owned engine.",
+      "supersedes": [],
+      "symbol": "useRoughDiffuse"
+    },
+    {
       "aliases": [],
       "constraints": [
         "off by default and expensive by construction — it does the work it is checking, twice",

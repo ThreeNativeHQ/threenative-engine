@@ -107,7 +107,7 @@ earlier wave unless the "Waits on" column says so.
 
 The PRDs above copy mechanisms from the Unreal source. These PRDs make the **templates look like a
 fresh Unreal 5.8.3 project** with no tuning. They measure against real Unreal renders of one shared
-scene and do not tune from memory. [PRD-631](look/PRD-631-an-unreal-reference-scene-measures-the-default-look.md)
+scene and do not tune from memory. [PRD-631](../done/PRD-631-an-unreal-reference-scene-measures-the-default-look.md)
 builds the instrument:
 - a headless Unreal capture of a cumulative layer ladder (L0 to L9)
 - the same cells from the scaffolded starter
@@ -125,7 +125,7 @@ A layer turns on by default only when five conditions hold:
 
 | Layer | Adds | Owner |
 | --- | --- | --- |
-| L0 | Geometry and camera alignment | [PRD-631](look/PRD-631-an-unreal-reference-scene-measures-the-default-look.md) |
+| L0 | Geometry and camera alignment | [PRD-631](../done/PRD-631-an-unreal-reference-scene-measures-the-default-look.md) |
 | L1 | Tone curve, exposure, light units | [PRD-632](look/PRD-632-the-frame-is-exposed-and-tone-mapped-the-way-a-fresh-unreal-project-is.md) |
 | L2 | Sky atmosphere and sky light capture | [PRD-633](look/PRD-633-the-sky-is-an-atmosphere-and-it-lights-the-scene.md) |
 | L3 | Height fog and aerial perspective | [PRD-562](rendering/PRD-562-aerial-perspective-from-a-froxel-volume.md) (amended) |
