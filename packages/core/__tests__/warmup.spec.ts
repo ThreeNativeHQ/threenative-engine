@@ -557,6 +557,26 @@ describe("scene warm-up", () => {
     expect(report).toMatchObject({ attempted: 1, compiled: 1, passes: ["main"] });
   });
 
+  test("should draw the covered pass again when the engine frame gate declined it", async () => {
+    // The Wasm engine declines a render while two frames are on the GPU; a declined warm render
+    // compiled nothing, and the post chain then compiled in the first visible frame.
+    const raw = { info: { engine: { frameGateSkips: 0 } } };
+    let drawn = 0;
+    const warmUpWorldPass = vi.fn(() => {
+      if (warmUpWorldPass.mock.calls.length === 1) raw.info.engine.frameGateSkips += 1;
+      else drawn += 1;
+    });
+    await warmUpScene(
+      { compileAsync: vi.fn(async () => undefined), warmUpWorldPass, raw },
+      sceneOf(1) as never,
+      {} as never,
+      { yieldFrame: () => Promise.resolve() },
+    );
+
+    expect(warmUpWorldPass).toHaveBeenCalledTimes(2);
+    expect(drawn).toBe(1);
+  });
+
   test("should still use the covered output pass when the async compile fails", async () => {
     const warmUpWorldPass = vi.fn();
     const report = await warmUpScene(

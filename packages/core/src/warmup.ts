@@ -723,6 +723,13 @@ interface IRestoredVisibility {
 }
 
 /** A shadow map is rendered for every shadow-casting light; nothing else triggers that pass. */
+/** Cumulative renders the Wasm engine's frame gate declined, when the renderer counts them. */
+function frameGateSkips(raw: unknown): number | undefined {
+  const skips = (raw as { info?: { engine?: { frameGateSkips?: unknown } } } | undefined)?.info
+    ?.engine?.frameGateSkips;
+  return typeof skips === "number" && Number.isFinite(skips) ? skips : undefined;
+}
+
 function hasShadowCaster(scene: Object3D): boolean {
   const stack: Object3D[] = [scene];
   while (stack.length > 0) {
@@ -812,6 +819,8 @@ async function renderWarmPasses(
   enabled: boolean,
   includeHidden: boolean,
   targetScene?: Object3D,
+  deadline = Number.POSITIVE_INFINITY,
+  now: () => number = () => globalThis.performance?.now() ?? Date.now(),
 ): Promise<IWarmPassRender | undefined> {
   const coveredWorldPass = renderer.warmUpWorldPass;
   const render =
@@ -883,7 +892,17 @@ async function renderWarmPasses(
     if (sceneVisible === false) (scene as IWarmVisibilityHost).visible = true;
     if (raw !== undefined) raw.autoClear = false;
     if (shadowMap !== undefined) shadowMap.needsUpdate = true;
-    await render();
+    // The Wasm engine declines a render while two drawn frames are still on the GPU, and counts
+    // it in `frameGateSkips`. The warm-up draws right behind the environment bake, so a declined
+    // render compiled nothing and the post chain compiled in the first visible frame instead.
+    // Draw again after a macrotask (the work-done callbacks arrive between tasks) until one lands.
+    for (;;) {
+      const skipsBefore = frameGateSkips(raw);
+      await render();
+      if (skipsBefore === undefined || frameGateSkips(raw) === skipsBefore) break;
+      if (now() >= deadline) break;
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
   } finally {
     if (raw !== undefined) {
       if (hadOwnAutoClear) raw.autoClear = autoClear;
@@ -1183,6 +1202,8 @@ export async function warmUpScene(
         options.renderPasses !== false,
         options.includeHidden === true,
         options.targetScene,
+        startedAt + budgetMs,
+        now,
       );
     } catch (error) {
       passError = error;
