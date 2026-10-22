@@ -1188,6 +1188,7 @@ export class WorldEnvironment {
               trace,
               camera: view,
               ...(target.godraysLight === undefined ? {} : { sun: target.godraysLight }),
+              ...(reflectionTrace.lamps === undefined ? {} : { lamps: reflectionTrace.lamps }),
               base,
               depth: depth(),
               normal: normal(),

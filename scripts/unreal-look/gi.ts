@@ -691,6 +691,8 @@ const UNREAL_VARIANT: Readonly<Record<string, string>> = {
   L1: "L1",
   L6: "L7-Low",
   L7: "L7-Epic",
+  // Reflections on, no post: the Unreal variant of the same layer (PRD-642).
+  L8: "L8",
   // A quality tier names the Unreal level it follows (scaffold/render/quality.ts, PRD-644).
   "L7-low": "L7-Low",
   "L7-medium": "L7-Medium",

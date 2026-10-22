@@ -16,6 +16,11 @@
       "name": "neon-corridor",
       "owner": "PRD-639",
       "poses": ["neon", "textured"]
+    },
+    {
+      "name": "mirror-room",
+      "owner": "PRD-642",
+      "poses": ["chrome", "room"]
     }
   ],
   "variants": [
@@ -88,6 +93,19 @@
         "r.Lumen.Visualize": 3
       },
       "kinds": ["png"]
+    },
+    {
+      "name": "L8",
+      "layer": "L8",
+      "cvars": {
+        "sg.GlobalIlluminationQuality": 3
+      },
+      "expect": {
+        "r.Lumen.DiffuseIndirect.Allow": 1,
+        "r.Lumen.FinalGatherMethod": 1,
+        "r.ReflectionMethod": 1
+      },
+      "kinds": ["png", "exr"]
     },
     {
       "name": "L9-Epic",

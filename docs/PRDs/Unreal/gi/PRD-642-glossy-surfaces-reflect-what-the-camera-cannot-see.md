@@ -48,7 +48,7 @@ prd_contract: v1
 ## Solution
 
 1. **Measure (Phase 1).** On the owned engine at L8, compare the chrome and smooth-dielectric spheres
-   of the PRD-631 scene and the `chrome` pose that this PRD adds to the `neon-corridor` calibration scene, against Unreal Epic.
+   of the PRD-631 scene and the `chrome` pose that this PRD adds in the `mirror-room` calibration scene (D11), against Unreal Epic.
    Classify each wrong region by cause: the reflected object is off screen, behind the camera,
    beyond `maxDistance`, or the surface is rougher than 0.4. Only the measured causes are built.
 2. **`TracedReflections` (Phase 2).** For pixels with roughness up to `maxRoughnessToTrace` (0.4,
@@ -74,7 +74,7 @@ stays out of the API. The options keep Unreal's names in camelCase: `maxRoughnes
 ## Acceptance Criteria
 
 - [ ] AC-1 [local]: The L8 cells on the owned engine match Unreal Epic within the PRD-631 thresholds on the chrome and smooth-dielectric sphere regions. proof: `pnpm unreal-look:compare --layer L8` — Evidence: pending.
-- [ ] AC-2 [local]: In the `cornell` pose, the chrome sphere reflects the red and green walls behind the camera within the thresholds of Unreal Epic. proof: `pnpm unreal-look:compare --scene gi --layer L8` — Evidence: pending.
+- [ ] AC-2 [local]: In the `mirror-room` scene (the `cornell` room with a chrome block), the `chrome` pose reflects the green and white walls behind the camera within the thresholds of Unreal Epic. proof: `pnpm unreal-look:compare --scene gi:mirror-room --layer L8` — Evidence: 2026-10-22, open. `room` pose Mirror passes (deltaE 0.69, dP50 0.000). `chrome` pose Mirror deltaE 5.12, dP50 0.101 (was 15.56 and 0.261): the walls are right in place and shadow and within 4 to 11 percent in level, and 27 to 40 percent too dark low on the wall (D11).
 - [x] AC-3 [local; needs a built desktop host]: The conformance row `traced-reflections` passes on the desktop lane within its tolerance. proof: `pnpm parity --target desktop --only-tests traced-reflections` — Evidence: 2026-10-22, RTX 2080: web reference pass, desktop host (V8 build of `prd-ocean`, read-only) pass with 0 mismatching pixels and deltaE 0; the two PNGs are byte identical (`md5 c8b6cbb9`). Scene `packages/runtime-native/conformance/scenes/shared/traced-reflections.js`: a mirror sphere with red, green and yellow walls outside the frustum. **Owned-engine result 2026-10-22 (parityaudit-lane):** `pnpm parity --target desktop --engine threenative --only-tests traced-reflections` (V8 engine player, RTX 2080, web reference from the same run): pass, pixel mismatch 0, delta E 0 (tolerance 0.08 / 10), no GPU validation error, owned frame viewed. The proof above ran the legacy `mystral` host.
 
 ## Integration Ledger
@@ -89,10 +89,10 @@ stays out of the API. The options keep Unreal's names in camelCase: `maxRoughnes
 
 #### Phase 1: Which reflections are wrong, and why
 **Status:** PARTIAL
-**Files:** `tools/unreal-reference/gi/neon-corridor/{scene.py,criteria.md}` (the `chrome` pose; the scene comes from PRD-639 or is created here)
-- [ ] The `chrome` pose is ready to calibrate: authored and captured in Unreal, recreated with direct light matching (PRD-646), and its PRD-647 criteria written. proof: `pnpm unreal-look:capture --engine unreal --scene gi:neon-corridor --check-cvars` and `pnpm unreal-look:compare --scene gi:neon-corridor --layer L1`.
+**Files:** `tools/unreal-reference/gi/mirror-room/{scene.py,criteria.md}` (the `chrome` pose lives in this new scene), `tools/unreal-reference/gi/scenes.json` (the GI `L8` variant), `scripts/unreal-look/gi.ts`
+- [ ] The `chrome` pose is ready to calibrate: authored and captured in Unreal, recreated with direct light matching (PRD-646), and its PRD-647 criteria written. proof: `pnpm unreal-look:capture --engine unreal --scene gi:mirror-room --check-cvars` and `pnpm unreal-look:compare --scene gi:mirror-room --layer L1`. Open: authored, captured (L1, L7, L8, L9, ID) and its criteria are written (D11), and L1 holds on 6 of 7 regions (deltaE at most 0.67), but `Box_Tall` is at dP50 0.028 against 0.01, and `--check-cvars` has not run.
 - [x] Each wrong L8 region of the PRD-631 spheres scene is listed with its cause under `## Decisions` (D1). proof: `pnpm unreal-look:compare --layer L8` on `reflect-before` (exit 1, 7/84 rows pass), and `?off=ssr`, `?off=reflcap`, `?off=gi` ablations of the same cells. Evidence: D1.
-- [ ] Each wrong L8 region of the `chrome` pose is listed with its cause under `## Decisions`. proof: `pnpm unreal-look:compare --scene gi:neon-corridor --layer L8`. Open: the scene is not on the epic yet and GI scenes have no L8 variant (D4).
+- [x] Each wrong L8 region of the `chrome` pose is listed with its cause under `## Decisions`. proof: `pnpm unreal-look:compare --scene gi:mirror-room --layer L8`. Result 2026-10-22: 7 regions fail at L8 before the fix (Mirror 15.56 and 2.87, Floor 2.05, Back 1.93, Wall_Red 2.33, Wall_Green 7.29, Box_Tall 3.82), each with its cause in D11. The GI scenes now have an `L8` variant (D4 is closed by it).
 
 #### Phase 2: Reflection rays leave the screen
 **Status:** PARTIAL
@@ -175,7 +175,7 @@ The `cornell` scene (`tools/unreal-reference/gi/cornell/scene.py`) has no chrome
 only the layers ID, L1, L7 and L9, so `--scene gi --layer L8` cannot run today. The `neon-corridor` scene exists
 only on `lane/surface` (commit `84f1682c5`) and has no glossy object. The sunlit-room and `cornell` surfaces all
 have roughness 1.0, so they have no glossy region to list. AC-2 needs a chrome sphere in `cornell`, an L8
-variant of the GI scenes, and an Unreal capture of both. They come after Phase 2 proves on the spheres scene.
+variant of the GI scenes, and an Unreal capture of both. The `mirror-room` scene and the GI `L8` variant now exist (D11).
 
 ### D5 — What the kernel does and why (2026-10-21)
 
@@ -275,3 +275,46 @@ The smooth regions do not move, because they take the traced share. Every rough 
 cube is a wide, shaded-side-bright lobe (D9), and a rough metal's specular is its whole colour, so the excess lands at full strength; the sky term it replaces was dim, which hid that.
 Decision: `roughSpec` is off by default, so no pixel changes. The routing box stays open until the cache's shaded level matches Unreal. Revisit when `ScreenProbeGather` or the cache
 shows the shaded side within a factor of 1.3 of Unreal (D9), then rerun this table.
+
+### D9 — On a lit surface the hit light is right; the excess is in the cache's shaded side (2026-10-22, reflect3-lane)
+
+Layer: the hit light is harness (`scripts/unreal-look/scaffold/render/reflectionTrace.ts`, look) and the bounce term it reads is the cache (`giCache.ts`, gi lane). This note replaces D7's "2 times too much direct light and 5 to 10 times too much shaded bounce" for the code that is now in the tree.
+Method: Unreal's own hit light is its Lumen Scene view (`r.Lumen.Visualize 3` at L8, the sphere poses; the surface cache as a ray sees it). Each number is a median (or, for the chrome third, a mean) of scene-linear luminance over an ID mask. Same frames for ThreeNative: the full L8 frame, a frame with the sun only (`ki=0`), a frame with the cache only (`kd=0`), and a frame where the camera ray itself is lit by the hit code (`dbg=hitlit`, a diagnosis knob that is not in the tree).
+
+| Floor pixels | sun60 | sun15 | sun04 |
+|---|---|---|---|
+| Lit floor: Unreal Lumen Scene, ThreeNative hit light, ThreeNative screen | 0.643, 0.714, 0.734 | 0.182, 0.248, 0.276 | 0.0196, 0.0272, 0.0411 |
+| Floor in shade (spheres pose): same three | 0.0709, 0.0793, 0.0586 | 0.0415, 0.0437, 0.0484 | 0.0062, 0.0128, 0.0167 |
+
+| Chrome sphere, lower third (the reflected floor), mean | sun60 | sun15 | sun04 |
+|---|---|---|---|
+| Unreal L8, ThreeNative L8, ratio (spheres pose) | 0.550, 0.602, 1.10 | 0.0753, 0.118, 1.56 | 0.0555, 0.0895, 1.61 |
+| Same, exterior pose | 0.577, 0.629, 1.09 | 0.0558, 0.121, 2.17 | 0.0377, 0.0931, 2.47 |
+
+What this says:
+1. A lit hit is within 10 to 35 percent of Unreal's surface cache, and it is closer to it than ThreeNative's own screen light is (the floor on screen is 0.276 against Unreal 0.182 at sun15). The direct term is not the fault: in the lower third the sun-only frame is 0.0003 at sun15 and sun04 (those hits are in the sun's shadow), and at sun60 the sun-only frame is 0.527 of 0.602.
+2. In shade the hit light equals ThreeNative's own screen light and both are above Unreal at dusk (the floor at sun04: hit 0.0128, screen 0.0167, Unreal 0.0062). The reflected floor is 1.6 to 2.5 times too bright at sun15 and sun04 because the shaded floor is. That belongs to the cache's sky and bounce level (gi lane and sky lane), not to the hit.
+3. Exposure is not a factor: the hit light and the screen light go through the same gain. Not measured: how much of the dusk shade excess is the sky term of the cache, and how much is its bounce.
+Decision: no change to the hit light of the sun scenes. The finding sets the revisit condition of D10: the routing wiring waits for the cache's shaded side.
+
+### D11 — The chrome pose: a hit takes the direct light of every lamp (2026-10-22, reflect3-lane)
+
+Layer: harness (`reflectionTrace.ts` is where a hit is lit; "how it is lit is a look"), with one new scene and one new Unreal variant for the harness.
+Scene: `tools/unreal-reference/gi/mirror-room` is the `cornell` room closed at the front, with a polished chrome block (`Mirror`: base 0.95, roughness 0.05, metallic 1, turned 40 degrees) and one lamp under the ceiling. No sun and no sky, so a ray that finds nothing shows black and the room is the only thing a mirror can show. Poses: `chrome` (1.1 m from the Mirror, which fills the frame) and `room`. Criteria: `mirror-room/criteria.md`. The GI scenes had no L8 variant (D4), so `scenes.json` has a new variant `L8` (layer L8, `sg.GlobalIlluminationQuality 3`, `r.ReflectionMethod 1`) and `gi.ts` pairs it (`unrealVariant("L8")`; red then green in `unreal-look-compare.spec.ts`, 41/41). `L7-Epic` has `r.ReflectionMethod 0`, so it is the wrong target for a mirror: it shows a soft green gradient with no walls.
+Cause of the wrong Mirror: a hit was lit by the sun plus the cache, and this scene has no sun, so the hit had no direct light. The reflected green wall read (86, 157, 57) against Unreal's (124, 196, 94) and the shadow on the reflected green wall was missing. Unreal's surface cache takes the direct light of every light (`Engine/Source/Runtime/Renderer/Private/Lumen/LumenSceneDirectLighting.cpp`).
+Fix: `ITracedReflectionStage.lamps` (point and spot lamps) lights a hit with colour times candela over the squared distance, the lamp's cut-off window and cone, and the same any-hit shadow ray as the sun. The scene registers its lamps in `reflectionTrace.lamps`; a scene with no lamps builds the same graph as before. Diagnosis knob `?lampHit=0` is the BEFORE arm.
+Result (NVIDIA, headed, L8, owned engine, median deltaE and dP50 to Unreal; two runs per arm, the runs differ by at most 10 display levels on 416 pixels of the chrome frame):
+
+| Region | BEFORE | AFTER |
+|---|---|---|
+| chrome pose, Mirror | 15.56 and 0.261 | 5.12 and 0.101 |
+| room pose, Mirror | 2.87 and 0.045 | 0.69 and 0.000 (PASS) |
+| room pose, Floor, Back, Wall_Red, Wall_Green, Box_Tall | 2.05, 1.93, 2.33, 7.29, 3.82 | unchanged |
+
+Judge (fresh Sonnet, six frames, criteria set before the run): IMPROVEMENT on both poses and overall. The `chrome` pose stays a MISMATCH against Unreal and the `room` pose is CLOSE.
+What is left, and why:
+1. The reflected walls are 4 to 11 percent below Unreal at the top and fall 27 to 40 percent below by the foot of the wall (green, G channel 192 to 159 against Unreal 198 to 184), because the lamp's direct light falls with the cosine and Unreal's walls stay flat. What is missing is the indirect light at a hit, which the screen gets from the gather and a hit takes from the cache alone. That is the cache and the gather (gi lane). The hit takes the cache's irradiance as it is, so a later cache fix reaches it.
+2. A dark olive wedge at the lower left of the `chrome` frame (about 270 by 85 pixels), where Unreal shows a faint pale shape. It is a lamp shadow and has the same cause as 1: Unreal fills a shadow with bounce light.
+3. Unreal's reflected walls carry soft mottled noise (surface cache and denoiser). ThreeNative shows smooth walls. Not ported.
+4. The other regions of the `room` pose are not reflection regions. They have the same numbers at L7 (Floor 2.01, Back 1.96, Wall_Red 2.32, Wall_Green 7.58, Box_Tall 3.93) and the direct light matches at L1 (Wall_Green 0.35), so the fault is the indirect level: Wall_Green is 16 percent too bright on screen while its reflection is too dark. GI lanes own them.
+Spheres scene (the wack-a-mole check): lamps are empty there, so the stage is unchanged. Two cells (sun15 spheres, sun60 exterior) were captured with the scaffold at HEAD (BEFORE) and with this tree (AFTER), and again with this tree. AFTER against BEFORE differs in 136106 and 60356 pixels; AFTER against AFTER differs in 118456 and 73136, so the difference is run noise. `compare --check --layer L8` on the AFTER capture breaks 12 of the 22 L8 locks (sun60 floors, `Sphere_Chrome` sun60 dP50 0.01005, others), all in cells where the change is inert; the BEFORE capture covers 2 cells and was not checked against the locks, so whether those 12 broke before this change is unverified. `Sphere_Chrome` is not touched by the routing commit (`roughSpec` is off, D10). The GI lock for `mirror-room` at L8 is not seeded: `reference-stats.json` needs the Unreal convergence captures (`L7-Epic@360`) that `--write-stats` demands.

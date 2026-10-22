@@ -572,6 +572,9 @@ describe("Unreal reference comparison", () => {
       expect(unrealVariant("L7", 1)).toBe("L7-Medium");
       expect(unrealVariant("L7", 3)).toBe("L7-Epic");
     });
+    it("pairs the GI scenes' reflection layer with the Unreal L8 variant (PRD-642)", () => {
+      expect(unrealVariant("L8")).toBe("L8");
+    });
     it("draws a GI tier against Epic shadows and a shadow tier against its own", () => {
       // Unreal's GI and shadow levels are separate scalability groups: the L7-Low frame has Epic shadows.
       expect(tierQuery("L7-low")).toBe("&tier=low&shadowTier=high");
