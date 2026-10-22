@@ -72,8 +72,9 @@ const TIER = resolveQualityTier({ tier: params.get("tier") ?? "high" });
 const GI_METHOD = level >= 7 ? giPreset(TIER).finalGatherMethod : "none";
 // PRD-641 AC-2: how the GI cache follows a light that changes. `unreal` is the tier's own response in frames (the
 // surface cache, radiosity and screen probe histories: render/lightResponse.ts); `step` follows on the next frame.
-// Off by default until the judge calls the fade CLOSE to Unreal. Diagnosis: ?giResponse=unreal|step.
-const GI_RESPONSE = params.get("giResponse") ?? "step";
+// On by default (PRD-641: the switch judge read the fade IMPROVEMENT over one frame and CLOSE to Unreal). `?giResponse=step`
+// brings back the one-frame follow for an A/B.
+const GI_RESPONSE = params.get("giResponse") ?? "unreal";
 if (GI_RESPONSE !== "unreal" && GI_RESPONSE !== "step")
   throw new Error(`TN_GI_RESPONSE: giResponse takes unreal or step, got ${GI_RESPONSE}`);
 // Unreal's GI and shadow levels are separate scalability groups: `shadowTier=` draws the shadows at another tier.
