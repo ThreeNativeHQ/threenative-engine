@@ -40,7 +40,6 @@ import {
   LinearFilter,
   type Material,
   type Mesh,
-  type MeshPhysicalMaterial,
   type MeshStandardMaterial,
   type Object3D,
   type PerspectiveCamera,
@@ -1454,19 +1453,6 @@ function nodeTwin(source: MeshStandardMaterial): MeshStandardMaterial {
   return twin as unknown as MeshStandardMaterial;
 }
 
-/**
- * The albedo a bounce takes from a surface. Unreal's surface cache folds the specular colour into the diffuse albedo as a
- * fully rough surface, so a metal bounces 0.45 of its base colour instead of nothing:
- * `Base (1 - Metallic) + 0.45 * lerp(0.08 * Specular, Base, Metallic)` with Specular 0.5 (`specularIntensity` 1)
- * (UE 5.8.3: Engine/Shaders/Private/Lumen/LumenCardBasePass.ush:114-117, Engine/Shaders/Private/BRDF.ush:648-654).
- */
-export function bounceAlbedo(color: Color, metalness: number, specularIntensity: number): number[] {
-  const f0 = 0.04 * specularIntensity;
-  return [color.r, color.g, color.b].map(
-    (base) => base * (1 - metalness) + 0.45 * (f0 + (base - f0) * metalness),
-  );
-}
-
 /** The native engine has no physical node class yet (core-webgpu.mjs refuses it): it lights a physical source as a standard one. */
 function physicalTwin() {
   try {
@@ -1551,13 +1537,10 @@ export function installGi(
     const known = surfaces.get(object.id);
     if (known !== undefined) return known;
     const m = (object as Mesh).material as MeshStandardMaterial;
+    const k = 1 - (m.metalness ?? 0);
     const e = [m.emissive.r, m.emissive.g, m.emissive.b];
     const data = {
-      albedo: bounceAlbedo(
-        m.color,
-        m.metalness ?? 0,
-        (m as Partial<MeshPhysicalMaterial>).specularIntensity ?? 1,
-      ),
+      albedo: [m.color.r * k, m.color.g * k, m.color.b * k],
       emissive: emitterIds.has(object.id)
         ? [0, 0, 0]
         : [0, 1, 2].map((c) => (e[c] ?? 0) * (m.emissiveIntensity ?? 1)),

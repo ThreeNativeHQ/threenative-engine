@@ -17,7 +17,6 @@ import {
 } from "three";
 import { describe, expect, it } from "vitest";
 import {
-  bounceAlbedo,
   giCache,
   gridOver,
   installGi,
@@ -789,21 +788,5 @@ describe("the world-space GI cache against closed forms (PRD-631 L7)", () => {
     const room = sunlitRoom();
     room.updateMatrixWorld(true);
     expect(gridOver(room).cell).toBe(0.5);
-  });
-});
-
-describe("bounceAlbedo", () => {
-  // UE 5.8.3: Lumen/LumenCardBasePass.ush:114-117 and BRDF.ush:648-654 fold the specular colour into the diffuse albedo
-  // as a fully rough surface: Base (1 - Metallic) + 0.45 * lerp(0.08 * Specular, Base, Metallic), Specular 0.5.
-  it("gives a metal 0.45 of its base colour, so the 0.8 grey metal bounces 0.36", () => {
-    const grey = new Color(0.8, 0.8, 0.8);
-    expect(bounceAlbedo(grey, 1, 1)).toEqual([0.36, 0.36, 0.36].map((v) => expect.closeTo(v, 6)));
-  });
-
-  it("adds 0.018 to a dielectric, and blends with the metalness", () => {
-    const red = new Color(1, 0.5, 0);
-    const [r, g, b] = bounceAlbedo(red, 0, 1);
-    expect([r, g, b]).toEqual([1.018, 0.518, 0.018].map((v) => expect.closeTo(v, 6)));
-    expect(bounceAlbedo(red, 0.5, 1)[0]).toBeCloseTo(0.5 + 0.45 * (0.5 * 0.04 + 0.5 * 1), 6);
   });
 });
