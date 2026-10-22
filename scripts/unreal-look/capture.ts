@@ -163,7 +163,12 @@ export async function main(args: readonly string[]): Promise<number> {
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
   main(process.argv.slice(2)).then(
-    (code) => process.exit(code),
+    (code) => {
+      // The dev server's pnpm prints "ELIFECYCLE Command failed." when it is stopped, so the
+      // last line names the real result.
+      console.info(`TN_UNREAL_LOOK_EXIT ${code}`);
+      process.exit(code);
+    },
     (error: unknown) => {
       console.error(error instanceof Error ? error.message : error);
       process.exit(1);

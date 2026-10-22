@@ -490,7 +490,17 @@ export function runCheck(options: IOptions = {}) {
   });
   return { failures: checkLocks(report.rows, locks), locks: locks.length, report };
 }
-function passes(row: IRow, thresholds?: IThresholds): boolean | null {
+/** thresholds.json's limits for one layer: the flat keys, overridden by `layers.<name>`. */
+export function layerThresholds(
+  file: IThresholdFile | null | undefined,
+  layer: string,
+): IThresholds | undefined {
+  if (!file) return undefined;
+  const { layers: perLayer, ...flat } = file;
+  return { ...flat, ...perLayer?.[layer] };
+}
+/** The verdict of a row against its limits: null when no limit applies to the row (the caller decides what that means). */
+export function passes(row: IRow, thresholds?: IThresholds): boolean | null {
   if (!thresholds) return null;
   const checks: [number | null, number | undefined, boolean][] = [
     [row.deltaE, thresholds.deltaE, false],
@@ -742,11 +752,7 @@ export function runComparison(options: IOptions = {}) {
     for (const entry of Object.values(thresholdData.layers ?? {}))
       checkThresholds(object(entry), true);
   }
-  const thresholdsFor = (layer: string): IThresholds | undefined => {
-    if (!thresholdData) return undefined;
-    const { layers: perLayer, ...flat } = thresholdData;
-    return { ...flat, ...perLayer?.[layer] };
-  };
+  const thresholdsFor = (layer: string) => layerThresholds(thresholdData, layer);
   const thresholds = thresholdData;
   const reference: IReference = {
     generatedAt: new Date().toISOString(),
