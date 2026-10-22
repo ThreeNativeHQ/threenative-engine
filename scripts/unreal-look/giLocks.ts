@@ -786,6 +786,9 @@ export function lockCommand(args: readonly string[], deps: ICheckDeps = defaultC
     fail("BAD_INPUT", "--write-locks cuts one layer: pass --layer <layer>");
   if (args.includes("--tighten") && args.includes("--relax"))
     fail("BAD_INPUT", "--tighten and --relax exclude each other");
+  const recut = args.includes("--recut");
+  if (recut && (args.includes("--tighten") || args.includes("--relax")))
+    fail("BAD_INPUT", "--recut already moves every bound: do not pass --tighten or --relax");
   const rowsOf = (run: string) => [...deps.compare(scene, layer, run)];
   const captured = flagValues(args, "--captures").map(rowsOf);
   // A lock exists only where the region is at parity with Unreal; --keep-off-parity cuts them all.
@@ -808,7 +811,11 @@ export function lockCommand(args: readonly string[], deps: ICheckDeps = defaultC
   writeMerged(
     path.resolve(flagValues(args, "--locks")[0] ?? GI_LOCK_FILE),
     fresh,
-    { tighten: args.includes("--tighten"), relax: args.includes("--relax") },
+    // --recut takes every bound from this cut, the tighter ones and the looser ones.
+    {
+      tighten: args.includes("--tighten") || recut,
+      relax: args.includes("--relax") || recut,
+    },
     deps.log,
     `${scene} ${layer} from ${head}`,
     new Set(split.off.map((name) => offKey(scene, layer, name))),

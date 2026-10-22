@@ -871,6 +871,19 @@ describe("the lock command", () => {
     expect(splitParity([rows()]).off).toEqual([]);
   });
 
+  it("--recut takes every bound from the cut, the looser and the tighter ones, and refuses --tighten or --relax beside it", () => {
+    const w = world({ ...runs, worse: flat({ dP50: 0.3 }), better: flat({ dP50: 0.05 }) });
+    const noise = ["--noise", "n1,n2"];
+    lockCommand(w.args("--captures", "good", ...noise), w.deps);
+    lockCommand(w.args("--captures", "worse", ...noise, "--recut"), w.deps);
+    expect(readGiLocks(w.file)[0]?.maxDP50).toBeCloseTo(0.3 + 0.01 + 0.01, 4);
+    lockCommand(w.args("--captures", "better", ...noise, "--recut"), w.deps);
+    expect(readGiLocks(w.file)[0]?.maxDP50).toBeCloseTo(0.05 + 0.01 + 0.01, 4);
+    expect(() =>
+      lockCommand(w.args("--captures", "better", ...noise, "--recut", "--relax"), w.deps),
+    ).toThrow(/--recut already moves every bound/);
+  });
+
   it("needs a capture, noise for a single capture, one layer and no contradicting flags", () => {
     const w = world(runs);
     expect(() => lockCommand(w.args("--noise", "n1,n2"), w.deps)).toThrow(/TOO_FEW_RUNS/);
