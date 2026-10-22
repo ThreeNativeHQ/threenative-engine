@@ -50,6 +50,23 @@
       "kinds": ["png", "exr"]
     },
     {
+      "name": "L5-direct",
+      "motionOnly": true,
+      "note": "Diagnosis arm for PRD-649: L5 with the sky light at zero, so only the sun lights the scene. motionOnly keeps it out of default runs; ask for it with --variants.",
+      "layer": "L5",
+      "cvars": {
+        "sg.ShadowQuality": 3,
+        "r.SkylightIntensityMultiplier": 0
+      },
+      "expect": {
+        "r.Shadow.Virtual.Enable": 1,
+        "r.DynamicGlobalIlluminationMethod": 0,
+        "r.Shadow.Virtual.SMRT.RayCountDirectional": 8,
+        "r.SkylightIntensityMultiplier": 0
+      },
+      "kinds": ["png", "exr"]
+    },
+    {
       "name": "L5-Low",
       "layer": "L5",
       "cvars": {

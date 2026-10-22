@@ -18,7 +18,19 @@ export interface INodeFrame {
   scene?: unknown;
 }
 
-export function defineTempNode(prototype: object) {
+/**
+ * three's TempNode over a back end's node `prototype`. `key` is the property the back end reads a
+ * node through and `read` answers it from the setup output: the Wasm runtime's integer handle by
+ * default, the engine node itself on the V8 player (its TSL adapter reads `threenative.tslNode`).
+ */
+export function defineTempNode(
+  prototype: object,
+  key: symbol = TSL_NODE,
+  read: (output: object) => unknown = (output) => {
+    const id = (output as { readonly [TSL_NODE]?: unknown })[TSL_NODE];
+    return Number.isInteger(id) ? id : undefined;
+  },
+) {
   // Consumed graphs live in C++; retain their hooks until the owner disposes them.
   const active = new Set<TempNode>();
   const frames = new WeakMap<
@@ -29,7 +41,7 @@ export function defineTempNode(prototype: object) {
     readonly isNode = true;
     readonly isTempNode = true;
     updateBeforeType: string = NodeUpdateType.NONE;
-    #output?: { readonly [TSL_NODE]: number };
+    #output?: object;
     #building = false;
     #disposed = false;
     #frames = new WeakMap<object, number>();
@@ -40,7 +52,7 @@ export function defineTempNode(prototype: object) {
     updateBefore(_frame: unknown): unknown {
       return undefined;
     }
-    get [TSL_NODE](): number {
+    get [key](): unknown {
       if (this.#disposed)
         throw new Error("TN_NATIVE_TEMPNODE_DISPOSED: a disposed node cannot be consumed");
       if (this.#building) throw new Error("TN_NATIVE_TEMPNODE_SETUP: cyclic setup output");
@@ -54,19 +66,16 @@ export function defineTempNode(prototype: object) {
               return properties.get(node);
             },
           });
-          if (typeof output !== "object" || output === null || !(TSL_NODE in output))
-            throw new Error("TN_NATIVE_TEMPNODE_SETUP: setup(builder) must return a TSL node");
           // Resolve while building to diagnose cycles instead of overflowing the JS stack.
-          const id = (output as { readonly [TSL_NODE]: number })[TSL_NODE];
-          if (!Number.isInteger(id))
-            throw new Error("TN_NATIVE_TEMPNODE_SETUP: invalid output node");
-          this.#output = output as { readonly [TSL_NODE]: number };
+          if (typeof output !== "object" || output === null || read(output) === undefined)
+            throw new Error("TN_NATIVE_TEMPNODE_SETUP: setup(builder) must return a TSL node");
+          this.#output = output;
           active.add(this);
         } finally {
           this.#building = false;
         }
       }
-      return this.#output[TSL_NODE];
+      return read(this.#output);
     }
     run(
       frame: INodeFrame & { renderer: object; frameId: number; time: number; deltaTime: number },
