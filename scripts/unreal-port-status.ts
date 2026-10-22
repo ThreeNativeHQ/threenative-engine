@@ -382,7 +382,9 @@ export function renderProgressSvg(history: readonly ISnap[]): string {
     Date.parse(last.date) + 7 * DAY,
     ...[all.eta, look.eta].filter((e) => e !== null).map((e) => Date.parse(e)),
   );
-  const yMax = Math.ceil((Math.max(...history.map((s) => s.total)) * 1.08) / 100) * 100;
+  // Share of boxes ticked, so scope growth and progress read as one line per scope.
+  const pct = (done: number, total: number): number => (total > 0 ? (done / total) * 100 : 0);
+  const yMax = 100;
   const x = (iso: string | number): number =>
     L + ((Number(typeof iso === "string" ? Date.parse(iso) : iso) - t0) / (t1 - t0)) * (W - L - R);
   const y = (v: number): number => H - B - (v / yMax) * (H - T - B);
@@ -393,7 +395,7 @@ export function renderProgressSvg(history: readonly ISnap[]): string {
   const parts: string[] = [];
   for (let v = 0; v <= yMax; v += yMax / 4) {
     parts.push(
-      `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" stroke="#2c322f"/><text x="${L - 8}" y="${y(v) + 4}" class="t" text-anchor="end">${v}</text>`,
+      `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" stroke="#2c322f"/><text x="${L - 8}" y="${y(v) + 4}" class="t" text-anchor="end">${v}%</text>`,
     );
   }
   for (let t = t0; t <= t1; t += 14 * DAY) {
@@ -418,24 +420,22 @@ export function renderProgressSvg(history: readonly ISnap[]): string {
       `<circle cx="${x(eta)}" cy="${y(to)}" r="4" fill="${color}"/><text x="${Math.min(x(eta), W - R - 4)}" y="${y(to) + dy}" class="e" fill="${color}" text-anchor="end">${label} ≈ ${long(eta)}</text>`,
     );
   };
-  parts.push(`<path d="${line((s) => s.total)}" stroke="#9aa49f" stroke-width="2" fill="none"/>`);
   parts.push(
-    `<path d="${line((s) => s.lookTotal)}" stroke="#4a86d6" stroke-width="1.5" stroke-dasharray="3 3" fill="none"/>`,
+    `<path d="${line((s) => pct(s.done, s.total))}" stroke="#3aa56c" stroke-width="2.5" fill="none"/>`,
   );
-  parts.push(`<path d="${line((s) => s.done)}" stroke="#3aa56c" stroke-width="2.5" fill="none"/>`);
   parts.push(
-    `<path d="${line((s) => s.lookDone)}" stroke="#4a86d6" stroke-width="2.5" fill="none"/>`,
+    `<path d="${line((s) => pct(s.lookDone, s.lookTotal))}" stroke="#4a86d6" stroke-width="2.5" fill="none"/>`,
   );
-  proj(all.eta, last.done, last.total, "#3aa56c", "Everything filed", -10);
-  proj(look.eta, last.lookDone, last.lookTotal, "#4a86d6", "Default look", -10);
+  proj(all.eta, pct(last.done, last.total), 100, "#3aa56c", "Everything filed", -10);
+  proj(look.eta, pct(last.lookDone, last.lookTotal), 100, "#4a86d6", "Default look", 18);
   const legend = [
-    ["#9aa49f", "All boxes (scope)"],
-    ["#3aa56c", "All boxes ticked"],
-    ["#4a86d6", "Default look (waves 1-4): ticked, and scope dashed"],
+    ["#3aa56c", "Every filed PRD: share of boxes ticked"],
+    ["#4a86d6", "Default look (waves 1-4): share of boxes ticked"],
+    ["#9aa49f", "Dashed: finish at the last 2 weeks' pace"],
   ]
     .map(
       ([c, t], i) =>
-        `<rect x="${L + i * 230}" y="46" width="14" height="4" fill="${c}"/><text x="${L + 20 + i * 230}" y="52" class="t">${t}</text>`,
+        `<rect x="${L + i * 340}" y="46" width="14" height="4" fill="${c}"/><text x="${L + 20 + i * 340}" y="52" class="t">${t}</text>`,
     )
     .join("");
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" font-family="system-ui, -apple-system, Segoe UI, sans-serif">
