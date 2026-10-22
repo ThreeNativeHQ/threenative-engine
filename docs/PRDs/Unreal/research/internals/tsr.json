@@ -1,390 +1,334 @@
 {
- "system": "tsr",
- "notes": "LOC is wc -l of UE 5.8.3 PostProcess/TemporalSuperResolution.cpp and Shaders/Private/TemporalSuperResolution files, split by measured line ranges. Resurrection, reprojection field, flickering and rejection anti-aliasing are on in the Epic scalability level (BaseScalability.ini:85-94) even where the cvar default is 0.",
- "rows": [
-  {
-   "parent": "Orchestration (C++)",
-   "internals": [
-    [
-     "CVars, tiers and defaults",
-     428,
-     "History sample count 16, history size, update quality, rejection anti-aliasing, flicker and resurrection switches.",
-     "partial",
-     "Temporal AA is the default at high and medium (PRD-636 Phase 4). No temporal tier table exists. PRD-720 Phase 3.",
-     [
-      "636",
-      "720"
-     ]
-    ],
-    [
-     "Wave size, 16-bit math and async compute",
-     102,
-     "Chooses wave size and half-precision math per vendor and overlaps passes on the async queue.",
-     "deferred",
-     "WebGPU has no async queue and no portable wave size control. Revisit when subgroup size control ships in WebGPU.",
-     []
-    ],
-    [
-     "Shader parameter structs and permutations",
-     1000,
-     "Declares every pass's parameters and permutation domain.",
-     "rule",
-     "Plumbing for one shader compiler. TSL and the owned engine have their own.",
-     []
-    ],
-    [
-     "Pass gating and measure passes",
-     368,
-     "Decides which passes run and dispatches the flicker luma and thin geometry coverage measures.",
-     "shipped",
-     "RenderChain provisions velocity only when a temporal stage asks (PRD-455).",
-     [
-      "455"
-     ]
-    ],
-    [
-     "History setup: sizes, jitter, validity and reset",
-     524,
-     "Sizes input, history and output, advances the jitter, and clears history on a cut.",
-     "partial",
-     "Lifecycle ships (PRD-455). History above output resolution is PRD-539 Phase 1 box 1.",
-     [
-      "455",
-      "539"
-     ]
-    ],
-    [
-     "Velocity, occluder and decimate dispatch",
-     378,
-     "Dispatches the clear, dilate and decimate passes.",
-     "open",
-     "PRD-717 adds the occluder scatter and its test.",
-     [
-      "717"
-     ]
-    ],
-    [
-     "Rejection and spatial anti-aliasing dispatch",
-     378,
-     "Dispatches thin geometry, weight relaxation, rejection and the spatial anti-aliaser.",
-     "partial",
-     "PRD-539 names the rejection levers. PRD-719 changes the rejection space.",
-     [
-      "539",
-      "719"
-     ]
-    ],
-    [
-     "Update and resolve dispatch",
-     302,
-     "Dispatches the history update and the resolve to output.",
-     "partial",
-     "Resolve ships at screen size. PRD-720 adds the kernel.",
-     [
-      "455",
-      "720"
-     ]
-    ],
-    [
-     "Output, history extraction and visualize dispatch",
-     300,
-     "Extracts the history and runs the 16 visualization views.",
-     "deferred",
-     "PRD-676 defers TSR visualize because PRD-539's script reports the rejected-history ratio. Revisit when an agent cannot read a ghosting cause from that ratio.",
-     []
-    ]
-   ]
-  },
-  {
-   "parent": "History update, resolve, decimate",
-   "internals": [
-    [
-     "Update: setup, quality levels and kernel tables",
-     570,
-     "Macros for the sample pattern per quality and the predictor machinery.",
-     "open",
-     "PRD-720 Phase 2 and 3.",
-     [
-      "720"
-     ]
-    ],
-    [
-     "Update: reprojection fetch, field and lens distortion",
-     365,
-     "Fetches velocity, applies the reprojection field and lens distortion to the history coordinate.",
-     "partial",
-     "Plain velocity reprojection ships. The field is PRD-539 lever 5 (named, no box). Lens distortion is not a ThreeNative post effect.",
-     [
-      "539"
-     ]
-    ],
-    [
-     "Update: history reprojection with Catmull-Rom fetch",
-     135,
-     "Fetches and corrects the previous history with a bicubic filter.",
-     "shipped",
-     "PRD-455 compared the Catmull-Rom history resample.",
-     [
-      "455"
-     ]
-    ],
-    [
-     "Update: input filter at predictor frequency",
-     179,
-     "Filters the current input with a kernel sized by the rejection and the sample count.",
-     "open",
-     "TRAANode reads one input texel. PRD-720.",
-     [
-      "720"
-     ]
-    ],
-    [
-     "Update: validity clamp, quantize and history write",
-     177,
-     "Clamps validity under motion, quantizes it, protects against NaN and writes history and mip 1.",
-     "partial",
-     "The velocity weight clamp is PRD-539 lever 2 (named, no box). Propose a box.",
-     [
-      "539"
-     ]
-    ],
-    [
-     "Reprojection field encoding",
-     166,
-     "Packs the field offset, boundary and 2 by 2 Jacobian.",
-     "partial",
-     "PRD-539 lever 5 says try after levers 1 to 4. The scalability file turns it on from High. Propose a box.",
-     [
-      "539"
-     ]
-    ],
-    [
-     "Resolve history to output",
-     430,
-     "Filters the history down to the output resolution.",
-     "partial",
-     "Needed by the 200 percent history of PRD-539 Phase 1 box 1.",
-     [
-      "539"
-     ]
-    ],
-    [
-     "Decimate history for rejection",
-     543,
-     "Reprojects the history to the input grid for the rejection, tests parallax disocclusion and reprojects the resurrected frame.",
-     "open",
-     "PRD-717 (parallax test) and PRD-718 (resurrection).",
-     [
-      "717",
-      "718"
-     ]
-    ],
-    [
-     "Clear previous-frame scratch textures",
-     46,
-     "Clears the atomic scratch textures each frame.",
-     "rule",
-     "A buffer clear. PRD-717 owns the buffer.",
-     []
-    ]
-   ]
-  },
-  {
-   "parent": "Shading rejection and flicker",
-   "internals": [
-    [
-     "Rejection pass: moire, measure, guide update, resurrection choice",
-     953,
-     "Compares input and history in a display space, decides how much history to keep and updates the guide.",
-     "partial",
-     "Variance clipping ships. PRD-539 lever 4 (moire error) is named without a box. PRD-719 changes the space. PRD-718 uses the resurrection choice.",
-     [
-      "539",
-      "718",
-      "719"
-     ]
-    ],
-    [
-     "Shading analysis library",
-     644,
-     "Moments and error measures with a display noise floor.",
-     "open",
-     "PRD-719.",
-     [
-      "719"
-     ]
-    ],
-    [
-     "Color spaces and back-buffer quantization error",
-     293,
-     "Guide and rejection color spaces, luminance weights and the display step.",
-     "open",
-     "PRD-719.",
-     [
-      "719"
-     ]
-    ],
-    [
-     "Flickering luma measure",
-     69,
-     "Stores the luma before translucency for the flicker analysis.",
-     "partial",
-     "PRD-539 lever 4 (flicker-aware rejection) is named in Context and Decisions with no box. Propose a box.",
-     [
-      "539"
-     ]
-    ],
-    [
-     "Weight relaxation",
-     263,
-     "Relaxes the history weight for thin geometry using the network.",
-     "deferred",
-     "Rides with thin geometry detection and the network. Revisit with them.",
-     []
-    ]
-   ]
-  },
-  {
-   "parent": "Velocity and depth analysis",
-   "internals": [
-    [
-     "Velocity dilation",
-     432,
-     "Takes the velocity of the closest depth in the neighbourhood and anti-aliases it by depth.",
-     "partial",
-     "TRAANode takes the closest depth of 3 by 3 (PRD-269 supplies the velocity). The anti-aliased dilation belongs to the reprojection field.",
-     [
-      "269"
-     ]
-    ],
-    [
-     "Closest-occluder scatter and parallax disocclusion test",
-     331,
-     "Scatters each pixel's closest depth and velocity into the previous frame with an atomic max, then tests and hole-fills.",
-     "open",
-     "PRD-717.",
-     [
-      "717"
-     ]
-    ],
-    [
-     "Depth and velocity analysis (depth error, bilaterals, Jacobian, edge)",
-     607,
-     "Computes depth error from the format, bilateral weights, the reprojection Jacobian and the reprojection edge.",
-     "partial",
-     "Depth error serves PRD-717. The Jacobian and edge serve the reprojection field (PRD-539 lever 5).",
-     [
-      "717",
-      "539"
-     ]
-    ]
-   ]
-  },
-  {
-   "parent": "Convolution network",
-   "internals": [
-    [
-     "Network weights and layer code",
-     1158,
-     "A small learned network of convolutions run in tiles of 32 by 32.",
-     "deferred",
-     "The weights are Epic's trained data, so a clean-room port needs its own training. Revisit if PRD-539 gate arms 1 to 4 and PRD-719 fail.",
-     []
-    ],
-    [
-     "Tiled network pass",
-     151,
-     "Runs the network without a round trip to memory, with an overscan.",
-     "deferred",
-     "Same as the network.",
-     []
-    ]
-   ]
-  },
-  {
-   "parent": "Common, kernels, visualize",
-   "internals": [
-    [
-     "Common types, packing and wave helpers",
-     505,
-     "Shared types, bit packing and wave helpers.",
-     "rule",
-     "Plumbing.",
-     []
-    ],
-    [
-     "Reconstruction kernels and neighbourhood offsets",
-     455,
-     "Kernel weights and neighbourhood pixel offsets for the filters.",
-     "open",
-     "PRD-720.",
-     [
-      "720"
-     ]
-    ],
-    [
-     "Visualization shader (16 views)",
-     595,
-     "Shows sample count, parallax disocclusion, resurrection, anti-aliaser and flicker masks.",
-     "deferred",
-     "PRD-676 defers TSR visualize. Same revisit condition as the visualize dispatch.",
-     []
-    ]
-   ]
-  },
-  {
-   "parent": "Spatial anti-aliasing",
-   "internals": [
-    [
-     "Spatial anti-aliaser kernels",
-     679,
-     "Edge-aware filter that smooths pixels whose history was rejected.",
-     "partial",
-     "PRD-539 lever 3 names it with no box. Propose a box.",
-     [
-      "539"
-     ]
-    ],
-    [
-     "Spatial anti-aliaser pass",
-     235,
-     "The compute pass that applies it per tile.",
-     "partial",
-     "Same as the kernels.",
-     [
-      "539"
-     ]
-    ]
-   ]
-  },
-  {
-   "parent": "Thin geometry detection",
-   "internals": [
-    [
-     "Thin geometry detection pass",
-     645,
-     "Finds sub-pixel lines and leaves and keeps their history.",
-     "deferred",
-     "Off in the cvar defaults, on only with Nanite foliage. PRD-539 lever 5 lists it last. Revisit when a default template ships sub-pixel foliage under temporal AA and the judge sees it flicker.",
-     []
-    ],
-    [
-     "Thin geometry shared helpers",
-     141,
-     "Encoding shared by the pass and the relaxation.",
-     "deferred",
-     "Same as the pass.",
-     []
-    ],
-    [
-     "Thin geometry coverage measure",
-     84,
-     "Measures sub-pixel coverage of the scene color.",
-     "deferred",
-     "Same as the pass.",
-     []
-    ]
-   ]
-  }
- ]
+  "system": "tsr",
+  "notes": "LOC is wc -l of UE 5.8.3 PostProcess/TemporalSuperResolution.cpp and Shaders/Private/TemporalSuperResolution files, split by measured line ranges. Resurrection, reprojection field, flickering and rejection anti-aliasing are on in the Epic scalability level (BaseScalability.ini:85-94) even where the cvar default is 0.",
+  "rows": [
+    {
+      "parent": "Orchestration (C++)",
+      "internals": [
+        [
+          "CVars, tiers and defaults",
+          428,
+          "History sample count 16, history size, update quality, rejection anti-aliasing, flicker and resurrection switches.",
+          "partial",
+          "Temporal AA is the default at high and medium (PRD-636 Phase 4). No temporal tier table exists. PRD-720 Phase 3.",
+          ["636", "720"]
+        ],
+        [
+          "Wave size, 16-bit math and async compute",
+          102,
+          "Chooses wave size and half-precision math per vendor and overlaps passes on the async queue.",
+          "deferred",
+          "WebGPU has no async queue and no portable wave size control. Revisit when subgroup size control ships in WebGPU.",
+          []
+        ],
+        [
+          "Shader parameter structs and permutations",
+          1000,
+          "Declares every pass's parameters and permutation domain.",
+          "rule",
+          "Plumbing for one shader compiler. TSL and the owned engine have their own.",
+          []
+        ],
+        [
+          "Pass gating and measure passes",
+          368,
+          "Decides which passes run and dispatches the flicker luma and thin geometry coverage measures.",
+          "shipped",
+          "RenderChain provisions velocity only when a temporal stage asks (PRD-455).",
+          ["455"]
+        ],
+        [
+          "History setup: sizes, jitter, validity and reset",
+          524,
+          "Sizes input, history and output, advances the jitter, and clears history on a cut.",
+          "partial",
+          "Lifecycle ships (PRD-455). History above output resolution is PRD-539 Phase 1 box 1.",
+          ["455", "539"]
+        ],
+        [
+          "Velocity, occluder and decimate dispatch",
+          378,
+          "Dispatches the clear, dilate and decimate passes.",
+          "open",
+          "PRD-717 adds the occluder scatter and its test.",
+          ["717"]
+        ],
+        [
+          "Rejection and spatial anti-aliasing dispatch",
+          378,
+          "Dispatches thin geometry, weight relaxation, rejection and the spatial anti-aliaser.",
+          "partial",
+          "PRD-539 names the rejection levers. PRD-719 changes the rejection space.",
+          ["539", "719"]
+        ],
+        [
+          "Update and resolve dispatch",
+          302,
+          "Dispatches the history update and the resolve to output.",
+          "partial",
+          "Resolve ships at screen size. PRD-720 adds the kernel.",
+          ["455", "720"]
+        ],
+        [
+          "Output, history extraction and visualize dispatch",
+          300,
+          "Extracts the history and runs the 16 visualization views.",
+          "deferred",
+          "PRD-676 defers TSR visualize because PRD-539's script reports the rejected-history ratio. Revisit when an agent cannot read a ghosting cause from that ratio.",
+          []
+        ]
+      ]
+    },
+    {
+      "parent": "History update, resolve, decimate",
+      "internals": [
+        [
+          "Update: setup, quality levels and kernel tables",
+          570,
+          "Macros for the sample pattern per quality and the predictor machinery.",
+          "open",
+          "PRD-720 Phase 2 and 3.",
+          ["720"]
+        ],
+        [
+          "Update: reprojection fetch, field and lens distortion",
+          365,
+          "Fetches velocity, applies the reprojection field and lens distortion to the history coordinate.",
+          "partial",
+          "Plain velocity reprojection ships. The field is PRD-539 lever 5 (named, no box). Lens distortion is not a ThreeNative post effect.",
+          ["539"]
+        ],
+        [
+          "Update: history reprojection with Catmull-Rom fetch",
+          135,
+          "Fetches and corrects the previous history with a bicubic filter.",
+          "shipped",
+          "PRD-455 compared the Catmull-Rom history resample.",
+          ["455"]
+        ],
+        [
+          "Update: input filter at predictor frequency",
+          179,
+          "Filters the current input with a kernel sized by the rejection and the sample count.",
+          "open",
+          "TRAANode reads one input texel. PRD-720.",
+          ["720"]
+        ],
+        [
+          "Update: validity clamp, quantize and history write",
+          177,
+          "Clamps validity under motion, quantizes it, protects against NaN and writes history and mip 1.",
+          "partial",
+          "The velocity weight clamp is PRD-539 lever 2 (named, no box). Propose a box.",
+          ["539"]
+        ],
+        [
+          "Reprojection field encoding",
+          166,
+          "Packs the field offset, boundary and 2 by 2 Jacobian.",
+          "partial",
+          "PRD-539 lever 5 says try after levers 1 to 4. The scalability file turns it on from High. Propose a box.",
+          ["539"]
+        ],
+        [
+          "Resolve history to output",
+          430,
+          "Filters the history down to the output resolution.",
+          "partial",
+          "Needed by the 200 percent history of PRD-539 Phase 1 box 1.",
+          ["539"]
+        ],
+        [
+          "Decimate history for rejection",
+          543,
+          "Reprojects the history to the input grid for the rejection, tests parallax disocclusion and reprojects the resurrected frame.",
+          "open",
+          "PRD-717 (parallax test) and PRD-718 (resurrection).",
+          ["717", "718"]
+        ],
+        [
+          "Clear previous-frame scratch textures",
+          46,
+          "Clears the atomic scratch textures each frame.",
+          "rule",
+          "A buffer clear. PRD-717 owns the buffer.",
+          []
+        ]
+      ]
+    },
+    {
+      "parent": "Shading rejection and flicker",
+      "internals": [
+        [
+          "Rejection pass: moire, measure, guide update, resurrection choice",
+          953,
+          "Compares input and history in a display space, decides how much history to keep and updates the guide.",
+          "partial",
+          "Variance clipping ships. PRD-539 lever 4 (moire error) is named without a box. PRD-719 changes the space. PRD-718 uses the resurrection choice.",
+          ["539", "718", "719"]
+        ],
+        [
+          "Shading analysis library",
+          644,
+          "Moments and error measures with a display noise floor.",
+          "open",
+          "PRD-719.",
+          ["719"]
+        ],
+        [
+          "Color spaces and back-buffer quantization error",
+          293,
+          "Guide and rejection color spaces, luminance weights and the display step.",
+          "open",
+          "PRD-719.",
+          ["719"]
+        ],
+        [
+          "Flickering luma measure",
+          69,
+          "Stores the luma before translucency for the flicker analysis.",
+          "partial",
+          "PRD-539 lever 4 (flicker-aware rejection) is named in Context and Decisions with no box. Propose a box.",
+          ["539"]
+        ],
+        [
+          "Weight relaxation",
+          263,
+          "Relaxes the history weight for thin geometry using the network.",
+          "deferred",
+          "Rides with thin geometry detection and the network. Revisit with them.",
+          []
+        ]
+      ]
+    },
+    {
+      "parent": "Velocity and depth analysis",
+      "internals": [
+        [
+          "Velocity dilation",
+          432,
+          "Takes the velocity of the closest depth in the neighbourhood and anti-aliases it by depth.",
+          "partial",
+          "TRAANode takes the closest depth of 3 by 3 (PRD-269 supplies the velocity). The anti-aliased dilation belongs to the reprojection field.",
+          ["269"]
+        ],
+        [
+          "Closest-occluder scatter and parallax disocclusion test",
+          331,
+          "Scatters each pixel's closest depth and velocity into the previous frame with an atomic max, then tests and hole-fills.",
+          "open",
+          "PRD-717.",
+          ["717"]
+        ],
+        [
+          "Depth and velocity analysis (depth error, bilaterals, Jacobian, edge)",
+          607,
+          "Computes depth error from the format, bilateral weights, the reprojection Jacobian and the reprojection edge.",
+          "partial",
+          "Depth error serves PRD-717. The Jacobian and edge serve the reprojection field (PRD-539 lever 5).",
+          ["717", "539"]
+        ]
+      ]
+    },
+    {
+      "parent": "Convolution network",
+      "internals": [
+        [
+          "Network weights and layer code",
+          1158,
+          "A small learned network of convolutions run in tiles of 32 by 32.",
+          "deferred",
+          "The weights are Epic's trained data, so a clean-room port needs its own training. Revisit if PRD-539 gate arms 1 to 4 and PRD-719 fail.",
+          []
+        ],
+        [
+          "Tiled network pass",
+          151,
+          "Runs the network without a round trip to memory, with an overscan.",
+          "deferred",
+          "Same as the network.",
+          []
+        ]
+      ]
+    },
+    {
+      "parent": "Common, kernels, visualize",
+      "internals": [
+        [
+          "Common types, packing and wave helpers",
+          505,
+          "Shared types, bit packing and wave helpers.",
+          "rule",
+          "Plumbing.",
+          []
+        ],
+        [
+          "Reconstruction kernels and neighbourhood offsets",
+          455,
+          "Kernel weights and neighbourhood pixel offsets for the filters.",
+          "open",
+          "PRD-720.",
+          ["720"]
+        ],
+        [
+          "Visualization shader (16 views)",
+          595,
+          "Shows sample count, parallax disocclusion, resurrection, anti-aliaser and flicker masks.",
+          "deferred",
+          "PRD-676 defers TSR visualize. Same revisit condition as the visualize dispatch.",
+          []
+        ]
+      ]
+    },
+    {
+      "parent": "Spatial anti-aliasing",
+      "internals": [
+        [
+          "Spatial anti-aliaser kernels",
+          679,
+          "Edge-aware filter that smooths pixels whose history was rejected.",
+          "partial",
+          "PRD-539 lever 3 names it with no box. Propose a box.",
+          ["539"]
+        ],
+        [
+          "Spatial anti-aliaser pass",
+          235,
+          "The compute pass that applies it per tile.",
+          "partial",
+          "Same as the kernels.",
+          ["539"]
+        ]
+      ]
+    },
+    {
+      "parent": "Thin geometry detection",
+      "internals": [
+        [
+          "Thin geometry detection pass",
+          645,
+          "Finds sub-pixel lines and leaves and keeps their history.",
+          "deferred",
+          "Off in the cvar defaults, on only with Nanite foliage. PRD-539 lever 5 lists it last. Revisit when a default template ships sub-pixel foliage under temporal AA and the judge sees it flicker.",
+          []
+        ],
+        [
+          "Thin geometry shared helpers",
+          141,
+          "Encoding shared by the pass and the relaxation.",
+          "deferred",
+          "Same as the pass.",
+          []
+        ],
+        [
+          "Thin geometry coverage measure",
+          84,
+          "Measures sub-pixel coverage of the scene color.",
+          "deferred",
+          "Same as the pass.",
+          []
+        ]
+      ]
+    }
+  ]
 }

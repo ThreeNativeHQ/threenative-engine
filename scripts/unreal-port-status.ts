@@ -527,7 +527,7 @@ export function refresh(): Map<string, string> {
   return new Map([
     [PAGE, page],
     [SVG, svg],
-    [HISTORY, `${JSON.stringify(history, null, 1)}\n`],
+    [HISTORY, `${JSON.stringify(history, null, 2)}\n`],
     [PROGRESS_SVG, renderProgressSvg(history)],
     [README, readme.replace(marker, () => readmeBlock(share, total, data, registry, history))],
   ]);
