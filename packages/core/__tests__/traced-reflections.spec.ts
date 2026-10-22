@@ -89,6 +89,47 @@ describe("TracedReflections", () => {
     expect(traced.weightAt(0.38)).toBeCloseTo(0.104, 3);
   });
 
+  it("routes a rougher surface to the radiance cache, and past 0.8 to the diffuse GI (Unreal's max-roughness-to-trace rule)", () => {
+    const traced = new TracedReflections(room(), { marker: false });
+    expect([traced.maxRoughnessToEvaluateRoughSpecular, traced.roughSpecularFadeLength]).toEqual([
+      0.8, 0.2,
+    ]);
+    // Smooth: the ray answers. Indoors at 0.6 the radiance cache answers, not the sky. At 0.8 and above: the diffuse GI.
+    expect(traced.routeAt(0.2)).toEqual({ traced: 1, roughSpecular: 0, diffuse: 0 });
+    expect(traced.routeAt(0.6).roughSpecular).toBeCloseTo(1, 9);
+    expect(traced.routeAt(0.8).diffuse).toBeCloseTo(1, 9);
+    expect(traced.routeAt(1).diffuse).toBe(1);
+    expect(traced.routeAt(1).traced + traced.routeAt(1).roughSpecular).toBe(0);
+    // The diffuse share rises over the 0.2 below the limit, as Unreal's RoughReflectionsDiffuseLerp does.
+    expect(traced.routeAt(0.7).diffuse).toBeCloseTo(0.5, 6);
+    expect(traced.routeAt(0.7).roughSpecular).toBeCloseTo(0.5, 6);
+    // Across the trace fade the three shares still add to one, so no roughness is brighter or darker than its neighbours.
+    for (let roughness = 0; roughness <= 1; roughness += 0.05) {
+      const route = traced.routeAt(roughness);
+      expect(route.traced + route.roughSpecular + route.diffuse).toBeCloseTo(1, 9);
+    }
+    const route = traced.route(float(0.6));
+    for (const share of [route.traced, route.roughSpecular, route.diffuse])
+      expect((share as { isNode?: boolean }).isNode).toBe(true);
+    traced.dispose();
+  });
+
+  it("keeps the game's own rough-specular limit, and refuses one that cannot mean what it says", () => {
+    const own = new TracedReflections(room(), {
+      marker: false,
+      maxRoughnessToEvaluateRoughSpecular: 0.9,
+      roughSpecularFadeLength: 0.1,
+    });
+    expect(own.routeAt(0.85).diffuse).toBeCloseTo(0.5, 6);
+    own.dispose();
+    const build = (options: ConstructorParameters<typeof TracedReflections>[1]) => () =>
+      new TracedReflections(room(), { marker: false, ...options });
+    expect(build({ maxRoughnessToEvaluateRoughSpecular: 0.3 })).toThrow(
+      /TN_TRACED_REFLECTIONS: maxRoughnessToEvaluateRoughSpecular/,
+    );
+    expect(build({ roughSpecularFadeLength: 0.9 })).toThrow(/roughSpecularFadeLength/);
+  });
+
   it("has no fade when the length is zero: full weight up to the cut-off, none past it", () => {
     const traced = new TracedReflections(room(), {
       marker: false,

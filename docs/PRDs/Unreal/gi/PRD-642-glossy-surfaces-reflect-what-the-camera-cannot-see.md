@@ -107,7 +107,7 @@ stays out of the API. The options keep Unreal's names in camelCase: `maxRoughnes
 **Status:** PARTIAL (conformance row landed; rough specular and denoiser open)
 **Files:** `packages/core/src/render/traced-reflections.ts`, `packages/core/__tests__/traced-reflections.spec.ts`, `packages/runtime-native/conformance/scenes/shared/traced-reflections.js` (new), `packages/runtime-native/conformance/registry.json`
 - [x] The conformance row `traced-reflections` runs the kernel on the browser and the desktop host. proof: `pnpm parity --target desktop --only-tests traced-reflections`. Result 2026-10-22: pass, 0 mismatching pixels, deltaE 0 (AC-3, D7). **Owned-engine result 2026-10-22 (parityaudit-lane):** `pnpm parity --target desktop --engine threenative --only-tests traced-reflections` (V8 engine player, RTX 2080, web reference from the same run): pass, pixel mismatch 0, delta E 0 (tolerance 0.08 / 10), no GPU validation error, owned frame viewed. The proof above ran the legacy `mystral` host.
-- [ ] A surface at roughness 0.6 indoors reads the radiance cache, not the sky, and a surface above 0.8 takes the diffuse GI. proof: `pnpm exec vitest run packages/core/__tests__/traced-reflections.spec.ts`.
+- [ ] A surface at roughness 0.6 indoors reads the radiance cache, not the sky, and a surface above 0.8 takes the diffuse GI. proof: `pnpm exec vitest run packages/core/__tests__/traced-reflections.spec.ts`. Open: the rule landed (`route()`/`routeAt()`, 11/11 vitest, red before green) but the harness wiring (`?roughSpec=1`) regresses every rough region while the radiance cache's shaded side is too bright, so it is off by default (D10).
 **Verification:** AC-3, and the PRD-641 flicker metric on the `pan` run for the chrome sphere region.
 
 ## Decisions
@@ -250,3 +250,28 @@ NVIDIA, headed, two runs (agree within 0.01 deltaE). Median Lab deltaE and dP50 
 The sky and BRDF lines closed about half of the SmoothDielectric gap and 0.5 of the chrome gap at sun15, and none at sun04. AC-1 stays open for the chrome at sun15 and sun04
 (and sun60 by 0.22 deltaE). What remains is the hit light of D7: the reflected floor lower third (Unreal 55, ours 66 to 79 at sun15) and the reflected rough metal
 (Unreal 40, ours 49 to 128), which the sky cannot change. Next step, in order: the radiance cache shaded-side bounce (gi lane), then retry D7 with Unreal's metal albedo and the screen reuse.
+
+### D10 — The roughness routing rule landed in the engine; the harness wiring stays opt-in (2026-10-22, reflect3-lane)
+
+Layer: the rule is engine (`packages/core/src/render/traced-reflections.ts`), the wiring is harness (`scripts/unreal-look/scaffold/render/giCache.ts`, URL knob `roughSpec=1`).
+
+Rule (UE 5.8.3: `Engine/Source/Runtime/Renderer/Private/Lumen/LumenReflections.cpp` `MaxRoughnessToTrace` (line 108); `Engine/Shaders/Private/Lumen/LumenReflectionsCombine.ush:39` `RoughReflectionsDiffuseLerp`):
+`TracedReflections.route(roughness)` and `routeAt(roughness)` return three shares that sum to 1: `traced` (the existing fade, 0.3 to 0.4), `roughSpecular` (the radiance cache along the
+reflection) and `diffuse` (the diffuse GI along the normal). `diffuse` rises from 0 at `maxRoughnessToEvaluateRoughSpecular - roughSpecularFadeLength` to the full remainder at
+`maxRoughnessToEvaluateRoughSpecular` (defaults 0.8 and 0.2). Both options are validated and a game can set its own limit.
+Red then green: `pnpm exec vitest run packages/core/__tests__/traced-reflections.spec.ts` (11/11; the two new tests failed before the implementation).
+
+Wiring result (NVIDIA, headed, one tree, `roughSpec=0` against `roughSpec=1`, median Lab deltaE to Unreal at L8; `sr=0`):
+
+| Cell and region | off | on |
+|---|---:|---:|
+| spheres sun60 Sphere_Chrome / SmoothDielectric | 2.13 / 0.97 | 2.11 / 0.97 |
+| exterior sun60 Sphere_RoughMetal / Box_Red | 3.66 / 4.49 | 6.96 / 5.55 |
+| exterior sun15 Sphere_RoughMetal / Box_Red | 3.42 / 1.71 | 24.07 / 2.93 |
+| exterior sun04 Sphere_RoughMetal / Box_Red | 7.11 / 10.85 | 20.41 / 11.69 |
+| exterior sun15 and sun04 Floor | 4.81 / 3.85 | 5.46 / 4.88 |
+
+The smooth regions do not move, because they take the traced share. Every rough region gets worse: the rough metal reads 157 against Unreal's 95 at sun15. Cause: the ambient
+cube is a wide, shaded-side-bright lobe (D9), and a rough metal's specular is its whole colour, so the excess lands at full strength; the sky term it replaces was dim, which hid that.
+Decision: `roughSpec` is off by default, so no pixel changes. The routing box stays open until the cache's shaded level matches Unreal. Revisit when `ScreenProbeGather` or the cache
+shows the shaded side within a factor of 1.3 of Unreal (D9), then rerun this table.

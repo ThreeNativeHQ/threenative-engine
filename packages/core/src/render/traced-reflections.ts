@@ -5,6 +5,7 @@ import {
   If,
   Loop,
   abs,
+  clamp,
   cross,
   dot,
   float,
@@ -40,6 +41,13 @@ export interface ITracedReflectionsOptions {
   /** The weight falls from 1 to 0 over this much roughness, ending at `maxRoughnessToTrace`: 0.1. */
   readonly roughnessFadeLength?: number;
   /**
+   * Surfaces rougher than this take the diffuse GI for specular, not the radiance cache. Unreal's
+   * `MaxRoughnessToEvaluateRoughSpecular`: 0.8.
+   */
+  readonly maxRoughnessToEvaluateRoughSpecular?: number;
+  /** The share of diffuse GI rises from 0 to 1 over this much roughness, ending at the limit above: 0.2. */
+  readonly roughSpecularFadeLength?: number;
+  /**
    * Most nodes one ray visits before it stops walking with the nearest surface found so far, which may be the
    * wrong one. A walk visits each node at most once, so the default, the tree's node count up to 2048, never
    * cuts a ray short in a scene of up to 2048 nodes.
@@ -47,6 +55,16 @@ export interface ITracedReflectionsOptions {
   readonly maxSteps?: number;
   /** False silences the TN_TRACED_REFLECTIONS line, not the report. */
   readonly marker?: boolean;
+}
+
+/**
+ * Where a surface's specular comes from, as shares that add to 1: the traced ray, the radiance cache read along the
+ * reflected direction (a rough lobe), or the diffuse GI (a surface too rough for a lobe).
+ */
+export interface IReflectionRoute<T> {
+  readonly traced: T;
+  readonly roughSpecular: T;
+  readonly diffuse: T;
 }
 
 /** One ray's answer, as nodes. Every field is meaningful only where `hit` is 1. */
@@ -112,6 +130,8 @@ export class TracedReflections {
   readonly scene: ITraceScene;
   readonly maxRoughnessToTrace: number;
   readonly roughnessFadeLength: number;
+  readonly maxRoughnessToEvaluateRoughSpecular: number;
+  readonly roughSpecularFadeLength: number;
   readonly maxSteps: number;
   readonly #nodes: ReturnType<typeof texture>;
   readonly #triangles: ReturnType<typeof texture>;
@@ -121,16 +141,38 @@ export class TracedReflections {
     const maxRoughnessToTrace = options.maxRoughnessToTrace ?? 0.4;
     const roughnessFadeLength = options.roughnessFadeLength ?? 0.1;
     const maxSteps = options.maxSteps;
+    const maxRoughnessToEvaluateRoughSpecular = options.maxRoughnessToEvaluateRoughSpecular ?? 0.8;
+    const roughSpecularFadeLength = options.roughSpecularFadeLength ?? 0.2;
     if (!(maxRoughnessToTrace > 0 && maxRoughnessToTrace <= 1))
       throw new RangeError("TN_TRACED_REFLECTIONS: maxRoughnessToTrace must be in (0, 1]");
     if (!(roughnessFadeLength >= 0 && roughnessFadeLength <= maxRoughnessToTrace))
       throw new RangeError(
         "TN_TRACED_REFLECTIONS: roughnessFadeLength must be in [0, maxRoughnessToTrace]",
       );
+    if (
+      !(
+        maxRoughnessToEvaluateRoughSpecular >= maxRoughnessToTrace &&
+        maxRoughnessToEvaluateRoughSpecular <= 1
+      )
+    )
+      throw new RangeError(
+        "TN_TRACED_REFLECTIONS: maxRoughnessToEvaluateRoughSpecular must be in [maxRoughnessToTrace, 1]",
+      );
+    if (
+      !(
+        roughSpecularFadeLength >= 0 &&
+        roughSpecularFadeLength <= maxRoughnessToEvaluateRoughSpecular
+      )
+    )
+      throw new RangeError(
+        "TN_TRACED_REFLECTIONS: roughSpecularFadeLength must be in [0, maxRoughnessToEvaluateRoughSpecular]",
+      );
     if (maxSteps !== undefined && !(Number.isInteger(maxSteps) && maxSteps > 0))
       throw new RangeError("TN_TRACED_REFLECTIONS: maxSteps must be a positive whole number");
     this.maxRoughnessToTrace = maxRoughnessToTrace;
     this.roughnessFadeLength = roughnessFadeLength;
+    this.maxRoughnessToEvaluateRoughSpecular = maxRoughnessToEvaluateRoughSpecular;
+    this.roughSpecularFadeLength = roughSpecularFadeLength;
     this.scene = packTraceScene(
       root,
       options.include === undefined ? {} : { include: options.include },
@@ -171,6 +213,44 @@ export class TracedReflections {
     const edge = this.maxRoughnessToTrace - this.roughnessFadeLength;
     const t = Math.min(1, Math.max(0, (roughness - edge) / (this.roughnessFadeLength || 1)));
     return roughness >= this.maxRoughnessToTrace ? 0 : 1 - t * t * (3 - 2 * t);
+  }
+
+  /**
+   * Where a surface's specular comes from (Unreal: `LumenCombineReflectionsAlpha` picks the ray, and
+   * `RoughReflectionsDiffuseLerp` in `LumenReflectionsCombine.ush` fades the rest from the gather's rough specular to
+   * the diffuse GI). The ray's share is `weight`; of the rest, the diffuse share rises from 0 at the limit minus the
+   * fade to 1 at the limit, and the radiance cache answers for what is left.
+   */
+  route(roughness: Node<"float">): IReflectionRoute<Node<"float">> {
+    const traced = this.weight(roughness);
+    const rest = float(1).sub(traced);
+    const toDiffuse = clamp(
+      roughness
+        .sub(this.maxRoughnessToEvaluateRoughSpecular - this.roughSpecularFadeLength)
+        .div(Math.max(this.roughSpecularFadeLength, 1e-6)),
+      0,
+      1,
+    );
+    return {
+      traced,
+      roughSpecular: rest.mul(float(1).sub(toDiffuse)),
+      diffuse: rest.mul(toDiffuse),
+    };
+  }
+
+  /** `route` for one roughness on the CPU. */
+  routeAt(roughness: number): IReflectionRoute<number> {
+    const traced = this.weightAt(roughness);
+    const edge = this.maxRoughnessToEvaluateRoughSpecular - this.roughSpecularFadeLength;
+    const toDiffuse = Math.min(
+      1,
+      Math.max(0, (roughness - edge) / Math.max(this.roughSpecularFadeLength, 1e-6)),
+    );
+    return {
+      traced,
+      roughSpecular: (1 - traced) * (1 - toDiffuse),
+      diffuse: (1 - traced) * toDiffuse,
+    };
   }
 
   /** The texel at `index` of a row-major pack texture, `TRACE_TEXTURE_WIDTH` wide. */
