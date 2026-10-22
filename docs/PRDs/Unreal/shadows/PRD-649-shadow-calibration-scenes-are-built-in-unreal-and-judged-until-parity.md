@@ -168,3 +168,10 @@ screenshots branch only.
   global illumination on (floor 5th over 95th percentile, `sun60-closeup`: Unreal 0.63, ThreeNative
   0.84 at L7; 0.38 and 0.57 at L9). Leaf gaps are visible in the ground shadow in every round. The
   symptoms are with leaf-lane (PRD-643). The sameness gate fails; see its box in Phase 2.
+- 2026-10-21 (wildwood lane): Unreal omits a short branch that ThreeNative draws in the lean `wildwood`
+  frames (647 px at `sun60-closeup`). The source GLB holds it as opaque geometry. Unreal's imported tree
+  keeps all 14927 source triangles in its mesh description (its Nanite fallback holds 3645), so the
+  import keeps the branch and the render drops it. Nanite is the leading suspect, not a finding. The test
+  is an import with Nanite off (`nanite_settings.enabled = False` in `import_glb` of `export.py`) and a
+  new `ID` capture, then `compare --sameness`. Not run: the job waited 20 minutes for GPU slots that other
+  lanes held, and was stopped.
