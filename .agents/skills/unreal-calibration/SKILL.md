@@ -101,13 +101,12 @@ One epic is one draft PR, and it is never merged during the run. A coordinator s
 - **Reports:** one final report per lane, no progress messages. At the cap, a lane commits `wip:` and names the next step. The coordinator starts a successor (`<lane>2-lane`) only for real open work.
 - **Stopped lanes:** do not message a stopped lane. A message revives it, and it then edits a worktree that its successor owns. Message the successor.
 - **Pacing:** pace the token burn against the plan reset with whatever usage meter the machine has. Do not start lanes that would only wait for the GPU.
-- **State on disk:** keep briefs, the queue and the lane ledger outside `/tmp`, because a reboot wipes it. Keep decisions in the AFK file (`afk-work` skill).
+- **State on disk:** keep briefs, the queue and the lane ledger outside `/tmp`, because a reboot wipes it. Keep a decision log beside them.
 - **Start of a run:** record each PRD's box count as a baseline, so the end report can show what moved. Give every PRD in scope an owning lane.
 - **Owner priority:** an issue the owner raises gets a dedicated lane at once, not a re-task of a busy lane. Check its start within 15 minutes.
 - **Holds and combined lines:** when change B is valid only with change A (sky units with the new diffuse model), the merge lane holds B, and A's lane merges and measures both as one line.
 - **Successors:** a successor reads its predecessor's handoff note and keeps its commits (`git log`, `git status` first). Name the stopped lanes in every new brief.
 - **Cross-lane findings:** a lane that finds a cause in another lane's file sends that lane the numbers and the file:line. It does not edit that file.
-- **AFK owner:** do not ask questions. Decide, log the decision, continue (`afk-work` skill).
 - **End of a run:** update the PRD index comment on the PR, then report boxes ticked, PRDs closed and what is parked.
 
 ## 7. Shared GPU and machines
