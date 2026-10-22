@@ -1171,7 +1171,9 @@ export class WorldEnvironment {
           // would blend into a bright halo. The reversible Karis weighting squeezes it into [0, 1)
           // for the filter and expands it back afterwards, so edges resolve without the halo.
           const peak = max(colour.r, max(colour.g, colour.b));
-          const squeezed = colour.div(peak.add(1));
+          // The weight is the colour's only. Alpha stays as drawn: squeezed with the colour, it came back as 1 / (peak + 1)
+          // over the 1e-4 floor below, so any pixel above 1e4 (a sun glint on chrome reaches 5e4) left the stage translucent.
+          const squeezed = vec4(colour.rgb.div(peak.add(1)), colour.a);
           const texture = convertToTexture(squeezed);
           sample(texture);
           const effect = options.screenSpaceAA === "fxaa" ? fxaa(texture) : smaa(texture);
@@ -1225,7 +1227,7 @@ export class WorldEnvironment {
           };
           const filtered = effect as unknown as ChainNode;
           const back = max(filtered.r, max(filtered.g, filtered.b));
-          return filtered.div(float(1).sub(back).max(1e-4));
+          return vec4(filtered.rgb.div(float(1).sub(back).max(1e-4)), filtered.a);
         },
       },
     ];

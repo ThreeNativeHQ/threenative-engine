@@ -130,10 +130,13 @@ try {
   const graded = lit.mul(vignette);
   // SMAA under the reversible Karis squeeze, as the template runs it last.
   const rgbMax = (c: typeof graded) => max(c.r, max(c.g, c.b));
-  const squeezed = graded.div(rgbMax(graded).add(1));
+  const squeezed = vec4(graded.rgb.div(rgbMax(graded).add(1)), graded.a);
   const filtered = smaa(squeezed) as unknown as ChainNode;
   const pipeline = new RenderPipeline(renderer);
-  pipeline.outputNode = filtered.div(max(sub(float(1), rgbMax(filtered)), float(1e-4)));
+  pipeline.outputNode = vec4(
+    filtered.rgb.div(max(sub(float(1), rgbMax(filtered)), float(1e-4))),
+    filtered.a,
+  );
 
   let baseline: EngineCounters | undefined;
   const frame = () => {
