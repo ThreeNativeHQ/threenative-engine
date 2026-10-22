@@ -20,7 +20,7 @@ const entry = resolve(work, "game.ts");
 const outfile = resolve(work, "game.js");
 await writeFile(entry, `
 import { AmbientLight, DirectionalLight, Mesh, MeshStandardMaterial, PerspectiveCamera, PlaneGeometry, Scene, SphereGeometry } from "three";
-import { convertToTexture, depth, pass } from "three/tsl";
+import { convertToTexture, pass } from "three/tsl";
 import { RenderPipeline, WebGPURenderer } from "three/webgpu";
 import { traa } from "three/addons/tsl/display/TRAANode.js";
 
@@ -36,7 +36,7 @@ sun.position.set(2, 4, 3);
 scene.add(floor, ball, sun, new AmbientLight(0xffffff, 0.4));
 globalThis.tn.scene = scene;
 globalThis.tn.camera = camera;
-const renderer = new WebGPURenderer({ canvas: { width: 1280, height: 720 } });
+const renderer = new WebGPURenderer({ canvas: { width: 1280, height: 720 }, antialias: true });
 
 const read = () => ({ samples: renderer.info.engine.samples, temporal: renderer.info.engine.temporal });
 const seen = {};
@@ -47,9 +47,10 @@ const step = () => {
   if (frame === 20) seen.plain = read();
   if (frame === 21) {
     const scenePass = pass(scene, camera);
-    pipeline = new RenderPipeline(renderer, traa(convertToTexture(scenePass), depth(), scenePass.getTextureNode("velocity"), camera));
+    pipeline = new RenderPipeline(renderer, traa(convertToTexture(scenePass.getTextureNode()), scenePass.getTextureNode("depth"), scenePass.getTextureNode("velocity"), camera));
   }
   if (pipeline !== undefined) pipeline.render();
+  else renderer.render(scene, camera);
   if (frame === 140) {
     seen.temporal = read();
     globalThis.tn.log("TEMPORAL_AA " + JSON.stringify(seen));
