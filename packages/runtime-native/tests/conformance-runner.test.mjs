@@ -618,26 +618,26 @@ test("the owned web lane refuses to bundle without the Wasm engine", async () =>
 });
 
 test("an owned-engine row whose scene needs an unbound import fails at the bundle, not as a pass", () => {
-  // `filmic-tonemap` imports CustomToneMapping, which the V8 engine player's `three` does not bind.
-  // The legacy lane bundled it with upstream three and passed; the owned lane must say why it cannot.
+  // `gi-tier-medium` runs core's ProbeVolume, which imports CubeCamera, a class the V8 engine player's
+  // `three` does not bind. The legacy lane bundled it with upstream three and passed; the owned lane must say why it cannot.
   const dir = makeTempDirSync("threenative-owned-conformance-");
   try {
     const out = join(dir, "owned-report.json");
     // A hardware row is blocked without a browser reference; the bundle fails before it is read.
     mkdirSync(join(dir, "web"));
-    writeFileSync(join(dir, "web/filmic-tonemap.png"), PNG.sync.write(new PNG({ width: 2, height: 2 })));
+    writeFileSync(join(dir, "web/gi-tier-medium.png"), PNG.sync.write(new PNG({ width: 2, height: 2 })));
     const proc = run(
-      ["--target", "desktop", "--engine", "threenative", "--only-tests", "filmic-tonemap", "--reference", join(dir, "web"), "--out", out],
+      ["--target", "desktop", "--engine", "threenative", "--only-tests", "gi-tier-medium", "--reference", join(dir, "web"), "--out", out],
       { THREENATIVE_ENGINE_PLAYER: join(dir, "missing-player") },
       240_000,
     );
     // 1: a failed row; the 117 rows outside --only-tests are blocked, which the runner also counts.
     assert.ok([1, 2].includes(proc.status), proc.stderr || proc.stdout);
-    const row = JSON.parse(readFileSync(out, "utf8")).results.find((entry) => entry.id === "filmic-tonemap");
+    const row = JSON.parse(readFileSync(out, "utf8")).results.find((entry) => entry.id === "gi-tier-medium");
     assert.equal(row.status, "fail");
     assert.equal(row.native.engine, "threenative");
     assert.equal(row.native.phase, "bundle");
-    assert.match(row.native.error, /TN_NATIVE_ENGINE_UNBOUND: three:CustomToneMapping/u);
+    assert.match(row.native.error, /TN_NATIVE_ENGINE_UNBOUND: three:CubeCamera/u);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

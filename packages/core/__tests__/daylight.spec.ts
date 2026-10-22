@@ -79,11 +79,11 @@ describe("Daylight", () => {
     const sized = new Daylight(
       options(new Object3D(), { shadowExtents: [250], shadowMapSize: 4096 }),
     );
-    expect((sized.sun.shadow.shadowNode as VirtualShadowNode).options.mapSize).toBe(4096);
+    expect((sized.sun.shadow.shadowNode as VirtualShadowNode).options.mapSize).toEqual([4096]);
     const stock = new Daylight(options(new Object3D()));
-    expect((stock.sun.shadow.shadowNode as VirtualShadowNode).options.mapSize).toBe(
-      stock.sun.shadow.mapSize.width,
-    );
+    const levels = (stock.sun.shadow.shadowNode as VirtualShadowNode).options.mapSize;
+    expect(levels.length).toBeGreaterThan(1);
+    expect(levels.every((size) => size === stock.sun.shadow.mapSize.width)).toBe(true);
   });
 
   it("names the sky box as the sky in the frame budget's per-source split", () => {

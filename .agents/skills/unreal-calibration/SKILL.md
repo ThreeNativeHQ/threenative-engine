@@ -28,7 +28,7 @@ This skill is the process. The harness details live in the repo:
 3. **Write the acceptance criteria before any capture.** Take them from the PRD box.
 4. **Fix it at the root, in the right layer.** The look goes in `scripts/unreal-look/scaffold/render/`. The mechanism goes in `packages/core` plus native C++. Templates change only after the harness layer matches.
 5. **Red-green.** A spec fails before the fix and passes after it. An engine change needs native proof: a conformance row or a `--target` playtest.
-6. **Capture paired arms from one code state:** BEFORE through a URL knob (`?probes=0`, `?giFollow=0`, `TN_UNREAL_LOOK_QUERY`), AFTER as the default. Use 2 runs per arm, and 5 runs per arm to claim "no change".
+6. **Capture paired arms from one code state:** BEFORE through a URL knob (`?probes=0`, `?giFollow=0`, `TN_UNREAL_LOOK_QUERY`), AFTER as the default. Use 2 runs per arm, and 5 runs per arm to claim "no change". Exception, measured 2026-10-22 (PRD-636 Decisions): at L9, an arm captured with the fixed-phase harness (`e20549a3a` or later, no `TN_UNREAL_LOOK_JITTER=free`) is run-to-run stable on the GI scenes (5-run spread of the p50 gap 0.0000 on `gi:sunlit-room` and `gi:cornell`, against 0.0064 and 0.0071 free) and within 0.0008 on the sun60 spheres. There 2 runs per arm hold, also to claim "no change". If the 2 runs differ by more than 0.002 in the p50 gap of any region, take 5. A BEFORE arm captured free-phase, or before that commit, still needs 5.
 7. **Judge, post, lock** (sections 2 and 3).
 8. **Queue the SHA** for the merge lane (section 6).
 
@@ -74,6 +74,7 @@ Every change that alters what reaches the screen gets a judge verdict and a befo
 - Timing runs need the GPU alone (an exclusive GPU slot), scheduled at night so that they do not stall the capture queue. In the day, use paired shared runs and state that.
 - A perf win counts only when the judge passes: NEUTRAL or IMPROVEMENT, no visible regression. A visual fix states its GPU cost.
 - A stage that costs more than Unreal's is a gap like a colour gap. Find Unreal's budget rule (update rates, probe counts, half-resolution passes) in its source and port it. Do not cut quality to win the number.
+- A run-time budget compares the whole GPU frame with the frame period, as Unreal's DynamicRenderScaling does (`DynamicResolution.cpp:32-103`: 10% headroom, a 16-frame history, 8 frames between changes, a drop after 2 frames over the period). A fixed millisecond budget for one stage is a bug: the SSGI pass read 6.3 ms at P5 and 2.1 to 3.0 ms at boost on one scene. `BudgetLadder` and `FrameTimeBudget` in `packages/core/src/render/` hold the rule.
 
 ## 5. Rules that keep the numbers honest
 

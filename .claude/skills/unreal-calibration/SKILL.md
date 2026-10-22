@@ -74,6 +74,7 @@ Every change that alters what reaches the screen gets a judge verdict and a befo
 - Timing runs need the GPU alone (an exclusive GPU slot), scheduled at night so that they do not stall the capture queue. In the day, use paired shared runs and state that.
 - A perf win counts only when the judge passes: NEUTRAL or IMPROVEMENT, no visible regression. A visual fix states its GPU cost.
 - A stage that costs more than Unreal's is a gap like a colour gap. Find Unreal's budget rule (update rates, probe counts, half-resolution passes) in its source and port it. Do not cut quality to win the number.
+- A run-time budget compares the whole GPU frame with the frame period, as Unreal's DynamicRenderScaling does (`DynamicResolution.cpp:32-103`: 10% headroom, a 16-frame history, 8 frames between changes, a drop after 2 frames over the period). A fixed millisecond budget for one stage is a bug: the SSGI pass read 6.3 ms at P5 and 2.1 to 3.0 ms at boost on one scene. `BudgetLadder` and `FrameTimeBudget` in `packages/core/src/render/` hold the rule.
 
 ## 5. Rules that keep the numbers honest
 

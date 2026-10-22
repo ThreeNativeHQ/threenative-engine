@@ -599,36 +599,39 @@ export type { FramePassKind, IRenderPassSample, MainDrawSource } from "./render-
 export { stageGpuReading } from "./render-pass-budget.js";
 export type { IStageGpuReading } from "./render-pass-budget.js";
 /**
- * A cost ladder for one render stage: a window of measured GPU milliseconds above a level's budget
- * steps the level down, a window under 70% of the next level's budget with room in the frame steps
- * it up, and a level that failed is retried after a growing wait. It decides when to move; the game
- * applies the move.
- * @situation step a render stage down when its GPU time stays over budget
+ * A cost ladder for one render stage: the whole GPU frame against the frame period moves it, by
+ * Unreal's DynamicRenderScaling rule. A frame over the period for 2 frames in a row steps the level
+ * down at once, a frame over the period less 10% headroom steps it down after the 8-frame change
+ * period, and a frame with room steps it up. A stage steps only when it could absorb the overage at
+ * zero cost, and a level that failed is retried after a growing wait. It decides when to move; the
+ * game applies the move.
+ * @situation step a render stage down when the GPU frame goes over the frame period
  * @situation pick a quality level from measured GPU time without oscillating
- * @constraint levels are listed cheapest first, and every level needs a finite budget in milliseconds
- * @constraint a window with too few resolved GPU readings never moves the level
- * @override explicit: true keeps the level and only reports a window over budget
- * @example const ladder = new BudgetLadder({ levels: ["low", "high"], budgetMs: { low: 1, high: 4 }, start: "high" }); const window = ladder.observe(gpuMs);
+ * @constraint levels are listed cheapest first, and the frame period is the game's own display target
+ * @constraint a frame without a resolved GPU reading never moves the level
+ * @override explicit: true keeps the level and only reports a frame over the target
+ * @example const ladder = new BudgetLadder({ levels: ["low", "high"], framePeriodMs: 1000 / 60, start: "high" }); const window = ladder.observe(stageMs, frameMs);
  */
 export { BudgetLadder } from "./render/budget-ladder.js";
 export type { BudgetVerdict, IBudgetLadderOptions, IBudgetWindow } from "./render/budget-ladder.js";
 /**
- * Steps a game's global illumination method (`none`, `irradianceField`, `screenProbeGather`) down
- * when its GPU time stays over budget over a 120-frame window, and back up when there is room. The
- * game owns what each method draws and applies each step; the budget of each method is the GPU
- * time Unreal spends at the matching `sg.GlobalIlluminationQuality`.
+ * Reports what a game's global illumination costs against the frame period: the GI share of the GPU
+ * frame and whether the frame fits its period less 10% headroom. The method (`none`,
+ * `irradianceField`, `screenProbeGather`) holds its level while the game runs, as Unreal's Lumen
+ * does: a frame over its period gets cheaper through the primary resolution scale, and the GI pass
+ * follows the lower resolution. The budget is the frame period, never a GI time in milliseconds,
+ * because a stage reading moves with the GPU clock.
  * @situation global illumination costs too much on a weak GPU
- * @situation pick the bounce light method from measured GPU time
+ * @situation see what share of the GPU frame the bounce light takes
  * @situation quality tier for indirect lighting that follows the hardware
- * @constraint the game applies each step to its own render chain; this class draws nothing
+ * @constraint the method never changes while the game runs: the primary resolution scale is the run-time lever
  * @constraint the GPU time of a pass is read by the scene name three or the game gave it, so name every GI pass in `stages`
- * @constraint timestamp queries are needed: without them every window is unobserved and the method holds
- * @override explicit: true keeps the game's own finalGatherMethod and reports an exceeded budget
+ * @constraint timestamp queries are needed: without them every window is unobserved
  * @alias lumen scalability
  * @alias sg.GlobalIlluminationQuality
  * @alias final gather method
  * @example
- * const gi = new GIBudget({ method: "screenProbeGather", stages: ["SSGI"], budgetMs: { none: 0, irradianceField: 1, screenProbeGather: 5 }, onStep: (method) => rebuildChain(method) });
+ * const gi = new GIBudget({ method: "screenProbeGather", stages: ["SSGI"], framePeriodMs: 1000 / 60 });
  * ctx.beforeRender(() => gi.observeRenderer(ctx.renderer.raw));
  */
 export { GI_METHODS, GIBudget } from "./render/gi-budget.js";
@@ -652,22 +655,23 @@ export { GI_METHODS, GIBudget } from "./render/gi-budget.js";
 export { GI_VISUALIZE_MODES, GIVisualize } from "./render/gi-visualize.js";
 export type { GIVisualizeMode, IGIVisualizeOptions } from "./render/gi-visualize.js";
 /**
- * Steps a game's soft-shadow tier down (`low`, `medium`, `high`) when the GPU time of its shadow
- * passes stays over the tier's budget for a 120-frame window, and back up when there is room. Only
- * the shadow stages' own time moves the tier, so a frame that is slow for another reason keeps its
- * shadows. The game owns the sample counts of each tier and rebuilds its filter on each step; the
- * tiers follow Unreal's `sg.ShadowQuality` Low, Medium and Epic.
+ * Steps a game's soft-shadow tier down (`low`, `medium`, `high`) when the whole GPU frame stays over
+ * the frame period, and back up when the frame has room, by the settings of Unreal's virtual shadow
+ * map budget (a linear model, 5% headroom). A frame that is slow for another reason keeps its
+ * shadows: the tier steps only when the shadow passes could absorb the overage. The game owns the
+ * sample counts of each tier and rebuilds its filter on each step; the tiers follow Unreal's
+ * `sg.ShadowQuality` Low, Medium and Epic.
  * @situation soft shadow filter costs too much on a weak GPU
- * @situation step the shadow quality tier from the measured GPU time of the shadow passes
+ * @situation step the shadow quality tier when the GPU frame goes over the frame period
  * @situation shadow quality tier that follows the hardware
  * @constraint the game rebuilds its filter with the tier's sample counts on each step; this class draws nothing
  * @constraint timestamp queries are needed: without them every window is unobserved and the tier holds
- * @constraint the signal is the GPU time of the shadow passes (the `Shadow` stage), which the receiver filter inside the colour pass is not part of
- * @override explicit: true keeps the game's own sample counts and reports an exceeded budget
+ * @constraint the rule reads the whole GPU frame and the `Shadow` stage, which the receiver filter inside the colour pass is not part of
+ * @override explicit: true keeps the game's own sample counts and reports an over-budget frame
  * @alias virtual shadow map scalability
  * @alias sg.ShadowQuality
  * @example
- * const filter = new ShadowFilterBudget({ tier: "high", budgetMs: { low: 0.3, medium: 0.3, high: 0.5 }, onStep: (tier) => { light.shadow.filterNode = filterFor(tier); } });
+ * const filter = new ShadowFilterBudget({ tier: "high", framePeriodMs: 1000 / 60, onStep: (tier) => { light.shadow.filterNode = filterFor(tier); } });
  * ctx.beforeRender(() => filter.observeRenderer(ctx.renderer.raw));
  */
 export {
@@ -689,9 +693,9 @@ export type {
 } from "./render/shadow-filter-budget.js";
 /**
  * Parse a `TN_GI` console line back into its report, or `undefined`.
- * @situation inspect which global illumination method ran and why it stepped
+ * @situation inspect which global illumination method ran and what the frame cost
  * @constraint non-marker lines and malformed markers return `undefined`
- * @example const report = readGIMarker(line); if (report?.stepped) console.log(report.reason);
+ * @example const report = readGIMarker(line); if (report?.verdict === "over") console.log(report.reason);
  */
 export { readGIMarker } from "./render/gi-budget.js";
 export type { GIMethod, IGIBudgetOptions, IGIBudgetReport } from "./render/gi-budget.js";

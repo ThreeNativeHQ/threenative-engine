@@ -83,6 +83,28 @@ const UP = new Vector3(0, 1, 0);
 let panToken = 0;
 const OFF = new Set((params.get("off") ?? "").split(",").filter(Boolean));
 // What each stage name turns off in the template's `high` preset.
+// Diagnosis: the contact occlusion's knobs by URL name, one table for every layer (PRD-635). ?gtaoR=M (metres) and
+// ?gtaoS=N are the short names of gtaoRadius and gtaoScale; ?gtaoReachPx=N sets the screen reach (Unreal's is 32).
+const GTAO_KNOBS: Record<string, string> = {
+  gtaoR: "gtaoRadius",
+  gtaoS: "gtaoScale",
+  gtaoRadius: "gtaoRadius",
+  gtaoReachPx: "gtaoReachPx",
+  gtaoSamples: "gtaoSamples",
+  gtaoScale: "gtaoScale",
+  gtaoDistanceExponent: "gtaoDistanceExponent",
+  gtaoDistanceFalloff: "gtaoDistanceFalloff",
+  gtaoThickness: "gtaoThickness",
+  gtaoDenoiseRadius: "gtaoDenoiseRadius",
+  gtaoMultiBounceAlbedo: "gtaoMultiBounceAlbedo",
+};
+const gtaoKnobs = (): Record<string, number> =>
+  Object.fromEntries(
+    Object.entries(GTAO_KNOBS)
+      .filter(([name]) => params.get(name) !== null)
+      .map(([name, option]) => [option, Number(params.get(name))]),
+  );
+
 const STAGE_OFF: Record<string, Record<string, unknown>> = {
   autoexposure: { autoExposureEnabled: false },
   bloom: { bloomEnabled: false, unrealBloomEnabled: false },
@@ -304,7 +326,8 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
           paintGround: !tracing || params.get("paint") === "1",
           // Diagnosis knob stockRays=1: cast the bake through ctx.raycast, the slow path (an A/B).
           stockRays: params.get("stockRays") === "1",
-          bounces: GI_METHOD === "none" ? 0 : 5,
+          // Diagnosis knob giBounces=N: the passes that carry surface light back into the cache (0 = the sky alone).
+          bounces: GI_METHOD === "none" ? 0 : Number(params.get("giBounces") ?? 5),
           // The tier's sky light multiplier (Unreal's Low sets 0.8). Diagnosis knob skyMul=N brackets it.
           skyIntensity: level >= 7 ? Number(params.get("skyMul") ?? GI.skylightIntensityMultiplier) : 1,
           // Unreal without GI shadows its sky light with distance fields, up to 10 m. Its Low tier (L7) turns
@@ -314,6 +337,8 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
             : {}),
           sun: { color: key.color, intensity: key.intensity, direction: SUN_DIRECTION },
         });
+      // Diagnosis knob envMul=N scales the sky's diffuse and specular environment light (0 = no sky light but the GI cache).
+      if (params.get("envMul") !== null) scene.environmentIntensity = Number(params.get("envMul"));
       if (TUNED && level >= 8 && !OFF.has("reflcap"))
         reflections = captureReflections(
           ctx.renderer.raw as unknown as Parameters<typeof captureReflections>[0],
@@ -323,6 +348,7 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
       if (level >= 9) {
         // setupPost reads the `high` preset by reference, so the ablation switches go there.
         for (const name of OFF) Object.assign(qualityPreset("high"), STAGE_OFF[name]);
+        Object.assign(qualityPreset("high"), gtaoKnobs());
         const post = setupPost(ctx.renderer, scene, camera, { godraysLight: key, tier: "high" });
         postDebug = () => post.debug();
         this.#dispose = () => post.dispose();
@@ -360,9 +386,7 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
             finalGatherMethod: method,
             // Unreal's SSAO at L6 (r.AmbientOcclusionRadius 40 cm); Lumen's short-range AO is thinner from L7.
             ...(level < 7 ? { gtaoRadius: 0.35 } : {}),
-            // Diagnosis: ?gtaoR=M (metres) and ?gtaoS=N set the contact term of any layer.
-            ...(params.get("gtaoR") === null ? {} : { gtaoRadius: Number(params.get("gtaoR")) }),
-            ...(params.get("gtaoS") === null ? {} : { gtaoScale: Number(params.get("gtaoS")) }),
+            ...gtaoKnobs(),
             vignetteAmount: 0,
             // Diagnosis: ?exposure=N sets the exposure (pair it with ?linear=1 below).
             ...(params.get("exposure") === null ? {} : { exposure: Number(params.get("exposure")) }),
@@ -375,14 +399,16 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
         // Diagnosis: ?linear=1 writes the exposed light with no tone curve, so the frame reads as scene-linear (the
         // light a PRD-646 direct-light gap is measured in), as CalibrationScene does.
         if (params.get("linear") === "1") raw.toneMapping = NoToneMapping;
-        // The tier's method moves with the measured GI time when the URL asks for giAuto=1 (PRD-644).
+        // The tier's method holds; the GI watcher reports its share of the GPU frame (PRD-644).
         if (GI_METHOD !== "none")
-          this.#gi = watchGi(ctx, { tier: TIER, method: GI_METHOD, rebuild: build });
+          this.#gi = watchGi(ctx, { tier: TIER, method: GI_METHOD });
       }
     }
 
     const target = new Vector3();
     const reference = {
+      // The live renderer, as the calibration scene exposes it: the capture's frame gate reads its draw counters and temporal state.
+      renderer: ctx.renderer.raw,
       layer: LAYER,
       tier: TIER,
       finalGatherMethod: GI_METHOD,
