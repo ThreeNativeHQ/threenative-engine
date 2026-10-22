@@ -1095,6 +1095,20 @@ export function cacheFallback(
   return (position, normal) => read(toWorld(position).add(at), toWorld(normal).normalize());
 }
 
+/**
+ * What the bake reads of a mesh its rays land on, taken once: a bake meets a few hundred meshes a million times, and on the
+ * owned engine each field of an object (its id, its matrix) is a call into the engine.
+ */
+interface IHitRecord {
+  readonly id: number;
+  /** The world matrix as plain numbers (it does not change during a bake). */
+  readonly matrix: readonly number[];
+  readonly data: { albedo: number[]; emissive: number[] };
+  /** The mesh's slot in the Surface Cache, when it has one. */
+  readonly slot: number | undefined;
+  readonly emitter: boolean;
+}
+
 /** What the bake's rays kept of each hit: enough to tell what a surface returns. */
 interface IRays {
   readonly hit: Uint8Array;
@@ -1480,15 +1494,18 @@ export function installGi(
         )
       : undefined;
   const sampled = { albedo: [0, 0, 0], emissive: [0, 0, 0] };
-  /** The albedo and emission a ray that landed on `hit` returns. */
-  const dataAt = (hit: Intersection): { albedo: number[]; emissive: number[] } => {
-    if (surfaceCache === undefined || hit.uv === undefined) return surfaceOf(hit.object);
-    const slot = slotOf.get(hit.object.id);
-    if (slot === undefined) return surfaceOf(hit.object);
-    surfaceCache.albedo(slot, hit.uv.x, hit.uv.y, sampled.albedo);
+  /** The albedo and emission a ray that landed on `record` at (u, v) returns; `hasUv` is false for a hit without a UV. */
+  const dataAt = (
+    record: IHitRecord,
+    hasUv: boolean,
+    u: number,
+    v: number,
+  ): { albedo: number[]; emissive: number[] } => {
+    if (surfaceCache === undefined || !hasUv || record.slot === undefined) return record.data;
+    surfaceCache.albedo(record.slot, u, v, sampled.albedo);
     // An emitter small enough for `emitterLight` carries no emission of its own in the rays.
-    if (emitterIds.has(hit.object.id)) sampled.emissive.fill(0);
-    else surfaceCache.emissive(slot, hit.uv.x, hit.uv.y, sampled.emissive);
+    if (record.emitter) sampled.emissive.fill(0);
+    else surfaceCache.emissive(record.slot, u, v, sampled.emissive);
     return sampled;
   };
 
@@ -1548,13 +1565,13 @@ export function installGi(
      * lamp, ranges 100 to 13 across a cell, and a sample near the hot spot lit the floor below it 1.8 times too bright.
      */
     const surface = (
-      object: Object3D,
+      id: number,
       [px, py, pz]: readonly [number, number, number],
       [nx, ny, nz]: readonly [number, number, number],
       albedo: number[],
       emissive: number[],
     ): number[] => {
-      const key = `${object.id}|${Math.floor(px / SHADE_CELL)}|${Math.floor(py / SHADE_CELL)}|${Math.floor(pz / SHADE_CELL)}|${Math.round(nx)}${Math.round(ny)}${Math.round(nz)}`;
+      const key = `${id}|${Math.floor(px / SHADE_CELL)}|${Math.floor(py / SHADE_CELL)}|${Math.floor(pz / SHADE_CELL)}|${Math.round(nx)}${Math.round(ny)}${Math.round(nz)}`;
       let visible = shaded.get(key);
       origin.set(px + nx * 0.02, py + ny * 0.02, pz + nz * 0.02);
       if (visible === undefined) {
@@ -1614,15 +1631,24 @@ export function installGi(
         grid.origin.z + (Math.floor(probe / (grid.nx * grid.ny)) + 0.5) * grid.cell,
       );
 
-    /** Each object's world matrix as plain numbers (it does not change during the bake). */
-    const matrices = new Map<number, number[]>();
-    const matrixOf = (object: Object3D): number[] => {
-      const known = matrices.get(object.id);
-      if (known !== undefined) return known;
-      const elements = [...object.matrixWorld.elements];
-      matrices.set(object.id, elements);
-      return elements;
+    /** Each mesh the rays land on, read once. The flat rays name a mesh by its index; a game's own rays by its object. */
+    const records = new Map<number, IHitRecord>();
+    const recordOf = (object: Object3D): IHitRecord => {
+      const id = object.id;
+      let known = records.get(id);
+      if (known === undefined) {
+        known = {
+          id,
+          matrix: [...object.matrixWorld.elements],
+          data: surfaceOf(object),
+          slot: slotOf.get(id),
+          emitter: emitterIds.has(id),
+        };
+        records.set(id, known);
+      }
+      return known;
     };
+    const recordsByOwner: (IHitRecord | undefined)[] = [];
     const hitAt: [number, number, number] = [0, 0, 0];
     const hitNormal: [number, number, number] = [0, 0, 0];
 
@@ -1637,6 +1663,9 @@ export function installGi(
       skies: Float64Array,
     ): number => {
       let near = 0;
+      const ox = centre.x;
+      const oy = centre.y;
+      const oz = centre.z;
       for (let k = 0; k < directions.length; k += 3) {
         const dx = directions[k] ?? 0;
         const dy = directions[k + 1] ?? 0;
@@ -1648,35 +1677,78 @@ export function installGi(
         ray.direction[at] = dx;
         ray.direction[at + 1] = dy;
         ray.direction[at + 2] = dz;
-        direction.set(dx, dy, dz);
-        const hit = ctx.raycast({ origin: centre, direction, far, targets: root });
+        // What the ray found, whichever query answered it. The flat rays answer in plain numbers; a game's own
+        // `ctx.raycast` answers with vector objects, and each field of one is a call into the engine.
+        let found = false;
+        let distance = 0;
+        let hasFace = false;
+        let fx = dx;
+        let fy = dy;
+        let fz = dz;
+        let hasUv = false;
+        let u = 0;
+        let v = 0;
+        let record: IHitRecord | undefined;
+        if (flat !== undefined) {
+          found = flat.cast(ox, oy, oz, dx, dy, dz, far);
+          if (found) {
+            const result = flat.result;
+            distance = result.distance;
+            hitAt[0] = result.x;
+            hitAt[1] = result.y;
+            hitAt[2] = result.z;
+            hasFace = true;
+            fx = result.nx;
+            fy = result.ny;
+            fz = result.nz;
+            hasUv = true;
+            u = result.u;
+            v = result.v;
+            record =
+              recordsByOwner[result.owner] ??
+              (recordsByOwner[result.owner] = recordOf(flat.objects[result.owner] as Object3D));
+          }
+        } else {
+          direction.set(dx, dy, dz);
+          const hit = ctx.raycast({ origin: centre, direction, far, targets: root });
+          if (hit !== undefined) {
+            found = true;
+            distance = hit.distance;
+            hitAt[0] = hit.point.x;
+            hitAt[1] = hit.point.y;
+            hitAt[2] = hit.point.z;
+            const face = hit.face?.normal;
+            if (face !== undefined && face !== null) {
+              hasFace = true;
+              fx = face.x;
+              fy = face.y;
+              fz = face.z;
+            }
+            hasUv = hit.uv !== undefined;
+            if (hit.uv !== undefined) {
+              u = hit.uv.x;
+              v = hit.uv.y;
+            }
+            record = recordOf(hit.object);
+          }
+        }
         const skyR = skies[k] ?? 0;
         const skyG = skies[k + 1] ?? 0;
         const skyB = skies[k + 2] ?? 0;
         ray.sky[at] = skyR;
         ray.sky[at + 1] = skyG;
         ray.sky[at + 2] = skyB;
-        if (hit === undefined) {
+        if (!found || record === undefined) {
           ray.base[at] = skyR;
           ray.base[at + 1] = skyG;
           ray.base[at + 2] = skyB;
           continue;
         }
         ray.hit[i] = 1;
-        const distance = hit.distance;
         ray.distance[i] = distance;
         if (distance < ENCLOSED_DISTANCE) near += 1;
-        const hitPoint = hit.point;
-        hitAt[0] = hitPoint.x;
-        hitAt[1] = hitPoint.y;
-        hitAt[2] = hitPoint.z;
-        const face = hit.face?.normal;
-        const m = matrixOf(hit.object);
+        const m = record.matrix;
         // transformDirection: the upper 3x3 of the world matrix, normalised.
-        const hasFace = face !== undefined && face !== null;
-        const fx = hasFace ? face.x : dx;
-        const fy = hasFace ? face.y : dy;
-        const fz = hasFace ? face.z : dz;
         let nx = (m[0] ?? 0) * fx + (m[4] ?? 0) * fy + (m[8] ?? 0) * fz;
         let ny = (m[1] ?? 0) * fx + (m[5] ?? 0) * fy + (m[9] ?? 0) * fz;
         let nz = (m[2] ?? 0) * fx + (m[6] ?? 0) * fy + (m[10] ?? 0) * fz;
@@ -1693,10 +1765,10 @@ export function installGi(
         hitNormal[0] = nx;
         hitNormal[1] = ny;
         hitNormal[2] = nz;
-        const { albedo, emissive } = dataAt(hit);
+        const { albedo, emissive } = dataAt(record, hasUv, u, v);
         // A bake without bounces keeps no surface light: `base` stays at its zeros.
         if (params.bounces > 0) {
-          const lit = surface(hit.object, hitAt, hitNormal, albedo, emissive);
+          const lit = surface(record.id, hitAt, hitNormal, albedo, emissive);
           ray.base[at] = lit[0] ?? 0;
           ray.base[at + 1] = lit[1] ?? 0;
           ray.base[at + 2] = lit[2] ?? 0;

@@ -18,9 +18,43 @@ const PAD = 1e-4;
 /** An instanced mesh is expanded into world-space triangles: past this many, the bake keeps the stock query. */
 const MAX_TRIANGLES = 4_000_000;
 
+/** What `cast` found, in plain numbers: no vector object is made or read per ray. */
+export interface IFlatHit {
+  distance: number;
+  /** The hit point in world space. */
+  x: number;
+  y: number;
+  z: number;
+  /** The face normal in the object's local space. */
+  nx: number;
+  ny: number;
+  nz: number;
+  u: number;
+  v: number;
+  /** The mesh that was hit, as an index into `objects`, and its material slot. */
+  owner: number;
+  slot: number;
+}
+
 /** The flat query, with a switch that makes every material double-sided for the rays that follow. */
 export interface IFlatRays extends IRayContext {
   doubleSided: boolean;
+  /** The meshes `result.owner` indexes. */
+  readonly objects: readonly Object3D[];
+  /**
+   * The same query from plain numbers: true on a hit, which `result` then holds. On the owned engine each field of a vector
+   * is a call into the engine, so `raycast` spends more on its arguments and its answer than on the ray.
+   */
+  cast(
+    ox: number,
+    oy: number,
+    oz: number,
+    dx: number,
+    dy: number,
+    dz: number,
+    far: number,
+  ): boolean;
+  readonly result: IFlatHit;
 }
 
 /** The flat query over `root`, or `undefined` for a scene it cannot flatten: the caller keeps `ctx.raycast`. */
@@ -337,164 +371,193 @@ function build(root: Object3D): IFlatRays | undefined {
     object: undefined as unknown as Object3D,
   };
   const stack = new Int32Array(64);
+  const result: IFlatHit = {
+    distance: 0,
+    x: 0,
+    y: 0,
+    z: 0,
+    nx: 0,
+    ny: 0,
+    nz: 0,
+    u: 0,
+    v: 0,
+    owner: 0,
+    slot: 0,
+  };
+  // Plain scalars throughout: this runs a million times per bake, and a destructured array literal is an allocation.
+  const cast = (
+    ox: number,
+    oy: number,
+    oz: number,
+    dx: number,
+    dy: number,
+    dz: number,
+    far: number,
+  ): boolean => {
+    const ix = 1 / dx;
+    const iy = 1 / dy;
+    const iz = 1 / dz;
+    const everySide = rays.doubleSided;
+    let best = far;
+    let found = -1;
+    // The best hit's barycentric weights of its second and third corner, and whether a back-sided test swapped them.
+    let bestB = 0;
+    let bestC = 0;
+    let swapped = false;
+    stack[0] = 0;
+    let top = 1;
+    while (top > 0) {
+      top -= 1;
+      const node = stack[top] ?? 0;
+      const b = node * 6;
+      // Slab test against the node's box, limited to the best hit so far. The near plane of each axis is the one the ray
+      // meets first (chosen by the sign of its direction, so no min / max per axis). A ray parallel to an axis only
+      // has to start between that axis' planes (0 x infinity is NaN, so the division is skipped).
+      let tmin = 0;
+      let tmax = best;
+      if (dx === 0) {
+        if (ox < (bounds[b] ?? 0) || ox > (bounds[b + 3] ?? 0)) continue;
+      } else {
+        const near = (bounds[dx < 0 ? b + 3 : b] ?? 0) - ox;
+        const far = (bounds[dx < 0 ? b : b + 3] ?? 0) - ox;
+        const t1 = near * ix;
+        const t2 = far * ix;
+        if (t1 > tmin) tmin = t1;
+        if (t2 < tmax) tmax = t2;
+      }
+      if (dy === 0) {
+        if (oy < (bounds[b + 1] ?? 0) || oy > (bounds[b + 4] ?? 0)) continue;
+      } else {
+        const t1 = ((bounds[dy < 0 ? b + 4 : b + 1] ?? 0) - oy) * iy;
+        const t2 = ((bounds[dy < 0 ? b + 1 : b + 4] ?? 0) - oy) * iy;
+        if (t1 > tmin) tmin = t1;
+        if (t2 < tmax) tmax = t2;
+      }
+      if (dz === 0) {
+        if (oz < (bounds[b + 2] ?? 0) || oz > (bounds[b + 5] ?? 0)) continue;
+      } else {
+        const t1 = ((bounds[dz < 0 ? b + 5 : b + 2] ?? 0) - oz) * iz;
+        const t2 = ((bounds[dz < 0 ? b + 2 : b + 5] ?? 0) - oz) * iz;
+        if (t1 > tmin) tmin = t1;
+        if (t2 < tmax) tmax = t2;
+      }
+      if (tmin > tmax) continue;
+      const count = size[node] ?? 0;
+      if (count === 0) {
+        // Visit the near child first.
+        const along = axisOf[node] ?? 0;
+        const negative = (along === 0 ? dx : along === 1 ? dy : dz) < 0;
+        const right = start[node] ?? 0;
+        stack[top] = negative ? node + 1 : right;
+        stack[top + 1] = negative ? right : node + 1;
+        top += 2;
+        continue;
+      }
+      const from = start[node] ?? 0;
+      for (let i = from; i < from + count; i += 1) {
+        const t = order[i] ?? 0;
+        const side = everySide ? 2 : (sideOfTriangle[t] ?? 0);
+        const c = t * 9;
+        // Three's Ray.intersectTriangle, culled by FrontSide (0), reversed for BackSide (1).
+        let ax = corners[c] ?? 0;
+        let ay = corners[c + 1] ?? 0;
+        let az = corners[c + 2] ?? 0;
+        let e1x = edges[c] ?? 0;
+        let e1y = edges[c + 1] ?? 0;
+        let e1z = edges[c + 2] ?? 0;
+        let e2x = edges[c + 3] ?? 0;
+        let e2y = edges[c + 4] ?? 0;
+        let e2z = edges[c + 5] ?? 0;
+        let nx = edges[c + 6] ?? 0;
+        let ny = edges[c + 7] ?? 0;
+        let nz = edges[c + 8] ?? 0;
+        if (side === 1) {
+          // Corners a and c trade places.
+          ax = corners[c + 6] ?? 0;
+          ay = corners[c + 7] ?? 0;
+          az = corners[c + 8] ?? 0;
+          e1x = (corners[c + 3] ?? 0) - ax;
+          e1y = (corners[c + 4] ?? 0) - ay;
+          e1z = (corners[c + 5] ?? 0) - az;
+          e2x = (corners[c] ?? 0) - ax;
+          e2y = (corners[c + 1] ?? 0) - ay;
+          e2z = (corners[c + 2] ?? 0) - az;
+          nx = e1y * e2z - e1z * e2y;
+          ny = e1z * e2x - e1x * e2z;
+          nz = e1x * e2y - e1y * e2x;
+        }
+        let ddn = dx * nx + dy * ny + dz * nz;
+        let sign: number;
+        if (ddn > 0) {
+          if (side !== 2) continue;
+          sign = 1;
+        } else if (ddn < 0) {
+          sign = -1;
+          ddn = -ddn;
+        } else continue;
+        const qx = ox - ax;
+        const qy = oy - ay;
+        const qz = oz - az;
+        // diff x edge2, edge1 x diff.
+        const ddqxe2 =
+          sign *
+          (dx * (qy * e2z - qz * e2y) + dy * (qz * e2x - qx * e2z) + dz * (qx * e2y - qy * e2x));
+        if (ddqxe2 < 0) continue;
+        const dde1xq =
+          sign *
+          (dx * (e1y * qz - e1z * qy) + dy * (e1z * qx - e1x * qz) + dz * (e1x * qy - e1y * qx));
+        if (dde1xq < 0) continue;
+        if (ddqxe2 + dde1xq > ddn) continue;
+        const qdn = -sign * (qx * nx + qy * ny + qz * nz);
+        if (qdn < 0) continue;
+        const distance = qdn / ddn;
+        if (distance > best || distance < 0) continue;
+        best = distance;
+        found = t;
+        bestB = ddqxe2 / ddn;
+        bestC = dde1xq / ddn;
+        swapped = side === 1;
+      }
+    }
+    if (found < 0) return false;
+    result.distance = best;
+    result.x = ox + dx * best;
+    result.y = oy + dy * best;
+    result.z = oz + dz * best;
+    result.nx = normals[found * 3] ?? 0;
+    result.ny = normals[found * 3 + 1] ?? 0;
+    result.nz = normals[found * 3 + 2] ?? 0;
+    result.owner = owner[found] ?? 0;
+    result.slot = slot[found] ?? 0;
+    // The test's point is a + b (b - a) + c (c - a); a BackSide test swapped its corners a and c, so the weight of
+    // stored corner 0, 1 and 2 follows that swap.
+    const rest = 1 - bestB - bestC;
+    const w0 = swapped ? bestC : rest;
+    const w2 = swapped ? rest : bestC;
+    result.u =
+      (uvs[found * 6] ?? 0) * w0 +
+      (uvs[found * 6 + 2] ?? 0) * bestB +
+      (uvs[found * 6 + 4] ?? 0) * w2;
+    result.v =
+      (uvs[found * 6 + 1] ?? 0) * w0 +
+      (uvs[found * 6 + 3] ?? 0) * bestB +
+      (uvs[found * 6 + 5] ?? 0) * w2;
+    return true;
+  };
   const rays: IFlatRays = {
     doubleSided: false,
+    objects,
+    result,
+    cast,
     raycast({ origin, direction, far }): Intersection | undefined {
-      // Plain scalars throughout: this runs a million times per bake, and a destructured array literal is an allocation.
-      const ox = origin.x;
-      const oy = origin.y;
-      const oz = origin.z;
-      const dx = direction.x;
-      const dy = direction.y;
-      const dz = direction.z;
-      const ix = 1 / dx;
-      const iy = 1 / dy;
-      const iz = 1 / dz;
-      const everySide = rays.doubleSided;
-      let best = far;
-      let found = -1;
-      // The best hit's barycentric weights of its second and third corner, and whether a back-sided test swapped them.
-      let bestB = 0;
-      let bestC = 0;
-      let swapped = false;
-      stack[0] = 0;
-      let top = 1;
-      while (top > 0) {
-        top -= 1;
-        const node = stack[top] ?? 0;
-        const b = node * 6;
-        // Slab test against the node's box, limited to the best hit so far. The near plane of each axis is the one the ray
-        // meets first (chosen by the sign of its direction, so no min / max per axis). A ray parallel to an axis only
-        // has to start between that axis' planes (0 x infinity is NaN, so the division is skipped).
-        let tmin = 0;
-        let tmax = best;
-        if (dx === 0) {
-          if (ox < (bounds[b] ?? 0) || ox > (bounds[b + 3] ?? 0)) continue;
-        } else {
-          const near = (bounds[dx < 0 ? b + 3 : b] ?? 0) - ox;
-          const far = (bounds[dx < 0 ? b : b + 3] ?? 0) - ox;
-          const t1 = near * ix;
-          const t2 = far * ix;
-          if (t1 > tmin) tmin = t1;
-          if (t2 < tmax) tmax = t2;
-        }
-        if (dy === 0) {
-          if (oy < (bounds[b + 1] ?? 0) || oy > (bounds[b + 4] ?? 0)) continue;
-        } else {
-          const t1 = ((bounds[dy < 0 ? b + 4 : b + 1] ?? 0) - oy) * iy;
-          const t2 = ((bounds[dy < 0 ? b + 1 : b + 4] ?? 0) - oy) * iy;
-          if (t1 > tmin) tmin = t1;
-          if (t2 < tmax) tmax = t2;
-        }
-        if (dz === 0) {
-          if (oz < (bounds[b + 2] ?? 0) || oz > (bounds[b + 5] ?? 0)) continue;
-        } else {
-          const t1 = ((bounds[dz < 0 ? b + 5 : b + 2] ?? 0) - oz) * iz;
-          const t2 = ((bounds[dz < 0 ? b + 2 : b + 5] ?? 0) - oz) * iz;
-          if (t1 > tmin) tmin = t1;
-          if (t2 < tmax) tmax = t2;
-        }
-        if (tmin > tmax) continue;
-        const count = size[node] ?? 0;
-        if (count === 0) {
-          // Visit the near child first.
-          const along = axisOf[node] ?? 0;
-          const negative = (along === 0 ? dx : along === 1 ? dy : dz) < 0;
-          const right = start[node] ?? 0;
-          stack[top] = negative ? node + 1 : right;
-          stack[top + 1] = negative ? right : node + 1;
-          top += 2;
-          continue;
-        }
-        const from = start[node] ?? 0;
-        for (let i = from; i < from + count; i += 1) {
-          const t = order[i] ?? 0;
-          const side = everySide ? 2 : (sideOfTriangle[t] ?? 0);
-          const c = t * 9;
-          // Three's Ray.intersectTriangle, culled by FrontSide (0), reversed for BackSide (1).
-          let ax = corners[c] ?? 0;
-          let ay = corners[c + 1] ?? 0;
-          let az = corners[c + 2] ?? 0;
-          let e1x = edges[c] ?? 0;
-          let e1y = edges[c + 1] ?? 0;
-          let e1z = edges[c + 2] ?? 0;
-          let e2x = edges[c + 3] ?? 0;
-          let e2y = edges[c + 4] ?? 0;
-          let e2z = edges[c + 5] ?? 0;
-          let nx = edges[c + 6] ?? 0;
-          let ny = edges[c + 7] ?? 0;
-          let nz = edges[c + 8] ?? 0;
-          if (side === 1) {
-            // Corners a and c trade places.
-            ax = corners[c + 6] ?? 0;
-            ay = corners[c + 7] ?? 0;
-            az = corners[c + 8] ?? 0;
-            e1x = (corners[c + 3] ?? 0) - ax;
-            e1y = (corners[c + 4] ?? 0) - ay;
-            e1z = (corners[c + 5] ?? 0) - az;
-            e2x = (corners[c] ?? 0) - ax;
-            e2y = (corners[c + 1] ?? 0) - ay;
-            e2z = (corners[c + 2] ?? 0) - az;
-            nx = e1y * e2z - e1z * e2y;
-            ny = e1z * e2x - e1x * e2z;
-            nz = e1x * e2y - e1y * e2x;
-          }
-          let ddn = dx * nx + dy * ny + dz * nz;
-          let sign: number;
-          if (ddn > 0) {
-            if (side !== 2) continue;
-            sign = 1;
-          } else if (ddn < 0) {
-            sign = -1;
-            ddn = -ddn;
-          } else continue;
-          const qx = ox - ax;
-          const qy = oy - ay;
-          const qz = oz - az;
-          // diff x edge2, edge1 x diff.
-          const ddqxe2 =
-            sign *
-            (dx * (qy * e2z - qz * e2y) + dy * (qz * e2x - qx * e2z) + dz * (qx * e2y - qy * e2x));
-          if (ddqxe2 < 0) continue;
-          const dde1xq =
-            sign *
-            (dx * (e1y * qz - e1z * qy) + dy * (e1z * qx - e1x * qz) + dz * (e1x * qy - e1y * qx));
-          if (dde1xq < 0) continue;
-          if (ddqxe2 + dde1xq > ddn) continue;
-          const qdn = -sign * (qx * nx + qy * ny + qz * nz);
-          if (qdn < 0) continue;
-          const distance = qdn / ddn;
-          if (distance > best || distance < 0) continue;
-          best = distance;
-          found = t;
-          bestB = ddqxe2 / ddn;
-          bestC = dde1xq / ddn;
-          swapped = side === 1;
-        }
-      }
-      if (found < 0) return undefined;
-      hit.distance = best;
-      hit.point.set(ox + dx * best, oy + dy * best, oz + dz * best);
-      hit.face.normal.set(
-        normals[found * 3] ?? 0,
-        normals[found * 3 + 1] ?? 0,
-        normals[found * 3 + 2] ?? 0,
-      );
-      hit.object = objects[owner[found] ?? 0] as Object3D;
-      hit.face.materialIndex = slot[found] ?? 0;
-      // The test's point is a + b (b - a) + c (c - a); a BackSide test swapped its corners a and c, so the weight of
-      // stored corner 0, 1 and 2 follows that swap.
-      const rest = 1 - bestB - bestC;
-      const w0 = swapped ? bestC : rest;
-      const w2 = swapped ? rest : bestC;
-      hit.uv.set(
-        (uvs[found * 6] ?? 0) * w0 +
-          (uvs[found * 6 + 2] ?? 0) * bestB +
-          (uvs[found * 6 + 4] ?? 0) * w2,
-        (uvs[found * 6 + 1] ?? 0) * w0 +
-          (uvs[found * 6 + 3] ?? 0) * bestB +
-          (uvs[found * 6 + 5] ?? 0) * w2,
-      );
+      if (!cast(origin.x, origin.y, origin.z, direction.x, direction.y, direction.z, far))
+        return undefined;
+      hit.distance = result.distance;
+      hit.point.set(result.x, result.y, result.z);
+      hit.face.normal.set(result.nx, result.ny, result.nz);
+      hit.object = objects[result.owner] as Object3D;
+      hit.face.materialIndex = result.slot;
+      hit.uv.set(result.u, result.v);
       return hit as unknown as Intersection;
     },
   };

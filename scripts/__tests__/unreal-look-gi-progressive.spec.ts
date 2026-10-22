@@ -241,6 +241,10 @@ describe("progressive GI bake", () => {
   });
 
   it("bakes in one call when the rays are the game's own, because slicing needs the flat ones", () => {
+    const flatRoom = sunlitRoom();
+    installGi(rayContext(flatRoom), flatRoom, { bounces: 1, sun: SUN });
+    const flat = Float32Array.from(giCache.field?.values ?? []);
+
     const room = sunlitRoom();
     const frames: (() => void)[] = [];
     const report = installGi(rayContext(room), room, {
@@ -251,5 +255,18 @@ describe("progressive GI bake", () => {
     });
     expect(report?.pass).toBe("final");
     expect(frames.length).toBe(0);
+    // The trace reads the game's answers as vectors and the flat rays' as numbers: the cache is the same, but for a
+    // ray that grazes a face, where three's raycaster and the flat test round differently (0.015% of the values).
+    const stock = giCache.field?.values ?? new Float32Array(0);
+    expect(stock.length).toBe(flat.length);
+    let differing = 0;
+    let largest = 0;
+    for (let i = 0; i < flat.length; i += 1) {
+      const gap = Math.abs((stock[i] ?? 0) - (flat[i] ?? 0));
+      if (gap > 0) differing += 1;
+      largest = Math.max(largest, gap);
+    }
+    expect(differing).toBeLessThan(flat.length * 0.001);
+    expect(largest).toBeLessThan(0.01);
   });
 });
