@@ -646,7 +646,9 @@ export function compareGiToUnreal(
   for (const layer of layers) {
     // A shadow scene names its Unreal variants after their layers (shadow/scenes.json).
     const variant = name.startsWith("shadow:") ? layer : unrealVariant(layer, unrealLevel);
-    const limits = layerThresholds(thresholdFile, layer);
+    // A quality tier (`L7-high`, `L5-Low`) is judged by the limits of its ladder layer.
+    const [ladder = layer] = layer.split("-");
+    const limits = layerThresholds(thresholdFile, ladder);
     for (const pose of scene.poses) {
       const own = masks(image(path.join(tn, "ID", `${pose.name}.png`)), scene.regions);
       const reference = masks(
