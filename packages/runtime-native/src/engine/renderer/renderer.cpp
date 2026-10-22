@@ -1019,6 +1019,16 @@ void Renderer::setTraa(const TraaOptions& options) {
 
 void Renderer::cutHistory() { if (traa_) traa_->cameraCut(); }
 
+void Renderer::setSceneFormat(WGPUTextureFormat format) {
+    if (format == sceneFormat_) return;
+    sceneFormat_ = format;
+    applySampleCount();
+    if (!width_) return;
+    const uint32_t width = width_, height = height_;
+    width_ = height_ = 0;  // setSize returns early at the same extent
+    setSize(width, height);
+}
+
 void Renderer::setSampleCount(uint32_t samples) {
     if (samples != 1 && samples != 4)
         throw std::runtime_error("TN_NATIVE_SAMPLES_UNSUPPORTED: sampleCount must be 1 or 4");
@@ -1029,7 +1039,7 @@ void Renderer::setSampleCount(uint32_t samples) {
 // Temporal AA replaces multisampling, as one method does in Unreal. The velocity pass tests depth Equal against the
 // colour pass, and 4x multisampling hands it one resolved sample of depth, so Equal fails on every sloped surface.
 void Renderer::applySampleCount() {
-    const uint32_t samples = traa_ ? 1 : requestedSamples_;
+    const uint32_t samples = traa_ || sceneFormat_ == WGPUTextureFormat_RGBA32Float ? 1 : requestedSamples_;  // RGBA32Float cannot resolve
     if (traa_ && requestedSamples_ == 4) {
         const std::string note = "TN_TRAA_MSAA_OFF: temporal AA replaces 4x multisampling, so the scene draws single-sampled";
         if (std::find(diagnostics_.begin(), diagnostics_.end(), note) == diagnostics_.end()) diagnostics_.push_back(note);
@@ -1139,10 +1149,10 @@ void Renderer::setSize(uint32_t width, uint32_t height) {
     depthDesc.sampleCount = 1;
     depth_ = wgpuDeviceCreateTexture(device_, &depthDesc);
     WGPUTextureDescriptor sceneDesc = depthDesc;
-    sceneDesc.format = WGPUTextureFormat_RGBA16Float;
+    sceneDesc.format = sceneFormat_;
     sceneDesc.usage = WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopySrc;
     sceneColor_ = wgpuDeviceCreateTexture(device_, &sceneDesc);
-    sceneView_ = view2d(sceneColor_, WGPUTextureFormat_RGBA16Float);
+    sceneView_ = view2d(sceneColor_, sceneFormat_);
     colorView_ = view2d(gpu_.texture(color_), WGPUTextureFormat_RGBA8Unorm);
     depthView_ = view2d(depth_, WGPUTextureFormat_Depth32Float);
     if (sampleCount_ == 4) {
@@ -1160,7 +1170,7 @@ void Renderer::setSize(uint32_t width, uint32_t height) {
     WGPUTextureDescriptor viewportDesc = sceneDesc;
     viewportDesc.usage = WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopyDst;
     viewportColor_ = wgpuDeviceCreateTexture(device_, &viewportDesc);
-    viewportColorView_ = view2d(viewportColor_, WGPUTextureFormat_RGBA16Float);
+    viewportColorView_ = view2d(viewportColor_, sceneFormat_);
     viewportDesc.format = WGPUTextureFormat_Depth32Float;
     viewportDepth_ = wgpuDeviceCreateTexture(device_, &viewportDesc);
     viewportDepthView_ = view2d(viewportDepth_, WGPUTextureFormat_Depth32Float);
@@ -2828,7 +2838,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         const WGPUCullMode cull = item.side == 2 ? WGPUCullMode_None : item.side == 1 ? WGPUCullMode_Front : WGPUCullMode_Back;
         // three blends unless NoBlending, or NormalBlending on a material that is not transparent.
         const uint8_t blend = item.blending == 0 || (item.blending == 1 && !item.transparent) ? 0 : item.blending;
-        PipelineTarget target{WGPUTextureFormat_RGBA16Float, WGPUTextureFormat_Depth32Float, cull, blend,
+        PipelineTarget target{sceneFormat_, WGPUTextureFormat_Depth32Float, cull, blend,
                               item.depthWrite};
         target.colorWrite = item.colorWrite;
         target.sampleCount = sampleCount_;
@@ -3892,7 +3902,7 @@ void Renderer::encodeFrame(FrameJob& job) {
         if (viewportBundle_) wgpuRenderBundleRelease(viewportBundle_);
         mainBundle_ = viewportBundle_ = nullptr;
         WGPURenderBundleEncoderDescriptor descriptor{};
-        const WGPUTextureFormat color = WGPUTextureFormat_RGBA16Float;
+        const WGPUTextureFormat color = sceneFormat_;
         descriptor.colorFormatCount = 1; descriptor.colorFormats = &color;
         descriptor.depthStencilFormat = WGPUTextureFormat_Depth32Float; descriptor.sampleCount = sampleCount_;
         const auto shadowStats = lastFrame_.shadowSkinned;
@@ -4147,16 +4157,18 @@ void Renderer::outputPass(WGPUCommandEncoder encoder, WGPUTextureView present, W
     wgpuRenderPassEncoderRelease(pass);
 }
 
-GpuStatus Renderer::readProbePixels(ReadbackCallback done) { return readRgba16(sceneColor_, std::move(done)); }
+GpuStatus Renderer::readProbePixels(ReadbackCallback done) {
+    return readRgba16(sceneColor_, std::move(done), sceneFormat_ == WGPUTextureFormat_RGBA32Float ? 16u : 8u);
+}
 
 GpuStatus Renderer::readNormalPixels(ReadbackCallback done) { return readRgba16(normalTexture_, std::move(done)); }
 GpuStatus Renderer::readAlbedoPixels(ReadbackCallback done) { return readRgba16(albedoTexture_, std::move(done)); }
 GpuStatus Renderer::readEmissivePixels(ReadbackCallback done) { return readRgba16(emissiveTexture_, std::move(done)); }
 
-GpuStatus Renderer::readRgba16(WGPUTexture texture, ReadbackCallback done) {
+GpuStatus Renderer::readRgba16(WGPUTexture texture, ReadbackCallback done, uint32_t texelBytes) {
     if (!done) return GpuStatus::OutOfRange;
     if (!texture) return GpuStatus::InvalidHandle;
-    const uint32_t width = width_, height = height_, row = width * 8, pitch = (row + 255u) & ~255u;
+    const uint32_t width = width_, height = height_, row = width * texelBytes, pitch = (row + 255u) & ~255u;
     const Handle staging = gpu_.createBuffer(uint64_t(pitch) * height, WGPUBufferUsage_CopyDst | WGPUBufferUsage_CopySrc);
     WGPUCommandEncoderDescriptor descriptor{};
     auto encoder = wgpuDeviceCreateCommandEncoder(device_, &descriptor);
