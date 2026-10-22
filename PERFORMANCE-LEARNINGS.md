@@ -112,6 +112,12 @@ PRD's "Tried and rejected" or "Decisions" section, for example
 - Cause: the frames the page draws while it bakes take about 9 to 13 ms of main-thread time each at L9. A longer slice leaves fewer frames, not a faster bake, and a loaded host moves the time by more than the slice does.
 - Insight: the progressive path cannot converge in the one-shot arm's time at 60 fps. Its gain is the world on screen 1.5 to 4 s before the one-shot arm, and no task over about 50 ms. Keep the slice at 8 ms.
 
+### 2026-10-22 — The screen-probe gather costs 2.1 to 3.0 ms at boost clock, not 6.4 ms — NO LEVER (the reading follows the GPU clock)
+- Where: `gi-tier-cost.ts` on `gi:cornell` at 1920 x 1080, tier high (screen probes, 16 x 16 rays), RTX 2080, owned Wasm engine, exclusive GPU window, two rounds of four variants back to back (`probeRays=8`, `ssgiDenoise=4`, default, `probes=1`), 600 samples each.
+- Result: every run of every variant reads one of two states. At P5 (about 700 to 1000 MHz) the SSGI stage median is 6.3 to 6.5 ms and the whole frame 22.6 to 23.5 ms (4 runs: A, A, C, D). At boost clock (P2, 1300 to 1800 MHz, memory 6800 MHz) the stage median is 2.1 to 3.0 ms and the frame 9.0 to 10.3 ms (4 runs: B, C, D, and B again at 5.0 ms mid-transition). The stage is 27% of the frame in both states. Unreal Epic profiles 3.09 to 5.79 ms (PRD-640).
+- Cause: the stage and the frame scale together by 2.5 times between the two clock states, so the 6.4 ms figure compares clocks, not methods. At boost clock the gather is inside Unreal's range.
+- Insight: do not cut the gather on a P5 reading. A `GIBudget` limit of 6 ms read at P5 steps a method down that costs 2.6 ms at boost. Attribute per pass only with a labelled stage per pass: the page's pass timer (`TN_UNREAL_LOOK_GPU_PASSES=1`) saw 9 passes and 1.3 ms of a 9 ms frame on this engine, too little to attribute.
+
 ### 2026-10-21 — Cloud noise textures: hoisted lattice weights, no `Math.min` — KEEP
 - Where: `scaffold/render/clouds.ts` (`lattice1d`, `valueNoise`, `worleyInverted`), commit `248a1b991`.
 - Result: Node, 4 seeds, loaded host: 1483 / 1280 / 1350 / 1298 ms → 672 / 566 / 594 / 562 ms (2.3×). Output is bit-identical: the spec `unreal-look-cloud-textures.spec.ts` pins the sha256 of the seed-631 textures and passed before and after.
