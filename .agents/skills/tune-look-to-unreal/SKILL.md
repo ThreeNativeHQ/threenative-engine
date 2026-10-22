@@ -46,6 +46,13 @@ flowchart LR
    colour difference and silhouette overlap. Name the largest gap in one sentence. It fails
    closed until both engines have every pose of the layer plus the `ID` cells (region masks) and
    the `L5` cells (shadow masks), so capture those first.
+   **Same scene first.** A look gap means nothing while the two engines draw different geometry.
+   `pnpm unreal-look:compare --sameness [--scene reference|gi|shadow|gi:<name>|shadow:<name>] [--captures <root>]`
+   scores every object of every pose from the `ID` frames: it prints IoU and the pixels that lie more than
+   1 px from the other engine's object, and exits 1 when a pose fails (PRD-646). Fix a failing object at its
+   source in the scene (`tools/unreal-reference/**/scene.py`, `scene.json`) or the recreation, never in the
+   threshold. `python3 -I tools/unreal-reference/sameness-sheet.py <out.png> --captures <root> --scene <scene>`
+   draws the engines' frames and the overlap.
 4. **One change** in `scripts/unreal-look/scaffold/render/` (copy the starter file there first if
    it is not there yet). Recapture into `--out .../after`. Compare again.
 5. **Sheet.** `python3 -I .agents/skills/tune-look-to-unreal/sheet.py <scratch>/sheet.png --layer L1 --sun sun60 "before=THREE.JS before" "after=THREE.JS after" "unreal=UNREAL 5.8.3 (target)"`

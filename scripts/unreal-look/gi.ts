@@ -29,12 +29,15 @@ import {
   type IImage,
   type IRow,
   type IStats,
+  type IThresholdFile,
   type IThresholds,
   compareCells,
   decode,
   iou,
+  layerThresholds,
   masks,
   measure,
+  passes,
 } from "./compare.js";
 import { contactGap, linearLuminance, pairedPenumbra } from "./penumbra.js";
 
@@ -604,22 +607,36 @@ export function unrealVariant(layer: string, unrealLevel?: number): string {
   return UNREAL_VARIANT[layer] ?? fail("BAD_INPUT", `GI layer ${layer}`);
 }
 
+/** tools/unreal-reference/thresholds.json (PRD-631), or null when the file is absent. */
+export function readThresholds(): IThresholdFile | null {
+  const file = path.join(REFERENCE, "thresholds.json");
+  return existsSync(file) ? (JSON.parse(readFileSync(file, "utf8")) as IThresholdFile) : null;
+}
+
+/**
+ * A row's verdict: it passes only when its layer sets a limit on the light (deltaE and dP50) and every limit holds.
+ * A row with no such limit fails, it does not report: a layer missing from the file, or a file with only the edge limit,
+ * would otherwise let any frame through.
+ */
+function verdict(row: IRow, limits: IThresholds | undefined): boolean {
+  const lightLimited = limits?.deltaE !== undefined && limits.dP50 !== undefined;
+  return lightLimited && passes(row, limits) === true;
+}
+
 /**
  * ThreeNative against Unreal for one scene: region statistics of every (layer, pose), with the
- * Unreal ID frame as the mask and the IoU of the two ID frames per region. A row passes against
- * tools/unreal-reference/thresholds.json when that file exists (PRD-631); otherwise it reports.
+ * Unreal ID frame as the mask and the IoU of the two ID frames per region. A row is judged against the limits of its
+ * layer in tools/unreal-reference/thresholds.json (PRD-631, `thresholdFile`) and fails when it has none. The shadow
+ * scenes take the same path, so both families get per-layer limits.
  */
 export function compareGiToUnreal(
   name: string,
   layers: readonly string[],
   root: string,
   unrealLevel?: number,
+  thresholdFile: IThresholdFile | null = readThresholds(),
 ): IRow[] {
   const { scene } = readScene(name);
-  const thresholdFile = path.join(REFERENCE, "thresholds.json");
-  const thresholds = existsSync(thresholdFile)
-    ? (JSON.parse(readFileSync(thresholdFile, "utf8")) as IThresholds)
-    : undefined;
   const unreal = path.join(root, "unreal", sceneKey(name));
   const tn = path.join(root, "threenative", sceneKey(name));
   // Without Unreal captures the committed statistics and ID frames stand in for them (PRD-638 AC-2).
@@ -629,6 +646,7 @@ export function compareGiToUnreal(
   for (const layer of layers) {
     // A shadow scene names its Unreal variants after their layers (shadow/scenes.json).
     const variant = name.startsWith("shadow:") ? layer : unrealVariant(layer, unrealLevel);
+    const limits = layerThresholds(thresholdFile, layer);
     for (const pose of scene.poses) {
       const own = masks(image(path.join(tn, "ID", `${pose.name}.png`)), scene.regions);
       const reference = masks(
@@ -664,12 +682,14 @@ export function compareGiToUnreal(
         masks: reference,
         regions,
         ...(!offline && existsSync(exr) ? { unrealExr: image(exr) } : {}),
-        ...(thresholds ? { thresholds } : {}),
+        ...(limits ? { thresholds: limits } : {}),
       });
       for (const row of cell) {
         const a = reference.regions[row.region];
         const b = own.regions[row.region];
         row.iou = a && b ? iou(a, b) : 0;
+        // The edge limit needs the IoU, which is measured here, so the verdict is read again with it.
+        row.pass = verdict(row, limits);
       }
       rows.push(...cell);
     }

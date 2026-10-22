@@ -22,6 +22,7 @@ import {
 } from "../visual-gate.js";
 import { workspacePackages } from "../workspace-packages.js";
 import { launchWebgpuBrowser } from "./browser.js";
+import { awaitExposureSettled, watchExposure } from "./exposureSettled.js";
 
 const REPO_ROOT = path.resolve(import.meta.dirname, "../..");
 const REFERENCE = path.join(REPO_ROOT, "tools/unreal-reference");
@@ -92,6 +93,26 @@ export function referencePoses(reference = REFERENCE): Record<string, readonly I
   return poses;
 }
 
+/**
+ * The ID layer is a classification image, not a picture: a multisampled edge blends two region colours
+ * into a third pixel, and some pairs blend into the colour of a third region (the cornell lamp shade
+ * read as 372 pixels of the green wall's edge). Unreal draws its ID frames aliased, so the page draws
+ * the ID layer on a single-sampled surface too: `?layer=ID` (calibration scenes) and `?tnRef=ID`
+ * (the reference scene) switch `renderer.antialias` off. Idempotent, so a reused scaffold gets it too.
+ */
+export const ID_LAYER_QUERY = /[?&](layer|tnRef)=ID(&|$)/;
+export const ID_LAYER_ANTIALIAS = `antialias: !${ID_LAYER_QUERY}.test(globalThis.location?.search ?? ""),`;
+export function idLayerIsAliased(source: string, file: string): string {
+  return source.includes(ID_LAYER_ANTIALIAS)
+    ? source
+    : replaceOnce(
+        source,
+        "alphaAntialiasing: true,",
+        `alphaAntialiasing: true,\n    ${ID_LAYER_ANTIALIAS}`,
+        file,
+      );
+}
+
 /** Applies the harness patches to a scaffolded starter; fails closed when the template moved. */
 async function patchScaffold(target: string, fresh: boolean, baseline: boolean): Promise<void> {
   // The look under tuning: these files replace the template's own in the copy only. A tuned
@@ -123,6 +144,8 @@ async function patchScaffold(target: string, fresh: boolean, baseline: boolean):
   await mkdir(path.join(target, "assets/unreal-reference"), { recursive: true });
   for (const file of ["scene.glb", "scene-id.glb"])
     await cp(path.join(REFERENCE, file), path.join(target, "assets/unreal-reference", file));
+  const starter = path.join(target, "threenative.config.ts");
+  await writeFile(starter, idLayerIsAliased(await readFile(starter, "utf8"), starter));
   if (!fresh) return;
   const game = path.join(target, "src/game.ts");
   let source = await readFile(game, "utf8");
@@ -278,6 +301,7 @@ export async function captureThreeNative(options: IThreeNativeCaptureOptions): P
     try {
       const page = await browser.newPage({ viewport: { width, height }, deviceScaleFactor: 1 });
       const errors: string[] = [];
+      const exposure = watchExposure(page);
       // The frame meter prints to the console; a measured cell keeps the windows between two marks.
       let meter: string[] = [];
       page.on("console", (message) => {
@@ -346,6 +370,7 @@ export async function captureThreeNative(options: IThreeNativeCaptureOptions): P
             throw new Error(`TN_UNREAL_LOOK_WRONG_ENGINE: ${layer} drew on ${String(engine)}`);
           if (count === 0) console.info(`TN_UNREAL_LOOK engine=${engine}`);
           for (const pose of wanted) {
+            const poseAt = Date.now();
             await page.evaluate((p) => {
               (window as unknown as { __tnRef: { pose(p: unknown): void } }).__tnRef.pose(p);
             }, pose);
@@ -356,6 +381,11 @@ export async function captureThreeNative(options: IThreeNativeCaptureOptions): P
             await page.evaluate(
               `new Promise((resolve) => { let n = 0; const tick = () => (++n >= ${settle} ? resolve() : requestAnimationFrame(tick)); requestAnimationFrame(tick); })`,
             );
+            // The frame count above is a floor: a frame is taken once the readings say the exposure landed.
+            if (layer === "L9")
+              console.info(
+                `TN_UNREAL_LOOK exposure ${pose.name} settled after ${await awaitExposureSettled(page, exposure, poseAt)} ms of waiting`,
+              );
             if (errors.length > 0)
               throw new Error(`TN_UNREAL_LOOK_PAGE_ERROR: ${errors.join(" | ")}`);
             const name = layer === "ID" ? `ID_${pose.name}` : `${layer}_${sun.name}_${pose.name}`;
