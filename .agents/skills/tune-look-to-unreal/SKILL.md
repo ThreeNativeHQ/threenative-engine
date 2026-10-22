@@ -79,7 +79,7 @@ flowchart LR
    tier after two MATCH rounds on one stamp. `--allow-red-direct-light` runs a round over a red L1
    check, records the override and does not count the round toward parity. `--status` prints where
    each scene stands (latest round, gap list, parity) from the scoreboard, with no GPU and no model.
-   An approved round becomes a ratchet lock (PRD-653). `pnpm unreal-look:calibrate --lock <round id>`
+   An approved round becomes a ratchet lock (PRD-654). `pnpm unreal-look:calibrate --lock <round id>`
    writes one bound per region and pose to `tools/unreal-reference/gi/parity-locks.json`: a ceiling for
    dP50 and deltaE and a floor for IoU, each widened by the noise between the two runs of the round. It
    needs no GPU. Every later round checks its AFTER arm against the locks and exits 2 when a locked

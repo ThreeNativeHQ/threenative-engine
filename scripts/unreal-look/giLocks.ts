@@ -1,5 +1,5 @@
 /**
- * Ratchet locks for the GI calibration scenes (PRD-653). An approved round (PRD-647) becomes a floor under
+ * Ratchet locks for the GI calibration scenes (PRD-654). An approved round (PRD-647) becomes a floor under
  * its regions, so that no later change makes them worse without anyone seeing it:
  *
  *   pnpm unreal-look:calibrate --lock <round> [--tighten | --relax]    write tools/unreal-reference/gi/parity-locks.json

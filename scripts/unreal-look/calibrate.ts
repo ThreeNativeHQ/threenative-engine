@@ -116,7 +116,7 @@ interface IOptions {
   dryRun: boolean;
   store: string;
   scoreboard: string;
-  /** The GI lock file (PRD-653) that the round checks its AFTER arm against. */
+  /** The GI lock file (PRD-654) that the round checks its AFTER arm against. */
   locks: string;
 }
 
@@ -501,7 +501,7 @@ function status(args: string[], deps: IDeps): number {
 }
 
 /**
- * The GI locks of this scene and layer, checked against the runs of the AFTER arm (PRD-653). It logs the
+ * The GI locks of this scene and layer, checked against the runs of the AFTER arm (PRD-654). It logs the
  * result and returns the number of broken bounds. A scene with no lock at this layer logs nothing.
  */
 function checkLocks(
@@ -612,7 +612,7 @@ function lockOptions(args: string[]) {
 }
 
 /**
- * `--lock <round>`: cut ratchet locks from an approved round (PRD-653). It re-measures the runs of the
+ * `--lock <round>`: cut ratchet locks from an approved round (PRD-654). It re-measures the runs of the
  * round's arm against the committed Unreal statistics, checks that they still show the numbers of the round
  * file, and merges the locks into tools/unreal-reference/gi/parity-locks.json. No GPU and no model.
  */

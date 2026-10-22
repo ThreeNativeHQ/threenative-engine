@@ -417,7 +417,7 @@ describe("main", () => {
     );
   });
 
-  describe("--lock (PRD-653)", () => {
+  describe("--lock (PRD-654)", () => {
     const round = (stamp: string) => `20261021T140512Z-cornell-high-${stamp.slice(0, 7)}`;
     const setup = async () => {
       const w = world();
