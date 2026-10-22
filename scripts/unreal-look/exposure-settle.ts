@@ -1,8 +1,13 @@
 /**
  * Auto exposure closes on its target over time (3 stops/s up, 1 stop/s down, Unreal's rates, in clock time), so a capture
  * that waits a fixed number of frames stops wherever the clock happens to be: two runs of the foliage cell ended 0.1045
- * and 0.1494 stops short of the target and differed by one display level everywhere (PRD-631 noise floor). The page's own
- * `settled` flag allows 0.25 stops, so the capture reads the distance to the target from the `TN_AUTO_EXPOSURE` reports.
+ * and 0.1494 stops short of the target, still moving, and differed by one display level everywhere (PRD-631 noise floor).
+ * The page's own `settled` flag allows 0.25 stops, so the capture reads the `TN_AUTO_EXPOSURE` reports and waits until
+ * the exposure stops moving.
+ *
+ * It waits for rest, not for the target. Every value the page prints is exact in half float, and a frame's step toward
+ * the target rounds to nothing a little short of it: the owner set stopped 0.006 to 0.009 stops short for good (more at
+ * 60 frames/s, where the step is smaller). That is the same place on every run at one frame rate, so it is no noise.
  */
 export interface IExposureObservation {
   readonly measured: boolean;
@@ -11,8 +16,10 @@ export interface IExposureObservation {
   readonly targetStops?: number;
 }
 
-/** 0.002 stops is 0.14% of luminance: about 0.1 of 255 at mid grey, a tenth of the 1% p50 noise floor. */
-export const EXPOSURE_TOLERANCE_STOPS = 0.002;
+/** A move between reports this small is rest: one half-float step is 0.002 in [2, 4) stops and 0.004 in [4, 8). */
+export const EXPOSURE_STEADY_STOPS = 0.004;
+/** At rest farther than this from the target is a stuck meter, not a landed exposure. */
+export const EXPOSURE_NEAR_STOPS = 0.15;
 
 const PREFIX = "TN_AUTO_EXPOSURE:";
 
@@ -29,16 +36,23 @@ export function parseExposure(text: string): IExposureObservation | undefined {
   }
 }
 
-export function exposureSettled(
-  observation: IExposureObservation | undefined,
-  tolerance = EXPOSURE_TOLERANCE_STOPS,
+/** True when every report is measured and applied, the exposure moved no more than `steady`, and it sits within `near` of the target. */
+export function exposureAtRest(
+  reports: readonly IExposureObservation[],
+  limits: { readonly steady?: number; readonly near?: number } = {},
 ): boolean {
+  const { steady = EXPOSURE_STEADY_STOPS, near = EXPOSURE_NEAR_STOPS } = limits;
+  const stops: number[] = [];
+  for (const report of reports) {
+    if (!report.measured || !report.applied) return false;
+    if (report.exposureStops === undefined || report.targetStops === undefined) return false;
+    stops.push(report.exposureStops);
+  }
+  const last = reports.at(-1);
+  if (last?.exposureStops === undefined || last.targetStops === undefined) return false;
   return (
-    observation?.measured === true &&
-    observation.applied &&
-    observation.exposureStops !== undefined &&
-    observation.targetStops !== undefined &&
-    Math.abs(observation.exposureStops - observation.targetStops) <= tolerance
+    Math.max(...stops) - Math.min(...stops) <= steady &&
+    Math.abs(last.exposureStops - last.targetStops) <= near
   );
 }
 
@@ -48,48 +62,47 @@ export interface IExposureSource {
   wait(ms: number): Promise<void>;
 }
 
+const stopsOf = (report: IExposureObservation) =>
+  `${report.exposureStops?.toFixed(4) ?? "none"}/${report.targetStops?.toFixed(4) ?? "none"}`;
+
 /**
- * Returns once the last `streak` observations sit on the target; fails closed when they never do, or when none arrive.
- * The page reports every 0.5 s of clock time, so the two reports of the default streak are at least a second apart.
+ * Returns the last report once the last `streak` reports are at rest; fails closed when they never are, or when none
+ * arrive. The page reports every 0.5 s of clock time, so the three reports of the default streak span a second: an
+ * exposure that is not stalled moves at least 0.63 of its distance to the target in that second, so a move under
+ * 0.004 stops means it is within 0.007 stops of the target, or stalled at the half-float step.
  */
 export async function waitForExposure(
   source: IExposureSource,
   options: {
-    readonly tolerance?: number;
+    readonly steady?: number;
+    readonly near?: number;
     readonly streak?: number;
     readonly timeoutMs?: number;
     readonly intervalMs?: number;
   } = {},
 ): Promise<IExposureObservation> {
   const {
-    tolerance = EXPOSURE_TOLERANCE_STOPS,
-    streak = 2,
+    steady = EXPOSURE_STEADY_STOPS,
+    near = EXPOSURE_NEAR_STOPS,
+    streak = 3,
     timeoutMs = 120_000,
     intervalMs = 250,
   } = options;
   for (let waited = 0; ; waited += intervalMs) {
-    const seen = source.observations();
-    const last = seen.at(-1);
-    if (
-      last !== undefined &&
-      seen.length >= streak &&
-      seen.slice(-streak).every((o) => exposureSettled(o, tolerance))
-    )
+    const recent = source.observations().slice(-streak);
+    const last = recent.at(-1);
+    if (last !== undefined && recent.length === streak && exposureAtRest(recent, { near, steady }))
       return last;
     if (waited >= timeoutMs) break;
     await source.wait(intervalMs);
   }
-  const last = source.observations().at(-1);
-  if (last === undefined)
+  const lastReports = source.observations().slice(-streak);
+  if (lastReports.length === 0)
     throw new Error(
       `TN_UNREAL_LOOK_EXPOSURE_UNSETTLED: no TN_AUTO_EXPOSURE observation in ${timeoutMs} ms`,
     );
-  const distance =
-    last.exposureStops === undefined || last.targetStops === undefined
-      ? "an unmeasured exposure"
-      : `${Math.abs(last.exposureStops - last.targetStops).toFixed(4)} stops from the target`;
   throw new Error(
-    `TN_UNREAL_LOOK_EXPOSURE_UNSETTLED: ${distance} after ${timeoutMs} ms, tolerance ${tolerance} stops: ${JSON.stringify(last)}`,
+    `TN_UNREAL_LOOK_EXPOSURE_UNSETTLED: not at rest within ${timeoutMs} ms (moves over ${steady} stops, or rests more than ${near} stops from its target); last reports, exposure/target in stops: ${lastReports.map(stopsOf).join(", ")}`,
   );
 }
 
