@@ -103,6 +103,9 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
     const unsupported: { actor: string; property: string; reason: string }[] = [];
     // Draws the lamps' shadows at another tier: what a `ShadowFilterBudget` step does, callable from the page.
     let setShadowTier = (_tier: ShadowFilterTier): void => undefined;
+    // Rebuilds the chain at another final gather method: what a `GIBudget` step does, callable from the page. The cost
+    // run alternates methods in one page, so every method sees the same GPU clock.
+    let setGatherMethod = (_method: FinalGatherMethod): void => undefined;
     // The region a mesh belongs to: the scene.glb node named after the Unreal actor, or, when the
     // asset pipeline flattened the nodes away, the mesh named after its static mesh, SM_<actor>. An
     // actor shares its region with others when scene.json names one (the leaf cards: Leaves).
@@ -295,6 +298,7 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
         this.#dispose = world.apply(ctx.renderer, scene, camera, {}).dispose;
       };
       build(GI_METHOD);
+      setGatherMethod = build;
       // The tier's method moves with the measured GI time when the URL asks for giAuto=1 (PRD-644).
       if (GI_METHOD !== "none")
         this.#gi = watchGi(ctx, { tier: TIER, method: GI_METHOD, rebuild: build });
@@ -312,6 +316,7 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
       giBudget: () => this.#gi?.lastReport(),
       shadowBudget: () => this.#shadow?.lastReport(),
       setShadowTier: (tier: string) => setShadowTier(resolveQualityTier({ tier })),
+      setGatherMethod: (method: FinalGatherMethod) => setGatherMethod(method),
       scene: NAME,
       unsupported,
       // The live scene, renderer and GI cache, for in-page diagnosis.

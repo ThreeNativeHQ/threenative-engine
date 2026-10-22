@@ -3,7 +3,7 @@
  *
  *   sh <slots>/gpu-slot.sh --exclusive pnpm exec tsx scripts/unreal-look/gi-tier-cost.ts \
  *     --scene gi:cornell [--tiers low,medium,high] [--shadow-tiers low,medium,high] [--windows 3] [--reuse] \
- *     [--url-extra "&probes=1"] [--auto] [--out cost.json]
+ *     [--url-extra "&probes=1"] [--auto | --interleave [--rounds 5] [--burst 100]] [--out cost.json]
  *
  * Opens the calibration scene at L7 on the owned engine, headed on WebGPU, at 1920 x 1080 with the adapter
  * checked, once per tier. The browser paints on a private Xvfb (`launchWebgpuBrowser`): set
@@ -16,6 +16,12 @@
  * stage `SSGI` (`stagesSeen`). `frame` is the whole frame's GPU time per distinct sample after 120 rendered frames of
  * warm-up with its `stages`, and `giDeltaMs` is a tier's frame mean minus the `low` tier's, which draws no GI: the
  * delta and `frame.stages.SSGI` check each other.
+ *
+ * `--interleave` times the final gather methods in one page instead: it starts at `high`, then alternates `none`,
+ * `irradianceField` and `screenProbeGather` in short bursts (`window.__tnRef.setGatherMethod`), `--rounds` times, with
+ * the order rotated each round. The GPU clock drifts with the load the page can feed it (a loaded host kept it at P5 to
+ * P8 for whole runs), so one run per tier compares clocks, not methods. The bursts share the clock, and the report gives
+ * each method's frame and SSGI time, and the paired difference to `none` per round.
  *
  * `--auto` is the live proof of the budgets instead: each tier starts with `giAuto=1` and `shadowAuto=1`, and the
  * report lists every window the budgets closed with the step they took and why.
@@ -60,9 +66,9 @@ const mean = (values: readonly number[]): number =>
  * per distinct sample, keyed by the engine's frame id. The page
  * draws the pose in a tight loop beside its own: the host draws nothing while two frames are on the GPU, so the
  * GPU stays busy. A GPU that idles between frames drops to a low clock, and every pass then reads 2 to 5 times
- * dearer (a `low` frame read 14.9 ms at P5 and 3.2 ms boosted). The warm-up is 240 drawn frames and 4 s.
+ * dearer (a `low` frame read 14.9 ms at P5 and 3.2 ms boosted). The warm-up is 240 drawn frames and 4 s by default.
  */
-const FRAME_SAMPLER = `(async (want) => {
+const FRAME_SAMPLER = `(async (want, warmFrames = 240, warmMs = 4000) => {
   const w = window.__tnRef;
   const r = w.renderer;
   const seen = new Map();
@@ -76,7 +82,7 @@ const FRAME_SAMPLER = `(async (want) => {
   const tick = () => new Promise((done) => setTimeout(done, 0));
   const t0 = performance.now();
   const f0 = r.info.frame;
-  while ((r.info.frame - f0 < 240 || performance.now() - t0 < 4000) && performance.now() - t0 < 60000) {
+  while ((r.info.frame - f0 < warmFrames || performance.now() - t0 < warmMs) && performance.now() - t0 < 60000) {
     r.render(w.world, w.camera);
     await tick();
   }
@@ -253,6 +259,101 @@ async function watchSteps(
   }
 }
 
+const METHODS = ["none", "irradianceField", "screenProbeGather"] as const;
+
+interface IBurst {
+  readonly method: string;
+  readonly round: number;
+  readonly ms: readonly number[];
+  readonly stages: Readonly<Record<string, readonly number[]>>;
+  readonly gpu: string;
+}
+
+const spread = (values: readonly number[]): number => {
+  const m = mean(values);
+  return values.length < 2
+    ? Number.NaN
+    : Math.sqrt(values.reduce((a, b) => a + (b - m) ** 2, 0) / (values.length - 1));
+};
+
+/** One page at `high`: every round times each method for `burst` samples, the order rotated, so they share the GPU clock. */
+async function measureInterleaved(
+  browser: Browser,
+  origin: string,
+  name: string,
+  pose: unknown,
+  rounds: number,
+  burst: number,
+  urlExtra: string,
+): Promise<Record<string, unknown>> {
+  const { adapter, errors, page } = await openTier(
+    browser,
+    `${origin}?tnGi=${name}&layer=L7&tier=high&shadowTier=high${urlExtra}`,
+    pose,
+  );
+  try {
+    await page.evaluate(`${FRAME_SAMPLER}(30, 240, 6000)`);
+    const bursts: IBurst[] = [];
+    for (let round = 0; round < rounds; round++) {
+      for (const method of [...METHODS.slice(round % 3), ...METHODS.slice(0, round % 3)]) {
+        await page.evaluate(`window.__tnRef.setGatherMethod(${JSON.stringify(method)})`);
+        const sampled = (await page.evaluate(`${FRAME_SAMPLER}(${burst}, 60, 800)`)) as {
+          ms: number[];
+          stages: Record<string, number[]>;
+        };
+        if (errors.length > 0) throw new Error(`TN_UNREAL_LOOK_PAGE_ERROR: ${errors.join(" | ")}`);
+        bursts.push({ gpu: gpuState(), method, round, ms: sampled.ms, stages: sampled.stages });
+      }
+    }
+    const perMethod = Object.fromEntries(
+      METHODS.map((method) => {
+        const own = bursts.filter((b) => b.method === method);
+        const ssgi = own.flatMap((b) => b.stages.SSGI ?? []);
+        return [
+          method,
+          {
+            frame: frameStats(own.flatMap((b) => b.ms)),
+            ssgi: ssgi.length === 0 ? null : frameStats(ssgi),
+            roundMeans: own.map((b) => Number(mean(b.ms).toFixed(3))),
+          },
+        ];
+      }),
+    );
+    const paired = Object.fromEntries(
+      METHODS.filter((method) => method !== "none").map((method) => {
+        const deltas = Array.from({ length: rounds }, (_, round) => {
+          const at = (m: string) => bursts.find((b) => b.round === round && b.method === m);
+          return mean(at(method)?.ms ?? []) - mean(at("none")?.ms ?? []);
+        });
+        return [
+          method,
+          {
+            meanMs: Number(mean(deltas).toFixed(3)),
+            sdMs: Number(spread(deltas).toFixed(3)),
+            rounds: deltas.map((d) => Number(d.toFixed(3))),
+          },
+        ];
+      }),
+    );
+    return {
+      adapter,
+      bursts: bursts.map(({ method, round, gpu, ms }) => ({
+        method,
+        round,
+        gpu,
+        mean: Number(mean(ms).toFixed(3)),
+      })),
+      paired,
+      perMethod,
+      rounds,
+      burst,
+      urlExtra,
+    };
+  } finally {
+    await page.close();
+  }
+}
+
 /** Every tier's frame mean minus the `low` tier's, which draws no GI: what the tier's GI costs when no pass is named. */
 function addDeltas(report: Record<string, Record<string, unknown>>): void {
   const base = (report.low?.frame as { mean: number } | undefined)?.mean;
@@ -276,6 +377,21 @@ async function measureAll(
   const tiers = (flag(args, "--tiers") ?? "low,medium,high").split(",");
   const count = Number(flag(args, "--windows") ?? 3);
   const urlExtra = flag(args, "--url-extra") ?? "";
+  if (args.includes("--interleave")) {
+    const rounds = Number(flag(args, "--rounds") ?? 5);
+    const burst = Number(flag(args, "--burst") ?? 100);
+    report.interleave = await measureInterleaved(
+      browser,
+      origin,
+      name,
+      pose,
+      rounds,
+      burst,
+      urlExtra,
+    );
+    console.info(`TN_GI_INTERLEAVE ${JSON.stringify(report.interleave)}`);
+    return report;
+  }
   if (args.includes("--auto")) {
     for (const tier of tiers) {
       report[`auto-${tier}`] = await watchSteps(browser, origin, name, tier, pose, count, urlExtra);
