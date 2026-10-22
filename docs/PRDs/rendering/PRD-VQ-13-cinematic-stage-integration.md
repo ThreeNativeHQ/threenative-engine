@@ -13,6 +13,8 @@ prd_contract: v1
 
 Current upstream supplies [DepthOfFieldNode](https://threejs.org/docs/pages/DepthOfFieldNode.html); the repository already lists motion-blur/temporal stage names and velocity infrastructure. The missing work is coherent generated-source integration and qualification, not implementing blur mathematics from scratch.
 
+**Unreal reference (UE 5.8.3, added 2026-10-21 from the [feature map](../Unreal/research/unreal-visuals-and-performance-feature-map.md)):** a fresh project ships depth of field off: the focal distance defaults to 0 (`Engine/Source/Runtime/Engine/Private/Scene.cpp:606`). The lens defaults are f-stop 4, minimum f-stop 1.2 and a 24.576 mm (APS-C) sensor width (`Scene.cpp:607-612`). `r.DepthOfFieldQuality` is 0, 1, 2, 2 and 4 from Low to Cinematic (`Engine/Config/BaseScalability.ini:571, 593, 628, 665, 705`). Unreal sizes the blur from this physical lens model, splits near and far layers, and picks gather or scatter bokeh by tier. Motion blur defaults now belong to `PRD-636` on the Unreal look epic; this PRD keeps only the history reset and exclusion rules for it.
+
 **Outcome:** A cinematic route changes focus between a near and far target and applies motion blur to actual moving world geometry without smearing a camera cut, the HUD or an explicitly excluded first-person viewmodel.
 
 ## Design and ownership
@@ -35,6 +37,7 @@ All proof paths below are **planned implementation targets**, not existing passi
 ### Phase 1 — Reuse the existing stage seams
 
 - [ ] Add generated-source factories for installed DOF and motion-blur nodes with documented controls and no duplicate scene pass. proof: `pnpm exec vitest run packages/create-threenative/__tests__/vq-cinematic-stage-integration.spec.ts`.
+- [ ] Map the Unreal lens controls (f-stop, focal length, sensor width) and the per-tier DOF quality onto the generated-source controls, or record under `## Decisions` why world-unit focus stays. proof: `pnpm exec vitest run packages/create-threenative/__tests__/vq-cinematic-stage-integration.spec.ts`.
 - [ ] Validate depth, velocity, stage order and unsupported-camera/material conditions before installation. proof: `pnpm exec vitest run packages/create-threenative/__tests__/vq-cinematic-stage-integration.spec.ts`.
 
 ### Phase 2 — Make transitions and exclusions correct
