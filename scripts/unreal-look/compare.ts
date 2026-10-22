@@ -6,6 +6,7 @@ import { PNG } from "pngjs";
 import { curveShape, exposureCurve } from "./exposureCurve.js";
 import { compareGi } from "./gi.js";
 import { linearLuminance, pairedPenumbra } from "./penumbra.js";
+import { runSameness } from "./sameness.js";
 // Three.js belongs to core's dependency graph; root scripts do not install a second copy.
 const coreRequire = createRequire(new URL("../../packages/core/package.json", import.meta.url));
 const { FloatType } = await import(pathToFileURL(coreRequire.resolve("three")).href);
@@ -160,16 +161,22 @@ export function masks(image: IImage, colors: Record<string, readonly number[]>):
   const regions: Record<string, Mask> = {};
   for (const name of ["Sky", ...Object.keys(colors)])
     regions[name] = new Uint8Array(image.width * image.height);
+  // An ID frame holds a few dozen distinct colours: classify each 8-bit colour once.
+  const seen = new Map<number, string | null>();
+  const bytes = image.data instanceof Uint8Array;
   for (let i = 0; i < image.width * image.height; i++) {
     const offset = i * image.channels;
-    const name = classify(
-      [
-        required(image.data[offset]),
-        required(image.data[offset + 1]),
-        required(image.data[offset + 2]),
-      ],
-      colors,
-    );
+    const rgb = [
+      required(image.data[offset]),
+      required(image.data[offset + 1]),
+      required(image.data[offset + 2]),
+    ];
+    const key = ((rgb[0] ?? 0) * 256 + (rgb[1] ?? 0)) * 256 + (rgb[2] ?? 0);
+    let name = bytes ? seen.get(key) : undefined;
+    if (name === undefined) {
+      name = classify(rgb, colors);
+      if (bytes) seen.set(key, name);
+    }
     if (name !== null) required(regions[name])[i] = 1;
   }
   return { width: image.width, height: image.height, regions };
@@ -259,7 +266,7 @@ export function iou(a: Mask, b: Mask): number {
 }
 /** Pixels that carry a region in this frame; a multisampled edge pixel belongs to none. */
 const knownCache = new WeakMap<IMasks, Mask>();
-function known(m: IMasks): Mask {
+export function known(m: IMasks): Mask {
   let cached = knownCache.get(m);
   if (!cached) {
     cached = new Uint8Array(m.width * m.height);
@@ -1065,6 +1072,10 @@ export function parseArgs(args: string[]): IOptions {
   return options;
 }
 export function main(args = process.argv.slice(2)): void {
+  if (args.includes("--sameness")) {
+    process.exitCode = runSameness(args);
+    return;
+  }
   if (args.includes("--scene")) {
     process.exitCode = compareGi(args);
     return;
