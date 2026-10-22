@@ -786,6 +786,9 @@ describe("capability manifest generator", () => {
         ids: ["request.vehicle-rescue-respawn"],
         owners: ["VehicleBody3D"],
       },
+      "lumen surface cache": { ids: ["request.lumen-surface-cache"], owners: ["SurfaceCache"] },
+      "lumen scene": { ids: ["request.lumen-scene"], owners: ["SurfaceCache"] },
+      "mesh cards": { ids: ["request.mesh-cards"], owners: ["SurfaceCache"] },
     } as const;
 
     expect([...new Set(aliases)].sort()).toEqual(Object.keys(predecessorRows).sort());

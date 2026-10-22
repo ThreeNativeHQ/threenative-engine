@@ -4,11 +4,15 @@
  *   pnpm unreal-look:capture --engine unreal --scene gi | gi:cornell[,gi:<name>...]
  *     --check-cvars          first resolve every variant console variable in the editor
  *     --variants L7-Epic,ID  limit the variants (default: every variant in gi/scenes.json)
- *     --warm-up 90,180       render warm-up frames per run (default 90)
+ *     --warm-up 180,360      render warm-up frames per run (default 180: sunlit-room is still 1% dark at 90)
  *     --runs 2               repeat each run; run 2 lands in "<variant>#2" (the noise floor)
  *     --rebuild              author and export the scene again even if its level exists
  *   pnpm unreal-look:compare --scene gi:cornell --unreal-vs-unreal [--write-stats]
  *   pnpm unreal-look:compare --scene gi:cornell --layer L1[,L7]   ThreeNative against Unreal, per region
+ *   pnpm unreal-look:compare --scene gi:cornell --layer L7-low,L7-medium,L7-high   each quality tier against its Unreal level (PRD-644)
+ *   pnpm unreal-look:compare --scene gi:cornell --layer L7 --unreal-level 0|1|3    one capture against another level's frame
+ *   pnpm unreal-look:compare --scene shadow:penumbra-lab --layer L5-Low --metric penumbra   shadow edge width, TN / Unreal (PRD-652)
+ *   pnpm unreal-look:compare --scene gi:sunlit-room --layer L7 --metric blotch [--regions Wall_Left,Wall_Right]   soft blotches on a surface, TN / Unreal (PRD-641)
  *
  * PRD-649: `--scene shadow | shadow:<name>` runs the same pipeline on the shadow family, whose scenes
  * live in tools/unreal-reference/shadow/<name>/ with their own shadow/scenes.json. A `gi:` id keeps its
@@ -19,21 +23,39 @@
  * the editor log. Every check fails closed.
  */
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { rm } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
+import {
+  type IBlotchBands,
+  blotchBands,
+  blotchVerdict,
+  displayLuma,
+  isFlatRegion,
+} from "./blotch.js";
 import {
   type IImage,
   type IRow,
   type IStats,
+  type IThresholdFile,
   type IThresholds,
   compareCells,
   decode,
   iou,
+  layerThresholds,
   masks,
   measure,
+  passes,
 } from "./compare.js";
 import { contactGap, linearLuminance, pairedPenumbra } from "./penumbra.js";
+import {
+  assetRoot,
+  prepareUnrealAssets,
+  readManifest,
+  validateWildwoodScene,
+  verifyAssets,
+} from "./wildwood.js";
 
 const REPO_ROOT = path.resolve(import.meta.dirname, "../..");
 const REFERENCE = path.join(REPO_ROOT, "tools/unreal-reference");
@@ -51,6 +73,8 @@ type Vec3 = [number, number, number];
 export interface ISceneMaterial {
   name: string;
   baseColor: Vec3;
+  /** The albedo texture the material binds (PRD-639): scene.glb carries it as `baseColorTexture`. */
+  baseColorTexture?: string;
   roughness: number;
   metallic: number;
   emissive: Vec3;
@@ -122,10 +146,14 @@ interface IGltf {
     alphaMode?: string;
     alphaCutoff?: number;
     doubleSided?: boolean;
+    /** KHR_materials_emissive_strength: the glTF exporter splits an emissive above 1 into factor and strength. */
+    extensions?: { KHR_materials_emissive_strength?: { emissiveStrength?: number } };
   }[];
 }
 interface IVariant {
   name: string;
+  /** The scenes that capture this variant by default; every scene when absent (wildwood's L6 to L8, PRD-651). */
+  only?: string[];
   layer: string;
   level?: string;
   cvars: Record<string, number>;
@@ -135,7 +163,8 @@ interface IVariant {
 export interface IRegistry {
   resolution: [number, number];
   /** `scene`: a scene of another family this entry reuses, authored once (`gi:foliage`). */
-  scenes: { name: string; owner: string; poses: string[]; scene?: string }[];
+  /** `manifest`: the scene places real assets from this manifest.json instead of exporting a scene.glb (PRD-651). */
+  scenes: { name: string; owner: string; poses: string[]; scene?: string; manifest?: string }[];
   variants: IVariant[];
 }
 interface ILayer {
@@ -179,6 +208,14 @@ export function registry(family = "gi"): IRegistry {
   return reg;
 }
 
+/** A variant limited to scenes (`only`) names scenes the registry has. */
+function checkVariantScenes(reg: IRegistry): void {
+  for (const variant of reg.variants)
+    for (const name of variant.only ?? [])
+      if (!reg.scenes.some((scene) => scene.name === name))
+        fail("BAD_INPUT", `variant ${variant.name} is limited to ${name}, which is not a scene`);
+}
+
 /**
  * PRD-649, fail closed: every shadow scene has the judge's criteria.md, and an L5 shadow cell renders
  * with GI and AO off, so neither can hide or add a shadow.
@@ -191,6 +228,7 @@ export function validateShadowRegistry(
   for (const scene of reg.scenes)
     if (!existsSync(path.join(dir, scene.name, "criteria.md")))
       fail("BAD_INPUT", `shadow scene ${scene.name} has no criteria.md`);
+  checkVariantScenes(reg);
   for (const variant of reg.variants.filter((v) => v.layer === "L5")) {
     const layer = layers.find((l) => l.name === "L5") ?? fail("BAD_INPUT", "layers.json has no L5");
     const cvars = { ...layer.cvars, ...variant.cvars };
@@ -326,14 +364,33 @@ export function validateSceneExport(scene: ISceneJson, gltf: IGltf): void {
     // glTF defaults (2.0 spec, section 5.19) for factors the exporter leaves out.
     const pbr = material.pbrMetallicRoughness ?? {};
     const want = actor.material;
+    // The albedo texture is checked both ways: a texture one file names and the other lacks is a different scene.
+    // scene.json names it as `baseColorTexture` (PRD-639) or, on a masked material, as `texture` (PRD-651); the
+    // masked-state check below holds a masked material to its texture.
+    if (want.baseColorTexture !== undefined && pbr.baseColorTexture === undefined)
+      fail(
+        "SCENE_EXPORT",
+        `${actor.name}: scene.json names the texture ${want.baseColorTexture}, scene.glb has none`,
+      );
+    if (
+      want.baseColorTexture === undefined &&
+      want.texture === undefined &&
+      pbr.baseColorTexture !== undefined
+    )
+      fail(
+        "SCENE_EXPORT",
+        `${actor.name}: scene.glb textures the material, scene.json does not name a texture`,
+      );
     if (
       !near((pbr.baseColorFactor ?? [1, 1, 1, 1]).slice(0, 3), want.baseColor, 1e-3) ||
       Math.abs((pbr.roughnessFactor ?? 1) - want.roughness) > 1e-3 ||
       Math.abs((pbr.metallicFactor ?? 1) - want.metallic) > 1e-3 ||
       !near(
-        material.emissiveFactor ?? [0, 0, 0],
+        (material.emissiveFactor ?? [0, 0, 0]).map(
+          (c) => c * (material.extensions?.KHR_materials_emissive_strength?.emissiveStrength ?? 1),
+        ),
         want.emissive.map((c) => c * want.emissiveStrength),
-        1e-3,
+        1e-3 * Math.max(1, want.emissiveStrength),
       )
     )
       fail(
@@ -387,14 +444,37 @@ export function validateSceneExport(scene: ISceneJson, gltf: IGltf): void {
     );
 }
 
+/**
+ * A scene that places real assets from a manifest (PRD-651 wildwood) has no scene.glb: the files are
+ * licensed Fab art that both engines read from the asset root, so none is committed.
+ */
+export function isManifestScene(name: string): boolean {
+  return existsSync(path.join(sceneDir(name), "manifest.json"));
+}
+
 export function readScene(name: string): { scene: ISceneJson; gltf: IGltf } {
   const dir = sceneDir(name);
-  for (const file of ["scene.json", "scene.glb"])
+  const manifest = isManifestScene(name);
+  for (const file of manifest ? ["scene.json"] : ["scene.json", "scene.glb"])
     if (!existsSync(path.join(dir, file))) fail("SCENE_EXPORT", `${name}: ${file} was not written`);
   return {
     scene: JSON.parse(readFileSync(path.join(dir, "scene.json"), "utf8")) as ISceneJson,
-    gltf: readGlbJson(readFileSync(path.join(dir, "scene.glb"))),
+    gltf: manifest ? {} : readGlbJson(readFileSync(path.join(dir, "scene.glb"))),
   };
+}
+
+/** The exported scene against what it was authored from: scene.glb for a modelled scene, the manifest and files for wildwood. */
+function validateScene(name: string, scene: ISceneJson, gltf: IGltf): void {
+  if (!isManifestScene(name)) {
+    validateSceneExport(scene, gltf);
+    return;
+  }
+  const manifest = readManifest(sceneDir(name));
+  validateWildwoodScene(
+    scene as unknown as Parameters<typeof validateWildwoodScene>[0],
+    manifest,
+    verifyAssets(manifest, assetRoot()),
+  );
 }
 
 /**
@@ -420,11 +500,47 @@ function flag(args: readonly string[], name: string): string | undefined {
   return index === -1 ? undefined : args[index + 1];
 }
 
+/** Warm-up frames of the reference capture: Lumen has converged by here (180 against 360 and 720 sit inside the noise floor). */
+export const REFERENCE_WARM_UP = 180;
+
 export function folderName(variant: string, warmUp: number, run: number): string {
-  return `${variant}${warmUp === 90 ? "" : `@${warmUp}`}${run === 1 ? "" : `#${run}`}`;
+  return `${variant}${warmUp === REFERENCE_WARM_UP ? "" : `@${warmUp}`}${run === 1 ? "" : `#${run}`}`;
 }
 
 type RunUnreal = (mode: string, out: string, env?: Record<string, string>) => Promise<number>;
+
+/** Builds one scene's Unreal levels and writes its scene.json; the editor's exit code. */
+async function buildScene(
+  name: string,
+  content: string,
+  out: string,
+  runUnreal: RunUnreal,
+): Promise<number> {
+  // A scene of real assets is verified and decoded for Unreal's importer before anything is removed (PRD-651).
+  const assets = isManifestScene(name)
+    ? await prepareUnrealAssets(
+        sceneDir(name),
+        process.env.TN_UNREAL_LOOK_WORK ??
+          path.join(os.homedir(), ".cache/threenative/unreal-look"),
+      )
+    : {};
+  await rm(content, { recursive: true, force: true });
+  const code = await runUnreal("build", out, { TN_UE_SCENE: name, ...assets });
+  if (code !== 0) return code;
+  // A build whose Python failed exits 0 and leaves its Content: remove it, or the next run skips it.
+  if (!existsSync(path.join(sceneDir(name), "scene.json"))) {
+    await rm(content, { recursive: true, force: true });
+    fail("SCENE_EXPORT", `${name}: the build wrote no scene.json (see the editor log)`);
+  }
+  // The exported scene.json is committed: give it the repo's JSON format.
+  // Relative: Biome skips an absolute path that runs through a .claude/ worktree.
+  const file = path.relative(REPO_ROOT, path.join(sceneDir(name), "scene.json"));
+  spawnSync("pnpm", ["exec", "biome", "format", "--write", file], {
+    cwd: REPO_ROOT,
+    stdio: "ignore",
+  });
+  return 0;
+}
 
 export async function captureGi(args: readonly string[], runUnreal: RunUnreal): Promise<number> {
   const value = flag(args, "--scene") ?? "gi";
@@ -435,16 +551,24 @@ export async function captureGi(args: readonly string[], runUnreal: RunUnreal): 
     reg.scenes.map((s) => s.name),
   );
   const only = flag(args, "--variants")?.split(",");
-  const variants = reg.variants.filter((v) => !only || only.includes(v.name));
-  if (only && variants.length !== only.length) fail("BAD_INPUT", `unknown variant in ${only}`);
-  const warmUps = (flag(args, "--warm-up") ?? "90").split(",").map(Number);
+  const variantsOf = (scene: string) =>
+    reg.variants.filter((v) =>
+      only ? only.includes(v.name) : !v.only || v.only.includes(scene.replace(/^.*:/, "")),
+    );
+  if (only && reg.variants.filter((v) => only.includes(v.name)).length !== only.length)
+    fail("BAD_INPUT", `unknown variant in ${only}`);
+  const warmUps = (flag(args, "--warm-up") ?? String(REFERENCE_WARM_UP)).split(",").map(Number);
   if (!warmUps.every((w) => Number.isInteger(w) && w > 0)) fail("BAD_INPUT", "--warm-up");
   const runs = Number(flag(args, "--runs") ?? 1);
   const out = path.resolve(flag(args, "--out") ?? path.join(REFERENCE, "captures", "unreal"));
 
   if (args.includes("--check-cvars")) {
     const extra = [
-      ...new Set(variants.flatMap((v) => [...Object.keys(v.cvars), ...Object.keys(v.expect)])),
+      ...new Set(
+        scenes
+          .flatMap(variantsOf)
+          .flatMap((v) => [...Object.keys(v.cvars), ...Object.keys(v.expect)]),
+      ),
     ];
     if ((await runUnreal("check-cvars", out, { TN_UE_EXTRA_CVARS: extra.join(",") })) !== 0)
       return 1;
@@ -457,26 +581,12 @@ export async function captureGi(args: readonly string[], runUnreal: RunUnreal): 
       family === "gi" ? "GI" : "Shadow",
       sceneKey(name).replace(/^shadow\//, ""),
     );
-    if (args.includes("--rebuild") || !existsSync(content)) {
-      await rm(content, { recursive: true, force: true });
-      if ((await runUnreal("build", out, { TN_UE_SCENE: name })) !== 0) return 1;
-      // A build whose Python failed exits 0 and leaves its Content: remove it, or the next run skips it.
-      if (!existsSync(path.join(sceneDir(name), "scene.json"))) {
-        await rm(content, { recursive: true, force: true });
-        fail("SCENE_EXPORT", `${name}: the build wrote no scene.json (see the editor log)`);
-      }
-      // The exported scene.json is committed: give it the repo's JSON format.
-      // Relative: Biome skips an absolute path that runs through a .claude/ worktree.
-      const file = path.relative(REPO_ROOT, path.join(sceneDir(name), "scene.json"));
-      spawnSync("pnpm", ["exec", "biome", "format", "--write", file], {
-        cwd: REPO_ROOT,
-        stdio: "ignore",
-      });
-    }
+    if (args.includes("--rebuild") || !existsSync(content))
+      if ((await buildScene(name, content, out, runUnreal)) !== 0) return 1;
     const { scene, gltf } = readScene(name);
-    validateSceneExport(scene, gltf);
-    for (const variant of variants)
-      for (const warmUp of variant.name === "ID" ? [90] : warmUps)
+    validateScene(name, scene, gltf);
+    for (const variant of variantsOf(name))
+      for (const warmUp of variant.name === "ID" ? [REFERENCE_WARM_UP] : warmUps)
         for (let run = 1; run <= (variant.name === "ID" ? 1 : runs); run++) {
           const env = {
             TN_UE_SCENE: name,
@@ -532,54 +642,134 @@ export function relativeChange(a: IStats, b: IStats): number {
   return 2 ** Math.abs(b.ev50 - a.ev50) - 1;
 }
 
+/** The committed Unreal statistics of a scene (`--write-stats`): the stand-in for its captures when they are absent. */
+function readStatsFile(name: string): { cells: Record<string, Record<string, IStats>> } {
+  const file = path.join(sceneDir(name), "reference-stats.json");
+  if (!existsSync(file))
+    fail(
+      "MISSING_CELL",
+      `${name}: no Unreal captures and no ${file} (run capture, then compare --write-stats)`,
+    );
+  const data = JSON.parse(readFileSync(file, "utf8")) as { cells?: unknown };
+  if (!data.cells || typeof data.cells !== "object" || !Object.keys(data.cells).length)
+    fail("BAD_INPUT", `${file}: no cells`);
+  return data as { cells: Record<string, Record<string, IStats>> };
+}
+
 /** The Unreal variant each ThreeNative layer is judged against (capture-gi-threenative.ts). */
 const UNREAL_VARIANT: Readonly<Record<string, string>> = {
   L1: "L1",
   L6: "L7-Low",
   L7: "L7-Epic",
+  // A quality tier names the Unreal level it follows (scaffold/render/quality.ts, PRD-644).
+  "L7-low": "L7-Low",
+  "L7-medium": "L7-Medium",
+  "L7-high": "L7-Epic",
   L9: "L9-Epic",
 };
 
+/** `sg.GlobalIlluminationQuality` of the GI variants a calibration scene is captured at in Unreal. */
+const UNREAL_LEVEL_VARIANT: Readonly<Record<number, string>> = {
+  0: "L7-Low",
+  1: "L7-Medium",
+  3: "L7-Epic",
+};
+
+/**
+ * The Unreal variant a ThreeNative layer is judged against. `unrealLevel` (0 Low, 1 Medium, 3 Epic)
+ * overrides the layer's own pair, to hold one capture against another level's frame.
+ */
+export function unrealVariant(layer: string, unrealLevel?: number): string {
+  if (unrealLevel !== undefined)
+    return UNREAL_LEVEL_VARIANT[unrealLevel] ?? fail("BAD_INPUT", `unreal level ${unrealLevel}`);
+  return UNREAL_VARIANT[layer] ?? fail("BAD_INPUT", `GI layer ${layer}`);
+}
+
+/** tools/unreal-reference/thresholds.json (PRD-631), or null when the file is absent. */
+export function readThresholds(): IThresholdFile | null {
+  const file = path.join(REFERENCE, "thresholds.json");
+  return existsSync(file) ? (JSON.parse(readFileSync(file, "utf8")) as IThresholdFile) : null;
+}
+
+/**
+ * A row's verdict: it passes only when its layer sets a limit on the light (deltaE and dP50) and every limit holds.
+ * A row with no such limit fails, it does not report: a layer missing from the file, or a file with only the edge limit,
+ * would otherwise let any frame through.
+ */
+function verdict(row: IRow, limits: IThresholds | undefined): boolean {
+  const lightLimited = limits?.deltaE !== undefined && limits.dP50 !== undefined;
+  return lightLimited && passes(row, limits) === true;
+}
+
 /**
  * ThreeNative against Unreal for one scene: region statistics of every (layer, pose), with the
- * Unreal ID frame as the mask and the IoU of the two ID frames per region. A row passes against
- * tools/unreal-reference/thresholds.json when that file exists (PRD-631); otherwise it reports.
+ * Unreal ID frame as the mask and the IoU of the two ID frames per region. A row is judged against the limits of its
+ * layer in tools/unreal-reference/thresholds.json (PRD-631, `thresholdFile`) and fails when it has none. The shadow
+ * scenes take the same path, so both families get per-layer limits.
  */
-export function compareGiToUnreal(name: string, layers: readonly string[], root: string): IRow[] {
+export function compareGiToUnreal(
+  name: string,
+  layers: readonly string[],
+  root: string,
+  unrealLevel?: number,
+  thresholdFile: IThresholdFile | null = readThresholds(),
+): IRow[] {
   const { scene } = readScene(name);
-  const thresholdFile = path.join(REFERENCE, "thresholds.json");
-  const thresholds = existsSync(thresholdFile)
-    ? (JSON.parse(readFileSync(thresholdFile, "utf8")) as IThresholds)
-    : undefined;
   const unreal = path.join(root, "unreal", sceneKey(name));
   const tn = path.join(root, "threenative", sceneKey(name));
+  // Without Unreal captures the committed statistics and ID frames stand in for them (PRD-638 AC-2).
+  const offline = !existsSync(unreal);
+  const cached = offline ? readStatsFile(name) : undefined;
   const rows: IRow[] = [];
   for (const layer of layers) {
     // A shadow scene names its Unreal variants after their layers (shadow/scenes.json).
-    const variant = name.startsWith("shadow:")
-      ? layer
-      : (UNREAL_VARIANT[layer] ?? fail("BAD_INPUT", `GI layer ${layer}`));
+    const variant = name.startsWith("shadow:") ? layer : unrealVariant(layer, unrealLevel);
+    // A quality tier (`L7-high`, `L5-Low`) is judged by the limits of its ladder layer.
+    const [ladder = layer] = layer.split("-");
+    const limits = layerThresholds(thresholdFile, ladder);
     for (const pose of scene.poses) {
-      const reference = masks(image(path.join(unreal, "ID", `${pose.name}.png`)), scene.regions);
       const own = masks(image(path.join(tn, "ID", `${pose.name}.png`)), scene.regions);
+      const reference = masks(
+        image(
+          offline
+            ? path.join(sceneDir(name), "id", `${pose.name}.png`)
+            : path.join(unreal, "ID", `${pose.name}.png`),
+        ),
+        scene.regions,
+      );
+      const statsCell = cached?.cells[`${variant}/${pose.name}`];
       const regions = Object.keys(reference.regions).filter(
-        (r) => r !== "Sky" && reference.regions[r]?.some(Boolean),
+        (r) =>
+          r !== "Sky" &&
+          reference.regions[r]?.some(Boolean) &&
+          (statsCell === undefined || statsCell[r] !== undefined),
       );
       const exr = path.join(unreal, variant, `${pose.name}.exr`);
       const cell = compareCells({
         layer,
         cell: `${name}/${pose.name}`,
-        unreal: image(path.join(unreal, variant, `${pose.name}.png`)),
+        ...(cached
+          ? {
+              reference:
+                cached.cells[`${variant}/${pose.name}`] ??
+                fail(
+                  "MISSING_CELL",
+                  `${name}: reference-stats.json has no ${variant}/${pose.name}`,
+                ),
+            }
+          : { unreal: image(path.join(unreal, variant, `${pose.name}.png`)) }),
         threenative: image(path.join(tn, layer, `${pose.name}.png`)),
         masks: reference,
         regions,
-        ...(existsSync(exr) ? { unrealExr: image(exr) } : {}),
-        ...(thresholds ? { thresholds } : {}),
+        ...(!offline && existsSync(exr) ? { unrealExr: image(exr) } : {}),
+        ...(limits ? { thresholds: limits } : {}),
       });
       for (const row of cell) {
         const a = reference.regions[row.region];
         const b = own.regions[row.region];
         row.iou = a && b ? iou(a, b) : 0;
+        // The edge limit needs the IoU, which is measured here, so the verdict is read again with it.
+        row.pass = verdict(row, limits);
       }
       rows.push(...cell);
     }
@@ -590,28 +780,55 @@ export function compareGiToUnreal(name: string, layers: readonly string[], root:
 /** Cells whose lamp has a source radius: the edge is tens of pixels wide, so it reads at this scale (PRD-650). */
 const WIDE_PENUMBRA: Record<string, number> = { "shadow:lamp-room/spot-soft": 2.5 };
 
-/** Floor shadow-edge width, Unreal against ThreeNative, per pose of one scene and layer (PRD-649). */
+export interface IPenumbraRow {
+  readonly layer: string;
+  readonly cell: string;
+  /** Floor rows where both frames hold a shadow edge. */
+  readonly matched: number;
+  readonly unrealPx: number;
+  readonly threenativePx: number;
+  /** ThreeNative edge width over Unreal's: PRD-634 holds it within 1.25. */
+  readonly ratio: number;
+}
+
+/**
+ * Shadow-edge width of a ThreeNative layer against its Unreal variant on the Floor region
+ * (PRD-634, PRD-649, PRD-652): the metric `--metric penumbra` prints for a calibration scene. A wide
+ * lamp edge reads at its own scale (`WIDE_PENUMBRA`). A cell with no edge in both frames has no row.
+ */
 export function penumbraRows(
   name: string,
-  layer: string,
+  layers: readonly string[],
   root: string,
-): { cell: string; matched: number; unreal: number; other: number; ratio: number }[] {
+  unrealLevel?: number,
+): IPenumbraRow[] {
   const { scene } = readScene(name);
   const unreal = path.join(root, "unreal", sceneKey(name));
   const tn = path.join(root, "threenative", sceneKey(name));
-  const variant = name.startsWith("shadow:") ? layer : (UNREAL_VARIANT[layer] ?? layer);
-  const rows = [];
-  for (const pose of scene.poses) {
-    const floor = masks(image(path.join(unreal, "ID", `${pose.name}.png`)), scene.regions).regions
-      .Floor;
-    if (!floor) fail("EMPTY_MASK", `${name}: the scene has no Floor region`);
-    const m = pairedPenumbra(
-      image(path.join(unreal, variant, `${pose.name}.png`)),
-      image(path.join(tn, layer, `${pose.name}.png`)),
-      floor,
-      WIDE_PENUMBRA[`${name}/${pose.name}`],
-    );
-    if (m) rows.push({ cell: `${name}/${pose.name}`, ...m });
+  const rows: IPenumbraRow[] = [];
+  for (const layer of layers) {
+    const variant = name.startsWith("shadow:") ? layer : unrealVariant(layer, unrealLevel);
+    for (const pose of scene.poses) {
+      const floor = masks(image(path.join(unreal, "ID", `${pose.name}.png`)), scene.regions).regions
+        .Floor;
+      if (floor === undefined) fail("BAD_INPUT", `${name} has no Floor region`);
+      const frames = [path.join(unreal, variant), path.join(tn, layer)].map((folder) =>
+        image(path.join(folder, `${pose.name}.png`)),
+      );
+      const [a, b] = frames as [IImage, IImage];
+      if (a.width !== b.width || a.height !== b.height)
+        fail("SIZE_MISMATCH", `${name}/${pose.name}: ${layer} and ${variant} differ in size`);
+      const m = pairedPenumbra(a, b, floor, WIDE_PENUMBRA[`${name}/${pose.name}`]);
+      if (m)
+        rows.push({
+          layer,
+          cell: `${name}/${pose.name}`,
+          matched: m.matched,
+          unrealPx: m.unreal,
+          threenativePx: m.other,
+          ratio: m.ratio,
+        });
+    }
   }
   return rows;
 }
@@ -657,6 +874,108 @@ export function contactRows(
   return rows;
 }
 
+export interface IBlotchRow {
+  layer: string;
+  cell: string;
+  region: string;
+  unreal: IBlotchBands;
+  threenative: IBlotchBands;
+  /** ThreeNative blotch over Unreal's. */
+  ratio: number;
+  pass: boolean;
+}
+
+/**
+ * Soft blotches of every region of a ThreeNative layer against its Unreal variant (PRD-641): the metric
+ * `--metric blotch` prints. Both arms read the same pixels, the region of the Unreal ID frame, so the
+ * ratio is the comparison. The regions are `only`, or the walls and ceilings (`isFlatRegion`). A region
+ * too small to measure in either arm has no row.
+ */
+export function blotchRows(
+  name: string,
+  layers: readonly string[],
+  root: string,
+  unrealLevel?: number,
+  only?: readonly string[],
+): IBlotchRow[] {
+  const { scene } = readScene(name);
+  const unreal = path.join(root, "unreal", sceneKey(name));
+  const tn = path.join(root, "threenative", sceneKey(name));
+  const rows: IBlotchRow[] = [];
+  for (const layer of layers)
+    for (const pose of scene.poses) {
+      const id = masks(image(path.join(unreal, "ID", `${pose.name}.png`)), scene.regions);
+      const [a, b] = [
+        path.join(unreal, unrealVariant(layer, unrealLevel)),
+        path.join(tn, layer),
+      ].map((folder) => image(path.join(folder, `${pose.name}.png`))) as [IImage, IImage];
+      if (a.width !== b.width || a.height !== b.height)
+        fail(
+          "SIZE_MISMATCH",
+          `${name}/${pose.name}: ${layer} and its Unreal variant differ in size`,
+        );
+      const [lumaA, lumaB] = [displayLuma(a), displayLuma(b)];
+      for (const [region, mask] of Object.entries(id.regions)) {
+        if (only === undefined ? !isFlatRegion(region) : !only.includes(region)) continue;
+        const u = blotchBands(lumaA, a.width, a.height, mask);
+        const t = blotchBands(lumaB, b.width, b.height, mask);
+        if (u && t)
+          rows.push({
+            layer,
+            cell: `${name}/${pose.name}`,
+            region,
+            unreal: u,
+            threenative: t,
+            ...blotchVerdict(t, u),
+          });
+      }
+    }
+  return rows;
+}
+
+/** Prints the `--metric blotch` table and returns 1 when any region is blotchier than PRD-641 allows, or none was measured. */
+function printBlotch(
+  names: readonly string[],
+  layers: readonly string[],
+  root: string,
+  unrealLevel: number | undefined,
+  only: readonly string[] | undefined,
+): number {
+  const pct = (v: number) => `${(v * 100).toFixed(2)}%`;
+  const rows = names.flatMap((name) => blotchRows(name, layers, root, unrealLevel, only));
+  console.log(
+    `| layer | cell | region | Unreal blotch | TN blotch | TN / Unreal | Unreal grain | TN grain | verdict |\n|---|---|---|---:|---:|---:|---:|---:|---|\n${rows
+      .map(
+        (r) =>
+          `| ${r.layer} | ${r.cell} | ${r.region} | ${pct(r.unreal.blotch)} | ${pct(r.threenative.blotch)} | ${r.ratio.toFixed(2)} | ${pct(r.unreal.grain)} | ${pct(r.threenative.grain)} | ${r.pass ? "PASS" : "FAIL"} |`,
+      )
+      .join("\n")}`,
+  );
+  if (rows.length === 0)
+    fail("BAD_INPUT", "no region is large enough to measure: an empty set proves nothing");
+  return rows.some((r) => !r.pass) ? 1 : 0;
+}
+
+/** Prints the `--metric penumbra` table and returns 1 when any edge is wider than PRD-634 allows. */
+function printPenumbra(
+  names: readonly string[],
+  layers: readonly string[],
+  root: string,
+  unrealLevel: number | undefined,
+): number {
+  const f2 = (v: number) => v.toFixed(2);
+  const rows = names.flatMap((name) => penumbraRows(name, layers, root, unrealLevel));
+  console.log(
+    `| layer | cell | edges | Unreal px | TN px | TN / Unreal |\n|---|---|---:|---:|---:|---:|\n${rows
+      .map(
+        (r) =>
+          `| ${r.layer} | ${r.cell} | ${r.matched} | ${f2(r.unrealPx)} | ${f2(r.threenativePx)} | ${f2(r.ratio)} |`,
+      )
+      .join("\n")}`,
+  );
+  return rows.some((r) => r.ratio > 1.25) ? 1 : 0;
+}
+
 export function compareGi(args: readonly string[]): number {
   const layerFlag = flag(args, "--layer");
   if (layerFlag !== undefined) {
@@ -666,6 +985,8 @@ export function compareGi(args: readonly string[]): number {
       value,
       registry(familyOf(value)).scenes.map((s) => s.name),
     );
+    const levelFlag = flag(args, "--unreal-level");
+    const unrealLevel = levelFlag === undefined ? undefined : Number(levelFlag);
     if (flag(args, "--metric") === "contact") {
       console.log("| cell | box | UE gap rows | TN gap rows |\n|---|---|---:|---:|");
       for (const name of names)
@@ -676,20 +997,19 @@ export function compareGi(args: readonly string[]): number {
             );
       return 0;
     }
-    if (flag(args, "--metric") === "penumbra") {
-      const show = (v: number) => Number(v.toPrecision(4));
-      console.log(
-        "| cell | matched edge rows | UE width px | TN width px | TN / UE |\n|---|---:|---:|---:|---:|",
+    if (flag(args, "--metric") === "penumbra")
+      return printPenumbra(names, layerFlag.split(","), root, unrealLevel);
+    if (flag(args, "--metric") === "blotch")
+      return printBlotch(
+        names,
+        layerFlag.split(","),
+        root,
+        unrealLevel,
+        flag(args, "--regions")?.split(","),
       );
-      for (const name of names)
-        for (const layer of layerFlag.split(","))
-          for (const r of penumbraRows(name, layer, root))
-            console.log(
-              `| ${r.cell} ${layer} | ${r.matched} | ${show(r.unreal)} | ${show(r.other)} | ${show(r.ratio)} |`,
-            );
-      return 0;
-    }
-    const rows = names.flatMap((name) => compareGiToUnreal(name, layerFlag.split(","), root));
+    const rows = names.flatMap((name) =>
+      compareGiToUnreal(name, layerFlag.split(","), root, unrealLevel),
+    );
     const f = (v: number | null, d = 3) => (v === null ? "—" : v.toFixed(d));
     console.log(
       `| layer | cell | region | Unreal p50 | TN p50 | dP50 | ΔE2000 | ID IoU | verdict |\n|---|---|---|---:|---:|---:|---:|---:|---|\n${rows
@@ -726,16 +1046,17 @@ export function compareGi(args: readonly string[]): number {
           );
       }
       if (!args.includes("--unreal-vs-unreal")) continue;
-      // Convergence: 90 against 180 warm-up frames. Noise floor: two runs at 180.
-      const at90 = regionStats(path.join(base, "L7-Epic"), pose.name, regionMasks);
-      const at180 = regionStats(path.join(base, "L7-Epic@180"), pose.name, regionMasks);
-      const again = existsSync(path.join(base, "L7-Epic@180#2"))
-        ? regionStats(path.join(base, "L7-Epic@180#2"), pose.name, regionMasks)
+      // Convergence: the reference warm-up against twice as many frames. Noise floor: two runs at the reference warm-up.
+      const longer = REFERENCE_WARM_UP * 2;
+      const atReference = regionStats(path.join(base, "L7-Epic"), pose.name, regionMasks);
+      const atLonger = regionStats(path.join(base, `L7-Epic@${longer}`), pose.name, regionMasks);
+      const again = existsSync(path.join(base, "L7-Epic#2"))
+        ? regionStats(path.join(base, "L7-Epic#2"), pose.name, regionMasks)
         : undefined;
-      for (const [region, a] of Object.entries(at90)) {
-        const b = at180[region] ?? fail("EMPTY_MASK", `${region} missing at 180 frames`);
+      for (const [region, a] of Object.entries(atReference)) {
+        const b = atLonger[region] ?? fail("EMPTY_MASK", `${region} missing at ${longer} frames`);
         const change = relativeChange(a, b);
-        const noise = again?.[region] ? relativeChange(b, again[region]) : null;
+        const noise = again?.[region] ? relativeChange(a, again[region]) : null;
         if (noise !== null) noiseFloor = Math.max(noiseFloor, noise);
         const pass = change < CONVERGENCE;
         failed ||= !pass;
@@ -746,11 +1067,18 @@ export function compareGi(args: readonly string[]): number {
     }
     if (rows.length) {
       console.log(
-        `\n### ${name}: Lumen convergence, L7 Epic, 90 vs 180 warm-up frames (limit ${CONVERGENCE * 100}%)\n\n| scene | pose | region | EV50 @90 | EV50 @180 | change | run-to-run @180 | verdict |\n|---|---|---|---:|---:|---:|---:|---|\n${rows.join("\n")}\n\nnoise floor (largest run-to-run change at 180 frames): ${(noiseFloor * 100).toFixed(2)}%`,
+        `\n### ${name}: Lumen convergence, L7 Epic, ${REFERENCE_WARM_UP} vs ${REFERENCE_WARM_UP * 2} warm-up frames (limit ${CONVERGENCE * 100}%)\n\n| scene | pose | region | EV50 @${REFERENCE_WARM_UP} | EV50 @${REFERENCE_WARM_UP * 2} | change | run-to-run @${REFERENCE_WARM_UP} | verdict |\n|---|---|---|---:|---:|---:|---:|---|\n${rows.join("\n")}\n\nnoise floor (largest run-to-run change at ${REFERENCE_WARM_UP} frames): ${(noiseFloor * 100).toFixed(2)}%`,
       );
     }
     if (args.includes("--write-stats")) {
       if (!Object.keys(stats).length) fail("MISSING_CELL", `${name}: no captured variant`);
+      // The ID frames are the region masks: a few kilobytes each, and what makes the offline compare exact.
+      mkdirSync(path.join(sceneDir(name), "id"), { recursive: true });
+      for (const pose of scene.poses)
+        copyFileSync(
+          path.join(base, "ID", `${pose.name}.png`),
+          path.join(sceneDir(name), "id", `${pose.name}.png`),
+        );
       writeFileSync(
         path.join(sceneDir(name), "reference-stats.json"),
         `${JSON.stringify({ generatedAt: new Date().toISOString(), scene: name, resolution: scene.resolution, cells: stats }, null, 2)}\n`,

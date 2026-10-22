@@ -8,7 +8,7 @@ prd_contract: v1
 **Priority:** P1 — no box is ticked: no scene authored in Unreal isolates colour bleed, interior sky light, leaks, emissive light or a moving light, so no GI change can be judged against Unreal. Every PRD in this folder is judged on these scenes.
 **Complexity:** 7 (HIGH) — 1–5 files in the PRD-631 harness plus one scene folder per scene (+1), new system: a scene authoring and export pipeline inside Unreal (+2), new state: Level Sequences for motion runs (+2), external tool: the headless Unreal editor and its glTF exporter (+2); risk override: none
 **Owner:** João
-**Depends on:** [PRD-631](../look/PRD-631-an-unreal-reference-scene-measures-the-default-look.md) Phase 1 (the headless Unreal capture). Recreation in ThreeNative is [PRD-646](PRD-646-threenative-recreates-each-unreal-calibration-scene-exactly.md), and the calibration loop that uses the frames is [PRD-647](PRD-647-a-visual-judge-calibrates-gi-against-the-unreal-scenes-until-parity.md).
+**Depends on:** [PRD-631](../look/PRD-631-an-unreal-reference-scene-measures-the-default-look.md) Phase 1 (the headless Unreal capture). Recreation in ThreeNative is [PRD-646](PRD-646-threenative-recreates-each-unreal-calibration-scene-exactly.md), and the calibration loop that uses the frames is [PRD-647](../../done/PRD-647-a-visual-judge-calibrates-gi-against-the-unreal-scenes-until-parity.md).
 
 ## Context
 
@@ -106,8 +106,8 @@ content or `.uasset` is committed, and the frames are renders of our scenes.
 
 ## Acceptance Criteria
 
-- [ ] AC-1 [local]: From a clean checkout plus `UE_ROOT`, one command authors, exports and captures `cornell` and `sunlit-room` with no manual editor step, and reads the GI level of each cell back from the log. proof: `pnpm unreal-look:capture --engine unreal --scene gi:cornell,gi:sunlit-room --check-cvars` exit 0, cell count checked against the pose list — Evidence: pending.
-- [ ] AC-2 [local]: `reference-stats.json` holds the Unreal statistics of every registered scene, so `compare.ts` and the PRD-647 scoreboard run without Unreal. proof: `pnpm unreal-look:compare --scene gi --write-stats` — Evidence: pending.
+- [x] AC-1 [local]: From a clean checkout plus `UE_ROOT`, one command authors, exports and captures `cornell` and `sunlit-room` with no manual editor step, and reads the GI level of each cell back from the log. proof: `pnpm unreal-look:capture --engine unreal --scene gi:cornell,gi:sunlit-room --check-cvars` exit 0, cell count checked against the pose list — Evidence: 2026-10-21 exit 0, 21 console variables checked, 0 missing. Every variant logged `readback ok` with the cell count of the pose list (cornell 4 per layer, 2 for ID and L7-Epic-scene; sunlit-room 12 per layer, 6 for ID and L7-Epic-scene). The log holds `r.Lumen.ScreenProbeGather.DownsampleFactor:16` and `TracingOctahedronResolution:8` (real-time Epic), not the cinematic 8 and 16.
+- [x] AC-2 [local]: `reference-stats.json` holds the Unreal statistics of every registered scene, so `compare.ts` and the PRD-647 scoreboard run without Unreal. proof: `pnpm unreal-look:compare --scene gi --write-stats` — Evidence: 2026-10-21 on the real-time captures (`DownsampleFactor` 16, `TracingOctahedronResolution` 8): `cornell` 14 cells and `sunlit-room` 42 cells written, with each pose's ID frame in `gi/<scene>/id/`. Red: `--layer L7 --captures <dir with no unreal/>` failed `TN_UNREAL_LOOK_MISSING_CELL: .../unreal/cornell/ID/cornell.png`. Green after `compareGiToUnreal` took the committed stats and ID frames: the cornell L7 table without Unreal is byte-identical to the table with Unreal.
 - [x] AC-3 [local]: A scene whose `scene.json` and `scene.glb` disagree on an actor (missing mesh, unknown light class, a property without a unit) fails the export, naming the actor. proof: `pnpm exec vitest run scripts/__tests__/unreal-look-scene-export.spec.ts` — Evidence: 10/10 pass (2026-10-20); the live export also failed closed once on `Lamp: intensity has no unit` before the enum fix.
 
 ## Integration Ledger
@@ -127,9 +127,9 @@ content or `.uasset` is committed, and the frames are renders of our scenes.
 - [x] Lumen has converged: frames 90 and 180 of each Epic cell differ by less than the PRD-631 noise floor in every region, and the noise floor of the scene is recorded under `## Decisions`. Result 2026-10-20: 12 regions over 2 poses PASS, largest change 0.79% (Box_Tall) against the 1% limit; noise floor 0.18%. proof: `pnpm unreal-look:capture --engine unreal --scene gi:cornell --warm-up 90,180` and `pnpm unreal-look:compare --scene gi:cornell --unreal-vs-unreal`.
 
 #### Phase 2: `sunlit-room`
-**Status:** NOT STARTED
+**Status:** DONE
 **Files:** `tools/unreal-reference/gi/sunlit-room/scene.py` (new), `tools/unreal-reference/gi/scenes.json`
-- [ ] `sunlit-room` authors, exports, converges and has its noise floor recorded, as in Phase 1. proof: the Phase 1 commands with `gi:sunlit-room`.
+- [x] `sunlit-room` authors, exports, converges and has its noise floor recorded, as in Phase 1. proof: the Phase 1 commands with `gi:sunlit-room` — Result 2026-10-21: `--check-cvars` 0 missing, 6 poses, every cell `readback ok`. 90 warm-up frames do NOT converge here: 34 of 52 regions change 1% to 4% against 180, and the Epic cells read about 1% dark. The reference warm-up is therefore 180 (`REFERENCE_WARM_UP` in `scripts/unreal-look/gi.ts`). 180 against 360: 40 of 40 regions PASS, largest change 0.34% (Ceiling, sun60-leak) against the 1% limit; mean abs pixel change 180 vs 360 vs 720 is 0.2 to 0.3 levels. Noise floor 0.22%. cornell at 180 against 360: 12 of 12 PASS, largest 0.34%, noise floor 0.13%. `pnpm unreal-look:compare --scene gi --unreal-vs-unreal`.
 
 #### Phase 3: Motion runs
 **Status:** NOT STARTED
@@ -139,6 +139,13 @@ content or `.uasset` is committed, and the frames are renders of our scenes.
 
 ## Decisions
 
+- 2026-10-21 (GI lane): the Unreal reference warms up for 180 frames, not 90. The real-time re-capture
+  (`DownsampleFactor` 16, `TracingOctahedronResolution` 8 in the log) showed `sunlit-room` still 1% dark at
+  90 frames, while 180, 360 and 720 agree inside the 0.22% noise floor. Only `L7-Epic` was captured at 180 and
+  renamed to the default folder (`L7-Epic@90` keeps the old frames); the other variants keep their 90-frame
+  captures until a judge round needs them. `reference-stats.json` holds the 180-frame statistics. No GI
+  parity lock file exists: `compare.ts --write-locks` covers the L-ladder only, so locks for `gi:` cells wait for
+  a PRD-647 scoreboard that defines them.
 - 2026-10-20 (owner): calibration scenes come first in the GI sub-epic. They are created in Unreal,
   recreated in ThreeNative (PRD-646), and the visual judge calibrates against them until parity
   (PRD-647). The first plan, one Blender GLB loaded into both engines, is replaced: Unreal authors.
