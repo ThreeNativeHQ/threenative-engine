@@ -3635,7 +3635,9 @@ void lampSourceRadiusWall() {
 // centimetres behind its dark face the stored depth lies within centimetres of the receiver, so a blocker
 // there reaches almost nothing. A filter that finds no blocker in reach and calls the receiver lit leaves a
 // bright stripe in the crate's umbra (lamp-room point pose, 2026-10-21). Every floor pixel the hard filter
-// shades below 0.35 of the open floor stays below 0.75 with the soft filter.
+// shades below 0.35 of the open floor stays below 0.75 with the soft filter. The crate's bottom face lies in
+// the floor's plane, so the floor beside its far foot ties with the stored depth to the last bit: both filters
+// light a dotted line of single pixels along the foot unless the lamp stores its back faces a hair nearer.
 void lampSourceRadiusCrate() {
     mystral::webgpu::Context context;
     CHECK(context.initializeHeadless());
@@ -3699,15 +3701,37 @@ void lampSourceRadiusCrate() {
         shaded += umbra;
         leaked += umbra && soft[i] > 0.75 * open[i];
     }
-    std::printf("lamp source radius crate: %d umbra pixels, %d lit by the soft filter\n", shaded, leaked);
+    // A lit pixel whose eight neighbours are all dark: the tie's dots, never a penumbra's edge.
+    const auto isolated = [&](const std::vector<double>& image) {
+        int count = 0;
+        for (int y = 1; y < kHeight - 1; ++y)
+            for (int x = 1; x < kWidth - 1; ++x) {
+                const size_t i = size_t(y) * kWidth + x;
+                if (open[i] < 24 || image[i] <= 0.5 * open[i]) continue;
+                bool alone = true;
+                for (int dy = -1; dy <= 1 && alone; ++dy)
+                    for (int dx = -1; dx <= 1; ++dx) {
+                        const size_t j = i + size_t(dy * kWidth + dx);
+                        if ((dx != 0 || dy != 0) && image[j] >= 0.25 * std::max(open[i], open[j])) { alone = false; break; }
+                    }
+                count += alone;
+            }
+        return count;
+    };
+    const int hardDots = isolated(hard), softDots = isolated(soft);
+    std::printf("lamp source radius crate: %d umbra pixels, %d lit by the soft filter; isolated lit pixels: hard %d, soft %d\n",
+                shaded, leaked, hardDots, softDots);
     CHECK(shaded > 5000);  // the room's shadows are there
     CHECK(leaked <= 40);   // a penumbra's edge may differ by a pixel; a stripe is hundreds
+    CHECK(hardDots == 0);  // 8 before the lamp stored its back faces a hair nearer
+    CHECK(softDots == 0);  // 3 before
 }
 
 // A box standing on a floor slab under a point lamp shades the floor right behind its far foot. three's
 // shadowSide draws a front-sided caster's back faces, so there the stored depth is the box's back face
-// at the floor and the strip leaks light (cornell's tall box); the strip's darkest-to-brightest
-// shadowed-to-open ratio. material.shadowSide = FrontSide closes it without acne on the lit floor.
+// at the floor and the strip leaks light (cornell's tall box, 0.859 of the open floor); a lamp stores its
+// back faces a few depth steps nearer, which closes the strip without acne on the lit floor. The strip's
+// darkest-to-brightest shadowed-to-open ratio. material.shadowSide = FrontSide closes it as well.
 // PRD-650: a still lamp keeps its map. Over 300 still frames neither lamp draws a caster; a caster
 // moving inside a lamp's range redraws it, one moving outside its range does not, and the kept map
 // still shadows the floor as a fresh one does.
@@ -3869,7 +3893,8 @@ void contactShadowFoot() {
     const auto [frontLeak, frontKept] = strip(Side::Front, 0, 0);
     std::printf("contact foot: back faces leak %.3f, lit floor kept %.3f; shadowSide front leak %.3f, kept %.3f\n",
                 backLeak, backKept, frontLeak, frontKept);
-    CHECK(backLeak > 0.5);    // three's derived shadowSide: the far foot leaks
+    CHECK(backLeak < 0.05);   // three's derived shadowSide: the far foot stays dark (0.859 without the lamp's back-face bias)
+    CHECK(backKept > 0.95);   // and the lit floor does not shadow itself
     CHECK(frontLeak < 0.05);  // shadowSide = FrontSide, the faces Unreal draws: the foot stays dark
     CHECK(frontKept > 0.95);  // and the lit floor does not shadow itself
 }
