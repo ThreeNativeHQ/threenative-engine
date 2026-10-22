@@ -95,10 +95,12 @@ plumbing every game repeats, so it belongs in core, with the values chosen in te
 - [ ] The curve applies Unreal's blue correction (0.6) and gamut expansion (default 0, 1.0 as the named override, see Decisions 2026-10-21) before the tone curve, so a saturated blue sky stays blue instead of shifting toward purple. proof: `pnpm exec vitest run packages/create-threenative/__tests__/tonemap.spec.ts` on the JS reference, then the L1 sky region inside thresholds with `pnpm unreal-look:compare --layer L1`.
 
 #### Phase 2: The starter matches L1
-**Status:** NOT STARTED
+**Status:** PARTIAL
 **Files:** `packages/create-threenative/templates/starter/src/render/{quality,lighting,sky,worldEnvironment,exposure}.ts`
 - [ ] The starter sun is in lux and the sky is in nits, with the values taken from `template-actors.json`. proof: `pnpm unreal-look:compare --layer L1`.
 - [ ] Auto exposure runs with Unreal's metering at `high` and `medium`, and AC-2 passes. proof: `pnpm unreal-look:compare --layer L9 --metric exposure`.
+- [x] The capture harness takes an L9 frame only after the exposure landed: three measured, settled `TN_AUTO_EXPOSURE` readings after the pose, a scene with the exposure off is not waited for, and readings that never land fail the capture with `TN_UNREAL_LOOK_EXPOSURE_NOT_SETTLED`. proof: `pnpm exec vitest run scripts/__tests__/unreal-look-exposure-settled.spec.ts`. Result 2026-10-21: 8 of 8 pass; red before the module existed and before the switched-off case, green after; root `tsc` has no error in the four files.
+- [ ] Both harnesses call it and log the wait per cell, so a GI-harness L9 frame (the `gi:` scenes and the foliage cell) is no longer taken after 45 frames. proof: `pnpm unreal-look:capture --engine threenative --scene shadow:foliage --layers L9` prints `TN_UNREAL_LOOK exposure <pose> settled after <n> ms of waiting` for every cell. First GPU run pending.
 
 #### Phase 3: Default in every template, native included
 **Status:** NOT STARTED
@@ -109,6 +111,7 @@ plumbing every game repeats, so it belongs in core, with the values chosen in te
 
 ## Decisions
 
+- 2026-10-21 (look lane): the `TN_AUTO_EXPOSURE` lines with `measured:false` ("Exposure readback is invalid") on every L9 capture are the cold start of a page. The spheres harness logs show 7 to 9 of them per page, then 3 to 4 unsettled and 20 or more settled readings before the frame, and no invalid reading after a measured one. `adaptExposure` writes -1 into the luminance when the histogram kept no weight (`exposureGraph.ts`), which is the state of a page that has not drawn yet, and `ExposureReadback` reports that as invalid. The lines are true and stay. The real fault was in the GI harness (the `gi:` scenes and the foliage cell): it took an L9 frame 45 frames after the pose, never waited for the exposure (1 stop per second), and its console filter hid every valid reading. Far-floor level of one foliage scene differed 5 to 8 percent between arms. Frames from that harness taken before this change were captured before the exposure settled. Both harnesses now hold an L9 frame for three settled readings after the pose (`scripts/unreal-look/exposureSettled.ts`). The readback class is generated user source and is not touched.
 - 2026-10-21 (Track A): the harness filmic curve has no gamut expansion by default (`expandGamut` 0, 1 stays the override). Evidence: `pnpm unreal-look:curve` on Unreal's own L1 and L2 EXR cells (worst L1 deltaE 11.63 with 1, 1.66 with 0; L2 rows passing 44 of 84 with 1, 60 of 84 with 0) and a per-pixel fit of the amount over 354 samples that needs 0 wherever a pixel is not clipped. The earlier default hid a red excess of the harness atmosphere (27 percent at a 60 degree sun) that belongs to PRD-633. The fog's sky-light fit was refit without the expansion. Judge on the L9 sheets (PR #541 comment 6314982174): NEUTRAL on 8 of 8 frames for the whole bloom, fog and cloud change set, with no gain on sky or floor, so no box of this PRD is ticked by it.
 
 - 2026-10-19: Unreal's tone curve is a look, so it ships as template source. The EV100-to-multiplier
