@@ -31,4 +31,13 @@ Give two answers per cell (a pose of one arm), then one answer per arm and one o
 - Rank the arms of a pose by closeness to Unreal, and name the most noticeable difference of each pose.
 - Grain, blotches, bright or black lines, halos and leaks count even when the median matches.
 - Do not judge the sky inside the window, the clouds or the exposure of the window itself. Other lanes own them.
+- Do not judge bloom, exposure adaptation, anti-aliasing, the sharpness of shadow edges, reflections or the shape
+  of the lamp. Other layers own them.
 - Keep the report under 30 lines. Send it with SendMessage to the lane that spawned you, and hand it back.
+
+## Headless rounds
+
+`pnpm unreal-look:calibrate` runs the judge as a headless session that has the Read tool only. That judge opens
+the raw frames the prompt lists, not sheets, and answers through the answer schema, so it sends no message. The
+numeric report is the table that closes the criteria. Two runs of one arm are one capture: a difference between
+them is capture noise. When BEFORE and AFTER are the same capture, the answer against BEFORE is NEUTRAL.
