@@ -7,44 +7,91 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap">
 <style>
-/* Layout: one column. Look ladder strip, then an area-true treemap of LOC, then a ranked table. */
+/* Layout: one column. Port order (matrix + waves) drives a system drill-down; then ladder, treemap, table. */
 :root {
-  --bg: #f5f6f4; --panel: #ffffff; --fg: #1b1f1d; --muted: #5d6662; --line: #d9ddda;
+  --bg: #f5f6f4; --panel: #ffffff; --fg: #1b1f1d; --muted: #5d6662; --line: #d9ddda; --hi: #fff4d6;
   --shipped: #2f8f5b; --partial: #d18a12; --open: #2f6fc4; --deferred: #8b8f93; --notfiled: #c9ccc7;
+  --w1: #b8323a; --w2: #d9691f; --w3: #c9a10a; --w4: #3f8f6b; --w5: #5b6f8f;
   --tile-fg: #ffffff; --accent: #0f6f6a;
   --display: "Instrument Sans", system-ui, sans-serif; --mono: "JetBrains Mono", ui-monospace, monospace;
 }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
-  --bg: #121513; --panel: #1a1e1c; --fg: #e7ebe8; --muted: #9aa49f; --line: #2c322f;
+  --bg: #121513; --panel: #1a1e1c; --fg: #e7ebe8; --muted: #9aa49f; --line: #2c322f; --hi: #3a3220;
   --shipped: #3aa56c; --partial: #d9961f; --open: #4a86d6; --deferred: #6c7176; --notfiled: #3b403d;
+  --w1: #e0525a; --w2: #ef8a45; --w3: #e3bf2c; --w4: #55b38a; --w5: #8197bb;
   --tile-fg: #ffffff; --accent: #3bb3aa; color-scheme: dark } }
 :root[data-theme="dark"] {
-  --bg: #121513; --panel: #1a1e1c; --fg: #e7ebe8; --muted: #9aa49f; --line: #2c322f;
+  --bg: #121513; --panel: #1a1e1c; --fg: #e7ebe8; --muted: #9aa49f; --line: #2c322f; --hi: #3a3220;
   --shipped: #3aa56c; --partial: #d9961f; --open: #4a86d6; --deferred: #6c7176; --notfiled: #3b403d;
+  --w1: #e0525a; --w2: #ef8a45; --w3: #e3bf2c; --w4: #55b38a; --w5: #8197bb;
   --tile-fg: #ffffff; --accent: #3bb3aa; color-scheme: dark }
+* { box-sizing: border-box; }
 body { margin: 0; background: var(--bg); color: var(--fg); font-family: var(--display); font-size: 15px; line-height: 1.5; }
 .wrap { max-width: 1180px; margin: 0 auto; padding-block: 28px 56px;
   padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
-  display: grid; gap: 28px; }
+  display: grid; gap: 36px; }
 h1 { font-size: clamp(26px, 4vw, 38px); line-height: 1.1; margin: 0; text-wrap: balance; letter-spacing: -0.01em; }
-h2 { font-size: 19px; margin: 0 0 4px; text-wrap: balance; }
-.sub { color: var(--muted); max-width: 70ch; margin: 6px 0 0; }
+h2 { font-size: 20px; margin: 0 0 4px; text-wrap: balance; }
+h3 { font-size: 16px; margin: 0; }
+.sub { color: var(--muted); max-width: 72ch; margin: 6px 0 0; }
 .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.note { color: var(--muted); font-size: 13px; }
 .kpis { display: flex; flex-wrap: wrap; gap: 28px; margin-top: 14px; }
 .kpi b { display: block; font-family: var(--mono); font-size: 22px; }
 .kpi span { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .06em; }
-.legend { display: flex; flex-wrap: wrap; gap: 8px 16px; font-size: 13px; color: var(--muted); }
-.legend button { font: inherit; color: var(--fg); background: var(--panel); border: 1px solid var(--line);
-  border-radius: 999px; padding: 3px 10px 3px 8px; cursor: pointer; display: inline-flex; gap: 6px; align-items: center; }
-.legend button[aria-pressed="false"] { opacity: .4; }
-.legend button:focus-visible, .toggle input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.dot { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+.section-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: end; gap: 10px; margin-bottom: 12px; }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; }
+.dot { width: 10px; height: 10px; border-radius: 3px; display: inline-block; flex: none; }
 .s-shipped { background: var(--shipped); } .s-partial { background: var(--partial); } .s-open { background: var(--open); }
 .s-deferred { background: var(--deferred); } .s-notfiled { background: var(--notfiled); }
-.section-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: end; gap: 10px; margin-bottom: 10px; }
-.toggle { font-size: 13px; color: var(--muted); display: inline-flex; gap: 6px; align-items: center; }
+.pill { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; white-space: nowrap; }
+button { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
-/* look ladder */
+/* port order */
+.port { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); gap: 16px; }
+@media (max-width: 900px) { .port { grid-template-columns: minmax(0, 1fr); } }
+.matrix { padding: 10px; }
+.matrix svg { width: 100%; height: auto; display: block; }
+.matrix text { fill: var(--muted); font-family: var(--display); font-size: 11px; }
+.matrix .ql { fill: var(--fg); opacity: .5; font-weight: 600; font-size: 12px; }
+.matrix .pt { cursor: pointer; }
+.matrix .pt text { fill: #fff; font-family: var(--mono); font-size: 9.5px; font-weight: 600; pointer-events: none; }
+.matrix .pt.sel circle { stroke: var(--fg); stroke-width: 2.5; }
+.waves { padding: 6px 0; max-height: 620px; overflow: auto; }
+.wave { padding: 8px 14px 4px; }
+.wave h4 { margin: 0 0 4px; font-size: 12px; text-transform: uppercase; letter-spacing: .06em; display: flex; gap: 8px; align-items: center; }
+.wave h4 i { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }
+.wave h4 small { color: var(--muted); font-weight: 500; text-transform: none; letter-spacing: 0; }
+.prd { display: grid; grid-template-columns: 74px minmax(0, 1fr) auto; gap: 10px; align-items: center; width: 100%; text-align: left;
+  background: none; border: 0; border-radius: 6px; padding: 5px 6px; cursor: pointer; }
+.prd:hover { background: var(--bg); }
+.prd.sel { background: var(--hi); }
+.prd .id { font-family: var(--mono); font-size: 12px; font-weight: 600; }
+.prd .t { font-size: 13.5px; line-height: 1.3; }
+.prd .t small { display: block; color: var(--muted); font-size: 12px; }
+.prd .m { font-family: var(--mono); font-size: 11px; color: var(--muted); text-align: right; white-space: nowrap; }
+.prog { display: block; width: 56px; height: 4px; border-radius: 2px; background: var(--line); margin-top: 3px; margin-left: auto; overflow: hidden; }
+.prog b { display: block; height: 100%; background: var(--shipped); }
+
+/* system detail */
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+.chip { background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 4px 12px; cursor: pointer; font-size: 13px; }
+.chip[aria-pressed="true"] { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+.detail { padding: 16px; display: grid; gap: 14px; }
+.dhead { display: flex; flex-wrap: wrap; gap: 8px 24px; align-items: baseline; justify-content: space-between; }
+.dhead .big { font-family: var(--mono); font-size: 20px; }
+.stack { display: flex; height: 22px; border-radius: 5px; overflow: hidden; gap: 2px; }
+.stack span { min-width: 3px; }
+.subs { overflow-x: auto; }
+.subs table { min-width: 720px; }
+.subs tr.hit td { background: var(--hi); }
+.legend { display: flex; flex-wrap: wrap; gap: 8px 16px; font-size: 13px; color: var(--muted); }
+.legend button { color: var(--fg); background: var(--panel); border: 1px solid var(--line);
+  border-radius: 999px; padding: 3px 10px 3px 8px; cursor: pointer; display: inline-flex; gap: 6px; align-items: center; }
+.legend button[aria-pressed="false"] { opacity: .4; }
+
+/* ladder */
 .ladder { display: grid; grid-template-columns: repeat(9, minmax(0, 1fr)); gap: 6px; }
 .rung { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px 10px 12px; min-width: 0;
   border-top: 5px solid var(--c); display: grid; gap: 2px; align-content: start; }
@@ -54,13 +101,15 @@ h2 { font-size: 19px; margin: 0 0 4px; text-wrap: balance; }
 @media (max-width: 860px) { .ladder { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 
 /* treemap */
-.tm { position: relative; width: 100%; height: 560px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.toggle { font-size: 13px; color: var(--muted); display: inline-flex; gap: 6px; align-items: center; }
+.tm { position: relative; width: 100%; height: 560px; overflow: hidden; }
 @media (max-width: 600px) { .tm { height: 720px; } }
 .grp { position: absolute; border: 1px solid var(--line); border-radius: 6px; }
 .grp > .gl { position: absolute; left: 6px; top: 2px; right: 6px; font-size: 11px; font-weight: 600; text-transform: uppercase;
   letter-spacing: .06em; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.tile { position: absolute; border-radius: 4px; color: var(--tile-fg); padding: 5px 6px; overflow: hidden; cursor: default;
+.tile { position: absolute; border-radius: 4px; color: var(--tile-fg); padding: 5px 6px; overflow: hidden;
   box-shadow: inset 0 0 0 1px rgba(0,0,0,.12); }
+.tile.drill { cursor: pointer; }
 .tile.s-notfiled { color: var(--fg); }
 .tile .tn { font-weight: 600; font-size: 12.5px; line-height: 1.2; }
 .tile .tl { font-family: var(--mono); font-size: 11px; opacity: .9; }
@@ -71,36 +120,50 @@ h2 { font-size: 19px; margin: 0 0 4px; text-wrap: balance; }
 .tip b { display: block; margin-bottom: 2px; }
 .tip .row { color: var(--muted); font-family: var(--mono); font-size: 12px; }
 
-/* table */
-.tablebox { overflow-x: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; }
-table { border-collapse: collapse; width: 100%; min-width: 760px; font-size: 13.5px; }
+/* tables */
+.tablebox { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 13.5px; }
+#tbl { min-width: 760px; }
 th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
-th { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); font-weight: 600; cursor: pointer; white-space: nowrap; }
-th:focus-visible { outline: 2px solid var(--accent); }
+th { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); font-weight: 600; white-space: nowrap; }
+#tbl th { cursor: pointer; }
 td.num { font-family: var(--mono); text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 tr:last-child td { border-bottom: 0; }
 .cxbar { display: inline-flex; gap: 2px; vertical-align: middle; }
 .cxbar i { width: 6px; height: 12px; border-radius: 1px; background: var(--line); }
 .cxbar i.on { background: var(--accent); }
-.pill { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; white-space: nowrap; }
-.note { color: var(--muted); font-size: 13px; }
 .foot { color: var(--muted); font-size: 12.5px; max-width: 80ch; }
-@media (prefers-reduced-motion: no-preference) { .tile { transition: opacity .15s; } }
 </style>
 </head>
 <body>
-
 <div class="wrap">
   <header>
     <h1>Unreal 5.8.3 render features, sized and rated</h1>
-    <p class="sub">Every system in the Unreal renderer that decides how a frame looks or what it costs. Area is measured lines of code from the 5.8.3 source. Colour is the ThreeNative status on 2026-10-21, including PR #541 (the Unreal default look epic).</p>
+    <p class="sub">The Unreal systems that decide how a frame looks or what it costs, measured in lines of code from the 5.8.3 source, with the ThreeNative status on 2026-10-21 (including PR #541) and the order to port them.</p>
     <div class="kpis">
       <div class="kpi"><b>449,725</b><span>Renderer C++ lines</span></div>
       <div class="kpi"><b>359,018</b><span>Shader lines</span></div>
       <div class="kpi"><b>~175K</b><span>Lines behind the default look</span></div>
-      <div class="kpi"><b id="k-open">0</b><span>Features with open PRDs</span></div>
+      <div class="kpi"><b id="k-prds">0</b><span>Open PRDs in the port order</span></div>
     </div>
   </header>
+
+  <section>
+    <div class="section-head"><div><h2>What to port first</h2>
+      <div class="note">Complexity is each PRD's own rating. Impact is a judgement: share of the default frame, frame time saved, or work unblocked. Select a PRD to open its Unreal system below.</div></div>
+      <div class="legend" id="wave-legend"></div></div>
+    <div class="port">
+      <div class="panel matrix"><svg id="matrix" viewBox="0 0 520 440" role="img" aria-label="Open PRDs plotted by complexity and impact"></svg></div>
+      <div class="panel waves" id="waves"></div>
+    </div>
+  </section>
+
+  <section id="detail-sec">
+    <div class="section-head"><div><h2>Inside each system</h2>
+      <div class="note">Every subsystem, its measured lines, what it does, and the ThreeNative PRD that ports it. Rows for the selected PRD are highlighted.</div></div></div>
+    <div class="chips" id="chips" role="group" aria-label="Unreal systems"></div>
+    <div class="panel detail" id="detail"></div>
+  </section>
 
   <section>
     <div class="section-head"><div><h2>The default-look ladder (PR #541)</h2>
@@ -110,109 +173,366 @@ tr:last-child td { border-bottom: 0; }
 
   <section>
     <div class="section-head">
-      <div><h2>Where the code is</h2><div class="note">Tile area = lines of code. Number in the corner = complexity, 1 to 10. Hover or focus a tile for detail.</div></div>
+      <div><h2>Where the code is</h2><div class="note">Tile area = lines of code. Corner number = complexity, 1 to 10. Select a tile with a ▸ to open its subsystems.</div></div>
       <label class="toggle"><input type="checkbox" id="big"> Include tool-heavy modules (Niagara, Landscape, World Partition, RHI, RenderCore)</label>
     </div>
     <div class="legend" id="legend" style="margin-bottom:10px"></div>
-    <div class="tm" id="tm" role="img" aria-label="Treemap of Unreal render features sized by lines of code"></div>
+    <div class="panel tm" id="tm" role="img" aria-label="Treemap of Unreal render features sized by lines of code"></div>
   </section>
 
   <section>
     <div class="section-head"><div><h2>All features, ranked</h2><div class="note">Select a column header to sort.</div></div></div>
-    <div class="tablebox"><table id="tbl"><thead><tr>
+    <div class="panel tablebox"><table id="tbl"><thead><tr>
       <th data-k="name" tabindex="0">Feature</th><th data-k="area" tabindex="0">Area</th>
       <th data-k="loc" tabindex="0" style="text-align:right">LOC</th><th data-k="cx" tabindex="0">Complexity</th>
       <th data-k="port" tabindex="0">Port cost</th><th data-k="status" tabindex="0">ThreeNative</th></tr></thead><tbody></tbody></table></div>
   </section>
 
-  <p class="foot">LOC counts raw lines (code, comments, blank lines) in <span class="mono">Engine/Source/Runtime/Renderer/Private</span> and <span class="mono">Engine/Shaders/Private</span>, by subfolder or file prefix. Shared files such as <span class="mono">SceneRendering.cpp</span> are not split, so each row is a lower bound. Landscape and World Partition hold editor code in their runtime modules. Niagara counts runtime only (editor: 275K more). Complexity and port cost are judgements. Source report: <span class="mono">docs/PRDs/Unreal/research/unreal-visuals-and-performance-feature-map.md</span>.</p>
+  <p class="foot">LOC counts raw lines (code, comments, blank lines) in <span class="mono">Engine/Source/Runtime/Renderer/Private</span> and <span class="mono">Engine/Shaders/Private</span>, grouped by subfolder or file prefix. Shared files such as <span class="mono">SceneRendering.cpp</span> are not split, so each row is a lower bound. A subsystem shown as "shared" lives inside one file with its siblings. Landscape and World Partition hold editor code in their runtime modules. Niagara counts runtime only (editor: 275K more). Complexity, impact and port cost are judgements. Report: <span class="mono">docs/PRDs/Unreal/research/unreal-visuals-and-performance-feature-map.md</span>.</p>
 </div>
 <div class="tip" id="tip" hidden></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
 <script>
-const STATUS = {
-  shipped: "Shipped", partial: "Partial", open: "Open", deferred: "Deferred", notfiled: "Not filed"
+const STATUS = { shipped: "Shipped", partial: "Partial", open: "Open", deferred: "Deferred", notfiled: "Not filed" };
+const fmt = n => n.toLocaleString("en-US");
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+// ---- Subsystems per Unreal system: [name, LOC or null (shared file), what it does, status, ThreeNative note, PRDs]
+const SYS = {
+ lumen: { name: "Lumen", what: "Dynamic global illumination and reflections, traced against a simplified scene.", subs: [
+  ["Surface cache (cards, capture, scene data)", 15759, "Flattens each mesh into card textures so rays can read colour, normal and emission at a hit.", "partial", "PRD-639 SurfaceCache, 6/9 boxes.", ["639"]],
+  ["Screen probe gather + Short Range AO", 14788, "Places probes on screen pixels, traces from them, filters and upsamples: the Epic GI tier.", "open", "PRD-640 (2/9). Temporal part: PRD-641.", ["640", "641"]],
+  ["Surface cache lighting (direct + radiosity)", 12519, "Lights the cards with every light and with multi-bounce radiosity, so hits glow correctly.", "partial", "PRD-639 (lights of what rays hit). Dynamic relight: PRD-VQ-09.", ["639", "VQ-09"]],
+  ["Reflections (tracing, resolve, denoise)", 8986, "Traces glossy reflections and denoises them in space and time.", "open", "PRD-642 TracedReflections (1/10).", ["642"]],
+  ["Radiance cache (world probes, clipmaps)", 8866, "World-space probe field that answers rays the screen cannot.", "open", "PRD-603 RadianceCache, PRD-605 clipmaps. #541 giCache.ts is the CPU reference.", ["603", "605"]],
+  ["Tracing core (SDF, mesh culling, HW RT common)", 6248, "Shared ray machinery: software distance-field tracing and hardware ray tracing.", "partial", "GPUSceneBVH trace ships. HW RT deferred (PRD-645) until WebGPU exposes ray tracing.", ["645"]],
+  ["Visualize and debug modes", 4040, "Lumen scene, surface cache and probe views for artists.", "open", "PRD-646 visualize modes.", ["646"]],
+  ["ReSTIR gather", 3000, "Reservoir resampling of GI rays; needs hardware ray tracing.", "deferred", "Deferred: no Unreal quality level turns it on.", []],
+  ["Translucency volume", 2768, "Froxel volume that gives glass and fog the bounce light.", "open", "PRD-643.", ["643"]],
+  ["Irradiance field gather", 1171, "Probe-grid gather used at the Medium GI tier.", "open", "PRD-604 IrradianceFieldGather.", ["604"]],
+  ["Tier and scalability glue", null, "Picks gather method and budgets per quality level (spread over the files above).", "partial", "PRD-644 (5/10), PRD-647 calibration done.", ["644", "647"]],
+ ]},
+ nanite: { name: "Nanite", what: "Virtualized geometry: meshes split into clusters, culled and rasterized on the GPU.", subs: [
+  ["Cull + raster (hierarchy, clusters, HZB, HW/SW raster)", 17818, "Walks the cluster tree, culls by view and HZB, rasterizes small triangles in compute.", "open", "PRD-600 submit only visible clusters. Persistent culling and SW raster deferred until WebGPU adds forward-progress guarantees and 64-bit image atomics.", ["600"]],
+  ["Shading and materials (shade binning, GBuffer export)", 8144, "Bins visible pixels by material and shades them once.", "open", "PRD-601 far clusters keep source shading.", ["601"]],
+  ["Ray tracing (cluster RT, AS cache, stream-out)", 7510, "Feeds Nanite geometry to hardware ray tracing.", "deferred", "Deferred with hardware RT (PRD-645).", ["645"]],
+  ["Data format, decode, streaming", 7405, "Compressed cluster pages, decode and page streaming.", "deferred", "Page streaming deferred: vertex data is 74% of resident bytes (PRD-285).", []],
+  ["Debug, visualize, editor", 4278, "Overdraw, cluster and stats views.", "notfiled", "—", []],
+  ["Curves (hair) raster", 2812, "Rasterizes hair curves through Nanite.", "notfiled", "Off by default.", []],
+  ["Voxels and bricks (far foliage)", 2734, "Turns distant dense foliage into voxels.", "notfiled", "No game asks yet.", []],
+  ["Tessellation and displacement", 2659, "Dices clusters for displacement maps.", "notfiled", "A material look decision.", []],
+  ["Translucency", 1189, "Nanite path for translucent meshes.", "notfiled", "—", []],
+  ["Visibility, skinning, ownership", 1129, "Per-view visibility masks and skinned Nanite.", "notfiled", "—", []],
+  ["Shadow casters at shadow-texel detail", null, "Draws shadow pages from clusters (inside cull + raster).", "open", "PRD-602.", ["602"]],
+ ]},
+ vsm: { name: "Virtual shadow maps", what: "One huge sparse shadow map per light, filled only where pixels need it.", subs: [
+  ["Page marking and physical page pool", 11240, "Marks which shadow pages pixels need and allocates them from a pool.", "shipped", "VirtualShadowNode clip levels ship. Page cost: PRD-457.", ["457"]],
+  ["Projection + SMRT soft shadows", 4389, "Samples pages with shadow-map ray tracing for a source-angle penumbra; spot and point projection.", "open", "PRD-634 sun penumbra, PRD-650 lamp shadows.", ["634", "650"]],
+  ["Cache and invalidation", 3764, "Keeps static pages across frames; redraws only what moved.", "shipped", "PRD-538, PRD-572 done.", ["538", "572"]],
+  ["Debug and stats", 1015, "Page usage and cache views.", "notfiled", "—", []],
+  ["Directional clipmaps", 831, "Nested levels around the camera for the sun.", "shipped", "Shipped; reach to the horizon in PRD-634.", ["634"]],
+  ["Per-page draw commands", 714, "Builds draw lists per dirty page.", "shipped", "Partial redraw ships.", []],
+  ["Leaf and alpha-masked casters", null, "Masked materials in the shadow pass.", "partial", "PRD-651 (5/12): an engine bug on the default engine.", ["651"]],
+  ["Calibration and tiers", null, "Shadow quality levels Low / Medium / Epic.", "open", "PRD-649 calibration scenes, PRD-652 tiers.", ["649", "652"]],
+ ]},
+ tsr: { name: "TSR", what: "Temporal super resolution: renders fewer pixels and rebuilds the full frame from history.", subs: [
+  ["Orchestration (C++)", 3780, "Sets up passes, history targets and resolution.", "partial", "PRD-455 done; PRD-539 open.", ["455", "539"]],
+  ["History update, resolve, decimate", 2611, "Reprojects and blends the previous frame.", "partial", "Catmull-Rom history resample shipped (PRD-455). 200% history in PRD-539.", ["455", "539"]],
+  ["Shading rejection and flicker", 2222, "Detects when history is wrong and how much to trust it.", "open", "PRD-539.", ["539"]],
+  ["Velocity and depth analysis", 1370, "Dilates velocity and finds the closest occluder.", "open", "PRD-539.", ["539"]],
+  ["Convolution network", 1309, "Small learned filter used by the rejection pass.", "open", "PRD-539 lever list.", ["539"]],
+  ["Common, kernels, visualize", 1555, "Shared filters and debug views.", "open", "—", []],
+  ["Spatial anti-aliasing", 914, "Anti-aliases pixels with no usable history.", "open", "PRD-539.", ["539"]],
+  ["Thin geometry detection", 870, "Keeps wires and leaves from flickering away.", "open", "PRD-539.", ["539"]],
+ ]},
+ post: { name: "Post chain", what: "Tone mapping, exposure, bloom, motion blur and the rest of the finishing passes.", subs: [
+  ["Depth of field (diaphragm)", 12354, "Physically based bokeh.", "notfiled", "Not in the default look.", []],
+  ["Tone map + LUT combine", 4252, "Filmic curve and colour grade baked into one LUT.", "partial", "LUT grade done (PRD-492). Filmic curve: PRD-632.", ["492", "632"]],
+  ["Motion blur", 4070, "Tile-based velocity blur.", "open", "PRD-636.", ["636"]],
+  ["TAA (legacy)", 3994, "Older temporal anti-aliasing.", "shipped", "Template temporal AA ships.", []],
+  ["Eye adaptation (histogram, basic)", 3977, "Auto exposure from a luminance histogram.", "partial", "Template auto exposure. Histogram: PRD-571 (needs a device). EV100: PRD-632.", ["571", "632"]],
+  ["ACES transforms", 3064, "ACES output transforms used by the tone mapper.", "open", "PRD-632.", ["632"]],
+  ["Bloom (Gaussian + FFT)", 2110, "Glow around bright pixels.", "partial", "Bloom ships; Unreal defaults in PRD-636.", ["636"]],
+  ["Local exposure", 1141, "Keeps shadows and highlights readable in one frame.", "open", "PRD-636.", ["636"]],
+  ["Lens flares", 619, "Image-based flares.", "notfiled", "—", []],
+ ]},
+ sky: { name: "Sky atmosphere", what: "Physically based sky from planet, Rayleigh and Mie parameters, precomputed in small LUTs.", subs: [
+  ["C++ orchestration (all stages)", 2666, "Sets up LUT passes and per-view sky rendering.", "open", "PRD-633.", ["633"]],
+  ["Shader kernels (all LUTs + render)", 2318, "SkyAtmosphere.usf and its common header.", "open", "PRD-633.", ["633"]],
+  ["Real-time sky light capture", 1455, "Re-captures the sky into the sky light cubemap as the sun moves.", "open", "PRD-633 (sky lights the scene).", ["633"]],
+  ["Transmittance LUT", null, "How much light survives a path through the air.", "open", "PRD-633.", ["633"]],
+  ["Multi-scattering LUT", null, "Approximates light that bounces many times in the air.", "open", "PRD-633.", ["633"]],
+  ["Sky-view LUT", null, "The distant sky dome at low resolution.", "open", "PRD-633.", ["633"]],
+  ["Aerial perspective volume", null, "Froxel volume that tints distant land.", "open", "PRD-562.", ["562"]],
+ ]},
+ clouds: { name: "Volumetric clouds", what: "Ray-marched cloud layer lit by the sun and the atmosphere.", subs: [
+  ["C++ orchestration", 3449, "Tracing passes, reconstruction and shadow maps.", "partial", "Template clouds in rain; PRD-VQ-08.", ["VQ-08"]],
+  ["Cloud shaders", 2695, "Ray march, lighting and material sampling.", "partial", "PRD-VQ-08.", ["VQ-08"]],
+  ["Cloud shadow map + overhead transmittance", null, "Shadows the ground and objects under clouds.", "open", "PRD-VQ-08 (three-channel cloud shadow map).", ["VQ-08"]],
+  ["Temporal reconstruction", null, "Traces at low resolution and rebuilds over frames.", "open", "PRD-VQ-08.", ["VQ-08"]],
+  ["Sky AO from clouds", null, "Darkens sky light under cloud cover.", "notfiled", "—", []],
+ ]},
+ fog: { name: "Fog", what: "Height fog, volumetric fog and local fog volumes.", subs: [
+  ["Volumetric fog (froxels)", 4979, "Lit fog in a camera-aligned voxel grid, with light functions.", "open", "Froxel volume: PRD-562.", ["562"]],
+  ["Height fog", 2414, "Exponential fog that thickens toward the ground and glows toward the sun.", "shipped", "PRD-560 done.", ["560"]],
+  ["Local fog volumes", 2193, "Placed fog boxes and spheres.", "notfiled", "—", []],
+  ["Fog composition", 1127, "Composites fog behind translucency.", "notfiled", "—", []],
+ ]},
+ ao: { name: "Ambient occlusion", what: "Darkens creases and contacts.", subs: [
+  ["SSAO / GTAO", 4392, "Screen-space AO with denoise.", "partial", "GTAO ships in templates. PRD-635 applies it to indirect light only.", ["635"]],
+  ["Distance-field AO", 1127, "Wider AO from mesh distance fields.", "notfiled", "Lumen ShortRangeAO replaces it (PRD-640).", ["640"]],
+ ]},
+ refl: { name: "Reflections", what: "Reflection captures, screen-space reflections and Lumen reflections.", subs: [
+  ["Lumen reflections", 8986, "Traced glossy reflections (see Lumen).", "open", "PRD-642.", ["642"]],
+  ["Reflection captures (box, sphere, real-time)", 4799, "Baked or live cubemaps at points in the level.", "open", "PRD-VQ-03 local reflection probes.", ["VQ-03"]],
+  ["Screen-space reflections", 3956, "Ray march against the depth buffer.", "shipped", "SSR stage ships in the render chain.", []],
+  ["Reflection environment apply", 3313, "Blends captures, sky and SSR per pixel.", "open", "PRD-VQ-03, PRD-642.", ["VQ-03", "642"]],
+ ]},
+ gpuscene: { name: "GPU scene + culling", what: "Every instance lives in GPU buffers; culling and draw lists are built on the GPU.", subs: [
+  ["Mesh draw commands", 12081, "Caches draw state per mesh pass.", "shipped", "Owned C++ engine.", []],
+  ["CPU view visibility", 7799, "Frustum, distance and LOD selection per view.", "shipped", "Engine and three.js frustum culling.", []],
+  ["Hierarchical scene culling grid", 5424, "Spatial hash that culls groups of instances at once.", "notfiled", "—", []],
+  ["Instance culling + draw compaction", 5137, "GPU culls instances and writes indirect draws.", "shipped", "world-gpu-scene.ts.", []],
+  ["GPU scene buffers", 3694, "Instance and primitive data uploaded once, updated by delta.", "shipped", "world-gpu-scene.ts.", []],
+  ["Occlusion queries + HZB", 2341, "Hides what walls hide.", "deferred", "PRD-489: our scenes would cull 1.3%. Revisit with a dense city or interior.", ["489"]],
+ ]},
+ streaming: { name: "Texture + mesh streaming", what: "Keeps only the mips and LODs the camera needs in memory.", subs: [
+  ["Texture streaming manager", 7195, "Budgets memory and picks wanted mips per texture.", "open", "PRD-VQ-10.", ["VQ-10"]],
+  ["Mip stream-in / stream-out", 5404, "Async loads, allocators and mip providers.", "open", "PRD-VQ-10 (no in-place shrink on WebGPU).", ["VQ-10"]],
+  ["Texture instance tracking", 3910, "Which textures are on which visible objects, and how big.", "open", "PRD-VQ-10.", ["VQ-10"]],
+  ["Mesh LOD streaming", 2597, "Streams static mesh LODs.", "open", "Admission budget: PRD-459.", ["459"]],
+  ["Build-time texel density", 1206, "Precomputes texel size per UV channel.", "open", "PRD-VQ-10 (wanted mips from screen size).", ["VQ-10"]],
+ ]},
+ wp: { name: "World Partition", what: "Splits a big world into cells and streams them around the player.", subs: [
+  ["Runtime hash and streaming policy", 31799, "Cell grid, streaming sources and load order.", "partial", "WorldCells + streaming.ts ship. PRD-459, 460, 606, 607 open.", ["459", "460", "606", "607"]],
+  ["Data layers", 6799, "Toggle groups of actors at runtime.", "deferred", "Deferred: no consumer yet; two WorldCells cover the case.", []],
+  ["HLOD", 5662, "Merged low-detail proxies for far cells.", "open", "PRD-456 distant world cell proxies.", ["456"]],
+  ["Content bundles", 2644, "Plug-in content injected into a world.", "notfiled", "—", []],
+  ["Cook, filters, loaders, errors", 2430, "Editor and cook tooling.", "notfiled", "Editor side.", []],
+  ["Level instances", 1563, "Reusable sub-levels.", "notfiled", "—", []],
+ ]},
+ niagara: { name: "Niagara", what: "GPU and CPU particle simulation and rendering.", subs: [
+  ["Data interfaces (grids, mesh, collision)", 49414, "What particles can read: grids, skeletal meshes, collision, landscape.", "partial", "Grid smoke ships (fluid-field.ts). Collision: PRD-610.", ["610"]],
+  ["Assets, scripts, components", 17727, "System, emitter and script assets: the authoring side.", "notfiled", "Out of scope: the repo rules close editors and IRs.", []],
+  ["CPU simulation (system, emitter, data sets)", 11631, "Ticks systems and emitters, stores particle data.", "partial", "GPUParticles3D; PRD-316 generated VFX source.", ["316"]],
+  ["Stateless emitters", 10436, "Cheap emitters with no per-particle state.", "notfiled", "—", []],
+  ["First-frame pipelines (engine PSO precache)", 8895, "Builds GPU pipelines before an effect first shows.", "open", "PRD-611.", ["611"]],
+  ["Renderers (ribbons, meshes, sprites)", 6618, "Draws particles as sprites, ribbons or meshes.", "shipped", "GPUParticles3D; ribbons in the vfx-compute row.", []],
+  ["Scalability, culling, budget", 4407, "Culls off-view effects and caps cost per platform.", "shipped", "PRD-569 done.", ["569"]],
+  ["Debug HUD", 3760, "In-game effect stats.", "notfiled", "—", []],
+  ["GPU compute dispatch", 2788, "Schedules GPU simulation passes.", "shipped", "GPUParticles3D compute; PRD-609 done.", ["609"]],
+ ]},
+ megalights: { name: "MegaLights", what: "Stochastic direct lighting for hundreds of shadowed lights.", subs: [
+  ["Shaders (not split)", 9857, "Sampling, tracing, resolve and denoise kernels.", "notfiled", "Off in a fresh Unreal project.", []],
+  ["Core", 2794, "Light sampling setup and passes.", "notfiled", "—", []],
+  ["Ray tracing", 2242, "Shadow rays for sampled lights.", "notfiled", "—", []],
+  ["Visualize", 1638, "Light complexity views.", "notfiled", "—", []],
+  ["Resolve", 1253, "Combines samples into lighting.", "notfiled", "—", []],
+  ["Denoising", 758, "Spatial and temporal denoise.", "notfiled", "—", []],
+  ["Sampling + internals", 1451, "Importance sampling, view state.", "notfiled", "—", []],
+ ]},
 };
-// name, area, cpp, shader, complexity, port, status, note, big (tool-heavy)
+const SYS_ORDER = ["lumen", "nanite", "vsm", "tsr", "post", "sky", "clouds", "fog", "ao", "refl", "gpuscene", "streaming", "wp", "niagara", "megalights"];
+
+// ---- Port order: [PRD, title, layer, complexity, estimated?, impact, done, total, wave, waits, why, system]
+const PORT = [
+ ["631","Reference scene + comparison harness","L0",6,0,5,15,15,1,"—","All boxes ticked; close it",null],
+ ["632","Filmic tone curve, EV100, auto exposure","L1",6,0,5,4,16,1,"631","Every pixel; later layers compare at matched exposure","post"],
+ ["633","Sky atmosphere + sky light","L2",6,0,5,1,11,2,"632","The sky fills the frame and lights the scene","sky"],
+ ["636","Finishing post chain","L9",5,0,3,15,28,2,"632","Half done; cheap finish","post"],
+ ["635","AO on indirect light only","L6",5,0,3,5,14,2,"632","Low cost, visible at every contact","ao"],
+ ["651","Leaf cards cast leaf shadows","L5",6,0,4,5,12,2,"—","Phase 1 is an engine bug","vsm"],
+ ["649","Shadow calibration scenes","L5",5,0,4,3,12,2,"646","Unblocks 634, 650, 652","vsm"],
+ ["646","Recreate GI calibration scenes","L7",6,0,4,6,15,2,"632","Unblocks every GI verdict","lumen"],
+ ["603","RadianceCache traces the packed scene","L7",7,0,5,0,10,2,"—","GI foundation; can start now","lumen"],
+ ["539","TSR quality and cost","Perf",6,1,4,0,5,2,"—","A cheaper frame pays for every layer","tsr"],
+ ["562","Aerial perspective (froxel volume)","L3",4,0,3,0,8,3,"633","Needs the atmosphere","fog"],
+ ["VQ-08","Volumetric clouds + overhead shadow","L4",7,1,3,0,9,3,"633","The default Unreal map has clouds","clouds"],
+ ["634","Sun shadows: reach + penumbra","L5",6,0,4,2,14,3,"649","Biggest shadow gap to Unreal","vsm"],
+ ["604","IrradianceFieldGather, no leaks","L7",5,0,4,0,10,3,"603","Unreal Medium GI tier","lumen"],
+ ["639","SurfaceCache","L7",7,0,4,6,9,3,"603","Two thirds done","lumen"],
+ ["640","ScreenProbeGather + ShortRangeAO","L7",8,0,5,2,9,3,"603, 647","Unreal Epic GI tier: the default","lumen"],
+ ["641","GI temporal filter","L7",6,0,3,4,13,4,"640","Stability once the gather exists","lumen"],
+ ["642","TracedReflections","L8",7,0,4,1,10,4,"603, 639","Needs the surface cache","lumen"],
+ ["644","GI tiers follow Unreal quality levels","Perf",6,0,4,5,10,4,"647","Cost per GI tier","lumen"],
+ ["650","Lamp shadows","L5",7,0,3,2,11,4,"649","Interiors","vsm"],
+ ["652","Shadow tiers","Perf",5,0,3,5,9,4,"634, 650","Cost per shadow tier","vsm"],
+ ["643","Glass, fog, leaves take GI","L7",5,0,2,0,8,5,"603, 604","Small share of the frame","lumen"],
+ ["605","Radiance cache clipmaps","L7",6,0,3,0,8,5,"603, 604","Open worlds","lumen"],
+ ["457","Shadow pages only where cheaper","Perf",5,1,2,0,4,5,"—","Only where measured","vsm"],
+ ["600","Nanite: submit visible clusters","Perf",6,0,3,0,8,5,"—","Dense scenes","nanite"],
+ ["601","Far clusters keep shading","Perf",4,0,2,0,7,5,"600","Follows 600","nanite"],
+ ["602","Cluster shadow casters","Perf",5,0,2,0,8,5,"600","Follows 600","nanite"],
+ ["570","Characters cost what the camera sees","Perf",5,0,3,0,10,5,"—","Crowds; a lane is measuring it",null],
+ ["VQ-10","Texture mip residency","Perf",5,1,2,0,8,5,"—","When texture memory limits a game","streaming"],
+ ["460","Invisible streaming transitions","Perf",6,0,2,0,15,5,"—","Open worlds","wp"],
+ ["606","Fast travel ready before reveal","Perf",3,0,2,0,13,5,"—","Open worlds","wp"],
+ ["607","Streaming reports and closes holes","Perf",5,0,2,0,11,5,"—","Open worlds","wp"],
+ ["611","Hidden effect's first frame is ready","Perf",4,0,2,0,10,5,"—","First-frame hitch","niagara"],
+ ["610","Sparks bounce off visible surfaces","VFX",6,0,1,0,12,5,"609","Effect detail","niagara"],
+].map(([id,title,layer,cx,est,impact,done,total,wave,waits,why,sys]) => ({id,title,layer,cx,est,impact,done,total,wave,waits,why,sys}));
+const WAVES = { 1: "Gate: everything compares against it", 2: "Cheap look layers + foundations, in parallel", 3: "Main look layers", 4: "Finish and tier", 5: "When a game or a measurement asks" };
+
+// ---- Feature table (top level)
 const F = [
- ["Lumen GI + reflections","Lighting & GI",45712,33515,10,"Very high","partial","PRD-638, 647 done. PRD-603–605, 639–644, 646 open. HW ray tracing deferred (PRD-645) until WebGPU exposes ray tracing. #541 adds giCache.ts CPU reference."],
+ ["Lumen GI + reflections","Lighting & GI",45712,33515,10,"Very high","partial","PRD-638, 647 done. PRD-603–605, 639–644, 646 open. HW ray tracing deferred (PRD-645) until WebGPU exposes ray tracing.",0,"lumen"],
  ["Distance fields","Lighting & GI",10870,6189,7,"High","notfiled","GPUSceneBVH gives the trace instead."],
- ["Deferred shading + clustered lights","Lighting & GI",16918,8254,6,"n/a","shipped","Covered by three.js and the owned C++ engine. Not a port target."],
- ["Reflection captures + SSR","Lighting & GI",7226,4842,5,"Medium","open","PRD-VQ-03 (low/medium), PRD-642 (high)."],
- ["Ambient occlusion","Lighting & GI",4501,2363,4,"Low","open","PRD-635, in PR #541."],
+ ["Deferred shading + clustered lights","Lighting & GI",16918,8254,6,"n/a","shipped","Covered by three.js and the owned C++ engine."],
+ ["Reflection captures + SSR","Lighting & GI",7226,4842,5,"Medium","partial","SSR stage ships. Captures PRD-VQ-03, traced reflections PRD-642 open.",0,"refl"],
+ ["Ambient occlusion","Lighting & GI",4501,2363,4,"Low","partial","GTAO ships in templates. PRD-635 applies it to indirect light only (#541).",0,"ao"],
  ["Substrate materials","Lighting & GI",12154,16982,8,"High","notfiled","three.js r185 already matches Unreal default lit."],
- ["MegaLights","Lighting & GI",10136,9857,8,"High","notfiled","Off in a fresh Unreal project."],
- ["Virtual shadow maps","Shadows",11261,10692,9,"High","partial","Sun clipmap, page cache, mover maps shipped (PRD-538, 572). PRD-634, 649–652, 457 open."],
- ["Classic shadows (CSM, contact)","Shadows",18513,2411,6,"Medium","shipped","CSM replaced by the shipped virtual shadow map. Contact shadows deferred (PRD-561): off in a fresh Unreal project; revisit when a light needs a contact-shadow length."],
- ["Sky atmosphere","Sky & volumes",2666,2318,6,"Medium","open","PRD-633, in PR #541."],
- ["Volumetric clouds","Sky & volumes",3449,2695,7,"Medium","partial","Template clouds in rain. PRD-VQ-08 open."],
- ["Height + volumetric fog","Sky & volumes",6663,4050,5,"Medium","partial","Height fog done (PRD-560). Aerial perspective PRD-562 open."],
+ ["MegaLights","Lighting & GI",10136,9857,8,"High","notfiled","Off in a fresh Unreal project.",0,"megalights"],
+ ["Virtual shadow maps","Shadows",11261,10692,9,"High","partial","Sun clipmap, page cache, mover maps shipped (PRD-538, 572). PRD-634, 649–652, 457 open.",0,"vsm"],
+ ["Classic shadows (CSM, contact)","Shadows",18513,2411,6,"Medium","shipped","CSM replaced by the shipped virtual shadow map. Contact shadows deferred (PRD-561): revisit when a light needs a contact-shadow length."],
+ ["Sky atmosphere","Sky & volumes",2666,2318,6,"Medium","open","PRD-633, in PR #541.",0,"sky"],
+ ["Volumetric clouds","Sky & volumes",3449,2695,7,"Medium","partial","Template clouds in rain. PRD-VQ-08 open.",0,"clouds"],
+ ["Height + volumetric fog","Sky & volumes",6663,4050,5,"Medium","partial","Height fog done (PRD-560). Aerial perspective PRD-562 open.",0,"fog"],
  ["Heterogeneous volumes","Sky & volumes",15562,11390,8,"High","notfiled","No game asks for it."],
- ["TSR upscaler","Post & temporal",3780,10851,9,"High","partial","Catmull-Rom history done (PRD-455). PRD-539 open."],
- ["TAA","Post & temporal",1531,2463,5,"Low","shipped","Superseded by the TSR work."],
- ["Tone map + LUT + ACES","Post & temporal",2237,5079,4,"Low","partial","LUT grade done (PRD-492). Filmic curve PRD-632 open (#541)."],
- ["Exposure (eye adaptation, local)","Post & temporal",3147,1971,5,"Low","partial","Template auto exposure. PRD-571 blocked on a device. PRD-632, 636 open."],
- ["Bloom + lens flare","Post & temporal",1797,932,3,"Low","partial","Bloom exists. PRD-636 open."],
- ["Motion blur","Post & temporal",1518,2552,5,"Low","open","PRD-636."],
- ["Depth of field","Post & temporal",4160,8194,7,"Medium","notfiled","Not in the default look."],
+ ["TSR upscaler","Post & temporal",3780,10851,9,"High","partial","Catmull-Rom history done (PRD-455). PRD-539 open.",0,"tsr"],
+ ["TAA","Post & temporal",1531,2463,5,"Low","shipped","Template temporal AA ships.",0,"post"],
+ ["Tone map + LUT + ACES","Post & temporal",2237,5079,4,"Low","partial","LUT grade done (PRD-492). Filmic curve PRD-632 open (#541).",0,"post"],
+ ["Exposure (eye adaptation, local)","Post & temporal",3147,1971,5,"Low","partial","Template auto exposure. PRD-571 needs a device. PRD-632, 636 open.",0,"post"],
+ ["Bloom + lens flare","Post & temporal",1797,932,3,"Low","partial","Bloom exists. PRD-636 open.",0,"post"],
+ ["Motion blur","Post & temporal",1518,2552,5,"Low","open","PRD-636.",0,"post"],
+ ["Depth of field","Post & temporal",4160,8194,7,"Medium","notfiled","Not in the default look.",0,"post"],
  ["Denoisers","Post & temporal",5800,10068,7,"High","notfiled","Unreal has no virtual-shadow denoiser."],
- ["Nanite","Geometry & scene",27571,28101,10,"Very high","open","PRD-600–602. Persistent culling, software raster and page streaming deferred until WebGPU adds forward-progress guarantees and 64-bit image atomics, or a measurement shows the gain."],
- ["GPU scene + instance culling","Geometry & scene",12019,2420,7,"Medium","shipped","world-gpu-scene.ts: cull and LOD into indirect draws."],
- ["Visibility + HZB occlusion","Geometry & scene",10140,3178,6,"Medium","deferred","HZB deferred (PRD-489): our scenes would cull 1.3%. Unreal has it for dense cities and interiors; revisit when a scene like that shows a high would-cull share."],
- ["Mesh draw commands","Geometry & scene",12081,0,7,"Medium","shipped","Owned C++ engine area."],
- ["Virtual texturing","Geometry & scene",15462,1851,8,"High","deferred","Runtime VT deferred until texture memory limits a game. Mip residency PRD-VQ-10 open first."],
+ ["Nanite","Geometry & scene",27571,28101,10,"Very high","open","PRD-600–602. Persistent culling, software raster and page streaming deferred.",0,"nanite"],
+ ["GPU scene + instance culling","Geometry & scene",12019,2420,7,"Medium","shipped","world-gpu-scene.ts: cull and LOD into indirect draws.",0,"gpuscene"],
+ ["Visibility + HZB occlusion","Geometry & scene",10140,3178,6,"Medium","deferred","HZB deferred (PRD-489): our scenes would cull 1.3%. Revisit with a dense city or interior.",0,"gpuscene"],
+ ["Mesh draw commands","Geometry & scene",12081,0,7,"Medium","shipped","Owned C++ engine area.",0,"gpuscene"],
+ ["Virtual texturing","Geometry & scene",15462,1851,8,"High","deferred","Runtime VT deferred until texture memory limits a game. Mip residency PRD-VQ-10 first."],
  ["Dynamic resolution","Geometry & scene",847,0,4,"Low","shipped","PRD-384, 563, 564 done."],
  ["PSO precache","Geometry & scene",8895,0,6,"Medium","shipped","Pipeline warm-up and native disk cache."],
  ["Variable rate shading","Geometry & scene",1799,583,4,"n/a","notfiled","No WebGPU API."],
  ["Mobile renderer","Geometry & scene",9086,3093,6,"Medium","partial","PRD-565, 568 done."],
- ["Texture + mesh streaming","World, anim, VFX",20414,0,7,"Medium","open","PRD-VQ-10."],
- ["Anim budget + AnimGraphRuntime","World, anim, VFX",29104,0,6,"Medium","open","PRD-570 (prd:75), PRD-486."],
+ ["Texture + mesh streaming","World, anim, VFX",20414,0,7,"Medium","open","PRD-VQ-10.",0,"streaming"],
+ ["Anim budget + AnimGraphRuntime","World, anim, VFX",29104,0,6,"Medium","open","PRD-570, PRD-486."],
  ["GPU skinning","World, anim, VFX",6782,1207,5,"Low","shipped","Through three.js and the owned engine."],
- ["Niagara runtime","World, anim, VFX",255512,0,9,"High","partial","GPUParticles3D. PRD-569, 609 done. PRD-610, 611 open. Graph editor out of scope: the repo rules close editors.",1],
+ ["Niagara runtime","World, anim, VFX",255512,0,9,"High","partial","GPUParticles3D. PRD-569, 609 done. PRD-610, 611 open. Graph editor out of scope.",1,"niagara"],
  ["Landscape","World, anim, VFX",86937,2567,8,"High","partial","PRD-566, 567 done. PRD-493 open.",1],
- ["World Partition + HLOD","World, anim, VFX",70618,0,9,"High","partial","WorldCells, streaming.ts. PRD-456, 459, 460, 606, 607 open.",1],
+ ["World Partition + HLOD","World, anim, VFX",70618,0,9,"High","partial","WorldCells, streaming.ts. PRD-456, 459, 460, 606, 607 open.",1,"wp"],
  ["RenderCore (RDG)","Foundation",103555,0,9,"n/a","deferred","RDG, bindless and async compute deferred until WebGPU exposes them.",1],
  ["RHI","Foundation",67546,0,8,"n/a","shipped","WebGPU and the owned C++ engine fill this role.",1],
- ["HW ray tracing + path tracer","Foundation",24257,29756,9,"High","deferred","Deferred for GI (PRD-645): the trace is 13x faster, but the WebGPU-to-Vulkan hand-off costs more. Unreal has no hand-off because it drives D3D12 and Vulkan directly. Revisit when WebGPU exposes ray tracing."],
+ ["HW ray tracing + path tracer","Foundation",24257,29756,9,"High","deferred","Deferred (PRD-645): the trace is 13x faster, but the WebGPU-to-Vulkan hand-off costs more. Revisit when WebGPU exposes ray tracing."],
  ["Hair strands","Foundation",17639,28297,9,"High","notfiled","Off by default."],
-].map(([name,area,cpp,shd,cx,port,status,note,big]) => ({name,area,cpp,shd,loc:cpp+shd,cx,port,status,note,big:!!big}));
+].map(([name,area,cpp,shd,cx,port,status,note,big,sys]) => ({name,area,cpp,shd,loc:cpp+shd,cx,port,status,note,big:!!big,sys}));
 
 const LADDER = [
  ["L1","Tone curve, exposure","PRD-632","partial"],["L2","Sky atmosphere","PRD-633","open"],
  ["L3","Fog, aerial perspective","PRD-560 / 562","partial"],["L4","Volumetric clouds","PRD-VQ-08","partial"],
- ["L5","Sun shadows","PRD-634 / 649–652","partial"],["L6","AO on indirect","PRD-635","open"],
- ["L7","Global illumination","PRD-603–647","partial"],["L8","Reflections","PRD-642 / VQ-03","open"],
+ ["L5","Sun shadows","PRD-634 / 649–652","partial"],["L6","AO on indirect","PRD-635","partial"],
+ ["L7","Global illumination","PRD-603–647","partial"],["L8","Reflections","PRD-642 / VQ-03","partial"],
  ["L9","Post chain + AA","PRD-636 / 539","partial"],
 ];
-const color = s => `var(--${s})`;
-const fmt = n => n.toLocaleString("en-US");
+
+// ---------- state
+let selSys = "lumen", selPrd = null;
+function select(sys, prd, scroll) {
+  if (sys) selSys = sys;
+  selPrd = prd;
+  renderMatrix(); renderWaves(); renderChips(); renderDetail();
+  if (scroll) document.getElementById("detail-sec").scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" });
+}
+
+// ---------- port order
+document.getElementById("k-prds").textContent = PORT.filter(p => p.done < p.total).length;
+document.getElementById("wave-legend").innerHTML = Object.keys(WAVES).map(w => `<span class="pill"><span class="dot" style="background:var(--w${w});border-radius:50%"></span>Wave ${w}</span>`).join("");
+
+function renderMatrix() {
+  const W = 520, H = 440, L = 44, R = 12, T = 14, B = 40;
+  const x = c => L + (c - 2.5) / (8.5 - 2.5) * (W - L - R);
+  const y = i => T + (5.5 - i) / (5.5 - 0.5) * (H - T - B);
+  let s = "";
+  // quadrants split at complexity 5.5, impact 3.5
+  const qx = x(5.5), qy = y(3.5);
+  s += `<rect x="${L}" y="${T}" width="${qx - L}" height="${qy - T}" fill="var(--shipped)" opacity=".07"/>`;
+  s += `<rect x="${qx}" y="${T}" width="${W - R - qx}" height="${qy - T}" fill="var(--open)" opacity=".07"/>`;
+  s += `<rect x="${qx}" y="${qy}" width="${W - R - qx}" height="${H - B - qy}" fill="var(--deferred)" opacity=".07"/>`;
+  s += `<text class="ql" x="${L + 6}" y="${T + 14}">Quick wins</text><text class="ql" x="${W - R - 6}" y="${T + 14}" text-anchor="end">Big bets</text>`;
+  s += `<text class="ql" x="${L + 6}" y="${H - B - 6}">Fill-ins</text><text class="ql" x="${W - R - 6}" y="${H - B - 6}" text-anchor="end">Wait for a game that asks</text>`;
+  for (let c = 3; c <= 8; c++) s += `<line x1="${x(c)}" x2="${x(c)}" y1="${T}" y2="${H - B}" stroke="var(--line)"/><text x="${x(c)}" y="${H - B + 16}" text-anchor="middle">${c}</text>`;
+  for (let i = 1; i <= 5; i++) s += `<line x1="${L}" x2="${W - R}" y1="${y(i)}" y2="${y(i)}" stroke="var(--line)"/><text x="${L - 8}" y="${y(i) + 4}" text-anchor="end">${i}</text>`;
+  s += `<text x="${(L + W - R) / 2}" y="${H - 6}" text-anchor="middle">Complexity (PRD rating)</text>`;
+  s += `<text transform="translate(12 ${(T + H - B) / 2}) rotate(-90)" text-anchor="middle">Impact</text>`;
+  // spread points that share a cell on a small ring
+  const cells = d3.group(PORT.filter(p => p.done < p.total), p => p.cx + "," + p.impact);
+  for (const pts of cells.values()) pts.forEach((p, k) => {
+    const n = pts.length, r = n === 1 ? 0 : 13 + n * 1.6, a = (k / n) * 2 * Math.PI - Math.PI / 2;
+    const px = x(p.cx) + r * Math.cos(a), py = y(p.impact) + r * Math.sin(a);
+    s += `<g class="pt${selPrd === p.id ? " sel" : ""}" tabindex="0" role="button" data-id="${p.id}" aria-label="PRD-${p.id} ${esc(p.title)}, wave ${p.wave}">
+      <title>PRD-${p.id}: ${esc(p.title)} — complexity ${p.cx}${p.est ? " (est.)" : ""}, impact ${p.impact}, wave ${p.wave}</title>
+      <circle cx="${px}" cy="${py}" r="11" fill="var(--w${p.wave})"/><text x="${px}" y="${py + 3.3}" text-anchor="middle">${p.id.replace("VQ-", "V")}</text></g>`;
+  });
+  document.getElementById("matrix").innerHTML = s;
+}
+function renderWaves() {
+  document.getElementById("waves").innerHTML = Object.entries(WAVES).map(([w, label]) => `
+    <div class="wave"><h4><i style="background:var(--w${w})"></i>Wave ${w} <small>${label}</small></h4>
+    ${PORT.filter(p => p.wave == w).map(p => `<button type="button" class="prd${selPrd === p.id ? " sel" : ""}" data-id="${p.id}">
+      <span class="id">PRD-${p.id}</span>
+      <span class="t">${esc(p.title)}<small>${esc(p.why)}${p.waits !== "—" ? " · waits on " + esc(p.waits) : ""}</small></span>
+      <span class="m">cx ${p.cx}${p.est ? "*" : ""} · imp ${p.impact}<span class="prog"><b style="width:${(p.done / p.total * 100).toFixed(0)}%"></b></span>${p.done}/${p.total}</span>
+    </button>`).join("")}</div>`).join("");
+}
+function onPick(e) {
+  const t = e.target.closest("[data-id]"); if (!t) return;
+  const p = PORT.find(q => q.id === t.dataset.id); select(p.sys, p.id, true);
+}
+document.getElementById("waves").addEventListener("click", onPick);
+const mx = document.getElementById("matrix");
+mx.addEventListener("click", onPick);
+mx.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onPick(e); } });
+
+// ---------- system detail
+function renderChips() {
+  document.getElementById("chips").innerHTML = SYS_ORDER.map(k => `<button type="button" class="chip" data-s="${k}" aria-pressed="${k === selSys}">${SYS[k].name}</button>`).join("");
+}
+document.getElementById("chips").addEventListener("click", e => { const b = e.target.closest("button"); if (b) select(b.dataset.s, null, false); });
+function renderDetail() {
+  const s = SYS[selSys], subs = s.subs;
+  const total = subs.reduce((a, r) => a + (r[1] || 0), 0);
+  const prds = PORT.filter(p => p.sys === selSys).sort((a, b) => a.wave - b.wave);
+  const counts = d3.rollup(subs, v => v.length, r => r[3]);
+  document.getElementById("detail").innerHTML = `
+    <div class="dhead"><div><h3>${s.name}</h3><div class="note">${s.what}</div></div>
+      <div><span class="big">${fmt(total)}</span> <span class="note">lines in listed subsystems</span></div></div>
+    <div class="stack" aria-hidden="true">${subs.filter(r => r[1]).map(r => `<span class="s-${r[3]}" style="flex:${r[1]}" title="${esc(r[0])}: ${fmt(r[1])}"></span>`).join("")}</div>
+    <div class="legend">${Object.keys(STATUS).filter(k => counts.get(k)).map(k => `<span class="pill"><span class="dot s-${k}"></span>${STATUS[k]} · ${counts.get(k)}</span>`).join("")}
+      ${prds.length ? `<span class="pill">Port order: ${prds.map(p => `PRD-${p.id} (wave ${p.wave})`).join(", ")}</span>` : ""}</div>
+    <div class="subs"><table><thead><tr><th>Subsystem</th><th style="text-align:right">LOC</th><th>What it does</th><th>ThreeNative</th></tr></thead><tbody>
+      ${subs.map(r => `<tr class="${selPrd && r[5].includes(selPrd) ? "hit" : ""}"><td><b>${esc(r[0])}</b></td>
+        <td class="num">${r[1] ? fmt(r[1]) : "shared"}</td><td>${esc(r[2])}</td>
+        <td><span class="pill"><span class="dot s-${r[3]}"></span>${STATUS[r[3]]}</span><div class="note">${esc(r[4])}</div></td></tr>`).join("")}
+    </tbody></table></div>`;
+}
+
+// ---------- ladder
+document.getElementById("ladder").innerHTML = LADDER.map(([l, n, p, s]) =>
+  `<div class="rung" style="--c:var(--${s})"><span class="l">${l} · ${STATUS[s]}</span><span class="n">${n}</span><span class="p">${p}</span></div>`).join("");
+
+// ---------- treemap
 const on = new Set(Object.keys(STATUS));
-
-document.getElementById("k-open").textContent = F.filter(f => f.status === "open" || f.status === "partial").length;
-document.getElementById("ladder").innerHTML = LADDER.map(([l,n,p,s]) =>
-  `<div class="rung" style="--c:${color(s)}"><span class="l">${l} · ${STATUS[s]}</span><span class="n">${n}</span><span class="p">${p}</span></div>`).join("");
-
 const legend = document.getElementById("legend");
-legend.innerHTML = Object.entries(STATUS).map(([k,v]) =>
+legend.innerHTML = Object.entries(STATUS).map(([k, v]) =>
   `<button type="button" aria-pressed="true" data-s="${k}"><span class="dot s-${k}"></span>${v}</button>`).join("");
 legend.addEventListener("click", e => {
   const b = e.target.closest("button"); if (!b) return;
   const s = b.dataset.s; on.has(s) ? on.delete(s) : on.add(s);
-  b.setAttribute("aria-pressed", on.has(s)); draw();
+  b.setAttribute("aria-pressed", on.has(s)); drawTreemap();
 });
-document.getElementById("big").addEventListener("change", draw);
-
+document.getElementById("big").addEventListener("change", drawTreemap);
 const tm = document.getElementById("tm"), tip = document.getElementById("tip");
 function showTip(f, x, y) {
   tip.innerHTML = `<b>${f.name}</b><div class="row">${fmt(f.loc)} LOC · C++ ${fmt(f.cpp)} · shader ${fmt(f.shd)}</div>
-    <div class="row">Complexity ${f.cx}/10 · port cost ${f.port}</div><div style="margin-top:6px"><span class="pill"><span class="dot s-${f.status}"></span>${STATUS[f.status]}</span> ${f.note}</div>`;
+    <div class="row">Complexity ${f.cx}/10 · port cost ${f.port}</div><div style="margin-top:6px"><span class="pill"><span class="dot s-${f.status}"></span>${STATUS[f.status]}</span> ${f.note}</div>
+    ${f.sys ? `<div class="row" style="margin-top:6px">Select to open subsystems</div>` : ""}`;
   tip.hidden = false;
   const r = tip.getBoundingClientRect();
   tip.style.left = Math.min(x + 14, innerWidth - r.width - 8) + "px";
   tip.style.top = Math.min(y + 14, innerHeight - r.height - 8) + "px";
 }
-function draw() {
+function drawTreemap() {
   const big = document.getElementById("big").checked;
   const rows = F.filter(f => (big || !f.big) && on.has(f.status));
   const groups = d3.groups(rows, f => f.area).map(([name, children]) => ({ name, children }));
@@ -221,12 +541,12 @@ function draw() {
   d3.treemap().size([W, H]).paddingOuter(4).paddingTop(d => d.depth === 1 ? 18 : 4).paddingInner(3).round(true)(root);
   let html = "";
   for (const g of root.children || []) {
-    html += `<div class="grp" style="left:${g.x0}px;top:${g.y0}px;width:${g.x1-g.x0}px;height:${g.y1-g.y0}px"><div class="gl">${g.data.name} · ${fmt(g.value)}</div></div>`;
+    html += `<div class="grp" style="left:${g.x0}px;top:${g.y0}px;width:${g.x1 - g.x0}px;height:${g.y1 - g.y0}px"><div class="gl">${g.data.name} · ${fmt(g.value)}</div></div>`;
     for (const l of g.leaves()) {
       const f = l.data, w = l.x1 - l.x0, h = l.y1 - l.y0, i = F.indexOf(f);
-      const txt = w > 70 && h > 34 ? `<div class="tn">${f.name}</div><div class="tl">${(f.loc/1000).toFixed(1)}K</div>` : "";
+      const txt = w > 70 && h > 34 ? `<div class="tn">${f.sys ? "▸ " : ""}${f.name}</div><div class="tl">${(f.loc / 1000).toFixed(1)}K</div>` : "";
       const cx = w > 34 && h > 20 ? `<span class="cx">${f.cx}</span>` : "";
-      html += `<div class="tile s-${f.status}" tabindex="0" data-i="${i}" aria-label="${f.name}, ${fmt(f.loc)} lines, complexity ${f.cx}, ${STATUS[f.status]}" style="left:${l.x0}px;top:${l.y0}px;width:${w}px;height:${h}px">${txt}${cx}</div>`;
+      html += `<div class="tile s-${f.status}${f.sys ? " drill" : ""}" tabindex="0" ${f.sys ? 'role="button"' : ""} data-i="${i}" aria-label="${f.name}, ${fmt(f.loc)} lines, complexity ${f.cx}, ${STATUS[f.status]}" style="left:${l.x0}px;top:${l.y0}px;width:${w}px;height:${h}px">${txt}${cx}</div>`;
     }
   }
   tm.innerHTML = html || `<p class="note" style="padding:16px">No features match the selected statuses.</p>`;
@@ -235,25 +555,30 @@ tm.addEventListener("pointermove", e => { const t = e.target.closest(".tile"); t
 tm.addEventListener("pointerleave", () => tip.hidden = true);
 tm.addEventListener("focusin", e => { const t = e.target.closest(".tile"); if (t) { const r = t.getBoundingClientRect(); showTip(F[t.dataset.i], r.left, r.top + 10); } });
 tm.addEventListener("focusout", () => tip.hidden = true);
-new ResizeObserver(draw).observe(tm);
+const openTile = e => { const t = e.target.closest(".tile.drill"); if (t) { tip.hidden = true; select(F[t.dataset.i].sys, null, true); } };
+tm.addEventListener("click", openTile);
+tm.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openTile(e); } });
+new ResizeObserver(drawTreemap).observe(tm);
 
-// table
+// ---------- table
 const ORDER = { shipped: 0, partial: 1, open: 2, deferred: 3, notfiled: 4 };
-const PORT = { "Low": 0, "Medium": 1, "High": 2, "Very high": 3, "n/a": -1 };
+const PORTC = { "Low": 0, "Medium": 1, "High": 2, "Very high": 3, "n/a": -1 };
 let sortK = "loc", dir = -1;
 function table() {
-  const val = f => sortK === "status" ? ORDER[f.status] : sortK === "port" ? PORT[f.port] : f[sortK];
+  const val = f => sortK === "status" ? ORDER[f.status] : sortK === "port" ? PORTC[f.port] : f[sortK];
   const rows = [...F].sort((a, b) => { const x = val(a), y = val(b); return (x > y ? 1 : x < y ? -1 : 0) * dir; });
   document.querySelector("#tbl tbody").innerHTML = rows.map(f => `<tr>
     <td><b>${f.name}</b><div class="note">${f.note}</div></td><td>${f.area}</td><td class="num">${fmt(f.loc)}</td>
-    <td><span class="cxbar" aria-label="${f.cx} of 10">${Array.from({length:10},(_,i)=>`<i class="${i<f.cx?"on":""}"></i>`).join("")}</span> <span class="mono">${f.cx}</span></td>
+    <td><span class="cxbar" aria-label="${f.cx} of 10">${Array.from({ length: 10 }, (_, i) => `<i class="${i < f.cx ? "on" : ""}"></i>`).join("")}</span> <span class="mono">${f.cx}</span></td>
     <td>${f.port}</td><td><span class="pill"><span class="dot s-${f.status}"></span>${STATUS[f.status]}</span></td></tr>`).join("");
 }
 document.querySelectorAll("#tbl th").forEach(th => {
   const go = () => { const k = th.dataset.k; dir = sortK === k ? -dir : (k === "name" || k === "area" ? 1 : -1); sortK = k; table(); };
   th.addEventListener("click", go); th.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(); } });
 });
+
 table();
+select("lumen", null, false);
 </script>
 </body>
 </html>
