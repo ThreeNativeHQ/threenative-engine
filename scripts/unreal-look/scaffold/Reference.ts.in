@@ -9,6 +9,7 @@ import {
   Scene,
   type SceneFrame,
   type ShadowFilterTier,
+  TracedReflections,
   VirtualShadowNode,
   sourceAngleShadowFilter,
 } from "@threenative/core";
@@ -44,6 +45,7 @@ import {
   shadowPreset,
 } from "../render/quality.js";
 import { captureReflections } from "../render/reflectionCapture.js";
+import { reflectionTrace } from "../render/reflectionTrace.js";
 import { SUN_DIRECTION, setupSky } from "../render/sky.js";
 import { WorldEnvironment } from "../render/worldEnvironment.js";
 import type { GameState } from "../state.js";
@@ -68,8 +70,9 @@ const SHADOW = shadowPreset(SHADOW_TIER);
 const GI_METHOD = level >= 7 ? GI.finalGatherMethod : "none";
 // `baseline=1` captures the template look as it ships; otherwise the tuning in progress applies.
 const TUNED = params.get("baseline") !== "1";
-// `off=vsm,gpusky,clouds,gi,reflcap,bloom,localexposure,autoexposure,ssgi,ssr,gtao,vignette,motionblur,smaa,noaa,nomsaa` switches one L9 stage off, to
-// attribute frame cost by ablation (PRD-636 performance). `gpusky` is read in `render/sky.ts`.
+// `off=vsm,gpusky,clouds,gi,reflcap,traced,bloom,localexposure,autoexposure,ssgi,ssr,gtao,vignette,motionblur,smaa,noaa,nomsaa` switches one L9 stage off, to
+// attribute frame cost by ablation (PRD-636 performance). `gpusky` is read in `render/sky.ts`. `traced` is the
+// scene-triangle reflection trace (PRD-642): off, the screen march, the cube capture and the floor paint answer.
 // `pan=<rad/s>` turns the camera about the vertical axis after each pose, to give the velocity pass something to blur.
 // `panStep=<rad>&panArc=<rad>` sweeps it instead: `panStep` per drawn frame, back and forth across `panArc` either side of the
 // pose, so the scene stays in view and every frame moves the same number of pixels whatever the frame rate (ghosting proof).
@@ -98,11 +101,6 @@ const STAGE_OFF: Record<string, Record<string, unknown>> = {
   // and 8.94 percent of the frame's energy (Unreal's tint sum 0.7951 / 6 x intensity 0.675 over the node's weight sum 3).
   stockbloom: { bloomRadius: 0, bloomStrength: 0.0298, bloomThreshold: 0, unrealBloomEnabled: false },
   vignette: { vignetteAmount: 0 },
-};
-// Diagnosis: the screen probes' knobs from the URL (PRD-640). `?probeFilter=N` sets the spatial filter passes over the probes
-// (the engine's own is 3, Unreal's).
-const PROBE_KNOBS: Record<string, unknown> = {
-  ...(params.has("probeFilter") ? { ssgiProbeFilterPasses: Number(params.get("probeFilter")) } : {}),
 };
 // Unreal 5.8.3's sun source angle, from the live level dump (tools/unreal-reference/template-actors.json),
 // is the sun's apex angle (its angular diameter). `sourceAngleShadowFilter` takes the angular radius,
@@ -260,10 +258,17 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
         scene.background = new Color(0x000000);
         scene.environment = null;
       }
+      // PRD-642: from L8 a reflection ray walks the scene's triangles (core's TracedReflections), so the painted
+      // floor, which stood in for what the screen cannot see, is not needed. The cube capture stays: a ray that
+      // misses sees the sky, and the capture draws the sky at a finer grain than the 64 x 32 environment.
+      const tracing = TUNED && level >= 8 && !OFF.has("traced");
+      if (tracing) reflectionTrace.current = new TracedReflections(model);
       // PRD-631: indirect diffuse from a world-space light cache of the sky and, from L7 (Unreal's
       // global illumination), the sun a surface returns (render/giCache.ts).
       if (TUNED && level >= 2 && !OFF.has("gi"))
         installGi(ctx, model, {
+          // Diagnosis knob paint=1: paint the lit floor into the environment even while reflections are traced.
+          paintGround: !tracing || params.get("paint") === "1",
           // Diagnosis knob stockRays=1: cast the bake through ctx.raycast, the slow path (an A/B).
           stockRays: params.get("stockRays") === "1",
           bounces: GI_METHOD === "none" ? 0 : 5,
@@ -285,19 +290,6 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
       if (level >= 9) {
         // setupPost reads the `high` preset by reference, so the ablation switches go there.
         for (const name of OFF) Object.assign(qualityPreset("high"), STAGE_OFF[name]);
-        // Diagnosis: ?probes=1 gathers with screen probes at L9 as it does below L9 (PRD-640); ?probes=0 keeps the per-pixel gather.
-        if (params.has("probes"))
-          Object.assign(
-            qualityPreset("high"),
-            params.get("probes") === "1"
-              ? {
-                  ssgiScreenProbes: true,
-                  ssgiProbeRays: Number(params.get("probeRays") ?? 16),
-                  ssgiDenoiseRadius: Number(params.get("ssgiDenoise") ?? 16),
-                }
-              : { ssgiDenoiseRadius: undefined, ssgiProbeRays: undefined, ssgiScreenProbes: false },
-          );
-        Object.assign(qualityPreset("high"), PROBE_KNOBS);
         const post = setupPost(ctx.renderer, scene, camera, { godraysLight: key, tier: "high" });
         postDebug = () => post.debug();
         this.#dispose = () => post.dispose();
@@ -325,10 +317,7 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
                   ssgiProbeRays: Number(params.get("probeRays") ?? 16),
                   ssgiDenoiseRadius: Number(params.get("ssgiDenoise") ?? 16),
                 }
-              : params.get("probes") === "0"
-                ? { ssgiDenoiseRadius: undefined, ssgiProbeRays: undefined, ssgiScreenProbes: false }
-                : {}),
-            ...PROBE_KNOBS,
+              : {}),
             ...(params.get("probeJitter") === null ? {} : { ssgiProbeJitter: Number(params.get("probeJitter")) }),
             ...(params.get("probeDebug") === null ? {} : { ssgiProbeDebug: Number(params.get("probeDebug")) }),
             autoExposureEnabled: false,
@@ -441,6 +430,8 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
   override exit(ctx: GameCtx): void {
     this.#reflectionsDispose?.();
     this.#reflectionsDispose = undefined;
+    reflectionTrace.current?.dispose();
+    reflectionTrace.current = undefined;
     this.#dispose?.();
     this.#dispose = undefined;
     super.exit(ctx);

@@ -74,6 +74,7 @@ export type MotionRun = {
   frames: number;
   camera: MotionCamera;
   light?: { name: string; keys: number[][] };
+  actor?: { name: string; keys: number[][] };
 };
 
 /** The camera of a motion run at a frame, as scene.py keys it: heading 0 looks down -z, a positive heading turns toward +x. */
@@ -103,6 +104,18 @@ export function motionPose(
     ],
     hfovDeg: camera.hfovDeg,
   };
+}
+
+/** An actor's offset at a frame, from `[frame, dx, dy, dz]` keys: linear between keys, held outside them (PRD-650 swing). */
+export function actorOffset(keys: number[][], frame: number): number[] {
+  const first = keys[0] ?? [0, 0, 0, 0];
+  if (frame <= (first[0] ?? 0)) return first.slice(1);
+  for (let k = 1; k < keys.length; k++) {
+    const [a = 0, ...from] = keys[k - 1] ?? [];
+    const [b = 0, ...to] = keys[k] ?? [];
+    if (frame <= b) return from.map((v, i) => v + ((to[i] ?? v) - v) * ((frame - a) / (b - a)));
+  }
+  return (keys.at(-1) ?? first).slice(1);
 }
 
 /** The scale of a keyed light at a frame: constant from each key to the next, as the Unreal track is. */

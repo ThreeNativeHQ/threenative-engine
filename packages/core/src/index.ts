@@ -260,6 +260,29 @@ export type {
   IGPUSceneBVHOptions,
 } from "./gpu-scene-bvh.js";
 /**
+ * Reflection rays against the scene's triangles, in TSL. For a smooth surface, a ray finds what the screen cannot
+ * show (a room behind the camera, the far side of an object) and returns the hit's position, normal and material.
+ * The game lights the hit in its own stage. The kernel is plain TSL: float textures and a loop, no storage buffer.
+ * @situation reflect what is behind the camera in a mirror or a chrome sphere
+ * @situation make a glossy or wet floor reflect objects that are off screen
+ * @situation trace a shadow ray from a reflected surface toward the sun
+ * @alias lumen reflections
+ * @alias dedicated reflection rays
+ * @constraint the pack is a snapshot of the static triangles taken when the object is built: build a new one after geometry moves
+ * @constraint instanced, skinned, batched and morphing meshes are not in the pack; report.skippedMoving counts them
+ * @constraint trace only pixels at or below maxRoughnessToTrace (0.4, Unreal's cut-off): each ray walks the tree
+ * @constraint a ray visits at most maxSteps tree nodes, then reports a miss; hit light, the miss colour and the blend with the frame stay in the game's src/render/
+ * @constraint the pack needs a device with float32-filterable
+ * @override maxRoughnessToTrace, roughnessFadeLength and maxSteps are game-owned choices
+ * @example const traced = new TracedReflections(ctx.scene); const hit = traced.trace({ origin, direction, far: 30 }); // light hit.albedo at hit.position in the stage
+ */
+export { TracedReflections } from "./render/traced-reflections.js";
+export type {
+  ITracedHit,
+  ITracedRay,
+  ITracedReflectionsOptions,
+} from "./render/traced-reflections.js";
+/**
  * Collapse many copies of one game-authored shape into a single draw, without counting them first.
  *
  * `new InstancedMesh(geometry, material, count)` needs the count before anything is placed, so a
@@ -1043,6 +1066,12 @@ export {
   VirtualShadowNode,
 } from "./render/virtual-shadow.js";
 export { readVirtualShadowMarker } from "./render/virtual-shadow.js";
+export {
+  LAMP_SHADOW_MARKER,
+  lampShadowMarker,
+  readLampShadowMarker,
+} from "./render/virtual-shadow.js";
+export type { ILampShadowStats } from "./render/virtual-shadow.js";
 /**
  * Source-angle blocker search and variable-radius PCF on three's shadow map.
  * @situation soften a directional shadow as the caster-receiver gap grows

@@ -725,6 +725,22 @@
       "reject": []
     },
     {
+      "id": "request.lumen-reflections",
+      "query": "lumen reflections",
+      "scope": "request",
+      "source": "template:starter#Ownership",
+      "expect": ["TracedReflections"],
+      "reject": []
+    },
+    {
+      "id": "request.dedicated-reflection-rays",
+      "query": "dedicated reflection rays",
+      "scope": "request",
+      "source": "template:starter#Ownership",
+      "expect": ["TracedReflections"],
+      "reject": []
+    },
+    {
       "id": "request.vehicle-suspension-grip",
       "query": "suspension wheel traction tyre grip",
       "scope": "request",

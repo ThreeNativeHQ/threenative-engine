@@ -188,6 +188,11 @@ describe("threenative-engine-mcp", () => {
     );
   });
 
+  it("finds TracedReflections by Unreal's names for it, ahead of the screen-space stage", () => {
+    for (const phrase of ["lumen reflections", "dedicated reflection rays"])
+      expect(searchResults(phrase, workspaceManifest)[0]?.symbol, phrase).toBe("TracedReflections");
+  });
+
   it("explains an alias hit with a readable situation", () => {
     const manifest = loadCapabilityManifest(workspaceManifest);
     const result = searchResults("third person camera follow", workspaceManifest).find(

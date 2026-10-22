@@ -8,7 +8,7 @@ prd_contract: v1
 **Priority:** P2 — no box is ticked: the templates' `low`, `medium` and `high` tiers change only the sun map size, while Unreal's shadow levels change the filter, its sample count and the shadow resolution bias, and nothing compares a ThreeNative tier with its Unreal level.
 **Complexity:** 5 (MEDIUM) — 1–5 files: the harness `quality.ts`, the filter options, the native filter (+1), a tier table every template takes (+2), a cost step under GPU pressure (+2); risk override: none
 **Owner:** João
-**Depends on:** [PRD-649](PRD-649-shadow-calibration-scenes-are-built-in-unreal-and-judged-until-parity.md) Phase 3 (the scenes and the scoreboard). Uses the filter of [PRD-634](../look/PRD-634-sun-shadows-reach-the-horizon-and-soften-with-distance-from-the-caster.md) Phase 2 and the lamp atlas of [PRD-650](PRD-650-a-lamp-shadow-is-as-sharp-as-the-pixels-it-covers-and-softens-with-the-lamp-size.md) Phase 1. Mirrors the GI tier of [PRD-644](../gi/PRD-644-the-gi-tier-follows-unreal-quality-levels-and-the-measured-gpu-time.md), with the same tier-to-level map.
+**Depends on:** [PRD-649](PRD-649-shadow-calibration-scenes-are-built-in-unreal-and-judged-until-parity.md) Phase 3 (the scenes and the scoreboard). Uses the filter of [PRD-634](../look/PRD-634-sun-shadows-reach-the-horizon-and-soften-with-distance-from-the-caster.md) Phase 2 and the lamp atlas of [PRD-650](../../done/PRD-650-a-lamp-shadow-is-as-sharp-as-the-pixels-it-covers-and-softens-with-the-lamp-size.md) Phase 1. Mirrors the GI tier of [PRD-644](../gi/PRD-644-the-gi-tier-follows-unreal-quality-levels-and-the-measured-gpu-time.md), with the same tier-to-level map.
 
 ## Context
 
