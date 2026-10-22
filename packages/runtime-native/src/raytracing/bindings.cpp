@@ -10,9 +10,13 @@
 #include "bindings.h"
 #include "rt_common.h"
 #include "mystral/js/engine.h"
-#include <iostream>
-#include <unordered_map>
+#include "../webgpu/shared_trace.h"
+#include <cmath>
+#include <cstdio>
 #include <cstring>
+#include <iostream>
+#include <string>
+#include <unordered_map>
 
 namespace mystral {
 namespace rt {
@@ -26,6 +30,15 @@ static std::unique_ptr<IRTBackend> g_rtBackend = nullptr;
 static constexpr bool kNativeRayTracingResultInteropAvailable = false;
 static constexpr const char* kNativeRayTracingUnavailableMessage =
     "TN_NATIVE_RAYTRACING_UNAVAILABLE: native traceRays is unavailable until buffer-to-texture copy-out interop exists.";
+
+// The backend starts on first use. Creating it opens a GPU device, which a game that never asks
+// for ray tracing should not pay for at every start.
+static IRTBackend* ensureBackend() {
+    if (!g_rtBackend) {
+        g_rtBackend = createRTBackend();
+    }
+    return g_rtBackend.get();
+}
 
 // Handle tracking for JS object cleanup
 static uint32_t g_nextGeometryId = 1;
@@ -153,14 +166,106 @@ static js::JSValueHandle js_isSupported(void* ctx, const std::vector<js::JSValue
 }
 
 static js::JSValueHandle js_getBackend(void* ctx, const std::vector<js::JSValueHandle>& args, js::Engine* engine) {
-    if (!g_rtBackend) {
-        return engine->newString("none");
+    return engine->newString(ensureBackend()->getBackend());
+}
+
+/**
+ * What the host found and what it can do, as a plain object. A game reads it to decide and never
+ * assumes it: rayBatch says whether traceRayBatch works, imageOutput whether traceRays could.
+ */
+static js::JSValueHandle js_capabilities(void* ctx, const std::vector<js::JSValueHandle>& args, js::Engine* engine) {
+    const RTCapabilities found = ensureBackend()->capabilities();
+    char apiVersion[32];
+    std::snprintf(apiVersion, sizeof(apiVersion), "%u.%u.%u", found.apiVersion >> 22,
+                  (found.apiVersion >> 12) & 0x3FF, found.apiVersion & 0xFFF);
+
+    auto result = engine->newObject();
+    engine->setProperty(result, "backend", engine->newString(found.backend.c_str()));
+    engine->setProperty(result, "device", engine->newString(found.deviceName.c_str()));
+    engine->setProperty(result, "vendorId", engine->newNumber(found.vendorId));
+    engine->setProperty(result, "deviceId", engine->newNumber(found.deviceId));
+    engine->setProperty(result, "apiVersion", engine->newString(apiVersion));
+    engine->setProperty(result, "driverVersion", engine->newNumber(found.driverVersion));
+    engine->setProperty(result, "maxRayRecursionDepth", engine->newNumber(found.maxRayRecursionDepth));
+    engine->setProperty(result, "timestampPeriodNs", engine->newNumber(found.timestampPeriodNs));
+    engine->setProperty(result, "accelerationStructure", engine->newBoolean(found.accelerationStructure));
+    engine->setProperty(result, "rayQuery", engine->newBoolean(found.rayQuery));
+    engine->setProperty(result, "rayTracingPipeline", engine->newBoolean(found.rayTracingPipeline));
+    engine->setProperty(result, "rayBatch", engine->newBoolean(found.rayBatch));
+    engine->setProperty(result, "imageOutput", engine->newBoolean(found.imageOutput));
+    engine->setProperty(result, "reason", engine->newString(found.reason.c_str()));
+    // The GPU transport needs the ray tracing device and the WebGPU device to share memory.
+    const webgpu::SharedTraceStatus shared = webgpu::sharedTraceStatus();
+    const bool sharedReady = found.sharedTransport && shared.available;
+    engine->setProperty(result, "sharedTransport", engine->newBoolean(sharedReady));
+    const std::string sharedReason = sharedReady ? std::string()
+        : (!found.sharedTransport ? found.sharedTransportReason : shared.reason);
+    engine->setProperty(result, "sharedTransportReason", engine->newString(sharedReason.c_str()));
+    return result;
+}
+
+static js::JSValueHandle js_traceRayBatchGpu(void* ctx, const std::vector<js::JSValueHandle>& args, js::Engine* engine) {
+    IRTBackend* backend = ensureBackend();
+    const RTCapabilities found = backend->capabilities();
+    const webgpu::SharedTraceStatus shared = webgpu::sharedTraceStatus();
+    if (!found.rayBatch || !found.sharedTransport || !shared.available) {
+        const std::string why = !found.rayBatch ? found.reason
+            : (!found.sharedTransport ? found.sharedTransportReason : shared.reason);
+        engine->throwException(("TN_NATIVE_RAYTRACING_UNAVAILABLE: native traceRayBatchGpu is unavailable on this host: " +
+                                why + ".").c_str());
+        return engine->newUndefined();
     }
-    return engine->newString(g_rtBackend->getBackend());
+
+    auto invalid = [&](const std::string& why) {
+        engine->throwTypeError(("TN_NATIVE_RAYTRACING_BATCH_INVALID: " + why).c_str());
+        return engine->newUndefined();
+    };
+    if (args.empty() || !engine->isObject(args[0])) {
+        return invalid("traceRayBatchGpu expects { tlas, rays, hits, rayCount }, with rays and hits as GPUBuffers.");
+    }
+    auto options = args[0];
+    auto tlasIt = g_tlases.find(getTLASId(engine, engine->getProperty(options, "tlas")));
+    if (tlasIt == g_tlases.end()) {
+        return invalid("tlas is not a live TLAS from createTLAS.");
+    }
+    auto bufferId = [&](const char* name, uint64_t* id) {
+        auto buffer = engine->getProperty(options, name);
+        if (!engine->isObject(buffer)) return false;
+        auto idValue = engine->getProperty(buffer, "_bufferId");
+        if (engine->isUndefined(idValue)) return false;
+        *id = static_cast<uint64_t>(engine->toNumber(idValue));
+        return true;
+    };
+    uint64_t raysId = 0;
+    uint64_t hitsId = 0;
+    if (!bufferId("rays", &raysId)) return invalid("rays must be a GPUBuffer.");
+    if (!bufferId("hits", &hitsId)) return invalid("hits must be a GPUBuffer.");
+    auto countVal = engine->getProperty(options, "rayCount");
+    const double requested = engine->isUndefined(countVal) ? -1 : engine->toNumber(countVal);
+    if (!(requested >= 1) || requested != std::floor(requested) || requested > UINT32_MAX) {
+        return invalid("rayCount must be a whole number of at least 1.");
+    }
+
+    const webgpu::GpuTraceResult traced = webgpu::traceRayBatchOnGpu(
+        *backend, tlasIt->second, raysId, hitsId, static_cast<uint32_t>(requested));
+    if (!traced.ok) {
+        engine->throwException(("TN_NATIVE_RAYTRACING_BATCH_FAILED: " + traced.error).c_str());
+        return engine->newUndefined();
+    }
+    auto result = engine->newObject();
+    engine->setProperty(result, "rayCount", engine->newNumber(requested));
+    engine->setProperty(result, "totalMs", engine->newNumber(traced.totalMs));
+    engine->setProperty(result, "cpuMs", engine->newNumber(traced.cpuMs));
+    return result;
+}
+
+// Waits for the last GPU trace and returns the GPU time of its trace dispatch alone.
+static js::JSValueHandle js_sharedBatchGpuMs(void* ctx, const std::vector<js::JSValueHandle>& args, js::Engine* engine) {
+    return engine->newNumber(ensureBackend()->sharedTraceGpuMs());
 }
 
 static js::JSValueHandle js_createGeometry(void* ctx, const std::vector<js::JSValueHandle>& args, js::Engine* engine) {
-    if (!g_rtBackend || !g_rtBackend->isSupported()) {
+    if (!ensureBackend()->isSupported()) {
         std::cerr << "[MystralRT] createGeometry: Hardware ray tracing not available" << std::endl;
         return engine->newNull();
     }
@@ -191,6 +296,10 @@ static js::JSValueHandle js_createGeometry(void* ctx, const std::vector<js::JSVa
 
     auto strideVal = engine->getProperty(options, "vertexStride");
     size_t vertexStride = engine->isUndefined(strideVal) ? 12 : static_cast<size_t>(engine->toNumber(strideVal));
+    if (vertexStride < 12 || vertexStride % 4 != 0) {
+        std::cerr << "[MystralRT] createGeometry: vertexStride must be a multiple of 4 and at least 12 bytes" << std::endl;
+        return engine->newNull();
+    }
 
     auto offsetVal = engine->getProperty(options, "vertexOffset");
     size_t vertexOffset = engine->isUndefined(offsetVal) ? 0 : static_cast<size_t>(engine->toNumber(offsetVal));
@@ -198,7 +307,7 @@ static js::JSValueHandle js_createGeometry(void* ctx, const std::vector<js::JSVa
     // Build geometry description
     RTGeometryDesc desc = {};
     desc.vertices = vertices;
-    desc.vertexCount = vertexCount / 3;  // vec3 positions
+    desc.vertexCount = vertexCount * sizeof(float) / vertexStride;  // vec3 positions, padded to the stride
     desc.vertexStride = vertexStride;
     desc.vertexOffset = vertexOffset;
     desc.indices = indices;
@@ -219,7 +328,7 @@ static js::JSValueHandle js_createGeometry(void* ctx, const std::vector<js::JSVa
 }
 
 static js::JSValueHandle js_createBLAS(void* ctx, const std::vector<js::JSValueHandle>& args, js::Engine* engine) {
-    if (!g_rtBackend || !g_rtBackend->isSupported()) {
+    if (!ensureBackend()->isSupported()) {
         std::cerr << "[MystralRT] createBLAS: Hardware ray tracing not available" << std::endl;
         return engine->newNull();
     }
@@ -271,7 +380,7 @@ static js::JSValueHandle js_createBLAS(void* ctx, const std::vector<js::JSValueH
 }
 
 static js::JSValueHandle js_createTLAS(void* ctx, const std::vector<js::JSValueHandle>& args, js::Engine* engine) {
-    if (!g_rtBackend || !g_rtBackend->isSupported()) {
+    if (!ensureBackend()->isSupported()) {
         std::cerr << "[MystralRT] createTLAS: Hardware ray tracing not available" << std::endl;
         return engine->newNull();
     }
@@ -348,7 +457,7 @@ static js::JSValueHandle js_createTLAS(void* ctx, const std::vector<js::JSValueH
 }
 
 static js::JSValueHandle js_updateTLAS(void* ctx, const std::vector<js::JSValueHandle>& args, js::Engine* engine) {
-    if (!g_rtBackend || !g_rtBackend->isSupported()) {
+    if (!ensureBackend()->isSupported()) {
         std::cerr << "[MystralRT] updateTLAS: Hardware ray tracing not available" << std::endl;
         return engine->newUndefined();
     }
@@ -422,7 +531,7 @@ static js::JSValueHandle js_traceRays(void* ctx, const std::vector<js::JSValueHa
         return engine->newUndefined();
     }
 
-    if (!g_rtBackend || !g_rtBackend->isSupported()) {
+    if (!ensureBackend()->isSupported()) {
         std::cerr << "[MystralRT] traceRays: Hardware ray tracing not available" << std::endl;
         return engine->newUndefined();
     }
@@ -469,6 +578,81 @@ static js::JSValueHandle js_traceRays(void* ctx, const std::vector<js::JSValueHa
 
     g_rtBackend->traceRays(traceOptions);
     return engine->newUndefined();
+}
+
+/**
+ * Trace a batch of rays and write one hit record per ray into a typed array the caller owns.
+ * Layout and limits: rt_common.h (kRayWords, kHitWords). Nothing here is a WebGPU resource, so the
+ * result is readable by construction and the game uploads it with an ordinary queue write.
+ */
+static js::JSValueHandle js_traceRayBatch(void* ctx, const std::vector<js::JSValueHandle>& args, js::Engine* engine) {
+    IRTBackend* backend = ensureBackend();
+    const RTCapabilities found = backend->capabilities();
+    if (!found.rayBatch) {
+        engine->throwException(("TN_NATIVE_RAYTRACING_UNAVAILABLE: native traceRayBatch is unavailable on this host: " +
+                                found.reason + ".").c_str());
+        return engine->newUndefined();
+    }
+
+    auto invalid = [&](const std::string& why) {
+        engine->throwTypeError(("TN_NATIVE_RAYTRACING_BATCH_INVALID: " + why).c_str());
+        return engine->newUndefined();
+    };
+
+    if (args.empty() || !engine->isObject(args[0])) {
+        return invalid("traceRayBatch expects { tlas, rays, hits, rayCount? }.");
+    }
+    auto options = args[0];
+
+    auto tlasIt = g_tlases.find(getTLASId(engine, engine->getProperty(options, "tlas")));
+    if (tlasIt == g_tlases.end()) {
+        return invalid("tlas is not a live TLAS from createTLAS.");
+    }
+
+    size_t raysBytes = 0;
+    size_t hitsBytes = 0;
+    const float* rays = static_cast<const float*>(
+        engine->getArrayBufferData(engine->getProperty(options, "rays"), &raysBytes));
+    float* hits = static_cast<float*>(
+        engine->getArrayBufferData(engine->getProperty(options, "hits"), &hitsBytes));
+    if (!rays || raysBytes == 0 || raysBytes % (kRayWords * sizeof(float)) != 0) {
+        return invalid("rays must be a Float32Array of 8 floats per ray: origin.xyz, tMin, direction.xyz, tMax.");
+    }
+    if (!hits) {
+        return invalid("hits must be a typed array with 4 words per ray.");
+    }
+
+    size_t rayCount = raysBytes / (kRayWords * sizeof(float));
+    auto countVal = engine->getProperty(options, "rayCount");
+    if (!engine->isUndefined(countVal)) {
+        const double requested = engine->toNumber(countVal);
+        if (!(requested >= 0) || requested != std::floor(requested) || requested > static_cast<double>(rayCount)) {
+            return invalid("rayCount must be a whole number from 0 to the number of rays in rays.");
+        }
+        rayCount = static_cast<size_t>(requested);
+    }
+    if (rayCount > UINT32_MAX || hitsBytes < rayCount * kHitWords * sizeof(uint32_t)) {
+        return invalid("hits needs room for 4 words per ray: " + std::to_string(rayCount) + " rays need " +
+                       std::to_string(rayCount * kHitWords * sizeof(uint32_t)) + " bytes, hits has " +
+                       std::to_string(hitsBytes) + ".");
+    }
+
+    TraceRayBatchOptions batch = {};
+    batch.tlas = tlasIt->second;
+    batch.rays = rays;
+    batch.rayCount = static_cast<uint32_t>(rayCount);
+    batch.hits = hits;
+    const TraceRayBatchResult traced = backend->traceRayBatch(batch);
+    if (!traced.ok) {
+        engine->throwException(("TN_NATIVE_RAYTRACING_BATCH_FAILED: " + traced.error).c_str());
+        return engine->newUndefined();
+    }
+
+    auto result = engine->newObject();
+    engine->setProperty(result, "rayCount", engine->newNumber(static_cast<double>(rayCount)));
+    engine->setProperty(result, "gpuMs", engine->newNumber(traced.gpuMs));
+    engine->setProperty(result, "totalMs", engine->newNumber(traced.totalMs));
+    return result;
 }
 
 static js::JSValueHandle js_destroyBLAS(void* ctx, const std::vector<js::JSValueHandle>& args, js::Engine* engine) {
@@ -523,8 +707,8 @@ bool initializeRTBindings(js::Engine* engine) {
         return false;
     }
 
-    // Create RT backend
-    g_rtBackend = createRTBackend();
+    // The backend is created on first use (ensureBackend), not here
+    g_rtBackend.reset();
 
     // Create mystralRT global object
     auto mystralRT = engine->newObject();
@@ -539,6 +723,30 @@ bool initializeRTBindings(js::Engine* engine) {
     engine->setProperty(mystralRT, "getBackend",
         engine->newFunction("getBackend", [engine](void* ctx, const std::vector<js::JSValueHandle>& args) {
             return js_getBackend(ctx, args, engine);
+        })
+    );
+
+    engine->setProperty(mystralRT, "capabilities",
+        engine->newFunction("capabilities", [engine](void* ctx, const std::vector<js::JSValueHandle>& args) {
+            return js_capabilities(ctx, args, engine);
+        })
+    );
+
+    engine->setProperty(mystralRT, "traceRayBatch",
+        engine->newFunction("traceRayBatch", [engine](void* ctx, const std::vector<js::JSValueHandle>& args) {
+            return js_traceRayBatch(ctx, args, engine);
+        })
+    );
+
+    engine->setProperty(mystralRT, "traceRayBatchGpu",
+        engine->newFunction("traceRayBatchGpu", [engine](void* ctx, const std::vector<js::JSValueHandle>& args) {
+            return js_traceRayBatchGpu(ctx, args, engine);
+        })
+    );
+
+    engine->setProperty(mystralRT, "sharedBatchGpuMs",
+        engine->newFunction("sharedBatchGpuMs", [engine](void* ctx, const std::vector<js::JSValueHandle>& args) {
+            return js_sharedBatchGpuMs(ctx, args, engine);
         })
     );
 
@@ -593,7 +801,7 @@ bool initializeRTBindings(js::Engine* engine) {
     // Register mystralRT as global
     engine->setGlobalProperty("mystralRT", mystralRT);
 
-    std::cout << "[MystralRT] Bindings initialized (backend: " << g_rtBackend->getBackend() << ")" << std::endl;
+    std::cout << "[MystralRT] Bindings initialized (backend: created on first use)" << std::endl;
     return true;
 }
 
