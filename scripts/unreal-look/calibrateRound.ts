@@ -5,6 +5,7 @@
  */
 import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
+import { type IThresholdFile, type IThresholds, layerThresholds } from "./compare.js";
 import {
   CLOSENESS,
   type Closeness,
@@ -48,23 +49,16 @@ export function adapterName(adapter: unknown): string {
   return name;
 }
 
-export interface ILimits {
-  deltaE?: number;
-  dP50?: number;
-  dEv?: number;
-  iou?: number;
-}
-export interface IThresholdFile extends ILimits {
-  layers?: Record<string, ILimits>;
-}
-
-/** thresholds.json: the flat keys apply to every layer and `layers.<name>` overrides them. */
-export function limitsFor(file: IThresholdFile, layer: string): ILimits {
-  const { layers, ...flat } = file;
-  const own = layers?.[layer];
-  if (own === undefined)
-    fail("NO_THRESHOLDS", `thresholds.json has no thresholds for layer ${layer}`);
-  return { ...flat, ...own };
+/**
+ * The limits of one layer from thresholds.json, read by the function that every compare uses
+ * (`layerThresholds`). A layer that sets no limit on the light (deltaE and dP50) fails closed: the flat IoU
+ * limit alone would let any frame through, as in the GI compare.
+ */
+export function lightLimits(file: IThresholdFile | null, layer: string): IThresholds {
+  const limits = layerThresholds(file, layer);
+  if (limits?.deltaE === undefined || limits.dP50 === undefined)
+    fail("NO_THRESHOLDS", `thresholds.json sets no deltaE and dP50 limit for layer ${layer}`);
+  return limits;
 }
 
 /** The part of a compare row the round reads. */
@@ -83,7 +77,7 @@ export interface IMeasured {
  * Pass when every metric that has a limit is inside it. The ratio is the worst metric over its limit
  * (the limit over the value for the IoU), so 1 sits on the threshold and 3.4 is 3.4 times past it.
  */
-export function evaluate(row: IMeasured, limits: ILimits): { pass: boolean; ratio: number } {
+export function evaluate(row: IMeasured, limits: IThresholds): { pass: boolean; ratio: number } {
   const checks: [number | null, number | undefined, boolean][] = [
     [row.deltaE, limits.deltaE, false],
     [row.dP50, limits.dP50, false],

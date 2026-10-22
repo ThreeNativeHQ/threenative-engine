@@ -41,13 +41,12 @@ import {
   type IMeasured,
   type IRegion,
   type IRound,
-  type IThresholdFile,
   adapterName,
   averageRuns,
   buildRound,
   evaluate,
   fail,
-  limitsFor,
+  lightLimits,
   numbersTable,
   parity,
   readRounds,
@@ -55,7 +54,7 @@ import {
   roundId,
   tierLayer,
 } from "./calibrateRound.js";
-import { compareGiToUnreal, readScene, registry } from "./gi.js";
+import { compareGiToUnreal, readScene, readThresholds, registry } from "./gi.js";
 import {
   GI_LOCK_FILE,
   checkGiLocks,
@@ -327,10 +326,7 @@ function regionsOf(
   layer: string,
   limitLayer: string,
 ): IRegion[] {
-  const thresholds = JSON.parse(
-    readFileSync(path.join(REFERENCE, "thresholds.json"), "utf8"),
-  ) as IThresholdFile;
-  const limits = limitsFor(thresholds, limitLayer);
+  const limits = lightLimits(readThresholds(), limitLayer);
   const runs = arm.runs.map((run) => {
     const root = path.join(dir, "compare", run);
     link(root, "unreal", o.unreal);
