@@ -62,6 +62,8 @@ describe("progressive GI bake", () => {
     const whole = sunlitRoom();
     const reference = installGi(rayContext(whole), whole, { bounces: 5, sun: SUN });
     const wanted = Float32Array.from(giCache.field?.values ?? []);
+    const wantedWalls = Uint8Array.from(giCache.field?.walls ?? []);
+    expect(wantedWalls.some((v) => v > 0)).toBe(true);
     expect(reference?.pass).toBe("final");
 
     const frames: (() => void)[] = [];
@@ -139,6 +141,10 @@ describe("progressive GI bake", () => {
     const got = giCache.field?.values ?? new Float32Array(0);
     expect(got.length).toBe(wanted.length);
     expect(got.every((v, i) => v === wanted[i])).toBe(true);
+    // The wall starts the reader needs (PRD-649) come out of the slices the same.
+    const gotWalls = giCache.field?.walls ?? new Uint8Array(0);
+    expect(gotWalls.length).toBe(wantedWalls.length);
+    expect(gotWalls.every((v, i) => v === wantedWalls[i])).toBe(true);
     expect(preview.some((v, i) => v !== wanted[i])).toBe(true);
     // The materials still read the one texture, now holding the full bake.
     expect(giCache.texture).toBe(texture);
