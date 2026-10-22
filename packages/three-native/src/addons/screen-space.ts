@@ -1,3 +1,5 @@
+import type { GpuStage } from "../gpu-stages.js";
+
 /**
  * Screen-space reflections for the owned engine, with the call shape of three's `ssr(color, depth,
  * normal, options)` (SSRNode): the engine had no live SSR node, so `three/addons/tsl/display/SSRNode.js`
@@ -46,7 +48,7 @@ export interface IScreenSpaceTsl {
     source: TslNode,
     width: number | null,
     height: number | null,
-    options: { type: number; minFilter?: number; magFilter?: number },
+    options: { type: number; minFilter?: number; magFilter?: number; gpuStage?: GpuStage },
   ) => TslNode;
   readonly smoothstep: (low: TslNode, high: TslNode, value: TslNode) => TslNode;
   readonly uniform: (value: number) => TslNode;
@@ -79,6 +81,8 @@ export interface IScreenSpaceReflectionOptions {
 }
 
 const HALF_FLOAT_TYPE = 1016;
+/** The passes of the screen-space gather report their GPU time under this stage (gpu-stages.ts). */
+const GI_STAGE: GpuStage = "SSGI";
 /** Ray slices per pixel. A game scales how far they reach (`maxDistance`), not how many there are. */
 const STEPS = 48;
 /** Bisection steps that sharpen a detected crossing. */
@@ -578,7 +582,7 @@ export function defineScreenSpaceGi(tsl: IScreenSpaceTsl) {
       return result;
     })();
 
-    const node = rtt(graph, null, null, { type: HALF_FLOAT_TYPE });
+    const node = rtt(graph, null, null, { type: HALF_FLOAT_TYPE, gpuStage: GI_STAGE });
     const uniformObjects = { radius, thickness, sliceCount, stepCount, intensity, screenEdgeFade };
     return Object.defineProperties(node, {
       ...Object.fromEntries(
@@ -721,6 +725,7 @@ function defineScreenProbes(
     type: HALF_FLOAT_TYPE,
     minFilter: 1003,
     magFilter: 1003,
+    gpuStage: GI_STAGE,
   });
 
   // 2. filter: this texel is direction `cell` of probe `tile`'s irradiance octahedron.
@@ -754,6 +759,7 @@ function defineScreenProbes(
   })();
   const filtered = rtt(filterGraph, tilesX * IRRADIANCE_SIDE, tilesY * IRRADIANCE_SIDE, {
     type: HALF_FLOAT_TYPE,
+    gpuStage: GI_STAGE,
   });
 
   // 2b. spatial filter: a probe takes the irradiance of the eight probes around it that lie on its own surface, direction by
@@ -882,5 +888,5 @@ function defineScreenProbes(
     });
     return result;
   })();
-  return rtt(gatherGraph, null, null, { type: HALF_FLOAT_TYPE });
+  return rtt(gatherGraph, null, null, { type: HALF_FLOAT_TYPE, gpuStage: GI_STAGE });
 }

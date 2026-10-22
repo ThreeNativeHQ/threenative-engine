@@ -3,8 +3,9 @@
 //
 // This is the one place this game decides how expensive it looks. `postprocessing.ts` reads
 // `qualityPreset(resolveQualityTier(...))` and nothing else, so "make it run on a phone" is one
-// file to edit rather than a hunt through anonymous literals. All three tiers use the World
-// Environment's shared SMAA stage; see `screenSpaceAA` in `worldEnvironment.ts`.
+// file to edit rather than a hunt through anonymous literals. `high` and `medium` anti-alias
+// temporally (`temporalAA`) and `low` uses the World Environment's shared SMAA stage; see
+// `screenSpaceAA` in `worldEnvironment.ts`.
 //
 // **Where the numbers come from.** Every millisecond below is GPU time from the per-stage
 // ablation recorded in the engine repository's `docs/verification/runtime-perf-state.md`: Chrome
@@ -93,7 +94,8 @@ export function resolveQualityTier(
 
 /**
  * The look every tier shares is a fresh Unreal 5.8.3 project's: its bloom, local exposure and
- * cosine-fourth vignette, plus the shared chain's SMAA (`screenSpaceAA` in `worldEnvironment.ts`).
+ * cosine-fourth vignette, plus Unreal's temporal anti-aliasing on `high` and `medium` (`temporalAA`) and the
+ * shared SMAA on `low` (`screenSpaceAA` in `worldEnvironment.ts`).
  * Each has a named override: `unrealBloomEnabled: false` (then `bloomStrength`, `bloomRadius` and
  * `bloomThreshold` apply), `localExposureEnabled: false` and `vignetteAmount: 0`.
  */
@@ -116,6 +118,9 @@ const shared: IWorldEnvironmentOptions = {
  */
 const high: IWorldEnvironmentOptions = {
   ...shared,
+  // Unreal's default anti-aliasing is temporal (`r.AntiAliasingMethod` 4). The engine jitters the camera, draws the motion
+  // and blends the frames; `temporalAA: false` brings back the chain's SMAA, which is what `low` and three.js keep.
+  temporalAA: true,
   // GTAO, full resolution plus denoise: unmeasured on its own here; read `TN_FRAME_BUDGET`.
   gtaoEnabled: true,
   gtaoRadius: 0.35,

@@ -7,7 +7,7 @@ prd_contract: v1
 **Status:** DONE — `pnpm unreal-look:judge`, `pnpm unreal-look:calibrate` (with `--status`), the scoreboard and the parity rule ship with unit proof. The baseline rounds on `cornell` (high) and `sunlit-room` (high and medium) ran live, with sheets, a fresh judge and one scoreboard file each.
 **Complexity:** 5 (MEDIUM) — 1–5 files: a calibrate command, a sheet layout, per-scene criteria, a scoreboard, specs (+1), new state: a parity scoreboard with history per commit (+2), a fresh judge session per round (+1), every GI PRD consumes it (+1); risk override: none
 **Owner:** João
-**Depends on:** [PRD-638](../Unreal/gi/PRD-638-calibration-scenes-are-built-in-unreal-and-captured-as-the-gi-target.md) Phase 1 (the Unreal frames) and [PRD-646](../Unreal/gi/PRD-646-threenative-recreates-each-unreal-calibration-scene-exactly.md) Phase 2 (a recreated scene whose direct light already matches). Every GI PRD in [`gi/`](../Unreal/gi/) and [`../rendering/`](../Unreal/rendering/) records its visual verdict through this loop.
+**Depends on:** [PRD-638](PRD-638-calibration-scenes-are-built-in-unreal-and-captured-as-the-gi-target.md) Phase 1 (the Unreal frames) and [PRD-646](../Unreal/gi/PRD-646-threenative-recreates-each-unreal-calibration-scene-exactly.md) Phase 2 (a recreated scene whose direct light already matches). Every GI PRD in [`gi/`](../Unreal/gi/) and [`../rendering/`](../Unreal/rendering/) records its visual verdict through this loop.
 
 ## Context
 
@@ -125,7 +125,7 @@ scoreboard is a workflow input, so it is allowed under the evidence rules in `do
   the command reads the stream to check that every image was opened. The layer of a frame is read from its
   path (`L9/L9_sun60_exterior.png`, `sunlit-room/L7/sun60-window.png`). Unreal GI variants pair as
   `L7-Epic` with L7, `L9-Epic` with L9 and `L7-Low` with ThreeNative L6 (`GI_LAYERS` in
-  `capture-gi-threenative.ts`). `--tier medium` pairs `L7-Medium` with the ThreeNative `L7-medium` layer and
+  `capture-gi-threenative.ts`; replaced the same day, see the last Decision). `--tier medium` pairs `L7-Medium` with the ThreeNative `L7-medium` layer and
   `--tier low` pairs `L7-Low` with `L7-low` (the PRD-644 tier layers). The judge answers both scales (against
   BEFORE and against UNREAL) in one session.
 - 2026-10-21 (judge lane): the scoreboard is a folder, `tools/unreal-reference/gi/parity/`, with one JSON
@@ -165,3 +165,4 @@ scoreboard is a workflow input, so it is allowed under the evidence rules in `do
   no limit applies, and the IoU is set after the row was judged. All 24 rows of a live `cornell` compare carry
   `pass: null`, so the GI compare reports and does not gate. `calibrate` applies `layers.L7` itself. The
   harness fix belongs to the PRD-631 owner: it changes the exit code of every GI compare.
+- 2026-10-21 (judge lane, coordinator order): the judge no longer pairs Unreal `L7-Low` with ThreeNative L6. L6 has no GI and no exposure, while `L7-Low` has its Lumen off at Low scalability but keeps auto exposure and an unshadowed sky light, so the pair reported a false black room. A tier follows its own Unreal level, as the PRD-644 compare tool does: ThreeNative L7 at tier low, medium and high against `L7-Low`, `L7-Medium` and `L7-Epic`, and L9 against `L9-Epic` at high. L6 pairs with no Unreal variant, and a round that holds an L6 frame fails with `LAYER_MISMATCH`. Proof: `pnpm exec vitest run scripts/__tests__/unreal-look-judge.spec.ts` (red first: L6 still paired with `L7-Low` at medium and high; then 40 passed).

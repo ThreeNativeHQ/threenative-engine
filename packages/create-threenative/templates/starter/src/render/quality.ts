@@ -93,7 +93,8 @@ export function resolveQualityTier(
 
 /**
  * The look every tier shares is a fresh Unreal 5.8.3 project's: its bloom, local exposure and
- * cosine-fourth vignette, plus the shared chain's SMAA (`screenSpaceAA` in `worldEnvironment.ts`).
+ * cosine-fourth vignette, plus Unreal's temporal anti-aliasing on `high` and `medium` (`temporalAA`) and the
+ * shared SMAA on `low` (`screenSpaceAA` in `worldEnvironment.ts`).
  * Each has a named override: `unrealBloomEnabled: false` (then `bloomStrength`, `bloomRadius` and
  * `bloomThreshold` apply), `localExposureEnabled: false` and `vignetteAmount: 0`.
  *
@@ -120,6 +121,11 @@ const shared: IWorldEnvironmentOptions = {
  */
 const high: IWorldEnvironmentOptions = {
   ...shared,
+  // Unreal's default anti-aliasing is temporal (`r.AntiAliasingMethod` 4). The engine jitters the camera, draws the motion
+  // and blends the frames; `temporalAA: false` brings back the chain's SMAA, which is what `low` and three.js keep.
+  // Read `setupPost(...).debug().temporal` for the live frame, history and jitter. The opt-in `traa` kit stage
+  // (`temporalAA.ts`) takes its place when the tier lists `authoredStageNames: ["traa"]`.
+  temporalAA: true,
   // GTAO, full resolution plus denoise: unmeasured on its own here; read `TN_FRAME_BUDGET`.
   gtaoEnabled: true,
   gtaoRadius: 0.35,
@@ -128,16 +134,13 @@ const high: IWorldEnvironmentOptions = {
   // Unreal enables motion blur on high-end PCs only. It needs the chain's velocity. Cost: unmeasured.
   motionBlurEnabled: true,
   renderChainTier: "high",
-  // Temporal AA is opt-in and no shipped tier names it: add `authoredStageNames: ["traa"]` here to
-  // reconstruct at the display raster, and read `setupPost(...).debug().temporal` for the reset and
-  // raster state it reports. Its rejection fraction, ghosting and frame-time cost are unqualified.
 };
 
 /**
  * The rung in between: the same occlusion at half the directions. Saving unmeasured, and the
  * chain's own antialiasing one notch cheaper.
  */
-// SMAA owns medium edges; another four-sample world resolve adds mobile bandwidth.
+// Temporal AA owns medium edges (it comes with `...high`); another four-sample world resolve adds mobile bandwidth.
 const medium: IWorldEnvironmentOptions = {
   ...high,
   gtaoSamples: 8,

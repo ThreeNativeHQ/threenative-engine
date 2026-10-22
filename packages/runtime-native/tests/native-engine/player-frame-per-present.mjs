@@ -231,7 +231,7 @@ if (gpuTiming) {
       assert.equal(value.elapsedMs, null); assert.equal(value.segmentsMs, null); assert.equal(value.fresh, false);
     } else {
       assert(Number.isFinite(value.elapsedMs) && value.elapsedMs > 0);
-      assert.equal(value.segmentsMs.length, 4);
+      assert.equal(value.segmentsMs.length, 5);
       assert(value.segmentsMs.every((v) => Number.isFinite(v) && v >= 0));
     }
     if (i > 0) {

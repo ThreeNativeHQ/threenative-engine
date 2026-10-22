@@ -1,5 +1,5 @@
 {
-  "note": "PRD-638 GI calibration scenes. Each scene folder holds scene.py (authored in Unreal), and the exported scene.glb and scene.json. A variant is one Movie Render Queue run per pose. GI quality follows BaseScalability.ini on 5.8.3: @0 Lumen GI off, @1 irradiance field gather, @3 screen probe gather. expect is read back from the editor log for every job.",
+  "note": "PRD-638 GI calibration scenes. Each scene folder holds scene.py (authored in Unreal), and the exported scene.glb and scene.json. A variant is one Movie Render Queue run per pose. GI quality follows BaseScalability.ini on 5.8.3: @0 Lumen GI off, @1 irradiance field gather, @3 screen probe gather. expect is read back from the editor log for every job. A variant with motion: true is what a motion run (--motion <run>) captures by default, and one with motionOnly: true is captured by a motion run only; L7-Epic-motion and L7-Medium-motion are L7-Epic and L7-Medium with the backbuffer dither at 16 bits, so a still camera shows the GI flicker and not the tonemapper dither (L7-Medium-motion is captured on request: --variants).",
   "resolution": [1280, 720],
   "scenes": [
     {
@@ -102,9 +102,41 @@
       "kinds": ["png", "exr"]
     },
     {
+      "name": "L7-Epic-motion",
+      "layer": "L7",
+      "motion": true,
+      "motionOnly": true,
+      "cvars": {
+        "sg.GlobalIlluminationQuality": 3,
+        "r.BackbufferQuantizationDitheringOverride": 16
+      },
+      "expect": {
+        "r.Lumen.DiffuseIndirect.Allow": 1,
+        "r.Lumen.FinalGatherMethod": 1,
+        "r.BackbufferQuantizationDitheringOverride": 16
+      },
+      "kinds": ["png"]
+    },
+    {
+      "name": "L7-Medium-motion",
+      "layer": "L7",
+      "motionOnly": true,
+      "cvars": {
+        "sg.GlobalIlluminationQuality": 1,
+        "r.BackbufferQuantizationDitheringOverride": 16
+      },
+      "expect": {
+        "r.Lumen.DiffuseIndirect.Allow": 1,
+        "r.Lumen.FinalGatherMethod": 0,
+        "r.BackbufferQuantizationDitheringOverride": 16
+      },
+      "kinds": ["png"]
+    },
+    {
       "name": "ID",
       "layer": "L0",
       "level": "id",
+      "motion": true,
       "cvars": {},
       "expect": {},
       "kinds": ["png"]
