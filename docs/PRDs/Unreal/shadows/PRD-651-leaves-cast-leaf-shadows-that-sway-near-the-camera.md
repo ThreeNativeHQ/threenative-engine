@@ -64,7 +64,7 @@ from the game. The engine only makes the shadow follow them.
 
 ## Acceptance Criteria
 
-- [ ] AC-1 [local]: On `wildwood/closeup` (real Fab vegetation, see Decisions) at `high`, a PRD-647 round returns no REGRESSION against BEFORE and MATCH or CLOSE against Unreal, with the leaf gaps visible in the ground shadow. proof: `pnpm unreal-look:calibrate --scene shadow:wildwood --tier high --before <commit>` — Evidence: pending.
+- [ ] AC-1 [local]: On `wildwood/closeup` (real Fab vegetation, see Decisions) at `high`, a PRD-647 round returns no REGRESSION against BEFORE and MATCH or CLOSE against Unreal, with the leaf gaps visible in the ground shadow. proof: `pnpm unreal-look:calibrate --scene shadow:wildwood --tier high --before <commit>` — Evidence: open. 2026-10-21, lean scene on PR #541 (issuecomment-6329578609), judge against Unreal without a BEFORE arm: `sun60-closeup` reads CLOSE at L5, FAR at L7 and CLOSE at L9. The leaf gaps are visible in the ground shadow in all three rounds. The `calibrate` round itself is not run.
 - [ ] AC-2 [local]: In the `wind` run, the near-ground tree shadow moves with the tree, and the GPU cost of wind stays within PRD-488's 0.25 ms against wind off on the RTX 2080. proof: `pnpm unreal-look:calibrate --scene shadow:foliage --run wind` and `TN_FRAME_BUDGET` windows from `playtest perf` — Evidence: pending.
 
 ## Integration Ledger
