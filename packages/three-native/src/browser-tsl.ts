@@ -498,6 +498,7 @@ export function defineTsl(
     };
   Object.assign(
     exports,
+    // quality-allow: the export table is untyped; defineStorageTextures narrows it to the builders it reads.
     defineStorageTextures(exports as unknown as Parameters<typeof defineStorageTextures>[0]),
   );
   // r185's Break(), Continue() and Return(): a loop or kernel ends early (statements, like atomicAdd).
