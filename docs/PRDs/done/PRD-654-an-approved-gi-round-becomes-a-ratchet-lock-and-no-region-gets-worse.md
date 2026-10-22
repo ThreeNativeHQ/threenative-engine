@@ -122,3 +122,12 @@ prd_contract: v1
   tier needs a Wasm pair that matches the merged tree, and the pair in this lane does not. The stored
   `medium` arm of `sunlit-room`, presented as the `high` layer, is real engine output of a lower GI tier, and
   it breaks 27 bounds in each run.
+- 2026-10-22 (judge2 lane): the cause of the run-to-run spread of the gated layer is temporal anti-aliasing. `quality.ts`
+  sets `temporalAA: true` in the `high` and `medium` tiers (`e23c6e92e`), so the camera jitters every frame and a
+  screenshot lands on an arbitrary frame after the 45-frame wait. Proof: eight screenshots of one `sunlit-room` pose, 0
+  to 32 frames apart, in one page session. With `temporalAA: true` each pair differs in 20,000 to 50,000 pixels (largest
+  step 15 to 45 levels). With `temporalAA: false` all eight shots of three poses are identical, 0 differing pixels. The
+  arm at `ad18729b8` (before the default) has two identical runs, the arm at `cf72b5346` differs in 35,000 to 110,000
+  pixels, even at L1, where the jitter moves the edges. The cause went to `post2-lane`. Until the still frame converges
+  to one image, every GI lock takes its noise from two random draws, and a lock cut with `--relax` carries the spread
+  that its two runs happened to show (the `cornell` L7-high bounds widened by up to 1.5 deltaE at `5bf588c`).
