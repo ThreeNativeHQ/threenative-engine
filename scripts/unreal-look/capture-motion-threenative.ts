@@ -153,7 +153,9 @@ export async function captureMotionFrames(input: IMotionCaptureInput): Promise<n
       | { lampRedraws: number; lampDraws: number; shadowDraws: number; lampGpuMs: number }
       | undefined;
     if (shadows === undefined)
-      throw new Error(`TN_UNREAL_LOOK_NO_LAMP_COUNTERS: ${run} frame ${frame}: the renderer keeps no lamp shadow counters`);
+      throw new Error(
+        `TN_UNREAL_LOOK_NO_LAMP_COUNTERS: ${run} frame ${frame}: the renderer keeps no lamp shadow counters`,
+      );
     lampFrames.push({ frame, redraws: shadows.lampRedraws, ...shadows });
   };
   await at(0);

@@ -634,7 +634,12 @@ function checkLight(
 }
 
 /** The motion record of a scene.json, checked against the scene it belongs to. Throws on the first fault. */
-function checkActor(actor: NonNullable<IMotionRun["actor"]>, frames: number, scene: IMotionScene, bad: Bad) {
+function checkActor(
+  actor: NonNullable<IMotionRun["actor"]>,
+  frames: number,
+  scene: IMotionScene,
+  bad: Bad,
+) {
   if (!(actor.name in scene.regions)) bad(`actor ${actor.name} is not a region of the scene`);
   if (actor.keys.length < 2) bad("an actor needs 2 keys or more");
   let last = -1;
