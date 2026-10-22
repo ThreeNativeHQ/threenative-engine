@@ -944,6 +944,18 @@ function irradianceAt(
 }
 
 /**
+ * A texel's place in the surface cache's refresh cycle: a fixed spread over `cycle` frames. The low bits of a plain
+ * multiplicative hash repeat with the texel index (the phase would depend on `texel` modulo `cycle` only and draw a
+ * lattice on the walls), so the bits are mixed first.
+ */
+export function refreshPhase(texel: number, cycle: number): number {
+  let h = Math.imul(texel + 1, 2654435761);
+  h = Math.imul(h ^ (h >>> 16), 2246822507);
+  h = Math.imul(h ^ (h >>> 13), 3266489909);
+  return ((h ^ (h >>> 16)) >>> 0) % cycle;
+}
+
+/**
  * The cache's read, registered when the bake finishes: a screen-space gather asks it what a ray that finds
  * nothing on screen would have returned (the tier below its own), with the pixel's world position and normal.
  */
@@ -1793,11 +1805,8 @@ export function installGi(
     );
   const alpha = response === undefined ? 1 : 1 / (1 + response.framesAccumulated);
   const fineTexels = fine.grid.nx * fine.grid.ny * fine.grid.nz;
-  /** A texel's place in the surface cache's refresh cycle: a fixed spread over `updateFactor` frames. */
   const phaseOf = (texel: number): number =>
-    response === undefined
-      ? 0
-      : (Math.imul(texel + 1, 2654435761) >>> 0) % Math.round(response.updateFactor);
+    response === undefined ? 0 : refreshPhase(texel, Math.round(response.updateFactor));
   let frame = 0;
   let settling = false;
   giCache.refresh = (): boolean => {

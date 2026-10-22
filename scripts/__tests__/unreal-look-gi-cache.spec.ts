@@ -20,6 +20,7 @@ import {
   giCache,
   gridOver,
   installGi,
+  refreshPhase,
   skyRadiance,
   sphereShare,
 } from "../unreal-look/scaffold/render/giCache.js";
@@ -574,6 +575,23 @@ describe("the world-space GI cache against closed forms (PRD-631 L7)", () => {
       it("refresh reports nothing to do while no light changed", () => {
         live();
         expect(giCache.refresh?.()).toBe(false);
+      });
+
+      describe("the refresh phase of a texel (PRD-641 AC-2)", () => {
+        const cycle = 32;
+        const phases = Array.from({ length: 4096 }, (_, k) => refreshPhase(k, cycle));
+
+        it("does not repeat with the texel index: a texel and the one a cycle later rarely share a phase", () => {
+          const same = phases.slice(0, 4096 - cycle).filter((p, k) => p === phases[k + cycle]);
+          // A random phase repeats 1 time in 32 (3%). A phase that is a function of the index modulo the cycle repeats always.
+          expect(same.length / (4096 - cycle)).toBeLessThan(0.1);
+        });
+
+        it("uses every phase about equally often", () => {
+          const counts = new Array<number>(cycle).fill(0);
+          for (const p of phases) counts[p] = (counts[p] ?? 0) + 1;
+          for (const n of counts) expect(Math.abs(n - 128)).toBeLessThan(45);
+        });
       });
 
       describe("with Unreal's response in frames (PRD-641 AC-2)", () => {
