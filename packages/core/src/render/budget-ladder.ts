@@ -1,6 +1,6 @@
 import {
-  type FrameTimeModel,
   FrameTimeBudget,
+  type FrameTimeModel,
   type IFrameTimeBudgetOptions,
 } from "./frame-time-budget.js";
 
