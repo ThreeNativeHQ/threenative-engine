@@ -28,8 +28,8 @@ function verifyStep(lamps) {
     windowFrames: 12,
   });
   let report;
-  for (let i = 0; i < 2; i += 1) report = budget.observe(6, 22) ?? report;
-  assertCondition(report?.stepped === "medium" && report.panic, "2 frames of 22 ms over the 16.7 ms period, 6 ms of it shadows, step high down to medium");
+  for (let i = 0; i < 2; i += 1) report = budget.observe(8, 22) ?? report;
+  assertCondition(report?.stepped === "medium" && report.panic, "2 frames of 22 ms over the 16.7 ms period, 8 ms of it shadows, step high down to medium");
   assertCondition(rebuilt.join() === "medium", "the game rebuilds its filter once, at the new tier");
   assertCondition(budget.shadowQuality === 1, "medium follows Unreal shadow quality level 1");
   assertCondition(lines.length === 1 && lines[0].startsWith("TN_SHADOW_TIER "), "one TN_SHADOW_TIER line for the step");
@@ -41,7 +41,7 @@ function verifyStep(lamps) {
     windowFrames: 12,
   });
   let kept;
-  for (let i = 0; i < 12; i += 1) kept = keep.observe(6, 22) ?? kept;
+  for (let i = 0; i < 12; i += 1) kept = keep.observe(8, 22) ?? kept;
   assertCondition(kept?.tier === "high" && kept.explicit, "explicit sample counts stay at high");
   assertCondition(kept.verdict === "over" && kept.frameMs > kept.targetMs, "the explicit report names the frame over its target");
   return { tier: budget.tier, taps: TAPS[budget.tier], explicit: keep.tier };
