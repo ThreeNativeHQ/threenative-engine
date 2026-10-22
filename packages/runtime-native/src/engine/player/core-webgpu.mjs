@@ -49,7 +49,10 @@ class NativeBackend {
   #timing = false;
   getTimestampFrames(type) {
     if (type !== "render") return [];
-    if (!this.#timing) globalThis.tn.setGpuTimer((this.#timing = true));
+    if (!this.#timing) {
+      this.#timing = true;
+      globalThis.tn.setGpuTimer(true);
+    }
     const { samples, source } = globalThis.tn.renderInfo().gpuTiming;
     return samples > 0 ? [source] : [];
   }
