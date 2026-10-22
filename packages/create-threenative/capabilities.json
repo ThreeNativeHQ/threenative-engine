@@ -2581,7 +2581,7 @@
       "constraints": [
         "non-marker lines and markers whose sun and lamp draws do not add up return `undefined`"
       ],
-      "example": "const stats = readLampShadowMarker(line);\nif (stats !== undefined) redraws += stats.lamps.redraws;",
+      "example": "const stats = readLampShadowMarker(line);\nif (stats !== undefined) console.log(stats.lamps.redraws);",
       "importPath": "@threenative/core",
       "kind": "function",
       "overrides": [],

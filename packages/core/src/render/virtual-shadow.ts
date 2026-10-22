@@ -3509,7 +3509,7 @@ export function lampShadowMarker(
  * @constraint non-marker lines and markers whose sun and lamp draws do not add up return `undefined`
  * @example
  * const stats = readLampShadowMarker(line);
- * if (stats !== undefined) redraws += stats.lamps.redraws;
+ * if (stats !== undefined) console.log(stats.lamps.redraws);
  */
 export function readLampShadowMarker(line: string): ILampShadowStats | undefined {
   if (!line.startsWith(`${LAMP_SHADOW_MARKER}:`)) return undefined;

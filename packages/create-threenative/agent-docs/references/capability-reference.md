@@ -1980,7 +1980,7 @@ export function readLampShadowMarker(line: string): ILampShadowStats | undefined
 
 ```ts
 const stats = readLampShadowMarker(line);
-if (stats !== undefined) redraws += stats.lamps.redraws;
+if (stats !== undefined) console.log(stats.lamps.redraws);
 ```
 
 ### `readProbeVolumeObservation`

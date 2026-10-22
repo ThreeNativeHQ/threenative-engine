@@ -1121,13 +1121,24 @@ describe("swing: lamp shadow redraws over a moving caster (PRD-650 AC-2)", () =>
   const swing = {
     frames: 180,
     camera: { kind: "pose", pose: "spot" },
-    actor: { name: "Crate", keys: [[60, 0, 0, 0], [120, -1, 0, 0.8]] },
+    actor: {
+      name: "Crate",
+      keys: [
+        [60, 0, 0, 0],
+        [120, -1, 0, 0.8],
+      ],
+    },
   } as unknown as IMotionRun;
   const readings = (redraw: (frame: number) => number) =>
     Array.from({ length: 180 }, (_, frame) => ({ frame, redraws: redraw(frame) }));
 
   it("counts no redraw while still, and no lag when the map redraws in the frame the caster moved", () => {
-    expect(swingRedraws(swing, readings((f) => (f > 60 && f <= 120 ? 3 : 0)))).toEqual({
+    expect(
+      swingRedraws(
+        swing,
+        readings((f) => (f > 60 && f <= 120 ? 3 : 0)),
+      ),
+    ).toEqual({
       stillBefore: 0,
       stillAfter: 0,
       maxLag: 0,
@@ -1136,21 +1147,40 @@ describe("swing: lamp shadow redraws over a moving caster (PRD-650 AC-2)", () =>
   });
 
   it("measures a redraw one frame late, redraws while still, and fails on a missing frame", () => {
-    expect(swingRedraws(swing, readings((f) => (f > 61 && f <= 121 ? 1 : f === 10 || f === 140 ? 1 : 0)))).toEqual({
+    expect(
+      swingRedraws(
+        swing,
+        readings((f) => (f > 61 && f <= 121 ? 1 : f === 10 || f === 140 ? 1 : 0)),
+      ),
+    ).toEqual({
       stillBefore: 1,
       stillAfter: 1,
       maxLag: 1,
       moving: 60,
     });
-    expect(() => swingRedraws(swing, readings(() => 0).slice(1))).toThrow(/TN_UNREAL_LOOK_MISSING_FRAME/);
+    expect(() => swingRedraws(swing, readings(() => 0).slice(1))).toThrow(
+      /TN_UNREAL_LOOK_MISSING_FRAME/,
+    );
   });
 
   it("refuses an actor that is not a region, or keys out of order", () => {
     const scene = { lights: [], poses: [{ name: "spot" }], regions: { Crate: [1, 2, 3] } };
     expect(() => validateMotion({ swing }, scene)).not.toThrow();
-    const ghost = { ...swing, actor: { name: "Ghost", keys: swing.actor?.keys ?? [] } } as IMotionRun;
+    const ghost = {
+      ...swing,
+      actor: { name: "Ghost", keys: swing.actor?.keys ?? [] },
+    } as IMotionRun;
     expect(() => validateMotion({ swing: ghost }, scene)).toThrow(/actor Ghost is not a region/);
-    const backwards = { ...swing, actor: { name: "Crate", keys: [[120, 0, 0, 0], [60, 0, 0, 0]] } } as IMotionRun;
+    const backwards = {
+      ...swing,
+      actor: {
+        name: "Crate",
+        keys: [
+          [120, 0, 0, 0],
+          [60, 0, 0, 0],
+        ],
+      },
+    } as IMotionRun;
     expect(() => validateMotion({ swing: backwards }, scene)).toThrow(/ascending/);
   });
 });
