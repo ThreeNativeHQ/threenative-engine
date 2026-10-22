@@ -544,16 +544,23 @@ await mkdir(resolve(work, "node_modules/@acme/viz/dist/three"), { recursive: tru
 await writeFile(resolve(work, "node_modules/@acme/viz/dist/three/index.js"), "export const mark = () => {};");
 await writeFile(resolve(work, "viz.ts"), 'import { Scene } from "three"; import { mark } from "./node_modules/@acme/viz/dist/three/index.js"; globalThis.tn.scene = new Scene(); mark();');
 await bundleNativeEngine({ entry: resolve(work, "viz.ts"), outfile: resolve(work, "viz.js"), boot: false });
-// Core's shadow filters and rough diffuse bundle and run (PRD-650, PRD-653): the engine draws both in C++,
-// so their three-only TSL bodies may name what the engine refuses (cubeTexture) and never call it, and a
-// refused class's prototype reads, as on Wasm.
+// Core's shadow filters, virtual shadow map and rough diffuse bundle and run (PRD-650, PRD-634, PRD-653):
+// the engine draws them in C++, so their three-only TSL bodies may name what the engine refuses
+// (cubeTexture, Stack, AssignNode) and never call it, and a refused class's prototype reads, as on Wasm.
 const coreLookEntry = resolve(work, "core-look.ts");
 const coreLookOut = resolve(work, "core-look.js");
 await writeFile(coreLookEntry, `
-import { Mesh, MeshStandardMaterial, PerspectiveCamera, PlaneGeometry, PointLight, Scene, SpotLight } from "three";
-import { sourceRadiusShadowFilter } from ${JSON.stringify(resolve(native, "../core/src/render/soft-shadow.ts"))};
+import { DirectionalLight, Mesh, MeshStandardMaterial, PerspectiveCamera, PlaneGeometry, PointLight, Scene, SpotLight } from "three";
+import { sourceAngleShadowFilter, sourceRadiusShadowFilter } from ${JSON.stringify(resolve(native, "../core/src/render/soft-shadow.ts"))};
 import { useRoughDiffuse } from ${JSON.stringify(resolve(native, "../core/src/render/rough-diffuse.ts"))};
+import { VirtualShadowNode } from ${JSON.stringify(resolve(native, "../core/src/render/virtual-shadow.ts"))};
 const scene = new Scene();
+const sun = new DirectionalLight(0xffffff, 3); sun.castShadow = true;
+sun.shadow.filterNode = sourceAngleShadowFilter({ sourceAngleRad: 0.02, minPenumbraPixels: 3 });
+const virtual = new VirtualShadowNode(sun, { clipExtents: [8], mapSize: 1024, marker: false });
+sun.shadow.shadowNode = virtual;
+if (sun.shadow.shadowNode !== virtual) throw new Error("the sun lost its virtual shadow");
+scene.add(sun, sun.target);
 const filter = sourceRadiusShadowFilter({ sourceRadius: 0.25 });
 const spot = new SpotLight(0xffffff, 40); spot.castShadow = true; spot.shadow.filterNode = filter;
 const point = new PointLight(0xffffff, 40); point.castShadow = true; point.shadow.filterNode = filter;

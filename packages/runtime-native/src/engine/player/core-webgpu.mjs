@@ -272,6 +272,8 @@ Object.setPrototypeOf(NodeMaterial.prototype, Material.prototype);
 NodeMaterial.prototype.isNodeMaterial = true;
 // three's RendererUtils state save/restore (shared with the Wasm back end).
 export const RendererUtils = defineRendererUtils(Color);
+// Refused at use: only VirtualShadowNode.setup builds one, and the engine draws that map in C++.
+export const AssignNode = unsupportedExport("AssignNode");
 
 WebGPURenderer.prototype.SphereReflectionCapture = defineSphereReflectionCapture(
   async (scene, x, y, z, size, face) => {

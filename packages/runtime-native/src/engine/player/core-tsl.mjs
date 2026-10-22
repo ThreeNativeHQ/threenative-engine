@@ -104,6 +104,11 @@ export const {
   incrementBefore, decrementBefore, increment, decrement, mat3, mat4,
 } = globalThis.tsl;
 
-// Refused at use, as on Wasm: the engine draws a lamp's cube shadow taps in C++ (shadowFilterOptions),
-// so core's three-only filter body names cubeTexture and never calls it here.
+// Refused at use, as on Wasm: the engine draws a lamp's cube shadow taps (shadowFilterOptions) and the
+// virtual shadow map (virtualShadowOptions) in C++, so the three-only bodies of core's soft-shadow.ts
+// and VirtualShadowNode.setup name these and never call them here.
 export const cubeTexture = unsupportedExport("cubeTexture");
+export const Stack = unsupportedExport("Stack");
+export const getShadowMaterial = unsupportedExport("getShadowMaterial");
+export const shadow = unsupportedExport("shadow");
+export const shadowPositionWorld = unsupportedExport("shadowPositionWorld");
