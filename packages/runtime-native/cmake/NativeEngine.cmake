@@ -410,7 +410,7 @@ if(TN_NODE_EXECUTABLE AND TN_TEMPLATE_TINT)
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
     set_tests_properties(native_engine_template_post_starter PROPERTIES LABELS "native-engine" TIMEOUT 180
         ENVIRONMENT "TN_POST_ONLY=starter")
-    foreach(effect GTAONode DenoiseNode SMAANode FnNode RTTNode BloomNode SharpenNode Lut3DNode)
+    foreach(effect GTAONode DenoiseNode SMAANode FnNode TextureLevel RTTNode BloomNode SharpenNode Lut3DNode)
         add_test(NAME native_engine_post_${effect}
             COMMAND ${CMAKE_COMMAND} -E env TN_POST_LOWERING=${effect}
                 ${TN_NODE_EXECUTABLE} --import tsx tests/native-engine/template-post-packages.ts

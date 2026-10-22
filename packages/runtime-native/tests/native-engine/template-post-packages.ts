@@ -97,14 +97,35 @@ function standIn(exported: ReturnType<typeof exportTslGraph>): string[] {
       Object.assign(node, { kind: "TextureNode", name: "velocity", args: [], dependencies: [] });
       continue;
     }
+    if (
+      node.kind === "ContextNode" &&
+      node.operation === "custom-context" &&
+      node.name === "velocity"
+    ) {
+      // Nothing else reads this context, so it is the node it wraps (JSON drops the undefined fields).
+      Object.assign(node, { operation: undefined, name: undefined });
+      continue;
+    }
     const hosted = HOST_RUN[node.kind];
     if (hosted === undefined) continue;
     const row = registry.tests.find((test) => test.id === hosted.row);
     if (!row || row.status !== "implemented" || row.required !== true || row.desktopGate !== true)
-      throw new Error(`TN_TEMPLATE_POST_HOST_RUN: ${node.kind} has no required, desktop-gated parity row '${hosted.row}'`);
+      throw new Error(
+        `TN_TEMPLATE_POST_HOST_RUN: ${node.kind} has no required, desktop-gated parity row '${hosted.row}'`,
+      );
     rows.add(`${node.kind} (${hosted.row})`);
-    exported.nodes.push({ kind: "TextureNode", name: `host_${node.kind}`, args: [], dependencies: [] });
-    Object.assign(node, { kind: "SplitNode", lanes: hosted.lanes, args: [exported.nodes.length - 1], dependencies: [] });
+    exported.nodes.push({
+      kind: "TextureNode",
+      name: `host_${node.kind}`,
+      args: [],
+      dependencies: [],
+    });
+    Object.assign(node, {
+      kind: "SplitNode",
+      lanes: hosted.lanes,
+      args: [exported.nodes.length - 1],
+      dependencies: [],
+    });
   }
   return [...rows];
 }
@@ -181,6 +202,12 @@ async function compile(name: string, output: unknown, hosted = false): Promise<b
   const expected = { FnNode: 2, RTTNode: 4, BloomNode: 26, SharpenNode: 4 }[name];
   if (expected !== undefined && modules.length !== expected)
     throw new Error(`${name}: expected ${expected} native modules, got ${modules.length}`);
+  // A loop body reads at an explicit mip; a plain sample there has no implicit derivatives to pick one.
+  if (
+    name === "TextureLevel" &&
+    !modules.some((m) => /textureSampleLevel\(/u.test(readFileSync(m, "utf8")))
+  )
+    throw new Error("TextureLevel: no explicit-level sample in the native package");
   if (name === "FnNode") {
     const shader = readFileSync(modules[1] as string, "utf8");
     for (const operation of ["for (", "if (", " = "])
