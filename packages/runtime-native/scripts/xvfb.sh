@@ -123,7 +123,9 @@ if [ -n "$compositor_pid" ]; then
     waited=0
     while [ "$waited" -lt 50 ]; do
       kill -0 "$compositor_pid" 2>/dev/null || break
-      xwininfo -root -children 2>/dev/null | grep -q '^ *[1-9][0-9]* child' && break
+      case "$(xwininfo -root -children 2>/dev/null)" in
+        *[1-9]" child"*) break ;;
+      esac
       sleep 0.1
       waited=$((waited + 1))
     done
