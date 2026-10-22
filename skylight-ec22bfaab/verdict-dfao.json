@@ -1,0 +1,462 @@
+{
+  "status": "COMPLETE",
+  "judgedAt": "2026-10-22T18:37:56.488Z",
+  "model": "claude-sonnet-5-5",
+  "effort": "high",
+  "sessionId": "684b12fa-ff48-41df-84bb-7201113acebf",
+  "costUsd": 0.8364433000000001,
+  "durationMs": 101853,
+  "imagesRead": 100,
+  "criteria": {
+    "file": "/home/joao/.cache/tmp-tn/skylight/criteria.md",
+    "sha256": "d6df80d68b51da01a64bd9b37c2bf08f7cf2442036a0ff136b7d1b657bb0bed4"
+  },
+  "expect": "improvement",
+  "tier": "high",
+  "runs": {
+    "before": 2,
+    "after": 2
+  },
+  "sets": {
+    "before": [
+      "/home/joao/.cache/tmp-tn/skylight/judge/b1",
+      "/home/joao/.cache/tmp-tn/skylight/judge/b2"
+    ],
+    "after": [
+      "/home/joao/.cache/tmp-tn/skylight/judge/a1",
+      "/home/joao/.cache/tmp-tn/skylight/judge/a2"
+    ],
+    "unreal": "/home/joao/.cache/tmp-tn/skylight/judge/unreal"
+  },
+  "frames": [
+    {
+      "id": "L2/L2_sun04_exterior",
+      "verdict": "REGRESSION",
+      "vsUnreal": "FAR",
+      "reasons": "Room interior (left back and side walls) shows a dense dithered cross-hatch grain in AFTER, present in both AFTER runs and absent in both BEFORE runs. The small spheres and the glowing sphere carry hard black holes and blotches. The floor and the long wall shadow look the same as BEFORE.",
+      "differences": "Unreal has smooth room walls and clean spheres with no contact marks. AFTER has black speckle holes on the spheres and a patterned room interior. The floor level is unchanged.",
+      "layer": "L2",
+      "unreal": "L2",
+      "files": {
+        "before": [
+          "/home/joao/.cache/tmp-tn/skylight/judge/b1/L2/L2_sun04_exterior.png",
+          "/home/joao/.cache/tmp-tn/skylight/judge/b2/L2/L2_sun04_exterior.png"
+        ],
+        "after": [
+          "/home/joao/.cache/tmp-tn/skylight/judge/a1/L2/L2_sun04_exterior.png",
+          "/home/joao/.cache/tmp-tn/skylight/judge/a2/L2/L2_sun04_exterior.png"
+        ],
+        "unreal": "/home/joao/.cache/tmp-tn/skylight/judge/unreal/L2/L2_sun04_exterior.png"
+      }
+    },
+    {
+      "id": "L2/L2_sun15_exterior",
+      "verdict": "REGRESSION",
+      "vsUnreal": "FAR",
+      "reasons": "Room back and side walls are covered in a dither or moire pattern in AFTER, in both runs. The three left spheres and the glowing sphere have black opaque blotches. BEFORE is clean. The big floor and the wall shadow are visibly unchanged, so nothing improves to offset the artifacts.",
+      "differences": "Unreal is smooth everywhere. AFTER adds black spots on the spheres and a patterned room interior.",
+      "layer": "L2",
+      "unreal": "L2",
+      "files": {
+        "before": [
+          "/home/joao/.cache/tmp-tn/skylight/judge/b1/L2/L2_sun15_exterior.png",
+          "/home/joao/.cache/tmp-tn/skylight/judge/b2/L2/L2_sun15_exterior.png"
+        ],
+        "after": [
+          "/home/joao/.cache/tmp-tn/skylight/judge/a1/L2/L2_sun15_exterior.png",
+          "/home/joao/.cache/tmp-tn/skylight/judge/a2/L2/L2_sun15_exterior.png"
+        ],
+        "unreal": "/home/joao/.cache/tmp-tn/skylight/judge/unreal/L2/L2_sun15_exterior.png"
+      }
+    },
+    {
+      "id": "L2/L2_sun15_spheres",
+      "verdict": "REGRESSION",
+      "vsUnreal": "CLOSE",
+      "reasons": "Floor under the spheres and capsule now has small hard dark contact blobs. The lower edge of the left spheres and the capsule bottom show visible speckle or grain. The blobs are hard, not a soft darkening. The sunlit floor, sky and lit faces are unchanged.",
+      "differences": "Unreal shows no dark blob under the spheres and no grain. AFTER adds noisy dark contact discs, and the shadow pool levels look near BEFORE.",
+      "layer": "L2",
+      "unreal": "L2",
+      "files": {
+        "before": [
+          "/home/joao/.cache/tmp-tn/skylight/judge/b1/L2/L2_sun15_spheres.png",
+          "/home/joao/.cache/tmp-tn/skylight/judge/b2/L2/L2_sun15_spheres.png"
+        ],
+        "after": [
+          "/home/joao/.cache/tmp-tn/skylight/judge/a1/L2/L2_sun15_spheres.png",
+          "/home/joao/.cache/tmp-tn/skylight/judge/a2/L2/L2_sun15_spheres.png"
+        ],
+        "unreal": "/home/joao/.cache/tmp-tn/skylight/judge/unreal/L2/L2_sun15_spheres.png"
+      }
+    },
+    {
+      "id": "L2/L2_sun15_spheres_crop",
+      "verdict": "REGRESSION",
+      "vsUnreal": "CLOSE",
+      "reasons": "A hard, dark, elliptical blob sits at the capsule base and under the mirror sphere. The capsule body shows a dither grain texture, especially near the lower band, and the left sphere edge is speckled. At L2 the floor is not in shadow here, so the pool does not move toward Unreal.",
+      "differences": "Unreal's capsule base and floor are smooth with no dark blob or grain. AFTER adds a dark halo and noise.",
+      "layer": "L2",
+      "unreal": "L2",
+      "files": {
+        "before": [
+          "/home/joao/.cache/tmp-tn/skylight/judge/b1/L2/L2_sun15_spheres_crop.png",
+          "/home/joao/.cache/tmp-tn/skylight/judge/b2/L2/L2_sun15_spheres_crop.png"
+        ],
+        "after": [
+          "/home/joao/.cache/tmp-tn/skylight/judge/a1/L2/L2_sun15_spheres_crop.png",
+          "/home/joao/.cache/tmp-tn/skylight/judge/a2/L2/L2_sun15_spheres_crop.png"
+        ],
+        "unreal": "/home/joao/.cache/tmp-tn/skylight/judge/unreal/L2/L2_sun15_spheres_crop.png"
+      }
+    },
+    {
+      "id": "L2/L2_sun60_exterior",
+      "verdict": "REGRESSION",
+      "vsUnreal": "FAR",
+      "reasons": "Room interior is dithered in AFTER, in both runs. The three left spheres and the glowing sphere have large black blotches. The capsule is also marked. BEFORE and Unreal are clean.",
+      "differences": "Unreal has no holes or pattern. AFTER has black speckle holes on the spheres and a patterned room.",
+      "layer": "L2",
+      "unreal": "L2",
+      "files": {
+        "before": [
+          "/home/joao/.cache/tmp-tn/skylight/judge/b1/L2/L2_sun60_exterior.png",
+          "/home/joao/.cache/tmp-tn/skylight/judge/b2/L2/L2_sun60_exterior.png"
+        ],
+        "after": [
+          "/home/joao/.cache/tmp-tn/skylight/judge/a1/L2/L2_sun60_exterior.png",
+          "/home/joao/.cache/tmp-tn/skylight/judge/a2/L2/L2_sun60_exterior.png"
+        ],
+        "unreal": "/home/joao/.cache/tmp-tn/skylight/judge/unreal/L2/L2_sun60_exterior.png"
+      }
+    },
+    {
+      "id": "L2/L2_sun60_spheres",
+      "verdict": "REGRESSION",
+      "vsUnreal": "CLOSE",
+      "reasons": "Small hard black contact blobs under the spheres and capsule. The shadowed lower part of the capsule and spheres has a visible grain or dither pattern. The sunlit floor is unchanged.",
+      "differences": "Unreal's contact is clean and soft. AFTER adds dark discs and fine noise.",
+      "layer": "L2",
+      "unreal": "L2",
+      "files": {
+        "before": [
+          "/home/joao/.cache/tmp-tn/skylight/judge/b1/L2/L2_sun60_spheres.png",
+          "/home/joao/.cache/tmp-tn/skylight/judge/b2/L2/L2_sun60_spheres.png"
+        ],
+        "after": [
+          "/home/joao/.cache/tmp-tn/skylight/judge/a1/L2/L2_sun60_spheres.png",
+          "/home/joao/.cache/tmp-tn/skylight/judge/a2/L2/L2_sun60_spheres.png"
+        ],
+        "unreal": "/home/joao/.cache/tmp-tn/skylight/judge/unreal/L2/L2_sun60_spheres.png"
+      }
+    },
+    {
+      "id": "L5/L5_sun04_exterior",
+      "verdict": "REGRESSION",
+      "vsUnreal": "FAR",
+      "reasons": "Room interior shows a dither cross-hatch in AFTER, in both runs, and the spheres have black holes. The big shadow floor is about as bright as BEFORE and does not move toward Unreal.",
+      "differences": "Unreal has clean room walls and spheres. AFTER has pattern noise and black blotches.",
+      "layer": "L5",
+      "unreal": "L5",
+      "files": {
+        "before": [
+          "/home/joao/.cache/tmp-tn/skylight/judge/b1/L5/L5_sun04_exterior.png",
+          "/home/joao/.cache/tmp-tn/skylight/judge/b2/L5/L5_sun04_exterior.png"
+        ],
+        "after": [
+          "/home/joao/.cache/tmp-tn/skylight/judge/a1/L5/L5_sun04_exterior.png",
+          "/home/joao/.cache/tmp-tn/skylight/judge/a2/L5/L5_sun04_exterior.png"
+        ],
+        "unreal": "/home/joao/.cache/tmp-tn/skylight/judge/unreal/L5/L5_sun04_exterior.png"
+      }
+    },
+    {
+      "id": "L5/L5_sun15_exterior",
+      "verdict": "REGRESSION",
+      "vsUnreal": "FAR",
+      "reasons": "Room walls show a dither moire. The three left spheres and the glowing sphere have black blotches. The long wall shadow looks about as bright as BEFORE and still lighter than Unreal's, so there is no improvement to offset the artifacts.",
+      "differences": "Unreal's shadow floor is darker and bluer, and its spheres are clean. AFTER has speckled spheres and a patterned room.",
+      "layer": "L5",
+      "unreal": "L5",
+      "files": {
+        "before": [
+          "/home/joao/.cache/tmp-tn/skylight/judge/b1/L5/L5_sun15_exterior.png",
+          "/home/joao/.cache/tmp-tn/skylight/judge/b2/L5/L5_sun15_exterior.png"
+        ],
+        "after": [
+          "/home/joao/.cache/tmp-tn/skylight/judge/a1/L5/L5_sun15_exterior.png",
+          "/home/joao/.cache/tmp-tn/skylight/judge/a2/L5/L5_sun15_exterior.png"
+        ],
+        "unreal": "/home/joao/.cache/tmp-tn/skylight/judge/unreal/L5/L5_sun15_exterior.png"
+      }
+    },
+    {
+      "id": "L5/L5_sun15_exterior_crop",
+      "verdict": "REGRESSION",
+      "vsUnreal": "FAR",
+      "reasons": "The left sphere, the second sphere and the glowing sphere are covered in black holes in both AFTER runs. The shadow floor near the objects is not visibly darker than BEFORE and stays lighter than Unreal's.",
+      "differences": "Unreal has clean spheres and a darker, bluer shadow pool. AFTER has opaque black blotches and a lighter pool.",
+      "layer": "L5",
+      "unreal": "L5",
+      "files": {
+        "before": [
+          "/home/joao/.cache/tmp-tn/skylight/judge/b1/L5/L5_sun15_exterior_crop.png",
+          "/home/joao/.cache/tmp-tn/skylight/judge/b2/L5/L5_sun15_exterior_crop.png"
+        ],
+        "after": [
+          "/home/joao/.cache/tmp-tn/skylight/judge/a1/L5/L5_sun15_exterior_crop.png",
+          "/home/joao/.cache/tmp-tn/skylight/judge/a2/L5/L5_sun15_exterior_crop.png"
+        ],
+        "unreal": "/home/joao/.cache/tmp-tn/skylight/judge/unreal/L5/L5_sun15_exterior_crop.png"
+      }
+    },
+    {
+      "id": "L5/L5_sun15_spheres",
+      "verdict": "REGRESSION",
+      "vsUnreal": "CLOSE",
+      "reasons": "The shadow pool right of the capsule and around the mirror sphere is a little darker than BEFORE, and a contact shadow appears under the spheres. But the sphere lower edges are speckled, and the capsule and mirror sphere bases have hard dark blobs. The pool is still lighter than Unreal's.",
+      "differences": "Unreal's pool is deeper and bluer and has soft contact with no grain. AFTER is only slightly darker and has speckle and hard blobs.",
+      "layer": "L5",
+      "unreal": "L5",
+      "files": {
+        "before": [
+          "/home/joao/.cache/tmp-tn/skylight/judge/b1/L5/L5_sun15_spheres.png",
+          "/home/joao/.cache/tmp-tn/skylight/judge/b2/L5/L5_sun15_spheres.png"
+        ],
+        "after": [
+          "/home/joao/.cache/tmp-tn/skylight/judge/a1/L5/L5_sun15_spheres.png",
+          "/home/joao/.cache/tmp-tn/skylight/judge/a2/L5/L5_sun15_spheres.png"
+        ],
+        "unreal": "/home/joao/.cache/tmp-tn/skylight/judge/unreal/L5/L5_sun15_spheres.png"
+      }
+    },
+    {
+      "id": "L5/L5_sun15_spheres_crop",
+      "verdict": "REGRESSION",
+      "vsUnreal": "CLOSE",
+      "reasons": "The shadow pool is visibly darker than BEFORE and has a soft contact shadow under the mirror sphere, which is a real gain. But a hard black blob sits under the capsule tip. There is grain on the capsule body, the box and the pool floor, which look like dither. The pool is still lighter and warmer than Unreal's.",
+      "differences": "Unreal's pool is darker and bluer and smooth. AFTER is closer in level but noisy, with a hard capsule-base blob.",
+      "layer": "L5",
+      "unreal": "L5",
+      "files": {
+        "before": [
+          "/home/joao/.cache/tmp-tn/skylight/judge/b1/L5/L5_sun15_spheres_crop.png",
+          "/home/joao/.cache/tmp-tn/skylight/judge/b2/L5/L5_sun15_spheres_crop.png"
+        ],
+        "after": [
+          "/home/joao/.cache/tmp-tn/skylight/judge/a1/L5/L5_sun15_spheres_crop.png",
+          "/home/joao/.cache/tmp-tn/skylight/judge/a2/L5/L5_sun15_spheres_crop.png"
+        ],
+        "unreal": "/home/joao/.cache/tmp-tn/skylight/judge/unreal/L5/L5_sun15_spheres_crop.png"
+      }
+    },
+    {
+      "id": "L5/L5_sun60_exterior",
+      "verdict": "REGRESSION",
+      "vsUnreal": "FAR",
+      "reasons": "Room interior has a dither pattern, and the spheres have black blotches in both AFTER runs. The floor is sunlit, so there is no pool improvement to offset the artifacts.",
+      "differences": "Unreal has clean surfaces. AFTER has black holes on the spheres and a patterned room.",
+      "layer": "L5",
+      "unreal": "L5",
+      "files": {
+        "before": [
+          "/home/joao/.cache/tmp-tn/skylight/judge/b1/L5/L5_sun60_exterior.png",
+          "/home/joao/.cache/tmp-tn/skylight/judge/b2/L5/L5_sun60_exterior.png"
+        ],
+        "after": [
+          "/home/joao/.cache/tmp-tn/skylight/judge/a1/L5/L5_sun60_exterior.png",
+          "/home/joao/.cache/tmp-tn/skylight/judge/a2/L5/L5_sun60_exterior.png"
+        ],
+        "unreal": "/home/joao/.cache/tmp-tn/skylight/judge/unreal/L5/L5_sun60_exterior.png"
+      }
+    },
+    {
+      "id": "L5/L5_sun60_spheres",
+      "verdict": "REGRESSION",
+      "vsUnreal": "CLOSE",
+      "reasons": "Small dark contact blobs at the sphere and capsule bases. Fine grain shows on the capsule's shadowed side. The sphere shadows on the floor are unchanged. The sunlit floor is unchanged.",
+      "differences": "Unreal's shadowed sides are smooth and bluer. AFTER adds hard base blobs and a faint dither.",
+      "layer": "L5",
+      "unreal": "L5",
+      "files": {
+        "before": [
+          "/home/joao/.cache/tmp-tn/skylight/judge/b1/L5/L5_sun60_spheres.png",
+          "/home/joao/.cache/tmp-tn/skylight/judge/b2/L5/L5_sun60_spheres.png"
+        ],
+        "after": [
+          "/home/joao/.cache/tmp-tn/skylight/judge/a1/L5/L5_sun60_spheres.png",
+          "/home/joao/.cache/tmp-tn/skylight/judge/a2/L5/L5_sun60_spheres.png"
+        ],
+        "unreal": "/home/joao/.cache/tmp-tn/skylight/judge/unreal/L5/L5_sun60_spheres.png"
+      }
+    },
+    {
+      "id": "L5/L5_sun60_spheres_crop",
+      "verdict": "REGRESSION",
+      "vsUnreal": "CLOSE",
+      "reasons": "A hard black oval blob sits under the capsule bottom and under the mirror sphere. The capsule shadow side shows a visible dither or grid grain. The cast shadow on the floor is unchanged from BEFORE.",
+      "differences": "Unreal has no blob or grain, and its shadowed capsule side is smooth and blue. AFTER adds a dark outline-like blob and noise.",
+      "layer": "L5",
+      "unreal": "L5",
+      "files": {
+        "before": [
+          "/home/joao/.cache/tmp-tn/skylight/judge/b1/L5/L5_sun60_spheres_crop.png",
+          "/home/joao/.cache/tmp-tn/skylight/judge/b2/L5/L5_sun60_spheres_crop.png"
+        ],
+        "after": [
+          "/home/joao/.cache/tmp-tn/skylight/judge/a1/L5/L5_sun60_spheres_crop.png",
+          "/home/joao/.cache/tmp-tn/skylight/judge/a2/L5/L5_sun60_spheres_crop.png"
+        ],
+        "unreal": "/home/joao/.cache/tmp-tn/skylight/judge/unreal/L5/L5_sun60_spheres_crop.png"
+      }
+    },
+    {
+      "id": "L6/L6_sun04_exterior",
+      "verdict": "REGRESSION",
+      "vsUnreal": "FAR",
+      "reasons": "Room interior shows a dither cross-hatch pattern. The spheres have black holes in both AFTER runs. The shadow floor level is the same as BEFORE.",
+      "differences": "Unreal is clean and smooth. AFTER has black blotches on the spheres and a patterned room.",
+      "layer": "L6",
+      "unreal": "L6",
+      "files": {
+        "before": [
+          "/home/joao/.cache/tmp-tn/skylight/judge/b1/L6/L6_sun04_exterior.png",
+          "/home/joao/.cache/tmp-tn/skylight/judge/b2/L6/L6_sun04_exterior.png"
+        ],
+        "after": [
+          "/home/joao/.cache/tmp-tn/skylight/judge/a1/L6/L6_sun04_exterior.png",
+          "/home/joao/.cache/tmp-tn/skylight/judge/a2/L6/L6_sun04_exterior.png"
+        ],
+        "unreal": "/home/joao/.cache/tmp-tn/skylight/judge/unreal/L6/L6_sun04_exterior.png"
+      }
+    },
+    {
+      "id": "L6/L6_sun15_exterior",
+      "verdict": "REGRESSION",
+      "vsUnreal": "FAR",
+      "reasons": "Room walls show a dither pattern. The left spheres and the glowing sphere have black blotches in both AFTER runs. The wall shadow floor is nearly the same as BEFORE and still lighter than Unreal's.",
+      "differences": "Unreal has a darker, bluer shadow and clean objects. AFTER has black holes and a patterned room.",
+      "layer": "L6",
+      "unreal": "L6",
+      "files": {
+        "before": [
+          "/home/joao/.cache/tmp-tn/skylight/judge/b1/L6/L6_sun15_exterior.png",
+          "/home/joao/.cache/tmp-tn/skylight/judge/b2/L6/L6_sun15_exterior.png"
+        ],
+        "after": [
+          "/home/joao/.cache/tmp-tn/skylight/judge/a1/L6/L6_sun15_exterior.png",
+          "/home/joao/.cache/tmp-tn/skylight/judge/a2/L6/L6_sun15_exterior.png"
+        ],
+        "unreal": "/home/joao/.cache/tmp-tn/skylight/judge/unreal/L6/L6_sun15_exterior.png"
+      }
+    },
+    {
+      "id": "L6/L6_sun15_spheres",
+      "verdict": "REGRESSION",
+      "vsUnreal": "CLOSE",
+      "reasons": "The pool is about the same as BEFORE, which already had a soft contact shadow at L6. The new changes are a hard dark blob under the capsule and sphere edge speckle. The pool is still lighter than Unreal's.",
+      "differences": "Unreal's pool is much darker and bluer and smooth. AFTER adds noise and a hard blob and does not improve the level.",
+      "layer": "L6",
+      "unreal": "L6",
+      "files": {
+        "before": [
+          "/home/joao/.cache/tmp-tn/skylight/judge/b1/L6/L6_sun15_spheres.png",
+          "/home/joao/.cache/tmp-tn/skylight/judge/b2/L6/L6_sun15_spheres.png"
+        ],
+        "after": [
+          "/home/joao/.cache/tmp-tn/skylight/judge/a1/L6/L6_sun15_spheres.png",
+          "/home/joao/.cache/tmp-tn/skylight/judge/a2/L6/L6_sun15_spheres.png"
+        ],
+        "unreal": "/home/joao/.cache/tmp-tn/skylight/judge/unreal/L6/L6_sun15_spheres.png"
+      }
+    },
+    {
+      "id": "L6/L6_sun15_spheres_crop",
+      "verdict": "REGRESSION",
+      "vsUnreal": "CLOSE",
+      "reasons": "A hard black blob appears under the capsule base. Fine dither grain shows on the capsule body and the box side. The floor pool is not visibly darker than BEFORE, which already had soft contact.",
+      "differences": "Unreal's pool is darker and bluer and smooth, with no blob. AFTER adds noise and the blob without moving the pool level.",
+      "layer": "L6",
+      "unreal": "L6",
+      "files": {
+        "before": [
+          "/home/joao/.cache/tmp-tn/skylight/judge/b1/L6/L6_sun15_spheres_crop.png",
+          "/home/joao/.cache/tmp-tn/skylight/judge/b2/L6/L6_sun15_spheres_crop.png"
+        ],
+        "after": [
+          "/home/joao/.cache/tmp-tn/skylight/judge/a1/L6/L6_sun15_spheres_crop.png",
+          "/home/joao/.cache/tmp-tn/skylight/judge/a2/L6/L6_sun15_spheres_crop.png"
+        ],
+        "unreal": "/home/joao/.cache/tmp-tn/skylight/judge/unreal/L6/L6_sun15_spheres_crop.png"
+      }
+    },
+    {
+      "id": "L6/L6_sun60_exterior",
+      "verdict": "REGRESSION",
+      "vsUnreal": "FAR",
+      "reasons": "Room interior has a dither pattern. The spheres have large black blotches in both AFTER runs. The floor is sunlit and unchanged.",
+      "differences": "Unreal is clean. AFTER has black holes and a patterned room.",
+      "layer": "L6",
+      "unreal": "L6",
+      "files": {
+        "before": [
+          "/home/joao/.cache/tmp-tn/skylight/judge/b1/L6/L6_sun60_exterior.png",
+          "/home/joao/.cache/tmp-tn/skylight/judge/b2/L6/L6_sun60_exterior.png"
+        ],
+        "after": [
+          "/home/joao/.cache/tmp-tn/skylight/judge/a1/L6/L6_sun60_exterior.png",
+          "/home/joao/.cache/tmp-tn/skylight/judge/a2/L6/L6_sun60_exterior.png"
+        ],
+        "unreal": "/home/joao/.cache/tmp-tn/skylight/judge/unreal/L6/L6_sun60_exterior.png"
+      }
+    },
+    {
+      "id": "L6/L6_sun60_spheres",
+      "verdict": "REGRESSION",
+      "vsUnreal": "CLOSE",
+      "reasons": "This frame is almost identical to BEFORE. Small dark contact blobs show at the sphere and capsule bases, and faint dither shows on the capsule's shadowed side. The sunlit floor and sphere shadows are unchanged.",
+      "differences": "Unreal's shadowed sides are smooth and bluer. AFTER adds faint grain and small base blobs.",
+      "layer": "L6",
+      "unreal": "L6",
+      "files": {
+        "before": [
+          "/home/joao/.cache/tmp-tn/skylight/judge/b1/L6/L6_sun60_spheres.png",
+          "/home/joao/.cache/tmp-tn/skylight/judge/b2/L6/L6_sun60_spheres.png"
+        ],
+        "after": [
+          "/home/joao/.cache/tmp-tn/skylight/judge/a1/L6/L6_sun60_spheres.png",
+          "/home/joao/.cache/tmp-tn/skylight/judge/a2/L6/L6_sun60_spheres.png"
+        ],
+        "unreal": "/home/joao/.cache/tmp-tn/skylight/judge/unreal/L6/L6_sun60_spheres.png"
+      }
+    }
+  ],
+  "overall": {
+    "verdict": "REGRESSION",
+    "vsUnreal": "FAR",
+    "reasons": "Every frame was opened and compared. The contact darkening works only partly. In L5 sun15 the shadow pool is a little darker and a soft contact shadow appears under the mirror sphere and the sphere bases. But the pool stays lighter and warmer than Unreal's. In L6 and L2 the pool barely moves, and in the sun60 frames it does not move. New artifacts appear in every exterior frame at L2, L5 and L6. The room interior walls get a dither cross-hatch pattern. The spheres and the glowing sphere get black blotches and holes. Both AFTER runs show these and both BEFORE runs do not, so they are not capture noise. The sphere frames also show hard dark blobs under the capsule and mirror sphere, plus grain on the capsule and sphere lower edges. That breaks the criteria for no hard outline, no new noise or speckle, and no change to the lit faces. The gain in pool level is too small and too noisy to offset them."
+  },
+  "blockedBy": [
+    "frame L2/L2_sun04_exterior is a REGRESSION",
+    "frame L2/L2_sun15_exterior is a REGRESSION",
+    "frame L2/L2_sun15_spheres is a REGRESSION",
+    "frame L2/L2_sun15_spheres_crop is a REGRESSION",
+    "frame L2/L2_sun60_exterior is a REGRESSION",
+    "frame L2/L2_sun60_spheres is a REGRESSION",
+    "frame L5/L5_sun04_exterior is a REGRESSION",
+    "frame L5/L5_sun15_exterior is a REGRESSION",
+    "frame L5/L5_sun15_exterior_crop is a REGRESSION",
+    "frame L5/L5_sun15_spheres is a REGRESSION",
+    "frame L5/L5_sun15_spheres_crop is a REGRESSION",
+    "frame L5/L5_sun60_exterior is a REGRESSION",
+    "frame L5/L5_sun60_spheres is a REGRESSION",
+    "frame L5/L5_sun60_spheres_crop is a REGRESSION",
+    "frame L6/L6_sun04_exterior is a REGRESSION",
+    "frame L6/L6_sun15_exterior is a REGRESSION",
+    "frame L6/L6_sun15_spheres is a REGRESSION",
+    "frame L6/L6_sun15_spheres_crop is a REGRESSION",
+    "frame L6/L6_sun60_exterior is a REGRESSION",
+    "frame L6/L6_sun60_spheres is a REGRESSION",
+    "the overall verdict is a REGRESSION"
+  ],
+  "file": "/home/joao/.cache/tmp-tn/skylight/verdict-dfao.json"
+}

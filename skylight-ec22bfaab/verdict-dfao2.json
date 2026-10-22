@@ -1,0 +1,453 @@
+{
+  "status": "COMPLETE",
+  "judgedAt": "2026-10-22T20:11:40.460Z",
+  "model": "claude-sonnet-5-5",
+  "effort": "high",
+  "sessionId": "2a5bc280-0793-4953-a013-63368e3c4f6c",
+  "costUsd": 0.7890346000000001,
+  "durationMs": 111289,
+  "imagesRead": 100,
+  "criteria": {
+    "file": "/home/joao/.cache/tmp-tn/skylight/criteria.md",
+    "sha256": "d6df80d68b51da01a64bd9b37c2bf08f7cf2442036a0ff136b7d1b657bb0bed4"
+  },
+  "expect": "improvement",
+  "tier": "high",
+  "runs": {
+    "before": 2,
+    "after": 2
+  },
+  "sets": {
+    "before": [
+      "/home/joao/.cache/tmp-tn/skylight/judge2/b1",
+      "/home/joao/.cache/tmp-tn/skylight/judge2/b2"
+    ],
+    "after": [
+      "/home/joao/.cache/tmp-tn/skylight/judge2/a1",
+      "/home/joao/.cache/tmp-tn/skylight/judge2/a2"
+    ],
+    "unreal": "/home/joao/.cache/tmp-tn/skylight/judge2/unreal"
+  },
+  "frames": [
+    {
+      "id": "L2/L2_sun04_exterior",
+      "verdict": "REGRESSION",
+      "vsUnreal": "CLOSE",
+      "reasons": "Looked at the row of spheres, the capsule and the room back wall. The second sphere (about x=573, y=382) is smooth in BEFORE. In both AFTER runs it has a mottled, blotchy surface. The same blotches appear in both runs, so this is not capture noise. The floor is almost unchanged, with no clear pool darkening to offset the artifact. The sky, the sunlit walls and the large wall on the right are unchanged.",
+      "differences": "UNREAL's spheres are smooth with soft contact. UNREAL's floor is a lighter, greyer brown, and the whole frame is brighter and less saturated. AFTER keeps the same strong warm tint as BEFORE, and its spheres are blotchy.",
+      "layer": "L2",
+      "unreal": "L2",
+      "files": {
+        "before": [
+          "/home/joao/.cache/tmp-tn/skylight/judge2/b1/L2/L2_sun04_exterior.png",
+          "/home/joao/.cache/tmp-tn/skylight/judge2/b2/L2/L2_sun04_exterior.png"
+        ],
+        "after": [
+          "/home/joao/.cache/tmp-tn/skylight/judge2/a1/L2/L2_sun04_exterior.png",
+          "/home/joao/.cache/tmp-tn/skylight/judge2/a2/L2/L2_sun04_exterior.png"
+        ],
+        "unreal": "/home/joao/.cache/tmp-tn/skylight/judge2/unreal/L2/L2_sun04_exterior.png"
+      }
+    },
+    {
+      "id": "L2/L2_sun15_exterior",
+      "verdict": "NEUTRAL",
+      "vsUnreal": "CLOSE",
+      "reasons": "Looked at the sphere row, the floor in front of the room and the long wall shadow on the right. BEFORE and AFTER are almost identical. I see only a very slight extra darkening at the sphere bases and no new grain at this scale. The floor, sky and lit wall faces are unchanged. No region got brighter.",
+      "differences": "UNREAL has softer, darker contact under the sphere row. UNREAL's wall shadow is a little darker. ThreeNative's overall tone is the same as before.",
+      "layer": "L2",
+      "unreal": "L2",
+      "files": {
+        "before": [
+          "/home/joao/.cache/tmp-tn/skylight/judge2/b1/L2/L2_sun15_exterior.png",
+          "/home/joao/.cache/tmp-tn/skylight/judge2/b2/L2/L2_sun15_exterior.png"
+        ],
+        "after": [
+          "/home/joao/.cache/tmp-tn/skylight/judge2/a1/L2/L2_sun15_exterior.png",
+          "/home/joao/.cache/tmp-tn/skylight/judge2/a2/L2/L2_sun15_exterior.png"
+        ],
+        "unreal": "/home/joao/.cache/tmp-tn/skylight/judge2/unreal/L2/L2_sun15_exterior.png"
+      }
+    },
+    {
+      "id": "L2/L2_sun15_spheres",
+      "verdict": "NEUTRAL",
+      "vsUnreal": "CLOSE",
+      "reasons": "Looked at the sphere bottoms, the capsule base, the box bases and the floor. The change is very subtle. There is a faint extra darkening where the capsule and sphere meet the floor, but nothing that clearly moves toward UNREAL. The lit faces and the floor are the same. I saw no grain or halo.",
+      "differences": "UNREAL shows a thin dark contact rim under the spheres and a darker, more neutral floor. AFTER's contact is weaker than UNREAL's. The mirror ball floor contact is missing in both.",
+      "layer": "L2",
+      "unreal": "L2",
+      "files": {
+        "before": [
+          "/home/joao/.cache/tmp-tn/skylight/judge2/b1/L2/L2_sun15_spheres.png",
+          "/home/joao/.cache/tmp-tn/skylight/judge2/b2/L2/L2_sun15_spheres.png"
+        ],
+        "after": [
+          "/home/joao/.cache/tmp-tn/skylight/judge2/a1/L2/L2_sun15_spheres.png",
+          "/home/joao/.cache/tmp-tn/skylight/judge2/a2/L2/L2_sun15_spheres.png"
+        ],
+        "unreal": "/home/joao/.cache/tmp-tn/skylight/judge2/unreal/L2/L2_sun15_spheres.png"
+      }
+    },
+    {
+      "id": "L2/L2_sun15_spheres_crop",
+      "verdict": "IMPROVEMENT",
+      "vsUnreal": "CLOSE",
+      "reasons": "Looked at the capsule bottom and the floor between the capsule and the mirror ball. AFTER, in both runs, has a faint soft darkening around the capsule's foot and under the mirror sphere. BEFORE has none. UNREAL has a similar faint contact. The darkening is soft with no outline, halo or grain. The floor and the lit capsule face are unchanged.",
+      "differences": "The effect in AFTER is weaker than UNREAL's. UNREAL's floor is slightly darker and greyer. UNREAL's contact under the mirror ball is darker.",
+      "layer": "L2",
+      "unreal": "L2",
+      "files": {
+        "before": [
+          "/home/joao/.cache/tmp-tn/skylight/judge2/b1/L2/L2_sun15_spheres_crop.png",
+          "/home/joao/.cache/tmp-tn/skylight/judge2/b2/L2/L2_sun15_spheres_crop.png"
+        ],
+        "after": [
+          "/home/joao/.cache/tmp-tn/skylight/judge2/a1/L2/L2_sun15_spheres_crop.png",
+          "/home/joao/.cache/tmp-tn/skylight/judge2/a2/L2/L2_sun15_spheres_crop.png"
+        ],
+        "unreal": "/home/joao/.cache/tmp-tn/skylight/judge2/unreal/L2/L2_sun15_spheres_crop.png"
+      }
+    },
+    {
+      "id": "L2/L2_sun60_exterior",
+      "verdict": "NEUTRAL",
+      "vsUnreal": "CLOSE",
+      "reasons": "Looked at the sphere row, the capsule underside, the room walls and the floor. The sun is high, so the floor is sunlit. BEFORE and AFTER match, and I see no new noise. The capsule base is a little darker in AFTER, but it is hard to see at this size.",
+      "differences": "UNREAL has slightly bluer underside shading on the spheres and a differently placed sphere shadow. Overall brightness is about the same.",
+      "layer": "L2",
+      "unreal": "L2",
+      "files": {
+        "before": [
+          "/home/joao/.cache/tmp-tn/skylight/judge2/b1/L2/L2_sun60_exterior.png",
+          "/home/joao/.cache/tmp-tn/skylight/judge2/b2/L2/L2_sun60_exterior.png"
+        ],
+        "after": [
+          "/home/joao/.cache/tmp-tn/skylight/judge2/a1/L2/L2_sun60_exterior.png",
+          "/home/joao/.cache/tmp-tn/skylight/judge2/a2/L2/L2_sun60_exterior.png"
+        ],
+        "unreal": "/home/joao/.cache/tmp-tn/skylight/judge2/unreal/L2/L2_sun60_exterior.png"
+      }
+    },
+    {
+      "id": "L2/L2_sun60_spheres",
+      "verdict": "NEUTRAL",
+      "vsUnreal": "CLOSE",
+      "reasons": "Looked at the sphere undersides, the capsule shadow band, the box bases and the floor. BEFORE and AFTER are visually the same. The floor is sunlit, so the sky occlusion barely matters. I saw no grain or halo, and nothing got brighter.",
+      "differences": "UNREAL's sphere undersides are bluer and darker, with a harder terminator. UNREAL shows a slightly different mirror-ball reflection. The floor and lit faces match closely.",
+      "layer": "L2",
+      "unreal": "L2",
+      "files": {
+        "before": [
+          "/home/joao/.cache/tmp-tn/skylight/judge2/b1/L2/L2_sun60_spheres.png",
+          "/home/joao/.cache/tmp-tn/skylight/judge2/b2/L2/L2_sun60_spheres.png"
+        ],
+        "after": [
+          "/home/joao/.cache/tmp-tn/skylight/judge2/a1/L2/L2_sun60_spheres.png",
+          "/home/joao/.cache/tmp-tn/skylight/judge2/a2/L2/L2_sun60_spheres.png"
+        ],
+        "unreal": "/home/joao/.cache/tmp-tn/skylight/judge2/unreal/L2/L2_sun60_spheres.png"
+      }
+    },
+    {
+      "id": "L5/L5_sun04_exterior",
+      "verdict": "REGRESSION",
+      "vsUnreal": "CLOSE",
+      "reasons": "Looked at the spheres, the room interior back wall and the floor shadow pool. The second sphere (x about 570, y 382) is blotchy and mottled in both AFTER runs, and smooth in BEFORE. The back wall inside the room (x 305 to 400) shows a fine dither or checker pattern in AFTER that is absent in BEFORE. The floor pool may be a touch darker, but the new noise breaks criterion 4.",
+      "differences": "UNREAL's shadow pool and room interior are smoother and slightly darker. UNREAL's sky and clouds differ in layout. ThreeNative's spheres have extra mottling.",
+      "layer": "L5",
+      "unreal": "L5",
+      "files": {
+        "before": [
+          "/home/joao/.cache/tmp-tn/skylight/judge2/b1/L5/L5_sun04_exterior.png",
+          "/home/joao/.cache/tmp-tn/skylight/judge2/b2/L5/L5_sun04_exterior.png"
+        ],
+        "after": [
+          "/home/joao/.cache/tmp-tn/skylight/judge2/a1/L5/L5_sun04_exterior.png",
+          "/home/joao/.cache/tmp-tn/skylight/judge2/a2/L5/L5_sun04_exterior.png"
+        ],
+        "unreal": "/home/joao/.cache/tmp-tn/skylight/judge2/unreal/L5/L5_sun04_exterior.png"
+      }
+    },
+    {
+      "id": "L5/L5_sun15_exterior",
+      "verdict": "REGRESSION",
+      "vsUnreal": "CLOSE",
+      "reasons": "Looked at the room interior back wall, the spheres and the long shadow pool. AFTER shows a fine dark crosshatch or dither grain on the room's back wall (x about 335, y 290) that BEFORE lacks. The second sphere also looks slightly speckled. The shadow pool is only marginally darker. The new grain breaks criterion 4.",
+      "differences": "UNREAL's pool and room wall are smooth. UNREAL's pool is darker and more neutral blue. AFTER's pool is still lighter than UNREAL's.",
+      "layer": "L5",
+      "unreal": "L5",
+      "files": {
+        "before": [
+          "/home/joao/.cache/tmp-tn/skylight/judge2/b1/L5/L5_sun15_exterior.png",
+          "/home/joao/.cache/tmp-tn/skylight/judge2/b2/L5/L5_sun15_exterior.png"
+        ],
+        "after": [
+          "/home/joao/.cache/tmp-tn/skylight/judge2/a1/L5/L5_sun15_exterior.png",
+          "/home/joao/.cache/tmp-tn/skylight/judge2/a2/L5/L5_sun15_exterior.png"
+        ],
+        "unreal": "/home/joao/.cache/tmp-tn/skylight/judge2/unreal/L5/L5_sun15_exterior.png"
+      }
+    },
+    {
+      "id": "L5/L5_sun15_exterior_crop",
+      "verdict": "REGRESSION",
+      "vsUnreal": "CLOSE",
+      "reasons": "Looked at the shadow pool around the box and mirror ball, and the left sphere. The pool is slightly darker in AFTER, a small move toward UNREAL. The left sphere (x about 100, y 160) turns speckled and blotchy in both AFTER runs, and BEFORE is smooth. A faint grain shows in the pool near the sphere. The new surface noise outweighs the small pool gain.",
+      "differences": "UNREAL's pool is clearly darker and bluer, with a soft contact under the mirror ball and the box. AFTER's pool is still brighter and warmer. UNREAL has smooth spheres.",
+      "layer": "L5",
+      "unreal": "L5",
+      "files": {
+        "before": [
+          "/home/joao/.cache/tmp-tn/skylight/judge2/b1/L5/L5_sun15_exterior_crop.png",
+          "/home/joao/.cache/tmp-tn/skylight/judge2/b2/L5/L5_sun15_exterior_crop.png"
+        ],
+        "after": [
+          "/home/joao/.cache/tmp-tn/skylight/judge2/a1/L5/L5_sun15_exterior_crop.png",
+          "/home/joao/.cache/tmp-tn/skylight/judge2/a2/L5/L5_sun15_exterior_crop.png"
+        ],
+        "unreal": "/home/joao/.cache/tmp-tn/skylight/judge2/unreal/L5/L5_sun15_exterior_crop.png"
+      }
+    },
+    {
+      "id": "L5/L5_sun15_spheres",
+      "verdict": "IMPROVEMENT",
+      "vsUnreal": "CLOSE",
+      "reasons": "Looked at the shadow pool between the capsule and the mirror ball, and at the sphere and box bases. The pool is a little darker in AFTER, and a soft contact darkening appears at the mirror ball's base and the capsule's foot. Both of those move toward UNREAL. I saw no visible grain at this scale. The sunlit floor, sky and lit faces are unchanged. A fine grain does show in the zoomed crop, so confidence is moderate.",
+      "differences": "UNREAL's pool is much darker and bluer, with visible contact shadows under the mirror ball and spheres. AFTER's pool is still lighter. UNREAL's reflections differ.",
+      "layer": "L5",
+      "unreal": "L5",
+      "files": {
+        "before": [
+          "/home/joao/.cache/tmp-tn/skylight/judge2/b1/L5/L5_sun15_spheres.png",
+          "/home/joao/.cache/tmp-tn/skylight/judge2/b2/L5/L5_sun15_spheres.png"
+        ],
+        "after": [
+          "/home/joao/.cache/tmp-tn/skylight/judge2/a1/L5/L5_sun15_spheres.png",
+          "/home/joao/.cache/tmp-tn/skylight/judge2/a2/L5/L5_sun15_spheres.png"
+        ],
+        "unreal": "/home/joao/.cache/tmp-tn/skylight/judge2/unreal/L5/L5_sun15_spheres.png"
+      }
+    },
+    {
+      "id": "L5/L5_sun15_spheres_crop",
+      "verdict": "REGRESSION",
+      "vsUnreal": "CLOSE",
+      "reasons": "Looked at the pool around the capsule foot, the box and the mirror ball. The pool is slightly darker and there is a soft contact at the capsule foot, which helps. However, the left sphere and the box side show fine crosshatch grain in both AFTER runs, and the pool has a faint texture. BEFORE is smooth in those places. The new grain breaks criterion 4.",
+      "differences": "UNREAL's pool is much darker, with a deep blue-black tone and a strong contact under the mirror ball. AFTER's pool is lighter and has grain. UNREAL's surfaces are smooth.",
+      "layer": "L5",
+      "unreal": "L5",
+      "files": {
+        "before": [
+          "/home/joao/.cache/tmp-tn/skylight/judge2/b1/L5/L5_sun15_spheres_crop.png",
+          "/home/joao/.cache/tmp-tn/skylight/judge2/b2/L5/L5_sun15_spheres_crop.png"
+        ],
+        "after": [
+          "/home/joao/.cache/tmp-tn/skylight/judge2/a1/L5/L5_sun15_spheres_crop.png",
+          "/home/joao/.cache/tmp-tn/skylight/judge2/a2/L5/L5_sun15_spheres_crop.png"
+        ],
+        "unreal": "/home/joao/.cache/tmp-tn/skylight/judge2/unreal/L5/L5_sun15_spheres_crop.png"
+      }
+    },
+    {
+      "id": "L5/L5_sun60_exterior",
+      "verdict": "REGRESSION",
+      "vsUnreal": "CLOSE",
+      "reasons": "Looked at the room interior, the spheres and the sunlit floor. The room's back wall and side wall show a visible dither or checker pattern in both AFTER runs, and BEFORE is smooth. The sunlit floor, the sky and the long wall shadow are unchanged. The only change is the new grain, which breaks criterion 4.",
+      "differences": "UNREAL's room interior is smooth, lit by soft blue sky light. UNREAL's sphere undersides are bluer. AFTER has grain inside the room.",
+      "layer": "L5",
+      "unreal": "L5",
+      "files": {
+        "before": [
+          "/home/joao/.cache/tmp-tn/skylight/judge2/b1/L5/L5_sun60_exterior.png",
+          "/home/joao/.cache/tmp-tn/skylight/judge2/b2/L5/L5_sun60_exterior.png"
+        ],
+        "after": [
+          "/home/joao/.cache/tmp-tn/skylight/judge2/a1/L5/L5_sun60_exterior.png",
+          "/home/joao/.cache/tmp-tn/skylight/judge2/a2/L5/L5_sun60_exterior.png"
+        ],
+        "unreal": "/home/joao/.cache/tmp-tn/skylight/judge2/unreal/L5/L5_sun60_exterior.png"
+      }
+    },
+    {
+      "id": "L5/L5_sun60_spheres",
+      "verdict": "NEUTRAL",
+      "vsUnreal": "CLOSE",
+      "reasons": "Looked at the capsule's shaded side and foot, the sphere bases and the floor. The sunlit floor and lit faces are unchanged. A small dark contact crescent appears at the capsule foot in AFTER. It is soft, but it is a new dark spot on a sunlit floor. A faint weave is visible on the capsule's shaded side, which is more obvious in the crop. Overall the frame is balanced between a small contact gain and faint grain.",
+      "differences": "UNREAL has bluer, smoother shaded sides on the capsule and spheres, and no dark crescent at the capsule foot. AFTER's shaded side is greyer and slightly textured.",
+      "layer": "L5",
+      "unreal": "L5",
+      "files": {
+        "before": [
+          "/home/joao/.cache/tmp-tn/skylight/judge2/b1/L5/L5_sun60_spheres.png",
+          "/home/joao/.cache/tmp-tn/skylight/judge2/b2/L5/L5_sun60_spheres.png"
+        ],
+        "after": [
+          "/home/joao/.cache/tmp-tn/skylight/judge2/a1/L5/L5_sun60_spheres.png",
+          "/home/joao/.cache/tmp-tn/skylight/judge2/a2/L5/L5_sun60_spheres.png"
+        ],
+        "unreal": "/home/joao/.cache/tmp-tn/skylight/judge2/unreal/L5/L5_sun60_spheres.png"
+      }
+    },
+    {
+      "id": "L5/L5_sun60_spheres_crop",
+      "verdict": "REGRESSION",
+      "vsUnreal": "CLOSE",
+      "reasons": "Looked at the capsule's shaded band, its lower cap and the sphere base. In both AFTER runs a clear fine weave or crosshatch pattern covers the capsule's shaded side and lower cap, and BEFORE is smooth. A dark crescent also appears at the capsule's tip on the sunlit floor. The grain breaks criterion 4 and the sunlit floor changed.",
+      "differences": "UNREAL's shaded capsule is smooth and bluish, with no dark crescent at the foot. UNREAL's cast shadow shapes match. AFTER's shaded side has visible grain and a greyer tone.",
+      "layer": "L5",
+      "unreal": "L5",
+      "files": {
+        "before": [
+          "/home/joao/.cache/tmp-tn/skylight/judge2/b1/L5/L5_sun60_spheres_crop.png",
+          "/home/joao/.cache/tmp-tn/skylight/judge2/b2/L5/L5_sun60_spheres_crop.png"
+        ],
+        "after": [
+          "/home/joao/.cache/tmp-tn/skylight/judge2/a1/L5/L5_sun60_spheres_crop.png",
+          "/home/joao/.cache/tmp-tn/skylight/judge2/a2/L5/L5_sun60_spheres_crop.png"
+        ],
+        "unreal": "/home/joao/.cache/tmp-tn/skylight/judge2/unreal/L5/L5_sun60_spheres_crop.png"
+      }
+    },
+    {
+      "id": "L6/L6_sun04_exterior",
+      "verdict": "REGRESSION",
+      "vsUnreal": "CLOSE",
+      "reasons": "Looked at the spheres, the room interior and the floor pool. The second sphere (x about 570, y 382) is blotchy and mottled in both AFTER runs, and BEFORE is smooth. The floor pool and the other regions look the same as BEFORE.",
+      "differences": "UNREAL's spheres are smooth. UNREAL's pool is slightly darker. UNREAL's sky differs in clouds. AFTER's mottled sphere does not match UNREAL.",
+      "layer": "L6",
+      "unreal": "L6",
+      "files": {
+        "before": [
+          "/home/joao/.cache/tmp-tn/skylight/judge2/b1/L6/L6_sun04_exterior.png",
+          "/home/joao/.cache/tmp-tn/skylight/judge2/b2/L6/L6_sun04_exterior.png"
+        ],
+        "after": [
+          "/home/joao/.cache/tmp-tn/skylight/judge2/a1/L6/L6_sun04_exterior.png",
+          "/home/joao/.cache/tmp-tn/skylight/judge2/a2/L6/L6_sun04_exterior.png"
+        ],
+        "unreal": "/home/joao/.cache/tmp-tn/skylight/judge2/unreal/L6/L6_sun04_exterior.png"
+      }
+    },
+    {
+      "id": "L6/L6_sun15_exterior",
+      "verdict": "REGRESSION",
+      "vsUnreal": "CLOSE",
+      "reasons": "Looked at the room interior and the shadow pool. A fine dither grain shows on the room's back wall in AFTER (x about 335, y 290), and BEFORE is smooth. The shadow pool is barely darker. The floor, sky and lit faces are unchanged. The new grain breaks criterion 4.",
+      "differences": "UNREAL's room interior is smooth. UNREAL's pool is darker and bluer. AFTER's pool is still lighter.",
+      "layer": "L6",
+      "unreal": "L6",
+      "files": {
+        "before": [
+          "/home/joao/.cache/tmp-tn/skylight/judge2/b1/L6/L6_sun15_exterior.png",
+          "/home/joao/.cache/tmp-tn/skylight/judge2/b2/L6/L6_sun15_exterior.png"
+        ],
+        "after": [
+          "/home/joao/.cache/tmp-tn/skylight/judge2/a1/L6/L6_sun15_exterior.png",
+          "/home/joao/.cache/tmp-tn/skylight/judge2/a2/L6/L6_sun15_exterior.png"
+        ],
+        "unreal": "/home/joao/.cache/tmp-tn/skylight/judge2/unreal/L6/L6_sun15_exterior.png"
+      }
+    },
+    {
+      "id": "L6/L6_sun15_spheres",
+      "verdict": "IMPROVEMENT",
+      "vsUnreal": "CLOSE",
+      "reasons": "Looked at the shadow pool by the capsule and the mirror ball, and at the sphere bases. The pool is slightly darker in AFTER, and the contact at the capsule foot and mirror ball base is a bit stronger. Both move toward UNREAL. I saw no visible grain at this scale. The sunlit floor, the lit faces and the sky are unchanged.",
+      "differences": "UNREAL's pool is much darker and bluer-black. UNREAL's contact shadows under the mirror ball and spheres are stronger. AFTER's pool is lighter and warmer.",
+      "layer": "L6",
+      "unreal": "L6",
+      "files": {
+        "before": [
+          "/home/joao/.cache/tmp-tn/skylight/judge2/b1/L6/L6_sun15_spheres.png",
+          "/home/joao/.cache/tmp-tn/skylight/judge2/b2/L6/L6_sun15_spheres.png"
+        ],
+        "after": [
+          "/home/joao/.cache/tmp-tn/skylight/judge2/a1/L6/L6_sun15_spheres.png",
+          "/home/joao/.cache/tmp-tn/skylight/judge2/a2/L6/L6_sun15_spheres.png"
+        ],
+        "unreal": "/home/joao/.cache/tmp-tn/skylight/judge2/unreal/L6/L6_sun15_spheres.png"
+      }
+    },
+    {
+      "id": "L6/L6_sun15_spheres_crop",
+      "verdict": "REGRESSION",
+      "vsUnreal": "CLOSE",
+      "reasons": "Looked at the pool around the capsule foot, the box side and the mirror ball. The pool is slightly darker, with a soft contact at the capsule foot, which helps. In both AFTER runs a fine crosshatch grain shows on the box's side face and the sphere at left, and a faint texture appears across the floor pool. BEFORE is smooth there. The grain breaks criterion 4.",
+      "differences": "UNREAL's pool is a deep blue-black with soft occlusion under the mirror ball. AFTER's pool is lighter, warmer and a little textured.",
+      "layer": "L6",
+      "unreal": "L6",
+      "files": {
+        "before": [
+          "/home/joao/.cache/tmp-tn/skylight/judge2/b1/L6/L6_sun15_spheres_crop.png",
+          "/home/joao/.cache/tmp-tn/skylight/judge2/b2/L6/L6_sun15_spheres_crop.png"
+        ],
+        "after": [
+          "/home/joao/.cache/tmp-tn/skylight/judge2/a1/L6/L6_sun15_spheres_crop.png",
+          "/home/joao/.cache/tmp-tn/skylight/judge2/a2/L6/L6_sun15_spheres_crop.png"
+        ],
+        "unreal": "/home/joao/.cache/tmp-tn/skylight/judge2/unreal/L6/L6_sun15_spheres_crop.png"
+      }
+    },
+    {
+      "id": "L6/L6_sun60_exterior",
+      "verdict": "REGRESSION",
+      "vsUnreal": "CLOSE",
+      "reasons": "Looked at the room interior and the floor. The room's back and side walls show a fine dither or checker grain in both AFTER runs, and BEFORE is smooth. The sunlit floor and the long wall shadow are unchanged. The grain breaks criterion 4.",
+      "differences": "UNREAL's room interior is smooth and softly blue. AFTER shows grain in the room. The rest of the frame closely matches UNREAL.",
+      "layer": "L6",
+      "unreal": "L6",
+      "files": {
+        "before": [
+          "/home/joao/.cache/tmp-tn/skylight/judge2/b1/L6/L6_sun60_exterior.png",
+          "/home/joao/.cache/tmp-tn/skylight/judge2/b2/L6/L6_sun60_exterior.png"
+        ],
+        "after": [
+          "/home/joao/.cache/tmp-tn/skylight/judge2/a1/L6/L6_sun60_exterior.png",
+          "/home/joao/.cache/tmp-tn/skylight/judge2/a2/L6/L6_sun60_exterior.png"
+        ],
+        "unreal": "/home/joao/.cache/tmp-tn/skylight/judge2/unreal/L6/L6_sun60_exterior.png"
+      }
+    },
+    {
+      "id": "L6/L6_sun60_spheres",
+      "verdict": "NEUTRAL",
+      "vsUnreal": "CLOSE",
+      "reasons": "Looked at the capsule's shaded side, the sphere undersides and the floor. The sunlit floor and lit faces are unchanged. A faint soft contact appears at the capsule foot, and I saw no clear grain at this scale. It is not clearly better or worse than BEFORE.",
+      "differences": "UNREAL's shaded sides are bluer, with a harder terminator on the spheres. AFTER's contact at the capsule foot is a little different. The cast shadows match.",
+      "layer": "L6",
+      "unreal": "L6",
+      "files": {
+        "before": [
+          "/home/joao/.cache/tmp-tn/skylight/judge2/b1/L6/L6_sun60_spheres.png",
+          "/home/joao/.cache/tmp-tn/skylight/judge2/b2/L6/L6_sun60_spheres.png"
+        ],
+        "after": [
+          "/home/joao/.cache/tmp-tn/skylight/judge2/a1/L6/L6_sun60_spheres.png",
+          "/home/joao/.cache/tmp-tn/skylight/judge2/a2/L6/L6_sun60_spheres.png"
+        ],
+        "unreal": "/home/joao/.cache/tmp-tn/skylight/judge2/unreal/L6/L6_sun60_spheres.png"
+      }
+    }
+  ],
+  "overall": {
+    "verdict": "REGRESSION",
+    "vsUnreal": "CLOSE",
+    "reasons": "The change does what it should in part. In the L5 and L6 sun-15 frames the shadow pools are slightly darker and there is a soft contact darkening at the capsule foot and the mirror ball base, which moves toward UNREAL. The sunlit floor and sky are unchanged and nothing got brighter. However, AFTER adds visible new noise. In both AFTER runs a fine dither or crosshatch grain shows on the room's back and side walls (L5 and L6 sun 15 and sun 60 exterior). The second sphere is mottled and blotchy in the three sun-04 exterior frames. The capsule's shaded side, the box side and the sphere at left show crosshatch grain in the zoomed crops. BEFORE is smooth in all of these places, and the repeated pattern across both AFTER runs shows it is not capture noise. Criterion 4 is broken in many frames, so the round is a REGRESSION even though the pools moved partly toward UNREAL. The AFTER pools are still much lighter than UNREAL's near-black ones, so the result is CLOSE rather than a match."
+  },
+  "blockedBy": [
+    "frame L2/L2_sun04_exterior is a REGRESSION",
+    "frame L5/L5_sun04_exterior is a REGRESSION",
+    "frame L5/L5_sun15_exterior is a REGRESSION",
+    "frame L5/L5_sun15_exterior_crop is a REGRESSION",
+    "frame L5/L5_sun15_spheres_crop is a REGRESSION",
+    "frame L5/L5_sun60_exterior is a REGRESSION",
+    "frame L5/L5_sun60_spheres_crop is a REGRESSION",
+    "frame L6/L6_sun04_exterior is a REGRESSION",
+    "frame L6/L6_sun15_exterior is a REGRESSION",
+    "frame L6/L6_sun15_spheres_crop is a REGRESSION",
+    "frame L6/L6_sun60_exterior is a REGRESSION",
+    "the overall verdict is a REGRESSION"
+  ],
+  "file": "/home/joao/.cache/tmp-tn/skylight/verdict-dfao2.json"
+}
