@@ -260,6 +260,12 @@ export function noteShadowRedrawGpuMs(renderer: object, ms: number): void {
 }
 
 /**
+ * The stage name of the shadow passes' summed GPU time in a stage reading: three's `Shadow Map`
+ * passes here, the owned engine's shadow segment there. A frame that drew no shadow pass has none.
+ */
+export const SHADOW_STAGE = "Shadow";
+
+/**
  * One resolved frame's GPU milliseconds by stage: `stages` sums the nested passes that carry the same
  * scene name (three names its post passes `SSGI` and `AO`), and `total` is the whole frame.
  */
@@ -469,7 +475,9 @@ export class RenderPassBudget {
       if (sum === undefined) continue;
       this.#deliveredGpuFrame = frame;
       if (sum.shadowPasses > 0) noteShadowRedrawGpuMs(this.#target, sum.shadow);
-      lastStageGpu.set(this.#target, { frame, stages: sum.stages, total: sum.total });
+      const stages =
+        sum.shadowPasses > 0 ? { ...sum.stages, [SHADOW_STAGE]: sum.shadow } : sum.stages;
+      lastStageGpu.set(this.#target, { frame, stages, total: sum.total });
       return {
         frame,
         main: sum.main,

@@ -351,7 +351,7 @@ describe("render pass budget", () => {
   it("names the GPU time of each named nested pass, so a game can read one stage's cost", () => {
     // Three names a post pass by the scene it renders (`SSGI`, `AO`). Those names are the only handle
     // a stage has: the reading sums the nested passes that carry the name, per frame, once the whole
-    // frame has resolved.
+    // frame has resolved. The shadow passes are one stage, `Shadow`, as the owned engine's shadow segment is.
     const { pool, raw } = timestampRenderer(20);
     const budget = RenderPassBudget.install(raw) as RenderPassBudget;
     const gather: IFakeScene = { name: "SSGI", submissions: { draws: 1, triangles: 2 } };
@@ -372,7 +372,7 @@ describe("render pass budget", () => {
     expect(budget.nextGpuFrame()).toMatchObject({ frame: 20, total: 10.5 });
     expect(stageGpuReading(raw)).toEqual({
       frame: 20,
-      stages: { AO: 0.5, SSGI: 2.25 },
+      stages: { AO: 0.5, SSGI: 2.25, Shadow: 2.25 },
       total: 10.5,
     });
   });

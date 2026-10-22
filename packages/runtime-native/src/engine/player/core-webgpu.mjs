@@ -25,7 +25,7 @@ import { ShadowMap } from "../../../../three-native/src/shadow-map.ts";
 import { defineSphereReflectionCapture } from "../../../../three-native/src/sphere-reflection-capture.ts";
 import { defineRenderTargets } from "../../../../three-native/src/render-target.ts";
 import { defineQuadMesh } from "../../../../three-native/src/quad-mesh.ts";
-import { GPU_STAGES } from "../../../../three-native/src/gpu-stages.ts";
+import { GPU_STAGES, SHADOW_STAGE } from "../../../../three-native/src/gpu-stages.ts";
 
 export const { MeshBasicNodeMaterial, MeshStandardNodeMaterial, SpriteNodeMaterial } = globalThis;
 Object.setPrototypeOf(MeshBasicNodeMaterial.prototype, globalThis.MeshBasicMaterial.prototype);
@@ -103,6 +103,7 @@ export class WebGPURenderer {
         const { segments } = globalThis.tn.renderInfo().gpuTiming;
         const stages = {};
         GPU_STAGES.forEach((name, index) => { if (segments[4 + index] > 0) stages[name] = segments[4 + index]; });
+        if (segments[0] > 0) stages[SHADOW_STAGE] = segments[0];
         return stages;
       },
     },
