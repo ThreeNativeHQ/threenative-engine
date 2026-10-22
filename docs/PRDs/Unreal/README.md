@@ -172,7 +172,7 @@ Gaps checked on 2026-10-12 and not filed. Each one needs new evidence before it 
   and displacement are a material look decision.
 - **Lumen.** Re-checked 2026-10-20; the GI set below now owns the surface cache (PRD-639), the screen
   probe gather (PRD-640), reflections (PRD-642 and PRD-VQ-03) and native hardware ray tracing
-  (PRD-645). Still not filed: global and mesh distance fields, because `GPUSceneBVH` already gives a
+  (PRD-645, declined at its gate on 2026-10-21). Still not filed: global and mesh distance fields, because `GPUSceneBVH` already gives a
   GPU trace (PRD-603 revisits this if its gate fails); ReSTIR GI, because Unreal needs hardware ray
   tracing for it and no quality level turns it on (`LumenReSTIRGather.cpp`); the far field, which is
   hardware-only and off by default.
@@ -210,7 +210,7 @@ for its own behaviour with that pipeline, and records its visual verdict as a PR
 | --- | --- | --- | --- |
 | Calibration scenes | [PRD-638](gi/PRD-638-calibration-scenes-are-built-in-unreal-and-captured-as-the-gi-target.md) | Calibration scenes are built in Unreal and captured as the GI target | PRD-631 Phase 1 |
 | Scene recreation, visualize modes | [PRD-646](gi/PRD-646-threenative-recreates-each-unreal-calibration-scene-exactly.md) | ThreeNative recreates each Unreal calibration scene exactly | PRD-638, PRD-632 |
-| Calibration loop | [PRD-647](gi/PRD-647-a-visual-judge-calibrates-gi-against-the-unreal-scenes-until-parity.md) | A visual judge calibrates GI against the Unreal scenes until parity | PRD-638, PRD-646 |
+| Calibration loop | [PRD-647](../done/PRD-647-a-visual-judge-calibrates-gi-against-the-unreal-scenes-until-parity.md) | A visual judge calibrates GI against the Unreal scenes until parity | PRD-638, PRD-646 |
 | Radiance cache | [PRD-603](rendering/PRD-603-probes-refresh-by-tracing-the-packed-scene-not-by-drawing-it-six-times.md) | `RadianceCache` refreshes by tracing the packed scene | — |
 | Irradiance field gather | [PRD-604](rendering/PRD-604-a-surface-is-lit-only-by-probes-that-can-see-it.md) | A surface is lit only by probes that can see it | — |
 | Radiance cache clipmaps | [PRD-605](rendering/PRD-605-the-probe-field-follows-the-camera-in-nested-rings.md) | The probe field follows the camera in nested rings | PRD-603, PRD-604 |
@@ -221,7 +221,7 @@ for its own behaviour with that pipeline, and records its visual verdict as a PR
 | Reflections | [PRD-642](gi/PRD-642-glossy-surfaces-reflect-what-the-camera-cannot-see.md) | Glossy surfaces reflect what the camera cannot see | PRD-603, PRD-639 |
 | Translucency volume, foliage | [PRD-643](gi/PRD-643-glass-fog-and-leaves-take-the-bounce-light-too.md) | Glass, fog and leaves take the bounce light too | PRD-603, PRD-604 |
 | Scalability | [PRD-644](gi/PRD-644-the-gi-tier-follows-unreal-quality-levels-and-the-measured-gpu-time.md) | The GI tier follows Unreal's quality levels and the measured GPU time | PRD-647 |
-| Hardware ray tracing | [PRD-645](gi/PRD-645-a-desktop-gpu-with-ray-tracing-traces-gi-rays-in-hardware.md) | A desktop GPU with ray tracing traces GI rays in hardware (opt-in) | PRD-603 |
+| Hardware ray tracing | [PRD-645](../done/PRD-645-a-desktop-gpu-with-ray-tracing-traces-gi-rays-in-hardware.md) | Done, declined at its gate: the hardware trace is 12 to 15 times faster, and the hand-off between the two GPU devices costs more than the software trace | — |
 | Templates | [PRD-267](../useful-defaults/PRD-267-screen-space-gi-ships-in-the-templates.md) | The templates take the tuned tier table, last | PRD-644, PRD-647 parity |
 
 ```mermaid
@@ -237,7 +237,7 @@ flowchart LR
   P640 --> P641[PRD-641 temporal]
   P639 --> P642[PRD-642 TracedReflections]
   P604 --> P643[PRD-643 translucency]
-  P603 --> P645[PRD-645 hardware RT]
+  P603 --> P645[PRD-645 hardware RT, declined]
   P604 --> P644[PRD-644 tiers]
   P640 --> P644
   P644 --> P267[PRD-267 templates]
@@ -322,7 +322,7 @@ not needed for its red-green test), then PRD-650 and the rest of PRD-651 in para
   The `walk` and `sunturn` runs show whether ThreeNative needs more.
 - **Capsule shadows, ray-traced shadows, MegaLights, translucent coloured shadows, area-light
   shadows:** all off in a fresh Unreal project, so they are not the default look. Each waits for a
-  game that asks. Hardware ray tracing starts in [PRD-645](gi/PRD-645-a-desktop-gpu-with-ray-tracing-traces-gi-rays-in-hardware.md).
+  game that asks. Hardware ray tracing was built and measured in [PRD-645](../done/PRD-645-a-desktop-gpu-with-ray-tracing-traces-gi-rays-in-hardware.md) and declined at its gate.
 
 ## Already shipped, or declined — do not file again
 
@@ -331,6 +331,9 @@ not needed for its red-green test), then PRD-650 and the rest of PRD-651 in para
   disk cache, Catmull–Rom history sampling (PRD-455), and the LUT colour grade (PRD-492).
 - **Declined on measurement:** HZB occlusion culling. PRD-489 closed on 2026-10-06 with a median
   would-cull share of 0.013.
+- **Declined on measurement:** hardware ray tracing for the radiance cache. PRD-645 closed on
+  2026-10-21. The hand-off between the two GPU devices takes about 1.1 ms of CPU per call. At 100 probes
+  per frame the hardware path reaches 0.14 to 0.16 times the software trace.
 - **Declined by rule:** Niagara's graph editor and module stack (an editor and an IR are closed),
   RDG, bindless, async compute and heap aliasing (no WebGPU API), Nanite landscape, runtime virtual
   textures, and the mobile tonemap subpass (off by default in Unreal itself).

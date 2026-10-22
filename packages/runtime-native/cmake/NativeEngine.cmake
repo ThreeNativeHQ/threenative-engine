@@ -130,7 +130,15 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_renderer_alpha_test=alpha_test
         native_engine_renderer_mipmaps_share_one_submit=mipmaps_share_one_submit
         native_engine_traa_alpha=traa_alpha
-        native_engine_traa_reset_seed=traa_reset_seed)
+        native_engine_traa_reset_seed=traa_reset_seed
+        native_engine_traa_camera_velocity=traa_camera_velocity
+        native_engine_traa_feeds_the_chain=traa_feeds_the_chain
+        native_engine_velocity_needs_traa=velocity_needs_traa
+        native_engine_traa_replaces_multisampling=traa_replaces_multisampling
+        native_engine_traa_converges_edges=traa_converges_edges
+        native_engine_traa_late_resolve=traa_late_resolve
+        native_engine_sibling_reads_the_live_scene=sibling_reads_the_live_scene
+        native_engine_renderer_output_screen_size=output_screen_size)
     target_link_libraries(tn-native-engine-renderer-test PRIVATE tn_engine_renderer tn_host_services)
 
     # A texture's retirement reaches every renderer that caches it, and a probe capture waits for a
@@ -280,9 +288,11 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_renderer_frustum_culling=frustum_culling
         native_engine_renderer_shadow_caster_frustum_culling=shadow_caster_frustum_culling
         native_engine_masked_shadow=masked_shadow
+        native_engine_leaf_receiver=leaf_receiver
         native_engine_point_shadow_cube_faces=point_shadow_cube_faces
         native_engine_lamp_source_radius=lamp_source_radius
         native_engine_contact_shadow_foot=contact_shadow_foot
+        native_engine_virtual_sun_contact_foot=virtual_sun_contact_foot
         native_engine_lamp_cache=lamp_cache
         native_engine_renderer_shadow_lights_follow_hierarchy=shadow_lights_follow_hierarchy
         native_engine_renderer_records_survive_siblings=records_survive_siblings

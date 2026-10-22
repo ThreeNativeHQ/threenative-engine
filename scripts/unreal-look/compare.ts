@@ -5,7 +5,9 @@ import { pathToFileURL } from "node:url";
 import { PNG } from "pngjs";
 import { curveShape, exposureCurve } from "./exposureCurve.js";
 import { compareGi } from "./gi.js";
-import { floorEdges, linearLuminance, matchedWidths } from "./penumbra.js";
+import { checkCommand, isGiCheck } from "./giLocks.js";
+import { linearLuminance, pairedPenumbra } from "./penumbra.js";
+import { runSameness } from "./sameness.js";
 // Three.js belongs to core's dependency graph; root scripts do not install a second copy.
 const coreRequire = createRequire(new URL("../../packages/core/package.json", import.meta.url));
 const { FloatType } = await import(pathToFileURL(coreRequire.resolve("three")).href);
@@ -87,6 +89,8 @@ export interface IOptions {
   writeLocks?: string;
   /** `--lock-metric iou,...`: seed only these metrics (default: every metric that holds). */
   lockMetrics?: string[];
+  /** `--drop-locks`: let `--write-locks` drop a lock whose cell no longer holds (default: it refuses). */
+  dropLocks?: boolean;
   sheet?: boolean;
 }
 type LockMetric = "deltaE" | "dP50" | "dEv" | "iou";
@@ -160,16 +164,22 @@ export function masks(image: IImage, colors: Record<string, readonly number[]>):
   const regions: Record<string, Mask> = {};
   for (const name of ["Sky", ...Object.keys(colors)])
     regions[name] = new Uint8Array(image.width * image.height);
+  // An ID frame holds a few dozen distinct colours: classify each 8-bit colour once.
+  const seen = new Map<number, string | null>();
+  const bytes = image.data instanceof Uint8Array;
   for (let i = 0; i < image.width * image.height; i++) {
     const offset = i * image.channels;
-    const name = classify(
-      [
-        required(image.data[offset]),
-        required(image.data[offset + 1]),
-        required(image.data[offset + 2]),
-      ],
-      colors,
-    );
+    const rgb = [
+      required(image.data[offset]),
+      required(image.data[offset + 1]),
+      required(image.data[offset + 2]),
+    ];
+    const key = ((rgb[0] ?? 0) * 256 + (rgb[1] ?? 0)) * 256 + (rgb[2] ?? 0);
+    let name = bytes ? seen.get(key) : undefined;
+    if (name === undefined) {
+      name = classify(rgb, colors);
+      if (bytes) seen.set(key, name);
+    }
     if (name !== null) required(regions[name])[i] = 1;
   }
   return { width: image.width, height: image.height, regions };
@@ -259,7 +269,7 @@ export function iou(a: Mask, b: Mask): number {
 }
 /** Pixels that carry a region in this frame; a multisampled edge pixel belongs to none. */
 const knownCache = new WeakMap<IMasks, Mask>();
-function known(m: IMasks): Mask {
+export function known(m: IMasks): Mask {
   let cached = knownCache.get(m);
   if (!cached) {
     cached = new Uint8Array(m.width * m.height);
@@ -461,7 +471,17 @@ export function runCheck(options: IOptions = {}) {
   });
   return { failures: checkLocks(report.rows, locks), locks: locks.length, report };
 }
-function passes(row: IRow, thresholds?: IThresholds): boolean | null {
+/** thresholds.json's limits for one layer: the flat keys, overridden by `layers.<name>`. */
+export function layerThresholds(
+  file: IThresholdFile | null | undefined,
+  layer: string,
+): IThresholds | undefined {
+  if (!file) return undefined;
+  const { layers: perLayer, ...flat } = file;
+  return { ...flat, ...perLayer?.[layer] };
+}
+/** The verdict of a row against its limits: null when no limit applies to the row (the caller decides what that means). */
+export function passes(row: IRow, thresholds?: IThresholds): boolean | null {
   if (!thresholds) return null;
   const checks: [number | null, number | undefined, boolean][] = [
     [row.deltaE, thresholds.deltaE, false],
@@ -621,6 +641,35 @@ function sheetPair(sheet: PNG, a: IImage, b: IImage, row: number) {
         sheet.data[dst + 3] = 255;
       }
 }
+/**
+ * A re-seed keeps only the cells that hold now. A cell that broke would lose its lock without a word, so the
+ * re-seed names each lock it would drop and stops, unless `--drop-locks` asks for it.
+ */
+function refuseDroppedLocks(
+  previous: IParityLock[],
+  kept: IParityLock[],
+  seeded: IParityLock[],
+): void {
+  const sameCell = (a: IParityLock, b: IParityLock) =>
+    a.layer === b.layer &&
+    a.sun === b.sun &&
+    a.pose === b.pose &&
+    a.region === b.region &&
+    a.metric === b.metric;
+  const dropped = previous.filter(
+    (lock) => !kept.includes(lock) && !seeded.some((seed) => sameCell(seed, lock)),
+  );
+  if (dropped.length)
+    fail(
+      "LOCK_DROPPED",
+      `--write-locks would drop ${dropped.length} lock(s) whose cell no longer holds: ${dropped
+        .slice(0, 5)
+        .map((lock) => `${lock.layer} ${lock.sun} ${lock.pose} ${lock.region} ${lock.metric}`)
+        .join(
+          "; ",
+        )}${dropped.length > 5 ? "; ..." : ""}. Fix the cell, or pass --drop-locks to drop its lock on purpose`,
+    );
+}
 export function runComparison(options: IOptions = {}) {
   const dir = options.referenceDir ?? "tools/unreal-reference";
   const rootA = options.unreal ?? path.join(dir, "captures/unreal");
@@ -713,11 +762,7 @@ export function runComparison(options: IOptions = {}) {
     for (const entry of Object.values(thresholdData.layers ?? {}))
       checkThresholds(object(entry), true);
   }
-  const thresholdsFor = (layer: string): IThresholds | undefined => {
-    if (!thresholdData) return undefined;
-    const { layers: perLayer, ...flat } = thresholdData;
-    return { ...flat, ...perLayer?.[layer] };
-  };
+  const thresholdsFor = (layer: string) => layerThresholds(thresholdData, layer);
   const thresholds = thresholdData;
   const reference: IReference = {
     generatedAt: new Date().toISOString(),
@@ -911,22 +956,14 @@ export function runComparison(options: IOptions = {}) {
         }
         if (options.metric === "penumbra" && layer === "L5" && a) {
           // Shadow-edge width on the floor (PRD-634): rows where both arms hold an edge.
-          const floor = required(base.regions.Floor);
-          const edges = (image: IImage) =>
-            floorEdges(
-              linearLuminance(image.data, image.width * image.height),
-              image.width,
-              image.height,
-              floor,
-            );
-          const m = matchedWidths(edges(a), edges(b));
-          if (m.matched > 0)
+          const m = pairedPenumbra(a, b, required(base.regions.Floor));
+          if (m)
             penumbra.push({
               cell,
               matched: m.matched,
               unrealPx: m.unreal,
               threenativePx: m.other,
-              ratio: m.other / m.unreal,
+              ratio: m.ratio,
             });
         }
         if (options.unrealVsUnreal)
@@ -956,10 +993,11 @@ export function runComparison(options: IOptions = {}) {
     if (!seeded.length) fail("BAD_INPUT", "no cell holds its thresholds; nothing to lock");
     // `--layer L7,L8` re-seeds only those layers and keeps every other layer's locks as they are.
     const lockFile = path.join(dir, "parity-locks.json");
-    const kept =
-      options.layers && existsSync(lockFile)
-        ? readLocks(lockFile).filter((lock) => !options.layers?.includes(lock.layer))
-        : [];
+    const previous = existsSync(lockFile) ? readLocks(lockFile) : [];
+    const kept = options.layers
+      ? previous.filter((lock) => !options.layers?.includes(lock.layer))
+      : [];
+    if (!options.dropLocks) refuseDroppedLocks(previous, kept, seeded);
     writeJson(lockFile, { locks: [...kept, ...seeded] });
   }
   if (options.writeThresholds)
@@ -1017,6 +1055,7 @@ export function parseArgs(args: string[]): IOptions {
     else if (flag === "--write-stats") options.writeStats = true;
     else if (flag === "--write-thresholds") options.writeThresholds = true;
     else if (flag === "--check") options.check = true;
+    else if (flag === "--drop-locks") options.dropLocks = true;
     else if (flag === "--sheet") options.sheet = true;
     else {
       if (
@@ -1073,6 +1112,14 @@ export function parseArgs(args: string[]): IOptions {
   return options;
 }
 export function main(args = process.argv.slice(2)): void {
+  if (args.includes("--sameness")) {
+    process.exitCode = runSameness(args);
+    return;
+  }
+  if (isGiCheck(args)) {
+    process.exitCode = checkCommand(args);
+    return;
+  }
   if (args.includes("--scene")) {
     process.exitCode = compareGi(args);
     return;

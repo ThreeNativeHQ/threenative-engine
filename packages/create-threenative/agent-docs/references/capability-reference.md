@@ -766,6 +766,22 @@ import { boneLengths } from "@threenative/core";
 const baseline = boneLengths(character);
 ```
 
+### `BudgetLadder`
+
+`class` — A cost ladder for one render stage: a window of measured GPU milliseconds above a level's budget steps the level down, a window under 70% of the next level's budget with room in the frame steps it up, and a level that failed is retried after a growing wait. It decides when to move; the game applies the move.
+
+```ts
+export class BudgetLadder<L extends string> { … }
+```
+
+- **Use when:** step a render stage down when its GPU time stays over budget · pick a quality level from measured GPU time without oscillating
+- **Constraints:** levels are listed cheapest first, and every level needs a finite budget in milliseconds · a window with too few resolved GPU readings never moves the level
+- **Overrides:** explicit: true keeps the level and only reports a window over budget
+
+```ts
+const ladder = new BudgetLadder({ levels: ["low", "high"], budgetMs: { low: 1, high: 4 }, start: "high" }); const window = ladder.observe(gpuMs);
+```
+
 ### `bvhIntersectFirstHit`
 
 `function` — Pack a selected static scene into TSL storage nodes for an upstream BVH ray query.
@@ -1410,10 +1426,27 @@ export function getPlatform(): Readonly<IPlatformInfo> { … }
 ```
 
 - **Use when:** branch a portable game on web or native · choose touch controls for a mobile device · can I raytrace on native
-- **Constraints:** only use the returned platform facts; native globals are host-owned · ray tracing is unavailable on native until buffer-to-texture copy-out interop exists; `mystralRT.traceRays` refuses instead of resolving success without a readable result
+- **Constraints:** only use the returned platform facts; native globals are host-owned · image ray tracing is unavailable on native until buffer-to-texture copy-out interop exists; `mystralRT.traceRays` refuses instead of resolving success without a readable result · a native desktop host with ray tracing hardware traces ray batches with `mystralRT.traceRayBatch`, which writes hit records into a typed array you own; read `mystralRT.capabilities().rayBatch` first, and keep the software BVH trace for the web and every other host · when `mystralRT.capabilities().sharedTransport` is true, `mystralRT.traceRayBatchGpu({ tlas, rays, hits, rayCount })` traces between two GPUBuffers with no copy through CPU memory; `rays` needs the CopySrc usage and `hits` the CopyDst usage, and each call costs CPU time, so measure it against the software trace for your batch size
 
 ```ts
 if (isMobile()) showTouchControls();
+```
+
+### `GIBudget`
+
+`class` — Steps a game's global illumination method (`none`, `irradianceField`, `screenProbeGather`) down when its GPU time stays over budget over a 120-frame window, and back up when there is room. The game owns what each method draws and applies each step; the budget of each method is the GPU time Unreal spends at the matching `sg.GlobalIlluminationQuality`.
+
+```ts
+export class GIBudget { … }
+```
+
+- **Use when:** global illumination costs too much on a weak GPU · pick the bounce light method from measured GPU time · quality tier for indirect lighting that follows the hardware
+- **Constraints:** the game applies each step to its own render chain; this class draws nothing · the GPU time of a pass is read by the scene name three or the game gave it, so name every GI pass in `stages` · timestamp queries are needed: without them every window is unobserved and the method holds
+- **Overrides:** explicit: true keeps the game's own finalGatherMethod and reports an exceeded budget
+
+```ts
+const gi = new GIBudget({ method: "screenProbeGather", stages: ["SSGI"], budgetMs: { none: 0, irradianceField: 1, screenProbeGather: 5 }, onStep: (method) => rebuildChain(method) });
+ctx.beforeRender(() => gi.observeRenderer(ctx.renderer.raw));
 ```
 
 ### `GPUParticles3D`
@@ -1553,7 +1586,7 @@ export function isMobile(): boolean { … }
 ```
 
 - **Use when:** branch a portable game on web or native · choose touch controls for a mobile device · can I raytrace on native
-- **Constraints:** only use the returned platform facts; native globals are host-owned · ray tracing is unavailable on native until buffer-to-texture copy-out interop exists; `mystralRT.traceRays` refuses instead of resolving success without a readable result
+- **Constraints:** only use the returned platform facts; native globals are host-owned · image ray tracing is unavailable on native until buffer-to-texture copy-out interop exists; `mystralRT.traceRays` refuses instead of resolving success without a readable result · a native desktop host with ray tracing hardware traces ray batches with `mystralRT.traceRayBatch`, which writes hit records into a typed array you own; read `mystralRT.capabilities().rayBatch` first, and keep the software BVH trace for the web and every other host · when `mystralRT.capabilities().sharedTransport` is true, `mystralRT.traceRayBatchGpu({ tlas, rays, hits, rayCount })` traces between two GPUBuffers with no copy through CPU memory; `rays` needs the CopySrc usage and `hits` the CopyDst usage, and each call costs CPU time, so measure it against the software trace for your batch size
 
 ```ts
 if (isMobile()) showTouchControls();
@@ -1568,7 +1601,7 @@ export function isNative(): boolean { … }
 ```
 
 - **Use when:** branch a portable game on web or native · choose touch controls for a mobile device · can I raytrace on native
-- **Constraints:** only use the returned platform facts; native globals are host-owned · ray tracing is unavailable on native until buffer-to-texture copy-out interop exists; `mystralRT.traceRays` refuses instead of resolving success without a readable result
+- **Constraints:** only use the returned platform facts; native globals are host-owned · image ray tracing is unavailable on native until buffer-to-texture copy-out interop exists; `mystralRT.traceRays` refuses instead of resolving success without a readable result · a native desktop host with ray tracing hardware traces ray batches with `mystralRT.traceRayBatch`, which writes hit records into a typed array you own; read `mystralRT.capabilities().rayBatch` first, and keep the software BVH trace for the web and every other host · when `mystralRT.capabilities().sharedTransport` is true, `mystralRT.traceRayBatchGpu({ tlas, rays, hits, rayCount })` traces between two GPUBuffers with no copy through CPU memory; `rays` needs the CopySrc usage and `hits` the CopyDst usage, and each call costs CPU time, so measure it against the software trace for your batch size
 
 ```ts
 if (isMobile()) showTouchControls();
@@ -1598,7 +1631,7 @@ export function isTouchscreenAvailable(): boolean { … }
 ```
 
 - **Use when:** branch a portable game on web or native · choose touch controls for a mobile device · can I raytrace on native
-- **Constraints:** only use the returned platform facts; native globals are host-owned · ray tracing is unavailable on native until buffer-to-texture copy-out interop exists; `mystralRT.traceRays` refuses instead of resolving success without a readable result
+- **Constraints:** only use the returned platform facts; native globals are host-owned · image ray tracing is unavailable on native until buffer-to-texture copy-out interop exists; `mystralRT.traceRays` refuses instead of resolving success without a readable result · a native desktop host with ray tracing hardware traces ray batches with `mystralRT.traceRayBatch`, which writes hit records into a typed array you own; read `mystralRT.capabilities().rayBatch` first, and keep the software BVH trace for the web and every other host · when `mystralRT.capabilities().sharedTransport` is true, `mystralRT.traceRayBatchGpu({ tlas, rays, hits, rayCount })` traces between two GPUBuffers with no copy through CPU memory; `rays` needs the CopySrc usage and `hits` the CopyDst usage, and each call costs CPU time, so measure it against the software trace for your batch size
 
 ```ts
 if (isMobile()) showTouchControls();
@@ -1613,7 +1646,7 @@ export function isWeb(): boolean { … }
 ```
 
 - **Use when:** branch a portable game on web or native · choose touch controls for a mobile device · can I raytrace on native
-- **Constraints:** only use the returned platform facts; native globals are host-owned · ray tracing is unavailable on native until buffer-to-texture copy-out interop exists; `mystralRT.traceRays` refuses instead of resolving success without a readable result
+- **Constraints:** only use the returned platform facts; native globals are host-owned · image ray tracing is unavailable on native until buffer-to-texture copy-out interop exists; `mystralRT.traceRays` refuses instead of resolving success without a readable result · a native desktop host with ray tracing hardware traces ray batches with `mystralRT.traceRayBatch`, which writes hit records into a typed array you own; read `mystralRT.capabilities().rayBatch` first, and keep the software BVH trace for the web and every other host · when `mystralRT.capabilities().sharedTransport` is true, `mystralRT.traceRayBatchGpu({ tlas, rays, hits, rayCount })` traces between two GPUBuffers with no copy through CPU memory; `rays` needs the CopySrc usage and `hits` the CopyDst usage, and each call costs CPU time, so measure it against the software trace for your batch size
 
 ```ts
 if (isMobile()) showTouchControls();
@@ -1903,6 +1936,21 @@ export class ProbeVolume extends Object3D implements IComputeDriven { … }
 const probes = new ProbeVolume({ bounds, density: 0.5 }); ctx.add(probes); void probes.requestBake(scene);
 ```
 
+### `readGIMarker`
+
+`function` — Parse a `TN_GI` console line back into its report, or `undefined`.
+
+```ts
+export function readGIMarker(line: string): IGIBudgetReport | undefined { … }
+```
+
+- **Use when:** inspect which global illumination method ran and why it stepped
+- **Constraints:** non-marker lines and malformed markers return `undefined`
+
+```ts
+const report = readGIMarker(line); if (report?.stepped) console.log(report.reason);
+```
+
 ### `readProbeVolumeObservation`
 
 `function` — Read the most recent observation from a probe volume.
@@ -1946,6 +1994,21 @@ export function readRenderChainReport(renderer: unknown): IRenderChainMarker | u
 
 ```ts
 const chain = new RenderChain(renderer, { input: colour, stages, request: { stages: ["bloom"], tier: "auto" } });
+```
+
+### `readShadowTierMarker`
+
+`function` — Parse a `TN_SHADOW_TIER` console line back into its report, or `undefined`.
+
+```ts
+export function readShadowTierMarker(line: string): IShadowFilterReport | undefined { … }
+```
+
+- **Use when:** inspect which shadow filter tier ran and why it stepped
+- **Constraints:** non-marker lines and malformed markers return `undefined`
+
+```ts
+const report = readShadowTierMarker(line); if (report?.stepped) console.log(report.reason);
 ```
 
 ### `readVelocityPreviousBoneMatrices`
@@ -2319,6 +2382,23 @@ export function setSpanRecorder(next: SpanRecorder | undefined): void { … }
 if (spansRequested()) setSpanRecorder(new SpanRecorder());
 ```
 
+### `ShadowFilterBudget`
+
+`class` — Steps a game's soft-shadow filter down a tier (`low`, `medium`, `high`) when the frame's GPU time stays over its period for a 120-frame window, and back up when there is room. The game owns the sample counts of each tier and rebuilds its filter on each step; the tiers follow Unreal's `sg.ShadowQuality` Low, Medium and Epic.
+
+```ts
+export class ShadowFilterBudget { … }
+```
+
+- **Use when:** soft shadow filter costs too much on a weak GPU · step the shadow filter samples from measured frame time · shadow quality tier that follows the hardware
+- **Constraints:** the game rebuilds its filter with the tier's sample counts on each step; this class draws nothing · timestamp queries are needed: without them every window is unobserved and the tier holds · the signal is the whole frame's GPU time, so a frame slow for another reason also steps the filter down · the signal is the whole frame's GPU time, so a frame slow for another reason also steps the filter down; name that reason's passes in `excludeStages`
+- **Overrides:** explicit: true keeps the game's own sample counts and reports an exceeded period
+
+```ts
+const filter = new ShadowFilterBudget({ tier: "high", frameBudgetMs: 1000 / 60, onStep: (tier) => { light.shadow.filterNode = filterFor(tier); } });
+ctx.beforeRender(() => filter.observeRenderer(ctx.renderer.raw));
+```
+
 ### `SkeletalMesh3D`
 
 `class` — Shared preparation for an imported rigged character. Instances the rig with a skeleton-safe clone, normalises size with skin-aware measurement, validates requested clips against the file and rig at load time, and sets up AnimationPlayer with honest stride-root accounting.
@@ -2582,6 +2662,21 @@ export class SpriteAnimator3D { … }
 const animator = new SpriteAnimator3D({ texture: atlas, frames, mode: "pingPong" });
 ```
 
+### `stageGpuReading`
+
+`function` — Read the GPU milliseconds of each named render pass of the newest resolved frame, such as `SSGI` or `AO`, with the whole frame's total.
+
+```ts
+export function stageGpuReading(renderer: unknown): IStageGpuReading | undefined { … }
+```
+
+- **Use when:** read the GPU cost of one post-processing stage · tell which render pass takes the GPU time
+- **Constraints:** absent before a whole frame resolves and on an adapter without timestamp queries; the frame number counts each reading once
+
+```ts
+const reading = stageGpuReading(renderer); const ssgiMs = reading?.stages.SSGI;
+```
+
 ### `staticTransformCensus`
 
 `function` — Stop recomposing the transforms of a subtree nobody moves. `markStatic(root)` composes the subtree once and freezes it; the engine re-arms a root whose own transform the game changes, and `invalidateStatic(object)` announces a write deeper inside one.
@@ -2595,6 +2690,38 @@ export function staticTransformCensus(): IStaticTransformCensus { … }
 
 ```ts
 invalidateStatic(drawbridge);
+```
+
+### `SurfaceCache`
+
+`class` — The Surface Cache: what a traced global-illumination ray reads where it hits a surface. A material atlas (base colour and emissive maps reduced to small tiles) answers the albedo and the glow at the hit UV; a flat material keeps its colour. `SurfaceLights` adds the scene's point and spot lamps at the hit, the brightest eight.
+
+```ts
+export class SurfaceCache { … }
+```
+
+- **Use when:** give a traced bounce ray the texture colour and glow of the surface it hits
+- **Constraints:** the materials are fixed when the cache is built; build a new one when a material or a map changes · a map whose image the runtime does not show to JavaScript (the owned engine's glTF maps) returns the flat colour and is listed in `report.fallbacks`; the `images` option hands over its pixels · the cache owns no colour, texture or light; the game's materials and lamps are the only source
+- **Overrides:** atlasSize and cardTexelDensityScale size the atlas; images supplies the pixels of a map the runtime hides
+
+```ts
+const cache = SurfaceCache.from(materials); cache.albedo(slot, hit.uv.x, hit.uv.y, out);
+```
+
+### `SurfaceLights`
+
+`class` — The local lamps at the hit of a traced ray: the point and spot lights whose range reaches it, the brightest eight, one shadow ray each. The Surface Cache gives the hit its colour; this gives it the lamps.
+
+```ts
+export class SurfaceLights { … }
+```
+
+- **Use when:** light the hit of a traced ray with the scene's point and spot lamps
+- **Constraints:** the cap skips the ninth-brightest lamp and every one after it, and counts them in `skipped` · the caller answers each shadow ray; the class owns no scene
+- **Overrides:** maxLights caps the lamps evaluated at one hit
+
+```ts
+const lamps = new SurfaceLights(lights); lamps.shade(point, normal, albedo, out, (i) => !occluded(i));
 ```
 
 ### `TracerPool3D`

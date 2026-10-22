@@ -4618,6 +4618,7 @@
         "side",
         "toneMapped",
         "transparent",
+        "twoSidedFoliage",
         "type",
         "uuid",
         "vertexColors",
@@ -4654,6 +4655,7 @@
         "side",
         "toneMapped",
         "transparent",
+        "twoSidedFoliage",
         "vertexColors",
         "visible"
       ],
@@ -4696,6 +4698,7 @@
         "specular.r",
         "toneMapped",
         "transparent",
+        "twoSidedFoliage",
         "type",
         "uuid",
         "vertexColors",
@@ -4737,6 +4740,7 @@
         "specular.r",
         "toneMapped",
         "transparent",
+        "twoSidedFoliage",
         "vertexColors",
         "visible"
       ],
@@ -4792,6 +4796,7 @@
         "toneMapped",
         "transmission",
         "transparent",
+        "twoSidedFoliage",
         "type",
         "uuid",
         "vertexColors",
@@ -4858,6 +4863,7 @@
         "toneMapped",
         "transmission",
         "transparent",
+        "twoSidedFoliage",
         "vertexColors",
         "visible"
       ],
@@ -4920,6 +4926,7 @@
         "side",
         "toneMapped",
         "transparent",
+        "twoSidedFoliage",
         "type",
         "uuid",
         "vertexColors",
@@ -4967,6 +4974,7 @@
         "side",
         "toneMapped",
         "transparent",
+        "twoSidedFoliage",
         "vertexColors",
         "visible"
       ],
@@ -5033,6 +5041,7 @@
         "side",
         "toneMapped",
         "transparent",
+        "twoSidedFoliage",
         "type",
         "uuid",
         "vertexColors",
@@ -5092,6 +5101,7 @@
         "side",
         "toneMapped",
         "transparent",
+        "twoSidedFoliage",
         "vertexColors",
         "vertexNode",
         "visible"
@@ -7343,6 +7353,7 @@
         "shadow.normalBias",
         "shadow.radius",
         "static",
+        "target",
         "up.x",
         "up.y",
         "up.z",
@@ -7376,7 +7387,6 @@
         "rotation",
         "scale",
         "shadow",
-        "target",
         "up"
       ],
       "fields": {

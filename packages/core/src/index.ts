@@ -566,6 +566,91 @@ export type {
 } from "./frame-budget.js";
 export type { FramePassKind, IRenderPassSample, MainDrawSource } from "./render-pass-budget.js";
 /**
+ * Read the GPU milliseconds of each named render pass of the newest resolved frame, such as `SSGI`
+ * or `AO`, with the whole frame's total.
+ * @situation read the GPU cost of one post-processing stage
+ * @situation tell which render pass takes the GPU time
+ * @constraint absent before a whole frame resolves and on an adapter without timestamp queries; the frame number counts each reading once
+ * @example const reading = stageGpuReading(renderer); const ssgiMs = reading?.stages.SSGI;
+ */
+export { stageGpuReading } from "./render-pass-budget.js";
+export type { IStageGpuReading } from "./render-pass-budget.js";
+/**
+ * A cost ladder for one render stage: a window of measured GPU milliseconds above a level's budget
+ * steps the level down, a window under 70% of the next level's budget with room in the frame steps
+ * it up, and a level that failed is retried after a growing wait. It decides when to move; the game
+ * applies the move.
+ * @situation step a render stage down when its GPU time stays over budget
+ * @situation pick a quality level from measured GPU time without oscillating
+ * @constraint levels are listed cheapest first, and every level needs a finite budget in milliseconds
+ * @constraint a window with too few resolved GPU readings never moves the level
+ * @override explicit: true keeps the level and only reports a window over budget
+ * @example const ladder = new BudgetLadder({ levels: ["low", "high"], budgetMs: { low: 1, high: 4 }, start: "high" }); const window = ladder.observe(gpuMs);
+ */
+export { BudgetLadder } from "./render/budget-ladder.js";
+export type { BudgetVerdict, IBudgetLadderOptions, IBudgetWindow } from "./render/budget-ladder.js";
+/**
+ * Steps a game's global illumination method (`none`, `irradianceField`, `screenProbeGather`) down
+ * when its GPU time stays over budget over a 120-frame window, and back up when there is room. The
+ * game owns what each method draws and applies each step; the budget of each method is the GPU
+ * time Unreal spends at the matching `sg.GlobalIlluminationQuality`.
+ * @situation global illumination costs too much on a weak GPU
+ * @situation pick the bounce light method from measured GPU time
+ * @situation quality tier for indirect lighting that follows the hardware
+ * @constraint the game applies each step to its own render chain; this class draws nothing
+ * @constraint the GPU time of a pass is read by the scene name three or the game gave it, so name every GI pass in `stages`
+ * @constraint timestamp queries are needed: without them every window is unobserved and the method holds
+ * @override explicit: true keeps the game's own finalGatherMethod and reports an exceeded budget
+ * @alias global illumination quality
+ * @alias lumen scalability
+ * @alias sg.GlobalIlluminationQuality
+ * @alias final gather method
+ * @example
+ * const gi = new GIBudget({ method: "screenProbeGather", stages: ["SSGI"], budgetMs: { none: 0, irradianceField: 1, screenProbeGather: 5 }, onStep: (method) => rebuildChain(method) });
+ * ctx.beforeRender(() => gi.observeRenderer(ctx.renderer.raw));
+ */
+export { GI_METHODS, GIBudget } from "./render/gi-budget.js";
+/**
+ * Steps a game's soft-shadow filter down a tier (`low`, `medium`, `high`) when the frame's GPU time
+ * stays over its period for a 120-frame window, and back up when there is room. The game owns the
+ * sample counts of each tier and rebuilds its filter on each step; the tiers follow Unreal's
+ * `sg.ShadowQuality` Low, Medium and Epic.
+ * @situation soft shadow filter costs too much on a weak GPU
+ * @situation step the shadow filter samples from measured frame time
+ * @situation shadow quality tier that follows the hardware
+ * @constraint the game rebuilds its filter with the tier's sample counts on each step; this class draws nothing
+ * @constraint timestamp queries are needed: without them every window is unobserved and the tier holds
+ * @constraint the signal is the whole frame's GPU time, so a frame slow for another reason also steps the filter down
+ * @override explicit: true keeps the game's own sample counts and reports an exceeded period
+ * @alias shadow quality
+ * @alias virtual shadow map scalability
+ * @alias sg.ShadowQuality
+ * @example
+ * const filter = new ShadowFilterBudget({ tier: "high", frameBudgetMs: 1000 / 60, onStep: (tier) => { light.shadow.filterNode = filterFor(tier); } });
+ * ctx.beforeRender(() => filter.observeRenderer(ctx.renderer.raw));
+ */
+export { SHADOW_FILTER_TIERS, ShadowFilterBudget } from "./render/shadow-filter-budget.js";
+/**
+ * Parse a `TN_SHADOW_TIER` console line back into its report, or `undefined`.
+ * @situation inspect which shadow filter tier ran and why it stepped
+ * @constraint non-marker lines and malformed markers return `undefined`
+ * @example const report = readShadowTierMarker(line); if (report?.stepped) console.log(report.reason);
+ */
+export { readShadowTierMarker } from "./render/shadow-filter-budget.js";
+export type {
+  IShadowFilterBudgetOptions,
+  IShadowFilterReport,
+  ShadowFilterTier,
+} from "./render/shadow-filter-budget.js";
+/**
+ * Parse a `TN_GI` console line back into its report, or `undefined`.
+ * @situation inspect which global illumination method ran and why it stepped
+ * @constraint non-marker lines and malformed markers return `undefined`
+ * @example const report = readGIMarker(line); if (report?.stepped) console.log(report.reason);
+ */
+export { readGIMarker } from "./render/gi-budget.js";
+export type { GIMethod, IGIBudgetOptions, IGIBudgetReport } from "./render/gi-budget.js";
+/**
  * Read what frame rate a game gets when its config does not say, and why.
  *
  * `display.maxFps` follows the display — capped at 120 on desktop and web, 60 on mobile — rather
@@ -835,6 +920,39 @@ export {
   PROBE_VOLUME_MARKER,
   ProbeVolume,
 } from "./render/probe-volume.js";
+/**
+ * The Surface Cache: what a traced global-illumination ray reads where it hits a surface. A material atlas
+ * (base colour and emissive maps reduced to small tiles) answers the albedo and the glow at the hit UV; a flat
+ * material keeps its colour. `SurfaceLights` adds the scene's point and spot lamps at the hit, the brightest eight.
+ * @situation give a traced bounce ray the texture colour and glow of the surface it hits
+ * @alias lumen surface cache
+ * @alias lumen scene
+ * @alias mesh cards
+ * @constraint the materials are fixed when the cache is built; build a new one when a material or a map changes
+ * @constraint a map whose image the runtime does not show to JavaScript (the owned engine's glTF maps) returns the flat colour and is listed in `report.fallbacks`; the `images` option hands over its pixels
+ * @constraint the cache owns no colour, texture or light; the game's materials and lamps are the only source
+ * @override atlasSize and cardTexelDensityScale size the atlas; images supplies the pixels of a map the runtime hides
+ * @example const cache = SurfaceCache.from(materials); cache.albedo(slot, hit.uv.x, hit.uv.y, out);
+ */
+export { SurfaceCache } from "./render/surface-cache.js";
+/**
+ * The local lamps at the hit of a traced ray: the point and spot lights whose range reaches it, the brightest eight,
+ * one shadow ray each. The Surface Cache gives the hit its colour; this gives it the lamps.
+ * @situation light the hit of a traced ray with the scene's point and spot lamps
+ * @constraint the cap skips the ninth-brightest lamp and every one after it, and counts them in `skipped`
+ * @constraint the caller answers each shadow ray; the class owns no scene
+ * @override maxLights caps the lamps evaluated at one hit
+ * @example const lamps = new SurfaceLights(lights); lamps.shade(point, normal, albedo, out, (i) => !occluded(i));
+ */
+export { SurfaceLights } from "./render/surface-cache.js";
+export type {
+  ISurfaceCacheMaterial,
+  ISurfaceCacheOptions,
+  ISurfaceCacheReport,
+  ISurfaceCacheTexture,
+  ISurfaceLight,
+  ISurfaceLightsOptions,
+} from "./render/surface-cache.js";
 /**
  * Read the most recent observation from a probe volume.
  * @situation inspect the latest probe bake observation
@@ -1305,7 +1423,9 @@ export type {
  * @situation choose touch controls for a mobile device
  * @situation can I raytrace on native
  * @constraint only use the returned platform facts; native globals are host-owned
- * @constraint ray tracing is unavailable on native until buffer-to-texture copy-out interop exists; `mystralRT.traceRays` refuses instead of resolving success without a readable result
+ * @constraint image ray tracing is unavailable on native until buffer-to-texture copy-out interop exists; `mystralRT.traceRays` refuses instead of resolving success without a readable result
+ * @constraint a native desktop host with ray tracing hardware traces ray batches with `mystralRT.traceRayBatch`, which writes hit records into a typed array you own; read `mystralRT.capabilities().rayBatch` first, and keep the software BVH trace for the web and every other host
+ * @constraint when `mystralRT.capabilities().sharedTransport` is true, `mystralRT.traceRayBatchGpu({ tlas, rays, hits, rayCount })` traces between two GPUBuffers with no copy through CPU memory; `rays` needs the CopySrc usage and `hits` the CopyDst usage, and each call costs CPU time, so measure it against the software trace for your batch size
  * @example if (isMobile()) showTouchControls();
  */
 export { getPlatform, isMobile, isNative, isTouchscreenAvailable, isWeb } from "./platform.js";

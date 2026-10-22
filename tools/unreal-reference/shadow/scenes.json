@@ -7,6 +7,25 @@
       "owner": "PRD-649",
       "serves": ["PRD-634", "PRD-652"],
       "poses": ["heights", "contact", "ramp"]
+    },
+    {
+      "name": "lamp-room",
+      "owner": "PRD-649",
+      "serves": ["PRD-650"],
+      "poses": ["spot", "spot-soft", "point", "rod"]
+    },
+    {
+      "name": "foliage",
+      "owner": "PRD-649",
+      "serves": ["PRD-651", "PRD-643"],
+      "poses": ["canopy", "grass"]
+    },
+    {
+      "name": "wildwood",
+      "owner": "PRD-649",
+      "serves": ["PRD-651", "PRD-643"],
+      "poses": ["closeup", "medium"],
+      "manifest": "manifest.json"
     }
   ],
   "variants": [
@@ -20,6 +39,80 @@
         "r.Shadow.Virtual.Enable": 1,
         "r.DynamicGlobalIlluminationMethod": 0,
         "r.Shadow.Virtual.SMRT.RayCountDirectional": 8
+      },
+      "kinds": ["png", "exr"]
+    },
+    {
+      "name": "L5-Low",
+      "layer": "L5",
+      "cvars": {
+        "sg.ShadowQuality": 0
+      },
+      "expect": {
+        "r.Shadow.Virtual.Enable": 1,
+        "r.DynamicGlobalIlluminationMethod": 0,
+        "r.Shadow.Virtual.SMRT.RayCountDirectional": 0
+      },
+      "kinds": ["png", "exr"]
+    },
+    {
+      "name": "L5-Medium",
+      "layer": "L5",
+      "cvars": {
+        "sg.ShadowQuality": 1
+      },
+      "expect": {
+        "r.Shadow.Virtual.Enable": 1,
+        "r.DynamicGlobalIlluminationMethod": 0,
+        "r.Shadow.Virtual.SMRT.RayCountDirectional": 4
+      },
+      "kinds": ["png", "exr"]
+    },
+    {
+      "name": "L6",
+      "only": ["wildwood"],
+      "layer": "L6",
+      "cvars": {
+        "sg.ShadowQuality": 3
+      },
+      "expect": {
+        "r.Shadow.Virtual.Enable": 1,
+        "r.Shadow.Virtual.SMRT.RayCountDirectional": 8,
+        "r.DynamicGlobalIlluminationMethod": 0,
+        "r.AmbientOcclusionLevels": -1
+      },
+      "kinds": ["png", "exr"]
+    },
+    {
+      "name": "L7",
+      "only": ["wildwood"],
+      "layer": "L7",
+      "cvars": {
+        "sg.ShadowQuality": 3,
+        "sg.GlobalIlluminationQuality": 3
+      },
+      "expect": {
+        "r.Shadow.Virtual.Enable": 1,
+        "r.Shadow.Virtual.SMRT.RayCountDirectional": 8,
+        "r.DynamicGlobalIlluminationMethod": 1,
+        "r.ReflectionMethod": 0
+      },
+      "kinds": ["png", "exr"]
+    },
+    {
+      "name": "L8",
+      "only": ["wildwood"],
+      "layer": "L8",
+      "cvars": {
+        "sg.ShadowQuality": 3,
+        "sg.GlobalIlluminationQuality": 3,
+        "sg.ReflectionQuality": 3
+      },
+      "expect": {
+        "r.Shadow.Virtual.Enable": 1,
+        "r.Shadow.Virtual.SMRT.RayCountDirectional": 8,
+        "r.DynamicGlobalIlluminationMethod": 1,
+        "r.ReflectionMethod": 1
       },
       "kinds": ["png", "exr"]
     },

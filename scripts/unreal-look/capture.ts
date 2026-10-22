@@ -7,12 +7,14 @@
  *     --check-cvars        only resolve every console variable in layers.json; exit 1 on a miss
  *     --dump-actors        only build the levels and write template-actors.json
  *   --engine threenative   scaffold the starter and capture the same cells headed on WebGPU
+ *                          The browser opens on its own private Xvfb, whatever DISPLAY the shell exports
+ *                          (browser.ts). TN_PLAYTEST_HOST_DISPLAY=1 opens it on the session display instead.
  *     --reuse              keep the scaffold and its install; re-copy the template source
  *     --baseline           skip scripts/unreal-look/scaffold/render/ (the template look as shipped)
  *     --measure <seconds>  hold each cell that long and write its TN_FRAME_BUDGET log (read it with
  *                          `playtest perf --file`); no screenshot
- *     --size 1920x1080     viewport override (the cells use poses.json's 1280x720); start Xvfb that large
- *     --off vsm,gpusky,...   L9 stage ablation: vsm gpusky clouds gi reflcap bloom localexposure autoexposure ssgi ssr gtao
+ *     --size 1920x1080     viewport override (the cells use poses.json's 1280x720); set TN_XVFB_SCREEN that large
+ *     --off vsm,gpusky,...   L9 stage ablation: vsm gpusky clouds gi reflcap bloom localexposure autoexposure ssgi ssr gtao vignette motionblur stockbloom
  *   --layers L0,L1,ID      limit the layers (default: every layer plus the region-id frames)
  *   --cells sun60/exterior limit the (sun, pose) cells
  *   --scene gi[:<name>,...] a PRD-638 GI calibration scene instead (flags: scripts/unreal-look/gi.ts)
@@ -100,7 +102,8 @@ export async function main(args: readonly string[]): Promise<number> {
   const out = path.resolve(flag(args, "--out") ?? path.join(REFERENCE, "captures", engine));
   const known = layerNames();
   const layers = (flag(args, "--layers")?.split(",") ?? known).filter(Boolean);
-  for (const layer of layers)
+  // A calibration scene names its own layers (`GI_LAYERS`, validated where it captures).
+  for (const layer of flag(args, "--scene") === undefined ? layers : [])
     if (!known.includes(layer)) throw new Error(`TN_UNREAL_LOOK_BAD_INPUT: unknown layer ${layer}`);
   const cellsFlag = flag(args, "--cells");
   const cells = cellsFlag === undefined ? undefined : new Set(cellsFlag.split(","));
@@ -116,6 +119,7 @@ export async function main(args: readonly string[]): Promise<number> {
         (familyOf(value) === "shadow" ? ["ID", "L5", "L9"] : ["ID", "L1", "L7"]),
       out: path.resolve(flag(args, "--out") ?? path.join(REFERENCE, "captures", "threenative")),
       reuse: args.includes("--reuse"),
+      ...(flag(args, "--measure") ? { measureSeconds: Number(flag(args, "--measure")) } : {}),
     });
     return count > 0 ? 0 : 1;
   }
@@ -159,7 +163,12 @@ export async function main(args: readonly string[]): Promise<number> {
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
   main(process.argv.slice(2)).then(
-    (code) => process.exit(code),
+    (code) => {
+      // The dev server's pnpm prints "ELIFECYCLE Command failed." when it is stopped, so the
+      // last line names the real result.
+      console.info(`TN_UNREAL_LOOK_EXIT ${code}`);
+      process.exit(code);
+    },
     (error: unknown) => {
       console.error(error instanceof Error ? error.message : error);
       process.exit(1);

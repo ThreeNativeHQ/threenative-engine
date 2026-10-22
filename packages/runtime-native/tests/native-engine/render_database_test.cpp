@@ -8,6 +8,7 @@
 #include "engine/animation/mixer.h"
 #include "engine/renderer/post/traa.h"
 #include "engine/renderer/render_database.h"
+#include "engine/renderer/shadows/virtual/atlas.h"
 #include "engine/renderer/reflector.h"
 #include "engine/renderer/render_target_pass.h"
 #include "engine/shader/graph/graph.h"
@@ -3357,6 +3358,116 @@ void maskedShadow() {
     CHECK(frontFacingLight < 0.05);        // three's shadowSide: a FrontSide caster draws its back faces
 }
 
+// PRD-651: a receiver marked twoSidedFoliage (Unreal's Two Sided Foliage shading model) looks its shadow
+// up where it stands, and a source-angle filter widens to Unreal's 5 degree minimum on it. A plate 1 m
+// above the floor with the sun at 45 degrees throws an edge at x = 1; a normal bias b along the floor's
+// normal moves a biased lookup's edge to x = 1 - b. The floor is the receiver: a marked floor skips the
+// bias, and a floor with two sides and a cut but no marker (Unreal's default lit) keeps it.
+void leafReceiver() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(96, 96);
+    OrthographicCamera camera(-3, 3, 3, -3, 0.1, 20);  // 16 pixels per metre
+    camera.position.set(0, 10, 0.001);
+    camera.lookAt(0, 0, 0);
+    camera.updateProjectionMatrix();
+    const auto row = [&](RenderDatabase& database, Scene& scene) {
+        database.render(renderer, scene, camera);
+        std::vector<uint8_t> pixels;
+        bool read = false;
+        renderer.readPixels([&](GpuStatus status, std::vector<uint8_t> px) {
+            if (status == GpuStatus::Ok) pixels = std::move(px);
+            read = true;
+        });
+        for (int i = 0; i < 5000 && !read; ++i) {
+            renderer.poll();
+            events.drain();
+            if (!read) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        CHECK(pixels.size() == size_t{96} * 96 * 4);
+        std::vector<double> out;
+        for (int x = 0; x < 96; ++x) out.push_back(pixels[(size_t{48} * 96 + size_t(x)) * 4]);
+        return out;
+    };
+    // The shadow edge on the middle row in metres (the first pixel brighter than half the lit floor, from
+    // the left, interpolated) and the width between 15 and 85 percent of the lit floor.
+    struct Edge { double at, width; };
+    const auto edgeOf = [](const std::vector<double>& line) {
+        const double lit = line[93], dark = *std::min_element(line.begin(), line.begin() + 80);
+        CHECK(lit - dark > 20);
+        const auto cross = [&](double fraction) {
+            const double level = dark + (lit - dark) * fraction;
+            for (int x = 1; x < 96; ++x)
+                if (line[x - 1] < level && line[x] >= level) return x - 1 + (level - line[x - 1]) / (line[x] - line[x - 1]);
+            return -1.0;
+        };
+        return Edge{(cross(0.5) - 48) / 16.0, (cross(0.85) - cross(0.15)) / 16.0};
+    };
+    // One floor, one plate, a sun at 45 degrees; the receiver's marker, side and cut and the light's bias vary.
+    const auto edge = [&](bool foliage, Side side, double alphaTest, double normalBias, bool filter) {
+        Scene scene;
+        DirectionalLight light{Color(1, 1, 1), 3};
+        light.position.set(-5, 5, 0);
+        light.setCastShadow(true);
+        light.shadow.camera->setLayerMask(double((1 << 0) | (1 << 2)));
+        light.shadow.normalBias = normalBias;
+        if (filter) {
+            auto options = std::make_shared<shadows::AtlasOptions>();
+            options->clipExtents = {8};
+            options->mapSize = 512;
+            options->pageTexels = 128;
+            options->lightDistance = 20;
+            options->depthRange = 40;
+            options->refreshStep = {0};
+            light.shadow.virtualShadow = options;
+            light.shadow.sourceAngleFilter = std::array<double, 3>{0.0047, 16, 16};  // 0.27 degrees, Unreal's sun
+        }
+        scene.add(light);
+        auto material = std::make_shared<Material>(MaterialType::Standard);
+        material->side = side;
+        material->alphaTest = alphaTest;
+        material->twoSidedFoliage = foliage;
+        Mesh floor{makePlaneGeometry(6, 6), material};
+        floor.rotation.set(-M_PI / 2, 0, 0);
+        floor.setReceiveShadow(true);
+        scene.add(floor);
+        // The plate covers x < 0 at 1 m (2 m with the filter, so the gap is wide enough to measure).
+        Mesh plate{makeBoxGeometry(3, 0.05, 6), std::make_shared<Material>(MaterialType::Standard)};
+        plate.position.set(-1.5, filter ? 2 : 1, 0);
+        plate.setCastShadow(true);
+        plate.setLayer(2);
+        scene.add(plate);
+        scene.updateMatrixWorld(true);
+        RenderDatabase database;
+        database.shadowMapEnabled = true;
+        // A virtual map is drawn on the first frame and read on the next.
+        std::vector<double> line = row(database, scene);
+        for (int frame = 0; frame < (filter ? 2 : 0); ++frame) line = row(database, scene);
+        return edgeOf(line);
+    };
+    const double bias = 0.4;
+    const Edge unbiased = edge(false, Side::Front, 0, 0, false);
+    const Edge biased = edge(false, Side::Front, 0, bias, false);
+    const Edge leaf = edge(true, Side::Double, 0.5, bias, false);
+    const Edge marked = edge(true, Side::Front, 0, bias, false);
+    const Edge plainCut = edge(false, Side::Double, 0.5, bias, false);
+    std::printf("leaf receiver bias: unbiased %.3f, biased %.3f, marked leaf %.3f, marked alone %.3f, plain cut %.3f\n",
+                unbiased.at, biased.at, leaf.at, marked.at, plainCut.at);
+    CHECK(unbiased.at - biased.at > 0.3);          // the bias moves an ordinary receiver's edge by about b
+    CHECK(std::abs(leaf.at - unbiased.at) < 0.1);  // a marked leaf keeps the unbiased edge
+    CHECK(std::abs(marked.at - unbiased.at) < 0.1);       // the marker alone is the shading model
+    CHECK(std::abs(plainCut.at - biased.at) < 0.1);       // two sides and a cut without it stay default lit
+    const Edge hard = edge(false, Side::Front, 0, 0, true);
+    const Edge hardCut = edge(false, Side::Double, 0.5, 0, true);
+    const Edge soft = edge(true, Side::Double, 0.5, 0, true);
+    std::printf("leaf receiver source: ordinary edge width %.3f m, plain cut %.3f m, marked leaf %.3f m\n", hard.width,
+                hardCut.width, soft.width);
+    CHECK(soft.width > hard.width + 0.15);         // the 5 degree minimum widens the marked leaf's penumbra
+    CHECK(std::abs(hardCut.width - hard.width) < 0.05);   // a plain cut card keeps the sun's own source
+}
+
 // sourceRadiusShadowFilter on a lamp (PRD-650): a plate 2 m under a lamp 4 m above the floor throws an
 // edge whose penumbra is 2 x sourceRadius x (4 - 2) / 2 m wide on the floor. The edge's width, in pixels
 // whose shadowed-to-unshadowed ratio lies between 0.15 and 0.85, follows the radius for a point light's
@@ -3606,6 +3717,94 @@ void contactShadowFoot() {
     CHECK(backLeak > 0.5);    // three's derived shadowSide: the far foot leaks
     CHECK(frontLeak < 0.05);  // shadowSide = FrontSide, the faces Unreal draws: the foot stays dark
     CHECK(frontKept > 0.95);  // and the lit floor does not shadow itself
+}
+
+// The same far foot under a sun with a virtual shadow map: a front-sided caster with a null shadowSide
+// draws its front faces into a virtual page, as Unreal's sun does, so the strip the box shades beside
+// its foot stays dark. Back faces store the depth on the box's own far face, at the floor, and leak
+// the sun along every seam where a box meets a surface (the sunlit room's inner wall edges).
+void virtualSunContactFoot() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(192, 192);
+    // 0.4 m across the box's far foot at x = 1: about 2 mm per pixel.
+    OrthographicCamera camera(-0.2, 0.2, 0.2, -0.2, 0.1, 20);
+    camera.position.set(1, 10, 0.001);
+    camera.lookAt(1, 0, 0);
+    camera.updateProjectionMatrix();
+    const auto strip = [&](std::optional<Side> side) -> std::array<double, 2> {
+        Scene scene;
+        DirectionalLight sun{Color(1, 1, 1), 3};
+        sun.position.set(3, 3, 0);  // 45 degrees: the box shades the floor at x < 1
+        sun.setCastShadow(true);
+        sun.shadow.camera->setLayerMask(double((1 << 0) | (1 << 2)));
+        shadows::AtlasOptions atlas;
+        atlas.clipExtents = {8}; atlas.mapSize = 512; atlas.pageTexels = 128;
+        atlas.lightDistance = 20; atlas.depthRange = 40;
+        sun.shadow.virtualShadow = std::make_shared<const shadows::AtlasOptions>(std::move(atlas));
+        scene.add(sun);
+        auto white = std::make_shared<Material>(MaterialType::Standard);
+        white->shadowSide = side;
+        Mesh floor{makeBoxGeometry(6, 0.2, 6), white};
+        floor.position.y = -0.1;
+        floor.setCastShadow(true);
+        floor.setReceiveShadow(true);
+        scene.add(floor);
+        // The box covers x 1..2 at z -0.5..0.5, 2 m tall, on layer 2: the camera sees the floor at x < 1.
+        Mesh box{makeBoxGeometry(1, 2, 1), white};
+        box.position.set(1.5, 1, 0);
+        box.setCastShadow(true);
+        box.setLayer(2);
+        scene.add(box);
+        scene.updateMatrixWorld(true);
+        RenderDatabase database;
+        database.shadowMapEnabled = true;
+        const auto row = [&] {
+            for (int frame = 0; frame < 3; ++frame) database.render(renderer, scene, camera);
+            std::vector<uint8_t> pixels;
+            bool read = false;
+            renderer.readPixels([&](GpuStatus status, std::vector<uint8_t> px) {
+                if (status == GpuStatus::Ok) pixels = std::move(px);
+                read = true;
+            });
+            for (int i = 0; i < 5000 && !read; ++i) {
+                renderer.poll();
+                events.drain();
+                if (!read) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+            CHECK(pixels.size() == size_t{192} * 192 * 4);
+            std::vector<double> red(192);
+            for (int x = 0; x < 192; ++x) red[x] = pixels[(size_t{96} * 192 + x) * 4];
+            return red;
+        };
+        const std::vector<double> shadowed = row();
+        box.setCastShadow(false);
+        const std::vector<double> open = row();
+        sun.setCastShadow(false);
+        const std::vector<double> free = row();
+        double acne = 1;
+        for (int x = 0; x < 192; ++x) acne = std::min(acne, open[x] / std::max(free[x], 1.0));
+        // The strip beside the foot, floor x 0.8 .. 1.0 m, on whichever side of the centre is darker.
+        std::array<double, 2> brightest{}, mean{};
+        for (int i = 1; i <= 95; ++i)
+            for (int s = 0; s < 2; ++s) {
+                const int x = s == 0 ? 96 + i : 96 - i;
+                const double ratio = shadowed[x] / std::max(open[x], 1.0);
+                brightest[s] = std::max(brightest[s], ratio);
+                mean[s] += ratio / 95;
+            }
+        CHECK(*std::max_element(open.begin(), open.end()) > 32);
+        return std::array<double, 2>{mean[0] < mean[1] ? brightest[0] : brightest[1], acne};
+    };
+    const auto [derivedLeak, derivedKept] = strip(std::nullopt);
+    const auto [frontLeak, frontKept] = strip(Side::Front);
+    std::printf("virtual sun foot: derived leak %.3f, kept %.3f; shadowSide front leak %.3f, kept %.3f\n",
+                derivedLeak, derivedKept, frontLeak, frontKept);
+    CHECK(frontLeak < 0.05);    // the faces the sun sees store the depth, so the foot stays dark
+    CHECK(derivedLeak < 0.05);  // and a null shadowSide on a virtual page draws them too
+    CHECK(derivedKept > 0.95);  // without the lit floor shadowing itself
 }
 
 // A point light's cube shadow: five casters around and below the lamp each shade the floor where its
@@ -4509,7 +4708,7 @@ TN_TEST_MAIN({"gpu_joint_production", gpuJointProduction}, {"multi_material_grou
              {"material_unsupported", materialUnsupported}, {"shader_invalid", shaderInvalid}, {"time_uniform", timeUniform}, {"gpu_mipmaps", gpuMipmaps}, {"updates", updates},
              {"multi_camera_layers", multiCameraLayers}, {"render_callback", renderCallback}, {"instanced", instanced},
              {"batched_vs_unbatched", batchedVsUnbatched}, {"skinned_crowd", skinnedCrowdPixels}, {"skinned_decline_cadence", skinnedDeclineCadence}, {"skinned_normalized_weights", skinnedNormalizedWeights}, {"normal_map_tilt", normalMapTilt}, {"unsupported_map_slot", unsupportedMapSlot}, {"env_map_slot_is_read", envMapSlotIsRead}, {"converted_copies_swept", convertedCopiesAreSwept}, {"gpu_timer_covers_offscreen", gpuTimerCoversOffscreen}, {"gpu_timer_covers_shadows", gpuTimerCoversShadows}, {"overlay_over_frame", overlayOverFrame}, {"gpu_timer_is_opt_in", gpuTimerIsOptIn}, {"msaa_edges", msaaEdges}, {"shadow_camera_layers", shadowCameraLayers}, {"flat_shading_needs_no_normals", flatShadingNeedsNoNormals}, {"map_sampleability_changes", mapSampleabilityChanges}, {"batch_caches_stay_put", batchCachesStayPut}, {"frustum_culling", frustumCulling},
-             {"shadow_caster_frustum_culling", shadowCasterFrustumCulling}, {"masked_shadow", maskedShadow}, {"point_shadow_cube_faces", pointShadowCubeFaces}, {"lamp_source_radius", lampSourceRadius}, {"contact_shadow_foot", contactShadowFoot}, {"lamp_cache", lampCache}, {"shadow_lights_follow_hierarchy", shadowLightsFollowHierarchy}, {"records_survive_siblings", recordsSurviveSiblings}, {"steady_frame_hashes_no_record", steadyFrameHashesNoRecord}, {"nested_record_cache", nestedRecordCache}, {"frustum_record_retention", frustumRecordRetention}, {"world_sphere_measured_once", worldSphereMeasuredOnce}, {"reflection_reuse", reflectionReuse})
+             {"shadow_caster_frustum_culling", shadowCasterFrustumCulling}, {"masked_shadow", maskedShadow}, {"leaf_receiver", leafReceiver}, {"point_shadow_cube_faces", pointShadowCubeFaces}, {"lamp_source_radius", lampSourceRadius}, {"contact_shadow_foot", contactShadowFoot}, {"virtual_sun_contact_foot", virtualSunContactFoot}, {"lamp_cache", lampCache}, {"shadow_lights_follow_hierarchy", shadowLightsFollowHierarchy}, {"records_survive_siblings", recordsSurviveSiblings}, {"steady_frame_hashes_no_record", steadyFrameHashesNoRecord}, {"nested_record_cache", nestedRecordCache}, {"frustum_record_retention", frustumRecordRetention}, {"world_sphere_measured_once", worldSphereMeasuredOnce}, {"reflection_reuse", reflectionReuse})
 
 
 

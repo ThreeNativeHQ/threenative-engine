@@ -503,6 +503,7 @@ RenderDatabase::Record& RenderDatabase::record(const Mesh& mesh, Record& r, bool
     d.side = static_cast<uint8_t>(material->side);
     d.shadowSide = material->shadowSide ? static_cast<uint8_t>(*material->shadowSide) : 255;
     d.flatShading = material->flatShading;
+    d.twoSidedFoliage = material->twoSidedFoliage;
     d.blending = static_cast<uint8_t>(material->blending);
     r.drawable = d.positions != nullptr;
     return r;
@@ -520,6 +521,7 @@ DrawItem& RenderDatabase::refresh(const Mesh& mesh, Record& r) {
     d.side = static_cast<uint8_t>(r.material->side);
     d.shadowSide = r.material->shadowSide ? static_cast<uint8_t>(*r.material->shadowSide) : 255;
     d.flatShading = r.material->flatShading;
+    d.twoSidedFoliage = r.material->twoSidedFoliage;
     d.blending = static_cast<uint8_t>(r.material->blending);
     d.positionNode = r.material->positionNode;
     d.nodes = r.material->nodes;
@@ -1348,7 +1350,7 @@ const std::vector<DrawItem>& RenderDatabase::prepare(Object3D& scene, Camera& ca
             if (mesh) continue;
             const Object3D* target = nullptr;
             if (type == typeid(DirectionalLight)) target = static_cast<const DirectionalLight*>(child)->target.get();
-            if (type == typeid(SpotLight)) target = static_cast<const SpotLight*>(child)->target;
+            if (type == typeid(SpotLight)) target = static_cast<const SpotLight*>(child)->target.get();
             const bool light = type == typeid(Light) || type == typeid(AmbientLight) ||
                                type == typeid(PointLight) || type == typeid(HemisphereLight) ||
                                (target && typeid(*target) == typeid(Object3D) && target->parent == nullptr);
