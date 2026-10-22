@@ -174,6 +174,12 @@ export interface IWorldEnvironmentOptions {
   /** Screen probes only, diagnosis: 1 draws the probes' weight and trust, 2 the sign of the gathered delta. */
   readonly ssgiProbeDebug?: number;
   /**
+   * Diagnosis, owned engine only: label one pass group as the `SSGI` GPU stage and leave the others in the frame, so
+   * `info.engine.gpuStages.SSGI` times that group alone (`trace`, `filter`, `gather` of the screen probes, or the chain's
+   * `denoise`). Omit to time every GI pass.
+   */
+  readonly ssgiTimedPass?: "trace" | "filter" | "gather" | "denoise";
+  /**
    * Denoise passes over the SSGI gather, each turning the tap pattern by its index. The default is the render chain
    * tier's `denoiseIterations` (high 3, medium 2, low 1): one pass left the sunlit room's walls grainy at `high`.
    */
@@ -641,6 +647,7 @@ export class WorldEnvironment {
       ssgiProbeJitter: options.ssgiProbeJitter ?? 1,
       ssgiProbeRays: options.ssgiProbeRays,
       ssgiProbeDebug: options.ssgiProbeDebug ?? 0,
+      ssgiTimedPass: options.ssgiTimedPass,
       giDenoisePasses:
         options.giDenoisePasses ??
         harnessDenoisePasses() ??
@@ -916,7 +923,8 @@ export class WorldEnvironment {
         };
         filter.index.value = pass;
         // The owned engine times the gather's denoise with the gather (`GI_STAGES`); three ignores the property.
-        filter.gpuStage = "SSGI";
+        if (options.ssgiTimedPass === undefined || options.ssgiTimedPass === "denoise")
+          filter.gpuStage = "SSGI";
         result = denoised(filter as unknown as ReturnType<typeof denoise>);
       }
       return result;
@@ -959,6 +967,14 @@ export class WorldEnvironment {
                           ...(options.ssgiProbeRays === undefined
                             ? {}
                             : { tracingOctahedronResolution: options.ssgiProbeRays }),
+                          ...(options.ssgiTimedPass === undefined
+                            ? {}
+                            : {
+                                timedPass:
+                                  options.ssgiTimedPass === "denoise"
+                                    ? null
+                                    : options.ssgiTimedPass,
+                              }),
                         },
                       }
                     : {}),

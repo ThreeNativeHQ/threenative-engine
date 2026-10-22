@@ -92,3 +92,19 @@ prd_contract: v1
   Sweep limits: the reference scene (L0 to L9) cannot be measured here because its Unreal reference statistics are
   not committed and the Unreal frames of L1 to L8 are not on this machine, and the `shadow:` scenes have no
   committed statistics or ID frames. Both need an Unreal capture and `compare --write-stats --write-masks` first.
+- 2026-10-22 (judge2 lane): the cause of the darker `gi:sunlit-room` at L9 after `ff837b1f2` is the vignette default, and
+  the exposure wait is not part of it. `quality.ts` changed `vignetteAmount` from 0.22 (a corner smoothstep) to 0.4 with
+  Unreal's cosine-fourth mask (`vignette.ts`), and every wall, floor and ceiling region that reaches the frame edge
+  loses about 7 percent. Ablation on the 40 regions at one tree, one settled capture each: the mean region median is
+  162.6 with all stages, 172.3 with `off=vignette` (37 of 40 regions brighter), 161.7 with `off=localexposure` and 162.9
+  with `off=motionblur`. The mean of ThreeNative minus Unreal is -3.9 with the vignette and +5.8 without it, and the mean
+  dP50 is 0.037 with it and 0.048 without it. So the old match at `dd489e9e4` (`Floor` 139.4 against Unreal 138) came
+  from a frame that was too bright in general, and the vignette moves the average toward Unreal. The cause went to
+  `post2-lane`.
+- 2026-10-22 (judge2 lane): the `gi:sunlit-room` L9 locks are cut again with `--relax` from a capture of the merged epic
+  head (`457ee75fe` plus the judge commits), with the wait for a settled exposure, and the noise of its two runs. The
+  visual judge says IMPROVEMENT overall and CLOSE against Unreal on the two poses that have an Unreal L9 frame on disk
+  (`sun15-window`, `sun60-window`): the lintel panel with black seams of `dd489e9e4` is gone, and the only new change is
+  the intended vignette. The other four poses are checked by numbers only. The old locks break on that capture in 52
+  bounds. The new locks hold on both runs (40 regions on 1 run, every bound holds) and break on the preview frames of
+  `ff837b1f2` (32 bounds), `3844cece8` (31) and `dd489e9e4` (33).
