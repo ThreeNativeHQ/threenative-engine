@@ -25,8 +25,9 @@
  * with a JSON list of `{ name, method, arm }`, where `arm` overrides the chain options (`ssgiProbeRays`,
  * `ssgiTimedPass`, ...), and the paired difference is to the first arm: one knob per arm, one page, one clock.
  *
- * `--auto` is the live proof of the budgets instead: each tier starts with `giAuto=1` and `shadowAuto=1`, and the
- * report lists every window the budgets closed with the step they took and why.
+ * `--auto` is the live proof of the frame-period rule instead: each tier starts with `shadowAuto=1`, and the report
+ * lists every window the GI report and the shadow budget closed, with the frame against its target, the step the
+ * shadow tier took and why. The GI method never steps (PRD-644 `## Decisions`, 2026-10-22).
  *
  * The GI tiers draw their shadows at `high`, as the Unreal GI cells do. `--shadow-tiers` instead draws the GI at
  * `medium` (no screen-space gather) and the shadows at each listed tier, so `frameMs` is the whole frame's GPU
@@ -47,11 +48,15 @@ interface IWindow {
   readonly window: number;
   readonly windowMs: number | undefined;
   readonly frameMs: number | undefined;
-  readonly budgetMs: number;
+  readonly periodMs: number;
+  readonly targetMs: number;
+  readonly share?: number;
+  /** The drawing buffer's width when the window closed: the primary resolution scale shows here. */
+  readonly drawingWidth?: number;
+  readonly verdict?: string;
   readonly stagesSeen: readonly string[];
   readonly passes: readonly string[];
   readonly finalGatherMethod: string;
-  readonly stepped?: string;
   readonly reason?: string;
 }
 
@@ -167,7 +172,9 @@ async function collectWindows(
   const windows = new Map<number, IWindow>();
   const deadline = Date.now() + 240_000;
   while (windows.size < count + 1 && Date.now() < deadline) {
-    const last = (await page.evaluate("window.__tnRef.giBudget?.() ?? null")) as IWindow | null;
+    const last = (await page.evaluate(
+      "(() => { const r = window.__tnRef.giBudget?.() ?? null; return r && { ...r, drawingWidth: window.__tnRef.renderer.domElement.width }; })()",
+    )) as IWindow | null;
     if (last?.window !== undefined) windows.set(last.window, last);
     if (errors.length > 0) throw new Error(`TN_UNREAL_LOOK_PAGE_ERROR: ${errors.join(" | ")}`);
     await page.waitForTimeout(250);
@@ -178,13 +185,16 @@ async function collectWindows(
 function summarize(adapter: Record<string, string>, kept: readonly IWindow[]): object {
   const resolved = kept.filter((w) => w.windowMs !== undefined);
   const giMs = mean(resolved.map((w) => w.windowMs ?? 0));
+  const frameMs = mean(resolved.map((w) => w.frameMs ?? 0));
   const first = kept[0];
   return {
     adapter,
-    budgetMs: first?.budgetMs ?? null,
-    frameMs: Number(mean(resolved.map((w) => w.frameMs ?? 0)).toFixed(3)),
+    frameMs: Number(frameMs.toFixed(3)),
     giMs: Number(giMs.toFixed(3)),
-    insideBudget: first === undefined || resolved.length === 0 ? null : giMs <= first.budgetMs,
+    // The frame decides, not the GI stage: the stage reading moves 2 to 3 times with the GPU clock.
+    insideTarget: first === undefined || resolved.length === 0 ? null : frameMs <= first.targetMs,
+    periodMs: first?.periodMs ?? null,
+    targetMs: first?.targetMs ?? null,
     method: first?.finalGatherMethod ?? null,
     passes: first?.passes ?? [],
     stagesSeen: first?.stagesSeen ?? [],
@@ -226,8 +236,7 @@ async function measureTier(
       ),
     };
     // No GI pass runs at `none`, so the tier costs no GI time by construction.
-    if (method === "none")
-      return { adapter, budgetMs: 0, frame, giMs: 0, insideBudget: true, method, windows: 0 };
+    if (method === "none") return { adapter, frame, giMs: 0, method, windows: 0 };
     return { ...summarize(adapter, await collectWindows(page, errors, count)), frame };
   } finally {
     await page.close();
@@ -235,8 +244,8 @@ async function measureTier(
 }
 
 /**
- * The live proof: the page starts at a tier with both budgets free to move (`giAuto=1`, `shadowAuto=1`), and the
- * report lists the windows they closed, each with the reading it judged and the step it took.
+ * The live proof: the page starts at a tier with the shadow tier free to move (`shadowAuto=1`), and the
+ * report lists the windows the GI report closed, each with the frame it judged, and the shadow report.
  */
 async function watchSteps(
   browser: Browser,
@@ -249,7 +258,7 @@ async function watchSteps(
 ): Promise<Record<string, unknown>> {
   const { adapter, errors, page } = await openTier(
     browser,
-    `${origin}?tnGi=${name}&layer=L7&tier=${tier}&shadowTier=high&giAuto=1&shadowAuto=1${urlExtra}`,
+    `${origin}?tnGi=${name}&layer=L7&tier=${tier}&shadowTier=high&shadowAuto=1${urlExtra}`,
     pose,
   );
   try {

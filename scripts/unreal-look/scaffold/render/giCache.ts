@@ -609,6 +609,8 @@ function insideSolid(ctx: IRayContext, root: Object3D, at: Vector3): boolean {
  * The reader blends texels itself and drops the ones a wall separates, because a hardware blend across a wall
  * thinner than a texel (the 0.2 m roof) mixes the lit outside into the room. Most links lie inside open space
  * where the coarse probes already say so; only the ones near a blocked or solid probe get a ray.
+ * `walls` keeps where a cut link's wall starts, as 255 times its share of the way from the texel to its neighbour:
+ * the reader needs the side of the wall a point is on (see `WALL_SOFT`).
  * A texel whose centre lies inside a solid (most of six axis rays leave through a back face, the coarse bake's own
  * test) is flagged: its value is an interpolation through the solid, and a floor beside a box that is not aligned
  * with the grid read it as its nearest texel, a hard-edged bright wedge along the box's foot.
@@ -618,10 +620,11 @@ function linkMasks(
   fine: IGrid,
   ctx: IRayContext,
   root: Object3D,
-): { masks: Uint8Array; solid: Uint8Array; rays: number } {
+): { masks: Uint8Array; solid: Uint8Array; walls: Uint8Array; rays: number } {
   const { grid } = field;
   const masks = new Uint8Array(fine.nx * fine.ny * fine.nz);
   const solid = new Uint8Array(masks.length);
+  const walls = new Uint8Array(masks.length * 3);
   const dims = [grid.nx, grid.ny, grid.nz];
   const stride = [1, grid.nx, grid.nx * grid.ny];
   const origin = new Vector3();
@@ -689,11 +692,14 @@ function linkMasks(
       origin.set(at[0], at[1], at[2]);
       direction.set(along[0], along[1], along[2]);
       const hit = ctx.raycast({ origin, direction, far: fine.cell, targets: root });
-      if (hit !== undefined && hit.distance < fine.cell) mask |= 1 << a;
+      if (hit !== undefined && hit.distance < fine.cell) {
+        mask |= 1 << a;
+        walls[index * 3 + a] = Math.round((255 * hit.distance) / fine.cell);
+      }
     }
     masks[index] = mask;
   }
-  return { masks, solid, rays };
+  return { masks, solid, walls, rays };
 }
 
 const halfView = new DataView(new ArrayBuffer(4));
@@ -713,6 +719,8 @@ function toHalf(value: number): number {
  * alpha = mask + 8 x round(63 x visibility) + 512 x solid (an integer below 2048, exact in a half float).
  */
 const SKY_STEPS = 63;
+/** The width, in texels, over which a read point passes from one side of a link's wall to the other. */
+const WALL_SOFT = 0.1;
 
 function volume(
   values: Float32Array,
@@ -720,8 +728,11 @@ function volume(
   masks: Uint8Array,
   sky: Float32Array,
   solid: Uint8Array,
+  walls: Uint8Array,
 ): Data3DTexture {
-  const slices = grid.nz * 6;
+  // Six face slices per z, then one slice of the wall positions: x, y, z in RGB, 255 times the share of the way
+  // to the +x, +y, +z neighbour at which a cut link's wall starts.
+  const slices = grid.nz * 7;
   const texels = new Uint16Array(grid.nx * grid.ny * slices * 4);
   for (let probe = 0; probe < grid.nx * grid.ny * grid.nz; probe += 1) {
     const [x, y, z] = [
@@ -739,6 +750,8 @@ function volume(
           512 * (solid[probe] ?? 0),
       );
     }
+    const o = (x + grid.nx * (y + grid.ny * (6 * grid.nz + z))) * 4;
+    for (let c = 0; c < 3; c += 1) texels[o + c] = toHalf((walls[probe * 3 + c] ?? 0) / 255);
   }
   const texture = new Data3DTexture(texels, grid.nx, grid.ny, slices);
   texture.format = RGBAFormat;
@@ -761,8 +774,9 @@ function irradianceAt(
   masks: Uint8Array,
   sky: Float32Array,
   solid: Uint8Array,
+  walls: Uint8Array,
 ) {
-  const cache = volume(values, grid, masks, sky, solid);
+  const cache = volume(values, grid, masks, sky, solid, walls);
   giCache.volumeTexture = cache;
   const dims = [grid.nx, grid.ny, grid.nz] as const;
   return (
@@ -810,6 +824,8 @@ function irradianceAt(
       mask: Node<"float">;
       sky: Node<"float">;
       solid: Node<"float">;
+      /** Where the wall on the link to the +x, +y, +z neighbour starts, as a share of the way (0 to 1). */
+      wall: Node<"vec3">;
     };
     const taps = new Map<number, Taps>();
     const tap = (corner: number): Taps => {
@@ -829,7 +845,7 @@ function irradianceAt(
           .mul(grid.nz)
           .add(tz as Node<"float">)
           .add(0.5)
-          .div(grid.nz * 6);
+          .div(grid.nz * 7);
         const texel = volumeNode.sample(vec3(u, v, w));
         const weighted = texel.rgb.mul(nth(squares, axis));
         colour = colour === undefined ? weighted : colour.add(weighted);
@@ -850,7 +866,7 @@ function irradianceAt(
                     .mul(grid.nz)
                     .add(tz as Node<"float">)
                     .add(0.5)
-                    .div(grid.nz * 6),
+                    .div(grid.nz * 7),
                 ),
               );
         const alongRest = along.a.sub(along.a.add(0.25).div(512).floor().mul(512));
@@ -863,6 +879,16 @@ function irradianceAt(
         mask: mask as Node<"float">,
         sky: visible as Node<"float">,
         solid: solidFlag as Node<"float">,
+        wall: volumeNode.sample(
+          vec3(
+            u,
+            v,
+            float(6 * grid.nz)
+              .add(tz as Node<"float">)
+              .add(0.5)
+              .div(grid.nz * 7),
+          ),
+        ).rgb,
       };
       taps.set(corner, result);
       return result;
@@ -886,6 +912,27 @@ function irradianceAt(
         (w, a) => w.mul((corner >> a) & 1 ? nth(fraction, a) : float(1).sub(nth(fraction, a))),
         float(1).sub(tap(corner).solid.mul(0.999)),
       );
+
+    /**
+     * 1 when `start` lies on the side of every wall that the read point is on, 0 when a wall cut by a link through
+     * `start` has the point on its other side, with a soft edge `WALL_SOFT` wide. A wall thinner than a texel hid
+     * this: the sky texel above the 0.2 m roof took 40 percent of the weight 1 cm under the roof's underside and lit a
+     * band along every ceiling and corner of the room (PRD-649, sun 60 interior).
+     */
+    const sideOf = (start: number): Node<"float"> => {
+      let side: Node<"float"> = float(1);
+      for (let a = 0; a < 3; a += 1) {
+        const lower = start & ~(1 << a);
+        const open = link(lower, a);
+        const walls = tap(lower).wall;
+        const wall = nth([walls.x, walls.y, walls.z], a);
+        const below = clamp(wall.sub(nth(fraction, a)).div(WALL_SOFT).add(0.5), 0, 1);
+        const mine = (start >> a) & 1 ? float(1).sub(below) : below;
+        side = side.mul(open.add(float(1).sub(open).mul(mine)));
+      }
+      // Never zero: where every start is across some wall the read falls back to their plain blend.
+      return max(side, 1e-3);
+    };
 
     // Every texel starts a walk, the one `weightsAt` takes at bake time from its strongest probe: a corner counts when
     // the links from the start to it, axis by axis, are open. The walks blend by the start's weight to the fourth
@@ -915,7 +962,7 @@ function irradianceAt(
         walkSky = walkSky === undefined ? t.sky.mul(weight) : walkSky.add(t.sky.mul(weight));
         walkTotal = walkTotal === undefined ? weight : walkTotal.add(weight);
       }
-      const own = weightOf(start);
+      const own = weightOf(start).mul(sideOf(start));
       const share = own
         .mul(own)
         .mul(own)
@@ -950,7 +997,14 @@ export const giCache: {
    * The baked field at its final resolution, for tools and tests: per texel, six faces of RGB (E / pi), six
    * environment shares, and whether the texel's centre lies inside a solid (a read gives it no weight).
    */
-  field?: { grid: IGrid; values: Float32Array; sky: Float32Array; solid: Uint8Array };
+  field?: {
+    grid: IGrid;
+    values: Float32Array;
+    sky: Float32Array;
+    solid: Uint8Array;
+    /** Per texel and axis (x, y, z): where the wall on the link to the next texel starts, 0 to 255 of the way (0 when open). */
+    walls: Uint8Array;
+  };
   /** The texture the materials read, for the light-change update. */
   volumeTexture?: Data3DTexture;
   /**
@@ -1717,8 +1771,14 @@ export function installGi(
   const cut = linkMasks({ grid, values, links, valid }, fine.grid, ctx, root);
   phase("linkMasks");
   traced += cut.rays;
-  giCache.field = { grid: fine.grid, values: fine.values, sky: fine.sky, solid: cut.solid };
-  const read = irradianceAt(fine.values, fine.grid, cut.masks, fine.sky, cut.solid);
+  giCache.field = {
+    grid: fine.grid,
+    values: fine.values,
+    sky: fine.sky,
+    solid: cut.solid,
+    walls: cut.walls,
+  };
+  const read = irradianceAt(fine.values, fine.grid, cut.masks, fine.sky, cut.solid, cut.walls);
   // The screen-space gather's tier below reads the same as a material does, emitters included, so a ray that hits
   // the emitter on screen replaces its direct light instead of adding it twice.
   giCache.irradiance = (position, normal) => {
