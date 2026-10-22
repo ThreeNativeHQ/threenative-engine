@@ -151,3 +151,20 @@ Per pixel, cast the scene geometry to get N, L and V. Compute the EON to Lambert
   Sky sun60 spheres, Sphere_RoughDielectric sun60 spheres and Floor/LitFloor sun15 spheres and breaks
   Sky sun60 exterior (EON brightens the frame, auto exposure drops, the sky darkens; the 0.78 lens constant
   from sky-lane lifts it back) and Sky sun15 spheres.
+- 2026-10-22 (brdf2-lane, task 1, no capture): the port matches Unreal 5.8.3. `Diffuse_GGX_Rough` is version 3
+  (`BRDF.ush:213,238-249`): EON at 0.4 x roughness x the light-size weight, with the albedo inversion
+  `rho (1 + 0.189468 (1 - rho) r)`, the `f_ss` and `f_ms` terms, and the double-angle `VoL`. `rough-diffuse.ts` and
+  `standard.cpp` `roughDiffuseFactor` hold the same terms. The Substrate path calls it only for `any(DiffuseColor > 0)`
+  with the safe roughness (floor 0.02, `SubstrateDefinitions.h:52`). `ProjectGBufferFormat=0` is the blendable
+  GBuffer, so `USE_ENERGY_CONSERVATION` is 0 (`ShadingEnergyConservation.ush:19-30`) and the diffuse has no
+  specular-albedo factor. Found and not ported: a lamp with `sourceRadius > 0` goes through the capsule path, which
+  wraps the diffuse N.L at the horizon (`SubstrateEvaluation.ush:535-545`, `CapsuleLightIntegrate.ush:96-102`). That is
+  an area-light term, not a BRDF term, so it is outside this PRD.
+- 2026-10-22 (brdf2-lane, task 1): which regions keep the spheres AC-2 spread wide on the final tree (runs `fa1`, `fa2`,
+  UE/TN region medians, gain-normalised): sun60 7.4 % is `Box_Red` 1.051 (374 lit pixels) against `Room` 0.976. sun04
+  10.2 % is `Box_Red` 1.039 (118 pixels) against `Box_White` 0.938 and `Room` 0.968. sun15 is 2.1 %. Causes:
+  (1) Unreal itself sits +-3 % off the published EON closed form by region (UE/EON+spec 0.94 to 1.04 at sun04, no
+  ThreeNative frame involved), so the Phase 1 floor of 6.4 / 8.6 / 8.7 % is the spread of the model, not of the port.
+  (2) `Box_Red` has under 400 lit pixels after the ID mask, so its median is the noisiest of the six. (3) `Box_White`
+  is the one region where ThreeNative leaves the closed form (TN/EON+spec 1.022 at sun60, 1.045 at sun04, 1.001 at
+  sun15, same face and view); the cause is open. Scratch: `~/.cache/tmp-tn/brdf2/`.
