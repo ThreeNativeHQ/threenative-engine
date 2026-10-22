@@ -31,6 +31,7 @@
 #include <cstdlib>
 #include <cmath>
 #include <cstdio>
+#include <numeric>
 #include <string>
 #include <thread>
 
@@ -2828,6 +2829,69 @@ void gpuTimerCoversShadows() {
     }
 }
 
+// PRD-650: the lamp maps' GPU time is its own segment, apart from the sun's, and the segments sum to the frame.
+void gpuTimerSplitsLampShadows() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(96, 96);
+    if (!wgpuDeviceHasFeature(context.getDevice(), WGPUFeatureName_TimestampQuery)) {
+        std::printf("no timestamp-query on this device: nothing to time\n");
+        return;
+    }
+    OrthographicCamera camera(-4, 4, 4, -4, 0.1, 20);
+    camera.position.set(0, 10, 0.001);
+    camera.lookAt(0, 0, 0);
+    camera.updateProjectionMatrix();
+    Scene scene;
+    SpotLight spot{Color(1, 1, 1), 40, 6, 0.9};
+    spot.position.set(1.5, 3, 0);
+    spot.target->position.set(1.5, 0, 0);
+    spot.setCastShadow(true);
+    scene.add(spot);
+    scene.add(*spot.target);
+    DirectionalLight sun{Color(1, 1, 1), 2};
+    sun.position.set(2, 8, 1);
+    sun.setCastShadow(true);
+    scene.add(sun);
+    auto white = std::make_shared<Material>(MaterialType::Standard);
+    Mesh floor{makeBoxGeometry(8, 0.2, 8), white};
+    floor.position.y = -0.1;
+    floor.setReceiveShadow(true);
+    scene.add(floor);
+    Mesh box{makeBoxGeometry(0.6, 0.6, 0.6), white};
+    box.position.set(1.5, 1, 0);
+    box.setCastShadow(true);
+    scene.add(box);
+    RenderDatabase database;
+    database.shadowMapEnabled = true;
+    renderer.setGpuTimer(true);
+    // One frame and its own GPU sample: wait for the frame's readback before the next frame.
+    const auto timed = [&] {
+        const uint64_t before = renderer.gpuSamples();
+        scene.updateMatrixWorld(true);
+        database.render(renderer, scene, camera);
+        const auto until = std::chrono::steady_clock::now() + std::chrono::milliseconds(2000);
+        while (renderer.gpuSamples() == before && std::chrono::steady_clock::now() < until) {
+            renderer.poll();
+            events.drain();
+        }
+        CHECK(renderer.gpuSamples() > before);
+        const auto segments = renderer.lastGpuSegments();
+        CHECK(std::abs(std::accumulate(segments.begin(), segments.end(), 0.0) - renderer.lastGpuMs()) < 1e-9);
+        return segments;
+    };
+    const auto first = timed();
+    std::printf("lamp gpu: first frame sun %.4f ms, lamps %.4f ms (%u maps)\n", first[0], first[kGpuLampShadowSegment], renderer.lastFrame().lampRedraws);
+    CHECK(renderer.lastFrame().lampRedraws == 1);
+    CHECK(first[0] > 0 && first[kGpuLampShadowSegment] > 0);
+    const auto cached = timed();
+    std::printf("lamp gpu: cached frame sun %.4f ms, lamps %.4f ms (%u maps)\n", cached[0], cached[kGpuLampShadowSegment], renderer.lastFrame().lampRedraws);
+    CHECK(renderer.lastFrame().lampRedraws == 0);
+    CHECK(cached[0] > 0 && cached[kGpuLampShadowSegment] == 0);
+}
+
 // Secondary targets and the main scene must resolve as one complete GPU sample.
 void gpuTimerCoversOffscreen() {
     mystral::webgpu::Context context;
@@ -5068,7 +5132,7 @@ TN_TEST_MAIN({"gpu_joint_production", gpuJointProduction}, {"multi_material_grou
              {"material_unsupported", materialUnsupported}, {"shader_invalid", shaderInvalid}, {"time_uniform", timeUniform}, {"gpu_mipmaps", gpuMipmaps}, {"updates", updates},
              {"multi_camera_layers", multiCameraLayers}, {"render_callback", renderCallback}, {"instanced", instanced},
              {"batched_vs_unbatched", batchedVsUnbatched}, {"skinned_crowd", skinnedCrowdPixels}, {"skinned_decline_cadence", skinnedDeclineCadence}, {"skinned_normalized_weights", skinnedNormalizedWeights}, {"normal_map_tilt", normalMapTilt}, {"unsupported_map_slot", unsupportedMapSlot}, {"env_map_slot_is_read", envMapSlotIsRead}, {"converted_copies_swept", convertedCopiesAreSwept}, {"gpu_timer_covers_offscreen", gpuTimerCoversOffscreen}, {"gpu_timer_splits_the_gather", gpuTimerSplitsTheLabelledGather}, {"gpu_timer_covers_shadows", gpuTimerCoversShadows}, {"overlay_over_frame", overlayOverFrame}, {"gpu_timer_is_opt_in", gpuTimerIsOptIn}, {"msaa_edges", msaaEdges}, {"shadow_camera_layers", shadowCameraLayers}, {"flat_shading_needs_no_normals", flatShadingNeedsNoNormals}, {"map_sampleability_changes", mapSampleabilityChanges}, {"batch_caches_stay_put", batchCachesStayPut}, {"frustum_culling", frustumCulling},
-             {"shadow_caster_frustum_culling", shadowCasterFrustumCulling}, {"masked_shadow", maskedShadow}, {"leaf_receiver", leafReceiver}, {"point_shadow_cube_faces", pointShadowCubeFaces}, {"lamp_source_radius", lampSourceRadius}, {"lamp_source_radius_wall", lampSourceRadiusWall}, {"lamp_source_radius_crate", lampSourceRadiusCrate}, {"contact_shadow_foot", contactShadowFoot}, {"virtual_sun_contact_foot", virtualSunContactFoot}, {"lamp_cache", lampCache}, {"lamp_atlas", lampAtlas}, {"shadow_lights_follow_hierarchy", shadowLightsFollowHierarchy}, {"records_survive_siblings", recordsSurviveSiblings}, {"steady_frame_hashes_no_record", steadyFrameHashesNoRecord}, {"nested_record_cache", nestedRecordCache}, {"frustum_record_retention", frustumRecordRetention}, {"world_sphere_measured_once", worldSphereMeasuredOnce}, {"reflection_reuse", reflectionReuse})
+             {"shadow_caster_frustum_culling", shadowCasterFrustumCulling}, {"masked_shadow", maskedShadow}, {"leaf_receiver", leafReceiver}, {"point_shadow_cube_faces", pointShadowCubeFaces}, {"lamp_source_radius", lampSourceRadius}, {"lamp_source_radius_wall", lampSourceRadiusWall}, {"lamp_source_radius_crate", lampSourceRadiusCrate}, {"contact_shadow_foot", contactShadowFoot}, {"virtual_sun_contact_foot", virtualSunContactFoot}, {"lamp_cache", lampCache}, {"lamp_atlas", lampAtlas}, {"gpu_timer_splits_lamp_shadows", gpuTimerSplitsLampShadows}, {"shadow_lights_follow_hierarchy", shadowLightsFollowHierarchy}, {"records_survive_siblings", recordsSurviveSiblings}, {"steady_frame_hashes_no_record", steadyFrameHashesNoRecord}, {"nested_record_cache", nestedRecordCache}, {"frustum_record_retention", frustumRecordRetention}, {"world_sphere_measured_once", worldSphereMeasuredOnce}, {"reflection_reuse", reflectionReuse})
 
 
 
