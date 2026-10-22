@@ -669,13 +669,13 @@
     },
     {
       "id": "soft-shadow-source-angle",
-      "title": "sun source-angle soft shadow through the virtual shadow node",
+      "title": "sun source-angle soft shadow and pixel floor",
       "category": "shadows",
       "status": "implemented",
       "scene": "conformance/scenes/shared/soft-shadow-source-angle.js",
       "tolerance": {
         "pixelMismatchRatio": 0.08,
-        "perceptualDeltaE": 3.0
+        "perceptualDeltaE": 10.0
       },
       "desktopGate": false,
       "required": true

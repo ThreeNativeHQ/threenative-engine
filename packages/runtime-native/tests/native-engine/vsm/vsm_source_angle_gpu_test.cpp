@@ -42,7 +42,7 @@ double edgeWidth(double height) {
     atlas.clipExtents = {8}; atlas.mapSize = 2048; atlas.pageTexels = 128;  // 7.8 mm texels
     atlas.lightDistance = 20; atlas.depthRange = 40;
     sun.shadow.virtualShadow = std::make_shared<const shadows::AtlasOptions>(std::move(atlas));
-    sun.shadow.sourceAngleFilter = std::array<double, 3>{kAngle, 16, 16};
+    sun.shadow.sourceAngleFilter = std::array<double, 4>{kAngle, 16, 16, 0};  // no pixel floor
     scene.add(sun);
     auto white = std::make_shared<Material>(MaterialType::Standard);
     Mesh floor{makeBoxGeometry(8, 0.2, 8), white};

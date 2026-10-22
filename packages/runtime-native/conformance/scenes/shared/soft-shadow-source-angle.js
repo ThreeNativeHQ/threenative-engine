@@ -3,39 +3,42 @@ import { VirtualShadowNode } from "../../../../core/src/render/virtual-shadow.ts
 import { THREE, assertCondition, startVisualScene } from "./scene-support.js";
 
 /**
- * PRD-634: the sun's source angle softens its shadow with the gap between caster and receiver.
- * A cube stands on the floor (gap 0, sharp foot) and a plate floats 3 m above it, both under one
- * `VirtualShadowNode` sun with `sourceAngleShadowFilter({ sourceAngleRad: 0.05 })`: the plate's
- * edge blurs by about 3 x tan(0.05) = 0.15 m on the floor, the cube's foot stays sharp.
+ * PRD-634: a sun's source angle softens its shadow with the gap between caster and receiver, and
+ * `minPenumbraPixels` adds the receiver's own pixel to the edge, so a contact edge is never sharper
+ * than the screen can show. A sun 30 degrees above the horizon over a floor and two plates: one 0.1 m
+ * above it (its penumbra is 0.1 x 0.02 = 2 mm, so the pixel sets the edge) and one 3 m above it (its
+ * penumbra is 3 x 0.02 x 2 = 12 cm wide). The browser and native frames must agree on both edges.
  */
 export function startScene(canvas, dimensions) {
   return startVisualScene(canvas, dimensions, "soft-shadow-source-angle", ({ renderer, scene, camera }) => {
     renderer.shadowMap.enabled = true;
-    camera.position.set(0, 7, 5);
-    camera.lookAt(0, 0, 0);
-    const material = (color) => new THREE.MeshStandardMaterial({ color, roughness: 1 });
-    const floor = new THREE.Mesh(new THREE.PlaneGeometry(20, 20), material(0x9a9a9a));
-    floor.rotation.x = -Math.PI / 2;
+    camera.position.set(-1.5, 4.5, 4.5);
+    camera.lookAt(-2.4, 0, 0);
+    const floor = new THREE.Mesh(
+      new THREE.BoxGeometry(12, 0.2, 8),
+      new THREE.MeshStandardMaterial({ color: 0x9a9a9a, roughness: 1 }),
+    );
+    floor.position.y = -0.1;
+    floor.castShadow = true;
     floor.receiveShadow = true;
-    const cube = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), material(0x4a5568));
-    cube.position.set(-1.8, 0.5, 0);
-    cube.castShadow = true;
-    const plate = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.05, 1.6), material(0x4a5568));
-    plate.position.set(1.4, 3, 0);
-    plate.castShadow = true;
-    const sun = new THREE.DirectionalLight(0xffffff, 2);
-    sun.position.set(2, 10, 3);
-    sun.target.position.set(0, 0, 0);
-    sun.castShadow = true;
-    sun.shadow.bias = -0.0005;
-    sun.shadow.normalBias = 0.02;
-    const node = new VirtualShadowNode(sun, { clipExtents: [6, 18, 54], mapSize: 1024, marker: false });
-    const filter = sourceAngleShadowFilter({ sourceAngleRad: 0.05 });
-    sun.shadow.shadowNode = node;
-    sun.shadow.filterNode = filter;
-    scene.add(floor, cube, plate, sun, sun.target, new THREE.AmbientLight(0x405070, 0.3));
-    assertCondition(sun.shadow.shadowNode === node, "the sun keeps its virtual shadow node");
-    assertCondition(sun.shadow.filterNode === filter, "the sun keeps its source-angle filter");
-    return { floor, cube, plate, sun, node };
+    const plate = (x, y) => {
+      const mesh = new THREE.Mesh(
+        new THREE.BoxGeometry(1.2, 0.05, 1.2),
+        new THREE.MeshStandardMaterial({ color: 0x4a5568, roughness: 1 }),
+      );
+      mesh.position.set(x, y, 0);
+      mesh.castShadow = true;
+      return mesh;
+    };
+    const light = new THREE.DirectionalLight(0xffffff, 3);
+    light.position.set(5.2, 3, 0);
+    light.castShadow = true;
+    const filter = sourceAngleShadowFilter({ sourceAngleRad: 0.02, minPenumbraPixels: 3 });
+    light.shadow.filterNode = filter;
+    const node = new VirtualShadowNode(light, { clipExtents: [8], mapSize: 1024, marker: false });
+    light.shadow.shadowNode = node;
+    assertCondition(light.shadow.filterNode === filter, "the sun keeps its source-angle filter");
+    scene.add(floor, plate(-1.2, 0.1), plate(1.2, 3), light, light.target, new THREE.AmbientLight(0x405070, 0.4));
+    return { floor, light, node };
   });
 }

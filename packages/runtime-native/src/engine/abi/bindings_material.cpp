@@ -387,18 +387,27 @@ void registerLightShadow(ClassBinding& b, bool spot) {
             const std::string& name = command->second.text;
             if (name == "invalidateAll") { control.invalidateAll = true; return; }
             if (name == "lod") {
-                const Value* idValue = nullptr; const Value* geometryValue = nullptr;
+                const Value* idValue = nullptr; const Value* geometriesValue = nullptr; const Value* errorsValue = nullptr;
                 for (const auto& [key, v] : value.fields) {
                     if (key == "id") idValue = &v;
-                    if (key == "geometry") geometryValue = &v;
+                    if (key == "geometries") geometriesValue = &v;
+                    if (key == "errors") errorsValue = &v;
                 }
-                if (!idValue || !geometryValue) throw Unsupported{"TN_VIRTUAL_SHADOW_INVALID: lod command"};
+                if (!idValue || !geometriesValue || !errorsValue) throw Unsupported{"TN_VIRTUAL_SHADOW_INVALID: lod command"};
                 const double id = number(*idValue);
                 if (!std::isfinite(id) || id < 0 || id > 9007199254740991.0 || id != std::floor(id))
                     throw Unsupported{"TN_VIRTUAL_SHADOW_INVALID: caster id"};
-                auto* object = store.find(*geometryValue);
-                if (!object || !acceptsClass(object->cls, "BufferGeometry")) throw Unsupported{"TN_VIRTUAL_SHADOW_INVALID: lod geometry"};
-                control.lods[uint64_t(id)] = std::static_pointer_cast<BufferGeometry>(object->ptr);
+                shadows::ShadowLodChain chain;
+                chain.errors = numbersOf(*errorsValue);
+                for (const Value& ref : refsOf(*geometriesValue)) {
+                    auto* object = store.find(ref);
+                    if (!object || !acceptsClass(object->cls, "BufferGeometry")) throw Unsupported{"TN_VIRTUAL_SHADOW_INVALID: lod geometry"};
+                    chain.rungs.push_back(std::static_pointer_cast<BufferGeometry>(object->ptr));
+                }
+                if (chain.rungs.empty() || chain.rungs.size() != chain.errors.size() ||
+                    std::any_of(chain.errors.begin(), chain.errors.end(), [](double e) { return !std::isfinite(e) || e < 0; }))
+                    throw Unsupported{"TN_VIRTUAL_SHADOW_INVALID: lod rungs and errors"};
+                control.lods[uint64_t(id)] = std::move(chain);
                 control.invalidateAll = true; return;
             }
             const auto arg = std::find_if(value.fields.begin(), value.fields.end(), [&](const auto& f) { return f.first == (name == "invalidateRegion" ? "bounds" : "id"); });
@@ -453,6 +462,11 @@ void registerLightShadow(ClassBinding& b, bool spot) {
             else if (key == "adaptiveCasterGate") options.adaptiveCasterGate = flag(v);
             else if (key == "followViewFocus") options.followViewFocus = flag(v);
             else if (key == "shadowLodBias") options.shadowLodBias = flag(v);
+            else if (key == "shadowLodTexels") {
+                const double n = number(v);
+                if (!(n > 0)) throw Unsupported{"TN_VIRTUAL_SHADOW_INVALID: shadowLodTexels"};
+                options.shadowLodTexels = n;
+            }
             else if (key == "staticAfterFrames" || key == "moverMapSize") {
                 const double n = number(v);
                 if (!std::isfinite(n) || n != std::floor(n) || n < 1 || n > 4096)
@@ -461,6 +475,7 @@ void registerLightShadow(ClassBinding& b, bool spot) {
             }
             else if (key == "expensiveRefreshShare") options.expensiveRefreshShare = number(v);
             else if (key == "minCasterTexels") options.minCasterTexels = number(v);
+            else if (key == "minWindowAspect") options.minWindowAspect = number(v);
             else if (key == "partialRedraw") options.partialRedraw = flag(v);
             else if (key == "receiverPlaneBias") options.receiverPlaneBias = flag(v);
         }
@@ -483,24 +498,30 @@ void registerLightShadow(ClassBinding& b, bool spot) {
         // sourceAngleShadowFilter on a sun (orthographic map), sourceRadiusShadowFilter on a lamp.
         const bool lamp = dynamic_cast<PerspectiveCamera*>(shadow.camera.get()) != nullptr;
         const char* size = lamp ? "sourceRadius" : "sourceAngleRad";
-        if (value.kind != Value::Kind::Record || value.fields.size() != (lamp ? 4u : 3u) ||
+        if (value.kind != Value::Kind::Record || value.fields.size() < 3 || value.fields.size() > 4 ||
             (!lamp && !dynamic_cast<OrthographicCamera*>(shadow.camera.get())))
             throw Unsupported{"TN_VIRTUAL_SHADOW_UNSUPPORTED: filterNode (sourceAngleShadowFilter on a directional "
                               "light, or sourceRadiusShadowFilter on a spot or point light, required)"};
         double extent = -1, blockers = 0, samples = 0, penumbraScale = lamp ? -1 : 1;  // a lamp must name its share
+        double minPixels = 0;
+        std::size_t known = 0;
         for (const auto& [key, v] : value.fields) {
             if (key == size) extent = number(v);
             else if (key == "blockerSamples") blockers = number(v);
             else if (key == "filterSamples") samples = number(v);
             else if (lamp && key == "penumbraScale") penumbraScale = number(v);
+            else if (!lamp && key == "minPenumbraPixels") minPixels = number(v);
+            else continue;
+            ++known;
         }
         if (!std::isfinite(extent) || extent < 0 || (!lamp && extent >= 1.5707963267948966) ||
             !std::isfinite(blockers) || blockers < 1 || blockers > 64 || blockers != std::floor(blockers) ||
             !std::isfinite(samples) || samples < 1 || samples > 64 || samples != std::floor(samples) ||
-            !std::isfinite(penumbraScale) || penumbraScale <= 0 || penumbraScale > 4)
+            !std::isfinite(penumbraScale) || penumbraScale <= 0 || penumbraScale > 4 ||
+            !std::isfinite(minPixels) || minPixels < 0 || minPixels > 16 || known != value.fields.size())
             throw Unsupported{lamp ? "TN_VIRTUAL_SHADOW_INVALID: source-radius filter" : "TN_VIRTUAL_SHADOW_INVALID: source-angle filter"};
         if (lamp) shadow.sourceRadiusFilter = std::array<double, 4>{extent, blockers, samples, penumbraScale};
-        else shadow.sourceAngleFilter = std::array<double, 3>{extent, blockers, samples};
+        else shadow.sourceAngleFilter = std::array<double, 4>{extent, blockers, samples, minPixels};
     };
     if (spot) {
         b.getters["focus"] = [](void* self) { return Value::of(as<LightShadow>(self)->focus); };

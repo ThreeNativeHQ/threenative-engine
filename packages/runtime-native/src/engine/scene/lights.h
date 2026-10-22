@@ -39,7 +39,8 @@ public:
     /** Shared like any Object3D: a scene, a LOD or a Raycaster that holds it keeps it alive past the light. */
     std::shared_ptr<Camera> camera;
     std::shared_ptr<const shadows::AtlasOptions> virtualShadow;
-    std::optional<std::array<double, 3>> sourceAngleFilter;
+    // sourceAngleShadowFilter on a sun: {sourceAngleRad, blockerSamples, filterSamples, minPenumbraPixels}.
+    std::optional<std::array<double, 4>> sourceAngleFilter;
     // sourceRadiusShadowFilter on a lamp: {sourceRadius m, blockerSamples, filterSamples, penumbraScale}.
     std::optional<std::array<double, 4>> sourceRadiusFilter;
     double intensity = 1;

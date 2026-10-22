@@ -2631,7 +2631,8 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         table = shadow.atlas.table();
         const auto& filter = lights.direct[i].shadow->sourceAngleFilter;
         table.insert(table.end(), {filter ? float(std::tan((*filter)[0])) : 0.0f,
-            filter ? float((*filter)[1]) : 0.0f, filter ? float((*filter)[2]) : 0.0f, filter ? 1.0f : 0.0f});
+            filter ? float((*filter)[1]) : 0.0f, filter ? float((*filter)[2]) : 0.0f,
+            filter ? 1.0f + float((*filter)[3]) : 0.0f});  // w > 0 is the filter; w - 1 its minimum penumbra, in pixels
     }
     const uint64_t jointPrefix = gpuJoints_ && gpuJoints_->current() ? gpuJoints_->parents.size() * 64 : 0;
     std::vector<float>& bones = storages_["boneMatrices"].data;
@@ -3014,16 +3015,31 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             pass.x = x; pass.y = y; pass.size = page->mover ? atlas.options().moverMapSize + 2 * atlas.options().border : atlas.stride();
             if (!page->mover) { pass.virtualLight = i; pass.virtualLevel = page->level; }
         }
+        // The error a coarser rung may have on this page: its texels in world units, along the window's
+        // wider axis (see PageAtlas::update), times the budget the node allows.
+        const double lodBudget = page && !page->mover
+            ? (page->highU - page->lowU) / double(virtualIt->second.atlas.options().pageTexels + 2 * virtualIt->second.atlas.options().border) *
+                  virtualIt->second.atlas.options().shadowLodTexels : 0;
         for (const auto& [depthKey, drawn] : opaque) {
             const DrawItem* selected = drawn;
             if (page && !page->mover && page->level > 0 && virtualIt->second.atlas.options().shadowLodBias && drawn->shadowObject) {
                 const auto& lods = virtualIt->second.atlas.options().control->lods;
                 const auto lod = lods.find(drawn->shadowObject->id());
-                if (lod != lods.end() && lod->second->index) {
-                    auto& copy = job.shadowLodItems.emplace_back(*drawn);
-                    copy.indices = lod->second->index->store.get();
-                    copy.cache = nullptr;
-                    selected = &copy;
+                if (lod != lods.end()) {
+                    // The coarsest rung whose error this page's budget allows, and never finer
+                    // than the rung the main pass draws (its index buffer is one of the chain's).
+                    const auto& chain = lod->second;
+                    int shown = 0;
+                    for (std::size_t r = 0; r < chain.rungs.size(); ++r)
+                        if (chain.rungs[r]->index && chain.rungs[r]->index->store.get() == drawn->indices) shown = int(r) + 1;
+                    Matrix4 model; model.elements = drawn->matrixWorld;
+                    const int rung = shadows::shadowLodRung(chain.errors, shown, lodBudget, model.getMaxScaleOnAxis());
+                    if (rung > 0 && std::size_t(rung) <= chain.rungs.size() && chain.rungs[std::size_t(rung - 1)]->index) {
+                        auto& copy = job.shadowLodItems.emplace_back(*drawn);
+                        copy.indices = chain.rungs[std::size_t(rung - 1)]->index->store.get();
+                        copy.cache = nullptr;
+                        selected = &copy;
+                    }
                 }
             }
             const DrawItem& item = *selected;

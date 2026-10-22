@@ -17,7 +17,8 @@ std::optional<PageAtlas> PageAtlas::create(const AtlasOptions& options, std::str
         options.invalidationDelay.empty() || std::any_of(options.invalidationDelay.begin(), options.invalidationDelay.end(),
             [](double v) { return !std::isfinite(v) || v < 0; }) || options.clipExtents.size() > 8 || options.selectionGuard.empty() || options.refreshStep.empty() ||
         !std::isfinite(options.lightDistance) || options.lightDistance <= 1 ||
-        !std::isfinite(options.depthRange) || options.depthRange <= 0) {
+        !std::isfinite(options.depthRange) || options.depthRange <= 0 ||
+        !std::isfinite(options.minWindowAspect) || options.minWindowAspect <= 0 || options.minWindowAspect > 1) {
         error = "TN_VIRTUAL_SHADOW_INVALID: atlas/depth configuration";
         return std::nullopt;
     }
@@ -32,7 +33,7 @@ std::optional<PageAtlas> PageAtlas::create(const AtlasOptions& options, std::str
         }
         guards.push_back(guard - step);
     }
-    out.clipmap_ = DirectionalClipmap::create({{0, 1, 0}, options.clipExtents, options.mapSize, guards, options.refreshStep}, error);
+    out.clipmap_ = DirectionalClipmap::create({{0, 1, 0}, options.clipExtents, options.mapSize, guards, options.refreshStep, options.minWindowAspect}, error);
     if (!out.clipmap_) return std::nullopt;
     const int count = out.tiles() * out.tiles() * int(options.clipExtents.size());
     if (count > 4096) { error = "TN_VIRTUAL_SHADOW_INVALID: page capacity"; return std::nullopt; }
@@ -47,7 +48,9 @@ void PageAtlas::invalidateAll() { for (auto& level : levels_) { level.dirty = tr
 void PageAtlas::invalidate(const Box3& bounds, bool urgent) {
     for (auto& level : levels_) {
         if (!level.mapped) continue;
-        const auto u = projectBounds(bounds, clipmap_->basisU()), v = projectBounds(bounds, clipmap_->basisV());
+        const auto u = projectBounds(bounds, clipmap_->basisU());
+        auto v = projectBounds(bounds, clipmap_->basisV());
+        v.low /= clipmap_->vScale(); v.high /= clipmap_->vScale();  // the window's `v` counts pages in its height
         const double lowU = level.window.minX * level.window.pageWorldSize;
         const double lowV = level.window.minY * level.window.pageWorldSize;
         if (u.low <= lowU + 2 * level.window.extent && u.high >= lowU &&
@@ -72,7 +75,7 @@ std::vector<AtlasPage> PageAtlas::update(const Vector3& eye, const Vector3& towa
         std::string error;
         std::vector<double> guards;
         for (int i = 0; i < int(levels_.size()); ++i) guards.push_back(at(options_.selectionGuard, i) - at(options_.refreshStep, i));
-        clipmap_ = DirectionalClipmap::create({direction, options_.clipExtents, options_.mapSize, guards, options_.refreshStep}, error);
+        clipmap_ = DirectionalClipmap::create({direction, options_.clipExtents, options_.mapSize, guards, options_.refreshStep, options_.minWindowAspect}, error);
         // The renderer validates the direction before entering this CPU plan.
         if (!clipmap_) return {};
         pool_ = PhysicalPagePool::create(tiles() * tiles() * int(levels_.size()), error);
@@ -118,8 +121,11 @@ std::vector<AtlasPage> PageAtlas::update(const Vector3& eye, const Vector3& towa
         level.centerW = center.w;
         const double cu = (window.minX + options_.mapSize / 2.0) * window.pageWorldSize;
         const double cv = (window.minY + options_.mapSize / 2.0) * window.pageWorldSize;
+        // `v` counts pages along the window's height: `vScale` metres of V each, so a texel along V is
+        // `vScale` times its width and covers the same floor area a low sun stretches it over.
+        const double vScale = clipmap_->vScale();
         Vector3 target = clipmap_->basisU(); target.multiplyScalar(cu);
-        target.addScaledVector(clipmap_->basisV(), cv).addScaledVector(clipmap_->basisW(), center.w);
+        target.addScaledVector(clipmap_->basisV(), cv * vScale).addScaledVector(clipmap_->basisW(), center.w);
         if (!level.mapped) {
             level.eye = options_.lightDistance;
             level.near = 1;
@@ -155,7 +161,7 @@ std::vector<AtlasPage> PageAtlas::update(const Vector3& eye, const Vector3& towa
         Matrix4 world; world.lookAt(from, target, Vector3(0, 1, 0)); world.setPosition(from);
         level.view = world; level.view.invert();
         Matrix4 projection;
-        projection.makeOrthographic(-window.extent, window.extent, window.extent, -window.extent,
+        projection.makeOrthographic(-window.extent, window.extent, window.extent * vScale, -window.extent * vScale,
                                     level.near, level.far, CoordinateSystem::WebGPU);
         level.projection = projection;
         level.matrix.set(0.5, 0, 0, 0.5, 0, 0.5, 0, 0.5, 0, 0, 1, 0, 0, 0, 0, 1);
@@ -170,17 +176,18 @@ std::vector<AtlasPage> PageAtlas::update(const Vector3& eye, const Vector3& towa
             protectedKeys.insert(key);
             level.slots.push_back(allocation->entry.slot);
             const double texel = window.pageWorldSize, pad = options_.border * texel;
+            const double texelV = texel * vScale, padV = options_.border * texelV;
             const double left = -window.extent + x * options_.pageTexels * texel;
-            const double bottom = -window.extent + y * options_.pageTexels * texel;
+            const double bottom = -window.extent * vScale + y * options_.pageTexels * texelV;
             AtlasPage page; page.level = l; page.x = x; page.y = y; page.slot = allocation->entry.slot; page.view = level.view;
             page.projection.makeOrthographic(left - pad, left + options_.pageTexels * texel + pad,
-                bottom + options_.pageTexels * texel + pad, bottom - pad,
+                bottom + options_.pageTexels * texelV + padV, bottom - padV,
                 level.near, level.far, CoordinateSystem::WebGPU);
             page.axisU.set(world.elements[0], world.elements[1], world.elements[2]);
             page.axisV.set(world.elements[4], world.elements[5], world.elements[6]);
             const double cameraU = target.dot(page.axisU), cameraV = target.dot(page.axisV);
             page.lowU = cameraU + left - pad; page.highU = cameraU + left + options_.pageTexels * texel + pad;
-            page.lowV = cameraV + bottom - pad; page.highV = cameraV + bottom + options_.pageTexels * texel + pad;
+            page.lowV = cameraV + bottom - padV; page.highV = cameraV + bottom + options_.pageTexels * texelV + padV;
             level.pages.push_back(page);
             if (!partial || level.dirtySlots.count(page.slot)) pages.push_back(page);
         }
@@ -249,7 +256,8 @@ void PageAtlas::appendMoverPages(std::vector<AtlasPage>& pages) const {
         if (!level.mapped) continue;
         AtlasPage p; p.level = l; p.mover = true; p.view = level.view; p.projection = level.projection;
         const double extent = options_.clipExtents[l], pad = 2 * extent * options_.border / options_.moverMapSize;
-        p.projection.makeOrthographic(-extent-pad, extent+pad, extent+pad, -extent-pad,
+        const double vScale = clipmap_->vScale();
+        p.projection.makeOrthographic(-extent-pad, extent+pad, (extent+pad) * vScale, -(extent+pad) * vScale,
                                      level.near, level.far, CoordinateSystem::WebGPU);
         pages.push_back(p);
     }
@@ -306,7 +314,10 @@ void PageAtlas::writeTable() {
         out[16] = float((level.window.minX + options_.mapSize / 2.0) * level.window.pageWorldSize);
         out[17] = float((level.window.minY + options_.mapSize / 2.0) * level.window.pageWorldSize);
         out[18] = float(options_.clipExtents[l]); out[19] = float(at(options_.selectionGuard, l) - at(options_.refreshStep, l));
-        const Vector3 axes[] = {clipmap_->basisU(), clipmap_->basisV(), clipmap_->basisW()};
+        // The V row is the axis whose dot product is `v`: the unit V over the window's height ratio, so the
+        // shader's window distance reads pages along the height. Its length is 1 / vScale.
+        Vector3 axisV = clipmap_->basisV(); axisV.multiplyScalar(1 / clipmap_->vScale());
+        const Vector3 axes[] = {clipmap_->basisU(), axisV, clipmap_->basisW()};
         for (int i = 0; i < 3; ++i) { out[20 + 4*i] = float(axes[i].x); out[21 + 4*i] = float(axes[i].y); out[22 + 4*i] = float(axes[i].z); }
         out[23] = float(options_.mapSize); out[27] = float(tiles());
         out[31] = float(level.far - level.near);

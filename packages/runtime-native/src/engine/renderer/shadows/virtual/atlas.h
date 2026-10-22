@@ -9,11 +9,30 @@ namespace tn::engine { class BufferGeometry; }
 
 namespace tn::engine::shadows {
 
+/** A caster's AutoLOD chain as a shadow level draws it: the derived rungs (rung 0 is the caster's own
+ *  geometry and is not listed) and each rung's geometric error in the geometry's local units. */
+struct ShadowLodChain {
+    std::vector<std::shared_ptr<BufferGeometry>> rungs;
+    std::vector<double> errors;
+};
+
+/**
+ * The rung (1 to n, 0 for none) a level draws for a caster: the coarsest whose error at `scale` times
+ * the geometry's size stays within `budget` (a texel of the level, times `shadowLodTexels`), and never
+ * one finer than `shown`, the rung the main pass draws. A rung with more error than a texel is a facet
+ * on the shadow's edge.
+ */
+inline int shadowLodRung(const std::vector<double>& errors, int shown, double budget, double scale) {
+    for (int rung = int(errors.size()); rung > shown; --rung)
+        if (errors[std::size_t(rung - 1)] * scale <= budget) return rung;
+    return 0;
+}
+
 // Camera-centred cached depth pages and independently refreshed mover maps.
 struct AtlasControl {
     std::set<uint64_t> pinned, tracked;
     std::vector<Box3> regions;
-    std::map<uint64_t, std::shared_ptr<BufferGeometry>> lods;
+    std::map<uint64_t, ShadowLodChain> lods;
     bool invalidateAll = false;
 };
 struct AtlasOptions {
@@ -28,7 +47,11 @@ struct AtlasOptions {
     double expensiveRefreshShare = 0.25;
     std::vector<double> invalidationDelay{0};
     bool adaptiveRefresh = false, adaptiveCasterGate = false, followViewFocus = false, shadowLodBias = false;
+    /** The error, in texels of a level, a coarser AutoLOD rung may have there; infinity draws the coarsest rung. */
+    double shadowLodTexels = 1;
     bool receiverPlaneBias = true, partialRedraw = true;
+    /** See DirectionalClipmapOptions::minAspect; core passes its own default (0.25), this keeps tests square. */
+    double minWindowAspect = 1;
 };
 
 struct AtlasPage {
@@ -69,6 +92,7 @@ public:
                             double extent, const std::vector<Box3>& receivers);
     void invalidateAll();
     const AtlasOptions& options() const { return options_; }
+    const DirectionalClipmap& clipmap() const { return *clipmap_; }
     const std::vector<float>& table() const { return table_; }
     int tiles() const { return options_.mapSize / options_.pageTexels; }
     int stride() const { return options_.pageTexels + 2 * options_.border; }

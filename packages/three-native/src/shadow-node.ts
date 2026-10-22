@@ -8,7 +8,7 @@ interface IShadowObject {
   geometry?: object;
   traverse(callback: (child: IShadowObject) => void): void;
 }
-/** Transfer registered chain data; native chooses its rung separately for every shadow level. */
+/** Transfer registered chain data: the derived rungs and their errors. Native chooses its rung separately for every shadow level. */
 export function detachVirtualShadow(value: unknown): void {
   if (!(value instanceof ShadowBaseNode)) return;
   installed.delete(value);
@@ -19,7 +19,7 @@ export function detachVirtualShadow(value: unknown): void {
 export function syncVirtualShadowLods(): void {
   const chains = (globalThis as Record<symbol, unknown>)[
     Symbol.for("threenative.discreteLodChains")
-  ] as WeakMap<object, { chain: { levels: object[] } }> | undefined;
+  ] as WeakMap<object, { chain: { levels: object[]; errors: number[] } }> | undefined;
   if (!chains) return;
   for (const node of installed) {
     if (node.disposed) {
@@ -32,13 +32,18 @@ export function syncVirtualShadowLods(): void {
     const present = new Set<number>();
     root.traverse((child) => {
       if (!child.geometry) return;
-      const levels = chains.get(child.geometry)?.chain.levels;
-      const geometry = levels?.at(-1);
-      if (!geometry) return;
+      const chain = chains.get(child.geometry)?.chain;
+      if (!chain || chain.levels.length < 2) return;
       present.add(child.id);
-      if (node.lods.get(child.id) === geometry) return;
-      node.dispatch?.({ command: "lod", id: child.id, geometry });
-      node.lods.set(child.id, geometry);
+      if (node.lods.get(child.id) === chain) return;
+      // Rung 0 is the caster's own geometry; native already holds it.
+      node.dispatch?.({
+        command: "lod",
+        id: child.id,
+        geometries: chain.levels.slice(1),
+        errors: chain.errors.slice(1),
+      });
+      node.lods.set(child.id, chain);
     });
     for (const id of node.lods.keys()) {
       if (present.has(id)) continue;
@@ -115,7 +120,7 @@ export function shadowFilterOptions(value: unknown): Record<string, number> | nu
     );
   const config = options as Record<string, unknown>;
   const size = angle ? "sourceAngleRad" : "sourceRadius";
-  const { [size]: extent, blockerSamples, filterSamples, penumbraScale } = config;
+  const { [size]: extent, blockerSamples, filterSamples, penumbraScale, minPenumbraPixels } = config;
   if (
     typeof extent !== "number" ||
     !Number.isFinite(extent) ||
@@ -125,7 +130,13 @@ export function shadowFilterOptions(value: unknown): Record<string, number> | nu
       (count) => typeof count !== "number" || !Number.isInteger(count) || count < 1 || count > 64,
     ) ||
     (angle === undefined &&
-      (typeof penumbraScale !== "number" || !(penumbraScale > 0 && penumbraScale <= 4)))
+      (typeof penumbraScale !== "number" || !(penumbraScale > 0 && penumbraScale <= 4))) ||
+    (angle !== undefined &&
+      minPenumbraPixels !== undefined &&
+      (typeof minPenumbraPixels !== "number" ||
+        !Number.isFinite(minPenumbraPixels) ||
+        minPenumbraPixels < 0 ||
+        minPenumbraPixels > 16))
   )
     throw new Error(
       `TN_VIRTUAL_SHADOW_INVALID: ${angle ? "source-angle" : "source-radius"} filter`,
@@ -136,5 +147,8 @@ export function shadowFilterOptions(value: unknown): Record<string, number> | nu
     filterSamples: filterSamples as number,
     // A lamp keeps a share of its geometric penumbra (sourceRadiusShadowFilter's penumbraScale).
     ...(angle === undefined ? { penumbraScale: penumbraScale as number } : {}),
+    ...(angle !== undefined && minPenumbraPixels !== undefined
+      ? { minPenumbraPixels: minPenumbraPixels as number }
+      : {}),
   };
 }
