@@ -24,7 +24,13 @@ import { workspacePackages } from "../workspace-packages.js";
 import { launchWebgpuBrowser } from "./browser.js";
 import { FRAME_GATE } from "./capture-motion-threenative.js";
 import { awaitExposureSettled, metersExposure, watchExposure } from "./exposureSettled.js";
-import { MIN_STEPS, RENDERER_LOST, SETTLE_STEPS, atFixedJitterPhase } from "./jitterPhase.js";
+import {
+  MIN_STEPS,
+  RENDERER_LOST,
+  SETTLE_STEPS,
+  atFixedJitterPhase,
+  stageBuildFailures,
+} from "./jitterPhase.js";
 
 const REPO_ROOT = path.resolve(import.meta.dirname, "../..");
 const REFERENCE = path.join(REPO_ROOT, "tools/unreal-reference");
@@ -323,6 +329,7 @@ export async function captureThreeNative(options: IThreeNativeCaptureOptions): P
       page.on("console", (message) => {
         if (message.text().startsWith("TN_FRAME_BUDGET")) meter.push(message.text());
         if (RENDERER_LOST.test(message.text())) errors.push(message.text());
+        errors.push(...stageBuildFailures(message.text()));
       });
       page.on("pageerror", (error) => errors.push(error.message));
       // Engine markers that say whether a stage ran (probe bake, refusals) belong in the capture log.
@@ -330,7 +337,7 @@ export async function captureThreeNative(options: IThreeNativeCaptureOptions): P
         if (
           message.type() === "error" ||
           message.type() === "warning" ||
-          /^(TN_(INDIRECT_LIGHT|PROBE_VOLUME|REFLECTION_CAPTURE|NATIVE_|RENDER_CHAIN|SSR|SSGI|GI_CACHE|SKY_OCCLUSION|AUTO_EXPOSURE|VIRTUAL_SHADOW)|GPU sky|CPU environment sky)/.test(
+          /^(TN_(WORLD_ENVIRONMENT|INDIRECT_LIGHT|PROBE_VOLUME|REFLECTION_CAPTURE|NATIVE_|RENDER_CHAIN|SSR|SSGI|GI_CACHE|SKY_OCCLUSION|AUTO_EXPOSURE|VIRTUAL_SHADOW)|GPU sky|CPU environment sky)/.test(
             message.text(),
           )
         )

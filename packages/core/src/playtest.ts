@@ -100,10 +100,21 @@ export function playtest<
         ...(runtime === undefined
           ? {}
           : {
-              fixedStep: (ticks, options) =>
-                clockMode === "wall-clock" && liveAdvance !== undefined
-                  ? liveAdvance(ticks)
-                  : runtime.fixedStep(ticks, options),
+              fixedStep: async (ticks, options) => {
+                // A `goto()` loads asynchronously and a counted batch is synchronous, so ticks
+                // spent while it loads simulate no world: a restart is outrun and the run reads
+                // a scene that never entered. Counted ticks wait for the scene that owns them.
+                await runtime.sceneTransition?.();
+                if (clockMode === "wall-clock" && liveAdvance !== undefined)
+                  return liveAdvance(ticks);
+                let ran = runtime.fixedStep(ticks, options);
+                // The batch ends early when a `goto()` began inside it; the rest follows the world.
+                while (ran > 0 && ran < ticks) {
+                  await runtime.sceneTransition?.();
+                  ran += runtime.fixedStep(ticks - ran, options);
+                }
+                return ran;
+              },
               tick: runtime.tick,
             }),
         ...(runtime?.runtimeDiagnosticsSeries === undefined

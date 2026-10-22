@@ -2796,9 +2796,9 @@ const lamps = new SurfaceLights(lights); lamps.shade(point, normal, albedo, out,
 export class TracedReflections { … }
 ```
 
-- **Use when:** reflect what is behind the camera in a mirror or a chrome sphere · make a glossy or wet floor reflect objects that are off screen · trace a shadow ray from a reflected surface toward the sun
+- **Use when:** reflect what is behind the camera in a mirror or a chrome sphere · make a glossy or wet floor reflect objects that are off screen · trace a shadow ray from a reflected surface toward the sun · split a surface's specular by roughness into traced, radiance-cache and diffuse-GI shares
 - **Constraints:** the pack is a snapshot of the static triangles taken when the object is built: build a new one after geometry moves · instanced, skinned, batched and morphing meshes are not in the pack; report.skippedMoving counts them · trace only pixels at or below maxRoughnessToTrace (0.4, Unreal's cut-off): each ray walks the tree · a ray visits at most maxSteps tree nodes, then reports a miss; hit light, the miss colour and the blend with the frame stay in the game's src/render/ · the pack needs a device with float32-filterable
-- **Overrides:** maxRoughnessToTrace, roughnessFadeLength and maxSteps are game-owned choices
+- **Overrides:** maxRoughnessToTrace, roughnessFadeLength, maxRoughnessToEvaluateRoughSpecular, roughSpecularFadeLength and maxSteps are game-owned choices
 
 ```ts
 const traced = new TracedReflections(ctx.scene); const hit = traced.trace({ origin, direction, far: 30 }); // light hit.albedo at hit.position in the stage

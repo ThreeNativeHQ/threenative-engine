@@ -508,7 +508,7 @@
       }
     },
     "create-threenative": {
-      "exports": [".", "./package.json", "./web-brand"],
+      "exports": [".", "./package.json", "./quality", "./web-brand"],
       "symbols": {}
     },
     "threenative-blender-mcp": {

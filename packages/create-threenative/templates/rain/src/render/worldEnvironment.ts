@@ -38,7 +38,6 @@ import { ssr } from "three/addons/tsl/display/SSRNode.js";
 import { sharpen } from "three/addons/tsl/display/SharpenNode.js";
 import { traa } from "three/addons/tsl/display/TRAANode.js";
 import {
-  clamp,
   color,
   convertToTexture,
   float,

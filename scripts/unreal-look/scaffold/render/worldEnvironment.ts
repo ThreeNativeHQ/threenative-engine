@@ -268,6 +268,11 @@ export interface IWorldEnvironmentOptions {
    * indirect light.
    */
   readonly gtaoMultiBounceAlbedo?: number;
+  /**
+   * Where the cache holds the indirect light, only that share takes the occlusion (Unreal's AO darkens indirect light
+   * only). `false` is the named override: the whole frame takes the occlusion, as an engine without a cache does.
+   */
+  readonly gtaoIndirectOnly?: boolean;
   /** Fraction of display resolution the occlusion is traced at. */
   readonly gtaoResolutionScale?: number;
   /**
@@ -728,6 +733,7 @@ export class WorldEnvironment {
       gtaoDenoiseRadius: options.gtaoDenoiseRadius,
       gtaoResolutionScale: options.gtaoResolutionScale ?? 1,
       gtaoMultiBounceAlbedo: options.gtaoMultiBounceAlbedo ?? UNREAL_AO_MULTIBOUNCE_ALBEDO,
+      gtaoIndirectOnly: options.gtaoIndirectOnly ?? true,
       ssgiResolutionScale: options.ssgiResolutionScale ?? 1,
       sharpenEnabled: options.sharpenEnabled ?? false,
       sharpenStrength: options.sharpenStrength ?? 0.2,
@@ -895,7 +901,8 @@ export class WorldEnvironment {
     // Contact occlusion dims the light that comes from around. With the world cache baked the frame's indirect
     // diffuse is known per pixel, so only that share takes the occlusion and the sun keeps its light, as
     // Unreal's AO (indirect light only) leaves it. Without a cache (the three.js engine) the whole frame is dimmed.
-    const indirectOcclusion = ownedEngine && giCache.irradiance !== undefined;
+    const indirectOcclusion =
+      ownedEngine && giCache.irradiance !== undefined && options.gtaoIndirectOnly;
     const scenePass = pass(scene, camera, { samples: options.samples });
     const resolutionSubrect =
       requested.length === 0 || resolutionSubrectRefusal !== undefined
@@ -1357,6 +1364,7 @@ export class WorldEnvironment {
               trace,
               camera: view,
               ...(target.godraysLight === undefined ? {} : { sun: target.godraysLight }),
+              ...(reflectionTrace.lamps === undefined ? {} : { lamps: reflectionTrace.lamps }),
               base,
               depth: depth(),
               normal: normal(),

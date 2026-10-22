@@ -9,7 +9,7 @@ import {
   type PointLight,
   Vector3,
 } from "three";
-import { Fn, If, float, getViewPosition, max, rtt, screenUV, uniform, vec2, vec4 } from "three/tsl";
+import { Fn, If, getViewPosition, max, rtt, screenUV, uniform, vec4 } from "three/tsl";
 import type { Node, NodeMaterial, RenderTarget } from "three/webgpu";
 import type { IFogVolume, IVolumetricFogOptions } from "./volumetricFogOptions.js";
 import {

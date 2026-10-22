@@ -44,7 +44,7 @@ pnpm dev
 pnpm build
 pnpm build --target desktop
 pnpm test:native
-pnpm test
+pnpm test   # runs `pnpm check` first: typecheck, ESLint, Biome format
 pnpm typecheck
 ```
 

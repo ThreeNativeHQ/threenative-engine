@@ -139,17 +139,6 @@ function collectArmy(game: Game, team: number, out: IEntity[]): IEntity[] {
   return out;
 }
 
-/** Counts the own entities of `type`, in place: `filter().length` was an array per question. */
-function countType(game: Game, team: number, type: EntityType): number {
-  let found = 0;
-  const entities = game.entities;
-  for (let i = 0; i < entities.length; i++) {
-    const e = entities[i];
-    if (e !== undefined && e.team === team && e.hp > 0 && e.type === type) found += 1;
-  }
-  return found;
-}
-
 export class CommanderAI {
   readonly team: number;
   private readonly rng: () => number;

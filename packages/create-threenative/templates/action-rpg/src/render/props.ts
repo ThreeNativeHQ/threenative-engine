@@ -10,13 +10,7 @@
 import { BoxGeometry, CylinderGeometry, Group, type Material, Mesh } from "three";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
-import {
-  bladeMaterial,
-  flameMaterial,
-  propMaterial,
-  structureMaterial,
-  worldGridUVs,
-} from "./materials.js";
+import { bladeMaterial, propMaterial, structureMaterial, worldGridUVs } from "./materials.js";
 
 /** The corner radius every solid in this game is cut with. */
 export const BEVEL = 0.03;

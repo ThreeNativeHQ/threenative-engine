@@ -1934,6 +1934,26 @@
       "tolerance": { "pixelMismatchRatio": 0.06, "perceptualDeltaE": 9.0 },
       "desktopGate": true,
       "required": true
+    },
+    {
+      "id": "spectral-ocean",
+      "title": "SpectralOcean FFT displacement and bounded height readback",
+      "category": "webgpu-tsl",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/spectral-ocean.js",
+      "tolerance": { "pixelMismatchRatio": 0.06, "perceptualDeltaE": 9.0 },
+      "desktopGate": true,
+      "required": true
+    },
+    {
+      "id": "realistic-ocean",
+      "title": "realistic ocean bundle: cascades, derivative and foam compute, filtered material",
+      "category": "webgpu-tsl",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/realistic-ocean.js",
+      "tolerance": { "pixelMismatchRatio": 0.1, "perceptualDeltaE": 9.0 },
+      "desktopGate": true,
+      "required": true
     }
   ],
   "generatedPlaytestProofs": [

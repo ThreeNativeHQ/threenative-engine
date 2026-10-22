@@ -18,7 +18,7 @@ import { join, relative } from "node:path";
 import { runInNewContext } from "node:vm";
 
 const ROOT = join(import.meta.dirname, "..");
-const PAGE = "docs/PRDs/Unreal/research/unreal-visuals-and-performance-feature-map.html";
+export const PAGE = "docs/PRDs/Unreal/research/unreal-visuals-and-performance-feature-map.html";
 const SVG = "docs/PRDs/Unreal/research/unreal-port-status.svg";
 const README = "README.md";
 const INTERNALS = "docs/PRDs/Unreal/research/internals";
@@ -44,9 +44,34 @@ interface IPageData {
   readonly SYS: Record<string, { name: string; subs: Sub[] }>;
   readonly F: { sys: string; loc: number; big: boolean }[];
   readonly AREA_OF: Record<string, string>;
-  readonly PORT: { id: string; wave: number; done: number; total: number }[];
+  readonly PORT: {
+    id: string;
+    wave: number;
+    done: number;
+    total: number;
+    cx: number;
+    vis: number;
+    perf: number;
+    visSrc: string;
+    perfSrc: string;
+    rank: number;
+    waits: string;
+  }[];
+  readonly PRDS: Record<string, { f: string }>;
   readonly prog: (r: Sub) => IProg;
+  readonly rankScore: (p: { vis: number; perf: number; cx: number }) => number;
 }
+
+/** Evaluates the page's `// @data-start … // @data-end` block: plain data and pure rules. */
+function evalData(page: string): IPageData {
+  const code = block(page, "data").exec(page)?.[0];
+  if (!code) throw new Error(`${PAGE}: no // @data-start … // @data-end block`);
+  return runInNewContext(
+    `${code}\n({ SYS, F, AREA_OF, PORT, PRDS, prog, rankScore })`,
+  ) as IPageData;
+}
+
+export const pageData = (): IPageData => evalData(readFileSync(join(ROOT, PAGE), "utf8"));
 
 const block = (text: string, name: string): RegExp =>
   new RegExp(`// @${name}-start[\\s\\S]*?// @${name}-end`);
@@ -509,9 +534,7 @@ export function refresh(): Map<string, string> {
     block(page, "prds"),
     () => `// @prds-start\nconst PRDS = ${JSON.stringify(registry)};\n// @prds-end`,
   );
-  const code = block(page, "data").exec(page)?.[0];
-  if (!code) throw new Error(`${PAGE}: no // @data-start … // @data-end block`);
-  const data = runInNewContext(`${code}\n({ SYS, F, AREA_OF, PORT, prog })`) as IPageData;
+  const data = evalData(page);
   const { svg, share, total } = renderSvg(data);
   let before: ISnap[] = [];
   try {

@@ -83,7 +83,9 @@ test('green native platform lane is required by primary CI', () => {
   expect(nativeJob).toContain('uses: ./.github/workflows/native-platforms.yml');
   expect(nativeJob).not.toMatch(/^\s+continue-on-error:/mu);
   expect(workflow).toContain('workflow_call:');
-  expect(workflow).not.toMatch(/\n\x20{2}(?:push|pull_request|schedule):/u);
+  // PRD-629: the only push trigger is main, so the release candidate gets a standalone run.
+  expect(workflow).not.toMatch(/\n\x20{2}(?:pull_request|schedule):/u);
+  expect(workflow).toMatch(/\n\x20{2}push:\n\x20{4}branches: \[main\]\n/u);
   expect(ciWorkflow).toContain(
     "cancel-in-progress: ${{ github.event_name == 'pull_request' }}",
   );

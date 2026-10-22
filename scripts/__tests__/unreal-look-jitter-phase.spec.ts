@@ -11,6 +11,7 @@ import {
   atFixedJitterPhase,
   atJitterPhase,
   jitterOf,
+  stageBuildFailures,
 } from "../unreal-look/jitterPhase.js";
 
 /** A page whose engine draws `drawsPerStep` frames a step and reports the jitter of the frame it drew last. */
@@ -244,4 +245,55 @@ describe("both captures take their stills through the phase gate", () => {
     expect(gate).toContain("gate.release = ");
     expect(gate).toContain("realNow() + gate.offset");
   });
+});
+
+describe("a post stage that failed to build fails the capture (PRD-635, wallgreen 2026-10-22)", () => {
+  // The line a page printed with a Wasm pair from before the GTAO screen reach: the stage threw, the chain dropped it,
+  // and the frame had no contact occlusion. mirror-room Wall_Green read deltaE 10.63, which looked like an AO regression.
+  const environment = (stages: object[]) =>
+    `TN_WORLD_ENVIRONMENT:${JSON.stringify({ marker: "TN_WORLD_ENVIRONMENT", stages })}`;
+
+  it("names each stage the chain dropped because its build threw", () => {
+    expect(
+      stageBuildFailures(
+        environment([
+          {
+            applied: false,
+            name: "ambientOcclusion",
+            reason:
+              "build:TN_AO_REACH_UNSUPPORTED: this engine's GTAO has no screen reach; set gtaoRadius (metres)",
+          },
+          { applied: true, name: "ssgi" },
+        ]),
+      ),
+    ).toEqual([
+      "TN_UNREAL_LOOK_STAGE_BUILD_FAILED ambientOcclusion: build:TN_AO_REACH_UNSUPPORTED: this engine's GTAO has no screen reach; set gtaoRadius (metres)",
+    ]);
+  });
+
+  it("passes a stage that is off on purpose or refused by the tier, and any other line", () => {
+    expect(
+      stageBuildFailures(
+        environment([
+          { applied: false, name: "bloom", reason: "bloomEnabled is false" },
+          { applied: false, name: "motionBlur", reason: "tier:off" },
+          { applied: true, name: "ambientOcclusion" },
+        ]),
+      ),
+    ).toEqual([]);
+    expect(stageBuildFailures("TN_AUTO_EXPOSURE:{}")).toEqual([]);
+  });
+
+  it("fails closed on a report it cannot read", () => {
+    expect(stageBuildFailures("TN_WORLD_ENVIRONMENT:{not json")).toEqual([
+      "TN_UNREAL_LOOK_STAGE_BUILD_FAILED unreadable TN_WORLD_ENVIRONMENT report",
+    ]);
+  });
+
+  for (const name of ["capture-threenative.ts", "capture-gi-threenative.ts"])
+    it(`${name} counts it as a page error`, () => {
+      expect(
+        readFileSync(path.join(import.meta.dirname, "../unreal-look", name), "utf8"),
+      ).toContain("errors.push(...stageBuildFailures(message.text()));");
+    });
 });

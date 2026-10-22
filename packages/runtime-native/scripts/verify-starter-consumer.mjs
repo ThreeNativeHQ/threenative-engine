@@ -6,6 +6,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, writeFi
 import { release as osRelease } from 'node:os';
 import { basename, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { desktopLaunchTarget } from './desktop-distribution.mjs';
 
 export const CONSUMER_GAMEPLAY_SCENARIO = 'playtests/production-readiness.playtest.json';
 export const CONSUMER_REQUIRED_TARGETS = ['desktop', 'android'];
@@ -379,11 +380,11 @@ function discoverConsumerArtifact(projectRoot, target) {
   if (target === 'desktop') {
     const manifest = JSON.parse(readFileSync(join(projectRoot, 'package.json'), 'utf8'));
     const name = basename(String(manifest.name ?? 'starter').replace(/^@[^/]+\//u, ''));
-    return join(
-      projectRoot,
-      'dist-native',
-      `${name}${process.platform === 'win32' ? '.exe' : ''}`,
-    );
+    const executable = `${name}${process.platform === 'win32' ? '.exe' : ''}`;
+    const artifact = join(projectRoot, 'dist-native', executable);
+    // A missing artifact stays the caller's `ARTIFACT_MISSING`; a container directory (PRD-637) is
+    // run through its launcher.
+    return existsSync(artifact) ? desktopLaunchTarget(artifact, executable) : artifact;
   }
   const apks = consumerArtifactFiles(join(projectRoot, 'dist-native'), (file) => file.endsWith('.apk'));
   if (apks.length === 0) {

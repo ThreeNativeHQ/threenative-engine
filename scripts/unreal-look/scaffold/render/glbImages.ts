@@ -84,3 +84,30 @@ export async function glbMaterialImages(
   }
   return byName;
 }
+
+/**
+ * `glbMaterialImages` of the first of `urls` (the places the asset store resolves a file to) that answers, and what each
+ * URL gave, for the capture log. No answer leaves the map empty: the Surface Cache then returns each colour factor.
+ */
+export async function fetchGlbMaterialImages(
+  urls: readonly string[],
+): Promise<{ images: Map<string, IGlbMaterialImages>; tried: string[] }> {
+  const tried: string[] = [];
+  for (const url of urls) {
+    const response = await fetch(url);
+    tried.push(`${response.status} ${url}`);
+    if (!response.ok) continue;
+    try {
+      return {
+        images: await glbMaterialImages(
+          await response.arrayBuffer(),
+          new URL(url, location.href).href,
+        ),
+        tried,
+      };
+    } catch (error) {
+      tried.push(String(error));
+    }
+  }
+  return { images: new Map(), tried };
+}

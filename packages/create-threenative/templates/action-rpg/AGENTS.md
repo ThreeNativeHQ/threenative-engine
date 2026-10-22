@@ -34,7 +34,7 @@ When an `@threenative/*` API is broken, missing, or does not do what you need, r
 pnpm dev
 pnpm build
 pnpm build --target desktop
-pnpm test
+pnpm test   # runs `pnpm check` first: typecheck, ESLint, Biome format
 ```
 
 Controls: WASD/arrows move; Space/F attacks; E casts Arcane Surge; Shift rolls; Q/U equips or

@@ -80,9 +80,7 @@ export function integrationEvidence(
         head_sha: workflowHeadSha,
         status: "completed",
         conclusion: "success",
-        steps: [
-          { name: "Typecheck pristine template", status: "completed", conclusion: "success" },
-        ],
+        steps: [{ name: "Check pristine template", status: "completed", conclusion: "success" }],
       }))
     : [];
   const observed = [...jobs, ...native.jobs, ...templates];

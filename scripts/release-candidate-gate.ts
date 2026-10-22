@@ -1117,7 +1117,7 @@ function parseRequestArtifacts(
   };
 }
 
-function parseReleaseCandidateRequest(
+export function parseReleaseCandidateRequest(
   value: unknown,
   expectedRepository: string | undefined,
   repo: string,
