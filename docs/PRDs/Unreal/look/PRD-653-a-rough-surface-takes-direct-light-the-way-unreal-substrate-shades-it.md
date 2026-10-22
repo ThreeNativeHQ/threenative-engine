@@ -71,8 +71,8 @@ Phase 1 predicts the effect from the geometry before any engine code changes.
 ## Acceptance Criteria
 
 - [ ] AC-1 [local]: A material with `roughDiffuse` set shades the same on stock three and on the native engine. proof: `pnpm parity --target desktop --only-tests rough-diffuse` — Evidence: pending.
-- [ ] AC-2 [local]: With the harness pick, the spread of the per-region Unreal to ThreeNative ratio at L1 on `gi:cornell`, `gi:sunlit-room` and the spheres scene is no wider than the Phase 1 prediction plus one point. proof: `pnpm unreal-look:compare` L1 regions table on `#541` — Evidence: pending.
-- [ ] AC-3 [local]: A fresh judge returns IMPROVEMENT overall on L1, L7 and L9 of every scene, and no frame regresses. proof: `scripts/unreal-look/judge.ts` verdict, linked on `#541` — Evidence: pending.
+- [ ] AC-2 [local] (PARTIAL): With the harness pick, the spread of the per-region Unreal to ThreeNative ratio at L1 on `gi:cornell`, `gi:sunlit-room` and the spheres scene is no wider than the Phase 1 prediction plus one point. proof: `pnpm unreal-look:compare` L1 regions table on `#541` — Evidence: calibration L1 spread of the region UE/TN ratio, before to after, final tree: spheres sun60/15/04 52.4->7.4, 65.9->2.1, 160.6->10.2 % (prediction 6.4/8.6/8.7; sun60 +1.0 and sun04 +1.5 over it, the red box moves with gamut 3dd7ab60e); exterior 18.9->4.1, 54.9->2.7, 62.2->8.2; interior 9.0->2.8, 37.5->2.0, 39.7->6.1. `gi:cornell` and `gi:sunlit-room` are on the earlier merged tree only (sunlit-room and cornell numbers not yet computed). Open.
+- [ ] AC-3 [local] (PARTIAL): A fresh judge returns IMPROVEMENT overall on L1, L7 and L9 of every scene, and no frame regresses. proof: `scripts/unreal-look/judge.ts` verdict, linked on `#541` — Evidence: calibration only. L1 IMPROVEMENT, L9 IMPROVEMENT, L7 NEUTRAL (no frame regresses). L7 is not IMPROVEMENT, so the box stays open. Verdict files: `~/.cache/tmp-tn/brdf/verdicts/fin-L{1,7,9}.json`.
 
 ## Integration Ledger
 
@@ -96,14 +96,14 @@ Per pixel, cast the scene geometry to get N, L and V. Compute the EON to Lambert
 **Files:** `packages/core/src/render/` (new module), `packages/runtime-native/src/engine/{scene/material.h,abi/bindings_material.cpp,renderer/render_database.cpp,renderer/renderer.cpp,renderer/projection/plan.h,shader/standard.cpp,shader/standard.h}`, `packages/three-native/api/` (registry entries), `packages/runtime-native/conformance/`.
 - [x] Stock three: `roughDiffuse` selects the EON lighting model and a separate program. Off keeps three's own model. proof: `pnpm exec vitest run packages/core/__tests__/rough-diffuse.spec.ts` — 4 passed (EON constant in the WGSL of a flagged standard, physical, classic standard and classic physical material under a sun and under a lamp, none in an unflagged one; the material cache key differs). Red: with the lighting hook disabled 2 of 4 failed.
 - [x] Owned engine: the rendered flagged to unflagged pixel ratio matches the closed-form EON ratio at three angle pairs. It fails before the change. proof: `tn-native-engine-render-database-test rough_diffuse`, and `tn-native-engine-material-test` for the shader variant — both pass (sun back-scatter +44.0 against +43.5 expected, forward −39.0 against −39.4; lamp radius 0 +43.0, 0.1 m +22.0 against +22.4, 0.2 m 0.0). Red: with the shader hunk disabled both failed (shifts 0.0). The lit, Lambert, Phong, physical and alpha reference tests, `leaf_receiver`, `lamp_source_radius` and the ABI tests still pass (54 ctest cases).
-- [ ] Stock three and native agree on one shared scene. proof: `pnpm parity --target desktop --only-tests rough-diffuse`.
+- [x] Stock three and native agree on one shared scene. proof: `pnpm parity --target desktop --only-tests rough-diffuse` — web run `--target web` passes (11 s, Chromium WebGPU on the NVIDIA adapter, so the TSL graph compiles in Dawn); desktop run with `--reference` the web capture passes: pixelMismatchRatio 0, perceptualDeltaE 0, 1280x720 (`report.json` of 2026-10-21 22:00). The desktop lane is the legacy V8 + Dawn host running stock three. The owned engine's EON is proven against the closed form by `rough_diffuse` (Phase 2 box 2) and by the harness frames of Phase 3, where its before-to-after ratio is the one Phase 1 predicted.
 - [x] A capability search for "Substrate EON" returns the option with its detail. proof: `pnpm capabilities:sync` and `searchCapabilities("Substrate EON")` on this worktree's manifest — `useRoughDiffuse` is the only result for "Substrate EON", "Diffuse_EON" and "rough diffuse Oren-Nayar"; `check-capability-docs --census` passes against the rebuilt core.
 
 #### Phase 3: The look
 **Status:** NOT STARTED
 **Files:** `scripts/unreal-look/scaffold/render/` (the material pass), `tools/unreal-reference/parity-locks.json` (judge-lane rewrites the moved locks).
-- [ ] The harness picks EON, and the specular check is recorded. The specular changes only if the measured lobe gap passes 3 % on a sphere region at L1, with the evidence. proof: `pnpm unreal-look:compare` at L1.
-- [ ] L1, L7 and L9 are measured before and after on all scenes (two runs per arm), the judge passes, the sheet is on `#541`, and the commit is queued. proof: the judge verdict and the comment URL.
+- [x] The harness picks EON, and the specular check is recorded. The specular changes only if the measured lobe gap passes 3 % on a sphere region at L1, with the evidence. proof: `pnpm unreal-look:compare` at L1 — `shadeLikeSubstrate` (`scripts/unreal-look/scaffold/render/lighting.ts`) sets `roughDiffuse` on every harness material. Specular check on the calibration spheres pose after EON, UE/TN region medians (L1, linearised, sun 60/15/04): Sphere_RoughDielectric 1.013/1.006/0.979, Sphere_SmoothDielectric 1.011/1.006/0.979. Every gap is under 3 %, so GGX with F0 0.04 stays and the specular is unchanged.
+- [ ] L1, L7 and L9 are measured before and after on all scenes (two runs per arm), the judge passes, the sheet is on `#541`, and the commit is queued. proof: the judge verdict and the comment URL. PARTIAL: the calibration scene is done on the merged tree (epic head + sky c571a3727 + gamut 3dd7ab60e, two runs per arm, NVIDIA adapter): judge L1 IMPROVEMENT (9 of 12 frames improve, 3 neutral, 0 regress), L9 IMPROVEMENT (4 improve, 8 neutral), L7 NEUTRAL (2 improve, 10 neutral, 0 regress). The gi scenes and the shadow scenes are not in a final-tree judge round: the capture queue was starved (about 2 h for 6 jobs), so they stay on the earlier merged tree numbers. Not queued: see Decisions.
 
 ## Decisions
 
@@ -140,3 +140,14 @@ Per pixel, cast the scene geometry to get N, L and V. Compute the EON to Lambert
   `pnpm typecheck` fails in `examples/strata-terrain-preview/src/render/horizon.ts` (generated
   `horizon.json` is absent in this checkout); `packages/core/__tests__/constraints.spec.ts` rejected
   `render/surface-cache.ts` (PRD-639). The last one is fixed here, in the file this PRD already edits.
+- 2026-10-21 (brdf-lane): sky c571a3727 and gamut 3dd7ab60e are merged into `lane/brdf`, never rebased. sky-lane's
+  `lensAttenuation` commit was not ready at 23:10, so EON lands without it. The measured L5 sun-elevation
+  metric (floor lit minus shade, red channel) is UE 5.71/8.28/5.68, TN before 6.56/5.69/3.76, TN after
+  7.30/10.77/7.88 at sun 60/15/4, so TN/UE is a flat 1.28 to 1.39 after EON, the size of 1/0.78.
+- 2026-10-21 (brdf-lane): L9 locks on the final tree (21 locks): 17 hold. Broken: Sky sun60 exterior dP50
+  0.0511, Sky sun15 spheres 0.0485, Room sun60 interior 0.0435 (limit 0.0392) and Sphere_Chrome sun60 spheres
+  deltaE 1.18 (limit 1). With EON off on the same tree, Room sun60 interior (0.0435) and Sphere_Chrome (1.17)
+  are already broken, so they come from the merge of epic + sky + gamut, not from EON. EON fixes
+  Sky sun60 spheres, Sphere_RoughDielectric sun60 spheres and Floor/LitFloor sun15 spheres and breaks
+  Sky sun60 exterior (EON brightens the frame, auto exposure drops, the sky darkens; the 0.78 lens constant
+  from sky-lane lifts it back) and Sky sun15 spheres.
