@@ -6,7 +6,7 @@ import type { Page } from "@playwright/test";
 import { afterEach, describe, expect, it } from "vitest";
 import { FRAME_GATE, captureMotionFrames } from "../unreal-look/capture-motion-threenative.js";
 import type { IImage } from "../unreal-look/compare.js";
-import type { ISceneJson } from "../unreal-look/gi.js";
+import { type ISceneJson, readScene } from "../unreal-look/gi.js";
 import {
   type IMotionReport,
   checkGradual,
@@ -617,6 +617,19 @@ describe("validateMotion", () => {
       ],
     },
   };
+
+  it("accepts the motion runs the registered scenes carry, and the neon run switches the lamp off at frame 60", () => {
+    for (const name of ["gi:cornell", "gi:neon-corridor"]) {
+      const { scene: exported } = readScene(name);
+      expect(() => validateMotion(exported.motion ?? {}, exported)).not.toThrow();
+    }
+    const neon = readScene("gi:neon-corridor").scene.motion?.neon;
+    expect(neon?.frames).toBe(180);
+    expect(neon?.light?.keys).toEqual([
+      [0, 1],
+      [60, 0],
+    ]);
+  });
 
   it("accepts a pan and a light switch", () => {
     expect(() => validateMotion({ pan, switch: lamp }, scene)).not.toThrow();
