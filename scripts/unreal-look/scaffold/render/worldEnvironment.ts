@@ -894,9 +894,12 @@ export class WorldEnvironment {
       let result = node;
       for (let pass = 0; pass < options.giDenoisePasses; pass += 1) {
         const filter = denoise(result, depth(), normal(), view) as unknown as {
+          gpuStage?: string;
           index: { value: number };
         };
         filter.index.value = pass;
+        // The owned engine times the gather's denoise with the gather (`GI_STAGES`); three ignores the property.
+        filter.gpuStage = "SSGI";
         result = denoised(filter as unknown as ReturnType<typeof denoise>);
       }
       return result;

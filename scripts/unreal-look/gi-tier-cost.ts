@@ -3,7 +3,7 @@
  *
  *   sh <slots>/gpu-slot.sh --exclusive pnpm exec tsx scripts/unreal-look/gi-tier-cost.ts \
  *     --scene gi:cornell [--tiers low,medium,high] [--shadow-tiers low,medium,high] [--windows 3] [--reuse] \
- *     [--url-extra "&probes=1"] [--out cost.json]
+ *     [--url-extra "&probes=1"] [--auto] [--out cost.json]
  *
  * Opens the calibration scene at L7 on the owned engine, headed on WebGPU, at 1920 x 1080 with the adapter
  * checked, once per tier. The browser paints on a private Xvfb (`launchWebgpuBrowser`): set
@@ -11,9 +11,14 @@
  * `--windows` windows is the tier's cost. Run it under the exclusive GPU slot: other GPU work moves the
  * numbers. The report prints the passes that resolved, so a wrong stage name reads as an empty list.
  *
- * The owned engine times the whole frame only: it has no per-pass timestamp pool, so `GIBudget` resolves no stage
- * there (`stagesSeen` is empty). `frame` is then the cost: the whole frame's GPU time per distinct sample after 120
- * rendered frames of warm-up, and `giDeltaMs` is a tier's frame mean minus the `low` tier's, which draws no GI.
+ * The owned engine times its passes natively and reports the whole frame and its labelled stages per sample
+ * (`info.render.timestamp`, `info.engine.gpuStages`, three-native `gpu-stages.ts`), so `GIBudget` resolves the
+ * stage `SSGI` (`stagesSeen`). `frame` is the whole frame's GPU time per distinct sample after 120 rendered frames of
+ * warm-up with its `stages`, and `giDeltaMs` is a tier's frame mean minus the `low` tier's, which draws no GI: the
+ * delta and `frame.stages.SSGI` check each other.
+ *
+ * `--auto` is the live proof of the budgets instead: each tier starts with `giAuto=1` and `shadowAuto=1`, and the
+ * report lists every window the budgets closed with the step they took and why.
  *
  * The GI tiers draw their shadows at `high`, as the Unreal GI cells do. `--shadow-tiers` instead draws the GI at
  * `medium` (no screen-space gather) and the shadows at each listed tier, so `frameMs` is the whole frame's GPU
@@ -38,6 +43,8 @@ interface IWindow {
   readonly stagesSeen: readonly string[];
   readonly passes: readonly string[];
   readonly finalGatherMethod: string;
+  readonly stepped?: string;
+  readonly reason?: string;
 }
 
 const flag = (args: readonly string[], name: string): string | undefined => {
@@ -49,7 +56,8 @@ const mean = (values: readonly number[]): number =>
   values.length === 0 ? Number.NaN : values.reduce((a, b) => a + b, 0) / values.length;
 
 /**
- * The whole frame's resolved GPU milliseconds, one per distinct sample, keyed by the engine's frame id. The page
+ * The whole frame's resolved GPU milliseconds and the named stages inside it (`info.engine.gpuStages`), one
+ * per distinct sample, keyed by the engine's frame id. The page
  * draws the pose in a tight loop beside its own: the host draws nothing while two frames are on the GPU, so the
  * GPU stays busy. A GPU that idles between frames drops to a low clock, and every pass then reads 2 to 5 times
  * dearer (a `low` frame read 14.9 ms at P5 and 3.2 ms boosted). The warm-up is 240 drawn frames and 4 s.
@@ -62,7 +70,8 @@ const FRAME_SAMPLER = `(async (want) => {
     const ids = r.backend && r.backend.getTimestampFrames ? r.backend.getTimestampFrames("render") : undefined;
     const id = ids ? ids[ids.length - 1] : undefined;
     const ms = r.info && r.info.render ? r.info.render.timestamp : undefined;
-    if (Number.isInteger(id) && typeof ms === "number" && ms > 0 && !seen.has(id)) seen.set(id, ms);
+    const stages = r.info && r.info.engine && r.info.engine.gpuStages ? { ...r.info.engine.gpuStages } : {};
+    if (Number.isInteger(id) && typeof ms === "number" && ms > 0 && !seen.has(id)) seen.set(id, { ms, stages });
   };
   const tick = () => new Promise((done) => setTimeout(done, 0));
   const t0 = performance.now();
@@ -76,8 +85,12 @@ const FRAME_SAMPLER = `(async (want) => {
     note();
     await tick();
   }
+  const samples = [...seen.values()];
+  const names = [...new Set(samples.flatMap((sample) => Object.keys(sample.stages)))];
   return {
-    ms: [...seen.values()],
+    ms: samples.map((sample) => sample.ms),
+    // A stage that drew no pass in a sample is absent there: it cost 0.
+    stages: Object.fromEntries(names.map((name) => [name, samples.map((sample) => sample.stages[name] ?? 0)])),
     pixelRatio: r.getPixelRatio ? r.getPixelRatio() : null,
     size: [r.domElement.width, r.domElement.height],
   };
@@ -141,6 +154,7 @@ async function collectWindows(
   page: Page,
   errors: readonly string[],
   count: number,
+  warmup = 1,
 ): Promise<IWindow[]> {
   const windows = new Map<number, IWindow>();
   const deadline = Date.now() + 240_000;
@@ -150,7 +164,7 @@ async function collectWindows(
     if (errors.length > 0) throw new Error(`TN_UNREAL_LOOK_PAGE_ERROR: ${errors.join(" | ")}`);
     await page.waitForTimeout(250);
   }
-  return [...windows.values()].filter((w) => w.window > 1);
+  return [...windows.values()].filter((w) => w.window > warmup);
 }
 
 function summarize(adapter: Record<string, string>, kept: readonly IWindow[]): object {
@@ -192,17 +206,48 @@ async function measureTier(
       ms: number[];
       pixelRatio: number | null;
       size: number[];
+      stages: Record<string, number[]>;
     };
     const frame = {
       ...frameStats(sampled.ms),
       gpu: gpuState(),
       pixelRatio: sampled.pixelRatio,
       size: sampled.size,
+      stages: Object.fromEntries(
+        Object.entries(sampled.stages).map(([stage, values]) => [stage, frameStats(values)]),
+      ),
     };
     // No GI pass runs at `none`, so the tier costs no GI time by construction.
     if (method === "none")
       return { adapter, budgetMs: 0, frame, giMs: 0, insideBudget: true, method, windows: 0 };
     return { ...summarize(adapter, await collectWindows(page, errors, count)), frame };
+  } finally {
+    await page.close();
+  }
+}
+
+/**
+ * The live proof: the page starts at a tier with both budgets free to move (`giAuto=1`, `shadowAuto=1`), and the
+ * report lists the windows they closed, each with the reading it judged and the step it took.
+ */
+async function watchSteps(
+  browser: Browser,
+  origin: string,
+  name: string,
+  tier: string,
+  pose: unknown,
+  count: number,
+  urlExtra: string,
+): Promise<Record<string, unknown>> {
+  const { adapter, errors, page } = await openTier(
+    browser,
+    `${origin}?tnGi=${name}&layer=L7&tier=${tier}&shadowTier=high&giAuto=1&shadowAuto=1${urlExtra}`,
+    pose,
+  );
+  try {
+    const windows = await collectWindows(page, errors, count, 0);
+    const shadow = await page.evaluate("window.__tnRef.shadowBudget?.() ?? null");
+    return { adapter, gpu: gpuState(), shadow, started: tier, windows };
   } finally {
     await page.close();
   }
@@ -219,13 +264,63 @@ function addDeltas(report: Record<string, Record<string, unknown>>): void {
   }
 }
 
+/** The measurements one page session takes, as the flags ask: the live proof, or the tiers and then the shadow tiers. */
+async function measureAll(
+  browser: Browser,
+  origin: string,
+  name: string,
+  pose: unknown,
+  args: readonly string[],
+): Promise<Record<string, Record<string, unknown>>> {
+  const report: Record<string, Record<string, unknown>> = {};
+  const tiers = (flag(args, "--tiers") ?? "low,medium,high").split(",");
+  const count = Number(flag(args, "--windows") ?? 3);
+  const urlExtra = flag(args, "--url-extra") ?? "";
+  if (args.includes("--auto")) {
+    for (const tier of tiers) {
+      report[`auto-${tier}`] = await watchSteps(browser, origin, name, tier, pose, count, urlExtra);
+      console.info(`TN_GI_AUTO ${tier} ${JSON.stringify(report[`auto-${tier}`])}`);
+    }
+    return report;
+  }
+  const shadowTiers = flag(args, "--shadow-tiers")?.split(",") ?? [];
+  for (const tier of shadowTiers.length > 0 ? [] : tiers)
+    report[tier] = await measureTier(
+      browser,
+      origin,
+      name,
+      tier,
+      pose,
+      count,
+      "high",
+      600,
+      urlExtra,
+    );
+  addDeltas(report);
+  for (const shadowTier of shadowTiers) {
+    const key = `shadow-${shadowTier}`;
+    report[key] = await measureTier(
+      browser,
+      origin,
+      name,
+      "medium",
+      pose,
+      count,
+      shadowTier,
+      600,
+      urlExtra,
+    );
+    console.info(`TN_GI_TIER_COST ${key} ${JSON.stringify(report[key])}`);
+  }
+  return report;
+}
+
 export async function main(args: readonly string[]): Promise<number> {
   const value = flag(args, "--scene") ?? "gi:cornell";
   const [name = ""] = sceneNames(
     value,
     registry(familyOf(value)).scenes.map((s) => s.name),
   );
-  const tiers = (flag(args, "--tiers") ?? "low,medium,high").split(",");
   const work =
     process.env.TN_UNREAL_LOOK_WORK ?? path.join(os.homedir(), ".cache/threenative/unreal-look");
   const target = await scaffold(work, args.includes("--reuse"), false);
@@ -243,44 +338,13 @@ export async function main(args: readonly string[]): Promise<number> {
       stdio: ["ignore", "inherit", "inherit"],
     },
   );
-  const report: Record<string, Record<string, unknown>> = {};
+  let report: Record<string, Record<string, unknown>> = {};
   try {
     const origin = `http://127.0.0.1:${port}/`;
     await waitForServer(origin, server);
     const browser = await launchWebgpuBrowser();
     try {
-      const count = Number(flag(args, "--windows") ?? 3);
-      const urlExtra = flag(args, "--url-extra") ?? "";
-      const shadowTiers = flag(args, "--shadow-tiers")?.split(",") ?? [];
-      for (const tier of shadowTiers.length > 0 ? [] : tiers) {
-        report[tier] = await measureTier(
-          browser,
-          origin,
-          name,
-          tier,
-          pose,
-          count,
-          "high",
-          600,
-          urlExtra,
-        );
-      }
-      addDeltas(report);
-      for (const shadowTier of shadowTiers) {
-        const key = `shadow-${shadowTier}`;
-        report[key] = await measureTier(
-          browser,
-          origin,
-          name,
-          "medium",
-          pose,
-          count,
-          shadowTier,
-          600,
-          urlExtra,
-        );
-        console.info(`TN_GI_TIER_COST ${key} ${JSON.stringify(report[key])}`);
-      }
+      report = await measureAll(browser, origin, name, pose, args);
     } finally {
       await browser.close();
     }
