@@ -13,6 +13,7 @@ import { PNG } from "pngjs";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { type IDeps, main } from "../unreal-look/calibrate.js";
 import type { IMeasured } from "../unreal-look/calibrateRound.js";
+import { sceneBasis } from "../unreal-look/giLocks.js";
 
 const roots: string[] = [];
 afterEach(() => {
@@ -469,6 +470,7 @@ describe("main", () => {
         pose: "cornell",
         region: "Back",
         round: id,
+        basis: sceneBasis("cornell"),
         maxDP50: 0.004,
         maxDeltaE: 0.4,
         minIoU: 0.99,
@@ -523,6 +525,24 @@ describe("main", () => {
       w.log.length = 0;
       await roundWith("4", { dP50: 0.009 }, 0, ["--locks", path.join(w.root, "elsewhere.json")]);
       expect(w.log.join("\n")).not.toMatch(/GI lock/i);
+    });
+
+    it("treats a lock cut against another scene basis as stale: a round logs it and passes, --lock needs --relax", async () => {
+      const { w, lock, read, roundWith, locks } = await setup();
+      await main(lock(await roundWith("1")), w.deps);
+      // The scene was rebuilt since: the stored locks name the basis of the old one.
+      const data = JSON.parse(readFileSync(locks, "utf8"));
+      for (const entry of data.locks) entry.basis = "ffffffffffff";
+      writeFileSync(locks, JSON.stringify(data));
+      w.log.length = 0;
+      const second = await roundWith("2", { dP50: 0.009 }, 0, ["--locks", locks]);
+      const text = w.log.join("\n");
+      expect(text).toMatch(/GI locks STALE: 2 lock\(s\) of cornell at L7-high were cut against/);
+      expect(text).not.toMatch(/GI LOCKS BROKEN|GI locks hold/);
+      await expect(main(lock(second), w.deps)).rejects.toThrow(/LOCK_STALE.*2 locked cell/);
+      expect(read()[0]).toMatchObject({ basis: "ffffffffffff" });
+      expect(await main(lock(second, ["--relax"]), w.deps)).toBe(0);
+      expect(read()[0]).toMatchObject({ basis: sceneBasis("cornell"), round: second });
     });
 
     it("cannot drop a locked region: a round that lacks it is refused", async () => {

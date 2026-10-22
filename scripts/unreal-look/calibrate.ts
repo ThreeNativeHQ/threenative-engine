@@ -61,6 +61,8 @@ import {
   lockCells,
   mergeLocks,
   readGiLocks,
+  sceneBasis,
+  staleLocks,
   withOfflineRoot,
   writeGiLocks,
 } from "./giLocks.js";
@@ -511,10 +513,19 @@ function checkLocks(
   if (!existsSync(o.locks)) return 0;
   const locks = readGiLocks(o.locks);
   if (!locks.some((lock) => lock.scene === o.scene && lock.layer === layer)) return 0;
+  // A lock cut against another scene or Unreal reference cannot judge this round: say so, and do not fail it.
+  const basis = sceneBasis(o.scene);
+  const stale = staleLocks(locks, o.scene, layer, basis);
+  if (stale.length > 0) {
+    deps.log(
+      `GI locks STALE: ${stale.length} lock(s) of ${o.scene} at ${layer} were cut against another scene or Unreal reference (round ${stale[0]?.round}), so this round is not checked against them. Approve this round, then pnpm unreal-look:calibrate --lock <round id> --relax`,
+    );
+    return 0;
+  }
   const runs = after.arm.runs.map((run) =>
     withOfflineRoot(path.join(after.dir, run), (root) => deps.compare(o.scene, layer, root)),
   );
-  const broken = checkGiLocks(o.scene, layer, runs, locks);
+  const broken = checkGiLocks(o.scene, layer, runs, locks, basis);
   deps.log(
     broken.length === 0
       ? `GI locks hold: every locked region of ${o.scene} at ${layer} is inside its bound`
@@ -632,7 +643,7 @@ function lockRound(args: string[], deps: IDeps): number {
       "ROUND_MISMATCH",
       `${mismatch}: the arm no longer measures what ${id} recorded; lock a round that the store still reproduces`,
     );
-  const fresh = lockCells(round.id, round.scene, layer, runs);
+  const fresh = lockCells(round.id, round.scene, layer, runs, sceneBasis(round.scene));
   const merged = mergeLocks(existsSync(file) ? readGiLocks(file) : [], fresh, { tighten, relax });
   writeGiLocks(file, merged.locks);
   deps.log(

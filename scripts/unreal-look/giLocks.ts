@@ -11,13 +11,24 @@
  * fails when a region of a new capture is past its bound, when a locked region or a run is missing, and when
  * the two runs of the new capture differ by more than the locked noise. A lock tightens only on request
  * (--tighten) and loosens only on request (--relax). Every comparison reads the committed Unreal statistics
- * (reference-stats.json), so the check needs no Unreal capture.
+ * (reference-stats.json), so the check needs no Unreal capture. A lock also records a digest of the committed
+ * scene and Unreal reference that it was cut against (`basis`). When another lane rebuilds the scene, the
+ * approved bounds no longer apply: the check says so (LOCK_STALE) and a new approved round re-cuts the lock.
  */
-import { existsSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { type IRow, ciede2000, lab } from "./compare.js";
-import { compareGiToUnreal } from "./gi.js";
+import { compareGiToUnreal, sceneDir } from "./gi.js";
 
 export const GI_LOCK_FILE = path.resolve(
   import.meta.dirname,
@@ -40,6 +51,8 @@ export interface IGiLock {
   region: string;
   /** The approved round that cut the lock. */
   round: string;
+  /** Digest of the committed scene and Unreal reference that the round was measured against (sceneBasis). */
+  basis: string;
   maxDP50: number;
   maxDeltaE: number;
   minIoU: number;
@@ -93,12 +106,43 @@ function finite(value: number | null | undefined, what: string): number {
   return value;
 }
 
+/**
+ * A digest of what a lock is measured against: the committed Unreal statistics, the Unreal ID frames that give
+ * the region masks, and the scene definition. The time stamp of the statistics file is left out, so that
+ * writing the same statistics again keeps the digest.
+ */
+export function sceneBasis(scene: string, dir = sceneDir(scene)): string {
+  const stats = JSON.parse(readFileSync(path.join(dir, "reference-stats.json"), "utf8")) as {
+    resolution?: unknown;
+    cells?: unknown;
+  };
+  const hash = createHash("sha256");
+  hash.update(JSON.stringify({ resolution: stats.resolution, cells: stats.cells }));
+  for (const name of readdirSync(path.join(dir, "id")).sort())
+    hash.update(`\0${name}\0`).update(readFileSync(path.join(dir, "id", name)));
+  hash.update("\0scene.json\0").update(readFileSync(path.join(dir, "scene.json")));
+  return hash.digest("hex").slice(0, 12);
+}
+
+/** The locks of a scene and layer that another scene or Unreal reference than `basis` cut: their bounds do not apply. */
+export function staleLocks(
+  locks: readonly IGiLock[],
+  scene: string,
+  layer: string,
+  basis: string,
+): IGiLock[] {
+  return locks.filter(
+    (lock) => lock.scene === scene && lock.layer === layer && lock.basis !== basis,
+  );
+}
+
 /** The locks that two runs of an approved round make, one per region of each pose. */
 export function lockCells(
   round: string,
   scene: string,
   layer: string,
   runs: readonly (readonly IMeasuredRow[])[],
+  basis: string,
 ): IGiLock[] {
   if (runs.length < 2)
     fail(
@@ -122,6 +166,7 @@ export function lockCells(
       pose: row.cell.slice(scene.length + 1),
       region: row.region,
       round,
+      basis,
     };
     for (const metric of METRICS) {
       const values = at.map((r) =>
@@ -148,6 +193,8 @@ export interface IMerge {
   improved: string[];
   /** Cells where the new round is looser and the lock stayed (no --relax), as one line per bound. */
   looser: string[];
+  /** Cells whose lock was cut against another scene or Unreal reference (--relax re-cuts them). */
+  stale: string[];
 }
 
 /**
@@ -162,7 +209,7 @@ export function mergeLocks(
 ): IMerge {
   const old = new Map(existing.map((lock) => [lockKey(lock), lock] as const));
   const next = new Map(old);
-  const out: IMerge = { locks: [], added: [], moved: [], improved: [], looser: [] };
+  const out: IMerge = { locks: [], added: [], moved: [], improved: [], looser: [], stale: [] };
   for (const lock of fresh) {
     const key = lockKey(lock);
     const was = old.get(key);
@@ -171,17 +218,31 @@ export function mergeLocks(
       out.added.push(key);
       continue;
     }
-    const { better, looser } = compareBounds(was, lock, key);
+    const { better, looser, stale } = compareBounds(was, lock, key);
     out.looser.push(...looser);
-    if (looser.length > 0 ? mode.relax : better && mode.tighten) {
+    if (stale) out.stale.push(key);
+    // A stale or looser lock is replaced on --relax, a tighter one on --tighten.
+    if (stale || looser.length > 0 ? mode.relax : better && mode.tighten) {
       next.set(key, lock);
       out.moved.push(key);
-    } else if (looser.length === 0 && better) out.improved.push(key);
+    } else if (better) out.improved.push(key);
   }
   refuseDropped(existing, fresh);
-  if (!mode.relax) refuseLooser(out.looser);
+  if (!mode.relax) {
+    refuseStale(out.stale);
+    refuseLooser(out.looser);
+  }
   out.locks = [...next.values()];
   return out;
+}
+
+/** A lock cut against another scene or Unreal reference cannot judge this round: a new baseline is accepted on purpose. */
+function refuseStale(stale: readonly string[]): void {
+  if (stale.length > 0)
+    fail(
+      "LOCK_STALE",
+      `${stale.length} locked cell(s) were cut against another scene or Unreal reference than the committed one: ${stale.slice(0, 5).join("; ")}${stale.length > 5 ? "; ..." : ""}. Their bounds do not carry over; pass --relax to cut them again from this approved round`,
+    );
 }
 
 /** A round that is looser than a lock on any bound is a regression: it is refused unless --relax accepts it. */
@@ -193,12 +254,16 @@ function refuseLooser(looser: readonly string[]): void {
     );
 }
 
-/** How a fresh lock stands against the stored one: tighter on some bound, and the bounds on which it is looser. */
+/**
+ * How a fresh lock stands against the stored one: tighter on some bound, and the bounds on which it is looser.
+ * Bounds cut against another scene basis are not comparable: the lock is stale and says nothing else.
+ */
 function compareBounds(
   was: IGiLock,
   lock: IGiLock,
   key: string,
-): { better: boolean; looser: string[] } {
+): { better: boolean; looser: string[]; stale: boolean } {
+  if (was.basis !== lock.basis) return { better: false, looser: [], stale: true };
   let better = false;
   const looser: string[] = [];
   for (const metric of METRICS) {
@@ -214,7 +279,7 @@ function compareBounds(
         looser.push(`${key} ${field}: ${was[field]} -> ${lock[field]}`);
     }
   }
-  return { better, looser };
+  return { better, looser, stale: false };
 }
 
 /** A round that no longer measures a cell of a scene and layer it locked is refused, with or without --relax. */
@@ -237,12 +302,19 @@ export function checkGiLocks(
   layer: string,
   runs: readonly (readonly IMeasuredRow[])[],
   locks: readonly IGiLock[],
+  basis: string,
 ): string[] {
   const own = locks.filter((lock) => lock.scene === scene && lock.layer === layer);
   if (own.length === 0)
     fail(
       "NO_LOCKS",
       `no lock for ${scene} at ${layer}: approve a round with pnpm unreal-look:calibrate --lock <round>`,
+    );
+  const stale = staleLocks(own, scene, layer, basis);
+  if (stale.length > 0)
+    fail(
+      "LOCK_STALE",
+      `${scene} ${layer}: ${stale.length} of ${own.length} lock(s) were cut against another scene or Unreal reference than the committed one (round ${[...new Set(stale.map((lock) => lock.round))].join(", ")}), so their bounds no longer apply. Approve a round on the current scene, then pnpm unreal-look:calibrate --lock <round> --relax`,
     );
   if (runs.length < 2)
     fail(
@@ -309,27 +381,33 @@ export function readGiLocks(file: string): IGiLock[] {
     );
   const keys = new Set<string>();
   return list.map((raw: unknown, index: number) => {
-    const lock = (raw ?? {}) as Record<string, unknown>;
-    for (const field of ["scene", "layer", "pose", "region", "round"])
-      if (typeof lock[field] !== "string" || lock[field] === "")
-        fail("BAD_INPUT", `${file} lock ${index}: ${field} must be a non-empty string`);
-    for (const field of METRIC_FIELDS)
-      if (
-        typeof lock[field] !== "number" ||
-        !Number.isFinite(lock[field]) ||
-        (lock[field] as number) < 0
-      )
-        fail("BAD_INPUT", `${file} lock ${index}: ${field} must be a non-negative number`);
-    const typed = lock as unknown as IGiLock;
-    if (keys.has(lockKey(typed))) fail("BAD_INPUT", `${file}: ${lockKey(typed)} is locked twice`);
-    keys.add(lockKey(typed));
-    return Object.fromEntries(
-      ["scene", "layer", "pose", "region", "round", ...METRIC_FIELDS].map((field) => [
-        field,
-        lock[field],
-      ]),
-    ) as unknown as IGiLock;
+    const lock = parseLock(raw, `${file} lock ${index}`);
+    if (keys.has(lockKey(lock))) fail("BAD_INPUT", `${file}: ${lockKey(lock)} is locked twice`);
+    keys.add(lockKey(lock));
+    return lock;
   });
+}
+
+function parseLock(raw: unknown, where: string): IGiLock {
+  const lock = (raw ?? {}) as Record<string, unknown>;
+  for (const field of ["scene", "layer", "pose", "region", "round"])
+    if (typeof lock[field] !== "string" || lock[field] === "")
+      fail("BAD_INPUT", `${where}: ${field} must be a non-empty string`);
+  if (typeof lock.basis !== "string" || !/^[0-9a-f]{12}$/.test(lock.basis))
+    fail("BAD_INPUT", `${where}: basis must be the 12 hex digits of sceneBasis`);
+  for (const field of METRIC_FIELDS)
+    if (
+      typeof lock[field] !== "number" ||
+      !Number.isFinite(lock[field]) ||
+      (lock[field] as number) < 0
+    )
+      fail("BAD_INPUT", `${where}: ${field} must be a non-negative number`);
+  return Object.fromEntries(
+    ["scene", "layer", "pose", "region", "round", "basis", ...METRIC_FIELDS].map((field) => [
+      field,
+      lock[field],
+    ]),
+  ) as unknown as IGiLock;
 }
 
 export function writeGiLocks(file: string, locks: readonly IGiLock[]): void {
@@ -359,12 +437,15 @@ export function withOfflineRoot<T>(run: string, use: (root: string) => T): T {
 export interface ICheckDeps {
   /** The compare rows of one capture folder at one layer, against the committed Unreal statistics. */
   compare(scene: string, layer: string, run: string): readonly IMeasuredRow[];
+  /** The digest of the committed scene and Unreal reference (sceneBasis). */
+  basis(scene: string): string;
   log(line: string): void;
   error(line: string): void;
 }
 export const defaultCheckDeps: ICheckDeps = {
   compare: (scene, layer, run) =>
     withOfflineRoot(run, (root) => compareGiToUnreal(scene, [layer], root)),
+  basis: (scene) => sceneBasis(scene),
   log: (line) => console.log(line),
   error: (line) => console.error(line),
 };
@@ -417,6 +498,7 @@ export function checkCommand(args: readonly string[], deps: ICheckDeps = default
         layer,
         captures.map((run) => [...deps.compare(scene, layer, run)]),
         locks,
+        deps.basis(scene),
       );
     } catch (error) {
       failures = [(error as Error).message];

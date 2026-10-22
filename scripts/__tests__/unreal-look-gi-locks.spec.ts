@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -15,9 +15,28 @@ import {
   lockCells,
   mergeLocks,
   readGiLocks,
+  sceneBasis,
+  staleLocks,
   withOfflineRoot,
   writeGiLocks,
 } from "../unreal-look/giLocks.js";
+
+const BASIS = "0123456789ab";
+/** The spec cuts and checks locks against one basis unless a test names another. */
+const cells = (
+  round: string,
+  scene: string,
+  layer: string,
+  runs: readonly (readonly IMeasuredRow[])[],
+  basis = BASIS,
+) => lockCells(round, scene, layer, runs, basis);
+const checkWith = (
+  scene: string,
+  layer: string,
+  runs: readonly (readonly IMeasuredRow[])[],
+  locks: readonly IGiLock[],
+  basis = BASIS,
+) => checkGiLocks(scene, layer, runs, locks, basis);
 
 const roots: string[] = [];
 afterEach(() => {
@@ -41,7 +60,7 @@ const row = (pose: string, region: string, over: Partial<IMeasuredRow> = {}): IM
 /** The rows of one run: two poses, two regions in each. */
 const rows = (over: Partial<IMeasuredRow> = {}): IMeasuredRow[] =>
   ["a", "b"].flatMap((pose) => ["Floor", "Wall"].map((region) => row(pose, region, over)));
-const cut = (runs = [rows(), rows()], round = "r1") => lockCells(round, "room", "L7-high", runs);
+const cut = (runs = [rows(), rows()], round = "r1") => cells(round, "room", "L7-high", runs);
 const at = (locks: IGiLock[], pose: string, region: string) =>
   locks.find((lock) => lock.pose === pose && lock.region === region) as IGiLock;
 
@@ -55,6 +74,7 @@ describe("lockCells", () => {
       pose: "a",
       region: "Floor",
       round: "r1",
+      basis: BASIS,
       noiseDP50: 0,
       noiseDeltaE: 0,
       noiseIoU: 0,
@@ -69,13 +89,13 @@ describe("lockCells", () => {
     expect(lock?.maxDeltaE).toBeGreaterThan(2.3);
     expect(lock?.maxDeltaE).toBeLessThan(2.6);
     // A darker median has a coarser step: one level of 12 is 1/12 of dP50.
-    const dark = lockCells("r1", "room", "L7-high", [
+    const dark = cells("r1", "room", "L7-high", [
       [row("a", "Floor", { unreal: { p50: 12 } })],
       [row("a", "Floor", { unreal: { p50: 12 } })],
     ]);
     expect(dark[0]?.maxDP50).toBeCloseTo(0.1 + 1 / 12, 4);
     // Without a reference median there is no step.
-    const bare = lockCells("r1", "room", "L7-high", [
+    const bare = cells("r1", "room", "L7-high", [
       [row("a", "Floor", { unreal: null })],
       [row("a", "Floor", { unreal: null })],
     ]);
@@ -84,7 +104,7 @@ describe("lockCells", () => {
   });
 
   it("widens every bound by the noise between the two runs, and a floor goes down by it", () => {
-    const [lock] = lockCells("r1", "room", "L7-high", [
+    const [lock] = cells("r1", "room", "L7-high", [
       [row("a", "Floor", { dP50: 0.1, iou: 0.99, unreal: null })],
       [row("a", "Floor", { dP50: 0.12, iou: 0.97, unreal: null })],
     ]);
@@ -95,7 +115,7 @@ describe("lockCells", () => {
 
   it("rounds a bound away from the value it was cut from", () => {
     const value = 0.123456789;
-    const [lock] = lockCells("r1", "room", "L7-high", [
+    const [lock] = cells("r1", "room", "L7-high", [
       [row("a", "Floor", { dP50: value, iou: value, unreal: null })],
       [row("a", "Floor", { dP50: value, iou: value, unreal: null })],
     ]);
@@ -110,7 +130,7 @@ describe("lockCells", () => {
     expect(() => cut([rows(), []])).toThrow(/TN_UNREAL_LOOK_RUN_MISMATCH/);
     expect(() => cut([[], []])).toThrow(/TN_UNREAL_LOOK_RUN_MISMATCH/);
     expect(() => cut([rows(), rows({ deltaE: null })])).toThrow(/TN_UNREAL_LOOK_MISSING_METRIC/);
-    expect(() => lockCells("r1", "other", "L7-high", [rows(), rows()])).toThrow(
+    expect(() => cells("r1", "other", "L7-high", [rows(), rows()])).toThrow(
       /TN_UNREAL_LOOK_BAD_INPUT.*not a cell of the scene other/,
     );
   });
@@ -159,8 +179,23 @@ describe("mergeLocks", () => {
     expect((relaxed.locks[0] as IGiLock).maxDP50).toBeCloseTo(0.41, 4);
   });
 
+  it("refuses a round on another scene basis: the old bounds do not carry over, and --relax cuts them again", () => {
+    const first = cut();
+    const rebuilt = cells("r2", "room", "L7-high", [rows(), rows()], "ffffffffffff");
+    expect(() => mergeLocks(first, rebuilt)).toThrow(
+      /TN_UNREAL_LOOK_LOCK_STALE.*4 locked cell\(s\).*room L7-high a Floor/,
+    );
+    expect(() => mergeLocks(first, rebuilt, { tighten: true })).toThrow(/LOCK_STALE/);
+    const cutAgain = mergeLocks(first, rebuilt, { relax: true });
+    expect(cutAgain.stale).toHaveLength(4);
+    expect(cutAgain.moved).toHaveLength(4);
+    expect(
+      cutAgain.locks.every((lock) => lock.basis === "ffffffffffff" && lock.round === "r2"),
+    ).toBe(true);
+  });
+
   it("counts more noise, or a lower overlap, as looser", () => {
-    const noisy = lockCells("r2", "room", "L7-high", [
+    const noisy = cells("r2", "room", "L7-high", [
       rows(),
       rows().map((r) => ({ ...r, deltaE: 2.001 })),
     ]);
@@ -170,7 +205,7 @@ describe("mergeLocks", () => {
 
   it("cannot drop a locked cell: a round that no longer measures it is refused, with or without --relax", () => {
     const first = cut();
-    const fewer = lockCells("r2", "room", "L7-high", [rows().slice(1), rows().slice(1)]);
+    const fewer = cells("r2", "room", "L7-high", [rows().slice(1), rows().slice(1)]);
     expect(() => mergeLocks(first, fewer)).toThrow(
       /TN_UNREAL_LOOK_LOCK_DROPPED.*1 locked cell.*room L7-high a Floor/,
     );
@@ -180,7 +215,8 @@ describe("mergeLocks", () => {
 
 describe("checkGiLocks", () => {
   const locks = cut();
-  const check = (runs: IMeasuredRow[][]) => checkGiLocks("room", "L7-high", runs, locks);
+  const check = (runs: IMeasuredRow[][], basis = BASIS) =>
+    checkWith("room", "L7-high", runs, locks, basis);
   const worse = (over: Partial<IMeasuredRow>) =>
     rows().map((r) => (r.cell === "room/a" && r.region === "Floor" ? { ...r, ...over } : r));
 
@@ -216,7 +252,7 @@ describe("checkGiLocks", () => {
   });
 
   it("allows as much disagreement as the locked noise", () => {
-    const noisy = lockCells("r1", "room", "L7-high", [
+    const noisy = cells("r1", "room", "L7-high", [
       rows(),
       rows().map((r) => ({ ...r, dP50: 0.12 })),
     ]);
@@ -224,7 +260,7 @@ describe("checkGiLocks", () => {
       rows().map((r) => ({ ...r, dP50: 0.1 })),
       rows().map((r) => ({ ...r, dP50: 0.12 })),
     ];
-    expect(checkGiLocks("room", "L7-high", runs, noisy)).toEqual([]);
+    expect(checkWith("room", "L7-high", runs, noisy)).toEqual([]);
   });
 
   it("fails a locked region that a run does not have, and says which run", () => {
@@ -238,12 +274,23 @@ describe("checkGiLocks", () => {
     expect(check([worse({ iou: null }), rows()])[0]).toMatch(/a Floor iou: a run gave no value/);
   });
 
+  it("cannot judge a lock that was cut against another scene basis, and names the round", () => {
+    expect(() => check([rows(), rows()], "aaaaaaaaaaaa")).toThrow(
+      /TN_UNREAL_LOOK_LOCK_STALE.*room L7-high: 4 of 4 lock\(s\).*\(round r1\).*--relax/s,
+    );
+    expect(staleLocks(locks, "room", "L7-high", BASIS)).toEqual([]);
+    expect(staleLocks(locks, "room", "L7-high", "aaaaaaaaaaaa")).toHaveLength(4);
+    // A lock of another scene or layer is not this check's business.
+    expect(staleLocks(locks, "elsewhere", "L7-high", "aaaaaaaaaaaa")).toEqual([]);
+    expect(staleLocks(locks, "room", "L7-low", "aaaaaaaaaaaa")).toEqual([]);
+  });
+
   it("cannot check on one run or on a scene and layer without a lock", () => {
     expect(() => check([rows()])).toThrow(/TN_UNREAL_LOOK_TOO_FEW_RUNS/);
-    expect(() => checkGiLocks("room", "L7-low", [rows(), rows()], locks)).toThrow(
+    expect(() => checkWith("room", "L7-low", [rows(), rows()], locks)).toThrow(
       /TN_UNREAL_LOOK_NO_LOCKS.*room at L7-low/,
     );
-    expect(() => checkGiLocks("elsewhere", "L7-high", [rows(), rows()], locks)).toThrow(/NO_LOCKS/);
+    expect(() => checkWith("elsewhere", "L7-high", [rows(), rows()], locks)).toThrow(/NO_LOCKS/);
   });
 });
 
@@ -279,6 +326,13 @@ describe("the lock file", () => {
       readGiLocks(put("name.json", { version: 1, locks: [{ ...one, region: "" }] })),
     ).toThrow(/region must be a non-empty string/);
     expect(() => readGiLocks(put("broken.json", "{"))).toThrow(/BAD_INPUT/);
+    const { basis: _basis, ...unbound } = one;
+    expect(() => readGiLocks(put("unbound.json", { version: 1, locks: [unbound] }))).toThrow(
+      /basis must be the 12 hex digits/,
+    );
+    expect(() =>
+      readGiLocks(put("short.json", { version: 1, locks: [{ ...one, basis: "abc" }] })),
+    ).toThrow(/basis must be/);
   });
 });
 
@@ -324,6 +378,50 @@ describe("the committed lock file", () => {
   });
 });
 
+describe("sceneBasis", () => {
+  const scene = (stats: unknown = { generatedAt: "a", resolution: [4, 4], cells: { x: 1 } }) => {
+    const dir = temp();
+    mkdirSync(path.join(dir, "id"));
+    writeFileSync(path.join(dir, "reference-stats.json"), JSON.stringify(stats));
+    writeFileSync(path.join(dir, "id", "p1.png"), "frame one");
+    writeFileSync(path.join(dir, "id", "p2.png"), "frame two");
+    writeFileSync(path.join(dir, "scene.json"), '{"regions":[]}');
+    return dir;
+  };
+
+  it("is 12 hex digits, and the same for the same scene", () => {
+    expect(sceneBasis("room", scene())).toMatch(/^[0-9a-f]{12}$/);
+    expect(sceneBasis("room", scene())).toBe(sceneBasis("room", scene()));
+  });
+
+  it("ignores the time the statistics were written, and follows every input that sets a measurement", () => {
+    const base = sceneBasis("room", scene());
+    expect(
+      sceneBasis("room", scene({ generatedAt: "b", resolution: [4, 4], cells: { x: 1 } })),
+    ).toBe(base);
+    expect(
+      sceneBasis("room", scene({ generatedAt: "a", resolution: [4, 4], cells: { x: 2 } })),
+    ).not.toBe(base);
+    expect(
+      sceneBasis("room", scene({ generatedAt: "a", resolution: [8, 8], cells: { x: 1 } })),
+    ).not.toBe(base);
+    const frame = scene();
+    writeFileSync(path.join(frame, "id", "p2.png"), "frame two, rebuilt");
+    expect(sceneBasis("room", frame)).not.toBe(base);
+    const definition = scene();
+    writeFileSync(path.join(definition, "scene.json"), '{"regions":[{"name":"Floor"}]}');
+    expect(sceneBasis("room", definition)).not.toBe(base);
+    const extra = scene();
+    writeFileSync(path.join(extra, "id", "p3.png"), "a third pose");
+    expect(sceneBasis("room", extra)).not.toBe(base);
+  });
+
+  it("fails closed on a scene without statistics, frames or definition", () => {
+    const dir = temp();
+    expect(() => sceneBasis("room", dir)).toThrow();
+  });
+});
+
 describe("withOfflineRoot", () => {
   it("names the capture folder, not the temporary root, in an error about one of its files", () => {
     const run = temp();
@@ -340,11 +438,12 @@ describe("withOfflineRoot", () => {
 });
 
 describe("the check command", () => {
-  const world = (runs: Record<string, IMeasuredRow[]>) => {
+  const world = (runs: Record<string, IMeasuredRow[]>, basis = BASIS) => {
     const file = path.join(temp(), "parity-locks.json");
     writeGiLocks(file, cut());
     const out = { log: [] as string[], error: [] as string[] };
     const deps: ICheckDeps = {
+      basis: () => basis,
       compare: (_scene, _layer, run) => {
         const found = runs[run];
         if (!found) throw new Error(`TN_UNREAL_LOOK_MISSING_CELL: ${run}`);
@@ -378,6 +477,15 @@ describe("the check command", () => {
       true,
     );
     expect(w.out.log[0]).toMatch(/bound\(s\) broken/);
+  });
+
+  it("exits 1 on a stale lock and says why, instead of listing bounds it cannot judge", () => {
+    const w = world({ run1: rows(), run2: rows() }, "aaaaaaaaaaaa");
+    expect(checkCommand(w.args("run1", "run2"), w.deps)).toBe(1);
+    expect(w.out.error).toHaveLength(1);
+    expect(w.out.error[0]).toMatch(
+      /^GI LOCK BROKEN TN_UNREAL_LOOK_LOCK_STALE: room L7-high: 4 of 4/,
+    );
   });
 
   it("exits 1 when a run cannot be compared", () => {
