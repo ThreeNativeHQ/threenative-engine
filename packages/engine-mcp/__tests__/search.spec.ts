@@ -615,13 +615,20 @@ describe("threenative-engine-mcp", () => {
     }
   });
 
-  it("answers that native ray tracing is unavailable until readable output interop exists", () => {
+  it("answers that native image ray tracing is unavailable until readable output interop exists", () => {
     const results = searchResults("can I raytrace on native", workspaceManifest);
     const platform = results.find((result) => result.symbol === "getPlatform");
     expect(platform).toBeDefined();
     expect(platform?.constraints.join(" ")).toContain("ray tracing is unavailable on native");
     expect(platform?.constraints.join(" ")).toContain("buffer-to-texture copy-out interop exists");
     expect(platform?.constraints.join(" ")).toContain("traceRays");
+  });
+
+  it("answers that a native desktop host with ray tracing hardware traces ray batches", () => {
+    const results = searchResults("can I raytrace on native", workspaceManifest);
+    const platform = results.find((result) => result.symbol === "getPlatform");
+    expect(platform?.constraints.join(" ")).toContain("mystralRT.traceRayBatch");
+    expect(platform?.constraints.join(" ")).toContain("mystralRT.capabilities().rayBatch");
   });
 
   it("ranks attachToBone for holding a rifle in a character's right hand", () => {
