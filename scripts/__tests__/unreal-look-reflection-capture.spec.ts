@@ -1,5 +1,6 @@
 import { Mesh, MeshStandardMaterial, Scene, SphereGeometry, Texture } from "three";
 import { describe, expect, it, vi } from "vitest";
+import { skyDisc } from "../unreal-look/scaffold/render/gpuSky.js";
 import { captureReflections } from "../unreal-look/scaffold/render/reflectionCapture.js";
 
 function fixture() {
@@ -69,5 +70,26 @@ describe("static mirror scene capture", () => {
     };
     await expect(captureReflections(renderer, scene, scene)).rejects.toThrow("capture failed");
     expect(chrome.visible).toBe(true);
+  });
+
+  it("hides the sun disc while a face is captured, as Unreal does, and restores it after, even on failure", async () => {
+    const { scene } = fixture();
+    const seen: number[] = [];
+    const renderer = {
+      SphereReflectionCapture: vi.fn(async () => {
+        seen.push(skyDisc.value);
+        if (seen.length === 2) throw new Error("capture failed");
+        return new Texture();
+      }),
+    };
+    const log = vi.spyOn(console, "info").mockImplementation(() => {});
+    skyDisc.value = 1;
+    await captureReflections(renderer, scene, scene);
+    expect(seen).toEqual([0]);
+    expect(skyDisc.value).toBe(1);
+    await expect(captureReflections(renderer, scene, scene)).rejects.toThrow("capture failed");
+    expect(seen).toEqual([0, 0]);
+    expect(skyDisc.value).toBe(1);
+    log.mockRestore();
   });
 });

@@ -89,6 +89,12 @@ struct VertexVariant {
      * so a marked material gets its own.
      */
     bool leafReceiver = false;
+    /**
+     * material.roughDiffuse (Unreal's Substrate rough diffuse, PRD-653): every direct light shades the diffuse lobe
+     * with the EON model at 0.4 x roughness, weighted by the light's source size, where three shades Lambert.
+     * Indirect light stays Lambert. It keys a lit program, so a marked material gets its own.
+     */
+    bool roughDiffuse = false;
     /** material.flatShading: the lit fragment's normal is the face normal from the position's screen-space
      *  derivatives (three's setupNormal), and the vertex stage reads no `normal` attribute. */
     bool flatShading = false;
@@ -167,7 +173,7 @@ struct VertexVariant {
     bool operator==(const VertexVariant&) const = default;
     /** A stable key: two variants with the same key build the same program. */
     [[nodiscard]] std::string key() const {
-        return std::to_string(fog) + (background ? "background|" : "") + std::string(sprite ? "sprite|" : "") + (backSide ? "back|" : "") + (doubleSide ? "double|" : "") + (leafReceiver ? "leaf|" : "") + (flatShading ? "flat|" : "") + std::to_string(instanced) + std::to_string(instanceColor) + "vc" + std::to_string(vertexColors) + std::to_string(skinned) +
+        return std::to_string(fog) + (background ? "background|" : "") + std::string(sprite ? "sprite|" : "") + (backSide ? "back|" : "") + (doubleSide ? "double|" : "") + (leafReceiver ? "leaf|" : "") + (roughDiffuse ? "eon|" : "") + (flatShading ? "flat|" : "") + std::to_string(instanced) + std::to_string(instanceColor) + "vc" + std::to_string(vertexColors) + std::to_string(skinned) +
                std::to_string(skinnedPalette) + (instanceStorage ? "storage" : "") + "m" + std::to_string(morphTargets) + (morphNormals ? "n" : "") +
                (map ? "t" : "") + (normalMap ? "N" : "") + (pbrMaps ? "P" + std::to_string(pbrMaps) : "") + (mapSRGB ? "s" : "") + (environment ? "e" : "") + (clearcoat ? "c" : "") + (invariantPosition ? "i" : "") +
                (positionNode ? "p:" + positionNode->key : "") + "|nodes:" + nodes.key();
