@@ -70,4 +70,15 @@ SCENE = {
         {"name": "neon", "position": [0, 1.5, -0.3], "target": [0, 1.3, -9], "hfovDeg": 75},
         {"name": "textured", "position": [-1.2, 1.6, -1.0], "target": [1.5, 1.2, -6.5], "hfovDeg": 70},
     ],
+    # PRD-641 motion run `neon`: the lamp switches off at frame 60 and the camera holds the `neon` pose, the same
+    # experiment as the cornell `switch` run. The strips and the emitter keep glowing, so the walls fade to the level
+    # that emission alone gives (the response target), not to black. The measure reads the surfaces the lamp lights.
+    "motion": {
+        "neon": {
+            "frames": 180,
+            "camera": {"kind": "pose", "pose": "neon"},
+            "light": {"name": "Lamp", "keys": [[0, 1.0], [60, 0.0]]},
+            "regions": ["Floor", "Ceiling", "Wall_Left", "Wall_Brick", "Back"],
+        },
+    },
 }
