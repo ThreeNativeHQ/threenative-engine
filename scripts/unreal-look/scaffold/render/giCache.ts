@@ -944,18 +944,6 @@ function irradianceAt(
 }
 
 /**
- * A texel's place in the surface cache's refresh cycle: a fixed spread over `cycle` frames. The low bits of a plain
- * multiplicative hash repeat with the texel index (the phase would depend on `texel` modulo `cycle` only and draw a
- * lattice on the walls), so the bits are mixed first.
- */
-export function refreshPhase(texel: number, cycle: number): number {
-  let h = Math.imul(texel + 1, 2654435761);
-  h = Math.imul(h ^ (h >>> 16), 2246822507);
-  h = Math.imul(h ^ (h >>> 13), 3266489909);
-  return ((h ^ (h >>> 16)) >>> 0) % cycle;
-}
-
-/**
  * The cache's read, registered when the bake finishes: a screen-space gather asks it what a ray that finds
  * nothing on screen would have returned (the tier below its own), with the pixel's world position and normal.
  */
@@ -1804,9 +1792,14 @@ export function installGi(
       "TN_GI_LIGHT_RESPONSE: updateFactor needs 1 or more and framesAccumulated 0 or more",
     );
   const alpha = response === undefined ? 1 : 1 / (1 + response.framesAccumulated);
+  /**
+   * The surface cache refreshes its texels over `updateFactor` frames, one share of them each frame, and a probe gathers
+   * rays from a great many of them: it sees their mean. The mean of one texel share per refresh phase is the same for every
+   * probe, so the cache keeps one state per phase (not one per probe, which drew the texels' own random stages as blotches
+   * on the walls) and every probe reads their mean.
+   */
+  const cycle = response === undefined ? 1 : Math.round(response.updateFactor);
   const fineTexels = fine.grid.nx * fine.grid.ny * fine.grid.nz;
-  const phaseOf = (texel: number): number =>
-    response === undefined ? 0 : refreshPhase(texel, Math.round(response.updateFactor));
   let frame = 0;
   let settling = false;
   giCache.refresh = (): boolean => {
@@ -1821,29 +1814,33 @@ export function installGi(
       if (scale.every((v, c) => v === light.applied[c])) continue;
       light.applied = scale;
       light.field ??= ownField(light.l);
-      light.latched ??= new Float32Array(fineTexels * 3).fill(1);
-      light.shown ??= new Float32Array(fineTexels * 3).fill(1);
+      light.latched ??= new Float32Array(cycle * 3).fill(1);
+      light.shown ??= new Float32Array(cycle * 3).fill(1);
       settling = true;
     }
     const texture = giCache.volumeTexture;
     if (!settling || texture === undefined) return settling;
     const texels = texture.image.data as Uint16Array;
     const { nx, ny, nz } = fine.grid;
-    const cycle = response === undefined ? 1 : Math.round(response.updateFactor);
     let gap = 0;
+    /** Per light and channel, the mean over the refresh phases of what the cache shows. */
+    const meanShown = new Map<(typeof dynamic)[number], number[]>();
     for (const light of dynamic) {
       const { latched, shown } = light;
       if (latched === undefined || shown === undefined) continue;
-      for (let probe = 0; probe < fineTexels; probe += 1) {
-        const refreshed = frame % cycle === phaseOf(probe);
+      const mean = [0, 0, 0];
+      for (let phase = 0; phase < cycle; phase += 1) {
+        const refreshed = frame % cycle === phase;
         for (let c = 0; c < 3; c += 1) {
-          const k = probe * 3 + c;
-          const target = light.applied[c] ?? 1;
-          if (response === undefined || refreshed) latched[k] = target;
+          const k = phase * 3 + c;
+          if (response === undefined || refreshed) latched[k] = light.applied[c] ?? 1;
           shown[k] = (shown[k] ?? 1) + ((latched[k] ?? 1) - (shown[k] ?? 1)) * alpha;
-          gap = Math.max(gap, Math.abs(target - (shown[k] ?? 1)));
+          mean[c] = (mean[c] ?? 0) + (shown[k] ?? 1) / cycle;
         }
       }
+      for (let c = 0; c < 3; c += 1)
+        gap = Math.max(gap, Math.abs((light.applied[c] ?? 1) - (mean[c] ?? 1)));
+      meanShown.set(light, mean);
     }
     for (let probe = 0; probe < fineTexels; probe += 1) {
       const [x, y, z] = [probe % nx, Math.floor(probe / nx) % ny, Math.floor(probe / (nx * ny))];
@@ -1853,14 +1850,14 @@ export function installGi(
           const j = (probe * 6 + face) * 3 + c;
           let v = bakedValues[j] ?? 0;
           for (const light of dynamic)
-            v += ((light.shown?.[probe * 3 + c] ?? 1) - 1) * (light.field?.[j] ?? 0);
+            v += ((meanShown.get(light)?.[c] ?? 1) - 1) * (light.field?.[j] ?? 0);
           fine.values[j] = Math.max(0, v);
           texels[o + c] = toHalf(Math.max(0, v));
         }
       }
     }
     texture.needsUpdate = true;
-    // The history is settled when every texel shows the scale its light has (a 1e-3 gap is under a half-float step).
+    // The history is settled when every phase shows the scale its light has (a 1e-3 gap is under a half-float step).
     if (gap < 1e-3) {
       settling = false;
       for (const light of dynamic) light.shown?.set(light.latched ?? []);

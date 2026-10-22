@@ -20,7 +20,6 @@ import {
   giCache,
   gridOver,
   installGi,
-  refreshPhase,
   skyRadiance,
   sphereShare,
 } from "../unreal-look/scaffold/render/giCache.js";
@@ -577,23 +576,6 @@ describe("the world-space GI cache against closed forms (PRD-631 L7)", () => {
         expect(giCache.refresh?.()).toBe(false);
       });
 
-      describe("the refresh phase of a texel (PRD-641 AC-2)", () => {
-        const cycle = 32;
-        const phases = Array.from({ length: 4096 }, (_, k) => refreshPhase(k, cycle));
-
-        it("does not repeat with the texel index: a texel and the one a cycle later rarely share a phase", () => {
-          const same = phases.slice(0, 4096 - cycle).filter((p, k) => p === phases[k + cycle]);
-          // A random phase repeats 1 time in 32 (3%). A phase that is a function of the index modulo the cycle repeats always.
-          expect(same.length / (4096 - cycle)).toBeLessThan(0.1);
-        });
-
-        it("uses every phase about equally often", () => {
-          const counts = new Array<number>(cycle).fill(0);
-          for (const p of phases) counts[p] = (counts[p] ?? 0) + 1;
-          for (const n of counts) expect(Math.abs(n - 128)).toBeLessThan(45);
-        });
-      });
-
       describe("with Unreal's response in frames (PRD-641 AC-2)", () => {
         /** The probe's total over the refreshes that follow a switch-off, one entry per rendered frame. */
         const fade = (lightResponse: { updateFactor: number; framesAccumulated: number }) => {
@@ -618,6 +600,36 @@ describe("the world-space GI cache against closed forms (PRD-631 L7)", () => {
           }
           return totals;
         };
+
+        it("fades every probe alike: no texel shows its own stage of the cycle as a blotch", () => {
+          skyRadiance.current = undefined;
+          const scene = sceneOf(true);
+          const source = { intensity: 100, color: new Color(1, 1, 1) };
+          installGi(rayContext(scene), scene, {
+            bounces: 1,
+            lights: [{ ...lamp, source }],
+            lightResponse: { updateFactor: 32, framesAccumulated: 10 },
+          });
+          const points = [
+            new Vector3(0.5, 0.5, 0.5),
+            new Vector3(-0.5, 0.3, 0.2),
+            new Vector3(0.2, -0.4, -0.6),
+          ];
+          const total = (at: Vector3) =>
+            texelAt(at)
+              .faces.flat()
+              .reduce((a, b) => a + b, 0);
+          const baked = points.map(total);
+          source.intensity = 0;
+          for (let frame = 0; frame < 20; frame += 1) giCache.refresh?.();
+          const ratios = points.map((at, i) => total(at) / (baked[i] as number));
+          // Mid-fade: the light is neither gone nor untouched, and every point shows the same share of it.
+          for (const r of ratios) {
+            expect(r).toBeGreaterThan(0.05);
+            expect(r).toBeLessThan(0.95);
+          }
+          expect(Math.max(...ratios) - Math.min(...ratios)).toBeLessThan(0.02);
+        });
 
         it("does not step: the light is still there on the first frame and gone after the cycle", () => {
           const totals = fade({ updateFactor: 32, framesAccumulated: 10 });
