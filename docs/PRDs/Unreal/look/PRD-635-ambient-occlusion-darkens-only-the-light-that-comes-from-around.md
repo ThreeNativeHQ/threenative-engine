@@ -8,7 +8,7 @@ prd_contract: v1
 **Priority:** P2 — no box is ticked: the templates multiply the whole lit frame by GTAO, so a sunlit crease turns grey, which Unreal's default never does.
 **Complexity:** 5 (MEDIUM) — template post source in 10 templates (+2), a depth-normal prepass that changes the frame cost (+2), native proof (+1); risk override: none
 **Owner:** João
-**Depends on:** [PRD-631](PRD-631-an-unreal-reference-scene-measures-the-default-look.md) Phase 3 (the L6 row). Comes before the GI work in [PRD-267](../../useful-defaults/PRD-267-screen-space-gi-ships-in-the-templates.md), which needs the same prepass.
+**Depends on:** [PRD-631](../../done/PRD-631-an-unreal-reference-scene-measures-the-default-look.md) Phase 3 (the L6 row). Comes before the GI work in [PRD-267](../../useful-defaults/PRD-267-screen-space-gi-ships-in-the-templates.md), which needs the same prepass.
 
 ## Context
 

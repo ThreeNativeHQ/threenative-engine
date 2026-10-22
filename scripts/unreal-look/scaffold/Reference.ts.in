@@ -99,11 +99,6 @@ const STAGE_OFF: Record<string, Record<string, unknown>> = {
   stockbloom: { bloomRadius: 0, bloomStrength: 0.0298, bloomThreshold: 0, unrealBloomEnabled: false },
   vignette: { vignetteAmount: 0 },
 };
-// Diagnosis: the screen probes' knobs from the URL (PRD-640). `?probeFilter=N` sets the spatial filter passes over the probes
-// (the engine's own is 3, Unreal's).
-const PROBE_KNOBS: Record<string, unknown> = {
-  ...(params.has("probeFilter") ? { ssgiProbeFilterPasses: Number(params.get("probeFilter")) } : {}),
-};
 // Unreal 5.8.3's sun source angle, from the live level dump (tools/unreal-reference/template-actors.json),
 // is the sun's apex angle (its angular diameter). `sourceAngleShadowFilter` takes the angular radius,
 // the half angle: Unreal's shadow rays spread over sin(angle / 2).
@@ -285,19 +280,6 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
       if (level >= 9) {
         // setupPost reads the `high` preset by reference, so the ablation switches go there.
         for (const name of OFF) Object.assign(qualityPreset("high"), STAGE_OFF[name]);
-        // Diagnosis: ?probes=1 gathers with screen probes at L9 as it does below L9 (PRD-640); ?probes=0 keeps the per-pixel gather.
-        if (params.has("probes"))
-          Object.assign(
-            qualityPreset("high"),
-            params.get("probes") === "1"
-              ? {
-                  ssgiScreenProbes: true,
-                  ssgiProbeRays: Number(params.get("probeRays") ?? 16),
-                  ssgiDenoiseRadius: Number(params.get("ssgiDenoise") ?? 16),
-                }
-              : { ssgiDenoiseRadius: undefined, ssgiProbeRays: undefined, ssgiScreenProbes: false },
-          );
-        Object.assign(qualityPreset("high"), PROBE_KNOBS);
         const post = setupPost(ctx.renderer, scene, camera, { godraysLight: key, tier: "high" });
         postDebug = () => post.debug();
         this.#dispose = () => post.dispose();
@@ -325,10 +307,7 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
                   ssgiProbeRays: Number(params.get("probeRays") ?? 16),
                   ssgiDenoiseRadius: Number(params.get("ssgiDenoise") ?? 16),
                 }
-              : params.get("probes") === "0"
-                ? { ssgiDenoiseRadius: undefined, ssgiProbeRays: undefined, ssgiScreenProbes: false }
-                : {}),
-            ...PROBE_KNOBS,
+              : {}),
             ...(params.get("probeJitter") === null ? {} : { ssgiProbeJitter: Number(params.get("probeJitter")) }),
             ...(params.get("probeDebug") === null ? {} : { ssgiProbeDebug: Number(params.get("probeDebug")) }),
             autoExposureEnabled: false,

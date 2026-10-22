@@ -133,13 +133,6 @@ overlay first, the templates through [PRD-267](../../useful-defaults/PRD-267-scr
 - [ ] A capability search for "lumen screen probe gather" returns `ScreenProbeGather`. proof: `pnpm exec vitest run packages/engine-mcp/__tests__/search.spec.ts`.
 **Verification:** AC-1 and AC-2. A PRD-647 round on `cornell` and `sunlit-room` at `high` (BEFORE `ssgi`, AFTER the gather, Unreal Epic as the target) must return IMPROVEMENT against BEFORE. The four PRD-631 poses are judged the same way.
 
-#### Phase 2b: The probes are filtered, and tier `high` gathers with them
-**Status:** DONE (gather lane, 2026-10-21; the PRD-647 round below returned IMPROVEMENT, the open items are under `## Decisions`)
-**Files:** `packages/three-native/src/addons/screen-space.ts`, `packages/three-native/__tests__/screen-space.spec.ts`, `scripts/unreal-look/scaffold/render/quality.ts`, `scripts/unreal-look/scaffold/render/worldEnvironment.ts`, `scripts/__tests__/unreal-look-gi-tier.spec.ts`
-- [x] The probe irradiance runs through `spatialFilterPasses` filter passes (default 3, as `SpatialFilterNumPasses`), each probe averaged with the 3 x 3 probes around it on the same surface. proof: `pnpm exec vitest run packages/three-native/__tests__/screen-space.spec.ts` — red against the source before the change (4 failed, 6 passed), green after (10 passed); `tsc --noEmit` in `packages/three-native` exit 0.
-- [x] Tier `high` gathers with the probes (16 x 16 rays, denoise radius 16). proof: `pnpm exec vitest run scripts/__tests__/unreal-look-gi-tier.spec.ts` — red before the preset change (1 failed, 7 passed), green after (8 passed).
-- [x] A PRD-647 round on `sunlit-room` at L7 `high` and L9 returns IMPROVEMENT against BEFORE, with no line above the window and the wall glow as smooth as Unreal. proof: `pnpm unreal-look:judge --tier high --expect improvement` on 8 frames, two runs per arm, BEFORE `?probes=0` — OVERALL IMPROVEMENT, CLOSE to Unreal, no REGRESSION; seam dip 0.010 / 0.009 and blotch 1.91 to 1.18 (L7 `sun60-window`), 1.52 to 1.09 (L9 `sun60-window`) against the limit 1.2: https://github.com/ThreeNativeHQ/threenative-engine/pull/541#issuecomment-6333731279
-
 #### Phase 3: Short Range AO and native proof
 **Status:** NOT STARTED
 **Files:** `packages/core/src/render/short-range-ao.ts` (new), `scripts/unreal-look/scaffold/render/worldEnvironment.ts`, `packages/runtime-native/conformance/scenes/shared/screen-probe-gather.js` (new), `packages/runtime-native/conformance/registry.json`
@@ -183,15 +176,3 @@ overlay first, the templates through [PRD-267](../../useful-defaults/PRD-267-scr
   half resolution, a full cache read per pixel, two denoises). The gather adds about 31 ms, 6 to 10 times Unreal's.
   The per-pixel path is therefore a calibration tool, not a shipping tier. Phase 2's probes (one per 16 × 16
   pixels) are the cost fix as well as the quality fix.
-- **2026-10-21, gather lane: the probes' spatial filter is the lever for the wall streaks, and tier `high` gathers with the probes.**
-  Owned engine, RTX 2080, `sunlit-room`, blotch median (TN over Unreal, limit 1.2) at L7 `sun60-window`: per-pixel gather 1.91,
-  probes with no filter 1.76, 1 pass 1.33, 3 passes 1.18, 5 passes 1.14. L9 `sun60-window` 1.52 to 1.09, `sun15-window` 1.09 to
-  1.00. 8 rays per probe 1.23 against 16 rays 1.19: the 16 stay. A per-frame noise option changed nothing (1.18 against 1.19)
-  with no history stage to average it, so it was deleted. Turning off the denoise passes (`&dn=0`) gave 1.08 and moved the
-  level 2.7 percent: not taken. The cost of the three filter passes is not measured (they carry the SSGI stage label, so
-  `GIBudget` counts them). Open: blotch is still over 1.2 in `sun60-window` Front_Left at L7 (1.61) and `sun15-window` Wall_Right at
-  L9 (1.31), so the PRD-641 Phase 2 history stays the next lever. The black line above the window returns with 4x MSAA
-  (`?off=smaa`, seam dip 1.000); the temporal AA default hides it. The suspected cause is the MSAA normal pass in
-  `renderer.cpp` (`LessEqual` with a slope bias lets the hidden jamb face win at the seam columns); the fix needs a
-  multisampled normal target and a Wasm rebuild, and is not made. The L9 locks (`parity-locks.json`) were already 52 bounds
-  broken at BEFORE; AFTER breaks 53 (new: `sun60-door` Floor deltaE 2.282 against 2.13) and moves 18 shared bounds each way.
