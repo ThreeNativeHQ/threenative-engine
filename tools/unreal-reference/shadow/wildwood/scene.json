@@ -28,7 +28,7 @@
       "scale": 1.0,
       "boundsMin": [-3.574551, -0.106504, -4.685332],
       "boundsMax": [5.211505, 7.34101, 2.96275],
-      "triangles": 3645,
+      "triangles": 14861,
       "material": {
         "name": "MI_green-tree01_0",
         "baseColor": [1.0, 1.0, 1.0],
@@ -87,7 +87,7 @@
       "scale": 1.0,
       "boundsMin": [-0.506522, -0.022634, -0.611673],
       "boundsMax": [0.559231, 1.219285, 0.354323],
-      "triangles": 2993,
+      "triangles": 4275,
       "material": {
         "name": "MI_bush01_0",
         "baseColor": [1.0, 1.0, 1.0],

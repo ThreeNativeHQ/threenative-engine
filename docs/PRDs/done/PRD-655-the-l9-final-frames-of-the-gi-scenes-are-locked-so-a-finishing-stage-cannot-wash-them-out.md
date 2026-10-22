@@ -7,7 +7,7 @@ prd_contract: v1
 **Status:** DONE — `gi:cornell` and `gi:sunlit-room` have L9 ratchet locks cut from the frames of the last good head (`dd489e9e4`). The locks pass those frames and fail the frames after the break.
 **Complexity:** 3 (LOW) — 1–5 files: the lock module, one command route, a lock file, specs (+1), new state: locks that have no overlap bound and are cut from one capture (+1)
 **Owner:** João
-**Depends on:** [PRD-654](../Unreal/gi/PRD-654-an-approved-gi-round-becomes-a-ratchet-lock-and-no-region-gets-worse.md) (the lock module, its check and its ratchet rules)
+**Depends on:** [PRD-654](PRD-654-an-approved-gi-round-becomes-a-ratchet-lock-and-no-region-gets-worse.md) (the lock module, its check and its ratchet rules)
 
 ## Context
 
