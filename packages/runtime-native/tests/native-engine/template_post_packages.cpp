@@ -105,6 +105,10 @@ int main(int argc, char** argv) {
     for (const auto& pass : passes) {
         std::vector<tn::engine::graph::Read> reads;
         for (const auto& [binding, name] : pass.reads) {
+            // The host draws these: the velocity target, and the stages a template runs through the facade
+            // (the sweep names them `host_<node>`; their parity row is what proves them).
+            if (!resources.count(name) && (name == "velocity" || name.rfind("host_", 0) == 0))
+                resources[name] = renderGraph.external(name, Desc{320,240,1,1});
             if (!resources.count(name)) { std::cerr << package.name << ": TN_POST_INPUT_MISSING: " << name << '\n'; return 1; }
             reads.push_back({resources.at(name)});
         }

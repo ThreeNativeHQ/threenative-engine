@@ -75,13 +75,14 @@ export const UNREAL_LEVEL: Readonly<Record<Tier, string>> = {
 };
 /**
  * The Unreal GI variants that pair with a ThreeNative layer at a tier (GI_LAYERS in
- * capture-gi-threenative.ts). ThreeNative L6 is shadows and AO without GI, which Unreal draws as L7 at
- * GI quality Low, so L7-Low pairs with L6 at every tier above low. Unreal has an L9 only at Epic. A
- * variant that is not listed pairs with nothing and is skipped.
+ * capture-gi-threenative.ts; the compare tool pairs the same way, PRD-644). A tier follows its own
+ * Unreal quality level: ThreeNative L7 at tier low against L7-Low, at medium against L7-Medium, at high
+ * against L7-Epic. ThreeNative L6 pairs with no variant: it has no GI and no exposure, and Unreal's
+ * L7-Low has its Lumen off at Low scalability but keeps auto exposure and an unshadowed sky light.
+ * Unreal has an L9 only at Epic. A variant that is not listed pairs with nothing and is skipped.
  */
 function unrealPairs(tier: Tier): Readonly<Record<string, string>> {
   return {
-    ...(tier === "low" ? {} : { "L7-Low": "L6" }),
     [`L7-${UNREAL_LEVEL[tier]}`]: "L7",
     ...(tier === "high" ? { "L9-Epic": "L9" } : {}),
   };
@@ -185,7 +186,7 @@ function absent(arm: string, listed: Listing, id: string): { code: string; text:
     };
   const hint =
     arm === "unreal"
-      ? " (an Unreal variant pairs only with its own tier: L7-Epic and L9-Epic at high, L7-Medium at medium, L7-Low at low, and L7-Low with L6 above low)"
+      ? " (an Unreal variant pairs only with its own tier: L7-Epic and L9-Epic at high, L7-Medium at medium and L7-Low at low; L6 has no Unreal partner)"
       : "";
   return { code: "MISSING_FRAME", text: `${arm} has no ${id}${hint}` };
 }
@@ -300,7 +301,8 @@ export const VERDICT_SCHEMA = {
   },
 } as const;
 
-export function buildPrompt(criteria: string, frames: readonly IFrame[]): string {
+/** `regions`: the measured table of judgeRegions.ts, when the round has a region limit. */
+export function buildPrompt(criteria: string, frames: readonly IFrame[], regions?: string): string {
   const listing = frames.map((frame) =>
     [
       `### ${frame.id} (layer ${frame.layer})`,
@@ -321,7 +323,17 @@ Every frame shows one pose at one layer in both engines. BEFORE and AFTER are th
 
 ${listing.join("\n\n")}
 
-## How to judge
+${
+  regions === undefined
+    ? ""
+    : `## Measured regions
+
+These numbers were measured on the frames above, per region. dP50 is the relative difference between the region's median in ThreeNative and in Unreal. A region marked OVER is past the limit of the criteria, so its frame is FAR whatever it looks like: name that region in "differences". Use the numbers to find where to look, and do not call a frame CLOSE or MATCH against them.
+
+${regions}
+
+`
+}## How to judge
 
 1. Open every image above with the Read tool before you answer. The answer is checked against the images you opened.
 2. For every frame give two answers.

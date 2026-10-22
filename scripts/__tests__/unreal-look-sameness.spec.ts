@@ -319,6 +319,39 @@ describe("sameness gate: capture roots", () => {
     );
   });
 
+  it("names an object that no pose of the scene shows, and leaves the verdict alone", () => {
+    const root = tempRoot();
+    for (const engine of ["unreal", "threenative"])
+      put(root, engine, "ID_spheres.png", frame(good));
+    // `good` shows A and B. C is in the scene and out of every view.
+    const report = samenessReport([input("spheres")], root);
+    expect(report.unscored).toEqual(["reference/C"]);
+    expect(report.cells.every((c) => c.pass)).toBe(true);
+  });
+
+  it("scores an object that any pose of the scene shows, and never lists the sky", () => {
+    const root = tempRoot();
+    const other = ["AAAA....", "AAAA.CC.", "AAAA.CC.", "AAAA...."];
+    for (const engine of ["unreal", "threenative"]) {
+      put(root, engine, "ID_spheres.png", frame(good));
+      put(root, engine, "ID_exterior.png", frame(other));
+    }
+    const colors = { ...COLORS, Sky: [1, 2, 3] };
+    const inputs = ["spheres", "exterior"].map((pose) => ({ ...input(pose), colors }));
+    expect(samenessReport(inputs, root).unscored).toEqual([]);
+  });
+
+  it("judges each scene on its own poses", () => {
+    const root = tempRoot();
+    for (const engine of ["unreal", "threenative"]) {
+      put(root, engine, "ID_spheres.png", frame(good));
+      put(root, engine, "ID_exterior.png", frame(["AAAA....", "AAAA.CC.", "AAAA.CC.", "AAAA...."]));
+    }
+    // One scene shows A and B, another A and C: each is missing the object the other shows.
+    const inputs = [input("spheres"), { ...input("exterior"), scene: "other" }];
+    expect(samenessReport(inputs, root).unscored).toEqual(["reference/C", "other/B"]);
+  });
+
   it("fails closed when it selects no pose", () => {
     expect(() => samenessReport([], tempRoot())).toThrow(/^TN_UNREAL_LOOK_BAD_INPUT/);
   });
@@ -528,7 +561,11 @@ describe("sameness gate: the command", () => {
     vi.restoreAllMocks();
   });
   /** The cornell scene as both engines draw it: every pose, every object. */
-  function cornell(root: string, threenative: (rows: string[]) => string[] = (rows) => rows) {
+  function cornell(
+    root: string,
+    threenative: (rows: string[]) => string[] = (rows) => rows,
+    unreal: (rows: string[]) => string[] = (rows) => rows,
+  ) {
     const { scene } = readScene("cornell");
     const names = Object.keys(scene.regions);
     // One row of vertical bands, an object each: the same in both engines unless `threenative` changes it.
@@ -538,7 +575,7 @@ describe("sameness gate: the command", () => {
     );
     for (const engine of ["unreal", "threenative"])
       for (const pose of scene.poses) {
-        const rows = engine === "unreal" ? bands : threenative(bands);
+        const rows = engine === "unreal" ? unreal(bands) : threenative(bands);
         const file = path.join(root, engine, "cornell", "ID", `${pose.name}.png`);
         mkdirSync(path.dirname(file), { recursive: true });
         writeFileSync(file, PNG.sync.write(frame(rows, palette)));
@@ -554,6 +591,28 @@ describe("sameness gate: the command", () => {
     // ThreeNative draws no last object: its band is background.
     cornell(broken, (rows) => rows.map((row) => `${row.slice(0, -4)}....`));
     expect(runSameness(["--scene", "gi:cornell", "--captures", broken])).toBe(1);
+  });
+
+  it("prints the objects no pose shows, and still passes", () => {
+    const root = tempRoot();
+    // Both engines draw the last band as background: nothing in the scene shows the last object.
+    const blank = (rows: string[]) => rows.map((row) => `${row.slice(0, -4)}....`);
+    const names = cornell(root, blank, blank);
+    const lines: string[] = [];
+    vi.spyOn(console, "log").mockImplementation((line: string) => void lines.push(line));
+    expect(runSameness(["--scene", "gi:cornell", "--captures", root])).toBe(0);
+    expect(lines.join("\n")).toContain(
+      `Not in view of any pose, so not scored: cornell/${names[names.length - 1]}.`,
+    );
+  });
+
+  it("prints no such line when every object is in view", () => {
+    const root = tempRoot();
+    cornell(root);
+    const lines: string[] = [];
+    vi.spyOn(console, "log").mockImplementation((line: string) => void lines.push(line));
+    expect(runSameness(["--scene", "gi:cornell", "--captures", root])).toBe(0);
+    expect(lines.join("\n")).not.toContain("Not in view of any pose");
   });
 
   it("is reachable from pnpm unreal-look:compare --sameness", () => {

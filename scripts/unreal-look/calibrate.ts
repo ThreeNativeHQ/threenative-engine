@@ -41,13 +41,12 @@ import {
   type IMeasured,
   type IRegion,
   type IRound,
-  type IThresholdFile,
   adapterName,
   averageRuns,
   buildRound,
   evaluate,
   fail,
-  limitsFor,
+  lightLimits,
   numbersTable,
   parity,
   readRounds,
@@ -55,7 +54,17 @@ import {
   roundId,
   tierLayer,
 } from "./calibrateRound.js";
-import { compareGiToUnreal, readScene, registry } from "./gi.js";
+import { compareGiToUnreal, readScene, readThresholds, registry } from "./gi.js";
+import {
+  GI_LOCK_FILE,
+  checkGiLocks,
+  lockCells,
+  readGiLocks,
+  sceneBasis,
+  staleLocks,
+  withOfflineRoot,
+  writeMerged,
+} from "./giLocks.js";
 import { main as judgeMain } from "./judge.js";
 import { type Expect, type Tier, UNREAL_LEVEL } from "./judgeVerdict.js";
 
@@ -64,7 +73,7 @@ const REFERENCE = path.join(REPO_ROOT, "tools/unreal-reference");
 const GI = path.join(REFERENCE, "gi");
 
 const USAGE =
-  "pnpm unreal-look:calibrate --scene gi:<name> --tier <low|medium|high> --before <commit> --unreal <dir> [--runs 2] [--expect improvement] [--capture-only] [--allow-red-direct-light] [--dry-run] [--store <dir>] [--scoreboard <dir>]\n  pnpm unreal-look:calibrate --status [--scene gi:<name>] [--tier <tier>] [--scoreboard <dir>]";
+  "pnpm unreal-look:calibrate --scene gi:<name> --tier <low|medium|high> --before <commit> --unreal <dir> [--runs 2] [--expect improvement] [--capture-only] [--allow-red-direct-light] [--dry-run] [--store <dir>] [--scoreboard <dir>]\n  pnpm unreal-look:calibrate --status [--scene gi:<name>] [--tier <tier>] [--scoreboard <dir>]\n  pnpm unreal-look:calibrate --lock <round id> [--tighten | --relax] [--store <dir>] [--scoreboard <dir>] [--locks <file>]";
 
 /** One captured arm of the store: the runs of one tree (stamp) at one scene and tier. */
 export interface IArm {
@@ -106,6 +115,8 @@ interface IOptions {
   dryRun: boolean;
   store: string;
   scoreboard: string;
+  /** The GI lock file (PRD-654) that the round checks its AFTER arm against. */
+  locks: string;
 }
 
 function parse(args: string[]): IOptions {
@@ -124,6 +135,7 @@ function parse(args: string[]): IOptions {
         expect: { type: "string" },
         store: { type: "string" },
         scoreboard: { type: "string" },
+        locks: { type: "string" },
         "capture-only": { type: "boolean" },
         "allow-red-direct-light": { type: "boolean" },
         "dry-run": { type: "boolean" },
@@ -175,6 +187,7 @@ function parse(args: string[]): IOptions {
       ),
     ),
     scoreboard: path.resolve(String(values.scoreboard ?? path.join(GI, "parity"))),
+    locks: path.resolve(String(values.locks ?? GI_LOCK_FILE)),
   };
 }
 
@@ -299,13 +312,11 @@ async function ensureArm(
   return { arm, dir, captured: true };
 }
 
-function link(target: string, name: string, source: string): void {
-  mkdirSync(target, { recursive: true });
-  const at = path.join(target, name);
-  if (!existsSync(at)) symlinkSync(source, at);
-}
-
-/** The compare rows of every run of an arm at one layer, as regions checked against the layer's thresholds. */
+/**
+ * The compare rows of every run of an arm at one layer, as regions checked against the layer's thresholds.
+ * The rows read the committed Unreal statistics, the same reference `--lock` re-measures, so a local Unreal
+ * tree that is older than the committed reference changes the judge's images but not the numbers.
+ */
 function regionsOf(
   deps: IDeps,
   o: IOptions,
@@ -314,29 +325,25 @@ function regionsOf(
   layer: string,
   limitLayer: string,
 ): IRegion[] {
-  const thresholds = JSON.parse(
-    readFileSync(path.join(REFERENCE, "thresholds.json"), "utf8"),
-  ) as IThresholdFile;
-  const limits = limitsFor(thresholds, limitLayer);
+  const limits = lightLimits(readThresholds(), limitLayer);
   const runs = arm.runs.map((run) => {
-    const root = path.join(dir, "compare", run);
-    link(root, "unreal", o.unreal);
-    link(root, "threenative", path.join(dir, run));
-    return deps.compare(o.scene, layer, root).map((row): IRegion => {
-      if (row.deltaE === null || row.dP50 === null || row.iou === null)
-        return fail("MISSING_METRIC", `${row.cell}/${row.region}: the compare gave no value`);
-      const { pass, ratio } = evaluate(row, limits);
-      return {
-        pose: row.cell.slice(o.scene.length + 1),
-        region: row.region,
-        dP50: row.dP50,
-        deltaE: row.deltaE,
-        dEv: row.dEv50 === null ? null : Math.abs(row.dEv50),
-        iou: row.iou,
-        pass,
-        ratio,
-      };
-    });
+    return withOfflineRoot(path.join(dir, run), (root) => deps.compare(o.scene, layer, root)).map(
+      (row): IRegion => {
+        if (row.deltaE === null || row.dP50 === null || row.iou === null)
+          return fail("MISSING_METRIC", `${row.cell}/${row.region}: the compare gave no value`);
+        const { pass, ratio } = evaluate(row, limits);
+        return {
+          pose: row.cell.slice(o.scene.length + 1),
+          region: row.region,
+          dP50: row.dP50,
+          deltaE: row.deltaE,
+          dEv: row.dEv50 === null ? null : Math.abs(row.dEv50),
+          iou: row.iou,
+          pass,
+          ratio,
+        };
+      },
+    );
   });
   return averageRuns(runs);
 }
@@ -489,11 +496,170 @@ function status(args: string[], deps: IDeps): number {
   return 0;
 }
 
+/**
+ * The GI locks of this scene and layer, checked against the runs of the AFTER arm (PRD-654). It logs the
+ * result and returns the number of broken bounds. A scene with no lock at this layer logs nothing.
+ */
+function checkLocks(
+  deps: IDeps,
+  o: IOptions,
+  after: { arm: IArm; dir: string },
+  layer: string,
+): number {
+  if (!existsSync(o.locks)) return 0;
+  const locks = readGiLocks(o.locks);
+  if (!locks.some((lock) => lock.scene === o.scene && lock.layer === layer)) return 0;
+  // A lock cut against another scene or Unreal reference cannot judge this round: say so, and do not fail it.
+  const basis = sceneBasis(o.scene);
+  const stale = staleLocks(locks, o.scene, layer, basis);
+  if (stale.length > 0) {
+    deps.log(
+      `GI locks STALE: ${stale.length} lock(s) of ${o.scene} at ${layer} were cut against another scene or Unreal reference (round ${stale[0]?.round}), so this round is not checked against them. Approve this round, then pnpm unreal-look:calibrate --lock <round id> --relax`,
+    );
+    return 0;
+  }
+  const runs = after.arm.runs.map((run) =>
+    withOfflineRoot(path.join(after.dir, run), (root) => deps.compare(o.scene, layer, root)),
+  );
+  const broken = checkGiLocks(o.scene, layer, runs, locks, basis);
+  deps.log(
+    broken.length === 0
+      ? `GI locks hold: every locked region of ${o.scene} at ${layer} is inside its bound`
+      : `GI LOCKS BROKEN (${broken.length}): the change makes a locked region worse\n  ${broken.join("\n  ")}\n  fix the regression, or pass --relax to pnpm unreal-look:calibrate --lock <round> once the owner accepts it`,
+  );
+  return broken.length;
+}
+
+/** The round file and the arm still agree, within what a round file keeps (four digits). */
+const near = (a: number, b: number) =>
+  Math.abs(a - b) <= 2e-3 * Math.max(Math.abs(a), Math.abs(b)) + 1e-4;
+
+/** The first region (as `pose/region`) whose numbers in the re-measured `runs` differ from the round file. */
+function firstMismatch(round: IRound, runs: IMeasured[][]): string | undefined {
+  const mean = (rows: (IMeasured | undefined)[], pick: (row: IMeasured) => number | null) =>
+    rows.reduce((sum, row) => sum + (row ? (pick(row) ?? Number.NaN) : Number.NaN), 0) /
+    rows.length;
+  for (const cell of round.cells)
+    for (const region of cell.regions) {
+      const rows = runs.map((run) =>
+        run.find(
+          (row) => row.cell === `${round.scene}/${cell.pose}` && row.region === region.region,
+        ),
+      );
+      const agrees =
+        near(
+          mean(rows, (row) => row.dP50),
+          region.dP50,
+        ) &&
+        near(
+          mean(rows, (row) => row.deltaE),
+          region.deltaE,
+        ) &&
+        near(
+          mean(rows, (row) => row.iou),
+          region.iou,
+        );
+      if (!agrees) return `${cell.pose}/${region.region}`;
+    }
+  return undefined;
+}
+
+function lockOptions(args: string[]) {
+  let values: ReturnType<typeof parseArgs>["values"];
+  try {
+    values = parseArgs({
+      args,
+      strict: true,
+      allowPositionals: false,
+      options: {
+        lock: { type: "string" },
+        tighten: { type: "boolean" },
+        relax: { type: "boolean" },
+        store: { type: "string" },
+        scoreboard: { type: "string" },
+        locks: { type: "string" },
+      },
+    }).values;
+  } catch (error) {
+    return fail("BAD_INPUT", `${(error as Error).message}\n${USAGE}`);
+  }
+  const id = values.lock;
+  if (typeof id !== "string" || id === "")
+    return fail("BAD_INPUT", `--lock needs a round id\n${USAGE}`);
+  if (values.tighten === true && values.relax === true)
+    return fail(
+      "BAD_INPUT",
+      "--tighten and --relax exclude each other: tighten ratchets improvements, relax accepts a regression",
+    );
+  return {
+    id,
+    tighten: values.tighten === true,
+    relax: values.relax === true,
+    scoreboard: path.resolve(String(values.scoreboard ?? path.join(GI, "parity"))),
+    store: path.resolve(
+      String(
+        values.store ??
+          process.env.TN_UNREAL_LOOK_ROUNDS ??
+          path.join(os.homedir(), ".cache/threenative/unreal-look-rounds"),
+      ),
+    ),
+    file: path.resolve(String(values.locks ?? GI_LOCK_FILE)),
+  };
+}
+
+/**
+ * `--lock <round>`: cut ratchet locks from an approved round (PRD-654). It re-measures the runs of the
+ * round's arm against the committed Unreal statistics, checks that they still show the numbers of the round
+ * file, and merges the locks into tools/unreal-reference/gi/parity-locks.json. No GPU and no model.
+ */
+function lockRound(args: string[], deps: IDeps): number {
+  const { id, tighten, relax, scoreboard, store, file } = lockOptions(args);
+  const round = readRounds(scoreboard).find((candidate) => candidate.id === id);
+  if (round === undefined)
+    return fail("NO_ROUND", `${id} is not on the scoreboard (${scoreboard})`);
+  if (round.after.dirty)
+    return fail(
+      "DIRTY_ARM",
+      `${id} was captured from a dirty tree: approve a round on a clean commit`,
+    );
+  const dir = armDir(store, round.after.stamp, round.scene, round.tier);
+  const arm = readArm(dir);
+  if (arm === undefined || arm.stamp !== round.after.stamp)
+    return fail(
+      "NO_ARM",
+      `the arm of ${id} is not in the store ${store}: the round cannot be measured again`,
+    );
+  const layer = tierLayer(round.tier);
+  const runs = arm.runs.map((run) =>
+    withOfflineRoot(path.join(dir, run), (root) => deps.compare(round.scene, layer, root)),
+  );
+  const mismatch = firstMismatch(round, runs);
+  if (mismatch !== undefined)
+    return fail(
+      "ROUND_MISMATCH",
+      `${mismatch}: the arm no longer measures what ${id} recorded; lock a round that the store still reproduces`,
+    );
+  const fresh = lockCells(round.id, round.scene, layer, runs, sceneBasis(round.scene));
+  writeMerged(file, fresh, { tighten, relax }, deps.log, `${round.scene} ${layer} from ${id}`);
+  return 0;
+}
+
+/** `--status` and `--lock` read the store and the scoreboard and run no capture. */
+function subcommand(args: string[], deps: IDeps): number | undefined {
+  if (args.includes("--status")) return status(args, deps);
+  if (args.includes("--lock")) return lockRound(args, deps);
+  return undefined;
+}
+
+/** A green judge with a broken lock still fails the round: exit 2, the code of a REGRESSION verdict. */
+const exitCode = (judge: number, broken: number) => (judge === 0 && broken > 0 ? 2 : judge);
+
 export async function main(
   args = process.argv.slice(2),
   deps: IDeps = defaultDeps(),
 ): Promise<number> {
-  if (args.includes("--status")) return status(args, deps);
+  const done = subcommand(args, deps);
+  if (done !== undefined) return done;
   if (args.includes("--help")) {
     deps.log(
       `${USAGE}\n\nOne calibration round on a GI scene: capture, numbers, sheets, a fresh judge, the scoreboard.`,
@@ -532,6 +698,8 @@ export async function main(
 
   const before = stored ?? after;
   const regions = regionsOf(deps, o, after.dir, after.arm, layer, GI_LAYER);
+  // The arm holds the L1 frames (GI off) too: the direct-light locks ride on every round.
+  const broken = checkLocks(deps, o, after, layer) + checkLocks(deps, o, after, "L1");
 
   const date = deps.now().toISOString();
   const id = roundId(date, o.scene, o.tier, state.stamp);
@@ -584,7 +752,7 @@ export async function main(
   deps.log(
     `sheets: ${path.join(roundDir, "sheets")}\nscoreboard: ${path.join(o.scoreboard, `${round.id}.json`)}`,
   );
-  return code;
+  return exitCode(code, broken);
 }
 
 const git = (...args: string[]) =>

@@ -9,7 +9,7 @@ import {
   buildRound,
   evaluate,
   gapList,
-  limitsFor,
+  lightLimits,
   numbersTable,
   parity,
   readRounds,
@@ -70,18 +70,22 @@ describe("adapterName", () => {
   });
 });
 
-describe("limitsFor", () => {
-  it("merges the flat thresholds with the ones of the layer", () => {
+describe("lightLimits", () => {
+  it("reads the limits of a layer the way every compare does: the flat keys, then the layer's own", () => {
     const file = {
       iou: 0.98,
-      layers: { L7: { deltaE: 1, dP50: 0.01, dEv: 0.02 }, L9: { deltaE: 2 } },
+      layers: { L7: { deltaE: 1, dP50: 0.01, dEv: 0.02 }, L9: { deltaE: 2, dP50: 0.02 } },
     };
-    expect(limitsFor(file, "L7")).toEqual(LIMITS);
-    expect(limitsFor(file, "L9")).toEqual({ iou: 0.98, deltaE: 2 });
+    expect(lightLimits(file, "L7")).toEqual(LIMITS);
+    expect(lightLimits(file, "L9")).toEqual({ iou: 0.98, deltaE: 2, dP50: 0.02 });
   });
 
-  it("fails closed on a layer without thresholds", () => {
-    expect(() => limitsFor({ layers: {} }, "L7")).toThrow(/NO_THRESHOLDS.*L7/);
+  it("fails closed on a layer that sets no limit on the light, though a flat IoU applies", () => {
+    expect(() => lightLimits({ iou: 0.98, layers: {} }, "L7")).toThrow(/NO_THRESHOLDS.*L7/);
+    expect(() => lightLimits({ iou: 0.98, layers: { L7: { deltaE: 1 } } }, "L7")).toThrow(
+      /NO_THRESHOLDS/,
+    );
+    expect(() => lightLimits(null, "L7")).toThrow(/NO_THRESHOLDS/);
   });
 });
 

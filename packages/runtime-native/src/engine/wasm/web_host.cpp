@@ -607,6 +607,9 @@ extern "C" double tnw_web_frame(int field) {
         case 16: return renderer->temporalStatus().jitterX;
         case 17: return renderer->temporalStatus().jitterY;
         case 18: return double(renderer->sampleCount());
+        // The sample field 7 reports, by what drew it: 19 shadow passes, 20 the scene pass, 21 other passes, 22 the
+        // output pass, 23 the screen-space gather (frame_gpu_timer.h). They sum to field 7.
+        case 19: case 20: case 21: case 22: case 23: return renderer->lastGpuSegments()[size_t(field - 19)];
         default: return 0;
     }
 }

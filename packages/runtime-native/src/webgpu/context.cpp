@@ -516,6 +516,12 @@ static RequiredFeatures buildRequiredFeatures(WGPUAdapter adapter,
     result.hasPipelineCache = appendIfSupported(
         static_cast<WGPUFeatureName>(WGPUNativeFeature_PipelineCache), "pipeline-cache");
 #endif
+#if defined(MYSTRAL_WEBGPU_DAWN) && defined(MYSTRAL_HAS_VULKAN_RT) && !defined(_WIN32)
+    // PRD-645: the hardware trace shares its rays and hits with this device as Vulkan images.
+    // Only a host built with the Vulkan ray tracing backend asks, so no other host changes.
+    appendIfSupported(WGPUFeatureName_SharedTextureMemoryOpaqueFD, "shared-texture-memory-opaque-fd");
+    appendIfSupported(WGPUFeatureName_SharedFenceVkSemaphoreOpaqueFD, "shared-fence-vk-semaphore-opaque-fd");
+#endif
     appendIfSupported(WGPUFeatureName_RG11B10UfloatRenderable, "rg11b10ufloat-renderable");
     // Float LUTs need linear filtering for continuous color grading.
     appendIfSupported(WGPUFeatureName_Float32Filterable, "float32-filterable");

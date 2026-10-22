@@ -786,6 +786,27 @@ describe("capability manifest generator", () => {
         ids: ["request.vehicle-rescue-respawn"],
         owners: ["VehicleBody3D"],
       },
+      "PCSS soft shadows": {
+        ids: ["request.pcss-soft-shadows"],
+        owners: ["sourceRadiusShadowFilter"],
+      },
+      "lumen scalability": { ids: ["request.gi-quality-scalability"], owners: ["GIBudget"] },
+      "sg.GlobalIlluminationQuality": {
+        ids: ["request.gi-quality-scalability"],
+        owners: ["GIBudget"],
+      },
+      "final gather method": { ids: ["request.gi-quality-scalability"], owners: ["GIBudget"] },
+      "virtual shadow map scalability": {
+        ids: ["request.shadow-quality-scalability"],
+        owners: ["ShadowFilterBudget"],
+      },
+      "sg.ShadowQuality": {
+        ids: ["request.shadow-quality-scalability"],
+        owners: ["ShadowFilterBudget"],
+      },
+      "lumen surface cache": { ids: ["request.lumen-surface-cache"], owners: ["SurfaceCache"] },
+      "lumen scene": { ids: ["request.lumen-scene"], owners: ["SurfaceCache"] },
+      "mesh cards": { ids: ["request.mesh-cards"], owners: ["SurfaceCache"] },
     } as const;
 
     expect([...new Set(aliases)].sort()).toEqual(Object.keys(predecessorRows).sort());

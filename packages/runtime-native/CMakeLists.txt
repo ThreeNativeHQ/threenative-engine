@@ -1589,6 +1589,7 @@ set(MYSTRAL_SOURCES
     src/webgpu/wrapper_factories.cpp
     src/webgpu/checked_handle.cpp
     src/webgpu/context.cpp
+    src/webgpu/shared_trace.cpp
     src/platform/window.cpp
     src/platform/input.cpp
     src/platform/crash_handlers.cpp
@@ -2545,6 +2546,11 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         tests/rt_handle_allocation_test.cpp)
     target_include_directories(threenative-rt-handle-allocation-test PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    add_executable(threenative-raytracing-probe-test EXCLUDE_FROM_ALL
+        tests/raytracing_probe_test.cpp)
+    target_include_directories(threenative-raytracing-probe-test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_link_libraries(threenative-raytracing-probe-test PRIVATE mystral-runtime)
     add_executable(threenative-js-engine-contract-test EXCLUDE_FROM_ALL
         tests/js_engine_contract_test.cpp)
     target_link_libraries(threenative-js-engine-contract-test PRIVATE mystral-runtime)
@@ -2801,6 +2807,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
             "TN_ENABLE_METAHUMAN=OFF")
     endif()
     tn_register_contract_test(threenative-render-pass-class-table-test)
+    tn_register_contract_test(threenative-raytracing-probe-test)
     tn_register_contract_test(threenative-rt-handle-allocation-test)
     tn_register_contract_test(threenative-screenshot-capture-gate-test)
     tn_register_contract_test(threenative-shader-module-metadata-test)
