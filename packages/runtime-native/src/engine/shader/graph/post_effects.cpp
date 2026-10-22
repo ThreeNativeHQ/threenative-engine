@@ -64,7 +64,10 @@ fn normalFromDepth(coord: vec2<f32>) -> vec3<f32> {
 )WGSL";
 
 // three r185 GTAONode.setup: slice normal projection, two-sided horizon marching, Eq. 7
-// cosine-weighted integration, foreshortening, radius/thickness/falloff/exponent/scale.
+// cosine-weighted integration, foreshortening, radius/thickness/falloff/exponent/scale. `reachPx` > 0 replaces the
+// world radius with a screen reach: the radius at a pixel is the pixel's view depth times 2 reachPx / (height * P11),
+// so a sample lands `reachPx` pixels of the occlusion target away at any depth, as Unreal's short-range AO does
+// (UE 5.8.3: Engine/Source/Runtime/Renderer/Private/Lumen/LumenScreenProbeGather.cpp:2665).
 const char* kGtao = R"WGSL(
 fn screenPosition(view: vec3<f32>) -> vec2<f32> {
     let clip = u._cameraProjectionMatrix*vec4<f32>(view,1.0);
@@ -82,6 +85,7 @@ fn screenPosition(view: vec3<f32>) -> vec2<f32> {
     let tangent = normalize(vec3<f32>(randomVec.xy,0.0));
     let bitangent = vec3<f32>(-tangent.y,tangent.x,0.0);
     let kernel = mat3x3<f32>(tangent,bitangent,vec3<f32>(0,0,1));
+    let radius = select(u.radius,u.reachPx*2.0*(-position.z)/(u.resolution.y*u._cameraProjectionMatrix[1][1]),u.reachPx>0.0);
     let directions = select(5,3,u.samples<30.0);
     // STEPS stays floating, including the non-integral loop bound in r185.
     let steps = (u.samples+f32(directions-1))/f32(directions);
@@ -102,7 +106,7 @@ fn screenPosition(view: vec3<f32>) -> vec2<f32> {
         let tangentN = cross(projN,sliceBitangent);
         var horizons = vec2<f32>(dot(viewDir,tangentN),dot(viewDir,-tangentN));
         for (var j=0; f32(j)<steps; j++) {
-            let offset = sampleDir*u.radius*jitter*pow((f32(j)+1.0)/steps,u.distanceExponent);
+            let offset = sampleDir*radius*jitter*pow((f32(j)+1.0)/steps,u.distanceExponent);
             let sx = screenPosition(position+offset);
             let dx = viewPosition(sx,sampleDepth(sx))-position;
             if (abs(dx.z)<u.thickness) {
@@ -402,6 +406,16 @@ Node importPostEffect(const json::Value& record, const std::vector<Node>& args, 
     if (effect->kind == "GTAONode" &&
         (effect->parameters.at("samples")[0] < 1 || effect->parameters.at("samples")[0] > 256))
         return invalid("samples 1..256");
+    if (effect->kind == "GTAONode") {
+        // Exports from before the screen reach carry no `reachPx`: they keep the world radius.
+        const auto* reach = parameters.find("reachPx");
+        const double px = reach && reach->isArray() && reach->items().size() == 1 && reach->items()[0].isNumber()
+                              ? reach->items()[0].number()
+                              : 0;
+        if (!std::isfinite(static_cast<float>(px)) || px < 0)
+            return invalid("finite parameter reachPx");
+        effect->parameters["reachPx"] = {static_cast<float>(px)};
+    }
     const auto& images = get(post, "images");
     const size_t imageCount = effect->kind == "SMAANode" ? 2 : 1;
     if (!images.isArray() || images.items().size() != imageCount)
@@ -688,7 +702,7 @@ std::shared_ptr<PostEffect> gtaoEffect(Node depth, Node normal) {
     effect->output = liveName();
     effect->inputs = normal ? std::vector<Node>{depth, normal} : std::vector<Node>{depth};
     effect->normal = normal != nullptr;
-    effect->parameters = {{"radius", {0.25f}}, {"thickness", {1}}, {"distanceExponent", {1}},
+    effect->parameters = {{"radius", {0.25f}}, {"reachPx", {0}}, {"thickness", {1}}, {"distanceExponent", {1}},
                           {"distanceFallOff", {1}}, {"scale", {1}}, {"samples", {16}},
                           {"_cameraProjectionMatrix", identity16()}, {"_cameraProjectionMatrixInverse", identity16()},
                           {"_temporalDirection", {0}}};

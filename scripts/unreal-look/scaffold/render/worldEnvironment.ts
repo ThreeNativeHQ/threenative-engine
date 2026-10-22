@@ -63,6 +63,7 @@ import {
   vec4,
 } from "three/tsl";
 import { BlendMode, type Node, type NodeBuilder, type TextureNode } from "three/webgpu";
+import { UNREAL_AO_REACH_PX } from "./aoReach.js";
 import { AutoExposureNode, applyExposure } from "./autoExposure.js";
 import { type IExposureSettings, exposureSettings } from "./exposure.js";
 import { cacheFallback, giCache } from "./giCache.js";
@@ -222,8 +223,13 @@ export interface IWorldEnvironmentOptions {
    * of centimetres and multiplies on top.
    */
   readonly gtaoEnabled?: boolean;
-  /** Occlusion gather radius in world units. Contact scale, not room scale. */
+  /**
+   * Occlusion gather radius in world units, a named override. Left out, the radius follows Unreal's rule
+   * instead: a fixed reach on the screen (`gtaoReachPx`), so a contact is as wide at any distance.
+   */
   readonly gtaoRadius?: number;
+  /** Screen reach of the occlusion in pixels at the display height when `gtaoRadius` is not set. Unreal's is 32. */
+  readonly gtaoReachPx?: number;
   /** Exponent on the occlusion term: higher is a darker, tighter contact. */
   readonly gtaoScale?: number;
   /** Directions sampled per pixel. Cost is linear in this. */
@@ -663,7 +669,8 @@ export class WorldEnvironment {
       godraysSteps: options.godraysSteps ?? 60,
       godraysMaxDensity: options.godraysMaxDensity ?? 0.5,
       gtaoEnabled: options.gtaoEnabled ?? false,
-      gtaoRadius: options.gtaoRadius ?? 0.25,
+      gtaoRadius: options.gtaoRadius,
+      gtaoReachPx: options.gtaoReachPx ?? UNREAL_AO_REACH_PX,
       gtaoScale: options.gtaoScale ?? 1,
       gtaoSamples: options.gtaoSamples ?? 16,
       gtaoDistanceExponent: options.gtaoDistanceExponent ?? 1,
@@ -1069,7 +1076,19 @@ export class WorldEnvironment {
           // smooth vertex normal against a faceted depth (a 32-sided capsule) read as one dark stripe per facet and a
           // stair-step band under the cap; the denoiser, GTAO scale and radius did not change them.
           const contact = ao(subrectTexture(depth()), null as never, view);
-          contact.radius.value = options.gtaoRadius;
+          if (options.gtaoRadius !== undefined) {
+            contact.radius.value = options.gtaoRadius;
+          } else {
+            // Unreal's reach is on the screen (see aoReach.ts). The owned engine's GTAO takes it as `reachPx`, in
+            // pixels of the occlusion target; upstream three's GTAONode has no such uniform, so that engine needs
+            // a world radius and refuses the default.
+            const owned = contact as unknown as { reachPx?: { value: number } };
+            if (owned.reachPx === undefined)
+              throw new Error(
+                "TN_AO_REACH_UNSUPPORTED: this engine's GTAO has no screen reach; set gtaoRadius (metres)",
+              );
+            owned.reachPx.value = options.gtaoReachPx * options.gtaoResolutionScale;
+          }
           contact.scale.value = options.gtaoScale;
           contact.samples.value = options.gtaoSamples;
           contact.distanceExponent.value = options.gtaoDistanceExponent;

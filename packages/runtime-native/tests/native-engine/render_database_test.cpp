@@ -1799,6 +1799,59 @@ void normalPassIsNotTallied() {
     CHECK(renderer.lastFrame().shadowDraws == 0 && renderer.lastFrame().shadowTriangles == 0);
 }
 
+// GTAO's `reachPx` puts the occlusion's reach on the screen (Unreal's short-range AO searches 32 px): with no
+// world radius, a reach of 0 leaves a sphere on a floor unoccluded, and a longer reach darkens more pixels around
+// the contact at any distance. The sphere sits at two camera distances; the dark ring must stay a similar share
+// of the sphere's footprint, which a fixed world radius would not give.
+void gtaoScreenReach() {
+    namespace g = shader::graph;
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(320, 240);
+    LitScene s;
+    auto floorMaterial = std::make_shared<Material>(MaterialType::Standard);
+    floorMaterial->color.setRGB(0.8, 0.8, 0.8);
+    Mesh floor(makePlaneGeometry(40, 40), floorMaterial);
+    floor.rotation.x = -1.5707963267948966;
+    floor.position.y = -1;
+    s.scene.add(floor);
+    s.camera.updateProjectionMatrix();
+    s.scene.updateMatrixWorld(true);
+    const auto colour = g::texture("scene", g::uv()), depth = g::texture("depth", g::uv()),
+               normal = g::texture("normal", g::uv());
+    RenderDatabase database;
+    // The occlusion frame for one reach and one camera distance.
+    const auto frame = [&](float reachPx, double distance, float radius = 0.0001f) {
+        s.camera.position.set(0, 1.4, distance);
+        s.camera.lookAt(0, 0, 0);
+        s.camera.updateProjectionMatrix();
+        s.scene.updateMatrixWorld(true);
+        auto contact = g::gtaoEffect(depth, normal);
+        contact->parameters["radius"] = {radius};
+        contact->parameters["reachPx"] = {reachPx};
+        renderer.setPostGraph(g::mul(colour, g::swizzle(g::effectNode(contact), "x")));
+        database.render(renderer, s.scene, s.camera, {0.05, 0.06, 0.08, 1});
+        return read(renderer, events);
+    };
+    // Pixels a reach darkened against the same view with no reach (a world radius of a tenth of a millimetre).
+    const auto darkened = [&](float reachPx, double distance, float radius = 0.0001f) {
+        const std::vector<uint8_t> open = frame(0, distance), px = frame(reachPx, distance, radius);
+        CHECK(!px.empty() && px.size() == open.size());
+        size_t count = 0;
+        for (size_t i = 0; i < px.size(); i += 4) count += px[i] + 6 < open[i];
+        return count;
+    };
+    const size_t near32 = darkened(32, 3.2), near64 = darkened(64, 3.2), far32 = darkened(32, 6.4);
+    const size_t nearWorld = darkened(0, 3.2, 0.3f), farWorld = darkened(0, 6.4, 0.3f);
+    CHECK(near32 > 200);
+    CHECK(near64 > near32);
+    // At twice the distance a world radius darkens a ring of half the width, so its dark area falls faster than a
+    // reach of 32 px does: the reach keeps a larger share of its near count (measured 0.32 against 0.23).
+    CHECK(far32 * nearWorld * 4 > near32 * farWorld * 5);
+}
+
 // three's material.colorWrite = false masks every colour channel of that material's draw (the tower-defense
 // tap pads rely on it); the engine did not bind it, so the web native build stopped at the material's constructor.
 void colorWriteMasksTheDraw() {
@@ -5479,7 +5532,7 @@ void gpuJointProduction() {
     }
 }
 
-TN_TEST_MAIN({"gpu_joint_production", gpuJointProduction}, {"multi_material_groups", multiMaterialGroups}, {"uniform_batch_preparation", uniformBatchPreparation}, {"steady_state", steadyState}, {"color_write_masks_the_draw", colorWriteMasksTheDraw}, {"normal_pass_is_not_tallied", normalPassIsNotTallied}, {"steady_cache_invalidation", steadyCacheInvalidation}, {"render_target", renderTarget}, {"float_render_target_keeps_float32", floatRenderTargetKeepsFloat32}, {"float_render_target_falls_back_to_half", floatRenderTargetFallsBackToHalf}, {"post_texture_resize_keeps_draw_groups", postTextureResizeKeepsDrawGroups}, {"deferred_target_follows_post_rtt", deferredTargetFollowsPostRtt}, {"deferred_target_samples_post_rtt_node", deferredTargetSamplesPostRttNode}, {"screen_size_reaches_the_vertex_stage", screenSizeReachesTheVertexStage}, {"depth_node_sets_fragment_depth", depthNodeSetsFragmentDepth}, {"depth_node_reaches_every_material_program", depthNodeReachesEveryMaterialProgram}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"present_direct", presentDirect}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"directional_target_outside_scene", directionalTargetOutsideScene}, {"scene_fog_node", sceneFogNode}, {"lit_mesh_without_normals", litMeshWithoutNormals}, {"invalidation", invalidation}, {"alpha_scene", alphaScene},
+TN_TEST_MAIN({"gpu_joint_production", gpuJointProduction}, {"multi_material_groups", multiMaterialGroups}, {"uniform_batch_preparation", uniformBatchPreparation}, {"steady_state", steadyState}, {"color_write_masks_the_draw", colorWriteMasksTheDraw}, {"normal_pass_is_not_tallied", normalPassIsNotTallied}, {"gtao_screen_reach", gtaoScreenReach}, {"steady_cache_invalidation", steadyCacheInvalidation}, {"render_target", renderTarget}, {"float_render_target_keeps_float32", floatRenderTargetKeepsFloat32}, {"float_render_target_falls_back_to_half", floatRenderTargetFallsBackToHalf}, {"post_texture_resize_keeps_draw_groups", postTextureResizeKeepsDrawGroups}, {"deferred_target_follows_post_rtt", deferredTargetFollowsPostRtt}, {"deferred_target_samples_post_rtt_node", deferredTargetSamplesPostRttNode}, {"screen_size_reaches_the_vertex_stage", screenSizeReachesTheVertexStage}, {"depth_node_sets_fragment_depth", depthNodeSetsFragmentDepth}, {"depth_node_reaches_every_material_program", depthNodeReachesEveryMaterialProgram}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"present_direct", presentDirect}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"directional_target_outside_scene", directionalTargetOutsideScene}, {"scene_fog_node", sceneFogNode}, {"lit_mesh_without_normals", litMeshWithoutNormals}, {"invalidation", invalidation}, {"alpha_scene", alphaScene},
              {"material_unsupported", materialUnsupported}, {"shader_invalid", shaderInvalid}, {"time_uniform", timeUniform}, {"gpu_mipmaps", gpuMipmaps}, {"updates", updates},
              {"multi_camera_layers", multiCameraLayers}, {"render_callback", renderCallback}, {"instanced", instanced},
              {"virtual_sun_room_seam", virtualSunRoomSeam},
