@@ -274,7 +274,8 @@ function cutRow(row: IMeasuredRow, { round, scene, layer, basis, maps, groups }:
       : significant(mean + spread + level, "up");
     lock[metric.noise] = significant(spread, "up");
   }
-  if (maps.length === 1) lock.runs = 1;
+  // A cut from the two runs of a round says nothing: the check reads two. Any other count is recorded.
+  if (maps.length !== ROUND_RUNS) lock.runs = maps.length;
   return lock as unknown as IGiLock;
 }
 
