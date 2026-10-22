@@ -30,27 +30,27 @@ import {
   type Texture,
   Vector3,
 } from "three";
-import { EMISSIVE_UNITS } from "../render/atmosphere.js";
-import { installGi } from "../render/giCache.js";
-import { setupLighting, shadeLikeSubstrate } from "../render/lighting.js";
+import { setupLighting } from "../render/lighting.js";
 import { setupPost } from "../render/postprocessing.js";
-import { watchGi } from "../render/giTier.js";
-import { watchShadowTier } from "../render/shadowTier.js";
-import {
-  EPIC_SSGI,
-  type FinalGatherMethod,
-  giPreset,
-  qualityPreset,
-  resolveQualityTier,
-  shadowPreset,
-} from "../render/quality.js";
-import { captureReflections } from "../render/reflectionCapture.js";
-import { reflectionTrace } from "../render/reflectionTrace.js";
+import { qualityPreset, resolveQualityTier } from "../render/quality.js";
 import { SUN_DIRECTION, setupSky } from "../render/sky.js";
 import { WorldEnvironment } from "../render/worldEnvironment.js";
 import type { GameState } from "../state.js";
 import { Play } from "./Play.js";
 import { POSES } from "./referencePoses.js";
+import {
+  EMISSIVE_UNITS,
+  EPIC_SSGI,
+  type FinalGatherMethod,
+  captureReflections,
+  giPreset,
+  installGi,
+  reflectionTrace,
+  shadeLikeSubstrate,
+  shadowPreset,
+  watchGi,
+  watchShadowTier,
+} from "./tuning.js";
 
 type GameCtx = ICtx<GameState, IPhysicsContext>;
 type Pose = { position: number[]; target: number[]; hfovDeg: number };
