@@ -4,22 +4,21 @@
 import {
   type DirectionalLight,
   HalfFloatType,
-  type Matrix4,
   NearestFilter,
   type PerspectiveCamera,
   type PointLight,
   Vector3,
-  Vector4,
 } from "three";
-import { Fn, If, float, mat4, max, rtt, screenUV, uniform, vec2, vec4 } from "three/tsl";
+import { Fn, If, max, rtt, screenUV, uniform, vec4 } from "three/tsl";
 import type { Node, NodeMaterial, RenderTarget } from "three/webgpu";
 import type { IFogVolume, IVolumetricFogOptions } from "./volumetricFogOptions.js";
 import {
   type IFogBounds,
+  type IFogCamera,
   type IFogLocalLight,
   type ScenePass,
   fogTransport,
-  viewPosition,
+  viewDepth,
 } from "./volumetricFogTransport.js";
 
 type FogTexture = ReturnType<typeof rtt> & {
@@ -44,16 +43,28 @@ function lightRadiance(light: DirectionalLight | PointLight) {
   );
 }
 
-/**
- * A camera matrix as four live columns. The owned engine's TSL takes a vector or a colour as a uniform value, not a
- * Matrix4, and the camera's own matrix (not the one of the pass that draws the quad) is what the march needs.
- */
-function liveMatrix(read: () => Matrix4): Node<"mat4"> {
-  const column = (index: number) => {
-    const value = new Vector4();
-    return uniform(value).onRenderUpdate(() => value.fromArray(read().elements, index * 4));
+/** The scene camera's pose and lens as vectors edited in place before each render (see IFogCamera). */
+function liveCamera(camera: PerspectiveCamera): IFogCamera {
+  const vector = (read: (value: Vector3) => void) => {
+    const value = new Vector3();
+    return uniform(value).onRenderUpdate(() => {
+      camera.updateMatrixWorld();
+      read(value);
+    });
   };
-  return mat4(column(0), column(1), column(2), column(3));
+  return {
+    right: vector((value) => value.setFromMatrixColumn(camera.matrixWorld, 0)),
+    up: vector((value) => value.setFromMatrixColumn(camera.matrixWorld, 1)),
+    back: vector((value) => value.setFromMatrixColumn(camera.matrixWorld, 2)),
+    lens: vector((value) =>
+      value.set(
+        1 / (camera.projectionMatrix.elements[0] as number),
+        1 / (camera.projectionMatrix.elements[5] as number),
+        0,
+      ),
+    ),
+    clip: vector((value) => value.set(camera.near, camera.far, 0)),
+  };
 }
 
 export function composeFogVolume(
@@ -67,8 +78,7 @@ export function composeFogVolume(
     low: uniform(volume.bounds.min.clone()),
     high: uniform(volume.bounds.max.clone()),
   }));
-  const cameraMatrix = liveMatrix(() => camera.matrixWorld);
-  const inverseProjection = liveMatrix(() => camera.projectionMatrixInverse);
+  const fogCamera = liveCamera(camera);
   const cameraPosition = new Vector3();
   const origin = uniform(cameraPosition).onRenderUpdate(() =>
     camera.getWorldPosition(cameraPosition),
@@ -105,9 +115,8 @@ export function composeFogVolume(
     ambientNode: options.ambientNode,
     anisotropy: options.anisotropy,
     bounds,
-    cameraMatrix,
+    camera: fogCamera,
     depth,
-    inverseProjection,
     localLights,
     origin,
     shadowDepth,
@@ -134,8 +143,8 @@ export function composeFogVolume(
     // integrate the full-resolution pixel instead; do not borrow stale/foreground history.
     if (options.resolutionScale < 1) {
       const lowUV = screenUV.mul(size.xy).floor().add(0.5).div(size.xy);
-      const fullZ = viewPosition(screenUV, depth.r, inverseProjection).z;
-      const lowZ = viewPosition(lowUV, depth.sample(lowUV).r, inverseProjection).z;
+      const fullZ = viewDepth(depth.r, fogCamera);
+      const lowZ = viewDepth(depth.sample(lowUV).r, fogCamera);
       If(
         fullZ
           .sub(lowZ)

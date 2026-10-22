@@ -5,13 +5,13 @@ import { describe, expect, it } from "vitest";
 import { pointLightMean, translucentTwin } from "../unreal-look/scaffold/render/translucency.js";
 
 describe("translucent surfaces take the light every direction receives (PRD-643)", () => {
-  it("is an unlit material that keeps the source's blending state and takes its colour from the light", () => {
+  it("is an unlit material that keeps the source's blending, opacity and sides, writes no depth, and takes its colour from the light", () => {
     const source = new MeshStandardMaterial({
       color: new Color(0.85, 0.5, 0.25),
       opacity: 0.5,
       transparent: true,
       side: DoubleSide,
-      depthWrite: false,
+      depthWrite: true,
     });
     const seen: unknown[] = [];
     const twin = translucentTwin(source, (position) => {

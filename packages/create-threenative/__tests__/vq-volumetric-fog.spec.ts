@@ -361,6 +361,20 @@ it("scatters a field read at every step when the air is given an ambient node (P
   expect(lit.search(read)).toBeGreaterThan(lit.indexOf("for ("));
 });
 
+it("reads the camera as vectors, not a matrix built from columns (PRD-643)", () => {
+  // The owned engine's TSL did not follow the pose through a mat4 of four vec4 uniforms: the fog drew black there.
+  const camera = new PerspectiveCamera();
+  const fog = required(createVolumetricFog(new Scene(), camera, settings()));
+  const scenePass = pass(new Scene(), camera);
+  fog.compose(scenePass);
+  const code = fragmentCode(camera, required(fog.transport), "vec4");
+  fog.dispose();
+  scenePass.dispose();
+  expect(code).not.toMatch(/mat4x4/);
+  // The march still reaches the surface behind each pixel: the depth texture is read to place its endpoint.
+  expect(code).toMatch(/textureLoad|textureSample/);
+});
+
 /** Builds the transport and the composed fog, at full and at half resolution (the half-resolution compose adds a depth test). */
 function buildBothGraphs(): void {
   for (const resolutionScale of [1, 0.5]) {

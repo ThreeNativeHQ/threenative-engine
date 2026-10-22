@@ -36,6 +36,7 @@ import { giCache, installGi } from "../render/giCache.js";
 import { watchGi } from "../render/giTier.js";
 import { type IGlbMaterialImages, glbMaterialImages } from "../render/glbImages.js";
 import { watchShadowTier } from "../render/shadowTier.js";
+import { GLTF_IOR, refractBehind } from "../render/refraction.js";
 import { pointLightMean, translucentTwin } from "../render/translucency.js";
 import { createVolumetricFog } from "../render/volumetricFog.js";
 import {
@@ -295,11 +296,31 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
       // Unreal's default lighting for a translucent surface is its translucency volume, the same in every direction
       // (Volumetric NonDirectional): the lamps at a quarter of what a facing surface receives and, from L7, the room's mean
       // bounce light. Another mode is not recreated (PRD-643). A mapped surface keeps the lit material.
-      for (const m of DATA.meshes as { name: string; material: { alphaMode?: string; translucencyLightingMode?: string } }[]) {
+      // Unreal also bends the scene behind a translucent surface (refraction.ts). The scene file gives each box exactly,
+      // where the geometry of a model may not carry a bounding box on every engine.
+      const paneBoxes: Box3[] = [];
+      for (const m of DATA.meshes as {
+        name: string;
+        position: number[];
+        rotationYDeg: number;
+        size: number[];
+        material: { alphaMode?: string; baseColorTexture?: string; translucencyLightingMode?: string };
+      }[]) {
+        if (m.material.alphaMode !== "BLEND") continue;
         const mode = m.material.translucencyLightingMode;
-        if (m.material.alphaMode === "BLEND" && mode !== undefined && mode !== "tlm_volumetric_non_directional")
+        if (mode !== undefined && mode !== "tlm_volumetric_non_directional")
           unsupported.push({ actor: m.name, property: "translucencyLightingMode", reason: `${mode} is not recreated` });
+        if (m.material.baseColorTexture !== undefined) continue;
+        if (Math.abs(m.rotationYDeg) > 1e-6) {
+          unsupported.push({ actor: m.name, property: "rotation", reason: "a turned translucent box does not refract" });
+          continue;
+        }
+        const [x = 0, y = 0, z = 0] = m.position;
+        const [w = 0, h = 0, d = 0] = m.size;
+        paneBoxes.push(new Box3(new Vector3(x - w / 2, y - h / 2, z - d / 2), new Vector3(x + w / 2, y + h / 2, z + d / 2)));
       }
+      // Diagnosis: ?refraction=off draws the same frame without the bent picture.
+      const refracts = paneBoxes.length > 0 && params.get("refraction") !== "off";
       const bounce = giCache.meanRadiance;
       const direct = (position: Node<"vec3">) => pointLightMean(lights, position);
       for (const mesh of meshes) {
@@ -400,7 +421,13 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
           ctx.renderer,
           scene,
           camera,
-          medium === undefined ? {} : { baseColour: (scenePass) => medium.compose(scenePass) },
+          medium === undefined && !refracts
+            ? {}
+            : {
+                baseColour: (scenePass) =>
+                  medium?.compose(scenePass) ??
+                  refractBehind(scenePass, camera, paneBoxes, { ior: GLTF_IOR, widthPixels: () => innerWidth }),
+              },
         );
         this.#dispose = () => {
           applied.dispose();

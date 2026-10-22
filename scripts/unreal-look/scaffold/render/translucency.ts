@@ -53,17 +53,18 @@ export function pointLightMean(
 
 /**
  * The material a translucent source becomes: unlit, its colour times the light every direction receives, drawn with the
- * source's own blending, opacity, sides and depth write. `light` is that light at a world position.
+ * source's own blending, opacity and sides, and no depth write. `light` is that light at a world position.
  */
 export function translucentTwin(
-  source: Pick<MeshStandardMaterial, "color" | "depthWrite" | "opacity" | "side">,
+  source: Pick<MeshStandardMaterial, "color" | "opacity" | "side">,
   light: (position: Node<"vec3">) => Node<"vec3">,
 ): MeshBasicNodeMaterial {
   const twin = new MeshBasicNodeMaterial();
   twin.transparent = true;
   twin.opacity = source.opacity;
   twin.side = source.side;
-  twin.depthWrite = source.depthWrite;
+  // A translucent surface draws no depth in Unreal: what is behind it stays in the depth the refraction reads.
+  twin.depthWrite = false;
   twin.colorNode = vec3(source.color.r, source.color.g, source.color.b).mul(light(positionWorld));
   return twin;
 }

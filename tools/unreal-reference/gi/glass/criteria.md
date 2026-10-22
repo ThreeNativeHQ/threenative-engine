@@ -23,6 +23,12 @@ the same in every direction.
    shows no dark band at its edges. The red wall and the green wall tint the pane only a little.
 4. **Smooth surfaces.** Walls, floor and pane show no grain, speckle or blotches.
 5. **No leak.** The bounce light of the lamp does not cross the pane as a bright or dark line on the floor.
+6. **The pane bends the picture behind it when seen at an angle.** Unreal's glTF proxy material refracts with index
+   of refraction 1.5. Seen head on, the picture behind the pane does not move. Seen at an angle, the block, the
+   floor line and the wall edge behind the pane shift sideways by a visible amount (the `glass-edge` pose: about 80
+   pixels at 1280 wide), and a part of the block behind the pane is hidden by the shift. The picture around the
+   pane stays in its place. A pane that shows the room behind it at its true place, in a pose seen at an angle, is
+   a fault.
 
 ## Per pose
 
