@@ -774,6 +774,14 @@ describe("capability manifest generator", () => {
         ids: ["request.drive-a-racing-kart"],
         owners: ["VehicleBody3D"],
       },
+      "lumen reflections": {
+        ids: ["request.lumen-reflections"],
+        owners: ["TracedReflections"],
+      },
+      "dedicated reflection rays": {
+        ids: ["request.dedicated-reflection-rays"],
+        owners: ["TracedReflections"],
+      },
       "suspension wheel traction tyre grip": {
         ids: ["request.vehicle-suspension-grip"],
         owners: ["VehicleBody3D"],

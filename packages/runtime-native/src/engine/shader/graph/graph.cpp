@@ -267,7 +267,10 @@ ExprId Lowerer::emit(Node node) {
         }
         case Kind::Var: { const auto variable = ensureVar(node); return variable == noVar ? kInvalid : program_.load(variable); }
         case Kind::RenderTexture:
-            return program_.sample(program_.texture2d(d.name), expression(d.args[1]));
+            // A third argument is an explicit level (`.level(n)`), so the read is legal under divergent control flow.
+            return d.args.size() > 2
+                       ? program_.sampleLevel(program_.texture2d(d.name), expression(d.args[1]), expression(d.args[2]))
+                       : program_.sample(program_.texture2d(d.name), expression(d.args[1]));
         case Kind::TextureSize:
             return program_.textureSize(program_.texture2d(d.name), d.args.empty() ? program_.constant(int32_t(0)) : expression(d.args[0]));
         case Kind::TextureLoad:

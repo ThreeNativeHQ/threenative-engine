@@ -11,6 +11,11 @@
       "name": "sunlit-room",
       "owner": "PRD-638",
       "poses": ["window", "leak", "door"]
+    },
+    {
+      "name": "neon-corridor",
+      "owner": "PRD-639",
+      "poses": ["neon", "textured"]
     }
   ],
   "variants": [
