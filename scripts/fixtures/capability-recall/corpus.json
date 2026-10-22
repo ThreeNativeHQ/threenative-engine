@@ -757,6 +757,14 @@
       "reject": []
     },
     {
+      "id": "request.rough-diffuse-substrate-eon",
+      "query": "Substrate EON, Diffuse_EON, Diffuse_GGX_Rough, rough diffuse, Oren-Nayar",
+      "scope": "request",
+      "source": "sandbox:lamp-room#scenes/CalibrationScene.ts",
+      "expect": ["useRoughDiffuse"],
+      "reject": []
+    },
+    {
       "id": "request.lumen-surface-cache",
       "query": "lumen surface cache",
       "scope": "request",

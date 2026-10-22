@@ -120,7 +120,7 @@ inline bool sameUniforms(const Material& a, const Material& b) {
             (a.normalScale.y == b.normalScale.y) & (a.aoMapIntensity == b.aoMapIntensity) & (a.bumpScale == b.bumpScale)) &&
            a.positionNode == b.positionNode && a.nodes == b.nodes &&
            a.vertexColors == b.vertexColors && a.flatShading == b.flatShading && a.twoSidedFoliage == b.twoSidedFoliage &&
-           a.maps == b.maps;
+           a.roughDiffuse == b.roughDiffuse && a.maps == b.maps;
 }
 
 // Bumped at the start of every prepare. No material changes while one runs, so a hash computed in it
@@ -184,6 +184,7 @@ inline std::size_t uniformHash(const Material& m) {
                      double(m.vertexColors),
                      double(m.flatShading),
                      double(m.twoSidedFoliage),
+                     double(m.roughDiffuse),
                      m.normalScale.x,
                      m.normalScale.y,
                      m.aoMapIntensity,

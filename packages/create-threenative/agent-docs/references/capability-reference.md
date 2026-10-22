@@ -2836,6 +2836,22 @@ const hull = await ctx.assets.model("hull.glb");
 ctx.scene.add(hull.scene);
 ```
 
+### `useRoughDiffuse`
+
+`function` — Unreal's Substrate rough diffuse (EON) on standard and physical materials, so direct sun and lamp light meets a rough surface the way Unreal shades it. The same `roughDiffuse` flag works on three's WebGPU renderer and on the owned engine.
+
+```ts
+export function useRoughDiffuse(root: Object3D, enabled = true): number { … }
+```
+
+- **Use when:** shade rough surfaces under a sun or a lamp the way Unreal's Substrate does, not as flat Lambert
+- **Constraints:** direct light only, indirect light stays Lambert; standard and physical materials; a lamp's `sourceRadius` in metres fades the effect to Lambert at 20 cm; a material changed after its first draw needs `needsUpdate`
+- **Overrides:** material.roughDiffuse = false, or useRoughDiffuse(root, false), puts Lambert back
+
+```ts
+useRoughDiffuse(scene);
+```
+
 ### `validateWorldMatrices`
 
 `function` — Prove that nothing a cache skipped changed the picture: `TN_RENDERLIST_VALIDATE=1` recomputes every world matrix the long way, every frame, and throws on the first element that disagrees with what the frame is about to draw.
