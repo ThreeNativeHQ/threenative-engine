@@ -270,6 +270,8 @@ describe("the Wasm engine's WebGPURenderer sample count", () => {
       if (field === 25) return 2; // lamp maps redrawn
       if (field === 26) return 13; // their draws
       if (field === 27) return 15; // every shadow draw
+      if (field === 28) return 1024; // the smallest footprint-sized lamp map
+      if (field === 29) return 2048; // and the largest
       return 0;
     });
     const renderer = new Renderer({ canvas, trackTimestamp: true }) as {
@@ -285,6 +287,8 @@ describe("the Wasm engine's WebGPURenderer sample count", () => {
       shadowDraws: 15,
       sunGpuMs: -1,
       lampGpuMs: -1,
+      lampMapMin: 1024,
+      lampMapMax: 2048,
     });
     gpuSamples = 1;
     renderer.render(scene, camera);

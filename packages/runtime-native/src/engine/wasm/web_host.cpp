@@ -616,6 +616,9 @@ extern "C" double tnw_web_frame(int field) {
         case 25: return double(renderer->lastFrame().lampRedraws);
         case 26: return double(renderer->lastFrame().lampShadowDraws);
         case 27: return double(renderer->lastFrame().shadowDraws);
+        // 28 and 29: the smallest and largest edge of the lamp maps the footprint sized (0 without one).
+        case 28: return double(renderer->lampShadowExtent()[0]);
+        case 29: return double(renderer->lampShadowExtent()[1]);
         default: return 0;
     }
 }

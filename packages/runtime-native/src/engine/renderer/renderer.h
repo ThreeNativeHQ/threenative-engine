@@ -343,6 +343,17 @@ public:
     std::size_t materialTextureCount() const { return textures_->records.size(); }
     /** What the last frame refused or skipped by name; cleared at the start of each frame. */
     const std::vector<std::string>& diagnostics() const { return diagnostics_; }
+    /** The smallest and largest edge of the lamp maps the footprint sized, {0, 0} without one (PRD-650). */
+    std::array<uint32_t, 2> lampShadowExtent() const {
+        std::array<uint32_t, 2> extent{0, 0};
+        for (const auto& [light, motion] : lampMotion_) {
+            const uint32_t size = lampShadowSize(light);
+            if (!size) continue;
+            extent[0] = extent[0] ? std::min(extent[0], size) : size;
+            extent[1] = std::max(extent[1], size);
+        }
+        return extent;
+    }
     /** The edge of light `light`'s lamp map as last allocated, 0 without one (PRD-650). */
     uint32_t lampShadowSize(std::size_t light) const {
         for (const auto* maps : {&shadowMaps_, &cubeShadowMaps_})
