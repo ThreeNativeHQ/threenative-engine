@@ -74,8 +74,8 @@ describe("filmic blue correction", () => {
     }
   });
 
-  // The template's curve before blue correction, sampled from its committed JS reference
-  // (create-threenative template-assets/tonemap.ts, 2026-10-19), which templates no longer ship.
+  // The template's curve before blue correction, gamut expansion, glow and red modifier, sampled from its committed JS
+  // reference (create-threenative template-assets/tonemap.ts, 2026-10-19), which templates no longer ship.
   it("reproduces the original curve exactly at amount zero", () => {
     const golden: [RGB, number, RGB][] = [
       [[0, 0, 0], 0, [4.279741339410783e-17, 4.279741339410783e-17, 4.279741339410782e-17]],
@@ -108,7 +108,13 @@ describe("filmic blue correction", () => {
       [[100, 100, 100], 4, [1, 1, 1]],
     ];
     for (const [rgb, exposure, expected] of golden) {
-      const actual = filmicToneMap(rgb, exposure, { ...FILMIC_CURVE, blueCorrection: 0 });
+      const actual = filmicToneMap(rgb, exposure, {
+        ...FILMIC_CURVE,
+        blueCorrection: 0,
+        expandGamut: 0,
+        glow: 0,
+        redModifier: 0,
+      });
       actual.forEach((v, i) => expect(v).toBeCloseTo(expected[i] ?? Number.NaN, 12));
     }
   });

@@ -1034,14 +1034,19 @@ export { sourceAngleShadowFilter } from "./render/soft-shadow.js";
 /**
  * Source-radius blocker search and variable-radius PCF on a spot or point light's shadow map.
  * @situation soften a lamp's shadow by the lamp's size, as Unreal's SourceRadius does
- * @constraint sourceRadius is required, in metres, 0 or more (0 is one hard tap); forward-depth maps only
- * @alias SourceRadius, PCSS, soft lamp shadow
+ * @constraint sourceRadius is required, in metres, 0 or more (0 is one hard tap); penumbraScale, the share of the geometric penumbra kept, is in (0, 4] and defaults to 0.6, the width Unreal's lamp ray test resolves; forward-depth maps only
+ * @alias PCSS soft shadows
+ * @override penumbraScale: 1 gives the geometric penumbra of a disk lamp
  * @example lamp.shadow.filterNode = sourceRadiusShadowFilter({ sourceRadius: 0.05 });
  */
-export {
-  lampPenumbraTangent,
-  sourceRadiusShadowFilter,
-} from "./render/soft-shadow.js";
+export { sourceRadiusShadowFilter } from "./render/soft-shadow.js";
+/**
+ * A lamp's penumbra radius in tangent units at a receiver, from the lamp's source radius and the blocker and receiver distances.
+ * @situation measure a lamp shadow's penumbra width without a GPU
+ * @constraint sourceRadius is 0 or more; both distances are positive metres; the result is the geometric tangent, before penumbraScale
+ * @example const tangent = lampPenumbraTangent(0.05, 2, 3);
+ */
+export { lampPenumbraTangent } from "./render/soft-shadow.js";
 /**
  * Convert world-space caster gap to a shadow UV radius, floored at one texel.
  * @situation measure a source-angle shadow's filter radius without a GPU
@@ -1050,6 +1055,16 @@ export {
  */
 export { penumbraUv } from "./render/soft-shadow.js";
 export type { ISourceAngleShadowInputs, ISourceAngleShadowOptions } from "./render/soft-shadow.js";
+/**
+ * Unreal's Substrate rough diffuse (EON) on standard and physical materials, so direct sun and lamp light meets a rough surface
+ * the way Unreal shades it. The same `roughDiffuse` flag works on three's WebGPU renderer and on the owned engine.
+ * @situation shade rough surfaces under a sun or a lamp the way Unreal's Substrate does, not as flat Lambert
+ * @constraint direct light only, indirect light stays Lambert; standard and physical materials; a lamp's `sourceRadius` in metres fades the effect to Lambert at 20 cm; a material changed after its first draw needs `needsUpdate`
+ * @alias Substrate EON, Diffuse_EON, Diffuse_GGX_Rough, rough diffuse, Oren-Nayar
+ * @override material.roughDiffuse = false, or useRoughDiffuse(root, false), puts Lambert back
+ * @example useRoughDiffuse(scene);
+ */
+export { useRoughDiffuse } from "./render/rough-diffuse.js";
 /**
  * An outdoor daylight rig: physical sky, one sun with open-world shadows that follow the eye,
  * hemisphere fill, sky-coloured haze and the AgX tone curve. Every value is the game's.

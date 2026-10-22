@@ -26,7 +26,7 @@ import {
   SUN_KELVIN,
   bakeSkyRadiance,
   sunLight,
-  sunTransmittance,
+  sunLightTransmittance,
   temperatureColour,
 } from "./atmosphere.js";
 import { bakeCloudRadiance } from "./clouds.js";
@@ -57,12 +57,18 @@ export const SUN_DIRECTION = new Vector3(0.555, 0.742, 0.38).normalize();
 
 /**
  * The reference level's fog, converted from Unreal's units (density and falloff are per 1000 cm,
- * so x0.1 per metre; the height is the fog actor's z, 68.5 m under the floor). Base-2 depth, as in
- * HeightFogCommon.ush. Inscattering and start distance are Unreal's defaults (black, 0).
+ * so x0.1 per metre; the height is the fog actor's z, 68.5 m under the floor). Inscattering and
+ * start distance are Unreal's defaults (black, 0).
+ *
+ * Unreal's line integral is (1 - 2^-F) / F times density times length
+ * (`CalculateLineIntegralShared` in HeightFogCommon.ush), which is ln2 times the exact integral of
+ * 2^(-k t) that heightFog.ts evaluates. The conversion therefore multiplies the density by ln2.
+ * Measured on the Unreal L2 and L3 frames (exterior, sun60, rows 21 to 2 degrees above the
+ * horizon): sky opacity is 1 - exp(-0.0545 / sin e), and this conversion predicts 0.0560.
  */
 const UNREAL_FOG: HeightFogParams = {
   ...HEIGHT_FOG,
-  density: 0.00436,
+  density: 0.00436 * Math.LN2,
   heightFalloff: 0.02,
   fogHeight: -68.5,
   startDistance: 0,
@@ -187,12 +193,12 @@ function atmosphereSky(clouds = false): Texture | undefined {
   return texture;
 }
 
-/** The sun reaches the ground through the air: its colour is the temperature tint times transmittance. */
+/** The sun reaches the ground through the air: its colour is the temperature tint times Unreal's CPU transmittance estimate. */
 function tintSun(): void {
   const sun = sunLight.current;
   if (sun === undefined) return;
   const tint = temperatureColour(SUN_KELVIN);
-  const through = sunTransmittance(Math.asin(Math.min(1, Math.max(-1, SUN_DIRECTION.y))));
+  const through = sunLightTransmittance(Math.asin(Math.min(1, Math.max(-1, SUN_DIRECTION.y))));
   sun.color.setRGB(
     (tint[0] ?? 1) * through[0],
     (tint[1] ?? 1) * through[1],

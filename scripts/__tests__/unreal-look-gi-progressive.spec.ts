@@ -270,6 +270,41 @@ describe("progressive GI bake", () => {
     expect(largest).toBeLessThan(0.01);
   });
 
+  it("follows a light that changes after the progressive bake converged (PRD-641 AC-2)", () => {
+    const room = sunlitRoom();
+    const source = { intensity: 100, color: new Color(1, 1, 1) };
+    const queue: (() => void)[] = [];
+    let converged = false;
+    installGi(rayContext(room), room, {
+      bounces: 2,
+      lights: [
+        {
+          position: new Vector3(0, 1.5, 0),
+          color: new Color(1, 1, 1),
+          intensity: 100,
+          distance: 0,
+          source,
+        },
+      ],
+      progressive: {
+        previewRays: 16,
+        budgetMs: 5,
+        defer: (run) => void queue.push(run),
+        onConverged: () => {
+          converged = true;
+        },
+      },
+    });
+    for (let steps = 0; !converged && steps < 100000; steps += 1) queue.shift()?.();
+    expect(converged).toBe(true);
+    const total = () => (giCache.field?.values ?? new Float32Array(0)).reduce((a, b) => a + b, 0);
+    const baked = total();
+    expect(baked).toBeGreaterThan(0);
+    source.intensity = 0;
+    expect(giCache.refresh?.()).toBe(true);
+    expect(total()).toBeLessThan(baked * 1e-3);
+  }, 120_000);
+
   it("takes the full bake's bounces for the provisional bake, which lands nearer the full cache on the dim walls", () => {
     // Fewer bounces leave out the warm light a lit floor throws on the walls: the first frame reads dark and blotchy.
     // The global L1 error hides it (0.077 with two bounces, 0.070 with five: the lit floor carries the sum), so the

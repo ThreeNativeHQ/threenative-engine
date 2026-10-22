@@ -527,6 +527,22 @@ describe("main", () => {
       expect(w.log.join("\n")).not.toMatch(/GI lock/i);
     });
 
+    it("checks the L1 direct-light locks of its AFTER arm as well, and a worse direct light exits 2", async () => {
+      const { w, lock, roundWith, locks } = await setup();
+      await main(lock(await roundWith("1")), w.deps);
+      const data = JSON.parse(readFileSync(locks, "utf8"));
+      data.locks.push(...data.locks.map((entry: object) => ({ ...entry, layer: "L1" })));
+      writeFileSync(locks, JSON.stringify(data));
+      w.log.length = 0;
+      await roundWith("2", { dP50: 0.002 }, 0, ["--locks", locks]);
+      expect(w.log.join("\n")).toMatch(
+        /GI locks hold: every locked region of cornell at L1 is inside its bound/,
+      );
+      w.log.length = 0;
+      await roundWith("3", { dP50: 0.01 }, 2, ["--locks", locks]);
+      expect(w.log.join("\n")).toMatch(/cornell L1 cornell Back dP50: 0\.01 is above the lock/);
+    });
+
     it("treats a lock cut against another scene basis as stale: a round logs it and passes, --lock needs --relax", async () => {
       const { w, lock, read, roundWith, locks } = await setup();
       await main(lock(await roundWith("1")), w.deps);
