@@ -1,580 +1,487 @@
 {
- "system": "vsm",
- "notes": "LOC is wc -l of UE 5.8.3 Renderer/Private/VirtualShadowMaps and Shaders/Private/VirtualShadowMaps files, split by measured line ranges. Rows sum to the SYS row LOC, with the remainder in a Shared and glue internal. The last three rows have no LOC in the map (null).",
- "rows": [
-  {
-   "parent": "Page marking and physical page pool",
-   "internals": [
-    [
-     "Pixel page marking from receiver footprint",
-     1212,
-     "Turns each depth pixel into a requested shadow page at the mip its footprint needs, with a border dilation, back-face skip, depth-of-field and first-person resolution bias.",
-     "partial",
-     "ReceiverDemandPass (virtual-shadow-pages.ts) computes demand but nothing renders sparse pages. PRD-457 Phase 2 names demand. The refinements (page dilation 0.05, back-facing pixel skip, depth-of-field bias) wait for PRD-457 admitting pages. Propose one PRD-457 box.",
-     [
-      "457"
-     ]
-    ],
-    [
-     "Froxel page marking",
-     473,
-     "Experimental path that marks pages from 8 by 8 pixel froxels built during the depth pyramid pass, plus the light grid prune.",
-     "deferred",
-     "Off by default in Unreal (r.Shadow.Virtual.MarkPagesUsingFroxels 0, approximate by design). Revisit if PRD-457 admits sparse pages and pixel marking is the measured cost.",
-     []
-    ],
-    [
-     "Coarse page marking",
-     73,
-     "Keeps the coarsest levels resident everywhere so low-resolution data always exists.",
-     "shipped",
-     "The outer clip levels of VirtualShadowNode cover their whole window every frame, so coarse data always exists by construction.",
-     []
-    ],
-    [
-     "Hierarchical page flags and mip propagation",
-     508,
-     "Builds the page flags, propagates mapped mips and filterable requests, merges receiver-mask mips.",
-     "partial",
-     "Page keys and level addressing exist in virtual-shadow-pages.ts. A sparse atlas needs the rest, gated by PRD-457 Phase 1.",
-     [
-      "457"
-     ]
-    ],
-    [
-     "Page table addressing and handles",
-     511,
-     "Virtual to physical page lookup helpers shared by marking, rendering and projection.",
-     "shipped",
-     "DirectionalClipmap and makePageKey/parsePageKey (virtual-shadow-pages.ts) carry the addressing.",
-     []
-    ],
-    [
-     "Physical page allocation, LRU and eviction",
-     1609,
-     "Maps requested pages to physical pages, reuses cached ones, evicts the oldest request first and packs the free list.",
-     "partial",
-     "PhysicalPagePool does LRU bookkeeping with no atlas behind it. PRD-457 Phase 2 box 1 and 2 name demand, LRU eviction and the bias before fallback.",
-     [
-      "457"
-     ]
-    ],
-    [
-     "Static and dynamic page merge, clear and initialize",
-     355,
-     "Selects pages to clear, merges the static page copy into the dynamic one and initializes new pages.",
-     "shipped",
-     "Static cached levels plus a separate mover map ship (PRD-538 partial redraw, PRD-572 automatic mover detection).",
-     [
-      "538",
-      "572"
-     ]
-    ],
-    [
-     "Per-page depth pyramid (HZB)",
-     369,
-     "Builds a depth pyramid for each dirty physical page for two-pass occlusion culling of casters.",
-     "open",
-     "No pyramid of the light view exists. PRD-716 measures the waste first, then builds the cull.",
-     [
-      "716"
-     ]
-    ],
-    [
-     "Prefiltered distant shadows",
-     565,
-     "Experimental separable blur of coarse pages, border gather and merge-down that makes far shadows soft and stable.",
-     "deferred",
-     "Off by default in Unreal (r.Shadow.Virtual.PrefilteredDistant 0, project-enable read-only 0). Revisit if the horizon scene of PRD-649 shows far-shadow shimmer that the clip levels cannot hide.",
-     []
-    ],
-    [
-     "Page pool pressure and dynamic resolution throttle",
-     222,
-     "Raises a resolution bias when the pool passes 85 percent. An experimental mode throttles from a shadow-depth time budget.",
-     "partial",
-     "PRD-457 Phase 2 box 1 names the bias before any fallback. ShadowFilterBudget and adaptiveRefresh step cost from measurement (PRD-652 done phase). The time-budget mode is experimental in Unreal.",
-     [
-      "457",
-      "652"
-     ]
-    ],
-    [
-     "Shadow depth rendering into pages",
-     1101,
-     "Nanite and non-Nanite draw passes, culling dispatch and per-page view setup for the depth render.",
-     "partial",
-     "VirtualShadowNode renders levels with the ordinary renderer. Clustered casters get their own cut in PRD-602 and compute raster in PRD-696.",
-     [
-      "602",
-      "696"
-     ]
-    ],
-    [
-     "Array setup, slot allocation and uniform buffers",
-     956,
-     "Per-frame setup of shadow map slots, uniform buffers and sampling parameters.",
-     "shipped",
-     "VirtualShadowNode owns its levels and uniforms.",
-     []
-    ],
-    [
-     "CVars, scalability tiers and defaults",
-     900,
-     "The console variables that set page pool size, biases, ray counts and marking modes per quality level.",
-     "partial",
-     "PRD-652 carries the tier table (sample counts, directional bias, page pool).",
-     [
-      "652"
-     ]
-    ],
-    [
-     "Page-management dispatcher and shader declarations",
-     686,
-     "Per-page compute dispatch machinery and shader permutation declarations.",
-     "rule",
-     "C++ and shader plumbing for the DirectX/Vulkan path. WebGPU and the owned engine dispatch their own passes.",
-     []
-    ],
-    [
-     "Debug overlays and stats readback in the array code",
-     1116,
-     "Stats logging, light search for the visualizer, caster bounds draw and visualization passes inside the array code.",
-     "open",
-     "PRD-676 reports the shadow-level view. The TN_VIRTUAL_SHADOW marker already ships.",
-     [
-      "676"
-     ]
-    ],
-    [
-     "Receiver masks and instance-to-page overlap tests",
-     464,
-     "Tests whether an instance rectangle overlaps pages that hold visible receivers or are occluded.",
-     "open",
-     "PRD-716 gates and builds the receiver test with the light-view cull.",
-     [
-      "716"
-     ]
-    ],
-    [
-     "Shared and glue",
-     120,
-     "Lines of the row that no single internal owns.",
-     "rule",
-     "Types, packing and helpers that every internal of this row uses. Any implementation needs them, so no PRD tracks them.",
-     []
-    ]
-   ]
-  },
-  {
-   "parent": "Projection + SMRT soft shadows",
-   "internals": [
-    [
-     "Directional projection and clip-level pick",
-     201,
-     "Chooses a clip level per pixel and blends to the next near the level edge.",
-     "shipped",
-     "VirtualShadowNode reads the finest covering level first and stops when the blend weight is spent (PRD-634 round 2).",
-     [
-      "634"
-     ]
-    ],
-    [
-     "Shadow-map ray tracing (SMRT) ray loop",
-     783,
-     "Shoots 7 to 8 rays of 4 to 8 samples across the source disc through the shadow map for a penumbra that grows with the caster gap.",
-     "partial",
-     "PRD-634 and PRD-650 copy the effect with a blocker-search filter, not the method, by design. PRD-652 sets the sample counts per tier.",
-     [
-      "634",
-      "650",
-      "652"
-     ]
-    ],
-    [
-     "Adaptive ray count early exit",
-     45,
-     "After the first ray, a group of pixels that all missed leaves the loop. After N rays, a group that all hit also leaves.",
-     "open",
-     "The source-angle filter always loads 16 blocker and 16 filter texels. PRD-715 gates the exit by measurement.",
-     [
-      "715"
-     ]
-    ],
-    [
-     "Screen-space start ray (smart bias)",
-     86,
-     "A 4-step depth-buffer ray of 1.5 percent of scene depth that tells the shadow ray where to start.",
-     "open",
-     "PRD-649 only measures it by ablation. PRD-715 builds it if the contact delta passes. Not the declined contact shadow of PRD-561.",
-     [
-      "715"
-     ]
-    ],
-    [
-     "Normal bias, slope bias and geometric normal estimate",
-     168,
-     "Offsets the lookup along the normal by an amount that follows camera distance and lens, then adds a slope bias from the receiver plane.",
-     "partial",
-     "receiverPlaneBias ships (slope). The normal offset is a fixed world-unit constant. PRD-715 Phase 2.",
-     [
-      "715"
-     ]
-    ],
-    [
-     "Local-light projection (cube face, footprint mip, spot and point)",
-     292,
-     "Picks the cube face and the mip from the pixel footprint for point and spot lights.",
-     "partial",
-     "PRD-650 sizes each lamp map from the pixels it covers and widens its penumbra with the lamp radius.",
-     [
-      "650"
-     ]
-    ],
-    [
-     "Page lookup, clipmap level selection and level blend",
-     563,
-     "Looks a texel up through the page table, offsets to coarser levels and converts between level bases.",
-     "shipped",
-     "Level selection and blend ship in the receiver. Reach to the horizon is PRD-634.",
-     [
-      "634"
-     ]
-    ],
-    [
-     "Prefiltered distant sampling",
-     47,
-     "Samples the blurred distant pages for far shadows.",
-     "deferred",
-     "Same switch as the prefiltered distant pages. Off by default in Unreal.",
-     []
-    ],
-    [
-     "Projection passes and shadow-mask composite",
-     1537,
-     "Per-light projection into a shadow mask, composite into a screen mask, packed formats and mask clears.",
-     "shipped",
-     "ThreeNative evaluates the shadow in the material, so it needs no screen mask. Glue of a deferred renderer.",
-     []
-    ],
-    [
-     "One-pass projection and per-pixel light list",
-     173,
-     "Projects all lights of a pixel in the lighting pass from a clustered light grid, up to 16 lights.",
-     "deferred",
-     "Needs clustered deferred lighting. Revisit with PRD-660 if many shadowed lamps become a measured cost.",
-     []
-    ],
-    [
-     "Hair strand shadow rays",
-     40,
-     "A single-sample shadow ray path for strand hair.",
-     "deferred",
-     "Revisit when PRD-671 (strand hair) ships and a hair shadow looks wrong.",
-     []
-    ],
-    [
-     "Subsurface and translucent receivers",
-     141,
-     "Transmission through subsurface materials and translucency quality.",
-     "deferred",
-     "No subsurface shading model ships. Revisit with a skin material (PRD-VQ-14).",
-     []
-    ],
-    [
-     "Projection visualization",
-     278,
-     "Debug colors for pages, cache state and ray counts.",
-     "open",
-     "PRD-676 shadow-level view.",
-     [
-      "676"
-     ]
-    ],
-    [
-     "Shared and glue",
-     35,
-     "Lines of the row that no single internal owns.",
-     "rule",
-     "Types, packing and helpers that every internal of this row uses. Any implementation needs them, so no PRD tracks them.",
-     []
-    ]
-   ]
-  },
-  {
-   "parent": "Cache and invalidation",
-   "internals": [
-    [
-     "Per-light cache entries and clip-level cache keys",
-     406,
-     "Keeps each light's cache across frames, resets on a camera cut, a light move or a scale change.",
-     "shipped",
-     "VirtualShadowNode caches levels with a window key and resets on cuts (PRD-538, PRD-572).",
-     [
-      "538",
-      "572"
-     ]
-    ],
-    [
-     "Instance invalidation: collectors, scene updater, payloads",
-     803,
-     "Collects moved, revealed, deformed and removed primitives and turns them into page invalidations.",
-     "shipped",
-     "ShadowInvalidationTracker and automatic mover detection ship. WPO and sway are PRD-651 Phase 3.",
-     [
-      "538",
-      "572",
-      "651"
-     ]
-    ],
-    [
-     "GPU-driven invalidation",
-     455,
-     "Compute passes that invalidate the pages an instance bounds covers, with a load balancer.",
-     "partial",
-     "The tracker runs on the CPU. PRD-524 names invalidation by caster bounds for the owned engine.",
-     [
-      "524"
-     ]
-    ],
-    [
-     "Physical pool resize and memory",
-     100,
-     "Reserved-resource pool allocation, resize and free, and the pyramid pool.",
-     "deferred",
-     "A sparse atlas does not exist yet. Revisit with PRD-457 Phase 2.",
-     []
-    ],
-    [
-     "Frame data extraction and persistent primitive indices",
-     214,
-     "Saves page tables and metadata for the next frame and keeps primitive flag buffers.",
-     "shipped",
-     "Level state persists in the node.",
-     [
-      "538"
-     ]
-    ],
-    [
-     "Stats extraction, overflow messages and cache views",
-     242,
-     "Accumulates cache stats and shows overflow notices and cache visualization.",
-     "open",
-     "PRD-676 shadow-level view.",
-     [
-      "676"
-     ]
-    ],
-    [
-     "Shadow caster bounds debug draw",
-     218,
-     "Draws caster bounds in a debug pass.",
-     "open",
-     "Debug view. PRD-676 owns it if the shadow-level view needs it.",
-     [
-      "676"
-     ]
-    ],
-    [
-     "Cache CVars (static threshold, page age, light age)",
-     210,
-     "Console variables such as frames before a mover returns to the static cache (100).",
-     "shipped",
-     "staticAfterFrames defaults to 100 (PRD-572).",
-     [
-      "572"
-     ]
-    ],
-    [
-     "Shared and glue",
-     1116,
-     "Lines of the row that no single internal owns.",
-     "rule",
-     "Header types, page cache common helpers and uncounted lines of the manager.",
-     []
-    ]
-   ]
-  },
-  {
-   "parent": "Debug and stats",
-   "internals": [
-    [
-     "Statistics counters, print and CSV log",
-     644,
-     "Counts pages, draws and cache hits and prints or logs them.",
-     "partial",
-     "The TN_VIRTUAL_SHADOW marker ships with level, refresh and gate counters. PRD-676 adds the shadow-level view.",
-     [
-      "676"
-     ]
-    ],
-    [
-     "Page and cache visualization overlays",
-     295,
-     "Colors pages by mip, cache state and age for the viewport.",
-     "open",
-     "PRD-676 shadow-level view.",
-     [
-      "676"
-     ]
-    ],
-    [
-     "Shared and glue",
-     76,
-     "Lines of the row that no single internal owns.",
-     "rule",
-     "Types, packing and helpers that every internal of this row uses. Any implementation needs them, so no PRD tracks them.",
-     []
-    ]
-   ]
-  },
-  {
-   "parent": "Directional clipmaps",
-   "internals": [
-    [
-     "Level geometry, snapping, bounding volumes and view matrices",
-     491,
-     "Computes level radii that double, snaps each origin to its grid and builds the per-level light view.",
-     "shipped",
-     "VirtualShadowNode builds snapped, camera-centered levels. Reach to the horizon is PRD-634.",
-     [
-      "634"
-     ]
-    ],
-    [
-     "Lens, viewport and orthographic scaling of level choice",
-     114,
-     "Scales the resolution bias by the camera focal length and viewport width, and picks the first level from an orthographic width.",
-     "open",
-     "VirtualShadowNode uses fixed clipExtents [16, 48, 144] and never reads the lens. PRD-714.",
-     [
-      "714"
-     ]
-    ],
-    [
-     "Clipmap CVars and tier bias",
-     198,
-     "First and last level, coarse levels, z range, resolution bias for still and moving suns.",
-     "partial",
-     "resolutionLodBiasDirectional ships in PRD-652. The moving-sun bias defaults to the still value in Unreal, so it changes no default look.",
-     [
-      "652"
-     ]
-    ],
-    [
-     "Cache hooks",
-     28,
-     "Tells the cache a primitive rendered into the clipmap and persists frame data.",
-     "shipped",
-     "PRD-538 and PRD-572.",
-     [
-      "538",
-      "572"
-     ]
-    ]
-   ]
-  },
-  {
-   "parent": "Per-page draw commands",
-   "internals": [
-    [
-     "Per-page draw command build and instance culling",
-     503,
-     "Builds the list of instances to draw for each dirty page, culling by page rectangle, footprint and occlusion.",
-     "partial",
-     "Dirty-rectangle redraw and a minimum caster size in texels ship (partialRedraw, minCasterTexels 1.5). The occlusion half is PRD-716.",
-     [
-      "538",
-      "716"
-     ]
-    ],
-    [
-     "View compaction and explicit chunk view masks",
-     141,
-     "Packs the active views of a multi-view raster pass.",
-     "rule",
-     "Needs a single-pass multi-view raster. VirtualShadowNode draws one level at a time.",
-     []
-    ],
-    [
-     "Mask bit helpers",
-     70,
-     "Bit helpers for view and page masks.",
-     "rule",
-     "Glue.",
-     []
-    ]
-   ]
-  },
-  {
-   "parent": "Leaf and alpha-masked casters",
-   "internals": [
-    [
-     "Alpha-masked depth in the page raster",
-     null,
-     "Casters with alpha-tested materials discard in the shadow depth pass.",
-     "partial",
-     "Native masked depth program done, browser alphaTestNode cut and parity open. Lines are counted in the rows above.",
-     [
-      "651"
-     ]
-    ],
-    [
-     "Wind and sway of casters near the camera",
-     null,
-     "Animates world position offset in fine levels and disables it past a distance.",
-     "open",
-     "PRD-651 Phase 3 is blocked on the wind node of PRD-488.",
-     [
-      "651"
-     ]
-    ],
-    [
-     "Two-sided foliage receiver",
-     null,
-     "Skips the normal bias and widens the source angle for a marked leaf receiver.",
-     "partial",
-     "Done on both engines, parity run open.",
-     [
-      "651"
-     ]
-    ]
-   ]
-  },
-  {
-   "parent": "Calibration and tiers",
-   "internals": [
-    [
-     "Shadow quality tiers",
-     null,
-     "Low, Medium, High and Epic set ray counts, the resolution bias and the page pool.",
-     "partial",
-     "PRD-652 tier table and ShadowFilterBudget step.",
-     [
-      "652"
-     ]
-    ],
-    [
-     "Calibration scenes and judged parity",
-     null,
-     "Unreal-built scenes isolate penumbra, lamp, leaf and motion cases.",
-     "open",
-     "PRD-649.",
-     [
-      "649"
-     ]
-    ],
-    [
-     "Distance-field far shadows",
-     null,
-     "A far shadow from mesh distance fields beyond the virtual map reach.",
-     "open",
-     "PRD-649 AC-2 records whether the default look includes it. Revisit if the horizon ablation shows it.",
-     [
-      "649"
-     ]
-    ]
-   ]
-  }
- ]
+  "system": "vsm",
+  "notes": "LOC is wc -l of UE 5.8.3 Renderer/Private/VirtualShadowMaps and Shaders/Private/VirtualShadowMaps files, split by measured line ranges. Rows sum to the SYS row LOC, with the remainder in a Shared and glue internal. The last three rows have no LOC in the map (null).",
+  "rows": [
+    {
+      "parent": "Page marking and physical page pool",
+      "internals": [
+        [
+          "Pixel page marking from receiver footprint",
+          1212,
+          "Turns each depth pixel into a requested shadow page at the mip its footprint needs, with a border dilation, back-face skip, depth-of-field and first-person resolution bias.",
+          "partial",
+          "ReceiverDemandPass (virtual-shadow-pages.ts) computes demand but nothing renders sparse pages. PRD-457 Phase 2 names demand. The refinements (page dilation 0.05, back-facing pixel skip, depth-of-field bias) wait for PRD-457 admitting pages. Propose one PRD-457 box.",
+          ["457"]
+        ],
+        [
+          "Froxel page marking",
+          473,
+          "Experimental path that marks pages from 8 by 8 pixel froxels built during the depth pyramid pass, plus the light grid prune.",
+          "deferred",
+          "Off by default in Unreal (r.Shadow.Virtual.MarkPagesUsingFroxels 0, approximate by design). Revisit if PRD-457 admits sparse pages and pixel marking is the measured cost.",
+          []
+        ],
+        [
+          "Coarse page marking",
+          73,
+          "Keeps the coarsest levels resident everywhere so low-resolution data always exists.",
+          "shipped",
+          "The outer clip levels of VirtualShadowNode cover their whole window every frame, so coarse data always exists by construction.",
+          []
+        ],
+        [
+          "Hierarchical page flags and mip propagation",
+          508,
+          "Builds the page flags, propagates mapped mips and filterable requests, merges receiver-mask mips.",
+          "partial",
+          "Page keys and level addressing exist in virtual-shadow-pages.ts. A sparse atlas needs the rest, gated by PRD-457 Phase 1.",
+          ["457"]
+        ],
+        [
+          "Page table addressing and handles",
+          511,
+          "Virtual to physical page lookup helpers shared by marking, rendering and projection.",
+          "shipped",
+          "DirectionalClipmap and makePageKey/parsePageKey (virtual-shadow-pages.ts) carry the addressing.",
+          []
+        ],
+        [
+          "Physical page allocation, LRU and eviction",
+          1609,
+          "Maps requested pages to physical pages, reuses cached ones, evicts the oldest request first and packs the free list.",
+          "partial",
+          "PhysicalPagePool does LRU bookkeeping with no atlas behind it. PRD-457 Phase 2 box 1 and 2 name demand, LRU eviction and the bias before fallback.",
+          ["457"]
+        ],
+        [
+          "Static and dynamic page merge, clear and initialize",
+          355,
+          "Selects pages to clear, merges the static page copy into the dynamic one and initializes new pages.",
+          "shipped",
+          "Static cached levels plus a separate mover map ship (PRD-538 partial redraw, PRD-572 automatic mover detection).",
+          ["538", "572"]
+        ],
+        [
+          "Per-page depth pyramid (HZB)",
+          369,
+          "Builds a depth pyramid for each dirty physical page for two-pass occlusion culling of casters.",
+          "open",
+          "No pyramid of the light view exists. PRD-716 measures the waste first, then builds the cull.",
+          ["716"]
+        ],
+        [
+          "Prefiltered distant shadows",
+          565,
+          "Experimental separable blur of coarse pages, border gather and merge-down that makes far shadows soft and stable.",
+          "deferred",
+          "Off by default in Unreal (r.Shadow.Virtual.PrefilteredDistant 0, project-enable read-only 0). Revisit if the horizon scene of PRD-649 shows far-shadow shimmer that the clip levels cannot hide.",
+          []
+        ],
+        [
+          "Page pool pressure and dynamic resolution throttle",
+          222,
+          "Raises a resolution bias when the pool passes 85 percent. An experimental mode throttles from a shadow-depth time budget.",
+          "partial",
+          "PRD-457 Phase 2 box 1 names the bias before any fallback. ShadowFilterBudget and adaptiveRefresh step cost from measurement (PRD-652 done phase). The time-budget mode is experimental in Unreal.",
+          ["457", "652"]
+        ],
+        [
+          "Shadow depth rendering into pages",
+          1101,
+          "Nanite and non-Nanite draw passes, culling dispatch and per-page view setup for the depth render.",
+          "partial",
+          "VirtualShadowNode renders levels with the ordinary renderer. Clustered casters get their own cut in PRD-602 and compute raster in PRD-696.",
+          ["602", "696"]
+        ],
+        [
+          "Array setup, slot allocation and uniform buffers",
+          956,
+          "Per-frame setup of shadow map slots, uniform buffers and sampling parameters.",
+          "shipped",
+          "VirtualShadowNode owns its levels and uniforms.",
+          []
+        ],
+        [
+          "CVars, scalability tiers and defaults",
+          900,
+          "The console variables that set page pool size, biases, ray counts and marking modes per quality level.",
+          "partial",
+          "PRD-652 carries the tier table (sample counts, directional bias, page pool).",
+          ["652"]
+        ],
+        [
+          "Page-management dispatcher and shader declarations",
+          686,
+          "Per-page compute dispatch machinery and shader permutation declarations.",
+          "rule",
+          "C++ and shader plumbing for the DirectX/Vulkan path. WebGPU and the owned engine dispatch their own passes.",
+          []
+        ],
+        [
+          "Debug overlays and stats readback in the array code",
+          1116,
+          "Stats logging, light search for the visualizer, caster bounds draw and visualization passes inside the array code.",
+          "open",
+          "PRD-676 reports the shadow-level view. The TN_VIRTUAL_SHADOW marker already ships.",
+          ["676"]
+        ],
+        [
+          "Receiver masks and instance-to-page overlap tests",
+          464,
+          "Tests whether an instance rectangle overlaps pages that hold visible receivers or are occluded.",
+          "open",
+          "PRD-716 gates and builds the receiver test with the light-view cull.",
+          ["716"]
+        ],
+        [
+          "Shared and glue",
+          120,
+          "Lines of the row that no single internal owns.",
+          "rule",
+          "Types, packing and helpers that every internal of this row uses. Any implementation needs them, so no PRD tracks them.",
+          []
+        ]
+      ]
+    },
+    {
+      "parent": "Projection + SMRT soft shadows",
+      "internals": [
+        [
+          "Directional projection and clip-level pick",
+          201,
+          "Chooses a clip level per pixel and blends to the next near the level edge.",
+          "shipped",
+          "VirtualShadowNode reads the finest covering level first and stops when the blend weight is spent (PRD-634 round 2).",
+          ["634"]
+        ],
+        [
+          "Shadow-map ray tracing (SMRT) ray loop",
+          783,
+          "Shoots 7 to 8 rays of 4 to 8 samples across the source disc through the shadow map for a penumbra that grows with the caster gap.",
+          "partial",
+          "PRD-634 and PRD-650 copy the effect with a blocker-search filter, not the method, by design. PRD-652 sets the sample counts per tier.",
+          ["634", "650", "652"]
+        ],
+        [
+          "Adaptive ray count early exit",
+          45,
+          "After the first ray, a group of pixels that all missed leaves the loop. After N rays, a group that all hit also leaves.",
+          "open",
+          "The source-angle filter always loads 16 blocker and 16 filter texels. PRD-715 gates the exit by measurement.",
+          ["715"]
+        ],
+        [
+          "Screen-space start ray (smart bias)",
+          86,
+          "A 4-step depth-buffer ray of 1.5 percent of scene depth that tells the shadow ray where to start.",
+          "open",
+          "PRD-649 only measures it by ablation. PRD-715 builds it if the contact delta passes. Not the declined contact shadow of PRD-561.",
+          ["715"]
+        ],
+        [
+          "Normal bias, slope bias and geometric normal estimate",
+          168,
+          "Offsets the lookup along the normal by an amount that follows camera distance and lens, then adds a slope bias from the receiver plane.",
+          "partial",
+          "receiverPlaneBias ships (slope). The normal offset is a fixed world-unit constant. PRD-715 Phase 2.",
+          ["715"]
+        ],
+        [
+          "Local-light projection (cube face, footprint mip, spot and point)",
+          292,
+          "Picks the cube face and the mip from the pixel footprint for point and spot lights.",
+          "partial",
+          "PRD-650 sizes each lamp map from the pixels it covers and widens its penumbra with the lamp radius.",
+          ["650"]
+        ],
+        [
+          "Page lookup, clipmap level selection and level blend",
+          563,
+          "Looks a texel up through the page table, offsets to coarser levels and converts between level bases.",
+          "shipped",
+          "Level selection and blend ship in the receiver. Reach to the horizon is PRD-634.",
+          ["634"]
+        ],
+        [
+          "Prefiltered distant sampling",
+          47,
+          "Samples the blurred distant pages for far shadows.",
+          "deferred",
+          "Same switch as the prefiltered distant pages. Off by default in Unreal.",
+          []
+        ],
+        [
+          "Projection passes and shadow-mask composite",
+          1537,
+          "Per-light projection into a shadow mask, composite into a screen mask, packed formats and mask clears.",
+          "shipped",
+          "ThreeNative evaluates the shadow in the material, so it needs no screen mask. Glue of a deferred renderer.",
+          []
+        ],
+        [
+          "One-pass projection and per-pixel light list",
+          173,
+          "Projects all lights of a pixel in the lighting pass from a clustered light grid, up to 16 lights.",
+          "deferred",
+          "Needs clustered deferred lighting. Revisit with PRD-660 if many shadowed lamps become a measured cost.",
+          []
+        ],
+        [
+          "Hair strand shadow rays",
+          40,
+          "A single-sample shadow ray path for strand hair.",
+          "deferred",
+          "Revisit when PRD-671 (strand hair) ships and a hair shadow looks wrong.",
+          []
+        ],
+        [
+          "Subsurface and translucent receivers",
+          141,
+          "Transmission through subsurface materials and translucency quality.",
+          "deferred",
+          "No subsurface shading model ships. Revisit with a skin material (PRD-VQ-14).",
+          []
+        ],
+        [
+          "Projection visualization",
+          278,
+          "Debug colors for pages, cache state and ray counts.",
+          "open",
+          "PRD-676 shadow-level view.",
+          ["676"]
+        ],
+        [
+          "Shared and glue",
+          35,
+          "Lines of the row that no single internal owns.",
+          "rule",
+          "Types, packing and helpers that every internal of this row uses. Any implementation needs them, so no PRD tracks them.",
+          []
+        ]
+      ]
+    },
+    {
+      "parent": "Cache and invalidation",
+      "internals": [
+        [
+          "Per-light cache entries and clip-level cache keys",
+          406,
+          "Keeps each light's cache across frames, resets on a camera cut, a light move or a scale change.",
+          "shipped",
+          "VirtualShadowNode caches levels with a window key and resets on cuts (PRD-538, PRD-572).",
+          ["538", "572"]
+        ],
+        [
+          "Instance invalidation: collectors, scene updater, payloads",
+          803,
+          "Collects moved, revealed, deformed and removed primitives and turns them into page invalidations.",
+          "shipped",
+          "ShadowInvalidationTracker and automatic mover detection ship. WPO and sway are PRD-651 Phase 3.",
+          ["538", "572", "651"]
+        ],
+        [
+          "GPU-driven invalidation",
+          455,
+          "Compute passes that invalidate the pages an instance bounds covers, with a load balancer.",
+          "partial",
+          "The tracker runs on the CPU. PRD-524 names invalidation by caster bounds for the owned engine.",
+          ["524"]
+        ],
+        [
+          "Physical pool resize and memory",
+          100,
+          "Reserved-resource pool allocation, resize and free, and the pyramid pool.",
+          "deferred",
+          "A sparse atlas does not exist yet. Revisit with PRD-457 Phase 2.",
+          []
+        ],
+        [
+          "Frame data extraction and persistent primitive indices",
+          214,
+          "Saves page tables and metadata for the next frame and keeps primitive flag buffers.",
+          "shipped",
+          "Level state persists in the node.",
+          ["538"]
+        ],
+        [
+          "Stats extraction, overflow messages and cache views",
+          242,
+          "Accumulates cache stats and shows overflow notices and cache visualization.",
+          "open",
+          "PRD-676 shadow-level view.",
+          ["676"]
+        ],
+        [
+          "Shadow caster bounds debug draw",
+          218,
+          "Draws caster bounds in a debug pass.",
+          "open",
+          "Debug view. PRD-676 owns it if the shadow-level view needs it.",
+          ["676"]
+        ],
+        [
+          "Cache CVars (static threshold, page age, light age)",
+          210,
+          "Console variables such as frames before a mover returns to the static cache (100).",
+          "shipped",
+          "staticAfterFrames defaults to 100 (PRD-572).",
+          ["572"]
+        ],
+        [
+          "Shared and glue",
+          1116,
+          "Lines of the row that no single internal owns.",
+          "rule",
+          "Header types, page cache common helpers and uncounted lines of the manager.",
+          []
+        ]
+      ]
+    },
+    {
+      "parent": "Debug and stats",
+      "internals": [
+        [
+          "Statistics counters, print and CSV log",
+          644,
+          "Counts pages, draws and cache hits and prints or logs them.",
+          "partial",
+          "The TN_VIRTUAL_SHADOW marker ships with level, refresh and gate counters. PRD-676 adds the shadow-level view.",
+          ["676"]
+        ],
+        [
+          "Page and cache visualization overlays",
+          295,
+          "Colors pages by mip, cache state and age for the viewport.",
+          "open",
+          "PRD-676 shadow-level view.",
+          ["676"]
+        ],
+        [
+          "Shared and glue",
+          76,
+          "Lines of the row that no single internal owns.",
+          "rule",
+          "Types, packing and helpers that every internal of this row uses. Any implementation needs them, so no PRD tracks them.",
+          []
+        ]
+      ]
+    },
+    {
+      "parent": "Directional clipmaps",
+      "internals": [
+        [
+          "Level geometry, snapping, bounding volumes and view matrices",
+          491,
+          "Computes level radii that double, snaps each origin to its grid and builds the per-level light view.",
+          "shipped",
+          "VirtualShadowNode builds snapped, camera-centered levels. Reach to the horizon is PRD-634.",
+          ["634"]
+        ],
+        [
+          "Lens, viewport and orthographic scaling of level choice",
+          114,
+          "Scales the resolution bias by the camera focal length and viewport width, and picks the first level from an orthographic width.",
+          "open",
+          "VirtualShadowNode uses fixed clipExtents [16, 48, 144] and never reads the lens. PRD-714.",
+          ["714"]
+        ],
+        [
+          "Clipmap CVars and tier bias",
+          198,
+          "First and last level, coarse levels, z range, resolution bias for still and moving suns.",
+          "partial",
+          "resolutionLodBiasDirectional ships in PRD-652. The moving-sun bias defaults to the still value in Unreal, so it changes no default look.",
+          ["652"]
+        ],
+        [
+          "Cache hooks",
+          28,
+          "Tells the cache a primitive rendered into the clipmap and persists frame data.",
+          "shipped",
+          "PRD-538 and PRD-572.",
+          ["538", "572"]
+        ]
+      ]
+    },
+    {
+      "parent": "Per-page draw commands",
+      "internals": [
+        [
+          "Per-page draw command build and instance culling",
+          503,
+          "Builds the list of instances to draw for each dirty page, culling by page rectangle, footprint and occlusion.",
+          "partial",
+          "Dirty-rectangle redraw and a minimum caster size in texels ship (partialRedraw, minCasterTexels 1.5). The occlusion half is PRD-716.",
+          ["538", "716"]
+        ],
+        [
+          "View compaction and explicit chunk view masks",
+          141,
+          "Packs the active views of a multi-view raster pass.",
+          "rule",
+          "Needs a single-pass multi-view raster. VirtualShadowNode draws one level at a time.",
+          []
+        ],
+        ["Mask bit helpers", 70, "Bit helpers for view and page masks.", "rule", "Glue.", []]
+      ]
+    },
+    {
+      "parent": "Leaf and alpha-masked casters",
+      "internals": [
+        [
+          "Alpha-masked depth in the page raster",
+          null,
+          "Casters with alpha-tested materials discard in the shadow depth pass.",
+          "partial",
+          "Native masked depth program done, browser alphaTestNode cut and parity open. Lines are counted in the rows above.",
+          ["651"]
+        ],
+        [
+          "Wind and sway of casters near the camera",
+          null,
+          "Animates world position offset in fine levels and disables it past a distance.",
+          "open",
+          "PRD-651 Phase 3 is blocked on the wind node of PRD-488.",
+          ["651"]
+        ],
+        [
+          "Two-sided foliage receiver",
+          null,
+          "Skips the normal bias and widens the source angle for a marked leaf receiver.",
+          "partial",
+          "Done on both engines, parity run open.",
+          ["651"]
+        ]
+      ]
+    },
+    {
+      "parent": "Calibration and tiers",
+      "internals": [
+        [
+          "Shadow quality tiers",
+          null,
+          "Low, Medium, High and Epic set ray counts, the resolution bias and the page pool.",
+          "partial",
+          "PRD-652 tier table and ShadowFilterBudget step.",
+          ["652"]
+        ],
+        [
+          "Calibration scenes and judged parity",
+          null,
+          "Unreal-built scenes isolate penumbra, lamp, leaf and motion cases.",
+          "open",
+          "PRD-649.",
+          ["649"]
+        ],
+        [
+          "Distance-field far shadows",
+          null,
+          "A far shadow from mesh distance fields beyond the virtual map reach.",
+          "open",
+          "PRD-649 AC-2 records whether the default look includes it. Revisit if the horizon ablation shows it.",
+          ["649"]
+        ]
+      ]
+    }
+  ]
 }
