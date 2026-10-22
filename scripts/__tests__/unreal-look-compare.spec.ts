@@ -424,8 +424,9 @@ describe("Unreal reference comparison", () => {
       since: "abc1234",
       ...over,
     });
-    function locked(locks: unknown[]) {
+    function locked(locks: unknown[], ratchets: unknown[] = []) {
       const { root, put } = fixture();
+      put("ratchets.json", JSON.stringify({ version: 1, ratchets }));
       for (const engine of ["unreal", "threenative"]) {
         put(`captures/${engine}/ID/ID_exterior.png`, floor());
         put(
@@ -448,6 +449,40 @@ describe("Unreal reference comparison", () => {
       main(["--check", "--reference-dir", root]);
       expect(process.exitCode).toBe(1);
       process.exitCode = undefined;
+    });
+    it("fails a ratchet that the capture is further from Unreal than, beside the locks, and exits 1", () => {
+      const ratchet = (bound: number) => ({
+        scene: "reference",
+        layer: "L1",
+        cell: "sun60_exterior",
+        region: "Floor",
+        metric: "dP50",
+        bound,
+        value: bound,
+        spread: 0,
+        runs: 2,
+        since: "abc1234",
+        date: "2026-10-22",
+      });
+      const held = runCheck({ referenceDir: locked([lock()], [ratchet(100)]) });
+      expect(held.failures).toEqual([]);
+      expect(held.ratchetFailures).toEqual([]);
+      expect(held.ratchets).toBe(1);
+      const root = locked([lock()], [ratchet(0.0001)]);
+      const slid = runCheck({ referenceDir: root });
+      expect(slid.failures).toEqual([]);
+      expect(slid.ratchetFailures).toHaveLength(1);
+      expect(slid.ratchetFailures[0]).toMatch(
+        /^reference L1 sun60_exterior Floor dP50: .* further from Unreal than the ratchet 0\.0001/,
+      );
+      main(["--check", "--reference-dir", root]);
+      expect(process.exitCode).toBe(1);
+      process.exitCode = undefined;
+    });
+    it("refuses a reference dir with no ratchet file instead of skipping the ratchets", () => {
+      const root = locked([lock()]);
+      rmSync(path.join(root, "ratchets.json"));
+      expect(() => runCheck({ referenceDir: root })).toThrow(/BAD_INPUT.*no ratchet file/);
     });
     it("fails a locked cell the capture does not have", () => {
       const root = locked([lock({ region: "NoSuchRegion" }), lock({ pose: "interior" })]);

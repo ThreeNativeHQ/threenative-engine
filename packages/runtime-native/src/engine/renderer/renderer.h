@@ -431,6 +431,11 @@ public:
         bool active = false, historyValid = false;
         uint64_t frame = 0;
         double jitterX = 0, jitterY = 0;
+        // The newest counted frame (one in `TraaPass::kMeasureEvery` is counted): the pixels whose history the resolve
+        // discarded (`rejected`: off screen or disoccluded), the pixels whose history it pulled into the colour
+        // neighbourhood (`clamped`), the pixel count of that frame and the frame it was. All 0 until the first count.
+        uint32_t rejected = 0, clamped = 0, pixels = 0;
+        uint64_t countedFrame = 0;
     };
     const TemporalStatus& temporalStatus() const { return temporalStatus_; }
     void cutHistory();
@@ -982,6 +987,14 @@ private:
     std::unique_ptr<TraaPass> traa_;
     std::shared_ptr<const shader::graph::PostEffect> liveTraa_;
     TemporalStatus temporalStatus_;
+    /** What the newest counted frame's readback brought back (`TemporalStatus::rejected`): shared with the callback, which can outlive the renderer. */
+    struct TraaCounts {
+        std::atomic<uint32_t> rejected{0}, clamped{0}, pixels{0};
+        std::atomic<uint64_t> frame{0};
+    };
+    std::shared_ptr<TraaCounts> traaCounts_ = std::make_shared<TraaCounts>();
+    Handle traaStats_;  // the resolve's two counters, read back after the frame that counted them
+    void readTraaCounts();
     /** True when the resolve reads a frame the post graph drew (`traaResolvesLate`): it then runs as a graph pass. */
     bool lateTraa_ = false;
     /** The colour the post graph and the output pass read as `scene`: the scene pass's own, or its resolve. */

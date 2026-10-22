@@ -1186,6 +1186,74 @@ void traaGhosting() {
     CHECK(rigid.back() < 0.7 && instanced.back() < 0.3);
 }
 
+// The resolve counts the pixels whose history it discarded and the pixels whose history it pulled into the colour
+// neighbourhood, on one frame in sixteen, and the count reaches `temporalStatus()` without stalling a frame. A still camera
+// discards nothing here. A camera that slides four pixels a frame discards the strip at the edge it moves toward, where the
+// history lies off screen: 141 pixels, three columns of 48 (0.046 of the frame), at every counted frame.
+void traaRejection() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    CHECK(rendersPixels(context));
+    if (!rendersPixels(context)) return;
+    constexpr uint32_t width = 64, height = 48;
+    constexpr int frames = 70;
+    BarField field;
+    shader::StandardMaterial white;
+    white.color = {1, 1, 1};
+    DrawItem bars;
+    bars.key = bars.id = 2; bars.kind = MaterialKind::Basic;
+    bars.positions = &field.positions; bars.indices = &field.indices; bars.material = &white;
+    bars.matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+    // `camera(aspect)` moved by `x` along its own x axis; 0.1 of a world unit is 1.03 pixels at the bars' depth.
+    const auto at = [&](double x) {
+        CameraState c = camera(double(width) / height);
+        c.matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, x, 0, 4, 1};
+        c.matrixWorldInverse = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -x, 0, -4, 1};
+        return c;
+    };
+    struct Counted { uint32_t rejected, clamped, pixels; uint64_t frame; };
+    const auto run = [&](double per) {
+        EventQueue events;
+        auto renderer = std::make_unique<Renderer>(context.getInstance(), context.getDevice(), context.getQueue(), events);
+        renderer->setSize(width, height);
+        renderer->setOutput(OutputState{std::nullopt, 1, false});
+        renderer->setPostGraph(temporalColour());
+        std::vector<Counted> counted;
+        for (int frame = 0; frame <= frames; ++frame) {
+            renderer->render({&bars, 1}, at(-14 + per * frame), LightState{}, {0, 0, 0, 1});
+            // The readback of a counted frame is asked for at the next render and lands on the event queue.
+            for (int wait = 0; wait < 20; ++wait) {
+                renderer->poll();
+                events.drain();
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+            const auto& status = renderer->temporalStatus();
+            if (status.pixels != 0 && (counted.empty() || counted.back().frame != status.countedFrame))
+                counted.push_back({status.rejected, status.clamped, status.pixels, status.countedFrame});
+        }
+        return counted;
+    };
+    const auto still = run(0);
+    const auto sliding = run(0.4);
+    // History frames 16, 32, 48 and 64 are counted; the last one arrives with the render after it.
+    CHECK(still.size() >= 3 && sliding.size() >= 3);
+    if (still.size() < 3 || sliding.size() < 3) return;
+    const auto worst = [](const std::vector<Counted>& all, bool rejected) {
+        double out = 0;
+        for (const auto& c : all) out = std::max(out, double(rejected ? c.rejected : c.clamped) / c.pixels);
+        return out;
+    };
+    for (const auto* all : {&still, &sliding})
+        for (const auto& c : *all) {
+            CHECK(c.pixels == width * height);
+            CHECK(c.frame % 16 == 0);
+            std::fprintf(stderr, "TN_DEBUG rejection %s, frame %llu: rejected %u clamped %u of %u\n", all == &still ? "still" : "sliding",
+                         static_cast<unsigned long long>(c.frame), c.rejected, c.clamped, c.pixels);
+        }
+    CHECK(worst(still, true) == 0);
+    CHECK(worst(sliding, true) > 0.03 && worst(sliding, true) < 0.1);
+}
+
 // The same field seen by a camera that slides: the history is read where the camera's own motion moved it, so the bars keep
 // their contrast. A history read at the wrong place blends neighbouring bars into grey. The measure is the spread of the red
 // channel (its standard deviation) once the camera has slid for 40 frames, over the spread with the camera still.
@@ -1472,6 +1540,7 @@ TN_TEST_MAIN({"resize_readback", resizeReadback}, {"emissive_target", emissiveTa
              {"sibling_reads_the_live_scene", siblingReadsTheLiveScene},
              {"traa_ghosting", traaGhosting},
              {"traa_camera_pan", traaCameraPan},
+             {"traa_rejection", traaRejection},
              {"output_screen_size", outputScreenSize},
 #if defined(MYSTRAL_WEBGPU_DAWN)
              {"traa_validation", traaValidation},

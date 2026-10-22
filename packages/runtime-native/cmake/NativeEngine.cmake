@@ -139,6 +139,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_traa_late_resolve=traa_late_resolve
         native_engine_traa_ghosting=traa_ghosting
         native_engine_traa_camera_pan=traa_camera_pan
+        native_engine_traa_rejection=traa_rejection
         native_engine_sibling_reads_the_live_scene=sibling_reads_the_live_scene
         native_engine_renderer_output_screen_size=output_screen_size)
     target_link_libraries(tn-native-engine-renderer-test PRIVATE tn_engine_renderer tn_host_services)
@@ -263,6 +264,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_renderer_time_uniform=time_uniform
         native_engine_renderer_steady_state=steady_state
         native_engine_renderer_normal_pass_is_not_tallied=normal_pass_is_not_tallied
+        native_engine_renderer_gtao_screen_reach=gtao_screen_reach
         native_engine_renderer_color_write_masks_the_draw=color_write_masks_the_draw
         native_engine_renderer_steady_cache_invalidation=steady_cache_invalidation
         native_engine_render_target=render_target

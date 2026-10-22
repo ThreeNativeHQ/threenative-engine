@@ -1,0 +1,651 @@
+{
+  "system": "lumen",
+  "rows": [
+    {
+      "parent": "Surface cache (cards, capture, scene data)",
+      "internals": [
+        [
+          "Card placement and mesh cards",
+          1694,
+          "Places a few axis-aligned cards on each mesh and tracks them per primitive group.",
+          "deferred",
+          "PRD-639 Decision 2026-10-21 replaces cards with texture-space tiles, because meshes carry UVs. Revisit when a mesh has no usable UV set or the judge sees UV-space error.",
+          [
+            "639"
+          ]
+        ],
+        [
+          "Card capture and physical atlas",
+          2852,
+          "Rasterizes albedo, normal, emissive and depth of each card into a paged physical atlas, inside a per-frame capture budget.",
+          "partial",
+          "PRD-639 Phase 2 builds a per-material atlas of base colour and emissive tiles. The GPU kernel read waits for PRD-603 Phase 2 (PRD-639 AC-2).",
+          [
+            "639"
+          ]
+        ],
+        [
+          "Surface cache residency, resolution and feedback",
+          1942,
+          "Picks each card's resolution from distance and from the pages that rays hit, maps and evicts atlas pages.",
+          "deferred",
+          "The ThreeNative atlas is keyed by material, not by instance, so its size follows the material count, not the scene size. PRD-639 auto-sizes tiles to the atlas. Revisit when TN_SURFACE_CACHE shows tiles shrunk below 16 texels or fallbacks for lack of atlas room.",
+          []
+        ],
+        [
+          "Surface cache compression and copy",
+          1549,
+          "Compresses the atlas into block formats on the GPU (r.LumenScene.SurfaceCache.Compress=1).",
+          "deferred",
+          "A memory saving only. Revisit when the PRD-639 atlas bytes exceed a measured budget on the Android medium tier.",
+          []
+        ],
+        [
+          "Surface cache sampling at a ray hit",
+          1196,
+          "Reads the cards around a hit point and blends them into the hit's albedo, emissive and lighting.",
+          "partial",
+          "PRD-639 Phase 2 reads the tile at the hit UV in the harness bake. The GPU read waits for PRD-603 Phase 2.",
+          [
+            "639"
+          ]
+        ],
+        [
+          "Scene data and primitive updates",
+          3982,
+          "Adds, moves and removes primitives in the Lumen scene; a move updates card transforms without recapture.",
+          "partial",
+          "Static scenes ship through GPUSceneBVH (PRD-244). A moved rigid object and the skinned-mesh guard are filed as PRD-686.",
+          [
+            "244",
+            "686"
+          ]
+        ],
+        [
+          "Heightfields in the scene",
+          104,
+          "Represents landscape as heightfields for tracing and cards.",
+          "deferred",
+          "Terrain enters GPUSceneBVH as triangles today. Revisit when a terrain template's pack build or trace exceeds its budget (PRD-686 Phase 1 measures rebuild cost).",
+          []
+        ],
+        [
+          "Shared and glue",
+          2464,
+          "Cvars, update task orchestration, frame temporaries, the global lighting change test and the GBuffer material read shared by the gathers.",
+          "partial",
+          "The global lighting change test is PRD-603 Phase 3. The rest is scheduling glue with no outcome of its own.",
+          [
+            "603"
+          ]
+        ]
+      ]
+    },
+    {
+      "parent": "Screen probe gather + Short Range AO",
+      "internals": [
+        [
+          "Uniform and adaptive probe placement",
+          428,
+          "Places one jittered probe per 16 px tile and adds adaptive probes where the uniform corners weigh under 0.01.",
+          "open",
+          "Uniform placement is PRD-640 (prototype `probes` option on the epic). Adaptive probes are filed as PRD-684.",
+          [
+            "640",
+            "684"
+          ]
+        ],
+        [
+          "BRDF and lighting importance sampling",
+          1274,
+          "Builds a BRDF PDF from the pixels that read a probe and a lighting PDF from last frame's radiance, and refines low-PDF rays.",
+          "open",
+          "PRD-640 names it only as conditional. Filed as PRD-684 Phase 3.",
+          [
+            "684"
+          ]
+        ],
+        [
+          "Probe tracing and radiance cache handoff",
+          2473,
+          "Traces each probe ray on screen (HZB), then in the world, then reads the radiance cache past its coverage distance.",
+          "open",
+          "PRD-640 Phase 2. The directional cache read is PRD-685.",
+          [
+            "640",
+            "685"
+          ]
+        ],
+        [
+          "Probe spatial filter and irradiance conversion",
+          1567,
+          "Filters probe radiance with its neighbours and converts it to SH or octahedral irradiance.",
+          "open",
+          "PRD-640 Solution (3-pass filter, SH irradiance), proven by its AC-1 and AC-2.",
+          [
+            "640"
+          ]
+        ],
+        [
+          "Probe and pixel temporal accumulation",
+          1401,
+          "Accumulates probe radiance and the per-pixel result over frames, with depth rejection, clamp and fast update.",
+          "partial",
+          "PRD-641 Phases 2 and 3.",
+          [
+            "641"
+          ]
+        ],
+        [
+          "Integrate, tile classification and upsample",
+          1984,
+          "Interpolates probes per pixel with depth weights, integrates diffuse and rough specular, by tile class.",
+          "open",
+          "PRD-640 Solution (per-pixel integrate with a depth weight, composite). Rough specular above 0.4 is PRD-642 Phase 3.",
+          [
+            "640",
+            "642"
+          ]
+        ],
+        [
+          "Short Range AO and bent normal",
+          1341,
+          "Horizon search of 2 slices at full resolution with a bent normal at Epic.",
+          "open",
+          "PRD-640 Phase 3.",
+          [
+            "640"
+          ]
+        ],
+        [
+          "Hardware ray tracing paths",
+          1219,
+          "Hardware ray traced probe and Short Range AO rays.",
+          "deferred",
+          "PRD-645 declined at its gate; deferred until WebGPU exposes ray tracing.",
+          [
+            "645"
+          ]
+        ],
+        [
+          "Hair strands",
+          328,
+          "Marks probes for hair strands and traces hair voxels.",
+          "deferred",
+          "No shipped strand hair. Revisit when PRD-671 ships strands that GI must light.",
+          []
+        ],
+        [
+          "Probe debug overlay",
+          337,
+          "Prints probe placement and tile classes on screen.",
+          "deferred",
+          "A placement overlay is moot until adaptive probes exist. Revisit when PRD-684 Phase 2 ships; PRD-687 holds the GI views.",
+          []
+        ],
+        [
+          "Shared and glue",
+          2150,
+          "Cvars, parameter setup and the gather orchestration.",
+          "open",
+          "Follows PRD-640 and the PRD-644 tier table.",
+          [
+            "640",
+            "644"
+          ]
+        ]
+      ]
+    },
+    {
+      "parent": "Surface cache lighting (direct + radiosity)",
+      "internals": [
+        [
+          "Light culling into card tiles",
+          1823,
+          "Culls lights to card tiles, at most 8 per tile at Epic.",
+          "partial",
+          "PRD-639 Phase 3: at most 8 lights per hit, brightest first, culled by range.",
+          [
+            "639"
+          ]
+        ],
+        [
+          "Card shadowing",
+          1593,
+          "Shadows card lighting from shadow maps first, then traces offscreen shadow rays; applies light functions and cloud transmittance.",
+          "partial",
+          "PRD-639 Phase 3 casts one BVH shadow ray per light. Light functions and cloud transmittance at the hit are not filed: ThreeNative has no light functions, and cloud shadows wait for PRD-665.",
+          [
+            "639"
+          ]
+        ],
+        [
+          "Direct lighting accumulation, update budget and combine",
+          2942,
+          "Accumulates light per card texel, refreshes atlas/32 texels per frame, and writes (direct + indirect) x albedo + emissive.",
+          "partial",
+          "PRD-639 evaluates light per hit; a cached page is added only if Phase 3 measures the per-hit cost above budget (PRD-639 Solution step 3).",
+          [
+            "639"
+          ]
+        ],
+        [
+          "Radiosity",
+          2420,
+          "Traces 4x4 hemisphere probes every 4 texels on the cards and accumulates bounces over frames.",
+          "partial",
+          "PRD-603 Phase 2 adds the bounce from the field's previous generation instead. No box makes a PRD-640 world hit add indirect light; a PRD-640 box is proposed.",
+          [
+            "603"
+          ]
+        ],
+        [
+          "Stochastic direct lighting",
+          2269,
+          "Samples many lights stochastically per card texel.",
+          "rule",
+          "Unreal marks it experimental, default 0, and allows it only with hardware ray tracing (LumenSceneDirectLightingStochastic.inl:3-7, :57-60).",
+          []
+        ],
+        [
+          "Hardware ray traced card lighting",
+          1130,
+          "Hardware ray traced shadows and radiosity rays for cards.",
+          "deferred",
+          "PRD-645 declined at its gate; deferred until WebGPU exposes ray tracing.",
+          [
+            "645"
+          ]
+        ],
+        [
+          "Shared and glue",
+          307,
+          "Cvars and helpers.",
+          "partial",
+          "Follows PRD-639.",
+          [
+            "639"
+          ]
+        ]
+      ]
+    },
+    {
+      "parent": "Reflections (tracing, resolve, denoise)",
+      "internals": [
+        [
+          "Tile classification and ray generation",
+          1319,
+          "Classifies tiles, keeps pixels up to roughness 0.4 and generates GGX rays.",
+          "open",
+          "PRD-642 Solution and Phase 2 box (roughness 0.4 and less trace, rougher pixels cast no ray).",
+          [
+            "642"
+          ]
+        ],
+        [
+          "Reflection tracing",
+          2450,
+          "Traces screen, then world, samples scene colour at an on-screen hit, and runs distant screen traces.",
+          "open",
+          "PRD-642 Phase 2 (BVH continuation). Scene colour at hit and the 40 ray-intensity clamp are not named; a PRD-642 box is proposed.",
+          [
+            "642"
+          ]
+        ],
+        [
+          "Spatial resolve",
+          759,
+          "Reconstructs each pixel from 5 neighbour rays in an 8 px kernel at Epic.",
+          "open",
+          "PRD-642 Solution step 3 (spatial pass).",
+          [
+            "642"
+          ]
+        ],
+        [
+          "Temporal denoiser",
+          809,
+          "Accumulates up to 12 frames with neighbourhood clamp.",
+          "open",
+          "PRD-642 Solution step 3, reusing PRD-641 history code.",
+          [
+            "642",
+            "641"
+          ]
+        ],
+        [
+          "Bilateral filter",
+          291,
+          "A depth-aware filter of 4 samples in an 8 px kernel after the temporal pass, on by default.",
+          "notfiled",
+          "PRD-642 names a spatial and a temporal pass only. A PRD-642 box is proposed instead of a PRD.",
+          []
+        ],
+        [
+          "Front layer translucency and water passes",
+          136,
+          "Runs Lumen reflections on the front translucent layer and on single-layer water.",
+          "deferred",
+          "Front layer is off by default (BaseScalability.ini:546, FrontLayerTranslucency.cpp:22-38). Water uses Lumen reflections whenever they run; a PRD-642 box for the sailing water surface is proposed.",
+          []
+        ],
+        [
+          "Ray traced translucency",
+          1346,
+          "Hardware ray traced translucency with refraction.",
+          "deferred",
+          "Hardware ray tracing only; PRD-645 declined at its gate.",
+          [
+            "645"
+          ]
+        ],
+        [
+          "Hardware ray traced reflections and hit lighting",
+          1410,
+          "Hardware reflection rays and full material hit lighting.",
+          "deferred",
+          "PRD-645 declined at its gate; deferred until WebGPU exposes ray tracing.",
+          [
+            "645"
+          ]
+        ],
+        [
+          "Shared and glue",
+          1272,
+          "Cvars, composite parameters and the reflection orchestration.",
+          "open",
+          "Follows PRD-642 and the PRD-644 reflection tiers.",
+          [
+            "642",
+            "644"
+          ]
+        ]
+      ]
+    },
+    {
+      "parent": "Radiance cache (world probes, clipmaps)",
+      "internals": [
+        [
+          "Probe marking, allocation and indirection",
+          960,
+          "Marks probes that pixels use, allocates atlas slots from a free list and frees probes unused for 8 frames.",
+          "partial",
+          "PRD-605 Decision: wrap-addressed rings and a frustum use window instead of an indirection pool.",
+          [
+            "605"
+          ]
+        ],
+        [
+          "Update priority and trace budget",
+          257,
+          "Buckets probes by age gap over clipmap index and traces 150 per frame at Epic.",
+          "open",
+          "PRD-603 Phase 3 stale queue; PRD-605 Phase 3 ring divisor.",
+          [
+            "603",
+            "605"
+          ]
+        ],
+        [
+          "Probe offset out of geometry",
+          202,
+          "Moves a probe out of geometry using the GBuffer or the global distance field.",
+          "partial",
+          "PRD-604 marks a probe inside geometry invalid instead of moving it.",
+          [
+            "604"
+          ]
+        ],
+        [
+          "Probe tracing with BRDF-driven trace tiles",
+          1055,
+          "Traces each probe in tiles, supersampling where screen-probe BRDF is above 0.1 and downsampling beyond 40 m.",
+          "partial",
+          "PRD-603 Phase 2 traces 64 uniform rays per probe. BRDF-driven tiles are not filed: the 64-ray budget is the cheap start; revisit if PRD-685 Phase 3 shows probe noise.",
+          [
+            "603"
+          ]
+        ],
+        [
+          "Radiance storage, spatial filter, mips and irradiance",
+          641,
+          "Stores octahedral radiance per probe, filters with neighbours, adds borders and a mip, derives irradiance.",
+          "open",
+          "Filed as PRD-685. PRD-603 stores SH irradiance only.",
+          [
+            "685"
+          ]
+        ],
+        [
+          "Probe occlusion depth",
+          209,
+          "Stores cosine-weighted hit distance per direction for probe visibility.",
+          "open",
+          "PRD-604 Phase 2.",
+          [
+            "604"
+          ]
+        ],
+        [
+          "Interpolation with parallax correction",
+          610,
+          "Reads 8 corner probes along a direction with parallax correction and a cone mip.",
+          "open",
+          "Filed as PRD-685 Phase 2; visibility weights from PRD-604.",
+          [
+            "685",
+            "604"
+          ]
+        ],
+        [
+          "Hardware ray tracing",
+          1480,
+          "Hardware ray traced probe updates and far field.",
+          "deferred",
+          "PRD-645 declined at its gate.",
+          [
+            "645"
+          ]
+        ],
+        [
+          "Shared and glue",
+          2067,
+          "Cvars, visualize marking and the update orchestration.",
+          "open",
+          "Follows PRD-603 and PRD-605.",
+          [
+            "603",
+            "605"
+          ]
+        ]
+      ]
+    },
+    {
+      "parent": "Tracing core (SDF, mesh culling, HW RT common)",
+      "internals": [
+        [
+          "Mesh SDF and heightfield culling",
+          1577,
+          "Culls mesh distance fields and heightfields into a froxel grid so each ray tests few objects.",
+          "shipped",
+          "GPUSceneBVH replaces distance fields; its tree does the culling (PRD-244). The owned engine uses the PRD-642 D2 pack.",
+          [
+            "244"
+          ]
+        ],
+        [
+          "Software ray tracing against distance fields",
+          1017,
+          "Sphere-traces mesh SDFs near the ray start, then the global SDF, with voxel lighting far away.",
+          "shipped",
+          "Replaced by the GPUSceneBVH first-hit query (PRD-244); PRD-603 and PRD-662 confirm no distance field is built. Rigid motion is PRD-686.",
+          [
+            "244",
+            "686"
+          ]
+        ],
+        [
+          "Hardware ray tracing common, materials and far field",
+          2762,
+          "Shared hardware ray tracing setup, hit materials and far-field tracing (r.LumenScene.FarField=0 by default).",
+          "deferred",
+          "PRD-645 declined at its gate; far field is off by default in Unreal (LumenScene.cpp:86-87).",
+          [
+            "645"
+          ]
+        ],
+        [
+          "Shared and glue",
+          660,
+          "Tracing utilities, position and buffer encodings.",
+          "shipped",
+          "Covered by the shipped trace (PRD-244).",
+          [
+            "244"
+          ]
+        ]
+      ]
+    },
+    {
+      "parent": "Visualize and debug modes",
+      "internals": [
+        [
+          "Lumen scene, reflection view and surface cache views",
+          2163,
+          "Traces from the camera to show the Lumen scene, the reflection view, surface cache coverage and dedicated reflection rays.",
+          "open",
+          "Filed as PRD-687. PRD-646 owns indirectDiffuse; PRD-641 names framesAccumulated and fastUpdateAmount in its Solution only.",
+          [
+            "687",
+            "646"
+          ]
+        ],
+        [
+          "Radiance cache, radiosity and card lighting views",
+          1205,
+          "Draws radiance cache and radiosity probes and card lighting updates.",
+          "open",
+          "Filed as PRD-687 Phase 3 (radiance cache probes). Radiosity and card-update views are moot: no card radiosity or card update budget is built.",
+          [
+            "687"
+          ]
+        ],
+        [
+          "Hardware ray traced visualize",
+          1680,
+          "Hardware ray traced versions of the scene views.",
+          "deferred",
+          "PRD-645 declined at its gate.",
+          [
+            "645"
+          ]
+        ]
+      ]
+    },
+    {
+      "parent": "ReSTIR gather",
+      "internals": [
+        [
+          "Reservoir sampling, temporal and spatial resampling",
+          3001,
+          "Keeps one reservoir per half-resolution pixel and resamples it with last frame and with neighbours.",
+          "deferred",
+          "PRD-661 opens on a gate; no Unreal quality level turns it on.",
+          [
+            "661"
+          ]
+        ]
+      ]
+    },
+    {
+      "parent": "Translucency volume",
+      "internals": [
+        [
+          "Froxel volume trace and filter",
+          1671,
+          "Fills a camera froxel grid from the radiance cache, cone-traces at Epic and reprojects with 0.9 history.",
+          "open",
+          "PRD-643 Phase 2 reads the radiance cache per pixel first; the froxel volume is built only if that read costs more than 0.5 ms.",
+          [
+            "643"
+          ]
+        ],
+        [
+          "Translucency radiance cache and glossy reflections on translucent surfaces",
+          634,
+          "Marks probes for translucent surfaces at quarter resolution and gives them glossy reflections from that cache.",
+          "open",
+          "Diffuse: PRD-643 Phase 2. Glossy reflections: filed as PRD-685 Phase 3.",
+          [
+            "643",
+            "685"
+          ]
+        ],
+        [
+          "Hardware ray tracing",
+          338,
+          "Hardware ray traced froxel lighting.",
+          "deferred",
+          "PRD-645 declined at its gate.",
+          [
+            "645"
+          ]
+        ]
+      ]
+    },
+    {
+      "parent": "Irradiance field gather",
+      "internals": [
+        [
+          "Probe gather and half-resolution interpolation",
+          805,
+          "Medium tier: radiance cache probes around pixels, 6x6 irradiance, half-resolution interpolate; adaptive placement off by default.",
+          "open",
+          "PRD-603 (trace and budget), PRD-605 (clipmaps), PRD-644 (the medium tier). Adaptive placement is off in Unreal (LumenIrradianceFieldGather.cpp:128).",
+          [
+            "603",
+            "605",
+            "644"
+          ]
+        ],
+        [
+          "Visibility-weighted interpolation",
+          368,
+          "Weighs 8 probes by wrap, Chebyshev visibility and validity, with a normal and view offset.",
+          "open",
+          "PRD-604 Phase 2.",
+          [
+            "604"
+          ]
+        ]
+      ]
+    },
+    {
+      "parent": "Tier and scalability glue",
+      "internals": [
+        [
+          "Final gather method and allow checks",
+          1004,
+          "Chooses the final gather method per quality level and checks that Lumen may run on the view.",
+          "partial",
+          "PRD-644 tier table and GIBudget; PRD-647 calibration done.",
+          [
+            "644",
+            "647"
+          ]
+        ],
+        [
+          "Per-view history state",
+          387,
+          "Holds each view's GI and reflection histories across frames.",
+          "open",
+          "PRD-641 (gather history) and PRD-642 (reflection history).",
+          [
+            "641",
+            "642"
+          ]
+        ]
+      ]
+    }
+  ]
+}
