@@ -82,3 +82,13 @@ prd_contract: v1
   regions at L9 (for example `sun60-window` `Floor` 126 against 140 at `dd489e9e4`, Unreal 138), and head `3844cece8` still
   shows it in 28 regions. This PRD does not say whether the cause is a finishing stage or the exposure wait. A capture
   of `dd489e9e4` with a settled exposure would tell.
+- 2026-10-22 (judge lane, lock sweep): the direct-light layer L1 (GI off) is locked for both GI scenes from the two
+  runs of the newest arms (`arm-2a38e6557031` for `sunlit-room`, `arm-0d059709cb7e` for `cornell`): 40 and 12 regions.
+  `calibrate` checks the L1 locks of its AFTER arm on every round, next to the L7 locks. Every region is locked, not
+  only the ones inside their threshold, because the lock is a ratchet at the measured value. Red on older frames:
+  the `sunlit-room` arm `0f48b22` breaks 80 bounds (the overlap floor, 0.999 against 1), and the `cornell` arm
+  `98a0afd` (older level) breaks 48 bounds including `Ceiling` dP50 0.08187 against 0.020468 and deltaE 4.009
+  against 1.0017. The spec `checks the L1 direct-light locks of its AFTER arm` fails when `calibrate` skips L1.
+  Sweep limits: the reference scene (L0 to L9) cannot be measured here because its Unreal reference statistics are
+  not committed and the Unreal frames of L1 to L8 are not on this machine, and the `shadow:` scenes have no
+  committed statistics or ID frames. Both need an Unreal capture and `compare --write-stats --write-masks` first.
