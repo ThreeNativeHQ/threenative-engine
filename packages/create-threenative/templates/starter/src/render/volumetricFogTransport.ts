@@ -8,7 +8,6 @@ import {
   If,
   Loop,
   float,
-  getViewPosition,
   lightShadowMatrix,
   max,
   min,
@@ -23,6 +22,20 @@ import {
 import type { Node } from "three/webgpu";
 
 export type ScenePass = ReturnType<typeof pass>;
+
+/**
+ * A screen position and its depth as a view-space point: three's `getViewPosition` on WebGPU's clip
+ * space, spelled out because the Wasm engine's TSL does not export that function.
+ */
+export function viewPosition(
+  uv: Node<"vec2">,
+  depth: Node<"float">,
+  inverseProjection: Node<"mat4">,
+): Node<"vec3"> {
+  const screen = vec2(uv.x, float(1).sub(uv.y)).mul(2).sub(1);
+  const view = inverseProjection.mul(vec4(vec3(screen, depth), 1));
+  return view.xyz.div(view.w);
+}
 type FogDepth = ReturnType<ScenePass["getTextureNode"]>;
 export interface IFogBounds {
   low: Node<"vec3">;
@@ -40,6 +53,7 @@ export interface IFogLocalLight {
 export interface IFogTransportInputs {
   albedo: Node<"vec3">;
   ambient: Node<"vec3">;
+  ambientNode: ((position: Node<"vec3">) => Node<"vec3">) | undefined;
   anisotropy: number;
   bounds: IFogBounds[];
   cameraMatrix: Node<"mat4">;
@@ -58,6 +72,7 @@ export function fogTransport(inputs: IFogTransportInputs): Node<"vec4"> {
   const {
     albedo,
     ambient,
+    ambientNode,
     anisotropy,
     bounds,
     cameraMatrix,
@@ -80,7 +95,7 @@ export function fogTransport(inputs: IFogTransportInputs): Node<"vec4"> {
     );
   return Fn(() => {
     const endpoint = cameraMatrix.mul(
-      vec4(getViewPosition(screenUV, depth.r, inverseProjection), 1),
+      vec4(viewPosition(screenUV, depth.r, inverseProjection), 1),
     ).xyz;
     const toSurface = endpoint.sub(origin).toVar();
     const distance = toSurface.length().max(0.000001).toVar();
@@ -127,7 +142,9 @@ export function fogTransport(inputs: IFogTransportInputs): Node<"vec4"> {
             },
           );
         }
-        const illumination = vec3(ambient).toVar();
+        const illumination = (
+          ambientNode === undefined ? vec3(ambient) : vec3(ambient).add(ambientNode(position))
+        ).toVar();
         if (
           sun !== undefined &&
           shadowDepth != null &&

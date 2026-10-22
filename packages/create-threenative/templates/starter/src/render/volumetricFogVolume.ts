@@ -4,12 +4,14 @@
 import {
   type DirectionalLight,
   HalfFloatType,
+  type Matrix4,
   NearestFilter,
   type PerspectiveCamera,
   type PointLight,
   Vector3,
+  Vector4,
 } from "three";
-import { Fn, If, float, getViewPosition, max, rtt, screenUV, uniform, vec2, vec4 } from "three/tsl";
+import { Fn, If, float, mat4, max, rtt, screenUV, uniform, vec2, vec4 } from "three/tsl";
 import type { Node, NodeMaterial, RenderTarget } from "three/webgpu";
 import type { IFogVolume, IVolumetricFogOptions } from "./volumetricFogOptions.js";
 import {
@@ -17,6 +19,7 @@ import {
   type IFogLocalLight,
   type ScenePass,
   fogTransport,
+  viewPosition,
 } from "./volumetricFogTransport.js";
 
 type FogTexture = ReturnType<typeof rtt> & {
@@ -41,6 +44,18 @@ function lightRadiance(light: DirectionalLight | PointLight) {
   );
 }
 
+/**
+ * A camera matrix as four live columns. The owned engine's TSL takes a vector or a colour as a uniform value, not a
+ * Matrix4, and the camera's own matrix (not the one of the pass that draws the quad) is what the march needs.
+ */
+function liveMatrix(read: () => Matrix4): Node<"mat4"> {
+  const column = (index: number) => {
+    const value = new Vector4();
+    return uniform(value).onRenderUpdate(() => value.fromArray(read().elements, index * 4));
+  };
+  return mat4(column(0), column(1), column(2), column(3));
+}
+
 export function composeFogVolume(
   camera: PerspectiveCamera,
   options: IVolumetricFogOptions,
@@ -52,8 +67,8 @@ export function composeFogVolume(
     low: uniform(volume.bounds.min.clone()),
     high: uniform(volume.bounds.max.clone()),
   }));
-  const cameraMatrix = uniform(camera.matrixWorld);
-  const inverseProjection = uniform(camera.projectionMatrixInverse);
+  const cameraMatrix = liveMatrix(() => camera.matrixWorld);
+  const inverseProjection = liveMatrix(() => camera.projectionMatrixInverse);
   const cameraPosition = new Vector3();
   const origin = uniform(cameraPosition).onRenderUpdate(() =>
     camera.getWorldPosition(cameraPosition),
@@ -87,6 +102,7 @@ export function composeFogVolume(
   const inputs = {
     albedo,
     ambient,
+    ambientNode: options.ambientNode,
     anisotropy: options.anisotropy,
     bounds,
     cameraMatrix,
@@ -118,8 +134,8 @@ export function composeFogVolume(
     // integrate the full-resolution pixel instead; do not borrow stale/foreground history.
     if (options.resolutionScale < 1) {
       const lowUV = screenUV.mul(size.xy).floor().add(0.5).div(size.xy);
-      const fullZ = getViewPosition(screenUV, depth.r, inverseProjection).z;
-      const lowZ = getViewPosition(lowUV, depth.sample(lowUV).r, inverseProjection).z;
+      const fullZ = viewPosition(screenUV, depth.r, inverseProjection).z;
+      const lowZ = viewPosition(lowUV, depth.sample(lowUV).r, inverseProjection).z;
       If(
         fullZ
           .sub(lowZ)

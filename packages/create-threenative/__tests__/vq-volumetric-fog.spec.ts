@@ -4,6 +4,7 @@ import {
   Box3,
   BoxGeometry,
   Color,
+  Data3DTexture,
   DepthTexture,
   DirectionalLight,
   FogExp2,
@@ -17,7 +18,7 @@ import {
   Texture,
   Vector3,
 } from "three";
-import { pass } from "three/tsl";
+import { pass, texture3D } from "three/tsl";
 import { type Node, WGSLNodeBuilder } from "three/webgpu";
 import { describe, expect, it, vi } from "vitest";
 import { setupSky } from "../templates/starter/src/render/sky.js";
@@ -27,6 +28,38 @@ import {
 } from "../templates/starter/src/render/volumetricFog.js";
 
 import { type OutputRenderer, WorldEnvironment } from "../template-assets/worldEnvironment.js";
+
+/**
+ * The owned engine's TSL front-end takes a node, a number, a string, a colour or a Vector2 to 4 as a uniform value
+ * (packages/three-native/src/browser-tsl.ts, `argument`). A Matrix4 or a Box3 stops the game at start with
+ * TN_TSL uniform, so every value the fog hands to `uniform()` is recorded here. The same front-end does not export
+ * `getViewPosition` (the catalog marks it unsupported), so a call to it is recorded too.
+ */
+const refused: string[] = [];
+vi.mock("three/tsl", async (importOriginal) => {
+  const real = await importOriginal<Record<string, (...args: unknown[]) => unknown>>();
+  return {
+    ...real,
+    getViewPosition: () => {
+      refused.push("getViewPosition");
+      return (real.vec3 as (...args: unknown[]) => unknown)(0);
+    },
+    uniform: (
+      value: { [flag: string]: unknown } | number | string | null | undefined,
+      ...rest: unknown[]
+    ) => {
+      const taken =
+        value == null ||
+        typeof value === "number" ||
+        typeof value === "string" ||
+        ["isNode", "isColor", "isVector2", "isVector3", "isVector4"].some(
+          (flag) => (value as { [flag: string]: unknown })[flag] === true,
+        );
+      if (!taken) refused.push(String((value as object).constructor.name));
+      return (real.uniform as (...args: unknown[]) => unknown)(value, ...rest);
+    },
+  };
+});
 
 function required<T>(value: T | undefined | null): T {
   if (value == null) throw new Error("Missing fixture value");
@@ -268,6 +301,72 @@ it.each([false, true])("builds the actual depth-clipped transport WGSL (lights=%
   fog.dispose();
   scenePass.dispose();
   options.sun?.shadow.map?.dispose();
+});
+
+/** The WGSL one fragment node builds to, on the same fake WebGPU renderer the transport tests use. */
+function fragmentCode(camera: PerspectiveCamera, node: Node, output: "vec4"): string {
+  const renderer = {
+    backend: {
+      isWebGPUBackend: true,
+      capabilities: { getUniformBufferLimit: () => 65_536 },
+      utils: { getTextureSampleData: () => ({ primarySamples: 1 }) },
+    },
+    coordinateSystem: 2001,
+    hasCompatibility: () => true,
+    hasFeature: () => false,
+    getRenderTarget: () => null,
+    getOutputBufferType: () => 1016,
+    samples: 0,
+    getMRT: () => null,
+    library: { fromMaterial: () => null },
+    shadowMap: { enabled: true, type: 1 },
+  };
+  const builder = new WGSLNodeBuilder(
+    new Mesh(new BoxGeometry(), new MeshBasicMaterial()),
+    renderer as never,
+  ) as unknown as {
+    camera: PerspectiveCamera;
+    setShaderStage(stage: string): void;
+    flowStagesNode(node: Node, output: string): { code: string };
+  };
+  builder.camera = camera;
+  builder.setShaderStage("fragment");
+  return builder.flowStagesNode(node, output).code;
+}
+
+it("scatters a field read at every step when the air is given an ambient node (PRD-643)", () => {
+  const camera = new PerspectiveCamera();
+  const field = new Data3DTexture(new Float32Array(4), 1, 1, 1);
+  const wgsl = (ambientNode?: IVolumetricFogOptions["ambientNode"]): string => {
+    const fog = required(createVolumetricFog(new Scene(), camera, { ...settings(), ambientNode }));
+    const scenePass = pass(new Scene(), camera);
+    fog.compose(scenePass);
+    const code = fragmentCode(camera, required(fog.transport), "vec4");
+    fog.dispose();
+    scenePass.dispose();
+    return code;
+  };
+  const plain = wgsl();
+  const lit = wgsl((position) => texture3D(field).sample(position.mul(0.1)).rgb);
+  // A 3D read is the only `vec3<u32>` texture load in the march (the scene depth is 2D).
+  const read = /textureLoad\([^;]*vec3<u32>/;
+  expect(plain).not.toMatch(read);
+  // The field is read inside the march: after the loop header, not once before it.
+  expect(lit.search(read)).toBeGreaterThan(lit.indexOf("for ("));
+});
+
+it("hands the owned engine's TSL only uniform values and functions it takes (PRD-643)", () => {
+  refused.length = 0;
+  const camera = new PerspectiveCamera();
+  const fog = required(createVolumetricFog(new Scene(), camera, settings()));
+  const scenePass = pass(new Scene(), camera);
+  const composed = fog.compose(scenePass);
+  // A TSL function body runs when the shader builds, so build both graphs the game draws.
+  fragmentCode(camera, required(fog.transport), "vec4");
+  fragmentCode(camera, composed, "vec4");
+  expect(refused).toEqual([]);
+  fog.dispose();
+  scenePass.dispose();
 });
 
 /**
