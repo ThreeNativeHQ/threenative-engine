@@ -572,9 +572,10 @@ globalThis.tn.scene = scene; globalThis.tn.camera = new PerspectiveCamera(); glo
 await bundleNativeEngine({ entry: coreLookEntry, outfile: coreLookOut, boot: false });
 const coreLook = spawnSync(resolve(executable), ["--check-game", coreLookOut], { encoding: "utf8" });
 assert.equal(coreLook.status, 0, coreLook.stderr);
-// A game TempNode (PRD-636's LocalExposureNode) on the V8 player: setup() builds its engine node once,
-// it is an operand and a receiver, a FRAME node's updateBefore runs once per render, and
-// RendererUtils restores the target it changed.
+// A game TempNode (PRD-636's LocalExposureNode) on the V8 player: setup() builds its engine node once and
+// it is an operand and a receiver. A check has no renderer, as a game's startup has none, so render()
+// runs no FRAME node's updateBefore (its draws would have nothing to draw with); the local-exposure
+// parity row proves the per-frame update on the GPU. RendererUtils is bound.
 const tempEntry = resolve(work, "temp-node.ts");
 const tempOut = resolve(work, "temp-node.js");
 await writeFile(tempEntry, `
@@ -598,7 +599,10 @@ if (typeof float(node).mul(node).add(node.mul(3)).toVar !== "function") throw ne
 const renderer = new WebGPURenderer({ canvas: { width: 64, height: 64 } });
 const scene = new Scene(); const camera = new PerspectiveCamera();
 renderer.render(scene, camera); renderer.render(scene, camera);
-if (setups !== 1 || updates !== 2) throw new Error("setup " + setups + " update " + updates);
+if (setups !== 1 || updates !== 0) throw new Error("setup " + setups + " update " + updates);
+const state = RendererUtils.resetRendererState(renderer);
+renderer.setRenderTarget(target);
+RendererUtils.restoreRendererState(renderer, state);
 if (renderer.getRenderTarget() !== null) throw new Error("RendererUtils left the target set");
 node.dispose();
 let disposed = false;

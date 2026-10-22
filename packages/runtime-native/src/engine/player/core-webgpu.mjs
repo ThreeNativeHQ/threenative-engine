@@ -200,8 +200,12 @@ const tslNode = Symbol.for("threenative.tslNode");
 const nodeMethods = Object.defineProperties({}, Object.getOwnPropertyDescriptors(globalThis.tsl.float(0)));
 const tempNodes = defineTempNode(nodeMethods, tslNode, (output) => (tslNode in output ? output[tslNode] : output));
 export const { TempNode } = tempNodes;
+// The game's startup render() runs before the player opens its renderer and draws no frame, so its nodes
+// update on the first render() of a drawn frame.
 let tempFrame = 0;
-const updateTempNodes = (renderer, scene, camera) => tempNodes.update({ renderer, scene, camera, frameId: ++tempFrame });
+const updateTempNodes = (renderer, scene, camera) => {
+  if (globalThis.tn.hasRenderer()) tempNodes.update({ renderer, scene, camera, frameId: ++tempFrame });
+};
 
 // three's RenderPipeline(renderer, outputNode): the player installs the node graph as its post pass
 // (once per graph) and draws it with the renderer's settings.
