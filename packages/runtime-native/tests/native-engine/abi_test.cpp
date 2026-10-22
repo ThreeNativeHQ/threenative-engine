@@ -23,6 +23,7 @@
 #include "engine/scene/geometry.h"
 #include "engine/scene/projected_cull.h"
 
+#include <algorithm>
 #include <fstream>
 #include <cstdlib>
 #include <cmath>
@@ -1051,6 +1052,55 @@ void tsl_call() {
 
 // PRD-540: a uniform's value is live. Midway writes `clock.value` every frame; the write reaches the
 // material's graph data without changing the program key, so nothing recompiles.
+// A mat4 built from four vec4 uniforms, as a game reads a camera matrix column by column, compiles and takes each
+// column's new value without a new program: the uniforms sit inside the matrix and the renderer reads them afresh.
+void tsl_matrix_columns() {
+    const tn_version_info_t own = tn_engine_version();
+    tn_context_t* ctx = nullptr;
+    Diag d;
+    CHECK(tn_context_create(&ctx, &own, &d.value) == TN_OK);
+    const auto vector = [](double a, double b, double c, double e) {
+        tn_tsl_arg_t arg{};
+        arg.kind = TN_TSL_ARG_VECTOR;
+        arg.reserved = 4;
+        arg.numbers[0] = a, arg.numbers[1] = b, arg.numbers[2] = c, arg.numbers[3] = e;
+        return arg;
+    };
+    uint64_t columns[4]{};
+    tn_tsl_arg_t parts[4]{};
+    for (int i = 0; i < 4; ++i) {
+        const tn_tsl_arg_t zero = vector(0, 0, 0, 0);
+        CHECK(tn_tsl_call(ctx, "uniform", nullptr, &zero, 1, &columns[i], &d.value) == TN_OK);
+        parts[i].kind = TN_TSL_ARG_NODE;
+        parts[i].node = columns[i];
+    }
+    uint64_t matrix = 0, product = 0;
+    CHECK(tn_tsl_call(ctx, "mat4", nullptr, parts, 4, &matrix, &d.value) == TN_OK);
+    const tn_tsl_arg_t point = vector(1, 1, 1, 1);
+    CHECK(tn_tsl_call(ctx, "mul", &matrix, &point, 1, &product, &d.value) == TN_OK);
+    tn_handle_t material{};
+    CHECK(tn_construct(ctx, "MeshBasicNodeMaterial", nullptr, 0, &material, &d.value) == TN_OK);
+    CHECK(tn_tsl_set(ctx, material, "colorNode", product, &d.value) == TN_OK);
+    CHECK(tn_tsl_compile(material, nullptr, &d.value) == TN_OK);
+    namespace g = tn::engine::shader::graph;
+    const auto graph = tn::abi::shaderNode(material, "colorNode");
+    const std::string key = g::key(graph);
+    // The four columns of a camera at (1, 2, 3), then at (4, 5, 6).
+    for (const double position : {1.0, 4.0}) {
+        const double axes[4][4] = {{1, 0, 0, 0}, {0, 1, 0, 0}, {0, 0, 1, 0}, {position, position + 1, position + 2, 1}};
+        for (int i = 0; i < 4; ++i) CHECK(tn_tsl_set_uniform(ctx, &columns[i], axes[i], 4, &d.value) == TN_OK);
+        std::vector<std::vector<double>> seen;
+        for (const auto& [name, values] : g::uniforms(graph)) seen.push_back(values);
+        std::sort(seen.begin(), seen.end());
+        std::vector<std::vector<double>> expected;
+        for (const auto& axis : axes) expected.emplace_back(axis, axis + 4);
+        std::sort(expected.begin(), expected.end());
+        CHECK(seen == expected);
+        CHECK(g::key(graph) == key);
+    }
+    CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
+}
+
 void tsl_uniform_value() {
     const tn_version_info_t own = tn_engine_version();
     tn_context_t* ctx = nullptr;
@@ -1446,6 +1496,54 @@ void typed_bytes() {
     CHECK(tn_invoke(m, "fromArray", &missing, 1, &result, &d.value) == TN_ERROR_INVALID_ARGUMENT);
     const tn_value_t converted = bytes("Int16Array", nullptr, 2);
     CHECK(tn_construct(ctx, "BufferAttribute", &converted, 1, &attribute, &d.value) != TN_OK);
+    CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
+}
+
+// fromArray(array, offset) reads the lanes that start at offset, as three's does: a mat4 built from four vec4 columns
+// fills column k from offset 4k of the camera matrix, and every column read the first four lanes before this check.
+// A window that leaves the array is refused, where a read past the end used to take whatever followed it.
+void array_offset() {
+    const tn_version_info_t own = tn_engine_version();
+    tn_context_t* ctx = nullptr;
+    Diag d;
+    CHECK(tn_context_create(&ctx, &own, &d.value) == TN_OK);
+    double lanes[20];
+    for (int i = 0; i < 20; ++i) lanes[i] = i + 1;
+    const tn_value_t array = bytes("Float64Array", lanes, 20);
+    tn_value_t result_{};
+    const auto toArray = [&](tn_handle_t object) {
+        tn_value_t result{};
+        CHECK(tn_invoke(object, "toArray", nullptr, 0, &result, &d.value) == TN_OK && result.kind == TN_VALUE_NUMBERS);
+        return std::vector<double>(result.numbers, result.numbers + result.count);
+    };
+    const auto window = [&](double first, size_t count) {
+        std::vector<double> out;
+        for (size_t i = 0; i < count; ++i) out.push_back(first + static_cast<double>(i));
+        return out;
+    };
+    // class name, lane count: the offset 2 window starts at the third lane of 1, 2, 3, ...
+    const std::pair<const char*, size_t> classes[] = {{"Vector2", 2}, {"Vector3", 3}, {"Vector4", 4}, {"Quaternion", 4},
+                                                      {"Color", 3}, {"Matrix3", 9}, {"Matrix4", 16}};
+    for (const auto& [name, count] : classes) {
+        tn_handle_t object{};
+        CHECK(tn_construct(ctx, name, nullptr, 0, &object, &d.value) == TN_OK);
+        const tn_value_t args[2] = {array, num(2)};
+        CHECK(tn_invoke(object, "fromArray", args, 2, &result_, &d.value) == TN_OK);
+        CHECK(toArray(object) == window(3, count));
+        const tn_value_t start[2] = {array, num(static_cast<double>(20 - count))};
+        CHECK(tn_invoke(object, "fromArray", start, 2, &result_, &d.value) == TN_OK);
+        CHECK(toArray(object) == window(static_cast<double>(21 - count), count));
+        const tn_value_t past[2] = {array, num(static_cast<double>(21 - count))};
+        CHECK(tn_invoke(object, "fromArray", past, 2, &result_, &d.value) == TN_ERROR_INVALID_ARGUMENT);
+        const tn_value_t negative[2] = {array, num(-1)};
+        CHECK(tn_invoke(object, "fromArray", negative, 2, &result_, &d.value) == TN_ERROR_INVALID_ARGUMENT);
+        const tn_value_t fractional[2] = {array, num(0.5)};
+        CHECK(tn_invoke(object, "fromArray", fractional, 2, &result_, &d.value) == TN_ERROR_INVALID_ARGUMENT);
+        // The refusals changed nothing, and no offset still means offset 0.
+        CHECK(toArray(object) == window(static_cast<double>(21 - count), count));
+        CHECK(tn_invoke(object, "fromArray", &array, 1, &result_, &d.value) == TN_OK);
+        CHECK(toArray(object) == window(1, count));
+    }
     CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
 }
 
@@ -2448,6 +2546,6 @@ void starter_post_bindings() {
 
 TN_TEST_MAIN({"body_result_lowers_once", body_result_lowers_once}, {"body_result_in_a_branch", body_result_in_a_branch}, {"join_converts_integer_parts", join_converts_integer_parts}, {"struct_function_return", struct_function_return}, {"authored_output", authored_output}, {"fragment_node_vec3_is_opaque", fragment_node_vec3_is_opaque}, {"rtt_quad_depth_has_a_vertex_output", rtt_quad_depth_has_a_vertex_output}, {"post_output_depth_has_a_vertex_output", post_output_depth_has_a_vertex_output}, {"skinned_bounds_before_the_first_frame", skinned_bounds_before_the_first_frame}, {"tsl_mat2_scalar_order", tsl_mat2_scalar_order}, {"starter_post_bindings", starter_post_bindings}, {"gpu_bind_escape", gpu_bind_escape}, {"version", version}, {"handles", handles}, {"generic", generic}, {"scene", scene},
              {"unsupported_member", unsupported_member}, {"material", material}, {"light", light}, {"spot_target_in_scene", spot_target_in_scene}, {"shadow_camera_in_scene", shadow_camera_in_scene}, {"lifetime", lifetime},
-             {"callbacks", callbacks}, {"color_set", color_set}, {"children", children}, {"tsl_call", tsl_call}, {"tsl_uniform_value", tsl_uniform_value}, {"tsl_statements", tsl_statements}, {"tsl_effect_parameter", tsl_effect_parameter}, {"mixer_time_field", mixer_time_field}, {"visible_field", visible_field}, {"layers_field", layers_field}, {"walk_parents", walk_parents}, {"property_bind", property_bind}, {"euler_order_field", euler_order_field}, {"object_addresses", object_addresses}, {"geometry_shapes", geometry_shapes}, {"typed_bytes", typed_bytes}, {"data_texture_bytes", data_texture_bytes}, {"attribute_view_writes", attribute_view_writes},
+             {"callbacks", callbacks}, {"color_set", color_set}, {"children", children}, {"tsl_call", tsl_call}, {"tsl_uniform_value", tsl_uniform_value}, {"tsl_matrix_columns", tsl_matrix_columns}, {"tsl_statements", tsl_statements}, {"tsl_effect_parameter", tsl_effect_parameter}, {"mixer_time_field", mixer_time_field}, {"visible_field", visible_field}, {"layers_field", layers_field}, {"walk_parents", walk_parents}, {"property_bind", property_bind}, {"euler_order_field", euler_order_field}, {"object_addresses", object_addresses}, {"geometry_shapes", geometry_shapes}, {"typed_bytes", typed_bytes}, {"array_offset", array_offset}, {"data_texture_bytes", data_texture_bytes}, {"attribute_view_writes", attribute_view_writes},
              {"attribute_defer", attribute_defer}, {"material_uuid", material_uuid}, {"matrix_walk_count", matrix_walk_count}, {"geometry_index_null", geometry_index_null}, {"world_space_conversions", world_space_conversions},
              {"projected_cull_list", projected_cull_list}, {"projected_cull_held_restore", projected_cull_held_restore})
