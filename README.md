@@ -182,6 +182,11 @@ place: [`docs/CURRENT-CHALLENGES.md`](docs/CURRENT-CHALLENGES.md).
   each version number promises before and after 1.0, and how a symbol gets deprecated.
 - [`packages/create-threenative/README.md`](packages/create-threenative/README.md) — templates and
   the scaffold command.
+- [Unreal render feature map](docs/PRDs/Unreal/research/unreal-visuals-and-performance-feature-map.html)
+  — the Unreal 5.8.3 visual and performance systems, sized by measured lines of code, rated for
+  complexity, and colored by ThreeNative status. Open the file in a browser. The
+  [Markdown report](docs/PRDs/Unreal/research/unreal-visuals-and-performance-feature-map.md) has
+  the same data.
 
 ## Contributing
 
