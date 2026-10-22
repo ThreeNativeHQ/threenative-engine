@@ -165,6 +165,20 @@
       "hfovDeg": 70
     }
   ],
+  "motion": {
+    "neon": {
+      "frames": 180,
+      "camera": {
+        "kind": "pose",
+        "pose": "neon"
+      },
+      "light": {
+        "name": "Lamp",
+        "keys": [[0, 1.0], [60, 0.0]]
+      },
+      "regions": ["Floor", "Ceiling", "Wall_Left", "Wall_Brick", "Back"]
+    }
+  },
   "regions": {
     "Floor": [255, 0, 0],
     "Ceiling": [0, 255, 0],
