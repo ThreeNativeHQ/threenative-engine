@@ -270,13 +270,16 @@ extern "C" int tnw_web_render(const tn_handle_t* sceneHandle, const tn_handle_t*
     framesOnGpu.push_back(renderer->gpu().submittedSerial());
     // A refused program or skipped draw, as the V8 player prints it: once each, as a console error,
     // so a page that draws less than its scene says why. TN_POST_NORMAL_SKIPPED is a note, not a fault (the
-    // post pass reads a depth-derived normal there), so it goes to the console log, which a playtest's
-    // no-console-errors policy does not fail on.
+    // post pass reads a depth-derived normal there), and so is TN_TRAA_VELOCITY_SKIPPED (the draw moves with
+    // the camera) and TN_TRAA_MSAA_OFF (the temporal pass replaces the multisampling), so they go to the console log, which a
+    // playtest's no-console-errors policy does not fail on.
     static std::set<std::string> reported;
     for (const std::string& diagnostic : renderer->diagnostics())
-        if (reported.insert(diagnostic).second)
-            std::fprintf(diagnostic.rfind("TN_POST_NORMAL_SKIPPED", 0) == 0 ? stdout : stderr, "TN_RENDERER: %s\n",
-                         diagnostic.c_str());
+        if (reported.insert(diagnostic).second) {
+            const bool note = diagnostic.rfind("TN_POST_NORMAL_SKIPPED", 0) == 0 || diagnostic.rfind("TN_TRAA_VELOCITY_SKIPPED", 0) == 0 ||
+                              diagnostic.rfind("TN_TRAA_MSAA_OFF", 0) == 0;
+            std::fprintf(note ? stdout : stderr, "TN_RENDERER: %s\n", diagnostic.c_str());
+        }
     if (!refused.empty()) return fail(refused);
     if (!database.diagnostics().empty()) return fail(database.diagnostics().front());
     return 0;
@@ -572,7 +575,10 @@ extern "C" int tnw_web_load_gltf(tn_context_t* context, const uint8_t* bytes, ui
  * the last resolved GPU frame time in ms (7), how many GPU times have resolved (8), the caller
  * frame id that sample was submitted under (9), whether frames are timed at all (10), and 1 while
  * two drawn frames are still on the GPU, so the caller draws none (11), and 1 while the last render skipped
- * its frame for an environment that is not baked yet (12).
+ * its frame for an environment that is not baked yet (12). The temporal pass follows: 1 while a traa() effect is in
+ * the post graph (13), the frames it has begun (14), 1 when the next resolve has history (15), and the last
+ * sub-pixel jitter in pixels, x (16) and y (17). Then the samples the scene draws with (18): 1 while the temporal pass
+ * replaces the multisampling the renderer asked for.
  */
 extern "C" double tnw_web_frame(int field) {
     if (!renderer) return 0;
@@ -595,6 +601,12 @@ extern "C" double tnw_web_frame(int field) {
             while (!framesOnGpu.empty() && framesOnGpu.front() <= renderer->gpu().completedSerial()) framesOnGpu.pop_front();
             return framesOnGpu.size() >= kMaxFramesOnGpu ? 1 : 0;
         case 12: return renderer->environmentPending() ? 1 : 0;
+        case 13: return renderer->temporalStatus().active ? 1 : 0;
+        case 14: return double(renderer->temporalStatus().frame);
+        case 15: return renderer->temporalStatus().historyValid ? 1 : 0;
+        case 16: return renderer->temporalStatus().jitterX;
+        case 17: return renderer->temporalStatus().jitterY;
+        case 18: return double(renderer->sampleCount());
         default: return 0;
     }
 }

@@ -454,6 +454,11 @@ Node importPostEffect(const json::Value& record, const std::vector<Node>& args, 
     return n;
 }
 
+bool traaResolvesLate(const PostEffect& effect) {
+    const auto& beauty = effect.inputs.at(0);
+    return !(beauty && beauty->kind == Kind::Texture && beauty->name == "scene");
+}
+
 std::shared_ptr<const PostEffect> traaEffect(Node root) {
     std::shared_ptr<const PostEffect> result;
     std::unordered_set<const NodeData*> seen;
@@ -491,7 +496,19 @@ std::vector<PostPass> postPasses(Node root, std::optional<ToneMapping> toneMappi
         if (!n->post)
             return;
         const auto& effect = *n->post;
-        if (effect.kind == "TRAANode") return;
+        if (effect.kind == "TRAANode") {
+            // Over the scene's own colour the renderer resolves right after the scene pass. Over a texture the graph
+            // drew, the resolve is a pass of the graph, and the renderer draws it once that texture is ready.
+            if (traaResolvesLate(effect)) {
+                PostPass resolve;
+                resolve.host = "traa";
+                resolve.output = effect.output;
+                resolve.package.name = effect.output;
+                resolve.reads = {{"beauty", textureName(effect.inputs[0])}, {"depth", "depth"}};
+                passes.push_back(std::move(resolve));
+            }
+            return;
+        }
         if (effect.kind == "SMAANode") {
             const std::string input = effect.output + "_input", edges = effect.output + "_edges",
                               weights = effect.output + "_weights";

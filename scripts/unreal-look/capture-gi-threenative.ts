@@ -12,10 +12,10 @@ import { existsSync } from "node:fs";
 import { cp, mkdir, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { chromium } from "@playwright/test";
-import { WEBGPU_BROWSER_ARGS } from "../../packages/playtest/src/runner/browser.js";
 import { assertVisualPortAvailable, stopVisualServer } from "../visual-gate.js";
+import { launchWebgpuBrowser } from "./browser.js";
 import { HIDE_UI, freePort, scaffold, waitForServer } from "./capture-threenative.js";
+import { awaitExposureSettled, watchExposure } from "./exposureSettled.js";
 import { readScene, sceneDir, sceneKey } from "./gi.js";
 
 const REPO_ROOT = path.resolve(import.meta.dirname, "../..");
@@ -148,7 +148,7 @@ export async function captureGiThreeNative(options: {
   try {
     const origin = `http://127.0.0.1:${port}/`;
     await waitForServer(origin, server);
-    const browser = await chromium.launch({ args: [...WEBGPU_BROWSER_ARGS], headless: false });
+    const browser = await launchWebgpuBrowser();
     try {
       const report: Record<string, unknown> = {};
       for (const name of options.scenes) {
@@ -162,6 +162,7 @@ export async function captureGiThreeNative(options: {
         // The frame meter prints to the console; a measured pose keeps the windows between two marks.
         let meter: string[] = [];
         page.on("pageerror", (error) => errors.push(error.message));
+        const exposure = watchExposure(page);
         page.on("console", (message) => {
           if (message.text().startsWith("TN_FRAME_BUDGET")) meter.push(message.text());
           if (
@@ -226,10 +227,17 @@ export async function captureGiThreeNative(options: {
               probe: await page.evaluate("window.__tnRef.probe?.()"),
             };
             for (const pose of visit.poses) {
+              const poseAt = Date.now();
               await page.evaluate(`window.__tnRef.pose(${JSON.stringify(pose)})`);
               await page.evaluate(
                 "new Promise((resolve) => { let n = 0; const tick = () => (++n >= 45 ? resolve() : requestAnimationFrame(tick)); requestAnimationFrame(tick); })",
               );
+              // Auto exposure (L9) closes at 1 stop/s like Unreal's: 45 frames are well short of that, so the
+              // frame waits for three settled readings after the pose and fails closed when they never come.
+              if (layer === "L9")
+                console.info(
+                  `TN_UNREAL_LOOK exposure ${pose.name} settled after ${await awaitExposureSettled(page, exposure, poseAt)} ms of waiting`,
+                );
               if (errors.length > 0)
                 throw new Error(`TN_UNREAL_LOOK_PAGE_ERROR: ${errors.join(" | ")}`);
               if (options.measureSeconds !== undefined) {
