@@ -56,6 +56,14 @@ function boxes(...drawn: [string, number, number, number, number][]): string[] {
   return rows.map((row) => row.join(""));
 }
 const here = { scene: "reference", pose: "spheres" };
+/**
+ * The wall A with a blade B on it. Unreal's blade has a gap of `gap` pixels down its middle where the wall
+ * shows through, and ThreeNative's blade is whole: two cut-out edges that land one pixel apart.
+ */
+const blades = (gap: number) => ({
+  unreal: boxes(["A", 10, 5, 40, 30], ["B", 20, 10, 2, 20], ["B", 22 + gap, 10, 2, 20]),
+  threenative: boxes(["A", 10, 5, 40, 30], ["B", 20, 10, 4 + gap, 20]),
+});
 
 describe("sameness gate: one pose", () => {
   const same = ["AAAA....", "AAAA.BB.", "AAAA.BB.", "AAAA...."];
@@ -86,6 +94,9 @@ describe("sameness gate: one pose", () => {
       threenativePx: 2,
       iou: 0,
       gap: Number.POSITIVE_INFINITY,
+      far: 0,
+      thin: 0,
+      lost: 0,
       shift: null,
       pass: false,
     });
@@ -127,14 +138,12 @@ describe("sameness gate: one pose", () => {
   });
 
   it("allows a few pixels beyond the edge limit and not one more", () => {
-    // A sliver of the wall two pixels out, as a crevice between two surfaces moves with one pixel of rounding.
-    const sliver = (length: number) =>
-      boxes(["A", 10, 5, 40, 30], ["A", 50, 10, 2, length], ["B", 2, 2, 6, 6]);
-    expect(row(sliver(EDGE_FAR_LIMIT), "A")).toMatchObject({ far: EDGE_FAR_LIMIT, pass: true });
-    expect(row(sliver(EDGE_FAR_LIMIT + 1), "A")).toMatchObject({
-      far: EDGE_FAR_LIMIT + 1,
-      pass: false,
-    });
+    // A strip of the wall three pixels wide and two pixels out: its outer two columns lie beyond the limit.
+    const strip = (length: number) =>
+      boxes(["A", 10, 5, 40, 30], ["A", 50, 10, 3, length], ["B", 2, 2, 6, 6]);
+    const rows = EDGE_FAR_LIMIT / 2;
+    expect(row(strip(rows), "A")).toMatchObject({ far: EDGE_FAR_LIMIT, pass: true });
+    expect(row(strip(rows + 1), "A")).toMatchObject({ far: EDGE_FAR_LIMIT + 2, pass: false });
   });
 
   it("fails an object that moved, and reports by how many pixels", () => {
@@ -149,6 +158,38 @@ describe("sameness gate: one pose", () => {
     const strict = samenessCell(here, masksOf(wall), masksOf(smaller), 0, 0);
     expect(strict.rows.find((r) => r.object === "A")).toMatchObject({ pass: false });
     expect(strict.pass).toBe(false);
+  });
+
+  it("counts the pixels the other engine draws in a colour that is no ID, a few allowed and not one more", () => {
+    // The first foliage scene: a cut-out card tinted by its texture reads as no object where the edge is dark.
+    const card = masksOf(boxes(["A", 10, 10, 20, 20]));
+    const darkened = (count: number) =>
+      masksOf(
+        boxes(["A", 10, 10, 20, 20]).map((r, y) =>
+          y === 10 ? `${r.slice(0, 10)}${"?".repeat(count)}${r.slice(10 + count)}` : r,
+        ),
+      );
+    const ok = samenessCell(here, card, darkened(EDGE_FAR_LIMIT)).rows[0];
+    expect(ok).toMatchObject({ lost: EDGE_FAR_LIMIT, far: 0, pass: true });
+    const bad = samenessCell(here, card, darkened(EDGE_FAR_LIMIT + 1)).rows[0];
+    expect(bad).toMatchObject({ lost: EDGE_FAR_LIMIT + 1, far: 0, pass: false });
+    // The same in the other engine's frame.
+    expect(samenessCell(here, darkened(EDGE_FAR_LIMIT + 1), card).rows[0]).toMatchObject({
+      lost: EDGE_FAR_LIMIT + 1,
+      pass: false,
+    });
+  });
+
+  it("fails a card whose thin outer ring reads as no ID, though no thick feature moved", () => {
+    const ring = boxes(["A", 10, 10, 20, 20]).map((r, y) =>
+      y === 10 || y === 29
+        ? `${r.slice(0, 10)}${"?".repeat(20)}${r.slice(30)}`
+        : y > 10 && y < 29
+          ? `${r.slice(0, 10)}?${r.slice(11, 29)}?${r.slice(30)}`
+          : r,
+    );
+    const cell = samenessCell(here, masksOf(boxes(["A", 10, 10, 20, 20])), masksOf(ring));
+    expect(cell.rows[0]).toMatchObject({ lost: 76, far: 0, pass: false });
   });
 
   it("leaves a pixel of no ID colour out of the score, and fails a frame with far more of them", () => {
@@ -278,6 +319,39 @@ describe("sameness gate: capture roots", () => {
     );
   });
 
+  it("names an object that no pose of the scene shows, and leaves the verdict alone", () => {
+    const root = tempRoot();
+    for (const engine of ["unreal", "threenative"])
+      put(root, engine, "ID_spheres.png", frame(good));
+    // `good` shows A and B. C is in the scene and out of every view.
+    const report = samenessReport([input("spheres")], root);
+    expect(report.unscored).toEqual(["reference/C"]);
+    expect(report.cells.every((c) => c.pass)).toBe(true);
+  });
+
+  it("scores an object that any pose of the scene shows, and never lists the sky", () => {
+    const root = tempRoot();
+    const other = ["AAAA....", "AAAA.CC.", "AAAA.CC.", "AAAA...."];
+    for (const engine of ["unreal", "threenative"]) {
+      put(root, engine, "ID_spheres.png", frame(good));
+      put(root, engine, "ID_exterior.png", frame(other));
+    }
+    const colors = { ...COLORS, Sky: [1, 2, 3] };
+    const inputs = ["spheres", "exterior"].map((pose) => ({ ...input(pose), colors }));
+    expect(samenessReport(inputs, root).unscored).toEqual([]);
+  });
+
+  it("judges each scene on its own poses", () => {
+    const root = tempRoot();
+    for (const engine of ["unreal", "threenative"]) {
+      put(root, engine, "ID_spheres.png", frame(good));
+      put(root, engine, "ID_exterior.png", frame(["AAAA....", "AAAA.CC.", "AAAA.CC.", "AAAA...."]));
+    }
+    // One scene shows A and B, another A and C: each is missing the object the other shows.
+    const inputs = [input("spheres"), { ...input("exterior"), scene: "other" }];
+    expect(samenessReport(inputs, root).unscored).toEqual(["reference/C", "other/B"]);
+  });
+
   it("fails closed when it selects no pose", () => {
     expect(() => samenessReport([], tempRoot())).toThrow(/^TN_UNREAL_LOOK_BAD_INPUT/);
   });
@@ -331,10 +405,32 @@ describe("sameness gate: capture roots", () => {
     expect(headings).toHaveLength(2);
     for (const heading of headings) expect(heading).toContain("ID layer, both engines");
     expect(text).toContain(
-      "| reference | spheres | A | 16 | 16 | 0.0, 0.0 | 1.0000 | 0 | 0 | PASS |",
+      "| reference | spheres | A | 16 | 16 | 0.0, 0.0 | 1.0000 | 0 | 0 | 0 | 0 | PASS |",
     );
     expect(text).toContain(
       "| reference | spheres | 2 | A | 0 | 0 | 1.0000 | 100.00 | 0.00 / 0.00 | PASS |",
+    );
+  });
+
+  it("reports the thin pixels in the table, after the pixels that decide the verdict", () => {
+    const root = tempRoot();
+    const { unreal, threenative } = blades(1);
+    put(root, "unreal", "ID_spheres.png", frame(unreal));
+    put(root, "threenative", "ID_spheres.png", frame(threenative));
+    const text = samenessTables(samenessReport([input("spheres")], root));
+    expect(text).toContain("px beyond 1 px | thin px beyond 1 px | no-ID px | verdict |");
+    expect(text).toMatch(
+      /\| reference \| spheres \| A \| \d+ \| \d+ \| .* \| 0 \| 18 \| 0 \| PASS \|/,
+    );
+  });
+
+  it("reports the pixels the other engine draws without an ID colour in the table", () => {
+    const root = tempRoot();
+    put(root, "unreal", "ID_spheres.png", frame(good));
+    put(root, "threenative", "ID_spheres.png", frame(["?AAA....", ...good.slice(1)]));
+    const text = samenessTables(samenessReport([input("spheres")], root));
+    expect(text).toMatch(
+      /\| reference \| spheres \| A \| 16 \| 15 \| .* \| 0 \| 0 \| 1 \| PASS \|/,
     );
   });
 
@@ -348,10 +444,59 @@ describe("sameness gate: capture roots", () => {
       frame(["AAAA....", "AAAA....", "AAAA....", "AAAA...."]),
     );
     const text = samenessTables(samenessReport([input("spheres")], root));
-    expect(text).toContain("| reference | spheres | B | 4 | 0 | — | 0.0000 | ∞ | ∞ | FAIL |");
+    expect(text).toContain(
+      "| reference | spheres | B | 4 | 0 | — | 0.0000 | ∞ | ∞ | — | — | FAIL |",
+    );
     expect(text).toContain(
       "| reference | spheres | 2 | B | ∞ | ∞ | 0.0000 | 87.50 | 0.00 / 0.00 | FAIL |",
     );
+  });
+});
+
+describe("sameness gate: features thinner than three pixels", () => {
+  const rowOf = (gap: number, object: string) => {
+    const { unreal, threenative } = blades(gap);
+    return samenessCell(here, masksOf(unreal), masksOf(threenative)).rows.find(
+      (r) => r.object === object,
+    );
+  };
+
+  it("counts the pixels of a one pixel crack apart from the verdict: two edges one pixel off can close it", () => {
+    // The crack is 20 pixels of the wall, 18 of them beyond the limit from ThreeNative's wall: more than the 10 allowed.
+    expect(rowOf(1, "A")).toMatchObject({ far: 0, thin: 18, pass: true });
+    expect(rowOf(1, "A")?.gap).toBeLessThanOrEqual(EDGE_GAP_LIMIT);
+    expect(rowOf(1, "B")).toMatchObject({ far: 0, thin: 0, pass: true });
+  });
+
+  it("scores a two pixel crack the same way: both of its edges can move one pixel", () => {
+    expect(rowOf(2, "A")).toMatchObject({ far: 0, thin: 36, pass: true });
+  });
+
+  it("still fails a crack three pixels wide, and the blade that fills it", () => {
+    // Three columns of the wall that the other engine covers: no 1 px shift of an edge closes them.
+    expect(rowOf(3, "A")).toMatchObject({ far: 54, thin: 0, pass: false });
+    expect(rowOf(3, "B")).toMatchObject({ pass: false });
+    expect(rowOf(3, "B")?.far).toBeGreaterThan(EDGE_FAR_LIMIT);
+  });
+
+  it("scores every pixel of an object that is thinner than three pixels everywhere", () => {
+    // A one pixel line has no pixel the exemption could apply to: it is scored as before.
+    const line = (x: number) => masksOf(boxes(["C", x, 10, 1, 20]));
+    const apart = samenessCell(here, line(10), line(20)).rows[0];
+    expect(apart).toMatchObject({ gap: 10, far: 40, thin: 0, pass: false });
+    expect(samenessCell(here, line(10), line(10)).rows[0]).toMatchObject({
+      far: 0,
+      thin: 0,
+      pass: true,
+    });
+  });
+
+  it("excuses a thin fringe of an object that also has a thick body", () => {
+    // A 12 x 12 leaf with a 1 pixel hair of 14 pixels that only Unreal draws: the hair is not the leaf's body.
+    const leaf = boxes(["A", 10, 10, 12, 12]);
+    const hairy = boxes(["A", 10, 10, 12, 12], ["A", 22, 15, 14, 1]);
+    const cell = samenessCell(here, masksOf(hairy), masksOf(leaf));
+    expect(cell.rows[0]).toMatchObject({ far: 0, thin: 13, pass: true });
   });
 });
 
@@ -416,7 +561,11 @@ describe("sameness gate: the command", () => {
     vi.restoreAllMocks();
   });
   /** The cornell scene as both engines draw it: every pose, every object. */
-  function cornell(root: string, threenative: (rows: string[]) => string[] = (rows) => rows) {
+  function cornell(
+    root: string,
+    threenative: (rows: string[]) => string[] = (rows) => rows,
+    unreal: (rows: string[]) => string[] = (rows) => rows,
+  ) {
     const { scene } = readScene("cornell");
     const names = Object.keys(scene.regions);
     // One row of vertical bands, an object each: the same in both engines unless `threenative` changes it.
@@ -426,7 +575,7 @@ describe("sameness gate: the command", () => {
     );
     for (const engine of ["unreal", "threenative"])
       for (const pose of scene.poses) {
-        const rows = engine === "unreal" ? bands : threenative(bands);
+        const rows = engine === "unreal" ? unreal(bands) : threenative(bands);
         const file = path.join(root, engine, "cornell", "ID", `${pose.name}.png`);
         mkdirSync(path.dirname(file), { recursive: true });
         writeFileSync(file, PNG.sync.write(frame(rows, palette)));
@@ -442,6 +591,28 @@ describe("sameness gate: the command", () => {
     // ThreeNative draws no last object: its band is background.
     cornell(broken, (rows) => rows.map((row) => `${row.slice(0, -4)}....`));
     expect(runSameness(["--scene", "gi:cornell", "--captures", broken])).toBe(1);
+  });
+
+  it("prints the objects no pose shows, and still passes", () => {
+    const root = tempRoot();
+    // Both engines draw the last band as background: nothing in the scene shows the last object.
+    const blank = (rows: string[]) => rows.map((row) => `${row.slice(0, -4)}....`);
+    const names = cornell(root, blank, blank);
+    const lines: string[] = [];
+    vi.spyOn(console, "log").mockImplementation((line: string) => void lines.push(line));
+    expect(runSameness(["--scene", "gi:cornell", "--captures", root])).toBe(0);
+    expect(lines.join("\n")).toContain(
+      `Not in view of any pose, so not scored: cornell/${names[names.length - 1]}.`,
+    );
+  });
+
+  it("prints no such line when every object is in view", () => {
+    const root = tempRoot();
+    cornell(root);
+    const lines: string[] = [];
+    vi.spyOn(console, "log").mockImplementation((line: string) => void lines.push(line));
+    expect(runSameness(["--scene", "gi:cornell", "--captures", root])).toBe(0);
+    expect(lines.join("\n")).not.toContain("Not in view of any pose");
   });
 
   it("is reachable from pnpm unreal-look:compare --sameness", () => {

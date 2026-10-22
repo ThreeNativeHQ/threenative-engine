@@ -69,8 +69,11 @@ them in `tools/unreal-reference/gi/<scene>/`.
 | `horizon` (runs) | `walk`: the camera moves 10 m in 3 s; `sunturn`: the sun azimuth turns 10° in 3 s | as above | — | PRD-634 (stability) |
 | `foliage` (the `gi:` scene of [PRD-643](../gi/PRD-643-glass-fog-and-leaves-take-the-bounce-light-too.md)) | Adds a leaf-card tree over open ground and card grass at a capsule's feet | Sun at 60° and 15° | `canopy`, `grass` | [PRD-651](PRD-651-leaves-cast-leaf-shadows-that-sway-near-the-camera.md) |
 | `foliage` (run) | `wind`: the tree sways for 180 frames on a still camera | as above | — | PRD-651 |
+| `wildwood` | Real vegetation, three Fab GLBs of the sandbox wildwood game: one broadleaf tree, one bush and one fern clump on a flat floor, and nothing else of that game. The files are not in the repository | Sun at 60° and 15° | `closeup`, `medium` | [PRD-651](PRD-651-leaves-cast-leaf-shadows-that-sway-near-the-camera.md), PRD-643 |
 
    Whichever of PRD-643 or PRD-651 starts first authors `foliage` with both PRDs' elements.
+   The owner asked for real vegetation (2026-10-21), so the judge takes `wildwood` as the foliage
+   target. `foliage` stays as the procedural control and keeps the `wind` run.
 5. **Unreal ablation frames (Phase 2).** Like the Lumen diagnosis views of PRD-638, three Unreal
    captures separate the parts of the default look before any ThreeNative code chases them:
    - `horizon` with `r.DistanceFieldShadowing 0` and `1`: does a distance-field far shadow show?
@@ -81,7 +84,10 @@ them in `tools/unreal-reference/gi/<scene>/`.
 **Images.** As in PRD-647: sheets in the run's scratch folder, posted on the PR through the orphan
 `PRD-<n>-screenshots` branch with UNREAL | ENGINE BEFORE | ENGINE AFTER and the engine named on
 each frame. Only `scene.py`, `scene.glb`, `scene.json`, `criteria.md`, `scenes.json` and
-`parity.json` are tracked.
+`parity.json` are tracked. `wildwood` tracks `manifest.json` in place of `scene.glb`, and no Fab model,
+texture or frame of them is tracked: Unreal frames of these models go to the gitignored
+`tools/unreal-reference/captures/` (or to `--out` in the run's work folder), and the sheets go to the
+screenshots branch only.
 
 ## Acceptance Criteria
 
@@ -107,10 +113,12 @@ each frame. Only `scene.py`, `scene.glb`, `scene.json`, `criteria.md`, `scenes.j
 
 #### Phase 2: The lamp, horizon and foliage scenes, and the ablations
 **Status:** NOT STARTED
-**Files:** `tools/unreal-reference/shadow/lamp-room/` (new), `tools/unreal-reference/shadow/horizon/` (new), `tools/unreal-reference/gi/foliage/` (shared with PRD-643), `scripts/unreal-look/compare.ts` (the `--ablation` pair)
+**Files:** `tools/unreal-reference/shadow/lamp-room/` (new), `tools/unreal-reference/shadow/horizon/` (new), `tools/unreal-reference/gi/foliage/` (shared with PRD-643), `tools/unreal-reference/shadow/wildwood/` (new), `scripts/unreal-look/wildwood.ts` (new), `scripts/unreal-look/compare.ts` (the `--ablation` pair)
 - [ ] Unreal captures `lamp-room` and its `swing` run. proof: `pnpm unreal-look:capture --engine unreal --scene shadow:lamp-room`. Open: `lamp-room` is built and captured at L5 and L9 for its four poses (2026-10-21, "shadow:lamp-room ID cells=4 readback ok", exit 0); the `swing` run is not authored, so the box stays open.
 - [ ] Unreal captures `horizon` with its `walk` and `sunturn` runs. proof: `pnpm unreal-look:capture --engine unreal --scene shadow:horizon`.
 - [ ] The three ablation pairs are captured, and each result is recorded under `## Decisions` with its region deltas. proof: `pnpm unreal-look:compare --scene shadow:<name> --ablation <cvar>`.
+- [x] Unreal and ThreeNative capture the lean `wildwood` scene from the three real Fab GLBs at L5, L7 and L9, with two suns, two poses and two runs per arm. proof: `UE_ROOT=<install> pnpm unreal-look:capture --engine unreal --scene shadow:wildwood` and `pnpm unreal-look:capture --engine threenative --scene shadow:wildwood`. Evidence: 2026-10-21 at 487219145: Unreal exit 0 (cells=52: L5, L7 and L9 twice, ID once), ThreeNative run 1 cells=16 and run 2 cells=12, both rc 0; sheets, region tables and IoU on PR #541 (issuecomment-6329578609).
+- [ ] The lean `wildwood` ID frames pass the sameness gate in every pose. proof: `pnpm unreal-look:compare --sameness --scene shadow:wildwood --captures <root>`. Open: FAIL in 4 of 4 poses (2026-10-21). The ID frames agree on 98.75 percent of the pixels and no pixel lacks an ID colour. The farthest edge is 37 px (`GreenTree_1`, closeup) and 32 px (`Floor`, closeup). ThreeNative draws a branch stub that Unreal does not (647 px). With that region made identical the tree reads 15 px. scenes-lane sets the foliage limit.
 
 #### Phase 3: Recreation and the baseline round
 **Status:** NOT STARTED
@@ -129,3 +137,41 @@ each frame. Only `scene.py`, `scene.glb`, `scene.json`, `criteria.md`, `scenes.j
   floor edge widths per pose. BEFORE baseline on `penumbra-lab` (TN / UE, median 10 to 90 percent width):
   sun 60 heights 0.64, contact 1.08, ramp 1.33; sun 15 1.14, 2.20, 2.74; sun 4 1.71, 3.27, 1.92. Two runs agree.
   `lamp-room` adds SpotLight to the pipeline (target and cone angles in scene.json, `validateSceneExport`).
+- 2026-10-21 (wildwood lane, owner): the vegetation target uses real assets. The owner asked three
+  times for the Fab GLBs of the sandbox wildwood game in place of procedural cards.
+  `shadow:wildwood` places them from `tools/unreal-reference/shadow/wildwood/manifest.json`. The
+  repository is public and the files are licensed, so the manifest names each file with its sha256
+  and each instance with its transform, and the files come from `TN_WILDWOOD_ASSETS`. A missing
+  root, a missing file or a changed hash stops the run before any engine starts
+  (`scripts/unreal-look/wildwood.ts`, `scripts/__tests__/unreal-look-wildwood.spec.ts`).
+- 2026-10-21 (wildwood lane, owner): keep the vegetation scene lean. The owner said the comparison does
+  not need the whole wildwood scene. The first build held 10 instances (a pine, a tree, a bush, two
+  ferns, three grass clumps and two flower clumps) in 3 poses; it is trimmed to one broadleaf tree
+  (`SM_green-tree01`), one bush (`SM_bush01`) and one fern clump (`SM_FarnGroup01`) in 2 poses:
+  `closeup` (leaf shadows on the ground, the trunk and the understory) and `medium` (the whole tree and
+  the length of the shadows). The layers are L5 and L9, plus L7 because the light on the leaves is
+  measurably off at L9. Both engines run 2 times per arm.
+- 2026-10-21 (wildwood lane): Unreal imports each file with its own glTF importer (Interchange),
+  from a decoded copy, because that importer has no `EXT_meshopt_compression` and the files carry it.
+  The copy holds the same triangles, UVs, textures and materials. Interchange draws a masked
+  material through sorted translucency, which does not cut a shadow. The build therefore rebuilds
+  each slot on the exporter's glTF master as Masked and two-sided with the file's own cutoff, and it
+  keeps the importer's textures. `scene.json` reports each slot, and the capture compares it with the
+  file's JSON before any frame is rendered. ThreeNative loads one GLB composed from the same decoded
+  copies (the floor box of `scene.json`, one node per manifest instance), so both engines read the
+  same triangles and the same textures.
+- 2026-10-21 (wildwood lane): the lean `wildwood` scene is captured in both engines (L5, L7, L9, two
+  suns, two poses, two runs per arm) and judged against Unreal. The judge reads CLOSE at L5, FAR at L7
+  (`sun60-closeup`, `sun60-medium`) and CLOSE at L9 (`sun15-medium` FAR). It read BEFORE and AFTER from
+  the same files, because this lane changes no engine code. The tree median is 0.38 to 0.87 above
+  Unreal at L7 and 0.19 to 0.73 above it at L9 (limit 0.25), and the floor shadows are shallower with
+  global illumination on (floor 5th over 95th percentile, `sun60-closeup`: Unreal 0.63, ThreeNative
+  0.84 at L7; 0.38 and 0.57 at L9). Leaf gaps are visible in the ground shadow in every round. The
+  symptoms are with leaf-lane (PRD-643). The sameness gate fails; see its box in Phase 2.
+- 2026-10-21 (wildwood lane): Unreal omits a short branch that ThreeNative draws in the lean `wildwood`
+  frames (647 px at `sun60-closeup`). The source GLB holds it as opaque geometry. Unreal's imported tree
+  keeps all 14927 source triangles in its mesh description (its Nanite fallback holds 3645), so the
+  import keeps the branch and the render drops it. Nanite is the leading suspect, not a finding. The test
+  is an import with Nanite off (`nanite_settings.enabled = False` in `import_glb` of `export.py`) and a
+  new `ID` capture, then `compare --sameness`. Not run: the job waited 20 minutes for GPU slots that other
+  lanes held, and was stopped.
