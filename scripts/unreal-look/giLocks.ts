@@ -48,6 +48,8 @@ function fail(code: string, message: string): never {
 /** The part of a compare row that a lock reads. `unreal` gives the reference median that sets the metric step. */
 export type IMeasuredRow = Pick<IRow, "cell" | "region" | "deltaE" | "dP50" | "iou"> & {
   unreal?: { p50: number } | null;
+  /** The compare verdict against the layer's thresholds. Absent in a hand-built row, null when nothing was evaluated. */
+  pass?: boolean | null;
 };
 
 export interface IGiLock {
@@ -196,6 +198,27 @@ export function lockCells(
   );
 }
 
+/**
+ * The rows of the regions that are at parity with Unreal in every run (the compare verdict passes), and the regions
+ * that are not, as `<cell> <region>`. A lock exists only where the region is at parity: a bound on a region that
+ * is far from Unreal would freeze the gap. A row with no verdict at all (`pass` absent) stays.
+ */
+export function splitParity(runs: readonly (readonly IMeasuredRow[])[]): {
+  runs: IMeasuredRow[][];
+  off: string[];
+} {
+  const names = (row: IMeasuredRow) => `${row.cell} ${row.region}`;
+  const off = new Set(
+    runs.flatMap((run) =>
+      run.filter((row) => row.pass !== undefined && row.pass !== true).map(names),
+    ),
+  );
+  return {
+    runs: runs.map((run) => run.filter((row) => !off.has(names(row)))),
+    off: [...off],
+  };
+}
+
 /** A cut takes two runs, or one run and the noise of other captures in groups of two runs. */
 function refuseRuns(runs: readonly unknown[], noise: readonly (readonly unknown[])[]): void {
   if (runs.length === 0 || (runs.length === 1 && noise.length === 0))
@@ -266,6 +289,8 @@ export interface IMerge {
   looser: string[];
   /** Cells whose lock was cut against another scene or Unreal reference (--relax re-cuts them). */
   stale: string[];
+  /** Locks that the cut removed because their region is not at parity with Unreal. */
+  removed: string[];
 }
 
 /**
@@ -274,13 +299,24 @@ export interface IMerge {
  * no longer measures a cell that its scene and layer have locked is refused: no round drops a cell.
  */
 export function mergeLocks(
-  existing: readonly IGiLock[],
+  stored: readonly IGiLock[],
   fresh: readonly IGiLock[],
   mode: { tighten?: boolean; relax?: boolean } = {},
+  off: ReadonlySet<string> = new Set(),
 ): IMerge {
+  const removed = stored.filter((lock) => off.has(lockKey(lock)));
+  const existing = stored.filter((lock) => !off.has(lockKey(lock)));
   const old = new Map(existing.map((lock) => [lockKey(lock), lock] as const));
   const next = new Map(old);
-  const out: IMerge = { locks: [], added: [], moved: [], improved: [], looser: [], stale: [] };
+  const out: IMerge = {
+    locks: [],
+    added: [],
+    moved: [],
+    improved: [],
+    looser: [],
+    stale: [],
+    removed: removed.map(lockKey),
+  };
   for (const lock of fresh) {
     const key = lockKey(lock);
     const was = old.get(key);
@@ -539,12 +575,15 @@ export function writeMerged(
   mode: { tighten?: boolean; relax?: boolean },
   log: (line: string) => void,
   what: string,
+  off: ReadonlySet<string> = new Set(),
 ): IMerge {
-  const merged = mergeLocks(existsSync(file) ? readGiLocks(file) : [], fresh, mode);
+  const merged = mergeLocks(existsSync(file) ? readGiLocks(file) : [], fresh, mode, off);
   writeGiLocks(file, merged.locks);
   log(
     `locked ${what}: ${fresh.length} region(s) in ${new Set(fresh.map((lock) => lock.pose)).size} pose(s), ${merged.added.length} added, ${merged.moved.length} moved, ${merged.improved.length} tighter and kept\nwrote ${file} (${merged.locks.length} lock(s))`,
   );
+  if (merged.removed.length > 0)
+    log(`removed ${merged.removed.length} lock(s) off parity:\n  ${merged.removed.join("\n  ")}`);
   if (merged.improved.length > 0)
     log(
       `${merged.improved.length} region(s) are tighter in this cut: pass --tighten to ratchet them`,
@@ -646,6 +685,10 @@ export const isGiCheck = (args: readonly string[]) =>
 export const isGiLock = (args: readonly string[]) =>
   args.includes("--write-locks") && namesGiScene(args);
 
+/** The lock key of an off-parity region named `<scene>/<pose> <region>`. */
+const offKey = (scene: string, layer: string, name: string) =>
+  `${scene} ${layer} ${name.slice(scene.length + 1)}`;
+
 /** `compare --check --scene gi:<name> --captures <run1> --captures <run2> [--layer L7-high] [--locks <file>]`. */
 export function checkCommand(args: readonly string[], deps: ICheckDeps = defaultCheckDeps): number {
   const [scene] = flagValues(args, "--scene").map((value) => value.replace(/^gi:/, ""));
@@ -656,13 +699,14 @@ export function checkCommand(args: readonly string[], deps: ICheckDeps = default
   const locks = readGiLocks(flagValues(args, "--locks")[0] ?? GI_LOCK_FILE);
   let broken = 0;
   for (const layer of layersToCheck(args, locks, scene)) {
-    const failures = checkLayer(scene, layer, captures, locks, deps);
+    const { failures, runs } = checkLayer(scene, layer, captures, locks, deps);
     for (const failure of failures) deps.error(`GI LOCK BROKEN ${failure}`);
     broken += failures.length;
     const locked = locks.filter((lock) => lock.scene === scene && lock.layer === layer).length;
     deps.log(
       `${scene} ${layer}: ${locked} locked region(s) on ${captures.length} run${captures.length === 1 ? "" : "s"}, ${failures.length === 0 ? "every bound holds" : `${failures.length} bound(s) broken`}`,
     );
+    if (runs.length > 0) deps.log(`${scene} ${layer}: ${distanceToUnreal(runs)}`);
   }
   return broken === 0 ? 0 : 1;
 }
@@ -686,14 +730,30 @@ function layersToCheck(
   return wanted;
 }
 
-/** The broken bounds of one layer, one line each. A check that cannot run is one broken line. */
+/**
+ * The total distance to Unreal of a layer: dP50 and deltaE summed over every measured region, each the mean of the
+ * runs, and the regions at parity in every run. Compare two prints to see whether a change is net closer.
+ */
+export function distanceToUnreal(runs: readonly (readonly IMeasuredRow[])[]): string {
+  const maps = runs.map(index);
+  const mean = (key: string, metric: "dP50" | "deltaE") => {
+    const values = maps.map((map) => map.get(key)?.[metric]).filter(Number.isFinite) as number[];
+    return values.length === 0 ? 0 : values.reduce((a, b) => a + b, 0) / values.length;
+  };
+  const keys = [...(maps[0]?.keys() ?? [])];
+  const sum = (metric: "dP50" | "deltaE") => keys.reduce((a, key) => a + mean(key, metric), 0);
+  const atParity = keys.filter((key) => maps.every((map) => map.get(key)?.pass === true)).length;
+  return `distance to Unreal dP50 ${sum("dP50").toFixed(4)}, deltaE ${sum("deltaE").toFixed(2)} over ${keys.length} region(s), ${atParity} at parity`;
+}
+
+/** The broken bounds of one layer, one line each, and the runs it read. A check that cannot run is one broken line. */
 function checkLayer(
   scene: string,
   layer: string,
   captures: readonly string[],
   locks: readonly IGiLock[],
   deps: ICheckDeps,
-): string[] {
+): { failures: string[]; runs: IMeasuredRow[][] } {
   const own = locks.filter((lock) => lock.scene === scene && lock.layer === layer);
   const need = own.length > 0 ? runsNeeded(own) : 1;
   if (captures.length < need)
@@ -702,15 +762,10 @@ function checkLayer(
       `${captures.length} --captures folder(s): the locks of ${scene} at ${layer} were cut from ${need}, so pass as many captures`,
     );
   try {
-    return checkGiLocks(
-      scene,
-      layer,
-      captures.map((run) => [...deps.compare(scene, layer, run)]),
-      locks,
-      deps.basis(scene),
-    );
+    const runs = captures.map((run) => [...deps.compare(scene, layer, run)]);
+    return { failures: checkGiLocks(scene, layer, runs, locks, deps.basis(scene)), runs };
   } catch (error) {
-    return [(error as Error).message];
+    return { failures: [(error as Error).message], runs: [] };
   }
 }
 
@@ -732,11 +787,21 @@ export function lockCommand(args: readonly string[], deps: ICheckDeps = defaultC
   if (args.includes("--tighten") && args.includes("--relax"))
     fail("BAD_INPUT", "--tighten and --relax exclude each other");
   const rowsOf = (run: string) => [...deps.compare(scene, layer, run)];
+  const captured = flagValues(args, "--captures").map(rowsOf);
+  // A lock exists only where the region is at parity with Unreal; --keep-off-parity cuts them all.
+  const split = args.includes("--keep-off-parity")
+    ? { runs: captured, off: [] as string[] }
+    : splitParity(captured);
+  if (split.runs[0]?.length === 0)
+    fail(
+      "NO_PARITY",
+      `${scene} ${layer}: no region is at parity with Unreal, so nothing can be locked`,
+    );
   const fresh = lockCells(
     head,
     scene,
     layer,
-    flagValues(args, "--captures").map(rowsOf),
+    split.runs,
     deps.basis(scene),
     flagValues(args, "--noise").map((pair) => pair.split(",").map(rowsOf)),
   );
@@ -746,6 +811,7 @@ export function lockCommand(args: readonly string[], deps: ICheckDeps = defaultC
     { tighten: args.includes("--tighten"), relax: args.includes("--relax") },
     deps.log,
     `${scene} ${layer} from ${head}`,
+    new Set(split.off.map((name) => offKey(scene, layer, name))),
   );
   return 0;
 }

@@ -32,6 +32,7 @@ import {
   mergeLocks,
   readGiLocks,
   sceneBasis,
+  splitParity,
   staleLocks,
   withOfflineRoot,
   writeGiLocks,
@@ -523,13 +524,14 @@ describe("the committed lock file", () => {
       );
   });
 
-  it("cuts the L9 locks from one capture of a preview head, with no overlap bound, for every pose of the scene", () => {
+  it("cuts the L9 locks from the captures of one head, for every pose of the scene", () => {
     const l9 = locks.filter((lock) => lock.layer === "L9");
     for (const lock of l9) {
-      expect(lock.round, lockKey(lock)).toMatch(/^preview-[0-9a-f]{9}$/);
-      expect(lock.runs, lockKey(lock)).toBe(1);
-      expect(lock, lockKey(lock)).not.toHaveProperty("minIoU");
+      expect(lock.round, lockKey(lock)).toMatch(/^[a-z0-9]+-[0-9a-f]{9}$/);
+      // One capture with the noise of others, or the repeat captures of one code state.
+      expect([1, 3], lockKey(lock)).toContain(lock.runs ?? 2);
     }
+    // A lock exists only where the region is at parity, so a pose may lose regions, never all of them.
     for (const scene of new Set(l9.map((lock) => lock.scene)))
       expect(
         [...new Set(l9.filter((lock) => lock.scene === scene).map((lock) => lock.pose))].sort(),
@@ -700,7 +702,7 @@ describe("the check command", () => {
   it("exits 0 when every bound holds", () => {
     const w = world({ run1: rows(), run2: rows() });
     expect(checkCommand(w.args("run1", "run2"), w.deps)).toBe(0);
-    expect(w.out.log).toEqual(["room L7-high: 4 locked region(s) on 2 runs, every bound holds"]);
+    expect(w.out.log[0]).toBe("room L7-high: 4 locked region(s) on 2 runs, every bound holds");
     expect(w.out.error).toEqual([]);
   });
 
@@ -711,6 +713,17 @@ describe("the check command", () => {
       true,
     );
     expect(w.out.log[0]).toMatch(/bound\(s\) broken/);
+  });
+
+  it("prints the total distance to Unreal of the layer: the mean of the runs over every region", () => {
+    const w = world({
+      run1: rows({ dP50: 0.1, deltaE: 2, pass: true }),
+      run2: rows({ dP50: 0.2, deltaE: 4, pass: false }),
+    });
+    checkCommand(w.args("run1", "run2"), w.deps);
+    expect(w.out.log).toContain(
+      "room L7-high: distance to Unreal dP50 0.6000, deltaE 12.00 over 4 region(s), 0 at parity",
+    );
   });
 
   it("exits 1 on a stale lock and says why, instead of listing bounds it cannot judge", () => {
@@ -742,7 +755,7 @@ describe("the check command", () => {
   it("reads one capture when the locks were cut from one", () => {
     const w = world({ run1: flat() }, BASIS, cutOne());
     expect(checkCommand(w.args("run1"), w.deps)).toBe(0);
-    expect(w.out.log).toEqual(["room L9: 4 locked region(s) on 1 run, every bound holds"]);
+    expect(w.out.log[0]).toBe("room L9: 4 locked region(s) on 1 run, every bound holds");
     const broken = world({ run1: flat({ dP50: 0.5 }) }, BASIS, cutOne());
     expect(checkCommand(broken.args("run1"), broken.deps)).toBe(1);
     expect(broken.out.error[0]).toMatch(/^GI LOCK BROKEN room L9 a Floor dP50: 0\.5 is above/);
@@ -821,6 +834,41 @@ describe("the lock command", () => {
     expect(readFileSync(w.file, "utf8")).toBe(before);
     expect(lockCommand([...loose, "--relax"], w.deps)).toBe(0);
     expect(readGiLocks(w.file)[0]?.maxDP50).toBeCloseTo(0.3 + 0.01 + 0.01, 4);
+  });
+
+  it("keeps a lock only where every run is at parity, drops the lock of any other region, and lists it", () => {
+    const off = (pose: string, region: string, pass: boolean | null) =>
+      flat().map((r) => (r.cell.endsWith(pose) && r.region === region ? { ...r, pass } : r));
+    const w = world({
+      ...runs,
+      good: off("a", "Wall", false).map((r) => ({ ...r, pass: r.pass ?? true })),
+    });
+    lockCommand(w.args("--captures", "n1", "--noise", "n1,n2", "--keep-off-parity"), w.deps);
+    expect(readGiLocks(w.file)).toHaveLength(4);
+    w.out.log.length = 0;
+    const cutArgs = w.args("--captures", "good", "--noise", "n1,n2", "--relax");
+    expect(lockCommand(cutArgs, w.deps)).toBe(0);
+    expect(readGiLocks(w.file).map((l) => `${l.pose} ${l.region}`)).toEqual([
+      "a Floor",
+      "b Floor",
+      "b Wall",
+    ]);
+    expect(w.out.log.join("\n")).toMatch(/removed 1 lock\(s\) off parity:\n\s+room L9 a Wall/);
+  });
+
+  it("splits the rows of the runs into the regions at parity in every run and the ones that are not", () => {
+    const r1 = rows({ pass: true });
+    const r2 = rows({ pass: true }).map((r) => (r.region === "Wall" ? { ...r, pass: false } : r));
+    const r3 = rows({ pass: true }).map((r) => (r.cell.endsWith("b") ? { ...r, pass: null } : r));
+    const split = splitParity([r1, r2, r3]);
+    expect(split.off.sort()).toEqual(["room/a Wall", "room/b Floor", "room/b Wall"]);
+    expect(split.runs.map((run) => run.map((r) => `${r.cell} ${r.region}`))).toEqual([
+      ["room/a Floor"],
+      ["room/a Floor"],
+      ["room/a Floor"],
+    ]);
+    // A row with no pass field has no verdict to read: it stays.
+    expect(splitParity([rows()]).off).toEqual([]);
   });
 
   it("needs a capture, noise for a single capture, one layer and no contradicting flags", () => {
