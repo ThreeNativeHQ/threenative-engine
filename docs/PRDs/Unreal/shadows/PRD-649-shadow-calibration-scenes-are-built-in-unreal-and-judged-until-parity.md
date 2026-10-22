@@ -118,7 +118,7 @@ screenshots branch only.
 - [ ] Unreal captures `horizon` with its `walk` and `sunturn` runs. proof: `pnpm unreal-look:capture --engine unreal --scene shadow:horizon`.
 - [ ] The three ablation pairs are captured, and each result is recorded under `## Decisions` with its region deltas. proof: `pnpm unreal-look:compare --scene shadow:<name> --ablation <cvar>`.
 - [x] Unreal and ThreeNative capture the lean `wildwood` scene from the three real Fab GLBs at L5, L7 and L9, with two suns, two poses and two runs per arm. proof: `UE_ROOT=<install> pnpm unreal-look:capture --engine unreal --scene shadow:wildwood` and `pnpm unreal-look:capture --engine threenative --scene shadow:wildwood`. Evidence: 2026-10-21 at 487219145: Unreal exit 0 (cells=52: L5, L7 and L9 twice, ID once), ThreeNative run 1 cells=16 and run 2 cells=12, both rc 0; sheets, region tables and IoU on PR #541 (issuecomment-6329578609).
-- [ ] The lean `wildwood` ID frames pass the sameness gate in every pose. proof: `pnpm unreal-look:compare --sameness --scene shadow:wildwood --captures <root>`. Open: FAIL in 4 of 4 poses (2026-10-21). The ID frames agree on 98.75 percent of the pixels and no pixel lacks an ID colour. The farthest edge is 37 px (`GreenTree_1`, closeup) and 32 px (`Floor`, closeup). ThreeNative draws a branch stub that Unreal does not (647 px). With that region made identical the tree reads 15 px. scenes-lane sets the foliage limit.
+- [x] The lean `wildwood` ID frames pass the sameness gate in every pose. proof: `pnpm unreal-look:compare --sameness --scene shadow:wildwood --captures <root>`. Evidence: 2026-10-21, Unreal imported with Nanite off against the ThreeNative ID frames at the epic head 0453b549f: 16 objects in 4 poses, farthest edge 1 px, 0 poses fail, 99.38 to 99.74 percent of the pixels agree, lowest IoU 0.9488 (`GreenTree_1`, medium). With Nanite on the same gate failed in 4 of 4 poses (farthest edge 37 px).
 
 #### Phase 3: Recreation and the baseline round
 **Status:** NOT STARTED
@@ -168,10 +168,13 @@ screenshots branch only.
   global illumination on (floor 5th over 95th percentile, `sun60-closeup`: Unreal 0.63, ThreeNative
   0.84 at L7; 0.38 and 0.57 at L9). Leaf gaps are visible in the ground shadow in every round. The
   symptoms are with leaf-lane (PRD-643). The sameness gate fails; see its box in Phase 2.
-- 2026-10-21 (wildwood lane): Unreal omits a short branch that ThreeNative draws in the lean `wildwood`
-  frames (647 px at `sun60-closeup`). The source GLB holds it as opaque geometry. Unreal's imported tree
-  keeps all 14927 source triangles in its mesh description (its Nanite fallback holds 3645), so the
-  import keeps the branch and the render drops it. Nanite is the leading suspect, not a finding. The test
-  is an import with Nanite off (`nanite_settings.enabled = False` in `import_glb` of `export.py`) and a
-  new `ID` capture, then `compare --sameness`. Not run: the job waited 20 minutes for GPU slots that other
-  lanes held, and was stopped.
+- 2026-10-21 (wildwood lane): Unreal omitted a short branch that ThreeNative draws in the lean `wildwood`
+  frames (647 px at `sun60-closeup`). The source GLB holds it as opaque geometry and the Unreal import
+  keeps all 14927 triangles, so Nanite was the suspect. Decision: `import_glb` of `export.py` turns Nanite
+  off (`nanite_settings.enabled = False`). With Nanite off the sameness gate passes in 4 of 4 poses
+  (farthest edge 1 px). The stock default is Nanite on: `bBuildNanite = true` in
+  `Engine/Plugins/Interchange/Runtime/Source/Pipelines/Public/InterchangeGenericMeshPipeline.h:134`, and
+  `NaniteTriangleThreshold = 0` enables it for every mesh. So Nanite off is a named override of the
+  harness, taken because the calibration needs the same triangles in both engines and Nanite drops thin
+  branches. The lighting rows move little: the tree dP50 changes by at most 0.10 between the two imports (L5, sun15-closeup, 0.15 to 0.25).
+  All Unreal frames of this scene are Nanite off from 2026-10-21 20:00 on.
