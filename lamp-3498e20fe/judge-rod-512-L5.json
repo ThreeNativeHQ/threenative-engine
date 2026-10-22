@@ -1,0 +1,120 @@
+{
+  "status": "COMPLETE",
+  "judgedAt": "2026-10-22T08:25:12.574Z",
+  "model": "claude-sonnet-5-5",
+  "effort": "high",
+  "sessionId": "d90c4720-cf3f-449d-99d9-9d6cdb3472e6",
+  "costUsd": 0.1575829,
+  "durationMs": 28455,
+  "imagesRead": 20,
+  "criteria": {
+    "file": "/home/joao/.cache/tmp-tn/lamp/criteria-512.md",
+    "sha256": "73f70b8d0778e88ef940cfb61bc56634c94dc12daef80d905839dc7f5b452c71"
+  },
+  "expect": "improvement",
+  "tier": "high",
+  "runs": {
+    "before": 2,
+    "after": 2
+  },
+  "sets": {
+    "before": [
+      "/home/joao/.cache/tmp-tn/lamp/cap/before-1",
+      "/home/joao/.cache/tmp-tn/lamp/cap/fixed512-1"
+    ],
+    "after": [
+      "/home/joao/.cache/tmp-tn/lamp/cap/after-1",
+      "/home/joao/.cache/tmp-tn/lamp/cap/after-2"
+    ],
+    "unreal": "/home/joao/.cache/tmp-tn/lamp/unreal"
+  },
+  "frames": [
+    {
+      "id": "shadow/lamp-room/L5/point",
+      "verdict": "NEUTRAL",
+      "vsUnreal": "CLOSE",
+      "reasons": "I looked at the crate's floor and back-wall shadow, its base, the table shadow at the left and the rod at the right. The soft edge of the crate shadow is retained in AFTER. There is no gap or lit dots at the crate base, and no acne or seam leaks. The table shadow edge is the same or marginally crisper. The rod line in AFTER is thinner. Brightness is unchanged.",
+      "differences": "Unreal's crate dark face is darker and its floor shadow slightly darker and more contrasty. Its wall and floor falloff is a touch different. Shadow shapes and edge softness otherwise match.",
+      "layer": "L5",
+      "unreal": "L5",
+      "files": {
+        "before": [
+          "/home/joao/.cache/tmp-tn/lamp/cap/before-1/shadow/lamp-room/L5/point.png",
+          "/home/joao/.cache/tmp-tn/lamp/cap/fixed512-1/shadow/lamp-room/L5/point.png"
+        ],
+        "after": [
+          "/home/joao/.cache/tmp-tn/lamp/cap/after-1/shadow/lamp-room/L5/point.png",
+          "/home/joao/.cache/tmp-tn/lamp/cap/after-2/shadow/lamp-room/L5/point.png"
+        ],
+        "unreal": "/home/joao/.cache/tmp-tn/lamp/unreal/shadow/lamp-room/L5/point.png"
+      }
+    },
+    {
+      "id": "shadow/lamp-room/L5/rod",
+      "verdict": "IMPROVEMENT",
+      "vsUnreal": "CLOSE",
+      "reasons": "I looked at the two vertical dark lines at about x 640 and x 660. BEFORE (both runs) shows the right line as a thick, fuzzy band with a grey halo, clearly wider than the left rod line. In both AFTER runs the right line is a thin, dark, continuous stroke that matches the left line's weight and runs the full height. It is much closer to Unreal's two thin crisp lines. The wall gradient is unchanged and I saw no breaks or acne.",
+      "differences": "AFTER's right line may still be a hair softer or wider than Unreal's. Wall tone and gradient otherwise match.",
+      "layer": "L5",
+      "unreal": "L5",
+      "files": {
+        "before": [
+          "/home/joao/.cache/tmp-tn/lamp/cap/before-1/shadow/lamp-room/L5/rod.png",
+          "/home/joao/.cache/tmp-tn/lamp/cap/fixed512-1/shadow/lamp-room/L5/rod.png"
+        ],
+        "after": [
+          "/home/joao/.cache/tmp-tn/lamp/cap/after-1/shadow/lamp-room/L5/rod.png",
+          "/home/joao/.cache/tmp-tn/lamp/cap/after-2/shadow/lamp-room/L5/rod.png"
+        ],
+        "unreal": "/home/joao/.cache/tmp-tn/lamp/unreal/shadow/lamp-room/L5/rod.png"
+      }
+    },
+    {
+      "id": "shadow/lamp-room/L5/spot",
+      "verdict": "NEUTRAL",
+      "vsUnreal": "CLOSE",
+      "reasons": "I looked at the table's floor shadow edges, the left-wall shadow and the rod at the left. AFTER is essentially the same as BEFORE. The floor shadow is equally crisp, with no stair steps, acne or banding. The wall-shadow edge is perhaps marginally less jagged in AFTER. The rod line is slightly thinner. There is no colour or exposure change.",
+      "differences": "The left-wall shadow edge keeps a slight stair-step and softness that Unreal does not have. Unreal's wall and floor are a little brighter and smoother, with a different wall falloff. The shadow shapes and positions otherwise match.",
+      "layer": "L5",
+      "unreal": "L5",
+      "files": {
+        "before": [
+          "/home/joao/.cache/tmp-tn/lamp/cap/before-1/shadow/lamp-room/L5/spot.png",
+          "/home/joao/.cache/tmp-tn/lamp/cap/fixed512-1/shadow/lamp-room/L5/spot.png"
+        ],
+        "after": [
+          "/home/joao/.cache/tmp-tn/lamp/cap/after-1/shadow/lamp-room/L5/spot.png",
+          "/home/joao/.cache/tmp-tn/lamp/cap/after-2/shadow/lamp-room/L5/spot.png"
+        ],
+        "unreal": "/home/joao/.cache/tmp-tn/lamp/unreal/shadow/lamp-room/L5/spot.png"
+      }
+    },
+    {
+      "id": "shadow/lamp-room/L5/spot-soft",
+      "verdict": "NEUTRAL",
+      "vsUnreal": "CLOSE",
+      "reasons": "I looked at the floor penumbra under the table, the dark corner patch, the right-wall shadow and the rod at the top left. BEFORE and AFTER are the same: the penumbra keeps its width and smoothness, with no banding or noise. The rod line in AFTER is slightly finer. There are no seam leaks and no brightness change.",
+      "differences": "Unreal's penumbra on the floor and the wall shadow is a bit softer and smoother, and its right wall is slightly brighter. The black corner patch and shadow shapes match.",
+      "layer": "L5",
+      "unreal": "L5",
+      "files": {
+        "before": [
+          "/home/joao/.cache/tmp-tn/lamp/cap/before-1/shadow/lamp-room/L5/spot-soft.png",
+          "/home/joao/.cache/tmp-tn/lamp/cap/fixed512-1/shadow/lamp-room/L5/spot-soft.png"
+        ],
+        "after": [
+          "/home/joao/.cache/tmp-tn/lamp/cap/after-1/shadow/lamp-room/L5/spot-soft.png",
+          "/home/joao/.cache/tmp-tn/lamp/cap/after-2/shadow/lamp-room/L5/spot-soft.png"
+        ],
+        "unreal": "/home/joao/.cache/tmp-tn/lamp/unreal/shadow/lamp-room/L5/spot-soft.png"
+      }
+    }
+  ],
+  "overall": {
+    "verdict": "IMPROVEMENT",
+    "vsUnreal": "CLOSE",
+    "reasons": "The promised gain is visible on `rod`. The right shadow line goes from a thick blurred band to a thin, dark, continuous line like Unreal's, and the same thinner rod shows in the other frames. `spot`, `spot-soft` and `point` show no new acne, banding, stair steps, light leaks or brightness change, so they pass as NEUTRAL. Remaining differences from Unreal are small tonal ones: darker crate face and floor shadow, and somewhat softer penumbrae."
+  },
+  "blockedBy": [],
+  "file": "/home/joao/.cache/tmp-tn/lamp/judge-512-L5.json"
+}

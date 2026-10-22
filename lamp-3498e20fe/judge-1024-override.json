@@ -1,0 +1,191 @@
+{
+  "status": "COMPLETE",
+  "judgedAt": "2026-10-22T08:25:24.858Z",
+  "model": "claude-sonnet-5-5",
+  "effort": "high",
+  "sessionId": "e7679165-cc5e-42f2-8a0e-fbc2b74f0922",
+  "costUsd": 0.24639,
+  "durationMs": 40986,
+  "imagesRead": 32,
+  "criteria": {
+    "file": "/home/joao/.cache/tmp-tn/lamp/criteria-1024.md",
+    "sha256": "92a7ce19ba5d3f5cecf1238c7f9705cd8db26cc0c6bfe190115847bfa73151c5"
+  },
+  "expect": "preserve",
+  "tier": "high",
+  "runs": {
+    "before": 1,
+    "after": 2
+  },
+  "sets": {
+    "before": [
+      "/home/joao/.cache/tmp-tn/lamp/cap/before-2"
+    ],
+    "after": [
+      "/home/joao/.cache/tmp-tn/lamp/cap/after-1",
+      "/home/joao/.cache/tmp-tn/lamp/cap/after-2"
+    ],
+    "unreal": "/home/joao/.cache/tmp-tn/lamp/unreal"
+  },
+  "frames": [
+    {
+      "id": "shadow/lamp-room/L5/point",
+      "verdict": "NEUTRAL",
+      "vsUnreal": "CLOSE",
+      "reasons": "Compared the crate's shadow on the floor and the rod line on the back wall at the right, plus the table shadow at the left. BEFORE, AFTER run 1 and AFTER run 2 look the same. The crate's soft edge is unchanged and the base of the crate has no gap or lit dots. The rod line is continuous and dark in all three, and I saw no acne, stripes or brightness change.",
+      "differences": "Shadow shapes and positions match Unreal. Unreal has a slightly cleaner, brighter floor and wall gradient, and its crate side face is a bit darker. The crate's shadow edge is slightly softer in the engine. These are minor.",
+      "layer": "L5",
+      "unreal": "L5",
+      "files": {
+        "before": [
+          "/home/joao/.cache/tmp-tn/lamp/cap/before-2/shadow/lamp-room/L5/point.png"
+        ],
+        "after": [
+          "/home/joao/.cache/tmp-tn/lamp/cap/after-1/shadow/lamp-room/L5/point.png",
+          "/home/joao/.cache/tmp-tn/lamp/cap/after-2/shadow/lamp-room/L5/point.png"
+        ],
+        "unreal": "/home/joao/.cache/tmp-tn/lamp/unreal/shadow/lamp-room/L5/point.png"
+      }
+    },
+    {
+      "id": "shadow/lamp-room/L5/rod",
+      "verdict": "NEUTRAL",
+      "vsUnreal": "CLOSE",
+      "reasons": "The two vertical rod shadow lines are thin, black and continuous from top to bottom in BEFORE and in both AFTER runs. Their width and position are unchanged and there are no breaks. The wall gradient is the same in all three.",
+      "differences": "Unreal shows the same two lines at the same x positions and with the same thickness. Its wall gradient is slightly smoother and its lines are marginally softer.",
+      "layer": "L5",
+      "unreal": "L5",
+      "files": {
+        "before": [
+          "/home/joao/.cache/tmp-tn/lamp/cap/before-2/shadow/lamp-room/L5/rod.png"
+        ],
+        "after": [
+          "/home/joao/.cache/tmp-tn/lamp/cap/after-1/shadow/lamp-room/L5/rod.png",
+          "/home/joao/.cache/tmp-tn/lamp/cap/after-2/shadow/lamp-room/L5/rod.png"
+        ],
+        "unreal": "/home/joao/.cache/tmp-tn/lamp/unreal/shadow/lamp-room/L5/rod.png"
+      }
+    },
+    {
+      "id": "shadow/lamp-room/L5/spot",
+      "verdict": "NEUTRAL",
+      "vsUnreal": "CLOSE",
+      "reasons": "Looked at the table's floor shadow rectangle edges, the wall shadow at the left, the crate shadow at the right and the corner. The edges are equally crisp in BEFORE and both AFTER runs. I saw no stair steps, acne or light leaks, and the brightness is the same.",
+      "differences": "Unreal's rectangle shadow is slightly lighter and its left wall is brighter overall. The shapes and edge positions match, and the shadow edge is slightly softer in Unreal.",
+      "layer": "L5",
+      "unreal": "L5",
+      "files": {
+        "before": [
+          "/home/joao/.cache/tmp-tn/lamp/cap/before-2/shadow/lamp-room/L5/spot.png"
+        ],
+        "after": [
+          "/home/joao/.cache/tmp-tn/lamp/cap/after-1/shadow/lamp-room/L5/spot.png",
+          "/home/joao/.cache/tmp-tn/lamp/cap/after-2/shadow/lamp-room/L5/spot.png"
+        ],
+        "unreal": "/home/joao/.cache/tmp-tn/lamp/unreal/shadow/lamp-room/L5/spot.png"
+      }
+    },
+    {
+      "id": "shadow/lamp-room/L5/spot-soft",
+      "verdict": "NEUTRAL",
+      "vsUnreal": "CLOSE",
+      "reasons": "Looked at the penumbra on the floor rectangle's edges and the black patch near the top right of the floor shadow. The width and smoothness of the penumbra are the same in BEFORE and both AFTER runs. I saw no banding, new acne or leaks on the wall at the right.",
+      "differences": "Unreal's penumbra is similar in width. Its floor is slightly brighter and its black patch has a marginally different edge. The shape and layout match.",
+      "layer": "L5",
+      "unreal": "L5",
+      "files": {
+        "before": [
+          "/home/joao/.cache/tmp-tn/lamp/cap/before-2/shadow/lamp-room/L5/spot-soft.png"
+        ],
+        "after": [
+          "/home/joao/.cache/tmp-tn/lamp/cap/after-1/shadow/lamp-room/L5/spot-soft.png",
+          "/home/joao/.cache/tmp-tn/lamp/cap/after-2/shadow/lamp-room/L5/spot-soft.png"
+        ],
+        "unreal": "/home/joao/.cache/tmp-tn/lamp/unreal/shadow/lamp-room/L5/spot-soft.png"
+      }
+    },
+    {
+      "id": "shadow/lamp-room/L9/point",
+      "verdict": "NEUTRAL",
+      "vsUnreal": "CLOSE",
+      "reasons": "The crate shadow, the rod line and the table shadow are faint and washed out but identical across BEFORE and both AFTER runs. I saw no new gaps, dots or acne at the crate base, and the exposure is unchanged.",
+      "differences": "Shadow shapes match Unreal. The engine's shadows are much lower in contrast at this layer: the crate shadow is almost invisible, while Unreal shows a clear gray shadow and darker crate faces.",
+      "layer": "L9",
+      "unreal": "L9",
+      "files": {
+        "before": [
+          "/home/joao/.cache/tmp-tn/lamp/cap/before-2/shadow/lamp-room/L9/point.png"
+        ],
+        "after": [
+          "/home/joao/.cache/tmp-tn/lamp/cap/after-1/shadow/lamp-room/L9/point.png",
+          "/home/joao/.cache/tmp-tn/lamp/cap/after-2/shadow/lamp-room/L9/point.png"
+        ],
+        "unreal": "/home/joao/.cache/tmp-tn/lamp/unreal/shadow/lamp-room/L9/point.png"
+      }
+    },
+    {
+      "id": "shadow/lamp-room/L9/rod",
+      "verdict": "NEUTRAL",
+      "vsUnreal": "CLOSE",
+      "reasons": "The faint double vertical rod line sits in the same place with the same width and continuity in BEFORE and both AFTER runs. I saw no acne or brightness change on the wall.",
+      "differences": "Unreal's rod lines are clearly gray and darker against a darker wall. The engine's lines are much fainter and the wall is brighter. Position and shape match.",
+      "layer": "L9",
+      "unreal": "L9",
+      "files": {
+        "before": [
+          "/home/joao/.cache/tmp-tn/lamp/cap/before-2/shadow/lamp-room/L9/rod.png"
+        ],
+        "after": [
+          "/home/joao/.cache/tmp-tn/lamp/cap/after-1/shadow/lamp-room/L9/rod.png",
+          "/home/joao/.cache/tmp-tn/lamp/cap/after-2/shadow/lamp-room/L9/rod.png"
+        ],
+        "unreal": "/home/joao/.cache/tmp-tn/lamp/unreal/shadow/lamp-room/L9/rod.png"
+      }
+    },
+    {
+      "id": "shadow/lamp-room/L9/spot",
+      "verdict": "NEUTRAL",
+      "vsUnreal": "CLOSE",
+      "reasons": "The table's floor shadow, the shadow on the left wall and the corner are the same in BEFORE and both AFTER runs, including edge crispness. I saw no stair steps, acne or leaks.",
+      "differences": "Shapes and edges match Unreal. The engine's shadows are faint and low in contrast, where Unreal's are clearly visible. Unreal's exposure is also lower.",
+      "layer": "L9",
+      "unreal": "L9",
+      "files": {
+        "before": [
+          "/home/joao/.cache/tmp-tn/lamp/cap/before-2/shadow/lamp-room/L9/spot.png"
+        ],
+        "after": [
+          "/home/joao/.cache/tmp-tn/lamp/cap/after-1/shadow/lamp-room/L9/spot.png",
+          "/home/joao/.cache/tmp-tn/lamp/cap/after-2/shadow/lamp-room/L9/spot.png"
+        ],
+        "unreal": "/home/joao/.cache/tmp-tn/lamp/unreal/shadow/lamp-room/L9/spot.png"
+      }
+    },
+    {
+      "id": "shadow/lamp-room/L9/spot-soft",
+      "verdict": "NEUTRAL",
+      "vsUnreal": "CLOSE",
+      "reasons": "The soft shadow on the floor rectangle and the wall at the right, including its penumbra, are the same in BEFORE and both AFTER runs. I saw no banding, acne or lit dots, and the brightness is unchanged.",
+      "differences": "Shadow shapes and penumbra positions match Unreal. The engine's shadows are much fainter, and Unreal's floor shadow and wall shadow are clearly darker.",
+      "layer": "L9",
+      "unreal": "L9",
+      "files": {
+        "before": [
+          "/home/joao/.cache/tmp-tn/lamp/cap/before-2/shadow/lamp-room/L9/spot-soft.png"
+        ],
+        "after": [
+          "/home/joao/.cache/tmp-tn/lamp/cap/after-1/shadow/lamp-room/L9/spot-soft.png",
+          "/home/joao/.cache/tmp-tn/lamp/cap/after-2/shadow/lamp-room/L9/spot-soft.png"
+        ],
+        "unreal": "/home/joao/.cache/tmp-tn/lamp/unreal/shadow/lamp-room/L9/spot-soft.png"
+      }
+    }
+  ],
+  "overall": {
+    "verdict": "NEUTRAL",
+    "vsUnreal": "CLOSE",
+    "reasons": "All eight frames are visually the same in BEFORE and both AFTER runs. The rod lines, the table's hard shadow edge, the 10 cm penumbra and the crate shadow are unchanged. I saw no new acne, gaps, lit dots, stripes, light leaks or brightness change. The 1024 workaround and the footprint rule give no visible difference. Against Unreal, shadow shapes and positions match. The remaining differences are the same in both arms: weaker shadow contrast at L9 and slightly different gradients and softness at L5."
+  },
+  "blockedBy": [],
+  "file": "/home/joao/.cache/tmp-tn/lamp/judge-1024.json"
+}
