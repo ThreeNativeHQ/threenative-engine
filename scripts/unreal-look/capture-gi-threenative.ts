@@ -18,7 +18,7 @@ import { FRAME_GATE, captureMotionFrames } from "./capture-motion-threenative.js
 import { HIDE_UI, freePort, scaffold, waitForServer } from "./capture-threenative.js";
 import { awaitExposureSettled, metersExposure, watchExposure } from "./exposureSettled.js";
 import { isManifestScene, readScene, sceneDir, sceneKey } from "./gi.js";
-import { MIN_STEPS, SETTLE_STEPS, atFixedJitterPhase } from "./jitterPhase.js";
+import { MIN_STEPS, RENDERER_LOST, SETTLE_STEPS, atFixedJitterPhase } from "./jitterPhase.js";
 import { composeForThreeNative } from "./wildwood.js";
 
 const REPO_ROOT = path.resolve(import.meta.dirname, "../..");
@@ -183,6 +183,7 @@ export async function captureGiThreeNative(options: {
         const exposure = watchExposure(page);
         page.on("console", (message) => {
           if (message.text().startsWith("TN_FRAME_BUDGET")) meter.push(message.text());
+          if (RENDERER_LOST.test(message.text())) errors.push(message.text());
           if (
             message.type() === "error" ||
             /^TN_(CALIBRATION|GI_CACHE|SURFACE_CACHE|WORLD_ENVIRONMENT|NATIVE_)/.test(

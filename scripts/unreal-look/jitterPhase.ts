@@ -30,6 +30,9 @@ const EXTRA_STEPS = 3 * JITTER_PERIOD;
 /** Set to `free` to take the screenshot on whatever phase the loop is at (the pre-2026-10-22 behaviour, for BEFORE arms). */
 export const JITTER_SWITCH = "TN_UNREAL_LOOK_JITTER";
 
+/** The facade's lost-renderer and device-error lines: a frame taken after one is black, so the capture counts them as page errors. */
+export const RENDERER_LOST = /TN_WASM_(RENDERER_LOST|DEVICE_(LOST|ERROR))/;
+
 const halton = (start: number, base: number): number => {
   let index = start;
   let fraction = 1;

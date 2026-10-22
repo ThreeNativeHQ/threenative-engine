@@ -6,6 +6,7 @@ import {
   JITTER_PHASE,
   JITTER_SWITCH,
   MIN_STEPS,
+  RENDERER_LOST,
   SETTLE_STEPS,
   atFixedJitterPhase,
   atJitterPhase,
@@ -192,6 +193,32 @@ describe("a still is taken on a fixed jitter phase", () => {
     expect(page.state.steps).toBe(0);
     expect(page.state.released).toBe(0);
   });
+});
+
+describe("a lost renderer is a failed capture", () => {
+  it("names the facade's lost-renderer and device-error lines", () => {
+    expect(
+      RENDERER_LOST.test("TN_WASM_RENDERER_LOST: this renderer draws nothing after this call."),
+    ).toBe(true);
+    expect(
+      RENDERER_LOST.test(
+        "TN_WASM_DEVICE_ERROR: vkAllocateMemory failed with VK_ERROR_OUT_OF_DEVICE_MEMORY",
+      ),
+    ).toBe(true);
+    expect(
+      RENDERER_LOST.test(
+        "TN_WASM_DEVICE_LOST: A valid external Instance reference no longer exists.",
+      ),
+    ).toBe(true);
+    expect(RENDERER_LOST.test("TN_AUTO_EXPOSURE:{}")).toBe(false);
+  });
+
+  for (const name of ["capture-threenative.ts", "capture-gi-threenative.ts"])
+    it(`${name} counts it as a page error`, () => {
+      expect(
+        readFileSync(path.join(import.meta.dirname, "../unreal-look", name), "utf8"),
+      ).toContain("if (RENDERER_LOST.test(message.text())) errors.push(message.text());");
+    });
 });
 
 describe("both captures take their stills through the phase gate", () => {
