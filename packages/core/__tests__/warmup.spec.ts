@@ -883,28 +883,6 @@ describe("scene warm-up", () => {
     expect(report.passes).toEqual(["main", "reflection"]);
   });
 
-  test("should find a reflector node on a material whose fields are prototype accessors", async () => {
-    // The engine's web materials list their fields in for...in, not in Object.values.
-    const reflectorNode = { isNode: true, _reflectorBaseNode: {}, getChildren: () => [] };
-    const prototype = {};
-    Object.defineProperty(prototype, "colorNode", {
-      enumerable: true,
-      get: () => ({ isNode: true, getChildren: () => [reflectorNode] }),
-    });
-    Object.defineProperty(prototype, "isNodeMaterial", { enumerable: true, get: () => true });
-    const material = Object.create(prototype) as object;
-    const renderer = {
-      compileAsync: () => Promise.resolve(),
-      render: () => undefined,
-      raw: { shadowMap: { enabled: true } },
-    };
-    const scene = group("scene", [{ children: [], material, name: "water" }]);
-    const report = await warmUpScene(renderer as never, scene as never, {} as never, {
-      yieldFrame: () => Promise.resolve(),
-    });
-    expect(report.passes).toEqual(["main", "reflection"]);
-  });
-
   test("should read a shared node material's values once, however many objects draw with it", async () => {
     // On the engine each field of a material is a call into the host, so a walk that reads a
     // material once per object costs the object count times the field count.

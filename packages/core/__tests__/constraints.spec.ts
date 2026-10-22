@@ -62,10 +62,6 @@ describe("core constraints", () => {
           // configures no property of one, and reads only `name` for the error label; which
           // materials exist, and how each looks, is entirely the game's.
           file !== "merge-parts.ts" &&
-          // `materialFieldNames` and `materialFieldValues` list the fields of any object with
-          // `for...in`, because the engine keeps a material's fields on its prototype. They read no
-          // value as appearance, construct no material and choose no look.
-          file !== "material-fields.ts" &&
           // FlightModel integrates lift, drag, thrust and moments on a game-owned airframe. It
           // constructs no material, light, colour or shader; the word "light" it trips on is
           // inside "flight".

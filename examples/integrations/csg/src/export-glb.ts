@@ -33,13 +33,11 @@ export async function writeSolidGlb(mesh: Mesh): Promise<Uint8Array> {
           );
         if (material.side === BackSide)
           throw new Error(`CSG export material '${source.name}' uses unsupported BackSide.`);
-        for (const key in material) {
-          const value: unknown = (material as unknown as Record<string, unknown>)[key];
+        for (const value of Object.values(material))
           if (value && typeof value === "object" && "isTexture" in value)
             throw new Error(
               `CSG export material '${source.name}' has a texture; use the ordinary textured asset authoring path.`,
             );
-        }
         const { r, g, b } = material.color;
         const e = material.emissive;
         if (
