@@ -154,6 +154,9 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
     const unsupported: { actor: string; property: string; reason: string }[] = [];
     // Draws the lamps' shadows at another tier: what a `ShadowFilterBudget` step does, callable from the page.
     let setShadowTier = (_tier: ShadowFilterTier): void => undefined;
+    // Rebuilds the chain at another final gather method: what a `GIBudget` step does, callable from the page. The cost
+    // run alternates methods in one page, so every method sees the same GPU clock.
+    let setGatherMethod = (_method: FinalGatherMethod): void => undefined;
     // Sets a lamp to its scene.json intensity times `scale` (a motion run's light track).
     let setLight = (name: string, _scale: number): void => {
       throw new Error(`TN_CALIBRATION_MOTION_LIGHT: ${name}: layer ${LAYER} has no lights`);
@@ -367,6 +370,7 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
         this.#dispose = world.apply(ctx.renderer, scene, camera, {}).dispose;
       };
       build(GI_METHOD);
+      setGatherMethod = build;
       // The tier's method moves with the measured GI time when the URL asks for giAuto=1 (PRD-644).
       if (GI_METHOD !== "none")
         this.#gi = watchGi(ctx, { tier: TIER, method: GI_METHOD, rebuild: build });
@@ -384,10 +388,12 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
       giBudget: () => this.#gi?.lastReport(),
       shadowBudget: () => this.#shadow?.lastReport(),
       setShadowTier: (tier: string) => setShadowTier(resolveQualityTier({ tier })),
+      setGatherMethod: (method: FinalGatherMethod) => setGatherMethod(method),
       scene: NAME,
       unsupported,
       // The live scene, renderer and GI cache, for in-page diagnosis.
       world: scene,
+      camera,
       gi: giCache,
       renderer: ctx.renderer.raw,
       disposePost: () => this.#dispose?.(),

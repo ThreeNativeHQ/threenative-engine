@@ -550,7 +550,7 @@ uint32_t PostEffects::render(WGPUCommandEncoder& encoder, WGPUTextureView scene,
         WGPURenderPassDescriptor passDesc{};
         passDesc.colorAttachmentCount = 1;
         passDesc.colorAttachments = &color;
-        const auto render = beginTimedRenderPass(encoder, &passDesc);
+        const auto render = beginTimedRenderPass(encoder, &passDesc, pass.source.stage == shader::graph::kStageScreenSpaceGi ? kGpuGiSegment : 2);
         if (pass.source.visible) {
             wgpuRenderPassEncoderSetPipeline(render, pass.pipeline);
             wgpuRenderPassEncoderSetBindGroup(render, 0, group, 0, nullptr);

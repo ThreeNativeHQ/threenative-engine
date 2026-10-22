@@ -82,10 +82,12 @@
     "request.vehicle-rescue-respawn",
     "request.lumen-surface-cache",
     "request.lumen-scene",
-    "request.mesh-cards"
+    "request.mesh-cards",
+    "request.gi-quality-scalability",
+    "request.shadow-quality-scalability"
   ],
   "rejectHits": 15,
-  "rowCount": 90,
+  "rowCount": 92,
   "rowIds": [
     "brief.endless-runner.1",
     "brief.endless-runner.2",
@@ -176,7 +178,9 @@
     "request.vehicle-rescue-respawn",
     "request.lumen-surface-cache",
     "request.lumen-scene",
-    "request.mesh-cards"
+    "request.mesh-cards",
+    "request.gi-quality-scalability",
+    "request.shadow-quality-scalability"
   ],
   "version": 1,
   "zeroResultRate": 0.05555555555555555,
