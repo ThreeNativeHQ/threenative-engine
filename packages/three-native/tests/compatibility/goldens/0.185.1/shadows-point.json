@@ -1,7 +1,7 @@
 {
   "name": "shadows-point",
   "threeVersion": "0.185.1",
-  "adaptedFrom": "original — a point light's cube PCF shadow map (six faces, bias, normalBias, a shortened far) on Standard, Lambert and Phong meshes; the box casts but does not receive, and a slab inside the sphere's shadow does neither",
+  "adaptedFrom": "original — a point light's cube PCF shadow map (six faces, bias, normalBias, a shortened far) on Standard, Lambert and Phong meshes; the box casts but does not receive, and a slab inside the sphere's shadow does neither; shadow.mapSize is set to 1024, the game's override, because the native engine sizes a lamp map at three's 512 default from its footprint (PRD-650)",
   "blocked": null,
   "observations": [
     {
@@ -32,13 +32,13 @@
       "index": 3,
       "id": "scene",
       "kind": "pixels",
-      "value": "s:261f9b6d7f83df9db87d4079425d44655a5cb8b747c50da4f0a587ef068aada6",
-      "decimal": "261f9b6d7f83df9db87d4079425d44655a5cb8b747c50da4f0a587ef068aada6"
+      "value": "s:27cf8cf4463ef08aa36380f3d9bf2a183a4c8f315210db2aa304cb1f9142e561",
+      "decimal": "27cf8cf4463ef08aa36380f3d9bf2a183a4c8f315210db2aa304cb1f9142e561"
     }
   ],
   "render": {
     "png": "shadows-point.png",
-    "pngSha256": "261f9b6d7f83df9db87d4079425d44655a5cb8b747c50da4f0a587ef068aada6",
+    "pngSha256": "27cf8cf4463ef08aa36380f3d9bf2a183a4c8f315210db2aa304cb1f9142e561",
     "width": 320,
     "height": 240,
     "adapter": {

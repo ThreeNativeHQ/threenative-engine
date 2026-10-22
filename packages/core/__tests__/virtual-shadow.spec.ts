@@ -62,6 +62,7 @@ import {
 import { noteShadowRedrawGpuMs } from "../src/render-pass-budget.js";
 import { clipmapMapSizes } from "../src/render/virtual-shadow-pages.js";
 import {
+  LAMP_SHADOW_MARKER,
   VIRTUAL_SHADOW_CASTER_LAYER,
   VIRTUAL_SHADOW_GATE_MARKER,
   VIRTUAL_SHADOW_MARKER,
@@ -69,6 +70,8 @@ import {
   VIRTUAL_SHADOW_REFRESH_MARKER,
   VIRTUAL_SHADOW_WIDE_CASTER_LAYER,
   VirtualShadowNode,
+  lampShadowMarker,
+  readLampShadowMarker,
   readVirtualShadowMarker,
 } from "../src/render/virtual-shadow.js";
 import { WorldImpostorSurface } from "../src/render/world-impostor-surface.js";
@@ -337,6 +340,46 @@ it("takes the normal bias back out of a twoSidedFoliage receiver's shadow positi
   expect(plainCut).toBe(ordinary);
   expect(leaf).not.toBe(ordinary);
   expect(leaf.length).toBeGreaterThan(ordinary.length);
+});
+
+describe("lamp shadow marker (PRD-650)", () => {
+  // One mixed-light frame on the owned engine: the sun's map and one lamp's cube both drew.
+  const info = {
+    engine: {
+      shadows: { lampRedraws: 1, lampDraws: 7, shadowDraws: 9, sunGpuMs: 0.21, lampGpuMs: 0.34 },
+    },
+  };
+
+  it("reports the lamp maps apart from the sun's, and the two add up to the shadow submissions", () => {
+    const line = lampShadowMarker({ info }, 42);
+    expect(line?.startsWith(`${LAMP_SHADOW_MARKER}:`)).toBe(true);
+    const stats = readLampShadowMarker(line ?? "");
+    expect(stats).toEqual({
+      frame: 42,
+      shadowDraws: 9,
+      sun: { draws: 2, gpuMs: 0.21 },
+      lamps: { redraws: 1, draws: 7, gpuMs: 0.34 },
+    });
+    expect((stats?.sun.draws ?? 0) + (stats?.lamps.draws ?? 0)).toBe(stats?.shadowDraws);
+  });
+
+  it("is silent on a renderer without the counters (three's own)", () => {
+    expect(lampShadowMarker({ info: { engine: {} } }, 0)).toBeUndefined();
+    expect(lampShadowMarker({}, 0)).toBeUndefined();
+  });
+
+  it("fails closed on counters that do not reconcile, and on lines that are not complete markers", () => {
+    const broken = { engine: { shadows: { ...info.engine.shadows, lampDraws: 10 } } };
+    expect(() => lampShadowMarker({ info: broken }, 1)).toThrow(/TN_LAMP_SHADOW_INVALID/);
+    const line = lampShadowMarker({ info }, 3) ?? "";
+    expect(
+      readLampShadowMarker(line.replace('"shadowDraws":9', '"shadowDraws":8')),
+    ).toBeUndefined();
+    expect(readLampShadowMarker(line.replace('"redraws":1', '"redraws":1.5'))).toBeUndefined();
+    expect(readLampShadowMarker(`${LAMP_SHADOW_MARKER}:{bad`)).toBeUndefined();
+    expect(readLampShadowMarker(`${LAMP_SHADOW_MARKER}:{}`)).toBeUndefined();
+    expect(readLampShadowMarker("TN_VIRTUAL_SHADOW:{}")).toBeUndefined();
+  });
 });
 
 describe("virtual shadow level diagnostic", () => {

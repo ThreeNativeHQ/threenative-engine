@@ -9,6 +9,7 @@ import {
   Scene,
   type SceneFrame,
   type ShadowFilterTier,
+  TracedReflections,
   VirtualShadowNode,
   sourceAngleShadowFilter,
 } from "@threenative/core";
@@ -44,6 +45,7 @@ import {
   shadowPreset,
 } from "../render/quality.js";
 import { captureReflections } from "../render/reflectionCapture.js";
+import { reflectionTrace } from "../render/reflectionTrace.js";
 import { SUN_DIRECTION, setupSky } from "../render/sky.js";
 import { WorldEnvironment } from "../render/worldEnvironment.js";
 import type { GameState } from "../state.js";
@@ -68,8 +70,9 @@ const SHADOW = shadowPreset(SHADOW_TIER);
 const GI_METHOD = level >= 7 ? GI.finalGatherMethod : "none";
 // `baseline=1` captures the template look as it ships; otherwise the tuning in progress applies.
 const TUNED = params.get("baseline") !== "1";
-// `off=vsm,gpusky,clouds,gi,reflcap,bloom,localexposure,autoexposure,ssgi,ssr,gtao,vignette,motionblur,smaa,noaa,nomsaa` switches one L9 stage off, to
-// attribute frame cost by ablation (PRD-636 performance). `gpusky` is read in `render/sky.ts`.
+// `off=vsm,gpusky,clouds,gi,reflcap,traced,bloom,localexposure,autoexposure,ssgi,ssr,gtao,vignette,motionblur,smaa,noaa,nomsaa` switches one L9 stage off, to
+// attribute frame cost by ablation (PRD-636 performance). `gpusky` is read in `render/sky.ts`. `traced` is the
+// scene-triangle reflection trace (PRD-642): off, the screen march, the cube capture and the floor paint answer.
 // `pan=<rad/s>` turns the camera about the vertical axis after each pose, to give the velocity pass something to blur.
 // `panStep=<rad>&panArc=<rad>` sweeps it instead: `panStep` per drawn frame, back and forth across `panArc` either side of the
 // pose, so the scene stays in view and every frame moves the same number of pixels whatever the frame rate (ghosting proof).
@@ -286,10 +289,17 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
         scene.background = new Color(0x000000);
         scene.environment = null;
       }
+      // PRD-642: from L8 a reflection ray walks the scene's triangles (core's TracedReflections), so the painted
+      // floor, which stood in for what the screen cannot see, is not needed. The cube capture stays: a ray that
+      // misses sees the sky, and the capture draws the sky at a finer grain than the 64 x 32 environment.
+      const tracing = TUNED && level >= 8 && !OFF.has("traced");
+      if (tracing) reflectionTrace.current = new TracedReflections(model);
       // PRD-631: indirect diffuse from a world-space light cache of the sky and, from L7 (Unreal's
       // global illumination), the sun a surface returns (render/giCache.ts).
       if (TUNED && level >= 2 && !OFF.has("gi"))
         installGi(ctx, model, {
+          // Diagnosis knob paint=1: paint the lit floor into the environment even while reflections are traced.
+          paintGround: !tracing || params.get("paint") === "1",
           // Diagnosis knob stockRays=1: cast the bake through ctx.raycast, the slow path (an A/B).
           stockRays: params.get("stockRays") === "1",
           bounces: GI_METHOD === "none" ? 0 : 5,
@@ -352,12 +362,17 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
             ...(params.get("gtaoR") === null ? {} : { gtaoRadius: Number(params.get("gtaoR")) }),
             ...(params.get("gtaoS") === null ? {} : { gtaoScale: Number(params.get("gtaoS")) }),
             vignetteAmount: 0,
+            // Diagnosis: ?exposure=N sets the exposure (pair it with ?linear=1 below).
+            ...(params.get("exposure") === null ? {} : { exposure: Number(params.get("exposure")) }),
             // The same ablation switches as L9, for attributing a GI fault below it.
             ...Object.assign({}, ...[...OFF].map((name) => STAGE_OFF[name] ?? {})),
           });
           this.#dispose = world.apply(ctx.renderer, scene, camera, { godraysLight: key }).dispose;
         };
         build(GI_METHOD);
+        // Diagnosis: ?linear=1 writes the exposed light with no tone curve, so the frame reads as scene-linear (the
+        // light a PRD-646 direct-light gap is measured in), as CalibrationScene does.
+        if (params.get("linear") === "1") raw.toneMapping = NoToneMapping;
         // The tier's method moves with the measured GI time when the URL asks for giAuto=1 (PRD-644).
         if (GI_METHOD !== "none")
           this.#gi = watchGi(ctx, { tier: TIER, method: GI_METHOD, rebuild: build });
@@ -446,6 +461,8 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
   override exit(ctx: GameCtx): void {
     this.#reflectionsDispose?.();
     this.#reflectionsDispose = undefined;
+    reflectionTrace.current?.dispose();
+    reflectionTrace.current = undefined;
     this.#dispose?.();
     this.#dispose = undefined;
     super.exit(ctx);

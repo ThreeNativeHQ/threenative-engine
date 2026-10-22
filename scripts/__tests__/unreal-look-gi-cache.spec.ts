@@ -366,6 +366,31 @@ describe("the world-space GI cache against closed forms (PRD-631 L7)", () => {
     expect((floor.material as MeshStandardMaterial).roughDiffuse ?? false).toBe(false);
   });
 
+  it("a marked leaf with a subsurfaceColor takes the cache's back-face light, and a leaf without one takes none (PRD-643)", () => {
+    const tinted = new MeshStandardMaterial({ side: DoubleSide });
+    tinted.twoSidedFoliage = true;
+    tinted.subsurfaceColor = new Color(0.2, 0.5, 0.1);
+    const bare = new MeshStandardMaterial({ side: DoubleSide });
+    bare.twoSidedFoliage = true;
+    const lone = new MeshStandardMaterial({ side: DoubleSide });
+    lone.subsurfaceColor = new Color(0.2, 0.5, 0.1);
+    const meshes = [tinted, bare, lone].map(
+      (m, i) => new Mesh(new PlaneGeometry(1, 1).translate(3 * i, 0, 0), m),
+    );
+    const floor = new Mesh(
+      new PlaneGeometry(40, 40).rotateX(-Math.PI / 2),
+      new MeshStandardMaterial(),
+    );
+    const scene = new Group().add(...meshes, floor);
+    skyRadiance.current = { data: new Float32Array(6), width: 2, height: 1, scale: [1, 1, 1] };
+    installGi(rayContext(scene), scene, { bounces: 1, sun: noSun });
+    const [a, b, c] = meshes.map((m) => m.material as MeshStandardMaterial);
+    expect((a as MeshStandardMaterial).emissiveNode).toBeTruthy();
+    expect((a as MeshStandardMaterial).subsurfaceColor?.g).toBeCloseTo(0.5);
+    expect((b as MeshStandardMaterial).emissiveNode ?? null).toBeNull();
+    expect((c as MeshStandardMaterial).emissiveNode ?? null).toBeNull();
+  });
+
   it("a material whose fields are accessors on its class, as the native engine's are, swaps with them intact", () => {
     // The native engine binds a material's fields as accessors on the class prototype, which a `for in` never lists:
     // a copy by enumeration took nothing, and every leaf and wall came back white.

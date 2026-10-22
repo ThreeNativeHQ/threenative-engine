@@ -26,6 +26,13 @@
       "serves": ["PRD-651", "PRD-643"],
       "poses": ["closeup", "medium"],
       "manifest": "manifest.json"
+    },
+    {
+      "name": "wildwood-backlit",
+      "owner": "PRD-643",
+      "serves": ["PRD-643"],
+      "poses": ["under", "toward"],
+      "manifest": "manifest.json"
     }
   ],
   "variants": [

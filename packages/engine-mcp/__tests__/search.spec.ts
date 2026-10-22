@@ -32,6 +32,13 @@ describe("threenative-engine-mcp", () => {
     expect(symbols("sg.ShadowQuality")).toContain("ShadowFilterBudget");
   });
 
+  it("finds the indirect diffuse visualize mode by Unreal's names", () => {
+    const symbols = (situation: string) => searchResults(situation).map((r) => r.symbol);
+    expect(symbols("lumen visualize indirect diffuse")).toContain("GIVisualize");
+    expect(symbols("indirect diffuse only")).toContain("GIVisualize");
+    expect(symbols("r.Lumen.Visualize.IndirectDiffuse")).toContain("GIVisualize");
+  });
+
   it("exposes exactly the two read-only capability tools", () => {
     expect(toolDefinitions().map((tool) => tool.name)).toEqual([
       "engine_search_capabilities",
@@ -179,6 +186,11 @@ describe("threenative-engine-mcp", () => {
     expect(searchResults("hitscan camera", workspaceManifest)[0]?.symbol).toBe(
       "PhysicsDirectSpaceState3D",
     );
+  });
+
+  it("finds TracedReflections by Unreal's names for it, ahead of the screen-space stage", () => {
+    for (const phrase of ["lumen reflections", "dedicated reflection rays"])
+      expect(searchResults(phrase, workspaceManifest)[0]?.symbol, phrase).toBe("TracedReflections");
   });
 
   it("explains an alias hit with a readable situation", () => {

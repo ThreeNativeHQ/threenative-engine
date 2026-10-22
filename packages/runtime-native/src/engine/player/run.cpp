@@ -1135,7 +1135,8 @@ int Session::initialize() {
                     {"fresh", json::Value::makeBool(samples > previousGpuSamples)},
                     {"elapsedMs", samples ? json::Value::makeNumber(renderer->lastGpuMs()) : json::Value::makeNull()},
                     {"segmentsMs", samples ? json::Value::makeArray({json::Value::makeNumber(segments[0]), json::Value::makeNumber(segments[1]),
-                        json::Value::makeNumber(segments[2]), json::Value::makeNumber(segments[3]), json::Value::makeNumber(segments[4])}) : json::Value::makeNull()}}));
+                        json::Value::makeNumber(segments[2]), json::Value::makeNumber(segments[3]), json::Value::makeNumber(segments[4]),
+                        json::Value::makeNumber(segments[5])}) : json::Value::makeNull()}}));
                 previousGpuSamples = samples;
                 sample = json::Value::makeObject(std::move(members));
             }

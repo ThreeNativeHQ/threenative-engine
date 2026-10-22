@@ -188,11 +188,14 @@ describe("starter visual floor", () => {
         // ownership check above is the rule that matters for it.
         // LocalExposureNode (a bilateral grid and its blur) and UnrealBloomNode (six Gaussian stages on a
         // downsample chain) are multi-pass nodes of the same kind, and each file is the whole stage.
+        // The filmic tone curve is one TSL graph (gamut, blue correction, glow, red modifier, the curve and an
+        // output dither), with the same maths on plain numbers for a test or a capture script.
         if (
           !name.endsWith("loading.ts") &&
           !name.endsWith("worldEnvironment.ts") &&
           !name.endsWith("autoExposure.ts") &&
           !name.endsWith("localExposure.ts") &&
+          !name.endsWith("tonemap.ts") &&
           !name.endsWith("unrealBloom.ts")
         )
           expect(source.trimEnd().split("\n").length, name).toBeLessThan(200);

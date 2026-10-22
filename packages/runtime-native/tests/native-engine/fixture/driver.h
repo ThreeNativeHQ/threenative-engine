@@ -57,7 +57,7 @@ public:
     Value share(std::string cls, std::shared_ptr<void> object) override;
     /**
      * The numeric array a `toArray()` result was boxed into, which is how `fromArray(array)`
-     * receives what the reference receives as a plain JS array. Empty for any other argument.
+     * receives what the reference receives as a plain JS array, or a typed array argument's numbers. Empty for any other argument.
      */
     std::vector<double> numbers(const Value& arg) override;
 

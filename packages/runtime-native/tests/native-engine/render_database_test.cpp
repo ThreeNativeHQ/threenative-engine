@@ -9,6 +9,7 @@
 #include "engine/renderer/post/traa.h"
 #include "engine/renderer/render_database.h"
 #include "engine/renderer/shadows/virtual/atlas.h"
+#include "engine/renderer/shadows/lamp_resolution.h"
 #include "engine/renderer/reflector.h"
 #include "engine/renderer/render_target_pass.h"
 #include "engine/shader/graph/graph.h"
@@ -30,6 +31,7 @@
 #include <cstdlib>
 #include <cmath>
 #include <cstdio>
+#include <numeric>
 #include <string>
 #include <thread>
 
@@ -1252,22 +1254,34 @@ void timeUniform() {
 }
 
 // A FloatType target keeps float32: auto exposure feeds its last value back through one, and a half
-// float rounded each frame stalled the adaptation 0.006 to 0.009 stops short of its target.
-void floatRenderTargetKeepsFloat32() {
+// float rounded each frame stalled the adaptation 0.006 to 0.009 stops short of its target. A device
+// without float32-blendable stores it as half instead (blending into RGBA32Float would fail validation),
+// reports that on the target, and a read still returns float32 rows.
+void drawFloatTarget(bool forceHalf) {
     mystral::webgpu::Context context;
     CHECK(context.initializeHeadless());
     EventQueue events;
     Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.forceHalfFloatTargets(forceHalf);
     renderer.setSize(64, 64);
+    const bool expectFloat32 = !forceHalf && wgpuDeviceHasFeature(context.getDevice(), WGPUFeatureName_Float32Blendable);
     const auto target = RenderTarget::make(4, 4, kTextureFloatType);
     Scene inner;
     OrthographicCamera innerCamera(-1, 1, 1, -1, 0.1, 10);
     innerCamera.position.z = 5;
     innerCamera.updateMatrixWorld();
+    // A half-transparent blue square over the whole target: a blended draw into the FloatType target.
+    auto blue = std::make_shared<Material>(MaterialType::Basic);
+    blue->color.setRGB(0, 0, 1);
+    blue->transparent = true;
+    blue->opacity = 0.5;
+    Mesh square(makePlaneGeometry(4, 4), blue);
+    inner.add(square);
     inner.updateMatrixWorld(true);
     // 1 + 2^-12 and 2^-12 + 2^-24 need more than half float's 11 significant bits.
     const double high = 1.0 + std::ldexp(1.0, -12), low = std::ldexp(1.0, -12) + std::ldexp(1.0, -24);
     CHECK(renderToTarget(renderer, *target, inner, innerCamera, {high, low, 0.5, 1}, false).empty());
+    CHECK(target->halfPrecision == !expectFloat32);
     std::vector<uint8_t> region;
     bool done = false;
     CHECK(readRenderTarget(*target, 0, 0, 4, 4, [&](GpuStatus status, std::vector<uint8_t> bytes) {
@@ -1280,14 +1294,22 @@ void floatRenderTargetKeepsFloat32() {
         events.drain();
         if (!done) std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
-    CHECK(region.size() == size_t{4} * 4 * 16);  // RGBA32Float rows
+    CHECK(region.size() == size_t{4} * 4 * 16);  // float32 rows either way
     if (region.size() == size_t{4} * 4 * 16) {
         float texel[4];
         std::memcpy(texel, region.data() + (size_t{1} * 4 + 1) * 16, sizeof texel);
-        std::fprintf(stderr, "float target: %.9g %.9g %.9g\n", texel[0], texel[1], texel[2]);
-        CHECK(texel[0] == float(high) && texel[1] == float(low) && texel[2] == 0.5f);
+        std::fprintf(stderr, "float target (%s): %.9g %.9g %.9g\n", expectFloat32 ? "float32" : "half", texel[0], texel[1], texel[2]);
+        // Half-opaque blue over (high, low, 0.5): red and green keep half of the clear, blue mixes toward 1.
+        const float red = float(high) * 0.5f, green = float(low) * 0.5f, blueMix = 0.75f;
+        const float tolerance = expectFloat32 ? 1e-6f : 2e-3f;
+        CHECK(std::abs(texel[0] - red) <= tolerance && std::abs(texel[1] - green) <= tolerance &&
+              std::abs(texel[2] - blueMix) <= tolerance);
+        if (expectFloat32) CHECK(texel[0] == red);  // the half rounding of 1 + 2^-12 halved would differ
     }
 }
+
+void floatRenderTargetKeepsFloat32() { drawFloatTarget(false); }
+void floatRenderTargetFallsBackToHalf() { drawFloatTarget(true); }
 
 // PRD-551: a game's RenderTarget. A render into it writes the linear scene colour (no tone mapping, no
 // output transform, as r185 writes a target); readRenderTarget returns a region of it; a material whose
@@ -2827,6 +2849,69 @@ void gpuTimerCoversShadows() {
     }
 }
 
+// PRD-650: the lamp maps' GPU time is its own segment, apart from the sun's, and the segments sum to the frame.
+void gpuTimerSplitsLampShadows() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(96, 96);
+    if (!wgpuDeviceHasFeature(context.getDevice(), WGPUFeatureName_TimestampQuery)) {
+        std::printf("no timestamp-query on this device: nothing to time\n");
+        return;
+    }
+    OrthographicCamera camera(-4, 4, 4, -4, 0.1, 20);
+    camera.position.set(0, 10, 0.001);
+    camera.lookAt(0, 0, 0);
+    camera.updateProjectionMatrix();
+    Scene scene;
+    SpotLight spot{Color(1, 1, 1), 40, 6, 0.9};
+    spot.position.set(1.5, 3, 0);
+    spot.target->position.set(1.5, 0, 0);
+    spot.setCastShadow(true);
+    scene.add(spot);
+    scene.add(*spot.target);
+    DirectionalLight sun{Color(1, 1, 1), 2};
+    sun.position.set(2, 8, 1);
+    sun.setCastShadow(true);
+    scene.add(sun);
+    auto white = std::make_shared<Material>(MaterialType::Standard);
+    Mesh floor{makeBoxGeometry(8, 0.2, 8), white};
+    floor.position.y = -0.1;
+    floor.setReceiveShadow(true);
+    scene.add(floor);
+    Mesh box{makeBoxGeometry(0.6, 0.6, 0.6), white};
+    box.position.set(1.5, 1, 0);
+    box.setCastShadow(true);
+    scene.add(box);
+    RenderDatabase database;
+    database.shadowMapEnabled = true;
+    renderer.setGpuTimer(true);
+    // One frame and its own GPU sample: wait for the frame's readback before the next frame.
+    const auto timed = [&] {
+        const uint64_t before = renderer.gpuSamples();
+        scene.updateMatrixWorld(true);
+        database.render(renderer, scene, camera);
+        const auto until = std::chrono::steady_clock::now() + std::chrono::milliseconds(2000);
+        while (renderer.gpuSamples() == before && std::chrono::steady_clock::now() < until) {
+            renderer.poll();
+            events.drain();
+        }
+        CHECK(renderer.gpuSamples() > before);
+        const auto segments = renderer.lastGpuSegments();
+        CHECK(std::abs(std::accumulate(segments.begin(), segments.end(), 0.0) - renderer.lastGpuMs()) < 1e-9);
+        return segments;
+    };
+    const auto first = timed();
+    std::printf("lamp gpu: first frame sun %.4f ms, lamps %.4f ms (%u maps)\n", first[0], first[kGpuLampShadowSegment], renderer.lastFrame().lampRedraws);
+    CHECK(renderer.lastFrame().lampRedraws == 1);
+    CHECK(first[0] > 0 && first[kGpuLampShadowSegment] > 0);
+    const auto cached = timed();
+    std::printf("lamp gpu: cached frame sun %.4f ms, lamps %.4f ms (%u maps)\n", cached[0], cached[kGpuLampShadowSegment], renderer.lastFrame().lampRedraws);
+    CHECK(renderer.lastFrame().lampRedraws == 0);
+    CHECK(cached[0] > 0 && cached[kGpuLampShadowSegment] == 0);
+}
+
 // Secondary targets and the main scene must resolve as one complete GPU sample.
 void gpuTimerCoversOffscreen() {
     mystral::webgpu::Context context;
@@ -3963,6 +4048,9 @@ void lampCache() {
     };
     const uint64_t first = frame();
     CHECK(first > 0);
+    // Both lamps redraw on the first frame, a cube's six faces as one, and every shadow draw is theirs.
+    CHECK(renderer.lastFrame().lampRedraws == 2);
+    CHECK(renderer.lastFrame().lampShadowDraws == first);
     const std::vector<uint8_t> fresh = pixels();
     uint64_t still = 0;
     for (int i = 0; i < 300; ++i) still += frame();
@@ -3981,7 +4069,87 @@ void lampCache() {
     const uint64_t inside = frame();
     std::printf("lamp cache: caster moved inside range %llu\n", (unsigned long long)inside);
     CHECK(inside > 0);
+    CHECK(renderer.lastFrame().lampRedraws >= 1);  // the box moved inside the point light's range
     CHECK(frame() == 0);
+    // A mixed-light frame: the sun's map redraws, the lamps' stay cached, and the two parts add up.
+    DirectionalLight sun{Color(1, 1, 1), 2};
+    sun.position.set(2, 8, 1);
+    sun.setCastShadow(true);
+    scene.add(sun);
+    const uint64_t mixed = frame();
+    std::printf("lamp cache: mixed frame %llu shadow draws, %u lamp\n", (unsigned long long)mixed, renderer.lastFrame().lampShadowDraws);
+    CHECK(mixed > 0);
+    CHECK(renderer.lastFrame().lampRedraws == 0 && renderer.lastFrame().lampShadowDraws == 0);
+    near.position.x = -1.5;
+    const uint64_t both = frame();
+    std::printf("lamp cache: mixed frame with a moved caster %llu shadow draws, %u lamp, %u lamp maps\n", (unsigned long long)both,
+                renderer.lastFrame().lampShadowDraws, renderer.lastFrame().lampRedraws);
+    CHECK(renderer.lastFrame().lampRedraws >= 1);
+    CHECK(renderer.lastFrame().lampShadowDraws > 0 && renderer.lastFrame().lampShadowDraws < both);
+}
+
+void lampAtlas() {
+    // PRD-650 Phase 1: Unreal's local-light rule picks the map from the pixel footprint.
+    using shadows::LampDemand;
+    CHECK((shadows::lampMapSizes({LampDemand{17}, LampDemand{30}}) == std::vector<uint32_t>{1024, 1024}));
+    CHECK((shadows::lampMapSizes({LampDemand{17, 1}}) == std::vector<uint32_t>{512}));  // moving: one mip coarser
+    // Over the budget one global bias rises: the lamp nearest its next coarser mip (30 texels) steps first.
+    CHECK((shadows::lampMapSizes({LampDemand{17}, LampDemand{30}}, 1024.0 * 1024 + 512 * 512) == std::vector<uint32_t>{1024, 512}));
+    CHECK((shadows::lampMapSizes({LampDemand{17, 0, true}, LampDemand{30}}, 1) == std::vector<uint32_t>{128, 128}));
+
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(256, 256);
+    PerspectiveCamera camera(50, 1, 0.1, 100);
+    Scene scene;
+    SpotLight spot{Color(1, 1, 1), 40, 0, 0.6};
+    spot.position.set(0, 3, 0);
+    spot.target->position.set(0, 0, 0);
+    spot.setCastShadow(true);
+    scene.add(spot);
+    scene.add(*spot.target);
+    auto white = std::make_shared<Material>(MaterialType::Standard);
+    Mesh floor{makeBoxGeometry(60, 0.2, 60), white};
+    floor.position.y = -0.1;
+    floor.setReceiveShadow(true);
+    scene.add(floor);
+    Mesh box{makeBoxGeometry(0.4, 0.4, 0.4), white};
+    box.position.set(0, 1, 0);
+    box.setCastShadow(true);
+    scene.add(box);
+    RenderDatabase database;
+    database.shadowMapEnabled = true;
+    const auto sizeFrom = [&](double away) {
+        camera.position.set(0, 1.2, away);
+        camera.lookAt(0, 0, 0);
+        scene.updateMatrixWorld(true);
+        database.render(renderer, scene, camera);
+        return renderer.lampShadowSize(0);
+    };
+    const uint32_t near = sizeFrom(2), far = sizeFrom(20);
+    std::printf("lamp atlas: 2 m %u, 20 m %u\n", near, far);
+    CHECK(near > far);
+    CHECK(near > 128 && near < 16384);
+    for (int i = 0; i < 12; ++i) sizeFrom(2);
+    const uint32_t still = renderer.lampShadowSize(0);
+    CHECK(still == near);
+    for (int i = 0; i < 3; ++i) {
+        spot.position.x += 0.001;
+        sizeFrom(2);
+    }
+    const uint32_t moving = renderer.lampShadowSize(0);
+    for (int i = 0; i < 12; ++i) sizeFrom(2);
+    const uint32_t settled = renderer.lampShadowSize(0);
+    std::printf("lamp atlas: still %u, moving %u, settled %u\n", still, moving, settled);
+    CHECK(moving * 2 == still);
+    CHECK(settled == still);
+    spot.shadow.mapSize.set(300, 300);
+    sizeFrom(2);
+    CHECK(renderer.lampShadowSize(0) == 300);  // the game's mapSize overrides, and says so
+    CHECK(std::any_of(renderer.diagnostics().begin(), renderer.diagnostics().end(),
+                      [](const std::string& d) { return d.starts_with("TN_LAMP_SHADOW_MAPSIZE_OVERRIDE"); }));
 }
 
 void contactShadowFoot() {
@@ -5417,7 +5585,7 @@ void gpuJointProduction() {
     }
 }
 
-TN_TEST_MAIN({"gpu_joint_production", gpuJointProduction}, {"multi_material_groups", multiMaterialGroups}, {"uniform_batch_preparation", uniformBatchPreparation}, {"steady_state", steadyState}, {"color_write_masks_the_draw", colorWriteMasksTheDraw}, {"normal_pass_is_not_tallied", normalPassIsNotTallied}, {"steady_cache_invalidation", steadyCacheInvalidation}, {"render_target", renderTarget}, {"float_render_target_keeps_float32", floatRenderTargetKeepsFloat32}, {"post_texture_resize_keeps_draw_groups", postTextureResizeKeepsDrawGroups}, {"deferred_target_follows_post_rtt", deferredTargetFollowsPostRtt}, {"deferred_target_samples_post_rtt_node", deferredTargetSamplesPostRttNode}, {"screen_size_reaches_the_vertex_stage", screenSizeReachesTheVertexStage}, {"depth_node_sets_fragment_depth", depthNodeSetsFragmentDepth}, {"depth_node_reaches_every_material_program", depthNodeReachesEveryMaterialProgram}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"present_direct", presentDirect}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"directional_target_outside_scene", directionalTargetOutsideScene}, {"scene_fog_node", sceneFogNode}, {"lit_mesh_without_normals", litMeshWithoutNormals}, {"invalidation", invalidation}, {"alpha_scene", alphaScene},
+TN_TEST_MAIN({"gpu_joint_production", gpuJointProduction}, {"multi_material_groups", multiMaterialGroups}, {"uniform_batch_preparation", uniformBatchPreparation}, {"steady_state", steadyState}, {"color_write_masks_the_draw", colorWriteMasksTheDraw}, {"normal_pass_is_not_tallied", normalPassIsNotTallied}, {"steady_cache_invalidation", steadyCacheInvalidation}, {"render_target", renderTarget}, {"float_render_target_keeps_float32", floatRenderTargetKeepsFloat32}, {"float_render_target_falls_back_to_half", floatRenderTargetFallsBackToHalf}, {"post_texture_resize_keeps_draw_groups", postTextureResizeKeepsDrawGroups}, {"deferred_target_follows_post_rtt", deferredTargetFollowsPostRtt}, {"deferred_target_samples_post_rtt_node", deferredTargetSamplesPostRttNode}, {"screen_size_reaches_the_vertex_stage", screenSizeReachesTheVertexStage}, {"depth_node_sets_fragment_depth", depthNodeSetsFragmentDepth}, {"depth_node_reaches_every_material_program", depthNodeReachesEveryMaterialProgram}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"present_direct", presentDirect}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"directional_target_outside_scene", directionalTargetOutsideScene}, {"scene_fog_node", sceneFogNode}, {"lit_mesh_without_normals", litMeshWithoutNormals}, {"invalidation", invalidation}, {"alpha_scene", alphaScene},
              {"material_unsupported", materialUnsupported}, {"shader_invalid", shaderInvalid}, {"time_uniform", timeUniform}, {"gpu_mipmaps", gpuMipmaps}, {"updates", updates},
              {"multi_camera_layers", multiCameraLayers}, {"render_callback", renderCallback}, {"instanced", instanced},
              {"virtual_sun_room_seam", virtualSunRoomSeam},
@@ -5426,7 +5594,7 @@ TN_TEST_MAIN({"gpu_joint_production", gpuJointProduction}, {"multi_material_grou
              {"virtual_sun_level_sizes", virtualSunLevelSizes},
              {"virtual_sun_auto_map_size", virtualSunAutoMapSize},
              {"batched_vs_unbatched", batchedVsUnbatched}, {"skinned_crowd", skinnedCrowdPixels}, {"skinned_decline_cadence", skinnedDeclineCadence}, {"skinned_normalized_weights", skinnedNormalizedWeights}, {"normal_map_tilt", normalMapTilt}, {"unsupported_map_slot", unsupportedMapSlot}, {"env_map_slot_is_read", envMapSlotIsRead}, {"converted_copies_swept", convertedCopiesAreSwept}, {"gpu_timer_covers_offscreen", gpuTimerCoversOffscreen}, {"gpu_timer_splits_the_gather", gpuTimerSplitsTheLabelledGather}, {"gpu_timer_covers_shadows", gpuTimerCoversShadows}, {"overlay_over_frame", overlayOverFrame}, {"gpu_timer_is_opt_in", gpuTimerIsOptIn}, {"msaa_edges", msaaEdges}, {"shadow_camera_layers", shadowCameraLayers}, {"flat_shading_needs_no_normals", flatShadingNeedsNoNormals}, {"map_sampleability_changes", mapSampleabilityChanges}, {"batch_caches_stay_put", batchCachesStayPut}, {"frustum_culling", frustumCulling},
-             {"shadow_caster_frustum_culling", shadowCasterFrustumCulling}, {"masked_shadow", maskedShadow}, {"leaf_receiver", leafReceiver}, {"rough_diffuse", roughDiffuse}, {"point_shadow_cube_faces", pointShadowCubeFaces}, {"lamp_source_radius", lampSourceRadius}, {"lamp_source_radius_wall", lampSourceRadiusWall}, {"lamp_source_radius_crate", lampSourceRadiusCrate}, {"contact_shadow_foot", contactShadowFoot}, {"virtual_sun_contact_foot", virtualSunContactFoot}, {"lamp_cache", lampCache}, {"shadow_lights_follow_hierarchy", shadowLightsFollowHierarchy}, {"records_survive_siblings", recordsSurviveSiblings}, {"steady_frame_hashes_no_record", steadyFrameHashesNoRecord}, {"nested_record_cache", nestedRecordCache}, {"frustum_record_retention", frustumRecordRetention}, {"world_sphere_measured_once", worldSphereMeasuredOnce}, {"reflection_reuse", reflectionReuse})
+             {"shadow_caster_frustum_culling", shadowCasterFrustumCulling}, {"masked_shadow", maskedShadow}, {"leaf_receiver", leafReceiver}, {"rough_diffuse", roughDiffuse}, {"point_shadow_cube_faces", pointShadowCubeFaces}, {"lamp_source_radius", lampSourceRadius}, {"lamp_source_radius_wall", lampSourceRadiusWall}, {"lamp_source_radius_crate", lampSourceRadiusCrate}, {"contact_shadow_foot", contactShadowFoot}, {"virtual_sun_contact_foot", virtualSunContactFoot}, {"lamp_cache", lampCache}, {"lamp_atlas", lampAtlas}, {"gpu_timer_splits_lamp_shadows", gpuTimerSplitsLampShadows}, {"shadow_lights_follow_hierarchy", shadowLightsFollowHierarchy}, {"records_survive_siblings", recordsSurviveSiblings}, {"steady_frame_hashes_no_record", steadyFrameHashesNoRecord}, {"nested_record_cache", nestedRecordCache}, {"frustum_record_retention", frustumRecordRetention}, {"world_sphere_measured_once", worldSphereMeasuredOnce}, {"reflection_reuse", reflectionReuse})
 
 
 

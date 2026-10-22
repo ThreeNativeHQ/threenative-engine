@@ -84,11 +84,20 @@ export interface IProbeVolumeOptions {
   readonly bounds: Box3 | { readonly min: IVector3Like; readonly max: IVector3Like };
   /** Probe spacing expressed as probes per world unit. */
   readonly density: ProbeVolumeDensity;
+  /**
+   * Where the atlas is rendered. `auto` (default) probes the device: a host that rejects a 3D render
+   * attachment (wgpu-native) renders each slice into a 2D target and copies it into the 3D atlas,
+   * and a host that accepts one renders into the atlas directly. `render3d` and `copy` force a path.
+   */
+  readonly atlasTarget?: "auto" | "render3d" | "copy";
   /** Optional device limit supplied by a host that knows it before construction. */
   readonly maxTextureDimension3D?: number;
   /** Alias for integrations that expose the WebGPU limit under a device-oriented name. */
   readonly deviceTextureLimit?: number;
-  /** Maximum wall-clock work per render phase, in milliseconds. */
+  /**
+   * Maximum wall-clock work per render phase, in milliseconds. A work item that outruns it fails the
+   * bake, except on a CPU rasteriser (the renderer's `softwareAdapter`), where `bakeCostMs` reports it.
+   */
   readonly bakeBudgetMs?: number;
   /** Additional guard that keeps a clock-less host from processing an unbounded queue. */
   readonly maxWorkItemsPerFrame?: number;
@@ -136,14 +145,20 @@ export function readProbeVolumeObservation(value: unknown): IProbeVolumeObservat
   return isProbeVolumeObservation(value) ? value : undefined;
 }
 
+interface IProbeDevice {
+  readonly limits?: Record<string, unknown>;
+  readonly createTexture?: (descriptor: unknown) => { readonly destroy?: () => void };
+  readonly popErrorScope?: () => Promise<unknown>;
+  readonly pushErrorScope?: (filter: string) => void;
+}
+
 interface IProbeRenderer {
   readonly autoClear?: boolean;
   readonly compileAsync?: (scene: Object3D, camera: Camera) => Promise<void>;
   readonly coordinateSystem?: CoordinateSystem;
-  readonly backend?: {
-    readonly device?: { readonly limits?: Record<string, unknown> };
-  };
-  readonly device?: { readonly limits?: Record<string, unknown> };
+  readonly backend?: { readonly device?: IProbeDevice };
+  readonly device?: IProbeDevice;
+  readonly initTexture?: (texture: unknown) => void;
   readonly shadowMap?: { autoUpdate: boolean; needsUpdate: boolean };
   readonly toneMapping?: number;
   readonly toneMappingExposure?: number;
@@ -266,6 +281,11 @@ export class ProbeVolume extends Object3D implements IComputeDriven {
   #projectionTarget: RenderTarget | undefined;
   #batchTarget: RenderTarget | undefined;
   #atlasTarget: RenderTarget3D | undefined;
+  #sliceTarget: RenderTarget | undefined;
+  readonly #requestedAtlasTarget: "auto" | "render3d" | "copy";
+  #atlasMode: "render3d" | "copy" | undefined;
+  #atlasProbeStarted = false;
+  #atlasUploaded = false;
   #quadScene: Scene | undefined;
   #quadCamera: OrthographicCamera | undefined;
   #quadMesh: Mesh | undefined;
@@ -293,6 +313,7 @@ export class ProbeVolume extends Object3D implements IComputeDriven {
     this.#report = options.report ?? ((line) => console.info(line));
     this.#now = options.now ?? (() => globalThis.performance?.now() ?? Date.now());
     this.#bakeBudgetMs = positiveNumber(options.bakeBudgetMs ?? 2, "bakeBudgetMs");
+    this.#requestedAtlasTarget = options.atlasTarget ?? "auto";
     this.#maxWorkItemsPerFrame = positiveInteger(
       options.maxWorkItemsPerFrame ?? 1,
       "maxWorkItemsPerFrame",
@@ -347,6 +368,11 @@ export class ProbeVolume extends Object3D implements IComputeDriven {
 
   get texture(): Data3DTexture {
     return this.#atlasTexture;
+  }
+
+  /** The atlas render path in use; `undefined` until the device probe settles. */
+  get atlasTarget(): "render3d" | "copy" | undefined {
+    return this.#atlasMode;
   }
 
   get atlasDepth(): number {
@@ -415,6 +441,7 @@ export class ProbeVolume extends Object3D implements IComputeDriven {
     const raw = renderer.raw as IProbeRenderer;
     const deviceLimit = readTextureLimit(raw);
     if (deviceLimit !== undefined) assertTextureLimit(this.maximumDimension, deviceLimit);
+    this.#startAtlasProbe(raw);
     this.#ensureGpuResources();
     if (this.#pending !== undefined) this.#prepareBake(this.#pending.scene, this.#pending.passes);
   }
@@ -614,6 +641,7 @@ export class ProbeVolume extends Object3D implements IComputeDriven {
       this.#publish(false);
       return;
     }
+    this.#ensureGpuResources();
     if (this.#sceneState === undefined)
       this.#prepareBake(this.#pending.scene, this.#pending.passes);
     this.#processPending(this.#pending);
@@ -634,6 +662,7 @@ export class ProbeVolume extends Object3D implements IComputeDriven {
 
   #processPending(pending: IPendingBake): void {
     const started = this.#now();
+    const softwareRaster = this.#renderer?.softwareAdapter !== undefined;
     let workItems = 0;
     try {
       while (this.#pending !== undefined && workItems < this.#maxWorkItemsPerFrame) {
@@ -644,12 +673,14 @@ export class ProbeVolume extends Object3D implements IComputeDriven {
         const itemCostMs = Math.max(0, this.#now() - itemStarted);
         this.#maxWorkItemCostMs = Math.max(this.#maxWorkItemCostMs, itemCostMs);
         const elapsed = Math.max(0, this.#now() - started);
-        if (itemCostMs > this.#bakeBudgetMs + BAKE_BUDGET_SLACK_MS) {
+        // A CPU rasteriser cannot hold a hardware frame budget: one cube-face draw costs 12 to 18 ms on
+        // SwiftShader. The bake still runs one measured item at a time; `bakeCostMs` reports the overrun.
+        if (!softwareRaster && itemCostMs > this.#bakeBudgetMs + BAKE_BUDGET_SLACK_MS) {
           throw new Error(
             `ProbeVolume bake work item cost ${itemCostMs}ms exceeds bakeBudgetMs ${this.#bakeBudgetMs}ms plus ${BAKE_BUDGET_SLACK_MS}ms scheduling slack.`,
           );
         }
-        if (elapsed > this.#bakeBudgetMs + BAKE_BUDGET_SLACK_MS) {
+        if (!softwareRaster && elapsed > this.#bakeBudgetMs + BAKE_BUDGET_SLACK_MS) {
           throw new Error(
             `ProbeVolume bake frame cost ${elapsed}ms exceeds bakeBudgetMs ${this.#bakeBudgetMs}ms plus ${BAKE_BUDGET_SLACK_MS}ms scheduling slack.`,
           );
@@ -678,6 +709,7 @@ export class ProbeVolume extends Object3D implements IComputeDriven {
     this.#projectionTarget?.dispose();
     this.#batchTarget?.dispose();
     this.#atlasTarget?.dispose();
+    this.#sliceTarget?.dispose();
     this.#emptyAtlasTexture.dispose();
     this.#projectionMaterial?.dispose();
     for (const material of this.#repackMaterials ?? []) material.dispose();
@@ -687,6 +719,7 @@ export class ProbeVolume extends Object3D implements IComputeDriven {
     this.#projectionTarget = undefined;
     this.#batchTarget = undefined;
     this.#atlasTarget = undefined;
+    this.#sliceTarget = undefined;
     this.#projectionMaterial = undefined;
     this.#repackMaterials = undefined;
     this.#atlasTexture = createCpuAtlas(this.#atlasData, this.resolution, this.#atlasDepth);
@@ -708,8 +741,59 @@ export class ProbeVolume extends Object3D implements IComputeDriven {
     );
   }
 
+  /**
+   * Ask the device whether it accepts a 3D render attachment, as the atlas target needs one. WebGPU
+   * names no capability for it, so the probe creates the texture inside a validation scope. The bake
+   * waits for the answer through `#gpuWarmupSettled`; a host with no error scopes keeps the 3D path.
+   */
+  #startAtlasProbe(raw: IProbeRenderer): void {
+    if (this.#atlasMode !== undefined || this.#atlasProbeStarted) return;
+    const device = raw.backend?.device ?? raw.device;
+    const { createTexture, popErrorScope, pushErrorScope } = device ?? {};
+    if (this.#requestedAtlasTarget !== "auto") {
+      this.#atlasMode = this.#requestedAtlasTarget;
+    } else if (
+      device === undefined ||
+      createTexture === undefined ||
+      popErrorScope === undefined ||
+      pushErrorScope === undefined
+    ) {
+      this.#atlasMode = "render3d";
+    } else {
+      this.#atlasProbeStarted = true;
+      this.#gpuWarmupSettled = false;
+      let probe: { readonly destroy?: () => void } | undefined;
+      let created = true;
+      pushErrorScope.call(device, "validation");
+      try {
+        // GPUTextureUsage.TEXTURE_BINDING | RENDER_ATTACHMENT, the usage of the atlas render target.
+        probe = createTexture.call(device, {
+          dimension: "3d",
+          format: "rgba32float",
+          size: [1, 1, 1],
+          usage: 0x04 | 0x10,
+        });
+      } catch {
+        created = false;
+      }
+      popErrorScope.call(device).then(
+        (error) =>
+          this.#settleAtlasProbe(created && (error === null || error === undefined), probe),
+        () => this.#settleAtlasProbe(true, probe),
+      );
+    }
+  }
+
+  #settleAtlasProbe(accepted: boolean, probe: { readonly destroy?: () => void } | undefined): void {
+    probe?.destroy?.();
+    this.#atlasMode = accepted ? "render3d" : "copy";
+    this.#gpuWarmupSettled = true;
+  }
+
   #ensureGpuResources(): void {
     if (this.#cubeRenderTarget !== undefined) return;
+    const atlasMode = this.#atlasMode;
+    if (atlasMode === undefined) return;
     this.#cubeRenderTarget = new CubeRenderTarget(this.#cubemapSize, {
       depthBuffer: true,
       generateMipmaps: false,
@@ -732,15 +816,31 @@ export class ProbeVolume extends Object3D implements IComputeDriven {
       minFilter: NearestFilter,
       type: FloatType,
     });
-    this.#atlasTarget = new RenderTarget3D(this.resolution.x, this.resolution.y, this.#atlasDepth, {
-      depthBuffer: false,
-      generateMipmaps: false,
-      magFilter: LinearFilter,
-      minFilter: LinearFilter,
-      type: FloatType,
-    });
-    this.#atlasTexture = this.#atlasTarget.texture as Data3DTexture;
-    this.#atlasTexture.format = RGBAFormat;
+    if (atlasMode === "render3d") {
+      this.#atlasTarget = new RenderTarget3D(
+        this.resolution.x,
+        this.resolution.y,
+        this.#atlasDepth,
+        {
+          depthBuffer: false,
+          generateMipmaps: false,
+          magFilter: LinearFilter,
+          minFilter: LinearFilter,
+          type: FloatType,
+        },
+      );
+      this.#atlasTexture = this.#atlasTarget.texture as Data3DTexture;
+      this.#atlasTexture.format = RGBAFormat;
+    } else {
+      // The atlas stays the plain 3D texture made at construction; slices are rendered here and copied in.
+      this.#sliceTarget = new RenderTarget(this.resolution.x, this.resolution.y, {
+        depthBuffer: false,
+        generateMipmaps: false,
+        magFilter: NearestFilter,
+        minFilter: NearestFilter,
+        type: FloatType,
+      });
+    }
     this.#setSamplingIsolated(this.#samplingIsolated);
     this.#quadCamera = new OrthographicCamera(-1, 1, 1, -1, 0, 1);
     this.#quadMesh = new Mesh(new PlaneGeometry(2, 2));
@@ -762,7 +862,7 @@ export class ProbeVolume extends Object3D implements IComputeDriven {
     if (this.#gpuWarmupStarted) return;
     const projectionTarget = this.#projectionTarget;
     const projectionMaterial = this.#projectionMaterial;
-    const atlasTarget = this.#atlasTarget;
+    const atlasTarget = this.#atlasTarget ?? this.#sliceTarget;
     const repackMaterials = this.#repackMaterials;
     if (
       projectionTarget === undefined ||
@@ -775,7 +875,11 @@ export class ProbeVolume extends Object3D implements IComputeDriven {
     // First-use shader work belongs to scene entry, before bounded bake slices are presented.
     this.#renderQuad(projectionTarget, projectionMaterial);
     repackMaterials.forEach((material, index) => {
-      this.#renderQuad(atlasTarget, material, index * this.paddedSlices);
+      this.#renderQuad(
+        atlasTarget,
+        material,
+        this.#atlasTarget === undefined ? undefined : index * this.paddedSlices,
+      );
     });
   }
 
@@ -969,7 +1073,7 @@ export class ProbeVolume extends Object3D implements IComputeDriven {
   }
 
   #repackSliceToAtlas(repackIndex: number): void {
-    const atlasTarget = this.#atlasTarget;
+    const atlasTarget = this.#atlasTarget ?? this.#sliceTarget;
     const materials = this.#repackMaterials;
     if (atlasTarget === undefined || materials === undefined) {
       throw new Error("ProbeVolume repack resources were not initialized.");
@@ -980,10 +1084,35 @@ export class ProbeVolume extends Object3D implements IComputeDriven {
     this.#repackSlice.value = sourceSlice;
     atlasTarget.viewport.set(0, 0, this.resolution.x, this.resolution.y);
     atlasTarget.scissorTest = false;
-    this.#renderQuad(
-      atlasTarget,
-      valueAt(materials, subVolume, "repack material"),
-      subVolume * this.paddedSlices + localSlice,
+    const material = valueAt(materials, subVolume, "repack material");
+    const atlasSlice = subVolume * this.paddedSlices + localSlice;
+    if (this.#atlasTarget !== undefined) {
+      this.#renderQuad(atlasTarget, material, atlasSlice);
+      return;
+    }
+    this.#renderQuad(atlasTarget, material);
+    this.#copySliceToAtlas(atlasSlice);
+  }
+
+  /** The atlas path for a device with no 3D render attachment: the 2D slice target joins the 3D atlas. */
+  #copySliceToAtlas(atlasSlice: number): void {
+    const raw = this.#rawRenderer();
+    const source = this.#sliceTarget;
+    if (source === undefined || raw.copyTextureToTexture === undefined) {
+      throw new Error(
+        "ProbeVolume requires WebGPU texture-to-texture copies for its atlas slices.",
+      );
+    }
+    if (!this.#atlasUploaded) {
+      // The copy needs the GPU atlas to exist; its first upload is the zero-filled CPU atlas.
+      raw.initTexture?.(this.#atlasTexture);
+      this.#atlasUploaded = true;
+    }
+    raw.copyTextureToTexture(
+      source.texture,
+      this.#atlasTexture,
+      new Box2(new Vector2(0, 0), new Vector2(this.resolution.x, this.resolution.y)),
+      new Vector3(0, 0, atlasSlice),
     );
   }
 
@@ -1048,7 +1177,9 @@ export class ProbeVolume extends Object3D implements IComputeDriven {
   #clearPreviousBake(): void {
     this.#coefficients.fill(0);
     this.#atlasData.fill(0);
-    if (this.#atlasTarget === undefined) this.#atlasTexture.needsUpdate = true;
+    if (this.#atlasTarget === undefined && this.#sliceTarget === undefined) {
+      this.#atlasTexture.needsUpdate = true;
+    }
   }
 
   #setSamplingIsolated(isolated: boolean): void {

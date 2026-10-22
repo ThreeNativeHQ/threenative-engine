@@ -49,7 +49,9 @@ export function watchGi(
     onStep: (method) => options.rebuild(method),
     stages: GI_STAGES,
     tier: options.tier,
-    ...(options.frameBudgetMs === undefined ? {} : { frameBudgetMs: options.frameBudgetMs }),
+    // A step up needs room in the whole frame: `irradianceField` has no pass of its own, so its stage reads 0 ms
+    // on any frame (PRD-644 `## Decisions`, step cycle).
+    frameBudgetMs: options.frameBudgetMs ?? 1000 / 60,
   });
   scene.beforeRender(() => {
     gi.observeRenderer(scene.renderer.raw);
