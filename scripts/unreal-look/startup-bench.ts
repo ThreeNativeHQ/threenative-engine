@@ -13,16 +13,17 @@
  *   --model <folder> [--shots] [--pose <json>]  a calibration scene lit by the reference, and a screenshot of one pose once converged
  *   giConverged    the full GI bake landed (window.__tnRef.giConverged); equals ready when the bake is not progressive
  * `cold` clears the dev server's dependency cache and uses a fresh browser profile; `warm` reuses both.
- * Hold the capture lock for the whole run, as for any GPU capture.
+ * Hold the capture lock for the whole run, as for any GPU capture. The browser opens on a private Xvfb (browser.ts);
+ * a run that grabs the display (`--strip`) sets TN_PLAYTEST_HOST_DISPLAY=1 under gpu-slot.sh, so the grab and the page
+ * share the slot's own display.
  */
 import { execFile, spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { cp, mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
-import { chromium } from "@playwright/test";
-import { WEBGPU_BROWSER_ARGS } from "../../packages/playtest/src/runner/browser.js";
 import { assertVisualPortAvailable, stopVisualServer } from "../visual-gate.js";
+import { launchWebgpuBrowser } from "./browser.js";
 import { HIDE_UI, freePort, scaffold, waitForServer } from "./capture-threenative.js";
 
 const execFileAsync = promisify(execFile);
@@ -68,8 +69,6 @@ async function main(): Promise<void> {
   const sun = flag("--sun", "60,25");
   const runs = flag("--runs", "cold,warm,warm").split(",");
   const model = flag("--model", "");
-  // `--executable <path>`: another Chromium (the owner's Brave) instead of the bundled one.
-  const executable = flag("--executable", "");
   const shots = process.argv.includes("--shots") ? true : undefined;
   const pose = flag(
     "--pose",
@@ -114,11 +113,7 @@ async function main(): Promise<void> {
   try {
     const origin = `http://127.0.0.1:${port}/`;
     await waitForServer(origin, server);
-    let browser = await chromium.launch({
-      args: [...WEBGPU_BROWSER_ARGS],
-      headless: false,
-      ...(executable === "" ? {} : { executablePath: executable }),
-    });
+    let browser = await launchWebgpuBrowser();
     for (const [index, kind] of runs.entries()) {
       if (kind === "cold") {
         await browser.close();
@@ -128,11 +123,7 @@ async function main(): Promise<void> {
         await rm(path.join(target, "node_modules/.vite"), { recursive: true, force: true });
         server = startServer();
         await waitForServer(origin, server);
-        browser = await chromium.launch({
-          args: [...WEBGPU_BROWSER_ARGS],
-          headless: false,
-          ...(executable === "" ? {} : { executablePath: executable }),
-        });
+        browser = await launchWebgpuBrowser();
       }
       const page = await browser.newPage({
         viewport: { width: 1280, height: 720 },
