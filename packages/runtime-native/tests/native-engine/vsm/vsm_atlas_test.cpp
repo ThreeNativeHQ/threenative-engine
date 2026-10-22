@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 using namespace tn::engine;
 using namespace tn::engine::shadows;
@@ -161,6 +162,23 @@ void binding() {
     CHECK(refusesLod(lodCommand({}, {})));                    // a chain has a rung
     CHECK(refusesLod(lodCommand({rung}, {0.25}), false));     // that the engine holds
     CHECK(chains.at(7).rungs.size() == 2);                    // a refused chain leaves the held one alone
+    // The texel budget of a coarser rung is one unless the node names it, and a positive number (infinity too).
+    DirectionalLight budgeted;
+    set(&budgeted.shadow, options, store);
+    CHECK(budgeted.shadow.virtualShadow->shadowLodTexels == 1);
+    auto unbounded = options;
+    unbounded.fields.emplace_back("shadowLodTexels", Value::of(std::numeric_limits<double>::infinity()));
+    set(&budgeted.shadow, unbounded, store);
+    CHECK(std::isinf(budgeted.shadow.virtualShadow->shadowLodTexels));
+    for (const double bad : {0.0, -1.0, std::nan("")}) {
+        auto refusedBudget = options;
+        refusedBudget.fields.emplace_back("shadowLodTexels", Value::of(bad));
+        bool refusedBad = false;
+        try { set(&budgeted.shadow, refusedBudget, store); }
+        catch (const Unsupported& e) { refusedBad = e.reason == "TN_VIRTUAL_SHADOW_INVALID: shadowLodTexels"; }
+        CHECK(refusedBad);
+    }
+    CHECK(std::isinf(budgeted.shadow.virtualShadow->shadowLodTexels));  // a refused budget leaves the node alone
 }
 
 // A level draws the coarsest rung one of its texels cannot tell from the full mesh, never one finer than

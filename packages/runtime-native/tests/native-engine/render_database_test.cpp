@@ -4007,7 +4007,7 @@ void virtualSunLodRung() {
     camera.position.set(0, 10, 0.001);
     camera.lookAt(0, 0, 0);
     camera.updateProjectionMatrix();
-    const auto stripLight = [&](double rungError) {
+    const auto stripLight = [&](double rungError, double texels = 1) {
         Scene scene;
         DirectionalLight sun{Color(1, 1, 1), 3};
         sun.position.set(3, 3, 0);
@@ -4029,6 +4029,7 @@ void virtualSunLodRung() {
         atlas.clipExtents = {0.2, 8}; atlas.mapSize = 2048; atlas.pageTexels = 128;
         atlas.lightDistance = 20; atlas.depthRange = 40;
         atlas.shadowLodBias = true;
+        atlas.shadowLodTexels = texels;
         auto rung = own->clone();
         rung->setIndexFromArray({0, 0, 0});
         atlas.control->lods[plate.id()] = shadows::ShadowLodChain{{rung}, {rungError}};
@@ -4055,10 +4056,12 @@ void virtualSunLodRung() {
         CHECK(lit > 32);
         return strip / lit;
     };
-    const double coarse = stripLight(0.5), fine = stripLight(0.001);
-    std::printf("virtual sun lod rung: strip %.2f of lit with a 0.5 m rung, %.2f with a 1 mm rung\n", coarse, fine);
-    CHECK(coarse < 0.25);  // 0.5 m of error is 64 texels: the plate keeps its own geometry and casts
-    CHECK(fine > 0.9);     // 1 mm is under a texel: the rung is drawn, and it casts nothing
+    const double coarse = stripLight(0.5), fine = stripLight(0.001), unbounded = stripLight(0.5, std::numeric_limits<double>::infinity());
+    std::printf("virtual sun lod rung: strip %.2f of lit with a 0.5 m rung, %.2f with a 1 mm rung, %.2f with a 0.5 m rung and an unbounded budget\n",
+                coarse, fine, unbounded);
+    CHECK(coarse < 0.25);     // 0.5 m of error is 64 texels: the plate keeps its own geometry and casts
+    CHECK(fine > 0.9);        // 1 mm is under a texel: the rung is drawn, and it casts nothing
+    CHECK(unbounded > 0.9);   // shadowLodTexels = infinity draws the coarsest rung on every level, as before
 }
 
 // A point light's cube shadow: five casters around and below the lamp each shade the floor where its

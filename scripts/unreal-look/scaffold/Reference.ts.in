@@ -245,6 +245,8 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
             ...(params.get("vsmAspect") === null ? {} : { minWindowAspect: Number(params.get("vsmAspect")) }),
             // Diagnosis knob vsmLod=0: every level draws a chain's own geometry (no shadowLodBias).
             ...(params.get("vsmLod") === "0" ? { shadowLodBias: false } : {}),
+            // Diagnosis knob vsmLodTexels=N: the rung error a level accepts, in texels (Infinity = the coarsest rung on every level).
+            ...(params.get("vsmLodTexels") === null ? {} : { shadowLodTexels: Number(params.get("vsmLodTexels")) }),
             // Diagnosis knob recvBias=0: authored bias only (does the seam line come from the plane slope?).
             receiverPlaneBias: params.get("recvBias") !== "0",
             // Diagnosis knob shadowBias=N brackets the tier's directional resolution bias (PRD-652).

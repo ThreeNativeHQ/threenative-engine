@@ -249,6 +249,13 @@ export interface IVirtualShadowOptions {
    */
   readonly shadowLodBias?: boolean;
   /**
+   * The most error, in texels of a level, that a coarser rung may have on that level, default 1.
+   * A rung within a texel is as good as the full mesh at that resolution; a larger budget draws
+   * fewer triangles and shows facets on a shadow's edge, and `Infinity` draws the coarsest rung on
+   * every level past the finest. Read only with `shadowLodBias`.
+   */
+  readonly shadowLodTexels?: number;
+  /**
    * Redraw only the pages an invalidation dirtied, default true. A level whose window did not move
    * and whose asks named under half its pages renders those rectangles alone: pages casters were
    * removed from are put back to the far plane first, pages casters streamed into are just drawn.
@@ -810,13 +817,13 @@ function instanceDiameter(mesh: Mesh, sphereRadius: number): number {
 
 /**
  * The geometry a caster draws into a level past the finest: the coarsest rung of its AutoLOD chain
- * whose error one texel of that level cannot tell from the full mesh, and never finer than the rung
- * the main pass shows, which the viewer already cannot tell apart. Where no rung is that accurate
- * the mesh keeps what it has. A rung whose error is more than a texel draws as a facet on the
- * shadow's edge: the coarsest rung of a sphere, 60 mm out, put straight segments on a 7 mm texel.
- * `undefined` leaves the geometry alone.
+ * whose error stays within `budget` (world units: texels of the level times `shadowLodTexels`), and
+ * never finer than the rung the main pass shows, which the viewer already cannot tell apart. Where
+ * no rung is that accurate the mesh keeps what it has. A rung whose error is more than a texel
+ * draws as a facet on the shadow's edge: the coarsest rung of a sphere, 60 mm out, put straight
+ * segments on a 7 mm texel. `undefined` leaves the geometry alone.
  */
-function shadowLod(mesh: Mesh, texel: number): BufferGeometry | undefined {
+function shadowLod(mesh: Mesh, budget: number): BufferGeometry | undefined {
   const chain = lodChainOf(mesh.geometry);
   if (chain === undefined) return undefined;
   // The largest instance scale `WorldCells` placed into this batch is on top of the mesh's own.
@@ -825,7 +832,7 @@ function shadowLod(mesh: Mesh, texel: number): BufferGeometry | undefined {
     mesh.matrixWorld.getMaxScaleOnAxis() * (placed !== undefined && placed > 0 ? placed : 1);
   const shown = chain.levels.indexOf(mesh.geometry);
   for (let rung = chain.levels.length - 1; rung > shown; rung -= 1) {
-    if ((chain.errors[rung] as number) * scale <= texel) return chain.levels[rung];
+    if ((chain.errors[rung] as number) * scale <= budget) return chain.levels[rung];
   }
   return undefined;
 }
@@ -1141,6 +1148,12 @@ export class VirtualShadowNode extends ShadowBaseNode {
         `TN_VIRTUAL_SHADOW_INVALID: mapSize must be a positive integer, got ${String(mapSize)}.`,
       );
     }
+    const shadowLodTexels = options.shadowLodTexels ?? 1;
+    if (!(shadowLodTexels > 0)) {
+      throw new RangeError(
+        `TN_VIRTUAL_SHADOW_INVALID: shadowLodTexels must be a positive number, got ${String(shadowLodTexels)}.`,
+      );
+    }
     const moverMapSize = options.moverMapSize ?? mapSize;
     if (!Number.isInteger(moverMapSize) || moverMapSize <= 0) {
       throw new RangeError(
@@ -1279,6 +1292,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
       refreshStep: steps,
       selectionGuard: guardedExtent,
       shadowLodBias: options.shadowLodBias ?? true,
+      shadowLodTexels,
       partialRedraw: options.partialRedraw ?? true,
       staticAfterFrames,
       followViewFocus: options.followViewFocus ?? true,
@@ -1865,7 +1879,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
       if (mesh.casterPrewarmOwed === true) prewarming = true;
       // Reduce geometry, never the caster's presence: alpha cutouts carry canopy and fences.
       if (biased && mesh.castShadow === true) {
-        const coarse = shadowLod(mesh, texel);
+        const coarse = shadowLod(mesh, texel * this.options.shadowLodTexels);
         if (coarse !== undefined) {
           this.#coarsened.push({ geometry: mesh.geometry, mesh });
           mesh.geometry = coarse;

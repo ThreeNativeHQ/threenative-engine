@@ -460,6 +460,11 @@ void registerLightShadow(ClassBinding& b, bool spot) {
             else if (key == "adaptiveCasterGate") options.adaptiveCasterGate = flag(v);
             else if (key == "followViewFocus") options.followViewFocus = flag(v);
             else if (key == "shadowLodBias") options.shadowLodBias = flag(v);
+            else if (key == "shadowLodTexels") {
+                const double n = number(v);
+                if (!(n > 0)) throw Unsupported{"TN_VIRTUAL_SHADOW_INVALID: shadowLodTexels"};
+                options.shadowLodTexels = n;
+            }
             else if (key == "staticAfterFrames" || key == "moverMapSize") {
                 const double n = number(v);
                 if (!std::isfinite(n) || n != std::floor(n) || n < 1 || n > 4096)

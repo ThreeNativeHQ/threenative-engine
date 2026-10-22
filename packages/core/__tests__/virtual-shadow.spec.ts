@@ -3126,6 +3126,57 @@ describe("VirtualShadowNode shadow LOD bias and alpha-caster range", () => {
     node.dispose();
   });
 
+  it("should draw the coarsest rung on every coarse level with an unbounded shadowLodTexels", async () => {
+    const { camera, light, scene } = world();
+    const mesh = await chained();
+    mesh.castShadow = true;
+    scene.add(mesh);
+    const chain = lodChainOf(mesh.geometry);
+    if (chain === undefined) throw new Error("the plugin registered no chain.");
+    const node = setupNode(light, {
+      clipExtents: [0.5, 1, 2, 8],
+      shadowLodTexels: Number.POSITIVE_INFINITY,
+    });
+    const host = drawHost();
+    watchDraws(node, host, camera, [mesh]);
+    renderAllLevels(node, camera, host);
+
+    expect(host.draws.map((draw) => draw.submitted)).toEqual([
+      mesh.geometry,
+      chain.levels[2],
+      chain.levels[2],
+      chain.levels[2],
+    ]);
+    node.dispose();
+  });
+
+  it("should scale the rung error a level accepts by shadowLodTexels, and refuse a budget that is not positive", async () => {
+    const { camera, light, scene } = world();
+    const mesh = await chained();
+    mesh.castShadow = true;
+    scene.add(mesh);
+    const chain = lodChainOf(mesh.geometry);
+    if (chain === undefined) throw new Error("the plugin registered no chain.");
+    // Four texels of 0.031 m, 0.0625 m and 0.25 m accept 0.125 m, 0.25 m and 1 m: the first level
+    // that kept the mesh's own geometry now takes the first rung, the others the coarsest.
+    const node = setupNode(light, { clipExtents: [0.5, 1, 2, 8], shadowLodTexels: 4 });
+    const host = drawHost();
+    watchDraws(node, host, camera, [mesh]);
+    renderAllLevels(node, camera, host);
+
+    expect(host.draws.map((draw) => draw.submitted)).toEqual([
+      mesh.geometry,
+      chain.levels[1],
+      chain.levels[2],
+      chain.levels[2],
+    ]);
+    node.dispose();
+    for (const bad of [0, -1, Number.NaN])
+      expect(() => new VirtualShadowNode(light, { shadowLodTexels: bad })).toThrow(
+        "TN_VIRTUAL_SHADOW_INVALID: shadowLodTexels",
+      );
+  });
+
   it("should never draw a rung finer than the one the main pass shows", async () => {
     const { camera, light, scene } = world();
     const mesh = await chained();

@@ -17,13 +17,14 @@ struct ShadowLodChain {
 };
 
 /**
- * The rung (1 to n, 0 for none) a level whose texel is `texel` draws for a caster: the coarsest whose
- * error at `scale` times the geometry's size stays within a texel, and never one finer than `shown`,
- * the rung the main pass draws. A rung with more error than a texel is a facet on the shadow's edge.
+ * The rung (1 to n, 0 for none) a level draws for a caster: the coarsest whose error at `scale` times
+ * the geometry's size stays within `budget` (a texel of the level, times `shadowLodTexels`), and never
+ * one finer than `shown`, the rung the main pass draws. A rung with more error than a texel is a facet
+ * on the shadow's edge.
  */
-inline int shadowLodRung(const std::vector<double>& errors, int shown, double texel, double scale) {
+inline int shadowLodRung(const std::vector<double>& errors, int shown, double budget, double scale) {
     for (int rung = int(errors.size()); rung > shown; --rung)
-        if (errors[std::size_t(rung - 1)] * scale <= texel) return rung;
+        if (errors[std::size_t(rung - 1)] * scale <= budget) return rung;
     return 0;
 }
 
@@ -46,6 +47,8 @@ struct AtlasOptions {
     double expensiveRefreshShare = 0.25;
     std::vector<double> invalidationDelay{0};
     bool adaptiveRefresh = false, adaptiveCasterGate = false, followViewFocus = false, shadowLodBias = false;
+    /** The error, in texels of a level, a coarser AutoLOD rung may have there; infinity draws the coarsest rung. */
+    double shadowLodTexels = 1;
     bool receiverPlaneBias = true, partialRedraw = true;
     /** See DirectionalClipmapOptions::minAspect; core passes its own default (0.25), this keeps tests square. */
     double minWindowAspect = 1;
