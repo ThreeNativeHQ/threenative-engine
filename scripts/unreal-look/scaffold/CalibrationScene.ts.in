@@ -323,6 +323,10 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
             // in a scene with no sun and no sky.
             intensity: params.get("giLights") === "0" ? 0 : l.intensity,
             distance: l.distance,
+            // A lamp that changes after the bake changes the bounce light with it (PRD-641 AC-2). ?direct=0 zeroes the
+            // lamps on purpose to leave the indirect frame, so it keeps the bake. Diagnosis: ?giFollow=0 keeps the bake
+            // too (the fixed-world arm of a paired run).
+            ...(params.get("direct") === "0" || params.get("giFollow") === "0" ? {} : { source: l }),
           })),
         });
         skipped.forEach((m, i) => (m.material as unknown as { color: Color }).color.copy(kept[i] as Color));
@@ -340,6 +344,11 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
           ...qualityPreset("high"),
           autoExposureEnabled: false,
           bloomEnabled: false,
+          // Below L9 Unreal draws with ShowFlag.LocalExposure 0 (PRD-631), and the `high` preset turns the stage on
+          // since the finishing chain became the default (ff837b1f2): it lifted L1's dark walls 14 levels.
+          // Diagnosis: ?localExposure=0|1 forces the stage.
+          localExposureEnabled:
+            params.get("localExposure") === null ? level >= 9 : params.get("localExposure") === "1",
           // Diagnosis: ?gtao=0 takes the contact occlusion out, to tell its darkening from the shadow's.
           gtaoEnabled: level >= 6 && params.get("gtao") !== "0",
           finalGatherMethod: method,
