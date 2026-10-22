@@ -10,6 +10,7 @@
 #include "bindings.h"
 #include "rt_common.h"
 #include "mystral/js/engine.h"
+#include "../webgpu/shared_trace.h"
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -193,7 +194,74 @@ static js::JSValueHandle js_capabilities(void* ctx, const std::vector<js::JSValu
     engine->setProperty(result, "rayBatch", engine->newBoolean(found.rayBatch));
     engine->setProperty(result, "imageOutput", engine->newBoolean(found.imageOutput));
     engine->setProperty(result, "reason", engine->newString(found.reason.c_str()));
+    // The GPU transport needs the ray tracing device and the WebGPU device to share memory.
+    const webgpu::SharedTraceStatus shared = webgpu::sharedTraceStatus();
+    const bool sharedReady = found.sharedTransport && shared.available;
+    engine->setProperty(result, "sharedTransport", engine->newBoolean(sharedReady));
+    const std::string sharedReason = sharedReady ? std::string()
+        : (!found.sharedTransport ? found.sharedTransportReason : shared.reason);
+    engine->setProperty(result, "sharedTransportReason", engine->newString(sharedReason.c_str()));
     return result;
+}
+
+static js::JSValueHandle js_traceRayBatchGpu(void* ctx, const std::vector<js::JSValueHandle>& args, js::Engine* engine) {
+    IRTBackend* backend = ensureBackend();
+    const RTCapabilities found = backend->capabilities();
+    const webgpu::SharedTraceStatus shared = webgpu::sharedTraceStatus();
+    if (!found.rayBatch || !found.sharedTransport || !shared.available) {
+        const std::string why = !found.rayBatch ? found.reason
+            : (!found.sharedTransport ? found.sharedTransportReason : shared.reason);
+        engine->throwException(("TN_NATIVE_RAYTRACING_UNAVAILABLE: native traceRayBatchGpu is unavailable on this host: " +
+                                why + ".").c_str());
+        return engine->newUndefined();
+    }
+
+    auto invalid = [&](const std::string& why) {
+        engine->throwTypeError(("TN_NATIVE_RAYTRACING_BATCH_INVALID: " + why).c_str());
+        return engine->newUndefined();
+    };
+    if (args.empty() || !engine->isObject(args[0])) {
+        return invalid("traceRayBatchGpu expects { tlas, rays, hits, rayCount }, with rays and hits as GPUBuffers.");
+    }
+    auto options = args[0];
+    auto tlasIt = g_tlases.find(getTLASId(engine, engine->getProperty(options, "tlas")));
+    if (tlasIt == g_tlases.end()) {
+        return invalid("tlas is not a live TLAS from createTLAS.");
+    }
+    auto bufferId = [&](const char* name, uint64_t* id) {
+        auto buffer = engine->getProperty(options, name);
+        if (!engine->isObject(buffer)) return false;
+        auto idValue = engine->getProperty(buffer, "_bufferId");
+        if (engine->isUndefined(idValue)) return false;
+        *id = static_cast<uint64_t>(engine->toNumber(idValue));
+        return true;
+    };
+    uint64_t raysId = 0;
+    uint64_t hitsId = 0;
+    if (!bufferId("rays", &raysId)) return invalid("rays must be a GPUBuffer.");
+    if (!bufferId("hits", &hitsId)) return invalid("hits must be a GPUBuffer.");
+    auto countVal = engine->getProperty(options, "rayCount");
+    const double requested = engine->isUndefined(countVal) ? -1 : engine->toNumber(countVal);
+    if (!(requested >= 1) || requested != std::floor(requested) || requested > UINT32_MAX) {
+        return invalid("rayCount must be a whole number of at least 1.");
+    }
+
+    const webgpu::GpuTraceResult traced = webgpu::traceRayBatchOnGpu(
+        *backend, tlasIt->second, raysId, hitsId, static_cast<uint32_t>(requested));
+    if (!traced.ok) {
+        engine->throwException(("TN_NATIVE_RAYTRACING_BATCH_FAILED: " + traced.error).c_str());
+        return engine->newUndefined();
+    }
+    auto result = engine->newObject();
+    engine->setProperty(result, "rayCount", engine->newNumber(requested));
+    engine->setProperty(result, "totalMs", engine->newNumber(traced.totalMs));
+    engine->setProperty(result, "cpuMs", engine->newNumber(traced.cpuMs));
+    return result;
+}
+
+// Waits for the last GPU trace and returns the GPU time of its trace dispatch alone.
+static js::JSValueHandle js_sharedBatchGpuMs(void* ctx, const std::vector<js::JSValueHandle>& args, js::Engine* engine) {
+    return engine->newNumber(ensureBackend()->sharedTraceGpuMs());
 }
 
 static js::JSValueHandle js_createGeometry(void* ctx, const std::vector<js::JSValueHandle>& args, js::Engine* engine) {
@@ -667,6 +735,18 @@ bool initializeRTBindings(js::Engine* engine) {
     engine->setProperty(mystralRT, "traceRayBatch",
         engine->newFunction("traceRayBatch", [engine](void* ctx, const std::vector<js::JSValueHandle>& args) {
             return js_traceRayBatch(ctx, args, engine);
+        })
+    );
+
+    engine->setProperty(mystralRT, "traceRayBatchGpu",
+        engine->newFunction("traceRayBatchGpu", [engine](void* ctx, const std::vector<js::JSValueHandle>& args) {
+            return js_traceRayBatchGpu(ctx, args, engine);
+        })
+    );
+
+    engine->setProperty(mystralRT, "sharedBatchGpuMs",
+        engine->newFunction("sharedBatchGpuMs", [engine](void* ctx, const std::vector<js::JSValueHandle>& args) {
+            return js_sharedBatchGpuMs(ctx, args, engine);
         })
     );
 

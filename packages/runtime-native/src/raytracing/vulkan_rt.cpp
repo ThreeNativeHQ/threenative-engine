@@ -23,6 +23,9 @@
 #include <fstream>
 #include <array>
 #include <chrono>
+#if !defined(_WIN32)
+#include <unistd.h>
+#endif
 
 // Embedded SPIR-V shaders, generated from the GLSL beside them by cmake/CompileRTShaders.cmake
 #include "shaders/rt_shaders_spirv.h"
@@ -62,6 +65,7 @@ VulkanRTBackend::~VulkanRTBackend() {
     if (device_ != VK_NULL_HANDLE) {
         vkDeviceWaitIdle(device_);
     }
+    destroySharedTrace();
 
     // Clean up all tracked resources
     for (auto& [id, tlas] : tlases_) {
@@ -474,6 +478,29 @@ bool VulkanRTBackend::createDevice() {
         deviceExtensions.push_back(VK_KHR_RAY_QUERY_EXTENSION_NAME);
     }
 
+    // The shared trace transport (PRD-645) needs these four. Without them the batch path still
+    // works and only the shared transport reports why it is off.
+    {
+        uint32_t extensionCount = 0;
+        vkEnumerateDeviceExtensionProperties(physicalDevice_, nullptr, &extensionCount, nullptr);
+        std::vector<VkExtensionProperties> available(extensionCount);
+        vkEnumerateDeviceExtensionProperties(physicalDevice_, nullptr, &extensionCount, available.data());
+        const char* sharing[] = {
+            VK_KHR_EXTERNAL_MEMORY_EXTENSION_NAME,
+            VK_KHR_EXTERNAL_MEMORY_FD_EXTENSION_NAME,
+            VK_KHR_EXTERNAL_SEMAPHORE_EXTENSION_NAME,
+            VK_KHR_EXTERNAL_SEMAPHORE_FD_EXTENSION_NAME,
+        };
+        externalSharingReady_ = std::all_of(std::begin(sharing), std::end(sharing), [&](const char* name) {
+            return std::any_of(available.begin(), available.end(), [&](const VkExtensionProperties& found) {
+                return std::strcmp(found.extensionName, name) == 0;
+            });
+        });
+        if (externalSharingReady_) {
+            deviceExtensions.insert(deviceExtensions.end(), std::begin(sharing), std::end(sharing));
+        }
+    }
+
     VkPhysicalDeviceBufferDeviceAddressFeatures bufferDeviceAddressFeatures = {};
     bufferDeviceAddressFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BUFFER_DEVICE_ADDRESS_FEATURES;
     bufferDeviceAddressFeatures.bufferDeviceAddress = VK_TRUE;
@@ -533,6 +560,13 @@ bool VulkanRTBackend::loadExtensionFunctions() {
     LOAD_VK_FUNC(vkGetBufferDeviceAddressKHR);
 
     #undef LOAD_VK_FUNC
+
+    if (externalSharingReady_) {
+        vkGetMemoryFdKHR_ = (PFN_vkGetMemoryFdKHR)vkGetDeviceProcAddr(device_, "vkGetMemoryFdKHR");
+        vkGetSemaphoreFdKHR_ = (PFN_vkGetSemaphoreFdKHR)vkGetDeviceProcAddr(device_, "vkGetSemaphoreFdKHR");
+        vkImportSemaphoreFdKHR_ = (PFN_vkImportSemaphoreFdKHR)vkGetDeviceProcAddr(device_, "vkImportSemaphoreFdKHR");
+        externalSharingReady_ = vkGetMemoryFdKHR_ && vkGetSemaphoreFdKHR_ && vkImportSemaphoreFdKHR_;
+    }
 
     return true;
 }
@@ -1835,6 +1869,34 @@ bool VulkanRTBackend::ensureBatchCapacity(uint32_t rayCount) {
     return true;
 }
 
+void VulkanRTBackend::bindBatchBuffers(VulkanTLAS* tlas) {
+    // The previous batch finished before it returned, so the set is idle and safe to rewrite.
+    VkWriteDescriptorSetAccelerationStructureKHR tlasWrite = {};
+    tlasWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR;
+    tlasWrite.accelerationStructureCount = 1;
+    tlasWrite.pAccelerationStructures = &tlas->accelerationStructure;
+    VkDescriptorBufferInfo raysInfo = {batchRaysDevice_.buffer, 0, VK_WHOLE_SIZE};
+    VkDescriptorBufferInfo hitsInfo = {batchHitsDevice_.buffer, 0, VK_WHOLE_SIZE};
+
+    std::array<VkWriteDescriptorSet, 3> writes = {};
+    writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[0].pNext = &tlasWrite;
+    writes[0].dstSet = batchSet_;
+    writes[0].dstBinding = 0;
+    writes[0].descriptorCount = 1;
+    writes[0].descriptorType = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
+    writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[1].dstSet = batchSet_;
+    writes[1].dstBinding = 1;
+    writes[1].descriptorCount = 1;
+    writes[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    writes[1].pBufferInfo = &raysInfo;
+    writes[2] = writes[1];
+    writes[2].dstBinding = 2;
+    writes[2].pBufferInfo = &hitsInfo;
+    vkUpdateDescriptorSets(device_, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
+}
+
 TraceRayBatchResult VulkanRTBackend::traceRayBatch(const TraceRayBatchOptions& options) {
     const auto started = std::chrono::steady_clock::now();
     TraceRayBatchResult result;
@@ -1848,6 +1910,9 @@ TraceRayBatchResult VulkanRTBackend::traceRayBatch(const TraceRayBatchOptions& o
         return fail("the batch path is not available (" +
                     (batchError_.empty() ? std::string("backend not initialized") : batchError_) + ")");
     }
+    // A shared trace in flight owns the batch fence, command buffer and buffers until it is done.
+    reclaimSharedTrace();
+    if (!batchReady_) return fail("the batch path is not available (" + batchError_ + ")");
 
     VulkanTLAS* tlas = static_cast<VulkanTLAS*>(options.tlas._handle);
     bool tlasIsLive = false;
@@ -1883,31 +1948,7 @@ TraceRayBatchResult VulkanRTBackend::traceRayBatch(const TraceRayBatchOptions& o
     const VkDeviceSize hitBytes = static_cast<VkDeviceSize>(options.rayCount) * kHitWords * sizeof(uint32_t);
     std::memcpy(batchRaysStaging_.mappedPtr, options.rays, rayBytes);
 
-    // The previous batch finished before it returned, so the set is idle and safe to rewrite.
-    VkWriteDescriptorSetAccelerationStructureKHR tlasWrite = {};
-    tlasWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR;
-    tlasWrite.accelerationStructureCount = 1;
-    tlasWrite.pAccelerationStructures = &tlas->accelerationStructure;
-    VkDescriptorBufferInfo raysInfo = {batchRaysDevice_.buffer, 0, VK_WHOLE_SIZE};
-    VkDescriptorBufferInfo hitsInfo = {batchHitsDevice_.buffer, 0, VK_WHOLE_SIZE};
-
-    std::array<VkWriteDescriptorSet, 3> writes = {};
-    writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    writes[0].pNext = &tlasWrite;
-    writes[0].dstSet = batchSet_;
-    writes[0].dstBinding = 0;
-    writes[0].descriptorCount = 1;
-    writes[0].descriptorType = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
-    writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    writes[1].dstSet = batchSet_;
-    writes[1].dstBinding = 1;
-    writes[1].descriptorCount = 1;
-    writes[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    writes[1].pBufferInfo = &raysInfo;
-    writes[2] = writes[1];
-    writes[2].dstBinding = 2;
-    writes[2].pBufferInfo = &hitsInfo;
-    vkUpdateDescriptorSets(device_, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
+    bindBatchBuffers(tlas);
 
     VkCommandBuffer cmd = batchCommands_;
     vkResetCommandBuffer(cmd, 0);
@@ -1990,11 +2031,482 @@ TraceRayBatchResult VulkanRTBackend::traceRayBatch(const TraceRayBatchOptions& o
     return result;
 }
 
+// ============================================================================
+// Shared trace transport (PRD-645)
+//
+// The rays and the hits live in two Vulkan images whose memory the WebGPU device imports. A batch
+// copies the ray image into the existing device-local ray buffer, runs the same ray query kernel,
+// and copies the hit buffer into the hit image. Both images stay in GENERAL layout. Ownership
+// moves between the two devices through opaque-fd semaphores, so no step waits on the CPU.
+// ============================================================================
+
+#if !defined(_WIN32)
+
+namespace {
+
+constexpr VkFormat kSharedFormat = VK_FORMAT_R32G32B32A32_SFLOAT;
+constexpr uint32_t kSharedTexelBytes = 16;
+
+// A copy region list for `texels` texels: the full rows, then one partial row.
+std::vector<VkBufferImageCopy> sharedRegions(uint32_t texels) {
+    std::vector<VkBufferImageCopy> regions;
+    const uint32_t fullRows = texels / kSharedRowTexels;
+    const uint32_t remainder = texels % kSharedRowTexels;
+    VkBufferImageCopy region = {};
+    region.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+    if (fullRows > 0) {
+        region.bufferRowLength = kSharedRowTexels;
+        region.imageExtent = {kSharedRowTexels, fullRows, 1};
+        regions.push_back(region);
+    }
+    if (remainder > 0) {
+        region.bufferOffset = static_cast<VkDeviceSize>(fullRows) * kSharedRowTexels * kSharedTexelBytes;
+        region.bufferRowLength = 0;
+        region.imageOffset = {0, static_cast<int32_t>(fullRows), 0};
+        region.imageExtent = {remainder, 1, 1};
+        regions.push_back(region);
+    }
+    return regions;
+}
+
+VkImageMemoryBarrier sharedImageBarrier(VkImage image, uint32_t srcFamily, uint32_t dstFamily,
+                                        VkImageLayout oldLayout, VkImageLayout newLayout,
+                                        VkAccessFlags srcAccess, VkAccessFlags dstAccess) {
+    VkImageMemoryBarrier barrier = {};
+    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    barrier.srcAccessMask = srcAccess;
+    barrier.dstAccessMask = dstAccess;
+    barrier.oldLayout = oldLayout;
+    barrier.newLayout = newLayout;
+    barrier.srcQueueFamilyIndex = srcFamily;
+    barrier.dstQueueFamilyIndex = dstFamily;
+    barrier.image = image;
+    barrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+    return barrier;
+}
+
+}  // namespace
+
+bool VulkanRTBackend::createSharedImage(uint32_t width, uint32_t height, VkImage& image,
+                                        VkDeviceMemory& memory, VkImageCreateInfo& info,
+                                        SharedTraceImage& out, std::string& error) {
+    info = {};
+    info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+    info.pNext = &sharedExternalInfo_;
+    info.imageType = VK_IMAGE_TYPE_2D;
+    info.format = kSharedFormat;
+    info.extent = {width, height, 1};
+    info.mipLevels = 1;
+    info.arrayLayers = 1;
+    info.samples = VK_SAMPLE_COUNT_1_BIT;
+    info.tiling = VK_IMAGE_TILING_OPTIMAL;
+    info.usage = VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+    info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+
+    VkPhysicalDeviceExternalImageFormatInfo externalFormat = {};
+    externalFormat.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_IMAGE_FORMAT_INFO;
+    externalFormat.handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT;
+    VkPhysicalDeviceImageFormatInfo2 formatInfo = {};
+    formatInfo.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_FORMAT_INFO_2;
+    formatInfo.pNext = &externalFormat;
+    formatInfo.format = info.format;
+    formatInfo.type = info.imageType;
+    formatInfo.tiling = info.tiling;
+    formatInfo.usage = info.usage;
+    VkExternalImageFormatProperties externalProperties = {};
+    externalProperties.sType = VK_STRUCTURE_TYPE_EXTERNAL_IMAGE_FORMAT_PROPERTIES;
+    VkImageFormatProperties2 formatProperties = {};
+    formatProperties.sType = VK_STRUCTURE_TYPE_IMAGE_FORMAT_PROPERTIES_2;
+    formatProperties.pNext = &externalProperties;
+    if (vkGetPhysicalDeviceImageFormatProperties2(physicalDevice_, &formatInfo, &formatProperties) != VK_SUCCESS) {
+        error = "the device does not support a " + std::to_string(width) + " by " + std::to_string(height) +
+                " RGBA32F image that an opaque fd can share";
+        return false;
+    }
+    const VkExternalMemoryFeatureFlags features = externalProperties.externalMemoryProperties.externalMemoryFeatures;
+    if (!(features & VK_EXTERNAL_MEMORY_FEATURE_EXPORTABLE_BIT) || !(features & VK_EXTERNAL_MEMORY_FEATURE_IMPORTABLE_BIT)) {
+        error = "an RGBA32F image cannot be both exported and imported through an opaque fd on this device";
+        return false;
+    }
+    if (width > formatProperties.imageFormatProperties.maxExtent.width ||
+        height > formatProperties.imageFormatProperties.maxExtent.height) {
+        error = "the shared image is larger than the device allows";
+        return false;
+    }
+
+    if (vkCreateImage(device_, &info, nullptr, &image) != VK_SUCCESS) {
+        error = "vkCreateImage failed";
+        return false;
+    }
+    VkImageMemoryRequirementsInfo2 requirementsInfo = {};
+    requirementsInfo.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_REQUIREMENTS_INFO_2;
+    requirementsInfo.image = image;
+    VkMemoryRequirements2 requirements = {};
+    requirements.sType = VK_STRUCTURE_TYPE_MEMORY_REQUIREMENTS_2;
+    vkGetImageMemoryRequirements2(device_, &requirementsInfo, &requirements);
+
+    // One dedicated allocation per image, which is what the importer's descriptor describes.
+    VkMemoryDedicatedAllocateInfo dedicated = {};
+    dedicated.sType = VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO;
+    dedicated.image = image;
+    VkExportMemoryAllocateInfo exportInfo = {};
+    exportInfo.sType = VK_STRUCTURE_TYPE_EXPORT_MEMORY_ALLOCATE_INFO;
+    exportInfo.pNext = &dedicated;
+    exportInfo.handleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT;
+    const uint32_t memoryType =
+        findMemoryTypeIndex(requirements.memoryRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+    if (memoryType == UINT32_MAX) {
+        error = "no device-local memory type fits the shared image";
+        return false;
+    }
+    VkMemoryAllocateInfo allocate = {};
+    allocate.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    allocate.pNext = &exportInfo;
+    allocate.allocationSize = requirements.memoryRequirements.size;
+    allocate.memoryTypeIndex = memoryType;
+    if (vkAllocateMemory(device_, &allocate, nullptr, &memory) != VK_SUCCESS) {
+        error = "vkAllocateMemory failed for the shared image";
+        return false;
+    }
+    if (vkBindImageMemory(device_, image, memory, 0) != VK_SUCCESS) {
+        error = "vkBindImageMemory failed for the shared image";
+        return false;
+    }
+
+    VkMemoryGetFdInfoKHR getFd = {};
+    getFd.sType = VK_STRUCTURE_TYPE_MEMORY_GET_FD_INFO_KHR;
+    getFd.memory = memory;
+    getFd.handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT;
+    int fd = -1;
+    if (vkGetMemoryFdKHR_(device_, &getFd, &fd) != VK_SUCCESS || fd < 0) {
+        error = "vkGetMemoryFdKHR failed";
+        return false;
+    }
+
+    out.imageCreateInfo = &info;
+    out.memoryFd = fd;
+    out.memoryTypeIndex = memoryType;
+    out.allocationSize = allocate.allocationSize;
+    out.dedicatedAllocation = true;
+    out.width = width;
+    out.height = height;
+    return true;
+}
+
+SharedTraceSetup VulkanRTBackend::createSharedTrace(uint32_t capacityRays) {
+    SharedTraceSetup setup;
+    auto fail = [&](const std::string& message) {
+        setup.ok = false;
+        setup.error = "vulkan shared trace: " + message;
+        if (setup.rays.memoryFd >= 0) close(setup.rays.memoryFd);
+        if (setup.hits.memoryFd >= 0) close(setup.hits.memoryFd);
+        if (setup.signalHitsFd >= 0) close(setup.signalHitsFd);
+        if (setup.signalRaysFd >= 0) close(setup.signalRaysFd);
+        setup.rays.memoryFd = setup.hits.memoryFd = setup.signalHitsFd = setup.signalRaysFd = -1;
+        destroySharedTrace();
+        return setup;
+    };
+
+    if (!initialized_ || !batchReady_) {
+        return fail("the ray batch path is off (" + (batchError_.empty() ? initError_ : batchError_) + ")");
+    }
+    if (!externalSharingReady_) {
+        return fail("the device lacks VK_KHR_external_memory_fd or VK_KHR_external_semaphore_fd");
+    }
+    if (sharedRays_ != VK_NULL_HANDLE) {
+        return fail("the shared images already exist");
+    }
+    if (capacityRays == 0 || capacityRays > maxBatchRays_) {
+        return fail("capacity " + std::to_string(capacityRays) + " is outside 1 to " + std::to_string(maxBatchRays_) + " rays");
+    }
+
+    sharedExternalInfo_ = {};
+    sharedExternalInfo_.sType = VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMAGE_CREATE_INFO;
+    sharedExternalInfo_.handleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT;
+
+    const uint32_t raysHeight = (capacityRays * 2 + kSharedRowTexels - 1) / kSharedRowTexels;
+    const uint32_t hitsHeight = (capacityRays + kSharedRowTexels - 1) / kSharedRowTexels;
+    std::string error;
+    if (!createSharedImage(kSharedRowTexels, raysHeight, sharedRays_, sharedRaysMemory_, sharedRaysInfo_, setup.rays, error)) {
+        return fail("ray image: " + error);
+    }
+    if (!createSharedImage(kSharedRowTexels, hitsHeight, sharedHits_, sharedHitsMemory_, sharedHitsInfo_, setup.hits, error)) {
+        return fail("hit image: " + error);
+    }
+
+    // Both images start in GENERAL and stay there between uses.
+    VkCommandBuffer cmd = beginSingleTimeCommands();
+    const VkImageMemoryBarrier toGeneral[2] = {
+        sharedImageBarrier(sharedRays_, VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED, VK_IMAGE_LAYOUT_UNDEFINED,
+                           VK_IMAGE_LAYOUT_GENERAL, 0, 0),
+        sharedImageBarrier(sharedHits_, VK_QUEUE_FAMILY_IGNORED, VK_QUEUE_FAMILY_IGNORED, VK_IMAGE_LAYOUT_UNDEFINED,
+                           VK_IMAGE_LAYOUT_GENERAL, 0, 0),
+    };
+    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0,
+                         nullptr, 2, toGeneral);
+    endSingleTimeCommands(cmd);
+
+    // Two semaphores live as long as the images: each trace signals them and the WebGPU device waits on
+    // them through fences it imported once. Two more take the wait fds that the WebGPU device exports.
+    VkExportSemaphoreCreateInfo exportSemaphore = {};
+    exportSemaphore.sType = VK_STRUCTURE_TYPE_EXPORT_SEMAPHORE_CREATE_INFO;
+    exportSemaphore.handleTypes = VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_FD_BIT;
+    VkSemaphoreCreateInfo signalInfo = {};
+    signalInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+    signalInfo.pNext = &exportSemaphore;
+    VkSemaphoreCreateInfo waitInfo = {};
+    waitInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+    for (VkSemaphore& semaphore : sharedSignals_) {
+        if (vkCreateSemaphore(device_, &signalInfo, nullptr, &semaphore) != VK_SUCCESS) return fail("vkCreateSemaphore failed");
+    }
+    for (VkSemaphore& semaphore : sharedWaits_) {
+        if (vkCreateSemaphore(device_, &waitInfo, nullptr, &semaphore) != VK_SUCCESS) return fail("vkCreateSemaphore failed");
+    }
+    VkSemaphoreGetFdInfoKHR getFd = {};
+    getFd.sType = VK_STRUCTURE_TYPE_SEMAPHORE_GET_FD_INFO_KHR;
+    getFd.handleType = VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_FD_BIT;
+    getFd.semaphore = sharedSignals_[0];
+    if (vkGetSemaphoreFdKHR_(device_, &getFd, &setup.signalHitsFd) != VK_SUCCESS) return fail("vkGetSemaphoreFdKHR failed");
+    getFd.semaphore = sharedSignals_[1];
+    if (vkGetSemaphoreFdKHR_(device_, &getFd, &setup.signalRaysFd) != VK_SUCCESS) return fail("vkGetSemaphoreFdKHR failed");
+
+    sharedCapacity_ = capacityRays;
+    setup.capacityRays = capacityRays;
+    setup.layout = VK_IMAGE_LAYOUT_GENERAL;
+    setup.ok = true;
+    return setup;
+}
+
+void VulkanRTBackend::reclaimSharedTrace() {
+    if (!sharedPending_) return;
+    const VkResult waited = vkWaitForFences(device_, 1, &batchFence_, VK_TRUE, 10ull * 1000 * 1000 * 1000);
+    if (waited != VK_SUCCESS) {
+        // The GPU may still own the buffers, so the path stays off until the backend is rebuilt.
+        batchReady_ = false;
+        batchError_ = "vkWaitForFences failed (VkResult " + std::to_string(waited) + ")";
+        return;
+    }
+    vkResetFences(device_, 1, &batchFence_);
+    if (timestampPool_ != VK_NULL_HANDLE) {
+        uint64_t ticks[2] = {0, 0};
+        if (vkGetQueryPoolResults(device_, timestampPool_, 0, 2, sizeof(ticks), ticks, sizeof(uint64_t),
+                                  VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WAIT_BIT) == VK_SUCCESS) {
+            const uint64_t mask = timestampValidBits_ >= 64 ? ~0ull : ((1ull << timestampValidBits_) - 1);
+            sharedGpuMs_ = static_cast<double>((ticks[1] - ticks[0]) & mask) * caps_.timestampPeriodNs * 1e-6;
+        }
+    }
+    sharedPending_ = false;
+}
+
+double VulkanRTBackend::sharedTraceGpuMs() {
+    reclaimSharedTrace();
+    return sharedGpuMs_;
+}
+
+void VulkanRTBackend::destroySharedTrace() {
+    if (device_ == VK_NULL_HANDLE) return;
+    if (sharedPending_) {
+        vkWaitForFences(device_, 1, &batchFence_, VK_TRUE, 10ull * 1000 * 1000 * 1000);
+        vkResetFences(device_, 1, &batchFence_);
+        sharedPending_ = false;
+    }
+    for (VkSemaphore& semaphore : sharedSignals_) {
+        if (semaphore != VK_NULL_HANDLE) vkDestroySemaphore(device_, semaphore, nullptr);
+        semaphore = VK_NULL_HANDLE;
+    }
+    for (VkSemaphore& semaphore : sharedWaits_) {
+        if (semaphore != VK_NULL_HANDLE) vkDestroySemaphore(device_, semaphore, nullptr);
+        semaphore = VK_NULL_HANDLE;
+    }
+    if (sharedRays_ != VK_NULL_HANDLE) vkDestroyImage(device_, sharedRays_, nullptr);
+    if (sharedHits_ != VK_NULL_HANDLE) vkDestroyImage(device_, sharedHits_, nullptr);
+    if (sharedRaysMemory_ != VK_NULL_HANDLE) vkFreeMemory(device_, sharedRaysMemory_, nullptr);
+    if (sharedHitsMemory_ != VK_NULL_HANDLE) vkFreeMemory(device_, sharedHitsMemory_, nullptr);
+    sharedRays_ = sharedHits_ = VK_NULL_HANDLE;
+    sharedRaysMemory_ = sharedHitsMemory_ = VK_NULL_HANDLE;
+    sharedCapacity_ = 0;
+}
+
+SharedTraceResult VulkanRTBackend::traceShared(const SharedTraceOptions& options) {
+    const auto started = std::chrono::steady_clock::now();
+    SharedTraceResult result;
+    int waitRaysFd = options.waitRaysFd;
+    int waitHitsFd = options.waitHitsFd;
+    auto fail = [&](const std::string& message) {
+        result.ok = false;
+        result.error = "vulkan shared trace: " + message;
+        // Vulkan owns an fd once its import succeeds; any fd still held here is closed.
+        if (waitRaysFd >= 0) close(waitRaysFd);
+        if (waitHitsFd >= 0) close(waitHitsFd);
+        return result;
+    };
+
+    if (!initialized_ || !batchReady_ || sharedRays_ == VK_NULL_HANDLE) {
+        return fail("the shared images do not exist");
+    }
+    VulkanTLAS* tlas = static_cast<VulkanTLAS*>(options.tlas._handle);
+    bool tlasIsLive = false;
+    for (const auto& entry : tlases_) {
+        if (entry.second.get() == tlas) {
+            tlasIsLive = tlas != nullptr;
+            break;
+        }
+    }
+    if (!tlasIsLive) return fail("the TLAS handle is missing or was destroyed");
+    if (!tlas->oneTriangleList) {
+        return fail("a hit names one triangle, so the TLAS must hold one instance of a BLAS built from one geometry");
+    }
+    if (options.rayCount == 0 || options.rayCount > sharedCapacity_) {
+        return fail("rayCount " + std::to_string(options.rayCount) + " is outside 1 to the shared capacity of " +
+                    std::to_string(sharedCapacity_) + " rays");
+    }
+
+    // The previous shared trace must be done before its buffers and descriptors change.
+    reclaimSharedTrace();
+    if (!batchReady_) return fail(batchError_);
+    if (!ensureBatchCapacity(options.rayCount)) {
+        return fail("allocating buffers for " + std::to_string(options.rayCount) + " rays failed");
+    }
+
+    std::array<VkSemaphore, 2> waits = {VK_NULL_HANDLE, VK_NULL_HANDLE};
+    uint32_t waitCount = 0;
+    // The two wait semaphores are reused: the previous trace is done, so neither holds a payload.
+    // A temporary import lasts for one wait, so the next call imports again.
+    auto importWait = [&](int& fd, VkSemaphore semaphore) {
+        if (fd < 0) return true;
+        VkImportSemaphoreFdInfoKHR importInfo = {};
+        importInfo.sType = VK_STRUCTURE_TYPE_IMPORT_SEMAPHORE_FD_INFO_KHR;
+        importInfo.semaphore = semaphore;
+        importInfo.flags = VK_SEMAPHORE_IMPORT_TEMPORARY_BIT;
+        importInfo.handleType = VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_FD_BIT;
+        importInfo.fd = fd;
+        if (vkImportSemaphoreFdKHR_(device_, &importInfo) != VK_SUCCESS) return false;
+        fd = -1;  // Vulkan owns it now
+        waits[waitCount++] = semaphore;
+        return true;
+    };
+    if (!importWait(waitRaysFd, sharedWaits_[0]) || !importWait(waitHitsFd, sharedWaits_[1])) {
+        return fail("importing a wait fd failed");
+    }
+    const std::array<VkSemaphore, 2> signals = {sharedSignals_[0], sharedSignals_[1]};  // hits ready, rays free
+
+    bindBatchBuffers(tlas);
+
+    VkCommandBuffer cmd = batchCommands_;
+    vkResetCommandBuffer(cmd, 0);
+    VkCommandBufferBeginInfo beginInfo = {};
+    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    vkBeginCommandBuffer(cmd, &beginInfo);
+
+    const bool timed = timestampPool_ != VK_NULL_HANDLE;
+    if (timed) vkCmdResetQueryPool(cmd, timestampPool_, 0, 2);
+
+    // Take both images from the WebGPU device. Both are GENERAL, so only the ownership moves.
+    const VkImageMemoryBarrier acquire[2] = {
+        sharedImageBarrier(sharedRays_, VK_QUEUE_FAMILY_EXTERNAL, queueFamilyIndex_, VK_IMAGE_LAYOUT_GENERAL,
+                           VK_IMAGE_LAYOUT_GENERAL, 0, VK_ACCESS_TRANSFER_READ_BIT),
+        sharedImageBarrier(sharedHits_, VK_QUEUE_FAMILY_EXTERNAL, queueFamilyIndex_, VK_IMAGE_LAYOUT_GENERAL,
+                           VK_IMAGE_LAYOUT_GENERAL, 0, VK_ACCESS_TRANSFER_WRITE_BIT),
+    };
+    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0,
+                         nullptr, 2, acquire);
+
+    const std::vector<VkBufferImageCopy> rayRegions = sharedRegions(options.rayCount * 2);
+    vkCmdCopyImageToBuffer(cmd, sharedRays_, VK_IMAGE_LAYOUT_GENERAL, batchRaysDevice_.buffer,
+                           static_cast<uint32_t>(rayRegions.size()), rayRegions.data());
+    // The first timestamp lands once the ray copy is done, so gpuMs covers the trace dispatch alone.
+    if (timed) vkCmdWriteTimestamp(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, timestampPool_, 0);
+
+    VkMemoryBarrier barrier = {};
+    barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+    barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1, &barrier, 0,
+                         nullptr, 0, nullptr);
+
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, batchPipeline_);
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, batchPipelineLayout_, 0, 1, &batchSet_, 0, nullptr);
+    vkCmdPushConstants(cmd, batchPipelineLayout_, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(uint32_t), &options.rayCount);
+    vkCmdDispatch(cmd, (options.rayCount + 63u) / 64u, 1, 1);
+    if (timed) vkCmdWriteTimestamp(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, timestampPool_, 1);
+
+    barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+    barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 1, &barrier, 0,
+                         nullptr, 0, nullptr);
+
+    const std::vector<VkBufferImageCopy> hitRegions = sharedRegions(options.rayCount);
+    vkCmdCopyBufferToImage(cmd, batchHitsDevice_.buffer, sharedHits_, VK_IMAGE_LAYOUT_GENERAL,
+                           static_cast<uint32_t>(hitRegions.size()), hitRegions.data());
+
+    // Give both images back to the WebGPU device.
+    const VkImageMemoryBarrier release[2] = {
+        sharedImageBarrier(sharedRays_, queueFamilyIndex_, VK_QUEUE_FAMILY_EXTERNAL, VK_IMAGE_LAYOUT_GENERAL,
+                           VK_IMAGE_LAYOUT_GENERAL, VK_ACCESS_TRANSFER_READ_BIT, 0),
+        sharedImageBarrier(sharedHits_, queueFamilyIndex_, VK_QUEUE_FAMILY_EXTERNAL, VK_IMAGE_LAYOUT_GENERAL,
+                           VK_IMAGE_LAYOUT_GENERAL, VK_ACCESS_TRANSFER_WRITE_BIT, 0),
+    };
+    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0, 0, nullptr, 0,
+                         nullptr, 2, release);
+    vkEndCommandBuffer(cmd);
+
+    const VkPipelineStageFlags waitStages[2] = {VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT};
+    VkSubmitInfo submitInfo = {};
+    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    submitInfo.waitSemaphoreCount = waitCount;
+    submitInfo.pWaitSemaphores = waits.data();
+    submitInfo.pWaitDstStageMask = waitStages;
+    submitInfo.commandBufferCount = 1;
+    submitInfo.pCommandBuffers = &cmd;
+    submitInfo.signalSemaphoreCount = 2;
+    submitInfo.pSignalSemaphores = signals.data();
+    const VkResult submitted = vkQueueSubmit(queue_, 1, &submitInfo, batchFence_);
+    if (submitted != VK_SUCCESS) {
+        batchReady_ = false;
+        batchError_ = "vkQueueSubmit failed (VkResult " + std::to_string(submitted) + ")";
+        return fail(batchError_);
+    }
+    sharedPending_ = true;
+
+    result.ok = true;
+    result.totalMs =
+        std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - started).count();
+    return result;
+}
+
+#else  // _WIN32
+
+SharedTraceSetup VulkanRTBackend::createSharedTrace(uint32_t) {
+    SharedTraceSetup setup;
+    setup.error = "vulkan shared trace: opaque fd sharing is not available on Windows";
+    return setup;
+}
+void VulkanRTBackend::destroySharedTrace() {}
+SharedTraceResult VulkanRTBackend::traceShared(const SharedTraceOptions&) {
+    SharedTraceResult result;
+    result.error = "vulkan shared trace: opaque fd sharing is not available on Windows";
+    return result;
+}
+double VulkanRTBackend::sharedTraceGpuMs() { return 0; }
+bool VulkanRTBackend::createSharedImage(uint32_t, uint32_t, VkImage&, VkDeviceMemory&, VkImageCreateInfo&,
+                                        SharedTraceImage&, std::string&) { return false; }
+void VulkanRTBackend::reclaimSharedTrace() {}
+
+#endif  // _WIN32
+
 RTCapabilities VulkanRTBackend::capabilities() {
     RTCapabilities found = caps_;
     found.rayBatch = initialized_ && batchReady_;
     // The camera path stops at a host buffer. No texture interop with the WebGPU device exists yet.
     found.imageOutput = false;
+    found.sharedTransport = initialized_ && batchReady_ && externalSharingReady_;
+    found.sharedTransportReason = found.sharedTransport
+        ? std::string()
+        : (initialized_ && batchReady_
+               ? std::string("the device lacks VK_KHR_external_memory_fd or VK_KHR_external_semaphore_fd")
+               : std::string("the ray batch path is off"));
     found.reason = found.rayBatch ? std::string() : (initialized_ ? batchError_ : initError_);
     return found;
 }

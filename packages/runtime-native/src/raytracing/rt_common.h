@@ -152,6 +152,51 @@ struct TraceRayBatchResult {
  * What a backend found on this machine. Filled when the backend initializes and reported as it
  * is: a probe or a game reads it to decide, and never assumes it.
  */
+// ----------------------------------------------------------------------------
+// Shared trace transport (PRD-645). The rays and the hits live in two Vulkan images that the
+// WebGPU device imports, so a batch crosses no CPU memory. A ray takes two RGBA32F texels
+// (origin and tMin, then direction and tMax). A hit takes one (t, primitive bits, b1, b2).
+// ----------------------------------------------------------------------------
+
+constexpr uint32_t kSharedRowTexels = 4096;
+
+/// One image for the WebGPU device to import. The backend keeps `imageCreateInfo` alive.
+struct SharedTraceImage {
+    const void* imageCreateInfo = nullptr;  // a VkImageCreateInfo
+    int memoryFd = -1;                      // opaque fd, ownership passes to the importer
+    uint32_t memoryTypeIndex = 0;
+    uint64_t allocationSize = 0;
+    bool dedicatedAllocation = true;
+    uint32_t width = 0;                     // texels
+    uint32_t height = 0;
+};
+
+struct SharedTraceSetup {
+    bool ok = false;
+    std::string error;                      // Names the step that failed when ok is false
+    SharedTraceImage rays;
+    SharedTraceImage hits;
+    uint32_t capacityRays = 0;
+    int32_t layout = 0;                     // The VkImageLayout both images stay in between uses
+    // Opaque fds of the two semaphores that every trace signals: the hits are in the hit image, and
+    // the trace stopped reading the ray image. The importer duplicates them and the caller closes its copies.
+    int signalHitsFd = -1;
+    int signalRaysFd = -1;
+};
+
+struct SharedTraceOptions {
+    RTTLASHandle tlas;
+    uint32_t rayCount = 0;
+    int waitRaysFd = -1;                    // Signaled when the ray image holds the rays; the backend takes the fd
+    int waitHitsFd = -1;                    // Signaled when the previous hits were read; -1 when there are none
+};
+
+struct SharedTraceResult {
+    bool ok = false;
+    std::string error;
+    double totalMs = 0;                     // CPU time of the call, which does not wait for the GPU
+};
+
 struct RTCapabilities {
     std::string backend = "none";
     std::string deviceName;
@@ -166,6 +211,8 @@ struct RTCapabilities {
     bool rayTracingPipeline = false;
     bool rayBatch = false;              // traceRayBatch works on this device
     bool imageOutput = false;           // traceRays can write a WebGPU texture (not yet anywhere)
+    bool sharedTransport = false;       // rays and hits can cross to the WebGPU device without CPU memory
+    std::string sharedTransportReason;  // Why sharedTransport is false; empty when it is true
     std::string reason;                 // Why rayBatch is false; empty when it is true
 };
 
@@ -312,6 +359,34 @@ public:
         result.error = std::string("the ") + getBackend() + " backend has no ray batch path";
         return result;
     }
+
+    /**
+     * Create the two shared images. The default refuses by name.
+     */
+    virtual SharedTraceSetup createSharedTrace(uint32_t capacityRays) {
+        (void)capacityRays;
+        SharedTraceSetup setup;
+        setup.error = std::string("the ") + getBackend() + " backend has no shared trace transport";
+        return setup;
+    }
+
+    virtual void destroySharedTrace() {}
+
+    /**
+     * Trace the rays in the shared ray image into the shared hit image. The call queues the work
+     * behind the two wait fds and returns without waiting for the GPU.
+     */
+    virtual SharedTraceResult traceShared(const SharedTraceOptions& options) {
+        (void)options;
+        SharedTraceResult result;
+        result.error = std::string("the ") + getBackend() + " backend has no shared trace transport";
+        return result;
+    }
+
+    /**
+     * Waits for the last shared trace and returns the GPU time of its trace dispatch alone.
+     */
+    virtual double sharedTraceGpuMs() { return 0; }
 
     /**
      * What this backend found and what it can do. The default reports the backend name only.

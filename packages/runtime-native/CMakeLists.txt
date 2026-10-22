@@ -1589,6 +1589,7 @@ set(MYSTRAL_SOURCES
     src/webgpu/wrapper_factories.cpp
     src/webgpu/checked_handle.cpp
     src/webgpu/context.cpp
+    src/webgpu/shared_trace.cpp
     src/platform/window.cpp
     src/platform/input.cpp
     src/platform/crash_handlers.cpp

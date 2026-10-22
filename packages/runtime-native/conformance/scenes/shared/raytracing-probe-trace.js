@@ -17,7 +17,7 @@ const FAR = 1e6;
 // The referee runs only for rays the two paths disagree on. More than this many means a real fault.
 const MAX_REFEREED = 64;
 const WARMUP = 5;
-const REPEATS = 20;
+const REPEATS = 50;
 const BATCHES = 5;
 const WARM_MS = 250;
 const VENDOR_IDS = { amd: 0x1002, intel: 0x8086, nvidia: 0x10de };
@@ -25,7 +25,7 @@ const VENDOR_IDS = { amd: 0x1002, intel: 0x8086, nvidia: 0x10de };
 // The small room is the shape of the shipped GI scenes. The dense and heavy rooms show how the
 // ratio moves with triangle count. Each probe grid is one refresh batch.
 const TRACE_SCENES = [
-  { name: "room", props: 12, icosahedronDetail: 2, knot: [32, 6], grids: [[4, 1, 4], [16, 4, 16], [32, 8, 32]] },
+  { name: "room", props: 12, icosahedronDetail: 2, knot: [32, 6], grids: [[4, 1, 4], [10, 1, 10], [16, 4, 16], [32, 8, 32]] },
   { name: "dense", props: 48, icosahedronDetail: 6, knot: [96, 10], grids: [[16, 4, 16]] },
   { name: "heavy", props: 150, icosahedronDetail: 8, knot: [128, 14], grids: [[16, 4, 16]] },
 ];
@@ -181,6 +181,21 @@ async function repeat(work) {
   return samples;
 }
 
+// Runs the arms one after another in every round, so clock and load drift reach each arm alike.
+async function pair(arms) {
+  const names = Object.keys(arms);
+  for (let index = 0; index < WARMUP; index += 1) for (const name of names) await arms[name]();
+  const samples = Object.fromEntries(names.map((name) => [name, []]));
+  for (let index = 0; index < REPEATS; index += 1) {
+    for (const name of names) {
+      const start = performance.now();
+      await arms[name]();
+      samples[name].push(performance.now() - start);
+    }
+  }
+  return samples;
+}
+
 // Mean GPU time of one software dispatch from the adapter's timestamp queries. A queue.onSubmittedWorkDone
 // wait is no barrier here: the host replays recorded passes on its own schedule, so the queries are
 // resolved instead, and every batch of dispatches ends in that resolve.
@@ -219,6 +234,36 @@ async function describeAdapter(renderer) {
   };
 }
 
+const gpuBufferOf = (renderer, node) => renderer.backend.get(node.value).buffer;
+
+// One GPU transport call on zeroed hits, so a record the transport never wrote stays zero. The hits are
+// read back and compared with the exact trace.
+async function gpuTransportParity(renderer, rt, c) {
+  c.hardwareNode.value.array.fill(0);
+  c.hardwareNode.value.needsUpdate = true;
+  renderer.compute(c.consumeNode);
+  await c.barrier();
+  rt.traceRayBatchGpu({
+    tlas: c.tlas,
+    rays: gpuBufferOf(renderer, c.raysNode),
+    hits: gpuBufferOf(renderer, c.hardwareNode),
+    rayCount: c.rayCount,
+  });
+  const hits = new Float32Array(await renderer.getArrayBufferAsync(c.hardwareNode.value));
+  return compareHits(c.softwareHits, hits, (ray) => referenceHit(c.positions, c.indices, c.rays, ray));
+}
+
+// The other arms still run when the transport fails, so a failing transport leaves the rest of the numbers.
+async function checkGpuTransport(renderer, rt, context) {
+  try {
+    return { parity: await gpuTransportParity(renderer, rt, context) };
+  } catch (error) {
+    const message = String(error?.message ?? error);
+    console.log(`TN_RT_GPU_TRANSPORT_ERROR ${JSON.stringify({ message })}`);
+    return { error: message };
+  }
+}
+
 async function runBatch(renderer, rt, tlas, bvh, { positions, indices }, grid, capabilities, adapter) {
   const rays = buildProbeRays(grid);
   const rayCount = rays.length / 8;
@@ -238,6 +283,9 @@ async function runBatch(renderer, rt, tlas, bvh, { positions, indices }, grid, c
   const consumeNode = Fn(() => {
     sinkNode.element(0).assign(hardwareNode.element(0).add(hardwareNode.element(rayCount - 1)));
   })().compute(1);
+  const consumeSoftwareNode = Fn(() => {
+    sinkNode.element(0).assign(softwareNode.element(0).add(softwareNode.element(rayCount - 1)));
+  })().compute(1);
   // Reading 16 bytes back is the only barrier that covers both paths: it drains the host's
   // recorded passes and waits for the queue. Both loops pay it once per iteration.
   const barrier = () => renderer.getArrayBufferAsync(sinkNode.value);
@@ -248,24 +296,63 @@ async function runBatch(renderer, rt, tlas, bvh, { positions, indices }, grid, c
   rt.traceRayBatch({ tlas, rays, hits: hardwareHits });
   const parity = compareHits(softwareHits, hardwareHits, (ray) => referenceHit(positions, indices, rays, ray));
   renderer.compute(consumeNode); // creates the sink buffer the barrier reads
+  renderer.compute(consumeSoftwareNode);
   await warmGpu(renderer, traceNode, barrier);
 
+  // The GPU transport: the rays stay in the WebGPU buffer, the hits land in another one, and no
+  // step reads CPU memory.
+  const gpuContext = {
+    tlas, rayCount, rays, raysNode, hardwareNode, consumeNode, barrier, softwareHits, positions, indices,
+  };
+  const gpuAvailable = capabilities.sharedTransport === true && typeof rt.traceRayBatchGpu === "function";
+  const gpuFirst = gpuAvailable ? await checkGpuTransport(renderer, rt, gpuContext) : null;
+  const gpuTransport = gpuFirst !== null && gpuFirst.error === undefined;
+
   const barrierSamples = await repeat(barrier);
-  const softwareSamples = await repeat(async () => {
-    raysNode.value.needsUpdate = true; // the attribute wraps `rays`, so this is the host-to-device copy
-    renderer.compute(traceNode);
-    await barrier();
-  });
   const hardwareKernel = [];
   const hardwareBatch = [];
-  const hardwareSamples = await repeat(async () => {
-    const traced = rt.traceRayBatch({ tlas, rays, hits: hardwareHits });
-    hardwareKernel.push(traced.gpuMs);
-    hardwareBatch.push(traced.totalMs);
-    hardwareNode.value.needsUpdate = true;
-    renderer.compute(consumeNode);
-    await barrier();
-  });
+  const gpuCall = [];
+  const gpuCallCpu = [];
+  const arms = {
+    // The rays are uploaded from the CPU before the software trace, and the hits cross the CPU.
+    softwareUpload: async () => {
+      raysNode.value.needsUpdate = true; // the attribute wraps `rays`, so this is the host-to-device copy
+      renderer.compute(traceNode);
+      await barrier();
+    },
+    hardwareCpu: async () => {
+      const traced = rt.traceRayBatch({ tlas, rays, hits: hardwareHits });
+      hardwareKernel.push(traced.gpuMs);
+      hardwareBatch.push(traced.totalMs);
+      hardwareNode.value.needsUpdate = true;
+      renderer.compute(consumeNode);
+      await barrier();
+    },
+    // The rays are already on the GPU, as they are when a compute pass wrote them.
+    softwareResident: async () => {
+      renderer.compute(traceNode);
+      renderer.compute(consumeSoftwareNode);
+      await barrier();
+    },
+  };
+  if (gpuTransport) {
+    const raysBuffer = gpuBufferOf(renderer, raysNode);
+    const hitsBuffer = gpuBufferOf(renderer, hardwareNode);
+    arms.hardwareGpu = async () => {
+      const traced = rt.traceRayBatchGpu({ tlas, rays: raysBuffer, hits: hitsBuffer, rayCount });
+      gpuCall.push(traced.totalMs);
+      gpuCallCpu.push(traced.cpuMs);
+      renderer.compute(consumeNode);
+      await barrier();
+    };
+  }
+  const samples = await pair(arms);
+  const softwareSamples = samples.softwareUpload;
+  const hardwareSamples = samples.hardwareCpu;
+  const gpuKernelMs = gpuTransport ? rt.sharedBatchGpuMs() : null;
+  // The timed calls reused the same fences hundreds of times, so the last answer is checked again.
+  const gpuLate = gpuTransport ? await checkGpuTransport(renderer, rt, gpuContext) : null;
+  const gpuError = gpuFirst?.error ?? gpuLate?.error;
   const softwareKernel = await softwareKernelMs(renderer, traceNode);
 
   const barrierMs = median(barrierSamples);
@@ -294,6 +381,25 @@ async function runBatch(renderer, rt, tlas, bvh, { positions, indices }, grid, c
       hardwareProbesPerMs: perMs(hardwareEndToEnd),
     },
   };
+  if (gpuError !== undefined) {
+    report.gpuTransport = { error: gpuError };
+  } else if (gpuFirst !== null) {
+    const residentMs = median(samples.softwareResident) - barrierMs;
+    const gpuMs = median(samples.hardwareGpu) - barrierMs;
+    report.gpuTransport = {
+      parity: { ...gpuFirst.parity, toleranceMetres: TOLERANCE_METRES },
+      parityAfterTimedCalls: gpuLate.parity,
+      kernelMs: gpuKernelMs,
+      callMs: median(gpuCall),
+      callCpuMs: median(gpuCallCpu),
+      softwareResidentMs: residentMs,
+      hardwareGpuMs: gpuMs,
+      softwareProbesPerMs: perMs(residentMs),
+      hardwareProbesPerMs: perMs(gpuMs),
+      speedup: residentMs / gpuMs,
+      samples: { softwareResident: spread(samples.softwareResident), hardwareGpu: spread(samples.hardwareGpu) },
+    };
+  }
   report.kernel.speedup =
     softwareKernel === null ? null : report.kernel.hardwareProbesPerMs / report.kernel.softwareProbesPerMs;
   report.endToEnd.speedup = report.endToEnd.hardwareProbesPerMs / report.endToEnd.softwareProbesPerMs;
@@ -351,7 +457,23 @@ async function proveProbeTrace(renderer) {
   const batches = [];
   for (const spec of TRACE_SCENES) batches.push(...(await runScene(renderer, rt, spec, capabilities, adapter)));
   // Every row is printed first, so a failing run still shows its numbers.
-  for (const { scene, probes, parity } of batches) {
+  for (const { scene, probes, parity, gpuTransport } of batches) {
+    if (gpuTransport) {
+      assertCondition(!gpuTransport.error, `${scene} ${probes} probes: the GPU transport failed: ${gpuTransport.error}`);
+      assertCondition(
+        gpuTransport.parity.mismatchCount === 0,
+        `${scene} ${probes} probes: ${gpuTransport.parity.mismatchCount} rays where the GPU transport differs from the exact trace, first ${JSON.stringify(gpuTransport.parity.mismatches[0])}.`,
+      );
+      assertCondition(
+        gpuTransport.parity.maxDistanceError <= TOLERANCE_METRES,
+        `${scene} ${probes} probes: GPU transport hit distances differ by ${gpuTransport.parity.maxDistanceError} m, limit ${TOLERANCE_METRES} m.`,
+      );
+      const late = gpuTransport.parityAfterTimedCalls;
+      assertCondition(
+        late.mismatchCount === 0 && late.maxDistanceError <= TOLERANCE_METRES,
+        `${scene} ${probes} probes: after the timed calls the GPU transport differs from the exact trace (${late.mismatchCount} rays, ${late.maxDistanceError} m).`,
+      );
+    }
     assertCondition(
       parity.mismatchCount === 0,
       `${scene} ${probes} probes: ${parity.mismatchCount} rays where the hardware trace differs from the exact trace, first ${JSON.stringify(parity.mismatches[0])}.`,
