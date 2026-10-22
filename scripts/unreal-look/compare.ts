@@ -5,7 +5,7 @@ import { pathToFileURL } from "node:url";
 import { PNG } from "pngjs";
 import { curveShape, exposureCurve } from "./exposureCurve.js";
 import { compareGi } from "./gi.js";
-import { checkCommand, isGiCheck } from "./giLocks.js";
+import { giCommand } from "./giLocks.js";
 import { linearLuminance, pairedPenumbra } from "./penumbra.js";
 import { runSameness } from "./sameness.js";
 // Three.js belongs to core's dependency graph; root scripts do not install a second copy.
@@ -197,7 +197,7 @@ export function quantiles(
   return fractions.map((f) => required(sorted[Math.max(0, Math.ceil(sorted.length * f) - 1)]));
 }
 // packages/playtest/src/capture.ts:75-76: display Rec.709, rounded to byte bins (no sRGB linearization).
-function luminance(image: IImage, i: number): number {
+export function luminance(image: IImage, i: number): number {
   const o = i * image.channels;
   return (
     0.2126 * required(image.data[o]) +
@@ -1116,8 +1116,9 @@ export function main(args = process.argv.slice(2)): void {
     process.exitCode = runSameness(args);
     return;
   }
-  if (isGiCheck(args)) {
-    process.exitCode = checkCommand(args);
+  const gi = giCommand(args);
+  if (gi !== undefined) {
+    process.exitCode = gi;
     return;
   }
   if (args.includes("--scene")) {

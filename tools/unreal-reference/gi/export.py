@@ -12,6 +12,12 @@ own helpers in `ref`. Modes:
            console variables from its start commands, so capture.ts reads the GI level back from
            the editor log.
 
+PRD-638 motion: a scene may carry a "motion" record in scene.py (runs of 30 frames a second: a pan, a light
+that switches). build also writes one Level Sequence per run (Seq_motion_<run>, a camera-only Seq_motion_<run>_id
+when the run keys a light, and one 1-frame Seq_motion_<run>_still_<frame> per still), and capture with
+TN_UE_MOTION=<run> renders them: <run>.NNNN.png for every frame and still-NNNN.0000.png for every still, into
+<out>/<scene>/motion/<run>/<variant>/.
+
 PRD-649: a `shadow:<name>` scene lives in ../shadow/<name>/ with ../shadow/scenes.json. A scene with
 "template": "default" is lit by Unreal's default level (Template_Default): one level per entry of
 "suns", the template floor deleted, the boxes added, and an unbound post-process volume with no
@@ -538,6 +544,142 @@ def build_level(ref, path, scene, meshes, materials, lights, glb_materials=None)
     return actors
 
 
+# --- motion runs (PRD-638) ----------------------------------------------------------------
+UNIT = unreal.MovieSceneTimeUnit.DISPLAY_RATE
+STEP = unreal.MovieSceneKeyInterpolation.CONSTANT
+LINE = unreal.MovieSceneKeyInterpolation.LINEAR
+
+
+def heading_at(camera, frame):
+    """Degrees at a frame: linear from the first heading to the second over sweepFrames, then held."""
+    first, last = camera["headingDeg"]
+    return first + (last - first) * min(max(frame / camera["sweepFrames"], 0.0), 1.0)
+
+
+def pan_pose(camera, frame):
+    """The pose of a pan at a frame, in the three.js frame: heading 0 looks down -z, a positive heading turns toward +x."""
+    heading, pitch = math.radians(heading_at(camera, frame)), math.radians(camera.get("pitchDeg", 0.0))
+    x, y, z = camera["position"]
+    return {
+        "position": [x, y, z],
+        "target": [x + math.sin(heading) * math.cos(pitch), y + math.sin(pitch), z - math.cos(heading) * math.cos(pitch)],
+        "hfovDeg": camera["hfovDeg"],
+    }
+
+
+def run_pose(scene, run, frame):
+    camera = run["camera"]
+    if camera["kind"] == "pan":
+        return pan_pose(camera, frame)
+    return next(p for p in scene["poses"] if p["name"] == camera["pose"])
+
+
+def spawn_camera(ref, name, pose, label):
+    camera = ref.actor_subsystem.spawn_actor_from_class(unreal.CameraActor, ref.to_unreal(pose["position"]), ref.look_rotation(pose["position"], pose["target"]))
+    camera.set_actor_label(label)
+    component = camera.get_editor_property("camera_component")
+    component.set_editor_property("field_of_view", pose["hfovDeg"])
+    width, height = registry(name)["resolution"]
+    component.set_editor_property("aspect_ratio", width / height)
+    component.set_editor_property("constrain_aspect_ratio", False)
+    return camera
+
+
+def key_summary(channel):
+    """[frame, value] of every key, for the build log. A diagnostic: a failure to read them never fails the build."""
+    try:
+        return json.dumps([[k.get_time().frame_number.value, k.get_value()] for k in channel.get_keys()])
+    except Exception as error:
+        return f"<unreadable: {error}>"
+
+
+def key_pan(ref, binding, camera, frames):
+    """Location and scale hold; the rotation turns linearly from the first heading to the last over sweepFrames."""
+    track = binding.add_track(unreal.MovieScene3DTransformTrack)
+    section = track.add_section()
+    section.set_range(0, frames)
+    channels = section.get_all_channels()
+    if len(channels) < 9:
+        raise RuntimeError(f"a transform section has {len(channels)} channels, expected 9")
+    first = pan_pose(camera, 0)
+    where = ref.to_unreal(first["position"])
+    for channel, value in zip(channels[0:3], (where.x, where.y, where.z)):
+        channel.add_key(unreal.FrameNumber(0), value, 0.0, UNIT, STEP)
+    for channel in channels[6:9]:
+        channel.add_key(unreal.FrameNumber(0), 1.0, 0.0, UNIT, STEP)
+    # Channels 3, 4 and 5 are the roll, pitch and yaw in degrees.
+    last = pan_pose(camera, camera["sweepFrames"])
+    for frame, pose in ((0, first), (camera["sweepFrames"], last)):
+        turn = ref.look_rotation(pose["position"], pose["target"])
+        for channel, value in zip(channels[3:6], (turn.roll, turn.pitch, turn.yaw)):
+            channel.add_key(unreal.FrameNumber(frame), value, 0.0, UNIT, LINE)
+    yaw = channels[5]
+    ref.log("motion pan yaw keys " + key_summary(yaw))
+
+
+def key_light(ref, sequence, spec, scene, frames):
+    """A float track on the light's Intensity: the authored intensity times `scale`, constant between keys."""
+    lamp = next(a for a in ref.actor_subsystem.get_all_level_actors() if a.get_actor_label() == spec["name"])
+    authored = next(l["intensity"] for l in scene["lights"] if l["name"] == spec["name"])
+    component_class = unreal.SpotLightComponent if lamp.get_class().get_name() == "SpotLight" else unreal.PointLightComponent
+    binding = sequence.add_possessable(lamp.get_component_by_class(component_class))
+    track = binding.add_track(unreal.MovieSceneFloatTrack)
+    track.set_property_name_and_path("Intensity", "Intensity")
+    section = track.add_section()
+    section.set_range(0, frames)
+    channel = section.get_all_channels()[0]
+    for frame, scale in spec["keys"]:
+        channel.add_key(unreal.FrameNumber(frame), authored * scale, 0.0, UNIT, STEP)
+    ref.log("motion light keys " + key_summary(channel))
+
+
+def motion_sequence(ref, name, scene, run, sequence_name, frames, pose_at, with_light):
+    """One Level Sequence at 30 frames a second: a spawnable camera, its cut, a keyed turn when the run pans, and the light track."""
+    sequence = ref.asset_tools.create_asset(sequence_name, root(name) + "/Sequences", unreal.LevelSequence, unreal.LevelSequenceFactoryNew())
+    sequence.set_display_rate(unreal.FrameRate(30, 1))
+    sequence.set_playback_start(0)
+    sequence.set_playback_end(frames)
+    camera = spawn_camera(ref, name, pose_at(0), "Cam_" + sequence_name)
+    binding = sequence.add_spawnable_from_instance(camera)
+    ref.actor_subsystem.destroy_actor(camera)
+    cut = sequence.add_track(unreal.MovieSceneCameraCutTrack)
+    section = cut.add_section()
+    section.set_range(0, frames)
+    section.set_camera_binding_id(sequence.get_binding_id(binding))
+    if run["camera"]["kind"] == "pan" and frames > 1:
+        key_pan(ref, binding, run["camera"], frames)
+    if with_light and run.get("light"):
+        key_light(ref, sequence, run["light"], scene, frames)
+    unreal.EditorAssetLibrary.save_loaded_asset(sequence)
+
+
+def build_motion(ref, name, scene):
+    """Sequences of every motion run. The lit level is the current editor level, so the light track binds to its actor.
+
+    A run that fails is logged with its traceback and the others still build, so one editor pass shows every fault.
+    """
+    failed = []
+    for run_name, run in scene.get("motion", {}).items():
+        try:
+            frames = run["frames"]
+            at = lambda frame, run=run: run_pose(scene, run, frame)
+            motion_sequence(ref, name, scene, run, f"Seq_motion_{run_name}", frames, at, True)
+            if run.get("light"):
+                motion_sequence(ref, name, scene, run, f"Seq_motion_{run_name}_id", frames, at, False)
+            for still in run.get("stills", []):
+                fixed = run_pose(scene, run, still)
+                still_run = dict(run, camera={"kind": "pose", "pose": "still"})
+                motion_sequence(ref, name, scene, still_run, f"Seq_motion_{run_name}_still_{still:04d}", 1, lambda frame, fixed=fixed: fixed, False)
+            ref.log(f"gi motion built scene={name} run={run_name} frames={frames} stills={run.get('stills', [])}")
+        except Exception:
+            import traceback
+
+            ref.log(f"gi motion FAILED scene={name} run={run_name}\n{traceback.format_exc()}")
+            failed.append(run_name)
+    if failed:
+        raise RuntimeError(f"motion runs failed to build: {failed}")
+
+
 def build(ref, name):
     scene = load_scene(name)
     template = scene.get("template") == "default"
@@ -596,7 +738,10 @@ def build(ref, name):
     if not glbs:
         export_glb(name, actors)
     ref.build_cameras(poses_of(scene), base)
-    ref.level_subsystem.save_all_dirty_levels()
+    try:
+        build_motion(ref, name, scene)
+    finally:
+        ref.level_subsystem.save_all_dirty_levels()
     ref.log(f"gi build done scene={name}")
 
 
@@ -715,6 +860,8 @@ def describe_level(ref, name, scene, regions):
         "fog": None,
         "exposure": exposure,
         "poses": poses_of(scene),
+        # The motion record is authored in scene.py: a Level Sequence cannot report it back as it was asked for.
+        **({"motion": scene["motion"]} if scene.get("motion") else {}),
         "regions": regions,
     }
 
@@ -772,6 +919,8 @@ def capture(ref, name, out):
     # Same naming as folderName() in scripts/unreal-look/gi.ts.
     folder = variant["name"] + ("" if warm_up == 180 else f"@{warm_up}") + ("" if run == 1 else f"#{run}")
     cvars = dict(layer["cvars"], **variant["cvars"])
+    if os.environ.get("TN_UE_MOTION"):
+        return capture_motion(ref, name, scene, variant, layer, cvars, out, folder, warm_up, os.environ["TN_UE_MOTION"])
     queue = ref.queue()
     count = 0
     for pose in poses_of(scene):
@@ -784,4 +933,28 @@ def capture(ref, name, out):
             )
             count += 1
     ref.log(f"gi capture scene={name} variant={folder} queued={count}")
+    ref.render()
+
+
+def capture_motion(ref, name, scene, variant, layer, cvars, out, folder, warm_up, run_name):
+    """PRD-638: the frames of one motion run, and one converged frame per still, for the variant in TN_UE_VARIANT."""
+    run = scene.get("motion", {}).get(run_name)
+    if run is None:
+        raise ValueError(f"scene {name} has no motion run {run_name}")
+    if scene.get("template") == "default":
+        raise ValueError(f"scene {name}: a template-lit scene has no motion run")
+    is_id = variant.get("level") == "id"
+    level = level_path(name, "_id" if is_id else "")
+    out_dir = os.path.join(out, out_key(name), "motion", run_name, folder)
+    # The ID level holds no light, so a run that keys a light renders its ID frames from the camera-only sequence.
+    jobs = [(run_name, f"Seq_motion_{run_name}" + ("_id" if is_id and run.get("light") else ""))]
+    jobs += [(f"still-{s:04d}", f"Seq_motion_{run_name}_still_{s:04d}") for s in run.get("stills", [])]
+    queue = ref.queue()
+    for job_name, sequence in jobs:
+        for kind in variant["kinds"]:
+            ref.add_job(
+                queue, job_name, level, f"{root(name)}/Sequences/{sequence}", out_dir, cvars, layer["showFlags"], kind,
+                warm_up, list(variant["expect"]), frames=True,
+            )
+    ref.log(f"gi capture motion scene={name} run={run_name} variant={folder} queued={len(jobs) * len(variant['kinds'])}")
     ref.render()

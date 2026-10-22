@@ -77,6 +77,8 @@ export function setupPost(
   // The opt-in `traa` stage publishes its provider here once the chain has built it, so `debug()`
   // reports the live reconstruction state and a scene can reset history on a teleport.
   let temporal: TemporalAAProvider | undefined;
+  // The chain's own temporal AA (`temporalAA` in `quality.ts`) reads the engine's live frame, history and jitter.
+  let engineTemporal: (() => Record<string, unknown>) | undefined;
   let observation: Record<string, unknown> = {
     tier: policy.tier,
     source: policy.pinned ? "pinned" : "auto",
@@ -91,9 +93,10 @@ export function setupPost(
     const world = new WorldEnvironment({
       ...settings,
       // Two stages this game owns, not the chain's: `grade.ts` builds them, `WorldEnvironment`
-      // orders and reports them, and `quality.ts` decides whether each tier runs them. The opt-in
-      // `traa` stage is offered beside them and runs only when a tier names it.
-      authoredStageNames: ["grade", "grain"],
+      // orders and reports them, and `quality.ts` decides whether each tier runs them. The kit's
+      // `traa` stage is offered beside them: a tier that lists `traa` in its `authoredStageNames`
+      // runs it in place of the chain's own temporal AA (`temporalAA`).
+      authoredStageNames: ["grade", "grain", ...(settings.authoredStageNames ?? [])],
       authoredStages: (stage) => [
         ...gradeStages(gradePreset(policy.tier), table),
         ...temporalAAStages(stage, {
@@ -109,6 +112,7 @@ export function setupPost(
       baseColour: composed === undefined ? undefined : (scenePass) => composed.compose(scenePass),
     });
     disposeGraph = applied.dispose;
+    engineTemporal = applied.temporalReport;
     observation = { ...observation, stages: applied.stages, dropped: applied.dropped };
     environment.onTierChanged?.(policy.tier);
   }
@@ -146,7 +150,10 @@ export function setupPost(
     get tier(): QualityTier {
       return policy.tier;
     },
-    debug: () => (temporal ? { ...observation, temporal: temporal.report() } : { ...observation }),
+    debug: () => {
+      const report = temporal ? temporal.report() : engineTemporal?.();
+      return report === undefined ? { ...observation } : { ...observation, temporal: report };
+    },
     observe(window: IQualityWindow): void {
       if (disposed) return;
       const decision = policy.observe(window);

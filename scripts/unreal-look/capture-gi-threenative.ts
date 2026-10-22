@@ -14,6 +14,7 @@ import os from "node:os";
 import path from "node:path";
 import { assertVisualPortAvailable, stopVisualServer } from "../visual-gate.js";
 import { launchWebgpuBrowser } from "./browser.js";
+import { FRAME_GATE, captureMotionFrames } from "./capture-motion-threenative.js";
 import { HIDE_UI, freePort, scaffold, waitForServer } from "./capture-threenative.js";
 import { awaitExposureSettled, watchExposure } from "./exposureSettled.js";
 import { isManifestScene, readScene, sceneDir, sceneKey } from "./gi.js";
@@ -134,6 +135,8 @@ export async function captureGiThreeNative(options: {
   readonly reuse: boolean;
   /** Hold each pose this many seconds and write its TN_FRAME_BUDGET windows instead of a screenshot. */
   readonly measureSeconds?: number;
+  /** A motion run of the scene (PRD-638): capture its frames, one rendered frame per step, instead of the poses. */
+  readonly motion?: string;
 }): Promise<number> {
   for (const layer of options.layers)
     if (!(layer in GI_LAYERS)) throw new Error(`TN_UNREAL_LOOK_BAD_INPUT: GI layer ${layer}`);
@@ -168,6 +171,7 @@ export async function captureGiThreeNative(options: {
         const [width, height] =
           override?.length === 2 ? (override as [number, number]) : scene.resolution;
         const page = await browser.newPage({ viewport: { width, height }, deviceScaleFactor: 1 });
+        if (options.motion !== undefined) await page.addInitScript(FRAME_GATE);
         const errors: string[] = [];
         // The frame meter prints to the console; a measured pose keeps the windows between two marks.
         let meter: string[] = [];
@@ -224,6 +228,19 @@ export async function captureGiThreeNative(options: {
               unsupported: await page.evaluate("window.__tnRef.unsupported"),
               probe: await page.evaluate("window.__tnRef.probe?.()"),
             };
+            if (options.motion !== undefined) {
+              count += await captureMotionFrames({
+                page,
+                scene,
+                sceneId: name,
+                layer,
+                run: options.motion,
+                out: options.out,
+              });
+              if (errors.length > 0)
+                throw new Error(`TN_UNREAL_LOOK_PAGE_ERROR: ${errors.join(" | ")}`);
+              continue;
+            }
             for (const pose of visit.poses) {
               const poseAt = Date.now();
               await page.evaluate(`window.__tnRef.pose(${JSON.stringify(pose)})`);
