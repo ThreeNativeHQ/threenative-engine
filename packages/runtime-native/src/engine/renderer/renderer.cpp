@@ -180,9 +180,14 @@ constexpr const char* kLightFieldNames[] = {"Color",       "Direction",        "
                                             "Decay",       "Axis",             "ConeCos",      "PenumbraCos",
                                             "ShadowMatrix", "ShadowBias",      "ShadowNormalBias", "ShadowRadius",
                                             "ShadowMapSize", "ShadowIntensity", "ShadowNear", "ShadowFar",
-                                            "ShadowSourceRadius"};
+                                            "ShadowSourceRadius", "ShadowPenumbraScale"};
 
 constexpr uint64_t kUniformAlign = 256;  // minUniformBufferOffsetAlignment's WebGPU default
+// A lamp stores a caster's back faces. A back face in the receiver's own plane, a crate's bottom face on
+// the floor beside it, ties with that floor to the last bit of the depth, and the tie lights a dotted line
+// along the crate's far foot. The back faces go this many depth steps nearer the lamp, so a tie is a block
+// (native_engine_contact_shadow_foot needs 2; the lamp-room crate, 1).
+constexpr int32_t kLampBackFaceBias = 8;
 uint64_t aligned(uint64_t size) { return (size + kUniformAlign - 1) / kUniformAlign * kUniformAlign; }
 
 WGPUTextureView view2d(WGPUTexture texture, WGPUTextureFormat format) {
@@ -2961,9 +2966,11 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 put(frameUniforms_, f, slot[kLightShadowIntensity], std::array<double, 1>{l.shadow->intensity});
                 put(frameUniforms_, f, slot[kLightShadowNear], std::array<double, 1>{l.shadow->near});
                 put(frameUniforms_, f, slot[kLightShadowFar], std::array<double, 1>{l.shadow->far});
-                if (const auto& soft = l.shadow->sourceRadiusFilter)
+                if (const auto& soft = l.shadow->sourceRadiusFilter) {
                     put(frameUniforms_, f, slot[kLightShadowSourceRadius],
                         std::array<double, 4>{(*soft)[0], l.shadow->tanHalfFov, (*soft)[1], (*soft)[2]});
+                    put(frameUniforms_, f, slot[kLightShadowPenumbraScale], std::array<double, 1>{(*soft)[3]});
+                }
             }
         }
         put(frameUniforms_, f, fs[kHemisphereSky], lights.hemisphereSky);
@@ -2991,7 +2998,8 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         const bool virtualMap = virtualIt != virtualShadows_.end();
         const int passCount = compilation ? 1 : virtualMap ? int(virtualPages[i].size()) : shadow.cube ? 6 : 1;
         const std::size_t firstPass = shadowPasses.size();
-        const bool lamp = lights.direct[i].kind != DirectLight::Kind::Directional && !virtualMap && !compilation;
+        const bool lampMap = lights.direct[i].kind != DirectLight::Kind::Directional && !virtualMap;
+        const bool lamp = lampMap && !compilation;
         for (int face = 0; face < passCount; ++face) {
         const shadows::AtlasPage* page = virtualMap && !compilation ? &virtualPages[i][face] : nullptr;
         const Matrix& view = page ? page->view.elements : shadow.cube ? shadow.faceViews[face] : shadow.view;
@@ -3072,11 +3080,13 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             target.frontFace = item.frontFace();
             target.skinIndex = skinIndexFormat(item);
             target.instanceStepMask = instanceStepMask(program.vertex, item);
+            const bool lampBackFace = lampMap && faces == 1;  // a front-face or double-sided map holds the receiver's own surface: no bias
+            if (lampBackFace) target.depthBias = -kLampBackFaceBias;
             if (compilation) {
                 compilation->push_back(pipelines_->getAsync(program.vertex, depthFragment, target));
                 continue;
             }
-            const uint64_t depthTargetKey = drawTargetKey(item, program.vertex) * 3 + (faces == 2 ? 0 : faces == 0 ? 1 : 2);  // a virtual page and a lamp cull one caster differently
+            const uint64_t depthTargetKey = drawTargetKey(item, program.vertex) * 6 + (faces == 2 ? 0 : faces == 0 ? 1 : 2) + (lampBackFace ? 3 : 0);  // a virtual page and a lamp cull one caster differently
             WGPURenderPipeline pipeline;
             if (cache && cache->depthPipeline && cache->depthTargetKey == depthTargetKey) {
                 pipeline = static_cast<WGPURenderPipeline>(cache->depthPipeline);

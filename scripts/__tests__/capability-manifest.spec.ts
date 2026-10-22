@@ -786,6 +786,10 @@ describe("capability manifest generator", () => {
         ids: ["request.vehicle-rescue-respawn"],
         owners: ["VehicleBody3D"],
       },
+      "PCSS soft shadows": {
+        ids: ["request.pcss-soft-shadows"],
+        owners: ["sourceRadiusShadowFilter"],
+      },
       "lumen scalability": { ids: ["request.gi-quality-scalability"], owners: ["GIBudget"] },
       "sg.GlobalIlluminationQuality": {
         ids: ["request.gi-quality-scalability"],

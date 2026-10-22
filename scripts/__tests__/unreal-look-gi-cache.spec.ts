@@ -518,6 +518,45 @@ describe("the world-space GI cache against closed forms (PRD-631 L7)", () => {
     it("an occluder between the light and the floor lowers the light on the floor below it", () => {
       expect(bake(true).total).toBeLessThan(bake(false).total);
     });
+
+    describe("a light that changes after the bake (PRD-641 AC-2)", () => {
+      /** The probe's total after the live light is set to `intensity` and the cache refreshes. */
+      const setIntensity = (
+        live: { intensity: number; color: Color },
+        intensity: number,
+      ): number => {
+        live.intensity = intensity;
+        expect(giCache.refresh?.()).toBe(true);
+        return texelAt(new Vector3(0.5, 0.5, 0.5))
+          .faces.flat()
+          .reduce((a, b) => a + b, 0);
+      };
+      const live = () => {
+        skyRadiance.current = undefined;
+        const scene = sceneOf(true);
+        const source = { intensity: 100, color: new Color(1, 1, 1) };
+        installGi(rayContext(scene), scene, { bounces: 1, lights: [{ ...lamp, source }] });
+        const baked = texelAt(new Vector3(0.5, 0.5, 0.5)).faces.flat();
+        return { source, baked: baked.reduce((a, b) => a + b, 0) };
+      };
+
+      it("a light switched off leaves no light in the field", () => {
+        const { source, baked } = live();
+        expect(baked).toBeGreaterThan(0);
+        expect(setIntensity(source, 0)).toBeLessThan(baked * 1e-3);
+      });
+
+      it("the field follows the intensity linearly and returns to the bake", () => {
+        const { source, baked } = live();
+        expect(setIntensity(source, 200) / baked).toBeCloseTo(2, 2);
+        expect(setIntensity(source, 100) / baked).toBeCloseTo(1, 3);
+      });
+
+      it("refresh reports nothing to do while no light changed", () => {
+        live();
+        expect(giCache.refresh?.()).toBe(false);
+      });
+    });
   });
 
   it("a texel just under a 0.2 m roof reads the room, not the sky above the roof (sunlit-room)", () => {

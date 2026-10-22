@@ -749,6 +749,14 @@
       "reject": []
     },
     {
+      "id": "request.pcss-soft-shadows",
+      "query": "PCSS soft shadows",
+      "scope": "request",
+      "source": "sandbox:lamp-room#scenes/CalibrationScene.ts",
+      "expect": ["sourceRadiusShadowFilter"],
+      "reject": []
+    },
+    {
       "id": "request.lumen-surface-cache",
       "query": "lumen surface cache",
       "scope": "request",
