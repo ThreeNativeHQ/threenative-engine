@@ -47,6 +47,7 @@ interface IGrade {
 interface IOverlayTonemap {
   COLOR_GRADE: IGrade;
   FILMIC_CURVE: Readonly<Record<string, number>>;
+  LUT_CLIP: number;
   colorGradeIsIdentity(grade: IGrade): boolean;
   filmicToneMap(
     rgb: RGB,
@@ -63,8 +64,14 @@ interface IOverlayTonemap {
 const tonemap = (await import(
   /* @vite-ignore */ `data:text/javascript;base64,${Buffer.from(bundled.outputFiles[0]?.text ?? "").toString("base64")}`
 )) as IOverlayTonemap;
-const { COLOR_GRADE, FILMIC_CURVE, colorGradeIsIdentity, filmicToneMap, resolveColorGrade } =
-  tonemap;
+const {
+  COLOR_GRADE,
+  FILMIC_CURVE,
+  LUT_CLIP,
+  colorGradeIsIdentity,
+  filmicToneMap,
+  resolveColorGrade,
+} = tonemap;
 
 const at = (v: readonly number[], i: number): number => v[i] ?? 0;
 // ---- References, from Unreal's published matrices and equations. ----
@@ -126,7 +133,8 @@ function gradeReference(rgb: RGB, g: IGrade): RGB {
   return mul(AP1_TO_SRGB, mixed).map((v) => Math.min(1, Math.max(0, v))) as unknown as RGB;
 }
 
-const CLIP = FILMIC_CURVE.lutClip ?? 0;
+const CLIP = LUT_CLIP;
+const ON = { ...FILMIC_CURVE, lutClip: LUT_CLIP };
 // With these three off, the tone curve amount 0 leaves only the grade (and the white balance).
 const NO_CURVE = { ...FILMIC_CURVE, blueCorrection: 0, expandGamut: 0, glow: 0, redModifier: 0 };
 const gradeOnly = (rgb: RGB, partial: unknown, exposure = 1): RGB =>
@@ -311,21 +319,21 @@ describe("white balance (Unreal WhiteBalance)", () => {
 });
 
 describe("the colour LUT domain", () => {
-  it("clips each channel at Unreal's 43.7 after exposure", () => {
-    expect(FILMIC_CURVE.lutClip).toBeGreaterThan(43.6);
-    expect(FILMIC_CURVE.lutClip).toBeLessThan(43.8);
-    near(filmicToneMap([100, 5, 1]), filmicToneMap([CLIP, 5, 1]), 1e-9);
-    near(filmicToneMap([1000, 1000, 1000]), [1, 1, 1], 1e-9);
-  });
-  it("is off at 0, the named override", () => {
-    const off = { ...FILMIC_CURVE, lutClip: 0 };
-    const a = filmicToneMap([100, 5, 1], 1, off);
-    const b = filmicToneMap([CLIP, 5, 1], 1, off);
+  it("is Unreal's 43.7, and off by default so default pixels do not move", () => {
+    expect(LUT_CLIP).toBeGreaterThan(43.6);
+    expect(LUT_CLIP).toBeLessThan(43.8);
+    expect(FILMIC_CURVE.lutClip).toBe(0);
+    const a = filmicToneMap([100, 5, 1]);
+    const b = filmicToneMap([CLIP, 5, 1]);
     expect(Math.abs(at(a, 1) - at(b, 1))).toBeGreaterThan(1e-4);
   });
+  it("clips each channel at 43.7 when switched on", () => {
+    near(filmicToneMap([100, 5, 1], 1, ON), filmicToneMap([CLIP, 5, 1], 1, ON), 1e-9);
+    near(filmicToneMap([1000, 1000, 1000], 1, ON), [1, 1, 1], 1e-9);
+  });
   it("applies after the exposure, not before", () => {
-    near(filmicToneMap([200, 5, 1], 0.5), filmicToneMap([100, 5, 1], 0.5), 1e-12);
-    near(filmicToneMap([1000, 25, 5], 0.2), filmicToneMap([CLIP / 0.2, 25, 5], 0.2), 1e-9);
+    near(filmicToneMap([200, 5, 1], 0.5, ON), filmicToneMap([100, 5, 1], 0.5, ON), 1e-12);
+    near(filmicToneMap([1000, 25, 5], 0.2, ON), filmicToneMap([CLIP / 0.2, 25, 5], 0.2, ON), 1e-9);
   });
 });
 

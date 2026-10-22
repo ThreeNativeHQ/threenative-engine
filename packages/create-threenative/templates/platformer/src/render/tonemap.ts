@@ -72,13 +72,14 @@ export interface IFilmicCurve {
    * The largest scene-linear value, after exposure, that one channel can hold when the colour goes into Unreal's
    * colour LUT (the top of its 14-stop log shaper, `Engine/Shaders/Private/GammaCorrectionCommon.ush`: `LogToLin(1)`
    * minus `LogToLin(0)`). A channel above it is clipped there, so the sun disc and a hot emitter lose their hue
-   * earlier than an unbounded curve would. 0 turns the clip off.
+   * earlier than an unbounded curve would. 0, the default, leaves the channel unbounded; pass `LUT_CLIP` for Unreal's.
    */
   readonly lutClip: number;
 }
 
 // Unreal's log shaper: 14 stops about mid grey 0.18, grey at code 444 of 1023.
-const LUT_CLIP = 2 ** ((1 - 444 / 1023) * 14) * 0.18 - 2 ** ((-444 / 1023) * 14) * 0.18;
+/** Unreal's LUT channel clip, 43.7. Off by default (it moves hot-emitter pixels); `filmicCurve: { lutClip: LUT_CLIP }` turns it on. */
+export const LUT_CLIP = 2 ** ((1 - 444 / 1023) * 14) * 0.18 - 2 ** ((-444 / 1023) * 14) * 0.18;
 
 /** Unreal 5.8.3 project defaults. Change these numbers to change the curve. */
 export const FILMIC_CURVE: IFilmicCurve = {
@@ -92,7 +93,7 @@ export const FILMIC_CURVE: IFilmicCurve = {
   glow: 1,
   redModifier: 1,
   dither: 1,
-  lutClip: LUT_CLIP,
+  lutClip: 0,
 };
 
 type Vec3 = readonly [number, number, number];

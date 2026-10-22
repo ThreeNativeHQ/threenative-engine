@@ -77,6 +77,7 @@ import {
   type ColorGradeOptions,
   FILMIC_CURVE,
   type IFilmicCurve,
+  LUT_CLIP,
   installFilmicToneMapping,
   resolveColorGrade,
 } from "./tonemap.js";
@@ -92,9 +93,9 @@ function harnessDenoisePasses(): number | undefined {
   return value === null ? undefined : Number(value);
 }
 
-/** Diagnosis (PRD-632): `?lutClip=0` lifts the film curve's 43.7 channel clip, the BEFORE arm of a paired capture. */
-function harnessLutClipOff(): boolean {
-  return new URLSearchParams(globalThis.location?.search ?? "").get("lutClip") === "0";
+/** Diagnosis (PRD-632): `?lutClip=1` turns on the film curve's 43.7 channel clip (off by default), the ON arm of a paired capture. */
+function harnessLutClipOn(): boolean {
+  return new URLSearchParams(globalThis.location?.search ?? "").get("lutClip") === "1";
 }
 
 /**
@@ -775,7 +776,11 @@ export class WorldEnvironment {
       // without a node library cannot run it; that frame keeps ACES and says so.
       const installed = installFilmicToneMapping(
         renderer.raw,
-        { ...FILMIC_CURVE, ...options.filmicCurve, ...(harnessLutClipOff() ? { lutClip: 0 } : {}) },
+        {
+          ...FILMIC_CURVE,
+          ...options.filmicCurve,
+          ...(harnessLutClipOn() ? { lutClip: LUT_CLIP } : {}),
+        },
         resolveColorGrade(options.colorGrade),
       );
       if (installed === undefined) {

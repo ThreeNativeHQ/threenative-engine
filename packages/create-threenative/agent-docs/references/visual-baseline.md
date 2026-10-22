@@ -153,8 +153,8 @@ colorGrade: {
 ```
 
 A control left out keeps Unreal's default and adds no shader code. Both options throw under any
-other `tonemapMode`. The curve clips each channel at 43.7 after exposure, as Unreal's colour LUT does;
-`filmicCurve: { lutClip: 0 }` turns that off.
+other `tonemapMode`. Unreal's colour LUT also clips each channel at 43.7 after exposure.
+That clip is off by default because it moves hot-emitter pixels; `filmicCurve: { lutClip: LUT_CLIP }` turns it on.
 
 ## Shafts of light — the one recipe that is easy to get wrong
 
