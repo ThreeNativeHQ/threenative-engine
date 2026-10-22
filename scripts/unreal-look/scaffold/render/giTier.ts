@@ -6,11 +6,10 @@ import type { FinalGatherMethod } from "./quality.js";
 
 /**
  * GPU milliseconds each method may cost at 1920 x 1080 on the RTX 2080: Unreal 5.8.3's own GI time at the
- * matching `sg.GlobalIlluminationQuality`, read from `ProfileGPU` (PRD-644 `## Decisions`). PROVISIONAL until
- * that profile is recorded for Low and Medium: `screenProbeGather` is the top of Unreal Epic's measured
- * 3.09 to 5.79 ms (PRD-640 `## Decisions`), and `irradianceField` is a placeholder. Irradiance field gathers
- * inside the colour pass, so no named pass carries its cost: its budget is the whole GI share Unreal spends
- * at Medium, which the colour pass must leave room for.
+ * matching `sg.GlobalIlluminationQuality` (PRD-644 `## Decisions`). `none` has no GI pass. `screenProbeGather`
+ * is the top of Unreal Epic's measured 3.09 to 5.79 ms (PRD-640 `## Decisions`). `irradianceField` is a
+ * placeholder: Unreal Medium is not profiled yet. This method gathers inside the colour pass, so no named pass
+ * carries its cost, its reading is 0 ms and its budget cannot trigger a step down today.
  */
 export const GI_BUDGET_MS: Readonly<Record<FinalGatherMethod, number>> = {
   irradianceField: 1.5,

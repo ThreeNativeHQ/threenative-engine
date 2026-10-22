@@ -137,6 +137,8 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_traa_replaces_multisampling=traa_replaces_multisampling
         native_engine_traa_converges_edges=traa_converges_edges
         native_engine_traa_late_resolve=traa_late_resolve
+        native_engine_traa_ghosting=traa_ghosting
+        native_engine_traa_camera_pan=traa_camera_pan
         native_engine_sibling_reads_the_live_scene=sibling_reads_the_live_scene
         native_engine_renderer_output_screen_size=output_screen_size)
     target_link_libraries(tn-native-engine-renderer-test PRIVATE tn_engine_renderer tn_host_services)
@@ -263,6 +265,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_renderer_color_write_masks_the_draw=color_write_masks_the_draw
         native_engine_renderer_steady_cache_invalidation=steady_cache_invalidation
         native_engine_render_target=render_target
+        native_engine_float_render_target=float_render_target_keeps_float32
         native_engine_renderer_updates=updates
         native_engine_renderer_multi_camera_layers=multi_camera_layers
         native_engine_renderer_callback=render_callback
@@ -279,6 +282,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_converted_copies_swept=converted_copies_swept
         native_engine_gpu_timer_covers_shadows=gpu_timer_covers_shadows
         native_engine_gpu_timer_covers_offscreen=gpu_timer_covers_offscreen
+        native_engine_gpu_timer_splits_the_gather=gpu_timer_splits_the_gather
         native_engine_renderer_overlay_over_frame=overlay_over_frame
         native_engine_gpu_timer_is_opt_in=gpu_timer_is_opt_in
         native_engine_shadow_camera_layers=shadow_camera_layers
@@ -408,7 +412,7 @@ if(TN_NODE_EXECUTABLE AND TN_TEMPLATE_TINT)
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
     set_tests_properties(native_engine_template_post_starter PROPERTIES LABELS "native-engine" TIMEOUT 180
         ENVIRONMENT "TN_POST_ONLY=starter")
-    foreach(effect GTAONode DenoiseNode SMAANode FnNode RTTNode BloomNode SharpenNode Lut3DNode)
+    foreach(effect GTAONode DenoiseNode SMAANode FnNode TextureLevel RTTNode BloomNode SharpenNode Lut3DNode)
         add_test(NAME native_engine_post_${effect}
             COMMAND ${CMAKE_COMMAND} -E env TN_POST_LOWERING=${effect}
                 ${TN_NODE_EXECUTABLE} --import tsx tests/native-engine/template-post-packages.ts

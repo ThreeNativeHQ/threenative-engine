@@ -21,6 +21,7 @@ inline PostPass renderTexturePass(Node node, std::optional<ToneMapping> toneMapp
         pass.rtt = node->rtt;
         pass.width = node->rtt->width; pass.height = node->rtt->height;
         pass.resolutionScale = node->rtt->scale; pass.autoUpdate = node->rtt->autoUpdate;
+        pass.stage = node->rtt->stage;
     }
     // Intermediate RTTs render the shader value verbatim, before RenderOutput transforms.
     auto programs = buildOutput(std::nullopt, false, &post, false);

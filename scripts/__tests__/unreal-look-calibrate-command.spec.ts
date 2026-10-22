@@ -491,7 +491,7 @@ describe("main", () => {
       w.log.length = 0;
       expect(await main(lock(better), w.deps)).toBe(0);
       expect(read()[0]).toMatchObject({ maxDP50: 0.004 });
-      expect(w.log.join("\n")).toMatch(/2 region\(s\) are tighter in this round: pass --tighten/);
+      expect(w.log.join("\n")).toMatch(/2 region\(s\) are tighter in this cut: pass --tighten/);
       expect(await main(lock(better, ["--tighten"]), w.deps)).toBe(0);
       expect(read()[0]).toMatchObject({ maxDP50: 0.002, round: better });
       const worse = await roundWith("3", { dP50: 0.01 });

@@ -1847,7 +1847,9 @@
       "aliases": [],
       "constraints": [
         "only use the returned platform facts; native globals are host-owned",
-        "ray tracing is unavailable on native until buffer-to-texture copy-out interop exists; `mystralRT.traceRays` refuses instead of resolving success without a readable result"
+        "image ray tracing is unavailable on native until buffer-to-texture copy-out interop exists; `mystralRT.traceRays` refuses instead of resolving success without a readable result",
+        "a native desktop host with ray tracing hardware traces ray batches with `mystralRT.traceRayBatch`, which writes hit records into a typed array you own; read `mystralRT.capabilities().rayBatch` first, and keep the software BVH trace for the web and every other host",
+        "when `mystralRT.capabilities().sharedTransport` is true, `mystralRT.traceRayBatchGpu({ tlas, rays, hits, rayCount })` traces between two GPUBuffers with no copy through CPU memory; `rays` needs the CopySrc usage and `hits` the CopyDst usage, and each call costs CPU time, so measure it against the software trace for your batch size"
       ],
       "example": "if (isMobile()) showTouchControls();",
       "importPath": "@threenative/core",
@@ -1865,12 +1867,7 @@
       "symbol": "getPlatform"
     },
     {
-      "aliases": [
-        "global illumination quality",
-        "lumen scalability",
-        "sg.GlobalIlluminationQuality",
-        "final gather method"
-      ],
+      "aliases": ["lumen scalability", "sg.GlobalIlluminationQuality", "final gather method"],
       "constraints": [
         "the game applies each step to its own render chain; this class draws nothing",
         "the GPU time of a pass is read by the scene name three or the game gave it, so name every GI pass in `stages`",
@@ -2092,7 +2089,9 @@
       "aliases": [],
       "constraints": [
         "only use the returned platform facts; native globals are host-owned",
-        "ray tracing is unavailable on native until buffer-to-texture copy-out interop exists; `mystralRT.traceRays` refuses instead of resolving success without a readable result"
+        "image ray tracing is unavailable on native until buffer-to-texture copy-out interop exists; `mystralRT.traceRays` refuses instead of resolving success without a readable result",
+        "a native desktop host with ray tracing hardware traces ray batches with `mystralRT.traceRayBatch`, which writes hit records into a typed array you own; read `mystralRT.capabilities().rayBatch` first, and keep the software BVH trace for the web and every other host",
+        "when `mystralRT.capabilities().sharedTransport` is true, `mystralRT.traceRayBatchGpu({ tlas, rays, hits, rayCount })` traces between two GPUBuffers with no copy through CPU memory; `rays` needs the CopySrc usage and `hits` the CopyDst usage, and each call costs CPU time, so measure it against the software trace for your batch size"
       ],
       "example": "if (isMobile()) showTouchControls();",
       "importPath": "@threenative/core",
@@ -2113,7 +2112,9 @@
       "aliases": [],
       "constraints": [
         "only use the returned platform facts; native globals are host-owned",
-        "ray tracing is unavailable on native until buffer-to-texture copy-out interop exists; `mystralRT.traceRays` refuses instead of resolving success without a readable result"
+        "image ray tracing is unavailable on native until buffer-to-texture copy-out interop exists; `mystralRT.traceRays` refuses instead of resolving success without a readable result",
+        "a native desktop host with ray tracing hardware traces ray batches with `mystralRT.traceRayBatch`, which writes hit records into a typed array you own; read `mystralRT.capabilities().rayBatch` first, and keep the software BVH trace for the web and every other host",
+        "when `mystralRT.capabilities().sharedTransport` is true, `mystralRT.traceRayBatchGpu({ tlas, rays, hits, rayCount })` traces between two GPUBuffers with no copy through CPU memory; `rays` needs the CopySrc usage and `hits` the CopyDst usage, and each call costs CPU time, so measure it against the software trace for your batch size"
       ],
       "example": "if (isMobile()) showTouchControls();",
       "importPath": "@threenative/core",
@@ -2155,7 +2156,9 @@
       "aliases": [],
       "constraints": [
         "only use the returned platform facts; native globals are host-owned",
-        "ray tracing is unavailable on native until buffer-to-texture copy-out interop exists; `mystralRT.traceRays` refuses instead of resolving success without a readable result"
+        "image ray tracing is unavailable on native until buffer-to-texture copy-out interop exists; `mystralRT.traceRays` refuses instead of resolving success without a readable result",
+        "a native desktop host with ray tracing hardware traces ray batches with `mystralRT.traceRayBatch`, which writes hit records into a typed array you own; read `mystralRT.capabilities().rayBatch` first, and keep the software BVH trace for the web and every other host",
+        "when `mystralRT.capabilities().sharedTransport` is true, `mystralRT.traceRayBatchGpu({ tlas, rays, hits, rayCount })` traces between two GPUBuffers with no copy through CPU memory; `rays` needs the CopySrc usage and `hits` the CopyDst usage, and each call costs CPU time, so measure it against the software trace for your batch size"
       ],
       "example": "if (isMobile()) showTouchControls();",
       "importPath": "@threenative/core",
@@ -2176,7 +2179,9 @@
       "aliases": [],
       "constraints": [
         "only use the returned platform facts; native globals are host-owned",
-        "ray tracing is unavailable on native until buffer-to-texture copy-out interop exists; `mystralRT.traceRays` refuses instead of resolving success without a readable result"
+        "image ray tracing is unavailable on native until buffer-to-texture copy-out interop exists; `mystralRT.traceRays` refuses instead of resolving success without a readable result",
+        "a native desktop host with ray tracing hardware traces ray batches with `mystralRT.traceRayBatch`, which writes hit records into a typed array you own; read `mystralRT.capabilities().rayBatch` first, and keep the software BVH trace for the web and every other host",
+        "when `mystralRT.capabilities().sharedTransport` is true, `mystralRT.traceRayBatchGpu({ tlas, rays, hits, rayCount })` traces between two GPUBuffers with no copy through CPU memory; `rays` needs the CopySrc usage and `hits` the CopyDst usage, and each call costs CPU time, so measure it against the software trace for your batch size"
       ],
       "example": "if (isMobile()) showTouchControls();",
       "importPath": "@threenative/core",
@@ -3085,7 +3090,7 @@
       "symbol": "setSpanRecorder"
     },
     {
-      "aliases": ["shadow quality", "virtual shadow map scalability", "sg.ShadowQuality"],
+      "aliases": ["virtual shadow map scalability", "sg.ShadowQuality"],
       "constraints": [
         "the game rebuilds its filter with the tier's sample counts on each step; this class draws nothing",
         "timestamp queries are needed: without them every window is unobserved and the tier holds",

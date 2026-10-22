@@ -102,8 +102,9 @@ these criteria, per frame and overall.
 
 #### Phase 2: The filter steps down under GPU pressure
 **Status:** DONE
-**Files:** `packages/core/src/render/shadow-filter-budget.ts` (new), `packages/core/src/render/budget-ladder.ts` (new, shared with PRD-644), `packages/core/src/render-pass-budget.ts`, `packages/core/__tests__/shadow-filter-budget.spec.ts` (new)
+**Files:** `packages/core/src/render/shadow-filter-budget.ts` (new), `packages/core/src/render/budget-ladder.ts` (new, shared with PRD-644), `packages/core/src/render-pass-budget.ts`, `packages/core/__tests__/shadow-filter-budget.spec.ts` (new), `packages/core/__tests__/owned-engine-stage-reading.spec.ts` (new)
 - [x] A filter over budget for a 120-frame window steps its samples down one level, steps up only below 70% of the next level's budget, and leaves an explicit setting alone with a report. proof: `pnpm exec vitest run packages/core/__tests__/shadow-filter-budget.spec.ts packages/core/__tests__/budget-ladder.spec.ts` — 5 and 10 tests passed on 2026-10-21 (step down one tier over the period, up below 70%, explicit keeps the counts and reports, no timestamps holds the tier).
+- [x] `ShadowFilterBudget` reads the whole frame's GPU time on the owned engine, with the gather's passes left out. proof: `pnpm exec vitest run packages/core/__tests__/owned-engine-stage-reading.spec.ts` red first (5 failed), then 6 passed on 2026-10-21. Live, 2026-10-22, exclusive GPU window, `pnpm tsx scripts/unreal-look/gi-tier-cost.ts --auto` on the owned Wasm engine: the newest shadow report holds 30 resolved readings, a window of 14.01 ms inside the 16.67 ms period, and the tier `high` stays. A step under load on the owned engine is not shown, because no run passed the period.
 - [x] The step runs on the native engine. proof: `pnpm parity --target desktop --only-tests shadow-filter-step` — `run-conformance.mjs --target web` then `--target desktop --reference <web capture>` on 2026-10-21: both pass. A `ShadowFilterBudget` fed 12 frames of 22 ms against a 16.7 ms period steps `high` to `medium` once, the scene rebuilds both lamp filters with 4 + 4 taps, and an explicit setting stays and reports. The desktop frame shows the 4-tap penumbra steps and has pixel mismatch 0 and delta E 0 against the web frame (1280 x 720). The desktop binary was the clean `prd-ocean` build (HEAD d0c2635d5), reused read-only, because this worktree has no native build and the lane changes no C++. `registry.json` row `shadow-filter-step`; `conformance-runner.test.mjs` 84 passed.
 
 #### Phase 3: Every template
@@ -158,3 +159,7 @@ these criteria, per frame and overall.
   No judge has called it an improvement, and the sun look is the shadows lane's, so the table holds 0 and `high` stays
   the pre-change look. The bias stays an option of `VirtualShadowNode` and a `?shadowBias=` diagnosis knob. The shadows
   lane may set −1.5 once a judge finds it an improvement.
+- 2026-10-22 (tier-lane, owned engine): `ShadowFilterBudget` was blind on the owned engine for the same reason as
+  `GIBudget` (PRD-644 `## Decisions`): `stageGpuReading` read only the timestamp pool of three. It now also returns the
+  frame total (`info.render.timestamp`) and the named stage times of the owned engine. The harness holds the frame
+  minus the `SSGI` stage to the period, so a slow gather steps the GI method and not the shadow filter.

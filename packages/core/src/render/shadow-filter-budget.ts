@@ -74,7 +74,6 @@ export interface IShadowFilterBudgetOptions {
  * @constraint timestamp queries are needed: without them every window is unobserved and the tier holds
  * @constraint the signal is the whole frame's GPU time, so a frame slow for another reason also steps the filter down; name that reason's passes in `excludeStages`
  * @override explicit: true keeps the game's own sample counts and reports an exceeded period
- * @alias shadow quality
  * @alias virtual shadow map scalability
  * @alias sg.ShadowQuality
  * @example

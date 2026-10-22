@@ -230,6 +230,35 @@ describe("the Wasm engine's WebGPURenderer sample count", () => {
     expect(renderer.backend.getTimestampFrames?.("compute")).toEqual([]);
   });
 
+  it("reports the sample's labelled stage times beside its whole frame, and leaves a stage that drew nothing out", async () => {
+    let gpuSamples = 0;
+    let gatherMs = 0;
+    const { Renderer, canvas, scene, camera } = host((field) => {
+      if (field === 7) return 12.5;
+      if (field === 8) return gpuSamples;
+      if (field === 9) return 4;
+      if (field === 10) return 1;
+      if (field === 23) return gatherMs; // the screen-space gather's segment (web_host.cpp 19 + 4)
+      return 0;
+    });
+    const renderer = new Renderer({ canvas, trackTimestamp: true }) as {
+      info: { engine: { gpuStages: Record<string, number> } };
+      init(): Promise<unknown>;
+      render(scene: unknown, camera: unknown): void;
+    };
+    await renderer.init();
+    renderer.render(scene, camera);
+    expect(renderer.info.engine.gpuStages).toEqual({});
+    gpuSamples = 1;
+    gatherMs = 4.25;
+    renderer.render(scene, camera);
+    expect(renderer.info.engine.gpuStages).toEqual({ SSGI: 4.25 });
+    gpuSamples = 2;
+    gatherMs = 0;
+    renderer.render(scene, camera);
+    expect(renderer.info.engine.gpuStages).toEqual({});
+  });
+
   it("does not claim enabled timestamps when the caller opts out or the device has none", async () => {
     const opted = host((field) => (field === 10 ? 1 : 0));
     const off = new opted.Renderer({ canvas: opted.canvas, trackTimestamp: false }) as {

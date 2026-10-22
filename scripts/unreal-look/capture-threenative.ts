@@ -22,7 +22,7 @@ import {
 } from "../visual-gate.js";
 import { workspacePackages } from "../workspace-packages.js";
 import { launchWebgpuBrowser } from "./browser.js";
-import { awaitExposureSettled, watchExposure } from "./exposureSettled.js";
+import { awaitExposureSettled, metersExposure, watchExposure } from "./exposureSettled.js";
 import { GPU_PASSES, readPasses } from "./gpuPasses.js";
 
 const REPO_ROOT = path.resolve(import.meta.dirname, "../..");
@@ -396,10 +396,18 @@ export async function captureThreeNative(options: IThreeNativeCaptureOptions): P
             await page.evaluate(
               `new Promise((resolve) => { let n = 0; const tick = () => (++n >= ${settle} ? resolve() : requestAnimationFrame(tick)); requestAnimationFrame(tick); })`,
             );
-            // The frame count above is a floor: a frame is taken once the readings say the exposure landed.
-            if (layer === "L9")
+            // The frame count above is a floor: a frame is taken once the readings say the exposure came to rest
+            // (two runs of one cell otherwise differ by the distance each stopped short, PRD-631).
+            if (
+              metersExposure({
+                baseline: options.baseline,
+                layer,
+                measureSeconds: options.measureSeconds,
+                switches: `${options.off ?? ""}${process.env.TN_UNREAL_LOOK_QUERY ?? ""}`,
+              })
+            )
               console.info(
-                `TN_UNREAL_LOOK exposure ${pose.name} settled after ${await awaitExposureSettled(page, exposure, poseAt)} ms of waiting`,
+                `TN_UNREAL_LOOK exposure ${pose.name} at rest after ${await awaitExposureSettled(page, exposure, poseAt)} ms of waiting`,
               );
             if (errors.length > 0)
               throw new Error(`TN_UNREAL_LOOK_PAGE_ERROR: ${errors.join(" | ")}`);

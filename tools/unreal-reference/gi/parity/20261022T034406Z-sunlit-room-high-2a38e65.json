@@ -1,0 +1,499 @@
+{
+  "version": 1,
+  "id": "20261022T034406Z-sunlit-room-high-2a38e65",
+  "date": "2026-10-22T03:44:06.312Z",
+  "scene": "sunlit-room",
+  "tier": "high",
+  "expect": "preserve",
+  "before": {
+    "commit": "ad18729b864f2891972c52ab79cd5a750cac3a38",
+    "stamp": "0f48b2203462866ac6e48c1d4e54a5a38340e04100f0f72892050c95841032c3",
+    "dirty": false
+  },
+  "after": {
+    "commit": "cf72b5346c0000764b74714f1c457f4e48834816",
+    "stamp": "2a38e6557031a19251263103ad851dceac698141748d8c4684cffdeac6fe4a45",
+    "dirty": false
+  },
+  "engine": "threenative",
+  "adapter": "nvidia turing",
+  "directLight": {
+    "pass": false,
+    "overridden": true,
+    "worst": 15.59
+  },
+  "cells": [
+    {
+      "pose": "sun60-window",
+      "verdict": "IMPROVEMENT",
+      "vsUnreal": "FAR",
+      "reasons": "Looked at the wall above the window, the wall glow below it, the ceiling and both side walls. In AFTER the black seam lines flanking the wall above the window are gone and the head is one smooth surface. AFTER run 1 still shows streaky, vertical-brushed noise on the walls. The glow under the window is mottled, broken and wavy. The ceiling brightening is blotchy. That is the same as BEFORE.",
+      "differences": "Unreal's walls, glow under the window and ceiling brightening are smooth soft gradients. AFTER has visible streak grain and blotches on the front wall, the side walls and the glow. The patch is brighter, more saturated white than Unreal's. Unreal's wall glow is a smooth, broad pool. The remaining grain is the first thing a player sees.",
+      "worst": 25,
+      "regions": [
+        {
+          "region": "Floor",
+          "dP50": 0.08333,
+          "deltaE": 1.513,
+          "dEv": null,
+          "iou": 1,
+          "pass": false,
+          "ratio": 8.333,
+          "spread": 0
+        },
+        {
+          "region": "Ceiling",
+          "dP50": 0.04286,
+          "deltaE": 1.876,
+          "dEv": null,
+          "iou": 1,
+          "pass": false,
+          "ratio": 4.286,
+          "spread": 0
+        },
+        {
+          "region": "Wall_Left",
+          "dP50": 0,
+          "deltaE": 1.08,
+          "dEv": null,
+          "iou": 1,
+          "pass": false,
+          "ratio": 1.082,
+          "spread": 0
+        },
+        {
+          "region": "Wall_Right",
+          "dP50": 0.05357,
+          "deltaE": 1.222,
+          "dEv": null,
+          "iou": 1,
+          "pass": false,
+          "ratio": 5.357,
+          "spread": 0
+        },
+        {
+          "region": "Front_Left",
+          "dP50": 0,
+          "deltaE": 1.209,
+          "dEv": null,
+          "iou": 1,
+          "pass": false,
+          "ratio": 1.209,
+          "spread": 0
+        },
+        {
+          "region": "Front_Right",
+          "dP50": 0.06818,
+          "deltaE": 1.577,
+          "dEv": null,
+          "iou": 1,
+          "pass": false,
+          "ratio": 6.818,
+          "spread": 0
+        },
+        {
+          "region": "Front_Sill",
+          "dP50": 0.2211,
+          "deltaE": 7.843,
+          "dEv": null,
+          "iou": 1,
+          "pass": false,
+          "ratio": 22.11,
+          "spread": 0
+        },
+        {
+          "region": "Front_Head",
+          "dP50": 0.25,
+          "deltaE": 5.04,
+          "dEv": null,
+          "iou": 1,
+          "pass": false,
+          "ratio": 25,
+          "spread": 0
+        },
+        {
+          "region": "Ground",
+          "dP50": 0.03139,
+          "deltaE": 1.708,
+          "dEv": null,
+          "iou": 1,
+          "pass": false,
+          "ratio": 3.139,
+          "spread": 0
+        }
+      ]
+    },
+    {
+      "pose": "sun60-leak",
+      "verdict": "NEUTRAL",
+      "vsUnreal": "CLOSE",
+      "reasons": "Looked at the back-right corner, the floor line, the ceiling corner and the right wall. BEFORE and AFTER match, and the two AFTER runs differ slightly from each other. The corner is soft and walls are smooth in both. There is a thin dark vertical corner line and a dark dot at the ceiling corner in both. I saw no bright line and no grain.",
+      "differences": "The right wall near the window has a bright, cool-grey glow band that Unreal does not have. Unreal is darker and flatter. A thin dark corner line and ceiling-corner dot are present where Unreal has a soft darkening.",
+      "worst": 15.38,
+      "regions": [
+        {
+          "region": "Floor",
+          "dP50": 0.129,
+          "deltaE": 1.331,
+          "dEv": null,
+          "iou": 1,
+          "pass": false,
+          "ratio": 12.9,
+          "spread": 0
+        },
+        {
+          "region": "Ceiling",
+          "dP50": 0.1538,
+          "deltaE": 1.919,
+          "dEv": null,
+          "iou": 0.9999,
+          "pass": false,
+          "ratio": 15.38,
+          "spread": 0
+        },
+        {
+          "region": "Wall_Right",
+          "dP50": 0.05882,
+          "deltaE": 1.193,
+          "dEv": null,
+          "iou": 1,
+          "pass": false,
+          "ratio": 5.882,
+          "spread": 0
+        },
+        {
+          "region": "Back_Right",
+          "dP50": 0.02083,
+          "deltaE": 0.6926,
+          "dEv": null,
+          "iou": 1,
+          "pass": false,
+          "ratio": 2.083,
+          "spread": 0
+        }
+      ]
+    },
+    {
+      "pose": "sun60-door",
+      "verdict": "IMPROVEMENT",
+      "vsUnreal": "CLOSE",
+      "reasons": "Looked at the back wall above and left of the door and at the corner. BEFORE shows a visible vertical seam on the back wall above the door head, starting at the ceiling, and a bright dot at the ceiling corner. AFTER removes the wall seam, and the head joins the wall cleanly. Wall and floor junctions are softer in AFTER. The opening is near black in both.",
+      "differences": "A tiny bright or dark dot remains at the ceiling corner. The walls are a touch lighter or greyer than Unreal's. The right wall has a slight gradient and the corner is a little blotchy. Unreal is a little more uniform.",
+      "worst": 33.33,
+      "regions": [
+        {
+          "region": "Floor",
+          "dP50": 0.1154,
+          "deltaE": 0.7009,
+          "dEv": null,
+          "iou": 1,
+          "pass": false,
+          "ratio": 11.54,
+          "spread": 0
+        },
+        {
+          "region": "Ceiling",
+          "dP50": 0.2188,
+          "deltaE": 2.575,
+          "dEv": null,
+          "iou": 0.9998,
+          "pass": false,
+          "ratio": 21.88,
+          "spread": 0
+        },
+        {
+          "region": "Wall_Left",
+          "dP50": 0.1667,
+          "deltaE": 1.982,
+          "dEv": null,
+          "iou": 1,
+          "pass": false,
+          "ratio": 16.67,
+          "spread": 0
+        },
+        {
+          "region": "Back_Left",
+          "dP50": 0.1622,
+          "deltaE": 1.925,
+          "dEv": null,
+          "iou": 0.9999,
+          "pass": false,
+          "ratio": 16.22,
+          "spread": 0
+        },
+        {
+          "region": "Back_Right",
+          "dP50": 0,
+          "deltaE": 0.7231,
+          "dEv": null,
+          "iou": 1,
+          "pass": true,
+          "ratio": 0.98,
+          "spread": 0
+        },
+        {
+          "region": "Back_Head",
+          "dP50": 0.2391,
+          "deltaE": 3.581,
+          "dEv": null,
+          "iou": 1,
+          "pass": false,
+          "ratio": 23.91,
+          "spread": 0
+        },
+        {
+          "region": "Hall_Back",
+          "dP50": 0.3333,
+          "deltaE": 0.9312,
+          "dEv": null,
+          "iou": 1,
+          "pass": false,
+          "ratio": 33.33,
+          "spread": 0
+        }
+      ]
+    },
+    {
+      "pose": "sun15-window",
+      "verdict": "IMPROVEMENT",
+      "vsUnreal": "CLOSE",
+      "reasons": "Looked at the wall above the window and its sides. BEFORE shows a distinct rectangular panel with black vertical seam lines at both sides of the Front_Head, and a hard darker block. AFTER removes those seams, and the wall above the window is one continuous surface. Walls, ceiling and floor stay smooth and warm. The patch matches in position. I saw no new defect.",
+      "differences": "The ceiling and side walls are a bit lighter and greyer than Unreal's warmer brown. The patch is paler and less saturated than Unreal's. The patch has a slightly striped, soft upper edge. The window interior differs, which I do not judge.",
+      "worst": 30.23,
+      "regions": [
+        {
+          "region": "Floor",
+          "dP50": 0.1724,
+          "deltaE": 2.062,
+          "dEv": null,
+          "iou": 1,
+          "pass": false,
+          "ratio": 17.24,
+          "spread": 0
+        },
+        {
+          "region": "Ceiling",
+          "dP50": 0.1875,
+          "deltaE": 3.278,
+          "dEv": null,
+          "iou": 1,
+          "pass": false,
+          "ratio": 18.75,
+          "spread": 0
+        },
+        {
+          "region": "Wall_Left",
+          "dP50": 0.2045,
+          "deltaE": 3.224,
+          "dEv": null,
+          "iou": 1,
+          "pass": false,
+          "ratio": 20.45,
+          "spread": 0
+        },
+        {
+          "region": "Wall_Right",
+          "dP50": 0.2143,
+          "deltaE": 2.915,
+          "dEv": null,
+          "iou": 1,
+          "pass": false,
+          "ratio": 21.43,
+          "spread": 0
+        },
+        {
+          "region": "Front_Left",
+          "dP50": 0.2564,
+          "deltaE": 3.275,
+          "dEv": null,
+          "iou": 1,
+          "pass": false,
+          "ratio": 25.64,
+          "spread": 0
+        },
+        {
+          "region": "Front_Right",
+          "dP50": 0.2121,
+          "deltaE": 2.547,
+          "dEv": null,
+          "iou": 1,
+          "pass": false,
+          "ratio": 21.21,
+          "spread": 0
+        },
+        {
+          "region": "Front_Sill",
+          "dP50": 0.1429,
+          "deltaE": 2.852,
+          "dEv": null,
+          "iou": 1,
+          "pass": false,
+          "ratio": 14.29,
+          "spread": 0
+        },
+        {
+          "region": "Front_Head",
+          "dP50": 0.3023,
+          "deltaE": 4.463,
+          "dEv": null,
+          "iou": 1,
+          "pass": false,
+          "ratio": 30.23,
+          "spread": 0
+        },
+        {
+          "region": "Ground",
+          "dP50": 0.1105,
+          "deltaE": 5.61,
+          "dEv": null,
+          "iou": 1,
+          "pass": false,
+          "ratio": 11.05,
+          "spread": 0
+        }
+      ]
+    },
+    {
+      "pose": "sun15-leak",
+      "verdict": "NEUTRAL",
+      "vsUnreal": "CLOSE",
+      "reasons": "Looked at the back corner, the ceiling joint, the floor line and the walls. Both arms are warm brown and smooth with no grain. The vertical corner line is slightly softer in AFTER, but a dark line is still visible in both arms. The two AFTER runs are identical.",
+      "differences": "A dark vertical line sits in the corner and a dark dot at the ceiling junction. Unreal has a soft darkening with no line. The right wall is brighter and warmer than Unreal's. Unreal is flatter and darker overall.",
+      "worst": 20.45,
+      "regions": [
+        {
+          "region": "Floor",
+          "dP50": 0.07407,
+          "deltaE": 1.203,
+          "dEv": null,
+          "iou": 1,
+          "pass": false,
+          "ratio": 7.407,
+          "spread": 0
+        },
+        {
+          "region": "Ceiling",
+          "dP50": 0.05,
+          "deltaE": 1.232,
+          "dEv": null,
+          "iou": 0.9999,
+          "pass": false,
+          "ratio": 5,
+          "spread": 0
+        },
+        {
+          "region": "Wall_Right",
+          "dP50": 0.2045,
+          "deltaE": 3.117,
+          "dEv": null,
+          "iou": 1,
+          "pass": false,
+          "ratio": 20.45,
+          "spread": 0
+        },
+        {
+          "region": "Back_Right",
+          "dP50": 0.08333,
+          "deltaE": 1.517,
+          "dEv": null,
+          "iou": 1,
+          "pass": false,
+          "ratio": 8.333,
+          "spread": 0
+        }
+      ]
+    },
+    {
+      "pose": "sun15-door",
+      "verdict": "NEUTRAL",
+      "vsUnreal": "CLOSE",
+      "reasons": "Looked at the left wall, the vertical wall corner, the door head and jambs, the patch edge and the floor. BEFORE and AFTER read the same at normal size. Both show a warm, smooth back wall and a near-black opening. Both have faint mottling on the left wall, and the thin dark line in the wall corner is still there. The patch edge is hard in both. AFTER is slightly softer on the floor patch edge, which I do not count.",
+      "differences": "Compared with Unreal, the left wall carries faint blotchy mottling where Unreal is smooth. There is a thin dark line at the vertical corner. The floor patch is whiter and less warm than Unreal's. The wall glow beside the door is a little different.",
+      "worst": 16.28,
+      "regions": [
+        {
+          "region": "Floor",
+          "dP50": 0.1628,
+          "deltaE": 2.328,
+          "dEv": null,
+          "iou": 1,
+          "pass": false,
+          "ratio": 16.28,
+          "spread": 0
+        },
+        {
+          "region": "Ceiling",
+          "dP50": 0.1034,
+          "deltaE": 4.179,
+          "dEv": null,
+          "iou": 0.9998,
+          "pass": false,
+          "ratio": 10.34,
+          "spread": 0
+        },
+        {
+          "region": "Wall_Left",
+          "dP50": 0,
+          "deltaE": 1.824,
+          "dEv": null,
+          "iou": 1,
+          "pass": false,
+          "ratio": 1.824,
+          "spread": 0
+        },
+        {
+          "region": "Back_Left",
+          "dP50": 0.04494,
+          "deltaE": 2.304,
+          "dEv": null,
+          "iou": 0.9999,
+          "pass": false,
+          "ratio": 4.494,
+          "spread": 0
+        },
+        {
+          "region": "Back_Right",
+          "dP50": 0.1132,
+          "deltaE": 2.231,
+          "dEv": null,
+          "iou": 1,
+          "pass": false,
+          "ratio": 11.32,
+          "spread": 0
+        },
+        {
+          "region": "Back_Head",
+          "dP50": 0.01389,
+          "deltaE": 1.902,
+          "dEv": null,
+          "iou": 1,
+          "pass": false,
+          "ratio": 1.902,
+          "spread": 0
+        },
+        {
+          "region": "Hall_Back",
+          "dP50": 0.09091,
+          "deltaE": 1.1,
+          "dEv": null,
+          "iou": 1,
+          "pass": false,
+          "ratio": 9.091,
+          "spread": 0
+        }
+      ]
+    }
+  ],
+  "overall": {
+    "verdict": "IMPROVEMENT",
+    "vsUnreal": "CLOSE",
+    "reasons": "The change removes the black vertical seam lines on the wall above the window in both window poses, and the back-wall seam in sun60-door. That was a named criterion. I found no regression in any pose, and the two AFTER runs agree. The leak poses and sun15-door are unchanged. The dark corner lines remain. The streaky grain and mottled glow on the sun60-window walls remain too, and they are the biggest gap to Unreal, which is smooth. Overall the lighting is the same as Unreal's with named differences, apart from the sun60-window grain, which is FAR for that pose."
+  },
+  "judge": {
+    "model": "claude-sonnet-5-5",
+    "sessionId": "0cef4994-75b4-48c2-8a71-8e2935e1381e",
+    "costUsd": 0.2528401,
+    "durationMs": 38519,
+    "criteriaSha256": "c44aaed099c1d64a9d8e314f030561c11a8fc32be8eb5a47292682ec506de958"
+  }
+}
