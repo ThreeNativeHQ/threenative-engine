@@ -11,6 +11,7 @@
 #include <unordered_set>
 
 #include "engine/renderer/renderer.h"
+#include "engine/scene/texture.h"
 #include "engine/shader/tsl/tsl.h"
 
 #include "mystral/webgpu_compat.h"
@@ -59,7 +60,7 @@ bool ComputePass::dispatch(WGPUCommandEncoder encoder, std::span<const Handle> s
 }
 
 void ComputePass::dispatchValues(WGPUCommandEncoder encoder, std::span<const Handle> storage, uint32_t invocations,
-                                 const std::map<std::string, std::vector<double>>& uniforms, const FrameClock& clock) {
+                                 const std::map<std::string, std::vector<double>>& uniforms, const FrameClock& clock, std::span<const WGPUBindGroupEntry> textures) {
     std::vector<uint8_t> block(module_.uniformBlockSize);
     for (const shader::UniformField& f : module_.uniforms) {
         // The engine's own frame clock, as the render passes get it.
@@ -77,12 +78,12 @@ void ComputePass::dispatchValues(WGPUCommandEncoder encoder, std::span<const Han
                                      std::to_string(lanes.size()) + " value(s)");
         shader::writeUniform(block, f, lanes);
     }
-    if (!pipeline_ || !encode(encoder, storage, invocations, block))
+    if (!pipeline_ || !encode(encoder, storage, invocations, block, textures))
         throw std::runtime_error(error_.empty() ? std::string("TN_COMPUTE_PIPELINE_REFUSED") : error_);
 }
 
 bool ComputePass::encode(WGPUCommandEncoder encoder, std::span<const Handle> storage, uint32_t invocations,
-                         const std::vector<uint8_t>& uniformBlock) {
+                         const std::vector<uint8_t>& uniformBlock, std::span<const WGPUBindGroupEntry> textures) {
     if (module_.uniformBlockSize) gpu_.writeBuffer(uniforms_, 0, uniformBlock.data(), uniformBlock.size());
     std::vector<WGPUBindGroupEntry> entries;
     size_t next = 0;
@@ -100,8 +101,12 @@ bool ComputePass::encode(WGPUCommandEncoder encoder, std::span<const Handle> sto
             e.buffer = gpu_.buffer(storage[next++]);
             e.size = wgpuBufferGetSize(e.buffer);
         } else {
-            error_ = "TN_COMPUTE_BINDING: textures in compute are not supported yet";
-            return false;
+            const auto found = std::find_if(textures.begin(), textures.end(), [&](const auto& entry) { return entry.binding == b.binding; });
+            if (found == textures.end()) {
+                error_ = "TN_COMPUTE_BINDING: missing texture binding " + b.name;
+                return false;
+            }
+            e = *found;
         }
         entries.push_back(e);
     }
@@ -338,7 +343,7 @@ ComputePass& GraphCompute::prepare(const graph::Node& node) {
     return *passes_.emplace(id, std::move(pass)).first->second;
 }
 
-void GraphCompute::record(WGPUCommandEncoder encoder, const ComputeDispatch& dispatch, const FrameClock& clock) {
+void GraphCompute::record(WGPUCommandEncoder encoder, const ComputeDispatch& dispatch, const FrameClock& clock, Renderer& renderer) {
     ComputePass& pass = prepare(dispatch.node);
     std::unordered_map<std::string, std::shared_ptr<BufferAttribute>> attributes;
     std::unordered_set<const graph::NodeData*> seen;
@@ -354,7 +359,28 @@ void GraphCompute::record(WGPUCommandEncoder encoder, const ComputeDispatch& dis
         storage.push_back(cache_.sync(*found->second->store,
                                       WGPUBufferUsage_Storage | WGPUBufferUsage_CopySrc | WGPUBufferUsage_CopyDst));
     }
-    pass.dispatchValues(encoder, storage, static_cast<uint32_t>(dispatch.node->bits), dispatch.uniforms, clock);
+    std::unordered_map<std::string, std::shared_ptr<const Texture>> sources;
+    seen.clear();
+    const auto collect = [&](const auto& self, const graph::Node& node) -> void {
+        if (!node || !seen.insert(node.get()).second) return;
+        if (node->object && (node->kind == graph::Kind::Texture || node->kind == graph::Kind::StorageTexture || node->kind == graph::Kind::TextureStore))
+            sources.emplace(node->name, std::static_pointer_cast<const Texture>(node->object));
+        for (const auto* list : {&node->args, &node->body, &node->otherwise})
+            for (const auto& child : *list) self(self, child);
+    };
+    collect(collect, dispatch.node);
+    std::vector<WGPUBindGroupEntry> textures;
+    for (const auto& b : pass.module().bindings) {
+        if (b.kind != shader::BindingKind::Texture && b.kind != shader::BindingKind::Sampler && b.kind != shader::BindingKind::StorageTexture) continue;
+        const auto found = sources.find(b.name.substr(b.kind == shader::BindingKind::Sampler ? 4 : b.kind == shader::BindingKind::StorageTexture ? 3 : 2));
+        if (found == sources.end()) throw std::runtime_error("TN_COMPUTE_BINDING: no texture owns " + b.name);
+        const auto* gpu = renderer.materialTexture(*found->second);
+        WGPUBindGroupEntry entry{}; entry.binding = b.binding;
+        if (b.kind == shader::BindingKind::Sampler) entry.sampler = gpu->sampler;
+        else entry.textureView = gpu->view;
+        textures.push_back(entry);
+    }
+    pass.dispatchValues(encoder, storage, static_cast<uint32_t>(dispatch.node->bits), dispatch.uniforms, clock, textures);
 }
 
 void ComputeQueue::bindDisposal(const std::shared_ptr<BufferAttribute>& attribute) {

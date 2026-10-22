@@ -2,8 +2,8 @@
 <defs><pattern id="gap" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="8" height="8" fill="#8a3b37"/><rect width="4" height="8" fill="#e0625a"/></pattern>
 <style>.a{fill:#9aa49f;font-size:10px;font-weight:600;letter-spacing:.06em}.s{fill:#e7ebe8;font-size:10.5px;font-weight:600}.l{fill:#fff;font-size:9.5px}.g{fill:#e7ebe8;font-size:12px}.h{fill:#e7ebe8;font-size:17px;font-weight:700}</style></defs>
 <rect width="1200" height="720" rx="10" fill="#121513"/>
-<text x="8" y="26" class="h">Unreal 5.8.3 → ThreeNative: 20% done, 20% in progress (share of 676K Unreal lines)</text>
-<rect x="8" y="40" width="11" height="11" rx="2" fill="#3aa56c"/><text x="24" y="50" class="g">Done 20%</text><rect x="93.4" y="40" width="11" height="11" rx="2" fill="#d9961f"/><text x="109.4" y="50" class="g">In progress 20%</text><rect x="225" y="40" width="11" height="11" rx="2" fill="#4a86d6"/><text x="241" y="50" class="g">Not started 38%</text><rect x="356.6" y="40" width="11" height="11" rx="2" fill="#6c7176"/><text x="372.6" y="50" class="g">Deferred 16%</text><rect x="468.40000000000003" y="40" width="11" height="11" rx="2" fill="url(#gap)"/><text x="484.40000000000003" y="50" class="g">No PRD 5%</text><rect x="567" y="40" width="11" height="11" rx="2" fill="#3b403d"/><text x="583" y="50" class="g">Out of scope by rule 1%</text><rect x="758" y="40" width="11" height="11" rx="2" fill="#2c322f"/><text x="774" y="50" class="g">Not split 1%</text>
+<text x="8" y="26" class="h">Unreal 5.8.3 → ThreeNative: 21% done, 19% in progress (share of 676K Unreal lines)</text>
+<rect x="8" y="40" width="11" height="11" rx="2" fill="#3aa56c"/><text x="24" y="50" class="g">Done 21%</text><rect x="93.4" y="40" width="11" height="11" rx="2" fill="#d9961f"/><text x="109.4" y="50" class="g">In progress 19%</text><rect x="225" y="40" width="11" height="11" rx="2" fill="#4a86d6"/><text x="241" y="50" class="g">Not started 38%</text><rect x="356.6" y="40" width="11" height="11" rx="2" fill="#6c7176"/><text x="372.6" y="50" class="g">Deferred 16%</text><rect x="468.40000000000003" y="40" width="11" height="11" rx="2" fill="url(#gap)"/><text x="484.40000000000003" y="50" class="g">No PRD 5%</text><rect x="567" y="40" width="11" height="11" rx="2" fill="#3b403d"/><text x="583" y="50" class="g">Out of scope by rule 1%</text><rect x="758" y="40" width="11" height="11" rx="2" fill="#2c322f"/><text x="774" y="50" class="g">Not split 1%</text>
 <rect x="10" y="66" width="343.60301046210975" height="644" rx="6" fill="#1a1e1c" stroke="#2c322f"/>
 <text x="17" y="79" class="a">LIGHTING &amp; GI · 199K</text>
 <rect x="14" y="85" width="335.60301046210975" height="246.81476595230424" rx="4" fill="#232826"/>
@@ -538,13 +538,12 @@
 <text x="1060.2595405950894" y="504.0164117491054" class="l">Sh…</text>
 <rect x="1057.2595405950894" y="526.8208190430471" width="26.559028081794622" height="28.35241904905388" rx="2" fill="#3aa56c"><title>Virtual shadow maps · Array setup, slot allocation and uniform buffers · Done</title></rect>
 <text x="1060.2595405950894" y="537.8208190430471" class="l">Ar…</text>
-<rect x="1057.2595405950894" y="556.173238092101" width="26.559028081794622" height="26.63303048551097" rx="2" fill="#d9961f"><title>Virtual shadow maps · CVars, scalability tiers and defaults · In progress</title></rect>
-<rect x="1057.2595405950894" y="579.806268577612" width="14.755015600997012" height="3" fill="#fff" opacity=".85"/>
+<rect x="1057.2595405950894" y="556.173238092101" width="26.559028081794622" height="26.63303048551097" rx="2" fill="#3aa56c"><title>Virtual shadow maps · CVars, scalability tiers and defaults · Done</title></rect>
 <text x="1060.2595405950894" y="567.173238092101" class="l">CV…</text>
 <rect x="1084.818568676884" y="458.75145394707187" width="26.58768496312132" height="23.629193533881846" rx="2" fill="#3aa56c"><title>Virtual shadow maps · Instance invalidation: collectors, scene updater, payloads · Done</title></rect>
 <text x="1087.818568676884" y="469.75145394707187" class="l">In…</text>
 <rect x="1112.4062536400054" y="458.75145394707187" width="25.900569521947773" height="23.629193533881846" rx="2" fill="#d9961f"><title>Virtual shadow maps · Shadow-map ray tracing (SMRT) ray loop · In progress</title></rect>
-<rect x="1112.4062536400054" y="479.3806474809537" width="6.856033108750881" height="3" fill="#fff" opacity=".85"/>
+<rect x="1112.4062536400054" y="479.3806474809537" width="10.79190396747824" height="3" fill="#fff" opacity=".85"/>
 <text x="1115.4062536400054" y="469.75145394707187" class="l">Sh…</text>
 <rect x="1139.3068231619534" y="458.75145394707187" width="22.568059632255654" height="23.629193533881846" rx="2" fill="#3b403d"><title>Virtual shadow maps · Page-management dispatcher and shader declarations · Out of scope by rule</title></rect>
 <text x="1142.3068231619534" y="469.75145394707187" class="l">Pa…</text>
@@ -569,8 +568,7 @@
 <rect x="1105.2343300601553" y="560.3683797747285" width="6.838536197011346" height="3" fill="#fff" opacity=".85"/>
 <rect x="1105.2343300601553" y="564.3683797747286" width="16.41248687282723" height="18.437888802883208" rx="2" fill="#d9961f"><title>Virtual shadow maps · Two-sided foliage receiver · In progress</title></rect>
 <rect x="1105.2343300601553" y="579.8062685776118" width="6.838536197011346" height="3" fill="#fff" opacity=".85"/>
-<rect x="1122.6468169329826" y="505.76314503403563" width="19.784394355672475" height="15.284428491095753" rx="2" fill="#d9961f"><title>Virtual shadow maps · Shadow quality tiers · In progress</title></rect>
-<rect x="1122.6468169329826" y="518.0475735251314" width="10.99133019759582" height="3" fill="#fff" opacity=".85"/>
+<rect x="1122.6468169329826" y="505.76314503403563" width="19.784394355672475" height="15.284428491095753" rx="2" fill="#3aa56c"><title>Virtual shadow maps · Shadow quality tiers · Done</title></rect>
 <rect x="1143.431211288655" y="505.76314503403563" width="19.784394355672475" height="15.284428491095753" rx="2" fill="#d9961f"><title>Virtual shadow maps · Calibration scenes and judged parity · In progress</title></rect>
 <rect x="1143.431211288655" y="518.0475735251314" width="4.946098588918119" height="3" fill="#fff" opacity=".85"/>
 <rect x="1164.2156056443275" y="505.76314503403563" width="19.784394355672475" height="15.284428491095753" rx="2" fill="#d9961f"><title>Virtual shadow maps · Distance-field far shadows · In progress</title></rect>
@@ -583,13 +581,12 @@
 <rect x="1140.6088083636264" y="522.0475735251314" width="15.631740262684389" height="13.143503620043361" rx="2" fill="#4a86d6"><title>Virtual shadow maps · Projection visualization · Not started</title></rect>
 <rect x="1157.2405486263108" y="522.0475735251314" width="13.477989725070529" height="13.143503620043361" rx="2" fill="#4a86d6"><title>Virtual shadow maps · Stats extraction, overflow messages and cache views · Not started</title></rect>
 <rect x="1171.7185383513815" y="522.0475735251314" width="12.28146164861846" height="13.143503620043361" rx="2" fill="#d9961f"><title>Virtual shadow maps · Page pool pressure and dynamic resolution throttle · In progress</title></rect>
-<rect x="1171.7185383513815" y="532.1910771451747" width="3.837956765193269" height="3" fill="#fff" opacity=".85"/>
+<rect x="1171.7185383513815" y="532.1910771451747" width="7.505337674155727" height="3" fill="#fff" opacity=".85"/>
 <rect x="1140.6088083636264" y="536.1910771451747" width="14.073644512039664" height="11.237371056695224" rx="2" fill="#4a86d6"><title>Virtual shadow maps · Shadow caster bounds debug draw · Not started</title></rect>
 <rect x="1155.682452875666" y="536.1910771451747" width="13.797063878791278" height="11.237371056695224" rx="2" fill="#3aa56c"><title>Virtual shadow maps · Frame data extraction and persistent primitive indices · Done</title></rect>
 <rect x="1170.4795167544573" y="536.1910771451747" width="13.520483245542664" height="11.237371056695224" rx="2" fill="#3aa56c"><title>Virtual shadow maps · Cache CVars (static threshold, page age, light age) · Done</title></rect>
 <rect x="1140.6088083636264" y="548.42844820187" width="12.68090604310646" height="11.431716600566688" rx="2" fill="#3aa56c"><title>Virtual shadow maps · Directional projection and clip-level pick · Done</title></rect>
-<rect x="1140.6088083636264" y="560.8601648024367" width="12.68090604310646" height="11.24616859160301" rx="2" fill="#d9961f"><title>Virtual shadow maps · Clipmap CVars and tier bias · In progress</title></rect>
-<rect x="1140.6088083636264" y="569.1063333940397" width="7.044947801725812" height="3" fill="#fff" opacity=".85"/>
+<rect x="1140.6088083636264" y="560.8601648024367" width="12.68090604310646" height="11.24616859160301" rx="2" fill="#3aa56c"><title>Virtual shadow maps · Clipmap CVars and tier bias · Done</title></rect>
 <rect x="1140.6088083636264" y="573.1063333940396" width="12.68090604310646" height="9.69993518357228" rx="2" fill="url(#gap)"><title>Virtual shadow maps · One-pass projection and per-pixel light list · No PRD</title></rect>
 <rect x="1154.2897144067329" y="548.42844820187" width="10.465173288152982" height="11.398768823274054" rx="2" fill="#d9961f"><title>Virtual shadow maps · Normal bias, slope bias and geometric normal estimate · In progress</title></rect>
 <rect x="1154.2897144067329" y="556.827217025144" width="2" height="3" fill="#fff" opacity=".85"/>

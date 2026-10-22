@@ -89,6 +89,7 @@ describe("starter post bindings", () => {
     const make = () => vi.fn(() => effect);
     const tsl = {
       ao: make(),
+      ssr: make(),
       denoise: make(),
       smaa: make(),
       bloom: make(),
@@ -146,6 +147,7 @@ describe("starter post bindings", () => {
       const make = () => effect;
       const temporal = definePostEffects({
         ao: make,
+        ssr: make,
         denoise: make,
         smaa: make,
         bloom: make,

@@ -371,16 +371,16 @@ ExprId Program::call(std::string_view function, const std::vector<ExprId>& args,
     // MaterialX noise (materialx_noise.h): three's overload is chosen by the coordinate, vec2 (`_0`)
     // or vec3 (`_1`), and the WGSL function carries that number.
     std::string library;
-    if (function == "mx_perlin_noise_float" || function == "mx_worley_noise_vec2") {
+    if (function == "mx_perlin_noise_float" || function == "mx_worley_noise_float" || function == "mx_worley_noise_vec2") {
         known = true;
-        const bool worley = function == "mx_worley_noise_vec2";
+        const bool worley = function != "mx_perlin_noise_float";
         const bool coordinate = !args.empty() && (type(0) == Type::vec(2) || type(0) == Type::vec(3));
         if (args.size() != (worley ? 3u : 1u) || !coordinate)
             error = worley ? "takes a vec2 or vec3, a float jitter and an int metric" : "takes a vec2 or vec3";
         else if (worley && (type(1) != Type::f32() || type(2) != Type::i32()))
             error = "takes a vec2 or vec3, a float jitter and an int metric";
         else {
-            result = worley ? Type::vec(2) : Type::f32();
+            result = function == "mx_worley_noise_vec2" ? Type::vec(2) : Type::f32();
             library = std::string(function) + (type(0) == Type::vec(2) ? "_0" : "_1");
         }
     }
@@ -484,6 +484,28 @@ void Program::store(uint32_t buffer, ExprId index, ExprId value, Where where) {
     emit(Stmt{StmtKind::Store, buffer, index, value});
 }
 
+uint32_t Program::storageTexture2d(std::string_view name, std::string_view format) {
+    if (format != "rgba16float" && format != "rgba32float" && format != "rgba8unorm") {
+        fail("storageTexture2d", "unsupported storage texture format " + std::string(format), Where::current());
+        return kInvalid;
+    }
+    for (uint32_t i = 0; i < storageTextures_.size(); ++i)
+        if (storageTextures_[i].name == name && storageTextures_[i].format == format) return i;
+    storageTextures_.push_back({std::string(name), std::string(format)});
+    return static_cast<uint32_t>(storageTextures_.size() - 1);
+}
+
+void Program::textureStore(uint32_t texture, ExprId coordinate, ExprId value, Where where) {
+    if (stage_ != Stage::Compute || texture >= storageTextures_.size() || coordinate == kInvalid || value == kInvalid) {
+        fail("textureStore", "requires a compute stage, storage texture, coordinate and value", where); return;
+    }
+    const Type coord = exprs_[coordinate].type;
+    if ((coord != Type::vec(2, Type::Scalar::U32) && coord != Type::vec(2, Type::Scalar::I32)) || exprs_[value].type != Type::vec(4)) {
+        fail("textureStore", "requires an integer vec2 coordinate and a vec4<f32> value", where); return;
+    }
+    emit(Stmt{StmtKind::TextureStore, texture, coordinate, value});
+}
+
 uint32_t Program::texture2d(std::string_view name) {
     // One texture is one binding however often it is sampled, as upstream binds a TextureNode once.
     for (std::size_t i = 0; i < textures_.size(); ++i)
@@ -517,6 +539,17 @@ uint32_t Program::textureDepth(std::string_view name, bool cube) {
     textures_.emplace_back(name);
     textureKinds_.push_back(cube ? TextureKind::DepthCube : TextureKind::Depth2d);
     return static_cast<uint32_t>(textures_.size() - 1);
+}
+
+bool Program::textureNeedsSampler(uint32_t texture) const {
+    if (textureKinds_[texture] != TextureKind::Depth2d && textureKinds_[texture] != TextureKind::DepthCube) return true;
+    for (const auto& e : exprs_) {
+        if (e.op != Op::Sample && e.op != Op::SampleLevel) continue;
+        const auto sampled = e.op == Op::Sample && e.argc == 2 && e.type == Type::vec(4)
+            ? gatherTexture(e.immediate) : uint32_t(e.immediate);
+        if (sampled == texture) return true;
+    }
+    return false;
 }
 
 ExprId Program::sampleCompare(uint32_t texture, ExprId uv, ExprId reference, Where where) {
@@ -760,6 +793,9 @@ void Program::dumpBlock(uint32_t block, int depth, std::string& out, std::vector
             case StmtKind::Store:
                 out += indent + "store " + storage_[s.a].name + "[" + describe(s.b, numbering) + "] = " +
                        describe(s.c, numbering) + "\n";
+                break;
+            case StmtKind::TextureStore:
+                out += indent + "textureStore " + storageTextures_[s.a].name + "[" + describe(s.b, numbering) + "] = " + describe(s.c, numbering) + "\n";
                 break;
             case StmtKind::Discard: out += indent + "discard\n"; break;
             case StmtKind::Return: out += indent + "return\n"; break;

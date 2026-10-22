@@ -610,6 +610,7 @@ private:
     struct Program {
         shader::StageModule vertex;
         shader::StageModule fragment;
+        shader::StageModule materialFragment;
         // Explicit layouts: each stage's uniform block is a dynamic-offset slice of the frame's one
         // uniform buffer, so a draw costs a bind-group offset, not a buffer and a bind group of its own.
         WGPUBindGroupLayout layouts[2] = {};
@@ -655,6 +656,7 @@ private:
         uint32_t version = 0;
         void release();
     };
+    friend class GraphCompute;
     const MaterialTexture* materialTexture(const Texture& texture);
     // Render-target textures by texture id: views borrowed from each target's renderer, never released here.
     std::unordered_map<uint64_t, MaterialTexture> renderTargetTextures_;
@@ -833,6 +835,8 @@ private:
     uint32_t sampleCount_ = 1;
     WGPUTexture msaaColor_ = nullptr;
     WGPUTextureView msaaColorView_ = nullptr;
+    WGPUTexture msaaAuxColor_ = nullptr;
+    WGPUTextureView msaaAuxColorView_ = nullptr;
     WGPUTexture msaaDepth_ = nullptr;
     WGPUTextureView msaaDepthView_ = nullptr;
     WGPURenderPipeline depthResolve_ = nullptr;  // built by the first 4x frame
@@ -841,6 +845,8 @@ private:
     WGPUTexture normalTexture_ = nullptr;
     WGPUTextureView normalView_ = nullptr;
     shader::StageModule normalFragment_;
+    WGPUTexture materialTexture_ = nullptr;
+    WGPUTextureView materialView_ = nullptr;
     std::vector<std::string> diagnostics_;
     OutputState output_;
     std::shared_ptr<const shader::PostNode> post_;

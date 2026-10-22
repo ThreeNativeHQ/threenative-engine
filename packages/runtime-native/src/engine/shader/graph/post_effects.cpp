@@ -28,12 +28,46 @@ const json::Value& get(const json::Value& v, const char* key) {
     const auto* x = v.find(key);
     return x ? *x : empty;
 }
+// The texture a post input reads, through swizzles and conversions; null when it reads none.
+Node textureSource(Node n) {
+    if (n && (n->kind == Kind::Texture || n->kind == Kind::PostEffect || n->kind == Kind::RenderTexture)) return n;
+    if (n && (n->kind == Kind::Swizzle || n->kind == Kind::Convert) && !n->args.empty()) return textureSource(n->args[0]);
+    return nullptr;
+}
 std::string textureName(Node n) {
-    if (n && (n->kind == Kind::Texture || n->kind == Kind::PostEffect || n->kind == Kind::RenderTexture))
-        return n->name;
-    if (n && (n->kind == Kind::Swizzle || n->kind == Kind::Convert) && !n->args.empty())
-        return textureName(n->args[0]);
+    if (const Node source = textureSource(n)) return source->name;
     throw std::runtime_error("TN_TSL_POST_INPUT: expected a depth/normal texture");
+}
+
+// Resolve scalar swizzles before binding: the scene's material outputs splat packed r/g to RGBA.
+// Other scalar graphs keep their own UVs/uniforms through the existing RTT materializer.
+std::string scalarSampler(Node input, const std::string& name, const std::string& output,
+                          std::map<std::string, std::string>& reads, std::vector<PostPass>& passes) {
+    Node source = input;
+    size_t lane = 0;
+    while (source && (source->kind == Kind::Swizzle || source->kind == Kind::Convert)) {
+        if (source->kind == Kind::Swizzle) lane = std::string_view("xyzw").find(source->lanes.at(lane));
+        source = source->args.at(0);
+    }
+    if (source && (source->kind == Kind::Texture || source->kind == Kind::PostEffect || source->kind == Kind::RenderTexture) &&
+        (source->kind != Kind::Texture || (source->args.at(0) && source->args[0]->kind == Kind::Attribute && source->args[0]->name == "uv"))) {
+        reads[name] = source->name;
+        if (source->name == "metalness") lane = 0;
+        if (source->name == "roughness") lane = 1;
+    } else {
+        auto target = std::make_shared<NodeData>();
+        target->kind = Kind::RenderTexture;
+        target->name = output + "_" + name;
+        target->args = {vec4({float_(input)}), uv()};
+        auto pass = renderTexturePass(target);
+        if (!pass.package.errors.empty()) throw std::runtime_error("TN_NATIVE_SSR_INPUT: " + name + ": " + pass.package.errors.front());
+        reads[name] = target->name;
+        passes.push_back(std::move(pass));
+        lane = 0;
+    }
+    return "fn sample" + std::string(name == "metalness" ? "Metalness" : "Roughness") +
+           "(coord: vec2<f32>) -> f32 { return textureSampleLevel(t_" + name + ",smp_" + name +
+           ",coord,0.0)." + std::string(1, "xyzw"[lane]) + "; }\n";
 }
 
 // r185 PostProcessingUtils.getViewPosition/getScreenPosition/getNormalFromDepth. The nine
@@ -60,6 +94,118 @@ fn normalFromDepth(coord: vec2<f32>) -> vec3<f32> {
     let dy = select(-ce+viewPosition(coord-vec2<f32>(0,1.0/size.y),t1),
         ce-viewPosition(coord+vec2<f32>(0,1.0/size.y),b1),db<dt);
     return normalize(cross(dx,dy));
+}
+)WGSL";
+
+// SSRNode r185's non-stochastic march. RGB is already weighted reflected radiance; alpha is
+// hit distance (not coverage). The game adds this texture to beauty, without another alpha blend.
+const char* kSsr = R"WGSL(
+fn screenPosition(view: vec3<f32>) -> vec2<f32> {
+    let clip = u._cameraProjectionMatrix*vec4<f32>(view,1.0);
+    let coord = clip.xy/clip.w*0.5+0.5;
+    return vec2<f32>(coord.x,1.0-coord.y);
+}
+fn rayZ(s: f32, start: f32, end: f32, perspective: bool) -> f32 {
+    if (perspective) { return 1.0/mix(1.0/start,1.0/end,s); }
+    return mix(start,end,s);
+}
+@fragment fn main(@location(0) coord: vec2<f32>) -> @location(0) vec4<f32> {
+    let depth = sampleDepth(coord);
+    if (depth>=1.0) { return vec4<f32>(0.0); }
+    let metalness = sampleMetalness(coord);
+    if (u.reflectNonMetals==0.0 && metalness<=0.0) { return vec4<f32>(0.0); }
+    let position = viewPosition(coord,depth);
+    let normal = sampleNormal(coord);
+    let perspective = u._cameraProjectionMatrix[3][3]==0.0;
+    var incident = vec3<f32>(0,0,-1);
+    if (perspective) { incident=normalize(position); }
+    let direction = normalize(reflect(incident,normal));
+    let facing = dot(-incident,normal);
+    if (facing<=0.0) { return vec4<f32>(0.0); }
+    var end = position+direction*(u.maxDistance/facing);
+    if (perspective && end.z > -u.cameraNear) {
+        end=position+direction*((-u.cameraNear-position.z)/direction.z);
+    }
+    let span = (screenPosition(end)-coord)*u.resolution;
+    let steps = max(1,i32(trunc(max(abs(span.x),abs(span.y))*clamp(u.quality,0.0,1.0))));
+    let ray = end-position;
+    let rayLength = length(ray);
+    if (rayLength==0.0) { return vec4<f32>(0.0); }
+    var found = false;
+    var hitUV = vec2<f32>(0.0);
+    var hitDepth = 1.0;
+    var lo = 0.0; var hi = 0.0;
+    for (var i=1; i<steps; i++) {
+        let s = f32(i)/f32(steps);
+        let uvS = coord+span/u.resolution*s;
+        if (any(uvS<vec2<f32>(0.0)) || any(uvS>vec2<f32>(1.0))) { break; }
+        let d = sampleDepth(uvS);
+        let point = viewPosition(uvS,d);
+        if (rayZ(s,position.z,end.z,perspective)<=point.z) {
+            let away = length(cross(point-position,point-end))/rayLength;
+            let neighbor = viewPosition(uvS+vec2<f32>(1.0/u.resolution.x,0),d);
+            let thickness = max((neighbor.x-point.x)*3.0,u.thickness);
+            if (away<=thickness) {
+                if (dot(direction,sampleNormal(uvS))>=0.0) { continue; }
+                if (dot(point-position,normal)>u.maxDistance) { break; }
+                found=true; hitUV=uvS; hitDepth=d;
+                lo=f32(i-1)/f32(steps); hi=s;
+                break;
+            }
+        }
+    }
+    if (!found) { return vec4<f32>(0.0); }
+    if (u.binaryRefine!=0.0) {
+        for (var i=0; i<8; i++) {
+            let s = (lo+hi)*0.5;
+            let uvS = coord+span/u.resolution*s;
+            if (rayZ(s,position.z,end.z,perspective)<=viewPosition(uvS,sampleDepth(uvS)).z) { hi=s; }
+            else { lo=s; }
+        }
+        hitUV=coord+span/u.resolution*hi; hitDepth=sampleDepth(hitUV);
+    }
+    let point = viewPosition(hitUV,hitDepth);
+    let distanceToPlane = dot(point-position,normal);
+    if (distanceToPlane>u.maxDistance) { return vec4<f32>(0.0); }
+    let ratio = 1.0-distanceToPlane/u.maxDistance;
+    let fresnel = (dot(incident,direction)+1.0)*0.5;
+    var color = textureSampleLevel(t_input,smp_input,hitUV,0.0).rgb*metalness*ratio*ratio*fresnel;
+    let lum = max(dot(color,vec3<f32>(0.2126,0.7152,0.0722)),0.0001);
+    color *= min(u.maxLuminance/lum,1.0)*u.intensity*u.opacity;
+    let worldDelta = (u._cameraWorldMatrix*vec4<f32>(point-position,0.0)).xyz;
+    return max(vec4<f32>(color,length(worldDelta)),vec4<f32>(0.0));
+}
+)WGSL";
+
+// Every blur level samples the original reflection, with spread=level; level zero is unblurred.
+const char* kSsrBlur = R"WGSL(
+@fragment fn main(@location(0) coord: vec2<f32>) -> @location(0) vec4<f32> {
+    if (u._blurSpread==0.0) { return textureSampleLevel(t_input,smp_input,coord,0.0); }
+    let pixel = max(u._blurSpread,1.0)/vec2<f32>(textureDimensions(t_input));
+    let size = i32(u.blurQuality);
+    var result = vec4<f32>(0.0);
+    for (var x = -size; x<=size; x++) {
+        for (var y = -size; y<=size; y++) {
+            result += textureSampleLevel(t_input,smp_input,coord+vec2<f32>(f32(x),f32(y))*pixel,0.0);
+        }
+    }
+    return result/f32((size*2+1)*(size*2+1));
+}
+)WGSL";
+const char* kSsrResolve = R"WGSL(
+fn sampleMip(coord: vec2<f32>, level: i32) -> vec4<f32> {
+    switch level {
+        case 0: { return textureSampleLevel(t_mip0,smp_mip0,coord,0.0); }
+        case 1: { return textureSampleLevel(t_mip1,smp_mip1,coord,0.0); }
+        case 2: { return textureSampleLevel(t_mip2,smp_mip2,coord,0.0); }
+        case 3: { return textureSampleLevel(t_mip3,smp_mip3,coord,0.0); }
+        default: { return textureSampleLevel(t_mip4,smp_mip4,coord,0.0); }
+    }
+}
+@fragment fn main(@location(0) coord: vec2<f32>) -> @location(0) vec4<f32> {
+    let roughness = sampleRoughness(coord);
+    let lod = clamp(roughness*roughness*4.0,0.0,4.0);
+    return mix(sampleMip(coord,i32(floor(lod))),sampleMip(coord,i32(ceil(lod))),fract(lod));
 }
 )WGSL";
 
@@ -275,7 +421,7 @@ const char* kSmaaBlend = R"WGSL(
 
 StageModule vertex() { return buildStage(buildOutput(std::nullopt, false).vertex); }
 PostPass rawPass(const PostEffect& effect, std::string output, const char* body,
-                 std::map<std::string, std::string> reads, bool geometry = false) {
+                 std::map<std::string, std::string> reads, bool geometry = false, bool parameters = false) {
     PostPass pass;
     pass.output = std::move(output);
     pass.reads = std::move(reads);
@@ -287,7 +433,7 @@ PostPass rawPass(const PostEffect& effect, std::string output, const char* body,
     StageModule fragment{Stage::Fragment};
     std::string code;
     uint32_t binding = 0, offset = 0;
-    if (geometry) {
+    if (geometry || parameters) {
         code += "struct Uniforms {\n";
         // Sorted names also determine native byte offsets: WGSL layout and metadata agree.
         auto params = effect.parameters;
@@ -492,7 +638,33 @@ std::vector<PostPass> postPasses(Node root, std::optional<ToneMapping> toneMappi
             return;
         const auto& effect = *n->post;
         if (effect.kind == "TRAANode") return;
-        if (effect.kind == "SMAANode") {
+        if (effect.kind == "SSRNode") {
+            std::map<std::string, std::string> reads{{"input", textureName(effect.inputs[0])},
+                {"depth", textureName(effect.inputs[1])}, {"normal", textureName(effect.inputs[2])}};
+            const auto metal = scalarSampler(effect.inputs[3], "metalness", effect.output, reads, passes);
+            const auto ray = effect.roughness ? effect.output + "_ray" : effect.output;
+            auto march = rawPass(effect, ray, (metal + kSsr).c_str(), std::move(reads), true);
+            march.effect = n->post;
+            passes.push_back(std::move(march));
+            if (effect.roughness) {
+                std::map<std::string, std::string> levels{{"mip0", ray}};
+                for (uint32_t level = 1; level < 5; ++level) {
+                    const auto name = "mip" + std::to_string(level);
+                    levels[name] = effect.output + "_" + name;
+                    auto blurEffect = effect;
+                    blurEffect.parameters["_blurSpread"] = {double(level)};
+                    auto blur = rawPass(blurEffect, levels[name], kSsrBlur, {{"input", ray}}, false, true);
+                    blur.effect = n->post;
+                    blur.mipLevel = level;
+                    passes.push_back(std::move(blur));
+                }
+                const auto rough = scalarSampler(effect.inputs[4], "roughness", effect.output, levels, passes);
+                auto resolve = rawPass(effect, effect.output, (rough + kSsrResolve).c_str(), std::move(levels));
+                // r185 selects roughness LOD at the consumer pixel, after the scaled march/blur.
+                resolve.resolutionScale = 1;
+                passes.push_back(std::move(resolve));
+            }
+        } else if (effect.kind == "SMAANode") {
             const std::string input = effect.output + "_input", edges = effect.output + "_edges",
                               weights = effect.output + "_weights";
             const PostNode post{key(effect.inputs[0]), [&](Program& p, uint32_t, ExprId coordinate) {
@@ -645,8 +817,8 @@ PostImage decodedTable(const std::string& name, bool area) {
 }
 
 void requireTexture(const Node& node, const char* what) {
-    try { textureName(node); }
-    catch (const std::exception&) { throw std::runtime_error(std::string("TN_TSL_POST_INPUT: ") + what + " must be a texture node"); }
+    // A check, not a catch: the Wasm build compiles the engine without exception handling.
+    if (!textureSource(node)) throw std::runtime_error(std::string("TN_TSL_POST_INPUT: ") + what + " must be a texture node");
 }
 }  // namespace
 
@@ -671,6 +843,24 @@ std::shared_ptr<PostEffect> gtaoEffect(Node depth, Node normal) {
                           {"_cameraProjectionMatrix", identity16()}, {"_cameraProjectionMatrixInverse", identity16()},
                           {"_temporalDirection", {0}}};
     effect->images = {magicSquareNoise(effect->output + "_noise")};
+    return effect;
+}
+
+std::shared_ptr<PostEffect> ssrEffect(Node color, Node depth, Node normal, Node metalness, Node roughness) {
+    requireTexture(color, "SSR color");
+    requireTexture(depth, "SSR depth");
+    requireTexture(normal, "SSR normal");
+    auto effect = std::make_shared<PostEffect>();
+    effect->kind = "SSRNode";
+    effect->output = liveName();
+    effect->normal = true;
+    effect->roughness = roughness != nullptr;
+    effect->inputs = {color, depth, normal, metalness ? metalness : float_(0), roughness ? roughness : float_(0)};
+    effect->parameters = {{"maxDistance", {1}}, {"thickness", {0.1f}}, {"opacity", {1}},
+        {"quality", {0.5f}}, {"blurQuality", {2}}, {"reflectNonMetals", {0}}, {"binaryRefine", {0}},
+        {"intensity", {1}}, {"maxLuminance", {10}}, {"cameraNear", {0.1f}},
+        {"_cameraProjectionMatrix", identity16()}, {"_cameraProjectionMatrixInverse", identity16()},
+        {"_cameraWorldMatrix", identity16()}};
     return effect;
 }
 

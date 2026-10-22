@@ -288,6 +288,7 @@ else()
 endif()
 
 tn_native_engine_test(tn-native-engine-shader-ir-test tests/native-engine/shader_ir_test.cpp
+    native_engine_tsl_ir_storage_textures=storage_textures
     native_engine_tsl_ir_order=order
     native_engine_tsl_ir_types=types
     native_engine_tsl_unsupported=unsupported)
@@ -300,9 +301,17 @@ tn_native_engine_test(tn-native-engine-material-test tests/native-engine/materia
     native_engine_fog_math=fog
     native_engine_fog_node_mixes_color=fog_node_mixes_color
     native_engine_material_node_key=node_key
+    native_engine_material_ssr_passes=ssr_passes
+    native_engine_material_ssr_rejects_inputs=ssr_rejects_inputs
+    native_engine_material_depth_texture_lowering=depth_texture_lowering
     native_engine_material_bloom_passes=bloom_passes
     native_engine_material_slots_share_one_lowering=slots_share_one_lowering)
 target_link_libraries(tn-native-engine-material-test PRIVATE tn_engine_shader)
+if(EMSCRIPTEN)
+    # ssr_rejects_inputs catches the named TN_TSL_POST_INPUT refusal, so enable Wasm EH on the test only.
+    target_compile_options(tn-native-engine-material-test PRIVATE -fwasm-exceptions)
+    target_link_options(tn-native-engine-material-test PRIVATE -fwasm-exceptions)
+endif()
 tn_native_engine_test(tn-native-engine-tonemap-test tests/native-engine/tonemap_test.cpp
     native_engine_tonemap_operators=operators)
 target_link_libraries(tn-native-engine-tonemap-test PRIVATE tn_engine_shader)
@@ -333,6 +342,9 @@ tn_native_engine_test(tn-native-engine-abi-test tests/native-engine/abi_test.cpp
     native_engine_struct_function_return=struct_function_return
     native_engine_authored_output=authored_output
     native_engine_starter_post_bindings=starter_post_bindings
+    native_engine_abi_tsl_ssr_parameters=tsl_ssr_parameters
+    native_engine_abi_tsl_texture_store=tsl_texture_store
+    native_engine_abi_tsl_mat4_element=tsl_mat4_element
     native_engine_abi_tsl_call=tsl_call
     native_engine_abi_tsl_mat2_scalar_order=tsl_mat2_scalar_order
     native_engine_abi_tsl_uniform_value=tsl_uniform_value

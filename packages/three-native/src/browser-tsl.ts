@@ -1,8 +1,9 @@
 import { type IEngineRef, TSL_NODE, engineRef } from "./browser-backend.js";
+import { withFnBuilder } from "./fn-builder.js";
 import { markNormalTarget } from "./pass-node.js";
 import { defineQuadMesh } from "./quad-mesh.js";
 import { type IRttClasses, defineRtt } from "./rtt.js";
-import { defineStorage } from "./storage.js";
+import { defineStorage, defineStorageTextures } from "./storage.js";
 import { defineTslExtras } from "./tsl-extras.js";
 import { defineStruct } from "./tsl-struct.js";
 import { type ConstClasses, liveUniforms, uniformLanes, withConstValues } from "./tsl-uniforms.js";
@@ -107,6 +108,8 @@ const FUNCTIONS = [
   "nodeObject",
   "color",
   "ivec2",
+  "uvec2",
+  "storageTexture",
   "textureLoad",
   "reflect",
   "dFdx",
@@ -120,6 +123,7 @@ const FUNCTIONS = [
   "varying",
   // The live post effects (lane-531's table entries); post-effects.ts publishes them as three's addons.
   "ao",
+  "ssr",
   "denoise",
   "smaa",
   "bloom",
@@ -136,6 +140,7 @@ const FUNCTIONS = [
   "logarithmicDepthToViewZ",
   "oneMinus",
   "mx_noise_float",
+  "mx_worley_noise_float",
   "mx_worley_noise_vec2",
   "pmremTexture",
   "reflector",
@@ -162,6 +167,7 @@ const CONSTANTS = [
   "positionWorld",
   "normalViewGeometry",
   "cameraViewMatrix",
+  "modelWorldMatrix",
   "instanceIndex",
   "vertexIndex",
   "screenUV",
@@ -180,6 +186,7 @@ const CONSTANTS = [
 ] as const;
 /** Node methods the shared table answers, with the receiver passed apart. */
 const METHODS = [
+  "element",
   "compute",
   "add",
   "sub",
@@ -274,7 +281,11 @@ export function isTslNode(value: unknown): value is ITslNode {
 function takesEngineObject(name: string, index: number): boolean {
   return (
     (index === 0 &&
-      (name === "pmremTexture" || name === "texture3D" || name === "lightShadowMatrix")) ||
+      (name === "pmremTexture" ||
+        name === "texture3D" ||
+        name === "storageTexture" ||
+        name === "textureStore" ||
+        name === "lightShadowMatrix")) ||
     (index < 2 && (name === "reflector" || name === "__rtt"))
   );
 }
@@ -298,7 +309,8 @@ export function defineTsl(
   sync(frame?: { camera?: unknown; scene?: unknown }): void;
 } {
   const released = new FinalizationRegistry<number>((node) => runtime.release(node));
-  const prototype: Record<string, unknown> = {};
+  // three marks every node with `isNode`; framework code (Atmosphere.radiance) branches on it.
+  const prototype: Record<string, unknown> = { isNode: true };
   const wrap = (node: number): ITslNode => {
     const object = Object.create(prototype) as ITslNode;
     Object.defineProperty(object, TSL_NODE, { value: node, configurable: true });
@@ -478,11 +490,17 @@ export function defineTsl(
     };
     return Object.assign(inline, { setLayout: () => inline });
   };
-  for (const name of ["atomicAdd", "atomicStore"])
+  exports.Fn = withFnBuilder(exports.Fn as Parameters<typeof withFnBuilder>[0]);
+  for (const name of ["atomicAdd", "atomicStore", "textureStore"])
     exports[name] = (...args: unknown[]) => {
       statement(name);
       return wrap(call(name, null, args));
     };
+  Object.assign(
+    exports,
+    // quality-allow: the export table is untyped; defineStorageTextures narrows it to the builders it reads.
+    defineStorageTextures(exports as unknown as Parameters<typeof defineStorageTextures>[0]),
+  );
   // r185's Break(), Continue() and Return(): a loop or kernel ends early (statements, like atomicAdd).
   for (const name of ["Break", "Continue", "Return"])
     exports[name] = (...args: unknown[]) => {
