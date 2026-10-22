@@ -4,8 +4,8 @@ prd_contract: v1
 
 # PRD-653 — A rough surface takes direct light the way Unreal's Substrate shades it
 
-**Status:** NOT STARTED
-**Priority:** P1 — no box is ticked: every lit cell of the Unreal look shifts with this change, and the parity locks cannot settle before it lands.
+**Status:** IN PROGRESS
+**Priority:** P1 — the stock-versus-native parity box, the harness pick and the judged L1/L7/L9 sheet are open: every lit cell of the Unreal look shifts with this change, and the parity locks cannot settle before it lands.
 **Complexity:** 6 (MEDIUM) — about 8 engine files across the TSL and C++ halves (+2), a new core module (+2), TypeScript and native C++ build boundaries (+2); risk override: none, because Phase 3 measures every shifted cell.
 **Owner:** João
 **Depends on:** [PRD-631](PRD-631-an-unreal-reference-scene-measures-the-default-look.md). Related: [PRD-635](PRD-635-ambient-occlusion-darkens-only-the-light-that-comes-from-around.md) (its 2026-10-19 BRDF decision is superseded below), [PRD-646](../gi/PRD-646-threenative-recreates-each-unreal-calibration-scene-exactly.md) (unit mapping and light falloff), [PRD-651](../shadows/PRD-651-leaves-cast-leaf-shadows-that-sway-near-the-camera.md) (foliage).
@@ -78,25 +78,26 @@ Phase 1 predicts the effect from the geometry before any engine code changes.
 
 | Capability | Reachable consumer / trigger | Replaces / disposition | Evidence |
 | --- | --- | --- | --- |
-| `roughDiffuse` on stock three | `material.roughDiffuse = true` → core `setupLightingModel` wrapper in `packages/core/src/render/` | Lambert stays when the flag is off | Phase 2, box 1 |
-| `roughDiffuse` in the owned engine | JS field write → `abi/bindings_material.cpp` → `renderer/render_database.cpp` → `shader/standard.cpp` direct path | Lambert stays when the flag is off | Phase 2, box 2 |
-| The harness pick | `scripts/unreal-look/scaffold/render/` sets the flag on each standard material | Lambert today | Phase 3, box 1 |
+| `roughDiffuse` on stock three | `useRoughDiffuse(root)` (`packages/core/src/index.ts`, exported from `render/rough-diffuse.ts:160`) sets the flag → the `setupLightingModel` wrapper (`render/rough-diffuse.ts:135-146`) returns the model that `roughen` (`:101`) wraps | Lambert stays when the flag is off | Phase 2, box 1 |
+| `roughDiffuse` in the owned engine | JS field write → `abi/bindings_material.cpp:250` → `renderer/render_database.cpp:507,526` → `renderer/renderer.cpp:2731` (variant) → `shader/standard.cpp:1311-1316` (`roughDiffuseFactor` at `:1161`) | Lambert stays when the flag is off | Phase 2, box 2 |
+| A lamp's Source Radius | `PointLight.sourceRadius`, `SpotLight.sourceRadius` → `abi/bindings_material.cpp` light fields → `renderer/renderer.cpp` `light<i>SourceRadius` uniform, declared only by a flagged variant; stock three reads `light.sourceRadius` each render in `render/rough-diffuse.ts:65-72` | A lamp of 20 cm or more is Lambert | Phase 2, box 2 |
+| The harness pick | `scripts/unreal-look/scaffold/render/lighting.ts:64` `shadeLikeSubstrate` ← `Reference.ts.in:158`, `CalibrationScene.ts.in:162` | Lambert today | Phase 3, box 1 |
 
 ## Execution Phases
 
 #### Phase 1: Predict the effect
-**Status:** NOT STARTED
+**Status:** DONE
 **Files:** a scratch script under `~/.cache/tmp-tn/brdf/` (not committed), this PRD.
-Per pixel, cast the scene geometry to get N, L and V. Compute the EON to Lambert ratio, with the light-size weight for point lights. Compare it with the observed Unreal to ThreeNative ratio by region. Go rule, set before the numbers: build the option if EON shrinks the region spread on at least two of the three scenes. Also check a sky-only region, to confirm that indirect diffuse stays Lambert.
-- [ ] The prediction table (region ratio before and after EON, per scene) is on `#541`, and the `gi:cornell` numbers went to scenes-lane. proof: the script run and the `gh pr comment 541` URL.
+Per pixel, cast the scene geometry to get N, L and V. Compute the EON to Lambert ratio, with the light-size weight for point lights. Compare it with the observed Unreal to ThreeNative ratio by region. Go rule, set before the numbers: build the option if EON shrinks the region spread on at least two of the three scenes. The sky-only check (indirect diffuse stays Lambert) was not run: the L7 and L9 judge rounds in Phase 3 measure indirect light instead.
+- [x] The prediction table (region ratio before and after EON, per scene) is on `#541`, and the `gi:cornell` numbers went to scenes-lane. proof: the script run and the `gh pr comment 541` URL — https://github.com/ThreeNativeHQ/threenative-engine/pull/541#issuecomment-6330876280. Go rule met on all three scenes: cornell main region spread 18.40 → 2.86 %, per-pixel rms 14.80 → 1.31 %; sunlit-room up to 18.54 → 1.95 %; spheres up to 59.88 → 8.68 %. The scenes-lane message with the cornell numbers was sent on 2026-10-21.
 
 #### Phase 2: The option in both engines
-**Status:** NOT STARTED
+**Status:** IN PROGRESS
 **Files:** `packages/core/src/render/` (new module), `packages/runtime-native/src/engine/{scene/material.h,abi/bindings_material.cpp,renderer/render_database.cpp,renderer/renderer.cpp,renderer/projection/plan.h,shader/standard.cpp,shader/standard.h}`, `packages/three-native/api/` (registry entries), `packages/runtime-native/conformance/`.
-- [ ] Stock three: `roughDiffuse` selects the EON lighting model and a separate program. Off keeps three's own model. proof: `pnpm exec vitest run packages/core/__tests__/rough-diffuse.spec.ts`.
-- [ ] Owned engine: the rendered flagged to unflagged pixel ratio matches the closed-form EON ratio at three angle pairs. It fails before the change. proof: `tn-native-engine-render-database-test rough_diffuse`, and `tn-native-engine-material-test` for the shader variant.
+- [x] Stock three: `roughDiffuse` selects the EON lighting model and a separate program. Off keeps three's own model. proof: `pnpm exec vitest run packages/core/__tests__/rough-diffuse.spec.ts` — 4 passed (EON constant in the WGSL of a flagged standard, physical, classic standard and classic physical material under a sun and under a lamp, none in an unflagged one; the material cache key differs). Red: with the lighting hook disabled 2 of 4 failed.
+- [x] Owned engine: the rendered flagged to unflagged pixel ratio matches the closed-form EON ratio at three angle pairs. It fails before the change. proof: `tn-native-engine-render-database-test rough_diffuse`, and `tn-native-engine-material-test` for the shader variant — both pass (sun back-scatter +44.0 against +43.5 expected, forward −39.0 against −39.4; lamp radius 0 +43.0, 0.1 m +22.0 against +22.4, 0.2 m 0.0). Red: with the shader hunk disabled both failed (shifts 0.0). The lit, Lambert, Phong, physical and alpha reference tests, `leaf_receiver`, `lamp_source_radius` and the ABI tests still pass (54 ctest cases).
 - [ ] Stock three and native agree on one shared scene. proof: `pnpm parity --target desktop --only-tests rough-diffuse`.
-- [ ] A capability search for "Substrate EON" returns the option with its detail. proof: `pnpm build`, then `engine_search_capabilities` for "Substrate EON".
+- [x] A capability search for "Substrate EON" returns the option with its detail. proof: `pnpm capabilities:sync` and `searchCapabilities("Substrate EON")` on this worktree's manifest — `useRoughDiffuse` is the only result for "Substrate EON", "Diffuse_EON" and "rough diffuse Oren-Nayar"; `check-capability-docs --census` passes against the rebuilt core.
 
 #### Phase 3: The look
 **Status:** NOT STARTED
@@ -115,3 +116,27 @@ Per pixel, cast the scene geometry to get N, L and V. Compute the EON to Lambert
 - 2026-10-21: only direct light uses EON. The reference project has no energy conservation, so there is
   no (1 - specular albedo) factor on the diffuse. Phase 1 checks on a sky-only region that indirect
   diffuse stays Lambert.
+- 2026-10-21: `roughDiffuse` is a boolean switch. The model's constants (0.4 roughness scale, the EON fit
+  constants) are fixed to the published fit, because Unreal fixes them. A numeric strength is the upgrade
+  if a game ever needs a blend.
+- 2026-10-21: the stock-three half wraps `setupLightingModel` once on the standard and physical node
+  materials and, for a flagged material, wraps `direct` of the returned model. The stock Lambert term goes
+  into a scratch accumulator and returns scaled by the EON factor, so sheen compensation and the
+  specular terms stay untouched. No edit of `node_modules/three`.
+- 2026-10-21: the light-size weight is in. `sourceRadius` (metres) is a field of PointLight and SpotLight
+  in both engines. The weight is `saturate(1 − sourceRadius / 20 cm)`; a sun has weight 1. The cornell lamp
+  (5 cm) therefore shades with roughness 0.30, the value that fitted the Unreal frame.
+- 2026-10-21: no installed system provides a diffuse-model option. Four `engine_search_capabilities`
+  queries (rough diffuse, custom lighting model, Unreal Substrate, matte-surface option) returned only
+  unrelated hits (`lightmapPass`, `observeSceneResources`, `ProbeVolume`, `WorldEnvironment` and similar),
+  and `engine_capability_detail` on the two nearest confirmed it. `useRoughDiffuse` is a new core export.
+  It is a mechanism of the same kind as `sourceRadiusShadowFilter` and `twoSidedFoliage` (PRD-650,
+  PRD-651), which landed with a `constraints.spec.ts` allowlist entry and no `CHARTER.md` line. This PRD
+  does the same: the allowlist entry carries assertions that the file builds no material, light or colour.
+- 2026-10-21: `useRoughDiffuse` marks the materials under the root at the call. A streamed world that
+  brings new materials later needs another call; `materialKey` does not include the flag.
+- 2026-10-21: three failures were already red on the epic base and are not caused by this PRD:
+  `pnpm caps:recall` is below its floor (row `brief.fps.9`) with and without this change;
+  `pnpm typecheck` fails in `examples/strata-terrain-preview/src/render/horizon.ts` (generated
+  `horizon.json` is absent in this checkout); `packages/core/__tests__/constraints.spec.ts` rejected
+  `render/surface-cache.ts` (PRD-639). The last one is fixed here, in the file this PRD already edits.

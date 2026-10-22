@@ -22,6 +22,15 @@ namespace {
 constexpr float kPi = std::numbers::pi_v<float>;
 constexpr float kEpsilon = 1e-6f;  // MathNode EPSILON
 
+// Unreal's Substrate rough diffuse, the EON model (PRD-653). The fit constants are the model's; the 0.4 and the
+// 20 cm are Diffuse_GGX_Rough's (Engine/Shaders/Private/BRDF.ush): EON's roughness is 0.4 x the material's, and
+// a lamp of 20 cm or more is shaded as Lambert, with the weight falling linearly between.
+constexpr float kEonRoughnessScale = 0.4f;
+constexpr float kEonSizeLimit = 0.2f;  // metres
+constexpr float kEonSingleLoss = 1.0f - 1.0f / (1.0f + (0.5f - 2.0f / (3.0f * kPi)));
+constexpr float kEonMultiTilt = 0.262048f;
+constexpr float kEonAlbedoGain = 0.189468f;
+
 struct Tsl {
     Program& p;
     ExprId f(float v) { return p.constant(v); }
@@ -704,6 +713,7 @@ void linkNodeVaryings(StandardPrograms& out, const VertexVariant& variant, ExprI
 struct Incoming {
     ExprId direction;
     ExprId color;
+    ExprId sourceRadius = kInvalid;  // a lamp's Source Radius, metres: read only when lampSize asks (a sun has none)
 };
 
 // interleavedGradientNoise(screenCoordinate.xy) * 2pi, PCF's per-pixel rotation.
@@ -1108,7 +1118,7 @@ static ExprId virtualShadowFactor(Program& f, Tsl& t, std::size_t index, int lev
 
 // `kind` upper case: the light casts a shadow this mesh receives; `positionWorld` is then read.
 static Incoming incoming(Program& f, Tsl& t, char kind, std::size_t index, ExprId positionView,
-                         ExprId positionWorld = kInvalid, ExprId normalWorld = kInvalid, bool softShadows = false, bool leaf = false) {
+                         ExprId positionWorld = kInvalid, ExprId normalWorld = kInvalid, bool softShadows = false, bool leaf = false, bool lampSize = false) {
     const std::string at = "light" + std::to_string(index);
     ExprId color = f.uniform(at + "Color", Type::vec(3));
     if (kind >= '1' && kind <= '8') {
@@ -1133,15 +1143,30 @@ static Incoming incoming(Program& f, Tsl& t, char kind, std::size_t index, ExprI
     const ExprId falloff = f.div(t.f(1), f.call("max", {f.call("pow", {distance, f.uniform(at + "Decay", Type::f32())}), t.f(0.01f)}));
     const ExprId cut = f.mul(falloff, t.pow2(t.saturate(t.oneMinus(t.pow2(t.pow2(f.div(distance, cutoff)))))));
     const ExprId attenuation = f.select(f.less(t.f(0), cutoff), cut, falloff);
-    if (kind == 'p') return {direction, f.mul(color, attenuation)};
+    const ExprId sourceRadius = lampSize ? f.uniform(at + "SourceRadius", Type::f32()) : kInvalid;
+    if (kind == 'p') return {direction, f.mul(color, attenuation), sourceRadius};
     const ExprId angleCos = t.dot(direction, f.call("normalize", {f.uniform(at + "Axis", Type::vec(3))}));
     const ExprId spot = f.call("smoothstep", {f.uniform(at + "ConeCos", Type::f32()), f.uniform(at + "PenumbraCos", Type::f32()), angleCos});
-    return {direction, f.mul(f.mul(color, spot), attenuation)};
+    return {direction, f.mul(f.mul(color, spot), attenuation), sourceRadius};
 }
 
 // NodeMaterial.depthNode: the fragment's own depth (frag_depth), on every material program that takes node slots.
 static void outputDepthNode(Program& f, graph::Lowering& slots, const VertexVariant& variant) {
     if (variant.nodes.depthNode) f.output("fragDepth", slotValue(f, slots, variant.nodes.depthNode, Type::f32(), kInvalid));
+}
+
+// Unreal's rough diffuse for one light (PRD-653), as the factor on Lambert: `albedo / pi * factor` is the EON BRDF
+// (Portsmouth, Kutz and Hill). `r` is the model's roughness; `n`, `v` and `l` are the view-space normal, view
+// and light directions. It is 1 at r = 0. A factor keeps the Lambert term whole where r is 0 and never divides by albedo.
+static ExprId roughDiffuseFactor(Program& f, Tsl& t, ExprId albedo, ExprId r, ExprId n, ExprId v, ExprId l) {
+    const ExprId nov = t.saturate(t.dot(n, v)), nol = t.saturate(t.dot(n, l));
+    const ExprId s = f.sub(t.dot(v, l), f.mul(nov, nol));
+    const ExprId sOverT = f.call("max", {f.div(s, f.call("max", {t.f(kEpsilon), f.call("max", {nov, nol})})), s});
+    const ExprId single = t.oneMinus(f.mul(r, t.f(kEonSingleLoss)));
+    const ExprId front = f.mul(single, f.add(t.f(1), f.mul(r, sOverT)));
+    const ExprId multi = t.oneMinus(f.mul(single, f.add(t.f(1), f.mul(f.mul(r, t.f(kEonMultiTilt)), t.oneMinus(nov)))));
+    const ExprId gain = f.add(t.f(1), f.mul(f.mul(t.f(kEonAlbedoGain), t.oneMinus(albedo)), r));
+    return f.mul(gain, f.add(front, f.mul(f.mul(albedo, gain), multi)));
 }
 
 // The MeshStandardNodeMaterial / MeshPhysicalNodeMaterial body. `physical` swaps setupSpecular's
@@ -1280,9 +1305,17 @@ static StandardPrograms buildStandardProgram(const StandardMaterial& material, b
     const ExprId fragmentView = f.varying("positionView", Type::vec(3));
     ExprId directDiffuse = f.construct(Type::vec(3), {t.f(0)}), directSpecular = directDiffuse;
     for (std::size_t i = 0; i < lights.kinds.size(); ++i) {
-        const Incoming light = incoming(f, t, lights.kinds[i], i, fragmentView, positionWorld, normalWorld, lights.softShadows, variant.leafReceiver);
+        const Incoming light = incoming(f, t, lights.kinds[i], i, fragmentView, positionWorld, normalWorld, lights.softShadows, variant.leafReceiver, variant.roughDiffuse);
         const ExprId irradiance = f.mul(t.saturate(t.dot(n, light.direction)), light.color);
-        directDiffuse = f.add(directDiffuse, f.mul(irradiance, brdfLambert));
+        ExprId diffuseBrdf = brdfLambert;
+        if (variant.roughDiffuse) {
+            // EON's roughness is 0.4 x the material's, fading to Lambert as the lamp's Source Radius reaches 20 cm.
+            ExprId r = f.mul(t.f(kEonRoughnessScale), roughness);
+            if (light.sourceRadius != kInvalid)
+                r = f.mul(r, t.saturate(t.oneMinus(f.mul(light.sourceRadius, t.f(1 / kEonSizeLimit)))));
+            diffuseBrdf = f.mul(brdfLambert, roughDiffuseFactor(f, t, diffuseContribution, r, n, positionViewDirection, light.direction));
+        }
+        directDiffuse = f.add(directDiffuse, f.mul(irradiance, diffuseBrdf));
         directSpecular = f.add(directSpecular, f.mul(irradiance, brdfGgxMultiscatter(t, surface, light.direction)));
         if (coated) {
             // PhysicalLightingModel.direct: BRDF_GGX on the clearcoat normal, with its own irradiance.

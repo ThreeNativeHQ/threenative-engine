@@ -1044,6 +1044,16 @@ export {
 export { penumbraUv } from "./render/soft-shadow.js";
 export type { ISourceAngleShadowInputs, ISourceAngleShadowOptions } from "./render/soft-shadow.js";
 /**
+ * Unreal's Substrate rough diffuse (EON) on standard and physical materials, so direct sun and lamp light meets a rough surface
+ * the way Unreal shades it. The same `roughDiffuse` flag works on three's WebGPU renderer and on the owned engine.
+ * @situation shade rough surfaces under a sun or a lamp the way Unreal's Substrate does, not as flat Lambert
+ * @constraint direct light only, indirect light stays Lambert; standard and physical materials; a lamp's `sourceRadius` in metres fades the effect to Lambert at 20 cm; a material changed after its first draw needs `needsUpdate`
+ * @alias Substrate EON, Diffuse_EON, Diffuse_GGX_Rough, rough diffuse, Oren-Nayar
+ * @override material.roughDiffuse = false, or useRoughDiffuse(root, false), puts Lambert back
+ * @example useRoughDiffuse(scene);
+ */
+export { useRoughDiffuse } from "./render/rough-diffuse.js";
+/**
  * An outdoor daylight rig: physical sky, one sun with open-world shadows that follow the eye,
  * hemisphere fill, sky-coloured haze and the AgX tone curve. Every value is the game's.
  *

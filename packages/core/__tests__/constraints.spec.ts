@@ -104,6 +104,15 @@ describe("core constraints", () => {
           // PRD-634 widens three's shadow filter by gap × tan(angle); the angle and every light,
           // map size and shadow camera come from the game. It decides no edge width of its own.
           file !== "render/soft-shadow.ts" &&
+          // PRD-653 swaps the Lambert term of three's own lighting model for Unreal's published EON fit when the game marks
+          // a material. Albedo, roughness, lights and a lamp's radius come from the game's own materials and lamps, and
+          // the game chooses which materials take it. It constructs no material, light or colour and sets no appearance
+          // value of its own; the assertions below keep that true.
+          file !== "render/rough-diffuse.ts" &&
+          // PRD-639 reduces the maps and flat colours of the game's own materials to atlas tiles that a traced GI ray reads.
+          // Every colour, texture and light comes from the game's materials and lights; it constructs none and chooses no
+          // look. The assertions below keep that true.
+          file !== "render/surface-cache.ts" &&
           // The virtual shadow attaches to a light and renders depth through three's own
           // ShadowNode; it creates no material, light, colour or filter of its own.
           file !== "render/virtual-shadow.ts" &&
@@ -291,6 +300,32 @@ describe("core constraints", () => {
     // roughness, a metalness, an opacity — is how a framework starts deciding one.
     expect(foliageAlpha).not.toMatch(/\.(color|roughness|metalness|emissive|opacity|envMap)\b/iu);
     expect(foliageAlpha.match(/#[0-9a-f]{6}\b|0x[0-9a-f]{6}\b/giu)).toBeNull();
+
+    // The rough diffuse option reads the game's roughness and albedo through three's own nodes and writes one flag of its
+    // own, `roughDiffuse`. Naming a look value is how a framework starts deciding one.
+    const roughDiffuse = readFileSync(
+      path.join(sourceDirectory, "render/rough-diffuse.ts"),
+      "utf8",
+    );
+    expect(roughDiffuse).not.toMatch(
+      /new\s+\w*Material|new\s+\w*Light|new\s+\w*Color|tonemapping|postprocessing|\.wgsl/iu,
+    );
+    expect(roughDiffuse).not.toMatch(
+      /\.(color|map|roughness|metalness|emissive|opacity|envMap)\b\s*(=[^=]|\?\?=)/iu,
+    );
+    expect(roughDiffuse.match(/#[0-9a-f]{6}\b|0x[0-9a-f]{6}\b/giu)).toBeNull();
+
+    // The surface cache reads the game's maps and colours and writes none of them.
+    const surfaceCache = readFileSync(
+      path.join(sourceDirectory, "render/surface-cache.ts"),
+      "utf8",
+    );
+    expect(surfaceCache).not.toMatch(
+      /new\s+\w*Material|new\s+\w*Light|new\s+\w*Color|tonemapping|postprocessing|\.wgsl/iu,
+    );
+    expect(surfaceCache).not.toMatch(
+      /\.(color|map|roughness|metalness|emissive|opacity|envMap)\b\s*(=[^=]|\?\?=)/iu,
+    );
 
     // The unlit-foliage warning names an envMap for the same reason foliage-alpha names a map: it
     // asks whether one is there. Reading its absence is the whole finding, so the check is that it

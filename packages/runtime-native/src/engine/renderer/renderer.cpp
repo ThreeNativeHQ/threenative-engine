@@ -179,7 +179,7 @@ constexpr const char* kLightFieldNames[] = {"Color",       "Direction",        "
                                             "Decay",       "Axis",             "ConeCos",      "PenumbraCos",
                                             "ShadowMatrix", "ShadowBias",      "ShadowNormalBias", "ShadowRadius",
                                             "ShadowMapSize", "ShadowIntensity", "ShadowNear", "ShadowFar",
-                                            "ShadowSourceRadius"};
+                                            "ShadowSourceRadius", "SourceRadius"};
 
 constexpr uint64_t kUniformAlign = 256;  // minUniformBufferOffsetAlignment's WebGPU default
 uint64_t aligned(uint64_t size) { return (size + kUniformAlign - 1) / kUniformAlign * kUniformAlign; }
@@ -2187,6 +2187,7 @@ Renderer::Program& Renderer::depthProgram(const shader::VertexVariant& variant, 
     kind.vertexColors = 0;
     kind.invariantPosition = false;  // the shadow depth pass shares its vertex stage with nothing
     kind.leafReceiver = false;       // a depth pass receives no shadow
+    kind.roughDiffuse = false;       // ...and shades no diffuse
     const auto positionGraph = kind.nodes.positionNode;
     kind.nodes = {};
     kind.nodes.positionNode = positionGraph; // a depth pass reads no colour
@@ -2727,6 +2728,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         v.backSide = item.side == 1;
         v.doubleSide = item.side == 2;
         v.leafReceiver = item.receiveShadow && item.twoSidedFoliage;
+        v.roughDiffuse = item.roughDiffuse;
         v.flatShading = item.flatShading;
         v.vertexColors = item.colors ? item.colorSize : 0;
         v.instanced = item.instanceMatrices != nullptr;
@@ -2938,6 +2940,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             put(frameUniforms_, f, slot[kLightPosition], transformPoint(view, l.position));
             put(frameUniforms_, f, slot[kLightDistance], std::array<double, 1>{l.distance});
             put(frameUniforms_, f, slot[kLightDecay], std::array<double, 1>{l.decay});
+            put(frameUniforms_, f, slot[kLightSourceRadius], std::array<double, 1>{l.sourceRadius});
             put(frameUniforms_, f, slot[kLightConeCos], std::array<double, 1>{l.coneCos});
             put(frameUniforms_, f, slot[kLightPenumbraCos], std::array<double, 1>{l.penumbraCos});
             if (l.shadow) {

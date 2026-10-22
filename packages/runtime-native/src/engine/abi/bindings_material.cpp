@@ -246,6 +246,8 @@ void registerTypeFields(ClassBinding& b, MaterialType type) {
     materialNumber(b, "envMapIntensity", &Material::envMapIntensity);
     materialNumber(b, "roughness", &Material::roughness);
     materialNumber(b, "metalness", &Material::metalness);
+    // An engine field three does not declare: Unreal's rough diffuse (PRD-653), on the classes that have a roughness.
+    materialBool(b, "roughDiffuse", &Material::roughDiffuse);
     // The standard program's scalar and emissive maps (shader::kPbrMapNames) and the occlusion strength.
     for (int k = 0; k < shader::kStandardPbrMapCount; ++k) materialMapSlot(b, shader::kPbrMapNames[k]);
     materialNumber(b, "aoMapIntensity", &Material::aoMapIntensity);
@@ -556,6 +558,8 @@ void registerPointLight(ClassBinding& b) {
     registerLightBase(b);
     numberField<PointLight>(b, "distance", &PointLight::distance);
     numberField<PointLight>(b, "decay", &PointLight::decay);
+    // An engine field three does not declare: Unreal's Source Radius (PRD-653).
+    numberField<PointLight>(b, "sourceRadius", &PointLight::sourceRadius);
     shadowBindings<PointLight, PerspectiveCamera>(b, "PointLightShadow", {"near", "far"}, {&PerspectiveCamera::near, &PerspectiveCamera::far});
 }
 
@@ -573,6 +577,7 @@ void registerSpotLight(ClassBinding& b) {
     numberField<SpotLight>(b, "angle", &SpotLight::angle);
     numberField<SpotLight>(b, "penumbra", &SpotLight::penumbra);
     numberField<SpotLight>(b, "decay", &SpotLight::decay);
+    numberField<SpotLight>(b, "sourceRadius", &SpotLight::sourceRadius);
     b.members["target"] = [](void* self, const Args&, Store& store) -> Value {
         SpotLight* light = as<SpotLight>(self);
         if (light->target == nullptr) return Value{};

@@ -91,7 +91,7 @@ function readable(name: string): string[] {
 const MATERIALS = Object.keys(registry.classes).filter((name) => name.endsWith("Material"));
 
 /** Fields the engine adds to a material that three has not: a new one needs a line here and a reason. */
-const ENGINE_FIELDS = ["twoSidedFoliage"];
+const ENGINE_FIELDS = ["twoSidedFoliage", "roughDiffuse"];
 
 describe("a native material's fields are enumerable", () => {
   it("covers the material classes of the registry", () => {
