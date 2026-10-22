@@ -21,6 +21,9 @@
  * whose texture tints its flat colour) is counted as `lost`, and added to the count: the edge distance
  * scores only the pixels both frames give a colour, and a card that is dark along its edge would pass.
  *
+ * The gate scores what a pose shows. An object that no pose of its scene shows in either engine is listed
+ * (`Not in view of any pose`) and left out of the verdict.
+ *
  * It fails closed: a missing frame, frames of two sizes, a pose that shows no object, an object only one
  * engine draws, and a frame with more pixels of no ID colour than the limit all fail. Three frames per
  * pose go to <root>/overlap/ for the sheet of a mismatch (tools/unreal-reference/sameness-sheet.py): the
@@ -463,6 +466,20 @@ export interface ISamenessReport {
   allowed: number;
   /** The scenes whose Unreal frames are the committed ones. */
   committed: string[];
+  /**
+   * `<scene>/<object>` of each object that no pose of its scene shows in either engine. The gate scores
+   * what a pose shows, so it says nothing about these, and the verdict does not count them.
+   */
+  unscored: string[];
+}
+
+function unscoredObjects(
+  inputs: readonly ISamenessInput[],
+  rows: readonly ISamenessRow[],
+): string[] {
+  const scored = new Set(rows.map((r) => `${r.scene}/${r.object}`));
+  const keys = inputs.flatMap((i) => Object.keys(i.colors).map((o) => `${i.scene}/${o}`));
+  return [...new Set(keys)].filter((key) => !key.endsWith("/Sky") && !scored.has(key));
 }
 
 /** Scores every input pose from the frames under `root`, and writes each pose's overlap frame. */
@@ -473,7 +490,14 @@ export function samenessReport(
   allowed: number = EDGE_FAR_LIMIT,
 ): ISamenessReport {
   if (inputs.length === 0) fail("BAD_INPUT", "the sameness gate selects no pose");
-  const report: ISamenessReport = { rows: [], cells: [], limit, allowed, committed: [] };
+  const report: ISamenessReport = {
+    rows: [],
+    cells: [],
+    limit,
+    allowed,
+    committed: [],
+    unscored: [],
+  };
   for (const input of inputs) {
     // A scene with an Unreal capture in the root is scored on it, a missing pose of it fails closed.
     const captured = existsSync(
@@ -510,6 +534,7 @@ export function samenessReport(
       pass: cell.pass,
     });
   }
+  report.unscored = unscoredObjects(inputs, report.rows);
   return report;
 }
 
@@ -622,6 +647,8 @@ export function runSameness(
     console.log(
       `Unreal frames of ${report.committed.join(", ")}: the committed ones (<scene>/id), the capture root has no Unreal capture of them.`,
     );
+  if (report.unscored.length > 0)
+    console.log(`Not in view of any pose, so not scored: ${report.unscored.join(", ")}.`);
   for (const note of depthTieNotes(
     [...new Set(failing.map((c) => c.scene))].filter((name) => name !== "reference"),
     read,

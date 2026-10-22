@@ -18,6 +18,7 @@
 #include "rt_common.h"
 #include <vulkan/vulkan.h>
 #include <vector>
+#include <string>
 #include <unordered_map>
 #include <memory>
 
@@ -74,6 +75,7 @@ struct VulkanTLAS {
     VulkanBuffer instanceBuffer;  // VkAccelerationStructureInstanceKHR array
     VkDeviceAddress deviceAddress = 0;
     uint32_t instanceCount = 0;
+    bool oneTriangleList = false;  // one instance of a one-geometry BLAS: a hit names one triangle
 };
 
 /**
@@ -92,6 +94,9 @@ public:
      * @return true if hardware RT is available and initialized
      */
     bool initialize();
+
+    /** Why initialize() returned false. Names the step that failed; empty after a success. */
+    const std::string& initError() const { return initError_; }
 
     // ========================================================================
     // IRTBackend Interface Implementation
@@ -113,6 +118,14 @@ public:
 
     void traceRays(const TraceRaysOptions& options) override;
 
+    TraceRayBatchResult traceRayBatch(const TraceRayBatchOptions& options) override;
+    RTCapabilities capabilities() override;
+
+    SharedTraceSetup createSharedTrace(uint32_t capacityRays) override;
+    void destroySharedTrace() override;
+    SharedTraceResult traceShared(const SharedTraceOptions& options) override;
+    double sharedTraceGpuMs() override;
+
 private:
     // ========================================================================
     // Initialization Helpers
@@ -126,15 +139,27 @@ private:
     bool createDescriptorPool();
     bool createRTPipeline();
     bool createShaderBindingTable();
+    bool createImagePath();
+    bool createBatchPath();
+    bool ensureBatchCapacity(uint32_t rayCount);
+    bool createSharedImage(uint32_t width, uint32_t height, VkImage& image, VkDeviceMemory& memory,
+                           VkImageCreateInfo& info, SharedTraceImage& out, std::string& error);
+    void reclaimSharedTrace();
+    void bindBatchBuffers(VulkanTLAS* tlas);
 
     // ========================================================================
     // Buffer Management
     // ========================================================================
 
+    /**
+     * With strict set, a request that no memory type satisfies fails. Without it the buffer falls
+     * back to memory type 0, which the image path has always done.
+     */
     bool createBuffer(VkDeviceSize size, VkBufferUsageFlags usage,
-                      VkMemoryPropertyFlags properties, VulkanBuffer& buffer);
+                      VkMemoryPropertyFlags properties, VulkanBuffer& buffer, bool strict = false);
     void destroyBuffer(VulkanBuffer& buffer);
     uint32_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
+    uint32_t findMemoryTypeIndex(uint32_t typeFilter, VkMemoryPropertyFlags properties);
 
     // ========================================================================
     // Command Buffer Helpers
@@ -195,11 +220,54 @@ private:
     VulkanBuffer cameraUBO_;
 
     // ========================================================================
+    // Ray Batch (ray query compute kernel)
+    // ========================================================================
+
+    VkDescriptorSetLayout batchSetLayout_ = VK_NULL_HANDLE;
+    VkDescriptorPool batchPool_ = VK_NULL_HANDLE;
+    VkDescriptorSet batchSet_ = VK_NULL_HANDLE;
+    VkPipelineLayout batchPipelineLayout_ = VK_NULL_HANDLE;
+    VkPipeline batchPipeline_ = VK_NULL_HANDLE;
+    VkCommandBuffer batchCommands_ = VK_NULL_HANDLE;
+    VkFence batchFence_ = VK_NULL_HANDLE;
+    VkQueryPool timestampPool_ = VK_NULL_HANDLE;
+    VulkanBuffer batchRaysStaging_;   // host visible, written by the caller's memcpy
+    VulkanBuffer batchRaysDevice_;    // device local, read by the kernel
+    VulkanBuffer batchHitsDevice_;    // device local, written by the kernel
+    VulkanBuffer batchHitsStaging_;   // host visible and cached, read by the caller's memcpy
+    uint32_t batchCapacity_ = 0;      // rays the four buffers above hold
+    uint64_t maxBatchRays_ = 0;
+    uint32_t timestampValidBits_ = 0;
+
+    // ========================================================================
+    // Shared trace transport (PRD-645)
+    // ========================================================================
+
+    PFN_vkGetMemoryFdKHR vkGetMemoryFdKHR_ = nullptr;
+    PFN_vkGetSemaphoreFdKHR vkGetSemaphoreFdKHR_ = nullptr;
+    PFN_vkImportSemaphoreFdKHR vkImportSemaphoreFdKHR_ = nullptr;
+    bool externalSharingReady_ = false;  // the four external memory and semaphore extensions are on
+    VkExternalMemoryImageCreateInfo sharedExternalInfo_ = {};
+    VkImageCreateInfo sharedRaysInfo_ = {};
+    VkImageCreateInfo sharedHitsInfo_ = {};
+    VkImage sharedRays_ = VK_NULL_HANDLE;
+    VkImage sharedHits_ = VK_NULL_HANDLE;
+    VkDeviceMemory sharedRaysMemory_ = VK_NULL_HANDLE;
+    VkDeviceMemory sharedHitsMemory_ = VK_NULL_HANDLE;
+    uint32_t sharedCapacity_ = 0;
+    double sharedGpuMs_ = 0;                     // the trace dispatch of the last reclaimed shared trace
+    bool sharedPending_ = false;                 // a shared trace was submitted and not yet reclaimed
+    VkSemaphore sharedSignals_[2] = {VK_NULL_HANDLE, VK_NULL_HANDLE};  // every trace signals: hits ready, rays free
+    VkSemaphore sharedWaits_[2] = {VK_NULL_HANDLE, VK_NULL_HANDLE};    // every trace imports a wait fd into these
+
+    // ========================================================================
     // Device Properties
     // ========================================================================
 
     VkPhysicalDeviceRayTracingPipelinePropertiesKHR rtPipelineProperties_ = {};
     VkPhysicalDeviceAccelerationStructureFeaturesKHR asFeatures_ = {};
+    RTCapabilities caps_;             // filled during device selection, reported as found
+    bool rayQuerySupported_ = false;  // VK_KHR_ray_query present and its feature true
 
     // ========================================================================
     // Extension Function Pointers
@@ -237,6 +305,11 @@ private:
 
     bool initialized_ = false;
     bool rtSupported_ = false;
+    bool imagePathReady_ = false;     // camera pipeline, SBT and UBO exist
+    bool batchReady_ = false;         // the ray batch kernel exists
+    std::string initError_;
+    std::string imageError_;
+    std::string batchError_;
 };
 
 }  // namespace rt

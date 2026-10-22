@@ -7,7 +7,7 @@ prd_contract: v1
 **Status:** DONE — `pnpm unreal-look:judge`, `pnpm unreal-look:calibrate` (with `--status`), the scoreboard and the parity rule ship with unit proof. The baseline rounds on `cornell` (high) and `sunlit-room` (high and medium) ran live, with sheets, a fresh judge and one scoreboard file each.
 **Complexity:** 5 (MEDIUM) — 1–5 files: a calibrate command, a sheet layout, per-scene criteria, a scoreboard, specs (+1), new state: a parity scoreboard with history per commit (+2), a fresh judge session per round (+1), every GI PRD consumes it (+1); risk override: none
 **Owner:** João
-**Depends on:** [PRD-638](../Unreal/gi/PRD-638-calibration-scenes-are-built-in-unreal-and-captured-as-the-gi-target.md) Phase 1 (the Unreal frames) and [PRD-646](../Unreal/gi/PRD-646-threenative-recreates-each-unreal-calibration-scene-exactly.md) Phase 2 (a recreated scene whose direct light already matches). Every GI PRD in [`gi/`](../Unreal/gi/) and [`../rendering/`](../Unreal/rendering/) records its visual verdict through this loop.
+**Depends on:** [PRD-638](PRD-638-calibration-scenes-are-built-in-unreal-and-captured-as-the-gi-target.md) Phase 1 (the Unreal frames) and [PRD-646](../Unreal/gi/PRD-646-threenative-recreates-each-unreal-calibration-scene-exactly.md) Phase 2 (a recreated scene whose direct light already matches). Every GI PRD in [`gi/`](../Unreal/gi/) and [`../rendering/`](../Unreal/rendering/) records its visual verdict through this loop.
 
 ## Context
 

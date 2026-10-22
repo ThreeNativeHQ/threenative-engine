@@ -8,6 +8,8 @@
 #include "engine/shader/graph/post_effects.h"
 #include "mystral/webgpu/context.h"
 
+#include <algorithm>
+#include <array>
 #include <chrono>
 #include <cmath>
 #include <cstdlib>
@@ -1051,6 +1053,195 @@ void siblingReadsTheLiveScene() {
     CHECK(std::abs(after - 153) <= 2);
 }
 
+// Bars across the view at z = -1, 2 px of white in each 4 px. A busy neighbourhood is where a stale colour hides from the
+// resolve's history clamp, so it is where a trail would show.
+struct BarField {
+    BufferStore positions{Scalar::F32, 0};
+    BufferStore indices{Scalar::U16, 0};
+    BarField() {
+        std::vector<float> p;
+        std::vector<uint16_t> idx;
+        for (int bar = -40; bar < 40; ++bar) {
+            const float x0 = float(bar) * 0.4f, x1 = x0 + 0.2f;
+            const auto base = uint16_t(p.size() / 3);
+            p.insert(p.end(), {x0, -3, -1, x1, -3, -1, x1, 3, -1, x0, 3, -1});
+            idx.insert(idx.end(), {base, uint16_t(base + 1), uint16_t(base + 2), base, uint16_t(base + 2), uint16_t(base + 3)});
+        }
+        positions.resize(p.size());
+        positions.write(0, p.data(), p.size() * 4);
+        indices.resize(idx.size());
+        indices.write(0, idx.data(), idx.size() * 2);
+    }
+};
+
+// What a frame keeps of an object that is not there. `with` is the resolved frame of the field and the object, `without` the
+// same field resolved with no object, and `cover` the object's own footprint in a hard-edged frame. A pixel more than
+// `margin` pixels from the footprint should read as the field does. The red channel's difference summed outside the
+// footprint, over the same sum on the footprint (the object's own contrast), is the trail the object left.
+double trailLeft(const std::vector<uint8_t>& with, const std::vector<uint8_t>& without, const std::vector<bool>& cover,
+                 int width, int height, int margin) {
+    double trail = 0, body = 0;
+    for (int y = 0; y < height; ++y)
+        for (int x = 0; x < width; ++x) {
+            bool near = false;
+            for (int dy = -margin; dy <= margin && !near; ++dy)
+                for (int dx = -margin; dx <= margin && !near; ++dx) {
+                    const int u = x + dx, v = y + dy;
+                    near = u >= 0 && v >= 0 && u < width && v < height && cover[size_t(v) * width + u];
+                }
+            const size_t at = (size_t(y) * width + x) * 4;
+            const double difference = std::abs(int(with[at]) - int(without[at]));
+            if (cover[size_t(y) * width + x]) body += difference;
+            else if (!near) trail += difference;
+        }
+    return body > 0 ? trail / body : -1;
+}
+
+// A stale colour must not outlive the object that left it. The resolve blends each frame into a history, so an object that
+// moves leaves a trail unless the history it reads moves with it. A grey sphere crosses the bar field, drawn as a rigid draw
+// (the renderer knows its previous matrix, so its velocity is its own) and as one instance (it does not, so the velocity
+// is the camera's, zero here). The field with no sphere resolves in step with it, so both have the same jitter and history.
+void traaGhosting() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    CHECK(rendersPixels(context));
+    if (!rendersPixels(context)) return;
+    constexpr uint32_t width = 64, height = 48;
+    constexpr int settle = 40, moved = 8;
+    constexpr float scale = 0.4f, step = 0.1f, start = -0.7f;
+    BarField field;
+    const auto ball = sphere(32, 16);
+    shader::StandardMaterial grey, white;
+    grey.color = {0.5f, 0.5f, 0.5f};
+    white.color = {1, 1, 1};
+    BufferStore matrices(Scalar::F32, 16);
+    DrawItem bars;
+    bars.key = bars.id = 2; bars.kind = MaterialKind::Basic;
+    bars.positions = &field.positions; bars.indices = &field.indices; bars.material = &white;
+    bars.matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+    // The sphere at `x`, as one rigid draw or as one instance.
+    const auto sphereAt = [&](float x, bool instanced) {
+        DrawItem item;
+        item.key = item.id = 1; item.kind = MaterialKind::Basic;
+        item.positions = &ball->positions; item.indices = &ball->indices; item.material = &grey;
+        const float m[16] = {scale, 0, 0, 0, 0, scale, 0, 0, 0, 0, scale, 0, x, 0, 0, 1};
+        if (instanced) {
+            item.matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+            matrices.write(0, m, sizeof m);
+            item.instanceMatrices = &matrices; item.instanceCount = 1;
+        } else {
+            for (int i = 0; i < 16; ++i) item.matrixWorld[size_t(i)] = m[i];
+        }
+        return item;
+    };
+    const auto view = camera(double(width) / height);
+    const auto make = [&](EventQueue& events, bool temporal) {
+        auto renderer = std::make_unique<Renderer>(context.getInstance(), context.getDevice(), context.getQueue(), events);
+        renderer->setSize(width, height);
+        renderer->setOutput(OutputState{std::nullopt, 1, false});
+        if (temporal) renderer->setPostGraph(temporalColour());
+        return renderer;
+    };
+    EventQueue plainEvents;
+    auto plain = make(plainEvents, false);
+    plain->render({&bars, 1}, view, LightState{}, {0, 0, 0, 1});
+    const auto plainField = read(*plain, plainEvents);
+    CHECK(plainField.size() == size_t{width} * height * 4);
+    if (plainField.size() != size_t{width} * height * 4) return;
+    const auto trails = [&](bool instanced) {
+        EventQueue events, fieldEvents;
+        auto mover = make(events, true);
+        auto still = make(fieldEvents, true);
+        std::vector<double> out;
+        for (int frame = 0; frame < settle + moved; ++frame) {
+            const float x = frame < settle ? start : start + step * float(frame - settle + 1);
+            const std::array<DrawItem, 2> items = {bars, sphereAt(x, instanced)};
+            mover->render({items.data(), items.size()}, view, LightState{}, {0, 0, 0, 1});
+            still->render({&bars, 1}, view, LightState{}, {0, 0, 0, 1});
+            if (frame < settle) continue;
+            const auto with = read(*mover, events);
+            const auto without = read(*still, fieldEvents);
+            plain->render({items.data(), items.size()}, view, LightState{}, {0, 0, 0, 1});
+            const auto hard = read(*plain, plainEvents);
+            CHECK(with.size() == plainField.size() && without.size() == plainField.size() && hard.size() == plainField.size());
+            if (with.size() != plainField.size() || without.size() != plainField.size() || hard.size() != plainField.size()) return out;
+            std::vector<bool> cover(size_t{width} * height);
+            for (size_t i = 0; i < cover.size(); ++i) cover[i] = std::abs(int(hard[i * 4]) - int(plainField[i * 4])) > 24;
+            out.push_back(trailLeft(with, without, cover, int(width), int(height), 3));
+        }
+        return out;
+    };
+    const auto rigid = trails(false);
+    const auto instanced = trails(true);
+    CHECK(rigid.size() == size_t{moved} && instanced.size() == size_t{moved});
+    for (size_t i = 0; i < std::min(rigid.size(), instanced.size()); ++i)
+        std::fprintf(stderr, "TN_DEBUG ghost, frame %zu of the move: trail %.3f of the sphere's contrast (rigid), %.3f (instanced)\n", i + 1, rigid[i], instanced[i]);
+    if (rigid.size() != size_t{moved} || instanced.size() != size_t{moved}) return;
+    // The trail sums every pixel the sphere has left, so it grows with the move: 0.46 (rigid) and 0.22 (instanced) after 8
+    // frames of one pixel each, and nothing before the third frame. A history read in place, not where the motion put it, gives
+    // 0.44 for both, so the instanced bound catches a velocity that is lost. The resolve's disocclusion test does not move
+    // this fixture's trail: the bars hide the stale grey from the variance clip, and the depth test sees a pixel that was
+    // background in the last frame too.
+    CHECK(rigid.front() < 0.05 && instanced.front() < 0.05);
+    CHECK(rigid.back() < 0.7 && instanced.back() < 0.3);
+}
+
+// The same field seen by a camera that slides: the history is read where the camera's own motion moved it, so the bars keep
+// their contrast. A history read at the wrong place blends neighbouring bars into grey. The measure is the spread of the red
+// channel (its standard deviation) once the camera has slid for 40 frames, over the spread with the camera still.
+void traaCameraPan() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    CHECK(rendersPixels(context));
+    if (!rendersPixels(context)) return;
+    constexpr uint32_t width = 64, height = 48;
+    constexpr int frames = 40;
+    BarField field;
+    shader::StandardMaterial white;
+    white.color = {1, 1, 1};
+    DrawItem bars;
+    bars.key = bars.id = 2; bars.kind = MaterialKind::Basic;
+    bars.positions = &field.positions; bars.indices = &field.indices; bars.material = &white;
+    bars.matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+    // `camera(aspect)` moved by `x` along its own x axis.
+    const auto at = [&](double x) {
+        CameraState c = camera(double(width) / height);
+        c.matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, x, 0, 4, 1};
+        c.matrixWorldInverse = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -x, 0, -4, 1};
+        return c;
+    };
+    const auto spread = [&](double per, bool temporal) {
+        EventQueue events;
+        Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+        renderer.setSize(width, height);
+        renderer.setOutput(OutputState{std::nullopt, 1, false});
+        if (temporal) renderer.setPostGraph(temporalColour());
+        for (int frame = 0; frame < frames; ++frame)
+            renderer.render({&bars, 1}, at(per * frame), LightState{}, {0, 0, 0, 1});
+        const auto pixels = read(renderer, events);
+        CHECK(pixels.size() == size_t{width} * height * 4);
+        if (pixels.size() != size_t{width} * height * 4) return -1.0;
+        double sum = 0, squares = 0;
+        int count = 0;
+        for (int y = 4; y < int(height) - 4; ++y)
+            for (int x = 4; x < int(width) - 4; ++x) {
+                const double v = pixels[(size_t(y) * width + x) * 4];
+                sum += v; squares += v * v; ++count;
+            }
+        const double mean = sum / count;
+        return std::sqrt(std::max(0.0, squares / count - mean * mean));
+    };
+    // One pixel per frame at the bars' depth: 0.1 of a world unit is 1.03 pixels here. The bars span 32 units, so 40 frames at
+    // up to 0.15 stay inside them.
+    const double hard = spread(0, false), still = spread(0, true), slow = spread(0.05, true), fast = spread(0.1, true), quick = spread(0.15, true);
+    std::fprintf(stderr, "TN_DEBUG pan, spread of the red channel: hard %.1f, temporal still %.1f, half a pixel a frame %.1f, a pixel %.1f, a pixel and a half %.1f\n", hard, still, slow, fast, quick);
+    // The resolve softens the bars' edges (still keeps 78 percent of the hard spread here) and a pan blurs a little more where
+    // the history lands between two texels (half a pixel keeps 62 percent of still, a whole pixel 80). A history read where
+    // the camera was, not where the camera's motion put it, blends neighbouring bars into grey and collapses all three.
+    CHECK(hard > 0 && still > 0.7 * hard);
+    CHECK(slow > 0.5 * still && fast > 0.6 * still && quick > 0.5 * still);
+}
+
 // OrthographicCamera(-2, 2, 1, -1, 0.1, 10) at z = 5, in WebGPU clip z.
 CameraState wideOrtho() {
     CameraState camera;
@@ -1279,6 +1470,8 @@ TN_TEST_MAIN({"resize_readback", resizeReadback}, {"emissive_target", emissiveTa
              {"traa_converges_edges", traaConvergesEdges},
              {"traa_late_resolve", traaLateResolve},
              {"sibling_reads_the_live_scene", siblingReadsTheLiveScene},
+             {"traa_ghosting", traaGhosting},
+             {"traa_camera_pan", traaCameraPan},
              {"output_screen_size", outputScreenSize},
 #if defined(MYSTRAL_WEBGPU_DAWN)
              {"traa_validation", traaValidation},
