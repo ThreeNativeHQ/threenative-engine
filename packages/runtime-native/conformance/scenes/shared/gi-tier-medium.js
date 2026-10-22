@@ -75,7 +75,7 @@ export async function startScene(canvas, dimensions) {
       const budget = verifyBudget();
       const volume = new ProbeVolume({
         bounds: VOLUME_BOUNDS,
-        bakeBudgetMs: 250, // the gate is the irradiance field, not frame pacing: a software-GPU emulator needs the room
+        bakeBudgetMs: 16
         cubemapSize: 8,
         density: 0.5,
         maxWorkItemsPerFrame: 1,
