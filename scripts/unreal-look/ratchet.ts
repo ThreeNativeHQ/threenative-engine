@@ -341,5 +341,13 @@ export async function main(args = process.argv.slice(2)): Promise<number> {
   console.log(`wrote ${file} (${ratchets.length} ratchet(s))`);
   return 0;
 }
+// No top-level await: compare.ts imports this module, and main() imports compare.ts, so an awaited main() deadlocks
+// that cycle (node exits 13 with no message).
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href)
-  process.exitCode = await main();
+  main().then(
+    (code) => process.exit(code),
+    (error: unknown) => {
+      console.error(error instanceof Error ? error.message : error);
+      process.exit(1);
+    },
+  );

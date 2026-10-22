@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -250,4 +251,33 @@ describe("compare --check on a GI scene", () => {
       "RATCHET BROKEN room L7-high room/window Wall dP50: 0.5 in run 2 is further from Unreal than the ratchet 0.22 (cut at abc1234, value 0.21)",
     ]);
   });
+});
+
+describe("ratchet command line", () => {
+  it("reaches the cut through the compare import cycle and fails closed on a missing capture", () => {
+    // compare.ts imports ratchet.ts: a top-level await on main() deadlocked that cycle and exited 13 with no message.
+    const dir = mkdtempSync(path.join(tmpdir(), "ratchet-cli-"));
+    const cli = spawnSync(
+      process.execPath,
+      [
+        "--import",
+        "tsx",
+        "scripts/unreal-look/ratchet.ts",
+        "--cut",
+        "abc1234",
+        "--scene",
+        "gi:cornell",
+        "--layer",
+        "L1",
+        "--captures",
+        path.join(dir, "missing"),
+        "--ratchets",
+        path.join(dir, "r.json"),
+      ],
+      { encoding: "utf8" },
+    );
+    rmSync(dir, { recursive: true, force: true });
+    expect(cli.status).toBe(1);
+    expect(cli.stderr).toMatch(/TN_UNREAL_LOOK_/);
+  }, 60_000);
 });
