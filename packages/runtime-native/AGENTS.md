@@ -117,7 +117,15 @@ does not exist.
 pnpm native:build                             # download deps + compile
 pnpm native:verify:desktop                    # 300 frames, markers, non-blank screenshot
 node conformance/run-conformance.mjs          # same scene, browser reference vs native
+node conformance/run-conformance.mjs --target desktop --engine threenative --only-tests <row> --reference <web capture dir>
 ```
+
+**Which engine a parity lane runs.** The default lanes run upstream three: Chromium on web, the legacy
+`mystral` host on desktop. A pass there is not owned-engine proof, and the owned engine has been the
+default since 2026-10-15. `--engine threenative` runs the same row on the owned engine: the V8 engine
+player on desktop (`THREENATIVE_ENGINE_PLAYER`, else `build/tn-engine-ui`), the Wasm engine in Chromium on
+web. The row is bundled with the engine's own `three`, so a scene that imports a name the engine does not
+bind fails at the bundle with `TN_NATIVE_ENGINE_UNBOUND`. Cite the engine in any parity result.
 
 `conformance/registry.json` is the versioned public test registry: a row that was not
 selected by `--only-tests` is reported **blocked**, never passed and never omitted. Keep it
