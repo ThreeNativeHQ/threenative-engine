@@ -167,6 +167,8 @@ struct DirectionalClipmapOptions {
      * area at any sun height. A sun within 18 degrees of the zenith stays square.
      */
     double minAspect = 1;
+    /** Texels per edge of each level, finest first, the last standing in for the rest; empty: `pagesPerAxis`. */
+    std::vector<int> levelPages;
 };
 
 /** Inclusive integer page range an axis-aligned box covers on one level. */
@@ -230,7 +232,7 @@ class DirectionalClipmap {
     [[nodiscard]] const ClipWindow& windowAt(int level) const;
 
     std::vector<double> clipExtents_;
-    int pagesPerAxis_ = 0;
+    std::vector<int> pagesPerAxis_;
     std::vector<double> refreshStep_;
     std::vector<double> selectionGuard_;
     int levelCount_ = 0;

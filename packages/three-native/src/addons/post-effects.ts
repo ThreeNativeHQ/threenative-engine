@@ -143,6 +143,7 @@ export function definePostEffects(tsl: IEffectTsl) {
     ao(depthNode: unknown, normalNode: unknown, camera: unknown): IEffectNode {
       const node = uniforms(tsl.ao(depthNode, normalNode ?? null, camera), [
         "radius",
+        "reachPx",
         "thickness",
         "distanceExponent",
         "distanceFallOff",

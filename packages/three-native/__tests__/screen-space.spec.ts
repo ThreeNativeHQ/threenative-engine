@@ -213,6 +213,21 @@ describe("defineScreenSpaceGi", () => {
         }),
       ),
     ).toEqual(["SSGI", "SSGI", "SSGI"]);
+    // A timed pass keeps the label on its own group only, so the stage times that group alone.
+    const timed = (timedPass: string | null) =>
+      stageOfEach((tsl) =>
+        defineScreenSpaceGi(tsl)(chain(), chain(), chain(), {
+          camera,
+          probes: { downsampleFactor: 16, viewport, timedPass: timedPass as "trace" },
+        }),
+      );
+    const S = "SSGI";
+    const _ = undefined;
+    expect(timed("trace")).toEqual([S, _, _]);
+    expect(timed("filter")).toEqual([_, S, _]);
+    expect(timed("gather")).toEqual([_, _, S]);
+    expect(timed(null)).toEqual([_, _, _]);
+    expect(() => timed("denoise")).toThrow(/TN_NATIVE_SCREEN_PROBES/);
     expect(
       stageOfEach((tsl) =>
         defineScreenSpaceReflections(tsl)(chain(), chain(), chain(), { camera }),

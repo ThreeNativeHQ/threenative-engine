@@ -5,6 +5,7 @@ import {
   PhysicalPagePool,
   ReceiverDemandPass,
   ShadowInvalidationTracker,
+  clipmapMapSizes,
   makePageKey,
   parsePageKey,
 } from "../src/render/virtual-shadow-pages.js";
@@ -472,5 +473,54 @@ describe("ShadowInvalidationTracker", () => {
     tracker.consumeInvalidatedKeys();
     tracker.invalidateAll();
     expect([...tracker.consumeInvalidatedKeys()].sort()).toEqual(["0:0:0", "0:2:0"]);
+  });
+});
+
+describe("clipmapMapSizes", () => {
+  // The harness reference view: hfov 60, 1280 px, four levels each twice the last, guard 0.9 - 0.125.
+  const harness = {
+    clipExtents: [7, 14, 28, 56],
+    selectionGuard: [0.775],
+    resolutionLodBias: 0,
+    tanHalfFov: Math.tan(Math.PI / 6),
+    viewportWidth: 1280,
+  };
+  const pixelAt = (distance: number): number =>
+    (2 * distance * harness.tanHalfFov) / harness.viewportWidth;
+
+  it("gives each level a texel of at most two pixels at the nearest receiver it serves", () => {
+    const sizes = clipmapMapSizes(harness);
+    // 2860.6 texels round up to 23 pages of 128.
+    expect(sizes).toEqual([2944, 2944, 2944, 2944]);
+    sizes.forEach((size, level) => {
+      const inner =
+        level === 0 ? 0.775 * 7 * 0.5 : 0.775 * (harness.clipExtents[level - 1] as number);
+      const texel = (2 * (harness.clipExtents[level] as number)) / size;
+      expect(texel / pixelAt(inner)).toBeLessThanOrEqual(2);
+      expect(texel / pixelAt(inner)).toBeGreaterThan(1.9);
+    });
+    // The sphere row, 5 m from the camera in the finest level: 4.8 mm texels, Unreal's level gives 5 mm.
+    expect((2 * 7) / (sizes[0] as number) / pixelAt(5)).toBeCloseTo(1.05, 2);
+  });
+
+  it("sizes a level by its own step from the level inside it", () => {
+    // [4, 8, 32]: the last level is four times the one inside it, so its texels per edge double
+    // (5760, held at the 4096 a level may have).
+    expect(clipmapMapSizes({ ...harness, clipExtents: [4, 8, 32] })).toEqual([2944, 2944, 4096]);
+    expect(clipmapMapSizes({ ...harness, clipExtents: [4, 8, 32], viewportWidth: 640 })).toEqual([
+      1536, 1536, 2944,
+    ]);
+  });
+
+  it("follows the resolution bias and raises it a quarter stop at a time past the page budget", () => {
+    expect(clipmapMapSizes({ ...harness, viewportWidth: 640, resolutionLodBias: -1 })).toEqual([
+      2944, 2944, 2944, 2944,
+    ]);
+    const capped = clipmapMapSizes({ ...harness, maxPhysicalPages: 1000 });
+    const pages = capped.reduce((sum, size) => sum + (size / 128) ** 2, 0);
+    expect(pages).toBeLessThanOrEqual(1000);
+    // 2^-0.75 of 2860.6 is 1701: the first quarter stop whose sizes fit.
+    expect(capped).toEqual([1792, 1792, 1792, 1792]);
+    expect(() => clipmapMapSizes({ ...harness, tanHalfFov: 0 })).toThrow(/tanHalfFov/u);
   });
 });

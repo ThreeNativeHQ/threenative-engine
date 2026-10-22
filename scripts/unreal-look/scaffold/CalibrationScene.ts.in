@@ -55,7 +55,7 @@ import {
   resolveQualityTier,
   shadowPreset,
 } from "../render/quality.js";
-import { WorldEnvironment } from "../render/worldEnvironment.js";
+import { type IWorldEnvironmentOptions, WorldEnvironment } from "../render/worldEnvironment.js";
 import type { GameState } from "../state.js";
 import { SCENES } from "./calibrationData.js";
 import { Play } from "./Play.js";
@@ -123,8 +123,9 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
     // Draws the lamps' shadows at another tier: what a `ShadowFilterBudget` step does, callable from the page.
     let setShadowTier = (_tier: ShadowFilterTier): void => undefined;
     // Rebuilds the chain at another final gather method: what a `GIBudget` step does, callable from the page. The cost
-    // run alternates methods in one page, so every method sees the same GPU clock.
-    let setGatherMethod = (_method: FinalGatherMethod): void => undefined;
+    // run alternates methods in one page, so every method sees the same GPU clock. `arm` overrides the chain options last:
+    // the cost run's paired arms (`gi-tier-cost.ts --arms`) change one knob in the same page.
+    let setGatherMethod = (_method: FinalGatherMethod, _arm?: IWorldEnvironmentOptions): void => undefined;
     // Sets a lamp to its scene.json intensity times `scale` (a motion run's light track).
     let setLight = (name: string, _scale: number): void => {
       throw new Error(`TN_CALIBRATION_MOTION_LIGHT: ${name}: layer ${LAYER} has no lights`);
@@ -259,7 +260,7 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
         light.intensity = candela(spec.intensity, spec.units) * LIGHT_SCALE * scale;
       };
       // A shadow tier decides whether a lamp casts and what its filter samples; `ShadowFilterBudget` moves
-      // it with the frame time when the URL asks for shadowAuto=1 (PRD-652). Diagnosis knobs: sourceRadius=0
+      // it with the frame period when the URL asks for shadowAuto=1 (PRD-652). Diagnosis knobs: sourceRadius=0
       // leaves the shadow on the hard filter (the filter's cost arm); blockers and samples set the tap counts.
       const applyShadowTier = (next: ShadowFilterTier) => {
         const preset = shadowPreset(next);
@@ -332,7 +333,7 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
       }
       // The template's `high` chain with the L9-only stages off, as Reference.ts runs below L9.
       // Exposure is the scene's fixed EV100: Unreal's manual exposure, 0.18 / 2^EV100.
-      const build = (method: FinalGatherMethod) => {
+      const build = (method: FinalGatherMethod, arm: IWorldEnvironmentOptions = {}) => {
         this.#dispose?.();
         const world = new WorldEnvironment({
           ...qualityPreset("high"),
@@ -371,6 +372,7 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
           ...(params.get("probeDebug") === null ? {} : { ssgiProbeDebug: Number(params.get("probeDebug")) }),
           vignetteAmount: 0,
           exposure: EXPOSURE,
+          ...arm,
         });
         this.#dispose = world.apply(ctx.renderer, scene, camera, {}).dispose;
       };
@@ -379,9 +381,9 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
       // light a PRD-646 direct-light gap is measured in). Pair it with ?exposure=N small enough that nothing clips.
       if (params.get("linear") === "1") raw.toneMapping = NoToneMapping;
       setGatherMethod = build;
-      // The tier's method moves with the measured GI time when the URL asks for giAuto=1 (PRD-644).
+      // The tier's method holds; the GI watcher reports its share of the GPU frame (PRD-644).
       if (GI_METHOD !== "none")
-        this.#gi = watchGi(ctx, { tier: TIER, method: GI_METHOD, rebuild: build });
+        this.#gi = watchGi(ctx, { tier: TIER, method: GI_METHOD });
     }
     for (const u of unsupported)
       console.info(`TN_CALIBRATION_SCENE unsupported ${u.actor}.${u.property}: ${u.reason}`);
@@ -401,7 +403,7 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
       giBudget: () => this.#gi?.lastReport(),
       shadowBudget: () => this.#shadow?.lastReport(),
       setShadowTier: (tier: string) => setShadowTier(resolveQualityTier({ tier })),
-      setGatherMethod: (method: FinalGatherMethod) => setGatherMethod(method),
+      setGatherMethod: (method: FinalGatherMethod, arm?: IWorldEnvironmentOptions) => setGatherMethod(method, arm),
       scene: NAME,
       unsupported,
       // The live scene, renderer and GI cache, for in-page diagnosis.

@@ -449,11 +449,26 @@ void registerLightShadow(ClassBinding& b, bool spot) {
             else if (key == "refreshStep") options.refreshStep = numbersOf(v);
             else if (key == "invalidationDelay") options.invalidationDelay = numbersOf(v);
             else if (key == "mapSize") {
+                // One size for every level, or one per level (core resolves it per level).
+                const auto sizes = v.kind == Value::Kind::Number ? std::vector<double>{number(v)} : numbersOf(v);
+                if (sizes.empty() || std::any_of(sizes.begin(), sizes.end(), [](double n) {
+                        return !std::isfinite(n) || n != std::floor(n) || n < 1 || n > 4096; }))
+                    throw Unsupported{"TN_VIRTUAL_SHADOW_INVALID: mapSize"};
+                options.mapSize = int(sizes[0]);
+                options.levelMapSizes.clear();
+                if (sizes.size() > 1) for (double n : sizes) options.levelMapSizes.push_back(int(n));
+                options.pageTexels = std::min(128, int(*std::min_element(sizes.begin(), sizes.end())));
+            }
+            else if (key == "autoMapSize") options.autoMapSize = flag(v);
+            else if (key == "resolutionLodBiasDirectional") {
+                options.resolutionLodBias = number(v);
+                if (!std::isfinite(options.resolutionLodBias)) throw Unsupported{"TN_VIRTUAL_SHADOW_INVALID: resolutionLodBiasDirectional"};
+            }
+            else if (key == "maxPhysicalPages") {
                 const double n = number(v);
                 if (!std::isfinite(n) || n != std::floor(n) || n < 1 || n > 4096)
-                    throw Unsupported{"TN_VIRTUAL_SHADOW_INVALID: mapSize"};
-                options.mapSize = int(n);
-                options.pageTexels = std::min(128, options.mapSize);
+                    throw Unsupported{"TN_VIRTUAL_SHADOW_INVALID: maxPhysicalPages"};
+                options.maxPhysicalPages = int(n);
             }
             else if (key == "lightDistance") options.lightDistance = number(v);
             else if (key == "depthRange") options.depthRange = number(v);

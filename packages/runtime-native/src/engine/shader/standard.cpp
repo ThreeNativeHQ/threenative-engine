@@ -1045,6 +1045,11 @@ static ExprId virtualShadowFactor(Program& f, Tsl& t, std::size_t index, int lev
     // inside the finest window reads one level, and one in a blend band reads two. The weights are the
     // coarse-to-fine mix chain unrolled: finest * w0 + (1 - w0) * (next * w1 + ...).
     const VarId accumulated = f.var(Type::f32(), t.f(0)), remaining = f.var(Type::f32(), t.f(1));
+    auto pageBase = [&](int level) {
+        ExprId sum = t.f(0);
+        for (int k = 0; k < level; ++k) { const ExprId n = f.swizzle(row(k*9+6), "w"); sum = f.add(sum, f.mul(n, n)); }
+        return sum;
+    };
     for (int l = 0; l < levels; ++l) {
         const ExprId window = row(l*9+4), u = row(l*9+5), v = row(l*9+6), w = row(l*9+7), params = row(l*9+8);
         const ExprId axisU = f.swizzle(u, "xyz"), axisV = f.swizzle(v, "xyz"), axisW = f.swizzle(w, "xyz");
@@ -1061,6 +1066,8 @@ static ExprId virtualShadowFactor(Program& f, Tsl& t, std::size_t index, int lev
         f.If(f.less(t.f(0), f.mul(f.load(remaining), weight)), [&] {
         const ExprId matrix = f.construct(Type::mat(4, 4), {row(l*9), row(l*9+1), row(l*9+2), row(l*9+3)});
         const ExprId mapSize = f.swizzle(u, "w"), tiles = f.swizzle(v, "w"), span = f.swizzle(w, "w");
+        // Each level's page table follows the last one's, `tiles²` entries long, so levels may differ in size.
+        const ExprId base = pageBase(l), total = pageBase(levels);
         const ExprId projected4 = f.mul(matrix, f.construct(Type::vec(4), {world, t.f(1)}));
         const ExprId projected = f.div(f.swizzle(projected4, "xyz"), f.swizzle(projected4, "w"));
         const ExprId uv = f.construct(Type::vec(2), {f.swizzle(projected, "x"), t.oneMinus(f.swizzle(projected, "y"))});
@@ -1082,7 +1089,7 @@ static ExprId virtualShadowFactor(Program& f, Tsl& t, std::size_t index, int lev
         const ExprId slopeBias = f.mul(f.div(f.div(f.mul(slope, f.mul(extent, t.f(2))), mapSize), span), footprint);
         const ExprId baseZ = f.add(f.swizzle(projected, "z"), f.uniform(at + "ShadowBias", Type::f32()));
         const ExprId mover = f.loadStorage(table, f.construct(Type::u32(), {
-            f.add(t.f(float(levels * 9 + l)), f.mul(t.f(float(levels)), f.mul(tiles, tiles)))}));
+            f.add(t.f(float(levels * 9 + l)), total)}));
         auto sampleLayer = [&](bool moving) {
         const ExprId resolution = moving ? f.swizzle(mover, "z") : mapSize;
         auto pcf = [&] {
@@ -1092,7 +1099,7 @@ static ExprId virtualShadowFactor(Program& f, Tsl& t, std::size_t index, int lev
                 f.construct(Type::vec(2), {t.f(0)}), f.construct(Type::vec(2), {t.f(1)})});
             const ExprId grid = f.mul(sampleUv, tiles);
             const ExprId tile = f.call("min", {f.call("floor", {grid}), f.construct(Type::vec(2), {f.sub(tiles, t.f(1))})});
-            const ExprId pageIndex = f.add(t.f(float(levels*9)), f.add(f.mul(t.f(float(l)), f.mul(tiles, tiles)),
+            const ExprId pageIndex = f.add(t.f(float(levels*9)), f.add(base,
                 f.add(f.mul(f.swizzle(tile, "y"), tiles), f.swizzle(tile, "x"))));
             const ExprId entry = f.loadStorage(table, f.construct(Type::u32(), {pageIndex}));
             const ExprId local = f.mul(f.sub(grid, tile), f.swizzle(params, "x"));
@@ -1107,7 +1114,7 @@ static ExprId virtualShadowFactor(Program& f, Tsl& t, std::size_t index, int lev
         };
         // The filter replaces the 5-tap PCF where it is on, so a pixel pays for one of the two.
         const VarId filtered = f.var(Type::f32(), t.f(1));
-        const ExprId filterIndex = f.add(t.f(float(levels * 10)), f.mul(t.f(float(levels)), f.mul(tiles, tiles)));
+        const ExprId filterIndex = f.add(t.f(float(levels * 10)), total);
         const ExprId filter = f.loadStorage(table, f.construct(Type::u32(), {filterIndex}));
         f.If(f.less(t.f(0), f.swizzle(filter, "w")), [&] {
             const ExprId sourceTangent = f.swizzle(filter, "x"), blockers = f.swizzle(filter, "y"), samples = f.swizzle(filter, "z");
@@ -1123,7 +1130,7 @@ static ExprId virtualShadowFactor(Program& f, Tsl& t, std::size_t index, int lev
                     return f.textureLoad(map, coordinate, f.constant(int32_t(0)));
                 }
                 const ExprId tile = f.call("floor", {f.div(pixel, f.swizzle(params, "x"))});
-                const ExprId pageIndex = f.add(t.f(float(levels*9)), f.add(f.mul(t.f(float(l)), f.mul(tiles, tiles)),
+                const ExprId pageIndex = f.add(t.f(float(levels*9)), f.add(base,
                     f.add(f.mul(f.swizzle(tile, "y"), tiles), f.swizzle(tile, "x"))));
                 const ExprId entry = f.loadStorage(table, f.construct(Type::u32(), {pageIndex}));
                 const ExprId local = f.sub(pixel, f.mul(tile, f.swizzle(params, "x")));
@@ -1145,7 +1152,7 @@ static ExprId virtualShadowFactor(Program& f, Tsl& t, std::size_t index, int lev
             const ExprId centreGrid = f.mul(centre, tiles);
             const ExprId centreTile = f.call("min", {f.call("floor", {centreGrid}), f.construct(Type::vec(2), {f.sub(tiles, t.f(1))})});
             const ExprId centreEntry = f.loadStorage(table, f.construct(Type::u32(), {f.add(t.f(float(levels*9)),
-                f.add(f.mul(t.f(float(l)), f.mul(tiles, tiles)),
+                f.add(base,
                 f.add(f.mul(f.swizzle(centreTile, "y"), tiles), f.swizzle(centreTile, "x"))))}));
             const ExprId planeOn = f.swizzle(centreEntry, "w");
             const ExprId planeWidth = f.div(width, span);
@@ -1191,7 +1198,7 @@ static ExprId virtualShadowFactor(Program& f, Tsl& t, std::size_t index, int lev
                 const ExprId clamped = f.call("clamp", {atUv, f.construct(Type::vec(2), {t.f(0)}), f.construct(Type::vec(2), {t.f(1)})});
                 const ExprId grid = f.mul(clamped, tiles);
                 const ExprId tile = f.call("min", {f.call("floor", {grid}), f.construct(Type::vec(2), {f.sub(tiles, t.f(1))})});
-                const ExprId pageIndex = f.add(t.f(float(levels*9)), f.add(f.mul(t.f(float(l)), f.mul(tiles, tiles)),
+                const ExprId pageIndex = f.add(t.f(float(levels*9)), f.add(base,
                     f.add(f.mul(f.swizzle(tile, "y"), tiles), f.swizzle(tile, "x"))));
                 const ExprId entry = f.loadStorage(table, f.construct(Type::u32(), {pageIndex}));
                 const ExprId local = f.mul(f.sub(grid, tile), f.swizzle(params, "x"));

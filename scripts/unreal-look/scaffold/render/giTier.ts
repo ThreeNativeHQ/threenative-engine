@@ -1,21 +1,9 @@
-// The GI tier at run time (PRD-644): the tier names the method a game starts at (`giPreset`), and
-// `GIBudget` moves it when the GPU time of the GI passes says the machine cannot hold it. The engine
-// measures and decides when; this file says what each method costs and what a step does.
+// The GI tier at run time (PRD-644): the tier names the method a game runs (`giPreset`), and it holds
+// that method as Unreal's Lumen holds its scalability level. `GIBudget` reports the GI share of the GPU
+// frame against the frame period. A frame over its period gets cheaper through the primary resolution
+// scale, and the GI pass follows the lower resolution.
 import { GIBudget } from "@threenative/core";
 import type { FinalGatherMethod } from "./quality.js";
-
-/**
- * GPU milliseconds each method may cost at 1920 x 1080 on the RTX 2080: Unreal 5.8.3's own GI time at the
- * matching `sg.GlobalIlluminationQuality` (PRD-644 `## Decisions`). `none` has no GI pass. `screenProbeGather`
- * is the top of Unreal Epic's measured 3.09 to 5.79 ms (PRD-640 `## Decisions`). `irradianceField` is a
- * placeholder: Unreal Medium is not profiled yet. This method gathers inside the colour pass, so no named pass
- * carries its cost, its reading is 0 ms and its budget cannot trigger a step down today.
- */
-export const GI_BUDGET_MS: Readonly<Record<FinalGatherMethod, number>> = {
-  irradianceField: 1.5,
-  none: 0,
-  screenProbeGather: 6,
-};
 
 /** The passes three names for the screen-space gather. Its denoise passes carry the gather's label. */
 export const GI_STAGES = ["SSGI"];
@@ -25,33 +13,21 @@ interface IGiScene {
   readonly beforeRender: (callback: () => void) => () => void;
 }
 
-/**
- * Watches the GI cost of a scene and rebuilds its chain on a step. A method the scene baked a cache for
- * can step between `irradianceField` and `screenProbeGather`; a scene that started at `none` baked nothing
- * and holds. The scene fixes the method (`explicit`) unless the URL asks for `giAuto=1`: a capture must
- * draw the tier it names, and a perf run must be free to move.
- */
+/** Watches the GI cost of a scene and reports it against the frame period. It never changes the method. */
 export function watchGi(
   scene: IGiScene,
   options: {
     readonly tier: string;
     readonly method: FinalGatherMethod;
-    readonly rebuild: (method: FinalGatherMethod) => void;
-    readonly frameBudgetMs?: number;
+    /** The harness lane holds a 60 Hz period; a game passes its own display target. */
+    readonly framePeriodMs?: number;
   },
 ): GIBudget {
-  const auto = new URLSearchParams(location.search).get("giAuto") === "1";
   const gi = new GIBudget({
-    budgetMs: GI_BUDGET_MS,
-    explicit: !auto,
+    framePeriodMs: options.framePeriodMs ?? 1000 / 60,
     method: options.method,
-    methods: options.method === "none" ? ["none"] : ["irradianceField", "screenProbeGather"],
-    onStep: (method) => options.rebuild(method),
     stages: GI_STAGES,
     tier: options.tier,
-    // A step up needs room in the whole frame: `irradianceField` has no pass of its own, so its stage reads 0 ms
-    // on any frame (PRD-644 `## Decisions`, step cycle).
-    frameBudgetMs: options.frameBudgetMs ?? 1000 / 60,
   });
   scene.beforeRender(() => {
     gi.observeRenderer(scene.renderer.raw);
