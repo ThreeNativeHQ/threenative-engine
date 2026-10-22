@@ -75,7 +75,7 @@ stays out of the API. The options keep Unreal's names in camelCase: `maxRoughnes
 
 - [ ] AC-1 [local]: The L8 cells on the owned engine match Unreal Epic within the PRD-631 thresholds on the chrome and smooth-dielectric sphere regions. proof: `pnpm unreal-look:compare --layer L8` — Evidence: pending.
 - [ ] AC-2 [local]: In the `cornell` pose, the chrome sphere reflects the red and green walls behind the camera within the thresholds of Unreal Epic. proof: `pnpm unreal-look:compare --scene gi --layer L8` — Evidence: pending.
-- [ ] AC-3 [local; needs a built desktop host]: The conformance row `traced-reflections` passes on the desktop lane within its tolerance. proof: `pnpm parity --target desktop --only-tests traced-reflections` — Evidence: pending.
+- [x] AC-3 [local; needs a built desktop host]: The conformance row `traced-reflections` passes on the desktop lane within its tolerance. proof: `pnpm parity --target desktop --only-tests traced-reflections` — Evidence: 2026-10-22, RTX 2080: web reference pass, desktop host (V8 build of `prd-ocean`, read-only) pass with 0 mismatching pixels and deltaE 0; the two PNGs are byte identical (`md5 c8b6cbb9`). Scene `packages/runtime-native/conformance/scenes/shared/traced-reflections.js`: a mirror sphere with red, green and yellow walls outside the frustum.
 
 ## Integration Ledger
 
@@ -104,8 +104,9 @@ stays out of the API. The options keep Unreal's names in camelCase: `maxRoughnes
 **Verification:** a PRD-647 round on the PRD-631 sphere cells and the `chrome` pose at `high`, Unreal Epic as the target, must return IMPROVEMENT against BEFORE.
 
 #### Phase 3: Rough specular and the denoiser
-**Status:** NOT STARTED
+**Status:** PARTIAL (conformance row landed; rough specular and denoiser open)
 **Files:** `packages/core/src/render/traced-reflections.ts`, `packages/core/__tests__/traced-reflections.spec.ts`, `packages/runtime-native/conformance/scenes/shared/traced-reflections.js` (new), `packages/runtime-native/conformance/registry.json`
+- [x] The conformance row `traced-reflections` runs the kernel on the browser and the desktop host. proof: `pnpm parity --target desktop --only-tests traced-reflections`. Result 2026-10-22: pass, 0 mismatching pixels, deltaE 0 (AC-3, D7).
 - [ ] A surface at roughness 0.6 indoors reads the radiance cache, not the sky, and a surface above 0.8 takes the diffuse GI. proof: `pnpm exec vitest run packages/core/__tests__/traced-reflections.spec.ts`.
 **Verification:** AC-3, and the PRD-641 flicker metric on the `pan` run for the chrome sphere region.
 
@@ -205,3 +206,33 @@ run-to-run noise (Floor sun15 6.03, 6.15, 6.07).
 AC-1 is still open: at sun15 and sun04 the chrome median is set by the reflected sky and clouds (sky-lane), and
 sun04 chrome dP50 stays 0.18 against a limit of 0.01. SmoothDielectric is the L7/L8 lighting, unchanged by this PRD.
 Open: the shadow ray is hard, so a reflected shadow edge is sharper than Unreal's.
+
+### D7 — The metal hit takes Unreal's albedo, but the hit light is too bright (2026-10-22, reflect2-lane)
+
+Task: replace `METAL_DIFFUSE` (0.12 times roughness, chosen by eye) with Unreal's model. Source read: the surface cache stores one diffuse albedo
+per surface, with the specular colour folded in as a fully rough surface: `DiffuseColor = Base (1 - Metallic) + 0.45 * lerp(0.08 * Specular, Base, Metallic)`
+(UE 5.8.3: `Engine/Shaders/Private/Lumen/LumenCardBasePass.ush:114-117`, `Engine/Shaders/Private/BRDF.ush:648-654`; the Substrate branch of the same file
+reaches the same sum). The hit is lit as `(direct + indirect) * albedo / PI` (`Engine/Shaders/Private/Lumen/SurfaceCache/LumenSurfaceCache.ush:50-61`). There is no
+specular term and no roughness at the hit, so a metal hit is 0.45 of its base colour whatever its roughness. A hit on screen takes the frame's colour instead
+(`r.Lumen.Reflections.SampleSceneColorAtHit`, default 1; depth thickness 0.01, normal threshold 85 degrees; `Engine/Shaders/Private/Lumen/LumenScreenTracing.ush:78-137`).
+
+Result (NVIDIA, headed, L8, `Sphere_Chrome` median deltaE; BEFORE = D6 code, `ms` = metal share, `sr` = screen reuse):
+
+| Cell | BEFORE (0.12 r) | 0.45 | 0.45 + sr | 0.2 + sr | 0.12 + sr |
+|---|---:|---:|---:|---:|---:|
+| spheres sun60 | 0.93 | 1.76 | 2.01 | 1.37 | 1.32 |
+| spheres sun15 | 3.26 | 5.22 | 4.72 | 3.56 | 3.50 |
+| spheres sun04 | 3.53 | 5.22 | 3.65 | 3.01 | 2.71 |
+| exterior sun15 | 3.66 | 6.63 | 7.12 | 5.68 | 5.93 |
+
+Unreal's model is a regression here, so it is not in the code and the 0.12 constant stays. The cause is the light at the hit, not the albedo. The reflected rough metal
+sphere (median grey value, Unreal / ours at 0.45): sun60 176 / 212, sun15 40 / 128, sun04 14 / 99. The share that matches Unreal changes with the sun (about 0.2, 0.09, 0.04),
+so no constant fits, and at 0.45 our hit takes about 2 times too much direct light and 5 to 10 times too much shaded-side bounce. The reflected floor in the lower third of the chrome shows the same excess
+(sun15: Unreal 55, ours 79, 66 with screen reuse). Our direct view of that floor lacks the contact darkening that Unreal has next to the sphere, so the error sits in
+the radiance cache (`giCache.irradiance`), which is the gi lane's code. A second fact for that lane: the cache bakes a metal's bounce albedo as `color * (1 - metalness)`
+(`scripts/unreal-look/scaffold/render/giCache.ts:1373`), that is 0 for a metal, where Unreal's surface cache bounces 0.36 for the 0.8 grey metal. Retry both steps together once the
+shaded-side bounce matches. Screen reuse on top of 0.45 gave sun04 spheres 5.22 to 3.65 and the floor 59.7 to 44.3 (Unreal 35), but exterior sun15 7.12 against 6.63, so it is not shipped alone either.
+The experiment build (knobs `kd`, `ki`, `ms`, `sr` and the screen reuse stage) is kept at `~/.cache/tmp-tn/reflect/reflectionTrace.task1-sr-knobs.ts`.
+
+Also: a TSL `mix(miss, shaded, hit.hit)` carries the undefined hit fields into the pixel on a miss (0 times NaN is NaN), which painted white rings on the mirror in the first
+conformance capture. Use `select` on `hit.hit`; the scene does.
