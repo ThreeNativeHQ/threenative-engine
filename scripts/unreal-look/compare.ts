@@ -197,7 +197,7 @@ export function quantiles(
   return fractions.map((f) => required(sorted[Math.max(0, Math.ceil(sorted.length * f) - 1)]));
 }
 // packages/playtest/src/capture.ts:75-76: display Rec.709, rounded to byte bins (no sRGB linearization).
-function luminance(image: IImage, i: number): number {
+export function luminance(image: IImage, i: number): number {
   const o = i * image.channels;
   return (
     0.2126 * required(image.data[o]) +
