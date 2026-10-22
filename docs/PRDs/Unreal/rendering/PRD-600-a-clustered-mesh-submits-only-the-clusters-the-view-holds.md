@@ -87,3 +87,4 @@ The change has three steps. Step 1 decides whether steps 2 and 3 continue.
 **Verification:** AC-1 and AC-3 close this phase. The visual judge compares route frames, with a camera turn mid-route.
 - [ ] The pruned walk matches the oracle on 200 seeded poses and a turn inside the margin does not re-cut. proof: red-green `pnpm exec vitest run packages/core/__tests__/clustered-mesh.spec.ts`
 - [ ] The quarry cliff walk time falls with the share of the view it sees, and the desktop route shows the same selection. proof: `pnpm --filter quarry measure -- --arm virtual --target desktop`
+- [ ] A clustered mesh whose material has a `positionNode` widens each cluster's bounds by the material's declared maximum offset before the frustum test, or keeps view pruning off and reports it (`UE 5.8.3: Engine/Shaders/Private/Nanite/NaniteClusterCulling.usf:168-169`). proof: red-green `pnpm exec vitest run packages/core/__tests__/clustered-mesh.spec.ts`

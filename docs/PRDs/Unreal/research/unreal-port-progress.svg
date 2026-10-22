@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 380" width="1200" height="380" font-family="system-ui, -apple-system, Segoe UI, sans-serif">
+<style>.h{fill:#e7ebe8;font-size:17px;font-weight:700}.t{fill:#9aa49f;font-size:12px}.e{font-size:12.5px;font-weight:600}</style>
+<rect width="1200" height="380" rx="10" fill="#121513"/>
+<text x="16" y="28" class="h">Unreal port burn-up: 353 of 1069 PRD boxes ticked · 133 a week over the last 2 weeks · 83 PRDs open</text>
+<rect x="56" y="46" width="14" height="4" fill="#9aa49f"/><text x="76" y="52" class="t">All boxes (scope)</text><rect x="286" y="46" width="14" height="4" fill="#3aa56c"/><text x="306" y="52" class="t">All boxes ticked</text><rect x="516" y="46" width="14" height="4" fill="#4a86d6"/><text x="536" y="52" class="t">Default look (waves 1-4): ticked, and scope dashed</text>
+<line x1="56" x2="1176" y1="340" y2="340" stroke="#2c322f"/><text x="48" y="344" class="t" text-anchor="end">0</text>
+<line x1="56" x2="1176" y1="273.5" y2="273.5" stroke="#2c322f"/><text x="48" y="277.5" class="t" text-anchor="end">300</text>
+<line x1="56" x2="1176" y1="207" y2="207" stroke="#2c322f"/><text x="48" y="211" class="t" text-anchor="end">600</text>
+<line x1="56" x2="1176" y1="140.5" y2="140.5" stroke="#2c322f"/><text x="48" y="144.5" class="t" text-anchor="end">900</text>
+<line x1="56" x2="1176" y1="74" y2="74" stroke="#2c322f"/><text x="48" y="78" class="t" text-anchor="end">1200</text>
+<text x="56" y="358" class="t" text-anchor="middle">Sep 6</text>
+<text x="244.9156626506024" y="358" class="t" text-anchor="middle">Sep 20</text>
+<text x="433.8313253012048" y="358" class="t" text-anchor="middle">Oct 4</text>
+<text x="622.7469879518072" y="358" class="t" text-anchor="middle">Oct 18</text>
+<text x="811.6626506024096" y="358" class="t" text-anchor="middle">Nov 1</text>
+<text x="1000.5783132530121" y="358" class="t" text-anchor="middle">Nov 15</text>
+<path d="M56.0,330.2L150.5,330.2L244.9,328.5L339.4,317.8L433.8,298.8L528.3,269.5L622.7,246.7L676.7,103.0" stroke="#9aa49f" stroke-width="2" fill="none"/>
+<path d="M56.0,340.0L150.5,340.0L244.9,340.0L339.4,340.0L433.8,332.9L528.3,330.2L622.7,326.7L676.7,238.3" stroke="#4a86d6" stroke-width="1.5" stroke-dasharray="3 3" fill="none"/>
+<path d="M56.0,338.9L150.5,338.9L244.9,337.3L339.4,337.3L433.8,337.3L528.3,317.4L622.7,305.6L676.7,261.8" stroke="#3aa56c" stroke-width="2.5" fill="none"/>
+<path d="M56.0,340.0L150.5,340.0L244.9,340.0L339.4,340.0L433.8,340.0L528.3,340.0L622.7,340.0L676.7,312.1" stroke="#4a86d6" stroke-width="2.5" fill="none"/>
+<path d="M676.722891566265,261.75166666666667L1176,103.03833333333333" stroke="#3aa56c" stroke-width="2" stroke-dasharray="6 5" fill="none"/>
+<circle cx="1176" cy="103.03833333333333" r="4" fill="#3aa56c"/><text x="1172" y="93.03833333333333" class="e" fill="#3aa56c" text-anchor="end">Everything filed ≈ Nov 28, 2026</text>
+<path d="M676.722891566265,312.07L906.1204819277109,238.255" stroke="#4a86d6" stroke-width="2" stroke-dasharray="6 5" fill="none"/>
+<circle cx="906.1204819277109" cy="238.255" r="4" fill="#4a86d6"/><text x="906.1204819277109" y="228.255" class="e" fill="#4a86d6" text-anchor="end">Default look ≈ Nov 8, 2026</text>
+</svg>
