@@ -134,8 +134,12 @@ describe("the committed manifest", () => {
     const manifest = readManifest(
       path.join(import.meta.dirname, "../../tools/unreal-reference/shadow/wildwood"),
     );
-    expect(manifest.assets.map((a) => a.file)).toContain("SM_pine01.glb");
-    expect(manifest.instances.length).toBeGreaterThanOrEqual(5);
+    expect(manifest.assets.map((a) => a.file)).toEqual([
+      "SM_green-tree01.glb",
+      "SM_bush01.glb",
+      "SM_FarnGroup01.glb",
+    ]);
+    expect(manifest.instances.map((i) => i.name)).toEqual(["GreenTree_1", "Bush_1", "Fern_1"]);
   });
 
   it("rejects an instance of an asset it does not list", async () => {

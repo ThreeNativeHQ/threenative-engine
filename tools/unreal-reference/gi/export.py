@@ -439,6 +439,8 @@ def describe_glb(actor, inst):
         # The mesh's own bounds in metres, three.js frame, before the instance scale.
         "boundsMin": to_three(box.min),
         "boundsMax": to_three(box.max),
+        # LOD 0 of the render data. Interchange builds these meshes with Nanite, which draws the whole mesh
+        # and keeps this coarser fallback for the passes that cannot (3645 against 14927 for the green tree).
         "triangles": mesh.get_num_triangles(0),
         "material": slots[0],
         "slots": slots,

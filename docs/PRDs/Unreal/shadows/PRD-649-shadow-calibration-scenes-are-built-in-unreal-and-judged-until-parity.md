@@ -69,7 +69,7 @@ them in `tools/unreal-reference/gi/<scene>/`.
 | `horizon` (runs) | `walk`: the camera moves 10 m in 3 s; `sunturn`: the sun azimuth turns 10° in 3 s | as above | — | PRD-634 (stability) |
 | `foliage` (the `gi:` scene of [PRD-643](../gi/PRD-643-glass-fog-and-leaves-take-the-bounce-light-too.md)) | Adds a leaf-card tree over open ground and card grass at a capsule's feet | Sun at 60° and 15° | `canopy`, `grass` | [PRD-651](PRD-651-leaves-cast-leaf-shadows-that-sway-near-the-camera.md) |
 | `foliage` (run) | `wind`: the tree sways for 180 frames on a still camera | as above | — | PRD-651 |
-| `wildwood` | Real vegetation, the Fab GLBs of the sandbox wildwood game: a pine, a broadleaf tree, a bush, two fern clumps, three grass clumps and two flower clumps on a flat floor. The files are not in the repository | Sun at 60° and 15° | `canopy`, `shrub`, `ground` | [PRD-651](PRD-651-leaves-cast-leaf-shadows-that-sway-near-the-camera.md), PRD-643 |
+| `wildwood` | Real vegetation, three Fab GLBs of the sandbox wildwood game: one broadleaf tree, one bush and one fern clump on a flat floor, and nothing else of that game. The files are not in the repository | Sun at 60° and 15° | `closeup`, `medium` | [PRD-651](PRD-651-leaves-cast-leaf-shadows-that-sway-near-the-camera.md), PRD-643 |
 
    Whichever of PRD-643 or PRD-651 starts first authors `foliage` with both PRDs' elements.
    The owner asked for real vegetation (2026-10-21), so the judge takes `wildwood` as the foliage
@@ -142,6 +142,13 @@ screenshots branch only.
   and each instance with its transform, and the files come from `TN_WILDWOOD_ASSETS`. A missing
   root, a missing file or a changed hash stops the run before any engine starts
   (`scripts/unreal-look/wildwood.ts`, `scripts/__tests__/unreal-look-wildwood.spec.ts`).
+- 2026-10-21 (wildwood lane, owner): keep the vegetation scene lean. The owner said the comparison does
+  not need the whole wildwood scene. The first build held 10 instances (a pine, a tree, a bush, two
+  ferns, three grass clumps and two flower clumps) in 3 poses; it is trimmed to one broadleaf tree
+  (`SM_green-tree01`), one bush (`SM_bush01`) and one fern clump (`SM_FarnGroup01`) in 2 poses:
+  `closeup` (leaf shadows on the ground, the trunk and the understory) and `medium` (the whole tree and
+  the length of the shadows). The layers are L5 and L9, plus L7 because the light on the leaves is
+  measurably off at L9. Both engines run 2 times per arm.
 - 2026-10-21 (wildwood lane): Unreal imports each file with its own glTF importer (Interchange),
   from a decoded copy, because that importer has no `EXT_meshopt_compression` and the files carry it.
   The copy holds the same triangles, UVs, textures and materials. Interchange draws a masked

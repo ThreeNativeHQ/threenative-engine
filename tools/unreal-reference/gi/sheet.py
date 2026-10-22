@@ -63,7 +63,8 @@ def main():
     crop = [float(v) for v in args.crop.split(",")] if args.crop else None
     arms = [a.split("=", 1) for a in args.arm]
     unreal_variant = args.layer if shadow else VARIANT[args.layer]
-    arms += [[args.tn, args.tn_label or f"WASM ENGINE {args.layer}"], ["unreal", f"UNREAL 5.8.3 {unreal_variant}"]]
+    dot = " · " if shadow else " "
+    arms += [[args.tn, args.tn_label or f"WASM ENGINE{dot}{args.layer}"], ["unreal", f"UNREAL 5.8.3{dot}{unreal_variant}"]]
     sheet = Image.new("RGB", (W * len(arms), H * len(poses)), (0, 0, 0))
     draw = ImageDraw.Draw(sheet)
     big = font(30)

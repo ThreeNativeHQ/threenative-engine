@@ -85,7 +85,7 @@ export function assetRoot(env: NodeJS.ProcessEnv = process.env): string {
   if (!existsSync(root) || !statSync(root).isDirectory())
     fail(
       "NO_ASSET_ROOT",
-      `${root} is not a folder. Set ${ASSET_ROOT_ENV} to the folder that holds the wildwood GLBs (SM_pine01.glb and the others); they are licensed Fab files and are not in this repository.`,
+      `${root} is not a folder. Set ${ASSET_ROOT_ENV} to the folder that holds the wildwood GLBs (SM_green-tree01.glb and the others in manifest.json); they are licensed Fab files and are not in this repository.`,
     );
   return root;
 }

@@ -1,9 +1,9 @@
 """PRD-649 shadow calibration scene `wildwood`: real vegetation on a flat floor, in both engines.
 
 Serves PRD-651 (the shadow and the look of alpha-tested leaf cards) and PRD-643 (the bounce light on
-leaves). It replaces the procedural cards of `foliage` as the foliage target: the vegetation is the
-Fab Landscape Pro GLBs of the sandbox wildwood game, two trees (a pine and a broadleaf), a bush, two
-fern clumps and a patch of grass and flower clumps. manifest.json names each file with its sha256 and
+leaves). It replaces the procedural cards of `foliage` as the foliage target: the vegetation is three
+Fab Landscape Pro GLBs of the sandbox wildwood game, a broadleaf tree, a bush and a fern clump, and
+nothing else of that game (no terrain, no scatter). manifest.json names each file with its sha256 and
 each instance with its transform; the files are read from TN_WILDWOOD_ASSETS and none of them is
 committed (scripts/unreal-look/wildwood.ts).
 
@@ -44,13 +44,10 @@ SCENE = {
     "fog": None,
     "ev100": 3,
     "poses": [
-        # Both trees whole and the dappled ground under them, from the sun side and above. At sun 15 the
-        # shadows run 37 m, so the camera rises to show their length.
-        {"name": "canopy", "position": [10.0, 7.0, 13.0], "target": [-0.5, 3.2, -3.0], "hfovDeg": 76,
-         "perSun": {"sun15": {"position": [12.0, 10.0, 15.0], "target": [-3.0, 1.5, -3.0], "hfovDeg": 76}}},
-        # The bush and the two ferns, with the shadow of the trees across them.
-        {"name": "shrub", "position": [4.5, 1.6, 5.5], "target": [1.0, 0.5, 1.0], "hfovDeg": 62},
-        # The grass and flower clumps near the ground.
-        {"name": "ground", "position": [3.2, 0.9, 5.6], "target": [4.4, 0.2, 3.4], "hfovDeg": 52},
+        # The trunk base and the ground under the crown, from the sun side and above: the leaf shadows
+        # on the ground, on the trunk and on the fern and the bush.
+        {"name": "closeup", "position": [3.0, 2.4, 3.4], "target": [-1.2, 0.8, 0.1], "hfovDeg": 64},
+        # The whole tree, the bush and the fern, and the length of the shadows across the floor.
+        {"name": "medium", "position": [2.4, 3.6, 12.0], "target": [-1.2, 3.1, 0.0], "hfovDeg": 66},
     ],
 }

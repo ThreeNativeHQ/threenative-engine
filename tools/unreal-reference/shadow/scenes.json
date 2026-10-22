@@ -24,7 +24,7 @@
       "name": "wildwood",
       "owner": "PRD-649",
       "serves": ["PRD-651", "PRD-643"],
-      "poses": ["canopy", "shrub", "ground"],
+      "poses": ["closeup", "medium"],
       "manifest": "manifest.json"
     }
   ],
