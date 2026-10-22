@@ -39,6 +39,8 @@ import { ssr } from "three/addons/tsl/display/SSRNode.js";
 import { sharpen } from "three/addons/tsl/display/SharpenNode.js";
 import { traa } from "three/addons/tsl/display/TRAANode.js";
 import {
+  Fn,
+  If,
   clamp,
   color,
   convertToTexture,
@@ -57,12 +59,13 @@ import {
   uniform,
   uv,
   vec2,
+  vec3,
   vec4,
 } from "three/tsl";
 import { BlendMode, type Node, type NodeBuilder, type TextureNode } from "three/webgpu";
 import { AutoExposureNode, applyExposure } from "./autoExposure.js";
 import { type IExposureSettings, exposureSettings } from "./exposure.js";
-import { cacheFallback } from "./giCache.js";
+import { cacheFallback, giCache } from "./giCache.js";
 import { harnessLayer } from "./harnessLayer.js";
 import { LocalExposureNode } from "./localExposure.js";
 import { motionBlur } from "./motionBlur.js";
@@ -810,6 +813,10 @@ export class WorldEnvironment {
           ...(engineInfo as { engine?: { temporal?: object } }).engine?.temporal,
         })
       : undefined;
+    // Contact occlusion dims the light that comes from around. With the world cache baked the frame's indirect
+    // diffuse is known per pixel, so only that share takes the occlusion and the sun keeps its light, as
+    // Unreal's AO (indirect light only) leaves it. Without a cache (the three.js engine) the whole frame is dimmed.
+    const indirectOcclusion = ownedEngine && giCache.irradiance !== undefined;
     const scenePass = pass(scene, camera, { samples: options.samples });
     const resolutionSubrect =
       requested.length === 0 || resolutionSubrectRefusal !== undefined
@@ -833,7 +840,9 @@ export class WorldEnvironment {
         normal: vec4(normalView, 0),
         metalness,
         roughness,
-        ...(options.ssgiEnabled ? { diffuseColor } : {}),
+        ...(options.ssgiEnabled || (options.gtaoEnabled && indirectOcclusion)
+          ? { diffuseColor }
+          : {}),
         // AO leaves emission alone: an emitter's underside stays its own radiance (Unreal's AO is indirect only).
         ...(options.gtaoEnabled || options.ssgiEnabled ? { emissive } : {}),
       });
@@ -878,10 +887,8 @@ export class WorldEnvironment {
       : undefined;
     // The frame's exposure multiplier. Every chain stage reads pre-exposed light, as Lumen's passes do.
     const gain = exposure === undefined ? float(options.exposure) : exposure.exposureNode;
-    const exposed = applyExposure(
-      colour,
-      localExposure === undefined ? gain : gain.mul(localExposure.gainNode),
-    );
+    const frameGain = localExposure === undefined ? gain : gain.mul(localExposure.gainNode);
+    const exposed = applyExposure(colour, frameGain);
     let released = false;
     const releaseGraph = (): void => {
       if (released) return;
@@ -924,7 +931,7 @@ export class WorldEnvironment {
 
     let releaseBloom = (): void => {};
     let releaseAo = (): void => {};
-    let contactOcclusion: ChainNode | undefined;
+    let contactOcclusion: Node<"float"> | undefined;
     let releaseAa = (): void => {};
     const stages: ChainStage[] = [
       stage({
@@ -1102,7 +1109,51 @@ export class WorldEnvironment {
           const composited = input
             .mul(vec4(occlusion.r, occlusion.r, occlusion.r, 1))
             .add(vec4(emitted.mul(float(1).sub(occlusion.r)), 0));
-          return composited;
+          const cache = indirectOcclusion ? cacheFallback(view) : undefined;
+          if (cache === undefined) return composited;
+          // The pixel's view-space position from its depth and the camera's projection terms, read live each
+          // render: the engine has no getViewPosition, and a post quad's own camera nodes are the quad's.
+          const term = (index: number) =>
+            uniform(view.projectionMatrix.elements[index] ?? 0).onRenderUpdate(
+              () => view.projectionMatrix.elements[index] ?? 0,
+            );
+          const [p0, p5, p8, p9, p10, p14] = [
+            term(0),
+            term(5),
+            term(8),
+            term(9),
+            term(10),
+            term(14),
+          ];
+          const compose = Fn(() => {
+            const coordinate = uv();
+            const result = vec3(composited.rgb).toVar();
+            const sceneDepth = depth().sample(coordinate).r;
+            const sceneNormal = normal().sample(coordinate).xyz;
+            // The sky and a draw the normal pass skips (an unlit material) keep the whole-frame multiply.
+            If(sceneDepth.lessThan(1).and(sceneNormal.dot(sceneNormal).greaterThan(0.25)), () => {
+              const viewZ = p14.negate().div(sceneDepth.add(p10));
+              const ndc = vec2(
+                coordinate.x.mul(2).sub(1),
+                float(1).sub(coordinate.y).mul(2).sub(1),
+              );
+              const position = vec3(
+                viewZ.negate().mul(ndc.x.add(p8)).div(p0),
+                viewZ.negate().mul(ndc.y.add(p9)).div(p5),
+                viewZ,
+              );
+              // The indirect diffuse the material added: the cache's irradiance times the albedo, in the frame's
+              // units (the gather's own fallback reads it the same way). Only it takes the occlusion, and the
+              // result is never darker than the whole-frame multiply.
+              const indirect = albedo()
+                .rgb.mul(float(1).sub(metal().r))
+                .mul(cache(position, sceneNormal.normalize()))
+                .mul(frameGain);
+              result.assign(max(input.rgb.sub(indirect.mul(float(1).sub(occlusion.r))), composited.rgb));
+            });
+            return vec4(result, input.a);
+          });
+          return compose();
         },
       }),
       stage({
