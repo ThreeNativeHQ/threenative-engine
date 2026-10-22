@@ -5,7 +5,7 @@ prd_contract: v1
 # PRD-642 — Glossy surfaces reflect what the camera cannot see
 
 **Status:** PARTIAL (Phase 1 measured; Phase 2 in progress)
-**Priority:** P2 — no box is ticked: a reflection ray that leaves the screen falls back to the sky environment, so a chrome sphere in a room reflects the sky and not the room behind the camera.
+**Priority:** P2 — the chrome sphere still misses AC-1 at sun15 and sun04 (sky and clouds, sky-lane): a reflection ray that leaves the screen falls back to the sky environment, so a chrome sphere in a room reflects the sky and not the room behind the camera.
 **Complexity:** 7 (HIGH) — 6–10 files: the reflection trace, rough specular, the denoise, specs, conformance (+2), new module `traced-reflections.ts` (+2), history state (+2), native proof (+1); risk override: none
 **Owner:** João
 **Depends on:** [PRD-603](../rendering/PRD-603-probes-refresh-by-tracing-the-packed-scene-not-by-drawing-it-six-times.md) Phase 2 (the radiance cache that rough reflections read and the BVH trace). [PRD-639](PRD-639-a-surface-cache-gives-traced-rays-the-texture-glow-and-lights-of-what-they-hit.md) Phase 2 (what a reflection ray sees at its hit). [PRD-641](PRD-641-bounce-light-holds-still-while-the-camera-moves-and-follows-a-light-that-changes.md) Phase 2 (the history code it reuses). [PRD-638](../../done/PRD-638-calibration-scenes-are-built-in-unreal-and-captured-as-the-gi-target.md) Phase 1, [PRD-646](PRD-646-threenative-recreates-each-unreal-calibration-scene-exactly.md) Phase 2 and [PRD-647](../../done/PRD-647-a-visual-judge-calibrates-gi-against-the-unreal-scenes-until-parity.md): this PRD adds the `chrome` pose to the `neon-corridor` calibration scene. [PRD-VQ-03](../../rendering/PRD-VQ-03-local-reflection-probes.md) owns the reflection captures that the tiers without traced reflections use.
@@ -95,11 +95,12 @@ stays out of the API. The options keep Unreal's names in camelCase: `maxRoughnes
 - [ ] Each wrong L8 region of the `chrome` pose is listed with its cause under `## Decisions`. proof: `pnpm unreal-look:compare --scene gi:neon-corridor --layer L8`. Open: the scene is not on the epic yet and GI scenes have no L8 variant (D4).
 
 #### Phase 2: Reflection rays leave the screen
-**Status:** NOT STARTED
+**Status:** PARTIAL
 **Files:** `packages/core/src/render/traced-reflections.ts` (new), `packages/core/src/index.ts`, `packages/core/__tests__/traced-reflections.spec.ts` (new), `scripts/unreal-look/scaffold/render/worldEnvironment.ts`, `scripts/unreal-look/scaffold/render/giCache.ts`, `packages/engine-mcp/__tests__/search.spec.ts`
-- [ ] An `ssr` miss on a surface at roughness 0.4 or less continues through the BVH, and a rougher surface casts no BVH ray. proof: `pnpm exec vitest run packages/core/__tests__/traced-reflections.spec.ts`.
+- [x] An `ssr` miss on a surface at roughness 0.4 or less continues through the BVH, and a rougher surface casts no BVH ray. proof: `pnpm exec vitest run packages/core/__tests__/traced-reflections.spec.ts`. Result: 9/9 pass (with `search.spec.ts` 67/67); the stage replaces the `ssr` march in `worldEnvironment.ts` and gates on `trace.weight(roughness)`; GPU proof in D6.
 - [ ] The harness floor paint is gone and AC-1 still holds. proof: `pnpm unreal-look:compare --layer L8`.
-- [ ] A capability search for "lumen reflections" returns `TracedReflections`. proof: `pnpm exec vitest run packages/engine-mcp/__tests__/search.spec.ts`.
+  Paint is off whenever the trace runs (`paint=1` brings it back); AC-1 does not hold yet on Sphere_Chrome at sun15 (dE 3.25 against 1) and sun04 (3.46), see D6.
+- [x] A capability search for "lumen reflections" returns `TracedReflections`. proof: `pnpm exec vitest run packages/engine-mcp/__tests__/search.spec.ts`. Result: 67/67 with the traced spec; both aliases rank it first.
 **Verification:** a PRD-647 round on the PRD-631 sphere cells and the `chrome` pose at `high`, Unreal Epic as the target, must return IMPROVEMENT against BEFORE.
 
 #### Phase 3: Rough specular and the denoiser
@@ -174,3 +175,33 @@ only the layers ID, L1, L7 and L9, so `--scene gi --layer L8` cannot run today. 
 only on `lane/surface` (commit `84f1682c5`) and has no glossy object. The sunlit-room and `cornell` surfaces all
 have roughness 1.0, so they have no glossy region to list. AC-2 needs a chrome sphere in `cornell`, an L8
 variant of the GI scenes, and an Unreal capture of both. They come after Phase 2 proves on the spheres scene.
+
+### D5 — What the kernel does and why (2026-10-21)
+
+The walk keeps a runtime trip count and a runtime loop over a leaf's triangles: a constant bound with an unrolled
+leaf lost the NVIDIA device. The cube capture stays while rays are traced (it is the miss colour source).
+A barycentric tolerance of 1e-5 closes the hairline cracks between triangles of one edge (spec: two triangles 2e-6 apart).
+The default node budget is the tree's node count up to 2048 and not 192: a CPU twin of the kernel on the spheres
+pose gives a wrong first hit on 3.02 percent of the pixels at 192, 0.13 at 256 and 0 at 512. The cut rays kept the far wall of
+the capsule, which showed as axis-aligned dark blocks on the capsule's band in the lit camera ray and as specks in the
+chrome. Cause: engine (`packages/core`). A metal hit takes a diffuse share of 0.12 times its roughness: with none the
+rough metal sphere reflects black, with the full colour it reflects a bright disc (Unreal: dark grey, about 34).
+
+### D6 — Result at L8, Sphere_Chrome (2026-10-21, reflect-lane)
+
+BEFORE (`?off=traced`, two runs, identical to the digit) and AFTER (two runs, final code) on the owned engine (Wasm),
+NVIDIA adapter, headed. Median Lab deltaE to Unreal, BEFORE then AFTER (runs agree within 0.1):
+
+| Region | sun60 spheres | sun15 spheres | sun04 spheres | sun15 exterior | sun04 exterior |
+|---|---:|---:|---:|---:|---:|
+| Sphere_Chrome | 1.14 to 0.93 | 4.55 to 3.26 | 3.46 to 3.53 | 7.22 to 3.65 | 4.79 to 3.97 |
+| Sphere_RoughMetal | not in pose | not in pose | not in pose | 10.18 to 5.06 | 9.24 to 6.51 |
+| Sphere_SmoothDielectric | 1.00 to 1.05 | 2.64 to 2.70 | 8.33 to 8.36 | 2.46 to 2.46 | 7.78 to 7.88 |
+
+The radial streaks, the stair-stepped seam, the flat white neighbours, the painted floor and the bright disc of the
+reflected rough metal are gone. Judge tool (`judge.ts`, 6 frames, 2 runs per arm, criteria in the PR comment):
+IMPROVEMENT on all six frames and overall, CLOSE to Unreal. Direct-view regions change by at most 0.1 deltaE, the same as
+run-to-run noise (Floor sun15 6.03, 6.15, 6.07).
+AC-1 is still open: at sun15 and sun04 the chrome median is set by the reflected sky and clouds (sky-lane), and
+sun04 chrome dP50 stays 0.18 against a limit of 0.01. SmoothDielectric is the L7/L8 lighting, unchanged by this PRD.
+Open: the shadow ray is hard, so a reflected shadow edge is sharper than Unreal's.
