@@ -597,7 +597,8 @@ v8::Local<v8::Value> V8Game::adapterValue() {
 
 // `tn.renderInfo()`: { drawCalls, triangles } of the last frame the player drew, and the renderer's
 // cumulative pipelineCompiles (a window's compiles are the difference between two reads), the samples the scene draws
-// with, and the temporal pass as the last planned frame left it: { active, frame, historyValid, jitter: [x, y] }.
+// with, and the temporal pass as the last planned frame left it: { active, frame, historyValid, jitter: [x, y], rejected,
+// clamped, pixels, countedFrame } (the last four are the newest counted frame, one in 16).
 // `gpuTiming` is the newest resolved GPU time once `tn.setGpuTimer(true)` asked for it: { enabled, samples, source, ms, segments }
 // (segments: shadow, scene, other, output passes, then the stages a post pass is labelled with, frame_gpu_timer.h).
 void V8Game::renderInfo(const v8::FunctionCallbackInfo<v8::Value>& info) {
@@ -614,6 +615,10 @@ void V8Game::renderInfo(const v8::FunctionCallbackInfo<v8::Value>& info) {
     status->Set(ctx, v8str(isolate, "active"), v8::Boolean::New(isolate, temporal.active)).Check();
     status->Set(ctx, v8str(isolate, "frame"), v8::Number::New(isolate, static_cast<double>(temporal.frame))).Check();
     status->Set(ctx, v8str(isolate, "historyValid"), v8::Boolean::New(isolate, temporal.historyValid)).Check();
+    status->Set(ctx, v8str(isolate, "rejected"), v8::Number::New(isolate, temporal.rejected)).Check();
+    status->Set(ctx, v8str(isolate, "clamped"), v8::Number::New(isolate, temporal.clamped)).Check();
+    status->Set(ctx, v8str(isolate, "pixels"), v8::Number::New(isolate, temporal.pixels)).Check();
+    status->Set(ctx, v8str(isolate, "countedFrame"), v8::Number::New(isolate, static_cast<double>(temporal.countedFrame))).Check();
     v8::Local<v8::Value> jitter[] = {v8::Number::New(isolate, temporal.jitterX), v8::Number::New(isolate, temporal.jitterY)};
     status->Set(ctx, v8str(isolate, "jitter"), v8::Array::New(isolate, jitter, 2)).Check();
     record->Set(ctx, v8str(isolate, "temporal"), status).Check();

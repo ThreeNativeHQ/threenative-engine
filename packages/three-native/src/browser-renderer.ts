@@ -147,6 +147,12 @@ export function defineWebRenderer(
           frame: 0,
           historyValid: false,
           jitter: [0, 0] as [number, number],
+          // The newest counted frame (one in 16 is counted): the pixels whose history the resolve discarded and the pixels
+          // whose history it pulled into the colour neighbourhood, of `pixels`, and which frame it was. 0 until the first.
+          rejected: 0,
+          clamped: 0,
+          pixels: 0,
+          countedFrame: 0,
         },
         // The samples the scene draws with. `samples` above is what was asked for; 1 here while the temporal pass runs.
         samples: 1,
@@ -425,6 +431,10 @@ export function defineWebRenderer(
       temporal.historyValid = module._tnw_web_frame(15) === 1;
       temporal.jitter[0] = module._tnw_web_frame(16);
       temporal.jitter[1] = module._tnw_web_frame(17);
+      temporal.rejected = module._tnw_web_frame(30);
+      temporal.clamped = module._tnw_web_frame(31);
+      temporal.pixels = module._tnw_web_frame(32);
+      temporal.countedFrame = module._tnw_web_frame(33);
       engine.samples = module._tnw_web_frame(18);
     }
 

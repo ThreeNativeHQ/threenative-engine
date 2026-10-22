@@ -101,12 +101,18 @@ describe("the Wasm engine's temporal pass readout", () => {
     return renderer.info.engine.temporal;
   }
 
-  it("reads the engine's frame, history and jitter while a traa() effect is in the graph", async () => {
-    expect(await readout({ 13: 1, 14: 7, 15: 1, 16: 0.25, 17: -0.5 })).toEqual({
+  it("reads the engine's frame, history, jitter and counted history rejection while a traa() effect is in the graph", async () => {
+    expect(
+      await readout({ 13: 1, 14: 7, 15: 1, 16: 0.25, 17: -0.5, 30: 12, 31: 7, 32: 3072, 33: 48 }),
+    ).toEqual({
       active: true,
       frame: 7,
       historyValid: true,
       jitter: [0.25, -0.5],
+      rejected: 12,
+      clamped: 7,
+      pixels: 3072,
+      countedFrame: 48,
     });
   });
 
@@ -132,6 +138,10 @@ describe("the Wasm engine's temporal pass readout", () => {
       frame: 0,
       historyValid: false,
       jitter: [0, 0],
+      rejected: 0,
+      clamped: 0,
+      pixels: 0,
+      countedFrame: 0,
     });
   });
 });
