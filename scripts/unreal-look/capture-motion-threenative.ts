@@ -158,6 +158,7 @@ export async function captureMotionFrames(input: IMotionCaptureInput): Promise<n
         scene: input.sceneId,
         run,
         layer: input.layer,
+        tier: await page.evaluate("window.__tnRef.tier"),
         frames: spec.frames,
         stills,
         warmUp,
