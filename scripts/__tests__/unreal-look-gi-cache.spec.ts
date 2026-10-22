@@ -620,6 +620,33 @@ describe("the world-space GI cache against closed forms (PRD-631 L7)", () => {
     expect(underRoof.share[1]).toBeLessThan((below.share[1] ?? 0) + 0.05);
   }, 120_000);
 
+  it("a cut link keeps where its wall starts, so a read point can tell the side it is on (sunlit-room)", () => {
+    const room = sunlitRoom();
+    skyRadiance.current = {
+      data: new Float32Array(6).fill(1),
+      width: 2,
+      height: 1,
+      scale: [1, 1, 1],
+    };
+    installGi(rayContext(room), room, { bounces: 1, sun: noSun });
+    const field = giCache.field;
+    if (field === undefined) throw new Error("no field baked");
+    const { grid, walls } = field;
+    const at = (point: Vector3): number =>
+      Math.floor((point.x - grid.origin.x) / grid.cell) +
+      grid.nx *
+        (Math.floor((point.y - grid.origin.y) / grid.cell) +
+          grid.ny * Math.floor((point.z - grid.origin.z) / grid.cell));
+    // The roof's underside is at y 3.0: the link up from the texel just under it meets the wall (3.0 - its centre) / cell of the way.
+    const under = at(new Vector3(1.75, 2.85, -3));
+    const centre =
+      grid.origin.y + (Math.floor((2.85 - grid.origin.y) / grid.cell) + 0.5) * grid.cell;
+    const share = (walls[under * 3 + 1] ?? 0) / 255;
+    expect(Math.abs(share - (3.0 - centre) / grid.cell)).toBeLessThan(0.02);
+    // The link up from a texel a row lower is open: no wall, no position.
+    expect(walls[at(new Vector3(1.75, 2.35, -3)) * 3 + 1]).toBe(0);
+  }, 120_000);
+
   it("the sunlit room's walls and ceiling read the path-traced light, not 1.5 times it, and smooth (sunlit-room)", () => {
     // A 40 m ground stretched the probe grid to 1 m, 0.9 m under the ceiling, and every bounce over-read: the walls
     // came out 1.46 to 1.78 times the path trace. Five bounces against a path of six surfaces, both with the same sun.

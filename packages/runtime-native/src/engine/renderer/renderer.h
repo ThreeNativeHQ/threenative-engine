@@ -405,8 +405,14 @@ public:
     /** Linear filtering, clamped to the edge: three's RenderTarget texture defaults. */
     WGPUSampler linearClampSampler();
     void setVirtualShadow(std::size_t light, const shadows::AtlasOptions& options);
-    void syncVirtualShadows(const LightState& lights);
+    /** `tanHalfFov` is the main view's (0 for a pass that is not it): auto-sized atlases measure on it. */
+    void syncVirtualShadows(const LightState& lights, double tanHalfFov = 0);
     bool hasVirtualShadows() const { return !virtualShadows_.empty(); }
+    /** The page plan of light `light`'s virtual shadow, or null. */
+    const shadows::PageAtlas* virtualShadowAtlas(std::size_t light) const {
+        const auto it = virtualShadows_.find(light);
+        return it == virtualShadows_.end() ? nullptr : &it->second.atlas;
+    }
     void cutVirtualShadows() { virtualCut_ = true; }
     void setOutput(const OutputState& output);
     /** A post pass between the scene and the output transform; null draws the scene straight out. */
