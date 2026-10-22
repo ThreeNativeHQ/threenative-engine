@@ -151,6 +151,7 @@ these criteria, per frame and overall.
   (the method) and Phase 3 (all templates take the method and the filter) are NOT STARTED, so this phase starts after them. The
   only effect a table could have today is `low` turning the sun's shadows off, which changes template pictures and needs the
   visual judge.
+- 2026-10-22 (tier2-lane, a slow frame costs the shadows): in the exclusive window of 2026-10-22 00:00 PDT (`gi-tier-cost.ts --auto`, RTX 2080 at P8, 420 to 540 MHz, 1920 × 1080), `ShadowFilterBudget` read frames of 19.5 ms (from `high`) and 19.8 ms (from `medium`) against the 16.7 ms period and stepped the shadow tier to `low` in both runs. The shadows were not the cost, because `low` and `medium` GI frames read 20.3 and 20.7 ms with the shadows at `high`. The harness `low` tier draws no shadow, so a frame that is slow for another reason removes every shadow. The earlier note about the whole-frame signal predicted the step, and this run shows what it costs. A fix needs the shadow pass's own time, or a floor of `medium` for the step-down. That choice is open and belongs to the PRD owner.
 - 2026-10-21 (tier-lane, no calibrate command): `pnpm unreal-look:calibrate` does not exist in this tree (PRD-647
   owns it). `pnpm unreal-look:compare --metric penumbra` is the substitute for the per-tier rows.
 - 2026-10-21 (tier-lane, Unreal's own spread): on `penumbra-lab`, Unreal Medium differs from Unreal Epic by a mean of
