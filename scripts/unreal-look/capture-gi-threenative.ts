@@ -15,6 +15,12 @@ import path from "node:path";
 import { assertVisualPortAvailable, stopVisualServer } from "../visual-gate.js";
 import { launchWebgpuBrowser } from "./browser.js";
 import { HIDE_UI, freePort, scaffold, waitForServer } from "./capture-threenative.js";
+import {
+  type IExposureObservation,
+  metersExposure,
+  parseExposure,
+  waitForExposure,
+} from "./exposure-settle.js";
 import { readScene, sceneDir, sceneKey } from "./gi.js";
 
 const REPO_ROOT = path.resolve(import.meta.dirname, "../..");
@@ -161,7 +167,11 @@ export async function captureGiThreeNative(options: {
         // The frame meter prints to the console; a measured pose keeps the windows between two marks.
         let meter: string[] = [];
         page.on("pageerror", (error) => errors.push(error.message));
+        // A template-lit scene meters its exposure, which closes on its target in clock time (exposure-settle.ts).
+        const exposure: IExposureObservation[] = [];
         page.on("console", (message) => {
+          const seen = parseExposure(message.text());
+          if (seen !== undefined) exposure.push(seen);
           if (message.text().startsWith("TN_FRAME_BUDGET")) meter.push(message.text());
           if (
             message.type() === "error" ||
@@ -181,18 +191,26 @@ export async function captureGiThreeNative(options: {
           const extra = process.env.TN_GI_URL_EXTRA ?? "";
           // A template-lit shadow scene (PRD-649) is lit by the reference scene's default-level
           // lighting, once per sun; its ID frames and every other scene use the calibration scene.
-          const visits: { query: string; key: string; poses: typeof scene.poses }[] =
+          const visits: {
+            query: string;
+            key: string;
+            poses: typeof scene.poses;
+            reference: boolean;
+          }[] =
             scene.template === "default" && layer !== "ID"
               ? (scene.suns ?? []).map((sun) => ({
                   query: `tnRef=${layerQuery(layer).layer}${tierQuery(layer)}&sun=${sun.elevationDeg},${sun.azimuthDeg}&model=${sceneKey(name)}`,
                   key: `${name}/${layer}/${sun.name}`,
                   poses: scene.poses.filter((pose) => pose.sun === sun.name),
+                  reference: true,
                 }))
               : [
                   {
                     query: `tnGi=${name}&layer=${layerQuery(layer).layer}${tierQuery(layer)}`,
                     key: `${name}/${layer}`,
                     poses: scene.poses,
+                    // The calibration scene holds its exposure fixed (Unreal's manual EV100).
+                    reference: false,
                   },
                 ];
           for (const visit of visits) {
@@ -217,6 +235,20 @@ export async function captureGiThreeNative(options: {
               await page.evaluate(
                 "new Promise((resolve) => { let n = 0; const tick = () => (++n >= 45 ? resolve() : requestAnimationFrame(tick)); requestAnimationFrame(tick); })",
               );
+              if (
+                visit.reference &&
+                metersExposure({
+                  layer: layerQuery(layer).layer,
+                  measureSeconds: options.measureSeconds,
+                  switches: extra,
+                })
+              ) {
+                const since = exposure.length;
+                await waitForExposure({
+                  observations: () => exposure.slice(since),
+                  wait: (ms) => page.waitForTimeout(ms),
+                });
+              }
               if (errors.length > 0)
                 throw new Error(`TN_UNREAL_LOOK_PAGE_ERROR: ${errors.join(" | ")}`);
               if (options.measureSeconds !== undefined) {

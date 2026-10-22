@@ -22,6 +22,12 @@ import {
 } from "../visual-gate.js";
 import { workspacePackages } from "../workspace-packages.js";
 import { launchWebgpuBrowser } from "./browser.js";
+import {
+  type IExposureObservation,
+  metersExposure,
+  parseExposure,
+  waitForExposure,
+} from "./exposure-settle.js";
 
 const REPO_ROOT = path.resolve(import.meta.dirname, "../..");
 const REFERENCE = path.join(REPO_ROOT, "tools/unreal-reference");
@@ -284,6 +290,12 @@ export async function captureThreeNative(options: IThreeNativeCaptureOptions): P
         if (message.text().startsWith("TN_FRAME_BUDGET")) meter.push(message.text());
       });
       page.on("pageerror", (error) => errors.push(error.message));
+      // Auto exposure closes on its target in clock time: a frame waits for the page to report it there.
+      const exposure: IExposureObservation[] = [];
+      page.on("console", (message) => {
+        const seen = parseExposure(message.text());
+        if (seen !== undefined) exposure.push(seen);
+      });
       // Engine markers that say whether a stage ran (probe bake, refusals) belong in the capture log.
       page.on("console", (message) => {
         if (
@@ -356,6 +368,22 @@ export async function captureThreeNative(options: IThreeNativeCaptureOptions): P
             await page.evaluate(
               `new Promise((resolve) => { let n = 0; const tick = () => (++n >= ${settle} ? resolve() : requestAnimationFrame(tick)); requestAnimationFrame(tick); })`,
             );
+            // The frames above run at the clock's pace, not the exposure's: wait until two reports sit on the
+            // target (two runs of one cell otherwise differ by the distance each stopped short, PRD-631).
+            if (
+              metersExposure({
+                baseline: options.baseline,
+                layer,
+                measureSeconds: options.measureSeconds,
+                switches: `${options.off ?? ""}${process.env.TN_UNREAL_LOOK_QUERY ?? ""}`,
+              })
+            ) {
+              const since = exposure.length;
+              await waitForExposure({
+                observations: () => exposure.slice(since),
+                wait: (ms) => page.waitForTimeout(ms),
+              });
+            }
             if (errors.length > 0)
               throw new Error(`TN_UNREAL_LOOK_PAGE_ERROR: ${errors.join(" | ")}`);
             const name = layer === "ID" ? `ID_${pose.name}` : `${layer}_${sun.name}_${pose.name}`;
