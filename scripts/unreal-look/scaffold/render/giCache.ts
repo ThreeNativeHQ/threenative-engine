@@ -32,7 +32,7 @@ import {
 } from "@threenative/core";
 import {
   Box3,
-  type Color,
+  Color,
   Data3DTexture,
   DoubleSide,
   HalfFloatType,
@@ -1209,6 +1209,28 @@ function nodeTwin(source: MeshStandardMaterial): MeshStandardMaterial {
   const subsurface = (source as { subsurfaceColor?: Color }).subsurfaceColor;
   if (subsurface !== undefined) twin.subsurfaceColor = subsurface;
   return twin as unknown as MeshStandardMaterial;
+}
+
+/**
+ * A slot that Unreal's level draws on the Two Sided Foliage model, with its Subsurface Color (linear, by glTF material name),
+ * is a `twoSidedFoliage` material with the same `subsurfaceColor` here (PRD-643). Both engines keep the glTF material name.
+ */
+export function markTwoSidedFoliage(
+  model: Object3D,
+  colours: Readonly<Record<string, readonly [number, number, number]>> | undefined,
+): void {
+  if (colours === undefined) return;
+  model.traverse((object) => {
+    for (const material of [(object as Mesh).material].flat() as (
+      | MeshStandardMaterial
+      | undefined
+    )[]) {
+      const colour = material === undefined ? undefined : colours[material.name];
+      if (material === undefined || colour === undefined) continue;
+      material.twoSidedFoliage = true;
+      material.subsurfaceColor = new Color(...colour);
+    }
+  });
 }
 
 /** The native engine has no physical node class yet (core-webgpu.mjs refuses it): it lights a physical source as a standard one. */
