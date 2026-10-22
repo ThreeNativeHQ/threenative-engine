@@ -1474,6 +1474,59 @@ if (runtime.tsl !== undefined) {
       "uniform(0).mul(2).x crosses as three calls, each on the node before it",
     );
   }
+  // A mat4 of four vec4 uniforms, each reading one column of a camera matrix with fromArray(elements, 4 * column),
+  // follows the camera. The offset used to be dropped, so all four columns read the first four lanes and the matrix
+  // stayed at its first pose (the volumetric fog and the glass refraction drew nothing on this engine).
+  {
+    const t = traceTsl(runtime.tsl);
+    const camera = new PerspectiveCamera();
+    const columns = [0, 1, 2, 3].map((column) => {
+      const value = new Vector4();
+      (value as { isVector4?: boolean }).isVector4 = true;
+      return t.tsl
+        .uniform(value)
+        .onRenderUpdate(() => value.fromArray(camera.matrixWorld.elements, column * 4));
+    });
+    t.tsl.mat4(...columns);
+    const lastColumns = () => t.uniforms.slice(-8).map((entry) => entry.split("=")[1]);
+    camera.position.set(1, 2, 3);
+    camera.updateMatrixWorld();
+    t.sync();
+    check(
+      isDeepStrictEqual(lastColumns().slice(0, 4), ["1,0,0,0", "0,1,0,0", "0,0,1,0", "1,2,3,1"]),
+      "a mat4 of four vec4 columns reads each column of the camera matrix",
+    );
+    camera.position.set(4, 5, 6);
+    camera.updateMatrixWorld();
+    t.sync();
+    check(lastColumns()[3] === "4,5,6,1", "a mat4 of four vec4 columns follows the camera's pose");
+  }
+  // toArray(array, offset) fills the array it is given from offset on and answers that array, as three's does.
+  for (const [name, lanes] of [
+    ["Vector2", 2],
+    ["Vector4", 4],
+    ["Quaternion", 4],
+    ["Color", 3],
+    ["Matrix3", 9],
+    ["Matrix4", 16],
+  ] as const) {
+    // biome-ignore lint/suspicious/noExplicitAny: smoke test builds a class by name
+    const value = new (engine.classes as any)[name]();
+    const source = Array.from({ length: lanes + 3 }, (_, index) => index + 1);
+    // biome-ignore lint/suspicious/noExplicitAny: smoke test calls dynamic math methods
+    (value as any).fromArray(source, 3);
+    const target = new Array(lanes + 4).fill(-1);
+    // biome-ignore lint/suspicious/noExplicitAny: smoke test calls dynamic math methods
+    const answer = (value as any).toArray(target, 2);
+    check(
+      answer === target &&
+        isDeepStrictEqual(
+          target,
+          [-1, -1, ...source.slice(3, 3 + lanes), -1, -1].slice(0, lanes + 4),
+        ),
+      `${name}.toArray(array, offset) fills the array from offset`,
+    );
+  }
   {
     const t = traceTsl(runtime.tsl);
     const sun = new Vector3(1, 2, 3);

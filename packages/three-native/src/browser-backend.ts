@@ -802,6 +802,15 @@ export function defineBrowserClasses(
         configurable: true,
         writable: true,
         value(this: object, ...args: unknown[]) {
+          // three's toArray(array, offset) writes the lanes into the array it is given and answers that array; the
+          // engine answers a new one, since a plain array crosses by value.
+          if (method === "toArray" && args[0] !== undefined) {
+            const target = args[0] as number[];
+            const start = (args[1] as number | undefined) ?? 0;
+            const lanes = (prototype.toArray as () => unknown[]).call(this);
+            for (let i = 0; i < lanes.length; i++) target[start + i] = lanes[i] as number;
+            return target;
+          }
           const intersections = method === "intersectObject" || method === "intersectObjects";
           const key = query ? `${method} ${String(args[0])}` : "";
           if (query && labels.get(this)?.has(key)) return labels.get(this)?.get(key);
