@@ -14,9 +14,11 @@ import os from "node:os";
 import path from "node:path";
 import { assertVisualPortAvailable, stopVisualServer } from "../visual-gate.js";
 import { launchWebgpuBrowser } from "./browser.js";
+import { FRAME_GATE, captureMotionFrames } from "./capture-motion-threenative.js";
 import { HIDE_UI, freePort, scaffold, waitForServer } from "./capture-threenative.js";
-import { awaitExposureSettled, watchExposure } from "./exposureSettled.js";
-import { readScene, sceneDir, sceneKey } from "./gi.js";
+import { awaitExposureSettled, metersExposure, watchExposure } from "./exposureSettled.js";
+import { isManifestScene, readScene, sceneDir, sceneKey } from "./gi.js";
+import { composeForThreeNative } from "./wildwood.js";
 
 const REPO_ROOT = path.resolve(import.meta.dirname, "../..");
 const SCAFFOLD_DIR =
@@ -29,6 +31,8 @@ export const GI_LAYERS: Readonly<Record<string, string>> = {
   // Shadows and AO without GI: the pair of Unreal with Lumen GI off.
   L6: "L7-Low",
   L7: "L7-Epic",
+  // Reflections: only a shadow scene with an L8 variant (wildwood) is captured here (PRD-651).
+  L8: "L8",
   // GI at one quality tier, against the Unreal level it follows (PRD-644): Low 0, Medium 1, Epic 3.
   "L7-low": "L7-Low",
   "L7-medium": "L7-Medium",
@@ -76,10 +80,17 @@ export async function patchGi(target: string, scenes: readonly string[]): Promis
   const dataFile = path.join(target, "src/scenes/calibrationData.ts");
   const data = existsSync(dataFile) ? calibrationScenes(await readFile(dataFile, "utf8")) : {};
   for (const name of scenes) {
-    data[name] = readScene(name).scene;
+    const { scene } = readScene(name);
+    data[name] = scene;
     const dir = path.join(target, "assets/unreal-reference/gi", sceneKey(name));
     await mkdir(dir, { recursive: true });
-    await cp(path.join(sceneDir(name), "scene.glb"), path.join(dir, "scene.glb"));
+    // A scene of real assets has no committed scene.glb: it is composed from the verified asset files (PRD-651).
+    if (isManifestScene(name))
+      await writeFile(
+        path.join(dir, "scene.glb"),
+        await composeForThreeNative(sceneDir(name), scene as never, sceneKey(name)),
+      );
+    else await cp(path.join(sceneDir(name), "scene.glb"), path.join(dir, "scene.glb"));
   }
   await writeFile(
     dataFile,
@@ -124,6 +135,8 @@ export async function captureGiThreeNative(options: {
   readonly reuse: boolean;
   /** Hold each pose this many seconds and write its TN_FRAME_BUDGET windows instead of a screenshot. */
   readonly measureSeconds?: number;
+  /** A motion run of the scene (PRD-638): capture its frames, one rendered frame per step, instead of the poses. */
+  readonly motion?: string;
 }): Promise<number> {
   for (const layer of options.layers)
     if (!(layer in GI_LAYERS)) throw new Error(`TN_UNREAL_LOOK_BAD_INPUT: GI layer ${layer}`);
@@ -158,10 +171,12 @@ export async function captureGiThreeNative(options: {
         const [width, height] =
           override?.length === 2 ? (override as [number, number]) : scene.resolution;
         const page = await browser.newPage({ viewport: { width, height }, deviceScaleFactor: 1 });
+        if (options.motion !== undefined) await page.addInitScript(FRAME_GATE);
         const errors: string[] = [];
         // The frame meter prints to the console; a measured pose keeps the windows between two marks.
         let meter: string[] = [];
         page.on("pageerror", (error) => errors.push(error.message));
+        // A template-lit scene meters its exposure, which closes on its target in clock time (exposureSettled.ts).
         const exposure = watchExposure(page);
         page.on("console", (message) => {
           if (message.text().startsWith("TN_FRAME_BUDGET")) meter.push(message.text());
@@ -183,18 +198,26 @@ export async function captureGiThreeNative(options: {
           const extra = process.env.TN_GI_URL_EXTRA ?? "";
           // A template-lit shadow scene (PRD-649) is lit by the reference scene's default-level
           // lighting, once per sun; its ID frames and every other scene use the calibration scene.
-          const visits: { query: string; key: string; poses: typeof scene.poses }[] =
+          const visits: {
+            query: string;
+            key: string;
+            poses: typeof scene.poses;
+            reference: boolean;
+          }[] =
             scene.template === "default" && layer !== "ID"
               ? (scene.suns ?? []).map((sun) => ({
                   query: `tnRef=${layerQuery(layer).layer}${tierQuery(layer)}&sun=${sun.elevationDeg},${sun.azimuthDeg}&model=${sceneKey(name)}`,
                   key: `${name}/${layer}/${sun.name}`,
                   poses: scene.poses.filter((pose) => pose.sun === sun.name),
+                  reference: true,
                 }))
               : [
                   {
                     query: `tnGi=${name}&layer=${layerQuery(layer).layer}${tierQuery(layer)}`,
                     key: `${name}/${layer}`,
                     poses: scene.poses,
+                    // The calibration scene holds its exposure fixed (Unreal's manual EV100).
+                    reference: false,
                   },
                 ];
           for (const visit of visits) {
@@ -214,17 +237,38 @@ export async function captureGiThreeNative(options: {
               unsupported: await page.evaluate("window.__tnRef.unsupported"),
               probe: await page.evaluate("window.__tnRef.probe?.()"),
             };
+            if (options.motion !== undefined) {
+              count += await captureMotionFrames({
+                page,
+                scene,
+                sceneId: name,
+                layer,
+                run: options.motion,
+                out: options.out,
+              });
+              if (errors.length > 0)
+                throw new Error(`TN_UNREAL_LOOK_PAGE_ERROR: ${errors.join(" | ")}`);
+              continue;
+            }
             for (const pose of visit.poses) {
               const poseAt = Date.now();
               await page.evaluate(`window.__tnRef.pose(${JSON.stringify(pose)})`);
               await page.evaluate(
                 "new Promise((resolve) => { let n = 0; const tick = () => (++n >= 45 ? resolve() : requestAnimationFrame(tick)); requestAnimationFrame(tick); })",
               );
-              // Auto exposure (L9) closes at 1 stop/s like Unreal's: 45 frames are well short of that, so the
-              // frame waits for three settled readings after the pose and fails closed when they never come.
-              if (layer === "L9")
+              // Auto exposure (L9) closes at 1 stop/s like Unreal's: 45 frames are well short of that, so the frame waits
+              // until the last three readings after the pose are at rest and fails closed when they never are.
+              // The calibration scene holds its exposure fixed (Unreal's manual EV100) and prints no reading.
+              if (
+                visit.reference &&
+                metersExposure({
+                  layer: layerQuery(layer).layer,
+                  measureSeconds: options.measureSeconds,
+                  switches: extra,
+                })
+              )
                 console.info(
-                  `TN_UNREAL_LOOK exposure ${pose.name} settled after ${await awaitExposureSettled(page, exposure, poseAt)} ms of waiting`,
+                  `TN_UNREAL_LOOK exposure ${pose.name} at rest after ${await awaitExposureSettled(page, exposure, poseAt)} ms of waiting`,
                 );
               if (errors.length > 0)
                 throw new Error(`TN_UNREAL_LOOK_PAGE_ERROR: ${errors.join(" | ")}`);

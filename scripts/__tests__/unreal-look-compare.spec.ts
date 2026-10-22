@@ -5,6 +5,7 @@ import { PNG } from "pngjs";
 import { afterEach, describe, expect, it } from "vitest";
 import { tierQuery } from "../unreal-look/capture-gi-threenative.js";
 import {
+  binnedMedian,
   ciede2000,
   classify,
   compareCells,
@@ -296,6 +297,35 @@ describe("Unreal reference comparison", () => {
     expect(report.noise).toHaveLength(1);
     expect(report.rows[0]?.dEv50).toBe(0);
   });
+  // A frame whose median is 66 moves 1.5% when a few pixels cross a bin edge (PRD-631: L7 sun60_interior p50 66 vs 67,
+  // L8 sun15_interior 93 vs 92), although the mean moved 0.12% and 0.02%. The sub-level median interpolates inside the bin.
+  it("reports the whole-frame p50 difference at sub-level resolution beside the whole-level one", () => {
+    const { root, put } = fixture();
+    const frame = (levels: number[]) => png(levels.map(gray));
+    for (const engine of ["unreal", "runB"]) {
+      put(`captures/${engine}/ID/ID_exterior.png`, floor());
+      put(
+        `captures/${engine}/L1/L1_sun60_exterior.png`,
+        frame(engine === "unreal" ? [66, 66, 67, 67] : [66, 67, 67, 67]),
+      );
+      put(`captures/${engine}/L1/L1_sun60_exterior.exr`, exr());
+    }
+    const report = runComparison({
+      referenceDir: root,
+      layers: ["L1"],
+      unrealVsUnreal: path.join(root, "captures/runB"),
+    });
+    expect(report.noise[0]?.dP50).toBeCloseTo(1 / 66, 6);
+    expect(report.noise[0]?.dP50Binned).toBeCloseTo(1 / 3 / 66.5, 6);
+    expect(report.maxNoiseBinned).toBeLessThan(0.01);
+    expect(report.maxNoiseBinned).toBeLessThan(report.maxNoise ?? 0);
+  });
+  it("interpolates the median inside its bin and leaves a single level alone", () => {
+    expect(binnedMedian([66, 66, 67, 67])).toBeCloseTo(66.5, 9);
+    expect(binnedMedian([66, 67, 67, 67])).toBeCloseTo(66 + 5 / 6, 9);
+    expect(binnedMedian([10, 10, 10, 10])).toBe(10);
+    expect(() => binnedMedian([])).toThrow(/^TN_UNREAL_LOOK_EMPTY_MASK/);
+  });
   it("derives per-layer thresholds as the larger of twice the worst noise and the absolute floor", () => {
     const row = (layer: string, deltaE: number, dP50: number, dEv50: number) =>
       ({ layer, cell: "c", region: "Floor", deltaE, dP50, dEv50, iou: null }) as never;
@@ -467,6 +497,37 @@ describe("Unreal reference comparison", () => {
       const after = readLocks(path.join(root, "parity-locks.json"));
       expect(after.filter((l) => l.layer === "L2").map((l) => l.since)).toEqual(["old0000"]);
       expect(after.filter((l) => l.layer === "L1").map((l) => l.since)).toEqual(["new1234"]);
+    });
+    it("refuses a re-seed that would drop a lock, and drops it only on --drop-locks", () => {
+      // The Floor deltaE lock cannot be re-seeded: thresholds.json holds no deltaE limit for L1 here, so
+      // the cell would lose its lock without a word. The re-seed names it and stops.
+      const root = locked([
+        lock({ since: "old0000" }),
+        lock({ metric: "deltaE", threshold: 50, since: "old0000" }),
+      ]);
+      writeFileSync(
+        path.join(root, "thresholds.json"),
+        JSON.stringify({ layers: { L1: { dP50: 100 } } }),
+      );
+      const file = path.join(root, "parity-locks.json");
+      expect(() =>
+        runComparison({ referenceDir: root, layers: ["L1"], writeLocks: "new1234" }),
+      ).toThrow(/^TN_UNREAL_LOOK_LOCK_DROPPED.*1 lock.*L1 sun60 exterior Floor deltaE/s);
+      expect(readLocks(file).map((l) => `${l.metric} ${l.since}`)).toEqual([
+        "dP50 old0000",
+        "deltaE old0000",
+      ]);
+      expect(parseArgs(["--write-locks", "abc", "--drop-locks"])).toEqual({
+        writeLocks: "abc",
+        dropLocks: true,
+      });
+      runComparison({
+        referenceDir: root,
+        layers: ["L1"],
+        writeLocks: "new1234",
+        dropLocks: true,
+      });
+      expect(readLocks(file).map((l) => `${l.metric} ${l.since}`)).toEqual(["dP50 new1234"]);
     });
     it("seeds only the cells and metrics that hold", () => {
       const root = locked([lock()]);

@@ -2821,7 +2821,8 @@ void gpuTimerCoversOffscreen() {
         CHECK(renderer.lastGpuMs() > 0);
         const auto segments = renderer.lastGpuSegments();
         CHECK(segments[1] > 0 && segments[2] > 0 && segments[3] > 0);
-        CHECK(renderer.lastGpuMs() == segments[0] + segments[1] + segments[2] + segments[3]);
+        CHECK(segments[4] == 0);  // nothing is labelled as the screen-space gather here
+        CHECK(renderer.lastGpuMs() == segments[0] + segments[1] + segments[2] + segments[3] + segments[4]);
     }
     // A separately submitted compute encoder is part of the next rendered frame too.
     namespace g = shader::graph;
@@ -2840,6 +2841,63 @@ void gpuTimerCoversOffscreen() {
     }
     CHECK(renderer.gpuSamples() == before + 1);
     CHECK(renderer.gpuTimestampPasses() == 3);  // compute, main scene, output
+}
+
+// A post pass the author labels with a stage reports its GPU time under that stage's segment, not under "other
+// passes", and the segments still add up to the frame (web_host.cpp exports each as a `tnw_web_frame` field).
+void gpuTimerSplitsTheLabelledGather() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(64, 48);
+    if (!wgpuDeviceHasFeature(context.getDevice(), WGPUFeatureName_TimestampQuery)) {
+        std::printf("no timestamp-query on this device: nothing to time\n");
+        return;
+    }
+    namespace g = shader::graph;
+    LitScene s;
+    RenderDatabase database;
+    renderer.setGpuTimer(true);
+    for (const uint8_t stage : {g::kStageNone, g::kStageScreenSpaceGi}) {
+        const auto live = g::uniform("gatherColour", shader::Type::vec(4), {0.25f, 0.5f, 0.75f, 1});
+        auto rtt = std::make_shared<g::NodeData>();
+        rtt->kind = g::Kind::RenderTexture;
+        rtt->type = shader::Type::vec(4);
+        rtt->name = stage == g::kStageNone ? "rtt_unlabelled" : "rtt_gather";
+        rtt->args = {live, g::uv()};
+        rtt->rtt = std::make_shared<g::RttState>();
+        auto& state = *rtt->rtt;
+        state.width = state.height = 32;
+        state.stage = stage;
+        state.target = RenderTarget::make(32, 24, kTextureHalfFloatType);
+        state.source = live;
+        state.quad = std::make_shared<Mesh>(makePlaneGeometry(2, 2), std::make_shared<Material>(MaterialType::Basic, true));
+        state.material = state.quad->material;
+        state.material->rawNodeMaterial = true;
+        state.material->nodes.fragmentNode = live;
+        renderer.setPostGraph(rtt);
+        const uint64_t before = renderer.gpuSamples();
+        // A sample is read back asynchronously: render a few frames, as a game does, until one lands.
+        for (int frame = 0; frame < 8 && renderer.gpuSamples() == before; ++frame) {
+            database.render(renderer, s.scene, s.camera);
+            while (renderer.gpu().completedSerial() < renderer.gpu().submittedSerial()) {
+                renderer.poll();
+                events.drain();
+            }
+            const auto until = std::chrono::steady_clock::now() + std::chrono::milliseconds(250);
+            while (renderer.gpuSamples() == before && std::chrono::steady_clock::now() < until) {
+                renderer.poll();
+                events.drain();
+            }
+        }
+        CHECK(renderer.gpuSamples() > before);
+        const auto segments = renderer.lastGpuSegments();
+        CHECK(segments[1] > 0 && segments[3] > 0);  // the scene pass and the output pass
+        if (stage == g::kStageNone) CHECK(segments[2] > 0 && segments[4] == 0);  // the pass counts as an other pass
+        else CHECK(segments[4] > 0);                                            // the labelled pass has its own segment
+        CHECK(renderer.lastGpuMs() == segments[0] + segments[1] + segments[2] + segments[3] + segments[4]);
+    }
 }
 
 // PRD-554: blitTo draws a UI overlay's premultiplied frame "over" the world, a steady overlay (the
@@ -4781,7 +4839,7 @@ void gpuJointProduction() {
 TN_TEST_MAIN({"gpu_joint_production", gpuJointProduction}, {"multi_material_groups", multiMaterialGroups}, {"uniform_batch_preparation", uniformBatchPreparation}, {"steady_state", steadyState}, {"color_write_masks_the_draw", colorWriteMasksTheDraw}, {"normal_pass_is_not_tallied", normalPassIsNotTallied}, {"steady_cache_invalidation", steadyCacheInvalidation}, {"render_target", renderTarget}, {"post_texture_resize_keeps_draw_groups", postTextureResizeKeepsDrawGroups}, {"deferred_target_follows_post_rtt", deferredTargetFollowsPostRtt}, {"deferred_target_samples_post_rtt_node", deferredTargetSamplesPostRttNode}, {"screen_size_reaches_the_vertex_stage", screenSizeReachesTheVertexStage}, {"depth_node_sets_fragment_depth", depthNodeSetsFragmentDepth}, {"depth_node_reaches_every_material_program", depthNodeReachesEveryMaterialProgram}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"present_direct", presentDirect}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"directional_target_outside_scene", directionalTargetOutsideScene}, {"scene_fog_node", sceneFogNode}, {"lit_mesh_without_normals", litMeshWithoutNormals}, {"invalidation", invalidation}, {"alpha_scene", alphaScene},
              {"material_unsupported", materialUnsupported}, {"shader_invalid", shaderInvalid}, {"time_uniform", timeUniform}, {"gpu_mipmaps", gpuMipmaps}, {"updates", updates},
              {"multi_camera_layers", multiCameraLayers}, {"render_callback", renderCallback}, {"instanced", instanced},
-             {"batched_vs_unbatched", batchedVsUnbatched}, {"skinned_crowd", skinnedCrowdPixels}, {"skinned_decline_cadence", skinnedDeclineCadence}, {"skinned_normalized_weights", skinnedNormalizedWeights}, {"normal_map_tilt", normalMapTilt}, {"unsupported_map_slot", unsupportedMapSlot}, {"env_map_slot_is_read", envMapSlotIsRead}, {"converted_copies_swept", convertedCopiesAreSwept}, {"gpu_timer_covers_offscreen", gpuTimerCoversOffscreen}, {"gpu_timer_covers_shadows", gpuTimerCoversShadows}, {"overlay_over_frame", overlayOverFrame}, {"gpu_timer_is_opt_in", gpuTimerIsOptIn}, {"msaa_edges", msaaEdges}, {"shadow_camera_layers", shadowCameraLayers}, {"flat_shading_needs_no_normals", flatShadingNeedsNoNormals}, {"map_sampleability_changes", mapSampleabilityChanges}, {"batch_caches_stay_put", batchCachesStayPut}, {"frustum_culling", frustumCulling},
+             {"batched_vs_unbatched", batchedVsUnbatched}, {"skinned_crowd", skinnedCrowdPixels}, {"skinned_decline_cadence", skinnedDeclineCadence}, {"skinned_normalized_weights", skinnedNormalizedWeights}, {"normal_map_tilt", normalMapTilt}, {"unsupported_map_slot", unsupportedMapSlot}, {"env_map_slot_is_read", envMapSlotIsRead}, {"converted_copies_swept", convertedCopiesAreSwept}, {"gpu_timer_covers_offscreen", gpuTimerCoversOffscreen}, {"gpu_timer_splits_the_gather", gpuTimerSplitsTheLabelledGather}, {"gpu_timer_covers_shadows", gpuTimerCoversShadows}, {"overlay_over_frame", overlayOverFrame}, {"gpu_timer_is_opt_in", gpuTimerIsOptIn}, {"msaa_edges", msaaEdges}, {"shadow_camera_layers", shadowCameraLayers}, {"flat_shading_needs_no_normals", flatShadingNeedsNoNormals}, {"map_sampleability_changes", mapSampleabilityChanges}, {"batch_caches_stay_put", batchCachesStayPut}, {"frustum_culling", frustumCulling},
              {"shadow_caster_frustum_culling", shadowCasterFrustumCulling}, {"masked_shadow", maskedShadow}, {"leaf_receiver", leafReceiver}, {"rough_diffuse", roughDiffuse}, {"point_shadow_cube_faces", pointShadowCubeFaces}, {"lamp_source_radius", lampSourceRadius}, {"contact_shadow_foot", contactShadowFoot}, {"virtual_sun_contact_foot", virtualSunContactFoot}, {"lamp_cache", lampCache}, {"shadow_lights_follow_hierarchy", shadowLightsFollowHierarchy}, {"records_survive_siblings", recordsSurviveSiblings}, {"steady_frame_hashes_no_record", steadyFrameHashesNoRecord}, {"nested_record_cache", nestedRecordCache}, {"frustum_record_retention", frustumRecordRetention}, {"world_sphere_measured_once", worldSphereMeasuredOnce}, {"reflection_reuse", reflectionReuse})
 
 

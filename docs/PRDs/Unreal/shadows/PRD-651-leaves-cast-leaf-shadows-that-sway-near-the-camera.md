@@ -64,8 +64,9 @@ from the game. The engine only makes the shadow follow them.
 
 ## Acceptance Criteria
 
-- [ ] AC-1 [local]: On `foliage/canopy` at `high`, a PRD-647 round returns no REGRESSION against BEFORE and MATCH or CLOSE against Unreal, with the leaf gaps visible in the ground shadow. proof: `pnpm unreal-look:calibrate --scene shadow:foliage --tier high --before <commit>` — Evidence: pending.
+- [x] AC-1 [local]: On `foliage/canopy` at `high`, a PRD-647 round returns no REGRESSION against BEFORE and MATCH or CLOSE against Unreal, with the leaf gaps visible in the ground shadow. proof: `pnpm unreal-look:capture --engine threenative --scene shadow:foliage --layers L5,L9 --reuse` for BEFORE and AFTER (two runs per arm), then `pnpm unreal-look:judge --layer L5` and `--layer L9` — Evidence: 2026-10-21 (b6c4f9d7f): both rounds return IMPROVEMENT on all four cells (sun 15 and sun 60, canopy and grass) and CLOSE against Unreal on all four. A third round, the old receiver key against the marker, returns IMPROVEMENT on all four cells (CLOSE, CLOSE, FAR, CLOSE against Unreal: the FAR cell is the fill level of shaded leaves, not the receiver rule). Floor shadow IoU against Unreal rose from 0.56 to 0.70 (BEFORE) to 0.77 to 0.90 (AFTER). Sheets and numbers: PR 541 comment 6325847354. Still wrong there: paler shadows, edges softer than Unreal's, shadow area 20% smaller.
 - [ ] AC-2 [local]: In the `wind` run, the near-ground tree shadow moves with the tree, and the GPU cost of wind stays within PRD-488's 0.25 ms against wind off on the RTX 2080. proof: `pnpm unreal-look:calibrate --scene shadow:foliage --run wind` and `TN_FRAME_BUDGET` windows from `playtest perf` — Evidence: pending.
+- [ ] AC-3 [local]: On `wildwood/closeup` (real Fab vegetation, see Decisions) at `high`, a PRD-647 round returns no REGRESSION against BEFORE and MATCH or CLOSE against Unreal, with the leaf gaps visible in the ground shadow. proof: `pnpm unreal-look:calibrate --scene shadow:wildwood --tier high --before <commit>` — Evidence: open. 2026-10-21, lean scene on PR #541 (issuecomment-6329578609), judge against Unreal without a BEFORE arm: `sun60-closeup` reads CLOSE at L5, FAR at L7 and CLOSE at L9. The leaf gaps are visible in the ground shadow in all three rounds. The `calibrate` round itself is not run.
 
 ## Integration Ledger
 
@@ -85,7 +86,7 @@ from the game. The engine only makes the shadow follow them.
 - [ ] Browser and native match on the masked caster. proof: `pnpm parity --target desktop --only-tests masked-shadow-caster`.
 
 #### Phase 2: Wind reaches the near shadow
-**Status:** NOT STARTED
+**Status:** BLOCKED — the wind node of PRD-488 is not built (PROPOSED) and the PRD-649 `wind` run is not authored; neither exists to build on or to judge against
 **Files:** `packages/core/src/render/virtual-shadow.ts`, `packages/core/__tests__/virtual-shadow.spec.ts`, the native VSM atlas
 - [ ] A caster swaying 5 cm sways in a 2 cm-texel level and draws its rest pose in a 20 cm-texel level, and the override moves that boundary and is reported. proof: `pnpm exec vitest run packages/core/__tests__/virtual-shadow.spec.ts`.
 - [ ] AC-2 holds. proof: the AC-2 commands.
@@ -94,12 +95,19 @@ from the game. The engine only makes the shadow follow them.
 **Status:** IN PROGRESS — the rule is on both engines and keyed on the marker; the parity run and the Two Sided Foliage sheet are open
 **Files:** `packages/core/src/render/soft-shadow.ts`, `packages/core/src/render/virtual-shadow.ts`, `packages/runtime-native/src/engine/shader/standard.cpp`, `packages/runtime-native/src/engine/renderer/renderer.cpp`, `packages/runtime-native/src/engine/scene/material.h`
 - [x] A receiver marked `twoSidedFoliage` skips the normal bias and widens its source to the 5° minimum, on both engines. proof: red-green native test `native_engine_leaf_receiver`, and `pnpm exec vitest run packages/core/__tests__/soft-shadow.spec.ts packages/core/__tests__/virtual-shadow.spec.ts`. — 2026-10-21 (first keyed on the sides and the cut, re-keyed on the marker after the Unreal read): native green with the marker (marked leaf edge 0.972 m = the unbiased edge, marker alone 0.972 m; penumbra 0.079 m ordinary against 0.548 m on the marked leaf); the browser unit tests pass 131/131 and the `VirtualShadowNode` position test fails when the override is switched off. Scope in the browser: the virtual shadow levels and `sourceAngleShadowFilter`; the stock three PCF path keeps three's normal bias (see Decisions).
-- [x] A two-sided cut card without the marker keeps the normal bias and the sun's own source, as Unreal's default lit does. proof: the same tests. — 2026-10-21: red first on the sides-and-cut key (native: plain cut edge 0.972 m and penumbra 0.548 m, marker alone 0.585 m; browser: 3 specs red), green on the marker (plain cut edge 0.585 m = the biased edge, penumbra 0.079 m; the plain cut shadow coordinate equals the ordinary one).
+- [x] A two-sided cut card without the marker keeps the normal bias and the sun's own source, as Unreal's default lit does. proof: the same tests, and the rule-on against rule-off sheet on PR 541 (comment 6325847354, judge IMPROVEMENT against the old key). — 2026-10-21: red first on the sides-and-cut key (native: plain cut edge 0.972 m and penumbra 0.548 m, marker alone 0.585 m; browser: 3 specs red), green on the marker (plain cut edge 0.585 m = the biased edge, penumbra 0.079 m; the plain cut shadow coordinate equals the ordinary one).
 - [ ] Browser and native match on the marked leaf receiver. proof: `pnpm parity --target desktop --only-tests leaf-receiver`. Scene and registry row exist (`conformance/scenes/shared/leaf-receiver.js`, now with the marker set); not run: this lane has no desktop runtime binary (`pnpm native:build` needs the V8 download).
 - [ ] A Two Sided Foliage leaf matches Unreal's Two Sided Foliage leaf, with the sheets posted on the PR. proof: `pnpm unreal-look:compare --scene shadow:foliage` on the Two Sided Foliage variant of the scene, and a PRD-647 round. Not run: the scene's leaves are default lit in Unreal, so the Two Sided Foliage capture is new work (see Decisions).
-**Verification:** AC-1 and AC-2.
+**Verification:** AC-1, AC-2 and AC-3.
 
 ## Decisions
+
+- 2026-10-21 (wildwood lane, owner): AC-3 judges real vegetation. The owner asked three times for the Fab
+  GLBs of the sandbox wildwood game in place of procedural cards. `shadow:wildwood` (PRD-649) is the AC-3
+  scene: one broadleaf tree, one bush and one fern clump, placed from one manifest in both
+  engines. The files stay out of the repository (`TN_WILDWOOD_ASSETS`). The leaf lane ticked AC-1 on the
+  procedural `foliage/canopy` scene (b6c4f9d7f) and that result stands. `foliage` stays as the
+  procedural control and keeps the `wind` run of AC-2.
 
 - 2026-10-21 (leaf lane, correction of the first Phase 3 commit): the rule first read the sides and the cut
   (`side = DoubleSide` and an alpha test) and the game marked nothing. That was wrong. Unreal takes
@@ -135,6 +143,33 @@ from the game. The engine only makes the shadow follow them.
   test) is open and would also serve any game that copies a material. The native engine has no
   physical node class, so a physical source is lit as a standard one there (the old behaviour).
 
+- 2026-10-21 (leaf lane): Phase 2 is blocked, not started. The rule reads a caster's sway amplitude from
+  its wind `positionNode`, and no such node exists: `engine_search_capabilities` for foliage wind
+  returns only `SoftBody3D` (cloth), PRD-488 is PROPOSED, and no code under `packages/core/src` displaces
+  foliage. The `wind` run has no Unreal capture either (PRD-649 Phase 2 is NOT STARTED). A guess at the
+  amplitude API would be written twice, so the rule waits for PRD-488. AC-2 stays open for the same reason.
+- 2026-10-21 (leaf lane): at L1 (sun only) a ThreeNative leaf differs from an Unreal leaf in three
+  ways. The `foliage` scene with the sun at 60 degrees gives the numbers. Unreal values come from the
+  scene-linear EXR. ThreeNative values come from the PNG through the inverse tone curve, which
+  reproduces the Unreal PNG from the Unreal EXR to 0.41 rms.
+  1. Unreal shades rough diffuse with the EON model. The Unreal project renders with Substrate, and
+     its rough diffuse is `Diffuse_EON` at 0.4 times the roughness (UE 5.8.3:
+     `Engine/Shaders/Private/BRDF.ush`, `Diffuse_GGX_Rough`). ThreeNative uses Lambert. EON depends on
+     the view direction. On 5 leaf cards the Unreal-to-Lambert ratio varies by 9% to 12% from card to
+     card (standard deviation over mean, per channel). Dividing by the EON-to-Lambert ratio of each
+     card leaves 2% to 4%. The ratio comes from the card normal, the sun and the camera at each pixel,
+     with no fitted parameter. Six grass cards with more than 1000 pixels leave 0.7% in green. At these
+     angles EON is 0.91 to 1.36 times Lambert (floor 1.06 to 1.09, trunk 1.10 to 1.20, grass 1.13 to 1.36).
+  2. ThreeNative adds white light. The standard material's specular term (F0 0.04, roughness 1) adds
+     0.1 per unit of N.L to every channel. That is +4% on leaf green, +16% on red and +35% on blue.
+  3. The red channel of Unreal's green foliage is a further 20% to 25% below the Lambert value of its
+     albedo (leaf mean 0.61, grass 0.68; green 0.84 and 0.83; blue 0.86 and 0.80). The brown trunk and
+     the grey pawn do not show this. Geometry, shadows (L1 has none), the texture (white RGB) and the
+     tone curve do not explain it. The cause is open. One Unreal run of the same colour on an opaque
+     box and on a masked card would tell a material-path cause from a colour cause.
+  The common level of 0.83 may come from the sun calibration, which used Lambert. That is not verified.
+  No code changed. A diffuse model is a look decision (render source) with a native twin. PRD-646
+  AC-2 (the L1 direct-light cell) cannot pass on foliage before it exists.
 - 2026-10-20 (slicing): the masked-caster fault is an engine bug (`packages/runtime-native/`), not
   a game one. Every game with leaves on the default engine has it, so it is fixed in the engine.
 - 2026-10-20 (slicing): Unreal sways foliage in every shadow level by default. ThreeNative sways

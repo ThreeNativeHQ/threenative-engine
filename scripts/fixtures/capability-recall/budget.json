@@ -1,5 +1,5 @@
 {
-  "recallAtK": 0.9080459770114943,
+  "recallAtK": 0.9111111111111111,
   "recalledRows": [
     "brief.endless-runner.1",
     "brief.endless-runner.2",
@@ -79,10 +79,15 @@
     "request.drive-a-racing-kart",
     "request.vehicle-suspension-grip",
     "request.vehicle-pedals-steering",
-    "request.vehicle-rescue-respawn"
+    "request.vehicle-rescue-respawn",
+    "request.lumen-surface-cache",
+    "request.lumen-scene",
+    "request.mesh-cards",
+    "request.gi-quality-scalability",
+    "request.shadow-quality-scalability"
   ],
-  "rejectHits": 16,
-  "rowCount": 87,
+  "rejectHits": 15,
+  "rowCount": 92,
   "rowIds": [
     "brief.endless-runner.1",
     "brief.endless-runner.2",
@@ -170,10 +175,15 @@
     "request.drive-a-racing-kart",
     "request.vehicle-suspension-grip",
     "request.vehicle-pedals-steering",
-    "request.vehicle-rescue-respawn"
+    "request.vehicle-rescue-respawn",
+    "request.lumen-surface-cache",
+    "request.lumen-scene",
+    "request.mesh-cards",
+    "request.gi-quality-scalability",
+    "request.shadow-quality-scalability"
   ],
   "version": 1,
-  "zeroResultRate": 0.05747126436781609,
+  "zeroResultRate": 0.05555555555555555,
   "unresolvedResultRate": 0,
   "notOwnedRows": {
     "request.inventory-system": "inventory",

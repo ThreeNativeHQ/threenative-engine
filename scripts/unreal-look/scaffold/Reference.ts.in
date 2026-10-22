@@ -71,7 +71,11 @@ const TUNED = params.get("baseline") !== "1";
 // `off=vsm,gpusky,clouds,gi,reflcap,bloom,localexposure,autoexposure,ssgi,ssr,gtao,vignette,motionblur,smaa,noaa,nomsaa` switches one L9 stage off, to
 // attribute frame cost by ablation (PRD-636 performance). `gpusky` is read in `render/sky.ts`.
 // `pan=<rad/s>` turns the camera about the vertical axis after each pose, to give the velocity pass something to blur.
+// `panStep=<rad>&panArc=<rad>` sweeps it instead: `panStep` per drawn frame, back and forth across `panArc` either side of the
+// pose, so the scene stays in view and every frame moves the same number of pixels whatever the frame rate (ghosting proof).
 const PAN = Number(params.get("pan") ?? 0);
+const PAN_STEP = Number(params.get("panStep") ?? 0);
+const PAN_ARC = Number(params.get("panArc") ?? 0.15);
 const UP = new Vector3(0, 1, 0);
 let panToken = 0;
 const OFF = new Set((params.get("off") ?? "").split(",").filter(Boolean));
@@ -361,14 +365,19 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
         camera.lookAt(target.fromArray(pose.target));
         camera.updateProjectionMatrix();
         // `pan=<rad/s>` turns the camera about the vertical axis from this pose on: the motion blur proof.
-        if (PAN === 0) return;
+        // `panStep` sweeps it by a fixed angle per drawn frame instead.
+        if (PAN === 0 && PAN_STEP === 0) return;
         const token = ++panToken;
         const origin = camera.position.clone();
         const offset = target.clone().sub(origin);
         const start = performance.now();
+        let frames = 0;
         const spin = () => {
           if (token !== panToken) return;
-          const angle = (PAN * (performance.now() - start)) / 1000;
+          frames += 1;
+          // A triangle wave of height `PAN_ARC`: constant speed, reversing at either end of the arc.
+          const sweep = PAN_ARC * (Math.abs((((PAN_STEP * frames) / PAN_ARC + 1) % 4) - 2) - 1);
+          const angle = PAN_STEP > 0 ? sweep : (PAN * (performance.now() - start)) / 1000;
           camera.lookAt(origin.clone().add(offset.clone().applyAxisAngle(UP, angle)));
           requestAnimationFrame(spin);
         };
