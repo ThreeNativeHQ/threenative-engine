@@ -3421,7 +3421,7 @@ void leafReceiver() {
             options->depthRange = 40;
             options->refreshStep = {0};
             light.shadow.virtualShadow = options;
-            light.shadow.sourceAngleFilter = std::array<double, 3>{0.0047, 16, 16};  // 0.27 degrees, Unreal's sun
+            light.shadow.sourceAngleFilter = std::array<double, 4>{0.0047, 16, 16, 0};  // 0.27 degrees, Unreal's sun
         }
         scene.add(light);
         auto material = std::make_shared<Material>(MaterialType::Standard);
@@ -3829,7 +3829,7 @@ void virtualSunRoomSeam() {
         atlas.clipExtents = {11.2}; atlas.mapSize = 2048; atlas.pageTexels = 128;
         atlas.lightDistance = 40; atlas.depthRange = 40;
         sun.shadow.virtualShadow = std::make_shared<const shadows::AtlasOptions>(std::move(atlas));
-        sun.shadow.sourceAngleFilter = std::array<double, 3>{0.006421, 16, 16};  // Unreal's sun, 0.7357 degrees across
+        sun.shadow.sourceAngleFilter = std::array<double, 4>{0.006421, 16, 16, 0};  // Unreal's sun, 0.7357 degrees across
         scene.add(sun);
         auto white = std::make_shared<Material>(MaterialType::Standard);
         white->shadowSide = side;
@@ -3907,6 +3907,84 @@ void virtualSunRoomSeam() {
     const auto [backLeak, backKept] = seam(views[0], Side::Back);
     std::printf("virtual sun room seam, back faces, %s: lit band %.1f mm, open surface kept %.3f\n", views[0].name, backLeak * 1000, backKept);
     CHECK(backLeak > 0.05);  // the proof can fail: back faces put the depth on the wall and the sun comes in
+}
+
+// A shadow edge is never narrower than `minPenumbraPixels` of the receiver's pixels: a tall caster's far edge
+// on a floor has a penumbra of a few millimetres and a texel under a pixel, so it is one hard step that crawls
+// as the camera moves. The floor widens the filter disc to the pixel, measured here as the 10 to 90 percent
+// width of the edge in pixels, for a floor of 0, 1 and 2 pixels.
+void virtualSunPixelFloor() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(192, 192);
+    // 3.2 m across 192 pixels: 17 mm each, over twice the 7.8 mm texel of the finest level.
+    OrthographicCamera camera(-1.6, 1.6, 1.6, -1.6, 0.1, 20);
+    camera.position.set(0, 10, 0.001);
+    camera.lookAt(0, 0, 0);
+    camera.updateProjectionMatrix();
+    const auto edgeWidth = [&](double minPixels) {
+        Scene scene;
+        DirectionalLight sun{Color(1, 1, 1), 3};
+        sun.position.set(3, 3, 0);  // 45 degrees: a 0.3 m plate shades the floor 0.3 m before its edge
+        sun.setCastShadow(true);
+        sun.shadow.camera->setLayerMask(double((1 << 0) | (1 << 2)));
+        shadows::AtlasOptions atlas;
+        atlas.clipExtents = {8}; atlas.mapSize = 2048; atlas.pageTexels = 128;
+        atlas.lightDistance = 20; atlas.depthRange = 40;
+        sun.shadow.virtualShadow = std::make_shared<const shadows::AtlasOptions>(std::move(atlas));
+        sun.shadow.sourceAngleFilter = std::array<double, 4>{0.006421, 16, 16, minPixels};
+        scene.add(sun);
+        auto white = std::make_shared<Material>(MaterialType::Standard);
+        Mesh floor{makeBoxGeometry(8, 0.2, 8), white};
+        floor.position.y = -0.1;
+        floor.setCastShadow(true);
+        floor.setReceiveShadow(true);
+        scene.add(floor);
+        // The plate covers x 1..2, 0.3 m tall, on layer 2: the camera sees the floor and the shadow at x < 1.
+        Mesh plate{makeBoxGeometry(1, 0.3, 1), white};
+        plate.position.set(1.5, 0.15, 0);
+        plate.setCastShadow(true);
+        plate.setLayer(2);
+        scene.add(plate);
+        scene.updateMatrixWorld(true);
+        RenderDatabase database;
+        database.shadowMapEnabled = true;
+        for (int frame = 0; frame < 3; ++frame) database.render(renderer, scene, camera);
+        std::vector<uint8_t> pixels;
+        bool read = false;
+        renderer.readPixels([&](GpuStatus status, std::vector<uint8_t> px) {
+            if (status == GpuStatus::Ok) pixels = std::move(px);
+            read = true;
+        });
+        for (int i = 0; i < 5000 && !read; ++i) {
+            renderer.poll();
+            events.drain();
+            if (!read) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        CHECK(pixels.size() == size_t{192} * 192 * 4);
+        std::vector<double> red(192);
+        for (int x = 0; x < 192; ++x) red[x] = pixels[(size_t{96} * 192 + x) * 4];
+        // The floor is lit at x = -1.4 m (pixel 12) and dark inside the strip (pixel 150, x = 0.86 m).
+        const double lit = red[12], dark = red[150];
+        CHECK(lit > 32 && dark < 0.25 * lit);
+        // The strip's lit-side edge sits at x = 0.7 m (pixel 138): find where it falls through 90 and 10 percent.
+        double high = -1, low = -1;
+        for (int x = 120; x < 150; ++x) {
+            const double level = (red[x] - dark) / (lit - dark), next = (red[x + 1] - dark) / (lit - dark);
+            if (level >= 0.9 && next < 0.9) high = x + (level - 0.9) / (level - next);
+            if (level >= 0.1 && next < 0.1) low = x + (level - 0.1) / (level - next);
+        }
+        CHECK(high >= 0 && low >= high);
+        return low - high;
+    };
+    const double none = edgeWidth(0), one = edgeWidth(1), two = edgeWidth(2);
+    std::printf("virtual sun pixel floor: edge width %.2f px at 0, %.2f px at 1, %.2f px at 2\n", none, one, two);
+    CHECK(none < 1.0);            // a hard edge without the floor
+    CHECK(one > none + 0.5);      // each pixel of floor widens the edge, in quadrature with the texel
+    CHECK(two > one + 0.5);
+    CHECK(two < 4.5);             // and never the smear of a wide penumbra
 }
 
 // A point light's cube shadow: five casters around and below the lamp each shade the floor where its
@@ -4810,6 +4888,7 @@ TN_TEST_MAIN({"gpu_joint_production", gpuJointProduction}, {"multi_material_grou
              {"material_unsupported", materialUnsupported}, {"shader_invalid", shaderInvalid}, {"time_uniform", timeUniform}, {"gpu_mipmaps", gpuMipmaps}, {"updates", updates},
              {"multi_camera_layers", multiCameraLayers}, {"render_callback", renderCallback}, {"instanced", instanced},
              {"virtual_sun_room_seam", virtualSunRoomSeam},
+             {"virtual_sun_pixel_floor", virtualSunPixelFloor},
              {"batched_vs_unbatched", batchedVsUnbatched}, {"skinned_crowd", skinnedCrowdPixels}, {"skinned_decline_cadence", skinnedDeclineCadence}, {"skinned_normalized_weights", skinnedNormalizedWeights}, {"normal_map_tilt", normalMapTilt}, {"unsupported_map_slot", unsupportedMapSlot}, {"env_map_slot_is_read", envMapSlotIsRead}, {"converted_copies_swept", convertedCopiesAreSwept}, {"gpu_timer_covers_offscreen", gpuTimerCoversOffscreen}, {"gpu_timer_covers_shadows", gpuTimerCoversShadows}, {"overlay_over_frame", overlayOverFrame}, {"gpu_timer_is_opt_in", gpuTimerIsOptIn}, {"msaa_edges", msaaEdges}, {"shadow_camera_layers", shadowCameraLayers}, {"flat_shading_needs_no_normals", flatShadingNeedsNoNormals}, {"map_sampleability_changes", mapSampleabilityChanges}, {"batch_caches_stay_put", batchCachesStayPut}, {"frustum_culling", frustumCulling},
              {"shadow_caster_frustum_culling", shadowCasterFrustumCulling}, {"masked_shadow", maskedShadow}, {"leaf_receiver", leafReceiver}, {"point_shadow_cube_faces", pointShadowCubeFaces}, {"lamp_source_radius", lampSourceRadius}, {"contact_shadow_foot", contactShadowFoot}, {"virtual_sun_contact_foot", virtualSunContactFoot}, {"lamp_cache", lampCache}, {"shadow_lights_follow_hierarchy", shadowLightsFollowHierarchy}, {"records_survive_siblings", recordsSurviveSiblings}, {"steady_frame_hashes_no_record", steadyFrameHashesNoRecord}, {"nested_record_cache", nestedRecordCache}, {"frustum_record_retention", frustumRecordRetention}, {"world_sphere_measured_once", worldSphereMeasuredOnce}, {"reflection_reuse", reflectionReuse})
 

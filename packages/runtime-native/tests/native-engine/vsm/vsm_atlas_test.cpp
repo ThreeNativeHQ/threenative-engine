@@ -66,6 +66,22 @@ void binding() {
     setters.at("filterNode")(&light.shadow, filter, store);
     CHECK(light.shadow.sourceAngleFilter && (*light.shadow.sourceAngleFilter)[0] == 0.01);
     CHECK((*light.shadow.sourceAngleFilter)[1] == 8 && (*light.shadow.sourceAngleFilter)[2] == 12);
+    CHECK((*light.shadow.sourceAngleFilter)[3] == 0);  // no floor unless the record names one
+    auto floored = filter; floored.fields.emplace_back("minPenumbraPixels", Value::of(1.5));
+    setters.at("filterNode")(&light.shadow, floored, store);
+    CHECK((*light.shadow.sourceAngleFilter)[3] == 1.5);
+    auto stray = filter; stray.fields.emplace_back("minPenumbraPixel", Value::of(1.5));
+    bool refusedStray = false;
+    try { setters.at("filterNode")(&light.shadow, stray, store); }
+    catch (const Unsupported& e) { refusedStray = e.reason == "TN_VIRTUAL_SHADOW_INVALID: source-angle filter"; }
+    CHECK(refusedStray && (*light.shadow.sourceAngleFilter)[3] == 1.5);  // an unknown key never passes quietly
+    auto negative = filter; negative.fields.emplace_back("minPenumbraPixels", Value::of(-1.0));
+    bool refusedNegative = false;
+    try { setters.at("filterNode")(&light.shadow, negative, store); }
+    catch (const Unsupported&) { refusedNegative = true; }
+    CHECK(refusedNegative);
+    setters.at("filterNode")(&light.shadow, filter, store);
+    CHECK((*light.shadow.sourceAngleFilter)[3] == 0);
     auto invalidFilter = filter; invalidFilter.fields[0].second = Value::of(-0.1);
     bool invalid = false;
     try { setters.at("filterNode")(&light.shadow, invalidFilter, store); }

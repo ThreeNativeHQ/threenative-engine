@@ -13,11 +13,14 @@ import {
   If,
   cross,
   cubeTexture,
+  dFdx,
+  dFdy,
   float,
   ivec2,
   max,
   min,
   reference,
+  sqrt,
   step,
   type texture,
   textureLoad,
@@ -83,6 +86,13 @@ export interface ISourceAngleShadowOptions {
   blockerSamples?: number;
   /** Fixed sample count, integer 1–64; default 16. */
   filterSamples?: number;
+  /**
+   * The receiver's own pixel, this many times over, blurs the edge on top of the source angle (the two add as
+   * the blur of two independent sources), so a contact edge is not a one-texel step that crawls as the camera
+   * moves. Unreal's sharpest sun-shadow edge is about a pixel wide (its texel dither and temporal resolve).
+   * Finite, in [0, 16]; default 0, which leaves the source angle alone.
+   */
+  minPenumbraPixels?: number;
 }
 
 /** The object passed by three r185 ShadowNode.setupShadowFilter. */
@@ -104,6 +114,7 @@ export function sourceAngleShadowFilter({
   sourceAngleRad,
   blockerSamples = 16,
   filterSamples = 16,
+  minPenumbraPixels = 0,
 }: ISourceAngleShadowOptions): (inputs: ISourceAngleShadowInputs) => Node<"float"> {
   penumbraUv(0, sourceAngleRad, 1, 1);
   for (const count of [blockerSamples, filterSamples]) {
@@ -111,6 +122,8 @@ export function sourceAngleShadowFilter({
       throw new RangeError("shadow sample counts must be integers in [1, 64]");
     }
   }
+  if (!Number.isFinite(minPenumbraPixels) || minPenumbraPixels < 0 || minPenumbraPixels > 16)
+    throw new RangeError("minPenumbraPixels must be finite and in [0, 16]");
   const tangent = Math.tan(sourceAngleRad);
   const disk = (index: number, count: number) => {
     const radius = Math.sqrt((index + 0.5) / count);
@@ -188,7 +201,20 @@ export function sourceAngleShadowFilter({
           });
         }
         const gap = max(0, receiver.sub(blockerSum.div(max(blockerCount, 1)))).mul(range);
-        const radius = max(texel, vec2(gap.mul(reach)).div(span)).toVar();
+        const penumbra = vec2(gap.mul(reach)).div(span);
+        // The receiver's pixel in this map's uv, per axis (the length of its two screen steps together), as
+        // many times as `minPenumbraPixels` asks for, and at most 16 texels: the steps of a quad that straddles
+        // a silhouette are the distance between two surfaces.
+        const stepX = dFdx(shadowCoord.xy);
+        const stepY = dFdy(shadowCoord.xy);
+        const pixels = min(
+          sqrt(stepX.mul(stepX).add(stepY.mul(stepY))).mul(minPenumbraPixels),
+          texel.mul(16),
+        );
+        const radius = max(
+          texel,
+          minPenumbraPixels === 0 ? penumbra : sqrt(penumbra.mul(penumbra).add(pixels.mul(pixels))),
+        ).toVar();
         const visibility = float(0).toVar();
         for (let index = 0; index < filterSamples; index++) {
           const depth = load(shadowCoord.xy.add(disk(index, filterSamples).mul(radius)));
@@ -204,6 +230,7 @@ export function sourceAngleShadowFilter({
       sourceAngleRad,
       blockerSamples,
       filterSamples,
+      minPenumbraPixels,
     }),
   });
 }

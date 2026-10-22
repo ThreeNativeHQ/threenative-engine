@@ -217,12 +217,13 @@ export interface IVirtualShadowOptions {
    */
   readonly followViewFocus?: boolean;
   /**
-   * The smallest ratio of a level's light-space height to its width, `(0, 1]`, default 0.25. A low
-   * sun stretches a shadow texel along the floor by `1 / sin(elevation)`, so a square level would
-   * blur every shadow edge across the floor that much more at sunset than at noon. The height
-   * shrinks to `sin(elevation)` instead, never under this value, and a texel then covers the same
-   * floor area at any sun height. The cost is vertical reach: a wall taller than a level's height is
-   * read from a wider level. `1` restores square levels.
+   * The smallest ratio of a level's light-space height to its width, `(0, 1]`, default 1 (square levels).
+   * A low sun stretches a shadow texel along the floor by `1 / sin(elevation)`. A value under 1 shrinks
+   * the height to `sin(elevation)` times the width, never under this value, so a texel covers the same
+   * floor area at any sun height. The costs: a wall taller than a level's height is read from a wider
+   * level, a level centred on the eye holds the floor only about `eye height / tan(elevation)` from the
+   * camera, and a wide filter disc (a source angle near 0.7 degrees) crosses the level's top and bottom
+   * edge and leaves a lit patch in a thin shadow (PRD-634, sun 4 ramp), so it is an opt-in.
    */
   readonly minWindowAspect?: number;
   /** Measure receiver-plane slope across each level's texel footprint to prevent coarse acne.
@@ -471,8 +472,8 @@ export const VIRTUAL_SHADOW_SMALL_CASTER_LAYER = 26;
  */
 export const VIRTUAL_SHADOW_KEY_LAYER = 25;
 const DEFAULT_CLIP_EXTENTS: readonly number[] = [16, 48, 144];
-/** A level is never shorter than a quarter of its width: a 14.5 degree sun is where the fit ends. */
-const DEFAULT_MIN_WINDOW_ASPECT = 0.25;
+/** Square levels. A fit to the ground (`0.25`, a 14.5 degree sun is where it ends) is the named override. */
+const DEFAULT_MIN_WINDOW_ASPECT = 1;
 const DEFAULT_MARKER_EVERY = 300;
 /** Frames between markers while `?tnShadowStats=1` is on the URL: about a second a walk is long. */
 const STATS_QUERY_EVERY = 60;
@@ -906,7 +907,7 @@ interface IRenderingShadowNode {
  * @constraint `trackCaster(object)` is the override that pins an object as a mover for good (it enables layer `VIRTUAL_SHADOW_MOVER_LAYER` on the object and its descendants), and `pinStatic(object)` opts an object out of detection; tracking or untracking refreshes only that object's region
  * @override bias, biasNode, normalBias, intensity, radius, blurSamples, mapType and filterNode stay on `light.shadow`; mapSize and the other options here have defaults
  * @override followViewFocus: false keeps eye follow; receiverPlaneBias: false uses only authored bias
- * @override minWindowAspect: a level is as high as `sin(sun elevation)` times its width, never under this (default 0.25), so a low sun's floor shadows keep the texel density of a high sun's; 1 keeps square levels
+ * @override minWindowAspect: below 1, a level is as high as `sin(sun elevation)` times its width, never under this, so a low sun's floor shadows keep the texel density of a high sun's; the default 1 keeps square levels
  * @example
  * const sun = new DirectionalLight(0xffffff, 3);
  * sun.castShadow = true;

@@ -539,7 +539,7 @@ describe("VirtualShadowNode", () => {
     ).toHaveLength(0);
   });
 
-  it("should fit each level's frustum to the ground: its height is the width times sin(elevation)", () => {
+  it("should fit each level's frustum to the ground when minWindowAspect asks: its height is the width times sin(elevation)", () => {
     // A low sun stretches a texel over 1 / sin(elevation) of floor along the light's V axis, so a
     // square frustum blurs every floor shadow edge that many times more than a high sun does.
     const heights = (degrees: number, options = {}) => {
@@ -554,15 +554,18 @@ describe("VirtualShadowNode", () => {
       node.dispose();
       return frusta.map((c) => [c.right - c.left, c.top - c.bottom]);
     };
-    const [fine, coarse] = heights(15);
+    const fit = { minWindowAspect: 0.25 };
+    const [fine, coarse] = heights(15, fit);
     expect(fine?.[0]).toBeCloseTo(16, 9);
     expect(fine?.[1]).toBeCloseTo(16 * Math.sin((15 * Math.PI) / 180), 9);
     expect(coarse?.[1]).toBeCloseTo(64 * Math.sin((15 * Math.PI) / 180), 9);
-    // Under minWindowAspect the height stops shrinking; an overhead sun and `1` stay square.
-    expect(heights(4)[0]?.[1]).toBeCloseTo(16 * 0.25, 9);
-    expect(heights(4, { minWindowAspect: 1 })[0]?.[1]).toBeCloseTo(16, 9);
-    expect(heights(89)[0]?.[1]).toBeCloseTo(16, 9);
+    // Under minWindowAspect the height stops shrinking; an overhead sun stays square.
+    expect(heights(4, fit)[0]?.[1]).toBeCloseTo(16 * 0.25, 9);
+    expect(heights(89, fit)[0]?.[1]).toBeCloseTo(16, 9);
     expect(() => heights(30, { minWindowAspect: 0 })).toThrow(/minWindowAspect/u);
+    // The default is square at every sun height: a fit is the named override (PRD-634).
+    expect(heights(4)[0]?.[1]).toBeCloseTo(16, 9);
+    expect(heights(15)[0]?.[1]).toBeCloseTo(16, 9);
   });
 
   it("should serve every level from cache while the camera stays inside its texel", () => {

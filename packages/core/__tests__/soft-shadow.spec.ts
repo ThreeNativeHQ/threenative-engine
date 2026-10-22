@@ -48,6 +48,26 @@ describe("source-angle soft shadows", () => {
     expect(() => penumbraUv(1, Math.PI, 20, 2048)).toThrow(RangeError);
   });
 
+  it("carries the pixel floor to the owned engine and refuses a bad one", () => {
+    const tag = (filter: unknown) =>
+      (filter as Record<symbol, unknown>)[Symbol.for("threenative.sourceAngleShadowFilter")];
+    expect(tag(sourceAngleShadowFilter({ sourceAngleRad: 0.02 }))).toEqual({
+      sourceAngleRad: 0.02,
+      blockerSamples: 16,
+      filterSamples: 16,
+      minPenumbraPixels: 0,
+    });
+    expect(
+      tag(sourceAngleShadowFilter({ sourceAngleRad: 0.02, minPenumbraPixels: 1 })),
+    ).toMatchObject({
+      minPenumbraPixels: 1,
+    });
+    for (const minPenumbraPixels of [-0.5, Number.NaN, Number.POSITIVE_INFINITY, 17])
+      expect(() => sourceAngleShadowFilter({ sourceAngleRad: 0.02, minPenumbraPixels })).toThrow(
+        RangeError,
+      );
+  });
+
   it("creates a filter without a GPU and validates its options", () => {
     const sun = new DirectionalLight();
     const filter = sourceAngleShadowFilter({ sourceAngleRad: 0.02 });

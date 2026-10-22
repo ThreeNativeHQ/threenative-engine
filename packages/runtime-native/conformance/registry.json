@@ -627,6 +627,19 @@
       "required": true
     },
     {
+      "id": "soft-shadow-source-angle",
+      "title": "sun source-angle soft shadow and pixel floor",
+      "category": "shadows",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/soft-shadow-source-angle.js",
+      "tolerance": {
+        "pixelMismatchRatio": 0.08,
+        "perceptualDeltaE": 10.0
+      },
+      "desktopGate": false,
+      "required": true
+    },
+    {
       "id": "virtual-sun-seam",
       "title": "virtual sun draws front-face casters",
       "category": "shadows",

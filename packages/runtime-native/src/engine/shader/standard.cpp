@@ -940,7 +940,10 @@ static ExprId virtualShadowFactor(Program& f, Tsl& t, std::size_t index, int lev
     const uint32_t table = f.storageBuffer("vsmTable" + std::to_string(index), Type::vec(4));
     auto row = [&](int i) { return f.loadStorage(table, f.construct(Type::u32(), {f.constant(int32_t(i))})); };
     const ExprId world = shadowWorld(f, positionWorld, normalWorld, at, leaf);
-    const ExprId plane = f.call("cross", {f.call("dFdx", {positionWorld}), f.call("dFdy", {positionWorld})});
+    // The receiver's pixel: the world steps one pixel right and one pixel down take (outside every branch,
+    // where a derivative is defined).
+    const ExprId pixelX = f.call("dFdx", {positionWorld}), pixelY = f.call("dFdy", {positionWorld});
+    const ExprId plane = f.call("cross", {pixelX, pixelY});
     const ExprId phi = noisePhi(f, t);
     // Finest level first: a level that holds the whole weight left skips every coarser one, so a pixel
     // inside the finest window reads one level, and one in a blend band reads two. The weights are the
@@ -965,6 +968,11 @@ static ExprId virtualShadowFactor(Program& f, Tsl& t, std::size_t index, int lev
         const ExprId projected4 = f.mul(matrix, f.construct(Type::vec(4), {world, t.f(1)}));
         const ExprId projected = f.div(f.swizzle(projected4, "xyz"), f.swizzle(projected4, "w"));
         const ExprId uv = f.construct(Type::vec(2), {f.swizzle(projected, "x"), t.oneMinus(f.swizzle(projected, "y"))});
+        // The pixel's size in this level's uv, per axis (the length of its two steps together): the level's
+        // matrix is orthographic, so it maps a world step to a uv step without the position.
+        const ExprId stepX = f.swizzle(f.mul(matrix, f.construct(Type::vec(4), {pixelX, t.f(0)})), "xy");
+        const ExprId stepY = f.swizzle(f.mul(matrix, f.construct(Type::vec(4), {pixelY, t.f(0)})), "xy");
+        const ExprId pixelUv = f.call("sqrt", {f.add(f.mul(stepX, stepX), f.mul(stepY, stepY))});
         const ExprId along = f.call("max", {f.call("abs", {t.dot(plane, axisW)}),
             f.call("max", {f.mul(f.call("length", {plane}), t.f(0.0001f)), t.f(1e-12f)})});
         // The V row is the unit V over the window's height ratio (length 1 / ratio), and a texel along V is
@@ -1072,11 +1080,17 @@ static ExprId virtualShadowFactor(Program& f, Tsl& t, std::size_t index, int lev
                 f.div(f.load(blockerSum), f.call("max", {f.load(blockerCount), t.f(1)})))}), span);
             // Where the blockers touch the receiver the penumbra is under a texel: each tap is then the
             // hardware's bilinear compare, so the edge is about one texel wide and not stair-stepped,
-            // and the floor of the disk is half a texel.
+            // and the floor of the disk is half a texel. `minPenumbraPixels` (filter.w - 1) adds the
+            // receiver's own pixel, as it lies in this level, in quadrature (the blur of two independent
+            // sources): a contact edge is then never sharper than the screen can show, and does not crawl
+            // as the camera moves. The pixel's reach is capped at 16 texels, since the derivatives of a
+            // quad that straddles a silhouette are the distance between two surfaces.
             const ExprId penumbraMetres = f.mul(gap, tangent);
-            const ExprId penumbra = f.construct(Type::vec(2), {
-                f.call("max", {f.mul(texel, t.f(0.5f)), f.div(penumbraMetres, width)}),
-                f.call("max", {f.mul(texel, t.f(0.5f)), f.div(f.div(penumbraMetres, width), aspect)})});
+            const ExprId geometric = f.construct(Type::vec(2), {f.div(penumbraMetres, width), f.div(f.div(penumbraMetres, width), aspect)});
+            const ExprId pixels = f.call("min", {f.mul(pixelUv, f.sub(f.swizzle(filter, "w"), t.f(1))),
+                f.construct(Type::vec(2), {f.mul(texel, t.f(16))})});
+            const ExprId penumbra = f.call("max", {f.construct(Type::vec(2), {f.mul(texel, t.f(0.5f))}),
+                f.call("sqrt", {f.add(f.mul(geometric, geometric), f.mul(pixels, pixels))})});
             auto compareAt = [&](ExprId atUv, ExprId z) {
                 const ExprId clamped = f.call("clamp", {atUv, f.construct(Type::vec(2), {t.f(0)}), f.construct(Type::vec(2), {t.f(1)})});
                 const ExprId grid = f.mul(clamped, tiles);

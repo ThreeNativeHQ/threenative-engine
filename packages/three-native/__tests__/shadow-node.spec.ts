@@ -139,6 +139,7 @@ it("constructs core's automatic-depth node and installs through the facade sette
     sourceAngleRad: 0.01,
     blockerSamples: 8,
     filterSamples: 12,
+    minPenumbraPixels: 1.5,
   });
   shadow.filterNode = filter;
   expect(shadow.filterNode).toBe(filter);
@@ -149,6 +150,7 @@ it("constructs core's automatic-depth node and installs through the facade sette
       sourceAngleRad: 0.01,
       blockerSamples: 8,
       filterSamples: 12,
+      minPenumbraPixels: 1.5,
     },
   ]);
   shadow.filterNode = null;
@@ -169,12 +171,28 @@ it("validates branded source-angle parameters before either engine ABI sees them
     { sourceAngleRad: 0, blockerSamples: 0, filterSamples: 16 },
     { sourceAngleRad: 0, blockerSamples: 16, filterSamples: 65 },
     { sourceAngleRad: 0, blockerSamples: 1.5, filterSamples: 16 },
+    { sourceAngleRad: 0, blockerSamples: 16, filterSamples: 16, minPenumbraPixels: -1 },
+    { sourceAngleRad: 0, blockerSamples: 16, filterSamples: 16, minPenumbraPixels: 17 },
+    { sourceAngleRad: 0, blockerSamples: 16, filterSamples: 16, minPenumbraPixels: "1" },
   ]) {
     const callback = Object.assign(() => {}, {
       [Symbol.for("threenative.sourceAngleShadowFilter")]: options,
     });
     expect(() => shadowFilterOptions(callback)).toThrow("TN_VIRTUAL_SHADOW_INVALID");
   }
+});
+
+it("passes a sun's pixel floor to the engine only when the filter names one", () => {
+  const tag = Symbol.for("threenative.sourceAngleShadowFilter");
+  const sun = (options: object) => Object.assign(() => {}, { [tag]: options });
+  expect(
+    shadowFilterOptions(
+      sun({ sourceAngleRad: 0.01, blockerSamples: 8, filterSamples: 12, minPenumbraPixels: 2 }),
+    ),
+  ).toEqual({ sourceAngleRad: 0.01, blockerSamples: 8, filterSamples: 12, minPenumbraPixels: 2 });
+  expect(
+    shadowFilterOptions(sun({ sourceAngleRad: 0.01, blockerSamples: 8, filterSamples: 12 })),
+  ).toEqual({ sourceAngleRad: 0.01, blockerSamples: 8, filterSamples: 12 });
 });
 
 it("passes a lamp's source-radius filter and refuses a bad radius", () => {
