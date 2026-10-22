@@ -1,0 +1,179 @@
+{
+  "version": 1,
+  "id": "20261022T054655Z-cornell-high-0796257",
+  "date": "2026-10-22T05:46:55.764Z",
+  "scene": "cornell",
+  "tier": "high",
+  "expect": "preserve",
+  "before": {
+    "commit": "bdeb757f28eb9d4ad0e84dc2dff8f4a03411156e",
+    "stamp": "0796257b6e2743571ec2b61a6899af23353ddb1c2b44ff47ccd6458a5ecccf46",
+    "dirty": false
+  },
+  "after": {
+    "commit": "bdeb757f28eb9d4ad0e84dc2dff8f4a03411156e",
+    "stamp": "0796257b6e2743571ec2b61a6899af23353ddb1c2b44ff47ccd6458a5ecccf46",
+    "dirty": false
+  },
+  "engine": "threenative",
+  "adapter": "nvidia turing",
+  "directLight": {
+    "pass": false,
+    "overridden": true,
+    "worst": 41.18
+  },
+  "cells": [
+    {
+      "pose": "cornell",
+      "verdict": "NEUTRAL",
+      "vsUnreal": "CLOSE",
+      "reasons": "BEFORE and AFTER paths are the same two runs (run1/run2 of the same capture), and the two runs look identical. I checked the red and green walls, the back wall, the ceiling recess, both boxes and the floor contacts. Nothing differs between the arms, so no regression is possible. Against Unreal the lighting is the same: red and green bleed onto the floor and box faces, the short box front is dark and warm, the shadows fall away from the lamp, and I see no grain, streaks or black or bright lines.",
+      "differences": "The ceiling recess is smaller and more washed out than in Unreal, which has a crisper, darker recess with a visible crease under the rim. The tall box front face is greyer and darker with a vertical gradient, where Unreal is brighter and flatter. The back wall is a little greyer and less uniform. The floor is slightly darker and greyer, with less lamp-lit brightness around the short box. The short box front is a bit lighter and greyer than Unreal's darker warm face. The red wall is a touch more saturated and has soft banding.",
+      "worst": 55.17,
+      "regions": [
+        {
+          "region": "Floor",
+          "dP50": 0.223,
+          "deltaE": 9.695,
+          "dEv": null,
+          "iou": 0.9977,
+          "pass": false,
+          "ratio": 22.3,
+          "spread": 0
+        },
+        {
+          "region": "Ceiling",
+          "dP50": 0.007426,
+          "deltaE": 0.4085,
+          "dEv": null,
+          "iou": 0.9984,
+          "pass": true,
+          "ratio": 0.9901,
+          "spread": 0.00495
+        },
+        {
+          "region": "Back",
+          "dP50": 0.0307,
+          "deltaE": 1.717,
+          "dEv": null,
+          "iou": 1,
+          "pass": false,
+          "ratio": 3.07,
+          "spread": 0
+        },
+        {
+          "region": "Wall_Red",
+          "dP50": 0.075,
+          "deltaE": 5.022,
+          "dEv": null,
+          "iou": 1,
+          "pass": false,
+          "ratio": 8,
+          "spread": 0.01
+        },
+        {
+          "region": "Wall_Green",
+          "dP50": 0.05172,
+          "deltaE": 2.831,
+          "dEv": null,
+          "iou": 0.9967,
+          "pass": false,
+          "ratio": 5.172,
+          "spread": 0
+        },
+        {
+          "region": "Box_Tall",
+          "dP50": 0.0578,
+          "deltaE": 4.862,
+          "dEv": null,
+          "iou": 1,
+          "pass": false,
+          "ratio": 5.78,
+          "spread": 0
+        },
+        {
+          "region": "Box_Short",
+          "dP50": 0.5517,
+          "deltaE": 10.91,
+          "dEv": null,
+          "iou": 1,
+          "pass": false,
+          "ratio": 55.17,
+          "spread": 0
+        },
+        {
+          "region": "Shade",
+          "dP50": 0,
+          "deltaE": 0.01066,
+          "dEv": null,
+          "iou": 1,
+          "pass": true,
+          "ratio": 0.98,
+          "spread": 0
+        }
+      ]
+    },
+    {
+      "pose": "corner",
+      "verdict": "NEUTRAL",
+      "vsUnreal": "CLOSE",
+      "reasons": "BEFORE and AFTER are the same capture, and run1 and run2 look identical. I checked the red wall, the shadow on the red wall, the floor, the back wall and the tall box face. Surfaces are smooth with soft junctions and no grain or lines. The red wall darkens toward the far corner and the floor is pink, as in Unreal.",
+      "differences": "The floor is lighter and more uniformly pink than Unreal's, which is darker and browner and falls off toward the far end. The shadow on the red wall is softer and less defined than Unreal's crisp edge. The red wall is slightly more saturated and orange. The tall box face is slightly pinker and less light grey than Unreal's. The back wall and floor at the far corner are slightly lighter and pinker than Unreal's.",
+      "worst": 43.01,
+      "regions": [
+        {
+          "region": "Floor",
+          "dP50": 0.4301,
+          "deltaE": 15.18,
+          "dEv": null,
+          "iou": 1,
+          "pass": false,
+          "ratio": 43.01,
+          "spread": 0
+        },
+        {
+          "region": "Back",
+          "dP50": 0.08108,
+          "deltaE": 3.892,
+          "dEv": null,
+          "iou": 1,
+          "pass": false,
+          "ratio": 8.108,
+          "spread": 0
+        },
+        {
+          "region": "Wall_Red",
+          "dP50": 0.03333,
+          "deltaE": 2.062,
+          "dEv": null,
+          "iou": 1,
+          "pass": false,
+          "ratio": 3.333,
+          "spread": 0
+        },
+        {
+          "region": "Box_Tall",
+          "dP50": 0.09756,
+          "deltaE": 7.247,
+          "dEv": null,
+          "iou": 1,
+          "pass": false,
+          "ratio": 9.756,
+          "spread": 0
+        }
+      ]
+    }
+  ],
+  "overall": {
+    "verdict": "NEUTRAL",
+    "vsUnreal": "CLOSE",
+    "reasons": "BEFORE and AFTER point at the same capture files, and the two runs are visually identical, so the change cannot be told apart. Both poses are in the same lighting family as Unreal. Differences are a smaller and softer ceiling recess, a greyer tall box face, a lighter and pinker floor in the corner pose, and a softer shadow on the red wall. I see no grain, leaks or lines."
+  },
+  "judge": {
+    "model": "claude-sonnet-5-5",
+    "sessionId": "24348268-7dbf-428e-8734-ef2907b59a61",
+    "costUsd": 0.066525,
+    "durationMs": 11923,
+    "criteriaSha256": "421060206ec322bb66a7eef78fc7dd6408d373e3fdee6f5d4ab92c04bb7f5d92"
+  }
+}

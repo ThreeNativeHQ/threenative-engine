@@ -514,4 +514,30 @@ void groundWindow() {
     CHECK(!PageAtlas::create(options, error));
 }
 
-TN_TEST_MAIN({"atlas", atlas}, {"continuous_invalidation", continuousInvalidation}, {"sampling", sampling}, {"ground_window", groundWindow}, {"lod_rung", lodRung})
+// The mover maps share the square with the static pages: six 3072-texel levels and their 512 mover maps
+// fit WebGPU's 8192 texture edge, which a mover column beside the pages (10884 texels) did not.
+void packing() {
+    std::string error;
+    AtlasOptions options;
+    options.clipExtents = {1, 2, 4, 8, 16, 32}; options.mapSize = 3072; options.pageTexels = 128;
+    options.moverMapSize = 512;
+    auto atlas = PageAtlas::create(options, error);
+    CHECK(atlas.has_value());
+    if (!atlas) return;
+    std::printf("packing: atlas edge %d\n", atlas->edge());
+    CHECK(atlas->edge() <= 8192);
+    const int slots = atlas->tiles() * atlas->tiles() * 6, mover = options.moverMapSize + 2 * options.border;
+    int lastStatic = 0;
+    for (int slot = 0; slot < slots; ++slot) lastStatic = std::max(lastStatic, atlas->origin(slot).second + atlas->stride());
+    for (int l = 0; l < 6; ++l) {
+        const auto [x, y] = atlas->moverOrigin(l);
+        CHECK(x + mover <= atlas->edge() && y + mover <= atlas->edge());
+        CHECK(y >= lastStatic);  // below every static page
+        for (int k = 0; k < l; ++k) {
+            const auto [ox, oy] = atlas->moverOrigin(k);
+            CHECK(x >= ox + mover || ox >= x + mover || y >= oy + mover || oy >= y + mover);
+        }
+    }
+}
+
+TN_TEST_MAIN({"atlas", atlas}, {"packing", packing}, {"continuous_invalidation", continuousInvalidation}, {"sampling", sampling}, {"ground_window", groundWindow}, {"lod_rung", lodRung})

@@ -361,6 +361,8 @@ tn_native_engine_test(tn-native-engine-abi-test tests/native-engine/abi_test.cpp
     native_engine_abi_object_addresses=object_addresses
     native_engine_abi_geometry_shapes=geometry_shapes
     native_engine_abi_typed_bytes=typed_bytes
+    native_engine_abi_array_offset=array_offset
+    native_engine_abi_tsl_matrix_columns=tsl_matrix_columns
     native_engine_abi_data_texture_bytes=data_texture_bytes
     native_engine_abi_attribute_view_writes=attribute_view_writes
     native_engine_abi_attribute_defer=attribute_defer
@@ -486,7 +488,8 @@ tn_native_engine_test(tn-native-engine-vsm-atlas-test tests/native-engine/vsm/vs
     native_engine_vsm_continuous_invalidation=continuous_invalidation
     native_engine_vsm_sampling=sampling
     native_engine_vsm_ground_window=ground_window
-    native_engine_vsm_lod_rung=lod_rung)
+    native_engine_vsm_lod_rung=lod_rung
+    native_engine_vsm_packing=packing)
 target_link_libraries(tn-native-engine-vsm-atlas-test PRIVATE tn_engine_vsm tn_engine_shader tn_engine_bindings)
 
 # The header compiles as strict C11 and a C program links against the ABI.
@@ -828,7 +831,7 @@ target_link_libraries(tn-native-engine-fixture-protocol-test PRIVATE tn_fixture_
 if(NOT EMSCRIPTEN)
     find_program(TN_PNPM_EXECUTABLE pnpm)
     if(TN_PNPM_EXECUTABLE)
-        foreach(math_case "math_core:math-core-*" "math_edges:math-edges-*" "math_euler:math-euler-*" "math_primitives:math-primitives-*" "scene_transforms:scene-transforms-*" "scene_cameras:scene-cameras-*" "scene_object_bounds:scene-object-bounds-*" "geometry:geometry-*" "geometry_derived:geometry-derived-*" "material_props:materials-props-*" "light_props:lights-props-*")
+        foreach(math_case "math_core:math-core-*" "math_edges:math-edges-*" "math_euler:math-euler-*" "math_primitives:math-primitives-*" "math_array:math-array-*" "scene_transforms:scene-transforms-*" "scene_cameras:scene-cameras-*" "scene_object_bounds:scene-object-bounds-*" "geometry:geometry-*" "geometry_derived:geometry-derived-*" "material_props:materials-props-*" "light_props:lights-props-*")
             string(REPLACE ":" ";" math_pair "${math_case}")
             list(GET math_pair 0 math_name)
             list(GET math_pair 1 math_glob)

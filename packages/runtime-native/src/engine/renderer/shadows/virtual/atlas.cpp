@@ -38,7 +38,18 @@ std::optional<PageAtlas> PageAtlas::create(const AtlasOptions& options, std::str
     const int count = out.tiles() * out.tiles() * int(options.clipExtents.size());
     if (count > 4096) { error = "TN_VIRTUAL_SHADOW_INVALID: page capacity"; return std::nullopt; }
     out.pool_ = PhysicalPagePool::create(count, error);
-    out.slotsPerAxis_ = int(std::ceil(std::sqrt(count)));
+    // The levels' mover maps sit in rows of whole slots under the static pages, so one square holds
+    // both: the smallest square whose static rows plus mover rows fit in its side.
+    const int span = (options.moverMapSize + 2 * options.border + out.stride() - 1) / out.stride();
+    const int levels = int(options.clipExtents.size());
+    for (int side = int(std::ceil(std::sqrt(count))); ; ++side) {
+        const int perRow = side / span;
+        if (perRow == 0) continue;
+        if ((count + side - 1) / side + span * ((levels + perRow - 1) / perRow) > side) continue;
+        out.slotsPerAxis_ = side;
+        out.staticRows_ = (count + side - 1) / side;
+        break;
+    }
     out.levels_.resize(options.clipExtents.size());
     return out;
 }
@@ -205,7 +216,8 @@ std::vector<AtlasPage> PageAtlas::update(const Vector3& eye, const Vector3& towa
 }
 
 std::pair<int, int> PageAtlas::moverOrigin(int level) const {
-    return {0, staticEdge() + level * (options_.moverMapSize + 2 * options_.border)};
+    const int span = (options_.moverMapSize + 2 * options_.border + stride() - 1) / stride(), perRow = slotsPerAxis_ / span;
+    return {level % perRow * span * stride(), (staticRows_ + level / perRow * span) * stride()};
 }
 
 bool PageAtlas::isMover(uint64_t key) const {
