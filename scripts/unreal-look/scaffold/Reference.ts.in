@@ -405,6 +405,8 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
 
     const target = new Vector3();
     const reference = {
+      // The live renderer, as the calibration scene exposes it: the capture's frame gate reads its draw counters and temporal state.
+      renderer: ctx.renderer.raw,
       layer: LAYER,
       tier: TIER,
       finalGatherMethod: GI_METHOD,
