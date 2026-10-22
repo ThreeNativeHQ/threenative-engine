@@ -136,6 +136,26 @@ stage you turned on that is not in that line as `applied: true` did not run, and
 why. An unknown `ssgiQuality` or `tonemapMode` throws at construction rather than quietly
 becoming the default.
 
+## Unreal's film curve and colour grade
+
+`tonemapMode: "filmic"` runs the curve and the defaults of a fresh Unreal Engine 5.8.3 project
+(`render/tonemap.ts`, your source). `tonemapMode: "aces"` is the named override. The curve takes
+`filmicCurve: { slope: 0.88, toe: 0.55, shoulder: 0.26, blackClip: 0, whiteClip: 0.04, ... }`, and
+the grade takes Unreal's controls under `colorGrade`:
+
+```ts
+colorGrade: {
+  whiteTemp: 5500, whiteTint: 0,           // Kelvin; "colorTemperature" in temperatureMode warms instead
+  global: { saturation: [1, 1, 1, 1.1] },  // [red, green, blue, master], like Unreal's panel
+  shadows: { gain: [1, 1, 1.05, 1] },      // also midtones and highlights; limits shadowsMax, highlightsMin/Max
+  toneCurveAmount: 1,                      // 0 = graded colour with no curve
+}
+```
+
+A control left out keeps Unreal's default and adds no shader code. Both options throw under any
+other `tonemapMode`. The curve clips each channel at 43.7 after exposure, as Unreal's colour LUT does;
+`filmicCurve: { lutClip: 0 }` turns that off.
+
 ## Shafts of light — the one recipe that is easy to get wrong
 
 You want the beam a cathedral window or a hole in a cave roof throws. **Do not build cone

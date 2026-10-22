@@ -254,6 +254,34 @@
       "reason": "The starter's filmic tone curve (generated template source: a log-domain line with two sigmoids in AP1, two 3x3 matrices, a desaturation) installed as three's CustomToneMapping through the renderer's node library, on the host as well as the browser. The frame is a nine step grey ramp from 0.002 to 16 (toe, line, shoulder) and six saturated primaries (the gamut and blue steps), so a host that drops the custom mapping and falls back to a linear clamp, or runs a matrix with the wrong layout, cannot match the browser reference. Measured 2026-10-22 on the RTX 2080 desktop lane (Chrome reference and the Linux host, both Dawn on the same adapter; host binary from the unreal-brdf lane, built 2026-10-21 19:12, which carries the custom tone mapping): 0 pixels differ and the mean deltaE is 0, and both frames show the nine greys and six primaries, not a blank. The tolerance stays at 0.02 and 3.0 because no software adapter was measured."
     },
     {
+      "id": "filmic-grade",
+      "title": "filmic tone curve with colour grade",
+      "category": "rendering",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/filmic-grade.js",
+      "owner": "PRD-632",
+      "browserRecipe": "webgpu",
+      "requiresHardwareAdapter": true,
+      "laneRegistrations": {
+        "browser": {
+          "registered": true,
+          "target": "web",
+          "assertsAdapter": true
+        },
+        "desktop": {
+          "registered": true,
+          "target": "desktop"
+        }
+      },
+      "tolerance": {
+        "pixelMismatchRatio": 0.02,
+        "perceptualDeltaE": 3.0
+      },
+      "desktopGate": true,
+      "required": true,
+      "reason": "The starter's filmic curve with Unreal's colour grade (white balance matrix, global and per-range saturation, contrast, gamma, gain and offset split by luma, tone curve amount) folded into the TSL graph as constants, on the host as well as the browser. The chart is the filmic-tonemap one, nine greys and six saturated primaries, so each range of the grade and each channel is read. A host that drops a vector pow, a clamp or a matrix constant cannot match the browser reference. Not yet measured: the first run is recorded in PRD-632 Phase 4."
+    },
+    {
       "id": "01-basic-cube",
       "title": "basic cube",
       "category": "core",
