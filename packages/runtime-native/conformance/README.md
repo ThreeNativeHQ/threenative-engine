@@ -13,6 +13,12 @@ Use `--only-tests id,id` for bounded real execution. Implemented rows not select
 command are reported blocked, never passed or omitted. ImageMagick Q16/Q16-HDRI absolute
 error is normalized by its quantum range; an unknown quantum depth fails metric computation.
 
+`--engine threenative` runs the selected rows on the owned C++ engine instead of upstream three: the
+Wasm engine in Chromium for `--target web`, the V8 engine player for `--target desktop`. On web, `--reference
+<dir>` compares the capture with an upstream three capture of the same row. The default lanes (no flag)
+run upstream three, and the desktop one runs the legacy `mystral` host, so their results are not proof
+for the owned engine.
+
 Run a scaffolded project's portable native entry with:
 
 ```sh
