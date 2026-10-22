@@ -20,6 +20,8 @@ namespace rt {
  *
  * - mystralRT.isSupported(): boolean
  * - mystralRT.getBackend(): string ("dxr", "vulkan", "metal", or "none")
+ * - mystralRT.capabilities(): { backend, device, rayBatch, imageOutput, reason, ... }
+ * - mystralRT.traceRayBatch({ tlas, rays, hits, rayCount? }): { rayCount, gpuMs, totalMs }
  * - mystralRT.createGeometry(options): RTGeometry
  * - mystralRT.createBLAS(geometries): RTBLAS
  * - mystralRT.createTLAS(instances): RTTLAS
@@ -27,6 +29,8 @@ namespace rt {
  * - mystralRT.traceRays(options): void
  * - mystralRT.destroyBLAS(blas): void
  * - mystralRT.destroyTLAS(tlas): void
+ *
+ * The hardware backend starts on first use of any method that needs it, not here.
  *
  * @param engine The JavaScript engine to register bindings on
  * @return true on success, false on error

@@ -578,7 +578,7 @@ public:
      * The last timed frame's GPU time by segment, in ms: shadow passes (0 when the frame drew none),
      * scene pass, other passes (offscreen, compute, post, TRAA), output pass.
      */
-    std::array<double, 4> lastGpuSegments() const { return timing_->segments; }
+    std::array<double, kGpuSegments> lastGpuSegments() const { return timing_->segments; }
     /** How many GPU times have come back, so a caller samples each one once. */
     uint64_t gpuSamples() const { return timing_->samples; }
     /** Timestamp pairs in the most recently resolved complete frame. */
@@ -984,7 +984,7 @@ private:
     // renderer is gone (wgpu does at teardown), and it must then find nothing to write into.
     struct Timing {
         double lastMs = -1;
-        std::array<double, 4> segments{};  // shadow passes, scene pass, other passes, output pass, in ms
+        std::array<double, kGpuSegments> segments{};  // shadow passes, scene pass, other passes, output pass, screen-space gather, in ms
         uint32_t passes = 0;
         uint64_t samples = 0;
         uint64_t source = 0;  // the caller frame id the successful sample was submitted with

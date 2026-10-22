@@ -5,6 +5,8 @@
  * `__effect(name[, value])`, which the back end routes to tslEffectParameter.
  */
 
+import { GPU_STAGES, gpuStageId } from "../gpu-stages.js";
+
 interface IEffectNode {
   __effect(name: string, value?: number): number;
   getTextureNode?: () => IEffectNode;
@@ -37,6 +39,17 @@ function uniforms(node: IEffectNode, names: readonly string[]): IEffectNode {
       }),
     });
   return node;
+}
+
+/** `node.gpuStage = "SSGI"` makes the effect's pass report its GPU time under that stage (gpu-stages.ts). */
+function stageLabel(node: IEffectNode): IEffectNode {
+  return Object.defineProperty(node, "gpuStage", {
+    configurable: true,
+    get: () => GPU_STAGES[node.__effect("stage") - 1],
+    set: (name: string) => {
+      node.__effect("stage", gpuStageId(name));
+    },
+  });
 }
 
 export function definePostEffects(tsl: IEffectTsl) {
@@ -154,13 +167,15 @@ export function definePostEffects(tsl: IEffectTsl) {
       normalNode: unknown,
       camera: unknown,
     ): IEffectNode =>
-      uniforms(tsl.denoise(node, depthNode, normalNode ?? null, camera), [
-        "lumaPhi",
-        "depthPhi",
-        "normalPhi",
-        "radius",
-        "index",
-      ]),
+      stageLabel(
+        uniforms(tsl.denoise(node, depthNode, normalNode ?? null, camera), [
+          "lumaPhi",
+          "depthPhi",
+          "normalPhi",
+          "radius",
+          "index",
+        ]),
+      ),
     smaa: (node: unknown): IEffectNode => tsl.smaa(node),
     bloom: (node: unknown, strength?: number, radius?: number, threshold?: number): IEffectNode =>
       uniforms(tsl.bloom(node, strength, radius, threshold), [

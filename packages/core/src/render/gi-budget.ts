@@ -96,7 +96,6 @@ export interface IGIBudgetOptions {
  * @constraint the GPU time of a pass is read by the scene name three or the game gave it, so name every GI pass in `stages`
  * @constraint timestamp queries are needed: without them every window is unobserved and the method holds
  * @override explicit: true keeps the game's own finalGatherMethod and reports an exceeded budget
- * @alias global illumination quality
  * @alias lumen scalability
  * @alias sg.GlobalIlluminationQuality
  * @alias final gather method

@@ -129,12 +129,14 @@ describe("Unreal reference CPU clouds", () => {
   });
 
   it("bakes a small sky within 300 ms on one core", () => {
-    // Best of three: the host runs other lanes, and one slow slice is not the cost of the bake.
+    // CPU time of this test process, best of three: wall time on a loaded host also counts the
+    // time the scheduler gives other lanes, which is not the cost of the bake.
     let elapsed = Number.POSITIVE_INFINITY;
     for (let run = 0; run < 3; run++) {
-      const start = performance.now();
+      const start = process.cpuUsage();
       bakeCloudRadiance(sky(), sun, width, height);
-      elapsed = Math.min(elapsed, performance.now() - start);
+      const used = process.cpuUsage(start);
+      elapsed = Math.min(elapsed, (used.user + used.system) / 1000);
     }
     console.log(`CPU clouds ${width}x${height}: ${elapsed.toFixed(1)} ms`);
     expect(elapsed).toBeLessThan(300);

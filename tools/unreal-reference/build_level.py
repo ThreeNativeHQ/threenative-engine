@@ -286,7 +286,7 @@ def cells():
             yield id_layer, {"name": "id"}, pose
 
 
-def add_job(queue, name, level, sequence, out_dir, cvars, show_flags, kind, warm_up, print_cvars=()):
+def add_job(queue, name, level, sequence, out_dir, cvars, show_flags, kind, warm_up, print_cvars=(), frames=False):
     job = queue.allocate_new_job(unreal.MoviePipelineExecutorJob)
     job.map = unreal.SoftObjectPath(level)
     job.sequence = unreal.SoftObjectPath(sequence)
@@ -294,7 +294,9 @@ def add_job(queue, name, level, sequence, out_dir, cvars, show_flags, kind, warm
     config = job.get_configuration()
     output = config.find_or_add_setting_by_class(unreal.MoviePipelineOutputSetting)
     output.output_directory = unreal.DirectoryPath(out_dir)
-    output.file_name_format = "{job_name}"
+    # A motion run (PRD-638) writes one file per frame: <job>.0000.png, counted from the first frame of the shot.
+    output.file_name_format = "{job_name}.{frame_number_rel}" if frames else "{job_name}"
+    output.zero_pad_frame_numbers = 4
     width, height = POSES["resolution"]
     # TN_UE_RESOLUTION=1920x1080 renders at another size (the PRD-640 GPU-time measurement).
     if os.environ.get("TN_UE_RESOLUTION"):

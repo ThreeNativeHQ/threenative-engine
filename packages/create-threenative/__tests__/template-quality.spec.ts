@@ -878,6 +878,32 @@ describe("starter postprocessing lifecycle", () => {
     controller.dispose();
   });
 
+  it("reports the engine's live temporal state while the chain's own temporal AA runs", async () => {
+    const post = await import("../templates/starter/src/render/postprocessing.js");
+    const temporal = { active: true, frame: 7, historyValid: true, jitter: [0.25, -0.25] };
+    const owned = {
+      kind: "webgpu",
+      raw: { info: { engine: { samples: 1, temporal } } },
+      createRenderChain: () => ({ applied: { stages: [], dropped: [] }, dispose() {} }),
+    } as Parameters<typeof post.setupPost>[0];
+    // `high` anti-aliases temporally, so the report is the engine's own, named for the method.
+    const high = post.setupPost(owned, new Scene(), new PerspectiveCamera(), {
+      mobile: false,
+      startupWindows: 0,
+      tier: "high",
+    });
+    expect(high.debug().temporal).toEqual({ method: "traa", ...temporal });
+    high.dispose();
+    // `low` keeps SMAA, so there is no temporal state to report and the key stays absent.
+    const low = post.setupPost(owned, new Scene(), new PerspectiveCamera(), {
+      mobile: false,
+      startupWindows: 0,
+      tier: "low",
+    });
+    expect(Object.hasOwn(low.debug(), "temporal")).toBe(false);
+    low.dispose();
+  });
+
   it("replaces only changed graphs and stops consuming windows after scene disposal", async () => {
     const post = await import("../templates/starter/src/render/postprocessing.js");
     const built: string[] = [];

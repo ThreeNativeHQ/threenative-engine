@@ -1,5 +1,5 @@
 {
-  "note": "Written by gi/export.py from the Unreal 5.8.3 level GI_cornell. three.js frame: Y up, metres. Unreal is the authority; scene.py is only the authoring input.",
+  "note": "Written by gi/export.py from the Unreal 5.8.3 level /Game/GI/cornell/GI_cornell. three.js frame: Y up, metres. Unreal is the authority; scene.py is only the authoring input.",
   "scene": "cornell",
   "resolution": [1280, 720],
   "meshes": [
@@ -53,7 +53,7 @@
       "class": "StaticMeshActor",
       "position": [-2.85, 2.75, -2.85],
       "rotationYDeg": -0.0,
-      "size": [0.2, 5.9, 5.7],
+      "size": [0.2, 5.5, 5.7],
       "material": {
         "name": "MI_Red",
         "baseColor": [0.63, 0.065, 0.05],
@@ -68,7 +68,7 @@
       "class": "StaticMeshActor",
       "position": [2.85, 2.75, -2.85],
       "rotationYDeg": -0.0,
-      "size": [0.2, 5.9, 5.7],
+      "size": [0.2, 5.5, 5.7],
       "material": {
         "name": "MI_Green",
         "baseColor": [0.14, 0.45, 0.091],
@@ -164,6 +164,32 @@
       "hfovDeg": 70
     }
   ],
+  "motion": {
+    "pan": {
+      "frames": 180,
+      "camera": {
+        "kind": "pan",
+        "position": [0, 2.75, 0.5],
+        "hfovDeg": 90,
+        "pitchDeg": 0,
+        "headingDeg": [-45, 45],
+        "sweepFrames": 60
+      },
+      "stills": [0, 15, 30, 45, 60],
+      "regions": ["Ceiling", "Back", "Wall_Green", "Box_Tall"]
+    },
+    "switch": {
+      "frames": 180,
+      "camera": {
+        "kind": "pose",
+        "pose": "cornell"
+      },
+      "light": {
+        "name": "Lamp",
+        "keys": [[0, 1.0], [60, 0.0]]
+      }
+    }
+  },
   "regions": {
     "Floor": [255, 0, 0],
     "Ceiling": [0, 255, 0],

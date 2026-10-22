@@ -62,6 +62,7 @@ import { BlendMode, type Node, type NodeBuilder, type TextureNode } from "three/
 import { AutoExposureNode, applyExposure } from "./autoExposure.js";
 import { type IExposureSettings, exposureSettings } from "./exposure.js";
 import { cacheFallback } from "./giCache.js";
+import { harnessLayer } from "./harnessLayer.js";
 import { LocalExposureNode } from "./localExposure.js";
 import { motionBlur } from "./motionBlur.js";
 import { installFilmicToneMapping } from "./tonemap.js";
@@ -71,12 +72,6 @@ import { vignetteMask } from "./vignette.js";
 /** Lumen reflections stop at this roughness, fading to nothing over the length below it. */
 const REFLECTION_CUTOFF = 0.4;
 const REFLECTION_FADE = 0.1;
-/** The reference harness's ladder layer, from `?tnRef=L<n>`; 9 (everything on) when there is none. */
-function harnessLayer(): number {
-  const layer = new URLSearchParams(globalThis.location?.search ?? "").get("tnRef") ?? "L9";
-  return /^L\d$/.test(layer) ? Number(layer.slice(1)) : 9;
-}
-
 /** Diagnosis: `?dn=N` runs N denoise passes over the SSGI gather at any layer, for an A/B against the tier's count. */
 function harnessDenoisePasses(): number | undefined {
   const value = new URLSearchParams(globalThis.location?.search ?? "").get("dn");
@@ -894,9 +889,12 @@ export class WorldEnvironment {
       let result = node;
       for (let pass = 0; pass < options.giDenoisePasses; pass += 1) {
         const filter = denoise(result, depth(), normal(), view) as unknown as {
+          gpuStage?: string;
           index: { value: number };
         };
         filter.index.value = pass;
+        // The owned engine times the gather's denoise with the gather (`GI_STAGES`); three ignores the property.
+        filter.gpuStage = "SSGI";
         result = denoised(filter as unknown as ReturnType<typeof denoise>);
       }
       return result;

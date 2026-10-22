@@ -6,6 +6,7 @@
 #include <bit>
 #include <span>
 #include <deque>
+#include <numeric>
 #include <cctype>
 #include <cmath>
 #include <unordered_map>
@@ -4075,7 +4076,7 @@ void Renderer::encodeFrame(FrameJob& job) {
             timer->pending = false;
             const auto t = timing.lock();
             if (!t || status != GpuStatus::Ok || bytes.size() != segments.size() * 16) return;
-            std::array<double, 4> sums{};
+            std::array<double, kGpuSegments> sums{};
             std::map<std::pair<std::shared_ptr<VirtualShadowCosts>, int>, double> levelCosts;
             for (size_t i = 0; i < segments.size(); ++i) {
                 uint64_t ns[2];
@@ -4086,7 +4087,7 @@ void Renderer::encodeFrame(FrameJob& job) {
                 if (const auto query = shadowQueries.find(i); query != shadowQueries.end())
                     if (const auto costs = query->second.first.lock()) levelCosts[{costs, query->second.second}] += ms;
             }
-            const double total = sums[0] + sums[1] + sums[2] + sums[3];
+            const double total = std::accumulate(sums.begin(), sums.end(), 0.0);
             if (total <= 0) return;
             for (const auto& [key, ms] : levelCosts) {
                 std::lock_guard lock(key.first->mutex);

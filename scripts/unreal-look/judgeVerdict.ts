@@ -57,9 +57,17 @@ export function fail(code: string, message: string): never {
   throw new Error(`TN_UNREAL_LOOK_JUDGE_${code}: ${message}`);
 }
 
-const LAYER = /(?<![A-Za-z0-9])(ID|L\d)(?:-(Epic|Medium|Low))?(?![A-Za-z0-9])/g;
+/** A layer token: `L7`, `ID`, an Unreal variant (`L7-Epic`) or a ThreeNative tier layer (`L7-medium`). */
+const LAYER =
+  /(?<![A-Za-z0-9])(ID|L\d)(?:-(Epic|Medium|Low|epic|medium|low|high))?(?![A-Za-z0-9])/g;
 /** ThreeNative's GI tiers; each is judged against one Unreal quality level (PRD-644). */
 export type Tier = "low" | "medium" | "high";
+const TIER_OF: Readonly<Record<string, Tier>> = {
+  epic: "high",
+  high: "high",
+  medium: "medium",
+  low: "low",
+};
 export const UNREAL_LEVEL: Readonly<Record<Tier, string>> = {
   low: "Low",
   medium: "Medium",
@@ -67,13 +75,14 @@ export const UNREAL_LEVEL: Readonly<Record<Tier, string>> = {
 };
 /**
  * The Unreal GI variants that pair with a ThreeNative layer at a tier (GI_LAYERS in
- * capture-gi-threenative.ts). ThreeNative L6 is shadows and AO without GI, which Unreal draws as L7 at
- * GI quality Low, so L7-Low pairs with L6 at every tier above low. Unreal has an L9 only at Epic. A
- * variant that is not listed pairs with nothing and is skipped.
+ * capture-gi-threenative.ts; the compare tool pairs the same way, PRD-644). A tier follows its own
+ * Unreal quality level: ThreeNative L7 at tier low against L7-Low, at medium against L7-Medium, at high
+ * against L7-Epic. ThreeNative L6 pairs with no variant: it has no GI and no exposure, and Unreal's
+ * L7-Low has its Lumen off at Low scalability but keeps auto exposure and an unshadowed sky light.
+ * Unreal has an L9 only at Epic. A variant that is not listed pairs with nothing and is skipped.
  */
 function unrealPairs(tier: Tier): Readonly<Record<string, string>> {
   return {
-    ...(tier === "low" ? {} : { "L7-Low": "L6" }),
     [`L7-${UNREAL_LEVEL[tier]}`]: "L7",
     ...(tier === "high" ? { "L9-Epic": "L9" } : {}),
   };
@@ -84,6 +93,8 @@ interface IListed {
   layer: string;
   name: string;
   file: string;
+  /** The tier a ThreeNative path names (`L7-medium`); a plain `L7` names none. */
+  tier?: Tier;
 }
 type Listing = Map<string, IListed>;
 
@@ -94,7 +105,12 @@ const isPng = (entry: Dirent, file: string) =>
 
 /** A PNG's id and its one layer; undefined for an Unreal variant that pairs with nothing. */
 function nameFrame(root: string, file: string, pairs?: Readonly<Record<string, string>>) {
-  const seen = { layers: new Set<string>(), name: "", paired: true };
+  const seen = {
+    layers: new Set<string>(),
+    name: "",
+    paired: true,
+    tier: undefined as Tier | undefined,
+  };
   const id = path
     .relative(root, file)
     .split(path.sep)
@@ -102,6 +118,7 @@ function nameFrame(root: string, file: string, pairs?: Readonly<Record<string, s
     .replace(/\.png$/i, "")
     .replace(LAYER, (token, layer: string, variant?: string) => {
       const mapped = pairs && variant !== undefined ? pairs[token] : layer;
+      if (!pairs && variant !== undefined) seen.tier = TIER_OF[variant.toLowerCase()];
       if (mapped === undefined) seen.paired = false;
       else seen.layers.add(mapped);
       seen.name ||= token;
@@ -114,7 +131,15 @@ function nameFrame(root: string, file: string, pairs?: Readonly<Record<string, s
       layers.length === 0 ? "LAYER_UNKNOWN" : "LAYER_AMBIGUOUS",
       `${file} ${layers.length === 0 ? "names no layer" : `names ${layers.join(" and ")}`}: put exactly one layer (L0 to L9 or ID) in the path of every frame, as the capture folders do`,
     );
-  return { id, frame: { layer: layers[0] as string, name: seen.name, file } };
+  return {
+    id,
+    frame: {
+      layer: layers[0] as string,
+      name: seen.name,
+      file,
+      ...(seen.tier ? { tier: seen.tier } : {}),
+    },
+  };
 }
 
 function listFrames(root: string, pairs?: Readonly<Record<string, string>>): Listing {
@@ -161,7 +186,7 @@ function absent(arm: string, listed: Listing, id: string): { code: string; text:
     };
   const hint =
     arm === "unreal"
-      ? " (an Unreal variant pairs only with its own tier: L7-Epic and L9-Epic at high, L7-Medium at medium, L7-Low at low, and L7-Low with L6 above low)"
+      ? " (an Unreal variant pairs only with its own tier: L7-Epic and L9-Epic at high, L7-Medium at medium and L7-Low at low; L6 has no Unreal partner)"
       : "";
   return { code: "MISSING_FRAME", text: `${arm} has no ${id}${hint}` };
 }
@@ -209,6 +234,15 @@ export function collectFrames(
     ...after.map((listed, i): [string, Listing] => [`after run ${i + 1}`, listed]),
     ["unreal", unreal],
   ];
+  for (const [arm, listed] of arms.slice(0, -1))
+    for (const id of wanted) {
+      const named = listed.get(id)?.tier;
+      if (named !== undefined && named !== tier)
+        fail(
+          "TIER_MISMATCH",
+          `${arm} holds ${id} from the ${named} tier but the round is at tier ${tier}: judge the same tier in both engines`,
+        );
+    }
   const problems = arms.flatMap(([arm, listed]) =>
     wanted.filter((id) => !listed.has(id)).map((id) => absent(arm, listed, id)),
   );
@@ -293,7 +327,7 @@ ${listing.join("\n\n")}
 1. Open every image above with the Read tool before you answer. The answer is checked against the images you opened.
 2. For every frame give two answers.
    - verdict: AFTER against BEFORE, by the criteria. IMPROVEMENT, NEUTRAL or REGRESSION. Look for what got worse as hard as for what got better: one broken criterion in one region is a REGRESSION, even when the rest improved. NEUTRAL means the arms cannot be told apart by the criteria. Judge what the images show, not what the change was meant to do.
-   - vsUnreal: AFTER against UNREAL, MATCH, CLOSE or FAR. MATCH means no difference a player would notice. CLOSE means the same lighting with a named difference. FAR means a different lighting result. Name the differences in "differences".
+   - vsUnreal: AFTER against UNREAL, MATCH, CLOSE or FAR. MATCH means no difference a player would notice. CLOSE means the same lighting with a named difference. FAR means a different lighting result (criteria that say MISMATCH mean FAR). Name the differences in "differences".
 3. In "reasons" name where you looked (wall, corner, seam, window edge, and so on) and what you saw there.
 4. "overall" has one verdict and one vsUnreal for the whole round, weighed as the criteria say.
 5. If you cannot read an image, put its path in "unreadable" and do not guess about it.
