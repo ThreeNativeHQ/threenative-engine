@@ -11,6 +11,7 @@ import { describe, expect, it } from "vitest";
  */
 async function loadQuality(): Promise<{
   giPreset(tier: string): object;
+  qualityPreset(tier: string): object;
   shadowPreset(tier: string): object;
 }> {
   const dir = mkdtempSync(join(tmpdir(), "tn-gi-tier-"));
@@ -47,6 +48,23 @@ describe("GI tier table (PRD-644)", () => {
         skylightIntensityMultiplier: 1,
       });
     }
+  });
+
+  it("high gathers with screen probes, 16 x 16 rays, filtered over the neighbouring probes (PRD-640)", async () => {
+    const { qualityPreset } = await loadQuality();
+    expect(qualityPreset("high")).toMatchObject({
+      finalGatherMethod: "screenProbeGather",
+      ssgiDenoiseRadius: 16,
+      ssgiProbeRays: 16,
+      ssgiScreenProbes: true,
+    });
+    expect(qualityPreset("high")).not.toHaveProperty("ssgiProbeFilterPasses");
+  });
+
+  it("medium keeps its world-space probes and low its none", async () => {
+    const { qualityPreset } = await loadQuality();
+    expect(qualityPreset("medium")).toMatchObject({ finalGatherMethod: "irradianceField" });
+    expect(qualityPreset("low")).toMatchObject({ finalGatherMethod: "none" });
   });
 
   it("throws on a name that is not a tier", async () => {

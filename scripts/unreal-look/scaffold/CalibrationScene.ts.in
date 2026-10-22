@@ -286,7 +286,11 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
                 ssgiProbeRays: Number(params.get("probeRays") ?? 16),
                 ssgiDenoiseRadius: Number(params.get("ssgiDenoise") ?? 16),
               }
-            : {}),
+            : params.get("probes") === "0"
+              ? { ssgiDenoiseRadius: undefined, ssgiProbeRays: undefined, ssgiScreenProbes: false }
+              : {}),
+          // Diagnosis: ?probeFilter=N sets the spatial filter passes over the probes (PRD-640).
+          ...(params.has("probeFilter") ? { ssgiProbeFilterPasses: Number(params.get("probeFilter")) } : {}),
           ...(params.get("probeJitter") === null ? {} : { ssgiProbeJitter: Number(params.get("probeJitter")) }),
           ...(params.get("probeDebug") === null ? {} : { ssgiProbeDebug: Number(params.get("probeDebug")) }),
           vignetteAmount: 0,

@@ -137,6 +137,13 @@ const high: IWorldEnvironmentOptions = {
   gtaoRadius: 0.12,
   // Epic: Unreal's screen probe gather (`sg.GlobalIlluminationQuality` 3). See `giPreset`.
   finalGatherMethod: "screenProbeGather",
+  // The gather is the screen probes, filtered over the neighbouring probes (`SpatialFilterNumPasses` 3). The per-pixel
+  // gather it replaces left streaks and mottling on the walls, and a black line at the seam of abutting boxes under 4x
+  // MSAA (PRD-640 Phase 2b). 16 x 16 rays per probe: the engine's probes carry no radiance cache, so they trace twice
+  // Unreal's real-time 8 x 8. `?probes=0` brings back the per-pixel gather.
+  ssgiDenoiseRadius: 16,
+  ssgiProbeRays: 16,
+  ssgiScreenProbes: true,
   renderChainTier: "high",
   // Unreal turns motion blur on for a high end PC only (HardwareTargetingModule.cpp), so the desktop tier has it
   // and `medium` and `low` do not. It needs the chain's velocity, which costs one more scene pass target.
