@@ -142,6 +142,10 @@ overlay first, the templates through [PRD-267](../../useful-defaults/PRD-267-scr
 
 ## Decisions
 
+- **2026-10-22, team-lead (stable-epic triage): `lane/bounceconv` stays out of the stable epic.** The last commit records measurement only for converged GI bake passes. The lane tested a rejected lever. Next step: retain the measurements as reference. Do not queue this branch.
+
+- **2026-10-22, team-lead (stable-epic triage): `lane/gather` stays out of the stable epic.** The last three commit subjects describe rotating screen-probe rays each frame for temporal averaging, an epic merge, and multisampled material passes. The material passes use four times the normal resolution and test Equal per sample. These WIP changes have no visual receipt. Next step: add a red-green spec, capture BEFORE and AFTER frames, and obtain a fresh judge verdict before merge.
+
 - **2026-10-20, GI session: the Phase 1 error is read on the full L7 frame, not on an `indirectDiffuse` pair.**
   Unreal's `L7-Epic-indirect` frame (`r.Lumen.Visualize.IndirectDiffuse 1`) is not on the frame's scale. The
   cornell corner floor is in full shadow at L6 (0 in both engines), so its L7 value is all indirect light. Unreal

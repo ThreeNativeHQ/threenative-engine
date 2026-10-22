@@ -106,6 +106,12 @@ sun colour all change together. That coupling is a large part of the Unreal look
 
 ## Decisions
 
+- **2026-10-22, team-lead (stable-epic triage): `lane/sky2` stays out of the stable epic.** PRD-721 supersedes this lane. The exposure line takes the exposure derivation and excludes the lens fit. Next step: complete PRD-721, `docs/PRDs/Unreal/look/PRD-721-the-exposure-line-lands-once-the-cloud-sky-light-matches-unreal.md`, on the exposure line.
+
+- **2026-10-22, team-lead (stable-epic triage): `lane/brdf` stays out of the stable epic.** PRD-721 supersedes this lane. The exposure line takes the exposure derivation and excludes the lens fit. Next step: complete PRD-721, `docs/PRDs/Unreal/look/PRD-721-the-exposure-line-lands-once-the-cloud-sky-light-matches-unreal.md`, on the exposure line.
+
+- **2026-10-22, team-lead (stable-epic triage): `lane/sky-lens` stays out of the stable epic.** Commit `074c7552d` stays out. PRD-721 supersedes this lane. The exposure line takes the exposure derivation and excludes the lens fit. Next step: complete PRD-721, `docs/PRDs/Unreal/look/PRD-721-the-exposure-line-lands-once-the-cloud-sky-light-matches-unreal.md`, on the exposure line.
+
 - 2026-10-21: the sun light takes Unreal's coarser CPU transmittance, and the sky and the disc take the LUT's. Unreal tints the light with `FAtmosphereSetup::GetTransmittanceAtGroundLevel` (15 start-point segments from 500 m) and reads the 10-sample LUT for the sky, so the two differ by design (`SkyAtmosphereCommonData.cpp`, `SkyAtmosphereRendering.cpp`). The 4 degree green and blue of the L2 frame sit on the CPU value.
 - 2026-10-21: a reflection capture draws no sun disc, as in Unreal (`SkyAtmosphereRendering.cpp`: `SourceDiskEnabled = bIsReflectionCapture ? 0 : 1`). The chrome sphere keeps the sky and its clouds and loses the hard flare. A one-pixel black hole at the sun glint of the chrome sphere (layers L7 to L9) is not the disc: it also shows with the disc off. It appears from L7 on, where the GI materials replace the originals, and its cause is not found.
 
