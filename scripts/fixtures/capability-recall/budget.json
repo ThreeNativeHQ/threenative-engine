@@ -1,5 +1,5 @@
 {
-  "recallAtK": 0.9175257731958762,
+  "recallAtK": 0.9183673469387755,
   "recalledRows": [
     "brief.endless-runner.1",
     "brief.endless-runner.2",
@@ -85,6 +85,7 @@
     "request.pcss-soft-shadows",
     "request.rough-diffuse-substrate-eon",
     "request.lumen-surface-cache",
+    "request.gi-visualize",
     "request.lumen-scene",
     "request.mesh-cards",
     "request.gi-quality-scalability",
@@ -92,7 +93,7 @@
     "request.two-sided-foliage"
   ],
   "rejectHits": 15,
-  "rowCount": 97,
+  "rowCount": 98,
   "rowIds": [
     "brief.endless-runner.1",
     "brief.endless-runner.2",
@@ -186,6 +187,7 @@
     "request.pcss-soft-shadows",
     "request.rough-diffuse-substrate-eon",
     "request.lumen-surface-cache",
+    "request.gi-visualize",
     "request.lumen-scene",
     "request.mesh-cards",
     "request.gi-quality-scalability",
@@ -193,7 +195,7 @@
     "request.two-sided-foliage"
   ],
   "version": 1,
-  "zeroResultRate": 0.05154639175257732,
+  "zeroResultRate": 0.05102040816326531,
   "unresolvedResultRate": 0,
   "notOwnedRows": {
     "request.inventory-system": "inventory",
