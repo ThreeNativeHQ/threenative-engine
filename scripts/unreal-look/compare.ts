@@ -5,7 +5,7 @@ import { pathToFileURL } from "node:url";
 import { PNG } from "pngjs";
 import { curveShape, exposureCurve } from "./exposureCurve.js";
 import { compareGi } from "./gi.js";
-import { checkCommand, isGiCheck } from "./giLocks.js";
+import { giCommand } from "./giLocks.js";
 import { linearLuminance, pairedPenumbra } from "./penumbra.js";
 import { runSameness } from "./sameness.js";
 // Three.js belongs to core's dependency graph; root scripts do not install a second copy.
@@ -1116,8 +1116,9 @@ export function main(args = process.argv.slice(2)): void {
     process.exitCode = runSameness(args);
     return;
   }
-  if (isGiCheck(args)) {
-    process.exitCode = checkCommand(args);
+  const gi = giCommand(args);
+  if (gi !== undefined) {
+    process.exitCode = gi;
     return;
   }
   if (args.includes("--scene")) {

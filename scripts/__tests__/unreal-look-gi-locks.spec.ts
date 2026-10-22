@@ -1,9 +1,20 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  readlinkSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { PNG } from "pngjs";
 import { afterEach, describe, expect, it } from "vitest";
 import { readRounds } from "../unreal-look/calibrateRound.js";
 import { main } from "../unreal-look/compare.js";
+import { readScene, sceneDir } from "../unreal-look/gi.js";
 import {
   GI_LOCK_FILE,
   type ICheckDeps,
@@ -11,8 +22,13 @@ import {
   type IMeasuredRow,
   checkCommand,
   checkGiLocks,
+  compareCapture,
+  giCommand,
   isGiCheck,
+  isGiLock,
   lockCells,
+  lockCommand,
+  lockKey,
   mergeLocks,
   readGiLocks,
   sceneBasis,
@@ -29,7 +45,8 @@ const cells = (
   layer: string,
   runs: readonly (readonly IMeasuredRow[])[],
   basis = BASIS,
-) => lockCells(round, scene, layer, runs, basis);
+  noise: readonly (readonly (readonly IMeasuredRow[])[])[] = [],
+) => lockCells(round, scene, layer, runs, basis, noise);
 const checkWith = (
   scene: string,
   layer: string,
@@ -61,6 +78,12 @@ const row = (pose: string, region: string, over: Partial<IMeasuredRow> = {}): IM
 const rows = (over: Partial<IMeasuredRow> = {}): IMeasuredRow[] =>
   ["a", "b"].flatMap((pose) => ["Floor", "Wall"].map((region) => row(pose, region, over)));
 const cut = (runs = [rows(), rows()], round = "r1") => cells(round, "room", "L7-high", runs);
+/** A capture with no ID frame has no overlap. */
+const flat = (over: Partial<IMeasuredRow> = {}) => rows({ iou: null, ...over });
+/** The two runs of another capture, which differ by `drift` in dP50. */
+const noiseOf = (drift: number) => [flat({ dP50: 0.1 }), flat({ dP50: 0.1 + drift })];
+/** The locks of one capture and the noise of another, as the L9 frames of the preview loop make them. */
+const cutOne = (round = "head1") => cells(round, "room", "L9", [flat()], BASIS, [noiseOf(0.01)]);
 const at = (locks: IGiLock[], pose: string, region: string) =>
   locks.find((lock) => lock.pose === pose && lock.region === region) as IGiLock;
 
@@ -134,6 +157,51 @@ describe("lockCells", () => {
       /TN_UNREAL_LOOK_BAD_INPUT.*not a cell of the scene other/,
     );
   });
+
+  it("cuts one capture with the noise of another, and marks that the check reads one capture", () => {
+    const locks = cutOne();
+    expect(locks).toHaveLength(4);
+    expect(locks[0]).toMatchObject({ layer: "L9", round: "head1", runs: 1, noiseDP50: 0.01 });
+    // The value, the noise of the other capture, and one display level of a median of 100.
+    expect(locks[0]?.maxDP50).toBeCloseTo(0.1 + 0.01 + 0.01, 4);
+    expect(cut()[0]).not.toHaveProperty("runs");
+  });
+
+  it("takes the widest spread of the noise groups", () => {
+    const [lock] = cells("head1", "room", "L9", [flat()], BASIS, [noiseOf(0.02), noiseOf(0.05)]);
+    expect(lock).toMatchObject({ noiseDP50: 0.05, noiseDeltaE: 0 });
+    expect(lock?.maxDP50).toBeCloseTo(0.1 + 0.05 + 0.01, 4);
+  });
+
+  it("leaves out the overlap bound when the capture has no overlap, and keeps it when it has", () => {
+    const [lock] = cutOne() as [IGiLock];
+    expect(lock).not.toHaveProperty("minIoU");
+    expect(lock).not.toHaveProperty("noiseIoU");
+    expect(cut()[0]).toMatchObject({ minIoU: 0.99, noiseIoU: 0 });
+  });
+
+  it("fails closed on one run with no noise, noise beside two runs, a short group and a region the noise lacks", () => {
+    expect(() => cells("h", "room", "L9", [flat()])).toThrow(
+      /TN_UNREAL_LOOK_TOO_FEW_RUNS.*--noise/,
+    );
+    expect(() => cells("h", "room", "L9", [], BASIS, [noiseOf(0)])).toThrow(/TOO_FEW_RUNS/);
+    expect(() => cells("h", "room", "L9", [flat(), flat()], BASIS, [noiseOf(0)])).toThrow(
+      /TN_UNREAL_LOOK_BAD_INPUT.*--noise/,
+    );
+    expect(() => cells("h", "room", "L9", [flat()], BASIS, [[flat()]])).toThrow(
+      /TN_UNREAL_LOOK_TOO_FEW_RUNS.*--noise group/,
+    );
+    expect(() => cells("h", "room", "L9", [flat()], BASIS, [[flat(), flat().slice(1)]])).toThrow(
+      /TN_UNREAL_LOOK_RUN_MISMATCH.*noise runs/,
+    );
+    expect(() =>
+      cells("h", "room", "L9", [flat()], BASIS, [[flat(), flat({ deltaE: null })]]),
+    ).toThrow(/TN_UNREAL_LOOK_MISSING_METRIC/);
+  });
+
+  it("fails closed on a capture whose runs have an overlap in one run and none in the other", () => {
+    expect(() => cut([flat(), rows()])).toThrow(/TN_UNREAL_LOOK_MISSING_METRIC.*iou/);
+  });
 });
 
 describe("mergeLocks", () => {
@@ -201,6 +269,13 @@ describe("mergeLocks", () => {
     ]);
     expect(() => mergeLocks(cut(), noisy)).toThrow(/LOCK_LOOSER.*noiseDeltaE/);
     expect(() => mergeLocks(cut(), cutWith({ iou: 0.9 }))).toThrow(/LOCK_LOOSER.*minIoU/);
+  });
+
+  it("counts a dropped overlap bound as looser, and a new one as tighter", () => {
+    const without = cut([flat(), flat()], "r2");
+    expect(() => mergeLocks(cut(), without)).toThrow(/LOCK_LOOSER.*a Floor minIoU: 0\.99 -> none/);
+    expect(mergeLocks(without, cut()).improved).toHaveLength(4);
+    expect(mergeLocks(cut(), without, { relax: true }).locks[0]).not.toHaveProperty("minIoU");
   });
 
   it("cannot drop a locked cell: a round that no longer measures it is refused, with or without --relax", () => {
@@ -285,6 +360,31 @@ describe("checkGiLocks", () => {
     expect(staleLocks(locks, "room", "L7-low", "aaaaaaaaaaaa")).toEqual([]);
   });
 
+  it("reads one capture for a lock that one capture cut, and none for no capture", () => {
+    const one = cutOne();
+    expect(checkWith("room", "L9", [flat()], one)).toEqual([]);
+    expect(() => checkWith("room", "L9", [], one)).toThrow(
+      /TN_UNREAL_LOOK_TOO_FEW_RUNS.*cut from 1/,
+    );
+    const failures = checkWith("room", "L9", [flat({ dP50: 0.5 })], one);
+    expect(failures[0]).toMatch(
+      /room L9 a Floor dP50: 0\.5 is above the lock 0\.12 in run 1 \(round head1\)/,
+    );
+    // Two captures still have to agree to the locked noise.
+    const apart = [flat({ dP50: 0.1 }), flat({ dP50: 0.115 })];
+    expect(checkWith("room", "L9", apart, one)[0]).toMatch(
+      /the runs differ by 0\.015, more than the locked noise 0\.01/,
+    );
+  });
+
+  it("asks for no overlap where the lock has none, and checks it where the lock has one", () => {
+    const one = cutOne();
+    expect(checkWith("room", "L9", [rows({ iou: 0.1 })], one)).toEqual([]);
+    expect(checkWith("room", "L7-high", [rows({ iou: null }), rows()], locks)[0]).toMatch(
+      /a Floor iou: a run gave no value/,
+    );
+  });
+
   it("cannot check on one run or on a scene and layer without a lock", () => {
     expect(() => check([rows()])).toThrow(/TN_UNREAL_LOOK_TOO_FEW_RUNS/);
     expect(() => checkWith("room", "L7-low", [rows(), rows()], locks)).toThrow(
@@ -300,6 +400,31 @@ describe("the lock file", () => {
     const locks = cut();
     writeGiLocks(file, locks);
     expect(readGiLocks(file)).toEqual(locks);
+  });
+
+  it("writes and reads back a lock with no overlap bound and one capture", () => {
+    const file = path.join(temp(), "parity-locks.json");
+    writeGiLocks(file, cutOne());
+    const read = readGiLocks(file);
+    expect(read).toEqual(cutOne());
+    expect(read[0]).toMatchObject({ runs: 1 });
+    expect(read[0]).not.toHaveProperty("minIoU");
+  });
+
+  it("fails closed on an overlap bound without its noise and on a capture count that is not a number of captures", () => {
+    const dir = temp();
+    const put = (name: string, lock: unknown) => {
+      const file = path.join(dir, name);
+      writeFileSync(file, JSON.stringify({ version: 1, locks: [lock] }));
+      return file;
+    };
+    const [one] = cut() as [IGiLock];
+    const { noiseIoU: _noise, ...half } = one;
+    expect(() => readGiLocks(put("half.json", half))).toThrow(/minIoU and noiseIoU go together/);
+    for (const runs of [0, 1.5, "1"])
+      expect(() => readGiLocks(put("runs.json", { ...one, runs }))).toThrow(
+        /runs must be a whole number of at least 1/,
+      );
   });
 
   it("fails closed on an empty list, a wrong version, a duplicate and a bad number", () => {
@@ -343,7 +468,7 @@ describe("the committed lock file", () => {
   );
   const slack = (value: number) => 1e-3 * Math.abs(value) + 1e-4; // a round file keeps four digits
 
-  it("locks the approved rounds: sunlit-room and cornell at high", () => {
+  it("locks the approved rounds at high and the approved L9 capture: sunlit-room and cornell", () => {
     const groups = new Map<string, number>();
     for (const lock of locks) {
       const key = `${lock.scene} ${lock.layer}`;
@@ -352,11 +477,13 @@ describe("the committed lock file", () => {
     expect(Object.fromEntries(groups)).toEqual({
       "sunlit-room L7-high": 40,
       "cornell L7-high": 12,
+      "sunlit-room L9": 40,
+      "cornell L9": 12,
     });
   });
 
   it("names a round on the scoreboard that holds each locked region, inside the bounds of its lock", () => {
-    for (const lock of locks) {
+    for (const lock of locks.filter((candidate) => candidate.layer.startsWith("L7"))) {
       const round = board.find((candidate) => candidate.id === lock.round);
       expect(round, `${lock.round} is not on the scoreboard`).toBeDefined();
       const region = round?.cells
@@ -371,10 +498,27 @@ describe("the committed lock file", () => {
       expect(region?.deltaE as number, `${name} deltaE`).toBeLessThanOrEqual(
         lock.maxDeltaE + slack(lock.maxDeltaE),
       );
-      expect(region?.iou as number, `${name} iou`).toBeGreaterThanOrEqual(
-        lock.minIoU - slack(lock.minIoU),
-      );
+      const floor = lock.minIoU as number;
+      expect(region?.iou as number, `${name} iou`).toBeGreaterThanOrEqual(floor - slack(floor));
     }
+  });
+
+  it("cuts the L9 locks from one capture of a preview head, with no overlap bound, for every pose of the scene", () => {
+    const l9 = locks.filter((lock) => lock.layer === "L9");
+    for (const lock of l9) {
+      expect(lock.round, lockKey(lock)).toMatch(/^preview-[0-9a-f]{9}$/);
+      expect(lock.runs, lockKey(lock)).toBe(1);
+      expect(lock, lockKey(lock)).not.toHaveProperty("minIoU");
+    }
+    for (const scene of new Set(l9.map((lock) => lock.scene)))
+      expect(
+        [...new Set(l9.filter((lock) => lock.scene === scene).map((lock) => lock.pose))].sort(),
+        scene,
+      ).toEqual(
+        readScene(`gi:${scene}`)
+          .scene.poses.map((pose) => pose.name)
+          .sort(),
+      );
   });
 });
 
@@ -437,10 +581,74 @@ describe("withOfflineRoot", () => {
   });
 });
 
+describe("a capture with no ID frames", () => {
+  const capture = () => {
+    const run = temp();
+    mkdirSync(path.join(run, "room", "L9"), { recursive: true });
+    writeFileSync(path.join(run, "room", "L9", "a.png"), "frame");
+    return run;
+  };
+
+  it("gets the committed Unreal ID frames beside its own layer folders", () => {
+    const ids = temp();
+    withOfflineRoot(
+      capture(),
+      (root) => {
+        const scene = path.join(root, "threenative", "room");
+        expect(readdirSync(scene).sort()).toEqual(["ID", "L9"]);
+        expect(readlinkSync(path.join(scene, "ID"))).toBe(ids);
+        expect(readFileSync(path.join(scene, "L9", "a.png"), "utf8")).toBe("frame");
+      },
+      { key: "room", dir: ids },
+    );
+  });
+
+  it("is used as it is when it has ID frames, and refused when it has no frames of the scene", () => {
+    const run = capture();
+    mkdirSync(path.join(run, "room", "ID"));
+    withOfflineRoot(
+      run,
+      (root) => expect(lstatSync(path.join(root, "threenative")).isSymbolicLink()).toBe(true),
+      { key: "room", dir: temp() },
+    );
+    expect(() => withOfflineRoot(temp(), () => 1, { key: "room", dir: temp() })).toThrow(
+      /TN_UNREAL_LOOK_MISSING_CELL.*no frames of room/,
+    );
+  });
+
+  it("is compared with the committed Unreal statistics, and measures no overlap", () => {
+    const { resolution } = JSON.parse(
+      readFileSync(path.join(sceneDir("gi:cornell"), "reference-stats.json"), "utf8"),
+    ) as { resolution: [number, number] };
+    const frame = new PNG({ width: resolution[0], height: resolution[1] });
+    for (let i = 0; i < frame.data.length; i += 4) frame.data.set([128, 128, 128, 255], i);
+    const run = temp();
+    mkdirSync(path.join(run, "cornell", "L9"), { recursive: true });
+    for (const { name } of readScene("gi:cornell").scene.poses)
+      writeFileSync(path.join(run, "cornell", "L9", `${name}.png`), PNG.sync.write(frame));
+    const flatRows = compareCapture("gi:cornell", "L9", run);
+    expect(flatRows.length).toBeGreaterThan(0);
+    expect(flatRows.every((r) => r.iou === null && Number.isFinite(r.dP50))).toBe(true);
+    // With the Unreal ID frames as its own, the same capture overlaps everywhere.
+    mkdirSync(path.join(run, "cornell", "ID"));
+    for (const name of readdirSync(path.join(sceneDir("gi:cornell"), "id")))
+      writeFileSync(
+        path.join(run, "cornell", "ID", name),
+        readFileSync(path.join(sceneDir("gi:cornell"), "id", name)),
+      );
+    const ownRows = compareCapture("gi:cornell", "L9", run);
+    expect(ownRows.map((r) => r.region)).toEqual(flatRows.map((r) => r.region));
+    expect(ownRows.every((r) => r.iou === 1)).toBe(true);
+    expect(() => compareCapture("gi:cornell", "L9", path.join(run, "nope"))).toThrow(
+      /MISSING_CELL.*nope/,
+    );
+  });
+});
+
 describe("the check command", () => {
-  const world = (runs: Record<string, IMeasuredRow[]>, basis = BASIS) => {
+  const world = (runs: Record<string, IMeasuredRow[]>, basis = BASIS, locks = cut()) => {
     const file = path.join(temp(), "parity-locks.json");
-    writeGiLocks(file, cut());
+    writeGiLocks(file, locks);
     const out = { log: [] as string[], error: [] as string[] };
     const deps: ICheckDeps = {
       basis: () => basis,
@@ -505,6 +713,23 @@ describe("the check command", () => {
     );
   });
 
+  it("reads one capture when the locks were cut from one", () => {
+    const w = world({ run1: flat() }, BASIS, cutOne());
+    expect(checkCommand(w.args("run1"), w.deps)).toBe(0);
+    expect(w.out.log).toEqual(["room L9: 4 locked region(s) on 1 run, every bound holds"]);
+    const broken = world({ run1: flat({ dP50: 0.5 }) }, BASIS, cutOne());
+    expect(checkCommand(broken.args("run1"), broken.deps)).toBe(1);
+    expect(broken.out.error[0]).toMatch(/^GI LOCK BROKEN room L9 a Floor dP50: 0\.5 is above/);
+    expect(() => checkCommand(broken.args(), broken.deps)).toThrow(/TOO_FEW_RUNS/);
+  });
+
+  it("checks every layer of the scene unless --layer names one", () => {
+    const w = world({ run1: flat() }, BASIS, [...cut(), ...cutOne()]);
+    // The L7 locks were cut from two runs: one capture cannot check them, and --layer leaves them out.
+    expect(() => checkCommand(w.args("run1"), w.deps)).toThrow(/TOO_FEW_RUNS.*room at L7-high/);
+    expect(checkCommand([...w.args("run1"), "--layer", "L9"], w.deps)).toBe(0);
+  });
+
   it("takes `--check` with one named GI scene and nothing else", () => {
     expect(isGiCheck(["--check", "--scene", "gi:cornell"])).toBe(true);
     expect(isGiCheck(["--scene", "gi:cornell", "--captures", "a", "--check"])).toBe(true);
@@ -520,5 +745,90 @@ describe("the check command", () => {
     expect(() => main(["--check", "--scene", "gi:cornell", "--captures", "only-one"])).toThrow(
       /TN_UNREAL_LOOK_TOO_FEW_RUNS/,
     );
+  });
+});
+
+describe("the lock command", () => {
+  const world = (runs: Record<string, IMeasuredRow[]>) => {
+    const file = path.join(temp(), "parity-locks.json");
+    const out = { log: [] as string[], error: [] as string[] };
+    const deps: ICheckDeps = {
+      basis: () => BASIS,
+      compare: (_scene, _layer, run) => {
+        const found = runs[run];
+        if (!found) throw new Error(`TN_UNREAL_LOOK_MISSING_CELL: ${run}`);
+        return found;
+      },
+      log: (line) => out.log.push(line),
+      error: (line) => out.error.push(line),
+    };
+    const args = (...more: string[]) => [
+      "--write-locks",
+      "head1",
+      "--scene",
+      "gi:room",
+      "--layer",
+      "L9",
+      "--locks",
+      file,
+      ...more,
+    ];
+    return { file, out, deps, args };
+  };
+  const runs = { good: flat(), n1: flat({ dP50: 0.1 }), n2: flat({ dP50: 0.11 }) };
+
+  it("cuts one layer from one capture and the noise of another, and writes the lock file", () => {
+    const w = world(runs);
+    expect(lockCommand(w.args("--captures", "good", "--noise", "n1,n2"), w.deps)).toBe(0);
+    expect(readGiLocks(w.file)).toEqual(cutOne());
+    expect(w.out.log[0]).toMatch(
+      /^locked room L9 from head1: 4 region\(s\) in 2 pose\(s\), 4 added, 0 moved, 0 tighter and kept/,
+    );
+  });
+
+  it("refuses a cut that is looser than the lock, writes nothing, and --relax accepts it", () => {
+    const w = world({ ...runs, worse: flat({ dP50: 0.3 }) });
+    lockCommand(w.args("--captures", "good", "--noise", "n1,n2"), w.deps);
+    const before = readFileSync(w.file, "utf8");
+    const loose = w.args("--captures", "worse", "--noise", "n1,n2");
+    expect(() => lockCommand(loose, w.deps)).toThrow(/TN_UNREAL_LOOK_LOCK_LOOSER/);
+    expect(readFileSync(w.file, "utf8")).toBe(before);
+    expect(lockCommand([...loose, "--relax"], w.deps)).toBe(0);
+    expect(readGiLocks(w.file)[0]?.maxDP50).toBeCloseTo(0.3 + 0.01 + 0.01, 4);
+  });
+
+  it("needs a capture, noise for a single capture, one layer and no contradicting flags", () => {
+    const w = world(runs);
+    expect(() => lockCommand(w.args("--noise", "n1,n2"), w.deps)).toThrow(/TOO_FEW_RUNS/);
+    expect(() => lockCommand(w.args("--captures", "good"), w.deps)).toThrow(
+      /TOO_FEW_RUNS.*--noise/,
+    );
+    expect(() => lockCommand(w.args("--captures", "good", "--noise", "n1"), w.deps)).toThrow(
+      /--noise group/,
+    );
+    expect(() => lockCommand(w.args("--captures", "good", "--noise", "n1,nope"), w.deps)).toThrow(
+      /MISSING_CELL: nope/,
+    );
+    const noLayer = w
+      .args("--captures", "good", "--noise", "n1,n2")
+      .filter((a) => a !== "--layer" && a !== "L9");
+    expect(() => lockCommand(noLayer, w.deps)).toThrow(/cuts one layer/);
+    const both = w.args("--captures", "good", "--noise", "n1,n2", "--tighten", "--relax");
+    expect(() => lockCommand(both, w.deps)).toThrow(/exclude each other/);
+    expect(() => lockCommand(["--write-locks", "h", "--layer", "L9"], w.deps)).toThrow(
+      /needs one scene/,
+    );
+  });
+
+  it("takes `--write-locks` with one named GI scene, and the reference scene keeps its own", () => {
+    expect(isGiLock(["--write-locks", "head1", "--scene", "gi:cornell"])).toBe(true);
+    expect(isGiLock(["--write-locks", "head1"])).toBe(false);
+    expect(isGiLock(["--scene", "gi:cornell"])).toBe(false);
+    expect(isGiLock(["--write-locks", "h", "--scene", "shadow:lamp"])).toBe(false);
+    expect(giCommand(["--sun", "60"])).toBeUndefined();
+    expect(giCommand(["--write-locks", "head1", "--layer", "L9"])).toBeUndefined();
+    expect(() =>
+      main(["--write-locks", "head1", "--scene", "gi:cornell", "--layer", "L9"]),
+    ).toThrow(/TN_UNREAL_LOOK_TOO_FEW_RUNS/);
   });
 });

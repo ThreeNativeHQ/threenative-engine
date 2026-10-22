@@ -59,12 +59,11 @@ import {
   GI_LOCK_FILE,
   checkGiLocks,
   lockCells,
-  mergeLocks,
   readGiLocks,
   sceneBasis,
   staleLocks,
   withOfflineRoot,
-  writeGiLocks,
+  writeMerged,
 } from "./giLocks.js";
 import { main as judgeMain } from "./judge.js";
 import { type Expect, type Tier, UNREAL_LEVEL } from "./judgeVerdict.js";
@@ -644,19 +643,7 @@ function lockRound(args: string[], deps: IDeps): number {
       `${mismatch}: the arm no longer measures what ${id} recorded; lock a round that the store still reproduces`,
     );
   const fresh = lockCells(round.id, round.scene, layer, runs, sceneBasis(round.scene));
-  const merged = mergeLocks(existsSync(file) ? readGiLocks(file) : [], fresh, { tighten, relax });
-  writeGiLocks(file, merged.locks);
-  deps.log(
-    `locked ${round.scene} ${layer} from ${id}: ${fresh.length} region(s) in ${round.cells.length} pose(s), ${merged.added.length} added, ${merged.moved.length} moved, ${merged.improved.length} tighter and kept\nwrote ${file} (${merged.locks.length} lock(s))`,
-  );
-  if (merged.improved.length > 0)
-    deps.log(
-      `${merged.improved.length} region(s) are tighter in this round: pass --tighten to ratchet them`,
-    );
-  if (merged.looser.length > 0)
-    deps.log(
-      `relaxed ${merged.looser.length} bound(s) on purpose:\n  ${merged.looser.join("\n  ")}`,
-    );
+  writeMerged(file, fresh, { tighten, relax }, deps.log, `${round.scene} ${layer} from ${id}`);
   return 0;
 }
 

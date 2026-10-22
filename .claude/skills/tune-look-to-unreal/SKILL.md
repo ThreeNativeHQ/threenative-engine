@@ -89,7 +89,10 @@ flowchart LR
    runs the same check on any two capture folders. A lock tightens only with `--tighten` and loosens
    only with `--relax`, and a round cannot drop a locked region. When another lane rebuilds the scene
    or its Unreal reference, the check reports LOCK_STALE until a new approved round re-cuts the lock
-   with `--lock <round id> --relax`.
+   with `--lock <round id> --relax`. The L9 final frames have locks too (PRD-655), cut from one capture
+   of a head: `pnpm unreal-look:compare --write-locks <head> --scene gi:<name> --layer L9 --captures <run>
+   --noise <run>,<run>`, where each `--noise` pair is the two runs of another head. The check takes
+   `--layer L9` and one capture, and a lane runs it on the L9 frames of its head before it queues a SHA.
 7. **Post.** Commit the images to the orphan `PRD-<n>-screenshots` branch with plumbing (no
    checkout): `git hash-object -w`, `git mktree`, `git commit-tree -p <previous>`, then
    `git push origin "${commit}:refs/heads/PRD-<n>-screenshots"`. Comment on the PR with the raw
