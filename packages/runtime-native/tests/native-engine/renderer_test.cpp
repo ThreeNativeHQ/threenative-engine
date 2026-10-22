@@ -1178,10 +1178,12 @@ void traaGhosting() {
         std::fprintf(stderr, "TN_DEBUG ghost, frame %zu of the move: trail %.3f of the sphere's contrast (rigid), %.3f (instanced)\n", i + 1, rigid[i], instanced[i]);
     if (rigid.size() != size_t{moved} || instanced.size() != size_t{moved}) return;
     // The trail sums every pixel the sphere has left, so it grows with the move: 0.46 (rigid) and 0.22 (instanced) after 8
-    // frames of one pixel each, and nothing before the third frame. A history that outlives the object (no disocclusion test)
-    // holds the sphere's colour where it was and keeps a whole contrast per pixel it left, which is well above these bounds.
+    // frames of one pixel each, and nothing before the third frame. A history read in place, not where the motion put it, gives
+    // 0.44 for both, so the instanced bound catches a velocity that is lost. The resolve's disocclusion test does not move
+    // this fixture's trail: the bars hide the stale grey from the variance clip, and the depth test sees a pixel that was
+    // background in the last frame too.
     CHECK(rigid.front() < 0.05 && instanced.front() < 0.05);
-    CHECK(rigid.back() < 0.7 && instanced.back() < 0.4);
+    CHECK(rigid.back() < 0.7 && instanced.back() < 0.3);
 }
 
 // The same field seen by a camera that slides: the history is read where the camera's own motion moved it, so the bars keep
