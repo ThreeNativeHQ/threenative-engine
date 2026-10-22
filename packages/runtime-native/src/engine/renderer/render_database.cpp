@@ -1621,7 +1621,9 @@ uint64_t RenderDatabase::render(Renderer& renderer, Object3D& scene, Camera& cam
     try { prepare(scene, camera, lights_, nullptr, renderer.hasVirtualShadows()); } catch (...) { gpuPreparing_ = false; throw; }
     gpuPreparing_ = false;
     const bool hadVirtual = renderer.hasVirtualShadows();
-    renderer.syncVirtualShadows(lights_);
+    // The main view's tan(hfov / 2) is 1 / P[0]; a reflection pass is another view and measures nothing.
+    const bool mainView = !reflecting_ && dynamic_cast<const PerspectiveCamera*>(&camera) && camera.projectionMatrix.elements[0] > 0;
+    renderer.syncVirtualShadows(lights_, mainView ? 1.0 / camera.projectionMatrix.elements[0] : 0.0);
     if (!hadVirtual && renderer.hasVirtualShadows()) prepare(scene, camera, lights_, nullptr, true);
     const auto preparedScene = profiling ? Clock::now() : Clock::time_point{};
     // Frame-pumped PMREM (PRD-573): until every environment this frame samples is fully baked,

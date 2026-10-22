@@ -470,7 +470,7 @@ describe("a level and the casters that changed", () => {
     edge.geometry.computeBoundingSphere();
     const radius = (edge.geometry.boundingSphere as Sphere).radius;
     const window = node.clipmap.getWindow(0);
-    const half = node.clipmap.pagesPerAxis / 2;
+    const half = node.clipmap.pagesAt(0) / 2;
     const centreU = (window.minX + half) * window.pageWorldSize;
     const centreV = (window.minY + half) * window.pageWorldSize;
     const { x, y, z } = node.clipmap.unproject({
