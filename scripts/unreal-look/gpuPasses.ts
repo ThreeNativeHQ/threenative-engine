@@ -9,6 +9,8 @@
 import type { Page } from "@playwright/test";
 
 export const GPU_PASSES = `(() => {
+  // tsx names the arrow functions of `readPasses` with a helper the page lacks.
+  globalThis.__name ??= (fn) => fn;
   const adapterProto = globalThis.GPUAdapter?.prototype;
   if (!adapterProto) return;
   const devices = new WeakMap(), encoders = new WeakMap(), views = new WeakMap();
