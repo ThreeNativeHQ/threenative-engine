@@ -7,15 +7,15 @@ import { assertCondition, startVisualScene } from "./scene-support.js";
 
 /**
  * PRD-644: the `medium` GI tier draws the irradiance field alone and the budget watcher reports that
- * method. The `GIBudget` runs on injected readings, so the browser and the native host take the same
- * steps; the frame is the probe volume lighting a wall, the `irradianceField` method (no screen gather).
+ * method against the frame period. The `GIBudget` runs on injected readings, so the browser and the native
+ * host report the same; the frame is the probe volume lighting a wall, the `irradianceField` method (no
+ * screen gather).
  */
 const VOLUME_BOUNDS = new THREE.Box3(
   new THREE.Vector3(-1, -1, -0.8),
   new THREE.Vector3(1, 1, 0.8),
 );
 const BAKE_FRAME_LIMIT = 180;
-const BUDGET_MS = { none: 0, irradianceField: 1.5, screenProbeGather: 6 };
 
 function nextFrame() {
   return new Promise((resolve) => requestAnimationFrame(resolve));
@@ -41,38 +41,26 @@ function feed(gi, frames, stageMs, frameMs) {
   return report;
 }
 
-/** The `medium` tier on injected GPU readings: holds with no room, steps down over budget, keeps an explicit method. */
+/** The `medium` tier on injected GPU readings: it holds its method and reports the frame against the period. */
 function verifyBudget() {
-  const steps = [];
   const lines = [];
-  const make = (explicit) =>
-    new GIBudget({
-      budgetMs: BUDGET_MS,
-      explicit,
-      frameBudgetMs: 16.7,
-      method: "irradianceField",
-      methods: ["none", "irradianceField", "screenProbeGather"],
-      minSamples: 4,
-      onStep: (method) => steps.push(method),
-      report: (line) => lines.push(line),
-      stages: ["SSGI"],
-      tier: "medium",
-      windowFrames: 12,
-    });
-  const gi = make(false);
-  const within = feed(gi, 12, 0, 16.5);
-  assertCondition(within?.finalGatherMethod === "irradianceField", "no room in the frame: medium holds");
-  assertCondition(within.stepped === undefined && steps.length === 0, "a held window takes no step");
-  const over = feed(gi, 12, 3, 16.5);
-  assertCondition(over?.stepped === "none", "3 ms over the 1.5 ms budget steps medium down to none");
-  assertCondition(steps.join() === "none", "the game is told of the step once");
-  assertCondition(gi.globalIlluminationQuality === 0, "none follows Unreal quality level 0");
-  const keep = make(true);
-  const kept = feed(keep, 12, 3, 16.5);
-  assertCondition(kept?.finalGatherMethod === "irradianceField" && kept.explicit, "an explicit method stays");
-  assertCondition(kept.windowMs > kept.budgetMs, "the explicit report names the exceeded budget");
-  assertCondition(lines.length === 2 && lines.every((line) => line.startsWith("TN_GI ")), "two TN_GI lines: the step and the first over-budget explicit window");
-  return { held: within.finalGatherMethod, stepped: over.stepped, explicit: kept.finalGatherMethod };
+  const gi = new GIBudget({
+    framePeriodMs: 1000 / 60,
+    method: "irradianceField",
+    report: (line) => lines.push(line),
+    stages: ["SSGI"],
+    tier: "medium",
+    windowFrames: 12,
+  });
+  const within = feed(gi, 12, 0, 9);
+  assertCondition(within?.finalGatherMethod === "irradianceField", "a frame inside the period: medium holds");
+  assertCondition(within.verdict === "within", "9 ms is inside the 15 ms target");
+  const over = feed(gi, 12, 3, 22);
+  assertCondition(over?.finalGatherMethod === "irradianceField", "a frame over the period: medium still holds");
+  assertCondition(over.verdict === "over" && over.frameMs === 22, "22 ms is over the 15 ms target and the report says so");
+  assertCondition(gi.globalIlluminationQuality === 1, "irradianceField follows Unreal quality level 1");
+  assertCondition(lines.length === 2 && lines.every((line) => line.startsWith("TN_GI ")), "two TN_GI lines: the first window and the change of verdict");
+  return { held: within.finalGatherMethod, verdict: over.verdict, frameMs: over.frameMs };
 }
 
 export async function startScene(canvas, dimensions) {

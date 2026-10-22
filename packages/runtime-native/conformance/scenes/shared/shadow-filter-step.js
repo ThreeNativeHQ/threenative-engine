@@ -3,20 +3,20 @@ import { ShadowFilterBudget } from "../../../../core/src/render/shadow-filter-bu
 import { THREE, assertCondition, startVisualScene } from "./scene-support.js";
 
 /**
- * PRD-652: shadow passes over their budget step the soft-shadow filter down one tier, and the game rebuilds its
+ * PRD-652: a GPU frame over the frame period for two frames steps the soft-shadow filter down one tier when the
+ * shadow passes could absorb the overage, and the game rebuilds its
  * filter with that tier's taps. The `ShadowFilterBudget` runs on injected readings, so the browser and the
  * native host take the same step; the frame is the lamp scene of `soft-shadow-source-radius` drawn with the
  * stepped filter (4 + 4 taps instead of 16 + 16).
  */
 const TAPS = { high: 16, medium: 4 };
-const BUDGET_MS = { high: 1, low: 1, medium: 1 };
+const PERIOD_MS = 1000 / 60;
 
 function verifyStep(lamps) {
   const lines = [];
   const rebuilt = [];
   const budget = new ShadowFilterBudget({
-    budgetMs: BUDGET_MS,
-    minSamples: 4,
+    framePeriodMs: PERIOD_MS,
     onStep: (tier) => {
       rebuilt.push(tier);
       const taps = TAPS[tier];
@@ -28,23 +28,22 @@ function verifyStep(lamps) {
     windowFrames: 12,
   });
   let report;
-  for (let i = 0; i < 12; i += 1) report = budget.observe(2.4, 22) ?? report;
-  assertCondition(report?.stepped === "medium", "2.4 ms of shadow passes over a 1 ms budget steps high down to medium");
+  for (let i = 0; i < 2; i += 1) report = budget.observe(6, 22) ?? report;
+  assertCondition(report?.stepped === "medium" && report.panic, "2 frames of 22 ms over the 16.7 ms period, 6 ms of it shadows, step high down to medium");
   assertCondition(rebuilt.join() === "medium", "the game rebuilds its filter once, at the new tier");
   assertCondition(budget.shadowQuality === 1, "medium follows Unreal shadow quality level 1");
   assertCondition(lines.length === 1 && lines[0].startsWith("TN_SHADOW_TIER "), "one TN_SHADOW_TIER line for the step");
   const keep = new ShadowFilterBudget({
-    budgetMs: BUDGET_MS,
     explicit: true,
-    minSamples: 4,
+    framePeriodMs: PERIOD_MS,
     report: (line) => lines.push(line),
     tier: "high",
     windowFrames: 12,
   });
   let kept;
-  for (let i = 0; i < 12; i += 1) kept = keep.observe(2.4, 22) ?? kept;
+  for (let i = 0; i < 12; i += 1) kept = keep.observe(6, 22) ?? kept;
   assertCondition(kept?.tier === "high" && kept.explicit, "explicit sample counts stay at high");
-  assertCondition(kept.windowMs > kept.budgetMs, "the explicit report names the exceeded budget");
+  assertCondition(kept.verdict === "over" && kept.frameMs > kept.targetMs, "the explicit report names the frame over its target");
   return { tier: budget.tier, taps: TAPS[budget.tier], explicit: keep.tier };
 }
 

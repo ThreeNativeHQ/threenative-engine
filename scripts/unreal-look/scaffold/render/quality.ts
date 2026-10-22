@@ -291,12 +291,6 @@ export interface IShadowTier {
    */
   readonly castShadows: boolean;
   /**
-   * GPU milliseconds the shadow passes may cost at 1920 x 1080 on the RTX 2080: Unreal 5.8.3's own `ShadowDepths` time
-   * at the matching `sg.ShadowQuality`, the median of its steady `ProfileGPU` frames on `penumbra-lab` (PRD-652
-   * `## Decisions`). Unreal Low draws no shadow pass. Medium and Epic read the same time within the noise (0.46 ms).
-   */
-  readonly budgetMs: number;
-  /**
    * The receiver filter taps of the sun and of every lamp: Unreal's directional and local ray counts
    * are equal at Medium and Epic, so one pair serves both.
    */
@@ -311,7 +305,6 @@ export interface IShadowTier {
 // taps are never read.
 const SHADOW_TIERS: Record<QualityTier, IShadowTier> = {
   high: {
-    budgetMs: 0.46,
     castShadows: true,
     filter: { blockerSamples: 16, filterSamples: 16 },
     // Unreal Epic sets -1.5 (`[ShadowQuality@3]`). Held at 0: -1.5 changes `sun4-ramp` and no judge has called it
@@ -320,14 +313,12 @@ const SHADOW_TIERS: Record<QualityTier, IShadowTier> = {
     shadowQuality: 3,
   },
   low: {
-    budgetMs: 0,
     castShadows: false,
     filter: { blockerSamples: 4, filterSamples: 4 },
     resolutionLodBiasDirectional: 0,
     shadowQuality: 0,
   },
   medium: {
-    budgetMs: 0.46,
     castShadows: true,
     filter: { blockerSamples: 4, filterSamples: 4 },
     resolutionLodBiasDirectional: 0,

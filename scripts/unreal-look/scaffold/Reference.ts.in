@@ -374,9 +374,9 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
         // Diagnosis: ?linear=1 writes the exposed light with no tone curve, so the frame reads as scene-linear (the
         // light a PRD-646 direct-light gap is measured in), as CalibrationScene does.
         if (params.get("linear") === "1") raw.toneMapping = NoToneMapping;
-        // The tier's method moves with the measured GI time when the URL asks for giAuto=1 (PRD-644).
+        // The tier's method holds; the GI watcher reports its share of the GPU frame (PRD-644).
         if (GI_METHOD !== "none")
-          this.#gi = watchGi(ctx, { tier: TIER, method: GI_METHOD, rebuild: build });
+          this.#gi = watchGi(ctx, { tier: TIER, method: GI_METHOD });
       }
     }
 
