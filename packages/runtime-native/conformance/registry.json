@@ -629,6 +629,19 @@
       "required": true
     },
     {
+      "id": "foliage-back-light",
+      "title": "twoSidedFoliage leaf adds subsurfaceColor x the back-face irradiance",
+      "category": "lighting-gi",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/foliage-back-light.js",
+      "tolerance": {
+        "pixelMismatchRatio": 0.08,
+        "perceptualDeltaE": 10.0
+      },
+      "desktopGate": true,
+      "required": true
+    },
+    {
       "id": "leaf-receiver",
       "title": "twoSidedFoliage receiver skips the normal bias",
       "category": "shadows",

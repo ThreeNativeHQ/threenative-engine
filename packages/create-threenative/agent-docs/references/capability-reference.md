@@ -417,6 +417,21 @@ if (!uvsTile(uv)) rewriteUvs(uv, transforms.get(source)!);
 
 ## `@threenative/core`
 
+### `addFoliageBackLight`
+
+`function` — Adds subsurfaceColor times the far-face irradiance to a Two Sided Foliage leaf's emissive node.
+
+```ts
+export function addFoliageBackLight(material: Material, backIrradiance: Node<"vec3">): boolean { … }
+```
+
+- **Use when:** add bounce light to the far face of a two sided foliage leaf
+- **Constraints:** the material needs the foliage marker and subsurfaceColor, else nothing is added and false is returned; call once per material · the material needs `twoSidedFoliage = true` and a `subsurfaceColor`, or nothing is added and false is returned; backIrradiance is a vec3 node in the unit of `irradianceNode`; call once per material
+
+```ts
+addFoliageBackLight(leaf, backIrradiance);
+```
+
 ### `addInSlices`
 
 `function` — Attach hundreds of built objects to the scene in slices, presenting a frame between each.

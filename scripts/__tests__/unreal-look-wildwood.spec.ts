@@ -336,6 +336,87 @@ describe("scene.json is held against the manifest and the files (Unreal's level,
   });
 });
 
+describe("a foliage manifest holds Unreal's Two Sided Foliage leaves to the manifest's colours (PRD-643)", () => {
+  const leaves = { leaf: [0.1, 0.12, 0.05] as [number, number, number] };
+  const slots = (colour: number[] | undefined): Record<string, unknown>[] => [
+    { slot: "bark", alphaMode: "OPAQUE", doubleSided: false },
+    {
+      slot: "leaf",
+      alphaMode: "MASK",
+      alphaCutoff: 0.333,
+      doubleSided: true,
+      ...(colour === undefined ? {} : { shadingModel: "TwoSidedFoliage", subsurfaceColor: colour }),
+    },
+  ];
+  const level = (manifest: IWildwoodManifest, colour: number[] | undefined) => ({
+    meshes: [
+      { name: "Floor" },
+      ...manifest.instances.map((i) => ({
+        name: i.name,
+        asset: i.asset,
+        region: i.region ?? i.name,
+        position: [...i.position],
+        rotationYDeg: i.rotationYDeg,
+        scale: i.scale,
+        slots: slots(i.asset === "oak" ? colour : undefined).map((s) =>
+          i.asset === "oak"
+            ? s
+            : { ...s, alphaCutoff: s.alphaCutoff === undefined ? undefined : 0.4 },
+        ),
+      })),
+    ] as never,
+    regions: Object.fromEntries(["Floor", "Oak_1", "Oak_2", "Firs"].map((r) => [r, [0, 0, 0]])),
+  });
+
+  it("rejects a subsurface colour that is not three numbers in 0 to 1", async () => {
+    const { manifest } = await fixture();
+    expect(() => validateManifest({ ...manifest, foliage: { leaf: [0.1, 0.1] as never } })).toThrow(
+      /foliage leaf/,
+    );
+    expect(() => validateManifest({ ...manifest, foliage: { leaf: [0.1, 2, 0.1] } })).toThrow(
+      /foliage leaf/,
+    );
+    expect(() => validateManifest({ ...manifest, foliage: leaves })).not.toThrow();
+  });
+
+  it("accepts a level that draws the leaf in the manifest's colour on the Two Sided Foliage model", async () => {
+    const { root, manifest } = await fixture();
+    const withLeaves = { ...manifest, foliage: leaves };
+    // The fir asset's leaf slot is plain in this fixture: only the oak instances are held to the table.
+    withLeaves.instances = withLeaves.instances.filter((i) => i.asset === "oak");
+    expect(() =>
+      validateWildwoodScene(
+        {
+          ...level(withLeaves, [0.1, 0.12, 0.05]),
+          regions: { Floor: [0], Oak_1: [0], Oak_2: [0] },
+        },
+        withLeaves,
+        verifyAssets(manifest, root),
+      ),
+    ).not.toThrow();
+  });
+
+  it("fails when the level draws the leaf plain, or in another colour", async () => {
+    const { root, manifest } = await fixture();
+    const withLeaves = { ...manifest, foliage: leaves };
+    withLeaves.instances = withLeaves.instances.filter((i) => i.asset === "oak");
+    const regions = { Floor: [0], Oak_1: [0], Oak_2: [0] };
+    const files = verifyAssets(manifest, root);
+    expect(() =>
+      validateWildwoodScene({ ...level(withLeaves, undefined), regions }, withLeaves, files),
+    ).toThrow(/slot leaf is not on the Two Sided Foliage model/);
+    expect(() =>
+      validateWildwoodScene(
+        { ...level(withLeaves, [0.3, 0.12, 0.05]), regions },
+        withLeaves,
+        files,
+      ),
+    ).toThrow(
+      /slot leaf has subsurface colour 0\.3,0\.12,0\.05, the manifest names 0\.1,0\.12,0\.05/,
+    );
+  });
+});
+
 describe("a shadow variant limited to scenes", () => {
   const reg = (only: string[]) => ({
     resolution: [1280, 720] as [number, number],

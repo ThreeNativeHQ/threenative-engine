@@ -287,7 +287,32 @@ def read_instance(mi):
     )
 
 
-def glb_slot_material(ref, folder, name, source):
+def foliage_master(ref, folder):
+    """The exporter's lit glTF master on Unreal's Two Sided Foliage shading model, with a Subsurface Color (PRD-643).
+
+    A copy of M_GLTF_Default (classic property connections, so the textures, factors and masked blend of every
+    other slot behave the same), the shading model switched, and a "Subsurface Color" vector parameter on the
+    SubsurfaceColor input. An instance sets that parameter to the manifest's colour for the leaf material.
+    """
+    path = f"{folder}/M_TN_Foliage"
+    if unreal.EditorAssetLibrary.does_asset_exist(path):
+        unreal.EditorAssetLibrary.delete_asset(path)
+    unreal.EditorAssetLibrary.duplicate_asset(PROXY, path)
+    master = unreal.load_asset(path)
+    if master.get_editor_property("use_material_attributes"):
+        raise RuntimeError("M_TN_Foliage: the glTF master uses material attributes, a SubsurfaceColor input would not reach the shading model")
+    master.set_editor_property("shading_model", unreal.MaterialShadingModel.MSM_TWO_SIDED_FOLIAGE)
+    colour = mel.create_material_expression(master, unreal.MaterialExpressionVectorParameter, -400, 900)
+    colour.set_editor_property("parameter_name", "Subsurface Color")
+    colour.set_editor_property("default_value", unreal.LinearColor(0.0, 0.0, 0.0, 1.0))
+    mel.connect_material_property(colour, "", unreal.MaterialProperty.MP_SUBSURFACE_COLOR)
+    mel.recompile_material(master)
+    unreal.EditorAssetLibrary.save_loaded_asset(master)
+    ref.log(f"foliage master {path} shading_model={master.get_editor_property('shading_model')}")
+    return path
+
+
+def glb_slot_material(ref, folder, name, source, foliage=None, master=None):
     """One imported slot rebuilt on the exporter's glTF master, as the glTF says (PRD-651).
 
     Interchange's own master draws a masked glTF material through Substrate translucency (blend mode
@@ -310,7 +335,10 @@ def glb_slot_material(ref, folder, name, source):
     }
     if masked:
         values.update(alphaMode="MASK", alphaCutoff=scalars.get("AlphaCutoff", 0.5), doubleSided=two_sided)
-    mi = material(ref, folder, name, values, textures={"base": base})
+    mi = material(ref, folder, name, values, proxy=master if foliage else PROXY, textures={"base": base})
+    if foliage:
+        r, g, b = foliage
+        mel.set_material_instance_vector_parameter_value(mi, "Subsurface Color", unreal.LinearColor(r, g, b, 1.0))
     if two_sided and not masked:
         set_two_sided(mi, True)
     for tex in textures.values():
@@ -373,14 +401,21 @@ def import_glbs(ref, base, scene, regions):
     material for each slot of its mesh."""
     files = glb_files()
     meshes, slots = {}, {}
+    # PRD-643: glTF material name -> Subsurface Color. Those slots go on the Two Sided Foliage master.
+    foliage = scene.get("foliage", {})
+    foliage_path = foliage_master(ref, f"{base}/Materials") if foliage else None
     for asset in sorted({g["asset"] for g in scene["glbs"]}):
         if asset not in files:
             raise ValueError(f"asset {asset}: no decoded file in TN_WILDWOOD_FILES")
         meshes[asset] = import_glb(ref, f"{base}/Models", asset, files[asset])
         slots[asset] = [
-            glb_slot_material(ref, f"{base}/Materials", f"MI_{asset}_{i}", slot.material_interface)
+            glb_slot_material(ref, f"{base}/Materials", f"MI_{asset}_{i}", slot.material_interface,
+                              foliage.get(str(slot.material_slot_name)), foliage_path)
             for i, slot in enumerate(meshes[asset].static_materials)
         ]
+    used = {str(s.material_slot_name) for m in meshes.values() for s in m.static_materials}
+    if foliage and not set(foliage) <= used:
+        raise ValueError(f"foliage names material(s) {sorted(set(foliage) - used)} that no imported slot has ({sorted(used)})")
     master = region_id_master(ref, f"{base}/Materials")
     lit, ids = {}, {}
     for inst in scene["glbs"]:
@@ -409,7 +444,7 @@ def spawn_glbs(ref, scene, meshes, materials):
     return actors
 
 
-def glb_slot_values(mi):
+def glb_slot_values(mi, foliage=False):
     """A slot's material as the level reports it: the glTF fields both engines must agree on."""
     tex = lambda param: mel.get_material_instance_texture_parameter_value(mi, param)
     named = lambda param: (lambda t: None if t is None or t.get_name().startswith("T_GLTF_Default") else t.get_name())(tex(param))
@@ -430,10 +465,15 @@ def glb_slot_values(mi):
     }
     if masked:
         values["alphaCutoff"] = round(overrides.get_editor_property("opacity_mask_clip_value"), 6)
+    if foliage:
+        # PRD-643: read back from the instance, so scene.json reports what the level draws.
+        c = mel.get_material_instance_vector_parameter_value(mi, "Subsurface Color")
+        values["shadingModel"] = "TwoSidedFoliage"
+        values["subsurfaceColor"] = [round(v, 6) for v in (c.r, c.g, c.b)]
     return values
 
 
-def describe_glb(actor, inst):
+def describe_glb(actor, inst, foliage):
     rot = actor.get_actor_rotation()
     if abs(rot.pitch) > 1e-3 or abs(rot.roll) > 1e-3:
         raise ValueError(f"{inst['name']}: an instance turns about the vertical only")
@@ -441,7 +481,7 @@ def describe_glb(actor, inst):
     mesh = component.static_mesh
     box = mesh.get_bounding_box()
     scale = actor.get_actor_scale3d()
-    slots = [dict(glb_slot_values(component.get_material(i)), slot=str(mesh.static_materials[i].material_slot_name)) for i in range(len(mesh.static_materials))]
+    slots = [dict(glb_slot_values(component.get_material(i), str(mesh.static_materials[i].material_slot_name) in foliage), slot=str(mesh.static_materials[i].material_slot_name)) for i in range(len(mesh.static_materials))]
     return {
         "name": inst["name"],
         "class": "StaticMeshActor",
@@ -780,7 +820,7 @@ def describe_level(ref, name, scene, regions):
     for actor in ref.actor_subsystem.get_all_level_actors():
         label, cls = actor.get_actor_label(), actor.get_class().get_name()
         if cls == "StaticMeshActor" and label in instances:
-            meshes.append(describe_glb(actor, instances[label]))
+            meshes.append(describe_glb(actor, instances[label], scene.get("foliage", {})))
         elif cls == "StaticMeshActor" and label not in boxes and scene.get("template") == "default":
             # The default level's own meshes (its sky sphere and the like) are Unreal's, not the scene's.
             template_meshes.append(label)

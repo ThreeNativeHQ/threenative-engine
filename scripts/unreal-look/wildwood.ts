@@ -62,6 +62,11 @@ export interface IWildwoodManifest {
   note?: string;
   assets: IWildwoodAsset[];
   instances: IWildwoodInstance[];
+  /**
+   * PRD-643: glTF material name -> Subsurface Color (linear). Unreal draws those slots on the Two Sided Foliage
+   * model with that colour, and ThreeNative marks them `twoSidedFoliage` with the same `subsurfaceColor`.
+   */
+  foliage?: Record<string, [number, number, number]>;
 }
 
 /** The most region-ID colours export.py has, the floor included. */
@@ -135,6 +140,9 @@ export function validateManifest(manifest: IWildwoodManifest): IWildwoodManifest
   }
   if (regions.size > MAX_REGIONS)
     fail("MANIFEST", `${regions.size} regions, but only ${MAX_REGIONS} region-ID colours exist`);
+  for (const [material, colour] of Object.entries(manifest.foliage ?? {}))
+    if (!Array.isArray(colour) || colour.length !== 3 || !colour.every((c) => c >= 0 && c <= 1))
+      fail("MANIFEST", `foliage ${material}: a subsurface colour is three numbers in 0 to 1`);
   return manifest;
 }
 
@@ -192,7 +200,14 @@ export interface IReadBackMesh {
   position: number[];
   rotationYDeg: number;
   scale?: number;
-  slots?: { slot: string; alphaMode: string; alphaCutoff?: number; doubleSided: boolean }[];
+  slots?: {
+    slot: string;
+    alphaMode: string;
+    alphaCutoff?: number;
+    doubleSided: boolean;
+    shadingModel?: string;
+    subsurfaceColor?: number[];
+  }[];
 }
 
 const near = (a: number, b: number, tolerance = 1e-3): boolean => Math.abs(a - b) <= tolerance;
@@ -218,6 +233,7 @@ function checkSlot(
   mesh: IReadBackMesh,
   slot: NonNullable<IReadBackMesh["slots"]>[number],
   materials: readonly IGltfMaterial[],
+  foliage: IWildwoodManifest["foliage"],
 ): void {
   const source = materials.find((m) => m.name === slot.slot);
   if (source === undefined)
@@ -233,6 +249,21 @@ function checkSlot(
     fail(
       "SCENE_EXPORT",
       `${mesh.name}: slot ${slot.slot} cuts at ${slot.alphaCutoff}, the glTF says ${source.alphaCutoff ?? 0.5}`,
+    );
+  // PRD-643: a foliage slot is on the Two Sided Foliage model in the manifest's colour; every other slot is not.
+  const want = foliage?.[slot.slot];
+  if (want === undefined) {
+    if (slot.shadingModel !== undefined)
+      fail("SCENE_EXPORT", `${mesh.name}: slot ${slot.slot} is on ${slot.shadingModel}, the manifest names no foliage`);
+    return;
+  }
+  if (slot.shadingModel !== "TwoSidedFoliage")
+    fail("SCENE_EXPORT", `${mesh.name}: slot ${slot.slot} is not on the Two Sided Foliage model`);
+  const got = slot.subsurfaceColor ?? [];
+  if (got.length !== 3 || !got.every((v, i) => near(v, want[i] ?? Number.NaN)))
+    fail(
+      "SCENE_EXPORT",
+      `${mesh.name}: slot ${slot.slot} has subsurface colour ${got}, the manifest names ${want}`,
     );
 }
 
@@ -257,7 +288,7 @@ export function validateWildwoodScene(
     const materials = readGltfJson(file).materials ?? [];
     if (!mesh.slots?.length)
       fail("SCENE_EXPORT", `${want.name}: scene.json reports no material slots`);
-    for (const slot of mesh.slots) checkSlot(mesh, slot, materials);
+    for (const slot of mesh.slots) checkSlot(mesh, slot, materials, manifest.foliage);
   }
   const listed = new Set(manifest.instances.map((i) => i.name));
   for (const mesh of scene.meshes)
