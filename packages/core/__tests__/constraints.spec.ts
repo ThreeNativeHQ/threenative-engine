@@ -62,6 +62,11 @@ describe("core constraints", () => {
           // configures no property of one, and reads only `name` for the error label; which
           // materials exist, and how each looks, is entirely the game's.
           file !== "merge-parts.ts" &&
+          // The scene trace flattens the game's meshes into triangle and material-texel buffers, and
+          // `TracedReflections` walks them. They read the game's materials and write none of them.
+          // The tighter check is below.
+          file !== "render/scene-trace.ts" &&
+          file !== "render/traced-reflections.ts" &&
           // FlightModel integrates lift, drag, thrust and moments on a game-owned airframe. It
           // constructs no material, light, colour or shader; the word "light" it trips on is
           // inside "flight".
@@ -327,6 +332,18 @@ describe("core constraints", () => {
       /\.(color|map|roughness|metalness|emissive|opacity|envMap)\b\s*(=[^=]|\?\?=)/iu,
     );
     expect(roughDiffuse.match(/#[0-9a-f]{6}\b|0x[0-9a-f]{6}\b/giu)).toBeNull();
+
+    // The scene trace and the traced reflections read the game's materials into buffers. They construct no
+    // material, light or colour and assign no look property of one.
+    for (const file of ["render/scene-trace.ts", "render/traced-reflections.ts"]) {
+      const traced = withoutComments(readFileSync(path.join(sourceDirectory, file), "utf8"));
+      expect(traced, file).not.toMatch(
+        /new\s+\w*Material|new\s+\w*Light|new\s+\w*Color|tonemapping|postprocessing|\.wgsl/iu,
+      );
+      expect(traced, file).not.toMatch(
+        /\.(color|map|roughness|metalness|emissive|opacity|envMap)\b\s*(=[^=]|\?\?=)/iu,
+      );
+    }
 
     // The surface cache reads the game's maps and colours and writes none of them.
     const surfaceCacheRaw = readFileSync(
