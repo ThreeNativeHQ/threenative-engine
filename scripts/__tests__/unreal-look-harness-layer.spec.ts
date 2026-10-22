@@ -36,4 +36,16 @@ describe("harnessLayer (PRD-646)", () => {
       /localExposureEnabled:\s*params\.get\("localExposure"\) === null \? level >= 7/u,
     );
   });
+  it("bakes the GI cache through the Surface Cache in both scenes, so a ray returns the map where it lands (PRD-640)", () => {
+    // Lumen's surface cache holds each card's albedo from its material (UE 5.8.3:
+    // Engine/Shaders/Private/Lumen/SurfaceCache/LumenSurfaceCache.ush, CombineFinalLighting). Without it the
+    // wildwood leaf cards bounced their white colour factor, not their dark map: shade over sun 0.208 against 0.099.
+    for (const scene of ["Reference", "CalibrationScene"]) {
+      const source = readFileSync(`scripts/unreal-look/scaffold/${scene}.ts.in`, "utf8");
+      expect(source).toMatch(
+        /installGi\(ctx, model, \{[\s\S]*?surfaceCache:\s*params\.get\("giMaps"\) !== "0" && \{\s*images:/u,
+      );
+      expect(source).toMatch(/fetchGlbMaterialImages\(await ctx\.assets\.resolve\(file\)\)/u);
+    }
+  });
 });

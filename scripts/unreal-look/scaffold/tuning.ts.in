@@ -3,6 +3,7 @@
 // a `--baseline` scaffold (the template's own src/render/) can swap it for tuningBaseline.ts.in.
 export { EMISSIVE_UNITS } from "../render/atmosphere.js";
 export { installGi } from "../render/giCache.js";
+export { type IGlbMaterialImages, fetchGlbMaterialImages } from "../render/glbImages.js";
 export { watchGi } from "../render/giTier.js";
 export { shadeLikeSubstrate } from "../render/lighting.js";
 export { EPIC_SSGI, type FinalGatherMethod, giPreset, shadowPreset } from "../render/quality.js";
