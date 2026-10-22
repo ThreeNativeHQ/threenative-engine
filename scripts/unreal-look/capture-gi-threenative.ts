@@ -16,7 +16,7 @@ import { assertVisualPortAvailable, stopVisualServer } from "../visual-gate.js";
 import { launchWebgpuBrowser } from "./browser.js";
 import { FRAME_GATE, captureMotionFrames } from "./capture-motion-threenative.js";
 import { HIDE_UI, freePort, scaffold, waitForServer } from "./capture-threenative.js";
-import { awaitExposureSettled, watchExposure } from "./exposureSettled.js";
+import { awaitExposureSettled, metersExposure, watchExposure } from "./exposureSettled.js";
 import { isManifestScene, readScene, sceneDir, sceneKey } from "./gi.js";
 import { composeForThreeNative } from "./wildwood.js";
 
@@ -176,6 +176,7 @@ export async function captureGiThreeNative(options: {
         // The frame meter prints to the console; a measured pose keeps the windows between two marks.
         let meter: string[] = [];
         page.on("pageerror", (error) => errors.push(error.message));
+        // A template-lit scene meters its exposure, which closes on its target in clock time (exposureSettled.ts).
         const exposure = watchExposure(page);
         page.on("console", (message) => {
           if (message.text().startsWith("TN_FRAME_BUDGET")) meter.push(message.text());
@@ -197,18 +198,26 @@ export async function captureGiThreeNative(options: {
           const extra = process.env.TN_GI_URL_EXTRA ?? "";
           // A template-lit shadow scene (PRD-649) is lit by the reference scene's default-level
           // lighting, once per sun; its ID frames and every other scene use the calibration scene.
-          const visits: { query: string; key: string; poses: typeof scene.poses }[] =
+          const visits: {
+            query: string;
+            key: string;
+            poses: typeof scene.poses;
+            reference: boolean;
+          }[] =
             scene.template === "default" && layer !== "ID"
               ? (scene.suns ?? []).map((sun) => ({
                   query: `tnRef=${layerQuery(layer).layer}${tierQuery(layer)}&sun=${sun.elevationDeg},${sun.azimuthDeg}&model=${sceneKey(name)}`,
                   key: `${name}/${layer}/${sun.name}`,
                   poses: scene.poses.filter((pose) => pose.sun === sun.name),
+                  reference: true,
                 }))
               : [
                   {
                     query: `tnGi=${name}&layer=${layerQuery(layer).layer}${tierQuery(layer)}`,
                     key: `${name}/${layer}`,
                     poses: scene.poses,
+                    // The calibration scene holds its exposure fixed (Unreal's manual EV100).
+                    reference: false,
                   },
                 ];
           for (const visit of visits) {
@@ -247,11 +256,19 @@ export async function captureGiThreeNative(options: {
               await page.evaluate(
                 "new Promise((resolve) => { let n = 0; const tick = () => (++n >= 45 ? resolve() : requestAnimationFrame(tick)); requestAnimationFrame(tick); })",
               );
-              // Auto exposure (L9) closes at 1 stop/s like Unreal's: 45 frames are well short of that, so the
-              // frame waits for three settled readings after the pose and fails closed when they never come.
-              if (layer === "L9")
+              // Auto exposure (L9) closes at 1 stop/s like Unreal's: 45 frames are well short of that, so the frame waits
+              // until the last three readings after the pose are at rest and fails closed when they never are.
+              // The calibration scene holds its exposure fixed (Unreal's manual EV100) and prints no reading.
+              if (
+                visit.reference &&
+                metersExposure({
+                  layer: layerQuery(layer).layer,
+                  measureSeconds: options.measureSeconds,
+                  switches: extra,
+                })
+              )
                 console.info(
-                  `TN_UNREAL_LOOK exposure ${pose.name} settled after ${await awaitExposureSettled(page, exposure, poseAt)} ms of waiting`,
+                  `TN_UNREAL_LOOK exposure ${pose.name} at rest after ${await awaitExposureSettled(page, exposure, poseAt)} ms of waiting`,
                 );
               if (errors.length > 0)
                 throw new Error(`TN_UNREAL_LOOK_PAGE_ERROR: ${errors.join(" | ")}`);
