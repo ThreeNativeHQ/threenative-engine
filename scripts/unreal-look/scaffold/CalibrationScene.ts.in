@@ -279,6 +279,8 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
         mesh.material = translucentTwin(source, (position) =>
           bounce === undefined ? direct(position) : bounce(position).add(direct(position)),
         );
+        // Cost measurement: ?translucent=off draws the same frame without its translucent surfaces.
+        if (params.get("translucent") === "off") mesh.visible = false;
       }
       // The fog Unreal draws from layer L3 (r.Fog, r.VolumetricFog), as VQ-07's medium: Unreal's exponential height fog in
       // the room, its extinction and albedo, the lamps as unshadowed point lights. One medium per chain build.
