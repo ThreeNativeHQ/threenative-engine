@@ -35,6 +35,7 @@ import os from "node:os";
 import path from "node:path";
 import { type IRow, ciede2000, lab } from "./compare.js";
 import { compareGiToUnreal, sceneDir, sceneKey } from "./gi.js";
+import { type IRatchet, checkRatchets, readRatchets } from "./ratchet.js";
 
 export const GI_LOCK_FILE = path.resolve(
   import.meta.dirname,
@@ -95,7 +96,7 @@ const show = (value: number) => Number(value.toPrecision(4));
 const index = (rows: readonly IMeasuredRow[]) =>
   new Map(rows.map((row) => [rowKey(row), row] as const));
 
-function significant(value: number, toward: "up" | "down"): number {
+export function significant(value: number, toward: "up" | "down"): number {
   if (value === 0) return 0;
   const scale = 10 ** (SIGNIFICANT - 1 - Math.floor(Math.log10(Math.abs(value))));
   const scaled = value * scale;
@@ -106,7 +107,7 @@ function significant(value: number, toward: "up" | "down"): number {
 }
 
 /** One display level of the reference median: the step by which dP50 and deltaE move when a median moves. */
-function displayLevel(reference: number | undefined): { dP50: number; deltaE: number } {
+export function displayLevel(reference: number | undefined): { dP50: number; deltaE: number } {
   if (reference === undefined) return { dP50: 0, deltaE: 0 };
   const grey = Math.min(Math.max(Math.round(reference), 0), 254);
   return {
@@ -655,10 +656,13 @@ export interface ICheckDeps {
   basis(scene: string): string;
   log(line: string): void;
   error(line: string): void;
+  /** The no-regress ratchets (ratchet.ts). Absent: none. */
+  ratchets?(): readonly IRatchet[];
 }
 export const defaultCheckDeps: ICheckDeps = {
   compare: compareCapture,
   basis: (scene) => sceneBasis(scene),
+  ratchets: () => readRatchets(),
   log: (line) => console.log(line),
   error: (line) => console.error(line),
 };
@@ -698,15 +702,27 @@ export function checkCommand(args: readonly string[], deps: ICheckDeps = default
   if (captures.length < 1)
     fail("TOO_FEW_RUNS", "no --captures folder: pass the runs of the capture");
   const locks = readGiLocks(flagValues(args, "--locks")[0] ?? GI_LOCK_FILE);
+  const [ratchetFile] = flagValues(args, "--ratchets");
+  const ratchets = (ratchetFile ? readRatchets(ratchetFile) : (deps.ratchets?.() ?? [])).filter(
+    (r) => r.scene === scene,
+  );
   let broken = 0;
-  for (const layer of layersToCheck(args, locks, scene)) {
-    const { failures, runs } = checkLayer(scene, layer, captures, locks, deps);
+  for (const layer of layersToCheck(args, locks, scene, ratchets)) {
+    const own = ratchets.filter((r) => r.layer === layer);
+    const { failures, runs } = checkLayer(scene, layer, captures, locks, deps, own.length > 0);
     for (const failure of failures) deps.error(`GI LOCK BROKEN ${failure}`);
-    broken += failures.length;
+    const slid =
+      runs.length > 0 ? checkRatchets(scene, layer, runs, own, { basis: deps.basis(scene) }) : [];
+    for (const failure of slid) deps.error(`RATCHET BROKEN ${failure}`);
+    broken += failures.length + slid.length;
     const locked = locks.filter((lock) => lock.scene === scene && lock.layer === layer).length;
     deps.log(
       `${scene} ${layer}: ${locked} locked region(s) on ${captures.length} run${captures.length === 1 ? "" : "s"}, ${failures.length === 0 ? "every bound holds" : `${failures.length} bound(s) broken`}`,
     );
+    if (own.length > 0)
+      deps.log(
+        `${scene} ${layer}: ${own.length} ratchet(s), ${slid.length === 0 ? "every one holds" : `${slid.length} broken`}`,
+      );
     if (runs.length > 0) deps.log(`${scene} ${layer}: ${distanceToUnreal(runs)}`);
   }
   return broken === 0 ? 0 : 1;
@@ -717,12 +733,18 @@ function layersToCheck(
   args: readonly string[],
   locks: readonly IGiLock[],
   scene: string,
+  ratchets: readonly IRatchet[] = [],
 ): string[] {
   const named = flagValues(args, "--layer").flatMap((value) => value.split(","));
   const wanted =
     named.length > 0
       ? named
-      : [...new Set(locks.filter((l) => l.scene === scene).map((l) => l.layer))];
+      : [
+          ...new Set([
+            ...locks.filter((l) => l.scene === scene).map((l) => l.layer),
+            ...ratchets.map((r) => r.layer),
+          ]),
+        ];
   if (wanted.length === 0)
     fail(
       "NO_LOCKS",
@@ -754,6 +776,7 @@ function checkLayer(
   captures: readonly string[],
   locks: readonly IGiLock[],
   deps: ICheckDeps,
+  ratcheted = false,
 ): { failures: string[]; runs: IMeasuredRow[][] } {
   const own = locks.filter((lock) => lock.scene === scene && lock.layer === layer);
   const need = own.length > 0 ? runsNeeded(own) : 1;
@@ -764,6 +787,8 @@ function checkLayer(
     );
   try {
     const runs = captures.map((run) => [...deps.compare(scene, layer, run)]);
+    // A layer with ratchets and no parity lock has nothing for checkGiLocks to judge.
+    if (own.length === 0 && ratcheted) return { failures: [], runs };
     return { failures: checkGiLocks(scene, layer, runs, locks, deps.basis(scene)), runs };
   } catch (error) {
     return { failures: [(error as Error).message], runs: [] };

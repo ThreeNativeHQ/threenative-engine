@@ -7,6 +7,7 @@ import { curveShape, exposureCurve } from "./exposureCurve.js";
 import { compareGi } from "./gi.js";
 import { giCommand } from "./giLocks.js";
 import { linearLuminance, pairedPenumbra } from "./penumbra.js";
+import { REFERENCE_SCENE, checkRatchets, readRatchets } from "./ratchet.js";
 import { runSameness } from "./sameness.js";
 // Three.js belongs to core's dependency graph; root scripts do not install a second copy.
 const coreRequire = createRequire(new URL("../../packages/core/package.json", import.meta.url));
@@ -487,11 +488,26 @@ export function seedLocks(
 export function runCheck(options: IOptions = {}) {
   const dir = options.referenceDir ?? "tools/unreal-reference";
   const locks = readLocks(path.join(dir, "parity-locks.json"));
-  const report = runComparison({
-    ...options,
-    layers: options.layers ?? [...new Set(locks.map((l) => l.layer))],
-  });
-  return { failures: checkLocks(report.rows, locks), locks: locks.length, report };
+  const ratchets = readRatchets(path.join(dir, "ratchets.json")).filter(
+    (r) => r.scene === REFERENCE_SCENE,
+  );
+  const layers = options.layers ?? [
+    ...new Set([...locks.map((l) => l.layer), ...ratchets.map((r) => r.layer)]),
+  ];
+  const report = runComparison({ ...options, layers });
+  // The ratchets of the cells that this check evaluates: a partial capture (--sun) checks its own cells.
+  const evaluated = new Set(report.rows.map((r) => `${r.layer} ${r.cell}`));
+  const inScope = ratchets.filter((r) => evaluated.has(`${r.layer} ${r.cell}`));
+  const ratchetFailures = layers.flatMap((layer) =>
+    checkRatchets(REFERENCE_SCENE, layer, [report.rows.filter((r) => r.layer === layer)], inScope),
+  );
+  return {
+    failures: checkLocks(report.rows, locks),
+    locks: locks.length,
+    report,
+    ratchetFailures,
+    ratchets: inScope.length,
+  };
 }
 /** thresholds.json's limits for one layer: the flat keys, overridden by `layers.<name>`. */
 export function layerThresholds(
@@ -1155,10 +1171,14 @@ export function main(args = process.argv.slice(2)): void {
   }
   const options = parseArgs(args);
   if (options.check) {
-    const { failures, locks } = runCheck(options);
+    const { failures, locks, ratchetFailures, ratchets } = runCheck(options);
     for (const failure of failures) console.error(`PARITY LOCK BROKEN ${failure}`);
+    for (const failure of ratchetFailures) console.error(`RATCHET BROKEN ${failure}`);
     console.log(`${locks - failures.length}/${locks} parity locks hold`);
-    if (failures.length) process.exitCode = 1;
+    console.log(
+      `${ratchets} ratchet(s) checked, ${ratchetFailures.length === 0 ? "every one holds" : `${ratchetFailures.length} broken`}`,
+    );
+    if (failures.length || ratchetFailures.length) process.exitCode = 1;
     return;
   }
   const report = runComparison(options);

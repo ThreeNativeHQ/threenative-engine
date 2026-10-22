@@ -66,6 +66,8 @@ Every change that alters what reaches the screen gets a judge verdict and a befo
 4. A lock break without that receipt is a regression, and the change does not merge.
 5. Locks on regions that are not at parity are removed in a re-cut, not moved by each lane.
 6. When one root cause moves many locks (for example the diffuse model under a sky change), land the dependent changes as one combined line, measured together.
+7. **Ratchets** bound the regions that are not at parity (`tools/unreal-reference/ratchets.json`, apart from the parity locks). A ratchet is the region's value plus its run spread, away from Unreal. `compare --check` fails when a region moves further from Unreal than its ratchet. When a fix moves a region closer, re-cut in the same commit (`pnpm unreal-look:ratchet --cut <sha> --scene reference|gi:<name> --layer <layer> --captures <run>...`), so that the gain cannot be lost later. A cut only tightens. `--relax --reason "<why>"` is the receipt for a move away, and the same 3-part rule applies.
+8. **Every scene and layer the change can reach.** A visual change runs `compare --check` on every scene and layer its change can reach, not only the ones it captured. GI, exposure, sky, sun, shadow and post changes reach every scene. It may not turn any lock or ratchet that holds on the lock board (the epic head's `lock-board.json`) into broken. Name the scenes and layers you checked in the queue line.
 
 ## 4. Performance parity
 
