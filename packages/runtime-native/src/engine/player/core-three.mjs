@@ -292,3 +292,12 @@ export { Material };
 // three's blending constant "use the material's own blending" (constants.js). It is a value in three,
 // not an engine class, so it has no catalog entry; `new BlendMode(MaterialBlending)` names it.
 export const MaterialBlending = 6;
+
+// three r185 constants that core's own modules compare against and the Wasm engine already exports
+// with these catalog values. CustomToneMapping is the mode the tone-mapping library compiles
+// (tone-mapping.ts); the depth and shadow-map values only label what the engine refuses or ignores.
+export const LessEqualCompare = 515;
+export const GreaterEqualCompare = 518;
+export const CustomToneMapping = 5;
+export const AlwaysDepth = 1;
+export const VSMShadowMap = 3;

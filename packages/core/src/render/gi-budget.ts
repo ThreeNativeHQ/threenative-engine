@@ -20,18 +20,23 @@ const UNREAL_QUALITY: Readonly<Record<GIMethod, 0 | 1 | 3>> = {
 };
 
 export interface IGIBudgetReport {
-  /** The method after this window. */
+  /** The method the game runs. It never changes while the game runs, as in Unreal. */
   readonly finalGatherMethod: GIMethod;
   /** Read-only: the `sg.GlobalIlluminationQuality` the method follows. */
   readonly globalIlluminationQuality: 0 | 1 | 3;
   /** The quality tier the game started at, when it named one. */
   readonly tier: string | undefined;
-  /** Mean GI-stage GPU milliseconds over the window, or `undefined` when too few frames resolved. */
+  /** Mean GI-stage GPU milliseconds over the window, or `undefined` when no frame resolved. */
   readonly windowMs: number | undefined;
-  /** Mean whole-frame GPU milliseconds over the window, to read the GI share against. */
+  /** Mean whole-frame GPU milliseconds over the window. */
   readonly frameMs: number | undefined;
-  /** The budget of the method the window ran at. */
-  readonly budgetMs: number;
+  /** The GI stage's share of the GPU frame, or `undefined` when either reading is missing. */
+  readonly share: number | undefined;
+  /** The frame period the frame is compared with. */
+  readonly periodMs: number;
+  /** The frame period less its headroom. */
+  readonly targetMs: number;
+  /** Resolved whole-frame readings in the window. */
   readonly samples: number;
   /** 1 for the first window the watcher closes, so a reader can skip the warm-up window. */
   readonly window: number;
@@ -39,37 +44,22 @@ export interface IGIBudgetReport {
   readonly stagesSeen: readonly string[];
   /** Every nested pass name that resolved in the window, to find the name a stage goes by. */
   readonly passes: readonly string[];
-  /** The method the ladder moved to, when this window moved it. */
-  readonly stepped: GIMethod | undefined;
-  /** The game fixed `finalGatherMethod`: an exceeded budget is reported and nothing changes. */
-  readonly explicit: boolean;
+  /** `over` when the frame mean is above the target. The primary resolution scale is the lever, not the method. */
+  readonly verdict: "over" | "within" | "unobserved";
   readonly reason: string;
 }
 
 export interface IGIBudgetOptions {
-  /** The method the game starts at: the tier's `finalGatherMethod`. */
+  /** The method the game runs: the tier's `finalGatherMethod`. */
   readonly method: GIMethod;
-  /**
-   * The methods the game can switch between while it runs, cheapest first. Default all three. A game
-   * that baked its world cache at start cannot step to `none` later, so it lists the other two.
-   */
-  readonly methods?: readonly GIMethod[];
-  /** The game set `finalGatherMethod` itself: the watcher reports and never changes it. */
-  readonly explicit?: boolean;
-  /** GPU milliseconds each method may cost: Unreal's measured GI time at the matching level. */
-  readonly budgetMs: Readonly<Record<GIMethod, number>>;
   /** Names of the render passes that are GI work (three names its passes by scene, such as `SSGI`). */
   readonly stages: readonly string[];
-  /** The whole frame's GPU allowance in milliseconds, usually the target frame period. */
-  readonly frameBudgetMs?: number;
+  /** The frame period in milliseconds, such as 1000 / 60. The whole GPU frame is compared with it. */
+  readonly framePeriodMs: number;
   /** The quality tier the method came from, for the report. */
   readonly tier?: string;
   /** Frames per window. Default 120. */
   readonly windowFrames?: number;
-  /** Resolved frames a window needs before it may move the method. Default 8. */
-  readonly minSamples?: number;
-  /** Called after the watcher moved the method; the game applies it to its own render chain. */
-  readonly onStep?: (method: GIMethod, report: IGIBudgetReport) => void;
   /** Where `TN_GI` lines go. Default `console.info`. */
   readonly report?: (line: string) => void;
   /** Reads a renderer's newest stage reading. Default `stageGpuReading`; a test supplies its own. */
@@ -77,30 +67,28 @@ export interface IGIBudgetOptions {
 }
 
 /**
- * Steps a game's global illumination method down when its GPU time stays over budget, and back up
- * when there is room. The game owns what each method draws; this reads the GPU time of the passes
- * the game names, once per resolved frame, and decides only when to move.
+ * Reports what a game's global illumination costs against the frame period. The method holds its
+ * scalability level while the game runs, as Unreal's Lumen does: no Lumen file declares a run-time
+ * budget (`sg.GlobalIlluminationQuality` comes from the benchmark or the device profile). A frame
+ * over its period gets cheaper through the primary resolution scale (`ResolutionScaler`), and the
+ * GI pass follows the lower resolution.
  *
- * The method starts where the game's quality tier puts it. Over a window of frames (120 by default)
- * above the method's budget, it steps down one method. It steps up only after a window below 70% of
- * the next method's budget, with room for that method in the whole frame. A method that failed is
- * retried after a longer wait each time, and only once the frame has room for what it cost then. A
- * game that sets `finalGatherMethod` itself keeps it: the report says the budget is exceeded and
- * nothing changes. An adapter without timestamp queries resolves no frame, so the window is reported
- * unobserved and the method holds.
+ * This reads the GPU time of the passes the game names, once per resolved frame. A window of frames
+ * (120 by default) reports the GI share of the whole GPU frame and whether the frame fits its
+ * period less 10% headroom (`FrameTimeBudget`). An adapter without timestamp queries resolves no
+ * frame, so the window is reported unobserved.
  *
  * @situation global illumination costs too much on a weak GPU
- * @situation pick the bounce light method from measured GPU time
+ * @situation see what share of the GPU frame the bounce light takes
  * @situation quality tier for indirect lighting that follows the hardware
- * @constraint the game applies each step to its own render chain; this class draws nothing
+ * @constraint the method never changes while the game runs: the primary resolution scale is the run-time lever
  * @constraint the GPU time of a pass is read by the scene name three or the game gave it, so name every GI pass in `stages`
- * @constraint timestamp queries are needed: without them every window is unobserved and the method holds
- * @override explicit: true keeps the game's own finalGatherMethod and reports an exceeded budget
+ * @constraint timestamp queries are needed: without them every window is unobserved
  * @alias lumen scalability
  * @alias sg.GlobalIlluminationQuality
  * @alias final gather method
  * @example
- * const gi = new GIBudget({ method: "screenProbeGather", stages: ["SSGI"], budgetMs: { none: 0, irradianceField: 1, screenProbeGather: 5 }, onStep: (method) => rebuildChain(method) });
+ * const gi = new GIBudget({ method: "screenProbeGather", stages: ["SSGI"], framePeriodMs: 1000 / 60 });
  * ctx.beforeRender(() => gi.observeRenderer(ctx.renderer.raw));
  */
 export class GIBudget {
@@ -111,36 +99,33 @@ export class GIBudget {
   readonly #seen = new Set<string>();
   readonly #passes = new Set<string>();
   #last: IGIBudgetReport | undefined;
-  #reportedOver = false;
+  #lastVerdict: string | undefined;
 
   constructor(options: IGIBudgetOptions) {
     if (options.stages.length === 0)
       throw new RangeError("GIBudget stages must name at least one render pass.");
-    const methods = options.methods ?? GI_METHODS;
-    const order = methods.map((m) => GI_METHODS.indexOf(m));
-    if (order.some((at, i) => at < 0 || (i > 0 && at <= (order[i - 1] ?? -1))))
+    if (!GI_METHODS.includes(options.method))
       throw new RangeError(
-        `GIBudget methods must be listed cheapest first from ${GI_METHODS.join(", ")}.`,
+        `GIBudget method ${String(options.method)} is not one of ${GI_METHODS.join(", ")}.`,
       );
     this.#options = options;
     this.#read = options.read ?? stageGpuReading;
+    // One level: the method holds, so the ladder only measures and reports.
     this.#ladder = new BudgetLadder<GIMethod>({
-      budgetMs: options.budgetMs,
-      levels: methods,
+      explicit: true,
+      framePeriodMs: options.framePeriodMs,
+      levels: [options.method],
       start: options.method,
-      ...(options.explicit === undefined ? {} : { explicit: options.explicit }),
-      ...(options.frameBudgetMs === undefined ? {} : { frameBudgetMs: options.frameBudgetMs }),
-      ...(options.minSamples === undefined ? {} : { minSamples: options.minSamples }),
       ...(options.windowFrames === undefined ? {} : { windowFrames: options.windowFrames }),
     });
   }
 
   get finalGatherMethod(): GIMethod {
-    return this.#ladder.level;
+    return this.#options.method;
   }
 
   get globalIlluminationQuality(): 0 | 1 | 3 {
-    return UNREAL_QUALITY[this.#ladder.level];
+    return UNREAL_QUALITY[this.#options.method];
   }
 
   /** The newest closed window's report, or `undefined` before the first closes. */
@@ -160,7 +145,6 @@ export class GIBudget {
     this.#seen.clear();
     this.#passes.clear();
     this.#emit(report);
-    if (window.stepped !== undefined) this.#options.onStep?.(window.stepped, report);
     return report;
   }
 
@@ -184,47 +168,46 @@ export class GIBudget {
   }
 
   #toReport(window: IBudgetWindow<GIMethod>): IGIBudgetReport {
-    const after = window.stepped ?? window.level;
     const ms = window.windowMs;
-    const shown = ms === undefined ? "" : `window ${Number(ms.toFixed(2))} ms`;
+    const frame = window.frameMs;
+    const verdict =
+      window.verdict === "unobserved"
+        ? "unobserved"
+        : window.verdict === "over"
+          ? "over"
+          : "within";
+    const share = ms !== undefined && frame !== undefined && frame > 0 ? ms / frame : undefined;
+    const method = window.level;
     let reason: string;
-    if (ms === undefined) {
-      reason = `no GPU time resolved in the window (${window.samples} readings): ${window.level} holds`;
-    } else if (window.verdict === "over") {
-      const base = `${shown} is over the ${window.budgetMs} ms budget`;
-      reason =
-        window.stepped !== undefined
-          ? `${base}: stepped down to ${window.stepped}`
-          : window.explicit
-            ? `${base}: finalGatherMethod is set by the game and stays ${window.level}`
-            : `${base} and ${window.level} is the cheapest method`;
-    } else if (window.stepped !== undefined) {
-      reason = `${shown} leaves room for ${window.stepped}: stepped up`;
+    if (frame === undefined) {
+      reason = `no GPU time resolved in the window (${window.frames} frames): ${method} holds`;
+    } else if (verdict === "over") {
+      reason = `frame ${Number(frame.toFixed(2))} ms is over the ${Number(window.targetMs.toFixed(2))} ms target (period ${Number(window.periodMs.toFixed(2))} ms): ${method} holds, the primary resolution scale is the lever${share === undefined ? "" : `, GI is ${Math.round(share * 100)}% of the frame`}`;
     } else {
-      reason = `${shown} is inside the ${window.budgetMs} ms budget`;
+      reason = `frame ${Number(frame.toFixed(2))} ms is inside the ${Number(window.targetMs.toFixed(2))} ms target`;
     }
     return {
-      budgetMs: window.budgetMs,
-      explicit: window.explicit,
-      finalGatherMethod: after,
-      frameMs: window.frameMs === undefined ? undefined : Number(window.frameMs.toFixed(3)),
-      globalIlluminationQuality: UNREAL_QUALITY[after],
+      finalGatherMethod: method,
+      frameMs: frame === undefined ? undefined : Number(frame.toFixed(3)),
+      globalIlluminationQuality: UNREAL_QUALITY[method],
+      passes: [...this.#passes].sort(),
+      periodMs: Number(window.periodMs.toFixed(3)),
       reason,
       samples: window.samples,
-      passes: [...this.#passes].sort(),
+      share: share === undefined ? undefined : Number(share.toFixed(4)),
       stagesSeen: [...this.#seen],
-      stepped: window.stepped,
+      targetMs: Number(window.targetMs.toFixed(3)),
       tier: this.#options.tier,
+      verdict,
       window: window.number,
       windowMs: ms === undefined ? undefined : Number(ms.toFixed(3)),
     };
   }
 
-  /** A step, or the first window an explicit method spends over budget, is worth a line. */
+  /** The first window, and a window that changes the verdict, is worth a line. */
   #emit(report: IGIBudgetReport): void {
-    const over = report.windowMs !== undefined && report.windowMs > report.budgetMs;
-    const worth = report.stepped !== undefined || (report.explicit && over && !this.#reportedOver);
-    this.#reportedOver = over;
+    const worth = report.verdict !== this.#lastVerdict;
+    this.#lastVerdict = report.verdict;
     if (!worth) return;
     const line = `${GI_MARKER} ${JSON.stringify(report)}`;
     if (this.#options.report !== undefined) this.#options.report(line);
@@ -239,7 +222,7 @@ export function readGIMarker(line: string): IGIBudgetReport | undefined {
     const parsed: unknown = JSON.parse(line.slice(GI_MARKER.length + 1));
     if (typeof parsed !== "object" || parsed === null) return undefined;
     const report = parsed as IGIBudgetReport;
-    return GI_METHODS.includes(report.finalGatherMethod) && typeof report.budgetMs === "number"
+    return GI_METHODS.includes(report.finalGatherMethod) && typeof report.periodMs === "number"
       ? report
       : undefined;
   } catch {

@@ -25,6 +25,8 @@ import { ShadowMap } from "../../../../three-native/src/shadow-map.ts";
 import { defineSphereReflectionCapture } from "../../../../three-native/src/sphere-reflection-capture.ts";
 import { defineRenderTargets } from "../../../../three-native/src/render-target.ts";
 import { defineQuadMesh } from "../../../../three-native/src/quad-mesh.ts";
+import { defineTempNode } from "../../../../three-native/src/temp-node.ts";
+import { defineRendererUtils } from "../../../../three-native/src/renderer-utils.ts";
 import { GPU_STAGES, SHADOW_STAGE } from "../../../../three-native/src/gpu-stages.ts";
 
 export const { MeshBasicNodeMaterial, MeshStandardNodeMaterial, SpriteNodeMaterial } = globalThis;
@@ -131,6 +133,8 @@ export class WebGPURenderer {
   getClearAlpha() { return this.__clearColor[3]; }
   setClearAlpha(alpha) { this.__clearColor[3] = alpha; }
   setPixelRatio() {}
+  // The player draws at the surface it opened, so the drawing buffer is the CSS size.
+  getPixelRatio() { return 1; }
   // three's `await renderer.init()`: the player owns the GPU and has opened it before any script runs.
   async init() { return this; }
   // WebGPUCapabilities.getMaxAnisotropy: WebGPU samplers clamp maxAnisotropy to 16.
@@ -145,6 +149,7 @@ export class WebGPURenderer {
     return target.set(width, height);
   }
   render(scene, camera) {
+    updateTempNodes(this, scene, camera);
     drawSecondaryPasses(this);
     globalThis.__tnGameSpan?.(GAME_SPANS.transport, 0);
     try { syncUniforms(); } finally { globalThis.__tnGameSpan?.(GAME_SPANS.transport, 1); }
@@ -188,6 +193,20 @@ defineRenderTargets(WebGPURenderer.prototype, (renderer) => ({
 // three's QuadMesh over the engine Mesh (shared with the Wasm back end).
 export const QuadMesh = defineQuadMesh(globalThis);
 
+// three's TempNode (shared with the Wasm back end): the V8 TSL adapter reads a game node's engine node
+// under `threenative.tslNode`, and each top-level render runs the FRAME nodes' updateBefore first. An
+// engine node carries its methods itself; the adapter calls them on the receiver's engine node.
+const tslNode = Symbol.for("threenative.tslNode");
+const nodeMethods = Object.defineProperties({}, Object.getOwnPropertyDescriptors(globalThis.tsl.float(0)));
+const tempNodes = defineTempNode(nodeMethods, tslNode, (output) => (tslNode in output ? output[tslNode] : output));
+export const { TempNode } = tempNodes;
+// The game's startup render() runs before the player opens its renderer and draws no frame, so its nodes
+// update on the first render() of a drawn frame.
+let tempFrame = 0;
+const updateTempNodes = (renderer, scene, camera) => {
+  if (globalThis.tn.hasRenderer()) tempNodes.update({ renderer, scene, camera, frameId: ++tempFrame });
+};
+
 // three's RenderPipeline(renderer, outputNode): the player installs the node graph as its post pass
 // (once per graph) and draws it with the renderer's settings.
 export class RenderPipeline {
@@ -202,6 +221,7 @@ export class RenderPipeline {
   render() {
     this.context.onBeforeRenderPipeline?.();
     try {
+    updateTempNodes(this.renderer, globalThis.tn.scene, globalThis.tn.camera);
     drawSecondaryPasses(this.renderer);
     syncUniforms();
     this.renderer.library.apply(this.renderer.toneMapping);
@@ -251,18 +271,13 @@ export class BlendMode {
 // three's ReadbackBuffer (shared with the Wasm back end).
 export { ReadbackBuffer } from "../../../../three-native/src/storage.ts";
 
-// Game-authored node lifecycles and fullscreen node materials have no V8 renderer binding. They stay
-// importable, so a game that defines a node class or imports them runs; one that constructs or calls
-// them fails at that use, by name. TempNode is a real constructor so `class X extends TempNode` loads.
-export class TempNode {
-  constructor() {
-    throw new Error("TN_NATIVE_UNSUPPORTED_TEMPNODE: TempNode is not available on the native engine.");
-  }
-}
 export const NodeMaterial = globalThis.NodeMaterial;
 Object.setPrototypeOf(NodeMaterial.prototype, Material.prototype);
 NodeMaterial.prototype.isNodeMaterial = true;
-export const RendererUtils = unsupportedExport("RendererUtils");
+// three's RendererUtils state save/restore (shared with the Wasm back end).
+export const RendererUtils = defineRendererUtils(Color);
+// Refused at use: only VirtualShadowNode.setup builds one, and the engine draws that map in C++.
+export const AssignNode = unsupportedExport("AssignNode");
 
 WebGPURenderer.prototype.SphereReflectionCapture = defineSphereReflectionCapture(
   async (scene, x, y, z, size, face) => {

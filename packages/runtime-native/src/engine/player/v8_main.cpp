@@ -304,6 +304,7 @@ class V8Game {
     double frameClockMs_ = 0;
     static void setPost(const v8::FunctionCallbackInfo<v8::Value>& info);
     static void renderTarget(const v8::FunctionCallbackInfo<v8::Value>& info);
+    static void hasRenderer(const v8::FunctionCallbackInfo<v8::Value>& info);
     static void captureFace(const v8::FunctionCallbackInfo<v8::Value>& info);
     static void readTarget(const v8::FunctionCallbackInfo<v8::Value>& info);
     static void readFrame(const v8::FunctionCallbackInfo<v8::Value>& info);
@@ -735,6 +736,13 @@ void V8Game::renderTarget(const v8::FunctionCallbackInfo<v8::Value>& info) {
                                         *static_cast<Object3D*>(root->ptr.get()), *static_cast<Camera*>(camera->ptr.get()),
                                         game.clear_, game.shadowMap_, info.Length() == 4 && info[3]->BooleanValue(isolate));
     if (!refused.empty()) refuse(refused.front());
+}
+
+// `tn.hasRenderer()`: whether the player has opened its renderer. The game's startup runs before it,
+// so a render() then only publishes the scene, and a draw into a render target has nothing to draw with.
+void V8Game::hasRenderer(const v8::FunctionCallbackInfo<v8::Value>& info) {
+    auto& game = *static_cast<V8Game*>(info.Data().As<v8::External>()->Value());
+    info.GetReturnValue().Set(game.renderer_ != nullptr);
 }
 
 void V8Game::settleRead(v8::Global<v8::Promise::Resolver>& pending, GpuStatus status, const std::vector<uint8_t>& bytes, bool asBuffer) {
@@ -1207,6 +1215,7 @@ bool V8Game::start(const std::string& path, std::string& error) {
 #endif
     host->Set(ctx, v8str(isolate_, "setPostGraph"), v8::Function::New(ctx, &setPost, self).ToLocalChecked()).Check();
     host->Set(ctx, v8str(isolate_, "renderTarget"), v8::Function::New(ctx, &renderTarget, self).ToLocalChecked()).Check();
+    host->Set(ctx, v8str(isolate_, "hasRenderer"), v8::Function::New(ctx, &hasRenderer, self).ToLocalChecked()).Check();
     host->Set(ctx, v8str(isolate_, "compileAsync"), v8::Function::New(ctx, &compileAsync, self).ToLocalChecked()).Check();
     host->Set(ctx, v8str(isolate_, "captureFace"), v8::Function::New(ctx, &captureFace, self).ToLocalChecked()).Check();
     host->Set(ctx, v8str(isolate_, "readTarget"), v8::Function::New(ctx, &readTarget, self).ToLocalChecked()).Check();

@@ -94,8 +94,15 @@ Tsl::Wrapper* Tsl::wrapper(v8::Local<v8::Value> value) const {
     if (!value->IsObject())
         return nullptr;
     const auto object = value.As<v8::Object>();
-    if (object->InternalFieldCount() != 2)
-        return nullptr;
+    if (object->InternalFieldCount() != 2) {
+        // three's TempNode (temp-node.ts) answers the engine node its setup() built under this symbol,
+        // so a game node is an operand and a receiver like the node it stands for.
+        v8::Local<v8::Value> node;
+        const auto key = v8::Symbol::For(isolate_, str(isolate_, "threenative.tslNode"));
+        if (!object->Get(isolate_->GetCurrentContext(), key).ToLocal(&node))
+            throw JsFailure{};
+        return node->IsObject() && node.As<v8::Object>()->InternalFieldCount() == 2 ? wrapper(node) : nullptr;
+    }
     const auto tag = object->GetInternalField(0);
     const auto handle = object->GetInternalField(1);
     if (!tag->IsValue() || !tag.As<v8::Value>()->IsExternal() || tag.As<v8::External>()->Value() != this ||

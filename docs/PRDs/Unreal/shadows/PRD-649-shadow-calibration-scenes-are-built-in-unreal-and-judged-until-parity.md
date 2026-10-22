@@ -18,6 +18,7 @@ visual judge until parity, with the screenshots posted on the PR. This repeats t
 ([PRD-647](../../done/PRD-647-a-visual-judge-calibrates-gi-against-the-unreal-scenes-until-parity.md)
 `## Decisions`).
 
+- 2026-10-22 (the bright rim at the room junctions is the GI cache read, not a shadow): the calibration interior showed a thin bright line along the roof edge and the corners already at L5. With the same pose the rim is the same under `&recvBias=0` and `&off=vsm`, and gone under `&off=gi`, so no shadow bias causes it. Cause: `irradianceAt` in `scripts/unreal-look/scaffold/render/giCache.ts` blends eight walks by the start texel's weight to the fourth power. A wall thinner than a texel (the 0.2 m roof and side walls) cuts the link between two texels, but the texel on the far side (sky above the roof) still kept its own start weight: 0.48 against 0.52 one centimetre under the roof. Fix: the bake stores where each cut link's wall starts (`walls`, a seventh slice of the volume), and the reader gives a start no weight when a wall on its links has the read point on the other side (`WALL_SOFT`). Ceiling-edge ratio (wall pixels 1 to 5 px under the roof edge over the wall 30 px lower), L5 sun60 interior: 1.52 before, 1.00 after (two runs each); judge IMPROVEMENT at L5 and at L9 (sun60 and sun15 interior, spheres NEUTRAL). Native parity locks were not run (see the queue line).
 **What exists.** The PRD-631 reference scene has an L5 shadow layer and a penumbra metric
 (`scripts/unreal-look/penumbra.ts`). PRD-634 tunes the sun penumbra against it. The scene has no
 lamp, no leaf card, no caster at a known height and no motion, so it cannot judge PRD-650 to
@@ -63,7 +64,7 @@ them in `tools/unreal-reference/gi/<scene>/`.
 | Scene | What it isolates | Light | Poses | Serves |
 | --- | --- | --- | --- | --- |
 | `penumbra-lab` | 0.5 m boxes at 0, 0.25, 1, 4 and 10 m over a white floor; a 2 cm pole; a 15° ramp for acne; a 1 m step | Sun at 60°, 15° and 4°; sky light | `heights`, `contact`, `ramp` | [PRD-634](../look/PRD-634-sun-shadows-reach-the-horizon-and-soften-with-distance-from-the-caster.md), [PRD-652](PRD-652-the-shadow-tier-follows-unreal-shadow-quality-levels.md) |
-| `lamp-room` | A 6 × 4 × 3 m room with box furniture, a 1 cm rod 5 cm from a wall | A spot light at source radius 0 and 10 cm, a point light at 5 cm; no sun, no sky | `spot`, `spot-soft`, `point`, `rod` | [PRD-650](PRD-650-a-lamp-shadow-is-as-sharp-as-the-pixels-it-covers-and-softens-with-the-lamp-size.md), PRD-652 |
+| `lamp-room` | A 6 × 4 × 3 m room with box furniture, a 1 cm rod 5 cm from a wall | A spot light at source radius 0 and 10 cm, a point light at 5 cm; no sun, no sky | `spot`, `spot-soft`, `point`, `rod` | [PRD-650](../../done/PRD-650-a-lamp-shadow-is-as-sharp-as-the-pixels-it-covers-and-softens-with-the-lamp-size.md), PRD-652 |
 | `lamp-room` (run) | `swing`: a box crosses the spot cone in frames 60 to 120, then stops | as above | — | PRD-650 |
 | `horizon` | A 2 × 2 km heightfield with hills; 30 m towers at 50, 300 and 1500 m | Sun at 15°; sky light | `near`, `far` | PRD-634, [PRD-457](../rendering/PRD-457-virtual-shadows-scale-by-measurement.md), PRD-652 |
 | `horizon` (runs) | `walk`: the camera moves 10 m in 3 s; `sunturn`: the sun azimuth turns 10° in 3 s | as above | — | PRD-634 (stability) |
@@ -178,3 +179,72 @@ screenshots branch only.
   harness, taken because the calibration needs the same triangles in both engines and Nanite drops thin
   branches. The lighting rows move little: the tree dP50 changes by at most 0.10 between the two imports (L5, sun15-closeup, 0.15 to 0.25).
   All Unreal frames of this scene are Nanite off from 2026-10-21 20:00 on.
+- 2026-10-22 (wildwood2 lane): what fills the floor shadow of `shadow:wildwood` at L7, by ablation. All frames
+  are scene-linear (`linear=1`, exposure 0.12, no tone curve). Unreal frames are its `.exr`. Metric: the
+  median floor luminance in the shade over the median in the sun, on the same pixels in both engines (the
+  floor pixels that Unreal itself shades, below a quarter of its 95th percentile, and lights, above half of
+  it). Unreal reads 0.099 at `sun60-closeup` and 0.191 at `sun15-closeup`. ThreeNative at the epic head reads
+  0.485 (4.9 times) and 0.492 (2.6 times). The older 0.84 against 0.63 is the same fault seen through the tone
+  curve, which compresses the ratio.
+
+  | `shade / sun` | sun60-closeup | sun15-closeup |
+  |---|---:|---:|
+  | Unreal 5.8.3, everything on | 0.099 | 0.191 |
+  | ThreeNative, direct sun only (`off=gi,gtao,ssgi&envMul=0`) | 0.136 | 0.175 |
+  | ThreeNative, everything on | 0.485 | 0.492 |
+  | `skyMul=0` (no sky term in the GI cache) | 0.402 | 0.345 |
+  | `off=gi` (no GI cache, the sky environment answers) | 0.359 | 0.459 |
+  | `off=gtao` (no AO) | 0.490 | 0.504 |
+  | `off=ssgi` | 0.499 | 0.505 |
+  | `skyMul=0&envMul=0` | 0.403 | 0.330 |
+
+  Terms, as the part of the sun-lit floor that reaches the shade: the direct sun alone (shadow-map softness
+  and leaf gaps) is 0.136 and 0.175, close to Unreal's whole value. The sky term of the GI cache adds 0.083
+  and 0.147. The sun bounce of the GI cache adds 0.266 and 0.170 (the `skyMul=0` value minus the direct
+  value) and is the largest term at sun60. AO removes only 0.005 and 0.012, and SSGI removes nothing, so
+  neither is the cause. The environment map adds nothing while the GI cache is on (`envMul=0` changes
+  0.402 to 0.403). With `off=gi` the unoccluded sky environment fills the shade instead (0.359), so
+  switching the cache off is not a fix. Unreal's whole shade value (direct and indirect, 0.099 at sun60) is below the 0.136 that the direct sun
+  alone gives in ThreeNative, against 0.35 of indirect in the cache. The term that fills too much is the sun bounce of the GI cache, then its sky term. Hypothesis, not
+  measured: the cache is a 3D probe grid with a 0.5 m cell, and a floor pixel reads probes above the floor
+  that see the sunlit floor beside the leaf shadow. On a flat plane the exact floor-to-floor bounce is zero,
+  so a 0.27 bounce on this floor is cache blur, not light. The test is a smaller cell (`CELL` in
+  `render/giCache.ts`) or a read of the probe at the surface; this lane did not change `giCache.ts`.
+  Tables and frames: `~/.cache/tmp-tn/wildwood/abl/`. New harness knob `envMul=N` (scene environment
+  intensity) in `scripts/unreal-look/scaffold/Reference.ts.in`.
+- 2026-10-22 (wildwood2 lane), hypothesis test, same pixels, knobs only. Question: is the shade fill cell blur
+  of the GI cache, or the gather method? Unreal's L7 method is Lumen ScreenProbeGather
+  (`r.DynamicGlobalIlluminationMethod=1`, `sg.GlobalIlluminationQuality 3` = `Engine/Config/BaseScalability.ini:416-438`:
+  `r.Lumen.FinalGatherMethod=1`, downsample factor 16, octahedron resolution 8, `r.Lumen.SkylightIntensityMultiplier` 1.0;
+  set in `tools/unreal-reference/layers.json` L7 and `tools/unreal-reference/shadow/scenes.json:98-99`).
+
+  | `shade / sun` | sun60-closeup | sun15-closeup |
+  |---|---:|---:|
+  | ThreeNative, everything on (base) | 0.485 | 0.492 |
+  | `probes=1` (probe gather on the screen) | 0.490 | 0.497 |
+  | `ssgiQuality=epic` | 0.485 | 0.493 |
+  | `tier=medium` (irradiance field) | 0.493 | 0.495 |
+  | `tier=low` (no GI, no sky shadow; not a valid arm) | 1.000 | 1.139 |
+  | cell 0.25 m (84672 probes, local patch of `CELL`/`MAX_POINTS`) | 0.478 | 0.490 |
+  | cell 0.25 m and `skyMul=0` | 0.396 | not run |
+  | `giBounces=0` (sky only, no surface light) | 0.302 | 0.431 |
+  | `giBounces=1` (surfaces lit by the sun, read once) | 0.307 | 0.434 |
+  | `giBounces=2` | 0.429 | 0.468 |
+  | `giBounces=5` (base) | 0.485 | 0.492 |
+
+  Result: the hypothesis is rejected. A cell 0.25 m, the screen-space gather arms and the `medium` tier all stay at
+  0.48 to 0.50, so cell blur and the gather method are not the cause. The fill is in the cache. With no surface light at all
+  (`giBounces=0`) the ratio is already 0.302 against 0.136 for the direct sun and 0.099 for Unreal, so the sky
+  term alone is about 3 times too high. The second pass adds 0.12, and passes 3 to 5 add 0.06. The first
+  pass adds 0.005 only, which fits the plane: a lit floor seen from a floor probe adds almost no light in one pass.
+  Candidates, not yet measured: (1) the sky term of a probe under the crown counts sky that the leaf cards
+  hide (the bake shares sun visibility per 0.5 m `SHADE_CELL` and per object); (2) the sun-to-sky balance
+  differs from Unreal's (Unreal's shade is darker than our direct-sun-only arm, which has no sky light, so
+  Unreal's own sky share is close to zero here); (3) leaf cards shaded from the underside in the bake
+  (`surface()` uses `max(0, n.sun)` on the hit normal). Next measurement: the same ratio on an open floor
+  with no tree, in both engines, to separate the sun-to-sky balance from the crown.
+  Knobs perf2-lane needs on `installGi` (no knob exists today; `CELL` at `giCache.ts:160` and `MAX_POINTS`
+  at `giCache.ts:179` are constants): `giCell` and `giMax` (cell and probe budget), `giShadeCell`
+  (the `SHADE_CELL` share), and `giSkipObject` (bake without one named object, to run the floor without
+  the tree). `giBounces=N` already exists in the harness (`Reference.ts.in`, passes to `installGi`).
+  Tables: `~/.cache/tmp-tn/wildwood/abl/L7-table.md`. The local `CELL` patch was measurement only and is not committed.
