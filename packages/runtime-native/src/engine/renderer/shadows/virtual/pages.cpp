@@ -187,7 +187,7 @@ std::optional<DirectionalClipmap> DirectionalClipmap::create(const DirectionalCl
         error.assign(kClipmapDirectionCode);
         return std::nullopt;
     }
-    if (options.pagesPerAxis <= 0) {
+    if (options.pagesPerAxis <= 0 || std::any_of(options.levelPages.begin(), options.levelPages.end(), [](int n) { return n <= 0; })) {
         error.assign(kClipmapPagesCode);
         return std::nullopt;
     }
@@ -236,8 +236,10 @@ std::optional<DirectionalClipmap> DirectionalClipmap::create(const DirectionalCl
 
     DirectionalClipmap clipmap;
     clipmap.clipExtents_ = options.clipExtents;
-    clipmap.pagesPerAxis_ = options.pagesPerAxis;
     clipmap.levelCount_ = static_cast<int>(options.clipExtents.size());
+    for (int level = 0; level < clipmap.levelCount_; ++level)
+        clipmap.pagesPerAxis_.push_back(options.levelPages.empty() ? options.pagesPerAxis
+            : options.levelPages[std::min<std::size_t>(std::size_t(level), options.levelPages.size() - 1)]);
     clipmap.selectionGuard_ = options.selectionGuard;
     clipmap.refreshStep_.resize(static_cast<std::size_t>(clipmap.levelCount_));
     for (int level = 0; level < clipmap.levelCount_; ++level)
@@ -268,13 +270,14 @@ const std::vector<ClipWindow>& DirectionalClipmap::updateCenter(const Vector3& w
     const LightSpacePoint previousCenter = centerLight_;
     centerWorld_ = worldPoint;
     centerLight_ = project(worldPoint);
-    const int halfPages = static_cast<int>(std::floor(static_cast<double>(pagesPerAxis_) / 2.0));
     const std::vector<ClipWindow> previous = windows_;
     windows_.clear();
     windows_.reserve(static_cast<std::size_t>(levelCount_));
     for (int level = 0; level < levelCount_; ++level) {
         const double extent = clipExtents_[static_cast<std::size_t>(level)];
-        const double pageWorldSize = (extent * 2.0) / static_cast<double>(pagesPerAxis_);
+        const int pages = pagesPerAxis_[static_cast<std::size_t>(level)];
+        const int halfPages = pages / 2;
+        const double pageWorldSize = (extent * 2.0) / static_cast<double>(pages);
         const double step = perLevel(refreshStep_, level);
         // `Math.Round` ties toward +Infinity; `jsRound` keeps that. `step === 0` keeps the old
         // one-page floor addressing.
@@ -302,8 +305,8 @@ const std::vector<ClipWindow>& DirectionalClipmap::updateCenter(const Vector3& w
         window.refreshPages = refreshPages;
         window.minX = minX;
         window.minY = minY;
-        window.maxX = minX + pagesPerAxis_;
-        window.maxY = minY + pagesPerAxis_;
+        window.maxX = minX + pages;
+        window.maxY = minY + pages;
         windows_.push_back(window);
     }
     return windows_;

@@ -24,6 +24,7 @@ import {
   Sphere,
   SphereGeometry,
   type Texture,
+  type Vector2,
   Vector3,
 } from "three";
 // @ts-expect-error Three's private texture manager has no public declaration; this test must exercise it directly.
@@ -59,6 +60,7 @@ import {
   lodChainOf,
 } from "../src/model-lod.js";
 import { noteShadowRedrawGpuMs } from "../src/render-pass-budget.js";
+import { clipmapMapSizes } from "../src/render/virtual-shadow-pages.js";
 import {
   VIRTUAL_SHADOW_CASTER_LAYER,
   VIRTUAL_SHADOW_GATE_MARKER,
@@ -538,6 +540,7 @@ describe("VirtualShadowNode", () => {
     expect(node.levelLights).toHaveLength(3);
     const finer = setupNode(light, {
       clipExtents: [8, 32, 128],
+      mapSize: 64,
       resolutionLodBiasDirectional: -1.5,
     });
     expect(finer.options.clipExtents[0]).toBeCloseTo(8 / 2 ** 1.5, 9);
@@ -552,8 +555,58 @@ describe("VirtualShadowNode", () => {
       () => new VirtualShadowNode(light, { resolutionLodBiasDirectional: Number.NaN }),
     ).toThrow(/resolutionLodBiasDirectional/u);
     expect(
-      () => new VirtualShadowNode(light, { clipExtents: [8, 12], resolutionLodBiasDirectional: 1 }),
+      () =>
+        new VirtualShadowNode(light, {
+          clipExtents: [8, 12],
+          mapSize: 64,
+          resolutionLodBiasDirectional: 1,
+        }),
     ).toThrow(/resolutionLodBiasDirectional/u);
+  });
+
+  it("should size each level by Unreal's texel-per-pixel rule on the camera that first reads it", () => {
+    const { light } = world();
+    // hfov 60 (aspect 1), a 1280 px drawing buffer: the harness reference view.
+    const camera = new PerspectiveCamera(60, 1, 0.1, 500);
+    const measuring = {
+      ...builder,
+      camera,
+      renderer: {
+        shadowMap: { enabled: true },
+        getDrawingBufferSize: (target: Vector2) => target.set(1280, 720),
+      },
+    } as unknown as NodeBuilder;
+    const rule = { clipExtents: [7, 14, 28, 56], resolutionLodBiasDirectional: -1 };
+    const node = new VirtualShadowNode(light, { marker: false, ...rule });
+    expect(node.options.autoMapSize).toBe(true);
+    // Before a camera reads it, every level holds the light's own map size.
+    expect(node.options.mapSize).toEqual([64, 64, 64, 64]);
+    node.setup(measuring);
+    // The bias acts on every level, not on the finest window, and doubles each size.
+    expect(node.options.clipExtents).toEqual([7, 14, 28, 56]);
+    expect(node.options.mapSize).toEqual(
+      clipmapMapSizes({
+        clipExtents: [7, 14, 28, 56],
+        selectionGuard: [0.775],
+        resolutionLodBias: -1,
+        tanHalfFov: Math.tan(Math.PI / 6),
+        viewportWidth: 1280,
+      }),
+    );
+    expect(node.options.mapSize[0]).toBe(4096);
+    expect(node.clipmap.pagesAt(3)).toBe(4096);
+    const sizes = node.levelLights.map((level) => (level as DirectionalLight).shadow.mapSize.x);
+    expect(sizes).toEqual([4096, 4096, 4096, 4096]);
+    // A named size holds: one number for every level, or one per level.
+    const held = new VirtualShadowNode(light, { marker: false, ...rule, mapSize: [512, 1024] });
+    held.setup(measuring);
+    expect(held.options.autoMapSize).toBe(false);
+    expect(held.options.mapSize).toEqual([512, 1024, 1024, 1024]);
+    expect(held.clipmap.pagesAt(1)).toBe(1024);
+    expect(() => new VirtualShadowNode(light, { mapSize: [512, 0] })).toThrow(/mapSize/u);
+    expect(() => new VirtualShadowNode(light, { maxPhysicalPages: 0 })).toThrow(
+      /maxPhysicalPages/u,
+    );
   });
 
   it("should build one cached level per clip extent and add its lights beside the source light", () => {

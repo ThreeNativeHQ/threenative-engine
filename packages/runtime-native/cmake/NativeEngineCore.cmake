@@ -487,7 +487,8 @@ tn_native_engine_test(tn-native-engine-vsm-atlas-test tests/native-engine/vsm/vs
     native_engine_vsm_sampling=sampling
     native_engine_vsm_ground_window=ground_window
     native_engine_vsm_lod_rung=lod_rung
-    native_engine_vsm_packing=packing)
+    native_engine_vsm_packing=packing
+    native_engine_vsm_map_sizes=map_sizes)
 target_link_libraries(tn-native-engine-vsm-atlas-test PRIVATE tn_engine_vsm tn_engine_shader tn_engine_bindings)
 
 # The header compiles as strict C11 and a C program links against the ABI.

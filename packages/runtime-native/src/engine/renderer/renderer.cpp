@@ -597,17 +597,28 @@ void Renderer::setVirtualShadow(std::size_t light, const shadows::AtlasOptions& 
     if (options.adaptiveRefresh || options.adaptiveCasterGate) passTimer_->enabled = true;
     // The table must exist before a cached material's bind groups can name it.
     auto& table = storages_["vsmTable" + std::to_string(light)];
-    table.capacity = uint64_t(options.clipExtents.size()) * (9 + (options.mapSize/options.pageTexels)*(options.mapSize/options.pageTexels)) * 16;
+    table.capacity = uint64_t(options.clipExtents.size() * 10 + 1 + virtualShadows_.at(light).atlas.pageCount()) * 16;
     table.buffer = gpu_.createBuffer(table.capacity, WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst);
 }
 
-void Renderer::syncVirtualShadows(const LightState& lights) {
+void Renderer::syncVirtualShadows(const LightState& lights, double tanHalfFov) {
+    // Unreal's texel rule on this view: a size change rebuilds that light's atlas.
+    WGPULimits limits = {};
+    if (tanHalfFov > 0 && width_ > 0) wgpuDeviceGetLimits(device_, &limits);
+    const auto measured = [&](const shadows::AtlasOptions& options) {
+        auto resolved = options;
+        if (options.autoMapSize && tanHalfFov > 0 && width_ > 0)
+            resolved.levelMapSizes = shadows::clipmapMapSizes(options, tanHalfFov, width_, int(limits.maxTextureDimension2D));
+        return resolved;
+    };
     // Facade configurations follow their light, not its sorted slot; remove stale GPU bindings.
     for (auto it = virtualShadows_.begin(); it != virtualShadows_.end();) {
         const auto i = it->first;
         const auto source = i < lights.direct.size() && lights.direct[i].shadow
             ? lights.direct[i].shadow->virtualShadow : nullptr;
-        if (!it->second.source || it->second.source == source) { ++it; continue; }
+        const bool resized = source && it->second.source == source && source->autoMapSize && tanHalfFov > 0 &&
+            measured(*source).levelMapSizes != it->second.atlas.options().levelMapSizes;
+        if (!it->second.source || (it->second.source == source && !resized)) { ++it; continue; }
         auto& map = it->second.map;
         if (map.view) wgpuTextureViewRelease(map.view);
         if (map.texture) wgpuTextureRelease(map.texture);
@@ -622,7 +633,7 @@ void Renderer::syncVirtualShadows(const LightState& lights) {
     for (std::size_t i = 0; i < lights.direct.size(); ++i) {
         const auto& light = lights.direct[i];
         if (!light.shadow || !light.shadow->virtualShadow || virtualShadows_.count(i)) continue;
-        setVirtualShadow(i, *light.shadow->virtualShadow);
+        setVirtualShadow(i, measured(*light.shadow->virtualShadow));
         virtualShadows_.at(i).source = light.shadow->virtualShadow;
     }
 }

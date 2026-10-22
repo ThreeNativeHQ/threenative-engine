@@ -9,8 +9,9 @@ double at(const std::vector<double>& values, int level) { return values[std::min
 }
 
 std::optional<PageAtlas> PageAtlas::create(const AtlasOptions& options, std::string& error) {
-    if (options.mapSize <= 0 || options.mapSize > 4096 || options.pageTexels <= 0 ||
-        options.mapSize % options.pageTexels || options.border < 1 || options.border > 64 ||
+    const auto badSize = [&](int size) { return size <= 0 || size > 4096 || options.pageTexels <= 0 || size % options.pageTexels; };
+    if (badSize(options.mapSize) || std::any_of(options.levelMapSizes.begin(), options.levelMapSizes.end(), badSize) ||
+        options.border < 1 || options.border > 64 ||
         options.staticAfterFrames <= 0 || options.moverMapSize < 1 || options.moverMapSize > 4096 ||
         !std::isfinite(options.expensiveRefreshShare) || options.expensiveRefreshShare <= 0 || options.expensiveRefreshShare > 1 ||
         !std::isfinite(options.minCasterTexels) || options.minCasterTexels < 0 ||
@@ -33,25 +34,48 @@ std::optional<PageAtlas> PageAtlas::create(const AtlasOptions& options, std::str
         }
         guards.push_back(guard - step);
     }
-    out.clipmap_ = DirectionalClipmap::create({{0, 1, 0}, options.clipExtents, options.mapSize, guards, options.refreshStep, options.minWindowAspect}, error);
+    out.clipmap_ = DirectionalClipmap::create({{0, 1, 0}, options.clipExtents, options.mapSize, guards, options.refreshStep, options.minWindowAspect, options.levelMapSizes}, error);
     if (!out.clipmap_) return std::nullopt;
-    const int count = out.tiles() * out.tiles() * int(options.clipExtents.size());
+    const int count = out.pageCount();
     if (count > 4096) { error = "TN_VIRTUAL_SHADOW_INVALID: page capacity"; return std::nullopt; }
     out.pool_ = PhysicalPagePool::create(count, error);
+    const int span = (options.moverMapSize + 2 * options.border + out.stride() - 1) / out.stride();
+    out.slotsPerAxis_ = packedSide(count, int(options.clipExtents.size()), span);
+    out.staticRows_ = (count + out.slotsPerAxis_ - 1) / out.slotsPerAxis_;
+    out.levels_.resize(options.clipExtents.size());
+    return out;
+}
+
+int packedSide(int count, int levels, int span) {
     // The levels' mover maps sit in rows of whole slots under the static pages, so one square holds
     // both: the smallest square whose static rows plus mover rows fit in its side.
-    const int span = (options.moverMapSize + 2 * options.border + out.stride() - 1) / out.stride();
-    const int levels = int(options.clipExtents.size());
     for (int side = int(std::ceil(std::sqrt(count))); ; ++side) {
         const int perRow = side / span;
         if (perRow == 0) continue;
-        if ((count + side - 1) / side + span * ((levels + perRow - 1) / perRow) > side) continue;
-        out.slotsPerAxis_ = side;
-        out.staticRows_ = (count + side - 1) / side;
-        break;
+        if ((count + side - 1) / side + span * ((levels + perRow - 1) / perRow) <= side) return side;
     }
-    out.levels_.resize(options.clipExtents.size());
-    return out;
+}
+
+std::vector<int> clipmapMapSizes(const AtlasOptions& options, double tanHalfFov, double viewportWidth, int maxEdge) {
+    const auto& extents = options.clipExtents;
+    const int levels = int(extents.size()), page = options.pageTexels;
+    const int stride = page + 2 * options.border, span = (options.moverMapSize + 2 * options.border + stride - 1) / stride;
+    const auto guard = [&](int l) { return at(options.selectionGuard, l) - at(options.refreshStep, l); };
+    std::vector<double> inner;
+    for (int l = 0; l < levels; ++l)
+        inner.push_back(l == 0 ? guard(0) * extents[0] * (levels > 1 ? extents[0] / extents[1] : 0.5) : guard(l - 1) * extents[std::size_t(l - 1)]);
+    for (double bias = options.resolutionLodBias; ; bias += 0.25) {
+        std::vector<int> sizes;
+        int pages = 0;
+        for (int l = 0; l < levels; ++l) {
+            const double pixel = 2 * inner[std::size_t(l)] * tanHalfFov / viewportWidth;
+            const int texels = int(std::ceil(2 * extents[std::size_t(l)] / (std::pow(2.0, 1 + bias) * pixel) / page)) * page;
+            sizes.push_back(std::clamp(texels, page, 4096));
+            pages += (sizes.back() / page) * (sizes.back() / page);
+        }
+        const bool smallest = std::all_of(sizes.begin(), sizes.end(), [&](int n) { return n == page; });
+        if (smallest || (pages <= options.maxPhysicalPages && packedSide(pages, levels, span) * stride <= maxEdge)) return sizes;
+    }
 }
 
 void PageAtlas::invalidateAll() { for (auto& level : levels_) { level.dirty = true; level.dirtyAll = true; } }
@@ -86,10 +110,10 @@ std::vector<AtlasPage> PageAtlas::update(const Vector3& eye, const Vector3& towa
         std::string error;
         std::vector<double> guards;
         for (int i = 0; i < int(levels_.size()); ++i) guards.push_back(at(options_.selectionGuard, i) - at(options_.refreshStep, i));
-        clipmap_ = DirectionalClipmap::create({direction, options_.clipExtents, options_.mapSize, guards, options_.refreshStep, options_.minWindowAspect}, error);
+        clipmap_ = DirectionalClipmap::create({direction, options_.clipExtents, options_.mapSize, guards, options_.refreshStep, options_.minWindowAspect, options_.levelMapSizes}, error);
         // The renderer validates the direction before entering this CPU plan.
         if (!clipmap_) return {};
-        pool_ = PhysicalPagePool::create(tiles() * tiles() * int(levels_.size()), error);
+        pool_ = PhysicalPagePool::create(pageCount(), error);
         for (auto& level : levels_) level = Level{};
     }
     if (cameraCut) invalidateAll();
@@ -107,7 +131,7 @@ std::vector<AtlasPage> PageAtlas::update(const Vector3& eye, const Vector3& towa
     // Protect all held levels until their own replacement has been rendered.
     std::set<std::string> protectedKeys;
     for (int l = 0; l < int(levels_.size()); ++l) if (levels_[l].mapped)
-        for (int y = 0; y < tiles(); ++y) for (int x = 0; x < tiles(); ++x)
+        for (int y = 0; y < tiles(l); ++y) for (int x = 0; x < tiles(l); ++x)
             protectedKeys.insert(makePageKey(l, levels_[l].window.minX + x * options_.pageTexels,
                                                levels_[l].window.minY + y * options_.pageTexels));
     // The shipped TS node requests an entire granted clip window (its prototype's sparse
@@ -124,14 +148,14 @@ std::vector<AtlasPage> PageAtlas::update(const Vector3& eye, const Vector3& towa
         const double gpuDelay = options_.adaptiveRefresh ? level.costMs / (1000 * options_.expensiveRefreshShare) : 0;
         const bool matured = level.dirty && (level.urgent || now_ - level.lastRender >= std::max(at(options_.invalidationDelay, l), gpuDelay));
         if ((!moved && !matured) || (granted && !level.urgent)) continue;
-        if (level.mapped) for (int y = 0; y < tiles(); ++y) for (int x = 0; x < tiles(); ++x)
+        if (level.mapped) for (int y = 0; y < tiles(l); ++y) for (int x = 0; x < tiles(l); ++x)
             protectedKeys.erase(makePageKey(l, level.window.minX + x * options_.pageTexels, level.window.minY + y * options_.pageTexels));
         const Matrix4 oldMatrix = level.matrix;
         bool partial = !moved && level.mapped && !level.dirtyAll && options_.partialRedraw;
         level.window = window;
         level.centerW = center.w;
-        const double cu = (window.minX + options_.mapSize / 2.0) * window.pageWorldSize;
-        const double cv = (window.minY + options_.mapSize / 2.0) * window.pageWorldSize;
+        const double cu = (window.minX + mapSize(l) / 2.0) * window.pageWorldSize;
+        const double cv = (window.minY + mapSize(l) / 2.0) * window.pageWorldSize;
         // `v` counts pages along the window's height: `vScale` metres of V each, so a texel along V is
         // `vScale` times its width and covers the same floor area a low sun stretches it over.
         const double vScale = clipmap_->vScale();
@@ -180,7 +204,7 @@ std::vector<AtlasPage> PageAtlas::update(const Vector3& eye, const Vector3& towa
         partial = partial && oldMatrix.elements == level.matrix.elements;
         level.slots.clear();
         level.pages.clear();
-        for (int y = 0; y < tiles(); ++y) for (int x = 0; x < tiles(); ++x) {
+        for (int y = 0; y < tiles(l); ++y) for (int x = 0; x < tiles(l); ++x) {
             const std::string key = makePageKey(l, window.minX + x * options_.pageTexels, window.minY + y * options_.pageTexels);
             const auto allocation = pool_->allocate(key, frame_, false, protectedKeys);
             if (!allocation) { level.mapped = false; writeTable(); return {}; }
@@ -292,12 +316,12 @@ double PageAtlas::refreshStep(int l) const {
     const double base = at(options_.refreshStep, l);
     if (!options_.adaptiveRefresh) return base;
     const double budget = options_.expensiveRefreshShare * std::min(frameSeconds_ * 1000, 1000.0 / 60);
-    const double margin = std::max(base, 1 - (at(options_.selectionGuard, l) - base) - 1.0 / options_.mapSize);
+    const double margin = std::max(base, 1 - (at(options_.selectionGuard, l) - base) - 1.0 / mapSize(l));
     return std::min(base * std::max(1.0, levels_[l].costMs / budget), margin);
 }
 
 double PageAtlas::casterGate(int l) const {
-    return options_.minCasterTexels * 2 * options_.clipExtents[l] / options_.mapSize * levels_[l].gateScale;
+    return options_.minCasterTexels * 2 * options_.clipExtents[l] / mapSize(l) * levels_[l].gateScale;
 }
 
 Vector3 PageAtlas::viewFocus(const Vector3& eye, const Vector3& forward, double far,
@@ -318,27 +342,28 @@ void PageAtlas::writeTable() {
     // Nine vec4s per level followed by a row-major page table. Page rows are flipped here rather
     // than in the sampler: the light-space V axis is up; WebGPU texture Y is down.
     const int header = int(levels_.size()) * 9;
-    table_.assign((header + int(levels_.size()) * tiles() * tiles()) * 4, 0);
+    table_.assign((header + pageCount()) * 4, 0);
     for (int l = 0; l < int(levels_.size()); ++l) {
         const auto& level = levels_[l];
         float* out = table_.data() + l * 36;
         for (int i = 0; i < 16; ++i) out[i] = float(level.matrix.elements[i]);
-        out[16] = float((level.window.minX + options_.mapSize / 2.0) * level.window.pageWorldSize);
-        out[17] = float((level.window.minY + options_.mapSize / 2.0) * level.window.pageWorldSize);
+        out[16] = float((level.window.minX + mapSize(l) / 2.0) * level.window.pageWorldSize);
+        out[17] = float((level.window.minY + mapSize(l) / 2.0) * level.window.pageWorldSize);
         out[18] = float(options_.clipExtents[l]); out[19] = float(at(options_.selectionGuard, l) - at(options_.refreshStep, l));
         // The V row is the axis whose dot product is `v`: the unit V over the window's height ratio, so the
         // shader's window distance reads pages along the height. Its length is 1 / vScale.
         Vector3 axisV = clipmap_->basisV(); axisV.multiplyScalar(1 / clipmap_->vScale());
         const Vector3 axes[] = {clipmap_->basisU(), axisV, clipmap_->basisW()};
         for (int i = 0; i < 3; ++i) { out[20 + 4*i] = float(axes[i].x); out[21 + 4*i] = float(axes[i].y); out[22 + 4*i] = float(axes[i].z); }
-        out[23] = float(options_.mapSize); out[27] = float(tiles());
+        out[23] = float(mapSize(l)); out[27] = float(tiles(l));
         out[31] = float(level.far - level.near);
         out[32] = float(options_.pageTexels); out[33] = float(options_.border);
         out[34] = float(edge()); out[35] = level.mapped ? 1 : 0;
         if (!level.mapped) continue;
-        for (int y = 0; y < tiles(); ++y) for (int x = 0; x < tiles(); ++x) {
-            const auto [px, py] = origin(level.slots[y * tiles() + x]);
-            float* entry = table_.data() + (header + l * tiles() * tiles() + (tiles() - 1 - y) * tiles() + x) * 4;
+        const int n = tiles(l);
+        for (int y = 0; y < n; ++y) for (int x = 0; x < n; ++x) {
+            const auto [px, py] = origin(level.slots[y * n + x]);
+            float* entry = table_.data() + (header + pageBase(l) + (n - 1 - y) * n + x) * 4;
             entry[0] = float(px); entry[1] = float(py); entry[2] = 1; entry[3] = options_.receiverPlaneBias ? 1 : 0;
         }
     }
