@@ -322,6 +322,9 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
       if (level >= 9) {
         // setupPost reads the `high` preset by reference, so the ablation switches go there.
         for (const name of OFF) Object.assign(qualityPreset("high"), STAGE_OFF[name]);
+        // Diagnosis: ?gtaoRadius=<m> and ?gtaoScale=N bracket the contact occlusion (PRD-635 AC-2 band width).
+        for (const option of ["gtaoRadius", "gtaoScale", "gtaoDistanceExponent", "gtaoDistanceFalloff", "gtaoThickness", "gtaoDenoiseRadius"] as const)
+          if (params.get(option) !== null) Object.assign(qualityPreset("high"), { [option]: Number(params.get(option)) });
         const post = setupPost(ctx.renderer, scene, camera, { godraysLight: key, tier: "high" });
         postDebug = () => post.debug();
         this.#dispose = () => post.dispose();

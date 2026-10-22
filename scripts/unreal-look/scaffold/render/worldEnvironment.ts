@@ -228,6 +228,14 @@ export interface IWorldEnvironmentOptions {
   readonly gtaoScale?: number;
   /** Directions sampled per pixel. Cost is linear in this. */
   readonly gtaoSamples?: number;
+  /** Spacing of the samples along a direction: 1 is even, 2 packs them near the pixel, as Unreal's horizon search does. */
+  readonly gtaoDistanceExponent?: number;
+  /** 0 weighs every sample alike, 1 (the node's default) weighs far samples less. */
+  readonly gtaoDistanceFalloff?: number;
+  /** Depth difference in world units beyond which a sample is no occluder. */
+  readonly gtaoThickness?: number;
+  /** The occlusion denoise's reach in pixels (DenoiseNode's 5 when omitted); 0 leaves the occlusion raw. */
+  readonly gtaoDenoiseRadius?: number;
   /** Fraction of display resolution the occlusion is traced at. */
   readonly gtaoResolutionScale?: number;
   /**
@@ -658,6 +666,10 @@ export class WorldEnvironment {
       gtaoRadius: options.gtaoRadius ?? 0.25,
       gtaoScale: options.gtaoScale ?? 1,
       gtaoSamples: options.gtaoSamples ?? 16,
+      gtaoDistanceExponent: options.gtaoDistanceExponent ?? 1,
+      gtaoDistanceFalloff: options.gtaoDistanceFalloff ?? 1,
+      gtaoThickness: options.gtaoThickness ?? 1,
+      gtaoDenoiseRadius: options.gtaoDenoiseRadius,
       gtaoResolutionScale: options.gtaoResolutionScale ?? 1,
       ssgiResolutionScale: options.ssgiResolutionScale ?? 1,
       sharpenEnabled: options.sharpenEnabled ?? false,
@@ -1060,6 +1072,9 @@ export class WorldEnvironment {
           contact.radius.value = options.gtaoRadius;
           contact.scale.value = options.gtaoScale;
           contact.samples.value = options.gtaoSamples;
+          contact.distanceExponent.value = options.gtaoDistanceExponent;
+          contact.distanceFallOff.value = options.gtaoDistanceFalloff;
+          contact.thickness.value = options.gtaoThickness;
           contact.resolutionScale = options.gtaoResolutionScale;
           const retained = contact as unknown as {
             setSize(w: number, h: number): void;
@@ -1081,9 +1096,13 @@ export class WorldEnvironment {
           // Denoised with the same depth-aware filter as the GI gather: GTAO's interleaved
           // sampling otherwise reads as a speckled halo around every contact — around feet on a
           // plain floor most of all — which is exactly the "not smooth" a player notices first.
-          const filter = options.denoiseEnabled
-            ? denoise(contact.getTextureNode(), depth(), normal(), view)
-            : undefined;
+          const filter =
+            options.denoiseEnabled && options.gtaoDenoiseRadius !== 0
+              ? denoise(contact.getTextureNode(), depth(), normal(), view)
+              : undefined;
+          if (filter && options.gtaoDenoiseRadius !== undefined)
+            (filter as unknown as { radius: { value: number } }).radius.value =
+              options.gtaoDenoiseRadius;
           if (filter && resolutionSubrect) {
             const denoiser = filter as unknown as {
               textureNode: TextureNode;
@@ -1149,7 +1168,9 @@ export class WorldEnvironment {
                 .rgb.mul(float(1).sub(metal().r))
                 .mul(cache(position, sceneNormal.normalize()))
                 .mul(frameGain);
-              result.assign(max(input.rgb.sub(indirect.mul(float(1).sub(occlusion.r))), composited.rgb));
+              result.assign(
+                max(input.rgb.sub(indirect.mul(float(1).sub(occlusion.r))), composited.rgb),
+              );
             });
             return vec4(result, input.a);
           });
