@@ -126,7 +126,7 @@ export function currentVisibilityEligible(scene: Scene): boolean {
       if (
         (material.constructor !== MeshStandardMaterial &&
           material.constructor !== MeshBasicMaterial) ||
-        Object.keys(material).some(
+        fieldNames(material).some(
           (name) =>
             (name.endsWith("Node") && Reflect.get(material, name) != null) ||
             (name.startsWith("setup") && typeof Reflect.get(material, name) === "function"),
@@ -167,4 +167,11 @@ function authoredNode(owner: unknown): boolean {
     const value = Reflect.get(owner, field);
     return value !== undefined && value !== null;
   });
+}
+
+/** A material's field names by `for...in`: the engine's web materials list them there, not in `Object.keys`. */
+function fieldNames(material: object): string[] {
+  const names: string[] = [];
+  for (const name in material) names.push(name);
+  return names;
 }
