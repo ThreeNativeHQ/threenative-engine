@@ -383,18 +383,27 @@ void registerLightShadow(ClassBinding& b, bool spot) {
             const std::string& name = command->second.text;
             if (name == "invalidateAll") { control.invalidateAll = true; return; }
             if (name == "lod") {
-                const Value* idValue = nullptr; const Value* geometryValue = nullptr;
+                const Value* idValue = nullptr; const Value* geometriesValue = nullptr; const Value* errorsValue = nullptr;
                 for (const auto& [key, v] : value.fields) {
                     if (key == "id") idValue = &v;
-                    if (key == "geometry") geometryValue = &v;
+                    if (key == "geometries") geometriesValue = &v;
+                    if (key == "errors") errorsValue = &v;
                 }
-                if (!idValue || !geometryValue) throw Unsupported{"TN_VIRTUAL_SHADOW_INVALID: lod command"};
+                if (!idValue || !geometriesValue || !errorsValue) throw Unsupported{"TN_VIRTUAL_SHADOW_INVALID: lod command"};
                 const double id = number(*idValue);
                 if (!std::isfinite(id) || id < 0 || id > 9007199254740991.0 || id != std::floor(id))
                     throw Unsupported{"TN_VIRTUAL_SHADOW_INVALID: caster id"};
-                auto* object = store.find(*geometryValue);
-                if (!object || !acceptsClass(object->cls, "BufferGeometry")) throw Unsupported{"TN_VIRTUAL_SHADOW_INVALID: lod geometry"};
-                control.lods[uint64_t(id)] = std::static_pointer_cast<BufferGeometry>(object->ptr);
+                shadows::ShadowLodChain chain;
+                chain.errors = numbersOf(*errorsValue);
+                for (const Value& ref : refsOf(*geometriesValue)) {
+                    auto* object = store.find(ref);
+                    if (!object || !acceptsClass(object->cls, "BufferGeometry")) throw Unsupported{"TN_VIRTUAL_SHADOW_INVALID: lod geometry"};
+                    chain.rungs.push_back(std::static_pointer_cast<BufferGeometry>(object->ptr));
+                }
+                if (chain.rungs.empty() || chain.rungs.size() != chain.errors.size() ||
+                    std::any_of(chain.errors.begin(), chain.errors.end(), [](double e) { return !std::isfinite(e) || e < 0; }))
+                    throw Unsupported{"TN_VIRTUAL_SHADOW_INVALID: lod rungs and errors"};
+                control.lods[uint64_t(id)] = std::move(chain);
                 control.invalidateAll = true; return;
             }
             const auto arg = std::find_if(value.fields.begin(), value.fields.end(), [&](const auto& f) { return f.first == (name == "invalidateRegion" ? "bounds" : "id"); });

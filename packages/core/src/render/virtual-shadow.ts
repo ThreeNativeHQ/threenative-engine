@@ -231,7 +231,9 @@ export interface IVirtualShadowOptions {
    */
   readonly receiverPlaneBias?: boolean;
   /**
-   * Draw registered AutoLOD chains with their coarsest geometry past the finest level, default true.
+   * Draw registered AutoLOD chains with a coarser rung past the finest level, default true. A level
+   * takes the coarsest rung whose geometric error is within one of its texels, and never a rung
+   * finer than the main pass shows; where no rung is that accurate the caster keeps its geometry.
    * Alpha-tested and transparent casters keep casting on every level that resolves their bounds;
    * dropping their whole shadow at the fine window edge loses canopy and fences.
    * Geometry swaps are restored before the next level, mover map and main pass.
@@ -795,6 +797,28 @@ function instanceDiameter(mesh: Mesh, sphereRadius: number): number {
   const radius = geometry.boundingSphere?.radius;
   if (radius === undefined || radius <= 0) return sphereRadius * 2;
   return radius * 2 * scale;
+}
+
+/**
+ * The geometry a caster draws into a level past the finest: the coarsest rung of its AutoLOD chain
+ * whose error one texel of that level cannot tell from the full mesh, and never finer than the rung
+ * the main pass shows, which the viewer already cannot tell apart. Where no rung is that accurate
+ * the mesh keeps what it has. A rung whose error is more than a texel draws as a facet on the
+ * shadow's edge: the coarsest rung of a sphere, 60 mm out, put straight segments on a 7 mm texel.
+ * `undefined` leaves the geometry alone.
+ */
+function shadowLod(mesh: Mesh, texel: number): BufferGeometry | undefined {
+  const chain = lodChainOf(mesh.geometry);
+  if (chain === undefined) return undefined;
+  // The largest instance scale `WorldCells` placed into this batch is on top of the mesh's own.
+  const placed = (mesh as Mesh & { casterInstanceScale?: number }).casterInstanceScale;
+  const scale =
+    mesh.matrixWorld.getMaxScaleOnAxis() * (placed !== undefined && placed > 0 ? placed : 1);
+  const shown = chain.levels.indexOf(mesh.geometry);
+  for (let rung = chain.levels.length - 1; rung > shown; rung -= 1) {
+    if ((chain.errors[rung] as number) * scale <= texel) return chain.levels[rung];
+  }
+  return undefined;
 }
 
 /** Keep each stock node's source-owned settings aligned with the public light shadow. */
@@ -1743,8 +1767,8 @@ export class VirtualShadowNode extends ShadowBaseNode {
     // budget raises the size a caster must be before it draws here, so it sheds its tiniest props
     // first. The scale starts and usually stays at 1, so a cheap level's gate — and every count
     // taken through it — is byte-identical to the configured one.
-    const gate =
-      ((this.options.minCasterTexels * 2 * level.extent) / this.options.mapSize) * level.gateScale;
+    const texel = (2 * level.extent) / this.options.mapSize;
+    const gate = this.options.minCasterTexels * texel * level.gateScale;
     let gateHidden = 0;
     const clusterLayer = 1 << VIRTUAL_SHADOW_CASTER_LAYER;
     const wideLayer = 1 << VIRTUAL_SHADOW_WIDE_CASTER_LAYER;
@@ -1813,11 +1837,10 @@ export class VirtualShadowNode extends ShadowBaseNode {
       if (mesh.casterPrewarmOwed === true) prewarming = true;
       // Reduce geometry, never the caster's presence: alpha cutouts carry canopy and fences.
       if (biased && mesh.castShadow === true) {
-        const chain = lodChainOf(mesh.geometry);
-        const coarsest = chain?.levels[chain.levels.length - 1];
-        if (coarsest !== undefined && coarsest !== mesh.geometry) {
+        const coarse = shadowLod(mesh, texel);
+        if (coarse !== undefined) {
           this.#coarsened.push({ geometry: mesh.geometry, mesh });
-          mesh.geometry = coarsest;
+          mesh.geometry = coarse;
         }
       }
       // The same two spheres three's cull uses: an instanced mesh's own, over its instances, or the

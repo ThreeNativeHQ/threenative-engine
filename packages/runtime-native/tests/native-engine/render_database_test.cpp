@@ -3987,6 +3987,73 @@ void virtualSunPixelFloor() {
     CHECK(two < 4.5);             // and never the smear of a wide penumbra
 }
 
+// A clip level past the finest draws a caster's coarse AutoLOD rung only where one texel of the level hides
+// the rung's error. The plate's only rung draws nothing, so the floor behind it is lit when the rung is used
+// and dark when the plate keeps its own geometry. The strip is outside the 0.2 m finest window: level 1, 7.8 mm texels.
+void virtualSunLodRung() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(192, 192);
+    OrthographicCamera camera(-1.6, 1.6, 1.6, -1.6, 0.1, 20);
+    camera.position.set(0, 10, 0.001);
+    camera.lookAt(0, 0, 0);
+    camera.updateProjectionMatrix();
+    const auto stripLight = [&](double rungError) {
+        Scene scene;
+        DirectionalLight sun{Color(1, 1, 1), 3};
+        sun.position.set(3, 3, 0);
+        sun.setCastShadow(true);
+        sun.shadow.camera->setLayerMask(double((1 << 0) | (1 << 2)));
+        auto white = std::make_shared<Material>(MaterialType::Standard);
+        Mesh floor{makeBoxGeometry(8, 0.2, 8), white};
+        floor.position.y = -0.1;
+        floor.setCastShadow(true);
+        floor.setReceiveShadow(true);
+        scene.add(floor);
+        auto own = makeBoxGeometry(1, 0.3, 1);
+        Mesh plate{own, white};
+        plate.position.set(1.5, 0.15, 0);
+        plate.setCastShadow(true);
+        plate.setLayer(2);
+        scene.add(plate);
+        shadows::AtlasOptions atlas;
+        atlas.clipExtents = {0.2, 8}; atlas.mapSize = 2048; atlas.pageTexels = 128;
+        atlas.lightDistance = 20; atlas.depthRange = 40;
+        atlas.shadowLodBias = true;
+        auto rung = own->clone();
+        rung->setIndexFromArray({0, 0, 0});
+        atlas.control->lods[plate.id()] = shadows::ShadowLodChain{{rung}, {rungError}};
+        sun.shadow.virtualShadow = std::make_shared<const shadows::AtlasOptions>(std::move(atlas));
+        scene.add(sun);
+        scene.updateMatrixWorld(true);
+        RenderDatabase database;
+        database.shadowMapEnabled = true;
+        for (int frame = 0; frame < 3; ++frame) database.render(renderer, scene, camera);
+        std::vector<uint8_t> pixels;
+        bool read = false;
+        renderer.readPixels([&](GpuStatus status, std::vector<uint8_t> px) {
+            if (status == GpuStatus::Ok) pixels = std::move(px);
+            read = true;
+        });
+        for (int i = 0; i < 5000 && !read; ++i) {
+            renderer.poll();
+            events.drain();
+            if (!read) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        CHECK(pixels.size() == size_t{192} * 192 * 4);
+        // Pixel 12 is lit floor at x = -1.4 m; pixel 150 is x = 0.86 m, inside the plate's shadow (x 0.7 to 2).
+        const double lit = pixels[(size_t{96} * 192 + 12) * 4], strip = pixels[(size_t{96} * 192 + 150) * 4];
+        CHECK(lit > 32);
+        return strip / lit;
+    };
+    const double coarse = stripLight(0.5), fine = stripLight(0.001);
+    std::printf("virtual sun lod rung: strip %.2f of lit with a 0.5 m rung, %.2f with a 1 mm rung\n", coarse, fine);
+    CHECK(coarse < 0.25);  // 0.5 m of error is 64 texels: the plate keeps its own geometry and casts
+    CHECK(fine > 0.9);     // 1 mm is under a texel: the rung is drawn, and it casts nothing
+}
+
 // A point light's cube shadow: five casters around and below the lamp each shade the floor where its
 // shadow lands, through four side faces and the bottom one, and the floor between them stays lit.
 void pointShadowCubeFaces() {
@@ -4889,6 +4956,7 @@ TN_TEST_MAIN({"gpu_joint_production", gpuJointProduction}, {"multi_material_grou
              {"multi_camera_layers", multiCameraLayers}, {"render_callback", renderCallback}, {"instanced", instanced},
              {"virtual_sun_room_seam", virtualSunRoomSeam},
              {"virtual_sun_pixel_floor", virtualSunPixelFloor},
+             {"virtual_sun_lod_rung", virtualSunLodRung},
              {"batched_vs_unbatched", batchedVsUnbatched}, {"skinned_crowd", skinnedCrowdPixels}, {"skinned_decline_cadence", skinnedDeclineCadence}, {"skinned_normalized_weights", skinnedNormalizedWeights}, {"normal_map_tilt", normalMapTilt}, {"unsupported_map_slot", unsupportedMapSlot}, {"env_map_slot_is_read", envMapSlotIsRead}, {"converted_copies_swept", convertedCopiesAreSwept}, {"gpu_timer_covers_offscreen", gpuTimerCoversOffscreen}, {"gpu_timer_covers_shadows", gpuTimerCoversShadows}, {"overlay_over_frame", overlayOverFrame}, {"gpu_timer_is_opt_in", gpuTimerIsOptIn}, {"msaa_edges", msaaEdges}, {"shadow_camera_layers", shadowCameraLayers}, {"flat_shading_needs_no_normals", flatShadingNeedsNoNormals}, {"map_sampleability_changes", mapSampleabilityChanges}, {"batch_caches_stay_put", batchCachesStayPut}, {"frustum_culling", frustumCulling},
              {"shadow_caster_frustum_culling", shadowCasterFrustumCulling}, {"masked_shadow", maskedShadow}, {"leaf_receiver", leafReceiver}, {"point_shadow_cube_faces", pointShadowCubeFaces}, {"lamp_source_radius", lampSourceRadius}, {"contact_shadow_foot", contactShadowFoot}, {"virtual_sun_contact_foot", virtualSunContactFoot}, {"lamp_cache", lampCache}, {"shadow_lights_follow_hierarchy", shadowLightsFollowHierarchy}, {"records_survive_siblings", recordsSurviveSiblings}, {"steady_frame_hashes_no_record", steadyFrameHashesNoRecord}, {"nested_record_cache", nestedRecordCache}, {"frustum_record_retention", frustumRecordRetention}, {"world_sphere_measured_once", worldSphereMeasuredOnce}, {"reflection_reuse", reflectionReuse})
 

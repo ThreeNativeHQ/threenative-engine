@@ -3042,6 +3042,75 @@ describe("VirtualShadowNode shadow LOD bias and alpha-caster range", () => {
     node.dispose();
   });
 
+  it("should keep a chain rung that a level's texel cannot hide, and draw the coarsest one where it can", async () => {
+    const { camera, light, scene } = world();
+    const mesh = await chained();
+    mesh.castShadow = true;
+    scene.add(mesh);
+    const chain = lodChainOf(mesh.geometry);
+    if (chain === undefined) throw new Error("the plugin registered no chain.");
+    // The 64-texel test map makes a texel `extent / 32`: 0.031 m, 0.0625 m and 0.25 m against rung
+    // errors of 0.05 m and 0.2 m. The first window keeps the mesh's own geometry (a 0.05 m facet is
+    // more than a texel there), the second hides the first rung but not the second, the third both.
+    const node = setupNode(light, { clipExtents: [0.5, 1, 2, 8] });
+    const host = drawHost();
+    watchDraws(node, host, camera, [mesh]);
+    renderAllLevels(node, camera, host);
+
+    expect(host.draws.map((draw) => draw.submitted)).toEqual([
+      mesh.geometry,
+      mesh.geometry,
+      chain.levels[1],
+      chain.levels[2],
+    ]);
+    node.dispose();
+  });
+
+  it("should judge a chain rung's error at the mesh's world scale", async () => {
+    const { camera, light, scene } = world();
+    const mesh = await chained();
+    mesh.castShadow = true;
+    mesh.scale.setScalar(4);
+    scene.add(mesh);
+    mesh.updateMatrixWorld(true);
+    const chain = lodChainOf(mesh.geometry);
+    if (chain === undefined) throw new Error("the plugin registered no chain.");
+    // Four times the size is four times the error: 0.2 m and 0.8 m, so the 0.0625 m texel that hid
+    // the first rung of the unscaled mesh hides neither, and 0.25 m hides only the first.
+    const node = setupNode(light, { clipExtents: [0.5, 2, 8, 40] });
+    const host = drawHost();
+    watchDraws(node, host, camera, [mesh]);
+    renderAllLevels(node, camera, host);
+
+    expect(host.draws.map((draw) => draw.submitted)).toEqual([
+      mesh.geometry,
+      mesh.geometry,
+      chain.levels[1],
+      chain.levels[2],
+    ]);
+    node.dispose();
+  });
+
+  it("should never draw a rung finer than the one the main pass shows", async () => {
+    const { camera, light, scene } = world();
+    const mesh = await chained();
+    mesh.castShadow = true;
+    scene.add(mesh);
+    const chain = lodChainOf(mesh.geometry);
+    if (chain === undefined) throw new Error("the plugin registered no chain.");
+    const coarsest = chain.levels[2] as BufferGeometry;
+    // A far mesh the main pass already draws at its coarsest rung: a window whose texel hides only
+    // the first rung must not put the mesh back on it.
+    mesh.geometry = coarsest;
+    const node = setupNode(light, { clipExtents: [0.5, 2, 8] });
+    const host = drawHost();
+    watchDraws(node, host, camera, [mesh]);
+    renderAllLevels(node, camera, host);
+
+    expect(host.draws.map((draw) => draw.submitted)).toEqual([coarsest, coarsest, coarsest]);
+    node.dispose();
+  });
+
   it("should put every level back on full detail with shadowLodBias off", async () => {
     const { camera, light, scene } = world();
     const mesh = await chained();

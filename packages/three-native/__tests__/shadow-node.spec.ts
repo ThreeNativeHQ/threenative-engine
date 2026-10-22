@@ -230,7 +230,7 @@ it("transfers registered LOD chain data once and clears its dispatch on disposal
   const previous = (globalThis as Record<symbol, unknown>)[key];
   const coarse = new BufferGeometry();
   (globalThis as Record<symbol, unknown>)[key] = new WeakMap([
-    [mesh.geometry, { chain: { levels: [mesh.geometry, coarse] } }],
+    [mesh.geometry, { chain: { levels: [mesh.geometry, coarse], errors: [0, 0.25] } }],
   ]);
   try {
     syncVirtualShadowLods();
@@ -238,7 +238,8 @@ it("transfers registered LOD chain data once and clears its dispatch on disposal
     expect(dispatch).toHaveBeenCalledExactlyOnceWith({
       command: "lod",
       id: mesh.id,
-      geometry: coarse,
+      geometries: [coarse],
+      errors: [0.25],
     });
     detachVirtualShadow(node);
     expect(node.lods.size).toBe(0);

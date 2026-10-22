@@ -3,6 +3,7 @@
 #include "engine/shader/standard.h"
 #include "engine/shader/package.h"
 #include "engine/abi/bindings.h"
+#include "engine/scene/geometry.h"
 #include "engine/scene/lights.h"
 
 #include <algorithm>
@@ -126,6 +127,53 @@ void binding() {
     CHECK(sourceAngleFilterRefusal(reverse.shadow));
     setters.at("filterNode")(&reverse.shadow, Value{}, store);
     CHECK(!sourceAngleFilterRefusal(reverse.shadow));
+    // A caster's chain crosses as its derived geometries and their errors, and reaches the atlas control.
+    struct GeometryStore : Store {
+        Object object{"BufferGeometry", std::make_shared<BufferGeometry>()};
+        bool known = true;
+        Object* find(const Value&) override { return known ? &object : nullptr; }
+        Value adopt(std::string, std::shared_ptr<void>) override { return {}; }
+        Value adoptAlias(std::string, void*, void*) override { return {}; }
+        Value share(std::string, std::shared_ptr<void>) override { return {}; }
+        std::vector<double> numbers(const Value&) override { return {}; }
+    } geometries;
+    DirectionalLight chained;
+    set(&chained.shadow, options, store);
+    const auto lodCommand = [&](std::vector<Value> rungs, std::vector<double> errors) {
+        return Value::record({{"command", Value{Value::Kind::String, 0, "lod"}}, {"id", Value::of(7.0)},
+            {"geometries", Value::array(std::move(rungs))}, {"errors", Value::list(std::move(errors))}});
+    };
+    const Value rung{Value::Kind::Ref, 0, "g"};
+    set(&chained.shadow, lodCommand({rung, rung}, {0.25, 1.0}), geometries);
+    const auto& chains = chained.shadow.virtualShadow->control->lods;
+    CHECK(chains.count(7) == 1 && chains.at(7).rungs.size() == 2 && chains.at(7).errors == std::vector<double>({0.25, 1.0}));
+    const auto refusesLod = [&](Value command, bool known = true) {
+        geometries.known = known;
+        bool refused = false;
+        try { set(&chained.shadow, command, geometries); }
+        catch (const Unsupported& e) { refused = e.reason.find("TN_VIRTUAL_SHADOW_INVALID: lod") == 0; }
+        geometries.known = true;
+        return refused;
+    };
+    CHECK(refusesLod(lodCommand({rung, rung}, {0.25})));      // an error for every rung
+    CHECK(refusesLod(lodCommand({rung}, {-0.25})));           // and none negative
+    CHECK(refusesLod(lodCommand({rung}, {std::nan("")})));    // or unmeasured
+    CHECK(refusesLod(lodCommand({}, {})));                    // a chain has a rung
+    CHECK(refusesLod(lodCommand({rung}, {0.25}), false));     // that the engine holds
+    CHECK(chains.at(7).rungs.size() == 2);                    // a refused chain leaves the held one alone
+}
+
+// A level draws the coarsest rung one of its texels cannot tell from the full mesh, never one finer than
+// the main pass shows, and the mesh's own geometry (rung 0) where no rung is that accurate.
+void lodRung() {
+    const std::vector<double> errors{0.02, 0.1, 0.5};  // rungs 1 to 3
+    CHECK(shadowLodRung(errors, 0, 0.1, 1) == 2);      // 0.1 fits a texel of 0.1, 0.5 does not
+    CHECK(shadowLodRung(errors, 0, 0.6, 1) == 3);
+    CHECK(shadowLodRung(errors, 0, 0.01, 1) == 0);     // finer than the first rung: the mesh's own
+    CHECK(shadowLodRung(errors, 0, 0.1, 2) == 1);      // twice the size, twice the error: 0.2 and 0.04
+    CHECK(shadowLodRung(errors, 3, 0.6, 1) == 0);      // the main pass already shows the coarsest
+    CHECK(shadowLodRung(errors, 2, 0.1, 1) == 0);      // and a rung that is not coarser than what it shows is no change
+    CHECK(shadowLodRung({}, 0, 1, 1) == 0);
 }
 
 void policies() {
@@ -419,4 +467,4 @@ void groundWindow() {
     CHECK(!PageAtlas::create(options, error));
 }
 
-TN_TEST_MAIN({"atlas", atlas}, {"continuous_invalidation", continuousInvalidation}, {"sampling", sampling}, {"ground_window", groundWindow})
+TN_TEST_MAIN({"atlas", atlas}, {"continuous_invalidation", continuousInvalidation}, {"sampling", sampling}, {"ground_window", groundWindow}, {"lod_rung", lodRung})

@@ -65,6 +65,11 @@ const STAGE_OFF: Record<string, Record<string, boolean>> = {
 // is the sun's apex angle (its angular diameter). `sourceAngleShadowFilter` takes the angular radius,
 // the half angle: Unreal's shadow rays spread over sin(angle / 2).
 const SUN_SOURCE_ANGLE_RAD = (0.7357 * Math.PI) / 360;
+// Unreal builds the disc of a shadow ray from `cross(N, x)` and `cross(that, N)` and never normalises them
+// (`GetRandomDirectionalLightRayDir`, VirtualShadowMapProjectionDirectional.ush), so the disc is sin(the angle
+// between the sun and the x axis) times the source radius. A sun on the x axis at elevation e casts the
+// penumbra of sin(e) times the nominal angle. `vsmAngle=ue` reproduces that.
+const unrealSourceScale = (sun: { x: number }): number => Math.sqrt(1 - sun.x * sun.x);
 
 export class Reference extends Scene<GameState, IPhysicsContext> {
   static override readonly initialState: GameState = Play.initialState;
@@ -145,8 +150,13 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
       if (TUNED) {
         if (!OFF.has("vsm"))
           (key.shadow as unknown as { filterNode: unknown }).filterNode = sourceAngleShadowFilter({
-            // Diagnosis knob vsmAngle: a factor on the angular radius (1 = Unreal's measured value).
-            sourceAngleRad: SUN_SOURCE_ANGLE_RAD * Number(params.get("vsmAngle") ?? 1),
+            // Diagnosis knob vsmAngle: a factor on the angular radius (1 = Unreal's measured value,
+            // "ue" = Unreal's own scale for this sun, see unrealSourceScale).
+            sourceAngleRad:
+              SUN_SOURCE_ANGLE_RAD *
+              (params.get("vsmAngle") === "ue" ? unrealSourceScale(SUN_DIRECTION) : Number(params.get("vsmAngle") ?? 1)),
+            // Diagnosis knob vsmMinPx: the filter disc's floor in screen pixels (absent = the engine's default).
+            ...(params.get("vsmMinPx") === null ? {} : { minPenumbraPixels: Number(params.get("vsmMinPx")) }),
           });
         // Unreal's directional light shadows the whole view with camera-centred virtual shadow
         // maps. `VirtualShadowNode` is that: nested clip levels around the camera, each twice
@@ -172,6 +182,8 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
             moverMapSize: Number(params.get("vsmMover") ?? 512),
             // Diagnosis knob vsmAspect: the smallest light-space height over width of a level (1 = square).
             ...(params.get("vsmAspect") === null ? {} : { minWindowAspect: Number(params.get("vsmAspect")) }),
+            // Diagnosis knob vsmLod=0: every level draws a chain's own geometry (no shadowLodBias).
+            ...(params.get("vsmLod") === "0" ? { shadowLodBias: false } : {}),
             // Diagnosis knob recvBias=0: authored bias only (does the seam line come from the plane slope?).
             receiverPlaneBias: params.get("recvBias") !== "0",
           });

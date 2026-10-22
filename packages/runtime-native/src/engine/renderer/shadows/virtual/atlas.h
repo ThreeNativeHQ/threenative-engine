@@ -9,11 +9,29 @@ namespace tn::engine { class BufferGeometry; }
 
 namespace tn::engine::shadows {
 
+/** A caster's AutoLOD chain as a shadow level draws it: the derived rungs (rung 0 is the caster's own
+ *  geometry and is not listed) and each rung's geometric error in the geometry's local units. */
+struct ShadowLodChain {
+    std::vector<std::shared_ptr<BufferGeometry>> rungs;
+    std::vector<double> errors;
+};
+
+/**
+ * The rung (1 to n, 0 for none) a level whose texel is `texel` draws for a caster: the coarsest whose
+ * error at `scale` times the geometry's size stays within a texel, and never one finer than `shown`,
+ * the rung the main pass draws. A rung with more error than a texel is a facet on the shadow's edge.
+ */
+inline int shadowLodRung(const std::vector<double>& errors, int shown, double texel, double scale) {
+    for (int rung = int(errors.size()); rung > shown; --rung)
+        if (errors[std::size_t(rung - 1)] * scale <= texel) return rung;
+    return 0;
+}
+
 // Camera-centred cached depth pages and independently refreshed mover maps.
 struct AtlasControl {
     std::set<uint64_t> pinned, tracked;
     std::vector<Box3> regions;
-    std::map<uint64_t, std::shared_ptr<BufferGeometry>> lods;
+    std::map<uint64_t, ShadowLodChain> lods;
     bool invalidateAll = false;
 };
 struct AtlasOptions {
