@@ -224,6 +224,8 @@ void registerTypeFields(ClassBinding& b, MaterialType type) {
     materialMapSlot(b);
     if (type == MaterialType::Basic) return;
     materialBool(b, "flatShading", &Material::flatShading);
+    // An engine field three does not declare: the Two Sided Foliage marker (PRD-651), on every lit class.
+    materialBool(b, "twoSidedFoliage", &Material::twoSidedFoliage);
     // A tangent-space normal map, which the lit programs perturb with three's perturbNormal2Arb, and
     // its scale: the member alias, written whole with a Vector2 (three's setValues assigns it).
     materialMapSlot(b, "normalMap");

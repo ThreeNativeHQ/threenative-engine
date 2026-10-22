@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { PNG } from "pngjs";
 import { afterEach, describe, expect, it } from "vitest";
+import { tierQuery } from "../unreal-look/capture-gi-threenative.js";
 import {
   ciede2000,
   classify,
@@ -22,6 +23,7 @@ import {
   seedLocks,
   silhouetteIou,
 } from "../unreal-look/compare.js";
+import { compareGiToUnreal, penumbraRows, readScene, unrealVariant } from "../unreal-look/gi.js";
 
 const roots: string[] = [];
 afterEach(() => {
@@ -434,6 +436,27 @@ describe("Unreal reference comparison", () => {
           /^TN_UNREAL_LOOK_(BAD_INPUT|MISSING_CELL)/,
         );
     });
+    it("keeps the emissive sphere locked at L9 in the sun 60 and sun 15 cells, within the layer's own thresholds", () => {
+      // `--write-locks` re-seeds a layer from the cells that hold now, so a broken cell drops its
+      // lock without a word. A vignette that scaled the alpha dimmed this sphere to dP50 0.118 and
+      // deltaE 6.7 at sun 60 (0.133 and 7.2 at sun 15), and L9 carried no lock on it. This list
+      // says what must stay locked.
+      const locks = readLocks("tools/unreal-reference/parity-locks.json");
+      const limits = JSON.parse(readFileSync("tools/unreal-reference/thresholds.json", "utf8"));
+      for (const sun of ["sun60", "sun15"])
+        for (const metric of ["deltaE", "dP50"] as const) {
+          const found = locks.find(
+            (l) =>
+              l.layer === "L9" &&
+              l.sun === sun &&
+              l.pose === "spheres" &&
+              l.region === "Sphere_Emissive" &&
+              l.metric === metric,
+          );
+          expect(found, `L9 ${sun} spheres Sphere_Emissive ${metric}`).toBeDefined();
+          expect(found?.threshold).toBeLessThanOrEqual(limits.layers.L9[metric]);
+        }
+    });
     it("re-seeds only the --layer layers and keeps the other locks", () => {
       const root = locked([lock({ layer: "L2", since: "old0000" }), lock({ since: "old0000" })]);
       writeFileSync(
@@ -476,5 +499,79 @@ describe("Unreal reference comparison", () => {
     ).toEqual({ layers: ["L0", "L1", "L5"], suns: ["4"], metric: "penumbra" });
     expect(() => parseArgs(["--layer"])).toThrow(/^TN_UNREAL_LOOK_BAD_INPUT/);
     expect(() => parseArgs(["--unknown"])).toThrow(/^TN_UNREAL_LOOK_BAD_INPUT/);
+  });
+
+  describe("GI quality tiers (PRD-644)", () => {
+    it("pairs each ThreeNative tier with the Unreal level it follows", () => {
+      expect(unrealVariant("L7-low")).toBe("L7-Low");
+      expect(unrealVariant("L7-medium")).toBe("L7-Medium");
+      expect(unrealVariant("L7-high")).toBe("L7-Epic");
+      // The level flag compares one capture against another level's frame.
+      expect(unrealVariant("L7", 0)).toBe("L7-Low");
+      expect(unrealVariant("L7", 1)).toBe("L7-Medium");
+      expect(unrealVariant("L7", 3)).toBe("L7-Epic");
+    });
+    it("draws a GI tier against Epic shadows and a shadow tier against its own", () => {
+      // Unreal's GI and shadow levels are separate scalability groups: the L7-Low frame has Epic shadows.
+      expect(tierQuery("L7-low")).toBe("&tier=low&shadowTier=high");
+      expect(tierQuery("L7-high")).toBe("&tier=high&shadowTier=high");
+      expect(tierQuery("L5-Medium")).toBe("&tier=medium");
+      expect(tierQuery("L7")).toBe("");
+    });
+    it("fails closed on a layer or level that is not in the table", () => {
+      expect(() => unrealVariant("L7-ultra")).toThrow(/^TN_UNREAL_LOOK_BAD_INPUT/);
+      expect(() => unrealVariant("L7", 2)).toThrow(/^TN_UNREAL_LOOK_BAD_INPUT.*unreal level 2/);
+    });
+    it("measures the shadow edge width of a tier against Unreal's, on the floor mask", () => {
+      const { root, put } = fixture();
+      const { scene } = readScene("shadow:penumbra-lab");
+      const [floor = []] = [scene.regions.Floor];
+      // A floor run 160 px wide with one shadow edge: lit left, shadowed right, the step `blur` px wide.
+      const frame = (blur: number) =>
+        png(
+          Array.from({ length: 200 * 40 }, (_, i) => {
+            const x = (i % 200) - 100;
+            const t = Math.min(1, Math.max(0, x / blur + 0.5));
+            return gray(Math.round(220 - 150 * t));
+          }),
+          200,
+        );
+      const id = png(
+        Array.from({ length: 200 * 40 }, () => floor),
+        200,
+      );
+      for (const pose of scene.poses.map((p) => p.name)) {
+        put(`unreal/shadow/penumbra-lab/ID/${pose}.png`, id);
+        put(`threenative/shadow/penumbra-lab/ID/${pose}.png`, id);
+        put(`unreal/shadow/penumbra-lab/L5-Low/${pose}.png`, frame(2));
+        put(`threenative/shadow/penumbra-lab/L5-Low/${pose}.png`, frame(4));
+      }
+      const rows = penumbraRows("shadow:penumbra-lab", ["L5-Low"], root);
+      expect(rows.length).toBe(scene.poses.length);
+      for (const row of rows) {
+        expect(row.matched).toBeGreaterThan(0);
+        // Twice the blur is about twice the width, the ratio the PRD-634 threshold (1.25) holds.
+        expect(row.ratio).toBeGreaterThan(1.6);
+        expect(row.ratio).toBeLessThan(2.4);
+      }
+    });
+    it("throws TN_UNREAL_LOOK_MISSING_CELL naming the Unreal frame of the level when it is absent", () => {
+      const { root, put } = fixture();
+      const { scene } = readScene("cornell");
+      const [name = "", color = []] = Object.entries(scene.regions)[0] ?? [];
+      const id = png([color, color, color, color]);
+      for (const engine of ["unreal", "threenative"])
+        for (const pose of scene.poses) put(`${engine}/cornell/ID/${pose.name}.png`, id);
+      for (const pose of scene.poses)
+        put(`threenative/cornell/L7-medium/${pose.name}.png`, floor());
+      expect(name).not.toBe("");
+      expect(() => compareGiToUnreal("cornell", ["L7-medium"], root)).toThrow(
+        /^TN_UNREAL_LOOK_MISSING_CELL.*L7-Medium/,
+      );
+      for (const pose of scene.poses) put(`unreal/cornell/L7-Medium/${pose.name}.png`, floor());
+      const rows = compareGiToUnreal("cornell", ["L7-medium"], root);
+      expect(rows.length).toBeGreaterThan(0);
+      expect(new Set(rows.map((r) => r.layer))).toEqual(new Set(["L7-medium"]));
+    });
   });
 });

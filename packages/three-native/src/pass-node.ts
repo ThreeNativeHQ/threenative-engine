@@ -68,6 +68,8 @@ interface IMRTNode {
   readonly blendModes: Record<string, unknown>;
   setBlendMode(name: string, blend: unknown): IMRTNode;
   getBlendMode(name: string): unknown;
+  /** three's MRTNode.has: the render chain asks before it provisions an output. */
+  has(name: string): boolean;
 }
 
 /**
@@ -133,6 +135,7 @@ export function definePass(
         return node;
       },
       getBlendMode: (name: string): unknown => node.blendModes[name],
+      has: (name: string): boolean => name in named,
     });
     return node;
   }
@@ -274,6 +277,9 @@ export function definePass(
       }
       if (name === "output") return tsl.texture({ name: "scene" }, tsl.uv());
       if (name === "depth") return tsl.texture({ name: "depth" }, tsl.uv());
+      // The temporal pass's velocity target (the NDC difference between two frames, the camera's own motion where no
+      // rigid draw wrote one). The engine draws it while a traa() effect is in the graph, no MRT asks for it.
+      if (name === "velocity") return tsl.texture({ name: "velocity" }, tsl.uv());
       if (name === "normal" && this.#mrt?.outputs.normal === normalView)
         return tsl.texture({ name: "normal" }, tsl.uv());
       // The renderer's albedo pass: each opaque lit draw's diffuse colour in rgb, alpha 1 where it wrote one.

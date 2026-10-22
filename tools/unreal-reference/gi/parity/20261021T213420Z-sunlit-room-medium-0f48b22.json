@@ -1,0 +1,499 @@
+{
+  "version": 1,
+  "id": "20261021T213420Z-sunlit-room-medium-0f48b22",
+  "date": "2026-10-21T21:34:20.734Z",
+  "scene": "sunlit-room",
+  "tier": "medium",
+  "expect": "preserve",
+  "before": {
+    "commit": "96be19ad3e320a9d19b584a52f52a1c447f201e0",
+    "stamp": "0f48b2203462866ac6e48c1d4e54a5a38340e04100f0f72892050c95841032c3",
+    "dirty": false
+  },
+  "after": {
+    "commit": "96be19ad3e320a9d19b584a52f52a1c447f201e0",
+    "stamp": "0f48b2203462866ac6e48c1d4e54a5a38340e04100f0f72892050c95841032c3",
+    "dirty": false
+  },
+  "engine": "threenative",
+  "adapter": "nvidia turing",
+  "directLight": {
+    "pass": false,
+    "overridden": true,
+    "worst": 15.59
+  },
+  "cells": [
+    {
+      "pose": "sun60-window",
+      "verdict": "NEUTRAL",
+      "vsUnreal": "CLOSE",
+      "reasons": "Same capture for BEFORE and AFTER; the runs are identical. The wall above the window is one smooth surface with no side seams. The ceiling brightening, the glow below the window and the patch are present. The patch edge is hard, with no halo. The walls fall off smoothly.",
+      "differences": "The engine's ceiling glow above the window is much stronger and broader. The glow on the wall below the window is also stronger and wider. The window-wall is lighter than Unreal's near-black wall. Side walls are brighter, with a darker lower band. Dark junction lines at the ceiling/wall edges are slightly harder. The sky inside the window is not judged.",
+      "worst": 120,
+      "regions": [
+        {
+          "region": "Floor",
+          "dP50": 0.2692,
+          "deltaE": 2.474,
+          "dEv": null,
+          "iou": 0.999,
+          "pass": false,
+          "ratio": 26.92,
+          "spread": 0
+        },
+        {
+          "region": "Ceiling",
+          "dP50": 0.6905,
+          "deltaE": 9.654,
+          "dEv": null,
+          "iou": 0.999,
+          "pass": false,
+          "ratio": 69.05,
+          "spread": 0
+        },
+        {
+          "region": "Wall_Left",
+          "dP50": 0.24,
+          "deltaE": 4.321,
+          "dEv": null,
+          "iou": 0.9974,
+          "pass": false,
+          "ratio": 24,
+          "spread": 0
+        },
+        {
+          "region": "Wall_Right",
+          "dP50": 0.2549,
+          "deltaE": 4.286,
+          "dEv": null,
+          "iou": 0.9974,
+          "pass": false,
+          "ratio": 25.49,
+          "spread": 0
+        },
+        {
+          "region": "Front_Left",
+          "dP50": 0.6207,
+          "deltaE": 5.594,
+          "dEv": null,
+          "iou": 0.9913,
+          "pass": false,
+          "ratio": 62.07,
+          "spread": 0
+        },
+        {
+          "region": "Front_Right",
+          "dP50": 0.68,
+          "deltaE": 5.478,
+          "dEv": null,
+          "iou": 0.9912,
+          "pass": false,
+          "ratio": 68,
+          "spread": 0
+        },
+        {
+          "region": "Front_Sill",
+          "dP50": 0.9268,
+          "deltaE": 12.42,
+          "dEv": null,
+          "iou": 0.9701,
+          "pass": false,
+          "ratio": 92.68,
+          "spread": 0
+        },
+        {
+          "region": "Front_Head",
+          "dP50": 1.2,
+          "deltaE": 11.73,
+          "dEv": null,
+          "iou": 0.9764,
+          "pass": false,
+          "ratio": 120,
+          "spread": 0
+        },
+        {
+          "region": "Ground",
+          "dP50": 0.03139,
+          "deltaE": 1.553,
+          "dEv": null,
+          "iou": 0.9966,
+          "pass": false,
+          "ratio": 3.139,
+          "spread": 0
+        }
+      ]
+    },
+    {
+      "pose": "sun60-leak",
+      "verdict": "NEUTRAL",
+      "vsUnreal": "CLOSE",
+      "reasons": "Same capture for BEFORE and AFTER; the runs are identical. The corner and floor line are soft and dark with no bright line and no grain.",
+      "differences": "A bright lobe on the right wall near the right edge, with a hard-ish vertical boundary around x=950, is absent in Unreal. The left wall is lighter than Unreal's. A dark vertical line sits along the corner. The ceiling edge is curved and dark at the top.",
+      "worst": 26.92,
+      "regions": [
+        {
+          "region": "Floor",
+          "dP50": 0.1,
+          "deltaE": 1.048,
+          "dEv": null,
+          "iou": 0.998,
+          "pass": false,
+          "ratio": 10,
+          "spread": 0
+        },
+        {
+          "region": "Ceiling",
+          "dP50": 0.2692,
+          "deltaE": 2.023,
+          "dEv": null,
+          "iou": 0.9929,
+          "pass": false,
+          "ratio": 26.92,
+          "spread": 0
+        },
+        {
+          "region": "Wall_Right",
+          "dP50": 0.1071,
+          "deltaE": 1.752,
+          "dEv": null,
+          "iou": 0.9983,
+          "pass": false,
+          "ratio": 10.71,
+          "spread": 0
+        },
+        {
+          "region": "Back_Right",
+          "dP50": 0.01961,
+          "deltaE": 1.846,
+          "dEv": null,
+          "iou": 0.998,
+          "pass": false,
+          "ratio": 1.961,
+          "spread": 0
+        }
+      ]
+    },
+    {
+      "pose": "sun60-door",
+      "verdict": "NEUTRAL",
+      "vsUnreal": "CLOSE",
+      "reasons": "Same capture for BEFORE and AFTER; the runs are identical. Walls are smooth and neutral. The opening is near black. The head above it joins the wall without a line.",
+      "differences": "Engine walls are more neutral grey. Unreal's are cooler blue-grey and slightly darker. A tiny bright dot sits at the ceiling/wall corner near x=497,y=52. The ceiling is slightly lighter.",
+      "worst": 64.29,
+      "regions": [
+        {
+          "region": "Floor",
+          "dP50": 0.09524,
+          "deltaE": 1.212,
+          "dEv": null,
+          "iou": 0.9974,
+          "pass": false,
+          "ratio": 9.524,
+          "spread": 0
+        },
+        {
+          "region": "Ceiling",
+          "dP50": 0.6429,
+          "deltaE": 2.669,
+          "dEv": null,
+          "iou": 0.9858,
+          "pass": false,
+          "ratio": 64.29,
+          "spread": 0
+        },
+        {
+          "region": "Wall_Left",
+          "dP50": 0.1212,
+          "deltaE": 1.61,
+          "dEv": null,
+          "iou": 0.9975,
+          "pass": false,
+          "ratio": 12.12,
+          "spread": 0
+        },
+        {
+          "region": "Back_Left",
+          "dP50": 0.1176,
+          "deltaE": 2.537,
+          "dEv": null,
+          "iou": 0.9891,
+          "pass": false,
+          "ratio": 11.76,
+          "spread": 0
+        },
+        {
+          "region": "Back_Right",
+          "dP50": 0.1042,
+          "deltaE": 2.068,
+          "dEv": null,
+          "iou": 0.9987,
+          "pass": false,
+          "ratio": 10.42,
+          "spread": 0
+        },
+        {
+          "region": "Back_Head",
+          "dP50": 0.02632,
+          "deltaE": 3.124,
+          "dEv": null,
+          "iou": 0.9892,
+          "pass": false,
+          "ratio": 3.124,
+          "spread": 0
+        },
+        {
+          "region": "Hall_Back",
+          "dP50": 0.5,
+          "deltaE": 0.5385,
+          "dEv": null,
+          "iou": 0.9634,
+          "pass": false,
+          "ratio": 50,
+          "spread": 0
+        }
+      ]
+    },
+    {
+      "pose": "sun15-window",
+      "verdict": "NEUTRAL",
+      "vsUnreal": "CLOSE",
+      "reasons": "Same capture for BEFORE and AFTER; the runs are identical. The walls and ceiling are smooth and warm, brightest near the window, with no grain. The window-wall pieces show no seams. The left-wall base has no pale line.",
+      "differences": "Engine walls and ceiling are lighter and greyer-warm than Unreal's darker brown. The side walls have dark edge lines at the wall junctions and the ceiling edges. The patch edge shows slight stair-step banding at the top. The floor is brighter than Unreal's.",
+      "worst": 44.83,
+      "regions": [
+        {
+          "region": "Floor",
+          "dP50": 0.2963,
+          "deltaE": 2.883,
+          "dEv": null,
+          "iou": 0.999,
+          "pass": false,
+          "ratio": 29.63,
+          "spread": 0
+        },
+        {
+          "region": "Ceiling",
+          "dP50": 0.3864,
+          "deltaE": 5.688,
+          "dEv": null,
+          "iou": 0.999,
+          "pass": false,
+          "ratio": 38.64,
+          "spread": 0
+        },
+        {
+          "region": "Wall_Left",
+          "dP50": 0.2727,
+          "deltaE": 3.664,
+          "dEv": null,
+          "iou": 0.9974,
+          "pass": false,
+          "ratio": 27.27,
+          "spread": 0
+        },
+        {
+          "region": "Wall_Right",
+          "dP50": 0.1667,
+          "deltaE": 2.68,
+          "dEv": null,
+          "iou": 0.9974,
+          "pass": false,
+          "ratio": 16.67,
+          "spread": 0
+        },
+        {
+          "region": "Front_Left",
+          "dP50": 0.2857,
+          "deltaE": 4.179,
+          "dEv": null,
+          "iou": 0.9913,
+          "pass": false,
+          "ratio": 28.57,
+          "spread": 0
+        },
+        {
+          "region": "Front_Right",
+          "dP50": 0.4483,
+          "deltaE": 3.912,
+          "dEv": null,
+          "iou": 0.9912,
+          "pass": false,
+          "ratio": 44.83,
+          "spread": 0
+        },
+        {
+          "region": "Front_Sill",
+          "dP50": 0.2857,
+          "deltaE": 3.602,
+          "dEv": null,
+          "iou": 0.9701,
+          "pass": false,
+          "ratio": 28.57,
+          "spread": 0
+        },
+        {
+          "region": "Front_Head",
+          "dP50": 0.2444,
+          "deltaE": 4.04,
+          "dEv": null,
+          "iou": 0.9764,
+          "pass": false,
+          "ratio": 24.44,
+          "spread": 0
+        },
+        {
+          "region": "Ground",
+          "dP50": 0.1105,
+          "deltaE": 5.514,
+          "dEv": null,
+          "iou": 0.9966,
+          "pass": false,
+          "ratio": 11.05,
+          "spread": 0
+        }
+      ]
+    },
+    {
+      "pose": "sun15-leak",
+      "verdict": "NEUTRAL",
+      "vsUnreal": "CLOSE",
+      "reasons": "Same capture for BEFORE and AFTER; the runs are identical. Corner and floor line are soft, with no bright line and no grain. The walls are warm brown as in Unreal.",
+      "differences": "Engine left wall has a warm brighter band at the left edge and a vertical gradient that Unreal does not show. The right wall shows a darker patch at the lower right. A faint dark line runs down the vertical corner edge. The ceiling edge has a curved dark rim at the top. Overall the engine is slightly brighter than Unreal.",
+      "worst": 38.71,
+      "regions": [
+        {
+          "region": "Floor",
+          "dP50": 0.25,
+          "deltaE": 1.822,
+          "dEv": null,
+          "iou": 0.998,
+          "pass": false,
+          "ratio": 25,
+          "spread": 0
+        },
+        {
+          "region": "Ceiling",
+          "dP50": 0.3871,
+          "deltaE": 3.761,
+          "dEv": null,
+          "iou": 0.9929,
+          "pass": false,
+          "ratio": 38.71,
+          "spread": 0
+        },
+        {
+          "region": "Wall_Right",
+          "dP50": 0.0566,
+          "deltaE": 1.191,
+          "dEv": null,
+          "iou": 0.9983,
+          "pass": false,
+          "ratio": 5.66,
+          "spread": 0
+        },
+        {
+          "region": "Back_Right",
+          "dP50": 0.1702,
+          "deltaE": 2.967,
+          "dEv": null,
+          "iou": 0.998,
+          "pass": false,
+          "ratio": 17.02,
+          "spread": 0
+        }
+      ]
+    },
+    {
+      "pose": "sun15-door",
+      "verdict": "NEUTRAL",
+      "vsUnreal": "CLOSE",
+      "reasons": "BEFORE and AFTER are the same capture (same paths); run1 and run2 look identical. Walls are smooth and warm, no grain. The patch has a hard edge, and the opening is near black. The wall at the door and the head above it join without a line. The ceiling/back-wall junction is clean.",
+      "differences": "Engine walls are lighter and warmer than Unreal. Engine floor outside the patch is a little brighter. The back-wall glow beside the door is stronger. A thin dark vertical line sits at the left/back wall corner. The patch spill on the left wall looks softer-edged. The ceiling strip is lighter.",
+      "worst": 70.45,
+      "regions": [
+        {
+          "region": "Floor",
+          "dP50": 0.5333,
+          "deltaE": 5.216,
+          "dEv": null,
+          "iou": 0.9974,
+          "pass": false,
+          "ratio": 53.33,
+          "spread": 0
+        },
+        {
+          "region": "Ceiling",
+          "dP50": 0.04396,
+          "deltaE": 2.805,
+          "dEv": null,
+          "iou": 0.9858,
+          "pass": false,
+          "ratio": 4.396,
+          "spread": 0
+        },
+        {
+          "region": "Wall_Left",
+          "dP50": 0.7045,
+          "deltaE": 10.05,
+          "dEv": null,
+          "iou": 0.9975,
+          "pass": false,
+          "ratio": 70.45,
+          "spread": 0
+        },
+        {
+          "region": "Back_Left",
+          "dP50": 0.3182,
+          "deltaE": 7.171,
+          "dEv": null,
+          "iou": 0.9891,
+          "pass": false,
+          "ratio": 31.82,
+          "spread": 0
+        },
+        {
+          "region": "Back_Right",
+          "dP50": 0.25,
+          "deltaE": 4.223,
+          "dEv": null,
+          "iou": 0.9987,
+          "pass": false,
+          "ratio": 25,
+          "spread": 0
+        },
+        {
+          "region": "Back_Head",
+          "dP50": 0.04478,
+          "deltaE": 1.15,
+          "dEv": null,
+          "iou": 0.9892,
+          "pass": false,
+          "ratio": 4.478,
+          "spread": 0
+        },
+        {
+          "region": "Hall_Back",
+          "dP50": 0.25,
+          "deltaE": 2.379,
+          "dEv": null,
+          "iou": 0.9634,
+          "pass": false,
+          "ratio": 25,
+          "spread": 0
+        }
+      ]
+    }
+  ],
+  "overall": {
+    "verdict": "NEUTRAL",
+    "vsUnreal": "CLOSE",
+    "reasons": "The BEFORE and AFTER paths are identical for every pose, so this is one capture and nothing changed. The run1 and run2 frames look identical. No grain, seams or bright lines appear. Lighting is the same type as Unreal but brighter and more diffuse. The biggest gaps are the strong ceiling and wall glow in sun60-window and the bright lobe in sun60-leak. The sun15 walls are lighter than Unreal's."
+  },
+  "judge": {
+    "model": "claude-sonnet-5-5",
+    "sessionId": "d9a2c48c-5af7-4172-b426-9ddc732ee983",
+    "costUsd": 0.1598134,
+    "durationMs": 21451,
+    "criteriaSha256": "bb9621f3f9d5584799b11e429e9dc30bc538eba17935a46e052e25aee9553d14"
+  }
+}

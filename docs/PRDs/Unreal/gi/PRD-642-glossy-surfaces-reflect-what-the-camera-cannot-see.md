@@ -4,11 +4,11 @@ prd_contract: v1
 
 # PRD-642 — Glossy surfaces reflect what the camera cannot see
 
-**Status:** NOT STARTED
+**Status:** PARTIAL (Phase 1 measured; Phase 2 in progress)
 **Priority:** P2 — no box is ticked: a reflection ray that leaves the screen falls back to the sky environment, so a chrome sphere in a room reflects the sky and not the room behind the camera.
 **Complexity:** 7 (HIGH) — 6–10 files: the reflection trace, rough specular, the denoise, specs, conformance (+2), new module `traced-reflections.ts` (+2), history state (+2), native proof (+1); risk override: none
 **Owner:** João
-**Depends on:** [PRD-603](../rendering/PRD-603-probes-refresh-by-tracing-the-packed-scene-not-by-drawing-it-six-times.md) Phase 2 (the radiance cache that rough reflections read and the BVH trace). [PRD-639](PRD-639-a-surface-cache-gives-traced-rays-the-texture-glow-and-lights-of-what-they-hit.md) Phase 2 (what a reflection ray sees at its hit). [PRD-641](PRD-641-bounce-light-holds-still-while-the-camera-moves-and-follows-a-light-that-changes.md) Phase 2 (the history code it reuses). [PRD-638](PRD-638-calibration-scenes-are-built-in-unreal-and-captured-as-the-gi-target.md) Phase 1, [PRD-646](PRD-646-threenative-recreates-each-unreal-calibration-scene-exactly.md) Phase 2 and [PRD-647](PRD-647-a-visual-judge-calibrates-gi-against-the-unreal-scenes-until-parity.md): this PRD adds the `chrome` pose to the `neon-corridor` calibration scene. [PRD-VQ-03](../../rendering/PRD-VQ-03-local-reflection-probes.md) owns the reflection captures that the tiers without traced reflections use.
+**Depends on:** [PRD-603](../rendering/PRD-603-probes-refresh-by-tracing-the-packed-scene-not-by-drawing-it-six-times.md) Phase 2 (the radiance cache that rough reflections read and the BVH trace). [PRD-639](PRD-639-a-surface-cache-gives-traced-rays-the-texture-glow-and-lights-of-what-they-hit.md) Phase 2 (what a reflection ray sees at its hit). [PRD-641](PRD-641-bounce-light-holds-still-while-the-camera-moves-and-follows-a-light-that-changes.md) Phase 2 (the history code it reuses). [PRD-638](PRD-638-calibration-scenes-are-built-in-unreal-and-captured-as-the-gi-target.md) Phase 1, [PRD-646](PRD-646-threenative-recreates-each-unreal-calibration-scene-exactly.md) Phase 2 and [PRD-647](../../done/PRD-647-a-visual-judge-calibrates-gi-against-the-unreal-scenes-until-parity.md): this PRD adds the `chrome` pose to the `neon-corridor` calibration scene. [PRD-VQ-03](../../rendering/PRD-VQ-03-local-reflection-probes.md) owns the reflection captures that the tiers without traced reflections use.
 
 ## Context
 
@@ -52,7 +52,7 @@ prd_contract: v1
    Classify each wrong region by cause: the reflected object is off screen, behind the camera,
    beyond `maxDistance`, or the surface is rougher than 0.4. Only the measured causes are built.
 2. **`TracedReflections` (Phase 2).** For pixels with roughness up to `maxRoughnessToTrace` (0.4,
-   fade 0.1), an `ssr` miss continues as a ray through `GPUSceneBVH`. The hit reads the
+   fade 0.1), a reflection ray walks the scene's packed triangles (D2). The hit reads the
    Surface Cache colour (PRD-639) lit by the sun with one shadow ray, plus the radiance cache at
    the hit for its bounce. A miss reads the sky environment. The `ssr` stage stays the screen part
    and keeps its name.
@@ -88,10 +88,11 @@ stays out of the API. The options keep Unreal's names in camelCase: `maxRoughnes
 ## Execution Phases
 
 #### Phase 1: Which reflections are wrong, and why
-**Status:** NOT STARTED
+**Status:** PARTIAL
 **Files:** `tools/unreal-reference/gi/neon-corridor/{scene.py,criteria.md}` (the `chrome` pose; the scene comes from PRD-639 or is created here)
 - [ ] The `chrome` pose is ready to calibrate: authored and captured in Unreal, recreated with direct light matching (PRD-646), and its PRD-647 criteria written. proof: `pnpm unreal-look:capture --engine unreal --scene gi:neon-corridor --check-cvars` and `pnpm unreal-look:compare --scene gi:neon-corridor --layer L1`.
-- [ ] Each wrong L8 region is listed with its cause under `## Decisions`. proof: `pnpm unreal-look:compare --layer L8` and `--scene gi:neon-corridor --layer L8`.
+- [x] Each wrong L8 region of the PRD-631 spheres scene is listed with its cause under `## Decisions` (D1). proof: `pnpm unreal-look:compare --layer L8` on `reflect-before` (exit 1, 7/84 rows pass), and `?off=ssr`, `?off=reflcap`, `?off=gi` ablations of the same cells. Evidence: D1.
+- [ ] Each wrong L8 region of the `chrome` pose is listed with its cause under `## Decisions`. proof: `pnpm unreal-look:compare --scene gi:neon-corridor --layer L8`. Open: the scene is not on the epic yet and GI scenes have no L8 variant (D4).
 
 #### Phase 2: Reflection rays leave the screen
 **Status:** NOT STARTED
@@ -106,3 +107,70 @@ stays out of the API. The options keep Unreal's names in camelCase: `maxRoughnes
 **Files:** `packages/core/src/render/traced-reflections.ts`, `packages/core/__tests__/traced-reflections.spec.ts`, `packages/runtime-native/conformance/scenes/shared/traced-reflections.js` (new), `packages/runtime-native/conformance/registry.json`
 - [ ] A surface at roughness 0.6 indoors reads the radiance cache, not the sky, and a surface above 0.8 takes the diffuse GI. proof: `pnpm exec vitest run packages/core/__tests__/traced-reflections.spec.ts`.
 **Verification:** AC-3, and the PRD-641 flicker metric on the `pan` run for the chrome sphere region.
+
+## Decisions
+
+### D1 — What is wrong at L8, and why (2026-10-21, reflect-lane)
+
+BEFORE is epic head `7688a516e`, owned engine, NVIDIA adapter, `pnpm unreal-look:capture --layers ID,L5,L8`.
+Numbers come from `pnpm unreal-look:compare --layer L8` (median Lab deltaE, relative p50 difference; the
+threshold is deltaE 1 and dP50 0.01). Causes come from ablations of the same cells with `?off=ssr`, `?off=reflcap`
+and `?off=gi`. The `base` ablation reproduced BEFORE to the digit (chrome 1.78 and 4.55), so the ablations are exact.
+
+| Region | Cell | deltaE | dP50 | What the eye sees against Unreal | Cause |
+|---|---|---:|---:|---|---|
+| Sphere_Chrome | sun60 | 1.78 | 0.000 | Reflected neighbours flat white and blocky. Hard sun halo with one black texel. Small hard clouds. | 1, 2, 3 |
+| Sphere_Chrome | sun15 | 4.55 | 0.126 | Stair-stepped edge across the floor half. Radial streaks. Flat neighbours. Reflected floor too bright. | 1, 2, 4 |
+| Sphere_Chrome | sun04 | 3.40 | 0.196 | Same as sun15. | 1, 2, 4 |
+| Sphere_SmoothDielectric | sun60, sun15, sun04 | 0.79, 2.59, 8.26 | 0.013, 0.031, 0.153 | Brighter than Unreal. | 5 |
+
+1. **The `ssr` stage breaks the chrome sphere.** With `?off=ssr` the stair-stepped edge, the radial streaks and the
+   flat white neighbours are gone, and the neighbours show Unreal's grey shading (chrome sun15: deltaE 4.55 to 3.88).
+   A screen trace holds only the side of an object that the camera sees. A ray that leaves the chrome sphere for the
+   far side of a neighbour finds the camera-facing pixel near its silhouette, which is lit white. Where the hit ends,
+   the static cube capture shows the true floor, and the two disagree: that seam is the stair-stepped edge.
+   This is the case this PRD names: the reflected side is off screen. Layer: engine `ssr`
+   (`packages/three-native/src/addons/screen-space.ts`) and the harness stage that adds it
+   (`worldEnvironment.ts`, stage `ssr`). The trace fixes it for every game, so the fix is engine mechanism.
+2. **The sun halo has one black texel, and its clouds are too sharp.** Both survive `?off=ssr,reflcap`, so they
+   are in the 64 x 32 environment canvas (`gpuSky.ts`, `createGpuSky`) and not in the reflection stages. The
+   cube capture draws the live sky at 256 px per face: its clouds are smaller and harder than Unreal's soft
+   reflected clouds. The environment alone has the right softness. Layer: sky. Owner: sky-lane, told on 2026-10-21.
+   This lane keeps the environment as the miss colour and does not change how it is built.
+3. **The cube capture covers one sphere.** `TN_REFLECTION_CAPTURE` reports `objects: 1` (`metalness >= 0.9` and
+   `roughness <= 0.3`). A glossy floor, a wet wall or a second mirror has no capture, only the sky and the paint.
+4. **The lower half of every mirror is a painted flat colour.** `?off=ssr,reflcap` shows a flat tan floor (chrome
+   sun15 p50 116 against Unreal 87). `?off=ssr,reflcap,gi` shows black below the horizon: the sky has no ground
+   (`paintGround` in `giCache.ts` is the only floor). Layer: harness trick, deleted in Phase 2.
+5. **The smooth dielectric sphere is not a reflection-ray fault.** `ssr` changes its deltaE by 0.00 (the Fresnel term
+   is 0.04) and `?off=gi` changes it by at most 0.3. The error is the sphere's own brightness (sun04 p50 196 against
+   Unreal 170). Cause open: it belongs to the diffuse and specular lighting of L7 and L8, not to this PRD's ray.
+   AC-1 can pass for this region only if that lighting is fixed by its owner.
+
+Other L8 regions fail too (floor, sky, room, backlit wall: worst deltaE 14.6). They are not reflection regions and
+belong to the GI, sky and shadow PRDs.
+
+### D2 — The trace uses its own packed BVH, not `GPUSceneBVH` (2026-10-21)
+
+The owned engine refuses `bvhIntersectFirstHit` (`packages/three-native/src/addons/mesh-bvh-webgpu.ts`,
+`unsupportedExport`), and its `wgslFn` takes only scalar, vector and matrix parameters: no storage pointer and no
+include. `GPUSceneBVH`'s trace cannot run there. `TracedReflections` packs the world-space triangles into three
+RGBA32F textures on the CPU (`packages/core/src/render/scene-trace.ts`) and walks them with a stackless
+skip-pointer loop in the engine's TSL subset (`Fn`, `If`, `Loop`, `textureLoad`). One kernel then serves the
+browser, the Wasm engine and the desktop player. The CPU walk (`traceScene`) is the reference the spec holds the
+pack to: it matches three's `Raycaster` on 400 random rays.
+
+### D3 — Dependencies not done (2026-10-21)
+
+PRD-603, PRD-639 and PRD-641 are not done. This PRD does not wait for them. A hit is lit by the sun with one shadow
+ray through the same pack, plus the harness radiance cache (`giCache.irradiance`) for the bounce, plus the
+material's emissive colour. The PRD-639 Surface Cache replaces that hit lighting when it lands. The PRD-641 history
+code replaces the reflection history in Phase 3 when it lands.
+
+### D4 — The `chrome` pose and AC-2 (2026-10-21)
+
+The `cornell` scene (`tools/unreal-reference/gi/cornell/scene.py`) has no chrome sphere, and the GI scenes support
+only the layers ID, L1, L7 and L9, so `--scene gi --layer L8` cannot run today. The `neon-corridor` scene exists
+only on `lane/surface` (commit `84f1682c5`) and has no glossy object. The sunlit-room and `cornell` surfaces all
+have roughness 1.0, so they have no glossy region to list. AC-2 needs a chrome sphere in `cornell`, an L8
+variant of the GI scenes, and an Unreal capture of both. They come after Phase 2 proves on the spheres scene.

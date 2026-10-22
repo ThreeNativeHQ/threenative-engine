@@ -3358,10 +3358,11 @@ void maskedShadow() {
     CHECK(frontFacingLight < 0.05);        // three's shadowSide: a FrontSide caster draws its back faces
 }
 
-// PRD-651: a two-sided, alpha-tested receiver (a leaf card) looks its shadow up where it stands, and a
-// source-angle filter widens to Unreal's 5 degree minimum on it. A plate 1 m above the floor with the sun
-// at 45 degrees throws an edge at x = 1; a normal bias b along the floor's normal moves a biased lookup's
-// edge to x = 1 - b. The floor is the receiver: a leaf skips the bias, a one-sided or uncut floor keeps it.
+// PRD-651: a receiver marked twoSidedFoliage (Unreal's Two Sided Foliage shading model) looks its shadow
+// up where it stands, and a source-angle filter widens to Unreal's 5 degree minimum on it. A plate 1 m
+// above the floor with the sun at 45 degrees throws an edge at x = 1; a normal bias b along the floor's
+// normal moves a biased lookup's edge to x = 1 - b. The floor is the receiver: a marked floor skips the
+// bias, and a floor with two sides and a cut but no marker (Unreal's default lit) keeps it.
 void leafReceiver() {
     mystral::webgpu::Context context;
     CHECK(context.initializeHeadless());
@@ -3404,8 +3405,8 @@ void leafReceiver() {
         };
         return Edge{(cross(0.5) - 48) / 16.0, (cross(0.85) - cross(0.15)) / 16.0};
     };
-    // One floor, one plate, a sun at 45 degrees; the receiver's side, cut and the light's bias vary.
-    const auto edge = [&](Side side, double alphaTest, double normalBias, bool filter) {
+    // One floor, one plate, a sun at 45 degrees; the receiver's marker, side and cut and the light's bias vary.
+    const auto edge = [&](bool foliage, Side side, double alphaTest, double normalBias, bool filter) {
         Scene scene;
         DirectionalLight light{Color(1, 1, 1), 3};
         light.position.set(-5, 5, 0);
@@ -3427,6 +3428,7 @@ void leafReceiver() {
         auto material = std::make_shared<Material>(MaterialType::Standard);
         material->side = side;
         material->alphaTest = alphaTest;
+        material->twoSidedFoliage = foliage;
         Mesh floor{makePlaneGeometry(6, 6), material};
         floor.rotation.set(-M_PI / 2, 0, 0);
         floor.setReceiveShadow(true);
@@ -3446,19 +3448,24 @@ void leafReceiver() {
         return edgeOf(line);
     };
     const double bias = 0.4;
-    const Edge unbiased = edge(Side::Front, 0, 0, false);
-    const Edge biased = edge(Side::Front, 0, bias, false);
-    const Edge leaf = edge(Side::Double, 0.5, bias, false);
-    const Edge twoSidedUncut = edge(Side::Double, 0, bias, false);
-    std::printf("leaf receiver bias: unbiased %.3f, biased %.3f, leaf %.3f, two-sided uncut %.3f\n", unbiased.at, biased.at,
-                leaf.at, twoSidedUncut.at);
+    const Edge unbiased = edge(false, Side::Front, 0, 0, false);
+    const Edge biased = edge(false, Side::Front, 0, bias, false);
+    const Edge leaf = edge(true, Side::Double, 0.5, bias, false);
+    const Edge marked = edge(true, Side::Front, 0, bias, false);
+    const Edge plainCut = edge(false, Side::Double, 0.5, bias, false);
+    std::printf("leaf receiver bias: unbiased %.3f, biased %.3f, marked leaf %.3f, marked alone %.3f, plain cut %.3f\n",
+                unbiased.at, biased.at, leaf.at, marked.at, plainCut.at);
     CHECK(unbiased.at - biased.at > 0.3);          // the bias moves an ordinary receiver's edge by about b
-    CHECK(std::abs(leaf.at - unbiased.at) < 0.1);  // a leaf keeps the unbiased edge
-    CHECK(std::abs(twoSidedUncut.at - biased.at) < 0.1);  // two sides without a cut is not a leaf
-    const Edge hard = edge(Side::Front, 0, 0, true);
-    const Edge soft = edge(Side::Double, 0.5, 0, true);
-    std::printf("leaf receiver source: ordinary edge width %.3f m, leaf %.3f m\n", hard.width, soft.width);
-    CHECK(soft.width > hard.width + 0.15);         // the 5 degree minimum widens the leaf's penumbra
+    CHECK(std::abs(leaf.at - unbiased.at) < 0.1);  // a marked leaf keeps the unbiased edge
+    CHECK(std::abs(marked.at - unbiased.at) < 0.1);       // the marker alone is the shading model
+    CHECK(std::abs(plainCut.at - biased.at) < 0.1);       // two sides and a cut without it stay default lit
+    const Edge hard = edge(false, Side::Front, 0, 0, true);
+    const Edge hardCut = edge(false, Side::Double, 0.5, 0, true);
+    const Edge soft = edge(true, Side::Double, 0.5, 0, true);
+    std::printf("leaf receiver source: ordinary edge width %.3f m, plain cut %.3f m, marked leaf %.3f m\n", hard.width,
+                hardCut.width, soft.width);
+    CHECK(soft.width > hard.width + 0.15);         // the 5 degree minimum widens the marked leaf's penumbra
+    CHECK(std::abs(hardCut.width - hard.width) < 0.05);   // a plain cut card keeps the sun's own source
 }
 
 // sourceRadiusShadowFilter on a lamp (PRD-650): a plate 2 m under a lamp 4 m above the floor throws an

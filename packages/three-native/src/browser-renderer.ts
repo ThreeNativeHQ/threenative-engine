@@ -134,6 +134,16 @@ export function defineWebRenderer(
         graphKeys: 0,
         programs: 0,
         frameGateSkips: 0,
+        // The temporal pass, read from the engine each frame. `active` is false until a traa() effect is in the post
+        // graph, so a graph that never reached the engine shows here as a pass that never ran.
+        temporal: {
+          active: false,
+          frame: 0,
+          historyValid: false,
+          jitter: [0, 0] as [number, number],
+        },
+        // The samples the scene draws with. `samples` above is what was asked for; 1 here while the temporal pass runs.
+        samples: 1,
       },
       // three's Info: render() adds to drawCalls and triangles, and the caller resets once per frame, so a
       // frame that draws its world and then its overlay reports both (core does this in onBeginFrame).
@@ -371,6 +381,13 @@ export function defineWebRenderer(
       engine.bindGroups = module._tnw_web_frame(4);
       engine.graphKeys = module._tnw_web_frame(5);
       engine.programs = module._tnw_web_frame(6);
+      const temporal = engine.temporal;
+      temporal.active = module._tnw_web_frame(13) === 1;
+      temporal.frame = module._tnw_web_frame(14);
+      temporal.historyValid = module._tnw_web_frame(15) === 1;
+      temporal.jitter[0] = module._tnw_web_frame(16);
+      temporal.jitter[1] = module._tnw_web_frame(17);
+      engine.samples = module._tnw_web_frame(18);
     }
 
     /** three's output and shadow settings, handed to the engine when they change. */
