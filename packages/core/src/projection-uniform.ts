@@ -1,5 +1,6 @@
 import type { Color, Material } from "three";
 
+import { materialFieldNames, materialFieldValues } from "./material-fields.js";
 import { tintableMaterial } from "./projection-skinned.js";
 
 /**
@@ -165,8 +166,8 @@ function signatureTextOf(
  */
 export function uniformSignatureOf(material: Material): string | undefined {
   if (!uniformEligible(material)) return undefined;
-  const keys = Object.keys(material);
-  const values = Object.values(material);
+  const keys = materialFieldNames(material);
+  const values = materialFieldValues(material);
   let record = records.get(material);
   if (record === undefined) {
     record = {
@@ -263,7 +264,7 @@ export function uniformUnchanged(material: Material): boolean {
   // disappeared comes with it. Reading each value by name instead is what this replaced, and it is
   // several times slower: an engine cannot fold a lookup through a variable, so eighty-one of
   // them per material is eighty-one dictionary probes, against one copy of eighty-one slots.
-  const current = Object.values(material);
+  const current = materialFieldValues(material);
   const {
     values,
     identityRanges,

@@ -289,7 +289,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Measured 2026-10-16 through createProject after starter's completed-work quality fallback fix.
   // Recomputed 2026-10-16: starter's adaptiveQuality split its policy resolution into qualityPolicy.ts
   // to stay under the 200-line render-file cap; only starter's tree moves.
-  starter: "35824c2bc2af68a15791b740c88275462182eff5c2713e7de42253da89de785a",
+  starter: "76931db1bafba014b383523f4053f281bc6bc925fd71aac91e323c359b8d5588",
   "tower-defense": "1d692d77c9422d5a0a1665988fcca0954063e868d5976c9a4831b356fef13e20",
 };
 

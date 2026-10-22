@@ -12,6 +12,7 @@ import {
 } from "three";
 import { isEngineRenderHook } from "./engine-render-hook.js";
 import { INSTANCED_LOD_MAX_PIXEL_ERROR } from "./instanced-batch-lod.js";
+import { materialFieldNames, materialFieldValues } from "./material-fields.js";
 import { baseGeometryOf } from "./model-lod.js";
 import { DISCRETE_LOD_DEFAULT_HYSTERESIS, type ILodView, selectLodLevel } from "./model-lod.js";
 import { displacesVertices } from "./projection-plan.js";
@@ -247,7 +248,7 @@ export function measureCellProxy(
     }
     triangles += (geometry.index?.count ?? geometry.getAttribute("position").count) / 3;
     draws++;
-    for (const value of Object.values(node.material))
+    for (const value of materialFieldValues(node.material))
       if (value instanceof Texture) textures.add(value);
   });
   if (triangles !== proxy.triangles || draws !== proxy.materialGroups)
@@ -302,7 +303,8 @@ export function cellProxyMaterialMatches(a: Material, b: Material): boolean {
   if (a.type !== b.type) return false;
   const descriptor = (material: Material): string => {
     const fields: Record<string, unknown> = {};
-    for (const [name, value] of Object.entries(material)) {
+    for (const name of materialFieldNames(material)) {
+      const value = (material as unknown as Record<string, unknown>)[name];
       if (
         ["id", "uuid", "name", "version", "userData"].includes(name) ||
         value instanceof Texture ||

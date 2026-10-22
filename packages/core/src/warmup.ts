@@ -1,6 +1,7 @@
 import type { Camera, Object3D, Texture } from "three";
 import { pmremTexture } from "three/tsl";
 
+import { materialFieldValues } from "./material-fields.js";
 import type { IPipelineCensus } from "./pipeline-census.js";
 import { STARTUP_HOLD_BUDGET_MS } from "./startup-readiness.js";
 
@@ -777,7 +778,7 @@ function hasReflector(scene: Object3D): boolean {
       !read.has(material)
     ) {
       read.add(material);
-      for (const value of Object.values(material as Record<string, unknown>)) {
+      for (const value of materialFieldValues(material)) {
         if (nodeHasReflector(value, 0)) return true;
       }
     }
