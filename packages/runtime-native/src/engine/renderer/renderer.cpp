@@ -3843,10 +3843,11 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     for (size_t i = 0; i < postTextures_.size(); ++i) {
         const auto& [name, source] = postTextures_[i];
         const auto* texture = materialTexture(*source);
-        if (newTextures || postTextureVersions_[i] != source->version() || postTextureViews_[i] != texture->view) releaseOutputGroup();
+        const bool remade = newTextures || postTextureVersions_[i] != source->version() || postTextureViews_[i] != texture->view;
+        if (remade) releaseOutputGroup();
         postTextureVersions_[i] = source->version();
         postTextureViews_[i] = texture->view;
-        if (postEffects_) postEffects_->input(name, texture->view, texture->sampler);
+        if (postEffects_) postEffects_->input(name, texture->view, texture->sampler, remade);
     }
     if (!postTextures_.empty() && !outputGroup_)
         outputGroup_ = bindGroup(outputLayout_, outputFragment_, outputUniforms_, postScene(), outputSampler_,
