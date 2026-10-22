@@ -349,6 +349,12 @@ if(TN_NODE_EXECUTABLE)
         COMMAND ${TN_NODE_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/player-temporal-aa.mjs
             $<TARGET_FILE:tn-native-engine-player-v8>)
     set_tests_properties(native_engine_player_temporal_aa PROPERTIES LABELS "native-engine" TIMEOUT 180)
+    # PRD-644 and PRD-652: the player publishes GPU stage times (`info.engine.gpuStages`) for GIBudget and
+    # ShadowFilterBudget, and starts timing only when a reader asks.
+    add_test(NAME native_engine_player_gpu_stages
+        COMMAND ${TN_NODE_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/player-gpu-stages.mjs
+            $<TARGET_FILE:tn-native-engine-player-v8>)
+    set_tests_properties(native_engine_player_gpu_stages PROPERTIES LABELS "native-engine" TIMEOUT 180)
     # PRD-573 v1.11: a settled R2 frame of 1,024 cubes costs at most 3.5 crossings per cube. Red until step 3 (host
     # projection) landed, green since: 10.26 per cube at step 0, 0.01 with the mirror gone.
     add_test(NAME native_engine_player_crossing_budget

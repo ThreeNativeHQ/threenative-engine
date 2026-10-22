@@ -373,6 +373,9 @@ public:
     void setPostSource(const Renderer* main) { postSource_ = main; }
     WGPUTextureView sceneDepthView() const { return depthView_; }
     WGPUTextureView sceneColorView() const { return sceneView_; }
+    /** The format the scene colour is drawn and read in: RGBA16Float, or RGBA32Float for a FloatType render target (a 32-bit target is never multisampled). */
+    void setSceneFormat(WGPUTextureFormat format);
+    WGPUTextureFormat sceneFormat() const { return sceneFormat_; }
     /** Linear filtering, clamped to the edge: three's RenderTarget texture defaults. */
     WGPUSampler linearClampSampler();
     void setVirtualShadow(std::size_t light, const shadows::AtlasOptions& options);
@@ -772,7 +775,7 @@ private:
     void rebuildGroups();
     void releaseTargets();
     void resolveDepth(WGPUCommandEncoder encoder);  // 4x: depth_ takes sample 0 of msaaDepth_
-    GpuStatus readRgba16(WGPUTexture texture, ReadbackCallback done);
+    GpuStatus readRgba16(WGPUTexture texture, ReadbackCallback done, uint32_t texelBytes = 8);
     void releaseOutputGroup();
     void outputPass(WGPUCommandEncoder encoder, WGPUTextureView present, WGPUTextureFormat presentFormat);
 
@@ -882,6 +885,7 @@ private:
     WGPUTextureView colorView_ = nullptr;
     WGPUTextureView depthView_ = nullptr;
     WGPUTexture sceneColor_ = nullptr;  // linear HDR, what materials draw into
+    WGPUTextureFormat sceneFormat_ = WGPUTextureFormat_RGBA16Float;
     WGPUTextureView sceneView_ = nullptr;
     uint32_t sampleCount_ = 1;
     uint32_t requestedSamples_ = 1;  // what the game asked for; sampleCount_ is 1 while a traa() effect is in the post graph
