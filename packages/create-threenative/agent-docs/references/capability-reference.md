@@ -1654,17 +1654,17 @@ if (isMobile()) showTouchControls();
 
 ### `lampPenumbraTangent`
 
-`function` — Source-radius blocker search and variable-radius PCF on a spot or point light's shadow map.
+`function` — A lamp's penumbra radius in tangent units at a receiver, from the lamp's source radius and the blocker and receiver distances.
 
 ```ts
 export function lampPenumbraTangent( sourceRadius: number, blockerDistance: number, receiverDistance: number, ): number { … }
 ```
 
-- **Use when:** soften a lamp's shadow by the lamp's size, as Unreal's SourceRadius does
-- **Constraints:** sourceRadius is required, in metres, 0 or more (0 is one hard tap); forward-depth maps only
+- **Use when:** measure a lamp shadow's penumbra width without a GPU
+- **Constraints:** sourceRadius is 0 or more; both distances are positive metres; the result is the geometric tangent, before penumbraScale
 
 ```ts
-lamp.shadow.filterNode = sourceRadiusShadowFilter({ sourceRadius: 0.05 });
+const tangent = lampPenumbraTangent(0.05, 2, 3);
 ```
 
 ### `loadAll`
@@ -2566,7 +2566,8 @@ export function sourceRadiusShadowFilter( { … }
 ```
 
 - **Use when:** soften a lamp's shadow by the lamp's size, as Unreal's SourceRadius does
-- **Constraints:** sourceRadius is required, in metres, 0 or more (0 is one hard tap); forward-depth maps only
+- **Constraints:** sourceRadius is required, in metres, 0 or more (0 is one hard tap); penumbraScale, the share of the geometric penumbra kept, is in (0, 4] and defaults to 0.6, the width Unreal's lamp ray test resolves; forward-depth maps only
+- **Overrides:** penumbraScale: 1 gives the geometric penumbra of a disk lamp
 
 ```ts
 lamp.shadow.filterNode = sourceRadiusShadowFilter({ sourceRadius: 0.05 });
@@ -2832,6 +2833,22 @@ export function updateModelLods( root: { … }
 // Nothing to call: the loader returns a mesh with the chain and the engine selects every frame.
 const hull = await ctx.assets.model("hull.glb");
 ctx.scene.add(hull.scene);
+```
+
+### `useRoughDiffuse`
+
+`function` — Unreal's Substrate rough diffuse (EON) on standard and physical materials, so direct sun and lamp light meets a rough surface the way Unreal shades it. The same `roughDiffuse` flag works on three's WebGPU renderer and on the owned engine.
+
+```ts
+export function useRoughDiffuse(root: Object3D, enabled = true): number { … }
+```
+
+- **Use when:** shade rough surfaces under a sun or a lamp the way Unreal's Substrate does, not as flat Lambert
+- **Constraints:** direct light only, indirect light stays Lambert; standard and physical materials; a lamp's `sourceRadius` in metres fades the effect to Lambert at 20 cm; a material changed after its first draw needs `needsUpdate`
+- **Overrides:** material.roughDiffuse = false, or useRoughDiffuse(root, false), puts Lambert back
+
+```ts
+useRoughDiffuse(scene);
 ```
 
 ### `validateWorldMatrices`

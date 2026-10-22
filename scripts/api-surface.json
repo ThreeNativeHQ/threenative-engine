@@ -227,6 +227,7 @@
         "@threenative/core#updateAtmosphereParameters": "export function updateAtmosphereParameters( current: IResolvedAtmosphereParameters, patch: IAtmosphereParameterPatch, ): IResolvedAtmosphereParameters { … }",
         "@threenative/core#updateClusteredMeshes": "export function updateClusteredMeshes( root: { … }",
         "@threenative/core#updateModelLods": "export function updateModelLods( root: { … }",
+        "@threenative/core#useRoughDiffuse": "export function useRoughDiffuse(root: Object3D, enabled = true): number { … }",
         "@threenative/core#validateWorldMatrices": "export function validateWorldMatrices(root: Object3D): { … }",
         "@threenative/core#velocityTexture": "export function velocityTexture(pass: IVelocityRenderPass): Node { … }",
         "@threenative/core#VelocityTracker": "export class VelocityTracker { … }",

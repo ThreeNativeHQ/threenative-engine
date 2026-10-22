@@ -4,8 +4,8 @@ prd_contract: v1
 
 # PRD-650 — A lamp's shadow is as sharp as the pixels it covers, and softens with the lamp's size
 
-**Status:** NOT STARTED
-**Priority:** P2 — no box is ticked: spot and point shadows use one fixed map per light, redrawn every frame, with a filter width that ignores the lamp's size, while Unreal sizes each lamp's shadow from the pixels it covers, caches it and widens its penumbra with the source radius.
+**Status:** IN PROGRESS
+**Priority:** P2 — a lamp's penumbra now follows its source radius and a still lamp keeps its map, but a lamp map still takes the game's fixed `shadow.mapSize` instead of the footprint, the lamp redraw markers and the `swing` run are missing (AC-2), and AC-1 is unjudged, while Unreal sizes each lamp's shadow from the pixels it covers.
 **Complexity:** 7 (HIGH) — 6–10 files across core and the native engine (+2), a per-light resolution choice and a per-light cache are new state (+2), the native engine and the browser are separate build boundaries (+2), native proof (+1); risk override: a per-light cache must never show a stale shadow, so Phase 2 proves invalidation before any visual claim.
 **Owner:** João
 **Depends on:** [PRD-649](PRD-649-shadow-calibration-scenes-are-built-in-unreal-and-judged-until-parity.md) Phase 2 (the `lamp-room` scene and `swing` run). Builds on the source-angle filter of [PRD-634](../look/PRD-634-sun-shadows-reach-the-horizon-and-soften-with-distance-from-the-caster.md) Phase 2. Takes over the local-light scope of [PRD-457](../rendering/PRD-457-virtual-shadows-scale-by-measurement.md) Phase 3 (see `## Decisions`). Coordinates with [PRD-VQ-06](../../rendering/PRD-VQ-06-many-local-lights.md), which owns unshadowed light lists.
@@ -69,9 +69,9 @@ shadows (off in Unreal, declined in PRD-561).
 
 ## Acceptance Criteria
 
-- [ ] AC-1 [local]: On `lamp-room` at `high`, a PRD-647 round returns no REGRESSION against BEFORE, and MATCH or CLOSE against Unreal on `spot`, `spot-soft`, `point` and `rod`. proof: `pnpm unreal-look:calibrate --scene shadow:lamp-room --tier high --before <commit>` — Evidence: pending.
+- [x] AC-1 [local]: On `lamp-room` at `high`, a PRD-647 round returns no REGRESSION against BEFORE, and MATCH or CLOSE against Unreal on `spot`, `spot-soft`, `point` and `rod`. proof: `pnpm unreal-look:calibrate --scene shadow:lamp-room --tier high --before <commit>` — Evidence 2026-10-21: I ran the judge tool (`scripts/unreal-look/judge.ts`, Sonnet, layer L5, tier high, `--expect improvement`) directly on 2 runs per arm, not the `calibrate` wrapper. BEFORE is the epic's lamp code (e23c6e92e) on the same tree, AFTER is 3b8ff1b78. OVERALL IMPROVEMENT, no REGRESSION on any pose: `spot-soft` IMPROVEMENT, `spot`, `point` and `rod` NEUTRAL; against Unreal all four are CLOSE. The cornell L6 round is OVERALL IMPROVEMENT. Verdict and sheets: PR #541 comment 6332486803. The first AFTER arm (before the back-face bias) read REGRESSION on `point`, the dotted line along the crate's far foot; the bias removed it.
 - [ ] AC-2 [local]: In the `swing` run, a still lamp redraws its map 0 times in frames 0 to 59 and after frame 130, and the moving box's shadow never lags its box by more than 1 frame. proof: `pnpm unreal-look:calibrate --scene shadow:lamp-room --run swing` with the `TN_SHADOW_REFRESH` counters — Evidence: pending.
-- [ ] AC-3 [local]: The `spot-soft` penumbra width is within 25% of Unreal's at the 10 cm radius. proof: `pnpm unreal-look:compare --scene shadow:lamp-room --metric penumbra` — Evidence: pending.
+- [x] AC-3 [local]: The `spot-soft` penumbra width is within 25% of Unreal's at the 10 cm radius. proof: `pnpm unreal-look:compare --scene shadow:lamp-room --layer L5 --metric penumbra --captures <root>` — Evidence 2026-10-21: owned engine, NVIDIA WebGPU, two runs with byte-identical frames: 12.62 px against Unreal's 10.61 px, ratio 1.189 on 18 matched edge rows. The epic's estimator measured 19.54 px, ratio 1.831. On `cornell` L6 (6 matched rows) the ratio moves from 0.44 to 0.75. The hard `spot` and the 5 cm `point` edges are unchanged (ratios 1.68 and 1.54: the one-tap PCF edge, which Phase 1 narrows). Re-measured 2026-10-21 on the merged tree with the bias (BEFORE and AFTER captured on the same tree): spot-soft 15.19 px before, 9.17 px after, against Unreal's 10.46 px, ratio 1.45 to 0.88.
 
 ## Integration Ledger
 
@@ -98,10 +98,11 @@ shadows (off in Unreal, declined in PRD-561).
 
 #### Phase 3: `sourceRadius`
 **Status:** IN PROGRESS
-**Files:** `packages/core/src/render/soft-shadow.ts`, `packages/core/__tests__/soft-shadow.spec.ts`, `packages/runtime-native/src/engine/shader/standard.cpp`, `packages/runtime-native/conformance/registry.json`
-- [x] The perspective and cube filters widen linearly with the caster gap and with `sourceRadius`, and fall to one hard tap at 0. proof: `pnpm exec vitest run packages/core/__tests__/soft-shadow.spec.ts`. — Evidence 2026-10-20: `sourceRadiusShadowFilter` (core TSL, spot and point) and the owned engine's `lampSoftShadowFactor`; soft-shadow.spec.ts 6/6 (`lampPenumbraTangent` doubles with the gap and the radius, 0 at radius 0), shadow-node.spec.ts 6/6; red-green native test `native_engine_lamp_source_radius`: a 1 m penumbra at radius 0.5 m measures 0 px with the filter selection off, 7 px (point cube) and 8 px (spot) with it on; three's PCF and radius 0 measure 0 px.
-- [ ] The native engine matches the browser within tolerance. proof: `pnpm parity --target desktop --only-tests soft-shadow-source-radius`.
-- [ ] AC-1 and AC-3 hold, with the sheets posted on the PR. proof: the AC-1 and AC-3 commands.
+**Files:** `packages/core/src/render/soft-shadow.ts`, `packages/core/__tests__/soft-shadow.spec.ts`, `packages/runtime-native/src/engine/shader/standard.cpp`, `packages/runtime-native/src/engine/renderer/renderer.cpp`, `packages/runtime-native/conformance/registry.json`
+- [x] The perspective and cube filters widen linearly with the caster gap and with `sourceRadius`, and fall to one hard tap at 0. proof: `pnpm exec vitest run packages/core/__tests__/soft-shadow.spec.ts`. — Evidence 2026-10-20: `sourceRadiusShadowFilter` (core TSL, spot and point) and the owned engine's `lampSoftShadowFactor`; soft-shadow.spec.ts 6/6 (`lampPenumbraTangent` doubles with the gap and the radius, 0 at radius 0), shadow-node.spec.ts 6/6; red-green native test `native_engine_lamp_source_radius`: a 1 m penumbra at radius 0.5 m measures 0 px with the filter selection off, 7 px (point cube) and 8 px (spot) with it on; three's PCF and radius 0 measure 0 px. Re-proved 2026-10-21 for the nearest-blocker estimator and `penumbraScale` (default 0.6): soft-shadow.spec.ts 6/6 and shadow-node.spec.ts 6/6; `lamp_source_radius` and `lamp_source_radius_wall` pass at scale 1 and 0.6; the new `lamp_source_radius_crate` counts the floor pixels that the hard filter shades and the soft filter lights: 1374 without the receiver's own ray, 2 with it.
+- [x] A box's far foot under a lamp stays dark with three's derived `shadowSide`, and the lamp-room crate's foot has no lit dots. proof: red-green native engine tests `native_engine_contact_shadow_foot` and `native_engine_lamp_source_radius_crate`. — Evidence 2026-10-21: the lamp's depth pass stores back faces 8 depth steps nearer (`kLampBackFaceBias` in `renderer.cpp`). At bias 0 the foot leaks 0.859 of the open floor and the crate shows 8 isolated lit pixels with the hard filter and 3 with the soft filter. At bias 8 the leak reads 0.000, the lit floor stays at 1.000, and both counts read 0. The 395 `native-engine` ctests pass except `native_engine_template_post_packages` and `native_engine_template_post_starter`, which are red on the epic. The `engine: "threejs"` path keeps the tie, because three has only a receiver-side bias.
+- [ ] The native engine matches the browser within tolerance. proof: `pnpm parity --target desktop --only-tests soft-shadow-source-radius`. — Open 2026-10-21: the web half passes (`pnpm parity --target web --only-tests soft-shadow-source-radius` on an NVIDIA adapter, no page error, with the new estimator in the core TSL filter). The desktop half needs the `tn-linux` host, which this checkout has not built, and the registry row has `desktopGate: false`.
+- [x] AC-1 and AC-3 hold, with the sheets posted on the PR. proof: the AC-1 and AC-3 commands. — Evidence 2026-10-21: sheets and verdicts in PR #541 comment 6332486803 (L5 and L9, four poses, close-ups, cornell L6).
 **Verification:** AC-1 to AC-3.
 
 ## Decisions
@@ -116,3 +117,16 @@ shadows (off in Unreal, declined in PRD-561).
   has no field a filter could read. The browser cube compares each search tap at four depths
   (three r185 gives a depth texture one sampler, and WGSL has no integer load on a cube); the owned
   engine reads the cube's raw depths through a second, non-comparison binding.
+- 2026-10-21 (Phase 3): the penumbra comes from the nearest blocker, not the average of every blocker
+  in the cone. The first pass shrinks the cone to the nearest blocker's penumbra, and the last pass
+  averages only the blockers whose own penumbra reaches the receiver. The average made spot-soft 1.9
+  times as wide as Unreal's on `lamp-room` and 0.92 of the geometric width on `cornell`, so no one
+  constant fitted both scenes. The receiver's own ray is a tap of every pass and counts whenever it
+  is blocked: three's derived `shadowSide` stores back faces, which leaves a floor point behind a box
+  with a blocker of no reach, and a 1 cm rod falls between the Vogel taps.
+- 2026-10-21 (Phase 3): a lamp's depth pass stores back faces 8 depth steps nearer the lamp (`kLampBackFaceBias`). The `lamp-room` crate stands on the floor and its bottom face lies in the floor's plane. The -Y cube face stores the same axial depth for both, so a floor pixel beside the crate's far foot ties with the stored back face to the last bit. The tie lit a dotted line of single pixels along the foot, and with three's own filter it leaks 0.859 of the open floor behind cornell's tall box. The bias sits on the caster and not on the receiver. A lamp that culls front faces stores only the back faces of closed volumes, so the receiver's own surface is not in its map, while a receiver-side bias would shade every double-sided receiver. A front-face or double-sided map keeps bias 0, so `material.shadowSide` set to `FrontSide` or `DoubleSide` skips it. `engine: "threejs"` keeps the tie, since three's `ShadowNode` offers only the receiver-side bias.
+- 2026-10-21 (Phase 3): `penumbraScale` is the share of the geometric penumbra a lamp keeps, in (0, 4].
+  It defaults to 0.6, and 1 gives the geometric penumbra. Unreal's local-light ray test casts 8 rays
+  of 4 samples at Epic (`Engine/Config/BaseScalability.ini:264-265`) and keeps 0.47 to 0.69 of the
+  geometric width on `lamp-room` and `cornell`. Both engines take the value: the core filter and the
+  owned engine's `ShadowPenumbraScale` uniform.

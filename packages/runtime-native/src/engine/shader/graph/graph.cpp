@@ -457,7 +457,12 @@ VarId Lowerer::ensureVar(Node var) {
     const auto found = vars_.find(var.get());
     if (found != vars_.end()) return found->second;
     const ExprId initial = expression(var->args[0]);
-    if (initial == kInvalid) return noVar;
+    if (initial == kInvalid) {
+        // A var over a void call (a TSL function body with no result) has no value, but the call's statements are emitted:
+        // remember that, or the next use of the var lowers the call again.
+        vars_.emplace(var.get(), noVar);
+        return noVar;
+    }
     const VarId id = program_.var(var->type.scalar == Type::Scalar::Void ? program_.expr(initial).type : var->type, initial);
     vars_.emplace(var.get(), id);
     return id;

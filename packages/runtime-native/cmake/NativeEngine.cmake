@@ -147,7 +147,8 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     # scene environment's frame-pumped PMREM before it reads a face.
     tn_native_engine_test(tn-native-engine-renderer-lifetime-test tests/native-engine/renderer_lifetime_test.cpp
         native_engine_renderer_shared_retired_sweep=shared_retired_sweep
-        native_engine_probe_capture_environment=probe_capture_environment)
+        native_engine_probe_capture_environment=probe_capture_environment
+        native_engine_probe_capture_callback_camera=probe_capture_callback_camera)
     target_link_libraries(tn-native-engine-renderer-lifetime-test PRIVATE tn_engine_renderer tn_host_services)
     if(TN_ENGINE_SANITIZE)
         # Like Gate E, exercise ASan/UBSan without judging the GPU driver's exit allocations.
@@ -293,8 +294,11 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_renderer_shadow_caster_frustum_culling=shadow_caster_frustum_culling
         native_engine_masked_shadow=masked_shadow
         native_engine_leaf_receiver=leaf_receiver
+        native_engine_rough_diffuse=rough_diffuse
         native_engine_point_shadow_cube_faces=point_shadow_cube_faces
         native_engine_lamp_source_radius=lamp_source_radius
+        native_engine_lamp_source_radius_wall=lamp_source_radius_wall
+        native_engine_lamp_source_radius_crate=lamp_source_radius_crate
         native_engine_contact_shadow_foot=contact_shadow_foot
         native_engine_virtual_sun_contact_foot=virtual_sun_contact_foot
         native_engine_lamp_cache=lamp_cache

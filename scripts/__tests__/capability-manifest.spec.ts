@@ -794,6 +794,15 @@ describe("capability manifest generator", () => {
         ids: ["request.vehicle-rescue-respawn"],
         owners: ["VehicleBody3D"],
       },
+      "PCSS soft shadows": {
+        ids: ["request.pcss-soft-shadows"],
+        owners: ["sourceRadiusShadowFilter"],
+      },
+      "Substrate EON, Diffuse_EON, Diffuse_GGX_Rough, rough diffuse, Oren-Nayar": {
+        baselineAlreadyRecalled: true,
+        ids: ["request.rough-diffuse-substrate-eon"],
+        owners: ["useRoughDiffuse"],
+      },
       "lumen scalability": { ids: ["request.gi-quality-scalability"], owners: ["GIBudget"] },
       "sg.GlobalIlluminationQuality": {
         ids: ["request.gi-quality-scalability"],

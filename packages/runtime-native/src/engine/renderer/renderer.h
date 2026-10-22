@@ -37,6 +37,7 @@ using Matrix = std::array<double, 16>;  // column-major, as three's Matrix4.elem
 
 class SkinnedMesh;
 class Bone;
+class PerspectiveCamera;
 struct GpuJointScene {
     struct Rig {
         std::weak_ptr<SkinnedMesh> mesh;
@@ -185,6 +186,7 @@ struct DrawItem {
     uint8_t shadowSide = 255;   // material.shadowSide, the same codes; 255 is null
     bool flatShading = false;   // material.flatShading: the face normal replaces the vertex normal
     bool twoSidedFoliage = false;  // material.twoSidedFoliage: Unreal's Two Sided Foliage receiver (PRD-651)
+    bool roughDiffuse = false;     // material.roughDiffuse: Unreal's Substrate rough diffuse, EON (PRD-653)
     uint8_t blending = 1;       // material.blending: 0 NoBlending, 1 NormalBlending, 2 AdditiveBlending
     // InstancedMesh: one mat4 (16 floats) per instance, an optional rgb per instance, and how many draw.
     BufferStore* instanceMatrices = nullptr;
@@ -223,6 +225,7 @@ struct DirectLight {
     std::array<double, 3> direction{0, 1, 0}; // directional: towards the light; spot: target to light
     std::array<double, 3> position{0, 0, 0};  // point and spot
     double distance = 0, decay = 2;           // point and spot: the cutoff (0 none) and the falloff exponent
+    double sourceRadius = 0;                  // point and spot: Unreal's Source Radius in metres (PRD-653)
     double coneCos = 0, penumbraCos = 0;      // spot: cos(angle) and cos(angle * (1 - penumbra))
     /**
      * Set when the light casts a shadow and the shadow map is on (three's LightShadow after
@@ -232,7 +235,7 @@ struct DirectLight {
     struct Shadow {
         std::shared_ptr<const shadows::AtlasOptions> virtualShadow;
         std::optional<std::array<double, 3>> sourceAngleFilter;
-        std::optional<std::array<double, 3>> sourceRadiusFilter;
+        std::optional<std::array<double, 4>> sourceRadiusFilter;
         double tanHalfFov = 1;  // a perspective map's: a cube face's is 1
         Matrix view{}, projection{}, matrix{};
         double bias = 0, normalBias = 0, radius = 1, intensity = 1;
@@ -344,6 +347,9 @@ public:
     const std::vector<std::string>& diagnostics() const { return diagnostics_; }
     /** Separate capture targets: probe work never resizes the presented frame or its post history. */
     Renderer& probeCaptureRenderer();
+    /** The face camera of a probe capture, shared so a render callback that keeps its handle is safe. The
+     *  capture creates it on the first face and poses it again for each one. */
+    std::shared_ptr<PerspectiveCamera>& probeCaptureCamera() { return probeCamera_; }
     /** Another renderer on this device, with its own targets: a reflection pass draws into one. */
     /** A renderer on the same device for a render target or a reflection: it shares this one's map
      *  textures, geometry copies, and layout and pipeline caches, as three's one renderer does. */
@@ -627,7 +633,8 @@ private:
     enum LightField : uint8_t { kLightColor, kLightDirection, kLightPosition, kLightDistance, kLightDecay, kLightAxis,
                                 kLightConeCos, kLightPenumbraCos, kLightShadowMatrix, kLightShadowBias,
                                 kLightShadowNormalBias, kLightShadowRadius, kLightShadowMapSize,
-                                kLightShadowIntensity, kLightShadowNear, kLightShadowFar, kLightShadowSourceRadius, kLightFieldCount };
+                                kLightShadowIntensity, kLightShadowNear, kLightShadowFar, kLightShadowSourceRadius,
+                                kLightShadowPenumbraScale, kLightSourceRadius, kLightFieldCount };
     uint64_t renderPrepared(std::span<const DrawItem> items, const CameraState& camera, const LightState& lights,
         std::array<double, 4> clear, std::vector<std::shared_ptr<PipelineCompilation>>* compilation,
         WGPUTextureFormat outputFormat, bool defer = false);
@@ -781,6 +788,7 @@ private:
 
     WGPUInstance instance_;
     std::unique_ptr<Renderer> probeCapture_;
+    std::shared_ptr<PerspectiveCamera> probeCamera_;
     WGPUDevice device_;
     WGPUQueue queue_;
     // Mip passes recorded since the last submit: one encoder for every texture uploaded in between,

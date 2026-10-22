@@ -63,6 +63,7 @@ flowchart LR
    must hold and what Unreal shows there (AFTER closer to UNREAL than BEFORE on the named gap, with
    no new artefact: hue cast, banding, clipping, missing object). Then run the judge command:
    `pnpm unreal-look:judge --criteria <criteria.md> --out <verdict.json> --before <run1> --before <run2> --after <run1> --after <run2> --unreal tools/unreal-reference/captures/unreal`
+   Add `--region-limit <dP50>` (the limit of the criteria file) to a round that has measurable regions: the judge then sees the per-region numbers and a frame with a region past the limit cannot read CLOSE or MATCH.
    It starts a fresh read-only Sonnet session (`claude -p`, Read tool only) that did not write the
    change, so the verdict stays with the lane that ran it. It pairs the frames by path and refuses a
    layer that differs between the engines, a missing frame and a single run per arm. It checks that the

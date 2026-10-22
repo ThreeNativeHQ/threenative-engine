@@ -34,6 +34,7 @@ import { MeshBasicNodeMaterial } from "three/webgpu";
 import { giCache, installGi } from "../render/giCache.js";
 import { watchGi } from "../render/giTier.js";
 import { type IGlbMaterialImages, glbMaterialImages } from "../render/glbImages.js";
+import { shadeLikeSubstrate } from "../render/lighting.js";
 import { watchShadowTier } from "../render/shadowTier.js";
 import {
   EPIC_SSGI,
@@ -210,16 +211,18 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
       // Casters and receivers do nothing until the renderer runs a shadow pass (scaffold lighting.ts does
       // this for the reference scene, which this scene does not use).
       (ctx.renderer.raw as unknown as { shadowMap: { enabled: boolean } }).shadowMap.enabled = shadows;
-      // Casters keep three's derived shadowSide (back faces of a front-sided material). With a hard
-      // filter those leak a bright line at a box's far foot (native_engine_contact_shadow_foot); the
-      // lamps' source-radius filter closes it, and front faces instead add acne on the grazing walls
-      // (cornell L6, 2026-10-20). Diagnosis knob: shadowSide=front|back|double|three.
+      // Casters keep three's derived shadowSide (back faces of a front-sided material). Those leak a
+      // bright line at a box's far foot; the owned engine stores a lamp's back faces a few depth steps
+      // nearer, which closes it (native_engine_contact_shadow_foot), and front faces instead add acne on
+      // the grazing walls (cornell L6, 2026-10-20). Diagnosis knob: shadowSide=front|back|double|three.
       const side = { front: FrontSide, back: BackSide, double: DoubleSide }[params.get("shadowSide") ?? "three"];
       for (const mesh of meshes) {
         mesh.castShadow = shadows;
         mesh.receiveShadow = shadows;
         if (side !== undefined) for (const m of [mesh.material].flat()) m.shadowSide = side;
       }
+      // PRD-653: direct light meets a rough surface as Unreal's Substrate does. Diagnosis knob roughDiffuse=0 is plain Lambert.
+      if (params.get("roughDiffuse") !== "0") shadeLikeSubstrate(model);
       const lights: (PointLight | SpotLight)[] = [];
       const lamps: { point: PointLight | SpotLight; radius: number; casts: boolean }[] = [];
       for (const light of DATA.lights) {
@@ -252,6 +255,8 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
         point.name = light.name;
         point.position.fromArray(light.position);
         lamps.push({ point, radius: light.sourceRadiusM ?? 0, casts: shadows && light.castShadows });
+        // The lamp's Source Radius also sets how rough diffuse shades it: a lamp of 20 cm or more is Lambert (PRD-653).
+        point.sourceRadius = light.sourceRadiusM ?? 0;
         // Unreal's lamp shadow has no near plane: three's 0.5 m default clipped cornell's shade, 0.3 m
         // from the lamp. Diagnosis knobs: shadowNear, shadowMap (texels), shadowBias, shadowNormalBias.
         point.shadow.camera.near = Number(params.get("shadowNear") ?? 0.02);
@@ -310,6 +315,9 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
         const gi = installGi(ctx, model, {
           // Diagnosis: ?bounces=N brackets how much of the indirect light the later bounces carry.
           bounces: Number(params.get("bounces") ?? 5),
+          // A changed light reaches the bounce light as Unreal's tier lets it (PRD-641 AC-2), not in one frame.
+          // Diagnosis: ?giStep=1 follows at once.
+          ...(params.get("giStep") === "1" ? {} : { lightResponse: giPreset(TIER).lightResponse }),
           // The Surface Cache is on: a ray reads the map where it lands (PRD-639). Diagnosis: ?giMaps=0 returns the
           // flat colour factor, ?giLights=0 leaves the lamps out of what a ray returns (the direct frame keeps them).
           surfaceCache:
@@ -323,6 +331,10 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
             // in a scene with no sun and no sky.
             intensity: params.get("giLights") === "0" ? 0 : l.intensity,
             distance: l.distance,
+            // A lamp that changes after the bake changes the bounce light with it (PRD-641 AC-2). ?direct=0 zeroes the
+            // lamps on purpose to leave the indirect frame, so it keeps the bake. Diagnosis: ?giFollow=0 keeps the bake
+            // too (the fixed-world arm of a paired run).
+            ...(params.get("direct") === "0" || params.get("giFollow") === "0" ? {} : { source: l }),
           })),
         });
         skipped.forEach((m, i) => (m.material as unknown as { color: Color }).color.copy(kept[i] as Color));
@@ -340,6 +352,13 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
           ...qualityPreset("high"),
           autoExposureEnabled: false,
           bloomEnabled: false,
+          // Unreal draws L1 to L8 with ShowFlag.LocalExposure 0 (PRD-631), and the `high` preset turns the stage on
+          // since the finishing chain became the default (ff837b1f2): it lifted neon-corridor L1's dark walls 14
+          // levels. This gate turns it off below L7. L7 and above keep it for now: the GI cache there is brighter than Unreal's, the stage's highlight
+          // compression hides part of that, and switching it off broke 14 cornell L7 locks. Remove it with the GI excess.
+          // Diagnosis: ?localExposure=0|1 forces the stage.
+          localExposureEnabled:
+            params.get("localExposure") === null ? level >= 7 : params.get("localExposure") === "1",
           // Diagnosis: ?gtao=0 takes the contact occlusion out, to tell its darkening from the shadow's.
           gtaoEnabled: level >= 6 && params.get("gtao") !== "0",
           finalGatherMethod: method,
@@ -361,7 +380,11 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
                 ssgiProbeRays: Number(params.get("probeRays") ?? 16),
                 ssgiDenoiseRadius: Number(params.get("ssgiDenoise") ?? 16),
               }
-            : {}),
+            : params.get("probes") === "0"
+              ? { ssgiDenoiseRadius: undefined, ssgiProbeRays: undefined, ssgiScreenProbes: false }
+              : {}),
+          // Diagnosis: ?probeFilter=N sets the spatial filter passes over the probes (PRD-640).
+          ...(params.has("probeFilter") ? { ssgiProbeFilterPasses: Number(params.get("probeFilter")) } : {}),
           ...(params.get("probeJitter") === null ? {} : { ssgiProbeJitter: Number(params.get("probeJitter")) }),
           ...(params.get("probeDebug") === null ? {} : { ssgiProbeDebug: Number(params.get("probeDebug")) }),
           vignetteAmount: 0,
