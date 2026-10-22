@@ -186,13 +186,13 @@ export async function captureGiThreeNative(options: {
           const visits: { query: string; key: string; poses: typeof scene.poses }[] =
             scene.template === "default" && layer !== "ID"
               ? (scene.suns ?? []).map((sun) => ({
-                  query: `tnRef=${layerQuery(layer).layer}${tierQuery(layer)}&sun=${sun.elevationDeg},${sun.azimuthDeg}&model=${sceneKey(name)}`,
+                  query: `tnRef=${layerQuery(layer).layer}${tierQuery(layer)}&sun=${sun.elevationDeg},${sun.azimuthDeg}&model=${sceneKey(name)}${process.env.TN_UNREAL_LOOK_QUERY ?? ""}`,
                   key: `${name}/${layer}/${sun.name}`,
                   poses: scene.poses.filter((pose) => pose.sun === sun.name),
                 }))
               : [
                   {
-                    query: `tnGi=${name}&layer=${layerQuery(layer).layer}${tierQuery(layer)}`,
+                    query: `tnGi=${name}&layer=${layerQuery(layer).layer}${tierQuery(layer)}${process.env.TN_UNREAL_LOOK_QUERY ?? ""}`,
                     key: `${name}/${layer}`,
                     poses: scene.poses,
                   },
