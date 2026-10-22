@@ -479,6 +479,8 @@ describe("the committed lock file", () => {
       "cornell L7-high": 12,
       "sunlit-room L9": 40,
       "cornell L9": 12,
+      "sunlit-room L1": 40,
+      "cornell L1": 12,
     });
   });
 
@@ -501,6 +503,24 @@ describe("the committed lock file", () => {
       const floor = lock.minIoU as number;
       expect(region?.iou as number, `${name} iou`).toBeGreaterThanOrEqual(floor - slack(floor));
     }
+  });
+
+  it("cuts the L1 direct-light locks from the two runs of one arm, with an overlap bound, for every pose of the scene", () => {
+    const l1 = locks.filter((lock) => lock.layer === "L1");
+    for (const lock of l1) {
+      expect(lock.round, lockKey(lock)).toMatch(/^arm-[0-9a-f]{12}$/);
+      expect(lock.runs, lockKey(lock)).toBeUndefined();
+      expect(lock.minIoU, lockKey(lock)).toBeDefined();
+    }
+    for (const scene of new Set(l1.map((lock) => lock.scene)))
+      expect(
+        [...new Set(l1.filter((lock) => lock.scene === scene).map((lock) => lock.pose))].sort(),
+        scene,
+      ).toEqual(
+        readScene(`gi:${scene}`)
+          .scene.poses.map((pose) => pose.name)
+          .sort(),
+      );
   });
 
   it("cuts the L9 locks from one capture of a preview head, with no overlap bound, for every pose of the scene", () => {

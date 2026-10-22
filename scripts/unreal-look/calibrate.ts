@@ -698,7 +698,8 @@ export async function main(
 
   const before = stored ?? after;
   const regions = regionsOf(deps, o, after.dir, after.arm, layer, GI_LAYER);
-  const broken = checkLocks(deps, o, after, layer);
+  // The arm holds the L1 frames (GI off) too: the direct-light locks ride on every round.
+  const broken = checkLocks(deps, o, after, layer) + checkLocks(deps, o, after, "L1");
 
   const date = deps.now().toISOString();
   const id = roundId(date, o.scene, o.tier, state.stamp);

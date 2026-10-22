@@ -166,3 +166,14 @@ scoreboard is a workflow input, so it is allowed under the evidence rules in `do
   `pass: null`, so the GI compare reports and does not gate. `calibrate` applies `layers.L7` itself. The
   harness fix belongs to the PRD-631 owner: it changes the exit code of every GI compare.
 - 2026-10-21 (judge lane, coordinator order): the judge no longer pairs Unreal `L7-Low` with ThreeNative L6. L6 has no GI and no exposure, while `L7-Low` has its Lumen off at Low scalability but keeps auto exposure and an unshadowed sky light, so the pair reported a false black room. A tier follows its own Unreal level, as the PRD-644 compare tool does: ThreeNative L7 at tier low, medium and high against `L7-Low`, `L7-Medium` and `L7-Epic`, and L9 against `L9-Epic` at high. L6 pairs with no Unreal variant, and a round that holds an L6 frame fails with `LAYER_MISMATCH`. Proof: `pnpm exec vitest run scripts/__tests__/unreal-look-judge.spec.ts` (red first: L6 still paired with `L7-Low` at medium and high; then 40 passed).
+- 2026-10-22 (judge lane, coordinator order): the judge takes `--region-limit <dP50>`. It measures dP50 per region of the
+  scene from the same frames (`judgeRegions.ts`, the numbers of `unreal-look:compare`), shows the table to the model,
+  and caps a frame at FAR when a region is past the limit, whatever the model said. A model that reads pictures called
+  shadow:wildwood frames CLOSE while the tree crown sat 0.38 to 0.87 above Unreal against a limit of 0.25 (PR #541,
+  comment 6329578609). Proof on those frames (`~/.cache/tmp-tn/wildwood/lean`, tier high, limit 0.25): without the
+  flag 5 of 8 L7 and L9 frames read CLOSE (L7 sun15-closeup and sun15-medium, L9 sun15-closeup, sun60-closeup and
+  sun60-medium). With the flag 4 of them read FAR, each naming the region past the limit (`GreenTree_1`, and `Bush_1`
+  and `Fern_1` in sun60-medium), and L9 sun60-closeup stays CLOSE because no region of it is past the limit. The
+  overall verdict is FAR at L7 and L9. The specs `capAtFar`, `regionTable` and `main --region-limit` cover the cap,
+  the mean of the runs, the closed failures and the no-flag path. The limit is the number the criteria file states:
+  `calibrate` does not pass it yet.
