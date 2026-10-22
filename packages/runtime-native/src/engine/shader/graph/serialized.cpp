@@ -204,6 +204,8 @@ public:
         }
         else if (kind == "UVNode" && field(record, "name").string() == "0") result = uv();
         else if (kind == "ScreenNode" && operation == "uv") result = uv();
+        // The drawing buffer, as `screenSize` is in a graph the facade builds (abi/tsl_call.cpp): the renderer fills it.
+        else if (kind == "ScreenNode" && operation == "size") result = uniform("screenSize", Type::vec(2));
         else if ((kind == "TextureNode" || kind == "PassTextureNode" || kind == "PassMultipleTextureNode") && ((args.size() <= 1 && operation.empty()) || (args.size() <= 2 && operation == "load"))) {
             const std::string name = field(record, "name").string();
             if (name.empty()) return fail("TN_TSL_EXPORT_INVALID: texture name");
