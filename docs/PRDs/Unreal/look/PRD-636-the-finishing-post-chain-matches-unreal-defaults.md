@@ -178,6 +178,21 @@ Stage deltas do not sum to the L9 total: removing GTAO also removes the denoise 
 
 The bake is one synchronous CPU job in the scene `enter`. It scales with host load (106 s at load 5 to 7, 250 s at load 23 to 37). Everything else in startup is 16 to 23 s. Sky bake cost is below 1% of startup: `CPU environment sky 64x32` took 140 to 580 ms and `GPU sky LUT submission` 26 to 154 ms (GPU completion is unmeasured).
 
+### Startup after the progressive GI bake (2026-10-22)
+
+The GI bake now runs in time slices. The room draws with a provisional cache first, and the full cache replaces it. The final cache is identical to the one-call cache. Judge verdict at L9 and L6: IMPROVEMENT, with the settled frame NEUTRAL. Proof: PR 541, comment 6335708145.
+
+| Layer | Arm | World visible (s) | GI converged (s) | Bake (ms) |
+| --- | --- | --- | --- | --- |
+| L9 | Epic, one call | 16.1, 16.7 | 15.7, 16.3 | 10046, 9624 |
+| L9 | This branch, one call | 5.1 | 5.0 | 2194 |
+| L9 | This branch, progressive | 3.8 | 6.2 | 2077 |
+| L6 | Epic, one call | 13.0, 13.1 | 12.0, 12.0 | 7827, 7844 |
+| L6 | This branch, one call | 3.6 | 2.7 | 1127 |
+| L6 | This branch, progressive | 3.1 | 3.5 | 1148 |
+
+Xvfb, RTX 2080, host load 2 to 13. At L9 the progressive cache converges in 1.22 times the one-call ready time on a quiet host and 1.5 to 2.0 times at load 30 to 40. Each frame costs 9 to 13 ms of main-thread time, so the bake keeps 38 to 60% of the thread. A larger slice does not shorten it (see `PERFORMANCE-LEARNINGS.md`). At L6 the ratio is 0.97.
+
 ### What this means for the template defaults
 
 - L9 does **not** hold the `high` budget on this lane: about 23 ms GPU at P5 clocks against 16.7 ms, and about 15 ms of CPU render p95 on the Wasm engine. The overshoot is real in order of magnitude. Its exact size at boost clocks is unverified.
