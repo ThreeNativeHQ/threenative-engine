@@ -55,6 +55,12 @@ export interface ISurfaceCacheOptions {
   readonly atlasSize?: number;
   /** Scales the 64-texel tile a material starts from. Default 1. The atlas budget still shrinks it. */
   readonly cardTexelDensityScale?: number;
+  /**
+   * The pixels of a map whose own `image` carries none. The owned engine decodes a glTF's maps itself, so JS sees
+   * their size and nothing else: the game hands over the image it read from the same file. Returning `undefined`
+   * keeps the texture's own `image`.
+   */
+  readonly images?: (material: ISurfaceCacheMaterial, slot: "map" | "emissiveMap") => unknown;
 }
 
 export interface ISurfaceCacheReport {
@@ -221,10 +227,11 @@ export class SurfaceCache {
     const tileOf = (
       material: ISurfaceCacheMaterial,
       index: number,
-      texture: ISurfaceCacheTexture | null | undefined,
+      slot: "map" | "emissiveMap",
     ): ITile | undefined => {
+      const texture = material[slot];
       if (texture === null || texture === undefined) return undefined;
-      const pixels = pixelsOf(texture.image);
+      const pixels = pixelsOf(options.images?.(material, slot) ?? texture.image);
       if (typeof pixels === "string") {
         fallbacks.push({
           material: material.name || `material ${index}`,
@@ -243,8 +250,8 @@ export class SurfaceCache {
       const color = material.color ?? { r: 1, g: 1, b: 1 };
       const e = material.emissive ?? { r: 0, g: 0, b: 0 };
       const intensity = material.emissiveIntensity ?? 1;
-      const albedoTile = tileOf(material, index, material.map);
-      const emissiveTile = tileOf(material, index, material.emissiveMap);
+      const albedoTile = tileOf(material, index, "map");
+      const emissiveTile = tileOf(material, index, "emissiveMap");
       if (albedoTile !== undefined || emissiveTile !== undefined) mapped += 1;
       return {
         albedo: { r: color.r * k, g: color.g * k, b: color.b * k },

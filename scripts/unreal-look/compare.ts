@@ -5,6 +5,7 @@ import { pathToFileURL } from "node:url";
 import { PNG } from "pngjs";
 import { curveShape, exposureCurve } from "./exposureCurve.js";
 import { compareGi } from "./gi.js";
+import { checkCommand, isGiCheck } from "./giLocks.js";
 import { linearLuminance, pairedPenumbra } from "./penumbra.js";
 import { runSameness } from "./sameness.js";
 // Three.js belongs to core's dependency graph; root scripts do not install a second copy.
@@ -88,6 +89,8 @@ export interface IOptions {
   writeLocks?: string;
   /** `--lock-metric iou,...`: seed only these metrics (default: every metric that holds). */
   lockMetrics?: string[];
+  /** `--drop-locks`: let `--write-locks` drop a lock whose cell no longer holds (default: it refuses). */
+  dropLocks?: boolean;
   sheet?: boolean;
 }
 type LockMetric = "deltaE" | "dP50" | "dEv" | "iou";
@@ -638,6 +641,35 @@ function sheetPair(sheet: PNG, a: IImage, b: IImage, row: number) {
         sheet.data[dst + 3] = 255;
       }
 }
+/**
+ * A re-seed keeps only the cells that hold now. A cell that broke would lose its lock without a word, so the
+ * re-seed names each lock it would drop and stops, unless `--drop-locks` asks for it.
+ */
+function refuseDroppedLocks(
+  previous: IParityLock[],
+  kept: IParityLock[],
+  seeded: IParityLock[],
+): void {
+  const sameCell = (a: IParityLock, b: IParityLock) =>
+    a.layer === b.layer &&
+    a.sun === b.sun &&
+    a.pose === b.pose &&
+    a.region === b.region &&
+    a.metric === b.metric;
+  const dropped = previous.filter(
+    (lock) => !kept.includes(lock) && !seeded.some((seed) => sameCell(seed, lock)),
+  );
+  if (dropped.length)
+    fail(
+      "LOCK_DROPPED",
+      `--write-locks would drop ${dropped.length} lock(s) whose cell no longer holds: ${dropped
+        .slice(0, 5)
+        .map((lock) => `${lock.layer} ${lock.sun} ${lock.pose} ${lock.region} ${lock.metric}`)
+        .join(
+          "; ",
+        )}${dropped.length > 5 ? "; ..." : ""}. Fix the cell, or pass --drop-locks to drop its lock on purpose`,
+    );
+}
 export function runComparison(options: IOptions = {}) {
   const dir = options.referenceDir ?? "tools/unreal-reference";
   const rootA = options.unreal ?? path.join(dir, "captures/unreal");
@@ -961,10 +993,11 @@ export function runComparison(options: IOptions = {}) {
     if (!seeded.length) fail("BAD_INPUT", "no cell holds its thresholds; nothing to lock");
     // `--layer L7,L8` re-seeds only those layers and keeps every other layer's locks as they are.
     const lockFile = path.join(dir, "parity-locks.json");
-    const kept =
-      options.layers && existsSync(lockFile)
-        ? readLocks(lockFile).filter((lock) => !options.layers?.includes(lock.layer))
-        : [];
+    const previous = existsSync(lockFile) ? readLocks(lockFile) : [];
+    const kept = options.layers
+      ? previous.filter((lock) => !options.layers?.includes(lock.layer))
+      : [];
+    if (!options.dropLocks) refuseDroppedLocks(previous, kept, seeded);
     writeJson(lockFile, { locks: [...kept, ...seeded] });
   }
   if (options.writeThresholds)
@@ -1022,6 +1055,7 @@ export function parseArgs(args: string[]): IOptions {
     else if (flag === "--write-stats") options.writeStats = true;
     else if (flag === "--write-thresholds") options.writeThresholds = true;
     else if (flag === "--check") options.check = true;
+    else if (flag === "--drop-locks") options.dropLocks = true;
     else if (flag === "--sheet") options.sheet = true;
     else {
       if (
@@ -1080,6 +1114,10 @@ export function parseArgs(args: string[]): IOptions {
 export function main(args = process.argv.slice(2)): void {
   if (args.includes("--sameness")) {
     process.exitCode = runSameness(args);
+    return;
+  }
+  if (isGiCheck(args)) {
+    process.exitCode = checkCommand(args);
     return;
   }
   if (args.includes("--scene")) {

@@ -88,16 +88,6 @@ describe("collectFrames", () => {
     expect(frame?.unrealName).toBe("L7-Epic");
   });
 
-  it("pairs ThreeNative L6 (shadows and AO, no GI) with Unreal L7 at Low (GI off)", () => {
-    const f = filled(
-      ["sunlit-room/L6/sun60-window.png"],
-      ["sunlit-room/L7-Low/sun60-window.png", "sunlit-room/L7-Epic/sun60-window.png"],
-    );
-    const [frame] = collectFrames(f.sets());
-    expect(frame?.layer).toBe("L6");
-    expect(frame?.unrealName).toBe("L7-Low");
-  });
-
   it("refuses ThreeNative L6 beside an Unreal full-look frame (the owner's 2026-10-21 sheet)", () => {
     const f = filled(["L6/L6_sun60_exterior.png"], ["L9/L9_sun60_exterior.png"]);
     expect(() => collectFrames(f.sets())).toThrow(
@@ -196,21 +186,19 @@ describe("collectFrames", () => {
       expect(named("low", file)).toEqual([[id, "L7-Low"]]);
     });
 
-    it("keeps L6 against L7-Low above tier low, and gives L6 no partner at tier low", () => {
-      const file = ["sunlit-room/L6/sun60-window.png"];
-      expect(named("high", file)).toEqual([["sunlit-room/L6/sun60-window", "L7-Low"]]);
-      expect(named("medium", file)).toEqual([["sunlit-room/L6/sun60-window", "L7-Low"]]);
-      const f = filled(file, unreal);
-      expect(() => collectFrames(f.sets(), { tier: "low" })).toThrow(
-        /LAYER_MISMATCH.*unreal holds sunlit-room\/L7\/sun60-window, not sunlit-room\/L6\/sun60-window/,
-      );
+    it("gives L6 no Unreal partner at any tier, because L7-Low has auto exposure and an unshadowed sky light that L6 lacks", () => {
+      const f = filled(["sunlit-room/L6/sun60-window.png"], unreal);
+      for (const tier of ["low", "medium", "high"] as const)
+        expect(() => collectFrames(f.sets(), { tier })).toThrow(
+          /LAYER_MISMATCH.*unreal holds sunlit-room\/L7\/sun60-window, not sunlit-room\/L6\/sun60-window/,
+        );
     });
 
     it("pairs L9 with Unreal Epic only, so a tier below high has no L9 partner", () => {
       const f = filled(["L9/L9_sun60_exterior.png"], ["L9-Epic/L9_sun60_exterior.png"]);
       expect(collectFrames(f.sets(), { tier: "high" })[0]?.unrealName).toBe("L9-Epic");
       expect(() => collectFrames(f.sets(), { tier: "medium" })).toThrow(
-        /BAD_INPUT.*none pairs with a ThreeNative layer at this tier \(L7-Low, L7-Medium\)/,
+        /BAD_INPUT.*none pairs with a ThreeNative layer at this tier \(L7-Medium\)/,
       );
     });
 
