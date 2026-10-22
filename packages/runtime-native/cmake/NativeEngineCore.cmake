@@ -311,7 +311,8 @@ tn_native_engine_test(tn-native-engine-material-test tests/native-engine/materia
     native_engine_fog_node_mixes_color=fog_node_mixes_color
     native_engine_material_node_key=node_key
     native_engine_material_bloom_passes=bloom_passes
-    native_engine_material_slots_share_one_lowering=slots_share_one_lowering)
+    native_engine_material_slots_share_one_lowering=slots_share_one_lowering
+    native_engine_material_rough_diffuse=rough_diffuse)
 target_link_libraries(tn-native-engine-material-test PRIVATE tn_engine_shader)
 tn_native_engine_test(tn-native-engine-tonemap-test tests/native-engine/tonemap_test.cpp
     native_engine_tonemap_operators=operators)

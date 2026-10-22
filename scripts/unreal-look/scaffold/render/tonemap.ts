@@ -9,11 +9,16 @@
 // toe and above the shoulder. A small desaturation before and after keeps saturated highlights
 // from shifting hue, as the ACES reference rendering does.
 //
+// Before the curve, as in Unreal's colour LUT, bright saturated colour is expanded toward a wider
+// gamut (`expandGamut`, 1 by default) and the blue correction runs (`blueCorrection`, 0.6).
+//
 // `worldEnvironment.ts` installs it as three's `CustomToneMapping` when `tonemapMode` is
 // `"filmic"`. `"aces"` stays available as the named override. `filmicToneMap()` is the same
 // curve on plain numbers, so a test or a capture script can apply it to a scene-linear image.
 import { CustomToneMapping, Matrix3 } from "three";
 import {
+  abs,
+  atan,
   clamp,
   dot,
   exp,
@@ -21,8 +26,11 @@ import {
   float,
   log,
   max,
+  min,
   mix,
   screenCoordinate,
+  sign,
+  sqrt,
   step,
   vec2,
   vec3,
@@ -37,10 +45,22 @@ export interface IFilmicCurve {
   readonly whiteClip: number;
   readonly blueCorrection: number;
   /**
-   * Unreal's "Expand Gamut": bright, saturated colour is pushed toward a wider gamut. Off by default: a per-pixel
-   * fit against Unreal's own L1 and L2 frames found no expansion in a fresh project (PRD-632). 1 is the override.
+   * Unreal's "Expand Gamut" (1 in a fresh project, `Engine/Source/Runtime/Engine/Private/Scene.cpp:437`): bright,
+   * saturated colour is pushed toward a wider gamut before the blue correction and the curve. 0 turns it off.
+   * Unreal's linear EXR frames are taken after this step (`Engine/Shaders/Private/PostProcessCombineLUTs.usf`,
+   * the expansion runs before the output-device branches), so a curve applied to an Unreal EXR needs 0 here.
    */
   readonly expandGamut: number;
+  /**
+   * The ACES reference rendering's glow, which Unreal keeps in its filmic curve (`Engine/Shaders/Private/TonemapCommon.ush`):
+   * dark, saturated colour gets up to 5% brighter. 1 is Unreal's amount, 0 turns it off.
+   */
+  readonly glow: number;
+  /**
+   * The ACES reference rendering's red modifier, also in Unreal's filmic curve: the red of a saturated red is pulled
+   * toward a dark pivot, up to 18%. 1 is Unreal's amount, 0 turns it off.
+   */
+  readonly redModifier: number;
   /**
    * Output dither in 8-bit steps: triangular grain added to the display colour before the backbuffer rounds it.
    * Unreal 5.8.3 uses one step for an 8-bit backbuffer, so a dim gradient reads as grain of one level instead of
@@ -57,7 +77,9 @@ export const FILMIC_CURVE: IFilmicCurve = {
   blackClip: 0,
   whiteClip: 0.04,
   blueCorrection: 0.6,
-  expandGamut: 0,
+  expandGamut: 1,
+  glow: 1,
+  redModifier: 1,
   dither: 1,
 };
 
@@ -160,13 +182,55 @@ export const BLUE_CORRECTION_INVERSE_AP1 = blueAP1
   .transpose()
   .toArray() as unknown as Mat3;
 
+// The glow and the red modifier of the ACES reference rendering (ACES licence as above, ampas/aces-dev
+// v1.3.1, transforms/ctl/rrt/RRT.ctl). Unreal keeps both in its filmic curve: they run in AP0 after the
+// blue correction and before the desaturation (`Engine/Shaders/Private/TonemapCommon.ush`). The glow
+// lifts saturated colour that is dark; the red modifier pulls the red channel of a saturated red toward
+// a pivot, by a weight that is 1 at red and 0 half the width away. The gain, mid level, scale, pivot and
+// width are the published ACES numbers. Without them Unreal's red box is 5 to 7 levels off on red.
+const GLOW_GAIN = 0.05;
+const GLOW_MID = 0.08;
+const RED_SCALE = 0.82;
+const RED_PIVOT = 0.03;
+const RED_WIDTH = (135 * Math.PI) / 180;
+const AP0_TO_AP1_ROWS = AP0_TO_AP1.clone().transpose().toArray() as unknown as Mat3;
+const AP1_TO_AP0 = AP0_TO_AP1.clone().invert().transpose().toArray() as unknown as Mat3;
+
+/** The red modifier's weight at a hue, in radians from red: 1 at red, 0 at half the width away and beyond. */
+export function redModifierWeight(hue: number): number {
+  const edge = Math.min(1, Math.max(0, 1 - Math.abs((2 * hue) / RED_WIDTH)));
+  return (edge * edge * (3 - 2 * edge)) ** 2;
+}
+
+/** The glow and the red modifier on one AP1 colour; `glow` and `red` scale their amounts (1 is Unreal's). */
+function glowAndRed(ap1: Vec3, glow: number, red: number): [number, number, number] {
+  const [r, g, b] = multiply(AP1_TO_AP0, ap1);
+  const high = Math.max(r, g, b);
+  const saturation =
+    (Math.max(high, 1e-10) - Math.max(Math.min(r, g, b), 1e-10)) / Math.max(high, 1e-2);
+  const spread = 0.5 * ((r - g) ** 2 + (g - b) ** 2 + (b - r) ** 2);
+  const brightness = (r + g + b + 1.75 * Math.sqrt(spread)) / 3;
+  const x = (saturation - 0.4) / 0.2;
+  const tail = Math.max(1 - Math.abs(x / 2), 0);
+  const shaper = (1 + Math.sign(x) * (1 - tail * tail)) / 2;
+  const fade = Math.min(1, Math.max(0, GLOW_MID / Math.max(brightness, 1e-10) - 0.5));
+  const lift = 1 + glow * GLOW_GAIN * shaper * fade;
+  const [lr, lg, lb] = [r * lift, g * lift, b * lift];
+  const hue = Math.atan2(Math.sqrt(3) * (lg - lb), 2 * lr - lg - lb);
+  const pulled =
+    lr + red * redModifierWeight(hue) * saturation * (RED_PIVOT - lr) * (1 - RED_SCALE);
+  return multiply(AP0_TO_AP1_ROWS, [pulled, lg, lb]);
+}
+
 // Gamut expansion, in AP1 -> AP1: the sRGB gamut re-expressed in a wider set of primaries (CIE xy
 // red 0.6965 0.3065, green 0.245 0.718, blue 0.1302 0.0456, white 0.3127 0.329), between P3 and
-// AP1. It is what Unreal's colour LUT mixes in by `expandAmount()`. Measured: without it the clear
-// sky at a 60 degree sun carries 27% too much red against the Unreal L2 frame, with it 3%.
-const EXPAND_AP1: Mat3 = [
-  1.3701908756, -0.329206602, -0.063670572, -0.0834440781, 1.0971191726, -0.0108611106,
-  -0.0257999545, -0.098656895, 1.2039833339,
+// AP1. It is what Unreal's colour LUT mixes in by `expandAmount()`. The matrix takes AP1 to sRGB,
+// reads those numbers as numbers in the wide primaries and carries them to AP1; all of it follows
+// from the chromaticities, and the spec derives it again to 1e-6. Without it the clear sky carries
+// a red excess against the Unreal L2 frames (PRD-632).
+export const EXPAND_AP1: Mat3 = [
+  1.370412273, -0.329292155, -0.063683161, -0.083433332, 1.097092614, -0.010861358, -0.025793271,
+  -0.098625844, 1.203694898,
 ];
 
 /**
@@ -284,7 +348,8 @@ export function filmicToneMap(
   // Order: Engine/Shaders/Private/PostProcessCombineLUTs.usf and TonemapCommon.ush.
   if (c.expandGamut !== 0) ap1 = expandAp1(ap1, c.expandGamut);
   if (c.blueCorrection !== 0) ap1 = correctBlue(ap1, BLUE_CORRECTION_AP1, c.blueCorrection);
-  const pre = saturate(ap1, PRE_SATURATION);
+  if (c.glow !== 0 || c.redModifier !== 0) ap1 = glowAndRed(ap1, c.glow, c.redModifier);
+  const pre = saturate(ap1.map((v) => Math.max(0, v)) as unknown as Vec3, PRE_SATURATION);
   const toned = saturate(
     [filmicCurve(pre[0], c), filmicCurve(pre[1], c), filmicCurve(pre[2], c)],
     POST_SATURATION,
@@ -362,7 +427,48 @@ export function filmicToneMappingNode(
       ap1 = mix(ap1, apply(EXPAND_AP1, ap1), amount);
     }
     if (c.blueCorrection !== 0) ap1 = mix(ap1, apply(BLUE_CORRECTION_AP1, ap1), c.blueCorrection);
-    const pre = mix(vec3(dot(ap1, luma)), ap1, PRE_SATURATION);
+    if (c.glow !== 0 || c.redModifier !== 0) {
+      // The same maths as glowAndRed() above, in AP0. The hue's x argument carries a 1e-10 so a grey stays defined.
+      const ap0 = apply(AP1_TO_AP0, ap1);
+      const [r, g, b] = [ap0.x, ap0.y, ap0.z];
+      const high = max(max(r, g), b);
+      const saturation = max(high, 1e-10)
+        .sub(max(min(min(r, g), b), 1e-10))
+        .div(max(high, 1e-2));
+      const spread = r.mul(r).add(g.mul(g)).add(b.mul(b)).sub(r.mul(g)).sub(g.mul(b)).sub(b.mul(r));
+      const brightness = r
+        .add(g)
+        .add(b)
+        .add(sqrt(max(spread, 0)).mul(1.75))
+        .div(3);
+      const x = saturation.sub(0.4).div(0.2);
+      const tail = max(float(1).sub(abs(x.div(2))), 0);
+      const shaper = float(1)
+        .add(sign(x).mul(float(1).sub(tail.mul(tail))))
+        .div(2);
+      const fade = clamp(float(GLOW_MID).div(max(brightness, 1e-10)).sub(0.5), 0, 1);
+      const lifted = ap0.mul(
+        shaper
+          .mul(fade)
+          .mul(c.glow * GLOW_GAIN)
+          .add(1),
+      );
+      const hue = atan(
+        lifted.y.sub(lifted.z).mul(Math.sqrt(3)),
+        lifted.x.mul(2).sub(lifted.y).sub(lifted.z).add(1e-10),
+      );
+      const edge = clamp(float(1).sub(abs(hue.mul(2 / RED_WIDTH))), 0, 1);
+      const smooth = edge.mul(edge).mul(edge.mul(-2).add(3));
+      const pulled = lifted.x.add(
+        smooth
+          .mul(smooth)
+          .mul(saturation)
+          .mul(float(RED_PIVOT).sub(lifted.x))
+          .mul(c.redModifier * (1 - RED_SCALE)),
+      );
+      ap1 = apply(AP0_TO_AP1_ROWS, vec3(pulled, lifted.y, lifted.z));
+    }
+    const pre = mix(vec3(dot(max(ap1, vec3(0)), luma)), max(ap1, vec3(0)), PRE_SATURATION);
     const logValue = log(max(pre, vec3(1e-10))).div(LOG10);
     const straight = logValue.add(m.straightMatch).mul(c.slope);
     const toeCurve = vec3(-c.blackClip).add(

@@ -12,6 +12,7 @@
  *   --min-runs 2           runs per arm the owner rule asks for; a lower number is written to the verdict
  *   --expect improvement   the change promised a visible gain: only an overall IMPROVEMENT passes
  *   --model sonnet --effort high --max-budget-usd 5 --timeout-min 20
+ *   --region-limit 0.25    measure dP50 per region (judgeRegions.ts): the judge sees the numbers and a region past the limit caps its frame at FAR
  *   --dry-run              pair the frames and print them; start no session
  *
  * Exit 0: a complete verdict that blocks nothing. Exit 2: a complete verdict with a REGRESSION (or no
@@ -24,6 +25,13 @@ import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
+import {
+  type IMeasure,
+  type IRegionMeasure,
+  capAtFar,
+  measureRegions,
+  regionTable,
+} from "./judgeRegions.js";
 import {
   type Expect,
   type IFrame,
@@ -40,7 +48,7 @@ import {
 } from "./judgeVerdict.js";
 
 const USAGE =
-  "pnpm unreal-look:judge --criteria <file> --out <verdict.json> --before <dir> [--before <dir>] --after <dir> [--after <dir>] --unreal <dir> [--layer L7] [--tier high] [--min-runs 2] [--expect improvement] [--model sonnet] [--effort high] [--max-budget-usd 5] [--timeout-min 20] [--dry-run]";
+  "pnpm unreal-look:judge --criteria <file> --out <verdict.json> --before <dir> [--before <dir>] --after <dir> [--after <dir>] --unreal <dir> [--layer L7] [--tier high] [--min-runs 2] [--expect improvement] [--region-limit 0.25] [--model sonnet] [--effort high] [--max-budget-usd 5] [--timeout-min 20] [--dry-run]";
 const HELP = `${USAGE}
 
 A round is three sets of PNG frames, paired by their path inside each set:
@@ -52,6 +60,8 @@ The path of every frame names exactly one layer (L9/L9_sun60_exterior.png, sunli
 and the layer must be the same in all sets. At tier high the Unreal variants pair as L7-Epic with L7 and
 L9-Epic with L9, at medium L7-Medium with L7, at low L7-Low with L7. ThreeNative L6 pairs with no Unreal
 variant. A round holds at most 24 frames.
+--region-limit 0.25 measures dP50 per region of the scene (the same numbers as unreal-look:compare), shows them to the judge and
+caps a frame at FAR when any region is past the limit. Use the limit the criteria file states.
 The judge returns IMPROVEMENT, NEUTRAL or REGRESSION per frame and overall (AFTER against BEFORE), and
 MATCH, CLOSE or FAR (AFTER against UNREAL). The verdict goes to --out and to the terminal.
 Exit 0: complete verdict, nothing blocked. Exit 2: complete verdict with a REGRESSION (or no overall
@@ -153,6 +163,7 @@ interface IOptions {
   effort: string;
   maxBudgetUsd: number;
   timeoutMin: number;
+  regionLimit?: number;
   dryRun: boolean;
 }
 
@@ -176,6 +187,7 @@ function parse(args: string[]): IOptions {
         effort: { type: "string" },
         "max-budget-usd": { type: "string" },
         "timeout-min": { type: "string" },
+        "region-limit": { type: "string" },
         "dry-run": { type: "boolean" },
       },
     }).values;
@@ -222,6 +234,7 @@ function parse(args: string[]): IOptions {
     effort: typeof values.effort === "string" ? values.effort : "high",
     maxBudgetUsd: number("max-budget-usd", 5),
     timeoutMin: number("timeout-min", 20),
+    ...(values["region-limit"] === undefined ? {} : { regionLimit: number("region-limit", 0) }),
     dryRun: values["dry-run"] === true,
   };
 }
@@ -244,6 +257,8 @@ function show(verdict: Record<string, unknown>): string {
     vsUnreal: string;
     reasons: string;
     differences: string;
+    overRegions?: string[];
+    judgedVsUnreal?: string;
   }[];
   const overall = verdict.overall as { verdict: string; vsUnreal: string; reasons: string };
   const blocked = verdict.blockedBy as string[];
@@ -252,6 +267,11 @@ function show(verdict: Record<string, unknown>): string {
     ...frames.flatMap((frame) => [
       `${frame.id} (${frame.layer}): ${frame.verdict}; vs UNREAL ${frame.unreal}: ${frame.vsUnreal}`,
       `  reasons: ${frame.reasons}`,
+      ...(frame.overRegions
+        ? [
+            `  past the region limit: ${frame.overRegions.join(", ")}${frame.judgedVsUnreal ? ` (capped at FAR, the judge said ${frame.judgedVsUnreal})` : ""}`,
+          ]
+        : []),
       ...(frame.differences ? [`  differences: ${frame.differences}`] : []),
     ]),
     `OVERALL: ${overall.verdict}; vs UNREAL: ${overall.vsUnreal}`,
@@ -266,7 +286,7 @@ function write(file: string, content: Record<string, unknown>): void {
   writeFileSync(file, `${JSON.stringify(content, null, 2)}\n`);
 }
 
-async function judge(o: IOptions, run: IRunner): Promise<number> {
+async function judge(o: IOptions, run: IRunner, measure: IMeasure): Promise<number> {
   let criteria: string;
   try {
     criteria = readFileSync(o.criteria, "utf8");
@@ -288,8 +308,17 @@ async function judge(o: IOptions, run: IRunner): Promise<number> {
     );
     return 0;
   }
+  // Measured before the session: a scene that cannot be measured fails the round without a model call.
+  const regions: IRegionMeasure[] | undefined =
+    o.regionLimit === undefined
+      ? undefined
+      : measure(frames, { before: o.before, after: o.after, unreal: o.unreal }, o.tier);
   const lines = await run({
-    prompt: buildPrompt(criteria, frames),
+    prompt: buildPrompt(
+      criteria,
+      frames,
+      regions && o.regionLimit !== undefined ? regionTable(regions, o.regionLimit) : undefined,
+    ),
     args: claudeArgs({
       model: o.model,
       effort: o.effort,
@@ -298,7 +327,12 @@ async function judge(o: IOptions, run: IRunner): Promise<number> {
     }),
     timeoutMs: o.timeoutMin * 60_000,
   });
-  const judged: IJudgeRun = readJudgeStream(lines, frames);
+  const asked: IJudgeRun = readJudgeStream(lines, frames);
+  const { judged, capped } =
+    regions && o.regionLimit !== undefined
+      ? capAtFar(asked, regions, o.regionLimit)
+      : { judged: asked, capped: new Map<string, string[]>() };
+  const judgedBefore = (id: string) => asked.frames.find((x) => x.id === id)?.vsUnreal;
   const verdict = {
     status: "COMPLETE",
     judgedAt: new Date().toISOString(),
@@ -311,12 +345,22 @@ async function judge(o: IOptions, run: IRunner): Promise<number> {
     criteria: { file: o.criteria, sha256: createHash("sha256").update(criteria).digest("hex") },
     expect: o.expect,
     tier: o.tier,
+    ...(o.regionLimit === undefined ? {} : { regionLimit: o.regionLimit }),
     runs: { before: o.before.length, after: o.after.length },
     sets: { before: o.before, after: o.after, unreal: o.unreal },
     frames: judged.frames.map((entry) => {
       const frame = frames.find((candidate) => candidate.id === entry.id) as IFrame;
       return {
         ...entry,
+        ...(regions
+          ? {
+              ...(capped.has(entry.id) ? { overRegions: capped.get(entry.id) } : {}),
+              ...(judgedBefore(entry.id) !== entry.vsUnreal
+                ? { judgedVsUnreal: judgedBefore(entry.id) }
+                : {}),
+              regions: regions.filter((r) => r.frame === entry.id),
+            }
+          : {}),
         layer: frame.layer,
         unreal: frame.unrealName,
         files: { before: frame.before, after: frame.after, unreal: frame.unreal },
@@ -334,6 +378,7 @@ async function judge(o: IOptions, run: IRunner): Promise<number> {
 export async function main(
   args = process.argv.slice(2),
   run: IRunner = runClaude,
+  measure: IMeasure = measureRegions,
 ): Promise<number> {
   if (args.includes("--help")) {
     console.log(HELP);
@@ -341,7 +386,7 @@ export async function main(
   }
   const options = parse(args);
   try {
-    return await judge(options, run);
+    return await judge(options, run, measure);
   } catch (error) {
     // The file at --out always says what the latest attempt did, so an old verdict cannot pass for this one.
     if (!options.dryRun)

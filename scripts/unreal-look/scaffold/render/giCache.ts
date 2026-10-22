@@ -76,6 +76,8 @@ export interface IRayContext {
     far: number;
     targets?: Object3D;
   }): Intersection | undefined;
+  /** The game's frame hook. With it, a light that has a `source` is followed as it changes. */
+  beforeRender?: (callback: () => void) => () => void;
 }
 
 /** Sky radiance on three's equirectangular grid, in scene units: `data * scale` per channel. */
@@ -103,6 +105,12 @@ export interface IGiOptions {
     readonly color: Color;
     readonly intensity: number;
     readonly distance: number;
+    /**
+     * The live light (a three `PointLight`). The cache keeps the rays it traced, so when this light's intensity or colour
+     * changes, the next frame re-solves the bounce light from them without a new trace (PRD-641 AC-2). A moved light
+     * or a changed shadow needs a new bake. Unset, the light is as baked.
+     */
+    readonly source?: { readonly intensity: number; readonly color: Color };
   }[];
   /**
    * Unreal without global illumination (layers L2 to L6) shadows its movable sky light with the scene's
@@ -117,6 +125,15 @@ export interface IGiOptions {
    * illumination sets 0.8 (Engine/Config/BaseScalability.ini, `[GlobalIlluminationQuality@0]`). Unset is 1.
    */
   readonly skyIntensity?: number;
+  /**
+   * How fast the bounce light follows a light that changes, in frames (PRD-641 AC-2). Unreal does not step it: the
+   * surface cache refreshes `1 / updateFactor` of its texels each frame (`r.LumenScene.DirectLighting.UpdateFactor`,
+   * Engine/Source/Runtime/Renderer/Private/Lumen/LumenSceneLighting.cpp:40 and :98-125), so a texel meets a changed light
+   * within `updateFactor` frames, and the screen probe gather blends each pixel's history with
+   * `1 / (1 + framesAccumulated)` (`r.Lumen.ScreenProbeGather.Temporal.MaxFramesAccumulated`, default 10,
+   * LumenScreenProbeGather.cpp:229 and LumenScreenProbeGatherTemporal.usf:522). Unset, the cache follows at once.
+   */
+  readonly lightResponse?: { readonly updateFactor: number; readonly framesAccumulated: number };
   /** Cast the bake's rays through `ctx.raycast` instead of the flat triangle hierarchy: the slow path, kept for an A/B. */
   readonly stockRays?: boolean;
   /**
@@ -763,6 +780,7 @@ function irradianceAt(
   walls: Uint8Array,
 ) {
   const cache = volume(values, grid, masks, sky, solid, walls);
+  giCache.volumeTexture = cache;
   const dims = [grid.nx, grid.ny, grid.nz] as const;
   return (
     position: Node<"vec3">,
@@ -990,6 +1008,13 @@ export const giCache: {
     /** Per texel and axis (x, y, z): where the wall on the link to the next texel starts, 0 to 255 of the way (0 when open). */
     walls: Uint8Array;
   };
+  /** The texture the materials read, for the light-change update. */
+  volumeTexture?: Data3DTexture;
+  /**
+   * Follows the lights that have a `source`: when one changed since the last call, rewrites the field and the texture and
+   * returns true. The game's frame hook calls it every frame (`IRayContext.beforeRender`); a test calls it by hand.
+   */
+  refresh?: () => boolean;
 } = {};
 
 /**
@@ -1239,9 +1264,9 @@ function nodeTwin(source: MeshStandardMaterial): MeshStandardMaterial {
     ? physicalTwin()
     : new MeshStandardNodeMaterial()) as unknown as Record<string, unknown>;
   copyFields(source, twin);
-  // three declares no `twoSidedFoliage`, so a three twin has no such key to copy into: carry the marker by name (PRD-651).
-  if ((source as { twoSidedFoliage?: boolean }).twoSidedFoliage === true)
-    twin.twoSidedFoliage = true;
+  // three declares no `twoSidedFoliage` or `roughDiffuse`, so a three twin has no such key to copy into: carry the markers by name (PRD-651, PRD-653).
+  for (const marker of ["twoSidedFoliage", "roughDiffuse"])
+    if ((source as unknown as Record<string, unknown>)[marker] === true) twin[marker] = true;
   return twin as unknown as MeshStandardMaterial;
 }
 
@@ -1295,6 +1320,8 @@ export function installGi(
     /** Miss: the sky radiance. Hit: the surface's own radiance (sun and emission), before the cache. */
     base: new Float32Array(capacity * 3),
     albedo: new Float32Array(capacity * 3),
+    emissive: new Float32Array(capacity * 3),
+    owner: new Int32Array(capacity),
     point: new Float32Array(capacity * 3),
     normal: new Float32Array(capacity * 3),
     /** The sky radiance along the ray, hit or not, and the distance to the hit. */
@@ -1327,11 +1354,12 @@ export function installGi(
    * lamp, ranges 100 to 13 across a cell, and a sample near the hot spot lit the floor below it 1.8 times too bright.
    */
   const surface = (
-    object: Object3D,
+    object: { readonly id: number },
     [px, py, pz]: readonly [number, number, number],
     [nx, ny, nz]: readonly [number, number, number],
     albedo: number[],
     emissive: number[],
+    mode = -1,
   ): number[] => {
     const key = `${object.id}|${Math.floor(px / SHADE_CELL)}|${Math.floor(py / SHADE_CELL)}|${Math.floor(pz / SHADE_CELL)}|${Math.round(nx)}${Math.round(ny)}${Math.round(nz)}`;
     let visible = shaded.get(key);
@@ -1362,12 +1390,15 @@ export function installGi(
       shaded.set(key, visible);
     }
     const cosine = Math.max(0, nx * sunX + ny * sunY + nz * sunZ);
-    const lit = [0, 1, 2].map(
-      (c) =>
-        (albedo[c] ?? 0) * (sunRadiance[c] ?? 0) * cosine * (visible[0] ?? 0) + (emissive[c] ?? 0),
+    // `mode` >= 0 is the share of light `mode` alone (the light-change basis); -1 is everything.
+    const lit = [0, 1, 2].map((c) =>
+      mode >= 0
+        ? 0
+        : (albedo[c] ?? 0) * (sunRadiance[c] ?? 0) * cosine * (visible[0] ?? 0) +
+          (emissive[c] ?? 0),
     );
     lights.forEach((light, l) => {
-      if (visible[l + 1] !== 1) return;
+      if (visible[l + 1] !== 1 || (mode >= 0 && mode !== l)) return;
       toLight.subVectors(light.position, origin);
       const d = toLight.length();
       toLight.divideScalar(d);
@@ -1529,6 +1560,8 @@ export function installGi(
         i * 3,
       );
       ray.albedo.set(albedo, i * 3);
+      ray.emissive.set(emissive, i * 3);
+      ray.owner[i] = hit.object.id;
       ray.point.set(hitAt, i * 3);
       ray.normal.set(hitNormal, i * 3);
     }
@@ -1632,7 +1665,11 @@ export function installGi(
   const shadowing = options.skyShadowDistance !== undefined;
   /** Per probe and face, the share of the cosine-weighted rays that leave the scene (see `IField.sky`). */
   const skyShare = new Float32Array(probes * 6);
-  const gather = (previous: IField | undefined): Float32Array => {
+  const gather = (
+    previous: IField | undefined,
+    base: Float32Array = ray.base,
+    withEmitted = true,
+  ): Float32Array => {
     const point = new Vector3();
     const normal = new Vector3();
     const out = new Float32Array(probes * 18);
@@ -1653,7 +1690,7 @@ export function installGi(
           ray.direction[i * 3 + 1] ?? 0,
           ray.direction[i * 3 + 2] ?? 0,
         ];
-        let [r, g, b] = [ray.base[i * 3] ?? 0, ray.base[i * 3 + 1] ?? 0, ray.base[i * 3 + 2] ?? 0];
+        let [r, g, b] = [base[i * 3] ?? 0, base[i * 3 + 1] ?? 0, base[i * 3 + 2] ?? 0];
         const free = ray.hit[i] === 0 || (ray.distance[i] ?? 0) > (options.skyShadowDistance ?? 0);
         if (shadowing)
           [r, g, b] = [ray.sky[i * 3] ?? 0, ray.sky[i * 3 + 1] ?? 0, ray.sky[i * 3 + 2] ?? 0];
@@ -1689,7 +1726,8 @@ export function installGi(
         const f = Math.floor(j / 3);
         const visible = shadowing ? (open[f] ?? 0) / Math.max(1e-6, weight[f] ?? 0) : 1;
         out[probe * 18 + j] =
-          (((sum[j] ?? 0) * 4) / Math.max(1, count)) * visible + (emitted[probe * 18 + j] ?? 0);
+          (((sum[j] ?? 0) * 4) / Math.max(1, count)) * visible +
+          (withEmitted ? (emitted[probe * 18 + j] ?? 0) : 0);
       }
     }
     return out;
@@ -1711,6 +1749,8 @@ export function installGi(
   }
   const environment = environmentShare(grid, ray, first, end, skyShare);
   const toProbe = new Vector3();
+  // Which probe each fine texel's corner sees, in the order `resample` asks: a light change replays it without a ray.
+  const seen: boolean[] = [];
   const fine = resample({ grid, values, links, valid, sky: environment }, (point, probe) => {
     toProbe.set(
       grid.origin.x + ((probe % grid.nx) + 0.5) * grid.cell,
@@ -1720,11 +1760,12 @@ export function installGi(
     toProbe.sub(point);
     const d = toProbe.length();
     traced += 1;
-    return (
+    const open =
       d < 1e-4 ||
       ctx.raycast({ origin: point, direction: toProbe.divideScalar(d), far: d, targets: root }) ===
-        undefined
-    );
+        undefined;
+    seen.push(open);
+    return open;
   });
   phase("resample");
   const cut = linkMasks({ grid, values, links, valid }, fine.grid, ctx, root);
@@ -1745,6 +1786,139 @@ export function installGi(
     const light = emitterLight(emitters, position, normal);
     return light === undefined ? base : base.add(light);
   };
+  // A light that changes (PRD-641 AC-2). The field is linear in each light's colour times intensity, so it is the bake
+  // plus, per changing light, (scale - 1) times that light's own field. Each own field is solved once, on the first
+  // change, from the rays already traced (no new trace; the shadow rays and the link and resample visibility are the
+  // bake's), and a later change only blends them into the texture: no hitch while a light flickers.
+  const dynamic = lights.flatMap((light, l) =>
+    light.source !== undefined && light.intensity > 0 && options.bounces > 0
+      ? [
+          {
+            l,
+            source: light.source,
+            baked: [light.color.r, light.color.g, light.color.b].map((c) => c * light.intensity),
+            /** The scale the light was last seen at, per channel. */
+            applied: [1, 1, 1],
+            field: undefined as Float32Array | undefined,
+            /** Per fine texel and channel: the scale its refresh took last, and the scale the pixel history shows. */
+            latched: undefined as Float32Array | undefined,
+            shown: undefined as Float32Array | undefined,
+          },
+        ]
+      : [],
+  );
+  const ownField = (l: number): Float32Array => {
+    const started = performance.now();
+    const own = new Float32Array(capacity * 3);
+    for (let i = 0; i < used; i += 1) {
+      if (ray.hit[i] !== 1) continue;
+      const hit = surface(
+        { id: ray.owner[i] ?? 0 },
+        [ray.point[i * 3] ?? 0, ray.point[i * 3 + 1] ?? 0, ray.point[i * 3 + 2] ?? 0],
+        [ray.normal[i * 3] ?? 0, ray.normal[i * 3 + 1] ?? 0, ray.normal[i * 3 + 2] ?? 0],
+        [ray.albedo[i * 3] ?? 0, ray.albedo[i * 3 + 1] ?? 0, ray.albedo[i * 3 + 2] ?? 0],
+        [0, 0, 0],
+        l,
+      );
+      own.set(hit, i * 3);
+    }
+    let solved = gather(undefined, own, false);
+    for (let pass = 1; pass < options.bounces; pass += 1)
+      solved = gather({ grid, values: solved, links, valid }, own, false);
+    for (let pass = 0; pass < SMOOTH_PASSES; pass += 1)
+      solved = smooth({ grid, values: solved, links, valid });
+    let at = 0;
+    const replay = resample({ grid, values: solved, links, valid, sky: environment }, () => {
+      const open = seen[at];
+      at += 1;
+      if (open === undefined)
+        throw new Error("TN_GI_RELIGHT: the resample asked for more rays than the bake");
+      return open;
+    });
+    if (at !== seen.length)
+      throw new Error("TN_GI_RELIGHT: the resample asked for fewer rays than the bake");
+    console.info(
+      `TN_GI_RELIGHT solved light ${l} in ${Math.round(performance.now() - started)} ms`,
+    );
+    return replay.values;
+  };
+  const bakedValues = Float32Array.from(fine.values);
+  const response = options.lightResponse;
+  if (
+    response !== undefined &&
+    (!(response.updateFactor >= 1) || !(response.framesAccumulated >= 0))
+  )
+    throw new RangeError(
+      "TN_GI_LIGHT_RESPONSE: updateFactor needs 1 or more and framesAccumulated 0 or more",
+    );
+  const alpha = response === undefined ? 1 : 1 / (1 + response.framesAccumulated);
+  const fineTexels = fine.grid.nx * fine.grid.ny * fine.grid.nz;
+  /** A texel's place in the surface cache's refresh cycle: a fixed spread over `updateFactor` frames. */
+  const phaseOf = (texel: number): number =>
+    response === undefined
+      ? 0
+      : (Math.imul(texel + 1, 2654435761) >>> 0) % Math.round(response.updateFactor);
+  let frame = 0;
+  let settling = false;
+  giCache.refresh = (): boolean => {
+    frame += 1;
+    for (const light of dynamic) {
+      const now = [light.source.color.r, light.source.color.g, light.source.color.b].map(
+        (c) => c * light.source.intensity,
+      );
+      const scale = now.map((v, c) =>
+        (light.baked[c] ?? 0) > 0 ? v / (light.baked[c] as number) : 1,
+      );
+      if (scale.every((v, c) => v === light.applied[c])) continue;
+      light.applied = scale;
+      light.field ??= ownField(light.l);
+      light.latched ??= new Float32Array(fineTexels * 3).fill(1);
+      light.shown ??= new Float32Array(fineTexels * 3).fill(1);
+      settling = true;
+    }
+    const texture = giCache.volumeTexture;
+    if (!settling || texture === undefined) return settling;
+    const texels = texture.image.data as Uint16Array;
+    const { nx, ny, nz } = fine.grid;
+    const cycle = response === undefined ? 1 : Math.round(response.updateFactor);
+    let gap = 0;
+    for (const light of dynamic) {
+      const { latched, shown } = light;
+      if (latched === undefined || shown === undefined) continue;
+      for (let probe = 0; probe < fineTexels; probe += 1) {
+        const refreshed = frame % cycle === phaseOf(probe);
+        for (let c = 0; c < 3; c += 1) {
+          const k = probe * 3 + c;
+          const target = light.applied[c] ?? 1;
+          if (response === undefined || refreshed) latched[k] = target;
+          shown[k] = (shown[k] ?? 1) + ((latched[k] ?? 1) - (shown[k] ?? 1)) * alpha;
+          gap = Math.max(gap, Math.abs(target - (shown[k] ?? 1)));
+        }
+      }
+    }
+    for (let probe = 0; probe < fineTexels; probe += 1) {
+      const [x, y, z] = [probe % nx, Math.floor(probe / nx) % ny, Math.floor(probe / (nx * ny))];
+      for (let face = 0; face < 6; face += 1) {
+        const o = (x + nx * (y + ny * (face * nz + z))) * 4;
+        for (let c = 0; c < 3; c += 1) {
+          const j = (probe * 6 + face) * 3 + c;
+          let v = bakedValues[j] ?? 0;
+          for (const light of dynamic)
+            v += ((light.shown?.[probe * 3 + c] ?? 1) - 1) * (light.field?.[j] ?? 0);
+          fine.values[j] = Math.max(0, v);
+          texels[o + c] = toHalf(Math.max(0, v));
+        }
+      }
+    }
+    texture.needsUpdate = true;
+    // The history is settled when every texel shows the scale its light has (a 1e-3 gap is under a half-float step).
+    if (gap < 1e-3) {
+      settling = false;
+      for (const light of dynamic) light.shown?.set(light.latched ?? []);
+    }
+    return true;
+  };
+  if (dynamic.length > 0) gameCtx.beforeRender?.(() => giCache.refresh?.());
   const normal = normalWorld.normalize();
   const incident = positionWorld.sub(cameraPosition).normalize();
   /**

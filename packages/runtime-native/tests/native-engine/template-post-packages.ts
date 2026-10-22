@@ -203,11 +203,17 @@ async function compile(name: string, output: unknown, hosted = false): Promise<b
   if (expected !== undefined && modules.length !== expected)
     throw new Error(`${name}: expected ${expected} native modules, got ${modules.length}`);
   // A loop body reads at an explicit mip; a plain sample there has no implicit derivatives to pick one.
-  if (
-    name === "TextureLevel" &&
-    !modules.some((m) => /textureSampleLevel\(/u.test(readFileSync(m, "utf8")))
-  )
-    throw new Error("TextureLevel: no explicit-level sample in the native package");
+  // The fixture's loop body holds one read, so the package holds one: a statement the importer lowered twice would sum it twice.
+  if (name === "TextureLevel") {
+    const reads = modules.reduce(
+      (count, m) => count + (readFileSync(m, "utf8").match(/textureSampleLevel\(/gu)?.length ?? 0),
+      0,
+    );
+    if (reads !== 1)
+      throw new Error(
+        `TextureLevel: expected 1 explicit-level sample in the native package, got ${reads}`,
+      );
+  }
   if (name === "FnNode") {
     const shader = readFileSync(modules[1] as string, "utf8");
     for (const operation of ["for (", "if (", " = "])
