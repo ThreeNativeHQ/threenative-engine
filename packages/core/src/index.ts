@@ -924,8 +924,8 @@ export {
  * The Surface Cache: what a traced global-illumination ray reads where it hits a surface. A material atlas
  * (base colour and emissive maps reduced to small tiles) answers the albedo and the glow at the hit UV; a flat
  * material keeps its colour. `SurfaceLights` adds the scene's point and spot lamps at the hit, the brightest eight.
- * @situation give a traced bounce ray the texture colour and glow of the surface it hits
- * @situation light the hit of a traced ray with the scene's point and spot lamps
+ * @situation give a traced bounce ray the texture colour and glow of the surface it reaches
+ * @situation light the surface a traced ray reaches with the scene's point and spot lamps
  * @alias lumen surface cache
  * @alias lumen scene
  * @alias mesh cards
@@ -1028,14 +1028,18 @@ export { sourceAngleShadowFilter } from "./render/soft-shadow.js";
  * Source-radius blocker search and variable-radius PCF on a spot or point light's shadow map.
  * @situation soften a lamp's shadow by the lamp's size, as Unreal's SourceRadius does
  * @constraint sourceRadius is required, in metres, 0 or more (0 is one hard tap); penumbraScale, the share of the geometric penumbra kept, is in (0, 4] and defaults to 0.6, the width Unreal's lamp ray test resolves; forward-depth maps only
- * @alias SourceRadius, PCSS, soft lamp shadow
+ * @alias PCSS soft shadows
  * @override penumbraScale: 1 gives the geometric penumbra of a disk lamp
  * @example lamp.shadow.filterNode = sourceRadiusShadowFilter({ sourceRadius: 0.05 });
  */
-export {
-  lampPenumbraTangent,
-  sourceRadiusShadowFilter,
-} from "./render/soft-shadow.js";
+export { sourceRadiusShadowFilter } from "./render/soft-shadow.js";
+/**
+ * A lamp's penumbra radius in tangent units at a receiver, from the lamp's source radius and the blocker and receiver distances.
+ * @situation measure a lamp shadow's penumbra width without a GPU
+ * @constraint sourceRadius is 0 or more; both distances are positive metres; the result is the geometric tangent, before penumbraScale
+ * @example const tangent = lampPenumbraTangent(0.05, 2, 3);
+ */
+export { lampPenumbraTangent } from "./render/soft-shadow.js";
 /**
  * Convert world-space caster gap to a shadow UV radius, floored at one texel.
  * @situation measure a source-angle shadow's filter radius without a GPU

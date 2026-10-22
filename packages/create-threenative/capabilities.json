@@ -2194,18 +2194,18 @@
       "symbol": "isWeb"
     },
     {
-      "aliases": ["SourceRadius, PCSS, soft lamp shadow"],
+      "aliases": [],
       "constraints": [
-        "sourceRadius is required, in metres, 0 or more (0 is one hard tap); penumbraScale, the share of the geometric penumbra kept, is in (0, 4] and defaults to 0.6, the width Unreal's lamp ray test resolves; forward-depth maps only"
+        "sourceRadius is 0 or more; both distances are positive metres; the result is the geometric tangent, before penumbraScale"
       ],
-      "example": "lamp.shadow.filterNode = sourceRadiusShadowFilter({ sourceRadius: 0.05 });",
+      "example": "const tangent = lampPenumbraTangent(0.05, 2, 3);",
       "importPath": "@threenative/core",
       "kind": "function",
-      "overrides": ["penumbraScale: 1 gives the geometric penumbra of a disk lamp"],
+      "overrides": [],
       "package": "@threenative/core",
       "signature": "export function lampPenumbraTangent( sourceRadius: number, blockerDistance: number, receiverDistance: number, ): number { … }",
-      "situations": ["soften a lamp's shadow by the lamp's size, as Unreal's SourceRadius does"],
-      "summary": "Source-radius blocker search and variable-radius PCF on a spot or point light's shadow map.",
+      "situations": ["measure a lamp shadow's penumbra width without a GPU"],
+      "summary": "A lamp's penumbra radius in tangent units at a receiver, from the lamp's source radius and the blocker and receiver distances.",
       "supersedes": [],
       "symbol": "lampPenumbraTangent"
     },
@@ -3300,7 +3300,7 @@
       "symbol": "sourceAngleShadowFilter"
     },
     {
-      "aliases": ["SourceRadius, PCSS, soft lamp shadow"],
+      "aliases": ["PCSS soft shadows"],
       "constraints": [
         "sourceRadius is required, in metres, 0 or more (0 is one hard tap); penumbraScale, the share of the geometric penumbra kept, is in (0, 4] and defaults to 0.6, the width Unreal's lamp ray test resolves; forward-depth maps only"
       ],
@@ -3503,8 +3503,8 @@
       "package": "@threenative/core",
       "signature": "export class SurfaceCache { … }",
       "situations": [
-        "give a traced bounce ray the texture colour and glow of the surface it hits",
-        "light the hit of a traced ray with the scene's point and spot lamps"
+        "give a traced bounce ray the texture colour and glow of the surface it reaches",
+        "light the surface a traced ray reaches with the scene's point and spot lamps"
       ],
       "summary": "The Surface Cache: what a traced global-illumination ray reads where it hits a surface. A material atlas (base colour and emissive maps reduced to small tiles) answers the albedo and the glow at the hit UV; a flat material keeps its colour. `SurfaceLights` adds the scene's point and spot lamps at the hit, the brightest eight.",
       "supersedes": [],
@@ -3526,8 +3526,8 @@
       "package": "@threenative/core",
       "signature": "export class SurfaceLights { … }",
       "situations": [
-        "give a traced bounce ray the texture colour and glow of the surface it hits",
-        "light the hit of a traced ray with the scene's point and spot lamps"
+        "give a traced bounce ray the texture colour and glow of the surface it reaches",
+        "light the surface a traced ray reaches with the scene's point and spot lamps"
       ],
       "summary": "The Surface Cache: what a traced global-illumination ray reads where it hits a surface. A material atlas (base colour and emissive maps reduced to small tiles) answers the albedo and the glow at the hit UV; a flat material keeps its colour. `SurfaceLights` adds the scene's point and spot lamps at the hit, the brightest eight.",
       "supersedes": [],

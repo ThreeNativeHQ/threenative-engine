@@ -786,6 +786,10 @@ describe("capability manifest generator", () => {
         ids: ["request.vehicle-rescue-respawn"],
         owners: ["VehicleBody3D"],
       },
+      "PCSS soft shadows": {
+        ids: ["request.pcss-soft-shadows"],
+        owners: ["sourceRadiusShadowFilter"],
+      },
     } as const;
 
     expect([...new Set(aliases)].sort()).toEqual(Object.keys(predecessorRows).sort());

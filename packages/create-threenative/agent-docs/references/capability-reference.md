@@ -1654,18 +1654,17 @@ if (isMobile()) showTouchControls();
 
 ### `lampPenumbraTangent`
 
-`function` — Source-radius blocker search and variable-radius PCF on a spot or point light's shadow map.
+`function` — A lamp's penumbra radius in tangent units at a receiver, from the lamp's source radius and the blocker and receiver distances.
 
 ```ts
 export function lampPenumbraTangent( sourceRadius: number, blockerDistance: number, receiverDistance: number, ): number { … }
 ```
 
-- **Use when:** soften a lamp's shadow by the lamp's size, as Unreal's SourceRadius does
-- **Constraints:** sourceRadius is required, in metres, 0 or more (0 is one hard tap); penumbraScale, the share of the geometric penumbra kept, is in (0, 4] and defaults to 0.6, the width Unreal's lamp ray test resolves; forward-depth maps only
-- **Overrides:** penumbraScale: 1 gives the geometric penumbra of a disk lamp
+- **Use when:** measure a lamp shadow's penumbra width without a GPU
+- **Constraints:** sourceRadius is 0 or more; both distances are positive metres; the result is the geometric tangent, before penumbraScale
 
 ```ts
-lamp.shadow.filterNode = sourceRadiusShadowFilter({ sourceRadius: 0.05 });
+const tangent = lampPenumbraTangent(0.05, 2, 3);
 ```
 
 ### `loadAll`
@@ -2702,7 +2701,7 @@ invalidateStatic(drawbridge);
 export class SurfaceCache { … }
 ```
 
-- **Use when:** give a traced bounce ray the texture colour and glow of the surface it hits · light the hit of a traced ray with the scene's point and spot lamps
+- **Use when:** give a traced bounce ray the texture colour and glow of the surface it reaches · light the surface a traced ray reaches with the scene's point and spot lamps
 - **Constraints:** the materials are fixed when the cache is built; build a new one when a material or a map changes · a map the cache cannot read (an image the runtime cannot draw to a canvas) returns the flat colour and is listed in `report.fallbacks` · the cache owns no colour, texture or light; the game's materials and lamps are the only source
 - **Overrides:** atlasSize and cardTexelDensityScale size the atlas; maxLights caps the lamps evaluated at a hit
 
@@ -2718,7 +2717,7 @@ const cache = SurfaceCache.from(materials); cache.albedo(slot, hit.uv.x, hit.uv.
 export class SurfaceLights { … }
 ```
 
-- **Use when:** give a traced bounce ray the texture colour and glow of the surface it hits · light the hit of a traced ray with the scene's point and spot lamps
+- **Use when:** give a traced bounce ray the texture colour and glow of the surface it reaches · light the surface a traced ray reaches with the scene's point and spot lamps
 - **Constraints:** the materials are fixed when the cache is built; build a new one when a material or a map changes · a map the cache cannot read (an image the runtime cannot draw to a canvas) returns the flat colour and is listed in `report.fallbacks` · the cache owns no colour, texture or light; the game's materials and lamps are the only source
 - **Overrides:** atlasSize and cardTexelDensityScale size the atlas; maxLights caps the lamps evaluated at a hit
 

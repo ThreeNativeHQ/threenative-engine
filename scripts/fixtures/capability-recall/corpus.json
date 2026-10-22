@@ -747,6 +747,14 @@
       "source": "template:racing#AGENTS.md — __PROJECT_NAME__ racing",
       "expect": ["VehicleBody3D"],
       "reject": []
+    },
+    {
+      "id": "request.pcss-soft-shadows",
+      "query": "PCSS soft shadows",
+      "scope": "request",
+      "source": "sandbox:lamp-room#scenes/CalibrationScene.ts",
+      "expect": ["sourceRadiusShadowFilter"],
+      "reject": []
     }
   ]
 }
