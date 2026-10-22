@@ -8,7 +8,7 @@ prd_contract: v1
 **Priority:** P2 — AC-1 and AC-3 are open: the starter L9 cells still differ from Unreal in lighting, sky, shadows and ambient occlusion, which other PRDs own, and the whole `high` chain does not hold 16.7 ms while ambient occlusion costs 15 ms.
 **Complexity:** 5 (MEDIUM) — template post source in 13 templates (+2), a local-exposure stage that is new to the chain (+2), native proof (+1); risk override: none
 **Owner:** João
-**Depends on:** [PRD-631](PRD-631-an-unreal-reference-scene-measures-the-default-look.md) Phase 3 (the L9 row) and [PRD-632](PRD-632-the-frame-is-exposed-and-tone-mapped-the-way-a-fresh-unreal-project-is.md): bloom and local exposure act on the exposed scene-linear frame, so they cannot be compared before exposure matches. Anti-aliasing and temporal reconstruction belong to [PRD-539](../performance/PRD-539-low-resolution-temporal-reconstruction-quality-and-cost.md).
+**Depends on:** [PRD-631](PRD-631-an-unreal-reference-scene-measures-the-default-look.md) Phase 3 (the L9 row) and [PRD-632](PRD-632-the-frame-is-exposed-and-tone-mapped-the-way-a-fresh-unreal-project-is.md): bloom and local exposure act on the exposed scene-linear frame, so they cannot be compared before exposure matches. Low-resolution temporal reconstruction belongs to [PRD-539](../performance/PRD-539-low-resolution-temporal-reconstruction-quality-and-cost.md). Phase 4 makes temporal anti-aliasing the default, by owner decision on 2026-10-21.
 
 ## Context
 
@@ -84,6 +84,24 @@ plumbing it already owns (`packages/core/src/render/chain.ts`).
 - [ ] Motion blur is on at desktop `high` and off on phones, and the template gate passes. proof: `pnpm test:templates`.
 - [ ] Every template defaults to the neutral grade and no grain, with the LUT kept as an option. proof: `pnpm test:templates`.
 - [ ] Every affected template's `AGENTS.md` (and mirror) states the Unreal-shaped bloom, vignette, local exposure, motion blur and neutral grade, with the LUT (`grade.cube`) and grain as the named options, so a new project's agent knows the default and how to override it. proof: `rg -l 'grade.cube' packages/create-threenative/templates/*/AGENTS.md` lists every affected template, and `pnpm sync:agents --check` exits 0.
+#### Phase 4: Anti-aliasing is Unreal's default, temporal
+**Status:** IN PROGRESS
+**Files:** `packages/runtime-native/src/engine/` (`renderer/renderer.cpp`, `renderer/post/traa.cpp`, `renderer/post/effects.cpp`, `shader/graph/post_effects.cpp`, `shader/graph/graph.cpp`, `abi/tsl_call.cpp`, `wasm/web_host.cpp`, `player/v8_main.cpp`), `packages/three-native/src/{pass-node,browser-renderer}.ts`, `scripts/unreal-look/scaffold/render/{worldEnvironment,quality}.ts`, then `packages/create-threenative/template-assets/worldEnvironment.ts` and the 13 templates
+Owner decision 2026-10-21: "shouldnt we turn it on by default then? we should use unreal defaults bro". Unreal 5.8.3 anti-aliases with temporal super resolution (`r.AntiAliasingMethod` 4, `Engine/Source/Runtime/Engine/Private/SceneView.cpp:236-246`). The phases above leave the chain on SMAA.
+The owner reported that the sphere borders look poor next to Unreal. There are two causes. SMAA leaves aliased edges. Ambient occlusion (GTAO) also draws a dark stair-stepped band along the lower limb, and every later stage keeps that edge. The temporal resolve now runs after the screen-space stages, as it does in Unreal, and smooths the band. The width and the halo of the GTAO band belong to [PRD-635](PRD-635-ambient-occlusion-darkens-only-the-light-that-comes-from-around.md).
+- [x] SMAA runs on the owned engine, so the stair-steps in the owner's crop are what SMAA leaves. proof: arms `sm_nov` (SMAA) and `b1` (no anti-aliasing), L9 `sun60/spheres`, vignette off. Result 2026-10-21: 10168 pixels (1.103%) differ by more than 2 levels and 1226 by more than 16. 79% of them lie within one pixel of an edge of the unfiltered frame, and those edges cover 7% of the frame.
+- [x] Engine (C++ renderer): `screenSpaceAA: "disabled"` renders a frame. The final output graph never received `screenSize`, so the vignette aspect was 0/0 and the frame was black. proof: `tn-native-engine-renderer-test output_screen_size`, red before the fix (the frame is not 128 grey), green after.
+- [x] Engine (C++ renderer): the temporal velocity pass draws a scene with instanced, skinned, morphed, alpha-tested and transparent draws. It aborted on the first one with `TN_TRAA_VELOCITY_UNSUPPORTED`. Those draws now carry the camera's motion, and the engine names them once (`TN_TRAA_VELOCITY_SKIPPED`). proof: `traa_camera_velocity`, red before the fix (the abort), green after.
+- [x] Engine and facade: a stage reads the temporal pass's velocity by name, and the frame the graph drew can start the resolve. proof: `traa_feeds_the_chain` and `velocity_needs_traa`, red before the fix (the velocity read is not 137, the request is not refused), green after. `packages/three-native/__tests__/pass-node.spec.ts`, red with the source reverted (2 failures), green after.
+- [x] Engine (C++ renderer): temporal AA replaces 4x multisampling, as one method does in Unreal, and the velocity pass keeps its depth-Equal test. The note `TN_TRAA_MSAA_OFF` goes to the console log, not the error stream. proof: `traa_replaces_multisampling`, red before the fix (the sample count is not 1), green after.
+- [x] Engine (C++ renderer, effects, ABI): the resolve runs late. `traa(convertToTexture(frame), depth, velocity, camera)` resolves the frame the screen-space stages drew, as a host pass of the post graph, so the edges those stages made are smoothed with the rest. proof: `traa_late_resolve` (a hard threshold edge: 0 partial pixels when the resolve runs first, 85 when it runs last), and `starter_post_bindings` (red with the late binding removed: `TN_NATIVE_TRAA_INPUT`, green after).
+- [x] Engine (ABI, shader graph): `.level(n)` reads a render texture, so the motion blur stage builds on the owned engine. Before, it was dropped with `TN_ABI_1: TSL level: TN_ABI_ARGUMENT level needs a texture node`. proof: `starter_post_bindings` (red with the level branch removed: `level needs a texture node`, green after), and `motionBlur` in the applied stages of the AFTER capture.
+- [x] Engine (C++ renderer): a render target reads the live scene. A game's exposure meter reads the main renderer's scene colour by name. Its cached bind group kept the view from before temporal AA replaced 4x multisampling, so it metered a frozen frame and exposed the scene 1.0 to 1.3 stops too bright. proof: `sibling_reads_the_live_scene`, red before the fix (51 and 51), green after (51 and 153). The AFTER capture meters luminance 0.8467 at `sun60` and 0.348 at `sun15`, the same as the SMAA capture.
+- [x] Facade (web Wasm): `debug().temporal` reads the live frame, history and jitter, and `info.engine.samples` reads the samples drawn. proof: `packages/three-native/__tests__/browser-renderer.spec.ts`, red with the source reverted (3 failures), green after, and the `TN_UNREAL_LOOK debug` line of the AFTER capture (samples asked 4, drawn 1, temporal active with a valid history and a moving jitter).
+- [ ] Native desktop player: the same `info.engine` record comes from `tn.renderInfo()` (`player/v8_main.cpp`, `player/core-webgpu.mjs`). proof: `pnpm native:build`, then a desktop playtest that reads `info.engine.temporal`. Open: `v8_main.cpp` compiles only in that full build, and the engine-only build used here leaves V8 off.
+- [ ] Harness: the `high` and `medium` tiers anti-alias temporally and the owner's crops are smooth. proof: BEFORE (SMAA), AFTER (temporal) and Unreal 5.8.3 crops at `sun60` and `sun15` with a fresh judge verdict, posted on the epic PR.
+- [ ] Qualification of the default: ghosting under camera and object motion, rejection fraction, RTX 2080 frame cost, web Wasm and native desktop. proof: the results, posted with the change.
+- [ ] Every template defaults to temporal AA at `high` and `medium`, with `temporalAA: false` as the named override. proof: `world-environment-temporal-aa.spec.ts` (red before the change) and `pnpm test:templates`.
 
 ## Decisions
 
@@ -92,6 +110,16 @@ plumbing it already owns (`packages/core/src/render/chain.ts`).
 - 2026-10-19 (external visual review, checked): the emissive sphere's wide, low halo is bloom
   (threshold and radius, this PRD). Its light on the floor in Unreal is Lumen GI from an emissive
   surface (layer L7), owned by the GI PRDs, not by a default point light inside the mesh.
+
+- 2026-10-21: Temporal AA is the default at the `high` and `medium` tiers, and the `low` (phone) tier keeps
+  SMAA. Unreal's mobile default is also temporal (`r.Mobile.AntiAliasing` 2,
+  `Engine/Source/Runtime/Core/Private/HAL/ConsoleManager.cpp:4719-4730`), but no phone has been measured with
+  the extra velocity and history targets here. `temporalAA: false` brings back SMAA. The legacy
+  `engine: "threejs"` renderer keeps SMAA and the applied report names why.
+- 2026-10-21: Known gap to Unreal. The Epic scalability setting keeps the history at twice the screen size
+  (`Engine/Config/BaseScalability.ini`, `[AntiAliasingQuality@3]`, `r.TSR.History.ScreenPercentage=200`). The
+  engine's resolve keeps it at the screen size. Draws with no previous vertex data (instanced, skinned, morphed,
+  alpha-tested, transparent) carry the camera's motion only, so a fast limb or blade can ghost slightly.
 
 ## Performance (2026-10-20)
 

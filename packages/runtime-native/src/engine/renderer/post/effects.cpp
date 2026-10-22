@@ -41,7 +41,7 @@ PostEffects::PostEffects(WGPUDevice device, WGPUQueue queue, std::vector<shader:
     // Validate all packages before allocating any GPU resources.
     for (const auto& source : sources) {
         std::string error;
-        if (!shader::acceptPackage(source.package, error))
+        if (source.host.empty() && !shader::acceptPackage(source.package, error))
             throw std::runtime_error(error);
     }
     linear_ = makeSampler(device, false, false);
@@ -56,6 +56,8 @@ PostEffects::PostEffects(WGPUDevice device, WGPUQueue queue, std::vector<shader:
         for (auto& source : sources) {
             passes_.push_back({std::move(source)});
             auto& pass = passes_.back();
+            // The renderer draws a host pass: it has no shader, bindings or uniforms of its own.
+            if (!pass.source.host.empty()) continue;
             const auto& stages = pass.source.package.variants.at(0).stages;
             const auto layoutFor = [&](const shader::StageModule& stage, WGPUShaderStage visibility) {
                 std::vector<WGPUBindGroupLayoutEntry> entries;
@@ -167,8 +169,10 @@ PostEffects::~PostEffects() {
             wgpuBufferRelease(pass.vertexUniforms);
         if (pass.vertexLayout)
             wgpuBindGroupLayoutRelease(pass.vertexLayout);
-        wgpuPipelineLayoutRelease(pass.pipelineLayout);
-        wgpuBindGroupLayoutRelease(pass.layout);
+        if (pass.pipelineLayout)
+            wgpuPipelineLayoutRelease(pass.pipelineLayout);
+        if (pass.layout)
+            wgpuBindGroupLayoutRelease(pass.layout);
     }
     for (auto& [name, image] : images_) {
         wgpuSamplerRelease(image.sampler);
@@ -237,8 +241,14 @@ void PostEffects::resize(uint32_t width, uint32_t height) {
             pass.source.rtt->actualHeight = target.height;
         }
         target.format = pass.source.redFormat ? WGPUTextureFormat_R8Unorm : WGPUTextureFormat_RGBA16Float;
+        // A host pass copies what it reads and what it wrote (the resolve seeds and stores its history from them).
+        const bool copied = std::any_of(passes_.begin(), passes_.end(), [&](const auto& host) {
+            return !host.source.host.empty() &&
+                   (host.source.output == pass.source.output || host.source.reads.at("beauty") == pass.source.output);
+        });
         target.texture = makeTexture(device_, target.width, target.height, target.format,
-                                     WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_TextureBinding);
+                                     WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_TextureBinding |
+                                         (copied ? WGPUTextureUsage_CopySrc : WGPUTextureUsage_None));
         target.view = wgpuTextureCreateView(target.texture, nullptr);
     }
 }
@@ -437,6 +447,15 @@ uint32_t PostEffects::render(WGPUCommandEncoder& encoder, WGPUTextureView scene,
                     break;
                 }
         auto& target = targets_.at(pass.source.output);
+        if (!pass.source.host.empty()) {
+            if (!host_)
+                throw std::runtime_error("TN_POST_HOST_MISSING: " + pass.source.host);
+            const auto& beauty = targets_.at(pass.source.reads.at("beauty"));
+            host_(encoder, beauty.texture, beauty.view, target.texture, target.view);
+            pass.rendered = true;
+            ++drawn;  // three's Info counts the resolve like any other fullscreen effect pass
+            continue;
+        }
         if (pass.source.rtt)
             pass.rttRevision = pass.rttRequested;
         const auto& stages = pass.source.package.variants.at(0).stages;

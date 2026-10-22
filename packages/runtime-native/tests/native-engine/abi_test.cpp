@@ -2340,6 +2340,24 @@ void starter_post_bindings() {
     try { call("traa", {TslArg::of(g::mul(scene, g::float_(0.5))), TslArg::of(scene), TslArg::of(scene), TslArg::other()}); }
     catch (const std::exception& error) { refused = std::string(error.what()).find("TN_NATIVE_TRAA_INPUT") != std::string::npos; }
     CHECK(refused);
+    // Over a texture the graph drew (convertToTexture of a frame its effects changed) the resolve is a pass of the graph:
+    // the composite's own pass, then the resolve, which the renderer draws.
+    const auto composite = call("convertToTexture", {TslArg::of(g::mul(scene, g::float_(0.5)))});
+    if (!composite) return;
+    const auto late = call("traa", {TslArg::of(composite), TslArg::of(g::texture("depth", g::uv())),
+                                    TslArg::of(g::texture("velocity", g::uv())), TslArg::other()});
+    if (!late) return;
+    CHECK(g::traaEffect(late) == late->post);
+    CHECK(g::traaResolvesLate(*late->post));
+    CHECK(late->name != "scene" && late->name.starts_with("native_traa_"));
+    CHECK(!g::traaResolvesLate(*temporal->post));
+    const auto latePasses = g::postPasses(late);
+    CHECK(latePasses.size() == 2);
+    if (latePasses.size() == 2) {
+        CHECK(latePasses.back().host == "traa" && latePasses.back().output == late->name);
+        CHECK(latePasses.back().reads.at("beauty") == composite->name && latePasses.back().reads.at("depth") == "depth");
+        CHECK(latePasses.front().host.empty() && latePasses.front().output == composite->name);
+    }
     const auto compile = [&](g::Node root) {
         const auto post = g::serializedPost(root);
         auto programs = tn::engine::shader::buildOutput(std::nullopt, false, &post, false);
@@ -2348,6 +2366,14 @@ void starter_post_bindings() {
         CHECK(programs.fragment.diagnostics().empty());
         return fragment;
     };
+    // `.level(n)` on a render texture reads it at an explicit level, as the motion blur's loop does.
+    const auto compositeSelf = TslArg::of(composite);
+    const auto leveled = tn::abi::tslCall("level", &compositeSelf, {TslArg::of(g::float_(0))}, serial);
+    CHECK(leveled && leveled->kind == g::Kind::RenderTexture && leveled->args.size() == 3 &&
+          leveled->name == composite->name);
+    if (leveled)
+        CHECK(compile(leveled).wgsl.code.find("textureSampleLevel(t_" + composite->name) !=
+              std::string::npos);
     const auto intensity = g::uniform("grainIntensity", tn::engine::shader::Type::f32(), {0.2f});
     const auto film = call("film", {TslArg::of(scene), TslArg::of(intensity), TslArg::other()});
     if (!film) return;
