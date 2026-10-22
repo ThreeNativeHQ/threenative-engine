@@ -178,3 +178,36 @@ screenshots branch only.
   harness, taken because the calibration needs the same triangles in both engines and Nanite drops thin
   branches. The lighting rows move little: the tree dP50 changes by at most 0.10 between the two imports (L5, sun15-closeup, 0.15 to 0.25).
   All Unreal frames of this scene are Nanite off from 2026-10-21 20:00 on.
+- 2026-10-22 (wildwood2 lane): what fills the floor shadow of `shadow:wildwood` at L7, by ablation. All frames
+  are scene-linear (`linear=1`, exposure 0.12, no tone curve). Unreal frames are its `.exr`. Metric: the
+  median floor luminance in the shade over the median in the sun, on the same pixels in both engines (the
+  floor pixels that Unreal itself shades, below a quarter of its 95th percentile, and lights, above half of
+  it). Unreal reads 0.099 at `sun60-closeup` and 0.191 at `sun15-closeup`. ThreeNative at the epic head reads
+  0.485 (4.9 times) and 0.492 (2.6 times). The older 0.84 against 0.63 is the same fault seen through the tone
+  curve, which compresses the ratio.
+
+  | `shade / sun` | sun60-closeup | sun15-closeup |
+  |---|---:|---:|
+  | Unreal 5.8.3, everything on | 0.099 | 0.191 |
+  | ThreeNative, direct sun only (`off=gi,gtao,ssgi&envMul=0`) | 0.136 | 0.175 |
+  | ThreeNative, everything on | 0.485 | 0.492 |
+  | `skyMul=0` (no sky term in the GI cache) | 0.402 | 0.345 |
+  | `off=gi` (no GI cache, the sky environment answers) | 0.359 | 0.459 |
+  | `off=gtao` (no AO) | 0.490 | 0.504 |
+  | `off=ssgi` | 0.499 | 0.505 |
+  | `skyMul=0&envMul=0` | 0.403 | 0.330 |
+
+  Terms, as the part of the sun-lit floor that reaches the shade: the direct sun alone (shadow-map softness
+  and leaf gaps) is 0.136 and 0.175, close to Unreal's whole value. The sky term of the GI cache adds 0.083
+  and 0.147. The sun bounce of the GI cache adds 0.266 and 0.170 (the `skyMul=0` value minus the direct
+  value) and is the largest term at sun60. AO removes only 0.005 and 0.012, and SSGI removes nothing, so
+  neither is the cause. The environment map adds nothing while the GI cache is on (`envMul=0` changes
+  0.402 to 0.403). With `off=gi` the unoccluded sky environment fills the shade instead (0.359), so
+  switching the cache off is not a fix. Unreal's whole shade value (direct and indirect, 0.099 at sun60) is below the 0.136 that the direct sun
+  alone gives in ThreeNative, against 0.35 of indirect in the cache. The term that fills too much is the sun bounce of the GI cache, then its sky term. Hypothesis, not
+  measured: the cache is a 3D probe grid with a 0.5 m cell, and a floor pixel reads probes above the floor
+  that see the sunlit floor beside the leaf shadow. On a flat plane the exact floor-to-floor bounce is zero,
+  so a 0.27 bounce on this floor is cache blur, not light. The test is a smaller cell (`CELL` in
+  `render/giCache.ts`) or a read of the probe at the surface; this lane did not change `giCache.ts`.
+  Tables and frames: `~/.cache/tmp-tn/wildwood/abl/`. New harness knob `envMul=N` (scene environment
+  intensity) in `scripts/unreal-look/scaffold/Reference.ts.in`.

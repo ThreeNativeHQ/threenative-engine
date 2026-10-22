@@ -312,6 +312,8 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
             : {}),
           sun: { color: key.color, intensity: key.intensity, direction: SUN_DIRECTION },
         });
+      // Diagnosis knob envMul=N scales the sky's diffuse and specular environment light (0 = no sky light but the GI cache).
+      if (params.get("envMul") !== null) scene.environmentIntensity = Number(params.get("envMul"));
       if (TUNED && level >= 8 && !OFF.has("reflcap"))
         reflections = captureReflections(
           ctx.renderer.raw as unknown as Parameters<typeof captureReflections>[0],
