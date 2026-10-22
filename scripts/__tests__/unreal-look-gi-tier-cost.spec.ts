@@ -11,6 +11,8 @@ describe("gi-tier-cost --arms", () => {
     expect(() => parseArms(JSON.stringify(arms.slice(0, 1)))).toThrow(/TN_GI_ARMS/);
     expect(() => parseArms(JSON.stringify([arms[0], arms[0]]))).toThrow(/duplicate/);
     expect(() => parseArms(JSON.stringify([arms[0], { name: "x" }]))).toThrow(/name and a method/);
-    expect(() => parseArms(JSON.stringify([arms[0], { ...arms[1], arm: 8 }]))).toThrow(/chain options/);
+    expect(() => parseArms(JSON.stringify([arms[0], { ...arms[1], arm: 8 }]))).toThrow(
+      /chain options/,
+    );
   });
 });
