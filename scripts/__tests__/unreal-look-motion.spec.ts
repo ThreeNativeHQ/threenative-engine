@@ -930,6 +930,52 @@ describe("FRAME_GATE steps the page's frame loop one frame at a time", () => {
     expect(info.frame).toBe(3);
   });
 
+  // The motion blur lasts (1/30 s) over the frame time, and three measures the frame time with performance.now().
+  // Unreal's sequences render at 30 frames per second, so a held loop must tick the clock 1/30 s a step.
+  it("owns the clock once it holds the loop: performance.now moves 1/30 s a step", async () => {
+    const { win, gate, flush, loop } = page();
+    const now = () => (win.performance as { now(): number }).now();
+    const seen: number[] = [];
+    (win.requestAnimationFrame as (c: (time: number) => void) => void)(loop);
+    flush();
+    expect(now()).toBe(1000);
+    const held = gate.hold();
+    flush();
+    await held;
+    expect(now()).toBe(1000);
+    for (let i = 1; i <= 3; i++) {
+      const step = gate.step();
+      flush();
+      await step;
+      seen.push(now());
+    }
+    expect(seen[0]).toBeCloseTo(1000 + 1000 / 30, 6);
+    expect(seen[1]).toBeCloseTo(1000 + 2000 / 30, 6);
+    expect(seen[2]).toBeCloseTo(1000 + 3000 / 30, 6);
+    // Between two steps the clock stands still, however long the pace waits.
+    expect(now()).toBe(seen[2]);
+  });
+
+  it("hands the frame callbacks the time that performance.now reads", async () => {
+    const { win, gate, flush } = page();
+    const got: number[] = [];
+    const ask = () =>
+      (win.requestAnimationFrame as (c: (time: number) => void) => void)((time) => {
+        got.push(time);
+        ask();
+      });
+    ask();
+    flush();
+    const held = gate.hold();
+    flush();
+    await held;
+    const step = gate.step();
+    flush();
+    await step;
+    expect(got.at(-1)).toBeCloseTo(1000 + 1000 / 30, 6);
+    expect((win.performance as { now(): number }).now()).toBe(got.at(-1));
+  });
+
   it("reports a render the engine declined as skipped, not drawn", async () => {
     // Ticks 1 and 2 run before the first step, so tick 4 is the second step.
     const { win, gate, flush, loop } = page((tick) => tick === 4);

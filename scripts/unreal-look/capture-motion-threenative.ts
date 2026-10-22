@@ -6,10 +6,15 @@
  *
  * The frame loop asks the browser for a frame with requestAnimationFrame. FRAME_GATE replaces it before
  * the page's own scripts run: until `hold()` it passes through, afterwards it queues the callbacks and
- * `step()` hands them one synthetic 1/60 s frame inside a real rendering opportunity. Every step must draw
+ * `step()` hands them one synthetic frame inside a real rendering opportunity. Every step must draw
  * at least one frame. The engine declines a render while two frames are still on the GPU (a loaded host);
  * that step drew nothing, so it is repeated, with a longer wait, until a frame is drawn. A step that both
  * draws and skips throws: it would shift the run against Unreal's.
+ *
+ * The gate owns the page's clock while it holds the loop: performance.now() moves STEP_MS a step and stands
+ * still between steps. Three measures the frame time with it (`deltaTime`), and the motion blur lasts the
+ * target frame time over the frame time, so a clock that ran with the pacing wait (80 to 400 ms) would cut
+ * the blur to a tenth. Unreal's sequences render at 30 frames per second with a fixed step, and so does this.
  *
  * Frames land in <out>/<scene>/motion/<run>/<layer>/<run>.NNNN.png and still-NNNN.0000.png, the names
  * Unreal's Movie Render Queue writes. Unreal warms 180 frames before the first frame of a run and of a
@@ -23,6 +28,8 @@ import { frameFile, stillJob } from "./motion.js";
 
 /** Milliseconds between two steps: the engine's GPU frame gate lags about 35 ms under Xvfb. */
 const PACE_MS = 80;
+/** The page's clock moves this far a step: the 30 frames per second of Unreal's motion sequences. */
+export const STEP_MS = 1000 / 30;
 /** Steps before the draws per step are counted: a shader compile can add one to the first steps. */
 const SETTLE_STEPS = 8;
 /** Times one step is repeated while the GPU frame gate declines it, and the longest wait between steps. */
@@ -33,6 +40,8 @@ export const FRAME_GATE = `(() => {
   const real = window.requestAnimationFrame.bind(window);
   const cancelReal = window.cancelAnimationFrame.bind(window);
   const gate = { manual: false, queue: new Map(), next: 1e9, time: 0, steps: 0 };
+  const realNow = performance.now.bind(performance);
+  performance.now = () => (gate.manual ? gate.time : realNow());
   window.requestAnimationFrame = (callback) => {
     if (!gate.manual) return real(callback);
     gate.next += 1;
@@ -44,8 +53,8 @@ export const FRAME_GATE = `(() => {
   };
   // Switch to queued frames once the loop's pending browser frame has run and asked for the next one.
   gate.hold = () => new Promise((resolve) => {
+    gate.time = realNow();
     gate.manual = true;
-    gate.time = performance.now();
     const wait = () => (gate.queue.size > 0 ? resolve(gate.queue.size) : real(wait));
     real(wait);
   });
@@ -59,7 +68,7 @@ export const FRAME_GATE = `(() => {
   gate.step = () => new Promise((resolve, reject) => real(() => {
     const callbacks = [...gate.queue.values()];
     gate.queue.clear();
-    gate.time += 1000 / 60;
+    gate.time += ${STEP_MS};
     gate.steps += 1;
     try {
       const before = counters();
