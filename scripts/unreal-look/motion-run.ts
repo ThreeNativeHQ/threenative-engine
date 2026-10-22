@@ -150,6 +150,8 @@ export interface IMeasureInput {
   minPixels?: number;
 }
 export interface IRegionReport {
+  /** The region's median display level in every frame (one decimal; null where the frame shows too few pixels), for plots. */
+  levels?: (number | null)[];
   flicker: { px: number; p50: number; frames: number };
   response?: ISwitchResponse;
   ghost?: Record<number, IGhost | null>;
@@ -195,7 +197,10 @@ export function measureRun(
   for (const name of names) {
     const mine = series.regions[name] ?? fail("BAD_INPUT", `region ${name} has no series`);
     const target = input.target?.[name];
-    report[name] = { flicker: flicker(mine, from, to) };
+    report[name] = {
+      levels: mine.p50.map((v) => (v === null ? null : Math.round(v * 10) / 10)),
+      flicker: flicker(mine, from, to),
+    };
     if (at !== undefined)
       report[name].response = switchResponse(mine, {
         at,

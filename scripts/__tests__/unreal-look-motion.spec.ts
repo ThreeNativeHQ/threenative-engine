@@ -614,6 +614,14 @@ describe("a run report (PRD-638)", () => {
     ).toMatch(/\| A \| unreal \| 100 \| 0.00% \| 0.00% \| 8 \| 9 \| 0.00% \| 0.00% \|/);
   });
 
+  it("keeps the median level of each region in every frame, for a plot of the response", () => {
+    const files = look("switch", 40, (t) => (t < 20 ? 100 : 40));
+    const unreal = measureRun(memoryStore(files), input("switch", "unreal"));
+    const levels = unreal.A?.levels ?? [];
+    expect(levels).toHaveLength(40);
+    expect([levels[0], levels[19], levels[20], levels[39]]).toEqual([100, 100, 40, 40]);
+  });
+
   it("accepts Unreal's region only when it answers over more than one frame", () => {
     const report = (lag90: number | null): IMotionReport => ({
       scene: "mini",
