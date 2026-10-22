@@ -211,3 +211,39 @@ screenshots branch only.
   `render/giCache.ts`) or a read of the probe at the surface; this lane did not change `giCache.ts`.
   Tables and frames: `~/.cache/tmp-tn/wildwood/abl/`. New harness knob `envMul=N` (scene environment
   intensity) in `scripts/unreal-look/scaffold/Reference.ts.in`.
+- 2026-10-22 (wildwood2 lane), hypothesis test, same pixels, knobs only. Question: is the shade fill cell blur
+  of the GI cache, or the gather method? Unreal's L7 method is Lumen ScreenProbeGather
+  (`r.DynamicGlobalIlluminationMethod=1`, `sg.GlobalIlluminationQuality 3` = `Engine/Config/BaseScalability.ini:416-438`:
+  `r.Lumen.FinalGatherMethod=1`, downsample factor 16, octahedron resolution 8, `r.Lumen.SkylightIntensityMultiplier` 1.0;
+  set in `tools/unreal-reference/layers.json` L7 and `tools/unreal-reference/shadow/scenes.json:98-99`).
+
+  | `shade / sun` | sun60-closeup | sun15-closeup |
+  |---|---:|---:|
+  | ThreeNative, everything on (base) | 0.485 | 0.492 |
+  | `probes=1` (probe gather on the screen) | 0.490 | 0.497 |
+  | `ssgiQuality=epic` | 0.485 | 0.493 |
+  | `tier=medium` (irradiance field) | 0.493 | 0.495 |
+  | `tier=low` (no GI, no sky shadow; not a valid arm) | 1.000 | 1.139 |
+  | cell 0.25 m (84672 probes, local patch of `CELL`/`MAX_POINTS`) | 0.478 | 0.490 |
+  | cell 0.25 m and `skyMul=0` | 0.396 | not run |
+  | `giBounces=0` (sky only, no surface light) | 0.302 | 0.431 |
+  | `giBounces=1` (surfaces lit by the sun, read once) | 0.307 | 0.434 |
+  | `giBounces=2` | 0.429 | 0.468 |
+  | `giBounces=5` (base) | 0.485 | 0.492 |
+
+  Result: the hypothesis is rejected. A cell 0.25 m, the screen-space gather arms and the `medium` tier all stay at
+  0.48 to 0.50, so cell blur and the gather method are not the cause. The fill is in the cache. With no surface light at all
+  (`giBounces=0`) the ratio is already 0.302 against 0.136 for the direct sun and 0.099 for Unreal, so the sky
+  term alone is about 3 times too high. The second pass adds 0.12, and passes 3 to 5 add 0.06. The first
+  pass adds 0.005 only, which fits the plane: a lit floor seen from a floor probe adds almost no light in one pass.
+  Candidates, not yet measured: (1) the sky term of a probe under the crown counts sky that the leaf cards
+  hide (the bake shares sun visibility per 0.5 m `SHADE_CELL` and per object); (2) the sun-to-sky balance
+  differs from Unreal's (Unreal's shade is darker than our direct-sun-only arm, which has no sky light, so
+  Unreal's own sky share is close to zero here); (3) leaf cards shaded from the underside in the bake
+  (`surface()` uses `max(0, n.sun)` on the hit normal). Next measurement: the same ratio on an open floor
+  with no tree, in both engines, to separate the sun-to-sky balance from the crown.
+  Knobs perf2-lane needs on `installGi` (no knob exists today; `CELL` at `giCache.ts:160` and `MAX_POINTS`
+  at `giCache.ts:179` are constants): `giCell` and `giMax` (cell and probe budget), `giShadeCell`
+  (the `SHADE_CELL` share), and `giSkipObject` (bake without one named object, to run the floor without
+  the tree). `giBounces=N` already exists in the harness (`Reference.ts.in`, passes to `installGi`).
+  Tables: `~/.cache/tmp-tn/wildwood/abl/L7-table.md`. The local `CELL` patch was measurement only and is not committed.
