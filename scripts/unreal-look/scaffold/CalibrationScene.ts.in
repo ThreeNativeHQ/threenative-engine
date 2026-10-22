@@ -32,6 +32,7 @@ import {
 } from "three";
 import { texture, uniform, vec4 } from "three/tsl";
 import { MeshBasicNodeMaterial } from "three/webgpu";
+import { gtaoUrlKnobs } from "../render/aoReach.js";
 import { giCache, installGi } from "../render/giCache.js";
 import { watchGi } from "../render/giTier.js";
 import { type IGlbMaterialImages, fetchGlbMaterialImages } from "../render/glbImages.js";
@@ -359,6 +360,8 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
             : {}),
           ...(params.get("probeJitter") === null ? {} : { ssgiProbeJitter: Number(params.get("probeJitter")) }),
           ...(params.get("probeDebug") === null ? {} : { ssgiProbeDebug: Number(params.get("probeDebug")) }),
+          // Diagnosis: the contact occlusion's URL knobs (aoReach.ts), as on the reference scene.
+          ...gtaoUrlKnobs(params),
           vignetteAmount: 0,
           exposure: EXPOSURE,
           ...arm,

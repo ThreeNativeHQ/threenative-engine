@@ -469,7 +469,7 @@ describe("the committed lock file", () => {
   );
   const slack = (value: number) => 1e-3 * Math.abs(value) + 1e-4; // a round file keeps four digits
 
-  it("locks the approved rounds at high and the approved L9 capture: sunlit-room and cornell", () => {
+  it("locks the approved rounds at high and the approved L9 capture: sunlit-room and cornell, and mirror-room L8", () => {
     const groups = new Map<string, number>();
     for (const lock of locks) {
       const key = `${lock.scene} ${lock.layer}`;
@@ -480,6 +480,7 @@ describe("the committed lock file", () => {
       "cornell L1",
       "cornell L7-high",
       "cornell L9",
+      "mirror-room L8",
       "sunlit-room L1",
       "sunlit-room L7-high",
       "sunlit-room L9",
