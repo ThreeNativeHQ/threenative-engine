@@ -84,7 +84,6 @@ public:
     bool drawsStatic(uint64_t key) const;
     void appendMoverPages(std::vector<AtlasPage>& pages) const;
     std::pair<int, int> moverOrigin(int level) const;
-    int staticEdge() const { return slotsPerAxis_ * stride(); }
     void recordCost(int level, double milliseconds, double frameSeconds);
     double refreshStep(int level) const;
     double casterGate(int level) const;
@@ -96,7 +95,7 @@ public:
     const std::vector<float>& table() const { return table_; }
     int tiles() const { return options_.mapSize / options_.pageTexels; }
     int stride() const { return options_.pageTexels + 2 * options_.border; }
-    int edge() const { return staticEdge() + int(levels_.size()) * (options_.moverMapSize + 2 * options_.border); }
+    int edge() const { return slotsPerAxis_ * stride(); }
     std::pair<int, int> origin(int slot) const { return {slot % slotsPerAxis_ * stride(), slot / slotsPerAxis_ * stride()}; }
     bool overlaps(const AtlasPage& page, const Box3& bounds) const;
 
@@ -129,7 +128,7 @@ private:
     std::vector<float> table_;
     Vector3 direction_, previousEye_;
     bool started_ = false;
-    int slotsPerAxis_ = 0, nextLevel_ = 0;
+    int slotsPerAxis_ = 0, staticRows_ = 0, nextLevel_ = 0;
     double frame_ = 0, now_ = 0, frameSeconds_ = 1.0 / 60;
 };
 

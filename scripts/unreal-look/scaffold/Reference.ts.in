@@ -241,9 +241,10 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
           .copy(SUN_DIRECTION)
           .multiplyScalar(reach + 1)
           .add(bounds.center);
-        // The native atlas holds every page of every level, then every level's mover map, in one
-        // square texture that must fit the device's 8192 texel limit: four 2048 levels take 4224
-        // and four 512 mover maps 2064 more. The scene has no moving caster.
+        // The native atlas holds every page of every level, with the levels' mover maps in rows under
+        // them, in one square texture that must fit the device's 8192 texel limit: four 2048 levels
+        // and their 512 mover maps take 4620, four 3072 levels 6732. The scene has no moving caster.
+        // vsmMap=3072 puts the sphere row's texel at one screen pixel (PRD-634 Decisions, 2026-10-22).
         // Candidate knob sunBox=reach (PRD-634 Phase 1, with off=vsm): the one stock map widened to the scene.
         if (OFF.has("vsm") && params.get("sunBox") === "reach") {
           const box = key.shadow.camera;
