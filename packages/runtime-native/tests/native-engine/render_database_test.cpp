@@ -3564,6 +3564,80 @@ void leafReceiver() {
     CHECK(std::abs(hardCut.width - hard.width) < 0.05);   // a plain cut card keeps the sun's own source
 }
 
+// PRD-653: a material marked roughDiffuse shades direct light with Unreal's Substrate rough diffuse (the EON
+// model) where three shades Lambert. A grey floor seen from above at 26.6 degrees and lit at 45 degrees from the
+// camera's side (back-scatter) or from the far side (forward scatter) differs between the two renders by EON's
+// factor on the diffuse term alone, whatever the specular does: E x N.L x albedo / pi x (g - 1). A lamp's Source
+// Radius fades the model's roughness to nothing at 20 cm, so a lamp that large shades Lambert.
+void roughDiffuse() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(96, 96);
+    renderer.setOutput(OutputState{std::nullopt, 1, false});  // linear and unmapped: a pixel is radiance x 255
+    PerspectiveCamera camera(20, 1, 0.1, 50);
+    camera.position.set(0, 1, 2);
+    camera.lookAt(0, 0, 0);
+    camera.updateProjectionMatrix();
+    const double irradiance = 5, albedo = 0.5;
+    const double nov = 1 / std::sqrt(5.0);  // the floor's centre, seen from (0, 1, 2)
+    // EON's factor on Lambert in doubles, from the published model: the shader's twin.
+    const auto factor = [&](double r, double nol, double vol) {
+        const double s = vol - nov * nol, sOverT = std::max(s / std::max(1e-6, std::max(nov, nol)), s);
+        const double single = 1 - r * (1 - 1 / (1.5 - 2 / (3 * M_PI)));
+        const double multi = 1 - single * (1 + r * 0.262048 * (1 - nov));
+        const double gain = 1 + 0.189468 * (1 - albedo) * r;
+        return gain * (single * (1 + r * sOverT) + albedo * gain * multi);
+    };
+    // The floor's centre pixel, 0 to 255, under one sun or lamp 4 m away towards `towards`.
+    const auto centre = [&](bool rough, bool lamp, const std::array<double, 3>& towards, double sourceRadius) {
+        Scene scene;
+        DirectionalLight sun{Color(1, 1, 1), irradiance};
+        PointLight bulb{Color(1, 1, 1), irradiance, 0, 0};  // no falloff: the floor sees the full irradiance
+        bulb.sourceRadius = sourceRadius;
+        Light& light = lamp ? static_cast<Light&>(bulb) : sun;
+        light.position.set(4 * towards[0], 4 * towards[1], 4 * towards[2]);
+        scene.add(light);
+        auto material = std::make_shared<Material>(MaterialType::Standard);
+        material->color = Color(albedo, albedo, albedo);
+        material->roughness = 1;
+        material->roughDiffuse = rough;
+        Mesh floor{makePlaneGeometry(6, 6), material};
+        floor.rotation.set(-M_PI / 2, 0, 0);
+        scene.add(floor);
+        scene.updateMatrixWorld(true);
+        RenderDatabase database;
+        database.render(renderer, scene, camera);
+        const auto pixels = read(renderer, events);
+        CHECK(pixels.size() == size_t{96} * 96 * 4);
+        return pixels.size() == size_t{96} * 96 * 4 ? double(pixels[(size_t{48} * 96 + 48) * 4]) : 0.0;
+    };
+    // What the factor moves the pixel by: 255 x E x N.L x albedo / pi x (g - 1), for the light `towards` it.
+    const auto shift = [&](const std::array<double, 3>& towards, double r) {
+        const double nol = towards[1], vol = nov * towards[1] + 2 / std::sqrt(5.0) * towards[2];
+        return 255 * irradiance * nol * albedo / M_PI * (factor(r, nol, vol) - 1);
+    };
+    const std::array<double, 3> back{0, M_SQRT1_2, M_SQRT1_2}, forward{0, M_SQRT1_2, -M_SQRT1_2};
+    const double backShift = centre(true, false, back, 0) - centre(false, false, back, 0);
+    const double forwardShift = centre(true, false, forward, 0) - centre(false, false, forward, 0);
+    std::printf("rough diffuse: sun back-scatter %+.1f (expect %+.1f), forward %+.1f (expect %+.1f)\n", backShift,
+                shift(back, 0.4), forwardShift, shift(forward, 0.4));
+    CHECK(std::abs(backShift - shift(back, 0.4)) < 2.5);
+    CHECK(std::abs(forwardShift - shift(forward, 0.4)) < 2.5);
+    CHECK(backShift > 30 && forwardShift < -30);  // EON brightens the retro-reflection and darkens the forward lobe
+    // A lamp's Source Radius: 0 is a sun's weight 1, 10 cm halves the model's roughness, 20 cm is Lambert.
+    const double lambert = centre(false, true, back, 0);
+    const double point = centre(true, true, back, 0) - lambert;
+    const double half = centre(true, true, back, 0.1) - lambert;
+    const double large = centre(true, true, back, 0.2) - lambert;
+    std::printf("rough diffuse: lamp r0 %+.1f (expect %+.1f), r0.1 %+.1f (expect %+.1f), r0.2 %+.1f (expect 0)\n", point,
+                shift(back, 0.4), half, shift(back, 0.2), large);
+    CHECK(std::abs(point - shift(back, 0.4)) < 2.5);
+    CHECK(std::abs(half - shift(back, 0.2)) < 2.5);
+    CHECK(std::abs(large) <= 1.5);
+}
+
 // sourceRadiusShadowFilter on a lamp (PRD-650): a plate 2 m under a lamp 4 m above the floor throws an
 // edge whose penumbra is 2 x sourceRadius x (4 - 2) / 2 m wide on the floor. The edge's width, in pixels
 // whose shadowed-to-unshadowed ratio lies between 0.15 and 0.85, follows the radius for a point light's
@@ -4984,7 +5058,7 @@ TN_TEST_MAIN({"gpu_joint_production", gpuJointProduction}, {"multi_material_grou
              {"material_unsupported", materialUnsupported}, {"shader_invalid", shaderInvalid}, {"time_uniform", timeUniform}, {"gpu_mipmaps", gpuMipmaps}, {"updates", updates},
              {"multi_camera_layers", multiCameraLayers}, {"render_callback", renderCallback}, {"instanced", instanced},
              {"batched_vs_unbatched", batchedVsUnbatched}, {"skinned_crowd", skinnedCrowdPixels}, {"skinned_decline_cadence", skinnedDeclineCadence}, {"skinned_normalized_weights", skinnedNormalizedWeights}, {"normal_map_tilt", normalMapTilt}, {"unsupported_map_slot", unsupportedMapSlot}, {"env_map_slot_is_read", envMapSlotIsRead}, {"converted_copies_swept", convertedCopiesAreSwept}, {"gpu_timer_covers_offscreen", gpuTimerCoversOffscreen}, {"gpu_timer_splits_the_gather", gpuTimerSplitsTheLabelledGather}, {"gpu_timer_covers_shadows", gpuTimerCoversShadows}, {"overlay_over_frame", overlayOverFrame}, {"gpu_timer_is_opt_in", gpuTimerIsOptIn}, {"msaa_edges", msaaEdges}, {"shadow_camera_layers", shadowCameraLayers}, {"flat_shading_needs_no_normals", flatShadingNeedsNoNormals}, {"map_sampleability_changes", mapSampleabilityChanges}, {"batch_caches_stay_put", batchCachesStayPut}, {"frustum_culling", frustumCulling},
-             {"shadow_caster_frustum_culling", shadowCasterFrustumCulling}, {"masked_shadow", maskedShadow}, {"leaf_receiver", leafReceiver}, {"point_shadow_cube_faces", pointShadowCubeFaces}, {"lamp_source_radius", lampSourceRadius}, {"lamp_source_radius_wall", lampSourceRadiusWall}, {"lamp_source_radius_crate", lampSourceRadiusCrate}, {"contact_shadow_foot", contactShadowFoot}, {"virtual_sun_contact_foot", virtualSunContactFoot}, {"lamp_cache", lampCache}, {"shadow_lights_follow_hierarchy", shadowLightsFollowHierarchy}, {"records_survive_siblings", recordsSurviveSiblings}, {"steady_frame_hashes_no_record", steadyFrameHashesNoRecord}, {"nested_record_cache", nestedRecordCache}, {"frustum_record_retention", frustumRecordRetention}, {"world_sphere_measured_once", worldSphereMeasuredOnce}, {"reflection_reuse", reflectionReuse})
+             {"shadow_caster_frustum_culling", shadowCasterFrustumCulling}, {"masked_shadow", maskedShadow}, {"leaf_receiver", leafReceiver}, {"rough_diffuse", roughDiffuse}, {"point_shadow_cube_faces", pointShadowCubeFaces}, {"lamp_source_radius", lampSourceRadius}, {"lamp_source_radius_wall", lampSourceRadiusWall}, {"lamp_source_radius_crate", lampSourceRadiusCrate}, {"contact_shadow_foot", contactShadowFoot}, {"virtual_sun_contact_foot", virtualSunContactFoot}, {"lamp_cache", lampCache}, {"shadow_lights_follow_hierarchy", shadowLightsFollowHierarchy}, {"records_survive_siblings", recordsSurviveSiblings}, {"steady_frame_hashes_no_record", steadyFrameHashesNoRecord}, {"nested_record_cache", nestedRecordCache}, {"frustum_record_retention", frustumRecordRetention}, {"world_sphere_measured_once", worldSphereMeasuredOnce}, {"reflection_reuse", reflectionReuse})
 
 
 
