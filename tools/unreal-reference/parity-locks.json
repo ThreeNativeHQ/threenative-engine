@@ -2690,6 +2690,24 @@
       "metric": "dP50",
       "threshold": 0.0392,
       "since": "ef8871272"
+    },
+    {
+      "layer": "L9",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Sphere_Chrome",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "e7bd94f01"
+    },
+    {
+      "layer": "L9",
+      "sun": "sun60",
+      "pose": "spheres",
+      "region": "Sphere_SmoothDielectric",
+      "metric": "deltaE",
+      "threshold": 1,
+      "since": "e7bd94f01"
     }
   ]
 }
