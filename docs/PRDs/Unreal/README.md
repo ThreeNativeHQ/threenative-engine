@@ -164,13 +164,18 @@ PRD-459, PRD-486 and PRD-493 cite Unreal only in passing, so they stay in their 
 
 The [feature map](research/unreal-visuals-and-performance-feature-map.md) found Unreal systems with no
 PRD. Each one below opens with a gate measurement and names the condition that reopens it if the gate
-fails. Depth of field already belongs to PRD-VQ-13 and Nanite page streaming to PRD-285.
+fails. Depth of field already belongs to PRD-VQ-13, Nanite page streaming to PRD-285, and the
+denoisers to PRD-641, PRD-642, PRD-660 and PRD-635. Level instances and content bundles are out of
+scope by rule: the repository has no scene format.
 
 | PRD | Outcome |
 | --- | --- |
 | [PRD-675](open-world/PRD-675-a-game-turns-a-named-layer-of-its-world-on-and-off-inside-one-streaming-budget.md) | A game turns a named layer of its world on and off inside one streaming budget |
 | [PRD-672](performance/PRD-672-terrain-shades-its-layers-once-into-cached-pages.md) | Terrain shades its layers once into cached pages, not every pixel every frame |
 | [PRD-673](performance/PRD-673-the-gpu-scene-tests-a-placement-only-when-its-grid-cell-is-in-view.md) | The GPU scene tests a placement only when its grid cell is in view |
+| [PRD-676](performance/PRD-676-a-playtest-capture-tells-an-agent-whether-a-frame-pays-for-pixels-clusters-shadow-levels-or-effects.md) | A playtest capture tells an agent whether a frame pays for pixels, clusters, shadow levels or effects |
+| [PRD-682](performance/PRD-682-flat-parts-of-the-frame-shade-at-a-coarser-rate-where-the-gpu-allows-it.md) | Flat parts of the frame shade at a coarser rate where the GPU allows it, and every other platform says why not |
+| [PRD-683](performance/PRD-683-a-frame-skips-passes-nothing-reads-and-shares-targets-whose-lifetimes-do-not-overlap.md) | A frame skips the passes nothing reads and shares one target between passes that never overlap |
 | [PRD-660](rendering/PRD-660-many-shadowed-lamps-cost-one-fixed-budget-not-one-shadow-map-each.md) | Many shadowed lamps cost one fixed budget, not one shadow map each |
 | [PRD-661](rendering/PRD-661-bounce-light-stays-clean-at-fewer-rays-by-reusing-neighbour-and-last-frame-rays.md) | Bounce light stays clean at fewer rays by reusing the rays of neighbours and of the last frame |
 | [PRD-662](rendering/PRD-662-with-dynamic-gi-off-the-sky-light-stops-at-nearby-walls-and-roofs.md) | With dynamic GI off, the sky light stops at nearby walls and roofs |
@@ -181,6 +186,9 @@ fails. Depth of field already belongs to PRD-VQ-13 and Nanite page streaming to 
 | [PRD-669](rendering/PRD-669-far-foliage-keeps-its-volume-when-its-clusters-become-voxels.md) | Far foliage keeps its volume when its clusters become voxels |
 | [PRD-670](rendering/PRD-670-rough-surfaces-reflect-light-the-way-a-fresh-unreal-project-shades-them.md) | Rough surfaces reflect light the way a fresh Unreal project shades them |
 | [PRD-671](rendering/PRD-671-a-character-wears-strand-hair-that-catches-light-along-each-strand.md) | A character wears strand hair that catches light along each strand |
+| [PRD-677](rendering/PRD-677-a-dense-glass-or-water-mesh-takes-the-cluster-cut-and-blends-like-the-source-mesh.md) | A dense glass or water mesh takes the cluster cut and blends like the source mesh |
+| [PRD-678](rendering/PRD-678-a-dense-skinned-body-takes-the-cluster-cut-in-every-view-that-sees-it.md) | A dense skinned body takes the cluster cut in every view that sees it |
+| [PRD-679](rendering/PRD-679-sparks-and-glass-in-fog-take-the-fog-of-their-own-distance-and-blend-mode.md) | Sparks and glass in fog take the fog of their own distance and blend mode |
 | [PRD-664](vfx/PRD-664-smoke-and-explosions-are-lit-volumes-not-flat-sprites.md) | Smoke and explosions are lit volumes, not flat sprites |
 | [PRD-674](vfx/PRD-674-an-ambient-particle-is-a-function-of-its-age-and-seed-and-costs-no-simulation.md) | An ambient particle is a function of its age and seed, and costs no simulation |
 

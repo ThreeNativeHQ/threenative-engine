@@ -104,10 +104,12 @@ quadrantChart
 | 5 | PRD-610 | Sparks bounce off visible surfaces | VFX | 6 | 1 | 0/12 | PRD-609 | Effect detail |
 
 Added on 2026-10-21: PRDs filed outside `docs/PRDs/Unreal/` that port an Unreal system, and the PRDs
-filed for the gaps this map found (PRD-660 to PRD-675).
+filed for the gaps this map found (PRD-660 to PRD-683).
 
 | Wave | PRD | What it ports | Layer | Complexity | Impact | Done | Waits on | Why this wave |
 | --- | --- | --- | --- | :---: | :---: | ---: | --- | --- |
+| 2 | PRD-679 | Fog behind glass and sparks (fog composition) | L3 | 5 | 3 | 0/8 | — | Additive effects add the fog colour today; gate first |
+| 2 | PRD-676 | Debug views an agent reads from a playtest capture | Perf | 5 | 3 | 0/7 | — | Explains frame cost before more perf work |
 | 2 | PRD-670 | Rough diffuse like a fresh Unreal project (Substrate is on in 5.8.3) | L1 | 5 | 3 | 0/5 | PRD-632 | Every rough pixel; gate first |
 | 3 | PRD-488 | Foliage moves in the wind | Look | 4 | 2 | 0/8 | — | Leaf shadows that sway (PRD-651) need it |
 | 4 | PRD-VQ-03 | Local reflection probes | L8 | 5 est. | 3 | 0/8 | — | Interiors reflect their room, not the sky |
@@ -127,6 +129,10 @@ filed for the gaps this map found (PRD-660 to PRD-675).
 | 5 | PRD-672 | Terrain layers cached in virtual pages | Perf | 8 | 1 | 0/6 | PRD-VQ-10 | Saves shading time on many-layer terrain |
 | 5 | PRD-673 | Cull by grid cell before placement (scene culling grid) | Perf | 6 | 2 | 0/7 | — | Dense placements; gate first |
 | 5 | PRD-675 | Named world layers in one streaming budget (data layers) | Perf | 5 | 1 | 0/6 | PRD-606 | Tests the two-`WorldCells` claim |
+| 5 | PRD-683 | Skip unread passes, share targets (render graph) | Perf | 5 | 1 | 0/7 | PRD-523 | The RDG outcomes that need no new API |
+| 5 | PRD-682 | Coarse shading where the GPU allows (VRS) | Perf | 7 | 1 | 0/6 | — | Off in Unreal; Linux needs a Dawn patch |
+| 5 | PRD-677 | Clustered glass and water blend like the source | Perf | 3 | 1 | 0/5 | PRD-600 | Off by default in Unreal |
+| 5 | PRD-678 | Skinned bodies take the cluster cut | Perf | 6 | 1 | 0/7 | PRD-486 | Only a 100K-triangle character needs it |
 | 5 | PRD-459 | One streaming admission budget per frame | Perf | 6 | 3 | 4/16 | — | Streaming hitches in open worlds |
 | 5 | PRD-456 | Distant world cell proxies (HLOD) | Perf | 8 | 2 | 0/6 | — | Far cells as merged proxies |
 | 5 | PRD-486 | Characters get a LOD chain | Perf | 4 | 2 | 0/8 | — | Crowds |
@@ -218,7 +224,7 @@ flowchart LR
 | Bloom and lens flare | 1,797 | 932 | 2,729 | 3 | Low | **Partial.** Bloom exists; PRD-636 open. Lens flare and FFT bloom (both off in a fresh project): PRD-667 |
 | Motion blur | 1,518 | 2,552 | 4,070 | 5 | Low | **Open.** PRD-636 |
 | Depth of field | 4,160 | 8,194 | 12,354 | 7 | Medium | **Open.** PRD-VQ-13 owns it. It lacks the Unreal lens model, near and far layers and tier costs. Off in a fresh project |
-| Denoisers | 5,800 | 10,068 | 15,868 | 7 | High | **Not filed.** Unreal has no virtual-shadow denoiser |
+| Denoisers | 5,800 | 10,068 | 15,868 | 7 | High | **Owned.** ScreenSpaceDenoise does not run in a fresh project. GI history PRD-641, reflections PRD-642, many lights PRD-660, low-tier AO PRD-635 |
 
 ## 5. Geometry and scene performance
 
