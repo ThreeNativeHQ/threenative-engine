@@ -94,7 +94,13 @@ PRD's "Tried and rejected" or "Decisions" section, for example
 - Cause: the trace made about twenty calls into the engine per ray: it set the direction vector, read the origin back, wrote the point, the normal and the UV into three vectors, read them again, then read the hit object's id and matrix several times.
 - Insight: after the `side` snapshot the remaining cost was the calls, not the arithmetic. Return numbers from a hot query and give the caller one record per mesh.
 
-### 2026-10-21 — The provisional bake takes two bounces — KEEP
+### 2026-10-22 — The provisional bake takes the full bake's bounces — KEEP
+- Where: `giCache.ts` (`progressive.previewBounces`, default the full bake's), `Reference.ts.in` (`giPreviewBounces`), spec `unreal-look-gi-progressive.spec.ts`, case "takes the full bake's bounces for the provisional bake" (red with two bounces: 0.2074 against a bound of 0.1556).
+- Result: Node, sunlit room, 5 bounces, 32 rays, mean over texels of |preview - full| / full: 0.207 with two bounces (16% too dark), 0.157 with three, 0.124 with five. The global L1 error (0.077 with two, 0.070 with five) hid this: the lit floor carries the sum, the dim walls carry little. The judge read the two-bounce frame at 15 s as blotchy (REGRESSION).
+- Cause: the entry below chose two bounces on the global L1 error. The metric was dominated by bright texels, and the eye reads the dim ones.
+- Insight: judge a first estimate with an error that counts every texel alike. More rays (64 at three bounces: 0.130) and more smoothing passes (12 passes: 0.138) gain less than the missing bounces.
+
+### 2026-10-21 — The provisional bake takes two bounces — REPLACED by the entry above
 - Where: `giCache.ts` (`progressive.previewBounces`, default 2), `Reference.ts.in` (`giPreviewBounces`), spec `unreal-look-gi-progressive.spec.ts`, case "takes two bounces for the provisional bake" (red with one bounce: 0.1508 against a bound of 0.1056).
 - Result: Node, sunlit room, 5 bounces, 32 rays, relative L1 error against the full cache: 0.151 with one bounce, 0.077 with two, 0.070 with three or five. The second bounce costs about 150 ms in the browser (the gather of all five bounces is 752 ms).
 - Cause: one bounce leaves out the warm light a lit floor throws on the walls. The first L9 frame showed dark blue patches on the walls for the seconds before the full bake landed.
