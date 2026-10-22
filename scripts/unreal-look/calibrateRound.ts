@@ -71,6 +71,8 @@ export interface IMeasured {
   iou: number | null;
   /** The reference statistics of the region: its median sets the step of dP50 and deltaE (PRD-654). */
   unreal?: { p50: number } | null;
+  /** The compare verdict against the layer thresholds: a lock exists only where it is true. */
+  pass?: boolean | null;
 }
 
 /**
