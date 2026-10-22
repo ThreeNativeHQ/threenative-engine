@@ -236,12 +236,27 @@ async function main(): Promise<void> {
         );
         if (exposures().at(-1)?.text.includes('"applied":true') === true) {
           const deadline = Date.now() + 240_000;
-          // Three readings in a row after the pose: one right after it can still be the old view's.
+          // Three readings in a row after the pose: one right after it can still be the old view's. The pass calls a
+          // reading `settled` while it is still 0.1 stop from its target (2.68 against 2.586, closing at 1 stop/s), and
+          // a frame taken then is about 7% too bright for the arm that had arrived: ask for 0.01 stop as well.
+          const arrived = (text: string) => {
+            const reading = JSON.parse(text.slice(text.indexOf("{"))) as {
+              exposureStops?: number;
+              targetStops?: number;
+              settled?: boolean;
+            };
+            return (
+              reading.settled === true &&
+              Math.abs(
+                (reading.exposureStops ?? Number.NaN) - (reading.targetStops ?? Number.NaN),
+              ) <= 0.01
+            );
+          };
           const settledNow = () => {
             const last = exposures()
               .filter((m) => m.atMs > poseAt)
               .slice(-3);
-            return last.length === 3 && last.every((m) => m.text.includes('"settled":true'));
+            return last.length === 3 && last.every((m) => arrived(m.text));
           };
           while (!settledNow() && Date.now() < deadline) await page.waitForTimeout(500);
           exposureSettled = settledNow();
