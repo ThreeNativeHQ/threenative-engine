@@ -70,6 +70,42 @@ PRD's "Tried and rejected" or "Decisions" section, for example
 - Cause: the compositor throttles an off-screen or occluded window, so presented frames are not a clock. Xvfb runs at about 10 fps and hid the fault.
 - Insight: pace background work by the clock and check it in the browser the owner uses, not only in the harness browser.
 
+### 2026-10-21 — Bake slices run on the next host task, not after an idle gap — KEEP
+- Where: `giCache.ts` (`hostDefer`, `progressive.gapMs`, `previewRays` 32), commit `68f8b893f`. URL knobs on the Reference page: `giGapMs` (0 by default, 8 gives the old pacing) and `giPreviewRays`.
+- Result: sunlit-room L6, Xvfb, NVIDIA RTX 2080, host load 22 to 28: world visible at 6.2 s and converged at 6.3 s, against 12.1 s and 19.2 s with the old 8 ms gap and 16 preview rays. The longest slice was 50 ms.
+- Cause: the equal idle gap halved the duty cycle of the bake. A message posted on a `MessageChannel` runs on the next host task, and Chrome draws a pending frame and handles input before it, so the page stays responsive without the gap.
+- Insight: pace background work by what the host leaves free. A fixed duty cycle wastes half of it.
+
+### 2026-10-21 — The bake reads each material's `side` once per mesh, not once per triangle — KEEP
+- Where: `scaffold/render/bakeRays.ts` (`sideOfTriangle`), commit `43cda1d2e`. Spec `unreal-look-bake-rays.spec.ts`, case "makes no call into the scene's materials while it casts rays" (3317 reads before, 0 now).
+- Result: the cache is bit-identical in Node (values hash 1524492911 at 0 bounces, 410990920 at 5). In the browser, a Chrome CPU profile of the one-shot bake of the sunlit room (L6, Xvfb, owned Wasm engine) put 8.6 s of the 10.6 s of `raycast` into `material.side` reads. After the change the bake took about 2 s.
+- Cause: on the owned engine every field read of a material, a vector or an object is a call into the engine. The ray test read `material.side` for each candidate triangle.
+- Insight: a Node profile of the same code showed none of this, because a property read in Node costs nothing. Profile a browser page on the owned engine before you choose a lever, and count the calls into the engine as well as the instructions.
+
+### 2026-10-21 — The bake's inner loops use scalars: 0.6 times the instructions — KEEP
+- Where: `bakeRays.ts` (`raycast`), `giCache.ts` (`trace`, `gather`, `readField`, `weightsAt`), commit `383164719`.
+- Result: user-space instructions of one Node bake of the sunlit room (1,026,116 rays, 3 runs): L6 32.5 G → 18.9 G, L9 (5 bounces) 53.6 G → 32.7 G. The ray test alone: 2.9 → 1.1 µs per ray. The cache is bit-identical: the values hash, the sky hash and the ray, solid and shadow-ray counts match.
+- Cause: array literals, destructuring and per-call temporaries in the hot loops, and a sky radiance that was read again for every probe.
+- Insight: compare a Node bake by instruction count (`perf stat`), not by seconds. On a loaded host the wall time of one build moved by 30% between runs.
+
+### 2026-10-21 — The trace casts its rays from plain numbers and reads each mesh once — KEEP
+- Where: `bakeRays.ts` (`cast`, `IFlatHit`), `giCache.ts` (`IHitRecord`, `trace`), commit `574c21756`. Spec `unreal-look-gi-trace.spec.ts` (0 casts on the old trace, more than 10,000 now).
+- Result: sunlit room L9 in the browser (Xvfb, RTX 2080), the tree before the commit against the tree with it, run back to back: trace phase 8748 → 4345 ms and 5819 → 2884 ms (0.50× in both pairs), whole bake 11,970 → 8721 ms and 8421 → 4363 ms. The host load was 45 to 83, so the whole-bake ratio (0.73×, 0.52×) is noisy and the trace ratio is the steady figure. The cache is bit-identical in Node: values hash 1524492911 at 0 bounces and 410990920 at 5.
+- Cause: the trace made about twenty calls into the engine per ray: it set the direction vector, read the origin back, wrote the point, the normal and the UV into three vectors, read them again, then read the hit object's id and matrix several times.
+- Insight: after the `side` snapshot the remaining cost was the calls, not the arithmetic. Return numbers from a hot query and give the caller one record per mesh.
+
+### 2026-10-21 — The provisional bake takes two bounces — KEEP
+- Where: `giCache.ts` (`progressive.previewBounces`, default 2), `Reference.ts.in` (`giPreviewBounces`), spec `unreal-look-gi-progressive.spec.ts`, case "takes two bounces for the provisional bake" (red with one bounce: 0.1508 against a bound of 0.1056).
+- Result: Node, sunlit room, 5 bounces, 32 rays, relative L1 error against the full cache: 0.151 with one bounce, 0.077 with two, 0.070 with three or five. The second bounce costs about 150 ms in the browser (the gather of all five bounces is 752 ms).
+- Cause: one bounce leaves out the warm light a lit floor throws on the walls. The first L9 frame showed dark blue patches on the walls for the seconds before the full bake landed.
+- Insight: after the second bounce the error that stays is the noise of the 32 rays, and more bounces do not remove it.
+
+### 2026-10-21 — A larger bake slice does not shorten the convergence — REJECT
+- Where: `giCache.ts` (`progressive.budgetMs`, URL knob `giBudgetMs`), sunlit room L9, Xvfb, RTX 2080, host load 25 to 35, arms run back to back (`b8`, `b16`, `b24`, `b32` against the one-shot arm), three rounds in rotating order.
+- Result: the bake's share of the main thread rose with the slice (38%, 55%, 56%, 64% from the frame interval) and the frame rate over the first 60 frames fell (about 47, 34, 23 and 20 fps). The time to the converged cache moved by less than the run-to-run noise: converged over the one-shot arm's ready time was 1.20 and 1.52 (8 ms), 0.81, 1.46 and 1.68 (16 ms), 1.07 and 1.53 (24 ms), 1.37, 1.42 and 1.19 (32 ms). Two arms of round 3 ran at load 94 to 108 and do not count.
+- Cause: the frames the page draws while it bakes take about 9 to 13 ms of main-thread time each at L9. A longer slice leaves fewer frames, not a faster bake, and a loaded host moves the time by more than the slice does.
+- Insight: the progressive path cannot converge in the one-shot arm's time at 60 fps. Its gain is the world on screen 1.5 to 4 s before the one-shot arm, and no task over about 50 ms. Keep the slice at 8 ms.
+
 ### 2026-10-21 — Cloud noise textures: hoisted lattice weights, no `Math.min` — KEEP
 - Where: `scaffold/render/clouds.ts` (`lattice1d`, `valueNoise`, `worleyInverted`), commit `248a1b991`.
 - Result: Node, 4 seeds, loaded host: 1483 / 1280 / 1350 / 1298 ms → 672 / 566 / 594 / 562 ms (2.3×). Output is bit-identical: the spec `unreal-look-cloud-textures.spec.ts` pins the sha256 of the seed-631 textures and passed before and after.
