@@ -49,7 +49,9 @@ flowchart LR
    **Same scene first.** A look gap means nothing while the two engines draw different geometry.
    `pnpm unreal-look:compare --sameness [--scene reference|gi|shadow|gi:<name>|shadow:<name>] [--captures <root>]`
    scores every object of every pose from the `ID` frames: it prints IoU and the pixels that lie more than
-   1 px from the other engine's object, and exits 1 when a pose fails (PRD-646). Fix a failing object at its
+   1 px from the other engine's object (a feature under 3 px is counted apart as `thin`, a pixel the other
+   engine draws with no ID colour as `no-ID`), lists the objects no pose shows, and exits 1 when a pose
+   fails (PRD-646). Fix a failing object at its
    source in the scene (`tools/unreal-reference/**/scene.py`, `scene.json`) or the recreation, never in the
    threshold. `python3 -I tools/unreal-reference/sameness-sheet.py <out.png> --captures <root> --scene <scene>`
    draws the engines' frames and the overlap.
