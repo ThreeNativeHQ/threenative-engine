@@ -325,6 +325,45 @@ not needed for its red-green test), then PRD-650 and the rest of PRD-651 in para
   game that asks. Hardware ray tracing was built and measured in [PRD-645](../done/PRD-645-a-desktop-gpu-with-ray-tracing-traces-gi-rays-in-hardware.md) and declined at its gate.
 
 ## Already shipped, or declined — do not file again
+||||||| parent of 68dc34cff (Unreal feature map: what each system costs and what to port first (#555))
+## Already shipped, or declined — do not file again
+
+## Gaps filed from the feature map (2026-10-21)
+
+The [feature map](research/unreal-visuals-and-performance-feature-map.md) found Unreal systems with no
+PRD. Each one below opens with a gate measurement and names the condition that reopens it if the gate
+fails. Depth of field already belongs to PRD-VQ-13, Nanite page streaming to PRD-285, and the
+denoisers to PRD-641, PRD-642, PRD-660 and PRD-635. Level instances and content bundles are out of
+scope by rule: the repository has no scene format.
+
+| PRD | Outcome |
+| --- | --- |
+| [PRD-675](open-world/PRD-675-a-game-turns-a-named-layer-of-its-world-on-and-off-inside-one-streaming-budget.md) | A game turns a named layer of its world on and off inside one streaming budget |
+| [PRD-672](performance/PRD-672-terrain-shades-its-layers-once-into-cached-pages.md) | Terrain shades its layers once into cached pages, not every pixel every frame |
+| [PRD-673](performance/PRD-673-the-gpu-scene-tests-a-placement-only-when-its-grid-cell-is-in-view.md) | The GPU scene tests a placement only when its grid cell is in view |
+| [PRD-676](performance/PRD-676-a-playtest-capture-tells-an-agent-whether-a-frame-pays-for-pixels-clusters-shadow-levels-or-effects.md) | A playtest capture tells an agent whether a frame pays for pixels, clusters, shadow levels or effects |
+| [PRD-682](performance/PRD-682-flat-parts-of-the-frame-shade-at-a-coarser-rate-where-the-gpu-allows-it.md) | Flat parts of the frame shade at a coarser rate where the GPU allows it, and every other platform says why not |
+| [PRD-683](performance/PRD-683-a-frame-skips-passes-nothing-reads-and-shares-targets-whose-lifetimes-do-not-overlap.md) | A frame skips the passes nothing reads and shares one target between passes that never overlap |
+| [PRD-660](rendering/PRD-660-many-shadowed-lamps-cost-one-fixed-budget-not-one-shadow-map-each.md) | Many shadowed lamps cost one fixed budget, not one shadow map each |
+| [PRD-661](rendering/PRD-661-bounce-light-stays-clean-at-fewer-rays-by-reusing-neighbour-and-last-frame-rays.md) | Bounce light stays clean at fewer rays by reusing the rays of neighbours and of the last frame |
+| [PRD-662](rendering/PRD-662-with-dynamic-gi-off-the-sky-light-stops-at-nearby-walls-and-roofs.md) | With dynamic GI off, the sky light stops at nearby walls and roofs |
+| [PRD-663](rendering/PRD-663-a-fog-bank-sits-where-the-game-puts-it.md) | A fog bank sits where the game puts it, and the sun lights it |
+| [PRD-665](rendering/PRD-665-clouds-shade-the-haze-and-fog-below-them.md) | Clouds shade the haze and fog below them, so light shafts show through the gaps |
+| [PRD-667](rendering/PRD-667-a-bright-sun-can-flare-the-lens-when-the-game-asks.md) | A bright sun can flare the lens, and bloom can take any kernel, when the game asks |
+| [PRD-668](rendering/PRD-668-a-displaced-surface-changes-its-silhouette-near-the-camera.md) | A displaced surface changes its silhouette near the camera |
+| [PRD-669](rendering/PRD-669-far-foliage-keeps-its-volume-when-its-clusters-become-voxels.md) | Far foliage keeps its volume when its clusters become voxels |
+| [PRD-670](rendering/PRD-670-rough-surfaces-reflect-light-the-way-a-fresh-unreal-project-shades-them.md) | Rough surfaces reflect light the way a fresh Unreal project shades them |
+| [PRD-671](rendering/PRD-671-a-character-wears-strand-hair-that-catches-light-along-each-strand.md) | A character wears strand hair that catches light along each strand |
+| [PRD-677](rendering/PRD-677-a-dense-glass-or-water-mesh-takes-the-cluster-cut-and-blends-like-the-source-mesh.md) | A dense glass or water mesh takes the cluster cut and blends like the source mesh |
+| [PRD-678](rendering/PRD-678-a-dense-skinned-body-takes-the-cluster-cut-in-every-view-that-sees-it.md) | A dense skinned body takes the cluster cut in every view that sees it |
+| [PRD-679](rendering/PRD-679-sparks-and-glass-in-fog-take-the-fog-of-their-own-distance-and-blend-mode.md) | Sparks and glass in fog take the fog of their own distance and blend mode |
+| [PRD-664](vfx/PRD-664-smoke-and-explosions-are-lit-volumes-not-flat-sprites.md) | Smoke and explosions are lit volumes, not flat sprites |
+| [PRD-674](vfx/PRD-674-an-ambient-particle-is-a-function-of-its-age-and-seed-and-costs-no-simulation.md) | An ambient particle is a function of its age and seed, and costs no simulation |
+
+## Already shipped, deferred, or out of scope by rule
+
+Owner rule, 2026-10-21: a feature that fails a gate is **deferred** with the condition that reopens
+it. Unreal ships each of these for a reason, so none is closed for good.
 
 - **Already shipped:** GPU-driven cull and LOD into indirect draws (`world-gpu-scene.ts`), the
   virtual-shadow clipmap with page cache and invalidation, pipeline warm-up and the native pipeline
@@ -338,3 +377,22 @@ not needed for its red-green test), then PRD-650 and the rest of PRD-651 in para
   RDG, bindless, async compute and heap aliasing (no WebGPU API), Nanite landscape, runtime virtual
   textures, and the mobile tonemap subpass (off by default in Unreal itself).
 - **Declined in PRD-460:** stencil LOD dither.
+||||||| parent of 68dc34cff (Unreal feature map: what each system costs and what to port first (#555))
+- **Declined on measurement:** HZB occlusion culling. PRD-489 closed on 2026-10-06 with a median
+  would-cull share of 0.013.
+- **Declined by rule:** Niagara's graph editor and module stack (an editor and an IR are closed),
+  RDG, bindless, async compute and heap aliasing (no WebGPU API), Nanite landscape, runtime virtual
+  textures, and the mobile tonemap subpass (off by default in Unreal itself).
+- **Declined in PRD-460:** stencil LOD dither.
+
+- **Deferred on measurement:** HZB occlusion culling. PRD-489 closed on 2026-10-06 with a median
+  would-cull share of 0.013. Revisit when a dense city or interior scene shows a high would-cull share.
+- **Deferred until WebGPU exposes the API:** RDG-class scheduling, bindless, async compute and heap
+  aliasing, and variable rate shading.
+- **Deferred with a PRD that opens on a gate:** runtime virtual textures (PRD-672). Nanite landscape
+  stays deferred until PRD-672 shows that cached terrain pages pay.
+- **Deferred on measurement:** Nanite page streaming. PRD-285 found vertex data is about 74% of
+  resident bytes. Revisit when cluster pages exceed a memory budget on a real scene.
+- **Off by default in Unreal itself:** the mobile tonemap subpass. Revisit if a mobile template needs it.
+- **Out of scope by rule:** Niagara's graph editor and module stack (an editor and an IR are closed).
+- **Deferred in PRD-460:** stencil LOD dither.

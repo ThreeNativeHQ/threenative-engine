@@ -4,8 +4,15 @@ prd_contract: v1
 
 # PRD-285 — clusters arrive when the camera asks for them
 
-**Status: DECLINED on its own precondition — 2026-08-30. Phase 5 of the
-[virtual geometry batch](./README.md). This phase declines alone and the batch stays open.**
+**Status: DEFERRED on its own precondition — 2026-08-30. Phase 5 of the
+[virtual geometry batch](./README.md). This phase defers alone and the batch stays open.**
+
+**Revisit when** a game in this repository or the sandbox holds clustered geometry that does not fit
+in memory on a target it must run on. Owner rule, 2026-10-21: a feature that fails a gate is
+deferred, not declined. The Unreal 5.8.3 reference for the reopened work:
+`Engine/Source/Runtime/Engine/Private/Rendering/NaniteStreamingManager.cpp` sets a 512 MB streaming
+pool (lines 57-61), at most 128 pending pages (line 82) and at most 128 page installs per frame
+(line 90).
 
 **The precondition §1 names is measured and not met.** No game in this repository or in the sandbox
 holds an asset that does not fit in memory on a target it must run on. The densest thing the batch
