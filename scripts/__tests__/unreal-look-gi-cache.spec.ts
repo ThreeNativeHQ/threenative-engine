@@ -9,6 +9,7 @@ import {
   Mesh,
   MeshPhysicalMaterial,
   MeshStandardMaterial,
+  PerspectiveCamera,
   PlaneGeometry,
   Raycaster,
   SphereGeometry,
@@ -17,6 +18,7 @@ import {
 } from "three";
 import { describe, expect, it } from "vitest";
 import {
+  cacheFallback,
   giCache,
   gridOver,
   installGi,
@@ -605,6 +607,7 @@ describe("the world-space GI cache against closed forms (PRD-631 L7)", () => {
 
       it("the gather reads a texture of its own, over the same texels, and refresh flags both", () => {
         const { source } = live();
+        cacheFallback(new PerspectiveCamera());
         const { gatherTexture, volumeTexture } = giCache;
         expect(gatherTexture).toBeDefined();
         expect(gatherTexture).not.toBe(volumeTexture);
@@ -618,6 +621,7 @@ describe("the world-space GI cache against closed forms (PRD-631 L7)", () => {
 
       it("a cache whose lights never change gives the gather no copy", () => {
         bake(false);
+        cacheFallback(new PerspectiveCamera());
         expect(giCache.gatherTexture).toBeUndefined();
       });
 

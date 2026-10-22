@@ -791,17 +791,7 @@ function volume(
     const o = (x + grid.nx * (y + grid.ny * (6 * grid.nz + z))) * 4;
     for (let c = 0; c < 3; c += 1) texels[o + c] = toHalf((walls[probe * 3 + c] ?? 0) / 255);
   }
-  return volumeOver(texels, grid.nx, grid.ny, slices);
-}
-
-/** A texture over `texels`: the cache itself, or a copy that shares them (`giCache.gatherTexture`). */
-function volumeOver(
-  texels: Uint16Array,
-  width: number,
-  height: number,
-  depth: number,
-): Data3DTexture {
-  const texture = new Data3DTexture(texels, width, height, depth);
+  const texture = new Data3DTexture(texels, grid.nx, grid.ny, slices);
   texture.format = RGBAFormat;
   texture.type = HalfFloatType;
   texture.minFilter = LinearFilter;
@@ -1053,6 +1043,8 @@ export const giCache: {
    * 3 times too early); a texture object of its own follows the texels.
    */
   gatherTexture?: Data3DTexture;
+  /** Set by `installGi`: at least one light has a `source` that can change after the bake. */
+  lightsChange?: boolean;
   /**
    * The baked field at its final resolution, for tools and tests: per texel, six faces of RGB (E / pi), six
    * environment shares, and whether the texel's centre lies inside a solid (a read gives it no weight).
@@ -1083,6 +1075,11 @@ export function cacheFallback(
 ): ((position: Node<"vec3">, normal: Node<"vec3">) => Node<"vec3">) | undefined {
   const read = giCache.irradiance;
   if (read === undefined) return undefined;
+  // The copy is made when the gather asks, and only if a light can change.
+  if (giCache.lightsChange === true && giCache.gatherTexture === undefined) {
+    giCache.gatherTexture = giCache.volumeTexture?.clone();
+    if (giCache.gatherTexture !== undefined) giCache.gatherTexture.needsUpdate = true;
+  }
   const live = (index: number) =>
     uniform(0).onRenderUpdate(() => camera.matrixWorld.elements[index] ?? 0);
   const column = (a: number) => vec3(live(a), live(a + 1), live(a + 2));
@@ -1843,6 +1840,7 @@ export function installGi(
   // The screen-space gather's tier below reads the same as a material does, emitters included, so a ray that hits
   // the emitter on screen replaces its direct light instead of adding it twice.
   giCache.gatherTexture = undefined;
+  giCache.lightsChange = false;
   giCache.irradiance = (position, normal, texture) => {
     const base = read(position, normal, undefined, texture).irradiance;
     const light = emitterLight(emitters, position, normal);
@@ -1962,14 +1960,8 @@ export function installGi(
     if (giCache.gatherTexture !== undefined) giCache.gatherTexture.needsUpdate = true;
     return true;
   };
-  if (dynamic.length > 0) {
-    const { volumeTexture } = giCache;
-    if (volumeTexture !== undefined) {
-      const { nx, ny, nz } = fine.grid;
-      giCache.gatherTexture = volumeOver(volumeTexture.image.data as Uint16Array, nx, ny, nz * 7);
-    }
-    gameCtx.beforeRender?.(() => giCache.refresh?.());
-  }
+  giCache.lightsChange = dynamic.length > 0;
+  if (dynamic.length > 0) gameCtx.beforeRender?.(() => giCache.refresh?.());
   const normal = normalWorld.normalize();
   const incident = positionWorld.sub(cameraPosition).normalize();
   /**
