@@ -821,10 +821,9 @@ function irradianceAt(
     position: Node<"vec3">,
     normal: Node<"vec3">,
     reflection?: Node<"vec3">,
-    texture: Data3DTexture = cache,
   ): { irradiance: Node<"vec3">; visibility: Node<"float"> } => {
-    // A node of its own per reader (a material, a post pass), over the one texture (or the copy a pass is given).
-    const volumeNode = texture3D(texture);
+    // A node of its own per reader (a material, a post pass), over the one texture.
+    const volumeNode = texture3D(cache);
     const n = normal;
     // Texel units: texel i's centre is at i + 0.5. Clamped to the centres so nothing reads past the grid.
     // Read half a fine cell off the surface. 1.5 cells (0.75 m) looked past a 0.4 m gap between two boxes and read the
@@ -1031,20 +1030,7 @@ function irradianceAt(
  * nothing on screen would have returned (the tier below its own), with the pixel's world position and normal.
  */
 export const giCache: {
-  irradiance?: (
-    position: Node<"vec3">,
-    normal: Node<"vec3">,
-    texture?: Data3DTexture,
-  ) => Node<"vec3">;
-  /**
-   * The texture the screen-space gather reads: a copy of `volumeTexture` over the same texels, made when a light
-   * can change. A second pass that reads the one texture the materials read kept the texels of its first frame while
-   * a light faded (the gather subtracted the unfaded cache from a frame that had faded, and the room went black
-   * 3 times too early); a texture object of its own follows the texels.
-   */
-  gatherTexture?: Data3DTexture;
-  /** Set by `installGi`: at least one light has a `source` that can change after the bake. */
-  lightsChange?: boolean;
+  irradiance?: (position: Node<"vec3">, normal: Node<"vec3">) => Node<"vec3">;
   /**
    * The baked field at its final resolution, for tools and tests: per texel, six faces of RGB (E / pi), six
    * environment shares, and whether the texel's centre lies inside a solid (a read gives it no weight).
@@ -1075,18 +1061,12 @@ export function cacheFallback(
 ): ((position: Node<"vec3">, normal: Node<"vec3">) => Node<"vec3">) | undefined {
   const read = giCache.irradiance;
   if (read === undefined) return undefined;
-  // The copy is made when the gather asks, and only if a light can change.
-  if (giCache.lightsChange === true && giCache.gatherTexture === undefined) {
-    giCache.gatherTexture = giCache.volumeTexture?.clone();
-    if (giCache.gatherTexture !== undefined) giCache.gatherTexture.needsUpdate = true;
-  }
   const live = (index: number) =>
     uniform(0).onRenderUpdate(() => camera.matrixWorld.elements[index] ?? 0);
   const column = (a: number) => vec3(live(a), live(a + 1), live(a + 2));
   const [right, up, back, at] = [column(0), column(4), column(8), column(12)];
   const toWorld = (v: Node<"vec3">) => right.mul(v.x).add(up.mul(v.y)).add(back.mul(v.z));
-  return (position, normal) =>
-    read(toWorld(position).add(at), toWorld(normal).normalize(), giCache.gatherTexture);
+  return (position, normal) => read(toWorld(position).add(at), toWorld(normal).normalize());
 }
 
 /** What the bake's rays kept of each hit: enough to tell what a surface returns. */
@@ -1839,10 +1819,8 @@ export function installGi(
   const read = irradianceAt(fine.values, fine.grid, cut.masks, fine.sky, cut.solid, cut.walls);
   // The screen-space gather's tier below reads the same as a material does, emitters included, so a ray that hits
   // the emitter on screen replaces its direct light instead of adding it twice.
-  giCache.gatherTexture = undefined;
-  giCache.lightsChange = false;
-  giCache.irradiance = (position, normal, texture) => {
-    const base = read(position, normal, undefined, texture).irradiance;
+  giCache.irradiance = (position, normal) => {
+    const base = read(position, normal).irradiance;
     const light = emitterLight(emitters, position, normal);
     return light === undefined ? base : base.add(light);
   };
@@ -1957,10 +1935,8 @@ export function installGi(
       }
     }
     texture.needsUpdate = true;
-    if (giCache.gatherTexture !== undefined) giCache.gatherTexture.needsUpdate = true;
     return true;
   };
-  giCache.lightsChange = dynamic.length > 0;
   if (dynamic.length > 0) gameCtx.beforeRender?.(() => giCache.refresh?.());
   const normal = normalWorld.normalize();
   const incident = positionWorld.sub(cameraPosition).normalize();

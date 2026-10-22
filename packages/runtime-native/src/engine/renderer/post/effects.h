@@ -35,6 +35,11 @@ class PostEffects {
     void captureUniforms();
     bool target(const std::string& name, WGPUTextureView view);
     void input(const std::string& name, WGPUTextureView view, WGPUSampler sampler = nullptr);
+    /**
+     * Drops every pass's cached bind group. A group is reused while its entries compare equal, and a view the renderer
+     * released can come back at the same address with new texels: the owner calls this when an input texture was rebuilt.
+     */
+    void releaseGroups();
     /** True when any pass reads the named resource ("normal" asks the renderer for a normal target). */
     bool reads(const std::string& name) const;
     /**
@@ -76,7 +81,6 @@ class PostEffects {
         WGPUBindGroup group = nullptr, vertexGroup = nullptr;
         std::vector<WGPUBindGroupEntry> groupEntries, vertexEntries;
     };
-    void releaseGroups();
     void clearTargets();
     WGPUDevice device_;
     WGPUQueue queue_;
