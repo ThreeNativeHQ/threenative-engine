@@ -437,7 +437,7 @@ describe("main", () => {
       /** A round on a new tree: its stamp, and the numbers the compare gives from now on. */
       const roundWith = async (
         digit: string,
-        numbers: { dP50?: number; regions?: string[] } = {},
+        numbers: { dP50?: number; regions?: string[]; off?: string[] } = {},
         expected = 0,
         extra: string[] = [],
       ) => {
@@ -451,6 +451,7 @@ describe("main", () => {
               dP50: numbers.dP50 ?? 0.004,
               dEv50: 0.01,
               iou: 0.99,
+              pass: !(numbers.off ?? []).includes(region),
             })),
           );
         expect(await main(w.argv(extra), w.deps)).toBe(expected);
@@ -458,6 +459,19 @@ describe("main", () => {
       };
       return { w, lock, read, roundWith, locks };
     };
+
+    it("locks only the regions at parity with Unreal, and removes the lock of a region that is not", async () => {
+      const { w, lock, read, roundWith } = await setup();
+      const first = await roundWith("1", { regions: ["Back", "Wall"] });
+      await main(lock(first), w.deps);
+      expect(read()).toHaveLength(4);
+      const next = await roundWith("2", { regions: ["Back", "Wall"], off: ["Wall"] });
+      expect(await main(lock(next, ["--relax"]), w.deps)).toBe(0);
+      expect(read().map((l) => l.region)).toEqual(["Back", "Back"]);
+      expect(w.log.join("\n")).toMatch(
+        /removed 2 lock\(s\) off parity:\n\s+cornell L7-high \w+ Wall/,
+      );
+    });
 
     it("cuts one lock per region from the two runs of an approved round, and again changes nothing", async () => {
       const { w, lock, read, roundWith } = await setup();
