@@ -226,6 +226,17 @@ void registerTypeFields(ClassBinding& b, MaterialType type) {
     materialBool(b, "flatShading", &Material::flatShading);
     // An engine field three does not declare: the Two Sided Foliage marker (PRD-651), on every lit class.
     materialBool(b, "twoSidedFoliage", &Material::twoSidedFoliage);
+    // Its Subsurface Color (PRD-643), another engine field: undefined until set, as three reads an unset one.
+    b.members["subsurfaceColor"] = [](void* self, const Args&, Store& store) -> Value {
+        Material& material = *as<Material>(self);
+        return material.hasSubsurfaceColor ? memberAlias(store, self, material.subsurfaceColor, "Color") : Value{};
+    };
+    b.setters["subsurfaceColor"] = [](void* self, const Value& v, Store& store) {
+        Material& material = *as<Material>(self);
+        material.hasSubsurfaceColor = v.kind != Value::Kind::Null && v.kind != Value::Kind::Undefined;
+        material.subsurfaceColor = material.hasSubsurfaceColor ? store.ref<Color>(v, "Color") : Color{0, 0, 0};
+        material.needsUpdate();
+    };
     // A tangent-space normal map, which the lit programs perturb with three's perturbNormal2Arb, and
     // its scale: the member alias, written whole with a Vector2 (three's setValues assigns it).
     materialMapSlot(b, "normalMap");

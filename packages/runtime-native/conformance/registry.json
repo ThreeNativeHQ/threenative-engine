@@ -642,6 +642,19 @@
       "required": true
     },
     {
+      "id": "foliage-transmission",
+      "title": "twoSidedFoliage leaf lets the sun through from behind: subsurfaceColor x wrap x GGX lobe",
+      "category": "lighting-gi",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/foliage-transmission.js",
+      "tolerance": {
+        "pixelMismatchRatio": 0.03,
+        "perceptualDeltaE": 4.0
+      },
+      "desktopGate": true,
+      "required": true
+    },
+    {
       "id": "leaf-receiver",
       "title": "twoSidedFoliage receiver skips the normal bias",
       "category": "shadows",

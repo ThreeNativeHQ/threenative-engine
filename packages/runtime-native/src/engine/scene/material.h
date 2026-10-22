@@ -114,6 +114,10 @@ public:
     bool flatShading = false;
     /** Unreal's Two Sided Foliage shading model (PRD-651): a receiver that looks its shadow up where it stands. */
     bool twoSidedFoliage = false;
+    /** Unreal's Subsurface Color on a Two Sided Foliage leaf (PRD-643): the sun it lets through. Absent (undefined in
+     *  script) until the game sets one, as in three, so a marked material without it takes no transmitted light. */
+    Color subsurfaceColor{0, 0, 0};
+    bool hasSubsurfaceColor = false;
     Vector2 normalScale{1, 1};
     double aoMapIntensity = 1;
     double bumpScale = 1;  // Standard, Physical (Lambert and Phong declare it too; their programs do not read it yet)

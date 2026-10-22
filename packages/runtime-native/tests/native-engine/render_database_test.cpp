@@ -3454,6 +3454,68 @@ void maskedShadow() {
     CHECK(frontFacingLight < 0.05);        // three's shadowSide: a FrontSide caster draws its back faces
 }
 
+// PRD-643: a Two Sided Foliage leaf lets the sun through from behind, as Unreal's SSS_TYPE_TWO_SIDED_WRAP does:
+// subsurfaceColor x saturate((-N.L + 0.5) / 2.25) x D_GGX(alpha 0.6, saturate(-V.L)) x the sun, with no N.L and no
+// 1/pi. Three cards face the camera with the sun straight behind them, so no card takes front light: the marked
+// card with a subsurfaceColor matches the closed form, and a marked card without one and an unmarked card with one
+// stay black.
+void foliageTransmission() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(96, 96);
+    OrthographicCamera camera(-3, 3, 3, -3, 0.1, 20);  // 16 pixels per metre
+    camera.position.set(0, 10, 0.001);
+    camera.lookAt(0, 0, 0);
+    camera.updateProjectionMatrix();
+    Scene scene;
+    DirectionalLight sun{Color(1, 1, 1), 1};
+    sun.position.set(0, -5, 0.001);  // under the cards: straight behind them from the camera
+    scene.add(sun);
+    const Color subsurface(0.5, 0.4, 0.1);
+    std::vector<std::unique_ptr<Mesh>> cards;
+    const auto card = [&](double x, bool marked, bool withColour) {
+        auto material = std::make_shared<Material>(MaterialType::Standard);
+        material->side = Side::Double;
+        material->color = Color(0.2, 0.5, 0.3);
+        material->twoSidedFoliage = marked;
+        material->hasSubsurfaceColor = withColour;
+        if (withColour) material->subsurfaceColor = subsurface;
+        cards.push_back(std::make_unique<Mesh>(makePlaneGeometry(1.5, 1.5), material));
+        cards.back()->rotation.set(-M_PI / 2, 0, 0);
+        cards.back()->position.set(x, 0, 0);
+        scene.add(*cards.back());
+    };
+    card(0, true, true);  // in the middle, where the view direction is the camera's axis
+    card(-2, true, false);
+    card(2, false, true);
+    scene.updateMatrixWorld(true);
+    RenderDatabase database;
+    database.render(renderer, scene, camera);
+    std::vector<uint8_t> pixels;
+    bool read = false;
+    renderer.readPixels([&](GpuStatus status, std::vector<uint8_t> px) {
+        if (status == GpuStatus::Ok) pixels = std::move(px);
+        read = true;
+    });
+    for (int i = 0; i < 5000 && !read; ++i) {
+        renderer.poll();
+        events.drain();
+        if (!read) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    CHECK(pixels.size() == size_t{96} * 96 * 4);
+    const auto at = [&](int x, int c) { return double(pixels[(size_t{48} * 96 + size_t(x)) * 4 + c]); };
+    const auto srgb = [](double v) { return 255 * (v <= 0.0031308 ? 12.92 * v : 1.055 * std::pow(v, 1 / 2.4) - 0.055); };
+    // -N.L = 1 and -V.L = 1: wrap (1 + 0.5) / 2.25, D_GGX at its peak 1 / (pi alpha^2).
+    const double lobe = (1.5 / 2.25) / (M_PI * 0.36);
+    const double expected[3] = {srgb(lobe * subsurface.r), srgb(lobe * subsurface.g), srgb(lobe * subsurface.b)};
+    std::printf("foliage transmission: marked %.0f %.0f %.0f (closed form %.1f %.1f %.1f), marked bare %.0f, unmarked %.0f\n",
+                at(48, 0), at(48, 1), at(48, 2), expected[0], expected[1], expected[2], at(16, 0), at(80, 0));
+    for (int c = 0; c < 3; ++c) CHECK(std::abs(at(48, c) - expected[c]) <= 3);
+    for (int c = 0; c < 3; ++c) CHECK(at(16, c) <= 1 && at(80, c) <= 1);
+}
+
 // PRD-651: a receiver marked twoSidedFoliage (Unreal's Two Sided Foliage shading model) looks its shadow
 // up where it stands, and a source-angle filter widens to Unreal's 5 degree minimum on it. A plate 1 m
 // above the floor with the sun at 45 degrees throws an edge at x = 1; a normal bias b along the floor's
@@ -4984,7 +5046,7 @@ TN_TEST_MAIN({"gpu_joint_production", gpuJointProduction}, {"multi_material_grou
              {"material_unsupported", materialUnsupported}, {"shader_invalid", shaderInvalid}, {"time_uniform", timeUniform}, {"gpu_mipmaps", gpuMipmaps}, {"updates", updates},
              {"multi_camera_layers", multiCameraLayers}, {"render_callback", renderCallback}, {"instanced", instanced},
              {"batched_vs_unbatched", batchedVsUnbatched}, {"skinned_crowd", skinnedCrowdPixels}, {"skinned_decline_cadence", skinnedDeclineCadence}, {"skinned_normalized_weights", skinnedNormalizedWeights}, {"normal_map_tilt", normalMapTilt}, {"unsupported_map_slot", unsupportedMapSlot}, {"env_map_slot_is_read", envMapSlotIsRead}, {"converted_copies_swept", convertedCopiesAreSwept}, {"gpu_timer_covers_offscreen", gpuTimerCoversOffscreen}, {"gpu_timer_splits_the_gather", gpuTimerSplitsTheLabelledGather}, {"gpu_timer_covers_shadows", gpuTimerCoversShadows}, {"overlay_over_frame", overlayOverFrame}, {"gpu_timer_is_opt_in", gpuTimerIsOptIn}, {"msaa_edges", msaaEdges}, {"shadow_camera_layers", shadowCameraLayers}, {"flat_shading_needs_no_normals", flatShadingNeedsNoNormals}, {"map_sampleability_changes", mapSampleabilityChanges}, {"batch_caches_stay_put", batchCachesStayPut}, {"frustum_culling", frustumCulling},
-             {"shadow_caster_frustum_culling", shadowCasterFrustumCulling}, {"masked_shadow", maskedShadow}, {"leaf_receiver", leafReceiver}, {"point_shadow_cube_faces", pointShadowCubeFaces}, {"lamp_source_radius", lampSourceRadius}, {"lamp_source_radius_wall", lampSourceRadiusWall}, {"lamp_source_radius_crate", lampSourceRadiusCrate}, {"contact_shadow_foot", contactShadowFoot}, {"virtual_sun_contact_foot", virtualSunContactFoot}, {"lamp_cache", lampCache}, {"shadow_lights_follow_hierarchy", shadowLightsFollowHierarchy}, {"records_survive_siblings", recordsSurviveSiblings}, {"steady_frame_hashes_no_record", steadyFrameHashesNoRecord}, {"nested_record_cache", nestedRecordCache}, {"frustum_record_retention", frustumRecordRetention}, {"world_sphere_measured_once", worldSphereMeasuredOnce}, {"reflection_reuse", reflectionReuse})
+             {"shadow_caster_frustum_culling", shadowCasterFrustumCulling}, {"masked_shadow", maskedShadow}, {"leaf_receiver", leafReceiver}, {"foliage_transmission", foliageTransmission}, {"point_shadow_cube_faces", pointShadowCubeFaces}, {"lamp_source_radius", lampSourceRadius}, {"lamp_source_radius_wall", lampSourceRadiusWall}, {"lamp_source_radius_crate", lampSourceRadiusCrate}, {"contact_shadow_foot", contactShadowFoot}, {"virtual_sun_contact_foot", virtualSunContactFoot}, {"lamp_cache", lampCache}, {"shadow_lights_follow_hierarchy", shadowLightsFollowHierarchy}, {"records_survive_siblings", recordsSurviveSiblings}, {"steady_frame_hashes_no_record", steadyFrameHashesNoRecord}, {"nested_record_cache", nestedRecordCache}, {"frustum_record_retention", frustumRecordRetention}, {"world_sphere_measured_once", worldSphereMeasuredOnce}, {"reflection_reuse", reflectionReuse})
 
 
 
