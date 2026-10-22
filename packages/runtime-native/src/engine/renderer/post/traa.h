@@ -5,6 +5,7 @@
 #include "engine/shader/output.h"
 #include <webgpu/webgpu.h>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -53,6 +54,20 @@ public:
         bool historyValid = false;
     };
     Status status() const { return {history_.frame(), jitter_[0], jitter_[1], history_.historyValid(0)}; }
+    // One resolve in `kMeasureEvery` counts the pixels whose history it discarded (stats[0]) and pulled into the colour
+    // neighbourhood (stats[1]). The owner gives the buffer (8 bytes, storage, copy source and destination) and reads it back
+    // after the frame is submitted; `takeMeasure` says whether the last resolve counted, once.
+    static constexpr uint64_t kMeasureEvery = 16;
+    void setStatsBuffer(WGPUBuffer buffer) { stats_ = buffer ? buffer : ownStats_; }
+    struct Measure {
+        uint64_t frame = 0;
+        uint32_t pixels = 0;
+    };
+    std::optional<Measure> takeMeasure() {
+        if (!measured_) return std::nullopt;
+        measured_ = false;
+        return Measure{measuredFrame_, width_ * height_};
+    }
     const graph::RenderGraph& renderGraph() const { return graph_; }
     // Fixture diagnostics only. No allocation/readback unless explicitly enabled by the driver.
     void enableDebugDump();
@@ -87,6 +102,9 @@ private:
     WGPUTexture historyColor_ = nullptr, historyDepth_ = nullptr, resolve_ = nullptr, velocity_ = nullptr;
     WGPUTextureView historyView_ = nullptr, historyDepthView_ = nullptr, resolveView_ = nullptr, velocityView_ = nullptr;
     WGPUBuffer uniforms_ = nullptr;
+    WGPUBuffer ownStats_ = nullptr, stats_ = nullptr;
+    bool measured_ = false;
+    uint64_t measuredFrame_ = 0;
     WGPUSampler sampler_ = nullptr;
     WGPURenderPipeline pipeline_ = nullptr, fillPipeline_ = nullptr;
     WGPUBuffer fillUniforms_ = nullptr;
