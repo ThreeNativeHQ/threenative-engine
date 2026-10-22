@@ -21,7 +21,8 @@ const constants = ["ACESFilmicToneMapping", "AgXToneMapping", "NeutralToneMappin
   "NearestFilter", "LinearFilter", "LinearMipmapLinearFilter", "UnsignedByteType", "FloatType",
   "RGBAFormat", "EquirectangularReflectionMapping", "NoToneMapping", "LoopOnce", "LoopRepeat", "AttachedBindMode",
   "FrontSide", "BackSide", "DoubleSide", "StaticDrawUsage", "DynamicDrawUsage",
-  "NoBlending", "NormalBlending", "AdditiveBlending", "PCFShadowMap"];
+  "NoBlending", "NormalBlending", "AdditiveBlending", "PCFShadowMap",
+  "LessEqualCompare", "GreaterEqualCompare", "CustomToneMapping", "AlwaysDepth", "VSMShadowMap"];
 const names = ["PerspectiveCamera", "Camera", "Object3D", "Mesh", "PlaneGeometry", "MeshStandardMaterial",
   "SkinnedMesh", "CylinderGeometry", "BufferGeometry", "Float32BufferAttribute", "BufferAttribute",
   "DataTexture", "Texture", "Color", "PropertyBinding", "getConsoleFunction", "setConsoleFunction", "MathUtils", "Scene", "Raycaster", "Vector3", "Euler", "LOD", "MeshBasicMaterial", "DirectionalLight", "OrthographicCamera", "LatheGeometry", "Vector2", "CatmullRomCurve3", "TubeGeometry", "AnimationClip",
@@ -543,6 +544,64 @@ await mkdir(resolve(work, "node_modules/@acme/viz/dist/three"), { recursive: tru
 await writeFile(resolve(work, "node_modules/@acme/viz/dist/three/index.js"), "export const mark = () => {};");
 await writeFile(resolve(work, "viz.ts"), 'import { Scene } from "three"; import { mark } from "./node_modules/@acme/viz/dist/three/index.js"; globalThis.tn.scene = new Scene(); mark();');
 await bundleNativeEngine({ entry: resolve(work, "viz.ts"), outfile: resolve(work, "viz.js"), boot: false });
+// Core's shadow filters and rough diffuse bundle and run (PRD-650, PRD-653): the engine draws both in C++,
+// so their three-only TSL bodies may name what the engine refuses (cubeTexture) and never call it, and a
+// refused class's prototype reads, as on Wasm.
+const coreLookEntry = resolve(work, "core-look.ts");
+const coreLookOut = resolve(work, "core-look.js");
+await writeFile(coreLookEntry, `
+import { Mesh, MeshStandardMaterial, PerspectiveCamera, PlaneGeometry, PointLight, Scene, SpotLight } from "three";
+import { sourceRadiusShadowFilter } from ${JSON.stringify(resolve(native, "../core/src/render/soft-shadow.ts"))};
+import { useRoughDiffuse } from ${JSON.stringify(resolve(native, "../core/src/render/rough-diffuse.ts"))};
+const scene = new Scene();
+const filter = sourceRadiusShadowFilter({ sourceRadius: 0.25 });
+const spot = new SpotLight(0xffffff, 40); spot.castShadow = true; spot.shadow.filterNode = filter;
+const point = new PointLight(0xffffff, 40); point.castShadow = true; point.shadow.filterNode = filter;
+scene.add(new Mesh(new PlaneGeometry(), new MeshStandardMaterial()), spot, point);
+if (useRoughDiffuse(scene) !== 1) throw new Error("rough diffuse marked no material");
+if (point.shadow.filterNode !== filter) throw new Error("the lamp lost its filter");
+globalThis.tn.scene = scene; globalThis.tn.camera = new PerspectiveCamera(); globalThis.tn.onUpdate(() => {});
+`);
+await bundleNativeEngine({ entry: coreLookEntry, outfile: coreLookOut, boot: false });
+const coreLook = spawnSync(resolve(executable), ["--check-game", coreLookOut], { encoding: "utf8" });
+assert.equal(coreLook.status, 0, coreLook.stderr);
+// A game TempNode (PRD-636's LocalExposureNode) on the V8 player: setup() builds its engine node once,
+// it is an operand and a receiver, a FRAME node's updateBefore runs once per render, and
+// RendererUtils restores the target it changed.
+const tempEntry = resolve(work, "temp-node.ts");
+const tempOut = resolve(work, "temp-node.js");
+await writeFile(tempEntry, `
+import { PerspectiveCamera, RenderTarget, Scene } from "three";
+import { float } from "three/tsl";
+import { NodeUpdateType, RendererUtils, TempNode, WebGPURenderer } from "three/webgpu";
+let setups = 0;
+let updates = 0;
+class Exposure extends TempNode {
+  constructor() { super("float"); this.updateBeforeType = NodeUpdateType.FRAME; }
+  setup(builder) { super.setup(builder); setups += 1; return float(2); }
+  updateBefore({ renderer }) {
+    updates += 1;
+    const state = RendererUtils.resetRendererState(renderer);
+    try { renderer.setRenderTarget(target); } finally { RendererUtils.restoreRendererState(renderer, state); }
+  }
+}
+const target = new RenderTarget(4, 4);
+const node = new Exposure();
+if (typeof float(node).mul(node).add(node.mul(3)).toVar !== "function") throw new Error("a TempNode is no operand");
+const renderer = new WebGPURenderer({ canvas: { width: 64, height: 64 } });
+const scene = new Scene(); const camera = new PerspectiveCamera();
+renderer.render(scene, camera); renderer.render(scene, camera);
+if (setups !== 1 || updates !== 2) throw new Error("setup " + setups + " update " + updates);
+if (renderer.getRenderTarget() !== null) throw new Error("RendererUtils left the target set");
+node.dispose();
+let disposed = false;
+try { float(node); } catch (error) { disposed = /TN_NATIVE_TEMPNODE_DISPOSED/.test(error.message); }
+if (!disposed) throw new Error("a disposed TempNode was consumed");
+globalThis.tn.scene = scene; globalThis.tn.camera = camera; globalThis.tn.onUpdate(() => {});
+`);
+await bundleNativeEngine({ entry: tempEntry, outfile: tempOut, boot: false });
+const temp = spawnSync(resolve(executable), ["--check-game", tempOut], { encoding: "utf8" });
+assert.equal(temp.status, 0, temp.stderr);
 if (process.argv.includes("--imports-only")) {
   console.log("PASS native imports, identity, picking, clone, TSL and audio");
   process.exit(0);

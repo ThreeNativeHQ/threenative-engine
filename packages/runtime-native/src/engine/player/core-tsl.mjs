@@ -1,4 +1,5 @@
 // TSL authoring calls the native lazy graph; no upstream shader implementation enters the player.
+import { unsupportedExport } from "../../../../three-native/src/refused.ts";
 import { liveUniforms, withConstValues } from "../../../../three-native/src/tsl-uniforms.ts";
 import { defineReflector } from "../../../../three-native/src/reflector.ts";
 import { definePass, markNormalTarget } from "../../../../three-native/src/pass-node.ts";
@@ -102,3 +103,7 @@ export const {
   xor, bitAnd, bitNot, bitOr, bitXor, shiftLeft, shiftRight,
   incrementBefore, decrementBefore, increment, decrement, mat3, mat4,
 } = globalThis.tsl;
+
+// Refused at use, as on Wasm: the engine draws a lamp's cube shadow taps in C++ (shadowFilterOptions),
+// so core's three-only filter body names cubeTexture and never calls it here.
+export const cubeTexture = unsupportedExport("cubeTexture");
