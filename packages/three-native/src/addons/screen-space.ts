@@ -423,10 +423,20 @@ export interface IScreenProbeOptions {
   readonly viewport: { readonly width: number; readonly height: number };
   /** Rays on a side of each probe's octahedron (r.Lumen.ScreenProbeGather.TracingOctahedronResolution; 8 at Epic). */
   readonly tracingOctahedronResolution?: number;
+  /**
+   * Spatial filter passes over the probes' irradiance: each pass averages a probe with the eight probes around it that
+   * lie on its own surface (Unreal's r.Lumen.ScreenProbeGather.SpatialFilterNumPasses, 3 at Epic, over a 3 x 3 kernel:
+   * Engine/Shaders/Private/Lumen/LumenScreenProbeFiltering.usf). Omit for 3; 0 keeps every probe's own rays only.
+   */
+  readonly spatialFilterPasses?: number;
 }
 
 /** Texels on a side of the irradiance octahedron each probe keeps (Unreal's gather resolution 6, bilinear lookup). */
 const IRRADIANCE_SIDE = 6;
+/** Spatial filter passes at Epic (r.Lumen.ScreenProbeGather.SpatialFilterNumPasses). */
+const SPATIAL_FILTER_PASSES = 3;
+/** The probes around a probe that the spatial filter reads, itself included: a 3 x 3 kernel (SpatialFilterHalfKernelSize 1). */
+const SPATIAL_FILTER_KERNEL = [-1, 0, 1].flatMap((dy) => [-1, 0, 1].map((dx) => [dx, dy] as const));
 
 /** Rays per slice: sliceCount x this many cosine-weighted rays leave each pixel. */
 const RAYS_PER_SLICE = 4;
@@ -619,12 +629,14 @@ function octahedronEncode(tsl: IScreenSpaceTsl, direction: TslNode): TslNode {
 }
 
 /**
- * The screen-probe gather (PRD-640). Three passes, none per pixel until the last:
+ * The screen-probe gather (PRD-640). Four kinds of pass, none per pixel until the last:
  *   1. trace   one texel per ray: a probe per tile traces an `n x n` octahedron of rays (view space) and keeps the lit
  *              colour each hit found and its weight.
  *   2. filter  each probe turns its rays into an irradiance octahedron: per direction, the cosine-weighted mean of
  *              `hit - fallback` over every ray, as the per-pixel gather returns it, so a ray that leaves the screen keeps
  *              the cache. A pixel then reads one bilinear tap instead of 64 rays.
+ *      spatial `spatialFilterPasses` passes (3 by default) average each probe's octahedron with the probes around it that
+ *              lie on the same surface, so the few bright things a probe's own rays happen to find do not show.
  *   3. gather  each pixel blends the four nearest probes by position, depth-plane distance and normal agreement, and
  *              reads each probe's irradiance along the pixel normal. A pixel no probe can see gets the cache alone.
  */
@@ -651,14 +663,16 @@ function defineScreenProbes(
   const { viewPosition } = input.mapping;
   const factor = probes.downsampleFactor;
   const side = probes.tracingOctahedronResolution ?? 8;
+  const filterPasses = probes.spatialFilterPasses ?? SPATIAL_FILTER_PASSES;
   if (
     !(factor >= 1) ||
     !(side >= 2) ||
     !(probes.viewport.width > 0) ||
-    !(probes.viewport.height > 0)
+    !(probes.viewport.height > 0) ||
+    !(Number.isInteger(filterPasses) && filterPasses >= 0 && filterPasses <= 8)
   )
     throw new TypeError(
-      `TN_NATIVE_SCREEN_PROBES: downsampleFactor ${factor}, tracingOctahedronResolution ${side}, viewport ${probes.viewport.width}x${probes.viewport.height}`,
+      `TN_NATIVE_SCREEN_PROBES: downsampleFactor ${factor}, tracingOctahedronResolution ${side}, spatialFilterPasses ${filterPasses}, viewport ${probes.viewport.width}x${probes.viewport.height}`,
     );
   const tilesX = Math.ceil(probes.viewport.width / factor);
   const tilesY = Math.ceil(probes.viewport.height / factor);
@@ -748,6 +762,64 @@ function defineScreenProbes(
     gpuStage: GI_STAGE,
   });
 
+  // 2b. spatial filter: a probe takes the irradiance of the eight probes around it that lie on its own surface, direction by
+  // direction. One probe's rays leave a few of the bright things in the room to chance; the neighbours' rays make that
+  // even. Unreal filters the rays before they become irradiance, over 3 x 3 probes and 3 passes, and weighs a neighbour by
+  // how far its depth is off (Engine/Shaders/Private/Lumen/LumenScreenProbeFiltering.usf, GetFilterPositionWeight).
+  // This one weighs by the neighbour's distance off the probe's plane, as the gather below does, and by its normal.
+  const probeAt = (tile: TslNode) => {
+    const probeUv = tile.add(0.5).div(tiles).min(vec2(1, 1));
+    const depth = depthNode.sample(probeUv).r;
+    const rawNormal = normalNode.sample(probeUv).xyz;
+    return {
+      normal: normalize(rawNormal),
+      position: viewPosition(probeUv, depth),
+      valid: valid(depth, rawNormal),
+    };
+  };
+  let smoothed = filtered;
+  for (let pass = 0; pass < filterPasses; pass += 1) {
+    const previous = smoothed;
+    const spatialGraph = Fn(() => {
+      const texel = uv().mul(irradianceSize).floor();
+      const tile = texel.div(IRRADIANCE_SIDE).floor();
+      const cell = texel.sub(tile.mul(IRRADIANCE_SIDE));
+      const centre = probeAt(tile);
+      const sum = vec4(0, 0, 0, 0).toVar();
+      const weights = float(0).toVar();
+      for (const [dx, dy] of SPATIAL_FILTER_KERNEL) {
+        const wanted = tile.add(vec2(dx, dy));
+        const inside = wanted.x
+          .greaterThanEqual(0)
+          .and(wanted.y.greaterThanEqual(0))
+          .and(wanted.x.lessThan(tilesX))
+          .and(wanted.y.lessThan(tilesY));
+        const other = wanted.max(vec2(0, 0)).min(tiles.sub(1));
+        const near = probeAt(other);
+        const offPlane = centre.normal
+          .dot(near.position.sub(centre.position))
+          .abs()
+          .div(max(centre.position.z.abs(), float(1e-3)));
+        const planeWeight = float(1).sub(smoothstep(0, 0.05, offPlane));
+        const agree = max(centre.normal.dot(near.normal), float(0));
+        const weight = centre.valid
+          .and(near.valid)
+          .and(inside)
+          .select(planeWeight.mul(agree.mul(agree).mul(agree.mul(agree))), float(0));
+        const found = previous.sample(
+          other.mul(IRRADIANCE_SIDE).add(cell).add(0.5).div(irradianceSize),
+        );
+        sum.assign(sum.add(found.mul(weight)));
+        weights.assign(weights.add(weight));
+      }
+      return sum.div(max(weights, float(1e-4)));
+    })();
+    smoothed = rtt(spatialGraph, tilesX * IRRADIANCE_SIDE, tilesY * IRRADIANCE_SIDE, {
+      type: HALF_FLOAT_TYPE,
+      gpuStage: GI_STAGE,
+    });
+  }
+
   // 3. gather: each pixel blends the four nearest probes it can see.
   const gatherGraph = Fn(() => {
     const coordinate = uv();
@@ -792,7 +864,7 @@ function defineScreenProbes(
           bilinear.mul(planeWeight).mul(normalWeight),
           float(0),
         );
-        const irradiance = filtered.sample(
+        const irradiance = smoothed.sample(
           tile.mul(IRRADIANCE_SIDE).add(lookup).div(irradianceSize),
         );
         sum.assign(sum.add(irradiance.mul(weight)));
