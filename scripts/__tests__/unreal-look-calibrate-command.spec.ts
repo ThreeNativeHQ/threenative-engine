@@ -139,6 +139,9 @@ function world(options: { omitUnreal?: string } = {}) {
     path.join(root, "store"),
     "--scoreboard",
     path.join(root, "parity"),
+    // A round checks the GI locks of its AFTER arm: the default is the repository's own file, so a spec names its own.
+    "--locks",
+    path.join(root, "no-locks.json"),
     ...extra,
   ];
   return { root, deps, state, behaviour, calls, log, argv, unreal };
@@ -411,5 +414,150 @@ describe("main", () => {
     expect(fresh.log.join("\n")).toMatch(
       /dry run: cornell tier high layer L7-high, 2 poses \(cornell, corner\)/,
     );
+  });
+
+  describe("--lock (PRD-653)", () => {
+    const round = (stamp: string) => `20261021T140512Z-cornell-high-${stamp.slice(0, 7)}`;
+    const setup = async () => {
+      const w = world();
+      const locks = path.join(w.root, "locks.json");
+      const lock = (id: string, extra: string[] = []) => [
+        "--lock",
+        id,
+        "--store",
+        path.join(w.root, "store"),
+        "--scoreboard",
+        path.join(w.root, "parity"),
+        "--locks",
+        locks,
+        ...extra,
+      ];
+      const read = () => JSON.parse(readFileSync(locks, "utf8")).locks as Record<string, unknown>[];
+      /** A round on a new tree: its stamp, and the numbers the compare gives from now on. */
+      const roundWith = async (
+        digit: string,
+        numbers: { dP50?: number; regions?: string[] } = {},
+        expected = 0,
+        extra: string[] = [],
+      ) => {
+        w.state.stamp = digit.repeat(64);
+        w.deps.compare = (scene): IMeasured[] =>
+          POSES.flatMap((pose) =>
+            (numbers.regions ?? ["Back"]).map((region) => ({
+              cell: `${scene}/${pose}`,
+              region,
+              deltaE: 0.4,
+              dP50: numbers.dP50 ?? 0.004,
+              dEv50: 0.01,
+              iou: 0.99,
+            })),
+          );
+        expect(await main(w.argv(extra), w.deps)).toBe(expected);
+        return round(w.state.stamp);
+      };
+      return { w, lock, read, roundWith, locks };
+    };
+
+    it("cuts one lock per region from the two runs of an approved round, and again changes nothing", async () => {
+      const { w, lock, read, roundWith } = await setup();
+      const id = await roundWith("1");
+      expect(await main(lock(id), w.deps)).toBe(0);
+      expect(read()).toHaveLength(2);
+      expect(read()[0]).toMatchObject({
+        scene: "cornell",
+        layer: "L7-high",
+        pose: "cornell",
+        region: "Back",
+        round: id,
+        maxDP50: 0.004,
+        maxDeltaE: 0.4,
+        minIoU: 0.99,
+        noiseDP50: 0,
+      });
+      expect(w.log.join("\n")).toMatch(
+        /locked cornell L7-high from .*: 2 region\(s\) in 2 pose\(s\), 2 added/,
+      );
+      const before = readFileSync(path.join(w.root, "locks.json"), "utf8");
+      expect(await main(lock(id), w.deps)).toBe(0);
+      expect(readFileSync(path.join(w.root, "locks.json"), "utf8")).toBe(before);
+    });
+
+    it("keeps a tighter round until --tighten, and refuses a looser round until --relax", async () => {
+      const { w, lock, read, roundWith } = await setup();
+      await main(lock(await roundWith("1")), w.deps);
+      const better = await roundWith("2", { dP50: 0.002 });
+      w.log.length = 0;
+      expect(await main(lock(better), w.deps)).toBe(0);
+      expect(read()[0]).toMatchObject({ maxDP50: 0.004 });
+      expect(w.log.join("\n")).toMatch(/2 region\(s\) are tighter in this round: pass --tighten/);
+      expect(await main(lock(better, ["--tighten"]), w.deps)).toBe(0);
+      expect(read()[0]).toMatchObject({ maxDP50: 0.002, round: better });
+      const worse = await roundWith("3", { dP50: 0.01 });
+      await expect(main(lock(worse), w.deps)).rejects.toThrow(
+        /LOCK_LOOSER.*maxDP50: 0\.002 -> 0\.01/,
+      );
+      await expect(main(lock(worse, ["--tighten"]), w.deps)).rejects.toThrow(/LOCK_LOOSER/);
+      expect(read()[0]).toMatchObject({ maxDP50: 0.002 });
+      expect(await main(lock(worse, ["--relax"]), w.deps)).toBe(0);
+      expect(read()[0]).toMatchObject({ maxDP50: 0.01, round: worse });
+      expect(w.log.join("\n")).toMatch(/relaxed 2 bound\(s\) on purpose/);
+    });
+
+    it("checks the locks of its AFTER arm: a worse round exits 2 and names the region, a better one passes", async () => {
+      const { w, lock, roundWith, locks } = await setup();
+      await main(lock(await roundWith("1")), w.deps);
+      w.log.length = 0;
+      await roundWith("2", { dP50: 0.002 }, 0, ["--locks", locks]);
+      expect(w.log.join("\n")).toMatch(
+        /GI locks hold: every locked region of cornell at L7-high is inside its bound/,
+      );
+      w.log.length = 0;
+      const worse = await roundWith("3", { dP50: 0.01 }, 2, ["--locks", locks]);
+      const text = w.log.join("\n");
+      expect(text).toMatch(/GI LOCKS BROKEN \(\d+\): the change makes a locked region worse/);
+      expect(text).toMatch(/cornell L7-high cornell Back dP50: 0\.01 is above the lock 0\.004/);
+      expect(text).toMatch(/pass --relax to pnpm unreal-look:calibrate --lock <round>/);
+      // The round is on the scoreboard all the same, so the evidence of the regression is kept.
+      expect(readdirSync(path.join(w.root, "parity"))).toContain(`${worse}.json`);
+      // A scene without a lock at this layer skips the check and says nothing about it.
+      w.log.length = 0;
+      await roundWith("4", { dP50: 0.009 }, 0, ["--locks", path.join(w.root, "elsewhere.json")]);
+      expect(w.log.join("\n")).not.toMatch(/GI lock/i);
+    });
+
+    it("cannot drop a locked region: a round that lacks it is refused", async () => {
+      const { w, lock, read, roundWith } = await setup();
+      await main(lock(await roundWith("1", { regions: ["Back", "Floor"] })), w.deps);
+      expect(read()).toHaveLength(4);
+      const fewer = await roundWith("2", { regions: ["Back"] });
+      await expect(main(lock(fewer, ["--relax"]), w.deps)).rejects.toThrow(
+        /LOCK_DROPPED.*2 locked cell\(s\).*cornell L7-high cornell Floor/,
+      );
+      expect(read()).toHaveLength(4);
+    });
+
+    it("fails closed on a missing round, a dirty arm, a missing arm, an arm that moved and both flags", async () => {
+      const { w, lock, roundWith } = await setup();
+      const id = await roundWith("1");
+      await expect(main(lock("nope"), w.deps)).rejects.toThrow(/NO_ROUND.*nope/);
+      await expect(main(["--lock", "--store", "x"], w.deps)).rejects.toThrow(/BAD_INPUT/);
+      await expect(main(lock(id, ["--tighten", "--relax"]), w.deps)).rejects.toThrow(
+        /exclude each other/,
+      );
+      const empty = lock(id).map((arg, i, all) =>
+        all[i - 1] === "--store" ? path.join(w.root, "empty") : arg,
+      );
+      await expect(main(empty, w.deps)).rejects.toThrow(/NO_ARM.*cannot be measured again/);
+      const moved = w.deps.compare;
+      w.deps.compare = (scene, layer, root) =>
+        moved(scene, layer, root).map((row) => ({ ...row, dP50: 0.5 }));
+      await expect(main(lock(id), w.deps)).rejects.toThrow(/ROUND_MISMATCH.*cornell\/Back/);
+      w.deps.compare = moved;
+      const file = path.join(w.root, "parity", `${id}.json`);
+      const data = JSON.parse(readFileSync(file, "utf8"));
+      data.after.dirty = true;
+      writeFileSync(file, JSON.stringify(data));
+      await expect(main(lock(id), w.deps)).rejects.toThrow(/DIRTY_ARM/);
+    });
   });
 });

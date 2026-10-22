@@ -75,6 +75,8 @@ export interface IMeasured {
   dP50: number | null;
   dEv50: number | null;
   iou: number | null;
+  /** The reference statistics of the region: its median sets the step of dP50 and deltaE (PRD-653). */
+  unreal?: { p50: number } | null;
 }
 
 /**
