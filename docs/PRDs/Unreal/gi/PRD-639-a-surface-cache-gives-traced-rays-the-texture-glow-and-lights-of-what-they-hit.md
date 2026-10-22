@@ -205,8 +205,9 @@ back to flat colour and why, and lights skipped by the cap.
   against 4.33, `Wall_Red` dP50 0.133 against 0.056, `Box_Tall` dP50 0.128 against 0.104). The L7 cache is brighter
   than Unreal's, and the stage's highlight compression hid part of that: a level `Back` at L7 was two errors that
   cancelled. Open: remove the stage at L7 and L8 in the same change that removes the GI excess (the gather lane).
-  Judges (criteria first, two runs per arm): L1 `neon-corridor` IMPROVEMENT. The L7 rounds of the first version are
-  on PR #541 and no longer apply.
+  Judges (criteria first, two runs per arm, on the final gate): L1 overall IMPROVEMENT. `neon-corridor` `neon` and
+  `textured` IMPROVEMENT (Wall_Brick dP50 1.36 to 0.18 and 1.07 to 0.07), `sunlit-room` six poses NEUTRAL. The
+  L7 rounds of the first version are on PR #541 and no longer apply.
 - 2026-10-21 (surface2 lane): **A washed-out neon-corridor L1 on the merged head was a stale Wasm pair, not the
   head.** The pair copied at lane spawn (17:16) lacked the C++ of PRD-636 (`b75c036d7`, `a7ad05dba`). With the head's
   JS on that pair, L1 read p50 220 to 245 on the walls against Unreal 42 to 122. A pair built from the head
