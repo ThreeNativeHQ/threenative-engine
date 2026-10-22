@@ -538,7 +538,7 @@ describe("sceneBasis", () => {
     expect(sceneBasis("room", scene())).toBe(sceneBasis("room", scene()));
   });
 
-  it("ignores the time the statistics were written, and follows every input that sets a measurement", () => {
+  it("ignores the time the statistics were written and the motion runs, and follows every input that sets a measurement", () => {
     const base = sceneBasis("room", scene());
     expect(
       sceneBasis("room", scene({ generatedAt: "b", resolution: [4, 4], cells: { x: 1 } })),
@@ -555,6 +555,12 @@ describe("sceneBasis", () => {
     const definition = scene();
     writeFileSync(path.join(definition, "scene.json"), '{"regions":[{"name":"Floor"}]}');
     expect(sceneBasis("room", definition)).not.toBe(base);
+    const motion = scene();
+    writeFileSync(
+      path.join(motion, "scene.json"),
+      '{"regions":[],"motion":{"pan":{"frames":180}}}',
+    );
+    expect(sceneBasis("room", motion)).toBe(base);
     const extra = scene();
     writeFileSync(path.join(extra, "id", "p3.png"), "a third pose");
     expect(sceneBasis("room", extra)).not.toBe(base);

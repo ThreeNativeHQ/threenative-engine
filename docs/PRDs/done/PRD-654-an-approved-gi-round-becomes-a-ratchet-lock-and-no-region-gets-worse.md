@@ -38,7 +38,7 @@ prd_contract: v1
    missing region, a missing frame, one run only, and two runs that differ by more than the locked noise.
    `calibrate` runs the same check on the AFTER arm of every round, logs it, and exits 2 when a lock breaks.
 4. **A lock names its basis.** Each lock records a digest of the committed scene and Unreal reference
-   (`reference-stats.json`, the ID frames and `scene.json`). When another lane rebuilds a scene, the bounds
+   (`reference-stats.json`, the ID frames and `scene.json` without its `motion` runs). When another lane rebuilds a scene, the bounds
    no longer describe it. The check then fails with LOCK_STALE, a calibrate round logs the stale lock and
    does not fail, and `--lock <round> --relax` cuts the lock again from a new approved round.
 5. **`compare --write-locks` cannot drop a lock silently.** A re-seed of the reference scene's locks names
@@ -112,6 +112,12 @@ prd_contract: v1
   approved round did not have (0.0006 to 0.125 deltaE in 7 regions). The first round had a locked noise of 0, so the
   check failed those 7 bounds. The locks take the new spread with `--relax` (23 bounds moved by 0.0003 to 0.155
   deltaE). The cause of the spread is open: some stage of the gated layer is not deterministic between two runs.
+- 2026-10-22 (judge lane): the digest of a scene leaves out the `motion` runs of `scene.json`. The motion lane added a
+  `motion` block to the `cornell` scene about two hours after the lock was cut, and that alone made every lock
+  LOCK_STALE, although the Unreal statistics, the ID frames and the still poses had not changed. A still pose does not
+  read a motion run. The `basis` of the 104 existing locks was written again with the new rule, and no bound moved.
+  Proof: the spec `ignores the time the statistics were written and the motion runs` fails when the digest keeps the
+  block, and on the merged epic the `cornell` check went from LOCK_STALE to `every bound holds`.
 - 2026-10-21 (judge lane): real-frame regression proof uses frames that exist. A fresh capture at the `low`
   tier needs a Wasm pair that matches the merged tree, and the pair in this lane does not. The stored
   `medium` arm of `sunlit-room`, presented as the `high` layer, is real engine output of a lower GI tier, and
