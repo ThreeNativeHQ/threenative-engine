@@ -363,7 +363,7 @@ export function defineBrowserClasses(
       : { engineReferences: counted(source.engineReferences) }),
   };
   const classes: Record<string, new (...args: unknown[]) => object> = {};
-  const byType = new Map<number, { prototype: object }>();
+  const byType = new Map<number, { prototype: object; own?: PropertyDescriptorMap }>();
   const typeNames = new Map<number, string>();
   (globalThis as { __tnEngineTypes?: Map<number, string> }).__tnEngineTypes = typeNames;
   // Reads that need no engine call: a field the engine holds in place is read from its memory (Wasm,
@@ -593,6 +593,7 @@ export function defineBrowserClasses(
       throw new TypeError(`TN_BROWSER_TYPE_UNKNOWN: no class for engine type ${ref.type}`);
     // Held until the next safe point decides: the engine may reference what it just handed out.
     const wrapper = adopt(Object.create(cls.prototype) as object, ref);
+    if (cls.own !== undefined) Object.defineProperties(wrapper, cls.own);
     hold(wrapper);
     return wrapper;
   };
@@ -725,6 +726,11 @@ export function defineBrowserClasses(
       (name === "BufferAttribute" || name === "InstancedBufferAttribute");
     const attributeClass = ATTRIBUTE_CLASSES.has(name);
     const geometryClass = name.endsWith("Geometry");
+    // three keeps a material's slots as own, enumerable fields, and the desktop host gives each
+    // material instance its accessors as own ones. `for...in`, `Object.keys` and `Object.values` find
+    // them on the web too: core's node-twin copy loops and "dispose every texture" rely on that.
+    const materialClass = name.endsWith("Material");
+    const own: PropertyDescriptorMap = {};
     const engineClass = class {
       constructor(...args: unknown[]) {
         if (!binding.constructor) throw new TypeError(`TN_BROWSER_NOT_CONSTRUCTIBLE: ${name}`);
@@ -737,6 +743,7 @@ export function defineBrowserClasses(
             : undefined;
         const engineArgs = parameters === undefined ? args : args.slice(0, -1);
         adopt(this, runtime.construct(name, engineArgs.map(toEngine)));
+        if (materialClass) Object.defineProperties(this, own);
         if (parameters !== undefined) setValues(this, name, parameters);
         // three's BufferAttribute keeps the typed array it is handed; the typed subclasses copy.
         const handed = args[0];
@@ -995,7 +1002,7 @@ export function defineBrowserClasses(
         flagField !== undefined && flagField[1] === 0 && peek !== undefined
           ? (self: object): boolean => peek(addressOf(self) + (flagField[0] ?? 0)) !== 0
           : undefined;
-      Object.defineProperty(accessors, property, {
+      const accessor: PropertyDescriptor = {
         configurable: true,
         get:
           fastGetter(binding, property) ??
@@ -1064,7 +1071,9 @@ export function defineBrowserClasses(
                 },
               }
             : {}),
-      });
+      };
+      Object.defineProperty(accessors, property, accessor);
+      if (materialClass) own[property] = { ...accessor, enumerable: true };
     }
     // Games turn objects every frame: an object's `rotation` is written in place (the transform page's
     // rotation column), and its quaternion follows here, as three's onRotationChange does. Any other
@@ -1355,7 +1364,7 @@ export function defineBrowserClasses(
       );
     }
     classes[name] = cls;
-    byType.set(runtime.typeId(name), { prototype: accessors });
+    byType.set(runtime.typeId(name), { prototype: accessors, ...(materialClass ? { own } : {}) });
     typeNames.set(runtime.typeId(name), name);
   }
   for (const name of ATTRIBUTE_CLASSES) {

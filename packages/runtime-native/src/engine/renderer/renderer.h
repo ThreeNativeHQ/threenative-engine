@@ -185,6 +185,7 @@ struct DrawItem {
     uint8_t side = 0;           // material.side: 0 FrontSide, 1 BackSide, 2 DoubleSide
     uint8_t shadowSide = 255;   // material.shadowSide, the same codes; 255 is null
     bool flatShading = false;   // material.flatShading: the face normal replaces the vertex normal
+    bool twoSidedFoliage = false;  // material.twoSidedFoliage: Unreal's Two Sided Foliage receiver (PRD-651)
     uint8_t blending = 1;       // material.blending: 0 NoBlending, 1 NormalBlending, 2 AdditiveBlending
     // InstancedMesh: one mat4 (16 floats) per instance, an optional rgb per instance, and how many draw.
     BufferStore* instanceMatrices = nullptr;
@@ -363,9 +364,14 @@ public:
     }
     /** The last render's linear HDR scene target (RGBA16Float), before post and the output transform. */
     void copyDepthToTexture(const Texture& texture);
+    /** The main renderer's scene colour and depth this target's materials read by name. A bind group built over views the
+     *  main renderer has since replaced (a resize, or temporal AA replacing multisampling) holds textures that keep their
+     *  last frame, so replaced views rebuild the groups. */
     void setSourceAttachments(WGPUTextureView color, WGPUTextureView depth) {
+        const bool replaced = color != sourceScene_ || depth != sourceDepth_;
         sourceScene_ = color;
         sourceDepth_ = depth;
+        if (replaced) rebuildGroups();
     }
     /** The renderer whose post render-to-texture passes this target's materials sample (a material node may read one). */
     void setPostSource(const Renderer* main) { postSource_ = main; }
@@ -385,12 +391,25 @@ public:
     void setPostInput(const std::string& name, WGPUTextureView view);
     void setTraa(const TraaOptions& options);
     TraaPass* traaDebugPass() const { return traa_.get(); }
+    /**
+     * The temporal pass as the last planned frame left it: whether a traa() effect is in the post graph, the frames it has
+     * begun, whether the next resolve has history, and the sub-pixel jitter in pixels. A snapshot taken where frames are
+     * planned, so the game thread reads it while the render thread encodes the frame before.
+     */
+    struct TemporalStatus {
+        bool active = false, historyValid = false;
+        uint64_t frame = 0;
+        double jitterX = 0, jitterY = 0;
+    };
+    const TemporalStatus& temporalStatus() const { return temporalStatus_; }
     void cutHistory();
     const OutputState& output() const { return output_; }
 
     /** Reallocates the targets; the next render draws at the new extent. Zero sizes clamp to 1. */
     void setSize(uint32_t width, uint32_t height);
+    /** The multisampling the game asks for. A traa() effect in the post graph replaces it: see sampleCount(). */
     void setSampleCount(uint32_t samples);
+    /** The samples the scene draws with: 1 while a traa() effect is in the post graph, otherwise the requested count. */
     uint32_t sampleCount() const { return sampleCount_; }
     uint32_t width() const { return width_; }
     uint32_t height() const { return height_; }
@@ -871,6 +890,7 @@ private:
     WGPUTexture sceneColor_ = nullptr;  // linear HDR, what materials draw into
     WGPUTextureView sceneView_ = nullptr;
     uint32_t sampleCount_ = 1;
+    uint32_t requestedSamples_ = 1;  // what the game asked for; sampleCount_ is 1 while a traa() effect is in the post graph
     WGPUTexture msaaColor_ = nullptr;
     WGPUTextureView msaaColorView_ = nullptr;
     WGPUTexture msaaDepth_ = nullptr;
@@ -897,6 +917,7 @@ private:
     const Renderer* postSource_ = nullptr;
     const PostEffects* postTextureOwner(const std::string& name) const;
     WGPUTextureView postTextureView(const std::string& name) const;
+    void applySampleCount();
     uint64_t postViewsStamp() const;
     void collectPostSources();
     GraphTextures postTextures_;
@@ -922,6 +943,11 @@ private:
     std::vector<WGPUTextureView> postTextureViews_;  // a resized render target's texture is a new view
     std::unique_ptr<TraaPass> traa_;
     std::shared_ptr<const shader::graph::PostEffect> liveTraa_;
+    TemporalStatus temporalStatus_;
+    /** True when the resolve reads a frame the post graph drew (`traaResolvesLate`): it then runs as a graph pass. */
+    bool lateTraa_ = false;
+    /** The colour the post graph and the output pass read as `scene`: the scene pass's own, or its resolve. */
+    WGPUTextureView postScene() const;
     std::unique_ptr<PostEffects> postEffects_;
     std::map<std::string, std::vector<double>> postUniforms_;
     /** three's `time` (its NodeFrame clock): seconds since this renderer was made, read once a frame. */

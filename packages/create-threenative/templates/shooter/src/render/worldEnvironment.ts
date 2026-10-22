@@ -57,7 +57,11 @@ import {
 import { BlendMode, type Node, type NodeBuilder, type TextureNode } from "three/webgpu";
 import { AutoExposureNode, applyExposure } from "./autoExposure.js";
 import { type IExposureSettings, exposureSettings } from "./exposure.js";
+import { LocalExposureNode } from "./localExposure.js";
+import { motionBlur } from "./motionBlur.js";
 import { installFilmicToneMapping } from "./tonemap.js";
+import { UnrealBloomNode } from "./unrealBloom.js";
+import { vignetteMask } from "./vignette.js";
 
 /** Godot's `Viewport.screen_space_aa`: which post-process antialiasing smooths the frame's edges. */
 export type ScreenSpaceAA = "smaa" | "fxaa" | "disabled";
@@ -205,8 +209,18 @@ export interface IWorldEnvironmentOptions {
   readonly sharpenEnabled?: boolean;
   /** RCAS sharpness. **0 is maximum sharpening and 2 is none** — it is a radius, not a gain. */
   readonly sharpenStrength?: number;
-  /** Corner darkening, as a fraction removed at the extreme corner. Zero disables it. */
+  /**
+   * Unreal's `VignetteIntensity` (default 0.4): corners fall off with the cosine-fourth law, so the
+   * centre is untouched and the corner of any aspect ratio keeps the same fraction of its light.
+   * Zero disables the stage.
+   */
   readonly vignetteAmount?: number;
+  /**
+   * Unreal's default motion blur: each pixel blurs along its own velocity for 1/60 s, at most 5 percent of the
+   * frame's width (`motionBlur.ts` holds the numbers). It reads the velocity the render chain provisions, which
+   * costs one more scene pass target, so it is a cost opt-in. Default false.
+   */
+  readonly motionBlurEnabled?: boolean;
   /**
    * Post-process antialiasing, run last. Godot's `Viewport.screen_space_aa`. Default `"smaa"`.
    *
@@ -262,6 +276,18 @@ export interface IWorldEnvironmentOptions {
   readonly exposure?: number;
   /** Cost opt-in. False retains the direct constant-exposure path. */
   readonly autoExposureEnabled?: boolean;
+  /**
+   * Unreal's local exposure: a bilateral grid of the frame's log luminance pulls each region toward
+   * middle grey on top of the global exposure (`localExposure.ts` holds the numbers). It needs no
+   * automatic exposure and measures against `exposure` when that is off. Default false.
+   */
+  readonly localExposureEnabled?: boolean;
+  /**
+   * Unreal's standard bloom in place of three's `BloomNode`: six Gaussians, no threshold, the whole frame
+   * blooms (`unrealBloom.ts` holds the numbers). `bloomStrength`, `bloomRadius` and `bloomThreshold` belong to
+   * the stock node and do nothing while this is on. Default false.
+   */
+  readonly unrealBloomEnabled?: boolean;
   /** Editable game policy; disabled application still measures when cost is opted in. */
   readonly exposurePolicy?: Readonly<IExposureSettings>;
 }
@@ -553,6 +579,7 @@ export class WorldEnvironment {
       sharpenEnabled: options.sharpenEnabled ?? false,
       sharpenStrength: options.sharpenStrength ?? 0.2,
       vignetteAmount: options.vignetteAmount ?? 0,
+      motionBlurEnabled: options.motionBlurEnabled ?? false,
       screenSpaceAA: options.screenSpaceAA ?? "smaa",
       bloomEnabled: options.bloomEnabled ?? true,
       bloomStrength: options.bloomStrength ?? 0.7,
@@ -562,6 +589,8 @@ export class WorldEnvironment {
       tonemapMode,
       exposure: options.exposure ?? 1,
       autoExposureEnabled: options.autoExposureEnabled ?? false,
+      localExposureEnabled: options.localExposureEnabled ?? false,
+      unrealBloomEnabled: options.unrealBloomEnabled ?? false,
       exposurePolicy: options.exposurePolicy ?? exposureSettings,
     };
   }
@@ -597,13 +626,23 @@ export class WorldEnvironment {
     }
 
     const requested: string[] = (
-      ["ssgi", "ambientOcclusion", "godRays", "ssr", "sharpen", "bloom", "vignette"] as const
+      [
+        "ssgi",
+        "ambientOcclusion",
+        "godRays",
+        "ssr",
+        "motionBlur",
+        "sharpen",
+        "bloom",
+        "vignette",
+      ] as const
     ).filter(
       (name) =>
         (name === "ssgi" && options.ssgiEnabled) ||
         (name === "ambientOcclusion" && options.gtaoEnabled) ||
         (name === "godRays" && options.godraysEnabled) ||
         (name === "ssr" && options.ssrEnabled) ||
+        (name === "motionBlur" && options.motionBlurEnabled) ||
         (name === "sharpen" && options.sharpenEnabled) ||
         (name === "bloom" && options.bloomEnabled) ||
         (name === "vignette" && options.vignetteAmount > 0),
@@ -621,7 +660,12 @@ export class WorldEnvironment {
     // applied as a multiply on the scene pass instead: scene-referred, so every downstream
     // stage sees the exposed image and the bloom threshold means the same thing at any
     // exposure. Both land at the same point in the graph — before the tone curve.
-    if (requested.length === 0 && target.baseColour === undefined && !options.autoExposureEnabled) {
+    if (
+      requested.length === 0 &&
+      target.baseColour === undefined &&
+      !options.autoExposureEnabled &&
+      !options.localExposureEnabled
+    ) {
       raw.toneMappingExposure = options.exposure;
       this.#reportApplied([], []);
       return { dropped: [], stages: [] };
@@ -696,15 +740,21 @@ export class WorldEnvironment {
     const exposure = options.autoExposureEnabled
       ? new AutoExposureNode(colour, options.exposurePolicy, options.exposure)
       : undefined;
-    const exposed =
-      exposure === undefined
-        ? applyExposure(colour, float(options.exposure))
-        : applyExposure(colour, exposure.exposureNode);
+    // Local exposure acts on the exposed frame, so with the meter off it measures against the fixed exposure.
+    const localExposure = options.localExposureEnabled
+      ? new LocalExposureNode(colour, exposure?.exposureNode ?? float(options.exposure))
+      : undefined;
+    const gain = exposure === undefined ? float(options.exposure) : exposure.exposureNode;
+    const exposed = applyExposure(
+      colour,
+      localExposure === undefined ? gain : gain.mul(localExposure.gainNode),
+    );
     let released = false;
     const releaseGraph = (): void => {
       if (released) return;
       released = true;
       exposure?.dispose();
+      localExposure?.dispose();
       // Only a newly created RTT is ours. A PassNode converts to a borrowed PassTextureNode;
       // supplied TextureNodes/RTTs belong to the caller even when their resources are shared.
       if (colour !== base && Reflect.get(colour, "isRTTNode") === true) {
@@ -900,6 +950,22 @@ export class WorldEnvironment {
         },
       }),
       stage({
+        name: "motionBlur",
+        supportsResolutionSubrect: true,
+        build: (input, chain) => {
+          // The chain provisions the velocity output after `available` runs and before `build`,
+          // so only `build` can tell whether it got one.
+          if (chain.velocityNode === undefined)
+            throw new Error(
+              "Motion blur requires the scene pass velocity; it is provisioned per request.",
+            );
+          const colour = subrectTexture(input);
+          const velocity = chain.velocityNode as TextureNode;
+          sample(velocity);
+          return motionBlur(colour, velocity);
+        },
+      }),
+      stage({
         name: "sharpen",
         build: (input) => {
           // Last of the image stages but one, because RCAS is defined on the finished
@@ -920,13 +986,11 @@ export class WorldEnvironment {
         build: (input) => {
           const texture = subrectTexture(input);
           const colour = input;
-          const effect = bloom(
-            texture,
-            options.bloomStrength,
-            options.bloomRadius,
-            options.bloomThreshold,
-          );
-          if (resolutionSubrect) {
+          const unreal = options.unrealBloomEnabled ? new UnrealBloomNode(texture) : undefined;
+          const effect =
+            unreal ??
+            bloom(texture, options.bloomStrength, options.bloomRadius, options.bloomThreshold);
+          if (resolutionSubrect && unreal === undefined) {
             const retained = effect as unknown as {
               setSize(w: number, h: number): void;
               setup(builder: NodeBuilder): unknown;
@@ -1002,7 +1066,9 @@ export class WorldEnvironment {
               scratch._quadMesh.material.dispose();
             }
           };
-          return colour.add(effect);
+          return unreal === undefined
+            ? colour.add(effect)
+            : vec4(colour.rgb.add(unreal.bloomNode), colour.a);
         },
       }),
       stage({
@@ -1010,13 +1076,7 @@ export class WorldEnvironment {
         supportsResolutionSubrect: true,
         build: (input) => {
           const colour = input;
-          // Radius measured from the centre in screen-diagonal units, so the corner is 1
-          // and the falloff does not change shape when the window does. It starts at 0.55 —
-          // well outside the subject in a 16:9 frame — so the vignette is a corner, not a
-          // spotlight.
-          const radius = uv().sub(vec2(0.5, 0.5)).mul(vec2(1.78, 1)).length().mul(1.04);
-          const fall = smoothstep(float(0.55), float(1.02), radius).mul(options.vignetteAmount);
-          return colour.mul(fall.oneMinus());
+          return vec4(colour.rgb.mul(vignetteMask(options.vignetteAmount)), colour.a);
         },
       }),
       {
@@ -1195,6 +1255,7 @@ export class WorldEnvironment {
       antialias: 'screenSpaceAA is "disabled", or no other stage installed a chain',
       bloom: "bloomEnabled is false",
       godRays: "godraysEnabled is false",
+      motionBlur: "motionBlurEnabled is false",
       sharpen: "sharpenEnabled is false",
       ssgi: "ssgiEnabled is false",
       ssr: "ssrEnabled is false",
@@ -1214,11 +1275,13 @@ export class WorldEnvironment {
       `TN_WORLD_ENVIRONMENT:${JSON.stringify({
         denoise: options.denoiseEnabled,
         exposure: options.exposure,
+        localExposure: options.localExposureEnabled,
         marker: "TN_WORLD_ENVIRONMENT",
         screenSpaceAA: options.screenSpaceAA,
         ssgiQuality: options.ssgiQuality,
         stages,
         tonemapMode: options.tonemapMode,
+        unrealBloom: options.unrealBloomEnabled,
       })}`,
     );
   }

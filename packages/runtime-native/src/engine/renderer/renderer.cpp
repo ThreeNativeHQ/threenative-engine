@@ -973,8 +973,9 @@ void Renderer::setPostGraph(shader::graph::Node root) {
     setPostNode(root ? std::make_shared<shader::PostNode>(shader::graph::serializedPost(root, output_.toneMapping, output_.srgb, output_.customToneMapping)) : nullptr);
     postGraph_ = root;
     if (temporal && temporal != liveTraa_) setTraa(TraaOptions{});
-    if (!temporal && liveTraa_) { traa_.reset(); releaseOutputGroup(); }
+    if (!temporal && liveTraa_) { traa_.reset(); releaseOutputGroup(); applySampleCount(); }
     liveTraa_ = temporal;
+    lateTraa_ = temporal && shader::graph::traaResolvesLate(*temporal);
     collectPostSources();
 }
 
@@ -1012,6 +1013,7 @@ void Renderer::setTraa(const TraaOptions& options) {
     traa_ = std::make_unique<TraaPass>(device_, queue_, options);
     if (width_ && height_) traa_->resize(width_, height_);
     releaseOutputGroup();
+    applySampleCount();
 }
 
 void Renderer::cutHistory() { if (traa_) traa_->cameraCut(); }
@@ -1019,6 +1021,18 @@ void Renderer::cutHistory() { if (traa_) traa_->cameraCut(); }
 void Renderer::setSampleCount(uint32_t samples) {
     if (samples != 1 && samples != 4)
         throw std::runtime_error("TN_NATIVE_SAMPLES_UNSUPPORTED: sampleCount must be 1 or 4");
+    requestedSamples_ = samples;
+    applySampleCount();
+}
+
+// Temporal AA replaces multisampling, as one method does in Unreal. The velocity pass tests depth Equal against the
+// colour pass, and 4x multisampling hands it one resolved sample of depth, so Equal fails on every sloped surface.
+void Renderer::applySampleCount() {
+    const uint32_t samples = traa_ ? 1 : requestedSamples_;
+    if (traa_ && requestedSamples_ == 4) {
+        const std::string note = "TN_TRAA_MSAA_OFF: temporal AA replaces 4x multisampling, so the scene draws single-sampled";
+        if (std::find(diagnostics_.begin(), diagnostics_.end(), note) == diagnostics_.end()) diagnostics_.push_back(note);
+    }
     if (samples == sampleCount_) return;
     sampleCount_ = samples;
     if (mainBundle_) wgpuRenderBundleRelease(mainBundle_);
@@ -1170,6 +1184,8 @@ const PostEffects* Renderer::postTextureOwner(const std::string& name) const {
     return nullptr;
 }
 
+WGPUTextureView Renderer::postScene() const { return traa_ && !lateTraa_ ? traa_->resultView() : sceneView_; }
+
 WGPUTextureView Renderer::postTextureView(const std::string& name) const {
     const PostEffects* owner = postTextureOwner(name);
     return owner ? owner->view(name) : nullptr;
@@ -1234,6 +1250,12 @@ WGPUBindGroup Renderer::bindGroup(WGPUBindGroupLayout layout, const shader::Stag
             const bool depthCopy = b.name.find("Depth") != std::string::npos;
             if (b.kind == shader::BindingKind::Texture) e.textureView = depthCopy ? viewportDepthView_ : viewportColorView_;
             else e.sampler = depthCopy ? compareSampler_ : outputSampler_;
+        } else if (b.name == "t_velocity" || b.name == "smp_velocity") {
+            // The temporal pass's velocity target, read by name (motion blur). Nothing else draws one, and the
+            // fallback below would hand the stage the scene colour as motion.
+            if (!traa_) throw std::runtime_error("TN_POST_INPUT_MISSING: velocity is drawn only while a traa() effect is in the post graph");
+            if (b.kind == shader::BindingKind::Texture) e.textureView = traa_->velocityView();
+            else e.sampler = sampler;
         } else if (graphTextureBinding(b.kind == shader::BindingKind::Sampler ? "t_" + b.name.substr(4) : b.name)) {
             // A graph's own texture (texture(object), texture3D), checked before the 3D probe atlases.
             const MaterialTexture* texture = graph(b.name, b.kind == shader::BindingKind::Sampler);
@@ -2164,6 +2186,7 @@ Renderer::Program& Renderer::depthProgram(const shader::VertexVariant& variant, 
     kind.instanceColor = false;
     kind.vertexColors = 0;
     kind.invariantPosition = false;  // the shadow depth pass shares its vertex stage with nothing
+    kind.leafReceiver = false;       // a depth pass receives no shadow
     const auto positionGraph = kind.nodes.positionNode;
     kind.nodes = {};
     kind.nodes.positionNode = positionGraph; // a depth pass reads no colour
@@ -2348,6 +2371,10 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     if (traa_ && !compilation)
         camera.projectionMatrix = traa_->begin(camera.projectionMatrix, camera.matrixWorld, camera.matrixWorldInverse,
                                                manualView ? &inputCamera.projectionMatrix : nullptr);
+    if (!compilation) {
+        const auto status = traa_ ? traa_->status() : TraaPass::Status{};
+        temporalStatus_ = {traa_ != nullptr, status.historyValid, status.frame, status.jitterX, status.jitterY};
+    }
     const Matrix& view = camera.matrixWorldInverse;
     geometry_->cache.sweep();  // GPU copies of attributes released since the last frame
     sweepTextures();    // ...and of textures that no longer exist
@@ -2699,6 +2726,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         v.sprite = item.sprite;
         v.backSide = item.side == 1;
         v.doubleSide = item.side == 2;
+        v.leafReceiver = item.receiveShadow && item.twoSidedFoliage;
         v.flatShading = item.flatShading;
         v.vertexColors = item.colors ? item.colorSize : 0;
         v.instanced = item.instanceMatrices != nullptr;
@@ -3116,12 +3144,20 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         Program& velocity = *programs_.at(key);
         for (const Planned& draw : plan) {
             const DrawItem& item = *draw.item;
-            // Previous deformed vertex data is not yet retained by these variants. Refuse it;
-            // ordinary rigid object/camera motion goes through the real VelocityNode equations.
+            // Previous deformed vertex data is not yet retained by these variants, and a transparent or alpha-tested
+            // draw has no depth of its own to match. The velocity pass leaves them out and the camera-motion fill
+            // keeps their pixels moving with the camera, so a game with a skinned character, grass or glass still draws.
+            // Ordinary rigid object/camera motion goes through the real VelocityNode equations. Named once a frame.
             if (item.instanceMatrices || item.skinIndices || item.morphGeometry || item.sprite ||
                 item.positionNode || item.nodes.positionNode || item.nodes.vertexNode || !item.attributes.empty() ||
-                item.transparent || item.material->alphaTest > 0)
-                throw std::runtime_error("TN_TRAA_VELOCITY_UNSUPPORTED: deformed/instanced/sprite/alpha-tested/transparent draw");
+                item.transparent || item.material->alphaTest > 0) {
+                const char* reason = item.instanceMatrices ? "instanced" : item.skinIndices ? "skinned" : item.morphGeometry ? "morphed"
+                    : item.sprite ? "sprite" : item.transparent ? "transparent" : item.material->alphaTest > 0 ? "alpha-tested" : "node-deformed";
+                const std::string note = std::string("TN_TRAA_VELOCITY_SKIPPED: ") + reason +
+                    " draws carry the camera's motion only (no previous vertex data)";
+                if (std::find(diagnostics_.begin(), diagnostics_.end(), note) == diagnostics_.end()) diagnostics_.push_back(note);
+                continue;
+            }
             PipelineTarget target{WGPUTextureFormat_RGBA16Float, WGPUTextureFormat_Depth32Float,
                 item.side == 2 ? WGPUCullMode_None : item.side == 1 ? WGPUCullMode_Front : WGPUCullMode_Back};
             target.layout = velocity.pipelineLayout; target.depthWrite = false;
@@ -3146,6 +3182,8 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             }
             velocityPlan.push_back({&item, &velocity, pipeline, offset, 0});
         }
+        // A post pass that reads "velocity" (motion blur) samples the target the temporal pass draws.
+        if (!compilation && postEffects_ && postEffects_->reads("velocity")) postEffects_->input("velocity", traa_->velocityView());
     }
     // A post pass that reads "normal" (GTAO, denoise) gets three's MRT normal output as a second
     // pass over the same draws: each draw's own vertex stage (skinning, morphs, instancing, position
@@ -3651,7 +3689,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         if (postEffects_) postEffects_->input(name, texture->view, texture->sampler);
     }
     if (!postTextures_.empty() && !outputGroup_)
-        outputGroup_ = bindGroup(outputLayout_, outputFragment_, outputUniforms_, traa_ ? traa_->resultView() : sceneView_, outputSampler_,
+        outputGroup_ = bindGroup(outputLayout_, outputFragment_, outputUniforms_, postScene(), outputSampler_,
             nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, &postTextures_);
     if (post_)
         for (const auto& node : post_->live) postUniforms_[node->name] = node->values;
@@ -3839,7 +3877,8 @@ void Renderer::encodeFrame(FrameJob& job) {
     // Like core's CPU measurement when timestamp queries are unavailable; never mix CPU and GPU samples.
     if (!passTimer_->queries)
         for (const auto& [key, ms] : shadowCosts) virtualShadows_.at(key.first).atlas.recordCost(key.second, ms, frameDelta_);
-    if (traa_) traa_->seedHistory(encoder, sceneColor_);
+    // A resolve over a frame the graph draws seeds from that frame, in its own pass.
+    if (traa_ && !lateTraa_) traa_->seedHistory(encoder, sceneColor_);
     WGPURenderPassEncoder pass = beginTimedRenderPass(encoder, &passDesc, ownsPassTimer_ ? 1 : 2);
     bound = nullptr;
     boundIndex = nullptr;
@@ -3961,8 +4000,9 @@ void Renderer::encodeFrame(FrameJob& job) {
         wgpuRenderPassEncoderEnd(emissiveEncoder); wgpuRenderPassEncoderRelease(emissiveEncoder);
     }
     if (traa_) {
+        traa_->fillVelocity(encoder, depthView_);
         WGPURenderPassColorAttachment motion{};
-        motion.view = traa_->velocityView(); motion.loadOp = WGPULoadOp_Clear; motion.storeOp = WGPUStoreOp_Store;
+        motion.view = traa_->velocityView(); motion.loadOp = WGPULoadOp_Load; motion.storeOp = WGPUStoreOp_Store;
 #if defined(MYSTRAL_WEBGPU_DAWN)
         motion.depthSlice = WGPU_DEPTH_SLICE_UNDEFINED;
 #endif
@@ -3975,7 +4015,7 @@ void Renderer::encodeFrame(FrameJob& job) {
         bound = nullptr; boundIndex = nullptr;
         for (const Planned& p : velocityPlan) encode(velocityPass, p, Tally::Extra);
         wgpuRenderPassEncoderEnd(velocityPass); wgpuRenderPassEncoderRelease(velocityPass);
-        traa_->resolve(encoder, sceneColor_, sceneView_, depth_, depthView_);
+        if (!lateTraa_) traa_->resolve(encoder, sceneColor_, sceneView_, depth_, depthView_);
     }
     // A game's RenderTarget the post graph samples is drawn where the frame first reads it, after the render-to-texture
     // passes its own scene samples: what the frame has recorded so far is submitted ahead of the target's draw.
@@ -3990,7 +4030,14 @@ void Renderer::encodeFrame(FrameJob& job) {
     };
     if (postEffects_) {
         // three's Info counts each fullscreen effect pass as one draw of one triangle, like the output pass below.
-        const uint32_t effectPasses = postEffects_->render(encoder, traa_ ? traa_->resultView() : sceneView_, depthView_, gpu_.buffer(outputTriangle_), camera, renderId_, frameTime_, static_cast<float>(output_.toneMappingExposure), &lights,
+        postEffects_->setHost(lateTraa_ ? PostEffects::HostPass([this](WGPUCommandEncoder resolveEncoder, WGPUTexture beauty,
+                                                                     WGPUTextureView beautyView, WGPUTexture output,
+                                                                     WGPUTextureView outputView) {
+                                  traa_->seedHistory(resolveEncoder, beauty);
+                                  traa_->resolve(resolveEncoder, beauty, beautyView, depth_, depthView_, output, outputView);
+                              })
+                              : PostEffects::HostPass());
+        const uint32_t effectPasses = postEffects_->render(encoder, postScene(), depthView_, gpu_.buffer(outputTriangle_), camera, renderId_, frameTime_, static_cast<float>(output_.toneMappingExposure), &lights,
             [&](const std::string& input) {
                 return std::any_of(postTextures_.begin(), postTextures_.end(), [&](const auto& texture) {
                     return texture.first == input && std::any_of(deferred_.begin(), deferred_.end(), [&](const auto& entry) { return entry.key == texture.second->renderTarget.lock().get(); });
@@ -4063,6 +4110,9 @@ void Renderer::outputPass(WGPUCommandEncoder encoder, WGPUTextureView present, W
     // post_->live was copied into postUniforms_ while the frame was planned: the game writes those nodes.
     postUniforms_["time"] = {frameTime_};
     postUniforms_["deltaTime"] = {frameDelta_};
+    // `screenSize` in an output graph is the drawing buffer, as it is in the render-target quads that draw before it.
+    // Left at zero it turned any stage that divides by it (the vignette's aspect ratio) into NaN, a black frame.
+    postUniforms_["screenSize"] = {static_cast<float>(width_), static_cast<float>(height_)};
     for (const auto& field : outputFragment_.uniforms) {
         const auto value = postUniforms_.find(field.name);
         if (value == postUniforms_.end()) continue;
@@ -4074,7 +4124,7 @@ void Renderer::outputPass(WGPUCommandEncoder encoder, WGPUTextureView present, W
     // group serves both and needs no rebuild when the present format changes.
     WGPUBindGroup& group = outputGroup_;
     if (!group) {
-        group = bindGroup(outputLayout_, outputFragment_, outputUniforms_, traa_ ? traa_->resultView() : sceneView_, outputSampler_, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, &postTextures_);
+        group = bindGroup(outputLayout_, outputFragment_, outputUniforms_, postScene(), outputSampler_, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, &postTextures_);
     }
     WGPURenderPassColorAttachment color = {};
     color.view = present ? present : colorView_;

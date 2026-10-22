@@ -186,10 +186,14 @@ describe("starter visual floor", () => {
         // AutoExposureNode sequences five GPU passes (meter, reduce, histogram tiles, histogram
         // bins, adapt) with their disposal. It stays plain Three.js the game can rewrite, so the
         // ownership check above is the rule that matters for it.
+        // LocalExposureNode (a bilateral grid and its blur) and UnrealBloomNode (six Gaussian stages on a
+        // downsample chain) are multi-pass nodes of the same kind, and each file is the whole stage.
         if (
           !name.endsWith("loading.ts") &&
           !name.endsWith("worldEnvironment.ts") &&
-          !name.endsWith("autoExposure.ts")
+          !name.endsWith("autoExposure.ts") &&
+          !name.endsWith("localExposure.ts") &&
+          !name.endsWith("unrealBloom.ts")
         )
           expect(source.trimEnd().split("\n").length, name).toBeLessThan(200);
       }
