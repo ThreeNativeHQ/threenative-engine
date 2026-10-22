@@ -9,6 +9,9 @@
 // toe and above the shoulder. A small desaturation before and after keeps saturated highlights
 // from shifting hue, as the ACES reference rendering does.
 //
+// Before the curve, as in Unreal's colour LUT, bright saturated colour is expanded toward a wider
+// gamut (`expandGamut`, 1 by default) and the blue correction runs (`blueCorrection`, 0.6).
+//
 // `worldEnvironment.ts` installs it as three's `CustomToneMapping` when `tonemapMode` is
 // `"filmic"`. `"aces"` stays available as the named override. `filmicToneMap()` is the same
 // curve on plain numbers, so a test or a capture script can apply it to a scene-linear image.
@@ -37,8 +40,10 @@ export interface IFilmicCurve {
   readonly whiteClip: number;
   readonly blueCorrection: number;
   /**
-   * Unreal's "Expand Gamut": bright, saturated colour is pushed toward a wider gamut. Off by default: a per-pixel
-   * fit against Unreal's own L1 and L2 frames found no expansion in a fresh project (PRD-632). 1 is the override.
+   * Unreal's "Expand Gamut" (1 in a fresh project, `Engine/Source/Runtime/Engine/Private/Scene.cpp:437`): bright,
+   * saturated colour is pushed toward a wider gamut before the blue correction and the curve. 0 turns it off.
+   * Unreal's linear EXR frames are taken after this step (`Engine/Shaders/Private/PostProcessCombineLUTs.usf`,
+   * the expansion runs before the output-device branches), so a curve applied to an Unreal EXR needs 0 here.
    */
   readonly expandGamut: number;
   /**
@@ -57,7 +62,7 @@ export const FILMIC_CURVE: IFilmicCurve = {
   blackClip: 0,
   whiteClip: 0.04,
   blueCorrection: 0.6,
-  expandGamut: 0,
+  expandGamut: 1,
   dither: 1,
 };
 
@@ -162,11 +167,13 @@ export const BLUE_CORRECTION_INVERSE_AP1 = blueAP1
 
 // Gamut expansion, in AP1 -> AP1: the sRGB gamut re-expressed in a wider set of primaries (CIE xy
 // red 0.6965 0.3065, green 0.245 0.718, blue 0.1302 0.0456, white 0.3127 0.329), between P3 and
-// AP1. It is what Unreal's colour LUT mixes in by `expandAmount()`. Measured: without it the clear
-// sky at a 60 degree sun carries 27% too much red against the Unreal L2 frame, with it 3%.
-const EXPAND_AP1: Mat3 = [
-  1.3701908756, -0.329206602, -0.063670572, -0.0834440781, 1.0971191726, -0.0108611106,
-  -0.0257999545, -0.098656895, 1.2039833339,
+// AP1. It is what Unreal's colour LUT mixes in by `expandAmount()`. The matrix takes AP1 to sRGB,
+// reads those numbers as numbers in the wide primaries and carries them to AP1; all of it follows
+// from the chromaticities, and the spec derives it again to 1e-6. Without it the clear sky carries
+// a red excess against the Unreal L2 frames (PRD-632).
+export const EXPAND_AP1: Mat3 = [
+  1.370412273, -0.329292155, -0.063683161, -0.083433332, 1.097092614, -0.010861358, -0.025793271,
+  -0.098625844, 1.203694898,
 ];
 
 /**
