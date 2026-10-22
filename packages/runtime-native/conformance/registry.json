@@ -635,8 +635,8 @@
       "status": "implemented",
       "scene": "conformance/scenes/shared/foliage-back-light.js",
       "tolerance": {
-        "pixelMismatchRatio": 0.08,
-        "perceptualDeltaE": 10.0
+        "pixelMismatchRatio": 0.03,
+        "perceptualDeltaE": 4.0
       },
       "desktopGate": true,
       "required": true
