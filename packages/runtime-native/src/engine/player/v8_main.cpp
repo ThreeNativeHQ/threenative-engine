@@ -575,7 +575,8 @@ v8::Local<v8::Value> V8Game::adapterValue() {
 }
 
 // `tn.renderInfo()`: { drawCalls, triangles } of the last frame the player drew, and the renderer's
-// cumulative pipelineCompiles (a window's compiles are the difference between two reads).
+// cumulative pipelineCompiles (a window's compiles are the difference between two reads), the samples the scene draws
+// with, and the temporal pass as the last planned frame left it: { active, frame, historyValid, jitter: [x, y] }.
 void V8Game::renderInfo(const v8::FunctionCallbackInfo<v8::Value>& info) {
     auto& game = *static_cast<V8Game*>(info.Data().As<v8::External>()->Value());
     auto* isolate = info.GetIsolate();
@@ -584,6 +585,15 @@ void V8Game::renderInfo(const v8::FunctionCallbackInfo<v8::Value>& info) {
     record->Set(ctx, v8str(isolate, "drawCalls"), v8::Number::New(isolate, game.drawCalls_)).Check();
     record->Set(ctx, v8str(isolate, "triangles"), v8::Number::New(isolate, static_cast<double>(game.triangles_))).Check();
     record->Set(ctx, v8str(isolate, "pipelineCompiles"), v8::Number::New(isolate, static_cast<double>(game.pipelineCompiles_))).Check();
+    const Renderer::TemporalStatus temporal = game.renderer_ ? game.renderer_->temporalStatus() : Renderer::TemporalStatus{};
+    record->Set(ctx, v8str(isolate, "samples"), v8::Number::New(isolate, game.renderer_ ? game.renderer_->sampleCount() : 1)).Check();
+    auto status = v8::Object::New(isolate);
+    status->Set(ctx, v8str(isolate, "active"), v8::Boolean::New(isolate, temporal.active)).Check();
+    status->Set(ctx, v8str(isolate, "frame"), v8::Number::New(isolate, static_cast<double>(temporal.frame))).Check();
+    status->Set(ctx, v8str(isolate, "historyValid"), v8::Boolean::New(isolate, temporal.historyValid)).Check();
+    v8::Local<v8::Value> jitter[] = {v8::Number::New(isolate, temporal.jitterX), v8::Number::New(isolate, temporal.jitterY)};
+    status->Set(ctx, v8str(isolate, "jitter"), v8::Array::New(isolate, jitter, 2)).Check();
+    record->Set(ctx, v8str(isolate, "temporal"), status).Check();
     info.GetReturnValue().Set(record);
 }
 

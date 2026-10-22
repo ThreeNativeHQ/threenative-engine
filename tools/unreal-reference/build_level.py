@@ -10,6 +10,8 @@ and passes the work through environment variables:
   TN_UE_LAYERS  comma-separated layer names for capture (default: all)
   TN_UE_CELLS   optional comma-separated "sun/pose" filter for capture
   TN_UE_EXTRA_CVARS  extra names for check-cvars (a red test of the check)
+  TN_UE_OVERRIDE_CVARS  name=value,... set on every capture job after the layer's own (a stage ablation, e.g.
+                        r.DefaultFeature.AutoExposure=0 holds the exposure fixed; ShowFlag.Vignette=0)
 
 build: one level per sun elevation, each from the editor's own default level
 template (/Engine/Maps/Templates/Template_Default), so the lighting actors keep
@@ -324,6 +326,9 @@ def add_job(queue, name, level, sequence, out_dir, cvars, show_flags, kind, warm
         setting.add_or_update_console_variable(cvar, float(value))
     for flag, value in show_flags.items():
         setting.add_or_update_console_variable("ShowFlag." + flag, float(value))
+    for override in filter(None, os.environ.get("TN_UE_OVERRIDE_CVARS", "").split(",")):
+        cvar, value = override.split("=")
+        setting.add_or_update_console_variable(cvar, float(value))
     # Start commands run after the job's console variables are set: a bare name prints its value
     # to the log, which is how the caller proves the setting reached the render.
     if print_cvars:

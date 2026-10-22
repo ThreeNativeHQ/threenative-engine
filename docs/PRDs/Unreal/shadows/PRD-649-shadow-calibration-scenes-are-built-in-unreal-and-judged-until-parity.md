@@ -8,14 +8,14 @@ prd_contract: v1
 **Priority:** P1 — no box is ticked: no Unreal-authored scene isolates penumbra growth, contact, lamp shadows, leaf shadows or shadow stability under motion, so PRD-650 to PRD-652 and the open PRD-634 boxes have no Unreal target to be judged against.
 **Complexity:** 5 (MEDIUM) — 1–5 files: a scene family switch, three `scene.py` scripts, shadow metrics in compare (+1), three new Unreal scenes and their recreation (+2), every shadow PRD consumes the scoreboard (+2); risk override: none
 **Owner:** João
-**Depends on:** [PRD-638](../gi/PRD-638-calibration-scenes-are-built-in-unreal-and-captured-as-the-gi-target.md) Phase 1 (the scene pipeline), [PRD-646](../gi/PRD-646-threenative-recreates-each-unreal-calibration-scene-exactly.md) Phase 2 (the recreation) and [PRD-647](../gi/PRD-647-a-visual-judge-calibrates-gi-against-the-unreal-scenes-until-parity.md) Phases 1 and 2 (the calibrate command, the judge and the scoreboard). This PRD adds a scene family to that pipeline. It does not build a second pipeline.
+**Depends on:** [PRD-638](../gi/PRD-638-calibration-scenes-are-built-in-unreal-and-captured-as-the-gi-target.md) Phase 1 (the scene pipeline), [PRD-646](../gi/PRD-646-threenative-recreates-each-unreal-calibration-scene-exactly.md) Phase 2 (the recreation) and [PRD-647](../../done/PRD-647-a-visual-judge-calibrates-gi-against-the-unreal-scenes-until-parity.md) Phases 1 and 2 (the calibrate command, the judge and the scoreboard). This PRD adds a scene family to that pipeline. It does not build a second pipeline.
 
 ## Context
 
 **Owner direction (2026-10-20):** every shadow PRD is judged on calibration scenes. A scene holds
 one or several PRDs' features. It is created in Unreal, recreated in ThreeNative, and sent to the
 visual judge until parity, with the screenshots posted on the PR. This repeats the GI rule
-([PRD-647](../gi/PRD-647-a-visual-judge-calibrates-gi-against-the-unreal-scenes-until-parity.md)
+([PRD-647](../../done/PRD-647-a-visual-judge-calibrates-gi-against-the-unreal-scenes-until-parity.md)
 `## Decisions`).
 
 **What exists.** The PRD-631 reference scene has an L5 shadow layer and a penumbra metric

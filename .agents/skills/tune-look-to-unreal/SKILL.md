@@ -46,6 +46,13 @@ flowchart LR
    colour difference and silhouette overlap. Name the largest gap in one sentence. It fails
    closed until both engines have every pose of the layer plus the `ID` cells (region masks) and
    the `L5` cells (shadow masks), so capture those first.
+   **Same scene first.** A look gap means nothing while the two engines draw different geometry.
+   `pnpm unreal-look:compare --sameness [--scene reference|gi|shadow|gi:<name>|shadow:<name>] [--captures <root>]`
+   scores every object of every pose from the `ID` frames: it prints IoU and the pixels that lie more than
+   1 px from the other engine's object, and exits 1 when a pose fails (PRD-646). Fix a failing object at its
+   source in the scene (`tools/unreal-reference/**/scene.py`, `scene.json`) or the recreation, never in the
+   threshold. `python3 -I tools/unreal-reference/sameness-sheet.py <out.png> --captures <root> --scene <scene>`
+   draws the engines' frames and the overlap.
 4. **One change** in `scripts/unreal-look/scaffold/render/` (copy the starter file there first if
    it is not there yet). Recapture into `--out .../after`. Compare again.
 5. **Sheet.** `python3 -I .agents/skills/tune-look-to-unreal/sheet.py <scratch>/sheet.png --layer L1 --sun sun60 "before=THREE.JS before" "after=THREE.JS after" "unreal=UNREAL 5.8.3 (target)"`
@@ -63,6 +70,15 @@ flowchart LR
    holds ID, L1 and L7 frames side by side: `--layer L7` judges one layer and `--tier medium` pairs
    it with the Unreal Medium frames (the default is high, Unreal Epic). `--dry-run` checks the
    pairing without a session; `--help` lists the layout rules.
+   For a GI scene, `pnpm unreal-look:calibrate --scene gi:<name> --tier high --before <commit>` runs
+   steps 2, 3, 5 and 6 in one command. It captures ID, L1 and the tier layer twice per arm and keeps
+   each arm in a store keyed by the inputs that decide the pixels, so it never captures the same
+   inputs twice. It checks that direct light matches (L1), compares the regions, lays out the UNREAL,
+   BEFORE and AFTER sheets, runs the judge, prints the gap list and writes one round file to
+   `tools/unreal-reference/gi/parity/`. Commit that file with the change. A scene is at parity for a
+   tier after two MATCH rounds on one stamp. `--allow-red-direct-light` runs a round over a red L1
+   check, records the override and does not count the round toward parity. `--status` prints where
+   each scene stands (latest round, gap list, parity) from the scoreboard, with no GPU and no model.
 7. **Post.** Commit the images to the orphan `PRD-<n>-screenshots` branch with plumbing (no
    checkout): `git hash-object -w`, `git mktree`, `git commit-tree -p <previous>`, then
    `git push origin "${commit}:refs/heads/PRD-<n>-screenshots"`. Comment on the PR with the raw
