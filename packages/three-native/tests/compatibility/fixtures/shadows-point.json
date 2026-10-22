@@ -1,6 +1,6 @@
 {
   "name": "shadows-point",
-  "adaptedFrom": "original \u2014 a point light's cube PCF shadow map (six faces, bias, normalBias, a shortened far) on Standard, Lambert and Phong meshes; the box casts but does not receive, and a slab inside the sphere's shadow does neither",
+  "adaptedFrom": "original \u2014 a point light's cube PCF shadow map (six faces, bias, normalBias, a shortened far) on Standard, Lambert and Phong meshes; the box casts but does not receive, and a slab inside the sphere's shadow does neither; shadow.mapSize is set to 1024, the game's override, because the native engine sizes a lamp map at three's 512 default from its footprint (PRD-650)",
   "tolerance": {
     "abs": 0
   },
@@ -372,6 +372,18 @@
       "id": "bulb",
       "path": "shadow.bias",
       "value": -0.002
+    },
+    {
+      "op": "set",
+      "id": "bulb",
+      "path": "shadow.mapSize.x",
+      "value": 1024
+    },
+    {
+      "op": "set",
+      "id": "bulb",
+      "path": "shadow.mapSize.y",
+      "value": 1024
     },
     {
       "op": "set",

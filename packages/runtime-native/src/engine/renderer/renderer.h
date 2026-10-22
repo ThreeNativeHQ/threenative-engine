@@ -343,6 +343,12 @@ public:
     std::size_t materialTextureCount() const { return textures_->records.size(); }
     /** What the last frame refused or skipped by name; cleared at the start of each frame. */
     const std::vector<std::string>& diagnostics() const { return diagnostics_; }
+    /** The edge of light `light`'s lamp map as last allocated, 0 without one (PRD-650). */
+    uint32_t lampShadowSize(std::size_t light) const {
+        for (const auto* maps : {&shadowMaps_, &cubeShadowMaps_})
+            if (light < maps->size() && (*maps)[light].width) return (*maps)[light].width;
+        return 0;
+    }
     /** Separate capture targets: probe work never resizes the presented frame or its post history. */
     Renderer& probeCaptureRenderer();
     /** The face camera of a probe capture, shared so a render callback that keeps its handle is safe. The
@@ -549,6 +555,8 @@ public:
         uint32_t shadowDraws = 0;
         /** The triangles those shadow draws submitted; three's Info counts them with the main pass's. */
         uint64_t shadowTriangles = 0;
+        /** Of the shadow draws, the spot and point light maps' (PRD-650): maps redrawn, and their draws. */
+        uint32_t lampRedraws = 0, lampShadowDraws = 0;
         struct SkinnedPass {
             uint32_t batches = 0, draws = 0, exactDraws = 0, instances = 0;
         };
@@ -848,6 +856,9 @@ private:
     std::map<std::size_t, VirtualShadow> virtualShadows_;
     /** Each lamp's last drawn map signature (PRD-650): an equal one skips its depth passes. */
     std::map<std::size_t, uint64_t> lampSignatures_;
+    /** Each lamp's last pose and the frame it last moved: a moving lamp takes a coarser map (PRD-650). */
+    struct LampMotion { uint64_t pose = 0; int64_t movedAt = 0; };
+    std::map<std::size_t, LampMotion> lampMotion_;
     bool virtualCut_ = false;
     WGPUSampler compareSampler_ = nullptr;
     WGPUSampler depthValueSampler_ = nullptr;  // nearest, no compare: a blocker search's depth reads

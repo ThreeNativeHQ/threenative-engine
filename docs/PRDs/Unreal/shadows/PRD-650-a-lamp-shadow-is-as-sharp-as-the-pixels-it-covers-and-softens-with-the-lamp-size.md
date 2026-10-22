@@ -84,9 +84,9 @@ shadows (off in Unreal, declined in PRD-561).
 ## Execution Phases
 
 #### Phase 1: Resolution follows the footprint
-**Status:** NOT STARTED
+**Status:** IN PROGRESS
 **Files:** `packages/runtime-native/src/engine/renderer/renderer.cpp`, `packages/runtime-native/src/engine/renderer/shadows/` (lamp atlas), `packages/three-native/src/` (the override report), native engine tests
-- [ ] A lamp 2 m from the camera gets a finer map than the same lamp at 20 m, a moving lamp is one step coarser, and an over-budget atlas steps the smallest footprint down first. proof: red-green native engine test `native_engine_lamp_atlas`.
+- [x] A lamp 2 m from the camera gets a finer map than the same lamp at 20 m, a moving lamp is one step coarser, and an over-budget atlas raises one global bias, so the lamp nearest its next coarser mip steps down first. proof: red-green native engine test `native_engine_lamp_atlas`. — Evidence 2026-10-22: `shadows/lamp_resolution.h` ports Unreal's local-light footprint and mip rule; the renderer sizes each spot or point map from its visible lit receivers (`renderer.cpp`, the `lampSizes` block). At 256² the spot reads 256 at 2 m and 128 at 20 m, 128 while it moves, and 256 again 12 still frames later; red with the size choice disabled: 512 at both distances and 512 moving (`CHECK failed: near > far`, `moving * 2 == still`). Over a budget of 1024² + 512², footprints of 17 and 30 texels give 1024 and 512. A `shadow.mapSize` other than three's 512² stays fixed and adds `TN_LAMP_SHADOW_MAPSIZE_OVERRIDE` to the diagnostics. 5 repeat runs read the same sizes. `ctest -L native-engine -j4`: 466/468 pass; `native_engine_render_shadows` was red until its two lamp fixtures took the override (see Decisions), and `native_engine_player_async_bridge` timed out under load and passes alone.
 - [ ] `lamp-room/rod` on the owned engine shows the 1 cm rod's shadow, which the fixed 512 map loses. proof: `pnpm unreal-look:calibrate --scene shadow:lamp-room --tier high --before <commit>` (cell `rod`).
 
 #### Phase 2: A cache per lamp
@@ -107,6 +107,26 @@ shadows (off in Unreal, declined in PRD-561).
 
 ## Decisions
 
+- 2026-10-22 (Phase 1, lamp-lane): the size rule is Unreal's, not a fitted curve. A lamp's footprint is a camera
+  pixel's radius at the receiver's depth, projected into the lamp's map in mip-0 texels of a 16384² virtual map
+  (`Engine/Shaders/Private/VirtualShadowMaps/VirtualShadowMapProjectionCommon.ush:96-120`); the mip is
+  floor(log2(footprint) + bias), clamped to 0 to 7 (`Engine/Shaders/Shared/VirtualShadowMapDefinitions.h:178-183`);
+  the bias is 0 still and 1 moving at Epic (`Engine/Config/BaseScalability.ini:260-261`), lerped by a mobility
+  factor that falls to 0 over the 10 frames after the lamp last moved (`Shadows/ShadowScene.cpp:20-25,199-217`). Our maps are
+  dense, not paged, so the finest mip over the lamp's visible lit receivers sizes the whole map. A lamp seen for the first
+  time is still (Unreal starts a movable light as moving), so a still lamp draws its first map once at its still size.
+- 2026-10-22 (Phase 1): over the budget, Unreal raises one global bias for every light
+  (`VirtualShadowMaps/VirtualShadowMapCacheManager.cpp:183-187,696-721`), not a per-lamp order. We take the smallest bias
+  that fits, so the lamp nearest its next coarser mip steps first and a bias of 1 halves every map; the box text says so now
+  in place of "the smallest footprint first". The budget is Epic's pool (4096 pages of 128², `BaseScalability.ini:257`)
+  times the 0.85 load factor, held by the lamps alone because the sun has its own atlas. Each lamp keeps its own texture:
+  one packed atlas would need cube faces in a 2D atlas and new shader addressing, and nothing measured asks for it yet.
+- 2026-10-22 (Phase 1): `shadow.mapSize` at three's default 512² means "size it for me"; any other value is the game's
+  override, kept and named in the renderer diagnostics. The C++ `LightShadow` cannot see a write of 512 through the
+  `mapSize` alias, so an explicit 512² is still automatic. The compatibility fixtures `shadows-spot` and `shadows-point`
+  now set 1024² so they keep proving three's PCF at a fixed size; their goldens were re-recorded.
+- 2026-10-22 (Phase 1): the size rule ships in the owned engine only. `engine: "threejs"` keeps three's fixed `mapSize`:
+  three gives a core helper no per-frame hook on a lamp's map without a ShadowNode subclass, and no game on that path asks.
 - 2026-10-20 (slicing): the local-light half of PRD-457 Phase 3 (a many-light fixture and separate
   local-light counters) moves here, because this PRD builds the lamp atlas and cache that it would
   measure. PRD-457 keeps the directional page-cost gate.

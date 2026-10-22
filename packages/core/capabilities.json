@@ -2217,6 +2217,24 @@
     {
       "aliases": [],
       "constraints": [
+        "counters that do not add up to the frame's shadow draws throw TN_LAMP_SHADOW_INVALID"
+      ],
+      "example": "const line = lampShadowMarker(renderer, frame);\nif (line !== undefined) console.info(line);",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function lampShadowMarker( renderer: { … }",
+      "situations": [
+        "log lamp shadow redraws and GPU time apart from the sun's on the owned engine"
+      ],
+      "summary": "The `TN_LAMP_SHADOW` line for the renderer's last frame, or `undefined` on a renderer that keeps no lamp counters (three's own).",
+      "supersedes": [],
+      "symbol": "lampShadowMarker"
+    },
+    {
+      "aliases": [],
+      "constraints": [
         "results are written to each item's own index and never appended, so a positional lookup finds the same asset on every load",
         "the first rejection rejects the call and no lane starts a load it had not begun"
       ],
@@ -2557,6 +2575,24 @@
       "summary": "Parse a `TN_GI` console line back into its report, or `undefined`.",
       "supersedes": [],
       "symbol": "readGIMarker"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "non-marker lines and markers whose sun and lamp draws do not add up return `undefined`"
+      ],
+      "example": "const stats = readLampShadowMarker(line);\nif (stats !== undefined) redraws += stats.lamps.redraws;",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function readLampShadowMarker(line: string): ILampShadowStats | undefined { … }",
+      "situations": [
+        "count lamp shadow redraws from a renderer log, for example a moving-caster run"
+      ],
+      "summary": "Parse a `TN_LAMP_SHADOW` line back into its stats, or `undefined`.",
+      "supersedes": [],
+      "symbol": "readLampShadowMarker"
     },
     {
       "aliases": [],

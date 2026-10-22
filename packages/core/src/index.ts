@@ -1024,6 +1024,12 @@ export {
   VirtualShadowNode,
 } from "./render/virtual-shadow.js";
 export { readVirtualShadowMarker } from "./render/virtual-shadow.js";
+export {
+  LAMP_SHADOW_MARKER,
+  lampShadowMarker,
+  readLampShadowMarker,
+} from "./render/virtual-shadow.js";
+export type { ILampShadowStats } from "./render/virtual-shadow.js";
 /**
  * Source-angle blocker search and variable-radius PCF on three's shadow map.
  * @situation soften a directional shadow as the caster-receiver gap grows

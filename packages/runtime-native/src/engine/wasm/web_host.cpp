@@ -610,6 +610,12 @@ extern "C" double tnw_web_frame(int field) {
         // The sample field 7 reports, by what drew it: 19 shadow passes, 20 the scene pass, 21 other passes, 22 the
         // output pass, 23 the screen-space gather (frame_gpu_timer.h). They sum to field 7.
         case 19: case 20: case 21: case 22: case 23: return renderer->lastGpuSegments()[size_t(field - 19)];
+        // PRD-650: the lamp maps apart from the sun's. 24 their GPU time (a part of field 7, beside 19), 25 the
+        // lamp maps the last frame redrew, 26 their draws, and 27 every shadow draw, so 27 - 26 is the sun's.
+        case 24: return renderer->lastGpuSegments()[kGpuLampShadowSegment];
+        case 25: return double(renderer->lastFrame().lampRedraws);
+        case 26: return double(renderer->lastFrame().lampShadowDraws);
+        case 27: return double(renderer->lastFrame().shadowDraws);
         default: return 0;
     }
 }
