@@ -5,7 +5,7 @@
  *   pnpm unreal-look:capture --engine threenative --scene gi:cornell --motion pan|switch
  *   pnpm unreal-look:compare --scene gi|gi:cornell --metric motion [--engine unreal|threenative] [--run pan,switch]
  *     [--layer L7] [--unreal-variant L7-Epic-motion] [--tn-folder threenative] [--captures <dir>] [--json <file>]
- *     [--erode 2] [--min-pixels 200] [--gradual Ceiling]
+ *     [--erode 2] [--min-pixels 200] [--gradual Ceiling] [--unreal-report <json from an earlier --json>]
  *
  * Both engines write captures/<engine>/<scene>/motion/<run>/<variant or layer>/<run>.NNNN.png and one
  * still-NNNN.0000.png per still. The ID frames come from Unreal: both engines draw the same camera.
@@ -295,6 +295,8 @@ interface IMotionArgs {
   tnFolder: string;
   erode: number;
   minPixels: number;
+  /** A saved report whose Unreal rows replace measuring Unreal's frames again (`--unreal-report`). */
+  unrealReport?: readonly IMotionReport[];
 }
 
 /**
@@ -328,6 +330,7 @@ function motionArgs(args: readonly string[]): IMotionArgs {
   const engine = flag(args, "--engine");
   if (engine !== undefined && engine !== "unreal" && engine !== "threenative")
     fail("BAD_INPUT", "--engine unreal|threenative");
+  const report = flag(args, "--unreal-report");
   return {
     scenes: motionScenes(args),
     engine,
@@ -337,7 +340,39 @@ function motionArgs(args: readonly string[]): IMotionArgs {
     tnFolder: flag(args, "--tn-folder") ?? "threenative",
     erode: Number(flag(args, "--erode") ?? ERODE),
     minPixels: Number(flag(args, "--min-pixels") ?? MIN_PIXELS),
+    ...(report ? { unrealReport: readReport(report) } : {}),
   };
+}
+
+function readReport(file: string): IMotionReport[] {
+  const parsed: unknown = JSON.parse(readFileSync(file, "utf8"));
+  if (!Array.isArray(parsed)) fail("BAD_INPUT", `--unreal-report ${file} is not a report array`);
+  return parsed as IMotionReport[];
+}
+
+/**
+ * The Unreal regions of one run from a saved report, so measuring ThreeNative again does not decode Unreal's
+ * frames again. Without a report it returns undefined; with one, a missing run or region is an error.
+ */
+export function savedUnreal(
+  saved: readonly IMotionReport[] | undefined,
+  scene: ISceneJson,
+  run: string,
+): Record<string, IRegionReport> | undefined {
+  if (!saved) return undefined;
+  const found = saved.find(
+    (r) => r.engine === "unreal" && r.scene === scene.scene && r.run === run,
+  );
+  if (!found) fail("BAD_INPUT", `--unreal-report has no unreal ${scene.scene}/${run}`);
+  const lacks = (scene.motion?.[run]?.regions ?? Object.keys(scene.regions)).filter(
+    (name) => !(name in found.regions),
+  );
+  if (lacks.length)
+    fail(
+      "BAD_INPUT",
+      `--unreal-report lacks the regions ${lacks.join(", ")} of ${scene.scene}/${run}`,
+    );
+  return found.regions;
 }
 
 /** The reports of one run: Unreal's own, and ThreeNative's held to the level Unreal reaches after the switch. */
@@ -355,7 +390,8 @@ function reportsFor(
     minPixels: a.minPixels,
   };
   const unrealDir = motionDir("unreal", sceneId, run, a.variant);
-  const unreal = measureRun(a.store, { ...shared, color: unrealDir });
+  const unreal =
+    savedUnreal(a.unrealReport, scene, run) ?? measureRun(a.store, { ...shared, color: unrealDir });
   const reports: IMotionReport[] = [];
   const base = { scene: scene.scene, run };
   if (a.engine !== "threenative")

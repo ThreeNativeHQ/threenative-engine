@@ -12,6 +12,7 @@ import {
   checkGradual,
   formatReports,
   measureRun,
+  savedUnreal,
   switchFrame,
 } from "../unreal-look/motion-run.js";
 import {
@@ -671,6 +672,41 @@ describe("a run report (PRD-638)", () => {
       { scene: "mini", run: "pan", engine: "unreal", folder: "u", regions: unreal },
     ]);
     expect(text).toMatch(/ghost@10 \| ghost@20/);
+  });
+});
+
+// A re-measure of ThreeNative reads Unreal's regions from a saved report instead of decoding Unreal's frames again.
+describe("savedUnreal reuses a saved Unreal report (PRD-638)", () => {
+  const scene = {
+    scene: "mini",
+    regions: { A: [1, 2, 3], B: [4, 5, 6] },
+    motion: { switch: { frames: 40, regions: ["A"] } },
+  } as unknown as ISceneJson;
+  const region = { flicker: { px: 0, p50: 0, frames: 10 } };
+  const saved = (run: string, engine: string, names: string[]): IMotionReport => ({
+    scene: "mini",
+    run,
+    engine,
+    folder: "f",
+    regions: Object.fromEntries(names.map((n) => [n, region])),
+  });
+
+  it("returns the regions of the saved Unreal run, and nothing without a report", () => {
+    expect(savedUnreal(undefined, scene, "switch")).toBeUndefined();
+    const found = savedUnreal([saved("switch", "unreal", ["A"])], scene, "switch");
+    expect(Object.keys(found ?? {})).toEqual(["A"]);
+  });
+
+  it("fails closed on a report without that run, that engine or a region of the run", () => {
+    expect(() => savedUnreal([saved("pan", "unreal", ["A"])], scene, "switch")).toThrow(
+      /TN_UNREAL_LOOK_BAD_INPUT.*no unreal mini\/switch/,
+    );
+    expect(() => savedUnreal([saved("switch", "threenative", ["A"])], scene, "switch")).toThrow(
+      /no unreal mini\/switch/,
+    );
+    expect(() => savedUnreal([saved("switch", "unreal", ["B"])], scene, "switch")).toThrow(
+      /lacks the regions A/,
+    );
   });
 });
 
