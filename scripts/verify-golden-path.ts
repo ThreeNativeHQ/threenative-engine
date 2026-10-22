@@ -39,6 +39,7 @@ export const MCP_SURFACES = [
   { name: "threenative-sculpt", file: "sculpt-mcp-tools.json" },
   { name: "threenative-engine", file: "engine-mcp-tools.json" },
   { name: "threenative-blender", file: "blender-mcp-tools.json" },
+  { name: "threenative-terrain", file: "terrain-mcp-tools.json" },
 ] as const;
 
 const AUTHORING_CAPABILITIES = [
@@ -937,16 +938,40 @@ export async function writeScaffoldScript(
   options: {
     readonly cliRuntimePackages?: readonly string[];
     readonly ignoreInstallScripts?: boolean;
+    /** Packed tarballs by package name; `dlx` resolves any dependency on them locally. */
+    readonly localTarballs?: Readonly<Record<string, string>>;
     readonly noInstall?: boolean;
   } = {},
 ): Promise<string> {
   const script = path.join(directory, "scaffold.sh");
   const target = '"${1:-game}"';
+  // `pnpm dlx` ignores `overrides` in every config file, but it honours a pnpmfile. Without this,
+  // a packed package's `workspace:*` dependency on an unpublished sibling asks the registry.
+  const pnpmfile = path.join(directory, "scaffold-pnpmfile.cjs");
+  await writeFile(
+    pnpmfile,
+    `const local = ${JSON.stringify(options.localTarballs ?? {})};
+module.exports = {
+  hooks: {
+    readPackage(pkg) {
+      for (const field of ["dependencies", "optionalDependencies"]) {
+        for (const name of Object.keys(pkg[field] ?? {})) {
+          if (local[name] !== undefined) pkg[field][name] = "file:" + local[name];
+        }
+      }
+      return pkg;
+    },
+  },
+};
+`,
+  );
   const invocation = [
     ...(options.ignoreInstallScripts ? ["npm_config_ignore_scripts=true"] : []),
+    `npm_config_pnpmfile=${pnpmfile}`,
     "pnpm",
     "dlx",
     "--silent",
+    `--config.pnpmfile=${pnpmfile}`,
     "--package",
     cliSource,
     ...(options.cliRuntimePackages ?? []).flatMap((source) => ["--package", source]),
@@ -1013,11 +1038,14 @@ export async function scaffold(
   const assetSource = sources["@threenative/assets"];
   await writeScaffoldScript(directory, template, cliSource, packageArgs, {
     ...options,
+    localTarballs: sources,
     ...(assetSource === undefined ? {} : { cliRuntimePackages: [assetSource] }),
   });
   assertTemplateDependencies(template, templateManifest, sources);
   process.stdout.write(`golden-path ${template}: ./scaffold.sh ${project}\n`);
   await runCommand("scaffold", "./scaffold.sh", [project], directory);
+  // Later installs must retain the same local transitive mappings as the scaffold install.
+  await cp(path.join(directory, "scaffold-pnpmfile.cjs"), path.join(target, ".pnpmfile.cjs"));
 }
 
 async function freePort(): Promise<number> {
@@ -1215,6 +1243,30 @@ export async function verifyPackedMutationControl(
       },
     );
     await cp(path.join(REPO_ROOT, "patches"), path.join(root, "patches"), { recursive: true });
+    // Prepack stages the terrain kits from the sibling terrain package: the five kit sources and
+    // the credits record. The 34 MB of textures beside credits.json are not read.
+    await cp(
+      path.join(REPO_ROOT, "packages/terrain/starter"),
+      path.join(root, "packages/terrain/starter"),
+      { recursive: true },
+    );
+    await mkdir(path.join(root, "packages/terrain/dist"), { recursive: true });
+    await cp(
+      path.join(REPO_ROOT, "packages/terrain/dist/kit.js"),
+      path.join(root, "packages/terrain/dist/kit.js"),
+    );
+    await cp(
+      path.join(REPO_ROOT, "packages/terrain/package.json"),
+      path.join(root, "packages/terrain/package.json"),
+    );
+    await mkdir(path.join(root, "packages/terrain/starter-assets"), { recursive: true });
+    await cp(
+      path.join(
+        await (await import("../packages/terrain/dist/kit.js")).starterAssetsDir(),
+        "credits.json",
+      ),
+      path.join(root, "packages/terrain/starter-assets/credits.json"),
+    );
     await materializeTemporaryPackageVersions(mutatedPackage);
     const templateManifestPath = path.join(mutatedPackage, "templates", template, PACKAGE_FILE);
     const templateManifest = JSON.parse(await readFile(templateManifestPath, "utf8")) as Record<

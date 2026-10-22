@@ -15,6 +15,7 @@ import {
 } from "three";
 import { TN_VIRTUAL_GEOMETRY, VirtualGeometryPlugin } from "./clustered-mesh.js";
 import { GEOMETRY_ASSET_KEY } from "./geometry-capture.js";
+import { attachInstancedLod } from "./instanced-batch-lod.js";
 import { DiscreteLodPlugin, type IModelLodPolicy, TN_DISCRETE_LOD } from "./model-lod.js";
 
 export interface IAssetLoaderOptions {
@@ -1148,7 +1149,7 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
         // Built here, after both widenings, so the derived levels share the widened base
         // attributes instead of pinning the quantized ones.
         if (root !== undefined && discreteLod !== undefined)
-          discreteLod.attach(root, await discretePolicy(path));
+          discreteLod.attach(root, await discretePolicy(path), attachInstancedLod);
         // Before the game ever sees it: clips z-mirrored against their own bind pose play every
         // animal backwards, silently. See `reconcileMirroredClips`.
         const clips = modelClips(value);

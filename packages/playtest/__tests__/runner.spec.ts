@@ -37,6 +37,7 @@ import { chromium, type Page } from "playwright";
 import { PLAYTEST_ASSERTION_REGISTRY } from "../src/index.js";
 import { HOST_PLAYTEST_OBSERVATION_FIELDS } from "../src/runner/observationFields.js";
 import { waitForStartupReady } from "../src/runner/startupReady.js";
+import { SCREENSHOT_TIMEOUT_MS } from "../src/runner/shared.js";
 
 const CONFIG: IStandalonePlaytestConfig = {
   artifactDirectory: "artifacts/playtest",
@@ -95,7 +96,10 @@ test("visual capture clips the largest canvas without waiting for locator stabil
   expect(nth).toHaveBeenCalledWith(1);
   expect(boundingBox).toHaveBeenCalledWith();
   expect(locatorScreenshot).not.toHaveBeenCalled();
-  expect(pageScreenshot).toHaveBeenCalledWith({ clip: { height: 360, width: 640, x: 12, y: 24 } });
+  expect(pageScreenshot).toHaveBeenCalledWith({
+    clip: { height: 360, width: 640, x: 12, y: 24 },
+    timeout: SCREENSHOT_TIMEOUT_MS,
+  });
 });
 
 test("visual observations rasterize an element-bound region captured beside the screenshot", () => {

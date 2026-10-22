@@ -476,6 +476,24 @@ export async function capabilityManifestErrors(root: string): Promise<string[]> 
   }
 }
 
+export async function terrainTarballErrors(root: string): Promise<string[]> {
+  const cwd = path.join(root, "packages", "terrain");
+  if (!existsSync(path.join(cwd, "package.json"))) return [];
+  if (!existsSync(path.join(cwd, "dist", "kit.js")))
+    return ["terrain tarball budget: build @threenative/terrain first"];
+  const { stdout } = await execFileAsync(
+    "npm",
+    ["pack", "--dry-run", "--json", "--ignore-scripts"],
+    { cwd, maxBuffer: 8 * 1024 * 1024 },
+  );
+  const packed = JSON.parse(stdout) as { size: number }[];
+  const size = packed[0]?.size;
+  if (!Number.isSafeInteger(size) || size === undefined || size <= 0)
+    return ["terrain tarball budget: npm pack returned no valid size"];
+  console.log(`terrain packed tarball: ${size} B (limit < 2000000 B)`);
+  return size < 2_000_000 ? [] : [`terrain packed tarball ${size} B must be < 2000000 B`];
+}
+
 export async function enforceBudgets(root: string): Promise<BudgetReport> {
   const nativeManifest = path.join(root, "packages", "runtime-native", "package.json");
   const ownsNativeRuntime = existsSync(nativeManifest)
@@ -486,6 +504,7 @@ export async function enforceBudgets(root: string): Promise<BudgetReport> {
   const report = await collectBudgets(root);
   const errors = [
     ...budgetErrors(report),
+    ...(await terrainTarballErrors(root)),
     ...(await buildMatrixErrors(root)),
     ...(await capabilityManifestErrors(root)),
     ...(await nativeCensusErrors(root)),

@@ -1,0 +1,411 @@
+{
+  "version": "0.185.1",
+  "release": "r185",
+  "commit": "2431a09f46f34c560bc8e44b33be0e567723d5b9",
+  "packageJsonSha256": "1d5c438acdc1fe5a52fb8ede2e417afd91fec91d22275c40f7b739591b24e4df",
+  "packageLockSha256": "ad871796b84315cc243f63d6885e2fe397c0db3a40de3b2fcca66bd23afbf9da",
+  "archiveSha256": "904bfa6979764988420b09720e21bbdadb5eb4077812155789830360af9ead4c",
+  "frozenCompatPairs": [
+    {
+      "path": "build/three.webgpu.js",
+      "oldHash": "148869ee7f18c62570ac1eafb7df5775e5a89581",
+      "newHash": "a308a892c59283b3b9a71477b3b02d64db40becd"
+    },
+    {
+      "path": "build/three.webgpu.js",
+      "oldHash": "5c5ef3c06885c724c1c2288295e7e68483ee1f6e",
+      "newHash": "a308a892c59283b3b9a71477b3b02d64db40becd"
+    },
+    {
+      "path": "build/three.webgpu.js",
+      "oldHash": "7aa62adb9e78ba8f0a67709d3141bf93c67419cc",
+      "newHash": "a308a892c59283b3b9a71477b3b02d64db40becd"
+    },
+    {
+      "path": "build/three.webgpu.js",
+      "oldHash": "bdffb9b4069f7beafa85913b155e92d3e83f12d0",
+      "newHash": "a308a892c59283b3b9a71477b3b02d64db40becd"
+    },
+    {
+      "path": "build/three.webgpu.js",
+      "oldHash": "efd0e16719cc7bbef1fbc18c241948e25eb85881",
+      "newHash": "a308a892c59283b3b9a71477b3b02d64db40becd"
+    },
+    {
+      "path": "build/three.webgpu.js",
+      "oldHash": "1071a6d91ee953f1fcc6769d0b6ba5230b67bfa1",
+      "newHash": "a308a892c59283b3b9a71477b3b02d64db40becd"
+    },
+    {
+      "path": "build/three.webgpu.nodes.js",
+      "oldHash": "1245f0da9bb6a0f731b8c75a64490d7c91238700",
+      "newHash": "95669d28b54250a3857dcb7d1b1b0e30dd19e0cb"
+    },
+    {
+      "path": "build/three.webgpu.nodes.js",
+      "oldHash": "1b3a6e96291af0077f7f247040e657cf4aa0cb33",
+      "newHash": "95669d28b54250a3857dcb7d1b1b0e30dd19e0cb"
+    },
+    {
+      "path": "build/three.webgpu.nodes.js",
+      "oldHash": "3d47c1151d563f1e0ae2bb4b92edd057fe0df2b3",
+      "newHash": "95669d28b54250a3857dcb7d1b1b0e30dd19e0cb"
+    },
+    {
+      "path": "build/three.webgpu.nodes.js",
+      "oldHash": "81c24b2e05e5047e1a02410a2056949d39b1a05c",
+      "newHash": "95669d28b54250a3857dcb7d1b1b0e30dd19e0cb"
+    },
+    {
+      "path": "build/three.webgpu.nodes.js",
+      "oldHash": "b8a7b2fd0a2e95911e7e12fd5674592107f012de",
+      "newHash": "95669d28b54250a3857dcb7d1b1b0e30dd19e0cb"
+    },
+    {
+      "path": "src/nodes/accessors/Instance.js",
+      "oldHash": "ed00e75ba4fd7b49343cfada26eacdef8940a4f4",
+      "newHash": "18e2b7943393fd07b7989b1e3a5231a61ca24187"
+    },
+    {
+      "path": "src/nodes/accessors/Skinning.js",
+      "oldHash": "aaeea633a8ece291be5faf868e312867ddad01b6",
+      "newHash": "76303e765bc29853cfd7f139dd3ec76545b70798"
+    },
+    {
+      "path": "src/renderers/common/Renderer.js",
+      "oldHash": "89b33efb80ca1dcb9db931071dfda62ffdba3526",
+      "newHash": "b1293bfbe2ccf0583711813c625ddd5c5ba78620"
+    },
+    {
+      "path": "src/renderers/webgpu/WebGPUBackend.js",
+      "oldHash": "69b8b67fdeec5be24de34d8382beda9020642f77",
+      "newHash": "5636b40e6708a490e926e5f590675834d23bf326"
+    },
+    {
+      "path": "src/renderers/webgpu/utils/WebGPUAttributeUtils.js",
+      "oldHash": "83bbe189915c8450c4e14108e6a3f4ed98c4b016",
+      "newHash": "16bd72d0c0f1d693481efc98140a0f1b73905149"
+    },
+    {
+      "path": "src/renderers/webgpu/utils/WebGPUTextureUtils.js",
+      "oldHash": "ff8ee2dbace2816105aa7152891c04f2333f33e8",
+      "newHash": "57c1eb62f1e0de063f22e08ec879e31d2a3240b6"
+    },
+    {
+      "path": "build/three.webgpu.js",
+      "oldHash": "9166d6f2dd1ac1505fa27b625f1976dff6b8ebc1",
+      "newHash": "a308a892c59283b3b9a71477b3b02d64db40becd"
+    },
+    {
+      "path": "build/three.webgpu.nodes.js",
+      "oldHash": "9e7c7f74be1191b761711bd70ee59cc033e586cb",
+      "newHash": "95669d28b54250a3857dcb7d1b1b0e30dd19e0cb"
+    },
+    {
+      "path": "src/nodes/accessors/TextureNode.js",
+      "oldHash": "f886ed21397ab39d6fdbc58e5ac57729f1871f8a",
+      "newHash": "1a138b1a055d0867e7686531930d4d557e1a20df"
+    },
+    {
+      "path": "src/nodes/accessors/TextureSizeNode.js",
+      "oldHash": "d4668281657ef8b1acad761e0d86a0716909eee4",
+      "newHash": "43eccaa01bcb12ea6e02c94232d5ee76bcac0d01"
+    },
+    {
+      "path": "src/nodes/display/PassNode.js",
+      "oldHash": "cc827a55cb82a6325296dcc5c55a4246f4f70aed",
+      "newHash": "3cdf66cfe0760066bc062bf7ce3f3a8000eb2b0d"
+    },
+    {
+      "path": "src/renderers/common/Renderer.js",
+      "oldHash": "51590d5a23a93365e5cd9fb0360678750270d5bf",
+      "newHash": "b1293bfbe2ccf0583711813c625ddd5c5ba78620"
+    },
+    {
+      "path": "src/renderers/webgpu/nodes/WGSLNodeBuilder.js",
+      "oldHash": "2acc832a628f43adac49614dad8e593ef058c398",
+      "newHash": "1cbc9b3e02c9832d69a8aadb3a6003392b443c8d"
+    },
+    {
+      "path": "src/renderers/webgpu/utils/WebGPUBindingUtils.js",
+      "oldHash": "a5da7ca09f746c0b2859ef173df663ccdc851ebc",
+      "newHash": "c479d0a88794b01bca531e7cbfb780cf93fc4721"
+    },
+    {
+      "path": "build/three.webgpu.js",
+      "oldHash": "941ec68ef0b8174a633054043edb94d9d3d58f5e",
+      "newHash": "a308a892c59283b3b9a71477b3b02d64db40becd"
+    },
+    {
+      "path": "build/three.webgpu.nodes.js",
+      "oldHash": "57f69c17352b936a9eca118a9801805c95c401b6",
+      "newHash": "95669d28b54250a3857dcb7d1b1b0e30dd19e0cb"
+    },
+    {
+      "path": "build/three.webgpu.js",
+      "oldHash": "ef853fd6f7382a8c7ff66cda43471344aeb20770",
+      "newHash": "a308a892c59283b3b9a71477b3b02d64db40becd"
+    },
+    {
+      "path": "build/three.webgpu.nodes.js",
+      "oldHash": "e7956e565579aa6ec550ca001336d5a0d76c652a",
+      "newHash": "95669d28b54250a3857dcb7d1b1b0e30dd19e0cb"
+    },
+    {
+      "path": "src/renderers/common/Renderer.js",
+      "oldHash": "730ce0ccd0f56d70c4a7abe7c514c5077d544d1e",
+      "newHash": "b1293bfbe2ccf0583711813c625ddd5c5ba78620"
+    },
+    {
+      "path": "src/renderers/webgpu/WebGPUBackend.js",
+      "oldHash": "927e3a1ad5a4665d77238ffbab4c57a603b86828",
+      "newHash": "5636b40e6708a490e926e5f590675834d23bf326"
+    },
+    {
+      "path": "src/renderers/webgpu/utils/WebGPUTextureUtils.js",
+      "oldHash": "c46f6ab0e06d93f124c9fc62ece8859529461d5e",
+      "newHash": "57c1eb62f1e0de063f22e08ec879e31d2a3240b6"
+    },
+    {
+      "path": "build/three.webgpu.js",
+      "oldHash": "e594543d1e604de1ac9f45c6260e213ad0e2d7b5",
+      "newHash": "a308a892c59283b3b9a71477b3b02d64db40becd"
+    },
+    {
+      "path": "build/three.webgpu.nodes.js",
+      "oldHash": "6581a8b0e69dea0ce5bfdc644f75a40f6aaac963",
+      "newHash": "95669d28b54250a3857dcb7d1b1b0e30dd19e0cb"
+    },
+    {
+      "path": "build/three.webgpu.js",
+      "oldHash": "00ff55f538873dc1b342d899073a8f07401a8824",
+      "newHash": "a308a892c59283b3b9a71477b3b02d64db40becd"
+    },
+    {
+      "path": "build/three.webgpu.nodes.js",
+      "oldHash": "25918de19dcb52504e13e7ecd3adbd64e8b64d65",
+      "newHash": "95669d28b54250a3857dcb7d1b1b0e30dd19e0cb"
+    },
+    {
+      "path": "build/three.webgpu.js",
+      "oldHash": "9b290e496a0951d1af111052bcfe12c97dad4762",
+      "newHash": "a308a892c59283b3b9a71477b3b02d64db40becd"
+    },
+    {
+      "path": "build/three.webgpu.js",
+      "oldHash": "f9ea33ac39db20e96822fda6b90e2bed02817435",
+      "newHash": "a308a892c59283b3b9a71477b3b02d64db40becd"
+    },
+    {
+      "path": "build/three.webgpu.nodes.js",
+      "oldHash": "e10b2c19633d2690b5dd852319c935735de06d30",
+      "newHash": "95669d28b54250a3857dcb7d1b1b0e30dd19e0cb"
+    },
+    {
+      "path": "build/three.webgpu.nodes.js",
+      "oldHash": "93cedce745291edfbd333fb76d8154b8eff685bd",
+      "newHash": "95669d28b54250a3857dcb7d1b1b0e30dd19e0cb"
+    },
+    {
+      "path": "src/nodes/accessors/Instance.js",
+      "oldHash": "3ff041a260cde0e5fb1880daddd4fc700a1c945e",
+      "newHash": "18e2b7943393fd07b7989b1e3a5231a61ca24187"
+    },
+    {
+      "path": "src/renderers/common/RenderObject.js",
+      "oldHash": "4f8d58950b80cd56bbec22a61cf39a7aae5bd731",
+      "newHash": "a3dcba2f1fb0df19f3ddb3039a97ae408e2938b3"
+    },
+    {
+      "path": "src/renderers/common/RenderObjects.js",
+      "oldHash": "91fba38f3bafa35806bd3c82d1c79671a4a6b00d",
+      "newHash": "72569d0339314d26eb7a35ff2a8462a803c852a6"
+    },
+    {
+      "path": "src/renderers/common/RenderPipeline.js",
+      "oldHash": "94e54740e13088a9fa40ccfd30000232df7c2eea",
+      "newHash": "ab3085cfdca456ffb3de6945d7e7f693e4ed33ae"
+    },
+    {
+      "path": "src/renderers/common/Renderer.js",
+      "oldHash": "bc495cb324ed9923008fa5685aede53aee44b6d8",
+      "newHash": "b1293bfbe2ccf0583711813c625ddd5c5ba78620"
+    },
+    {
+      "path": "src/renderers/common/Textures.js",
+      "oldHash": "be47645f5662a2be8002c23de8ff4092bf561049",
+      "newHash": "5b305173fa4a2814ec74563d2ae5cdc70e7505e1"
+    },
+    {
+      "path": "src/renderers/webgpu/WebGPUBackend.js",
+      "oldHash": "7ebe3404830ecea2e304baa368f04bfa474ff0e1",
+      "newHash": "5636b40e6708a490e926e5f590675834d23bf326"
+    },
+    {
+      "path": "src/renderers/webgpu/WebGPUBackend.js",
+      "oldHash": "add7f3284d411fd3eb188c2568775595b85204f5",
+      "newHash": "5636b40e6708a490e926e5f590675834d23bf326"
+    },
+    {
+      "path": "src/renderers/webgpu/utils/WebGPUAttributeUtils.js",
+      "oldHash": "ded852d9df7e709c62c9fc3a6109c31737650d97",
+      "newHash": "16bd72d0c0f1d693481efc98140a0f1b73905149"
+    },
+    {
+      "path": "src/renderers/webgpu/utils/WebGPUBindingUtils.js",
+      "oldHash": "7ff28660e2ea3e72eb545c5bbe95bd8d8435a58e",
+      "newHash": "c479d0a88794b01bca531e7cbfb780cf93fc4721"
+    },
+    {
+      "path": "src/renderers/webgpu/utils/WebGPUPipelineUtils.js",
+      "oldHash": "d5872652cc969dbea62c69944044a9eeff1f3ac3",
+      "newHash": "3480fea1e86f1f237cb6ee2ea87b5826d4fc404d"
+    },
+    {
+      "path": "src/renderers/webgpu/utils/WebGPUTextureUtils.js",
+      "oldHash": "03998e6e9067462c50bd402ffda5b29d24634be8",
+      "newHash": "57c1eb62f1e0de063f22e08ec879e31d2a3240b6"
+    },
+    {
+      "path": "src/renderers/webgpu/utils/WebGPUTextureUtils.js",
+      "oldHash": "f6d510b59151e02c46928689b2be99486c1dfcd8",
+      "newHash": "57c1eb62f1e0de063f22e08ec879e31d2a3240b6"
+    },
+    {
+      "path": "build/three.webgpu.js",
+      "oldHash": "5975e257a43fe139b69c249d8c8c1edfe91e12a0",
+      "newHash": "a308a892c59283b3b9a71477b3b02d64db40becd"
+    },
+    {
+      "path": "src/renderers/webgpu/WebGPUBackend.js",
+      "oldHash": "b86e40b357823cf3919d9fdf3c2554f14bcd9931",
+      "newHash": "5636b40e6708a490e926e5f590675834d23bf326"
+    },
+    {
+      "path": "build/three.webgpu.js",
+      "oldHash": "ee394e98d798be749776cce1fa3e043fb9951769",
+      "newHash": "a308a892c59283b3b9a71477b3b02d64db40becd"
+    },
+    {
+      "path": "build/three.webgpu.nodes.js",
+      "oldHash": "a0fab1c7c37cfaf270d9ce36dd3d91453ae6a44c",
+      "newHash": "95669d28b54250a3857dcb7d1b1b0e30dd19e0cb"
+    },
+    {
+      "path": "src/renderers/webgpu/WebGPUBackend.js",
+      "oldHash": "94b48d64ed8f2e57f00cb5fd5bd0112da085aeae",
+      "newHash": "5636b40e6708a490e926e5f590675834d23bf326"
+    },
+    {
+      "path": "build/three.webgpu.js",
+      "oldHash": "2a70eb319b4235c958c7b5b1ede148c808d0b4b2",
+      "newHash": "a308a892c59283b3b9a71477b3b02d64db40becd"
+    },
+    {
+      "path": "build/three.webgpu.nodes.js",
+      "oldHash": "bfa242835dfef49019dd368e3593a62a221dda3d",
+      "newHash": "95669d28b54250a3857dcb7d1b1b0e30dd19e0cb"
+    },
+    {
+      "path": "src/renderers/webgpu/WebGPUBackend.js",
+      "oldHash": "5dbb9bf2ed43fa055c0f7dd2859c146485825817",
+      "newHash": "5636b40e6708a490e926e5f590675834d23bf326"
+    },
+    {
+      "path": "build/three.webgpu.js",
+      "oldHash": "7e34d05be672a7fa2e38b19c035f744a8b486446",
+      "newHash": "a308a892c59283b3b9a71477b3b02d64db40becd"
+    },
+    {
+      "path": "build/three.webgpu.nodes.js",
+      "oldHash": "4b7a3baea4fc2a99f9453211d2807131f8a86dd4",
+      "newHash": "95669d28b54250a3857dcb7d1b1b0e30dd19e0cb"
+    },
+    {
+      "path": "src/renderers/common/Renderer.js",
+      "oldHash": "769c909b0a63708dea7d22efc5379c39bdf57d92",
+      "newHash": "b1293bfbe2ccf0583711813c625ddd5c5ba78620"
+    },
+    {
+      "path": "src/renderers/webgpu/WebGPUBackend.js",
+      "oldHash": "0fbcc307d39cbf6d74d9dbc5f199f2b0e4f58b33",
+      "newHash": "5636b40e6708a490e926e5f590675834d23bf326"
+    },
+    {
+      "path": "build/three.webgpu.nodes.js",
+      "oldHash": "f656265a47ffb6034da0c6ce768264762096b197",
+      "newHash": "95669d28b54250a3857dcb7d1b1b0e30dd19e0cb"
+    },
+    {
+      "path": "src/nodes/accessors/Batch.js",
+      "oldHash": "2cf4bb6039853d5c922e89041419250b243694ef",
+      "newHash": "2cf4bb6039853d5c922e89041419250b243694ef"
+    },
+    {
+      "path": "src/renderers/common/Geometries.js",
+      "oldHash": "979da2ffc4d0dcda6fdd72747a7e7125e3f8a3a3",
+      "newHash": "979da2ffc4d0dcda6fdd72747a7e7125e3f8a3a3"
+    },
+    {
+      "path": "src/renderers/common/RenderObjects.js",
+      "oldHash": "72569d0339314d26eb7a35ff2a8462a803c852a6",
+      "newHash": "72569d0339314d26eb7a35ff2a8462a803c852a6"
+    },
+    {
+      "path": "src/renderers/common/Bindings.js",
+      "oldHash": "a9da6dbb8e15c87a8b434ad019a318b9e7e70335",
+      "newHash": "a3cec4ed844ab88f870b46714c56c941e0cc7a8e"
+    },
+    {
+      "path": "src/renderers/common/Renderer.js",
+      "oldHash": "35c82282c7e0717516a8f7f0c947467b9142e438",
+      "newHash": "b1293bfbe2ccf0583711813c625ddd5c5ba78620"
+    },
+    {
+      "path": "build/three.webgpu.js",
+      "oldHash": "25c2364fe50e512155f1e3a584e54854bd293bd1",
+      "newHash": "a308a892c59283b3b9a71477b3b02d64db40becd"
+    },
+    {
+      "path": "build/three.webgpu.nodes.js",
+      "oldHash": "b344d27b52f8be09a0e6c7fef999c87b16377c9c",
+      "newHash": "95669d28b54250a3857dcb7d1b1b0e30dd19e0cb"
+    }
+  ],
+  "baseFinalHashes": {
+    "build/three.cjs": "b0f917241f1f2cd25baa21dec20edda32176ef6a",
+    "build/three.core.js": "868a634b4294be5f32664912a50813d55d6dd6e7",
+    "build/three.webgpu.js": "a308a892c59283b3b9a71477b3b02d64db40becd",
+    "build/three.webgpu.nodes.js": "95669d28b54250a3857dcb7d1b1b0e30dd19e0cb",
+    "src/materials/nodes/manager/NodeMaterialObserver.js": "7e2cb9926878b43aa2b8b3a146e3427711be7210",
+    "src/nodes/accessors/Batch.js": "2cf4bb6039853d5c922e89041419250b243694ef",
+    "src/nodes/accessors/Instance.js": "18e2b7943393fd07b7989b1e3a5231a61ca24187",
+    "src/nodes/accessors/Skinning.js": "76303e765bc29853cfd7f139dd3ec76545b70798",
+    "src/nodes/accessors/TextureNode.js": "1a138b1a055d0867e7686531930d4d557e1a20df",
+    "src/nodes/accessors/TextureSizeNode.js": "43eccaa01bcb12ea6e02c94232d5ee76bcac0d01",
+    "src/nodes/accessors/VelocityNode.js": "c48002abbce20ee8b29908cf314d7b03afe0db03",
+    "src/nodes/core/NodeBuilder.js": "1990da8fe8f1f29a7b53030756dfd966d8de3cb6",
+    "src/nodes/display/PassNode.js": "3cdf66cfe0760066bc062bf7ce3f3a8000eb2b0d",
+    "src/nodes/lighting/PointShadowNode.js": "f9019a72890a30fded9f7ce76982722c2f7d6a3f",
+    "src/nodes/lighting/ShadowFilterNode.js": "fe8b50c8f76d0b6ce3d2fa1452751b2469a821e4",
+    "src/objects/BatchedMesh.js": "35cc0ffe83a69ea9fa5fca6dec2d820ca193f88d",
+    "src/renderers/common/Bindings.js": "a3cec4ed844ab88f870b46714c56c941e0cc7a8e",
+    "src/renderers/common/Geometries.js": "979da2ffc4d0dcda6fdd72747a7e7125e3f8a3a3",
+    "src/renderers/common/RenderContexts.js": "7319e25e280452b69c6f0c4c2f8c93c955ff9be3",
+    "src/renderers/common/RenderObject.js": "a3dcba2f1fb0df19f3ddb3039a97ae408e2938b3",
+    "src/renderers/common/RenderObjects.js": "72569d0339314d26eb7a35ff2a8462a803c852a6",
+    "src/renderers/common/Renderer.js": "b1293bfbe2ccf0583711813c625ddd5c5ba78620",
+    "src/renderers/common/Textures.js": "5b305173fa4a2814ec74563d2ae5cdc70e7505e1",
+    "src/renderers/common/nodes/NodeManager.js": "033128c396c2cad5c5d1d362f2d261e9adbd6bdc",
+    "src/renderers/webgpu/WebGPUBackend.js": "5636b40e6708a490e926e5f590675834d23bf326",
+    "src/renderers/webgpu/nodes/WGSLNodeBuilder.js": "1cbc9b3e02c9832d69a8aadb3a6003392b443c8d",
+    "src/renderers/webgpu/utils/WebGPUAttributeUtils.js": "16bd72d0c0f1d693481efc98140a0f1b73905149",
+    "src/renderers/webgpu/utils/WebGPUBindingUtils.js": "c479d0a88794b01bca531e7cbfb780cf93fc4721",
+    "src/renderers/webgpu/utils/WebGPUPipelineUtils.js": "3480fea1e86f1f237cb6ee2ea87b5826d4fc404d",
+    "src/renderers/webgpu/utils/WebGPUTextureUtils.js": "57c1eb62f1e0de063f22e08ec879e31d2a3240b6",
+    "src/renderers/common/RenderPipeline.js": "ab3085cfdca456ffb3de6945d7e7f693e4ed33ae",
+    "src/nodes/pmrem/PMREMNode.js": "c4c33cf3060d8c75398000589ed4e3f9a52ec285",
+    "src/renderers/common/extras/PMREMGenerator.js": "ace19db76fab3f08ed4d581d1e272066a24c34aa",
+    "examples/jsm/tsl/display/SMAANode.js": "0bb036147379173ea3eb51774be72d4587b757b8"
+  }
+}

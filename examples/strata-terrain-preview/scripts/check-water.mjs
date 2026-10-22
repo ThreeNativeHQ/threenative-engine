@@ -48,7 +48,6 @@ try {
 const flooded = scatterProps(
   {
     field,
-    colors: [],
     resolution: 17,
     size: 64,
     waterLevel: null,

@@ -258,3 +258,28 @@ export type { IDedupeCensus, IMaterialBucket, IMaterialState } from "./content/d
  */
 export { censusDocument, materialStateOf, totalCensus } from "./content/census.js";
 export type { IContentCensus } from "./content/census.js";
+/**
+ * Bake evaluated terrain and static species into an instanced GLB and streaming world package.
+ * @situation bake a terrain world headlessly into a GLB with instanced trees and rocks
+ * @situation generate a forest world for my game
+ * @example await cookTerrainWorld({ state, species, out: "assets/world" });
+ */
+export { cookTerrainWorld } from "./world/terrain-world.js";
+export type {
+  ICookTerrainWorldMaterialLayer,
+  ICookTerrainWorldOptions,
+  ICookTerrainWorldResult,
+  IPreparedTerrainWorldOptions,
+  ISpeciesLODSpec,
+  ISpeciesSpec,
+  IWorldPackageAsset,
+  IWorldPackageManifest,
+} from "./world/terrain-world.js";
+
+/**
+ * Build a standalone card-thinned foliage mesh, preserving opaque parts and vertex attributes.
+ * @situation prepare a far foliage mesh by thinning whole cards instead of triangles
+ * @constraint mutates the supplied document; rejects unsupported MASK topology and invalid ratios
+ * @example thinFoliageCards(document, 0.14);
+ */
+export { thinFoliageCards } from "./lod/generate.js";

@@ -1,6 +1,7 @@
 import {
   Bone,
   BoxGeometry,
+  DirectionalLight,
   Float32BufferAttribute,
   InstancedMesh,
   Matrix4,
@@ -74,6 +75,90 @@ function sceneWithSpecializedObjects(): {
 }
 
 describe("SceneRenderProjection and the installed output pipeline", () => {
+  it("falls back when a custom shadow node cannot be copied to a mirrored light", () => {
+    const scene = new Scene();
+    const geometry = new BoxGeometry();
+    const material = new MeshBasicMaterial();
+    for (let index = 0; index < 8; index += 1) scene.add(new Mesh(geometry, material));
+    const light = new DirectionalLight(0xffffff, 1);
+    light.castShadow = true;
+    const shadowNode = {};
+    Reflect.set(light.shadow, "shadowNode", shadowNode);
+    scene.add(light);
+    const projection = new SceneRenderProjection(scene, { minMeshes: 8 });
+
+    try {
+      projection.reconcile();
+
+      expect(projection.root).toBe(scene);
+      expect(projection.report.reasonCode).toBe("unsupportedLight");
+      expect(projection.report.reason).toContain("custom shadow node");
+      expect(light.shadow.autoUpdate).toBe(true);
+    } finally {
+      projection.dispose();
+      geometry.dispose();
+      material.dispose();
+    }
+  });
+
+  it("restores authored shadow updates when a custom shadow node is added after mirroring", () => {
+    const scene = new Scene();
+    const geometry = new BoxGeometry();
+    const material = new MeshBasicMaterial();
+    for (let index = 0; index < 8; index += 1) scene.add(new Mesh(geometry, material));
+    const light = new DirectionalLight(0xffffff, 1);
+    light.castShadow = true;
+    scene.add(light);
+    const projection = new SceneRenderProjection(scene, { minMeshes: 8 });
+
+    try {
+      projection.reconcile();
+      expect(projection.deoptimized).toBe(false);
+      expect(light.shadow.autoUpdate).toBe(false);
+
+      Reflect.set(light.shadow, "shadowNode", {});
+      projection.reconcile();
+
+      expect(projection.root).toBe(scene);
+      expect(projection.report.reasonCode).toBe("unsupportedLight");
+      expect(projection.report.reason).toContain("custom shadow node");
+      expect(light.shadow.autoUpdate).toBe(true);
+    } finally {
+      projection.dispose();
+      geometry.dispose();
+      material.dispose();
+    }
+  });
+
+  it("continues mirroring a directional light with the standard shadow graph", () => {
+    const scene = new Scene();
+    const geometry = new BoxGeometry();
+    const material = new MeshBasicMaterial();
+    for (let index = 0; index < 8; index += 1) scene.add(new Mesh(geometry, material));
+    const light = new DirectionalLight(0xffffff, 1);
+    light.castShadow = true;
+    scene.add(light);
+    const projection = new SceneRenderProjection(scene, { minMeshes: 8 });
+
+    try {
+      projection.reconcile();
+
+      expect(projection.deoptimized).toBe(false);
+      const mirroredLights: DirectionalLight[] = [];
+      projection.root.traverse((object) => {
+        if ((object as DirectionalLight).isDirectionalLight === true)
+          mirroredLights.push(object as DirectionalLight);
+      });
+      expect(mirroredLights).toHaveLength(1);
+      expect(mirroredLights[0]).not.toBe(light);
+      expect(mirroredLights[0]?.shadow).not.toBe(light.shadow);
+    } finally {
+      projection.dispose();
+      geometry.dispose();
+      material.dispose();
+    }
+  });
+
   it("shares the generated instanced matrix attributes across independently allocated batches", () => {
     const declarations: string[] = [];
     for (const count of [8, 8]) {

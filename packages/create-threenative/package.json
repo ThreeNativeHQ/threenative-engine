@@ -52,6 +52,10 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
+    "./terrain-kit": {
+      "types": "./dist/terrain-kit.d.ts",
+      "import": "./dist/terrain-kit.js"
+    },
     "./package.json": "./package.json",
     "./quality": {
       "types": "./dist/quality.d.ts",
@@ -66,7 +70,7 @@
     "build": "tsup --config tsup.config.ts && publint",
     "typecheck": "tsc --noEmit",
     "test": "publint --strict",
-    "prepack": "node -e \"const fs=require('node:fs');for(const [s,n] of [['../core/patches/three@0.185.1.patch','three@0.185.1.patch'],['../../patches/vite@8.2.0.patch','vite@8.2.0.patch'],['../../patches/@tailwindcss__node@4.3.3.patch','@tailwindcss__node@4.3.3.patch']]){const d='template-assets/patches/'+n;fs.mkdirSync('template-assets/patches',{recursive:true});if(fs.existsSync(s))fs.cpSync(s,d);else if(!fs.existsSync(d))throw new Error('TN_FRAMEWORK_PATCH_MISSING: '+s)}\""
+    "prepack": "node -e \"const fs=require('node:fs');for(const [s,n] of [['../core/patches/three@0.185.1.patch','three@0.185.1.patch'],['../../patches/vite@8.2.0.patch','vite@8.2.0.patch'],['../../patches/@tailwindcss__node@4.3.3.patch','@tailwindcss__node@4.3.3.patch']]){const d='template-assets/patches/'+n;fs.mkdirSync('template-assets/patches',{recursive:true});if(fs.existsSync(s))fs.cpSync(s,d);else if(!fs.existsSync(d))throw new Error('TN_FRAMEWORK_PATCH_MISSING: '+s)}\" && node scripts/stage-terrain-kits.mjs"
   },
   "dependencies": {
     "@gltf-transform/core": "catalog:",

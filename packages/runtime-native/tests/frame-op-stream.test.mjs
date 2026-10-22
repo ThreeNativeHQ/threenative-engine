@@ -283,6 +283,13 @@ describe("packed frame op stream", () => {
     expect(drain()).toBeNull();
   });
 
+  it("records a finished command buffer without a submit", () => {
+    const { device, drain } = harness();
+    device.createCommandEncoder().finish();
+    expect(records(drain()).result.map(({ opcode }) => opcode)).toEqual([2, 28]);
+    expect(drain()).toBeNull();
+  });
+
   it("keeps render and compute pass methods on shared receiver-aware prototypes", () => {
     const { device, drain } = harness();
     const encoderA = device.createCommandEncoder();

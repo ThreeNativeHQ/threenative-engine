@@ -117,7 +117,7 @@ describe("pass-scoped sample interpolation and position invariance", () => {
     const manager = new RenderObjects(
       renderer,
       nodes,
-      {},
+      { getIndex: () => null, releaseRenderObject: vi.fn() },
       { delete: vi.fn() },
       { deleteForRender: vi.fn() },
       {},

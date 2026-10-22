@@ -2,6 +2,7 @@ import { unsupportedExport } from "../../../../three-native/src/refused.ts";
 import {
   Material,
   defineObjectSurface,
+  defineReleaseNoops,
   defineTypeFlags,
 } from "../../../../three-native/src/object-surface.ts";
 import { definePropertyBinding } from "../../../../three-native/src/property-binding.ts";
@@ -142,9 +143,6 @@ export const clone = (root) => skeletonUtils.clone(root);
 
 // three's BatchedMesh: an engine class (PRD-552), each geometry's instances drawn as one instanced mesh.
 export const { BatchedMesh } = globalThis;
-// three's BatchedMesh/InstancedMesh.dispose frees the instance textures; the engine frees its instance
-// buffers with the object, so the call has nothing to release (core's projection mirror makes it).
-for (const instanced of [BatchedMesh, InstancedMesh]) instanced.prototype.dispose ??= function dispose() {};
 // three's InstancedBufferGeometry: an engine class, drawn instanceCount times.
 export const { InstancedBufferGeometry } = globalThis;
 // three exports the engine does not provide: refused at use, by name, as on Wasm (unsupportedExport).
@@ -200,6 +198,7 @@ for (const name of [
   };
 }
 defineTypeFlags(globalThis);
+defineReleaseNoops(globalThis);
 const geometries = [
   BoxGeometry,
   CircleGeometry,

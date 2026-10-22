@@ -1,7 +1,7 @@
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 
 import { makeTempDir } from "../../../test-support/temp-dir.js";
 
@@ -12,6 +12,7 @@ import {
   defaultCaptureLockRoot,
   detectCaptureConcurrency,
   formatLockTimeoutLine,
+  isProcessAlive,
 } from "../src/runner/captureLock.js";
 
 const aliveAlways = () => true;
@@ -81,6 +82,44 @@ test("a live holder counts as concurrency; a dead one does not", async () => {
     expect(detectCaptureConcurrency({ isProcessAlive: () => false, lockRoot })).toBe(0);
     expect(detectCaptureConcurrency({ isProcessAlive: aliveAlways, lockRoot })).toBe(1);
   } finally {
+    await rm(lockRoot, { recursive: true, force: true });
+  }
+});
+
+test("EPERM from process.kill means the process is alive but not inspectable", () => {
+  const error = Object.assign(new Error("operation not permitted"), { code: "EPERM" });
+  const kill = vi.spyOn(process, "kill").mockImplementation(() => {
+    throw error;
+  });
+  try {
+    expect(isProcessAlive(3000)).toBe(true);
+  } finally {
+    kill.mockRestore();
+  }
+});
+
+test("a live EPERM holder is queued behind, never stolen", async () => {
+  const lockRoot = await makeTempDir("tn-capture-lock-");
+  const lockDir = join(lockRoot, "lock");
+  const holderPath = join(lockDir, "holder.json");
+  const error = Object.assign(new Error("operation not permitted"), { code: "EPERM" });
+  const kill = vi.spyOn(process, "kill").mockImplementation(() => {
+    throw error;
+  });
+  try {
+    await mkdir(lockDir, { recursive: true });
+    await writeFile(
+      holderPath,
+      `${JSON.stringify({ command: "other uid playtest", pid: 3000, startedAt: "2026-10-18T00:00:00.000Z" })}\n`,
+    );
+    expect(detectCaptureConcurrency({ isProcessAlive, lockRoot })).toBe(1);
+    await expect(
+      acquireCaptureLock({ lockRoot, pid: 900, pollIntervalMs: 10, timeoutMs: 40 }),
+    ).rejects.toBeInstanceOf(CaptureLockTimeoutError);
+    const holder = JSON.parse(await readFile(holderPath, "utf8")) as { pid?: number };
+    expect(holder.pid).toBe(3000);
+  } finally {
+    kill.mockRestore();
     await rm(lockRoot, { recursive: true, force: true });
   }
 });

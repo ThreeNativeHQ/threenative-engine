@@ -28,13 +28,26 @@ import {
 export type WorldName = "forest" | "coastal" | "alpine" | "desert" | "tundra";
 type RGB = readonly [number, number, number];
 
+type HeightBand =
+  | "alpine"
+  | "rock"
+  | "treeline"
+  | "cap"
+  | "desertRock"
+  | "alpineRock"
+  | "alpineHollow";
+type HeightBands = Readonly<Record<HeightBand, readonly [number, number]>>;
+
 export interface IBiome {
   readonly world: WorldName;
   readonly grassTint: RGB;
   readonly stoneTint: RGB;
+  /** Prop-only tint; terrain rock keeps its own grading. */
+  readonly propStoneTint?: RGB;
   readonly snowTint: RGB;
   readonly distantStone: RGB;
-  readonly snow: readonly [number, number, number];
+  readonly snowFractions: readonly [number, number, number];
+  readonly heightFractions: HeightBands;
   readonly maps: Record<LayerKey, IGroundMaps>;
   readonly horizon: "mountain" | "alpine" | "mesa" | "plain";
   readonly sun: {
@@ -79,7 +92,17 @@ const temperate: IBiome = {
   stoneTint: [0.48, 0.44, 0.39],
   snowTint: [1, 1, 1],
   distantStone: [0.115, 0.105, 0.088],
-  snow: [145, 195, 0.22],
+  // Snow and caps belong to the surveyed horizon, beyond the resident height range.
+  snowFractions: [3.6, 4.8, 0.22],
+  heightFractions: {
+    alpine: [0.95, 1.65],
+    rock: [0.35, 1.8],
+    treeline: [2.75, 6],
+    cap: [5.6, 7.75],
+    desertRock: [0.18, 0.48],
+    alpineRock: [0.06, 0.14],
+    alpineHollow: [0.05, 0.12],
+  },
   maps: GROUND_MAPS,
   horizon: "mountain",
   sun: { color: 0xffe3b5, intensity: 5.8, direction: [-180, 145, 80], shadowRadius: 1.7 },
@@ -114,6 +137,15 @@ export const BIOMES: Record<WorldName, IBiome> = {
   coastal: {
     ...temperate,
     world: "coastal",
+    snowFractions: [1.3, 1.75, 0.22],
+    heightFractions: {
+      ...temperate.heightFractions,
+      alpine: [0.34, 0.6],
+      rock: [0.12, 0.64],
+      treeline: [1, 2.15],
+      cap: [2, 2.8],
+    },
+    propStoneTint: [1, 1, 1],
     sun: { ...temperate.sun, intensity: 5.2, direction: [-180, 150, -120] },
     fill: { ...temperate.fill, intensity: 0.66 },
     haze: { ...temperate.haze, density: 0.0008 },
@@ -137,7 +169,14 @@ export const BIOMES: Record<WorldName, IBiome> = {
     stoneTint: [0.86, 0.88, 0.9],
     snowTint: [1.9, 1.93, 2],
     distantStone: [0.23, 0.225, 0.215],
-    snow: [50, 180, 0.39],
+    snowFractions: [0.6, 0.85, 0.39],
+    heightFractions: {
+      ...temperate.heightFractions,
+      alpine: [0.06, 0.1],
+      rock: [0.02, 0.11],
+      treeline: [0.3, 0.55],
+      cap: [0.82, 1],
+    },
     maps: {
       ...GROUND_MAPS,
       snow: { ...GROUND_MAPS.snow, normal: "snow_02/snow_02_nor_gl_1k.jpg" },
@@ -173,11 +212,19 @@ export const BIOMES: Record<WorldName, IBiome> = {
   desert: {
     ...temperate,
     world: "desert",
+    propStoneTint: [1.08, 0.85, 0.64],
     horizon: "mesa",
     grassTint: [1, 1, 1],
     stoneTint: [1.16, 0.82, 0.55],
     distantStone: [0.31, 0.205, 0.12],
-    snow: [10000, 10001, 0.22],
+    snowFractions: [2, 3, 0.22],
+    heightFractions: {
+      ...temperate.heightFractions,
+      alpine: [0.28, 0.49],
+      rock: [0.08, 0.52],
+      treeline: [0.8, 1.8],
+      cap: [2, 2.8],
+    },
     maps: {
       ...GROUND_MAPS,
       grass: { ...GROUND_MAPS.sand, normal: "sand_01/sand_01_nor_gl_1k.jpg" },
@@ -219,12 +266,14 @@ export const BIOMES: Record<WorldName, IBiome> = {
   tundra: {
     ...temperate,
     world: "tundra",
+    toneMapping: AgXToneMapping,
     horizon: "plain",
     grassTint: [0.83, 0.88, 0.82],
     stoneTint: [0.7, 0.74, 0.77],
     snowTint: [1.45, 1.5, 1.58],
     distantStone: [0.18, 0.2, 0.21],
-    snow: [12, 36, 0.22],
+    snowFractions: [0.15, 0.45, 0.22],
+    heightFractions: { ...temperate.heightFractions, alpine: [0.6, 1.2], rock: [0.06, 1.25] },
     maps: {
       ...GROUND_MAPS,
       snow: { ...GROUND_MAPS.snow, normal: "snow_02/snow_02_nor_gl_1k.jpg" },
@@ -264,9 +313,56 @@ export const BIOMES: Record<WorldName, IBiome> = {
   },
 };
 
+export interface IWorldBiome extends IBiome {
+  readonly elevationRange: readonly [number, number];
+  readonly heightBands: HeightBands;
+  readonly snowBand: readonly [number, number];
+}
+
+/** Resolve game-owned fractions once against this world's actual samples. */
+export function measureBiome(biome: IBiome, heights: readonly number[]): IWorldBiome {
+  if (heights.length === 0) throw new RangeError("Terrain elevation samples are empty");
+  let min = Number.POSITIVE_INFINITY;
+  let max = Number.NEGATIVE_INFINITY;
+  for (const height of heights) {
+    if (!Number.isFinite(height)) throw new RangeError("Terrain elevation sample is nonfinite");
+    min = Math.min(min, height);
+    max = Math.max(max, height);
+  }
+  const span = max - min;
+  if (!Number.isFinite(span)) throw new RangeError("Terrain elevation range is nonfinite");
+  const resolve = (fraction: number) => {
+    const height = min + fraction * span;
+    if (!Number.isFinite(height)) throw new RangeError("Terrain elevation band is nonfinite");
+    return height;
+  };
+  return {
+    ...biome,
+    elevationRange: [min, max],
+    heightBands: Object.fromEntries(
+      Object.entries(biome.heightFractions).map(([key, pair]) => [
+        key,
+        [resolve(pair[0]), resolve(pair[1])] as const,
+      ]),
+    ) as HeightBands,
+    snowBand: [resolve(biome.snowFractions[0]), resolve(biome.snowFractions[1])],
+  };
+}
+
+/** A flat world has no elevation transition; never emit equal-edge smoothstep. */
+export function elevationBand(
+  biome: IWorldBiome,
+  band: readonly [number, number],
+  height: Node<"float"> = positionWorld.y,
+): Node<"float"> {
+  return biome.elevationRange[0] === biome.elevationRange[1]
+    ? float(0)
+    : smoothstep(band[0], band[1], height);
+}
+
 /** Local ground rules; slope keeps steep faces bare and noise breaks the snow's contour line. */
 export function biomeWeights(
-  biome: IBiome,
+  biome: IWorldBiome,
   steep: Node<"float">,
   hollow: Node<"float">,
   breakup: Node<"float">,
@@ -280,19 +376,19 @@ export function biomeWeights(
       moss: float(0),
       sand: float(0),
       rock: stone
-        .max(smoothstep(25, 65, positionWorld.y).mul(0.48))
+        .max(elevationBand(biome, biome.heightBands.desertRock).mul(0.48))
         .mul(float(1).sub(smoothstep(0.12, 0.5, hollow).mul(0.35))),
       snow: float(0),
     };
   // Wind-scoured convex/exposed faces shed snow; sheltered shelves keep it.
   const exposure = normalWorldGeometry.x.mul(0.65).add(normalWorldGeometry.z.mul(0.4)).max(0);
-  const retention = smoothstep(
-    biome.snow[0],
-    biome.snow[1],
+  const retention = elevationBand(
+    biome,
+    biome.snowBand,
     positionWorld.y.add(hollow.max(0).mul(biome.world === "alpine" ? 14 : 5)),
   ).mul(
     float(1)
-      .sub(smoothstep(biome.world === "alpine" ? 0.16 : 0.04, biome.snow[2], steep))
+      .sub(smoothstep(biome.world === "alpine" ? 0.16 : 0.04, biome.snowFractions[2], steep))
       .mul(float(1).sub(exposure.mul(0.28))),
   );
   // A narrow retention threshold leaves wind-shaped shelves and sharp scour edges.
@@ -328,15 +424,15 @@ export function biomeWeights(
       biome.world === "alpine"
         ? stone
             .max(0.8)
-            .max(smoothstep(40, 90, positionWorld.y).mul(0.58))
+            .max(elevationBand(biome, biome.heightBands.alpineRock).mul(0.58))
             .max(
               smoothstep(0.12, 0.5, hollow)
-                .mul(smoothstep(35, 80, positionWorld.y))
+                .mul(elevationBand(biome, biome.heightBands.alpineHollow))
                 .mul(0.45),
             )
             .mul(float(1).sub(smoothstep(0.08, 0.4, hollow).mul(0.4)))
         : stone,
-    snow: biome.world === "tundra" ? snow : alpineSnowCover(hollow),
+    snow: biome.world === "tundra" ? snow : alpineSnowCover(biome, hollow),
   };
 }
 
@@ -367,9 +463,16 @@ export function alpineRockColor(sample: Node<"vec3">): Node<"vec3"> {
 }
 
 /** Snow respects world elevation and upward faces, including tilted instanced scans. */
-export function alpineSnowCover(hollow: Node<"float"> = float(0)): Node<"float"> {
+export function alpineSnowCover(
+  biome: IWorldBiome,
+  hollow: Node<"float"> = float(0),
+): Node<"float"> {
   const exposure = normalWorldGeometry.x.mul(0.65).add(normalWorldGeometry.z.mul(0.4)).max(0);
-  const retention = smoothstep(50, 180, positionWorld.y.add(hollow.max(0).mul(110)))
+  const retention = elevationBand(
+    biome,
+    biome.snowBand,
+    positionWorld.y.add(hollow.max(0).mul(110)),
+  )
     .mul(smoothstep(0.35, 0.72, normalWorldGeometry.y))
     .mul(float(1).sub(exposure.mul(0.28)))
     .mul(float(1).sub(hollow.min(0).negate().mul(0.65)));

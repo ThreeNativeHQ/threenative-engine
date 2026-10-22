@@ -7,6 +7,7 @@ import { validatePlacementOverrides } from "../core/placements.js";
 import { type PatchCommand, Terrain, TerrainEvaluator } from "../core/terrain.js";
 import type { ITerrainDocument } from "../core/types.js";
 import type { IPlacementOverride } from "../core/types.js";
+import { loadCooker } from "../mcp/cook.js";
 import { AssetStore } from "./assetStore.js";
 import {
   type IAssetLimits,
@@ -41,6 +42,7 @@ import {
 
 const PREFIX = "/terrain-editor/";
 const MAX_BYTES = 64 * 1024 * 1024;
+const MAX_SMALL_BYTES = 1024 * 1024;
 const MAX_REFERENCES = 16;
 
 export interface IAuthoringDocument {
@@ -150,12 +152,26 @@ class EditorError extends Error {
 export class TerrainEditorDocument {
   readonly path: string;
   #snapshot: IEditorSnapshot;
+  #lastValidDocument: IAuthoringDocument | null = null;
   #listeners = new Set<(snapshot: IEditorSnapshot) => void>();
   constructor(path: string) {
     if (!isAbsolute(path)) throw new Error("Document path must be absolute");
     this.path = resolve(path);
-    const document = this.#read();
-    this.#snapshot = { document, revision: revision(document), diagnostic: null };
+    try {
+      const document = this.#read();
+      this.#lastValidDocument = document;
+      this.#snapshot = { document, revision: revision(document), diagnostic: null };
+    } catch (error) {
+      const fallback: IAuthoringDocument = {
+        version: 1,
+        recipe: new Terrain().toJSON(),
+      };
+      this.#snapshot = {
+        document: fallback,
+        revision: revision(fallback),
+        diagnostic: error instanceof Error ? error.message : String(error),
+      };
+    }
   }
   #read(): IAuthoringDocument {
     const info = lstatSync(this.path);
@@ -177,12 +193,40 @@ export class TerrainEditorDocument {
     try {
       const document = this.#read();
       const nextRevision = revision(document);
+      this.#lastValidDocument = document;
       if (nextRevision === this.#snapshot.revision && this.#snapshot.diagnostic === null) return;
       this.#snapshot = { document, revision: nextRevision, diagnostic: null };
     } catch (error) {
       this.#snapshot.diagnostic = error instanceof Error ? error.message : String(error);
     }
     this.#emit();
+  }
+  restoreLastValid(): IEditorSnapshot {
+    // Never overwrite a malformed original with a synthetic fallback: without a real valid save
+    // there is nothing to restore, so the caller must fix the file and reload instead.
+    if (!this.#lastValidDocument)
+      throw new EditorError(409, "No valid save to restore; the document has never been valid");
+    const target = this.#lastValidDocument;
+    const temporary = `${this.path}.${randomUUID()}.tmp`;
+    try {
+      writeFileSync(temporary, `${JSON.stringify(target, null, 2)}\n`, { flag: "wx", mode: 0o600 });
+      renameSync(temporary, this.path);
+    } catch (error) {
+      try {
+        unlinkSync(temporary);
+      } catch (cleanupError) {
+        if ((cleanupError as NodeJS.ErrnoException).code !== "ENOENT")
+          throw new AggregateError(
+            [error, cleanupError],
+            "Document save and temporary-file cleanup failed",
+          );
+      }
+      throw error;
+    }
+    this.#lastValidDocument = target;
+    this.#snapshot = { document: target, revision: revision(target), diagnostic: null };
+    this.#emit();
+    return this.snapshot();
   }
   commit(input: unknown): IEditorSnapshot {
     this.refresh();
@@ -230,25 +274,35 @@ export class TerrainEditorDocument {
       throw error;
     }
     this.#snapshot = { document: next, revision: nextRevision, diagnostic: null };
+    this.#lastValidDocument = next;
     this.#emit();
     return this.snapshot();
   }
 }
 
-async function body(request: IncomingMessage): Promise<unknown> {
-  if (request.headers["content-type"]?.split(";")[0] !== "application/json")
+async function body(
+  request: IncomingMessage,
+  maxBytes = MAX_SMALL_BYTES,
+  parse = true,
+): Promise<unknown> {
+  if (Number(request.headers["content-length"]) > maxBytes) {
+    request.resume();
+    throw new EditorError(413, `Request exceeds ${maxBytes / (1024 * 1024)} MiB`);
+  }
+  if (parse && request.headers["content-type"]?.split(";")[0] !== "application/json")
     throw new EditorError(415, "Expected application/json");
-  if (Number(request.headers["content-length"]) > MAX_BYTES)
-    throw new EditorError(413, "Request exceeds 64 MiB");
   const chunks: Buffer[] = [];
   let bytes = 0;
-  for await (const chunk of request) {
+  for await (const chunk of request.iterator({ destroyOnReturn: false })) {
     const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
     bytes += buffer.length;
-    if (bytes > MAX_BYTES) throw new EditorError(413, "Request exceeds 64 MiB");
-    chunks.push(buffer);
+    if (bytes > maxBytes) {
+      request.resume();
+      throw new EditorError(413, `Request exceeds ${maxBytes / (1024 * 1024)} MiB`);
+    }
+    if (parse) chunks.push(buffer);
   }
-  return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+  return parse ? JSON.parse(Buffer.concat(chunks).toString("utf8")) : undefined;
 }
 function json(response: ServerResponse, status: number, value: unknown): void {
   response.writeHead(status, {
@@ -409,6 +463,44 @@ export function terrainEditor(options: {
               json(response, 200, document.snapshot());
               return;
             }
+            if (request.method === "POST" && path === `${PREFIX}api/export`) {
+              const input = (await body(request, MAX_BYTES)) as {
+                baseRevision?: unknown;
+                preparedWorld?: Record<string, unknown>;
+              };
+              const snapshot = document.snapshot();
+              if (snapshot.diagnostic)
+                throw new EditorError(409, "Cannot export an invalid disk save");
+              if (!input || input.baseRevision !== snapshot.revision)
+                throw new EditorError(409, "Stale export revision");
+              if (
+                !input.preparedWorld ||
+                typeof input.preparedWorld !== "object" ||
+                Array.isArray(input.preparedWorld)
+              )
+                throw new Error("Expected preparedWorld glTF JSON");
+              const cooker = await loadCooker(vite.config.root);
+              const cooked = await cooker.cookTerrainWorld({ preparedWorld: input.preparedWorld });
+              if (document.snapshot().revision !== snapshot.revision)
+                throw new EditorError(409, "World changed while exporting");
+              response.writeHead(200, {
+                "content-type": "model/gltf-binary",
+                "cache-control": "no-store",
+              });
+              response.end(cooked.worldGlb);
+              return;
+            }
+            if (request.method === "POST" && path === `${PREFIX}api/reload`) {
+              await body(request, MAX_SMALL_BYTES, false);
+              document.refresh();
+              json(response, 200, document.snapshot());
+              return;
+            }
+            if (request.method === "POST" && path === `${PREFIX}api/restore`) {
+              await body(request, MAX_SMALL_BYTES, false);
+              json(response, 200, document.restoreLastValid());
+              return;
+            }
             if (request.method === "GET" && path === `${PREFIX}api/events`) {
               response.writeHead(200, {
                 "content-type": "text/event-stream",
@@ -421,7 +513,7 @@ export function terrainEditor(options: {
               return;
             }
             if (request.method === "POST" && path === `${PREFIX}api/document`) {
-              json(response, 200, document.commit(await body(request)));
+              json(response, 200, document.commit(await body(request, MAX_BYTES)));
               return;
             }
             if (request.method === "POST" && path === `${PREFIX}api/cameras`) {
@@ -478,7 +570,7 @@ export function terrainEditor(options: {
               return;
             }
             if (request.method === "POST" && path === `${PREFIX}api/assets`) {
-              const transaction = await body(request);
+              const transaction = await body(request, MAX_BYTES);
               if (
                 !transaction ||
                 typeof transaction !== "object" ||
@@ -654,9 +746,10 @@ export function terrainEditor(options: {
             }
             throw new EditorError(405, "Unsupported terrain editor route/method");
           } catch (error) {
-            json(response, error instanceof EditorError ? error.status : 400, {
+            const status = error instanceof EditorError ? error.status : 400;
+            json(response, status, {
+              code: status,
               error: error instanceof Error ? error.message : String(error),
-              snapshot: document.snapshot(),
             });
           }
         })();

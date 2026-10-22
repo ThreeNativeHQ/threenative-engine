@@ -2239,9 +2239,10 @@ function recordRanTimings(
 /** Fails closed: every pass must account for every input, ran or cached, or nothing is emitted. */
 function assertCompletePassCosts(
   costInputs: ReadonlyMap<string, IPassCostRecord>,
-  inputCount: number,
+  inputsForPass: (pass: string) => number,
 ): void {
   for (const [pass, record] of costInputs) {
+    const inputCount = inputsForPass(pass);
     if (record.ranInputs + record.cachedInputs !== inputCount) {
       throw new Error(
         `TN_ASSETS_PASS_COST_INCOMPLETE: pass '${pass}' accounts for ${record.ranInputs} ran + ${record.cachedInputs} cached of ${inputCount} input(s); refusing to emit a cost report with a hole in it.`,
@@ -2727,13 +2728,24 @@ export async function compileAssets(
    * source path, so a shared output would silently serve it the canonical member's policy.
    */
   const modelSources = logicals.filter((logical) => classify(logical) === "model");
+  const cookedWorlds = new Set<string>();
+  for (const logical of modelSources) {
+    if (path.extname(logical).toLowerCase() !== ".glb") continue;
+    try {
+      if (unpackGlb(await readSource(logical)).json.asset.extras?.tnTerrainWorld === 1) {
+        cookedWorlds.add(logical);
+      }
+    } catch (error) {
+      throw new Error(`TN_ASSETS_MODEL_UNREADABLE: '${logical}': ${messageOf(error)}`);
+    }
+  }
   const perAssetLod =
     typeof layout.lod === "object" && layout.lod !== null && layout.lod.overrides !== undefined
       ? new Set(Object.keys(layout.lod.overrides))
       : new Set<string>();
   const canonicalOf = await groupModelSources(
     layout.sourceRoot,
-    modelSources.filter((logical) => !perAssetLod.has(logical)),
+    modelSources.filter((logical) => !perAssetLod.has(logical) && !cookedWorlds.has(logical)),
     readSource,
   );
 
@@ -2792,8 +2804,24 @@ export async function compileAssets(
   };
   const entries: Record<string, IAssetManifestEntry> = {};
   const receiptOutputs: IBakeReceiptOutput[] = [];
+  // Cooked terrain owns its geometry and look; native only needs a portable buffer layout.
+  const terrainPasses =
+    options.platform === undefined || options.platform === "web"
+      ? []
+      : [
+          modelPass({
+            vertexLayout: "separate",
+            compact: false,
+            passes: { dedup: false, meshopt: false, prune: false, quantize: false, reorder: false },
+            textures: "none",
+            virtual: "none",
+            lod: false,
+          }),
+        ];
+  const terrainPassNames = terrainPasses.map((pass) => pass.name);
+
   const costInputs = new Map<string, IPassCostRecord>();
-  for (const name of passNames)
+  for (const name of new Set([...passNames, ...terrainPassNames]))
     costInputs.set(name, { cachedInputs: 0, ranInputs: 0, timings: [] });
 
   const healthInputs: IAssetHealthInput[] = [];
@@ -2864,7 +2892,7 @@ export async function compileAssets(
     receiptOutputs.push({
       bytes: entry.bytes,
       path: entry.output,
-      producer: passNames.join("+"),
+      producer: entry.passes.join("+"),
       source: logical,
     });
     for (const output of auxiliary) receiptOutputs.push({ ...output, source: logical });
@@ -2933,12 +2961,20 @@ export async function compileAssets(
       ? createPassPool(concurrency, activePassSpecs, layout.outputRoot)
       : undefined;
 
-  /** One cooked source, published as itself. */
+  /** Publish authored data with the target's vertex layout. */
   const cookOne = async (logical: string): Promise<ICookedModel> => {
     const input = await readSource(logical);
+    const terrainWorld = cookedWorlds.has(logical);
     const digest = createHash("sha256")
       .update(input)
-      .update(passConfigurations[classify(logical)], "utf8")
+      .update(
+        terrainWorld
+          ? terrainPasses.length === 0
+            ? "terrain-world-v1"
+            : "terrain-world-native-separate-v2"
+          : passConfigurations[classify(logical)],
+        "utf8",
+      )
       .digest("hex");
     // The output name carries the digest of the input bytes and the whole pass configuration,
     // so a previous entry under that exact name, with every file it declares still on disk, is
@@ -2959,7 +2995,7 @@ export async function compileAssets(
         ? await readFile(path.join(layout.outputRoot, previousEntry.output))
         : input;
       bookkeep(logical, measured, reused, reusable, undefined);
-      recordCachedInputs(costInputs, passNames);
+      recordCachedInputs(costInputs, terrainWorld ? terrainPassNames : passNames);
       skipped += 1;
       return {
         auxiliary: reusable,
@@ -2968,8 +3004,9 @@ export async function compileAssets(
         measured,
       };
     }
-    const applied =
-      pool === undefined
+    const applied = terrainWorld
+      ? await applyPasses(terrainPasses, input, logical)
+      : pool === undefined
         ? await applyPasses(activePasses, input, logical)
         : await pool.run(logical, input);
     recordRanTimings(costInputs, logical, applied.timings);
@@ -2982,7 +3019,7 @@ export async function compileAssets(
       bytes: applied.buffer.length,
       kind: classify(logical),
       output: outputNameFor(logical, digest.slice(0, 8), applied.extension),
-      passes: [...passNames],
+      passes: [...(terrainWorld ? terrainPassNames : passNames)],
       ...auxiliaryFields,
       ...(extensions === undefined ? {} : { extensions }),
       ...(applied.entry === undefined
@@ -3201,7 +3238,12 @@ export async function compileAssets(
 
   // The report runs unconditionally — it is the one place a user learns why their game is
   // slow. Only declared targets can fail it.
-  assertCompletePassCosts(costInputs, logicals.length);
+  assertCompletePassCosts(
+    costInputs,
+    (pass) =>
+      (passNames.includes(pass) ? logicals.length - cookedWorlds.size : 0) +
+      (terrainPassNames.includes(pass) ? cookedWorlds.size : 0),
+  );
   const passCosts = buildPassCostRows(costInputs);
   const report = await runHealthReport(healthInputs, layout.targets);
   for (const line of formatHealthReport(report)) console.log(line);

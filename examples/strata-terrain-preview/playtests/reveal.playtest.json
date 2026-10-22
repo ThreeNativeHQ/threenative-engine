@@ -1,0 +1,113 @@
+{
+  "schemaVersion": 1,
+  "name": "strata-terrain-reveal",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 0,
+  "artifacts": {
+    "screenshots": true,
+    "console": true
+  },
+  "steps": [
+    {
+      "label": "world-ready",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "timeToReadyMs",
+        "gte": 1
+      },
+      "timeoutMs": 120000,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "reveal",
+      "waitTicks": 1,
+      "release": true,
+      "screenshot": "reveal"
+    },
+    {
+      "label": "reveal-plus-3s",
+      "timeoutMs": 30000,
+      "screenshot": "reveal-plus-3s",
+      "release": true,
+      "waitForResource": {
+        "id": "GameState",
+        "path": "revealComplete",
+        "equals": true
+      }
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "GameState",
+        "path": "timeToReadyMs",
+        "gte": 1,
+        "allowTrivial": "Native attaches after readiness; this recorded startup duration is already positive when reveal sampling begins."
+      }
+    ],
+    "components": [
+      {
+        "entity": "props",
+        "component": "reveal",
+        "path": "complete",
+        "equals": true
+      },
+      {
+        "entity": "props",
+        "component": "reveal",
+        "path": "samples",
+        "gte": 2
+      },
+      {
+        "entity": "props",
+        "component": "reveal",
+        "path": "elapsedMs",
+        "gte": 3000
+      },
+      {
+        "entity": "props",
+        "component": "reveal",
+        "path": "pipelineCensusAvailable",
+        "equals": true,
+        "allowTrivial": "The pipeline census must be complete and available throughout the measured post-reveal window."
+      },
+      {
+        "entity": "props",
+        "component": "reveal",
+        "path": "pipelinesCreated",
+        "equals": 0,
+        "allowTrivial": "Held invariant: no device pipeline creations may occur throughout the measured post-reveal window."
+      },
+      {
+        "entity": "props",
+        "component": "reveal",
+        "path": "publishedBatchesInView",
+        "equals": 0,
+        "allowTrivial": "Held invariant: no visible prop batches may publish throughout the measured post-reveal window."
+      },
+      {
+        "entity": "props",
+        "component": "reveal",
+        "path": "shadowInvalidated",
+        "equals": 0,
+        "allowTrivial": "Held invariant: shadows must remain valid throughout the measured post-reveal window."
+      },
+      {
+        "entity": "props",
+        "component": "reveal",
+        "path": "impostorPendingPeak",
+        "equals": 0,
+        "allowTrivial": "Held invariant: no impostor bake may remain pending throughout the measured post-reveal window."
+      }
+    ]
+  }
+}

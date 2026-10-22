@@ -48,8 +48,9 @@ jobs:
       reason: ${{ steps.classify.outputs.reason }}
       plan: ${{ steps.classify.outputs.plan }}
       candidate_sha: ${{ steps.classify.outputs.candidate_sha }}
-      # PRD-620: the one admitted slice of eligible HEAVY instances across all three workflows,
-      # at most `TN_RUNNER_SLOTS`. Empty for a fork, a missing count or no advertised runner.
+      # PRD-620: the one admitted slice of eligible CPU-heavy instances across all three workflows,
+      # at most `TN_RUNNER_SLOTS`. GPU-routed instances are excluded; empty for a fork, missing count
+      # or no advertised CPU runner.
       runner_admission: ${{ steps.admission.outputs.runner_admission }}
     # PRD-481 tree reuse: the classification asks the Actions API which successful run tested this
     # exact tree. Read-only, and nothing else in the workflow gains from it.
@@ -90,7 +91,8 @@ jobs:
           printf 'Candidate checked out once: `%s`\n' "$(git rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
       # PRD-620: one shared admission budget for every workflow. The count comes from the publisher's
       # observed idle-heavy count; a missing count or an unset runner leaves every lane hosted. The
-      # selected instances are the plan's required jobs in the inventory's CPU-heavy order.
+      # selected instances are the plan's required jobs in CPU-heavy order, excluding GPU-routed
+      # instances when TN_RUNNER_GPU is configured.
       - id: admission
         name: Admit the eligible heavy instances to the idle pool
         env:
@@ -98,6 +100,8 @@ jobs:
           TN_CI_FORK: ${{ github.event.pull_request.head.repo.fork }}
           TN_CI_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha || '' }}
           TN_RUNNER: ${{ vars.TN_RUNNER }}
+          # A temporary GPU route matches only the exact PR head, merge-group head or push SHA.
+          TN_RUNNER_GPU: ${{ (!vars.TN_RUNNER_GPU_HEAD || (github.event.pull_request.head.sha || github.event.merge_group.head_sha || (github.event_name == 'push' && github.sha) || '') == vars.TN_RUNNER_GPU_HEAD) && vars.TN_RUNNER_GPU || '' }}
           TN_RUNNER_SLOTS: ${{ vars.TN_RUNNER_SLOTS }}
         run: node scripts/ci-runner-admission.mjs --admit
 
@@ -690,6 +694,52 @@ jobs:
       - uses: ./.github/actions/playwright-chromium
       - run: pnpm test:playtest:ci
 
+  strata:
+    needs: [scope, build-artifacts]
+    if: ${{ needs.scope.outputs.selection == 'full' && fromJSON(needs.scope.outputs.plan).jobs.strata.required }}
+    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-24.04' || ((!vars.TN_RUNNER_GPU_HEAD || (github.event.pull_request.head.sha || github.event.merge_group.head_sha || (github.event_name == 'push' && github.sha) || '') == vars.TN_RUNNER_GPU_HEAD) && vars.TN_RUNNER_GPU || '') || ((!vars.TN_RUNNER || !contains(fromJSON(needs.scope.outputs.runner_admission || '[]'), 'ci:strata')) && 'ubuntu-24.04' || vars.TN_RUNNER) }}
+    timeout-minutes: 60
+    env:
+      TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.scope.outputs.candidate_sha || github.sha }}
+      - uses: ./.github/actions/pnpm
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: |
+            pnpm-lock.yaml
+            packages/create-threenative/templates/*/package.json
+      - run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/workspace-dist
+        with:
+          shared-artifact: workspace-packages
+          save-bundles: "false"
+      - uses: ./.github/actions/playwright-chromium
+      - name: Run strata web playtest
+        run: sh scripts/xvfb.sh pnpm --filter strata-terrain-preview test:terrain:web
+      - name: Run strata consumer verification
+        run: pnpm --filter strata-terrain-preview test:consumer
+      - name: Run strata editor verification
+        run: sh scripts/xvfb.sh pnpm --filter strata-terrain-preview test:terrain:editor
+      - name: Run strata authored-world reproduction
+        run: sh scripts/xvfb.sh pnpm --filter strata-terrain-preview test:terrain:authored
+      - name: Run strata custom-art swap
+        run: sh scripts/xvfb.sh pnpm --filter strata-terrain-preview test:terrain:custom
+      - name: Run strata static-world export
+        run: sh scripts/xvfb.sh pnpm --filter strata-terrain-preview test:terrain:export
+      - name: Retain failed Strata playtest evidence
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: strata-playtest-${{ github.run_id }}-${{ github.run_attempt }}-${{ needs.scope.outputs.candidate_sha }}
+          path: examples/strata-terrain-preview/artifacts/playtest/
+          if-no-files-found: ignore
+          retention-days: 7
+
   golden-path-template:
     needs: [scope, build-artifacts]
     if: ${{ (needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'template') }}
@@ -835,10 +885,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.scope.outputs.plan).templateMatrix }}
-    # Routes through the idle-pool switch with hosted fallback: forks fall through to hosted and
-    # snapshot fallback is best-effort, so queued legs may remain local.
-    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(needs.scope.outputs.runner_admission || '[]'), format('ci:template-nonvisual:{0}', matrix.template))) && 'ubuntu-24.04' || vars.TN_RUNNER }}
-    # rain relaunches the page for each of its five GPU-free scenarios. On the hosted SwiftShader
+    # Racing and Rain can use the opt-in GPU pool; other legs use the shared CPU pool with hosted fallback.
+    # Forks always stay hosted, and snapshot fallback is best-effort.
+    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-24.04' || ((matrix.template == 'racing' || matrix.template == 'rain') && ((!vars.TN_RUNNER_GPU_HEAD || (github.event.pull_request.head.sha || github.event.merge_group.head_sha || (github.event_name == 'push' && github.sha) || '') == vars.TN_RUNNER_GPU_HEAD) && vars.TN_RUNNER_GPU || '')) || ((!vars.TN_RUNNER || !contains(fromJSON(needs.scope.outputs.runner_admission || '[]'), format('ci:template-nonvisual:{0}', matrix.template))) && 'ubuntu-24.04' || vars.TN_RUNNER) }}
+    # Rain relaunches the page for each of its five nonvisual scenarios. On the hosted SwiftShader
     # adapter each launch now takes about 7 minutes, against about 1 minute on develop (runs
     # 38818830914 and 38824021621), so five launches exceed the 30-minute cap. Only rain gets the
     # larger cap until that software launch cost is reduced; every other leg keeps 30 minutes.
@@ -850,7 +900,7 @@ jobs:
     timeout-minutes: ${{ matrix.template == 'shooter' && 120 || matrix.template == 'rain' && 60 || 30 }}
     env:
       TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
-      TN_PLAYTEST_ALLOW_SOFTWARE: "1"
+      TN_PLAYTEST_ALLOW_SOFTWARE: ${{ (matrix.template == 'rain' && !github.event.pull_request.head.repo.fork && ((!vars.TN_RUNNER_GPU_HEAD || (github.event.pull_request.head.sha || github.event.merge_group.head_sha || (github.event_name == 'push' && github.sha) || '') == vars.TN_RUNNER_GPU_HEAD) && vars.TN_RUNNER_GPU) && '0') || '1' }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -911,8 +961,15 @@ jobs:
           # assertion, frame bound and budget is unchanged, and an ordinary CLI run keeps 15 s.
           pnpm --dir "$target" exec threenative-playtest "${scenario_args[@]}" \
             --browser-recipe webgpu --headed --no-screenshots --server-timeout 120000 \
+            --artifacts "$GITHUB_WORKSPACE/artifacts/template-nonvisual/${{ matrix.template }}" \
             --server-command "pnpm dev --host 127.0.0.1 --port \$PORT --strictPort"
-      # Engine parity guard: the same pose on engine "threejs" and on "threenative", compared by
+      - name: Retain failed template observations
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: template-nonvisual-${{ matrix.template }}-failure
+          path: artifacts/template-nonvisual/${{ matrix.template }}/
+# Engine parity guard: the same pose on engine "threejs" and on "threenative", compared by
       # 4x4 tile means (scripts/engine-parity.ts). Both arms share this runner's adapter, so a
       # software rasteriser still catches a wrong exposure, colour, fog or a missing object.
       - name: Compare the two engines on one pose
@@ -978,14 +1035,14 @@ jobs:
   benchmark:
     needs: [scope, build-artifacts]
     if: ${{ needs.scope.outputs.selection == 'full' }}
-    runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(needs.scope.outputs.runner_admission || '[]'), 'ci:benchmark')) && 'ubuntu-24.04' || vars.TN_RUNNER }}
+    runs-on: ${{ github.event.pull_request.head.repo.fork && 'ubuntu-24.04' || ((!vars.TN_RUNNER_GPU_HEAD || (github.event.pull_request.head.sha || github.event.merge_group.head_sha || (github.event_name == 'push' && github.sha) || '') == vars.TN_RUNNER_GPU_HEAD) && vars.TN_RUNNER_GPU || '') || ((!vars.TN_RUNNER || !contains(fromJSON(needs.scope.outputs.runner_admission || '[]'), 'ci:benchmark')) && 'ubuntu-24.04' || vars.TN_RUNNER) }}
     timeout-minutes: 25
     env:
       TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ needs.scope.outputs.candidate_sha || github.sha }}
+          ref: ${{ needs.scope.outputs.candidate_sha }}
       - uses: ./.github/actions/pnpm
       - uses: actions/setup-node@v7
         with:
@@ -1007,6 +1064,32 @@ jobs:
       # `test:browser` is the test-browser job's gate; running it again here bought nothing but
       # a second copy of the slowest step in the workflow.
       - run: pnpm exec playwright test --config=benchmark.playwright.config.ts
+      # Software startup regression contract only; hardware and visual acceptance remain separate.
+      - uses: actions/checkout@v7
+        with:
+          ref: 88b988cd70d5db7266eb0281e5f74bd0e030b3e7
+          path: .worktrees/strata-startup-baseline
+      - name: Build isolated reviewed Strata baseline
+        timeout-minutes: 5
+        working-directory: .worktrees/strata-startup-baseline
+        run: |
+          set -euo pipefail
+          pnpm install --frozen-lockfile
+          pnpm --filter strata-terrain-preview... build
+      - name: Bake candidate Strata source
+        timeout-minutes: 3
+        run: pnpm --filter strata-terrain-preview bake
+      - name: Enforce Strata startup median
+        timeout-minutes: 9
+        env:
+          EXPECTED_SOURCE_SHA: ${{ needs.scope.outputs.candidate_sha }}
+        run: timeout 9m pnpm tsx scripts/verify-strata-startup.ts
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: strata-startup-${{ needs.scope.outputs.candidate_sha }}
+          path: artifacts/strata-startup/
+          if-no-files-found: warn
 
   # visuals is NOT a job here any more. It captures frames from a WebGPU canvas, and this runner
   # has no GPU — its first execution in the repository's history failed on
@@ -1070,7 +1153,13 @@ jobs:
           node-version: 20
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      # Before the pack inside workspace-dist: runtime-native lists the web engine in `files`, and
+      # Check before restoring or publishing workspace builds, including the develop warm lane.
+      # The pinned upstream archive is downloaded fresh; cache: pnpm does not cache its npm build.
+      # Bash time reports the download + own-build wall cost and preserves failures (PRD-593 AC-2).
+      - name: Verify the generated Three.js patch has not drifted
+        shell: bash
+        run: time pnpm --filter @threenative/core patch:generate --check
+# Before the pack inside workspace-dist: runtime-native lists the web engine in `files`, and
       # `pnpm pack` drops a file that is not there yet.
       - uses: ./.github/actions/native-engine-wasm
       - uses: ./.github/actions/workspace-dist
@@ -1409,7 +1498,7 @@ jobs:
   # The only required context after protected-develop cutover. Explicit exemptions are not passes.
   # Legacy main contexts stay in place until the owner changes protection after full qualification.
   ci-required:
-    needs: [scope, integration, native-platforms, native-engine, typecheck, lint, test, test-unit, test-native, test-browser, test-playtest, golden-path-template, template-nonvisual, golden-path, benchmark, build, build-artifacts, budgets, performance-contracts, supply-chain]
+    needs: [scope, integration, native-platforms, native-engine, typecheck, lint, test, test-unit, test-native, test-browser, test-playtest, strata, golden-path-template, template-nonvisual, golden-path, benchmark, build, build-artifacts, budgets, performance-contracts, supply-chain]
     if: ${{ always() && !github.event.pull_request.draft }}
     runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER_LIGHT) && 'ubuntu-24.04' || vars.TN_RUNNER_LIGHT }}
     timeout-minutes: 5
@@ -1464,6 +1553,7 @@ jobs:
       - test-native
       - test-browser
       - test-playtest
+      - strata
       - golden-path-template
       - template-nonvisual
       - golden-path

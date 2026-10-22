@@ -23,9 +23,8 @@ const tundraCover = (x: number, z: number): number =>
       tundraNoise.noise(x * 0.11, 19, z * 0.11) * 0.15,
   );
 
-/** A field the placement rule reads: the world's own baked colours plus its sampled geometry. */
+/** A field the placement rule reads: the world's baked transport and sampled geometry. */
 export interface IPlacementField {
-  readonly colors: readonly number[];
   readonly erosion?: IBakedWorld["erosion"];
   readonly field: Heightfield;
   readonly resolution: number;

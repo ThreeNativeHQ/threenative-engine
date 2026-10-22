@@ -50,6 +50,7 @@ export function createSurfaceBindings(
   inputs: Record<string, Texture | undefined>,
   urlOf: (asset: IProjectAsset) => string,
   gpuFormat: (texture: Texture) => string | undefined = () => undefined,
+  onChange?: () => void,
 ) {
   const bindings = new Map<string, IBinding>();
   for (const [input, texture] of Object.entries(inputs))
@@ -72,6 +73,7 @@ export function createSurfaceBindings(
     binding.texture.source = binding.original;
     binding.texture.dispose();
     binding.texture.needsUpdate = true;
+    onChange?.();
     binding.assetId = null;
     binding.sha256 = null;
     binding.url = null;
@@ -97,6 +99,7 @@ export function createSurfaceBindings(
       binding.texture.colorSpace = wanted === "srgb" ? SRGBColorSpace : NoColorSpace;
       binding.texture.dispose();
       binding.texture.needsUpdate = true;
+      onChange?.();
       if (previous && previous !== url) assets.release("texture", previous);
       binding.assetId = asset.id;
       binding.sha256 = asset.sha256;

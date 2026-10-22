@@ -99,7 +99,7 @@ thesis: each spends the training-data advantage to buy a surface the model then 
 | An authored IR, a compiler of game code, a serialized scene format | Your game is TypeScript. The compiler was 25,898 LOC and bought nothing a model can't do with a `.ts` file. The opt-in native engine's shader IR is internal: no game or author writes it. |
 | A second *renderer* | 32% of v1's commits went to a runtime no benchmark ever measured. §7's host runs Three.js, it does not replace it. **One exception (owner, 2026-10-12):** ThreeNative owns one C++ engine, renderer plus internal shader IR, behind the Three.js API. The engine is the default for web and desktop since 2026-10-15 (owner), and a game sets `engine: "threejs"` to keep the legacy host ([`NATIVE-ENGINE-DECISION.md`](NATIVE-ENGINE-DECISION.md)). Any renderer beyond that one engine has become v1. |
 | A JSON/structured-source ECS | Measured at **14x vanilla Three.js** on greenfield work, and scored lower on playability and visuals. |
-| An editor | Not in v1. The paid editor is a separate product in a separate repository. |
+| A general game editor | The paid editor is a separate product in a separate repository. Terrain-only authoring companions are admitted by the narrow allowance below. |
 | A bespoke CLI vocabulary | 178 command forms, a 2,477-word root help. Models are worst at discovering novel API surfaces. |
 | A recipe/preset/genre system | 0 of 7 presets ever reproduced their genre. |
 | A code-first ECS (miniplex, bitECS) | Entities are plain classes (§9b). Gameplay architecture is the model's job. A game that wants one runs `pnpm add miniplex`; the framework neither ships nor fights it. |

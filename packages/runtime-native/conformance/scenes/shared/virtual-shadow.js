@@ -15,7 +15,10 @@ export function assertVirtualShadowProof({ renderer, light, node }) {
 }
 
 export function startScene(canvas, dimensions) {
-  return startVisualScene(canvas, dimensions, "virtual-shadow", ({ renderer, scene, camera }) => {
+  return startVisualScene(canvas, dimensions, "virtual-shadow", buildVirtualShadowScene);
+}
+
+export function buildVirtualShadowScene({ renderer, scene, camera }) {
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     camera.position.set(0, 4, 7);
@@ -47,5 +50,4 @@ export function startScene(canvas, dimensions) {
 
     scene.add(floor, ball, light, light.target, new THREE.AmbientLight(0xffffff, 0.15));
     return { ball, floor, light, node, detail: { levels: node.options.clipExtents.length } };
-  });
 }

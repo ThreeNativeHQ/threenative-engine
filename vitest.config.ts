@@ -6,10 +6,11 @@ export default defineConfig({
     environment: "node",
     include: [
       "scripts/**/*.spec.ts",
+      "examples/strata-terrain-preview/__tests__/**/*.spec.ts",
       "packages/**/__tests__/**/*.spec.ts",
       "packages/**/__tests__/**/*.spec.tsx",
     ],
-    exclude: ["**/node_modules/**", "**/dist/**", "examples/**"],
+    exclude: ["**/node_modules/**", "**/dist/**"],
     reporters: ["default"],
     coverage: {
       provider: "v8",

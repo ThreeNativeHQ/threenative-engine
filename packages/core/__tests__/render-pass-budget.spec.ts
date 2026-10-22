@@ -211,6 +211,114 @@ describe("render pass budget", () => {
     expect(budget.nextGpuFrame()).toBeUndefined();
   });
 
+  it("attributes authored colour and depth through a fullscreen pipeline to main", () => {
+    const world = { name: "World" };
+    const fullscreen = { name: "Fullscreen" };
+    const camera = {};
+    const reflectionCamera = {};
+    const pool = { queryOffsets: new Map<string, number>(), timestamps: new Map<string, number>() };
+    let allocation = 0;
+    let depth = false;
+    const raw = {
+      backend: { timestampQueryPool: { render: pool } },
+      info: { render: { drawCalls: 0, triangles: 0 } },
+      render(scene: { name: string }, view: object): void {
+        let ms: number;
+        if (scene === fullscreen) {
+          raw.render(world, camera);
+          ms = 0.2;
+        } else if (scene.name === "Shadow Map") ms = 2;
+        else if (scene.name === "Reflector") ms = 3;
+        else if (depth) ms = 1;
+        else {
+          expect(view).toBe(camera);
+          depth = true;
+          raw.render(world, camera);
+          depth = false;
+          world.name = "Shadow Map";
+          raw.render(world, camera);
+          world.name = "Reflector";
+          raw.render(world, reflectionCamera);
+          world.name = "World";
+          ms = 6;
+        }
+        const uid = `r:0:${++allocation}:f7`;
+        pool.queryOffsets.set(uid, pool.queryOffsets.size * 2);
+        pool.timestamps.set(uid, ms);
+        raw.info.render.drawCalls++;
+        raw.info.render.triangles++;
+      },
+    };
+    const budget = RenderPassBudget.install(raw) as RenderPassBudget;
+    budget.beginFrame();
+    RenderPassBudget.renderWorld(raw, world, camera, () => raw.render(fullscreen, {}));
+    const gpu = budget.nextGpuFrame();
+    expect(gpu).toEqual({ frame: 7, main: 7, shadow: 2, shadowPasses: 1, total: 12.2 });
+    expect((gpu?.total ?? 0) - (gpu?.main ?? 0) - (gpu?.shadow ?? 0)).toBeCloseTo(3.2);
+    expect(budget.passes().filter((pass) => pass.kind === "main")).toHaveLength(2);
+  });
+
+  it("restores reentrant world scopes after throws and keeps standalone attribution", () => {
+    const raw = fakeRenderer();
+    const budget = RenderPassBudget.install(raw) as RenderPassBudget;
+    const outer = { ...MAIN, name: "Outer" };
+    const inner = { ...MAIN, name: "Inner" };
+    const camera = {};
+    const wrongCamera = {};
+    const sentinel = new Error("render failed");
+    budget.beginFrame();
+    RenderPassBudget.renderWorld(raw, outer, camera, () => {
+      raw.render(outer, camera);
+      expect(() =>
+        RenderPassBudget.renderWorld(raw, inner, camera, () => {
+          raw.render(inner, camera);
+          raw.render(outer, camera);
+          throw sentinel;
+        }),
+      ).toThrow(sentinel);
+      raw.render(outer, camera);
+      raw.render(outer, wrongCamera);
+      outer.name = "Shadow Map";
+      raw.render(outer, camera);
+      outer.name = "Reflector";
+      raw.render(outer, camera);
+      outer.name = "Outer";
+    });
+    raw.render(inner, wrongCamera);
+    expect(budget.passes().map((pass) => pass.kind)).toEqual([
+      "main",
+      "main",
+      "nested",
+      "main",
+      "nested",
+      "shadow",
+      "reflection",
+      "main",
+    ]);
+    expect(() =>
+      RenderPassBudget.renderWorld(raw, outer, camera, () => {
+        throw sentinel;
+      }),
+    ).toThrow(sentinel);
+    raw.render(inner, camera);
+    expect(budget.passes().at(-1)?.kind).toBe("main");
+  });
+
+  it("preserves an uninstrumented world draw and its exception", () => {
+    const target = {};
+    let draws = 0;
+    const sentinel = new Error("render failed");
+    RenderPassBudget.renderWorld(target, {}, {}, () => {
+      draws++;
+    });
+    expect(draws).toBe(1);
+    expect(() =>
+      RenderPassBudget.renderWorld(target, {}, {}, () => {
+        throw sentinel;
+      }),
+    ).toThrow(sentinel);
+  });
+
   it("leaves the frame absent until its recorded shadow pass resolves, never a partial total", () => {
     // The defect: a shadow pass is recorded but its uid never lands in `timestamps`, and the reading
     // forwarded `total: 5.5` — only the main pass — as the frame's cost. A partial sum is not a whole

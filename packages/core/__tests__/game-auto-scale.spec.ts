@@ -1,3 +1,4 @@
+import { setImmediate as flushAsyncFrame } from "node:timers/promises";
 import { describe, expect, it } from "vitest";
 import { defineGame } from "../src/game.js";
 import { Scene } from "../src/scene.js";
@@ -397,7 +398,7 @@ describe('resolutionScale: "auto"', () => {
       for (let index = 0; index < 20; index += 1) {
         time += 100;
         frame(time);
-        await Promise.resolve();
+        await flushAsyncFrame();
       }
       const duringLoad = game.ctx?.renderer.surface();
       expect(duringLoad?.resolutionScale).toBe(1);
@@ -409,12 +410,18 @@ describe('resolutionScale: "auto"', () => {
       // in the window record, then the refund gives it back because 100 ms frames never
       // improve on fewer pixels.
       releaseTier();
+      // Final settlement observes rendered frames after the held warm-up, including two quiet ones.
+      for (let index = 0; index < 10; index += 1) {
+        time += 8;
+        frame(time);
+        await flushAsyncFrame();
+      }
       await game.ctx?.startup.whenReady();
       postReadiness.length = 0;
       for (let index = 0; index < 6; index += 1) {
         time += 100;
         frame(time);
-        await Promise.resolve();
+        await flushAsyncFrame();
       }
       expect(postReadiness).toContain(0.85);
       expect(postReadiness.at(-1)).toBe(1);

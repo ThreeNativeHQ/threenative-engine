@@ -1,14 +1,6 @@
 import { BlendSpace1D, type ICtx, SkeletalMesh3D } from "@threenative/core";
 import { CharacterBody3D, CollisionShape3D, type IPhysicsContext } from "@threenative/physics";
-import {
-  type AnimationClip,
-  Group,
-  MathUtils,
-  type Mesh,
-  type Object3D,
-  Quaternion,
-  Vector3,
-} from "three";
+import { type AnimationClip, Group, type Mesh, type Object3D, Quaternion, Vector3 } from "three";
 import { type IStarterConventions, preparePlayerConventions } from "../conventions.js";
 import type { ITouchInput } from "../render/touch-controls.js";
 import type { GameState } from "../state.js";
@@ -64,6 +56,7 @@ export class Player {
   #landing = 0;
   #wasGrounded = true;
   #supportSurfaceY = 0;
+  #heading = new Quaternion();
   #previousPosition = new Vector3();
   #bodyWorldPosition = new Vector3();
   #visualWorldPosition = new Vector3();
@@ -114,12 +107,7 @@ export class Player {
     });
   }
 
-  update(
-    ctx: GameCtx,
-    dt: number,
-    supportSurfaceY?: (position: Pick<Vector3, "x" | "y" | "z">) => number | undefined,
-    touch?: ITouchInput,
-  ): void {
+  update(ctx: GameCtx, dt: number, touch?: ITouchInput): void {
     if (this.#hasPreviousPosition) {
       this.#odometer += this.mesh.position.distanceTo(this.#previousPosition);
       // The solver applies moveAndSlide after update; measure its last completed step.
@@ -163,11 +151,8 @@ export class Player {
     this.body.moveAndSlide(dt);
     this.#hasPreviousPosition = true;
     if (this.body.grounded) this.#coyoteTime = COYOTE_TIME;
-    const supportingSurfaceY = supportSurfaceY?.(this.mesh.position);
-    const canCorrectGrounding =
-      this.body.grounded && this.body.velocity.y <= 0 && supportingSurfaceY !== undefined;
-    // The resolver identifies the supporting collider; derive the contact plane from the
-    // grounded character so a changed platform height never pulls the visual from its body.
+    const canCorrectGrounding = this.body.grounded && this.body.velocity.y <= 0;
+    // Derive the contact plane from the grounded body, including terrain outside the arena.
     if (canCorrectGrounding) this.#supportSurfaceY = this.mesh.position.y - PLAYER_FOOT_OFFSET;
     this.#conventions.groundSnap.enabled = canCorrectGrounding;
     this.#conventions.applyGrounding(this.#supportSurfaceY, dt);
@@ -190,6 +175,7 @@ export class Player {
     facingAxis: "+x" | "-x" | "+z" | "-z";
     gait: "idle" | "walk" | "run" | "air";
     grounded: boolean;
+    facingZ: number;
     groundClearance: number | null;
     groundCorrectionEnabled: boolean;
     groundSurfaceY: number;
@@ -226,6 +212,7 @@ export class Player {
             ? "run"
             : "walk",
       grounded: this.body.grounded,
+      facingZ: this.character.root.getWorldDirection(new Vector3()).z,
       groundClearance: this.#conventions.groundSnap.clearance,
       groundCorrectionEnabled: this.#conventions.groundSnap.enabled,
       groundSurfaceY: this.#supportSurfaceY,
@@ -266,8 +253,9 @@ export class Player {
     const figure = this.character.root;
     if (Math.hypot(inputX, inputZ) > 0.05) {
       const heading = Math.atan2(inputX, inputZ);
-      const turn = MathUtils.euclideanModulo(heading - figure.rotation.y + Math.PI, Math.PI * 2);
-      figure.rotation.y += (turn - Math.PI) * Math.min(1, dt * 12);
+      // Matrix decomposition can represent a half-turn with x/z Euler rotations.
+      this.#heading.setFromAxisAngle(this.mesh.up, heading);
+      figure.quaternion.slerp(this.#heading, Math.min(1, dt * 12));
     }
     const grounded = this.body.grounded;
     this.#landing -= dt;

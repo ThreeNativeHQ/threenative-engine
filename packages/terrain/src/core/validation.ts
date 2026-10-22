@@ -133,7 +133,10 @@ function fail(message: string): never {
 /** Rejects anything a recipe cannot round-trip: non-finite numbers, views, cycles, unsafe keys. */
 export function finiteTree(value: unknown, path = "value", depth = 0): void {
   if (depth > 32) fail(`${path}: nesting is too deep`);
-  if (typeof value === "number" && !Number.isFinite(value)) fail(`${path} must be finite`);
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) fail(`${path} must be finite`);
+    return;
+  }
   if (
     value === undefined ||
     typeof value === "function" ||
@@ -143,9 +146,15 @@ export function finiteTree(value: unknown, path = "value", depth = 0): void {
     fail(`${path} is not JSON-serializable`);
   if (value && typeof value === "object") {
     if (ArrayBuffer.isView(value)) fail(`${path}: use a plain array in recipes`);
-    for (const [key, entry] of Object.entries(value)) {
-      if (["__proto__", "prototype", "constructor"].includes(key))
+    for (const key of Object.keys(value)) {
+      if (key === "__proto__" || key === "prototype" || key === "constructor")
         fail(`${path}: unsafe object key`);
+      const entry = (value as Record<string, unknown>)[key];
+      if (typeof entry === "number") {
+        if (depth + 1 > 32) fail(`${path}.${key}: nesting is too deep`);
+        if (!Number.isFinite(entry)) fail(`${path}.${key} must be finite`);
+        continue;
+      }
       finiteTree(entry, `${path}.${key}`, depth + 1);
     }
   }
@@ -513,6 +522,8 @@ export function validateLayer(layer: Layer): void {
   }
   if (params.name !== undefined) identifier(params.name, "name");
   if (params.asset !== undefined) identifier(params.asset, "asset");
+  if (layer.type === "scatter" && typeof params.asset !== "string")
+    fail("scatter requires an asset identifier");
   if (["heightmap", "paste"].includes(layer.type) && !params.data)
     fail(`${layer.type} requires heightmap data`);
   const data = params.data as

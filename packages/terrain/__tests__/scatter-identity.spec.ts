@@ -5,6 +5,7 @@ describe("public scatter candidate identity", () => {
   it("retains candidate coordinates, scale and yaw when earlier candidates are rejected", () => {
     const terrain = new Terrain({ size: 64, resolution: 17, seed: 73 }).scatter({
       id: "trees",
+      asset: "pine",
       count: 80,
       minDistance: 0,
       avoidWater: false,
@@ -25,6 +26,7 @@ describe("public scatter candidate identity", () => {
   it("gives a new seed different candidate identities and preserves keys on round trip", () => {
     const terrain = new Terrain({ size: 64, resolution: 17 }).scatter({
       id: "trees",
+      asset: "pine",
       count: 20,
       seed: 10,
       minDistance: 0,

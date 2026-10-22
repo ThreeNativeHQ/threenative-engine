@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { TerrainEditorController } from "@threenative/terrain/editor";
 import { terrainEditor } from "@threenative/terrain/editor/server";
+import { starterAssetsDir } from "@threenative/terrain/kit";
 import { Matrix4, Quaternion, Vector3 } from "three";
 import { createServer } from "vite";
 import {
@@ -26,7 +27,7 @@ try {
     configFile: false,
     // The project's own Vite config serves the CC0 starter sets from the terrain package; this
     // standalone server has to be told, or the export would be proven with no art loaded at all.
-    publicDir: resolve("../../packages/terrain/starter-assets"),
+    publicDir: await starterAssetsDir(),
     server: { host: "127.0.0.1", port: Number(process.env.EDITOR_PORT ?? 5185) },
     plugins: [plugin],
     optimizeDeps: { exclude: ["@threenative/terrain/editor"] },

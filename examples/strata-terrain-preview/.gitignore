@@ -2,3 +2,7 @@
 /dist/
 /src/world/.bake-stamp
 /assets/
+/basis/
+/src/world/*.placements.bin
+/src/world/*.splat.rgba8
+/assets.manifest.json

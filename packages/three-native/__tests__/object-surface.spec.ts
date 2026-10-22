@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { Material, defineObjectSurface, defineTypeFlags } from "../src/object-surface.js";
+import {
+  Material,
+  defineObjectSurface,
+  defineReleaseNoops,
+  defineTypeFlags,
+} from "../src/object-surface.js";
 
 class BufferGeometry {
   readonly stored = new Map<string, unknown>();
@@ -129,5 +134,21 @@ describe("defineTypeFlags", () => {
     expect(texture.isTexture).toBe(true);
     texture.isTexture = true;
     expect(Object.hasOwn(texture, "isTexture")).toBe(true);
+  });
+});
+
+describe("defineReleaseNoops", () => {
+  it("gives lights and instanced meshes three's dispose, keeping one the back end defines", () => {
+    // A scene's exit disposes its sun, as three allows; the engine frees the light with the object.
+    class DirectionalLight {}
+    class Mesh {
+      dispose() {
+        return "engine";
+      }
+    }
+    defineReleaseNoops({ DirectionalLight, InstancedMesh: Mesh });
+    expect(new DirectionalLight() as { dispose?: () => void }).toHaveProperty("dispose");
+    expect((new DirectionalLight() as { dispose: () => void }).dispose()).toBeUndefined();
+    expect(new Mesh().dispose()).toBe("engine");
   });
 });

@@ -922,6 +922,25 @@ export class VirtualShadowNode extends ShadowBaseNode {
    */
   readonly tracker: ShadowInvalidationTracker;
   #levels: ILevel[] = [];
+  /** Core startup cover: drain all due levels without steady-state invalidation delays. */
+  startupCovered = false;
+  /** Three's type flag; core's startup gate reads it so the game loop never imports this class. */
+  readonly isVirtualShadowNode = true;
+
+  /** Every map is present and no requested/delayed invalidation remains. */
+  get settled(): boolean {
+    return (
+      this.#initialised &&
+      this.#levels.length > 0 &&
+      !this.#invalidateAll &&
+      this.#regions.length === 0 &&
+      !(this.light as DirectionalLight).shadow.needsUpdate &&
+      this.tracker.pending === 0 &&
+      this.#levels.every(
+        (level) => level.mapped.value === 1 && !level.dirty && level.pending === REASON_NONE,
+      )
+    );
+  }
   #invalidateAll = false;
   /** Regions handed to `invalidateRegion`, read and cleared by the next `updateBefore`. */
   #regions: Array<IBoundsLike & { admission?: true; urgent?: true }> = [];
@@ -1512,9 +1531,15 @@ export class VirtualShadowNode extends ShadowBaseNode {
         if (state.phase === MOTION_MOVER) this.#settle(mesh, state);
         continue;
       }
-      // A caster that casts nothing, is not drawn, or is not a layer-0 object is no business of
-      // this scan: the world's own batches reach the levels through `invalidateRegion` instead.
-      if (!mesh.castShadow || !mesh.visible || (mesh.layers.mask & 1) === 0) continue;
+      // WorldCells keeps wide aggregates on layer 0 for the main pass, but their reserved wide bit
+      // marks streamed instances whose shadow changes the world reports through `invalidateRegion`.
+      if (
+        !mesh.castShadow ||
+        !mesh.visible ||
+        (mesh.layers.mask & 1) === 0 ||
+        mesh.layers.isEnabled(VIRTUAL_SHADOW_WIDE_CASTER_LAYER)
+      )
+        continue;
       // `trackCaster` — or the game — put it on the mover layer itself, which pins it as a mover.
       if (state.phase === MOTION_STATIC && mesh.layers.isEnabled(VIRTUAL_SHADOW_MOVER_LAYER))
         continue;
@@ -2968,7 +2993,9 @@ export class VirtualShadowNode extends ShadowBaseNode {
         // *own* last render, so a burst spanning that delay is one render and a lone ask is one
         // render, and the level keeps the map and window it has in between — already right for
         // every static caster in it, missing only what streamed in since.
-        const delay = Math.max(this.options.invalidationDelay[index] ?? 0, gpuDelay);
+        const delay = this.startupCovered
+          ? 0
+          : Math.max(this.options.invalidationDelay[index] ?? 0, gpuDelay);
         const matured = level.dirty && (urgent || now - level.lastRender >= delay);
         let reason: RenderReason = REASON_NONE;
         if (windowMoved) reason = REASON_MOVE;
@@ -2983,7 +3010,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
         // can hide it from. A level that reads part of that spot draws on this frame too, so the
         // blob never stands next to the mover's new shadow. It fires once per caster, on the frame
         // the node classifies it, and at most one render per level.
-        const grant = due && (!budgetSpent || (urgentSelected && matured));
+        const grant = due && (this.startupCovered || !budgetSpent || (urgentSelected && matured));
         // The rectangles this render draws, or undefined for the whole level.
         let passes: IPartialPass[] | undefined;
         // The pages this render counted as rectangles, kept for the derived span below that turns

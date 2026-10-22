@@ -80,6 +80,7 @@
   "sideEffects": false,
   "scripts": {
     "postinstall": "node ./scripts/postinstall.mjs",
+    "patch:generate": "node scripts/generate-three-patch.mjs",
     "build": "node scripts/generate-version.mjs && tsup --config tsup.config.ts && node scripts/bundle-engine-mcp.mjs && node scripts/bundle-blender-mcp.mjs && publint",
     "typecheck": "tsc --noEmit",
     "test": "publint --strict"

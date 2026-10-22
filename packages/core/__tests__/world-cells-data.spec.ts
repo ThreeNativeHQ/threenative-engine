@@ -694,3 +694,223 @@ it("runs an owed stationary-camera refilter after the last byte-identical public
     world.dispose();
   }
 });
+
+async function spawnWorld(
+  follow: Vector3,
+  loadModel: (url: string) => Promise<Group> = async () =>
+    new Group().add(new Mesh(new BoxGeometry(1, 2, 1), new MeshBasicMaterial())),
+): Promise<WorldCells> {
+  const assets = createAssetLoader();
+  vi.spyOn(assets, "resolve").mockResolvedValue([]);
+  return WorldCells.load({
+    url: "world.json",
+    assets,
+    surface: new MeshBasicMaterial(),
+    follow: { position: follow },
+    ring: 0,
+    terrain: false,
+    data: { manifest, placements },
+    budgets: { bytes: 128, instances: 4, residentCells: 2 },
+    loadModel,
+  });
+}
+async function untilReady(world: WorldCells, position: { x: number; z: number }): Promise<void> {
+  for (let frame = 0; frame < 100; frame++) {
+    world.update();
+    await Promise.resolve();
+    if (world.readinessAt(position).ready) return;
+  }
+  throw new Error("Spawn region did not become ready within 100 updates");
+}
+
+it("resolves whenSpawnReady immediately when the spawn region is already loaded", async () => {
+  const world = await spawnWorld(new Vector3(32, 0, 32));
+  try {
+    await untilReady(world, { x: 32, z: 32 });
+    await expect(world.whenSpawnReady({ x: 32, z: 32 })).resolves.toMatchObject({
+      ready: true,
+      failures: 0,
+      loadedCells: 1,
+      requiredCells: 1,
+    });
+  } finally {
+    world.dispose();
+  }
+});
+
+it("settles a whenSpawnReady waiter on a later update that admits the spawn region", async () => {
+  const world = await spawnWorld(new Vector3(32, 0, 32));
+  const clearSpy = vi.spyOn(globalThis, "clearTimeout");
+  try {
+    expect(world.readinessAt({ x: 32, z: 32 }).ready).toBe(false);
+    const ready = world.whenSpawnReady({ x: 32, z: 32 });
+    let settled = false;
+    void ready.then(() => {
+      settled = true;
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(settled).toBe(false);
+    expect(world.readinessAt({ x: 32, z: 32 }).loadedCells).toBe(0);
+    for (let frame = 0; frame < 100 && !settled; frame++) {
+      world.update();
+      await Promise.resolve();
+      if (settled) expect(world.readinessAt({ x: 32, z: 32 }).ready).toBe(true);
+    }
+    expect(settled).toBe(true);
+    await expect(ready).resolves.toMatchObject({
+      ready: true,
+      failures: 0,
+      requiredCells: 1,
+      loadedCells: 1,
+    });
+    expect(clearSpy).toHaveBeenCalled();
+  } finally {
+    clearSpy.mockRestore();
+    world.dispose();
+  }
+});
+
+it("rejects a whenSpawnReady waiter when its spawn asset fails to load", async () => {
+  const world = await spawnWorld(new Vector3(32, 0, 32), async () => {
+    throw new Error("boom");
+  });
+  try {
+    const ready = world.whenSpawnReady({ x: 32, z: 32 });
+    let settled = false;
+    void ready.catch(() => {
+      settled = true;
+    });
+    for (let frame = 0; frame < 100 && !settled; frame++) {
+      world.update();
+      await Promise.resolve();
+    }
+    await expect(ready).rejects.toThrow("WorldCells spawn assets failed to load");
+    expect(world.readinessAt({ x: 32, z: 32 }).failures).toBeGreaterThan(0);
+  } finally {
+    world.dispose();
+  }
+});
+
+it("rejects whenSpawnReady on a disposed world without arming a deadline", async () => {
+  const world = await spawnWorld(new Vector3(32, 0, 32));
+  world.dispose();
+  vi.useFakeTimers();
+  try {
+    await expect(world.whenSpawnReady({ x: 32, z: 32 })).rejects.toThrow("WorldCells disposed");
+    expect(vi.getTimerCount()).toBe(0);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("settles a waiting whenSpawnReady when the world is disposed and clears its deadline", async () => {
+  const world = await spawnWorld(new Vector3(32, 0, 32));
+  vi.useFakeTimers();
+  try {
+    const ready = world.whenSpawnReady({ x: 224, z: 32 });
+    const expectation = expect(ready).rejects.toThrow("WorldCells spawn cancelled");
+    expect(vi.getTimerCount()).toBe(1);
+    world.dispose();
+    await expectation;
+    expect(vi.getTimerCount()).toBe(0);
+  } finally {
+    vi.useRealTimers();
+    world.dispose();
+  }
+});
+
+it("settles every concurrent whenSpawnReady waiter and clears each deadline", async () => {
+  const world = await spawnWorld(new Vector3(32, 0, 32));
+  try {
+    const first = world.whenSpawnReady({ x: 32, z: 32 });
+    const second = world.whenSpawnReady({ x: 32, z: 32 });
+    const third = world.whenSpawnReady({ x: 32, z: 32 });
+    for (let frame = 0; frame < 100; frame++) {
+      expect(() => world.update()).not.toThrow();
+      await Promise.resolve();
+      if (world.readinessAt({ x: 32, z: 32 }).ready) break;
+    }
+    const settlements = await Promise.all([first, second, third]);
+    for (const readiness of settlements) expect(readiness.ready).toBe(true);
+  } finally {
+    expect(() => world.dispose()).not.toThrow();
+  }
+});
+
+it("rejects a whenSpawnReady that exceeds its finite deadline and clears the timer", async () => {
+  const world = await spawnWorld(new Vector3(32, 0, 32));
+  vi.useFakeTimers();
+  try {
+    const ready = world.whenSpawnReady({ x: 224, z: 32 }, 0, 500);
+    const expectation = expect(ready).rejects.toThrow("WorldCells spawn exceeded 500 ms");
+    expect(vi.getTimerCount()).toBe(1);
+    await vi.advanceTimersByTimeAsync(500);
+    await expectation;
+    expect(vi.getTimerCount()).toBe(0);
+  } finally {
+    vi.useRealTimers();
+    world.dispose();
+  }
+});
+
+it.each([
+  [{ x: Number.NaN, z: 32 }, 0, 1],
+  [{ x: 32, z: Number.POSITIVE_INFINITY }, 0, 1],
+  [{ x: 32, z: 32 }, -1, 1],
+  [{ x: 32, z: 32 }, Number.NaN, 1],
+  [{ x: 32, z: 32 }, 0, 0],
+  [{ x: 32, z: 32 }, 0, Number.POSITIVE_INFINITY],
+  [{ x: 32, z: 32 }, 0, 2 ** 31],
+])("rejects malformed whenSpawnReady inputs %#", async (position, radius, timeoutMs) => {
+  const world = await spawnWorld(new Vector3(32, 0, 32));
+  try {
+    await expect(world.whenSpawnReady(position, radius, timeoutMs)).rejects.toThrow(
+      /WorldCells spawn readiness requires/,
+    );
+  } finally {
+    world.dispose();
+  }
+});
+
+it("snapshots the spawn coordinates taken at whenSpawnReady call time", async () => {
+  const world = await spawnWorld(new Vector3(224, 0, 32));
+  try {
+    const spawn = { x: 32, z: 32 };
+    const ready = world.whenSpawnReady(spawn);
+    let settled = false;
+    void ready.then(
+      () => {
+        settled = true;
+      },
+      () => {
+        settled = true;
+      },
+    );
+    spawn.x = 224;
+    world.update();
+    await Promise.resolve();
+    expect(settled).toBe(false);
+    const expectation = expect(ready).rejects.toThrow("WorldCells spawn cancelled");
+    world.dispose();
+    await expectation;
+  } finally {
+    world.dispose();
+  }
+});
+
+it("resolves a whenSpawnReady once and keeps that success after the region is evicted", async () => {
+  const follow = new Vector3(32, 0, 32);
+  const world = await spawnWorld(follow);
+  try {
+    await untilReady(world, { x: 32, z: 32 });
+    const ready = world.whenSpawnReady({ x: 32, z: 32 });
+    const resolved = await ready;
+    follow.x = 224;
+    await settle(world);
+    expect(world.stats().evictions).toBeGreaterThan(0);
+    await expect(ready).resolves.toBe(resolved);
+  } finally {
+    world.dispose();
+  }
+});

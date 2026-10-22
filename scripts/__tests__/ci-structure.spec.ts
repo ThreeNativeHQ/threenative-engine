@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { cp, mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { runInNewContext } from "node:vm";
 import { describe, expect, it } from "vitest";
 import { makeTempDir } from "../../test-support/temp-dir.js";
 import { allTemplates } from "../../test-support/templates.js";
@@ -735,6 +736,25 @@ function classifyScope(
 }
 
 describe("CI pipeline structure", () => {
+  it("checks generated Three.js patches before publishing even cached workspace builds", async () => {
+    const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
+    const build = requiredJob(ci, "build-artifacts");
+    const step = "Verify the generated Three.js patch has not drifted";
+    expect(build).toContain(`- name: ${step}`);
+    expect(build.indexOf(step)).toBeLessThan(
+      build.indexOf("uses: ./.github/actions/workspace-dist"),
+    );
+    expect(build).toContain("needs.scope.outputs.selection == 'warm'");
+    const check = build.slice(
+      build.indexOf(`      - name: ${step}`),
+      build.indexOf("      - uses: ./.github/actions/workspace-dist"),
+    );
+    expect(check).toContain("shell: bash");
+    expect(check).toContain("run: time pnpm --filter @threenative/core patch:generate --check");
+    expect(check).not.toMatch(/continue-on-error:|if:|\|\||--archive/u);
+    expect(ci.match(/patch:generate --check/gu)).toHaveLength(1);
+  });
+
   it("uses one fail-closed scope decision before expensive CI and native jobs", async () => {
     const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
     const scope = requiredJob(ci, "scope");
@@ -1295,6 +1315,239 @@ describe("CI pipeline structure", () => {
     `\${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(needs.${need}.outputs.runner_admission || '[]'), '${id}')) && 'ubuntu-24.04' || vars.TN_RUNNER }}`;
   const heavyMatrix = (format: string, axis: string, need = "scope") =>
     `\${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(needs.${need}.outputs.runner_admission || '[]'), format('${format}', ${axis}))) && 'ubuntu-24.04' || vars.TN_RUNNER }}`;
+  const gpuPinGuard =
+    "(!vars.TN_RUNNER_GPU_HEAD || (github.event.pull_request.head.sha || github.event.merge_group.head_sha || (github.event_name == 'push' && github.sha) || '') == vars.TN_RUNNER_GPU_HEAD) && vars.TN_RUNNER_GPU || ''";
+  const gpuHeavy = (id: string, need = "scope") =>
+    `\${{ github.event.pull_request.head.repo.fork && 'ubuntu-24.04' || (${gpuPinGuard}) || ((!vars.TN_RUNNER || !contains(fromJSON(needs.${need}.outputs.runner_admission || '[]'), '${id}')) && 'ubuntu-24.04' || vars.TN_RUNNER) }}`;
+  const gpuHeavyMatrix = (format: string, axis: string, need = "scope") =>
+    `\${{ github.event.pull_request.head.repo.fork && 'ubuntu-24.04' || ((${axis} == 'racing' || ${axis} == 'rain') && (${gpuPinGuard})) || ((!vars.TN_RUNNER || !contains(fromJSON(needs.${need}.outputs.runner_admission || '[]'), format('${format}', ${axis}))) && 'ubuntu-24.04' || vars.TN_RUNNER) }}`;
+  const workflowMatrixContext = (input: {
+    template: string;
+    fork?: boolean;
+    pin?: string;
+    gpu?: string;
+    runner?: string;
+    admitted?: boolean;
+  }) => ({
+    matrix: { template: input.template },
+    vars: {
+      TN_RUNNER_GPU_HEAD: input.pin ?? "",
+      TN_RUNNER_GPU: input.gpu ?? "",
+      TN_RUNNER: input.runner ?? "",
+    },
+    github: {
+      event_name: "pull_request",
+      event: {
+        pull_request: { head: { sha: "candidate-sha", repo: { fork: input.fork ?? false } } },
+        merge_group: { head_sha: "" },
+      },
+      sha: "",
+    },
+    needs: {
+      scope: {
+        outputs: {
+          runner_admission: JSON.stringify(
+            input.admitted === false ? [] : [`ci:template-nonvisual:${input.template}`],
+          ),
+        },
+      },
+    },
+    fromJSON: JSON.parse,
+    contains: (values: unknown[], value: unknown) => values.includes(value),
+    format: (pattern: string, value: unknown) => pattern.replace("{0}", String(value)),
+  });
+
+  it("pins optional GPU routing to the exact supported event SHA without changing fallbacks", async () => {
+    const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
+    const scope = requiredJob(ci, "scope");
+    const gpuGuard = scope.match(/TN_RUNNER_GPU: \$\{\{ (.+) \}\}/u)?.[1];
+    expect(gpuGuard).toBe(gpuPinGuard);
+
+    const pinnedGpuHeavy = (id: string) =>
+      `\${{ github.event.pull_request.head.repo.fork && 'ubuntu-24.04' || (${gpuPinGuard}) || ((!vars.TN_RUNNER || !contains(fromJSON(needs.scope.outputs.runner_admission || '[]'), '${id}')) && 'ubuntu-24.04' || vars.TN_RUNNER) }}`;
+    const pinnedGpuMatrix = gpuHeavyMatrix("ci:template-nonvisual:{0}", "matrix.template");
+    for (const [job, expected] of [
+      ["strata", pinnedGpuHeavy("ci:strata")],
+      ["benchmark", pinnedGpuHeavy("ci:benchmark")],
+      ["template-nonvisual", pinnedGpuMatrix],
+    ] as const) {
+      expect(requiredJob(ci, job).match(/^ {4}runs-on: (.+)$/mu)?.[1], `${job} GPU pin`).toBe(
+        expected,
+      );
+    }
+
+    const evaluateGpuGuard = (input: {
+      isPullRequest: boolean;
+      headSha?: string;
+      eventName?: string;
+      eventSha?: string;
+      mergeGroupSha?: string;
+      pin?: string;
+      gpuLabel?: string;
+    }): unknown =>
+      runInNewContext(gpuGuard ?? "", {
+        vars: {
+          TN_RUNNER_GPU_HEAD: input.pin ?? "",
+          TN_RUNNER_GPU: input.gpuLabel ?? "",
+        },
+        github: {
+          event_name: input.eventName ?? (input.isPullRequest ? "pull_request" : "push"),
+          sha: input.eventSha ?? "",
+          event: {
+            pull_request: { head: { sha: input.isPullRequest ? (input.headSha ?? "") : "" } },
+            merge_group: { head_sha: input.mergeGroupSha ?? "" },
+          },
+        },
+      });
+    expect(
+      evaluateGpuGuard({
+        isPullRequest: true,
+        headSha: "candidate-sha",
+        eventSha: "merge-candidate-sha",
+        pin: "candidate-sha",
+        gpuLabel: "tn-gpu-pr483",
+      }),
+    ).toBe("tn-gpu-pr483");
+    expect(
+      evaluateGpuGuard({
+        isPullRequest: true,
+        headSha: "different-sha",
+        eventSha: "candidate-sha",
+        pin: "candidate-sha",
+        gpuLabel: "tn-gpu-pr483",
+      }),
+    ).toBe("");
+    expect(
+      evaluateGpuGuard({ isPullRequest: true, headSha: "candidate-sha", gpuLabel: "tn-gpu-pr483" }),
+    ).toBe("tn-gpu-pr483");
+    expect(
+      evaluateGpuGuard({
+        isPullRequest: true,
+        headSha: "candidate-sha",
+        pin: "candidate-sha",
+      }),
+    ).toBe("");
+    expect(
+      evaluateGpuGuard({
+        isPullRequest: false,
+        pin: "candidate-sha",
+        gpuLabel: "tn-gpu-pr483",
+      }),
+    ).toBe("");
+    for (const eventName of ["push", "merge_group"]) {
+      for (const matches of [true, false]) {
+        expect
+          .soft(
+            evaluateGpuGuard({
+              isPullRequest: false,
+              eventName,
+              eventSha: eventName === "push" ? "candidate-sha" : "different-event-sha",
+              mergeGroupSha: eventName === "merge_group" ? "candidate-sha" : "",
+              pin: matches ? "candidate-sha" : "different-pin",
+              gpuLabel: "tn-gpu-pr483",
+            }),
+            `${eventName} exact pin match=${matches}`,
+          )
+          .toBe(matches ? "tn-gpu-pr483" : "");
+      }
+    }
+    for (const eventName of ["workflow_dispatch", "schedule"]) {
+      expect(
+        evaluateGpuGuard({
+          isPullRequest: false,
+          eventName,
+          eventSha: "candidate-sha",
+          pin: "candidate-sha",
+          gpuLabel: "tn-gpu-pr483",
+        }),
+        `${eventName} cannot use a pinned GPU route`,
+      ).toBe("");
+      expect(evaluateGpuGuard({ isPullRequest: false, eventName, gpuLabel: "tn-gpu-pr483" })).toBe(
+        "tn-gpu-pr483",
+      );
+    }
+  });
+
+  it("routes Rain to the pinned GPU only for eligible non-fork runs", async () => {
+    const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
+    const job = requiredJob(ci, "template-nonvisual");
+    const matrixExpression = job.match(/^ {4}runs-on: \$\{\{ (.+) \}\}$/mu)?.[1] ?? "";
+    const softwareExpression =
+      job.match(/^ {6}TN_PLAYTEST_ALLOW_SOFTWARE: \$\{\{ (.+) \}\}$/mu)?.[1] ?? "";
+    const cases = [
+      { template: "rain", pin: "candidate-sha", gpu: "", expected: "ubuntu-24.04" },
+      {
+        template: "rain",
+        pin: "candidate-sha",
+        gpu: "tn-gpu-pr483",
+        expected: "tn-gpu-pr483",
+      },
+      {
+        template: "racing",
+        pin: "candidate-sha",
+        gpu: "tn-gpu-pr483",
+        expected: "tn-gpu-pr483",
+      },
+      {
+        template: "rain",
+        pin: "candidate-sha",
+        gpu: "tn-gpu-pr483",
+        admitted: false,
+        expected: "tn-gpu-pr483",
+      },
+      {
+        template: "rain",
+        fork: true,
+        pin: "candidate-sha",
+        gpu: "tn-gpu-pr483",
+        expected: "ubuntu-24.04",
+      },
+      {
+        template: "rain",
+        pin: "different-sha",
+        gpu: "tn-gpu-pr483",
+        runner: "tn-local",
+        expected: "tn-local",
+      },
+      {
+        template: "starter",
+        pin: "candidate-sha",
+        gpu: "tn-gpu-pr483",
+        runner: "tn-local",
+        expected: "tn-local",
+      },
+      {
+        template: "rain",
+        pin: "different-sha",
+        gpu: "tn-gpu-pr483",
+        admitted: false,
+        expected: "ubuntu-24.04",
+      },
+    ];
+    for (const input of cases) {
+      const result = runInNewContext(matrixExpression, workflowMatrixContext(input));
+      expect(result, `${input.template} routes to ${input.expected}`).toBe(input.expected);
+    }
+
+    const softwareCases = [
+      { template: "rain", pin: "candidate-sha", gpu: "tn-gpu-pr483", expected: "0" },
+      {
+        template: "rain",
+        fork: true,
+        pin: "candidate-sha",
+        gpu: "tn-gpu-pr483",
+        expected: "1",
+      },
+      { template: "rain", pin: "different-sha", gpu: "tn-gpu-pr483", expected: "1" },
+      { template: "rain", pin: "candidate-sha", gpu: "", expected: "1" },
+      { template: "starter", pin: "candidate-sha", gpu: "tn-gpu-pr483", expected: "1" },
+    ];
+    for (const input of softwareCases)
+      expect(runInNewContext(softwareExpression, workflowMatrixContext(input))).toBe(
+        input.expected,
+      );
+  });
+
   // `starter-linux` resolves its per-row runner inside the scope job, so the admission output it
   // reads is a step output there, not a `needs` one.
   const heavyStep = (id: string) =>
@@ -1308,13 +1561,14 @@ describe("CI pipeline structure", () => {
     ["ci.yml:test-native", heavy("ci:test-native")],
     ["ci.yml:test-browser", heavy("ci:test-browser")],
     ["ci.yml:test-playtest", heavy("ci:test-playtest")],
-    ["ci.yml:benchmark", heavy("ci:benchmark")],
+    ["ci.yml:strata", gpuHeavy("ci:strata")],
+    ["ci.yml:benchmark", gpuHeavy("ci:benchmark")],
     ["ci.yml:build-artifacts", heavy("ci:build-artifacts")],
     ["ci.yml:performance-contracts", heavy("ci:performance-contracts")],
     ["ci.yml:budgets", heavy("ci:budgets")],
     ["ci.yml:test-unit", heavyMatrix("ci:test-unit:{0}", "matrix.shard")],
     ["ci.yml:golden-path-template", heavyMatrix("ci:golden-path-template:{0}", "matrix.template")],
-    ["ci.yml:template-nonvisual", heavyMatrix("ci:template-nonvisual:{0}", "matrix.template")],
+    ["ci.yml:template-nonvisual", gpuHeavyMatrix("ci:template-nonvisual:{0}", "matrix.template")],
     ["ci.yml:native-engine", heavy("ci:native-engine")],
     ["integration.yml:animation", heavy("integration:animation", "paths")],
     ["integration.yml:capture", heavy("integration:capture", "paths")],
@@ -1520,7 +1774,7 @@ describe("CI pipeline structure", () => {
     return rows;
   }
 
-  it("routes every movable Linux job through exactly one TN_RUNNER switch", async () => {
+  it("routes every movable Linux job through its configured runner pool", async () => {
     const directory = path.join(repo, ".github/workflows");
     const routed = [
       ".github/workflows/ci.yml",
@@ -1621,6 +1875,7 @@ describe("CI pipeline structure", () => {
     expect(scope).toContain("runner_admission: ${{ steps.admission.outputs.runner_admission }}");
     expect(scope).toContain("node scripts/ci-runner-admission.mjs --admit");
     expect(scope).toContain("TN_RUNNER_SLOTS: ${{ vars.TN_RUNNER_SLOTS }}");
+    expect(scope).toContain(`TN_RUNNER_GPU: \${{ ${gpuPinGuard} }}`);
     const forwarded =
       ci.match(/runner_admission: \$\{\{ needs\.scope\.outputs\.runner_admission \}\}/gu) ?? [];
     expect(forwarded, "one plan reaches both reusable workflows").toHaveLength(2);
@@ -2173,12 +2428,14 @@ describe("CI pipeline structure", () => {
     const job = requiredJob(ci, "template-nonvisual");
     // Runs on every event since 2026-09-01 (owner call): the PR skip reported nothing on the
     // branch where the regression was written, and the merge that shipped it reported too late.
-    expect(job).not.toContain("github.event_name == 'push'");
+    expect(job).not.toMatch(/^\s+if:.*github\.event_name/mu);
     // An `if:` gate naming the event, not any mention of it: the TN_RUNNER routing expression
     // (PRD-480) reads `github.event.pull_request.head.repo.fork` in every routed job and gates
     // nothing on it. What this forbids is a gate that skips pull requests.
     expect(job).not.toMatch(/^\s+if:.*pull_request/mu);
-    expect(job).toContain('TN_PLAYTEST_ALLOW_SOFTWARE: "1"');
+    expect(job).toContain(
+      "TN_PLAYTEST_ALLOW_SOFTWARE: ${{ (matrix.template == 'rain' && !github.event.pull_request.head.repo.fork &&",
+    );
     expect(job).toContain("non-visual-scenarios.mjs");
     expect(job).toContain("threenative-playtest");
     expect(matrixTemplates(job)).toEqual([...expectedTemplates].sort());
@@ -2227,7 +2484,7 @@ describe("CI pipeline structure", () => {
     expect(lane).not.toMatch(/^\s+max-parallel:/mu);
     expect(lane).toContain("fail-fast: false");
     expect(lane).toContain(
-      `runs-on: ${heavyMatrix("ci:template-nonvisual:{0}", "matrix.template")}`,
+      `runs-on: ${gpuHeavyMatrix("ci:template-nonvisual:{0}", "matrix.template")}`,
     );
   });
 
@@ -3252,7 +3509,7 @@ describe("CI pipeline structure", () => {
     // The lane it delegates to has to run the same classifier and runner, on every event.
     expect(nonVisual).toContain("non-visual-scenarios.mjs");
     expect(nonVisual).toContain("threenative-playtest");
-    expect(nonVisual).not.toContain("github.event_name == 'push'");
+    expect(nonVisual).not.toMatch(/^\s+if:.*github\.event_name/mu);
     // And it has to cover every template this matrix drives.
     const driven = matrixTemplates(goldenPath);
     expect(driven.length).toBeGreaterThan(0);
@@ -4035,6 +4292,77 @@ describe("PRD-373 selective feature verification", () => {
     }
   });
 
+  describe("strata terrain CI selection", () => {
+    it.each([
+      "packages/terrain/src/index.ts",
+      "examples/strata-terrain-preview/src/game.ts",
+      "packages/core/src/world.ts",
+      "packages/core/src/world-cells.ts",
+      "packages/core/__tests__/world-cells-terrain.spec.ts",
+    ])("selects strata job when %s changes on develop PR", async (path) => {
+      const fixture = await scopeFixture();
+      try {
+        const head = await commitScopeChange(
+          fixture,
+          path,
+          "export const terrainTouch = true;\n",
+          "terrain change",
+        );
+        const plan = classifyScope(fixture.root, fixture.base, head, ["--target", "develop"]);
+        expect(plan.selection).toBe("full");
+        const jobs = plan.jobs as Record<string, { required: boolean }>;
+        expect(jobs.strata?.required).toBe(true);
+      } finally {
+        await removeFixture(fixture.root);
+      }
+    });
+
+    it("skips strata job for an unrelated template change on develop PR", async () => {
+      const fixture = await scopeFixture();
+      try {
+        const head = await commitScopeChange(
+          fixture,
+          "packages/create-threenative/templates/rain/src/game.ts",
+          "export const rainTouch = true;\n",
+          "unrelated template",
+        );
+        const plan = classifyScope(fixture.root, fixture.base, head, ["--target", "develop"]);
+        const jobs = plan.jobs as Record<string, { required: boolean }>;
+        expect(jobs.strata?.required).toBe(false);
+      } finally {
+        await removeFixture(fixture.root);
+      }
+    });
+
+    it("runs every strata proof lane, gated by the scope plan", async () => {
+      const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
+      const strata = requiredJob(ci, "strata");
+      expect(strata).toContain("fromJSON(needs.scope.outputs.plan).jobs.strata.required");
+      for (const lane of ["web", "editor", "authored", "custom", "export"]) {
+        expect(strata).toContain(`test:terrain:${lane}`);
+      }
+      expect(strata).toContain("test:consumer");
+    });
+
+    it("requires strata job in full qualification mode", async () => {
+      const fixture = await scopeFixture();
+      try {
+        const head = await commitScopeChange(
+          fixture,
+          "packages/create-threenative/templates/rain/src/game.ts",
+          "export const rainTouch = true;\n",
+          "unrelated template",
+        );
+        const plan = classifyScope(fixture.root, fixture.base, head, ["--target", "main"]);
+        expect(plan.qualification).toBe(true);
+        const jobs = plan.jobs as Record<string, { required: boolean }>;
+        expect(jobs.strata?.required).toBe(true);
+      } finally {
+        await removeFixture(fixture.root);
+      }
+    });
+  });
+
   it("a fresh install cannot stop on the interactive node_modules purge prompt", () => {
     // A checkout whose node_modules was not created by this pnpm makes `pnpm install` ask before
     // purging it. Agents run without a TTY, so the prompt hangs them until `CI=true` is added by
@@ -4321,6 +4649,7 @@ const CI_SKIPPED_JOBS = [
   "golden-path-template",
   "native-platforms",
   "performance-contracts",
+  "strata",
   "template-nonvisual",
   "test",
   "test-browser",
@@ -4372,10 +4701,13 @@ describe("a CI-configuration-only pull request", () => {
       expect(Object.values(jobs).filter((job) => job.required).length).toBeGreaterThan(6);
       // Every gate the `ci` selection skipped comes back. `native-platforms` is the one a clean
       // develop diff legitimately waives, and this diff does not touch a native path.
-      for (const name of CI_SKIPPED_JOBS.filter((job) => job !== "native-platforms")) {
+      for (const name of CI_SKIPPED_JOBS.filter(
+        (job) => job !== "native-platforms" && job !== "strata",
+      )) {
         expect(jobs[name]?.required, name).toBe(true);
       }
       expect(jobs["native-platforms"]?.required).toBe(true);
+      expect(jobs.strata?.required).toBe(false);
     } finally {
       await removeFixture(fixture.root);
     }

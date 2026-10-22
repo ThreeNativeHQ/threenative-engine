@@ -1,7 +1,13 @@
 import { PMREMNode } from "three/webgpu";
 import { describe, expect, test, vi } from "vitest";
 
-import { type IWarmUpProgress, warmUpComputeNodes, warmUpScene } from "../src/warmup.js";
+import { StartupReadiness } from "../src/startup-readiness.js";
+import {
+  type IWarmUpProgress,
+  warmUpComputeNodes,
+  warmUpScene,
+  warmUpSceneWithCompletion,
+} from "../src/warmup.js";
 
 /**
  * The launch this exists to fix: a Pixel 8 spent 24.5 seconds across 107 pipeline compiles inside
@@ -56,6 +62,130 @@ const run = (renderer: any, scene: any, options: any = {}) =>
   warmUpScene(renderer, scene, {} as never, { granularity: "object", ...options });
 
 describe("scene warm-up", () => {
+  test("keeps the original timed-out compile observable to a launch gate", async () => {
+    let resolveCompile: () => void = () => undefined;
+    let compileCalls = 0;
+    const renderer = {
+      compileAsync: () => {
+        compileCalls += 1;
+        return new Promise<void>((resolve) => {
+          resolveCompile = resolve;
+        });
+      },
+    };
+    const resultPromise = warmUpSceneWithCompletion(renderer, sceneOf(1) as never, {} as never, {
+      budgetMs: 10,
+      compileTimeoutMs: 5,
+      granularity: "scene",
+      yieldFrame: () => new Promise<void>((resolve) => setTimeout(resolve, 0)),
+    });
+    const result = await resultPromise;
+
+    expect(result.report.timedOut).toBe(true);
+    expect(compileCalls).toBe(1);
+    const readiness = new StartupReadiness({
+      afterHolds: () => result.completion,
+      settled: () => true,
+      stableFrames: 1,
+    });
+    const ready = readiness.whenReady();
+    readiness.hold("streamed-world", Promise.resolve());
+    readiness.start();
+    for (let index = 0; index < 8; index += 1) await Promise.resolve();
+    readiness.observe(1);
+    for (let index = 0; index < 8; index += 1) await Promise.resolve();
+    expect(readiness.ready).toBe(false);
+
+    resolveCompile();
+    await result.completion;
+    for (let index = 0; index < 8; index += 1) await Promise.resolve();
+    readiness.observe(1);
+    readiness.observe(1);
+    await ready;
+    expect(readiness.ready).toBe(true);
+    expect(compileCalls).toBe(1);
+  }, 10_000);
+
+  test("settles a timed-out compile whose covered pass the expired budget skipped", async () => {
+    // The compile outran the held budget, so the covered pass never started: that is lazy work,
+    // not a failure. It rejected with "covered world warm render did not settle", and the held
+    // gate turned a slow compile into TN_STARTUP_STALLED: the forest's endless loading screen.
+    let clock = 0;
+    const time = vi.spyOn(performance, "now").mockImplementation(() => clock);
+    try {
+      let resolveCompile: () => void = () => undefined;
+      const warmUpWorldPass = vi.fn();
+      const result = await warmUpSceneWithCompletion(
+        {
+          compileAsync: () =>
+            new Promise<void>((resolve) => {
+              resolveCompile = resolve;
+            }),
+          warmUpWorldPass,
+        },
+        sceneOf(1) as never,
+        {} as never,
+        {
+          budgetMs: 10,
+          granularity: "scene",
+          yieldFrame: () => {
+            clock += 20;
+            return Promise.resolve();
+          },
+        },
+      );
+
+      expect(result.report.timedOut).toBe(true);
+      expect(warmUpWorldPass).not.toHaveBeenCalled();
+      resolveCompile();
+      await expect(result.completion).resolves.toBeUndefined();
+    } finally {
+      time.mockRestore();
+    }
+  }, 10_000);
+
+  test("preserves a timed-out compile rejection for the held startup gate", async () => {
+    let rejectCompile: (error: Error) => void = () => undefined;
+    let compileCalls = 0;
+    const failure = new Error("pipeline creation failed");
+    const result = await warmUpSceneWithCompletion(
+      {
+        compileAsync: () => {
+          compileCalls += 1;
+          return new Promise<void>((_resolve, reject) => {
+            rejectCompile = reject;
+          });
+        },
+      },
+      sceneOf(1) as never,
+      {} as never,
+      {
+        budgetMs: 10,
+        compileTimeoutMs: 5,
+        granularity: "scene",
+        yieldFrame: () => new Promise<void>((resolve) => setTimeout(resolve, 0)),
+      },
+    );
+
+    expect(result.report.timedOut).toBe(true);
+    const readiness = new StartupReadiness({
+      afterHolds: () => result.completion,
+      settled: () => true,
+      stableFrames: 1,
+    });
+    const ready = readiness.whenReady();
+    readiness.hold("streamed-world", Promise.resolve());
+    readiness.start();
+    for (let index = 0; index < 8; index += 1) await Promise.resolve();
+    readiness.observe(1);
+    for (let index = 0; index < 8; index += 1) await Promise.resolve();
+
+    const rejected = expect(ready).rejects.toBe(failure);
+    rejectCompile(failure);
+    await rejected;
+    expect(readiness.ready).toBe(false);
+    expect(compileCalls).toBe(1);
+  }, 10_000);
   test("should prepare the scene PMREM on the raw renderer before the covered world pass", async () => {
     const previous = Object.getOwnPropertyDescriptor(PMREMNode, "prepareTextureAsync");
     const environment = { isTexture: true } as never;
@@ -883,6 +1013,33 @@ describe("scene warm-up", () => {
     expect(report.passes).toEqual(["main", "reflection"]);
   });
 
+  test("should walk a shared node subgraph once when it looks for a reflector", async () => {
+    // A diamond chain: every node lists the next one twice, so a walk without a visited set makes
+    // 2^20 calls. TSL graphs share nodes like this all over a terrain material.
+    let calls = 0;
+    const children = (list: unknown[]) => {
+      calls += 1;
+      return list;
+    };
+    let tail: unknown = { isNode: true, getChildren: () => children([]) };
+    for (let level = 0; level < 20; level += 1) {
+      const next = tail;
+      tail = { isNode: true, getChildren: () => children([next, next]) };
+    }
+    const material = { isNodeMaterial: true, colorNode: tail };
+    const renderer = {
+      compileAsync: () => Promise.resolve(),
+      render: () => undefined,
+      raw: { shadowMap: { enabled: true } },
+    };
+    const scene = group("scene", [{ children: [], material, name: "ground" }]);
+    const report = await warmUpScene(renderer as never, scene as never, {} as never, {
+      yieldFrame: () => Promise.resolve(),
+    });
+    expect(report.passes).toEqual(["main"]);
+    expect(calls).toBeLessThanOrEqual(21);
+  });
+
   test("should not render passes when renderPasses is false", async () => {
     const render = vi.fn();
     const renderer = {
@@ -1081,6 +1238,114 @@ describe("scene warm-up", () => {
     expect(raw.autoClear).toBe(true);
     expect(raw.shadowMap.needsUpdate).toBe(false);
     expect(scene.visible).toBe(false);
+  });
+
+  test("should not expand a shared diamond DAG exponentially while reporting the same passes", async () => {
+    let calls = 0;
+    const leaf: { isNode: boolean; getChildren: () => unknown[] } = {
+      isNode: true,
+      getChildren: () => {
+        calls += 1;
+        return [];
+      },
+    };
+    let root: unknown = leaf;
+    const depth = 12;
+    for (let index = 0; index < depth; index += 1) {
+      const next: unknown = root;
+      const level: { isNode: boolean; getChildren: () => unknown[] } = {
+        isNode: true,
+        getChildren: () => {
+          calls += 1;
+          return [next, next];
+        },
+      };
+      root = level;
+    }
+    const material = { isNodeMaterial: true, a: root, b: root };
+    const renderer = {
+      compileAsync: () => Promise.resolve(),
+      render: vi.fn(),
+      raw: { shadowMap: { enabled: false } },
+    };
+    const scene = group("scene", [{ children: [], material, name: "water" }]);
+    const report = await warmUpScene(renderer as never, scene as never, {} as never, {
+      yieldFrame: () => Promise.resolve(),
+    });
+    expect(report.passes).toEqual(["main"]);
+    expect(renderer.render).not.toHaveBeenCalled();
+    expect(calls).toBeLessThan(50);
+  });
+
+  test("should retain reflection when a shared node is first reached deep past the cutoff", async () => {
+    const reflectorNode = { isNode: true, _reflectorBaseNode: {}, getChildren: () => [] };
+    const chain = (length: number, leaf: unknown): unknown => {
+      let next: unknown = leaf;
+      for (let index = 0; index < length; index += 1) {
+        const current: unknown = next;
+        const level = {
+          isNode: true,
+          getChildren: () => [current],
+        };
+        next = level;
+      }
+      return next;
+    };
+    const tail = chain(4, reflectorNode);
+    const shared = { isNode: true, getChildren: () => [tail] };
+    const deepRoot = chain(60, shared);
+    const material = { isNodeMaterial: true, deep: deepRoot, shallow: shared };
+    const renderer = {
+      compileAsync: () => Promise.resolve(),
+      render: () => undefined,
+      raw: { shadowMap: { enabled: false } },
+    };
+    const scene = group("scene", [{ children: [], material, name: "water" }]);
+    const report = await warmUpScene(renderer as never, scene as never, {} as never, {
+      yieldFrame: () => Promise.resolve(),
+    });
+    expect(report.passes).toEqual(["main", "reflection"]);
+  });
+
+  test("should discover a reflector added between two warm-ups", async () => {
+    const reflectorNode = { isNode: true, _reflectorBaseNode: {}, getChildren: () => [] };
+    const children: unknown[] = [];
+    const plain = { isNode: true, getChildren: () => children };
+    const material = { isNodeMaterial: true, colorNode: plain };
+    const renderer = {
+      compileAsync: () => Promise.resolve(),
+      render: () => undefined,
+      raw: { shadowMap: { enabled: false } },
+    };
+    const scene = group("scene", [{ children: [], material, name: "water" }]);
+    const first = await warmUpScene(renderer as never, scene as never, {} as never, {
+      yieldFrame: () => Promise.resolve(),
+    });
+    expect(first.passes).toEqual(["main"]);
+    children.push(reflectorNode);
+    const second = await warmUpScene(renderer as never, scene as never, {} as never, {
+      yieldFrame: () => Promise.resolve(),
+    });
+    expect(second.passes).toEqual(["main", "reflection"]);
+  });
+
+  test("should terminate on a node cycle without a reflector", async () => {
+    const cyclic: { isNode: boolean; getChildren: () => unknown[] } = {
+      isNode: true,
+      getChildren: () => [cyclic],
+    };
+    const material = { isNodeMaterial: true, colorNode: cyclic };
+    const renderer = {
+      compileAsync: () => Promise.resolve(),
+      render: vi.fn(),
+      raw: { shadowMap: { enabled: false } },
+    };
+    const scene = group("scene", [{ children: [], material, name: "water" }]);
+    const report = await warmUpScene(renderer as never, scene as never, {} as never, {
+      yieldFrame: () => Promise.resolve(),
+    });
+    expect(report.passes).toEqual(["main"]);
+    expect(renderer.render).not.toHaveBeenCalled();
   });
 });
 

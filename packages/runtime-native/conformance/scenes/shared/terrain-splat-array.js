@@ -1,4 +1,4 @@
-import { saturate } from "three/tsl";
+import { positionWorld, saturate, texture, vec3 } from "three/tsl";
 import { loadTerrainSplat } from "../../../../core/src/world-terrain-splat.ts";
 import { assertCondition, startVisualScene, THREE } from "./scene-support.js";
 
@@ -28,7 +28,7 @@ function mapRgb(layer, kind, x, y) {
     const crest = (Math.floor(x / 2) + Math.floor(y / 2) + layer) % 2 === 0;
     return crest ? [230, 230, 230] : [25, 25, 25];
   }
-  if (kind === "nrm") return [128 + (layer % 5) * 24, 128 + (((layer >> 1) % 5) * 20) % 127, 255];
+  if (kind === "nrm") return [128 + (layer % 5) * 24, 128 + ((((layer >> 1) % 5) * 20) % 127), 255];
   if (kind === "orm") return [255, 40 + ((layer * 17) % 200), (layer % 3) * 40];
   const step = 2 + (layer % 4);
   const on = (Math.floor(x / step) + Math.floor(y / step) + layer) % 2 === 0;
@@ -76,6 +76,7 @@ function layersTable() {
       id: `layer${slot}`,
       lo: 0.25,
       mask: `m${slot}`,
+      maps: slot === 0 ? { height: "shared/layer0-height.png" } : undefined,
       normal: true,
       orm: true,
       tile: 2,
@@ -83,7 +84,18 @@ function layersTable() {
     });
   }
   return {
-    base: { id: "base", normal: true, orm: true, tile: 2, tint: [0.85, 0.85, 0.88] },
+    base: {
+      id: "base",
+      maps: {
+        diffuse: "shared/base-color.png",
+        normal: "shared/base-nor_gl.png",
+        orm: "shared/base-arm.png",
+      },
+      normal: true,
+      orm: true,
+      tile: 2,
+      tint: [0.85, 0.85, 0.88],
+    },
     breakup: { push: 0.06, scale: 0.35 },
     layers,
     macro: { max: 1.1, min: 0.85, scale: 0.12 },
@@ -92,8 +104,18 @@ function layersTable() {
   };
 }
 
+/** Game source intentionally changes the baked appearance while leaving its descriptors absent. */
+function gameTable(baked) {
+  return {
+    base: baked.base,
+    breakup: { ...baked.breakup, push: 0 },
+    macro: { ...baked.macro, min: 1, max: 1 },
+    layers: baked.layers,
+  };
+}
+
 /** world.json, the table and the mask bytes, served the way a game's own package is. */
-function packageAssets() {
+function packageAssets(table = layersTable()) {
   const files = new Map([
     [
       "world.json",
@@ -103,7 +125,7 @@ function packageAssets() {
         version: 1,
       }),
     ],
-    ["layers/table.json", JSON.stringify(layersTable())],
+    ["layers/table.json", JSON.stringify(table)],
     ["layers/splat.rgba8", splatBytes()],
   ]);
   return {
@@ -113,7 +135,16 @@ function packageAssets() {
       return [URL.createObjectURL(new Blob([bytes], { type: "application/octet-stream" }))];
     },
     texture: async (path, options = {}) => {
-      const match = /^layers\/(?:base|layer(\d+))_(diff|nrm|orm|h)\.jpg$/u.exec(path);
+      // Explicit package paths resolve to the same fixtures as the convention-named maps.
+      const aliases = {
+        "shared/base-color.png": "layers/base_diff.jpg",
+        "shared/base-nor_gl.png": "layers/base_nrm.jpg",
+        "shared/base-arm.png": "layers/base_orm.jpg",
+        "shared/layer0-height.png": "layers/layer0_h.jpg",
+      };
+      const match = /^layers\/(?:base|layer(\d+))_(diff|nrm|orm|h)\.jpg$/u.exec(
+        aliases[path] ?? path,
+      );
       assertCondition(match !== null, `terrain-splat-array: unexpected map '${path}'`);
       const texture = layerTexture(
         match[1] === undefined ? 0 : Number(match[1]),
@@ -126,16 +157,106 @@ function packageAssets() {
   };
 }
 
+export function assertCallbackPixels(pixels) {
+  assertCondition(
+    pixels instanceof Uint8Array && pixels.length === 64,
+    "callback readback must be 4x4 RGBA8",
+  );
+  const counts = [0, 0, 0];
+  // Linear RGBA8: sRGB albedo at texel (4,4), scaled by callback index; normal/ORM stay data.
+  const expected = [
+    [67, 128, 40],
+    [135, 128, 40],
+    [8, 152, 57],
+  ];
+  for (let offset = 0; offset < pixels.length; offset += 4) {
+    const index = expected.findIndex((rgb) =>
+      rgb.every((value, channel) => Math.abs(pixels[offset + channel] - value) <= 1),
+    );
+    assertCondition(
+      index !== -1 && pixels[offset + 3] === 255,
+      `unexpected callback pixel ${pixels.slice(offset, offset + 4)}`,
+    );
+    counts[index] += 1;
+  }
+  // Existing plane-0 r/g bytes repeat every four cells; each retained mask paints four texels.
+  assertCondition(counts.join() === "8,4,4", `callback blend populations: ${counts}`);
+}
+
+async function verifyCallbacks(renderer) {
+  const baked = layersTable();
+  baked.layers = baked.layers.slice(0, 2);
+  const material = await loadTerrainSplat({
+    assets: packageAssets(baked),
+    renderer: { raw: renderer },
+    table: gameTable(baked),
+    url: "world.json",
+    layerSample: ({ diffuse, normal, orm, index }) => {
+      const uv = positionWorld.xz.div(2).add(0.0625);
+      return {
+        color: texture(diffuse, uv).rgb.mul((index + 1) / 3),
+        normal: texture(normal, uv).rgb,
+        orm: texture(orm, uv).rgb,
+      };
+    },
+    materialFactory: ({ color, normal, orm }) => {
+      const result = new THREE.MeshBasicNodeMaterial();
+      result.colorNode = vec3(color.r, normal.r, orm.g);
+      result.toneMapped = false;
+      return result;
+    },
+  });
+  const target = new THREE.RenderTarget(4, 4);
+  const previous = renderer.getRenderTarget();
+  const geometry = new THREE.PlaneGeometry(HALF * 2, HALF * 2);
+  try {
+    assertCondition(
+      material.userData.TN_TERRAIN_SPLAT ===
+        "layers=3 loadedSamplerUpperBound=12 stacked=0 sampling=custom",
+      "custom callback sampler bound changed",
+    );
+    const probe = new THREE.Scene();
+    const ground = new THREE.Mesh(geometry, material);
+    ground.rotation.x = -Math.PI / 2;
+    probe.add(ground);
+    const camera = new THREE.OrthographicCamera(-HALF, HALF, HALF, -HALF, 0.1, 20);
+    camera.position.set(0, 8, 0);
+    camera.up.set(0, 0, -1);
+    camera.lookAt(0, 0, 0);
+    renderer.setRenderTarget(target);
+    renderer.render(probe, camera);
+    const pixels = new Uint8Array(64);
+    // Three returns 256-byte-padded rows; single-row reads contain only the requested texels.
+    for (let row = 0; row < 4; row += 1) {
+      const data = await renderer.readRenderTargetPixelsAsync(target, 0, row, 4, 1);
+      assertCondition(
+        data instanceof Uint8Array && data.length === 16,
+        "callback row must be RGBA8",
+      );
+      pixels.set(data, row * 16);
+    }
+    assertCallbackPixels(pixels);
+  } finally {
+    renderer.setRenderTarget(previous);
+    target.dispose();
+    geometry.dispose();
+    material.dispose();
+  }
+}
+
 export async function startScene(canvas, dimensions) {
   return startVisualScene(
     canvas,
     dimensions,
     "terrain-splat-array",
     async ({ renderer, scene }) => {
+      await verifyCallbacks(renderer);
+      const baked = layersTable();
       const material = await loadTerrainSplat({
-        assets: packageAssets(),
+        assets: packageAssets(baked),
         layerWeight: heightBlend,
         renderer: { raw: renderer },
+        table: gameTable(baked),
         url: "world.json",
       });
       const marker = String(material.userData.TN_TERRAIN_SPLAT);

@@ -96,3 +96,57 @@ test("CLI keeps capture-lock timeout at exit 75", async () => {
   }
   expect(errors.join("")).toContain("NOT a test failure");
 });
+
+test("CLI includes the original callsite when report serialization throws", async () => {
+  function serializeEvidence(): never {
+    throw new RangeError("Invalid string length while serializing report");
+  }
+  runStandalonePlaytests.mockResolvedValueOnce([{
+    ...report(true),
+    evidence: { toJSON: serializeEvidence },
+  }]);
+  const errors: string[] = [];
+  const originalWrite = process.stderr.write;
+  process.stderr.write = ((chunk: string | Uint8Array) => {
+    errors.push(String(chunk));
+    return true;
+  }) as typeof process.stderr.write;
+  let exitCode: number;
+  try {
+    exitCode = await main(await scenarioArguments());
+  } finally {
+    process.stderr.write = originalWrite;
+  }
+
+  const diagnostic = JSON.parse(errors.join("")) as { diagnostics: Array<{ code: string; message: string }> };
+  expect(exitCode).toBe(2);
+  expect(diagnostic.diagnostics[0]?.code).toBe("TN_PLAYTEST_RUNNER_FAILED");
+  expect(diagnostic.diagnostics[0]?.message).toContain("Invalid string length while serializing report");
+  expect(diagnostic.diagnostics[0]?.message).toContain("serializeEvidence");
+});
+
+test("CLI includes the original callsite when an async runner operation rejects", async () => {
+  async function failAsyncRunnerOperation(): Promise<never> {
+    throw new Error("async settlement operation failed");
+  }
+  const failure = await failAsyncRunnerOperation().catch((error: unknown) => error);
+  runStandalonePlaytests.mockRejectedValueOnce(failure);
+  const errors: string[] = [];
+  const originalWrite = process.stderr.write;
+  process.stderr.write = ((chunk: string | Uint8Array) => {
+    errors.push(String(chunk));
+    return true;
+  }) as typeof process.stderr.write;
+  let exitCode: number;
+  try {
+    exitCode = await main(await scenarioArguments());
+  } finally {
+    process.stderr.write = originalWrite;
+  }
+
+  const diagnostic = JSON.parse(errors.join("")) as { diagnostics: Array<{ code: string; message: string }> };
+  expect(exitCode).toBe(2);
+  expect(diagnostic.diagnostics[0]?.code).toBe("TN_PLAYTEST_RUNNER_FAILED");
+  expect(diagnostic.diagnostics[0]?.message).toContain("async settlement operation failed");
+  expect(diagnostic.diagnostics[0]?.message).toContain("failAsyncRunnerOperation");
+});

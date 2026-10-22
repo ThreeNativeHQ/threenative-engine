@@ -22,13 +22,13 @@ const selected = [
   "ci:typecheck",
 ];
 
-it("lists the 47 eligible HEAVY instances as 30 ci + 13 integration + 4 native", () => {
+it("lists the 48 eligible HEAVY instances as 31 ci + 13 integration + 4 native", () => {
   expect(ADMISSION_NAMESPACES).toEqual(["ci", "integration", "native"]);
-  expect(ADMISSION_INVENTORY).toHaveLength(47);
-  expect(here("ci")).toHaveLength(30);
+  expect(ADMISSION_INVENTORY).toHaveLength(48);
+  expect(here("ci")).toHaveLength(31);
   expect(here("integration")).toHaveLength(13);
   expect(here("native")).toHaveLength(4);
-  expect(new Set(ADMISSION_INVENTORY).size).toBe(47);
+  expect(new Set(ADMISSION_INVENTORY).size).toBe(48);
 });
 
 it("counts each matrix leg as its own instance", () => {
@@ -58,6 +58,25 @@ it("admits at most the published slots, in the caller's order, across every work
     "integration:csg",
   ]);
   expect(admissionPlan(selected, 1)).toEqual(["ci:test-unit:1/4"]);
+});
+
+it("keeps GPU-designated instances out of CPU slots only when a GPU runner is configured", () => {
+  const selected = [
+    "ci:test-unit:1/4",
+    "ci:benchmark",
+    "ci:template-nonvisual:racing",
+    "ci:strata",
+    "ci:typecheck",
+  ];
+  expect(admissionPlan(selected, 3, { gpuRunner: "tn-gpu" })).toEqual([
+    "ci:test-unit:1/4",
+    "ci:typecheck",
+  ]);
+  expect(admissionPlan(selected, 3)).toEqual(selected.slice(0, 3));
+});
+
+it("keeps GPU-designated instances hosted for forks even when both runner labels exist", () => {
+  expect(admissionPlan(selected, 5, { fork: true, gpuRunner: "tn-gpu" })).toEqual([]);
 });
 
 it("treats zero capacity, a missing count or an absent runner as hosted", () => {
@@ -103,6 +122,7 @@ it("selects only the plan-required instances, in the inventory's CPU-heavy order
   const plan = {
     jobs: {
       typecheck: { required: true },
+      strata: { required: true },
       "test-unit": { required: true },
       benchmark: { required: false },
       integration: { required: true },
@@ -116,6 +136,7 @@ it("selects only the plan-required instances, in the inventory's CPU-heavy order
     "ci:test-unit:1/4",
     "ci:test-unit:2/4",
     "ci:typecheck",
+    "ci:strata",
     "integration:csg",
   ]);
   expect(selectInstances(plan, {})).not.toContain("integration:csg");

@@ -335,6 +335,20 @@ describe("threenative doctor", () => {
     expect(serverChecks.map(({ detail }) => detail).join(" ")).toMatch(/threenative-engine/);
   });
 
+  it("tells a project without the optional terrain addon exactly what to install", () => {
+    const report = diagnoseProject(
+      snapshot({
+        readText: (relative) => (relative === ".mcp.json" ? MCP_CONFIG : "export default {}"),
+        resolvePackageDirectory: () => undefined,
+      }),
+    );
+    const terrain = check(report, "capability search: @threenative/terrain");
+    expect(terrain.status).toBe("warn");
+    expect(terrain.detail).toContain("optional");
+    expect(terrain.fix).toBe("Run: npm i -D @threenative/terrain");
+    expect(terrain.fix).not.toContain("@0.");
+  });
+
   it("fails a resolved MCP server whose transport does not initialize", () => {
     const report = diagnoseProject(
       snapshot({
@@ -1098,6 +1112,12 @@ describe("threenative doctor edge coverage", () => {
       version: string;
     };
     for (const spec of MCP_SERVER_SPECS) {
+      // Terrain is an optional addon the shim resolves from the project, never a core dependency
+      // (core -> assets -> terrain -> core would be a cycle), so its pin follows its own package.
+      if (spec.packageName === "@threenative/terrain") {
+        expect(spec.version, spec.packageName).toBe(await workspaceVersion(spec.packageName));
+        continue;
+      }
       const declared =
         spec.packageName === "@threenative/core"
           ? core.version

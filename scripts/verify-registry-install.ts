@@ -253,6 +253,8 @@ const MCP_SAFE_TOOLS: Readonly<Record<string, string>> = {
   "threenative-blender": "blender_status",
   "threenative-engine": "engine_search_capabilities",
   "threenative-sculpt": "sculpt_grimoire",
+  // A patch with no commands round-trips a recipe and never cooks.
+  "threenative-terrain": "terrain_patch",
 };
 
 function safeOperation(
@@ -271,7 +273,12 @@ function safeOperation(
         ? { topic: "glossary/3d_vocabulary" }
         : name === "engine_search_capabilities"
           ? { scope: "mechanic", situation: "enemy walks around a wall" }
-          : {};
+          : name === "terrain_patch"
+            ? {
+                commands: [],
+                recipe: { config: { resolution: 17, seed: 1, size: 64 }, layers: [], version: 1 },
+              }
+            : {};
   return { arguments: argumentsValue, name };
 }
 
@@ -1192,6 +1199,10 @@ function mcpStep(project: string, runner: McpRunner): string {
         results.push(
           `${name}: initialize, tools/list, search and detail ok (${hit.symbol}; ${hits.length} hit(s))`,
         );
+      } else if (name === "threenative-terrain") {
+        if (record === undefined || !Array.isArray(record.layers) || record.version !== 1)
+          throw new Error("terrain_patch returned no terrain recipe document.");
+        results.push(`${name}: initialize, tools/list and terrain_patch ok`);
       } else if (name === "threenative-blender") {
         if (record === undefined || record.available !== true) {
           const detail = isNonEmptyString(record?.detail)

@@ -1,4 +1,4 @@
-import { entityPosition } from "./shared.js";
+import { entityPosition, SCREENSHOT_TIMEOUT_MS } from "./shared.js";
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { PNG } from "pngjs";
@@ -89,7 +89,7 @@ export async function captureVisualSurface(
     || bounds.width <= 0
     || bounds.height <= 0
   ) return undefined;
-  const content = await page.screenshot({ clip: bounds });
+  const content = await page.screenshot({ clip: bounds, timeout: SCREENSHOT_TIMEOUT_MS });
   if (artifactPath !== undefined) await writeFile(artifactPath, content);
   return content;
 }

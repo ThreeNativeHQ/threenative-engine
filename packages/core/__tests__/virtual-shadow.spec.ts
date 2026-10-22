@@ -169,6 +169,33 @@ function settle(node: VirtualShadowNode, camera: PerspectiveCamera): number {
   return frames;
 }
 
+it("settles all covered levels immediately and restores uncovered delay and budget", () => {
+  const { camera, light } = world();
+  const node = setupNode(light, { clipExtents: [8, 32, 128], invalidationDelay: [10, 10, 10] });
+  expect(node.settled).toBe(false);
+  node.startupCovered = true;
+  node.updateBefore(frameFor(camera, 0));
+  expect(node.stats).toMatchObject({ rendered: 3, deferred: 0, held: 0 });
+  expect(node.settled).toBe(true);
+  node.invalidateAll();
+  expect(node.settled).toBe(false);
+  node.updateBefore(frameFor(camera, 0.01));
+  expect(node.stats).toMatchObject({ rendered: 3, deferred: 0, held: 0 });
+  expect(node.settled).toBe(true);
+  node.startupCovered = false;
+  node.invalidateAll();
+  node.updateBefore(frameFor(camera, 0.02));
+  expect(node.stats).toMatchObject({ rendered: 0, held: 3 });
+  expect(node.settled).toBe(false);
+  node.updateBefore(frameFor(camera, 11));
+  expect(node.stats).toMatchObject({ rendered: 1, deferred: 2 });
+  expect(node.settled).toBe(false);
+  node.updateBefore(frameFor(camera, 11.01));
+  node.updateBefore(frameFor(camera, 11.02));
+  expect(node.settled).toBe(true);
+  node.dispose();
+});
+
 interface IShaderGraphBuilder extends NodeBuilder {
   setShaderStage(shaderStage: "fragment"): void;
   flowStagesNode(node: Node, output: "vec4"): { code: string };
@@ -3666,6 +3693,36 @@ describe("VirtualShadowNode automatic movers", () => {
     crowd.instanceMatrix.needsUpdate = true;
     step(built);
     expect(built.node.stats).toMatchObject({ autoMovers: 1, invalidated: 2 });
+  });
+
+  it("should leave a world-invalidated dual-layer instance out of automatic movers", () => {
+    const built = scene20();
+    const far = new InstancedMesh(new BoxGeometry(1, 1, 1), new MeshBasicMaterial(), 2);
+    far.castShadow = true;
+    far.count = 1;
+    far.layers.enable(VIRTUAL_SHADOW_WIDE_CASTER_LAYER);
+    far.setMatrixAt(0, new Matrix4().makeTranslation(20, 0.5, 0));
+    built.scene.add(far);
+    steady(built);
+
+    far.setMatrixAt(0, new Matrix4().makeTranslation(21, 0.5, 0));
+    far.instanceMatrix.needsUpdate = true;
+    built.node.invalidateRegion({ min: { x: 20, y: 0, z: -1 }, max: { x: 22, y: 1, z: 1 } });
+    step(built);
+    expect(far.layers.isEnabled(0)).toBe(true);
+    expect(far.layers.isEnabled(VIRTUAL_SHADOW_WIDE_CASTER_LAYER)).toBe(true);
+    expect(built.node.stats).toMatchObject({ autoMovers: 0, autoTransitions: 0, invalidated: 1 });
+    expect(built.node.stats.perLevel.map((level) => level.invalidated)).toEqual([0, 1]);
+
+    for (let frame = 0; frame < 4; frame += 1) {
+      step(built);
+      expect(built.node.stats).toMatchObject({
+        autoMovers: 0,
+        autoTransitions: 0,
+        invalidated: 0,
+        rendered: 0,
+      });
+    }
   });
 
   it("should not call an arriving caster a mover", () => {

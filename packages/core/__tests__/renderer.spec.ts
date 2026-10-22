@@ -2,7 +2,11 @@ import { Color, Object3D, PerspectiveCamera, Scene } from "three";
 import { pass } from "three/tsl";
 import { NodeFrame, NodeUpdateType, RenderPipeline } from "three/webgpu";
 import { describe, expect, it, vi } from "vitest";
+import { defineGame } from "../src/game.js";
+import { RenderChain } from "../src/render/chain.js";
 import { beginAsyncPipelines, createRenderer, prewarm } from "../src/renderer.js";
+import { RESOLUTION_SCALER, ResolutionScaler } from "../src/resolution-scaler.js";
+import { Scene as GameScene, type ICtx } from "../src/scene.js";
 
 function testCanvas(): HTMLCanvasElement {
   const canvas = new EventTarget() as EventTarget & Partial<HTMLCanvasElement>;
@@ -15,6 +19,73 @@ function testCanvas(): HTMLCanvasElement {
 }
 
 describe("createRenderer", () => {
+  it("keeps the desktop temporalUpscale floor for a TRAA chain without lifting it for velocity", async () => {
+    let frame: FrameRequestCallback | undefined;
+    let chain: RenderChain | undefined;
+    vi.stubGlobal("navigator", { gpu: {} });
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      frame = callback;
+      return 1;
+    });
+    vi.stubGlobal("cancelAnimationFrame", () => {});
+    const pipeline = vi.spyOn(RenderPipeline.prototype, "render").mockImplementation(() => {});
+    const observe = vi.spyOn(ResolutionScaler.prototype, "observe");
+    class TemporalScene extends GameScene {
+      override enter(ctx: ICtx): void {
+        chain = new RenderChain(ctx.renderer, {
+          input: pass(ctx.scene, ctx.camera),
+          stages: [{ name: "traa", build: (input) => input }],
+          request: { tier: "high", stages: ["traa"], velocity: { perObject: true } },
+          report: () => {},
+        });
+      }
+    }
+    const canvas = testCanvas();
+    const game = defineGame({
+      initialState: {},
+      scenes: { TemporalScene },
+      start: "TemporalScene",
+      frameBudget: { reportEvery: 2, report: () => {} },
+      renderer: {
+        canvas,
+        webgpuFactory: () => ({
+          domElement: canvas,
+          init: async () => {},
+          render: () => {},
+          setSize: () => {},
+          dispose: () => {},
+        }),
+      },
+    });
+    try {
+      await game.start();
+      expect(chain?.applied.stages).toEqual(["traa"]);
+      expect(chain?.applied.velocity.provisioned).toBe(true);
+      if (!frame) throw new Error("No game frame scheduled");
+      for (let i = 1; i <= 10; i++) frame(i * 16.7);
+      const scaler = observe.mock.contexts[0];
+      expect(scaler).toBeInstanceOf(ResolutionScaler);
+      if (!(scaler instanceof ResolutionScaler)) throw new Error("Game did not observe its scaler");
+      for (let i = 0; i < 30; i++) {
+        scaler.observe({
+          fps: 5 / scaler.scale ** 2,
+          gpuMs: 200 * scaler.scale ** 2,
+          gpuAgeFrames: 0,
+          presented: { p50: 200, p95: 200, p99: 200, max: 200 },
+        });
+        expect(scaler.scale).toBeGreaterThanOrEqual(RESOLUTION_SCALER.desktopFloorScale);
+      }
+      expect(scaler.scale).toBe(RESOLUTION_SCALER.desktopFloorScale);
+      expect(scaler.atFloor).toBe(true);
+    } finally {
+      chain?.dispose();
+      game.stop();
+      observe.mockRestore();
+      pipeline.mockRestore();
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("keeps its browser-created canvas layout independent of drawing-buffer scale", async () => {
     const canvas = testCanvas();
     const style = { width: "", height: "" };

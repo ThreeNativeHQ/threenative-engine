@@ -45,6 +45,20 @@ function budgetLine(windowId: number, fps: number, frameP95: number, renderP50: 
     `"shares":{"render":0.55}}`;
 }
 
+/** The same window with an explicitly reported `surface.compiling` flag. */
+function compilingLine(
+  windowId: number,
+  fps: number,
+  frameP95: number,
+  renderP50: number,
+  compiling: boolean,
+): string {
+  return budgetLine(windowId, fps, frameP95, renderP50).replace(
+    '"shares":{"render":0.55}',
+    `"shares":{"render":0.55},"surface":{"resolutionScale":1,"scaleSource":"auto","sampleCount":4,"drawingBufferWidth":1920,"drawingBufferHeight":1080,"compiling":${compiling}}`,
+  );
+}
+
 const hostGapLine = "TN_HOST_GAP:{\"frames\":300,\"periodP50Ms\":48.75,\"periodMeanMs\":49.1," +
   "\"segments\":{\"present\":{\"p50Ms\":14.57,\"meanMs\":14.6},\"frameReplay\":{\"p50Ms\":7.95,\"meanMs\":8.0}," +
   "\"devicePoll\":{\"p50Ms\":0.28,\"meanMs\":0.3},\"timers\":{\"p50Ms\":0.001,\"meanMs\":0.002}}," +
@@ -169,6 +183,53 @@ describe("assessPerfMarkers", () => {
       expect.objectContaining({ code: "TN_PERF_WINDOWS_MISSING", observed: 1, bound: 2 }),
     ]);
     expect(report.pass).toBe(false);
+  });
+
+  it("refuses to count explicitly compiling windows as steady, even when their numbers clear every bound", () => {
+    // Fast warmup loops cannot establish settled speed, even when their reported bounds pass.
+    const lines = Array.from({ length: 10 }, (_, index) => compilingLine(index + 1, 120, 4, 0.5, true));
+    const parsed = parsePerformanceMarkers(lines.join("\n"));
+    const report = assessPerfMarkers(parsed, { minFps: 55, maxFrameMsP95: 30, requireWindows: 6 }, "log");
+    expect(report.discardedWindows).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+    expect(report.violations).toEqual([
+      expect.objectContaining({ code: "TN_PERF_WINDOWS_MISSING", observed: 0, bound: 6 }),
+    ]);
+    expect(report.pass).toBe(false);
+  });
+
+  it("still assesses the settled windows that follow a compiling startup", () => {
+    const lines = [
+      compilingLine(1, 60, 8, 4, true),
+      compilingLine(2, 60, 8, 4, true),
+      budgetLine(3, 60, 8, 4),
+      budgetLine(4, 61, 8, 4),
+      budgetLine(5, 59, 8, 4),
+    ];
+    const parsed = parsePerformanceMarkers(lines.join("\n"));
+    const report = assessPerfMarkers(parsed, { minFps: 55, maxFrameMsP95: 30, requireWindows: 2 }, "log");
+    expect(report.discardedWindows).toEqual([1, 2]);
+    expect(report.violations).toEqual([]);
+    expect(report.pass).toBe(true);
+    // A window that measured `compiling:false` is steady as before, not discarded.
+    expect(parsePerformanceMarkers(compilingLine(1, 60, 8, 4, false)).budgets[0]?.surface?.compiling).toBe(false);
+    expect(assessPerfMarkers(parsePerformanceMarkers(compilingLine(1, 60, 8, 4, false)), { requireWindows: 1 }, "log").pass).toBe(true);
+  });
+
+  it("rejects a frame-budget window whose surface.compiling is not a boolean", () => {
+    const malformed = budgetLine(1, 60, 8, 4).replace(
+      '"shares":{"render":0.55}',
+      '"shares":{"render":0.55},"surface":{"resolutionScale":1,"scaleSource":"auto","sampleCount":1,' +
+        '"drawingBufferWidth":1920,"drawingBufferHeight":1080,"compiling":"pending"}',
+    );
+    expect(() => parsePerformanceMarkers(malformed)).toThrow(/TN_PERF_MARKER_MALFORMED/);
+  });
+
+  it.each([null, [], "pending"])("rejects a malformed surface record: %j", (surface) => {
+    const payload = JSON.parse(budgetLine(1, 60, 8, 4).split("TN_FRAME_BUDGET:")[1] as string);
+    payload.surface = surface;
+    expect(() => parsePerformanceMarkers(`TN_FRAME_BUDGET:${JSON.stringify(payload)}`)).toThrow(
+      /TN_PERF_MARKER_MALFORMED/,
+    );
   });
 
   it("fails closed when a frame-p95 bound is requested but the window carries no frame summary", () => {
@@ -509,7 +570,7 @@ describe("formatPerfReport", () => {
     expect(text).toContain("perf — 3 window(s)");
     expect(text).toContain("present mode: mailbox (vsync=false)");
     expect(text).toContain("1*");
-    expect(text).toContain("window 1 always lies");
+    expect(text).toContain("discarded as startup or active compilation");
     expect(text).toContain("frameReplay");
     expect(text).toContain("PASS");
   });

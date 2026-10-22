@@ -56,6 +56,19 @@ function budget(overrides: Partial<ICapabilityRecallBudget> = {}): ICapabilityRe
 }
 
 describe("capability recall gate", () => {
+  it("finds startup placement edits through the public terrain starter API", () => {
+    const measurement = measureRecall(
+      [
+        row({
+          expect: ["editWorldPlacements"],
+          query: "move remove add generated props without rebaking",
+        }),
+      ],
+      manifestFile,
+    );
+    expect(measurement.metrics.recallAtK).toBe(1);
+  });
+
   it("pins transport ownership while keeping replication and prediction game-owned", async () => {
     const corpus = await loadCorpus();
     const transport = corpus.rows.find((candidate) => candidate.id === "request.multiplayer");

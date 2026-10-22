@@ -111,6 +111,124 @@ async function singleImageFixtureGlb(gridDepth = 3): Promise<Buffer> {
 }
 
 describe("compileAssets", () => {
+  it("lists a cooked terrain GLB byte-identically without invoking model passes", async () => {
+    const root = await makeTempDir("threenative-cooked-world-");
+    await mkdir(path.join(root, "assets/worlds/forest"), { recursive: true });
+    const doc = await buildFixtureDocument();
+    doc.getRoot().getAsset().extras = { tnTerrainWorld: 1 };
+    const cooked = Buffer.from(await new NodeIO().writeBinary(doc));
+    await writeFile(path.join(root, "assets/worlds/forest/world.glb"), cooked);
+    await writeFile(path.join(root, "assets/ordinary.glb"), await buildFixtureGlb());
+    const apply = vi.fn((input: Buffer) => input);
+    await compileAssets({
+      cwd: root,
+      passes: [{ name: "encode-probe", appliesTo: ["model"], apply }],
+    });
+    const manifest = JSON.parse(
+      await readFile(path.join(root, "public/assets.manifest.json"), "utf8"),
+    );
+    const entry = manifest.entries["worlds/forest/world.glb"];
+    expect(entry).toMatchObject({ kind: "model", bytes: cooked.length, passes: [] });
+    expect(await readFile(path.join(root, "public", entry.output))).toEqual(cooked);
+    expect(apply.mock.calls).toHaveLength(1);
+    expect(manifest.entries["ordinary.glb"].passes).toEqual(["encode-probe"]);
+    const malformed = Buffer.from(cooked);
+    malformed.writeUInt32LE(cooked.length + 4, 8);
+    await writeFile(path.join(root, "assets/worlds/forest/world.glb"), malformed);
+    await expect(compileAssets({ cwd: root, passes: [] })).rejects.toThrow(/GLB/);
+  });
+
+  it.each([
+    { platform: "desktop", models: "none" },
+    { platform: "android", models: "none" },
+    { platform: "ios", models: "none" },
+    { platform: "desktop", models: undefined },
+  ] as const)(
+    "normalizes cooked terrain layout on $platform (models: $models) without reauthoring or reusing web output",
+    async ({ platform, models }) => {
+      const root = await makeTempDir("threenative-cooked-world-native-");
+      await mkdir(path.join(root, "assets"));
+      const doc = buildFixtureDocument();
+      const material = doc.getRoot().listMaterials()[0];
+      if (!material) throw new Error("fixture must contain a material");
+      doc.createMaterial().copy(material);
+      doc.getRoot().getAsset().extras = { tnTerrainWorld: 1 };
+      const io = new NodeIO().registerExtensions(ALL_EXTENSIONS);
+      const cooked = Buffer.from(await io.writeBinary(doc));
+      await writeFile(path.join(root, "assets/world.glb"), cooked);
+      const config = { models, textures: "none", audio: "none", lod: false } as const;
+      const readEntry = async () => {
+        const manifest = JSON.parse(
+          await readFile(path.join(root, "public/assets.manifest.json"), "utf8"),
+        );
+        return manifest.entries["world.glb"];
+      };
+      await compileAssets({ cwd: root, config, platform: "web" });
+      const web = await readEntry();
+      expect(await readFile(path.join(root, "public", web.output))).toEqual(cooked);
+      const native = await compileAssets({ cwd: root, config, platform });
+      const entry = await readEntry();
+      expect(native.skipped).toBe(0);
+      expect(entry.output).not.toBe(web.output);
+      expect(entry.passes).toEqual(["model"]);
+      expect(native.passCosts.find((row) => row.pass === "model")).toMatchObject({
+        ranInputs: 1,
+        cachedInputs: 0,
+        status: "ran",
+        assets: [{ logicalPath: "world.glb", durationMs: expect.any(Number) }],
+      });
+      expect(native.receipt?.outputs.find((output) => output.path === entry.output)?.producer).toBe(
+        "model",
+      );
+      const output = await readFile(path.join(root, "public", entry.output));
+      const json = (await io.binaryToJSON(output)).json;
+      const original = (await io.binaryToJSON(cooked)).json;
+      expect(json.materials).toEqual(original.materials);
+      expect(json.asset.extras).toEqual(original.asset.extras);
+      const accessors = json.accessors ?? [];
+      for (const mesh of json.meshes ?? []) {
+        for (const primitive of mesh.primitives ?? []) {
+          const attributes = Object.values(primitive.attributes ?? {});
+          expect(new Set(attributes.map((index) => accessors[index]?.bufferView)).size).toBe(
+            attributes.length,
+          );
+        }
+      }
+      const restored = await io.readBinary(output);
+      expect(
+        restored
+          .getRoot()
+          .listTextures()
+          .map((texture) => Array.from(texture.getImage() ?? [])),
+      ).toEqual(
+        doc
+          .getRoot()
+          .listTextures()
+          .map((texture) => Array.from(texture.getImage() ?? [])),
+      );
+      const geometry = (document: typeof doc) =>
+        document
+          .getRoot()
+          .listMeshes()
+          .map((mesh) =>
+            mesh.listPrimitives().map((primitive) => ({
+              attributes: primitive.listAttributes().map((attribute) => attribute.getArray()),
+              indices: primitive.getIndices()?.getArray(),
+            })),
+          );
+      expect(geometry(restored)).toEqual(geometry(doc));
+      const cached = await compileAssets({ cwd: root, config, platform });
+      expect(cached.skipped).toBe(1);
+      expect(cached.passCosts.find((row) => row.pass === "model")).toMatchObject({
+        ranInputs: 0,
+        cachedInputs: 1,
+        status: "cached",
+        assets: [],
+      });
+      expect(await readEntry()).toEqual(entry);
+    },
+  );
+
   it("should omit an excluded model from the manifest and report saved bytes", async () => {
     const root = await makeTempDir("threenative-exclude-");
     await mkdir(path.join(root, "assets/unused"), { recursive: true });

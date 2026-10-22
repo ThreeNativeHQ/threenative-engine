@@ -63,8 +63,8 @@ export class TerrainEvaluator {
     validateDocument(doc);
     validateConfig({ ...doc.config, resolution });
     const keys: string[] = [];
-    let key = JSON.stringify({ ...doc.config, resolution });
-    for (const layer of doc.layers) {
+    let key = this.limit > 0 ? JSON.stringify({ ...doc.config, resolution }) : "";
+    for (const layer of this.limit > 0 ? doc.layers : []) {
       key += `|${JSON.stringify(layer)}`;
       keys.push(key);
     }
@@ -433,7 +433,7 @@ export class Terrain {
   biome(options: OperationOptions<"biome"> = {}): this {
     return this._operation("biome", options);
   }
-  scatter(options: OperationOptions<"scatter"> = {}): this {
+  scatter(options: OperationOptions<"scatter">): this {
     return this._operation("scatter", options);
   }
   clear(options: OperationOptions<"clear">): this {

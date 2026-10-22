@@ -23,11 +23,15 @@
       "release": true
     },
     {
-      "kind": "wait",
       "label": "grounded",
-      "waitTicks": 120,
       "release": true,
-      "screenshot": "forest-start"
+      "screenshot": "forest-start",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "currentViewWindows",
+        "gte": 3
+      },
+      "timeoutMs": 120000
     },
     {
       "kind": "input",
@@ -37,11 +41,15 @@
       "release": true
     },
     {
-      "kind": "wait",
       "label": "meadow-close",
-      "waitTicks": 150,
       "release": true,
-      "screenshot": "meadow-close"
+      "screenshot": "meadow-close",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "currentViewWindows",
+        "gte": 3
+      },
+      "timeoutMs": 120000
     },
     {
       "kind": "input",
@@ -51,11 +59,15 @@
       "release": true
     },
     {
-      "kind": "wait",
       "label": "overview",
-      "waitTicks": 150,
       "release": true,
-      "screenshot": "overview"
+      "screenshot": "overview",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "currentViewWindows",
+        "gte": 3
+      },
+      "timeoutMs": 120000
     },
     {
       "kind": "input",
@@ -65,11 +77,15 @@
       "release": true
     },
     {
-      "kind": "wait",
       "label": "river",
-      "waitTicks": 150,
       "release": true,
-      "screenshot": "river"
+      "screenshot": "river",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "currentViewWindows",
+        "gte": 3
+      },
+      "timeoutMs": 120000
     },
     {
       "kind": "input",
@@ -79,10 +95,14 @@
       "release": true
     },
     {
-      "kind": "wait",
       "label": "back-to-player",
-      "waitTicks": 30,
-      "release": true
+      "release": true,
+      "waitForResource": {
+        "id": "GameState",
+        "path": "currentViewWindows",
+        "gte": 3
+      },
+      "timeoutMs": 120000
     },
     {
       "kind": "input",
@@ -130,11 +150,15 @@
       "release": true
     },
     {
-      "kind": "wait",
       "label": "ocean-early",
-      "waitTicks": 180,
       "release": true,
-      "screenshot": "coastal-ocean-early"
+      "screenshot": "coastal-ocean-early",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "currentViewWindows",
+        "gte": 3
+      },
+      "timeoutMs": 120000
     },
     {
       "kind": "wait",
@@ -165,11 +189,15 @@
       "release": true
     },
     {
-      "kind": "wait",
       "label": "horizon-sea",
-      "waitTicks": 150,
       "release": true,
-      "screenshot": "coastal-horizon-sea"
+      "screenshot": "coastal-horizon-sea",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "currentViewWindows",
+        "gte": 3
+      },
+      "timeoutMs": 120000
     },
     {
       "kind": "input",
@@ -179,10 +207,14 @@
       "release": true
     },
     {
-      "kind": "wait",
       "label": "coastal-player",
-      "waitTicks": 60,
-      "release": true
+      "release": true,
+      "waitForResource": {
+        "id": "GameState",
+        "path": "currentViewWindows",
+        "gte": 3
+      },
+      "timeoutMs": 120000
     },
     {
       "kind": "input",
@@ -230,11 +262,15 @@
       "release": true
     },
     {
-      "kind": "wait",
       "label": "alpine-settle",
-      "waitTicks": 150,
       "release": true,
-      "screenshot": "alpine-player"
+      "screenshot": "alpine-player",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "currentViewWindows",
+        "gte": 3
+      },
+      "timeoutMs": 120000
     },
     {
       "kind": "input",
@@ -261,11 +297,15 @@
       "release": true
     },
     {
-      "kind": "wait",
       "label": "alpine-ridge",
-      "waitTicks": 180,
       "release": true,
-      "screenshot": "alpine-ridge"
+      "screenshot": "alpine-ridge",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "currentViewWindows",
+        "gte": 3
+      },
+      "timeoutMs": 120000
     },
     {
       "kind": "input",
@@ -275,11 +315,15 @@
       "release": true
     },
     {
-      "kind": "wait",
       "label": "alpine-overview",
-      "waitTicks": 150,
       "release": true,
-      "screenshot": "alpine-overview"
+      "screenshot": "alpine-overview",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "currentViewWindows",
+        "gte": 3
+      },
+      "timeoutMs": 120000
     },
     {
       "kind": "input",
@@ -319,11 +363,15 @@
       "release": true
     },
     {
-      "kind": "wait",
       "label": "desert-settle",
-      "waitTicks": 150,
       "release": true,
-      "screenshot": "desert-player"
+      "screenshot": "desert-player",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "currentViewWindows",
+        "gte": 3
+      },
+      "timeoutMs": 120000
     },
     {
       "kind": "input",
@@ -350,11 +398,15 @@
       "release": true
     },
     {
-      "kind": "wait",
       "label": "desert-mesa",
-      "waitTicks": 180,
       "release": true,
-      "screenshot": "desert-mesa"
+      "screenshot": "desert-mesa",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "currentViewWindows",
+        "gte": 3
+      },
+      "timeoutMs": 120000
     },
     {
       "kind": "input",
@@ -364,11 +416,15 @@
       "release": true
     },
     {
-      "kind": "wait",
       "label": "desert-overview",
-      "waitTicks": 150,
       "release": true,
-      "screenshot": "desert-overview"
+      "screenshot": "desert-overview",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "currentViewWindows",
+        "gte": 3
+      },
+      "timeoutMs": 120000
     },
     {
       "kind": "input",
@@ -408,11 +464,15 @@
       "release": true
     },
     {
-      "kind": "wait",
       "label": "tundra-settle",
-      "waitTicks": 150,
       "release": true,
-      "screenshot": "tundra-player"
+      "screenshot": "tundra-player",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "currentViewWindows",
+        "gte": 3
+      },
+      "timeoutMs": 120000
     },
     {
       "kind": "input",
@@ -469,11 +529,15 @@
       "release": true
     },
     {
-      "kind": "wait",
       "label": "tundra-plain",
-      "waitTicks": 180,
       "release": true,
-      "screenshot": "tundra-plain"
+      "screenshot": "tundra-plain",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "currentViewWindows",
+        "gte": 3
+      },
+      "timeoutMs": 120000
     },
     {
       "kind": "input",
@@ -483,11 +547,15 @@
       "release": true
     },
     {
-      "kind": "wait",
       "label": "tundra-overview",
-      "waitTicks": 150,
       "release": true,
-      "screenshot": "tundra-overview"
+      "screenshot": "tundra-overview",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "currentViewWindows",
+        "gte": 3
+      },
+      "timeoutMs": 120000
     },
     {
       "kind": "input",
@@ -517,10 +585,14 @@
       "release": true
     },
     {
-      "kind": "wait",
       "label": "coastal-return-settle",
-      "waitTicks": 360,
-      "release": true
+      "release": true,
+      "waitForResource": {
+        "id": "GameState",
+        "path": "currentViewWindows",
+        "gte": 3
+      },
+      "timeoutMs": 120000
     },
     {
       "label": "coastal-return-waves",
@@ -529,7 +601,7 @@
         "path": "oceanSteps",
         "gte": 300
       },
-      "timeoutMs": 10000,
+      "timeoutMs": 120000,
       "release": true
     },
     {
@@ -547,11 +619,15 @@
       "release": true
     },
     {
-      "kind": "wait",
       "label": "coastal-meadow-final",
-      "waitTicks": 180,
       "release": true,
-      "screenshot": "coastal-meadow-close"
+      "screenshot": "coastal-meadow-close",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "currentViewWindows",
+        "gte": 3
+      },
+      "timeoutMs": 120000
     },
     {
       "kind": "input",
@@ -561,11 +637,15 @@
       "release": true
     },
     {
-      "kind": "wait",
       "label": "coastal-overview-final",
-      "waitTicks": 180,
       "release": true,
-      "screenshot": "coastal-overview"
+      "screenshot": "coastal-overview",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "currentViewWindows",
+        "gte": 3
+      },
+      "timeoutMs": 120000
     },
     {
       "kind": "input",
@@ -582,11 +662,15 @@
       "release": true
     },
     {
-      "kind": "wait",
       "label": "coastal-player-final",
-      "waitTicks": 60,
       "release": true,
-      "screenshot": "coastal-player"
+      "screenshot": "coastal-player",
+      "waitForResource": {
+        "id": "GameState",
+        "path": "currentViewWindows",
+        "gte": 3
+      },
+      "timeoutMs": 120000
     }
   ],
   "assert": {
@@ -596,6 +680,13 @@
       "runtimeReady": true
     },
     "resources": [
+      {
+        "id": "GameState",
+        "path": "enterMs",
+        "gte": 0,
+        "lte": 50,
+        "allowTrivial": "Measured synchronous scene enter; baked scatter must not run in enter."
+      },
       {
         "id": "GameState",
         "path": "lakePlacementError",

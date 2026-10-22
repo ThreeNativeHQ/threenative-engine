@@ -3,8 +3,7 @@
 import { createRequire } from "node:module";
 import { type Accessor, type Document, NodeIO } from "@gltf-transform/core";
 import { ALL_EXTENSIONS } from "@gltf-transform/extensions";
-import { Api } from "xatlasjs/dist/node/api.mjs";
-import createXAtlasModule from "xatlasjs/dist/node/xatlas.js";
+import type { Api } from "xatlasjs/dist/node/api.mjs";
 import type { IAssetPass, IAssetPassOutput } from "../compile.js";
 import { bakeStaticLightmap } from "./lightmap-bake.js";
 import { encodeLinearRgbaKtx2 } from "./texture.js";
@@ -82,6 +81,10 @@ async function readDocument(input: Buffer, logicalPath: string): Promise<Documen
 }
 
 async function createAtlasApi(): Promise<InstanceType<ReturnType<typeof Api>>> {
+  const [{ Api }, { default: createXAtlasModule }] = await Promise.all([
+    import("xatlasjs/dist/node/api.mjs"),
+    import("xatlasjs/dist/node/xatlas.js"),
+  ]);
   const XAtlas = Api(createXAtlasModule);
   const wasmPath = createRequire(import.meta.url).resolve("xatlasjs/dist/node/xatlas.wasm");
   let loaded = (): void => {};
@@ -250,7 +253,7 @@ async function bakeUv2(
       { blockAlign: true, padding, resolution: atlasSize, texelsPerUnit: 0 },
     );
     writeAtlas(document, rows, atlas);
-    const bake = bakeStaticLightmap(document, atlas.width, atlas.height, padding);
+    const bake = await bakeStaticLightmap(document, atlas.width, atlas.height, padding);
     const lightmap = await encodeLinearRgbaKtx2(bake.pixels, bake.width, bake.height, astc);
     return {
       auxiliaryOutputs: [

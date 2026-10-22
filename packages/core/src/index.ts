@@ -918,7 +918,7 @@ export { Daylight } from "./render/daylight.js";
 export type { IDaylightOptions } from "./render/daylight.js";
 export type { IVirtualShadowOptions, IVirtualShadowStats } from "./render/virtual-shadow.js";
 /**
- * Attach hundreds of built objects to the scene in slices, presenting a frame between each.
+ * Attach hundreds of built objects to the scene in slices with an 8 ms default budget, presenting a frame between each.
  * @situation add hundreds of built objects to the scene without one multi-second frame
  * @situation stream a detail tier in behind a loading curtain without the page looking hung
  * @constraint the objects, and where each one goes, stay the game's; this decides only when each joins the graph

@@ -857,6 +857,10 @@ export class ProjectionMirror {
   #syncLights(lights: readonly (Light | undefined)[], lightCount: number): string | undefined {
     for (let index = 0; index < lightCount; index += 1) {
       const light = lights[index] as Light;
+      const shadow = (light as Light & { shadow?: { autoUpdate: boolean; shadowNode?: unknown } })
+        .shadow;
+      if (shadow?.shadowNode != null)
+        return `a ${light.type} uses a custom shadow node that cannot be mirrored`;
       let proxy = this.#lightProxies.get(light);
       if (proxy === undefined) {
         const cloned = light.clone() as Light & { target?: Object3D };
@@ -901,7 +905,6 @@ export class ProjectionMirror {
       }
       // The clone above copied `autoUpdate` before it was switched off, so the drawn light keeps
       // its shadow. Only the source — whose map nothing samples this frame — is taken offline.
-      const shadow = (light as Light & { shadow?: { autoUpdate: boolean } }).shadow;
       if (
         shadow !== undefined &&
         shadow.autoUpdate === true &&
