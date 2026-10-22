@@ -8,7 +8,7 @@ prd_contract: v1
 **Priority:** P2 — no box is ticked: the templates' `low`, `medium` and `high` tiers change only the sun map size, while Unreal's shadow levels change the filter, its sample count and the shadow resolution bias, and nothing compares a ThreeNative tier with its Unreal level.
 **Complexity:** 5 (MEDIUM) — 1–5 files: the harness `quality.ts`, the filter options, the native filter (+1), a tier table every template takes (+2), a cost step under GPU pressure (+2); risk override: none
 **Owner:** João
-**Depends on:** [PRD-649](PRD-649-shadow-calibration-scenes-are-built-in-unreal-and-judged-until-parity.md) Phase 3 (the scenes and the scoreboard). Uses the filter of [PRD-634](../look/PRD-634-sun-shadows-reach-the-horizon-and-soften-with-distance-from-the-caster.md) Phase 2 and the lamp atlas of [PRD-650](PRD-650-a-lamp-shadow-is-as-sharp-as-the-pixels-it-covers-and-softens-with-the-lamp-size.md) Phase 1. Mirrors the GI tier of [PRD-644](../gi/PRD-644-the-gi-tier-follows-unreal-quality-levels-and-the-measured-gpu-time.md), with the same tier-to-level map.
+**Depends on:** [PRD-649](PRD-649-shadow-calibration-scenes-are-built-in-unreal-and-judged-until-parity.md) Phase 3 (the scenes and the scoreboard). Uses the filter of [PRD-634](../look/PRD-634-sun-shadows-reach-the-horizon-and-soften-with-distance-from-the-caster.md) Phase 2 and the lamp atlas of [PRD-650](../../done/PRD-650-a-lamp-shadow-is-as-sharp-as-the-pixels-it-covers-and-softens-with-the-lamp-size.md) Phase 1. Mirrors the GI tier of [PRD-644](../gi/PRD-644-the-gi-tier-follows-unreal-quality-levels-and-the-measured-gpu-time.md), with the same tier-to-level map.
 
 ## Context
 
@@ -143,6 +143,15 @@ these criteria, per frame and overall.
   casters. The cause is `r.Shadow.RadiusThreshold` (0.06 Low, 0.05 Medium, 0.01 Epic), a screen-radius cull.
   ThreeNative has only the camera-independent `minCasterTexels` gate. A screen-radius cull needs a change in
   `VirtualShadowNode` and in the native `atlas.cpp`. Both belong to the shadows lane, so this lane does not add it.
+- 2026-10-21 (tier2-lane, Phase 3 is blocked, no template edit): the shadow tier table drives the receiver filter and `castShadow`
+  of the harness sun (`Reference.ts.in`, `shadowTier.ts`). Every template still draws one `PCFSoftShadowMap` sun map
+  (`templates/*/src/render/lighting.ts`, 12 lines apart from the harness file) with no virtual shadow node and no filter node. A
+  template has no filter taps for the table to set, and a `shadowQuality` report field with no effect would be a false claim in
+  its `AGENTS.md`. [PRD-634](../look/PRD-634-sun-shadows-reach-the-horizon-and-soften-with-distance-from-the-caster.md) Phase 1
+  (the method) and Phase 3 (all templates take the method and the filter) are NOT STARTED, so this phase starts after them. The
+  only effect a table could have today is `low` turning the sun's shadows off, which changes template pictures and needs the
+  visual judge.
+- 2026-10-22 (tier2-lane, a slow frame costs the shadows): in the exclusive window of 2026-10-22 00:00 PDT (`gi-tier-cost.ts --auto`, RTX 2080 at P8, 420 to 540 MHz, 1920 × 1080), `ShadowFilterBudget` read frames of 19.5 ms (from `high`) and 19.8 ms (from `medium`) against the 16.7 ms period and stepped the shadow tier to `low` in both runs. The shadows were not the cost, because `low` and `medium` GI frames read 20.3 and 20.7 ms with the shadows at `high`. The harness `low` tier draws no shadow, so a frame that is slow for another reason removes every shadow. The earlier note about the whole-frame signal predicted the step, and this run shows what it costs. A fix needs the shadow pass's own time, or a floor of `medium` for the step-down. That choice is open and belongs to the PRD owner.
 - 2026-10-21 (tier-lane, no calibrate command): `pnpm unreal-look:calibrate` does not exist in this tree (PRD-647
   owns it). `pnpm unreal-look:compare --metric penumbra` is the substitute for the per-tier rows.
 - 2026-10-21 (tier-lane, Unreal's own spread): on `penumbra-lab`, Unreal Medium differs from Unreal Epic by a mean of

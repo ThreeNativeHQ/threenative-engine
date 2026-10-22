@@ -114,6 +114,8 @@ public:
     bool flatShading = false;
     /** Unreal's Two Sided Foliage shading model (PRD-651): a receiver that looks its shadow up where it stands. */
     bool twoSidedFoliage = false;
+    /** Unreal's Substrate rough diffuse, the EON model (PRD-653): direct light shades the diffuse lobe with EON, not Lambert. */
+    bool roughDiffuse = false;
     Vector2 normalScale{1, 1};
     double aoMapIntensity = 1;
     double bumpScale = 1;  // Standard, Physical (Lambert and Phong declare it too; their programs do not read it yet)

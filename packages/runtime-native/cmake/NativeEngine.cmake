@@ -267,6 +267,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_renderer_steady_cache_invalidation=steady_cache_invalidation
         native_engine_render_target=render_target
         native_engine_float_render_target=float_render_target_keeps_float32
+        native_engine_float_render_target_half=float_render_target_falls_back_to_half
         native_engine_renderer_updates=updates
         native_engine_renderer_multi_camera_layers=multi_camera_layers
         native_engine_renderer_callback=render_callback
@@ -294,6 +295,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_renderer_shadow_caster_frustum_culling=shadow_caster_frustum_culling
         native_engine_masked_shadow=masked_shadow
         native_engine_leaf_receiver=leaf_receiver
+        native_engine_rough_diffuse=rough_diffuse
         native_engine_point_shadow_cube_faces=point_shadow_cube_faces
         native_engine_lamp_source_radius=lamp_source_radius
         native_engine_lamp_source_radius_wall=lamp_source_radius_wall
@@ -301,6 +303,8 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_contact_shadow_foot=contact_shadow_foot
         native_engine_virtual_sun_contact_foot=virtual_sun_contact_foot
         native_engine_lamp_cache=lamp_cache
+        native_engine_lamp_atlas=lamp_atlas
+        native_engine_gpu_timer_splits_lamp_shadows=gpu_timer_splits_lamp_shadows
         native_engine_renderer_shadow_lights_follow_hierarchy=shadow_lights_follow_hierarchy
         native_engine_renderer_records_survive_siblings=records_survive_siblings
         native_engine_renderer_steady_frame_hashes_no_record=steady_frame_hashes_no_record

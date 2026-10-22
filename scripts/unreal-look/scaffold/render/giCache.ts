@@ -128,6 +128,11 @@ export interface IGiOptions {
   /** Cast the bake's rays through `ctx.raycast` instead of the flat triangle hierarchy: the slow path, kept for an A/B. */
   readonly stockRays?: boolean;
   /**
+   * Paint the lit ground into the environment's lower half, so a mirror reflects a floor where the screen shows none
+   * (default true). Off when reflection rays walk the scene's triangles and find the floor themselves.
+   */
+  readonly paintGround?: boolean;
+  /**
    * The Surface Cache (PRD-639): a ray that lands on a mapped material returns the map's texel at the hit UV, for the
    * albedo and for the emission, instead of the material's flat colour (a loaded asset's colour factor is often white
    * under a brick map). Unset, every hit returns the flat colour. `true` takes the cache's defaults.
@@ -1201,9 +1206,9 @@ function nodeTwin(source: MeshStandardMaterial): MeshStandardMaterial {
     ? physicalTwin()
     : new MeshStandardNodeMaterial()) as unknown as Record<string, unknown>;
   copyFields(source, twin);
-  // three declares no `twoSidedFoliage`, so a three twin has no such key to copy into: carry the marker by name (PRD-651).
-  if ((source as { twoSidedFoliage?: boolean }).twoSidedFoliage === true)
-    twin.twoSidedFoliage = true;
+  // three declares no `twoSidedFoliage` or `roughDiffuse`, so a three twin has no such key to copy into: carry the markers by name (PRD-651, PRD-653).
+  for (const marker of ["twoSidedFoliage", "roughDiffuse"])
+    if ((source as unknown as Record<string, unknown>)[marker] === true) twin[marker] = true;
   return twin as unknown as MeshStandardMaterial;
 }
 
@@ -1680,7 +1685,7 @@ export function installGi(
     values = smooth({ grid, values, links, valid });
   phase("smooth");
 
-  if (options.bounces > 0) {
+  if (options.bounces > 0 && options.paintGround !== false) {
     const floor = groundRadiance({ grid, values, links, valid }, ray, first, end, grid.origin.y);
     if (floor !== undefined) paintGround(root, floor);
   }

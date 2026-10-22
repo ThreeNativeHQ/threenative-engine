@@ -68,21 +68,17 @@ function hitSphere(r: number, mu: number, radius: number, far: boolean): number 
   return t >= 0 ? t : undefined;
 }
 
-const STEPS_LIGHT = 16;
-
-/** Optical depth from a point to the top of the atmosphere; undefined when the planet blocks the way. */
+/**
+ * Optical depth from a point to the top of the atmosphere; undefined when the planet blocks the way.
+ * Unreal stores this in its transmittance LUT, ten samples a ray (r.SkyAtmosphere.TransmittanceLUT.SampleCount).
+ */
 function opticalDepthToTop(r: number, mu: number): Rgb | undefined {
   if (mu < 0 && hitSphere(r, mu, BOTTOM_KM, false) !== undefined) return undefined;
   const length = hitSphere(r, mu, TOP_KM, true) ?? 0;
   const sum: [number, number, number] = [0, 0, 0];
-  let previous = 0;
-  for (let i = 1; i <= STEPS_LIGHT; i += 1) {
-    const t = (length * i * i) / (STEPS_LIGHT * STEPS_LIGHT); // quadratic: the dense air is first
-    const mid = (previous + t) / 2;
-    const m = medium(Math.max(0, Math.sqrt(r * r + 2 * r * mu * mid + mid * mid) - BOTTOM_KM));
-    const dt = t - previous;
-    for (let c = 0; c < 3; c += 1) sum[c] = (sum[c] ?? 0) + m.ext[c as 0 | 1 | 2] * dt;
-    previous = t;
+  for (const { from, to, at } of linear(10)(length)) {
+    const m = medium(Math.max(0, Math.sqrt(r * r + 2 * r * mu * at + at * at) - BOTTOM_KM));
+    for (let c = 0; c < 3; c += 1) sum[c] = (sum[c] ?? 0) + m.ext[c as 0 | 1 | 2] * (to - from);
   }
   return sum;
 }
@@ -94,6 +90,29 @@ export function sunTransmittance(elevationRad: number): Rgb {
   return [Math.exp(-depth[0]), Math.exp(-depth[1]), Math.exp(-depth[2])];
 }
 
+/**
+ * The colour Unreal gives the sun light itself (FAtmosphereSetup::GetTransmittanceAtGroundLevel,
+ * Engine/Source/Runtime/Engine/Private/Components/SkyAtmosphere*): a CPU estimate, not the exact
+ * integral. It starts 500 m above the planet, sums 15 equal segments by their start point (the
+ * rule over-counts the dense low air) and has no minimum elevation (TransmittanceMinLightElevationAngle
+ * is -90). The sky itself reads the transmittance LUT (`sunTransmittance`), so the two differ.
+ */
+export function sunLightTransmittance(elevationRad: number): Rgb {
+  const f = Math.fround;
+  const r0 = BOTTOM_KM + 0.5;
+  const mu = Math.sin(elevationRad);
+  const tMax = hitSphere(r0, mu, TOP_KM, true) ?? 0;
+  const depth: [number, number, number] = [0, 0, 0];
+  const step = f(1 / 15);
+  for (let t = 0; t < 1; t = f(t + step)) {
+    const along = tMax * t;
+    const h = Math.max(0, Math.sqrt(r0 * r0 + 2 * r0 * mu * along + along * along) - BOTTOM_KM);
+    const m = medium(h);
+    for (let c = 0; c < 3; c += 1) depth[c] = (depth[c] ?? 0) + m.ext[c as 0 | 1 | 2] * step * tMax;
+  }
+  return [Math.exp(-depth[0]), Math.exp(-depth[1]), Math.exp(-depth[2])];
+}
+
 /** Fraction of the sun's illuminance that reaches radius `r` where the sun's cosine to local up is `mu`. */
 export function transmittanceToTop(r: number, mu: number): Rgb {
   const depth = opticalDepthToTop(r, mu);
@@ -102,6 +121,43 @@ export function transmittanceToTop(r: number, mu: number): Rgb {
 }
 
 type Multi = (heightKm: number, cosSun: number) => Rgb;
+
+/** One ray segment: it spans [from, to] in kilometres and its medium is read at `at`. */
+interface ISegment {
+  from: number;
+  to: number;
+  at: number;
+}
+type Sampling = (tMax: number) => ISegment[];
+
+/** Unreal's fixed march (the transmittance, multiple-scattering and distant sky light passes): equal segments, read `offset` of the way in. */
+const linear =
+  (steps: number, offset = 0.3): Sampling =>
+  (tMax) =>
+    Array.from({ length: steps }, (_, i) => ({
+      from: (tMax * i) / steps,
+      to: (tMax * (i + 1)) / steps,
+      at: (tMax * (i + offset)) / steps,
+    }));
+
+/**
+ * Unreal's sky-view march (SamplingSetup.VariableSampleCount in SkyAtmosphere.usf): the count grows
+ * from `min` to `max` with the distance, the segments grow with the square of it, and the last one
+ * runs on to the end of the ray.
+ */
+const variable =
+  (min: number, max: number, distanceKm: number, offset = 0.3): Sampling =>
+  (tMax) => {
+    const count = min + (max - min) * Math.min(1, Math.max(0, tMax / distanceKm));
+    const whole = Math.floor(count);
+    const tMaxWhole = (tMax * whole) / count;
+    return Array.from({ length: Math.ceil(count) }, (_, i) => {
+      const [u0, u1] = [(i / whole) ** 2, ((i + 1) / whole) ** 2];
+      const from = tMaxWhole * u0;
+      const to = u1 > 1 ? tMax : tMaxWhole * u1;
+      return { from, to, at: from + (to - from) * offset };
+    });
+  };
 
 interface IGather {
   radiance: [number, number, number];
@@ -120,7 +176,8 @@ function march(
   sun: Vec3,
   iso: boolean,
   multi: Multi | undefined,
-  ground = iso,
+  ground: boolean,
+  sampling: Sampling,
 ): IGather {
   const out: IGather = { radiance: [0, 0, 0], transfer: [0, 0, 0] };
   const mu0 = dir[1];
@@ -130,13 +187,9 @@ function march(
   const phaseRay = iso ? 1 / FOUR_PI : rayleighPhase(cosView);
   const phaseMie = iso ? 1 / FOUR_PI : hgPhase(cosView);
   const through: [number, number, number] = [1, 1, 1];
-  const steps = 48;
-  let previous = 0;
   const at = (t: number): Vec3 => [dir[0] * t, r0 + dir[1] * t, dir[2] * t];
-  for (let i = 1; i <= steps; i += 1) {
-    const t = (tMax * i * i) / (steps * steps);
-    const mid = (previous + t) / 2;
-    const dt = t - previous;
+  for (const { from, to, at: mid } of sampling(tMax)) {
+    const dt = to - from;
     const p = at(mid);
     const rr = Math.hypot(p[0], p[1], p[2]);
     const cosSun = dot(p, sun) / rr;
@@ -157,7 +210,6 @@ function march(
       out.transfer[c] = (out.transfer[c] ?? 0) + (through[c] ?? 1) * scatter * integral;
       through[c] = (through[c] ?? 1) * stepT;
     }
-    previous = t;
   }
   // The sky pass draws no ground luminance (Unreal's sky render passes Ground = false), so the nadir
   // is only the in-scatter up to the planet, near black. The multiple-scattering pass does bounce
@@ -199,7 +251,7 @@ function multipleScatteringTable(): Multi {
       const sum = [0, 0, 0];
       const transfer = [0, 0, 0];
       for (const dir of dirs) {
-        const ray = march(BOTTOM_KM + h, dir, sun, true, undefined);
+        const ray = march(BOTTOM_KM + h, dir, sun, true, undefined, true, linear(15));
         for (let c = 0; c < 3; c += 1) {
           sum[c] = (sum[c] ?? 0) + (ray.radiance[c] ?? 0);
           transfer[c] = (transfer[c] ?? 0) + (ray.transfer[c] ?? 0);
@@ -241,38 +293,60 @@ function multipleScatteringTable(): Multi {
  * (GetViewDistanceSkyLightColor). Per unit sun illuminance, like `bakeSkyRadiance`.
  */
 export const DISTANT_SKY_LIGHT_ALTITUDE_KM = 6;
+/**
+ * Unreal's distant sky light shader: one 8 x 8 group, one stratified direction a thread, ten linear
+ * samples a ray (RenderDistantSkyLightLutCS). The directions come from a seeded linear congruential
+ * stream (0xDE4DC0DE, GUniformSphereSamplesBuffer in SkyAtmosphereRendering.cpp), so the coarse
+ * result is one fixed draw, not a mean; the same draw is reproduced here.
+ */
+const DISTANT_GROUP = 8;
+function distantDirections(): Vec3[] {
+  let seed = 0xde4dc0de;
+  const fraction = (): number => {
+    seed = (Math.imul(seed, 196314165) + 907633515) >>> 0;
+    return (seed >>> 9) / 8388608;
+  };
+  const dirs: Vec3[] = new Array(DISTANT_GROUP * DISTANT_GROUP);
+  for (let i = 0; i < DISTANT_GROUP; i += 1) {
+    for (let j = 0; j < DISTANT_GROUP; j += 1) {
+      const up = 1 - (2 * (i + fraction())) / DISTANT_GROUP;
+      const phi = (2 * Math.PI * (j + fraction())) / DISTANT_GROUP;
+      const ring = Math.sqrt(1 - up * up);
+      dirs[j * DISTANT_GROUP + i] = [ring * Math.cos(phi), up, ring * Math.sin(phi)];
+    }
+  }
+  return dirs;
+}
 export function distantSkyLight(toSun: { x: number; y: number; z: number }): Rgb {
   const sun: Vec3 = [toSun.x, toSun.y, toSun.z];
   const multi = multipleScatteringTable();
-  const count = 64;
+  const dirs = distantDirections();
   const sum: [number, number, number] = [0, 0, 0];
-  for (let i = 0; i < count; i += 1) {
-    const y = 1 - (2 * (i + 0.5)) / count;
-    const ring = Math.sqrt(1 - y * y);
-    const phi = i * Math.PI * (3 - Math.sqrt(5));
-    const dir: Vec3 = [Math.cos(phi) * ring, y, Math.sin(phi) * ring];
-    const ray = march(BOTTOM_KM + DISTANT_SKY_LIGHT_ALTITUDE_KM, dir, sun, true, multi, false);
-    for (let c = 0; c < 3; c += 1) sum[c] = (sum[c] ?? 0) + (ray.radiance[c] ?? 0) / count;
+  for (const dir of dirs) {
+    const ray = march(
+      BOTTOM_KM + DISTANT_SKY_LIGHT_ALTITUDE_KM,
+      dir,
+      sun,
+      true,
+      multi,
+      false,
+      linear(10),
+    );
+    for (let c = 0; c < 3; c += 1) sum[c] = (sum[c] ?? 0) + (ray.radiance[c] ?? 0) / dirs.length;
   }
   return sum;
 }
 
 /**
- * Measured, not derived: the fixed-exposure Unreal L3 void (height fog fogged to opaque, so it is
- * the fog's inscattering colour and nothing else) over `distantSkyLight`, per channel, through the
- * same tone curve (gamut expansion on, as in a fresh Unreal frame). 0.811 / 0.867 / 0.930 at a 60
- * degree sun and 0.799 / 0.870 / 0.921 at 15, so one constant holds across the sun within 0.5 level. The clear sky matches the Unreal L2 frame within a few levels
- * with no such factor, so the cause sits in how Unreal builds this one light. Cloud ambient and
- * fog both read it, as in Unreal (GetViewDistanceSkyLightColor).
+ * The light height fog and clouds take from the sky, per unit sun illuminance: Unreal's distant sky
+ * light (GetViewDistanceSkyLightColor). It needs no fit. The 0.76 / 0.871 / 0.941 factors that stood
+ * here made up for a finer march than Unreal's own, ten samples a ray from one fixed 8 x 8 draw of
+ * directions (`distantSkyLight`); the same march agrees with the Unreal L3 void within 2.4 percent in
+ * green and blue at 15 and 60 degrees, and within 0.6 percent in red at 15 degrees. Red stays 10 percent
+ * high at 60 degrees, the same excess the clear sky shows at a high sun (open, PRD-633).
  */
-export const VIEW_DISTANCE_SKY_LIGHT_FIT: Rgb = [0.805, 0.868, 0.925];
-
-/** The light height fog and clouds take from the sky, per unit sun illuminance. */
 export function viewDistanceSkyLight(toSun: { x: number; y: number; z: number }): Rgb {
-  const light = distantSkyLight(toSun);
-  return [0, 1, 2].map(
-    (c) => (light[c] ?? 0) * (VIEW_DISTANCE_SKY_LIGHT_FIT[c] ?? 1),
-  ) as unknown as Rgb;
+  return distantSkyLight(toSun);
 }
 
 /**
@@ -299,7 +373,7 @@ export function bakeSkyRadiance(
         Math.sin(elevation),
         Math.sin(azimuth) * Math.cos(elevation),
       ];
-      const ray = march(r0, dir, sun, false, multi);
+      const ray = march(r0, dir, sun, false, multi, false, variable(4, 32, 150));
       const o = (y * width + x) * 3;
       data[o] = ray.radiance[0];
       data[o + 1] = ray.radiance[1];

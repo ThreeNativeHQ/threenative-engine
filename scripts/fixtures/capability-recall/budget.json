@@ -1,5 +1,5 @@
 {
-  "recallAtK": 0.9139784946236559,
+  "recallAtK": 0.9166666666666666,
   "recalledRows": [
     "brief.endless-runner.1",
     "brief.endless-runner.2",
@@ -77,10 +77,13 @@
     "rain.streaks",
     "rain.round-time-limit",
     "request.drive-a-racing-kart",
+    "request.lumen-reflections",
+    "request.dedicated-reflection-rays",
     "request.vehicle-suspension-grip",
     "request.vehicle-pedals-steering",
     "request.vehicle-rescue-respawn",
     "request.pcss-soft-shadows",
+    "request.rough-diffuse-substrate-eon",
     "request.lumen-surface-cache",
     "request.lumen-scene",
     "request.mesh-cards",
@@ -88,7 +91,7 @@
     "request.shadow-quality-scalability"
   ],
   "rejectHits": 15,
-  "rowCount": 93,
+  "rowCount": 96,
   "rowIds": [
     "brief.endless-runner.1",
     "brief.endless-runner.2",
@@ -174,10 +177,13 @@
     "rain.streaks",
     "rain.round-time-limit",
     "request.drive-a-racing-kart",
+    "request.lumen-reflections",
+    "request.dedicated-reflection-rays",
     "request.vehicle-suspension-grip",
     "request.vehicle-pedals-steering",
     "request.vehicle-rescue-respawn",
     "request.pcss-soft-shadows",
+    "request.rough-diffuse-substrate-eon",
     "request.lumen-surface-cache",
     "request.lumen-scene",
     "request.mesh-cards",
@@ -185,7 +191,7 @@
     "request.shadow-quality-scalability"
   ],
   "version": 1,
-  "zeroResultRate": 0.05555555555555555,
+  "zeroResultRate": 0.052083333333333336,
   "unresolvedResultRate": 0,
   "notOwnedRows": {
     "request.inventory-system": "inventory",

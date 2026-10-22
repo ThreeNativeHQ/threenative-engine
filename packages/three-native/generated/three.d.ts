@@ -1589,6 +1589,7 @@ alphaTest: number;
 readonly id: number;
 readonly type: string;
 twoSidedFoliage: boolean;
+roughDiffuse: boolean;
 
   setValues(values?: MeshStandardMaterialParameters): void;
 
@@ -1655,6 +1656,7 @@ colorWrite: boolean;
 aoNode: Node | null;
 irradianceNode: Node | null;
 twoSidedFoliage: boolean;
+roughDiffuse: boolean;
 
   clone(): this;
 
@@ -2121,6 +2123,7 @@ distance: number;
 intensity: number;
 color: Color;
 readonly shadow: PointLightShadow;
+sourceRadius: number;
 }
 
 /** Catalog partial (members-not-catalogued, media-sources-unbound): three/PositionalAudio. */
@@ -3444,6 +3447,7 @@ penumbra: number;
 color: Color;
 target: Object3D;
 readonly shadow: SpotLightShadow;
+sourceRadius: number;
 }
 
 /** Catalog supported: three/AnimationAction. */

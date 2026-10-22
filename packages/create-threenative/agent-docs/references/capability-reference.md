@@ -1667,6 +1667,22 @@ export function lampPenumbraTangent( sourceRadius: number, blockerDistance: numb
 const tangent = lampPenumbraTangent(0.05, 2, 3);
 ```
 
+### `lampShadowMarker`
+
+`function` — The `TN_LAMP_SHADOW` line for the renderer's last frame, or `undefined` on a renderer that keeps no lamp counters (three's own).
+
+```ts
+export function lampShadowMarker( renderer: { … }
+```
+
+- **Use when:** log lamp shadow redraws and GPU time apart from the sun's on the owned engine
+- **Constraints:** counters that do not add up to the frame's shadow draws throw TN_LAMP_SHADOW_INVALID
+
+```ts
+const line = lampShadowMarker(renderer, frame);
+if (line !== undefined) console.info(line);
+```
+
 ### `loadAll`
 
 `function` — Load a list with bounded concurrency, returning results in the input's order.
@@ -1949,6 +1965,22 @@ export function readGIMarker(line: string): IGIBudgetReport | undefined { … }
 
 ```ts
 const report = readGIMarker(line); if (report?.stepped) console.log(report.reason);
+```
+
+### `readLampShadowMarker`
+
+`function` — Parse a `TN_LAMP_SHADOW` line back into its stats, or `undefined`.
+
+```ts
+export function readLampShadowMarker(line: string): ILampShadowStats | undefined { … }
+```
+
+- **Use when:** count lamp shadow redraws from a renderer log, for example a moving-caster run
+- **Constraints:** non-marker lines and markers whose sun and lamp draws do not add up return `undefined`
+
+```ts
+const stats = readLampShadowMarker(line);
+if (stats !== undefined) console.log(stats.lamps.redraws);
 ```
 
 ### `readProbeVolumeObservation`
@@ -2725,6 +2757,22 @@ export class SurfaceLights { … }
 const lamps = new SurfaceLights(lights); lamps.shade(point, normal, albedo, out, (i) => !occluded(i));
 ```
 
+### `TracedReflections`
+
+`class` — Reflection rays against the scene's triangles, in TSL. For a smooth surface, a ray finds what the screen cannot show (a room behind the camera, the far side of an object) and returns the hit's position, normal and material. The game lights the hit in its own stage. The kernel is plain TSL: float textures and a loop, no storage buffer.
+
+```ts
+export class TracedReflections { … }
+```
+
+- **Use when:** reflect what is behind the camera in a mirror or a chrome sphere · make a glossy or wet floor reflect objects that are off screen · trace a shadow ray from a reflected surface toward the sun
+- **Constraints:** the pack is a snapshot of the static triangles taken when the object is built: build a new one after geometry moves · instanced, skinned, batched and morphing meshes are not in the pack; report.skippedMoving counts them · trace only pixels at or below maxRoughnessToTrace (0.4, Unreal's cut-off): each ray walks the tree · a ray visits at most maxSteps tree nodes, then reports a miss; hit light, the miss colour and the blend with the frame stay in the game's src/render/ · the pack needs a device with float32-filterable
+- **Overrides:** maxRoughnessToTrace, roughnessFadeLength and maxSteps are game-owned choices
+
+```ts
+const traced = new TracedReflections(ctx.scene); const hit = traced.trace({ origin, direction, far: 30 }); // light hit.albedo at hit.position in the stage
+```
+
 ### `TracerPool3D`
 
 `class` — Pool travelling bullet-streak meshes for hitscan shots.
@@ -2817,6 +2865,22 @@ export function updateModelLods( root: { … }
 // Nothing to call: the loader returns a mesh with the chain and the engine selects every frame.
 const hull = await ctx.assets.model("hull.glb");
 ctx.scene.add(hull.scene);
+```
+
+### `useRoughDiffuse`
+
+`function` — Unreal's Substrate rough diffuse (EON) on standard and physical materials, so direct sun and lamp light meets a rough surface the way Unreal shades it. The same `roughDiffuse` flag works on three's WebGPU renderer and on the owned engine.
+
+```ts
+export function useRoughDiffuse(root: Object3D, enabled = true): number { … }
+```
+
+- **Use when:** shade rough surfaces under a sun or a lamp the way Unreal's Substrate does, not as flat Lambert
+- **Constraints:** direct light only, indirect light stays Lambert; standard and physical materials; a lamp's `sourceRadius` in metres fades the effect to Lambert at 20 cm; a material changed after its first draw needs `needsUpdate`
+- **Overrides:** material.roughDiffuse = false, or useRoughDiffuse(root, false), puts Lambert back
+
+```ts
+useRoughDiffuse(scene);
 ```
 
 ### `validateWorldMatrices`

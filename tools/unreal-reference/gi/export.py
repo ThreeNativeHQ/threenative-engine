@@ -669,6 +669,8 @@ def build_motion(ref, name, scene):
     failed = []
     for run_name, run in scene.get("motion", {}).items():
         try:
+            if run.get("actor"):
+                raise RuntimeError(f"run {run_name}: an actor track is not keyed in Unreal yet (PRD-649 Phase 2)")
             frames = run["frames"]
             at = lambda frame, run=run: run_pose(scene, run, frame)
             motion_sequence(ref, name, scene, run, f"Seq_motion_{run_name}", frames, at, True)
