@@ -12,24 +12,24 @@
   --bg: #f5f6f4; --panel: #ffffff; --fg: #1b1f1d; --muted: #5d6662; --line: #d9ddda; --hi: #fff4d6;
   --shipped: #2f8f5b; --partial: #d18a12; --open: #2f6fc4; --deferred: #8b8f93; --notfiled: #c9ccc7;
   --w1: #b8323a; --w2: #d9691f; --w3: #c9a10a; --w4: #3f8f6b; --w5: #5b6f8f;
-  --tile-fg: #ffffff; --accent: #0f6f6a;
+  --tile-fg: #ffffff; --accent: #0f6f6a; --gap: #c0392b;
   --display: "Instrument Sans", system-ui, sans-serif; --mono: "JetBrains Mono", ui-monospace, monospace;
 }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
   --bg: #121513; --panel: #1a1e1c; --fg: #e7ebe8; --muted: #9aa49f; --line: #2c322f; --hi: #3a3220;
   --shipped: #3aa56c; --partial: #d9961f; --open: #4a86d6; --deferred: #6c7176; --notfiled: #3b403d;
   --w1: #e0525a; --w2: #ef8a45; --w3: #e3bf2c; --w4: #55b38a; --w5: #8197bb;
-  --tile-fg: #ffffff; --accent: #3bb3aa; color-scheme: dark } }
+  --tile-fg: #ffffff; --accent: #3bb3aa; --gap: #f0716a; color-scheme: dark } }
 :root[data-theme="dark"] {
   --bg: #121513; --panel: #1a1e1c; --fg: #e7ebe8; --muted: #9aa49f; --line: #2c322f; --hi: #3a3220;
   --shipped: #3aa56c; --partial: #d9961f; --open: #4a86d6; --deferred: #6c7176; --notfiled: #3b403d;
   --w1: #e0525a; --w2: #ef8a45; --w3: #e3bf2c; --w4: #55b38a; --w5: #8197bb;
-  --tile-fg: #ffffff; --accent: #3bb3aa; color-scheme: dark }
+  --tile-fg: #ffffff; --accent: #3bb3aa; --gap: #f0716a; color-scheme: dark }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--bg); color: var(--fg); font-family: var(--display); font-size: 15px; line-height: 1.5; }
 .wrap { max-width: 1180px; margin: 0 auto; padding-block: 28px 56px;
   padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
-  display: grid; gap: 36px; }
+  display: grid; grid-template-columns: minmax(0, 1fr); gap: 36px; }
 h1 { font-size: clamp(26px, 4vw, 38px); line-height: 1.1; margin: 0; text-wrap: balance; letter-spacing: -0.01em; }
 h2 { font-size: 20px; margin: 0 0 4px; text-wrap: balance; }
 h3 { font-size: 16px; margin: 0; }
@@ -74,11 +74,46 @@ button { font: inherit; color: inherit; }
 .prog { display: block; width: 56px; height: 4px; border-radius: 2px; background: var(--line); margin-top: 3px; margin-left: auto; overflow: hidden; }
 .prog b { display: block; height: 100%; background: var(--shipped); }
 
-/* system detail */
-.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
-.chip { background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 4px 12px; cursor: pointer; font-size: 13px; }
-.chip[aria-pressed="true"] { background: var(--fg); color: var(--bg); border-color: var(--fg); }
-.detail { padding: 16px; display: grid; gap: 14px; }
+/* coverage explorer: system rail (left) drives the detail (right) */
+.explorer { display: grid; grid-template-columns: 280px minmax(0, 1fr); gap: 16px; align-items: start; }
+@media (max-width: 900px) { .explorer { grid-template-columns: minmax(0, 1fr); } .explorer .rail { max-height: 320px; position: static; } }
+.rail { padding: 6px; max-height: 900px; overflow: auto; position: sticky; top: 12px; }
+.rail .area { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); padding: 10px 8px 4px; }
+.sysbtn { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 3px 8px; width: 100%; text-align: left; background: none;
+  border: 0; border-radius: 6px; padding: 6px 8px; cursor: pointer; align-items: center; }
+.sysbtn:hover { background: var(--bg); }
+.sysbtn[aria-pressed="true"] { background: var(--hi); }
+.sysbtn .nm { font-size: 13.5px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sysbtn .gb { font-family: var(--mono); font-size: 11px; color: var(--gap); font-weight: 600; white-space: nowrap; }
+.sysbtn .gb.ok { color: var(--shipped); }
+.cbar { grid-column: 1 / -1; display: flex; height: 5px; border-radius: 3px; overflow: hidden; gap: 1px; background: var(--line); }
+.c-prd { background: var(--open); } .c-ships { background: var(--shipped); } .c-rule { background: var(--notfiled); }
+.c-gap { background: repeating-linear-gradient(135deg, var(--gap) 0 3px, transparent 3px 6px); background-color: color-mix(in srgb, var(--gap) 35%, transparent); }
+.railtools { display: flex; justify-content: space-between; gap: 8px; padding: 6px 8px; font-size: 12.5px; color: var(--muted); }
+.detail { padding: 16px; display: grid; gap: 16px; min-width: 0; }
+.blk { min-width: 0; }
+.blk h4 { margin: 0 0 8px; font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 8px; }
+.card { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; display: grid; gap: 4px; background: var(--panel);
+  text-align: left; cursor: pointer; border-left: 4px solid var(--c, var(--open)); }
+.card:hover { border-color: var(--muted); border-left-color: var(--c, var(--open)); }
+.card.sel { background: var(--hi); }
+.card .top { display: flex; justify-content: space-between; gap: 8px; font-family: var(--mono); font-size: 12px; }
+.card .ttl { font-size: 13.5px; line-height: 1.3; font-weight: 500; }
+.card .cov { font-size: 12px; color: var(--muted); }
+.card a { font-size: 12px; color: var(--accent); }
+.card .prog { width: 100%; margin: 2px 0 0; }
+.gaps { display: grid; gap: 6px; }
+.gapi { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 12px; padding: 8px 12px; border-radius: 8px;
+  border: 1px dashed var(--gap); background: color-mix(in srgb, var(--gap) 7%, transparent); }
+.gapi b { font-size: 13.5px; } .gapi .num { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+.gapi .note { grid-column: 1 / -1; }
+.allok { padding: 10px 12px; border-radius: 8px; background: color-mix(in srgb, var(--shipped) 12%, transparent); font-size: 13.5px; }
+.tag { display: inline-block; font-family: var(--mono); font-size: 11px; font-weight: 600; padding: 1px 6px; border-radius: 4px;
+  border: 1px solid var(--line); background: var(--bg); color: var(--fg); cursor: pointer; margin: 0 4px 3px 0; white-space: nowrap; }
+.tag.no { border-color: var(--gap); color: var(--gap); background: none; cursor: default; }
+.s-rule { background: transparent; box-shadow: inset 0 0 0 1px var(--muted); }
+#tbl tbody tr { cursor: pointer; } #tbl tbody tr:hover td { background: var(--bg); }
 .dhead { display: flex; flex-wrap: wrap; gap: 8px 24px; align-items: baseline; justify-content: space-between; }
 .dhead .big { font-family: var(--mono); font-size: 20px; }
 .stack { display: flex; height: 22px; border-radius: 5px; overflow: hidden; gap: 2px; }
@@ -102,16 +137,23 @@ button { font: inherit; color: inherit; }
 
 /* treemap */
 .toggle { font-size: 13px; color: var(--muted); display: inline-flex; gap: 6px; align-items: center; }
-.tm { position: relative; width: 100%; height: 560px; overflow: hidden; }
-@media (max-width: 600px) { .tm { height: 720px; } }
+.tm { position: relative; width: 100%; height: 760px; overflow: hidden; }
+@media (max-width: 600px) { .tm { height: 1100px; } }
+.fgrp { position: absolute; border-radius: 5px; background: color-mix(in srgb, var(--fg) 6%, transparent); cursor: pointer; }
+.fgrp > .fl { position: absolute; left: 5px; top: 1px; right: 5px; font-size: 11.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fgrp > .fl small { font-family: var(--mono); font-weight: 400; color: var(--muted); }
+.p-done { background: var(--shipped); } .p-progress { background: var(--partial); } .p-notstarted { background: var(--open); }
+.p-deferred { background: var(--deferred); } .p-rule { background: var(--notfiled); } .p-unsplit { background: color-mix(in srgb, var(--fg) 12%, transparent); }
+.p-gap { background: repeating-linear-gradient(135deg, var(--gap) 0 4px, color-mix(in srgb, var(--gap) 55%, transparent) 4px 8px); }
+.tile.p-rule, .tile.p-unsplit { color: var(--fg); }
+.tile .pb { position: absolute; left: 0; bottom: 0; height: 4px; background: rgba(255,255,255,.85); }
 .grp { position: absolute; border: 1px solid var(--line); border-radius: 6px; }
 .grp > .gl { position: absolute; left: 6px; top: 2px; right: 6px; font-size: 11px; font-weight: 600; text-transform: uppercase;
   letter-spacing: .06em; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tile { position: absolute; border-radius: 4px; color: var(--tile-fg); padding: 5px 6px; overflow: hidden;
   box-shadow: inset 0 0 0 1px rgba(0,0,0,.12); }
-.tile.drill { cursor: pointer; }
-.tile.s-notfiled { color: var(--fg); }
-.tile .tn { font-weight: 600; font-size: 12.5px; line-height: 1.2; }
+.tile { cursor: pointer; }
+.tile .tn { font-weight: 600; font-size: 11.5px; line-height: 1.2; }
 .tile .tl { font-family: var(--mono); font-size: 11px; opacity: .9; }
 .tile .cx { position: absolute; right: 5px; bottom: 4px; font-family: var(--mono); font-size: 11px; opacity: .85; }
 .tile:hover, .tile:focus-visible { outline: 2px solid var(--fg); outline-offset: -2px; z-index: 2; }
@@ -145,6 +187,7 @@ tr:last-child td { border-bottom: 0; }
       <div class="kpi"><b>359,018</b><span>Shader lines</span></div>
       <div class="kpi"><b>~175K</b><span>Lines behind the default look</span></div>
       <div class="kpi"><b id="k-prds">0</b><span>Open PRDs in the port order</span></div>
+      <div class="kpi"><b id="k-gaps" style="color:var(--gap)">0</b><span>Subsystems with no PRD</span></div>
     </div>
   </header>
 
@@ -159,10 +202,12 @@ tr:last-child td { border-bottom: 0; }
   </section>
 
   <section id="detail-sec">
-    <div class="section-head"><div><h2>Inside each system</h2>
-      <div class="note">Every subsystem, its measured lines, what it does, and the ThreeNative PRD that ports it. Rows for the selected PRD are highlighted.</div></div></div>
-    <div class="chips" id="chips" role="group" aria-label="Unreal systems"></div>
-    <div class="panel detail" id="detail"></div>
+    <div class="section-head"><div><h2>Unreal feature → ThreeNative PRDs</h2>
+      <div class="note">Select an Unreal feature. You see the PRDs that port it, then every subsystem that no PRD covers yet. Bar: <span class="pill"><span class="dot c-prd"></span>has a PRD</span> <span class="pill"><span class="dot c-ships"></span>ships, no PRD needed</span> <span class="pill"><span class="dot c-gap"></span>no PRD</span> <span class="pill"><span class="dot c-rule"></span>out of scope by rule</span></div></div></div>
+    <div class="explorer">
+      <nav class="panel rail" aria-label="Unreal features"><div class="railtools"><label class="toggle"><input type="checkbox" id="gaponly"> Only features with gaps</label></div><div id="rail"></div></nav>
+      <div class="panel detail" id="detail" aria-live="polite"></div>
+    </div>
   </section>
 
   <section>
@@ -173,15 +218,15 @@ tr:last-child td { border-bottom: 0; }
 
   <section>
     <div class="section-head">
-      <div><h2>Where the code is</h2><div class="note">Tile area = lines of code. Corner number = complexity, 1 to 10. Select a tile with a ▸ to open its subsystems.</div></div>
+      <div><h2>Where the code is</h2><div class="note">Each Unreal system is split into its subsystems. Tile area = lines of code. Colour = how far ThreeNative has ported it; the white bar is the share of PRD boxes ticked. Select a tile to see its PRDs and gaps.</div></div>
       <label class="toggle"><input type="checkbox" id="big"> Include tool-heavy modules (Niagara, Landscape, World Partition, RHI, RenderCore)</label>
     </div>
     <div class="legend" id="legend" style="margin-bottom:10px"></div>
-    <div class="panel tm" id="tm" role="img" aria-label="Treemap of Unreal render features sized by lines of code"></div>
+    <div class="panel tm" id="tm" role="group" aria-label="Treemap of Unreal subsystems sized by lines of code and coloured by port progress"></div>
   </section>
 
   <section>
-    <div class="section-head"><div><h2>All features, ranked</h2><div class="note">Select a column header to sort.</div></div></div>
+    <div class="section-head"><div><h2>All features, ranked</h2><div class="note">Select a column header to sort. Select a row to see its PRDs and gaps.</div></div></div>
     <div class="panel tablebox"><table id="tbl"><thead><tr>
       <th data-k="name" tabindex="0">Feature</th><th data-k="area" tabindex="0">Area</th>
       <th data-k="loc" tabindex="0" style="text-align:right">LOC</th><th data-k="cx" tabindex="0">Complexity</th>
@@ -194,7 +239,12 @@ tr:last-child td { border-bottom: 0; }
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
 <script>
-const STATUS = { shipped: "Shipped", partial: "Partial", open: "Open", deferred: "Deferred", notfiled: "Not filed" };
+// @data-start: plain data and pure rules. scripts/unreal-port-status.ts evaluates this block too.
+const STATUS = { shipped: "Shipped", partial: "Partial", open: "Open", deferred: "Deferred", notfiled: "Not filed", rule: "Out of scope by rule" };
+// PRD registry (title, path, box counts), generated from the PRD files by a script; do not hand-edit.
+// @prds-start
+const PRDS = {"285":{"t":"clusters arrive when the camera asks for them","p":"docs/PRDs/done/nanite-like/PRD-285-clusters-arrive-when-the-camera-asks-for-them.md","r":"develop","s":"","d":0,"n":5,"f":"done"},"316":{"t":"forty-six VFX are generated render source, not an engine inside the engine","p":"docs/PRDs/Unreal/vfx/PRD-316-forty-six-vfx-are-generated-render-source-not-an-engine-inside-the-engine.md","r":"develop","s":"","d":0,"n":39,"f":"open"},"384":{"t":"Adaptive resolution must distinguish host delay from GPU cost","p":"docs/PRDs/done/PRD-384-adaptive-resolution-gpu-headroom.md","r":"develop","s":"DONE","d":8,"n":8,"f":"done"},"455":{"t":"Fewer rendered pixels reconstruct into a stable full-resolution frame","p":"docs/PRDs/done/PRD-455-temporal-reconstruction-from-dynamic-resolution.md","r":"develop","s":"DONE","d":7,"n":7,"f":"done"},"456":{"t":"Distant world cells stay visible after their detailed cells unload","p":"docs/PRDs/open-world/PRD-456-distant-world-cell-proxies.md","r":"develop","s":"PROPOSED","d":0,"n":6,"f":"open"},"457":{"t":"Virtual shadows page only when pages are cheaper than cached clip levels","p":"docs/PRDs/Unreal/rendering/PRD-457-virtual-shadows-scale-by-measurement.md","r":"develop","s":"PROPOSED","d":0,"n":6,"f":"open"},"459":{"t":"Smooth streaming: one admission budget per frame, prefetched ahead of the camera","p":"docs/PRDs/open-world/PRD-459-smooth-streaming-one-admission-budget-per-frame.md","r":"develop","s":"PARTIAL","d":4,"n":16,"f":"open"},"460":{"t":"Invisible streaming: a dithered fade for arriving props and a crossfade across LOD levels","p":"docs/PRDs/Unreal/open-world/PRD-460-invisible-streaming-transitions.md","r":"develop","s":"NOT STARTED","d":0,"n":15,"f":"open"},"486":{"t":"Characters get a LOD chain","p":"docs/PRDs/open-world/PRD-486-characters-get-a-lod-chain.md","r":"develop","s":"PROPOSED","d":0,"n":8,"f":"open"},"488":{"t":"Foliage moves in the wind","p":"docs/PRDs/open-world/PRD-488-foliage-moves-in-the-wind.md","r":"develop","s":"PROPOSED","d":0,"n":8,"f":"open"},"489":{"t":"Occlusion culling re-tested on the GPU scene","p":"docs/PRDs/done/PRD-489-gpu-scene-occlusion-culling.md","r":"develop","s":"CLOSED","d":2,"n":8,"f":"done"},"492":{"t":"Colour grading and film grain","p":"docs/PRDs/done/PRD-492-colour-grading-and-film-grain.md","r":"develop","s":"DONE","d":6,"n":6,"f":"done"},"493":{"t":"Terrain layers past sixteen textures","p":"docs/PRDs/open-world/PRD-493-terrain-layers-past-sixteen-textures.md","r":"develop","s":"PARTIAL","d":6,"n":8,"f":"open"},"523":{"t":"The render graph owns passes and history (N14a)","p":"docs/PRDs/native-engine/N14-native-render-chain-and-advanced-visuals/PRD-523-n14a-the-render-graph-owns-passes-and-history.md","r":"develop","s":"PROPOSED","d":0,"n":7,"f":"open"},"538":{"t":"Shadow maps redraw only what streamed in","p":"docs/PRDs/done/PRD-538-shadow-maps-redraw-only-what-streamed-in.md","r":"develop","s":"DONE","d":4,"n":4,"f":"done"},"539":{"t":"A lower internal raster reconstructs into a stable full-resolution frame","p":"docs/PRDs/Unreal/performance/PRD-539-low-resolution-temporal-reconstruction-quality-and-cost.md","r":"develop","s":"NOT STARTED","d":0,"n":5,"f":"open"},"560":{"t":"Height fog follows the ground, and the sun shows through it","p":"docs/PRDs/done/PRD-560-height-fog-follows-the-ground.md","r":"develop","s":"LOCAL PHASES COMPLETE","d":11,"n":11,"f":"done"},"561":{"t":"Small things touch the ground: contact shadows from screen depth","p":"docs/PRDs/done/PRD-561-contact-shadows-from-screen-depth.md","r":"develop","s":"DECLINED","d":1,"n":7,"f":"done"},"562":{"t":"Distant land takes the colour of the sky it is seen through","p":"docs/PRDs/Unreal/rendering/PRD-562-aerial-perspective-from-a-froxel-volume.md","r":"develop","s":"NOT STARTED","d":0,"n":8,"f":"open"},"563":{"t":"The first frame starts at the tier the GPU family can hold","p":"docs/PRDs/done/PRD-563-the-first-frame-starts-at-the-tier-the-gpu-family-holds.md","r":"develop","s":"COMPLETE","d":15,"n":15,"f":"done"},"564":{"t":"The resolution scale changes without reallocating a render target","p":"docs/PRDs/done/PRD-564-the-resolution-scale-changes-without-reallocating-a-target.md","r":"develop","s":"DONE","d":7,"n":7,"f":"done"},"565":{"t":"Multisampled targets stay in tile memory on the Android host","p":"docs/PRDs/done/PRD-565-multisampled-targets-stay-in-tile-memory-on-android.md","r":"develop","s":"COMPLETE","d":4,"n":4,"f":"done"},"566":{"t":"Terrain LOD morphs on the GPU and picks its level by screen error","p":"docs/PRDs/done/PRD-566-terrain-lod-morphs-on-the-gpu-and-picks-by-screen-error.md","r":"develop","s":"DONE","d":9,"n":9,"f":"done"},"567":{"t":"Terrain layers blend by their own height, and the game owns the curve","p":"docs/PRDs/done/PRD-567-terrain-layers-blend-by-their-own-height.md","r":"develop","s":"DONE","d":9,"n":9,"f":"done"},"568":{"t":"Mobile builds ship GPU-ready ASTC, so no phone transcodes or uploads RGBA8","p":"docs/PRDs/done/PRD-568-mobile-builds-ship-gpu-ready-astc.md","r":"develop","s":"DONE","d":8,"n":8,"f":"done"},"569":{"t":"GPU particle emitters out of view stop costing, and effects yield to the frame budget","p":"docs/PRDs/done/PRD-569-gpu-particle-emitters-cull-and-yield-to-the-frame-budget.md","r":"develop","s":"DONE","d":12,"n":12,"f":"done"},"570":{"t":"A character costs what the camera sees of it","p":"docs/PRDs/Unreal/animation/PRD-570-a-character-costs-what-the-camera-sees-of-it.md","r":"develop","s":"NOT STARTED","d":0,"n":10,"f":"open"},"571":{"t":"Exposure meters a histogram and ignores the sun","p":"docs/PRDs/BLOCKED/requires-physical-device/PRD-571-exposure-meters-a-histogram-and-ignores-the-sun.md","r":"develop","s":"BLOCKED","d":8,"n":8,"f":"blocked"},"572":{"t":"Shadow casters sort themselves into static and moving","p":"docs/PRDs/done/PRD-572-shadow-casters-sort-themselves-into-static-and-moving.md","r":"develop","s":"DONE","d":9,"n":9,"f":"done"},"600":{"t":"A clustered mesh submits only the clusters the view holds","p":"docs/PRDs/Unreal/rendering/PRD-600-a-clustered-mesh-submits-only-the-clusters-the-view-holds.md","r":"develop","s":"NOT STARTED","d":0,"n":8,"f":"open"},"601":{"t":"Far clusters keep the shading of the source mesh","p":"docs/PRDs/Unreal/rendering/PRD-601-far-clusters-keep-the-shading-of-the-source-mesh.md","r":"develop","s":"NOT STARTED","d":0,"n":7,"f":"open"},"602":{"t":"A clustered shadow caster draws what its shadow texel resolves","p":"docs/PRDs/Unreal/rendering/PRD-602-a-clustered-shadow-caster-draws-what-its-shadow-texel-resolves.md","r":"develop","s":"NOT STARTED","d":0,"n":8,"f":"open"},"603":{"t":"Probes refresh by tracing the packed scene, not by drawing it six times","p":"docs/PRDs/Unreal/rendering/PRD-603-probes-refresh-by-tracing-the-packed-scene-not-by-drawing-it-six-times.md","r":"develop","s":"NOT STARTED","d":0,"n":8,"f":"open"},"604":{"t":"A surface is lit only by probes that can see it","p":"docs/PRDs/Unreal/rendering/PRD-604-a-surface-is-lit-only-by-probes-that-can-see-it.md","r":"develop","s":"NOT STARTED","d":0,"n":8,"f":"open"},"605":{"t":"The probe field follows the camera in nested rings","p":"docs/PRDs/Unreal/rendering/PRD-605-the-probe-field-follows-the-camera-in-nested-rings.md","r":"develop","s":"NOT STARTED","d":0,"n":8,"f":"open"},"606":{"t":"A fast-travel destination is ready before the cover lifts","p":"docs/PRDs/Unreal/open-world/PRD-606-a-fast-travel-destination-is-ready-before-the-cover-lifts.md","r":"develop","s":"NOT STARTED","d":0,"n":13,"f":"open"},"607":{"t":"Streaming reports when a hole is near and spends more to close it","p":"docs/PRDs/Unreal/open-world/PRD-607-streaming-reports-when-a-hole-is-near-and-spends-more-to-close-it.md","r":"develop","s":"NOT STARTED","d":0,"n":11,"f":"open"},"609":{"t":"A GPU burst starts where and when it is asked, and live particles stay put","p":"docs/PRDs/done/PRD-609-a-gpu-burst-starts-where-and-when-it-is-asked-and-live-particles-stay-put.md","r":"develop","s":"DONE","d":8,"n":8,"f":"done"},"610":{"t":"The native engine wins on real games","p":"docs/PRDs/performance/PRD-610-native-engine-wins-on-real-games.md","r":"develop","s":"PARTIAL","d":3,"n":10,"f":"open"},"611":{"t":"The Linux HUD overlay keeps up with the game and stops burning a core","p":"docs/PRDs/performance/PRD-611-hud-overlay-latency-and-cpu.md","r":"develop","s":"PARTIAL","d":7,"n":9,"f":"open"},"631":{"t":"An Unreal reference scene measures the default look","p":"docs/PRDs/Unreal/look/PRD-631-an-unreal-reference-scene-measures-the-default-look.md","r":"develop","s":"NOT STARTED","d":0,"n":13,"f":"open"},"632":{"t":"The frame is exposed and tone-mapped the way a fresh Unreal project is","p":"docs/PRDs/Unreal/look/PRD-632-the-frame-is-exposed-and-tone-mapped-the-way-a-fresh-unreal-project-is.md","r":"develop","s":"NOT STARTED","d":0,"n":10,"f":"open"},"633":{"t":"The sky is an atmosphere, and it lights the scene","p":"docs/PRDs/Unreal/look/PRD-633-the-sky-is-an-atmosphere-and-it-lights-the-scene.md","r":"develop","s":"NOT STARTED","d":0,"n":10,"f":"open"},"634":{"t":"Sun shadows reach the horizon and soften with distance from the caster","p":"docs/PRDs/Unreal/look/PRD-634-sun-shadows-reach-the-horizon-and-soften-with-distance-from-the-caster.md","r":"develop","s":"NOT STARTED","d":0,"n":10,"f":"open"},"635":{"t":"Ambient occlusion darkens only the light that comes from around","p":"docs/PRDs/Unreal/look/PRD-635-ambient-occlusion-darkens-only-the-light-that-comes-from-around.md","r":"develop","s":"NOT STARTED","d":0,"n":8,"f":"open"},"636":{"t":"The finishing post chain matches Unreal's defaults","p":"docs/PRDs/Unreal/look/PRD-636-the-finishing-post-chain-matches-unreal-defaults.md","r":"develop","s":"NOT STARTED","d":0,"n":10,"f":"open"},"660":{"t":"Many shadowed lamps cost one fixed budget, not one shadow map each","p":"docs/PRDs/Unreal/rendering/PRD-660-many-shadowed-lamps-cost-one-fixed-budget-not-one-shadow-map-each.md","r":"develop","s":"NOT STARTED","d":0,"n":10,"f":"open"},"661":{"t":"Bounce light stays clean at fewer rays by reusing the rays of neighbours and of the last frame","p":"docs/PRDs/Unreal/rendering/PRD-661-bounce-light-stays-clean-at-fewer-rays-by-reusing-neighbour-and-last-frame-rays.md","r":"develop","s":"NOT STARTED","d":0,"n":9,"f":"open"},"662":{"t":"With dynamic GI off, the sky light stops at nearby walls and roofs","p":"docs/PRDs/Unreal/rendering/PRD-662-with-dynamic-gi-off-the-sky-light-stops-at-nearby-walls-and-roofs.md","r":"develop","s":"NOT STARTED","d":0,"n":8,"f":"open"},"663":{"t":"A fog bank sits where the game puts it, and the sun lights it","p":"docs/PRDs/Unreal/rendering/PRD-663-a-fog-bank-sits-where-the-game-puts-it.md","r":"develop","s":"NOT STARTED","d":0,"n":9,"f":"open"},"664":{"t":"Smoke and explosions are lit volumes, not flat sprites","p":"docs/PRDs/Unreal/vfx/PRD-664-smoke-and-explosions-are-lit-volumes-not-flat-sprites.md","r":"develop","s":"NOT STARTED","d":0,"n":10,"f":"open"},"665":{"t":"Clouds shade the haze and fog below them, so light shafts show through the gaps","p":"docs/PRDs/Unreal/rendering/PRD-665-clouds-shade-the-haze-and-fog-below-them.md","r":"develop","s":"NOT STARTED","d":0,"n":9,"f":"open"},"667":{"t":"A bright sun can flare the lens, and bloom can take any kernel, when the game asks","p":"docs/PRDs/Unreal/rendering/PRD-667-a-bright-sun-can-flare-the-lens-when-the-game-asks.md","r":"develop","s":"NOT STARTED","d":0,"n":10,"f":"open"},"668":{"t":"A displaced surface changes its silhouette near the camera","p":"docs/PRDs/Unreal/rendering/PRD-668-a-displaced-surface-changes-its-silhouette-near-the-camera.md","r":"develop","s":"NOT STARTED","d":0,"n":9,"f":"open"},"669":{"t":"Far foliage keeps its volume when its clusters become voxels","p":"docs/PRDs/Unreal/rendering/PRD-669-far-foliage-keeps-its-volume-when-its-clusters-become-voxels.md","r":"develop","s":"NOT STARTED","d":0,"n":9,"f":"open"},"670":{"t":"Rough surfaces reflect light the way a fresh Unreal project shades them","p":"docs/PRDs/Unreal/rendering/PRD-670-rough-surfaces-reflect-light-the-way-a-fresh-unreal-project-shades-them.md","r":"develop","s":"NOT STARTED","d":0,"n":8,"f":"open"},"671":{"t":"A character wears strand hair that catches light along each strand","p":"docs/PRDs/Unreal/rendering/PRD-671-a-character-wears-strand-hair-that-catches-light-along-each-strand.md","r":"develop","s":"NOT STARTED","d":0,"n":9,"f":"open"},"672":{"t":"Terrain shades its layers once into cached pages, not every pixel every frame","p":"docs/PRDs/Unreal/performance/PRD-672-terrain-shades-its-layers-once-into-cached-pages.md","r":"develop","s":"NOT STARTED","d":0,"n":9,"f":"open"},"673":{"t":"The GPU scene tests a placement only when its grid cell is in view","p":"docs/PRDs/Unreal/performance/PRD-673-the-gpu-scene-tests-a-placement-only-when-its-grid-cell-is-in-view.md","r":"develop","s":"NOT STARTED","d":0,"n":9,"f":"open"},"674":{"t":"An ambient particle is a function of its age and seed, and costs no simulation","p":"docs/PRDs/Unreal/vfx/PRD-674-an-ambient-particle-is-a-function-of-its-age-and-seed-and-costs-no-simulation.md","r":"develop","s":"NOT STARTED","d":0,"n":10,"f":"open"},"675":{"t":"A game turns a named layer of its world on and off inside one streaming budget","p":"docs/PRDs/Unreal/open-world/PRD-675-a-game-turns-a-named-layer-of-its-world-on-and-off-inside-one-streaming-budget.md","r":"develop","s":"NOT STARTED","d":0,"n":8,"f":"open"},"676":{"t":"A playtest capture tells an agent whether a frame pays for pixels, clusters, shadow levels or effects","p":"docs/PRDs/Unreal/performance/PRD-676-a-playtest-capture-tells-an-agent-whether-a-frame-pays-for-pixels-clusters-shadow-levels-or-effects.md","r":"develop","s":"NOT STARTED","d":0,"n":10,"f":"open"},"677":{"t":"A dense glass or water mesh takes the cluster cut and blends like the source mesh","p":"docs/PRDs/Unreal/rendering/PRD-677-a-dense-glass-or-water-mesh-takes-the-cluster-cut-and-blends-like-the-source-mesh.md","r":"develop","s":"NOT STARTED","d":0,"n":7,"f":"open"},"678":{"t":"A dense skinned body takes the cluster cut in every view that sees it","p":"docs/PRDs/Unreal/rendering/PRD-678-a-dense-skinned-body-takes-the-cluster-cut-in-every-view-that-sees-it.md","r":"develop","s":"NOT STARTED","d":0,"n":10,"f":"open"},"679":{"t":"Sparks and glass in fog take the fog of their own distance and blend mode","p":"docs/PRDs/Unreal/rendering/PRD-679-sparks-and-glass-in-fog-take-the-fog-of-their-own-distance-and-blend-mode.md","r":"develop","s":"NOT STARTED","d":0,"n":11,"f":"open"},"682":{"t":"Flat parts of the frame shade at a coarser rate where the GPU allows it, and every other platform says why not","p":"docs/PRDs/Unreal/performance/PRD-682-flat-parts-of-the-frame-shade-at-a-coarser-rate-where-the-gpu-allows-it.md","r":"develop","s":"NOT STARTED","d":0,"n":8,"f":"open"},"683":{"t":"A frame skips the passes nothing reads and shares one target between passes that never overlap","p":"docs/PRDs/Unreal/performance/PRD-683-a-frame-skips-passes-nothing-reads-and-shares-targets-whose-lifetimes-do-not-overlap.md","r":"develop","s":"NOT STARTED","d":0,"n":9,"f":"open"},"VQ-03":{"t":"Off-screen specular reflections come from a complete local probe","p":"docs/PRDs/rendering/PRD-VQ-03-local-reflection-probes.md","r":"develop","s":"PROPOSED","d":0,"n":9,"f":"open"},"VQ-08":{"t":"Clouds and their ground attenuation share one authored field","p":"docs/PRDs/Unreal/rendering/PRD-VQ-08-clouds-and-overhead-transmittance.md","r":"develop","s":"PROPOSED","d":0,"n":9,"f":"open"},"VQ-09":{"t":"Diffuse probes refresh bounded changed regions without a visible half-bake","p":"docs/PRDs/rendering/PRD-VQ-09-incremental-diffuse-relighting.md","r":"develop","s":"PROPOSED","d":0,"n":8,"f":"open"},"VQ-10":{"t":"Texture residency releases real GPU memory rather than only biasing sampling","p":"docs/PRDs/Unreal/performance/PRD-VQ-10-texture-mip-residency.md","r":"develop","s":"PROPOSED","d":0,"n":8,"f":"open"},"VQ-13":{"t":"Depth of field and motion blur are qualified optional stages, not a second camera pipeline","p":"docs/PRDs/rendering/PRD-VQ-13-cinematic-stage-integration.md","r":"develop","s":"PROPOSED","d":0,"n":9,"f":"open"},"VQ-15":{"t":"Hair cards preserve coverage, tangent highlights and shadow behavior across quality tiers","p":"docs/PRDs/rendering/PRD-VQ-15-hair-card-material-qualification.md","r":"develop","s":"PROPOSED","d":0,"n":8,"f":"open"}};
+// @prds-end
 const fmt = n => n.toLocaleString("en-US");
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
@@ -208,7 +258,7 @@ const SYS = {
   ["Radiance cache (world probes, clipmaps)", 8866, "World-space probe field that answers rays the screen cannot.", "open", "PRD-603 RadianceCache, PRD-605 clipmaps. #541 giCache.ts is the CPU reference.", ["603", "605"]],
   ["Tracing core (SDF, mesh culling, HW RT common)", 6248, "Shared ray machinery: software distance-field tracing and hardware ray tracing.", "partial", "GPUSceneBVH trace ships. HW RT deferred (PRD-645) until WebGPU exposes ray tracing.", ["645"]],
   ["Visualize and debug modes", 4040, "Lumen scene, surface cache and probe views for artists.", "open", "PRD-646 visualize modes.", ["646"]],
-  ["ReSTIR gather", 3000, "Reservoir resampling of GI rays; needs hardware ray tracing.", "deferred", "Deferred: no Unreal quality level turns it on.", []],
+  ["ReSTIR gather", 3000, "Reservoir resampling of GI rays; needs hardware ray tracing.", "deferred", "PRD-661: gate first. No Unreal quality level turns it on.", ["661"]],
   ["Translucency volume", 2768, "Froxel volume that gives glass and fog the bounce light.", "open", "PRD-643.", ["643"]],
   ["Irradiance field gather", 1171, "Probe-grid gather used at the Medium GI tier.", "open", "PRD-604 IrradianceFieldGather.", ["604"]],
   ["Tier and scalability glue", null, "Picks gather method and budgets per quality level (spread over the files above).", "partial", "PRD-644 (5/10), PRD-647 calibration done.", ["644", "647"]],
@@ -217,20 +267,20 @@ const SYS = {
   ["Cull + raster (hierarchy, clusters, HZB, HW/SW raster)", 17818, "Walks the cluster tree, culls by view and HZB, rasterizes small triangles in compute.", "open", "PRD-600 submit only visible clusters. Persistent culling and SW raster deferred until WebGPU adds forward-progress guarantees and 64-bit image atomics.", ["600"]],
   ["Shading and materials (shade binning, GBuffer export)", 8144, "Bins visible pixels by material and shades them once.", "open", "PRD-601 far clusters keep source shading.", ["601"]],
   ["Ray tracing (cluster RT, AS cache, stream-out)", 7510, "Feeds Nanite geometry to hardware ray tracing.", "deferred", "Deferred with hardware RT (PRD-645).", ["645"]],
-  ["Data format, decode, streaming", 7405, "Compressed cluster pages, decode and page streaming.", "deferred", "Page streaming deferred: vertex data is 74% of resident bytes (PRD-285).", []],
-  ["Debug, visualize, editor", 4278, "Overdraw, cluster and stats views.", "notfiled", "—", []],
-  ["Curves (hair) raster", 2812, "Rasterizes hair curves through Nanite.", "notfiled", "Off by default.", []],
-  ["Voxels and bricks (far foliage)", 2734, "Turns distant dense foliage into voxels.", "notfiled", "No game asks yet.", []],
-  ["Tessellation and displacement", 2659, "Dices clusters for displacement maps.", "notfiled", "A material look decision.", []],
-  ["Translucency", 1189, "Nanite path for translucent meshes.", "notfiled", "—", []],
-  ["Visibility, skinning, ownership", 1129, "Per-view visibility masks and skinned Nanite.", "notfiled", "—", []],
+  ["Data format, decode, streaming", 7405, "Compressed cluster pages, decode and page streaming.", "deferred", "PRD-285 (closed): page streaming deferred, vertex data is 74% of resident bytes. Revisit when cluster pages exceed a memory budget.", ["285"]],
+  ["Debug, visualize, editor", 4278, "Overdraw, cluster and stats views.", "open", "PRD-676: overdraw and cluster views an agent reads from a playtest capture.", ["676"]],
+  ["Curves (hair) raster", 2812, "Rasterizes hair curves through Nanite.", "open", "PRD-671 strand hair (first slice). Off in a fresh project.", ["671"]],
+  ["Voxels and bricks (far foliage)", 2734, "Turns distant dense foliage into voxels.", "open", "PRD-669, gate first. Off in a fresh project.", ["669"]],
+  ["Tessellation and displacement", 2659, "Dices clusters for displacement maps.", "open", "PRD-668, gate first. Per-material opt-in in Unreal.", ["668"]],
+  ["Translucency", 1189, "Nanite path for translucent meshes.", "open", "PRD-677: prove blend state survives the bake; sort only if the judge sees an artifact.", ["677"]],
+  ["Visibility, skinning, ownership", 1129, "Per-view visibility masks and skinned Nanite.", "open", "PRD-678: skinned clustered meshes. Visibility and ownership already ship (per-object culling, Object3D.layers).", ["678"]],
   ["Shadow casters at shadow-texel detail", null, "Draws shadow pages from clusters (inside cull + raster).", "open", "PRD-602.", ["602"]],
  ]},
  vsm: { name: "Virtual shadow maps", what: "One huge sparse shadow map per light, filled only where pixels need it.", subs: [
   ["Page marking and physical page pool", 11240, "Marks which shadow pages pixels need and allocates them from a pool.", "shipped", "VirtualShadowNode clip levels ship. Page cost: PRD-457.", ["457"]],
   ["Projection + SMRT soft shadows", 4389, "Samples pages with shadow-map ray tracing for a source-angle penumbra; spot and point projection.", "open", "PRD-634 sun penumbra, PRD-650 lamp shadows.", ["634", "650"]],
   ["Cache and invalidation", 3764, "Keeps static pages across frames; redraws only what moved.", "shipped", "PRD-538, PRD-572 done.", ["538", "572"]],
-  ["Debug and stats", 1015, "Page usage and cache views.", "notfiled", "—", []],
+  ["Debug and stats", 1015, "Page usage and cache views.", "open", "PRD-676 shadow-level view.", ["676"]],
   ["Directional clipmaps", 831, "Nested levels around the camera for the sun.", "shipped", "Shipped; reach to the horizon in PRD-634.", ["634"]],
   ["Per-page draw commands", 714, "Builds draw lists per dirty page.", "shipped", "Partial redraw ships.", []],
   ["Leaf and alpha-masked casters", null, "Masked materials in the shadow pass.", "partial", "PRD-651 (5/12): an engine bug on the default engine.", ["651"]],
@@ -242,20 +292,20 @@ const SYS = {
   ["Shading rejection and flicker", 2222, "Detects when history is wrong and how much to trust it.", "open", "PRD-539.", ["539"]],
   ["Velocity and depth analysis", 1370, "Dilates velocity and finds the closest occluder.", "open", "PRD-539.", ["539"]],
   ["Convolution network", 1309, "Small learned filter used by the rejection pass.", "open", "PRD-539 lever list.", ["539"]],
-  ["Common, kernels, visualize", 1555, "Shared filters and debug views.", "open", "—", []],
+  ["Common, kernels, visualize", 1555, "Shared filters and debug views.", "open", "Shared filters ride with PRD-539. History and rejection views: PRD-676.", ["539", "676"]],
   ["Spatial anti-aliasing", 914, "Anti-aliases pixels with no usable history.", "open", "PRD-539.", ["539"]],
   ["Thin geometry detection", 870, "Keeps wires and leaves from flickering away.", "open", "PRD-539.", ["539"]],
  ]},
  post: { name: "Post chain", what: "Tone mapping, exposure, bloom, motion blur and the rest of the finishing passes.", subs: [
-  ["Depth of field (diaphragm)", 12354, "Physically based bokeh.", "notfiled", "Not in the default look.", []],
+  ["Depth of field (diaphragm)", 12354, "Physically based bokeh.", "open", "PRD-VQ-13 cinematic stage owns it. It lacks the Unreal lens model, near/far layers and tier costs. Off in a fresh project.", ["VQ-13"]],
   ["Tone map + LUT combine", 4252, "Filmic curve and colour grade baked into one LUT.", "partial", "LUT grade done (PRD-492). Filmic curve: PRD-632.", ["492", "632"]],
   ["Motion blur", 4070, "Tile-based velocity blur.", "open", "PRD-636.", ["636"]],
   ["TAA (legacy)", 3994, "Older temporal anti-aliasing.", "shipped", "Template temporal AA ships.", []],
   ["Eye adaptation (histogram, basic)", 3977, "Auto exposure from a luminance histogram.", "partial", "Template auto exposure. Histogram: PRD-571 (needs a device). EV100: PRD-632.", ["571", "632"]],
   ["ACES transforms", 3064, "ACES output transforms used by the tone mapper.", "open", "PRD-632.", ["632"]],
-  ["Bloom (Gaussian + FFT)", 2110, "Glow around bright pixels.", "partial", "Bloom ships; Unreal defaults in PRD-636.", ["636"]],
+  ["Bloom (Gaussian + FFT)", 2110, "Glow around bright pixels.", "partial", "Bloom ships; Unreal defaults in PRD-636. FFT kernel bloom: PRD-667.", ["636", "667"]],
   ["Local exposure", 1141, "Keeps shadows and highlights readable in one frame.", "open", "PRD-636.", ["636"]],
-  ["Lens flares", 619, "Image-based flares.", "notfiled", "—", []],
+  ["Lens flares", 619, "Image-based flares.", "open", "PRD-667. Off in a fresh project (r.DefaultFeature.LensFlare=0).", ["667"]],
  ]},
  sky: { name: "Sky atmosphere", what: "Physically based sky from planet, Rayleigh and Mie parameters, precomputed in small LUTs.", subs: [
   ["C++ orchestration (all stages)", 2666, "Sets up LUT passes and per-view sky rendering.", "open", "PRD-633.", ["633"]],
@@ -271,17 +321,17 @@ const SYS = {
   ["Cloud shaders", 2695, "Ray march, lighting and material sampling.", "partial", "PRD-VQ-08.", ["VQ-08"]],
   ["Cloud shadow map + overhead transmittance", null, "Shadows the ground and objects under clouds.", "open", "PRD-VQ-08 (three-channel cloud shadow map).", ["VQ-08"]],
   ["Temporal reconstruction", null, "Traces at low resolution and rebuilds over frames.", "open", "PRD-VQ-08.", ["VQ-08"]],
-  ["Sky AO from clouds", null, "Darkens sky light under cloud cover.", "notfiled", "—", []],
+  ["Sky AO from clouds + cloud shadow on air and fog", null, "Darkens sky light under cloud cover and shades the haze below clouds.", "open", "PRD-665.", ["665"]],
  ]},
  fog: { name: "Fog", what: "Height fog, volumetric fog and local fog volumes.", subs: [
   ["Volumetric fog (froxels)", 4979, "Lit fog in a camera-aligned voxel grid, with light functions.", "open", "Froxel volume: PRD-562.", ["562"]],
   ["Height fog", 2414, "Exponential fog that thickens toward the ground and glows toward the sun.", "shipped", "PRD-560 done.", ["560"]],
-  ["Local fog volumes", 2193, "Placed fog boxes and spheres.", "notfiled", "—", []],
-  ["Fog composition", 1127, "Composites fog behind translucency.", "notfiled", "—", []],
+  ["Local fog volumes", 2193, "Placed fog boxes and spheres.", "open", "PRD-663. No fresh Unreal project places one.", ["663"]],
+  ["Fog composition", 1127, "Composites fog behind translucency.", "open", "PRD-679: additive and glass surfaces take the fog of their own distance and blend mode.", ["679"]],
  ]},
  ao: { name: "Ambient occlusion", what: "Darkens creases and contacts.", subs: [
   ["SSAO / GTAO", 4392, "Screen-space AO with denoise.", "partial", "GTAO ships in templates. PRD-635 applies it to indirect light only.", ["635"]],
-  ["Distance-field AO", 1127, "Wider AO from mesh distance fields.", "notfiled", "Lumen ShortRangeAO replaces it (PRD-640).", ["640"]],
+  ["Distance-field AO", 1127, "Wider AO from mesh distance fields.", "open", "Lumen ShortRangeAO replaces it (PRD-640). With GI off: PRD-662 SkyLightOcclusion on GPUSceneBVH.", ["640", "662"]],
  ]},
  refl: { name: "Reflections", what: "Reflection captures, screen-space reflections and Lumen reflections.", subs: [
   ["Lumen reflections", 8986, "Traced glossy reflections (see Lumen).", "open", "PRD-642.", ["642"]],
@@ -292,7 +342,7 @@ const SYS = {
  gpuscene: { name: "GPU scene + culling", what: "Every instance lives in GPU buffers; culling and draw lists are built on the GPU.", subs: [
   ["Mesh draw commands", 12081, "Caches draw state per mesh pass.", "shipped", "Owned C++ engine.", []],
   ["CPU view visibility", 7799, "Frustum, distance and LOD selection per view.", "shipped", "Engine and three.js frustum culling.", []],
-  ["Hierarchical scene culling grid", 5424, "Spatial hash that culls groups of instances at once.", "notfiled", "—", []],
+  ["Hierarchical scene culling grid", 5424, "Spatial hash that culls groups of instances at once.", "open", "PRD-673, gate first: time the per-placement cull and the empty draws.", ["673"]],
   ["Instance culling + draw compaction", 5137, "GPU culls instances and writes indirect draws.", "shipped", "world-gpu-scene.ts.", []],
   ["GPU scene buffers", 3694, "Instance and primitive data uploaded once, updated by delta.", "shipped", "world-gpu-scene.ts.", []],
   ["Occlusion queries + HZB", 2341, "Hides what walls hide.", "deferred", "PRD-489: our scenes would cull 1.3%. Revisit with a dense city or interior.", ["489"]],
@@ -306,34 +356,33 @@ const SYS = {
  ]},
  wp: { name: "World Partition", what: "Splits a big world into cells and streams them around the player.", subs: [
   ["Runtime hash and streaming policy", 31799, "Cell grid, streaming sources and load order.", "partial", "WorldCells + streaming.ts ship. PRD-459, 460, 606, 607 open.", ["459", "460", "606", "607"]],
-  ["Data layers", 6799, "Toggle groups of actors at runtime.", "deferred", "Deferred: no consumer yet; two WorldCells cover the case.", []],
+  ["Data layers", 6799, "Toggle groups of actors at runtime.", "open", "PRD-675 tests the claim that two WorldCells cover it: today each spends its own budget.", ["675"]],
   ["HLOD", 5662, "Merged low-detail proxies for far cells.", "open", "PRD-456 distant world cell proxies.", ["456"]],
-  ["Content bundles", 2644, "Plug-in content injected into a world.", "notfiled", "—", []],
-  ["Cook, filters, loaders, errors", 2430, "Editor and cook tooling.", "notfiled", "Editor side.", []],
-  ["Level instances", 1563, "Reusable sub-levels.", "notfiled", "—", []],
+  ["Content bundles", 2644, "Plug-in content injected into a world.", "rule", "Out of scope: editor-written containers. Adding a package to a running world is PRD-675.", []],
+  ["Cook, filters, loaders, errors", 2430, "Editor and cook tooling.", "rule", "Out of scope: the repo rules close editors.", []],
+  ["Level instances", 1563, "Reusable sub-levels.", "rule", "Out of scope: the repo has no scene format. A reusable sub-level is a function the game calls; Unreal flattens embedded instances at build time.", []],
  ]},
  niagara: { name: "Niagara", what: "GPU and CPU particle simulation and rendering.", subs: [
   ["Data interfaces (grids, mesh, collision)", 49414, "What particles can read: grids, skeletal meshes, collision, landscape.", "partial", "Grid smoke ships (fluid-field.ts). Collision: PRD-610.", ["610"]],
-  ["Assets, scripts, components", 17727, "System, emitter and script assets: the authoring side.", "notfiled", "Out of scope: the repo rules close editors and IRs.", []],
+  ["Assets, scripts, components", 17727, "System, emitter and script assets: the authoring side.", "rule", "Out of scope: the repo rules close editors and IRs.", []],
   ["CPU simulation (system, emitter, data sets)", 11631, "Ticks systems and emitters, stores particle data.", "partial", "GPUParticles3D; PRD-316 generated VFX source.", ["316"]],
-  ["Stateless emitters", 10436, "Cheap emitters with no per-particle state.", "notfiled", "—", []],
+  ["Stateless emitters", 10436, "Cheap emitters with no per-particle state.", "open", "PRD-674. First user: the rain template (299 lines of its own draw today).", ["674"]],
   ["First-frame pipelines (engine PSO precache)", 8895, "Builds GPU pipelines before an effect first shows.", "open", "PRD-611.", ["611"]],
   ["Renderers (ribbons, meshes, sprites)", 6618, "Draws particles as sprites, ribbons or meshes.", "shipped", "GPUParticles3D; ribbons in the vfx-compute row.", []],
   ["Scalability, culling, budget", 4407, "Culls off-view effects and caps cost per platform.", "shipped", "PRD-569 done.", ["569"]],
-  ["Debug HUD", 3760, "In-game effect stats.", "notfiled", "—", []],
+  ["Debug HUD", 3760, "In-game effect stats.", "open", "PRD-676 effects view.", ["676"]],
   ["GPU compute dispatch", 2788, "Schedules GPU simulation passes.", "shipped", "GPUParticles3D compute; PRD-609 done.", ["609"]],
  ]},
  megalights: { name: "MegaLights", what: "Stochastic direct lighting for hundreds of shadowed lights.", subs: [
-  ["Shaders (not split)", 9857, "Sampling, tracing, resolve and denoise kernels.", "notfiled", "Off in a fresh Unreal project.", []],
-  ["Core", 2794, "Light sampling setup and passes.", "notfiled", "—", []],
-  ["Ray tracing", 2242, "Shadow rays for sampled lights.", "notfiled", "—", []],
-  ["Visualize", 1638, "Light complexity views.", "notfiled", "—", []],
-  ["Resolve", 1253, "Combines samples into lighting.", "notfiled", "—", []],
-  ["Denoising", 758, "Spatial and temporal denoise.", "notfiled", "—", []],
-  ["Sampling + internals", 1451, "Importance sampling, view state.", "notfiled", "—", []],
+  ["Shaders (not split)", 9857, "Sampling, tracing, resolve and denoise kernels.", "open", "PRD-660 StochasticLighting: gate first (off in a fresh Unreal project).", ["660"]],
+  ["Core", 2794, "Light sampling setup and passes.", "open", "PRD-660 StochasticLighting: gate first (off in a fresh Unreal project).", ["660"]],
+  ["Ray tracing", 2242, "Shadow rays for sampled lights.", "open", "PRD-660 StochasticLighting: gate first (off in a fresh Unreal project).", ["660"]],
+  ["Visualize", 1638, "Light complexity views.", "open", "PRD-660 StochasticLighting: gate first (off in a fresh Unreal project).", ["660"]],
+  ["Resolve", 1253, "Combines samples into lighting.", "open", "PRD-660 StochasticLighting: gate first (off in a fresh Unreal project).", ["660"]],
+  ["Denoising", 758, "Spatial and temporal denoise.", "open", "PRD-660 StochasticLighting: gate first (off in a fresh Unreal project).", ["660"]],
+  ["Sampling + internals", 1451, "Importance sampling, view state.", "open", "PRD-660 StochasticLighting: gate first (off in a fresh Unreal project).", ["660"]],
  ]},
 };
-const SYS_ORDER = ["lumen", "nanite", "vsm", "tsr", "post", "sky", "clouds", "fog", "ao", "refl", "gpuscene", "streaming", "wp", "niagara", "megalights"];
 
 // ---- Port order: [PRD, title, layer, complexity, estimated?, impact, done, total, wave, waits, why, system]
 const PORT = [
@@ -371,52 +420,97 @@ const PORT = [
  ["607","Streaming reports and closes holes","Perf",5,0,2,0,11,5,"—","Open worlds","wp"],
  ["611","Hidden effect's first frame is ready","Perf",4,0,2,0,10,5,"—","First-frame hitch","niagara"],
  ["610","Sparks bounce off visible surfaces","VFX",6,0,1,0,12,5,"609","Effect detail","niagara"],
+ // filed 2026-10-21 for the gaps this map found
+ ["660","Many shadowed lamps, one fixed budget","Perf",8,0,1,0,8,5,"650","Off in a fresh Unreal project; gate first","megalights"],
+ ["661","ReSTIR: fewer GI rays, same quality","Perf",7,0,1,0,7,5,"640, 641","No Unreal tier turns it on; gate first","lumen"],
+ ["662","Sky light stops at walls with GI off","L6",6,0,2,0,6,5,"644","Low tier look; DFAO on the BVH","ao"],
+ ["665","Clouds shade the haze and fog below","L4",5,0,2,0,7,5,"VQ-08, 562","Light shafts through cloud gaps","clouds"],
+ ["663","Local fog volumes","L3",4,0,1,0,6,5,"—","Sailing template first; gate first","fog"],
+ ["664","Smoke and explosions as lit volumes","VFX",6,0,1,0,7,5,"—","Off at Unreal low and medium tiers","f-heterogeneous-volumes"],
+ ["667","Lens flare and FFT bloom on request","L9",4,0,1,0,7,5,"636","Off in a fresh Unreal project","post"],
+ ["679","Fog behind glass and sparks","L3",5,0,3,0,8,2,"—","Additive effects add fog colour today; gate first","fog"],
+ ["676","Debug views an agent can read","Perf",5,0,3,0,7,2,"—","Explains frame cost before perf work",null],
+ ["670","Rough diffuse like a fresh Unreal project","L1",5,0,3,0,5,2,"632","Substrate is on in Unreal 5.8.3; every rough pixel","f-substrate-materials"],
+ ["668","Displacement changes the silhouette","Look",7,0,1,0,6,5,"600","Per-material opt-in in Unreal","nanite"],
+ ["669","Far foliage as voxels","Perf",7,0,1,0,7,5,"—","Off in a fresh project; gate first","nanite"],
+ ["671","Strand hair","Look",7,0,1,0,6,5,"VQ-15","Off in a fresh project","f-hair-strands"],
+ ["672","Terrain layers cached in virtual pages","Perf",8,0,1,0,6,5,"VQ-10","Saves shading time on many-layer terrain","f-virtual-texturing"],
+ ["674","Ambient particles cost no simulation","Perf",5,0,2,0,8,4,"—","Rain template draws its own today","niagara"],
+ ["673","Cull by grid cell before placement","Perf",6,0,2,0,7,5,"—","Dense placements; gate first","gpuscene"],
+ ["675","Named world layers, one streaming budget","Perf",5,0,1,0,6,5,"606","Tests the two-WorldCells claim","wp"],
+ ["683","Skip unread passes, share targets","Perf",5,0,1,0,7,5,"523","Render graph outcomes that need no new API","f-rendercore-rdg-"],
+ ["682","Coarse shading where the GPU allows","Perf",7,0,1,0,6,5,"—","Off in Unreal; needs a Dawn patch","f-variable-rate-shading"],
+ ["677","Clustered glass and water blend right","Perf",3,0,1,0,5,5,"600","Off by default in Unreal","nanite"],
+ ["678","Skinned bodies take the cluster cut","Perf",6,0,1,0,7,5,"486","Only a 100K-triangle character needs it","nanite"],
+ // filed outside docs/PRDs/Unreal/
+ ["VQ-03","Local reflection probes","L8",5,1,3,0,8,4,"—","Interiors and shaded areas reflect their room, not the sky","refl"],
+ ["VQ-13","Cinematic stage: depth of field","Look",6,1,1,0,8,5,"—","Owns DOF; needs Unreal lens model","post"],
+ ["VQ-09","Incremental diffuse relight","L7",6,1,3,0,8,4,"—","Light changes relight only the dirty region","lumen"],
+ ["488","Foliage moves in the wind","Look",4,0,2,0,8,3,"—","Leaf shadows that sway (PRD-651) need it",null],
+ ["456","Distant world cell proxies (HLOD)","Perf",8,0,2,0,6,5,"—","Open worlds: far cells as merged proxies","wp"],
+ ["459","One streaming admission budget per frame","Perf",6,0,3,4,16,5,"—","Streaming hitches in open worlds","wp"],
+ ["493","Terrain layers past sixteen textures","Look",3,0,1,6,8,5,"—","Blocked on a private game walk","f-landscape"],
+ ["486","Characters get a LOD chain","Perf",4,0,2,0,8,5,"—","Crowds","f-anim-budget-animgraphruntime"],
 ].map(([id,title,layer,cx,est,impact,done,total,wave,waits,why,sys]) => ({id,title,layer,cx,est,impact,done,total,wave,waits,why,sys}));
 const WAVES = { 1: "Gate: everything compares against it", 2: "Cheap look layers + foundations, in parallel", 3: "Main look layers", 4: "Finish and tier", 5: "When a game or a measurement asks" };
 
 // ---- Feature table (top level)
 const F = [
  ["Lumen GI + reflections","Lighting & GI",45712,33515,10,"Very high","partial","PRD-638, 647 done. PRD-603–605, 639–644, 646 open. HW ray tracing deferred (PRD-645) until WebGPU exposes ray tracing.",0,"lumen"],
- ["Distance fields","Lighting & GI",10870,6189,7,"High","notfiled","GPUSceneBVH gives the trace instead."],
- ["Deferred shading + clustered lights","Lighting & GI",16918,8254,6,"n/a","shipped","Covered by three.js and the owned C++ engine."],
+ ["Distance fields","Lighting & GI",10870,6189,7,"High","open","PRD-662 maps distance-field AO onto GPUSceneBVH. The distance fields themselves stay deferred: the BVH gives the trace.",0,null,["662"]],
+ ["Deferred shading + clustered lights","Lighting & GI",16918,8254,6,"n/a","shipped","Covered by three.js and the owned C++ engine.",0,null,[]],
  ["Reflection captures + SSR","Lighting & GI",7226,4842,5,"Medium","partial","SSR stage ships. Captures PRD-VQ-03, traced reflections PRD-642 open.",0,"refl"],
  ["Ambient occlusion","Lighting & GI",4501,2363,4,"Low","partial","GTAO ships in templates. PRD-635 applies it to indirect light only (#541).",0,"ao"],
- ["Substrate materials","Lighting & GI",12154,16982,8,"High","notfiled","three.js r185 already matches Unreal default lit."],
- ["MegaLights","Lighting & GI",10136,9857,8,"High","notfiled","Off in a fresh Unreal project.",0,"megalights"],
+ ["Substrate materials","Lighting & GI",12154,16982,8,"High","open","On in a fresh 5.8.3 project. three r185 matches its specular energy, not its rough diffuse: PRD-670.",0,null,["670"]],
+ ["MegaLights","Lighting & GI",10136,9857,8,"High","open","PRD-660, gate first. Off in a fresh Unreal project.",0,"megalights"],
  ["Virtual shadow maps","Shadows",11261,10692,9,"High","partial","Sun clipmap, page cache, mover maps shipped (PRD-538, 572). PRD-634, 649–652, 457 open.",0,"vsm"],
- ["Classic shadows (CSM, contact)","Shadows",18513,2411,6,"Medium","shipped","CSM replaced by the shipped virtual shadow map. Contact shadows deferred (PRD-561): revisit when a light needs a contact-shadow length."],
+ ["Classic shadows (CSM, contact)","Shadows",18513,2411,6,"Medium","shipped","CSM replaced by the shipped virtual shadow map. Contact shadows deferred (PRD-561): revisit when a light needs a contact-shadow length.",0,null,["561"]],
  ["Sky atmosphere","Sky & volumes",2666,2318,6,"Medium","open","PRD-633, in PR #541.",0,"sky"],
  ["Volumetric clouds","Sky & volumes",3449,2695,7,"Medium","partial","Template clouds in rain. PRD-VQ-08 open.",0,"clouds"],
  ["Height + volumetric fog","Sky & volumes",6663,4050,5,"Medium","partial","Height fog done (PRD-560). Aerial perspective PRD-562 open.",0,"fog"],
- ["Heterogeneous volumes","Sky & volumes",15562,11390,8,"High","notfiled","No game asks for it."],
+ ["Heterogeneous volumes","Sky & volumes",15562,11390,8,"High","open","PRD-664: dense 128³ march with a lighting cache, gate first. Off at Unreal low and medium effects tiers.",0,null,["664"]],
  ["TSR upscaler","Post & temporal",3780,10851,9,"High","partial","Catmull-Rom history done (PRD-455). PRD-539 open.",0,"tsr"],
  ["TAA","Post & temporal",1531,2463,5,"Low","shipped","Template temporal AA ships.",0,"post"],
  ["Tone map + LUT + ACES","Post & temporal",2237,5079,4,"Low","partial","LUT grade done (PRD-492). Filmic curve PRD-632 open (#541).",0,"post"],
  ["Exposure (eye adaptation, local)","Post & temporal",3147,1971,5,"Low","partial","Template auto exposure. PRD-571 needs a device. PRD-632, 636 open.",0,"post"],
- ["Bloom + lens flare","Post & temporal",1797,932,3,"Low","partial","Bloom exists. PRD-636 open.",0,"post"],
+ ["Bloom + lens flare","Post & temporal",1797,932,3,"Low","partial","Bloom exists. PRD-636 open. Lens flare and FFT bloom: PRD-667.",0,"post"],
  ["Motion blur","Post & temporal",1518,2552,5,"Low","open","PRD-636.",0,"post"],
- ["Depth of field","Post & temporal",4160,8194,7,"Medium","notfiled","Not in the default look.",0,"post"],
- ["Denoisers","Post & temporal",5800,10068,7,"High","notfiled","Unreal has no virtual-shadow denoiser."],
+ ["Depth of field","Post & temporal",4160,8194,7,"Medium","open","PRD-VQ-13 owns it. Off in a fresh Unreal project.",0,"post"],
+ ["Denoisers","Post & temporal",5800,10068,7,"High","partial","Unreal ScreenSpaceDenoise does not run in a fresh project. Each denoiser the default look uses has an owner: GI history PRD-641, reflections PRD-642, many lights PRD-660, low-tier AO PRD-635.",0,null,["641","642","660","635"]],
  ["Nanite","Geometry & scene",27571,28101,10,"Very high","open","PRD-600–602. Persistent culling, software raster and page streaming deferred.",0,"nanite"],
  ["GPU scene + instance culling","Geometry & scene",12019,2420,7,"Medium","shipped","world-gpu-scene.ts: cull and LOD into indirect draws.",0,"gpuscene"],
  ["Visibility + HZB occlusion","Geometry & scene",10140,3178,6,"Medium","deferred","HZB deferred (PRD-489): our scenes would cull 1.3%. Revisit with a dense city or interior.",0,"gpuscene"],
  ["Mesh draw commands","Geometry & scene",12081,0,7,"Medium","shipped","Owned C++ engine area.",0,"gpuscene"],
- ["Virtual texturing","Geometry & scene",15462,1851,8,"High","deferred","Runtime VT deferred until texture memory limits a game. Mip residency PRD-VQ-10 first."],
- ["Dynamic resolution","Geometry & scene",847,0,4,"Low","shipped","PRD-384, 563, 564 done."],
+ ["Virtual texturing","Geometry & scene",15462,1851,8,"High","deferred","Runtime VT: PRD-672 caches terrain layer shading in pages, gate first. It saves shading time, not memory. Mip residency PRD-VQ-10 first.",0,null,["VQ-10","672"]],
+ ["Dynamic resolution","Geometry & scene",847,0,4,"Low","shipped","PRD-384, 563, 564 done.",0,null,["384","563","564"]],
  ["PSO precache","Geometry & scene",8895,0,6,"Medium","shipped","Pipeline warm-up and native disk cache."],
- ["Variable rate shading","Geometry & scene",1799,583,4,"n/a","notfiled","No WebGPU API."],
- ["Mobile renderer","Geometry & scene",9086,3093,6,"Medium","partial","PRD-565, 568 done."],
+ ["Variable rate shading","Geometry & scene",1799,583,4,"n/a","deferred","PRD-682, gate first. Off by default in Unreal (r.VRS.Enable=0). Web waits for a WebGPU feature; Linux needs a Dawn patch.",0,null,["682"]],
+ ["Mobile renderer","Geometry & scene",9086,3093,6,"Medium","partial","PRD-565, 568 done.",0,null,["565","568"]],
  ["Texture + mesh streaming","World, anim, VFX",20414,0,7,"Medium","open","PRD-VQ-10.",0,"streaming"],
- ["Anim budget + AnimGraphRuntime","World, anim, VFX",29104,0,6,"Medium","open","PRD-570, PRD-486."],
+ ["Anim budget + AnimGraphRuntime","World, anim, VFX",29104,0,6,"Medium","open","PRD-570, PRD-486.",0,null,["570","486"]],
  ["GPU skinning","World, anim, VFX",6782,1207,5,"Low","shipped","Through three.js and the owned engine."],
  ["Niagara runtime","World, anim, VFX",255512,0,9,"High","partial","GPUParticles3D. PRD-569, 609 done. PRD-610, 611 open. Graph editor out of scope.",1,"niagara"],
- ["Landscape","World, anim, VFX",86937,2567,8,"High","partial","PRD-566, 567 done. PRD-493 open.",1],
+ ["Landscape","World, anim, VFX",86937,2567,8,"High","partial","PRD-566, 567 done. PRD-493 open.",1,null,["566","567","493"]],
  ["World Partition + HLOD","World, anim, VFX",70618,0,9,"High","partial","WorldCells, streaming.ts. PRD-456, 459, 460, 606, 607 open.",1,"wp"],
- ["RenderCore (RDG)","Foundation",103555,0,9,"n/a","deferred","RDG, bindless and async compute deferred until WebGPU exposes them.",1],
+ ["RenderCore (RDG)","Foundation",103555,0,9,"n/a","deferred","PRD-683 takes what needs no new API: skip passes nothing reads, share targets that never overlap. Bindless and async compute wait for WebGPU.",1,null,["683"]],
  ["RHI","Foundation",67546,0,8,"n/a","shipped","WebGPU and the owned C++ engine fill this role.",1],
- ["HW ray tracing + path tracer","Foundation",24257,29756,9,"High","deferred","Deferred (PRD-645): the trace is 13x faster, but the WebGPU-to-Vulkan hand-off costs more. Revisit when WebGPU exposes ray tracing."],
- ["Hair strands","Foundation",17639,28297,9,"High","notfiled","Off by default."],
-].map(([name,area,cpp,shd,cx,port,status,note,big,sys]) => ({name,area,cpp,shd,loc:cpp+shd,cx,port,status,note,big:!!big,sys}));
+ ["HW ray tracing + path tracer","Foundation",24257,29756,9,"High","deferred","Deferred (PRD-645): the trace is 13x faster, but the WebGPU-to-Vulkan hand-off costs more. Revisit when WebGPU exposes ray tracing.",0,null,["645"]],
+ ["Hair strands","Foundation",17639,28297,9,"High","open","PRD-671: ribbon strands and hair shading first. Off in a fresh project.",0,null,["671"]],
+].map(([name,area,cpp,shd,cx,port,status,note,big,sys,prds]) => ({name,area,cpp,shd,loc:cpp+shd,cx,port,status,note,big:!!big,sys,prds:prds||[]}));
+
+// A feature with no subsystem split becomes a one-row system, so every feature opens the same way.
+const AREA_OF = {};
+for (const f of F) {
+  if (!f.sys) {
+    f.sys = "f-" + f.name.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+    SYS[f.sys] = { name: f.name, what: f.note, subs: [["Whole system (not split)", f.loc, "Measured as one system.", f.status, f.note, f.prds]] };
+  }
+  AREA_OF[f.sys] ??= f.area;
+}
+PORT.find(p => p.id === "570").sys = "f-anim-budget-animgraphruntime";
+// coverage of one subsystem: a PRD names it, it ships, the repo rules close it, or nothing covers it
+const cov = r => r[3] === "rule" ? "rule" : r[5].length ? "prd" : r[3] === "shipped" ? "ships" : "gap";
+const weight = r => r[1] || 400;
 
 const LADDER = [
  ["L1","Tone curve, exposure","PRD-632","partial"],["L2","Sky atmosphere","PRD-633","open"],
@@ -426,12 +520,30 @@ const LADDER = [
  ["L9","Post chain + AA","PRD-636 / 539","partial"],
 ];
 
+// box counts come from the PRD files when the registry has them
+for (const p of PORT) if (PRDS[p.id]) { p.done = PRDS[p.id].d; p.total = PRDS[p.id].n; }
+
+const PROG = { done: "Done", progress: "In progress", notstarted: "Not started", deferred: "Deferred", gap: "No PRD", rule: "Out of scope by rule", unsplit: "Not split (shared files)" };
+// a PRD that is not on this branch yet (e.g. still on the Unreal look epic) falls back to its PORT row
+const prdOf = id => PRDS[id] || (p => p && { t: p.title, d: p.done, n: p.total, f: "elsewhere" })(PORT.find(q => q.id === id));
+const sum = (xs, f) => xs.reduce((a, x) => a + f(x), 0);
+function prog(r) {
+  if (r[3] === "rule") return { k: "rule" };
+  if (r[3] === "shipped") return { k: "done", pct: 1 };
+  if (!r[5].length) return { k: "gap" };
+  if (r[3] === "deferred") return { k: "deferred" };
+  const ps = r[5].map(prdOf).filter(Boolean);
+  const n = sum(ps, p => p.n), d = sum(ps, p => p.f === "done" ? p.n : p.d), pct = n ? d / n : 0;
+  return { k: pct >= 1 ? "done" : pct > 0 || r[3] === "partial" ? "progress" : "notstarted", pct };
+}
+// @data-end
+
 // ---------- state
 let selSys = "lumen", selPrd = null;
 function select(sys, prd, scroll) {
   if (sys) selSys = sys;
   selPrd = prd;
-  renderMatrix(); renderWaves(); renderChips(); renderDetail();
+  renderMatrix(); renderWaves(); renderRail(); renderDetail();
   if (scroll) document.getElementById("detail-sec").scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" });
 }
 
@@ -484,38 +596,81 @@ const mx = document.getElementById("matrix");
 mx.addEventListener("click", onPick);
 mx.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onPick(e); } });
 
-// ---------- system detail
-function renderChips() {
-  document.getElementById("chips").innerHTML = SYS_ORDER.map(k => `<button type="button" class="chip" data-s="${k}" aria-pressed="${k === selSys}">${SYS[k].name}</button>`).join("");
+// ---------- coverage explorer
+const GH = "https://github.com/ThreeNativeHQ/threenative-engine/blob/";
+const gapCount = k => SYS[k].subs.filter(r => cov(r) === "gap").length;
+document.getElementById("k-gaps").textContent = Object.keys(SYS).reduce((a, k) => a + gapCount(k), 0);
+const gaponly = document.getElementById("gaponly");
+gaponly.addEventListener("change", renderRail);
+function renderRail() {
+  const keys = [...new Set(F.map(f => f.sys))].filter(k => !gaponly.checked || gapCount(k));
+  document.getElementById("rail").innerHTML = d3.groups(keys, k => AREA_OF[k]).map(([area, ks]) =>
+    `<div class="area">${area}</div>` + ks.map(k => {
+      const subs = SYS[k].subs, g = gapCount(k);
+      const parts = ["prd", "ships", "rule", "gap"].map(c => [c, d3.sum(subs.filter(r => cov(r) === c), weight)]).filter(x => x[1]);
+      return `<button type="button" class="sysbtn" data-s="${k}" aria-pressed="${k === selSys}">
+        <span class="nm">${esc(SYS[k].name)}</span><span class="gb${g ? "" : " ok"}">${g ? g + " no PRD" : "✓ covered"}</span>
+        <span class="cbar" aria-hidden="true">${parts.map(([c, w]) => `<i class="c-${c}" style="flex:${w}"></i>`).join("")}</span></button>`;
+    }).join("")).join("");
 }
-document.getElementById("chips").addEventListener("click", e => { const b = e.target.closest("button"); if (b) select(b.dataset.s, null, false); });
+document.getElementById("rail").addEventListener("click", e => {
+  const b = e.target.closest("button"); if (!b) return;
+  select(b.dataset.s, null, false);
+  if (matchMedia("(max-width: 900px)").matches) document.getElementById("detail").scrollIntoView({ block: "start" });
+});
+
+function prdCard(id, subs) {
+  const P = PRDS[id], port = PORT.find(p => p.id === id), elsewhere = !P && port;
+  const covered = subs.filter(r => r[5].includes(id)), covers = covered.map(r => r[0]);
+  // a finished PRD whose measurement deferred the feature reads as such, not as shipped work
+  const deferred = covered.length && covered.every(r => r[3] === "deferred");
+  const state = elsewhere ? "Not on develop yet" : !P ? "Not found" : P.f === "done" ? (deferred ? "Closed · deferred" : "Done") : P.f === "blocked" ? "Blocked" : deferred ? "Deferred" : "Open";
+  const c = !P ? "--notfiled" : state === "Done" ? "--shipped" : state === "Open" ? "--open" : "--deferred";
+  return `<div class="card${selPrd === id ? " sel" : ""}" style="--c:var(${c})" data-id="${id}" tabindex="0" role="button" aria-pressed="${selPrd === id}">
+    <span class="top"><b>PRD-${id}</b><span>${state}${port ? ` · wave ${port.wave}` : ""}</span></span>
+    <span class="ttl">${esc(P ? P.t : port ? port.title : "File not found on this branch")}</span>
+    ${P && P.n ? `<span class="prog"><b style="width:${(P.d / P.n * 100).toFixed(0)}%"></b></span><span class="cov mono">${P.d}/${P.n} boxes</span>` : ""}
+    ${covers.length ? `<span class="cov">Covers: ${esc(covers.join(" · "))}</span>` : ""}
+    ${P ? `<a href="${GH}${P.r}/${P.p}" target="_blank" rel="noopener">Open the PRD ↗</a>` : elsewhere ? `<span class="cov">${port.done}/${port.total} boxes. The file is on an open PR branch (the Unreal look epic, PR #541).</span>` : ""}</div>`;
+}
 function renderDetail() {
   const s = SYS[selSys], subs = s.subs;
   const total = subs.reduce((a, r) => a + (r[1] || 0), 0);
-  const prds = PORT.filter(p => p.sys === selSys).sort((a, b) => a.wave - b.wave);
-  const counts = d3.rollup(subs, v => v.length, r => r[3]);
+  const order = id => { const P = PRDS[id], w = PORT.find(p => p.id === id)?.wave; return (P?.f === "done" ? 100 : 0) + (w || 9); };
+  const ids = [...new Set([...subs.flatMap(r => r[5]), ...PORT.filter(p => p.sys === selSys).map(p => p.id)])].sort((a, b) => order(a) - order(b));
+  const gaps = subs.filter(r => cov(r) === "gap").sort((a, b) => (b[1] || 0) - (a[1] || 0));
+  const rule = subs.filter(r => cov(r) === "rule");
+  const gapLoc = d3.sum(gaps, r => r[1] || 0);
   document.getElementById("detail").innerHTML = `
-    <div class="dhead"><div><h3>${s.name}</h3><div class="note">${s.what}</div></div>
-      <div><span class="big">${fmt(total)}</span> <span class="note">lines in listed subsystems</span></div></div>
-    <div class="stack" aria-hidden="true">${subs.filter(r => r[1]).map(r => `<span class="s-${r[3]}" style="flex:${r[1]}" title="${esc(r[0])}: ${fmt(r[1])}"></span>`).join("")}</div>
-    <div class="legend">${Object.keys(STATUS).filter(k => counts.get(k)).map(k => `<span class="pill"><span class="dot s-${k}"></span>${STATUS[k]} · ${counts.get(k)}</span>`).join("")}
-      ${prds.length ? `<span class="pill">Port order: ${prds.map(p => `PRD-${p.id} (wave ${p.wave})`).join(", ")}</span>` : ""}</div>
-    <div class="subs"><table><thead><tr><th>Subsystem</th><th style="text-align:right">LOC</th><th>What it does</th><th>ThreeNative</th></tr></thead><tbody>
+    <div class="dhead"><div><h3>${esc(s.name)}</h3><div class="note">${esc(s.what)}</div></div>
+      <div><span class="big">${fmt(total)}</span> <span class="note">Unreal lines · ${subs.length - gaps.length - rule.length} of ${subs.length - rule.length} subsystems covered${gaps.length ? ` · <b style="color:var(--gap)">${fmt(gapLoc)} lines with no PRD</b>` : ""}</span></div></div>
+    <div class="blk"><h4>PRDs that port it (${ids.length})</h4>
+      ${ids.length ? `<div class="cards">${ids.map(id => prdCard(id, subs)).join("")}</div>` : `<div class="note">No PRD names this feature yet.</div>`}</div>
+    <div class="blk"><h4>Not covered by any PRD (${gaps.length})</h4>
+      ${gaps.length ? `<div class="gaps">${gaps.map(r => `<div class="gapi"><b>${esc(r[0])}</b><span class="num">${r[1] ? fmt(r[1]) + " lines" : "shared file"} · ${STATUS[r[3]]}</span><span class="note">${esc(r[2])} ${r[4] !== "—" ? "ThreeNative: " + esc(r[4]) : ""}</span></div>`).join("")}</div>`
+        : `<div class="allok">Every subsystem has a PRD or already ships.</div>`}
+      ${rule.length ? `<div class="note" style="margin-top:8px">Out of scope by rule: ${esc(rule.map(r => r[0]).join(", "))}.</div>` : ""}</div>
+    <div class="blk"><h4>All subsystems</h4><div class="subs"><table><thead><tr><th>Subsystem</th><th style="text-align:right">LOC</th><th>What it does</th><th>ThreeNative</th><th>PRDs</th></tr></thead><tbody>
       ${subs.map(r => `<tr class="${selPrd && r[5].includes(selPrd) ? "hit" : ""}"><td><b>${esc(r[0])}</b></td>
         <td class="num">${r[1] ? fmt(r[1]) : "shared"}</td><td>${esc(r[2])}</td>
-        <td><span class="pill"><span class="dot s-${r[3]}"></span>${STATUS[r[3]]}</span><div class="note">${esc(r[4])}</div></td></tr>`).join("")}
-    </tbody></table></div>`;
+        <td><span class="pill"><span class="dot s-${r[3]}"></span>${STATUS[r[3]]}</span><div class="note">${esc(r[4])}</div></td>
+        <td>${r[5].length ? r[5].map(id => `<button type="button" class="tag" data-id="${id}">${id}</button>`).join("") : cov(r) === "gap" ? `<span class="tag no">No PRD</span>` : `<span class="note">${cov(r) === "rule" ? "by rule" : "ships"}</span>`}</td></tr>`).join("")}
+    </tbody></table></div></div>`;
 }
+const det = document.getElementById("detail");
+const pickPrd = e => { if (e.target.closest("a")) return; const t = e.target.closest("[data-id]"); if (t) select(null, selPrd === t.dataset.id ? null : t.dataset.id, false); };
+det.addEventListener("click", pickPrd);
+det.addEventListener("keydown", e => { if ((e.key === "Enter" || e.key === " ") && e.target.matches(".card")) { e.preventDefault(); pickPrd(e); } });
 
 // ---------- ladder
 document.getElementById("ladder").innerHTML = LADDER.map(([l, n, p, s]) =>
   `<div class="rung" style="--c:var(--${s})"><span class="l">${l} · ${STATUS[s]}</span><span class="n">${n}</span><span class="p">${p}</span></div>`).join("");
 
-// ---------- treemap
-const on = new Set(Object.keys(STATUS));
+// ---------- treemap: area -> Unreal system -> subsystem, coloured by port progress
+const on = new Set(Object.keys(PROG));
 const legend = document.getElementById("legend");
-legend.innerHTML = Object.entries(STATUS).map(([k, v]) =>
-  `<button type="button" aria-pressed="true" data-s="${k}"><span class="dot s-${k}"></span>${v}</button>`).join("");
+legend.innerHTML = Object.entries(PROG).map(([k, v]) =>
+  `<button type="button" aria-pressed="true" data-s="${k}"><span class="dot p-${k}"></span>${v}</button>`).join("");
 legend.addEventListener("click", e => {
   const b = e.target.closest("button"); if (!b) return;
   const s = b.dataset.s; on.has(s) ? on.delete(s) : on.add(s);
@@ -523,39 +678,53 @@ legend.addEventListener("click", e => {
 });
 document.getElementById("big").addEventListener("change", drawTreemap);
 const tm = document.getElementById("tm"), tip = document.getElementById("tip");
-function showTip(f, x, y) {
-  tip.innerHTML = `<b>${f.name}</b><div class="row">${fmt(f.loc)} LOC · C++ ${fmt(f.cpp)} · shader ${fmt(f.shd)}</div>
-    <div class="row">Complexity ${f.cx}/10 · port cost ${f.port}</div><div style="margin-top:6px"><span class="pill"><span class="dot s-${f.status}"></span>${STATUS[f.status]}</span> ${f.note}</div>
-    ${f.sys ? `<div class="row" style="margin-top:6px">Select to open subsystems</div>` : ""}`;
+let LEAVES = [];
+function showTip(l, x, y) {
+  const r = l.r, p = l.p;
+  tip.innerHTML = `<b>${esc(r[0])}</b><div class="row">${esc(SYS[l.sys].name)} · ${r[1] ? fmt(r[1]) + " lines" : "shared file"}</div>
+    <div style="margin-top:6px"><span class="pill"><span class="dot p-${p.k}"></span>${PROG[p.k]}${p.pct != null && p.k !== "done" ? ` · ${Math.round(p.pct * 100)}% of PRD boxes` : ""}</span></div>
+    ${r[5].length ? `<div class="row" style="margin-top:4px">PRD-${r[5].join(", PRD-")}</div>` : ""}
+    <div style="margin-top:4px">${esc(r[4] !== "—" ? r[4] : r[2])}</div><div class="row" style="margin-top:6px">Select to see its PRDs and gaps</div>`;
   tip.hidden = false;
-  const r = tip.getBoundingClientRect();
-  tip.style.left = Math.min(x + 14, innerWidth - r.width - 8) + "px";
-  tip.style.top = Math.min(y + 14, innerHeight - r.height - 8) + "px";
+  const b = tip.getBoundingClientRect();
+  tip.style.left = Math.min(x + 14, innerWidth - b.width - 8) + "px";
+  tip.style.top = Math.min(y + 14, innerHeight - b.height - 8) + "px";
 }
 function drawTreemap() {
   const big = document.getElementById("big").checked;
-  const rows = F.filter(f => (big || !f.big) && on.has(f.status));
-  const groups = d3.groups(rows, f => f.area).map(([name, children]) => ({ name, children }));
+  const keys = [...new Set(F.filter(f => big || !f.big).map(f => f.sys))];
+  const areas = d3.groups(keys, k => AREA_OF[k]).map(([name, ks]) => ({ name, children: ks.map(k => {
+    const total = d3.sum(F.filter(f => f.sys === k), f => f.loc), subs = SYS[k].subs;
+    const kids = subs.map(r => ({ r, sys: k, p: prog(r), v: r[1] || 400 }));
+    const rest = total - d3.sum(subs, r => r[1] || 0);
+    if (rest > total * 0.03) kids.push({ r: ["Rest of " + SYS[k].name, rest, "Shared files not split by subsystem.", "", "—", []], sys: k, p: { k: "unsplit" }, v: rest });
+    return { name: SYS[k].name, sys: k, total, children: kids.filter(c => on.has(c.p.k)) };
+  }).filter(f => f.children.length) })).filter(a => a.children.length);
   const W = tm.clientWidth, H = tm.clientHeight;
-  const root = d3.hierarchy({ children: groups }).sum(d => d.loc || 0).sort((a, b) => b.value - a.value);
-  d3.treemap().size([W, H]).paddingOuter(4).paddingTop(d => d.depth === 1 ? 18 : 4).paddingInner(3).round(true)(root);
-  let html = "";
+  const root = d3.hierarchy({ children: areas }).sum(d => d.v || 0).sort((a, b) => b.value - a.value);
+  d3.treemap().size([W, H]).paddingOuter(d => d.depth === 2 ? 2 : 4).paddingTop(d => d.depth === 1 ? 18 : d.depth === 2 ? 16 : 0).paddingInner(d => d.depth === 2 ? 1 : 3).round(true)(root);
+  let html = ""; LEAVES = [];
   for (const g of root.children || []) {
     html += `<div class="grp" style="left:${g.x0}px;top:${g.y0}px;width:${g.x1 - g.x0}px;height:${g.y1 - g.y0}px"><div class="gl">${g.data.name} · ${fmt(g.value)}</div></div>`;
-    for (const l of g.leaves()) {
-      const f = l.data, w = l.x1 - l.x0, h = l.y1 - l.y0, i = F.indexOf(f);
-      const txt = w > 70 && h > 34 ? `<div class="tn">${f.sys ? "▸ " : ""}${f.name}</div><div class="tl">${(f.loc / 1000).toFixed(1)}K</div>` : "";
-      const cx = w > 34 && h > 20 ? `<span class="cx">${f.cx}</span>` : "";
-      html += `<div class="tile s-${f.status}${f.sys ? " drill" : ""}" tabindex="0" ${f.sys ? 'role="button"' : ""} data-i="${i}" aria-label="${f.name}, ${fmt(f.loc)} lines, complexity ${f.cx}, ${STATUS[f.status]}" style="left:${l.x0}px;top:${l.y0}px;width:${w}px;height:${h}px">${txt}${cx}</div>`;
+    for (const f of g.children) {
+      const w = f.x1 - f.x0;
+      html += `<div class="fgrp" data-s="${f.data.sys}" style="left:${f.x0}px;top:${f.y0}px;width:${w}px;height:${f.y1 - f.y0}px">${w > 40 ? `<div class="fl">${esc(f.data.name)} <small>${(f.data.total / 1000).toFixed(1)}K</small></div>` : ""}</div>`;
+      for (const l of f.leaves()) {
+        const d = l.data, lw = l.x1 - l.x0, lh = l.y1 - l.y0, i = LEAVES.push(d) - 1;
+        const txt = lw > 64 && lh > 26 ? `<div class="tn">${esc(d.r[0])}</div>${lh > 40 ? `<div class="tl">${d.r[1] ? (d.r[1] / 1000).toFixed(1) + "K" : "shared"}</div>` : ""}` : "";
+        const bar = d.p.k === "progress" ? `<span class="pb" style="width:${Math.max(3, d.p.pct * 100).toFixed(0)}%"></span>` : "";
+        html += `<div class="tile p-${d.p.k}" tabindex="0" role="button" data-i="${i}" aria-label="${esc(d.r[0])}, ${esc(SYS[d.sys].name)}, ${PROG[d.p.k]}" style="left:${l.x0}px;top:${l.y0}px;width:${lw}px;height:${lh}px">${txt}${bar}</div>`;
+      }
     }
   }
-  tm.innerHTML = html || `<p class="note" style="padding:16px">No features match the selected statuses.</p>`;
+  tm.innerHTML = html || `<p class="note" style="padding:16px">No subsystems match the selected states.</p>`;
 }
-tm.addEventListener("pointermove", e => { const t = e.target.closest(".tile"); t ? showTip(F[t.dataset.i], e.clientX, e.clientY) : (tip.hidden = true); });
+tm.addEventListener("pointermove", e => { const t = e.target.closest(".tile"); t ? showTip(LEAVES[t.dataset.i], e.clientX, e.clientY) : (tip.hidden = true); });
 tm.addEventListener("pointerleave", () => tip.hidden = true);
-tm.addEventListener("focusin", e => { const t = e.target.closest(".tile"); if (t) { const r = t.getBoundingClientRect(); showTip(F[t.dataset.i], r.left, r.top + 10); } });
+tm.addEventListener("focusin", e => { const t = e.target.closest(".tile"); if (t) { const r = t.getBoundingClientRect(); showTip(LEAVES[t.dataset.i], r.left, r.top + 10); } });
 tm.addEventListener("focusout", () => tip.hidden = true);
-const openTile = e => { const t = e.target.closest(".tile.drill"); if (t) { tip.hidden = true; select(F[t.dataset.i].sys, null, true); } };
+const openTile = e => { const t = e.target.closest(".tile, .fgrp"); if (!t) return; tip.hidden = true;
+  select(t.classList.contains("tile") ? LEAVES[t.dataset.i].sys : t.dataset.s, null, true); };
 tm.addEventListener("click", openTile);
 tm.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openTile(e); } });
 new ResizeObserver(drawTreemap).observe(tm);
@@ -567,7 +736,7 @@ let sortK = "loc", dir = -1;
 function table() {
   const val = f => sortK === "status" ? ORDER[f.status] : sortK === "port" ? PORTC[f.port] : f[sortK];
   const rows = [...F].sort((a, b) => { const x = val(a), y = val(b); return (x > y ? 1 : x < y ? -1 : 0) * dir; });
-  document.querySelector("#tbl tbody").innerHTML = rows.map(f => `<tr>
+  document.querySelector("#tbl tbody").innerHTML = rows.map(f => `<tr data-s="${f.sys}">
     <td><b>${f.name}</b><div class="note">${f.note}</div></td><td>${f.area}</td><td class="num">${fmt(f.loc)}</td>
     <td><span class="cxbar" aria-label="${f.cx} of 10">${Array.from({ length: 10 }, (_, i) => `<i class="${i < f.cx ? "on" : ""}"></i>`).join("")}</span> <span class="mono">${f.cx}</span></td>
     <td>${f.port}</td><td><span class="pill"><span class="dot s-${f.status}"></span>${STATUS[f.status]}</span></td></tr>`).join("");
@@ -577,6 +746,7 @@ document.querySelectorAll("#tbl th").forEach(th => {
   th.addEventListener("click", go); th.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(); } });
 });
 
+document.querySelector("#tbl tbody").addEventListener("click", e => { const t = e.target.closest("tr"); if (t) select(t.dataset.s, null, true); });
 table();
 select("lumen", null, false);
 </script>

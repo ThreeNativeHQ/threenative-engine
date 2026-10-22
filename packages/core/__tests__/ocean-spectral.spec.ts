@@ -218,6 +218,70 @@ describe("initialSpectrumData", () => {
   });
 });
 
+describe("initialSpectrumData with a game-owned energy curve", () => {
+  const band = { kMin: 0, kMax: Number.POSITIVE_INFINITY };
+  const flat = () => 1e-4;
+
+  it("should be deterministic for the same seed and curve", () => {
+    const first = initialSpectrumData(16, 100, band, { ...TUNING, energy: flat });
+    const second = initialSpectrumData(16, 100, band, { ...TUNING, energy: flat });
+    expect([...first]).toStrictEqual([...second]);
+    expect([...first].every(Number.isFinite)).toBe(true);
+    expect([...first].some((value) => value !== 0)).toBe(true);
+  });
+
+  it("should leave the Phillips default untouched when no curve is given", () => {
+    const withoutCurve = initialSpectrumData(16, 100, band, TUNING);
+    const explicitUndefined = initialSpectrumData(16, 100, band, { ...TUNING, energy: undefined });
+    expect([...explicitUndefined]).toStrictEqual([...withoutCurve]);
+  });
+
+  it("should keep the cascade band limit on a custom curve", () => {
+    const calls: number[] = [];
+    const data = initialSpectrumData(
+      16,
+      100,
+      { kMin: 1e6, kMax: Number.POSITIVE_INFINITY },
+      {
+        ...TUNING,
+        energy: (kx, kz) => {
+          calls.push(Math.hypot(kx, kz));
+          return 1;
+        },
+      },
+    );
+    expect([...data].every((value) => value === 0)).toBe(true);
+    expect(calls).toHaveLength(0);
+  });
+
+  it("should stay Hermitian, so the inverse transform produces a real height", () => {
+    const resolution = 16;
+    const data = initialSpectrumData(resolution, 100, band, {
+      ...TUNING,
+      energy: (kx, kz) => 1e-4 / (1 + kx * kx + kz * kz) ** 2,
+    });
+    for (let y = 1; y < resolution; y += 1) {
+      for (let x = 1; x < resolution; x += 1) {
+        const index = y * resolution + x;
+        const mirror =
+          ((resolution - y) % resolution) * resolution + ((resolution - x) % resolution);
+        // `(h0, conj(h0(-k)))`: the stored conjugate of this texel is the mirrored texel's pair.
+        expect(data[index * 4 + 2]).toBeCloseTo(data[mirror * 4] as number, 6);
+        expect(data[index * 4 + 3]).toBeCloseTo(-(data[mirror * 4 + 1] as number), 6);
+      }
+    }
+  });
+
+  it.each([-1, Number.NaN, Number.POSITIVE_INFINITY])(
+    "should refuse a curve that returns %s",
+    (value) => {
+      expect(() => initialSpectrumData(8, 100, band, { ...TUNING, energy: () => value })).toThrow(
+        "energy must return a finite, non-negative number",
+      );
+    },
+  );
+});
+
 describe("sampleGrid", () => {
   it("should return the stored value at a grid corner", () => {
     const grid = Float32Array.from([0, 1, 2, 3]);
@@ -288,6 +352,25 @@ describe("SpectralOcean options", () => {
     expect(await construct({ choppiness: Number.NaN }).then((build) => build)).toThrow(
       "choppiness must be a finite number",
     );
+  });
+
+  it("should refuse a spectrum seam it cannot honour", async () => {
+    expect(
+      await construct({ energy: 3 as unknown as () => number }).then((build) => build),
+    ).toThrow("energy must be a function");
+    expect(await construct({ capillaryWavenumber: 0 }).then((build) => build)).toThrow(
+      "capillaryWavenumber must be a positive number",
+    );
+    expect(await construct({ capillaryWavenumber: Number.NaN }).then((build) => build)).toThrow(
+      "capillaryWavenumber must be a positive number",
+    );
+  });
+
+  it("should build with a custom energy curve and a capillary crossover", async () => {
+    const { SpectralOcean } = await import("../src/ocean/spectral.js");
+    const ocean = new SpectralOcean(options({ energy: () => 1e-5, capillaryWavenumber: 370 }));
+    expect(ocean.cascades).toHaveLength(2);
+    ocean.detach();
   });
 
   it("should reject an invalid cadence", async () => {

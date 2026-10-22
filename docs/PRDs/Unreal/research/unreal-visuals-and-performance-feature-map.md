@@ -103,6 +103,41 @@ quadrantChart
 | 5 | PRD-611 | Hidden GPU effect draws its first frame ready | Perf | 4 | 2 | 0/10 | — | First-frame hitch |
 | 5 | PRD-610 | Sparks bounce off visible surfaces | VFX | 6 | 1 | 0/12 | PRD-609 | Effect detail |
 
+Added on 2026-10-21: PRDs filed outside `docs/PRDs/Unreal/` that port an Unreal system, and the PRDs
+filed for the gaps this map found (PRD-660 to PRD-683).
+
+| Wave | PRD | What it ports | Layer | Complexity | Impact | Done | Waits on | Why this wave |
+| --- | --- | --- | --- | :---: | :---: | ---: | --- | --- |
+| 2 | PRD-679 | Fog behind glass and sparks (fog composition) | L3 | 5 | 3 | 0/8 | — | Additive effects add the fog colour today; gate first |
+| 2 | PRD-676 | Debug views an agent reads from a playtest capture | Perf | 5 | 3 | 0/7 | — | Explains frame cost before more perf work |
+| 2 | PRD-670 | Rough diffuse like a fresh Unreal project (Substrate is on in 5.8.3) | L1 | 5 | 3 | 0/5 | PRD-632 | Every rough pixel; gate first |
+| 3 | PRD-488 | Foliage moves in the wind | Look | 4 | 2 | 0/8 | — | Leaf shadows that sway (PRD-651) need it |
+| 4 | PRD-VQ-03 | Local reflection probes | L8 | 5 est. | 3 | 0/8 | — | Interiors reflect their room, not the sky |
+| 4 | PRD-674 | Ambient particles cost no simulation (Niagara stateless) | Perf | 5 | 2 | 0/8 | — | The rain template draws its own particles today |
+| 4 | PRD-VQ-09 | Incremental diffuse relight | L7 | 6 est. | 3 | 0/8 | — | A light change relights only the dirty region |
+| 5 | PRD-665 | Clouds shade the haze and fog below them | L4 | 5 | 2 | 0/7 | PRD-VQ-08, PRD-562 | Light shafts through cloud gaps |
+| 5 | PRD-662 | Sky light stops at walls with GI off (DFAO on the BVH) | L6 | 6 | 2 | 0/6 | PRD-644 | Low-tier look |
+| 5 | PRD-663 | Local fog volumes | L3 | 4 | 1 | 0/6 | — | No fresh Unreal project places one |
+| 5 | PRD-667 | Lens flare and FFT bloom on request | L9 | 4 | 1 | 0/7 | PRD-636 | Off in a fresh Unreal project |
+| 5 | PRD-VQ-13 | Cinematic stage: depth of field | Look | 6 est. | 1 | 0/8 | — | Owns DOF; lacks the Unreal lens model |
+| 5 | PRD-664 | Smoke and explosions as lit volumes | VFX | 6 | 1 | 0/7 | — | Off at Unreal low and medium tiers |
+| 5 | PRD-660 | Many shadowed lamps, one fixed budget (MegaLights) | Perf | 8 | 1 | 0/8 | PRD-650 | Off in a fresh Unreal project |
+| 5 | PRD-661 | ReSTIR: fewer GI rays, same quality | Perf | 7 | 1 | 0/7 | PRD-640, PRD-641 | No Unreal tier turns it on |
+| 5 | PRD-668 | Displacement changes the silhouette | Look | 7 | 1 | 0/6 | PRD-600 | Per-material opt-in in Unreal |
+| 5 | PRD-669 | Far foliage as voxels | Perf | 7 | 1 | 0/7 | — | Off in a fresh Unreal project |
+| 5 | PRD-671 | Strand hair | Look | 7 | 1 | 0/6 | PRD-VQ-15 | Off in a fresh Unreal project |
+| 5 | PRD-672 | Terrain layers cached in virtual pages | Perf | 8 | 1 | 0/6 | PRD-VQ-10 | Saves shading time on many-layer terrain |
+| 5 | PRD-673 | Cull by grid cell before placement (scene culling grid) | Perf | 6 | 2 | 0/7 | — | Dense placements; gate first |
+| 5 | PRD-675 | Named world layers in one streaming budget (data layers) | Perf | 5 | 1 | 0/6 | PRD-606 | Tests the two-`WorldCells` claim |
+| 5 | PRD-683 | Skip unread passes, share targets (render graph) | Perf | 5 | 1 | 0/7 | PRD-523 | The RDG outcomes that need no new API |
+| 5 | PRD-682 | Coarse shading where the GPU allows (VRS) | Perf | 7 | 1 | 0/6 | — | Off in Unreal; Linux needs a Dawn patch |
+| 5 | PRD-677 | Clustered glass and water blend like the source | Perf | 3 | 1 | 0/5 | PRD-600 | Off by default in Unreal |
+| 5 | PRD-678 | Skinned bodies take the cluster cut | Perf | 6 | 1 | 0/7 | PRD-486 | Only a 100K-triangle character needs it |
+| 5 | PRD-459 | One streaming admission budget per frame | Perf | 6 | 3 | 4/16 | — | Streaming hitches in open worlds |
+| 5 | PRD-456 | Distant world cell proxies (HLOD) | Perf | 8 | 2 | 0/6 | — | Far cells as merged proxies |
+| 5 | PRD-486 | Characters get a LOD chain | Perf | 4 | 2 | 0/8 | — | Crowds |
+| 5 | PRD-493 | Terrain layers past sixteen textures | Look | 3 | 1 | 6/8 | — | Blocked on a private game walk |
+
 The rule behind the order: **the default look first, by layer, cheapest proof first.** L1 gates every
 comparison. Sky, post and AO are cheap and change most of the frame. GI is the biggest visual gap,
 so its foundation (PRD-603, PRD-646) starts in wave 2, in parallel. Pure performance ports
@@ -111,11 +146,17 @@ exception, because a cheaper frame pays for every look layer.
 
 ## Subsystems inside each system
 
-The HTML page splits 15 systems into their subsystems, with measured lines, what each one does and
-the PRD that ports it: Lumen (11 parts), Nanite (11), virtual shadow maps (8), TSR (8), the post
-chain (9), sky atmosphere, clouds, fog, AO, reflections, GPU scene, streaming, World Partition,
-Niagara and MegaLights. Select a PRD in the port order, or a tile marked with a triangle, to open
-its system.
+The HTML page has an "Unreal feature → ThreeNative PRDs" explorer. Select any Unreal feature in its
+list, the treemap or the table. The page then shows:
+
+- the PRDs that port the feature, each with its status, ticked boxes, wave and a link to the file;
+- every subsystem that no PRD covers yet, in red, with its lines;
+- every subsystem with its measured lines, what it does, and its PRDs or a "No PRD" tag.
+
+Fifteen systems are split into subsystems: Lumen (11 parts), Nanite (11), virtual shadow maps (8),
+TSR (8), the post chain (9), sky atmosphere, clouds, fog, AO, reflections, GPU scene, streaming,
+World Partition, Niagara and MegaLights. Every other feature shows as one row. A script reads the
+PRD files and writes the title, path and box counts into the page.
 
 ## The map
 
@@ -149,12 +190,12 @@ flowchart LR
 | Feature | C++ | Shader | Total LOC | Complexity | Port cost | ThreeNative status |
 | --- | ---: | ---: | ---: | :---: | --- | --- |
 | Lumen (GI, reflections, surface cache, radiance cache, screen probes) | 45,712 | 33,515 | **79,227** | 10 | Very high | **Partial.** PRD-638, PRD-647 done; PRD-603 to 605, 639 to 644, 646 open; hardware ray tracing deferred (PRD-645) until WebGPU exposes ray tracing. PR #541 adds the `giCache.ts` CPU reference |
-| Distance fields (global and mesh SDF) | 10,870 | 6,189 | 17,059 | 7 | High | **Not filed.** `GPUSceneBVH` gives the trace instead |
+| Distance fields (global and mesh SDF) | 10,870 | 6,189 | 17,059 | 7 | High | **Open.** PRD-662 maps distance-field AO onto `GPUSceneBVH` for the GI-off tier. The distance fields themselves stay deferred: the BVH gives the trace |
 | Deferred shading, clustered lights, base pass | 16,918 | 8,254 | 25,172 | 6 | n/a | Covered by three.js and the owned engine; not a port target |
 | Reflection captures and SSR | 7,226 | 4,842 | 12,068 | 5 | Medium | **Partial.** The SSR stage ships. Captures PRD-VQ-03 (low, medium), traced reflections PRD-642 (high) |
 | Ambient occlusion (SSAO, GTAO) | 4,501 | 2,363 | 6,864 | 4 | Low | **Partial.** GTAO ships in the templates. PRD-635 (PR #541) applies it to indirect light only |
-| Substrate materials | 12,154 | 16,982 | 29,136 | 8 | High | **Not filed.** three.js r185 already matches Unreal default lit |
-| MegaLights | 10,136 | 9,857 | 19,993 | 8 | High | **Not filed.** Off in a fresh project |
+| Substrate materials | 12,154 | 16,982 | 29,136 | 8 | High | **Open.** A fresh 5.8.3 project turns Substrate on (`GameProjectUtils.cpp:198-212`). three r185 matches its specular energy but not its rough diffuse: PRD-670 |
+| MegaLights | 10,136 | 9,857 | 19,993 | 8 | High | **Open.** PRD-660, gate first. Off in a fresh project |
 
 ## 2. Shadows
 
@@ -168,9 +209,9 @@ flowchart LR
 | Feature | C++ | Shader | Total LOC | Complexity | Port cost | ThreeNative status |
 | --- | ---: | ---: | ---: | :---: | --- | --- |
 | Sky atmosphere (LUTs, sky light capture) | 2,666 | 2,318 | 4,984 | 6 | Medium | **Open.** PRD-633 (PR #541) |
-| Volumetric clouds | 3,449 | 2,695 | 6,144 | 7 | Medium | **Partial.** Template clouds in `rain`; PRD-VQ-08 open |
-| Height fog, volumetric fog, local fog volumes | 6,663 | 4,050 | 10,713 | 5 | Medium | **Partial.** Height fog done (PRD-560); aerial perspective PRD-562 open |
-| Heterogeneous volumes | 15,562 | 11,390 | 26,952 | 8 | High | **Not filed** |
+| Volumetric clouds | 3,449 | 2,695 | 6,144 | 7 | Medium | **Partial.** Template clouds in `rain`; PRD-VQ-08 open. Cloud shadow on air and fog, cloud sky AO: PRD-665 |
+| Height fog, volumetric fog, local fog volumes | 6,663 | 4,050 | 10,713 | 5 | Medium | **Partial.** Height fog done (PRD-560); aerial perspective PRD-562 open; local fog volumes PRD-663 |
+| Heterogeneous volumes | 15,562 | 11,390 | 26,952 | 8 | High | **Open.** PRD-664, gate first. Off at Unreal low and medium effects tiers |
 
 ## 4. Post-process and temporal
 
@@ -180,10 +221,10 @@ flowchart LR
 | TAA | 1,531 | 2,463 | 3,994 | 5 | Low | **Shipped.** Template temporal AA |
 | Tone map, LUT, ACES | 2,237 | 5,079 | 7,316 | 4 | Low | **Partial.** LUT grade done (PRD-492); filmic curve PRD-632 open (PR #541) |
 | Exposure (eye adaptation, histogram, local) | 3,147 | 1,971 | 5,118 | 5 | Low | **Partial.** Template auto exposure; PRD-571 blocked on a device; PRD-632, 636 open |
-| Bloom and lens flare | 1,797 | 932 | 2,729 | 3 | Low | **Partial.** Bloom exists; PRD-636 open |
+| Bloom and lens flare | 1,797 | 932 | 2,729 | 3 | Low | **Partial.** Bloom exists; PRD-636 open. Lens flare and FFT bloom (both off in a fresh project): PRD-667 |
 | Motion blur | 1,518 | 2,552 | 4,070 | 5 | Low | **Open.** PRD-636 |
-| Depth of field | 4,160 | 8,194 | 12,354 | 7 | Medium | **Not filed.** Not in the default look |
-| Denoisers | 5,800 | 10,068 | 15,868 | 7 | High | **Not filed.** Unreal has no virtual-shadow denoiser |
+| Depth of field | 4,160 | 8,194 | 12,354 | 7 | Medium | **Open.** PRD-VQ-13 owns it. It lacks the Unreal lens model, near and far layers and tier costs. Off in a fresh project |
+| Denoisers | 5,800 | 10,068 | 15,868 | 7 | High | **Owned.** ScreenSpaceDenoise does not run in a fresh project. GI history PRD-641, reflections PRD-642, many lights PRD-660, low-tier AO PRD-635 |
 
 ## 5. Geometry and scene performance
 
@@ -193,7 +234,7 @@ flowchart LR
 | GPU scene and instance culling | 12,019 | 2,420 | 14,439 | 7 | Medium | **Shipped.** `world-gpu-scene.ts` cull and LOD into indirect draws |
 | Visibility, occlusion, HZB | 10,140 | 3,178 | 13,318 | 6 | Medium | **Deferred.** HZB occlusion (PRD-489): our scenes would cull 1.3%. Unreal has it for dense cities and interiors; revisit when a scene like that shows a high would-cull share |
 | Mesh draw commands and pass processors | 12,081 | 0 | 12,081 | 7 | Medium | Owned C++ engine area |
-| Virtual texturing | 15,462 | 1,851 | 17,313 | 8 | High | **Deferred.** Runtime VT waits until texture memory limits a game. Mip residency PRD-VQ-10 open first |
+| Virtual texturing | 15,462 | 1,851 | 17,313 | 8 | High | **Deferred, with a gate.** PRD-672 caches terrain layer shading in pages; it saves shading time, not memory. Mip residency PRD-VQ-10 open first |
 | Dynamic resolution | 847 | 0 | 847 | 4 | Low | **Shipped.** PRD-384, 563, 564 |
 | PSO precache | 8,895 | 0 | 8,895 | 6 | Medium | **Shipped.** Pipeline warm-up and the native disk cache |
 | Variable rate shading | 1,799 | 583 | 2,382 | 4 | n/a | **Not filed.** No WebGPU API |
@@ -217,7 +258,7 @@ flowchart LR
 | RenderCore (RDG, shader maps) | 103,555 | 9 | **Deferred** until WebGPU exposes RDG-class features (bindless, async compute) |
 | RHI (GPU abstraction) | 67,546 | 8 | WebGPU and the owned C++ engine fill this role |
 | Hardware ray tracing and path tracer | 54,013 | 9 | **Deferred** for GI (PRD-645): the trace is 13x faster, but the WebGPU-to-Vulkan hand-off costs more. Revisit when WebGPU exposes ray tracing |
-| Hair strands | 45,936 | 9 | **Not filed** |
+| Hair strands | 45,936 | 9 | **Open.** PRD-671: ribbon strands and hair shading first. Off in a fresh project |
 
 ## What this says
 

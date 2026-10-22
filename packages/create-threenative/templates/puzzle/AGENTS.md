@@ -44,7 +44,7 @@ bridge; avoid DOM globals, dynamic `import()`, and raw physics handles. **Report
 pnpm dev
 pnpm build
 pnpm build --target desktop
-pnpm test
+pnpm test   # runs `pnpm check` first: typecheck, ESLint, Biome format
 ```
 
 Forty-five dynamic bodies from seed 6132 — 41 solid crates to shove, 4 phase crates to walk through, and a

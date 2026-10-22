@@ -2,12 +2,18 @@
 
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { PNG } from 'pngjs';
 
-import { parseLinkedLibraries, resolveContainer } from './desktop-distribution.mjs';
+import {
+  desktopLaunchTarget,
+  isEnginePlayerLaunch,
+  parseLinkedLibraries,
+  resolveContainer,
+} from './desktop-distribution.mjs';
+import { verifyStarterConsumerGameplay } from './verify-starter-consumer.mjs';
 import { inspectContainerBrand } from './inspect-container-brand.mjs';
 import { inspectMacosIcon } from './inspect-macos-icon.mjs';
 
@@ -292,6 +298,8 @@ function judgeStarterRun({ artifact, brand, frames, log, logPath, reportPath, sc
   return report;
 }
 
+export { desktopLaunchTarget };
+
 export function verifyStarterDesktop({ frames = 300, project = process.cwd() } = {}) {
   const projectRoot = resolve(project);
   const manifest = JSON.parse(readFileSync(join(projectRoot, 'package.json'), 'utf8'));
@@ -306,8 +314,22 @@ export function verifyStarterDesktop({ frames = 300, project = process.cwd() } =
   const logPath = join(artifactDirectory, 'starter-desktop.log');
   const reportPath = join(artifactDirectory, 'starter-desktop-report.json');
   mkdirSync(artifactDirectory, { recursive: true });
-  const log = launchStarterExecutable(artifact, { frames, logPath, project: projectRoot, screenshot });
-  return judgeStarterRun({ artifact, frames, log, logPath, reportPath, screenshot });
+  const launch = desktopLaunchTarget(artifact, executableName);
+  // The engine player takes neither `--frames` nor `--screenshot` and prints none of the legacy
+  // host's markers, so the playtest runner drives it (PRD-637). The report keeps the same path.
+  if (isEnginePlayerLaunch(launch)) {
+    const { row } = verifyStarterConsumerGameplay({ project: projectRoot, target: 'desktop' });
+    const report = {
+      artifact: launch,
+      assertions: row.assertions,
+      gate: 'consumer-playtest',
+      pass: row.pass === true,
+    };
+    writeFileSync(reportPath, `${JSON.stringify(report, null, 2)}\n`);
+    return report;
+  }
+  const log = launchStarterExecutable(launch, { frames, logPath, project: projectRoot, screenshot });
+  return judgeStarterRun({ artifact: launch, frames, log, logPath, reportPath, screenshot });
 }
 
 /**
@@ -447,6 +469,10 @@ if (process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.ar
       process.exit(0);
     }
     const report = options.root ? verifyStarterContainer(options) : verifyStarterDesktop(options);
+    if (report.gate === 'consumer-playtest') {
+      console.log(`starter desktop gate passed: engine player, ${report.assertions} playtest assertions`);
+      process.exit(0);
+    }
     const brand = report.brand === undefined || report.brand === null
       ? 'brand NOT inspected (pass --config <resolved config json>)'
       : `brand ${report.brand.name?.name ?? 'unnamed'} verified`;

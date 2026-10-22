@@ -44,10 +44,14 @@ concurrency:
   # workflow's history was a proof run killed by the next push to its own branch, and a
   # candidate-keyed result is still valid for the SHA it was produced from.
   #
+  # PRD-629: a release tag run has a group of its own. A main proof run (a duplicate `workflow_run`
+  # or a `release-proof` label) held `native-release-proof` once and delayed the tag run until it
+  # was cancelled by hand; a tag run publishes, so nothing may queue ahead of it.
+  #
   # Only a run that will prove joins the shared group. Every ordinary PR push still starts this
   # workflow (its `gates` job then refuses it), and in one shared group those no-op runs would queue
   # behind a real proof and replace a pending one, since a group keeps a single pending run.
-  group: ${{ (github.event_name != 'pull_request' || github.event.pull_request.base.ref == 'main' || contains(github.event.pull_request.labels.*.name, 'release-proof')) && 'native-release-proof' || format('native-release-skip-{0}', github.run_id) }}
+  group: ${{ github.ref_type == 'tag' && 'native-release-tag' || (github.event_name != 'pull_request' || github.event.pull_request.base.ref == 'main' || contains(github.event.pull_request.labels.*.name, 'release-proof')) && 'native-release-proof' || format('native-release-skip-{0}', github.run_id) }}
   cancel-in-progress: false
 
 jobs:
@@ -469,7 +473,7 @@ jobs:
       - name: Install Linux desktop build dependencies
         if: runner.os == 'Linux'
         run: >-
-          sudo apt-get update && sudo apt-get install -y
+          sh scripts/retry-download.sh sudo apt-get update && sh scripts/retry-download.sh sudo apt-get install -y
           libasound2-dev libcurl4-openssl-dev libfontconfig1-dev libfreetype6-dev
           libpulse-dev libudev-dev libx11-dev libxext-dev libxrandr-dev
           libxcursor-dev libxi-dev libxfixes-dev libxss-dev libxkbcommon-dev
@@ -619,7 +623,7 @@ jobs:
           packages: platform-tools
       - name: Install Android NDK 28.2 and select it for all native steps
         run: |
-          sdkmanager "ndk;28.2.13676358" "cmake;3.22.1"
+          sh scripts/retry-download.sh sdkmanager "ndk;28.2.13676358" "cmake;3.22.1"
           echo "ANDROID_NDK_HOME=${ANDROID_SDK_ROOT:-$ANDROID_HOME}/ndk/28.2.13676358" >> "$GITHUB_ENV"
       - run: rustup target add aarch64-linux-android x86_64-linux-android
       - run: pnpm install --frozen-lockfile
@@ -706,8 +710,13 @@ jobs:
           if-no-files-found: error
 
   build-ios-simulator:
+    # PRD-629: the published matrix includes this asset, so a proof run builds it too. The lock the
+    # rehearsal `publish` generates is then the lock the tag run generates. It runs beside the
+    # Windows build, which is the longer job, so it adds no wall time.
     needs: [validate-tag, gates]
-    if: needs.validate-tag.outputs.candidate_sha == github.sha
+    if: >-
+      ${{ !cancelled() && needs.gates.result == 'success' &&
+      (github.ref_type != 'tag' || needs.validate-tag.outputs.candidate_sha == github.sha) }}
     runs-on: macos-15
     timeout-minutes: 60
     steps:
@@ -746,24 +755,63 @@ jobs:
           if-no-files-found: error
 
   publish:
-    needs: [validate-tag, build, build-android, build-ios-simulator]
-    if: github.event_name == 'push' && github.ref_type == 'tag' && needs.validate-tag.outputs.candidate_sha == github.sha
+    # PRD-629: a proof run (promotion PR, `release-proof` label, dispatch, main CI completion) runs
+    # this job in rehearsal mode. It builds the same lock, SBOM and provenance and creates the
+    # release with the same command, but the release is a DRAFT named `rehearsal-<run id>`, which
+    # `validate-tag` never accepts. `cleanup-rehearsal` deletes it. The tag run therefore has no
+    # code path that a proof run did not already execute.
+    needs: [validate-tag, gates, build, build-android, build-ios-simulator]
+    if: >-
+      ${{ !cancelled() && needs.build.result == 'success' && needs.build-android.result == 'success' &&
+      ((github.ref_type != 'tag' && needs.gates.result == 'success' &&
+      needs.build-ios-simulator.result == 'success') ||
+      (github.event_name == 'push' && github.ref_type == 'tag' && needs.validate-tag.result == 'success' &&
+      needs.build-ios-simulator.result == 'success' && needs.validate-tag.outputs.candidate_sha == github.sha)) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
       contents: write
+    outputs:
+      release_tag: ${{ steps.release.outputs.release_tag }}
+      rehearsal: ${{ steps.release.outputs.rehearsal }}
     steps:
+      # On `workflow_run` the evidence candidate is the triggering CI head, not `GITHUB_SHA`.
       - uses: actions/checkout@v7
+        if: github.event_name == 'workflow_run'
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+      - uses: actions/checkout@v7
+        if: github.event_name != 'workflow_run'
       - uses: actions/download-artifact@v8
         with:
           pattern: runtime-*
           path: release
           merge-multiple: true
+      - name: Name the release this run creates
+        id: release
+        env:
+          CANDIDATE_SHA: ${{ needs.validate-tag.outputs.candidate_sha }}
+        run: |
+          set -euo pipefail
+          # `lock_tag` is the tag the checksum lock and every asset URL name. It is always the real
+          # `runtime-native-v<version>` tag, so a rehearsal runs the same manifest validation.
+          if [ "$GITHUB_REF_TYPE" = tag ]; then
+            echo "lock_tag=$GITHUB_REF_NAME" >> "$GITHUB_OUTPUT"
+            echo "release_tag=$GITHUB_REF_NAME" >> "$GITHUB_OUTPUT"
+            echo "rehearsal=false" >> "$GITHUB_OUTPUT"
+            echo "sha=$CANDIDATE_SHA" >> "$GITHUB_OUTPUT"
+          else
+            version="$(node -p 'require("./packages/runtime-native/package.json").version')"
+            echo "lock_tag=runtime-native-v$version" >> "$GITHUB_OUTPUT"
+            echo "release_tag=rehearsal-$GITHUB_RUN_ID" >> "$GITHUB_OUTPUT"
+            echo "rehearsal=true" >> "$GITHUB_OUTPUT"
+            echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          fi
       - name: Generate the checksum lock from the verified assets
         env:
           RELEASE_REPOSITORY: ${{ github.repository }}
-          RELEASE_TAG: ${{ github.ref_name }}
-          RELEASE_SHA: ${{ needs.validate-tag.outputs.candidate_sha }}
+          RELEASE_TAG: ${{ steps.release.outputs.lock_tag }}
+          RELEASE_SHA: ${{ steps.release.outputs.sha }}
         run: |
           node --input-type=module <<'NODE'
           import { writeFileSync } from "node:fs";
@@ -777,7 +825,8 @@ jobs:
           NODE
       - name: Generate SBOM, license inventory and release provenance
         env:
-          RELEASE_SHA: ${{ needs.validate-tag.outputs.candidate_sha }}
+          RELEASE_SHA: ${{ steps.release.outputs.sha }}
+          RELEASE_TAG: ${{ steps.release.outputs.lock_tag }}
         run: |
           node packages/runtime-native/scripts/generate-native-sbom.mjs --out release/compliance
           pnpm --filter @threenative/runtime-native deps:sbom:check || true
@@ -794,7 +843,7 @@ jobs:
             subjects.push({
               name: entry,
               sha256: createHash("sha256").update(bytes).digest("hex"),
-              url: `https://github.com/${process.env.GITHUB_REPOSITORY}/releases/download/${process.env.GITHUB_REF_NAME}/${entry}`,
+              url: `https://github.com/${process.env.GITHUB_REPOSITORY}/releases/download/${process.env.RELEASE_TAG}/${entry}`,
               candidateSha: process.env.RELEASE_SHA,
             });
           }
@@ -811,7 +860,7 @@ jobs:
             receipts: [],
             candidate: process.env.RELEASE_SHA,
             repository: process.env.GITHUB_REPOSITORY,
-            tag: process.env.GITHUB_REF_NAME,
+            tag: process.env.RELEASE_TAG,
             runUrl: `https://github.com/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`,
             pnpmLockSha256: createHash("sha256").update(readFileSync("pnpm-lock.yaml")).digest("hex"),
           });
@@ -820,24 +869,58 @@ jobs:
       - name: Publish runtimes and checksum lock
         env:
           GH_TOKEN: ${{ github.token }}
+          REHEARSAL: ${{ steps.release.outputs.rehearsal }}
+          RELEASE_TAG: ${{ steps.release.outputs.release_tag }}
         run: |
           # `release/*` expands to `release/compliance`, a directory, and `gh release create`
           # fails on it. Upload files only, so a runtime release is created in one pass.
           mapfile -t assets < <(find release -maxdepth 1 -type f)
-          gh release create "${{ github.ref_name }}" "${assets[@]}" \
-            --repo "${{ github.repository }}" \
-            --verify-tag \
-            --title "ThreeNative runtime ${{ github.ref_name }}" \
-            --prerelease \
-            --latest=false \
-            --generate-notes
+          if [ "${REHEARSAL:-}" = true ]; then
+            # A draft has no git tag and no public URL, so nothing a consumer reads can change.
+            mode=(--draft --title "Rehearsal ${RELEASE_TAG:-} (run ${GITHUB_RUN_ID:-})" --notes "Release rehearsal from run ${GITHUB_RUN_ID:-}. Deleted by cleanup-rehearsal.")
+          else
+            mode=(--verify-tag --title "ThreeNative runtime ${RELEASE_TAG:-}" --prerelease --latest=false --generate-notes)
+          fi
+          gh release create "$RELEASE_TAG" "${assets[@]}" \
+            --repo "$GITHUB_REPOSITORY" \
+            "${mode[@]}"
+      - name: Verify the uploaded assets against the lock
+        if: steps.release.outputs.rehearsal == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.release.outputs.release_tag }}
+        run: |
+          set -euo pipefail
+          # Download what the release now holds, not what this job staged, and compare it with the
+          # lock a consumer would read. An upload that dropped, renamed or truncated an asset
+          # fails here instead of on tag day.
+          rm -rf rehearsal-download
+          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --dir rehearsal-download
+          node --input-type=module <<'NODE'
+          import { createHash } from "node:crypto";
+          import { readFileSync, readdirSync } from "node:fs";
+          import { validateReleaseManifest } from "./packages/runtime-native/scripts/install-prebuilt.mjs";
+          const lock = JSON.parse(readFileSync("rehearsal-download/prebuilt-lock.json", "utf8"));
+          validateReleaseManifest(lock);
+          const held = new Set(readdirSync("rehearsal-download"));
+          for (const [key, artifact] of Object.entries(lock.artifacts)) {
+            const name = artifact.url.split("/").pop();
+            if (!held.has(name)) throw new Error(`Rehearsal release is missing ${name} (${key}).`);
+            const bytes = readFileSync(`rehearsal-download/${name}`);
+            const sha256 = createHash("sha256").update(bytes).digest("hex");
+            if (sha256 !== artifact.sha256 || bytes.length !== artifact.size) {
+              throw new Error(`Rehearsal asset ${name} differs from the lock (${key}).`);
+            }
+          }
+          console.log(`Rehearsal release holds all ${Object.keys(lock.artifacts).length} locked assets.`);
+          NODE
 
   clean-consumer:
     needs: [validate-tag, gates, build, build-android, publish]
     if: >-
       ${{ !cancelled() && needs.gates.result == 'success' &&
       needs.build.result == 'success' && needs.build-android.result == 'success' &&
-      ((github.ref_type != 'tag' && needs.publish.result == 'skipped') ||
+      ((github.ref_type != 'tag' && needs.publish.result == 'success') ||
       (needs.validate-tag.outputs.candidate_sha == github.sha && needs.publish.result == 'success')) }}
     runs-on: ubuntu-24.04
     # Four successful `Android emulator visual parity` runs measured 27m00s, 27m33s, 27m50s and
@@ -886,7 +969,10 @@ jobs:
           const names = PUBLISHED_PREBUILT_KEYS.filter((key) => !key.startsWith("ios-"))
             .map((key) => [key, PREBUILT_ASSET_NAMES[key]]);
           const expected = names.map(([, name]) => name).sort();
-          if (JSON.stringify(readdirSync("release").sort()) !== JSON.stringify(expected)) {
+          // The simulator zip is in this download because a proof run builds it for the rehearsal
+          // `publish`. This lane does not install it, so it is not an extra.
+          const served = readdirSync("release").filter((name) => !name.startsWith("threenative-ios-"));
+          if (JSON.stringify(served.sort()) !== JSON.stringify(expected)) {
             throw new Error("Proof assets must contain every published non-iOS runtime from this run, and no extras.");
           }
           const artifacts = Object.fromEntries(names.map(([key, name]) => {
@@ -913,7 +999,7 @@ jobs:
           echo "THREENATIVE_ALLOW_INSECURE_PREBUILT=1" >> "$GITHUB_ENV"
       - name: Install a software Vulkan ICD for the clean desktop launch
         run: |
-          sudo apt-get update
+          sh scripts/retry-download.sh sudo apt-get update
           # WebKitGTK alongside the ICD: `ldd` on the prebuilt this job downloads names
           # libwebkit2gtk-4.1.so.0, libjavascriptcoregtk-4.1.so.0, libsoup-3.0.so.0 and
           # libgtk-3.so.0, because the desktop runtime links the UI overlay. A hosted runner has
@@ -921,7 +1007,7 @@ jobs:
           #   threenative-runtime: error while loading shared libraries: libwebkit2gtk-4.1.so.0
           #   Runtime packager exited with code 127.
           # A real Linux consumer needs it too, so it belongs inside the proof, not around it.
-          sudo apt-get install -y mesa-vulkan-drivers libwebkit2gtk-4.1-0
+          sh scripts/retry-download.sh sudo apt-get install -y mesa-vulkan-drivers libwebkit2gtk-4.1-0
       - run: pnpm install --frozen-lockfile
       - uses: ./.github/actions/native-engine-wasm
       - name: Pack the exact scaffold consumer packages
@@ -985,7 +1071,7 @@ jobs:
         with:
           packages: platform-tools
       - name: Provision the consumer emulator before masking native toolchains
-        run: sdkmanager "platform-tools" "emulator" "platforms;android-35" "build-tools;35.0.0" "system-images;android-35;google_apis;x86_64"
+        run: sh scripts/retry-download.sh sdkmanager "platform-tools" "emulator" "platforms;android-35" "build-tools;35.0.0" "system-images;android-35;google_apis;x86_64"
       - name: Expose an Android SDK with no NDK or CMake installation
         run: |
           source_sdk="$ANDROID_HOME"
@@ -1294,6 +1380,9 @@ jobs:
         run: |
           target="$RUNNER_TEMP/threenative-ios-release-consumer"
           cp examples/native-smoke/src/game.ts "$target/src/game.ts"
+          # The entry's own siblings: `game.ts` alone fails with UNRESOLVED_IMPORT for these two (PRD-637).
+          cp examples/native-smoke/src/networking-game.ts examples/native-smoke/src/worker-proof.ts \
+            "$target/src/"
           cp examples/native-smoke/vite.config.ts "$target/vite.config.ts"
           cp packages/physics/__tests__/fixtures/physics-parity.scenario.json \
             "$target/physics-parity.scenario.json"
@@ -1407,7 +1496,7 @@ jobs:
     if: >-
       ${{ !cancelled() && needs.gates.result == 'success' &&
       needs.build.result == 'success' &&
-      ((github.ref_type != 'tag' && needs.publish.result == 'skipped') ||
+      ((github.ref_type != 'tag' && needs.publish.result == 'success') ||
       (needs.validate-tag.outputs.candidate_sha == github.sha && needs.publish.result == 'success')) }}
     runs-on: windows-2025
     # `clean-consumer`'s mechanisms all assume POSIX: a `/bin/sh` toolchain mask, an apt Vulkan
@@ -1677,14 +1766,22 @@ jobs:
   finalize:
     # iOS is not a supported target (owner, 2026-09-23): its consumer proof stays as evidence but
     # does not gate promotion, and it has never completed green in a tag run.
-    needs: [validate-tag, clean-consumer, clean-consumer-windows]
-    if: github.event_name == 'push' && github.ref_type == 'tag' && needs.validate-tag.outputs.candidate_sha == github.sha
+    #
+    # A proof run rehearses this job too (PRD-629): it checks the same release and skips only the
+    # `gh release edit` that would make a release public.
+    needs: [validate-tag, publish, clean-consumer, clean-consumer-windows]
+    if: >-
+      ${{ !cancelled() && needs.publish.result == 'success' &&
+      needs.clean-consumer.result == 'success' && needs.clean-consumer-windows.result == 'success' &&
+      (github.ref_type != 'tag' ||
+      (github.event_name == 'push' && needs.validate-tag.outputs.candidate_sha == github.sha)) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
       contents: write
     steps:
       - name: Promote the consumer-verified release
+        if: github.ref_type == 'tag'
         env:
           GH_TOKEN: ${{ github.token }}
         run: >-
@@ -1692,6 +1789,84 @@ jobs:
           --repo "${{ github.repository }}"
           --prerelease=false
           --latest
+      - name: Check the rehearsal release without publishing it
+        if: github.ref_type != 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.publish.outputs.release_tag }}
+        run: |
+          set -euo pipefail
+          state="$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json isDraft,assets --jq '[.isDraft, (.assets | length)] | @tsv')"
+          echo "rehearsal release $RELEASE_TAG: $state"
+          test "$(printf '%s' "$state" | cut -f1)" = true
+          test "$(printf '%s' "$state" | cut -f2)" -gt 0
+
+  # The npm half of the tag-day path. `pnpm release --dry-run` packs the whole npm cohort against
+  # the lock the rehearsal release holds, and publishes nothing (PRD-629).
+  npm-dry-run:
+    needs: [publish]
+    if: ${{ !cancelled() && github.ref_type != 'tag' && needs.publish.result == 'success' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      # A draft release is invisible to a token that cannot write to the repository, and the
+      # rehearsal lock lives on a draft. The job runs the same label-gated code `publish` runs.
+      contents: write
+    steps:
+      # On `workflow_run` the evidence candidate is the triggering CI head, not `GITHUB_SHA`.
+      - uses: actions/checkout@v7
+        if: github.event_name == 'workflow_run'
+        with:
+          # check-publish-state counts commits to a package's source since its published version
+          # went up, which a shallow clone cannot see.
+          fetch-depth: 0
+          ref: ${{ github.event.workflow_run.head_sha }}
+      - uses: actions/checkout@v7
+        if: github.event_name != 'workflow_run'
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20.19.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: ./.github/actions/native-engine-wasm
+      - run: node packages/runtime-native/scripts/download-deps.mjs --only gradle-wrapper
+      # The first preflight in `release.ts` reads a built tree: `pnpm release:prepare` builds it
+      # before a real release, and a fresh checkout has no `dist` to pack.
+      - run: pnpm build
+      - name: Fetch the lock from the rehearsal release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.publish.outputs.release_tag }}
+        run: gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern prebuilt-lock.json --dir "$RUNNER_TEMP"
+      - name: Pack the npm cohort against that lock
+        run: pnpm tsx scripts/release.ts --dry-run --skip-gates --lock "$RUNNER_TEMP/prebuilt-lock.json"
+
+  # Delete the rehearsal draft whatever happened, including a cancelled run.
+  cleanup-rehearsal:
+    if: ${{ always() && github.ref_type != 'tag' && needs.publish.outputs.rehearsal == 'true' }}
+    needs: [publish, finalize, npm-dry-run]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Delete the rehearsal draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.publish.outputs.release_tag }}
+        run: |
+          set -euo pipefail
+          case "$RELEASE_TAG" in rehearsal-*) ;; *) echo "Refusing to delete '$RELEASE_TAG'." >&2; exit 1;; esac
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft | grep -qx true; then
+            gh release delete "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --yes
+          fi
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Rehearsal release $RELEASE_TAG still exists." >&2
+            exit 1
+          fi
 
   cleanup-failed-release:
     if: >-

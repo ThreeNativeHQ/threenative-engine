@@ -7,7 +7,7 @@
 // The shader is the storm ceiling: a raymarched volume between 145 and 815 metres, lit by a
 // five-tap march toward the sun and filled from a procedural 64³ noise volume. It is one full-screen
 // pass into a render target the coast samples — see src/render/clouds.ts.
-import { Data3DTexture, Vector2, Vector3, Vector4 } from "three";
+import { Data3DTexture, Vector3 } from "three";
 import {
   Break,
   Fn,
@@ -170,7 +170,7 @@ export const lightAt = /*@__PURE__*/ Fn(([p_immutable, l]: [Node<"vec3">, Node<"
   const sum = float(0).toVar();
   const stepLen = float(28).toVar();
 
-  Loop({ start: int(0), end: 5 }, ({ i }) => {
+  Loop({ start: int(0), end: 5 }, () => {
     p.addAssign(l.mul(stepLen));
     sum.addAssign(density(p).mul(stepLen));
     stepLen.mulAssign(1.7);

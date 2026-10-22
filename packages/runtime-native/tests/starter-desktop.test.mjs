@@ -2,7 +2,7 @@ import { makeTempDirSync } from '../../../test-support/temp-dir.js';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { chmodSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
 
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -12,6 +12,7 @@ import { test } from 'vitest';
 import {
   analyzeStarterLog,
   assertPlayerPrerequisites,
+  desktopLaunchTarget,
   inspectStarterScreenshot,
   verifyStarterContainer,
 } from '../scripts/verify-starter-desktop.mjs';
@@ -369,7 +370,9 @@ test('primary CI invokes the native lane on pull requests and pushes', () => {
   const native = readFileSync('../../.github/workflows/native-platforms.yml', 'utf8');
   const nativeTriggers = native.slice(native.indexOf('\non:'), native.indexOf('concurrency:'));
   assert.match(nativeTriggers, /workflow_call:/u);
-  assert.doesNotMatch(nativeTriggers, /(?:pull_request|push|schedule):/u);
+  assert.doesNotMatch(nativeTriggers, /(?:pull_request|schedule):/u);
+  // A push to main starts the run the release-candidate gate needs (PRD-629); no other branch does.
+  assert.match(nativeTriggers, /push:\s*\n\s*branches:\s*\[main\]/u);
 });
 
 test('native workflow verifies a freshly scaffolded starter on Linux', () => {
@@ -624,4 +627,17 @@ test('the router re-exports the brand surface so --brand-only callers keep resol
     'verifyStarterConsumerGameplay', 'assertConsumerTargetRows']) {
     assert.equal(typeof router[name], 'function', `${name} must resolve through the router`);
   }
+});
+
+test('launches the launcher inside a desktop container, not the container directory (PRD-637)', () => {
+  // `build:desktop` of a registry install writes `dist-native/<name>/<name>`; spawning the
+  // directory exited 126 ("Is a directory") in the post-publish clean room.
+  const directory = makeTempDirSync('threenative-desktop-target-');
+  const container = join(directory, 'dist-native', 'game');
+  mkdirSync(container, { recursive: true });
+  writeFileSync(join(container, 'game'), '#!/bin/sh\n');
+  assert.equal(desktopLaunchTarget(container, 'game'), join(container, 'game'));
+  const flat = join(directory, 'flat');
+  writeFileSync(flat, '#!/bin/sh\n');
+  assert.equal(desktopLaunchTarget(flat, 'flat'), flat);
 });

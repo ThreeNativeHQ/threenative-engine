@@ -19,6 +19,7 @@ One source, two runtimes: browser WebGPU and an owned C++ host for desktop/Andro
 5. **Keep the PRD current as you work.** Tick each box the moment its work is done and verified, with the result beside it, in the same commit as the change. Never tick unrun, partial or unverified work — leave it open and say why. Run `pnpm prd:progress <prd file>` before starting and after each phase; it prints the PR label and exits 1 when the PRD lacks per-phase boxes — fix that first. Filing rules: `docs/PRDs/AGENTS.md`; lifecycle: the `prd-lifecycle` skill.
 6. **Surgical.** Touch only what the task needs; tidying is its own change. Ask when the request is ambiguous.
 7. **Primary docs follow the executables.** README, `docs/architecture/` and package AGENTS files name only shipped commands and packages (`scripts/__tests__/primary-docs.spec.ts`); fix the prose, not the code.
+8. **Reverse engineer from the Unreal source (owner, 2026-10-21).** Before you write or fill a PRD that ports a look or performance feature, find the Unreal source clone on this machine (`$UE_SRC`, or search for an `UnrealEngine` checkout) and read the subsystem it ports; with none, make the sparse clone in `docs/PRDs/Unreal/README.md`. Borrow the algorithm, defaults and guards, cite `UE 5.8.3: Engine/...:line`, never copy code. `pnpm unreal:status` refreshes the port map and the README status.
 
 ## Pull requests
 

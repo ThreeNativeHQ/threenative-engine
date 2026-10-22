@@ -741,9 +741,8 @@ describe("generated template ordinary-frame runtime cost", () => {
       });
     const race = new Race();
     try {
-      // A cached texture resolves before enter(), while the bounded sample is still pending.
-      expect(race.load(context as never)).toBeUndefined();
-      await Promise.resolve();
+      // The sky is applied before enter(), while the bounded sample is still pending.
+      await race.load(context as never);
       expect(sampleSpy).toHaveBeenCalledTimes(1);
       expect(complete).toBeTypeOf("function");
       race.enter(context as never);
