@@ -28,7 +28,8 @@ export async function startScene(canvas, dimensions) {
     async ({ camera, renderer, scene }) => {
       const volume = new ProbeVolume({
         bounds: VOLUME_BOUNDS,
-        bakeBudgetMs: 16,
+        // This row judges the frame, not the bake cost: a work item that a busy host delays past 16.5 ms would end the scene.
+        bakeBudgetMs: 250,
         cubemapSize: 8,
         density: 0.5,
         maxWorkItemsPerFrame: 1,
