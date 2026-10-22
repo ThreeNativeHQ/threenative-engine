@@ -57,9 +57,17 @@ export function fail(code: string, message: string): never {
   throw new Error(`TN_UNREAL_LOOK_JUDGE_${code}: ${message}`);
 }
 
-const LAYER = /(?<![A-Za-z0-9])(ID|L\d)(?:-(Epic|Medium|Low))?(?![A-Za-z0-9])/g;
+/** A layer token: `L7`, `ID`, an Unreal variant (`L7-Epic`) or a ThreeNative tier layer (`L7-medium`). */
+const LAYER =
+  /(?<![A-Za-z0-9])(ID|L\d)(?:-(Epic|Medium|Low|epic|medium|low|high))?(?![A-Za-z0-9])/g;
 /** ThreeNative's GI tiers; each is judged against one Unreal quality level (PRD-644). */
 export type Tier = "low" | "medium" | "high";
+const TIER_OF: Readonly<Record<string, Tier>> = {
+  epic: "high",
+  high: "high",
+  medium: "medium",
+  low: "low",
+};
 export const UNREAL_LEVEL: Readonly<Record<Tier, string>> = {
   low: "Low",
   medium: "Medium",
@@ -84,6 +92,8 @@ interface IListed {
   layer: string;
   name: string;
   file: string;
+  /** The tier a ThreeNative path names (`L7-medium`); a plain `L7` names none. */
+  tier?: Tier;
 }
 type Listing = Map<string, IListed>;
 
@@ -94,7 +104,12 @@ const isPng = (entry: Dirent, file: string) =>
 
 /** A PNG's id and its one layer; undefined for an Unreal variant that pairs with nothing. */
 function nameFrame(root: string, file: string, pairs?: Readonly<Record<string, string>>) {
-  const seen = { layers: new Set<string>(), name: "", paired: true };
+  const seen = {
+    layers: new Set<string>(),
+    name: "",
+    paired: true,
+    tier: undefined as Tier | undefined,
+  };
   const id = path
     .relative(root, file)
     .split(path.sep)
@@ -102,6 +117,7 @@ function nameFrame(root: string, file: string, pairs?: Readonly<Record<string, s
     .replace(/\.png$/i, "")
     .replace(LAYER, (token, layer: string, variant?: string) => {
       const mapped = pairs && variant !== undefined ? pairs[token] : layer;
+      if (!pairs && variant !== undefined) seen.tier = TIER_OF[variant.toLowerCase()];
       if (mapped === undefined) seen.paired = false;
       else seen.layers.add(mapped);
       seen.name ||= token;
@@ -114,7 +130,15 @@ function nameFrame(root: string, file: string, pairs?: Readonly<Record<string, s
       layers.length === 0 ? "LAYER_UNKNOWN" : "LAYER_AMBIGUOUS",
       `${file} ${layers.length === 0 ? "names no layer" : `names ${layers.join(" and ")}`}: put exactly one layer (L0 to L9 or ID) in the path of every frame, as the capture folders do`,
     );
-  return { id, frame: { layer: layers[0] as string, name: seen.name, file } };
+  return {
+    id,
+    frame: {
+      layer: layers[0] as string,
+      name: seen.name,
+      file,
+      ...(seen.tier ? { tier: seen.tier } : {}),
+    },
+  };
 }
 
 function listFrames(root: string, pairs?: Readonly<Record<string, string>>): Listing {
@@ -209,6 +233,15 @@ export function collectFrames(
     ...after.map((listed, i): [string, Listing] => [`after run ${i + 1}`, listed]),
     ["unreal", unreal],
   ];
+  for (const [arm, listed] of arms.slice(0, -1))
+    for (const id of wanted) {
+      const named = listed.get(id)?.tier;
+      if (named !== undefined && named !== tier)
+        fail(
+          "TIER_MISMATCH",
+          `${arm} holds ${id} from the ${named} tier but the round is at tier ${tier}: judge the same tier in both engines`,
+        );
+    }
   const problems = arms.flatMap(([arm, listed]) =>
     wanted.filter((id) => !listed.has(id)).map((id) => absent(arm, listed, id)),
   );
@@ -293,7 +326,7 @@ ${listing.join("\n\n")}
 1. Open every image above with the Read tool before you answer. The answer is checked against the images you opened.
 2. For every frame give two answers.
    - verdict: AFTER against BEFORE, by the criteria. IMPROVEMENT, NEUTRAL or REGRESSION. Look for what got worse as hard as for what got better: one broken criterion in one region is a REGRESSION, even when the rest improved. NEUTRAL means the arms cannot be told apart by the criteria. Judge what the images show, not what the change was meant to do.
-   - vsUnreal: AFTER against UNREAL, MATCH, CLOSE or FAR. MATCH means no difference a player would notice. CLOSE means the same lighting with a named difference. FAR means a different lighting result. Name the differences in "differences".
+   - vsUnreal: AFTER against UNREAL, MATCH, CLOSE or FAR. MATCH means no difference a player would notice. CLOSE means the same lighting with a named difference. FAR means a different lighting result (criteria that say MISMATCH mean FAR). Name the differences in "differences".
 3. In "reasons" name where you looked (wall, corner, seam, window edge, and so on) and what you saw there.
 4. "overall" has one verdict and one vsUnreal for the whole round, weighed as the criteria say.
 5. If you cannot read an image, put its path in "unreadable" and do not guess about it.
