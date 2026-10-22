@@ -3,7 +3,7 @@
  *
  *   sh <slots>/gpu-slot.sh --exclusive pnpm exec tsx scripts/unreal-look/gi-tier-cost.ts \
  *     --scene gi:cornell [--tiers low,medium,high] [--shadow-tiers low,medium,high] [--windows 3] [--reuse] \
- *     [--out cost.json]
+ *     [--url-extra "&probes=1"] [--out cost.json]
  *
  * Opens the calibration scene at L7 on the owned engine, headed on WebGPU, at 1920 x 1080 with the adapter
  * checked, once per tier. The first window of 120 frames is the warm-up and is dropped; the mean of the next
@@ -178,10 +178,11 @@ async function measureTier(
   count: number,
   shadowTier = "high",
   frames = 600,
+  urlExtra = "",
 ): Promise<Record<string, unknown>> {
   const { adapter, errors, page } = await openTier(
     browser,
-    `${origin}?tnGi=${name}&layer=L7&tier=${tier}&shadowTier=${shadowTier}`,
+    `${origin}?tnGi=${name}&layer=L7&tier=${tier}&shadowTier=${shadowTier}${urlExtra}`,
     pose,
   );
   try {
@@ -248,14 +249,35 @@ export async function main(args: readonly string[]): Promise<number> {
     const browser = await chromium.launch({ args: [...WEBGPU_BROWSER_ARGS], headless: false });
     try {
       const count = Number(flag(args, "--windows") ?? 3);
+      const urlExtra = flag(args, "--url-extra") ?? "";
       const shadowTiers = flag(args, "--shadow-tiers")?.split(",") ?? [];
       for (const tier of shadowTiers.length > 0 ? [] : tiers) {
-        report[tier] = await measureTier(browser, origin, name, tier, pose, count);
+        report[tier] = await measureTier(
+          browser,
+          origin,
+          name,
+          tier,
+          pose,
+          count,
+          "high",
+          600,
+          urlExtra,
+        );
       }
       addDeltas(report);
       for (const shadowTier of shadowTiers) {
         const key = `shadow-${shadowTier}`;
-        report[key] = await measureTier(browser, origin, name, "medium", pose, count, shadowTier);
+        report[key] = await measureTier(
+          browser,
+          origin,
+          name,
+          "medium",
+          pose,
+          count,
+          shadowTier,
+          600,
+          urlExtra,
+        );
         console.info(`TN_GI_TIER_COST ${key} ${JSON.stringify(report[key])}`);
       }
     } finally {
