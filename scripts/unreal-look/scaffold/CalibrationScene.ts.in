@@ -373,9 +373,13 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
           ],
           albedo: new Color().setRGB(ar, ag, ab, SRGBColorSpace),
           ambient: new Color(0, 0, 0),
-          // From L7 the air also scatters the room's bounce light: the cache's mean radiance, the same in every direction
-          // (Unreal adds the Lumen translucency volume to every fog sample).
-          ...(giCache.meanRadiance === undefined ? {} : { ambientNode: giCache.meanRadiance }),
+          // From L7 the air can also scatter the room's bounce light: the cache's mean radiance, the same in every direction
+          // (Unreal adds the Lumen translucency volume to every fog sample). Opt-in with ?fogGi=1: the judge read it as a
+          // REGRESSION against the same fog without it (PRD-643 Decision 15), because it veils the walls by about twice
+          // what Unreal shows while the walls are already too bright from the direct light (PRD-646).
+          ...(giCache.meanRadiance === undefined || params.get("fogGi") !== "1"
+            ? {}
+            : { ambientNode: giCache.meanRadiance }),
           anisotropy: fogData.volumetricScatteringDistribution,
           points: lights.filter((l): l is PointLight => l instanceof PointLight && !l.castShadow),
           environment: { aerialPerspective: false, godRays: false },

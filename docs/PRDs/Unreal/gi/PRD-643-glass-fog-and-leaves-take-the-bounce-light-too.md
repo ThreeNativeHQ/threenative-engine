@@ -64,9 +64,9 @@ The subsurface colour, the AO factor and the fog density are look values in game
 
 ## Acceptance Criteria
 
-- [ ] AC-1 [local]: The glass pane and the fog-filled room regions on the owned engine match Unreal Epic within the PRD-631 thresholds at L7. proof: `pnpm unreal-look:compare --scene gi --layer L7` — Evidence: pending.
+- [ ] AC-1 [local]: The glass pane and the fog-filled room regions on the owned engine match Unreal Epic within the PRD-631 thresholds at L7. proof: `pnpm unreal-look:compare --scene gi --layer L7` — Evidence: not met. `Pane` at L7 went from dP50 0.387 to 0.143 (Decision 9), still outside the threshold because L1 is 2.17 times Unreal (Decision 10). The fog room frames were black until Decision 14. With the camera fix, the fog without GI sits 11 to 17 percent below Unreal on the room regions at L7 (Decision 16), and the GI fog term overshoots the side walls (Decision 15), so fog is outside the thresholds too.
 - [ ] AC-2 [local]: The back-lit leaf region of the `foliage` pose matches Unreal Epic within the thresholds. proof: the same command — Evidence: pending.
-- [ ] AC-3 [local; needs a built desktop host]: The conformance row `translucency-gi` passes on the desktop lane within its tolerance. proof: `pnpm parity --target desktop --only-tests translucency-gi` — Evidence: pending.
+- [x] AC-3 [local; needs a built desktop host]: The conformance row `translucency-gi` passes on the desktop lane within its tolerance. proof: `pnpm parity --target desktop --only-tests translucency-gi` — Evidence: `node packages/runtime-native/conformance/run-conformance.mjs --target desktop --only-tests translucency-gi` on 5f17e6d87 (2026-10-21 19:06): pass, pixelMismatchRatio 0, perceptualDeltaE 0, no GPU validation errors, host exit 0 (the runner exits 2 because it marks the 118 unselected rows blocked). The first two desktop runs failed under host load, see Decision 8.
 
 ## Integration Ledger
 
@@ -81,8 +81,11 @@ The subsurface colour, the AO factor and the fog density are look values in game
 Lane glassfog, 2026-10-21. The engine owns the mechanism. The harness render source owns the look.
 
 1. **The lane builds `glass` and `fog`, not `foliage`.** Two scenes isolate the two materials that Phase 1
-   names, and each scene has one cause. `foliage` waits for the `shadow:wildwood` scene (lane wildwood).
-   The Phase 3 box and AC-2 stay open until that scene lands.
+   names, and each scene has one cause. The `shadow:wildwood` scene reached the epic (b5a08bde2) late in the run.
+   leaf-lane found that the L1 foliage cell does not match before any GI is added (PRD-651 Decisions: Unreal's direct
+   diffuse is EON where ThreeNative draws Lambert plus a white specular term, and its red on green foliage sits a
+   further 20 to 25 percent below the albedo). PRD-646 stops the GI comparison at an L1 mismatch, so the Phase 3 box
+   and AC-2 stay open and the lane did not start them.
 2. **Unreal's default translucent material takes the translucency volume, the same in every direction.**
    The lighting mode is Volumetric NonDirectional (UE 5.8.3: `Engine/Shaders/Private/TranslucencyVolumeCommon.ush`,
    `GetVolumeLightingNonDirectional`). The read is the L0 term times 0.886227, which is the irradiance averaged over
@@ -113,20 +116,95 @@ Lane glassfog, 2026-10-21. The engine owns the mechanism. The harness render sou
    engine, so a BEFORE without those fixes has no fog frame to compare.
 7. **Native proof is the conformance row `translucency-gi`.** `ProbeVolume` is JavaScript on both engines, so the
    lane adds no C++. The row draws a translucent pane that reads `sampleNonDirectional` beside an opaque panel that reads the directional `sampleNode` of the same volume. The runner compares web with desktop.
+8. **The desktop row needed a looser bake budget.** The row passed on web but failed on the desktop host under load:
+   300 frames in 30 s, one present, "startup gate never opened". The likely cause is the ProbeVolume bake guard
+   (`packages/core/src/render/probe-volume.ts`: a work item over `bakeBudgetMs` plus 0.5 ms throws). The row judges
+   the frame, not the bake cost, so it sets `bakeBudgetMs: 250`. The runner keeps only the last 4000 bytes of
+   stdout, so the commit records the cause as likely, not proven. Sibling rows (`probe-volume-sample`,
+   `gi-tier-medium`) still set 16 and are not touched.
+9. **Glass result at the epic head b5a08bde2 merged into `lane/glassfog` (5f17e6d87).** Two runs per arm on the
+   NVIDIA adapter gave identical region values. The table lists pose `glass`; pose `glass-edge` is in the #541
+   comment. `Pane` is the material that took no GI before: it was lit as an opaque material and, in the cache bake,
+   it blocked the bounce paths. Display p50 (0 to 255), dP50 is the relative gap to Unreal Epic.
+
+   | layer | region | Unreal | BEFORE | AFTER | dP50 BEFORE | dP50 AFTER |
+   |---|---|---:|---:|---:|---:|---:|
+   | L1 | Pane | 46 | 116 | 69 | 1.522 | 0.500 |
+   | L7 | Pane | 119 | 165 | 136 | 0.387 | 0.143 |
+   | L9 | Pane | 122 | 165 | 136 | 0.352 | 0.115 |
+   | L7 | Back | 93 | 98 | 104 | 0.054 | 0.118 |
+   | L7 | Ceiling | 104 | 105 | 112 | 0.010 | 0.077 |
+   | L7 | Floor | 133 | 135 | 137 | 0.015 | 0.030 |
+   | L7 | Wall_Red | 29 | 30 | 34 | 0.034 | 0.172 |
+   | L7 | Wall_Green | 61 | 74 | 78 | 0.213 | 0.279 |
+   | L7 | Box_White | 139 | 143 | 146 | 0.029 | 0.050 |
+
+   The judge (2 runs per arm, L7 and L9) returned IMPROVEMENT on both poses and overall, and CLOSE to Unreal.
+   Comment: https://github.com/ThreeNativeHQ/threenative-engine/pull/541#issuecomment-6331292243.
+10. **The opaque room regions moved away from Unreal, and the cause is not this PRD.** The BEFORE bake counted the
+    pane as a solid. That dimmed the room and hid an error. AFTER removes the wrong block, as Unreal does. The error
+    that remains is in L1, with no GI at all: 1.94 times Unreal on `Back`, 1.85 on `Wall_Red`, 2.01 on `Wall_Green`,
+    1.45 on `Box_White` (scene-linear), and the L1 `Pane` is 2.17 times. That is direct light matching
+    (PRD-646). The AC-1 thresholds of PRD-631 do not hold on glass while L1 itself fails them.
+11. **Sameness gate passes.** `pnpm unreal-look:compare --sameness --scene gi:glass,gi:fog` reports PASS on all 12
+    glass rows and all fog rows (IoU at least 0.9998, 0 px beyond 1 px, 0 no-ID px) with the new-base ID frames.
+    The earlier failure on old-base frames came from multisampled ID edges.
+12. **Measurement set-up.** The Wasm engine pair of the lane lacked engine commit 0449f9e63 (TRAA late resolve), so
+    the first captures ran new JS on an old engine. The lane rebuilt the pair from source (2 minutes, 206 steps).
+    The L9 captures skip the auto-exposure wait of b5a08bde2 with a local switch, because that wait fails every
+    fixed-exposure scene (glass and fog use `aem_manual`). The switch is not committed.
+13. **Glass lacked refraction, and Unreal has no strong reflection here (owner report 2026-10-21).** Unreal's default
+    glTF material (`GLTFExporter/Materials/Proxy/M_GLTF_Default`) refracts with index of refraction 1.5, through the
+    distortion pass (UE 5.8.3: `Engine/Shaders/Private/DistortAccumulatePS.usf`, `DistortionCommon.ush`,
+    `DistortApplyScreenPS.usf`, parameters from `Renderer/Private/DistortionRendering.cpp`). The scene colour behind
+    the pane moves by the view-space normal times (IOR - 1) times the view width times 0.00023 times
+    1 / tan(half the horizontal field of view), kept only where the shifted place lies behind the pane. In the
+    `glass-edge` pose that is about 82 pixels. Layer: harness render source. `refraction.ts` (`refractBehind`) does
+    this with an analytic ray test on the pane box from the scene file. The translucent twin writes no depth, as in
+    Unreal. Red-green: `scripts/__tests__/unreal-look-refraction.spec.ts` pins the scale and the owned-engine IR rules.
+    The capture proof is the judge: 2 runs per arm, L7 and L9, `--expect improvement`, all four frames IMPROVEMENT,
+    overall IMPROVEMENT, close to Unreal (comment on #541, 2026-10-22). The dP50 of the pane does not move
+    (L7 `glass` 0.143 to 0.151, `glass-edge` 0.162 to 0.162), because refraction changes where the picture sits. Reflection:
+    Unreal draws one on a translucent surface only through Lumen front-layer reflections, on at the Epic tier
+    (`Engine/Config/BaseScalability.ini:558`, code default 0 in `FrontLayerTranslucency.cpp:23`). With roughness 1.0
+    and F0 0.04 the term is faint and blurred (estimate about 4 percent of the room radiance, not measured). No
+    reflection code was added. Measure the term in a capture before adding one.
+14. **The starter's fog drew black on the owned engine, and the cause was the camera matrix.** The fog read the
+    camera through a `mat4` made of four `vec4` uniforms. On the Wasm engine that matrix did not follow the camera pose
+    (probes: scene, depth and march alpha fine, scattering exactly zero, a ray built from the matrix zero). The fog now
+    reads the camera as vector uniforms (axes, lens, clip), the way `packages/three-native/src/addons/screen-space.ts`
+    reads its projection. Layer: starter template, `volumetricFogTransport.ts` and `volumetricFogVolume.ts`, because
+    every owned-engine game that opts into the fog got a black frame. Red-green: `vq-volumetric-fog.spec.ts`
+    "reads the camera as vectors" fails on the old graph (`mat4x4` in the WGSL) and passes on the new one. Capture
+    proof: fog L6 mean 0.00 to 90.9 and L7 0.00 to 122.8 (display, `blackcheck.mts`). Not run: a native desktop or
+    Android capture of the fixed fog.
+15. **The GI fog term is not accepted, so the harness keeps it behind `?fogGi=1`.** Judge, fog L7, 2 runs per arm,
+    BEFORE = fog with the camera fix and no GI term, AFTER = the same plus `ambientNode`: both poses REGRESSION,
+    overall REGRESSION, far from Unreal. The term lifts the floor, ceiling and back wall toward Unreal (L7 dP50
+    Floor 0.139 to 0.032, Ceiling 0.120 to 0.024, Back 0.137 to 0.085) but veils the side walls too much (Wall_Red
+    0.165 to 0.468, Wall_Green 0.110 to 0.275). Probable cause, not tested: the walls are already 1.85 to 2.0 times
+    Unreal in L1 (Decision 10), and the full mean radiance as an isotropic scatter adds more haze than Unreal's
+    translucency volume does. Next step: a measured fog term per Unreal's volume lighting (port-map wave for
+    fog), after PRD-646 fixes the direct light. The default harness arm (term off, run f3 on 7811a10d1 plus this change) matches the
+    no-GI arm within noise: L7 mean 122.79 against 122.80, at most 103 pixels differ by more than 6 of 765 (sum of channels).
+16. **Fog result, L7 display p50 against Unreal Epic, pose `fog`.** Camera fix and no GI term (fb2): Floor 136 vs 158,
+    Ceiling 147 vs 167, Back 132 vs 153, Wall_Red 66 vs 79, Wall_Green 97 vs 109. With the GI term (f1): Floor 163,
+    Ceiling 171, Back 166, Wall_Red 116, Wall_Green 139. At L6 (no GI, both arms equal): Floor 87 vs 79, Ceiling 112 vs 107,
+    Back 95 vs 74, Wall_Red 51 vs 29, Wall_Green 65 vs 43. Frames before the fix were black at L6, L7 and L9.
 
 ## Execution Phases
 
 #### Phase 1: What takes no GI
 **Status:** IN PROGRESS (glass and fog; `foliage` waits for the `shadow:wildwood` scene)
 **Files:** `tools/unreal-reference/gi/{glass,fog}/{scene.py,criteria.md}` (new), `tools/unreal-reference/gi/foliage/{scene.py,criteria.md}` (new, open), `tools/unreal-reference/gi/scenes.json`
-- [ ] `glass` and `fog` are ready to calibrate: built and captured in Unreal, recreated with direct light matching (PRD-646), their silhouettes agree, and their PRD-647 criteria are written. proof: `pnpm unreal-look:capture --engine unreal --scene gi:glass,gi:fog --check-cvars` and `pnpm unreal-look:compare --sameness --scene gi:glass,gi:fog`.
-- [ ] The materials and fog froxels that take no GI on `glass` and `fog` are listed under `## Decisions`, with the per-region error against Unreal Epic. proof: `pnpm unreal-look:compare --scene gi:glass,gi:fog --layer L7`.
+- [x] `glass` and `fog` are ready to calibrate: built and captured in Unreal, recreated with direct light matching (PRD-646), their silhouettes agree, and their PRD-647 criteria are written. proof: `pnpm unreal-look:capture --engine unreal --scene gi:glass,gi:fog --check-cvars` and `pnpm unreal-look:compare --sameness --scene gi:glass,gi:fog`. Evidence: sameness PASS on all glass and fog rows (Decision 11, IoU at least 0.9998); criteria `tools/unreal-reference/gi/{glass,fog}/criteria.md` written, glass item 6 added with Decision 13. The Unreal captures of both scenes exist (`tools/unreal-reference/captures/unreal/{glass,fog}/L7-Epic`) and every compare here reads them. `--check-cvars` was not rerun in this session (unverified).
+- [x] The materials and fog froxels that take no GI on `glass` and `fog` are listed under `## Decisions`, with the per-region error against Unreal Epic. proof: `pnpm unreal-look:compare --scene gi:glass,gi:fog --layer L7`. Evidence: Decisions 9, 10, 13 and 16 list the surfaces (glass pane, fog) and give the per-region error.
 - [ ] `foliage` is ready to calibrate: authored and captured in Unreal, recreated with direct light matching (PRD-646), and its PRD-647 criteria written. It reuses the `shadow:wildwood` scene when that lands. proof: `pnpm unreal-look:capture --engine unreal --scene gi:foliage --check-cvars` and `pnpm unreal-look:compare --scene gi:foliage --layer L1`.
 
 #### Phase 2: Glass and fog
 **Status:** IN PROGRESS
 **Files:** `packages/core/src/render/probe-volume.ts`, the VQ-07 fog pass (`packages/create-threenative/templates/starter/src/render/volumetricFog*.ts`), `scripts/unreal-look/scaffold/render/{translucency,giCache}.ts`, `packages/core/__tests__/probe-volume.spec.ts`
-- [ ] A translucent pixel and a fog froxel read the same irradiance as an opaque pixel at the same point. proof: `pnpm exec vitest run packages/core/__tests__/probe-volume.spec.ts`.
+- [x] A translucent pixel and a fog froxel read the same irradiance as an opaque pixel at the same point. proof: `pnpm exec vitest run packages/core/__tests__/probe-volume.spec.ts`. Evidence: 28 tests pass on 7811a10d1 (2026-10-22), with `scripts/__tests__/unreal-look-translucency.spec.ts` and `packages/create-threenative/__tests__/vq-volumetric-fog.spec.ts` (32). The fog read is opt-in in the harness (Decision 15), because its look is not accepted.
 - [ ] The per-pixel read on a full-screen glass pane costs no more than 0.5 ms at 1920 × 1080, or the froxel decision is recorded. proof: `node packages/playtest/dist/runner/cli.js perf` on the harness.
 
 #### Phase 3: Leaves lit from behind
