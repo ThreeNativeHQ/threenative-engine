@@ -1,0 +1,14 @@
+cell                              p50 A  p50 B    dP50   p50f A   p50f B   dP50f   dMean
+sun15/spheres                       149    149   0.00%   149.09   149.13   0.02%   0.02%
+sun60/spheres                       160    160   0.00%   160.28   160.27   0.00%   0.01%
+gi:sunlit-room/sun60-window         153    153   0.00%   153.34   153.33   0.01%   0.01%
+gi:sunlit-room/sun15-window         153    153   0.00%   153.05   153.04   0.01%   0.01%
+gi:cornell/cornell                  178    178   0.00%   177.58   177.56   0.01%   0.02%
+gi:cornell/corner                    99     99   0.00%    99.01    99.02   0.01%   0.00%
+shadow:foliage/sun60-canopy         185    185   0.00%   185.22   185.22   0.00%   0.00%
+shadow:foliage/sun15-canopy         175    175   0.00%   174.83   174.94   0.06%   0.08%
+
+worst whole-frame p50 difference: 0.00% whole-level, 0.06% sub-level (limit 1%)
+
+regions of 1000 pixels or more over 1% (sub-level p50 or mean):
+  gi:cornell/cornell               Sky                      px    2694 p50f    0.1->   0.2 ( 4.44%)  mean    0.26->   0.50 (23.98%)

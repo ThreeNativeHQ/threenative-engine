@@ -1,0 +1,17 @@
+cell                              p50 A  p50 B    dP50   p50f A   p50f B   dP50f   dMean
+sun15/spheres                       160    160   0.00%   159.82   159.83   0.01%   0.00%
+sun60/spheres                       162    162   0.00%   161.77   161.77   0.00%   0.00%
+gi:sunlit-room/sun60-window         159    159   0.00%   158.70   158.63   0.04%   0.04%
+gi:sunlit-room/sun15-window         159    159   0.00%   158.64   158.64   0.00%   0.00%
+gi:cornell/cornell                  174    174   0.00%   174.31   174.31   0.00%   0.00%
+gi:cornell/corner                    90     90   0.00%    89.97    89.97   0.00%   0.00%
+shadow:foliage/sun60-canopy         188    189   0.53%   187.62   188.59   0.51%   0.65%
+shadow:foliage/sun15-canopy         179    179   0.00%   179.24   178.93   0.17%   0.20%
+
+worst whole-frame p50 difference: 0.53% whole-level, 0.51% sub-level (limit 1%)
+
+regions of 1000 pixels or more over 1% (sub-level p50 or mean):
+  shadow:foliage/sun60-canopy      Sky                      px  194391 p50f   59.5->  60.6 ( 1.86%)  mean   57.64->  58.73 ( 1.89%)
+  shadow:foliage/sun60-canopy      Trunk                    px    9627 p50f   70.1->  71.3 ( 1.64%)  mean   72.86->  74.07 ( 1.67%)
+  shadow:foliage/sun60-canopy      Leaves                   px   57001 p50f  137.4-> 139.2 ( 1.33%)  mean  122.54-> 124.08 ( 1.26%)
+  shadow:foliage/sun60-canopy      Grass                    px    6977 p50f  136.5-> 138.1 ( 1.16%)  mean  128.25-> 129.77 ( 1.19%)
