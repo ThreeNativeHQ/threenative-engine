@@ -976,7 +976,8 @@ export function runComparison(options: IOptions = {}) {
             });
           }
         }
-        if (options.metric === "penumbra" && layer === "L5" && a) {
+        // Sun shadows exist from L5 on; L9 is the layer the owner looks at.
+        if (options.metric === "penumbra" && /^L([5-9])$/.test(layer) && a) {
           // Shadow-edge width on the floor (PRD-634): rows where both arms hold an edge.
           const m = pairedPenumbra(a, b, required(base.regions.Floor));
           if (m)
@@ -1208,7 +1209,7 @@ export function main(args = process.argv.slice(2)): void {
   }
   if (report.penumbra.length) {
     console.log(
-      "\n| L5 cell | matched edge rows | UE width px | TN width px | TN / UE |\n|---|---:|---:|---:|---:|",
+      "\n| cell | matched edge rows | UE width px | TN width px | TN / UE |\n|---|---:|---:|---:|---:|",
     );
     for (const r of report.penumbra)
       console.log(

@@ -302,6 +302,9 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_lamp_source_radius_crate=lamp_source_radius_crate
         native_engine_contact_shadow_foot=contact_shadow_foot
         native_engine_virtual_sun_contact_foot=virtual_sun_contact_foot
+        native_engine_virtual_sun_room_seam=virtual_sun_room_seam
+        native_engine_virtual_sun_pixel_floor=virtual_sun_pixel_floor
+        native_engine_virtual_sun_lod_rung=virtual_sun_lod_rung
         native_engine_lamp_cache=lamp_cache
         native_engine_lamp_atlas=lamp_atlas
         native_engine_gpu_timer_splits_lamp_shadows=gpu_timer_splits_lamp_shadows
@@ -319,6 +322,10 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     target_compile_definitions(tn-native-engine-render-database-test PRIVATE
         TN_GOLDENS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../three-native/tests/compatibility/goldens/0.185.1"
         TN_NATIVE_LIT_OUT="${CMAKE_CURRENT_BINARY_DIR}/native-lit-render.rgba")
+    # PRD-634: the sun filter's edge widens with the caster gap as the browser's penumbraUv model says.
+    tn_native_engine_test(tn-native-engine-vsm-source-angle-test tests/native-engine/vsm/vsm_source_angle_gpu_test.cpp
+        native_engine_vsm_source_angle_gap=gap_widening)
+    target_link_libraries(tn-native-engine-vsm-source-angle-test PRIVATE tn_engine_renderer tn_host_services)
 
     # PRD-520 phase 2 and PRD-528 phase 1: cooked-package loads for a world (failure codes, cancel
     # against in-flight GPU use, teardown) and render ids within one tick.

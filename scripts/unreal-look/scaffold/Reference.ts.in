@@ -106,6 +106,11 @@ const STAGE_OFF: Record<string, Record<string, unknown>> = {
 // is the sun's apex angle (its angular diameter). `sourceAngleShadowFilter` takes the angular radius,
 // the half angle: Unreal's shadow rays spread over sin(angle / 2).
 const SUN_SOURCE_ANGLE_RAD = (0.7357 * Math.PI) / 360;
+// Unreal builds the disc of a shadow ray from `cross(N, x)` and `cross(that, N)` and never normalises them
+// (`GetRandomDirectionalLightRayDir`, VirtualShadowMapProjectionDirectional.ush), so the disc is sin(the angle
+// between the sun and the x axis) times the source radius. A sun on the x axis at elevation e casts the
+// penumbra of sin(e) times the nominal angle. `vsmAngle=ue` reproduces that.
+const unrealSourceScale = (sun: { x: number }): number => Math.sqrt(1 - sun.x * sun.x);
 
 export class Reference extends Scene<GameState, IPhysicsContext> {
   static override readonly initialState: GameState = Play.initialState;
@@ -199,8 +204,18 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
           key.castShadow = level >= 5 && params.get("sunShadow") !== "0" && preset.castShadows;
           if (!OFF.has("vsm"))
             (key.shadow as unknown as { filterNode: unknown }).filterNode = sourceAngleShadowFilter({
-              sourceAngleRad: SUN_SOURCE_ANGLE_RAD,
+              // Diagnosis knob vsmAngle: a factor on the angular radius (1 = Unreal's measured value,
+              // "ue" = Unreal's own scale for this sun, see unrealSourceScale).
+              sourceAngleRad:
+                SUN_SOURCE_ANGLE_RAD *
+                (params.get("vsmAngle") === "ue"
+                  ? unrealSourceScale(SUN_DIRECTION)
+                  : Number(params.get("vsmAngle") ?? 1)),
               ...preset.filter,
+              // Diagnosis knob vsmMinPx: the filter disc's floor in screen pixels (absent = the engine's default).
+              ...(params.get("vsmMinPx") === null
+                ? {}
+                : { minPenumbraPixels: Number(params.get("vsmMinPx")) }),
               // Diagnosis knobs for the tier's sample-count round (PRD-652): sunBlockers and sunSamples.
               ...(params.get("sunBlockers") === null
                 ? {}
@@ -229,11 +244,27 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
         // The native atlas holds every page of every level, then every level's mover map, in one
         // square texture that must fit the device's 8192 texel limit: four 2048 levels take 4224
         // and four 512 mover maps 2064 more. The scene has no moving caster.
+        // Candidate knob sunBox=reach (PRD-634 Phase 1, with off=vsm): the one stock map widened to the scene.
+        if (OFF.has("vsm") && params.get("sunBox") === "reach") {
+          const box = key.shadow.camera;
+          box.left = box.bottom = -reach;
+          box.right = box.top = reach;
+          box.near = 0.5;
+          box.far = 2 * reach + 2;
+          box.updateProjectionMatrix();
+        }
         if (!OFF.has("vsm"))
           key.shadow.shadowNode = new VirtualShadowNode(key, {
-            clipExtents: [reach / 4, reach / 2, reach, 2 * reach],
-            mapSize: 2048,
-            moverMapSize: 512,
+            // Diagnosis knobs vsmExt=<divisors of reach, finest first>, vsmMap, vsmMover: the clip levels.
+            clipExtents: (params.get("vsmExt") ?? "4,2,1,0.5").split(",").map((d) => reach / Number(d)),
+            mapSize: Number(params.get("vsmMap") ?? 2048),
+            moverMapSize: Number(params.get("vsmMover") ?? 512),
+            // Diagnosis knob vsmAspect: the smallest light-space height over width of a level (1 = square).
+            ...(params.get("vsmAspect") === null ? {} : { minWindowAspect: Number(params.get("vsmAspect")) }),
+            // Diagnosis knob vsmLod=0: every level draws a chain's own geometry (no shadowLodBias).
+            ...(params.get("vsmLod") === "0" ? { shadowLodBias: false } : {}),
+            // Diagnosis knob vsmLodTexels=N: the rung error a level accepts, in texels (Infinity = the coarsest rung on every level).
+            ...(params.get("vsmLodTexels") === null ? {} : { shadowLodTexels: Number(params.get("vsmLodTexels")) }),
             // Diagnosis knob recvBias=0: authored bias only (does the seam line come from the plane slope?).
             receiverPlaneBias: params.get("recvBias") !== "0",
             // Diagnosis knob shadowBias=N brackets the tier's directional resolution bias (PRD-652).

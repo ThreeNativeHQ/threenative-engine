@@ -696,6 +696,19 @@
       "required": true
     },
     {
+      "id": "soft-shadow-source-angle",
+      "title": "sun source-angle soft shadow and pixel floor",
+      "category": "shadows",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/soft-shadow-source-angle.js",
+      "tolerance": {
+        "pixelMismatchRatio": 0.08,
+        "perceptualDeltaE": 10.0
+      },
+      "desktopGate": false,
+      "required": true
+    },
+    {
       "id": "surface-cache-albedo",
       "title": "surface cache albedo and emission at a hit",
       "category": "materials",
