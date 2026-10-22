@@ -15,9 +15,9 @@
 <text x="811.6626506024096" y="358" class="t" text-anchor="middle">Nov 1</text>
 <text x="1000.5783132530121" y="358" class="t" text-anchor="middle">Nov 15</text>
 <path d="M56.0,309.8L150.5,309.8L244.9,278.6L339.4,308.1L433.8,322.8L528.3,254.7L622.7,242.1L676.7,252.2" stroke="#3aa56c" stroke-width="2.5" fill="none"/>
-<path d="M56.0,340.0L150.5,340.0L244.9,340.0L339.4,340.0L433.8,340.0L528.3,340.0L622.7,340.0L676.7,267.0" stroke="#4a86d6" stroke-width="2.5" fill="none"/>
+<path d="M56.0,340.0L150.5,340.0L244.9,340.0L339.4,340.0L433.8,340.0L528.3,340.0L622.7,340.0L676.7,270.3" stroke="#4a86d6" stroke-width="2.5" fill="none"/>
 <path d="M676.722891566265,252.1627689429373L1176,74" stroke="#3aa56c" stroke-width="2" stroke-dasharray="6 5" fill="none"/>
 <circle cx="1176" cy="74" r="4" fill="#3aa56c"/><text x="1172" y="64" class="e" fill="#3aa56c" text-anchor="end">Everything filed ≈ Nov 28, 2026</text>
-<path d="M676.722891566265,266.98039215686276L906.1204819277109,74" stroke="#4a86d6" stroke-width="2" stroke-dasharray="6 5" fill="none"/>
-<circle cx="906.1204819277109" cy="74" r="4" fill="#4a86d6"/><text x="906.1204819277109" y="92" class="e" fill="#4a86d6" text-anchor="end">Default look ≈ Nov 8, 2026</text>
+<path d="M676.722891566265,270.3201663201663L919.6144578313254,74" stroke="#4a86d6" stroke-width="2" stroke-dasharray="6 5" fill="none"/>
+<circle cx="919.6144578313254" cy="74" r="4" fill="#4a86d6"/><text x="919.6144578313254" y="92" class="e" fill="#4a86d6" text-anchor="end">Default look ≈ Nov 9, 2026</text>
 </svg>

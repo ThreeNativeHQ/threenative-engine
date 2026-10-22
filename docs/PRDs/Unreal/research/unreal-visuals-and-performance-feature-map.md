@@ -44,6 +44,17 @@ as of 2026-10-21. It leaves out the asset PRDs (PRD-352, PRD-487) and PRD-316.
 - **Wave** respects the "Waits on" order in [`../README.md`](../README.md). PRDs in one wave can
   run in parallel.
 
+**Wave audit 2026-10-22.** `scripts/__tests__/unreal-port-status.spec.ts` now fails when a PRD waits on one in a later wave, on an unknown PRD or in a cycle. Moves, each with its reason:
+
+- PRD-457 to wave 2 (was 5): the counters in its Phase 1 are the gate of PRD-714 (wave 2) and PRD-716. Its complexity is 7, as its own file says (was an estimate of 5).
+- PRD-715 to wave 3 (was 2): it needs `sourceAngleShadowFilter` from PRD-634 (wave 3).
+- PRD-684 to wave 4 (was 3): it needs PRD-641 Phase 4, the blotch metric (wave 4).
+- PRD-600 to wave 4 (was 5): 0.83 score points per complexity point, no gate, and PRD-601, 602, 668, 677 and 678 wait on it.
+- PRD-486 to wave 4 (was 5): 0.75 score points per complexity point, no gate, and PRD-678 waits on it.
+- Added to wave 5: PRD-523 and PRD-524 (native render graph and virtual shadows, which PRD-683 waits on), PRD-VQ-12 and PRD-VQ-15 (PRD-671 follows VQ-15). PRD-316 (an asset PRD) and PRD-571 (blocked) stay off the list.
+
+Every other "waits on" already sat in the same or an earlier wave. The audit read the "waits on" column of the page against the **Depends on** line of PRD-457, 523, 524, 684, 714, 715, 716, 671 and 683. It did not re-read the other PRD files.
+
 ```mermaid
 quadrantChart
   title Open Unreal PRDs, complexity against impact

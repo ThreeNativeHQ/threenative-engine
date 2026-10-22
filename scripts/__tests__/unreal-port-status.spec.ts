@@ -1,6 +1,9 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   type ISnap,
+  PAGE,
   finish,
   pace,
   pageData,
@@ -72,5 +75,65 @@ describe("unreal-port-status", () => {
       for (let i = 1; i < byRank.length; i++)
         expect(rankScore(byRank[i - 1])).toBeGreaterThanOrEqual(rankScore(byRank[i]));
     });
+  });
+
+  describe("port waves", () => {
+    const { PORT, PRDS } = pageData();
+    const waitsOf = (p: { waits: string }): string[] =>
+      p.waits === "—" ? [] : p.waits.split(",").map((w) => w.trim());
+
+    it("puts every PRD in the same wave as the PRDs it waits on, or later", () => {
+      const byId = new Map(PORT.map((p) => [p.id, p]));
+      const late = PORT.flatMap((p) =>
+        waitsOf(p).flatMap((w) => {
+          const q = byId.get(w);
+          return q && q.wave > p.wave
+            ? [`${p.id} (wave ${p.wave}) waits on ${w} (wave ${q.wave})`]
+            : [];
+        }),
+      );
+      expect(late).toEqual([]);
+    });
+
+    it("names only PRDs that are on the port list or filed as done", () => {
+      const byId = new Map(PORT.map((p) => [p.id, p]));
+      const unknown = PORT.flatMap((p) =>
+        waitsOf(p)
+          .filter((w) => !byId.has(w) && PRDS[w]?.f !== "done")
+          .map((w) => `${p.id} waits on ${w}`),
+      );
+      expect(unknown).toEqual([]);
+    });
+
+    it("has no wait cycle", () => {
+      const byId = new Map(PORT.map((p) => [p.id, p]));
+      const walk = (id: string, path: string[]): void => {
+        expect(path, `cycle ${[...path, id].join(" > ")}`).not.toContain(id);
+        for (const w of waitsOf(byId.get(id) ?? { waits: "—" })) walk(w, [...path, id]);
+      };
+      for (const p of PORT) walk(p.id, []);
+    });
+
+    it("counts a PRD filed under done/ as done and gives it no rank", () => {
+      for (const p of PORT)
+        if (PRDS[p.id]?.f === "done") expect([p.done >= p.total, p.rank]).toEqual([true, null]);
+    });
+  });
+
+  it("reads only fields a PORT row has when it renders the port list", () => {
+    const page = readFileSync(join(import.meta.dirname, "..", "..", PAGE), "utf8");
+    const part = page.slice(
+      page.indexOf("// ---------- port order"),
+      page.indexOf("// ---------- coverage explorer"),
+    );
+    const { PORT, PRDS } = pageData();
+    // The block also totals boxes over the registry, whose entries use their own short keys.
+    const keys = new Set([
+      ...Object.keys(PORT[0] ?? {}),
+      ...Object.keys(Object.values(PRDS)[0] ?? {}),
+    ]);
+    const read = [...part.matchAll(/\bp\.([A-Za-z]\w*)/g)].map((m) => m[1] as string);
+    expect(read.length).toBeGreaterThan(20);
+    expect(read.filter((k) => !keys.has(k))).toEqual([]);
   });
 });
