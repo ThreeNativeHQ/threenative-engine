@@ -50,7 +50,8 @@ A round is three sets of PNG frames, paired by their path inside each set:
   --tier high        the ThreeNative GI tier, which picks the Unreal variant: high is Epic, medium is Medium, low is Low
 The path of every frame names exactly one layer (L9/L9_sun60_exterior.png, sunlit-room/L7/sun60-window.png),
 and the layer must be the same in all sets. At tier high the Unreal variants pair as L7-Epic with L7 and
-L9-Epic with L9, and L7-Low with ThreeNative L6 above tier low. A round holds at most 24 frames.
+L9-Epic with L9, at medium L7-Medium with L7, at low L7-Low with L7. ThreeNative L6 pairs with no Unreal
+variant. A round holds at most 24 frames.
 The judge returns IMPROVEMENT, NEUTRAL or REGRESSION per frame and overall (AFTER against BEFORE), and
 MATCH, CLOSE or FAR (AFTER against UNREAL). The verdict goes to --out and to the terminal.
 Exit 0: complete verdict, nothing blocked. Exit 2: complete verdict with a REGRESSION (or no overall

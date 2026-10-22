@@ -12,6 +12,7 @@
  *   pnpm unreal-look:compare --scene gi:cornell --layer L7-low,L7-medium,L7-high   each quality tier against its Unreal level (PRD-644)
  *   pnpm unreal-look:compare --scene gi:cornell --layer L7 --unreal-level 0|1|3    one capture against another level's frame
  *   pnpm unreal-look:compare --scene shadow:penumbra-lab --layer L5-Low --metric penumbra   shadow edge width, TN / Unreal (PRD-652)
+ *   pnpm unreal-look:compare --scene gi:sunlit-room --layer L7 --metric blotch [--regions Wall_Left,Wall_Right]   soft blotches on a surface, TN / Unreal (PRD-641)
  *
  * PRD-649: `--scene shadow | shadow:<name>` runs the same pipeline on the shadow family, whose scenes
  * live in tools/unreal-reference/shadow/<name>/ with their own shadow/scenes.json. A `gi:` id keeps its
@@ -24,19 +25,37 @@
 import { spawnSync } from "node:child_process";
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { rm } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
+import {
+  type IBlotchBands,
+  blotchBands,
+  blotchVerdict,
+  displayLuma,
+  isFlatRegion,
+} from "./blotch.js";
 import {
   type IImage,
   type IRow,
   type IStats,
+  type IThresholdFile,
   type IThresholds,
   compareCells,
   decode,
   iou,
+  layerThresholds,
   masks,
   measure,
+  passes,
 } from "./compare.js";
 import { contactGap, linearLuminance, pairedPenumbra } from "./penumbra.js";
+import {
+  assetRoot,
+  prepareUnrealAssets,
+  readManifest,
+  validateWildwoodScene,
+  verifyAssets,
+} from "./wildwood.js";
 
 const REPO_ROOT = path.resolve(import.meta.dirname, "../..");
 const REFERENCE = path.join(REPO_ROOT, "tools/unreal-reference");
@@ -133,6 +152,8 @@ interface IGltf {
 }
 interface IVariant {
   name: string;
+  /** The scenes that capture this variant by default; every scene when absent (wildwood's L6 to L8, PRD-651). */
+  only?: string[];
   layer: string;
   level?: string;
   cvars: Record<string, number>;
@@ -142,7 +163,8 @@ interface IVariant {
 export interface IRegistry {
   resolution: [number, number];
   /** `scene`: a scene of another family this entry reuses, authored once (`gi:foliage`). */
-  scenes: { name: string; owner: string; poses: string[]; scene?: string }[];
+  /** `manifest`: the scene places real assets from this manifest.json instead of exporting a scene.glb (PRD-651). */
+  scenes: { name: string; owner: string; poses: string[]; scene?: string; manifest?: string }[];
   variants: IVariant[];
 }
 interface ILayer {
@@ -186,6 +208,14 @@ export function registry(family = "gi"): IRegistry {
   return reg;
 }
 
+/** A variant limited to scenes (`only`) names scenes the registry has. */
+function checkVariantScenes(reg: IRegistry): void {
+  for (const variant of reg.variants)
+    for (const name of variant.only ?? [])
+      if (!reg.scenes.some((scene) => scene.name === name))
+        fail("BAD_INPUT", `variant ${variant.name} is limited to ${name}, which is not a scene`);
+}
+
 /**
  * PRD-649, fail closed: every shadow scene has the judge's criteria.md, and an L5 shadow cell renders
  * with GI and AO off, so neither can hide or add a shadow.
@@ -198,6 +228,7 @@ export function validateShadowRegistry(
   for (const scene of reg.scenes)
     if (!existsSync(path.join(dir, scene.name, "criteria.md")))
       fail("BAD_INPUT", `shadow scene ${scene.name} has no criteria.md`);
+  checkVariantScenes(reg);
   for (const variant of reg.variants.filter((v) => v.layer === "L5")) {
     const layer = layers.find((l) => l.name === "L5") ?? fail("BAD_INPUT", "layers.json has no L5");
     const cvars = { ...layer.cvars, ...variant.cvars };
@@ -413,14 +444,37 @@ export function validateSceneExport(scene: ISceneJson, gltf: IGltf): void {
     );
 }
 
+/**
+ * A scene that places real assets from a manifest (PRD-651 wildwood) has no scene.glb: the files are
+ * licensed Fab art that both engines read from the asset root, so none is committed.
+ */
+export function isManifestScene(name: string): boolean {
+  return existsSync(path.join(sceneDir(name), "manifest.json"));
+}
+
 export function readScene(name: string): { scene: ISceneJson; gltf: IGltf } {
   const dir = sceneDir(name);
-  for (const file of ["scene.json", "scene.glb"])
+  const manifest = isManifestScene(name);
+  for (const file of manifest ? ["scene.json"] : ["scene.json", "scene.glb"])
     if (!existsSync(path.join(dir, file))) fail("SCENE_EXPORT", `${name}: ${file} was not written`);
   return {
     scene: JSON.parse(readFileSync(path.join(dir, "scene.json"), "utf8")) as ISceneJson,
-    gltf: readGlbJson(readFileSync(path.join(dir, "scene.glb"))),
+    gltf: manifest ? {} : readGlbJson(readFileSync(path.join(dir, "scene.glb"))),
   };
+}
+
+/** The exported scene against what it was authored from: scene.glb for a modelled scene, the manifest and files for wildwood. */
+function validateScene(name: string, scene: ISceneJson, gltf: IGltf): void {
+  if (!isManifestScene(name)) {
+    validateSceneExport(scene, gltf);
+    return;
+  }
+  const manifest = readManifest(sceneDir(name));
+  validateWildwoodScene(
+    scene as unknown as Parameters<typeof validateWildwoodScene>[0],
+    manifest,
+    verifyAssets(manifest, assetRoot()),
+  );
 }
 
 /**
@@ -455,6 +509,39 @@ export function folderName(variant: string, warmUp: number, run: number): string
 
 type RunUnreal = (mode: string, out: string, env?: Record<string, string>) => Promise<number>;
 
+/** Builds one scene's Unreal levels and writes its scene.json; the editor's exit code. */
+async function buildScene(
+  name: string,
+  content: string,
+  out: string,
+  runUnreal: RunUnreal,
+): Promise<number> {
+  // A scene of real assets is verified and decoded for Unreal's importer before anything is removed (PRD-651).
+  const assets = isManifestScene(name)
+    ? await prepareUnrealAssets(
+        sceneDir(name),
+        process.env.TN_UNREAL_LOOK_WORK ??
+          path.join(os.homedir(), ".cache/threenative/unreal-look"),
+      )
+    : {};
+  await rm(content, { recursive: true, force: true });
+  const code = await runUnreal("build", out, { TN_UE_SCENE: name, ...assets });
+  if (code !== 0) return code;
+  // A build whose Python failed exits 0 and leaves its Content: remove it, or the next run skips it.
+  if (!existsSync(path.join(sceneDir(name), "scene.json"))) {
+    await rm(content, { recursive: true, force: true });
+    fail("SCENE_EXPORT", `${name}: the build wrote no scene.json (see the editor log)`);
+  }
+  // The exported scene.json is committed: give it the repo's JSON format.
+  // Relative: Biome skips an absolute path that runs through a .claude/ worktree.
+  const file = path.relative(REPO_ROOT, path.join(sceneDir(name), "scene.json"));
+  spawnSync("pnpm", ["exec", "biome", "format", "--write", file], {
+    cwd: REPO_ROOT,
+    stdio: "ignore",
+  });
+  return 0;
+}
+
 export async function captureGi(args: readonly string[], runUnreal: RunUnreal): Promise<number> {
   const value = flag(args, "--scene") ?? "gi";
   const family = familyOf(value);
@@ -464,8 +551,12 @@ export async function captureGi(args: readonly string[], runUnreal: RunUnreal): 
     reg.scenes.map((s) => s.name),
   );
   const only = flag(args, "--variants")?.split(",");
-  const variants = reg.variants.filter((v) => !only || only.includes(v.name));
-  if (only && variants.length !== only.length) fail("BAD_INPUT", `unknown variant in ${only}`);
+  const variantsOf = (scene: string) =>
+    reg.variants.filter((v) =>
+      only ? only.includes(v.name) : !v.only || v.only.includes(scene.replace(/^.*:/, "")),
+    );
+  if (only && reg.variants.filter((v) => only.includes(v.name)).length !== only.length)
+    fail("BAD_INPUT", `unknown variant in ${only}`);
   const warmUps = (flag(args, "--warm-up") ?? String(REFERENCE_WARM_UP)).split(",").map(Number);
   if (!warmUps.every((w) => Number.isInteger(w) && w > 0)) fail("BAD_INPUT", "--warm-up");
   const runs = Number(flag(args, "--runs") ?? 1);
@@ -473,7 +564,11 @@ export async function captureGi(args: readonly string[], runUnreal: RunUnreal): 
 
   if (args.includes("--check-cvars")) {
     const extra = [
-      ...new Set(variants.flatMap((v) => [...Object.keys(v.cvars), ...Object.keys(v.expect)])),
+      ...new Set(
+        scenes
+          .flatMap(variantsOf)
+          .flatMap((v) => [...Object.keys(v.cvars), ...Object.keys(v.expect)]),
+      ),
     ];
     if ((await runUnreal("check-cvars", out, { TN_UE_EXTRA_CVARS: extra.join(",") })) !== 0)
       return 1;
@@ -486,25 +581,11 @@ export async function captureGi(args: readonly string[], runUnreal: RunUnreal): 
       family === "gi" ? "GI" : "Shadow",
       sceneKey(name).replace(/^shadow\//, ""),
     );
-    if (args.includes("--rebuild") || !existsSync(content)) {
-      await rm(content, { recursive: true, force: true });
-      if ((await runUnreal("build", out, { TN_UE_SCENE: name })) !== 0) return 1;
-      // A build whose Python failed exits 0 and leaves its Content: remove it, or the next run skips it.
-      if (!existsSync(path.join(sceneDir(name), "scene.json"))) {
-        await rm(content, { recursive: true, force: true });
-        fail("SCENE_EXPORT", `${name}: the build wrote no scene.json (see the editor log)`);
-      }
-      // The exported scene.json is committed: give it the repo's JSON format.
-      // Relative: Biome skips an absolute path that runs through a .claude/ worktree.
-      const file = path.relative(REPO_ROOT, path.join(sceneDir(name), "scene.json"));
-      spawnSync("pnpm", ["exec", "biome", "format", "--write", file], {
-        cwd: REPO_ROOT,
-        stdio: "ignore",
-      });
-    }
+    if (args.includes("--rebuild") || !existsSync(content))
+      if ((await buildScene(name, content, out, runUnreal)) !== 0) return 1;
     const { scene, gltf } = readScene(name);
-    validateSceneExport(scene, gltf);
-    for (const variant of variants)
+    validateScene(name, scene, gltf);
+    for (const variant of variantsOf(name))
       for (const warmUp of variant.name === "ID" ? [REFERENCE_WARM_UP] : warmUps)
         for (let run = 1; run <= (variant.name === "ID" ? 1 : runs); run++) {
           const env = {
@@ -604,22 +685,36 @@ export function unrealVariant(layer: string, unrealLevel?: number): string {
   return UNREAL_VARIANT[layer] ?? fail("BAD_INPUT", `GI layer ${layer}`);
 }
 
+/** tools/unreal-reference/thresholds.json (PRD-631), or null when the file is absent. */
+export function readThresholds(): IThresholdFile | null {
+  const file = path.join(REFERENCE, "thresholds.json");
+  return existsSync(file) ? (JSON.parse(readFileSync(file, "utf8")) as IThresholdFile) : null;
+}
+
+/**
+ * A row's verdict: it passes only when its layer sets a limit on the light (deltaE and dP50) and every limit holds.
+ * A row with no such limit fails, it does not report: a layer missing from the file, or a file with only the edge limit,
+ * would otherwise let any frame through.
+ */
+function verdict(row: IRow, limits: IThresholds | undefined): boolean {
+  const lightLimited = limits?.deltaE !== undefined && limits.dP50 !== undefined;
+  return lightLimited && passes(row, limits) === true;
+}
+
 /**
  * ThreeNative against Unreal for one scene: region statistics of every (layer, pose), with the
- * Unreal ID frame as the mask and the IoU of the two ID frames per region. A row passes against
- * tools/unreal-reference/thresholds.json when that file exists (PRD-631); otherwise it reports.
+ * Unreal ID frame as the mask and the IoU of the two ID frames per region. A row is judged against the limits of its
+ * layer in tools/unreal-reference/thresholds.json (PRD-631, `thresholdFile`) and fails when it has none. The shadow
+ * scenes take the same path, so both families get per-layer limits.
  */
 export function compareGiToUnreal(
   name: string,
   layers: readonly string[],
   root: string,
   unrealLevel?: number,
+  thresholdFile: IThresholdFile | null = readThresholds(),
 ): IRow[] {
   const { scene } = readScene(name);
-  const thresholdFile = path.join(REFERENCE, "thresholds.json");
-  const thresholds = existsSync(thresholdFile)
-    ? (JSON.parse(readFileSync(thresholdFile, "utf8")) as IThresholds)
-    : undefined;
   const unreal = path.join(root, "unreal", sceneKey(name));
   const tn = path.join(root, "threenative", sceneKey(name));
   // Without Unreal captures the committed statistics and ID frames stand in for them (PRD-638 AC-2).
@@ -629,6 +724,9 @@ export function compareGiToUnreal(
   for (const layer of layers) {
     // A shadow scene names its Unreal variants after their layers (shadow/scenes.json).
     const variant = name.startsWith("shadow:") ? layer : unrealVariant(layer, unrealLevel);
+    // A quality tier (`L7-high`, `L5-Low`) is judged by the limits of its ladder layer.
+    const [ladder = layer] = layer.split("-");
+    const limits = layerThresholds(thresholdFile, ladder);
     for (const pose of scene.poses) {
       const own = masks(image(path.join(tn, "ID", `${pose.name}.png`)), scene.regions);
       const reference = masks(
@@ -664,12 +762,14 @@ export function compareGiToUnreal(
         masks: reference,
         regions,
         ...(!offline && existsSync(exr) ? { unrealExr: image(exr) } : {}),
-        ...(thresholds ? { thresholds } : {}),
+        ...(limits ? { thresholds: limits } : {}),
       });
       for (const row of cell) {
         const a = reference.regions[row.region];
         const b = own.regions[row.region];
         row.iou = a && b ? iou(a, b) : 0;
+        // The edge limit needs the IoU, which is measured here, so the verdict is read again with it.
+        row.pass = verdict(row, limits);
       }
       rows.push(...cell);
     }
@@ -774,6 +874,88 @@ export function contactRows(
   return rows;
 }
 
+export interface IBlotchRow {
+  layer: string;
+  cell: string;
+  region: string;
+  unreal: IBlotchBands;
+  threenative: IBlotchBands;
+  /** ThreeNative blotch over Unreal's. */
+  ratio: number;
+  pass: boolean;
+}
+
+/**
+ * Soft blotches of every region of a ThreeNative layer against its Unreal variant (PRD-641): the metric
+ * `--metric blotch` prints. Both arms read the same pixels, the region of the Unreal ID frame, so the
+ * ratio is the comparison. The regions are `only`, or the walls and ceilings (`isFlatRegion`). A region
+ * too small to measure in either arm has no row.
+ */
+export function blotchRows(
+  name: string,
+  layers: readonly string[],
+  root: string,
+  unrealLevel?: number,
+  only?: readonly string[],
+): IBlotchRow[] {
+  const { scene } = readScene(name);
+  const unreal = path.join(root, "unreal", sceneKey(name));
+  const tn = path.join(root, "threenative", sceneKey(name));
+  const rows: IBlotchRow[] = [];
+  for (const layer of layers)
+    for (const pose of scene.poses) {
+      const id = masks(image(path.join(unreal, "ID", `${pose.name}.png`)), scene.regions);
+      const [a, b] = [
+        path.join(unreal, unrealVariant(layer, unrealLevel)),
+        path.join(tn, layer),
+      ].map((folder) => image(path.join(folder, `${pose.name}.png`))) as [IImage, IImage];
+      if (a.width !== b.width || a.height !== b.height)
+        fail(
+          "SIZE_MISMATCH",
+          `${name}/${pose.name}: ${layer} and its Unreal variant differ in size`,
+        );
+      const [lumaA, lumaB] = [displayLuma(a), displayLuma(b)];
+      for (const [region, mask] of Object.entries(id.regions)) {
+        if (only === undefined ? !isFlatRegion(region) : !only.includes(region)) continue;
+        const u = blotchBands(lumaA, a.width, a.height, mask);
+        const t = blotchBands(lumaB, b.width, b.height, mask);
+        if (u && t)
+          rows.push({
+            layer,
+            cell: `${name}/${pose.name}`,
+            region,
+            unreal: u,
+            threenative: t,
+            ...blotchVerdict(t, u),
+          });
+      }
+    }
+  return rows;
+}
+
+/** Prints the `--metric blotch` table and returns 1 when any region is blotchier than PRD-641 allows, or none was measured. */
+function printBlotch(
+  names: readonly string[],
+  layers: readonly string[],
+  root: string,
+  unrealLevel: number | undefined,
+  only: readonly string[] | undefined,
+): number {
+  const pct = (v: number) => `${(v * 100).toFixed(2)}%`;
+  const rows = names.flatMap((name) => blotchRows(name, layers, root, unrealLevel, only));
+  console.log(
+    `| layer | cell | region | Unreal blotch | TN blotch | TN / Unreal | Unreal grain | TN grain | verdict |\n|---|---|---|---:|---:|---:|---:|---:|---|\n${rows
+      .map(
+        (r) =>
+          `| ${r.layer} | ${r.cell} | ${r.region} | ${pct(r.unreal.blotch)} | ${pct(r.threenative.blotch)} | ${r.ratio.toFixed(2)} | ${pct(r.unreal.grain)} | ${pct(r.threenative.grain)} | ${r.pass ? "PASS" : "FAIL"} |`,
+      )
+      .join("\n")}`,
+  );
+  if (rows.length === 0)
+    fail("BAD_INPUT", "no region is large enough to measure: an empty set proves nothing");
+  return rows.some((r) => !r.pass) ? 1 : 0;
+}
+
 /** Prints the `--metric penumbra` table and returns 1 when any edge is wider than PRD-634 allows. */
 function printPenumbra(
   names: readonly string[],
@@ -817,6 +999,14 @@ export function compareGi(args: readonly string[]): number {
     }
     if (flag(args, "--metric") === "penumbra")
       return printPenumbra(names, layerFlag.split(","), root, unrealLevel);
+    if (flag(args, "--metric") === "blotch")
+      return printBlotch(
+        names,
+        layerFlag.split(","),
+        root,
+        unrealLevel,
+        flag(args, "--regions")?.split(","),
+      );
     const rows = names.flatMap((name) =>
       compareGiToUnreal(name, layerFlag.split(","), root, unrealLevel),
     );

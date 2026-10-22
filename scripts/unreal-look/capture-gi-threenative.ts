@@ -15,7 +15,9 @@ import path from "node:path";
 import { assertVisualPortAvailable, stopVisualServer } from "../visual-gate.js";
 import { launchWebgpuBrowser } from "./browser.js";
 import { HIDE_UI, freePort, scaffold, waitForServer } from "./capture-threenative.js";
-import { readScene, sceneDir, sceneKey } from "./gi.js";
+import { awaitExposureSettled, watchExposure } from "./exposureSettled.js";
+import { isManifestScene, readScene, sceneDir, sceneKey } from "./gi.js";
+import { composeForThreeNative } from "./wildwood.js";
 
 const REPO_ROOT = path.resolve(import.meta.dirname, "../..");
 const SCAFFOLD_DIR =
@@ -28,6 +30,8 @@ export const GI_LAYERS: Readonly<Record<string, string>> = {
   // Shadows and AO without GI: the pair of Unreal with Lumen GI off.
   L6: "L7-Low",
   L7: "L7-Epic",
+  // Reflections: only a shadow scene with an L8 variant (wildwood) is captured here (PRD-651).
+  L8: "L8",
   // GI at one quality tier, against the Unreal level it follows (PRD-644): Low 0, Medium 1, Epic 3.
   "L7-low": "L7-Low",
   "L7-medium": "L7-Medium",
@@ -75,10 +79,17 @@ export async function patchGi(target: string, scenes: readonly string[]): Promis
   const dataFile = path.join(target, "src/scenes/calibrationData.ts");
   const data = existsSync(dataFile) ? calibrationScenes(await readFile(dataFile, "utf8")) : {};
   for (const name of scenes) {
-    data[name] = readScene(name).scene;
+    const { scene } = readScene(name);
+    data[name] = scene;
     const dir = path.join(target, "assets/unreal-reference/gi", sceneKey(name));
     await mkdir(dir, { recursive: true });
-    await cp(path.join(sceneDir(name), "scene.glb"), path.join(dir, "scene.glb"));
+    // A scene of real assets has no committed scene.glb: it is composed from the verified asset files (PRD-651).
+    if (isManifestScene(name))
+      await writeFile(
+        path.join(dir, "scene.glb"),
+        await composeForThreeNative(sceneDir(name), scene as never, sceneKey(name)),
+      );
+    else await cp(path.join(sceneDir(name), "scene.glb"), path.join(dir, "scene.glb"));
   }
   await writeFile(
     dataFile,
@@ -161,6 +172,7 @@ export async function captureGiThreeNative(options: {
         // The frame meter prints to the console; a measured pose keeps the windows between two marks.
         let meter: string[] = [];
         page.on("pageerror", (error) => errors.push(error.message));
+        const exposure = watchExposure(page);
         page.on("console", (message) => {
           if (message.text().startsWith("TN_FRAME_BUDGET")) meter.push(message.text());
           if (
@@ -221,10 +233,17 @@ export async function captureGiThreeNative(options: {
               probe: await page.evaluate("window.__tnRef.probe?.()"),
             };
             for (const pose of visit.poses) {
+              const poseAt = Date.now();
               await page.evaluate(`window.__tnRef.pose(${JSON.stringify(pose)})`);
               await page.evaluate(
                 "new Promise((resolve) => { let n = 0; const tick = () => (++n >= 45 ? resolve() : requestAnimationFrame(tick)); requestAnimationFrame(tick); })",
               );
+              // Auto exposure (L9) closes at 1 stop/s like Unreal's: 45 frames are well short of that, so the
+              // frame waits for three settled readings after the pose and fails closed when they never come.
+              if (layer === "L9")
+                console.info(
+                  `TN_UNREAL_LOOK exposure ${pose.name} settled after ${await awaitExposureSettled(page, exposure, poseAt)} ms of waiting`,
+                );
               if (errors.length > 0)
                 throw new Error(`TN_UNREAL_LOOK_PAGE_ERROR: ${errors.join(" | ")}`);
               if (options.measureSeconds !== undefined) {
