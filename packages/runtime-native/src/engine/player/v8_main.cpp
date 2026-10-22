@@ -27,6 +27,7 @@
 #include "engine/renderer/render_target_pass.h"
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cstdint>
 #include <cstdio>
@@ -234,6 +235,13 @@ class V8Game {
     uint32_t drawCalls_ = 0;
     uint64_t triangles_ = 0;
     uint64_t pipelineCompiles_ = 0;  // pipelines the renderer has compiled so far, cumulative
+    // The newest resolved GPU time, as the Wasm engine reports it (tnw_web_frame 7..9, 19..23). Timing is off until a
+    // reader asks (`tn.setGpuTimer`), since a timed frame resolves and reads back a query set every frame.
+    bool gpuTimerWanted_ = false, gpuTimerRuns_ = false;
+    uint64_t gpuSamples_ = 0, gpuSource_ = 0;
+    uint64_t sourceFrame_ = 0;  // the game's `info.frame` at its last render(): the id the next drawn frame's GPU time reports
+    double gpuMs_ = -1;
+    std::array<double, kGpuSegments> gpuSegments_{};
     bool shadowMap_ = false;  // three's WebGPURenderer defaults: shadowMap off, PCFShadowMap
     int shadowMapType_ = 1;
     uint32_t samples_ = 1;
@@ -243,6 +251,7 @@ class V8Game {
     static void setRendererState(const v8::FunctionCallbackInfo<v8::Value>& info);
     static void requestAdapter(const v8::FunctionCallbackInfo<v8::Value>& info);
     static void renderInfo(const v8::FunctionCallbackInfo<v8::Value>& info);
+    static void setGpuTimer(const v8::FunctionCallbackInfo<v8::Value>& info);
     static void surfaceSize(const v8::FunctionCallbackInfo<v8::Value>& info);
     v8::Local<v8::Value> adapterValue();
   public:
@@ -253,6 +262,11 @@ class V8Game {
         drawCalls_ = renderer.lastFrame().draws + renderer.lastFrame().shadowDraws;
         triangles_ = renderer.lastFrame().triangles + renderer.lastFrame().shadowTriangles;
         pipelineCompiles_ = renderer.pipelines().compiles();
+        gpuTimerRuns_ = renderer.gpuTimerEnabled();
+        gpuSamples_ = renderer.gpuSamples();
+        gpuSource_ = renderer.gpuSourceFrame();
+        gpuMs_ = renderer.lastGpuMs();
+        gpuSegments_ = renderer.lastGpuSegments();
         frameClockMs_ += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - frameStartedAt_).count();
         profileFrame();
     }
@@ -270,6 +284,7 @@ class V8Game {
         if (outputChanged_) renderer.setOutput(output_);
         outputChanged_ = false;
         renderer.setSampleCount(samples_);
+        renderer.setGpuTimerSourceFrame(sourceFrame_);
         database.shadowMapEnabled = shadowMap_;
         database.shadowMapType = shadowMapType_;
     }
@@ -546,6 +561,12 @@ void V8Game::setRendererState(const v8::FunctionCallbackInfo<v8::Value>& info) {
         const double s = samples.As<v8::Number>()->Value();
         game.samples_ = s == 4 ? 4 : 1;
     }
+    // The frame id core counts presented frames with (`info.frame`), so a GPU time says which frame it belongs to.
+    v8::Local<v8::Value> frameInfo, frameId;
+    if (settings->Get(ctx, v8str(isolate, "info")).ToLocal(&frameInfo) && frameInfo->IsObject() &&
+        frameInfo.As<v8::Object>()->Get(ctx, v8str(isolate, "frame")).ToLocal(&frameId) && frameId->IsNumber() &&
+        frameId.As<v8::Number>()->Value() >= 0)
+        game.sourceFrame_ = static_cast<uint64_t>(frameId.As<v8::Number>()->Value());
     // The facade's clear colour and alpha (setClearColor), linear, as `__clearColor: [r, g, b, a]`.
     v8::Local<v8::Value> clear;
     if (settings->Get(ctx, v8str(isolate, "__clearColor")).ToLocal(&clear) && clear->IsArray()) {
@@ -577,6 +598,8 @@ v8::Local<v8::Value> V8Game::adapterValue() {
 // `tn.renderInfo()`: { drawCalls, triangles } of the last frame the player drew, and the renderer's
 // cumulative pipelineCompiles (a window's compiles are the difference between two reads), the samples the scene draws
 // with, and the temporal pass as the last planned frame left it: { active, frame, historyValid, jitter: [x, y] }.
+// `gpuTiming` is the newest resolved GPU time once `tn.setGpuTimer(true)` asked for it: { enabled, samples, source, ms, segments }
+// (segments: shadow, scene, other, output passes, then the stages a post pass is labelled with, frame_gpu_timer.h).
 void V8Game::renderInfo(const v8::FunctionCallbackInfo<v8::Value>& info) {
     auto& game = *static_cast<V8Game*>(info.Data().As<v8::External>()->Value());
     auto* isolate = info.GetIsolate();
@@ -594,7 +617,23 @@ void V8Game::renderInfo(const v8::FunctionCallbackInfo<v8::Value>& info) {
     v8::Local<v8::Value> jitter[] = {v8::Number::New(isolate, temporal.jitterX), v8::Number::New(isolate, temporal.jitterY)};
     status->Set(ctx, v8str(isolate, "jitter"), v8::Array::New(isolate, jitter, 2)).Check();
     record->Set(ctx, v8str(isolate, "temporal"), status).Check();
+    auto timing = v8::Object::New(isolate);
+    timing->Set(ctx, v8str(isolate, "enabled"), v8::Boolean::New(isolate, game.gpuTimerRuns_)).Check();
+    timing->Set(ctx, v8str(isolate, "samples"), v8::Number::New(isolate, static_cast<double>(game.gpuSamples_))).Check();
+    timing->Set(ctx, v8str(isolate, "source"), v8::Number::New(isolate, static_cast<double>(game.gpuSource_))).Check();
+    timing->Set(ctx, v8str(isolate, "ms"), v8::Number::New(isolate, game.gpuMs_)).Check();
+    v8::Local<v8::Value> segments[kGpuSegments];
+    for (size_t i = 0; i < kGpuSegments; ++i) segments[i] = v8::Number::New(isolate, game.gpuSegments_[i]);
+    timing->Set(ctx, v8str(isolate, "segments"), v8::Array::New(isolate, segments, kGpuSegments)).Check();
+    record->Set(ctx, v8str(isolate, "gpuTiming"), timing).Check();
     info.GetReturnValue().Set(record);
+}
+
+// `tn.setGpuTimer(on)`: the first reader of GPU times turns frame timing on; a game that never reads them pays nothing.
+void V8Game::setGpuTimer(const v8::FunctionCallbackInfo<v8::Value>& info) {
+    auto& game = *static_cast<V8Game*>(info.Data().As<v8::External>()->Value());
+    game.gpuTimerWanted_ = info.Length() > 0 && info[0]->BooleanValue(info.GetIsolate());
+    if (game.renderer_) game.renderer_->setGpuTimer(game.gpuTimerWanted_);
 }
 
 // `tn.surfaceSize()`: { width, height } of the drawing buffer. The player owns the window, so a game's
@@ -979,6 +1018,7 @@ void V8Game::setPost(const v8::FunctionCallbackInfo<v8::Value>& info) {
 
 void V8Game::initialize(Renderer& renderer) {
     renderer_ = &renderer;
+    if (gpuTimerWanted_) renderer.setGpuTimer(true);
     renderer.setOutput(output_);
     outputChanged_ = false;
     if (post_) renderer.setPostGraph(post_);
@@ -1177,6 +1217,7 @@ bool V8Game::start(const std::string& path, std::string& error) {
     host->Set(ctx, v8str(isolate_, "setRendererState"), v8::Function::New(ctx, &setRendererState, self).ToLocalChecked()).Check();
     host->Set(ctx, v8str(isolate_, "requestAdapter"), v8::Function::New(ctx, &requestAdapter, self).ToLocalChecked()).Check();
     host->Set(ctx, v8str(isolate_, "renderInfo"), v8::Function::New(ctx, &renderInfo, self).ToLocalChecked()).Check();
+    host->Set(ctx, v8str(isolate_, "setGpuTimer"), v8::Function::New(ctx, &setGpuTimer, self).ToLocalChecked()).Check();
     host->Set(ctx, v8str(isolate_, "surfaceSize"), v8::Function::New(ctx, &surfaceSize, self).ToLocalChecked()).Check();
     host->Set(ctx, v8str(isolate_, "presentMode"), v8str(isolate_, player::presentModeName())).Check();
     v8::Local<v8::Script> script;
