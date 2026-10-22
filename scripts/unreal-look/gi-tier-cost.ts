@@ -268,10 +268,12 @@ interface IArm {
   readonly arm?: Readonly<Record<string, unknown>>;
 }
 
-const METHOD_ARMS: readonly IArm[] = ["none", "irradianceField", "screenProbeGather"].map((method) => ({
-  name: method,
-  method,
-}));
+const METHOD_ARMS: readonly IArm[] = ["none", "irradianceField", "screenProbeGather"].map(
+  (method) => ({
+    name: method,
+    method,
+  }),
+);
 
 interface IBurst {
   readonly arm: string;
@@ -312,7 +314,10 @@ async function measureInterleaved(
     const bursts: IBurst[] = [];
     for (let round = 0; round < rounds; round++) {
       const turn = round % arms.length;
-      for (const { name: arm, method, arm: options } of [...arms.slice(turn), ...arms.slice(0, turn)]) {
+      for (const { name: arm, method, arm: options } of [
+        ...arms.slice(turn),
+        ...arms.slice(0, turn),
+      ]) {
         await page.evaluate(
           `window.__tnRef.setGatherMethod(${JSON.stringify(method)}, ${JSON.stringify(options ?? {})})`,
         );
@@ -321,6 +326,11 @@ async function measureInterleaved(
           stages: Record<string, number[]>;
         };
         if (errors.length > 0) throw new Error(`TN_UNREAL_LOOK_PAGE_ERROR: ${errors.join(" | ")}`);
+        // A gather that draws must time its stage: no reading means the chain did not build (a bad arm), not 0 ms.
+        if (method === "screenProbeGather" && (sampled.stages.SSGI ?? []).every((ms) => !(ms > 0)))
+          throw new Error(
+            `TN_GI_ARMS: ${arm} drew no SSGI stage; check the page console for the chain error`,
+          );
         bursts.push({ arm, gpu: gpuState(), round, ms: sampled.ms, stages: sampled.stages });
       }
     }
@@ -333,6 +343,18 @@ async function measureInterleaved(
           {
             frame: frameStats(own.flatMap((b) => b.ms)),
             ssgi: ssgi.length === 0 ? null : frameStats(ssgi),
+            // The stage's share of its own sample's frame: the GPU clock moves both alike, so the share survives a
+            // P2 to P8 swing that moves the milliseconds 2 to 3 times.
+            ssgiShare:
+              ssgi.length === 0
+                ? null
+                : Number(
+                    mean(
+                      own.flatMap((b) =>
+                        (b.stages.SSGI ?? []).map((ms, i) => ms / (b.ms[i] ?? Number.NaN)),
+                      ),
+                    ).toFixed(4),
+                  ),
             roundMeans: own.map((b) => Number(mean(b.ms).toFixed(3))),
           },
         ];
@@ -388,7 +410,8 @@ export function parseArms(text: string): IArm[] {
       throw new Error(`TN_GI_ARMS: ${entry.name}: arm must be an object of chain options`);
   }
   const names = (arms as IArm[]).map((entry) => entry.name);
-  if (new Set(names).size !== names.length) throw new Error(`TN_GI_ARMS: duplicate arm names ${names.join(",")}`);
+  if (new Set(names).size !== names.length)
+    throw new Error(`TN_GI_ARMS: duplicate arm names ${names.join(",")}`);
   return arms as IArm[];
 }
 

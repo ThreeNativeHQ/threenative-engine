@@ -39,7 +39,7 @@ function validateOptions(options: Record<string, unknown>): void {
     if (key === "depthBuffer" && value === false) continue;
     // Not a RenderTarget option: the GPU stage the pass reports its time under (gpu-stages.ts).
     if (key === "gpuStage") {
-      gpuStageId(value);
+      if (value !== undefined) gpuStageId(value);
       continue;
     }
     if ((key === "minFilter" || key === "magFilter") && (value === 1003 || value === 1006))
