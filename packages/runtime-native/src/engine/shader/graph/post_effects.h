@@ -5,6 +5,12 @@
 #include <map>
 
 namespace tn::engine::shader::graph {
+/**
+ * The labelled GPU stage a post pass reports its time under (`Renderer::lastGpuSegments`, then `info.engine.gpuStages` on the web
+ * renderer). The author labels a stage's passes when it creates them; a pass with no label counts under "other passes".
+ * three-native's `GPU_STAGES` lists the names in this order, starting at 1.
+ */
+inline constexpr uint8_t kStageNone = 0, kStageScreenSpaceGi = 1;
 struct PostImage {
     std::string name;
     uint32_t width = 0, height = 0;
@@ -20,6 +26,7 @@ struct PostEffect {
     bool normal = false, temporal = false;
     bool viewOffset = false;
     std::array<double, 16> originalProjection{};
+    uint8_t stage = kStageNone;
 };
 struct PostPass {
     std::shared_ptr<RttState> rtt;
@@ -42,6 +49,7 @@ struct PostPass {
     std::shared_ptr<const PostEffect> effect;
     /** Non-empty: the renderer draws this pass itself, as `traa` does, and the pass has no shader package. */
     std::string host;
+    uint8_t stage = kStageNone;
 };
 Node importPostEffect(const json::Value& record, const std::vector<Node>& args, std::vector<std::string>& errors);
 

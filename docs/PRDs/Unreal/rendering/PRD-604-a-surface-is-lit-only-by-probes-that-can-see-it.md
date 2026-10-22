@@ -4,7 +4,7 @@
 **Priority:** P2 — Phase 1 leak measurement, the per-probe distance atlas and the visibility-weighted sampler are all unbuilt.
 **Complexity:** 5 (MEDIUM) — 1–5 implementation files: `probe-volume.ts`, one trace helper, specs, one conformance scene (+1), new GPU data and a new sampler (+2), reuse of the installed `GPUSceneBVH` ray query (+0), native proof (+1), cost risk on a per-pixel path (+1); risk override: none
 **Owner:** unassigned
-**Depends on:** None. Part of the GI set in [`../gi/`](../gi/) (PR #541); the leak cells come from [PRD-638](../gi/PRD-638-calibration-scenes-are-built-in-unreal-and-captured-as-the-gi-target.md) (`leak` pose). Shares a kernel with [PRD-603](PRD-603-probes-refresh-by-tracing-the-packed-scene-not-by-drawing-it-six-times.md) if that PRD lands first (see Solution step 2).
+**Depends on:** None. Part of the GI set in [`../gi/`](../gi/) (PR #541); the leak cells come from [PRD-638](../../done/PRD-638-calibration-scenes-are-built-in-unreal-and-captured-as-the-gi-target.md) (`leak` pose). Shares a kernel with [PRD-603](PRD-603-probes-refresh-by-tracing-the-packed-scene-not-by-drawing-it-six-times.md) if that PRD lands first (see Solution step 2).
 
 ## Context
 

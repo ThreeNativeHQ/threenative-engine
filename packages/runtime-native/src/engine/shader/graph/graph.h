@@ -55,6 +55,8 @@ struct RttState {
     uint16_t minFilter = 1006, magFilter = 1006;
     bool autoUpdate = true, textureNeedsUpdate = true;
     uint64_t revision = 1, disposal = 0;
+    /** The GPU stage this pass's time is reported under (post_effects.h kStage*); the author sets it at creation. */
+    uint8_t stage = 0;
 };
 
 struct TextureBinding { std::shared_ptr<const void> object; };

@@ -8,7 +8,7 @@ prd_contract: v1
 **Priority:** P1 — no box is ticked: no Unreal-authored scene isolates penumbra growth, contact, lamp shadows, leaf shadows or shadow stability under motion, so PRD-650 to PRD-652 and the open PRD-634 boxes have no Unreal target to be judged against.
 **Complexity:** 5 (MEDIUM) — 1–5 files: a scene family switch, three `scene.py` scripts, shadow metrics in compare (+1), three new Unreal scenes and their recreation (+2), every shadow PRD consumes the scoreboard (+2); risk override: none
 **Owner:** João
-**Depends on:** [PRD-638](../gi/PRD-638-calibration-scenes-are-built-in-unreal-and-captured-as-the-gi-target.md) Phase 1 (the scene pipeline), [PRD-646](../gi/PRD-646-threenative-recreates-each-unreal-calibration-scene-exactly.md) Phase 2 (the recreation) and [PRD-647](../../done/PRD-647-a-visual-judge-calibrates-gi-against-the-unreal-scenes-until-parity.md) Phases 1 and 2 (the calibrate command, the judge and the scoreboard). This PRD adds a scene family to that pipeline. It does not build a second pipeline.
+**Depends on:** [PRD-638](../../done/PRD-638-calibration-scenes-are-built-in-unreal-and-captured-as-the-gi-target.md) Phase 1 (the scene pipeline), [PRD-646](../gi/PRD-646-threenative-recreates-each-unreal-calibration-scene-exactly.md) Phase 2 (the recreation) and [PRD-647](../../done/PRD-647-a-visual-judge-calibrates-gi-against-the-unreal-scenes-until-parity.md) Phases 1 and 2 (the calibrate command, the judge and the scoreboard). This PRD adds a scene family to that pipeline. It does not build a second pipeline.
 
 ## Context
 
@@ -168,3 +168,10 @@ screenshots branch only.
   global illumination on (floor 5th over 95th percentile, `sun60-closeup`: Unreal 0.63, ThreeNative
   0.84 at L7; 0.38 and 0.57 at L9). Leaf gaps are visible in the ground shadow in every round. The
   symptoms are with leaf-lane (PRD-643). The sameness gate fails; see its box in Phase 2.
+- 2026-10-21 (wildwood lane): Unreal omits a short branch that ThreeNative draws in the lean `wildwood`
+  frames (647 px at `sun60-closeup`). The source GLB holds it as opaque geometry. Unreal's imported tree
+  keeps all 14927 source triangles in its mesh description (its Nanite fallback holds 3645), so the
+  import keeps the branch and the render drops it. Nanite is the leading suspect, not a finding. The test
+  is an import with Nanite off (`nanite_settings.enabled = False` in `import_glb` of `export.py`) and a
+  new `ID` capture, then `compare --sameness`. Not run: the job waited 20 minutes for GPU slots that other
+  lanes held, and was stopped.
