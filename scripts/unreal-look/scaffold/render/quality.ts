@@ -141,16 +141,20 @@ const high: IWorldEnvironmentOptions = {
   // Unreal turns motion blur on for a high end PC only (HardwareTargetingModule.cpp), so the desktop tier has it
   // and `medium` and `low` do not. It needs the chain's velocity, which costs one more scene pass target.
   motionBlurEnabled: true,
-  // Temporal AA is opt-in and no shipped tier names it: add `authoredStageNames: ["traa"]` here to
-  // reconstruct at the display raster, and read `setupPost(...).debug().temporal` for the reset and
-  // raster state it reports. Its rejection fraction, ghosting and frame-time cost are unqualified.
+  // Unreal's default anti-aliasing is temporal (`r.AntiAliasingMethod` 4, SceneView.cpp:236-246), and the desktop
+  // tier gets it. The engine jitters the camera, draws the motion and blends the frames, and the `traa` stage resolves
+  // the frame after its screen-space stages. Read `setupPost(...).debug().temporal` for the live frame, history and
+  // jitter. `temporalAA: false` here brings back the
+  // SMAA this tier shipped with. Unreal's Epic setting also keeps the history at twice the screen size
+  // (BaseScalability.ini, `[AntiAliasingQuality@3]`); this tier keeps it at the screen size.
+  temporalAA: true,
 };
 
 /**
  * The rung in between: the same occlusion at half the directions. Saving unmeasured, and the
  * chain's own antialiasing one notch cheaper.
  */
-// SMAA owns medium edges; another four-sample world resolve adds mobile bandwidth.
+// Temporal AA owns medium edges (it comes with `...high`); another four-sample world resolve adds mobile bandwidth.
 const medium: IWorldEnvironmentOptions = {
   ...high,
   motionBlurEnabled: false,
@@ -163,7 +167,8 @@ const medium: IWorldEnvironmentOptions = {
 
 /**
  * What a phone gets: bloom, vignette and the tone curve, nothing screen-space. Unreal's default device profile turns
- * local exposure off on mobile (BaseDeviceProfiles.ini), so this does too.
+ * local exposure off on mobile (BaseDeviceProfiles.ini), so this does too. Its edges stay on SMAA: the temporal pass
+ * costs a velocity target and a history target, and no phone has been measured with it.
  */
 const low: IWorldEnvironmentOptions = {
   ...shared,
