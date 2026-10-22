@@ -117,6 +117,8 @@ scoreboard is a workflow input, so it is allowed under the evidence rules in `do
 
 ## Decisions
 
+- **2026-10-22, team-lead (stable-epic triage): `lane/gi` stays out of the stable epic.** Commit `f8e141c1e` drops this lane's calibrate tooling because the judge lane owns PRD-647. The latest commit is `19d56d753`, for PRD-646. The comparison `git diff origin/feat/unreal-look-epic...lane/gi --stat` shows four code files with 107 insertions and 15 deletions. The remaining changes add GI verdict tests and share layer thresholds. They recalculate verdicts after IoU measurement and gate calibration SSGI and SSR by layer. This branch is not merged by content. It stays out because these code changes remain outside the judge lane's PRD-647 ownership. Next step: have the judge lane review the verdict changes and the PRD-646 owner review the layer gate. Integrate only changes that those owners accept and verify.
+
 - 2026-10-20 (owner): the visual judge on the Unreal calibration scenes is the measure of the GI
   sub-epic until parity. Numbers locate a gap, and the judge decides whether it is closed.
 - 2026-10-21 (judge lane): the judge is a command, not an Agent-tool subagent, because the Agent tool hands
