@@ -121,6 +121,8 @@ back to flat colour and why, and lights skipped by the cap.
 
 ## Decisions
 
+- **2026-10-22, team-lead (stable-epic triage): `lane/surfcache` stays out of the stable epic.** The last three commit subjects describe panelLight changes that skip distant triangles, skip visibility rays below 0.2% of panel radiance, and remove allocations. One subject reports a 2.5 times speed increase. These WIP changes have no visual receipt. Next step: add a red-green spec, capture BEFORE and AFTER frames, and obtain a fresh judge verdict before merge.
+
 - 2026-10-20 (PRD authoring): Unreal emissive has no separate emitter path. It lights the world only
   through rays that hit the emissive surface. This PRD keeps that model, so a tiny bright emitter is
   tested through the `neon` pose and the PRD-641 `neon` motion run, not with a special sampler.

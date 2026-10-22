@@ -130,6 +130,8 @@ screenshots branch only.
 
 ## Decisions
 
+- **2026-10-22, team-lead (stable-epic triage): `lane/shadowscenes` stays out of the stable epic.** The last three commit subjects describe an epic merge, a preview merge, and filing completed PRD-631 under done. They do not identify a new shadow implementation or provide a visual receipt for the WIP. Next step: identify the remaining shadow changes, add a red-green spec, capture BEFORE and AFTER frames, and obtain a fresh judge verdict before merge.
+
 - 2026-10-20 (owner): shadow PRDs use Unreal-authored calibration scenes and the visual judge until
   parity, with screenshots on the PR. One scene may hold several PRDs' features.
 - 2026-10-20 (slicing): this PRD extends the PRD-638/646/647 pipeline with a family and does not
