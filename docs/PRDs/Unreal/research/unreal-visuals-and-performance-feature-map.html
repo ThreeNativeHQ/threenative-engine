@@ -75,6 +75,7 @@ button { font: inherit; color: inherit; }
 .prd .t { font-size: 13.5px; line-height: 1.3; }
 .prd .t small { display: block; color: var(--muted); font-size: 12px; }
 .prd .m { font-family: var(--mono); font-size: 11px; color: var(--muted); text-align: right; white-space: nowrap; }
+.prd.closed .t { opacity: .6; }
 .prd .rk { display: block; font-family: var(--mono); font-size: 11px; color: var(--muted); font-weight: 500; }
 .badges { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 3px; }
 .bdg { display: inline-flex; align-items: center; gap: 4px; font-family: var(--mono); font-size: 11px; line-height: 1; padding: 3px 6px; border-radius: 4px;
@@ -524,6 +525,10 @@ const SCORES = {
  "459": [1, 2, "Fewer streaming hitches", "One admission budget per frame"],
  "493": [1, 0, "Blocked on a private game", "No cost change"],
  "486": [0, 3, "Same pixels", "Crowds draw cheaper characters"],
+ "523": [0, 2, "Native only; changes no pixel", "A graph that skips unread passes frees time"],
+ "524": [1, 2, "Native shadows match the web ones", "Paged shadows scale with the frame"],
+ "VQ-12": [2, 0, "Overlapping effects stop sorting wrong", "Bounded approximation cost"],
+ "VQ-15": [2, 0, "Hair keeps its silhouette and highlights", "No cost change"],
 };
 // Parity locks broken / all, per layer: the calibration lock board (epic 340abbffd, 2026-10-22). L7 adds L7-high. L9 leaves out 24 stale locks.
 const LOCKS = { L0: [0, 81], L1: [19, 148], L2: [10, 28], L3: [8, 14], L4: [11, 20], L5: [8, 18], L6: [11, 17], L7: [21, 67], L8: [14, 22], L9: [8, 132] };
@@ -560,8 +565,8 @@ const PORT = [
  ["652","Shadow tiers","Perf",5,0,5,9,4,"634, 650","Cost per shadow tier","vsm"],
  ["643","Glass, fog, leaves take GI","L7",5,0,0,8,5,"603, 604","Small share of the frame","lumen"],
  ["605","Radiance cache clipmaps","L7",6,0,0,8,5,"603, 604","Open worlds","lumen"],
- ["457","Shadow pages only where cheaper","Perf",5,1,0,4,5,"—","Only where measured","vsm"],
- ["600","Nanite: submit visible clusters","Perf",6,0,0,8,5,"—","Dense scenes","nanite"],
+ ["457","Shadow pages only where cheaper","Perf",7,0,0,4,2,"—","Wave 2: the counters in its Phase 1 are the gate of 714 (wave 2) and 716. Pages only where measured cheaper","vsm"],
+ ["600","Nanite: submit visible clusters","Perf",6,0,0,8,4,"—","Wave 4: score 0.83 per complexity point with no gate, and 601, 602, 668, 677 and 678 wait on it. Dense scenes","nanite"],
  ["601","Far clusters keep shading","Perf",4,0,0,7,5,"600","Follows 600","nanite"],
  ["602","Cluster shadow casters","Perf",5,0,0,8,5,"600","Follows 600","nanite"],
  ["570","Characters cost what the camera sees","Perf",5,0,0,10,5,"—","Crowds; a lane is measuring it",null],
@@ -597,7 +602,7 @@ const PORT = [
  ["695","Every view takes its own cluster cut","Perf",6,0,0,9,2,"—","Phase 1 fixes an orthographic-camera throw","nanite"],
  ["694","Traces and colliders see a fixed cluster error","Perf",4,0,0,10,2,"—","Colliders built before the first frame are empty today","nanite"],
  ["685","Directional radiance for missed rays","L7",7,0,0,10,3,"640","PRD-640 decision: the miss tier needs direction","lumen"],
- ["684","Adaptive probes and importance sampling","L7",6,0,0,10,3,"640, 641","Fills depth-edge gaps; fewer noisy rays","lumen"],
+ ["684","Adaptive probes and importance sampling","L7",6,0,0,10,4,"640, 641","Wave 4: it needs 641 Phase 4, the blotch metric. Fills depth-edge gaps; fewer noisy rays","lumen"],
  ["686","Moving doors block GI rays","L7",6,0,0,9,3,"603","The traced scene is a static snapshot today","lumen"],
  ["687","GI debug views an agent can read","Perf",5,0,0,7,4,"676","PRD-676 leaves GI views out","lumen"],
  ["696","Compute raster for tiny shadow triangles","Perf",7,0,0,8,5,"602","Depth-only raster needs only 32-bit atomics","nanite"],
@@ -607,7 +612,7 @@ const PORT = [
  ["706","Effects start on a moving character's skin","VFX",6,0,0,7,5,"609","Effects start at the origin point today","niagara"],
   // filed 2026-10-22 from the shadow-map and TSR deep dives
  ["714","Sun shadow texels follow the lens","L5",5,0,0,6,2,"457","Fixed clip extents ignore zoom today","vsm"],
- ["715","Shadow filter skips flat areas, starts off its surface","L5",4,0,0,6,2,"634","Cheaper, cleaner shadow edges","vsm"],
+ ["715","Shadow filter skips flat areas, starts off its surface","L5",4,0,0,6,3,"634","Wave 3: it needs 634's sourceAngleShadowFilter. Cheaper, cleaner shadow edges","vsm"],
  ["717","Disoccluded pixels reproject through the surface that left","Perf",6,0,0,6,3,"539","Less ghosting behind movers","tsr"],
  ["720","Wider resolve input where history fails","Perf",6,0,0,6,3,"539","Sharper disocclusions at low internal resolution","tsr"],
  ["716","Skip casters no visible pixel receives","Perf",7,0,0,6,4,"457","Fewer shadow draws","vsm"],
@@ -621,15 +626,17 @@ const PORT = [
  ["456","Distant world cell proxies (HLOD)","Perf",8,0,0,6,5,"—","Open worlds: far cells as merged proxies","wp"],
  ["459","One streaming admission budget per frame","Perf",6,0,4,16,5,"—","Streaming hitches in open worlds","wp"],
  ["493","Terrain layers past sixteen textures","Look",3,0,6,8,5,"—","Blocked on a private game walk","f-landscape"],
- ["486","Characters get a LOD chain","Perf",4,0,0,8,5,"—","Crowds","f-anim-budget-animgraphruntime"],
+ ["486","Characters get a LOD chain","Perf",4,0,0,8,4,"—","Wave 4: score 0.75 per complexity point with no gate, and 678 waits on it. Crowds","f-anim-budget-animgraphruntime"],
+ ["523","The render graph owns passes and history","Perf",4,0,0,7,5,"—","Native only; starts after PRD-534 passes. 524 and 683 wait on it","f-rendercore-rdg-"],
+ ["524","Virtual shadows run native","Perf",4,0,0,5,5,"523","Native port of the paged shadows","vsm"],
+ ["VQ-12","Overlapping effects composite correctly","Look",5,1,0,8,5,"—","A real overlapping-effects consumer is the admission gate",null],
+ ["VQ-15","Hair cards keep coverage and highlights","Look",5,1,0,8,5,"—","Cards stay the far and low-tier hair that 671 builds on","f-hair-strands"],
 ].map(([id,title,layer,cx,est,done,total,wave,waits,why,sys]) => {
   const s = SCORES[id];
   if (!s) throw new Error(`PORT ${id}: no entry in SCORES`);
   const [vis, visSrc] = visOf(s[0]), [perf, perfSrc] = perfOf(s[1]);
   return {id,title,layer,cx,est,done,total,wave,waits,why,sys,vis,visSrc,visWhy:s[2],perf,perfSrc,perfWhy:s[3],rank:null};
 });
-PORT.filter(p => p.done < p.total).sort((a, b) => rankScore(b) - rankScore(a) || a.cx - b.cx || a.wave - b.wave || a.id.localeCompare(b.id))
-  .forEach((p, i) => { p.rank = i + 1; });
 
 const WAVES = { 1: "Gate: everything compares against it", 2: "Cheap look layers + foundations, in parallel", 3: "Main look layers", 4: "Finish and tier", 5: "When a game or a measurement asks" };
 
@@ -700,7 +707,10 @@ const LADDER = [
 ];
 
 // box counts come from the PRD files when the registry has them
-for (const p of PORT) if (PRDS[p.id]) { p.done = PRDS[p.id].d; p.total = PRDS[p.id].n; }
+for (const p of PORT) if (PRDS[p.id]) { p.total = PRDS[p.id].n; p.done = PRDS[p.id].f === "done" ? p.total : PRDS[p.id].d; }
+// Rank the open PRDs after the sync above, so a PRD filed under done/ never takes a rank.
+PORT.filter(p => p.done < p.total).sort((a, b) => rankScore(b) - rankScore(a) || a.cx - b.cx || a.wave - b.wave || a.id.localeCompare(b.id))
+  .forEach((p, i) => { p.rank = i + 1; });
 
 const PROG = { done: "Done", progress: "In progress", notstarted: "Not started", deferred: "Deferred", gap: "No PRD", rule: "Out of scope by rule", unsplit: "Not split (shared files)" };
 // a PRD that is not on this branch yet (e.g. still on the Unreal look epic) falls back to its PORT row
@@ -755,7 +765,7 @@ function renderMatrix() {
   s += `<text x="${(L + W - R) / 2}" y="${H - 6}" text-anchor="middle">Complexity (PRD rating)</text>`;
   s += `<text transform="translate(12 ${(T + H - B) / 2}) rotate(-90)" text-anchor="middle">Impact (higher of visual and performance)</text>`;
   // spread points that share a cell on a small ring
-  const cells = d3.group(PORT.filter(p => p.done < p.total), p => p.cx + "," + imp(p));
+  const cells = d3.group(PORT.filter(p => p.done < p.total && Number.isFinite(imp(p))), p => p.cx + "," + imp(p));
   for (const pts of cells.values()) pts.forEach((p, k) => {
     const n = pts.length, r = n === 1 ? 0 : 13 + n * 1.6, a = (k / n) * 2 * Math.PI - Math.PI / 2;
     const px = x(p.cx) + r * Math.cos(a), py = y(imp(p)) + r * Math.sin(a);
@@ -765,17 +775,19 @@ function renderMatrix() {
   });
   document.getElementById("matrix").innerHTML = s;
 }
+const shown = n => Number.isFinite(n) ? n : "–";
 const bdg = (k, p) => {
-  const n = p[k], src = p[k + "Src"], why = p[k + "Why"], name = k === "vis" ? "Visual" : "Performance";
-  return `<span class="bdg ${k === "vis" ? "v" : "p"} ${src}" title="${name} impact ${n} of 5, ${src}. ${esc(why)}"><i>${k === "vis" ? "V" : "P"}</i>${src === "estimate" ? "~" : ""}${n}<span class="pips" aria-hidden="true">${[1, 2, 3, 4, 5].map(i => `<u class="${i <= n ? "on" : ""}"></u>`).join("")}</span></span>`;
+  const n = shown(p[k]), src = p[k + "Src"], why = p[k + "Why"], name = k === "vis" ? "Visual" : "Performance";
+  return `<span class="bdg ${k === "vis" ? "v" : "p"} ${src}" title="${name} impact ${n} of 5, ${src}. ${esc(why)}"><i>${k === "vis" ? "V" : "P"}</i>${src === "estimate" && n !== "–" ? "~" : ""}${n}<span class="pips" aria-hidden="true">${[1, 2, 3, 4, 5].map(i => `<u class="${i <= p[k] ? "on" : ""}"></u>`).join("")}</span></span>`;
 };
 const badges = p => `<span class="badges">${bdg("vis", p)}${bdg("perf", p)}</span>`;
 let psort = "wave";
 const SORTS = { rank: (a, b) => (a.rank ?? 1e9) - (b.rank ?? 1e9), vis: (a, b) => b.vis - a.vis || SORTS.rank(a, b), perf: (a, b) => b.perf - a.perf || SORTS.rank(a, b), cx: (a, b) => a.cx - b.cx || SORTS.rank(a, b) };
 function prdBtn(p) {
-  return `<button type="button" class="prd${selPrd === p.id ? " sel" : ""}" data-id="${p.id}">
-      <span class="id">PRD-${p.id}${p.rank ? `<span class="rk">#${p.rank}</span>` : ""}</span>
-      <span class="t">${esc(p.title)}<small>${esc(p.why)}${p.waits !== "—" ? " · waits on " + esc(p.waits) : ""}</small>${badges(p)}</span>
+  const closed = p.done >= p.total;
+  return `<button type="button" class="prd${selPrd === p.id ? " sel" : ""}${closed ? " closed" : ""}" data-id="${p.id}">
+      <span class="id">PRD-${p.id}<span class="rk">${closed ? "✓ done" : "#" + p.rank}</span></span>
+      <span class="t">${esc(p.title)}<small>${esc(p.why)}${p.waits !== "—" ? " · waits on " + esc(p.waits) : ""}</small>${closed ? "" : badges(p)}</span>
       <span class="m">cx ${p.cx}${p.est ? "*" : ""}<span class="prog"><b style="width:${(p.done / p.total * 100).toFixed(0)}%"></b></span>${p.done}/${p.total}</span>
     </button>`;
 }
@@ -796,7 +808,7 @@ function prdTable() {
     return ((x > y ? 1 : x < y ? -1 : 0) * ptDir) || SORTS.rank(a, b);
   });
   document.querySelector("#ptbl tbody").innerHTML = rows.map(p => `<tr data-id="${p.id}" data-s="${p.sys || ""}">
-    <td class="num mono">${p.rank}</td><td><b class="mono">PRD-${p.id}</b><div class="note">${esc(p.title)}</div></td><td>${p.layer}</td>
+    <td class="num mono">${p.rank ?? "–"}</td><td><b class="mono">PRD-${p.id}</b><div class="note">${esc(p.title)}</div></td><td>${p.layer}</td>
     <td>${bdg("vis", p)}<div class="note why">${esc(p.visWhy)}</div></td><td>${bdg("perf", p)}<div class="note why">${esc(p.perfWhy)}</div></td>
     <td class="mono">${p.cx}${p.est ? "*" : ""}</td><td class="mono">${p.wave}</td><td class="mono">${p.done}/${p.total}</td></tr>`).join("");
 }

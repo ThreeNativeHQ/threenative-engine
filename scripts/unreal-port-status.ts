@@ -18,7 +18,7 @@ import { join, relative } from "node:path";
 import { runInNewContext } from "node:vm";
 
 const ROOT = join(import.meta.dirname, "..");
-const PAGE = "docs/PRDs/Unreal/research/unreal-visuals-and-performance-feature-map.html";
+export const PAGE = "docs/PRDs/Unreal/research/unreal-visuals-and-performance-feature-map.html";
 const SVG = "docs/PRDs/Unreal/research/unreal-port-status.svg";
 const README = "README.md";
 const INTERNALS = "docs/PRDs/Unreal/research/internals";
@@ -55,7 +55,9 @@ interface IPageData {
     visSrc: string;
     perfSrc: string;
     rank: number;
+    waits: string;
   }[];
+  readonly PRDS: Record<string, { f: string }>;
   readonly prog: (r: Sub) => IProg;
   readonly rankScore: (p: { vis: number; perf: number; cx: number }) => number;
 }
@@ -64,7 +66,9 @@ interface IPageData {
 function evalData(page: string): IPageData {
   const code = block(page, "data").exec(page)?.[0];
   if (!code) throw new Error(`${PAGE}: no // @data-start … // @data-end block`);
-  return runInNewContext(`${code}\n({ SYS, F, AREA_OF, PORT, prog, rankScore })`) as IPageData;
+  return runInNewContext(
+    `${code}\n({ SYS, F, AREA_OF, PORT, PRDS, prog, rankScore })`,
+  ) as IPageData;
 }
 
 export const pageData = (): IPageData => evalData(readFileSync(join(ROOT, PAGE), "utf8"));
