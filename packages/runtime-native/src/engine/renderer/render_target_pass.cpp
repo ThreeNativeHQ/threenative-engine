@@ -21,6 +21,9 @@ TargetGpu& gpuOf(Renderer& main, RenderTarget& target) {
     if (!target.gpu) {
         auto gpu = std::make_shared<TargetGpu>();
         gpu->renderer = main.sibling();
+        // A FloatType target keeps float32: a half float rounds a value fed back each frame (auto exposure).
+        gpu->renderer->setSceneFormat(target.texture->isFloat() ? WGPUTextureFormat_RGBA32Float
+                                                                : WGPUTextureFormat_RGBA16Float);
         gpu->database = std::make_unique<RenderDatabase>();
         target.gpu = std::move(gpu);
     }
@@ -76,13 +79,14 @@ GpuStatus readRenderTarget(RenderTarget& target, uint32_t x, uint32_t y, uint32_
         return GpuStatus::OutOfRange;
     auto& gpu = *static_cast<TargetGpu*>(target.gpu.get());
     const uint32_t full = target.width;
+    const bool float32 = target.texture->isFloat();
     return gpu.renderer->readProbePixels(
-        [x, y, width, height, full, done = std::move(done)](GpuStatus status, std::vector<uint8_t> bytes) {
+        [x, y, width, height, full, float32, done = std::move(done)](GpuStatus status, std::vector<uint8_t> bytes) {
             if (status != GpuStatus::Ok) {
                 done(status, {});
                 return;
             }
-            constexpr uint32_t texel = 8;  // RGBA16Float
+            const uint32_t texel = float32 ? 16 : 8;  // RGBA32Float or RGBA16Float
             std::vector<uint8_t> region(std::size_t(width) * height * texel);
             for (uint32_t row = 0; row < height; ++row)
                 std::memcpy(region.data() + std::size_t(row) * width * texel,
