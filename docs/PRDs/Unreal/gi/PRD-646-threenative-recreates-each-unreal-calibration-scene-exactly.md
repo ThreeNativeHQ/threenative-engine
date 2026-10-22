@@ -8,7 +8,7 @@ prd_contract: v1
 **Priority:** P1 — no box is ticked: until ThreeNative loads the Unreal calibration scenes with the same geometry, materials, lights and units, a GI difference cannot be told apart from a scene difference.
 **Complexity:** 6 (MEDIUM) — 1–5 files: a scene loader in the harness, the unit conversions, one visualize node, specs (+1), new module: the calibration scene loader (+2), crosses the engine boundary: the owned engine must render every light class the scenes use (+2), native proof (+1); risk override: none
 **Owner:** João
-**Depends on:** [PRD-638](PRD-638-calibration-scenes-are-built-in-unreal-and-captured-as-the-gi-target.md) Phase 1 (`cornell`, its `scene.json` and `scene.glb`). [PRD-632](../look/PRD-632-the-frame-is-exposed-and-tone-mapped-the-way-a-fresh-unreal-project-is.md) (light units and EV100). The loop that uses the recreated scenes is [PRD-647](../../done/PRD-647-a-visual-judge-calibrates-gi-against-the-unreal-scenes-until-parity.md).
+**Depends on:** [PRD-638](../../done/PRD-638-calibration-scenes-are-built-in-unreal-and-captured-as-the-gi-target.md) Phase 1 (`cornell`, its `scene.json` and `scene.glb`). [PRD-632](../look/PRD-632-the-frame-is-exposed-and-tone-mapped-the-way-a-fresh-unreal-project-is.md) (light units and EV100). The loop that uses the recreated scenes is [PRD-647](../../done/PRD-647-a-visual-judge-calibrates-gi-against-the-unreal-scenes-until-parity.md).
 
 ## Context
 
