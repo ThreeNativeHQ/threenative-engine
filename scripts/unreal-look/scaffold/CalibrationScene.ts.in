@@ -337,6 +337,9 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
         this.#dispose = world.apply(ctx.renderer, scene, camera, {}).dispose;
       };
       build(GI_METHOD);
+      // Diagnosis: ?linear=1 writes the exposed light with no tone curve, so the frame reads as scene-linear (the
+      // light a PRD-646 direct-light gap is measured in). Pair it with ?exposure=N small enough that nothing clips.
+      if (params.get("linear") === "1") raw.toneMapping = NoToneMapping;
       setGatherMethod = build;
       // The tier's method moves with the measured GI time when the URL asks for giAuto=1 (PRD-644).
       if (GI_METHOD !== "none")
