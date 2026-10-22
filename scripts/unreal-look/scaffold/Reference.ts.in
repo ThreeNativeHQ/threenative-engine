@@ -241,10 +241,9 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
           .copy(SUN_DIRECTION)
           .multiplyScalar(reach + 1)
           .add(bounds.center);
-        // The native atlas holds every page of every level, with the levels' mover maps in rows under
-        // them, in one square texture that must fit the device's 8192 texel limit: four 2048 levels
-        // and their 512 mover maps take 4620, four 3072 levels 6732. The scene has no moving caster.
-        // vsmMap=3072 puts the sphere row's texel at one screen pixel (PRD-634 Decisions, 2026-10-22).
+        // Each level's map size is Unreal's texel-per-pixel rule, measured by the engine on the pose's camera
+        // and viewport (2944 texels at hfov 60 and 1280 px); the engine fits the atlas to the device's
+        // texture limit. Diagnosis knob vsmMap=N holds every level at N (2048 was the fixed size before).
         // Candidate knob sunBox=reach (PRD-634 Phase 1, with off=vsm): the one stock map widened to the scene.
         if (OFF.has("vsm") && params.get("sunBox") === "reach") {
           const box = key.shadow.camera;
@@ -258,7 +257,7 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
           key.shadow.shadowNode = new VirtualShadowNode(key, {
             // Diagnosis knobs vsmExt=<divisors of reach, finest first>, vsmMap, vsmMover: the clip levels.
             clipExtents: (params.get("vsmExt") ?? "4,2,1,0.5").split(",").map((d) => reach / Number(d)),
-            mapSize: Number(params.get("vsmMap") ?? 2048),
+            ...(params.get("vsmMap") === null ? {} : { mapSize: Number(params.get("vsmMap")) }),
             moverMapSize: Number(params.get("vsmMover") ?? 512),
             // Diagnosis knob vsmAspect: the smallest light-space height over width of a level (1 = square).
             ...(params.get("vsmAspect") === null ? {} : { minWindowAspect: Number(params.get("vsmAspect")) }),
@@ -303,7 +302,8 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
           paintGround: !tracing || params.get("paint") === "1",
           // Diagnosis knob stockRays=1: cast the bake through ctx.raycast, the slow path (an A/B).
           stockRays: params.get("stockRays") === "1",
-          bounces: GI_METHOD === "none" ? 0 : 5,
+          // Diagnosis knob giBounces=N: the passes that carry surface light back into the cache (0 = the sky alone).
+          bounces: GI_METHOD === "none" ? 0 : Number(params.get("giBounces") ?? 5),
           // The tier's sky light multiplier (Unreal's Low sets 0.8). Diagnosis knob skyMul=N brackets it.
           skyIntensity: level >= 7 ? Number(params.get("skyMul") ?? GI.skylightIntensityMultiplier) : 1,
           // Unreal without GI shadows its sky light with distance fields, up to 10 m. Its Low tier (L7) turns
@@ -313,6 +313,8 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
             : {}),
           sun: { color: key.color, intensity: key.intensity, direction: SUN_DIRECTION },
         });
+      // Diagnosis knob envMul=N scales the sky's diffuse and specular environment light (0 = no sky light but the GI cache).
+      if (params.get("envMul") !== null) scene.environmentIntensity = Number(params.get("envMul"));
       if (TUNED && level >= 8 && !OFF.has("reflcap"))
         reflections = captureReflections(
           ctx.renderer.raw as unknown as Parameters<typeof captureReflections>[0],

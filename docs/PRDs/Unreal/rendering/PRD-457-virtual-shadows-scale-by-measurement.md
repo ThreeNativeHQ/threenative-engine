@@ -45,7 +45,7 @@ scalability—without pretending directional clipmaps solve point/spot lights.
   tiny pages” is not automatically 24 complete scene traversals.
 - **2026-10-09 (João, via the Unreal review request): overflow degrades resolution before it switches path.** Unreal's answer to page-pool pressure (below) replaces this PRD's plain overflow fallback in Phase 2's first box. No other box changes.
 - 2026-10-12 (Unreal source review): All cited line ranges and defaults match Unreal 5.8.3, except the static-return range, now `1767-1820`. The `trackCaster` remark was stale because PRD-572 is done. Unreal also skips small instances in coarse pages by pixel footprint. Phase 2's first box now names that limit.
-- 2026-10-20 (shadow slicing): Phase 3's two boxes (a many-light fixture, and local-light counters apart from directional ones) are moot here and deleted. [PRD-650](../../done/PRD-650-a-lamp-shadow-is-as-sharp-as-the-pixels-it-covers-and-softens-with-the-lamp-size.md) builds the lamp atlas and cache that they would measure, and carries both as its own boxes. This PRD keeps the directional page-cost gate.
+- 2026-10-20 (shadow slicing): Phase 3's two boxes (a many-light fixture, and local-light counters apart from directional ones) are moot here and deleted. [PRD-650](../shadows/PRD-650-a-lamp-shadow-is-as-sharp-as-the-pixels-it-covers-and-softens-with-the-lamp-size.md) builds the lamp atlas and cache that they would measure, and carries both as its own boxes. This PRD keeps the directional page-cost gate.
 - **Local lights are a measured follow-on.** This PRD may establish a common budget/update scheduler
   for one spot-light fixture, but does not claim full Unreal-style point/spot shadow virtualization
   unless the acceptance evidence actually covers it.
@@ -107,7 +107,7 @@ Paths are under `Engine/Source/Runtime/Renderer/Private/VirtualShadowMaps/`.
 
 ### Phase 3 — Moved to PRD-650
 
-The local-light scope moved to [PRD-650](../../done/PRD-650-a-lamp-shadow-is-as-sharp-as-the-pixels-it-covers-and-softens-with-the-lamp-size.md) on 2026-10-20 (see `## Decisions`).
+The local-light scope moved to [PRD-650](../shadows/PRD-650-a-lamp-shadow-is-as-sharp-as-the-pixels-it-covers-and-softens-with-the-lamp-size.md) on 2026-10-20 (see `## Decisions`).
 
 ## Acceptance criteria
 

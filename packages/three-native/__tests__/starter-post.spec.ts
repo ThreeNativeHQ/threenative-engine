@@ -279,6 +279,18 @@ describe("starter post bindings", () => {
       { NodeMaterial, QuadMesh, RenderTarget },
     )({}, null, null, { type: 1016 });
     expect(unlabelled.has("stage")).toBe(false);
+    // An explicit `gpuStage: undefined` is no label, as an absent one is (a screen-probe pass left out of `timedPass`).
+    defineRtt(
+      () => ({
+        __effect: (name: string, value?: number) => {
+          if (value !== undefined) unlabelled.set(name, value);
+          return 0;
+        },
+        __rtt: vi.fn(),
+      }),
+      { NodeMaterial, QuadMesh, RenderTarget },
+    )({}, null, null, { type: 1016, gpuStage: undefined });
+    expect(unlabelled.has("stage")).toBe(false);
     expect(() =>
       defineRtt(make, { NodeMaterial, QuadMesh, RenderTarget })({}, null, null, {
         type: 1016,

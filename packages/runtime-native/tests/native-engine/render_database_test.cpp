@@ -4582,6 +4582,112 @@ void virtualSunLodRung() {
     CHECK(unbounded > 0.9);   // shadowLodTexels = infinity draws the coarsest rung on every level, as before
 }
 
+// Levels of different sizes: the shader finds level 1's pages after level 0's own table. The strip under
+// the plate lies outside the 1 m finest window, so level 1 (2048 texels) shades it while level 0 holds 256.
+void virtualSunLevelSizes() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(192, 192);
+    OrthographicCamera camera(-1.6, 1.6, 1.6, -1.6, 0.1, 20);
+    camera.position.set(0, 10, 0.001);
+    camera.lookAt(0, 0, 0);
+    camera.updateProjectionMatrix();
+    const auto stripLight = [&](std::vector<int> sizes) {
+        Scene scene;
+        DirectionalLight sun{Color(1, 1, 1), 3};
+        sun.position.set(3, 3, 0);
+        sun.setCastShadow(true);
+        auto white = std::make_shared<Material>(MaterialType::Standard);
+        Mesh floor{makeBoxGeometry(8, 0.2, 8), white};
+        floor.position.y = -0.1;
+        floor.setCastShadow(true);
+        floor.setReceiveShadow(true);
+        scene.add(floor);
+        Mesh plate{makeBoxGeometry(1, 0.3, 1), white};
+        plate.position.set(1.5, 0.15, 0);
+        plate.setCastShadow(true);
+        scene.add(plate);
+        shadows::AtlasOptions atlas;
+        atlas.clipExtents = {1, 8}; atlas.mapSize = 2048; atlas.levelMapSizes = std::move(sizes); atlas.pageTexels = 128;
+        atlas.lightDistance = 20; atlas.depthRange = 40;
+        sun.shadow.virtualShadow = std::make_shared<const shadows::AtlasOptions>(std::move(atlas));
+        scene.add(sun);
+        scene.updateMatrixWorld(true);
+        RenderDatabase database;
+        database.shadowMapEnabled = true;
+        for (int frame = 0; frame < 3; ++frame) database.render(renderer, scene, camera);
+        std::vector<uint8_t> pixels;
+        bool read = false;
+        renderer.readPixels([&](GpuStatus status, std::vector<uint8_t> px) {
+            if (status == GpuStatus::Ok) pixels = std::move(px);
+            read = true;
+        });
+        for (int i = 0; i < 5000 && !read; ++i) {
+            renderer.poll();
+            events.drain();
+            if (!read) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        CHECK(pixels.size() == size_t{192} * 192 * 4);
+        if (pixels.size() != size_t{192} * 192 * 4) return 1.0;
+        // Pixel 12 is lit floor at x = -1.4 m; pixel 150 is x = 0.86 m, inside the plate's shadow (x 0.7 to 1).
+        const double lit = pixels[(size_t{96} * 192 + 12) * 4], strip = pixels[(size_t{96} * 192 + 150) * 4];
+        CHECK(lit > 32);
+        return strip / lit;
+    };
+    const double same = stripLight({}), mixed = stripLight({256, 2048});
+    std::printf("virtual sun level sizes: strip %.2f of lit with one size, %.2f with 256 and 2048\n", same, mixed);
+    CHECK(same < 0.25);
+    CHECK(mixed < 0.25);
+}
+
+// An auto-sized sun measures Unreal's texel rule on the view that renders it: 2944 texels per level at
+// hfov 60 and 1280 px (core's clipmapMapSizes numbers), and the atlas is rebuilt when the fov widens.
+void virtualSunAutoMapSize() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(1280, 720);
+    const auto verticalFov = [](double hfov) { return 2 * std::atan(std::tan(hfov * M_PI / 360) * 720 / 1280) * 180 / M_PI; };
+    PerspectiveCamera camera(verticalFov(60), 1280.0 / 720, 0.1, 200);
+    camera.position.set(0, 1.7, 5);
+    camera.lookAt(0, 0, 0);
+    camera.updateProjectionMatrix();
+    Scene scene;
+    DirectionalLight sun{Color(1, 1, 1), 3};
+    sun.position.set(3, 3, 0);
+    sun.setCastShadow(true);
+    Mesh floor{makeBoxGeometry(8, 0.2, 8), std::make_shared<Material>(MaterialType::Standard)};
+    floor.position.y = -0.1;
+    floor.setCastShadow(true);
+    floor.setReceiveShadow(true);
+    scene.add(floor);
+    shadows::AtlasOptions atlas;
+    atlas.clipExtents = {7, 14, 28, 56}; atlas.mapSize = 512; atlas.moverMapSize = 512;
+    atlas.lightDistance = 20; atlas.depthRange = 40; atlas.autoMapSize = true;
+    sun.shadow.virtualShadow = std::make_shared<const shadows::AtlasOptions>(std::move(atlas));
+    scene.add(sun);
+    scene.updateMatrixWorld(true);
+    RenderDatabase database;
+    database.shadowMapEnabled = true;
+    database.render(renderer, scene, camera);
+    const auto* plan = renderer.virtualShadowAtlas(0);
+    CHECK(plan != nullptr);
+    if (!plan) return;
+    const int at60 = plan->mapSize(0), coarse60 = plan->mapSize(3);
+    camera.fov = verticalFov(75);
+    camera.updateProjectionMatrix();
+    database.render(renderer, scene, camera);
+    plan = renderer.virtualShadowAtlas(0);
+    CHECK(plan != nullptr);
+    if (!plan) return;
+    std::printf("virtual sun auto map size: %d (coarsest %d) at hfov 60, %d at hfov 75, atlas %d\n", at60, coarse60, plan->mapSize(0), plan->edge());
+    CHECK(at60 == 2944 && coarse60 == 2944);
+    CHECK(plan->mapSize(0) == 2176);  // ceil(1280 / (0.775 tan 37.5) / 128) pages
+}
+
 // A point light's cube shadow: five casters around and below the lamp each shade the floor where its
 // shadow lands, through four side faces and the bottom one, and the floor between them stays lit.
 void pointShadowCubeFaces() {
@@ -5485,6 +5591,8 @@ TN_TEST_MAIN({"gpu_joint_production", gpuJointProduction}, {"multi_material_grou
              {"virtual_sun_room_seam", virtualSunRoomSeam},
              {"virtual_sun_pixel_floor", virtualSunPixelFloor},
              {"virtual_sun_lod_rung", virtualSunLodRung},
+             {"virtual_sun_level_sizes", virtualSunLevelSizes},
+             {"virtual_sun_auto_map_size", virtualSunAutoMapSize},
              {"batched_vs_unbatched", batchedVsUnbatched}, {"skinned_crowd", skinnedCrowdPixels}, {"skinned_decline_cadence", skinnedDeclineCadence}, {"skinned_normalized_weights", skinnedNormalizedWeights}, {"normal_map_tilt", normalMapTilt}, {"unsupported_map_slot", unsupportedMapSlot}, {"env_map_slot_is_read", envMapSlotIsRead}, {"converted_copies_swept", convertedCopiesAreSwept}, {"gpu_timer_covers_offscreen", gpuTimerCoversOffscreen}, {"gpu_timer_splits_the_gather", gpuTimerSplitsTheLabelledGather}, {"gpu_timer_covers_shadows", gpuTimerCoversShadows}, {"overlay_over_frame", overlayOverFrame}, {"gpu_timer_is_opt_in", gpuTimerIsOptIn}, {"msaa_edges", msaaEdges}, {"shadow_camera_layers", shadowCameraLayers}, {"flat_shading_needs_no_normals", flatShadingNeedsNoNormals}, {"map_sampleability_changes", mapSampleabilityChanges}, {"batch_caches_stay_put", batchCachesStayPut}, {"frustum_culling", frustumCulling},
              {"shadow_caster_frustum_culling", shadowCasterFrustumCulling}, {"masked_shadow", maskedShadow}, {"leaf_receiver", leafReceiver}, {"rough_diffuse", roughDiffuse}, {"point_shadow_cube_faces", pointShadowCubeFaces}, {"lamp_source_radius", lampSourceRadius}, {"lamp_source_radius_wall", lampSourceRadiusWall}, {"lamp_source_radius_crate", lampSourceRadiusCrate}, {"contact_shadow_foot", contactShadowFoot}, {"virtual_sun_contact_foot", virtualSunContactFoot}, {"lamp_cache", lampCache}, {"lamp_atlas", lampAtlas}, {"gpu_timer_splits_lamp_shadows", gpuTimerSplitsLampShadows}, {"shadow_lights_follow_hierarchy", shadowLightsFollowHierarchy}, {"records_survive_siblings", recordsSurviveSiblings}, {"steady_frame_hashes_no_record", steadyFrameHashesNoRecord}, {"nested_record_cache", nestedRecordCache}, {"frustum_record_retention", frustumRecordRetention}, {"world_sphere_measured_once", worldSphereMeasuredOnce}, {"reflection_reuse", reflectionReuse})
 
