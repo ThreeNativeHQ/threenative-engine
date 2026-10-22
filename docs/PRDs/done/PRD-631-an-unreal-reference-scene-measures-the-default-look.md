@@ -5,10 +5,10 @@ prd_contract: v1
 # PRD-631 — An Unreal reference scene measures the default look
 
 **Status:** IN PROGRESS
-**Priority:** P1 — no box is ticked: no reference frame exists, so every "Unreal look" PRD in [`../README.md`](../README.md) tunes against memory instead of a measurement.
+**Priority:** P1 — no box is ticked: no reference frame exists, so every "Unreal look" PRD in [`../README.md`](../Unreal/README.md) tunes against memory instead of a measurement.
 **Complexity:** 6 (MEDIUM) — new tool folder and two capture scripts (+2), an external renderer driven headless (+2), cross-engine coordinate and unit mapping (+1), a comparison report that later PRDs gate on (+1); risk override: none
 **Owner:** João
-**Depends on:** None. Every layer PRD in [`../look/`](./) waits on Phase 3 of this PRD.
+**Depends on:** None. Every layer PRD in [`../look/`](../Unreal/look) waits on Phase 3 of this PRD.
 
 ## Context
 
@@ -135,7 +135,7 @@ means anything:
 
 This PRD commits no Unreal code, shader, asset or `.uasset` file. The level is built at run time
 from engine default actors and our own GLB, and the config files are written by us. The frames are
-renders of our own scene. Read [`../README.md`](../README.md) "The licence rule" before you touch
+renders of our own scene. Read [`../README.md`](../Unreal/README.md) "The licence rule" before you touch
 the Unreal tree.
 
 ### The default-on contract that the layer PRDs inherit
@@ -242,7 +242,7 @@ GPU capture/visual judging and desktop V8 execution remain unverified. No enviro
 #### Phase 3: Noise floor, thresholds and the baseline gap
 **Status:** NOT STARTED
 **Files:** `tools/unreal-reference/reference-stats.json`
-- [ ] Two runs agree: per-cell display p50 within 1%. This number is the noise floor for every threshold. proof: `pnpm unreal-look:compare --unreal-vs-unreal`. Result 2026-10-20 (second full run, `captures/unreal-run2`, 120 PNG + 120 EXR + 4 ID, one editor per layer, same RTX 2080): whole-frame p50 agrees to 0 in 119 of 120 cells. One cell misses: L6 sun04_spheres, 1.49%. Per layer worst: region deltaE L2 0.017, L3 0.242, L4 0.016, L5 0.028, L6 0.047, L7 0.098, L8 0.110, L9 0.308 (L0 and L1 0); region dEv L7 0.006, L8 0.006, L9 0.011 (others at most 0.0014); region relative dP50 0 in L0 to L8 and 0.0196 in L9 (sun04_spheres, Box_Red). One cell was above 1%, and the AO layer (L6) is the temporal one. Re-run 2026-10-21 with 300 warm-up frames for AO layers (`TN_UE_WARMUP`, now the `build_level.py` default for L6 and above): two L6 runs (`captures/unreal-l6w-a`, `captures/unreal-l6w-b`, 12 cells each) agree to 0 in all 12 cells (`pnpm unreal-look:compare --layer L6 --unreal-vs-unreal`: maximum relative p50 difference 0). The 90-frame default caused the 1.49% miss. Open again 2026-10-21: the real-time L7 to L9 pair (`captures/unreal-rt3a`, `captures/unreal-rt3b`, 300 warm-up frames, 36 cells each run) has two cells above 1% in whole-frame p50, both interiors: L7 sun60_interior 1.52% and L8 sun15_interior 1.08%. The other 34 of 36 cells agree to 0. Cause is not found. Next step: capture those two cells with 600 warm-up frames (`TN_UE_WARMUP=600`) and compare again.
+- [x] Two runs agree: per-cell display p50 within 1%. This number is the noise floor for every threshold. proof: `pnpm unreal-look:compare --unreal-vs-unreal`. Result 2026-10-20 (second full run, `captures/unreal-run2`, 120 PNG + 120 EXR + 4 ID, one editor per layer, same RTX 2080): whole-frame p50 agrees to 0 in 119 of 120 cells. One cell misses: L6 sun04_spheres, 1.49%. Per layer worst: region deltaE L2 0.017, L3 0.242, L4 0.016, L5 0.028, L6 0.047, L7 0.098, L8 0.110, L9 0.308 (L0 and L1 0); region dEv L7 0.006, L8 0.006, L9 0.011 (others at most 0.0014); region relative dP50 0 in L0 to L8 and 0.0196 in L9 (sun04_spheres, Box_Red). One cell was above 1%, and the AO layer (L6) is the temporal one. Re-run 2026-10-21 with 300 warm-up frames for AO layers (`TN_UE_WARMUP`, now the `build_level.py` default for L6 and above): two L6 runs (`captures/unreal-l6w-a`, `captures/unreal-l6w-b`, 12 cells each) agree to 0 in all 12 cells (`pnpm unreal-look:compare --layer L6 --unreal-vs-unreal`: maximum relative p50 difference 0). The 90-frame default caused the 1.49% miss. Open again 2026-10-21: the real-time L7 to L9 pair (`captures/unreal-rt3a`, `captures/unreal-rt3b`, 300 warm-up frames, 36 cells each run) has two cells above 1% in whole-frame p50, both interiors: L7 sun60_interior 1.52% and L8 sun15_interior 1.08%. The other 34 of 36 cells agree to 0. Cause found 2026-10-21: the whole-frame p50 is the median of byte-rounded display values, and one level is 1.5% of 66 and 1.1% of 93. The two cells differ by one level while their means differ by 0.12% and 0.02% and only 0.1% and 0.0% of their pixels differ by more than 2 levels, so the miss is the resolution of the median, not render noise. `pnpm unreal-look:compare --unreal-vs-unreal` now prints each cell's p50 difference at sub-level resolution (the median interpolated inside its byte bin, `binnedMedian`) beside the whole-level one. Re-run on the same pair (`captures/unreal-rt3a` against `captures/unreal-rt3b`, L7 to L9, 36 cells): all 36 cells agree within 0.12% at sub-level resolution (L7 sun60_interior 0.12%, L8 sun15_interior 0.054%, L8 sun60_interior 0.043%, every other cell at most 0.032%). The whole-level numbers stay 1.52% and 1.08%, and 600 warm-up frames are not needed: a third capture (`captures/unreal-w600-L7b`) lands on the first run's level 66. Red-green in `scripts/__tests__/unreal-look-compare.spec.ts`. The thresholds and the 311 locks still use the whole-level p50.
 - [x] Match thresholds per metric are set from the Phase 1 noise floor and written under `## Decisions`. proof: `pnpm unreal-look:compare --unreal-vs-unreal`. Result 2026-10-20: `tools/unreal-reference/thresholds.json`, written by `pnpm unreal-look:compare --unreal-vs-unreal tools/unreal-reference/captures/unreal-run2 --write-thresholds`; table and rule under Decisions; red-green in `scripts/__tests__/unreal-look-compare.spec.ts`.
 - [x] Parity locks harden each cell that already matches. proof: `pnpm unreal-look:compare --check`. Result 2026-10-20: `tools/unreal-reference/parity-locks.json` holds 311 locks (L0 IoU 60, and the deltaE and dP50 locks that hold per layer, L1 to L9), seeded by `--write-locks 17306d6c1` from the 120-cell capture of AC-2 only; the spec covers a passing cell, a drifted cell (exit 1), a missing cell (exit 1), an empty list, a bad entry and a scene lock. `pnpm unreal-look:compare --check --threenative tools/unreal-reference/captures/threenative-120`: 311/311 parity locks hold, exit 0.
 
@@ -307,18 +307,18 @@ GPU capture/visual judging and desktop V8 execution remain unverified. No enviro
 - 2026-10-19 (gap ownership): a residual that no installed capability closes goes to a PRD. Read
   the Unreal source for the algorithm and cite the path; never copy its code, shaders or comments.
   Existing owners, checked before filing: dynamic off-screen GI —
-  [PRD-603](../rendering/PRD-603-probes-refresh-by-tracing-the-packed-scene-not-by-drawing-it-six-times.md),
-  [PRD-604](../rendering/PRD-604-a-surface-is-lit-only-by-probes-that-can-see-it.md),
-  [PRD-605](../rendering/PRD-605-the-probe-field-follows-the-camera-in-nested-rings.md),
-  [PRD-VQ-09](../../rendering/PRD-VQ-09-incremental-diffuse-relighting.md); off-screen reflections —
-  [PRD-VQ-03](../../rendering/PRD-VQ-03-local-reflection-probes.md); native probes —
-  [PRD-525](../../native-engine/N14-native-render-chain-and-advanced-visuals/PRD-525-n14c-probes-run-native.md);
-  aerial perspective and clouds — [PRD-562](../rendering/PRD-562-aerial-perspective-from-a-froxel-volume.md),
-  [PRD-VQ-08](../rendering/PRD-VQ-08-clouds-and-overhead-transmittance.md). Installed now: `ssgi`, `ssr`,
+  [PRD-603](../Unreal/rendering/PRD-603-probes-refresh-by-tracing-the-packed-scene-not-by-drawing-it-six-times.md),
+  [PRD-604](../Unreal/rendering/PRD-604-a-surface-is-lit-only-by-probes-that-can-see-it.md),
+  [PRD-605](../Unreal/rendering/PRD-605-the-probe-field-follows-the-camera-in-nested-rings.md),
+  [PRD-VQ-09](../rendering/PRD-VQ-09-incremental-diffuse-relighting.md); off-screen reflections —
+  [PRD-VQ-03](../rendering/PRD-VQ-03-local-reflection-probes.md); native probes —
+  [PRD-525](../native-engine/N14-native-render-chain-and-advanced-visuals/PRD-525-n14c-probes-run-native.md);
+  aerial perspective and clouds — [PRD-562](../Unreal/rendering/PRD-562-aerial-perspective-from-a-froxel-volume.md),
+  [PRD-VQ-08](../Unreal/rendering/PRD-VQ-08-clouds-and-overhead-transmittance.md). Installed now: `ssgi`, `ssr`,
   `ProbeVolume` (static bake), `Atmosphere`. A new PRD is filed only for a residual none of these owns.
 - 2026-10-19 (layer ownership after an external visual review): L7 (Lumen GI) and L8 (Lumen
   reflections) had no owner in this epic. Owner rule (absorb, don't duplicate): the epic absorbs
-  [PRD-VQ-03](../../rendering/PRD-VQ-03-local-reflection-probes.md) for L8, starting with the
+  [PRD-VQ-03](../rendering/PRD-VQ-03-local-reflection-probes.md) for L8, starting with the
   installed `ssr`, and the GI owners listed above for L7, starting with the installed `ssgi` and
   `ProbeVolume`. They run after PRD-632 to PRD-636, on this branch and PR.
 - 2026-10-19 (second external review, adjudicated; each claim checked, generic advice filtered for scale):
@@ -340,7 +340,7 @@ GPU capture/visual judging and desktop V8 execution remain unverified. No enviro
   the soft-shadow `filterNode`, `SkyCapture`, auto exposure) becomes engine work in this epic and PR.
   three.js frames captured so far stay as history; new BEFORE/AFTER pairs are engine frames.
   The four templates that still pin three.js (runner, snow, sailing, action-rpg) belong to
-  [PRD-617](../../performance/PRD-617-every-template-runs-on-the-native-engine.md), in progress on
+  [PRD-617](../performance/PRD-617-every-template-runs-on-the-native-engine.md), in progress on
   its own lane; the starter is unpinned and already defaults to the engine.
 - 2026-10-20 (thresholds, `tools/unreal-reference/thresholds.json`): a threshold is the larger of twice the worst Unreal-vs-Unreal difference of its layer and one absolute floor: deltaE 1 (one CIEDE2000 just-noticeable difference), relative dP50 0.01 (this PRD's 1% target), dEv 0.02 (2% luminance). Silhouette IoU is geometry, not render noise, and stays at 0.98. The file holds flat keys for every layer and a `layers` map that overrides them. The noise is near zero (Unreal is deterministic here), so the floors decide every layer except L9:
 

@@ -101,6 +101,32 @@ void binding() {
     CHECK(sourceAngleFilterRefusal(reverse.shadow));
     setters.at("filterNode")(&reverse.shadow, Value{}, store);
     CHECK(!sourceAngleFilterRefusal(reverse.shadow));
+    // A lamp's filter names the share of the geometric penumbra it keeps; a sun's record never carries one.
+    SpotLight lamp;
+    const auto& lampSet = registry.at("SpotLightShadow").setters.at("filterNode");
+    const Value soft = Value::record({{"sourceRadius", Value::of(0.05)}, {"blockerSamples", Value::of(16.0)},
+        {"filterSamples", Value::of(8.0)}, {"penumbraScale", Value::of(0.6)}});
+    lampSet(&lamp.shadow, soft, store);
+    CHECK(lamp.shadow.sourceRadiusFilter && *lamp.shadow.sourceRadiusFilter == (std::array<double, 4>{0.05, 16, 8, 0.6}));
+    for (const double scale : {0.0, -1.0, 4.5, std::nan("")}) {
+        auto bad = soft; bad.fields[3].second = Value::of(scale);
+        bool refusedScale = false;
+        try { lampSet(&lamp.shadow, bad, store); }
+        catch (const Unsupported& e) { refusedScale = e.reason == "TN_VIRTUAL_SHADOW_INVALID: source-radius filter"; }
+        CHECK(refusedScale && (*lamp.shadow.sourceRadiusFilter)[3] == 0.6);
+    }
+    auto named = soft; named.fields[3].first = "gain";  // four fields, none of them penumbraScale
+    bool unnamed = false;
+    try { lampSet(&lamp.shadow, named, store); }
+    catch (const Unsupported& e) { unnamed = e.reason == "TN_VIRTUAL_SHADOW_INVALID: source-radius filter"; }
+    CHECK(unnamed);
+    auto old = Value::record({{"sourceRadius", Value::of(0.05)}, {"blockerSamples", Value::of(16.0)}, {"filterSamples", Value::of(8.0)}});
+    bool threeFields = false;
+    try { lampSet(&lamp.shadow, old, store); }
+    catch (const Unsupported& e) { threeFields = e.reason.find("TN_VIRTUAL_SHADOW_UNSUPPORTED: filterNode") == 0; }
+    CHECK(threeFields);
+    lampSet(&lamp.shadow, Value{}, store);
+    CHECK(!lamp.shadow.sourceRadiusFilter);
 }
 
 void policies() {

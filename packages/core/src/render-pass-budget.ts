@@ -274,11 +274,38 @@ const lastStageGpu = new WeakMap<object, IStageGpuReading>();
 
 /**
  * The newest whole frame's GPU milliseconds by named stage on this renderer, or `undefined` before
- * one resolved (or with no recorder installed, or an adapter that grants no timestamp query). The
- * `frame` number lets a reader count each resolved frame once. A stage that did not draw is absent.
+ * one resolved (or with neither a recorder installed nor an owned engine, or an adapter that grants
+ * no timestamp query). The `frame` number lets a reader count each resolved frame once. A stage that
+ * did not draw is absent.
  */
 export function stageGpuReading(renderer: unknown): IStageGpuReading | undefined {
-  return typeof renderer === "object" && renderer !== null ? lastStageGpu.get(renderer) : undefined;
+  if (typeof renderer !== "object" || renderer === null) return undefined;
+  return lastStageGpu.get(renderer) ?? ownedEngineReading(renderer);
+}
+
+interface IOwnedEngineRenderer {
+  readonly backend?: { getTimestampFrames?(type: string): readonly number[] };
+  readonly info?: {
+    readonly engine?: { readonly gpuStages?: Readonly<Record<string, number>> };
+    readonly render?: { readonly timestamp?: number };
+  };
+}
+
+/**
+ * The owned (Wasm) engine times its passes natively and has no timestamp pool for the recorder to
+ * read: it reports its newest sample itself, the whole frame as `info.render.timestamp`, the stages
+ * its passes are labelled with as `info.engine.gpuStages`, and the frame they belong to as the last
+ * `getTimestampFrames("render")` entry (three-native `browser-renderer.ts`). Three's renderer has
+ * none of `gpuStages`, so it falls through to `undefined`.
+ */
+function ownedEngineReading(renderer: IOwnedEngineRenderer): IStageGpuReading | undefined {
+  const frames = renderer.backend?.getTimestampFrames?.("render");
+  const frame = frames?.[frames.length - 1];
+  const stages = renderer.info?.engine?.gpuStages;
+  const total = renderer.info?.render?.timestamp;
+  if (frame === undefined || stages === undefined || typeof total !== "number" || !(total > 0))
+    return undefined;
+  return { frame, stages, total };
 }
 
 export class RenderPassBudget {

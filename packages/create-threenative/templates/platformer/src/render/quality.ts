@@ -115,6 +115,9 @@ const shared: IWorldEnvironmentOptions = {
  */
 const high: IWorldEnvironmentOptions = {
   ...shared,
+  // Unreal's default anti-aliasing is temporal (`r.AntiAliasingMethod` 4). The engine jitters the camera, draws the motion
+  // and blends the frames; `temporalAA: false` brings back the chain's SMAA, which is what `low` and three.js keep.
+  temporalAA: true,
   // GTAO, full resolution plus denoise: unmeasured on its own here; read `TN_FRAME_BUDGET`.
   gtaoEnabled: true,
   gtaoRadius: 0.4,

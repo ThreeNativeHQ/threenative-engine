@@ -113,6 +113,10 @@ const high: IWorldEnvironmentOptions = {
   // No SSGI runs here, so there is nothing for the denoiser to clean up. Off, explicitly.
   denoiseEnabled: false,
   autoExposureEnabled: false,
+  // Unreal's default anti-aliasing is temporal, and the engine offers it as `temporalAA: true`. It is off here: the engine
+  // draws no velocity for instanced or sprite draws, and tens of thousands of flakes could trail. The scene keeps 4x
+  // multisampling. Turn it on after you have watched the flakes with it.
+  temporalAA: false,
   exposure: 0.95,
   // Off at every tier — see the note at the top of this file.
   ssgiEnabled: false,

@@ -4,11 +4,10 @@ prd_contract: v1
 
 # PRD-654 — An approved GI round becomes a ratchet lock, and no region gets worse
 
-**Status:** PARTIAL — the lock tooling ships with unit proof, and `sunlit-room` at `high` is locked and proven on real frames. `cornell` at `high` is locked, but the scenes lane rebuilt its level after the lock was cut, so the lock reports LOCK_STALE until a new approved round re-cuts it.
-**Priority:** P2 — AC-2 is open: the `cornell` lock reads LOCK_STALE until a new approved round on the rebuilt level re-cuts it.
+**Status:** DONE — the lock tooling ships with unit proof, and `sunlit-room` and `cornell` at `high` are locked from rounds on the current scene and the current engine (gi-layer gate, `cf72b5346`). The L9 locks are PRD-655.
 **Complexity:** 4 (MEDIUM) — 1–5 files: a lock module, a check command, a lock file, specs (+1), new state: a committed lock file with a scene digest (+2), one flag on an existing command (+1)
 **Owner:** João
-**Depends on:** [PRD-647](../../done/PRD-647-a-visual-judge-calibrates-gi-against-the-unreal-scenes-until-parity.md) (the calibrate command and its rounds) and [PRD-631](../look/PRD-631-an-unreal-reference-scene-measures-the-default-look.md) (the compare and its parity locks)
+**Depends on:** [PRD-647](PRD-647-a-visual-judge-calibrates-gi-against-the-unreal-scenes-until-parity.md) (the calibrate command and its rounds) and [PRD-631](PRD-631-an-unreal-reference-scene-measures-the-default-look.md) (the compare and its parity locks)
 
 ## Context
 
@@ -39,7 +38,7 @@ prd_contract: v1
    missing region, a missing frame, one run only, and two runs that differ by more than the locked noise.
    `calibrate` runs the same check on the AFTER arm of every round, logs it, and exits 2 when a lock breaks.
 4. **A lock names its basis.** Each lock records a digest of the committed scene and Unreal reference
-   (`reference-stats.json`, the ID frames and `scene.json`). When another lane rebuilds a scene, the bounds
+   (`reference-stats.json`, the ID frames and `scene.json` without its `motion` runs). When another lane rebuilds a scene, the bounds
    no longer describe it. The check then fails with LOCK_STALE, a calibrate round logs the stale lock and
    does not fail, and `--lock <round> --relax` cuts the lock again from a new approved round.
 5. **`compare --write-locks` cannot drop a lock silently.** A re-seed of the reference scene's locks names
@@ -48,7 +47,7 @@ prd_contract: v1
 ## Acceptance Criteria
 
 - [x] AC-1 [local]: `sunlit-room` at `high` is locked from round `20261021T211118Z-sunlit-room-high-0f48b22`: 40 regions in 6 poses. The two approved runs pass the check, and real frames of a lower tier fail it. proof: `pnpm unreal-look:compare --check --scene gi:sunlit-room --captures <arm>/run1 --captures <arm>/run2` — exit 0, `40 locked region(s) on 2 runs, every bound holds`; the same command on the stored `medium` arm presented as the `high` layer — exit 1, 27 broken bounds in each run, in all 6 poses (16 `dP50`, 11 `deltaE`).
-- [ ] AC-2 [local]: `cornell` at `high` is locked from a round on the rebuilt level, and the check holds on that round's frames. proof: `pnpm unreal-look:calibrate --scene gi:cornell --tier high --before HEAD`, then `pnpm unreal-look:calibrate --lock <that round> --relax`, then `pnpm unreal-look:compare --check --scene gi:cornell --captures <arm>/run1 --captures <arm>/run2` — exit 0. Open: the scenes lane rebuilt the `cornell` level after round `20261021T212345Z-cornell-high-9154b17` (the committed ID frames, `scene.json` and `scene.glb` changed), so that round's lock reads LOCK_STALE on the epic. A new capture needs a Wasm pair built from the epic head: the pair in this lane predates the `twoSidedFoliage` binding and fails with `TN_ABI_6`.
+- [x] AC-2 [local]: `cornell` at `high` is locked from a round on the rebuilt level, and the check holds on that round's frames. proof: `pnpm unreal-look:calibrate --scene gi:cornell --tier high --before 96be19ad3 --unreal <tree> --allow-red-direct-light` — round `20261022T034904Z-cornell-high-0d05970`, judge IMPROVEMENT overall (corner IMPROVEMENT, cornell NEUTRAL, vs Unreal CLOSE); `pnpm unreal-look:calibrate --lock 20261022T034904Z-cornell-high-0d05970 --relax` — `12 region(s) in 2 pose(s), 0 added, 12 moved`; `pnpm unreal-look:compare --check --scene gi:cornell --layer L7-high --captures <arm>/run1 --captures <arm>/run2` — exit 0, `12 locked region(s) on 2 runs, every bound holds`.
 
 ## Integration Ledger
 
@@ -78,7 +77,8 @@ prd_contract: v1
 **Files:** `tools/unreal-reference/gi/parity-locks.json`, `.agents/skills/tune-look-to-unreal/SKILL.md`, `.claude/skills/tune-look-to-unreal/SKILL.md`
 - [x] `cornell` at `high` is locked from round `20261021T212345Z-cornell-high-9154b17` (12 regions in 2 poses), and the approved runs passed it before the scenes lane rebuilt the level. proof: at commit `2ec5f3410`, `pnpm unreal-look:compare --check --scene gi:cornell --captures <arm>/run1 --captures <arm>/run2` — exit 0, `12 locked region(s) on 2 runs, every bound holds`; the frames of the older `cornell` tree (arm `98a0afd`) presented as the `high` layer — exit 1, 6 broken bounds in each run (`Box_Short` `dP50` 0.8276 against 0.65518, `Wall_Green` `deltaE` 2.233 against 1.9602).
 - [x] The skill `tune-look-to-unreal` names the lock commands and the stale rule. proof: `diff .agents/skills/tune-look-to-unreal/SKILL.md .claude/skills/tune-look-to-unreal/SKILL.md` — identical; `pnpm check:docs` — exit 0.
-**Verification:** AC-1 (done) and AC-2 (open).
+- [x] The `sunlit-room` lock follows the engine after the gi-layer gate (`f9326e238`), which gates SSGI and SSR on the scene's own layer. proof: `pnpm unreal-look:calibrate --scene gi:sunlit-room --tier high --before ad18729b8 --unreal <tree> --allow-red-direct-light` — round `20261022T034406Z-sunlit-room-high-2a38e65`, judge IMPROVEMENT overall (3 poses IMPROVEMENT, 3 NEUTRAL, no REGRESSION); `--lock <that round> --relax` — `0 added, 18 moved, 22 tighter and kept`; the check on the new arm — exit 0, `40 locked region(s) on 2 runs, every bound holds`.
+**Verification:** AC-1 and AC-2 (done).
 
 ## Decisions
 
@@ -102,6 +102,22 @@ prd_contract: v1
   would turn the CI red for every lane that changes a locked scene, and only an approved round can re-cut a
   lock. The spec on the committed file checks what a hand edit can break: each lock names a round on the
   scoreboard that holds its region, and the round's numbers sit inside the bounds of the lock.
+- 2026-10-22 (judge lane): a round measures against the committed Unreal statistics, not against the local Unreal
+  tree. The local `cornell` tree held the Unreal frames of 2026-10-20 (90 frame warm-up), and the committed
+  statistics came from the 180 frame capture of 2026-10-21. The round and `--lock` then disagreed by 1.2 percent in
+  `Floor` deltaE (ROUND_MISMATCH). The tree now feeds only the judge images and the sheets. The numbers of a round and
+  of its lock come from one reference. Proof: the same `cornell` arm failed `--lock` with ROUND_MISMATCH before the
+  change and locked after it.
+- 2026-10-22 (judge lane): the recapture on the gate commit shows run to run spread in `sunlit-room` that the first
+  approved round did not have (0.0006 to 0.125 deltaE in 7 regions). The first round had a locked noise of 0, so the
+  check failed those 7 bounds. The locks take the new spread with `--relax` (23 bounds moved by 0.0003 to 0.155
+  deltaE). The cause of the spread is open: some stage of the gated layer is not deterministic between two runs.
+- 2026-10-22 (judge lane): the digest of a scene leaves out the `motion` runs of `scene.json`. The motion lane added a
+  `motion` block to the `cornell` scene about two hours after the lock was cut, and that alone made every lock
+  LOCK_STALE, although the Unreal statistics, the ID frames and the still poses had not changed. A still pose does not
+  read a motion run. The `basis` of the 104 existing locks was written again with the new rule, and no bound moved.
+  Proof: the spec `ignores the time the statistics were written and the motion runs` fails when the digest keeps the
+  block, and on the merged epic the `cornell` check went from LOCK_STALE to `every bound holds`.
 - 2026-10-21 (judge lane): real-frame regression proof uses frames that exist. A fresh capture at the `low`
   tier needs a Wasm pair that matches the merged tree, and the pair in this lane does not. The stored
   `medium` arm of `sunlit-room`, presented as the `high` layer, is real engine output of a lower GI tier, and

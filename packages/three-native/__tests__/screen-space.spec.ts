@@ -185,6 +185,41 @@ describe("defineScreenSpaceGi", () => {
     });
   });
 
+  it("labels every pass of the gather with the SSGI stage, and the reflections with none", () => {
+    const stageOfEach = (build: (tsl: IScreenSpaceTsl) => void): unknown[] => {
+      const { tsl } = stubTsl();
+      const stages: unknown[] = [];
+      (tsl as unknown as Record<string, unknown>).rtt = (
+        _: unknown,
+        __: unknown,
+        ___: unknown,
+        options: { gpuStage?: string },
+      ) => {
+        stages.push(options.gpuStage);
+        return chain();
+      };
+      build(tsl);
+      return stages;
+    };
+    const viewport = { width: 1280, height: 720 };
+    expect(
+      stageOfEach((tsl) => defineScreenSpaceGi(tsl)(chain(), chain(), chain(), { camera })),
+    ).toEqual(["SSGI"]);
+    expect(
+      stageOfEach((tsl) =>
+        defineScreenSpaceGi(tsl)(chain(), chain(), chain(), {
+          camera,
+          probes: { downsampleFactor: 16, viewport },
+        }),
+      ),
+    ).toEqual(["SSGI", "SSGI", "SSGI"]);
+    expect(
+      stageOfEach((tsl) =>
+        defineScreenSpaceReflections(tsl)(chain(), chain(), chain(), { camera }),
+      ),
+    ).toEqual([undefined]);
+  });
+
   it("refuses a call that names no camera", () => {
     const { tsl } = stubTsl();
     expect(() => defineScreenSpaceGi(tsl)(chain(), chain(), chain(), {} as never)).toThrow(

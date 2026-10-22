@@ -52,4 +52,31 @@ SCENE = {
         {"name": "cornell", "position": [0, 2.75, 8], "target": [0, 2.75, -2.75], "hfovDeg": 70},
         {"name": "corner", "position": [-1.6, 1.8, -0.6], "target": [-2.6, 0.5, -5.4], "hfovDeg": 70},
     ],
+    # PRD-638 motion runs: one Level Sequence per run at 30 frames a second, keyed from this record.
+    # Frames count from 0. A pan turns the camera about its own position at a constant rate. Heading 0 looks
+    # down -z and a positive heading turns toward +x. The camera holds still after `sweepFrames`, and
+    # `stills` lists the frames whose pose is also rendered as one converged frame (the ghosting reference).
+    # A light track scales the authored intensity by `scale` from `frame` on (constant between keys).
+    "motion": {
+        "pan": {
+            "frames": 180,
+            "camera": {
+                "kind": "pan",
+                "position": [0, 2.75, 0.5],
+                "hfovDeg": 90,
+                "pitchDeg": 0,
+                "headingDeg": [-45, 45],
+                "sweepFrames": 60,
+            },
+            "stills": [0, 15, 30, 45, 60],
+            # The pan starts at the opening, so its ends see the void, and Wall_Red, Floor and Box_Short leave the
+            # view before the hold. The measure reads the regions that stay in view through the hold.
+            "regions": ["Ceiling", "Back", "Wall_Green", "Box_Tall"],
+        },
+        "switch": {
+            "frames": 180,
+            "camera": {"kind": "pose", "pose": "cornell"},
+            "light": {"name": "Lamp", "keys": [[0, 1.0], [60, 0.0]]},
+        },
+    },
 }

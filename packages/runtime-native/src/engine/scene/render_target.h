@@ -44,6 +44,8 @@ public:
     std::shared_ptr<Texture> texture = std::make_shared<Texture>();
     /** The renderer's state for this target (its own renderer and render database); empty until drawn. */
     std::shared_ptr<void> gpu;
+    /** True when this FloatType target is stored as half float because the device lacks float32-blendable; set when the target first draws. */
+    bool halfPrecision = false;
 
 private:
     RenderTarget() = default;

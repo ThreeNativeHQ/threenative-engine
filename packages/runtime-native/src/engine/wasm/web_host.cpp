@@ -141,7 +141,7 @@ void onAdapter(WGPURequestAdapterStatus status, WGPUAdapter adapter, WGPUStringV
     // The features the desktop host asks for (webgpu/context.cpp buildRequiredFeatures), each when
     // the adapter has it: without float32-filterable a linear-filtered FloatType texture is refused.
     std::vector<WGPUFeatureName> features;
-    for (WGPUFeatureName feature : {WGPUFeatureName_TimestampQuery, WGPUFeatureName_Float32Filterable,
+    for (WGPUFeatureName feature : {WGPUFeatureName_TimestampQuery, WGPUFeatureName_Float32Filterable, WGPUFeatureName_Float32Blendable,
                                     WGPUFeatureName_RG11B10UfloatRenderable, WGPUFeatureName_TextureCompressionBC,
                                     WGPUFeatureName_TextureCompressionETC2, WGPUFeatureName_TextureCompressionASTC})
         if (wgpuAdapterHasFeature(adapter, feature)) features.push_back(feature);
@@ -607,6 +607,18 @@ extern "C" double tnw_web_frame(int field) {
         case 16: return renderer->temporalStatus().jitterX;
         case 17: return renderer->temporalStatus().jitterY;
         case 18: return double(renderer->sampleCount());
+        // The sample field 7 reports, by what drew it: 19 shadow passes, 20 the scene pass, 21 other passes, 22 the
+        // output pass, 23 the screen-space gather (frame_gpu_timer.h). They sum to field 7.
+        case 19: case 20: case 21: case 22: case 23: return renderer->lastGpuSegments()[size_t(field - 19)];
+        // PRD-650: the lamp maps apart from the sun's. 24 their GPU time (a part of field 7, beside 19), 25 the
+        // lamp maps the last frame redrew, 26 their draws, and 27 every shadow draw, so 27 - 26 is the sun's.
+        case 24: return renderer->lastGpuSegments()[kGpuLampShadowSegment];
+        case 25: return double(renderer->lastFrame().lampRedraws);
+        case 26: return double(renderer->lastFrame().lampShadowDraws);
+        case 27: return double(renderer->lastFrame().shadowDraws);
+        // 28 and 29: the smallest and largest edge of the lamp maps the footprint sized (0 without one).
+        case 28: return double(renderer->lampShadowExtent()[0]);
+        case 29: return double(renderer->lampShadowExtent()[1]);
         default: return 0;
     }
 }

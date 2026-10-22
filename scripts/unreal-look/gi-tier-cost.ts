@@ -3,7 +3,7 @@
  *
  *   sh <slots>/gpu-slot.sh --exclusive pnpm exec tsx scripts/unreal-look/gi-tier-cost.ts \
  *     --scene gi:cornell [--tiers low,medium,high] [--shadow-tiers low,medium,high] [--windows 3] [--reuse] \
- *     [--out cost.json]
+ *     [--url-extra "&probes=1"] [--auto | --interleave [--rounds 5] [--burst 100]] [--out cost.json]
  *
  * Opens the calibration scene at L7 on the owned engine, headed on WebGPU, at 1920 x 1080 with the adapter
  * checked, once per tier. The browser paints on a private Xvfb (`launchWebgpuBrowser`): set
@@ -11,11 +11,26 @@
  * `--windows` windows is the tier's cost. Run it under the exclusive GPU slot: other GPU work moves the
  * numbers. The report prints the passes that resolved, so a wrong stage name reads as an empty list.
  *
+ * The owned engine times its passes natively and reports the whole frame and its labelled stages per sample
+ * (`info.render.timestamp`, `info.engine.gpuStages`, three-native `gpu-stages.ts`), so `GIBudget` resolves the
+ * stage `SSGI` (`stagesSeen`). `frame` is the whole frame's GPU time per distinct sample after 120 rendered frames of
+ * warm-up with its `stages`, and `giDeltaMs` is a tier's frame mean minus the `low` tier's, which draws no GI: the
+ * delta and `frame.stages.SSGI` check each other.
+ *
+ * `--interleave` times the final gather methods in one page instead: it starts at `high`, then alternates `none`,
+ * `irradianceField` and `screenProbeGather` in short bursts (`window.__tnRef.setGatherMethod`), `--rounds` times, with
+ * the order rotated each round. The GPU clock drifts with the load the page can feed it (a loaded host kept it at P5 to
+ * P8 for whole runs), so one run per tier compares clocks, not methods. The bursts share the clock, and the report gives
+ * each method's frame and SSGI time, and the paired difference to `none` per round.
+ *
+ * `--auto` is the live proof of the budgets instead: each tier starts with `giAuto=1` and `shadowAuto=1`, and the
+ * report lists every window the budgets closed with the step they took and why.
+ *
  * The GI tiers draw their shadows at `high`, as the Unreal GI cells do. `--shadow-tiers` instead draws the GI at
  * `medium` (no screen-space gather) and the shadows at each listed tier, so `frameMs` is the whole frame's GPU
  * time at that shadow tier.
  */
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -34,6 +49,8 @@ interface IWindow {
   readonly stagesSeen: readonly string[];
   readonly passes: readonly string[];
   readonly finalGatherMethod: string;
+  readonly stepped?: string;
+  readonly reason?: string;
 }
 
 const flag = (args: readonly string[], name: string): string | undefined => {
@@ -43,6 +60,75 @@ const flag = (args: readonly string[], name: string): string | undefined => {
 
 const mean = (values: readonly number[]): number =>
   values.length === 0 ? Number.NaN : values.reduce((a, b) => a + b, 0) / values.length;
+
+/**
+ * The whole frame's resolved GPU milliseconds and the named stages inside it (`info.engine.gpuStages`), one
+ * per distinct sample, keyed by the engine's frame id. The page
+ * draws the pose in a tight loop beside its own: the host draws nothing while two frames are on the GPU, so the
+ * GPU stays busy. A GPU that idles between frames drops to a low clock, and every pass then reads 2 to 5 times
+ * dearer (a `low` frame read 14.9 ms at P5 and 3.2 ms boosted). The warm-up is 240 drawn frames and 4 s by default.
+ */
+const FRAME_SAMPLER = `(async (want, warmFrames = 240, warmMs = 4000) => {
+  const w = window.__tnRef;
+  const r = w.renderer;
+  const seen = new Map();
+  const note = () => {
+    const ids = r.backend && r.backend.getTimestampFrames ? r.backend.getTimestampFrames("render") : undefined;
+    const id = ids ? ids[ids.length - 1] : undefined;
+    const ms = r.info && r.info.render ? r.info.render.timestamp : undefined;
+    const stages = r.info && r.info.engine && r.info.engine.gpuStages ? { ...r.info.engine.gpuStages } : {};
+    if (Number.isInteger(id) && typeof ms === "number" && ms > 0 && !seen.has(id)) seen.set(id, { ms, stages });
+  };
+  const tick = () => new Promise((done) => setTimeout(done, 0));
+  const t0 = performance.now();
+  const f0 = r.info.frame;
+  while ((r.info.frame - f0 < warmFrames || performance.now() - t0 < warmMs) && performance.now() - t0 < 60000) {
+    r.render(w.world, w.camera);
+    await tick();
+  }
+  while (seen.size < want && performance.now() - t0 < 180000) {
+    r.render(w.world, w.camera);
+    note();
+    await tick();
+  }
+  const samples = [...seen.values()];
+  const names = [...new Set(samples.flatMap((sample) => Object.keys(sample.stages)))];
+  return {
+    ms: samples.map((sample) => sample.ms),
+    // A stage that drew no pass in a sample is absent there: it cost 0.
+    stages: Object.fromEntries(names.map((name) => [name, samples.map((sample) => sample.stages[name] ?? 0)])),
+    pixelRatio: r.getPixelRatio ? r.getPixelRatio() : null,
+    size: [r.domElement.width, r.domElement.height],
+  };
+})`;
+
+/** The GPU clock state right after a saturated run, so a reader can see the sample was taken boosted. */
+function gpuState(): string {
+  try {
+    return execFileSync(
+      "nvidia-smi",
+      [
+        "--query-gpu=pstate,clocks.sm,clocks.mem,utilization.gpu,power.draw,temperature.gpu",
+        "--format=csv,noheader",
+      ],
+      { encoding: "utf8", timeout: 10_000 },
+    ).trim();
+  } catch {
+    return "unavailable";
+  }
+}
+
+function frameStats(ms: readonly number[]): object {
+  const sorted = [...ms].sort((a, b) => a - b);
+  const at = (q: number): number =>
+    sorted[Math.min(sorted.length - 1, Math.floor(q * sorted.length))] ?? Number.NaN;
+  return {
+    mean: Number(mean(ms).toFixed(3)),
+    median: Number(at(0.5).toFixed(3)),
+    p95: Number(at(0.95).toFixed(3)),
+    samples: ms.length,
+  };
+}
 
 /** Opens the scene at a tier, checks the adapter is a real GPU and returns the page ready to watch. */
 async function openTier(
@@ -74,6 +160,7 @@ async function collectWindows(
   page: Page,
   errors: readonly string[],
   count: number,
+  warmup = 1,
 ): Promise<IWindow[]> {
   const windows = new Map<number, IWindow>();
   const deadline = Date.now() + 240_000;
@@ -83,7 +170,7 @@ async function collectWindows(
     if (errors.length > 0) throw new Error(`TN_UNREAL_LOOK_PAGE_ERROR: ${errors.join(" | ")}`);
     await page.waitForTimeout(250);
   }
-  return [...windows.values()].filter((w) => w.window > 1);
+  return [...windows.values()].filter((w) => w.window > warmup);
 }
 
 function summarize(adapter: Record<string, string>, kept: readonly IWindow[]): object {
@@ -95,7 +182,7 @@ function summarize(adapter: Record<string, string>, kept: readonly IWindow[]): o
     budgetMs: first?.budgetMs ?? null,
     frameMs: Number(mean(resolved.map((w) => w.frameMs ?? 0)).toFixed(3)),
     giMs: Number(giMs.toFixed(3)),
-    insideBudget: first === undefined ? null : giMs <= first.budgetMs,
+    insideBudget: first === undefined || resolved.length === 0 ? null : giMs <= first.budgetMs,
     method: first?.finalGatherMethod ?? null,
     passes: first?.passes ?? [],
     stagesSeen: first?.stagesSeen ?? [],
@@ -111,21 +198,237 @@ async function measureTier(
   pose: unknown,
   count: number,
   shadowTier = "high",
-): Promise<object> {
+  frames = 600,
+  urlExtra = "",
+): Promise<Record<string, unknown>> {
   const { adapter, errors, page } = await openTier(
     browser,
-    `${origin}?tnGi=${name}&layer=L7&tier=${tier}&shadowTier=${shadowTier}`,
+    `${origin}?tnGi=${name}&layer=L7&tier=${tier}&shadowTier=${shadowTier}${urlExtra}`,
     pose,
   );
   try {
     const method = (await page.evaluate("window.__tnRef.finalGatherMethod")) as string;
+    const sampled = (await page.evaluate(`${FRAME_SAMPLER}(${frames})`)) as {
+      ms: number[];
+      pixelRatio: number | null;
+      size: number[];
+      stages: Record<string, number[]>;
+    };
+    const frame = {
+      ...frameStats(sampled.ms),
+      gpu: gpuState(),
+      pixelRatio: sampled.pixelRatio,
+      size: sampled.size,
+      stages: Object.fromEntries(
+        Object.entries(sampled.stages).map(([stage, values]) => [stage, frameStats(values)]),
+      ),
+    };
     // No GI pass runs at `none`, so the tier costs no GI time by construction.
     if (method === "none")
-      return { adapter, budgetMs: 0, giMs: 0, insideBudget: true, method, windows: 0 };
-    return summarize(adapter, await collectWindows(page, errors, count));
+      return { adapter, budgetMs: 0, frame, giMs: 0, insideBudget: true, method, windows: 0 };
+    return { ...summarize(adapter, await collectWindows(page, errors, count)), frame };
   } finally {
     await page.close();
   }
+}
+
+/**
+ * The live proof: the page starts at a tier with both budgets free to move (`giAuto=1`, `shadowAuto=1`), and the
+ * report lists the windows they closed, each with the reading it judged and the step it took.
+ */
+async function watchSteps(
+  browser: Browser,
+  origin: string,
+  name: string,
+  tier: string,
+  pose: unknown,
+  count: number,
+  urlExtra: string,
+): Promise<Record<string, unknown>> {
+  const { adapter, errors, page } = await openTier(
+    browser,
+    `${origin}?tnGi=${name}&layer=L7&tier=${tier}&shadowTier=high&giAuto=1&shadowAuto=1${urlExtra}`,
+    pose,
+  );
+  try {
+    const windows = await collectWindows(page, errors, count, 0);
+    const shadow = await page.evaluate("window.__tnRef.shadowBudget?.() ?? null");
+    return { adapter, gpu: gpuState(), shadow, started: tier, windows };
+  } finally {
+    await page.close();
+  }
+}
+
+const METHODS = ["none", "irradianceField", "screenProbeGather"] as const;
+
+interface IBurst {
+  readonly method: string;
+  readonly round: number;
+  readonly ms: readonly number[];
+  readonly stages: Readonly<Record<string, readonly number[]>>;
+  readonly gpu: string;
+}
+
+const spread = (values: readonly number[]): number => {
+  const m = mean(values);
+  return values.length < 2
+    ? Number.NaN
+    : Math.sqrt(values.reduce((a, b) => a + (b - m) ** 2, 0) / (values.length - 1));
+};
+
+/** One page at `high`: every round times each method for `burst` samples, the order rotated, so they share the GPU clock. */
+async function measureInterleaved(
+  browser: Browser,
+  origin: string,
+  name: string,
+  pose: unknown,
+  rounds: number,
+  burst: number,
+  urlExtra: string,
+): Promise<Record<string, unknown>> {
+  const { adapter, errors, page } = await openTier(
+    browser,
+    `${origin}?tnGi=${name}&layer=L7&tier=high&shadowTier=high${urlExtra}`,
+    pose,
+  );
+  try {
+    await page.evaluate(`${FRAME_SAMPLER}(30, 240, 6000)`);
+    const bursts: IBurst[] = [];
+    for (let round = 0; round < rounds; round++) {
+      for (const method of [...METHODS.slice(round % 3), ...METHODS.slice(0, round % 3)]) {
+        await page.evaluate(`window.__tnRef.setGatherMethod(${JSON.stringify(method)})`);
+        const sampled = (await page.evaluate(`${FRAME_SAMPLER}(${burst}, 60, 800)`)) as {
+          ms: number[];
+          stages: Record<string, number[]>;
+        };
+        if (errors.length > 0) throw new Error(`TN_UNREAL_LOOK_PAGE_ERROR: ${errors.join(" | ")}`);
+        bursts.push({ gpu: gpuState(), method, round, ms: sampled.ms, stages: sampled.stages });
+      }
+    }
+    const perMethod = Object.fromEntries(
+      METHODS.map((method) => {
+        const own = bursts.filter((b) => b.method === method);
+        const ssgi = own.flatMap((b) => b.stages.SSGI ?? []);
+        return [
+          method,
+          {
+            frame: frameStats(own.flatMap((b) => b.ms)),
+            ssgi: ssgi.length === 0 ? null : frameStats(ssgi),
+            roundMeans: own.map((b) => Number(mean(b.ms).toFixed(3))),
+          },
+        ];
+      }),
+    );
+    const paired = Object.fromEntries(
+      METHODS.filter((method) => method !== "none").map((method) => {
+        const deltas = Array.from({ length: rounds }, (_, round) => {
+          const at = (m: string) => bursts.find((b) => b.round === round && b.method === m);
+          return mean(at(method)?.ms ?? []) - mean(at("none")?.ms ?? []);
+        });
+        return [
+          method,
+          {
+            meanMs: Number(mean(deltas).toFixed(3)),
+            sdMs: Number(spread(deltas).toFixed(3)),
+            rounds: deltas.map((d) => Number(d.toFixed(3))),
+          },
+        ];
+      }),
+    );
+    return {
+      adapter,
+      bursts: bursts.map(({ method, round, gpu, ms }) => ({
+        method,
+        round,
+        gpu,
+        mean: Number(mean(ms).toFixed(3)),
+      })),
+      paired,
+      perMethod,
+      rounds,
+      burst,
+      urlExtra,
+    };
+  } finally {
+    await page.close();
+  }
+}
+
+/** Every tier's frame mean minus the `low` tier's, which draws no GI: what the tier's GI costs when no pass is named. */
+function addDeltas(report: Record<string, Record<string, unknown>>): void {
+  const base = (report.low?.frame as { mean: number } | undefined)?.mean;
+  for (const [tier, entry] of Object.entries(report)) {
+    const frame = entry.frame as { mean: number } | undefined;
+    if (base !== undefined && frame !== undefined && tier !== "low")
+      entry.giDeltaMs = Number((frame.mean - base).toFixed(3));
+    console.info(`TN_GI_TIER_COST ${tier} ${JSON.stringify(entry)}`);
+  }
+}
+
+/** The measurements one page session takes, as the flags ask: the live proof, or the tiers and then the shadow tiers. */
+async function measureAll(
+  browser: Browser,
+  origin: string,
+  name: string,
+  pose: unknown,
+  args: readonly string[],
+): Promise<Record<string, Record<string, unknown>>> {
+  const report: Record<string, Record<string, unknown>> = {};
+  const tiers = (flag(args, "--tiers") ?? "low,medium,high").split(",");
+  const count = Number(flag(args, "--windows") ?? 3);
+  const urlExtra = flag(args, "--url-extra") ?? "";
+  if (args.includes("--interleave")) {
+    const rounds = Number(flag(args, "--rounds") ?? 5);
+    const burst = Number(flag(args, "--burst") ?? 100);
+    report.interleave = await measureInterleaved(
+      browser,
+      origin,
+      name,
+      pose,
+      rounds,
+      burst,
+      urlExtra,
+    );
+    console.info(`TN_GI_INTERLEAVE ${JSON.stringify(report.interleave)}`);
+    return report;
+  }
+  if (args.includes("--auto")) {
+    for (const tier of tiers) {
+      report[`auto-${tier}`] = await watchSteps(browser, origin, name, tier, pose, count, urlExtra);
+      console.info(`TN_GI_AUTO ${tier} ${JSON.stringify(report[`auto-${tier}`])}`);
+    }
+    return report;
+  }
+  const shadowTiers = flag(args, "--shadow-tiers")?.split(",") ?? [];
+  for (const tier of shadowTiers.length > 0 ? [] : tiers)
+    report[tier] = await measureTier(
+      browser,
+      origin,
+      name,
+      tier,
+      pose,
+      count,
+      "high",
+      600,
+      urlExtra,
+    );
+  addDeltas(report);
+  for (const shadowTier of shadowTiers) {
+    const key = `shadow-${shadowTier}`;
+    report[key] = await measureTier(
+      browser,
+      origin,
+      name,
+      "medium",
+      pose,
+      count,
+      shadowTier,
+      600,
+      urlExtra,
+    );
+    console.info(`TN_GI_TIER_COST ${key} ${JSON.stringify(report[key])}`);
+  }
+  return report;
 }
 
 export async function main(args: readonly string[]): Promise<number> {
@@ -134,7 +437,6 @@ export async function main(args: readonly string[]): Promise<number> {
     value,
     registry(familyOf(value)).scenes.map((s) => s.name),
   );
-  const tiers = (flag(args, "--tiers") ?? "low,medium,high").split(",");
   const work =
     process.env.TN_UNREAL_LOOK_WORK ?? path.join(os.homedir(), ".cache/threenative/unreal-look");
   const target = await scaffold(work, args.includes("--reuse"), false);
@@ -152,23 +454,13 @@ export async function main(args: readonly string[]): Promise<number> {
       stdio: ["ignore", "inherit", "inherit"],
     },
   );
-  const report: Record<string, object> = {};
+  let report: Record<string, Record<string, unknown>> = {};
   try {
     const origin = `http://127.0.0.1:${port}/`;
     await waitForServer(origin, server);
     const browser = await launchWebgpuBrowser();
     try {
-      const count = Number(flag(args, "--windows") ?? 3);
-      const shadowTiers = flag(args, "--shadow-tiers")?.split(",") ?? [];
-      for (const tier of shadowTiers.length > 0 ? [] : tiers) {
-        report[tier] = await measureTier(browser, origin, name, tier, pose, count);
-        console.info(`TN_GI_TIER_COST ${tier} ${JSON.stringify(report[tier])}`);
-      }
-      for (const shadowTier of shadowTiers) {
-        const key = `shadow-${shadowTier}`;
-        report[key] = await measureTier(browser, origin, name, "medium", pose, count, shadowTier);
-        console.info(`TN_GI_TIER_COST ${key} ${JSON.stringify(report[key])}`);
-      }
+      report = await measureAll(browser, origin, name, pose, args);
     } finally {
       await browser.close();
     }

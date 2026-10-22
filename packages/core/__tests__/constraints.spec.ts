@@ -62,6 +62,11 @@ describe("core constraints", () => {
           // configures no property of one, and reads only `name` for the error label; which
           // materials exist, and how each looks, is entirely the game's.
           file !== "merge-parts.ts" &&
+          // The scene trace flattens the game's meshes into triangle and material-texel buffers, and
+          // `TracedReflections` walks them. They read the game's materials and write none of them.
+          // The tighter check is below.
+          file !== "render/scene-trace.ts" &&
+          file !== "render/traced-reflections.ts" &&
           // FlightModel integrates lift, drag, thrust and moments on a game-owned airframe. It
           // constructs no material, light, colour or shader; the word "light" it trips on is
           // inside "flight".
@@ -104,6 +109,15 @@ describe("core constraints", () => {
           // PRD-634 widens three's shadow filter by gap × tan(angle); the angle and every light,
           // map size and shadow camera come from the game. It decides no edge width of its own.
           file !== "render/soft-shadow.ts" &&
+          // PRD-653 swaps the Lambert term of three's own lighting model for Unreal's published EON fit when the game marks
+          // a material. Albedo, roughness, lights and a lamp's radius come from the game's own materials and lamps, and
+          // the game chooses which materials take it. It constructs no material, light or colour and sets no appearance
+          // value of its own; the assertions below keep that true.
+          file !== "render/rough-diffuse.ts" &&
+          // PRD-639 reduces the maps and flat colours of the game's own materials to atlas tiles that a traced GI ray reads.
+          // Every colour, texture and light comes from the game's materials and lights; it constructs none and chooses no
+          // look. The assertions below keep that true.
+          file !== "render/surface-cache.ts" &&
           // The virtual shadow attaches to a light and renders depth through three's own
           // ShadowNode; it creates no material, light, colour or filter of its own.
           file !== "render/virtual-shadow.ts" &&
@@ -123,6 +137,11 @@ describe("core constraints", () => {
           // them. It reads appearance fields only to compare them; it constructs, sets and chooses
           // nothing, and the surface kept is the package's own.
           file !== "render/material-key.ts" &&
+          // The Surface Cache is a lookup of the game's own materials in texture space: it reads a
+          // material's colour, emissive and map, flattens them into an atlas the trace samples, and
+          // returns them untouched. It names a material only to read it, and it constructs no
+          // material, light, colour or shader and picks no value. The assertions below keep it so.
+          file !== "render/surface-cache.ts" &&
           // The daylight rig wires a sky, a sun, a fill light, haze and the tone curve from values
           // the game must supply — every colour, angle, intensity, density and exposure is a
           // required option. It constructs the objects those values need and chooses none of them.
@@ -192,6 +211,14 @@ describe("core constraints", () => {
     expect(assets).not.toMatch(
       /new\s+\w*Material|new\s+\w*Light|new\s+Color|tonemapping|postprocessing|\.wgsl/iu,
     );
+
+    const surfaceCache = withoutComments(
+      readFileSync(path.join(sourceDirectory, "render/surface-cache.ts"), "utf8"),
+    );
+    expect(surfaceCache).not.toMatch(
+      /new\s+\w*(Material|Light|Texture|Geometry)|new\s+(Color|Scene)|tonemapping|postprocessing|\.wgsl/iu,
+    );
+    expect(surfaceCache).not.toMatch(/\bmaterial\.\w+\s*(=(?!=)|\+=|-=|\*=|\/=|\+\+|--)/u);
 
     const renderTrapAudit = withoutComments(
       readFileSync(path.join(sourceDirectory, "profiling/render-trap-audit.ts"), "utf8"),
@@ -291,6 +318,44 @@ describe("core constraints", () => {
     // roughness, a metalness, an opacity — is how a framework starts deciding one.
     expect(foliageAlpha).not.toMatch(/\.(color|roughness|metalness|emissive|opacity|envMap)\b/iu);
     expect(foliageAlpha.match(/#[0-9a-f]{6}\b|0x[0-9a-f]{6}\b/giu)).toBeNull();
+
+    // The rough diffuse option reads the game's roughness and albedo through three's own nodes and writes one flag of its
+    // own, `roughDiffuse`. Naming a look value is how a framework starts deciding one.
+    const roughDiffuse = readFileSync(
+      path.join(sourceDirectory, "render/rough-diffuse.ts"),
+      "utf8",
+    );
+    expect(roughDiffuse).not.toMatch(
+      /new\s+\w*Material|new\s+\w*Light|new\s+\w*Color|tonemapping|postprocessing|\.wgsl/iu,
+    );
+    expect(roughDiffuse).not.toMatch(
+      /\.(color|map|roughness|metalness|emissive|opacity|envMap)\b\s*(=[^=]|\?\?=)/iu,
+    );
+    expect(roughDiffuse.match(/#[0-9a-f]{6}\b|0x[0-9a-f]{6}\b/giu)).toBeNull();
+
+    // The scene trace and the traced reflections read the game's materials into buffers. They construct no
+    // material, light or colour and assign no look property of one.
+    for (const file of ["render/scene-trace.ts", "render/traced-reflections.ts"]) {
+      const traced = withoutComments(readFileSync(path.join(sourceDirectory, file), "utf8"));
+      expect(traced, file).not.toMatch(
+        /new\s+\w*Material|new\s+\w*Light|new\s+\w*Color|tonemapping|postprocessing|\.wgsl/iu,
+      );
+      expect(traced, file).not.toMatch(
+        /\.(color|map|roughness|metalness|emissive|opacity|envMap)\b\s*(=[^=]|\?\?=)/iu,
+      );
+    }
+
+    // The surface cache reads the game's maps and colours and writes none of them.
+    const surfaceCacheRaw = readFileSync(
+      path.join(sourceDirectory, "render/surface-cache.ts"),
+      "utf8",
+    );
+    expect(surfaceCacheRaw).not.toMatch(
+      /new\s+\w*Material|new\s+\w*Light|new\s+\w*Color|tonemapping|postprocessing|\.wgsl/iu,
+    );
+    expect(surfaceCacheRaw).not.toMatch(
+      /\.(color|map|roughness|metalness|emissive|opacity|envMap)\b\s*(=[^=]|\?\?=)/iu,
+    );
 
     // The unlit-foliage warning names an envMap for the same reason foliage-alpha names a map: it
     // asks whether one is there. Reading its absence is the whole finding, so the check is that it

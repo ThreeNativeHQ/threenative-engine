@@ -4,11 +4,11 @@ prd_contract: v1
 
 # PRD-638 — Calibration scenes are built in Unreal and captured as the GI target
 
-**Status:** NOT STARTED
+**Status:** DONE — the `cornell` and `sunlit-room` scenes author in Unreal and export with their frames and noise floors, and the `pan` and `switch` motion runs are captured in Unreal and in the owned engine and measured (`scripts/unreal-look/motion.ts`). The owned-engine baseline is on PR #541.
 **Priority:** P1 — no box is ticked: no scene authored in Unreal isolates colour bleed, interior sky light, leaks, emissive light or a moving light, so no GI change can be judged against Unreal. Every PRD in this folder is judged on these scenes.
 **Complexity:** 7 (HIGH) — 1–5 files in the PRD-631 harness plus one scene folder per scene (+1), new system: a scene authoring and export pipeline inside Unreal (+2), new state: Level Sequences for motion runs (+2), external tool: the headless Unreal editor and its glTF exporter (+2); risk override: none
 **Owner:** João
-**Depends on:** [PRD-631](../look/PRD-631-an-unreal-reference-scene-measures-the-default-look.md) Phase 1 (the headless Unreal capture). Recreation in ThreeNative is [PRD-646](PRD-646-threenative-recreates-each-unreal-calibration-scene-exactly.md), and the calibration loop that uses the frames is [PRD-647](../../done/PRD-647-a-visual-judge-calibrates-gi-against-the-unreal-scenes-until-parity.md).
+**Depends on:** [PRD-631](PRD-631-an-unreal-reference-scene-measures-the-default-look.md) Phase 1 (the headless Unreal capture). Recreation in ThreeNative is [PRD-646](../Unreal/gi/PRD-646-threenative-recreates-each-unreal-calibration-scene-exactly.md), and the calibration loop that uses the frames is [PRD-647](PRD-647-a-visual-judge-calibrates-gi-against-the-unreal-scenes-until-parity.md).
 
 ## Context
 
@@ -84,15 +84,15 @@ unique across all scenes, so any PRD can cite a pose by name.
 |---|---|---|---|---|
 | `cornell` | Colour bleed, multi-bounce, corners, a ceiling lit only by bounce | One point light; no sun, no sky | `cornell`, `corner` | PRD-638 (this) |
 | `sunlit-room` | Sky and sun through a window, falloff into a room, a leak through a 0.2 m wall | Sun 60° and 15°, sky light | `window`, `leak`, `door` | PRD-638 (this) |
-| `neon-corridor` | Emissive strips, a 5 cm bright emitter, a textured wall, a point lamp | No sun, no sky | `neon`, `textured` | [PRD-639](PRD-639-a-surface-cache-gives-traced-rays-the-texture-glow-and-lights-of-what-they-hit.md) |
-| `neon-corridor` (pose) | A chrome sphere and a glossy floor that reflect what is behind the camera | as above | `chrome` | [PRD-642](PRD-642-glossy-surfaces-reflect-what-the-camera-cannot-see.md) |
-| `foliage` | Back-lit two-sided leaves, a glass pane, fog in a room | Sun 15° behind the leaves, sky light, height fog | `foliage`, `glass` | [PRD-643](PRD-643-glass-fog-and-leaves-take-the-bounce-light-too.md) |
+| `neon-corridor` | Emissive strips, a 5 cm bright emitter, a textured wall, a point lamp | No sun, no sky | `neon`, `textured` | [PRD-639](../Unreal/gi/PRD-639-a-surface-cache-gives-traced-rays-the-texture-glow-and-lights-of-what-they-hit.md) |
+| `neon-corridor` (pose) | A chrome sphere and a glossy floor that reflect what is behind the camera | as above | `chrome` | [PRD-642](../Unreal/gi/PRD-642-glossy-surfaces-reflect-what-the-camera-cannot-see.md) |
+| `foliage` | Back-lit two-sided leaves, a glass pane, fog in a room | Sun 15° behind the leaves, sky light, height fog | `foliage`, `glass` | [PRD-643](../Unreal/gi/PRD-643-glass-fog-and-leaves-take-the-bounce-light-too.md) |
 
 | Motion run | Scene | Owner |
 |---|---|---|
 | `pan` (90° in 2 s) | `cornell` | PRD-638 (pipeline proof) |
-| `neon` (strips off at frame 60, on at 120) | `neon-corridor` | [PRD-641](PRD-641-bounce-light-holds-still-while-the-camera-moves-and-follows-a-light-that-changes.md) |
-| `door` (opens over 30 frames), `occluder` (a 1 m box crosses the window) | `sunlit-room` | [PRD-VQ-09](../../rendering/PRD-VQ-09-incremental-diffuse-relighting.md) |
+| `neon` (strips off at frame 60, on at 120) | `neon-corridor` | [PRD-641](../Unreal/gi/PRD-641-bounce-light-holds-still-while-the-camera-moves-and-follows-a-light-that-changes.md) |
+| `door` (opens over 30 frames), `occluder` (a 1 m box crosses the window) | `sunlit-room` | [PRD-VQ-09](../rendering/PRD-VQ-09-incremental-diffuse-relighting.md) |
 
 `cornell` and `sunlit-room` belong here because PRD-603, PRD-604, PRD-605, PRD-640, PRD-644 and PRD-645
 all need them first. `--scene gi` selects every registered scene, and `--scene gi:<name>` one.
@@ -132,12 +132,58 @@ content or `.uasset` is committed, and the frames are renders of our scenes.
 - [x] `sunlit-room` authors, exports, converges and has its noise floor recorded, as in Phase 1. proof: the Phase 1 commands with `gi:sunlit-room` — Result 2026-10-21: `--check-cvars` 0 missing, 6 poses, every cell `readback ok`. 90 warm-up frames do NOT converge here: 34 of 52 regions change 1% to 4% against 180, and the Epic cells read about 1% dark. The reference warm-up is therefore 180 (`REFERENCE_WARM_UP` in `scripts/unreal-look/gi.ts`). 180 against 360: 40 of 40 regions PASS, largest change 0.34% (Ceiling, sun60-leak) against the 1% limit; mean abs pixel change 180 vs 360 vs 720 is 0.2 to 0.3 levels. Noise floor 0.22%. cornell at 180 against 360: 12 of 12 PASS, largest 0.34%, noise floor 0.13%. `pnpm unreal-look:compare --scene gi --unreal-vs-unreal`.
 
 #### Phase 3: Motion runs
-**Status:** NOT STARTED
-**Files:** `tools/unreal-reference/gi/cornell/scene.py`, `tools/unreal-reference/build_level.py`, `scripts/unreal-look/compare.ts`, `scripts/__tests__/unreal-look-compare.spec.ts`
-- [ ] The `pan` run renders 180 frames, and the motion metric fails closed on a missing frame, a frame-count mismatch or an empty region. proof: `pnpm unreal-look:capture --engine unreal --scene gi:cornell --motion pan` and `pnpm exec vitest run scripts/__tests__/unreal-look-compare.spec.ts`.
-- [ ] Lumen updates between sequence frames: in a test run where the point light switches off at frame 60, the ceiling region responds over more than 1 frame. proof: `pnpm unreal-look:compare --scene gi:cornell --metric motion --engine unreal`.
+**Status:** DONE
+**Files:** `tools/unreal-reference/gi/cornell/scene.py`, `tools/unreal-reference/gi/cornell/scene.json`, `tools/unreal-reference/gi/export.py`, `tools/unreal-reference/gi/scenes.json`, `tools/unreal-reference/gi/strip.py` (new), `tools/unreal-reference/build_level.py`, `scripts/unreal-look/motion.ts` (new), `scripts/unreal-look/motion-run.ts` (new), `scripts/unreal-look/capture-motion-threenative.ts` (new), `scripts/unreal-look/gi.ts`, `scripts/unreal-look/capture-gi-threenative.ts`, `scripts/unreal-look/scaffold/CalibrationScene.ts.in`, `scripts/__tests__/unreal-look-motion.spec.ts` (new)
+- [x] The `pan` run renders 180 frames, and the motion metric fails closed on a missing frame, a frame-count mismatch or an empty region. proof: `pnpm unreal-look:capture --engine unreal --scene gi:cornell --motion pan` and `pnpm exec vitest run scripts/__tests__/unreal-look-motion.spec.ts` — Result 2026-10-21: the build made `Seq_motion_pan`, `Seq_motion_switch`, their `_id` twin and five one-frame still sequences; the capture logged `L7-Epic-motion frames=180 stills=5 readback ok` and `ID frames=180 stills=5 readback ok` (185 PNG files each, `pan.0000` to `pan.0179`). The spec passes 46 of 46. Red first: with `motion.ts` replaced by a stub that throws, the 38 tests of the metric failed 38 of 38. The report-layer, frame-gate and gate-verdict tests were written after the code and passed at once. On the real frames the metric failed closed as designed: `TN_UNREAL_LOOK_EMPTY_MASK: region Shade has at least 200 pixels in 0 of 180 frames`, so the `pan` run names the four regions that stay in view.
+- [x] Lumen updates between sequence frames: in a test run where the point light switches off at frame 60, the ceiling region responds over more than 1 frame. proof: `pnpm unreal-look:compare --scene gi:cornell --metric motion --engine unreal --run switch` — Result 2026-10-21: Ceiling `lag90` 43 frames and `settle` 53 frames after the switch (`responds over more than 1 frame`, exit 0). The other regions reach 90% of the change in 32 (Wall_Red) to 51 (Back) frames. Unreal's image history adds to the response: the capture is a Movie Render Queue run with the project's temporal anti-aliasing.
+- [x] ThreeNative's frames of both runs are captured one rendered frame per step and measured against Unreal's: per-region lag after the switch and ghosting along the pan, with a labelled frame strip on PR #541. proof: `pnpm unreal-look:capture --engine threenative --scene gi:cornell --motion switch` and `--motion pan`, then `pnpm unreal-look:compare --scene gi:cornell --metric motion` — Result 2026-10-21: epic `e5caffbe1`, tier `high`, the NVIDIA Turing GPU through WebGPU, 180 frames per run, one drawn frame per step (`drawsPerStep` 1, no repeated frame). The switch run was captured twice (A and B). The pan run was captured once with the fixed clock (B). Capture A's pan run is not used: its clock followed the pacing wait and cut the motion blur to a tenth (see Decisions). Switch: the owned engine's `lag90` is `never` in all 8 regions and 59% to 94% of the change is left at frame 179, where Unreal needs 32 to 51 frames. The world cache is baked once at load. The two captures agree: flicker within 0.006 points, residual identical. Pan: ghosting is at most 0.89% per pixel and 0.56% low-pass, against 0.64% and 0.35% in Unreal. The worst cell is `Box_Tall` at frame 60 in both. Labelled strips, curves and tables are on PR #541: switch https://github.com/ThreeNativeHQ/threenative-engine/pull/541#issuecomment-6330537053, pan https://github.com/ThreeNativeHQ/threenative-engine/pull/541#issuecomment-6330977152. The motion spec passes 65 of 65 and the 28 `unreal-look` spec files pass 364 of 364. A second pan capture (C, the noise floor) was still in the GPU queue when this box was ticked.
 
 ## Decisions
+
+- 2026-10-21 (motion lane, Phase 3): the Unreal motion variant is `L7-Epic-motion`: `L7-Epic` plus
+  `r.BackbufferQuantizationDitheringOverride 16`. The tone mapper's 8-bit dither would otherwise show as flicker on a
+  still camera, and the flicker metric must see only the GI. The render stays real-time Lumen (not cinematic)
+  with the project's temporal anti-aliasing, as the pose captures do. `L7-Medium-motion` adds
+  `sg.GlobalIlluminationQuality 1` and is captured on request (`--variants L7-Medium-motion`) for the PRD-641 Medium target.
+- 2026-10-21 (motion lane): the metric reads display luminance of the PNG bytes (Rec.709 weights, no
+  linearisation, as `packages/playtest/src/capture.ts` does). Both engines use the Unreal ID frames of the same run
+  for the region masks, eroded by 2 px, so one mask measures both engines. A region needs 200 px in a frame and 30 frames in a run. Anything less throws
+  `TN_UNREAL_LOOK_EMPTY_MASK`. A missing frame, a frame count that differs from `scene.json` and a frame of another size
+  also throw. The report never shows a number for an input it could not read.
+- 2026-10-21 (motion lane): definitions. Flicker is the mean absolute change of a region between two consecutive
+  frames, over a window where nothing moves (`switch`: frames 10 to 59, `pan`: after the sweep plus 30 frames, to the
+  last frame), as a share of the region level: `flicker px` per pixel and `flicker p50` on the region median.
+  `lag90` is the number of frames after the switch until the region median is within 10% of the change from its final
+  level. `settle` is the first frame after which it stays within 5%. `overshoot` is the largest excursion past the final
+  level, as a share of the change. `residual` is the distance of the last 15 frames from the target, which for ThreeNative
+  is Unreal's final level, so a lamp that never goes dark shows `lag90 never`. Ghosting is the gap between a frame of the sweep and a
+  converged still of the same pose (a one-frame sequence rendered after the same warm-up), as a share of the still.
+- 2026-10-21 (motion lane): the `pan` run measures `Ceiling`, `Back`, `Wall_Green` and `Box_Tall`. The camera stands at
+  the open front (z 0.5), so `Shade` is never in view (an `EMPTY_MASK` on the first measurement) and `Wall_Red`, `Floor`
+  and `Box_Short` leave the view before the hold. The extreme frames of the sweep look past the walls at black void.
+  The `switch` run measures all eight regions from the `cornell` pose.
+- 2026-10-21 (motion lane): the ThreeNative capture replaces `requestAnimationFrame` with a gate. A step runs the queued
+  callbacks once, in one real frame, and waits for the draw. The owned engine refuses a
+  render while two frames are still on the GPU (`kMaxFramesOnGpu` in `web_host.cpp`) and counts it in `frameGateSkips`. A
+  refused step drew nothing, so it is repeated, and a step that did both or neither stops the capture
+  (`TN_UNREAL_LOOK_FRAME_STEP`). `renderer.info.frame` counts every `render()` call that passes the gate, overlay
+  renders included, so a step may count two draws. The capture records `drawsPerStep` and the number of repeated steps.
+- 2026-10-21 (motion lane): while it holds the loop the gate owns `performance.now()`. The clock moves 1/30 s a step
+  (`STEP_MS`, the rate of Unreal's motion sequences) and stands still between steps. Three reads `deltaTime` from it, and
+  the starter's motion blur lasts (1/30 s) over `deltaTime` (`motionBlur.ts`), so the first capture, whose clock followed
+  the 80 to 400 ms pacing wait, ran the blur at a tenth of its length: the edge of the tall box was a 1 px step in the
+  moving frame, where Unreal's frame has a 12 px ramp. That capture's pan run is not used. Its switch run has a still
+  camera and stays. The two clock specs failed first (`expected 1000 to be close to 1033.33`).
+- 2026-10-21 (motion lane): the ghost has a second reading, `low`. The per-pixel gap counts grain and motion blur as
+  ghosting, so a temporal accumulation that lowers the noise and adds a trail would look the same. `low` is the same
+  gap after both frames pass a box mean of radius 8 (a window of 17 px, 1.3% of the frame width), inside the pixels whose
+  whole window is in the region in both frames. It reads a broad patch of old light. It is `null` when no pixel keeps
+  such a window. `--low-radius` sets the radius. A saved Unreal report made before `low` existed fails closed in
+  `--unreal-report`. The 12 new metric specs failed first.
+- 2026-10-21 (motion lane): the report layer, `FRAME_GATE` and `captureMotionFrames` specs were written after their
+  code. They pass at once and are not red-first. The metric's own 38 specs were red first (stub that throws: 38 of 38 failed).
+  The machine ran at a load of 30 to 100 while the runs were measured, so a measurement of 180 PNG frames took about ten
+  minutes and a GPU slot took more than 30 minutes.
 
 - 2026-10-21 (GI lane): the Unreal reference warms up for 180 frames, not 90. The real-time re-capture
   (`DownsampleFactor` 16, `TracingOctahedronResolution` 8 in the log) showed `sunlit-room` still 1% dark at

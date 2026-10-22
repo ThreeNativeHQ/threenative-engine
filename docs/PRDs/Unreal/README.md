@@ -107,7 +107,7 @@ earlier wave unless the "Waits on" column says so.
 
 The PRDs above copy mechanisms from the Unreal source. These PRDs make the **templates look like a
 fresh Unreal 5.8.3 project** with no tuning. They measure against real Unreal renders of one shared
-scene and do not tune from memory. [PRD-631](look/PRD-631-an-unreal-reference-scene-measures-the-default-look.md)
+scene and do not tune from memory. [PRD-631](../done/PRD-631-an-unreal-reference-scene-measures-the-default-look.md)
 builds the instrument:
 - a headless Unreal capture of a cumulative layer ladder (L0 to L9)
 - the same cells from the scaffolded starter
@@ -125,7 +125,7 @@ A layer turns on by default only when five conditions hold:
 
 | Layer | Adds | Owner |
 | --- | --- | --- |
-| L0 | Geometry and camera alignment | [PRD-631](look/PRD-631-an-unreal-reference-scene-measures-the-default-look.md) |
+| L0 | Geometry and camera alignment | [PRD-631](../done/PRD-631-an-unreal-reference-scene-measures-the-default-look.md) |
 | L1 | Tone curve, exposure, light units | [PRD-632](look/PRD-632-the-frame-is-exposed-and-tone-mapped-the-way-a-fresh-unreal-project-is.md) |
 | L2 | Sky atmosphere and sky light capture | [PRD-633](look/PRD-633-the-sky-is-an-atmosphere-and-it-lights-the-scene.md) |
 | L3 | Height fog and aerial perspective | [PRD-562](rendering/PRD-562-aerial-perspective-from-a-froxel-volume.md) (amended) |
@@ -208,7 +208,7 @@ for its own behaviour with that pipeline, and records its visual verdict as a PR
 
 | Lumen part | PRD | Outcome | Waits on |
 | --- | --- | --- | --- |
-| Calibration scenes | [PRD-638](gi/PRD-638-calibration-scenes-are-built-in-unreal-and-captured-as-the-gi-target.md) | Calibration scenes are built in Unreal and captured as the GI target | PRD-631 Phase 1 |
+| Calibration scenes | [PRD-638](../done/PRD-638-calibration-scenes-are-built-in-unreal-and-captured-as-the-gi-target.md) | Calibration scenes are built in Unreal and captured as the GI target | PRD-631 Phase 1 |
 | Scene recreation, visualize modes | [PRD-646](gi/PRD-646-threenative-recreates-each-unreal-calibration-scene-exactly.md) | ThreeNative recreates each Unreal calibration scene exactly | PRD-638, PRD-632 |
 | Calibration loop | [PRD-647](../done/PRD-647-a-visual-judge-calibrates-gi-against-the-unreal-scenes-until-parity.md) | A visual judge calibrates GI against the Unreal scenes until parity | PRD-638, PRD-646 |
 | Radiance cache | [PRD-603](rendering/PRD-603-probes-refresh-by-tracing-the-packed-scene-not-by-drawing-it-six-times.md) | `RadianceCache` refreshes by tracing the packed scene | — |
@@ -290,7 +290,7 @@ adds a `shadow:` family to the GI pipeline (PRD-638, PRD-646, PRD-647) and does 
 | --- | --- | --- | --- |
 | Calibration scenes | [PRD-649](shadows/PRD-649-shadow-calibration-scenes-are-built-in-unreal-and-judged-until-parity.md) | `penumbra-lab`, `lamp-room`, `horizon` and the shared `foliage` scene, judged at L5 | PRD-638 Phase 1, PRD-646 Phase 2, PRD-647 |
 | Sun penumbra and reach | [PRD-634](look/PRD-634-sun-shadows-reach-the-horizon-and-soften-with-distance-from-the-caster.md) | Sun shadows reach the horizon and soften with the caster gap | PRD-649 for its stability runs |
-| Lamp shadows | [PRD-650](shadows/PRD-650-a-lamp-shadow-is-as-sharp-as-the-pixels-it-covers-and-softens-with-the-lamp-size.md) | A lamp's shadow is as sharp as the pixels it covers, cached, and softened by `sourceRadius` | PRD-649 Phase 2 |
+| Lamp shadows | [PRD-650](../done/PRD-650-a-lamp-shadow-is-as-sharp-as-the-pixels-it-covers-and-softens-with-the-lamp-size.md) | A lamp's shadow is as sharp as the pixels it covers, cached, and softened by `sourceRadius` | PRD-649 Phase 2 |
 | Leaf shadows | [PRD-651](shadows/PRD-651-leaves-cast-leaf-shadows-that-sway-near-the-camera.md) | Leaf cards cast leaf shadows on the owned engine, and sway near the camera | PRD-649 Phase 2; PRD-488 for wind |
 | Tiers | [PRD-652](shadows/PRD-652-the-shadow-tier-follows-unreal-shadow-quality-levels.md) | `low`, `medium`, `high` follow Unreal Low, Medium, Epic | PRD-649 Phase 3, PRD-634, PRD-650 |
 | Page cost | [PRD-457](rendering/PRD-457-virtual-shadows-scale-by-measurement.md) | Sparse pages only where measured cheaper | — |

@@ -115,7 +115,7 @@ export function shadowFilterOptions(value: unknown): Record<string, number> | nu
     );
   const config = options as Record<string, unknown>;
   const size = angle ? "sourceAngleRad" : "sourceRadius";
-  const { [size]: extent, blockerSamples, filterSamples } = config;
+  const { [size]: extent, blockerSamples, filterSamples, penumbraScale } = config;
   if (
     typeof extent !== "number" ||
     !Number.isFinite(extent) ||
@@ -123,7 +123,9 @@ export function shadowFilterOptions(value: unknown): Record<string, number> | nu
     (angle !== undefined && extent >= Math.PI / 2) ||
     [blockerSamples, filterSamples].some(
       (count) => typeof count !== "number" || !Number.isInteger(count) || count < 1 || count > 64,
-    )
+    ) ||
+    (angle === undefined &&
+      (typeof penumbraScale !== "number" || !(penumbraScale > 0 && penumbraScale <= 4)))
   )
     throw new Error(
       `TN_VIRTUAL_SHADOW_INVALID: ${angle ? "source-angle" : "source-radius"} filter`,
@@ -132,5 +134,7 @@ export function shadowFilterOptions(value: unknown): Record<string, number> | nu
     [size]: extent,
     blockerSamples: blockerSamples as number,
     filterSamples: filterSamples as number,
+    // A lamp keeps a share of its geometric penumbra (sourceRadiusShadowFilter's penumbraScale).
+    ...(angle === undefined ? { penumbraScale: penumbraScale as number } : {}),
   };
 }

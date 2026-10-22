@@ -8,7 +8,7 @@ prd_contract: v1
 **Priority:** P2 — the harness bake now reads the map and the lamps where a ray lands (Phases 2 and 3). The GPU kernel (AC-2) waits for PRD-603 Phase 2, and the L7 cells are closer to Unreal but not yet within the PRD-631 thresholds (AC-1).
 **Complexity:** 7 (HIGH) — 6–10 files: the trace kernel, a material atlas, a light list, specs, a conformance scene (+2), new module `surface-cache.ts` (+2), state across frames: atlas pages and a light update budget (+2), native proof (+1); risk override: none
 **Owner:** João
-**Depends on:** [PRD-603](../rendering/PRD-603-probes-refresh-by-tracing-the-packed-scene-not-by-drawing-it-six-times.md) Phase 2 (the traced refresh and its flat material table). [PRD-638](PRD-638-calibration-scenes-are-built-in-unreal-and-captured-as-the-gi-target.md) Phase 1 (the scene pipeline), [PRD-646](PRD-646-threenative-recreates-each-unreal-calibration-scene-exactly.md) Phase 2 and [PRD-647](../../done/PRD-647-a-visual-judge-calibrates-gi-against-the-unreal-scenes-until-parity.md) Phase 1. This PRD authors the `neon-corridor` calibration scene. Feeds [PRD-640](PRD-640-pixels-gather-bounce-light-from-screen-probes-and-the-radiance-cache-answers-the-rest.md) and [PRD-642](PRD-642-glossy-surfaces-reflect-what-the-camera-cannot-see.md), whose rays hit the same surfaces.
+**Depends on:** [PRD-603](../rendering/PRD-603-probes-refresh-by-tracing-the-packed-scene-not-by-drawing-it-six-times.md) Phase 2 (the traced refresh and its flat material table). [PRD-638](../../done/PRD-638-calibration-scenes-are-built-in-unreal-and-captured-as-the-gi-target.md) Phase 1 (the scene pipeline), [PRD-646](PRD-646-threenative-recreates-each-unreal-calibration-scene-exactly.md) Phase 2 and [PRD-647](../../done/PRD-647-a-visual-judge-calibrates-gi-against-the-unreal-scenes-until-parity.md) Phase 1. This PRD authors the `neon-corridor` calibration scene. Feeds [PRD-640](PRD-640-pixels-gather-bounce-light-from-screen-probes-and-the-radiance-cache-answers-the-rest.md) and [PRD-642](PRD-642-glossy-surfaces-reflect-what-the-camera-cannot-see.md), whose rays hit the same surfaces.
 
 ## Context
 
@@ -103,7 +103,7 @@ back to flat colour and why, and lights skipped by the cap.
 #### Phase 1: Which hit data changes the picture
 **Status:** IN PROGRESS (2 of 3 boxes)
 **Files:** `tools/unreal-reference/gi/neon-corridor/{scene.py,criteria.md}` (new), `tools/unreal-reference/gi/scenes.json`, `scripts/unreal-look/scaffold/render/giCache.ts`
-- [ ] `neon-corridor` is ready to calibrate: authored and captured in Unreal, recreated with direct light matching (PRD-646), and its PRD-647 criteria written. proof: `pnpm unreal-look:capture --engine unreal --scene gi:neon-corridor --check-cvars` and `pnpm unreal-look:compare --scene gi:neon-corridor --layer L1` — Open 2026-10-21: the scene, its Unreal captures and its criteria exist. The direct light does not match yet. At L1 the owned engine is above Unreal in all 8 surface cells, dP50 0.04 to 0.31 against the 0.01 target, and PRD-646 owns that. `--check-cvars` was not run again here.
+- [ ] `neon-corridor` is ready to calibrate: authored and captured in Unreal, recreated with direct light matching (PRD-646), and its PRD-647 criteria written. proof: `pnpm unreal-look:capture --engine unreal --scene gi:neon-corridor --check-cvars` and `pnpm unreal-look:compare --scene gi:neon-corridor --layer L1` — Open 2026-10-21: the scene, its Unreal captures and its criteria exist. The direct light does not match yet. Re-measured 2026-10-21 on epic head 2174a4e2f with a Wasm pair built from that head and the local-exposure gate of this lane (see `## Decisions`): at L1 the owned engine is above Unreal in 6 of the 10 surface cells (the left wall, the floor and the brick wall in both cells), level with it on the back wall (122 against 122 and 120 against 120) and 1 to 2 levels below it on the ceiling. dP50 is 0.00 to 0.21 and CIEDE2000 0.4 to 3.9 against the 0.01 target. PRD-646 owns the rest. `--check-cvars` was not run again here.
 - [x] The L7 region change from textured albedo at the hit is recorded under `## Decisions`. proof: `pnpm unreal-look:compare --scene gi:neon-corridor --layer L7`, flat against textured — Result 2026-10-21: over the 10 surface cells the mean dP50 against Unreal L7-Epic is 0.29 flat and 0.16 textured. The mean CIEDE2000 is 14.5 flat and 10.0 textured. All 10 cells move toward Unreal. Two runs of each arm are bit-identical. The table is under `## Decisions`.
 - [x] The L7 region change from the point lamp at the hit is recorded under `## Decisions`. proof: the same command, sun-only against sun and lamp — Result 2026-10-21: this scene has no sun, so the arms are the lamp at the hit and no lamp at the hit (`?giLights=0`). The lamp adds 6 to 9 levels of p50 to every L7 cell. The mean dP50 is 0.16 with the lamp and 0.10 without it. See `## Decisions`.
 
@@ -185,8 +185,30 @@ back to flat colour and why, and lights skipped by the cap.
   out of what a ray returns (`?giLights=0`; the direct frame keeps the lamp) every L7 cell loses 6 to 9 levels of
   p50 and gets closer to Unreal: the mean dP50 falls from 0.16 to 0.10, and the `neon` back wall reads 188 against
   Unreal's 188. Unreal's own bounce includes the lamp, so the lamp stays in the rays. The excess comes from the
-  direct light: at L1, with no bounce at all, the owned engine is above Unreal in all 8 surface cells (p50 42
-  against 55 on the `neon` left wall, 68 against 78 on the `textured` floor), and the lamp's bounce scales with
-  the same lamp level. PRD-646 direct light matching is the first suspect for this scene. An empty lamp list
+  direct light: at L1, with no bounce at all, the owned engine is above Unreal in most surface cells (p50 55
+  against 42 on the `neon` left wall, 78 against 68 on the `textured` floor), and the lamp's bounce scales with
+  the same lamp level. PRD-646 direct light matching is the first suspect for this scene. The next note
+  corrects how large that excess is. An empty lamp list
   stops the bake in a scene with no sun and no sky (`installGi` returns nothing), so the switch keeps the lamp's
   place and sets its ray intensity to 0.
+- 2026-10-21 (surface2 lane): **The L1 direct light sits above Unreal mainly because of local exposure, which the
+  calibration scene did not switch off below L9.** Unreal draws L1 to L8 with `ShowFlag.LocalExposure 0` (PRD-631).
+  The `high` preset turns the stage on since the finishing chain became the default (`ff837b1f2`), and
+  `CalibrationScene.ts.in` never turned it off, so it lifted the dark regions. On epic head `2174a4e2f` with a
+  fresh Wasm pair, `neon-corridor` L1 read `neon` Floor 78, Wall_Left 69 and Wall_Brick 26 against Unreal 55, 42
+  and 11. With the stage off it reads 60, 51 and 13 (Back 122 against 122). The mean dP50 of the 10 surface cells
+  at L1 falls from 0.48 to 0.08. The earlier "above in all 8 cells" came from this lift plus a small real excess in
+  the floor and the left wall. The gate is `localExposureEnabled: level >= 7` (`?localExposure=0|1` forces it).
+  **L7 and L8 keep the stage, on purpose.** A first version switched it off at L7 too. On `neon-corridor` L7 that
+  was neutral (brick wall closer, back wall further, mean dP50 0.17 in both arms) and the sunlit room was
+  identical. On `cornell` L7 on head `93a13713f` it broke 14 bounds of the re-cut L7-high locks (`Back` deltaE 7.49
+  against 4.33, `Wall_Red` dP50 0.133 against 0.056, `Box_Tall` dP50 0.128 against 0.104). The L7 cache is brighter
+  than Unreal's, and the stage's highlight compression hid part of that: a level `Back` at L7 was two errors that
+  cancelled. Open: remove the stage at L7 and L8 in the same change that removes the GI excess (the gather lane).
+  Judges (criteria first, two runs per arm, on the final gate): L1 overall IMPROVEMENT. `neon-corridor` `neon` and
+  `textured` IMPROVEMENT (Wall_Brick dP50 1.36 to 0.18 and 1.07 to 0.07), `sunlit-room` six poses NEUTRAL. The
+  L7 rounds of the first version are on PR #541 and no longer apply.
+- 2026-10-21 (surface2 lane): **A washed-out neon-corridor L1 on the merged head was a stale Wasm pair, not the
+  head.** The pair copied at lane spawn (17:16) lacked the C++ of PRD-636 (`b75c036d7`, `a7ad05dba`). With the head's
+  JS on that pair, L1 read p50 220 to 245 on the walls against Unreal 42 to 122. A pair built from the head
+  (`cmake --preset wasm`, 2 minutes) gives the numbers above. See the memory `lane-wasm-pair-trails-the-epic-cpp`.

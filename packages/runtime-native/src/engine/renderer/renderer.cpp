@@ -1,11 +1,13 @@
 #include "renderer.h"
 #include "engine/renderer/pipeline_cache.h"
 #include "engine/renderer/render_target_pass.h"
+#include "engine/renderer/shadows/lamp_resolution.h"
 
 #include <algorithm>
 #include <bit>
 #include <span>
 #include <deque>
+#include <numeric>
 #include <cctype>
 #include <cmath>
 #include <unordered_map>
@@ -179,9 +181,14 @@ constexpr const char* kLightFieldNames[] = {"Color",       "Direction",        "
                                             "Decay",       "Axis",             "ConeCos",      "PenumbraCos",
                                             "ShadowMatrix", "ShadowBias",      "ShadowNormalBias", "ShadowRadius",
                                             "ShadowMapSize", "ShadowIntensity", "ShadowNear", "ShadowFar",
-                                            "ShadowSourceRadius"};
+                                            "ShadowSourceRadius", "ShadowPenumbraScale", "SourceRadius"};
 
 constexpr uint64_t kUniformAlign = 256;  // minUniformBufferOffsetAlignment's WebGPU default
+// A lamp stores a caster's back faces. A back face in the receiver's own plane, a crate's bottom face on
+// the floor beside it, ties with that floor to the last bit of the depth, and the tie lights a dotted line
+// along the crate's far foot. The back faces go this many depth steps nearer the lamp, so a tie is a block
+// (native_engine_contact_shadow_foot needs 2; the lamp-room crate, 1).
+constexpr int32_t kLampBackFaceBias = 8;
 uint64_t aligned(uint64_t size) { return (size + kUniformAlign - 1) / kUniformAlign * kUniformAlign; }
 
 WGPUTextureView view2d(WGPUTexture texture, WGPUTextureFormat format) {
@@ -438,8 +445,9 @@ struct Renderer::Planned {
 
 struct Renderer::ShadowPass {
     WGPUTextureView target;
-    std::size_t virtualLight = 0;
+    std::size_t virtualLight = 0;  // the light the pass draws for
     int virtualLevel = -1;
+    bool lamp = false;  // a spot or point light's own map (PRD-650): counted and timed apart from the sun's
     int x = 0, y = 0, size = 0; // zero: ordinary map; otherwise one atlas page's guarded viewport
     std::vector<Planned> draws;
 };
@@ -1018,6 +1026,16 @@ void Renderer::setTraa(const TraaOptions& options) {
 
 void Renderer::cutHistory() { if (traa_) traa_->cameraCut(); }
 
+void Renderer::setSceneFormat(WGPUTextureFormat format) {
+    if (format == sceneFormat_) return;
+    sceneFormat_ = format;
+    applySampleCount();
+    if (!width_) return;
+    const uint32_t width = width_, height = height_;
+    width_ = height_ = 0;  // setSize returns early at the same extent
+    setSize(width, height);
+}
+
 void Renderer::setSampleCount(uint32_t samples) {
     if (samples != 1 && samples != 4)
         throw std::runtime_error("TN_NATIVE_SAMPLES_UNSUPPORTED: sampleCount must be 1 or 4");
@@ -1028,7 +1046,7 @@ void Renderer::setSampleCount(uint32_t samples) {
 // Temporal AA replaces multisampling, as one method does in Unreal. The velocity pass tests depth Equal against the
 // colour pass, and 4x multisampling hands it one resolved sample of depth, so Equal fails on every sloped surface.
 void Renderer::applySampleCount() {
-    const uint32_t samples = traa_ ? 1 : requestedSamples_;
+    const uint32_t samples = traa_ || sceneFormat_ == WGPUTextureFormat_RGBA32Float ? 1 : requestedSamples_;  // RGBA32Float cannot resolve
     if (traa_ && requestedSamples_ == 4) {
         const std::string note = "TN_TRAA_MSAA_OFF: temporal AA replaces 4x multisampling, so the scene draws single-sampled";
         if (std::find(diagnostics_.begin(), diagnostics_.end(), note) == diagnostics_.end()) diagnostics_.push_back(note);
@@ -1138,10 +1156,10 @@ void Renderer::setSize(uint32_t width, uint32_t height) {
     depthDesc.sampleCount = 1;
     depth_ = wgpuDeviceCreateTexture(device_, &depthDesc);
     WGPUTextureDescriptor sceneDesc = depthDesc;
-    sceneDesc.format = WGPUTextureFormat_RGBA16Float;
+    sceneDesc.format = sceneFormat_;
     sceneDesc.usage = WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopySrc;
     sceneColor_ = wgpuDeviceCreateTexture(device_, &sceneDesc);
-    sceneView_ = view2d(sceneColor_, WGPUTextureFormat_RGBA16Float);
+    sceneView_ = view2d(sceneColor_, sceneFormat_);
     colorView_ = view2d(gpu_.texture(color_), WGPUTextureFormat_RGBA8Unorm);
     depthView_ = view2d(depth_, WGPUTextureFormat_Depth32Float);
     if (sampleCount_ == 4) {
@@ -1159,7 +1177,7 @@ void Renderer::setSize(uint32_t width, uint32_t height) {
     WGPUTextureDescriptor viewportDesc = sceneDesc;
     viewportDesc.usage = WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopyDst;
     viewportColor_ = wgpuDeviceCreateTexture(device_, &viewportDesc);
-    viewportColorView_ = view2d(viewportColor_, WGPUTextureFormat_RGBA16Float);
+    viewportColorView_ = view2d(viewportColor_, sceneFormat_);
     viewportDesc.format = WGPUTextureFormat_Depth32Float;
     viewportDepth_ = wgpuDeviceCreateTexture(device_, &viewportDesc);
     viewportDepthView_ = view2d(viewportDepth_, WGPUTextureFormat_Depth32Float);
@@ -2187,6 +2205,7 @@ Renderer::Program& Renderer::depthProgram(const shader::VertexVariant& variant, 
     kind.vertexColors = 0;
     kind.invariantPosition = false;  // the shadow depth pass shares its vertex stage with nothing
     kind.leafReceiver = false;       // a depth pass receives no shadow
+    kind.roughDiffuse = false;       // ...and shades no diffuse
     const auto positionGraph = kind.nodes.positionNode;
     kind.nodes = {};
     kind.nodes.positionNode = positionGraph; // a depth pass reads no colour
@@ -2533,6 +2552,92 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     }
 
     if (!compilation) virtualCut_ = false;
+
+    // PRD-650: a lamp's map is as fine as the finest pixel footprint over the visible receivers it
+    // lights (shadows/lamp_resolution.h). A shadow.mapSize other than three's 512² is the game's override.
+    std::map<std::size_t, uint32_t> lampSizes;
+    if (!compilation) {
+        std::vector<std::size_t> autoLamps;
+        std::vector<shadows::LampDemand> demands;
+        Matrix4 view; view.elements = camera.matrixWorldInverse;
+        Matrix4 viewProjection; viewProjection.elements = camera.projectionMatrix; viewProjection.multiply(view);
+        const auto& p = camera.projectionMatrix;
+        const double screenRadius = std::min(1 / (width_ * std::abs(p[0])), 1 / (height_ * std::abs(p[5])));
+        WGPULimits limits = {}; wgpuDeviceGetLimits(device_, &limits);
+        for (std::size_t i = 0; i < lights.direct.size(); ++i) {
+            const DirectLight& l = lights.direct[i];
+            if (!l.shadow || l.kind == DirectLight::Kind::Directional || virtualShadows_.count(i)) continue;
+            const DirectLight::Shadow& s = *l.shadow;
+            if (s.width != 512 || s.height != 512) {
+                const std::string note = "TN_LAMP_SHADOW_MAPSIZE_OVERRIDE: light " + std::to_string(l.id) + " keeps shadow.mapSize " +
+                    std::to_string(s.width) + "x" + std::to_string(s.height) + " instead of its footprint size";
+                if (std::find(diagnostics_.begin(), diagnostics_.end(), note) == diagnostics_.end()) diagnostics_.push_back(note);
+                continue;
+            }
+            // A pose seen for the first time is still: a still lamp draws its first map at its still size.
+            uint64_t pose = 0xcbf29ce484222325ull;
+            for (double e : l.position) pose = (pose ^ std::bit_cast<uint64_t>(e)) * 0x100000001b3ull;
+            for (double e : l.direction) pose = (pose ^ std::bit_cast<uint64_t>(e)) * 0x100000001b3ull;
+            auto [state, seen] = lampMotion_.try_emplace(i, LampMotion{pose, int64_t(id) - shadows::kLampActiveFrames});
+            if (state->second.pose != pose) state->second = {pose, int64_t(id)};
+            shadows::LampDemand demand;
+            demand.mobility = shadows::lampMobility(int64_t(id) - state->second.movedAt);
+            demand.cube = s.cube;
+            while (shadows::lampMipSize(demand.minMip) > limits.maxTextureDimension2D && demand.minMip < shadows::kLampMaxMip) ++demand.minMip;
+            const Vector3 at(l.position[0], l.position[1], l.position[2]);
+            const Vector3 axis = Vector3(-l.direction[0], -l.direction[1], -l.direction[2]).normalize();
+            Matrix4 shadowView; shadowView.elements = s.view;
+            double footprint = INFINITY;
+            const auto visit = [&](const Vector3& point) {
+                Vector4 clip(point.x, point.y, point.z, 1); clip.applyMatrix4(viewProjection);
+                if (!(clip.w > 0) || std::abs(clip.x) > clip.w || std::abs(clip.y) > clip.w || clip.z < 0 || clip.z > clip.w) return;
+                const Vector3 offset = Vector3(point).sub(at);
+                const double reach = offset.length();
+                if ((l.distance > 0 && reach > l.distance) || reach == 0) return;
+                if (l.kind == DirectLight::Kind::Spot && offset.dot(axis) < l.coneCos * reach) return;
+                const double shadowDepth = s.cube ? std::max({std::abs(offset.x), std::abs(offset.y), std::abs(offset.z)})
+                                                  : -Vector3(point).applyMatrix4(shadowView).z;
+                if (!(shadowDepth > s.near)) return;
+                const double sceneDepth = -Vector3(point).applyMatrix4(view).z;
+                footprint = std::min(footprint, shadows::lampFootprint(sceneDepth * -p[11] + p[15], screenRadius, std::abs(s.projection[0]), shadowDepth));
+            };
+            // ponytail: a 5³ grid and the camera's nearest point per receiver box; a depth-buffer reduction
+            // (Unreal's page marking) when a big receiver's grid misses the pixels nearest the camera.
+            const Vector3 eye(camera.matrixWorld[12], camera.matrixWorld[13], camera.matrixWorld[14]);
+            for (const DrawItem& item : items) {
+                if (!item.mainPass || !item.receiveShadow || (item.layers & s.layersMask) == 0) continue;
+                const auto* mesh = dynamic_cast<const Mesh*>(item.shadowObject);
+                if (!mesh || !mesh->geometry) continue;
+                std::shared_ptr<Box3> local = mesh->geometry->boundingBox;
+                if (const auto* instanced = dynamic_cast<const InstancedMesh*>(mesh)) {
+                    if (!instanced->boundingBox) const_cast<InstancedMesh*>(instanced)->computeBoundingBox();
+                    local = instanced->boundingBox;
+                } else if (!local) {
+                    mesh->geometry->computeBoundingBox();
+                    local = mesh->geometry->boundingBox;
+                }
+                if (!local || local->isEmpty()) continue;
+                Matrix4 model; model.elements = item.matrixWorld;
+                Box3 box = *local; box.applyMatrix4(model);
+                if (l.distance > 0 && box.distanceToPoint(at) > l.distance) continue;
+                for (int x = 0; x < 5; ++x) for (int y = 0; y < 5; ++y) for (int z = 0; z < 5; ++z)
+                    visit(Vector3(box.min.x + (box.max.x - box.min.x) * x / 4, box.min.y + (box.max.y - box.min.y) * y / 4,
+                                  box.min.z + (box.max.z - box.min.z) * z / 4));
+                Vector3 nearest; box.clampPoint(eye, nearest);
+                visit(nearest);
+            }
+            demand.footprint = std::isfinite(footprint) ? footprint : 0;
+            autoLamps.push_back(i);
+            demands.push_back(demand);
+        }
+        const auto sizes = shadows::lampMapSizes(demands);
+        for (std::size_t k = 0; k < autoLamps.size(); ++k) lampSizes[autoLamps[k]] = sizes[k];
+    }
+    const auto mapExtent = [&](std::size_t i) {
+        const auto found = lampSizes.find(i);
+        return found != lampSizes.end() ? std::array<uint32_t, 2>{found->second, found->second}
+                                        : std::array<uint32_t, 2>{lights.direct[i].shadow->width, lights.direct[i].shadow->height};
+    };
     std::string lightKinds, unshadowedKinds;
     for (std::size_t i = 0; i < lights.direct.size(); ++i) {
         const DirectLight& l = lights.direct[i];
@@ -2565,7 +2670,8 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         std::vector<ShadowMap>& maps = l.shadow->cube ? cubeShadowMaps_ : shadowMaps_;
         if (maps.size() <= i) maps.resize(i + 1);
         ShadowMap& map = maps[i];
-        if (map.width == l.shadow->width && map.height == l.shadow->height) continue;
+        const auto [mapWidth, mapHeight] = mapExtent(i);
+        if (map.width == mapWidth && map.height == mapHeight) continue;
         if (map.view) wgpuTextureViewRelease(map.view);
         for (WGPUTextureView& face : map.faces) {
             if (face) wgpuTextureViewRelease(face);
@@ -2574,7 +2680,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         if (map.texture) wgpuTextureRelease(map.texture);
         WGPUTextureDescriptor desc = {};
         desc.dimension = WGPUTextureDimension_2D;
-        desc.size = {l.shadow->width, l.shadow->height, l.shadow->cube ? 6u : 1u};
+        desc.size = {mapWidth, mapHeight, l.shadow->cube ? 6u : 1u};
         desc.format = WGPUTextureFormat_Depth24Plus;
         desc.usage = WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_TextureBinding;
         desc.mipLevelCount = 1;
@@ -2597,8 +2703,8 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         } else {
             map.view = view2d(map.texture, WGPUTextureFormat_Depth24Plus);
         }
-        map.width = l.shadow->width;
-        map.height = l.shadow->height;
+        map.width = mapWidth;
+        map.height = mapHeight;
         shadowMapsChanged_ = true;
     }
 
@@ -2727,6 +2833,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         v.backSide = item.side == 1;
         v.doubleSide = item.side == 2;
         v.leafReceiver = item.receiveShadow && item.twoSidedFoliage;
+        v.roughDiffuse = item.roughDiffuse;
         v.flatShading = item.flatShading;
         v.vertexColors = item.colors ? item.colorSize : 0;
         v.instanced = item.instanceMatrices != nullptr;
@@ -2827,7 +2934,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         const WGPUCullMode cull = item.side == 2 ? WGPUCullMode_None : item.side == 1 ? WGPUCullMode_Front : WGPUCullMode_Back;
         // three blends unless NoBlending, or NormalBlending on a material that is not transparent.
         const uint8_t blend = item.blending == 0 || (item.blending == 1 && !item.transparent) ? 0 : item.blending;
-        PipelineTarget target{WGPUTextureFormat_RGBA16Float, WGPUTextureFormat_Depth32Float, cull, blend,
+        PipelineTarget target{sceneFormat_, WGPUTextureFormat_Depth32Float, cull, blend,
                               item.depthWrite};
         target.colorWrite = item.colorWrite;
         target.sampleCount = sampleCount_;
@@ -2938,6 +3045,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             put(frameUniforms_, f, slot[kLightPosition], transformPoint(view, l.position));
             put(frameUniforms_, f, slot[kLightDistance], std::array<double, 1>{l.distance});
             put(frameUniforms_, f, slot[kLightDecay], std::array<double, 1>{l.decay});
+            put(frameUniforms_, f, slot[kLightSourceRadius], std::array<double, 1>{l.sourceRadius});
             put(frameUniforms_, f, slot[kLightConeCos], std::array<double, 1>{l.coneCos});
             put(frameUniforms_, f, slot[kLightPenumbraCos], std::array<double, 1>{l.penumbraCos});
             if (l.shadow) {
@@ -2946,13 +3054,15 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 put(frameUniforms_, f, slot[kLightShadowNormalBias], std::array<double, 1>{l.shadow->normalBias});
                 put(frameUniforms_, f, slot[kLightShadowRadius], std::array<double, 1>{l.shadow->radius});
                 put(frameUniforms_, f, slot[kLightShadowMapSize],
-                    std::array<double, 2>{double(l.shadow->width), double(l.shadow->height)});
+                    std::array<double, 2>{double(mapExtent(i)[0]), double(mapExtent(i)[1])});
                 put(frameUniforms_, f, slot[kLightShadowIntensity], std::array<double, 1>{l.shadow->intensity});
                 put(frameUniforms_, f, slot[kLightShadowNear], std::array<double, 1>{l.shadow->near});
                 put(frameUniforms_, f, slot[kLightShadowFar], std::array<double, 1>{l.shadow->far});
-                if (const auto& soft = l.shadow->sourceRadiusFilter)
+                if (const auto& soft = l.shadow->sourceRadiusFilter) {
                     put(frameUniforms_, f, slot[kLightShadowSourceRadius],
                         std::array<double, 4>{(*soft)[0], l.shadow->tanHalfFov, (*soft)[1], (*soft)[2]});
+                    put(frameUniforms_, f, slot[kLightShadowPenumbraScale], std::array<double, 1>{(*soft)[3]});
+                }
             }
         }
         put(frameUniforms_, f, fs[kHemisphereSky], lights.hemisphereSky);
@@ -2980,11 +3090,13 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         const bool virtualMap = virtualIt != virtualShadows_.end();
         const int passCount = compilation ? 1 : virtualMap ? int(virtualPages[i].size()) : shadow.cube ? 6 : 1;
         const std::size_t firstPass = shadowPasses.size();
-        const bool lamp = lights.direct[i].kind != DirectLight::Kind::Directional && !virtualMap && !compilation;
+        const bool lampMap = lights.direct[i].kind != DirectLight::Kind::Directional && !virtualMap;
+        const bool lamp = lampMap && !compilation;
         for (int face = 0; face < passCount; ++face) {
         const shadows::AtlasPage* page = virtualMap && !compilation ? &virtualPages[i][face] : nullptr;
         const Matrix& view = page ? page->view.elements : shadow.cube ? shadow.faceViews[face] : shadow.view;
         ShadowPass& pass = shadowPasses.emplace_back();
+        pass.lamp = lamp; pass.virtualLight = i;
         pass.target = compilation ? nullptr : virtualMap ? virtualIt->second.map.view : shadow.cube ? cubeShadowMaps_[i].faces[face] : shadowMaps_[i].view;
         if (page) {
             const auto& atlas = virtualIt->second.atlas;
@@ -3061,11 +3173,13 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             target.frontFace = item.frontFace();
             target.skinIndex = skinIndexFormat(item);
             target.instanceStepMask = instanceStepMask(program.vertex, item);
+            const bool lampBackFace = lampMap && faces == 1;  // a front-face or double-sided map holds the receiver's own surface: no bias
+            if (lampBackFace) target.depthBias = -kLampBackFaceBias;
             if (compilation) {
                 compilation->push_back(pipelines_->getAsync(program.vertex, depthFragment, target));
                 continue;
             }
-            const uint64_t depthTargetKey = drawTargetKey(item, program.vertex) * 3 + (faces == 2 ? 0 : faces == 0 ? 1 : 2);  // a virtual page and a lamp cull one caster differently
+            const uint64_t depthTargetKey = drawTargetKey(item, program.vertex) * 6 + (faces == 2 ? 0 : faces == 0 ? 1 : 2) + (lampBackFace ? 3 : 0);  // a virtual page and a lamp cull one caster differently
             WGPURenderPipeline pipeline;
             if (cache && cache->depthPipeline && cache->depthTargetKey == depthTargetKey) {
                 pipeline = static_cast<WGPURenderPipeline>(cache->depthPipeline);
@@ -3113,7 +3227,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         bool animated = false;
         mixMatrix(shadow.projection);
         if (shadow.cube) for (const Matrix& m : shadow.faceViews) mixMatrix(m); else mixMatrix(shadow.view);
-        mix(shadow.width); mix(shadow.height);
+        mix(mapExtent(i)[0]); mix(mapExtent(i)[1]);
         for (std::size_t k = firstPass; k < shadowPasses.size(); ++k) {
             mix(reinterpret_cast<uintptr_t>(shadowPasses[k].target));
             for (const Planned& p : shadowPasses[k].draws) {
@@ -3855,7 +3969,12 @@ void Renderer::encodeFrame(FrameJob& job) {
         WGPURenderPassDescriptor shadowDesc = {};
         shadowDesc.depthStencilAttachment = &shadowDepth;
         const size_t query = passTimer_->segments.size();
-        WGPURenderPassEncoder shadowPass = beginTimedRenderPass(encoder, &shadowDesc, ownsPassTimer_ ? 0 : 2);
+        WGPURenderPassEncoder shadowPass = beginTimedRenderPass(encoder, &shadowDesc, !ownsPassTimer_ ? 2 : shadowPlan.lamp ? kGpuLampShadowSegment : 0);
+        if (shadowPlan.lamp) {
+            // A lamp's map is redrawn when its first face is: a cube's six passes are one redraw.
+            lastFrame_.lampRedraws += &shadowPlan == shadowPasses.data() || (&shadowPlan - 1)->virtualLight != shadowPlan.virtualLight || !(&shadowPlan - 1)->lamp;
+            lastFrame_.lampShadowDraws += uint32_t(shadowPlan.draws.size());
+        }
         if (shadowPlan.virtualLevel >= 0 && passTimer_->segments.size() > query)
             shadowQueries[query] = {virtualShadows_.at(shadowPlan.virtualLight).costs, shadowPlan.virtualLevel};
         if (shadowPlan.size) {
@@ -3891,12 +4010,13 @@ void Renderer::encodeFrame(FrameJob& job) {
         if (viewportBundle_) wgpuRenderBundleRelease(viewportBundle_);
         mainBundle_ = viewportBundle_ = nullptr;
         WGPURenderBundleEncoderDescriptor descriptor{};
-        const WGPUTextureFormat color = WGPUTextureFormat_RGBA16Float;
+        const WGPUTextureFormat color = sceneFormat_;
         descriptor.colorFormatCount = 1; descriptor.colorFormats = &color;
         descriptor.depthStencilFormat = WGPUTextureFormat_Depth32Float; descriptor.sampleCount = sampleCount_;
         const auto shadowStats = lastFrame_.shadowSkinned;
         const auto shadowDraws = lastFrame_.shadowDraws;
         const auto shadowTriangles = lastFrame_.shadowTriangles;
+        const auto lampRedraws = lastFrame_.lampRedraws, lampShadowDraws = lastFrame_.lampShadowDraws;
         lastFrame_ = FrameStats{};
         const auto record = [&](std::size_t from, std::size_t to) {
             const auto bundle = wgpuDeviceCreateRenderBundleEncoder(device_, &descriptor);
@@ -3915,6 +4035,7 @@ void Renderer::encodeFrame(FrameJob& job) {
         lastFrame_.shadowSkinned = shadowStats;
         lastFrame_.shadowDraws = shadowDraws;
         lastFrame_.shadowTriangles = shadowTriangles;
+        lastFrame_.lampRedraws = lampRedraws; lastFrame_.lampShadowDraws = lampShadowDraws;
         mainBundleKey_ = std::move(job.bundleKey);
     } else {
         lastFrame_.draws = mainBundleStats_.draws;
@@ -4065,7 +4186,7 @@ void Renderer::encodeFrame(FrameJob& job) {
             timer->pending = false;
             const auto t = timing.lock();
             if (!t || status != GpuStatus::Ok || bytes.size() != segments.size() * 16) return;
-            std::array<double, 4> sums{};
+            std::array<double, kGpuSegments> sums{};
             std::map<std::pair<std::shared_ptr<VirtualShadowCosts>, int>, double> levelCosts;
             for (size_t i = 0; i < segments.size(); ++i) {
                 uint64_t ns[2];
@@ -4076,7 +4197,7 @@ void Renderer::encodeFrame(FrameJob& job) {
                 if (const auto query = shadowQueries.find(i); query != shadowQueries.end())
                     if (const auto costs = query->second.first.lock()) levelCosts[{costs, query->second.second}] += ms;
             }
-            const double total = sums[0] + sums[1] + sums[2] + sums[3];
+            const double total = std::accumulate(sums.begin(), sums.end(), 0.0);
             if (total <= 0) return;
             for (const auto& [key, ms] : levelCosts) {
                 std::lock_guard lock(key.first->mutex);
@@ -4146,16 +4267,18 @@ void Renderer::outputPass(WGPUCommandEncoder encoder, WGPUTextureView present, W
     wgpuRenderPassEncoderRelease(pass);
 }
 
-GpuStatus Renderer::readProbePixels(ReadbackCallback done) { return readRgba16(sceneColor_, std::move(done)); }
+GpuStatus Renderer::readProbePixels(ReadbackCallback done) {
+    return readRgba16(sceneColor_, std::move(done), sceneFormat_ == WGPUTextureFormat_RGBA32Float ? 16u : 8u);
+}
 
 GpuStatus Renderer::readNormalPixels(ReadbackCallback done) { return readRgba16(normalTexture_, std::move(done)); }
 GpuStatus Renderer::readAlbedoPixels(ReadbackCallback done) { return readRgba16(albedoTexture_, std::move(done)); }
 GpuStatus Renderer::readEmissivePixels(ReadbackCallback done) { return readRgba16(emissiveTexture_, std::move(done)); }
 
-GpuStatus Renderer::readRgba16(WGPUTexture texture, ReadbackCallback done) {
+GpuStatus Renderer::readRgba16(WGPUTexture texture, ReadbackCallback done, uint32_t texelBytes) {
     if (!done) return GpuStatus::OutOfRange;
     if (!texture) return GpuStatus::InvalidHandle;
-    const uint32_t width = width_, height = height_, row = width * 8, pitch = (row + 255u) & ~255u;
+    const uint32_t width = width_, height = height_, row = width * texelBytes, pitch = (row + 255u) & ~255u;
     const Handle staging = gpu_.createBuffer(uint64_t(pitch) * height, WGPUBufferUsage_CopyDst | WGPUBufferUsage_CopySrc);
     WGPUCommandEncoderDescriptor descriptor{};
     auto encoder = wgpuDeviceCreateCommandEncoder(device_, &descriptor);

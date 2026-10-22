@@ -6,8 +6,9 @@
  */
 import { TSL_NODE, type TnAbiModule, engineRef } from "./browser-backend.js";
 import { type ITslRuntime, defineTsl, isTslNode } from "./browser-tsl.js";
+import { GPU_STAGES } from "./gpu-stages.js";
 import type { PassDraw } from "./pass-node.js";
-import { defineRenderTargets } from "./render-target.js";
+import { defineRenderTargets, targetTexelBytes } from "./render-target.js";
 import { ShadowMap } from "./shadow-map.js";
 import { syncVirtualShadowLods } from "./shadow-node.js";
 import { defineSphereReflectionCapture } from "./sphere-reflection-capture.js";
@@ -47,6 +48,11 @@ const READY = 1;
 export const RENDER_AGAIN = Symbol("tn.renderAgain");
 const DRAW_TARGET = Symbol("tn.drawTarget");
 const FAILED = 2;
+/**
+ * `tnw_web_frame` field of the first named stage's segment (web_host.cpp): 19 + 4 shadow, scene, other and output
+ * passes. `GPU_STAGES` counts on from there, one segment per stage.
+ */
+const GPU_STAGE_FIELD = 23;
 
 interface IAdapterInfo {
   readonly vendor: string;
@@ -144,6 +150,22 @@ export function defineWebRenderer(
         },
         // The samples the scene draws with. `samples` above is what was asked for; 1 here while the temporal pass runs.
         samples: 1,
+        // The GPU milliseconds of the sample `render.timestamp` reports, by named stage (gpu-stages.ts). A stage that
+        // drew no pass is absent; core's `stageGpuReading` hands it to the GI and shadow budgets.
+        gpuStages: {} as Record<string, number>,
+        // The last frame's shadow passes, the spot and point light maps apart from the sun's (PRD-650):
+        // lamp maps redrawn and their draws, every shadow draw (the sun's are the rest), and the GPU
+        // milliseconds of each part in the sample `render.timestamp` reports, -1 until one resolves.
+        // `lampMapMin` and `lampMapMax` are the edges of the lamp maps the engine sized from their footprint.
+        shadows: {
+          lampRedraws: 0,
+          lampDraws: 0,
+          shadowDraws: 0,
+          sunGpuMs: -1,
+          lampGpuMs: -1,
+          lampMapMin: 0,
+          lampMapMax: 0,
+        },
       },
       // three's Info: render() adds to drawCalls and triangles, and the caller resets once per frame, so a
       // frame that draws its world and then its overlay reports both (core does this in onBeginFrame).
@@ -364,6 +386,12 @@ export function defineWebRenderer(
       this.info.render.calls += this.info.render.frameCalls;
       this.info.render.drawCalls += this.info.render.frameCalls;
       this.info.render.triangles += module._tnw_web_frame(1);
+      const shadows = this.info.engine.shadows;
+      shadows.lampRedraws = module._tnw_web_frame(25);
+      shadows.lampDraws = module._tnw_web_frame(26);
+      shadows.shadowDraws = module._tnw_web_frame(27);
+      shadows.lampMapMin = module._tnw_web_frame(28);
+      shadows.lampMapMax = module._tnw_web_frame(29);
       const gpuSamples = module._tnw_web_frame(8);
       if (gpuSamples > this.#gpuSamples) {
         this.#gpuSamples = gpuSamples;
@@ -373,6 +401,14 @@ export function defineWebRenderer(
         if (Number.isFinite(gpuMs) && gpuMs > 0) {
           this.info.render.timestamp = gpuMs;
           this.#timestampFrames = [module._tnw_web_frame(9)];
+          const stages: Record<string, number> = {};
+          GPU_STAGES.forEach((name, index) => {
+            const stageMs = module._tnw_web_frame(GPU_STAGE_FIELD + index);
+            if (stageMs > 0) stages[name] = stageMs;
+          });
+          this.info.engine.gpuStages = stages;
+          this.info.engine.shadows.sunGpuMs = module._tnw_web_frame(19);
+          this.info.engine.shadows.lampGpuMs = module._tnw_web_frame(24);
         }
       }
       const engine = this.info.engine;
@@ -578,7 +614,8 @@ export function defineWebRenderer(
     writeHandle(24, target, "render target");
     const id = module._tnw_web_read_target(handles + 24, x, y, width, height);
     if (id === 0) check(1);
-    const size = width * height * 8;
+    const size =
+      width * height * targetTexelBytes((target as { texture: { type: number } }).texture.type);
     const out = module._malloc(size) >>> 0;
     try {
       for (;;) {

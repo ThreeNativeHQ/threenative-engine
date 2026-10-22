@@ -76,6 +76,8 @@ export interface IRayContext {
     far: number;
     targets?: Object3D;
   }): Intersection | undefined;
+  /** The game's frame hook. With it, a light that has a `source` is followed as it changes. */
+  beforeRender?: (callback: () => void) => () => void;
 }
 
 /** Sky radiance on three's equirectangular grid, in scene units: `data * scale` per channel. */
@@ -103,6 +105,12 @@ export interface IGiOptions {
     readonly color: Color;
     readonly intensity: number;
     readonly distance: number;
+    /**
+     * The live light (a three `PointLight`). The cache keeps the rays it traced, so when this light's intensity or colour
+     * changes, the next frame re-solves the bounce light from them without a new trace (PRD-641 AC-2). A moved light
+     * or a changed shadow needs a new bake. Unset, the light is as baked.
+     */
+    readonly source?: { readonly intensity: number; readonly color: Color };
   }[];
   /**
    * Unreal without global illumination (layers L2 to L6) shadows its movable sky light with the scene's
@@ -119,6 +127,11 @@ export interface IGiOptions {
   readonly skyIntensity?: number;
   /** Cast the bake's rays through `ctx.raycast` instead of the flat triangle hierarchy: the slow path, kept for an A/B. */
   readonly stockRays?: boolean;
+  /**
+   * Paint the lit ground into the environment's lower half, so a mirror reflects a floor where the screen shows none
+   * (default true). Off when reflection rays walk the scene's triangles and find the floor themselves.
+   */
+  readonly paintGround?: boolean;
   /**
    * The Surface Cache (PRD-639): a ray that lands on a mapped material returns the map's texel at the hit UV, for the
    * albedo and for the emission, instead of the material's flat colour (a loaded asset's colour factor is often white
@@ -788,22 +801,30 @@ function meanRadianceAt(
   values: Float32Array,
   grid: IGrid,
   solid: Uint8Array,
-): (position: Node<"vec3">) => Node<"vec3"> {
+): { read: (position: Node<"vec3">) => Node<"vec3">; texture: Data3DTexture; refresh: () => void } {
   const { nx, ny, nz } = grid;
-  const mean = meanField(values, grid, solid);
   const texels = new Uint16Array(nx * ny * nz * 4);
-  for (let i = 0; i < nx * ny * nz; i += 1)
-    for (let c = 0; c < 3; c += 1) texels[i * 4 + c] = toHalf(mean[i * 3 + c] ?? 0);
+  /** Rewrites the texture from `values`, which a light change edits in place. */
+  const refresh = () => {
+    const mean = meanField(values, grid, solid);
+    for (let i = 0; i < nx * ny * nz; i += 1)
+      for (let c = 0; c < 3; c += 1) texels[i * 4 + c] = toHalf(mean[i * 3 + c] ?? 0);
+    texture.needsUpdate = true;
+  };
   const texture = new Data3DTexture(texels, nx, ny, nz);
   texture.format = RGBAFormat;
   texture.type = HalfFloatType;
   texture.minFilter = LinearFilter;
   texture.magFilter = LinearFilter;
   texture.unpackAlignment = 1;
-  texture.needsUpdate = true;
+  refresh();
   const size = vec3(nx * grid.cell, ny * grid.cell, nz * grid.cell);
   // Texel i has its centre at i + 0.5 cells from the origin, so the unit-cube coordinate is the plain quotient.
-  return (position) => texture3D(texture).sample(position.sub(vec3(grid.origin)).div(size)).rgb;
+  return {
+    read: (position) => texture3D(texture).sample(position.sub(vec3(grid.origin)).div(size)).rgb,
+    texture,
+    refresh,
+  };
 }
 
 /**
@@ -819,6 +840,7 @@ function irradianceAt(
   solid: Uint8Array,
 ) {
   const cache = volume(values, grid, masks, sky, solid);
+  giCache.volumeTexture = cache;
   const dims = [grid.nx, grid.ny, grid.nz] as const;
   return (
     position: Node<"vec3">,
@@ -1011,6 +1033,15 @@ export const giCache: {
    * side facing the light receives. A translucent surface and a fog sample read it (see `meanRadianceAt`).
    */
   meanRadiance?: (position: Node<"vec3">) => Node<"vec3">;
+  /** The texture `meanRadiance` reads, for tests: a light change rewrites it with the field. */
+  meanTexture?: Data3DTexture;
+  /** The texture the materials read, for the light-change update. */
+  volumeTexture?: Data3DTexture;
+  /**
+   * Follows the lights that have a `source`: when one changed since the last call, rewrites the field and the texture and
+   * returns true. The game's frame hook calls it every frame (`IRayContext.beforeRender`); a test calls it by hand.
+   */
+  refresh?: () => boolean;
 } = {};
 
 /**
@@ -1260,9 +1291,9 @@ function nodeTwin(source: MeshStandardMaterial): MeshStandardMaterial {
     ? physicalTwin()
     : new MeshStandardNodeMaterial()) as unknown as Record<string, unknown>;
   copyFields(source, twin);
-  // three declares no `twoSidedFoliage`, so a three twin has no such key to copy into: carry the marker by name (PRD-651).
-  if ((source as { twoSidedFoliage?: boolean }).twoSidedFoliage === true)
-    twin.twoSidedFoliage = true;
+  // three declares no `twoSidedFoliage` or `roughDiffuse`, so a three twin has no such key to copy into: carry the markers by name (PRD-651, PRD-653).
+  for (const marker of ["twoSidedFoliage", "roughDiffuse"])
+    if ((source as unknown as Record<string, unknown>)[marker] === true) twin[marker] = true;
   return twin as unknown as MeshStandardMaterial;
 }
 
@@ -1341,6 +1372,8 @@ function bakeGi(gameCtx: IRayContext, root: Object3D, options: IGiOptions): IGiR
     /** Miss: the sky radiance. Hit: the surface's own radiance (sun and emission), before the cache. */
     base: new Float32Array(capacity * 3),
     albedo: new Float32Array(capacity * 3),
+    emissive: new Float32Array(capacity * 3),
+    owner: new Int32Array(capacity),
     point: new Float32Array(capacity * 3),
     normal: new Float32Array(capacity * 3),
     /** The sky radiance along the ray, hit or not, and the distance to the hit. */
@@ -1373,11 +1406,12 @@ function bakeGi(gameCtx: IRayContext, root: Object3D, options: IGiOptions): IGiR
    * lamp, ranges 100 to 13 across a cell, and a sample near the hot spot lit the floor below it 1.8 times too bright.
    */
   const surface = (
-    object: Object3D,
+    object: { readonly id: number },
     [px, py, pz]: readonly [number, number, number],
     [nx, ny, nz]: readonly [number, number, number],
     albedo: number[],
     emissive: number[],
+    mode = -1,
   ): number[] => {
     const key = `${object.id}|${Math.floor(px / SHADE_CELL)}|${Math.floor(py / SHADE_CELL)}|${Math.floor(pz / SHADE_CELL)}|${Math.round(nx)}${Math.round(ny)}${Math.round(nz)}`;
     let visible = shaded.get(key);
@@ -1408,12 +1442,15 @@ function bakeGi(gameCtx: IRayContext, root: Object3D, options: IGiOptions): IGiR
       shaded.set(key, visible);
     }
     const cosine = Math.max(0, nx * sunX + ny * sunY + nz * sunZ);
-    const lit = [0, 1, 2].map(
-      (c) =>
-        (albedo[c] ?? 0) * (sunRadiance[c] ?? 0) * cosine * (visible[0] ?? 0) + (emissive[c] ?? 0),
+    // `mode` >= 0 is the share of light `mode` alone (the light-change basis); -1 is everything.
+    const lit = [0, 1, 2].map((c) =>
+      mode >= 0
+        ? 0
+        : (albedo[c] ?? 0) * (sunRadiance[c] ?? 0) * cosine * (visible[0] ?? 0) +
+          (emissive[c] ?? 0),
     );
     lights.forEach((light, l) => {
-      if (visible[l + 1] !== 1) return;
+      if (visible[l + 1] !== 1 || (mode >= 0 && mode !== l)) return;
       toLight.subVectors(light.position, origin);
       const d = toLight.length();
       toLight.divideScalar(d);
@@ -1575,6 +1612,8 @@ function bakeGi(gameCtx: IRayContext, root: Object3D, options: IGiOptions): IGiR
         i * 3,
       );
       ray.albedo.set(albedo, i * 3);
+      ray.emissive.set(emissive, i * 3);
+      ray.owner[i] = hit.object.id;
       ray.point.set(hitAt, i * 3);
       ray.normal.set(hitNormal, i * 3);
     }
@@ -1678,7 +1717,11 @@ function bakeGi(gameCtx: IRayContext, root: Object3D, options: IGiOptions): IGiR
   const shadowing = options.skyShadowDistance !== undefined;
   /** Per probe and face, the share of the cosine-weighted rays that leave the scene (see `IField.sky`). */
   const skyShare = new Float32Array(probes * 6);
-  const gather = (previous: IField | undefined): Float32Array => {
+  const gather = (
+    previous: IField | undefined,
+    base: Float32Array = ray.base,
+    withEmitted = true,
+  ): Float32Array => {
     const point = new Vector3();
     const normal = new Vector3();
     const out = new Float32Array(probes * 18);
@@ -1699,7 +1742,7 @@ function bakeGi(gameCtx: IRayContext, root: Object3D, options: IGiOptions): IGiR
           ray.direction[i * 3 + 1] ?? 0,
           ray.direction[i * 3 + 2] ?? 0,
         ];
-        let [r, g, b] = [ray.base[i * 3] ?? 0, ray.base[i * 3 + 1] ?? 0, ray.base[i * 3 + 2] ?? 0];
+        let [r, g, b] = [base[i * 3] ?? 0, base[i * 3 + 1] ?? 0, base[i * 3 + 2] ?? 0];
         const free = ray.hit[i] === 0 || (ray.distance[i] ?? 0) > (options.skyShadowDistance ?? 0);
         if (shadowing)
           [r, g, b] = [ray.sky[i * 3] ?? 0, ray.sky[i * 3 + 1] ?? 0, ray.sky[i * 3 + 2] ?? 0];
@@ -1735,7 +1778,8 @@ function bakeGi(gameCtx: IRayContext, root: Object3D, options: IGiOptions): IGiR
         const f = Math.floor(j / 3);
         const visible = shadowing ? (open[f] ?? 0) / Math.max(1e-6, weight[f] ?? 0) : 1;
         out[probe * 18 + j] =
-          (((sum[j] ?? 0) * 4) / Math.max(1, count)) * visible + (emitted[probe * 18 + j] ?? 0);
+          (((sum[j] ?? 0) * 4) / Math.max(1, count)) * visible +
+          (withEmitted ? (emitted[probe * 18 + j] ?? 0) : 0);
       }
     }
     return out;
@@ -1751,12 +1795,14 @@ function bakeGi(gameCtx: IRayContext, root: Object3D, options: IGiOptions): IGiR
     values = smooth({ grid, values, links, valid });
   phase("smooth");
 
-  if (options.bounces > 0) {
+  if (options.bounces > 0 && options.paintGround !== false) {
     const floor = groundRadiance({ grid, values, links, valid }, ray, first, end, grid.origin.y);
     if (floor !== undefined) paintGround(root, floor);
   }
   const environment = environmentShare(grid, ray, first, end, skyShare);
   const toProbe = new Vector3();
+  // Which probe each fine texel's corner sees, in the order `resample` asks: a light change replays it without a ray.
+  const seen: boolean[] = [];
   const fine = resample({ grid, values, links, valid, sky: environment }, (point, probe) => {
     toProbe.set(
       grid.origin.x + ((probe % grid.nx) + 0.5) * grid.cell,
@@ -1766,11 +1812,12 @@ function bakeGi(gameCtx: IRayContext, root: Object3D, options: IGiOptions): IGiR
     toProbe.sub(point);
     const d = toProbe.length();
     traced += 1;
-    return (
+    const open =
       d < 1e-4 ||
       ctx.raycast({ origin: point, direction: toProbe.divideScalar(d), far: d, targets: root }) ===
-        undefined
-    );
+        undefined;
+    seen.push(open);
+    return open;
   });
   phase("resample");
   const cut = linkMasks({ grid, values, links, valid }, fine.grid, ctx, root);
@@ -1786,7 +1833,97 @@ function bakeGi(gameCtx: IRayContext, root: Object3D, options: IGiOptions): IGiR
     return light === undefined ? base : base.add(light);
   };
   const mean = meanRadianceAt(fine.values, fine.grid, cut.solid);
-  giCache.meanRadiance = mean;
+  giCache.meanRadiance = mean.read;
+  giCache.meanTexture = mean.texture;
+  // A light that changes (PRD-641 AC-2). The field is linear in each light's colour times intensity, so it is the bake
+  // plus, per changing light, (scale - 1) times that light's own field. Each own field is solved once, on the first
+  // change, from the rays already traced (no new trace; the shadow rays and the link and resample visibility are the
+  // bake's), and a later change only blends them into the texture: no hitch while a light flickers.
+  const dynamic = lights.flatMap((light, l) =>
+    light.source !== undefined && light.intensity > 0 && options.bounces > 0
+      ? [
+          {
+            l,
+            source: light.source,
+            baked: [light.color.r, light.color.g, light.color.b].map((c) => c * light.intensity),
+            applied: [1, 1, 1],
+            field: undefined as Float32Array | undefined,
+          },
+        ]
+      : [],
+  );
+  const ownField = (l: number): Float32Array => {
+    const started = performance.now();
+    const own = new Float32Array(capacity * 3);
+    for (let i = 0; i < used; i += 1) {
+      if (ray.hit[i] !== 1) continue;
+      const hit = surface(
+        { id: ray.owner[i] ?? 0 },
+        [ray.point[i * 3] ?? 0, ray.point[i * 3 + 1] ?? 0, ray.point[i * 3 + 2] ?? 0],
+        [ray.normal[i * 3] ?? 0, ray.normal[i * 3 + 1] ?? 0, ray.normal[i * 3 + 2] ?? 0],
+        [ray.albedo[i * 3] ?? 0, ray.albedo[i * 3 + 1] ?? 0, ray.albedo[i * 3 + 2] ?? 0],
+        [0, 0, 0],
+        l,
+      );
+      own.set(hit, i * 3);
+    }
+    let solved = gather(undefined, own, false);
+    for (let pass = 1; pass < options.bounces; pass += 1)
+      solved = gather({ grid, values: solved, links, valid }, own, false);
+    for (let pass = 0; pass < SMOOTH_PASSES; pass += 1)
+      solved = smooth({ grid, values: solved, links, valid });
+    let at = 0;
+    const replay = resample({ grid, values: solved, links, valid, sky: environment }, () => {
+      const open = seen[at];
+      at += 1;
+      if (open === undefined)
+        throw new Error("TN_GI_RELIGHT: the resample asked for more rays than the bake");
+      return open;
+    });
+    if (at !== seen.length)
+      throw new Error("TN_GI_RELIGHT: the resample asked for fewer rays than the bake");
+    console.info(
+      `TN_GI_RELIGHT solved light ${l} in ${Math.round(performance.now() - started)} ms`,
+    );
+    return replay.values;
+  };
+  const bakedValues = Float32Array.from(fine.values);
+  giCache.refresh = (): boolean => {
+    let changed = false;
+    for (const light of dynamic) {
+      const now = [light.source.color.r, light.source.color.g, light.source.color.b].map(
+        (c) => c * light.source.intensity,
+      );
+      const scale = now.map((v, c) =>
+        (light.baked[c] ?? 0) > 0 ? v / (light.baked[c] as number) : 1,
+      );
+      if (scale.every((v, c) => v === light.applied[c])) continue;
+      light.applied = scale;
+      light.field ??= ownField(light.l);
+      changed = true;
+    }
+    const texture = giCache.volumeTexture;
+    if (!changed || texture === undefined) return changed;
+    const texels = texture.image.data as Uint16Array;
+    const { nx, ny, nz } = fine.grid;
+    for (let probe = 0; probe < nx * ny * nz; probe += 1) {
+      const [x, y, z] = [probe % nx, Math.floor(probe / nx) % ny, Math.floor(probe / (nx * ny))];
+      for (let face = 0; face < 6; face += 1) {
+        const o = (x + nx * (y + ny * (face * nz + z))) * 4;
+        for (let c = 0; c < 3; c += 1) {
+          const j = (probe * 6 + face) * 3 + c;
+          let v = bakedValues[j] ?? 0;
+          for (const light of dynamic) v += ((light.applied[c] ?? 1) - 1) * (light.field?.[j] ?? 0);
+          fine.values[j] = Math.max(0, v);
+          texels[o + c] = toHalf(Math.max(0, v));
+        }
+      }
+    }
+    texture.needsUpdate = true;
+    mean.refresh();
+    return true;
+  };
+  if (dynamic.length > 0) gameCtx.beforeRender?.(() => giCache.refresh?.());
   const normal = normalWorld.normalize();
   const incident = positionWorld.sub(cameraPosition).normalize();
   /**
@@ -1819,7 +1956,7 @@ function bakeGi(gameCtx: IRayContext, root: Object3D, options: IGiOptions): IGiR
     if (material === undefined) {
       // A translucent surface has no side that faces the light: it reads the mean, whichever way it looks.
       const { node, visibility } = source.transparent
-        ? { node: mean(positionWorld), visibility: float(1) }
+        ? { node: mean.read(positionWorld), visibility: float(1) }
         : readFor(source.roughness);
       material = nodeTwin(source);
       (material as unknown as { irradianceNode: unknown }).irradianceNode = node;

@@ -1867,12 +1867,7 @@
       "symbol": "getPlatform"
     },
     {
-      "aliases": [
-        "global illumination quality",
-        "lumen scalability",
-        "sg.GlobalIlluminationQuality",
-        "final gather method"
-      ],
+      "aliases": ["lumen scalability", "sg.GlobalIlluminationQuality", "final gather method"],
       "constraints": [
         "the game applies each step to its own render chain; this class draws nothing",
         "the GPU time of a pass is read by the scene name three or the game gave it, so name every GI pass in `stages`",
@@ -2204,20 +2199,38 @@
       "symbol": "isWeb"
     },
     {
-      "aliases": ["SourceRadius, PCSS, soft lamp shadow"],
+      "aliases": [],
       "constraints": [
-        "sourceRadius is required, in metres, 0 or more (0 is one hard tap); forward-depth maps only"
+        "sourceRadius is 0 or more; both distances are positive metres; the result is the geometric tangent, before penumbraScale"
       ],
-      "example": "lamp.shadow.filterNode = sourceRadiusShadowFilter({ sourceRadius: 0.05 });",
+      "example": "const tangent = lampPenumbraTangent(0.05, 2, 3);",
       "importPath": "@threenative/core",
       "kind": "function",
       "overrides": [],
       "package": "@threenative/core",
       "signature": "export function lampPenumbraTangent( sourceRadius: number, blockerDistance: number, receiverDistance: number, ): number { … }",
-      "situations": ["soften a lamp's shadow by the lamp's size, as Unreal's SourceRadius does"],
-      "summary": "Source-radius blocker search and variable-radius PCF on a spot or point light's shadow map.",
+      "situations": ["measure a lamp shadow's penumbra width without a GPU"],
+      "summary": "A lamp's penumbra radius in tangent units at a receiver, from the lamp's source radius and the blocker and receiver distances.",
       "supersedes": [],
       "symbol": "lampPenumbraTangent"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "counters that do not add up to the frame's shadow draws throw TN_LAMP_SHADOW_INVALID"
+      ],
+      "example": "const line = lampShadowMarker(renderer, frame);\nif (line !== undefined) console.info(line);",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function lampShadowMarker( renderer: { … }",
+      "situations": [
+        "log lamp shadow redraws and GPU time apart from the sun's on the owned engine"
+      ],
+      "summary": "The `TN_LAMP_SHADOW` line for the renderer's last frame, or `undefined` on a renderer that keeps no lamp counters (three's own).",
+      "supersedes": [],
+      "symbol": "lampShadowMarker"
     },
     {
       "aliases": [],
@@ -2564,6 +2577,24 @@
       "summary": "Parse a `TN_GI` console line back into its report, or `undefined`.",
       "supersedes": [],
       "symbol": "readGIMarker"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "non-marker lines and markers whose sun and lamp draws do not add up return `undefined`"
+      ],
+      "example": "const stats = readLampShadowMarker(line);\nif (stats !== undefined) console.log(stats.lamps.redraws);",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function readLampShadowMarker(line: string): ILampShadowStats | undefined { … }",
+      "situations": [
+        "count lamp shadow redraws from a renderer log, for example a moving-caster run"
+      ],
+      "summary": "Parse a `TN_LAMP_SHADOW` line back into its stats, or `undefined`.",
+      "supersedes": [],
+      "symbol": "readLampShadowMarker"
     },
     {
       "aliases": [],
@@ -3097,7 +3128,7 @@
       "symbol": "setSpanRecorder"
     },
     {
-      "aliases": ["shadow quality", "virtual shadow map scalability", "sg.ShadowQuality"],
+      "aliases": ["virtual shadow map scalability", "sg.ShadowQuality"],
       "constraints": [
         "the game rebuilds its filter with the tier's sample counts on each step; this class draws nothing",
         "timestamp queries are needed: without them every window is unobserved and the tier holds",
@@ -3312,14 +3343,14 @@
       "symbol": "sourceAngleShadowFilter"
     },
     {
-      "aliases": ["SourceRadius, PCSS, soft lamp shadow"],
+      "aliases": ["PCSS soft shadows"],
       "constraints": [
-        "sourceRadius is required, in metres, 0 or more (0 is one hard tap); forward-depth maps only"
+        "sourceRadius is required, in metres, 0 or more (0 is one hard tap); penumbraScale, the share of the geometric penumbra kept, is in (0, 4] and defaults to 0.6, the width Unreal's lamp ray test resolves; forward-depth maps only"
       ],
       "example": "lamp.shadow.filterNode = sourceRadiusShadowFilter({ sourceRadius: 0.05 });",
       "importPath": "@threenative/core",
       "kind": "function",
-      "overrides": [],
+      "overrides": ["penumbraScale: 1 gives the geometric penumbra of a disk lamp"],
       "package": "@threenative/core",
       "signature": "export function sourceRadiusShadowFilter( { … }",
       "situations": ["soften a lamp's shadow by the lamp's size, as Unreal's SourceRadius does"],
@@ -3537,6 +3568,30 @@
       "symbol": "SurfaceLights"
     },
     {
+      "aliases": ["lumen reflections", "dedicated reflection rays"],
+      "constraints": [
+        "the pack is a snapshot of the static triangles taken when the object is built: build a new one after geometry moves",
+        "instanced, skinned, batched and morphing meshes are not in the pack; report.skippedMoving counts them",
+        "trace only pixels at or below maxRoughnessToTrace (0.4, Unreal's cut-off): each ray walks the tree",
+        "a ray visits at most maxSteps tree nodes, then reports a miss; hit light, the miss colour and the blend with the frame stay in the game's src/render/",
+        "the pack needs a device with float32-filterable"
+      ],
+      "example": "const traced = new TracedReflections(ctx.scene); const hit = traced.trace({ origin, direction, far: 30 }); // light hit.albedo at hit.position in the stage",
+      "importPath": "@threenative/core",
+      "kind": "class",
+      "overrides": ["maxRoughnessToTrace, roughnessFadeLength and maxSteps are game-owned choices"],
+      "package": "@threenative/core",
+      "signature": "export class TracedReflections { … }",
+      "situations": [
+        "reflect what is behind the camera in a mirror or a chrome sphere",
+        "make a glossy or wet floor reflect objects that are off screen",
+        "trace a shadow ray from a reflected surface toward the sun"
+      ],
+      "summary": "Reflection rays against the scene's triangles, in TSL. For a smooth surface, a ray finds what the screen cannot show (a room behind the camera, the far side of an object) and returns the hit's position, normal and material. The game lights the hit in its own stage. The kernel is plain TSL: float textures and a loop, no storage buffer.",
+      "supersedes": [],
+      "symbol": "TracedReflections"
+    },
+    {
       "aliases": [],
       "constraints": [
         "the surface comes from the game; pooling, travel, and fading belong to the engine",
@@ -3652,6 +3707,26 @@
       "summary": "Draw a model at the detail its projected geometric error earns, from a chain the asset cook baked. **This is engine-owned, and a game does not call it.** `assets.lod: {}` opts in — the default-on front door opens after qualification — the `model` pass bakes `TN_discrete_lod` into eligible models, the loader registers the reader, and the engine runs the selection every frame before it renders. Each frame the mesh picks the cheapest baked level whose measured error projects to fewer than the resolved pixel budget, taking the camera's own projection, zoom, viewport and a conservative nearest depth into account. Refinement is immediate; coarsening waits for the resolved hysteresis. A mesh with no baked chain draws its full geometry.",
       "supersedes": [],
       "symbol": "updateModelLods"
+    },
+    {
+      "aliases": ["Substrate EON, Diffuse_EON, Diffuse_GGX_Rough, rough diffuse, Oren-Nayar"],
+      "constraints": [
+        "direct light only, indirect light stays Lambert; standard and physical materials; a lamp's `sourceRadius` in metres fades the effect to Lambert at 20 cm; a material changed after its first draw needs `needsUpdate`"
+      ],
+      "example": "useRoughDiffuse(scene);",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [
+        "material.roughDiffuse = false, or useRoughDiffuse(root, false), puts Lambert back"
+      ],
+      "package": "@threenative/core",
+      "signature": "export function useRoughDiffuse(root: Object3D, enabled = true): number { … }",
+      "situations": [
+        "shade rough surfaces under a sun or a lamp the way Unreal's Substrate does, not as flat Lambert"
+      ],
+      "summary": "Unreal's Substrate rough diffuse (EON) on standard and physical materials, so direct sun and lamp light meets a rough surface the way Unreal shades it. The same `roughDiffuse` flag works on three's WebGPU renderer and on the owned engine.",
+      "supersedes": [],
+      "symbol": "useRoughDiffuse"
     },
     {
       "aliases": [],

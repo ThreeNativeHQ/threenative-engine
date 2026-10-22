@@ -348,6 +348,25 @@ describe("the world-space GI cache against closed forms (PRD-631 L7)", () => {
     expect((card.material as MeshStandardMaterial).twoSidedFoliage ?? false).toBe(false);
   });
 
+  it("the roughDiffuse flag survives the swap, and an unflagged material stays unflagged (PRD-653)", () => {
+    // three declares no such field either: the swap carries it by name, so the lit twin shades its direct light with EON.
+    const flagged = new MeshStandardMaterial();
+    flagged.roughDiffuse = true;
+    const wall = new Mesh(new PlaneGeometry(1, 1), flagged);
+    const floor = new Mesh(
+      new PlaneGeometry(40, 40).rotateX(-Math.PI / 2),
+      new MeshStandardMaterial(),
+    );
+    const scene = new Group().add(wall, floor);
+    skyRadiance.current = { data: new Float32Array(6), width: 2, height: 1, scale: [1, 1, 1] };
+    installGi(rayContext(scene), scene, { bounces: 1, sun: noSun });
+    expect((wall.material as MeshStandardMaterial).constructor.name).toBe(
+      "MeshStandardNodeMaterial",
+    );
+    expect((wall.material as MeshStandardMaterial).roughDiffuse).toBe(true);
+    expect((floor.material as MeshStandardMaterial).roughDiffuse ?? false).toBe(false);
+  });
+
   it("a material whose fields are accessors on its class, as the native engine's are, swaps with them intact", () => {
     // The native engine binds a material's fields as accessors on the class prototype, which a `for in` never lists:
     // a copy by enumeration took nothing, and every leaf and wall came back white.
@@ -537,6 +556,56 @@ describe("the world-space GI cache against closed forms (PRD-631 L7)", () => {
       expect(plate.layers.isEnabled(0)).toBe(true);
       // The pane takes the cache's mean, not a side of it.
       expect(giCache.meanRadiance).toBeDefined();
+    });
+
+    describe("a light that changes after the bake (PRD-641 AC-2)", () => {
+      /** The probe's total after the live light is set to `intensity` and the cache refreshes. */
+      const setIntensity = (
+        live: { intensity: number; color: Color },
+        intensity: number,
+      ): number => {
+        live.intensity = intensity;
+        expect(giCache.refresh?.()).toBe(true);
+        return texelAt(new Vector3(0.5, 0.5, 0.5))
+          .faces.flat()
+          .reduce((a, b) => a + b, 0);
+      };
+      const live = () => {
+        skyRadiance.current = undefined;
+        const scene = sceneOf(true);
+        const source = { intensity: 100, color: new Color(1, 1, 1) };
+        installGi(rayContext(scene), scene, { bounces: 1, lights: [{ ...lamp, source }] });
+        const baked = texelAt(new Vector3(0.5, 0.5, 0.5)).faces.flat();
+        return { source, baked: baked.reduce((a, b) => a + b, 0) };
+      };
+
+      it("a light switched off leaves no light in the field", () => {
+        const { source, baked } = live();
+        expect(baked).toBeGreaterThan(0);
+        expect(setIntensity(source, 0)).toBeLessThan(baked * 1e-3);
+      });
+
+      it("the field follows the intensity linearly and returns to the bake", () => {
+        const { source, baked } = live();
+        expect(setIntensity(source, 200) / baked).toBeCloseTo(2, 2);
+        expect(setIntensity(source, 100) / baked).toBeCloseTo(1, 3);
+      });
+
+      it("the mean field a translucent surface and the fog read follows the light too (PRD-643)", () => {
+        const { source } = live();
+        const texels = () => giCache.meanTexture?.image.data as Uint16Array;
+        const baked = Uint16Array.from(texels());
+        expect(baked.some((value) => value > 0)).toBe(true);
+        setIntensity(source, 0);
+        expect(texels().some((value) => value > 0)).toBe(false);
+        setIntensity(source, 100);
+        expect([...texels()]).toEqual([...baked]);
+      });
+
+      it("refresh reports nothing to do while no light changed", () => {
+        live();
+        expect(giCache.refresh?.()).toBe(false);
+      });
     });
   });
 
