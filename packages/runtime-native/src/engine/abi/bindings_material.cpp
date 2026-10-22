@@ -513,12 +513,12 @@ void registerLightShadow(ClassBinding& b, bool spot) {
         // sourceAngleShadowFilter on a sun (orthographic map), sourceRadiusShadowFilter on a lamp.
         const bool lamp = dynamic_cast<PerspectiveCamera*>(shadow.camera.get()) != nullptr;
         const char* size = lamp ? "sourceRadius" : "sourceAngleRad";
-        if (value.kind != Value::Kind::Record || value.fields.size() < (lamp ? 4u : 3u) || value.fields.size() > 4 ||
+        if (value.kind != Value::Kind::Record || value.fields.size() < (lamp ? 4u : 3u) || value.fields.size() > (lamp ? 4u : 6u) ||
             (!lamp && !dynamic_cast<OrthographicCamera*>(shadow.camera.get())))
             throw Unsupported{"TN_VIRTUAL_SHADOW_UNSUPPORTED: filterNode (sourceAngleShadowFilter on a directional "
                               "light, or sourceRadiusShadowFilter on a spot or point light, required)"};
         double extent = -1, blockers = 0, samples = 0, penumbraScale = lamp ? -1 : 1;  // a lamp must name its share
-        double minPixels = 0;
+        double minPixels = 0, samplesPerRay = 4, rayLengthScale = 1.5;  // core's defaults
         std::size_t known = 0;
         for (const auto& [key, v] : value.fields) {
             if (key == size) extent = number(v);
@@ -526,6 +526,8 @@ void registerLightShadow(ClassBinding& b, bool spot) {
             else if (key == "filterSamples") samples = number(v);
             else if (lamp && key == "penumbraScale") penumbraScale = number(v);
             else if (!lamp && key == "minPenumbraPixels") minPixels = number(v);
+            else if (!lamp && key == "samplesPerRay") samplesPerRay = number(v);
+            else if (!lamp && key == "rayLengthScale") rayLengthScale = number(v);
             else continue;
             ++known;
         }
@@ -533,10 +535,12 @@ void registerLightShadow(ClassBinding& b, bool spot) {
             !std::isfinite(blockers) || blockers < 1 || blockers > 64 || blockers != std::floor(blockers) ||
             !std::isfinite(samples) || samples < 1 || samples > 64 || samples != std::floor(samples) ||
             !std::isfinite(penumbraScale) || penumbraScale <= 0 || penumbraScale > 4 ||
-            !std::isfinite(minPixels) || minPixels < 0 || minPixels > 16 || known != value.fields.size())
+            !std::isfinite(minPixels) || minPixels < 0 || minPixels > 16 ||
+            !std::isfinite(samplesPerRay) || samplesPerRay < 0 || samplesPerRay > 64 || samplesPerRay != std::floor(samplesPerRay) ||
+            !std::isfinite(rayLengthScale) || rayLengthScale <= 0 || known != value.fields.size())
             throw Unsupported{lamp ? "TN_VIRTUAL_SHADOW_INVALID: source-radius filter" : "TN_VIRTUAL_SHADOW_INVALID: source-angle filter"};
         if (lamp) shadow.sourceRadiusFilter = std::array<double, 4>{extent, blockers, samples, penumbraScale};
-        else shadow.sourceAngleFilter = std::array<double, 4>{extent, blockers, samples, minPixels};
+        else shadow.sourceAngleFilter = std::array<double, 6>{extent, blockers, samples, minPixels, samplesPerRay, rayLengthScale};
     };
     if (spot) {
         b.getters["focus"] = [](void* self) { return Value::of(as<LightShadow>(self)->focus); };

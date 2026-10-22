@@ -326,7 +326,8 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         TN_NATIVE_LIT_OUT="${CMAKE_CURRENT_BINARY_DIR}/native-lit-render.rgba")
     # PRD-634: the sun filter's edge widens with the caster gap as the browser's penumbraUv model says.
     tn_native_engine_test(tn-native-engine-vsm-source-angle-test tests/native-engine/vsm/vsm_source_angle_gpu_test.cpp
-        native_engine_vsm_source_angle_gap=gap_widening)
+        native_engine_vsm_source_angle_gap=gap_widening
+        native_engine_vsm_source_angle_ray_test=ray_test_gap)
     target_link_libraries(tn-native-engine-vsm-source-angle-test PRIVATE tn_engine_renderer tn_host_services)
 
     # PRD-520 phase 2 and PRD-528 phase 1: cooked-package loads for a world (failure codes, cancel

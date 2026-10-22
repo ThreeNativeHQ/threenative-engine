@@ -223,6 +223,8 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
               ...(params.get("sunSamples") === null
                 ? {}
                 : { filterSamples: Number(params.get("sunSamples")) }),
+              // Diagnosis knob vsmRay: Unreal's shadow-ray samples per ray (0 = the full caster gap, the old edge).
+              ...(params.get("vsmRay") === null ? {} : { samplesPerRay: Number(params.get("vsmRay")) }),
             });
         };
         applyShadowTier(SHADOW_TIER);
