@@ -363,15 +363,19 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
     }
     if (name == "traa") {
         arity(4);
-        // The existing pass runs before post effects and reads the scene attachments.
-        if (arg(0)->kind != g::Kind::Texture || arg(0)->name != "scene" ||
+        // The colour is the scene's own (resolved right after the scene pass, ahead of every effect) or a texture the
+        // graph drew (convertToTexture of the frame after its effects, resolved where that texture is ready). Depth and
+        // velocity are always the scene's attachments.
+        const auto beauty = arg(0);
+        const bool sceneColour = beauty->kind == g::Kind::Texture && beauty->name == "scene";
+        if ((!sceneColour && beauty->kind != g::Kind::RenderTexture) ||
             arg(1)->kind != g::Kind::Texture || arg(1)->name != "depth" ||
             arg(2)->kind != g::Kind::Texture || arg(2)->name != "velocity")
-            throw std::runtime_error("TN_NATIVE_TRAA_INPUT: traa requires the scene color, depth and velocity attachments; authored pre-resolve inputs are unbound");
+            throw std::runtime_error("TN_NATIVE_TRAA_INPUT: traa requires the scene color or a texture the graph drew, with the scene depth and velocity attachments");
         auto effect = std::make_shared<g::PostEffect>();
         effect->kind = "TRAANode";
-        effect->output = "scene";
-        effect->inputs = {arg(0), arg(1), arg(2)};
+        effect->output = sceneColour ? "scene" : "native_traa_" + std::to_string(++serial);
+        effect->inputs = {beauty, arg(1), arg(2)};
         effect->parameters = {{"depthThreshold", {0.0005f}}, {"edgeDepthDiff", {0.001f}},
                               {"maxVelocityLength", {128}}, {"useSubpixelCorrection", {1}}};
         return g::effectNode(effect);
@@ -642,10 +646,13 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
     if (method && name == "level") {
         arity(1);
         const auto source = lhs();
-        if (source->kind != g::Kind::Texture || source->args.size() != 1)
+        // A render texture (convertToTexture of a graph) reads at a level too: the level is the third argument.
+        const bool rendered = source->kind == g::Kind::RenderTexture && source->args.size() == 2;
+        if (!rendered && (source->kind != g::Kind::Texture || source->args.size() != 1))
             throw std::runtime_error("level needs a texture node");
         auto node = std::make_shared<g::NodeData>(*source);
-        node->args = {source->args[0], arg(0)};
+        node->args = rendered ? std::vector<g::Node>{source->args[0], source->args[1], arg(0)}
+                              : std::vector<g::Node>{source->args[0], arg(0)};
         return node;
     }
     // r185's camera accessors (accessors/Camera.js) for a single camera: render-group uniforms by
