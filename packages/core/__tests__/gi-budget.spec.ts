@@ -2,119 +2,79 @@ import { describe, expect, it } from "vitest";
 import type { IStageGpuReading } from "../src/render-pass-budget.js";
 import { GIBudget, type IGIBudgetOptions, readGIMarker } from "../src/render/gi-budget.js";
 
-// Unreal's measured GI time per level, as the tier table records it (PRD-644): none costs nothing.
-const BUDGET = { irradianceField: 1, none: 0, screenProbeGather: 6 } as const;
-
 function budget(overrides: Partial<IGIBudgetOptions> = {}) {
   const lines: string[] = [];
-  const steps: string[] = [];
   const target = new GIBudget({
-    budgetMs: BUDGET,
-    frameBudgetMs: 16.7,
+    framePeriodMs: 1000 / 60,
     method: "screenProbeGather",
-    minSamples: 4,
-    onStep: (method) => steps.push(method),
     report: (line) => lines.push(line),
     stages: ["SSGI", "Denoise"],
     tier: "high",
     windowFrames: 10,
     ...overrides,
   });
-  return { lines, steps, target };
+  return { lines, target };
 }
 
-function run(target: GIBudget, ms: number, frameMs = 10) {
+function run(target: GIBudget, ms: number, frameMs: number) {
   let report: ReturnType<GIBudget["observe"]>;
   for (let frame = 0; frame < 10; frame++) report = target.observe(ms, frameMs);
   return report;
 }
 
 describe("GIBudget", () => {
-  it("steps screenProbeGather down to irradianceField once, and says why", () => {
-    const { lines, steps, target } = budget();
-    const report = run(target, 31);
-    expect(report).toMatchObject({
-      budgetMs: 6,
-      frameMs: 10,
-      finalGatherMethod: "irradianceField",
-      globalIlluminationQuality: 1,
-      reason: "window 31 ms is over the 6 ms budget: stepped down to irradianceField",
-      stepped: "irradianceField",
-      tier: "high",
-      windowMs: 31,
-    });
-    expect(target.finalGatherMethod).toBe("irradianceField");
-    expect(target.globalIlluminationQuality).toBe(1);
-    expect(steps).toEqual(["irradianceField"]);
-    expect(lines).toHaveLength(1);
-    expect(readGIMarker(lines[0] ?? "")).toMatchObject({
-      stepped: "irradianceField",
-      windowMs: 31,
-    });
-  });
-
-  it("steps up after a window below 70% of the next budget with room in the frame", () => {
-    const { steps, target } = budget({ method: "irradianceField" });
-    expect(run(target, 0.4, 10)?.stepped).toBe("screenProbeGather");
-    expect(steps).toEqual(["screenProbeGather"]);
-    expect(target.globalIlluminationQuality).toBe(3);
-  });
-
-  it("does not climb out of none on a frame that has no room", () => {
-    const { target } = budget({ method: "none" });
-    expect(run(target, 0, 16.5)?.stepped).toBeUndefined();
-    expect(target.finalGatherMethod).toBe("none");
-    expect(run(target, 0, 8)?.stepped).toBe("irradianceField");
-  });
-
-  it("keeps an explicit method and reports the exceeded budget", () => {
-    const { lines, steps, target } = budget({ explicit: true });
-    const report = run(target, 31);
-    expect(report).toMatchObject({ explicit: true, stepped: undefined });
-    expect(report?.reason).toBe(
-      "window 31 ms is over the 6 ms budget: finalGatherMethod is set by the game and stays screenProbeGather",
-    );
-    expect(target.finalGatherMethod).toBe("screenProbeGather");
-    expect(steps).toEqual([]);
-    expect(lines).toHaveLength(1);
-  });
-
-  it("reports nothing for a window inside its budget", () => {
+  it("holds the method on a frame over its period and says the resolution scale is the lever", () => {
     const { lines, target } = budget();
-    expect(run(target, 4)?.stepped).toBeUndefined();
-    expect(lines).toEqual([]);
+    const report = run(target, 6.3, 22.6);
+    expect(report).toMatchObject({
+      finalGatherMethod: "screenProbeGather",
+      frameMs: 22.6,
+      globalIlluminationQuality: 3,
+      periodMs: 16.667,
+      share: 0.2788,
+      targetMs: 15,
+      tier: "high",
+      verdict: "over",
+      windowMs: 6.3,
+    });
+    expect(report?.reason).toContain(
+      "screenProbeGather holds, the primary resolution scale is the lever",
+    );
+    expect(report?.reason).toContain("GI is 28% of the frame");
+    // 120 more frames of the same: the method never moves.
+    for (let i = 0; i < 12; i++) run(target, 6.3, 22.6);
+    expect(target.finalGatherMethod).toBe("screenProbeGather");
+    expect(readGIMarker(lines[0] ?? "")).toMatchObject({ verdict: "over", windowMs: 6.3 });
+    expect(lines).toHaveLength(1);
   });
 
-  it("reads the named stages of each resolved frame once, and holds when none resolve", () => {
+  it("reads the same GI time as inside the frame at boost: the frame decides, not the stage", () => {
+    const { lines, target } = budget();
+    // The gather read 2.1 to 3.0 ms at boost and 6.3 to 6.5 ms at P5 on one scene.
+    expect(run(target, 6.3, 12.5)).toMatchObject({ verdict: "within" });
+    expect(run(target, 2.5, 9)).toMatchObject({ verdict: "within" });
+    expect(run(target, 6.3, 22.6)).toMatchObject({ verdict: "over" });
+    // One line for the first window and one for the change of verdict.
+    expect(lines).toHaveLength(2);
+  });
+
+  it("reads the named stages of each resolved frame once, and reports unobserved without any", () => {
     let reading: IStageGpuReading | undefined;
     const { target } = budget({ read: () => reading });
-    // No timestamp query on this adapter: the window is unobserved and the method holds.
     for (let frame = 0; frame < 10; frame++) target.observeRenderer({});
     expect(target.finalGatherMethod).toBe("screenProbeGather");
+    expect(target.lastReport()).toMatchObject({ verdict: "unobserved" });
     expect(target.lastReport()?.reason).toMatch(/no GPU time/);
-    // A frame counts once, however many loop frames wait for the next one to resolve.
     let last: ReturnType<GIBudget["observeRenderer"]>;
     for (let frame = 0; frame < 10; frame++) {
       reading = { frame: 100 + frame, stages: { Denoise: 3, SSGI: 5, other: 99 }, total: 14 };
       last = target.observeRenderer({});
     }
-    expect(last).toMatchObject({ stepped: "irradianceField", windowMs: 8 });
-    // The same resolved frame again is no new reading: the window sees nothing and holds.
+    expect(last).toMatchObject({ frameMs: 14, verdict: "within", windowMs: 8 });
+    // The same resolved frame again is no new reading.
     let again: ReturnType<GIBudget["observeRenderer"]>;
     for (let frame = 0; frame < 10; frame++) again = target.observeRenderer({});
-    expect(again).toMatchObject({ samples: 0, windowMs: undefined });
-  });
-
-  it("steps only among the methods the game can switch between", () => {
-    const { steps, target } = budget({ methods: ["irradianceField", "screenProbeGather"] });
-    expect(run(target, 31)?.stepped).toBe("irradianceField");
-    // The cheapest listed method holds: `none` is not on the ladder.
-    expect(run(target, 31)?.reason).toBe(
-      "window 31 ms is over the 1 ms budget and irradianceField is the cheapest method",
-    );
-    expect(steps).toEqual(["irradianceField"]);
-    expect(() => budget({ methods: ["screenProbeGather", "none"] })).toThrow(/cheapest first/);
-    expect(() => budget({ methods: ["none", "irradianceField"] })).toThrow(/start/);
+    expect(again).toMatchObject({ samples: 0, verdict: "unobserved", windowMs: undefined });
   });
 
   it("names which of the configured stages resolved, so a wrong stage name is visible", () => {
@@ -135,9 +95,9 @@ describe("GIBudget", () => {
     expect(report).toMatchObject({ stagesSeen: [], windowMs: 0 });
   });
 
-  it("fails closed on a method outside the ladder or a missing budget", () => {
-    expect(() => budget({ method: "ssgi" as never })).toThrow(/start/);
-    expect(() => budget({ budgetMs: { none: 0 } as never })).toThrow(/budget/);
+  it("fails closed on a method outside the ladder or a missing period", () => {
+    expect(() => budget({ method: "ssgi" as never })).toThrow(/not one of/);
+    expect(() => budget({ framePeriodMs: 0 })).toThrow(RangeError);
     expect(() => budget({ stages: [] })).toThrow(/stages/);
   });
 });

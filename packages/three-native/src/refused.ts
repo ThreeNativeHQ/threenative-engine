@@ -1,7 +1,9 @@
 /**
  * A three export the native engine does not provide, for both back ends: any call, construction or
  * property access throws `diagnostic` naming the export. A game that only imports it (core's WebGL2
- * fallback, a renderer it never builds) runs; one that uses it fails at that use, by name.
+ * fallback, a renderer it never builds) runs; one that uses it fails at that use, by name. Its
+ * `prototype` alone reads, as on the Wasm engine (browser-entry.ts), so a module may hook or extend
+ * a refused class (core's `installRoughDiffuse`) and fail only when it constructs one.
  */
 export function refused(name: string, diagnostic: string): unknown {
   const fail = (): never => {
@@ -10,7 +12,7 @@ export function refused(name: string, diagnostic: string): unknown {
   return new Proxy(function refusedExport() {}, {
     apply: fail,
     construct: fail,
-    get: fail,
+    get: (target, key) => (key === "prototype" ? target.prototype : fail()),
     set: fail,
     has: fail,
     ownKeys: fail,
