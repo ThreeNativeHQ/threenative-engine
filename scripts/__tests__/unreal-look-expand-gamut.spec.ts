@@ -5,6 +5,7 @@ import {
   expandAmount,
   expandGamutLinear,
   filmicToneMap,
+  redModifierWeight,
 } from "../unreal-look/scaffold/render/tonemap.js";
 
 // Unreal 5.8.3 L1 frames (fixed exposure, Box_Red): the scene-linear EXR pixel and the 8-bit PNG pixel of the
@@ -138,5 +139,54 @@ describe("Unreal's gamut expansion in the harness tone curve (PRD-632)", () => {
   it("pulls the red of a bright clear sky down toward the wide gamut", () => {
     const sky = [0.3521, 0.6163, 1.0911] as const;
     expect(showsAs(sky, 1)[0] as number).toBeLessThan(showsAs(sky, 0)[0] as number);
+  });
+
+  it("maps the Unreal red box within 1.1 levels with the red modifier and 3 to 5 levels off without it", () => {
+    const worst = (curve: object) =>
+      Math.max(
+        ...RED_BOX.flatMap(({ linear, png }) =>
+          filmicToneMap([...linear], 1, { ...FILMIC_CURVE, expandGamut: 0, ...curve })
+            .map(srgb8)
+            .map((level, c) => Math.abs(level - (png[c] as number))),
+        ),
+      );
+    expect(worst({})).toBeLessThan(1.1);
+    expect(worst({ glow: 0, redModifier: 0 })).toBeGreaterThan(4.5);
+  });
+});
+
+describe("the ACES red modifier and glow in the harness tone curve (PRD-632)", () => {
+  it("are on by default, as in Unreal's film tone map", () => {
+    expect(FILMIC_CURVE.glow).toBe(1);
+    expect(FILMIC_CURVE.redModifier).toBe(1);
+  });
+
+  it("weights the red modifier by smoothstep(1 - |2 hue / 135 deg|) squared", () => {
+    const rad = (degrees: number) => (degrees * Math.PI) / 180;
+    expect(redModifierWeight(0)).toBe(1);
+    expect(redModifierWeight(rad(33.75))).toBeCloseTo(0.25, 10);
+    expect(redModifierWeight(rad(-33.75))).toBeCloseTo(0.25, 10);
+    expect(redModifierWeight(rad(67.5))).toBe(0);
+    expect(redModifierWeight(rad(120))).toBe(0);
+  });
+
+  it("leaves a grey alone and a green or blue untouched by the red modifier", () => {
+    const off = { ...FILMIC_CURVE, glow: 0, redModifier: 0 };
+    filmicToneMap([0.2, 0.2, 0.2]).forEach((v, c) =>
+      expect(v).toBeCloseTo(filmicToneMap([0.2, 0.2, 0.2], 1, off)[c] ?? Number.NaN, 9),
+    );
+    const green = filmicToneMap([0.05, 0.8, 0.1], 1, { ...FILMIC_CURVE, glow: 0 });
+    const greenOff = filmicToneMap([0.05, 0.8, 0.1], 1, off);
+    green.forEach((v, c) => expect(v).toBeCloseTo(greenOff[c] ?? Number.NaN, 9));
+  });
+
+  it("pulls the red of a saturated red down and lifts a dark saturated colour", () => {
+    const off = { ...FILMIC_CURVE, glow: 0, redModifier: 0 };
+    expect(filmicToneMap([0.4, 0.05, 0.05])[0] as number).toBeLessThan(
+      filmicToneMap([0.4, 0.05, 0.05], 1, off)[0] as number,
+    );
+    const dark = filmicToneMap([0.02, 0.003, 0.003], 1, { ...FILMIC_CURVE, redModifier: 0 });
+    const darkOff = filmicToneMap([0.02, 0.003, 0.003], 1, off);
+    expect(dark[0] as number).toBeGreaterThan(darkOff[0] as number);
   });
 });
