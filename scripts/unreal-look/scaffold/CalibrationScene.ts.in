@@ -33,7 +33,7 @@ import { texture, uniform, vec4 } from "three/tsl";
 import { MeshBasicNodeMaterial } from "three/webgpu";
 import { giCache, installGi } from "../render/giCache.js";
 import { watchGi } from "../render/giTier.js";
-import { type IGlbMaterialImages, glbMaterialImages } from "../render/glbImages.js";
+import { type IGlbMaterialImages, fetchGlbMaterialImages } from "../render/glbImages.js";
 import {
   type MotionRun,
   type Pose,
@@ -96,18 +96,8 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
     // The engine decodes the scene's maps itself and shows JavaScript only their size. The Surface Cache reads
     // the same images again from the file (PRD-639).
     const file = `unreal-reference/gi/${NAME.replace(":", "/")}/scene.glb`;
-    const tried: string[] = [];
-    for (const url of await ctx.assets.resolve(file)) {
-      const response = await fetch(url);
-      tried.push(`${response.status} ${url}`);
-      if (!response.ok) continue;
-      try {
-        this.#images = await glbMaterialImages(await response.arrayBuffer(), new URL(url, location.href).href);
-        break;
-      } catch (error) {
-        tried.push(String(error));
-      }
-    }
+    const { images, tried } = await fetchGlbMaterialImages(await ctx.assets.resolve(file));
+    this.#images = images;
     console.info(`TN_CALIBRATION_IMAGES ${JSON.stringify({ tried, materials: [...this.#images.keys()] })}`);
   }
 

@@ -5,6 +5,11 @@ export type FinalGatherMethod = "none" | "irradianceField" | "screenProbeGather"
 export const EMISSIVE_UNITS = 1;
 export const EPIC_SSGI = {};
 export const installGi = (..._args: unknown[]): void => undefined;
+export type IGlbMaterialImages = Readonly<Record<string, unknown>>;
+export const fetchGlbMaterialImages = async (..._args: unknown[]) => ({
+  images: new Map<string, IGlbMaterialImages>(),
+  tried: [] as string[],
+});
 export const shadeLikeSubstrate = (..._args: unknown[]): void => undefined;
 export const watchGi = (..._args: unknown[]): { lastReport(): unknown } | undefined => undefined;
 export const watchShadowTier = (..._args: unknown[]): { lastReport(): unknown } | undefined =>
