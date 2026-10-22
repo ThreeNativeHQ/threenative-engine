@@ -53,9 +53,12 @@ import {
   cameraPosition,
   clamp,
   dot,
+  exp2,
   float,
   inverseSqrt,
+  materialEmissive,
   max,
+  min,
   mix,
   normalWorld,
   positionWorld,
@@ -133,6 +136,16 @@ export interface IGiOptions {
    * (default true). Off when reflection rays walk the scene's triangles and find the floor themselves.
    */
   readonly paintGround?: boolean;
+  /**
+   * Where a material's specular comes from, by roughness (PRD-642 Phase 3: `TracedReflections.routeAt`). A share for the
+   * radiance cache is read from the cache along the reflection, a share for the diffuse GI from the cache along the normal,
+   * and both replace the environment's specular, which keeps only the traced share. Unset, the environment answers.
+   */
+  readonly roughSpecular?: (roughness: number) => {
+    readonly traced: number;
+    readonly roughSpecular: number;
+    readonly diffuse: number;
+  };
   /**
    * The Surface Cache (PRD-639): a ray that lands on a mapped material returns the map's texel at the hit UV, for the
    * albedo and for the emission, instead of the material's flat colour (a loaded asset's colour factor is often white
@@ -1895,6 +1908,53 @@ export function installGi(
     reads.set(roughness, made);
     return made;
   };
+  /**
+   * Rough specular from the cache instead of the sky (PRD-642). The engine's environment specular is the sky's radiance times
+   * the surface's single-scatter reflectance, dimmed by the cache's sky share, so a room's bounce light never shows in it.
+   * Here the environment keeps the traced share of its intensity, and the cache's radiance along the reflection (or along the
+   * normal, for a surface too rough for a lobe) takes the rest, through the same reflectance
+   * (EnvBRDFApprox, UE 5.8.3: Engine/Shaders/Private/BRDF.ush) added to the material's emission as `addFoliageBackLight` does.
+   */
+  const routeOf = options.roughSpecular;
+  const addRoughSpecular = (material: MeshStandardMaterial, source: MeshStandardMaterial): void => {
+    const route = routeOf?.(source.roughness);
+    if (route === undefined || route.roughSpecular + route.diffuse <= 0) return;
+    const r = source.roughness;
+    const lobe = mix(reflect(incident, normal), normal, r ** 3).normalize();
+    const radiance = read(positionWorld, lobe)
+      .irradiance.mul(route.roughSpecular)
+      .add(read(positionWorld, normal).irradiance.mul(route.diffuse));
+    const view = max(dot(normal, incident.negate()), 1e-4);
+    // Karis's fit of the split-sum terms: scale on F0 (x) and the offset that F90 = 1 takes (y).
+    const c = [
+      [-1, -0.0275, -0.572, 0.022],
+      [1, 0.0425, 1.04, -0.04],
+    ] as const;
+    const [rx, ry, rz, rw] = [0, 1, 2, 3].map((i) => (c[0][i] ?? 0) * r + (c[1][i] ?? 0)) as [
+      number,
+      number,
+      number,
+      number,
+    ];
+    const a004 = min(float(rx * rx), exp2(view.mul(-9.28)))
+      .mul(rx)
+      .add(ry);
+    const scale = a004.mul(-1.04).add(rz);
+    const offset = a004.mul(1.04).add(rw);
+    const f0 = mix(
+      vec3(0.04, 0.04, 0.04),
+      vec3(source.color.r, source.color.g, source.color.b),
+      source.metalness,
+    );
+    const target = material as unknown as {
+      emissiveNode?: Node<"vec3"> | null;
+      envMapIntensity: number;
+    };
+    target.envMapIntensity = source.envMapIntensity * route.traced;
+    target.emissiveNode = (target.emissiveNode ?? materialEmissive).add(
+      radiance.mul(f0.mul(scale).add(offset)),
+    );
+  };
   /** What a two-sided leaf's back face reads (PRD-643): the cache and the emitters along the opposite of the viewer's normal. */
   let backLight: Node<"vec3"> | undefined;
   const readBack = (): Node<"vec3"> => {
@@ -1920,6 +1980,7 @@ export function installGi(
       (material as unknown as { aoNode: unknown }).aoNode = visibility;
       if (material.twoSidedFoliage === true && material.subsurfaceColor !== undefined)
         addFoliageBackLight(material, readBack());
+      addRoughSpecular(material, source);
       twins.set(source, material);
     }
     mesh.material = material;

@@ -9,6 +9,7 @@ import {
   Scene,
   type SceneFrame,
   type ShadowFilterTier,
+  TracedReflections,
   sourceRadiusShadowFilter,
 } from "@threenative/core";
 import type { IPhysicsContext } from "@threenative/physics";
@@ -34,6 +35,7 @@ import { MeshBasicNodeMaterial } from "three/webgpu";
 import { giCache, installGi } from "../render/giCache.js";
 import { watchGi } from "../render/giTier.js";
 import { type IGlbMaterialImages, fetchGlbMaterialImages } from "../render/glbImages.js";
+import { reflectionTrace } from "../render/reflectionTrace.js";
 import {
   type MotionRun,
   type Pose,
@@ -267,6 +269,16 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
       applyShadowTier(SHADOW_TIER);
       setShadowTier = applyShadowTier;
       if (shadows) this.#shadow = watchShadowTier(ctx, { tier: SHADOW_TIER, apply: applyShadowTier });
+      // PRD-642: a scene with a surface smoother than the trace limit (roughness 0.4, Unreal's default) traces that
+      // surface's reflection through the scene's triangles from L7, where Unreal's Lumen reflections run. A scene of rough
+      // surfaces draws as before. Diagnosis: ?traced=0 leaves the reflections to the environment.
+      const smooth = meshes.some((m) => ((m.material as { roughness?: number }).roughness ?? 1) < 0.4);
+      const tracing = smooth && GI_METHOD !== "none" && params.get("traced") !== "0";
+      if (tracing) {
+        reflectionTrace.current = new TracedReflections(model);
+        // The lamps light a reflection's hit as they light the screen. Diagnosis: ?lampHit=0 leaves a hit to the cache alone.
+        if (params.get("lampHit") !== "0") reflectionTrace.lamps = lights;
+      }
       if (GI_METHOD !== "none") {
         // Diagnosis: ?giSkip=<region> bakes with that region black, to measure its share of the bounce.
         const skipped = meshes.filter((m) => regionOf(m) === params.get("giSkip"));
@@ -277,6 +289,8 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
           (m.material as unknown as { color: Color }).color.setScalar(0);
         }
         const gi = installGi(ctx, model, {
+          // A traced ray finds the floor itself: the painted floor of the cube capture is not needed.
+          paintGround: !tracing,
           // Diagnosis: ?bounces=N brackets how much of the indirect light the later bounces carry.
           bounces: Number(params.get("bounces") ?? 5),
           // The Surface Cache is on: a ray reads the map where it lands (PRD-639). Diagnosis: ?giMaps=0 returns the
@@ -322,6 +336,7 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
             params.get("localExposure") === null ? level >= 7 : params.get("localExposure") === "1",
           // Diagnosis: ?gtao=0 takes the contact occlusion out, to tell its darkening from the shadow's.
           gtaoEnabled: level >= 6 && params.get("gtao") !== "0",
+          ssrEnabled: tracing,
           finalGatherMethod: method,
           // Diagnosis: ?ssgi=0|1 and ?ssgiIntensity=N bracket the screen-space gather over the cache.
           ...(params.get("ssgi") === null ? {} : { ssgiEnabled: params.get("ssgi") === "1" }),
@@ -448,6 +463,9 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
   }
 
   override exit(ctx: GameCtx): void {
+    reflectionTrace.current?.dispose();
+    reflectionTrace.current = undefined;
+    reflectionTrace.lamps = undefined;
     this.#dispose?.();
     this.#dispose = undefined;
     super.exit(ctx);

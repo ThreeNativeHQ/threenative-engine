@@ -266,6 +266,7 @@ export type {
  * @situation reflect what is behind the camera in a mirror or a chrome sphere
  * @situation make a glossy or wet floor reflect objects that are off screen
  * @situation trace a shadow ray from a reflected surface toward the sun
+ * @situation split a surface's specular by roughness into traced, radiance-cache and diffuse-GI shares
  * @alias lumen reflections
  * @alias dedicated reflection rays
  * @constraint the pack is a snapshot of the static triangles taken when the object is built: build a new one after geometry moves
@@ -273,11 +274,12 @@ export type {
  * @constraint trace only pixels at or below maxRoughnessToTrace (0.4, Unreal's cut-off): each ray walks the tree
  * @constraint a ray visits at most maxSteps tree nodes, then reports a miss; hit light, the miss colour and the blend with the frame stay in the game's src/render/
  * @constraint the pack needs a device with float32-filterable
- * @override maxRoughnessToTrace, roughnessFadeLength and maxSteps are game-owned choices
+ * @override maxRoughnessToTrace, roughnessFadeLength, maxRoughnessToEvaluateRoughSpecular, roughSpecularFadeLength and maxSteps are game-owned choices
  * @example const traced = new TracedReflections(ctx.scene); const hit = traced.trace({ origin, direction, far: 30 }); // light hit.albedo at hit.position in the stage
  */
 export { TracedReflections } from "./render/traced-reflections.js";
 export type {
+  IReflectionRoute,
   ITracedHit,
   ITracedRay,
   ITracedReflectionsOptions,
