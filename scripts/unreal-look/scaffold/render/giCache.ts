@@ -125,15 +125,6 @@ export interface IGiOptions {
    * illumination sets 0.8 (Engine/Config/BaseScalability.ini, `[GlobalIlluminationQuality@0]`). Unset is 1.
    */
   readonly skyIntensity?: number;
-  /**
-   * How fast the bounce light follows a light that changes, in frames (PRD-641 AC-2). Unreal does not step it: the
-   * surface cache refreshes `1 / updateFactor` of its texels each frame (`r.LumenScene.DirectLighting.UpdateFactor`,
-   * Engine/Source/Runtime/Renderer/Private/Lumen/LumenSceneLighting.cpp:40 and :98-125), so a texel meets a changed light
-   * within `updateFactor` frames, and the screen probe gather blends each pixel's history with
-   * `1 / (1 + framesAccumulated)` (`r.Lumen.ScreenProbeGather.Temporal.MaxFramesAccumulated`, default 10,
-   * LumenScreenProbeGather.cpp:229 and LumenScreenProbeGatherTemporal.usf:522). Unset, the cache follows at once.
-   */
-  readonly lightResponse?: { readonly updateFactor: number; readonly framesAccumulated: number };
   /** Cast the bake's rays through `ctx.raycast` instead of the flat triangle hierarchy: the slow path, kept for an A/B. */
   readonly stockRays?: boolean;
   /**
@@ -1737,12 +1728,8 @@ export function installGi(
             l,
             source: light.source,
             baked: [light.color.r, light.color.g, light.color.b].map((c) => c * light.intensity),
-            /** The scale the light was last seen at, per channel. */
             applied: [1, 1, 1],
             field: undefined as Float32Array | undefined,
-            /** Per fine texel and channel: the scale its refresh took last, and the scale the pixel history shows. */
-            latched: undefined as Float32Array | undefined,
-            shown: undefined as Float32Array | undefined,
           },
         ]
       : [],
@@ -1783,25 +1770,8 @@ export function installGi(
     return replay.values;
   };
   const bakedValues = Float32Array.from(fine.values);
-  const response = options.lightResponse;
-  if (
-    response !== undefined &&
-    (!(response.updateFactor >= 1) || !(response.framesAccumulated >= 0))
-  )
-    throw new RangeError(
-      "TN_GI_LIGHT_RESPONSE: updateFactor needs 1 or more and framesAccumulated 0 or more",
-    );
-  const alpha = response === undefined ? 1 : 1 / (1 + response.framesAccumulated);
-  const fineTexels = fine.grid.nx * fine.grid.ny * fine.grid.nz;
-  /** A texel's place in the surface cache's refresh cycle: a fixed spread over `updateFactor` frames. */
-  const phaseOf = (texel: number): number =>
-    response === undefined
-      ? 0
-      : (Math.imul(texel + 1, 2654435761) >>> 0) % Math.round(response.updateFactor);
-  let frame = 0;
-  let settling = false;
   giCache.refresh = (): boolean => {
-    frame += 1;
+    let changed = false;
     for (const light of dynamic) {
       const now = [light.source.color.r, light.source.color.g, light.source.color.b].map(
         (c) => c * light.source.intensity,
@@ -1812,50 +1782,26 @@ export function installGi(
       if (scale.every((v, c) => v === light.applied[c])) continue;
       light.applied = scale;
       light.field ??= ownField(light.l);
-      light.latched ??= new Float32Array(fineTexels * 3).fill(1);
-      light.shown ??= new Float32Array(fineTexels * 3).fill(1);
-      settling = true;
+      changed = true;
     }
     const texture = giCache.volumeTexture;
-    if (!settling || texture === undefined) return settling;
+    if (!changed || texture === undefined) return changed;
     const texels = texture.image.data as Uint16Array;
     const { nx, ny, nz } = fine.grid;
-    const cycle = response === undefined ? 1 : Math.round(response.updateFactor);
-    let gap = 0;
-    for (const light of dynamic) {
-      const { latched, shown } = light;
-      if (latched === undefined || shown === undefined) continue;
-      for (let probe = 0; probe < fineTexels; probe += 1) {
-        const refreshed = frame % cycle === phaseOf(probe);
-        for (let c = 0; c < 3; c += 1) {
-          const k = probe * 3 + c;
-          const target = light.applied[c] ?? 1;
-          if (response === undefined || refreshed) latched[k] = target;
-          shown[k] = (shown[k] ?? 1) + ((latched[k] ?? 1) - (shown[k] ?? 1)) * alpha;
-          gap = Math.max(gap, Math.abs(target - (shown[k] ?? 1)));
-        }
-      }
-    }
-    for (let probe = 0; probe < fineTexels; probe += 1) {
+    for (let probe = 0; probe < nx * ny * nz; probe += 1) {
       const [x, y, z] = [probe % nx, Math.floor(probe / nx) % ny, Math.floor(probe / (nx * ny))];
       for (let face = 0; face < 6; face += 1) {
         const o = (x + nx * (y + ny * (face * nz + z))) * 4;
         for (let c = 0; c < 3; c += 1) {
           const j = (probe * 6 + face) * 3 + c;
           let v = bakedValues[j] ?? 0;
-          for (const light of dynamic)
-            v += ((light.shown?.[probe * 3 + c] ?? 1) - 1) * (light.field?.[j] ?? 0);
+          for (const light of dynamic) v += ((light.applied[c] ?? 1) - 1) * (light.field?.[j] ?? 0);
           fine.values[j] = Math.max(0, v);
           texels[o + c] = toHalf(Math.max(0, v));
         }
       }
     }
     texture.needsUpdate = true;
-    // The history is settled when every texel shows the scale its light has (a 1e-3 gap is under a half-float step).
-    if (gap < 1e-3) {
-      settling = false;
-      for (const light of dynamic) light.shown?.set(light.latched ?? []);
-    }
     return true;
   };
   if (dynamic.length > 0) gameCtx.beforeRender?.(() => giCache.refresh?.());
