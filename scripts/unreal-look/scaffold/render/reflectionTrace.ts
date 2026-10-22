@@ -143,11 +143,16 @@ export function tracedReflections(stage: ITracedReflectionStage): Node<"vec4"> {
             });
             blocked.assign(shadow.hit);
           });
+        // TODO(PRD-642 experiment): ?kd= and ?ki= scale the direct and the indirect term.
+        const query = new URLSearchParams(location.search);
+        const kd = Number(query.get("kd") ?? 1);
+        const ki = Number(query.get("ki") ?? 1);
         const direct = sunRadiance
           .mul(facing)
           .mul(float(1).sub(blocked))
-          .mul(float(1).sub(hit.metalness));
-        const indirect = giCache.irradiance?.(hit.position, hit.normal) ?? vec3(NO_CACHE_RADIANCE);
+          .mul(float(1).sub(hit.metalness))
+          .mul(kd);
+        const indirect = (giCache.irradiance?.(hit.position, hit.normal) ?? vec3(NO_CACHE_RADIANCE)).mul(ki);
         const radiance = hit.albedo.mul(direct.add(indirect)).add(hit.emissive).mul(stage.gain);
 
         const facingView = clamp(dot(normalView, incidentView.negate()), 0, 1);
