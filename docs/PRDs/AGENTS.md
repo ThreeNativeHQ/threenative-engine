@@ -45,6 +45,21 @@ the same commit as the change:
 If a PRD has no checkboxes and you are working it, add them as you discover the steps, then keep
 them current the same way.
 
+## A PRD that ports an Unreal feature (owner, 2026-10-21)
+
+Unreal 5.8.3 is the reference: ThreeNative reverse engineers what its source does. Before you write
+or fill such a PRD:
+
+1. Find the Unreal source clone on this machine (`$UE_SRC`, or search for an `UnrealEngine`
+   checkout). With none, make the sparse clone that [`Unreal/README.md`](Unreal/README.md) shows.
+2. Read the subsystem the PRD ports. Cite each fact as `UE 5.8.3: Engine/...:line`, and re-check
+   every cited line before you build on it.
+3. Follow the licence rule in that README: borrow the algorithm, data layout, defaults and guards,
+   never the code, shader code or comments.
+4. Map the subsystem in the feature map (`Unreal/research/unreal-visuals-and-performance-feature-map.html`,
+   the `SYS` and `F` tables). The pre-commit hook then runs `pnpm unreal:status`, which refreshes the
+   map, its SVG and the root README status, and `pnpm check:docs` fails while they are stale.
+
 ## The shape of a PRD (owner decision, 2026-09-25)
 
 - **R1 — every box names its proof inline.** `- [ ] Linux desktop build runs 300 frames. proof:
