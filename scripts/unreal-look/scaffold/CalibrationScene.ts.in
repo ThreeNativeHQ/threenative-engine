@@ -30,9 +30,11 @@ import {
   SpotLight,
   Vector3,
 } from "three";
+import type { Node } from "three/webgpu";
 import { giCache, installGi } from "../render/giCache.js";
 import { watchGi } from "../render/giTier.js";
 import { watchShadowTier } from "../render/shadowTier.js";
+import { pointLightMean, translucentTwin } from "../render/translucency.js";
 import { createVolumetricFog } from "../render/volumetricFog.js";
 import {
   EPIC_SSGI,
@@ -260,6 +262,23 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
         // Diagnosis: ?direct=0 switches the lights off after the bake, so the frame holds the indirect
         // light alone (Unreal's L7-Epic-indirect, r.Lumen.Visualize.IndirectDiffuse 1, is its pair).
         if (params.get("direct") === "0") for (const l of lights) l.intensity = 0;
+      }
+      // Unreal's default lighting for a translucent surface is its translucency volume, the same in every direction
+      // (Volumetric NonDirectional): the lamps at a quarter of what a facing surface receives and, from L7, the room's mean
+      // bounce light. Another mode is not recreated (PRD-643). A mapped surface keeps the lit material.
+      for (const m of DATA.meshes as { name: string; material: { alphaMode?: string; translucencyLightingMode?: string } }[]) {
+        const mode = m.material.translucencyLightingMode;
+        if (m.material.alphaMode === "BLEND" && mode !== undefined && mode !== "tlm_volumetric_non_directional")
+          unsupported.push({ actor: m.name, property: "translucencyLightingMode", reason: `${mode} is not recreated` });
+      }
+      const bounce = giCache.meanRadiance;
+      const direct = (position: Node<"vec3">) => pointLightMean(lights, position);
+      for (const mesh of meshes) {
+        const source = mesh.material as MeshStandardMaterial;
+        if (source.transparent !== true || source.map != null) continue;
+        mesh.material = translucentTwin(source, (position) =>
+          bounce === undefined ? direct(position) : bounce(position).add(direct(position)),
+        );
       }
       // The fog Unreal draws from layer L3 (r.Fog, r.VolumetricFog), as VQ-07's medium: Unreal's exponential height fog in
       // the room, its extinction and albedo, the lamps as unshadowed point lights. One medium per chain build.
