@@ -10,7 +10,11 @@ const W = 16;
 const H = 16;
 const LIMITS: IThresholdFile = {
   iou: 0.98,
-  layers: { L1: { deltaE: 1, dP50: 0.01 }, L5: { deltaE: 1, dP50: 0.01 } },
+  layers: {
+    L1: { deltaE: 1, dP50: 0.01 },
+    L5: { deltaE: 1, dP50: 0.01 },
+    L7: { deltaE: 1, dP50: 0.01 },
+  },
 };
 
 function png(fill: (x: number, y: number) => [number, number, number]): Buffer {
@@ -113,6 +117,18 @@ describe("compareGiToUnreal verdicts (PRD-631 limits)", () => {
     }
   });
 
+  it("judges a quality tier by the limits of its ladder layer", () => {
+    // L7-high pairs with Unreal's L7-Epic frame, and thresholds.json keys its limits by L7.
+    const base = root(scene, "L7-high", "L7-Epic", { corner: gray(190) });
+    const rows = compareGiToUnreal(scene, ["L7-high"], base, undefined, LIMITS);
+    expect(verdicts(rows, "cornell", scene)).toEqual([true]);
+    expect(verdicts(rows, "corner", scene)).toEqual([false]);
+    // A tier whose ladder layer has no entry still fails closed.
+    const none = { iou: 0.98, layers: { L1: { deltaE: 1, dP50: 0.01 } } };
+    const closed = compareGiToUnreal(scene, ["L7-high"], base, undefined, none);
+    expect(closed.every((r) => r.pass === false)).toBe(true);
+  });
+
   it("reads the committed thresholds.json when it is not given one", () => {
     const base = root(scene, "L1", "L1", { corner: gray(190) });
     const rows = compareGiToUnreal(scene, ["L1"], base);
@@ -132,5 +148,12 @@ describe("the shadow family shares the verdict (PRD-649)", () => {
     expect(
       compareGiToUnreal(scene, ["L5"], base, undefined, {}).every((r) => r.pass === false),
     ).toBe(true);
+  });
+
+  it("judges a shadow tier by the limits of its ladder layer", () => {
+    const base = root(scene, "L5-Low", "L5-Low", { point: gray(190) });
+    const rows = compareGiToUnreal(scene, ["L5-Low"], base, undefined, LIMITS);
+    expect(verdicts(rows, "spot", scene)).toEqual([true]);
+    expect(verdicts(rows, "point", scene)).toEqual([false]);
   });
 });
