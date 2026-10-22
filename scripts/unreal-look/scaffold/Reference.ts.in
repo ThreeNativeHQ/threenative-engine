@@ -68,17 +68,32 @@ const SHADOW = shadowPreset(SHADOW_TIER);
 const GI_METHOD = level >= 7 ? GI.finalGatherMethod : "none";
 // `baseline=1` captures the template look as it ships; otherwise the tuning in progress applies.
 const TUNED = params.get("baseline") !== "1";
-// `off=vsm,gpusky,clouds,gi,reflcap,bloom,localexposure,autoexposure,ssgi,ssr,gtao` switches one L9 stage off, to
+// `off=vsm,gpusky,clouds,gi,reflcap,bloom,localexposure,autoexposure,ssgi,ssr,gtao,vignette,motionblur,smaa,noaa,nomsaa` switches one L9 stage off, to
 // attribute frame cost by ablation (PRD-636 performance). `gpusky` is read in `render/sky.ts`.
+// `pan=<rad/s>` turns the camera about the vertical axis after each pose, to give the velocity pass something to blur.
+const PAN = Number(params.get("pan") ?? 0);
+const UP = new Vector3(0, 1, 0);
+let panToken = 0;
 const OFF = new Set((params.get("off") ?? "").split(",").filter(Boolean));
 // What each stage name turns off in the template's `high` preset.
-const STAGE_OFF: Record<string, Record<string, boolean>> = {
-  autoexposure: { autoExposureEnabled: false, localExposureEnabled: false },
+const STAGE_OFF: Record<string, Record<string, unknown>> = {
+  autoexposure: { autoExposureEnabled: false },
   bloom: { bloomEnabled: false, unrealBloomEnabled: false },
   gtao: { gtaoEnabled: false },
   localexposure: { localExposureEnabled: false },
+  motionblur: { motionBlurEnabled: false },
+  // `smaa` is the antialiasing the high tier shipped before temporal AA became its default (PRD-636 anti-aliasing).
+  smaa: { temporalAA: false },
+  // `noaa` leaves the edges raw, for attribution.
+  noaa: { screenSpaceAA: "disabled", temporalAA: false },
+  // The world pass without MSAA (`samples: 0`).
+  nomsaa: { samples: 0 },
   ssgi: { ssgiEnabled: false },
   ssr: { ssrEnabled: false },
+  // Three's own bloom at its best fit to Unreal's: no threshold, radius 0 (the heaviest weight on the narrowest mip)
+  // and 8.94 percent of the frame's energy (Unreal's tint sum 0.7951 / 6 x intensity 0.675 over the node's weight sum 3).
+  stockbloom: { bloomRadius: 0, bloomStrength: 0.0298, bloomThreshold: 0, unrealBloomEnabled: false },
+  vignette: { vignetteAmount: 0 },
 };
 // Unreal 5.8.3's sun source angle, from the live level dump (tools/unreal-reference/template-actors.json),
 // is the sun's apex angle (its angular diameter). `sourceAngleShadowFilter` takes the angular radius,
@@ -132,6 +147,8 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
     // Set once the first reflection capture is done: takes the capture again, with the converged cache.
     let firstCapture: Promise<void> | undefined;
     let recapture: (() => Promise<void>) | undefined;
+    // The L9 chain's own report (stages and dropped), read by the capture.
+    let postDebug: (() => unknown) | undefined;
     // Draws the sun's shadow at another tier: what a `ShadowFilterBudget` step does, callable from the page.
     let setShadowTier = (_tier: ShadowFilterTier): void => undefined;
 
@@ -292,6 +309,7 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
         // setupPost reads the `high` preset by reference, so the ablation switches go there.
         for (const name of OFF) Object.assign(qualityPreset("high"), STAGE_OFF[name]);
         const post = setupPost(ctx.renderer, scene, camera, { godraysLight: key, tier: "high" });
+        postDebug = () => post.debug();
         this.#dispose = () => post.dispose();
       } else {
         // The template's own `high` chain with the L9-only stages off: bloom, vignette, the
@@ -322,6 +340,7 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
             ...(params.get("probeDebug") === null ? {} : { ssgiProbeDebug: Number(params.get("probeDebug")) }),
             autoExposureEnabled: false,
             bloomEnabled: false,
+            localExposureEnabled: false,
             gtaoEnabled: level >= 6,
             finalGatherMethod: method,
             // Unreal's SSAO at L6 (r.AmbientOcclusionRadius 40 cm); Lumen's short-range AO is thinner from L7.
@@ -357,6 +376,15 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
         "engine" in (ctx.renderer.raw as unknown as { info: object }).info
           ? "threenative"
           : "threejs",
+      // The renderer's MSAA samples and the engine's live temporal state beside the chain's own report.
+      debug: (): unknown => {
+        const info = (ctx.renderer.raw as unknown as { info: { engine?: { samples?: number; temporal?: unknown } } }).info;
+        return {
+          samples: { asked: (ctx.renderer.raw as unknown as { samples?: number }).samples, drawn: info.engine?.samples },
+          temporal: info.engine?.temporal,
+          post: postDebug?.(),
+        };
+      },
       pose(pose: Pose): void {
         const aspect = innerWidth / innerHeight;
         const half = (pose.hfovDeg * Math.PI) / 360;
@@ -367,6 +395,19 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
         camera.position.fromArray(pose.position);
         camera.lookAt(target.fromArray(pose.target));
         camera.updateProjectionMatrix();
+        // `pan=<rad/s>` turns the camera about the vertical axis from this pose on: the motion blur proof.
+        if (PAN === 0) return;
+        const token = ++panToken;
+        const origin = camera.position.clone();
+        const offset = target.clone().sub(origin);
+        const start = performance.now();
+        const spin = () => {
+          if (token !== panToken) return;
+          const angle = (PAN * (performance.now() - start)) / 1000;
+          camera.lookAt(origin.clone().add(offset.clone().applyAxisAngle(UP, angle)));
+          requestAnimationFrame(spin);
+        };
+        requestAnimationFrame(spin);
       },
     };
     // Start at the capture's first pose (or ?pose=<name>). The framework camera starts at the

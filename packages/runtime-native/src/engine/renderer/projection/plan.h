@@ -119,7 +119,7 @@ inline bool sameUniforms(const Material& a, const Material& b) {
             (a.envMapIntensity == b.envMapIntensity) & (a.normalScale.x == b.normalScale.x) &
             (a.normalScale.y == b.normalScale.y) & (a.aoMapIntensity == b.aoMapIntensity) & (a.bumpScale == b.bumpScale)) &&
            a.positionNode == b.positionNode && a.nodes == b.nodes &&
-           a.vertexColors == b.vertexColors && a.flatShading == b.flatShading &&
+           a.vertexColors == b.vertexColors && a.flatShading == b.flatShading && a.twoSidedFoliage == b.twoSidedFoliage &&
            a.maps == b.maps;
 }
 
@@ -183,6 +183,7 @@ inline std::size_t uniformHash(const Material& m) {
                      double(m.fog),
                      double(m.vertexColors),
                      double(m.flatShading),
+                     double(m.twoSidedFoliage),
                      m.normalScale.x,
                      m.normalScale.y,
                      m.aoMapIntensity,

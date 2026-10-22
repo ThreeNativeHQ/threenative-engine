@@ -40,6 +40,8 @@ struct PostPass {
     bool temporal = false;
     /** The effect whose parameters this pass draws with, read each frame (null: `uniforms` only). */
     std::shared_ptr<const PostEffect> effect;
+    /** Non-empty: the renderer draws this pass itself, as `traa` does, and the pass has no shader package. */
+    std::string host;
 };
 Node importPostEffect(const json::Value& record, const std::vector<Node>& args, std::vector<std::string>& errors);
 
@@ -67,4 +69,9 @@ double mulberry32(uint32_t& state);
 std::vector<PostPass> postPasses(Node root, std::optional<ToneMapping> toneMapping = std::nullopt, bool srgb = false, Node custom = {});
 /** The scene TRAA pass requested by this graph; two distinct resolves fail. */
 std::shared_ptr<const PostEffect> traaEffect(Node root);
+/**
+ * True when the resolve reads a texture the graph drew (the frame after its screen-space stages) and not the scene
+ * pass's own colour. It then runs as a pass of the graph, where its input is ready, and not right after the scene pass.
+ */
+bool traaResolvesLate(const PostEffect& effect);
 } // namespace tn::engine::shader::graph

@@ -214,6 +214,8 @@ const METHOD_OVERRIDE: Record<string, { parameters: ICatalogParameter[]; returns
 const UNDECLARED_FIELDS: Record<string, string> = {
   revision: "number",
   id: "number",
+  // The engine's Two Sided Foliage marker (PRD-651): bound on every lit material class, declared by no three type.
+  twoSidedFoliage: "boolean",
   "BufferGeometry.parameters": "Record<string, unknown>",
   // Basic stores these authored slots too; upstream only evaluates emissiveNode.
   "MeshBasicNodeMaterial.emissiveNode": "Node | null",

@@ -1317,16 +1317,11 @@ interface IBaked {
 const NOT_COPIED = /^(?:is[A-Z]|_)|^(?:constructor|id|uuid|version|type)$/;
 
 /**
- * The node material a source material becomes when the cache lights it, as three's `fromMaterial` makes it: the class that
- * matches the source type (a node material keeps its class), and every settable field copied, so the maps, the cut-out,
- * the sides and the blending carry over. three holds a field as an own property and the native engine as an accessor on
- * the class, which `for in` never lists, so the fields are found by walking the prototype chain's descriptors.
+ * Every settable field of the source that the twin declares, copied as three's `fromMaterial` copies it, so the maps, the
+ * cut-out, the sides and the blending carry over. three holds a field as an own property and the native engine as an accessor
+ * on the class, which `for in` never lists, so the fields are found by walking the prototype chain's descriptors.
  */
-function nodeTwin(source: MeshStandardMaterial): MeshStandardMaterial {
-  if ((source as { isNodeMaterial?: boolean }).isNodeMaterial) return source;
-  const twin = (source.type === "MeshPhysicalMaterial"
-    ? physicalTwin()
-    : new MeshStandardNodeMaterial()) as unknown as Record<string, unknown>;
+function copyFields(source: object, twin: Record<string, unknown>): void {
   for (
     let at: object | null = source;
     at !== null && at !== Object.prototype;
@@ -1335,9 +1330,24 @@ function nodeTwin(source: MeshStandardMaterial): MeshStandardMaterial {
     for (const [key, field] of Object.entries(Object.getOwnPropertyDescriptors(at))) {
       if (NOT_COPIED.test(key) || !(key in twin) || (field.set ? !field.get : !field.writable))
         continue;
-      const value = (source as unknown as Record<string, unknown>)[key];
+      const value = (source as Record<string, unknown>)[key];
       if (value !== undefined && typeof value !== "function") twin[key] = value;
     }
+}
+
+/**
+ * The node material a source material becomes when the cache lights it, as three's `fromMaterial` makes it: the class that
+ * matches the source type (a node material keeps its class) with the source's fields copied over.
+ */
+function nodeTwin(source: MeshStandardMaterial): MeshStandardMaterial {
+  if ((source as { isNodeMaterial?: boolean }).isNodeMaterial) return source;
+  const twin = (source.type === "MeshPhysicalMaterial"
+    ? physicalTwin()
+    : new MeshStandardNodeMaterial()) as unknown as Record<string, unknown>;
+  copyFields(source, twin);
+  // three declares no `twoSidedFoliage`, so a three twin has no such key to copy into: carry the marker by name (PRD-651).
+  if ((source as { twoSidedFoliage?: boolean }).twoSidedFoliage === true)
+    twin.twoSidedFoliage = true;
   return twin as unknown as MeshStandardMaterial;
 }
 

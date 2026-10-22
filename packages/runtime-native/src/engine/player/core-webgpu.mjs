@@ -77,6 +77,12 @@ export class WebGPURenderer {
       get triangles() { return globalThis.tn.renderInfo().triangles; },
     },
     compute: {},
+    // What the owned engine adds to three's info, as the Wasm engine does: the samples the scene draws with (1 while the
+    // temporal pass replaces multisampling) and that pass's live frame, history and jitter.
+    engine: {
+      get samples() { return globalThis.tn.renderInfo().samples; },
+      get temporal() { return globalThis.tn.renderInfo().temporal; },
+    },
     frame: 0,
     reset() {},
   };
