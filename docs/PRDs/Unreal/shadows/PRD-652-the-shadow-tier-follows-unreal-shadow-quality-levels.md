@@ -143,6 +143,14 @@ these criteria, per frame and overall.
   casters. The cause is `r.Shadow.RadiusThreshold` (0.06 Low, 0.05 Medium, 0.01 Epic), a screen-radius cull.
   ThreeNative has only the camera-independent `minCasterTexels` gate. A screen-radius cull needs a change in
   `VirtualShadowNode` and in the native `atlas.cpp`. Both belong to the shadows lane, so this lane does not add it.
+- 2026-10-21 (tier2-lane, Phase 3 is blocked, no template edit): the shadow tier table drives the receiver filter and `castShadow`
+  of the harness sun (`Reference.ts.in`, `shadowTier.ts`). Every template still draws one `PCFSoftShadowMap` sun map
+  (`templates/*/src/render/lighting.ts`, 12 lines apart from the harness file) with no virtual shadow node and no filter node. A
+  template has no filter taps for the table to set, and a `shadowQuality` report field with no effect would be a false claim in
+  its `AGENTS.md`. [PRD-634](../look/PRD-634-sun-shadows-reach-the-horizon-and-soften-with-distance-from-the-caster.md) Phase 1
+  (the method) and Phase 3 (all templates take the method and the filter) are NOT STARTED, so this phase starts after them. The
+  only effect a table could have today is `low` turning the sun's shadows off, which changes template pictures and needs the
+  visual judge.
 - 2026-10-21 (tier-lane, no calibrate command): `pnpm unreal-look:calibrate` does not exist in this tree (PRD-647
   owns it). `pnpm unreal-look:compare --metric penumbra` is the substitute for the per-tier rows.
 - 2026-10-21 (tier-lane, Unreal's own spread): on `penumbra-lab`, Unreal Medium differs from Unreal Epic by a mean of
