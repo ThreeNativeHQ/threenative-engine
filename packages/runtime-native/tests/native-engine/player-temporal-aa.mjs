@@ -59,7 +59,7 @@ const step = () => {
 };
 requestAnimationFrame(step);
 `);
-await bundleNativeEngine({ entry, outfile, boot: false });
+await bundleNativeEngine({ entry, outfile, boot: false, host: true });
 const env = { ...process.env, SDL_VIDEODRIVER: "dummy", SDL_AUDIO_DRIVER: "dummy" };
 delete env.TN_PLAYTEST_MAILBOX_ROOT;
 const child = spawn(resolve(executable), [outfile], { env });
