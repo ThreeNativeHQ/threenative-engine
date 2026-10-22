@@ -10,6 +10,7 @@ const SCAFFOLD = join(__dirname, "../unreal-look/scaffold/render");
 async function loadQuality(): Promise<{
   qualityPreset(tier: string): {
     gtaoDistanceExponent?: number;
+    gtaoDistanceFalloff?: number;
     gtaoRadius?: number;
     gtaoSamples?: number;
   };
@@ -45,5 +46,10 @@ describe("contact occlusion reach (PRD-635)", () => {
     const { qualityPreset } = await loadQuality();
     for (const tier of ["high", "medium"])
       expect(qualityPreset(tier)).toMatchObject({ gtaoDistanceExponent: 2, gtaoSamples: 7 });
+  });
+
+  it("weighs every step alike, as Unreal's horizon search", async () => {
+    const { qualityPreset } = await loadQuality();
+    for (const tier of ["high", "medium"]) expect(qualityPreset(tier).gtaoDistanceFalloff).toBe(0);
   });
 });

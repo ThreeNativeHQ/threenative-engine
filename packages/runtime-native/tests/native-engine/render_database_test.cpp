@@ -1800,7 +1800,7 @@ void normalPassIsNotTallied() {
 }
 
 // GTAO's `reachPx` puts the occlusion's reach on the screen (Unreal's short-range AO searches 32 px): with no
-// world radius, a reach of 0 leaves a sphere on a floor unoccluded, and a longer reach darkens more pixels around
+// world radius, a reach of 0 leaves a sphere on a floor unoccluded, and a reach of 32 darkens the same area around
 // the contact at any distance. The sphere sits at two camera distances; the dark ring must stay a similar share
 // of the sphere's footprint, which a fixed world radius would not give.
 void gtaoScreenReach() {
@@ -1823,7 +1823,7 @@ void gtaoScreenReach() {
                normal = g::texture("normal", g::uv());
     RenderDatabase database;
     // The occlusion frame for one reach and one camera distance.
-    const auto frame = [&](float reachPx, double distance, float radius = 0.0001f) {
+    const auto frame = [&](float reachPx, double distance, float radius = 0.0001f, float thickness = 1.0f) {
         s.camera.position.set(0, 1.4, distance);
         s.camera.lookAt(0, 0, 0);
         s.camera.updateProjectionMatrix();
@@ -1831,25 +1831,33 @@ void gtaoScreenReach() {
         auto contact = g::gtaoEffect(depth, normal);
         contact->parameters["radius"] = {radius};
         contact->parameters["reachPx"] = {reachPx};
+        contact->parameters["thickness"] = {thickness};
+        contact->parameters["distanceFallOff"] = {0};  // Unreal weighs every step alike
         renderer.setPostGraph(g::mul(colour, g::swizzle(g::effectNode(contact), "x")));
         database.render(renderer, s.scene, s.camera, {0.05, 0.06, 0.08, 1});
         return read(renderer, events);
     };
     // Pixels a reach darkened against the same view with no reach (a world radius of a tenth of a millimetre).
-    const auto darkened = [&](float reachPx, double distance, float radius = 0.0001f) {
-        const std::vector<uint8_t> open = frame(0, distance), px = frame(reachPx, distance, radius);
+    const auto darkened = [&](float reachPx, double distance, float radius = 0.0001f, float thickness = 1.0f) {
+        const std::vector<uint8_t> open = frame(0, distance), px = frame(reachPx, distance, radius, thickness);
         CHECK(!px.empty() && px.size() == open.size());
         size_t count = 0;
         for (size_t i = 0; i < px.size(); i += 4) count += px[i] + 6 < open[i];
         return count;
     };
-    const size_t near32 = darkened(32, 3.2), near64 = darkened(64, 3.2), far32 = darkened(32, 6.4);
+    const size_t near32 = darkened(32, 3.2), far32 = darkened(32, 6.4);
     const size_t nearWorld = darkened(0, 3.2, 0.3f), farWorld = darkened(0, 6.4, 0.3f);
     CHECK(near32 > 200);
-    CHECK(near64 > near32);
+    // Twice the distance, the same dark area to within a factor of two (the reach is on the screen).
+    CHECK(far32 * 2 > near32 && near32 * 2 > far32);
     // At twice the distance a world radius darkens a ring of half the width, so its dark area falls faster than a
     // reach of 32 px does: the reach keeps a larger share of its near count (measured 0.32 against 0.23).
     CHECK(far32 * nearWorld * 4 > near32 * farWorld * 5);
+    // The reach takes Unreal's foreground reject (a sample's occlusion fades out over 0.3 of the pixel's depth)
+    // instead of a metre cutoff: a thickness of a tenth of a millimetre does not blind it, while the world radius
+    // path still honours the cutoff.
+    CHECK(darkened(32, 3.2, 0.0001f, 0.0001f) > near32 / 2);
+    CHECK(darkened(0, 3.2, 0.3f, 0.0001f) < nearWorld / 2);
 }
 
 // three's material.colorWrite = false masks every colour channel of that material's draw (the tower-defense

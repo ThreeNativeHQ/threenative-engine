@@ -137,6 +137,9 @@ const high: IWorldEnvironmentOptions = {
   // (`gtaoSamples` 7: three directions, the node's count below 30 samples; Unreal takes 2 slices of 3 steps).
   gtaoDistanceExponent: 2,
   gtaoSamples: 7,
+  // Unreal weighs every step alike: the horizon is the largest over the steps (LumenScreenSpaceBentNormal.usf:271),
+  // with no 2 / (step + 2) falloff. The node's falloff narrowed the contact band to about 8 px against Unreal's 13.
+  gtaoDistanceFalloff: 0,
   // Epic: Unreal's screen probe gather (`sg.GlobalIlluminationQuality` 3). See `giPreset`.
   finalGatherMethod: "screenProbeGather",
   renderChainTier: "high",
