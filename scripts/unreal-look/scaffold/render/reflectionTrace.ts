@@ -66,6 +66,8 @@ const START_OFFSET_PER_METRE = 0.004;
 const SHADOW_OFFSET = 0.02;
 const SHADOW_FAR = 2000;
 const NO_CACHE_RADIANCE = 0;
+/** Share of a metal's colour, per unit of roughness, that a hit takes as diffuse: calibrated on the rough metal sphere. */
+const METAL_DIFFUSE = 0.12;
 
 /**
  * The delta to add to the lit frame (zero where nothing is traced or the ray finds nothing): for a metal the
@@ -108,7 +110,8 @@ export function tracedReflections(stage: ITracedReflectionStage): Node<"vec4"> {
     const result = vec4(0, 0, 0, 0).toVar();
     const depth = stage.depth.r;
     const roughness = stage.roughness.g;
-    If(depth.lessThan(1).and(roughness.lessThan(trace.maxRoughnessToTrace)), () => {
+    const gate = depth.lessThan(1).and(roughness.lessThan(trace.maxRoughnessToTrace));
+    If(gate, () => {
       // View-space position from depth: depth is (A z + B) / -z, so z = -B / (depth + A).
       const z = p32.negate().div(depth.add(p22));
       const position = vec3(
@@ -131,29 +134,22 @@ export function tracedReflections(stage: ITracedReflectionStage): Node<"vec4"> {
         // The hit's light, in scene units: the sun through one shadow ray, the cache for everything else.
         const facing = max(dot(hit.normal, sunDirection), 0);
         const blocked = float(0).toVar();
-        // TODO(PRD-642 experiment): `?noshadow` skips the second walk, to tell the cost of two walks from one.
-        const shadows = !new URLSearchParams(location.search).has("noshadow");
-        if (shadows)
-          If(facing.greaterThan(0), () => {
-            const shadow = trace.trace({
-              origin: hit.position.add(hit.normal.mul(SHADOW_OFFSET)),
-              direction: sunDirection,
-              far: SHADOW_FAR,
-              anyHit: true,
-            });
-            blocked.assign(shadow.hit);
+        If(facing.greaterThan(0), () => {
+          const shadow = trace.trace({
+            origin: hit.position.add(hit.normal.mul(SHADOW_OFFSET)),
+            direction: sunDirection,
+            far: SHADOW_FAR,
+            anyHit: true,
           });
-        // TODO(PRD-642 experiment): ?kd= and ?ki= scale the direct and the indirect term.
-        const query = new URLSearchParams(location.search);
-        const kd = Number(query.get("kd") ?? 1);
-        const ki = Number(query.get("ki") ?? 1);
-        const direct = sunRadiance
-          .mul(facing)
-          .mul(float(1).sub(blocked))
-          .mul(float(1).sub(hit.metalness))
-          .mul(kd);
-        const indirect = (giCache.irradiance?.(hit.position, hit.normal) ?? vec3(NO_CACHE_RADIANCE)).mul(ki);
-        const radiance = hit.albedo.mul(direct.add(indirect)).add(hit.emissive).mul(stage.gain);
+          blocked.assign(shadow.hit);
+        });
+        const direct = sunRadiance.mul(facing).mul(float(1).sub(blocked));
+        const indirect = giCache.irradiance?.(hit.position, hit.normal) ?? vec3(NO_CACHE_RADIANCE);
+        // A metal has almost no diffuse colour: the sun and the bounce light it only a little, more the rougher it is
+        // (Unreal's reflection hit shows a rough metal as a dark shape, not black and not a lit diffuse one).
+        const metalShare = hit.roughness.mul(METAL_DIFFUSE);
+        const diffuse = hit.albedo.mul(float(1).sub(hit.metalness.mul(float(1).sub(metalShare))));
+        const radiance = diffuse.mul(direct.add(indirect)).add(hit.emissive).mul(stage.gain);
 
         const facingView = clamp(dot(normalView, incidentView.negate()), 0, 1);
         const schlick = float(1).sub(facingView).pow(5);

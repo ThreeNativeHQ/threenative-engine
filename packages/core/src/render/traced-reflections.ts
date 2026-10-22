@@ -39,7 +39,11 @@ export interface ITracedReflectionsOptions {
   readonly maxRoughnessToTrace?: number;
   /** The weight falls from 1 to 0 over this much roughness, ending at `maxRoughnessToTrace`: 0.1. */
   readonly roughnessFadeLength?: number;
-  /** Most nodes one ray visits before it gives up and reports a miss. Default 192. */
+  /**
+   * Most nodes one ray visits before it stops walking with the nearest surface found so far, which may be the
+   * wrong one. A walk visits each node at most once, so the default, the tree's node count up to 2048, never
+   * cuts a ray short in a scene of up to 2048 nodes.
+   */
   readonly maxSteps?: number;
   /** False silences the TN_TRACED_REFLECTIONS line, not the report. */
   readonly marker?: boolean;
@@ -86,6 +90,13 @@ const DEFAULT_FAR = 1e4;
 const TINY = 1e-8;
 /** Determinant below which a ray counts as parallel to a triangle. */
 const PARALLEL = 1e-9;
+/**
+ * The most nodes a ray may visit by default. A ray that grazes a long, thin mesh (a capsule's wall) crosses several
+ * hundred overlapping boxes, and the walk is not ordered by distance, so a ray cut short at 192 reported the far
+ * wall of the capsule: 3% of the pixels of a 13 000-triangle scene. The cap keeps one pathological ray from
+ * stalling the GPU.
+ */
+const MAX_AUTO_STEPS = 2048;
 
 /**
  * Ray queries against the scene's triangles for reflections, in the engine's own TSL: the pack is float
@@ -109,22 +120,22 @@ export class TracedReflections {
   constructor(root: Object3D, options: ITracedReflectionsOptions = {}) {
     const maxRoughnessToTrace = options.maxRoughnessToTrace ?? 0.4;
     const roughnessFadeLength = options.roughnessFadeLength ?? 0.1;
-    const maxSteps = options.maxSteps ?? 192;
+    const maxSteps = options.maxSteps;
     if (!(maxRoughnessToTrace > 0 && maxRoughnessToTrace <= 1))
       throw new RangeError("TN_TRACED_REFLECTIONS: maxRoughnessToTrace must be in (0, 1]");
     if (!(roughnessFadeLength >= 0 && roughnessFadeLength <= maxRoughnessToTrace))
       throw new RangeError(
         "TN_TRACED_REFLECTIONS: roughnessFadeLength must be in [0, maxRoughnessToTrace]",
       );
-    if (!(Number.isInteger(maxSteps) && maxSteps > 0))
+    if (maxSteps !== undefined && !(Number.isInteger(maxSteps) && maxSteps > 0))
       throw new RangeError("TN_TRACED_REFLECTIONS: maxSteps must be a positive whole number");
     this.maxRoughnessToTrace = maxRoughnessToTrace;
     this.roughnessFadeLength = roughnessFadeLength;
-    this.maxSteps = maxSteps;
     this.scene = packTraceScene(
       root,
       options.include === undefined ? {} : { include: options.include },
     );
+    this.maxSteps = maxSteps ?? Math.max(1, Math.min(this.scene.report.nodes, MAX_AUTO_STEPS));
     this.#nodes = texture(this.scene.nodes);
     this.#triangles = texture(this.scene.triangles);
     this.#materials = texture(this.scene.materialTable);

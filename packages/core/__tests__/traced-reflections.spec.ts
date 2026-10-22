@@ -61,6 +61,21 @@ describe("TracedReflections", () => {
     expect(build({ maxSteps: 2.5 })).toThrow(/maxSteps/);
   });
 
+  it("walks as many nodes as the tree has, up to 2048, unless the game names a budget", () => {
+    // A walk visits each node at most once, so a budget of the node count never cuts a ray short. A budget of 192
+    // did: a ray along a capsule's wall crosses more boxes than that and reported the far wall.
+    const small = new TracedReflections(room(), { marker: false });
+    expect(small.report.nodes).toBeLessThan(192);
+    expect(small.maxSteps).toBe(small.report.nodes);
+    const dense = new Group();
+    dense.add(new Mesh(new PlaneGeometry(1, 1, 64, 64), new MeshStandardMaterial()));
+    dense.updateMatrixWorld(true);
+    const large = new TracedReflections(dense, { marker: false });
+    expect(large.report.nodes).toBeGreaterThan(2048);
+    expect(large.maxSteps).toBe(2048);
+    expect(new TracedReflections(dense, { marker: false, maxSteps: 64 }).maxSteps).toBe(64);
+  });
+
   it("traces a surface at roughness 0.4 or less, and a rougher one casts no ray", () => {
     const traced = new TracedReflections(room(), { marker: false });
     expect(traced.weightAt(0)).toBe(1);
