@@ -1,7 +1,19 @@
-import { describe, expect, it } from "vitest";
+import { mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import vm from "node:vm";
+import type { Page } from "@playwright/test";
+import { afterEach, describe, expect, it } from "vitest";
+import { FRAME_GATE, captureMotionFrames } from "../unreal-look/capture-motion-threenative.js";
 import type { IImage } from "../unreal-look/compare.js";
 import type { ISceneJson } from "../unreal-look/gi.js";
-import { formatReports, measureRun, switchFrame } from "../unreal-look/motion-run.js";
+import {
+  type IMotionReport,
+  checkGradual,
+  formatReports,
+  measureRun,
+  switchFrame,
+} from "../unreal-look/motion-run.js";
 import {
   type IFrameStore,
   type IMotionRun,
@@ -598,7 +610,35 @@ describe("a run report (PRD-638)", () => {
       formatReports([
         { scene: "mini", run: "switch", engine: "unreal", folder: "u", regions: unreal },
       ]),
-    ).toMatch(/\| A \| unreal \| 100 \| 0.0% \| 0.0% \| 8 \| 9 \| 0.0% \| 0.0% \|/);
+    ).toMatch(/\| A \| unreal \| 100 \| 0.00% \| 0.00% \| 8 \| 9 \| 0.00% \| 0.00% \|/);
+  });
+
+  it("accepts Unreal's region only when it answers over more than one frame", () => {
+    const report = (lag90: number | null): IMotionReport => ({
+      scene: "mini",
+      run: "switch",
+      engine: "unreal",
+      folder: "u",
+      regions: {
+        A: {
+          flicker: { px: 0, p50: 0, frames: 10 },
+          response: {
+            before: 100,
+            after: 10,
+            target: 10,
+            lag90,
+            settle: lag90,
+            overshoot: 0,
+            residual: 0,
+            flat: false,
+          },
+        },
+      },
+    });
+    expect(checkGradual([report(43)], "A")).toBe(0);
+    expect(checkGradual([report(1)], "A")).toBe(1);
+    expect(checkGradual([report(0)], "A")).toBe(1);
+    expect(checkGradual([report(null)], "A")).toBe(1);
   });
 
   it("fails closed when a run lacks a frame", () => {
@@ -631,5 +671,199 @@ describe("a run report (PRD-638)", () => {
       { scene: "mini", run: "pan", engine: "unreal", folder: "u", regions: unreal },
     ]);
     expect(text).toMatch(/ghost@10 \| ghost@20/);
+  });
+});
+
+// The page-side frame gate, run against a fake browser: a queue of "real" frames, and a loop that draws or is
+// declined by the engine's GPU frame gate.
+describe("FRAME_GATE steps the page's frame loop one frame at a time", () => {
+  interface IStep {
+    callbacks: number;
+    drawn: number;
+    skipped: number;
+  }
+  function page(declined: (tick: number) => boolean = () => false) {
+    const real: Array<(time: number) => void> = [];
+    const info = { frame: 0, engine: { frameGateSkips: 0 } };
+    const win: Record<string, unknown> = {
+      requestAnimationFrame: (callback: (time: number) => void) => real.push(callback),
+      cancelAnimationFrame: () => undefined,
+      performance: { now: () => 1000 },
+      __tnRef: { renderer: { info } },
+    };
+    win.window = win;
+    vm.runInNewContext(FRAME_GATE, win);
+    const gate = win.__tnGate as {
+      hold(): Promise<number>;
+      step(): Promise<IStep>;
+      queue: Map<number, unknown>;
+    };
+    const flush = () => {
+      for (const callback of real.splice(0)) callback(0);
+    };
+    let tick = 0;
+    const loop = () => {
+      tick += 1;
+      if (declined(tick)) info.engine.frameGateSkips += 1;
+      else info.frame += 1;
+      (win.requestAnimationFrame as (c: () => void) => void)(loop);
+    };
+    return { win, gate, info, flush, loop, real };
+  }
+
+  it("passes frames through until hold(), then runs one queued frame per step", async () => {
+    const { win, gate, flush, loop, real, info } = page();
+    (win.requestAnimationFrame as (c: () => void) => void)(loop);
+    flush();
+    expect(info.frame).toBe(1);
+    expect(real).toHaveLength(1);
+    const held = gate.hold();
+    flush();
+    await expect(held).resolves.toBe(1);
+    const first = gate.step();
+    flush();
+    await expect(first).resolves.toEqual({ callbacks: 1, drawn: 1, skipped: 0 });
+    expect(real).toHaveLength(0);
+    expect(gate.queue.size).toBe(1);
+    expect(info.frame).toBe(3);
+  });
+
+  it("reports a render the engine declined as skipped, not drawn", async () => {
+    // Ticks 1 and 2 run before the first step, so tick 4 is the second step.
+    const { win, gate, flush, loop } = page((tick) => tick === 4);
+    (win.requestAnimationFrame as (c: () => void) => void)(loop);
+    flush();
+    const held = gate.hold();
+    flush();
+    await held;
+    const results: IStep[] = [];
+    for (let i = 0; i < 3; i++) {
+      const step = gate.step();
+      flush();
+      results.push(await step);
+    }
+    expect(results).toEqual([
+      { callbacks: 1, drawn: 1, skipped: 0 },
+      { callbacks: 1, drawn: 0, skipped: 1 },
+      { callbacks: 1, drawn: 1, skipped: 0 },
+    ]);
+  });
+
+  it("rejects a step whose callback throws, so the capture stops", async () => {
+    const { win, gate, flush } = page();
+    let broken = false;
+    const loop = () => {
+      if (broken) throw new Error("page broke");
+      (win.requestAnimationFrame as (c: () => void) => void)(loop);
+    };
+    (win.requestAnimationFrame as (c: () => void) => void)(loop);
+    const held = gate.hold();
+    flush();
+    await held;
+    broken = true;
+    const step = gate.step();
+    flush();
+    await expect(step).rejects.toThrow("page broke");
+  });
+});
+
+// The harness half of the ThreeNative capture, against a fake page: the order of the steps, the frames it writes,
+// the repeat of a step the engine declined, and the steps that stop the capture.
+describe("captureMotionFrames walks a run one rendered frame per step", () => {
+  const roots: string[] = [];
+  afterEach(() => {
+    for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
+  });
+  interface IStep {
+    callbacks: number;
+    drawn: number;
+    skipped: number;
+  }
+  const OK: IStep = { callbacks: 1, drawn: 1, skipped: 0 };
+  const scene = {
+    motion: {
+      switch: {
+        frames: 3,
+        camera: { kind: "pose", pose: "p" },
+        light: { name: "Lamp", keys: [[0, 1]] },
+        stills: [1],
+      },
+    },
+  } as unknown as ISceneJson;
+
+  function run(script: IStep[], runName = "switch") {
+    const out = mkdtempSync(path.join(os.tmpdir(), "tn-motion-capture-"));
+    roots.push(out);
+    const calls: string[] = [];
+    const page = {
+      evaluate: async (code: string) => {
+        calls.push(code);
+        if (code === "window.__tnGate.hold()") return 1;
+        if (code === "window.__tnGate.step()") return script.shift() ?? OK;
+        return undefined;
+      },
+      waitForTimeout: async () => undefined,
+      screenshot: async () => Buffer.from("png"),
+    } as unknown as Page;
+    const done = captureMotionFrames({
+      page,
+      scene,
+      sceneId: "gi:mini",
+      layer: "L7",
+      run: runName,
+      out,
+      warmUp: 2,
+      paceMs: 0,
+    });
+    return { out, calls, done, dir: path.join(out, "mini", "motion", "switch", "L7") };
+  }
+
+  it("warms up at frame 0, then writes each frame and each still under Unreal's names", async () => {
+    const { calls, done, dir } = run([]);
+    await expect(done).resolves.toBe(4);
+    expect(readdirSync(dir).sort()).toEqual([
+      "motion-capture.json",
+      "still-0001.0000.png",
+      "switch.0000.png",
+      "switch.0001.png",
+      "switch.0002.png",
+    ]);
+    const poses = calls.filter((c) => c.startsWith("window.__tnRef.motionFrame"));
+    expect(poses).toEqual([0, 0, 1, 2, 1].map((f) => `window.__tnRef.motionFrame("switch", ${f})`));
+    // The loop is held before the first pose is set, so no frame of the page's own timing is drawn for it.
+    expect(calls[0]).toBe("window.__tnGate.hold()");
+    expect(calls[1]).toBe('window.__tnRef.motionFrame("switch", 0)');
+    const record = JSON.parse(readFileSync(path.join(dir, "motion-capture.json"), "utf8"));
+    // 2 warm-up steps, 3 frames, then 2 warm-up steps and 1 step for the still.
+    expect(record).toMatchObject({
+      steps: 8,
+      frames: 3,
+      stills: [1],
+      stepsRepeatedForTheFrameGate: 0,
+    });
+  });
+
+  it("repeats a step the engine's frame gate declined, and still writes every frame", async () => {
+    const { done, dir } = run([OK, { callbacks: 1, drawn: 0, skipped: 1 }]);
+    await expect(done).resolves.toBe(4);
+    const record = JSON.parse(readFileSync(path.join(dir, "motion-capture.json"), "utf8"));
+    expect(record.stepsRepeatedForTheFrameGate).toBe(1);
+    expect(record.steps).toBe(8);
+  });
+
+  it("stops on a step that both drew and skipped, with no callback, or with no draw", async () => {
+    await expect(run([{ callbacks: 1, drawn: 1, skipped: 1 }]).done).rejects.toThrow(
+      /TN_UNREAL_LOOK_FRAME_STEP: switch warm-up 0: 1 callbacks, 1 frames drawn, 1 skipped/,
+    );
+    await expect(run([OK, { callbacks: 0, drawn: 1, skipped: 0 }]).done).rejects.toThrow(
+      /warm-up 1: 0 callbacks/,
+    );
+    await expect(run([OK, OK, { callbacks: 1, drawn: 0, skipped: 0 }]).done).rejects.toThrow(
+      /switch frame 0: 1 callbacks, 0 frames drawn, 0 skipped/,
+    );
+  });
+
+  it("names a run the scene does not have", async () => {
+    await expect(run([], "orbit").done).rejects.toThrow(/TN_UNREAL_LOOK_BAD_INPUT.*orbit/);
   });
 });

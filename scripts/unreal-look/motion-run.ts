@@ -3,7 +3,7 @@
  *
  *   pnpm unreal-look:capture --engine unreal --scene gi:cornell --motion pan|switch      (called from gi.ts)
  *   pnpm unreal-look:capture --engine threenative --scene gi:cornell --motion pan|switch
- *   pnpm unreal-look:compare --scene gi:cornell --metric motion [--engine unreal|threenative] [--run pan,switch]
+ *   pnpm unreal-look:compare --scene gi|gi:cornell --metric motion [--engine unreal|threenative] [--run pan,switch]
  *     [--layer L7] [--unreal-variant L7-Epic-motion] [--tn-folder threenative] [--captures <dir>] [--json <file>]
  *     [--erode 2] [--min-pixels 200] [--gradual Ceiling]
  *
@@ -20,7 +20,9 @@ import {
   checkReadback,
   folderName,
   readScene,
+  registry,
   sceneKey,
+  sceneNames,
 } from "./gi.js";
 import {
   type IFrameStore,
@@ -208,7 +210,7 @@ export function measureRun(
 }
 
 // --- report ------------------------------------------------------------------------------
-const pct = (v: number | undefined) => (v === undefined ? "-" : `${(v * 100).toFixed(1)}%`);
+const pct = (v: number | undefined) => (v === undefined ? "-" : `${(v * 100).toFixed(2)}%`);
 const count = (v: number | null | undefined) =>
   v === undefined || v === null ? "never" : String(v);
 function table(head: string[], rows: string[][]): string {
@@ -285,9 +287,7 @@ export function formatReports(reports: readonly IMotionReport[]): string {
 
 // --- compare -----------------------------------------------------------------------------
 interface IMotionArgs {
-  sceneId: string;
-  scene: ISceneJson;
-  runs: string[];
+  scenes: { sceneId: string; scene: ISceneJson; runs: string[] }[];
   engine: string | undefined;
   store: IFrameStore;
   variant: string;
@@ -297,23 +297,39 @@ interface IMotionArgs {
   minPixels: number;
 }
 
+/**
+ * `--scene gi` reads every registered scene that has motion runs, `gi:a,gi:b` the named ones. `--run` picks
+ * runs, by default all of a scene's. A named scene or run that does not exist is an error.
+ */
+function motionScenes(args: readonly string[]): IMotionArgs["scenes"] {
+  const value = flag(args, "--scene") ?? fail("BAD_INPUT", "--scene gi or gi:<name>");
+  const named = flag(args, "--run")?.split(",").filter(Boolean);
+  const everyScene = value === "gi";
+  const scenes = sceneNames(
+    value,
+    registry().scenes.map((s) => s.name),
+  ).map((name) => ({ sceneId: `gi:${name}`, scene: readScene(`gi:${name}`).scene }));
+  const chosen = scenes.flatMap(({ sceneId, scene }) => {
+    const known = Object.keys(scene.motion ?? {});
+    const runs = named ? named.filter((r) => known.includes(r)) : known;
+    const missing = (named ?? []).filter((r) => !known.includes(r));
+    if (!everyScene && (!known.length || missing.length))
+      fail(
+        "BAD_INPUT",
+        `${sceneId} has the motion runs ${known.join(", ") || "none"}${missing.length ? `, not ${missing.join(", ")}` : ""}`,
+      );
+    return runs.length ? [{ sceneId, scene, runs }] : [];
+  });
+  if (!chosen.length) fail("BAD_INPUT", `--scene ${value}: no scene has a motion run to measure`);
+  return chosen;
+}
+
 function motionArgs(args: readonly string[]): IMotionArgs {
-  const sceneId = flag(args, "--scene") ?? fail("BAD_INPUT", "--scene gi:<name>");
-  const { scene } = readScene(sceneId);
-  const known = Object.keys(scene.motion ?? {});
-  const runs = (flag(args, "--run") ?? known.join(",")).split(",").filter(Boolean);
-  if (!runs.length || runs.some((r) => !known.includes(r)))
-    fail(
-      "BAD_INPUT",
-      `--run ${runs.join(",")}: ${sceneId} has the motion runs ${known.join(", ") || "none"}`,
-    );
   const engine = flag(args, "--engine");
   if (engine !== undefined && engine !== "unreal" && engine !== "threenative")
     fail("BAD_INPUT", "--engine unreal|threenative");
   return {
-    sceneId,
-    scene,
-    runs,
+    scenes: motionScenes(args),
     engine,
     store: diskStore(path.resolve(flag(args, "--captures") ?? path.join(REFERENCE, "captures"))),
     variant: flag(args, "--unreal-variant") ?? UNREAL_MOTION_VARIANT,
@@ -325,25 +341,30 @@ function motionArgs(args: readonly string[]): IMotionArgs {
 }
 
 /** The reports of one run: Unreal's own, and ThreeNative's held to the level Unreal reaches after the switch. */
-function reportsFor(a: IMotionArgs, run: string): IMotionReport[] {
+function reportsFor(
+  a: IMotionArgs,
+  sceneId: string,
+  scene: ISceneJson,
+  run: string,
+): IMotionReport[] {
   const shared = {
-    scene: a.scene,
+    scene,
     run,
-    id: motionDir("unreal", a.sceneId, run, "ID"),
+    id: motionDir("unreal", sceneId, run, "ID"),
     erode: a.erode,
     minPixels: a.minPixels,
   };
-  const unrealDir = motionDir("unreal", a.sceneId, run, a.variant);
+  const unrealDir = motionDir("unreal", sceneId, run, a.variant);
   const unreal = measureRun(a.store, { ...shared, color: unrealDir });
   const reports: IMotionReport[] = [];
-  const base = { scene: a.scene.scene, run };
+  const base = { scene: scene.scene, run };
   if (a.engine !== "threenative")
     reports.push({ ...base, engine: "unreal", folder: unrealDir, regions: unreal });
   if (a.engine !== "unreal") {
     const target = Object.fromEntries(
       Object.entries(unreal).flatMap(([n, r]) => (r.response ? [[n, r.response.target]] : [])),
     );
-    const tnDir = motionDir(a.tnFolder, a.sceneId, run, a.layer);
+    const tnDir = motionDir(a.tnFolder, sceneId, run, a.layer);
     const regions = measureRun(a.store, { ...shared, color: tnDir, target });
     reports.push({ ...base, engine: "threenative", folder: tnDir, regions });
   }
@@ -354,7 +375,7 @@ function reportsFor(a: IMotionArgs, run: string): IMotionReport[] {
  * PRD-638: Lumen filters over time, so a region answers a switched light over more than one frame.
  * Returns 1 when Unreal's `region` answers in a frame or less, or never.
  */
-function checkGradual(reports: readonly IMotionReport[], region: string): number {
+export function checkGradual(reports: readonly IMotionReport[], region: string): number {
   let code = 0;
   for (const r of reports.filter((x) => x.engine === "unreal")) {
     const answer = r.regions[region]?.response;
@@ -374,7 +395,9 @@ function checkGradual(reports: readonly IMotionReport[], region: string): number
  */
 export function compareMotion(args: readonly string[]): number {
   const a = motionArgs(args);
-  const reports = a.runs.flatMap((run) => reportsFor(a, run));
+  const reports = a.scenes.flatMap(({ sceneId, scene, runs }) =>
+    runs.flatMap((run) => reportsFor(a, sceneId, scene, run)),
+  );
   console.info(formatReports(reports));
   const code = checkGradual(reports, flag(args, "--gradual") ?? "Ceiling");
   const json = flag(args, "--json");

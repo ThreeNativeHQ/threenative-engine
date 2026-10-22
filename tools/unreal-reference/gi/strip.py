@@ -95,14 +95,16 @@ def main():
             top = fitted(draw, labels[r], width - 16, 26)
             draw.rectangle(draw.textbbox((x, y), labels[r], font=top), fill=(0, 0, 0))
             draw.text((x, y), labels[r], font=top, fill=(255, 255, 0))
-            big = font(44)
+            big = font(max(22, width // 9))
             caption = f"frame {frames[c]}"
-            draw.rectangle(draw.textbbox((x, y + 32), caption, font=big), fill=(0, 0, 0))
-            draw.text((x, y + 32), caption, font=big, fill=(255, 255, 255))
-            small = font(16)
+            drop = top.size + 8
+            draw.rectangle(draw.textbbox((x, y + drop), caption, font=big), fill=(0, 0, 0))
+            draw.text((x, y + drop), caption, font=big, fill=(255, 255, 255))
+            small = font(max(12, width // 24))
             tag = f"{args.scene}/{args.run}"
-            draw.rectangle(draw.textbbox((x, y + 84), tag, font=small), fill=(0, 0, 0))
-            draw.text((x, y + 84), tag, font=small, fill=(200, 200, 200))
+            below = drop + big.size + 6
+            draw.rectangle(draw.textbbox((x, y + below), tag, font=small), fill=(0, 0, 0))
+            draw.text((x, y + below), tag, font=small, fill=(200, 200, 200))
     os.makedirs(os.path.dirname(os.path.abspath(args.out)), exist_ok=True)
     sheet.save(args.out)
     print(f"wrote {args.out} {sheet.size[0]}x{sheet.size[1]}")

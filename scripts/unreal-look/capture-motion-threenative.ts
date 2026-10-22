@@ -6,9 +6,10 @@
  *
  * The frame loop asks the browser for a frame with requestAnimationFrame. FRAME_GATE replaces it before
  * the page's own scripts run: until `hold()` it passes through, afterwards it queues the callbacks and
- * `step()` hands them one synthetic 1/60 s frame inside a real rendering opportunity. Every step checks
- * that the renderer drew the same number of frames as in the first step and skipped none. A frame the
- * renderer skips (the engine caps frames in flight) would shift the run against Unreal's, so it throws.
+ * `step()` hands them one synthetic 1/60 s frame inside a real rendering opportunity. Every step must draw
+ * at least one frame. The engine declines a render while two frames are still on the GPU (a loaded host);
+ * that step drew nothing, so it is repeated, with a longer wait, until a frame is drawn. A step that both
+ * draws and skips throws: it would shift the run against Unreal's.
  *
  * Frames land in <out>/<scene>/motion/<run>/<layer>/<run>.NNNN.png and still-NNNN.0000.png, the names
  * Unreal's Movie Render Queue writes. Unreal warms 180 frames before the first frame of a run and of a
@@ -22,8 +23,11 @@ import { frameFile, stillJob } from "./motion.js";
 
 /** Milliseconds between two steps: the engine's GPU frame gate lags about 35 ms under Xvfb. */
 const PACE_MS = 80;
-/** Steps before the frames-per-step count is fixed: a shader compile can add one to the first steps. */
+/** Steps before the draws per step are counted: a shader compile can add one to the first steps. */
 const SETTLE_STEPS = 8;
+/** Times one step is repeated while the GPU frame gate declines it, and the longest wait between steps. */
+const MAX_RETRIES = 100;
+const MAX_PACE_MS = 400;
 
 export const FRAME_GATE = `(() => {
   const real = window.requestAnimationFrame.bind(window);
@@ -45,15 +49,23 @@ export const FRAME_GATE = `(() => {
     const wait = () => (gate.queue.size > 0 ? resolve(gate.queue.size) : real(wait));
     real(wait);
   });
+  // The renderer's drawn-frame and declined-render counters: info.frame and info.engine.frameGateSkips.
+  const counters = () => {
+    const info = window.__tnRef.renderer.info;
+    return { frame: info.frame, skips: info.engine?.frameGateSkips ?? 0 };
+  };
   // One synthetic frame for everything queued, run inside a real rendering opportunity so the canvas presents.
+  // Resolves with how many callbacks ran and how many frames the renderer drew and declined while they ran.
   gate.step = () => new Promise((resolve, reject) => real(() => {
     const callbacks = [...gate.queue.values()];
     gate.queue.clear();
     gate.time += 1000 / 60;
     gate.steps += 1;
     try {
+      const before = counters();
       for (const callback of callbacks) callback(gate.time);
-      resolve(callbacks.length);
+      const after = counters();
+      resolve({ callbacks: callbacks.length, drawn: after.frame - before.frame, skipped: after.skips - before.skips });
     } catch (error) {
       reject(error);
     }
@@ -61,9 +73,10 @@ export const FRAME_GATE = `(() => {
   window.__tnGate = gate;
 })();`;
 
-interface IFrameInfo {
-  frame: number;
-  skips: number;
+interface IStep {
+  callbacks: number;
+  drawn: number;
+  skipped: number;
 }
 
 export interface IMotionCaptureInput {
@@ -76,11 +89,6 @@ export interface IMotionCaptureInput {
   warmUp?: number;
   paceMs?: number;
 }
-
-const frameInfo = (page: Page): Promise<IFrameInfo> =>
-  page.evaluate(
-    "(() => { const i = window.__tnRef.renderer.info; return { frame: i.frame, skips: i.engine?.frameGateSkips ?? 0 }; })()",
-  ) as Promise<IFrameInfo>;
 
 /**
  * Renders the frames of one motion run, and the converged still of each listed frame, and writes them as
@@ -97,29 +105,34 @@ export async function captureMotionFrames(input: IMotionCaptureInput): Promise<n
   const at = (frame: number) =>
     page.evaluate(`window.__tnRef.motionFrame(${JSON.stringify(run)}, ${frame})`);
   await page.evaluate("window.__tnGate.hold()");
-  let perStep: number | undefined;
   let steps = 0;
-  const firstDrawn: number[] = [];
+  let retried = 0;
+  let wait = pace;
+  const drew = new Map<number, number>();
+  // One more step of the loop, repeated while the engine's GPU frame gate declines it. A declined step drew
+  // nothing, so the render state did not move, and the next step is the same frame of the run. A loaded host
+  // leaves two frames on the GPU, so each repeat also waits longer.
   const advance = async (label: string) => {
-    const before = await frameInfo(page);
-    const callbacks = (await page.evaluate("window.__tnGate.step()")) as number;
-    const after = await frameInfo(page);
-    const drawn = after.frame - before.frame;
-    if (firstDrawn.length < 12) firstDrawn.push(drawn);
-    // The first steps may count extra frames (a shader compile advances the frame id outside the loop), so the
-    // per-step count is read from the first step after SETTLE_STEPS and every later step must match it.
-    if (steps >= SETTLE_STEPS) perStep ??= drawn;
-    if (
-      callbacks < 1 ||
-      drawn < 1 ||
-      (perStep !== undefined && drawn !== perStep) ||
-      after.skips !== before.skips
-    )
-      throw new Error(
-        `TN_UNREAL_LOOK_FRAME_STEP: ${label}: ${callbacks} callbacks, ${drawn} frames drawn (a step draws ${perStep ?? "?"}; the first steps drew ${firstDrawn.join(",")}), ${after.skips - before.skips} skipped`,
-      );
-    steps += 1;
-    await page.waitForTimeout(pace);
+    for (let attempt = 0; ; attempt++) {
+      const { callbacks, drawn, skipped } = (await page.evaluate(
+        "window.__tnGate.step()",
+      )) as IStep;
+      if (callbacks >= 1 && drawn === 0 && skipped > 0 && attempt < MAX_RETRIES) {
+        retried += 1;
+        wait = Math.min(wait * 1.5, MAX_PACE_MS);
+        await page.waitForTimeout(wait);
+        continue;
+      }
+      // A step draws the frame, and may count more than one draw (the overlay's own render, a compile).
+      if (callbacks < 1 || drawn < 1 || skipped !== 0)
+        throw new Error(
+          `TN_UNREAL_LOOK_FRAME_STEP: ${label}: ${callbacks} callbacks, ${drawn} frames drawn, ${skipped} skipped after ${attempt} retries`,
+        );
+      if (steps >= SETTLE_STEPS) drew.set(drawn, (drew.get(drawn) ?? 0) + 1);
+      steps += 1;
+      await page.waitForTimeout(wait);
+      return;
+    }
   };
   const grab = async (file: string) =>
     writeFile(path.join(dir, file), await page.screenshot({ type: "png" }));
@@ -149,8 +162,10 @@ export async function captureMotionFrames(input: IMotionCaptureInput): Promise<n
         stills,
         warmUp,
         steps,
-        framesDrawnPerStep: perStep,
-        firstStepsDrew: firstDrawn,
+        // How many steps counted 1, 2, ... draws after the settle steps, and how many were repeated for the frame gate.
+        drawsPerStep: Object.fromEntries([...drew].sort(([a], [b]) => a - b)),
+        stepsRepeatedForTheFrameGate: retried,
+        finalPaceMs: wait,
         paceMs: pace,
         seconds: (Date.now() - started) / 1000,
       },
