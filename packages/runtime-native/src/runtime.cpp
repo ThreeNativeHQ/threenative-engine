@@ -35,6 +35,7 @@
 #include "mystral/cold_start.h"
 
 #include "raytracing/bindings.h"
+#include "webgpu/shared_trace.h"
 #include <map>
 #include <iostream>
 
@@ -826,6 +827,7 @@ public:
         }
         frameCapture_ = webgpu::makeFrameCaptureSource(bindingsState_);
         webgpu_->setFrameCaptureSource(frameCapture_.get());
+        webgpu::setSharedTraceState(bindingsState_);
 
         // In no-SDL mode, set the offscreen texture for headless rendering
         if (config_.noSdl) {
@@ -891,7 +893,9 @@ public:
         // (Audio callback thread may be accessing JS handles)
         audio::cleanupAudioBindings();
 
-        // Clean up ray tracing resources
+        // Clean up ray tracing resources. The WebGPU side of the shared trace goes first.
+        webgpu::releaseSharedTrace();
+        webgpu::setSharedTraceState(nullptr);
         rt::cleanupRTBindings();
 
         // Shutdown async HTTP client (cancels pending requests)

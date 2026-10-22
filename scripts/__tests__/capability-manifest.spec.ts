@@ -800,6 +800,9 @@ describe("capability manifest generator", () => {
         ids: ["request.shadow-quality-scalability"],
         owners: ["ShadowFilterBudget"],
       },
+      "lumen surface cache": { ids: ["request.lumen-surface-cache"], owners: ["SurfaceCache"] },
+      "lumen scene": { ids: ["request.lumen-scene"], owners: ["SurfaceCache"] },
+      "mesh cards": { ids: ["request.mesh-cards"], owners: ["SurfaceCache"] },
     } as const;
 
     expect([...new Set(aliases)].sort()).toEqual(Object.keys(predecessorRows).sort());

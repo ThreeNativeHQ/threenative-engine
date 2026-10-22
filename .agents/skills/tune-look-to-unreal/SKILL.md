@@ -79,6 +79,15 @@ flowchart LR
    tier after two MATCH rounds on one stamp. `--allow-red-direct-light` runs a round over a red L1
    check, records the override and does not count the round toward parity. `--status` prints where
    each scene stands (latest round, gap list, parity) from the scoreboard, with no GPU and no model.
+   An approved round becomes a ratchet lock (PRD-654). `pnpm unreal-look:calibrate --lock <round id>`
+   writes one bound per region and pose to `tools/unreal-reference/gi/parity-locks.json`: a ceiling for
+   dP50 and deltaE and a floor for IoU, each widened by the noise between the two runs of the round. It
+   needs no GPU. Every later round checks its AFTER arm against the locks and exits 2 when a locked
+   region gets worse. `pnpm unreal-look:compare --check --scene gi:<name> --captures <run1> --captures <run2>`
+   runs the same check on any two capture folders. A lock tightens only with `--tighten` and loosens
+   only with `--relax`, and a round cannot drop a locked region. When another lane rebuilds the scene
+   or its Unreal reference, the check reports LOCK_STALE until a new approved round re-cuts the lock
+   with `--lock <round id> --relax`.
 7. **Post.** Commit the images to the orphan `PRD-<n>-screenshots` branch with plumbing (no
    checkout): `git hash-object -w`, `git mktree`, `git commit-tree -p <previous>`, then
    `git push origin "${commit}:refs/heads/PRD-<n>-screenshots"`. Comment on the PR with the raw
