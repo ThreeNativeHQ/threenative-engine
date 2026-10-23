@@ -18,6 +18,11 @@ declare module "three" {
      * and lets no sun through.
      */
     subsurfaceColor?: Color;
+    /**
+     * Marks a Two Sided Foliage leaf (PRD-651). Declared here too, with the type that soft-shadow.ts gives it, so that a
+     * declaration build whose entry reaches this file through `renderer.ts` and not through `soft-shadow.ts` still sees it.
+     */
+    twoSidedFoliage?: boolean;
   }
 }
 
