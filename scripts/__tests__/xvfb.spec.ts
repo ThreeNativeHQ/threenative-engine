@@ -94,7 +94,7 @@ describe.each([
       // that starts first sees a display with no compositing manager.
       fs.writeFileSync(
         path.join(bin, "xcompmgr"),
-        `#!/bin/sh\nsleep 0.1\necho "$DISPLAY $@" > ${compositorArgs}\nexec sleep 30\n`,
+        `#!/bin/sh\nsleep 0.3\necho "$DISPLAY $@" > ${compositorArgs}\nexec sleep 30\n`,
         { mode: 0o755 },
       );
     }
