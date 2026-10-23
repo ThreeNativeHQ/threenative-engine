@@ -94,6 +94,8 @@ const RECOVERED_COMPACTION = 0.008;
 const WIND_EROSION = 0.00065;
 /** Deposition burial rate per metre of fill. */
 const DEPOSITION_BURIAL = 26;
+/** Past this many separate windows a take is one box: a long drag must not grow the list. */
+const MAX_UNTAKEN_WINDOWS = 32;
 /** Hard ceiling on cells one contact may span, so a malformed extent fails instead of allocating. */
 const MAX_CONTACT_CELLS = 1 << 20;
 
@@ -257,6 +259,7 @@ export class SnowField {
   #version = 0;
   #dirty: IHeightfieldRegionBounds | undefined;
   #untaken: IHeightfieldRegionBounds | undefined;
+  #untakenWindows: IHeightfieldRegionBounds[] = [];
   #scratch = new Float32Array(0);
 
   constructor(options: ISnowFieldOptions) {
@@ -325,7 +328,21 @@ export class SnowField {
   takeDirtyRegion(): IHeightfieldRegionBounds | undefined {
     const region = this.#untaken;
     this.#untaken = undefined;
+    this.#untakenWindows = [];
     return region;
+  }
+
+  /**
+   * The windows written since the previous call, then forgotten. Windows that overlap or touch
+   * are one window, so two bodies a long way apart are two small windows, where
+   * `takeDirtyRegion` returns the large box around both. A renderer that uploads only what moved
+   * takes this. Like `takeDirtyRegion` it has one owner, and taking either one empties both.
+   */
+  takeDirtyRegions(): readonly IHeightfieldRegionBounds[] {
+    const windows = this.#untakenWindows;
+    this.#untaken = undefined;
+    this.#untakenWindows = [];
+    return windows;
   }
 
   /** Bytes retained by the four snow channels and the base terrain copy. */
@@ -739,6 +756,35 @@ export class SnowField {
     this.field.updateHeights({ ...bounds, heights });
     this.#dirty = { ...bounds };
     this.#untaken = unionBounds(this.#untaken, bounds);
+    this.#untakenWindows = addWindow(this.#untakenWindows, bounds);
     this.#version += 1;
   }
+}
+
+/** Add `next` to `windows`, merging every window it overlaps or touches into one. */
+function addWindow(
+  windows: readonly IHeightfieldRegionBounds[],
+  next: IHeightfieldRegionBounds,
+): IHeightfieldRegionBounds[] {
+  let merged = next;
+  let rest = [...windows];
+  for (let again = true; again; ) {
+    again = false;
+    const keep: IHeightfieldRegionBounds[] = [];
+    for (const window of rest) {
+      const apart =
+        window.column > merged.column + merged.columns ||
+        merged.column > window.column + window.columns ||
+        window.row > merged.row + merged.rows ||
+        merged.row > window.row + window.rows;
+      if (apart) keep.push(window);
+      else {
+        merged = unionBounds(merged, window);
+        again = true;
+      }
+    }
+    rest = keep;
+  }
+  const all = [...rest, merged];
+  return all.length > MAX_UNTAKEN_WINDOWS ? [all.reduce((a, b) => unionBounds(a, b))] : all;
 }

@@ -185,7 +185,7 @@
 <rect x="227.29214668982945" y="649.520884075263" width="122.3108637722803" height="56.479115924737016" rx="4" fill="#232826"/>
 <text x="231.29214668982945" y="660.520884075263" class="s">Ambient occlusion</text>
 <rect x="228.29214668982945" y="662.520884075263" width="75.9821261200255" height="41.479115924737016" rx="2" fill="#d9961f"><title>Ambient occlusion · SSAO / GTAO · In progress</title></rect>
-<rect x="228.29214668982945" y="701" width="31.286757814128144" height="3" fill="#fff" opacity=".85"/>
+<rect x="228.29214668982945" y="701" width="35.75629464471788" height="3" fill="#fff" opacity=".85"/>
 <text x="231.29214668982945" y="673.520884075263" class="l">SSAO / GTAO</text>
 <rect x="305.27427280985495" y="662.520884075263" width="22.574899733933137" height="41.479115924737016" rx="2" fill="#2c322f"><title>Ambient occlusion · Rest of Ambient occlusion · Not split</title></rect>
 <text x="308.27427280985495" y="673.520884075263" class="l">Re…</text>
@@ -395,7 +395,7 @@
 <rect x="809.7576551391769" y="265.78650851832265" width="100.8896467162034" height="152.96494542874922" rx="4" fill="#232826"/>
 <text x="813.7576551391769" y="276.78650851832265" class="s">Denoisers</text>
 <rect x="810.7576551391769" y="278.78650851832265" width="97.8896467162034" height="137.96494542874922" rx="2" fill="#d9961f"><title>Denoisers · Whole system (not split) · In progress</title></rect>
-<rect x="810.7576551391769" y="413.75145394707187" width="39.880967180675455" height="3" fill="#fff" opacity=".85"/>
+<rect x="810.7576551391769" y="413.75145394707187" width="41.693738416160706" height="3" fill="#fff" opacity=".85"/>
 <text x="813.7576551391769" y="289.78650851832265" class="l">Whole system (no…</text>
 <rect x="912.6473018553803" y="265.78650851832265" width="92.86881907642885" height="152.96494542874922" rx="4" fill="#232826"/>
 <text x="916.6473018553803" y="276.78650851832265" class="s">TSR</text>
