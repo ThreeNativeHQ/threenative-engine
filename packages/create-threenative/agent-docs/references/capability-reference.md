@@ -1273,6 +1273,38 @@ export function exposureFromEv100(ev100: number): number { … }
 renderer.toneMappingExposure = exposureFromEv100(ev100FromCamera(4, 1 / 60, 100));
 ```
 
+### `filmicToneMap`
+
+`function` — Unreal 5.8.3's tone curve, the default tone mapping of `createRenderer` and `Game`: a filmic curve in ACEScg (slope 0.88, toe 0.55, shoulder 0.26) after the gamut expansion and blue correction of Unreal's colour LUT. `installFilmicToneMapping` registers it as three's custom tone mapping; `filmicToneMap` is the same curve on plain numbers for a test or a capture script.
+
+```ts
+export function filmicToneMap( rgb: readonly [number, number, number], exposure = 1, c: IFilmicCurve = FILMIC_CURVE, grade: IColorGrade = COLOR_GRADE, ): [number, number, number] { … }
+```
+
+- **Use when:** the frame should tone map the way a fresh Unreal project does · compare a scene-linear colour against Unreal's tonemapped output on the CPU
+- **Constraints:** WebGPU renderers only: a renderer without a node library keeps ACES and reports `TN_TONEMAP`
+- **Overrides:** `createRenderer({ toneMapping: "aces" | "agx" | "neutral" | "none" })` or `game.renderer.toneMapping` in the game config; setting `renderer.raw.toneMapping` later wins; `IFilmicCurve` fields change the curve itself
+
+```ts
+const renderer = await createRenderer({ toneMapping: "aces" }); // the named override
+```
+
+### `filmicToneMappingNode`
+
+`function` — Unreal 5.8.3's tone curve, the default tone mapping of `createRenderer` and `Game`: a filmic curve in ACEScg (slope 0.88, toe 0.55, shoulder 0.26) after the gamut expansion and blue correction of Unreal's colour LUT. `installFilmicToneMapping` registers it as three's custom tone mapping; `filmicToneMap` is the same curve on plain numbers for a test or a capture script.
+
+```ts
+export function filmicToneMappingNode( c: IFilmicCurve = FILMIC_CURVE, grade: IColorGrade = COLOR_GRADE, ): (color: Node<"vec3">, exposure: Node<"float">) => Node<"vec3"> { … }
+```
+
+- **Use when:** the frame should tone map the way a fresh Unreal project does · compare a scene-linear colour against Unreal's tonemapped output on the CPU
+- **Constraints:** WebGPU renderers only: a renderer without a node library keeps ACES and reports `TN_TONEMAP`
+- **Overrides:** `createRenderer({ toneMapping: "aces" | "agx" | "neutral" | "none" })` or `game.renderer.toneMapping` in the game config; setting `renderer.raw.toneMapping` later wins; `IFilmicCurve` fields change the curve itself
+
+```ts
+const renderer = await createRenderer({ toneMapping: "aces" }); // the named override
+```
+
 ### `FlightModel`
 
 `class` — Fly a fixed-wing aircraft with a real force balance instead of a steered velocity.
@@ -1558,6 +1590,22 @@ export class InputMap { … }
 ```ts
 const game = defineGame({ input: { move: { up: ["KeyW"], down: ["KeyS"], left: ["KeyA"], right: ["KeyD"] } }, scenes: { Play } });
 // inside the scene, per frame: ctx.input.axis("move") is 0 at rest and 1 at full tilt
+```
+
+### `installFilmicToneMapping`
+
+`function` — Unreal 5.8.3's tone curve, the default tone mapping of `createRenderer` and `Game`: a filmic curve in ACEScg (slope 0.88, toe 0.55, shoulder 0.26) after the gamut expansion and blue correction of Unreal's colour LUT. `installFilmicToneMapping` registers it as three's custom tone mapping; `filmicToneMap` is the same curve on plain numbers for a test or a capture script.
+
+```ts
+export function installFilmicToneMapping( raw: unknown, c: IFilmicCurve = FILMIC_CURVE, grade: IColorGrade = COLOR_GRADE, ): number | undefined { … }
+```
+
+- **Use when:** the frame should tone map the way a fresh Unreal project does · compare a scene-linear colour against Unreal's tonemapped output on the CPU
+- **Constraints:** WebGPU renderers only: a renderer without a node library keeps ACES and reports `TN_TONEMAP`
+- **Overrides:** `createRenderer({ toneMapping: "aces" | "agx" | "neutral" | "none" })` or `game.renderer.toneMapping` in the game config; setting `renderer.raw.toneMapping` later wins; `IFilmicCurve` fields change the curve itself
+
+```ts
+const renderer = await createRenderer({ toneMapping: "aces" }); // the named override
 ```
 
 ### `installSpanProbes`

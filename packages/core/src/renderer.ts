@@ -22,6 +22,7 @@ import {
   type IGpuFrameObservation,
   type IGpuFrameObservationOptions,
 } from "./gpu-frame-observation.js";
+import { type RendererToneMapping, applyRendererToneMapping } from "./look/default-tone-mapping.js";
 import {
   type IPipelineCensus,
   type PipelineCensus,
@@ -421,6 +422,13 @@ export interface IRendererOptions {
   alphaAntialiasing?: boolean;
   /** Requests multisample antialiasing from the renderer. Defaults to true. */
   antialias?: boolean;
+  /**
+   * The tone curve a WebGPU renderer starts with. Defaults to `filmic`, a fresh Unreal 5.8.3
+   * project's curve; `aces`, `agx`, `neutral` and `none` (three's linear output) are the named
+   * overrides. A renderer that cannot run the curve keeps ACES and reports `TN_TONEMAP`. Setting
+   * `renderer.raw.toneMapping` afterwards still wins.
+   */
+  toneMapping?: RendererToneMapping;
   canvas?: HTMLCanvasElement;
   gpuTimestampFrameInterval?: number;
   preferWebGPU?: boolean;
@@ -1776,6 +1784,8 @@ export async function createRenderer(options: IRendererOptions = {}): Promise<IR
           });
       const instance = raw as RendererInstance;
       await instance.init?.();
+      // A game that sets `toneMapping` on the renderer later (WorldEnvironment, Daylight) replaces this.
+      applyRendererToneMapping(instance, options.toneMapping ?? "filmic", report);
       const alphaAntialiasing = arm(instance);
       const timestampCapable = instance.backend?.trackTimestamp === true;
       const adapter = await readWebGpuAdapterFacts(instance);

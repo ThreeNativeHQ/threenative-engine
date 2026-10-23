@@ -1147,6 +1147,26 @@ export { useRoughDiffuse } from "./render/rough-diffuse.js";
  * ctx.add(daylight);
  */
 export { Daylight } from "./render/daylight.js";
+/**
+ * Unreal 5.8.3's tone curve, the default tone mapping of `createRenderer` and `Game`: a filmic curve in ACEScg
+ * (slope 0.88, toe 0.55, shoulder 0.26) after the gamut expansion and blue correction of Unreal's colour LUT.
+ * `installFilmicToneMapping` registers it as three's custom tone mapping; `filmicToneMap` is the same curve on
+ * plain numbers for a test or a capture script.
+ *
+ * @situation the frame should tone map the way a fresh Unreal project does
+ * @situation compare a scene-linear colour against Unreal's tonemapped output on the CPU
+ * @constraint WebGPU renderers only: a renderer without a node library keeps ACES and reports `TN_TONEMAP`
+ * @override `createRenderer({ toneMapping: "aces" | "agx" | "neutral" | "none" })` or `game.renderer.toneMapping` in the game config; setting `renderer.raw.toneMapping` later wins; `IFilmicCurve` fields change the curve itself
+ * @example const renderer = await createRenderer({ toneMapping: "aces" }); // the named override
+ */
+export {
+  FILMIC_CURVE,
+  filmicToneMap,
+  filmicToneMappingNode,
+  installFilmicToneMapping,
+} from "./look/filmic-tone-mapping.js";
+export type { IFilmicCurve } from "./look/filmic-tone-mapping.js";
+export type { RendererToneMapping } from "./look/default-tone-mapping.js";
 export type { IDaylightOptions } from "./render/daylight.js";
 /**
  * Photometric exposure units: EV100 to the renderer multiplier and back, a physical camera's

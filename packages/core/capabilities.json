@@ -1632,6 +1632,48 @@
     {
       "aliases": [],
       "constraints": [
+        "WebGPU renderers only: a renderer without a node library keeps ACES and reports `TN_TONEMAP`"
+      ],
+      "example": "const renderer = await createRenderer({ toneMapping: \"aces\" }); // the named override",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [
+        "`createRenderer({ toneMapping: \"aces\" | \"agx\" | \"neutral\" | \"none\" })` or `game.renderer.toneMapping` in the game config; setting `renderer.raw.toneMapping` later wins; `IFilmicCurve` fields change the curve itself"
+      ],
+      "package": "@threenative/core",
+      "signature": "export function filmicToneMap( rgb: readonly [number, number, number], exposure = 1, c: IFilmicCurve = FILMIC_CURVE, grade: IColorGrade = COLOR_GRADE, ): [number, number, number] { … }",
+      "situations": [
+        "the frame should tone map the way a fresh Unreal project does",
+        "compare a scene-linear colour against Unreal's tonemapped output on the CPU"
+      ],
+      "summary": "Unreal 5.8.3's tone curve, the default tone mapping of `createRenderer` and `Game`: a filmic curve in ACEScg (slope 0.88, toe 0.55, shoulder 0.26) after the gamut expansion and blue correction of Unreal's colour LUT. `installFilmicToneMapping` registers it as three's custom tone mapping; `filmicToneMap` is the same curve on plain numbers for a test or a capture script.",
+      "supersedes": [],
+      "symbol": "filmicToneMap"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "WebGPU renderers only: a renderer without a node library keeps ACES and reports `TN_TONEMAP`"
+      ],
+      "example": "const renderer = await createRenderer({ toneMapping: \"aces\" }); // the named override",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [
+        "`createRenderer({ toneMapping: \"aces\" | \"agx\" | \"neutral\" | \"none\" })` or `game.renderer.toneMapping` in the game config; setting `renderer.raw.toneMapping` later wins; `IFilmicCurve` fields change the curve itself"
+      ],
+      "package": "@threenative/core",
+      "signature": "export function filmicToneMappingNode( c: IFilmicCurve = FILMIC_CURVE, grade: IColorGrade = COLOR_GRADE, ): (color: Node<\"vec3\">, exposure: Node<\"float\">) => Node<\"vec3\"> { … }",
+      "situations": [
+        "the frame should tone map the way a fresh Unreal project does",
+        "compare a scene-linear colour against Unreal's tonemapped output on the CPU"
+      ],
+      "summary": "Unreal 5.8.3's tone curve, the default tone mapping of `createRenderer` and `Game`: a filmic curve in ACEScg (slope 0.88, toe 0.55, shoulder 0.26) after the gamut expansion and blue correction of Unreal's colour LUT. `installFilmicToneMapping` registers it as three's custom tone mapping; `filmicToneMap` is the same curve on plain numbers for a test or a capture script.",
+      "supersedes": [],
+      "symbol": "filmicToneMappingNode"
+    },
+    {
+      "aliases": [],
+      "constraints": [
         "every mass, area, power and inertia value comes from the game's airframe",
         "damage, stores and configuration arrive as the game's own modifier sample"
       ],
@@ -2049,6 +2091,27 @@
       "summary": "The map a game reads input through: named actions, 2D vectors and scalar axes resolved from keyboard, gamepad, mouse, wheel, pinch and touch. `defineGame({ input })` builds one and hands it to the running game as `ctx.input`, so the usual route is a binding in the config and `ctx.input.axis(\"move\")` in the update. Construct one directly to drive a menu, a replay or a test outside a running game.",
       "supersedes": [],
       "symbol": "InputMap"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "WebGPU renderers only: a renderer without a node library keeps ACES and reports `TN_TONEMAP`"
+      ],
+      "example": "const renderer = await createRenderer({ toneMapping: \"aces\" }); // the named override",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [
+        "`createRenderer({ toneMapping: \"aces\" | \"agx\" | \"neutral\" | \"none\" })` or `game.renderer.toneMapping` in the game config; setting `renderer.raw.toneMapping` later wins; `IFilmicCurve` fields change the curve itself"
+      ],
+      "package": "@threenative/core",
+      "signature": "export function installFilmicToneMapping( raw: unknown, c: IFilmicCurve = FILMIC_CURVE, grade: IColorGrade = COLOR_GRADE, ): number | undefined { … }",
+      "situations": [
+        "the frame should tone map the way a fresh Unreal project does",
+        "compare a scene-linear colour against Unreal's tonemapped output on the CPU"
+      ],
+      "summary": "Unreal 5.8.3's tone curve, the default tone mapping of `createRenderer` and `Game`: a filmic curve in ACEScg (slope 0.88, toe 0.55, shoulder 0.26) after the gamut expansion and blue correction of Unreal's colour LUT. `installFilmicToneMapping` registers it as three's custom tone mapping; `filmicToneMap` is the same curve on plain numbers for a test or a capture script.",
+      "supersedes": [],
+      "symbol": "installFilmicToneMapping"
     },
     {
       "aliases": [],
