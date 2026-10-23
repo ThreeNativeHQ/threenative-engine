@@ -578,22 +578,6 @@ export class AnimationPlayer { … }
 const player = new AnimationPlayer({ clips, root: rig, strideRoot: body });
 ```
 
-### `applyExposure`
-
-`function` — Auto exposure with Unreal 5.8.3's metering: a 64-bin histogram of log2 luminance (red, green and blue weighted equally, the darkest and brightest 10% ignored), key 0.18 x 2, -10 to +20 EV100, 3 stops/s brighter and 1 stop/s darker. `AutoExposureNode` meters a colour texture and outputs the adapted exposure; `applyExposure` multiplies it into the frame without touching alpha.
-
-```ts
-export function applyExposure(colour: Node<"vec4">, exposure: Node<"float">): Node<"vec4"> { … }
-```
-
-- **Use when:** the frame should expose itself the way a fresh Unreal project does as the sun and the view change · read the metered exposure in stops for a test, a marker or a cut
-- **Constraints:** WebGPU renderers only: a renderer without WebGPU keeps the fixed exposure and says so · the node owns scratch render targets and never draws the world or installs another output transform
-- **Overrides:** `exposureSettings` fields (`enabled`, `key`, `minStops`, `maxStops`, `lowPercent`, `highPercent`, `rateUp`, `rateDown`) or a fixed `renderer.toneMappingExposure` with `enabled: false`
-
-```ts
-const settings = { ...exposureSettings, rateDown: 2 }; const node = new AutoExposureNode(input, settings, 1);
-```
-
 ### `Atmosphere`
 
 `class` — Own the compute lifetime and expose only parameter-driven atmosphere nodes. The class deliberately creates no mesh, material, or scene light. A template chooses all of those, and the same object remains useful when a game supplies a completely different look.
@@ -675,18 +659,18 @@ const effects = new AudioBus({ camera });
 
 ### `AutoExposureNode`
 
-`class` — Auto exposure with Unreal 5.8.3's metering: a 64-bin histogram of log2 luminance (red, green and blue weighted equally, the darkest and brightest 10% ignored), key 0.18 x 2, -10 to +20 EV100, 3 stops/s brighter and 1 stop/s darker. `AutoExposureNode` meters a colour texture and outputs the adapted exposure; `applyExposure` multiplies it into the frame without touching alpha.
+`class` — Auto exposure with Unreal 5.8.3's metering: a 64-bin histogram of log2 luminance (the darkest and brightest 10% ignored), key 0.18 x 2, -10 to +20 EV100, 3 stops/s brighter and 1 stop/s darker. `AutoExposureNode` meters a colour texture and outputs the adapted exposure; `exposureSettings` holds the defaults.
 
 ```ts
 export class AutoExposureNode extends TempNode<"float"> { … }
 ```
 
-- **Use when:** the frame should expose itself the way a fresh Unreal project does as the sun and the view change · read the metered exposure in stops for a test, a marker or a cut
-- **Constraints:** WebGPU renderers only: a renderer without WebGPU keeps the fixed exposure and says so · the node owns scratch render targets and never draws the world or installs another output transform
-- **Overrides:** `exposureSettings` fields (`enabled`, `key`, `minStops`, `maxStops`, `lowPercent`, `highPercent`, `rateUp`, `rateDown`) or a fixed `renderer.toneMappingExposure` with `enabled: false`
+- **Use when:** the frame should expose itself the way a fresh Unreal project does as the sun and the view change
+- **Constraints:** WebGPU renderers only: a renderer without WebGPU keeps the fixed exposure and says so
+- **Overrides:** every `IExposureSettings` field, spread over `exposureSettings` and passed to `AutoExposureNode`, replaces the Unreal default
 
 ```ts
-const settings = { ...exposureSettings, rateDown: 2 }; const node = new AutoExposureNode(input, settings, 1);
+const slow = { ...exposureSettings, rateDown: 0.5 }; const node = new AutoExposureNode(input, slow, 1);
 ```
 
 ### `baseGeometryOf`
@@ -1305,86 +1289,6 @@ export function exposureFromEv100(ev100: number): number { … }
 renderer.toneMappingExposure = exposureFromEv100(ev100FromCamera(4, 1 / 60, 100));
 ```
 
-### `exposureLuminance`
-
-`function` — The metering constants and the metering functions behind `AutoExposureNode`: Unreal's defaults in `exposureSettings`, the per-pixel meter (equal RGB weights, no spatial weight) and its decode, the reduction sizes and the validator.
-
-```ts
-export function exposureLuminance(mean: Node<"float">): Node<"float"> { … }
-```
-
-- **Use when:** change how fast or how far the frame adapts, or the middle grey it adapts to · meter a frame with a different luminance weight for a test
-- **Constraints:** settings are validated and a malformed field throws; the node freezes a copy
-- **Overrides:** every `IExposureSettings` field, passed to `AutoExposureNode`, replaces the Unreal default
-
-```ts
-const slow = { ...exposureSettings, rateUp: 1, rateDown: 0.5 }; validateExposureSettings(slow);
-```
-
-### `exposureMeter`
-
-`function` — The metering constants and the metering functions behind `AutoExposureNode`: Unreal's defaults in `exposureSettings`, the per-pixel meter (equal RGB weights, no spatial weight) and its decode, the reduction sizes and the validator.
-
-```ts
-export function exposureMeter(colour: Node<"vec4">, uv: Node<"vec2">): Node<"vec2"> { … }
-```
-
-- **Use when:** change how fast or how far the frame adapts, or the middle grey it adapts to · meter a frame with a different luminance weight for a test
-- **Constraints:** settings are validated and a malformed field throws; the node freezes a copy
-- **Overrides:** every `IExposureSettings` field, passed to `AutoExposureNode`, replaces the Unreal default
-
-```ts
-const slow = { ...exposureSettings, rateUp: 1, rateDown: 0.5 }; validateExposureSettings(slow);
-```
-
-### `exposureReductionSizes`
-
-`function` — The metering constants and the metering functions behind `AutoExposureNode`: Unreal's defaults in `exposureSettings`, the per-pixel meter (equal RGB weights, no spatial weight) and its decode, the reduction sizes and the validator.
-
-```ts
-export function exposureReductionSizes(width: number, height: number): [number, number][] { … }
-```
-
-- **Use when:** change how fast or how far the frame adapts, or the middle grey it adapts to · meter a frame with a different luminance weight for a test
-- **Constraints:** settings are validated and a malformed field throws; the node freezes a copy
-- **Overrides:** every `IExposureSettings` field, passed to `AutoExposureNode`, replaces the Unreal default
-
-```ts
-const slow = { ...exposureSettings, rateUp: 1, rateDown: 0.5 }; validateExposureSettings(slow);
-```
-
-### `filmicToneMap`
-
-`function` — Unreal 5.8.3's tone curve, the default tone mapping of `createRenderer` and `Game`: a filmic curve in ACEScg (slope 0.88, toe 0.55, shoulder 0.26) after the gamut expansion and blue correction of Unreal's colour LUT. `installFilmicToneMapping` registers it as three's custom tone mapping; `filmicToneMap` is the same curve on plain numbers for a test or a capture script.
-
-```ts
-export function filmicToneMap( rgb: readonly [number, number, number], exposure = 1, c: IFilmicCurve = FILMIC_CURVE, grade: IColorGrade = COLOR_GRADE, ): [number, number, number] { … }
-```
-
-- **Use when:** the frame should tone map the way a fresh Unreal project does · compare a scene-linear colour against Unreal's tonemapped output on the CPU
-- **Constraints:** WebGPU renderers only: a renderer without a node library keeps ACES and reports `TN_TONEMAP`
-- **Overrides:** `createRenderer({ toneMapping: "aces" | "agx" | "neutral" | "none" })` or `game.renderer.toneMapping` in the game config; setting `renderer.raw.toneMapping` later wins; `IFilmicCurve` fields change the curve itself
-
-```ts
-const renderer = await createRenderer({ toneMapping: "aces" }); // the named override
-```
-
-### `filmicToneMappingNode`
-
-`function` — Unreal 5.8.3's tone curve, the default tone mapping of `createRenderer` and `Game`: a filmic curve in ACEScg (slope 0.88, toe 0.55, shoulder 0.26) after the gamut expansion and blue correction of Unreal's colour LUT. `installFilmicToneMapping` registers it as three's custom tone mapping; `filmicToneMap` is the same curve on plain numbers for a test or a capture script.
-
-```ts
-export function filmicToneMappingNode( c: IFilmicCurve = FILMIC_CURVE, grade: IColorGrade = COLOR_GRADE, ): (color: Node<"vec3">, exposure: Node<"float">) => Node<"vec3"> { … }
-```
-
-- **Use when:** the frame should tone map the way a fresh Unreal project does · compare a scene-linear colour against Unreal's tonemapped output on the CPU
-- **Constraints:** WebGPU renderers only: a renderer without a node library keeps ACES and reports `TN_TONEMAP`
-- **Overrides:** `createRenderer({ toneMapping: "aces" | "agx" | "neutral" | "none" })` or `game.renderer.toneMapping` in the game config; setting `renderer.raw.toneMapping` later wins; `IFilmicCurve` fields change the curve itself
-
-```ts
-const renderer = await createRenderer({ toneMapping: "aces" }); // the named override
-```
-
 ### `FlightModel`
 
 `class` — Fly a fixed-wing aircraft with a real force balance instead of a steered velocity.
@@ -1575,22 +1479,6 @@ const gi = new GIBudget({ method: "screenProbeGather", stages: ["SSGI"], framePe
 ctx.beforeRender(() => gi.observeRenderer(ctx.renderer.raw));
 ```
 
-### `giPreset`
-
-`function` — The quality tiers of the Unreal 5.8.3 look: what `high` (a desktop, Unreal's Epic), `medium` and `low` (a phone) turn on, how a GPU family picks its start tier, and the global illumination and shadow filter settings per tier named after Unreal's scalability levels. A `WorldEnvironment` with no options starts from `high`.
-
-```ts
-export function giPreset(tier: string): IGiTier { … }
-```
-
-- **Use when:** pick a start tier for the GPU class and read what that tier costs the look · build a `WorldEnvironment` for a weaker device from a named tier
-- **Constraints:** an unknown tier name throws with the names it expected
-- **Overrides:** pass any `IWorldEnvironmentOptions` field after `qualityPreset(tier)`, or an explicit `tier` to `resolveQualityTier`
-
-```ts
-const world = new WorldEnvironment({ ...qualityPreset(resolveQualityTier({ gpuClass: renderer.gpuClass })), bloomEnabled: false });
-```
-
 ### `GIVisualize`
 
 `class` — Shows the indirect diffuse light of a frame by itself, the counterpart of Unreal's Lumen `Visualize IndirectDiffuse` mode, so a lighting gap against a reference can be told apart from a scene gap. The game's chain builds the term; this class selects it and fails when the term is missing.
@@ -1690,15 +1578,15 @@ const game = defineGame({ input: { move: { up: ["KeyW"], down: ["KeyS"], left: [
 
 ### `installFilmicToneMapping`
 
-`function` — Unreal 5.8.3's tone curve, the default tone mapping of `createRenderer` and `Game`: a filmic curve in ACEScg (slope 0.88, toe 0.55, shoulder 0.26) after the gamut expansion and blue correction of Unreal's colour LUT. `installFilmicToneMapping` registers it as three's custom tone mapping; `filmicToneMap` is the same curve on plain numbers for a test or a capture script.
+`function` — Unreal 5.8.3's tone curve, the default tone mapping of `createRenderer` and `Game`: a filmic curve in ACEScg (slope 0.88, toe 0.55, shoulder 0.26) after the gamut expansion and blue correction of Unreal's colour LUT. `installFilmicToneMapping` registers it as three's custom tone mapping.
 
 ```ts
 export function installFilmicToneMapping( raw: unknown, c: IFilmicCurve = FILMIC_CURVE, grade: IColorGrade = COLOR_GRADE, ): number | undefined { … }
 ```
 
-- **Use when:** the frame should tone map the way a fresh Unreal project does · compare a scene-linear colour against Unreal's tonemapped output on the CPU
+- **Use when:** the frame should tone map the way a fresh Unreal project does
 - **Constraints:** WebGPU renderers only: a renderer without a node library keeps ACES and reports `TN_TONEMAP`
-- **Overrides:** `createRenderer({ toneMapping: "aces" | "agx" | "neutral" | "none" })` or `game.renderer.toneMapping` in the game config; setting `renderer.raw.toneMapping` later wins; `IFilmicCurve` fields change the curve itself
+- **Overrides:** `createRenderer({ toneMapping: "aces" | "agx" | "neutral" | "none" })` or `game.renderer.toneMapping` in the game config; setting `renderer.raw.toneMapping` later wins
 
 ```ts
 const renderer = await createRenderer({ toneMapping: "aces" }); // the named override
@@ -2129,7 +2017,7 @@ const probes = new ProbeVolume({ bounds, density: 0.5 }); ctx.add(probes); void 
 
 ### `qualityPreset`
 
-`function` — The quality tiers of the Unreal 5.8.3 look: what `high` (a desktop, Unreal's Epic), `medium` and `low` (a phone) turn on, how a GPU family picks its start tier, and the global illumination and shadow filter settings per tier named after Unreal's scalability levels. A `WorldEnvironment` with no options starts from `high`.
+`function` — The quality tiers of the Unreal 5.8.3 look: what `high` (a desktop, Unreal's Epic), `medium` and `low` (a phone) turn on, how a GPU family picks its start tier, and the global illumination and shadow filter settings per tier named after Unreal's scalability levels. A `WorldEnvironment` with no options starts from `high`. `qualityTiers` holds the tier tables: `resolve` picks a start tier from a GPU class, `gi` and `shadow` read a tier's settings.
 
 ```ts
 export function qualityPreset(tier: string): IWorldEnvironmentOptions { … }
@@ -2137,10 +2025,10 @@ export function qualityPreset(tier: string): IWorldEnvironmentOptions { … }
 
 - **Use when:** pick a start tier for the GPU class and read what that tier costs the look · build a `WorldEnvironment` for a weaker device from a named tier
 - **Constraints:** an unknown tier name throws with the names it expected
-- **Overrides:** pass any `IWorldEnvironmentOptions` field after `qualityPreset(tier)`, or an explicit `tier` to `resolveQualityTier`
+- **Overrides:** pass any `IWorldEnvironmentOptions` field after `qualityPreset(tier)`, or an explicit `tier` to `qualityTiers.resolve`
 
 ```ts
-const world = new WorldEnvironment({ ...qualityPreset(resolveQualityTier({ gpuClass: renderer.gpuClass })), bloomEnabled: false });
+const world = new WorldEnvironment({ ...qualityPreset(qualityTiers.resolve({ gpuClass: renderer.gpuClass })), bloomEnabled: false });
 ```
 
 ### `readGIMarker`
@@ -2478,22 +2366,6 @@ export function resolveAtmosphereParameters( options: IAtmosphereParameters, ): 
 const parameters = resolveAtmosphereParameters({ rayleigh, mie, ozone, planetRadius, atmosphereRadius });
 ```
 
-### `resolveQualityTier`
-
-`function` — The quality tiers of the Unreal 5.8.3 look: what `high` (a desktop, Unreal's Epic), `medium` and `low` (a phone) turn on, how a GPU family picks its start tier, and the global illumination and shadow filter settings per tier named after Unreal's scalability levels. A `WorldEnvironment` with no options starts from `high`.
-
-```ts
-export function resolveQualityTier( request: { … }
-```
-
-- **Use when:** pick a start tier for the GPU class and read what that tier costs the look · build a `WorldEnvironment` for a weaker device from a named tier
-- **Constraints:** an unknown tier name throws with the names it expected
-- **Overrides:** pass any `IWorldEnvironmentOptions` field after `qualityPreset(tier)`, or an explicit `tier` to `resolveQualityTier`
-
-```ts
-const world = new WorldEnvironment({ ...qualityPreset(resolveQualityTier({ gpuClass: renderer.gpuClass })), bloomEnabled: false });
-```
-
 ### `resolveTargetFps`
 
 `function` — Read what frame rate a game gets when its config does not say, and why. `display.maxFps` follows the display — capped at 120 on desktop and web, 60 on mobile — rather than the 60 every template used to ship, and an explicit number still wins with `0` still uncapping. The engine calls this itself; a game calls it when it needs the same number for its own frame-rate-dependent work, and `TN_FRAME_BUDGET` reports the resolved target and its source on every window.
@@ -2636,22 +2508,6 @@ export class ShadowFilterBudget { … }
 ```ts
 const filter = new ShadowFilterBudget({ tier: "high", framePeriodMs: 1000 / 60, onStep: (tier) => { light.shadow.filterNode = filterFor(tier); } });
 ctx.beforeRender(() => filter.observeRenderer(ctx.renderer.raw));
-```
-
-### `shadowPreset`
-
-`function` — The quality tiers of the Unreal 5.8.3 look: what `high` (a desktop, Unreal's Epic), `medium` and `low` (a phone) turn on, how a GPU family picks its start tier, and the global illumination and shadow filter settings per tier named after Unreal's scalability levels. A `WorldEnvironment` with no options starts from `high`.
-
-```ts
-export function shadowPreset(tier: string): IShadowTier { … }
-```
-
-- **Use when:** pick a start tier for the GPU class and read what that tier costs the look · build a `WorldEnvironment` for a weaker device from a named tier
-- **Constraints:** an unknown tier name throws with the names it expected
-- **Overrides:** pass any `IWorldEnvironmentOptions` field after `qualityPreset(tier)`, or an explicit `tier` to `resolveQualityTier`
-
-```ts
-const world = new WorldEnvironment({ ...qualityPreset(resolveQualityTier({ gpuClass: renderer.gpuClass })), bloomEnabled: false });
 ```
 
 ### `SkeletalMesh3D`
@@ -3106,22 +2962,6 @@ export function useRoughDiffuse(root: Object3D, enabled = true): number { … }
 useRoughDiffuse(scene);
 ```
 
-### `validateExposureSettings`
-
-`function` — The metering constants and the metering functions behind `AutoExposureNode`: Unreal's defaults in `exposureSettings`, the per-pixel meter (equal RGB weights, no spatial weight) and its decode, the reduction sizes and the validator.
-
-```ts
-export function validateExposureSettings(value: IExposureSettings): void { … }
-```
-
-- **Use when:** change how fast or how far the frame adapts, or the middle grey it adapts to · meter a frame with a different luminance weight for a test
-- **Constraints:** settings are validated and a malformed field throws; the node freezes a copy
-- **Overrides:** every `IExposureSettings` field, passed to `AutoExposureNode`, replaces the Unreal default
-
-```ts
-const slow = { ...exposureSettings, rateUp: 1, rateDown: 0.5 }; validateExposureSettings(slow);
-```
-
 ### `validateWorldMatrices`
 
 `function` — Prove that nothing a cache skipped changed the picture: `TN_RENDERLIST_VALIDATE=1` recomputes every world matrix the long way, every frame, and throws on the first element that disagrees with what the frame is about to draw.
@@ -3279,7 +3119,7 @@ export class WorldEnvironment { … }
 - **Overrides:** every option on `IWorldEnvironmentOptions`: `tonemapMode: "aces" | "agx" | "neutral"`, `autoExposureEnabled: false` with a fixed `exposure`, `bloomEnabled`, `gtaoEnabled`, `ssgiEnabled`, `screenSpaceAA`
 
 ```ts
-const world = new WorldEnvironment({ tonemapMode: "aces", autoExposureEnabled: false, exposure: 0.8 }); world.apply(renderer, scene, camera);
+const world = new WorldEnvironment({ tonemapMode: "aces", autoExposureEnabled: false, exposure: 0.8 }); world.apply(renderer, scene, view);
 ```
 
 ### `zenithTransmittance`

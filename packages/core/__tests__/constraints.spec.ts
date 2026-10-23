@@ -592,7 +592,7 @@ describe("core constraints", () => {
     // The renderer's default tone curve (owner exception, 2026-10-22) is re-exported by name; naming it is the
     // only use of "tone mapping" the index may make.
     const withoutToneCurveNames = indexSource.replace(
-      /\b(?:installFilmicToneMapping|filmicToneMappingNode|RendererToneMapping)\b|look\/(?:default|filmic)-tone-mapping\.js/gu,
+      /\b(?:installFilmicToneMapping|RendererToneMapping)\b|look\/(?:default|filmic)-tone-mapping\.js/gu,
       " ",
     );
     expect(withoutToneCurveNames).not.toMatch(

@@ -297,3 +297,6 @@ export function shadowPreset(tier: string): IShadowTier {
   }
   return preset;
 }
+
+/** The tier tables as one object: `resolve` a start tier from a GPU class, `gi` and `shadow` settings of a tier. */
+export const qualityTiers = { gi: giPreset, resolve: resolveQualityTier, shadow: shadowPreset } as const;
