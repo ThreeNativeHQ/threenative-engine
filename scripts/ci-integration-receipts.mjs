@@ -8,7 +8,22 @@ import {
   validateIntegrationReceipts,
 } from "./ci-integration-scope.mjs";
 
-export const readIntegrationJobs = readAttemptJobs;
+// Jobs of attempts 1..current, so a leg that passed before `gh run rerun --failed` still reads as it
+// did. The current attempt is read last and carries the settled-name wait.
+export function readIntegrationJobs(identity, prefix = "CI_INTEGRATION", settledNames = []) {
+  const current = Number(identity.runAttempt);
+  const byId = new Map();
+  for (let attempt = 1; attempt <= current; attempt++) {
+    const listing = readAttemptJobs(
+      { ...identity, runAttempt: String(attempt) },
+      prefix,
+      attempt === current ? settledNames : [],
+    );
+    for (const job of listing.jobs) byId.set(job.id, job);
+  }
+  const jobs = [...byId.values()];
+  return { totalCount: jobs.length, jobs };
+}
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   try {
@@ -35,11 +50,8 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       process.argv[2] === "--collect"
         ? expected.jobs.map((job) => `integration / ${expected.jobNames[job]}`)
         : [];
-    const listing = readIntegrationJobs(
-      { repository, runId, runAttempt },
-      "CI_INTEGRATION",
-      settled,
-    );
+    const read = process.argv[2] === "--collect" ? readIntegrationJobs : readAttemptJobs;
+    const listing = read({ repository, runId, runAttempt }, "CI_INTEGRATION", settled);
     if (process.argv[2] === "--write") {
       const job = process.env.GITHUB_JOB;
       if (!expected.jobs.includes(job))
