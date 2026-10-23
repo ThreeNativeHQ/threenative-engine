@@ -153,3 +153,18 @@ A capsule's feet stay sharp, and a shadow cast from 10 m up spreads to about 9 c
   ratchet in both runs, judge `L5` and `L6` `sun15_spheres` (2 runs per arm, `--expect` none), and re-cut those three ratchets with
   `pnpm unreal-look:ratchet --cut --relax --reason` in the merge commit. If the second run falls inside the bound, queue `lane/receiptA-vsm` as it is.
   The wildwood shadow scene (`shadow:wildwood`, judged IMPROVEMENT by vsm3 on the older epic) and the `gi:` scenes were not captured here. The `gi:` scenes build no `sourceAngleShadowFilter`.
+
+- 2026-10-23 (serial-lane, five-run ratchet rerun): **PARKED**. Capture tree `f107e48368` holds epic `a2bff4bd8`.
+  Five paired runs from one HARNESS tree, headed WebGPU, NVIDIA Turing in all ten receipts; BEFORE uses
+  `vsmRay=0&vsmAngle=1`, AFTER uses the ray rule and Unreal sun disc. Scope: reference `sun15/spheres`, L5–L8.
+  Every BEFORE run holds all 86 scoped ratchets; every AFTER run breaks the same three Floor ratchets:
+  L5 deltaE 47.08 (BEFORE 45.83, bound 46.412), L5 dP50 2.927 (BEFORE 2.854, bound 2.9025),
+  L6 deltaE 41.77–41.78 (BEFORE 41.16–41.19, bound 41.644). Both arms hold 7/10 scoped parity locks;
+  the same three locks already fail in BEFORE. The scoped sum of dP50 increases at every layer:
+  L5 5.034305 to 5.068005, L6 4.652205 to 4.665705, L7 0.938611 to 0.945511, L8 0.767681 to 0.774581.
+  Fresh read-only Sonnet judge, two paired sheets with full frames and floor crops: NEUTRAL, no regression
+  in 16 views; FAR overall against Unreal (L5/L6 FAR, L7/L8 CLOSE). The complete scene/layer distance-reduction
+  receipt is not established. No lock or ratchet was re-cut, no box changed, and no SHA was queued.
+  Focused soft-shadow, shadow-node and sun-disc specs pass 20/20. Native/Wasm suites were not rerun and GPU cost
+  was not timed in this rerun. All-scene lock-board clearance is unverified. The next change must fix the Floor
+  drift before the line can merge. [Five-run numbers, sheets and verbatim judge](https://github.com/ThreeNativeHQ/threenative-engine/pull/541#issuecomment-6357284715).

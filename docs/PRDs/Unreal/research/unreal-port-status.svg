@@ -546,7 +546,7 @@
 <rect x="1084.818568676884" y="458.75145394707187" width="26.58768496312132" height="23.629193533881846" rx="2" fill="#3aa56c"><title>Virtual shadow maps · Instance invalidation: collectors, scene updater, payloads · Done</title></rect>
 <text x="1087.818568676884" y="469.75145394707187" class="l">In…</text>
 <rect x="1112.4062536400054" y="458.75145394707187" width="25.900569521947773" height="23.629193533881846" rx="2" fill="#d9961f"><title>Virtual shadow maps · Shadow-map ray tracing (SMRT) ray loop · In progress</title></rect>
-<rect x="1112.4062536400054" y="479.3806474809537" width="18.319915027719155" height="3" fill="#fff" opacity=".85"/>
+<rect x="1112.4062536400054" y="479.3806474809537" width="18.95163623557154" height="3" fill="#fff" opacity=".85"/>
 <text x="1115.4062536400054" y="469.75145394707187" class="l">Sh…</text>
 <rect x="1139.3068231619534" y="458.75145394707187" width="22.568059632255654" height="23.629193533881846" rx="2" fill="#3b403d"><title>Virtual shadow maps · Page-management dispatcher and shader declarations · Out of scope by rule</title></rect>
 <text x="1142.3068231619534" y="469.75145394707187" class="l">Pa…</text>
