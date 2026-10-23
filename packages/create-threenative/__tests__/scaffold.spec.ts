@@ -202,6 +202,7 @@ const BUG_REPORT_SKILL_PATHS = [
 // on the merge of lane/emissive into the epic.
 // Recomputed 2026-10-22: worldEnvironment.ts drops the unused smoothstep and vec2 imports (19eb1b38f); measured by this test.
 // Recomputed 2026-10-22 on the merge of lane/tonemap (PRD-632 GAP-1..5: grade, white balance, tone curve amount) with the unused-import removal; measured by this test.
+// Recomputed 2026-10-22 again: only snow moves, its snowSurface.ts uploads the moved windows (lane/snow e764013de); measured by this test.
 // Recomputed 2026-10-20 for the Unreal look epic (PR #541): every template gains the opt-in `filmic` tone mode (tonemap.ts,
 // worldEnvironment.ts), the exposure cold-read retry and the histogram-walk fix, and one AGENTS.md/CLAUDE.md line on the engine
 // default. Measured from the committed branch head.
@@ -296,7 +297,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Finite-height readiness plus hull, sail, and buoy interpolation from the current swell pose.
   sailing: "d27fc1acccff1f55428944f7c1e075c31e240c56fee6250d3feed7ac369f1438",
   shooter: "7fa374b2f1471c7ad8a2af2bed5f019943b58cceef6844e616aaac9baa7450de",
-  snow: "28b9a4a1123d9b8b7aaf017a0620549b5c498d46822cf5fbdedfdfd2914c20db",
+  snow: "c041fb86c6cd9f8c926594b6d869179369001ec2ae52457db11b4bf065f00e67",
   // Measured 2026-10-16 through createProject after starter's completed-work quality fallback fix.
   // Recomputed 2026-10-16: starter's adaptiveQuality split its policy resolution into qualityPolicy.ts
   // to stay under the 200-line render-file cap; only starter's tree moves.

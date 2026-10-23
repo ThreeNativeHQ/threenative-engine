@@ -133,3 +133,23 @@ A capsule's feet stay sharp, and a shadow cast from 10 m up spreads to about 9 c
   not 0.5357°; the templates use the measured value. The starter's `shadow.radius = 2`
   (`templates/starter/src/render/lighting.ts:28`) is part of the blob look the review flagged;
   the source-angle filter replaces it.
+- 2026-10-22 (receiptA-lane, `lane/vsm` parked at the ratchet gate): the line is the sun edge from Unreal's shadow-ray gap (`32950c94f`)
+  plus the harness sun disc (`aeb321854`). Merged onto epic `f97578097` as `c5f07f003` on `lane/receiptA-vsm`, native build rebuilt after the merge.
+  Proof that holds: core `soft-shadow` and `shadow-node` specs red on the epic code (4 fail) and green with the line (17/17),
+  `unreal-look-sun-disc` 3/3, `scaffold` 68/68; `ctest -L native-engine` 489/489 and the Wasm suite 155 of 155 (both built from the merged tree);
+  `pnpm parity --target desktop --engine threenative --only-tests soft-shadow-source-angle` with `THREENATIVE_ENGINE_PLAYER`
+  (owned V8 player against the owned Wasm web capture) passes at pixelMismatchRatio 0 and deltaE 0. This is the owned engine against itself.
+  The reference of the open box in Phase 2 stays the upstream-three capture, so that box stays open.
+  Reference scene L9, headed WebGPU on the RTX 2080, 2 runs per arm, paired arms from one tree (BEFORE = `vsmRay=0&vsmAngle=1`): `compare --check`
+  holds 18/21 locks and 147/147 ratchets in all four runs (the 3 broken locks are the board's own). The fresh judge reads IMPROVEMENT overall,
+  CLOSE to Unreal on 8 of 8 frames (`sun15` edge crop and `sun04` sphere row IMPROVEMENT, the other six NEUTRAL).
+  What fails: at L5 to L8, one run per arm (A-1 against B-2; the B-1 capture hit `ERR_NETWORK_CHANGED`), `compare --check` reports 3 ratchets
+  newly broken by the line: `reference L5 sun15_spheres Floor` deltaE 47.08 against 46.41 and dP50 2.927 against 2.9025, and
+  `L6 sun15_spheres Floor` deltaE 41.77 against 41.64. The bound is the cut value plus one run spread (0.025), so the line is one spread above it, in a
+  region that is far from Unreal in both arms. The total dP50 over all 336 rows gets smaller (84.91 to 84.70, 6 rows closer by more than 0.002, 10 further).
+  Lock policy needs three things for a ratchet that moves away: (a) a judge with no regression in that frame, (b) a smaller total distance, (c) a re-cut with
+  `--relax --reason` in the same commit. (b) holds. (a) and (c) are not done, and one run per arm cannot tell the 0.025 from run noise.
+  Next step: on `lane/receiptA-vsm` rerun `capsv.sh`-style captures for `r58-B-1` and `r58-A-2` (L5, L6, L7, L8, ID), then `compare --check` on both pairs. If A stays above the
+  ratchet in both runs, judge `L5` and `L6` `sun15_spheres` (2 runs per arm, `--expect` none), and re-cut those three ratchets with
+  `pnpm unreal-look:ratchet --cut --relax --reason` in the merge commit. If the second run falls inside the bound, queue `lane/receiptA-vsm` as it is.
+  The wildwood shadow scene (`shadow:wildwood`, judged IMPROVEMENT by vsm3 on the older epic) and the `gi:` scenes were not captured here. The `gi:` scenes build no `sourceAngleShadowFilter`.
