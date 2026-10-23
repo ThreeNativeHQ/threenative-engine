@@ -42,3 +42,21 @@ export function applyRendererToneMapping(
   target.toneMapping = ACESFilmicToneMapping;
   return ACESFilmicToneMapping;
 }
+
+/**
+ * Runs `draw` with three's linear output (`NoToneMapping`), then restores the renderer's curve.
+ * The canvas layer draws this way: it is UI over the tone-mapped world, so an unlit colour reaches
+ * the screen as authored. Under the default filmic curve #ff00ff otherwise became #f33ae0.
+ */
+export function withLinearOutput(raw: unknown, draw: () => void): void {
+  const target = raw as { toneMapping?: number };
+  const hadOwn = Object.hasOwn(target, "toneMapping");
+  const previous = target.toneMapping;
+  target.toneMapping = NoToneMapping;
+  try {
+    draw();
+  } finally {
+    if (hadOwn) target.toneMapping = previous;
+    else Reflect.deleteProperty(target, "toneMapping");
+  }
+}
