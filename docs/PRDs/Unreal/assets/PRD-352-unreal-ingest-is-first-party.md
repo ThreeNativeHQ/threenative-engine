@@ -243,6 +243,25 @@ flowchart LR
 The PNG source decoder and slot mapping are build-time mechanisms. Per-pack appearance choices
 stay game-owned data, and package readers do not guess a replacement look for unsupported graphs.
 
+### Execution phases
+
+No phase has started. The three phases below follow the execution sequence above, one box per gate.
+
+#### Phase 1: Freeze the source and control
+**Status:** NOT STARTED
+- [ ] The pack and six-prop hashes, the importer revision and the first-party reader results are recorded, with matched-resolution external output. proof: the record cited from this PRD (`docs/verification/PRD-352-first-party-ingest.md`).
+- [ ] Positions, indices, normals, UVs, section and material assignment, units and transforms of the six props match the external importer. proof: `pnpm exec vitest run packages/raw-unreal/__tests__`.
+
+#### Phase 2: Wire ingest into the existing cook
+**Status:** NOT STARTED
+- [ ] `unrealPass` classifies mesh, texture and material packages, and the cook publishes the six props through the canonical receipt publisher on cold, cached, watched and failed-import runs. proof: `pnpm exec vitest run packages/assets/__tests__`.
+- [ ] Unsupported selected inputs throw a typed `UAssetError` that names the asset. proof: one unit case per refused form in `packages/raw-unreal/__tests__/`, each red before the guard.
+
+#### Phase 3: Prove installed output
+**Status:** NOT STARTED
+- [ ] `sandbox/quarry` renders its six props on the browser and the native desktop from installed packages, matched against the external importer by capture. proof: `node packages/playtest/dist/runner/cli.js` scenario for Quarry.
+- [ ] Mobile compilation passes its compatibility validator, and the three negative controls (swapped colour channels, removed material binding, removed shared output) each fail their assertion. proof: `pnpm test` plus the verification record.
+
 ---
 
 ## 5. Acceptance criteria

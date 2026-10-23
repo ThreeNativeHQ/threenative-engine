@@ -75,6 +75,7 @@ sequenceDiagram
 
 ## Decisions
 
+- 2026-10-23 (team-lead): `lane/ownedbind` (WIP) is kept and not merged. It goes to the follow-up PR. Reason: the work is unfinished and has no receipt. Next step: apply the salvage patch `~/.cache/tmp-tn/reaped/wip/unreal-ownedbind.patch` in a new lane and finish the three phases.
 - 2026-10-22 (ownedbind2-lane): ProbeVolume takes an engine route instead of generic
   `CubeRenderTarget`, `CubeCamera`, `RenderTarget3D` and `cubeTexture` bindings. The engine already
   has the face capture and the projection in C++ (decision 1 of NATIVE-ENGINE-DECISION: engine

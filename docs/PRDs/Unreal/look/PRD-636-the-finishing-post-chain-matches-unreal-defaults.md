@@ -108,6 +108,8 @@ The owner reported that the sphere borders look poor next to Unreal. There are t
 
 ## Decisions
 
+- 2026-10-23 (team-lead): `lane/shipfix` 9a51a0548 (warm-up redraw) is not in #541. It goes to the follow-up PR. Reason: the judge verdict is NEUTRAL and there is no `compare --check` receipt (#541 comment 6358656775). Next step: run `compare --check` on the merged develop, then merge with the combined lock board.
+- 2026-10-23 (team-lead): `lane/post` (local exposure, WIP) is not merged and is not in #541. It goes to the follow-up PR. Reason: the work is unfinished and has no receipt. Next step: apply the salvage patch `~/.cache/tmp-tn/reaped/wip/unreal-post.patch` in a new lane, finish it and add a receipt.
 - 2026-10-19: Chromatic aberration, lens flare and depth of field stay off. Unreal's effective
   defaults are off too.
 - 2026-10-19 (external visual review, checked): the emissive sphere's wide, low halo is bloom

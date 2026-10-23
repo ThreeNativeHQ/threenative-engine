@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-635 — Ambient occlusion darkens only the light that comes from around
 
-**Status:** NOT STARTED
+**Status:** IN PROGRESS
 **Priority:** P2 — no box is ticked: the templates multiply the whole lit frame by GTAO, so a sunlit crease turns grey, which Unreal's default never does.
 **Complexity:** 5 (MEDIUM) — template post source in 10 templates (+2), a depth-normal prepass that changes the frame cost (+2), native proof (+1); risk override: none
 **Owner:** João

@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-649 — Shadow calibration scenes are built in Unreal and judged until parity
 
-**Status:** NOT STARTED
+**Status:** PARTIAL
 **Priority:** P1 — no box is ticked: no Unreal-authored scene isolates penumbra growth, contact, lamp shadows, leaf shadows or shadow stability under motion, so PRD-650 to PRD-652 and the open PRD-634 boxes have no Unreal target to be judged against.
 **Complexity:** 5 (MEDIUM) — 1–5 files: a scene family switch, three `scene.py` scripts, shadow metrics in compare (+1), three new Unreal scenes and their recreation (+2), every shadow PRD consumes the scoreboard (+2); risk override: none
 **Owner:** João
@@ -106,14 +106,14 @@ screenshots branch only.
 ## Execution Phases
 
 #### Phase 1: The family and the first scene
-**Status:** NOT STARTED
+**Status:** PARTIAL
 **Files:** `scripts/unreal-look/capture.ts`, `scripts/unreal-look/compare.ts`, `scripts/unreal-look/penumbra.ts`, `tools/unreal-reference/shadow/scenes.json` (new), `tools/unreal-reference/shadow/penumbra-lab/` (new), `scripts/__tests__/unreal-look-calibrate.spec.ts`
 - [ ] `--scene shadow:<name>` resolves a scene of either family, and fails closed on an unknown name, a missing `criteria.md` and an L5 cell captured with GI on. proof: `pnpm exec vitest run scripts/__tests__/unreal-look-calibrate.spec.ts`.
 - [ ] The contact-gap metric reads 0 for a box resting on the floor and grows with the gap on a lifted box, in Unreal frames of `penumbra-lab/contact`. proof: `pnpm unreal-look:compare --scene shadow:penumbra-lab --metric contact`. Open: `contactGap` and `--layer L5 --metric contact` ship (unit cases: 0, 4, 12 rows for a gap of 0, 4, 12; nothing when the floor stays lit). On Unreal's L5 frames a resting `Box_0` reads 0 in 4 of 5 poses and a lifted `Box_0p25` reads 63 (sun15 heights) and 48 (sun60 contact), but `Box_0` reads 9 in sun60 contact and `Box_0p25` reads 0 in sun60 and sun4 heights, where the shadow does not fall below the box in the image. The scan runs down the image, so it holds only when the shadow side faces the camera. A pose per box that faces the shadow side closes the box. Numbers on the ThreeNative frames (2026-10-21, two runs agree, PR #541 comment 6332495123): lifted boxes read 38 against Unreal's 37 (sun60-heights Box_1), 48 against 48 (sun60-contact Box_0p25) and 0 against 0; ThreeNative has no reading on sun15-heights Box_0p25 (Unreal 63) and sun60-contact Box_0, so the box stays open.
 - [x] Unreal captures `penumbra-lab` at L5 and L9 for every pose and sun, with a region-ID frame. proof: `UE_ROOT=<install> pnpm unreal-look:capture --engine unreal --scene shadow:penumbra-lab`. Evidence: 2026-10-20 commit bd369168d, "L5 cells=18 readback ok" and "L9 cells=18 readback ok"; copied captures read back by `compare --metric penumbra` on 2026-10-21 (9 poses).
 
 #### Phase 2: The lamp, horizon and foliage scenes, and the ablations
-**Status:** NOT STARTED
+**Status:** PARTIAL
 **Files:** `tools/unreal-reference/shadow/lamp-room/` (new), `tools/unreal-reference/shadow/horizon/` (new), `tools/unreal-reference/gi/foliage/` (shared with PRD-643), `tools/unreal-reference/shadow/wildwood/` (new), `scripts/unreal-look/wildwood.ts` (new), `scripts/unreal-look/compare.ts` (the `--ablation` pair)
 - [ ] Unreal captures `lamp-room` and its `swing` run. proof: `pnpm unreal-look:capture --engine unreal --scene shadow:lamp-room`. Open: `lamp-room` is built and captured at L5 and L9 for its four poses (2026-10-21, "shadow:lamp-room ID cells=4 readback ok", exit 0); the `swing` run is not authored, so the box stays open.
 - [ ] Unreal captures `horizon` with its `walk` and `sunturn` runs. proof: `pnpm unreal-look:capture --engine unreal --scene shadow:horizon`.
@@ -130,6 +130,8 @@ screenshots branch only.
 
 ## Decisions
 
+- 2026-10-23 (team-lead): `lane/receiptE-perf2` 2a4eb91cf (one-call GI bake, 3 to 5 times faster) is not in #541. It goes to the follow-up PR. Reason: the judge verdict is NEUTRAL (16 of 16 L9 frames, CLOSE to Unreal) and it needs integration evidence on the combined head (#541 comments 6357760574 and 6357809499). Next step: merge it on the merged develop with the combined lock board and `ctest native_engine_post_input_follows_each_upload`.
+- 2026-10-23 (team-lead): `lane/wildwood` (PRD-649 and PRD-650, WIP) is kept and not merged. It goes to the follow-up PR. Reason: the work is unfinished. Next step: apply the salvage patch `~/.cache/tmp-tn/reaped/wip/unreal-wildwood.patch` in a new lane and add a receipt.
 - **2026-10-22, team-lead (stable-epic triage): `lane/shadowscenes` stays out of the stable epic.** The last three commit subjects describe an epic merge, a preview merge, and filing completed PRD-631 under done. They do not identify a new shadow implementation or provide a visual receipt for the WIP. Next step: identify the remaining shadow changes, add a red-green spec, capture BEFORE and AFTER frames, and obtain a fresh judge verdict before merge.
 
 - 2026-10-20 (owner): shadow PRDs use Unreal-authored calibration scenes and the visual judge until

@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-646 — ThreeNative recreates each Unreal calibration scene exactly
 
-**Status:** NOT STARTED
+**Status:** PARTIAL
 **Priority:** P1 — no box is ticked: until ThreeNative loads the Unreal calibration scenes with the same geometry, materials, lights and units, a GI difference cannot be told apart from a scene difference.
 **Complexity:** 6 (MEDIUM) — 1–5 files: a scene loader in the harness, the unit conversions, one visualize node, specs (+1), new module: the calibration scene loader (+2), crosses the engine boundary: the owned engine must render every light class the scenes use (+2), native proof (+1); risk override: none
 **Owner:** João
@@ -80,7 +80,7 @@ appearance value still comes from the scene data or the tuned render source.
 ## Execution Phases
 
 #### Phase 1: `cornell` loads, and the properties map
-**Status:** NOT STARTED
+**Status:** DONE
 **Files:** `scripts/unreal-look/scaffold/CalibrationScene.ts.in` (new), `scripts/unreal-look/capture-threenative.ts`, `scripts/__tests__/unreal-look-calibration-scene.spec.ts` (new)
 - [x] Unreal Z-up centimetres, lumens, candela, lux and attenuation radius convert to ThreeNative values, and an actor that neither maps nor appears as unsupported fails the load. proof: `pnpm exec vitest run scripts/__tests__/unreal-look-calibration-scene.spec.ts`. — 10 tests pass. The pure loader rules moved from `CalibrationScene.ts.in` to `scaffold/render/calibrationUnits.ts` (`candela`, `lightCandela`, `lightUnsupported`, `checkMapped`, `motionPose`, `lightScale`), so a spec can import them. The spec pins lumens (`/ 4 pi`) and candela, fails a lux light, a light class and a mesh with no region by name (`TN_CALIBRATION_SCENE_UNIT`, `_LIGHT`, `_UNMAPPED`), reports the `sourceRadiusM` gap (PRD-634), holds the metre frame (the lamp of `cornell` at `[0, 4.9, -2.75]`), and checks that `validateSceneExport` and the loader rules pass on `cornell`, `neon-corridor` and `lamp-room`. The Z-up centimetre conversion itself happens once, in `tools/unreal-reference/gi/export.py` (line 772), and `validateSceneExport` checks its result. The sun in lux belongs to the template scenes (`SUN_ILLUMINANCE`, 6 lux x pi), pinned in the same spec.
 - [x] `cornell` region-ID edges agree within 1 px, and its unsupported properties are listed under `## Decisions` with the PRD that owns each one. proof: the AC-1 commands for `gi:cornell` — `pnpm unreal-look:compare --sameness --scene gi:cornell`: 12 objects in 2 poses, 0 px beyond 1 px, farthest edge 1 px (Phase 1b); `pnpm unreal-look:capture --engine threenative --scene gi:cornell --layers L1` reports one unsupported property, `Lamp.sourceRadiusM` (see Decisions). Proof comment with the tables, sheets and judge verdict: https://github.com/ThreeNativeHQ/threenative-engine/pull/541#issuecomment-6327109477
@@ -101,7 +101,7 @@ appearance value still comes from the scene data or the tuned render source.
 - [ ] `sunlit-room` loads and its direct-light cells match within the thresholds. proof: `pnpm unreal-look:compare --scene gi:sunlit-room --layer L1`.
 
 #### Phase 3: GI alone, and the motion replay
-**Status:** NOT STARTED
+**Status:** DONE
 **Files:** `packages/core/src/render/gi-visualize.ts` (new, exports `GIVisualize`), `packages/core/src/index.ts`, `packages/engine-mcp/__tests__/search.spec.ts`, `scripts/unreal-look/scaffold/render/worldEnvironment.ts`, `packages/runtime-native/conformance/scenes/shared/gi-visualize-indirect.js` (new), `packages/runtime-native/conformance/registry.json`
 - [x] A capability search for "lumen visualize indirect diffuse" returns `GIVisualize`. proof: `pnpm exec vitest run packages/engine-mcp/__tests__/search.spec.ts`. — 58 tests pass, including the new case: "lumen visualize indirect diffuse", "indirect diffuse only" and "r.Lumen.Visualize.IndirectDiffuse" each return `GIVisualize` (`pnpm capabilities:sync` wrote the manifest entry with the three `@alias` lines). `GIVisualize` (`packages/core/src/render/gi-visualize.ts`, 5 unit tests) selects `off` (the frame) or `indirectDiffuse` (the term the chain built), and throws `TN_GI_VISUALIZE_TERM` when the chain built no term and `TN_GI_VISUALIZE_MODE` for an unknown mode.
 - [x] The `pan` run replays on the owned engine and its series has the same frame count as Unreal's. proof: `pnpm unreal-look:compare --scene gi:cornell --metric motion`. — `pnpm unreal-look:capture --engine threenative --reuse --scene gi:cornell --motion pan` wrote 180 frames and the 5 stills (`pan.0000`..`pan.0179`, `still-0000`..`still-0060`), the same 185 PNGs as Unreal's `L7-Epic-motion` folder. `pnpm unreal-look:compare --scene gi:cornell --metric motion --run pan` reads both series (exit 0) and reports flicker, ghosting and low-pass per region for both engines: held flicker 0.00% to 0.03% in both, ghost at frame 60 on `Box_Tall` 0.62% (Unreal) against 1.01% (ThreeNative).

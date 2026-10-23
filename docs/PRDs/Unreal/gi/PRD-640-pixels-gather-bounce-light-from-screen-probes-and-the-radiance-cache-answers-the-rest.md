@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-640 — Pixels gather bounce light from screen probes, and the radiance cache answers the rest
 
-**Status:** NOT STARTED
+**Status:** PARTIAL (Phase 1 done, gate FAIL; Phases 2 and 3 not started)
 **Priority:** P1 — no box is ticked: the Epic tier of Unreal, which a fresh project runs, gathers GI with screen probes, and ThreeNative has only a per-pixel SSGI whose misses read a 1 m field.
 **Complexity:** 8 (HIGH) — 6–10 files: the gather, the short range AO, the composite, specs, conformance (+2), new module `screen-probe-gather.ts` (+2), state across frames: probe radiance history (+2), native proof (+1), changes the frame cost of the high tier (+1); risk override: none
 **Owner:** João
