@@ -288,24 +288,52 @@ def read_instance(mi):
 
 
 def foliage_master(ref, folder):
-    """The exporter's lit glTF master on Unreal's Two Sided Foliage shading model, with a Subsurface Color (PRD-643).
+    """A small lit master on Unreal's Two Sided Foliage shading model, with a Subsurface Color (PRD-643).
 
-    A copy of M_GLTF_Default (classic property connections, so the textures, factors and masked blend of every
-    other slot behave the same), the shading model switched, and a "Subsurface Color" vector parameter on the
-    SubsurfaceColor input. An instance sets that parameter to the manifest's colour for the leaf material.
+    The parameters are the ones the glTF master has for a leaf slot: "Base Color Texture" times "Base Color Factor",
+    the texture's alpha as the opacity mask, "Normal Texture", "Roughness Factor", "Metallic Factor", and a
+    "Subsurface Color" that an instance sets to the manifest's colour for the leaf material.
+
+    It is built from nodes, not copied from M_GLTF_Default. The copy renders every leaf near white under this model
+    (Substrate converts it to a thin two-sided wrap slab), whatever the Subsurface Color, Opacity, Emissive, Specular
+    or Normal pins hold; the same copy on Default Lit, and this graph on Two Sided Foliage, are green. PRD-643 Decisions.
     """
     path = f"{folder}/M_TN_Foliage"
     if unreal.EditorAssetLibrary.does_asset_exist(path):
         unreal.EditorAssetLibrary.delete_asset(path)
-    unreal.EditorAssetLibrary.duplicate_asset(PROXY, path)
-    master = unreal.load_asset(path)
-    if master.get_editor_property("use_material_attributes"):
-        raise RuntimeError("M_TN_Foliage: the glTF master uses material attributes, a SubsurfaceColor input would not reach the shading model")
+    master = ref.asset_tools.create_asset("M_TN_Foliage", folder, unreal.Material, unreal.MaterialFactoryNew())
     master.set_editor_property("shading_model", unreal.MaterialShadingModel.MSM_TWO_SIDED_FOLIAGE)
-    colour = mel.create_material_expression(master, unreal.MaterialExpressionVectorParameter, -400, 900)
-    colour.set_editor_property("parameter_name", "Subsurface Color")
-    colour.set_editor_property("default_value", unreal.LinearColor(0.0, 0.0, 0.0, 1.0))
-    mel.connect_material_property(colour, "", unreal.MaterialProperty.MP_SUBSURFACE_COLOR)
+    master.set_editor_property("blend_mode", unreal.BlendMode.BLEND_MASKED)
+    master.set_editor_property("two_sided", True)
+
+    def node(cls, x, y, name, **props):
+        expr = mel.create_material_expression(master, cls, x, y)
+        if name is not None:
+            expr.set_editor_property("parameter_name", name)
+        for key, value in props.items():
+            expr.set_editor_property(key, value)
+        return expr
+
+    colour = node(unreal.MaterialExpressionTextureSampleParameter2D, -800, 0, "Base Color Texture",
+                  texture=unreal.load_asset("/GLTFExporter/Textures/Proxy/T_GLTF_DefaultWhite"))
+    factor = node(unreal.MaterialExpressionVectorParameter, -800, 300, "Base Color Factor",
+                  default_value=unreal.LinearColor(1.0, 1.0, 1.0, 1.0))
+    product = node(unreal.MaterialExpressionMultiply, -500, 100, None)
+    mel.connect_material_expressions(colour, "RGB", product, "A")
+    mel.connect_material_expressions(factor, "", product, "B")
+    mel.connect_material_property(product, "", unreal.MaterialProperty.MP_BASE_COLOR)
+    mel.connect_material_property(colour, "A", unreal.MaterialProperty.MP_OPACITY_MASK)
+    normal = node(unreal.MaterialExpressionTextureSampleParameter2D, -800, 600, "Normal Texture",
+                  texture=unreal.load_asset("/GLTFExporter/Textures/Proxy/T_GLTF_DefaultNormal"),
+                  sampler_type=unreal.MaterialSamplerType.SAMPLERTYPE_NORMAL)
+    mel.connect_material_property(normal, "RGB", unreal.MaterialProperty.MP_NORMAL)
+    subsurface = node(unreal.MaterialExpressionVectorParameter, -500, 900, "Subsurface Color",
+                      default_value=unreal.LinearColor(0.0, 0.0, 0.0, 1.0))
+    mel.connect_material_property(subsurface, "", unreal.MaterialProperty.MP_SUBSURFACE_COLOR)
+    rough = node(unreal.MaterialExpressionScalarParameter, -500, 1100, "Roughness Factor", default_value=1.0)
+    mel.connect_material_property(rough, "", unreal.MaterialProperty.MP_ROUGHNESS)
+    metal = node(unreal.MaterialExpressionScalarParameter, -500, 1250, "Metallic Factor", default_value=0.0)
+    mel.connect_material_property(metal, "", unreal.MaterialProperty.MP_METALLIC)
     mel.recompile_material(master)
     unreal.EditorAssetLibrary.save_loaded_asset(master)
     ref.log(f"foliage master {path} shading_model={master.get_editor_property('shading_model')}")
