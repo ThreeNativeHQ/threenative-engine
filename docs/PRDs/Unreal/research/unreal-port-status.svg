@@ -185,7 +185,7 @@
 <rect x="227.29214668982945" y="649.520884075263" width="122.3108637722803" height="56.479115924737016" rx="4" fill="#232826"/>
 <text x="231.29214668982945" y="660.520884075263" class="s">Ambient occlusion</text>
 <rect x="228.29214668982945" y="662.520884075263" width="75.9821261200255" height="41.479115924737016" rx="2" fill="#d9961f"><title>Ambient occlusion · SSAO / GTAO · In progress</title></rect>
-<rect x="228.29214668982945" y="701" width="31.286757814128144" height="3" fill="#fff" opacity=".85"/>
+<rect x="228.29214668982945" y="701" width="35.75629464471788" height="3" fill="#fff" opacity=".85"/>
 <text x="231.29214668982945" y="673.520884075263" class="l">SSAO / GTAO</text>
 <rect x="305.27427280985495" y="662.520884075263" width="22.574899733933137" height="41.479115924737016" rx="2" fill="#2c322f"><title>Ambient occlusion · Rest of Ambient occlusion · Not split</title></rect>
 <text x="308.27427280985495" y="673.520884075263" class="l">Re…</text>
@@ -372,30 +372,30 @@
 <rect x="810.7576551391769" y="98" width="89.42896722836485" height="121.59258859661315" rx="2" fill="#4a86d6"><title>Post chain · Depth of field (diaphragm) · Not started</title></rect>
 <text x="813.7576551391769" y="109" class="l">Depth of field…</text>
 <rect x="810.7576551391769" y="220.59258859661315" width="89.42896722836485" height="41.193919921709494" rx="2" fill="#d9961f"><title>Post chain · Tone map + LUT combine · In progress</title></rect>
-<rect x="810.7576551391769" y="258.78650851832265" width="63.34551845342511" height="3" fill="#fff" opacity=".85"/>
+<rect x="810.7576551391769" y="258.78650851832265" width="66.35052407265779" height="3" fill="#fff" opacity=".85"/>
 <text x="813.7576551391769" y="231.59258859661315" class="l">Tone map + LUT…</text>
 <rect x="901.1866223675418" y="98" width="51.15166904223315" height="69.03100946992117" rx="2" fill="#d9961f"><title>Post chain · Motion blur · In progress</title></rect>
-<rect x="901.1866223675418" y="164.03100946992117" width="31.056370489927268" height="3" fill="#fff" opacity=".85"/>
+<rect x="901.1866223675418" y="164.03100946992117" width="31.74931181931713" height="3" fill="#fff" opacity=".85"/>
 <text x="904.1866223675418" y="109" class="l">Motion …</text>
 <rect x="953.3382914097749" y="98" width="50.177829522034244" height="69.03100946992117" rx="2" fill="#3aa56c"><title>Post chain · TAA (legacy) · Done</title></rect>
 <text x="956.3382914097749" y="109" class="l">TAA (le…</text>
 <rect x="901.1866223675418" y="168.03100946992117" width="65.67977265062837" height="52.521178769420914" rx="2" fill="#d9961f"><title>Post chain · Eye adaptation (histogram, basic) · In progress</title></rect>
-<rect x="901.1866223675418" y="217.5521882393421" width="47.99675693699765" height="3" fill="#fff" opacity=".85"/>
+<rect x="901.1866223675418" y="217.5521882393421" width="49.75740352320331" height="3" fill="#fff" opacity=".85"/>
 <text x="904.1866223675418" y="179.03100946992117" class="l">Eye adapta…</text>
 <rect x="901.1866223675418" y="221.5521882393421" width="65.67977265062837" height="40.23432027898056" rx="2" fill="#d9961f"><title>Post chain · ACES transforms · In progress</title></rect>
-<rect x="901.1866223675418" y="258.78650851832265" width="40.13763884205067" height="3" fill="#fff" opacity=".85"/>
+<rect x="901.1866223675418" y="258.78650851832265" width="44.66224540242729" height="3" fill="#fff" opacity=".85"/>
 <text x="904.1866223675418" y="232.5521882393421" class="l">ACES trans…</text>
 <rect x="967.8663950181701" y="168.03100946992117" width="35.64972591363903" height="50.66255891269435" rx="2" fill="#d9961f"><title>Post chain · Bloom (Gaussian + FFT) · In progress</title></rect>
-<rect x="967.8663950181701" y="215.69356838261552" width="15.948561592943777" height="3" fill="#fff" opacity=".85"/>
+<rect x="967.8663950181701" y="215.69356838261552" width="16.453719652448786" height="3" fill="#fff" opacity=".85"/>
 <text x="970.8663950181701" y="179.03100946992117" class="l">Bloo…</text>
 <rect x="967.8663950181701" y="219.69356838261552" width="35.64972591363903" height="26.936957212978314" rx="2" fill="#d9961f"><title>Post chain · Local exposure · In progress</title></rect>
-<rect x="967.8663950181701" y="243.63052559559384" width="21.644476447566554" height="3" fill="#fff" opacity=".85"/>
+<rect x="967.8663950181701" y="243.63052559559384" width="22.127416084327674" height="3" fill="#fff" opacity=".85"/>
 <text x="970.8663950181701" y="230.69356838261552" class="l">Loca…</text>
 <rect x="967.8663950181701" y="247.63052559559384" width="35.64972591363903" height="14.15598292272881" rx="2" fill="#4a86d6"><title>Post chain · Lens flares · Not started</title></rect>
 <rect x="809.7576551391769" y="265.78650851832265" width="100.8896467162034" height="152.96494542874922" rx="4" fill="#232826"/>
 <text x="813.7576551391769" y="276.78650851832265" class="s">Denoisers</text>
 <rect x="810.7576551391769" y="278.78650851832265" width="97.8896467162034" height="137.96494542874922" rx="2" fill="#d9961f"><title>Denoisers · Whole system (not split) · In progress</title></rect>
-<rect x="810.7576551391769" y="413.75145394707187" width="33.884877709455026" height="3" fill="#fff" opacity=".85"/>
+<rect x="810.7576551391769" y="413.75145394707187" width="35.76737091553586" height="3" fill="#fff" opacity=".85"/>
 <text x="813.7576551391769" y="289.78650851832265" class="l">Whole system (no…</text>
 <rect x="912.6473018553803" y="265.78650851832265" width="92.86881907642885" height="152.96494542874922" rx="4" fill="#232826"/>
 <text x="916.6473018553803" y="276.78650851832265" class="s">TSR</text>
@@ -424,7 +424,7 @@
 <rect x="936.3213325069834" y="350.4091132586037" width="19.68528256298987" height="16.94126796532919" rx="2" fill="#d9961f"><title>TSR · Resolve history to output · In progress</title></rect>
 <rect x="936.3213325069834" y="364.3503812239329" width="2" height="3" fill="#fff" opacity=".85"/>
 <rect x="936.3213325069834" y="368.3503812239329" width="19.68528256298987" height="16.857820207350926" rx="2" fill="#d9961f"><title>TSR · CVars, tiers and defaults · In progress</title></rect>
-<rect x="936.3213325069834" y="382.20820143128384" width="9.561422959166508" height="3" fill="#fff" opacity=".85"/>
+<rect x="936.3213325069834" y="382.20820143128384" width="9.842641281494934" height="3" fill="#fff" opacity=".85"/>
 <rect x="936.3213325069834" y="386.2082014312838" width="19.68528256298987" height="14.771626257894013" rx="2" fill="#4a86d6"><title>TSR · Velocity, occluder and decimate dispatch · Not started</title></rect>
 <rect x="936.3213325069834" y="401.97982768917785" width="19.68528256298987" height="14.771626257894013" rx="2" fill="#d9961f"><title>TSR · Rejection and spatial anti-aliasing dispatch · In progress</title></rect>
 <rect x="936.3213325069834" y="413.75145394707187" width="2" height="3" fill="#fff" opacity=".85"/>

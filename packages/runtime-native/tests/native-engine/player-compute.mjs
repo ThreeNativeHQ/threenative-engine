@@ -9,9 +9,9 @@ const executable = process.argv[2];
 assert(executable, "Usage: player-compute.mjs <tn-native-engine-player-v8>");
 
 const { verdict, output } = await runComputeGame(executable, `
-import { DoubleSide, Mesh, OrthographicCamera, PerspectiveCamera, PlaneGeometry, RenderTarget, Scene, UnsignedByteType } from "three";
-import { Fn, If, atomicAdd, atomicLoad, atomicStore, float, instanceIndex, instancedArray, uint, uniform, vec3, vec4, vertexIndex } from "three/tsl";
-import { MeshBasicNodeMaterial, QuadMesh, WebGPURenderer } from "three/webgpu";
+import { DoubleSide, Mesh, OrthographicCamera, PerspectiveCamera, PlaneGeometry, RenderTarget, Scene, HalfFloatType, RGBAFormat, UnsignedByteType } from "three";
+import { Fn, If, atomicAdd, atomicLoad, atomicStore, float, instanceIndex, instancedArray, uint, uniform, uvec2, vec2, texture, textureStore, storageTexture, vec3, vec4, vertexIndex } from "three/tsl";
+import { MeshBasicNodeMaterial, QuadMesh, StorageTexture, WebGPURenderer } from "three/webgpu";
 
 const faults = [];
 const same = (label, got, want) => {
@@ -123,6 +123,56 @@ async function run() {
   new QuadMesh(material).render(renderer);
   renderer.setRenderTarget(null);
   same("render read", await renderer.readRenderTargetPixelsAsync(target, 0, 0, 1, 1), [64, 128, 191, 255]);
+
+  // A storage texture's writes reach the next kernel and the ordinary sampled-texture path.
+  const extent = new StorageTexture();
+  if (!extent.isStorageTexture || extent.image.width !== 1 || extent.image.height !== 1 ||
+      extent.minFilter !== 1006 || extent.magFilter !== 1006 || !extent.generateMipmaps || !extent.mipmapsAutoUpdate)
+    faults.push("storage texture defaults");
+  extent.setSize(4, 4);
+  if (extent.image.width !== 4 || extent.image.height !== 4) faults.push("storage texture setSize");
+  extent.dispose();
+  const lut = new StorageTexture(4, 4);
+  lut.type = HalfFloatType;
+  lut.format = RGBAFormat;
+  lut.mipmapsAutoUpdate = false;
+  lut.generateMipmaps = false;
+  const texels = instancedArray(16, "vec4");
+  const bake = Fn(() => {
+    const x = instanceIndex.mod(4), y = instanceIndex.div(4);
+    textureStore(lut, uvec2(x, y), vec4(float(x).div(4), float(y).div(4), float(x.add(y)).div(8), 1));
+  })().compute(16);
+  const sample = Fn(() => {
+    const x = instanceIndex.mod(4), y = instanceIndex.div(4);
+    const centre = vec2(float(x).add(0.5), float(y).add(0.5)).div(4);
+    texels.element(instanceIndex).assign(texture(lut, centre).level(0));
+  })().compute(16);
+  renderer.compute(bake);
+  renderer.compute(sample);
+  const pixels = new Float32Array(await renderer.getArrayBufferAsync(texels.value));
+  const expected = Array.from({ length: 16 }, (_, i) => [i % 4 / 4, Math.floor(i / 4) / 4, (i % 4 + Math.floor(i / 4)) / 8, 1]).flat();
+  if (pixels.length !== expected.length || pixels.some((v, i) => !Number.isFinite(v) || Math.abs(v - expected[i]) > 1e-3))
+    faults.push("storage texture compute read " + Array.from(pixels));
+  const lutMaterial = new MeshBasicNodeMaterial();
+  lutMaterial.colorNode = texture(lut, vec2(1.5 / 4, 2.5 / 4)).level(0);
+  renderer.setRenderTarget(target);
+  new QuadMesh(lutMaterial).render(renderer);
+  renderer.setRenderTarget(null);
+  same("storage texture render read", await renderer.readRenderTargetPixelsAsync(target, 0, 0, 1, 1), [64, 128, 96, 255]);
+
+  // r185's storageTexture node can be handed to textureStore, or append its own store.
+  renderer.compute(Fn(() => {
+    textureStore(storageTexture(lut), uvec2(0, 0), vec4(0.5, 0.25, 0.75, 1));
+    storageTexture(lut, uvec2(1, 0), vec4(0.25, 0.5, 0.75, 1)).toStack();
+  })().compute(1));
+  renderer.compute(sample);
+  const stored = new Float32Array(await renderer.getArrayBufferAsync(texels.value));
+  same("storageTexture node", stored.slice(0, 8), [0.5, 0.25, 0.75, 1, 0.25, 0.5, 0.75, 1]);
+  const invalidTexture = new StorageTexture();
+  invalidTexture.type = 1010;
+  try { Fn(() => { textureStore(invalidTexture, uvec2(0, 0), vec4(1)); })(); faults.push("unsupported storage texture format accepted"); }
+  catch (error) { if (!/TN_NATIVE_STORAGE_TEXTURE_FORMAT:.*1010.*1023/.test(String(error.message))) faults.push("storage format error " + error.message); }
+  lut.dispose();
 
   // A vertex-stage read: a plane's corners come from padded vec3 storage by vertexIndex, and the left half of
   // the target is covered. Row 0 of the read is the target's top row.

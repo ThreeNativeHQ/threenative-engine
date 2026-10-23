@@ -1,8 +1,8 @@
 /**
  * three's `pass(scene, camera)`, `mrt()` and the MRT slots over the engine's own scene pass, for both
  * back ends (the V8 player and the Wasm engine). The engine draws one scene pass whose targets are
- * the renderer's colour ("output"), depth and, with an MRT that asks for it, view normals and the diffuse colour; a pass's
- * texture nodes name those targets. `normalView` is the engine's TSL node, as in three, so a graph
+ * the renderer's colour ("output"), depth and, with an MRT that asks for it, view normals, material
+ * values and the diffuse colour; a pass's texture nodes name those targets. `normalView` is the engine's TSL node, as in three, so a graph
  * reads it and `mrt({ normal: normalView })` names the normal target by that node's identity.
  *
  * Which pass is the frame's is fixed by how it is made, never by when: `pass(scene, camera)` (the
@@ -51,6 +51,16 @@ interface IPassTsl {
   /** The TSL constructors the surface decode composes; a table that lacks them refuses by name. */
   readonly floor?: (value: unknown) => unknown;
   readonly vec4?: (...values: unknown[]) => unknown;
+  readonly cameraNear?: IPassMath;
+  readonly cameraFar?: IPassMath;
+}
+
+/** The node arithmetic getViewZNode composes. */
+interface IPassMath {
+  readonly x: IPassMath;
+  sub(value: unknown): IPassMath;
+  mul(value: unknown): IPassMath;
+  div(value: unknown): IPassMath;
 }
 
 interface IMRTSlot {
@@ -144,11 +154,11 @@ export function definePass(
 
   /**
    * The engine's normal target carries the surface in its alpha (Renderer::planNormals):
-   * `2 * round(7 * metalness) + 0.25 + 0.5 * roughness`, 0 where no material wrote. One texel reads as
-   * `vec4(metalness, roughness, 0, 1)`: a game samples `.r` for the metalness target and `.g` for the
-   * roughness target. A pixel with no material reads as metalness 0 and roughness 1: it reflects nothing.
+   * `2 * round(7 * metalness) + 0.25 + 0.5 * roughness`, 0 where no material wrote. Each name reads as a
+   * splat of its own value, as three splats a float MRT output to RGBA (and as the separate material
+   * target does). A pixel with no material reads as metalness 0 and roughness 1: it reflects nothing.
    */
-  function surfaceNode(): unknown {
+  function surfaceNode(name: string): unknown {
     const { floor, vec4 } = tsl;
     if (floor === undefined || vec4 === undefined)
       throw new Error(
@@ -160,7 +170,9 @@ export function definePass(
     const level = floor(alpha.mul(0.5)) as typeof alpha;
     const written = alpha.greaterThan(0.125);
     const roughness = alpha.sub(level.mul(2)).sub(0.25).mul(2).clamp(0, 1);
-    return vec4(written.select(level.div(7), 0), written.select(roughness, 1), 0, 1);
+    const value =
+      name === "metalness" ? written.select(level.div(7), 0) : written.select(roughness, 1);
+    return vec4(value, value, value, value);
   }
 
   const framePass = Symbol("tn.framePass");
@@ -182,6 +194,7 @@ export function definePass(
     #target: IPassTarget | null = null;
     #offscreen: boolean;
     #disposed = false;
+    #viewZ = new Map<string, unknown>();
 
     constructor(scope: unknown, scene: unknown, camera: unknown) {
       this.#scene = scene;
@@ -292,10 +305,31 @@ export function definePass(
         this.#mrt?.outputs.normal === normalView &&
         this.#mrt?.outputs[name] === slots[name]
       )
-        return surfaceNode();
+        return surfaceNode(name);
+      if (
+        (name === "metalness" && this.#mrt?.outputs.metalness === metalness) ||
+        (name === "roughness" && this.#mrt?.outputs.roughness === roughness)
+      )
+        return tsl.texture({ name }, tsl.uv());
       throw new Error(
         `TN_NATIVE_PASS_TEXTURE_UNSUPPORTED: the native scene pass has no '${name}' target`,
       );
+    }
+
+    /** three's `perspectiveDepthToViewZ(depth, cameraNear, cameraFar)` of a depth target, once per name. */
+    getViewZNode(name = "depth"): unknown {
+      let viewZ = this.#viewZ.get(name);
+      if (viewZ === undefined) {
+        const depth = (this.getTextureNode(name) as IPassMath).x;
+        const { cameraNear: near, cameraFar: far } = tsl;
+        if (near === undefined || far === undefined)
+          throw new Error(
+            "TN_NATIVE_PASS_TEXTURE_UNSUPPORTED: this TSL table has no cameraNear and cameraFar",
+          );
+        viewZ = near.mul(far).div(far.sub(near).mul(depth).sub(far));
+        this.#viewZ.set(name, viewZ);
+      }
+      return viewZ;
     }
 
     /** Releases an offscreen pass's target and stops drawing it. The frame pass owns nothing to release. */

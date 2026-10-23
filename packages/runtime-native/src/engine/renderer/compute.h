@@ -21,6 +21,7 @@
 namespace tn::engine {
 
 class BufferAttribute;
+class Renderer;
 
 /** three's `time` and `deltaTime` (its NodeFrame clock) at the dispatch: seconds since the renderer was made, and since the frame before. */
 struct FrameClock {
@@ -56,12 +57,13 @@ public:
      * Throws std::runtime_error naming the uniform or storage buffer the program cannot be given.
      */
     void dispatchValues(WGPUCommandEncoder encoder, std::span<const Handle> storage, uint32_t invocations,
-                        const std::map<std::string, std::vector<double>>& uniforms, const FrameClock& clock = {});
+                        const std::map<std::string, std::vector<double>>& uniforms, const FrameClock& clock = {},
+                        std::span<const WGPUBindGroupEntry> textures = {});
     const shader::StageModule& module() const { return module_; }
 
 private:
     bool encode(WGPUCommandEncoder encoder, std::span<const Handle> storage, uint32_t invocations,
-                const std::vector<uint8_t>& uniformBlock);
+                const std::vector<uint8_t>& uniformBlock, std::span<const WGPUBindGroupEntry> textures = {});
     WGPUDevice device_;
     GpuResources& gpu_;
     shader::StageModule module_;
@@ -91,7 +93,7 @@ public:
     /** Compiles the node's pass if it has none; throws std::runtime_error TN_COMPUTE_* with the reason. */
     ComputePass& prepare(const shader::graph::Node& node);
     /** Records one dispatch into `encoder`. */
-    void record(WGPUCommandEncoder encoder, const ComputeDispatch& dispatch, const FrameClock& clock);
+    void record(WGPUCommandEncoder encoder, const ComputeDispatch& dispatch, const FrameClock& clock, Renderer& renderer);
 
 private:
     WGPUDevice device_;
@@ -99,8 +101,6 @@ private:
     GeometryCache& cache_;
     std::unordered_map<uint64_t, std::unique_ptr<ComputePass>> passes_;
 };
-
-class Renderer;
 
 /**
  * `renderer.compute` and `renderer.getArrayBufferAsync` in call order (PRD-620). A host queues them as

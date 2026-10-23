@@ -210,6 +210,7 @@ std::vector<std::string> unsupportedFeatures(const StandardMaterial& material);
 struct StandardPrograms {
     Program vertex{Stage::Vertex};
     Program fragment{Stage::Fragment};
+    ExprId materialProperties = kInvalid;
     std::vector<std::string> diagnostics;  // TN_MATERIAL_UNSUPPORTED ...; empty when drawable
 };
 
