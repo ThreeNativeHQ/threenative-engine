@@ -1,11 +1,4 @@
-import {
-  ACESFilmicToneMapping,
-  Color,
-  NoToneMapping,
-  Object3D,
-  PerspectiveCamera,
-  Scene,
-} from "three";
+import { Color, Object3D, PerspectiveCamera, Scene } from "three";
 import { pass } from "three/tsl";
 import { NodeFrame, NodeUpdateType, RenderPipeline } from "three/webgpu";
 import { describe, expect, it, vi } from "vitest";
@@ -1700,12 +1693,7 @@ describe("createRenderer", () => {
       configurable: true,
       value: { gpu: {} },
     });
-    const calls: Array<{
-      autoClear: boolean | undefined;
-      camera: unknown;
-      scene: unknown;
-      toneMapping: number | undefined;
-    }> = [];
+    const calls: Array<{ autoClear: boolean | undefined; camera: unknown; scene: unknown }> = [];
 
     try {
       const raw = {
@@ -1714,26 +1702,19 @@ describe("createRenderer", () => {
         domElement: canvas,
         init: async () => undefined,
         render(scene: unknown, camera: unknown) {
-          calls.push({ autoClear: this.autoClear, camera, scene, toneMapping: this.toneMapping });
+          calls.push({ autoClear: this.autoClear, camera, scene });
         },
         setSize: () => undefined,
-        toneMapping: ACESFilmicToneMapping as number,
       };
-      const renderer = await createRenderer({
-        canvas,
-        toneMapping: "aces",
-        webgpuFactory: () => raw,
-      });
+      const renderer = await createRenderer({ canvas, webgpuFactory: () => raw });
       const scene = {} as never;
       const camera = {} as never;
       renderer.setOutputNode({});
 
       renderer.renderOverlay(scene, camera);
 
-      // The overlay is UI over the tone-mapped world: it draws with no curve of its own.
-      expect(calls).toEqual([{ autoClear: false, camera, scene, toneMapping: NoToneMapping }]);
+      expect(calls).toEqual([{ autoClear: false, camera, scene }]);
       expect(raw.autoClear).toBe(true);
-      expect(raw.toneMapping).toBe(ACESFilmicToneMapping);
       renderer.dispose();
     } finally {
       if (descriptor === undefined) Reflect.deleteProperty(globalThis, "navigator");

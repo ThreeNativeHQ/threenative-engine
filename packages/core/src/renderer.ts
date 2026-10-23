@@ -22,11 +22,7 @@ import {
   type IGpuFrameObservation,
   type IGpuFrameObservationOptions,
 } from "./gpu-frame-observation.js";
-import {
-  type RendererToneMapping,
-  applyRendererToneMapping,
-  withLinearOutput,
-} from "./look/default-tone-mapping.js";
+import { type RendererToneMapping, applyRendererToneMapping } from "./look/default-tone-mapping.js";
 import {
   type IPipelineCensus,
   type PipelineCensus,
@@ -756,8 +752,7 @@ function wrapRenderer(
     const autoClear = raw.autoClear;
     raw.autoClear = false;
     try {
-      // The overlay is UI over the finished world: the world's curve and exposure stay off it.
-      withLinearOutput(raw, () => raw.render(scene, camera));
+      raw.render(scene, camera);
     } finally {
       if (hadOwnAutoClear) raw.autoClear = autoClear;
       else Reflect.deleteProperty(raw, "autoClear");
