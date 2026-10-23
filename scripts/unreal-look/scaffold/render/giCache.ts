@@ -1018,6 +1018,8 @@ export const giCache: {
     /** Per texel and axis (x, y, z): where the wall on the link to the next texel starts, 0 to 255 of the way (0 when open). */
     walls: Uint8Array;
   };
+  /** How many small emissive spheres light their neighbours per pixel: 0 while the cache does not bounce. */
+  emitters?: number;
   /** The texture the materials read, for the light-change update. */
   volumeTexture?: Data3DTexture;
   /**
@@ -1456,6 +1458,11 @@ export function installGi(
       id: mesh.id,
     });
   });
+  // Unreal spills an emissive surface's light onto its neighbours through Lumen alone (L7): below it the surface is bright
+  // and lights nothing. A cache with no bounces is the sky alone, so the per-pixel emitter share stays off as well
+  // (PRD-634: it lit the floor of the L5 and L6 reference frames, a lobe Unreal does not draw, and flipped the Floor median).
+  if (options.bounces === 0) emitters.length = 0;
+  giCache.emitters = emitters.length;
   const emitterIds = new Set(emitters.map((e) => e.id));
 
   const materialData = new Map<number, { albedo: number[]; emissive: number[] }>();
