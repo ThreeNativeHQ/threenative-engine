@@ -672,6 +672,38 @@ describe("the world-space GI cache against closed forms (PRD-631 L7)", () => {
             expect(totals[i] as number).toBeLessThanOrEqual((totals[i - 1] as number) + 1e-6);
         });
 
+        // PRD-641 (motion2): a per-texel refresh phase drew a lattice of cones on the walls mid-fade. The fade is one
+        // scale for the whole cache now; this pins that, so a later per-texel phase fails here.
+        it("fades every probe alike: no texel shows its own stage of the fade as a blotch", () => {
+          skyRadiance.current = undefined;
+          const scene = sceneOf(true);
+          const source = { intensity: 100, color: new Color(1, 1, 1) };
+          installGi(rayContext(scene), scene, {
+            bounces: 1,
+            lights: [{ ...lamp, source }],
+            lightResponse: epic,
+          });
+          const points = [
+            new Vector3(0.5, 0.5, 0.5),
+            new Vector3(-0.5, 0.3, 0.2),
+            new Vector3(0.2, -0.4, -0.6),
+          ];
+          const total = (at: Vector3) =>
+            texelAt(at)
+              .faces.flat()
+              .reduce((a, b) => a + b, 0);
+          const baked = points.map(total);
+          source.intensity = 0;
+          for (let frame = 0; frame < 20; frame += 1) giCache.refresh?.();
+          const ratios = points.map((at, i) => total(at) / (baked[i] as number));
+          // Mid-fade: the light is neither gone nor untouched, and every point shows the same share of it.
+          for (const r of ratios) {
+            expect(r).toBeGreaterThan(0.05);
+            expect(r).toBeLessThan(0.95);
+          }
+          expect(Math.max(...ratios) - Math.min(...ratios)).toBeLessThan(0.02);
+        });
+
         it("fades between the first-bounce curve and the last-bounce curve of the model", () => {
           const bounces = 3;
           const totals = fade(bounces);
