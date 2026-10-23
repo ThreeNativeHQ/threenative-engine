@@ -2939,13 +2939,6 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     };
     const auto planNormals = [&] {
         if (normalPass) {
-            if (normalFragment_.wgsl.code.empty()) {
-                shader::Program fragment{shader::Stage::Fragment};
-                fragment.output("color", fragment.construct(shader::Type::vec(4),
-                    {fragment.call("normalize", {fragment.varying("normalView", shader::Type::vec(3))}), fragment.constant(0.f)}));
-                normalFragment_ = shader::buildStage(fragment, 1);
-                if (!normalFragment_.wgsl.ok()) throw std::runtime_error("TN_NATIVE_SHADER_INVALID: post normal program");
-            }
             for (const Planned& draw : plan) {
                 const DrawItem& item = *draw.item;
                 // The sky and unlit materials write no view-space normal (their programs have no normalView).
@@ -2960,9 +2953,27 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 }
                 if (item.nodes.normalNode)
                     throw std::runtime_error("TN_POST_NORMAL_UNSUPPORTED: a material normalNode is not written to the normal target");
+                auto& normalFragment = normalFragments_[item.flatShading ? 2 : size_t(item.side == 2)];
+                if (normalFragment.wgsl.code.empty()) {
+                    shader::Program fragment{shader::Stage::Fragment};
+                    auto normal = fragment.varying("normalView", shader::Type::vec(3));
+                    // Flat vertices carry zero normals; match the colour fragment's face derivatives instead.
+                    if (item.flatShading) {
+                        const auto position = fragment.varying("positionView", shader::Type::vec(3));
+                        normal = fragment.call("cross", {fragment.call("dFdx", {position}), fragment.call("dFdy", {position})});
+                    }
+                    normal = fragment.call("normalize", {normal});
+                    if (item.side == 2 && !item.flatShading)
+                        normal = fragment.mul(normal, fragment.select(fragment.builtin("frontFacing"), fragment.constant(1.f), fragment.constant(-1.f)));
+                    fragment.output("color", fragment.construct(shader::Type::vec(4), {normal, fragment.constant(0.f)}));
+                    normalFragment = shader::buildStage(fragment, 1);
+                    if (!normalFragment.wgsl.ok()) throw std::runtime_error("TN_NATIVE_SHADER_INVALID: post normal program");
+                }
                 // The normal fragment reads `normalView` at location 0, which the program's vertex stage must write there.
                 if (draw.program->vertex.wgsl.code.find("@location(0) o_normalView") == std::string::npos)
                     throw std::runtime_error("TN_POST_NORMAL_LAYOUT: normalView is not the vertex stage's first varying");
+                if (item.flatShading && draw.program->vertex.wgsl.code.find("@location(1) o_positionView") == std::string::npos)
+                    throw std::runtime_error("TN_POST_NORMAL_LAYOUT: positionView is not the vertex stage's second varying");
                 PipelineTarget target{WGPUTextureFormat_RGBA16Float, WGPUTextureFormat_Depth32Float,
                     item.side == 2 ? WGPUCullMode_None : item.side == 1 ? WGPUCullMode_Front : WGPUCullMode_Back};
                 target.layout = draw.program->pipelineLayout; target.depthWrite = false;
@@ -2972,10 +2983,10 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 target.skinIndex = skinIndexFormat(item);
                 target.instanceStepMask = instanceStepMask(draw.program->vertex, item);
                 if (compilation) {
-                    compilation->push_back(pipelines_->getAsync(draw.program->vertex, &normalFragment_, target));
+                    compilation->push_back(pipelines_->getAsync(draw.program->vertex, &normalFragment, target));
                     continue;
                 }
-                const auto pipeline = pipelines_->get(draw.program->vertex, &normalFragment_, target);
+                const auto pipeline = pipelines_->get(draw.program->vertex, &normalFragment, target);
                 if (!pipeline) throw std::runtime_error("TN_POST_NORMAL_PIPELINE_REFUSED");
                 Planned normal = draw;
                 normal.pipeline = pipeline;

@@ -844,7 +844,7 @@ private:
     // drawn after the main pass; created with the first such frame, released with the targets.
     WGPUTexture normalTexture_ = nullptr;
     WGPUTextureView normalView_ = nullptr;
-    shader::StageModule normalFragment_;
+    std::array<shader::StageModule, 3> normalFragments_;
     WGPUTexture materialTexture_ = nullptr;
     WGPUTextureView materialView_ = nullptr;
     std::vector<std::string> diagnostics_;
