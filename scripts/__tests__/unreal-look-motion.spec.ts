@@ -1,9 +1,9 @@
-import { mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
-import os from "node:os";
+import { readFileSync, readdirSync, rmSync } from "node:fs";
 import path from "node:path";
 import vm from "node:vm";
 import type { Page } from "@playwright/test";
 import { afterEach, describe, expect, it } from "vitest";
+import { makeTempDirSync } from "../../test-support/temp-dir.js";
 import { FRAME_GATE, captureMotionFrames } from "../unreal-look/capture-motion-threenative.js";
 import type { IImage } from "../unreal-look/compare.js";
 import type { ISceneJson } from "../unreal-look/gi.js";
@@ -1041,7 +1041,7 @@ describe("captureMotionFrames walks a run one rendered frame per step", () => {
   } as unknown as ISceneJson;
 
   function run(script: IStep[], runName = "switch") {
-    const out = mkdtempSync(path.join(os.tmpdir(), "tn-motion-capture-"));
+    const out = makeTempDirSync("tn-motion-capture-");
     roots.push(out);
     const calls: string[] = [];
     const page = {

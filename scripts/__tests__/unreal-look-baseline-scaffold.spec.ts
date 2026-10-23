@@ -1,7 +1,7 @@
-import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { cpSync, existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { makeTempDirSync } from "../../test-support/temp-dir.js";
 import { patchScaffold } from "../unreal-look/capture-threenative.js";
 
 const TEMPLATE = path.resolve(
@@ -15,7 +15,7 @@ afterEach(() => {
 
 /** A scaffolded starter as createProject leaves it, patched for the capture. */
 async function patched(baseline: boolean): Promise<string> {
-  const target = mkdtempSync(path.join(tmpdir(), "tn-baseline-"));
+  const target = makeTempDirSync("tn-baseline-");
   roots.push(target);
   cpSync(path.join(TEMPLATE, "src"), path.join(target, "src"), { recursive: true });
   writeFileSync(path.join(target, "threenative.config.ts"), "  alphaAntialiasing: true,\n");

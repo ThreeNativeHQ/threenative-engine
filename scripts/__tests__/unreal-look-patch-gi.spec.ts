@@ -1,12 +1,12 @@
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
-import os from "node:os";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { makeTempDirSync } from "../../test-support/temp-dir.js";
 import { calibrationScenes, foliageOf, patchGi } from "../unreal-look/capture-gi-threenative.js";
 
 /** A scaffold with only the anchors patchGi edits: the template's game.ts and config. */
 function scaffold(): string {
-  const root = mkdtempSync(path.join(os.tmpdir(), "tn-patch-gi-"));
+  const root = makeTempDirSync("tn-patch-gi-");
   mkdirSync(path.join(root, "src/scenes"), { recursive: true });
   writeFileSync(
     path.join(root, "threenative.config.ts"),

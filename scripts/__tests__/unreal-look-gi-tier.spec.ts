@@ -1,8 +1,8 @@
-import { copyFileSync, mkdtempSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { copyFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { describe, expect, it } from "vitest";
+import { makeTempDirSync } from "../../test-support/temp-dir.js";
 
 /**
  * The scaffold copies the starter's `rendererGate.ts` beside `quality.ts`, which re-exports it. The
@@ -13,7 +13,7 @@ async function loadQuality(): Promise<{
   giPreset(tier: string): object;
   shadowPreset(tier: string): object;
 }> {
-  const dir = mkdtempSync(join(tmpdir(), "tn-gi-tier-"));
+  const dir = makeTempDirSync("tn-gi-tier-");
   copyFileSync(
     join(__dirname, "../unreal-look/scaffold/render/quality.ts"),
     join(dir, "quality.ts"),

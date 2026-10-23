@@ -1,8 +1,8 @@
-import { copyFileSync, mkdtempSync, readFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { copyFileSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { describe, expect, it } from "vitest";
+import { makeTempDirSync } from "../../test-support/temp-dir.js";
 
 const SCAFFOLD = join(__dirname, "../unreal-look/scaffold/render");
 
@@ -15,7 +15,7 @@ async function loadQuality(): Promise<{
     gtaoSamples?: number;
   };
 }> {
-  const dir = mkdtempSync(join(tmpdir(), "tn-ao-quality-"));
+  const dir = makeTempDirSync("tn-ao-quality-");
   copyFileSync(join(SCAFFOLD, "quality.ts"), join(dir, "quality.ts"));
   copyFileSync(
     join(
@@ -29,7 +29,7 @@ async function loadQuality(): Promise<{
 
 describe("contact occlusion reach (PRD-635)", () => {
   it("takes Unreal's 32 px screen reach", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "tn-ao-reach-"));
+    const dir = makeTempDirSync("tn-ao-reach-");
     copyFileSync(join(SCAFFOLD, "aoReach.ts"), join(dir, "aoReach.ts"));
     const { UNREAL_AO_REACH_PX } = await import(
       /* @vite-ignore */ pathToFileURL(join(dir, "aoReach.ts")).href
@@ -54,7 +54,7 @@ describe("contact occlusion reach (PRD-635)", () => {
   });
 
   it("takes the contact occlusion URL knobs on a calibration scene", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "tn-ao-knobs-"));
+    const dir = makeTempDirSync("tn-ao-knobs-");
     copyFileSync(join(SCAFFOLD, "aoReach.ts"), join(dir, "aoReach.ts"));
     const { gtaoUrlKnobs } = (await import(
       /* @vite-ignore */ pathToFileURL(join(dir, "aoReach.ts")).href

@@ -1,8 +1,8 @@
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { rmSync } from "node:fs";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { makeTempDirSync } from "../../test-support/temp-dir.js";
 import {
   type ICheckDeps,
   type IGiLock,
@@ -27,7 +27,7 @@ afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
 });
 const temp = () => {
-  const root = mkdtempSync(path.join(tmpdir(), "ratchet-"));
+  const root = makeTempDirSync("ratchet-");
   roots.push(root);
   return root;
 };
@@ -256,7 +256,7 @@ describe("compare --check on a GI scene", () => {
 describe("ratchet command line", () => {
   it("reaches the cut through the compare import cycle and fails closed on a missing capture", () => {
     // compare.ts imports ratchet.ts: a top-level await on main() deadlocked that cycle and exited 13 with no message.
-    const dir = mkdtempSync(path.join(tmpdir(), "ratchet-cli-"));
+    const dir = makeTempDirSync("ratchet-cli-");
     const cli = spawnSync(
       process.execPath,
       [

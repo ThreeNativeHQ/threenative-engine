@@ -1,8 +1,8 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { PNG } from "pngjs";
 import { afterEach, describe, expect, it } from "vitest";
+import { makeTempDirSync } from "../../test-support/temp-dir.js";
 import { tierQuery } from "../unreal-look/capture-gi-threenative.js";
 import {
   binnedMedian,
@@ -31,7 +31,7 @@ afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
 });
 function fixture() {
-  const root = mkdtempSync(path.join(tmpdir(), "unreal-look-"));
+  const root = makeTempDirSync("unreal-look-");
   roots.push(root);
   const put = (name: string, content: Buffer | string) => {
     const file = path.join(root, name);

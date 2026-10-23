@@ -1,16 +1,8 @@
-import {
-  existsSync,
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  rmSync,
-  symlinkSync,
-  writeFileSync,
-} from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { PNG } from "pngjs";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { makeTempDirSync } from "../../test-support/temp-dir.js";
 import { claudeArgs, main } from "../unreal-look/judge.js";
 import {
   CLOSENESS,
@@ -31,7 +23,7 @@ afterEach(() => {
 const PIXEL = PNG.sync.write(new PNG({ width: 1, height: 1 }));
 /** One temp folder per test; `put("before1", "L9/a.png")` writes a PNG there. */
 function fixture() {
-  const root = mkdtempSync(path.join(tmpdir(), "unreal-look-judge-"));
+  const root = makeTempDirSync("unreal-look-judge-");
   roots.push(root);
   const put = (set: string, ...files: string[]) => {
     for (const file of files) {

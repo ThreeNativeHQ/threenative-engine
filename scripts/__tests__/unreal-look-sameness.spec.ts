@@ -1,8 +1,8 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { PNG } from "pngjs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { makeTempDirSync } from "../../test-support/temp-dir.js";
 import {
   ID_LAYER_ANTIALIAS,
   ID_LAYER_QUERY,
@@ -30,7 +30,7 @@ afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
 });
 function tempRoot(): string {
-  const root = mkdtempSync(path.join(tmpdir(), "unreal-look-sameness-"));
+  const root = makeTempDirSync("unreal-look-sameness-");
   roots.push(root);
   return root;
 }

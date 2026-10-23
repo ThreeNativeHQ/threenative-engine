@@ -1,7 +1,7 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
-import os from "node:os";
+import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { makeTempDirSync } from "../../test-support/temp-dir.js";
 import {
   type IRegistry,
   familyOf,
@@ -26,7 +26,7 @@ function shadowRegistry(variantCvars: Record<string, number>): IRegistry {
 }
 
 function folderWith(criteria: boolean): string {
-  const dir = mkdtempSync(path.join(os.tmpdir(), "tn-shadow-registry-"));
+  const dir = makeTempDirSync("tn-shadow-registry-");
   mkdirSync(path.join(dir, "lab"));
   if (criteria) writeFileSync(path.join(dir, "lab", "criteria.md"), "# lab\n");
   return dir;

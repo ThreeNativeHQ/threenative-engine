@@ -1,16 +1,8 @@
-import {
-  existsSync,
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  readdirSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { PNG } from "pngjs";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { makeTempDirSync } from "../../test-support/temp-dir.js";
 import { type IDeps, main } from "../unreal-look/calibrate.js";
 import type { IMeasured } from "../unreal-look/calibrateRound.js";
 import { sceneBasis } from "../unreal-look/giLocks.js";
@@ -28,7 +20,7 @@ const ADAPTER = { vendor: "nvidia", architecture: "turing", device: "", descript
 
 /** A temp world: an Unreal tree, a store, a scoreboard, and fakes for everything that needs a GPU or a model. */
 function world(options: { omitUnreal?: string } = {}) {
-  const root = mkdtempSync(path.join(tmpdir(), "unreal-look-calibrate-"));
+  const root = makeTempDirSync("unreal-look-calibrate-");
   roots.push(root);
   const unreal = path.join(root, "unreal");
   for (const variant of ["ID", "L1", "L7-Epic", "L7-Medium", "L7-Low"])

@@ -1,8 +1,8 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { PNG } from "pngjs";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { makeTempDirSync } from "../../test-support/temp-dir.js";
 import { main } from "../unreal-look/judge.js";
 import {
   type IRegionMeasure,
@@ -131,7 +131,7 @@ describe("sceneOfFrame", () => {
 describe("main --region-limit", () => {
   const PIXEL = PNG.sync.write(new PNG({ width: 1, height: 1 }));
   function setup() {
-    const root = mkdtempSync(path.join(tmpdir(), "unreal-look-judge-regions-"));
+    const root = makeTempDirSync("unreal-look-judge-regions-");
     roots.push(root);
     for (const set of ["b1", "b2", "a1", "a2", "u"]) {
       const file = path.join(root, set, "shadow/wildwood/L7/sun60-closeup.png");

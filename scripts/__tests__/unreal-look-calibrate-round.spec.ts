@@ -1,7 +1,7 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { makeTempDirSync } from "../../test-support/temp-dir.js";
 import {
   type IRound,
   adapterName,
@@ -23,7 +23,7 @@ afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
 });
 const temp = () => {
-  const root = mkdtempSync(path.join(tmpdir(), "unreal-look-round-"));
+  const root = makeTempDirSync("unreal-look-round-");
   roots.push(root);
   return root;
 };

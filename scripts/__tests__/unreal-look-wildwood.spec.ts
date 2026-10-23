@@ -1,9 +1,10 @@
 import { createHash } from "node:crypto";
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { Document, NodeIO } from "@gltf-transform/core";
 import { describe, expect, it } from "vitest";
+import { makeTempDirSync } from "../../test-support/temp-dir.js";
 import { captureGi, validateShadowRegistry } from "../unreal-look/gi.js";
 import {
   ASSET_ROOT_ENV,
@@ -56,7 +57,7 @@ const sha256 = (file: string): string =>
 
 /** An asset root holding two trees and the manifest that names them. */
 async function fixture(): Promise<{ root: string; manifest: IWildwoodManifest }> {
-  const root = mkdtempSync(path.join(os.tmpdir(), "tn-wildwood-"));
+  const root = makeTempDirSync("tn-wildwood-");
   await writeTree(path.join(root, "SM_oak.glb"), 0.333);
   await writeTree(path.join(root, "SM_fir.glb"), 0.4);
   const manifest: IWildwoodManifest = {
@@ -425,7 +426,7 @@ describe("a shadow variant limited to scenes", () => {
   });
 
   it("names a scene the registry has", () => {
-    const dir = mkdtempSync(path.join(os.tmpdir(), "tn-shadow-"));
+    const dir = makeTempDirSync("tn-shadow-");
     mkdirSync(path.join(dir, "wildwood"));
     writeFileSync(path.join(dir, "wildwood/criteria.md"), "x");
     expect(() => validateShadowRegistry(reg(["wildwood"]), dir, [])).not.toThrow();

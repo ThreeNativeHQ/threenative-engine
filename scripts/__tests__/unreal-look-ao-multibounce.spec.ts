@@ -1,15 +1,15 @@
-import { copyFileSync, mkdtempSync, readFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { copyFileSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { describe, expect, it } from "vitest";
+import { makeTempDirSync } from "../../test-support/temp-dir.js";
 
 const SCAFFOLD = join(__dirname, "../unreal-look/scaffold/render");
 
 async function loadFit(): Promise<
   typeof import("../unreal-look/scaffold/render/aoMultiBounce.js")
 > {
-  const dir = mkdtempSync(join(tmpdir(), "tn-ao-multibounce-"));
+  const dir = makeTempDirSync("tn-ao-multibounce-");
   copyFileSync(join(SCAFFOLD, "aoMultiBounce.ts"), join(dir, "aoMultiBounce.ts"));
   return import(/* @vite-ignore */ pathToFileURL(join(dir, "aoMultiBounce.ts")).href);
 }

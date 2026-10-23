@@ -1,8 +1,8 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
-import os from "node:os";
+import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { PNG } from "pngjs";
 import { describe, expect, it } from "vitest";
+import { makeTempDirSync } from "../../test-support/temp-dir.js";
 import { type IRow, type IThresholdFile, layerThresholds } from "../unreal-look/compare.js";
 import { compareGiToUnreal, readScene, sceneKey } from "../unreal-look/gi.js";
 
@@ -45,7 +45,7 @@ function idFrame(scene: string, shift = 0): Buffer {
  * the same grey, except in the poses `frames` names.
  */
 function root(scene: string, layer: string, variant: string, frames: Record<string, Buffer>) {
-  const base = path.join(mkdtempSync(path.join(os.tmpdir(), "tn-gi-verdict-")), "root");
+  const base = path.join(makeTempDirSync("tn-gi-verdict-"), "root");
   const key = sceneKey(scene);
   for (const { name: pose } of readScene(scene).scene.poses) {
     put(path.join(base, "unreal", key, "ID", `${pose}.png`), idFrame(scene));

@@ -1,17 +1,16 @@
 import {
   lstatSync,
   mkdirSync,
-  mkdtempSync,
   readFileSync,
   readdirSync,
   readlinkSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
 import path from "node:path";
 import { PNG } from "pngjs";
 import { afterEach, describe, expect, it } from "vitest";
+import { makeTempDirSync } from "../../test-support/temp-dir.js";
 import { readRounds } from "../unreal-look/calibrateRound.js";
 import { main } from "../unreal-look/compare.js";
 import { readScene, sceneDir } from "../unreal-look/gi.js";
@@ -61,7 +60,7 @@ afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
 });
 const temp = () => {
-  const root = mkdtempSync(path.join(tmpdir(), "gi-locks-"));
+  const root = makeTempDirSync("gi-locks-");
   roots.push(root);
   return root;
 };

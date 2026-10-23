@@ -1,15 +1,15 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
-import os from "node:os";
+import { mkdirSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { makeTempDirSync } from "../../test-support/temp-dir.js";
 import { frameworkStamp } from "../unreal-look/capture-threenative.js";
 
 let root: string;
 afterEach(() => rmSync(root, { recursive: true, force: true }));
 
 function repo(): string {
-  root = mkdtempSync(path.join(os.tmpdir(), "tn-reuse-"));
+  root = makeTempDirSync("tn-reuse-");
   const git = (...args: string[]) => execFileSync("git", ["-C", root, ...args]);
   git("init", "-q");
   mkdirSync(path.join(root, "packages/core/src"), { recursive: true });
