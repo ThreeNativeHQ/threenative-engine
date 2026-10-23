@@ -56,7 +56,7 @@
 <rect x="121.60793684813063" y="259.70790320974254" width="45.14806965591683" height="34.648919548643335" rx="2" fill="#6c7176"><title>Lumen · Hardware ray traced visualize · Deferred</title></rect>
 <text x="124.60793684813063" y="270.70790320974254" class="l">Hardwa…</text>
 <rect x="121.60793684813063" y="295.3568227583858" width="45.14806965591683" height="34.457943193918425" rx="2" fill="#d9961f"><title>Lumen · Froxel volume trace and filter · In progress</title></rect>
-<rect x="121.60793684813063" y="326.81476595230424" width="10.032904367981518" height="3" fill="#fff" opacity=".85"/>
+<rect x="121.60793684813063" y="326.81476595230424" width="27.088841793550095" height="3" fill="#fff" opacity=".85"/>
 <text x="124.60793684813063" y="306.3568227583858" class="l">Froxel…</text>
 <rect x="167.75600650404746" y="143.87013427162117" width="36.0962242216319" height="41.0510357605267" rx="2" fill="#d9961f"><title>Lumen · Card shadowing · In progress</title></rect>
 <rect x="167.75600650404746" y="181.92117003214787" width="24.06414948108793" height="3" fill="#fff" opacity=".85"/>
@@ -122,7 +122,7 @@
 <rect x="298.2112527030668" y="250.95352003696058" width="24.334209194938467" height="23.776577015582802" rx="2" fill="#4a86d6"><title>Lumen · Radiance storage, spatial filter, mips and irradiance · Not started</title></rect>
 <text x="301.2112527030668" y="261.9535200369606" class="l">Ra…</text>
 <rect x="323.54546189800527" y="250.95352003696058" width="24.05754856410448" height="23.776577015582802" rx="2" fill="#d9961f"><title>Lumen · Translucency radiance cache and glossy reflections on translucent surfaces · In progress</title></rect>
-<rect x="323.54546189800527" y="271.7300970525434" width="2.5323735330636294" height="3" fill="#fff" opacity=".85"/>
+<rect x="323.54546189800527" y="271.7300970525434" width="7.217264569231343" height="3" fill="#fff" opacity=".85"/>
 <text x="326.54546189800527" y="261.9535200369606" class="l">Tr…</text>
 <rect x="272.12610751015046" y="275.7300970525434" width="24.332307463166444" height="22.58010387989765" rx="2" fill="#4a86d6"><title>Lumen · Interpolation with parallax correction · Not started</title></rect>
 <text x="275.12610751015046" y="286.7300970525434" class="l">In…</text>

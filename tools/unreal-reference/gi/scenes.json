@@ -21,6 +21,16 @@
       "name": "mirror-room",
       "owner": "PRD-642",
       "poses": ["chrome", "room"]
+    },
+    {
+      "name": "glass",
+      "owner": "PRD-643",
+      "poses": ["glass", "glass-edge"]
+    },
+    {
+      "name": "fog",
+      "owner": "PRD-643",
+      "poses": ["fog", "fog-corner"]
     }
   ],
   "variants": [

@@ -1293,6 +1293,21 @@
       "required": true
     },
     {
+      "id": "translucency-gi",
+      "title": "translucent surface reads the probe volume without a facing",
+      "category": "lighting-gi",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/translucency-gi.js",
+      "browserRecipe": "webgpu",
+      "requiresHardwareAdapter": true,
+      "tolerance": {
+        "pixelMismatchRatio": 0.08,
+        "perceptualDeltaE": 10.0
+      },
+      "desktopGate": true,
+      "required": true
+    },
+    {
       "id": "gi-tier-medium",
       "title": "medium GI tier: irradiance field and budget watcher",
       "category": "lighting-gi",

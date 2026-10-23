@@ -236,7 +236,19 @@ export async function captureGiThreeNative(options: {
               waitUntil: "domcontentloaded",
             });
             await page.addStyleTag({ content: HIDE_UI });
-            await page.waitForSelector('[data-threenative-startup="ready"]', { timeout: 300_000 });
+            // A rejected start never reaches "ready": GameCanvas renders its message, so stop on that
+            // instead of waiting out the timeout.
+            await page.waitForSelector(
+              '[data-threenative-startup="ready"], [data-threenative-canvas-error="true"]',
+              { timeout: 300_000 },
+            );
+            const startFailure = await page
+              .locator('[data-threenative-canvas-error="true"]')
+              .allTextContents();
+            if (startFailure.length > 0)
+              throw new Error(
+                `TN_UNREAL_LOOK_START_FAILED: ${name} ${layer}: ${startFailure.join(" | ")}`,
+              );
             await page.waitForFunction(() => "__tnRef" in window, undefined, { timeout: 240_000 });
             const engine = await page.evaluate("window.__tnRef.engine");
             if (engine !== "threenative")

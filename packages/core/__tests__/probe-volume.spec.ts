@@ -28,6 +28,7 @@ function volume(options: Partial<ConstructorParameters<typeof ProbeVolume>[0]> =
 
 interface ITexture3DNode extends Node {
   readonly isTexture3DNode?: boolean;
+  readonly uvNode?: unknown;
   readonly referenceNode?: ITexture3DNode;
   readonly value?: unknown;
 }
@@ -160,6 +161,63 @@ describe("ProbeVolume", () => {
 
     expect(() => subject.sampleIrradiance({} as Vector3, new Vector3())).toThrow(/Vector3/u);
     expect(() => subject.sampleIrradiance(new Vector3(), {} as Vector3)).toThrow(/Vector3/u);
+  });
+
+  it("reads the irradiance averaged over every normal for translucent surfaces and fog (PRD-643)", () => {
+    const subject = volume({ report: () => undefined });
+    // A strong L0 and distinct, signed L1 and L2 slots: only L0 may reach the non-directional read, and every axis
+    // stays positive, because `sampleIrradiance` clamps each normal's value at zero.
+    const skewed = Array.from({ length: 9 }, (_, index) =>
+      index === 0
+        ? { b: 0.5, g: 0.8, r: 1.2 }
+        : {
+            b: (index % 2 === 0 ? 1 : -1) * 0.02 * index,
+            g: (index % 3 === 0 ? -1 : 1) * 0.03 * index,
+            r: (index % 2 === 0 ? -1 : 1) * 0.04 * index,
+          },
+    );
+    for (let iz = 0; iz < subject.resolution.z; iz += 1)
+      for (let iy = 0; iy < subject.resolution.y; iy += 1)
+        for (let ix = 0; ix < subject.resolution.x; ix += 1)
+          subject.setProbeCoefficients(
+            ix,
+            iy,
+            iz,
+            skewed.map((c) => ({ b: c.b * (1 + ix), g: c.g * (1 + iy), r: c.r * (1 + iz) })),
+          );
+    const at = new Vector3(0.7, 1.2, 0.4);
+    const axes = [
+      new Vector3(1, 0, 0),
+      new Vector3(-1, 0, 0),
+      new Vector3(0, 1, 0),
+      new Vector3(0, -1, 0),
+      new Vector3(0, 0, 1),
+      new Vector3(0, 0, -1),
+    ];
+    // The six axes integrate the L2 basis exactly, so their mean is the sphere's mean: the L0 term.
+    const mean = axes
+      .reduce((sum, n) => sum.add(subject.sampleIrradiance(at, n)), new Vector3())
+      .divideScalar(axes.length);
+    const flat = subject.sampleNonDirectional(at);
+    expect(flat).toBeInstanceOf(Vector3);
+    expect(flat.distanceTo(mean)).toBeLessThan(1e-4);
+    expect(flat.x).toBeGreaterThan(0);
+  });
+
+  it("reads the non-directional value with one atlas fetch, not seven (PRD-643)", () => {
+    const subject = volume({ report: () => undefined });
+    const fetches = (node: Node): number => {
+      const seen = new Set<unknown>();
+      node.traverse((child) => {
+        const sampled = child as ITexture3DNode;
+        // A fetch is a sample node with its own uv; the shared base node has none.
+        if (sampled.isTexture3DNode === true && sampled.uvNode != null) seen.add(sampled);
+      });
+      return seen.size;
+    };
+    expect(fetches(subject.sampleNode())).toBe(7);
+    expect(fetches(subject.sampleNonDirectional())).toBe(1);
+    expect(samplerTextureDimensions(subject.sampleNonDirectional())).toEqual(["3x3x35"]);
   });
 
   it("rejects invalid coefficient edits at the public data seam", () => {

@@ -47,3 +47,17 @@ test("negative control: removing the probe-volume registry row is rejected", () 
     /probe-volume-sample registry row missing/u,
   );
 });
+
+test("the translucency-gi row is bound to the lighting-gi category and its scene reads the non-directional probe sample", () => {
+  const entry = registry().tests.find((candidate) => candidate.id === "translucency-gi");
+  assert.ok(entry, "translucency-gi must be registered");
+  assert.equal(entry.status, "implemented");
+  assert.equal(entry.category, "lighting-gi");
+  assert.equal(entry.scene, "conformance/scenes/shared/translucency-gi.js");
+  assert.equal(entry.desktopGate, true);
+  assert.equal(entry.required, true);
+  const scene = readFileSync(join(runtimeRoot, entry.scene), "utf8");
+  assert.match(scene, /sampleNonDirectional\(/u);
+  assert.match(scene, /transparent = true/u);
+  assert.match(scene, /assertCondition\(/u);
+});

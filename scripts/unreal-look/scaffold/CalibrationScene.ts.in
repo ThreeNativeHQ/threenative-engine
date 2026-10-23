@@ -15,6 +15,7 @@ import {
 import type { IPhysicsContext } from "@threenative/physics";
 import {
   BackSide,
+  Box3,
   Color,
   DoubleSide,
   FrontSide,
@@ -31,7 +32,7 @@ import {
   Vector3,
 } from "three";
 import { texture, uniform, vec4 } from "three/tsl";
-import { MeshBasicNodeMaterial } from "three/webgpu";
+import { MeshBasicNodeMaterial, type Node } from "three/webgpu";
 import { gtaoUrlKnobs } from "../render/aoReach.js";
 import { giCache, installGi } from "../render/giCache.js";
 import { watchGi } from "../render/giTier.js";
@@ -50,6 +51,9 @@ import {
 } from "../render/calibrationUnits.js";
 import { shadeLikeSubstrate } from "../render/lighting.js";
 import { watchShadowTier } from "../render/shadowTier.js";
+import { GLTF_IOR, refractBehind } from "../render/refraction.js";
+import { pointLightMean, translucentTwin } from "../render/translucency.js";
+import { createVolumetricFog } from "../render/volumetricFog.js";
 import {
   EPIC_SSGI,
   type FinalGatherMethod,
@@ -192,7 +196,9 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
       // the grazing walls (cornell L6, 2026-10-20). Diagnosis knob: shadowSide=front|back|double|three.
       const side = { front: FrontSide, back: BackSide, double: DoubleSide }[params.get("shadowSide") ?? "three"];
       for (const mesh of meshes) {
-        mesh.castShadow = shadows;
+        // A translucent material casts no dynamic shadow in Unreal unless it asks to be cut out like a mask (UE 5.8.3:
+        // Engine/Public/MaterialShared.h, FMaterial::ShouldCastDynamicShadows): the lamp's light passes a glass pane.
+        mesh.castShadow = shadows && (mesh.material as MeshStandardMaterial).transparent !== true;
         mesh.receiveShadow = shadows;
         if (side !== undefined) for (const m of [mesh.material].flat()) m.shadowSide = side;
       }
@@ -320,10 +326,103 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
         // light alone (Unreal's L7-Epic-indirect, r.Lumen.Visualize.IndirectDiffuse 1, is its pair).
         if (params.get("direct") === "0") for (const l of lights) l.intensity = 0;
       }
+      // Unreal's default lighting for a translucent surface is its translucency volume, the same in every direction
+      // (Volumetric NonDirectional): the lamps at a quarter of what a facing surface receives and, from L7, the room's mean
+      // bounce light. Another mode is not recreated (PRD-643). A mapped surface keeps the lit material.
+      // Unreal also bends the scene behind a translucent surface (refraction.ts). The scene file gives each box exactly,
+      // where the geometry of a model may not carry a bounding box on every engine.
+      const paneBoxes: Box3[] = [];
+      for (const m of DATA.meshes as {
+        name: string;
+        position: number[];
+        rotationYDeg: number;
+        size: number[];
+        material: { alphaMode?: string; baseColorTexture?: string; translucencyLightingMode?: string };
+      }[]) {
+        if (m.material.alphaMode !== "BLEND") continue;
+        const mode = m.material.translucencyLightingMode;
+        if (mode !== undefined && mode !== "tlm_volumetric_non_directional")
+          unsupported.push({ actor: m.name, property: "translucencyLightingMode", reason: `${mode} is not recreated` });
+        if (m.material.baseColorTexture !== undefined) continue;
+        if (Math.abs(m.rotationYDeg) > 1e-6) {
+          unsupported.push({ actor: m.name, property: "rotation", reason: "a turned translucent box does not refract" });
+          continue;
+        }
+        const [x = 0, y = 0, z = 0] = m.position;
+        const [w = 0, h = 0, d = 0] = m.size;
+        paneBoxes.push(new Box3(new Vector3(x - w / 2, y - h / 2, z - d / 2), new Vector3(x + w / 2, y + h / 2, z + d / 2)));
+      }
+      // Diagnosis: ?refraction=off draws the same frame without the bent picture.
+      const refracts = paneBoxes.length > 0 && params.get("refraction") !== "off";
+      const bounce = giCache.meanRadiance;
+      const direct = (position: Node<"vec3">) => pointLightMean(lights, position);
+      for (const mesh of meshes) {
+        const source = mesh.material as MeshStandardMaterial;
+        if (source.transparent !== true || source.map != null) continue;
+        mesh.material = translucentTwin(source, (position) =>
+          bounce === undefined ? direct(position) : bounce(position).add(direct(position)),
+        );
+        // Cost measurement: ?translucent=off draws the same frame without its translucent surfaces.
+        if (params.get("translucent") === "off") mesh.visible = false;
+      }
+      // The fog Unreal draws from layer L3 (r.Fog, r.VolumetricFog), as VQ-07's medium: Unreal's exponential height fog in
+      // the room, its extinction and albedo, the lamps as unshadowed point lights. One medium per chain build.
+      const fogData = level >= 3 ? DATA.fog : undefined;
+      const makeFog = () => {
+        if (fogData === undefined || fogData === null) return undefined;
+        if (!fogData.volumetric) {
+          unsupported.push({ actor: "Fog", property: "volumetric", reason: "only volumetric fog is recreated" });
+          return undefined;
+        }
+        const extinction = fogData.density * 0.1 * fogData.volumetricExtinctionScale;
+        const [ar = 1, ag = 1, ab = 1] = fogData.volumetricAlbedo;
+        // The fog fills the scene and ends at its opaque surfaces: the model's bounds, past the walls.
+        const bounds = new Box3().setFromObject(model).expandByScalar(1);
+        const shadowed = lights.filter((l) => !(l instanceof PointLight) || l.castShadow);
+        for (const l of shadowed)
+          unsupported.push({ actor: l.name, property: "castShadows", reason: "the fog takes unshadowed point lights only" });
+        for (const [key, zero] of [
+          ["startDistanceM", 0],
+          ["maxOpacity", 1],
+        ] as const)
+          if (fogData[key] !== zero)
+            unsupported.push({ actor: "Fog", property: key, reason: "not carried by the fog medium" });
+        if (fogData.inscatteringLuminance.some((c: number) => c > 0))
+          unsupported.push({ actor: "Fog", property: "inscatteringLuminance", reason: "the analytic fog colour is not drawn" });
+        return createVolumetricFog(scene, camera, {
+          enabled: true,
+          renderer: ctx.renderer.kind,
+          steps: Number(params.get("fogSteps") ?? 48),
+          resolutionScale: params.get("fogScale") === "1" ? 1 : 0.5,
+          // Unreal: FogDensity / 1000 per centimetre, FogHeightFalloff / 1000 per centimetre in base 2
+          // (UE 5.8.3: Renderer/Private/SceneCore.cpp, FExponentialHeightFogSceneInfo).
+          volumes: [
+            {
+              bounds,
+              density: extinction,
+              baseHeight: fogData.position[1],
+              heightFalloff: ((fogData.heightFalloff / 1000) * 100) * Math.LN2,
+            },
+          ],
+          albedo: new Color().setRGB(ar, ag, ab, SRGBColorSpace),
+          ambient: new Color(0, 0, 0),
+          // From L7 the air can also scatter the room's bounce light: the cache's mean radiance, the same in every direction
+          // (Unreal adds the Lumen translucency volume to every fog sample). Opt-in with ?fogGi=1: the judge read it as a
+          // REGRESSION against the same fog without it (PRD-643 Decision 15), because it veils the walls by about twice
+          // what Unreal shows while the walls are already too bright from the direct light (PRD-646).
+          ...(giCache.meanRadiance === undefined || params.get("fogGi") !== "1"
+            ? {}
+            : { ambientNode: giCache.meanRadiance }),
+          anisotropy: fogData.volumetricScatteringDistribution,
+          points: lights.filter((l): l is PointLight => l instanceof PointLight && !l.castShadow),
+          environment: { aerialPerspective: false, godRays: false },
+        });
+      };
       // The template's `high` chain with the L9-only stages off, as Reference.ts runs below L9.
       // Exposure is the scene's fixed EV100: Unreal's manual exposure, 0.18 / 2^EV100.
       const build = (method: FinalGatherMethod, arm: IWorldEnvironmentOptions = {}) => {
         this.#dispose?.();
+        const medium = makeFog();
         const world = new WorldEnvironment({
           ...qualityPreset("high"),
           autoExposureEnabled: false,
@@ -366,7 +465,22 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
           exposure: EXPOSURE,
           ...arm,
         });
-        this.#dispose = world.apply(ctx.renderer, scene, camera, {}).dispose;
+        const applied = world.apply(
+          ctx.renderer,
+          scene,
+          camera,
+          medium === undefined && !refracts
+            ? {}
+            : {
+                baseColour: (scenePass) =>
+                  medium?.compose(scenePass) ??
+                  refractBehind(scenePass, camera, paneBoxes, { ior: GLTF_IOR, widthPixels: () => innerWidth }),
+              },
+        );
+        this.#dispose = () => {
+          applied.dispose();
+          medium?.dispose();
+        };
       };
       build(GI_METHOD);
       // Diagnosis: ?linear=1 writes the exposed light with no tone curve, so the frame reads as scene-linear (the
