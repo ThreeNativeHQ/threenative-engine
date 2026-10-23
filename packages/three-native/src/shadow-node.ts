@@ -120,13 +120,19 @@ export function shadowFilterOptions(value: unknown): Record<string, number> | nu
     );
   const config = options as Record<string, unknown>;
   const size = angle ? "sourceAngleRad" : "sourceRadius";
-  const {
-    [size]: extent,
-    blockerSamples,
-    filterSamples,
-    penumbraScale,
-    minPenumbraPixels,
-  } = config;
+  const { [size]: extent, blockerSamples, filterSamples, penumbraScale } = config;
+  // A sun's optional keys, each with its range; a lamp has none.
+  const sunKeys: Record<string, (n: number) => boolean> = {
+    minPenumbraPixels: (n) => Number.isFinite(n) && n >= 0 && n <= 16,
+    samplesPerRay: (n) => Number.isInteger(n) && n >= 0 && n <= 64,
+    rayLengthScale: (n) => Number.isFinite(n) && n > 0,
+  };
+  const optional =
+    angle === undefined
+      ? []
+      : Object.keys(sunKeys)
+          .filter((key) => config[key] !== undefined)
+          .map((key) => [key, config[key]] as const);
   if (
     typeof extent !== "number" ||
     !Number.isFinite(extent) ||
@@ -137,12 +143,7 @@ export function shadowFilterOptions(value: unknown): Record<string, number> | nu
     ) ||
     (angle === undefined &&
       (typeof penumbraScale !== "number" || !(penumbraScale > 0 && penumbraScale <= 4))) ||
-    (angle !== undefined &&
-      minPenumbraPixels !== undefined &&
-      (typeof minPenumbraPixels !== "number" ||
-        !Number.isFinite(minPenumbraPixels) ||
-        minPenumbraPixels < 0 ||
-        minPenumbraPixels > 16))
+    optional.some(([key, v]) => typeof v !== "number" || sunKeys[key]?.(v) !== true)
   )
     throw new Error(
       `TN_VIRTUAL_SHADOW_INVALID: ${angle ? "source-angle" : "source-radius"} filter`,
@@ -153,8 +154,6 @@ export function shadowFilterOptions(value: unknown): Record<string, number> | nu
     filterSamples: filterSamples as number,
     // A lamp keeps a share of its geometric penumbra (sourceRadiusShadowFilter's penumbraScale).
     ...(angle === undefined ? { penumbraScale: penumbraScale as number } : {}),
-    ...(angle !== undefined && minPenumbraPixels !== undefined
-      ? { minPenumbraPixels: minPenumbraPixels as number }
-      : {}),
+    ...(Object.fromEntries(optional) as Record<string, number>),
   };
 }

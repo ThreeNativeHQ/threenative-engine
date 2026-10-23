@@ -3664,7 +3664,7 @@ void leafReceiver() {
             options->depthRange = 40;
             options->refreshStep = {0};
             light.shadow.virtualShadow = options;
-            light.shadow.sourceAngleFilter = std::array<double, 4>{0.0047, 16, 16, 0};  // 0.27 degrees, Unreal's sun
+            light.shadow.sourceAngleFilter = std::array<double, 6>{0.0047, 16, 16, 0};  // 0.27 degrees, Unreal's sun
         }
         scene.add(light);
         auto material = std::make_shared<Material>(MaterialType::Standard);
@@ -4415,7 +4415,7 @@ void virtualSunRoomSeam() {
         atlas.clipExtents = {11.2}; atlas.mapSize = 2048; atlas.pageTexels = 128;
         atlas.lightDistance = 40; atlas.depthRange = 40;
         sun.shadow.virtualShadow = std::make_shared<const shadows::AtlasOptions>(std::move(atlas));
-        sun.shadow.sourceAngleFilter = std::array<double, 4>{0.006421, 16, 16, 0};  // Unreal's sun, 0.7357 degrees across
+        sun.shadow.sourceAngleFilter = std::array<double, 6>{0.006421, 16, 16, 0};  // Unreal's sun, 0.7357 degrees across
         scene.add(sun);
         auto white = std::make_shared<Material>(MaterialType::Standard);
         white->shadowSide = side;
@@ -4520,7 +4520,7 @@ void virtualSunPixelFloor() {
         atlas.clipExtents = {8}; atlas.mapSize = 2048; atlas.pageTexels = 128;
         atlas.lightDistance = 20; atlas.depthRange = 40;
         sun.shadow.virtualShadow = std::make_shared<const shadows::AtlasOptions>(std::move(atlas));
-        sun.shadow.sourceAngleFilter = std::array<double, 4>{0.006421, 16, 16, minPixels};
+        sun.shadow.sourceAngleFilter = std::array<double, 6>{0.006421, 16, 16, minPixels};
         scene.add(sun);
         auto white = std::make_shared<Material>(MaterialType::Standard);
         Mesh floor{makeBoxGeometry(8, 0.2, 8), white};

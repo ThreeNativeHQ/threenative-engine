@@ -2754,6 +2754,8 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         table.insert(table.end(), {filter ? float(std::tan((*filter)[0])) : 0.0f,
             filter ? float((*filter)[1]) : 0.0f, filter ? float((*filter)[2]) : 0.0f,
             filter ? 1.0f + float((*filter)[3]) : 0.0f});  // w > 0 is the filter; w - 1 its minimum penumbra, in pixels
+        // The shadow-ray test: samples per ray (0 is off) and the ray length over the view distance.
+        table.insert(table.end(), {filter ? float((*filter)[4]) : 0.0f, filter ? float((*filter)[5]) : 0.0f, 0.0f, 0.0f});
     }
     const uint64_t jointPrefix = gpuJoints_ && gpuJoints_->current() ? gpuJoints_->parents.size() * 64 : 0;
     std::vector<float>& bones = storages_["boneMatrices"].data;

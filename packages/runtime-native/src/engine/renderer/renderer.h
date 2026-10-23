@@ -234,7 +234,7 @@ struct DirectLight {
      */
     struct Shadow {
         std::shared_ptr<const shadows::AtlasOptions> virtualShadow;
-        std::optional<std::array<double, 4>> sourceAngleFilter;  // + minPenumbraPixels
+        std::optional<std::array<double, 6>> sourceAngleFilter;  // as LightShadow's
         std::optional<std::array<double, 4>> sourceRadiusFilter;
         double tanHalfFov = 1;  // a perspective map's: a cube face's is 1
         Matrix view{}, projection{}, matrix{};

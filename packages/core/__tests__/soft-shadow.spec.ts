@@ -17,6 +17,7 @@ import {
   lampPenumbraTangent,
   penumbraUv,
   receiverSourceTangent,
+  shadowRayOccluderGap,
   sourceAngleShadowFilter,
   sourceRadiusShadowFilter,
 } from "../src/render/soft-shadow.js";
@@ -56,6 +57,8 @@ describe("source-angle soft shadows", () => {
       blockerSamples: 16,
       filterSamples: 16,
       minPenumbraPixels: 0,
+      samplesPerRay: 4,
+      rayLengthScale: 1.5,
     });
     expect(
       tag(sourceAngleShadowFilter({ sourceAngleRad: 0.02, minPenumbraPixels: 1 })),
@@ -64,6 +67,40 @@ describe("source-angle soft shadows", () => {
     });
     for (const minPenumbraPixels of [-0.5, Number.NaN, Number.POSITIVE_INFINITY, 17])
       expect(() => sourceAngleShadowFilter({ sourceAngleRad: 0.02, minPenumbraPixels })).toThrow(
+        RangeError,
+      );
+  });
+
+  it("sees the occluder where Unreal's shadow ray samples it (PRD-634 AC-2)", () => {
+    // Off: the blocker gap as it stands.
+    expect(shadowRayOccluderGap(2.08, 7.23, 0, 1.5)).toBe(2.08);
+    expect(shadowRayOccluderGap(0, 7.23, 4, 1.5)).toBe(0);
+    // The sphere row at a 15 degree sun: a 2.08 m gap 7.23 m from the camera, Epic's 4 samples per ray.
+    expect(shadowRayOccluderGap(2.08, 7.23, 4, 1.5)).toBeCloseTo(1.1183, 3);
+    // Past the ray's end the first sample is the nearest one below the caster.
+    const reach = 1.5 * 7.23;
+    expect(shadowRayOccluderGap(50, 7.23, 4, 1.5)).toBeCloseTo(reach * (1 - 1 / 4 + 1 / 48), 9);
+    // The two branches meet at the first step; the seen gap never passes the gap and never falls as it grows.
+    const knee = reach / 16;
+    expect(shadowRayOccluderGap(knee * (1 - 1e-9), 7.23, 4, 1.5)).toBeCloseTo(
+      shadowRayOccluderGap(knee * (1 + 1e-9), 7.23, 4, 1.5),
+      6,
+    );
+    let last = 0;
+    for (let gap = 0.01; gap < 30; gap *= 1.3) {
+      const seen = shadowRayOccluderGap(gap, 7.23, 4, 1.5);
+      expect(seen).toBeGreaterThanOrEqual(last);
+      expect(seen).toBeLessThanOrEqual(gap);
+      last = seen;
+    }
+    // More samples per ray see the occluder nearer its true gap.
+    expect(shadowRayOccluderGap(2.08, 7.23, 8, 1.5)).toBeGreaterThan(1.1183);
+    for (const samplesPerRay of [-1, 1.5, 65, Number.NaN])
+      expect(() => sourceAngleShadowFilter({ sourceAngleRad: 0.02, samplesPerRay })).toThrow(
+        RangeError,
+      );
+    for (const rayLengthScale of [0, -1, Number.NaN, Number.POSITIVE_INFINITY])
+      expect(() => sourceAngleShadowFilter({ sourceAngleRad: 0.02, rayLengthScale })).toThrow(
         RangeError,
       );
   });
