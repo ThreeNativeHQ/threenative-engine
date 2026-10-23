@@ -2972,6 +2972,8 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 // The normal fragment reads `normalView` at location 0, which the program's vertex stage must write there.
                 if (draw.program->vertex.wgsl.code.find("@location(0) o_normalView") == std::string::npos)
                     throw std::runtime_error("TN_POST_NORMAL_LAYOUT: normalView is not the vertex stage's first varying");
+                if (item.flatShading && draw.program->vertex.wgsl.code.find("@location(1) o_positionView") == std::string::npos)
+                    throw std::runtime_error("TN_POST_NORMAL_LAYOUT: positionView is not the vertex stage's second varying");
                 PipelineTarget target{WGPUTextureFormat_RGBA16Float, WGPUTextureFormat_Depth32Float,
                     item.side == 2 ? WGPUCullMode_None : item.side == 1 ? WGPUCullMode_Front : WGPUCullMode_Back};
                 target.layout = draw.program->pipelineLayout; target.depthWrite = false;
