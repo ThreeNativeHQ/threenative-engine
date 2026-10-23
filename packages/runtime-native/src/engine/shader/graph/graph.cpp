@@ -146,6 +146,11 @@ ExprId Lowerer::expression(Node node) {
     const auto found = exprs_.find(node.get());
     if (found != exprs_.end()) return found->second;
     ExprId id = emit(node);
+    // The scene's two scalar MRT outputs share a packed target; three splats each to RGBA.
+    if (id != kInvalid && (node->kind == Kind::Texture || node->kind == Kind::TextureLoad)) {
+        if (node->name == "metalness") id = program_.swizzle(id, "xxxx");
+        if (node->name == "roughness") id = program_.swizzle(id, "yyyy");
+    }
     // TempNode subclasses snapshot shared values; Var/Split/Convert remain live expressions.
     const auto kind = node->kind;
     const bool shared = uses_[node.get()] > 1 && (kind == Kind::Unary || kind == Kind::Binary ||
@@ -272,9 +277,14 @@ ExprId Lowerer::emit(Node node) {
                        ? program_.sampleLevel(program_.texture2d(d.name), expression(d.args[1]), expression(d.args[2]))
                        : program_.sample(program_.texture2d(d.name), expression(d.args[1]));
         case Kind::TextureSize:
-            return program_.textureSize(program_.texture2d(d.name), d.args.empty() ? program_.constant(int32_t(0)) : expression(d.args[0]));
-        case Kind::TextureLoad:
-            return program_.textureLoad(d.bits == 1 ? program_.textureDepth(d.name) : program_.texture2d(d.name), expression(d.args[0]), d.args.size() < 2 ? program_.constant(int32_t(0)) : expression(d.args[1]));
+            return program_.textureSize(d.name == "depth" ? program_.textureDepth(d.name) : program_.texture2d(d.name), d.args.empty() ? program_.constant(int32_t(0)) : expression(d.args[0]));
+        case Kind::StorageTexture:
+            if (d.args.empty()) throw std::runtime_error("storageTexture requires coordinates when read");
+            return program_.textureLoad(program_.texture2d(d.name), convert(expression(d.args[0]), Type::vec(2, Type::Scalar::I32)), program_.constant(int32_t(0)));
+        case Kind::TextureLoad: {
+            const auto loaded = program_.textureLoad(d.bits == 1 || d.name == "depth" ? program_.textureDepth(d.name) : program_.texture2d(d.name), expression(d.args[0]), d.args.size() < 2 ? program_.constant(int32_t(0)) : expression(d.args[1]));
+            return d.name == "depth" ? convert(loaded, d.type == Type{} ? Type::vec(4) : d.type) : loaded;
+        }
         case Kind::Constant:
             if (d.type.scalar == Type::Scalar::F32)
                 return program_.constant(std::bit_cast<float>(static_cast<uint32_t>(d.bits)));
@@ -354,6 +364,15 @@ ExprId Lowerer::emit(Node node) {
             const bool pairwise = d.name == "min" || d.name == "max" || d.name == "pow" || d.name == "step" || d.name == "mod";
             if (ids.size() == 2 && pairwise) {
                 if (ids[0] == kInvalid || ids[1] == kInvalid) return kInvalid;
+                // r185 types a whole JS divisor from the integer index, as the binary operators do.
+                if (d.name == "mod" && d.args[1]->kind == Kind::Constant) {
+                    const auto& divisor = program_.expr(ids[1]);
+                    const Type index = program_.expr(ids[0]).type;
+                    const float value = std::bit_cast<float>(static_cast<uint32_t>(divisor.immediate));
+                    if (divisor.op == Op::Constant && divisor.type == Type::f32() && value == std::floor(value) &&
+                        index.isScalar() && (index.scalar == Type::Scalar::U32 || index.scalar == Type::Scalar::I32))
+                        ids[1] = program_.construct(index, {ids[1]});
+                }
                 const auto a = program_.expr(ids[0]).type, b = program_.expr(ids[1]).type;
                 // A serialized graph converts any mismatch; an authored one only widens a float scalar to the other
                 // operand's lanes (TSL's mod(vec2, float)), so a real type error still reports.
@@ -369,7 +388,11 @@ ExprId Lowerer::emit(Node node) {
         case Kind::Swizzle: return program_.swizzle(expression(d.args[0]), d.lanes);
         case Kind::Join: {
             std::vector<ExprId> ids;
-            for (const Node& part : d.args) ids.push_back(expression(part));
+            for (const Node& part : d.args) {
+                const auto value = expression(part);
+                ids.push_back(d.type.scalar == Type::Scalar::U32 && value != kInvalid
+                    ? convert(value, Type::vec(program_.expr(value).type.rows, Type::Scalar::U32)) : value);
+            }
             // `vec3(0.5)` splats a constant, as the builder's join does.
             if (ids.size() == 1 && ids[0] != kInvalid && program_.expr(ids[0]).op == Op::Constant)
                 ids.assign(d.type.rows, ExprId{ids[0]});  // a copy: assign's value must not alias the vector
@@ -416,18 +439,17 @@ ExprId Lowerer::emit(Node node) {
         case Kind::Texture: {
             const ExprId coordinate = expression(d.args[0]);
             if (coordinate == kInvalid) return kInvalid;
-            // A depth texture has no filtered sample: read the texel under the uv. The scene pass's own depth
-            // (a texture named "depth" with no object behind it) is one, bound as a depth view by the post stage.
+            // A depth texture, or the scene pass's own depth (a texture named "depth" with no object
+            // behind it), has no filtered sample: read the texel under the uv.
             if (d.bits == 1 || (d.name == "depth" && !d.textureBinding)) {
                 const auto texture = program_.textureDepth(d.name);
                 const auto size = program_.textureSize(texture, program_.constant(int32_t(0)));
-                const ExprId inside = program_.call("min", {coordinate, program_.construct(Type::vec(2), {program_.constant(0.99999f)})});
-                const auto texel = program_.construct(Type::vec(2, Type::Scalar::I32), {
-                    program_.mul(inside, program_.construct(Type::vec(2), {size}))});
-                const ExprId depth = program_.textureLoad(texture, texel, program_.constant(int32_t(0)));
-                // The sample of a float texture is a vec4: the depth rides in the first channel.
-                return d.bits == 1 ? depth
-                                   : program_.construct(Type::vec(4), {depth, program_.constant(0.0f), program_.constant(0.0f), program_.constant(1.0f)});
+                const auto extent = program_.construct(Type::vec(2), {size});
+                const auto clamped = program_.call("clamp", {program_.mul(coordinate, extent), program_.constant(0.0f),
+                    program_.sub(extent, program_.construct(Type::vec(2), {program_.constant(1.0f)}))});
+                const auto texel = program_.construct(Type::vec(2, Type::Scalar::I32), {clamped});
+                const auto loaded = program_.textureLoad(texture, texel, program_.constant(int32_t(0)));
+                return d.bits == 1 ? loaded : convert(loaded, d.type == Type{} ? Type::vec(4) : d.type);
             }
             // TextureNode.level(n): an explicit mip, which a vertex stage needs.
             if (d.args.size() == 2) {
@@ -483,6 +505,13 @@ void Lowerer::statement(Node node) {
             if (!s.args.empty()) statement(s.args[0]);
             return;
         case Kind::Call: case Kind::AtomicAdd: (void)expression(node); return;
+        case Kind::TextureStore: {
+            const auto* texture = static_cast<const tn::engine::Texture*>(s.object.get());
+            program_.textureStore(program_.storageTexture2d(s.name, texture->storageFormat()),
+                                  convert(expression(s.args[0]), Type::vec(2, Type::Scalar::U32)),
+                                  convert(expression(s.args[1]), Type::vec(4)));
+            return;
+        }
         case Kind::AtomicStore: {
             const auto& target = *s.args[0];
             program_.store(ensureStorage(target), index(s.args[0]), convert(expression(s.args[1]), target.type));
