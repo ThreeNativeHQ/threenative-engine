@@ -168,3 +168,31 @@ A capsule's feet stay sharp, and a shadow cast from 10 m up spreads to about 9 c
   Focused soft-shadow, shadow-node and sun-disc specs pass 20/20. Native/Wasm suites were not rerun and GPU cost
   was not timed in this rerun. All-scene lock-board clearance is unverified. The next change must fix the Floor
   drift before the line can merge. [Five-run numbers, sheets and verbatim judge](https://github.com/ThreeNativeHQ/threenative-engine/pull/541#issuecomment-6357284715).
+
+- 2026-10-23 (vsmfix-lane): **the Floor drift was the emissive spill, not the sun filter; fixed in the harness, ratchets re-cut**. Layer: harness
+  (`scripts/unreal-look/scaffold/render/giCache.ts`, generated look source), not the engine.
+  Cause. The Floor statistic is the per-channel median of a region. At L5 and L6 the reference Floor is bimodal, and TN had 54% of it lit where Unreal
+  has 48%, so the TN median sat in the lit mode (L* 66) and Unreal's in the umbra mode (L* 16.7): deltaE 47. The lit extra share is a warm lobe
+  between the chrome sphere and the emissive sphere. The `giCache` per-pixel emitter share lit the floor with no bounces, but Unreal has no GI below L7
+  (UE 5.8.3: `Engine/Source/Runtime/Renderer/Private/Lumen/LumenDiffuseIndirect.cpp:290-299`, an emissive surface lights neighbours through Lumen only).
+  The ray rule narrowed the soft edges and moved that median up by one L*, which is what broke the three Floor ratchets. The umbra level was equal in
+  BEFORE and AFTER (linear Y 0.0410 against 0.0409; Unreal 0.0132): the filter never lightened it. The edge itself already matches Unreal after the ray
+  rule (10 to 90% width at the capsule foot 11.4 px against Unreal 11.7 px, BEFORE 23.9 px; sphere edge 3.0 against 3.2 px). Split arms
+  (2 runs, L5 and L7, `vsmRay`/`vsmAngle`): the ray rule moves the Floor median by +1.03 L*, the disc by +0.28 L*. Both are the same median cliff.
+  Fix. With `bounces` 0 the emitter list is empty (`giCache.emitters` reports the count); the URL knob `spill=1` keeps the old look measurable.
+  Red-green: `unreal-look-gi-cache.spec.ts` 26/26 (the new case failed on the missing count first).
+  Receipt, tree `793dc6fa3` holds epic `70a0ee128`, headed WebGPU NVIDIA, one tree, BEFORE = `vsmRay=0&vsmAngle=1&spill=1` (epic behaviour):
+  - L5 to L8 `sun15_spheres`, 2 runs per arm, results identical between runs: Floor deltaE L5 45.83 to 5.88, L6 41.16 to 5.18 (dP50 2.854 to 0.415, 2.585 to 0.390);
+    Box_White L5 32.9 to 5.1; total deltaE L5 112.5 to 42.4, L6 106.7 to 41.4; L7 and L8 Floor deltaE 5.58 to 5.94 (holds). The 86 scoped ratchets hold
+    after the re-cut; 7/10 scoped parity locks hold in both arms (the same three fail in BEFORE).
+  - L9 `sun60/sun15/sun04` spheres, 2 runs per arm: 10/12 locks in both arms (the same Sky and LitFloor dP50 locks, flaky on the board), 60/60 ratchets, total dP50 1.259 to 1.256.
+  - All poses and suns at L5 and L6 (`compare --check`, 1 run per arm): 301 ratchets, 9 broke (8 `Room` dP50 and deltaE in interior and exterior poses, `Box_Red` L5 deltaE), each by 1 to 3
+    display levels, and the same 9 break with the ray rule off (arm `xemit`): the removed spill had lit those dark rooms, which Unreal lights by other means.
+    Parity locks: 16/35 hold before and after, no new break. Scene `reference` total deltaE L5 471 to 331, L6 451 to 318; dP50 29.0 to 19.3, 27.3 to 18.6.
+    Six of the 24 pose and layer cells (interior sun15, exterior sun60 and interior sun60, each at L5 and L6) grow by 0.1 to 0.4 deltaE; the sum over the scene and the layer shrinks.
+  - Judge (fresh `claude -p`, Sonnet): 2 runs per arm, L5 to L8 spheres, 16 frames with 1:1 crops: IMPROVEMENT overall, CLOSE to Unreal, no REGRESSION. All poses L5 and L6, 24 frames,
+    1 run per arm: IMPROVEMENT overall, 16 IMPROVEMENT and 8 NEUTRAL, no REGRESSION; `sun60_interior` stays FAR from Unreal in both arms. Verbatim verdicts on #541.
+  - `ctest -L native-engine` 496/496 (Linux engine) and 162/162 (Wasm), both built from the merged tree; core soft-shadow and shadow-node specs were not rerun (no change).
+  Re-cut (`--relax`, the lock policy's part c): the 9 ratchets above moved away; every other bound is unchanged or tighter (74 at L5 and the same at L6 tightened). The cut used two arms
+  (`xafter`, `xemit`) as its two runs, which differ only in the sun-filter knobs. A third run of one arm was not taken.
+  Open: five runs per arm were not taken (2 per arm, equal in every metric); L9 other poses, sun04 and sun60 at L7 to L9, `gi:` and `shadow:` scenes were not captured. The cause of the dark `Room` (Unreal is brighter there) is a missing ambient term at L5 and L6, not the spill.
