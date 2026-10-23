@@ -136,6 +136,8 @@ export interface IGiOptions {
    * (default true). Off when reflection rays walk the scene's triangles and find the floor themselves.
    */
   readonly paintGround?: boolean;
+  /** Diagnosis: light the neighbours of an emissive sphere even with no bounces (the look before PRD-634's emitter rule). */
+  readonly emitterSpill?: boolean;
   /**
    * Where a material's specular comes from, by roughness (PRD-642 Phase 3: `TracedReflections.routeAt`). A share for the
    * radiance cache is read from the cache along the reflection, a share for the diffuse GI from the cache along the normal,
@@ -1461,7 +1463,7 @@ export function installGi(
   // Unreal spills an emissive surface's light onto its neighbours through Lumen alone (L7): below it the surface is bright
   // and lights nothing. A cache with no bounces is the sky alone, so the per-pixel emitter share stays off as well
   // (PRD-634: it lit the floor of the L5 and L6 reference frames, a lobe Unreal does not draw, and flipped the Floor median).
-  if (options.bounces === 0) emitters.length = 0;
+  if (options.bounces === 0 && options.emitterSpill !== true) emitters.length = 0;
   giCache.emitters = emitters.length;
   const emitterIds = new Set(emitters.map((e) => e.id));
 

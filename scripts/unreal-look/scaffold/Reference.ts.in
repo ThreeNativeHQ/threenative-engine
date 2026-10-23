@@ -331,6 +331,8 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
         installGi(ctx, model, {
           // Diagnosis knob paint=1: paint the lit floor into the environment even while reflections are traced.
           paintGround: !tracing || params.get("paint") === "1",
+          // Diagnosis knob spill=1: an emissive sphere lights its neighbours below L7 too (the look before PRD-634's emitter rule).
+          emitterSpill: params.get("spill") === "1",
           // PRD-642 Phase 3 (opt in, D10): past the trace's roughness cut-off, specular reads the radiance cache and, past
           // 0.8, the diffuse GI. Off by default: the cache is an ambient cube per probe, a lobe far wider than a surface at
           // roughness 0.5 needs, and its shade is brighter than Unreal's, so the read adds light that Unreal's lobes do not.

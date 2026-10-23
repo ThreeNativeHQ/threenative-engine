@@ -532,6 +532,9 @@ describe("the world-space GI cache against closed forms (PRD-631 L7)", () => {
     skyRadiance.current = { data: new Float32Array(6), width: 2, height: 1, scale: [1, 1, 1] };
     installGi(rayContext(scene), scene, { bounces: 0, sun: noSun });
     expect(giCache.emitters).toBe(0);
+    // The diagnosis override (URL knob spill=1) keeps the earlier look measurable.
+    installGi(rayContext(scene), scene, { bounces: 0, sun: noSun, emitterSpill: true });
+    expect(giCache.emitters).toBe(1);
     installGi(rayContext(scene), scene, { bounces: 1, sun: noSun });
     expect(giCache.emitters).toBe(1);
   });
