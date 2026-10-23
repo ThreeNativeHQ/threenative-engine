@@ -219,6 +219,8 @@ const UNDECLARED_FIELDS: Record<string, string> = {
   // The engine's Substrate rough diffuse switch on a standard or physical material, and a lamp's Source Radius in metres (PRD-653).
   roughDiffuse: "boolean",
   sourceRadius: "number",
+  // The Two Sided Foliage leaf's Subsurface Color (PRD-643): unset until written, so it reads undefined.
+  subsurfaceColor: "Color | undefined",
   "BufferGeometry.parameters": "Record<string, unknown>",
   // Basic stores these authored slots too; upstream only evaluates emissiveNode.
   "MeshBasicNodeMaterial.emissiveNode": "Node | null",

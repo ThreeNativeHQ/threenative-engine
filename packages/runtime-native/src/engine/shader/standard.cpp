@@ -1427,6 +1427,11 @@ static StandardPrograms buildStandardProgram(const StandardMaterial& material, b
     const ExprId brdfLambert = f.mul(diffuseContribution, t.f(1 / kPi));
     const ExprId fragmentView = f.varying("positionView", Type::vec(3));
     ExprId directDiffuse = f.construct(Type::vec(3), {t.f(0)}), directSpecular = directDiffuse;
+    // Two Sided Foliage (PRD-643) lets the light through from behind: subsurfaceColor times a wrapped -N.L (wrap 0.5,
+    // over (1 + wrap)^2) times a GGX lobe of alpha 0.6 around the light seen through the leaf, times the light's
+    // colour with its shadow, with no N.L and no 1/pi. UE 5.8.3: Engine/Shaders/Private/Substrate/
+    // SubstrateEvaluation.ush:881-899 (the SSS_TYPE_TWO_SIDED_WRAP branch); Opacity 1 keeps the light's own shadow.
+    const ExprId subsurface = variant.twoSidedFoliage ? f.uniform("subsurfaceColor", Type::vec(3)) : kInvalid;
     for (std::size_t i = 0; i < lights.kinds.size(); ++i) {
         const Incoming light = incoming(f, t, lights.kinds[i], i, fragmentView, positionWorld, normalWorld, lights.softShadows, variant.leafReceiver, variant.roughDiffuse);
         const ExprId irradiance = f.mul(t.saturate(t.dot(n, light.direction)), light.color);
@@ -1440,6 +1445,11 @@ static StandardPrograms buildStandardProgram(const StandardMaterial& material, b
         }
         directDiffuse = f.add(directDiffuse, f.mul(irradiance, diffuseBrdf));
         directSpecular = f.add(directSpecular, f.mul(irradiance, brdfGgxMultiscatter(t, surface, light.direction)));
+        if (subsurface != kInvalid) {
+            const ExprId wrap = t.saturate(f.div(f.add(f.neg(t.dot(n, light.direction)), t.f(0.5f)), t.f(2.25f)));
+            const ExprId scatter = dGgx(t, t.f(0.6f), t.saturate(f.neg(t.dot(positionViewDirection, light.direction))));
+            directDiffuse = f.add(directDiffuse, f.mul(f.mul(light.color, f.mul(wrap, scatter)), subsurface));
+        }
         if (coated) {
             // PhysicalLightingModel.direct: BRDF_GGX on the clearcoat normal, with its own irradiance.
             const ExprId ccIrradiance = f.mul(t.saturate(t.dot(clearcoatNormalView, light.direction)), light.color);

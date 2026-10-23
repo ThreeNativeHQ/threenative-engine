@@ -1777,10 +1777,14 @@ export async function createRenderer(options: IRendererOptions = {}): Promise<IR
     try {
       const raw = options.webgpuFactory
         ? await options.webgpuFactory(canvas, rendererParameters)
-        : new (await import("three/webgpu")).WebGPURenderer({
-            canvas,
-            ...rendererParameters,
-            ...(await adapterTextureLimits()),
+        : await import("three/webgpu").then(async (webgpu) => {
+            // Two Sided Foliage lets the sun through on three's lit node materials too (PRD-643).
+            (await import("./render/two-sided-foliage.js")).installFoliageTransmission(webgpu);
+            return new webgpu.WebGPURenderer({
+              canvas,
+              ...rendererParameters,
+              ...(await adapterTextureLimits()),
+            });
           });
       const instance = raw as RendererInstance;
       await instance.init?.();

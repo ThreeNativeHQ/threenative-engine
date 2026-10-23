@@ -176,7 +176,7 @@ constexpr const char* kSlotNames[] = {
     "specularIntensityMapUvTransform", "clearcoatMapUvTransform", "clearcoatRoughnessMapUvTransform",
     "clearcoatNormalMapUvTransform", "aoMapIntensity", "clearcoat", "clearcoatRoughness", "clearcoatNormalScale", "bumpScale",
     "pmremTexelWidth", "pmremTexelHeight", "pmremMaxMip", "pmremRotation", "screenSize", "cameraNear", "cameraFar",
-    "modelNormalMatrix"};
+    "modelNormalMatrix", "subsurfaceColor"};
 constexpr const char* kLightFieldNames[] = {"Color",       "Direction",        "Position",     "Distance",
                                             "Decay",       "Axis",             "ConeCos",      "PenumbraCos",
                                             "ShadowMatrix", "ShadowBias",      "ShadowNormalBias", "ShadowRadius",
@@ -2261,6 +2261,7 @@ Renderer::Program& Renderer::depthProgram(const shader::VertexVariant& variant, 
     kind.vertexColors = 0;
     kind.invariantPosition = false;  // the shadow depth pass shares its vertex stage with nothing
     kind.leafReceiver = false;       // a depth pass receives no shadow
+    kind.twoSidedFoliage = false;    // ...and no light
     kind.roughDiffuse = false;       // ...and shades no diffuse
     const auto positionGraph = kind.nodes.positionNode;
     kind.nodes = {};
@@ -2893,6 +2894,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         v.backSide = item.side == 1;
         v.doubleSide = item.side == 2;
         v.leafReceiver = item.receiveShadow && item.twoSidedFoliage;
+        v.twoSidedFoliage = item.twoSidedFoliage;
         v.roughDiffuse = item.roughDiffuse;
         v.flatShading = item.flatShading;
         v.vertexColors = item.colors ? item.colorSize : 0;
@@ -3062,6 +3064,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         put(frameUniforms_, f, fs[kIor], std::array<double, 1>{m.ior});
         put(frameUniforms_, f, fs[kSpecularIntensity], std::array<double, 1>{m.specularIntensity});
         put(frameUniforms_, f, fs[kSpecularColor], std::array<double, 3>{m.specularColor[0], m.specularColor[1], m.specularColor[2]});
+        put(frameUniforms_, f, fs[kSubsurfaceColor], std::array<double, 3>{m.subsurfaceColor[0], m.subsurfaceColor[1], m.subsurfaceColor[2]});
         put(frameUniforms_, f, fs[kClearcoat], std::array<double, 1>{m.clearcoat});
         put(frameUniforms_, f, fs[kClearcoatRoughness], std::array<double, 1>{m.clearcoatRoughness});
         put(frameUniforms_, f, fs[kClearcoatNormalScale], std::array<double, 2>{m.clearcoatNormalScale[0], m.clearcoatNormalScale[1]});

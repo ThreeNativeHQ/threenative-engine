@@ -959,10 +959,14 @@ export type {
  * Bake static diffuse irradiance that reaches surfaces from outside the camera view.
  * @situation light bouncing from a room I cannot see
  * @situation light a wall with an off-screen emitter
+ * @situation glass or fog inside a room takes the room's bounce light
  * @alias readable world lighting
+ * @alias lumen translucency volume
+ * @alias translucency gi
  * @constraint request a bake after static geometry and lights are authored; this is static-lighting-first, not fully dynamic relighting
  * @constraint add the volume with ctx.add() so its incremental work is measured in the render phase
  * @constraint call sample() or sampleNode() from a game-owned material before screen-space GI; the volume owns no light, material, or colour
+ * @constraint a translucent material or a fog sample has no side that faces the light: it reads sampleNonDirectional(position), one atlas fetch, the same in every direction (divide by pi for a radiance)
  * @override density, bounds, bakeBudgetMs, and bounces are game-owned choices
  * @example const probes = new ProbeVolume({ bounds, density: 0.5 }); ctx.add(probes); void probes.requestBake(scene);
  */
