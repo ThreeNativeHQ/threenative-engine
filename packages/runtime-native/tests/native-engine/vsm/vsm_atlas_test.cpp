@@ -81,6 +81,19 @@ void binding() {
     CHECK(light.shadow.sourceAngleFilter && (*light.shadow.sourceAngleFilter)[0] == 0.01);
     CHECK((*light.shadow.sourceAngleFilter)[1] == 8 && (*light.shadow.sourceAngleFilter)[2] == 12);
     CHECK((*light.shadow.sourceAngleFilter)[3] == 0);  // no floor unless the record names one
+    // Unreal's shadow-ray test unless the record turns it off (core's defaults: 4 samples, 1.5 view distances).
+    CHECK((*light.shadow.sourceAngleFilter)[4] == 4 && (*light.shadow.sourceAngleFilter)[5] == 1.5);
+    auto rayOff = filter; rayOff.fields.emplace_back("samplesPerRay", Value::of(0.0));
+    rayOff.fields.emplace_back("rayLengthScale", Value::of(2.0));
+    setters.at("filterNode")(&light.shadow, rayOff, store);
+    CHECK((*light.shadow.sourceAngleFilter)[4] == 0 && (*light.shadow.sourceAngleFilter)[5] == 2);
+    for (const auto& [key, bad] : std::initializer_list<std::pair<const char*, double>>{
+             {"samplesPerRay", 1.5}, {"samplesPerRay", -1}, {"samplesPerRay", 65}, {"rayLengthScale", 0}}) {
+        auto wrong = filter; wrong.fields.emplace_back(key, Value::of(bad));
+        bool refused = false;
+        try { setters.at("filterNode")(&light.shadow, wrong, store); } catch (const Unsupported&) { refused = true; }
+        CHECK(refused);
+    }
     auto floored = filter; floored.fields.emplace_back("minPenumbraPixels", Value::of(1.5));
     setters.at("filterNode")(&light.shadow, floored, store);
     CHECK((*light.shadow.sourceAngleFilter)[3] == 1.5);

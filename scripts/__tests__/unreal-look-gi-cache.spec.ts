@@ -20,8 +20,8 @@ import {
   giCache,
   gridOver,
   installGi,
-  meanField,
   markTwoSidedFoliage,
+  meanField,
   skyRadiance,
   sphereShare,
 } from "../unreal-look/scaffold/render/giCache.js";
@@ -528,6 +528,32 @@ describe("the world-space GI cache against closed forms (PRD-631 L7)", () => {
       const direct = radiance * (radius / distance) ** 2 * Math.abs(toward.x);
       expect(Math.abs(face[0] as number)).toBeLessThan(direct * 0.05);
     }
+  });
+
+  it("an emissive sphere lights its neighbours only while the cache bounces light (Unreal: no GI below L7, PRD-634)", () => {
+    // Unreal's emissive surface spills onto the floor through Lumen alone: at L1-L6 it is a bright surface and nothing
+    // else. A cache with no bounces is the sky alone, so the per-pixel emitter share must not be added on top of it.
+    const lamp = new Mesh(
+      new SphereGeometry(0.5, 32, 16),
+      new MeshStandardMaterial({
+        color: new Color(0.1, 0.1, 0.1),
+        emissive: new Color(1, 1, 1),
+        emissiveIntensity: 10,
+      }),
+    );
+    const wall = new Mesh(
+      new BoxGeometry(0.2, 4, 4).translate(14, 0, 0),
+      new MeshStandardMaterial({ color: new Color(0.5, 0.5, 0.5), side: DoubleSide }),
+    );
+    const scene = new Group().add(lamp, wall);
+    skyRadiance.current = { data: new Float32Array(6), width: 2, height: 1, scale: [1, 1, 1] };
+    installGi(rayContext(scene), scene, { bounces: 0, sun: noSun });
+    expect(giCache.emitters).toBe(0);
+    // The diagnosis override (URL knob spill=1) keeps the earlier look measurable.
+    installGi(rayContext(scene), scene, { bounces: 0, sun: noSun, emitterSpill: true });
+    expect(giCache.emitters).toBe(1);
+    installGi(rayContext(scene), scene, { bounces: 1, sun: noSun });
+    expect(giCache.emitters).toBe(1);
   });
 
   it("a sphere above the horizon lights a surface by (r / d)^2 cos; one cut by the horizon fades to zero smoothly", () => {

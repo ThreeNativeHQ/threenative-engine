@@ -151,6 +151,8 @@ it("constructs core's automatic-depth node and installs through the facade sette
       blockerSamples: 8,
       filterSamples: 12,
       minPenumbraPixels: 1.5,
+      samplesPerRay: 4,
+      rayLengthScale: 1.5,
     },
   ]);
   shadow.filterNode = null;
@@ -174,6 +176,9 @@ it("validates branded source-angle parameters before either engine ABI sees them
     { sourceAngleRad: 0, blockerSamples: 16, filterSamples: 16, minPenumbraPixels: -1 },
     { sourceAngleRad: 0, blockerSamples: 16, filterSamples: 16, minPenumbraPixels: 17 },
     { sourceAngleRad: 0, blockerSamples: 16, filterSamples: 16, minPenumbraPixels: "1" },
+    { sourceAngleRad: 0, blockerSamples: 16, filterSamples: 16, samplesPerRay: 1.5 },
+    { sourceAngleRad: 0, blockerSamples: 16, filterSamples: 16, samplesPerRay: 65 },
+    { sourceAngleRad: 0, blockerSamples: 16, filterSamples: 16, rayLengthScale: 0 },
   ]) {
     const callback = Object.assign(() => {}, {
       [Symbol.for("threenative.sourceAngleShadowFilter")]: options,

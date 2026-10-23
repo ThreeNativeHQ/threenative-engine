@@ -1179,8 +1179,22 @@ static ExprId virtualShadowFactor(Program& f, Tsl& t, std::size_t index, int lev
                     f.assign(blockerCount, f.add(f.load(blockerCount), t.f(1)));
                 });
             });
-            const ExprId gap = f.mul(f.call("max", {t.f(0), f.sub(baseZ,
+            const ExprId ray = f.loadStorage(table, f.construct(Type::u32(), {f.add(filterIndex, t.f(1))}));
+            const ExprId perRay = f.swizzle(ray, "x");
+            const ExprId blockerGap = f.mul(f.call("max", {t.f(0), f.sub(baseZ,
                 f.div(f.load(blockerSum), f.call("max", {f.load(blockerCount), t.f(1)})))}), span);
+            // The gap Unreal's shadow-ray test sees (core shadowRayOccluderGap): a ray of `rayLengthScale`
+            // view distances, `samplesPerRay` squared steps from a random start; the edge spreads by the
+            // distance of the first sample under the caster, here its mean over the start. 0 samples is off.
+            const ExprId viewDistance = f.call("length", {f.swizzle(f.mul(f.uniform("viewMatrix", Type::mat(4, 4)),
+                f.construct(Type::vec(4), {positionWorld, t.f(1)})), "xyz")});
+            const ExprId rayReach = f.mul(f.swizzle(ray, "y"), viewDistance);
+            const ExprId steps = f.call("max", {perRay, t.f(1)});
+            const ExprId x = f.call("min", {t.f(1), f.call("sqrt", {f.div(blockerGap, f.call("max", {rayReach, t.f(1e-6f)}))})});
+            const ExprId seen = f.mul(rayReach, f.select(f.less(f.mul(x, steps), t.f(1)),
+                f.div(f.mul(f.mul(f.mul(x, x), x), steps), t.f(3)),
+                f.add(f.sub(f.mul(x, x), f.div(x, steps)), f.div(t.f(1), f.mul(t.f(3), f.mul(steps, steps))))));
+            const ExprId gap = f.select(f.less(t.f(0), perRay), seen, blockerGap);
             // Where the blockers touch the receiver the penumbra is under a texel: each tap is then the
             // hardware's bilinear compare, so the edge is about one texel wide and not stair-stepped,
             // and the floor of the disk is half a texel. `minPenumbraPixels` (filter.w - 1) adds the
