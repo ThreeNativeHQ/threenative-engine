@@ -44,7 +44,7 @@ function completedWindows(frames: number, arm: string) {
       budget.beginFrame(now, now);
       tick = window * 120 + Math.floor(((frame + 1) * 120) / frames);
       for (let rig = 0; rig < 128; rig += 1) {
-        if (arm === "animated") recorder.add(SPANS.animationUpdate, 0.01);
+        if (arm !== "static") recorder.add(SPANS.animationUpdate, 0.01);
         if (arm !== "static") recorder.add(SPANS.skinnedWrite, 0.005);
       }
       recorder.endFrame(4);
@@ -97,17 +97,28 @@ describe("skinned crowd measurement bridge", () => {
     },
   );
 
-  it.each(["held", "static"])("preserves the %s arm's absence expectations", async (arm) => {
+  it.each(["held", "static"])("reports the %s arm's actual animation calls", async (arm) => {
     const { crowdBudget, crowdSpans, crowdRate } = await fixture(arm);
+    if (arm === "held") crowdRate.rawRigs = 112;
     for (const { budget, spans } of completedWindows(258, arm)) {
       crowdBudget(budget);
       crowdSpans(formatSpansWindow(spans));
     }
     expect(crowdRate.ready).toBe(true);
     expect(crowdRate.measured).toMatchObject({
-      animationCalls: 0,
+      animationCalls: arm === "static" ? 0 : 128,
       paletteCalls: arm === "static" ? 0 : 128,
     });
+  });
+
+  it("refuses a held auto arm that never reaches the RAW draw path", async () => {
+    const { crowdBudget, crowdSpans, crowdRate } = await fixture("held");
+    for (const { budget, spans } of completedWindows(258, "held")) {
+      crowdBudget(budget);
+      crowdSpans(formatSpansWindow(spans));
+    }
+    expect(crowdRate.ready).toBe(false);
+    expect(crowdRate.measured).toBe(null);
   });
 
   it.each([

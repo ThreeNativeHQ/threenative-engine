@@ -117,7 +117,8 @@ export function crowdSpans(line: string): void {
     // reportEvery is 120 simulation ticks at the fixture's default 60 Hz, not 120 renders.
     Number.isFinite(crowdRate.simulatedSeconds) &&
     Number(crowdRate.simulatedSeconds) >= 120 / 60 &&
-    (arm === "animated"
+    (arm !== "held" || updateRate === 1 || Number(crowdRate.rawRigs) > 0) &&
+    (arm !== "static"
       ? animation?.perFrame === count &&
         animation.frames === window.frames &&
         Number.isFinite(animation.mean)
@@ -146,6 +147,7 @@ export function crowdSpans(line: string): void {
       paletteFrames: finiteOrNull(crowdRate.paletteFrames),
       animationUpdateMs: finiteOrNull(crowdRate.animationUpdateMs),
       skinnedWriteMs: finiteOrNull(crowdRate.skinnedWriteMs),
+      rawRigs: finiteOrNull(crowdRate.rawRigs),
       animationCalls: finiteOrNull(crowdRate.animationCalls),
       paletteCalls: finiteOrNull(crowdRate.paletteCalls),
       gpuSamples: finiteOrNull(crowdRate.gpuSamples),
@@ -376,15 +378,21 @@ export class Crowd extends Scene {
           // Both frozen controls redraw shadows, so a cached shadow is never priced as skinning
           // saved.
           for (const shadow of shadows) shadow.needsUpdate = true;
-          if (arm === "animated")
+          if (arm !== "static")
             for (const player of players) {
               beginSpan(SPANS.animationUpdate);
               try {
-                player.update(1 / 60);
+                player.update(arm === "held" ? 0 : 1 / 60);
               } finally {
                 endSpan(SPANS.animationUpdate);
               }
             }
+          if (arm === "held") {
+            crowdRate.rawRigs = players.filter((player) => {
+              const report = player.updateRateReport;
+              return report.boneRate > report.rate;
+            }).length;
+          }
           if (visualFreezeFrame !== undefined) {
             const rates = players.map((player) => player.updateRateReport.rate);
             crowdRate.visualRenderFrame = visualRenderFrame;

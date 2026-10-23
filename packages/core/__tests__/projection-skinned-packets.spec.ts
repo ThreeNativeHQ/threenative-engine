@@ -6,6 +6,7 @@ import {
   Float32BufferAttribute,
   MeshStandardMaterial,
   NumberKeyframeTrack,
+  Object3D,
   PerspectiveCamera,
   Scene,
   Skeleton,
@@ -111,6 +112,45 @@ function fixture(velocity = true, rate: 1 | 4 | "auto" = 4) {
 }
 
 describe("SkinnedBatch owned scalar display packets", () => {
+  it("keeps bone attachments on the same stock pose as their character", () => {
+    const f = fixture();
+    try {
+      present(f.bones[5]).add(new Object3D());
+      f.draw();
+      expect(f.receipt().slots[0].currentRaw).toBe(false);
+      expect(animationRateStates.get(f.mesh)?.gpuPose).not.toBe(true);
+      f.mesh.skeleton.update();
+      f.mesh.skeleton.boneMatrices.forEach((value, index) =>
+        expect(f.batch.palette[index]).toBeCloseTo(value, 6),
+      );
+    } finally {
+      f.close();
+    }
+  });
+
+  it.each([false, true])("retires a held attached RAW pose (custom update: %s)", (custom) => {
+    const f = fixture();
+    try {
+      f.draw();
+      f.held();
+      expect(f.receipt().slots[0].currentRaw).toBe(true);
+      present(f.bones[5]).add(new Object3D());
+      const update = vi.fn();
+      if (custom) f.mesh.skeleton.update = update;
+      f.draw();
+      expect(update).not.toHaveBeenCalled();
+      expect(f.receipt().slots[0].currentRaw).toBe(false);
+      expect(f.receipt().slots[0].previousRaw).toBe(true);
+      expect(animationRateStates.get(f.mesh)?.gpuPose).toBe(false);
+      Skeleton.prototype.update.call(f.mesh.skeleton);
+      f.mesh.skeleton.boneMatrices.forEach((value, index) =>
+        expect(f.batch.palette[index]).toBeCloseTo(value, 6),
+      );
+    } finally {
+      f.close();
+    }
+  });
+
   it("submits independently saved current/previous RAW payloads on held ticks", () => {
     const f = fixture();
     try {
@@ -660,8 +700,13 @@ describe("SkinnedBatch owned scalar display packets", () => {
     it("hands the bones back exact when the rig leaves the batch", () => {
       const f = auto();
       try {
-        for (let i = 0; i < 13; i++) f.frame();
-        const now = 13 / 60;
+        let frames = 13;
+        for (let i = 0; i < frames; i++) f.frame();
+        if (f.player.updateRateReport.evaluated) {
+          f.frame();
+          frames += 1;
+        }
+        const now = frames / 60;
         expect(present(f.mesh.skeleton.bones[1]).rotation.z).not.toBeCloseTo(sway(now), 6);
         f.batch.release(f.mesh);
         expect(present(f.mesh.skeleton.bones[1]).rotation.z).toBeCloseTo(sway(now), 6);

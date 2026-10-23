@@ -426,7 +426,8 @@ export function readAnimationPosePacketTime(
 /**
  * A genuine refresh that reuses the captured packet: the same checks as the held query, and the
  * version is restamped with this evaluation's held time and counter so the CPU fallback and the
- * dedup bookkeeping read the pose this refresh produced. The numeric payload is shared as is.
+ * dedup bookkeeping read the pose this refresh produced. Raw keys stay shared; fallback operands
+ * snapshot this CPU evaluation so retirement cannot restore an earlier pose.
  */
 export function refreshAnimationPosePacket(
   rig: SkinnedMesh,
@@ -440,6 +441,12 @@ export function refreshAnimationPosePacket(
     ...version,
     time: held,
     evaluation: found.state.evaluation,
+    world64: Object.freeze(
+      rig.skeleton.bones.map((bone) => Object.freeze(bone.matrixWorld.elements.slice())),
+    ),
+    inverse64: Object.freeze(
+      rig.skeleton.boneInverses.map((inverse) => Object.freeze(inverse.elements.slice())),
+    ),
   });
   found.saved.version = next;
   return Object.freeze({ raw: true, version: next, time: found.state.time });

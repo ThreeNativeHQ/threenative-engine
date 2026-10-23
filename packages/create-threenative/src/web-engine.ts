@@ -102,7 +102,7 @@ async function upstreamNames(root: string): Promise<string[]> {
     UPSTREAM.map((id) => import(pathToFileURL(require.resolve(id)).href) as Promise<object>),
   );
   return [...new Set(modules.flatMap((module) => Object.keys(module)))]
-    .filter((name) => name !== "default")
+    .filter((name) => name !== "default" && name !== "module.exports")
     .sort();
 }
 

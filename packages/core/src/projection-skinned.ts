@@ -593,7 +593,7 @@ export class SkinnedBatch {
    * last full write saw, so the only thing that moved is the playhead. Anything else, an observed
    * batch included, takes the full path.
    */
-  #writeHeld(slot: number, rig: SkinnedMesh): boolean {
+  #writeHeld(slot: number, rig: SkinnedMesh, state: IAnimationRateStateLike | undefined): boolean {
     const display = this.#rawSlots.get(slot);
     const hot = display?.hot;
     if (
@@ -605,7 +605,6 @@ export class SkinnedBatch {
       (display.trusted ?? 0) <= 0
     )
       return false;
-    const state = animationRateStateOf(rig);
     if (
       state === undefined ||
       state.evaluated ||
@@ -642,9 +641,16 @@ export class SkinnedBatch {
   write(slot: number, rig: SkinnedMesh): void {
     beginSpan(SPANS.skinnedWrite);
     try {
-      if (this.#writeHeld(slot, rig)) return;
-      this.#checkObservedEdits(slot);
       const state = animationRateStateOf(rig);
+      // Attachments follow CPU bones, so their character must keep the same stock pose.
+      const attached =
+        (state?.effectiveRate ?? 1) > 1 &&
+        this.bones === 12 &&
+        rig.skeleton.bones.some((bone, index, bones) =>
+          bone.children.some((child) => child !== bones[index + 1]),
+        );
+      if (!attached && this.#writeHeld(slot, rig, state)) return;
+      this.#checkObservedEdits(slot);
       // Named rate1 and ordinary stock owners never pay the capture/query path.
       if (this.#rawMeta.length && ((state?.effectiveRate ?? 1) > 1 || this.#rawSlots.has(slot))) {
         this.#prepareRawFrame();
@@ -675,6 +681,7 @@ export class SkinnedBatch {
         }
         const repeatedRefresh = !held && display.writeFrame === this.#frame;
         const packet =
+          !attached &&
           !repeatedRefresh &&
           !display.retired &&
           (state?.effectiveRate ?? 1) > 1 &&

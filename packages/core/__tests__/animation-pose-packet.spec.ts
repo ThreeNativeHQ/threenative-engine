@@ -13,6 +13,7 @@ import {
   evaluateAnimationPosePacket,
   readAnimationPosePacket,
   readAnimationPosePacketTime,
+  refreshAnimationPosePacket,
 } from "../src/animation-pose-packet.js";
 import { AnimationPlayer } from "../src/animation.js";
 
@@ -56,6 +57,25 @@ function fixture() {
 }
 
 describe("owned scalar-Z pose packets", () => {
+  it("keeps refreshed fallback matrices at the latest CPU pose without changing prior history", () => {
+    const f = fixture();
+    try {
+      const first = required(readAnimationPosePacket(f.mesh));
+      const previous = evaluateAnimationPoseFallback(first.version);
+      f.player.update(0.5, true);
+      f.mesh.updateMatrixWorld(true);
+      f.mesh.skeleton.update();
+      const refreshed = required(refreshAnimationPosePacket(f.mesh, first.version));
+      expect(evaluateAnimationPoseFallback(refreshed.version)).toEqual(
+        f.mesh.skeleton.boneMatrices,
+      );
+      expect(evaluateAnimationPoseFallback(first.version)).toEqual(previous);
+      expect(refreshed.version.keys).toBe(first.version.keys);
+    } finally {
+      f.player.dispose();
+    }
+  });
+
   it("captures the frozen chain and queries held logical time without author evaluation", () => {
     const f = fixture();
     const first = readAnimationPosePacket(f.mesh);

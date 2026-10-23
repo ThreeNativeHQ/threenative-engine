@@ -268,6 +268,13 @@ export async function startScene(canvas, dimensions) {
               restoredRefresh,
               precisionPixels: REPROJECTION_PIXELS,
             };
+            raw.rigs[0].skeleton.bones[5].add(new THREE.Object3D());
+            raw.advance();
+            assertCondition(
+              !raw.receipt().slots[0].currentRaw,
+              "a bone attachment must retire the GPU pose so both use CPU bones",
+            );
+            detail.attachmentStock = true;
             done = true;
             clearTimeout(deadline);
             complete();
