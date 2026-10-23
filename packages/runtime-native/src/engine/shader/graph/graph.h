@@ -39,7 +39,7 @@ enum class Kind : uint8_t {
     StorageElement, VarRead, LoopIndex,
     Body, Var, Assign, If, Loop, RenderTexture, TextureSize, TextureLoad, Call, Return, Break, Continue, Discard, PostEffect,
     Pmrem, ScreenUv, Reflector, ViewportDepth, StructType, Struct, StructMember, RenderOutput, PipelineOutput,
-    Compute,
+    Compute, StorageTexture, TextureStore,
 };
 
 enum class UnOp : uint8_t { Negate };

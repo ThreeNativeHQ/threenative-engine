@@ -10,6 +10,7 @@
 #include <cstdio>
 #include <set>
 #include <string>
+#include <stdexcept>
 
 using namespace tn::engine::shader;
 
@@ -546,6 +547,112 @@ void bloomPasses() {
     CHECK(outputs.size() == passes.size());
 }
 
+
+void ssrPasses() {
+    namespace g = graph;
+    const auto color = g::texture("scene", g::uv());
+    const auto depth = g::texture("depth", g::uv());
+    const auto normal = g::texture("normal", g::uv());
+    const auto metal = g::swizzle(g::texture("metalness", g::uv()), "x");
+    const auto rough = g::swizzle(g::texture("roughness", g::uv()), "y");
+    const auto effect = g::ssrEffect(color, depth, normal, metal, rough);
+    effect->resolutionScale = 0.5f;
+    CHECK(effect->kind == "SSRNode" && effect->normal && effect->roughness);
+    CHECK(effect->inputs == std::vector<g::Node>({color, depth, normal, metal, rough}));
+    CHECK(effect->parameters.at("quality")[0] == 0.5);
+    const auto passes = g::postPasses(g::effectNode(effect));
+    CHECK(passes.size() == 6);
+    if (passes.size() != 6) return;
+    CHECK((passes[0].reads == std::map<std::string, std::string>{{"input", "scene"}, {"depth", "depth"},
+        {"normal", "normal"}, {"metalness", "metalness"}}));
+    CHECK(passes[0].output == effect->output + "_ray");
+    CHECK(passes[0].effect == effect && passes[0].resolutionScale == 0.5f);
+    for (uint32_t level = 1; level < 5; ++level) {
+        CHECK(passes[level].mipLevel == level);
+        CHECK(passes[level].reads.at("input") == passes[0].output);
+        CHECK(passes.back().reads.at("mip" + std::to_string(level)) == passes[level].output);
+    }
+    CHECK(passes.back().reads.at("mip0") == passes[0].output);
+    CHECK(passes.back().reads.at("roughness") == "roughness");
+    CHECK(passes.back().output == effect->output && passes.back().resolutionScale == 1);
+    for (const auto& pass : passes) {
+        std::string error;
+        CHECK(acceptPackage(pass.package, error));
+        for (const auto& stage : pass.package.variants.at(0).stages) CHECK(stage.wgsl.ok());
+    }
+    CHECK(passes[0].package.variants[0].stages.back().wgsl.code.find("t_metalness,smp_metalness,coord,0.0).x") != std::string::npos);
+    CHECK(passes.back().package.variants[0].stages.back().wgsl.code.find("t_roughness,smp_roughness,coord,0.0).y") != std::string::npos);
+
+    // Scalar expressions get their own render pass rather than losing their uniforms or UVs.
+    const auto scalar = g::uniform("authoredMetalness", Type::f32(), {0.25});
+    const auto fallback = g::ssrEffect(color, depth, normal, scalar, g::float_(0.7));
+    const auto materialized = g::postPasses(g::effectNode(fallback));
+    CHECK(materialized.size() == 8);
+    if (materialized.size() != 8) return;
+    CHECK(materialized[0].output == fallback->output + "_metalness");
+    CHECK(materialized[0].uniforms.at("authoredMetalness")[0] == 0.25);
+    CHECK(materialized[1].reads.at("metalness") == materialized[0].output);
+    CHECK(materialized[6].output == fallback->output + "_roughness");
+    CHECK(materialized[7].reads.at("roughness") == materialized[6].output);
+    for (const auto& pass : materialized) CHECK(pass.package.ok());
+
+    const auto defaults = g::ssrEffect(color, depth, normal, nullptr, nullptr);
+    CHECK(!defaults->roughness && defaults->inputs.size() == 5);
+    const auto simple = g::postPasses(g::effectNode(defaults));
+    CHECK(simple.size() == 2);
+    CHECK(simple.back().output == defaults->output);
+    CHECK(simple.back().reads.count("roughness") == 0);
+}
+
+void ssrRejectsInputs() {
+    namespace g = graph;
+    const auto texture = g::texture("scene", g::uv());
+    const char* names[]{"SSR color", "SSR depth", "SSR normal"};
+    for (size_t i = 0; i < 3; ++i) for (const auto& bad : {g::Node{}, g::float_(1), g::mul(texture, g::float_(0.5))}) {
+        std::vector<g::Node> inputs{texture, texture, texture};
+        inputs[i] = bad;
+        bool refused = false;
+        try { g::ssrEffect(inputs[0], inputs[1], inputs[2], nullptr, nullptr); }
+        catch (const std::runtime_error& e) {
+            refused = std::string(e.what()) == std::string("TN_TSL_POST_INPUT: ") + names[i] + " must be a texture node";
+        }
+        CHECK(refused);
+    }
+}
+
+void depthTextureLowering() {
+    namespace g = graph;
+    for (bool namedDepth : {false, true}) for (bool load : {false, true}) {
+        const std::string name = namedDepth ? "depth" : "authoredDepth";
+        auto node = std::make_shared<g::NodeData>(*g::texture(name, g::vec2({g::float_(-0.5), g::float_(1.5)})));
+        node->bits = namedDepth ? 0 : 1;
+        if (load) {
+            node->kind = g::Kind::TextureLoad;
+            auto coord = std::make_shared<g::NodeData>();
+            coord->kind = g::Kind::Join; coord->type = Type::vec(2, Type::Scalar::I32);
+            coord->args = {g::int_(0)};
+            node->args = {coord};
+        }
+        Program p(Stage::Fragment);
+        const auto value = g::lower(node, p);
+        CHECK(p.ok());
+        CHECK(p.expr(value).type == (namedDepth ? Type::vec(4) : Type::f32()));
+        p.output("color", p.construct(Type::vec(4), {value}));
+        const auto stage = buildStage(p);
+        CHECK(stage.wgsl.ok());
+        CHECK(stage.wgsl.code.find("t_" + name + ": texture_depth_2d") != std::string::npos);
+        CHECK(stage.wgsl.code.find("textureLoad(t_" + name) != std::string::npos);
+        CHECK(stage.wgsl.code.find("textureSample(") == std::string::npos);
+        if (!load) {
+            CHECK(stage.wgsl.code.find("clamp(") != std::string::npos);
+            CHECK(stage.wgsl.code.find("textureDimensions(t_" + name) != std::string::npos);
+        }
+        bool bound = false;
+        for (const auto& binding : stage.bindings) if (binding.name == "t_" + name) bound = binding.depth;
+        CHECK(bound);
+    }
+}
+
 }  // namespace
 
-TN_TEST_MAIN({"depth_node_writes_frag_depth", depthNodeWritesFragDepth}, {"unsupported", unsupported}, {"emissive_output", emissiveOutput}, {"builds", builds}, {"fog", fog}, {"rough_diffuse", roughDiffuse}, {"fog_node_mixes_color", fogNodeMixesColor}, {"node_key", nodeKey}, {"bloom_passes", bloomPasses}, {"slots_share_one_lowering", slotsShareOneLowering})
+TN_TEST_MAIN({"ssr_passes", ssrPasses}, {"ssr_rejects_inputs", ssrRejectsInputs}, {"depth_texture_lowering", depthTextureLowering}, {"depth_node_writes_frag_depth", depthNodeWritesFragDepth}, {"unsupported", unsupported}, {"emissive_output", emissiveOutput}, {"builds", builds}, {"fog", fog}, {"rough_diffuse", roughDiffuse}, {"fog_node_mixes_color", fogNodeMixesColor}, {"node_key", nodeKey}, {"bloom_passes", bloomPasses}, {"slots_share_one_lowering", slotsShareOneLowering})

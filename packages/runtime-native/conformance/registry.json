@@ -1952,6 +1952,7 @@
       "status": "implemented",
       "scene": "conformance/scenes/shared/realistic-ocean.js",
       "tolerance": { "pixelMismatchRatio": 0.1, "perceptualDeltaE": 9.0 },
+      "androidReadyTimeoutMs": 120000,
       "desktopGate": true,
       "required": true
     }
