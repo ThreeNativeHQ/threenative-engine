@@ -42,6 +42,8 @@ struct StandardMaterial {
     float ior = 1.5f;
     float specularIntensity = 1;
     std::array<float, 3> specularColor{1, 1, 1};
+    /** material.subsurfaceColor on a Two Sided Foliage leaf (PRD-643); black when unset. */
+    std::array<float, 3> subsurfaceColor{0, 0, 0};
     /** MeshStandardMaterial.envMapIntensity: scales the environment's radiance and irradiance. */
     float envMapIntensity = 1;
     // MeshPhysicalMaterial's clearcoat layer (PhysicalLightingModel's clearcoat), read by buildPhysical
@@ -89,6 +91,9 @@ struct VertexVariant {
      * so a marked material gets its own.
      */
     bool leafReceiver = false;
+    /** The material is marked twoSidedFoliage (PRD-643): the standard and physical programs add the sun that its
+     *  subsurfaceColor lets through from behind, shadowed or not. Set on a lit draw only. */
+    bool twoSidedFoliage = false;
     /**
      * material.roughDiffuse (Unreal's Substrate rough diffuse, PRD-653): every direct light shades the diffuse lobe
      * with the EON model at 0.4 x roughness, weighted by the light's source size, where three shades Lambert.
@@ -173,7 +178,7 @@ struct VertexVariant {
     bool operator==(const VertexVariant&) const = default;
     /** A stable key: two variants with the same key build the same program. */
     [[nodiscard]] std::string key() const {
-        return std::to_string(fog) + (background ? "background|" : "") + std::string(sprite ? "sprite|" : "") + (backSide ? "back|" : "") + (doubleSide ? "double|" : "") + (leafReceiver ? "leaf|" : "") + (roughDiffuse ? "eon|" : "") + (flatShading ? "flat|" : "") + std::to_string(instanced) + std::to_string(instanceColor) + "vc" + std::to_string(vertexColors) + std::to_string(skinned) +
+        return std::to_string(fog) + (background ? "background|" : "") + std::string(sprite ? "sprite|" : "") + (backSide ? "back|" : "") + (doubleSide ? "double|" : "") + (leafReceiver ? "leaf|" : "") + (twoSidedFoliage ? "foliage|" : "") + (roughDiffuse ? "eon|" : "") + (flatShading ? "flat|" : "") + std::to_string(instanced) + std::to_string(instanceColor) + "vc" + std::to_string(vertexColors) + std::to_string(skinned) +
                std::to_string(skinnedPalette) + (instanceStorage ? "storage" : "") + "m" + std::to_string(morphTargets) + (morphNormals ? "n" : "") +
                (map ? "t" : "") + (normalMap ? "N" : "") + (pbrMaps ? "P" + std::to_string(pbrMaps) : "") + (mapSRGB ? "s" : "") + (environment ? "e" : "") + (clearcoat ? "c" : "") + (invariantPosition ? "i" : "") +
                (positionNode ? "p:" + positionNode->key : "") + "|nodes:" + nodes.key();

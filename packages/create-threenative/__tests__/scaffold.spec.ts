@@ -301,7 +301,8 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Measured 2026-10-16 through createProject after starter's completed-work quality fallback fix.
   // Recomputed 2026-10-16: starter's adaptiveQuality split its policy resolution into qualityPolicy.ts
   // to stay under the 200-line render-file cap; only starter's tree moves.
-  starter: "cae4279c0da4334a2df8e690a7da5a3a850bf4ddbaca093cd061cc196fe3ca12",
+  // Recomputed 2026-10-23: the native render-chain scenario expects the Unreal finishing chain (grade and grain off).
+  starter: "3634f9d7eebf14ec3d8072ff71bc6bd7635fd7b28f16df8c3234aa839539a7f0",
   "tower-defense": "654e7d81e46ce652c545ee9a3a6480089b5cd1413eccfde8f2065dfb85129464",
 };
 

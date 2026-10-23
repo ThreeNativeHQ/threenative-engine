@@ -1,5 +1,5 @@
 import * as THREE from "three/webgpu";
-import { installFilmicToneMapping } from "../../../../create-threenative/templates/starter/src/render/tonemap.ts";
+import { installFilmicToneMapping } from "../../../../core/src/look/filmic-tone-mapping.ts";
 import { assertCondition, startVisualScene } from "./scene-support.js";
 
 /**

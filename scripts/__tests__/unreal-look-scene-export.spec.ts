@@ -183,6 +183,53 @@ describe("GI calibration scene export (PRD-638 AC-3)", () => {
     expect(() => validateSceneExport(scene, gltf)).toThrow(/masked state/);
   });
 
+  it("holds a translucent material to alphaMode BLEND and its opacity (PRD-643 glass)", () => {
+    const { scene, gltf } = fixture();
+    Object.assign(scene.meshes[0]?.material ?? {}, { alphaMode: "BLEND", opacity: 0.5 });
+    const material = gltf.materials?.[0] ?? {};
+    // scene.json says translucent, scene.glb says opaque.
+    expect(() => validateSceneExport(scene, gltf)).toThrow(
+      /translucent state of material MI_Red differs/,
+    );
+    // The glTF carries the opacity as the alpha of the base colour factor.
+    material.alphaMode = "BLEND";
+    expect(() => validateSceneExport(scene, gltf)).toThrow(/translucent state/);
+    if (material.pbrMetallicRoughness)
+      material.pbrMetallicRoughness.baseColorFactor = [0.63, 0.065, 0.05, 0.5];
+    expect(() => validateSceneExport(scene, gltf)).not.toThrow();
+    if (material.pbrMetallicRoughness)
+      material.pbrMetallicRoughness.baseColorFactor = [0.63, 0.065, 0.05, 0.4];
+    expect(() => validateSceneExport(scene, gltf)).toThrow(/translucent state/);
+    // An opaque scene.json material against a translucent scene.glb one fails too.
+    if (material.pbrMetallicRoughness)
+      material.pbrMetallicRoughness.baseColorFactor = [0.63, 0.065, 0.05, 0.5];
+    Object.assign(scene.meshes[0]?.material ?? {}, { alphaMode: undefined, opacity: undefined });
+    expect(() => validateSceneExport(scene, gltf)).toThrow(/translucent state/);
+  });
+
+  it("checks the fog values and fails closed on a fog that cannot scatter (PRD-643)", () => {
+    const { scene, gltf } = fixture();
+    scene.fog = {
+      position: [0, 0, 0],
+      density: 1,
+      heightFalloff: 0.2,
+      inscatteringLuminance: [0, 0, 0],
+      startDistanceM: 0,
+      maxOpacity: 1,
+      volumetric: true,
+      volumetricScatteringDistribution: 0.2,
+      volumetricAlbedo: [1, 1, 1],
+      volumetricExtinctionScale: 1,
+      volumetricDistanceM: 60,
+    };
+    expect(() => validateSceneExport(scene, gltf)).not.toThrow();
+    scene.fog.density = 0;
+    expect(() => validateSceneExport(scene, gltf)).toThrow(/fog density/);
+    scene.fog.density = 1;
+    scene.fog.volumetricAlbedo = [1, 1.5, 1];
+    expect(() => validateSceneExport(scene, gltf)).toThrow(/fog.*albedo/);
+  });
+
   it("fails on a mesh that scene.glb lacks, naming the actor", () => {
     const { scene, gltf } = fixture();
     gltf.nodes = [];

@@ -10,8 +10,10 @@ export const fetchGlbMaterialImages = async (..._args: unknown[]) => ({
   images: new Map<string, IGlbMaterialImages>(),
   tried: [] as string[],
 });
+export const markTwoSidedFoliage = (..._args: unknown[]): void => undefined;
 export const shadeLikeSubstrate = (..._args: unknown[]): void => undefined;
 export const watchGi = (..._args: unknown[]): { lastReport(): unknown } | undefined => undefined;
+export const unrealSunDiscScale = (_sun: { readonly x: number }): number => 1;
 export const watchShadowTier = (..._args: unknown[]): { lastReport(): unknown } | undefined =>
   undefined;
 export const captureReflections = (..._args: unknown[]): Promise<() => void> =>

@@ -959,10 +959,14 @@ export type {
  * Bake static diffuse irradiance that reaches surfaces from outside the camera view.
  * @situation light bouncing from a room I cannot see
  * @situation light a wall with an off-screen emitter
+ * @situation glass or fog inside a room takes the room's bounce light
  * @alias readable world lighting
+ * @alias lumen translucency volume
+ * @alias translucency gi
  * @constraint request a bake after static geometry and lights are authored; this is static-lighting-first, not fully dynamic relighting
  * @constraint add the volume with ctx.add() so its incremental work is measured in the render phase
  * @constraint call sample() or sampleNode() from a game-owned material before screen-space GI; the volume owns no light, material, or colour
+ * @constraint a translucent material or a fog sample has no side that faces the light: it reads sampleNonDirectional(position), one atlas fetch, the same in every direction (divide by pi for a radiance)
  * @override density, bounds, bakeBudgetMs, and bounces are game-owned choices
  * @example const probes = new ProbeVolume({ bounds, density: 0.5 }); ctx.add(probes); void probes.requestBake(scene);
  */
@@ -1147,6 +1151,86 @@ export { useRoughDiffuse } from "./render/rough-diffuse.js";
  * ctx.add(daylight);
  */
 export { Daylight } from "./render/daylight.js";
+/**
+ * Unreal 5.8.3's tone curve, the default tone mapping of `createRenderer` and `Game`: a filmic curve in ACEScg
+ * (slope 0.88, toe 0.55, shoulder 0.26) after the gamut expansion and blue correction of Unreal's colour LUT.
+ * `installFilmicToneMapping` registers it as three's custom tone mapping.
+ *
+ * @situation the frame should tone map the way a fresh Unreal project does
+ * @constraint WebGPU renderers only: a renderer without a node library keeps ACES and reports `TN_TONEMAP`
+ * @override `createRenderer({ toneMapping: "aces" | "agx" | "neutral" | "none" })` or `game.renderer.toneMapping` in the game config; setting `renderer.raw.toneMapping` later wins
+ * @example const renderer = await createRenderer({ toneMapping: "aces" }); // the named override
+ */
+export { installFilmicToneMapping } from "./look/filmic-tone-mapping.js";
+export type { RendererToneMapping } from "./look/default-tone-mapping.js";
+/**
+ * Auto exposure with Unreal 5.8.3's metering: a 64-bin histogram of log2 luminance (the darkest and brightest 10%
+ * ignored), key 0.18 x 2, -10 to +20 EV100, 3 stops/s brighter and 1 stop/s darker. `AutoExposureNode` meters a colour
+ * texture and outputs the adapted exposure; `exposureSettings` holds the defaults.
+ *
+ * @situation the frame should expose itself the way a fresh Unreal project does as the sun and the view change
+ * @constraint WebGPU renderers only: a renderer without WebGPU keeps the fixed exposure and says so
+ * @override every `IExposureSettings` field, spread over `exposureSettings` and passed to `AutoExposureNode`, replaces the Unreal default
+ * @example const slow = { ...exposureSettings, rateDown: 0.5 }; const node = new AutoExposureNode(input, slow, 1);
+ */
+export { AutoExposureNode } from "./look/auto-exposure.js";
+export { exposureSettings } from "./look/exposure-settings.js";
+export type { IExposureSettings } from "./look/exposure-settings.js";
+/**
+ * The node that says which lighting effects a scene runs and how strong they are, with a fresh Unreal 5.8.3 project's
+ * defaults: the filmic tone curve, Unreal-metered auto exposure, screen-space GI and ambient occlusion, SMAA, Unreal's
+ * bloom and local exposure. It builds the post chain through `renderer.createRenderChain()` and prints `TN_RENDER_CHAIN`
+ * naming every stage as applied or refused with a reason. Property names are Godot's `Environment` where it has one.
+ *
+ * @situation a scene should light and tone map like a fresh Unreal level without wiring each post stage by hand
+ * @situation turn one lighting effect off, or pick a cheaper tier, for a weak GPU or a stylised look
+ * @constraint post stages run on WebGPU only: a renderer without it keeps the fixed exposure and reports `TN_AUTO_EXPOSURE_REFUSED`, and a missing node library keeps ACES and reports `TN_TONEMAP`
+ * @constraint an unknown option value throws instead of becoming the default
+ * @override every option on `IWorldEnvironmentOptions`: `tonemapMode: "aces" | "agx" | "neutral"`, `autoExposureEnabled: false` with a fixed `exposure`, `bloomEnabled`, `gtaoEnabled`, `ssgiEnabled`, `screenSpaceAA`
+ * @example const world = new WorldEnvironment({ tonemapMode: "aces", autoExposureEnabled: false, exposure: 0.8 }); world.apply(renderer, scene, view);
+ */
+export { WorldEnvironment } from "./look/world-environment.js";
+export type {
+  ChainStage,
+  IWorldEnvironmentOptions,
+  IWorldEnvironmentStageContext,
+  IWorldEnvironmentTarget,
+  OutputRenderer,
+  ScreenSpaceAA,
+  SsgiQuality,
+  TonemapMode,
+} from "./look/world-environment.js";
+/**
+ * The diagnosis switches of the calibration harness for the look (ladder layer, the alpha-squeeze BEFORE arm, a denoise
+ * pass count, the film curve's channel clip, a GI visualisation). A game never sets them; the defaults are the shipped look.
+ *
+ * @situation a calibration capture needs one look effect off or one GI term alone
+ * @constraint set them before the `WorldEnvironment` is built; the layer is 0 to 9 and 9 is everything on
+ * @override each field of `lookDiagnostics`
+ * @example lookDiagnostics.layer = 6; // no gather, no reflections
+ */
+export { lookDiagnostics } from "./look/look-diagnostics.js";
+/**
+ * The quality tiers of the Unreal 5.8.3 look: what `high` (a desktop, Unreal's Epic), `medium` and `low` (a phone) turn
+ * on, how a GPU family picks its start tier, and the global illumination and shadow filter settings per tier named
+ * after Unreal's scalability levels. A `WorldEnvironment` with no options starts from `high`.
+ *
+ * `qualityTiers` holds the tier tables: `resolve` picks a start tier from a GPU class, `gi` and `shadow` read a tier's settings.
+ *
+ * @situation pick a start tier for the GPU class and read what that tier costs the look
+ * @situation build a `WorldEnvironment` for a weaker device from a named tier
+ * @constraint an unknown tier name throws with the names it expected
+ * @override pass any `IWorldEnvironmentOptions` field after `qualityPreset(tier)`, or an explicit `tier` to `qualityTiers.resolve`
+ * @example const world = new WorldEnvironment({ ...qualityPreset(qualityTiers.resolve({ gpuClass: renderer.gpuClass })), bloomEnabled: false });
+ */
+export { EPIC_SSGI, qualityPreset, qualityTiers } from "./look/quality.js";
+export type {
+  FinalGatherMethod,
+  IGiTier,
+  IShadowFilter,
+  IShadowTier,
+  QualityTier,
+} from "./look/quality.js";
 export type { IDaylightOptions } from "./render/daylight.js";
 /**
  * Photometric exposure units: EV100 to the renderer multiplier and back, a physical camera's

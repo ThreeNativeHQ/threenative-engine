@@ -23,7 +23,8 @@ constexpr double kHalf = 1.6;  // 3.2 m across 192 pixels: 16.7 mm each
 constexpr double kAngle = 0.05;
 
 // 10 to 90 percent width, in metres, of the shadow edge of a plate whose near edge is at x = 0.
-double edgeWidth(double height) {
+// `samplesPerRay` 0 spreads the edge by the full gap; more is Unreal's shadow-ray test at 1.5 view distances.
+double edgeWidth(double height, double samplesPerRay = 0) {
     mystral::webgpu::Context context;
     CHECK(context.initializeHeadless());
     EventQueue events;
@@ -42,7 +43,7 @@ double edgeWidth(double height) {
     atlas.clipExtents = {8}; atlas.mapSize = 2048; atlas.pageTexels = 128;  // 7.8 mm texels
     atlas.lightDistance = 20; atlas.depthRange = 40;
     sun.shadow.virtualShadow = std::make_shared<const shadows::AtlasOptions>(std::move(atlas));
-    sun.shadow.sourceAngleFilter = std::array<double, 4>{kAngle, 16, 16, 0};  // no pixel floor
+    sun.shadow.sourceAngleFilter = std::array<double, 6>{kAngle, 16, 16, 0, samplesPerRay, 1.5};  // no pixel floor
     scene.add(sun);
     auto white = std::make_shared<Material>(MaterialType::Standard);
     Mesh floor{makeBoxGeometry(8, 0.2, 8), white};
@@ -98,6 +99,19 @@ void gapWidening() {
     CHECK(farW / nearW > 2.5);  // linear in the gap: 4 by the model, less the fixed texel and pixel share
 }
 
+// PRD-634 AC-2: Unreal's shadow ray (4 samples at squared steps over 1.5 view distances, Epic) sees a
+// caster at the distance of its first sample under it, so the edge spreads from that nearer gap (core
+// shadowRayOccluderGap): at a 2 m gap 10 m from the camera, a 15 m ray sees 0.943 m.
+void rayTestGap() {
+    const double off = edgeWidth(2), on = edgeWidth(2, 4);
+    const double reach = 15, x = std::sqrt(2 / reach), seen = reach * (x * x - x / 4 + 1.0 / 48);
+    const double model = 2 * 0.687 * std::tan(kAngle) * seen;
+    std::printf("ray test: edge 10-90 width %.4f m (model %.4f, seen gap %.3f m), %.4f m with the full gap\n",
+                on, model, seen, off);
+    CHECK(std::abs(on / model - 1) < 0.35);  // the texel and pixel widen it, as in gap_widening
+    CHECK(on < 0.7 * off);
+}
+
 }  // namespace
 
-TN_TEST_MAIN({"gap_widening", gapWidening})
+TN_TEST_MAIN({"gap_widening", gapWidening}, {"ray_test_gap", rayTestGap})

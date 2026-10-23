@@ -20,6 +20,8 @@ import {
   giCache,
   gridOver,
   installGi,
+  markTwoSidedFoliage,
+  meanField,
   skyRadiance,
   sphereShare,
 } from "../unreal-look/scaffold/render/giCache.js";
@@ -371,6 +373,21 @@ describe("the world-space GI cache against closed forms (PRD-631 L7)", () => {
     expect((card.material as MeshStandardMaterial).twoSidedFoliage ?? false).toBe(false);
   });
 
+  it("marks the materials a foliage table names by their glTF name, and no other (PRD-643)", () => {
+    const leaf = new MeshStandardMaterial({ name: "MI_leaf", side: DoubleSide });
+    const bark = new MeshStandardMaterial({ name: "MI_bark" });
+    const scene = new Group().add(
+      new Mesh(new PlaneGeometry(1, 1), leaf),
+      new Mesh(new PlaneGeometry(1, 1), bark),
+    );
+    markTwoSidedFoliage(scene, { MI_leaf: [0.1, 0.12, 0.05] });
+    expect([leaf.twoSidedFoliage, leaf.subsurfaceColor?.g]).toEqual([true, 0.12]);
+    expect([bark.twoSidedFoliage, bark.subsurfaceColor]).toEqual([undefined, undefined]);
+    const lone = new MeshStandardMaterial({ name: "MI_leaf" });
+    markTwoSidedFoliage(new Group().add(new Mesh(new PlaneGeometry(1, 1), lone)), undefined);
+    expect(lone.twoSidedFoliage).toBeUndefined();
+  });
+
   it("the roughDiffuse flag survives the swap, and an unflagged material stays unflagged (PRD-653)", () => {
     // three declares no such field either: the swap carries it by name, so the lit twin shades its direct light with EON.
     const flagged = new MeshStandardMaterial();
@@ -513,6 +530,32 @@ describe("the world-space GI cache against closed forms (PRD-631 L7)", () => {
     }
   });
 
+  it("an emissive sphere lights its neighbours only while the cache bounces light (Unreal: no GI below L7, PRD-634)", () => {
+    // Unreal's emissive surface spills onto the floor through Lumen alone: at L1-L6 it is a bright surface and nothing
+    // else. A cache with no bounces is the sky alone, so the per-pixel emitter share must not be added on top of it.
+    const lamp = new Mesh(
+      new SphereGeometry(0.5, 32, 16),
+      new MeshStandardMaterial({
+        color: new Color(0.1, 0.1, 0.1),
+        emissive: new Color(1, 1, 1),
+        emissiveIntensity: 10,
+      }),
+    );
+    const wall = new Mesh(
+      new BoxGeometry(0.2, 4, 4).translate(14, 0, 0),
+      new MeshStandardMaterial({ color: new Color(0.5, 0.5, 0.5), side: DoubleSide }),
+    );
+    const scene = new Group().add(lamp, wall);
+    skyRadiance.current = { data: new Float32Array(6), width: 2, height: 1, scale: [1, 1, 1] };
+    installGi(rayContext(scene), scene, { bounces: 0, sun: noSun });
+    expect(giCache.emitters).toBe(0);
+    // The diagnosis override (URL knob spill=1) keeps the earlier look measurable.
+    installGi(rayContext(scene), scene, { bounces: 0, sun: noSun, emitterSpill: true });
+    expect(giCache.emitters).toBe(1);
+    installGi(rayContext(scene), scene, { bounces: 1, sun: noSun });
+    expect(giCache.emitters).toBe(1);
+  });
+
   it("a sphere above the horizon lights a surface by (r / d)^2 cos; one cut by the horizon fades to zero smoothly", () => {
     const sin2 = 0.25;
     // Wholly above the horizon: the closed form.
@@ -587,6 +630,25 @@ describe("the world-space GI cache against closed forms (PRD-631 L7)", () => {
       expect(bake(true).total).toBeLessThan(bake(false).total);
     });
 
+    it("a translucent pane is out of the bake: it neither shades the floor nor bounces light, and its layer comes back (PRD-643)", () => {
+      skyRadiance.current = undefined;
+      const scene = sceneOf(true);
+      const plate = scene.children[1] as Mesh;
+      Object.assign(plate.material, { transparent: true, opacity: 0.5 });
+      installGi(rayContext(scene), scene, { bounces: 1, lights: [lamp] });
+      const total = texelAt(new Vector3(0.5, 0.5, 0.5))
+        .faces.flat()
+        .reduce((a, b) => a + b, 0);
+      // Unreal's Lumen scene holds no translucent material: the floor reads what it reads with no plate (the grid is
+      // taller with the plate in the scene, so the probes differ a little), and far more than under an opaque one.
+      const clear = bake(false).total;
+      expect(Math.abs(total - clear) / clear).toBeLessThan(0.15);
+      expect(total).toBeGreaterThan(10 * bake(true).total);
+      expect(plate.layers.isEnabled(0)).toBe(true);
+      // The pane takes the cache's mean, not a side of it.
+      expect(giCache.meanRadiance).toBeDefined();
+    });
+
     describe("a light that changes after the bake (PRD-641 AC-2)", () => {
       /** The probe's total after the live light is set to `intensity` and the cache refreshes. */
       const setIntensity = (
@@ -620,11 +682,38 @@ describe("the world-space GI cache against closed forms (PRD-631 L7)", () => {
         expect(setIntensity(source, 100) / baked).toBeCloseTo(1, 3);
       });
 
+      it("the mean field a translucent surface and the fog read follows the light too (PRD-643)", () => {
+        const { source } = live();
+        const texels = () => giCache.meanTexture?.image.data as Uint16Array;
+        const baked = Uint16Array.from(texels());
+        expect(baked.some((value) => value > 0)).toBe(true);
+        setIntensity(source, 0);
+        expect(texels().some((value) => value > 0)).toBe(false);
+        setIntensity(source, 100);
+        expect([...texels()]).toEqual([...baked]);
+      });
+
       it("refresh reports nothing to do while no light changed", () => {
         live();
         expect(giCache.refresh?.()).toBe(false);
       });
     });
+  });
+
+  it("the mean field is the six faces' mean, and a texel in a solid takes the open texels beside it (PRD-643)", () => {
+    const grid = { origin: new Vector3(), cell: 1, nx: 3, ny: 1, nz: 1 };
+    // Per texel, six faces of RGB: texel 0 holds 6 on +x only, texel 1 is inside a solid (garbage), texel 2 holds 3 everywhere.
+    const values = new Float32Array(3 * 6 * 3);
+    values.set([6, 0, 0], 0);
+    values.fill(99, 18, 36);
+    values.fill(3, 36, 54);
+    const mean = meanField(values, grid, Uint8Array.from([0, 1, 0]));
+    expect([...mean.slice(0, 3)]).toEqual([1, 0, 0]);
+    expect([...mean.slice(6, 9)]).toEqual([3, 3, 3]);
+    // The solid texel between them takes their mean, not its own garbage.
+    expect([...mean.slice(3, 6)]).toEqual([2, 1.5, 1.5]);
+    // A field with no solid is only averaged.
+    expect([...meanField(values, grid, new Uint8Array(3)).slice(3, 6)]).toEqual([99, 99, 99]);
   });
 
   it("a texel just under a 0.2 m roof reads the room, not the sky above the roof (sunlit-room)", () => {

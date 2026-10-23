@@ -10,6 +10,7 @@ import {
 import {
   Fn,
   If,
+  cameraPosition,
   cross,
   cubeTexture,
   dFdx,
@@ -18,6 +19,7 @@ import {
   ivec2,
   max,
   min,
+  positionWorld,
   reference,
   sqrt,
   step,
@@ -86,6 +88,30 @@ export function penumbraUv(
   return Math.max(1 / mapSize, (gapMetres * Math.tan(sourceAngleRad)) / frustumWidthMetres);
 }
 
+/**
+ * The caster gap that Unreal's shadow-map ray test sees (PRD-634). Each ray runs `rayLengthScale` times the
+ * receiver's view distance toward the light, sampled `samplesPerRay` times at squared steps from a random
+ * start, far end first. It counts as blocked only when its first sample under the caster lies inside the
+ * caster's silhouette, so the edge spreads by that sample's distance and not by the caster's: this is that
+ * distance, averaged over the random start. 0 samples keeps the gap as it is.
+ * UE 5.8.3: Engine/Shaders/Private/VirtualShadowMaps/VirtualShadowMapSMRTTemplate.ush:41-130 (the sample
+ * times and the hit test), VirtualShadowMapProjectionDirectional.ush:230 (the ray length),
+ * Engine/Config/BaseScalability.ini:263 (4 samples per ray at Epic),
+ * Engine/Source/Runtime/Renderer/Private/VirtualShadowMaps/VirtualShadowMapArray.cpp:760 (the 1.5 scale).
+ */
+export function shadowRayOccluderGap(
+  gap: number,
+  viewDistance: number,
+  samplesPerRay: number,
+  rayLengthScale: number,
+): number {
+  if (samplesPerRay === 0) return gap;
+  const reach = rayLengthScale * viewDistance;
+  const x = reach > 0 ? Math.min(1, Math.sqrt(gap / reach)) : 1;
+  const n = samplesPerRay;
+  return reach * (x >= 1 / n ? x * x - x / n + 1 / (3 * n * n) : (n * x ** 3) / 3);
+}
+
 export interface ISourceAngleShadowOptions {
   /** Required game-owned angular radius in radians, in [0, PI/2). No default. */
   sourceAngleRad: number;
@@ -100,6 +126,14 @@ export interface ISourceAngleShadowOptions {
    * Finite, in [0, 16]; default 0, which leaves the source angle alone.
    */
   minPenumbraPixels?: number;
+  /**
+   * Unreal's shadow-map ray samples (`r.Shadow.Virtual.SMRT.SamplesPerRayDirectional`, 4 at Epic): the edge
+   * spreads from the caster gap that the ray test sees (`shadowRayOccluderGap`). Integer 0–64; default 4.
+   * 0 is the override that spreads the edge by the full geometric gap.
+   */
+  samplesPerRay?: number;
+  /** The ray's length over the receiver's view distance (`r.Shadow.Virtual.SMRT.RayLengthScaleDirectional`); default 1.5. */
+  rayLengthScale?: number;
 }
 
 /** The object passed by three r185 ShadowNode.setupShadowFilter. */
@@ -122,6 +156,8 @@ export function sourceAngleShadowFilter({
   blockerSamples = 16,
   filterSamples = 16,
   minPenumbraPixels = 0,
+  samplesPerRay = 4,
+  rayLengthScale = 1.5,
 }: ISourceAngleShadowOptions): (inputs: ISourceAngleShadowInputs) => Node<"float"> {
   penumbraUv(0, sourceAngleRad, 1, 1);
   for (const count of [blockerSamples, filterSamples]) {
@@ -131,6 +167,10 @@ export function sourceAngleShadowFilter({
   }
   if (!Number.isFinite(minPenumbraPixels) || minPenumbraPixels < 0 || minPenumbraPixels > 16)
     throw new RangeError("minPenumbraPixels must be finite and in [0, 16]");
+  if (!Number.isInteger(samplesPerRay) || samplesPerRay < 0 || samplesPerRay > 64)
+    throw new RangeError("samplesPerRay must be an integer in [0, 64]");
+  if (!Number.isFinite(rayLengthScale) || rayLengthScale <= 0)
+    throw new RangeError("rayLengthScale must be finite and positive");
   const tangent = Math.tan(sourceAngleRad);
   const disk = (index: number, count: number) => {
     const radius = Math.sqrt((index + 0.5) / count);
@@ -207,7 +247,26 @@ export function sourceAngleShadowFilter({
             blockerCount.addAssign(1);
           });
         }
-        const gap = max(0, receiver.sub(blockerSum.div(max(blockerCount, 1)))).mul(range);
+        const blockerGap = max(0, receiver.sub(blockerSum.div(max(blockerCount, 1)))).mul(range);
+        // shadowRayOccluderGap, per receiver.
+        const n = samplesPerRay;
+        const rayReach = positionWorld.distance(cameraPosition).mul(rayLengthScale);
+        const x = min(1, sqrt(blockerGap.div(max(rayReach, 1e-6))));
+        const gap =
+          n === 0
+            ? blockerGap
+            : rayReach.mul(
+                x.greaterThanEqual(1 / n).select(
+                  x
+                    .mul(x)
+                    .sub(x.div(n))
+                    .add(1 / (3 * n * n)),
+                  x
+                    .mul(x)
+                    .mul(x)
+                    .mul(n / 3),
+                ),
+              );
         const penumbra = vec2(gap.mul(reach)).div(span);
         // The receiver's pixel in this map's uv, per axis (the length of its two screen steps together), as
         // many times as `minPenumbraPixels` asks for, and at most 16 texels: the steps of a quad that straddles
@@ -238,6 +297,8 @@ export function sourceAngleShadowFilter({
       blockerSamples,
       filterSamples,
       minPenumbraPixels,
+      samplesPerRay,
+      rayLengthScale,
     }),
   });
 }

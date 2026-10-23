@@ -234,7 +234,7 @@ struct DirectLight {
      */
     struct Shadow {
         std::shared_ptr<const shadows::AtlasOptions> virtualShadow;
-        std::optional<std::array<double, 4>> sourceAngleFilter;  // + minPenumbraPixels
+        std::optional<std::array<double, 6>> sourceAngleFilter;  // as LightShadow's
         std::optional<std::array<double, 4>> sourceRadiusFilter;
         double tanHalfFov = 1;  // a perspective map's: a cube face's is 1
         Matrix view{}, projection{}, matrix{};
@@ -660,7 +660,7 @@ private:
         kSpecularIntensityMapUvTransform, kClearcoatMapUvTransform, kClearcoatRoughnessMapUvTransform,
         kClearcoatNormalMapUvTransform, kAoMapIntensity, kClearcoat, kClearcoatRoughness, kClearcoatNormalScale, kBumpScale,
         kPmremTexelWidth, kPmremTexelHeight, kPmremMaxMip, kPmremRotation, kScreenSize, kCameraNear, kCameraFar,
-        kModelNormalMatrix, kSlotCount
+        kModelNormalMatrix, kSubsurfaceColor, kSlotCount
     };
     // Per direct light i, `light{i}<Field>` (shader::LightLayout).
     enum LightField : uint8_t { kLightColor, kLightDirection, kLightPosition, kLightDistance, kLightDecay, kLightAxis,

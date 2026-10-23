@@ -32,7 +32,7 @@ import {
 } from "@threenative/core";
 import {
   Box3,
-  type Color,
+  Color,
   Data3DTexture,
   DoubleSide,
   HalfFloatType,
@@ -136,6 +136,8 @@ export interface IGiOptions {
    * (default true). Off when reflection rays walk the scene's triangles and find the floor themselves.
    */
   readonly paintGround?: boolean;
+  /** Diagnosis: light the neighbours of an emissive sphere even with no bounces (the look before PRD-634's emitter rule). */
+  readonly emitterSpill?: boolean;
   /**
    * Where a material's specular comes from, by roughness (PRD-642 Phase 3: `TracedReflections.routeAt`). A share for the
    * radiance cache is read from the cache along the reflection, a share for the diffuse GI from the cache along the normal,
@@ -777,6 +779,84 @@ function volume(
 }
 
 /**
+ * Per texel, the mean of its six faces (E / pi averaged over the sphere): the radiance a point with no facing receives
+ * from every direction. A texel inside a solid holds no light, so it takes the mean of the open texels beside it, a pass
+ * at a time, and a filter that reaches into a wall blends air with air.
+ */
+export function meanField(values: Float32Array, grid: IGrid, solid: Uint8Array): Float32Array {
+  const { nx, ny, nz } = grid;
+  const count = nx * ny * nz;
+  const mean = new Float32Array(count * 3);
+  for (let i = 0; i < count; i += 1)
+    for (let c = 0; c < 3; c += 1) {
+      let sum = 0;
+      for (let face = 0; face < 6; face += 1) sum += values[(i * 6 + face) * 3 + c] ?? 0;
+      mean[i * 3 + c] = sum / 6;
+    }
+  let open = Uint8Array.from(solid, (flag) => 1 - flag);
+  const beside = (index: number): number[] => {
+    const [x, y, z] = [index % nx, Math.floor(index / nx) % ny, Math.floor(index / (nx * ny))];
+    return [
+      x > 0 ? index - 1 : -1,
+      x < nx - 1 ? index + 1 : -1,
+      y > 0 ? index - nx : -1,
+      y < ny - 1 ? index + nx : -1,
+      z > 0 ? index - nx * ny : -1,
+      z < nz - 1 ? index + nx * ny : -1,
+    ].filter((n) => n >= 0);
+  };
+  for (let pass = 0; pass < nx + ny + nz && open.some((flag) => flag === 0); pass += 1) {
+    const next = open.slice();
+    for (let i = 0; i < count; i += 1) {
+      if (open[i] === 1) continue;
+      const near = beside(i).filter((n) => open[n] === 1);
+      if (near.length === 0) continue;
+      for (let c = 0; c < 3; c += 1)
+        mean[i * 3 + c] = near.reduce((sum, n) => sum + (mean[n * 3 + c] ?? 0), 0) / near.length;
+      next[i] = 1;
+    }
+    open = next;
+  }
+  return mean;
+}
+
+/**
+ * `meanField` as a TSL function of a world position. Unreal lights a translucent surface (the default lighting mode,
+ * Volumetric NonDirectional) and every fog sample from its translucency volume, filled with the radiance cache's L0 term,
+ * the same in every direction (UE 5.8.3: Engine/Shaders/Private/BasePassPixelShader.usf, GetSkyLighting;
+ * Engine/Shaders/Private/VolumetricFog.usf, the LUMEN_GI permutation).
+ */
+function meanRadianceAt(
+  values: Float32Array,
+  grid: IGrid,
+  solid: Uint8Array,
+): { read: (position: Node<"vec3">) => Node<"vec3">; texture: Data3DTexture; refresh: () => void } {
+  const { nx, ny, nz } = grid;
+  const texels = new Uint16Array(nx * ny * nz * 4);
+  /** Rewrites the texture from `values`, which a light change edits in place. */
+  const refresh = () => {
+    const mean = meanField(values, grid, solid);
+    for (let i = 0; i < nx * ny * nz; i += 1)
+      for (let c = 0; c < 3; c += 1) texels[i * 4 + c] = toHalf(mean[i * 3 + c] ?? 0);
+    texture.needsUpdate = true;
+  };
+  const texture = new Data3DTexture(texels, nx, ny, nz);
+  texture.format = RGBAFormat;
+  texture.type = HalfFloatType;
+  texture.minFilter = LinearFilter;
+  texture.magFilter = LinearFilter;
+  texture.unpackAlignment = 1;
+  refresh();
+  const size = vec3(nx * grid.cell, ny * grid.cell, nz * grid.cell);
+  // Texel i has its centre at i + 0.5 cells from the origin, so the unit-cube coordinate is the plain quotient.
+  return {
+    read: (position) => texture3D(texture).sample(position.sub(vec3(grid.origin)).div(size)).rgb,
+    texture,
+    refresh,
+  };
+}
+
+/**
  * The ambient-cube read as a TSL function of a world position and unit normal: E / pi. The eight texels around the
  * read point are blended here (not by the hardware) with the weight of a texel set to zero when a wall cuts the way
  * to it from the nearest texel, the walk `weightsAt` does at bake time, on the links `linkMasks` stored in alpha.
@@ -1018,6 +1098,15 @@ export const giCache: {
     /** Per texel and axis (x, y, z): where the wall on the link to the next texel starts, 0 to 255 of the way (0 when open). */
     walls: Uint8Array;
   };
+  /**
+   * The cache's mean over every direction (E / pi averaged over the sphere) at a world position: what a point with no
+   * side facing the light receives. A translucent surface and a fog sample read it (see `meanRadianceAt`).
+   */
+  meanRadiance?: (position: Node<"vec3">) => Node<"vec3">;
+  /** The texture `meanRadiance` reads, for tests: a light change rewrites it with the field. */
+  meanTexture?: Data3DTexture;
+  /** How many small emissive spheres light their neighbours per pixel: 0 while the cache does not bounce. */
+  emitters?: number;
   /** The texture the materials read, for the light-change update. */
   volumeTexture?: Data3DTexture;
   /**
@@ -1283,6 +1372,28 @@ function nodeTwin(source: MeshStandardMaterial): MeshStandardMaterial {
   return twin as unknown as MeshStandardMaterial;
 }
 
+/**
+ * A slot that Unreal's level draws on the Two Sided Foliage model, with its Subsurface Color (linear, by glTF material name),
+ * is a `twoSidedFoliage` material with the same `subsurfaceColor` here (PRD-643). Both engines keep the glTF material name.
+ */
+export function markTwoSidedFoliage(
+  model: Object3D,
+  colours: Readonly<Record<string, readonly [number, number, number]>> | undefined,
+): void {
+  if (colours === undefined) return;
+  model.traverse((object) => {
+    for (const material of [(object as Mesh).material].flat() as (
+      | MeshStandardMaterial
+      | undefined
+    )[]) {
+      const colour = material === undefined ? undefined : colours[material.name];
+      if (material === undefined || colour === undefined) continue;
+      material.twoSidedFoliage = true;
+      material.subsurfaceColor = new Color(...colour);
+    }
+  });
+}
+
 /** The native engine has no physical node class yet (core-webgpu.mjs refuses it): it lights a physical source as a standard one. */
 function physicalTwin() {
   try {
@@ -1292,11 +1403,36 @@ function physicalTwin() {
   }
 }
 
+/**
+ * `bakeGi` with the translucent surfaces out of the bake. Unreal's Lumen scene holds none (a translucent material is not
+ * a card: UE 5.8.3, Engine/Source/Runtime/Renderer/Private/Lumen/LumenSceneRendering.cpp, `bOpaqueOrMasked`), so a ray
+ * passes a pane of glass and the pane neither shades a probe nor bounces light. Layer 0 is what every ray query tests, and
+ * the bake is synchronous, so the layer is off only while it runs.
+ */
 export function installGi(
   gameCtx: IRayContext,
   root: Object3D,
   options: IGiOptions,
 ): IGiReport | undefined {
+  const glass: Mesh[] = [];
+  root.traverse((object) => {
+    const mesh = object as Mesh;
+    if (
+      mesh.isMesh &&
+      [mesh.material].flat().some((m) => m.transparent) &&
+      mesh.layers.isEnabled(0)
+    )
+      glass.push(mesh);
+  });
+  for (const mesh of glass) mesh.layers.disable(0);
+  try {
+    return bakeGi(gameCtx, root, options);
+  } finally {
+    for (const mesh of glass) mesh.layers.enable(0);
+  }
+}
+
+function bakeGi(gameCtx: IRayContext, root: Object3D, options: IGiOptions): IGiReport | undefined {
   const lights = options.lights ?? [];
   const sun = options.sun;
   if (skyRadiance.current === undefined && sun === undefined && lights.length === 0)
@@ -1456,6 +1592,11 @@ export function installGi(
       id: mesh.id,
     });
   });
+  // Unreal spills an emissive surface's light onto its neighbours through Lumen alone (L7): below it the surface is bright
+  // and lights nothing. A cache with no bounces is the sky alone, so the per-pixel emitter share stays off as well
+  // (PRD-634: it lit the floor of the L5 and L6 reference frames, a lobe Unreal does not draw, and flipped the Floor median).
+  if (options.bounces === 0 && options.emitterSpill !== true) emitters.length = 0;
+  giCache.emitters = emitters.length;
   const emitterIds = new Set(emitters.map((e) => e.id));
 
   const materialData = new Map<number, { albedo: number[]; emissive: number[] }>();
@@ -1799,6 +1940,9 @@ export function installGi(
     const light = emitterLight(emitters, position, normal);
     return light === undefined ? base : base.add(light);
   };
+  const mean = meanRadianceAt(fine.values, fine.grid, cut.solid);
+  giCache.meanRadiance = mean.read;
+  giCache.meanTexture = mean.texture;
   // A light that changes (PRD-641 AC-2). The field is linear in each light's colour times intensity, so it is the bake
   // plus, per changing light, (scale - 1) times that light's own field. Each own field is solved once, on the first
   // change, from the rays already traced (no new trace; the shadow rays and the link and resample visibility are the
@@ -1884,6 +2028,7 @@ export function installGi(
       }
     }
     texture.needsUpdate = true;
+    mean.refresh();
     return true;
   };
   if (dynamic.length > 0) gameCtx.beforeRender?.(() => giCache.refresh?.());
@@ -1974,7 +2119,10 @@ export function installGi(
     // texel and then draws its colour factor (PRD-639).
     let material = twins.get(source);
     if (material === undefined) {
-      const { node, visibility } = readFor(source.roughness);
+      // A translucent surface has no side that faces the light: it reads the mean, whichever way it looks.
+      const { node, visibility } = source.transparent
+        ? { node: mean.read(positionWorld), visibility: float(1) }
+        : readFor(source.roughness);
       material = nodeTwin(source);
       (material as unknown as { irradianceNode: unknown }).irradianceNode = node;
       (material as unknown as { aoNode: unknown }).aoNode = visibility;

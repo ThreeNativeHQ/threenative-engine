@@ -536,11 +536,29 @@ export class ProbeVolume extends Object3D implements IComputeDriven {
     return result.max(new Vector3());
   }
 
-  /** The GPU graph used by `sample`; exposed so generated materials can compose it explicitly. */
-  sampleNode(
-    position: Node<"vec3"> = positionWorld,
-    normal: Node<"vec3"> = normalWorld,
-  ): Node<"vec3"> {
+  /**
+   * The irradiance averaged over every normal at a point, for a surface or a sample that has no side facing the light:
+   * a translucent pane (Unreal's default Volumetric NonDirectional lighting) and a fog sample (its isotropic term). It
+   * is the L0 coefficient, `0.886227 * c0`, so it is the mean of `sample(position, n)` over any set of normals that
+   * integrates the L2 basis, the six axes among them. It reads one atlas texel, where `sample` reads seven.
+   *
+   * Divide by pi for the mean radiance a fog sample scatters, and multiply by the colour for a pane: the volume owns
+   * no colour.
+   */
+  sampleNonDirectional(position: Vector3): Vector3;
+  sampleNonDirectional(position?: Node<"vec3">): Node<"vec3">;
+  sampleNonDirectional(position: IProbePosition = positionWorld): Vector3 | Node<"vec3"> {
+    if (position instanceof Vector3) {
+      const c = this.#samplePackedCoefficients(position);
+      return new Vector3(c[0] ?? 0, c[1] ?? 0, c[2] ?? 0)
+        .multiplyScalar(0.886227)
+        .max(new Vector3());
+    }
+    return this.#atlasNode.sample(this.#atlasAt(position)(0)).rgb.mul(0.886227).max(0);
+  }
+
+  /** The atlas coordinate of a world position inside each packed sub-volume. */
+  #atlasAt(position: Node<"vec3">): (subVolume: number) => Node<"vec3"> {
     const local = clamp(vec3(position).sub(this.#boundsMinNode).div(this.#boundsSizeNode), 0, 1);
     const atlasX = local.x
       .mul(this.resolution.x - 1)
@@ -551,13 +569,24 @@ export class ProbeVolume extends Object3D implements IComputeDriven {
       .add(0.5)
       .div(this.resolution.y);
     const sliceStride = this.resolution.z + 2 * SAMPLE_ATLAS_PADDING;
-    const atlasZ = (subVolume: number) =>
-      local.z
-        .mul(this.resolution.z - 1)
-        .add(SAMPLE_ATLAS_PADDING + 0.5 + subVolume * sliceStride)
-        .div(this.#atlasDepth);
-    const packed = (subVolume: number) =>
-      this.#atlasNode.sample(vec3(atlasX, atlasY, atlasZ(subVolume)));
+    return (subVolume) =>
+      vec3(
+        atlasX,
+        atlasY,
+        local.z
+          .mul(this.resolution.z - 1)
+          .add(SAMPLE_ATLAS_PADDING + 0.5 + subVolume * sliceStride)
+          .div(this.#atlasDepth),
+      );
+  }
+
+  /** The GPU graph used by `sample`; exposed so generated materials can compose it explicitly. */
+  sampleNode(
+    position: Node<"vec3"> = positionWorld,
+    normal: Node<"vec3"> = normalWorld,
+  ): Node<"vec3"> {
+    const atlasAt = this.#atlasAt(position);
+    const packed = (subVolume: number) => this.#atlasNode.sample(atlasAt(subVolume));
     const packedValues = Array.from({ length: PACKED_SUB_VOLUME_COUNT }, (_, index) =>
       packed(index),
     );

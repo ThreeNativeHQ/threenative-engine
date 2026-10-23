@@ -1179,8 +1179,22 @@ static ExprId virtualShadowFactor(Program& f, Tsl& t, std::size_t index, int lev
                     f.assign(blockerCount, f.add(f.load(blockerCount), t.f(1)));
                 });
             });
-            const ExprId gap = f.mul(f.call("max", {t.f(0), f.sub(baseZ,
+            const ExprId ray = f.loadStorage(table, f.construct(Type::u32(), {f.add(filterIndex, t.f(1))}));
+            const ExprId perRay = f.swizzle(ray, "x");
+            const ExprId blockerGap = f.mul(f.call("max", {t.f(0), f.sub(baseZ,
                 f.div(f.load(blockerSum), f.call("max", {f.load(blockerCount), t.f(1)})))}), span);
+            // The gap Unreal's shadow-ray test sees (core shadowRayOccluderGap): a ray of `rayLengthScale`
+            // view distances, `samplesPerRay` squared steps from a random start; the edge spreads by the
+            // distance of the first sample under the caster, here its mean over the start. 0 samples is off.
+            const ExprId viewDistance = f.call("length", {f.swizzle(f.mul(f.uniform("viewMatrix", Type::mat(4, 4)),
+                f.construct(Type::vec(4), {positionWorld, t.f(1)})), "xyz")});
+            const ExprId rayReach = f.mul(f.swizzle(ray, "y"), viewDistance);
+            const ExprId steps = f.call("max", {perRay, t.f(1)});
+            const ExprId x = f.call("min", {t.f(1), f.call("sqrt", {f.div(blockerGap, f.call("max", {rayReach, t.f(1e-6f)}))})});
+            const ExprId seen = f.mul(rayReach, f.select(f.less(f.mul(x, steps), t.f(1)),
+                f.div(f.mul(f.mul(f.mul(x, x), x), steps), t.f(3)),
+                f.add(f.sub(f.mul(x, x), f.div(x, steps)), f.div(t.f(1), f.mul(t.f(3), f.mul(steps, steps))))));
+            const ExprId gap = f.select(f.less(t.f(0), perRay), seen, blockerGap);
             // Where the blockers touch the receiver the penumbra is under a texel: each tap is then the
             // hardware's bilinear compare, so the edge is about one texel wide and not stair-stepped,
             // and the floor of the disk is half a texel. `minPenumbraPixels` (filter.w - 1) adds the
@@ -1427,6 +1441,11 @@ static StandardPrograms buildStandardProgram(const StandardMaterial& material, b
     const ExprId brdfLambert = f.mul(diffuseContribution, t.f(1 / kPi));
     const ExprId fragmentView = f.varying("positionView", Type::vec(3));
     ExprId directDiffuse = f.construct(Type::vec(3), {t.f(0)}), directSpecular = directDiffuse;
+    // Two Sided Foliage (PRD-643) lets the light through from behind: subsurfaceColor times a wrapped -N.L (wrap 0.5,
+    // over (1 + wrap)^2) times a GGX lobe of alpha 0.6 around the light seen through the leaf, times the light's
+    // colour with its shadow, with no N.L and no 1/pi. UE 5.8.3: Engine/Shaders/Private/Substrate/
+    // SubstrateEvaluation.ush:881-899 (the SSS_TYPE_TWO_SIDED_WRAP branch); Opacity 1 keeps the light's own shadow.
+    const ExprId subsurface = variant.twoSidedFoliage ? f.uniform("subsurfaceColor", Type::vec(3)) : kInvalid;
     for (std::size_t i = 0; i < lights.kinds.size(); ++i) {
         const Incoming light = incoming(f, t, lights.kinds[i], i, fragmentView, positionWorld, normalWorld, lights.softShadows, variant.leafReceiver, variant.roughDiffuse);
         const ExprId irradiance = f.mul(t.saturate(t.dot(n, light.direction)), light.color);
@@ -1440,6 +1459,11 @@ static StandardPrograms buildStandardProgram(const StandardMaterial& material, b
         }
         directDiffuse = f.add(directDiffuse, f.mul(irradiance, diffuseBrdf));
         directSpecular = f.add(directSpecular, f.mul(irradiance, brdfGgxMultiscatter(t, surface, light.direction)));
+        if (subsurface != kInvalid) {
+            const ExprId wrap = t.saturate(f.div(f.add(f.neg(t.dot(n, light.direction)), t.f(0.5f)), t.f(2.25f)));
+            const ExprId scatter = dGgx(t, t.f(0.6f), t.saturate(f.neg(t.dot(positionViewDirection, light.direction))));
+            directDiffuse = f.add(directDiffuse, f.mul(f.mul(light.color, f.mul(wrap, scatter)), subsurface));
+        }
         if (coated) {
             // PhysicalLightingModel.direct: BRDF_GGX on the clearcoat normal, with its own irradiance.
             const ExprId ccIrradiance = f.mul(t.saturate(t.dot(clearcoatNormalView, light.direction)), light.color);

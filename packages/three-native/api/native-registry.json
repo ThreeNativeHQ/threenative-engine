@@ -4669,13 +4669,14 @@
         "polygonOffsetUnits",
         "shadowSide",
         "side",
+        "subsurfaceColor",
         "toneMapped",
         "transparent",
         "twoSidedFoliage",
         "vertexColors",
         "visible"
       ],
-      "members": ["color", "emissive", "map", "normalMap", "normalScale"],
+      "members": ["color", "emissive", "map", "normalMap", "normalScale", "subsurfaceColor"],
       "callbacks": [],
       "events": [],
       "fixedMembers": ["color", "emissive", "normalScale"],
@@ -4754,13 +4755,22 @@
         "specular.b",
         "specular.g",
         "specular.r",
+        "subsurfaceColor",
         "toneMapped",
         "transparent",
         "twoSidedFoliage",
         "vertexColors",
         "visible"
       ],
-      "members": ["color", "emissive", "map", "normalMap", "normalScale", "specular"],
+      "members": [
+        "color",
+        "emissive",
+        "map",
+        "normalMap",
+        "normalScale",
+        "specular",
+        "subsurfaceColor"
+      ],
       "callbacks": [],
       "events": [],
       "fixedMembers": ["color", "emissive", "normalScale", "specular"],
@@ -4878,6 +4888,7 @@
         "specularColorMap",
         "specularIntensity",
         "specularIntensityMap",
+        "subsurfaceColor",
         "toneMapped",
         "transmission",
         "transparent",
@@ -4903,7 +4914,8 @@
         "roughnessMap",
         "specularColor",
         "specularColorMap",
-        "specularIntensityMap"
+        "specularIntensityMap",
+        "subsurfaceColor"
       ],
       "callbacks": [],
       "events": [],
@@ -4992,6 +5004,7 @@
         "roughnessMap",
         "shadowSide",
         "side",
+        "subsurfaceColor",
         "toneMapped",
         "transparent",
         "twoSidedFoliage",
@@ -5009,7 +5022,8 @@
         "metalnessMap",
         "normalMap",
         "normalScale",
-        "roughnessMap"
+        "roughnessMap",
+        "subsurfaceColor"
       ],
       "callbacks": [],
       "events": [],
@@ -5121,6 +5135,7 @@
         "roughnessNode",
         "shadowSide",
         "side",
+        "subsurfaceColor",
         "toneMapped",
         "transparent",
         "twoSidedFoliage",
@@ -5139,7 +5154,8 @@
         "metalnessMap",
         "normalMap",
         "normalScale",
-        "roughnessMap"
+        "roughnessMap",
+        "subsurfaceColor"
       ],
       "callbacks": [],
       "events": [],

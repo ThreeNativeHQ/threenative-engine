@@ -37,6 +37,7 @@ import { SUN_DIRECTION, setupSky } from "../render/sky.js";
 import { WorldEnvironment } from "../render/worldEnvironment.js";
 import type { GameState } from "../state.js";
 import { Play } from "./Play.js";
+import { FOLIAGE } from "./referenceFoliage.js";
 import { POSES } from "./referencePoses.js";
 import {
   EMISSIVE_UNITS,
@@ -47,9 +48,11 @@ import {
   fetchGlbMaterialImages,
   giPreset,
   installGi,
+  markTwoSidedFoliage,
   reflectionTrace,
   shadeLikeSubstrate,
   shadowPreset,
+  unrealSunDiscScale,
   watchGi,
   watchShadowTier,
 } from "./tuning.js";
@@ -132,11 +135,6 @@ const STAGE_OFF: Record<string, Record<string, unknown>> = {
 // is the sun's apex angle (its angular diameter). `sourceAngleShadowFilter` takes the angular radius,
 // the half angle: Unreal's shadow rays spread over sin(angle / 2).
 const SUN_SOURCE_ANGLE_RAD = (0.7357 * Math.PI) / 360;
-// Unreal builds the disc of a shadow ray from `cross(N, x)` and `cross(that, N)` and never normalises them
-// (`GetRandomDirectionalLightRayDir`, VirtualShadowMapProjectionDirectional.ush), so the disc is sin(the angle
-// between the sun and the x axis) times the source radius. A sun on the x axis at elevation e casts the
-// penumbra of sin(e) times the nominal angle. `vsmAngle=ue` reproduces that.
-const unrealSourceScale = (sun: { x: number }): number => Math.sqrt(1 - sun.x * sun.x);
 
 export class Reference extends Scene<GameState, IPhysicsContext> {
   static override readonly initialState: GameState = Play.initialState;
@@ -177,6 +175,8 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
     const el = (elevationDeg * Math.PI) / 180;
     const az = (azimuthDeg * Math.PI) / 180;
     SUN_DIRECTION.set(Math.sin(az) * Math.cos(el), Math.sin(el), Math.cos(az) * Math.cos(el));
+    // PRD-643: the leaves Unreal draws on its Two Sided Foliage model are `twoSidedFoliage` here, with the same Subsurface Color.
+    markTwoSidedFoliage(model, FOLIAGE[params.get("model") ?? ""]);
     ctx.add(model);
     const scene = ctx.scene;
     const camera = ctx.camera as PerspectiveCamera;
@@ -237,13 +237,13 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
           key.castShadow = level >= 5 && params.get("sunShadow") !== "0" && preset.castShadows;
           if (!OFF.has("vsm"))
             (key.shadow as unknown as { filterNode: unknown }).filterNode = sourceAngleShadowFilter({
-              // Diagnosis knob vsmAngle: a factor on the angular radius (1 = Unreal's measured value,
-              // "ue" = Unreal's own scale for this sun, see unrealSourceScale).
+              // Unreal's un-normalised sun disc by default (PRD-634, `unrealSunDiscScale`). Override vsmAngle=N:
+              // N times the nominal angular radius (1 = the normalised disc, the edge before PRD-634).
               sourceAngleRad:
                 SUN_SOURCE_ANGLE_RAD *
-                (params.get("vsmAngle") === "ue"
-                  ? unrealSourceScale(SUN_DIRECTION)
-                  : Number(params.get("vsmAngle") ?? 1)),
+                (params.get("vsmAngle") === null || params.get("vsmAngle") === "ue"
+                  ? unrealSunDiscScale(SUN_DIRECTION)
+                  : Number(params.get("vsmAngle"))),
               ...preset.filter,
               // Diagnosis knob vsmMinPx: the filter disc's floor in screen pixels (absent = the engine's default).
               ...(params.get("vsmMinPx") === null
@@ -256,6 +256,8 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
               ...(params.get("sunSamples") === null
                 ? {}
                 : { filterSamples: Number(params.get("sunSamples")) }),
+              // Diagnosis knob vsmRay: Unreal's shadow-ray samples per ray (0 = the full caster gap, the old edge).
+              ...(params.get("vsmRay") === null ? {} : { samplesPerRay: Number(params.get("vsmRay")) }),
             });
         };
         applyShadowTier(SHADOW_TIER);
@@ -333,6 +335,8 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
         installGi(ctx, model, {
           // Diagnosis knob paint=1: paint the lit floor into the environment even while reflections are traced.
           paintGround: !tracing || params.get("paint") === "1",
+          // Diagnosis knob spill=1: an emissive sphere lights its neighbours below L7 too (the look before PRD-634's emitter rule).
+          emitterSpill: params.get("spill") === "1",
           // PRD-642 Phase 3 (opt in, D10): past the trace's roughness cut-off, specular reads the radiance cache and, past
           // 0.8, the diffuse GI. Off by default: the cache is an ambient cube per probe, a lobe far wider than a surface at
           // roughness 0.5 needs, and its shade is brighter than Unreal's, so the read adds light that Unreal's lobes do not.
