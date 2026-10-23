@@ -264,7 +264,7 @@
 <rect x="437.9436997003186" y="354.91499432378674" width="28.839264365941006" height="24.384518363504924" rx="2" fill="url(#gap)"><title>Nanite · Ray-triangle decode for ray tracing · No PRD</title></rect>
 <text x="440.9436997003186" y="365.91499432378674" class="l">Ray…</text>
 <rect x="437.9436997003186" y="380.29951268729167" width="28.839264365941006" height="23.3390813137853" rx="2" fill="#d9961f"><title>Nanite · Frustum, clip-plane, draw-distance and WPO-distance tests · In progress</title></rect>
-<rect x="437.9436997003186" y="400.63859400107697" width="8.239789818840286" height="3" fill="#fff" opacity=".85"/>
+<rect x="437.9436997003186" y="400.63859400107697" width="9.613088121980335" height="3" fill="#fff" opacity=".85"/>
 <text x="440.9436997003186" y="391.29951268729167" class="l">Fru…</text>
 <rect x="437.9436997003186" y="404.63859400107697" width="28.839264365941006" height="22.718353065514293" rx="2" fill="#4a86d6"><title>Nanite · Stats print · Not started</title></rect>
 <text x="440.9436997003186" y="415.63859400107697" class="l">Sta…</text>
@@ -566,11 +566,11 @@
 <rect x="1084.818568676884" y="579.8062685776118" width="2" height="3" fill="#fff" opacity=".85"/>
 <rect x="1105.2343300601553" y="505.76314503403563" width="16.41248687282723" height="18.729457134926463" rx="2" fill="#3aa56c"><title>Virtual shadow maps · Per-light cache entries and clip-level cache keys · Done</title></rect>
 <rect x="1105.2343300601553" y="525.4926021689621" width="16.41248687282723" height="18.437888802883208" rx="2" fill="#d9961f"><title>Virtual shadow maps · Alpha-masked depth in the page raster · In progress</title></rect>
-<rect x="1105.2343300601553" y="540.9304909718453" width="8.206243436413615" height="3" fill="#fff" opacity=".85"/>
+<rect x="1105.2343300601553" y="540.9304909718453" width="9.573950675815885" height="3" fill="#fff" opacity=".85"/>
 <rect x="1105.2343300601553" y="544.9304909718453" width="16.41248687282723" height="18.437888802883208" rx="2" fill="#d9961f"><title>Virtual shadow maps · Wind and sway of casters near the camera · In progress</title></rect>
-<rect x="1105.2343300601553" y="560.3683797747285" width="8.206243436413615" height="3" fill="#fff" opacity=".85"/>
+<rect x="1105.2343300601553" y="560.3683797747285" width="9.573950675815885" height="3" fill="#fff" opacity=".85"/>
 <rect x="1105.2343300601553" y="564.3683797747286" width="16.41248687282723" height="18.437888802883208" rx="2" fill="#d9961f"><title>Virtual shadow maps · Two-sided foliage receiver · In progress</title></rect>
-<rect x="1105.2343300601553" y="579.8062685776118" width="8.206243436413615" height="3" fill="#fff" opacity=".85"/>
+<rect x="1105.2343300601553" y="579.8062685776118" width="9.573950675815885" height="3" fill="#fff" opacity=".85"/>
 <rect x="1122.6468169329826" y="505.76314503403563" width="19.784394355672475" height="15.284428491095753" rx="2" fill="#d9961f"><title>Virtual shadow maps · Shadow quality tiers · In progress</title></rect>
 <rect x="1122.6468169329826" y="518.0475735251314" width="12.590069135427939" height="3" fill="#fff" opacity=".85"/>
 <rect x="1143.431211288655" y="505.76314503403563" width="19.784394355672475" height="15.284428491095753" rx="2" fill="#d9961f"><title>Virtual shadow maps · Calibration scenes and judged parity · In progress</title></rect>

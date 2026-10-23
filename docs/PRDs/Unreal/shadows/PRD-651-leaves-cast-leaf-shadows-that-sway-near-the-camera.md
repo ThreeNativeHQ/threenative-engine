@@ -83,7 +83,7 @@ from the game. The engine only makes the shadow follow them.
 **Files:** `packages/runtime-native/src/engine/renderer/renderer.cpp`, `packages/runtime-native/src/engine/shader/standard.cpp`, native engine tests, `packages/runtime-native/conformance/registry.json`, `packages/core/src/render/world-impostor-surface.ts`
 - [x] A 50%-cut leaf card casts a shadow with 50% ± 5% coverage of the card's projected area on the native engine. proof: red-green native engine test `native_engine_masked_shadow` (red first on the empty fragment stage). — 2026-10-20 (b98c06d40): red 1.000 coverage on the fragment-less depth program, green 0.500 after the masked depth program; tn-engine ctest 431/434, the three reds unrelated (perf timing at load 32, a known-red label, a load flake that passes alone).
 - [x] A `DoubleSide` card casts from its back face. proof: the same test. — 2026-10-20 (b98c06d40): the card faces the light; `DoubleSide` shades 0.500, `FrontSide` 0.000 (three's shadowSide draws only its back faces).
-- [x] Browser and native match on the masked caster. proof: `pnpm parity --target desktop --only-tests masked-shadow-caster`. **Re-proved with the fixed runner, 2026-10-22 (ownedbind2-lane):** `pnpm parity --target desktop --engine threenative` at `fbfd286b6` (runner fix `5883fc179`, which steps the player clock: before it every owned desktop capture was the first frame), V8 engine player, RTX 2080, upstream web reference from the same slot (adapter nvidia): pass, pixel mismatch 0, delta E 0, non-uniform frame.
+- [x] Browser and native match on the masked caster. proof: `pnpm parity --target desktop --only-tests masked-shadow-caster`. **Re-proved with the fixed runner, 2026-10-22 (ownedbind2-lane):** `pnpm parity --target desktop --engine threenative` at `fbfd286b6` (runner fix `5883fc179`, which steps the player clock: before it every owned desktop capture was the first frame), V8 engine player, RTX 2080, upstream web reference from the same slot (adapter nvidia): pass, pixel mismatch 0, delta E 0, non-uniform frame. **Owned engine, web then desktop (bounce lane):** proof: `pnpm parity --target web --engine threenative --only-tests masked-shadow-caster,leaf-receiver`, then the same on `--target desktop --reference <web dir>`. — 2026-10-22, owned engine (Wasm engine in Chromium, then the V8 engine player `tn-native-engine-player-v8` built on 2026-10-21 from this lane): web pass, desktop pass, pixelMismatchRatio 0 and perceptualDeltaE 0 against the web capture at 1280 x 720 (lane run, `parity-owned` report; the upstream-three lane is not proof for the owned engine).
 
 #### Phase 2: Wind reaches the near shadow
 **Status:** BLOCKED — the wind node of PRD-488 is not built (PROPOSED) and the PRD-649 `wind` run is not authored; neither exists to build on or to judge against
@@ -96,11 +96,32 @@ from the game. The engine only makes the shadow follow them.
 **Files:** `packages/core/src/render/soft-shadow.ts`, `packages/core/src/render/virtual-shadow.ts`, `packages/runtime-native/src/engine/shader/standard.cpp`, `packages/runtime-native/src/engine/renderer/renderer.cpp`, `packages/runtime-native/src/engine/scene/material.h`
 - [x] A receiver marked `twoSidedFoliage` skips the normal bias and widens its source to the 5° minimum, on both engines. proof: red-green native test `native_engine_leaf_receiver`, and `pnpm exec vitest run packages/core/__tests__/soft-shadow.spec.ts packages/core/__tests__/virtual-shadow.spec.ts`. — 2026-10-21 (first keyed on the sides and the cut, re-keyed on the marker after the Unreal read): native green with the marker (marked leaf edge 0.972 m = the unbiased edge, marker alone 0.972 m; penumbra 0.079 m ordinary against 0.548 m on the marked leaf); the browser unit tests pass 131/131 and the `VirtualShadowNode` position test fails when the override is switched off. Scope in the browser: the virtual shadow levels and `sourceAngleShadowFilter`; the stock three PCF path keeps three's normal bias (see Decisions).
 - [x] A two-sided cut card without the marker keeps the normal bias and the sun's own source, as Unreal's default lit does. proof: the same tests, and the rule-on against rule-off sheet on PR 541 (comment 6325847354, judge IMPROVEMENT against the old key). — 2026-10-21: red first on the sides-and-cut key (native: plain cut edge 0.972 m and penumbra 0.548 m, marker alone 0.585 m; browser: 3 specs red), green on the marker (plain cut edge 0.585 m = the biased edge, penumbra 0.079 m; the plain cut shadow coordinate equals the ordinary one).
-- [ ] Browser and native match on the marked leaf receiver. proof: `pnpm parity --target desktop --only-tests leaf-receiver`. Scene and registry row exist (`conformance/scenes/shared/leaf-receiver.js`, now with the marker set); not run: this lane has no desktop runtime binary (`pnpm native:build` needs the V8 download).
+- [x] Browser and native match on the marked leaf receiver. proof: `pnpm parity --target web --engine threenative --only-tests masked-shadow-caster,leaf-receiver`, then the same on `--target desktop --reference <web dir>`. — 2026-10-22, owned engine (lane head a08d9acbd, which holds the ownedbind bundling fixes of 5883fc179, and the V8 engine player rebuilt after them): web pass, desktop pass, pixelMismatchRatio 0 and perceptualDeltaE 0 against the web capture at 1280 x 720, no GPU validation errors, neither capture uniform (lane run, `parity-owned` report). The scene's `three/tsl` and `three/webgpu` imports that failed with `TN_NATIVE_ENGINE_UNBOUND` before the bundling fix now bind. The C++ rule is also covered by `native_engine_leaf_receiver`.
 - [ ] A Two Sided Foliage leaf matches Unreal's Two Sided Foliage leaf, with the sheets posted on the PR. proof: `pnpm unreal-look:compare --scene shadow:foliage` on the Two Sided Foliage variant of the scene, and a PRD-647 round. Not run: the scene's leaves are default lit in Unreal, so the Two Sided Foliage capture is new work (see Decisions).
 **Verification:** AC-1, AC-2 and AC-3.
 
 ## Decisions
+
+- 2026-10-22 (receiptE-lane): the GI-cache sheet line (`lane/bounce-receipt`, tip `a57ab9d74`: the crown is no
+  solid `26f1bdb10`, the sheet gather `4e0c01039`, the gain only removes light `e9335656d`) is parked, not merged.
+  Receipt on epic `f97578097` (no other change to the scaffold up to `de871dd92`), `shadow:wildwood` L9, one
+  checkout, BEFORE = the epic `giCache.ts` through `TN_UNREAL_LOOK_SCAFFOLD`, AFTER = the line, 2 runs per arm
+  (the runs agree within 0.001), Wasm engine, RTX 2080. Median scene-linear luminance of the ID region over
+  Unreal's (nonanite capture), BEFORE then AFTER:
+  tree 0.942 to 0.577 (sun60-closeup), 1.078 to 0.732 (sun60-medium), 1.080 to 0.691 (sun15-closeup),
+  1.008 to 0.738 (sun15-medium); bush 1.375 to 1.117 and fern 1.335 to 1.174 at sun60-medium; floor within
+  0.01. On today's epic the crown is already within 8% of Unreal without the line, and the sheet gain
+  (mean 0.75 to 0.77 on 5700 to 5900 texels, solids 3084 to 88) puts it 26% to 42% under Unreal in every
+  pose. That is a frame further from Unreal, so the line fails the merge rule. The bake also takes 44 to
+  49 s against 24 s (leaf2 measured +2.5 s on 10.9 s in Node). leaf2's receipt at epic `f6e38cc19` (#541
+  6348296707) measured the same gain as a 1% to 4% move. Some change on the epic between `f6e38cc19` and
+  `f97578097` made the gain move the crown 30% to 40%. Which change is not known (not bisected).
+  Next step: bisect the epic from `f6e38cc19` to `f97578097` with the line's `giCache.ts` (`TN_UNREAL_LOOK_SCAFFOLD`
+  arms, `shadow:wildwood` L9, 2 runs) to find which change made the gain 10 times larger; then decide whether
+  the crown floor of the cache (the cache now reads 1.14 of a path trace) or the screen gather owns the
+  remaining crown light, and cut the sheet gain only where the L9 tree then moves toward Unreal. The line's
+  specs (29 of 29 in `unreal-look-gi-cache.spec.ts` on the merged tree) stay valid; the line merges again
+  only with a receipt that moves no wildwood region away from Unreal. Data: `~/.cache/tmp-tn/receiptE/l9/`.
 
 - 2026-10-21 (wildwood lane, owner): AC-3 judges real vegetation. The owner asked three times for the Fab
   GLBs of the sandbox wildwood game in place of procedural cards. `shadow:wildwood` (PRD-649) is the AC-3
