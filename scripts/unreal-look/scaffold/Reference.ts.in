@@ -37,6 +37,7 @@ import { SUN_DIRECTION, setupSky } from "../render/sky.js";
 import { WorldEnvironment } from "../render/worldEnvironment.js";
 import type { GameState } from "../state.js";
 import { Play } from "./Play.js";
+import { FOLIAGE } from "./referenceFoliage.js";
 import { POSES } from "./referencePoses.js";
 import {
   EMISSIVE_UNITS,
@@ -47,6 +48,7 @@ import {
   fetchGlbMaterialImages,
   giPreset,
   installGi,
+  markTwoSidedFoliage,
   reflectionTrace,
   shadeLikeSubstrate,
   shadowPreset,
@@ -175,6 +177,8 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
     const el = (elevationDeg * Math.PI) / 180;
     const az = (azimuthDeg * Math.PI) / 180;
     SUN_DIRECTION.set(Math.sin(az) * Math.cos(el), Math.sin(el), Math.cos(az) * Math.cos(el));
+    // PRD-643: the leaves Unreal draws on its Two Sided Foliage model are `twoSidedFoliage` here, with the same Subsurface Color.
+    markTwoSidedFoliage(model, FOLIAGE[params.get("model") ?? ""]);
     ctx.add(model);
     const scene = ctx.scene;
     const camera = ctx.camera as PerspectiveCamera;

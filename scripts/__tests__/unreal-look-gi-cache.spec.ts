@@ -21,6 +21,7 @@ import {
   gridOver,
   installGi,
   meanField,
+  markTwoSidedFoliage,
   skyRadiance,
   sphereShare,
 } from "../unreal-look/scaffold/render/giCache.js";
@@ -370,6 +371,21 @@ describe("the world-space GI cache against closed forms (PRD-631 L7)", () => {
     installGi(rayContext(scene), scene, { bounces: 1, sun: noSun });
     expect((leaf.material as MeshStandardMaterial).twoSidedFoliage).toBe(true);
     expect((card.material as MeshStandardMaterial).twoSidedFoliage ?? false).toBe(false);
+  });
+
+  it("marks the materials a foliage table names by their glTF name, and no other (PRD-643)", () => {
+    const leaf = new MeshStandardMaterial({ name: "MI_leaf", side: DoubleSide });
+    const bark = new MeshStandardMaterial({ name: "MI_bark" });
+    const scene = new Group().add(
+      new Mesh(new PlaneGeometry(1, 1), leaf),
+      new Mesh(new PlaneGeometry(1, 1), bark),
+    );
+    markTwoSidedFoliage(scene, { MI_leaf: [0.1, 0.12, 0.05] });
+    expect([leaf.twoSidedFoliage, leaf.subsurfaceColor?.g]).toEqual([true, 0.12]);
+    expect([bark.twoSidedFoliage, bark.subsurfaceColor]).toEqual([undefined, undefined]);
+    const lone = new MeshStandardMaterial({ name: "MI_leaf" });
+    markTwoSidedFoliage(new Group().add(new Mesh(new PlaneGeometry(1, 1), lone)), undefined);
+    expect(lone.twoSidedFoliage).toBeUndefined();
   });
 
   it("the roughDiffuse flag survives the swap, and an unflagged material stays unflagged (PRD-653)", () => {
