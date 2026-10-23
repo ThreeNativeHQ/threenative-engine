@@ -87,7 +87,8 @@ let panToken = 0;
 const OFF = new Set((params.get("off") ?? "").split(",").filter(Boolean));
 // What each stage name turns off in the template's `high` preset.
 // Diagnosis: the contact occlusion's knobs by URL name, one table for every layer (PRD-635). ?gtaoR=M (metres) and
-// ?gtaoS=N are the short names of gtaoRadius and gtaoScale; ?gtaoReachPx=N sets the screen reach (Unreal's is 32).
+// ?gtaoS=N are the short names of gtaoRadius and gtaoScale; ?gtaoReachPx=N sets the screen reach (Unreal's is 32);
+// ?gtaoIndirectOnly=0 lets the whole frame take the occlusion, as aoReach.ts does on the GI scenes.
 const GTAO_KNOBS: Record<string, string> = {
   gtaoR: "gtaoRadius",
   gtaoS: "gtaoScale",
@@ -100,6 +101,7 @@ const GTAO_KNOBS: Record<string, string> = {
   gtaoThickness: "gtaoThickness",
   gtaoDenoiseRadius: "gtaoDenoiseRadius",
   gtaoMultiBounceAlbedo: "gtaoMultiBounceAlbedo",
+  gtaoIndirectOnly: "gtaoIndirectOnly",
 };
 const gtaoKnobs = (): Record<string, number> =>
   Object.fromEntries(
