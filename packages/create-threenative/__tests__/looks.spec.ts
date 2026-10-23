@@ -263,7 +263,7 @@ describe("starter visual floor", () => {
         movement?: { entity?: string; minDistance?: number };
         renderChain?: {
           contributions?: Record<string, string[]>;
-          stages?: { includes?: string[] };
+          stages?: { excludes?: string[]; includes?: string[] };
         };
         resources?: Array<{
           atSteps?: Array<{ label: string; textIncludes?: string }>;
@@ -290,16 +290,17 @@ describe("starter visual floor", () => {
     });
     expect(scenario.assert?.camera).toMatchObject({ entity: "camera.main", follows: "player" });
     expect(scenario.assert?.movement).toMatchObject({ entity: "player", minDistance: 4 });
-    // AO, bloom and vignette are the chain this kit ships, `grade` and `grain` are the two stages
-    // its own `src/render/grade.ts` adds, and each one is proved to have changed the graph output
-    // rather than being reported as applied.
+    // AO, temporal AA, motion blur, bloom and vignette are the chain this kit ships, and each one is
+    // proved to have changed the graph output rather than being reported as applied. `grade` and
+    // `grain` run at intensity 0 (the Unreal defaults), so the scenario asserts the chain refuses both.
     expect(scenario.assert?.renderChain?.stages?.includes).toEqual([
       "ambientOcclusion",
+      "traa",
+      "motionBlur",
       "bloom",
       "vignette",
-      "grade",
-      "grain",
     ]);
+    expect(scenario.assert?.renderChain?.stages?.excludes).toEqual(["grade", "grain"]);
     expect(Object.keys(scenario.assert?.renderChain?.contributions ?? {})).toEqual([
       "graphOutputChanged",
     ]);
