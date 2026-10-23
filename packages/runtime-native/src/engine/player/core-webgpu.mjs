@@ -29,7 +29,8 @@ import { defineTempNode } from "../../../../three-native/src/temp-node.ts";
 import { defineRendererUtils } from "../../../../three-native/src/renderer-utils.ts";
 import { GPU_STAGES, SHADOW_STAGE } from "../../../../three-native/src/gpu-stages.ts";
 
-export const { MeshBasicNodeMaterial, MeshStandardNodeMaterial, SpriteNodeMaterial } = globalThis;
+export const { StorageTexture, MeshBasicNodeMaterial, MeshStandardNodeMaterial, SpriteNodeMaterial } = globalThis;
+Object.setPrototypeOf(StorageTexture.prototype, globalThis.Texture.prototype);
 Object.setPrototypeOf(MeshBasicNodeMaterial.prototype, globalThis.MeshBasicMaterial.prototype);
 Object.setPrototypeOf(MeshStandardNodeMaterial.prototype, globalThis.MeshStandardMaterial.prototype);
 Object.setPrototypeOf(SpriteNodeMaterial.prototype, globalThis.SpriteMaterial.prototype);

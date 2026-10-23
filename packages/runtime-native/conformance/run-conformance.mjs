@@ -2077,7 +2077,9 @@ async function runAndroid(
     if (!/Status:\s*ok/iu.test(String(launch.stdout)))
       throw new Error(`Android activity failed to start: ${launch.stdout}`);
     const marker = `TN_CONFORMANCE_READY:${test.id}`;
-    const timeoutAt = Date.now() + Number(process.env.TN_ANDROID_TIMEOUT_MS || 45_000);
+    // A case whose first frame compiles heavy compute on SwiftShader names its own floor.
+    const timeoutAt =
+      Date.now() + Math.max(Number(test.androidReadyTimeoutMs || 0), Number(process.env.TN_ANDROID_TIMEOUT_MS || 45_000));
     let pid = null;
     let appLog = "";
     while (Date.now() <= timeoutAt) {

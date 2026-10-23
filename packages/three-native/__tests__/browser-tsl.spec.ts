@@ -33,6 +33,26 @@ function setup() {
   return { runtime, tsl: defineTsl(runtime).exports as unknown as ITslExports };
 }
 
+describe("Wasm modelWorldMatrix", () => {
+  it("uses one engine-provided mat4 node for multiplication and column selection", () => {
+    const { tsl, runtime } = setup();
+    const exports = tsl as unknown as {
+      modelWorldMatrix: INode & { element(index: number): INode };
+      vec4(...args: number[]): INode;
+    };
+    const matrix = exports.modelWorldMatrix;
+    expect(exports.modelWorldMatrix).toBe(matrix);
+    matrix.mul(exports.vec4(0, 0, 0, 1));
+    matrix.element(3);
+    expect(runtime.call).toHaveBeenCalledWith("constant:modelWorldMatrix", null, []);
+    expect(runtime.call).toHaveBeenCalledWith("mul", matrix[TSL_NODE], expect.any(Array));
+    expect(runtime.call).toHaveBeenCalledWith("element", matrix[TSL_NODE], expect.any(Array));
+    expect(
+      vi.mocked(runtime.call).mock.calls.filter(([name]) => name === "constant:modelWorldMatrix"),
+    ).toHaveLength(1);
+  });
+});
+
 describe("Wasm TSL Fn parameters", () => {
   it("defers the blue-noise style destructuring callback until called", () => {
     const { tsl, runtime } = setup();
@@ -182,4 +202,21 @@ describe("r185 math surface census", () => {
       ).toEqual([]);
     });
   }
+});
+
+describe("Wasm MaterialX scalar Worley noise", () => {
+  it("forwards omitted arguments and explicit zero jitter to the shared engine call", () => {
+    const { tsl, runtime } = setup();
+    const noise = (
+      tsl as unknown as { mx_worley_noise_float(position?: INode, jitter?: number): INode }
+    ).mx_worley_noise_float;
+    expect(noise()[TSL_NODE]).toBeGreaterThan(0);
+    expect(runtime.call).toHaveBeenLastCalledWith("mx_worley_noise_float", null, []);
+    const point = tsl.vec2(0.25, -0.75);
+    expect(noise(point, 0)[TSL_NODE]).toBeGreaterThan(0);
+    expect(runtime.call).toHaveBeenLastCalledWith("mx_worley_noise_float", null, [
+      { kind: "node", node: point[TSL_NODE] },
+      { kind: "number", number: 0 },
+    ]);
+  });
 });

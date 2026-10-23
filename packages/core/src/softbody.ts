@@ -196,10 +196,11 @@ function clothPass(options: {
     const nextPosition = position.add(velocity.mul(options.halfStep)).toVar();
     const collision = options.collision;
     if (collision !== undefined) {
-      Loop({ type: "uint", start: 0, end: collision.capacity }, ({ i }) => {
-        If(i.lessThan(collision.count), () => {
-          const center = collision.bounds.element(i.mul(2)).xyz;
-          const halfExtents = collision.bounds.element(i.mul(2).add(1)).xyz;
+      // Unrolled over the capacity: the owned engine reads a uniform array at a constant index only.
+      for (let box = 0; box < collision.capacity; box++) {
+        If(collision.count.greaterThan(box), () => {
+          const center = collision.bounds.element(box * 2).xyz;
+          const halfExtents = collision.bounds.element(box * 2 + 1).xyz;
           const currentRelative = position.sub(center);
           const relative = nextPosition.sub(center);
           const withinX = relative.x.abs().lessThanEqual(halfExtents.x);
@@ -286,7 +287,7 @@ function clothPass(options: {
                 });
             });
         });
-      });
+      }
     }
     If(metadata.x.greaterThan(0), () => {
       options.targetPositions

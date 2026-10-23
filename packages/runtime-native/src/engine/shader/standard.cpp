@@ -1359,13 +1359,15 @@ static StandardPrograms buildStandardProgram(const StandardMaterial& material, b
     ExprId roughnessFactor = variant.nodes.roughnessNode ? kInvalid : f.uniform("roughness", Type::f32());
     if (roughnessFactor != kInvalid && variant.reads(kRoughnessMap))
         roughnessFactor = f.mul(roughnessFactor, f.swizzle(pbrTexel(f, variant, kRoughnessMap), "y"));
+    const ExprId materialRoughness = slotValue(f, slots, variant.nodes.roughnessNode, Type::f32(), roughnessFactor);
+    out.materialProperties = f.construct(Type::vec(4), {metalness, materialRoughness, t.f(0), t.f(1)});
 
     // getRoughness: max(roughness, 0.0525) + getGeometryRoughness, capped at 1.
     const ExprId dxy = f.call("max", {f.call("abs", {f.call("dFdx", {normalViewGeometry})}),
                                       f.call("abs", {f.call("dFdy", {normalViewGeometry})})});
     const ExprId geometryRoughness =
         f.call("max", {f.call("max", {f.swizzle(dxy, "x"), f.swizzle(dxy, "y")}), f.swizzle(dxy, "z")});
-    ExprId roughness = f.call("min", {f.add(f.call("max", {slotValue(f, slots, variant.nodes.roughnessNode, Type::f32(), roughnessFactor), t.f(0.0525f)}),
+    ExprId roughness = f.call("min", {f.add(f.call("max", {materialRoughness, t.f(0.0525f)}),
                                                   geometryRoughness), t.f(1)});
 
     // MeshStandardNodeMaterial.setupSpecular, or MeshPhysicalNodeMaterial's setupSpecular.
