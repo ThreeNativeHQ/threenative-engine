@@ -820,6 +820,11 @@ describe("capability manifest generator", () => {
       "lumen surface cache": { ids: ["request.lumen-surface-cache"], owners: ["SurfaceCache"] },
       "lumen scene": { ids: ["request.lumen-scene"], owners: ["SurfaceCache"] },
       "mesh cards": { ids: ["request.mesh-cards"], owners: ["SurfaceCache"] },
+      "lumen translucency volume": {
+        ids: ["request.lumen-translucency-volume"],
+        owners: ["ProbeVolume"],
+      },
+      "translucency gi": { ids: ["request.translucency-gi"], owners: ["ProbeVolume"] },
       "lumen visualize": {
         baselineAlreadyRecalled: true,
         ids: ["request.gi-visualize"],

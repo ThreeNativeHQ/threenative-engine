@@ -813,6 +813,22 @@
       "reject": []
     },
     {
+      "id": "request.lumen-translucency-volume",
+      "query": "lumen translucency volume",
+      "scope": "request",
+      "source": "template:starter#Quality and proof",
+      "expect": ["ProbeVolume"],
+      "reject": []
+    },
+    {
+      "id": "request.translucency-gi",
+      "query": "translucency gi",
+      "scope": "request",
+      "source": "template:starter#Quality and proof",
+      "expect": ["ProbeVolume"],
+      "reject": []
+    },
+    {
       "id": "request.gi-quality-scalability",
       "query": "lumen scalability sg.GlobalIlluminationQuality final gather method",
       "scope": "request",
