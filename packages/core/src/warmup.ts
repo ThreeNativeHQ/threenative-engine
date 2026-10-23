@@ -1,4 +1,4 @@
-import { type Camera, type Object3D, RenderTarget, Scene, type Texture } from "three";
+import type { Camera, Object3D, Texture } from "three";
 import { pmremTexture } from "three/tsl";
 
 import type { IPipelineCensus } from "./pipeline-census.js";
@@ -722,43 +722,7 @@ interface IRestoredVisibility {
   readonly visible?: boolean;
 }
 
-/**
- * A GPU fence for the Wasm engine, which has no device queue to drain: a 1-texel read of a target
- * drawn after the warm render resolves only once the GPU has run every frame submitted before it.
- * The GPU process compiles a new pipeline when the first frame that uses it runs, so without this
- * wait the post chain's compile stalled the first visible frames for seconds.
- */
-function readbackFence(raw: unknown, camera: Camera): Promise<unknown> | undefined {
-  if (frameGateSkips(raw) === undefined) return undefined;
-  const host = raw as {
-    render?: (scene: Object3D, camera: Camera) => void;
-    getRenderTarget?: () => unknown;
-    setRenderTarget?: (target: unknown) => void;
-    readRenderTargetPixelsAsync?: (
-      target: RenderTarget,
-      x: number,
-      y: number,
-      width: number,
-      height: number,
-    ) => Promise<unknown>;
-  };
-  if (
-    typeof host.render !== "function" ||
-    typeof host.setRenderTarget !== "function" ||
-    typeof host.readRenderTargetPixelsAsync !== "function"
-  )
-    return undefined;
-  const fence = new RenderTarget(1, 1);
-  const previous = host.getRenderTarget?.() ?? null;
-  try {
-    host.setRenderTarget(fence);
-    host.render(new Scene(), camera);
-  } finally {
-    host.setRenderTarget(previous);
-  }
-  return host.readRenderTargetPixelsAsync(fence, 0, 0, 1, 1).finally(() => fence.dispose());
-}
-
+/** A shadow map is rendered for every shadow-casting light; nothing else triggers that pass. */
 /** Cumulative renders the Wasm engine's frame gate declined, when the renderer counts them. */
 function frameGateSkips(raw: unknown): number | undefined {
   const skips = (raw as { info?: { engine?: { frameGateSkips?: unknown } } } | undefined)?.info
@@ -766,7 +730,6 @@ function frameGateSkips(raw: unknown): number | undefined {
   return typeof skips === "number" && Number.isFinite(skips) ? skips : undefined;
 }
 
-/** A shadow map is rendered for every shadow-casting light; nothing else triggers that pass. */
 function hasShadowCaster(scene: Object3D): boolean {
   const stack: Object3D[] = [scene];
   while (stack.length > 0) {
@@ -1258,11 +1221,8 @@ export async function warmUpScene(
         | { backend?: { device?: { queue?: { onSubmittedWorkDone?: () => Promise<unknown> } } } }
         | undefined
     )?.backend?.device?.queue;
-    const drained =
-      typeof queue?.onSubmittedWorkDone === "function"
-        ? Promise.resolve().then(() => queue.onSubmittedWorkDone?.())
-        : readbackFence(renderer.raw, camera);
-    if (drained === undefined) return;
+    if (typeof queue?.onSubmittedWorkDone !== "function") return;
+    const drained = Promise.resolve().then(() => queue.onSubmittedWorkDone?.());
     gpuDrainSettled = await withinDeadline(startedAt + budgetMs, drained, yieldFrame, now);
   };
   const withPasses = (report: IWarmUpReport): IWarmUpReport =>
