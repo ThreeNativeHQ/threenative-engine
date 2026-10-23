@@ -113,6 +113,12 @@ describe("core constraints", () => {
           // fresh Unreal 5.8.3 project's tone curve. The curve is plain maths on the frame's colour; it builds no
           // material, light or scene object, and `toneMapping` names the override.
           file !== "look/default-tone-mapping.ts" &&
+          // Auto exposure meters the frame the game already drew with screen-space quads on scratch targets. The
+          // materials never reach a game object, and the metering constants are Unreal 5.8.3's defaults.
+          file !== "look/auto-exposure.ts" &&
+          file !== "look/exposure-graph.ts" &&
+          file !== "look/exposure-readback.ts" &&
+          file !== "look/exposure-settings.ts" &&
           file !== "look/filmic-tone-mapping.ts" &&
           // PRD-653 swaps the Lambert term of three's own lighting model for Unreal's published EON fit when the game marks
           // a material. Albedo, roughness, lights and a lamp's radius come from the game's own materials and lamps, and

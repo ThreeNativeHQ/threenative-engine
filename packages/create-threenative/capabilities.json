@@ -753,6 +753,28 @@
       "symbol": "AnimationPlayer"
     },
     {
+      "aliases": [],
+      "constraints": [
+        "WebGPU renderers only: a renderer without WebGPU keeps the fixed exposure and says so",
+        "the node owns scratch render targets and never draws the world or installs another output transform"
+      ],
+      "example": "const settings = { ...exposureSettings, rateDown: 2 }; const node = new AutoExposureNode(input, settings, 1);",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [
+        "`exposureSettings` fields (`enabled`, `key`, `minStops`, `maxStops`, `lowPercent`, `highPercent`, `rateUp`, `rateDown`) or a fixed `renderer.toneMappingExposure` with `enabled: false`"
+      ],
+      "package": "@threenative/core",
+      "signature": "export function applyExposure(colour: Node<\"vec4\">, exposure: Node<\"float\">): Node<\"vec4\"> { … }",
+      "situations": [
+        "the frame should expose itself the way a fresh Unreal project does as the sun and the view change",
+        "read the metered exposure in stops for a test, a marker or a cut"
+      ],
+      "summary": "Auto exposure with Unreal 5.8.3's metering: a 64-bin histogram of log2 luminance (red, green and blue weighted equally, the darkest and brightest 10% ignored), key 0.18 x 2, -10 to +20 EV100, 3 stops/s brighter and 1 stop/s darker. `AutoExposureNode` meters a colour texture and outputs the adapted exposure; `applyExposure` multiplies it into the frame without touching alpha.",
+      "supersedes": [],
+      "symbol": "applyExposure"
+    },
+    {
       "aliases": ["green platforms bright saturated sky"],
       "constraints": [
         "supply rayleigh, mie, ozone, planetRadius, and atmosphereRadius; there is no Earth fallback",
@@ -854,6 +876,28 @@
       "summary": "Route effects through a named audio bus.",
       "supersedes": ["new Audio("],
       "symbol": "AudioBus"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "WebGPU renderers only: a renderer without WebGPU keeps the fixed exposure and says so",
+        "the node owns scratch render targets and never draws the world or installs another output transform"
+      ],
+      "example": "const settings = { ...exposureSettings, rateDown: 2 }; const node = new AutoExposureNode(input, settings, 1);",
+      "importPath": "@threenative/core",
+      "kind": "class",
+      "overrides": [
+        "`exposureSettings` fields (`enabled`, `key`, `minStops`, `maxStops`, `lowPercent`, `highPercent`, `rateUp`, `rateDown`) or a fixed `renderer.toneMappingExposure` with `enabled: false`"
+      ],
+      "package": "@threenative/core",
+      "signature": "export class AutoExposureNode extends TempNode<\"float\"> { … }",
+      "situations": [
+        "the frame should expose itself the way a fresh Unreal project does as the sun and the view change",
+        "read the metered exposure in stops for a test, a marker or a cut"
+      ],
+      "summary": "Auto exposure with Unreal 5.8.3's metering: a 64-bin histogram of log2 luminance (red, green and blue weighted equally, the darkest and brightest 10% ignored), key 0.18 x 2, -10 to +20 EV100, 3 stops/s brighter and 1 stop/s darker. `AutoExposureNode` meters a colour texture and outputs the adapted exposure; `applyExposure` multiplies it into the frame without touching alpha.",
+      "supersedes": [],
+      "symbol": "AutoExposureNode"
     },
     {
       "aliases": [],
@@ -1628,6 +1672,69 @@
       "summary": "Photometric exposure units: EV100 to the renderer multiplier and back, a physical camera's EV100, and a meter reading. Conversion only; the exposure and the light values are the game's.",
       "supersedes": [],
       "symbol": "exposureFromEv100"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "settings are validated and a malformed field throws; the node freezes a copy"
+      ],
+      "example": "const slow = { ...exposureSettings, rateUp: 1, rateDown: 0.5 }; validateExposureSettings(slow);",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [
+        "every `IExposureSettings` field, passed to `AutoExposureNode`, replaces the Unreal default"
+      ],
+      "package": "@threenative/core",
+      "signature": "export function exposureLuminance(mean: Node<\"float\">): Node<\"float\"> { … }",
+      "situations": [
+        "change how fast or how far the frame adapts, or the middle grey it adapts to",
+        "meter a frame with a different luminance weight for a test"
+      ],
+      "summary": "The metering constants and the metering functions behind `AutoExposureNode`: Unreal's defaults in `exposureSettings`, the per-pixel meter (equal RGB weights, no spatial weight) and its decode, the reduction sizes and the validator.",
+      "supersedes": [],
+      "symbol": "exposureLuminance"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "settings are validated and a malformed field throws; the node freezes a copy"
+      ],
+      "example": "const slow = { ...exposureSettings, rateUp: 1, rateDown: 0.5 }; validateExposureSettings(slow);",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [
+        "every `IExposureSettings` field, passed to `AutoExposureNode`, replaces the Unreal default"
+      ],
+      "package": "@threenative/core",
+      "signature": "export function exposureMeter(colour: Node<\"vec4\">, uv: Node<\"vec2\">): Node<\"vec2\"> { … }",
+      "situations": [
+        "change how fast or how far the frame adapts, or the middle grey it adapts to",
+        "meter a frame with a different luminance weight for a test"
+      ],
+      "summary": "The metering constants and the metering functions behind `AutoExposureNode`: Unreal's defaults in `exposureSettings`, the per-pixel meter (equal RGB weights, no spatial weight) and its decode, the reduction sizes and the validator.",
+      "supersedes": [],
+      "symbol": "exposureMeter"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "settings are validated and a malformed field throws; the node freezes a copy"
+      ],
+      "example": "const slow = { ...exposureSettings, rateUp: 1, rateDown: 0.5 }; validateExposureSettings(slow);",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [
+        "every `IExposureSettings` field, passed to `AutoExposureNode`, replaces the Unreal default"
+      ],
+      "package": "@threenative/core",
+      "signature": "export function exposureReductionSizes(width: number, height: number): [number, number][] { … }",
+      "situations": [
+        "change how fast or how far the frame adapts, or the middle grey it adapts to",
+        "meter a frame with a different luminance weight for a test"
+      ],
+      "summary": "The metering constants and the metering functions behind `AutoExposureNode`: Unreal's defaults in `exposureSettings`, the per-pixel meter (equal RGB weights, no spatial weight) and its decode, the reduction sizes and the validator.",
+      "supersedes": [],
+      "symbol": "exposureReductionSizes"
     },
     {
       "aliases": [],
@@ -3826,6 +3933,27 @@
       "summary": "Unreal's Substrate rough diffuse (EON) on standard and physical materials, so direct sun and lamp light meets a rough surface the way Unreal shades it. The same `roughDiffuse` flag works on three's WebGPU renderer and on the owned engine.",
       "supersedes": [],
       "symbol": "useRoughDiffuse"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "settings are validated and a malformed field throws; the node freezes a copy"
+      ],
+      "example": "const slow = { ...exposureSettings, rateUp: 1, rateDown: 0.5 }; validateExposureSettings(slow);",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [
+        "every `IExposureSettings` field, passed to `AutoExposureNode`, replaces the Unreal default"
+      ],
+      "package": "@threenative/core",
+      "signature": "export function validateExposureSettings(value: IExposureSettings): void { … }",
+      "situations": [
+        "change how fast or how far the frame adapts, or the middle grey it adapts to",
+        "meter a frame with a different luminance weight for a test"
+      ],
+      "summary": "The metering constants and the metering functions behind `AutoExposureNode`: Unreal's defaults in `exposureSettings`, the per-pixel meter (equal RGB weights, no spatial weight) and its decode, the reduction sizes and the validator.",
+      "supersedes": [],
+      "symbol": "validateExposureSettings"
     },
     {
       "aliases": [],

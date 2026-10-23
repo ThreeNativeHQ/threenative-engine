@@ -1167,6 +1167,38 @@ export {
 } from "./look/filmic-tone-mapping.js";
 export type { IFilmicCurve } from "./look/filmic-tone-mapping.js";
 export type { RendererToneMapping } from "./look/default-tone-mapping.js";
+/**
+ * Auto exposure with Unreal 5.8.3's metering: a 64-bin histogram of log2 luminance (red, green and blue weighted
+ * equally, the darkest and brightest 10% ignored), key 0.18 x 2, -10 to +20 EV100, 3 stops/s brighter and 1 stop/s
+ * darker. `AutoExposureNode` meters a colour texture and outputs the adapted exposure; `applyExposure` multiplies
+ * it into the frame without touching alpha.
+ *
+ * @situation the frame should expose itself the way a fresh Unreal project does as the sun and the view change
+ * @situation read the metered exposure in stops for a test, a marker or a cut
+ * @constraint WebGPU renderers only: a renderer without WebGPU keeps the fixed exposure and says so
+ * @constraint the node owns scratch render targets and never draws the world or installs another output transform
+ * @override `exposureSettings` fields (`enabled`, `key`, `minStops`, `maxStops`, `lowPercent`, `highPercent`, `rateUp`, `rateDown`) or a fixed `renderer.toneMappingExposure` with `enabled: false`
+ * @example const settings = { ...exposureSettings, rateDown: 2 }; const node = new AutoExposureNode(input, settings, 1);
+ */
+export { AutoExposureNode, applyExposure } from "./look/auto-exposure.js";
+/**
+ * The metering constants and the metering functions behind `AutoExposureNode`: Unreal's defaults in `exposureSettings`,
+ * the per-pixel meter (equal RGB weights, no spatial weight) and its decode, the reduction sizes and the validator.
+ *
+ * @situation change how fast or how far the frame adapts, or the middle grey it adapts to
+ * @situation meter a frame with a different luminance weight for a test
+ * @constraint settings are validated and a malformed field throws; the node freezes a copy
+ * @override every `IExposureSettings` field, passed to `AutoExposureNode`, replaces the Unreal default
+ * @example const slow = { ...exposureSettings, rateUp: 1, rateDown: 0.5 }; validateExposureSettings(slow);
+ */
+export {
+  exposureLuminance,
+  exposureMeter,
+  exposureReductionSizes,
+  exposureSettings,
+  validateExposureSettings,
+} from "./look/exposure-settings.js";
+export type { IExposureSettings } from "./look/exposure-settings.js";
 export type { IDaylightOptions } from "./render/daylight.js";
 /**
  * Photometric exposure units: EV100 to the renderer multiplier and back, a physical camera's

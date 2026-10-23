@@ -578,6 +578,22 @@ export class AnimationPlayer { … }
 const player = new AnimationPlayer({ clips, root: rig, strideRoot: body });
 ```
 
+### `applyExposure`
+
+`function` — Auto exposure with Unreal 5.8.3's metering: a 64-bin histogram of log2 luminance (red, green and blue weighted equally, the darkest and brightest 10% ignored), key 0.18 x 2, -10 to +20 EV100, 3 stops/s brighter and 1 stop/s darker. `AutoExposureNode` meters a colour texture and outputs the adapted exposure; `applyExposure` multiplies it into the frame without touching alpha.
+
+```ts
+export function applyExposure(colour: Node<"vec4">, exposure: Node<"float">): Node<"vec4"> { … }
+```
+
+- **Use when:** the frame should expose itself the way a fresh Unreal project does as the sun and the view change · read the metered exposure in stops for a test, a marker or a cut
+- **Constraints:** WebGPU renderers only: a renderer without WebGPU keeps the fixed exposure and says so · the node owns scratch render targets and never draws the world or installs another output transform
+- **Overrides:** `exposureSettings` fields (`enabled`, `key`, `minStops`, `maxStops`, `lowPercent`, `highPercent`, `rateUp`, `rateDown`) or a fixed `renderer.toneMappingExposure` with `enabled: false`
+
+```ts
+const settings = { ...exposureSettings, rateDown: 2 }; const node = new AutoExposureNode(input, settings, 1);
+```
+
 ### `Atmosphere`
 
 `class` — Own the compute lifetime and expose only parameter-driven atmosphere nodes. The class deliberately creates no mesh, material, or scene light. A template chooses all of those, and the same object remains useful when a game supplies a completely different look.
@@ -655,6 +671,22 @@ export class AudioBus { … }
 
 ```ts
 const effects = new AudioBus({ camera });
+```
+
+### `AutoExposureNode`
+
+`class` — Auto exposure with Unreal 5.8.3's metering: a 64-bin histogram of log2 luminance (red, green and blue weighted equally, the darkest and brightest 10% ignored), key 0.18 x 2, -10 to +20 EV100, 3 stops/s brighter and 1 stop/s darker. `AutoExposureNode` meters a colour texture and outputs the adapted exposure; `applyExposure` multiplies it into the frame without touching alpha.
+
+```ts
+export class AutoExposureNode extends TempNode<"float"> { … }
+```
+
+- **Use when:** the frame should expose itself the way a fresh Unreal project does as the sun and the view change · read the metered exposure in stops for a test, a marker or a cut
+- **Constraints:** WebGPU renderers only: a renderer without WebGPU keeps the fixed exposure and says so · the node owns scratch render targets and never draws the world or installs another output transform
+- **Overrides:** `exposureSettings` fields (`enabled`, `key`, `minStops`, `maxStops`, `lowPercent`, `highPercent`, `rateUp`, `rateDown`) or a fixed `renderer.toneMappingExposure` with `enabled: false`
+
+```ts
+const settings = { ...exposureSettings, rateDown: 2 }; const node = new AutoExposureNode(input, settings, 1);
 ```
 
 ### `baseGeometryOf`
@@ -1271,6 +1303,54 @@ export function exposureFromEv100(ev100: number): number { … }
 
 ```ts
 renderer.toneMappingExposure = exposureFromEv100(ev100FromCamera(4, 1 / 60, 100));
+```
+
+### `exposureLuminance`
+
+`function` — The metering constants and the metering functions behind `AutoExposureNode`: Unreal's defaults in `exposureSettings`, the per-pixel meter (equal RGB weights, no spatial weight) and its decode, the reduction sizes and the validator.
+
+```ts
+export function exposureLuminance(mean: Node<"float">): Node<"float"> { … }
+```
+
+- **Use when:** change how fast or how far the frame adapts, or the middle grey it adapts to · meter a frame with a different luminance weight for a test
+- **Constraints:** settings are validated and a malformed field throws; the node freezes a copy
+- **Overrides:** every `IExposureSettings` field, passed to `AutoExposureNode`, replaces the Unreal default
+
+```ts
+const slow = { ...exposureSettings, rateUp: 1, rateDown: 0.5 }; validateExposureSettings(slow);
+```
+
+### `exposureMeter`
+
+`function` — The metering constants and the metering functions behind `AutoExposureNode`: Unreal's defaults in `exposureSettings`, the per-pixel meter (equal RGB weights, no spatial weight) and its decode, the reduction sizes and the validator.
+
+```ts
+export function exposureMeter(colour: Node<"vec4">, uv: Node<"vec2">): Node<"vec2"> { … }
+```
+
+- **Use when:** change how fast or how far the frame adapts, or the middle grey it adapts to · meter a frame with a different luminance weight for a test
+- **Constraints:** settings are validated and a malformed field throws; the node freezes a copy
+- **Overrides:** every `IExposureSettings` field, passed to `AutoExposureNode`, replaces the Unreal default
+
+```ts
+const slow = { ...exposureSettings, rateUp: 1, rateDown: 0.5 }; validateExposureSettings(slow);
+```
+
+### `exposureReductionSizes`
+
+`function` — The metering constants and the metering functions behind `AutoExposureNode`: Unreal's defaults in `exposureSettings`, the per-pixel meter (equal RGB weights, no spatial weight) and its decode, the reduction sizes and the validator.
+
+```ts
+export function exposureReductionSizes(width: number, height: number): [number, number][] { … }
+```
+
+- **Use when:** change how fast or how far the frame adapts, or the middle grey it adapts to · meter a frame with a different luminance weight for a test
+- **Constraints:** settings are validated and a malformed field throws; the node freezes a copy
+- **Overrides:** every `IExposureSettings` field, passed to `AutoExposureNode`, replaces the Unreal default
+
+```ts
+const slow = { ...exposureSettings, rateUp: 1, rateDown: 0.5 }; validateExposureSettings(slow);
 ```
 
 ### `filmicToneMap`
@@ -2960,6 +3040,22 @@ export function useRoughDiffuse(root: Object3D, enabled = true): number { … }
 
 ```ts
 useRoughDiffuse(scene);
+```
+
+### `validateExposureSettings`
+
+`function` — The metering constants and the metering functions behind `AutoExposureNode`: Unreal's defaults in `exposureSettings`, the per-pixel meter (equal RGB weights, no spatial weight) and its decode, the reduction sizes and the validator.
+
+```ts
+export function validateExposureSettings(value: IExposureSettings): void { … }
+```
+
+- **Use when:** change how fast or how far the frame adapts, or the middle grey it adapts to · meter a frame with a different luminance weight for a test
+- **Constraints:** settings are validated and a malformed field throws; the node freezes a copy
+- **Overrides:** every `IExposureSettings` field, passed to `AutoExposureNode`, replaces the Unreal default
+
+```ts
+const slow = { ...exposureSettings, rateUp: 1, rateDown: 0.5 }; validateExposureSettings(slow);
 ```
 
 ### `validateWorldMatrices`
