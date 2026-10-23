@@ -294,6 +294,18 @@ these criteria, per frame and overall.
   NEUTRAL, 8 x 8 with one pass NEUTRAL, both CLOSE to Unreal on 16 of 16 frames. The templates take it through PRD-267.
   No C++ changed, so no native build or test ran for it.
 
+- 2026-10-22 (receiptA-lane, gicost parked, reason found): the 8 x 8 port (`e503db41d`) was HELD, and it stays parked, for one
+  reason: it changes a gather that the epic does not have. Its two changed lines set `ssgiProbeRays: 8` and `giDenoisePasses: 1` on the
+  screen-probe path (`ssgiScreenProbes`), and the epic reverted that path in `126f3715a` (lock sun60-door Floor 2.282 against 2.13, no receipt).
+  `lane/gather` stays out of the stable epic (PRD-640 Decisions, 2026-10-22). On the epic head `acd7f5689` the `high` tier gathers per
+  pixel, so the port has nothing to act on. A merge of `lane/gicost` conflicts in `quality.ts`, `worldEnvironment.ts`,
+  `screen-space.ts` and three specs, because the lane predates the revert. Its other commits are on the epic already
+  (`236a131a5` as `9aea0c002`, `6958db18f` by content). Next step: when the screen-probe gather returns with a receipt,
+  re-apply the two lines of `e503db41d` in `quality.ts` and `CalibrationScene.ts.in` on top of it (do not merge the old
+  branch), rerun the paired cost page (`gi-tier-cost.ts --interleave`) and the 16-frame judge round, and keep the port only if
+  the judge reads NEUTRAL or IMPROVEMENT and no lock or ratchet on the lock board turns broken. Until then the per-pixel
+  gather has no attribution (the open half of AC-2).
+
 - 2026-10-22 (dynres-lane, rule ported, layer: engine): the fixed-ms GI budget is gone. `packages/core/src/render/frame-time-budget.ts` (new, internal)
   ports Unreal's `DynamicRenderScaling` heuristic: the frame period is the budget, 10% target headroom, a 16-frame history weighted 0.9 per
   frame, at least 8 frames between changes, a fast drop after 2 frames over the period, a 2% change threshold and a quadratic pixel model
