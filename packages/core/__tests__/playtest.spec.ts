@@ -8,6 +8,7 @@ import {
 import {
   AnimationClip,
   BoxGeometry,
+  Group,
   Mesh,
   MeshBasicMaterial,
   NumberKeyframeTrack,
@@ -38,6 +39,33 @@ function bridge(): IPlaytestBridgeV1 {
 }
 
 describe("playtest plugin", () => {
+  it("observes the group root of a registered entity", async () => {
+    const group = new Group();
+    group.position.set(1, 2, 3);
+    const game = defineGame({
+      initialState: {},
+      plugins: [playtest()],
+      renderer: stubRenderer(testCanvas()),
+      scenes: {
+        test: class extends Scene {
+          override enter(ctx: ICtx) {
+            ctx.entities.add("enemy", { group });
+          }
+        },
+      },
+      start: "test",
+    });
+    await game.start();
+    try {
+      const snapshot = await bridge().sample({ entities: ["enemy"] });
+      expect(snapshot.entities?.find(({ id }) => id === "enemy")?.transform?.position).toEqual([
+        1, 2, 3,
+      ]);
+    } finally {
+      game.stop();
+    }
+  });
+
   it("should not advertise runtime.physics without a contributing plugin", async () => {
     const game = defineGame({
       initialState: {},
