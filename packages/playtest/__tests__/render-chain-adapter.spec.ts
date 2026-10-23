@@ -578,8 +578,9 @@ describe("renderChain perAdapter GPU families", () => {
   const LOOK_HIGH_STAGES = ["ambientOcclusion", "traa", "motionBlur", "bloom", "vignette"];
   const LOOK_MEDIUM_STAGES = ["ambientOcclusion", "traa", "bloom", "vignette"];
   const LOOK_LOW_STAGES = ["bloom", "vignette", "antialias"];
-  // The starter's native render-chain scenario still expects the grade and grain stages (not yet re-proved on the native host).
-  const NATIVE_CHAIN_HIGH_STAGES = ["ambientOcclusion", "bloom", "vignette", "grade", "grain"];
+  // The starter's native render-chain scenario runs the three.js host (CI pins engine "threejs"): no traa, spatial antialias.
+  const NATIVE_CHAIN_HIGH_STAGES = ["ambientOcclusion", "motionBlur", "bloom", "vignette", "antialias"];
+  const NATIVE_CHAIN_MEDIUM_STAGES = ["ambientOcclusion", "bloom", "vignette", "antialias"];
   const lookChain = (tier: "high" | "low" | "medium"): IPlaytestRenderChainObservation => {
     const stages = { high: LOOK_HIGH_STAGES, low: LOOK_LOW_STAGES, medium: LOOK_MEDIUM_STAGES }[tier];
     return {
@@ -623,15 +624,15 @@ describe("renderChain perAdapter GPU families", () => {
   // The four scenarios that once asserted a flat `high` alone. Each reports the stages its own
   // template authors at that tier: the starter drops ambientOcclusion and grain at low, while
   // sailing's bloom and rain's stormPost run at every tier, so their rows keep the stage check.
-  it.each<[string, string, string[], string[]]>([
-    ["starter native render-chain", "templates/starter/native-playtests/render-chain.playtest.json", NATIVE_CHAIN_HIGH_STAGES, ["bloom", "vignette", "antialias", "grade"]],
+  it.each<[string, string, string[], string[], string[]?]>([
+    ["starter native render-chain", "templates/starter/native-playtests/render-chain.playtest.json", NATIVE_CHAIN_HIGH_STAGES, ["bloom", "vignette", "antialias"], NATIVE_CHAIN_MEDIUM_STAGES],
     ["sailing native survives", "templates/sailing/native-playtests/survives.playtest.json", ["bloom"], ["bloom"]],
     ["rain native boot", "templates/rain/native-playtests/boot.playtest.json", ["stormPost"], ["stormPost"]],
     ["rain performance", "templates/rain/playtests/performance.playtest.json", ["stormPost"], ["stormPost"]],
-  ])("holds the shipped %s scenario to the tier each adapter starts on", async (_name, relative, upperStages, lowStages) => {
+  ])("holds the shipped %s scenario to the tier each adapter starts on", async (_name, relative, upperStages, lowStages, mediumStages = upperStages) => {
     const scenario = await shipped(relative);
     const observed = (tier: "high" | "low" | "medium"): IPlaytestRenderChainObservation => {
-      const stages = tier === "low" ? lowStages : upperStages;
+      const stages = { high: upperStages, low: lowStages, medium: mediumStages }[tier];
       return { ...HIGH, contributions: stages.map((name) => ({ graphOutputChanged: true, name })), requested: stages, stages, tier };
     };
     const verdicts = (adapter: Record<string, string>, tier: "high" | "low" | "medium") => {
