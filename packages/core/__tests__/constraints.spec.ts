@@ -109,6 +109,30 @@ describe("core constraints", () => {
           // PRD-634 widens three's shadow filter by gap × tan(angle); the angle and every light,
           // map size and shadow camera come from the game. It decides no edge width of its own.
           file !== "render/soft-shadow.ts" &&
+          // Owner exception to "never own the look" (2026-10-22): `createRenderer` starts a WebGPU renderer on a
+          // fresh Unreal 5.8.3 project's tone curve. The curve is plain maths on the frame's colour; it builds no
+          // material, light or scene object, and `toneMapping` names the override.
+          file !== "look/default-tone-mapping.ts" &&
+          // Auto exposure meters the frame the game already drew with screen-space quads on scratch targets. The
+          // materials never reach a game object, and the metering constants are Unreal 5.8.3's defaults.
+          // The look's post chain (owner exception, 2026-10-22): `WorldEnvironment` and its stages are the Unreal 5.8.3
+          // defaults of the frame. They draw the game's scene through the renderer's chain and name every override.
+          file !== "look/auto-exposure.ts" &&
+          file !== "look/world-environment.ts" &&
+          file !== "look/reflection-trace.ts" &&
+          file !== "look/gi-registry.ts" &&
+          file !== "look/ao-reach.ts" &&
+          file !== "look/ao-multibounce.ts" &&
+          file !== "look/local-exposure.ts" &&
+          file !== "look/unreal-bloom.ts" &&
+          file !== "look/motion-blur.ts" &&
+          file !== "look/vignette.ts" &&
+          file !== "look/look-diagnostics.ts" &&
+          file !== "look/quality.ts" &&
+          file !== "look/exposure-graph.ts" &&
+          file !== "look/exposure-readback.ts" &&
+          file !== "look/exposure-settings.ts" &&
+          file !== "look/filmic-tone-mapping.ts" &&
           // PRD-653 swaps the Lambert term of three's own lighting model for Unreal's published EON fit when the game marks
           // a material. Albedo, roughness, lights and a lamp's radius come from the game's own materials and lamps, and
           // the game chooses which materials take it. It constructs no material, light or colour and sets no appearance
@@ -445,7 +469,10 @@ describe("core constraints", () => {
     // `renderer.ts` is exempted because `prewarm` must inspect and clone the game's own render
     // surfaces to compile them early. It does not construct a surface or choose its appearance.
     const renderer = readFileSync(path.join(sourceDirectory, "renderer.ts"), "utf8");
-    expect(renderer).not.toMatch(
+    // The one tone mapping it may name is the default curve it applies (owner exception, 2026-10-22).
+    expect(
+      renderer.replace(/\b(?:applyRendererToneMapping|RendererToneMapping|toneMapping)\b/gu, " "),
+    ).not.toMatch(
       /new\s+\w*Material|new\s+\w*Light|new\s+Color|tonemapping|postprocessing|\.wgsl/iu,
     );
 
@@ -562,7 +589,13 @@ describe("core constraints", () => {
 
     // The public surface may NAME the types it re-exports (`IGPUSceneBVHMaterialGroup` is a data
     // group, not a look); what it may never do is originate an appearance.
-    expect(indexSource).not.toMatch(
+    // The renderer's default tone curve (owner exception, 2026-10-22) is re-exported by name; naming it is the
+    // only use of "tone mapping" the index may make.
+    const withoutToneCurveNames = indexSource.replace(
+      /\b(?:installFilmicToneMapping|RendererToneMapping)\b|look\/(?:default|filmic)-tone-mapping\.js/gu,
+      " ",
+    );
+    expect(withoutToneCurveNames).not.toMatch(
       /new\s+\w*Material|new\s+\w*Light|new\s+Color|tonemapping|postprocessing|\.wgsl/iu,
     );
 

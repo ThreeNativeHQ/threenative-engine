@@ -657,6 +657,22 @@ export class AudioBus { … }
 const effects = new AudioBus({ camera });
 ```
 
+### `AutoExposureNode`
+
+`class` — Auto exposure with Unreal 5.8.3's metering: a 64-bin histogram of log2 luminance (the darkest and brightest 10% ignored), key 0.18 x 2, -10 to +20 EV100, 3 stops/s brighter and 1 stop/s darker. `AutoExposureNode` meters a colour texture and outputs the adapted exposure; `exposureSettings` holds the defaults.
+
+```ts
+export class AutoExposureNode extends TempNode<"float"> { … }
+```
+
+- **Use when:** the frame should expose itself the way a fresh Unreal project does as the sun and the view change
+- **Constraints:** WebGPU renderers only: a renderer without WebGPU keeps the fixed exposure and says so
+- **Overrides:** every `IExposureSettings` field, spread over `exposureSettings` and passed to `AutoExposureNode`, replaces the Unreal default
+
+```ts
+const slow = { ...exposureSettings, rateDown: 0.5 }; const node = new AutoExposureNode(input, slow, 1);
+```
+
 ### `baseGeometryOf`
 
 `function` — The full-detail geometry of a mesh the loader gave an automatic LOD chain. Selection swaps `mesh.geometry`, so a ray test or a collision body built from the current geometry would change with the camera. Framework picking and gameplay collide against this instead: the authored LOD0, which never changes as the camera moves.
@@ -1560,6 +1576,22 @@ const game = defineGame({ input: { move: { up: ["KeyW"], down: ["KeyS"], left: [
 // inside the scene, per frame: ctx.input.axis("move") is 0 at rest and 1 at full tilt
 ```
 
+### `installFilmicToneMapping`
+
+`function` — Unreal 5.8.3's tone curve, the default tone mapping of `createRenderer` and `Game`: a filmic curve in ACEScg (slope 0.88, toe 0.55, shoulder 0.26) after the gamut expansion and blue correction of Unreal's colour LUT. `installFilmicToneMapping` registers it as three's custom tone mapping.
+
+```ts
+export function installFilmicToneMapping( raw: unknown, c: IFilmicCurve = FILMIC_CURVE, grade: IColorGrade = COLOR_GRADE, ): number | undefined { … }
+```
+
+- **Use when:** the frame should tone map the way a fresh Unreal project does
+- **Constraints:** WebGPU renderers only: a renderer without a node library keeps ACES and reports `TN_TONEMAP`
+- **Overrides:** `createRenderer({ toneMapping: "aces" | "agx" | "neutral" | "none" })` or `game.renderer.toneMapping` in the game config; setting `renderer.raw.toneMapping` later wins
+
+```ts
+const renderer = await createRenderer({ toneMapping: "aces" }); // the named override
+```
+
 ### `installSpanProbes`
 
 `function` — Attach the span probes to a renderer: three's `render`, `_projectObject`, the render list's `sort`, the per-draw submission, and the scene-graph walk. Installed for you when `TN_FRAME_SPANS` asks; exported so a harness can wrap a renderer it owns.
@@ -1981,6 +2013,22 @@ export class ProbeVolume extends Object3D implements IComputeDriven { … }
 
 ```ts
 const probes = new ProbeVolume({ bounds, density: 0.5 }); ctx.add(probes); void probes.requestBake(scene);
+```
+
+### `qualityPreset`
+
+`function` — The quality tiers of the Unreal 5.8.3 look: what `high` (a desktop, Unreal's Epic), `medium` and `low` (a phone) turn on, how a GPU family picks its start tier, and the global illumination and shadow filter settings per tier named after Unreal's scalability levels. A `WorldEnvironment` with no options starts from `high`. `qualityTiers` holds the tier tables: `resolve` picks a start tier from a GPU class, `gi` and `shadow` read a tier's settings.
+
+```ts
+export function qualityPreset(tier: string): IWorldEnvironmentOptions { … }
+```
+
+- **Use when:** pick a start tier for the GPU class and read what that tier costs the look · build a `WorldEnvironment` for a weaker device from a named tier
+- **Constraints:** an unknown tier name throws with the names it expected
+- **Overrides:** pass any `IWorldEnvironmentOptions` field after `qualityPreset(tier)`, or an explicit `tier` to `qualityTiers.resolve`
+
+```ts
+const world = new WorldEnvironment({ ...qualityPreset(qualityTiers.resolve({ gpuClass: renderer.gpuClass })), bloomEnabled: false });
 ```
 
 ### `readGIMarker`
@@ -3056,6 +3104,22 @@ const tracker = new VelocityTracker();
 tracker.update(scene);
 renderer.render(scene, camera);
 tracker.commit(scene);
+```
+
+### `WorldEnvironment`
+
+`class` — The node that says which lighting effects a scene runs and how strong they are, with a fresh Unreal 5.8.3 project's defaults: the filmic tone curve, Unreal-metered auto exposure, screen-space GI and ambient occlusion, SMAA, Unreal's bloom and local exposure. It builds the post chain through `renderer.createRenderChain()` and prints `TN_RENDER_CHAIN` naming every stage as applied or refused with a reason. Property names are Godot's `Environment` where it has one.
+
+```ts
+export class WorldEnvironment { … }
+```
+
+- **Use when:** a scene should light and tone map like a fresh Unreal level without wiring each post stage by hand · turn one lighting effect off, or pick a cheaper tier, for a weak GPU or a stylised look
+- **Constraints:** post stages run on WebGPU only: a renderer without it keeps the fixed exposure and reports `TN_AUTO_EXPOSURE_REFUSED`, and a missing node library keeps ACES and reports `TN_TONEMAP` · an unknown option value throws instead of becoming the default
+- **Overrides:** every option on `IWorldEnvironmentOptions`: `tonemapMode: "aces" | "agx" | "neutral"`, `autoExposureEnabled: false` with a fixed `exposure`, `bloomEnabled`, `gtaoEnabled`, `ssgiEnabled`, `screenSpaceAA`
+
+```ts
+const world = new WorldEnvironment({ tonemapMode: "aces", autoExposureEnabled: false, exposure: 0.8 }); world.apply(renderer, scene, view);
 ```
 
 ### `zenithTransmittance`

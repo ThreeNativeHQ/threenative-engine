@@ -1560,6 +1560,8 @@ describe("createRenderer", () => {
 
       try {
         const renderer = await createRenderer({ canvas, webgpuFactory: () => raw });
+        // createRenderer starts a WebGPU renderer on the filmic default; the warm-up must restore whatever the game set.
+        raw.toneMapping = 17;
         const authoredScene = new Scene();
         const authoredCamera = new PerspectiveCamera();
         worldPass = pass(authoredScene, authoredCamera);

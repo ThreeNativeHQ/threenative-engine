@@ -857,6 +857,26 @@
     },
     {
       "aliases": [],
+      "constraints": [
+        "WebGPU renderers only: a renderer without WebGPU keeps the fixed exposure and says so"
+      ],
+      "example": "const slow = { ...exposureSettings, rateDown: 0.5 }; const node = new AutoExposureNode(input, slow, 1);",
+      "importPath": "@threenative/core",
+      "kind": "class",
+      "overrides": [
+        "every `IExposureSettings` field, spread over `exposureSettings` and passed to `AutoExposureNode`, replaces the Unreal default"
+      ],
+      "package": "@threenative/core",
+      "signature": "export class AutoExposureNode extends TempNode<\"float\"> { … }",
+      "situations": [
+        "the frame should expose itself the way a fresh Unreal project does as the sun and the view change"
+      ],
+      "summary": "Auto exposure with Unreal 5.8.3's metering: a 64-bin histogram of log2 luminance (the darkest and brightest 10% ignored), key 0.18 x 2, -10 to +20 EV100, 3 stops/s brighter and 1 stop/s darker. `AutoExposureNode` meters a colour texture and outputs the adapted exposure; `exposureSettings` holds the defaults.",
+      "supersedes": [],
+      "symbol": "AutoExposureNode"
+    },
+    {
+      "aliases": [],
       "constraints": [],
       "example": "const geometry = baseGeometryOf(mesh);",
       "importPath": "@threenative/core",
@@ -2053,6 +2073,24 @@
     {
       "aliases": [],
       "constraints": [
+        "WebGPU renderers only: a renderer without a node library keeps ACES and reports `TN_TONEMAP`"
+      ],
+      "example": "const renderer = await createRenderer({ toneMapping: \"aces\" }); // the named override",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [
+        "`createRenderer({ toneMapping: \"aces\" | \"agx\" | \"neutral\" | \"none\" })` or `game.renderer.toneMapping` in the game config; setting `renderer.raw.toneMapping` later wins"
+      ],
+      "package": "@threenative/core",
+      "signature": "export function installFilmicToneMapping( raw: unknown, c: IFilmicCurve = FILMIC_CURVE, grade: IColorGrade = COLOR_GRADE, ): number | undefined { … }",
+      "situations": ["the frame should tone map the way a fresh Unreal project does"],
+      "summary": "Unreal 5.8.3's tone curve, the default tone mapping of `createRenderer` and `Game`: a filmic curve in ACEScg (slope 0.88, toe 0.55, shoulder 0.26) after the gamut expansion and blue correction of Unreal's colour LUT. `installFilmicToneMapping` registers it as three's custom tone mapping.",
+      "supersedes": [],
+      "symbol": "installFilmicToneMapping"
+    },
+    {
+      "aliases": [],
+      "constraints": [
         "returns an uninstall that restores every wrapper, asserted by test",
         "a renderer whose internals have moved loses that span rather than throwing, and it is absent from the report rather than zero",
         "only the outermost `_projectObject` opens a span, because three's recurses per child"
@@ -2597,6 +2635,25 @@
       "summary": "Bake static diffuse irradiance that reaches surfaces from outside the camera view.",
       "supersedes": [],
       "symbol": "ProbeVolume"
+    },
+    {
+      "aliases": [],
+      "constraints": ["an unknown tier name throws with the names it expected"],
+      "example": "const world = new WorldEnvironment({ ...qualityPreset(qualityTiers.resolve({ gpuClass: renderer.gpuClass })), bloomEnabled: false });",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [
+        "pass any `IWorldEnvironmentOptions` field after `qualityPreset(tier)`, or an explicit `tier` to `qualityTiers.resolve`"
+      ],
+      "package": "@threenative/core",
+      "signature": "export function qualityPreset(tier: string): IWorldEnvironmentOptions { … }",
+      "situations": [
+        "pick a start tier for the GPU class and read what that tier costs the look",
+        "build a `WorldEnvironment` for a weaker device from a named tier"
+      ],
+      "summary": "The quality tiers of the Unreal 5.8.3 look: what `high` (a desktop, Unreal's Epic), `medium` and `low` (a phone) turn on, how a GPU family picks its start tier, and the global illumination and shadow filter settings per tier named after Unreal's scalability levels. A `WorldEnvironment` with no options starts from `high`. `qualityTiers` holds the tier tables: `resolve` picks a start tier from a GPU class, `gi` and `shadow` read a tier's settings.",
+      "supersedes": [],
+      "symbol": "qualityPreset"
     },
     {
       "aliases": [],
@@ -3949,6 +4006,28 @@
       "summary": "Provision screen-space motion data for temporal nodes and keep per-instance history at the frame boundary.",
       "supersedes": [],
       "symbol": "withVelocityContext"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "post stages run on WebGPU only: a renderer without it keeps the fixed exposure and reports `TN_AUTO_EXPOSURE_REFUSED`, and a missing node library keeps ACES and reports `TN_TONEMAP`",
+        "an unknown option value throws instead of becoming the default"
+      ],
+      "example": "const world = new WorldEnvironment({ tonemapMode: \"aces\", autoExposureEnabled: false, exposure: 0.8 }); world.apply(renderer, scene, view);",
+      "importPath": "@threenative/core",
+      "kind": "class",
+      "overrides": [
+        "every option on `IWorldEnvironmentOptions`: `tonemapMode: \"aces\" | \"agx\" | \"neutral\"`, `autoExposureEnabled: false` with a fixed `exposure`, `bloomEnabled`, `gtaoEnabled`, `ssgiEnabled`, `screenSpaceAA`"
+      ],
+      "package": "@threenative/core",
+      "signature": "export class WorldEnvironment { … }",
+      "situations": [
+        "a scene should light and tone map like a fresh Unreal level without wiring each post stage by hand",
+        "turn one lighting effect off, or pick a cheaper tier, for a weak GPU or a stylised look"
+      ],
+      "summary": "The node that says which lighting effects a scene runs and how strong they are, with a fresh Unreal 5.8.3 project's defaults: the filmic tone curve, Unreal-metered auto exposure, screen-space GI and ambient occlusion, SMAA, Unreal's bloom and local exposure. It builds the post chain through `renderer.createRenderChain()` and prints `TN_RENDER_CHAIN` naming every stage as applied or refused with a reason. Property names are Godot's `Environment` where it has one.",
+      "supersedes": [],
+      "symbol": "WorldEnvironment"
     },
     {
       "aliases": [],
