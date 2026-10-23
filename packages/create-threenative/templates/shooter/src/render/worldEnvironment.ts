@@ -48,10 +48,8 @@ import {
   output,
   pass,
   roughness,
-  smoothstep,
   uniform,
   uv,
-  vec2,
   vec4,
 } from "three/tsl";
 import { BlendMode, type Node, type NodeBuilder, type TextureNode } from "three/webgpu";
@@ -59,7 +57,13 @@ import { AutoExposureNode, applyExposure } from "./autoExposure.js";
 import { type IExposureSettings, exposureSettings } from "./exposure.js";
 import { LocalExposureNode } from "./localExposure.js";
 import { motionBlur } from "./motionBlur.js";
-import { installFilmicToneMapping } from "./tonemap.js";
+import {
+  type ColorGradeOptions,
+  FILMIC_CURVE,
+  type IFilmicCurve,
+  installFilmicToneMapping,
+  resolveColorGrade,
+} from "./tonemap.js";
 import { UnrealBloomNode } from "./unrealBloom.js";
 import { vignetteMask } from "./vignette.js";
 
@@ -275,6 +279,19 @@ export interface IWorldEnvironmentOptions {
   /** Quality tier passed to the measured chain; the quality module owns this value. */
   readonly renderChainTier?: ChainTier;
   readonly tonemapMode?: TonemapMode;
+  /**
+   * The numbers of the `"filmic"` curve, any field of `IFilmicCurve` (slope, toe, shoulder, black clip, white
+   * clip, blue correction, expand gamut, glow, red modifier, dither, lutClip). Unreal 5.8.3's project defaults
+   * apply to every field left out. Only `tonemapMode: "filmic"` reads it; any other mode with this set throws.
+   */
+  readonly filmicCurve?: Partial<IFilmicCurve>;
+  /**
+   * Unreal's colour grade and white balance for `"filmic"`: saturation, contrast, gamma, gain and offset
+   * (`[red, green, blue, master]`) for the whole frame and for `shadows`, `midtones` and `highlights`, the
+   * luma limits, `whiteTemp` and `whiteTint` in Kelvin and -1 to 1, and `toneCurveAmount`. Left out, the grade
+   * is neutral and costs no shader instruction. Only `tonemapMode: "filmic"` reads it.
+   */
+  readonly colorGrade?: ColorGradeOptions;
   /**
    * Scene-referred exposure: multiplied into the scene pass **before** the tone curve, so
    * the GI gather, reflections and bloom threshold all see the exposed image and the bloom
@@ -561,6 +578,15 @@ export class WorldEnvironment {
         `Unknown tonemapMode '${String(tonemapMode)}'. Use one of: ${Object.keys(TONEMAP).join(", ")}.`,
       );
     }
+    resolveColorGrade(options.colorGrade);
+    if (
+      tonemapMode !== "filmic" &&
+      (options.filmicCurve !== undefined || options.colorGrade !== undefined)
+    ) {
+      throw new Error(
+        `TN_TONEMAP_OPTIONS_IGNORED: filmicCurve and colorGrade need tonemapMode: "filmic", got '${tonemapMode}'.`,
+      );
+    }
     const renderChainTier = options.renderChainTier ?? "high";
     if (!isChainTier(renderChainTier)) {
       throw new Error(
@@ -605,6 +631,8 @@ export class WorldEnvironment {
       bloomThreshold: options.bloomThreshold ?? 0.2,
       renderChainTier,
       tonemapMode,
+      filmicCurve: options.filmicCurve ?? {},
+      colorGrade: options.colorGrade ?? {},
       exposure: options.exposure ?? 1,
       autoExposureEnabled: options.autoExposureEnabled ?? false,
       localExposureEnabled: options.localExposureEnabled ?? false,
@@ -636,7 +664,11 @@ export class WorldEnvironment {
     if (options.tonemapMode === "filmic") {
       // The curve is this game's source, registered as three's custom tone mapping. A renderer
       // without a node library cannot run it; that frame keeps ACES and says so.
-      const installed = installFilmicToneMapping(renderer.raw);
+      const installed = installFilmicToneMapping(
+        renderer.raw,
+        { ...FILMIC_CURVE, ...options.filmicCurve },
+        resolveColorGrade(options.colorGrade),
+      );
       if (installed === undefined) {
         raw.toneMapping = ACESFilmicToneMapping;
         console.warn(

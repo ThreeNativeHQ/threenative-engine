@@ -71,7 +71,7 @@ Phase 1 predicts the effect from the geometry before any engine code changes.
 ## Acceptance Criteria
 
 - [x] AC-1 [local]: A material with `roughDiffuse` set shades the same on stock three and on the native engine. proof: `pnpm parity --target desktop --only-tests rough-diffuse` — Evidence: pending. **Re-ticked 2026-10-22 (ownedbind-lane).** On the owned engine (`pnpm parity --target desktop --engine threenative --only-tests rough-diffuse` and `--target web --engine threenative`, lane/ownedbind 829831f19, V8 engine player and the web Wasm engine, NVIDIA RTX 2080, reference = the upstream-three web capture) both pass: desktop pixelMismatchRatio 0.0002, deltaE 0.0001; Wasm the same (tolerance 0.04, 6). Before, `useRoughDiffuse` threw on the MeshPhysicalNodeMaterial check; the refused stub now lets its `prototype` read, as on Wasm, and a use still throws.
-- [ ] AC-2 [local] (PARTIAL): With the harness pick, the spread of the per-region Unreal to ThreeNative ratio at L1 on `gi:cornell`, `gi:sunlit-room` and the spheres scene is no wider than the Phase 1 prediction plus one point. proof: `pnpm unreal-look:compare` L1 regions table on `#541` — Evidence: calibration L1 spread of the region UE/TN ratio, before to after, final tree: spheres sun60/15/04 52.4->7.4, 65.9->2.1, 160.6->10.2 % (prediction 6.4/8.6/8.7; sun60 +1.0 and sun04 +1.5 over it, the red box moves with gamut 3dd7ab60e); exterior 18.9->4.1, 54.9->2.7, 62.2->8.2; interior 9.0->2.8, 37.5->2.0, 39.7->6.1. `gi:cornell` and `gi:sunlit-room` are on the earlier merged tree only (sunlit-room and cornell numbers not yet computed). Open.
+- [ ] AC-2 [local] (PARTIAL): With the harness pick, the spread of the per-region Unreal to ThreeNative ratio at L1 on `gi:cornell`, `gi:sunlit-room` and the spheres scene is no wider than the Phase 1 prediction plus one point. proof: `pnpm unreal-look:compare` L1 regions table on `#541` — Evidence: 2026-10-22 brdf2-lane, epic e3ba159c6 (before the exposure line, which scales every region alike and so leaves the spread unchanged), one run per arm, the BEFORE arm from the same tree with the knob off (`&roughDiffuse=0` on the `tnGi` page, `&off=roughDiffuse` on the reference page). The `tn_lin.mts` inversion now uses the current harness curve (the older curve gave sun60 7.4 and sun04 10.2 on the spheres). Spread before to after, %: spheres sun60/15/04 45.4->3.6, 59.3->2.1, 153.8->8.4 (prediction 6.4/8.6/8.7); exterior 18.8->3.9, 54.9->2.6, 62.2->8.2; interior 9.0->2.8, 37.5->2.0, 39.7->6.2; `gi:cornell` 18.5->2.6 (prediction 2.86), corner 5.6->2.7 (2.81); `gi:sunlit-room` (regions of 300 pixels or more) sun60 window/leak/door 6.2->2.2, 5.2->0.2, 16.2->1.5 (prediction 0.22/0.07/0.41) and sun15 window/leak/door 12.2->3.1, 20.7->2.4, 56.9->2.1 (5.28/0.40/1.95). Open: three sunlit-room poses are wider than prediction plus one by 0.1 to 1.0 point (sun60 window, sun60 door, sun15 leak). The residual there is a 1 to 2 % gap between the sky and indirect light of the two engines, which this PRD leaves Lambert. Scratch and numbers: `~/.cache/tmp-tn/brdf2/ac2-pre-exposure.txt`. Final-tree run waits for the exposure line.
 - [ ] AC-3 [local] (PARTIAL): A fresh judge returns IMPROVEMENT overall on L1, L7 and L9 of every scene, and no frame regresses. proof: `scripts/unreal-look/judge.ts` verdict, linked on `#541` — Evidence: calibration only. L1 IMPROVEMENT, L9 IMPROVEMENT, L7 NEUTRAL (no frame regresses). L7 is not IMPROVEMENT, so the box stays open. Verdict files: `~/.cache/tmp-tn/brdf/verdicts/fin-L{1,7,9}.json`.
 
 ## Integration Ledger
@@ -151,3 +151,20 @@ Per pixel, cast the scene geometry to get N, L and V. Compute the EON to Lambert
   Sky sun60 spheres, Sphere_RoughDielectric sun60 spheres and Floor/LitFloor sun15 spheres and breaks
   Sky sun60 exterior (EON brightens the frame, auto exposure drops, the sky darkens; the 0.78 lens constant
   from sky-lane lifts it back) and Sky sun15 spheres.
+- 2026-10-22 (brdf2-lane, task 1, no capture): the port matches Unreal 5.8.3. `Diffuse_GGX_Rough` is version 3
+  (`BRDF.ush:213,238-249`): EON at 0.4 x roughness x the light-size weight, with the albedo inversion
+  `rho (1 + 0.189468 (1 - rho) r)`, the `f_ss` and `f_ms` terms, and the double-angle `VoL`. `rough-diffuse.ts` and
+  `standard.cpp` `roughDiffuseFactor` hold the same terms. The Substrate path calls it only for `any(DiffuseColor > 0)`
+  with the safe roughness (floor 0.02, `SubstrateDefinitions.h:52`). `ProjectGBufferFormat=0` is the blendable
+  GBuffer, so `USE_ENERGY_CONSERVATION` is 0 (`ShadingEnergyConservation.ush:19-30`) and the diffuse has no
+  specular-albedo factor. Found and not ported: a lamp with `sourceRadius > 0` goes through the capsule path, which
+  wraps the diffuse N.L at the horizon (`SubstrateEvaluation.ush:535-545`, `CapsuleLightIntegrate.ush:96-102`). That is
+  an area-light term, not a BRDF term, so it is outside this PRD.
+- 2026-10-22 (brdf2-lane, task 1): which regions keep the spheres AC-2 spread wide on the final tree (runs `fa1`, `fa2`,
+  UE/TN region medians, gain-normalised): sun60 7.4 % is `Box_Red` 1.051 (374 lit pixels) against `Room` 0.976. sun04
+  10.2 % is `Box_Red` 1.039 (118 pixels) against `Box_White` 0.938 and `Room` 0.968. sun15 is 2.1 %. Causes:
+  (1) Unreal itself sits +-3 % off the published EON closed form by region (UE/EON+spec 0.94 to 1.04 at sun04, no
+  ThreeNative frame involved), so the Phase 1 floor of 6.4 / 8.6 / 8.7 % is the spread of the model, not of the port.
+  (2) `Box_Red` has under 400 lit pixels after the ID mask, so its median is the noisiest of the six. (3) `Box_White`
+  is the one region where ThreeNative leaves the closed form (TN/EON+spec 1.022 at sun60, 1.045 at sun04, 1.001 at
+  sun15, same face and view); the cause is open. Scratch: `~/.cache/tmp-tn/brdf2/`.
