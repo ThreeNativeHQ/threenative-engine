@@ -339,6 +339,25 @@ describe("SnowField canonical surface", () => {
     expect(region?.row).toBeGreaterThan(0);
   });
 
+  it("hands a renderer two small windows for two bodies a long way apart, and one for a pair that touch", () => {
+    const snow = new SnowField({ field: fixtureTerrain(), depth: 0.28 });
+    snow.takeDirtyRegion();
+    const disc = snowDiscFootprint(0.15);
+    snow.stamp({ area: 0.02, footprint: disc, load: 400, x: -4, z: 4 });
+    snow.stamp({ area: 0.02, footprint: disc, load: 400, x: 4, z: -4 });
+    const box = snow.dirtyRegion;
+    const windows = snow.takeDirtyRegions();
+    expect(windows).toHaveLength(2);
+    for (const window of windows)
+      expect(window.columns * window.rows).toBeLessThan(0.1 * snow.columns * snow.rows);
+    expect(snow.takeDirtyRegion()).toBeUndefined();
+    expect(snow.takeDirtyRegions()).toHaveLength(0);
+    expect(box).toBeDefined();
+    snow.stamp({ area: 0.02, footprint: disc, load: 400, x: 0, z: 0 });
+    snow.stamp({ area: 0.02, footprint: disc, load: 400, x: 0.1, z: 0.1 });
+    expect(snow.takeDirtyRegions()).toHaveLength(1);
+  });
+
   it("copies a channel window that matches sample at every cell, and rejects a window outside", () => {
     const snow = new SnowField({ field: fixtureTerrain(), depth: 0.28 });
     snow.stamp({ area: 0.02, footprint: snowDiscFootprint(0.3), load: 2000, x: 0, z: 0 });
