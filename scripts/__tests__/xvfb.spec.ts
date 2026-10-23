@@ -98,6 +98,12 @@ describe.each([
         { mode: 0o755 },
       );
     }
+    // Reports a child on the root once the compositor has started, as the real one does.
+    fs.writeFileSync(
+      path.join(bin, "xwininfo"),
+      `#!/bin/sh\ntest -f ${compositorArgs} && echo "     1 child:"\nexit 0\n`,
+      { mode: 0o755 },
+    );
     return { bin, xvfbArgs, compositorArgs };
   }
 
