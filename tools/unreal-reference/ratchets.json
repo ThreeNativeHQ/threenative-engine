@@ -6680,12 +6680,12 @@
       "cell": "sun04_backlit",
       "region": "BacklitWall",
       "metric": "deltaE",
-      "bound": 8.0595,
-      "value": 7.771,
+      "bound": 4.5756,
+      "value": 4.287,
       "spread": 0.28847,
       "runs": 2,
-      "since": "340abbffd",
-      "date": "2026-10-22"
+      "since": "f5d469841",
+      "date": "2026-10-23"
     },
     {
       "scene": "reference",
@@ -6693,12 +6693,12 @@
       "cell": "sun04_backlit",
       "region": "BacklitWall",
       "metric": "dP50",
-      "bound": 0.33334,
-      "value": 0.2857,
+      "bound": 0.2381,
+      "value": 0.1905,
       "spread": 0.04762,
       "runs": 2,
-      "since": "340abbffd",
-      "date": "2026-10-22"
+      "since": "f5d469841",
+      "date": "2026-10-23"
     },
     {
       "scene": "reference",
@@ -6706,12 +6706,12 @@
       "cell": "sun04_backlit",
       "region": "Floor",
       "metric": "deltaE",
-      "bound": 2.9734,
-      "value": 2.656,
+      "bound": 2.8743,
+      "value": 2.557,
       "spread": 0.31755,
       "runs": 2,
-      "since": "340abbffd",
-      "date": "2026-10-22"
+      "since": "f5d469841",
+      "date": "2026-10-23"
     },
     {
       "scene": "reference",
@@ -6732,12 +6732,12 @@
       "cell": "sun04_backlit",
       "region": "LitFloor",
       "metric": "deltaE",
-      "bound": 5.3269,
-      "value": 4.975,
+      "bound": 5.3267,
+      "value": 4.974,
       "spread": 0.35234,
       "runs": 2,
-      "since": "340abbffd",
-      "date": "2026-10-22"
+      "since": "f5d469841",
+      "date": "2026-10-23"
     },
     {
       "scene": "reference",
@@ -6758,12 +6758,12 @@
       "cell": "sun04_backlit",
       "region": "ShadowedFloor",
       "metric": "deltaE",
-      "bound": 2.8696,
-      "value": 2.552,
+      "bound": 2.7765,
+      "value": 2.459,
       "spread": 0.31714,
       "runs": 2,
-      "since": "340abbffd",
-      "date": "2026-10-22"
+      "since": "f5d469841",
+      "date": "2026-10-23"
     },
     {
       "scene": "reference",
@@ -6771,12 +6771,12 @@
       "cell": "sun04_backlit",
       "region": "ShadowedFloor",
       "metric": "dP50",
-      "bound": 0.19048,
-      "value": 0.1667,
+      "bound": 0.16667,
+      "value": 0.1429,
       "spread": 0.02381,
       "runs": 2,
-      "since": "340abbffd",
-      "date": "2026-10-22"
+      "since": "f5d469841",
+      "date": "2026-10-23"
     },
     {
       "scene": "reference",
@@ -6784,12 +6784,12 @@
       "cell": "sun04_backlit",
       "region": "Sky",
       "metric": "deltaE",
-      "bound": 2.9194,
-      "value": 2.523,
+      "bound": 2.9139,
+      "value": 2.518,
       "spread": 0.39605,
       "runs": 2,
-      "since": "340abbffd",
-      "date": "2026-10-22"
+      "since": "f5d469841",
+      "date": "2026-10-23"
     },
     {
       "scene": "reference",
@@ -6836,12 +6836,12 @@
       "cell": "sun04_exterior",
       "region": "Capsule",
       "metric": "deltaE",
-      "bound": 5.5419,
-      "value": 5.255,
+      "bound": 5.3724,
+      "value": 5.085,
       "spread": 0.28685,
       "runs": 2,
-      "since": "340abbffd",
-      "date": "2026-10-22"
+      "since": "f5d469841",
+      "date": "2026-10-23"
     },
     {
       "scene": "reference",
@@ -6849,12 +6849,12 @@
       "cell": "sun04_exterior",
       "region": "Capsule",
       "metric": "dP50",
-      "bound": 0.099416,
-      "value": 0.09357,
+      "bound": 0.093568,
+      "value": 0.08772,
       "spread": 0.005848,
       "runs": 2,
-      "since": "340abbffd",
-      "date": "2026-10-22"
+      "since": "f5d469841",
+      "date": "2026-10-23"
     },
     {
       "scene": "reference",
@@ -6862,12 +6862,12 @@
       "cell": "sun04_exterior",
       "region": "Floor",
       "metric": "deltaE",
-      "bound": 2.5989,
-      "value": 2.284,
+      "bound": 2.5702,
+      "value": 2.255,
       "spread": 0.31517,
       "runs": 2,
-      "since": "340abbffd",
-      "date": "2026-10-22"
+      "since": "f5d469841",
+      "date": "2026-10-23"
     },
     {
       "scene": "reference",
@@ -6888,12 +6888,12 @@
       "cell": "sun04_exterior",
       "region": "LitFloor",
       "metric": "deltaE",
-      "bound": 2.6451,
-      "value": 2.33,
+      "bound": 2.3895,
+      "value": 2.075,
       "spread": 0.31493,
       "runs": 2,
-      "since": "340abbffd",
-      "date": "2026-10-22"
+      "since": "f5d469841",
+      "date": "2026-10-23"
     },
     {
       "scene": "reference",
@@ -6901,12 +6901,12 @@
       "cell": "sun04_exterior",
       "region": "LitFloor",
       "metric": "dP50",
-      "bound": 0.2,
-      "value": 0.1714,
+      "bound": 0.17143,
+      "value": 0.1429,
       "spread": 0.028572,
       "runs": 2,
-      "since": "340abbffd",
-      "date": "2026-10-22"
+      "since": "f5d469841",
+      "date": "2026-10-23"
     },
     {
       "scene": "reference",
@@ -6914,12 +6914,12 @@
       "cell": "sun04_exterior",
       "region": "Room",
       "metric": "deltaE",
-      "bound": 4.974,
-      "value": 4.696,
+      "bound": 4.7944,
+      "value": 4.517,
       "spread": 0.27774,
       "runs": 2,
-      "since": "340abbffd",
-      "date": "2026-10-22"
+      "since": "f5d469841",
+      "date": "2026-10-23"
     },
     {
       "scene": "reference",
@@ -6927,12 +6927,12 @@
       "cell": "sun04_exterior",
       "region": "Room",
       "metric": "dP50",
-      "bound": 0.084746,
-      "value": 0.0791,
+      "bound": 0.079097,
+      "value": 0.07345,
       "spread": 0.0056498,
       "runs": 2,
-      "since": "340abbffd",
-      "date": "2026-10-22"
+      "since": "f5d469841",
+      "date": "2026-10-23"
     },
     {
       "scene": "reference",
@@ -6940,12 +6940,12 @@
       "cell": "sun04_exterior",
       "region": "ShadowedFloor",
       "metric": "deltaE",
-      "bound": 5.3097,
-      "value": 4.994,
+      "bound": 3.0742,
+      "value": 2.758,
       "spread": 0.31604,
       "runs": 2,
-      "since": "340abbffd",
-      "date": "2026-10-22"
+      "since": "f5d469841",
+      "date": "2026-10-23"
     },
     {
       "scene": "reference",
@@ -6953,12 +6953,12 @@
       "cell": "sun04_exterior",
       "region": "ShadowedFloor",
       "metric": "dP50",
-      "bound": 0.38462,
-      "value": 0.359,
+      "bound": 0.23077,
+      "value": 0.2051,
       "spread": 0.025642,
       "runs": 2,
-      "since": "340abbffd",
-      "date": "2026-10-22"
+      "since": "f5d469841",
+      "date": "2026-10-23"
     },
     {
       "scene": "reference",
@@ -7018,12 +7018,12 @@
       "cell": "sun04_interior",
       "region": "LitFloor",
       "metric": "deltaE",
-      "bound": 2.5552,
-      "value": 2.241,
+      "bound": 2.4487,
+      "value": 2.134,
       "spread": 0.31431,
       "runs": 2,
-      "since": "340abbffd",
-      "date": "2026-10-22"
+      "since": "f5d469841",
+      "date": "2026-10-23"
     },
     {
       "scene": "reference",
@@ -7044,12 +7044,12 @@
       "cell": "sun04_interior",
       "region": "Room",
       "metric": "deltaE",
-      "bound": 5.862,
-      "value": 5.551,
+      "bound": 5.8171,
+      "value": 5.506,
       "spread": 0.31079,
       "runs": 2,
-      "since": "340abbffd",
-      "date": "2026-10-22"
+      "since": "f5d469841",
+      "date": "2026-10-23"
     },
     {
       "scene": "reference",
@@ -7057,12 +7057,12 @@
       "cell": "sun04_interior",
       "region": "Room",
       "metric": "dP50",
-      "bound": 0.11465,
-      "value": 0.1083,
+      "bound": 0.10829,
+      "value": 0.1019,
       "spread": 0.0063695,
       "runs": 2,
-      "since": "340abbffd",
-      "date": "2026-10-22"
+      "since": "f5d469841",
+      "date": "2026-10-23"
     },
     {
       "scene": "reference",
@@ -7096,12 +7096,12 @@
       "cell": "sun04_spheres",
       "region": "Box_Red",
       "metric": "deltaE",
-      "bound": 4.8526,
-      "value": 4.464,
+      "bound": 4.4453,
+      "value": 4.056,
       "spread": 0.38891,
       "runs": 2,
-      "since": "340abbffd",
-      "date": "2026-10-22"
+      "since": "f5d469841",
+      "date": "2026-10-23"
     },
     {
       "scene": "reference",
@@ -7109,12 +7109,12 @@
       "cell": "sun04_spheres",
       "region": "Box_Red",
       "metric": "dP50",
-      "bound": 0.14679,
-      "value": 0.1376,
+      "bound": 0.12845,
+      "value": 0.1193,
       "spread": 0.0091744,
       "runs": 2,
-      "since": "340abbffd",
-      "date": "2026-10-22"
+      "since": "f5d469841",
+      "date": "2026-10-23"
     },
     {
       "scene": "reference",
@@ -7122,12 +7122,12 @@
       "cell": "sun04_spheres",
       "region": "Box_White",
       "metric": "deltaE",
-      "bound": 7.378,
-      "value": 7.135,
+      "bound": 3.5504,
+      "value": 3.307,
       "spread": 0.24317,
       "runs": 2,
-      "since": "340abbffd",
-      "date": "2026-10-22"
+      "since": "f5d469841",
+      "date": "2026-10-23"
     },
     {
       "scene": "reference",
@@ -7135,12 +7135,12 @@
       "cell": "sun04_spheres",
       "region": "Box_White",
       "metric": "dP50",
-      "bound": 0.09804,
-      "value": 0.09314,
+      "bound": 0.058824,
+      "value": 0.05392,
       "spread": 0.004902,
       "runs": 2,
-      "since": "340abbffd",
-      "date": "2026-10-22"
+      "since": "f5d469841",
+      "date": "2026-10-23"
     },
     {
       "scene": "reference",
@@ -7148,12 +7148,12 @@
       "cell": "sun04_spheres",
       "region": "Capsule",
       "metric": "deltaE",
-      "bound": 5.1231,
-      "value": 4.841,
+      "bound": 5.057,
+      "value": 4.775,
       "spread": 0.28222,
       "runs": 2,
-      "since": "340abbffd",
-      "date": "2026-10-22"
+      "since": "f5d469841",
+      "date": "2026-10-23"
     },
     {
       "scene": "reference",
@@ -7161,12 +7161,12 @@
       "cell": "sun04_spheres",
       "region": "Capsule",
       "metric": "dP50",
-      "bound": 0.091955,
-      "value": 0.08621,
+      "bound": 0.086207,
+      "value": 0.08046,
       "spread": 0.0057472,
       "runs": 2,
-      "since": "340abbffd",
-      "date": "2026-10-22"
+      "since": "f5d469841",
+      "date": "2026-10-23"
     },
     {
       "scene": "reference",
@@ -7174,12 +7174,12 @@
       "cell": "sun04_spheres",
       "region": "Floor",
       "metric": "deltaE",
-      "bound": 5.226,
-      "value": 4.911,
+      "bound": 3.1183,
+      "value": 2.803,
       "spread": 0.31493,
       "runs": 2,
-      "since": "340abbffd",
-      "date": "2026-10-22"
+      "since": "f5d469841",
+      "date": "2026-10-23"
     },
     {
       "scene": "reference",
@@ -7187,12 +7187,12 @@
       "cell": "sun04_spheres",
       "region": "LitFloor",
       "metric": "deltaE",
-      "bound": 3.583,
-      "value": 3.267,
+      "bound": 2.9771,
+      "value": 2.662,
       "spread": 0.31543,
       "runs": 2,
-      "since": "340abbffd",
-      "date": "2026-10-22"
+      "since": "f5d469841",
+      "date": "2026-10-23"
     },
     {
       "scene": "reference",
@@ -7200,12 +7200,12 @@
       "cell": "sun04_spheres",
       "region": "LitFloor",
       "metric": "dP50",
-      "bound": 0.2973,
-      "value": 0.2703,
+      "bound": 0.24325,
+      "value": 0.2162,
       "spread": 0.027028,
       "runs": 2,
-      "since": "340abbffd",
-      "date": "2026-10-22"
+      "since": "f5d469841",
+      "date": "2026-10-23"
     },
     {
       "scene": "reference",
@@ -7213,12 +7213,12 @@
       "cell": "sun04_spheres",
       "region": "Room",
       "metric": "deltaE",
-      "bound": 5.5915,
-      "value": 5.309,
+      "bound": 5.4234,
+      "value": 5.141,
       "spread": 0.28222,
       "runs": 2,
-      "since": "340abbffd",
-      "date": "2026-10-22"
+      "since": "f5d469841",
+      "date": "2026-10-23"
     },
     {
       "scene": "reference",
@@ -7226,12 +7226,12 @@
       "cell": "sun04_spheres",
       "region": "ShadowedFloor",
       "metric": "deltaE",
-      "bound": 7.0459,
-      "value": 6.731,
+      "bound": 3.1106,
+      "value": 2.796,
       "spread": 0.31471,
       "runs": 2,
-      "since": "340abbffd",
-      "date": "2026-10-22"
+      "since": "f5d469841",
+      "date": "2026-10-23"
     },
     {
       "scene": "reference",
@@ -7239,12 +7239,12 @@
       "cell": "sun04_spheres",
       "region": "ShadowedFloor",
       "metric": "dP50",
-      "bound": 0.61765,
-      "value": 0.5882,
+      "bound": 0.29412,
+      "value": 0.2647,
       "spread": 0.029412,
       "runs": 2,
-      "since": "340abbffd",
-      "date": "2026-10-22"
+      "since": "f5d469841",
+      "date": "2026-10-23"
     },
     {
       "scene": "reference",
@@ -7252,12 +7252,12 @@
       "cell": "sun04_spheres",
       "region": "Sky",
       "metric": "deltaE",
-      "bound": 1.8939,
-      "value": 1.497,
+      "bound": 1.8792,
+      "value": 1.482,
       "spread": 0.39676,
       "runs": 2,
-      "since": "340abbffd",
-      "date": "2026-10-22"
+      "since": "f5d469841",
+      "date": "2026-10-23"
     },
     {
       "scene": "reference",
@@ -7304,12 +7304,12 @@
       "cell": "sun04_spheres",
       "region": "Sphere_RoughDielectric",
       "metric": "deltaE",
-      "bound": 6.2483,
-      "value": 5.961,
+      "bound": 5.3919,
+      "value": 5.105,
       "spread": 0.28685,
       "runs": 2,
-      "since": "340abbffd",
-      "date": "2026-10-22"
+      "since": "f5d469841",
+      "date": "2026-10-23"
     },
     {
       "scene": "reference",
@@ -7317,12 +7317,12 @@
       "cell": "sun04_spheres",
       "region": "Sphere_RoughDielectric",
       "metric": "dP50",
-      "bound": 0.11696,
-      "value": 0.1111,
+      "bound": 0.093568,
+      "value": 0.08772,
       "spread": 0.005848,
       "runs": 2,
-      "since": "340abbffd",
-      "date": "2026-10-22"
+      "since": "f5d469841",
+      "date": "2026-10-23"
     },
     {
       "scene": "reference",
@@ -7330,12 +7330,12 @@
       "cell": "sun04_spheres",
       "region": "Sphere_SmoothDielectric",
       "metric": "deltaE",
-      "bound": 6.0948,
-      "value": 5.801,
+      "bound": 5.4614,
+      "value": 5.168,
       "spread": 0.29328,
       "runs": 2,
-      "since": "340abbffd",
-      "date": "2026-10-22"
+      "since": "f5d469841",
+      "date": "2026-10-23"
     },
     {
       "scene": "reference",
@@ -7343,12 +7343,12 @@
       "cell": "sun04_spheres",
       "region": "Sphere_SmoothDielectric",
       "metric": "dP50",
-      "bound": 0.11378,
-      "value": 0.1078,
+      "bound": 0.1018,
+      "value": 0.09581,
       "spread": 0.0059881,
       "runs": 2,
-      "since": "340abbffd",
-      "date": "2026-10-22"
+      "since": "f5d469841",
+      "date": "2026-10-23"
     },
     {
       "scene": "reference",
@@ -7356,12 +7356,12 @@
       "cell": "sun15_backlit",
       "region": "BacklitWall",
       "metric": "deltaE",
-      "bound": 6.792,
-      "value": 6.475,
+      "bound": 4.8931,
+      "value": 4.576,
       "spread": 0.31675,
       "runs": 2,
-      "since": "340abbffd",
-      "date": "2026-10-22"
+      "since": "f5d469841",
+      "date": "2026-10-23"
     },
     {
       "scene": "reference",
@@ -7369,12 +7369,12 @@
       "cell": "sun15_backlit",
       "region": "BacklitWall",
       "metric": "dP50",
-      "bound": 0.14635,
-      "value": 0.122,
+      "bound": 0.12196,
+      "value": 0.09756,
       "spread": 0.024391,
       "runs": 2,
-      "since": "340abbffd",
-      "date": "2026-10-22"
+      "since": "f5d469841",
+      "date": "2026-10-23"
     },
     {
       "scene": "reference",
@@ -7408,12 +7408,12 @@
       "cell": "sun15_backlit",
       "region": "LitFloor",
       "metric": "deltaE",
-      "bound": 2.8983,
-      "value": 2.652,
+      "bound": 2.8976,
+      "value": 2.651,
       "spread": 0.24657,
       "runs": 2,
-      "since": "340abbffd",
-      "date": "2026-10-22"
+      "since": "f5d469841",
+      "date": "2026-10-23"
     },
     {
       "scene": "reference",
@@ -7434,12 +7434,12 @@
       "cell": "sun15_backlit",
       "region": "ShadowedFloor",
       "metric": "deltaE",
-      "bound": 5.7869,
-      "value": 5.454,
+      "bound": 5.7712,
+      "value": 5.438,
       "spread": 0.33293,
       "runs": 2,
-      "since": "340abbffd",
-      "date": "2026-10-22"
+      "since": "f5d469841",
+      "date": "2026-10-23"
     },
     {
       "scene": "reference",
@@ -7512,12 +7512,12 @@
       "cell": "sun15_exterior",
       "region": "Capsule",
       "metric": "deltaE",
-      "bound": 2.029,
-      "value": 1.804,
+      "bound": 1.999,
+      "value": 1.774,
       "spread": 0.22461,
       "runs": 2,
-      "since": "340abbffd",
-      "date": "2026-10-22"
+      "since": "f5d469841",
+      "date": "2026-10-23"
     },
     {
       "scene": "reference",
@@ -7538,12 +7538,12 @@
       "cell": "sun15_exterior",
       "region": "Floor",
       "metric": "deltaE",
-      "bound": 6.1835,
-      "value": 5.839,
+      "bound": 6.1826,
+      "value": 5.838,
       "spread": 0.34425,
       "runs": 2,
-      "since": "340abbffd",
-      "date": "2026-10-22"
+      "since": "f5d469841",
+      "date": "2026-10-23"
     },
     {
       "scene": "reference",
@@ -7564,12 +7564,12 @@
       "cell": "sun15_exterior",
       "region": "LitFloor",
       "metric": "deltaE",
-      "bound": 6.0333,
-      "value": 5.687,
+      "bound": 6.0331,
+      "value": 5.686,
       "spread": 0.34662,
       "runs": 2,
-      "since": "340abbffd",
-      "date": "2026-10-22"
+      "since": "f5d469841",
+      "date": "2026-10-23"
     },
     {
       "scene": "reference",
@@ -7616,12 +7616,12 @@
       "cell": "sun15_exterior",
       "region": "ShadowedFloor",
       "metric": "deltaE",
-      "bound": 6.2859,
-      "value": 5.955,
+      "bound": 5.9365,
+      "value": 5.606,
       "spread": 0.33077,
       "runs": 2,
-      "since": "340abbffd",
-      "date": "2026-10-22"
+      "since": "f5d469841",
+      "date": "2026-10-23"
     },
     {
       "scene": "reference",
@@ -7629,12 +7629,12 @@
       "cell": "sun15_exterior",
       "region": "ShadowedFloor",
       "metric": "dP50",
-      "bound": 0.13606,
-      "value": 0.1293,
+      "bound": 0.12926,
+      "value": 0.1224,
       "spread": 0.0068028,
       "runs": 2,
-      "since": "340abbffd",
-      "date": "2026-10-22"
+      "since": "f5d469841",
+      "date": "2026-10-23"
     },
     {
       "scene": "reference",
@@ -7668,12 +7668,12 @@
       "cell": "sun15_interior",
       "region": "Floor",
       "metric": "deltaE",
-      "bound": 6.2643,
-      "value": 5.889,
+      "bound": 6.0781,
+      "value": 5.703,
       "spread": 0.37513,
       "runs": 2,
-      "since": "340abbffd",
-      "date": "2026-10-22"
+      "since": "f5d469841",
+      "date": "2026-10-23"
     },
     {
       "scene": "reference",
@@ -7681,12 +7681,12 @@
       "cell": "sun15_interior",
       "region": "Floor",
       "metric": "dP50",
-      "bound": 0.13179,
-      "value": 0.124,
+      "bound": 0.12404,
+      "value": 0.1163,
       "spread": 0.007752,
       "runs": 2,
-      "since": "340abbffd",
-      "date": "2026-10-22"
+      "since": "f5d469841",
+      "date": "2026-10-23"
     },
     {
       "scene": "reference",
@@ -7733,12 +7733,12 @@
       "cell": "sun15_spheres",
       "region": "Box_Red",
       "metric": "deltaE",
-      "bound": 4.9819,
-      "value": 4.678,
+      "bound": 4.788,
+      "value": 4.484,
       "spread": 0.30352,
       "runs": 2,
-      "since": "340abbffd",
-      "date": "2026-10-22"
+      "since": "f5d469841",
+      "date": "2026-10-23"
     },
     {
       "scene": "reference",
@@ -7759,12 +7759,12 @@
       "cell": "sun15_spheres",
       "region": "Box_White",
       "metric": "deltaE",
-      "bound": 1.9928,
-      "value": 1.782,
+      "bound": 1.5837,
+      "value": 1.373,
       "spread": 0.21036,
       "runs": 2,
-      "since": "340abbffd",
-      "date": "2026-10-22"
+      "since": "f5d469841",
+      "date": "2026-10-23"
     },
     {
       "scene": "reference",
@@ -7772,12 +7772,12 @@
       "cell": "sun15_spheres",
       "region": "Box_White",
       "metric": "dP50",
-      "bound": 0.029412,
-      "value": 0.02521,
+      "bound": 0.025211,
+      "value": 0.02101,
       "spread": 0.0042017,
       "runs": 2,
-      "since": "340abbffd",
-      "date": "2026-10-22"
+      "since": "f5d469841",
+      "date": "2026-10-23"
     },
     {
       "scene": "reference",
@@ -7785,12 +7785,12 @@
       "cell": "sun15_spheres",
       "region": "Capsule",
       "metric": "deltaE",
-      "bound": 1.9599,
-      "value": 1.737,
+      "bound": 1.9592,
+      "value": 1.736,
       "spread": 0.22272,
       "runs": 2,
-      "since": "340abbffd",
-      "date": "2026-10-22"
+      "since": "f5d469841",
+      "date": "2026-10-23"
     },
     {
       "scene": "reference",
@@ -7811,12 +7811,12 @@
       "cell": "sun15_spheres",
       "region": "Floor",
       "metric": "deltaE",
-      "bound": 7.3874,
-      "value": 7.052,
+      "bound": 6.5361,
+      "value": 6.201,
       "spread": 0.33513,
       "runs": 2,
-      "since": "340abbffd",
-      "date": "2026-10-22"
+      "since": "f5d469841",
+      "date": "2026-10-23"
     },
     {
       "scene": "reference",
@@ -7824,12 +7824,12 @@
       "cell": "sun15_spheres",
       "region": "Floor",
       "metric": "dP50",
-      "bound": 0.16552,
-      "value": 0.1586,
+      "bound": 0.14483,
+      "value": 0.1379,
       "spread": 0.0068966,
       "runs": 2,
-      "since": "340abbffd",
-      "date": "2026-10-22"
+      "since": "f5d469841",
+      "date": "2026-10-23"
     },
     {
       "scene": "reference",
@@ -7837,12 +7837,12 @@
       "cell": "sun15_spheres",
       "region": "LitFloor",
       "metric": "deltaE",
-      "bound": 5.9845,
-      "value": 5.66,
+      "bound": 5.9488,
+      "value": 5.624,
       "spread": 0.32448,
       "runs": 2,
-      "since": "340abbffd",
-      "date": "2026-10-22"
+      "since": "f5d469841",
+      "date": "2026-10-23"
     },
     {
       "scene": "reference",
@@ -7876,12 +7876,12 @@
       "cell": "sun15_spheres",
       "region": "ShadowedFloor",
       "metric": "deltaE",
-      "bound": 8.4964,
-      "value": 8.154,
+      "bound": 6.7438,
+      "value": 6.402,
       "spread": 0.34191,
       "runs": 2,
-      "since": "340abbffd",
-      "date": "2026-10-22"
+      "since": "f5d469841",
+      "date": "2026-10-23"
     },
     {
       "scene": "reference",
@@ -7889,12 +7889,12 @@
       "cell": "sun15_spheres",
       "region": "ShadowedFloor",
       "metric": "dP50",
-      "bound": 0.19015,
-      "value": 0.1831,
+      "bound": 0.14789,
+      "value": 0.1408,
       "spread": 0.0070423,
       "runs": 2,
-      "since": "340abbffd",
-      "date": "2026-10-22"
+      "since": "f5d469841",
+      "date": "2026-10-23"
     },
     {
       "scene": "reference",
@@ -7902,12 +7902,12 @@
       "cell": "sun15_spheres",
       "region": "Sky",
       "metric": "deltaE",
-      "bound": 0.70533,
-      "value": 0.4216,
+      "bound": 0.69978,
+      "value": 0.416,
       "spread": 0.28374,
       "runs": 2,
-      "since": "340abbffd",
-      "date": "2026-10-22"
+      "since": "f5d469841",
+      "date": "2026-10-23"
     },
     {
       "scene": "reference",
@@ -7928,12 +7928,12 @@
       "cell": "sun15_spheres",
       "region": "Sphere_Chrome",
       "metric": "deltaE",
-      "bound": 9.9733,
-      "value": 9.621,
+      "bound": 9.9643,
+      "value": 9.612,
       "spread": 0.35234,
       "runs": 2,
-      "since": "340abbffd",
-      "date": "2026-10-22"
+      "since": "f5d469841",
+      "date": "2026-10-23"
     },
     {
       "scene": "reference",
@@ -7954,12 +7954,12 @@
       "cell": "sun15_spheres",
       "region": "Sphere_RoughDielectric",
       "metric": "deltaE",
-      "bound": 2.1975,
-      "value": 1.974,
+      "bound": 1.9862,
+      "value": 1.763,
       "spread": 0.22366,
       "runs": 2,
-      "since": "340abbffd",
-      "date": "2026-10-22"
+      "since": "f5d469841",
+      "date": "2026-10-23"
     },
     {
       "scene": "reference",
@@ -7967,12 +7967,12 @@
       "cell": "sun15_spheres",
       "region": "Sphere_RoughDielectric",
       "metric": "dP50",
-      "bound": 0.040359,
-      "value": 0.03587,
+      "bound": 0.035875,
+      "value": 0.03139,
       "spread": 0.0044844,
       "runs": 2,
-      "since": "340abbffd",
-      "date": "2026-10-22"
+      "since": "f5d469841",
+      "date": "2026-10-23"
     },
     {
       "scene": "reference",
@@ -7980,12 +7980,12 @@
       "cell": "sun15_spheres",
       "region": "Sphere_SmoothDielectric",
       "metric": "deltaE",
-      "bound": 2.1237,
-      "value": 1.898,
+      "bound": 2.0515,
+      "value": 1.826,
       "spread": 0.22557,
       "runs": 2,
-      "since": "340abbffd",
-      "date": "2026-10-22"
+      "since": "f5d469841",
+      "date": "2026-10-23"
     },
     {
       "scene": "reference",
@@ -8006,12 +8006,12 @@
       "cell": "sun60_backlit",
       "region": "BacklitWall",
       "metric": "deltaE",
-      "bound": 4.7984,
-      "value": 4.469,
+      "bound": 4.1865,
+      "value": 3.857,
       "spread": 0.32921,
       "runs": 2,
-      "since": "340abbffd",
-      "date": "2026-10-22"
+      "since": "f5d469841",
+      "date": "2026-10-23"
     },
     {
       "scene": "reference",
@@ -8019,12 +8019,13 @@
       "cell": "sun60_backlit",
       "region": "BacklitWall",
       "metric": "dP50",
-      "bound": 0.032259,
-      "value": 0.01613,
+      "bound": 0.12904,
+      "value": 0.1129,
       "spread": 0.01613,
       "runs": 2,
-      "since": "340abbffd",
-      "date": "2026-10-22"
+      "since": "f5d469841",
+      "date": "2026-10-23",
+      "reason": "PRD-634 5894cd864: the emissive sphere no longer lights its neighbours below L7 (Unreal has no such spill at L3). BacklitWall sun60_backlit loses the grey spill lobe: deltaE 4.47 to 3.86, p50 63 to 55 vs Unreal 62. Reference L3 total dP50 7.391 to 6.374, deltaE 292.2 to 265.1 (2 runs per arm, identical). Fresh judge IMPROVEMENT (wall and full frame); the residual wall darkness is an under-lit sky fill, PRD-724."
     },
     {
       "scene": "reference",
@@ -8162,12 +8163,12 @@
       "cell": "sun60_exterior",
       "region": "Capsule",
       "metric": "deltaE",
-      "bound": 2.0379,
-      "value": 1.809,
+      "bound": 2.0225,
+      "value": 1.794,
       "spread": 0.22848,
       "runs": 2,
-      "since": "340abbffd",
-      "date": "2026-10-22"
+      "since": "f5d469841",
+      "date": "2026-10-23"
     },
     {
       "scene": "reference",
@@ -8175,12 +8176,12 @@
       "cell": "sun60_exterior",
       "region": "Capsule",
       "metric": "dP50",
-      "bound": 0.041285,
-      "value": 0.0367,
+      "bound": 0.036698,
+      "value": 0.03211,
       "spread": 0.0045872,
       "runs": 2,
-      "since": "340abbffd",
-      "date": "2026-10-22"
+      "since": "f5d469841",
+      "date": "2026-10-23"
     },
     {
       "scene": "reference",
@@ -8357,12 +8358,12 @@
       "cell": "sun60_interior",
       "region": "Room",
       "metric": "deltaE",
-      "bound": 3.4048,
-      "value": 3.156,
+      "bound": 3.3578,
+      "value": 3.109,
       "spread": 0.24889,
       "runs": 2,
-      "since": "340abbffd",
-      "date": "2026-10-22"
+      "since": "f5d469841",
+      "date": "2026-10-23"
     },
     {
       "scene": "reference",
@@ -8383,12 +8384,12 @@
       "cell": "sun60_interior",
       "region": "ShadowedFloor",
       "metric": "deltaE",
-      "bound": 2.5757,
-      "value": 2.339,
+      "bound": 2.5266,
+      "value": 2.29,
       "spread": 0.23665,
       "runs": 2,
-      "since": "340abbffd",
-      "date": "2026-10-22"
+      "since": "f5d469841",
+      "date": "2026-10-23"
     },
     {
       "scene": "reference",
@@ -8409,12 +8410,12 @@
       "cell": "sun60_spheres",
       "region": "Box_Red",
       "metric": "deltaE",
-      "bound": 4.8404,
-      "value": 4.501,
+      "bound": 4.4944,
+      "value": 4.155,
       "spread": 0.33962,
       "runs": 2,
-      "since": "340abbffd",
-      "date": "2026-10-22"
+      "since": "f5d469841",
+      "date": "2026-10-23"
     },
     {
       "scene": "reference",
@@ -8422,12 +8423,12 @@
       "cell": "sun60_spheres",
       "region": "Box_Red",
       "metric": "dP50",
-      "bound": 0.11889,
-      "value": 0.1119,
+      "bound": 0.11189,
+      "value": 0.1049,
       "spread": 0.0069931,
       "runs": 2,
-      "since": "340abbffd",
-      "date": "2026-10-22"
+      "since": "f5d469841",
+      "date": "2026-10-23"
     },
     {
       "scene": "reference",
@@ -8435,12 +8436,12 @@
       "cell": "sun60_spheres",
       "region": "Box_White",
       "metric": "deltaE",
-      "bound": 1.8867,
-      "value": 1.672,
+      "bound": 1.474,
+      "value": 1.259,
       "spread": 0.21461,
       "runs": 2,
-      "since": "340abbffd",
-      "date": "2026-10-22"
+      "since": "f5d469841",
+      "date": "2026-10-23"
     },
     {
       "scene": "reference",
@@ -8448,12 +8449,12 @@
       "cell": "sun60_spheres",
       "region": "Box_White",
       "metric": "dP50",
-      "bound": 0.034335,
-      "value": 0.03004,
+      "bound": 0.025752,
+      "value": 0.02146,
       "spread": 0.0042919,
       "runs": 2,
-      "since": "340abbffd",
-      "date": "2026-10-22"
+      "since": "f5d469841",
+      "date": "2026-10-23"
     },
     {
       "scene": "reference",
@@ -8461,12 +8462,12 @@
       "cell": "sun60_spheres",
       "region": "Capsule",
       "metric": "deltaE",
-      "bound": 1.8399,
-      "value": 1.613,
+      "bound": 1.8249,
+      "value": 1.598,
       "spread": 0.22653,
       "runs": 2,
-      "since": "340abbffd",
-      "date": "2026-10-22"
+      "since": "f5d469841",
+      "date": "2026-10-23"
     },
     {
       "scene": "reference",
@@ -8474,12 +8475,12 @@
       "cell": "sun60_spheres",
       "region": "Capsule",
       "metric": "dP50",
-      "bound": 0.036364,
-      "value": 0.03182,
+      "bound": 0.031819,
+      "value": 0.02727,
       "spread": 0.0045455,
       "runs": 2,
-      "since": "340abbffd",
-      "date": "2026-10-22"
+      "since": "f5d469841",
+      "date": "2026-10-23"
     },
     {
       "scene": "reference",
@@ -8487,12 +8488,12 @@
       "cell": "sun60_spheres",
       "region": "Floor",
       "metric": "deltaE",
-      "bound": 2.5698,
-      "value": 2.335,
+      "bound": 2.5656,
+      "value": 2.331,
       "spread": 0.23455,
       "runs": 2,
-      "since": "340abbffd",
-      "date": "2026-10-22"
+      "since": "f5d469841",
+      "date": "2026-10-23"
     },
     {
       "scene": "reference",
@@ -8500,12 +8501,12 @@
       "cell": "sun60_spheres",
       "region": "Floor",
       "metric": "dP50",
-      "bound": 0.051887,
-      "value": 0.04717,
+      "bound": 0.04717,
+      "value": 0.04245,
       "spread": 0.004717,
       "runs": 2,
-      "since": "340abbffd",
-      "date": "2026-10-22"
+      "since": "f5d469841",
+      "date": "2026-10-23"
     },
     {
       "scene": "reference",
@@ -8513,12 +8514,12 @@
       "cell": "sun60_spheres",
       "region": "LitFloor",
       "metric": "deltaE",
-      "bound": 2.5698,
-      "value": 2.335,
+      "bound": 2.5656,
+      "value": 2.331,
       "spread": 0.23455,
       "runs": 2,
-      "since": "340abbffd",
-      "date": "2026-10-22"
+      "since": "f5d469841",
+      "date": "2026-10-23"
     },
     {
       "scene": "reference",
@@ -8526,12 +8527,12 @@
       "cell": "sun60_spheres",
       "region": "LitFloor",
       "metric": "dP50",
-      "bound": 0.051887,
-      "value": 0.04717,
+      "bound": 0.04717,
+      "value": 0.04245,
       "spread": 0.004717,
       "runs": 2,
-      "since": "340abbffd",
-      "date": "2026-10-22"
+      "since": "f5d469841",
+      "date": "2026-10-23"
     },
     {
       "scene": "reference",
@@ -8539,12 +8540,12 @@
       "cell": "sun60_spheres",
       "region": "Room",
       "metric": "dP50",
-      "bound": 0.052632,
-      "value": 0.04785,
+      "bound": 0.047847,
+      "value": 0.04306,
       "spread": 0.0047847,
       "runs": 2,
-      "since": "340abbffd",
-      "date": "2026-10-22"
+      "since": "f5d469841",
+      "date": "2026-10-23"
     },
     {
       "scene": "reference",
@@ -8565,12 +8566,12 @@
       "cell": "sun60_spheres",
       "region": "ShadowedFloor",
       "metric": "dP50",
-      "bound": 0.056873,
-      "value": 0.05213,
+      "bound": 0.052133,
+      "value": 0.04739,
       "spread": 0.0047394,
       "runs": 2,
-      "since": "340abbffd",
-      "date": "2026-10-22"
+      "since": "f5d469841",
+      "date": "2026-10-23"
     },
     {
       "scene": "reference",
@@ -8604,12 +8605,12 @@
       "cell": "sun60_spheres",
       "region": "Sphere_Chrome",
       "metric": "deltaE",
-      "bound": 8.0308,
-      "value": 7.677,
+      "bound": 8.0035,
+      "value": 7.65,
       "spread": 0.35396,
       "runs": 2,
-      "since": "340abbffd",
-      "date": "2026-10-22"
+      "since": "f5d469841",
+      "date": "2026-10-23"
     },
     {
       "scene": "reference",
@@ -8630,12 +8631,12 @@
       "cell": "sun60_spheres",
       "region": "Sphere_RoughDielectric",
       "metric": "deltaE",
-      "bound": 2.2277,
-      "value": 2.001,
+      "bound": 2.023,
+      "value": 1.796,
       "spread": 0.22653,
       "runs": 2,
-      "since": "340abbffd",
-      "date": "2026-10-22"
+      "since": "f5d469841",
+      "date": "2026-10-23"
     },
     {
       "scene": "reference",
@@ -8643,12 +8644,12 @@
       "cell": "sun60_spheres",
       "region": "Sphere_RoughDielectric",
       "metric": "dP50",
-      "bound": 0.04091,
-      "value": 0.03636,
+      "bound": 0.036364,
+      "value": 0.03182,
       "spread": 0.0045455,
       "runs": 2,
-      "since": "340abbffd",
-      "date": "2026-10-22"
+      "since": "f5d469841",
+      "date": "2026-10-23"
     },
     {
       "scene": "reference",
@@ -8656,12 +8657,12 @@
       "cell": "sun60_spheres",
       "region": "Sphere_SmoothDielectric",
       "metric": "deltaE",
-      "bound": 1.7788,
-      "value": 1.554,
+      "bound": 1.628,
+      "value": 1.403,
       "spread": 0.22461,
       "runs": 2,
-      "since": "340abbffd",
-      "date": "2026-10-22"
+      "since": "f5d469841",
+      "date": "2026-10-23"
     },
     {
       "scene": "reference",

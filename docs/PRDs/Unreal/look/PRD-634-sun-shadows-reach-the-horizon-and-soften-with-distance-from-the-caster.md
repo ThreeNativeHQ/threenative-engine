@@ -196,3 +196,12 @@ A capsule's feet stay sharp, and a shadow cast from 10 m up spreads to about 9 c
   Re-cut (`--relax`, the lock policy's part c): the 9 ratchets above moved away; every other bound is unchanged or tighter (74 at L5 and the same at L6 tightened). The cut used two arms
   (`xafter`, `xemit`) as its two runs, which differ only in the sun-filter knobs. A third run of one arm was not taken.
   Open: five runs per arm were not taken (2 per arm, equal in every metric); L9 other poses, sun04 and sun60 at L7 to L9, `gi:` and `shadow:` scenes were not captured. The cause of the dark `Room` (Unreal is brighter there) is a missing ambient term at L5 and L6, not the spill.
+- 2026-10-23 (team-lead, backlit-lane bisect): **the spill rule also moves reference L3 `sun60_backlit` BacklitWall; one ratchet re-cut**. The lock board at
+  epic `f5d469841` against `ce69cbb7e` broke one ratchet: L3 BacklitWall dP50 0.1129 in both runs against the bound 0.032259. Bisect by frame hash: `ff8b39fdf`
+  and `55a5111c3` with `spill=1` give the old frame, `55a5111c3` gives the new one, and `vsmAngle=1` or `vsmRay=0` do not change it. Cause: `5894cd864` (above).
+  The old spill lit the wall a neutral grey (p50 63, Unreal 62, deltaE 4.47). Without it the wall has Unreal's blue and its vertical falloff (deltaE 3.86)
+  but is 7 levels too dark (p50 55). Receipt, 2 runs per arm with identical results: reference L3 total dP50 7.391 to 6.374 and deltaE 292.2 to 265.1 over 84 rows;
+  only this row worsens by more than 0.01. Fresh judge (Sonnet): IMPROVEMENT for the wall and for the full frame, no new artifact, with the wall brightness
+  a mild regression on that one axis. Re-cut: `pnpm unreal-look:ratchet --cut f5d469841 --scene reference --layer L3 --relax --reason ...` on the board's
+  two full runs. Only this bound moves away (0.032259 to 0.12904); 82 L3 bounds tighten. The cut also loosened five rows that already held (by 0.002 to 0.06 deltaE);
+  their entries were restored, as a cut without `--relax` does. Open: the dark wall is an under-lit sky or ambient term at L3, as for `Room` at L5 and L6 (PRD-724).
