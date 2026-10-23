@@ -574,10 +574,14 @@ describe("renderChain perAdapter GPU families", () => {
   // The shipped files, not a copy of their shape: the real `renderChain` block of the starter's
   // `play` and `look` scenarios goes through the real loader and the evaluator, against the adapter
   // fields the Iris Xe laptop and the Pixel 8 report. The flat `high` alone failed both.
-  const LOOK_HIGH_STAGES = ["ambientOcclusion", "bloom", "vignette", "grade", "grain"];
-  const LOOK_LOW_STAGES = ["bloom", "vignette", "antialias", "grade"];
+  // The Unreal finishing look (4d49b1fcd): grade and grain run at intensity 0, so the chain refuses both.
+  const LOOK_HIGH_STAGES = ["ambientOcclusion", "traa", "motionBlur", "bloom", "vignette"];
+  const LOOK_MEDIUM_STAGES = ["ambientOcclusion", "traa", "bloom", "vignette"];
+  const LOOK_LOW_STAGES = ["bloom", "vignette", "antialias"];
+  // The starter's native render-chain scenario still expects the grade and grain stages (not yet re-proved on the native host).
+  const NATIVE_CHAIN_HIGH_STAGES = ["ambientOcclusion", "bloom", "vignette", "grade", "grain"];
   const lookChain = (tier: "high" | "low" | "medium"): IPlaytestRenderChainObservation => {
-    const stages = tier === "low" ? LOOK_LOW_STAGES : LOOK_HIGH_STAGES;
+    const stages = { high: LOOK_HIGH_STAGES, low: LOOK_LOW_STAGES, medium: LOOK_MEDIUM_STAGES }[tier];
     return {
       ...HIGH,
       contributions: stages.map((name) => ({ graphOutputChanged: true, name })),
@@ -620,7 +624,7 @@ describe("renderChain perAdapter GPU families", () => {
   // template authors at that tier: the starter drops ambientOcclusion and grain at low, while
   // sailing's bloom and rain's stormPost run at every tier, so their rows keep the stage check.
   it.each<[string, string, string[], string[]]>([
-    ["starter native render-chain", "templates/starter/native-playtests/render-chain.playtest.json", LOOK_HIGH_STAGES, ["bloom", "vignette", "antialias", "grade"]],
+    ["starter native render-chain", "templates/starter/native-playtests/render-chain.playtest.json", NATIVE_CHAIN_HIGH_STAGES, ["bloom", "vignette", "antialias", "grade"]],
     ["sailing native survives", "templates/sailing/native-playtests/survives.playtest.json", ["bloom"], ["bloom"]],
     ["rain native boot", "templates/rain/native-playtests/boot.playtest.json", ["stormPost"], ["stormPost"]],
     ["rain performance", "templates/rain/playtests/performance.playtest.json", ["stormPost"], ["stormPost"]],
@@ -649,7 +653,7 @@ describe("renderChain perAdapter GPU families", () => {
 
   it("keeps the starter native low row from accepting a chain that still runs occlusion or grain", async () => {
     const scenario = await shipped("templates/starter/native-playtests/render-chain.playtest.json");
-    const stages = LOOK_HIGH_STAGES;
+    const stages = NATIVE_CHAIN_HIGH_STAGES;
     const heldHigh: IPlaytestRenderChainObservation = {
       ...HIGH,
       contributions: stages.map((name) => ({ graphOutputChanged: true, name })),
