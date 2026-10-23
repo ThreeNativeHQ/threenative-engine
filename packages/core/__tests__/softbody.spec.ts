@@ -159,6 +159,21 @@ describe("SoftBody3D cloth", () => {
       expect(cloth.material).not.toBe(material);
       expect(cloth.uniqueVertexCount).toBe(3);
       expect(set).toHaveBeenCalledWith(expect.any(Object), "positionNode", expect.any(Number));
+      // The owned engine refuses a uniform array read at a node index (TN_TSL_UNIFORM_ARRAY), so the
+      // collision pass must index its boxes with constants.
+      const colliding = new SoftBody3D(
+        new Mesh(geometry, new (classes.MeshBasicNodeMaterial as new () => object)() as never),
+        {
+          pinned: [0],
+          stiffness: 35,
+          damping: 1.8,
+          gravity: [0, -9.81, 0],
+          wind: [1, 0, 0],
+          collision: { capacity: 2, writeBoxes: () => 0 },
+        },
+      );
+      colliding.attachRenderer(renderer([]));
+      colliding.process();
       const plain = new (classes.MeshBasicMaterial as new () => object)();
       expect(
         () =>
