@@ -12,6 +12,7 @@ import {
 import { MeshPhysicalNodeMaterial, MeshStandardNodeMaterial, type Node } from "three/webgpu";
 
 declare module "three" {
+  // quality-allow: declaration merging needs three's own interface name, and the naming rule would demand an I prefix
   // biome-ignore lint/style/useNamingConvention: a module augmentation keeps three's own class name.
   interface Material {
     /**
@@ -21,11 +22,13 @@ declare module "three" {
      */
     roughDiffuse?: boolean;
   }
+  // quality-allow: declaration merging needs three's own interface name, and the naming rule would demand an I prefix
   // biome-ignore lint/style/useNamingConvention: a module augmentation keeps three's own class name.
   interface PointLight {
     /** Unreal's Source Radius in metres: how large the lamp is. A rough diffuse surface blends back to Lambert at 20 cm. */
     sourceRadius?: number;
   }
+  // quality-allow: declaration merging needs three's own interface name, and the naming rule would demand an I prefix
   // biome-ignore lint/style/useNamingConvention: a module augmentation keeps three's own class name.
   interface SpotLight {
     /** Unreal's Source Radius in metres, as on PointLight. */
@@ -66,7 +69,7 @@ function lampWeight(light: Lamp | undefined): Node<"float"> | undefined {
   if (light === undefined || light.isDirectionalLight === true) return undefined;
   let radius = sourceRadii.get(light);
   if (radius === undefined) {
-    radius = uniform(0).onRenderUpdate(() => light.sourceRadius ?? 0) as unknown as Node<"float">;
+    radius = uniform(0).onRenderUpdate(() => light.sourceRadius ?? 0) as Node<"float">;
     sourceRadii.set(light, radius);
   }
   return clamp(radius.mul(1 / SIZE_LIMIT).oneMinus()) as Node<"float">;
@@ -105,7 +108,7 @@ function roughen(model: ILightingModel): ILightingModel {
     input: IDirectInput,
     builder: unknown,
   ): void {
-    const scratch = vec3(0).toVar() as unknown as Node<"vec3">;
+    const scratch = vec3(0).toVar() as Node<"vec3">;
     lambert.call(
       this,
       { ...input, reflectedLight: { ...input.reflectedLight, directDiffuse: scratch } },
@@ -134,6 +137,7 @@ function roughen(model: ILightingModel): ILightingModel {
  */
 export function installRoughDiffuse(): void {
   for (const material of [MeshStandardNodeMaterial, MeshPhysicalNodeMaterial]) {
+    // quality-allow: three's setupLightingModel types its direct input as LightingModelDirectInput, which IDirectInput narrows to the fields read here
     const proto = material?.prototype as unknown as IPatchable | undefined;
     const original = proto?.setupLightingModel;
     if (proto === undefined || original === undefined || installed.has(proto)) continue;

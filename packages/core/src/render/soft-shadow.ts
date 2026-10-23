@@ -35,6 +35,7 @@ import type { Node } from "three/webgpu";
 export const LEAF_MIN_SOURCE_TANGENT = Math.tan((5 * Math.PI) / 180);
 
 declare module "three" {
+  // quality-allow: declaration merging needs three's own interface name, and the naming rule would demand an I prefix
   // biome-ignore lint/style/useNamingConvention: a module augmentation keeps three's own class name.
   interface Material {
     /**
@@ -444,9 +445,10 @@ export function sourceRadiusShadowFilter({
       // A depth compare answers a float; three's types call every texture read a vec4.
       const tap = (offset: Node<"vec2">, reference: Node<"float">) =>
         cubeTexture(
+          // quality-allow: the depth texture is a cube map the point-light shadow pass renders into, which three types as a plain DepthTexture
           depthTexture as unknown as CubeTexture,
           bd3D.add(tangent.mul(offset.x).add(bitangent.mul(offset.y))),
-        ).compare(reference) as unknown as Node<"float">;
+        ).compare(reference) as unknown as Node<"float">; // quality-allow: a depth compare answers a float, and three 0.185 types every texture read as a vec4
       // The depth along a tap's cube face over the distance along its ray: the ray's largest component
       // over its length.
       const axialPerEuclid = (offset: Node<"vec2">) => {

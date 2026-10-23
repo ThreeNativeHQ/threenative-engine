@@ -643,6 +643,7 @@ export function defineWebRenderer(
   };
   if (DataTexture !== undefined)
     Object.assign(Renderer.prototype, {
+      // quality-allow: the capture API takes the requested Unreal actor name
       // biome-ignore lint/style/useNamingConvention: capture API uses the requested Unreal actor name.
       SphereReflectionCapture: defineSphereReflectionCapture(async (scene, x, y, z, size, face) => {
         beforeRender();

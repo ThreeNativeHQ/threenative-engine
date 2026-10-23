@@ -187,12 +187,8 @@ const blueAP0 = new Matrix3().set(
 );
 const blueAP1 = AP0_TO_AP1.clone().multiply(blueAP0).multiply(AP0_TO_AP1.clone().invert());
 // Transpose only for serialization: Matrix3 stores columns, apply()/multiply() consume rows.
-export const BLUE_CORRECTION_AP1 = blueAP1.clone().transpose().toArray() as unknown as Mat3;
-export const BLUE_CORRECTION_INVERSE_AP1 = blueAP1
-  .clone()
-  .invert()
-  .transpose()
-  .toArray() as unknown as Mat3;
+export const BLUE_CORRECTION_AP1 = blueAP1.clone().transpose().toArray() as Mat3;
+export const BLUE_CORRECTION_INVERSE_AP1 = blueAP1.clone().invert().transpose().toArray() as Mat3;
 
 // The glow and the red modifier of the ACES reference rendering (ACES licence as above, ampas/aces-dev
 // v1.3.1, transforms/ctl/rrt/RRT.ctl). Unreal keeps both in its filmic curve: they run in AP0 after the
@@ -205,8 +201,8 @@ const GLOW_MID = 0.08;
 const RED_SCALE = 0.82;
 const RED_PIVOT = 0.03;
 const RED_WIDTH = (135 * Math.PI) / 180;
-const AP0_TO_AP1_ROWS = AP0_TO_AP1.clone().transpose().toArray() as unknown as Mat3;
-const AP1_TO_AP0 = AP0_TO_AP1.clone().invert().transpose().toArray() as unknown as Mat3;
+const AP0_TO_AP1_ROWS = AP0_TO_AP1.clone().transpose().toArray() as Mat3;
+const AP1_TO_AP0 = AP0_TO_AP1.clone().invert().transpose().toArray() as Mat3;
 
 /** The red modifier's weight at a hue, in radians from red: 1 at red, 0 at half the width away and beyond. */
 export function redModifierWeight(hue: number): number {
@@ -261,7 +257,7 @@ function expandAp1(ap1: Vec3, gamut: number): Vec3 {
   const d2 = ap1.reduce((sum, v) => sum + (v / luma - 1) ** 2, 0);
   const amount = expandAmount(d2, luma, gamut);
   const wide = multiply(EXPAND_AP1, ap1);
-  return ap1.map((v, i) => v + ((wide[i] ?? 0) - v) * amount) as unknown as Vec3;
+  return ap1.map((v, i) => v + ((wide[i] ?? 0) - v) * amount) as number[] & Vec3;
 }
 
 /** The gamut expansion alone, scene-linear sRGB in and out (negative results clip to zero). */
@@ -463,7 +459,7 @@ export function resolveColorGrade(options: ColorGradeOptions = {}): IColorGrade 
     }
     out[range] = merged;
   }
-  const g = out as unknown as IColorGrade;
+  const g = out as Record<string, unknown> & IColorGrade;
   validateGrade(g);
   return g;
 }
@@ -507,7 +503,7 @@ function matMul(a: Mat3, b: Mat3): Mat3 {
       );
     }
   }
-  return out as unknown as Mat3;
+  return out as number[] & Mat3;
 }
 
 /** Krystek's rational fit of the Planckian locus in CIE 1960 (u, v) [Krystek 1985], 1000 to 15000 K. */
@@ -626,9 +622,9 @@ export function filmicToneMap(
   c: IFilmicCurve = FILMIC_CURVE,
   grade: IColorGrade = COLOR_GRADE,
 ): [number, number, number] {
-  const exposed = rgb.map((v) => Math.max(0, v * exposure)) as unknown as Vec3;
+  const exposed = rgb.map((v) => Math.max(0, v * exposure)) as number[] & Vec3;
   const lit =
-    c.lutClip > 0 ? (exposed.map((v) => Math.min(v, c.lutClip)) as unknown as Vec3) : exposed;
+    c.lutClip > 0 ? (exposed.map((v) => Math.min(v, c.lutClip)) as number[] & Vec3) : exposed;
   const balanced = whiteBalanceActive(grade) ? multiply(whiteBalanceMatrix(grade), lit) : lit;
   let ap1: Vec3 = multiply(SRGB_TO_AP1, balanced);
   // Order: Engine/Shaders/Private/PostProcessCombineLUTs.usf and TonemapCommon.ush.
@@ -637,7 +633,7 @@ export function filmicToneMap(
   if (c.blueCorrection !== 0) ap1 = correctBlue(ap1, BLUE_CORRECTION_AP1, c.blueCorrection);
   const corrected = ap1;
   if (c.glow !== 0 || c.redModifier !== 0) ap1 = glowAndRed(ap1, c.glow, c.redModifier);
-  const pre = saturate(ap1.map((v) => Math.max(0, v)) as unknown as Vec3, PRE_SATURATION);
+  const pre = saturate(ap1.map((v) => Math.max(0, v)) as number[] & Vec3, PRE_SATURATION);
   let toned: Vec3 = saturate(
     [filmicCurve(pre[0], c), filmicCurve(pre[1], c), filmicCurve(pre[2], c)],
     POST_SATURATION,

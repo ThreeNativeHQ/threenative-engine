@@ -501,7 +501,7 @@ function stage(definition: {
  * conversion runs, no node is added to the graph, so it cannot move a pixel.
  */
 function denoised(node: ReturnType<typeof denoise>): ChainNode {
-  return node as unknown as ChainNode;
+  return node as typeof node & ChainNode;
 }
 type OutputInstallation = { isCurrent(): boolean; dispose(): void };
 type ResolutionSubrectTarget = {
@@ -996,7 +996,7 @@ export class WorldEnvironment {
       // Only a newly created RTT is ours. A PassNode converts to a borrowed PassTextureNode;
       // supplied TextureNodes/RTTs belong to the caller even when their resources are shared.
       if (colour !== base && Reflect.get(colour, "isRTTNode") === true) {
-        const owned = colour as unknown as {
+        const owned = colour as typeof colour & {
           renderTarget: { dispose(): void };
           _quadMesh: { material: { dispose(): void } };
         };
@@ -1015,7 +1015,7 @@ export class WorldEnvironment {
       if (!options.denoiseEnabled) return node;
       let result = node;
       for (let pass = 0; pass < options.giDenoisePasses; pass += 1) {
-        const filter = denoise(result, depth(), normal(), view) as unknown as {
+        const filter = denoise(result, depth(), normal(), view) as {
           gpuStage?: string;
           index: { value: number };
         };
@@ -1023,7 +1023,7 @@ export class WorldEnvironment {
         // The owned engine times the gather's denoise with the gather (`GI_STAGES`); three ignores the property.
         if (options.ssgiTimedPass === undefined || options.ssgiTimedPass === "denoise")
           filter.gpuStage = "SSGI";
-        result = denoised(filter as unknown as ReturnType<typeof denoise>);
+        result = denoised(filter as ReturnType<typeof denoise>);
       }
       return result;
     };
@@ -1038,7 +1038,7 @@ export class WorldEnvironment {
         build: (input) => {
           // The gather reads the lit frame at each ray's hit, so the frame is materialised once and reused.
           const base = convertToTexture(input);
-          const wasmEngine = "engine" in (renderer.raw as unknown as { info: object }).info;
+          const wasmEngine = "engine" in (renderer.raw as { info: object }).info;
           // Harness: on the owned engine the gather also answers for the tier below it (the world-space cache), so
           // a ray that hits returns `hit - cache` and the two never add the same light twice (Lumen's tiering,
           // Engine/Source/Runtime/Renderer/Private/Lumen/LumenScreenProbeGather.cpp).
@@ -1049,7 +1049,7 @@ export class WorldEnvironment {
             cache === undefined
               ? undefined
               : (position: Node<"vec3">, normal: Node<"vec3">) => cache(position, normal).mul(gain);
-          const gi = (ssgi as unknown as (...args: unknown[]) => ReturnType<typeof ssgi>)(
+          const gi = (ssgi as (...args: unknown[]) => ReturnType<typeof ssgi>)(
             base,
             depth(),
             normal(),
@@ -1080,7 +1080,7 @@ export class WorldEnvironment {
               : view,
           );
           const tier = SSGI_QUALITY[options.ssgiQuality];
-          const probeUniforms = gi as unknown as {
+          const probeUniforms = gi as {
             probeJitter?: { value: number };
             probeDebug?: { value: number };
           };
@@ -1094,7 +1094,7 @@ export class WorldEnvironment {
           // `setSize` is the public seam the pass drives it through. The owned engine's node has a
           // `resolutionScale` of its own.
           const ssgiScale = options.ssgiResolutionScale;
-          const sizedGi = gi as unknown as {
+          const sizedGi = gi as {
             setSize?: (width: number, height: number) => void;
             resolutionScale?: number;
           };
@@ -1121,7 +1121,7 @@ export class WorldEnvironment {
           const occlusion = wasmEngine ? gi.getAONode() : giDenoise(gi.getAONode());
           const indirect = giDenoise(gi.getGINode());
           if (options.denoiseEnabled && options.ssgiDenoiseRadius !== undefined)
-            (indirect as unknown as { radius: { value: number } }).radius.value =
+            (indirect as typeof indirect & { radius: { value: number } }).radius.value =
               options.ssgiDenoiseRadius;
           const reflected = albedo()
             .rgb.mul(float(1).sub(metal().r))
@@ -1172,7 +1172,7 @@ export class WorldEnvironment {
             // Unreal's reach is on the screen (see aoReach.ts). The owned engine's GTAO takes it as `reachPx`, in
             // pixels of the occlusion target; upstream three's GTAONode has no such uniform, so that engine needs
             // a world radius and refuses the default.
-            const owned = contact as unknown as { reachPx?: { value: number } };
+            const owned = contact as { reachPx?: { value: number } };
             if (owned.reachPx === undefined)
               throw new Error(
                 "TN_AO_REACH_UNSUPPORTED: this engine's GTAO has no screen reach; set gtaoRadius (metres)",
@@ -1185,7 +1185,7 @@ export class WorldEnvironment {
           contact.distanceFallOff.value = options.gtaoDistanceFalloff;
           contact.thickness.value = options.gtaoThickness;
           contact.resolutionScale = options.gtaoResolutionScale;
-          const retained = contact as unknown as {
+          const retained = contact as typeof contact & {
             setSize(w: number, h: number): void;
             _aoRenderTarget: RenderTarget;
           };
@@ -1210,10 +1210,10 @@ export class WorldEnvironment {
               ? denoise(contact.getTextureNode(), depth(), normal(), view)
               : undefined;
           if (filter && options.gtaoDenoiseRadius !== undefined)
-            (filter as unknown as { radius: { value: number } }).radius.value =
+            (filter as typeof filter & { radius: { value: number } }).radius.value =
               options.gtaoDenoiseRadius;
           if (filter && resolutionSubrect) {
-            const denoiser = filter as unknown as {
+            const denoiser = filter as typeof filter & {
               textureNode: TextureNode;
               _resolution: { value: Vector2 };
               updateBefore(): void;
@@ -1390,12 +1390,17 @@ export class WorldEnvironment {
             });
             return base.add(traced.mul(trace.weight(rough().g)));
           }
-          const reflections = ssr(base, depth(), normal() as unknown as Parameters<typeof ssr>[2], {
-            camera: view,
-            metalnessNode: metal().r,
-            roughnessNode: rough().g,
-            reflectNonMetals: true,
-          });
+          const reflections = ssr(
+            base,
+            depth(),
+            normal() as ReturnType<typeof normal> & Parameters<typeof ssr>[2],
+            {
+              camera: view,
+              metalnessNode: metal().r,
+              roughnessNode: rough().g,
+              reflectNonMetals: true,
+            },
+          );
           reflections.maxDistance.value = options.ssrMaxDistance;
           reflections.resolutionScale = options.ssrResolutionScale;
           // Unreal traces reflections only for surfaces smoother than a roughness cut-off and fades
@@ -1469,6 +1474,7 @@ export class WorldEnvironment {
             unreal ??
             bloom(texture, options.bloomStrength, options.bloomRadius, options.bloomThreshold);
           if (resolutionSubrect && unreal === undefined) {
+            // quality-allow: this branch only runs for stock bloom (`unreal === undefined`), but `effect` is typed as the union with UnrealBloomNode
             const retained = effect as unknown as {
               setSize(w: number, h: number): void;
               setup(builder: NodeBuilder): unknown;
@@ -1530,16 +1536,16 @@ export class WorldEnvironment {
             };
           }
           releaseBloom = () => {
-            resolutionSubrect?.release(effect as unknown as ResolutionSubrectTarget);
+            resolutionSubrect?.release(effect as typeof effect & ResolutionSubrectTarget);
             effect.dispose();
             // convertToTexture may return its input. Only the newly allocated RTT is ours.
-            const scratch = texture as unknown as {
+            const scratch = texture as typeof texture & {
               isRTTNode?: boolean;
               renderTarget: { dispose(): void };
               _quadMesh: { material: { dispose(): void } };
             };
             if (texture !== input && scratch.isRTTNode === true) {
-              resolutionSubrect?.release(texture as unknown as ResolutionSubrectTarget);
+              resolutionSubrect?.release(texture as ResolutionSubrectTarget);
               scratch.renderTarget.dispose();
               scratch._quadMesh.material.dispose();
             }
@@ -1583,7 +1589,7 @@ export class WorldEnvironment {
           sample(texture);
           const effect = options.screenSpaceAA === "fxaa" ? fxaa(texture) : smaa(texture);
           if (resolutionSubrect && options.screenSpaceAA !== "fxaa") {
-            const retained = effect as unknown as {
+            const retained = effect as typeof effect & {
               setSize(w: number, h: number): void;
               _renderTargetEdges: RenderTarget;
               _renderTargetWeights: RenderTarget;
@@ -1604,7 +1610,7 @@ export class WorldEnvironment {
             ])
               sample(node);
           } else if (resolutionSubrect) {
-            const filter = effect as unknown as {
+            const filter = effect as typeof effect & {
               updateBefore(): void;
               _invSize: { value: Vector2 };
             };
@@ -1618,11 +1624,11 @@ export class WorldEnvironment {
             };
           }
           releaseAa = () => {
-            resolutionSubrect?.release(effect as unknown as ResolutionSubrectTarget);
+            resolutionSubrect?.release(effect as typeof effect & ResolutionSubrectTarget);
             effect.dispose();
             if (Reflect.get(texture, "isRTTNode") === true) {
-              resolutionSubrect?.release(texture as unknown as ResolutionSubrectTarget);
-              const owned = texture as unknown as {
+              resolutionSubrect?.release(texture as typeof texture & ResolutionSubrectTarget);
+              const owned = texture as typeof texture & {
                 renderTarget: RenderTarget;
                 _quadMesh: { material: { dispose(): void } };
               };
@@ -1630,7 +1636,7 @@ export class WorldEnvironment {
               owned._quadMesh.material.dispose();
             }
           };
-          const filtered = effect as unknown as ChainNode;
+          const filtered = effect as typeof effect & ChainNode;
           const back = max(filtered.r, max(filtered.g, filtered.b));
           const floor = float(1).sub(back).max(1e-4);
           return lookDiagnostics.aaAlphaSqueezed
@@ -1798,7 +1804,7 @@ export class WorldEnvironment {
 /** The drawing buffer in pixels. The engine answers `{ width, height }` from a target that returns what it is given. */
 function drawingBufferSize(renderer: OutputRenderer): { width: number; height: number } {
   const size = (
-    renderer.raw as unknown as {
+    renderer.raw as {
       getDrawingBufferSize(target: unknown): {
         width?: number;
         height?: number;

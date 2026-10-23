@@ -2,12 +2,16 @@ import { TSL_NODE } from "./browser-backend.js";
 
 // three r185: src/nodes/core/{TempNode,Node,NodeFrame}.js; shader temporaries stay in the engine.
 export const NodeUpdateType = Object.freeze({
+  // quality-allow: three r185 fixes this public enum key
   // biome-ignore lint/style/useNamingConvention: three r185 public enum key.
   NONE: "none",
+  // quality-allow: three r185 fixes this public enum key
   // biome-ignore lint/style/useNamingConvention: three r185 public enum key.
   FRAME: "frame",
+  // quality-allow: three r185 fixes this public enum key
   // biome-ignore lint/style/useNamingConvention: three r185 public enum key.
   RENDER: "render",
+  // quality-allow: three r185 fixes this public enum key
   // biome-ignore lint/style/useNamingConvention: three r185 public enum key.
   OBJECT: "object",
 });

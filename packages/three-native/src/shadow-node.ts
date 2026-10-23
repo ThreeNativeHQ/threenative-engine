@@ -2,6 +2,12 @@
 let nextId = 0;
 const installed = new Set<ShadowBaseNode>();
 const dispatchKey = Symbol.for("threenative.virtualShadowCommand");
+const bridgeKey = Symbol.for("threenative.virtualShadow");
+/** The symbol-keyed slots the native bridge keeps on a core shadow node. */
+interface IBridgeSlots {
+  [dispatchKey]?: unknown;
+  [bridgeKey]?: unknown;
+}
 interface IShadowObject {
   id: number;
   parent?: IShadowObject | null;
@@ -14,7 +20,7 @@ export function detachVirtualShadow(value: unknown): void {
   installed.delete(value);
   value.dispatch = undefined;
   value.lods.clear();
-  delete (value as unknown as Record<symbol, unknown>)[dispatchKey];
+  delete (value as IBridgeSlots)[dispatchKey];
 }
 export function syncVirtualShadowLods(): void {
   const chains = (globalThis as Record<symbol, unknown>)[
@@ -87,12 +93,10 @@ export function virtualShadowOptions(
   if (value.disposed) throw new Error("TN_NATIVE_SHADOW_NODE_DISPOSED");
   if (dispatch) {
     value.dispatch = dispatch;
-    (value as unknown as Record<symbol, unknown>)[dispatchKey] = dispatch;
+    (value as IBridgeSlots)[dispatchKey] = dispatch;
     installed.add(value);
   }
-  const bridge = (value as unknown as Record<symbol, unknown>)[
-    Symbol.for("threenative.virtualShadow")
-  ];
+  const bridge = (value as IBridgeSlots)[bridgeKey];
   const options = (bridge ?? value.options) as Record<string, unknown>;
   const guards = options.selectionGuard as number[];
   const steps = options.refreshStep as number[];
@@ -109,9 +113,7 @@ export function virtualShadowOptions(
 export function shadowFilterOptions(value: unknown): Record<string, number> | null {
   if (value === null) return null;
   const tagged = (name: string) =>
-    typeof value === "function"
-      ? (value as unknown as Record<symbol, unknown>)[Symbol.for(`threenative.${name}`)]
-      : undefined;
+    typeof value === "function" ? Reflect.get(value, Symbol.for(`threenative.${name}`)) : undefined;
   const angle = tagged("sourceAngleShadowFilter");
   const options = angle ?? tagged("sourceRadiusShadowFilter");
   if (typeof options !== "object" || options === null)

@@ -117,6 +117,15 @@ function dataTexture(data: Float32Array, texels: number): DataTexture {
   return result;
 }
 
+/** The material properties the trace reads, whichever material class carries them. */
+interface IMaterialSlots {
+  color?: { r: number; g: number; b: number };
+  emissive?: { r: number; g: number; b: number };
+  emissiveIntensity?: unknown;
+  metalness?: unknown;
+  roughness?: unknown;
+}
+
 const sideOf = (material: Material): number =>
   material.side === FrontSide ? SIDE_FRONT : material.side === BACK_SIDE ? SIDE_BACK : SIDE_BOTH;
 
@@ -127,7 +136,7 @@ const sideOf = (material: Material): number =>
 function reader(
   attribute: BufferAttribute | InterleavedBufferAttribute,
 ): (vertex: number, component: number) => number {
-  const raw = attribute as unknown as {
+  const raw = attribute as {
     array?: ArrayLike<number>;
     itemSize: number;
     isInterleavedBufferAttribute?: boolean;
@@ -355,11 +364,14 @@ export function packTraceScene(root: Object3D, options: ITraceSceneOptions = {})
   }
   const materialData = new Float32Array(Math.max(1, materials.length) * MATERIAL_TEXELS * 4);
   materials.forEach((material, id) => {
-    const colour = (material as unknown as { color?: { r: number; g: number; b: number } }).color;
-    const emissive = (material as unknown as { emissive?: { r: number; g: number; b: number } })
-      .emissive;
-    const number = (key: string, fallback: number): number => {
-      const value = (material as unknown as Record<string, unknown>)[key];
+    const slots = material as Material & IMaterialSlots;
+    const colour = slots.color;
+    const emissive = slots.emissive;
+    const number = (
+      key: "emissiveIntensity" | "metalness" | "roughness",
+      fallback: number,
+    ): number => {
+      const value = slots[key];
       return typeof value === "number" ? value : fallback;
     };
     const o = id * MATERIAL_TEXELS * 4;

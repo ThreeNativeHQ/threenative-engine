@@ -926,6 +926,12 @@ interface IRenderingShadowNode {
   updateShadow(frame: NodeFrame): void;
 }
 
+/** The slot the native bridge fills with its command sink on a core shadow node. */
+const COMMAND_KEY = Symbol.for("threenative.virtualShadowCommand");
+interface ICommandSlot {
+  [COMMAND_KEY]?: (value: object) => void;
+}
+
 /**
  * One directional shadow for a whole open world: camera-centred clip levels, each snapped to its
  * own texel grid and re-rendered only when its window moves. Movers never touch that cache: a
@@ -1376,9 +1382,7 @@ export class VirtualShadowNode extends ShadowBaseNode {
   }
 
   #nativeCommand(command: string, data: object = {}): void {
-    const dispatch = (this as unknown as Record<symbol, ((value: object) => void) | undefined>)[
-      Symbol.for("threenative.virtualShadowCommand")
-    ];
+    const dispatch = (this as ICommandSlot)[COMMAND_KEY];
     dispatch?.({ command, ...data });
   }
 
@@ -3608,7 +3612,7 @@ const isGpuMs = (n: unknown): n is number => n === -1 || (Number.isFinite(n) && 
 function isLampShadowStats(value: unknown): value is ILampShadowStats {
   const stats = value as Partial<Record<keyof ILampShadowStats, Record<string, unknown>>> | null;
   if (typeof stats !== "object" || stats === null) return false;
-  const { frame, shadowDraws } = stats as unknown as Record<string, unknown>;
+  const { frame, shadowDraws } = stats as Record<string, unknown>;
   const sun = stats.sun;
   const lamps = stats.lamps;
   return (

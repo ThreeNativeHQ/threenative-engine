@@ -10,6 +10,7 @@ import {
 import type { Node } from "three/webgpu";
 
 declare module "three" {
+  // quality-allow: declaration merging needs three's own interface name, and the naming rule would demand an I prefix
   // biome-ignore lint/style/useNamingConvention: a module augmentation keeps three's own class name.
   interface Material {
     /**
@@ -102,6 +103,7 @@ export function installFoliageTransmission(classes: Readonly<Record<string, unkn
       if (this.twoSidedFoliage !== true || this.subsurfaceColor === undefined) return model;
       const direct = model.direct.bind(model);
       // The material's own Color object: an edit of its r, g or b reaches the uniform.
+      // quality-allow: a colour uniform is read as a vec3 colour node, and three 0.185 types the two as unrelated
       const subsurface = uniform(this.subsurfaceColor) as unknown as Node<"vec3">;
       model.direct = (input, inner) => {
         direct(input, inner);

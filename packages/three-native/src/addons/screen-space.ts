@@ -24,12 +24,16 @@ export type TslNode = any;
 
 /** The engine TSL functions and inputs the effect composes. */
 export interface IScreenSpaceTsl {
+  // quality-allow: the engine TSL table must match three's own function name
   // biome-ignore lint/style/useNamingConvention: three's TSL function name.
   readonly Break: () => void;
+  // quality-allow: the engine TSL table must match three's own function name
   // biome-ignore lint/style/useNamingConvention: three's TSL function name.
   readonly Fn: (body: () => TslNode) => () => TslNode;
+  // quality-allow: the engine TSL table must match three's own function name
   // biome-ignore lint/style/useNamingConvention: three's TSL function name.
   readonly If: (condition: TslNode, body: () => void) => { Else(body: () => void): void };
+  // quality-allow: the engine TSL table must match three's own function name
   // biome-ignore lint/style/useNamingConvention: three's TSL function name.
   readonly Loop: (
     options: { start: TslNode; end: TslNode; type: string; condition: string },

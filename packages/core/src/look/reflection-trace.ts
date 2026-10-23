@@ -91,7 +91,7 @@ const METAL_DIFFUSE = 0.12;
 export function tracedReflections(stage: ITracedReflectionStage): Node<"vec4"> {
   const { camera, trace } = stage;
   const live = (read: () => number): Node<"float"> =>
-    uniform(read()).onRenderUpdate(read) as unknown as Node<"float">;
+    uniform(read()).onRenderUpdate(read) as Node<"float">;
   const projection = (index: number) => live(() => camera.projectionMatrix.elements[index] ?? 0);
   const [p00, p11, p02, p12, p22, p32] = [0, 5, 8, 9, 10, 14].map(projection) as [
     Node<"float">,
@@ -236,7 +236,7 @@ export function tracedReflections(stage: ITracedReflectionStage): Node<"vec4"> {
     return result;
   })();
 
-  const node = rtt(graph, null, null, { type: HalfFloatType }) as unknown as Node<"vec4"> & {
+  const node = rtt(graph, null, null, { type: HalfFloatType }) as Node<"vec4"> & {
     setResolutionScale?: (scale: number) => unknown;
   };
   if (stage.resolutionScale !== undefined && stage.resolutionScale !== 1)

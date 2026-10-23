@@ -112,7 +112,7 @@ function pixelsOf(image: unknown): IPixels | string {
     candidate.height > 0
   )
     return {
-      data: data as unknown as ArrayLike<number>,
+      data: data as ArrayBufferView & ArrayLike<number>,
       width: candidate.width,
       height: candidate.height,
     };
