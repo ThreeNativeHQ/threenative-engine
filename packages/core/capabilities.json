@@ -2055,6 +2055,25 @@
       "symbol": "GIBudget"
     },
     {
+      "aliases": [],
+      "constraints": ["an unknown tier name throws with the names it expected"],
+      "example": "const world = new WorldEnvironment({ ...qualityPreset(resolveQualityTier({ gpuClass: renderer.gpuClass })), bloomEnabled: false });",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [
+        "pass any `IWorldEnvironmentOptions` field after `qualityPreset(tier)`, or an explicit `tier` to `resolveQualityTier`"
+      ],
+      "package": "@threenative/core",
+      "signature": "export function giPreset(tier: string): IGiTier { … }",
+      "situations": [
+        "pick a start tier for the GPU class and read what that tier costs the look",
+        "build a `WorldEnvironment` for a weaker device from a named tier"
+      ],
+      "summary": "The quality tiers of the Unreal 5.8.3 look: what `high` (a desktop, Unreal's Epic), `medium` and `low` (a phone) turn on, how a GPU family picks its start tier, and the global illumination and shadow filter settings per tier named after Unreal's scalability levels. A `WorldEnvironment` with no options starts from `high`.",
+      "supersedes": [],
+      "symbol": "giPreset"
+    },
+    {
       "aliases": ["lumen visualize", "indirect diffuse only", "r.Lumen.Visualize.IndirectDiffuse"],
       "constraints": [
         "the game's render chain builds the indirectDiffuse node (gathered and cached light times albedo); this class draws nothing else",
@@ -2770,6 +2789,25 @@
     },
     {
       "aliases": [],
+      "constraints": ["an unknown tier name throws with the names it expected"],
+      "example": "const world = new WorldEnvironment({ ...qualityPreset(resolveQualityTier({ gpuClass: renderer.gpuClass })), bloomEnabled: false });",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [
+        "pass any `IWorldEnvironmentOptions` field after `qualityPreset(tier)`, or an explicit `tier` to `resolveQualityTier`"
+      ],
+      "package": "@threenative/core",
+      "signature": "export function qualityPreset(tier: string): IWorldEnvironmentOptions { … }",
+      "situations": [
+        "pick a start tier for the GPU class and read what that tier costs the look",
+        "build a `WorldEnvironment` for a weaker device from a named tier"
+      ],
+      "summary": "The quality tiers of the Unreal 5.8.3 look: what `high` (a desktop, Unreal's Epic), `medium` and `low` (a phone) turn on, how a GPU family picks its start tier, and the global illumination and shadow filter settings per tier named after Unreal's scalability levels. A `WorldEnvironment` with no options starts from `high`.",
+      "supersedes": [],
+      "symbol": "qualityPreset"
+    },
+    {
+      "aliases": [],
       "constraints": ["non-marker lines and malformed markers return `undefined`"],
       "example": "const report = readGIMarker(line); if (report?.verdict === \"over\") console.log(report.reason);",
       "importPath": "@threenative/core",
@@ -3169,6 +3207,25 @@
     },
     {
       "aliases": [],
+      "constraints": ["an unknown tier name throws with the names it expected"],
+      "example": "const world = new WorldEnvironment({ ...qualityPreset(resolveQualityTier({ gpuClass: renderer.gpuClass })), bloomEnabled: false });",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [
+        "pass any `IWorldEnvironmentOptions` field after `qualityPreset(tier)`, or an explicit `tier` to `resolveQualityTier`"
+      ],
+      "package": "@threenative/core",
+      "signature": "export function resolveQualityTier( request: { … }",
+      "situations": [
+        "pick a start tier for the GPU class and read what that tier costs the look",
+        "build a `WorldEnvironment` for a weaker device from a named tier"
+      ],
+      "summary": "The quality tiers of the Unreal 5.8.3 look: what `high` (a desktop, Unreal's Epic), `medium` and `low` (a phone) turn on, how a GPU family picks its start tier, and the global illumination and shadow filter settings per tier named after Unreal's scalability levels. A `WorldEnvironment` with no options starts from `high`.",
+      "supersedes": [],
+      "symbol": "resolveQualityTier"
+    },
+    {
+      "aliases": [],
       "constraints": [
         "pass the measured display rate when you have one; without it the answer is the 60 fallback and says so"
       ],
@@ -3354,6 +3411,25 @@
       "summary": "Steps a game's soft-shadow tier down (`low`, `medium`, `high`) when the whole GPU frame stays over the frame period, and back up when the frame has room, by the settings of Unreal's virtual shadow map budget (a linear model, 5% headroom). A frame that is slow for another reason keeps its shadows: the tier steps only when the shadow passes could absorb the overage. The game owns the sample counts of each tier and rebuilds its filter on each step; the tiers follow Unreal's `sg.ShadowQuality` Low, Medium and Epic.",
       "supersedes": [],
       "symbol": "ShadowFilterBudget"
+    },
+    {
+      "aliases": [],
+      "constraints": ["an unknown tier name throws with the names it expected"],
+      "example": "const world = new WorldEnvironment({ ...qualityPreset(resolveQualityTier({ gpuClass: renderer.gpuClass })), bloomEnabled: false });",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [
+        "pass any `IWorldEnvironmentOptions` field after `qualityPreset(tier)`, or an explicit `tier` to `resolveQualityTier`"
+      ],
+      "package": "@threenative/core",
+      "signature": "export function shadowPreset(tier: string): IShadowTier { … }",
+      "situations": [
+        "pick a start tier for the GPU class and read what that tier costs the look",
+        "build a `WorldEnvironment` for a weaker device from a named tier"
+      ],
+      "summary": "The quality tiers of the Unreal 5.8.3 look: what `high` (a desktop, Unreal's Epic), `medium` and `low` (a phone) turn on, how a GPU family picks its start tier, and the global illumination and shadow filter settings per tier named after Unreal's scalability levels. A `WorldEnvironment` with no options starts from `high`.",
+      "supersedes": [],
+      "symbol": "shadowPreset"
     },
     {
       "aliases": [],
@@ -4140,6 +4216,28 @@
       "summary": "Provision screen-space motion data for temporal nodes and keep per-instance history at the frame boundary.",
       "supersedes": [],
       "symbol": "withVelocityContext"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "post stages run on WebGPU only: a renderer without it keeps the fixed exposure and reports `TN_AUTO_EXPOSURE_REFUSED`, and a missing node library keeps ACES and reports `TN_TONEMAP`",
+        "an unknown option value throws instead of becoming the default"
+      ],
+      "example": "const world = new WorldEnvironment({ tonemapMode: \"aces\", autoExposureEnabled: false, exposure: 0.8 }); world.apply(renderer, scene, camera);",
+      "importPath": "@threenative/core",
+      "kind": "class",
+      "overrides": [
+        "every option on `IWorldEnvironmentOptions`: `tonemapMode: \"aces\" | \"agx\" | \"neutral\"`, `autoExposureEnabled: false` with a fixed `exposure`, `bloomEnabled`, `gtaoEnabled`, `ssgiEnabled`, `screenSpaceAA`"
+      ],
+      "package": "@threenative/core",
+      "signature": "export class WorldEnvironment { … }",
+      "situations": [
+        "a scene should light and tone map like a fresh Unreal level without wiring each post stage by hand",
+        "turn one lighting effect off, or pick a cheaper tier, for a weak GPU or a stylised look"
+      ],
+      "summary": "The node that says which lighting effects a scene runs and how strong they are, with a fresh Unreal 5.8.3 project's defaults: the filmic tone curve, Unreal-metered auto exposure, screen-space GI and ambient occlusion, SMAA, Unreal's bloom and local exposure. It builds the post chain through `renderer.createRenderChain()` and prints `TN_RENDER_CHAIN` naming every stage as applied or refused with a reason. Property names are Godot's `Environment` where it has one.",
+      "supersedes": [],
+      "symbol": "WorldEnvironment"
     },
     {
       "aliases": [],

@@ -1575,6 +1575,22 @@ const gi = new GIBudget({ method: "screenProbeGather", stages: ["SSGI"], framePe
 ctx.beforeRender(() => gi.observeRenderer(ctx.renderer.raw));
 ```
 
+### `giPreset`
+
+`function` — The quality tiers of the Unreal 5.8.3 look: what `high` (a desktop, Unreal's Epic), `medium` and `low` (a phone) turn on, how a GPU family picks its start tier, and the global illumination and shadow filter settings per tier named after Unreal's scalability levels. A `WorldEnvironment` with no options starts from `high`.
+
+```ts
+export function giPreset(tier: string): IGiTier { … }
+```
+
+- **Use when:** pick a start tier for the GPU class and read what that tier costs the look · build a `WorldEnvironment` for a weaker device from a named tier
+- **Constraints:** an unknown tier name throws with the names it expected
+- **Overrides:** pass any `IWorldEnvironmentOptions` field after `qualityPreset(tier)`, or an explicit `tier` to `resolveQualityTier`
+
+```ts
+const world = new WorldEnvironment({ ...qualityPreset(resolveQualityTier({ gpuClass: renderer.gpuClass })), bloomEnabled: false });
+```
+
 ### `GIVisualize`
 
 `class` — Shows the indirect diffuse light of a frame by itself, the counterpart of Unreal's Lumen `Visualize IndirectDiffuse` mode, so a lighting gap against a reference can be told apart from a scene gap. The game's chain builds the term; this class selects it and fails when the term is missing.
@@ -2111,6 +2127,22 @@ export class ProbeVolume extends Object3D implements IComputeDriven { … }
 const probes = new ProbeVolume({ bounds, density: 0.5 }); ctx.add(probes); void probes.requestBake(scene);
 ```
 
+### `qualityPreset`
+
+`function` — The quality tiers of the Unreal 5.8.3 look: what `high` (a desktop, Unreal's Epic), `medium` and `low` (a phone) turn on, how a GPU family picks its start tier, and the global illumination and shadow filter settings per tier named after Unreal's scalability levels. A `WorldEnvironment` with no options starts from `high`.
+
+```ts
+export function qualityPreset(tier: string): IWorldEnvironmentOptions { … }
+```
+
+- **Use when:** pick a start tier for the GPU class and read what that tier costs the look · build a `WorldEnvironment` for a weaker device from a named tier
+- **Constraints:** an unknown tier name throws with the names it expected
+- **Overrides:** pass any `IWorldEnvironmentOptions` field after `qualityPreset(tier)`, or an explicit `tier` to `resolveQualityTier`
+
+```ts
+const world = new WorldEnvironment({ ...qualityPreset(resolveQualityTier({ gpuClass: renderer.gpuClass })), bloomEnabled: false });
+```
+
 ### `readGIMarker`
 
 `function` — Parse a `TN_GI` console line back into its report, or `undefined`.
@@ -2446,6 +2478,22 @@ export function resolveAtmosphereParameters( options: IAtmosphereParameters, ): 
 const parameters = resolveAtmosphereParameters({ rayleigh, mie, ozone, planetRadius, atmosphereRadius });
 ```
 
+### `resolveQualityTier`
+
+`function` — The quality tiers of the Unreal 5.8.3 look: what `high` (a desktop, Unreal's Epic), `medium` and `low` (a phone) turn on, how a GPU family picks its start tier, and the global illumination and shadow filter settings per tier named after Unreal's scalability levels. A `WorldEnvironment` with no options starts from `high`.
+
+```ts
+export function resolveQualityTier( request: { … }
+```
+
+- **Use when:** pick a start tier for the GPU class and read what that tier costs the look · build a `WorldEnvironment` for a weaker device from a named tier
+- **Constraints:** an unknown tier name throws with the names it expected
+- **Overrides:** pass any `IWorldEnvironmentOptions` field after `qualityPreset(tier)`, or an explicit `tier` to `resolveQualityTier`
+
+```ts
+const world = new WorldEnvironment({ ...qualityPreset(resolveQualityTier({ gpuClass: renderer.gpuClass })), bloomEnabled: false });
+```
+
 ### `resolveTargetFps`
 
 `function` — Read what frame rate a game gets when its config does not say, and why. `display.maxFps` follows the display — capped at 120 on desktop and web, 60 on mobile — rather than the 60 every template used to ship, and an explicit number still wins with `0` still uncapping. The engine calls this itself; a game calls it when it needs the same number for its own frame-rate-dependent work, and `TN_FRAME_BUDGET` reports the resolved target and its source on every window.
@@ -2588,6 +2636,22 @@ export class ShadowFilterBudget { … }
 ```ts
 const filter = new ShadowFilterBudget({ tier: "high", framePeriodMs: 1000 / 60, onStep: (tier) => { light.shadow.filterNode = filterFor(tier); } });
 ctx.beforeRender(() => filter.observeRenderer(ctx.renderer.raw));
+```
+
+### `shadowPreset`
+
+`function` — The quality tiers of the Unreal 5.8.3 look: what `high` (a desktop, Unreal's Epic), `medium` and `low` (a phone) turn on, how a GPU family picks its start tier, and the global illumination and shadow filter settings per tier named after Unreal's scalability levels. A `WorldEnvironment` with no options starts from `high`.
+
+```ts
+export function shadowPreset(tier: string): IShadowTier { … }
+```
+
+- **Use when:** pick a start tier for the GPU class and read what that tier costs the look · build a `WorldEnvironment` for a weaker device from a named tier
+- **Constraints:** an unknown tier name throws with the names it expected
+- **Overrides:** pass any `IWorldEnvironmentOptions` field after `qualityPreset(tier)`, or an explicit `tier` to `resolveQualityTier`
+
+```ts
+const world = new WorldEnvironment({ ...qualityPreset(resolveQualityTier({ gpuClass: renderer.gpuClass })), bloomEnabled: false });
 ```
 
 ### `SkeletalMesh3D`
@@ -3200,6 +3264,22 @@ const tracker = new VelocityTracker();
 tracker.update(scene);
 renderer.render(scene, camera);
 tracker.commit(scene);
+```
+
+### `WorldEnvironment`
+
+`class` — The node that says which lighting effects a scene runs and how strong they are, with a fresh Unreal 5.8.3 project's defaults: the filmic tone curve, Unreal-metered auto exposure, screen-space GI and ambient occlusion, SMAA, Unreal's bloom and local exposure. It builds the post chain through `renderer.createRenderChain()` and prints `TN_RENDER_CHAIN` naming every stage as applied or refused with a reason. Property names are Godot's `Environment` where it has one.
+
+```ts
+export class WorldEnvironment { … }
+```
+
+- **Use when:** a scene should light and tone map like a fresh Unreal level without wiring each post stage by hand · turn one lighting effect off, or pick a cheaper tier, for a weak GPU or a stylised look
+- **Constraints:** post stages run on WebGPU only: a renderer without it keeps the fixed exposure and reports `TN_AUTO_EXPOSURE_REFUSED`, and a missing node library keeps ACES and reports `TN_TONEMAP` · an unknown option value throws instead of becoming the default
+- **Overrides:** every option on `IWorldEnvironmentOptions`: `tonemapMode: "aces" | "agx" | "neutral"`, `autoExposureEnabled: false` with a fixed `exposure`, `bloomEnabled`, `gtaoEnabled`, `ssgiEnabled`, `screenSpaceAA`
+
+```ts
+const world = new WorldEnvironment({ tonemapMode: "aces", autoExposureEnabled: false, exposure: 0.8 }); world.apply(renderer, scene, camera);
 ```
 
 ### `zenithTransmittance`

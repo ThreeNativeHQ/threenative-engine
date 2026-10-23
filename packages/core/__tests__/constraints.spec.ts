@@ -115,7 +115,20 @@ describe("core constraints", () => {
           file !== "look/default-tone-mapping.ts" &&
           // Auto exposure meters the frame the game already drew with screen-space quads on scratch targets. The
           // materials never reach a game object, and the metering constants are Unreal 5.8.3's defaults.
+          // The look's post chain (owner exception, 2026-10-22): `WorldEnvironment` and its stages are the Unreal 5.8.3
+          // defaults of the frame. They draw the game's scene through the renderer's chain and name every override.
           file !== "look/auto-exposure.ts" &&
+          file !== "look/world-environment.ts" &&
+          file !== "look/reflection-trace.ts" &&
+          file !== "look/gi-registry.ts" &&
+          file !== "look/ao-reach.ts" &&
+          file !== "look/ao-multibounce.ts" &&
+          file !== "look/local-exposure.ts" &&
+          file !== "look/unreal-bloom.ts" &&
+          file !== "look/motion-blur.ts" &&
+          file !== "look/vignette.ts" &&
+          file !== "look/look-diagnostics.ts" &&
+          file !== "look/quality.ts" &&
           file !== "look/exposure-graph.ts" &&
           file !== "look/exposure-readback.ts" &&
           file !== "look/exposure-settings.ts" &&

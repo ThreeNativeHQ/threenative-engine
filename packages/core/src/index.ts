@@ -1199,6 +1199,65 @@ export {
   validateExposureSettings,
 } from "./look/exposure-settings.js";
 export type { IExposureSettings } from "./look/exposure-settings.js";
+/**
+ * The node that says which lighting effects a scene runs and how strong they are, with a fresh Unreal 5.8.3 project's
+ * defaults: the filmic tone curve, Unreal-metered auto exposure, screen-space GI and ambient occlusion, SMAA, Unreal's
+ * bloom and local exposure. It builds the post chain through `renderer.createRenderChain()` and prints `TN_RENDER_CHAIN`
+ * naming every stage as applied or refused with a reason. Property names are Godot's `Environment` where it has one.
+ *
+ * @situation a scene should light and tone map like a fresh Unreal level without wiring each post stage by hand
+ * @situation turn one lighting effect off, or pick a cheaper tier, for a weak GPU or a stylised look
+ * @constraint post stages run on WebGPU only: a renderer without it keeps the fixed exposure and reports `TN_AUTO_EXPOSURE_REFUSED`, and a missing node library keeps ACES and reports `TN_TONEMAP`
+ * @constraint an unknown option value throws instead of becoming the default
+ * @override every option on `IWorldEnvironmentOptions`: `tonemapMode: "aces" | "agx" | "neutral"`, `autoExposureEnabled: false` with a fixed `exposure`, `bloomEnabled`, `gtaoEnabled`, `ssgiEnabled`, `screenSpaceAA`
+ * @example const world = new WorldEnvironment({ tonemapMode: "aces", autoExposureEnabled: false, exposure: 0.8 }); world.apply(renderer, scene, camera);
+ */
+export { WorldEnvironment } from "./look/world-environment.js";
+export type {
+  ChainStage,
+  IWorldEnvironmentOptions,
+  IWorldEnvironmentStageContext,
+  IWorldEnvironmentTarget,
+  OutputRenderer,
+  ScreenSpaceAA,
+  SsgiQuality,
+  TonemapMode,
+} from "./look/world-environment.js";
+/**
+ * The diagnosis switches of the calibration harness for the look (ladder layer, the alpha-squeeze BEFORE arm, a denoise
+ * pass count, the film curve's channel clip, a GI visualisation). A game never sets them; the defaults are the shipped look.
+ *
+ * @situation a calibration capture needs one look effect off or one GI term alone
+ * @constraint set them before the `WorldEnvironment` is built; the layer is 0 to 9 and 9 is everything on
+ * @override each field of `lookDiagnostics`
+ * @example lookDiagnostics.layer = 6; // no gather, no reflections
+ */
+export { lookDiagnostics } from "./look/look-diagnostics.js";
+/**
+ * The quality tiers of the Unreal 5.8.3 look: what `high` (a desktop, Unreal's Epic), `medium` and `low` (a phone) turn
+ * on, how a GPU family picks its start tier, and the global illumination and shadow filter settings per tier named
+ * after Unreal's scalability levels. A `WorldEnvironment` with no options starts from `high`.
+ *
+ * @situation pick a start tier for the GPU class and read what that tier costs the look
+ * @situation build a `WorldEnvironment` for a weaker device from a named tier
+ * @constraint an unknown tier name throws with the names it expected
+ * @override pass any `IWorldEnvironmentOptions` field after `qualityPreset(tier)`, or an explicit `tier` to `resolveQualityTier`
+ * @example const world = new WorldEnvironment({ ...qualityPreset(resolveQualityTier({ gpuClass: renderer.gpuClass })), bloomEnabled: false });
+ */
+export {
+  EPIC_SSGI,
+  giPreset,
+  qualityPreset,
+  resolveQualityTier,
+  shadowPreset,
+} from "./look/quality.js";
+export type {
+  FinalGatherMethod,
+  IGiTier,
+  IShadowFilter,
+  IShadowTier,
+  QualityTier,
+} from "./look/quality.js";
 export type { IDaylightOptions } from "./render/daylight.js";
 /**
  * Photometric exposure units: EV100 to the renderer multiplier and back, a physical camera's
