@@ -301,7 +301,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Measured 2026-10-16 through createProject after starter's completed-work quality fallback fix.
   // Recomputed 2026-10-16: starter's adaptiveQuality split its policy resolution into qualityPolicy.ts
   // to stay under the 200-line render-file cap; only starter's tree moves.
-  starter: "cae4279c0da4334a2df8e690a7da5a3a850bf4ddbaca093cd061cc196fe3ca12",
+  starter: "47abb45bb043515b1114e61f3ed55de1d0017c78612053ff0c61016cda7840d9",
   "tower-defense": "654e7d81e46ce652c545ee9a3a6480089b5cd1413eccfde8f2065dfb85129464",
 };
 
@@ -423,6 +423,7 @@ const STARTER_PATHS = [
   "src/render/volumetricFogOptions.ts",
   "src/render/volumetricFogVolume.ts",
   "src/render/volumetricFogTransport.ts",
+  "src/render/volumetricFogCamera.ts",
   "src/render/palette.ts",
   "src/render/materials.ts",
   "src/render/arena.ts",
