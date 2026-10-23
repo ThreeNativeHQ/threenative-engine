@@ -73,7 +73,7 @@
 <rect x="167.75600650404746" y="185.92117003214787" width="36.15747328978759" height="36.15896148552574" rx="2" fill="#6c7176"><title>Lumen · Hardware ray traced reflections and hit lighting · Deferred</title></rect>
 <text x="170.75600650404746" y="196.92117003214787" class="l">Hard…</text>
 <rect x="167.75600650404746" y="223.0801315176736" width="36.15747328978759" height="35.9217766249798" rx="2" fill="#d9961f"><title>Lumen · Probe and pixel temporal accumulation · In progress</title></rect>
-<rect x="167.75600650404746" y="256.0019081426534" width="12.913383317781282" height="3" fill="#fff" opacity=".85"/>
+<rect x="167.75600650404746" y="256.0019081426534" width="20.33857872550552" height="3" fill="#fff" opacity=".85"/>
 <text x="170.75600650404746" y="234.0801315176736" class="l">Prob…</text>
 <rect x="167.75600650404746" y="260.0019081426534" width="36.15747328978759" height="34.472313588310385" rx="2" fill="#6c7176"><title>Lumen · Ray traced translucency · Deferred</title></rect>
 <text x="170.75600650404746" y="271.0019081426534" class="l">Ray …</text>
@@ -109,7 +109,7 @@
 <rect x="236.2770041054922" y="326.81476595230424" width="2" height="3" fill="#fff" opacity=".85"/>
 <text x="239.2770041054922" y="315.5916941438003" class="l">Prob…</text>
 <rect x="272.12610751015046" y="220.5686015573854" width="25.07240391408976" height="29.38491847957519" rx="2" fill="#d9961f"><title>Lumen · Temporal denoiser · In progress</title></rect>
-<rect x="272.12610751015046" y="246.95352003696058" width="11.031857722199495" height="3" fill="#fff" opacity=".85"/>
+<rect x="272.12610751015046" y="246.95352003696058" width="13.929113285605423" height="3" fill="#fff" opacity=".85"/>
 <text x="275.12610751015046" y="231.5686015573854" class="l">Te…</text>
 <rect x="298.1985114242402" y="220.5686015573854" width="24.943492151844623" height="29.38491847957519" rx="2" fill="#d9961f"><title>Lumen · Probe gather and half-resolution interpolation · In progress</title></rect>
 <rect x="298.1985114242402" y="246.95352003696058" width="7.483047645553387" height="3" fill="#fff" opacity=".85"/>
@@ -129,7 +129,7 @@
 <rect x="272.12610751015046" y="299.31020093244103" width="24.332307463166444" height="15.544728623928165" rx="2" fill="#d9961f"><title>Lumen · Uniform and adaptive probe placement · In progress</title></rect>
 <rect x="272.12610751015046" y="311.8549295563692" width="2.5612955224385727" height="3" fill="#fff" opacity=".85"/>
 <rect x="272.12610751015046" y="315.8549295563692" width="24.332307463166444" height="13.959836395935042" rx="2" fill="#d9961f"><title>Lumen · Per-view history state · In progress</title></rect>
-<rect x="272.12610751015046" y="326.81476595230424" width="10.706215283793236" height="3" fill="#fff" opacity=".85"/>
+<rect x="272.12610751015046" y="326.81476595230424" width="13.517948590648025" height="3" fill="#fff" opacity=".85"/>
 <rect x="297.4584149733169" y="275.7300970525434" width="17.045264755393816" height="18.969867800643215" rx="2" fill="#4a86d6"><title>Lumen · Visibility-weighted interpolation · Not started</title></rect>
 <rect x="315.5036797287107" y="275.7300970525434" width="15.574183389464963" height="18.969867800643215" rx="2" fill="#6c7176"><title>Lumen · Hardware ray tracing · Deferred</title></rect>
 <rect x="332.07786311817574" y="275.7300970525434" width="15.525147343934009" height="18.969867800643215" rx="2" fill="url(#gap)"><title>Lumen · Probe debug overlay · No PRD</title></rect>
@@ -395,7 +395,7 @@
 <rect x="809.7576551391769" y="265.78650851832265" width="100.8896467162034" height="152.96494542874922" rx="4" fill="#232826"/>
 <text x="813.7576551391769" y="276.78650851832265" class="s">Denoisers</text>
 <rect x="810.7576551391769" y="278.78650851832265" width="97.8896467162034" height="137.96494542874922" rx="2" fill="#d9961f"><title>Denoisers · Whole system (not split) · In progress</title></rect>
-<rect x="810.7576551391769" y="413.75145394707187" width="33.884877709455026" height="3" fill="#fff" opacity=".85"/>
+<rect x="810.7576551391769" y="413.75145394707187" width="39.880967180675455" height="3" fill="#fff" opacity=".85"/>
 <text x="813.7576551391769" y="289.78650851832265" class="l">Whole system (no…</text>
 <rect x="912.6473018553803" y="265.78650851832265" width="92.86881907642885" height="152.96494542874922" rx="4" fill="#232826"/>
 <text x="916.6473018553803" y="276.78650851832265" class="s">TSR</text>
