@@ -54,7 +54,12 @@ describe("the web GLTFLoader's image files", () => {
     const fetched: string[] = [];
     vi.stubGlobal("fetch", async (url: string) => {
       fetched.push(url);
-      return { arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer, ok: true, status: 200 };
+      return {
+        arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer,
+        headers: new Headers({ "content-type": "image/jpeg" }),
+        ok: true,
+        status: 200,
+      };
     });
     await new GLTFLoader().parseAsync(MODEL, "assets/");
     expect(fetched).toEqual(["assets/shared/images/a%20b.jpg"]);
@@ -68,6 +73,21 @@ describe("the web GLTFLoader's image files", () => {
     vi.stubGlobal("fetch", async () => ({ ok: false, status: 404 }));
     await expect(new GLTFLoader().parseAsync(MODEL, "assets/")).rejects.toThrow(
       "TN_WASM_GLTF_FETCH: 404 assets/shared/images/a%20b.jpg",
+    );
+    expect(loadGltf).not.toHaveBeenCalled();
+  });
+
+  // PRD-637: a dev server answers a missing file with its index.html and a 200 (Vite's SPA fallback).
+  // Those bytes reached the engine as the image, which then refused the model as "undecoded images".
+  it("fails by name when the server answers an image with a page, rather than handing the engine HTML", async () => {
+    vi.stubGlobal("fetch", async () => ({
+      arrayBuffer: async () => new TextEncoder().encode("<!doctype html>").buffer,
+      headers: new Headers({ "content-type": "text/html" }),
+      ok: true,
+      status: 200,
+    }));
+    await expect(new GLTFLoader().parseAsync(MODEL, "assets/")).rejects.toThrow(
+      "TN_WASM_GLTF_FETCH: text/html assets/shared/images/a%20b.jpg",
     );
     expect(loadGltf).not.toHaveBeenCalled();
   });

@@ -220,6 +220,8 @@ void PostEffects::resize(uint32_t width, uint32_t height) {
         target.height = std::max(
             1u, uint32_t(std::floor((pass.source.height ? pass.source.height : height) * pass.source.resolutionScale +
                                     rounding)));
+        target.width = std::max(1u, target.width >> pass.source.mipLevel);
+        target.height = std::max(1u, target.height >> pass.source.mipLevel);
         if (pass.source.rtt) {
             target.sampler =
                 makeSampler(device_, pass.source.rtt->minFilter == 1003, false, pass.source.rtt->magFilter == 1003);
@@ -476,6 +478,7 @@ uint32_t PostEffects::render(WGPUCommandEncoder& encoder, WGPUTextureView scene,
         values["screenSize"] = {float(target.width), float(target.height)};
         values["_cameraProjectionMatrix"] = {camera.projectionMatrix.begin(), camera.projectionMatrix.end()};
         values["_cameraProjectionMatrixInverse"] = {inverse.elements.begin(), inverse.elements.end()};
+        values["_cameraWorldMatrix"] = {camera.matrixWorld.begin(), camera.matrixWorld.end()};
         constexpr float rotations[]{60, 300, 180, 240, 120, 0};
         values["_temporalDirection"] = {pass.source.temporal ? rotations[frame % 6] / 360.0f : 0.0f};
         for (size_t stageIndex = 0; stageIndex < 2; ++stageIndex) {

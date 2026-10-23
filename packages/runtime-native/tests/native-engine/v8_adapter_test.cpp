@@ -566,14 +566,23 @@ void catalogCoverage() {
     for (const auto& [name, want] : numbers) CHECK(tableConstants.count(name) == 1);
     for (const auto& [name, want] : strings) CHECK(tableConstants.count(name) == 1);
     // Supported TSL functions live on the TSL module, rather than the class/constant globals.
-    const std::set<std::string> tslFunctions = {"atomicAdd", "atomicStore", "lightShadowMatrix", "rtt"};
+    const std::set<std::string> tslFunctions = {"atomicAdd", "atomicStore", "lightShadowMatrix", "rtt", "storageTexture",
+                                                "textureStore", "uvec2"};
+    // TSL nodes the catalog publishes as functions that the engine installs as node objects.
+    const std::set<std::string> tslNodes = {"modelWorldMatrix"};
+    for (const auto& name : tslNodes) {
+        v8::Local<v8::Value> value;
+        CHECK(global->Get(ctx, key("tsl")).ToLocal(&value) && value->IsObject() &&
+              value.As<v8::Object>()->Get(ctx, key(name)).ToLocal(&value) && value->IsObject());
+    }
     v8::Local<v8::Value> tsl;
     CHECK(global->Get(ctx, key("tsl")).ToLocal(&tsl) && tsl->IsObject());
     for (const auto& name : tslFunctions) {
         v8::Local<v8::Value> value;
         CHECK(tsl.As<v8::Object>()->Get(ctx, key(name)).ToLocal(&value) && value->IsFunction());
     }
-    CHECK(installed.size() + tableConstants.size() + recordTypes.size() + enums.size() + tslFunctions.size() ==
+    CHECK(installed.size() + tableConstants.size() + recordTypes.size() + enums.size() + tslFunctions.size() +
+              tslNodes.size() ==
           tn_engine_version().capability_count);
 
     // Every class's prototype exposes exactly its registry members: methods, top-level getters and
@@ -584,7 +593,11 @@ void catalogCoverage() {
         for (const auto& [member, fn] : binding.methods) { (void)fn; expected.insert(member); }
         for (const auto& [member, fn] : binding.getters) {
             (void)fn;
-            if (member.find('.') == std::string::npos) expected.insert(member);
+            const std::size_t dot = member.find('.');
+            if (dot == std::string::npos) expected.insert(member);
+            // A dotted getter with no member object reads through a holder (`texture.image.width`).
+            else if (binding.members.count(member.substr(0, dot)) == 0 && binding.getters.count(member.substr(0, dot)) == 0)
+                expected.insert(member.substr(0, dot));
         }
         for (const auto& [member, fn] : binding.members) {
             (void)fn;

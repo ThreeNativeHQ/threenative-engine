@@ -96,6 +96,8 @@ StageModule buildStage(const Program& program, uint32_t group) {
         module.bindings.push_back(
             Binding{group, binding++, BindingKind::Storage, "s_" + storage.name, roundUp(element.size, element.align)});
     }
+    for (const auto& texture : program.storageTextures_)
+        module.bindings.push_back(Binding{group, binding++, BindingKind::StorageTexture, "st_" + texture.name});
     for (std::size_t i = 0; i < program.textures_.size(); ++i) {
         const std::string& name = program.textures_[i];
         const bool values = program.textureKinds_[i] == Program::TextureKind::DepthCubeValues;
@@ -105,7 +107,8 @@ StageModule buildStage(const Program& program, uint32_t group) {
         const bool cube = program.textureKinds_[i] == Program::TextureKind::DepthCube || values ||
                           program.textureKinds_[i] == Program::TextureKind::FloatCube;
         module.bindings.push_back(Binding{group, binding++, BindingKind::Texture, "t_" + name, 0, depth, cube, volume});
-        module.bindings.push_back(Binding{group, binding++, BindingKind::Sampler, "smp_" + name, 0, depth, cube, volume, values});
+        if (program.textureNeedsSampler(i))
+            module.bindings.push_back(Binding{group, binding++, BindingKind::Sampler, "smp_" + name, 0, depth, cube, volume, values});
     }
     return module;
 }

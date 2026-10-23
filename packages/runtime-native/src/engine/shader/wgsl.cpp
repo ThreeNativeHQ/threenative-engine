@@ -156,7 +156,7 @@ WgslEmitter::WgslEmitter(const Program& program)
     for (const auto& b : program.blocks_) {
         for (const auto& s : b) {
             if (s.kind == Kind::Eval || s.kind == Kind::Assign || s.kind == Kind::Output) visit(visit, s.b);
-            else if (s.kind == Kind::Store) visit(visit, s.b), visit(visit, s.c);
+            else if (s.kind == Kind::Store || s.kind == Kind::TextureStore) visit(visit, s.b), visit(visit, s.c);
             else if (s.kind == Kind::If || s.kind == Kind::Loop) visit(visit, s.a);
         }
     }
@@ -311,6 +311,9 @@ void WgslEmitter::block(uint32_t index, int depth, std::string& out) const {
                 else
                     out += indent + "s_" + p_.storage_[s.a].name + "[" + expr(s.b) + "] = " + expr(s.c) + ";\n";
                 break;
+            case Kind::TextureStore:
+                out += indent + "textureStore(st_" + p_.storageTextures_[s.a].name + ", " + expr(s.b) + ", " + expr(s.c) + ");\n";
+                break;
             case Kind::Discard: out += indent + "discard;\n"; break;
             case Kind::Return: out += indent + "return;\n"; break;
             case Kind::Break: out += indent + "break;\n"; break;
@@ -393,6 +396,9 @@ WgslModule WgslEmitter::emit(const Program& program, uint32_t group) {
                (storage.atomic ? "atomic<" + e.type(storage.element) + ">" : e.type(storage.element)) + ">;\n";
     }
 
+    for (const auto& texture : program.storageTextures_)
+        out += "@group(" + std::to_string(group) + ") @binding(" + std::to_string(binding++) + ") var st_" + texture.name +
+               ": texture_storage_2d<" + texture.format + ", write>;\n";
     for (std::size_t i = 0; i < program.textures_.size(); ++i) {
         const std::string& name = program.textures_[i];
         const auto kind = program.textureKinds_[i];
@@ -403,8 +409,9 @@ WgslModule WgslEmitter::emit(const Program& program, uint32_t group) {
                 : kind == Program::TextureKind::FloatCube ? ": texture_cube<f32>;\n"
                 : depth                                 ? ": texture_depth_2d;\n"
                                                         : ": texture_2d<f32>;\n");
-        out += "@group(" + std::to_string(group) + ") @binding(" + std::to_string(binding++) + ") var smp_" + name +
-               (depth ? ": sampler_comparison;\n" : ": sampler;\n");
+        if (program.textureNeedsSampler(i))
+            out += "@group(" + std::to_string(group) + ") @binding(" + std::to_string(binding++) + ") var smp_" + name +
+                   (depth ? ": sampler_comparison;\n" : ": sampler;\n");
     }
 
     const Stage stage = program.stage_;

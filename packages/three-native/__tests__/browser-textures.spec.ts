@@ -29,6 +29,7 @@ function recording() {
     types.get(name) ?? types.set(name, types.size + 1).get(name) ?? 0;
   const constructed: [string, EngineValue[]][] = [];
   const writes: [string, string, EngineValue][] = [];
+  const invocations: [string, string][] = [];
   let next = 0;
   const runtime: IBrowserRuntime = {
     typeId,
@@ -36,8 +37,11 @@ function recording() {
       constructed.push([name, [...args]]);
       return { key: `${name}#${String(next++)}`, type: typeId(name) };
     },
-    invoke: () => {
-      throw new Error("not under test");
+    invoke: (self, method) => {
+      invocations.push([self.key, method]);
+      if (method !== "clone") throw new Error("not under test");
+      const name = self.key.split("#")[0] as string;
+      return { key: `${name}#${String(next++)}`, type: typeId(name) };
     },
     get: () => undefined,
     set: (self, property, value) => {
@@ -47,7 +51,7 @@ function recording() {
     setCallback: () => undefined,
   };
   const { classes } = defineBrowserClasses(registry, runtime, loadCatalog(REPO));
-  return { bound: withTextureSources(classes, runtime), constructed, writes };
+  return { bound: withTextureSources(classes, runtime), constructed, writes, invocations };
 }
 
 type Ctor = new (...args: unknown[]) => Record<string, unknown>;
@@ -55,6 +59,24 @@ type Ctor = new (...args: unknown[]) => Record<string, unknown>;
 afterEach(() => vi.unstubAllGlobals());
 
 describe("browser texture sources", () => {
+  it("clones through the engine while retaining the shared JS image for later uploads", () => {
+    const { bound, writes, invocations } = recording();
+    const DataTexture = bound.DataTexture as Ctor;
+    const pixels = new Uint8Array([1, 2, 3, 255]);
+    const texture = new DataTexture(pixels, 1, 1);
+    const clone = (texture.clone as () => Record<string, unknown>)();
+    expect(clone).not.toBe(texture);
+    expect(clone).toBeInstanceOf(DataTexture);
+    expect(clone.image).toBe(texture.image);
+    pixels[0] = 9;
+    clone.needsUpdate = true;
+    expect(invocations.at(-1)?.[1]).toBe("clone");
+    expect(writes.slice(-2).map(([, field, value]) => [field, value])).toEqual([
+      ["image.data", [9, 2, 3, 255]],
+      ["needsUpdate", true],
+    ]);
+  });
+
   it("re-sends a DataTexture's edited typed array on needsUpdate (Midway's ripples)", () => {
     const { bound, constructed, writes } = recording();
     const DataTexture = bound.DataTexture as Ctor;

@@ -3,10 +3,30 @@ import { describe, expect, it } from "vitest";
 import { definePass, markNormalTarget } from "../src/pass-node.js";
 
 const normalView = Object.freeze({ name: "normalView" });
+// A node that records its arithmetic, so getViewZNode's formula reads back as text.
+interface IExpr {
+  readonly text: string;
+  readonly x: IExpr;
+  sub(value: IExpr): IExpr;
+  mul(value: IExpr): IExpr;
+  div(value: IExpr): IExpr;
+}
+const expr = (text: string): IExpr => ({
+  text,
+  get x() {
+    return expr(`${text}.x`);
+  },
+  sub: (value) => expr(`(${text} - ${value.text})`),
+  mul: (value) => expr(`(${text} * ${value.text})`),
+  div: (value) => expr(`(${text} / ${value.text})`),
+});
 const tsl = {
-  texture: (source: unknown) => ({ source }),
+  texture: (source: unknown) =>
+    Object.assign(Object.create(expr((source as { name?: string }).name ?? "target")), { source }),
   uv: () => ({}),
   normalView,
+  cameraNear: expr("near"),
+  cameraFar: expr("far"),
 };
 const { mrt, output, metalness, roughness } = definePass(tsl);
 const vec4 = markNormalTarget((...parts: unknown[]) => ({ parts }), normalView);
@@ -47,6 +67,8 @@ describe("native scene pass surface targets", () => {
     );
     const surface = scenePass.getTextureNode("metalness") as { parts: unknown[] };
     expect(surface.parts).toHaveLength(4);
+    // Each name is a splat of its own channel, as the separate material target and three's float MRT are.
+    expect(new Set(surface.parts).size).toBe(1);
     expect(scenePass.getTextureNode("roughness")).toBeDefined();
     expect(calls.some((call) => call.includes("greaterThan"))).toBe(true);
   });
@@ -142,6 +164,34 @@ describe("native scene pass MRT", () => {
     expect(node.setBlendMode("normal", mode)).toBe(node);
     expect(node.getBlendMode("normal")).toBe(mode);
     expect(node.getBlendMode("output")).toBeUndefined();
+  });
+
+  it("exposes each material target only when its own MRT slot is present", () => {
+    const api = definePass(tsl);
+    const scene = api.pass({}, {});
+    for (const name of ["metalness", "roughness"]) {
+      expect(() => scene.getTextureNode(name)).toThrow(/TN_NATIVE_PASS_TEXTURE_UNSUPPORTED/u);
+    }
+    scene.setMRT(api.mrt({ output: api.output, metalness: api.metalness }));
+    expect(scene.getTextureNode("metalness")).toEqual({ source: { name: "metalness" } });
+    expect(() => scene.getTextureNode("roughness")).toThrow(/TN_NATIVE_PASS_TEXTURE_UNSUPPORTED/u);
+    scene.setMRT(api.mrt({ roughness: api.roughness }));
+    expect(scene.getTextureNode("roughness")).toEqual({ source: { name: "roughness" } });
+    expect(() => scene.getTextureNode("metalness")).toThrow(/TN_NATIVE_PASS_TEXTURE_UNSUPPORTED/u);
+    // With the normal target in the MRT, roughness reads from the normal target's alpha instead (the
+    // surface decode), which this table cannot build.
+    scene.setMRT(api.mrt({ roughness: api.roughness, normal: normalView }));
+    expect(scene.getTextureNode("normal")).toEqual({ source: { name: "normal" } });
+    expect(() => scene.getTextureNode("roughness")).toThrow(/no floor and vec4/u);
+    expect(scene.getTextureNode()).toEqual({ source: { name: "scene" } });
+    expect(scene.getTextureNode("depth")).toEqual({ source: { name: "depth" } });
+    scene.setMRT(api.mrt({ metalness: api.metalness, roughness: api.roughness }));
+    for (const name of ["metalness", "roughness"]) {
+      expect(scene.getTextureNode(name)).toEqual({ source: { name } });
+    }
+    scene.setMRT(null);
+    expect(() => scene.getTextureNode("roughness")).toThrow(/TN_NATIVE_PASS_TEXTURE_UNSUPPORTED/u);
+    expect(() => scene.getTextureNode("unknown")).toThrow(/TN_NATIVE_PASS_TEXTURE_UNSUPPORTED/u);
   });
 });
 
@@ -274,6 +324,13 @@ describe("offscreen PassNode on a non-main scene", () => {
     expect(target.disposed).toBe(true);
     expect(draws).toHaveLength(1);
     expect(() => side.getTextureNode()).toThrow(/TN_NATIVE_PASS_DISPOSED/u);
+  });
+
+  it("gives three's perspective viewZ of the depth target, once per name", () => {
+    const scenePass = definePass(tsl).pass(mainScene, mainCamera);
+    const viewZ = scenePass.getViewZNode() as IExpr;
+    expect(viewZ.text).toBe("((near * far) / (((far - near) * depth.x) - far))");
+    expect(scenePass.getViewZNode("depth")).toBe(viewZ);
   });
 
   it("refuses what an offscreen pass cannot do, by name", () => {
