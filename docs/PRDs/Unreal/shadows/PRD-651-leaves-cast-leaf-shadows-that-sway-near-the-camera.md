@@ -102,6 +102,27 @@ from the game. The engine only makes the shadow follow them.
 
 ## Decisions
 
+- 2026-10-22 (receiptE-lane): the GI-cache sheet line (`lane/bounce-receipt`, tip `a57ab9d74`: the crown is no
+  solid `26f1bdb10`, the sheet gather `4e0c01039`, the gain only removes light `e9335656d`) is parked, not merged.
+  Receipt on epic `f97578097` (no other change to the scaffold up to `de871dd92`), `shadow:wildwood` L9, one
+  checkout, BEFORE = the epic `giCache.ts` through `TN_UNREAL_LOOK_SCAFFOLD`, AFTER = the line, 2 runs per arm
+  (the runs agree within 0.001), Wasm engine, RTX 2080. Median scene-linear luminance of the ID region over
+  Unreal's (nonanite capture), BEFORE then AFTER:
+  tree 0.942 to 0.577 (sun60-closeup), 1.078 to 0.732 (sun60-medium), 1.080 to 0.691 (sun15-closeup),
+  1.008 to 0.738 (sun15-medium); bush 1.375 to 1.117 and fern 1.335 to 1.174 at sun60-medium; floor within
+  0.01. On today's epic the crown is already within 8% of Unreal without the line, and the sheet gain
+  (mean 0.75 to 0.77 on 5700 to 5900 texels, solids 3084 to 88) puts it 26% to 42% under Unreal in every
+  pose. That is a frame further from Unreal, so the line fails the merge rule. The bake also takes 44 to
+  49 s against 24 s (leaf2 measured +2.5 s on 10.9 s in Node). leaf2's receipt at epic `f6e38cc19` (#541
+  6348296707) measured the same gain as a 1% to 4% move. Some change on the epic between `f6e38cc19` and
+  `f97578097` made the gain move the crown 30% to 40%. Which change is not known (not bisected).
+  Next step: bisect the epic from `f6e38cc19` to `f97578097` with the line's `giCache.ts` (`TN_UNREAL_LOOK_SCAFFOLD`
+  arms, `shadow:wildwood` L9, 2 runs) to find which change made the gain 10 times larger; then decide whether
+  the crown floor of the cache (the cache now reads 1.14 of a path trace) or the screen gather owns the
+  remaining crown light, and cut the sheet gain only where the L9 tree then moves toward Unreal. The line's
+  specs (29 of 29 in `unreal-look-gi-cache.spec.ts` on the merged tree) stay valid; the line merges again
+  only with a receipt that moves no wildwood region away from Unreal. Data: `~/.cache/tmp-tn/receiptE/l9/`.
+
 - 2026-10-21 (wildwood lane, owner): AC-3 judges real vegetation. The owner asked three times for the Fab
   GLBs of the sandbox wildwood game in place of procedural cards. `shadow:wildwood` (PRD-649) is the AC-3
   scene: one broadleaf tree, one bush and one fern clump, placed from one manifest in both
