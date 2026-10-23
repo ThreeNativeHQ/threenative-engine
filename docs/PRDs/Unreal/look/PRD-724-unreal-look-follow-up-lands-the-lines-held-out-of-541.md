@@ -54,3 +54,8 @@ PRD-722 (starter and minimal port) and PRD-723 (kit migration plan) exist only o
 ## Decisions
 
 - 2026-10-23 (team-lead): Filed as PRD-724 because PRD-722 and PRD-723 are used by lane branches. The order of Phase 1 follows the dependency: the sky commit needs the swap commit.
+- 2026-10-23 (team-lead): dispositions of the other lane branches that still have commits not on #541. None of them is merged, and none is lost: each is a local branch, and all are in the bundle `~/.cache/tmp-tn/epic-tools/lanes-2026-10-23.bundle`.
+  - `lane/wave1` (15 patches) and `lane/wave1b` (6 patches), the twelve-kit filmic and auto-exposure defaults (PRD-632). Superseded by the core move: `lane/corelook` 8e7df2b0b is on #541, and the kits take the look from core through PRD-723. Do not merge these; reuse a patch only through PRD-723.
+  - `lane/exposure` (15 commits, including 8ea346d16 and 74384b1f4) and `lane/gi2` (5 commits, including 71bd083cd and 0f5b52b98), the PRD-721 exposure line. Not merged: the lane ledger marks gi2 "do not merge", and the exposure line has no #541 receipt. Next step: PRD-721 re-reads both branches against the core auto exposure on #541 and takes only what is still missing, with its own receipt.
+  - `lane/receiptE` and `lane/receiptE-perf` (15 patches each): the PRD-651 sheet-gain line, parked in PRD-651 under `lane/bounce-receipt` a57ab9d74. Same disposition as that park note.
+  - `lane/ne-hygiene`, `lane/ne-midway`, `lane/ne-tsl-runtime`, `lane/ne-wasm-templates` and `lane/perry-games` (branched 2026-10-07): superseded. Their content reached develop through the native-engine squash in #493, which the epic carries (spot check: `tsl_call.cpp` and the `instanceCount` code are on the epic). Do not merge.
