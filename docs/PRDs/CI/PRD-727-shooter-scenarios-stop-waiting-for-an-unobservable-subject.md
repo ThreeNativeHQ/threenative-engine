@@ -18,7 +18,7 @@ Shooter completes all nonvisual scenarios in under 30 minutes on the measured so
 ## Findings
 - Layer: engine. `packages/core/src/playtest.ts` `entityObject` accepted only `Object3D`, `mesh` or `object`. The shooter registers its soldier class, which exposes `group`, so `subject: "enemy"` was never observable. `establishSceneSubject` (`packages/playtest/src/runner/runner.ts:692`) then waits up to 30 display frames after every step. One SwiftShader frame costs 1.3 to 1.9 s on both engines, so one scenario burned about 5 minutes.
 - The CI engine gap is not the cause: with the cause present, `enemy-uses-crouch-clips` took 376 s and 434 s on the owned engine and 524 s on `engine: "threejs"` (desktop, load 35, SwiftShader).
-- Rain is a separate cost. Four pinned cores: owned 199 to 233 s per launch against 56 to 77 s for `engine: "threejs"`. The page main thread is idle (rAF callbacks 0 ms), the GPU process saturates its cores, and each presented frame takes about 9 s. The scene is one raymarched fragment shader plus a cloud pass, so the cost is shader execution on SwiftShader. Not yet attributed to a pass.
+- Rain is a separate cost, now attributed. The scenarios' `warmupFrames: 30` wait (`packages/playtest/src/runner/runner.ts:468`) is the cost: one `page.evaluate` in that wait took 147 s and 168 s of 179-199 s runs. The owned engine compiles pipelines synchronously and reports warm-up settled at about 1.2 s (`packages/three-native/src/browser-renderer.ts` `compileAsync()` resolves at once), so every warm-up rAF is a full rain frame (world raymarch pass 75-80 % of the frame). three.js serves those rAFs with cheap loader-cover frames while its pipelines compile asynchronously, and draws only 3-4 world frames per run. Paired, owned, 4 cores: warmupFrames 30 gives 199-233 s, warmupFrames 3 gives 71 s.
 
 ## Execution Phases
 ### Phase 1: Reproduce and attribute
@@ -27,9 +27,10 @@ Shooter completes all nonvisual scenarios in under 30 minutes on the measured so
 - [x] Fix the owning layer with a failing-before/passing-after check. proof: `packages/core/__tests__/playtest.spec.ts` "observes the group root of a registered entity" failed before and passes after (32 of 32); same scenario 62 s and 47 s after.
 ### Phase 3: Qualify
 - [x] Measure all shooter scenarios. proof: 26 of 26 pass in 1094 s (18.2 min) on the desktop under load 14 to 45, from 77 to 95 min in CI.
-- [ ] Rain launch improves. proof: paired 4-core launches of `cinematic` before and after a fix; open, no fix yet (see Findings).
+- [ ] Rain launch improves. proof: paired 4-core launches of `cinematic` before and after the owned engine compiles pipelines asynchronously behind the loader cover; open (see Findings and Decisions).
 - [ ] Run workflow readers, typecheck, lint and affected tests. proof: ci-*, doc and sync specs 676 of 676 pass, core `tsc --noEmit` clean, biome on the two touched files (3 existing complexity warnings); repo-wide `pnpm typecheck`, `pnpm lint` and `pnpm test` not run, so the box stays open.
 
 ## Decisions
 - 2026-10-23: use the exact checkout path and no-push/no-PR delivery in the owner brief, overriding general worktree/PR defaults. Keep the unmerged checkout available to team-lead for integration.
 - 2026-10-23: shooter timeout 120 to 60 minutes. Estimate 31 minutes on the hosted runner (desktop time times 1.7), unconfirmed by a CI run.
+- 2026-10-23 (team-lead, owner order "as efficient as possible"): rain ships unchanged on #541. It already finishes in about 30 min inside its 60-min cap. The fix is an owned-engine warm-up that really compiles pipelines asynchronously, so `compileSettled` is honest. It needs a Wasm rebuild and a startup-order proof, so it does not block #541. Rejected: skipping redraws of unchanged frames, because it breaks temporal accumulation (TAA, SSGI, auto exposure).
