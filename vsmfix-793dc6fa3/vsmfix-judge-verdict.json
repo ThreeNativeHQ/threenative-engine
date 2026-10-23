@@ -1,0 +1,360 @@
+{
+  "status": "COMPLETE",
+  "judgedAt": "2026-10-23T05:22:34.877Z",
+  "model": "claude-sonnet-5-5",
+  "effort": "high",
+  "sessionId": "053b8e80-0671-40e4-8f54-f030826b7137",
+  "costUsd": 0.3542583,
+  "durationMs": 73846,
+  "imagesRead": 80,
+  "criteria": {
+    "file": "/home/joao/.cache/tmp-tn/vsmfix/receipt/criteria.md",
+    "sha256": "39fdee55e8a16cfe9e98c534191a3c6d0562184f6a0fb40fbd62259447df3c4e"
+  },
+  "expect": "preserve",
+  "tier": "high",
+  "runs": {
+    "before": 2,
+    "after": 2
+  },
+  "sets": {
+    "before": [
+      "/home/joao/.cache/tmp-tn/vsmfix/receipt/judge/before-1",
+      "/home/joao/.cache/tmp-tn/vsmfix/receipt/judge/before-2"
+    ],
+    "after": [
+      "/home/joao/.cache/tmp-tn/vsmfix/receipt/judge/after-1",
+      "/home/joao/.cache/tmp-tn/vsmfix/receipt/judge/after-2"
+    ],
+    "unreal": "/home/joao/.cache/tmp-tn/vsmfix/receipt/judge/unreal"
+  },
+  "frames": [
+    {
+      "id": "L5/L5_sun15_spheres",
+      "verdict": "IMPROVEMENT",
+      "vsUnreal": "CLOSE",
+      "reasons": "Floor right of the chrome sphere, toward the emissive sphere: BEFORE (both runs) shows a warm light lobe. AFTER (both runs) has no lobe, and the shadowed floor is a flat dark blue-grey umbra like Unreal's. The capsule and sphere shadow edges, the red cube shadow and the capsule foot look as soft as BEFORE. I saw no acne, banding or leaks. BEFORE runs match each other and AFTER runs match each other.",
+      "differences": "Unreal's umbra is a little darker and bluer, and it has soft contact darkening under the chrome sphere. AFTER's umbra is slightly lighter. The sky clouds and the chrome sphere reflection differ (AFTER shows a black lower half). These differences are outside the criteria and are the same in BEFORE.",
+      "layer": "L5",
+      "unreal": "L5",
+      "files": {
+        "before": [
+          "/home/joao/.cache/tmp-tn/vsmfix/receipt/judge/before-1/L5/L5_sun15_spheres.png",
+          "/home/joao/.cache/tmp-tn/vsmfix/receipt/judge/before-2/L5/L5_sun15_spheres.png"
+        ],
+        "after": [
+          "/home/joao/.cache/tmp-tn/vsmfix/receipt/judge/after-1/L5/L5_sun15_spheres.png",
+          "/home/joao/.cache/tmp-tn/vsmfix/receipt/judge/after-2/L5/L5_sun15_spheres.png"
+        ],
+        "unreal": "/home/joao/.cache/tmp-tn/vsmfix/receipt/judge/unreal/L5/L5_sun15_spheres.png"
+      }
+    },
+    {
+      "id": "L5/L5_sun15_spheres_foot",
+      "verdict": "IMPROVEMENT",
+      "vsUnreal": "CLOSE",
+      "reasons": "Capsule foot crop: the floor in shadow shifts from BEFORE's brown-purple grey to a cooler dark blue, which is nearer Unreal. The contact edge and the penumbra at the foot are equally soft in BEFORE and AFTER. There is no acne and no light leak at the contact. The two runs of each arm match.",
+      "differences": "Unreal's umbra is slightly darker. Unreal also shows a faint darker AO-like gradient near the contact. AFTER's edge softness is comparable.",
+      "layer": "L5",
+      "unreal": "L5",
+      "files": {
+        "before": [
+          "/home/joao/.cache/tmp-tn/vsmfix/receipt/judge/before-1/L5/L5_sun15_spheres_foot.png",
+          "/home/joao/.cache/tmp-tn/vsmfix/receipt/judge/before-2/L5/L5_sun15_spheres_foot.png"
+        ],
+        "after": [
+          "/home/joao/.cache/tmp-tn/vsmfix/receipt/judge/after-1/L5/L5_sun15_spheres_foot.png",
+          "/home/joao/.cache/tmp-tn/vsmfix/receipt/judge/after-2/L5/L5_sun15_spheres_foot.png"
+        ],
+        "unreal": "/home/joao/.cache/tmp-tn/vsmfix/receipt/judge/unreal/L5/L5_sun15_spheres_foot.png"
+      }
+    },
+    {
+      "id": "L5/L5_sun15_spheres_glow",
+      "verdict": "IMPROVEMENT",
+      "vsUnreal": "CLOSE",
+      "reasons": "This is the lobe crop between the chrome sphere and the emissive sphere. BEFORE has an obvious warm glow on the floor, and AFTER has none. AFTER now reads as Unreal's dark umbra, and the cube shadow on the left is also darker and cooler. The edge softness is unchanged and I saw no artefacts.",
+      "differences": "Unreal's floor is a little darker and more neutral, with a soft dark contact shadow under the chrome sphere. AFTER's umbra is slightly bluer and lighter. The chrome sphere reflection differs (AFTER shows a black lower half).",
+      "layer": "L5",
+      "unreal": "L5",
+      "files": {
+        "before": [
+          "/home/joao/.cache/tmp-tn/vsmfix/receipt/judge/before-1/L5/L5_sun15_spheres_glow.png",
+          "/home/joao/.cache/tmp-tn/vsmfix/receipt/judge/before-2/L5/L5_sun15_spheres_glow.png"
+        ],
+        "after": [
+          "/home/joao/.cache/tmp-tn/vsmfix/receipt/judge/after-1/L5/L5_sun15_spheres_glow.png",
+          "/home/joao/.cache/tmp-tn/vsmfix/receipt/judge/after-2/L5/L5_sun15_spheres_glow.png"
+        ],
+        "unreal": "/home/joao/.cache/tmp-tn/vsmfix/receipt/judge/unreal/L5/L5_sun15_spheres_glow.png"
+      }
+    },
+    {
+      "id": "L5/L5_sun15_spheres_sphere",
+      "verdict": "IMPROVEMENT",
+      "vsUnreal": "CLOSE",
+      "reasons": "Sphere and cube shadow crop: sphere shadow edges stay equally soft and are not harder than BEFORE. The shadowed floor and the cube shadow side go from BEFORE's warm grey to a cool dark tone, closer to Unreal. The sphere terminator is now neutral dark grey like Unreal's. There is no acne or banding.",
+      "differences": "Unreal's shadow side is a bit darker and bluer, and the sphere's dark side has more ambient fill. This is a small tone difference.",
+      "layer": "L5",
+      "unreal": "L5",
+      "files": {
+        "before": [
+          "/home/joao/.cache/tmp-tn/vsmfix/receipt/judge/before-1/L5/L5_sun15_spheres_sphere.png",
+          "/home/joao/.cache/tmp-tn/vsmfix/receipt/judge/before-2/L5/L5_sun15_spheres_sphere.png"
+        ],
+        "after": [
+          "/home/joao/.cache/tmp-tn/vsmfix/receipt/judge/after-1/L5/L5_sun15_spheres_sphere.png",
+          "/home/joao/.cache/tmp-tn/vsmfix/receipt/judge/after-2/L5/L5_sun15_spheres_sphere.png"
+        ],
+        "unreal": "/home/joao/.cache/tmp-tn/vsmfix/receipt/judge/unreal/L5/L5_sun15_spheres_sphere.png"
+      }
+    },
+    {
+      "id": "L6/L6_sun15_spheres",
+      "verdict": "IMPROVEMENT",
+      "vsUnreal": "CLOSE",
+      "reasons": "BEFORE has the warm lobe and warm streaks on the floor around the chrome sphere's shadow and toward the emissive sphere. AFTER removes them and gives a clean dark umbra. A soft dark contact shadow under the chrome sphere remains in both arms. The shadow edges are unchanged in softness and nothing new appears. Run noise is nil.",
+      "differences": "Unreal's umbra is slightly darker and bluer. The sky and the chrome reflection differ, and both arms have these differences.",
+      "layer": "L6",
+      "unreal": "L6",
+      "files": {
+        "before": [
+          "/home/joao/.cache/tmp-tn/vsmfix/receipt/judge/before-1/L6/L6_sun15_spheres.png",
+          "/home/joao/.cache/tmp-tn/vsmfix/receipt/judge/before-2/L6/L6_sun15_spheres.png"
+        ],
+        "after": [
+          "/home/joao/.cache/tmp-tn/vsmfix/receipt/judge/after-1/L6/L6_sun15_spheres.png",
+          "/home/joao/.cache/tmp-tn/vsmfix/receipt/judge/after-2/L6/L6_sun15_spheres.png"
+        ],
+        "unreal": "/home/joao/.cache/tmp-tn/vsmfix/receipt/judge/unreal/L6/L6_sun15_spheres.png"
+      }
+    },
+    {
+      "id": "L6/L6_sun15_spheres_foot",
+      "verdict": "IMPROVEMENT",
+      "vsUnreal": "CLOSE",
+      "reasons": "Capsule foot: the shadowed floor goes from brownish BEFORE to cool dark blue AFTER, closer to Unreal. The contact edge and the penumbra width stay equal to BEFORE and soft. I saw no leak at the foot.",
+      "differences": "Unreal's floor in shadow is a little darker. The soft contact darkening in Unreal is slightly stronger.",
+      "layer": "L6",
+      "unreal": "L6",
+      "files": {
+        "before": [
+          "/home/joao/.cache/tmp-tn/vsmfix/receipt/judge/before-1/L6/L6_sun15_spheres_foot.png",
+          "/home/joao/.cache/tmp-tn/vsmfix/receipt/judge/before-2/L6/L6_sun15_spheres_foot.png"
+        ],
+        "after": [
+          "/home/joao/.cache/tmp-tn/vsmfix/receipt/judge/after-1/L6/L6_sun15_spheres_foot.png",
+          "/home/joao/.cache/tmp-tn/vsmfix/receipt/judge/after-2/L6/L6_sun15_spheres_foot.png"
+        ],
+        "unreal": "/home/joao/.cache/tmp-tn/vsmfix/receipt/judge/unreal/L6/L6_sun15_spheres_foot.png"
+      }
+    },
+    {
+      "id": "L6/L6_sun15_spheres_glow",
+      "verdict": "IMPROVEMENT",
+      "vsUnreal": "CLOSE",
+      "reasons": "The lobe between the chrome sphere and the emissive sphere, with the broken warm streaks next to the chrome sphere, is visible in BEFORE and gone in AFTER. The AFTER floor is a uniform dark umbra with a soft contact shadow under the chrome sphere. This matches Unreal's structure. I saw no artefacts and the runs agree.",
+      "differences": "Unreal's umbra is darker and more neutral than AFTER's blue-grey. The chrome sphere reflection differs, in both arms.",
+      "layer": "L6",
+      "unreal": "L6",
+      "files": {
+        "before": [
+          "/home/joao/.cache/tmp-tn/vsmfix/receipt/judge/before-1/L6/L6_sun15_spheres_glow.png",
+          "/home/joao/.cache/tmp-tn/vsmfix/receipt/judge/before-2/L6/L6_sun15_spheres_glow.png"
+        ],
+        "after": [
+          "/home/joao/.cache/tmp-tn/vsmfix/receipt/judge/after-1/L6/L6_sun15_spheres_glow.png",
+          "/home/joao/.cache/tmp-tn/vsmfix/receipt/judge/after-2/L6/L6_sun15_spheres_glow.png"
+        ],
+        "unreal": "/home/joao/.cache/tmp-tn/vsmfix/receipt/judge/unreal/L6/L6_sun15_spheres_glow.png"
+      }
+    },
+    {
+      "id": "L6/L6_sun15_spheres_sphere",
+      "verdict": "IMPROVEMENT",
+      "vsUnreal": "CLOSE",
+      "reasons": "Sphere shadow edges are as soft as BEFORE, and the sphere terminator and the cube shadow turn cool and dark as in Unreal. The warm cast on the shadowed floor is gone. There is no acne or banding.",
+      "differences": "Unreal has a slightly darker, bluer shadow side and slightly more fill on the sphere's dark side.",
+      "layer": "L6",
+      "unreal": "L6",
+      "files": {
+        "before": [
+          "/home/joao/.cache/tmp-tn/vsmfix/receipt/judge/before-1/L6/L6_sun15_spheres_sphere.png",
+          "/home/joao/.cache/tmp-tn/vsmfix/receipt/judge/before-2/L6/L6_sun15_spheres_sphere.png"
+        ],
+        "after": [
+          "/home/joao/.cache/tmp-tn/vsmfix/receipt/judge/after-1/L6/L6_sun15_spheres_sphere.png",
+          "/home/joao/.cache/tmp-tn/vsmfix/receipt/judge/after-2/L6/L6_sun15_spheres_sphere.png"
+        ],
+        "unreal": "/home/joao/.cache/tmp-tn/vsmfix/receipt/judge/unreal/L6/L6_sun15_spheres_sphere.png"
+      }
+    },
+    {
+      "id": "L7/L7_sun15_spheres",
+      "verdict": "NEUTRAL",
+      "vsUnreal": "CLOSE",
+      "reasons": "The floor is lit by the emissive sphere in BEFORE and in AFTER. The warm bounce on the floor at the right, the capsule contact and the shadow edges look identical in both. The differences are within run noise. I saw no new artefacts.",
+      "differences": "Unreal shows a matte grey sphere where ThreeNative shows a chrome upper half with a brown lower half. Unreal has a green bounce tint on the cube. The sky also differs. The floor lobe is similar, and Unreal's is slightly stronger and wider.",
+      "layer": "L7",
+      "unreal": "L7",
+      "files": {
+        "before": [
+          "/home/joao/.cache/tmp-tn/vsmfix/receipt/judge/before-1/L7/L7_sun15_spheres.png",
+          "/home/joao/.cache/tmp-tn/vsmfix/receipt/judge/before-2/L7/L7_sun15_spheres.png"
+        ],
+        "after": [
+          "/home/joao/.cache/tmp-tn/vsmfix/receipt/judge/after-1/L7/L7_sun15_spheres.png",
+          "/home/joao/.cache/tmp-tn/vsmfix/receipt/judge/after-2/L7/L7_sun15_spheres.png"
+        ],
+        "unreal": "/home/joao/.cache/tmp-tn/vsmfix/receipt/judge/unreal/L7/L7_sun15_spheres.png"
+      }
+    },
+    {
+      "id": "L7/L7_sun15_spheres_foot",
+      "verdict": "NEUTRAL",
+      "vsUnreal": "CLOSE",
+      "reasons": "Foot crop: the warm bounce on the floor at the foot, the contact edge and the penumbra are indistinguishable between BEFORE and AFTER. The softness is unchanged and there is no acne or leak.",
+      "differences": "Unreal's shadow edge to the right of the foot is a little softer and its floor a little darker, with less warm bounce at the contact.",
+      "layer": "L7",
+      "unreal": "L7",
+      "files": {
+        "before": [
+          "/home/joao/.cache/tmp-tn/vsmfix/receipt/judge/before-1/L7/L7_sun15_spheres_foot.png",
+          "/home/joao/.cache/tmp-tn/vsmfix/receipt/judge/before-2/L7/L7_sun15_spheres_foot.png"
+        ],
+        "after": [
+          "/home/joao/.cache/tmp-tn/vsmfix/receipt/judge/after-1/L7/L7_sun15_spheres_foot.png",
+          "/home/joao/.cache/tmp-tn/vsmfix/receipt/judge/after-2/L7/L7_sun15_spheres_foot.png"
+        ],
+        "unreal": "/home/joao/.cache/tmp-tn/vsmfix/receipt/judge/unreal/L7/L7_sun15_spheres_foot.png"
+      }
+    },
+    {
+      "id": "L7/L7_sun15_spheres_glow",
+      "verdict": "NEUTRAL",
+      "vsUnreal": "CLOSE",
+      "reasons": "The warm floor glow from the emissive sphere has the same shape and brightness in BEFORE and AFTER. It is not lost with GI on. The cube and sphere contact shadows look the same. There is no new artefact.",
+      "differences": "The sphere differs: Unreal shows a matte grey sphere and ThreeNative shows chrome plus brown. Unreal also has a green tint from the cube. The floor glow is similar in extent, and Unreal's is slightly broader.",
+      "layer": "L7",
+      "unreal": "L7",
+      "files": {
+        "before": [
+          "/home/joao/.cache/tmp-tn/vsmfix/receipt/judge/before-1/L7/L7_sun15_spheres_glow.png",
+          "/home/joao/.cache/tmp-tn/vsmfix/receipt/judge/before-2/L7/L7_sun15_spheres_glow.png"
+        ],
+        "after": [
+          "/home/joao/.cache/tmp-tn/vsmfix/receipt/judge/after-1/L7/L7_sun15_spheres_glow.png",
+          "/home/joao/.cache/tmp-tn/vsmfix/receipt/judge/after-2/L7/L7_sun15_spheres_glow.png"
+        ],
+        "unreal": "/home/joao/.cache/tmp-tn/vsmfix/receipt/judge/unreal/L7/L7_sun15_spheres_glow.png"
+      }
+    },
+    {
+      "id": "L7/L7_sun15_spheres_sphere",
+      "verdict": "NEUTRAL",
+      "vsUnreal": "CLOSE",
+      "reasons": "The sphere shadow edges and the floor light are the same in BEFORE and AFTER. The edge softness matches. No acne or banding is visible.",
+      "differences": "Unreal has a slightly darker, cooler shadow on the dark side of the sphere and the cube. There is a small green tint on the cube side.",
+      "layer": "L7",
+      "unreal": "L7",
+      "files": {
+        "before": [
+          "/home/joao/.cache/tmp-tn/vsmfix/receipt/judge/before-1/L7/L7_sun15_spheres_sphere.png",
+          "/home/joao/.cache/tmp-tn/vsmfix/receipt/judge/before-2/L7/L7_sun15_spheres_sphere.png"
+        ],
+        "after": [
+          "/home/joao/.cache/tmp-tn/vsmfix/receipt/judge/after-1/L7/L7_sun15_spheres_sphere.png",
+          "/home/joao/.cache/tmp-tn/vsmfix/receipt/judge/after-2/L7/L7_sun15_spheres_sphere.png"
+        ],
+        "unreal": "/home/joao/.cache/tmp-tn/vsmfix/receipt/judge/unreal/L7/L7_sun15_spheres_sphere.png"
+      }
+    },
+    {
+      "id": "L8/L8_sun15_spheres",
+      "verdict": "NEUTRAL",
+      "vsUnreal": "CLOSE",
+      "reasons": "The floor light from the emissive sphere and the contact shadows are unchanged between BEFORE and AFTER, including the capsule foot and the sphere shadow edges. The runs agree. I saw no new artefacts.",
+      "differences": "Unreal's floor lobe is a little warmer, broader and brighter. Its shadow is slightly darker, and the chrome reflection and sky differ.",
+      "layer": "L8",
+      "unreal": "L8",
+      "files": {
+        "before": [
+          "/home/joao/.cache/tmp-tn/vsmfix/receipt/judge/before-1/L8/L8_sun15_spheres.png",
+          "/home/joao/.cache/tmp-tn/vsmfix/receipt/judge/before-2/L8/L8_sun15_spheres.png"
+        ],
+        "after": [
+          "/home/joao/.cache/tmp-tn/vsmfix/receipt/judge/after-1/L8/L8_sun15_spheres.png",
+          "/home/joao/.cache/tmp-tn/vsmfix/receipt/judge/after-2/L8/L8_sun15_spheres.png"
+        ],
+        "unreal": "/home/joao/.cache/tmp-tn/vsmfix/receipt/judge/unreal/L8/L8_sun15_spheres.png"
+      }
+    },
+    {
+      "id": "L8/L8_sun15_spheres_foot",
+      "verdict": "NEUTRAL",
+      "vsUnreal": "CLOSE",
+      "reasons": "Foot crop: the contact edge, the penumbra width and the floor tone are the same in BEFORE and AFTER. There is no leak or acne.",
+      "differences": "Unreal's floor right of the foot is a little more neutral and darker, and its edge is slightly softer.",
+      "layer": "L8",
+      "unreal": "L8",
+      "files": {
+        "before": [
+          "/home/joao/.cache/tmp-tn/vsmfix/receipt/judge/before-1/L8/L8_sun15_spheres_foot.png",
+          "/home/joao/.cache/tmp-tn/vsmfix/receipt/judge/before-2/L8/L8_sun15_spheres_foot.png"
+        ],
+        "after": [
+          "/home/joao/.cache/tmp-tn/vsmfix/receipt/judge/after-1/L8/L8_sun15_spheres_foot.png",
+          "/home/joao/.cache/tmp-tn/vsmfix/receipt/judge/after-2/L8/L8_sun15_spheres_foot.png"
+        ],
+        "unreal": "/home/joao/.cache/tmp-tn/vsmfix/receipt/judge/unreal/L8/L8_sun15_spheres_foot.png"
+      }
+    },
+    {
+      "id": "L8/L8_sun15_spheres_glow",
+      "verdict": "NEUTRAL",
+      "vsUnreal": "CLOSE",
+      "reasons": "The warm glow on the floor next to the emissive sphere is the same in BEFORE and AFTER, so GI floor light is retained. The chrome sphere reflections and the contact shadow are unchanged. There is no artefact.",
+      "differences": "Unreal's warm glow is a little larger and brighter near the emissive sphere. The chrome reflection of the scene differs in detail.",
+      "layer": "L8",
+      "unreal": "L8",
+      "files": {
+        "before": [
+          "/home/joao/.cache/tmp-tn/vsmfix/receipt/judge/before-1/L8/L8_sun15_spheres_glow.png",
+          "/home/joao/.cache/tmp-tn/vsmfix/receipt/judge/before-2/L8/L8_sun15_spheres_glow.png"
+        ],
+        "after": [
+          "/home/joao/.cache/tmp-tn/vsmfix/receipt/judge/after-1/L8/L8_sun15_spheres_glow.png",
+          "/home/joao/.cache/tmp-tn/vsmfix/receipt/judge/after-2/L8/L8_sun15_spheres_glow.png"
+        ],
+        "unreal": "/home/joao/.cache/tmp-tn/vsmfix/receipt/judge/unreal/L8/L8_sun15_spheres_glow.png"
+      }
+    },
+    {
+      "id": "L8/L8_sun15_spheres_sphere",
+      "verdict": "NEUTRAL",
+      "vsUnreal": "CLOSE",
+      "reasons": "The sphere shadow edge and the cube shadow are the same softness in BEFORE and AFTER. The floor tone is unchanged. No acne or banding.",
+      "differences": "Unreal has a slightly darker, cooler shadow side on the sphere. There is a green bounce tint on the cube side in Unreal.",
+      "layer": "L8",
+      "unreal": "L8",
+      "files": {
+        "before": [
+          "/home/joao/.cache/tmp-tn/vsmfix/receipt/judge/before-1/L8/L8_sun15_spheres_sphere.png",
+          "/home/joao/.cache/tmp-tn/vsmfix/receipt/judge/before-2/L8/L8_sun15_spheres_sphere.png"
+        ],
+        "after": [
+          "/home/joao/.cache/tmp-tn/vsmfix/receipt/judge/after-1/L8/L8_sun15_spheres_sphere.png",
+          "/home/joao/.cache/tmp-tn/vsmfix/receipt/judge/after-2/L8/L8_sun15_spheres_sphere.png"
+        ],
+        "unreal": "/home/joao/.cache/tmp-tn/vsmfix/receipt/judge/unreal/L8/L8_sun15_spheres_sphere.png"
+      }
+    }
+  ],
+  "overall": {
+    "verdict": "IMPROVEMENT",
+    "vsUnreal": "CLOSE",
+    "reasons": "L5 and L6, all four frames each: the warm lobe on the floor between the chrome sphere and the emissive sphere, present in BEFORE, is gone in AFTER. The shadowed floor is now a dark cool umbra, closer to Unreal. The cube shadow and the sphere dark sides are also nearer to Unreal. Shadow softness at the capsule foot and the sphere edges stays as soft as BEFORE and Unreal, with no acne, banding or leaks. L7 and L8: BEFORE and AFTER are indistinguishable, within run noise, and the emissive floor light is kept. There is no REGRESSION in any frame. The remaining differences from Unreal are a slightly lighter or bluer umbra, and chrome-sphere material and sky differences that are not part of this change."
+  },
+  "blockedBy": [],
+  "file": "/home/joao/.cache/tmp-tn/vsmfix/receipt/verdict.json"
+}
