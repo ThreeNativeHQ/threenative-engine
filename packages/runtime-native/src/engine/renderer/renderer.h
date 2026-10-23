@@ -953,9 +953,10 @@ private:
     WGPUTextureView albedoView_ = nullptr;
     WGPUTexture emissiveTexture_ = nullptr;
     WGPUTextureView emissiveView_ = nullptr;
-    shader::StageModule normalFragment_;
-    /** normalFragment_ for Standard and Physical draws: the alpha also packs metalness and roughness (see planNormals). */
-    shader::StageModule surfaceFragment_;
+    /** The normal-target programs, one per face-normal variant: smooth, DoubleSide smooth, flat (see planNormals). */
+    std::array<shader::StageModule, 3> normalFragments_;
+    /** normalFragments_ for Standard and Physical draws: the alpha also packs metalness and roughness. */
+    std::array<shader::StageModule, 3> surfaceFragments_;
     WGPUTexture materialTexture_ = nullptr;
     WGPUTextureView materialView_ = nullptr;
     std::vector<std::string> diagnostics_;

@@ -3425,35 +3425,6 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     };
     const auto planNormals = [&] {
         if (normalPass) {
-            if (normalFragment_.wgsl.code.empty()) {
-                shader::Program fragment{shader::Stage::Fragment};
-                fragment.output("color", fragment.construct(shader::Type::vec(4),
-                    {fragment.call("normalize", {fragment.varying("normalView", shader::Type::vec(3))}), fragment.constant(0.f)}));
-                normalFragment_ = shader::buildStage(fragment, 1);
-                if (!normalFragment_.wgsl.ok()) throw std::runtime_error("TN_NATIVE_SHADER_INVALID: post normal program");
-            }
-            if (surfaceFragment_.wgsl.code.empty()) {
-                // The alpha carries the surface for post passes that read metalness and roughness:
-                //   alpha = 2 * round(7 * metalness) + 0.25 + 0.5 * roughness
-                // so the integer half is the metalness level, the fraction is roughness, and 0 (nothing written)
-                // is no surface at all. Half-float spacing stays well under the 0.25 offset. `metalness` and
-                // `roughness` are the first two fields of a standard fragment's uniform block (offsets 0 and 4),
-                // so this block-prefix reads each draw's own material values through the draw's own bindings.
-                shader::Program fragment{shader::Stage::Fragment};
-                const auto clamp01 = [&](shader::ExprId v) {
-                    return fragment.call("clamp", {v, fragment.constant(0.f), fragment.constant(1.f)});
-                };
-                const auto metalness = clamp01(fragment.uniform("metalness", shader::Type::f32()));
-                const auto roughness = clamp01(fragment.uniform("roughness", shader::Type::f32()));
-                const auto level = fragment.call("floor", {fragment.add(fragment.mul(metalness, fragment.constant(7.f)),
-                                                                         fragment.constant(0.5f))});
-                const auto packed = fragment.add(fragment.add(fragment.mul(level, fragment.constant(2.f)), fragment.constant(0.25f)),
-                                                 fragment.mul(roughness, fragment.constant(0.5f)));
-                fragment.output("color", fragment.construct(shader::Type::vec(4),
-                    {fragment.call("normalize", {fragment.varying("normalView", shader::Type::vec(3))}), packed}));
-                surfaceFragment_ = shader::buildStage(fragment, 1);
-                if (!surfaceFragment_.wgsl.ok()) throw std::runtime_error("TN_NATIVE_SHADER_INVALID: post surface program");
-            }
             for (const Planned& draw : plan) {
                 const DrawItem& item = *draw.item;
                 // The sky and unlit materials write no view-space normal (their programs have no normalView).
@@ -3468,9 +3439,50 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 }
                 if (item.nodes.normalNode)
                     throw std::runtime_error("TN_POST_NORMAL_UNSUPPORTED: a material normalNode is not written to the normal target");
+                // Standard and Physical programs lead their fragment block with metalness and roughness.
+                // A material node that replaces either one has no such field: the draw writes no surface (alpha 0).
+                const bool surface = (item.kind == MaterialKind::Standard || item.kind == MaterialKind::Physical) &&
+                                     !item.nodes.metalnessNode && !item.nodes.roughnessNode;
+                auto& normalFragment = (surface ? surfaceFragments_ : normalFragments_)[item.flatShading ? 2 : size_t(item.side == 2)];
+                if (normalFragment.wgsl.code.empty()) {
+                    shader::Program fragment{shader::Stage::Fragment};
+                    auto normal = fragment.varying("normalView", shader::Type::vec(3));
+                    // Flat vertices carry zero normals; match the colour fragment's face derivatives instead.
+                    if (item.flatShading) {
+                        const auto position = fragment.varying("positionView", shader::Type::vec(3));
+                        normal = fragment.call("cross", {fragment.call("dFdx", {position}), fragment.call("dFdy", {position})});
+                    }
+                    normal = fragment.call("normalize", {normal});
+                    if (item.side == 2 && !item.flatShading)
+                        normal = fragment.mul(normal, fragment.select(fragment.builtin("frontFacing"), fragment.constant(1.f), fragment.constant(-1.f)));
+                    auto alpha = fragment.constant(0.f);
+                    if (surface) {
+                        // The alpha carries the surface for post passes that read metalness and roughness:
+                        //   alpha = 2 * round(7 * metalness) + 0.25 + 0.5 * roughness
+                        // so the integer half is the metalness level, the fraction is roughness, and 0 (nothing written)
+                        // is no surface at all. Half-float spacing stays well under the 0.25 offset. `metalness` and
+                        // `roughness` are the first two fields of a standard fragment's uniform block (offsets 0 and 4),
+                        // so this block-prefix reads each draw's own material values through the draw's own bindings.
+                        const auto clamp01 = [&](shader::ExprId v) {
+                            return fragment.call("clamp", {v, fragment.constant(0.f), fragment.constant(1.f)});
+                        };
+                        const auto metalness = clamp01(fragment.uniform("metalness", shader::Type::f32()));
+                        const auto roughness = clamp01(fragment.uniform("roughness", shader::Type::f32()));
+                        const auto level = fragment.call("floor", {fragment.add(fragment.mul(metalness, fragment.constant(7.f)),
+                                                                                 fragment.constant(0.5f))});
+                        alpha = fragment.add(fragment.add(fragment.mul(level, fragment.constant(2.f)), fragment.constant(0.25f)),
+                                             fragment.mul(roughness, fragment.constant(0.5f)));
+                    }
+                    fragment.output("color", fragment.construct(shader::Type::vec(4), {normal, alpha}));
+                    normalFragment = shader::buildStage(fragment, 1);
+                    if (!normalFragment.wgsl.ok())
+                        throw std::runtime_error(surface ? "TN_NATIVE_SHADER_INVALID: post surface program" : "TN_NATIVE_SHADER_INVALID: post normal program");
+                }
                 // The normal fragment reads `normalView` at location 0, which the program's vertex stage must write there.
                 if (draw.program->vertex.wgsl.code.find("@location(0) o_normalView") == std::string::npos)
                     throw std::runtime_error("TN_POST_NORMAL_LAYOUT: normalView is not the vertex stage's first varying");
+                if (item.flatShading && draw.program->vertex.wgsl.code.find("@location(1) o_positionView") == std::string::npos)
+                    throw std::runtime_error("TN_POST_NORMAL_LAYOUT: positionView is not the vertex stage's second varying");
                 PipelineTarget target{WGPUTextureFormat_RGBA16Float, WGPUTextureFormat_Depth32Float,
                     item.side == 2 ? WGPUCullMode_None : item.side == 1 ? WGPUCullMode_Front : WGPUCullMode_Back};
                 target.layout = draw.program->pipelineLayout; target.depthWrite = false;
@@ -3487,17 +3499,11 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 }
                 target.skinIndex = skinIndexFormat(item);
                 target.instanceStepMask = instanceStepMask(draw.program->vertex, item);
-                // Standard and Physical programs lead their fragment block with metalness and roughness.
-                // A material node that replaces either one has no such field: the draw writes no surface (alpha 0).
-                shader::StageModule* fragment =
-                    (item.kind == MaterialKind::Standard || item.kind == MaterialKind::Physical) &&
-                    !item.nodes.metalnessNode && !item.nodes.roughnessNode
-                        ? &surfaceFragment_ : &normalFragment_;
                 if (compilation) {
-                    compilation->push_back(pipelines_->getAsync(draw.program->vertex, fragment, target));
+                    compilation->push_back(pipelines_->getAsync(draw.program->vertex, &normalFragment, target));
                     continue;
                 }
-                const auto pipeline = pipelines_->get(draw.program->vertex, fragment, target);
+                const auto pipeline = pipelines_->get(draw.program->vertex, &normalFragment, target);
                 if (!pipeline) throw std::runtime_error("TN_POST_NORMAL_PIPELINE_REFUSED");
                 Planned normal = draw;
                 normal.pipeline = pipeline;

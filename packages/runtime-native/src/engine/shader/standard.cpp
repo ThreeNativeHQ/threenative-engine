@@ -601,9 +601,9 @@ static ExprId materialColor(Program& f, const VertexVariant& variant, ExprId dif
 
 // negateOnBackSide for DoubleSide: three's normalView is the geometry normal times faceDirection
 // (float(frontFacing) * 2 - 1), so a back face is lit from the side the viewer sees. BackSide is
-// negated in the vertex stage; FrontSide never rasterizes a back face.
+// negated in the vertex stage; flat derivatives already face the viewer (r185 Normal.js).
 static ExprId facedNormal(Program& f, const VertexVariant& variant, ExprId normal) {
-    if (!variant.doubleSide) return normal;
+    if (!variant.doubleSide || variant.flatShading) return normal;
     const ExprId front = f.select(f.builtin("frontFacing"), f.constant(1.0f), f.constant(0.0f));
     return f.mul(normal, f.sub(f.mul(front, f.constant(2.0f)), f.constant(1.0f)));
 }
