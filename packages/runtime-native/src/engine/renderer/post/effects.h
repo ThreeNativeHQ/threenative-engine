@@ -34,7 +34,9 @@ class PostEffects {
      */
     void captureUniforms();
     bool target(const std::string& name, WGPUTextureView view);
-    void input(const std::string& name, WGPUTextureView view, WGPUSampler sampler = nullptr);
+    // `remade`: the view's texture was made again (a new upload). A cached group may bind the old view under the
+    // same handle: the browser's WebGPU frees a released handle and gives it to the next view.
+    void input(const std::string& name, WGPUTextureView view, WGPUSampler sampler = nullptr, bool remade = false);
     /** True when any pass reads the named resource ("normal" asks the renderer for a normal target). */
     bool reads(const std::string& name) const;
     /**

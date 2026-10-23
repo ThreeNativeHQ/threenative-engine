@@ -312,9 +312,10 @@ bool PostEffects::target(const std::string& name, WGPUTextureView view) {
     releaseGroups();
     return true;
 }
-void PostEffects::input(const std::string& name, WGPUTextureView view, WGPUSampler sampler) {
+void PostEffects::input(const std::string& name, WGPUTextureView view, WGPUSampler sampler, bool remade) {
     if (name == "scene" || name == "depth" || targets_.contains(name) || images_.contains(name))
         throw std::runtime_error("TN_POST_INPUT_RESERVED: " + name);
+    if (remade) releaseGroups();
     if (sampler) inputSamplers_[name] = sampler; else inputSamplers_.erase(name);
     if (view)
         inputs_[name] = view;

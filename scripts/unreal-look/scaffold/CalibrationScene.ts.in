@@ -136,6 +136,8 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
       }
       return undefined;
     };
+    // False while a progressive GI bake is still converging; the capture waits for true.
+    let giConverged = true;
     const meshes: Mesh[] = [];
     model.traverse((object) => {
       if (object instanceof Mesh) meshes.push(object);
@@ -289,9 +291,22 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
           m.material = (m.material as MeshBasicMaterial).clone();
           (m.material as unknown as { color: Color }).color.setScalar(0);
         }
+        const progressive = params.get("giProgressive") === "1" && params.get("giSkip") === null;
         const gi = installGi(ctx, model, {
           // A traced ray finds the floor itself: the painted floor of the cube capture is not needed.
           paintGround: !tracing,
+          ...(progressive
+            ? {
+                // The cache shows a provisional bake first and converges over the next frames.
+                progressive: {
+                  previewRays: 16,
+                  budgetMs: Number(params.get("giBudgetMs") ?? 8),
+                  onConverged: () => {
+                    giConverged = true;
+                  },
+                },
+              }
+            : {}),
           // Diagnosis: ?bounces=N brackets how much of the indirect light the later bounces carry.
           bounces: Number(params.get("bounces") ?? 5),
           // The Surface Cache is on: a ray reads the map where it lands (PRD-639). Diagnosis: ?giMaps=0 returns the
@@ -313,6 +328,7 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
             ...(params.get("direct") === "0" || params.get("giFollow") === "0" ? {} : { source: l }),
           })),
         });
+        giConverged = gi === undefined || gi.pass === "final";
         skipped.forEach((m, i) => (m.material as unknown as { color: Color }).color.copy(kept[i] as Color));
         if (gi === undefined)
           unsupported.push({ actor: NAME, property: "GI", reason: "the GI cache did not bake" });
@@ -385,6 +401,9 @@ export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
     const actors = new Map<string, { object: Object3D; rest: Vector3 }>();
     const reference = {
       layer: LAYER,
+      get giConverged(): boolean {
+        return giConverged;
+      },
       tier: TIER,
       finalGatherMethod: GI_METHOD,
       shadowQuality: SHADOW.shadowQuality,

@@ -154,9 +154,13 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
       : LAYER === "ID"
         ? "unreal-reference/scene-id.glb"
         : "unreal-reference/scene.glb";
+    // The photograph is only the sky of a page that cannot draw one: the GPU sky and the canvas bake both need an
+    // OffscreenCanvas. Decoding and uploading its 4096 x 2048 pixels held the main thread for about 3 s at load (`?skyPhoto=1` loads it, for an A/B).
     const [model, sky] = await Promise.all([
       ctx.assets.model<{ scene: Group }>(file),
-      ctx.assets.texture("sky.jpg"),
+      typeof OffscreenCanvas === "undefined" || params.get("skyPhoto") === "1"
+        ? ctx.assets.texture("sky.jpg")
+        : undefined,
     ]);
     this.#model = model.scene;
     this.#sky = sky;
@@ -171,7 +175,7 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
   override enter(ctx: GameCtx): SceneFrame<GameState, IPhysicsContext> {
     const model = this.#model;
     const sky = this.#sky;
-    if (model === undefined || sky === undefined) throw new Error("TN_REF_NOT_LOADED");
+    if (model === undefined) throw new Error("TN_REF_NOT_LOADED");
     const el = (elevationDeg * Math.PI) / 180;
     const az = (azimuthDeg * Math.PI) / 180;
     SUN_DIRECTION.set(Math.sin(az) * Math.cos(el), Math.sin(el), Math.cos(az) * Math.cos(el));
@@ -180,6 +184,13 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
     const camera = ctx.camera as PerspectiveCamera;
     const raw = ctx.renderer.raw as unknown as { toneMapping: number };
     let reflections: Promise<() => void> | undefined;
+    // The GI cache is baked before the first frame. giProgressive=1 shows a provisional bake at the first frame and
+    // converges over the next ones; the capture waits for `reference.giConverged`. It is opt-in until the engine
+    // defect is fixed: a provisional upload before the final one changes the settled frame (PRD-649).
+    let giConverged = true;
+    // Set once the first reflection capture is done: takes the capture again, with the converged cache.
+    let firstCapture: Promise<void> | undefined;
+    let recapture: (() => Promise<void>) | undefined;
     // The L9 chain's own report (stages and dropped), read by the capture.
     let postDebug: (() => unknown) | undefined;
     // Draws the sun's shadow at another tier: what a `ShadowFilterBudget` step does, callable from the page.
@@ -327,8 +338,8 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
       if (tracing) reflectionTrace.current = new TracedReflections(model);
       // PRD-631: indirect diffuse from a world-space light cache of the sky and, from L7 (Unreal's
       // global illumination), the sun a surface returns (render/giCache.ts).
-      if (TUNED && level >= 2 && !OFF.has("gi"))
-        installGi(ctx, model, {
+      if (TUNED && level >= 2 && !OFF.has("gi")) {
+        const gi = installGi(ctx, model, {
           // Diagnosis knob paint=1: paint the lit floor into the environment even while reflections are traced.
           paintGround: !tracing || params.get("paint") === "1",
           // PRD-642 Phase 3 (opt in, D10): past the trace's roughness cut-off, specular reads the radiance cache and, past
@@ -353,6 +364,31 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
           surfaceCache: params.get("giMaps") !== "0" && {
             images: (material, slot) => this.#images.get(material.name ?? "")?.[slot],
           },
+          ...(params.get("giProgressive") !== "1"
+            ? {}
+            : {
+                progressive: {
+                  previewRays: Number(params.get("giPreviewRays") ?? 32),
+                  ...(params.has("giPreviewBounces")
+                    ? { previewBounces: Number(params.get("giPreviewBounces")) }
+                    : {}),
+                  budgetMs: Number(params.get("giBudgetMs") ?? 8),
+                  // giGapMs=8 leaves the main thread idle as long as each slice (the first progressive pacing, 53% duty).
+                  gapMs: Number(params.get("giGapMs") ?? 0),
+                  onConverged: () => {
+                    // Glossy surfaces reflect a capture of the lit scene: take it again with the full bake.
+                    void (async () => {
+                      try {
+                        await firstCapture;
+                        await recapture?.();
+                      } catch (error) {
+                        console.error("TN_REFLECTION_RECAPTURE_FAILED", error);
+                      }
+                      giConverged = true;
+                    })();
+                  },
+                },
+              }),
           // Diagnosis knob giBounces=N: the passes that carry surface light back into the cache (0 = the sky alone).
           bounces: GI_METHOD === "none" ? 0 : Number(params.get("giBounces") ?? 5),
           // The tier's sky light multiplier (Unreal's Low sets 0.8). Diagnosis knob skyMul=N brackets it.
@@ -364,6 +400,8 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
             : {}),
           sun: { color: key.color, intensity: key.intensity, direction: SUN_DIRECTION },
         });
+        giConverged = gi === undefined || gi.pass === "final";
+      }
       // Diagnosis knob envMul=N scales the sky's diffuse and specular environment light (0 = no sky light but the GI cache).
       if (params.get("envMul") !== null) scene.environmentIntensity = Number(params.get("envMul"));
       if (TUNED && level >= 8 && !OFF.has("reflcap"))
@@ -437,6 +475,9 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
       // The live renderer, as the calibration scene exposes it: the capture's frame gate reads its draw counters and temporal state.
       renderer: ctx.renderer.raw,
       layer: LAYER,
+      get giConverged(): boolean {
+        return giConverged;
+      },
       tier: TIER,
       finalGatherMethod: GI_METHOD,
       shadowQuality: SHADOW.shadowQuality,
@@ -503,10 +544,21 @@ export class Reference extends Scene<GameState, IPhysicsContext> {
         const renderer = ctx.renderer.raw as unknown as {
           prepareEnvironmentAsync?(scene: unknown, camera: unknown): Promise<boolean>;
         };
+        recapture = async () => {
+          const next = await captureReflections(
+            ctx.renderer.raw as unknown as Parameters<typeof captureReflections>[0],
+            scene,
+            model,
+          );
+          this.#reflectionsDispose?.();
+          this.#reflectionsDispose = next;
+          await renderer.prepareEnvironmentAsync?.(scene, camera);
+        };
         if ((await renderer.prepareEnvironmentAsync?.(scene, camera)) === false)
           throw new Error("TN_REFLECTION_CAPTURE_PMREM");
         publishReference();
       });
+      firstCapture = ready.catch(() => undefined);
       ctx.startup.hold("reflection-capture", ready, 180_000);
       void ready.catch((error) => console.error("TN_REFLECTION_CAPTURE_FAILED", error));
     }

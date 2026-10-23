@@ -18,6 +18,7 @@ import { FRAME_GATE, captureMotionFrames } from "./capture-motion-threenative.js
 import { HIDE_UI, freePort, scaffold, waitForServer } from "./capture-threenative.js";
 import { awaitExposureSettled, metersExposure, watchExposure } from "./exposureSettled.js";
 import { isManifestScene, readScene, sceneDir, sceneKey } from "./gi.js";
+import { GPU_PASSES, readPasses } from "./gpuPasses.js";
 import {
   MIN_STEPS,
   RENDERER_LOST,
@@ -178,6 +179,9 @@ export async function captureGiThreeNative(options: {
         const [width, height] =
           override?.length === 2 ? (override as [number, number]) : scene.resolution;
         const page = await browser.newPage({ viewport: { width, height }, deviceScaleFactor: 1 });
+        // TN_UNREAL_LOOK_GPU_PASSES=1 with --measure: per-pass GPU time of the drawn frames, beside the frame-budget log.
+        const passes = process.env.TN_UNREAL_LOOK_GPU_PASSES === "1";
+        if (passes) await page.addInitScript(GPU_PASSES);
         // The motion run steps the loop itself; a still holds it to land on one jitter phase (jitterPhase.ts).
         if (options.motion !== undefined || options.measureSeconds === undefined)
           await page.addInitScript(FRAME_GATE);
@@ -238,6 +242,14 @@ export async function captureGiThreeNative(options: {
             await page.addStyleTag({ content: HIDE_UI });
             await page.waitForSelector('[data-threenative-startup="ready"]', { timeout: 300_000 });
             await page.waitForFunction(() => "__tnRef" in window, undefined, { timeout: 240_000 });
+            // A progressive GI bake shows a provisional cache first; a capture is of the converged one.
+            await page.waitForFunction(
+              () =>
+                (window as never as { __tnRef: { giConverged?: boolean } }).__tnRef.giConverged !==
+                false,
+              undefined,
+              { timeout: 900_000 },
+            );
             const engine = await page.evaluate("window.__tnRef.engine");
             if (engine !== "threenative")
               throw new Error(
@@ -285,7 +297,6 @@ export async function captureGiThreeNative(options: {
                 throw new Error(`TN_UNREAL_LOOK_PAGE_ERROR: ${errors.join(" | ")}`);
               if (options.measureSeconds !== undefined) {
                 meter = [];
-                await page.waitForTimeout(options.measureSeconds * 1000);
                 const log = path.join(
                   options.out,
                   sceneKey(name),
@@ -293,6 +304,12 @@ export async function captureGiThreeNative(options: {
                   `${pose.name}.frame-budget.log`,
                 );
                 await mkdir(path.dirname(log), { recursive: true });
+                if (passes)
+                  await writeFile(
+                    log.replace(/frame-budget\.log$/u, "gpu-passes.json"),
+                    `${JSON.stringify((await readPasses(page, options.measureSeconds)) ?? null, null, 2)}\n`,
+                  );
+                else await page.waitForTimeout(options.measureSeconds * 1000);
                 await writeFile(log, `${meter.join("\n")}\n`);
                 console.info(
                   `TN_UNREAL_LOOK measured ${name} ${layer} ${pose.name} windows=${meter.length} log=${log}`,

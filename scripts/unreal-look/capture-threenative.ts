@@ -24,6 +24,7 @@ import { workspacePackages } from "../workspace-packages.js";
 import { launchWebgpuBrowser } from "./browser.js";
 import { FRAME_GATE } from "./capture-motion-threenative.js";
 import { awaitExposureSettled, metersExposure, watchExposure } from "./exposureSettled.js";
+import { GPU_PASSES, readPasses } from "./gpuPasses.js";
 import {
   MIN_STEPS,
   RENDERER_LOST,
@@ -321,6 +322,8 @@ export async function captureThreeNative(options: IThreeNativeCaptureOptions): P
     try {
       const page = await browser.newPage({ viewport: { width, height }, deviceScaleFactor: 1 });
       const errors: string[] = [];
+      const passes = process.env.TN_UNREAL_LOOK_GPU_PASSES === "1";
+      if (passes) await page.addInitScript(GPU_PASSES);
       // A still holds the loop to land on one jitter phase (jitterPhase.ts); a measured cell keeps the browser's frames.
       if (options.measureSeconds === undefined) await page.addInitScript(FRAME_GATE);
       const exposure = watchExposure(page);
@@ -389,6 +392,18 @@ export async function captureThreeNative(options: IThreeNativeCaptureOptions): P
           console.info(
             `TN_UNREAL_LOOK startup layer=${layer} ready=${readyMs}ms scene=${Date.now() - started}ms`,
           );
+          // A progressive GI bake shows a provisional cache first; a capture is of the converged one.
+          await page.waitForFunction(
+            () =>
+              (window as never as { __tnRef: { giConverged?: boolean } }).__tnRef.giConverged !==
+              false,
+            undefined,
+            {
+              timeout: 900_000,
+            },
+          );
+          if (options.measureSeconds === undefined)
+            console.info(`TN_UNREAL_LOOK converged layer=${layer} after=${Date.now() - started}ms`);
           const engine = await page.evaluate("window.__tnRef.engine");
           if (engine !== "threenative")
             throw new Error(`TN_UNREAL_LOOK_WRONG_ENGINE: ${layer} drew on ${String(engine)}`);
@@ -426,7 +441,14 @@ export async function captureThreeNative(options: IThreeNativeCaptureOptions): P
             );
             if (options.measureSeconds !== undefined) {
               meter = [];
-              await page.waitForTimeout(options.measureSeconds * 1000);
+              if (passes) {
+                const rows = await readPasses(page, options.measureSeconds);
+                await mkdir(path.join(options.out, layer), { recursive: true });
+                await writeFile(
+                  path.join(options.out, layer, `${name}.gpu-passes.json`),
+                  `${JSON.stringify(rows ?? null, null, 2)}\n`,
+                );
+              } else await page.waitForTimeout(options.measureSeconds * 1000);
               const log = path.join(options.out, layer, `${name}.frame-budget.log`);
               await mkdir(path.dirname(log), { recursive: true });
               await writeFile(log, `${meter.join("\n")}\n`);

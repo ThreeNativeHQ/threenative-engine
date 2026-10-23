@@ -46,6 +46,88 @@ PRD's "Tried and rejected" or "Decisions" section, for example
 
 ## Levers
 
+### 2026-10-21 — GI bake rays go through one flat world-space triangle BVH — KEEP
+- Where: Unreal-look harness (game layer), `scripts/unreal-look/scaffold/render/bakeRays.ts` and `giCache.ts`, commit `c02b5ce7b` on `lane/perf`.
+- Result: exterior L9 bake in the browser 248.8 / 231.6 s → 17.9 / 11.8 s on the same page; trace phase 221 s → 14 s. Node, 13,182 triangles: `ScenePicker` with the old `weightsAt` 33.3 s, stock `Raycaster` 24.5 s, `bakeRays` 12.4 s, `bakeRays` with the allocation-free `weightsAt` about 5 s. Spec `unreal-look-bake-rays.spec.ts` pins hits against the stock raycaster.
+- Cause: the bake cast its rays through the game's `ctx.raycast`, which tests meshes one by one per ray. The bake was 87 to 92% of L9 startup (PRD-636), so the trace phase dominated.
+- Insight: after the BVH the probe-weight lookup (`weightsAt`) was the next cost: removing its per-call allocations cut the Node bake from 12.4 s to about 5 s.
+
+### 2026-10-21 — The flat bake rays expand instanced meshes instead of falling back to `ctx.raycast` — KEEP
+- Where: `scaffold/render/bakeRays.ts` (`instanceFrame`, `MAX_TRIANGLES`), spec `unreal-look-bake-rays.spec.ts` (red against the previous file, green now).
+- Result: cornell L7 in the browser, same page: bake 125.3 s in one 116 s task (trace 98.8 s, stock rays) → 16.2 s (trace 13.7 s) and a preview 13 s after load on a software adapter. The preview and the final cache now come in slices; before, the page stayed blank for the whole bake.
+- Cause: the asset cook merges equal meshes into `EXT_mesh_gpu_instancing` (cornell: `instance 1 batch(es) / 2 instance(s)`), the engine loads an `InstancedMesh`, and `bakeRays` refused every instanced mesh. A refusal also switches the progressive bake off, because slicing needs the flat rays. The refusal was silent; `TN_GI_STOCK_RAYS` now names the reason.
+- Insight: a fallback that is 8 times slower and turns off the other lever must say so on the console. The scene that exposed it was a 96-triangle box, not a heavy one.
+
+### 2026-10-21 — The GI bake runs in slices after the first frame (progressive) — KEEP
+- Where: `giCache.ts` (`progressive` option, `pass: "pending" | "preview" | "final"`), `Reference.ts.in`, commits `5c36185a0`, `bf0595eb5`.
+- Result: sunlit-room L6, Playwright Chromium on NVIDIA, host load about 3.5: first frame 9.1 s against 16.0 s one-shot, longest task after the first frame 77 ms against 12.4 s, converged field at 31 s against 13.4 s. The settled frames match the one-shot frames with a pixel diff of exactly 0. Visual judge NEUTRAL.
+- Cause: the one-shot bake was one synchronous job inside the scene `enter`, so the page showed nothing for the whole bake.
+- Insight: a convergence time that is longer than the one-shot time is the price of a responsive page. Report both numbers and the first-frame time together.
+
+### 2026-10-21 — Bake slices are paced by `setTimeout`, not by `requestAnimationFrame` — KEEP
+- Where: `giCache.ts` (`defer`, a slice of `budgetMs` and an idle gap of equal length), commit `df03ca89b`.
+- Result: the owner's Brave 153 on `:0` showed rAF at about 1.1 per second although the main thread was idle and the GPU was at 13%. With one slice per frame the preview took 89 s. With the clock pacing the preview lands 4 s after load and the bake converges in 36 to 50 s (cornell L7 and sunlit-room L6).
+- Cause: the compositor throttles an off-screen or occluded window, so presented frames are not a clock. Xvfb runs at about 10 fps and hid the fault.
+- Insight: pace background work by the clock and check it in the browser the owner uses, not only in the harness browser.
+
+### 2026-10-21 — Bake slices run on the next host task, not after an idle gap — KEEP
+- Where: `giCache.ts` (`hostDefer`, `progressive.gapMs`, `previewRays` 32), commit `68f8b893f`. URL knobs on the Reference page: `giGapMs` (0 by default, 8 gives the old pacing) and `giPreviewRays`.
+- Result: sunlit-room L6, Xvfb, NVIDIA RTX 2080, host load 22 to 28: world visible at 6.2 s and converged at 6.3 s, against 12.1 s and 19.2 s with the old 8 ms gap and 16 preview rays. The longest slice was 50 ms.
+- Cause: the equal idle gap halved the duty cycle of the bake. A message posted on a `MessageChannel` runs on the next host task, and Chrome draws a pending frame and handles input before it, so the page stays responsive without the gap.
+- Insight: pace background work by what the host leaves free. A fixed duty cycle wastes half of it.
+
+### 2026-10-21 — The bake reads each material's `side` once per mesh, not once per triangle — KEEP
+- Where: `scaffold/render/bakeRays.ts` (`sideOfTriangle`), commit `43cda1d2e`. Spec `unreal-look-bake-rays.spec.ts`, case "makes no call into the scene's materials while it casts rays" (3317 reads before, 0 now).
+- Result: the cache is bit-identical in Node (values hash 1524492911 at 0 bounces, 410990920 at 5). In the browser, a Chrome CPU profile of the one-shot bake of the sunlit room (L6, Xvfb, owned Wasm engine) put 8.6 s of the 10.6 s of `raycast` into `material.side` reads. After the change the bake took about 2 s.
+- Cause: on the owned engine every field read of a material, a vector or an object is a call into the engine. The ray test read `material.side` for each candidate triangle.
+- Insight: a Node profile of the same code showed none of this, because a property read in Node costs nothing. Profile a browser page on the owned engine before you choose a lever, and count the calls into the engine as well as the instructions.
+
+### 2026-10-21 — The bake's inner loops use scalars: 0.6 times the instructions — KEEP
+- Where: `bakeRays.ts` (`raycast`), `giCache.ts` (`trace`, `gather`, `readField`, `weightsAt`), commit `383164719`.
+- Result: user-space instructions of one Node bake of the sunlit room (1,026,116 rays, 3 runs): L6 32.5 G → 18.9 G, L9 (5 bounces) 53.6 G → 32.7 G. The ray test alone: 2.9 → 1.1 µs per ray. The cache is bit-identical: the values hash, the sky hash and the ray, solid and shadow-ray counts match.
+- Cause: array literals, destructuring and per-call temporaries in the hot loops, and a sky radiance that was read again for every probe.
+- Insight: compare a Node bake by instruction count (`perf stat`), not by seconds. On a loaded host the wall time of one build moved by 30% between runs.
+
+### 2026-10-21 — The trace casts its rays from plain numbers and reads each mesh once — KEEP
+- Where: `bakeRays.ts` (`cast`, `IFlatHit`), `giCache.ts` (`IHitRecord`, `trace`), commit `574c21756`. Spec `unreal-look-gi-trace.spec.ts` (0 casts on the old trace, more than 10,000 now).
+- Result: sunlit room L9 in the browser (Xvfb, RTX 2080), the tree before the commit against the tree with it, run back to back: trace phase 8748 → 4345 ms and 5819 → 2884 ms (0.50× in both pairs), whole bake 11,970 → 8721 ms and 8421 → 4363 ms. The host load was 45 to 83, so the whole-bake ratio (0.73×, 0.52×) is noisy and the trace ratio is the steady figure. The cache is bit-identical in Node: values hash 1524492911 at 0 bounces and 410990920 at 5.
+- Cause: the trace made about twenty calls into the engine per ray: it set the direction vector, read the origin back, wrote the point, the normal and the UV into three vectors, read them again, then read the hit object's id and matrix several times.
+- Insight: after the `side` snapshot the remaining cost was the calls, not the arithmetic. Return numbers from a hot query and give the caller one record per mesh.
+
+### 2026-10-22 — The provisional bake takes the full bake's bounces — KEEP
+- Where: `giCache.ts` (`progressive.previewBounces`, default the full bake's), `Reference.ts.in` (`giPreviewBounces`), spec `unreal-look-gi-progressive.spec.ts`, case "takes the full bake's bounces for the provisional bake" (red with two bounces: 0.2074 against a bound of 0.1556).
+- Result: Node, sunlit room, 5 bounces, 32 rays, mean over texels of |preview - full| / full: 0.207 with two bounces (16% too dark), 0.157 with three, 0.124 with five. The global L1 error (0.077 with two, 0.070 with five) hid this: the lit floor carries the sum, the dim walls carry little. The judge read the two-bounce frame at 15 s as blotchy (REGRESSION).
+- Cause: the entry below chose two bounces on the global L1 error. The metric was dominated by bright texels, and the eye reads the dim ones.
+- Insight: judge a first estimate with an error that counts every texel alike. More rays (64 at three bounces: 0.130) and more smoothing passes (12 passes: 0.138) gain less than the missing bounces.
+
+### 2026-10-21 — The provisional bake takes two bounces — REPLACED by the entry above
+- Where: `giCache.ts` (`progressive.previewBounces`, default 2), `Reference.ts.in` (`giPreviewBounces`), spec `unreal-look-gi-progressive.spec.ts`, case "takes two bounces for the provisional bake" (red with one bounce: 0.1508 against a bound of 0.1056).
+- Result: Node, sunlit room, 5 bounces, 32 rays, relative L1 error against the full cache: 0.151 with one bounce, 0.077 with two, 0.070 with three or five. The second bounce costs about 150 ms in the browser (the gather of all five bounces is 752 ms).
+- Cause: one bounce leaves out the warm light a lit floor throws on the walls. The first L9 frame showed dark blue patches on the walls for the seconds before the full bake landed.
+- Insight: after the second bounce the error that stays is the noise of the 32 rays, and more bounces do not remove it.
+
+### 2026-10-21 — A larger bake slice does not shorten the convergence — REJECT
+- Where: `giCache.ts` (`progressive.budgetMs`, URL knob `giBudgetMs`), sunlit room L9, Xvfb, RTX 2080, host load 25 to 35, arms run back to back (`b8`, `b16`, `b24`, `b32` against the one-shot arm), three rounds in rotating order.
+- Result: the bake's share of the main thread rose with the slice (38%, 55%, 56%, 64% from the frame interval) and the frame rate over the first 60 frames fell (about 47, 34, 23 and 20 fps). The time to the converged cache moved by less than the run-to-run noise: converged over the one-shot arm's ready time was 1.20 and 1.52 (8 ms), 0.81, 1.46 and 1.68 (16 ms), 1.07 and 1.53 (24 ms), 1.37, 1.42 and 1.19 (32 ms). Two arms of round 3 ran at load 94 to 108 and do not count.
+- Cause: the frames the page draws while it bakes take about 9 to 13 ms of main-thread time each at L9. A longer slice leaves fewer frames, not a faster bake, and a loaded host moves the time by more than the slice does.
+- Insight: the progressive path cannot converge in the one-shot arm's time at 60 fps. Its gain is the world on screen 1.5 to 4 s before the one-shot arm, and no task over about 50 ms. Keep the slice at 8 ms.
+
+### 2026-10-22 — The screen-probe gather costs 2.1 to 3.0 ms at boost clock, not 6.4 ms — NO LEVER (the reading follows the GPU clock)
+- Where: `gi-tier-cost.ts` on `gi:cornell` at 1920 x 1080, tier high (screen probes, 16 x 16 rays), RTX 2080, owned Wasm engine, exclusive GPU window, two rounds of four variants back to back (`probeRays=8`, `ssgiDenoise=4`, default, `probes=1`), 600 samples each.
+- Result: every run of every variant reads one of two states. At P5 (about 700 to 1000 MHz) the SSGI stage median is 6.3 to 6.5 ms and the whole frame 22.6 to 23.5 ms (4 runs: A, A, C, D). At boost clock (P2, 1300 to 1800 MHz, memory 6800 MHz) the stage median is 2.1 to 3.0 ms and the frame 9.0 to 10.3 ms (4 runs: B, C, D, and B again at 5.0 ms mid-transition). The stage is 27% of the frame in both states. Unreal Epic profiles 3.09 to 5.79 ms (PRD-640).
+- Cause: the stage and the frame scale together by 2.5 times between the two clock states, so the 6.4 ms figure compares clocks, not methods. At boost clock the gather is inside Unreal's range.
+- Insight: do not cut the gather on a P5 reading. A `GIBudget` limit of 6 ms read at P5 steps a method down that costs 2.6 ms at boost. Attribute per pass only with a labelled stage per pass: the page's pass timer (`TN_UNREAL_LOOK_GPU_PASSES=1`) saw 9 passes and 1.3 ms of a 9 ms frame on this engine, too little to attribute.
+
+### 2026-10-21 — Cloud noise textures: hoisted lattice weights, no `Math.min` — KEEP
+- Where: `scaffold/render/clouds.ts` (`lattice1d`, `valueNoise`, `worleyInverted`), commit `248a1b991`.
+- Result: Node, 4 seeds, loaded host: 1483 / 1280 / 1350 / 1298 ms → 672 / 566 / 594 / 562 ms (2.3×). Output is bit-identical: the spec `unreal-look-cloud-textures.spec.ts` pins the sha256 of the seed-631 textures and passed before and after.
+- Cause: the per-texel wrap and weight work ran once per axis per neighbour.
+
+### 2026-10-21 — Native standard program refused the `envMap` slot — FIX (engine)
+- Where: `packages/runtime-native/src/engine/renderer/render_database.cpp`, commit `a47d9acf3`, native test `env_map_slot_is_read` (red before, green after).
+- Result: L8 and L9 pages no longer lose the renderer (`TN_NATIVE_MATERIAL_UNSPECIFIED envMap is not read`, then `TN_WASM_RENDERER_LOST`).
+- Cause: the refusal loop skipped `map` and `normalMap` only, but the reflection capture sets `envMap` on metal materials.
+
 ### 2026-10-15 — Game thread pinned to the CPPC top-ranked core — REJECT
 - Where: PRD-610 AC-20, commit `6878c53ff` (superseded by `61c7c1d06` and `c4be636dc`, same `ThreadPlacement` in `player/run.cpp`).
 - Result: `q-place-auto-1` 10.65 / 11.07 / 15.56 ms against `q-place-off-1` 8.67 / 9.26 / 10.98 ms (IPC 0.46); load 12 to 16.

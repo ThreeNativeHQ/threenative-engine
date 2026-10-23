@@ -1593,6 +1593,55 @@ void deferredTargetFollowsPostRtt() {
     CHECK(renderer.diagnostics().empty());
 }
 
+// PRD-649: a post pass that samples a texture keeps its bind group while every entry is the same handle. A new upload
+// makes the texture's view again, and the browser's WebGPU (emdawnwebgpu) gives a released handle to the next view, so
+// the group kept binding the first upload: a GI cache shown as a provisional bake and then the final one showed the
+// provisional one in the screen-space gather. Dawn native keeps a handle unique while a group holds it, so this case
+// passes here before the fix too; it pins that each upload reaches the pass. The browser proof is the cornell capture.
+void postInputFollowsEachUpload() {
+    namespace g = shader::graph;
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(64, 64);
+    renderer.setOutput(OutputState{std::nullopt, 1, false});  // linear out: the bytes are the sampled values
+    const auto cache = std::make_shared<Texture>();
+    cache->width = cache->height = 1;
+    cache->data = {64, 0, 0, 255};
+    const auto sampled = g::objectTexture(cache, "uploadedCache", g::uv());
+    auto rtt = std::make_shared<g::NodeData>();
+    rtt->kind = g::Kind::RenderTexture;
+    rtt->type = shader::Type::vec(4);
+    rtt->name = "rtt_uploaded";
+    rtt->args = {sampled, g::uv()};
+    rtt->rtt = std::make_shared<g::RttState>();
+    auto& state = *rtt->rtt;
+    state.width = state.height = 32;
+    state.autoUpdate = true;
+    state.target = RenderTarget::make(32, 32, kTextureHalfFloatType);
+    state.source = sampled;
+    state.quad = std::make_shared<Mesh>(makePlaneGeometry(2, 2), std::make_shared<Material>(MaterialType::Basic, true));
+    state.material = state.quad->material;
+    state.material->rawNodeMaterial = true;
+    state.material->nodes.fragmentNode = sampled;
+    renderer.setPostGraph(rtt);
+    const auto frame = [&] {
+        renderer.render({}, CameraState{}, LightState{}, {0, 0, 0, 1});
+        const auto bytes = read(renderer, events);
+        CHECK(bytes.size() == 64 * 64 * 4);
+        return bytes.size() == 64 * 64 * 4 ? int(bytes[(32 * 64 + 32) * 4]) : -1;
+    };
+    // The first upload, a provisional one, then the final one: each frame shows the upload before it.
+    for (const uint8_t value : {uint8_t(64), uint8_t(128), uint8_t(191)}) {
+        cache->data[0] = value;
+        cache->needsUpdate();
+        CHECK(std::abs(frame() - value) <= 1);
+        CHECK(std::abs(frame() - value) <= 1);
+    }
+    CHECK(renderer.diagnostics().empty());
+}
+
 // PRD-617: an offscreen PassNode whose material samples a post render-to-texture node directly (rain's bloom pass
 // reads the chain colour that convertToTexture made) draws in its own renderer. That renderer has no post effects,
 // so the node's texture fell back to a default view and the bloom came out as a screen-wide gradient. It reads the
@@ -5646,7 +5695,7 @@ void gpuJointProduction() {
     }
 }
 
-TN_TEST_MAIN({"gpu_joint_production", gpuJointProduction}, {"multi_material_groups", multiMaterialGroups}, {"uniform_batch_preparation", uniformBatchPreparation}, {"steady_state", steadyState}, {"color_write_masks_the_draw", colorWriteMasksTheDraw}, {"normal_pass_is_not_tallied", normalPassIsNotTallied}, {"gtao_screen_reach", gtaoScreenReach}, {"steady_cache_invalidation", steadyCacheInvalidation}, {"render_target", renderTarget}, {"float_render_target_keeps_float32", floatRenderTargetKeepsFloat32}, {"float_render_target_falls_back_to_half", floatRenderTargetFallsBackToHalf}, {"post_texture_resize_keeps_draw_groups", postTextureResizeKeepsDrawGroups}, {"deferred_target_follows_post_rtt", deferredTargetFollowsPostRtt}, {"deferred_target_samples_post_rtt_node", deferredTargetSamplesPostRttNode}, {"screen_size_reaches_the_vertex_stage", screenSizeReachesTheVertexStage}, {"depth_node_sets_fragment_depth", depthNodeSetsFragmentDepth}, {"depth_node_reaches_every_material_program", depthNodeReachesEveryMaterialProgram}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"present_direct", presentDirect}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"directional_target_outside_scene", directionalTargetOutsideScene}, {"scene_fog_node", sceneFogNode}, {"lit_mesh_without_normals", litMeshWithoutNormals}, {"invalidation", invalidation}, {"alpha_scene", alphaScene},
+TN_TEST_MAIN({"gpu_joint_production", gpuJointProduction}, {"multi_material_groups", multiMaterialGroups}, {"uniform_batch_preparation", uniformBatchPreparation}, {"steady_state", steadyState}, {"color_write_masks_the_draw", colorWriteMasksTheDraw}, {"normal_pass_is_not_tallied", normalPassIsNotTallied}, {"gtao_screen_reach", gtaoScreenReach}, {"steady_cache_invalidation", steadyCacheInvalidation}, {"render_target", renderTarget}, {"float_render_target_keeps_float32", floatRenderTargetKeepsFloat32}, {"float_render_target_falls_back_to_half", floatRenderTargetFallsBackToHalf}, {"post_texture_resize_keeps_draw_groups", postTextureResizeKeepsDrawGroups}, {"deferred_target_follows_post_rtt", deferredTargetFollowsPostRtt}, {"post_input_follows_each_upload", postInputFollowsEachUpload}, {"deferred_target_samples_post_rtt_node", deferredTargetSamplesPostRttNode}, {"screen_size_reaches_the_vertex_stage", screenSizeReachesTheVertexStage}, {"depth_node_sets_fragment_depth", depthNodeSetsFragmentDepth}, {"depth_node_reaches_every_material_program", depthNodeReachesEveryMaterialProgram}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"present_direct", presentDirect}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"directional_target_outside_scene", directionalTargetOutsideScene}, {"scene_fog_node", sceneFogNode}, {"lit_mesh_without_normals", litMeshWithoutNormals}, {"invalidation", invalidation}, {"alpha_scene", alphaScene},
              {"material_unsupported", materialUnsupported}, {"shader_invalid", shaderInvalid}, {"time_uniform", timeUniform}, {"gpu_mipmaps", gpuMipmaps}, {"updates", updates},
              {"multi_camera_layers", multiCameraLayers}, {"render_callback", renderCallback}, {"instanced", instanced},
              {"virtual_sun_room_seam", virtualSunRoomSeam},
