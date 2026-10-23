@@ -70,7 +70,7 @@ modes of PRD-646 gain `framesAccumulated` and `fastUpdateAmount`.
 ## Acceptance Criteria
 
 - [ ] AC-1 [local]: On the still-camera part of every motion run, GI flicker on the owned engine is at or below Unreal Epic's flicker in every region. proof: `pnpm unreal-look:compare --scene gi --metric motion` — Evidence: pending.
-- [ ] AC-2 [local]: After the neon switch, the response on the lit wall takes no more frames than Unreal Epic's response, and overshoot stays within the noise floor. proof: the same command, `neon` run — Evidence 2026-10-21 (partly met, cornell `switch` run, the `neon` run is not authored yet): the world cache follows the lamp. Floor, Wall_Red, Wall_Green, Box_Tall and Box_Short reach 90% of the change in 0 frames (Unreal 32 to 46), against "never" with a fixed bake (55 to 90% of the old light left at frame 179). Ceiling, Back and Shade read "never" because the owned engine ends fully black and Unreal's frame 179 is still fading (residual 24%, 12%, 93%). The step is one frame, not a fade.
+- [ ] AC-2 [local]: After the neon switch, the response on the lit wall takes no more frames than Unreal Epic's response, and overshoot stays within the noise floor. proof: the same command, `neon` run — Evidence 2026-10-21 (partly met, cornell `switch` run, the `neon` run is not authored yet): the world cache follows the lamp. Floor, Wall_Red, Wall_Green, Box_Tall and Box_Short reach 90% of the change in 0 frames (Unreal 32 to 46), against "never" with a fixed bake (55 to 90% of the old light left at frame 179). Ceiling, Back and Shade read "never" because the owned engine ends fully black and Unreal's frame 179 is still fading (residual 24%, 12%, 93%). The step is one frame, not a fade. Evidence 2026-10-22 (motion3-lane, cornell `switch`, 2 runs per arm, one tree, 844ede7f2): the cache fades the light over Unreal's three stages (Phase 5, `giResponse=unreal`, now the harness default) and the lag90 / settle of every region is within 7 frames of Unreal's lag90: Floor 41 / 54 (Unreal 39 / 57), Ceiling 42 / 55 (44 / 73), Back 46 / 58 (52 / 76), Wall_Red 31 / 52 (32 / 62), Wall_Green 39 / 53 (41 / 61), Box_Tall 40 / 54 (46 / 64), Box_Short 36 / 48 (38 / 51), Shade 47 / 60 (40 / 77). Judge: IMPROVEMENT, CLOSE. Still open: Unreal's tail on Ceiling, Back and Shade (settle 73 to 77 against 55 to 60), and the `neon` run (the owned engine's strips light the walls white and warm where Unreal's are cyan and magenta, so the lamp's share of the light is small there; the fade is not visible in the judge frames).
 - [ ] AC-3 [local; needs a built desktop host]: The conformance row `gi-history-rejection` passes on the desktop lane: a disoccluded region holds no stale light after 4 frames. proof: `pnpm parity --target desktop --only-tests gi-history-rejection` — Evidence: pending.
 - [ ] AC-4 [local]: On the walls and ceilings of the `sunlit-room` poses, the soft-blotch share of the owned engine at L7 and L9 is at most 1.2 times Unreal's in every region. proof: `pnpm unreal-look:compare --scene gi:sunlit-room --layer L7,L9 --metric blotch` — Evidence 2026-10-21 (not met): on the frames captured before the epic merge (Phase 4), 10 of 22 regions pass at L9 (median ratio 1.31, worst 1.95) and 9 of 22 pass at L7 (median 1.37, worst 9.39).
 
@@ -92,10 +92,10 @@ modes of PRD-646 gain `framesAccumulated` and `fastUpdateAmount`.
 **Verification:** the fresh judge rounds above.
 
 #### Phase 1: The motion targets
-**Status:** NOT STARTED
+**Status:** DONE
 **Files:** `tools/unreal-reference/gi/neon-corridor/scene.py` (the `neon` run; the scene comes from PRD-639 or is created here), `tools/unreal-reference/gi/scenes.json`
-- [ ] The `neon` run renders 180 frames in both engines with matching frame counts. proof: `pnpm unreal-look:capture --engine unreal --scene gi:neon-corridor --motion neon` and `pnpm unreal-look:compare --scene gi:neon-corridor --metric motion`.
-- [ ] Flicker, response and overshoot per region for Unreal Epic, Unreal Medium and the current owned-engine chain are recorded under `## Decisions`. proof: `pnpm unreal-look:compare --scene gi --metric motion`.
+- [x] The `neon` run renders 180 frames in both engines with matching frame counts. proof: `pnpm unreal-look:capture --engine unreal --scene gi:neon-corridor --motion neon` and `pnpm unreal-look:compare --scene gi:neon-corridor --metric motion`. Result 2026-10-22 (motion3-lane): Unreal 180 frames at L7-Epic, 180 at L7-Medium, 180 ID frames; the owned engine 180 frames in each of 3 arms (`compare` pairs them frame for frame).
+- [x] Flicker, response and overshoot per region for Unreal Epic, Unreal Medium and the current owned-engine chain are recorded under `## Decisions`. proof: `pnpm unreal-look:compare --scene gi --metric motion`. Result 2026-10-22: the three tables are under `## Decisions` (neon and cornell `switch`, Epic and Medium, two owned-engine runs).
 
 #### Phase 2: The gather keeps a history
 **Status:** NOT STARTED
@@ -120,5 +120,57 @@ modes of PRD-646 gain `framesAccumulated` and `fastUpdateAmount`.
 **Status:** DONE
 **Files:** `scripts/unreal-look/scaffold/render/giCache.ts`, `scripts/unreal-look/scaffold/CalibrationScene.ts.in`, `scripts/__tests__/unreal-look-gi-cache.spec.ts`
 - [x] A light that has a `source` and changes intensity or colour after the bake changes the bounce light on the next frame, with no new trace. The field is linear in each light, so the cache solves one field per light from the rays it kept, on the first change, and blends them into the texture. proof: `pnpm exec vitest run scripts/__tests__/unreal-look-gi-cache.spec.ts -t "after the bake"` and the cornell `switch` run — Result 2026-10-21: spec red first (`refresh` undefined), green after: off leaves under 0.1% of the baked light, 2x reads 2x within 1%, back to 1x reads the bake. Cornell `switch`, two runs per arm, same code with `?giFollow=0` for the fixed arm: 5 of 8 regions at lag 0. Judge (criteria first, `scripts/unreal-look/judge.ts`, 2 runs per arm): overall IMPROVEMENT against the fixed bake, FAR against Unreal (a one-frame blackout, Unreal fades over about 50 frames). The first solve of a light is one gather, smooth and resample over the kept rays (0.3 to 0.5 s in the unit scene, not measured on cornell), and a later change costs a texture blend. Not followed: a moved light, a changed shadow, a changed emissive material.
+- [x] The bounce light fades over Unreal's three stages (surface cache refresh, radiosity history, screen probe history), per tier, behind `?giResponse` (default `unreal` in the harness, `step` for the one-frame follow). proof: `pnpm exec vitest run scripts/__tests__/unreal-look-light-response.spec.ts scripts/__tests__/unreal-look-gi-cache.spec.ts` and the cornell `switch` run — Result 2026-10-22: red first for the gather copy (`gatherTexture` undefined), then 51 tests green in the two specs (19 for the stage rule: cornell and neon Epic series lie between the first-bounce and fifth-bounce curve, cycle 1 frame at Epic and 3 at Medium for cornell, 31 and 62 for 40k and 80k m2). Cornell `switch`, two runs per arm from one tree (844ede7f2): lag90 / settle 31 to 47 / 48 to 60 frames (Unreal 32 to 52 / 51 to 77), the one-frame follow 0 / 0; the two runs agree to 1 frame. Judge (criteria first, `scripts/unreal-look/judge.ts`, frames 62, 70, 80, 100, 120, 2 runs per arm): overall IMPROVEMENT, CLOSE to Unreal (frames 62 to 100 CLOSE, 120 FAR: Unreal's tail and the lit lamp panel). Sheet and verdict: #541. Not measured: the neon run on the fixed tree.
+- [x] The screen-space gather follows the fading cache. proof: the cornell `switch` run with and without the fix — Result 2026-10-22: the gather subtracted a cache that did not fade (the fit `x = 1.44 S - 0.40` on the scene share, a constant subtraction), so the room went dark about 3 times early (Floor share 0.04 at 20 frames against the cache's 0.31). The arm without the cache read in the gather and the arm with its own copy of the cache texture both give 0.59, 0.43, 0.31, 0.15 at 10, 15, 20, 30 frames (Unreal 0.58, 0.43, 0.31, 0.16). The copy is a clone taken when the gather asks (`giCache.gatherTexture`); a texture object built at install over the same texels did not engage. Lead for the engine lane: a second pass reading a texture a material also reads kept that texture's first frame.
 **Verification:** AC-2.
 
+## Decisions
+
+Recorded by motion3-lane, 2026-10-22. Unreal 5.8.3 captures at L7, Epic and Medium (`Engine/Config/BaseScalability.ini`), stepped clock, switch at frame 60, frames 59 to 179. The owned engine is `lane/motion3` at 632ac4f1d with the default fixed bake (`?giResponse=step`), two runs that agree. "lag90 / settle" counts frames after the switch until a region is within 10% / 2% of its OWN end level. The Unreal-target `lag90` reads "never" for any region whose end level differs from Unreal's, which hides a fade behind a base-light difference.
+
+**The rule Unreal follows (paths only).** Three stages in series. (1) The surface cache refreshes `atlas^2 / UpdateFactor` texels a frame, at least one 128 x 128 page (`Lumen/LumenSceneLighting.cpp:98-125`; Epic: factor 32 direct and 64 radiosity, atlas 4096; Medium: 128 and 128, atlas 2048). A card gets at most 0.2 texels per cm. (2) The radiosity of a texel blends over 4 updates (`LumenRadiosity.cpp:145`). (3) The screen probe gather blends each pixel over 10 frames (`LumenScreenProbeGather.cpp:229`). A bounce of order k reads the radiosity of order k-1, so it lags k-1 radiosity histories more.
+
+**Prediction before the code.** Cornell (162 m2 of room, 33 m2 of boxes) fills 0.5% of the Epic atlas, so stage 1 is one frame and the fade is stages 2 and 3: first bounce `(10/11)^t` (35% left at t=10, 14% at t=20), later bounces slower. The measured Floor, Wall_Green and Box_Tall series lie between the first-bounce and the fifth-bounce curve at every sampled frame (spec `unreal-look-light-response.spec.ts`, pins at display level with the tone curve already in them). In scene-linear light (display inverted through the filmic curve) the measured Floor share left is 0.58 at t=10, 0.31 at t=20 and 0.16 at t=30, and the owned engine with the new fade and no gather (`?ssgi=0`) gives 0.59, 0.31 and 0.15. No constant was fitted to a capture.
+
+**Response, Unreal Epic against the owned engine (default fixed bake), lag90 / settle in frames, own-target.**
+
+| scene | region | UE Epic | UE Medium | TN step (a, b) |
+|---|---|---|---|---|
+| cornell | Floor | 39 / 57 | 17 / 29 | 0 / 0 |
+| cornell | Ceiling | 44 / 73 | 15 / 29 | 0 / 0 |
+| cornell | Back | 52 / 76 | 27 / 51 | 0 / 0 |
+| cornell | Wall_Red | 32 / 62 | 9 / 21 | 0 / 0 |
+| cornell | Wall_Green | 41 / 61 | 18 / 48 | 0 / 0 |
+| cornell | Box_Tall | 46 / 64 | 15 / 27 | 0 / 0 |
+| cornell | Box_Short | 38 / 51 | flat | 0 / 0 |
+| cornell | Shade | 40 / 77 | 18 / 34 | 0 / 0 |
+| neon | Floor | 29 / 67 | 8 / 119 | 1 / 1 |
+| neon | Ceiling | 24 / 59 | 8 / 36 | 1 / 1 |
+| neon | Wall_Left | 25 / 50 | 12 / 91 | 1 / 1 |
+| neon | Wall_Brick | 33 / 90 | 17 / 42 | 1 / 35, 31 |
+| neon | Back | 31 / 61 | 9 / 36 | 1 / 2 |
+
+**Flicker (px% of the region) and overshoot (%), still camera.**
+
+| scene | region | UE Epic | UE Medium | TN step |
+|---|---|---|---|---|
+| neon | Floor | 0.09 / 0.0 | 0.16 / 0.0 | 0.03 / 0.0 |
+| neon | Ceiling | 0.05 / 0.0 | 0.12 / 1.4 | 0.02 / 0.0 |
+| neon | Wall_Left | 0.06 / 0.0 | 0.11 / 2.6 | 0.02 / 0.0 |
+| neon | Wall_Brick | 0.10 / 0.0 | 0.13 / 0.0 | 0.12 / 0.0 |
+| neon | Back | 0.03 / 0.0 | 0.08 / 1.0 | 0.03 / 0.0 |
+| cornell | Floor | 0.08 / 0.0 | 0.27 / 0.0 | 0.13 / 0.0 |
+| cornell | Ceiling | 0.04 / 0.6 | 0.13 / 0.0 | 0.09 / 25.9 |
+| cornell | Back | 0.01 / 0.5 | 0.05 / 0.0 | 0.04 / 12.8 |
+| cornell | Wall_Red | 0.06 / 0.0 | 0.18 / 0.0 | 0.17 / 1.0 |
+| cornell | Wall_Green | 0.04 / 0.6 | 0.11 / 0.7 | 0.09 / 0.6 |
+| cornell | Box_Tall | 0.04 / 0.0 | 0.35 / 0.0 | 0.03 / 0.6 |
+| cornell | Box_Short | 0.08 / 0.0 | 0.24 / 0.0 | 0.07 / 0.0 |
+| cornell | Shade | 0.00 / 1.5 | 0.00 / 0.0 | 0.00 / 93.2 |
+
+**Findings.**
+
+- Medium fades 2 to 3 times faster than Epic, because its update factor is larger and its atlas smaller (`surfaceCacheCycle` is 3 frames at Medium, 1 at Epic for cornell). `IGiTier.lightResponse` carries both tiers.
+- The owned engine ends neon 20 to 65 display levels above Unreal (Floor 138 against 93, Ceiling 105 against 39): the emitter strips keep a base light in the owned engine that Unreal's switch removes. Not the fade; separate cause, open.
+- Unreal Epic's tail (Ceiling, Back, Shade settle 73 to 77 frames, Wall_Brick 90) is longer than three history stages give. Not modelled. Open.
+- With the gather on, the displayed fade was faster than the cache (Floor share left 0.44 at t=10 and 0.03 at t=20, against the cache's 0.58 and 0.31). `?ssgi=0` and `?ssgiIntensity=0` matched Unreal, so did a gather whose cache read was taken away, `?localExposure=0` was faster, and `?gtao=0` and `?dn=0` changed nothing: the gather's `hit - fallback` subtracted a cache that did not fade. Fixed in the harness by giving the gather a clone of the cache texture (Phase 5); the layer that holds the cause is the engine (a texture two passes read), not the game. The measured pairs: the cornell Floor share at 10, 15, 20, 30 frames is 0.59, 0.43, 0.31, 0.15 in the fixed arm and 0.58, 0.43, 0.31, 0.16 in Unreal.

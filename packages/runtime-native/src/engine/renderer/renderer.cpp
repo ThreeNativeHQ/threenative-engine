@@ -3844,6 +3844,8 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         const auto& [name, source] = postTextures_[i];
         const auto* texture = materialTexture(*source);
         if (newTextures || postTextureVersions_[i] != source->version() || postTextureViews_[i] != texture->view) releaseOutputGroup();
+        // The texture's record was rebuilt: its new view can sit at the old view's address, and a pass group compares addresses.
+        if (postEffects_ && postTextureVersions_[i] != source->version()) postEffects_->releaseGroups();
         postTextureVersions_[i] = source->version();
         postTextureViews_[i] = texture->view;
         if (postEffects_) postEffects_->input(name, texture->view, texture->sampler);

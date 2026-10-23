@@ -71,6 +71,7 @@ import {
 } from "three/tsl";
 import { MeshPhysicalNodeMaterial, MeshStandardNodeMaterial, type Node } from "three/webgpu";
 import { bakeRays } from "./bakeRays.js";
+import { type ILightResponse, LightFade, checkLightResponse } from "./lightResponse.js";
 
 /** What the bake needs of the game's context: the scene ray query (`ICtx.raycast`). */
 export interface IRayContext {
@@ -116,6 +117,11 @@ export interface IGiOptions {
      */
     readonly source?: { readonly intensity: number; readonly color: Color };
   }[];
+  /**
+   * How the bounce light follows a light that changes (PRD-641 AC-2): the stages of Unreal's surface cache, radiosity and
+   * screen probe history (`lightResponse.ts`). Unset, the cache follows at once.
+   */
+  readonly lightResponse?: ILightResponse;
   /**
    * Unreal without global illumination (layers L2 to L6) shadows its movable sky light with the scene's
    * distance fields, up to the sky light's occlusion distance (1000 cm,
@@ -178,6 +184,38 @@ const GROUND_MARGIN = 2;
  * 0.060 with none, 0.029 / 0.017 / 0.011 / 0.0085 after 1 to 4; the 1 m grid had 0.011. Area means move under 1%.
  */
 const SMOOTH_PASSES = 4;
+
+/** No history anywhere: a changed light shows at its new scale on the next frame. */
+const INSTANT_RESPONSE: ILightResponse = {
+  updateFactor: 1,
+  radiosityUpdateFactor: 1,
+  radiosityFramesAccumulated: 0,
+  framesAccumulated: 0,
+  atlasSize: 4096,
+};
+
+/** The area of every mesh surface under `root`, in square metres: the texels the surface cache has to hold. */
+export function surfaceArea(root: Object3D): number {
+  root.updateWorldMatrix(true, true);
+  const [a, b, c] = [new Vector3(), new Vector3(), new Vector3()];
+  let area = 0;
+  root.traverse((object) => {
+    const mesh = object as Mesh;
+    const position = mesh.geometry?.getAttribute("position");
+    if (!(mesh as { isMesh?: boolean }).isMesh || position === undefined) return;
+    const index = mesh.geometry.getIndex();
+    const corners = index?.count ?? position.count;
+    for (let t = 0; t + 2 < corners; t += 3) {
+      const at = (n: number) => index?.getX(t + n) ?? t + n;
+      a.fromBufferAttribute(position, at(0)).applyMatrix4(mesh.matrixWorld);
+      b.fromBufferAttribute(position, at(1)).applyMatrix4(mesh.matrixWorld);
+      c.fromBufferAttribute(position, at(2)).applyMatrix4(mesh.matrixWorld);
+      area += b.sub(a).cross(c.sub(a)).length() / 2;
+    }
+  });
+  return area;
+}
+
 /**
  * The filter's edge stop, in natural-log units of a neighbour's luminance over the probe's: a neighbour 2x off weighs
  * 0.61, 4x off 0.14. Probe noise (about 30%) blends; a window probe that sees the sun patch does not. Plain, the filter
@@ -1802,7 +1840,8 @@ export function installGi(
   // A light that changes (PRD-641 AC-2). The field is linear in each light's colour times intensity, so it is the bake
   // plus, per changing light, (scale - 1) times that light's own field. Each own field is solved once, on the first
   // change, from the rays already traced (no new trace; the shadow rays and the link and resample visibility are the
-  // bake's), and a later change only blends them into the texture: no hitch while a light flickers.
+  // bake's), and a later change only blends them into the texture: no hitch while a light flickers. The own field is
+  // kept per bounce, because a bounce lags one radiosity history more than the one before (`LightFade`).
   const dynamic = lights.flatMap((light, l) =>
     light.source !== undefined && light.intensity > 0 && options.bounces > 0
       ? [
@@ -1811,12 +1850,14 @@ export function installGi(
             source: light.source,
             baked: [light.color.r, light.color.g, light.color.b].map((c) => c * light.intensity),
             applied: [1, 1, 1],
-            field: undefined as Float32Array | undefined,
+            fields: undefined as Float32Array[] | undefined,
+            fade: undefined as LightFade | undefined,
           },
         ]
       : [],
   );
-  const ownField = (l: number): Float32Array => {
+  /** The light's own field after each bounce, then the part each bounce adds. */
+  const ownFields = (l: number): Float32Array[] => {
     const started = performance.now();
     const own = new Float32Array(capacity * 3);
     for (let i = 0; i < used; i += 1) {
@@ -1831,29 +1872,43 @@ export function installGi(
       );
       own.set(hit, i * 3);
     }
-    let solved = gather(undefined, own, false);
-    for (let pass = 1; pass < options.bounces; pass += 1)
-      solved = gather({ grid, values: solved, links, valid }, own, false);
-    for (let pass = 0; pass < SMOOTH_PASSES; pass += 1)
-      solved = smooth({ grid, values: solved, links, valid });
-    let at = 0;
-    const replay = resample({ grid, values: solved, links, valid, sky: environment }, () => {
-      const open = seen[at];
-      at += 1;
-      if (open === undefined)
-        throw new Error("TN_GI_RELIGHT: the resample asked for more rays than the bake");
-      return open;
-    });
-    if (at !== seen.length)
-      throw new Error("TN_GI_RELIGHT: the resample asked for fewer rays than the bake");
+    /** The gathered values as the texture shows them: smoothed, then resampled through the bake's own visibility. */
+    const relight = (gathered: Float32Array): Float32Array => {
+      let solved = gathered;
+      for (let pass = 0; pass < SMOOTH_PASSES; pass += 1)
+        solved = smooth({ grid, values: solved, links, valid });
+      let at = 0;
+      const replay = resample({ grid, values: solved, links, valid, sky: environment }, () => {
+        const open = seen[at];
+        at += 1;
+        if (open === undefined)
+          throw new Error("TN_GI_RELIGHT: the resample asked for more rays than the bake");
+        return open;
+      });
+      if (at !== seen.length)
+        throw new Error("TN_GI_RELIGHT: the resample asked for fewer rays than the bake");
+      return replay.values;
+    };
+    let gathered = gather(undefined, own, false);
+    const upTo = [relight(gathered)];
+    for (let pass = 1; pass < options.bounces; pass += 1) {
+      gathered = gather({ grid, values: gathered, links, valid }, own, false);
+      upTo.push(relight(gathered));
+    }
     console.info(
       `TN_GI_RELIGHT solved light ${l} in ${Math.round(performance.now() - started)} ms`,
     );
-    return replay.values;
+    return upTo.map((field, k) => {
+      const before = upTo[k - 1];
+      return before === undefined ? field : field.map((v, i) => v - (before[i] ?? 0));
+    });
   };
   const bakedValues = Float32Array.from(fine.values);
+  const response = options.lightResponse ?? INSTANT_RESPONSE;
+  checkLightResponse(response);
+  const area = surfaceArea(root);
   giCache.refresh = (): boolean => {
-    let changed = false;
+    let working = false;
     for (const light of dynamic) {
       const now = [light.source.color.r, light.source.color.g, light.source.color.b].map(
         (c) => c * light.source.intensity,
@@ -1861,13 +1916,17 @@ export function installGi(
       const scale = now.map((v, c) =>
         (light.baked[c] ?? 0) > 0 ? v / (light.baked[c] as number) : 1,
       );
-      if (scale.every((v, c) => v === light.applied[c])) continue;
-      light.applied = scale;
-      light.field ??= ownField(light.l);
-      changed = true;
+      if (!scale.every((v, c) => v === light.applied[c])) {
+        light.applied = scale;
+        light.fields ??= ownFields(light.l);
+        light.fade ??= new LightFade(response, area, light.fields.length);
+        light.fade.set(scale);
+      }
+      if (light.fade !== undefined && !light.fade.settled) working = true;
     }
     const texture = giCache.volumeTexture;
-    if (!changed || texture === undefined) return changed;
+    if (!working || texture === undefined) return working;
+    const shown = new Map(dynamic.map((light) => [light, light.fade?.step()]));
     const texels = texture.image.data as Uint16Array;
     const { nx, ny, nz } = fine.grid;
     for (let probe = 0; probe < nx * ny * nz; probe += 1) {
@@ -1877,7 +1936,12 @@ export function installGi(
         for (let c = 0; c < 3; c += 1) {
           const j = (probe * 6 + face) * 3 + c;
           let v = bakedValues[j] ?? 0;
-          for (const light of dynamic) v += ((light.applied[c] ?? 1) - 1) * (light.field?.[j] ?? 0);
+          for (const light of dynamic) {
+            const scales = shown.get(light);
+            if (scales === undefined) continue;
+            for (let k = 0; k < scales.length; k += 1)
+              v += ((scales[k]?.[c] ?? 1) - 1) * (light.fields?.[k]?.[j] ?? 0);
+          }
           fine.values[j] = Math.max(0, v);
           texels[o + c] = toHalf(Math.max(0, v));
         }

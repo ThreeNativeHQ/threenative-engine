@@ -1593,6 +1593,52 @@ void deferredTargetFollowsPostRtt() {
     CHECK(renderer.diagnostics().empty());
 }
 
+// PRD-641: a texture that a post render-to-texture pass reads and the game rewrites each frame (the GI cache the
+// screen-space gather subtracts) kept the texels of its first frame. The renderer rebuilds the texture's GPU record
+// when its version moves, and the allocator hands the new view the address of the old one; the post pass compared
+// view addresses to reuse its bind group, so it kept the group that bound the released texture.
+void postPassFollowsRewrittenTexture() {
+    namespace g = shader::graph;
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(64, 64);
+    renderer.setOutput(OutputState{std::nullopt, 1, false});  // linear out: the bytes are the sampled values
+    const auto texels = std::make_shared<DataTexture>();
+    const auto rewrite = [&](double red) {
+        texels->setImage({red, 0, 0, 255, red, 0, 0, 255, red, 0, 0, 255, red, 0, 0, 255}, "Uint8Array", 2, 2,
+                         kTextureRGBAFormat, kTextureUnsignedByteType);
+    };
+    rewrite(10);
+    const auto read3 = g::objectTexture(texels, "rewrittenTexels", g::uv());
+    auto rtt = std::make_shared<g::NodeData>();
+    rtt->kind = g::Kind::RenderTexture;
+    rtt->type = shader::Type::vec(4);
+    rtt->name = "rtt_rewritten";
+    rtt->args = {read3, g::uv()};
+    rtt->rtt = std::make_shared<g::RttState>();
+    auto& state = *rtt->rtt;
+    state.width = state.height = 32;
+    state.autoUpdate = true;
+    state.target = RenderTarget::make(32, 32, kTextureHalfFloatType);
+    state.source = read3;
+    state.quad = std::make_shared<Mesh>(makePlaneGeometry(2, 2), std::make_shared<Material>(MaterialType::Basic, true));
+    state.material = state.quad->material;
+    state.material->rawNodeMaterial = true;
+    state.material->nodes.fragmentNode = read3;
+    renderer.setPostGraph(rtt);
+    const auto frame = [&](double red) {
+        rewrite(red);
+        renderer.render({}, CameraState{}, LightState{}, {0, 0, 0, 1});
+        const auto bytes = read(renderer, events);
+        CHECK(bytes.size() == 64 * 64 * 4);
+        return bytes.size() == 64 * 64 * 4 ? int(bytes[(32 * 64 + 32) * 4]) : -1;
+    };
+    for (const double red : {10, 90, 170, 250, 40, 130, 220, 70}) CHECK(std::abs(frame(red) - int(red)) <= 1);
+    CHECK(renderer.diagnostics().empty());
+}
+
 // PRD-617: an offscreen PassNode whose material samples a post render-to-texture node directly (rain's bloom pass
 // reads the chain colour that convertToTexture made) draws in its own renderer. That renderer has no post effects,
 // so the node's texture fell back to a default view and the bloom came out as a screen-wide gradient. It reads the
@@ -5646,7 +5692,7 @@ void gpuJointProduction() {
     }
 }
 
-TN_TEST_MAIN({"gpu_joint_production", gpuJointProduction}, {"multi_material_groups", multiMaterialGroups}, {"uniform_batch_preparation", uniformBatchPreparation}, {"steady_state", steadyState}, {"color_write_masks_the_draw", colorWriteMasksTheDraw}, {"normal_pass_is_not_tallied", normalPassIsNotTallied}, {"gtao_screen_reach", gtaoScreenReach}, {"steady_cache_invalidation", steadyCacheInvalidation}, {"render_target", renderTarget}, {"float_render_target_keeps_float32", floatRenderTargetKeepsFloat32}, {"float_render_target_falls_back_to_half", floatRenderTargetFallsBackToHalf}, {"post_texture_resize_keeps_draw_groups", postTextureResizeKeepsDrawGroups}, {"deferred_target_follows_post_rtt", deferredTargetFollowsPostRtt}, {"deferred_target_samples_post_rtt_node", deferredTargetSamplesPostRttNode}, {"screen_size_reaches_the_vertex_stage", screenSizeReachesTheVertexStage}, {"depth_node_sets_fragment_depth", depthNodeSetsFragmentDepth}, {"depth_node_reaches_every_material_program", depthNodeReachesEveryMaterialProgram}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"present_direct", presentDirect}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"directional_target_outside_scene", directionalTargetOutsideScene}, {"scene_fog_node", sceneFogNode}, {"lit_mesh_without_normals", litMeshWithoutNormals}, {"invalidation", invalidation}, {"alpha_scene", alphaScene},
+TN_TEST_MAIN({"gpu_joint_production", gpuJointProduction}, {"multi_material_groups", multiMaterialGroups}, {"uniform_batch_preparation", uniformBatchPreparation}, {"steady_state", steadyState}, {"color_write_masks_the_draw", colorWriteMasksTheDraw}, {"normal_pass_is_not_tallied", normalPassIsNotTallied}, {"gtao_screen_reach", gtaoScreenReach}, {"steady_cache_invalidation", steadyCacheInvalidation}, {"render_target", renderTarget}, {"float_render_target_keeps_float32", floatRenderTargetKeepsFloat32}, {"float_render_target_falls_back_to_half", floatRenderTargetFallsBackToHalf}, {"post_texture_resize_keeps_draw_groups", postTextureResizeKeepsDrawGroups}, {"deferred_target_follows_post_rtt", deferredTargetFollowsPostRtt}, {"post_pass_follows_rewritten_texture", postPassFollowsRewrittenTexture}, {"deferred_target_samples_post_rtt_node", deferredTargetSamplesPostRttNode}, {"screen_size_reaches_the_vertex_stage", screenSizeReachesTheVertexStage}, {"depth_node_sets_fragment_depth", depthNodeSetsFragmentDepth}, {"depth_node_reaches_every_material_program", depthNodeReachesEveryMaterialProgram}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"present_direct", presentDirect}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"directional_target_outside_scene", directionalTargetOutsideScene}, {"scene_fog_node", sceneFogNode}, {"lit_mesh_without_normals", litMeshWithoutNormals}, {"invalidation", invalidation}, {"alpha_scene", alphaScene},
              {"material_unsupported", materialUnsupported}, {"shader_invalid", shaderInvalid}, {"time_uniform", timeUniform}, {"gpu_mipmaps", gpuMipmaps}, {"updates", updates},
              {"multi_camera_layers", multiCameraLayers}, {"render_callback", renderCallback}, {"instanced", instanced},
              {"virtual_sun_room_seam", virtualSunRoomSeam},
