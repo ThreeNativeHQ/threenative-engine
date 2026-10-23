@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "name": "nvidia-tower-defense-world",
+  "target": "web",
+  "viewport": { "width": 960, "height": 540 },
+  "warmupFrames": 30,
+  "artifacts": { "screenshots": "before-after" },
+  "steps": [
+    { "kind": "wait", "label": "pose", "waitTicks": 300, "screenshot": "pose", "release": true }
+  ],
+  "assert": {
+    "visual": [
+      {
+        "region": {
+          "x": 200, "y": 120, "width": 450, "height": 300,
+          "minNonblankPixelRatio": 0.9,
+          "maxDarkPixelRatio": 0.1,
+          "maxLuminance": 0.01
+        }
+      }
+    ]
+  }
+}

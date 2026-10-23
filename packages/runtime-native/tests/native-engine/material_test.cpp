@@ -267,6 +267,16 @@ void builds() {
         CHECK(vertex.attributes.size() == (kind == 0 ? 1 : 2));
         CHECK(fragment.wgsl.code.find("i_instanceColor") != std::string::npos);
     }
+    // r185 Normal.js leaves derivative face normals unflipped, including DoubleSide back faces.
+    for (bool physical : {false, true}) for (bool flat : {false, true}) {
+        VertexVariant variant;
+        variant.doubleSide = true;
+        variant.flatShading = flat;
+        const auto p = physical ? buildPhysical({}, variant) : buildStandard({}, variant);
+        const auto fragment = buildStage(p.fragment, 1);
+        CHECK(fragment.wgsl.ok());
+        CHECK((fragment.wgsl.code.find("@builtin(front_facing)") == std::string::npos) == flat);
+    }
     // Midway's instanced, mapped, fogged meshes: no builder may leave the stages' varyings in
     // declaration order when the fragment reads them in another.
     for (int kind = 0; kind < 5; ++kind) {
