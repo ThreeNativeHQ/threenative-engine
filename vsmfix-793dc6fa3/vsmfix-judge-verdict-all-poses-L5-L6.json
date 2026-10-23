@@ -1,0 +1,470 @@
+{
+  "status": "COMPLETE",
+  "judgedAt": "2026-10-23T06:31:35.112Z",
+  "model": "claude-sonnet-5-5",
+  "effort": "high",
+  "sessionId": "146e2eec-cbe9-4694-93af-f521aaedf14f",
+  "costUsd": 0.607772,
+  "durationMs": 99043,
+  "imagesRead": 72,
+  "criteria": {
+    "file": "/home/joao/.cache/tmp-tn/vsmfix/receipt/criteria2.md",
+    "sha256": "7673223fdfdc0bea6c156ef16976c84af799034e56d3bae286f5d8bba9ae6190"
+  },
+  "expect": "preserve",
+  "tier": "high",
+  "runs": {
+    "before": 1,
+    "after": 1
+  },
+  "sets": {
+    "before": [
+      "/home/joao/.cache/tmp-tn/vsmfix/receipt/xbefore-1"
+    ],
+    "after": [
+      "/home/joao/.cache/tmp-tn/vsmfix/receipt/xafter-1"
+    ],
+    "unreal": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/unreal-receiptAv/tools/unreal-reference/captures/unreal"
+  },
+  "frames": [
+    {
+      "id": "L5/L5_sun04_backlit",
+      "verdict": "IMPROVEMENT",
+      "vsUnreal": "CLOSE",
+      "reasons": "Occluder face and the shadowed floor strip below it. BEFORE has a warm brown-grey face (about 50,38,30) from the emissive spill. AFTER is darker and neutral (about 38,28,25) and sits nearer UNREAL's near-black face. Sky, sun side and edges are unchanged. No acne or banding.",
+      "differences": "UNREAL's wall is near-black with a cool tint and the shadowed floor is darker. AFTER is still slightly warmer and brighter. The cloud layout differs because the sky capture differs.",
+      "layer": "L5",
+      "unreal": "L5",
+      "files": {
+        "before": [
+          "/home/joao/.cache/tmp-tn/vsmfix/receipt/xbefore-1/L5/L5_sun04_backlit.png"
+        ],
+        "after": [
+          "/home/joao/.cache/tmp-tn/vsmfix/receipt/xafter-1/L5/L5_sun04_backlit.png"
+        ],
+        "unreal": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/unreal-receiptAv/tools/unreal-reference/captures/unreal/L5/L5_sun04_backlit.png"
+      }
+    },
+    {
+      "id": "L5/L5_sun04_exterior",
+      "verdict": "IMPROVEMENT",
+      "vsUnreal": "CLOSE",
+      "reasons": "Floor in the shadow band beside the emissive sphere. BEFORE has a warm glow lobe on the floor to the left of the sphere and a lighter tan cube beside the mirror sphere. AFTER has a uniformly dark umbra, as UNREAL does, and the cube is dark grey. Shadow edges are the same softness. No new artefact.",
+      "differences": "UNREAL's sunlit floor is a darker, more saturated brown. UNREAL's sky and clouds differ. UNREAL's umbra is slightly warmer.",
+      "layer": "L5",
+      "unreal": "L5",
+      "files": {
+        "before": [
+          "/home/joao/.cache/tmp-tn/vsmfix/receipt/xbefore-1/L5/L5_sun04_exterior.png"
+        ],
+        "after": [
+          "/home/joao/.cache/tmp-tn/vsmfix/receipt/xafter-1/L5/L5_sun04_exterior.png"
+        ],
+        "unreal": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/unreal-receiptAv/tools/unreal-reference/captures/unreal/L5/L5_sun04_exterior.png"
+      }
+    },
+    {
+      "id": "L5/L5_sun04_interior",
+      "verdict": "NEUTRAL",
+      "vsUnreal": "CLOSE",
+      "reasons": "Back wall shadow zone, right wall, ceiling and floor shadow. AFTER is a touch darker in the shadowed back-wall region and near the ceiling. That is the allowed spill loss and is barely visible. The lit patch, its edges and the floor patch are identical. No leaks or banding.",
+      "differences": "UNREAL shows a faint lit right wall and ceiling from sky fill. Both arms render them as pure black. UNREAL's lit patch is slightly more orange and less yellow.",
+      "layer": "L5",
+      "unreal": "L5",
+      "files": {
+        "before": [
+          "/home/joao/.cache/tmp-tn/vsmfix/receipt/xbefore-1/L5/L5_sun04_interior.png"
+        ],
+        "after": [
+          "/home/joao/.cache/tmp-tn/vsmfix/receipt/xafter-1/L5/L5_sun04_interior.png"
+        ],
+        "unreal": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/unreal-receiptAv/tools/unreal-reference/captures/unreal/L5/L5_sun04_interior.png"
+      }
+    },
+    {
+      "id": "L5/L5_sun04_spheres",
+      "verdict": "IMPROVEMENT",
+      "vsUnreal": "CLOSE",
+      "reasons": "Floor right of the emissive sphere. BEFORE has a bright warm lobe on the shadowed floor and a tan cube. AFTER has the lobe gone. The shadowed floor is dark umbra, the cube is dark like UNREAL's, and the mirror sphere's underside is clean. Shadow softness and the capsule and sphere terminators are unchanged.",
+      "differences": "UNREAL's mirror sphere has a richer, larger sky reflection with cloud detail. UNREAL's sunlit floor is a deeper brown. The sky is a different cloud field. UNREAL's umbra has a faint warm tint.",
+      "layer": "L5",
+      "unreal": "L5",
+      "files": {
+        "before": [
+          "/home/joao/.cache/tmp-tn/vsmfix/receipt/xbefore-1/L5/L5_sun04_spheres.png"
+        ],
+        "after": [
+          "/home/joao/.cache/tmp-tn/vsmfix/receipt/xafter-1/L5/L5_sun04_spheres.png"
+        ],
+        "unreal": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/unreal-receiptAv/tools/unreal-reference/captures/unreal/L5/L5_sun04_spheres.png"
+      }
+    },
+    {
+      "id": "L5/L5_sun15_backlit",
+      "verdict": "IMPROVEMENT",
+      "vsUnreal": "CLOSE",
+      "reasons": "Occluder face and shadowed floor. BEFORE's face is a warm grey (about 62,56,56) lifted by emissive spill. AFTER is darker and cooler (about 50,50,56), nearer UNREAL's dark face. The sun disc and sky are identical. No artefact.",
+      "differences": "UNREAL's wall is a deeper navy blue and its shadow floor is a bit darker. AFTER is still a neutral dark grey. The cloud layout differs.",
+      "layer": "L5",
+      "unreal": "L5",
+      "files": {
+        "before": [
+          "/home/joao/.cache/tmp-tn/vsmfix/receipt/xbefore-1/L5/L5_sun15_backlit.png"
+        ],
+        "after": [
+          "/home/joao/.cache/tmp-tn/vsmfix/receipt/xafter-1/L5/L5_sun15_backlit.png"
+        ],
+        "unreal": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/unreal-receiptAv/tools/unreal-reference/captures/unreal/L5/L5_sun15_backlit.png"
+      }
+    },
+    {
+      "id": "L5/L5_sun15_exterior",
+      "verdict": "IMPROVEMENT",
+      "vsUnreal": "CLOSE",
+      "reasons": "Floor in shadow around the emissive sphere. BEFORE has a warm glow patch on the umbra at the sphere's base. AFTER has the glow gone and a flat blue-grey umbra like UNREAL's. The cubes and room walls are unchanged and the edges are equally soft.",
+      "differences": "UNREAL's mirror sphere reflection is more detailed. UNREAL's lit floor is slightly darker and more brown. UNREAL's sky has a different cloud pattern.",
+      "layer": "L5",
+      "unreal": "L5",
+      "files": {
+        "before": [
+          "/home/joao/.cache/tmp-tn/vsmfix/receipt/xbefore-1/L5/L5_sun15_exterior.png"
+        ],
+        "after": [
+          "/home/joao/.cache/tmp-tn/vsmfix/receipt/xafter-1/L5/L5_sun15_exterior.png"
+        ],
+        "unreal": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/unreal-receiptAv/tools/unreal-reference/captures/unreal/L5/L5_sun15_exterior.png"
+      }
+    },
+    {
+      "id": "L5/L5_sun15_interior",
+      "verdict": "NEUTRAL",
+      "vsUnreal": "CLOSE",
+      "reasons": "Back wall in shadow (BEFORE about 30,27,26, AFTER about 22,22,22) and the dark side walls. AFTER is slightly darker and more neutral, the expected loss of emissive spill. The lit wall patch, the floor patch and their edges are identical. No leaks, acne or banding.",
+      "differences": "UNREAL's shadowed walls, ceiling and the shadow floor carry a blue sky-fill tint (dark navy). Both arms are near-black and neutral there. AFTER is a little further from UNREAL's brightness on the back wall.",
+      "layer": "L5",
+      "unreal": "L5",
+      "files": {
+        "before": [
+          "/home/joao/.cache/tmp-tn/vsmfix/receipt/xbefore-1/L5/L5_sun15_interior.png"
+        ],
+        "after": [
+          "/home/joao/.cache/tmp-tn/vsmfix/receipt/xafter-1/L5/L5_sun15_interior.png"
+        ],
+        "unreal": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/unreal-receiptAv/tools/unreal-reference/captures/unreal/L5/L5_sun15_interior.png"
+      }
+    },
+    {
+      "id": "L5/L5_sun15_spheres",
+      "verdict": "IMPROVEMENT",
+      "vsUnreal": "CLOSE",
+      "reasons": "Floor right of and below the emissive sphere. BEFORE has a warm lobe across the shadowed floor and a tan cube. AFTER has a dark blue-grey umbra, like UNREAL's, and the cube is dark. The red cube's shadow, the capsule shadow and the shadow edges are unchanged.",
+      "differences": "UNREAL's mirror sphere shows a detailed cloud reflection. UNREAL's floor is slightly browner. The sky differs.",
+      "layer": "L5",
+      "unreal": "L5",
+      "files": {
+        "before": [
+          "/home/joao/.cache/tmp-tn/vsmfix/receipt/xbefore-1/L5/L5_sun15_spheres.png"
+        ],
+        "after": [
+          "/home/joao/.cache/tmp-tn/vsmfix/receipt/xafter-1/L5/L5_sun15_spheres.png"
+        ],
+        "unreal": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/unreal-receiptAv/tools/unreal-reference/captures/unreal/L5/L5_sun15_spheres.png"
+      }
+    },
+    {
+      "id": "L5/L5_sun60_backlit",
+      "verdict": "NEUTRAL",
+      "vsUnreal": "CLOSE",
+      "reasons": "Occluder face and the strip below it. AFTER's face is a little darker and bluer (about 68,72,92 against BEFORE 80,82,98). The change is small, in the allowed direction, and a hair closer to UNREAL. The shadow strip and the floor are identical. No artefact.",
+      "differences": "UNREAL's wall is a more saturated blue, steeper top-to-bottom, with a lighter grey-blue shadow strip. AFTER is flatter and greyer.",
+      "layer": "L5",
+      "unreal": "L5",
+      "files": {
+        "before": [
+          "/home/joao/.cache/tmp-tn/vsmfix/receipt/xbefore-1/L5/L5_sun60_backlit.png"
+        ],
+        "after": [
+          "/home/joao/.cache/tmp-tn/vsmfix/receipt/xafter-1/L5/L5_sun60_backlit.png"
+        ],
+        "unreal": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/unreal-receiptAv/tools/unreal-reference/captures/unreal/L5/L5_sun60_backlit.png"
+      }
+    },
+    {
+      "id": "L5/L5_sun60_exterior",
+      "verdict": "IMPROVEMENT",
+      "vsUnreal": "CLOSE",
+      "reasons": "Base of the emissive sphere. BEFORE has a faint warm halo ring on the white floor. AFTER has it gone, with a clean contact shadow as UNREAL has. The room interior, the wall shadows and the edges are unchanged.",
+      "differences": "UNREAL's room interior is lighter, with a blue-grey wall and visible fill. AFTER's is deep navy and dark. UNREAL's mirror sphere reflection is a more detailed sky.",
+      "layer": "L5",
+      "unreal": "L5",
+      "files": {
+        "before": [
+          "/home/joao/.cache/tmp-tn/vsmfix/receipt/xbefore-1/L5/L5_sun60_exterior.png"
+        ],
+        "after": [
+          "/home/joao/.cache/tmp-tn/vsmfix/receipt/xafter-1/L5/L5_sun60_exterior.png"
+        ],
+        "unreal": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/unreal-receiptAv/tools/unreal-reference/captures/unreal/L5/L5_sun60_exterior.png"
+      }
+    },
+    {
+      "id": "L5/L5_sun60_interior",
+      "verdict": "NEUTRAL",
+      "vsUnreal": "FAR",
+      "reasons": "Back and side walls and the floor. BEFORE and AFTER are both almost black. AFTER is marginally darker (back wall about 18,22,30 against 24,28,36). The darkening is the allowed spill loss. There is no banding or acne and no new leak.",
+      "differences": "UNREAL's room is visibly lit by sky fill. Its walls are blue-grey, the ceiling is navy, there are bright wall-floor edge glows, and the wall has soft vertical streaks. The engine arms are close to black, so the room reads very differently. This was already the case before the change, and AFTER is a little darker.",
+      "layer": "L5",
+      "unreal": "L5",
+      "files": {
+        "before": [
+          "/home/joao/.cache/tmp-tn/vsmfix/receipt/xbefore-1/L5/L5_sun60_interior.png"
+        ],
+        "after": [
+          "/home/joao/.cache/tmp-tn/vsmfix/receipt/xafter-1/L5/L5_sun60_interior.png"
+        ],
+        "unreal": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/unreal-receiptAv/tools/unreal-reference/captures/unreal/L5/L5_sun60_interior.png"
+      }
+    },
+    {
+      "id": "L5/L5_sun60_spheres",
+      "verdict": "IMPROVEMENT",
+      "vsUnreal": "CLOSE",
+      "reasons": "Floor right of the emissive sphere. BEFORE has a tan/warm elliptical halo on the white floor. AFTER has a neutral blue-grey shadow ellipse instead, matching UNREAL's. The other shadows on the sphere, capsule and cubes are unchanged and equally soft.",
+      "differences": "UNREAL's mirror sphere has a richer reflection of sky and horizon, and its sphere terminators are a little more blue. The sky has a different cloud field.",
+      "layer": "L5",
+      "unreal": "L5",
+      "files": {
+        "before": [
+          "/home/joao/.cache/tmp-tn/vsmfix/receipt/xbefore-1/L5/L5_sun60_spheres.png"
+        ],
+        "after": [
+          "/home/joao/.cache/tmp-tn/vsmfix/receipt/xafter-1/L5/L5_sun60_spheres.png"
+        ],
+        "unreal": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/unreal-receiptAv/tools/unreal-reference/captures/unreal/L5/L5_sun60_spheres.png"
+      }
+    },
+    {
+      "id": "L6/L6_sun04_backlit",
+      "verdict": "IMPROVEMENT",
+      "vsUnreal": "CLOSE",
+      "reasons": "Occluder face and shadow floor. BEFORE's face is brown-grey from emissive spill. AFTER is darker, nearer UNREAL's near-black face. The contact darkening at the base is retained. No artefact.",
+      "differences": "UNREAL's face is cooler and darker, and its shadow floor is darker. The cloud layout differs.",
+      "layer": "L6",
+      "unreal": "L6",
+      "files": {
+        "before": [
+          "/home/joao/.cache/tmp-tn/vsmfix/receipt/xbefore-1/L6/L6_sun04_backlit.png"
+        ],
+        "after": [
+          "/home/joao/.cache/tmp-tn/vsmfix/receipt/xafter-1/L6/L6_sun04_backlit.png"
+        ],
+        "unreal": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/unreal-receiptAv/tools/unreal-reference/captures/unreal/L6/L6_sun04_backlit.png"
+      }
+    },
+    {
+      "id": "L6/L6_sun04_exterior",
+      "verdict": "IMPROVEMENT",
+      "vsUnreal": "CLOSE",
+      "reasons": "Shadow band floor around the emissive sphere. BEFORE has the warm glow lobe on the floor and a tan cube. AFTER has dark umbra and a dark cube as UNREAL has. The edges are equally soft.",
+      "differences": "UNREAL's lit floor is a deeper brown. UNREAL's mirror sphere has more reflection detail. The sky differs.",
+      "layer": "L6",
+      "unreal": "L6",
+      "files": {
+        "before": [
+          "/home/joao/.cache/tmp-tn/vsmfix/receipt/xbefore-1/L6/L6_sun04_exterior.png"
+        ],
+        "after": [
+          "/home/joao/.cache/tmp-tn/vsmfix/receipt/xafter-1/L6/L6_sun04_exterior.png"
+        ],
+        "unreal": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/unreal-receiptAv/tools/unreal-reference/captures/unreal/L6/L6_sun04_exterior.png"
+      }
+    },
+    {
+      "id": "L6/L6_sun04_interior",
+      "verdict": "NEUTRAL",
+      "vsUnreal": "CLOSE",
+      "reasons": "Back wall shadow zone, ceiling and right wall. AFTER is faintly darker at the back wall and ceiling. The lit patch and the floor patch are identical. No new artefacts.",
+      "differences": "UNREAL's right wall and ceiling show faint sky fill. The engine renders them black. UNREAL's lit patch is a bit more orange.",
+      "layer": "L6",
+      "unreal": "L6",
+      "files": {
+        "before": [
+          "/home/joao/.cache/tmp-tn/vsmfix/receipt/xbefore-1/L6/L6_sun04_interior.png"
+        ],
+        "after": [
+          "/home/joao/.cache/tmp-tn/vsmfix/receipt/xafter-1/L6/L6_sun04_interior.png"
+        ],
+        "unreal": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/unreal-receiptAv/tools/unreal-reference/captures/unreal/L6/L6_sun04_interior.png"
+      }
+    },
+    {
+      "id": "L6/L6_sun04_spheres",
+      "verdict": "IMPROVEMENT",
+      "vsUnreal": "CLOSE",
+      "reasons": "Floor to the right of the emissive sphere. BEFORE has a warm spill lobe, with soft contact darkening under the mirror sphere. AFTER has a dark umbra, a dark cube and a clean contact shadow as UNREAL has. The shadow softness is unchanged.",
+      "differences": "UNREAL's mirror sphere has a more detailed cloud reflection. UNREAL's sunlit floor is a deeper brown. The sky differs.",
+      "layer": "L6",
+      "unreal": "L6",
+      "files": {
+        "before": [
+          "/home/joao/.cache/tmp-tn/vsmfix/receipt/xbefore-1/L6/L6_sun04_spheres.png"
+        ],
+        "after": [
+          "/home/joao/.cache/tmp-tn/vsmfix/receipt/xafter-1/L6/L6_sun04_spheres.png"
+        ],
+        "unreal": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/unreal-receiptAv/tools/unreal-reference/captures/unreal/L6/L6_sun04_spheres.png"
+      }
+    },
+    {
+      "id": "L6/L6_sun15_backlit",
+      "verdict": "IMPROVEMENT",
+      "vsUnreal": "CLOSE",
+      "reasons": "Occluder face and the floor strip. BEFORE's face is warm grey (about 62,56,56). AFTER is darker and cooler, nearer UNREAL's dark face. The base contact darkening and the sun disc are intact. No artefact.",
+      "differences": "UNREAL's face is a deeper navy. AFTER is a neutral dark grey. The cloud layout differs.",
+      "layer": "L6",
+      "unreal": "L6",
+      "files": {
+        "before": [
+          "/home/joao/.cache/tmp-tn/vsmfix/receipt/xbefore-1/L6/L6_sun15_backlit.png"
+        ],
+        "after": [
+          "/home/joao/.cache/tmp-tn/vsmfix/receipt/xafter-1/L6/L6_sun15_backlit.png"
+        ],
+        "unreal": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/unreal-receiptAv/tools/unreal-reference/captures/unreal/L6/L6_sun15_backlit.png"
+      }
+    },
+    {
+      "id": "L6/L6_sun15_exterior",
+      "verdict": "IMPROVEMENT",
+      "vsUnreal": "CLOSE",
+      "reasons": "Emissive sphere's base in the shadowed floor. BEFORE has a warm glow patch. AFTER has none, and a flat umbra like UNREAL's. The room, cubes and shadow edges are unchanged.",
+      "differences": "UNREAL's lit floor is slightly darker and browner. The mirror sphere reflection and the sky differ.",
+      "layer": "L6",
+      "unreal": "L6",
+      "files": {
+        "before": [
+          "/home/joao/.cache/tmp-tn/vsmfix/receipt/xbefore-1/L6/L6_sun15_exterior.png"
+        ],
+        "after": [
+          "/home/joao/.cache/tmp-tn/vsmfix/receipt/xafter-1/L6/L6_sun15_exterior.png"
+        ],
+        "unreal": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/unreal-receiptAv/tools/unreal-reference/captures/unreal/L6/L6_sun15_exterior.png"
+      }
+    },
+    {
+      "id": "L6/L6_sun15_interior",
+      "verdict": "NEUTRAL",
+      "vsUnreal": "CLOSE",
+      "reasons": "Back wall shadow zone and the dark side walls. AFTER is marginally darker and more neutral on the back wall. The lit patch, floor patch and edges are identical. No banding or acne.",
+      "differences": "UNREAL's shadowed walls, ceiling and floor have a blue sky-fill tint. The engine's are near-black. AFTER is slightly darker than UNREAL on the back wall.",
+      "layer": "L6",
+      "unreal": "L6",
+      "files": {
+        "before": [
+          "/home/joao/.cache/tmp-tn/vsmfix/receipt/xbefore-1/L6/L6_sun15_interior.png"
+        ],
+        "after": [
+          "/home/joao/.cache/tmp-tn/vsmfix/receipt/xafter-1/L6/L6_sun15_interior.png"
+        ],
+        "unreal": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/unreal-receiptAv/tools/unreal-reference/captures/unreal/L6/L6_sun15_interior.png"
+      }
+    },
+    {
+      "id": "L6/L6_sun15_spheres",
+      "verdict": "IMPROVEMENT",
+      "vsUnreal": "CLOSE",
+      "reasons": "Floor right of the emissive sphere. BEFORE has a warm lobe on the shadowed floor and a tan cube. AFTER has a dark blue-grey umbra, the cube is dark, and the red cube shadow is unchanged. This matches UNREAL's umbra. The shadow softness is unchanged.",
+      "differences": "UNREAL's mirror sphere reflection is more detailed. UNREAL's floor is slightly browner. The sky differs.",
+      "layer": "L6",
+      "unreal": "L6",
+      "files": {
+        "before": [
+          "/home/joao/.cache/tmp-tn/vsmfix/receipt/xbefore-1/L6/L6_sun15_spheres.png"
+        ],
+        "after": [
+          "/home/joao/.cache/tmp-tn/vsmfix/receipt/xafter-1/L6/L6_sun15_spheres.png"
+        ],
+        "unreal": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/unreal-receiptAv/tools/unreal-reference/captures/unreal/L6/L6_sun15_spheres.png"
+      }
+    },
+    {
+      "id": "L6/L6_sun60_backlit",
+      "verdict": "NEUTRAL",
+      "vsUnreal": "CLOSE",
+      "reasons": "Occluder face and the floor strip. AFTER is slightly darker and bluer, a small change in the allowed direction. The contact darkening at the base, the strip and the floor are identical. No artefact.",
+      "differences": "UNREAL's face is a more saturated blue with a stronger vertical gradient. The shadow strip is lighter grey-blue in UNREAL.",
+      "layer": "L6",
+      "unreal": "L6",
+      "files": {
+        "before": [
+          "/home/joao/.cache/tmp-tn/vsmfix/receipt/xbefore-1/L6/L6_sun60_backlit.png"
+        ],
+        "after": [
+          "/home/joao/.cache/tmp-tn/vsmfix/receipt/xafter-1/L6/L6_sun60_backlit.png"
+        ],
+        "unreal": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/unreal-receiptAv/tools/unreal-reference/captures/unreal/L6/L6_sun60_backlit.png"
+      }
+    },
+    {
+      "id": "L6/L6_sun60_exterior",
+      "verdict": "IMPROVEMENT",
+      "vsUnreal": "CLOSE",
+      "reasons": "Emissive sphere's base. BEFORE has a faint warm halo on the white floor. AFTER is clean. The room interior, the wall shadows and the edges are unchanged.",
+      "differences": "UNREAL's room interior is lighter and blue-grey. The engine's is deep navy. UNREAL's mirror sphere has more reflection detail.",
+      "layer": "L6",
+      "unreal": "L6",
+      "files": {
+        "before": [
+          "/home/joao/.cache/tmp-tn/vsmfix/receipt/xbefore-1/L6/L6_sun60_exterior.png"
+        ],
+        "after": [
+          "/home/joao/.cache/tmp-tn/vsmfix/receipt/xafter-1/L6/L6_sun60_exterior.png"
+        ],
+        "unreal": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/unreal-receiptAv/tools/unreal-reference/captures/unreal/L6/L6_sun60_exterior.png"
+      }
+    },
+    {
+      "id": "L6/L6_sun60_interior",
+      "verdict": "NEUTRAL",
+      "vsUnreal": "FAR",
+      "reasons": "Walls and floor. BEFORE and AFTER are both nearly black. AFTER is marginally darker, with no new artefact, no banding and no leaks.",
+      "differences": "UNREAL's room has blue-grey fill, a navy ceiling, bright wall-floor edge glows and soft vertical streaks. The engine arms are near black, so the lighting result is very different. The difference was already present in BEFORE.",
+      "layer": "L6",
+      "unreal": "L6",
+      "files": {
+        "before": [
+          "/home/joao/.cache/tmp-tn/vsmfix/receipt/xbefore-1/L6/L6_sun60_interior.png"
+        ],
+        "after": [
+          "/home/joao/.cache/tmp-tn/vsmfix/receipt/xafter-1/L6/L6_sun60_interior.png"
+        ],
+        "unreal": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/unreal-receiptAv/tools/unreal-reference/captures/unreal/L6/L6_sun60_interior.png"
+      }
+    },
+    {
+      "id": "L6/L6_sun60_spheres",
+      "verdict": "IMPROVEMENT",
+      "vsUnreal": "CLOSE",
+      "reasons": "Floor right of the emissive sphere. BEFORE has a tan/warm halo ellipse. AFTER has a neutral blue-grey shadow ellipse like UNREAL's. The other shadows are unchanged and equally soft.",
+      "differences": "UNREAL's mirror sphere has a richer sky and horizon reflection. The sky has a different cloud field.",
+      "layer": "L6",
+      "unreal": "L6",
+      "files": {
+        "before": [
+          "/home/joao/.cache/tmp-tn/vsmfix/receipt/xbefore-1/L6/L6_sun60_spheres.png"
+        ],
+        "after": [
+          "/home/joao/.cache/tmp-tn/vsmfix/receipt/xafter-1/L6/L6_sun60_spheres.png"
+        ],
+        "unreal": "/home/joao/projects/threenative/threenative-engine/.claude/worktrees/unreal-receiptAv/tools/unreal-reference/captures/unreal/L6/L6_sun60_spheres.png"
+      }
+    }
+  ],
+  "overall": {
+    "verdict": "IMPROVEMENT",
+    "vsUnreal": "CLOSE",
+    "reasons": "I opened all 72 images (24 poses, each with BEFORE, AFTER and UNREAL). The warm emissive lobe is gone from every spheres, exterior and backlit pose. The shadowed floor now reads as dark umbra, as UNREAL's does. The tan cube beside the mirror sphere is now dark in the sun04 and sun15 poses, and the sun60 halo ring is gone. Backlit faces are a little darker and cooler, closer to UNREAL. Interior walls are marginally darker, which the criteria allow. I saw no acne, banding, leaks or flicker, and shadow edges are as soft as before and as UNREAL's. There is no REGRESSION in any frame. Remaining gaps against UNREAL are not caused by this change. UNREAL's interiors carry sky fill that the engine renders as near-black. This is worst in the sun60 interiors, which stay FAR. UNREAL's mirror-sphere reflections and floor browns also differ."
+  },
+  "blockedBy": [],
+  "file": "/home/joao/.cache/tmp-tn/vsmfix/receipt/verdict2.json"
+}
