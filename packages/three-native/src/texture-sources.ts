@@ -72,6 +72,16 @@ export function defineTextureSources(
   if (BaseCanvas === undefined) throw new TypeError("TN_BROWSER_UNBOUND: CanvasTexture");
   const sources = new WeakMap<object, unknown>();
   const prototype = BaseData.prototype as object;
+  for (const Native of [BaseTexture, BaseData, BaseCanvas, BaseVolume]) {
+    if (Native === undefined) continue;
+    const target = Native.prototype as { clone(): object };
+    const clone = target.clone;
+    target.clone = function (this: object): object {
+      const result = clone.call(this);
+      if (sources.has(this)) sources.set(result, sources.get(this));
+      return result;
+    };
+  }
   /** `image` is the JS source; `needsUpdate` re-sends its pixels, as three re-reads `texture.image`. */
   const followSource = (target: object, name: string): void => {
     const needsUpdate = Object.getOwnPropertyDescriptor(target, "needsUpdate")?.set;

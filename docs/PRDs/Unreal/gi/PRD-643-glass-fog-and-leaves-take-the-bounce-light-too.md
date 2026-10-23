@@ -66,7 +66,7 @@ The subsurface colour, the AO factor and the fog density are look values in game
 
 - [ ] AC-1 [local]: The glass pane and the fog-filled room regions on the owned engine match Unreal Epic within the PRD-631 thresholds at L7. proof: `pnpm unreal-look:compare --scene gi --layer L7` — Evidence: not met. `Pane` at L7 went from dP50 0.387 to 0.143 (Decision 9), still outside the threshold because L1 is 2.17 times Unreal (Decision 10). The fog room frames were black until Decision 14. With the camera fix, the fog without GI sits 11 to 17 percent below Unreal on the room regions at L7 (Decision 16), and the GI fog term overshoots the side walls (Decision 15), so fog is outside the thresholds too.
 - [ ] AC-2 [local]: The back-lit leaf region of the `foliage` pose matches Unreal Epic within the thresholds. proof: the same command — Evidence: pending.
-- [x] AC-3 [local; needs a built desktop host]: The conformance row `translucency-gi` passes on the desktop lane within its tolerance. proof: `pnpm parity --target desktop --only-tests translucency-gi` — Evidence: `node packages/runtime-native/conformance/run-conformance.mjs --target desktop --only-tests translucency-gi` on 5f17e6d87 (2026-10-21 19:06): pass, pixelMismatchRatio 0, perceptualDeltaE 0, no GPU validation errors, host exit 0 (the runner exits 2 because it marks the 118 unselected rows blocked). The first two desktop runs failed under host load, see Decision 8.
+- [ ] AC-3 [local; needs a built desktop host]: The conformance row `translucency-gi` passes on the desktop lane within its tolerance. proof: `pnpm parity --target desktop --only-tests translucency-gi` — Evidence: `node packages/runtime-native/conformance/run-conformance.mjs --target desktop --only-tests translucency-gi` on 5f17e6d87 (2026-10-21 19:06): pass, pixelMismatchRatio 0, perceptualDeltaE 0, no GPU validation errors, host exit 0 (the runner exits 2 because it marks the 118 unselected rows blocked). The first two desktop runs failed under host load, see Decision 8. Reopened 2026-10-22 (receiptB-lane): that pass ran the legacy host on upstream three. On the owned engine the row fails, see the receipt Decision below.
 
 ## Integration Ledger
 
@@ -191,6 +191,35 @@ Lane glassfog, 2026-10-21. The engine owns the mechanism. The harness render sou
     Ceiling 147 vs 167, Back 132 vs 153, Wall_Red 66 vs 79, Wall_Green 97 vs 109. With the GI term (f1): Floor 163,
     Ceiling 171, Back 166, Wall_Red 116, Wall_Green 139. At L6 (no GI, both arms equal): Floor 87 vs 79, Ceiling 112 vs 107,
     Back 95 vs 74, Wall_Red 51 vs 29, Wall_Green 65 vs 43. Frames before the fix were black at L6, L7 and L9.
+
+**Receipt on the epic head (receiptB-lane, 2026-10-22).**
+
+- **Merge.** `lane/glassfog` merged into the epic head `a2bff4bd8`. Three defects were fixed on the way:
+  `pnpm lint` failed on two unformatted `reference-stats.json` files, `volumetricFogTransport.ts` had 211 lines
+  against the cap of under 200, and `screenRay` had no caller outside its file. The fix moves `IFogCamera`,
+  `viewDepth` and `screenRay` into `volumetricFogCamera.ts` (a pure move, no pixel change). The starter
+  fingerprint changed from `cae4279c...` to `47abb45b...`.
+- **Specs.** 118 tests pass in 6 files (probe-volume, vq-volumetric-fog, gi-cache, refraction, scene-export,
+  translucency). `looks.spec`, the template "call every exported render integration symbol" test and the scaffold
+  "byte-stable" test pass.
+- **Judge, BEFORE = epic scaffold, AFTER = line, 2 runs per arm, L7 and L9, RTX 2080, `--browser-recipe webgpu`.**
+  Overall IMPROVEMENT on all 8 frames. Fog is CLOSE to Unreal at L7 and L9, with every region inside the 0.25 limit
+  (Wall_Red dP50 0.30 to 0.15). Glass is FAR to Unreal. The pane dP50 fell from 0.36 to 0.16 (L7) and from 0.33 to
+  0.13 (L9). Wall_Red and Wall_Green stay over the limit (0.34 to 0.38), which is the PRD-646 direct-light gap.
+- **Open regression to track.** At the `glass-edge` pose the translucent pane no longer blocks the bounce, so
+  some regions moved numerically away from Unreal: Floor 0.38 to 0.60 and Wall_Green 0.65 to 0.88 at L7, and Back
+  0.06 to 0.27, Floor 0.33 to 0.54 and Wall_Green 0.79 to 1.04 at L9. The frames still read IMPROVEMENT. A
+  same-tree control (`?refraction=off`, glass pose, L7) shows no region change except Pane (0.151 to 0.160).
+  Next step: calibrate the bounce level of the glass room (PRD-646 direct light), then rejudge `glass-edge`.
+- **Neutrality.** `gi:sunlit-room` (6 poses), `gi:cornell` (2) and `gi:neon-corridor` (2) at L7-high are identical
+  to the epic head (mean abs diff at most 0.0009), so the locks hold by identity.
+- **AC-3 reopened.** On the owned engine the row `translucency-gi` fails. On the Wasm engine the error is
+  `TN_NATIVE_UNCATALOGUED_CUBERENDERTARGET`. On the V8 desktop player it is `TN_NATIVE_ENGINE_UNBOUND` for
+  CubeRenderTarget, RenderTarget3D, viewportCoordinate and Box2. The control row `probe-volume-sample` fails
+  the same way, so this is an older ProbeVolume gap. Next step: allocate the bake resources lazily
+  (`#ensureGpuResources` in `packages/core/src/render/probe-volume.ts` creates a CubeRenderTarget, a RenderTarget
+  and a RenderTarget3D in `attachRenderer`) and let the row read atlas data without a bake. Not measured: the GPU
+  cost of the per-pixel read (Phase 2 box stays open).
 
 ## Execution Phases
 

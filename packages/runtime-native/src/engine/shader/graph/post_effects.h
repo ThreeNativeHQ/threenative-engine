@@ -23,7 +23,7 @@ struct PostEffect {
     std::map<std::string, std::vector<double>> parameters;
     std::vector<PostImage> images;
     float resolutionScale = 1;
-    bool normal = false, temporal = false;
+    bool normal = false, temporal = false, roughness = false;
     bool viewOffset = false;
     std::array<double, 16> originalProjection{};
     uint8_t stage = kStageNone;
@@ -40,6 +40,7 @@ struct PostPass {
     std::vector<PostImage> images;
     float resolutionScale = 1;
     uint32_t width = 0, height = 0; // RTT fixed dimensions; zero uses viewport
+    uint32_t mipLevel = 0; // SSR's separately rendered blur levels, sized from the rounded base extent
     bool floorSize = false, autoUpdate = true, visible = true;
     // GTAONode uses RedFormat + UnsignedByteType (R8Unorm), not an HDR colour target.
     bool redFormat = false;
@@ -59,6 +60,8 @@ Node importPostEffect(const json::Value& record, const std::vector<Node>& args, 
 // set after construction (`ao(...).radius.value = 0.35`).
 /** GTAONode(depth, normal, camera); `normal` may be null (normals from depth). */
 std::shared_ptr<PostEffect> gtaoEffect(Node depth, Node normal);
+/** SSRNode's mirror/blur path. Missing material inputs mean metalness=0, roughness=0. */
+std::shared_ptr<PostEffect> ssrEffect(Node color, Node depth, Node normal, Node metalness, Node roughness);
 /** DenoiseNode(input, depth, normal, camera). `seed` draws the SimplexNoise permutation three draws
  *  from Math.random; a fixed seed keeps a native frame reproducible. */
 std::shared_ptr<PostEffect> denoiseEffect(Node input, Node depth, Node normal, uint32_t seed);

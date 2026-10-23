@@ -283,6 +283,10 @@ export class GLTFLoader {
       uris.map(async (uri) => {
         const response = await fetch(path + uri);
         if (!response.ok) throw new Error(`TN_WASM_GLTF_FETCH: ${response.status} ${path + uri}`);
+        // A dev server answers a missing file with its page and a 200 (Vite's SPA fallback); the
+        // engine would refuse those bytes only as "undecoded images", without the file's name.
+        if (response.headers.get("content-type")?.startsWith("text/html"))
+          throw new Error(`TN_WASM_GLTF_FETCH: text/html ${path + uri}`);
         // The engine loader asks for the uri with its percent escapes decoded.
         return [decodeURIComponent(uri), new Uint8Array(await response.arrayBuffer())] as const;
       }),

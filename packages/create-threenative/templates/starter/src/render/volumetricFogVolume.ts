@@ -11,14 +11,13 @@ import {
 } from "three";
 import { Fn, If, max, rtt, screenUV, uniform, vec4 } from "three/tsl";
 import type { Node, NodeMaterial, RenderTarget } from "three/webgpu";
+import { type IFogCamera, viewDepth } from "./volumetricFogCamera.js";
 import type { IFogVolume, IVolumetricFogOptions } from "./volumetricFogOptions.js";
 import {
   type IFogBounds,
-  type IFogCamera,
   type IFogLocalLight,
   type ScenePass,
   fogTransport,
-  viewDepth,
 } from "./volumetricFogTransport.js";
 
 type FogTexture = ReturnType<typeof rtt> & {

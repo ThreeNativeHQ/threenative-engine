@@ -1153,9 +1153,11 @@
     },
     "CanvasTexture": {
       "constructor": true,
-      "methods": ["dispose"],
+      "methods": ["clone", "dispose"],
       "getters": [
         "anisotropy",
+        "center.x",
+        "center.y",
         "colorSpace",
         "flipY",
         "format",
@@ -1178,6 +1180,8 @@
       ],
       "setters": [
         "anisotropy",
+        "center.x",
+        "center.y",
         "colorSpace",
         "flipY",
         "format",
@@ -1197,10 +1201,10 @@
         "wrapS",
         "wrapT"
       ],
-      "members": ["offset", "repeat", "source"],
+      "members": ["center", "offset", "repeat", "source"],
       "callbacks": [],
       "events": [],
-      "fixedMembers": ["offset", "repeat", "source"],
+      "fixedMembers": ["center", "offset", "repeat", "source"],
       "fields": {}
     },
     "CapsuleGeometry": {
@@ -1600,9 +1604,11 @@
     },
     "Data3DTexture": {
       "constructor": true,
-      "methods": ["dispose"],
+      "methods": ["clone", "dispose"],
       "getters": [
         "anisotropy",
+        "center.x",
+        "center.y",
         "colorSpace",
         "flipY",
         "format",
@@ -1626,6 +1632,8 @@
       ],
       "setters": [
         "anisotropy",
+        "center.x",
+        "center.y",
         "colorSpace",
         "flipY",
         "format",
@@ -1646,17 +1654,19 @@
         "wrapS",
         "wrapT"
       ],
-      "members": ["offset", "repeat", "source"],
+      "members": ["center", "offset", "repeat", "source"],
       "callbacks": [],
       "events": [],
-      "fixedMembers": ["offset", "repeat", "source"],
+      "fixedMembers": ["center", "offset", "repeat", "source"],
       "fields": {}
     },
     "DataTexture": {
       "constructor": true,
-      "methods": ["dispose"],
+      "methods": ["clone", "dispose"],
       "getters": [
         "anisotropy",
+        "center.x",
+        "center.y",
         "colorSpace",
         "flipY",
         "format",
@@ -1679,6 +1689,8 @@
       ],
       "setters": [
         "anisotropy",
+        "center.x",
+        "center.y",
         "colorSpace",
         "flipY",
         "format",
@@ -1698,17 +1710,19 @@
         "wrapS",
         "wrapT"
       ],
-      "members": ["offset", "repeat", "source"],
+      "members": ["center", "offset", "repeat", "source"],
       "callbacks": [],
       "events": [],
-      "fixedMembers": ["offset", "repeat", "source"],
+      "fixedMembers": ["center", "offset", "repeat", "source"],
       "fields": {}
     },
     "DepthTexture": {
       "constructor": true,
-      "methods": ["dispose"],
+      "methods": ["clone", "dispose"],
       "getters": [
         "anisotropy",
+        "center.x",
+        "center.y",
         "colorSpace",
         "flipY",
         "format",
@@ -1731,6 +1745,8 @@
       ],
       "setters": [
         "anisotropy",
+        "center.x",
+        "center.y",
         "colorSpace",
         "flipY",
         "format",
@@ -1749,10 +1765,10 @@
         "wrapS",
         "wrapT"
       ],
-      "members": ["offset", "repeat", "source"],
+      "members": ["center", "offset", "repeat", "source"],
       "callbacks": [],
       "events": [],
-      "fixedMembers": ["offset", "repeat", "source"],
+      "fixedMembers": ["center", "offset", "repeat", "source"],
       "fields": {}
     },
     "DirectionalLight": {
@@ -7887,11 +7903,71 @@
       "fixedMembers": ["color"],
       "fields": {}
     },
-    "Texture": {
+    "StorageTexture": {
       "constructor": true,
-      "methods": ["dispose"],
+      "methods": ["clone", "dispose", "setSize"],
       "getters": [
         "anisotropy",
+        "center.x",
+        "center.y",
+        "colorSpace",
+        "flipY",
+        "format",
+        "generateMipmaps",
+        "image.height",
+        "image.width",
+        "isStorageTexture",
+        "magFilter",
+        "mapping",
+        "minFilter",
+        "mipmapsAutoUpdate",
+        "name",
+        "offset.x",
+        "offset.y",
+        "repeat.x",
+        "repeat.y",
+        "rotation",
+        "type",
+        "version",
+        "wrapS",
+        "wrapT"
+      ],
+      "setters": [
+        "anisotropy",
+        "center.x",
+        "center.y",
+        "colorSpace",
+        "flipY",
+        "format",
+        "generateMipmaps",
+        "magFilter",
+        "mapping",
+        "minFilter",
+        "mipmapsAutoUpdate",
+        "name",
+        "needsUpdate",
+        "offset.x",
+        "offset.y",
+        "repeat.x",
+        "repeat.y",
+        "rotation",
+        "type",
+        "wrapS",
+        "wrapT"
+      ],
+      "members": ["center", "offset", "repeat", "source"],
+      "callbacks": [],
+      "events": [],
+      "fixedMembers": ["center", "offset", "repeat", "source"],
+      "fields": {}
+    },
+    "Texture": {
+      "constructor": true,
+      "methods": ["clone", "dispose"],
+      "getters": [
+        "anisotropy",
+        "center.x",
+        "center.y",
         "colorSpace",
         "flipY",
         "format",
@@ -7914,6 +7990,8 @@
       ],
       "setters": [
         "anisotropy",
+        "center.x",
+        "center.y",
         "colorSpace",
         "flipY",
         "format",
@@ -7932,10 +8010,10 @@
         "wrapS",
         "wrapT"
       ],
-      "members": ["offset", "repeat", "source"],
+      "members": ["center", "offset", "repeat", "source"],
       "callbacks": [],
       "events": [],
-      "fixedMembers": ["offset", "repeat", "source"],
+      "fixedMembers": ["center", "offset", "repeat", "source"],
       "fields": {}
     },
     "TorusGeometry": {

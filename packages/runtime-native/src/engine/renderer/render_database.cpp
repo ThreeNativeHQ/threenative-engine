@@ -46,7 +46,7 @@ GraphFind findGraphSources(const Material& material) {
             if (found.texture && found.texture != texture)
                 throw std::runtime_error("TN_NATIVE_PMREM_UNSUPPORTED: one material samples two pmremTexture sources");
             found.texture = texture;
-        } else if (node->kind == shader::graph::Kind::Texture && node->textureObject()) {
+        } else if ((node->kind == shader::graph::Kind::Texture || node->kind == shader::graph::Kind::StorageTexture) && node->textureObject()) {
             const auto* texture = static_cast<const Texture*>(node->textureObject().get());
             if (std::none_of(found.textures.begin(), found.textures.end(),
                              [&](const auto& entry) { return entry.first == node->name; }))
