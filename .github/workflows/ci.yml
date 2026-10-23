@@ -412,6 +412,13 @@ jobs:
       # missing — an unbuilt executable is unexecuted, and a silent skip would read as a pass. CI
       # never built them, so `pnpm test` had four permanently failing tests and this workflow had
       # never once gone green. The build is what makes the native half of the suite real here.
+      - name: Use the Ubuntu archive mirror for native build dependencies
+        shell: bash
+        run: |
+          # Keep package selection unchanged while avoiding the slow hosted Azure mirror.
+          for source in /etc/apt/sources.list /etc/apt/sources.list.d/ubuntu.sources; do
+            [ ! -f "$source" ] || sudo sed -i 's|http://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g; s|https://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' "$source"
+          done
       - name: Install Linux desktop build dependencies
         # Not `--no-install-recommends`, tried and reverted. It took this step from 63s to 36s
         # and then failed `distribution.test.mjs > an installed runtime verifier uses packaged

@@ -1179,6 +1179,13 @@ jobs:
         run: |
           node packages/runtime-native/conformance/check-lane-blocks.mjs \
             packages/runtime-native/artifacts/conformance/web "downloaded web reference"
+      - name: Use the Ubuntu archive mirror for native build dependencies
+        shell: bash
+        run: |
+          # Azure mirror delivered 25.5 MB in 326s on run 39992565239; keep the same signed suites.
+          for source in /etc/apt/sources.list /etc/apt/sources.list.d/ubuntu.sources; do
+            [ ! -f "$source" ] || sudo sed -i 's|http://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g; s|https://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' "$source"
+          done
       - name: Install Linux desktop build dependencies and ccache
         run: >-
           sh scripts/retry-download.sh sudo apt-get update && sh scripts/retry-download.sh sudo apt-get install -y
@@ -1389,6 +1396,8 @@ jobs:
             [ -n "$package_name" ] || continue
             pnpm --filter "$package_name" --if-present run build
           done < <(pnpm tsx scripts/workspace-packages.ts --archives)
+          pnpm tsx scripts/ios-package-output-snapshot.ts > "$RUNNER_TEMP/desktop-package-outputs.sha256"
+          test -s "$RUNNER_TEMP/desktop-package-outputs.sha256"
       - run: pnpm --filter threenative-native-smoke build
       # ccache makes this build faster; it never makes it correct. So a package feed that is slow
       # or down must not turn a compiler cache into a failed platform leg — which is exactly what
@@ -1491,11 +1500,16 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          # Verification must leave the initially built package bytes intact, as in the iOS handoff.
+          pnpm tsx scripts/ios-package-output-snapshot.ts > "$RUNNER_TEMP/desktop-package-outputs-current.sha256"
+          cmp -s "$RUNNER_TEMP/desktop-package-outputs.sha256" "$RUNNER_TEMP/desktop-package-outputs-current.sha256" || {
+            echo "TN_DESKTOP_PACKAGE_OUTPUTS_CHANGED: verification changed the package payload" >&2
+            exit 1
+          }
           mkdir -p "$RUNNER_TEMP/threenative-packages"
           pnpm tsx scripts/workspace-packages.ts --archives > "$RUNNER_TEMP/threenative-package-specs"
           while IFS=$'\t' read -r package_name _; do
             [ -n "$package_name" ] || continue
-            pnpm --filter "$package_name" --if-present run build
             pnpm --filter "$package_name" pack --pack-destination "$RUNNER_TEMP/threenative-packages"
           done < "$RUNNER_TEMP/threenative-package-specs"
       - name: Scaffold the starter from local tarballs
@@ -2194,6 +2208,13 @@ jobs:
         with:
           python-version: "3.12"
       - run: pnpm install --frozen-lockfile
+      - name: Use the Ubuntu archive mirror for native build dependencies
+        shell: bash
+        run: |
+          # Azure mirror delivered 25.5 MB in 326s on run 39992565239; keep the same signed suites.
+          for source in /etc/apt/sources.list /etc/apt/sources.list.d/ubuntu.sources; do
+            [ ! -f "$source" ] || sudo sed -i 's|http://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g; s|https://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' "$source"
+          done
       - name: Install Linux desktop build dependencies
         run: >-
           sh scripts/retry-download.sh sudo apt-get update && sh scripts/retry-download.sh sudo apt-get install -y
@@ -2542,6 +2563,15 @@ jobs:
           node-version: 20
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Start the iOS simulator before compiling
+        run: |
+          node --input-type=module <<'NODE'
+          import { execFileSync } from 'node:child_process';
+          import { assertIosRuntime, selectIosSimulator } from './packages/runtime-native/scripts/select-ios-simulator.mjs';
+          const selected = selectIosSimulator(JSON.parse(execFileSync('xcrun', ['simctl', 'list', 'devices', 'available', '--json'], { encoding: 'utf8' })));
+          assertIosRuntime(selected.runtime);
+          if (selected.state !== 'Booted') execFileSync('xcrun', ['simctl', 'boot', selected.udid], { stdio: 'inherit' });
+          NODE
       - name: Build iOS proof workspace dependencies
         run: |
           set -euo pipefail
