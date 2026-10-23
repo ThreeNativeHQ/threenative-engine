@@ -31,6 +31,8 @@ const URGENT_CELLS = 12_000;
 /** A wide window is spread over about this many frames, never fewer than eight rows a frame. */
 const SLICE_FRAMES = 15;
 const SLICE_ROWS = 8;
+/** More separate windows than this waiting for one draw are merged into their bounding box. */
+const MAX_URGENT_WINDOWS = 16;
 
 type Bounds = {
   readonly column: number;
@@ -52,7 +54,7 @@ export interface ISnowSource {
     refreshGeometry(geometry: BufferGeometry, bounds?: Bounds): void;
     toColliderHeights(): Float32Array;
   };
-  takeDirtyRegion(): Bounds | undefined;
+  takeDirtyRegions(): readonly Bounds[];
   copyChannel(
     channel: "indent" | "compaction",
     bounds: Bounds,
@@ -175,10 +177,10 @@ export function createSnowSurface(snow: ISnowSource): ISnowSurface {
     state.needsUpdate = true;
   };
 
-  let urgent: Bounds | undefined;
+  let urgent: Bounds[] = [];
   let background: Bounds | undefined;
   // `toGeometry` already drew the field as it stands; the field's own first full write is not news.
-  snow.takeDirtyRegion();
+  snow.takeDirtyRegions();
   const redraw = (written: Bounds): void => {
     // A normal reads its neighbours, so one sample beyond the written window moves too.
     const column = Math.max(0, written.column - 1);
@@ -191,19 +193,34 @@ export function createSnowSurface(snow: ISnowSource): ISnowSurface {
     };
     field.refreshGeometry(geometry, bounds);
     writeState(bounds);
-    // Upload only the rows that moved: a whole-field upload every frame is megabytes per frame.
-    const first = bounds.row * field.columns;
-    const count = bounds.rows * field.columns;
+    // Upload only the samples that moved: a whole-field upload every frame is megabytes per
+    // frame, and whole rows of a narrow window are most of that. One range per row keeps a
+    // footprint's upload to a footprint, however far across the field the window sits.
+    const wholeRows = bounds.columns === field.columns;
     for (const name of ["position", "normal", STATE]) {
       const attribute = geometry.getAttribute(name) as BufferAttribute;
-      attribute.addUpdateRange(first * attribute.itemSize, count * attribute.itemSize);
+      if (wholeRows) {
+        attribute.addUpdateRange(
+          bounds.row * field.columns * attribute.itemSize,
+          bounds.rows * field.columns * attribute.itemSize,
+        );
+        continue;
+      }
+      for (let row = bounds.row; row < bounds.row + bounds.rows; row += 1)
+        attribute.addUpdateRange(
+          (row * field.columns + bounds.column) * attribute.itemSize,
+          bounds.columns * attribute.itemSize,
+        );
     }
   };
   const collect = (): void => {
-    const written = snow.takeDirtyRegion();
-    if (written === undefined) return;
-    if (written.columns * written.rows <= URGENT_CELLS) urgent = union(urgent, written);
-    else background = union(background, written);
+    // Windows a long way apart stay apart: one box around a ball and a crate is most of the field.
+    for (const written of snow.takeDirtyRegions()) {
+      if (written.columns * written.rows <= URGENT_CELLS) urgent.push(written);
+      else background = union(background, written);
+    }
+    // A frame that waits long for its draw falls back to one box rather than a list that grows.
+    if (urgent.length > MAX_URGENT_WINDOWS) urgent = [urgent.reduce(union)];
   };
 
   return {
@@ -215,8 +232,8 @@ export function createSnowSurface(snow: ISnowSource): ISnowSurface {
     },
     refresh() {
       collect();
-      if (urgent !== undefined) redraw(urgent);
-      urgent = undefined;
+      for (const window of urgent) redraw(window);
+      urgent = [];
       if (background === undefined) return;
       // Proportional to what is waiting, so a refill always finishes before the next one lands.
       const rows = Math.min(
@@ -231,9 +248,9 @@ export function createSnowSurface(snow: ISnowSource): ISnowSurface {
     },
     renderError() {
       collect();
-      if (urgent !== undefined) redraw(urgent);
+      for (const window of urgent) redraw(window);
       if (background !== undefined) redraw(background);
-      urgent = undefined;
+      urgent = [];
       background = undefined;
       const positions = geometry.getAttribute("position");
       const heights = field.toColliderHeights();
