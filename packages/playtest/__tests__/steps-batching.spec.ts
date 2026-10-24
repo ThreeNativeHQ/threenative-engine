@@ -200,3 +200,14 @@ it("consumes the installed Three bridge series shape and retains full camera obs
     expect(report.samples[0]).not.toHaveProperty("frameMs");
   } finally { installation.dispose(); }
 });
+
+it("collects the configured native smoke minimum instead of stopping after 251 presents", async () => {
+  vi.stubEnv("TN_PLAYTEST_COMPLETION_WINDOW_MIN_FRAMES", "300");
+  try {
+    const rows = Array.from({ length: 500 }, (_, i) => ({ sequence: i + 1, completedAtMs: i * 20 }));
+    const report = await measureCompletionWindow("smoke", async mode => ({ mode, tick: 0, epoch: 1 }),
+      async () => ({ ...completionSnapshot(), samples: rows }), async () => undefined);
+    expect(report.samples).toHaveLength(300);
+    expect(report.intervalCount).toBe(299);
+  } finally { vi.unstubAllEnvs(); }
+});
