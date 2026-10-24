@@ -24,8 +24,11 @@ export const ITEM_CURVE: readonly Readonly<Record<ItemKind, number>>[] = [
 export const ITEM_FEEL = {
   /** Seconds the roulette spins before the item is in hand. */
   roulette: 1,
-  /** Seconds a taken box stays empty. */
-  boxRespawn: 2,
+  /**
+   * Seconds a taken box stays empty: 20 ticks spinning out, then about 20 rising back
+   * (`mk64: src/actors/item_box/update.inc.c:56`, `:42`), so a box is back before the next kart.
+   */
+  boxRespawn: 40 / 60,
   /** Reach of a box, banana and shell, in metres between centres on the ground plane. */
   boxReach: 1.7,
   bananaReach: 1.2,

@@ -131,7 +131,7 @@ export class ItemBoxes {
 
   /**
    * Spins and bobs the boxes; a box that is not `ready` shrinks away, then grows back. A box within
-   * 4.5 m of `eye` (the camera) shrinks too, so the chase camera never flies through one.
+   * 6.5 m of `eye` (the camera) shrinks too, gone by 3.5 m, so the chase camera never flies through one.
    */
   update(
     time: number,
@@ -147,7 +147,7 @@ export class ItemBoxes {
       const scale = (this.#scale[i] ?? 0) + (target - (this.#scale[i] ?? 0)) * Math.min(1, dt * 8);
       this.#scale[i] = scale;
       const near = eye ? Math.hypot(spot.x - eye.x, spot.y - eye.y, spot.z - eye.z) : 9;
-      const size = scale * Math.min(1, Math.max(0, (near - 2.5) / 2));
+      const size = scale * Math.min(1, Math.max(0, (near - 3.5) / 3));
       box.visible = glow.visible = size > 0.01;
       if (!box.visible) return;
       const y = spot.y + Math.sin(time * 2.2 + i) * 0.12;

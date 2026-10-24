@@ -271,7 +271,7 @@ export const BURSTS = {
   landing: { emitter: "dust", count: 14, shape: [3, 0.5, 0.6] },
   wall: { emitter: "sparkle", count: 10, shape: [3.5, 2, 0.2] },
   // Drift sparks, one emitter per stage colour.
-  spark1: { emitter: "sparkWhite", count: 2, shape: [2.2, 2.6, 0.15] },
+  spark1: { emitter: "sparkWhite", count: 3, shape: [2.2, 2.6, 0.15] },
   spark2: { emitter: "sparkYellow", count: 3, shape: [2.6, 3, 0.15] },
   spark3: { emitter: "sparkOrange", count: 4, shape: [3, 3.4, 0.15] },
   flame: { emitter: "flame", count: 3, shape: [0.5, 0.4, 0.08] },

@@ -48,8 +48,9 @@ export const LAYOUT = {
   /** Boost pads: lap fraction and lateral offset of each, a 4 m x 3 m chevron. */
   pads: [
     { at: 0.04, lateral: -2.5 },
-    // On the back straight, so a kart reaches the jump on a boost.
-    { at: 0.385, lateral: -5 },
+    // On the back straight, so a kart reaches the jump on a boost; its 3 m plate ends inside the
+    // edge line.
+    { at: 0.385, lateral: -4.2 },
     { at: 0.7, lateral: 0 },
     { at: 0.86, lateral: -2 },
   ],
