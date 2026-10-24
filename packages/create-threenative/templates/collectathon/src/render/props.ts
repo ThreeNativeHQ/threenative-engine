@@ -22,7 +22,7 @@ function shadowed(mesh: Mesh): Mesh {
 }
 
 /** A spinning coin, origin at its centre. */
-export function coinModel(): Group {
+function coin(): Group {
   const group = new Group();
   const disc = shadowed(
     new Mesh(
@@ -47,7 +47,7 @@ export function coinModel(): Group {
  * A red gem, origin at its centre. It casts no shadow: a sharp-edged octahedron under a high sun
  * throws a hard dark diamond on the block it floats over, which reads as a hole, not a gem.
  */
-export function gemModel(): Group {
+function gem(): Group {
   const group = new Group();
   const body = new Mesh(
     new OctahedronGeometry(0.42),
@@ -59,7 +59,7 @@ export function gemModel(): Group {
 }
 
 /** A Sunseed: a glowing seed with two leaves, origin at its centre. */
-export function seedModel(): Group {
+function seed(): Group {
   const group = new Group();
   const seed = shadowed(
     new Mesh(
@@ -82,7 +82,7 @@ export function seedModel(): Group {
 }
 
 /** The walker: a round purple bumblet on two stubby feet, origin at its feet, facing -Z. */
-export function walkerModel(): Group {
+function walker(): Group {
   const group = new Group();
   const body = shadowed(
     new Mesh(new SphereGeometry(0.55, 20, 14), lit(C.walker, { roughness: 0.6 })),
@@ -127,7 +127,7 @@ function eyes(group: Group, x: number, y: number, z: number, size: number): void
 }
 
 /** The hopper: a lime, frog-round bouncer on two long feet, eyes on top, origin at its feet. */
-export function hopperModel(): Group {
+function hopper(): Group {
   const group = new Group();
   const body = shadowed(
     new Mesh(new SphereGeometry(0.5, 18, 12), lit(C.hopper, { roughness: 0.5 })),
@@ -153,7 +153,7 @@ export function hopperModel(): Group {
  * The thornback: a low rust shell bristling with dark spikes, a sand-coloured head poking out the
  * front, origin at its feet. The spikes are the group named `spikes`, which its telegraph raises.
  */
-export function thornbackModel(): Group {
+function thornback(): Group {
   const group = new Group();
   const shell = shadowed(
     new Mesh(
@@ -199,3 +199,20 @@ export function thornbackModel(): Group {
   }
   return group;
 }
+
+// Each model is built once and every copy clones it, which shares the geometry and materials.
+// The renderer batches meshes that share both, so forty coins become one instanced draw.
+function shared(build: () => Group): () => Group {
+  let model: Group | undefined;
+  return () => {
+    model ??= build();
+    return model.clone();
+  };
+}
+
+export const coinModel = shared(coin);
+export const gemModel = shared(gem);
+export const seedModel = shared(seed);
+export const walkerModel = shared(walker);
+export const hopperModel = shared(hopper);
+export const thornbackModel = shared(thornback);
