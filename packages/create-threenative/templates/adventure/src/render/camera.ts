@@ -17,7 +17,7 @@
 // Then it checks the picture itself: while walls fill the front half of the way to Wren (a doorway
 // behind her, the jamb of a nook she walks into), the arm shortens, so the camera follows her
 // through instead of filming her past the stone.
-import { Box3, MathUtils, type PerspectiveCamera, Vector3 } from "three";
+import { Box3, MathUtils, type PerspectiveCamera, Quaternion, Vector3 } from "three";
 
 const DISTANCE = 5.6;
 const HEIGHT = 2.6;
@@ -44,6 +44,12 @@ const ARM_STEP = 0.75;
  */
 const CLUTTER = { reach: 0.6, share: 2 / 24 };
 const FOV = 55;
+/**
+ * The fastest the view may turn, in radians per second (140°/s, about 2.3° a 60 Hz tick): a lock,
+ * a target switch or a boss charging past swings the picture no faster, so it reads instead of
+ * smearing. A snap (respawn, room change) is a cut and ignores it.
+ */
+const MAX_TURN = MathUtils.degToRad(140);
 /** Wren's body around her origin (her waist), for the framing: soles to the top of her cap. */
 const HERO = { below: 0.85, above: 0.95, radius: 0.35 };
 /** Locked framing: both bodies stay inside `share` of the frame, the lens never wider than this. */
@@ -67,6 +73,8 @@ const LOCK = {
   /** Metres added when the target is closer than `closeAt`, so Wren never hides it. */
   closeBack: 1.5,
   closeAt: 3,
+  /** Metres the camera rises there too, so Wren sits below the target's torso on screen. */
+  closeRise: 0.8,
   /** Metres added per metre the target stands taller than Wren, up to `tallMax`. */
   tallBack: 0.8,
   tallMax: 2,
@@ -120,8 +128,11 @@ export function setupCamera(camera: PerspectiveCamera, blocked: CameraBlocker): 
   // 0 unlocked, 1 locked, eased between, so a lock glides into the fight framing.
   let locked = 0;
   let extra = 0;
+  let rise = 0;
   let swing = LOCK.orbit;
   let watching = false;
+  // The view's orientation last tick: the next one turns from it by at most MAX_TURN.
+  const held = new Quaternion();
   const pivot = new Vector3();
   const desired = new Vector3();
   const aim = new Vector3();
@@ -227,7 +238,7 @@ export function setupCamera(camera: PerspectiveCamera, blocked: CameraBlocker): 
     );
     desired.set(
       pivot.x + Math.sin(view) * distance,
-      focus.y + HEIGHT - LOCK.drop * locked,
+      focus.y + HEIGHT + (rise - LOCK.drop) * locked,
       pivot.z + Math.cos(view) * distance,
     );
     return blocked(pivot, desired)?.distance;
@@ -301,6 +312,7 @@ export function setupCamera(camera: PerspectiveCamera, blocked: CameraBlocker): 
           (apart < LOCK.closeAt ? LOCK.closeBack : 0) +
           MathUtils.clamp(tall * LOCK.tallBack, 0, LOCK.tallMax);
         extra += (Math.min(goal, LOCK.maxDistance - DISTANCE) - extra) * rate;
+        rise += ((apart < LOCK.closeAt ? LOCK.closeRise : 0) - rise) * rate;
         // It orbits on the side of the fight line it already films from, so a new lock or a target
         // switch never swings the picture across the line, where Wren would hide the target.
         const onLine = MathUtils.euclideanModulo(
@@ -343,6 +355,7 @@ export function setupCamera(camera: PerspectiveCamera, blocked: CameraBlocker): 
       const reveal = watch !== undefined && !watching && lock === undefined;
       watching = watch !== undefined;
       place(focus, lock?.bounds ?? watch, quick, reveal ? 1 : quick);
+      camera.quaternion.copy(held.rotateTowards(camera.quaternion, MAX_TURN * dt));
     },
     recenter(to: number): void {
       home = to;
@@ -355,6 +368,7 @@ export function setupCamera(camera: PerspectiveCamera, blocked: CameraBlocker): 
       aim.copy(goalAim);
       shift.set(0, 0, 0);
       place(focus, undefined, 1);
+      held.copy(camera.quaternion);
     },
   };
 }

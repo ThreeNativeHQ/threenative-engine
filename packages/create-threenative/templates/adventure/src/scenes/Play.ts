@@ -59,6 +59,8 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     hintOverlap: 0,
     toastOverlap: 0,
     openingFramedShare: 0,
+    cameraTurnWorst: 0,
+    torsoCovered: 0,
     heroViewNearest: 0,
     hitsTaken: 0,
     keys: 0,
@@ -360,7 +362,8 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     // over half of it either. Every tick: nothing solid between her head and the lens, walls in
     // the front half of the way from the lens to her cover little of the frame (a grid of rays,
     // every 6th tick), Wren stays clear of the controls card (top right, Menu.tsx), and a toast
-    // (Hud.tsx) covers neither Wren nor the fight's target.
+    // (Hud.tsx) covers neither Wren nor the fight's target. The worst per-tick view turn and the
+    // ticks Wren's box sits over a locked target's middle (its torso) are kept too.
     const FIGHT_RANGE = 8;
     const GLIDE = 15;
     // ponytail: the card's and the toast's boxes in view space at 1280 by 720, kept in step with
@@ -377,6 +380,8 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       openingFrames: 0,
       openingFramed: 0,
       toast: 0,
+      turn: 0,
+      torso: 0,
       run: 0,
       worstRun: 0,
       ticks: 0,
@@ -390,6 +395,8 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       rect.y1 > TOAST.y0 &&
       rect.y0 < TOAST.y1;
     const fightBox = new Box3();
+    const viewNow = new Vector3();
+    const viewBefore = new Vector3();
     const heroCentre = new Vector3();
     const ray = new Vector3();
     // Wren's silhouette: her body's width across the view, from her feet to the top of her head.
@@ -457,6 +464,10 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       if (hero.rig.group.visible) viewNearest = Math.min(viewNearest, near);
       lighting.follow(hero.mesh.position);
       camera.updateMatrixWorld();
+      // How far the view turned this tick, in degrees: the fastest swing a player sees.
+      camera.getWorldDirection(viewNow);
+      if (fight.ticks > 0) fight.turn = Math.max(fight.turn, viewNow.angleTo(viewBefore) * DEG);
+      viewBefore.copy(viewNow);
       fight.ticks += 1;
       fight.lockTicks =
         lock.target !== undefined && lock.target === fight.lockedOn ? fight.lockTicks + 1 : 0;
@@ -512,6 +523,9 @@ export class Play extends Scene<GameState, IPhysicsContext> {
           hidden > area / 2;
       fight.frames += 1;
       if (behind) fight.occluded += 1;
+      // Wren's box over the locked target's middle (its torso), once the lock has glided in.
+      if (target === lock.target && fight.lockTicks > GLIDE && covers(corner, heroRect))
+        fight.torso += 1;
       if (underToast(heroRect) || underToast(targetRect)) fight.toast += 1;
       if (target === warden && lock.target === undefined) {
         fight.openingFrames += 1;
@@ -689,6 +703,8 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       statePatch.nearWallWorst = Math.round(fight.nearWall * 1000) / 1000;
       statePatch.hintOverlap = fight.hint;
       statePatch.toastOverlap = fight.toast;
+      statePatch.cameraTurnWorst = Math.round(fight.turn * 100) / 100;
+      statePatch.torsoCovered = fight.torso;
       statePatch.openingFramedShare =
         fight.openingFrames === 0
           ? 0

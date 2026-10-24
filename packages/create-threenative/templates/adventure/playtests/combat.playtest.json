@@ -273,6 +273,12 @@
       },
       {
         "id": "state",
+        "path": "cameraTurnWorst",
+        "lte": 2.5,
+        "allowTrivial": "The most the view turned in one 60 Hz tick, in degrees (2.5 is 150 per second); a running maximum, 0 at the start."
+      },
+      {
+        "id": "state",
         "path": "cameraBlocked",
         "lte": 0,
         "allowTrivial": "Ticks with something solid between Wren's head and the lens; a running count, 0 at the start."

@@ -341,6 +341,18 @@
       },
       {
         "id": "state",
+        "path": "cameraTurnWorst",
+        "lte": 2.5,
+        "allowTrivial": "The most the view turned in one 60 Hz tick, in degrees (2.5 is 150 per second); a running maximum, 0 at the start."
+      },
+      {
+        "id": "state",
+        "path": "torsoCovered",
+        "lte": 0,
+        "allowTrivial": "Ticks, once a lock has glided in, with Wren's on-screen box over the Warden's middle; a running count, 0 at the start."
+      },
+      {
+        "id": "state",
         "path": "openingFramedShare",
         "gte": 0.95,
         "allowTrivial": "Of the Warden's opening ticks (awake, nothing locked), the share with Wren and the whole Warden inside the frame, 6% clear of the top; 0 until it wakes, so a run that never wakes it fails."
