@@ -1,11 +1,13 @@
 #!/usr/bin/env node
 
 import { spawnSync } from "node:child_process";
-import { appendFileSync, readFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { readAttemptJobs } from "./ci-attempt-receipts.mjs";
 import {
   assertMergeParentCandidate,
+  classify,
   currentRun,
+  queueHeadReuse,
   sourceVerdict,
   validateEventPlan,
   validatePlan,
@@ -67,7 +69,34 @@ try {
   // profile; what only the API can settle is whether that run's own verdict went green and whether
   // it really did conclude every leg, and a reuse this job cannot confirm is not a pass.
   let source = { succeeded: true };
-  if (plan.reusedRunId > 0) {
+  let queueReuse;
+  if (plan.reusedRunId > 0 && process.env.TN_CI_EVENT === "merge_group") {
+    // PRD-730. The queue's reuse rests on one rule, so this job re-decides it from the candidate
+    // instead of trusting the plan: the same pull-request run, or no pass.
+    const full = classify({
+      root: process.cwd(),
+      eventName: "merge_group",
+      target: process.env.TN_CI_BASE_REF,
+      base: process.env.TN_CI_BASE_SHA,
+      head: process.env.TN_CI_HEAD_SHA,
+      candidateSha: plan.candidateSha,
+      noReuse: true,
+    });
+    queueReuse =
+      full.selection === "full"
+        ? queueHeadReuse({ root: process.cwd(), plan: full, queueRef: process.env.TN_CI_QUEUE_REF })
+        : { error: `the queue candidate selects ${full.selection}, not the full board` };
+    if ("error" in queueReuse) throw new Error(`CI_REQUIRED_QUEUE_REUSE: ${queueReuse.error}`);
+    if (queueReuse.runId !== plan.reusedRunId)
+      throw new Error(
+        `CI_REQUIRED_QUEUE_REUSE: the plan cites run ${plan.reusedRunId}, the queue rule confirms run ${queueReuse.runId}`,
+      );
+    mkdirSync("artifacts/ci-queue-reuse", { recursive: true });
+    writeFileSync(
+      "artifacts/ci-queue-reuse/receipt.json",
+      `${JSON.stringify({ version: 1, ...queueReuse, candidateSha: plan.candidateSha, queueRef: process.env.TN_CI_QUEUE_REF, reusedBy: process.env.GITHUB_RUN_ID })}\n`,
+    );
+  } else if (plan.reusedRunId > 0) {
     const target = process.env.TN_CI_BASE_REF ?? "";
     // A reuse plan states nothing about what was required — every job in it reads exempt — so the
     // gate re-checks what policy owes each target, and the plan's tier is that answer: a pull
@@ -91,7 +120,13 @@ try {
     `Native matrix: \`${plan.nativeTier}\``,
     "",
   ];
-  if (plan.reusedRunId > 0) {
+  if (queueReuse !== undefined) {
+    lines.splice(
+      3,
+      0,
+      `Reused verdict from CI run \`${String(queueReuse.runId)}\` (attempt ${String(queueReuse.runAttempt)}) of pull request head \`${queueReuse.headSha}\`, tree \`${queueReuse.tree}\`: the queue commit repeats that tree`,
+    );
+  } else if (plan.reusedRunId > 0) {
     lines.splice(
       3,
       0,

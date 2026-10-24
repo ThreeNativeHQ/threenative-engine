@@ -432,6 +432,7 @@ function parseArgs(argv) {
     ["--validate-plan", "plan"],
     ["--candidate-sha", "candidateSha"],
     ["--day-of-week", "dayOfWeek"],
+    ["--queue-ref", "queueRef"],
   ]);
   const options = { root: process.cwd(), format: "text" };
   for (let index = 0; index < argv.length; index += 1) {
@@ -1019,13 +1020,137 @@ function diffSelection(paths, selective) {
   };
 }
 
+// PRD-730. The one verdict reuse the merge queue may take: the queue commit has the tree of the
+// pull request it names, and that pull request's head already has a green full run. The queue ref
+// is `gh-readonly-queue/<base>/pr-<number>-<base sha>`; the head comes from `refs/pull/<number>/head`.
+const QUEUE_REF = /^(?:refs\/heads\/)?gh-readonly-queue\/[^/]+\/pr-(\d+)-[0-9a-f]{40}$/u;
+const SHA = /^[0-9a-f]{40}$/u;
+const MATRIX_BOARDS = [
+  ["test-unit", "unitMatrix", "shard"],
+  ["template-nonvisual", "templateMatrix", "template"],
+  ["golden-path-template", "goldenMatrix", "template"],
+];
+
+/** A commit's tree, fetching the commit first when this clone does not hold it. */
+function treeOfFetched(root, sha) {
+  const held = treeOf(root, sha);
+  if (held !== null) return held;
+  git(root, ["fetch", "--quiet", "--no-tags", "origin", sha]);
+  return treeOf(root, sha);
+}
+
+/** The tested candidate of a CI run: the one sha its Integration receipt artifacts name. */
+function receiptCandidate(runId) {
+  const receipt = new RegExp(`^ci-integration-receipt-${runId}-\\d+-([0-9a-f]{40})-`, "u");
+  const shas = new Set();
+  for (let page = 1; page <= 5; page += 1) {
+    const listed = ghApi(`actions/runs/${runId}/artifacts?per_page=100&page=${page}`);
+    if ("error" in listed) return listed;
+    const artifacts = listed.value?.artifacts;
+    if (!Array.isArray(artifacts))
+      return { error: `CI run ${runId}'s artifact listing could not be interpreted` };
+    for (const artifact of artifacts) {
+      const sha = receipt.exec(String(artifact?.name ?? ""))?.[1];
+      if (sha !== undefined) shas.add(sha);
+    }
+    if (artifacts.length < 100) break;
+  }
+  return shas.size === 1
+    ? { sha: [...shas][0] }
+    : { error: `CI run ${runId} names ${String(shas.size)} tested candidates, not one` };
+}
+
+/**
+ * The newest pull-request run of the head that the queue commit repeats, when it is green and full.
+ * `plan` is the full plan of the queue commit. Every miss, ambiguity or API error is `{ error }`.
+ */
+export function queueHeadReuse(input) {
+  try {
+    return decideQueueReuse(input);
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+function decideQueueReuse({ root, plan, queueRef }) {
+  const number = QUEUE_REF.exec(queueRef ?? "")?.[1];
+  if (number === undefined) return { error: "the merge-group ref does not name a pull request" };
+  const tree = treeOf(root, plan.candidateSha);
+  if (tree === null) return { error: "the candidate's tree could not be resolved" };
+  const remote = git(root, ["ls-remote", "origin", `refs/pull/${number}/head`]);
+  const headSha = remote.stdout.split(/\s/u)[0];
+  if (remote.status !== 0 || !SHA.test(headSha))
+    return { error: `the head of pull request ${number} could not be read` };
+  if (treeOfFetched(root, headSha) !== tree)
+    return { error: `the tree differs from the head of pull request ${number}` };
+  const listed = ghApi(
+    `actions/workflows/ci.yml/runs?head_sha=${headSha}&event=pull_request&per_page=100`,
+  );
+  if ("error" in listed) return listed;
+  const runs = listed.value?.workflow_runs;
+  if (
+    !Array.isArray(runs) ||
+    runs.length === 0 ||
+    runs.some((run) => !Number.isInteger(run?.id) || !Number.isInteger(run?.run_number))
+  )
+    return { error: `no pull-request CI run of ${headSha} could be interpreted` };
+  const run = runs.reduce((newest, next) => (next.run_number > newest.run_number ? next : newest));
+  if (run.head_sha !== headSha || run.status !== "completed" || run.conclusion !== "success")
+    return { error: `the newest CI run of ${headSha} is ${String(run.conclusion ?? run.status)}` };
+  const jobs = runJobs(String(run.id));
+  if ("error" in jobs) return jobs;
+  const succeeded = (name) =>
+    jobs.jobs.some((job) => job.name === name && job.conclusion === "success");
+  if (!succeeded("ci-required"))
+    return { error: `CI run ${run.id} did not conclude ci-required as success` };
+  const owed = Object.entries(plan.jobs)
+    .filter(([, job]) => job.required)
+    .map(([name]) => name);
+  const missing = owed.find(
+    (name) =>
+      !jobs.jobs.some((job) => boardName(job.name) === name && job.conclusion === "success"),
+  );
+  if (missing !== undefined) return { error: `CI run ${run.id} has no successful ${missing}` };
+  for (const [board, matrix, key] of MATRIX_BOARDS) {
+    const leg = plan[matrix][key].find((value) => !succeeded(`${board} (${value})`));
+    if (leg !== undefined && owed.includes(board))
+      return { error: `CI run ${run.id} has no successful ${board} (${leg})` };
+  }
+  const tested = receiptCandidate(run.id);
+  if ("error" in tested) return tested;
+  const parents = git(root, ["rev-list", "--parents", "-n", "1", tested.sha])
+    .stdout.trim()
+    .split(" ");
+  if (treeOfFetched(root, tested.sha) !== tree || parents.length !== 3 || parents[2] !== headSha)
+    return {
+      error: `CI run ${run.id} tested a candidate other than the head merged with its base`,
+    };
+  // The pull request's own plan, from the parents of what it tested: a narrowed run proves less.
+  const source = classify({
+    root,
+    base: parents[1],
+    head: headSha,
+    target: "develop",
+    eventName: "pull_request",
+    candidateSha: tested.sha,
+    noReuse: true,
+  });
+  if (source.selection !== "full")
+    return { error: `CI run ${run.id} was not a full board (${source.selection})` };
+  if (
+    (NATIVE_RANKS[source.nativeTier] ?? -1) < (NATIVE_RANKS[plan.nativeTier] ?? -1) ||
+    (plan.qualification && !source.qualification)
+  )
+    return { error: `CI run ${run.id} proved a weaker native or qualification tier` };
+  return { runId: run.id, tree, headSha, testedSha: tested.sha, runAttempt: run.run_attempt };
+}
+
 /**
  * PRD-481: the one place a full board may be replaced. A narrowed plan is already cheaper than a
  * reused one and does not consult the API at all.
  */
 function reuseOrKeep(plan, options, candidateSha) {
-  if (plan.selection !== "full" || !reuseEligible(options)) return plan;
-  const found = findReusableRun(options.root, candidateSha);
+  if (plan.selection !== "full" || options.noReuse || !reuseEligible(options)) return plan;
   // Fail closed means run the work. The reason carries why, so a run that ran the board for no
   // stated reason cannot be confused with one that never looked.
   const unavailable = (error) =>
@@ -1039,6 +1164,21 @@ function reuseOrKeep(plan, options, candidateSha) {
       plan.target,
       plan.qualification,
     );
+  // PRD-730: the queue takes its own narrow rule, never the generic cross-commit one below.
+  if (options.eventName === "merge_group") {
+    const hit = queueHeadReuse({ root: options.root, plan, queueRef: options.queueRef });
+    if ("error" in hit) return unavailable(hit.error);
+    return selectionPlan(
+      "reused",
+      `queue tree ${hit.tree} equals the head of its pull request and already passed in CI run ${String(hit.runId)}`,
+      plan.files,
+      candidateSha,
+      plan.native,
+      hit.runId,
+      plan.target,
+    );
+  }
+  const found = findReusableRun(options.root, candidateSha);
   if (!("runId" in found)) return unavailable(found.error);
   const current = currentRun({
     eventName: options.eventName,

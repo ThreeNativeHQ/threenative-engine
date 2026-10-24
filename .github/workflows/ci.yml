@@ -19,7 +19,9 @@ on:
   workflow_dispatch: {} # Explicit full audit; never a selectable exemption.
   # PRD-481: the merge queue. GitHub tests the exact result a merge would produce, so two PRs
   # merged back to back can no longer put a tree on develop that nothing tested. Qualification
-  # always runs fresh exhaustive coverage; unproven matrix verdict reuse remains disabled.
+  # always runs fresh exhaustive coverage; unproven matrix verdict reuse remains disabled, with one
+  # exception (PRD-730): a queue commit whose tree is the tree of its pull request's head, which has
+  # a green full run, reuses that run instead of repeating the board.
   merge_group:
     types: [checks_requested]
   schedule:
@@ -72,6 +74,7 @@ jobs:
           # the cache-warm lane on develop and keeps a push to main full.
           TN_CI_TARGET: ${{ github.base_ref || github.event.merge_group.base_ref || (github.event_name == 'push' && github.ref_name) || '' }}
           TN_CI_FORCE_FULL: ${{ vars.TN_CI_FORCE_FULL }}
+          TN_CI_QUEUE_REF: ${{ github.event.merge_group.head_ref }}
           TN_CI_BASE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
           TN_CI_HEAD: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha }}
           GH_TOKEN: ${{ github.token }}
@@ -79,6 +82,7 @@ jobs:
           set -euo pipefail
           extra=()
           if [ "$TN_CI_FORCE_FULL" = true ]; then extra+=(--full); fi
+          if [ -n "$TN_CI_QUEUE_REF" ]; then extra+=(--queue-ref "$TN_CI_QUEUE_REF"); fi
           node scripts/ci-change-scope.mjs "${extra[@]}" \
             --target "$TN_CI_TARGET" \
             --candidate-sha "$(git rev-parse HEAD)" \
@@ -1440,6 +1444,7 @@ jobs:
           TN_CI_CUTOVER: ${{ vars.TN_DEVELOP_CI_ENABLED }}
           TN_CI_BASE_REF: ${{ github.base_ref || github.event.merge_group.base_ref || (github.event_name == 'push' && github.ref_name) || '' }}
           TN_CI_FORCE_FULL: ${{ vars.TN_CI_FORCE_FULL }}
+          TN_CI_QUEUE_REF: ${{ github.event.merge_group.head_ref }}
           TN_CI_HEAD_REF: ${{ github.head_ref }}
           TN_CI_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
           TN_CI_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.event.merge_group.head_sha }}
@@ -1447,6 +1452,13 @@ jobs:
           TN_CI_INTEGRATION_RECEIPT: ${{ needs.integration.outputs.coverage_receipt }}
           GH_TOKEN: ${{ github.token }}
         run: node scripts/ci-required.mjs
+      # PRD-730: a queue run that reused a pull-request run leaves the proof of what it cited.
+      - name: Keep the queue reuse receipt
+        if: ${{ always() && hashFiles('artifacts/ci-queue-reuse/receipt.json') != '' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: ci-queue-reuse-receipt-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/ci-queue-reuse/receipt.json
 
   # PRD-296 item 3. Three gates once sat behind a permanently red one and were skipped on every
   # run this repository had ever produced; nobody had seen any of them fail because nobody had
