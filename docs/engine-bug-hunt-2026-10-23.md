@@ -204,6 +204,29 @@ The watchdog stops itself after its false report. This limits the defect to temp
 
 **Smallest fix:** Dispose owned skeleton resources once per distinct skeleton during model release, with the same shared-resource care as existing geometry/material disposal. This specifically concerns renderer paths allocating bone textures; the default owned renderer's bone-texture allocation was not established.
 
+## Regression coverage
+
+Every finding has a test that failed on the reviewed revision and passes after the fix. The branch is `fix/engine-bug-hunt-2026-10-23`; the pull request is [#564](https://github.com/ThreeNativeHQ/threenative-engine/pull/564).
+
+| Finding | Regression test |
+| --- | --- |
+| F01 | `packages/runtime-native/tests/local_storage_test.cpp`: entry identity and legacy migration |
+| F02 | `packages/core/__tests__/game.spec.ts`: newer goto and stop during load |
+| F03 | `packages/core/__tests__/net-session.spec.ts`: stalled stream timeout and caller abort |
+| F04 | `packages/core/__tests__/net-session.spec.ts`: reliable saturation keeps order |
+| F05 | `packages/physics/__tests__/rigidbody.spec.ts` and the Rust `explicit_mass_is_the_total_body_mass_not_added_to_the_collider` |
+| F06 | `packages/core/__tests__/net-session.spec.ts`: readiness timeout closes the transport |
+| F07 | `packages/core/__tests__/audio.spec.ts`: reused paused voice starts at zero |
+| F08 | `packages/core/__tests__/assets.spec.ts` and `game.spec.ts`: decoder pool disposal |
+| F09 | `packages/core/__tests__/ui-layer.spec.ts`: one browser transition is counted once |
+| F10 | `packages/core/__tests__/input.spec.ts`: a HUD wheel does not zoom the game |
+| F11 | `packages/physics/__tests__/navigation-agent.spec.ts`: elevated target rejected and never reached underneath |
+| F12 | `packages/physics/__tests__/navigation-region.spec.ts`: superseded disposal keeps active agents |
+| F13 | `packages/core/__tests__/game.spec.ts`: stall watch cancelled on stop |
+| F14 | `packages/core/__tests__/assets.spec.ts`: released skinned model frees its bone texture |
+
+Red run on the reviewed revision: 4 network, 9 core and 3 physics tests failed. Green run after the fixes: 288 test files and 4172 tests pass across `packages/core` and `packages/physics` (4 skipped), plus the C++ storage test, the Rust mass test, 269 documentation/CI contract tests, `pnpm check:docs`, package typechecks and Biome.
+
 ## Verification performed
 
 ✅ **354 focused engine tests passed across 11 files.** The first command ran 155 tests in 5.77 seconds; the second ran 199 in 2.19 seconds.
