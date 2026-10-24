@@ -132,7 +132,7 @@ abi::TslArg Tsl::argument(const std::string& name, int index, int count, v8::Loc
     const auto ctx = isolate_->GetCurrentContext();
     Wrapper* w = wrapper(value);
     // A texture names its map by the object's `name`; textureLoad also takes a texture node.
-    const bool texture = index == 0 && name == "texture";
+    const bool texture = index == 0 && (name == "texture" || name == "textureValue");
     const bool textureLoad = index == 0 && name == "textureLoad";
     if (w && !texture && (w->node || !textureLoad)) return abi::TslArg::of(w->node);
     // pmremTexture prefilters the texture object itself and texture3D samples it, and storage reads the attribute's buffer, not a map the material

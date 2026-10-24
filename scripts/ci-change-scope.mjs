@@ -50,7 +50,11 @@ function isNativePath(file) {
 // Derive coverage from shipped kit identities; directory-prefix lookalikes earn no exemption.
 export const TEMPLATE_NAMES = readdirSync(
   new URL("../packages/create-threenative/templates/", import.meta.url),
-).sort();
+  { withFileTypes: true },
+)
+  .filter((entry) => entry.isDirectory())
+  .map((entry) => entry.name)
+  .sort();
 for (const name of TEMPLATE_NAMES) {
   const kit = JSON.parse(
     readFileSync(

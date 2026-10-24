@@ -31,6 +31,21 @@ describe("adapterTextureLimits", () => {
     expect(await adapterTextureLimits()).toEqual({});
   });
 
+  it("raises color attachment bytes past the portable 32, which a 7-target RGBA16Float MRT needs", async () => {
+    // 7 RGBA16Float attachments = 56 bytes per sample; the device default of 32 rejects the pipeline.
+    withAdapter({ maxColorAttachmentBytesPerSample: 128 });
+    expect(await adapterTextureLimits()).toEqual({
+      requiredLimits: { maxColorAttachmentBytesPerSample: 128 },
+    });
+  });
+
+  it("asks for nothing for color attachment bytes at the portable 32 or when the adapter omits it", async () => {
+    withAdapter({ maxColorAttachmentBytesPerSample: 32 });
+    expect(await adapterTextureLimits()).toEqual({});
+    withAdapter({ maxSampledTexturesPerShaderStage: 16 });
+    expect(await adapterTextureLimits()).toEqual({});
+  });
+
   it("asks for nothing on a 16-limit adapter, with no adapter, or without WebGPU", async () => {
     withAdapter({ maxSampledTexturesPerShaderStage: 16, maxSamplersPerShaderStage: 16 });
     expect(await adapterTextureLimits()).toEqual({});

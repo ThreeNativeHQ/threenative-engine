@@ -1,3 +1,4 @@
+import type { ChainStage, IWorldEnvironmentStageContext } from "@threenative/core";
 // Generated user source: this kit's `traa` stage. The chain owns stage order, velocity provisioning
 // and the applied report; this file owns the effect, the camera it jitters and the history it
 // disposes. The chain hands the stage the *sampled* velocity texture, while the accessor TRAANode
@@ -6,7 +7,6 @@ import type { OrthographicCamera, PerspectiveCamera } from "three";
 import type { Node, PassNode, TextureNode } from "three/webgpu";
 import { createTemporalAA } from "./temporalAA.js";
 import type { ITemporalRejectionMeasurement } from "./temporalRejectionCounter.js";
-import type { ChainStage, IWorldEnvironmentStageContext } from "./worldEnvironment.js";
 
 export type TemporalResetReason =
   | "initial"

@@ -2,7 +2,10 @@ import { PerspectiveCamera, Scene, Texture } from "three";
 import { texture, vec4 } from "three/tsl";
 import type { Node, TextureNode } from "three/webgpu";
 import { expect, it } from "vitest";
-import { type OutputRenderer, WorldEnvironment } from "../template-assets/worldEnvironment.js";
+import {
+  type OutputRenderer,
+  WorldEnvironment,
+} from "../../../test-support/isolated-world-environment.js";
 
 /** The motion blur stage as the render chain meets it: asked `available` first, then built. */
 function motionBlurStage(): {

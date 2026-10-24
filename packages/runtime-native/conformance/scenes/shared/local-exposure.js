@@ -1,14 +1,14 @@
 import * as THREE from "three/webgpu";
 import { float, pass, vec4 } from "three/tsl";
-import { LocalExposureNode } from "../../../../create-threenative/templates/starter/src/render/localExposure.ts";
-import { UnrealBloomNode } from "../../../../create-threenative/templates/starter/src/render/unrealBloom.ts";
+import { LocalExposureNode } from "../../../../core/src/look/local-exposure.ts";
+import { UnrealBloomNode } from "../../../../core/src/look/unreal-bloom.ts";
 import { startVisualScene } from "./scene-support.js";
 
 /**
  * PRD-636: the two finishing stages a fresh Unreal project adds that no other row carries, on the
  * host as well as the browser. Local exposure is a bilateral grid of log luminance read back as a
  * per pixel gain, and the Unreal bloom is a downsample chain feeding six Gaussians through a wide
- * float loop. Both are generated template source, so a host that drops a pass or a float target
+ * float loop. Both ship in core, so a host that drops a pass or a float target
  * leaves a game broken where it ships.
  *
  * The frame is built so that a stage that silently does nothing on the host cannot match the

@@ -2,7 +2,7 @@
 
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { PNG } from 'pngjs';
@@ -13,7 +13,6 @@ import {
   parseLinkedLibraries,
   resolveContainer,
 } from './desktop-distribution.mjs';
-import { verifyStarterConsumerGameplay } from './verify-starter-consumer.mjs';
 import { inspectContainerBrand } from './inspect-container-brand.mjs';
 import { inspectMacosIcon } from './inspect-macos-icon.mjs';
 
@@ -300,7 +299,59 @@ function judgeStarterRun({ artifact, brand, frames, log, logPath, reportPath, sc
 
 export { desktopLaunchTarget };
 
-export function verifyStarterDesktop({ frames = 300, project = process.cwd() } = {}) {
+function verifyOwnedDesktop({ frames, project, artifact, artifactDirectory, logPath, run, env }) {
+  const cli = join(project, 'node_modules', '@threenative', 'playtest', 'dist', 'runner', 'cli.js');
+  if (!existsSync(cli)) throw new Error(`TN_NATIVE_STARTER_RUNNER_MISSING: ${cli}`);
+  const temporary = mkdtempSync(join(artifactDirectory, 'smoke-'));
+  const scenario = join(temporary, 'native-smoke.playtest.json');
+  const captures = join(artifactDirectory, 'native-smoke');
+  const screenshot = join(captures, 'after.png');
+  const timeout = Number(env.TN_STARTER_TIMEOUT_MS ?? 300_000);
+  try {
+    rmSync(screenshot, { force: true });
+    writeFileSync(scenario, JSON.stringify({ name: 'native-smoke', schemaVersion: 1,
+      steps: [{ kind: 'wait', waitTicks: 1, label: 'native-smoke' }],
+      assert: { diagnostics: { runtimeReady: true, noConsoleErrors: true, noRuntimeDiagnostics: true } },
+      artifacts: { screenshots: 'after' } }));
+    const result = run(process.execPath, [cli, scenario, '--target', 'desktop', '--project', project,
+      '--artifacts', captures, '--executable', artifact, '--host-arg', '--windowed'], {
+      cwd: project, encoding: 'utf8', timeout, maxBuffer: 32 * 1024 * 1024,
+      env: { ...env, TN_PLAYTEST_COMPLETION_WINDOW_LABEL: 'native-smoke',
+        TN_PLAYTEST_COMPLETION_WINDOW_MIN_FRAMES: String(frames),
+        TN_PLAYTEST_COMPLETION_WINDOW_TIMEOUT_MS: String(Math.max(1, timeout - 10_000)) },
+    });
+    writeFileSync(logPath, `${result.stdout ?? ''}\n${result.stderr ?? ''}`);
+    if (result.error || result.signal || result.status !== 0)
+      throw new Error(`TN_NATIVE_STARTER_SMOKE: runner failed: ${result.error?.message ?? result.signal ?? result.stderr ?? result.status}`);
+    const report = JSON.parse(result.stdout);
+    if (report?.pass !== true || !report.assertionResults?.length
+      || report.assertionResults.some((assertion) => assertion.pass !== true))
+      throw new Error('TN_NATIVE_STARTER_SMOKE: runner assertions missing or failed');
+    const completion = report.acquisition?.completionWindow;
+    const samples = completion?.samples;
+    if (completion?.source !== 'present-return' || completion.timebase !== 'steady-clock-ms'
+      || !Array.isArray(samples) || samples.length < frames || samples.some((sample, index) =>
+        !Number.isSafeInteger(sample.sequence) || sample.sequence < 1 || !Number.isFinite(sample.completedAtMs)
+        || sample.completedAtMs < 0 || (index > 0 && (sample.sequence !== samples[index - 1].sequence + 1
+          || sample.completedAtMs <= samples[index - 1].completedAtMs))))
+      throw new Error(`TN_NATIVE_STARTER_SMOKE: missing ${frames} contiguous native completion observations`);
+    const image = PNG.sync.read(readFileSync(screenshot));
+    const colors = new Set();
+    let opaque = 0;
+    for (let index = 0; index < image.data.length; index += 4) {
+      if (image.data[index + 3] !== 0) opaque += 1;
+      colors.add(image.data.readUInt32BE(index));
+    }
+    if (opaque === 0 || colors.size < 2) throw new Error('native smoke screenshot is blank');
+    return { artifact, gate: 'native-smoke', pass: true, frames: samples.length, requestedFrames: frames,
+      completion, screenshot, width: image.width, height: image.height, assertions: report.assertionResults };
+  } finally {
+    rmSync(temporary, { recursive: true, force: true });
+  }
+}
+
+export function verifyStarterDesktop({ frames = 300, project = process.cwd(), run = spawnSync, env = process.env } = {}) {
+  frames = frameCount(frames);
   const projectRoot = resolve(project);
   const manifest = JSON.parse(readFileSync(join(projectRoot, 'package.json'), 'utf8'));
   const projectName = basename(String(manifest.name ?? 'starter').replace(/^@[^/]+\//u, ''));
@@ -318,13 +369,8 @@ export function verifyStarterDesktop({ frames = 300, project = process.cwd() } =
   // The engine player takes neither `--frames` nor `--screenshot` and prints none of the legacy
   // host's markers, so the playtest runner drives it (PRD-637). The report keeps the same path.
   if (isEnginePlayerLaunch(launch)) {
-    const { row } = verifyStarterConsumerGameplay({ project: projectRoot, target: 'desktop' });
-    const report = {
-      artifact: launch,
-      assertions: row.assertions,
-      gate: 'consumer-playtest',
-      pass: row.pass === true,
-    };
+    const report = verifyOwnedDesktop({ frames, project: projectRoot, artifact: launch,
+      artifactDirectory, logPath, run, env });
     writeFileSync(reportPath, `${JSON.stringify(report, null, 2)}\n`);
     return report;
   }
@@ -469,8 +515,8 @@ if (process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.ar
       process.exit(0);
     }
     const report = options.root ? verifyStarterContainer(options) : verifyStarterDesktop(options);
-    if (report.gate === 'consumer-playtest') {
-      console.log(`starter desktop gate passed: engine player, ${report.assertions} playtest assertions`);
+    if (report.gate === 'native-smoke') {
+      console.log(`starter desktop gate passed: ${report.frames} native presents, ${report.assertions.length} playtest assertions, screenshot ${report.screenshot}`);
       process.exit(0);
     }
     const brand = report.brand === undefined || report.brand === null

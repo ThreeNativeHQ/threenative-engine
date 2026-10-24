@@ -959,17 +959,29 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     if (!this.#enterScene(scene, ctx)) return;
     const renderer = this.#renderer;
     const nodes = this.#computeDriven.warmupNodes;
-    if (renderer === undefined || nodes.length === 0) return;
+    const hasEnvironment = ctx.scene.environment?.isTexture === true;
+    if (renderer === undefined || (nodes.length === 0 && !hasEnvironment)) return;
     this.#sceneEntered = false;
     let report: Awaited<ReturnType<typeof warmUpComputeNodes>> | undefined;
     let failure: string | undefined;
     try {
-      report = await warmUpComputeNodes(renderer, nodes, this.#warmUpOptions());
+      const options = this.#warmUpOptions();
+      if (hasEnvironment) {
+        const projection = this.#projection;
+        projection?.reconcile();
+        const root = projection?.root ?? ctx.scene;
+        this.#matrixWorld?.apply(root);
+        // A new environment skips world draws until its retained bake has completed.
+        report = await warmUpScene(renderer, root, ctx.camera, {
+          ...options,
+          computeNodes: [...(options.computeNodes ?? []), ...nodes],
+        });
+      } else report = await warmUpComputeNodes(renderer, nodes, options);
     } catch (error) {
       failure = error instanceof Error ? error.message : String(error);
     }
     console.log(
-      `TN_TRANSITION_COMPUTE_WARMUP:${JSON.stringify(
+      `${hasEnvironment ? "TN_TRANSITION_WARMUP" : "TN_TRANSITION_COMPUTE_WARMUP"}:${JSON.stringify(
         report === undefined
           ? { failed: failure ?? "unknown" }
           : {
@@ -2056,7 +2068,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         for (const plugin of this.#activePlugins) plugin.beforeUpdate?.(ctx, dt);
         const scene = this.#scene;
         const frame = this.#sceneFrame;
-        if (frame !== undefined) {
+        if (this.#sceneEntered && frame !== undefined) {
           frame(ctx, dt);
           updates += 1;
         }

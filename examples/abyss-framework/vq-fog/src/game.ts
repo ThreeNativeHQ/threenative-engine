@@ -1,3 +1,4 @@
+import { WorldEnvironment } from "@threenative/core";
 import {
   Box3,
   BoxGeometry,
@@ -19,7 +20,6 @@ import {
 import { Scene as GameScene, type ICtx, defineGame } from "../../../../packages/core/src/index.js";
 import { playtest } from "../../../../packages/core/src/playtest.js";
 import { createVolumetricFog } from "../../../../packages/create-threenative/templates/starter/src/render/volumetricFog.js";
-import { WorldEnvironment } from "../../../../packages/create-threenative/templates/starter/src/render/worldEnvironment.js";
 
 import { exposureSettings } from "../../../../packages/create-threenative/template-assets/exposure.js";
 
@@ -394,6 +394,15 @@ export class FogProbe extends GameScene<FogState> {
     const world = new WorldEnvironment({
       autoExposureEnabled: this.#exposureEnabled,
       exposurePolicy: { ...exposureSettings, enabled: true },
+      // Keep this qualification fixture isolated from the core scene look.
+      finalGatherMethod: "none",
+      gtaoEnabled: false,
+      localExposureEnabled: false,
+      motionBlurEnabled: false,
+      ssrEnabled: false,
+      temporalAA: false,
+      unrealBloomEnabled: false,
+      vignetteAmount: 0,
       bloomEnabled: false,
       screenSpaceAA: "disabled",
       tonemapMode: "neutral",

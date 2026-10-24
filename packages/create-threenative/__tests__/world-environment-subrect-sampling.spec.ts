@@ -18,10 +18,13 @@ import {
 } from "three/webgpu";
 import { describe, expect, it, vi } from "vitest";
 import {
+  type OutputRenderer,
+  WorldEnvironment,
+} from "../../../test-support/isolated-world-environment.js";
+import {
   type IResolutionTextureView,
   ResolutionSubrect,
 } from "../../core/src/render/resolution-subrect.js";
-import { type OutputRenderer, WorldEnvironment } from "../template-assets/worldEnvironment.js";
 
 /** The real `WGSLNodeBuilder` output: shader proof only, never pixel proof. */
 type IBuilt = WGSLNodeBuilder & {
@@ -332,8 +335,18 @@ const stage = () => {
   const retained = [colour, depth, normal, occlusion];
   for (const texture of retained) proof.view(texture);
   const unretained = (built: IBuilt): string[] => {
-    const kept = new Set(retained.flatMap((texture) => bindingNames(built, texture)));
-    return allBindingNames(built).filter((name) => !kept.has(name));
+    const kept = new Set(
+      retained.flatMap((texture) =>
+        Object.values(built.bindings.fragment ?? {})
+          .flat()
+          .filter((binding) => binding.texture === texture)
+          .map((binding) => binding.name),
+      ),
+    );
+    // A bound-but-unused texture performs no read; inspect every binding the shader actually samples.
+    return allBindingNames(built).filter(
+      (name) => !kept.has(name) && reads(built.fragmentShader, [name]).length > 0,
+    );
   };
   return { ...proof, ao, depth, denoiser, gtao, normal, occlusion, unretained };
 };
@@ -347,18 +360,15 @@ describe("canonical ambient occlusion under a retained sub-rectangle", () => {
       const half = namesOf(proof.gtao, [scene.halfTexel]);
       expect(fraction).not.toHaveLength(0);
       const depthReads = reads(proof.gtao.fragmentShader, bindingNames(proof.gtao, proof.depth));
-      const normalReads = reads(proof.gtao.fragmentShader, bindingNames(proof.gtao, proof.normal));
+      // Core reconstructs AO normals from depth; the denoiser still samples the normal target.
       expect(depthReads.length).toBeGreaterThan(0);
-      expect(normalReads.length).toBeGreaterThan(0);
       const pairs = new Set(
-        [...depthReads, ...normalReads].map(
-          (read) => retainedViewOf(read, fraction, half)?.fraction,
-        ),
+        depthReads.map((read) => retainedViewOf(read, fraction, half)?.fraction),
       );
       // Every read is clamped by a live view uniform, and each sampler carries its own pair.
       expect(pairs.has(undefined)).toBe(false);
       // GTAO marches depth along its horizons, so every read site owns its own live pair.
-      expect(pairs.size).toBe(depthReads.length + normalReads.length);
+      expect(pairs.size).toBe(depthReads.length);
       expect(pairs.size).toBeGreaterThanOrEqual(4);
       // The half texel is the retained capacity's, not the viewport's.
       for (const name of half) {

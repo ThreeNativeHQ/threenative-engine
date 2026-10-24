@@ -123,17 +123,7 @@ export function stampLoadingSource(canonical: string, template: string): string 
  * hand let one fall a revision behind without anything failing. A file belongs here only when a
  * kit editing it would be a mistake rather than a choice.
  */
-export const SHARED_RENDER_SOURCES = [
-  path.join("src", "render", "worldEnvironment.ts"),
-  path.join("src", "render", "autoExposure.ts"),
-  path.join("src", "render", "exposureGraph.ts"),
-  path.join("src", "render", "exposureReadback.ts"),
-  path.join("src", "render", "tonemap.ts"),
-  path.join("src", "render", "localExposure.ts"),
-  path.join("src", "render", "motionBlur.ts"),
-  path.join("src", "render", "unrealBloom.ts"),
-  path.join("src", "render", "vignette.ts"),
-] as const;
+export const SHARED_RENDER_SOURCES: readonly string[] = [];
 
 export function canonicalRenderSourcePath(relativePath: string, root = templateRoot()): string {
   const name = path.basename(relativePath);

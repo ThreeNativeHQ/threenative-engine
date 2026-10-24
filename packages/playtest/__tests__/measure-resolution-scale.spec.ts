@@ -1,4 +1,4 @@
-import { beforeEach, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { EventEmitter } from "node:events";
 import { PLAYTEST_STARTUP_READY_TIMEOUT_MS } from "../src/protocol.js";
 
@@ -22,6 +22,7 @@ const fixture = vi.hoisted(() => {
     display,
     fs: {
       mkdir: vi.fn(),
+      readFile: vi.fn(),
       symlink: vi.fn(),
       writeFile: vi.fn(),
     },
@@ -64,11 +65,35 @@ beforeEach(() => {
   fixture.createServer.mockReset().mockResolvedValue(fixture.server);
   fixture.display.release.mockReset().mockResolvedValue(undefined);
   fixture.fs.mkdir.mockReset().mockResolvedValue(undefined);
+  fixture.fs.readFile.mockReset();
   fixture.fs.symlink.mockReset().mockResolvedValue(undefined);
   fixture.fs.writeFile.mockReset().mockResolvedValue(undefined);
   fixture.provideDisplay.mockReset().mockResolvedValue(fixture.display);
   fixture.server.close.mockReset().mockResolvedValue(undefined);
   fixture.server.listen.mockReset().mockResolvedValue(undefined);
+});
+
+afterEach(() => vi.unstubAllEnvs());
+
+test("control source is wired into starter postprocessing while retaining core type imports", async () => {
+  vi.stubEnv("TN_RESOLUTION_CONTROL_SOURCE", "/control/worldEnvironment.ts");
+  const control = "export class WorldEnvironment {}";
+  const source = 'import { type OutputRenderer, WorldEnvironment } from "@threenative/core";\nconst world = new WorldEnvironment();';
+  fixture.fs.readFile.mockResolvedValueOnce(control).mockResolvedValueOnce(source);
+  const error = new Error("stop after starter setup");
+  fixture.provideDisplay.mockRejectedValue(error);
+  await expect(importMeasurement()).rejects.toBe(error);
+  expect(fixture.fs.writeFile).toHaveBeenCalledWith(expect.stringMatching(/src\/render\/resolutionControl\.ts$/), control);
+  expect(fixture.fs.writeFile).toHaveBeenCalledWith(expect.stringMatching(/src\/render\/postprocessing\.ts$/),
+    'import { type OutputRenderer } from "@threenative/core";\nimport { WorldEnvironment } from "./resolutionControl.js";\nconst world = new WorldEnvironment();');
+});
+
+test("control source rejects a missing WorldEnvironment import seam before serving", async () => {
+  vi.stubEnv("TN_RESOLUTION_CONTROL_SOURCE", "/control/worldEnvironment.ts");
+  fixture.fs.readFile.mockResolvedValueOnce("export class WorldEnvironment {}").mockResolvedValueOnce('import { Other } from "@threenative/core";');
+  fixture.provideDisplay.mockRejectedValue(new Error("control was not wired"));
+  await expect(importMeasurement()).rejects.toThrow("Starter WorldEnvironment control import source is missing");
+  expect(fixture.createServer).not.toHaveBeenCalled();
 });
 
 test("startup failures close acquired resources and preserve the originating error", async () => {

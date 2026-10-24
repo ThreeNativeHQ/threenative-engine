@@ -1,7 +1,7 @@
 import { DataTexture, FloatType, NearestFilter, RGBAFormat, RenderTarget } from "three";
 import { texture } from "three/tsl";
 import { NodeFrame, NodeMaterial, NodeUpdateType, QuadMesh, WebGPURenderer } from "three/webgpu";
-import { AutoExposureNode, applyExposure } from "../../../template-assets/autoExposure.js";
+import { AutoExposureNode, applyExposure } from "../../../../core/src/look/auto-exposure.js";
 import { exposureReductionSizes, exposureSettings } from "../../../template-assets/exposure.js";
 
 interface IExposureDevice {
