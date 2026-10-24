@@ -200,6 +200,12 @@ export interface IGamePluginRuntime {
    * they read are the ones the world actually has. The frame loop remains held throughout.
    */
   readonly holdStart?: (gate: Promise<void>) => Promise<void>;
+  /**
+   * Settles when the start scene's `load()` has finished, so its entities are registered. A runner's
+   * pre-entry setup awaits it: setup names entities `load()` adds, and an async `load()` (a texture
+   * or a model fetch) is still pending when the runner first attaches. Rejects when `load()` throws.
+   */
+  readonly startSceneLoaded?: () => Promise<void>;
   readonly observations: IGameRuntimeObservations;
   readonly tick: () => number;
   readonly runtimeDiagnosticsSeries?: () => readonly IRenderPerformanceSample[];
@@ -2083,7 +2089,14 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       readonly rejectEntered: (error: unknown) => void;
       readonly resolveEntered: () => void;
     }> = [];
+    let settleLoaded: (error?: unknown) => void = () => undefined;
+    const startLoaded = new Promise<void>((resolve, reject) => {
+      settleLoaded = (error) => (error === undefined ? resolve() : reject(error));
+    });
+    // A run with no setup never awaits it; a failed load is reported by start() itself.
+    void startLoaded.catch(() => undefined);
     const runtime: IGamePluginRuntime = {
+      startSceneLoaded: () => startLoaded,
       fixedStep: (ticks, options) =>
         gameLoop.advance(ticks, { ...options, until: () => this.#pendingSceneEnter !== undefined }),
       sceneTransition: () =>
@@ -2162,7 +2175,9 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       const loaded = scene.load(ctx);
       startHeldLoop();
       if (loaded !== undefined) await loaded;
+      settleLoaded();
     } catch (error) {
+      settleLoaded(error);
       this.#teardown(ctx);
       throw error;
     }

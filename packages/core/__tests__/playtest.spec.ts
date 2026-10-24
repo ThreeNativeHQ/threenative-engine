@@ -921,6 +921,51 @@ describe("playtest holdUntilAttached", () => {
     }
   });
 
+  it("waits for an async load to register entities before it applies setup", async () => {
+    let finishLoad: () => void = () => undefined;
+    const loading = new Promise<void>((resolve) => {
+      finishLoad = resolve;
+    });
+    let entered: number[] | undefined;
+    class AsyncScene extends Scene {
+      override async load(ctx: ICtx): Promise<void> {
+        // A texture or model fetch: the runner's setup arrives while this await is pending.
+        await loading;
+        const placeholder = new Mesh(new BoxGeometry(1, 1, 1), new MeshBasicMaterial());
+        ctx.add(placeholder);
+        ctx.entities.add("player", placeholder);
+      }
+
+      override enter(ctx: ICtx): void {
+        entered = ctx.entities.get<Mesh>("player")?.position.toArray();
+      }
+    }
+    const game = defineGame({
+      initialState: {},
+      plugins: [playtest({ holdUntilAttached: true, attachTimeoutMs: 5_000 })],
+      renderer: stubRenderer(testCanvas()),
+      scenes: { main: AsyncScene },
+      start: "main",
+    });
+    const started = game.start();
+
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      const installed = bridge();
+      if (installed.applySetup === undefined) throw new Error("Setup channel was not installed.");
+      const applied = installed.applySetup({
+        entities: [{ entity: "player", transform: { position: [4, 1, -2] } }],
+      });
+      finishLoad();
+      expect(await applied).toEqual({ entities: ["player"], resources: [] });
+      await installed.describe();
+      await started;
+      expect(entered).toEqual([4, 1, -2]);
+    } finally {
+      game.stop();
+    }
+  });
+
   it("holds a native endpoint run until its no-setup describe handshake", async () => {
     const host = globalThis as Record<string, unknown>;
     const previousEndpoint = host.TN_PLAYTEST_ENDPOINT;
