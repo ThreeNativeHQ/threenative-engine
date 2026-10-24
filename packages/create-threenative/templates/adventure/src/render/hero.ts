@@ -75,18 +75,20 @@ export interface IHeroRig {
 }
 
 /** Hip height: the body group's origin, and the pivot the run and the roll turn about. */
-const HIP = 0.62;
+const HIP = 0.66;
 /** The head's centre above the neck joint, and its radius before the jaw taper. */
 const HC = 0.17;
 const HR = 0.165;
+/** How much the jaw narrows toward the chin. */
+const JAW = 0.4;
 /** The hood: a shell round the head, open over the face from the brim down. */
-const HOOD = { r: 0.205, y: HC + 0.015, z: -0.015, brim: 1.1, window: 0.85, hem: 0.78 * Math.PI };
+const HOOD = { r: 0.19, y: HC + 0.012, z: -0.01, brim: 1.1, window: 0.85, hem: 0.78 * Math.PI };
 /** Where the hood gathers into its tip: up and back. */
 const PEAK = new Vector3(0, 0.55, -0.83).normalize();
 /** The chest's turned profile, [radius, height] from the waist up; its depth is 0.74 of its width. */
 const CHEST: readonly (readonly [number, number])[] = [
-  [0.15, -0.03],
-  [0.158, 0.06],
+  [0.142, -0.03],
+  [0.148, 0.06],
   [0.165, 0.16],
   [0.18, 0.28],
   [0.183, 0.36],
@@ -97,21 +99,22 @@ const CHEST: readonly (readonly [number, number])[] = [
 ];
 const CHEST_DEPTH = 0.74;
 
-type Surface = "cloth" | "hood" | "skin" | "hair" | "leather" | "metal" | "eye";
+type Surface = "cloth" | "hood" | "drape" | "skin" | "hair" | "leather" | "metal" | "eye";
 /** A part: its geometry (already placed in its joint), its colour or a colour per point, its surface. */
 type Part = readonly [BufferGeometry, number | ((p: Vector3) => number), Surface];
 type Point = readonly [number, number, number];
-const CASTS = new Set<Surface>(["cloth", "hood", "leather"]);
+const CASTS = new Set<Surface>(["cloth", "drape", "leather", "skin"]);
 
 function surfaces(): Record<Surface, Material> {
   return {
     cloth: lit(0xffffff, { detail: true, roughness: 0.92, vertexColors: true }),
     // The hood and the mantle are seen from inside through their openings.
     hood: lit(0xffffff, { detail: true, doubleSided: true, roughness: 0.92, vertexColors: true }),
+    drape: lit(0xffffff, { detail: true, doubleSided: true, roughness: 0.92, vertexColors: true }),
     skin: lit(0xffffff, { roughness: 0.6, vertexColors: true }),
     hair: lit(0xffffff, { roughness: 0.5, vertexColors: true }),
     leather: lit(0xffffff, { detail: true, roughness: 0.6, vertexColors: true }),
-    metal: lit(0xffffff, { metalness: 0.85, roughness: 0.32, vertexColors: true }),
+    metal: lit(0xffffff, { metalness: 0.7, roughness: 0.3, vertexColors: true }),
     eye: lit(0xffffff, { roughness: 0.15, vertexColors: true }),
   };
 }
@@ -219,8 +222,8 @@ function bake(joint: Object3D, parts: readonly Part[]): void {
     merged.setAttribute("uv", new BufferAttribute(uv, 2));
     merged.setAttribute("color", new BufferAttribute(colour, 3));
     const mesh = new Mesh(merged, materials[surface]);
-    // Only the cloth and leather cast: the hood, tunic, boots and shield already make her shadow,
-    // and the face, hair and fittings inside it would double her shadow-pass triangles for nothing.
+    // Only the body's big forms cast. The hood does not, so it never darkens the face it frames;
+    // hair and fittings would double her shadow-pass triangles for nothing.
     mesh.castShadow = CASTS.has(surface);
     mesh.receiveShadow = true;
     joint.add(mesh);
@@ -259,7 +262,7 @@ function skull(v: Vector3): void {
   const ny = v.y / HR;
   if (ny >= 0) return;
   v.y *= 1.12;
-  v.x *= 1 - 0.32 * ny * ny;
+  v.x *= 1 - JAW * ny * ny;
   v.z *= v.z > 0 ? 1 - 0.12 * ny * ny : 1 - 0.3 * ny * ny;
 }
 
@@ -268,7 +271,7 @@ function faceZ(x: number, y: number): number {
   if (y >= 0) return Math.sqrt(Math.max(0, HR * HR - x * x - y * y));
   const y0 = y / 1.12;
   const ny = y0 / HR;
-  const x0 = x / (1 - 0.32 * ny * ny);
+  const x0 = x / (1 - JAW * ny * ny);
   return Math.sqrt(Math.max(0, HR * HR - x0 * x0 - y0 * y0)) * (1 - 0.12 * ny * ny);
 }
 
@@ -325,9 +328,9 @@ export function createBlade(): Group {
   const outline = new Shape();
   outline.moveTo(-0.019, 0.1);
   outline.lineTo(0.019, 0.1);
-  outline.lineTo(0.016, 0.62);
-  outline.lineTo(0, 0.75);
-  outline.lineTo(-0.016, 0.62);
+  outline.lineTo(0.016, 0.55);
+  outline.lineTo(0, 0.66);
+  outline.lineTo(-0.016, 0.55);
   outline.closePath();
   const edge = new ExtrudeGeometry(outline, {
     bevelEnabled: true,
@@ -360,11 +363,11 @@ export function createBlade(): Group {
     [at(new SphereGeometry(0.024, 10, 8), 0, 0.08, 0, 0, 0, 0, 1, 0.8, 0.7), C.brass, "metal"],
     [at(new SphereGeometry(0.027, 10, 8), 0, -0.1, 0), C.brass, "metal"],
   ]);
-  blade.add(part(new BoxGeometry(0.01, 0.5, 0.0165), glow(C.ember, 3), 0, 0.37));
+  blade.add(part(new BoxGeometry(0.01, 0.42, 0.0165), glow(C.ember, 3), 0, 0.33));
   return blade;
 }
 
-/** The round shield, face toward +Z: a domed board painted blue and ochre, a brass rim and boss. */
+/** The round shield, face toward +Z: a domed wooden board, an ochre cross, a brass rim and boss. */
 function createShield(): Group {
   const shield = new Group();
   const face = lathe(
@@ -375,21 +378,31 @@ function createShield(): Group {
       [0.2, 0],
       [0.17, 0.012],
       [0.145, 0.019],
-      [0.144, 0.0195],
-      [0.106, 0.026],
-      [0.104, 0.0262],
+      [0.105, 0.026],
       [0.06, 0.031],
       [0, 0.034],
     ],
     24,
   ).rotateX(Math.PI / 2);
-  const field = (p: Vector3): number => {
-    if (p.z < 0) return C.shield;
-    const r = Math.hypot(p.x, p.y);
-    return r < 0.105 ? C.cap : r < 0.1445 ? C.tunicTrim : C.shield;
+  // The dome's height at a radius, for the cross that lies on it.
+  const dome = (r: number): number => {
+    const top = [0.034, 0.031, 0.026, 0.019, 0.012, 0];
+    const rs = [0, 0.06, 0.105, 0.145, 0.17, 0.2];
+    const i = Math.max(0, rs.findIndex((x) => x >= r) - 1);
+    const t = MathUtils.clamp((r - (rs[i] ?? 0)) / ((rs[i + 1] ?? 1) - (rs[i] ?? 0)), 0, 1);
+    return (top[i] ?? 0) + ((top[i + 1] ?? 0) - (top[i] ?? 0)) * t;
   };
+  const cross = [0, Math.PI / 2].map((turn) => {
+    const points: Point[] = [];
+    for (let i = 0; i <= 8; i += 1) {
+      const t = -0.17 + (0.34 * i) / 8;
+      points.push([Math.cos(turn) * t, Math.sin(turn) * t, dome(Math.abs(t)) + 0.003]);
+    }
+    return [strand(points, () => 0.012, 6, 16), C.tunicTrim, "leather"] as const;
+  });
   bake(shield, [
-    [face, field, "leather"],
+    [face, (p) => (Math.hypot(p.x, p.y) > 0.17 ? C.belt : C.shield), "leather"],
+    ...cross,
     [new TorusGeometry(0.2, 0.014, 6, 28), C.brass, "metal"],
     [
       at(new SphereGeometry(0.042, 12, 6, 0, Math.PI * 2, 0, Math.PI / 2), 0, 0, 0.03, Math.PI / 2),
@@ -423,7 +436,7 @@ export function createHero(): IHeroRig {
   bake(body, [
     [
       at(
-        new TorusGeometry(0.163, 0.022, 6, 32).rotateX(Math.PI / 2),
+        new TorusGeometry(0.153, 0.022, 6, 32).rotateX(Math.PI / 2),
         0,
         0.02,
         0,
@@ -438,13 +451,13 @@ export function createHero(): IHeroRig {
       "leather",
     ],
     [
-      at(new TorusGeometry(0.026, 0.0065, 6, 4), 0, 0.02, 0.143, 0, 0, Math.PI / 4),
+      at(new TorusGeometry(0.026, 0.0065, 6, 4), 0, 0.02, 0.136, 0, 0, Math.PI / 4),
       C.brass,
       "metal",
     ],
     [at(new CylinderGeometry(0.048, 0.05, 0.12, 12, 1, true), 0, 0.59, 0), C.skin, "skin"],
   ]);
-  const pouch = joint(body, -0.17, -0.005, 0.075);
+  const pouch = joint(body, -0.16, -0.005, 0.07);
   pouch.rotation.y = -0.8;
   bake(pouch, [
     [
@@ -470,7 +483,7 @@ export function createHero(): IHeroRig {
     ],
     [at(new SphereGeometry(0.009, 6, 4), 0, -0.05, 0.036), C.brass, "metal"],
   ]);
-  const lamp = joint(body, 0.19, 0, 0.09);
+  const lamp = joint(body, 0.18, 0, 0.085);
   bake(lamp, [
     [at(new TorusGeometry(0.012, 0.003, 4, 10), 0, -0.012, 0), C.iron, "metal"],
     [at(new ConeGeometry(0.045, 0.04, 8), 0, -0.045, 0), C.iron, "metal"],
@@ -483,10 +496,10 @@ export function createHero(): IHeroRig {
   const folds = (v: Vector3): void => {
     const depth = MathUtils.clamp(-v.y / 0.33, 0, 1);
     const phi = Math.atan2(v.x, v.z / 0.82);
-    const flare = 1 + 0.055 * depth * Math.sin(9 * phi);
+    const flare = 1 + 0.085 * depth * Math.sin(7 * phi);
     v.x *= flare;
     v.z *= flare;
-    v.y += 0.01 * depth * Math.sin(9 * phi + 0.8);
+    v.y += 0.012 * depth * Math.sin(7 * phi + 0.8);
   };
   bake(skirt, [
     [
@@ -498,8 +511,8 @@ export function createHero(): IHeroRig {
             [0.258, -0.31],
             [0.235, -0.24],
             [0.2, -0.14],
-            [0.172, -0.05],
-            [0.16, 0.005],
+            [0.165, -0.05],
+            [0.15, 0.005],
           ],
           30,
           0.82,
@@ -687,16 +700,21 @@ export function createHero(): IHeroRig {
       "hood",
     ],
     [strand(rim, () => 0.012, 6, 40), C.capDark, "cloth"],
-    [
-      strand(
-        [0.35, 0.8, 1.3, 1.8, 2.2].map((theta) => hoodPoint((Math.PI * 3) / 2, theta)),
-        () => 0.005,
-        5,
-        16,
-      ),
-      C.capDark,
-      "cloth",
-    ],
+    ...[0, -0.55, 0.55].map(
+      (turn) =>
+        [
+          strand(
+            [0.35, 0.8, 1.3, 1.8, 2.2].map((theta) =>
+              hoodPoint((Math.PI * 3) / 2 + turn, theta + Math.abs(turn) * 0.6),
+            ),
+            () => (turn === 0 ? 0.005 : 0.004),
+            5,
+            16,
+          ),
+          C.capDark,
+          "cloth",
+        ] as const,
+    ),
   );
   bake(head, face);
 
@@ -728,9 +746,9 @@ export function createHero(): IHeroRig {
       strand(
         [
           [0, 0, 0],
-          [0, -0.03, -0.04],
-          [0, -0.1, -0.062],
-          [0, -0.18, -0.055],
+          [0, -0.04, -0.04],
+          [0, -0.11, -0.07],
+          [0, -0.19, -0.075],
         ],
         (t) => 0.045 * (1 - t) + 0.006,
         10,
@@ -751,9 +769,10 @@ export function createHero(): IHeroRig {
     [0.12, 0.565],
     [0.1, 0.585],
   ];
+  // The hem is dagged: it hangs in soft points.
   const wave = (phi: number, y: number): number =>
-    0.012 * MathUtils.clamp((0.44 - y) / 0.05, 0, 1) * Math.sin(7 * phi);
-  const mantle = shape(lathe(mantleProfile, 26, 0.8, gap, Math.PI * 2 - 2 * gap), (v) => {
+    -0.03 * MathUtils.clamp((0.44 - y) / 0.05, 0, 1) * Math.max(0, Math.sin(8 * phi)) ** 2;
+  const mantle = shape(lathe(mantleProfile, 40, 0.8, gap, Math.PI * 2 - 2 * gap), (v) => {
     v.y += wave(Math.atan2(v.x, v.z / 0.8), v.y);
   });
   const around = (phi: number, [r, y]: readonly [number, number]): Point => [
@@ -762,12 +781,12 @@ export function createHero(): IHeroRig {
     0.8 * r * Math.cos(phi),
   ];
   const hem: Point[] = [];
-  for (let i = 0; i <= 24; i += 1)
-    hem.push(around(gap + ((Math.PI * 2 - 2 * gap) * i) / 24, [0.264, 0.39]));
+  for (let i = 0; i <= 48; i += 1)
+    hem.push(around(gap + ((Math.PI * 2 - 2 * gap) * i) / 48, [0.264, 0.39]));
   const clasp = (s: number): Point => around(s * gap, [0.188, 0.515]);
   bake(body, [
-    [mantle, C.cap, "hood"],
-    [strand(hem, () => 0.01, 5, 32), C.capDark, "cloth"],
+    [mantle, C.cap, "drape"],
+    [strand(hem, () => 0.01, 5, 64), C.capDark, "cloth"],
     ...[-1, 1].map(
       (s) =>
         [
@@ -799,9 +818,9 @@ export function createHero(): IHeroRig {
     [
       lathe(
         [
-          [0, -0.4],
-          [0.026, -0.385],
-          [0.036, -0.3],
+          [0, -0.33],
+          [0.026, -0.315],
+          [0.036, -0.24],
           [0.04, 0.3],
           [0.042, 0.37],
           [0, 0.371],
@@ -827,9 +846,9 @@ export function createHero(): IHeroRig {
     [
       lathe(
         [
-          [0, -0.415],
-          [0.03, -0.39],
-          [0.04, -0.33],
+          [0, -0.345],
+          [0.03, -0.32],
+          [0.04, -0.26],
         ],
         10,
         0.5,
@@ -865,11 +884,11 @@ export function createHero(): IHeroRig {
       [
         lathe(
           [
-            [0.056, -0.205],
-            [0.06, -0.18],
-            [0.07, -0.12],
-            [0.078, -0.06],
-            [0.075, 0],
+            [0.052, -0.205],
+            [0.057, -0.18],
+            [0.073, -0.11],
+            [0.085, -0.05],
+            [0.078, 0],
           ],
           14,
         ),
@@ -909,24 +928,35 @@ export function createHero(): IHeroRig {
         "leather",
       ],
       [
-        at(new SphereGeometry(0.042, 10, 8), 0, -0.215, 0.004, 0, 0, 0, 0.8, 1.1, 0.62),
+        at(new SphereGeometry(0.046, 10, 8), 0, -0.215, 0.004, 0, 0, 0, 0.8, 1.05, 0.66),
         C.gloves,
         "leather",
       ],
-      [
-        at(new CapsuleGeometry(0.018, 0.045, 3, 8), 0, -0.245, 0.02, 0, 0, Math.PI / 2),
-        C.gloves,
-        "leather",
-      ],
+      ...[-0.021, -0.007, 0.007, 0.021].map(
+        (z) =>
+          [
+            at(
+              new CapsuleGeometry(0.0115, 0.02, 2, 6),
+              -side * 0.012,
+              -0.25,
+              z + 0.004,
+              0,
+              0,
+              Math.PI / 2,
+            ),
+            C.gloves,
+            "leather",
+          ] as const,
+      ),
       [
         at(
-          new CapsuleGeometry(0.014, 0.025, 3, 6),
-          -side * 0.012,
-          -0.21,
-          0.035,
-          -0.5,
+          new CapsuleGeometry(0.013, 0.03, 2, 6),
+          -side * 0.02,
+          -0.215,
+          0.034,
+          -0.4,
           0,
-          side * 0.5,
+          side * 0.6,
         ),
         C.gloves,
         "leather",
@@ -939,9 +969,9 @@ export function createHero(): IHeroRig {
       [
         lathe(
           [
-            [0.058, -0.28],
-            [0.066, -0.22],
-            [0.076, -0.08],
+            [0.058, -0.3],
+            [0.066, -0.24],
+            [0.076, -0.09],
             [0.078, 0.02],
           ],
           14,
@@ -949,19 +979,19 @@ export function createHero(): IHeroRig {
         C.trousers,
         "cloth",
       ],
-      [at(new SphereGeometry(0.058, 10, 8), 0, -0.28, 0), C.trousers, "cloth"],
+      [at(new SphereGeometry(0.058, 10, 8), 0, -0.3, 0), C.trousers, "cloth"],
     ]);
     const shin = shins[name];
-    shin.position.y = -0.28;
+    shin.position.y = -0.3;
     leg.add(shin);
     bake(shin, [
       [
         lathe(
           [
-            [0.05, -0.245],
-            [0.062, -0.225],
-            [0.06, -0.19],
-            [0.066, -0.12],
+            [0.05, -0.265],
+            [0.062, -0.245],
+            [0.06, -0.205],
+            [0.066, -0.13],
             [0.072, -0.075],
             [0.09, -0.06],
             [0.092, -0.01],
@@ -973,12 +1003,12 @@ export function createHero(): IHeroRig {
         "leather",
       ],
       [
-        at(new SphereGeometry(0.062, 12, 8), 0, -0.245, 0.045, 0, 0, 0, 0.95, 0.72, 1.75),
+        at(new SphereGeometry(0.062, 12, 8), 0, -0.265, 0.045, 0, 0, 0, 0.95, 0.72, 1.75),
         C.leather,
         "leather",
       ],
       [
-        at(new CylinderGeometry(0.064, 0.064, 0.022, 16), 0, -0.289, 0.045, 0, 0, 0, 1, 1, 1.8),
+        at(new CylinderGeometry(0.064, 0.064, 0.022, 16), 0, -0.309, 0.045, 0, 0, 0, 1, 1, 1.8),
         C.sole,
         "leather",
       ],
@@ -1083,8 +1113,8 @@ export function createHero(): IHeroRig {
       );
       arms.left.rotation.set(-swing * 0.8, 0, 0.1 + breath * 0.02);
       arms.right.rotation.set(swing * 0.8 - (drawn ? 0.3 : 0), 0, -0.1 - breath * 0.02);
-      fores.left.rotation.set(-0.15 - 0.75 * run, 0, 0);
-      fores.right.rotation.set(-0.15 - 0.75 * run - (drawn ? 0.3 : 0), 0, 0);
+      fores.left.rotation.set(-0.3 - 0.6 * run, 0, 0);
+      fores.right.rotation.set(-0.3 - 0.6 * run - (drawn ? 0.3 : 0), 0, 0);
       head.rotation.set(-run * 0.1, Math.sin(time * 0.9) * 0.08 * (1 - run), 0);
       armShield.position.set(0.055, -0.1, 0);
       armShield.rotation.set(0, Math.PI / 2, 0);
@@ -1112,7 +1142,7 @@ export function createHero(): IHeroRig {
       } else if (state === "block" || guard > 0.01) {
         // The shield comes up across her chest, face forward; she braces lower.
         arms.left.rotation.set(-1.45 * guard, 0, MathUtils.lerp(0.1, -0.3, guard));
-        fores.left.rotation.set(MathUtils.lerp(-0.15, 0, guard), 0, 0);
+        fores.left.rotation.set(MathUtils.lerp(-0.3, 0, guard), 0, 0);
         armShield.position.set(
           MathUtils.lerp(0.055, 0, guard),
           MathUtils.lerp(-0.1, -0.12, guard),
@@ -1137,16 +1167,21 @@ export function createHero(): IHeroRig {
         shins.left.rotation.set(0.3, 0, 0);
         shins.right.rotation.set(0.3, 0, 0);
       } else if (state === "roll") {
-        // A tucked somersault: the body shrinks into a ball and turns about the hip, which lifts
-        // enough that the hood never dips under the floor.
+        // A tucked somersault: knees to chest, head down, the ball turning about its own middle
+        // (0.3 m above the hip, before the squash), which stays high enough that the hood never dips under the floor.
         const tuck = Math.sin(progress * Math.PI);
-        body.rotation.x = progress * Math.PI * 2;
-        body.scale.setScalar(1 - 0.28 * tuck);
-        body.position.y = HIP + 0.08 * tuck;
-        legs.left.rotation.x = -1.4 * tuck;
-        legs.right.rotation.x = -1.4 * tuck;
-        shins.left.rotation.x = 1.6 * tuck;
-        shins.right.rotation.x = 1.6 * tuck;
+        const turn = progress * Math.PI * 2;
+        // The spine squashes, cartoon-style, so she reads as a ball rather than a turning plank.
+        const scale = 1 - 0.45 * tuck;
+        const middle = MathUtils.lerp(HIP + 0.3, 0.42, tuck);
+        body.rotation.x = turn;
+        body.scale.set(1 - 0.15 * tuck, scale, 1 - 0.15 * tuck);
+        body.position.set(0, middle - 0.3 * scale * Math.cos(turn), -0.3 * scale * Math.sin(turn));
+        head.rotation.x = 0.7 * tuck;
+        legs.left.rotation.x = -2.1 * tuck;
+        legs.right.rotation.x = -2.1 * tuck;
+        shins.left.rotation.x = 2.3 * tuck;
+        shins.right.rotation.x = 2.3 * tuck;
         arms.left.rotation.set(-1.2 * tuck, 0, 0.3);
         arms.right.rotation.set(-1.2 * tuck, 0, -0.3);
         fores.left.rotation.x = -1.2 * tuck;
@@ -1168,15 +1203,20 @@ export function createHero(): IHeroRig {
       }
 
       // Secondary motion. Each hanging part chases where her motion would throw it: back with
-      // speed, up as she drops, side to side with the stride, a slow sway at rest.
+      // speed, up as she drops, side to side with the stride, a slow sway at rest. The hood tip
+      // falls toward her left shoulder blade, so it shows in her silhouette from behind.
       const step = Math.min(dt, 1 / 30);
       const lift = MathUtils.clamp((body.position.y - lastY) / Math.max(dt, 1e-3), -3, 3);
       lastY = body.position.y;
       const idle = Math.sin(time * 1.7) * (1 - run);
       hoodTip.rotation.set(
-        chase(springs.tip, run * 0.55 - lift * 0.3 + idle * 0.06, step),
+        chase(springs.tip, run * 0.15 - lift * 0.4 + idle * 0.06, step),
         0,
-        chase(springs.tipSide, Math.sin(cycle) * 0.14 * run + Math.sin(time * 1.1) * 0.05, step),
+        chase(
+          springs.tipSide,
+          0.35 + Math.sin(cycle) * 0.14 * run + Math.sin(time * 1.1) * 0.05,
+          step,
+        ),
       );
       const sway = chase(springs.locks, run * 0.35 - lift * 0.18 + idle * 0.04, step, 110, 10);
       for (const [i, lock] of locks.entries())

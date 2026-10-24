@@ -890,7 +890,7 @@ export function plantVale(site: IValeSite): {
       false,
     ),
   );
-  // The canopy's shade: leaf-sized discs high over the clearing that only cast shadow, so the
+  // The canopy's shade: leaf-sized pentagons high over the clearing that only cast shadow, so the
   // floor is dappled. Its gaps sit where the sun shafts come down, so each shaft lands in light.
   const canopyY = 10;
   const gaps = SHAFTS.map(([x, z, r]) => {
@@ -905,7 +905,7 @@ export function plantVale(site: IValeSite): {
     if (gaps.some(([gx, gz, gr]) => Math.hypot(x - gx, z - gz) < gr + r * 0.5)) continue;
     if (Math.sin(x * 0.7) * Math.cos(z * 0.6) + Math.sin(x * 0.23 + z * 0.31) > 1.65) continue;
     discs.push(
-      new CircleGeometry(r, 6)
+      new CircleGeometry(r, 5)
         .rotateX(-Math.PI / 2)
         .scale(1, 1, 0.6 + rng() * 0.6)
         .rotateY(spin())
