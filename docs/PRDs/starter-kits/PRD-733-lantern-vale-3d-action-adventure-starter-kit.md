@@ -461,6 +461,51 @@ Each playtest runs on a project scaffolded from `--template adventure`:
   Green at 65°: all 11 scenarios exit 0 on the nvidia turing adapter (`boss` torso 0.321, ring
   0.361, contact 0.606, framed 0.993, opening 0.984, occluded 0, worst turn 2.33°; `flicker`
   occluded 0); `performance` p95 17.7 ms, 303 draws, 168,725 triangles, no budget raised.
+- 2026-10-24 (owner via the lead: "for zelda, try this look and feel", "all procedural please",
+  Unreal-like GI and atmosphere, "maps also look flat", the core Unreal defaults with no exposure
+  pin; look rounds decided without the owner, who is AFK):
+  - Look round 1 (`179e25913`): `valeHeight(x, z)` gives the vale relief (banks, outcrops, a stream
+    bed, a rise to the dungeon, level play spaces) and every entity snaps to it. Giant trees, a
+    canopy shade that dapples the floor, height mist, fireflies, a hollow-tree hut, signs, a pitcher
+    lantern and a companion orb. The sun shafts are soft additive tubes, because the core `godRays`
+    stage does not run on the owned engine yet. The follow camera keeps clearance over the ground
+    (`thornback`: 41 ticks under a bank before, 0 after). Judge: PASS by the written rule, FAIL once
+    the owner's anti-tiling criterion T1 counts.
+  - Look round 2 (`9154b53bd`): PCF dapple with a penumbra, rounded cobbles, darker moss, thinner
+    near mist. `905b27d2f` draws the canopy shade as pentagons to stay under 190,000 triangles.
+  - Dungeon contrast (owner: "crisp, contrasty, not washed out; at least as readable as
+    2150413e6", `9d26d21aa`): the sky light indoors drops from a tenth to a twentieth and the Hollow
+    mist thins (distance 0.004, density 0.002, glow 0.5). `warden-opening` luminance sd 0.132, p5
+    0.345 against 0.118 and 0.365 at `2150413e6`. No exposure pin.
+  - Judge look round 2 (fresh Opus, high effort; BEFORE `cb2d49a`, AFTER `63a47cbfb`, two runs
+    each; references: the owner image, `2150413e6`, three remake-video frames for look only, not
+    committed): **PASS**. L1-L5 IMPROVEMENT, L6, C1-C4 and R1 NEUTRAL, T1 PASS on the grazing floor
+    view, D1 PASS (narrow: the far third of the Warden room still carries some haze). Notes for a
+    later round: a darker vale foreground, less fog at the back of the Warden room, softer canopy
+    shadow shapes.
+  - Hero rebuild (owner: "polish zelda and mario characters, they kind of still suck"; 4-5 heads,
+    original, no Link likeness): `5d457c82e` rebuilds Wren as turned and swept parts with a face,
+    and rounds 2-13 (`905b27d2f` to `63a47cbfb`) shape the hood, mantle, hands, boots, skirt and
+    holds. Every judge round from r4 found IMPROVEMENT over `9154b53bd` and passed the front, face,
+    outfit, poses and originality. Rounds r4-r13 FAIL narrowly on one item: from the chase camera
+    the back of the hood reads as a smooth dome. r12 compared a hood tail with none and chose none
+    (the tail read as a beak), so `63a47cbfb` drops it and adds a top-back peak, a centre seam,
+    folds at the mantle and a darker lower hood. A round 14 (lower peak, darker palette,
+    crown-to-mantle creases) was reverted: it cast a face-like shadow on the hood back and did not
+    change the in-game lavender, which comes from the dungeon light on the hood top. Open.
+  - The sculpt MCP spec gate was not completed for Wren: she is code-built parts in `hero.ts`, and
+    the judge loop above stood in for `sculpt_pass_gate`.
+  - Black warden frames in some capture runs came from host load (load 70-140): the same build
+    captured clean at load 40.
+  Green at `63a47cbfb`: the 11 kit scenarios exit 0 on the nvidia turing adapter (consumer
+  installed from the 00:57 tarballs). The four PRD-735 gates (`controls`, `explore`, `look`,
+  `stride`) need a newer playtest runner and core than that install: `explore` and `stride` are
+  rejected as unknown keys (`seed`, `footSlip`), and `stride` names `footL`/`footR` nodes that
+  Wren's rig does not carry yet. `performance`, tier high, RTX 2080, presented p95 18.4-19.1 ms,
+  332-345 draws, 187,601 triangles. A paired A/B against `99f1309c4` at host load 33-37 shows no
+  cost from these rounds (presented p95 19.1 and 37.0 for A, 18.4 and 18.5 for B). Tier medium,
+  Intel gen-12lp laptop: p95 17.7 ms, 58.1 fps, 329 draws, 187,593 triangles. Tier low not
+  measured. No budget raised.
 
 ## Execution Phases
 
@@ -511,4 +556,4 @@ visible, and no frame is blank or white.
 
 - [x] AC-8: the kit passes every registration gate and the template lane. proof: `pnpm budgets && pnpm exec vitest run scripts/__tests__/ci-structure.spec.ts scripts/__tests__/primary-docs.spec.ts scripts/__tests__/check-template-conventions.spec.ts && pnpm test:templates` — Evidence: `pnpm budgets` exit 0. The registration specs (scaffold, looks, auto-exposure-scaffold, ci-structure, primary-docs, check-template-conventions, playtest) pass 370/370 on the kit's own tree, with the adventure scaffold hash re-pinned after the hero and camera edits. `pnpm check:docs` passes. `TN_TEMPLATE_ONLY=adventure` template lane: 9 scenarios plus the boot smoke pass ("adventure: scaffolded playtests passed"). After the hero and camera edits, all 9 scenarios rerun green on the nvidia adapter (`performance`: p95 18.5 ms, 275 draws, 34,477 triangles, tier high). `pnpm test:tone` has no adventure case, so it did not run. After the owner polish round (hero, floor, vegetation, Flicker, Thornback), all 11 scenarios exit 0 on the nvidia turing adapter (`performance`: p95 18.4 ms, 304 draws, 168,725 triangles, tier high, no budget raised). The 9 registration specs pass 402/402 with the hash re-pinned, `pnpm budgets` exit 0 (the PRD-289 conventions row now cites `Hero.ts:144`), `pnpm check:docs` exit 0. After the judge round 2 readability fixes: all 11 scenarios exit 0 (`performance` p95 17.7 ms, 303 draws, 168,725 triangles), the 9 specs pass 402/402 with the hash re-pinned, `pnpm budgets` exit 0. After the Warden recoil: all 11 scenarios exit 0 again (`boss` framed 0.998, occluded 0; `performance` p95 17.7 ms, 305 draws, 168,701 triangles, no budget raised), the 9 specs pass 402/402 with the hash re-pinned. After the judge round 3 opening and toast fixes: all 11 scenarios exit 0 (`performance` p95 18.2 ms, 303 draws, 168,701 triangles), the 9 specs pass 402/402 with the hash re-pinned, `pnpm budgets` exit 0. After the round 5 camera turn cap and close-range rise: all 11 scenarios exit 0 (`performance` p95 18 ms, 304 draws, 168,701 triangles), the 9 specs pass 402/402 with the hash re-pinned, `pnpm budgets` exit 0. After the round 6 Warden orbit and chest-ring probe: all 11 scenarios exit 0 (`performance` p95 18.1 ms, 304 draws, 168,749 triangles), the 9 specs pass 402/402 with the hash re-pinned, `pnpm budgets` exit 0, `pnpm check:docs` exit 0, the scaffolded project typechecks. After the round 7 65° orbit cap and ring-width assert: all 11 scenarios exit 0 (`performance` p95 17.7 ms, 303 draws, 168,725 triangles), the 9 specs pass 402/402 with the hash re-pinned, `pnpm budgets` exit 0, the scaffolded project typechecks.
 - [ ] AC-9: the kit runs 300 frames on the native desktop engine player with a non-blank capture. proof: `node packages/playtest/dist/runner/cli.js <project>/native-playtests/survives.playtest.json --target desktop` — Evidence: open, engine-blocked (see `## Blocked on`). `pnpm build --target desktop` with the worktree's `tn-native-engine-player-v8` builds `dist-native/adventure/adventure`. The run exits 2 with `TN_INSPECT_GAME_BRIDGE: TypeError: TN_TSL uniform: expected a TSL node or number`, the core auto exposure blocker PRD-732 also records.
-- [ ] AC-10: the visual judge returns pass on every criterion above for all three poses. proof: the judge report linked from the PR — Evidence: open, for the lead's judge. Captures, headed WebGPU on the nvidia adapter, two runs per pose: `~/Downloads/lantern-vale/01-vale-run1.png` to `06-warden-run2.png`. All six report `TN_WORLD_ENVIRONMENT` `tonemapMode: "filmic"` and `TN_AUTO_EXPOSURE` measured and applied (settled in the vale and the block room, still settling at the Warden pose). Gameplay video: `~/Downloads/lantern-vale/lantern-vale-gameplay.mp4` (31.5 s: the lock-on arrow and slash, shield block, block push and grate, key and door, the Warden stun). Lock-on stills, headed WebGPU on the nvidia adapter, two runs per pose: `07-lockon-mossling-run1.png` to `10-lockon-warden-run2.png`. Round 1 moved to `~/Downloads/lantern-vale/round1/`. Polish round (2026-10-24): `01-vale.png` to `13-flicker-block.png` labelled "LANTERN VALE ca97704", `hero-front/side/back/guard.png` (WebGL turnaround viewer, not the game renderer), and `lantern-vale-gameplay.mp4` (51 s, live clock, labelled `20b0d9e06`). Immutable provenance export for the Unreal comparison: `~/.hermes/cache/scratch/starter-kits-unreal-comparison-20261024/captures/adventure/20b0d9e065e3cae7e3f0b5e085cb89ec515f637d/` (3 poses, tier high, RTX 2080, 1280x720 and 1920x1080, state.json, scene.glb, SHA256SUMS, read-only). A repeat run differs by a mean of 0.4-3.2 of 255, because TSL `time` sway and the effects run on wall time.
+- [ ] AC-10: the visual judge returns pass on every criterion above for all three poses. proof: the judge report linked from the PR — Evidence: open, for the lead's judge. Captures, headed WebGPU on the nvidia adapter, two runs per pose: `~/Downloads/lantern-vale/01-vale-run1.png` to `06-warden-run2.png`. All six report `TN_WORLD_ENVIRONMENT` `tonemapMode: "filmic"` and `TN_AUTO_EXPOSURE` measured and applied (settled in the vale and the block room, still settling at the Warden pose). Gameplay video: `~/Downloads/lantern-vale/lantern-vale-gameplay.mp4` (31.5 s: the lock-on arrow and slash, shield block, block push and grate, key and door, the Warden stun). Lock-on stills, headed WebGPU on the nvidia adapter, two runs per pose: `07-lockon-mossling-run1.png` to `10-lockon-warden-run2.png`. Round 1 moved to `~/Downloads/lantern-vale/round1/`. Polish round (2026-10-24): `01-vale.png` to `13-flicker-block.png` labelled "LANTERN VALE ca97704", `hero-front/side/back/guard.png` (WebGL turnaround viewer, not the game renderer), and `lantern-vale-gameplay.mp4` (51 s, live clock, labelled `20b0d9e06`). Immutable provenance export for the Unreal comparison: `~/.hermes/cache/scratch/starter-kits-unreal-comparison-20261024/captures/adventure/20b0d9e065e3cae7e3f0b5e085cb89ec515f637d/` (3 poses, tier high, RTX 2080, 1280x720 and 1920x1080, state.json, scene.glb, SHA256SUMS, read-only). A repeat run differs by a mean of 0.4-3.2 of 255, because TSL `time` sway and the effects run on wall time. Look round (2026-10-24, `63a47cbfb`): the look judge round 2 returns PASS on L1-L6, C1-C4, R1, T1 and D1 (see Decisions); the hero judge r13 returns FAIL, narrow, on the back of the hood from the chase camera only. Still open for the hero item. Stills, hero turnaround and the two films, labelled `LANTERN VALE 63a47cbfb`: `~/Downloads/lantern-vale/look1/final/`, copied to `docs/PRDs/starter-kits/screenshots/lantern-vale/`.
