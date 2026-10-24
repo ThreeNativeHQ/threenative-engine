@@ -74,6 +74,18 @@ it("starts from the tier named by renderChainTier, and an explicit option beats 
   expect(requested[1]?.stages).not.toContain("bloom");
 });
 
+it("gathers screen-space GI at half resolution by default, reports it, and keeps 1 as the named override", () => {
+  const info = vi.spyOn(console, "info").mockImplementation(() => {});
+  const marker = (options: ConstructorParameters<typeof WorldEnvironment>[0]) => {
+    info.mockClear();
+    apply(options, renderer("webgpu", { library: { addToneMapping() {} } }).target);
+    const line = info.mock.calls.map(String).find((text) => text.startsWith("TN_WORLD_ENVIRONMENT:"));
+    return JSON.parse(line?.slice("TN_WORLD_ENVIRONMENT:".length) ?? "{}");
+  };
+  expect(marker({}).ssgiResolutionScale).toBe(0.5);
+  expect(marker({ ssgiResolutionScale: 1 }).ssgiResolutionScale).toBe(1);
+});
+
 it("does not let an undefined option cancel the preset", () => {
   const { requested, target } = renderer("webgpu", { library: { addToneMapping() {} } });
   apply({ gtaoEnabled: undefined }, target);
