@@ -581,6 +581,19 @@
       "required": true
     },
     {
+      "id": "27-tsl-attribute-color",
+      "title": "TSL attribute(\"color\") in a colorNode without vertexColors",
+      "category": "webgpu-tsl",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/tsl-attribute-color.js",
+      "tolerance": {
+        "pixelMismatchRatio": 0.01,
+        "perceptualDeltaE": 3.0
+      },
+      "desktopGate": false,
+      "required": true
+    },
+    {
       "id": "28-shape-geometry",
       "title": "shape geometry",
       "category": "geometry",

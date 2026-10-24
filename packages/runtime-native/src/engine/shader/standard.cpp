@@ -730,6 +730,7 @@ void linkNodeVaryings(StandardPrograms& out, const VertexVariant& variant, ExprI
             value = v.mul(v.uniform("modelNormalMatrix", Type::mat(3, 3)), normal);
         else if (name == "instanceIndex" || name == "vertexIndex") value = v.builtin(name);
         else if (name == "positionGeometry") value = v.attribute("position", type);
+        else if (name == "vertexColor") value = v.attribute("color", type);
         else value = v.attribute(name, type);
         v.output(name, value);
     }

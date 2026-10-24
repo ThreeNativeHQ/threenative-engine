@@ -368,7 +368,16 @@ void nodes() {
     CHECK(!buildBasic(invalid).vertex.ok());
     variant.nodes.positionNode = g::vec4({g::positionLocal(), g::float_(1)});
     CHECK(buildBasic(variant).vertex.ok()); // setupPosition subBuild requests vec3
-
+    // attribute("color") read in a fragment rides a varying, which must not take the colour output's name.
+    VertexVariant painted;
+    painted.nodes.colorNode = g::vec4({g::attribute("color", Type::vec(3)), g::float_(1)});
+    for (const auto& built : {buildBasic(painted), buildStandard(StandardMaterial{}, painted)}) {
+        CHECK(built.vertex.ok() && built.fragment.ok());
+        const auto pv = WgslEmitter::emit(built.vertex, 0), pf = WgslEmitter::emit(built.fragment, 1);
+        CHECK(pv.ok() && pf.ok());
+        CHECK(pv.code.find("a_color") != std::string::npos);
+        stagesAgree(built.fragment, pv.code, pf.code);
+    }
 }
 
 void builds() {
