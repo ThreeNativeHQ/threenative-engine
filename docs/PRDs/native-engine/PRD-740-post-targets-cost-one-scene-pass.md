@@ -56,10 +56,11 @@ draw again on every frame. The compute dispatches also create 30 to 43 bind grou
 ### Phase 3 — measured and judged
 
 - [x] The native engine suites pass. proof: `ctest -L native-engine` — 436/436 pass with both commits in the tree (2026-10-24).
-- [ ] The web Wasm engine builds. proof: `cmake --build build/wasm --target tn-native-engine-web`
-- [ ] Hop Garden at tier high draws fewer calls per rendered frame than the baseline, steady window. proof: `measure.mjs` runs `before-1/2` and `after-1/2`
+- [x] The web Wasm engine builds. proof: `cmake --build build/wasm --target tn-native-engine-web` — exit 0, `tn-native-engine-web.wasm` 4,145,332 bytes (2026-10-24).
+- [x] Hop Garden at tier high draws fewer calls per rendered frame than the baseline, steady window. proof: `measure.mjs` runs `before-1/2` and `after-1/2` — median per rendered frame, before (4 runs) vs after (2 runs): draws 650-696 -> 114-122, `setBindGroup` 1,255-1,347 -> 183-199, render passes 78 -> 76, `createBindGroup` 16-17 -> 5, submits 40-41 -> 39-41 (unchanged). Main pass span p95 per 5 s window 6.1-11.5 ms before, 6.5-10.3 ms after: no change shown under Xvfb, where the Wasm frame cap holds about 20 rendered frames a second. Lantern Vale draws 821 -> 181, Clover Cup 116 -> 56 (2026-10-24).
   Draws, `setBindGroup`, submits, render passes, `createBindGroup` and the main pass p95; headed Chromium, WebGPU, adapter `nvidia turing`.
 - [ ] Visual judge on Hop Garden, Lantern Vale and Clover Cup, two runs per arm, returns NEUTRAL or better. proof: a fresh read-only Opus judge on `~/Downloads/mrt-merge-judge/`
+  Open (2026-10-24): two labelled judges returned Lantern Vale NEUTRAL, Clover Cup NEUTRAL, Hop Garden REGRESSION ("AFTER grass lighter, weaker occlusion"), so OVERALL REGRESSION. A blinded control judge on the same Hop captures (sets P and Q, arm not named) returned "DIFFERENT: NO". Over 5 runs per arm (one blank before-arm capture dropped), the named grass patch's mean grey moves +0.0007 (0.38 → 0.38) and the hillside -0.0006, inside 0.2 grey levels of 255. A native dump of the normal, albedo and emissive targets for an instanced, double-sided, two-sided-foliage, vertex-coloured Standard draw, a tilted emissive Physical draw and a flat Lambert draw is byte-identical between the base commit and this branch. No cause is found; the verdict stays REGRESSION until a judge passes.
 
 ## Decisions
 
