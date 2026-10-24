@@ -193,6 +193,31 @@ export function liveUniforms<TNode extends object>(
   return live;
 }
 
+/**
+ * three's `uniform(false)` (a boolean toggle such as the exposure meter's `enabled`) over a back end's numeric
+ * uniform. The ABI stores numeric lanes, so the boolean is the live float compared with zero (`notZero`); its
+ * `.value` reads and writes booleans. Any other value goes to `uniform` as before.
+ */
+export function booleanUniforms<TNode extends object>(
+  uniform: (value: unknown, type?: unknown) => TNode,
+  notZero: (scalar: TNode) => TNode,
+): (value: unknown, type?: unknown) => TNode {
+  return (value, type) => {
+    if (typeof value !== "boolean") return uniform(value, type);
+    if (type !== undefined && type !== "bool")
+      throw new TypeError("TN_TSL_UNIFORM_VALUE: a boolean uniform requires bool type");
+    const scalar = uniform(Number(value)) as TNode & { value: number };
+    return Object.defineProperty(notZero(scalar), "value", {
+      get: () => Boolean(scalar.value),
+      set: (next: unknown) => {
+        if (typeof next !== "boolean")
+          throw new TypeError("TN_TSL_UNIFORM_VALUE: expected a boolean");
+        scalar.value = Number(next);
+      },
+    });
+  };
+}
+
 /** The three classes a constant's value is made of. */
 export type ConstClasses = Readonly<
   Record<"Vector2" | "Vector3" | "Vector4" | "Color", new (...lanes: number[]) => object>
