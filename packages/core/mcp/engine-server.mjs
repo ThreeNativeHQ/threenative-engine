@@ -315,9 +315,13 @@ function loadLocalReferenceGames(cwd = process.cwd()) {
   );
 }
 function loadReferenceGame(gameId, cwd = process.cwd()) {
-  const local = loadLocalReferenceGames(cwd).find((game) => game.id === gameId);
-  if (local !== void 0) return Promise.resolve(local);
   const name = `game-${id(gameId, "game id")}.json`;
+  const file = path2.join(localReferencesDir(cwd), `${gameId}.json`);
+  if (existsSync(file)) {
+    const local = validateReferenceGame(parseJson(readFileSync(file), file), file);
+    if (local.id !== gameId) fail(file, `id '${local.id}' differs from requested '${gameId}'`);
+    return Promise.resolve(local);
+  }
   let load = gameLoads.get(name);
   if (load === void 0) {
     load = cachedAsset(name, (body) => {
@@ -358,6 +362,11 @@ function saveReferenceGame(value, cwd = process.cwd()) {
   const gameId = id(incoming.id, "reference.id");
   const file = path2.join(localReferencesDir(cwd), `${gameId}.json`);
   const previous = existsSync(file) ? validateReferenceGame(parseJson(readFileSync(file), file), file) : void 0;
+  if (previous !== void 0 && previous.sha !== incoming.sha)
+    fail(
+      "reference.sha",
+      `saved game '${gameId}' is pinned to ${previous.sha}; cannot merge revision ${String(incoming.sha)}`
+    );
   const merge = (old, next) => {
     if (!Array.isArray(next)) fail("reference", "expected an array");
     const replacements = new Set(
@@ -368,7 +377,7 @@ function saveReferenceGame(value, cwd = process.cwd()) {
     return [...old.filter((entry) => !replacements.has(entry.id)), ...next];
   };
   const merged = validateReferenceGame(
-    previous === void 0 || previous.sha !== incoming.sha ? incoming : {
+    previous === void 0 ? incoming : {
       ...incoming,
       cards: merge(previous.cards, incoming.cards),
       nodes: merge(previous.nodes, incoming.nodes)
@@ -850,7 +859,7 @@ var TOOL_DEFINITIONS = [
   },
   {
     name: "engine_save_reference",
-    description: "Validate and save a pinned game's repository map and mechanic cards to .threenative/refs, merged by id. Pass a game object with version:1, id, title, repo, sha, nodes and cards. Returns a contribution command for review; does not send it. Unknown fields and fenced code are refused.",
+    description: "Validate and save a pinned game's repository map and mechanic cards to .threenative/refs, merged by id at the same SHA; conflicting revisions are refused. Pass a game object with version:1, id, title, repo, sha, nodes and cards. Returns a POSIX-shell contribution command for review; does not send it. Unknown fields and fenced code are refused.",
     annotations: { destructiveHint: false, openWorldHint: false, readOnlyHint: false },
     inputSchema: {
       type: "object",
@@ -903,7 +912,8 @@ async function searchReferences(situation, limit = 5) {
   try {
     release = await loadReferenceIndex();
   } catch (error) {
-    if (!String(error).includes("TN_REFERENCES_UNAVAILABLE")) throw error;
+    if (!(error instanceof Error && error.message.startsWith("TN_REFERENCES_UNAVAILABLE:")))
+      throw error;
     if (local.length === 0)
       return {
         results: [],
@@ -950,15 +960,16 @@ async function searchReferences(situation, limit = 5) {
   const query = tokens(situation);
   return {
     guidance: "",
-    results: candidates.map((stub, index) => ({
-      ...stub,
-      ...situationScore(
-        query,
-        phrases[index]?.situations ?? [],
+    results: candidates.map((stub, index) => {
+      const content = situationScore(query, phrases[index]?.situations ?? [], [], weights);
+      const title = scoreAliases(
         phrases[index]?.aliases ?? [],
+        new Set(query),
+        query.join(" "),
         weights
-      )
-    })).filter((stub) => stub.score >= RELEVANCE_FLOOR).sort((a, b) => b.score - a.score || a.id.localeCompare(b.id)).slice(0, limit)
+      );
+      return { ...stub, ...content, score: content.score + title };
+    }).filter((stub) => stub.score >= RELEVANCE_FLOOR).sort((a, b) => b.score - a.score || a.id.localeCompare(b.id)).slice(0, limit)
   };
 }
 async function handleToolCall(params, manifestFile) {
@@ -979,7 +990,15 @@ async function handleToolCall(params, manifestFile) {
       verdict: response.verdict
     });
     return toolText(
-      response.verdict === "none" ? { ...response, references: await searchReferences(argumentsValue.situation, 3) } : response
+      response.verdict === "none" ? {
+        ...response,
+        references: await searchReferences(argumentsValue.situation, 3).catch(
+          (error) => ({
+            results: [],
+            guidance: `references unavailable: ${String(error)}`
+          })
+        )
+      } : response
     );
   }
   if (name === "engine_capability_detail") {

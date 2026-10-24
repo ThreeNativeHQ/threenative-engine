@@ -438,9 +438,13 @@ export function loadLocalReferenceGames(cwd = process.cwd()): IReferenceGame[] {
 
 /** One game's map and cards: the project's own saved copy first, then the release. */
 export function loadReferenceGame(gameId: string, cwd = process.cwd()): Promise<IReferenceGame> {
-  const local = loadLocalReferenceGames(cwd).find((game) => game.id === gameId);
-  if (local !== undefined) return Promise.resolve(local);
   const name = `game-${id(gameId, "game id")}.json`;
+  const file = path.join(localReferencesDir(cwd), `${gameId}.json`);
+  if (existsSync(file)) {
+    const local = validateReferenceGame(parseJson(readFileSync(file), file), file);
+    if (local.id !== gameId) fail(file, `id '${local.id}' differs from requested '${gameId}'`);
+    return Promise.resolve(local);
+  }
   let load = gameLoads.get(name);
   if (load === undefined) {
     load = cachedAsset(name, (body) => {
@@ -497,6 +501,11 @@ export function saveReferenceGame(
   const previous = existsSync(file)
     ? validateReferenceGame(parseJson(readFileSync(file), file), file)
     : undefined;
+  if (previous !== undefined && previous.sha !== incoming.sha)
+    fail(
+      "reference.sha",
+      `saved game '${gameId}' is pinned to ${previous.sha}; cannot merge revision ${String(incoming.sha)}`,
+    );
   const merge = (old: readonly { readonly id: string }[], next: unknown): unknown[] => {
     if (!Array.isArray(next)) fail("reference", "expected an array");
     const replacements = new Set(
@@ -507,7 +516,7 @@ export function saveReferenceGame(
     return [...old.filter((entry) => !replacements.has(entry.id)), ...next];
   };
   const merged = validateReferenceGame(
-    previous === undefined || previous.sha !== incoming.sha
+    previous === undefined
       ? incoming
       : {
           ...incoming,

@@ -20,8 +20,9 @@ work offline from that cache. `THREENATIVE_REFERENCES_URL` overrides the release
 `references unavailable` and capability discovery keeps working.
 
 Saved references live in the game's `.threenative/refs/<game-id>.json`, take priority over release
-data, and merge by id at the same commit SHA. The save tool returns a `gh issue create` command;
-it does not send the contribution. Reference guardrail: mechanics and feel only, with pinned
+data, and merge by id at the same commit SHA. A conflicting SHA is rejected without changing the saved file.
+The save tool returns a `gh issue create` command for a POSIX shell; run it in that shell.
+It does not send the contribution. Reference guardrail: mechanics and feel only, with pinned
 `file:line` sources; no code, level layouts, character names or art.
 
 ## Which manifest the server reads

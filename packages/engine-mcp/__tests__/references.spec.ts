@@ -14,6 +14,7 @@ let server: Server;
 let cache: string;
 let project: string;
 let malformed = false;
+let malformedField = "code";
 let truncated = false;
 const requests: { url: string; etag: string | undefined }[] = [];
 async function refs() {
@@ -38,6 +39,7 @@ async function call(name: string, args: unknown, manifestFile = manifest) {
 beforeEach(async () => {
   vi.resetModules();
   malformed = false;
+  malformedField = "code";
   truncated = false;
   requests.length = 0;
   cache = makeTempDirSync("reference-cache-");
@@ -58,7 +60,7 @@ beforeEach(async () => {
       return;
     }
     if (req.url === "/index.json.gz")
-      res.end(gzipSync(JSON.stringify(malformed ? { ...index, code: "bad" } : index)));
+      res.end(gzipSync(JSON.stringify(malformed ? { ...index, [malformedField]: "bad" } : index)));
     else if (req.url === "/game-sm64.json" || req.url === "/game-oot.json")
       res.end(JSON.stringify(game));
     else res.writeHead(404).end();
@@ -128,12 +130,34 @@ describe("reference release cache", () => {
     );
     expect((await loadReferenceGame("sm64", project)).cards).toHaveLength(2);
   });
+  it("loads a requested local game without parsing an unrelated damaged file", async () => {
+    const { saveReferenceGame, loadReferenceGame } = await refs();
+    saveReferenceGame(game, project);
+    writeFileSync(path.join(project, ".threenative/refs/oot.json"), "{broken");
+    expect((await loadReferenceGame("sm64", project)).id).toBe("sm64");
+    expect(() => loadReferenceGame("oot", project)).toThrow(/MALFORMED/u);
+    writeFileSync(path.join(project, ".threenative/refs/oot.json"), JSON.stringify(game));
+    expect(() => loadReferenceGame("oot", project)).toThrow(/id/u);
+  });
   it("isolates caches for different release sources", async () => {
     const { loadReferenceIndex } = await refs();
     await loadReferenceIndex();
     vi.stubEnv("THREENATIVE_REFERENCES_URL", "http://127.0.0.1:1/");
     vi.resetModules();
     await expect((await refs()).loadReferenceIndex()).rejects.toThrow("UNAVAILABLE");
+  });
+  it("rejects a different pinned revision without replacing previously saved work", async () => {
+    const { saveReferenceGame } = await refs();
+    const saved = saveReferenceGame(game, project);
+    const file = path.join(project, saved.saved);
+    const previous = readFileSync(file, "utf8");
+    expect(() =>
+      saveReferenceGame(
+        { ...game, sha: "b".repeat(40), cards: [{ ...game.cards[0], id: "long-jump" }] },
+        project,
+      ),
+    ).toThrow(/sha|revision/iu);
+    expect(readFileSync(file, "utf8")).toBe(previous);
   });
   it("saves and merges by id, prioritizes local cards and returns a shell-safe contribution command", async () => {
     const { saveReferenceGame, loadReferenceGame } = await refs();
@@ -161,6 +185,24 @@ describe("reference release cache", () => {
 });
 
 describe("reference MCP tools", () => {
+  it("does not mistake malformed payload text for a network-unavailable error", async () => {
+    malformed = true;
+    malformedField = "TN_REFERENCES_UNAVAILABLE";
+    await expect(call("engine_search_references", { situation: "triple jump" })).rejects.toThrow(
+      /MALFORMED/u,
+    );
+  });
+  it("finds a tier-one game by its title alone", async () => {
+    const result = await call("engine_search_references", { situation: "Super Mario 64" });
+    expect(result.results.length).toBeGreaterThan(0);
+    expect(result.results[0]).toMatchObject({ game: "sm64" });
+  });
+  it("keeps the named mechanic first when the query includes its game title", async () => {
+    const result = await call("engine_search_references", {
+      situation: "Super Mario 64 triple jump",
+    });
+    expect(result.results[0]).toMatchObject({ game: "sm64", id: "triple-jump", kind: "card" });
+  });
   it("searches cards and map nodes, lazily loads detail with constants, files, functions and children", async () => {
     const result = await call("engine_search_references", { situation: "triple jump" });
     expect(result.results[0]).toMatchObject({ game: "sm64", id: "triple-jump", kind: "card" });
@@ -205,6 +247,22 @@ describe("reference MCP tools", () => {
     });
     expect(matched.verdict).toBe("matched");
     expect(matched.references).toBeUndefined();
+  });
+  it("keeps capability discovery usable when optional references are malformed", async () => {
+    const emptyManifest = path.join(project, "capabilities.json");
+    writeFileSync(emptyManifest, JSON.stringify({ version: 2, entries: [], notOwned: [] }));
+    malformed = true;
+    const result = await call(
+      "engine_search_capabilities",
+      { situation: "triple jump" },
+      emptyManifest,
+    );
+    expect(result.verdict).toBe("none");
+    expect(result.references.results).toEqual([]);
+    expect(result.references.guidance).toContain("MALFORMED");
+    await expect(call("engine_search_references", { situation: "triple jump" })).rejects.toThrow(
+      /MALFORMED/u,
+    );
   });
   it("saves through MCP and searches local references when the release is unavailable", async () => {
     const cwd = vi.spyOn(process, "cwd").mockReturnValue(project);

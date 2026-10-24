@@ -82,6 +82,6 @@
     "engine_capability_detail": "Inspect one engine capability's import, signature, example, constraints, and overrides. When several packages export the symbol, every match is returned under `matches`.",
     "engine_search_references": "Search mechanic cards and repository map nodes from classic games. Tier-2 titles link to repos to explore and save. References describe feel only; borrow algorithms, cite pinned sources, copy no code or art.",
     "engine_reference_detail": "Read a game's pinned map or mechanic card. A node includes files, key functions, dependencies and child nodes; a card includes constants and sources.",
-    "engine_save_reference": "Validate and save a pinned game's repository map and mechanic cards to .threenative/refs, merged by id. Pass a game object with version:1, id, title, repo, sha, nodes and cards. Returns a contribution command for review; does not send it. Unknown fields and fenced code are refused."
+    "engine_save_reference": "Validate and save a pinned game's repository map and mechanic cards to .threenative/refs, merged by id at the same SHA; conflicting revisions are refused. Pass a game object with version:1, id, title, repo, sha, nodes and cards. Returns a POSIX-shell contribution command for review; does not send it. Unknown fields and fenced code are refused."
   }
 }

@@ -12,7 +12,7 @@ infer its concrete mechanics instead of replacing it with a generic genre loop.
 Record these six sections in order. Each ends with a value or explicit `none` and its reason;
 a blank section blocks plan approval. Search now; asset downloads wait for implementation approval.
 
-1. **Kit** — inspect installed `create-threenative` template `kit.json` aliases and `--genre`
+1. **Kit** — inspect installed `create-threenative` template `kit.json` fields and exact `--genre`
    routing. Record the chosen kit and why it fits, or `none` for an existing/custom game.
 2. **Mechanics** — call `engine_search_capabilities` for the mechanically explicit full request
    with `scope: "request"`, then each mechanic with `scope: "mechanic"`. Inspect every relevant
