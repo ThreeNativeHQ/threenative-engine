@@ -288,7 +288,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-10-16 for PRD-617: puzzle's boot-failure scenario asserts the engine-neutral
   // boot-failure text both engines now show, so only puzzle's tree moves.
   "action-rpg": "1cae629196c039ce4aed7c37529f3a3e5eebcffbed4264a22bffe3c6bd99332b",
-  minimal: "6c546795f50b7cb893d5cad65195a870904845127d2491e57bed3a53dc60a683",
+  minimal: "a74f1c8861de355347e53d917b7ed9279cdd19e26ac5be7639160ac0b5d33ace",
   platformer: "cdeabe05fa66094152d669b89aa819e41360a6d50a7ea9af6ffee1efd28fb589",
   puzzle: "20dce7f3bbca3c02cd183644faf5efdfc813d1d1d3800ff6e63d35f68e8b06d3",
   racing: "c6be51b7748fc5122049fbe4df8aca733b98787dfdd581ddba7a56ef00c4866f",

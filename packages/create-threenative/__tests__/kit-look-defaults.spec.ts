@@ -55,7 +55,6 @@ const VENDORED_RENDER_FILES = [
  */
 const LOOK_OVERRIDES: Readonly<Record<string, string>> = {
   "action-rpg": "Retain the develop look until this kit has a fresh PRD-723 IMPROVEMENT verdict.",
-  minimal: "Retain the develop look until this kit has a fresh PRD-723 IMPROVEMENT verdict.",
   platformer: "Retain the develop look until this kit has a fresh PRD-723 IMPROVEMENT verdict.",
   puzzle: "Retain the develop look until this kit has a fresh PRD-723 IMPROVEMENT verdict.",
   racing: "Retain the develop look until this kit has a fresh PRD-723 IMPROVEMENT verdict.",
@@ -158,6 +157,27 @@ describe("PRD-723 phase 1 kit look defaults", () => {
         expect(preset.autoExposureEnabled, `${kit}/${tier} autoExposureEnabled`).toBe(true);
       }
       expect(() => qualityPreset("ultra"), `${kit} rejects an unknown tier`).toThrow();
+    },
+  );
+
+  it.each(TIERS)(
+    "minimal/%s follows the core preset with the authored core exposure policy",
+    async (tier) => {
+      const quality = (await import(pathToFileURL(renderFile("minimal", "quality.ts")).href)) as {
+        qualityPreset: (tier: string) => Record<string, unknown>;
+      };
+      const exposure = (await import(pathToFileURL(renderFile("minimal", "exposure.ts")).href)) as {
+        exposureSettings: Record<string, unknown>;
+      };
+      const core = await import("@threenative/core");
+      const preset = quality.qualityPreset(tier);
+      expect(exposure.exposureSettings).toEqual(core.exposureSettings);
+      expect(preset).toEqual({
+        ...core.qualityPreset(tier),
+        exposurePolicy: exposure.exposureSettings,
+      });
+      expect(preset.tonemapMode, `minimal/${tier} tonemapMode`).toBe("filmic");
+      expect(preset.autoExposureEnabled, `minimal/${tier} metered exposure`).toBe(true);
     },
   );
 });
