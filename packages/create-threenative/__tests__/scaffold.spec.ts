@@ -297,11 +297,11 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // scenario), folding the shared textures, the play-gate scenarios and the footSlip stride bound
   // (method checked against platformer, from a copy of the index). Recomputed 2026-10-24 for the
   // mouse orbit camera, and for the planted-foot gait (no hip twist, walk lift, run blend).
-  collectathon: "20634f7f03b9b9ab18964c1fceac7f6d8abd3cd3afdc3507ddd731ec06cf8c4b",
+  collectathon: "df624aadd7b1119fd031d69b9bda19269a9e3a30a4d0feb82a89f5c8c93c110e",
   // PRD-733 (2026-10-23): the new Lantern Vale kit, measured through createProject.
-  adventure: "053df1c0bdd51750491b9c92e5a8345f3aa1991e3949270f0f6ad3040f376005",
+  adventure: "36e3c4f2dac92186c418dc97b87568b54759b0c709d3817aa8ab3bbe234229ce",
   // PRD-734 (2026-10-24): the new Clover Cup kart kit, measured through createProject.
-  kart: "7ab1fb7930b0dbd5c4d7a4b4cff36ce2750930940223ffe972b699a338b50a45",
+  kart: "19034396c68859d82b93342347833a68bdd9f5d8a7f6d458b4825549c05cf47d",
   minimal: "04038bc1992ddf983b8e330b46142f8fa7c67bb9b32cb23cecf3228ed3a15bb9",
   platformer: "77acc3c7f3d2f6953a14588ddf855d3479539f37c5e4203f0e50899c2a1ed1c1",
   puzzle: "f2a02e5bd2b1281e2fe94057fd7ab5a1843473e65cf8285b4fa25a9a88a371fe",
@@ -317,7 +317,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-10-16: starter's adaptiveQuality split its policy resolution into qualityPolicy.ts
   // to stay under the 200-line render-file cap; only starter's tree moves.
   // Recomputed 2026-10-23: the native render-chain scenario expects the Unreal finishing chain (grade and grain off).
-  starter: "a81534516da58a566637a69e3ba0d8f5790c1726f03ba7b912120487f6fb042f",
+  starter: "2a9b7ef9926f7ab2dba03a22e83da4649134e0137e594b0a7df2736279287439",
   "tower-defense": "6832c52d982e8ec921b5da337af73a03572b04d3463846c138bb0765d2c16ecc",
 };
 
