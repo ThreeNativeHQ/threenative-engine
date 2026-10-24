@@ -82,7 +82,7 @@ const HR = 0.165;
 /** How much the jaw narrows toward the chin. */
 const JAW = 0.4;
 /** The hood: a shell round the head, open over the face from the brim down. */
-const HOOD = { r: 0.19, y: HC + 0.004, z: -0.008, brim: 1.1, window: 0.85, hem: 0.78 * Math.PI };
+const HOOD = { r: 0.19, y: HC + 0.004, z: -0.008, brim: 1.1, window: 0.85, hem: 0.86 * Math.PI };
 /** The chest's turned profile, [radius, height] from the waist up; its depth is 0.74 of its width. */
 const CHEST: readonly (readonly [number, number])[] = [
   [0.142, -0.03],
@@ -274,20 +274,60 @@ function faceZ(x: number, y: number): number {
   return Math.sqrt(Math.max(0, HR * HR - x0 * x0 - y0 * y0)) * (1 - 0.12 * ny * ny);
 }
 
-/** Below the head the hood drapes wider and longer onto the mantle, in five broad folds round the
- * back and sides (none at the face). */
+/** Where the cloth gathers into a soft peak, behind and above the crown. */
+const PEAK = new Vector3(0, 0.5, -0.87).normalize();
+/** The mantle's outline (radius, height on the body), crown to hem; it is 0.8 as deep as wide. */
+const MANTLE: readonly (readonly [number, number])[] = [
+  [0.262, 0.39],
+  [0.255, 0.42],
+  [0.225, 0.475],
+  [0.17, 0.535],
+  [0.12, 0.565],
+  [0.1, 0.585],
+];
+/** The hood centre's height on the body: the head joint, the head centre, the hood's offset. */
+const HOOD_ON_BODY = 0.585 + HOOD.y;
+
+/** The mantle's radius at body height `y`, or 0 above it. */
+function mantleRadius(y: number): number {
+  for (let i = 1; i < MANTLE.length; i += 1) {
+    const [r0, y0] = MANTLE[i - 1] as readonly [number, number];
+    const [r1, y1] = MANTLE[i] as readonly [number, number];
+    if (y <= y1) return MathUtils.lerp(r0, r1, MathUtils.clamp((y - y0) / (y1 - y0), 0, 1));
+  }
+  return 0;
+}
+
+/** The hood rises to a soft peak behind the crown. Below the head it drapes wider and longer, in
+ * three broad folds down the back, and its lower edge lies on the mantle. */
 function drape(v: Vector3): void {
-  const ny = v.y / v.length();
+  const length = v.length();
+  const ny = v.y / length;
+  const peak = Math.max(0, v.dot(PEAK) / length - 0.8) / 0.2;
+  v.addScaledVector(PEAK, 0.03 * peak * peak);
   if (ny >= 0) return;
   const phi = Math.atan2(v.z, -v.x);
-  const fold = 1 - 0.07 * ny * (0.5 + 0.5 * Math.cos(5 * (phi - (Math.PI * 3) / 2)));
+  const back = Math.max(0, -Math.sin(phi));
+  const fold = 1 - 0.06 * ny * back * (0.5 + 0.5 * Math.cos(6 * (phi - (Math.PI * 3) / 2)));
   v.x *= (1 - 0.15 * ny) * fold;
   v.z *= (1 - 0.2 * ny) * fold;
   v.y *= 1 - 0.5 * ny;
+  const on = mantleRadius(v.y + HOOD_ON_BODY) + 0.01;
+  const across = Math.hypot(v.x, (v.z + HOOD.z) / 0.8);
+  if (across > 1e-4 && across < on) {
+    v.x *= on / across;
+    v.z = ((v.z + HOOD.z) * on) / across - HOOD.z;
+  }
 }
 
-/** Half the face opening's width, in radians round the hood, at polar angle `theta`: rounded at the top. */
+/** Where the face opening's arch closes, as a polar angle on the hood. */
+const ARCH = HOOD.brim - 0.15;
+
+/** Half the face opening's width, in radians round the hood, at polar angle `theta`: closed above the
+ * arch, rounding open to the brim, then widening toward the hem. */
 function opening(theta: number): number {
+  if (theta <= ARCH) return 0;
+  if (theta < HOOD.brim) return HOOD.window * 0.55 * Math.sqrt((theta - ARCH) / (HOOD.brim - ARCH));
   const u = MathUtils.clamp((theta - HOOD.brim) / 0.45, 0, 1);
   return HOOD.window * (0.55 + 0.45 * Math.sin((u * Math.PI) / 2));
 }
@@ -595,7 +635,7 @@ export function createHero(): IHeroRig {
 
   // Head: a jaw-tapered skull, big dark eyes with lids and catchlights, brows, a small nose, a
   // smile, warm cheeks; hair under the brim, a side-swept fringe.
-  const head = joint(body, 0, 0.585, 0);
+  const head = joint(body, 0, HOOD_ON_BODY - HOOD.y, 0);
   const face: Part[] = [[at(shape(new SphereGeometry(HR, 24, 18), skull), 0, HC), C.skin, "skin"]];
   const onFace = (x: number, y: number, lift: number): Point => [x, HC + y, faceZ(x, y) + lift];
   const sparkle = glow(0xffffff, 1.5);
@@ -662,7 +702,7 @@ export function createHero(): IHeroRig {
   }
   face.push([
     at(
-      new SphereGeometry(0.016, 8, 6),
+      new SphereGeometry(0.019, 8, 6),
       0,
       HC - 0.056,
       faceZ(0, -0.056) - 0.002,
@@ -704,29 +744,32 @@ export function createHero(): IHeroRig {
     ]);
   }
 
-  // The hood: a shell open over the face, a rolled rim round the opening, a mantle below.
-  const top = new SphereGeometry(HOOD.r, 28, 6, 0, Math.PI * 2, 0, HOOD.brim);
-  const sides = new SphereGeometry(
+  // The hood: one shell open over the face, a rolled rim round the opening, a mantle below.
+  const shell = new SphereGeometry(
     HOOD.r,
-    24,
-    12,
+    28,
+    18,
     Math.PI / 2 + HOOD.window,
     Math.PI * 2 - 2 * HOOD.window,
-    HOOD.brim,
-    HOOD.hem - HOOD.brim,
+    0,
+    HOOD.hem,
   );
-  const rim: Point[] = [];
-  const down = (i: number): number => HOOD.brim + ((HOOD.hem - HOOD.brim) * i) / 8;
-  for (let i = 8; i > 0; i -= 1) rim.push(hoodPoint(Math.PI / 2 + opening(down(i)), down(i)));
-  const across = opening(HOOD.brim);
-  for (let i = 0; i <= 6; i += 1)
-    rim.push(hoodPoint(Math.PI / 2 + across - (2 * across * i) / 6, HOOD.brim - 0.02));
-  for (let i = 1; i <= 8; i += 1) rim.push(hoodPoint(Math.PI / 2 - opening(down(i)), down(i)));
+  // The rim runs up one side of the opening, round the arch and down the other: dense at the arch.
+  const edge = [
+    ...Array.from({ length: 8 }, (_, i) => HOOD.hem - ((HOOD.hem - HOOD.brim) * i) / 8),
+    ...Array.from({ length: 7 }, (_, i) => ARCH + (HOOD.brim - ARCH) * ((6 - i) / 6) ** 2),
+  ];
+  const rim: Point[] = [
+    ...edge.map((theta) => hoodPoint(Math.PI / 2 + opening(theta), theta)),
+    ...[...edge]
+      .reverse()
+      .slice(1)
+      .map((theta) => hoodPoint(Math.PI / 2 - opening(theta), theta)),
+  ];
   face.push(
-    [at(shape(top, drape), 0, HOOD.y, HOOD.z), C.cap, "hood"],
     [
       at(
-        shape(sides, (v) => {
+        shape(shell, (v) => {
           narrow(v);
           drape(v);
         }),
@@ -738,32 +781,13 @@ export function createHero(): IHeroRig {
       "hood",
     ],
     // A lighter lining rolled over the edge, so the opening reads from any side.
-    [strand(rim, () => 0.009, 6, 40), C.capLining, "cloth"],
-    // Soft folds: the centre seam and four creases running down from the crown.
-    ...[0, -0.5, 0.5, -1, 1].map(
-      (turn) =>
-        [
-          strand(
-            [0.3, 0.75, 1.2, 1.7, 2.2].map((theta) =>
-              hoodPoint(
-                (Math.PI * 3) / 2 + turn * (0.4 + theta * 0.3),
-                theta + Math.abs(turn) * 0.3,
-              ),
-            ),
-            (t) => (turn === 0 ? 0.005 : 0.0045 * Math.sin(Math.PI * t) + 0.001),
-            5,
-            10,
-          ),
-          C.capDark,
-          "cloth",
-        ] as const,
-    ),
+    [strand(rim, () => 0.009, 6, 48), C.capLining, "cloth"],
   );
   bake(head, face);
 
   // Side locks and the hood's tip hang on their own joints: springs move them.
   const locks = [-1, 1].map((s) => {
-    const lock = joint(head, s * 0.128, HC + 0.05, 0.085);
+    const lock = joint(head, s * 0.12, HC + 0.05, 0.095);
     const hang = (dx: number, dz: number, length: number): Part => [
       strand(
         [
@@ -782,9 +806,9 @@ export function createHero(): IHeroRig {
     bake(lock, [hang(0, 0, 0.16), hang(s * 0.008, -0.04, 0.13)]);
     return lock;
   });
-  // The tip: a tapering tail of the hood's cloth, gathered at the back of the crown, lying down the
-  // hood a little off-centre and resting on the mantle.
-  const tipRoot = hoodPoint((Math.PI * 3) / 2, 0.95);
+  // The tip grows out of the peak: a short tapering tail of the hood's cloth lying down its back,
+  // drooping a little to one side.
+  const tipRoot = hoodPoint((Math.PI * 3) / 2, 1.05);
   const lie = (turn: number, theta: number, out: number): Point => {
     const [x, y, z] = hoodPoint((Math.PI * 3) / 2 + turn, theta);
     return [
@@ -798,15 +822,15 @@ export function createHero(): IHeroRig {
     [
       strand(
         [
-          lie(0, 0.95, 1),
-          lie(0.03, 1.3, 1.12),
-          lie(0.1, 1.7, 1.17),
-          lie(0.2, 2, 1.22),
-          lie(0.3, 2.4, 1.2),
+          lie(0, 1.05, 0.92),
+          lie(0.06, 1.4, 1.04),
+          lie(0.18, 1.75, 1.05),
+          lie(0.32, 2.05, 1.04),
+          lie(0.42, 2.3, 1.03),
         ],
-        (t) => 0.042 * (1 - t) + 0.008,
+        (t) => 0.03 * Math.min(1, t / 0.2) * (1 - t) + 0.006,
         8,
-        16,
+        14,
       ),
       C.cap,
       "drape",
@@ -815,18 +839,10 @@ export function createHero(): IHeroRig {
 
   // The mantle over her shoulders, open at the front over the V collar, clasped with a cord.
   const gap = 0.55;
-  const mantleProfile: [number, number][] = [
-    [0.262, 0.39],
-    [0.255, 0.42],
-    [0.225, 0.475],
-    [0.17, 0.535],
-    [0.12, 0.565],
-    [0.1, 0.585],
-  ];
   // The hem is dagged: it hangs in soft points.
   const wave = (phi: number, y: number): number =>
     -0.03 * MathUtils.clamp((0.44 - y) / 0.05, 0, 1) * Math.max(0, Math.sin(8 * phi)) ** 2;
-  const mantle = shape(lathe(mantleProfile, 40, 0.8, gap, Math.PI * 2 - 2 * gap), (v) => {
+  const mantle = shape(lathe(MANTLE, 40, 0.8, gap, Math.PI * 2 - 2 * gap), (v) => {
     v.y += wave(Math.atan2(v.x, v.z / 0.8), v.y);
   });
   const around = (phi: number, [r, y]: readonly [number, number]): Point => [
@@ -845,7 +861,7 @@ export function createHero(): IHeroRig {
       (s) =>
         [
           strand(
-            mantleProfile.map((p) => around(s * gap, p)),
+            MANTLE.map((p) => around(s * gap, p)),
             () => 0.009,
             6,
             8,
@@ -1248,10 +1264,10 @@ export function createHero(): IHeroRig {
         legs.right.rotation.x = -2.1 * tuck;
         shins.left.rotation.x = 2.3 * tuck;
         shins.right.rotation.x = 2.3 * tuck;
-        arms.left.rotation.set(-1.2 * tuck, 0, 0.3);
-        arms.right.rotation.set(-1.2 * tuck, 0, -0.3);
-        fores.left.rotation.x = -1.2 * tuck;
-        fores.right.rotation.x = -1.2 * tuck;
+        arms.left.rotation.set(-0.5 * tuck, 0, 0.35);
+        arms.right.rotation.set(-0.5 * tuck, 0, -0.35);
+        fores.left.rotation.x = -2.2 * tuck;
+        fores.right.rotation.x = -2.2 * tuck;
       } else if (state === "hop") {
         legs.left.rotation.x = -0.5;
         legs.right.rotation.x = 0.4;

@@ -85,7 +85,7 @@ export const C = {
   /** The tunic's hem band: a muted ochre, cloth rather than gold. */
   hem: 0xa8793a,
   undershirt: 0xe9dcc0,
-  cap: 0x2a3b78,
+  cap: 0x30448a,
   capDark: 0x1e2b5a,
   /** The hood's lining, rolled over the edge of the opening. */
   capLining: 0x5a72b4,
@@ -101,7 +101,7 @@ export const C = {
   iris: 0x2e2014,
   lid: 0x24160e,
   blush: 0xe3a083,
-  gloves: 0x74492a,
+  gloves: 0x553420,
   belt: 0x47301e,
   sole: 0x2a1d14,
   leather: 0x6b4a2e,
