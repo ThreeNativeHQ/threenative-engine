@@ -581,6 +581,19 @@
       "required": true
     },
     {
+      "id": "27-instanced-count-churn",
+      "title": "instanced meshes keep their transforms while another changes its count each frame",
+      "category": "geometry",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/instanced-count-churn.js",
+      "tolerance": {
+        "pixelMismatchRatio": 0.01,
+        "perceptualDeltaE": 3.0
+      },
+      "desktopGate": false,
+      "required": true
+    },
+    {
       "id": "27-tsl-attribute-color",
       "title": "TSL attribute(\"color\") in a colorNode without vertexColors",
       "category": "webgpu-tsl",
