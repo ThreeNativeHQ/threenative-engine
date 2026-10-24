@@ -101,7 +101,7 @@ export const C = {
   iris: 0x2e2014,
   lid: 0x24160e,
   blush: 0xe3a083,
-  gloves: 0x553420,
+  gloves: 0x9a6238,
   belt: 0x47301e,
   sole: 0x2a1d14,
   leather: 0x6b4a2e,

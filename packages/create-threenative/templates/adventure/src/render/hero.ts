@@ -274,8 +274,8 @@ function faceZ(x: number, y: number): number {
   return Math.sqrt(Math.max(0, HR * HR - x0 * x0 - y0 * y0)) * (1 - 0.12 * ny * ny);
 }
 
-/** Where the cloth gathers into a soft peak, behind and above the crown. */
-const PEAK = new Vector3(0, 0.5, -0.87).normalize();
+/** Where the cloth gathers into a soft point, straight back from the crown. */
+const PEAK = new Vector3(0, 0.3, -0.95).normalize();
 /** The mantle's outline (radius, height on the body), crown to hem; it is 0.8 as deep as wide. */
 const MANTLE: readonly (readonly [number, number])[] = [
   [0.262, 0.39],
@@ -303,8 +303,8 @@ function mantleRadius(y: number): number {
 function drape(v: Vector3): void {
   const length = v.length();
   const ny = v.y / length;
-  const peak = Math.max(0, v.dot(PEAK) / length - 0.8) / 0.2;
-  v.addScaledVector(PEAK, 0.03 * peak * peak);
+  const peak = MathUtils.smoothstep(v.dot(PEAK) / length, 0.6, 1);
+  v.addScaledVector(PEAK, 0.035 * peak * peak);
   if (ny >= 0) return;
   const phi = Math.atan2(v.z, -v.x);
   const back = Math.max(0, -Math.sin(phi));
@@ -522,9 +522,23 @@ export function createHero(): IHeroRig {
     ],
     [at(new SphereGeometry(0.009, 6, 4), 0, -0.05, 0.036), C.brass, "metal"],
   ]);
-  const lamp = joint(body, 0.18, 0, 0.085);
+  const lamp = joint(body, 0.17, 0, -0.03);
   bake(lamp, [
     [at(new TorusGeometry(0.012, 0.003, 4, 10), 0, -0.012, 0), C.iron, "metal"],
+    [
+      strand(
+        [
+          [-0.022, 0.012, 0],
+          [-0.006, 0.008, 0],
+          [0, 0, 0],
+        ],
+        () => 0.003,
+        4,
+        5,
+      ),
+      C.iron,
+      "metal",
+    ],
     [at(new ConeGeometry(0.045, 0.04, 8), 0, -0.045, 0), C.iron, "metal"],
     [at(new CylinderGeometry(0.042, 0.042, 0.014, 8), 0, -0.142, 0), C.iron, "metal"],
     ...[0, 1, 2, 3].map(
@@ -548,7 +562,7 @@ export function createHero(): IHeroRig {
   // trousers.
   const skirt = joint(body, 0, 0.03, 0);
   const folds = (v: Vector3): void => {
-    const depth = MathUtils.clamp(-v.y / 0.33, 0, 1);
+    const depth = MathUtils.clamp(-v.y / 0.28, 0, 1);
     const phi = Math.atan2(v.x, v.z / 0.82);
     const flare = 1 + 0.085 * depth * Math.sin(7 * phi);
     v.x *= flare;
@@ -559,8 +573,8 @@ export function createHero(): IHeroRig {
     [
       lathe(
         [
-          [0.15, -0.2],
-          [0.15, -0.12],
+          [0.15, -0.17],
+          [0.15, -0.1],
           [0.14, 0],
         ],
         16,
@@ -579,12 +593,12 @@ export function createHero(): IHeroRig {
         shape(
           lathe(
             [
-              [0.25, -0.342],
-              [0.262, -0.335],
-              [0.258, -0.31],
-              [0.235, -0.24],
-              [0.2, -0.14],
-              [0.165, -0.05],
+              [0.25, -0.291],
+              [0.262, -0.285],
+              [0.258, -0.264],
+              [0.235, -0.204],
+              [0.2, -0.119],
+              [0.165, -0.043],
               [0.15, 0.005],
             ],
             14,
@@ -601,9 +615,9 @@ export function createHero(): IHeroRig {
         shape(
           lathe(
             [
-              [0.254, -0.344],
-              [0.266, -0.337],
-              [0.264, -0.302],
+              [0.254, -0.292],
+              [0.266, -0.286],
+              [0.264, -0.257],
             ],
             14,
             0.82,
@@ -703,16 +717,16 @@ export function createHero(): IHeroRig {
   }
   face.push([
     at(
-      new SphereGeometry(0.019, 8, 6),
+      new SphereGeometry(0.017, 8, 6),
       0,
       HC - 0.056,
-      faceZ(0, -0.056) - 0.002,
-      -0.35,
+      faceZ(0, -0.056) - 0.004,
+      -0.2,
       0,
       0,
-      0.72,
-      1.2,
-      0.95,
+      1,
+      0.9,
+      0.85,
     ),
     C.skin,
     "skin",
@@ -783,20 +797,20 @@ export function createHero(): IHeroRig {
     ],
     // A lighter lining rolled over the edge, so the opening reads from any side.
     [strand(rim, () => 0.009, 6, 48), C.capLining, "cloth"],
-    // The seam over the crown, from the arch of the opening back to the tip.
-    [
-      strand(
+    // Two soft ridges of the same cloth from the crown down to the mantle.
+    ...[-0.62, 0.62].map(
+      (turn) =>
         [
-          ...[ARCH - 0.04, 0.6, 0.25].map((theta) => hoodPoint(Math.PI / 2, theta)),
-          ...[0.25, 0.6, 1.0].map((theta) => hoodPoint((Math.PI * 3) / 2, theta)),
-        ],
-        () => 0.005,
-        5,
-        24,
-      ),
-      C.capDark,
-      "cloth",
-    ],
+          strand(
+            [0.55, 1.1, 1.65, 2.2, 2.6].map((theta) => hoodPoint((Math.PI * 3) / 2 + turn, theta)),
+            (t) => 0.009 * Math.sin(Math.PI * t) + 0.002,
+            6,
+            14,
+          ),
+          C.cap,
+          "hood",
+        ] as const,
+    ),
   );
   bake(head, face);
 
@@ -821,22 +835,25 @@ export function createHero(): IHeroRig {
     bake(lock, [hang(0, 0, 0.17), hang(s * 0.008, -0.03, 0.14)]);
     return lock;
   });
-  // The tip leaves the peak behind the crown and hangs free down the back of the hood, curving to
-  // her left, its end clear of the cloth above the mantle.
-  const hoodTip = joint(head, ...hoodPoint((Math.PI * 3) / 2, 1.15));
+  // The tip: the hood's point drawn out into a tapering tail that lies down the back of the hood and
+  // on over the mantle, drifting to her left, lifted a hair off the cloth so it throws a shadow line.
+  const crown = Math.acos(PEAK.y);
+  const tipRadius = (t: number): number =>
+    0.03 * Math.sin((Math.PI / 2) * Math.min(1, t / 0.2)) * (1 - t) + 0.007;
+  const tipAt = (t: number): Vector3 => {
+    const [x, y, z] = hoodPoint((Math.PI * 3) / 2 + 0.35 * t, crown + (2.75 - crown) * t);
+    const out = 1 + (0.7 * tipRadius(t)) / HOOD.r;
+    return new Vector3(x * out, (y - HOOD.y) * out + HOOD.y, (z - HOOD.z) * out + HOOD.z);
+  };
+  const tipRoot = tipAt(0);
+  const hoodTip = joint(head, tipRoot.x, tipRoot.y, tipRoot.z);
   bake(hoodTip, [
     [
       strand(
-        [
-          [0, 0, 0.012],
-          [0.012, -0.035, -0.03],
-          [0.03, -0.09, -0.045],
-          [0.05, -0.15, -0.045],
-          [0.065, -0.2, -0.04],
-        ],
-        (t) => 0.034 * (1 - t) ** 1.2 + 0.006,
+        [0, 0.15, 0.3, 0.45, 0.6, 0.75, 0.9, 1].map((t) => tipAt(t).sub(tipRoot).toArray()),
+        tipRadius,
         8,
-        16,
+        12,
       ),
       C.cap,
       "drape",
@@ -862,7 +879,7 @@ export function createHero(): IHeroRig {
   const clasp = (s: number): Point => around(s * gap, [0.188, 0.515]);
   bake(body, [
     [mantle, C.cap, "drape"],
-    [strand(hem, () => 0.01, 5, 64), C.capDark, "cloth"],
+    [strand(hem, () => 0.01, 5, 64), C.capLining, "cloth"],
     ...[-1, 1].map(
       (s) =>
         [
@@ -1035,7 +1052,7 @@ export function createHero(): IHeroRig {
             [-side * 0.022, -0.252, 0.04],
             [-side * 0.03, -0.268, 0.03],
           ],
-          (t) => 0.0145 - 0.004 * t,
+          (t) => 0.017 - 0.005 * t,
           5,
           5,
         ),
@@ -1090,7 +1107,7 @@ export function createHero(): IHeroRig {
         "leather",
       ],
       [
-        at(new CylinderGeometry(0.064, 0.064, 0.022, 16), 0, -0.309, 0.045, 0, 0, 0, 1, 1, 1.8),
+        at(new CylinderGeometry(0.06, 0.06, 0.022, 16), 0, -0.306, 0.042, -0.06, 0, 0, 1, 1, 1.72),
         C.sole,
         "leather",
       ],
@@ -1200,8 +1217,8 @@ export function createHero(): IHeroRig {
         0,
         -0.1 - breath * 0.02,
       );
-      fores.left.rotation.set(-0.3 - 0.45 * run, 0, 0);
-      fores.right.rotation.set(-0.3 - 0.45 * run - (drawn ? 0.3 : 0), 0, 0);
+      fores.left.rotation.set(-0.42 - 0.33 * run, 0, 0);
+      fores.right.rotation.set(-0.42 - 0.33 * run - (drawn ? 0.3 : 0), 0, 0);
       head.rotation.set(-run * 0.1, Math.sin(time * 0.9) * 0.08 * (1 - run), 0);
       armShield.position.set(0.055, -0.12, 0);
       armShield.rotation.set(0, Math.PI / 2, 0);
