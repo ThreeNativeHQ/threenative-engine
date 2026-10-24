@@ -47,6 +47,7 @@ import { MeshStandardNodeMaterial } from "three/webgpu";
 import { lit } from "./materials.js";
 import { C, palette } from "./palette.js";
 import { SUN_DIRECTION, sunShafts } from "./sky.js";
+import { groundSurface, surfaced } from "./surface.js";
 
 /** Where the sun shafts meet the floor, x, z and radius: down the path ahead and between giants. */
 const SHAFTS = [
@@ -501,7 +502,7 @@ export function plantVale(site: IValeSite): {
       ]);
     }
   });
-  const bark = lit(0xffffff, { detail: true, vertexColors: true });
+  const bark = surfaced(0xffffff, "bark", { vertexColors: true });
   giants.forEach((model, i) => {
     group.add(instanced(model.wood, bark, wood.giant[i] ?? [], true));
   });
@@ -698,7 +699,7 @@ export function plantVale(site: IValeSite): {
         ]),
         1,
       ),
-      lit(0xffffff, { detail: true, vertexColors: true }),
+      surfaced(0xffffff, "bark", { vertexColors: true }),
       logs,
       true,
     ),
@@ -768,7 +769,7 @@ export function plantVale(site: IValeSite): {
   for (const [x, z] of site.stream.points)
     for (let i = 0; i < 3; i += 1)
       rockAt(x + (rng() - 0.5) * 3, z + (rng() - 0.5) * 3, 0.3 + rng() * 0.4);
-  const stone = lit(0xffffff, { detail: true, vertexColors: true });
+  const stone = surfaced(0xffffff, "rock", { vertexColors: true });
   group.add(instanced(boulder, stone, rocks, true));
 
   // The path: rounded cobbles, two to four across, a few centimetres proud of the dark soil and
@@ -820,8 +821,8 @@ export function plantVale(site: IValeSite): {
     }
   }
   group.add(
-    instanced(slab, lit(C.flagstoneDark, { detail: true, roughness: 0.9 }), slabs[0], false),
-    instanced(slab, lit(C.flagstone2, { detail: true, roughness: 0.9 }), slabs[1], false),
+    instanced(slab, surfaced(C.flagstoneDark, "rock", { roughness: 0.9 }), slabs[0], false),
+    instanced(slab, surfaced(C.flagstone2, "rock", { roughness: 0.9 }), slabs[1], false),
   );
   // How much of the path's centre line a slab covers: the playtest's proof the path is laid.
   let covered = 0;
@@ -1037,7 +1038,7 @@ export function valeGround(
     }
     geometry.setAttribute("color", new BufferAttribute(colour, 3));
   };
-  const material = lit(0xffffff, { detail: true, vertexColors: true });
+  const material = groundSurface();
   const inner = heightGrid(site, INNER.x0, INNER.x1, INNER.z0, INNER.z1, INNER.step, () => 0);
   paintGround(inner);
   // The coarse hills skip what the fine grid covers, and dip a little under its rim so the two

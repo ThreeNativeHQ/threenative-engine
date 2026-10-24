@@ -21,7 +21,7 @@ import {
   RGBAFormat,
   RepeatWrapping,
 } from "three";
-import { C, palette } from "./palette.js";
+import { palette } from "./palette.js";
 
 const cache = new Map<string, Material>();
 
@@ -173,8 +173,6 @@ export function mottle(
 export function worldMaterials() {
   return {
     accent: lit(palette.accent, { metalness: 0.6, roughness: 0.4 }),
-    /** The north cliff and the ruin: dark, mossy, grained stone. */
-    cliff: lit(C.cliff, { detail: true, flat: true, vertexColors: true }),
     grass: lit(palette.grass, { vertexColors: true }),
     stone: lit(palette.stone, { flat: true, vertexColors: true }),
   };

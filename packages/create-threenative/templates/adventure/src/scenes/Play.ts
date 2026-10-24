@@ -51,6 +51,7 @@ import { createLoadingScreen } from "../render/loading.js";
 import { setupPost } from "../render/postprocessing.js";
 import { createCompanion, createHeartVessel } from "../render/props.js";
 import { type ISky, createSky, setupSky } from "../render/sky.js";
+import { loadSurfaces } from "../render/surface.js";
 import { TouchControls } from "../render/touch-controls.js";
 import type { Checkpoint, GameState } from "../state.js";
 
@@ -138,7 +139,8 @@ export class Play extends Scene<GameState, IPhysicsContext> {
    * `setup.place` and `setup.spawn` run after `load()` and before `enter()`, so an entity that first
    * appears in `enter()` cannot be placed. `enter()` builds every body where its mesh now stands.
    */
-  override load(ctx: GameCtx): void {
+  override async load(ctx: GameCtx): Promise<void> {
+    await loadSurfaces(ctx.assets);
     this.#sky = createSky();
     setupSky(ctx.scene, this.#sky);
     const vale = buildVale(makeRng(1986));

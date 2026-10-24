@@ -4,6 +4,7 @@ import { torch } from "../render/lighting.js";
 import { lit, mottle, worldMaterials } from "../render/materials.js";
 import { C } from "../render/palette.js";
 import { createTorch } from "../render/props.js";
+import { surfaced } from "../render/surface.js";
 
 /** The Hollow is built 100 m east of the clearing; the cave mouth carries Wren between them. */
 export const HOLLOW_X = 100;
@@ -46,7 +47,7 @@ export function buildHollow(rng: () => number): IHollow {
   const group = new Group();
   group.name = "hollow";
   const materials = worldMaterials();
-  const wallMaterial = lit(C.stoneDark, { flat: true, vertexColors: true });
+  const wallMaterial = surfaced(C.stoneDark, "stone-wall", { flat: true, vertexColors: true });
   const box = (
     x0: number,
     x1: number,
@@ -176,7 +177,7 @@ export function buildHollow(rng: () => number): IHollow {
   }
   const slab = new BoxGeometry(1, 0.05, 1);
   [C.flagstone, C.flagstoneDark, C.flagstoneLight].forEach((shade, i) => {
-    group.add(instanced(slab, lit(shade, { flat: true }), shades[i] ?? [], false));
+    group.add(instanced(slab, surfaced(shade, "rock", { flat: true }), shades[i] ?? [], false));
   });
   group.add(instanced(new BoxGeometry(0.025, 0.004, 1), lit(C.grout), cracks, false));
 

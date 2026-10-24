@@ -8,9 +8,10 @@ import {
   Vector3,
 } from "three";
 import { type IValeSite, plantVale, valeGround } from "../render/foliage.js";
-import { flat, lit, mottle, worldMaterials } from "../render/materials.js";
+import { flat, lit, mottle } from "../render/materials.js";
 import { C } from "../render/palette.js";
 import { createHut, createPitcherLantern, createSign } from "../render/props.js";
+import { surfaced } from "../render/surface.js";
 
 /** A small seeded generator, so the clearing is the same clearing every run. */
 export function makeRng(seed: number): () => number {
@@ -198,7 +199,6 @@ export function measureRelief(walkLimit = Math.PI / 4): {
 export function buildVale(rng: () => number): IVale {
   const group = new Group();
   group.name = "vale";
-  const materials = worldMaterials();
   const solid = (mesh: Mesh): Mesh => {
     mesh.userData.solid = true;
     mesh.castShadow = true;
@@ -227,7 +227,7 @@ export function buildVale(rng: () => number): IVale {
       rng,
     );
     geometry.translate(x, y + h / 2, z);
-    return solid(new Mesh(geometry, materials.cliff));
+    return solid(new Mesh(geometry, surfaced(C.cliff, "rock", { flat: true, vertexColors: true })));
   };
 
   // The north cliff with the cave mouth at x = 0: buttresses of uneven height and depth, so its

@@ -28,6 +28,7 @@ import { SpriteNodeMaterial } from "three/webgpu";
 import { mossBark } from "./foliage.js";
 import { glow, lit, mottle } from "./materials.js";
 import { C, palette } from "./palette.js";
+import { surfaced } from "./surface.js";
 
 function part(geometry: BufferGeometry, material: Material, x = 0, y = 0, z = 0): Mesh {
   const mesh = new Mesh(geometry, material);
@@ -151,15 +152,15 @@ export function createSwitchPlate(): { readonly group: Group; setPressed(pressed
 export function createSign(): Group {
   const group = new Group();
   group.add(
-    part(new CylinderGeometry(0.06, 0.08, 1.35, 6), lit(C.woodDark, { detail: true }), 0, 0.67),
+    part(new CylinderGeometry(0.06, 0.08, 1.35, 6), surfaced(C.woodDark, "planks"), 0, 0.67),
   );
   group.add(part(new SphereGeometry(0.09, 6, 4), lit(C.forestMoss), 0, 1.36));
   const board = new Group();
   board.position.set(0, 1.1, 0.07);
   board.rotation.z = 0.04;
   group.add(board);
-  board.add(part(new BoxGeometry(0.9, 0.4, 0.06), lit(C.wood, { detail: true })));
-  const tip = part(new CylinderGeometry(0.2, 0.2, 0.06, 3), lit(C.wood, { detail: true }), 0.5);
+  board.add(part(new BoxGeometry(0.9, 0.4, 0.06), surfaced(C.wood, "planks")));
+  const tip = part(new CylinderGeometry(0.2, 0.2, 0.06, 3), surfaced(C.wood, "planks"), 0.5);
   tip.rotation.set(Math.PI / 2, 0, Math.PI / 2);
   board.add(tip);
   // The lettering: two lines of short brush strokes, as if painted by hand.
@@ -210,12 +211,12 @@ export function createHut(): { readonly group: Group; readonly lanterns: number 
       position.setXYZ(i, x * k, y, z * k);
     }
   }
-  const walls = new Mesh(mossBark(body, 0.8), lit(0xffffff, { detail: true, vertexColors: true }));
+  const walls = new Mesh(mossBark(body, 0.8), surfaced(0xffffff, "bark", { vertexColors: true }));
   walls.castShadow = true;
   walls.receiveShadow = true;
   group.add(walls);
   // The round door, its ring and a brass knob; a round window to its right.
-  group.add(part(new CircleGeometry(0.72, 18), lit(C.hutDoor, { detail: true }), 0, 0.85, 2.06));
+  group.add(part(new CircleGeometry(0.72, 18), surfaced(C.hutDoor, "planks"), 0, 0.85, 2.06));
   group.add(part(new TorusGeometry(0.76, 0.09, 6, 20), lit(C.woodDark), 0, 0.85, 2.06));
   group.add(
     part(
