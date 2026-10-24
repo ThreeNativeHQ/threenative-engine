@@ -83,6 +83,12 @@ decoded. Run `engine_search_capabilities` first: `loadAll` and the playtest star
 
 ### Phase 3 — Levers, one at a time
 
+Levers tried (the dashboard holds the numbers; a verdict lands here when it lands there):
+
+| # | Lever | Bytes | Preload (paired) | Verdict |
+| --- | --- | ---: | --- | --- |
+| 5 | Meshopt `FILTER` for animation outputs | 5.37 → 4.94 MiB (−8.0%) | local 830 vs 798 ms, 40 Mbps 1892 vs 1970 ms: noise | **Rejected.** Worst rotation error 0.712° against 0.041° today, translation 0.97 mm against 0. A limb tip moves 12 mm. `__tests__/model-animation-filter.spec.ts` now pins the floor: red on `FILTER`, green on the current cook. |
+
 Each lever is one iteration on the dashboard: measure, then `keep` or `reject`. A lever changes what
 reaches the screen, so a kept lever needs the visual judge (root `AGENTS.md`, owner rule
 2026-10-09) to return NEUTRAL or IMPROVEMENT, and no texture may fall below its PRD-351 floor.

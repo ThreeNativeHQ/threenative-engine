@@ -4,6 +4,8 @@
 //   sh scripts/xvfb.sh node scripts/asset-perf-loop.mjs measure --label "default cook" [--arm default|none] [--config '{"textures":{"quality":96}}'] [--decision keep] [--notes ...] [--dry-run] [--no-preload]
 //   node scripts/asset-perf-loop.mjs show
 //   node scripts/asset-perf-loop.mjs discard --iteration 3 --reason "dirty tree"
+//   node scripts/asset-perf-loop.mjs decide --iteration 5 --decision keep|reject --reason "..."
+//   node scripts/asset-perf-loop.mjs snapshot   # the built packages/assets becomes the --pair control
 //   node scripts/asset-perf-loop.mjs report
 //   node scripts/asset-perf-loop.mjs serve [--port 8767]   # live page, reloads when the ledger changes
 //
@@ -12,7 +14,15 @@
 // `@threenative/assets` first: `pnpm --filter "@threenative/assets..." build`. docs/asset-perf/ledger.json
 // is the durable record and docs/asset-perf/index.html is generated from it, as in the CI speed loop.
 import { execFileSync } from "node:child_process";
-import { cpSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from "node:fs";
+import {
+  cpSync,
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  statSync,
+} from "node:fs";
 import { createServer } from "node:http";
 import { hostname, tmpdir } from "node:os";
 import { dirname, extname, join, relative, resolve } from "node:path";
@@ -43,6 +53,9 @@ const DECISIONS = [
   "invalid",
 ];
 const MiB = 1024 * 1024;
+const DIST = resolve(ROOT, "packages/assets/dist");
+/** The build a `--pair` control cooks with. A code lever needs it: the same code cannot be its own control. */
+const CONTROL_DIST = resolve(ROOT, "packages/assets/node_modules/.cache/tn-asset-perf/control");
 /** Written while a `measure` runs, so the live page can say what is cooking. */
 const RUNNING = join(tmpdir(), "tn-asset-perf-running.json");
 
@@ -176,9 +189,9 @@ function listFiles(dir) {
 }
 
 /** Copy the corpus into a fresh project and cook it cold with `config`. The caller removes it. */
-async function cook(config) {
+async function cook(config, dist = DIST) {
   const { compileAssets, resolveBasisTranscoder } = await import(
-    pathToFileURL(resolve(ROOT, "packages/assets/dist/index.js")).href
+    pathToFileURL(join(dist, "index.js")).href
   );
   const project = mkdtempSync(join(tmpdir(), "tn-asset-perf-"));
   for (const [name, dir] of CORPUS) cpSync(dir, join(project, "assets", name), { recursive: true });
@@ -209,7 +222,11 @@ export async function measure(config, { preload = true, pair = false } = {}) {
   const arms = [];
   try {
     arms.push(await cook(config));
-    if (pair) arms.push(await cook(ARMS.default));
+    if (pair) {
+      if (!existsSync(CONTROL_DIST))
+        throw new Error("--pair needs a control build: run `snapshot` first");
+      arms.push(await cook(ARMS.default, CONTROL_DIST));
+    }
     if (preload) {
       const entries = arms[0].sources
         .map((source) => ({ path: source.path, kind: kindOf(source.path) }))
@@ -263,6 +280,21 @@ export function appendIteration(
     files: measurement.files,
   };
   return { ...ledger, goals: GOALS, iterations: [...ledger.iterations, iteration] };
+}
+
+/** Record the verdict on a measured iteration: the loop measures first and decides after its checks. */
+export function decideIteration(ledger, id, decision, reason) {
+  if (!DECISIONS.includes(decision))
+    throw new Error(`decision must be one of ${DECISIONS.join(", ")}`);
+  if (!ledger.iterations.some((item) => item.id === id)) throw new Error(`no iteration ${id}`);
+  return {
+    ...ledger,
+    iterations: ledger.iterations.map((item) =>
+      item.id === id
+        ? { ...item, decision, notes: [item.notes, reason].filter(Boolean).join(" | ") }
+        : item,
+    ),
+  };
 }
 
 /** The baseline is the first live `baseline` iteration; a `control` arm never becomes it. */
@@ -477,11 +509,27 @@ async function main(argv) {
   if (command === "measure") return measureCommand(ledger, argv, get);
   if (command === "show") return show(ledger);
   if (command === "serve") return serve(Number(get("--port") ?? 8767));
+  if (command === "decide") {
+    const next = decideIteration(
+      ledger,
+      Number(get("--iteration")),
+      get("--decision"),
+      get("--reason"),
+    );
+    writeAtomic(LEDGER, `${JSON.stringify(next, null, 2)}\n`);
+    writeAtomic(HTML, renderHtml(next));
+    return console.log(`iteration ${get("--iteration")}: ${get("--decision")}`);
+  }
+  if (command === "snapshot") {
+    rmSync(CONTROL_DIST, { recursive: true, force: true });
+    cpSync(DIST, CONTROL_DIST, { recursive: true });
+    return console.log(`control build: ${CONTROL_DIST}`);
+  }
   if (command === "discard") {
     ledger = discardIteration(ledger, Number(get("--iteration")), get("--reason"));
     writeAtomic(LEDGER, `${JSON.stringify(ledger, null, 2)}\n`);
   } else if (command !== "report") {
-    console.error("usage: asset-perf-loop.mjs measure|show|discard|report|serve");
+    console.error("usage: asset-perf-loop.mjs measure|show|discard|decide|report|serve|snapshot");
     process.exit(2);
   }
   writeAtomic(HTML, renderHtml(ledger));

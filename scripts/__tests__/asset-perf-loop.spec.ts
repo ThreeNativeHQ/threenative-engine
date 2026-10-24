@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-const { appendIteration, kindOf, renderHtml, summarize } = await import(
+const { appendIteration, decideIteration, kindOf, renderHtml, summarize } = await import(
   new URL("../asset-perf-loop.mjs", import.meta.url).href
 );
 const { emptyLedger } = await import(new URL("../ci-speed-loop.mjs", import.meta.url).href);
@@ -75,5 +75,22 @@ describe("asset perf loop", () => {
         decision: "maybe",
       }),
     ).toThrow(/decision must be one of/u);
+  });
+
+  it("records a verdict on a measured iteration and refuses an unknown one", () => {
+    const measurement = { ...summarize(sources, receipt), compileMs: 10 };
+    const ledger = appendIteration(emptyLedger(), {
+      measurement,
+      label: "lever",
+      arm: "default",
+      config: {},
+    });
+    const rejected = decideIteration(ledger, 1, "reject", "rotation error 0.71 degrees");
+    expect(rejected.iterations[0]).toMatchObject({
+      decision: "reject",
+      notes: "rotation error 0.71 degrees",
+    });
+    expect(() => decideIteration(ledger, 9, "keep")).toThrow(/no iteration 9/u);
+    expect(() => decideIteration(ledger, 1, "maybe")).toThrow(/decision must be one of/u);
   });
 });
