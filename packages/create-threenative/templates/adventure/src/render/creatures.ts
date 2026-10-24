@@ -136,21 +136,21 @@ export function createDummy(): ICreatureRig {
   };
 }
 
-/** The lock-on reticle: a gold ring and four pips, drawn over everything. Billboarded by `LockOn`. */
+/**
+ * The lock-on marker: a gold three-sided arrow pointing down, drawn over everything. Its origin is
+ * the arrow's tip, so `LockOn` places the tip above the target's head; it spins about Y, so its
+ * outline reads from any side.
+ */
 export function createReticle(): Group {
   const reticle = new Group();
-  const material = flat(C.reticle, 0.9, { depthTest: false });
-  const ring = new Mesh(new TorusGeometry(0.42, 0.03, 6, 32), material);
-  ring.renderOrder = 20;
-  reticle.add(ring);
-  for (let i = 0; i < 4; i += 1) {
-    const pip = new Mesh(new ConeGeometry(0.07, 0.16, 3), material);
-    const a = (i / 4) * Math.PI * 2;
-    pip.position.set(Math.cos(a) * 0.58, Math.sin(a) * 0.58, 0);
-    pip.rotation.z = a + Math.PI / 2;
-    pip.renderOrder = 20;
-    reticle.add(pip);
-  }
+  const arrow = new Mesh(
+    new ConeGeometry(0.2, 0.42, 3),
+    flat(C.reticle, 0.95, { depthTest: false }),
+  );
+  arrow.rotation.x = Math.PI;
+  arrow.position.y = 0.21;
+  arrow.renderOrder = 20;
+  reticle.add(arrow);
   reticle.visible = false;
   return reticle;
 }

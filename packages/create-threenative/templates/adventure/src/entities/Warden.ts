@@ -36,7 +36,6 @@ export class Warden implements ITarget {
   readonly mesh = new Group();
   readonly rig: ICreatureRig;
   readonly radius = CAPSULE.radius;
-  readonly height = 3;
   readonly tags = ["hostile", "boss"];
   body: CharacterBody3D | undefined;
   state: WardenState = "dormant";

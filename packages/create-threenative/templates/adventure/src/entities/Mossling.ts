@@ -47,7 +47,6 @@ export class Mossling implements ITarget {
   readonly mesh = new Group();
   readonly rig: ICreatureRig;
   readonly radius = CAPSULE.radius + 0.06;
-  readonly height = 1.25;
   readonly tags = ["hostile"];
   readonly home: Vector3;
   body: CharacterBody3D | undefined;

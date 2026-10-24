@@ -1,6 +1,5 @@
-import { Billboard3D } from "@threenative/core";
 import type { Group, PerspectiveCamera, Vector3 } from "three";
-import { Vector3 as V3 } from "three";
+import { Box3, MathUtils, Vector3 as V3 } from "three";
 import { createReticle } from "../render/creatures.js";
 
 /** Anything Wren can lock onto and cut: Mosslings, the Warden, the practice dummies. */
@@ -10,8 +9,6 @@ export interface ITarget {
   readonly alive: boolean;
   /** Body radius, so reach is measured to the surface. */
   readonly radius: number;
-  /** Where the reticle floats, above the origin. */
-  readonly height: number;
   /** The physics body the slash query reports. */
   readonly bodyId: number | undefined;
   /** Returns true when the hit did damage. */
@@ -25,6 +22,10 @@ const CONE = (60 * Math.PI) / 180;
 const SWITCH_WINDOW = 0.3;
 /** A hostile this close locks from any side: the one at Wren's back is the one that matters. */
 const CLOSE = 3;
+/** The marker's tip floats this far over the target's top, before the bob and the height scale. */
+const LIFT = 0.45;
+/** Past this camera distance the marker grows, so it stays readable across a room. */
+const READABLE_AT = 12;
 
 /**
  * Z-targeting, game-owned: no engine capability locks on, so this file picks and holds a target.
@@ -38,18 +39,16 @@ export class LockOn {
   target: ITarget | undefined;
   /** True on the one step a target was acquired, so the hero can record the strafe distance. */
   justAcquired = false;
-  readonly reticle: Group;
-  readonly #billboard: Billboard3D;
+  readonly reticle: Group = createReticle();
+  /** How far the marker's lowest point floats over the locked target's top (m); 0 while unlocked. */
+  markerLift = 0;
   #released: ITarget | undefined;
   #window = 0;
   #spin = 0;
   readonly #view = new V3();
   readonly #to = new V3();
-
-  constructor(camera: PerspectiveCamera) {
-    this.reticle = createReticle();
-    this.#billboard = new Billboard3D(this.reticle, { camera });
-  }
+  readonly #bounds = new Box3();
+  readonly #marker = new Box3();
 
   update(
     dt: number,
@@ -79,13 +78,24 @@ export class LockOn {
     }
     const target = this.target;
     this.reticle.visible = target !== undefined;
+    this.markerLift = 0;
     if (target !== undefined) {
-      this.#spin += dt * 2;
-      this.reticle.position.copy(target.mesh.position);
-      this.reticle.position.y += target.height;
-      this.#billboard.update();
-      this.reticle.rotateZ(this.#spin);
-      this.reticle.scale.setScalar(1 + Math.sin(this.#spin * 3) * 0.06);
+      // The target's live bounds, not a fixed offset: a rearing Warden or a hopping Mossling keeps
+      // the arrow over its real top.
+      const box = this.#bounds.setFromObject(target.mesh);
+      const tall = MathUtils.clamp((box.max.y - box.min.y) / 1.8, 0.75, 1.25);
+      this.#spin += dt * 1.6;
+      const lift = LIFT + 0.05 * tall + Math.sin(this.#spin * 2.5) * 0.06;
+      this.reticle.position.set(
+        (box.min.x + box.max.x) / 2,
+        box.max.y + lift,
+        (box.min.z + box.max.z) / 2,
+      );
+      this.reticle.rotation.set(0, this.#spin, 0);
+      const far = this.reticle.position.distanceTo(camera.position) / READABLE_AT;
+      this.reticle.scale.setScalar(tall * Math.max(1, far));
+      // Measured, not assumed: the gap from the target's top to the marker's own lowest point.
+      this.markerLift = this.#marker.setFromObject(this.reticle).min.y - box.max.y;
     }
   }
 

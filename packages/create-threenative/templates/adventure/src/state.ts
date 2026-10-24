@@ -24,6 +24,10 @@ export type GameState = {
   zone: "vale" | "hollow";
   /** The entity the lock-on holds, or "" when nothing is locked. */
   lockTarget: string;
+  /** The lock-on marker: whether it shows, and the lowest its tip has floated over a locked
+   * target's top (m) — 0 until the first lock. */
+  lockMarkerShown: boolean;
+  lockMarkerLowest: number;
   /** Counters the playtests prove the loop with. */
   slashes: number;
   slashHits: number;

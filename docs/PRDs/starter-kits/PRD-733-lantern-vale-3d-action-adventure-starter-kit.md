@@ -75,7 +75,7 @@ small clearing and one small three-room dungeon, the Moss Hollow. The kit is gam
 - **Lock-on.** `src/entities/LockOn.ts` picks the nearest living hostile inside a 12 m range and a 60°
   cone of the camera. While held, the hero faces the target, strafes at a constant distance and
   rolls become hops. The target moves to the next hostile on a press and drops when it dies, leaves
-  range or the button is released. A billboarded reticle marks the target.
+  range or the button is released. A gold arrow floats above the target's head.
 - **Combat.** A slash runs one `intersectShape` query over the arc on the active frames. Block raises
   the shield: a hit inside the 100° front cone costs nothing, a hit from behind costs a half-heart.
   Health is a row of hearts counted in half-hearts. A heart container adds one heart of capacity.
@@ -254,6 +254,22 @@ Each playtest runs on a project scaffolded from `--template adventure`:
   is not added there alone: the kit order puts `collectathon` first. Registration rows added here:
   the PRD-289 conventions table, `TEMPLATE_NAMES` in `scripts/capability-recall.ts`, and the
   `request.adventure-lock-on` recall row (budget `rowCount` 102).
+- 2026-10-24 (owner, João: "on the zelda clone the target is on the enemy, not above it"): the
+  lock-on marker floats above the target, not on it. It is a gold three-sided arrow pointing down.
+  It bobs, spins slowly about Y and draws over everything. Its tip sits 0.4-0.6 m over the top of
+  the target's live bounds (`Box3.setFromObject`, so a rearing Warden or a hopping Mossling is
+  covered). It scales with the target's height (capped at 1.25x) and grows past 12 m of camera
+  distance. The fixed per-entity `height` field is deleted. The lock camera's yaw and Wren's facing
+  are unchanged. One framing addition: while locked, the camera aim rises 60% of the way from
+  Wren's shoulders to the marker, eased. Without it, the Warden's marker sat above the frame top.
+  The lock camera puts the target on the line through Wren, so a small Mossling close behind her is
+  hidden by her body. Its arrow then shows just over her head. The owner keeps that camera; a side
+  offset (as in Ocarina) is the fix if he wants it. Proof: state
+  `lockMarkerShown` and `lockMarkerLowest` (the lowest gap from the target's top to the marker's own
+  lowest point, measured from both bounds). `lockon`, `combat` and `boss` assert that it shows
+  while locked (a dummy, `mossling.0`, `warden`), hides when unlocked, and that the gap is at least
+  0.3 m. Red: the old ring at the old offset hung 0.35-0.59 m into the dummy and the Mossling
+  (`lockon` and `combat` exit 1). Green: the lowest gap was 0.43-0.52 m.
 
 ## Execution Phases
 
@@ -297,11 +313,11 @@ runs the native player once to record whether navigation is bound.
 **Implementation:** register the kit in every gate. Capture the clearing, the block room and the
 Warden room at three fixed poses, headed, two runs each. Give the captures and the visual criteria
 to a fresh read-only judge subagent: Wren reads as one character with feet on the ground, the vale
-and the Hollow read as two connected places under the Unreal default look, the lock-on reticle is
+and the Hollow read as two connected places under the Unreal default look, the lock-on arrow is
 visible, and no frame is blank or white.
 **Verification:** the commands on each box. The judge verdict and the PR screenshots go on the PR
 (orphan `prd-733-screenshots` branch, with the PRD-732 images on the same PR).
 
 - [x] AC-8: the kit passes every registration gate and the template lane. proof: `pnpm budgets && pnpm exec vitest run scripts/__tests__/ci-structure.spec.ts scripts/__tests__/primary-docs.spec.ts scripts/__tests__/check-template-conventions.spec.ts && pnpm test:templates` — Evidence: `pnpm budgets` exit 0. The registration specs (scaffold, looks, auto-exposure-scaffold, ci-structure, primary-docs, check-template-conventions, playtest) pass 370/370 on the kit's own tree, with the adventure scaffold hash re-pinned after the hero and camera edits. `pnpm check:docs` passes. `TN_TEMPLATE_ONLY=adventure` template lane: 9 scenarios plus the boot smoke pass ("adventure: scaffolded playtests passed"). After the hero and camera edits, all 9 scenarios rerun green on the nvidia adapter (`performance`: p95 18.5 ms, 275 draws, 34,477 triangles, tier high). `pnpm test:tone` has no adventure case, so it did not run.
 - [ ] AC-9: the kit runs 300 frames on the native desktop engine player with a non-blank capture. proof: `node packages/playtest/dist/runner/cli.js <project>/native-playtests/survives.playtest.json --target desktop` — Evidence: open, engine-blocked (see `## Blocked on`). `pnpm build --target desktop` with the worktree's `tn-native-engine-player-v8` builds `dist-native/adventure/adventure`. The run exits 2 with `TN_INSPECT_GAME_BRIDGE: TypeError: TN_TSL uniform: expected a TSL node or number`, the core auto exposure blocker PRD-732 also records.
-- [ ] AC-10: the visual judge returns pass on every criterion above for all three poses. proof: the judge report linked from the PR — Evidence: open, for the lead's judge. Captures, headed WebGPU on the nvidia adapter, two runs per pose: `~/Downloads/lantern-vale/01-vale-run1.png` to `06-warden-run2.png`. All six report `TN_WORLD_ENVIRONMENT` `tonemapMode: "filmic"` and `TN_AUTO_EXPOSURE` measured and applied (settled in the vale and the block room, still settling at the Warden pose). Gameplay video: `~/Downloads/lantern-vale/lantern-vale-gameplay.mp4` (31 s: lock-on and slash, shield block, block push and grate, key and door, the Warden stun).
+- [ ] AC-10: the visual judge returns pass on every criterion above for all three poses. proof: the judge report linked from the PR — Evidence: open, for the lead's judge. Captures, headed WebGPU on the nvidia adapter, two runs per pose: `~/Downloads/lantern-vale/01-vale-run1.png` to `06-warden-run2.png`. All six report `TN_WORLD_ENVIRONMENT` `tonemapMode: "filmic"` and `TN_AUTO_EXPOSURE` measured and applied (settled in the vale and the block room, still settling at the Warden pose). Gameplay video: `~/Downloads/lantern-vale/lantern-vale-gameplay.mp4` (31.5 s: the lock-on arrow and slash, shield block, block push and grate, key and door, the Warden stun). Lock-on stills, headed WebGPU on the nvidia adapter, two runs per pose: `07-lockon-mossling-run1.png` to `10-lockon-warden-run2.png`.

@@ -206,6 +206,40 @@
         "id": "state",
         "path": "defeated",
         "gte": 2
+      },
+      {
+        "id": "state",
+        "path": "lockTarget",
+        "equals": "",
+        "atSteps": [
+          {
+            "label": "lock",
+            "equals": "mossling.0"
+          }
+        ],
+        "allowTrivial": "The lock ends empty; the lock step proves the marker below was measured on the Mossling."
+      },
+      {
+        "id": "state",
+        "path": "lockMarkerShown",
+        "equals": false,
+        "atSteps": [
+          {
+            "label": "lock",
+            "equals": true
+          },
+          {
+            "label": "between",
+            "equals": true
+          }
+        ],
+        "allowTrivial": "The per-step values prove the marker shows while a target is locked and is gone once the lock drops."
+      },
+      {
+        "id": "state",
+        "path": "lockMarkerLowest",
+        "gte": 0.3,
+        "allowTrivial": "The lowest the marker tip floated over a locked target's bounds top; 0 until a lock, so a run that never locks fails."
       }
     ],
     "components": [

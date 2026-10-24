@@ -9,7 +9,6 @@ export class Dummy implements ITarget {
   readonly mesh: Group;
   readonly rig: ICreatureRig;
   readonly radius = 0.3;
-  readonly height = 2.1;
   readonly tags = ["hostile"];
   health = 2;
   state: "standing" | "dead" = "standing";

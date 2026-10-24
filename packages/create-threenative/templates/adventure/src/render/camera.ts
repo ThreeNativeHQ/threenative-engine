@@ -18,6 +18,8 @@ const YAW_RATE = 4;
 const WALL_MARGIN = 0.35;
 /** The most a pulled-in camera climbs above its usual height. */
 const MAX_CLIMB = 1.6;
+/** While locked, the share of the way the aim rises from Wren's shoulders to the lock marker. */
+const MARKER_PULL = 0.6;
 
 /** A ray from `from` to `to`; returns the hit distance, or undefined when nothing is in the way. */
 export type CameraBlocker = (from: Vector3, to: Vector3) => number | undefined;
@@ -25,7 +27,8 @@ export type CameraBlocker = (from: Vector3, to: Vector3) => number | undefined;
 export interface IFollowCamera {
   /** The yaw the camera sits at around Wren: 0 puts it south of her, looking north. */
   readonly yaw: number;
-  update(focus: Vector3, target: Vector3 | undefined, dt: number): void;
+  /** `markerY`, while locked, is the lock marker's height: the aim rises toward it to keep it in frame. */
+  update(focus: Vector3, target: Vector3 | undefined, dt: number, markerY?: number): void;
   /** Swing round to `yaw` and stay there: the target button with nothing to lock recentres. */
   recenter(yaw: number): void;
   /** Jump to a pose at once: after a respawn or a room change, never ease across the map. */
@@ -44,6 +47,8 @@ export function setupCamera(camera: PerspectiveCamera, blocked: CameraBlocker): 
   const desired = new Vector3();
   const aim = new Vector3();
   const direction = new Vector3();
+  // How far the aim sits over Wren's shoulders; eased, so a lock tilts the view instead of snapping.
+  let raise = 0;
   const place = (focus: Vector3, ease: number): void => {
     pivot.set(focus.x, focus.y + AIM_HEIGHT + 0.4, focus.z);
     desired.set(
@@ -67,14 +72,20 @@ export function setupCamera(camera: PerspectiveCamera, blocked: CameraBlocker): 
       }
     }
     camera.position.lerp(desired, ease);
-    camera.lookAt(aim.set(focus.x, focus.y + AIM_HEIGHT, focus.z));
+    camera.lookAt(aim.set(focus.x, focus.y + AIM_HEIGHT + raise, focus.z));
   };
   return {
     get yaw(): number {
       return yaw;
     },
-    update(focus: Vector3, target: Vector3 | undefined, dt: number): void {
+    update(focus: Vector3, target: Vector3 | undefined, dt: number, markerY?: number): void {
       if (target !== undefined) home = Math.atan2(focus.x - target.x, focus.z - target.z);
+      // A tall target's marker sits above the frame when the aim stays on Wren: lift it 60% of the way.
+      const wanted =
+        target !== undefined && markerY !== undefined
+          ? Math.max(0, (markerY - (focus.y + AIM_HEIGHT)) * MARKER_PULL)
+          : 0;
+      raise += (wanted - raise) * (1 - Math.exp(-YAW_RATE * dt));
       const goal = home;
       const turn = MathUtils.euclideanModulo(goal - yaw + Math.PI, Math.PI * 2) - Math.PI;
       yaw += turn * (1 - Math.exp(-YAW_RATE * dt));

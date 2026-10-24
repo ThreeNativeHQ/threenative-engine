@@ -236,6 +236,40 @@
         "id": "state",
         "path": "shieldBlocks",
         "equals": 2
+      },
+      {
+        "id": "state",
+        "path": "lockTarget",
+        "equals": "",
+        "atSteps": [
+          {
+            "label": "charged",
+            "equals": "warden"
+          }
+        ],
+        "allowTrivial": "The lock ends empty once the Warden falls; the charged step proves the marker was measured on the Warden."
+      },
+      {
+        "id": "state",
+        "path": "lockMarkerShown",
+        "equals": false,
+        "atSteps": [
+          {
+            "label": "charged",
+            "equals": true
+          },
+          {
+            "label": "stun-1",
+            "equals": true
+          }
+        ],
+        "allowTrivial": "The per-step values prove the marker shows while a target is locked and is gone once the lock drops."
+      },
+      {
+        "id": "state",
+        "path": "lockMarkerLowest",
+        "gte": 0.3,
+        "allowTrivial": "The lowest the marker tip floated over a locked target's bounds top; 0 until a lock, so a run that never locks fails."
       }
     ],
     "components": [

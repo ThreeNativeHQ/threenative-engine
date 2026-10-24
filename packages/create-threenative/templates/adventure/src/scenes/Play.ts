@@ -55,6 +55,8 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     keys: 0,
     lastRespawn: "",
     lockFacingError: 0,
+    lockMarkerLowest: 0,
+    lockMarkerShown: false,
     lockStrafeDrift: 0,
     lockStrafeSeconds: 0,
     lockTarget: "",
@@ -193,7 +195,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     const dummies = this.#dummies;
     const mosslings = this.#mosslings;
     const targets: ITarget[] = [...dummies, ...mosslings, warden];
-    const lock = new LockOn(camera);
+    const lock = new LockOn();
     ctx.add(lock.reticle);
 
     const grate = new Door(
@@ -232,6 +234,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     let strafeDrift = 0;
     let strafeSeconds = 0;
     let lockFacing = 0;
+    let markerLow = 0;
     // Respawn point: the start, then the last doorway Wren came through.
     const checkpoint: { at: Vector3; name: Checkpoint; yaw: number } = {
       at: (indoors ? hollow.entry : vale.spawn).clone(),
@@ -301,7 +304,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     });
     rig.snap(hero.mesh.position, hero.yaw + Math.PI);
     afterPhysics(ctx, (dt) => {
-      rig.update(hero.mesh.position, lock.target?.mesh.position, dt);
+      rig.update(hero.mesh.position, lock.target?.mesh.position, dt, lock.reticle.position.y);
       lighting.follow(hero.mesh.position);
     });
 
@@ -441,6 +444,10 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       statePatch.lockStrafeDrift = Math.round(strafeDrift * 1000) / 1000;
       statePatch.lockStrafeSeconds = Math.round(strafeSeconds * 100) / 100;
       statePatch.lockTarget = target?.id ?? "";
+      statePatch.lockMarkerShown = lock.reticle.visible;
+      if (lock.reticle.visible)
+        markerLow = markerLow === 0 ? lock.markerLift : Math.min(markerLow, lock.markerLift);
+      statePatch.lockMarkerLowest = Math.round(markerLow * 1000) / 1000;
       statePatch.prompt = prompt;
       statePatch.respawns = respawns;
       statePatch.shieldBlocks = hero.shieldBlocks;
