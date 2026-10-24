@@ -157,8 +157,8 @@
       {
         "id": "state",
         "path": "assetLoads",
-        "equals": 0,
-        "allowTrivial": "Every model, texture and sky is built in code: the loader is never asked for a file."
+        "equals": 5,
+        "allowTrivial": "Every model and the sky are built in code; the loader is asked only for the five shared tiling photos in src/render/surface.ts."
       }
     ]
   }
