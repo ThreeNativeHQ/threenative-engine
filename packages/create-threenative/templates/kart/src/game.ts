@@ -7,13 +7,9 @@ import type { GameState } from "./state.js";
 
 const game = defineGame<GameState>({
   input: {
-    // Steering is the x of `input.vector("move")`: the arrows, A/D or the left stick.
-    move: {
-      down: ["ArrowDown", "KeyS"],
-      left: ["ArrowLeft", "KeyA"],
-      right: ["ArrowRight", "KeyD"],
-      up: ["ArrowUp", "KeyW"],
-    },
+    // Steering is the x of `input.vector("steer")`: the arrows, A/D or the left stick. No up or
+    // down here: a vector is normalised, so W held with D would steer at only 0.71.
+    steer: { left: ["ArrowLeft", "KeyA"], right: ["ArrowRight", "KeyD"] },
     accel: { buttons: [0], keys: ["ArrowUp", "KeyW"] },
     brake: { buttons: [1], keys: ["ArrowDown", "KeyS"] },
     // Hop; hold it through a turn to power-slide, wiggle against the slide to charge a mini-turbo.

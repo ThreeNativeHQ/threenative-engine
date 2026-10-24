@@ -144,7 +144,7 @@ export class CourseItem {
     this.grace = Math.max(0, this.grace - dt);
     const at = this.mesh.position;
     if (this.kind === "banana") {
-      at.y = course.y[this.index]! + 0.25;
+      at.y = course.heightAt(this.index, at.x, at.z) + 0.02;
       return;
     }
     this.life -= dt;
@@ -171,7 +171,7 @@ export class CourseItem {
       at.z -= nz * (Math.abs(this.lateral) - limit);
       this.bounces += 1;
     }
-    at.y = course.y[this.index]! + 0.35;
+    at.y = course.heightAt(this.index, at.x, at.z) + 0.02;
     this.mesh.rotation.y += dt * 14;
   }
 

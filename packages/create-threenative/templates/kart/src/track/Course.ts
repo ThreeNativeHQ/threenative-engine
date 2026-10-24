@@ -48,7 +48,8 @@ export const LAYOUT = {
   /** Boost pads: lap fraction and lateral offset of each, a 4 m x 3 m chevron. */
   pads: [
     { at: 0.04, lateral: -2.5 },
-    { at: 0.23, lateral: 2.5 },
+    // On the back straight, so a kart reaches the jump on a boost.
+    { at: 0.385, lateral: -5 },
     { at: 0.7, lateral: 0 },
     { at: 0.86, lateral: -2 },
   ],
@@ -97,6 +98,9 @@ export interface ICourse {
   /** Finds a kart again near where it was, MK64's −3..+6 window (`path_utils.inc.c:300`). */
   track(from: number, x: number, z: number, out?: { index: number; lateral: number }): ITrackPoint;
   surface(point: ITrackPoint): Surface;
+  /** Road height under x/z near sample `index`, interpolated between samples so a fast kart
+   * does not feel the 1 m steps as bumps. */
+  heightAt(index: number, x: number, z: number): number;
   /** World position of `lateral` metres off sample `index`, on the road surface. */
   pointAt(index: number, lateral: number, out: { x: number; y: number; z: number }): void;
 }
@@ -208,6 +212,13 @@ export function buildCourse(): ICourse {
     creek: [creekFirst, creekFirst + LAYOUT.jump.floor],
     deck,
     length,
+    heightAt(i, px0, pz0) {
+      const k = wrap(i);
+      const along = (px0 - x[k]!) * tx[k]! + (pz0 - z[k]!) * tz[k]!;
+      const other = wrap(k + (along >= 0 ? 1 : -1));
+      const f = Math.min(1, Math.abs(along) / STEP);
+      return y[k]! + (y[other]! - y[k]!) * f;
+    },
     pads: LAYOUT.pads.map(({ at, lateral }) => ({ index: index(at), lateral })),
     pointAt(i, lateral, out) {
       const k = wrap(Math.round(i));

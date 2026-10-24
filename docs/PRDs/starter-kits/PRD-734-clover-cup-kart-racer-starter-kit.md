@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-734 — Clover Cup: a kart racer starter kit with MK64-style drifting, items and CPU drivers
 
-**Status:** NOT STARTED
+**Status:** PARTIAL — Phase 1 done
 **Priority:** P2 — new genre kit: no shipped kit has a power-slide with a mini-turbo, item boxes, CPU drivers with rubber-banding or a kart chase camera (all three phases open).
 **Complexity:** 5 (MEDIUM) — 11+ kit source files (+3), new kit system (+2). Risk override: none. The kit is game code in one template; the only `packages/` change is the engine-mcp kit router (one function, one test).
 **Owner:** João
@@ -117,7 +117,7 @@ flowchart LR
 ```
 
 **Registration:** `kit.json` (genre `kart-racer`, aliases `mario-kart`, `mariokart`, `mk64`,
-`kart`), the scaffold hash and `cli.spec.ts` alias rows, the capability manifest, the engine-mcp
+`kart`, `kart-racer`), the scaffold hash and `cli.spec.ts` alias rows, the capability manifest, the engine-mcp
 router (a longer kit phrase beats a shorter one inside it: "mario kart" is not "mario"), the README
 kit row, the conventions row, the capability-recall rows and the template `AGENTS.md`.
 
@@ -164,6 +164,16 @@ gates every kit must pass. Each playtest runs on a project scaffolded from `--te
 - 2026-10-24 (agent): deferred until a user asks — red shells, the star, lightning, the blue shell,
   battle mode, split screen, a cup of several courses, audio (no asset files and no synthesis
   capability). Revisit when the owner asks or an engine capability makes audio portable.
+- 2026-10-24 (agent): a nose driven into a wall turns to slide along it (kit guard). MK64's
+  reflection alone left the nose pointing in, so the slip lag steered the kart back into the wall
+  every tick and the -18 throttle per contact stopped it dead (model replay, before the guard).
+- 2026-10-24 (agent): the road height is interpolated between the 1 m samples. Per-sample steps
+  read as bumps at speed and launched the kart off the lip test on flat road.
+- 2026-10-24 (agent): the second boost pad moved to the back straight (lap 0.385), so the surfaces
+  playtest reaches it after the grass run and a kart reaches the jump on a boost.
+- 2026-10-24 (agent): AC-7's infield cut is out of reach by design: the walls close the course on
+  both sides, so no kart can cut the infield. The lap rule is proven by order and direction instead
+  (`maxJump`, the window of -3..+6 samples, keeps a kart from skipping ahead).
 - 2026-10-24 (agent): the countdown lights last 1 s each. MK64's grand-prix pre-roll of 240 object
   ticks (`mk64: src/code_8006E9C0.c:443`) is 8 s, too long for a starter kit and its playtests.
 
@@ -171,7 +181,7 @@ gates every kit must pass. Each playtest runs on a project scaffolded from `--te
 
 #### Phase 1: The kart drives like the reference
 
-**Status:** NOT STARTED
+**Status:** DONE (2026-10-24)
 **Files:** `templates/kart/` cloned from `collectathon`'s shell; new `src/entities/Kart.ts`,
 `src/track/Course.ts`, `src/render/kart.ts`, `src/render/camera.ts`, `kit.json`,
 `playtests/{survives,drift,surfaces,wall}.playtest.json`.
@@ -179,10 +189,10 @@ gates every kit must pass. Each playtest runs on a project scaffolded from `--te
 and driver models.
 **Verification:** the four playtests below on WebGPU, `adapter.info` checked.
 
-- [ ] AC-1: the scaffolded kit boots on the core Unreal defaults (`TN_WORLD_ENVIRONMENT` filmic, `TN_AUTO_EXPOSURE` measured and applied, `rg 'tonemapMode|autoExposureEnabled|exposure:' src/` finds no pin), the kart sits on the road and drives for 600 frames with no console error, and `assets/` holds no file. proof: `playtests/survives.playtest.json`
-- [ ] AC-2: a hop with the stick held locks a drift to that side; two outside-and-back wiggles reach stage 2 (spark colour white → yellow → orange); the release fires a mini-turbo that lifts speed above the pre-drift top speed for 0.52 s; a drift released at stage 1 fires none. proof: `playtests/drift.playtest.json`
-- [ ] AC-3: full throttle on grass settles at ×0.70 ± 0.03 of the road top speed, and a boost pad pins the throttle and lifts speed by +9.8% ± 1.5% for 1.33 s. proof: `playtests/surfaces.playtest.json`
-- [ ] AC-4: driving into the wall removes the speed into it, the kart stays inside the wall line, and its throttle drops; the ramp sends the kart airborne for at least 0.4 s and it lands on the road. proof: `playtests/wall.playtest.json`
+- [x] AC-1: the scaffolded kit boots on the core Unreal defaults (`TN_WORLD_ENVIRONMENT` filmic, `TN_AUTO_EXPOSURE` measured and applied, `rg 'tonemapMode|autoExposureEnabled|exposure:' src/` finds no pin), the kart sits on the road and drives for 600 frames with no console error, and `assets/` holds no file. proof: `playtests/survives.playtest.json` — exit 0 on RTX 2080 (`adapter.info` nvidia turing, tier high), `tonemapMode":"filmic"`, `TN_AUTO_EXPOSURE` measured, applied and settled, `rg` finds no pin, the template and the scaffold have no `assets/`.
+- [x] AC-2: a hop with the stick held locks a drift to that side; two outside-and-back wiggles reach stage 2 (spark colour white → yellow → orange); the release fires a mini-turbo that lifts speed above the pre-drift top speed for 0.52 s; a drift released at stage 1 fires none. proof: `playtests/drift.playtest.json` — exit 0: `stageLog` 1,3, 1 mini-turbo of 2 drifts, sparks white 32 / yellow 26 / orange 6 bursts, entry 19.1 m/s, turbo peak 25.49 m/s (top 24), 0 wall hits.
+- [x] AC-3: full throttle on grass settles at ×0.70 ± 0.03 of the road top speed, and a boost pad pins the throttle and lifts speed by +9.8% ± 1.5% for 1.33 s. proof: `playtests/surfaces.playtest.json` — exit 0: grass settles at 16.80 m/s (x0.700), pad peak 1.0976 x top, boost 1.317 s (79 ticks). Red first: the pad was missed while `W`+`D` steered at 0.71 through one normalised vector; steering now has its own left-right binding.
+- [x] AC-4: driving into the wall removes the speed into it, the kart stays inside the wall line, and its throttle drops; the ramp sends the kart airborne for at least 0.4 s and it lands on the road. proof: `playtests/wall.playtest.json` — exit 0: 9.06 m/s into the wall, -4.53 after (x0.5 reflected), throttle -18, widest 10.15 m (limit 10.15), longest air 0.63 s, lands on road.
 
 #### Phase 2: The course is a race
 
@@ -195,7 +205,7 @@ checkpoints, laps, ranking, finish screen, the effects.
 
 - [ ] AC-5: an item box gives an item drawn from the rank's curve; a dropped banana spins the kart behind for 1.5 s, a green shell hits a CPU ahead and tumbles it for 1.7 s, and a mushroom boosts the user for 1.33 s. proof: `playtests/items.playtest.json`
 - [ ] AC-6: after a 3-2-1 countdown the 7 CPUs finish 3 laps with no CPU stuck, the finish order matches the progress ranking, and the HUD state shows the player's position and lap and the finish screen. proof: `playtests/race.playtest.json`
-- [ ] AC-7: a lap counts only after the 4 checkpoints in order; driving backwards over the line does not add a lap, and a cut across the infield does not count. proof: `playtests/laps.playtest.json`
+- [ ] AC-7: a lap counts only after the 4 checkpoints in order; driving backwards over the line does not add a lap, and no kart skips ahead along the line (the -3..+6 sample window; see Decisions for the infield cut). proof: `playtests/laps.playtest.json`
 
 #### Phase 3: Registered, measured and judged
 

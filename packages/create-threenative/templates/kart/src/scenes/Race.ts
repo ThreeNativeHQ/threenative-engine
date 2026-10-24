@@ -158,15 +158,18 @@ export class Race extends Scene<GameState> {
           ...kart.counts,
           airborne: kart.airborne,
           backCrossings: entrant.racer.backCrossings,
+          boostLift: kart.boostPeak / kart.topSpeed,
+          boostSeconds: kart.boostSeconds,
           boostTicks: kart.boostTicks,
           boxes: entrant.boxes,
           drag: kart.drag,
           driftSide: kart.driftSide,
           driftStage: kart.driftStage,
-          driftStages: [...kart.driftStages],
+          driftEntrySpeed: kart.driftEntrySpeed,
+          stageLog: kart.driftStages.join(","),
           drifting: kart.drifting,
           finished: entrant.racer.finished,
-          groundGap: kart.y - course.y[kart.index]!,
+          groundGap: kart.y - course.heightAt(kart.index, kart.x, kart.z),
           finishTime: entrant.racer.finishTime,
           hit: kart.hit,
           index: kart.index,
@@ -175,6 +178,7 @@ export class Race extends Scene<GameState> {
           lap: entrant.racer.lap,
           lateral: kart.lateral,
           longestAir: kart.longestAir,
+          maxLateral: kart.maxLateral,
           maxJump: entrant.racer.maxJump,
           miniTurboTicks: kart.miniTurboTicks,
           name: entrant.racer.name,
@@ -183,12 +187,18 @@ export class Race extends Scene<GameState> {
           passed: entrant.racer.passed,
           progress: entrant.racer.progress,
           rank: entrant.racer.rank,
+          settledGrass: kart.settled.grass,
+          settledRoad: kart.settled.road,
           speed: kart.speed,
           stuckWorst: entrant.stuckWorst,
           surface: kart.surface,
           throttle: kart.throttle,
           topSpeed: kart.topSpeed,
+          turboPeak: kart.turboPeak,
+          wallAfter: kart.wallAfter,
           wallHits: kart.wallHits,
+          wallInto: kart.wallInto,
+          wallThrottleDrop: kart.wallThrottleDrop,
           wrongWay: entrant.racer.wrongWay,
           y: kart.y,
         }),
@@ -308,7 +318,7 @@ export class Race extends Scene<GameState> {
     const skids = new SkidMarks(view.group);
     ctx.entities.add("effects", {
       debug: () => ({
-        fired: { ...fired },
+        ...fired,
         skids: skids.laid,
         spawned: Object.fromEntries(Object.entries(emitters).map(([k, e]) => [k, e.stats.spawned])),
       }),
@@ -428,7 +438,7 @@ export class Race extends Scene<GameState> {
 
       // ---- The player's hands -------------------------------------------------------------
       if (input.justPressed("autopilot")) autopilot = !autopilot;
-      const steer = input.vector("move").x + (touch?.move.x ?? 0);
+      const steer = input.vector("steer").x + (touch?.move.x ?? 0);
       playerInput.throttle = throttleHeld;
       playerInput.brake = input.pressed("brake") || (touch !== undefined && touch.move.y < -0.5);
       playerInput.steer = Math.max(-1, Math.min(1, steer));

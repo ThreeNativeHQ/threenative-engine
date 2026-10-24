@@ -142,6 +142,12 @@ export class Kart {
   #hopping = false;
   miniTurboTicks = 0;
   miniTurbo = 0;
+  /** Fastest speed during the last mini-turbo, and the speed the last drift began at. */
+  turboPeak = 0;
+  driftEntrySpeed = 0;
+  /** Seconds the last boost lasted, and the fastest speed during it. */
+  boostSeconds = 0;
+  boostPeak = 0;
   boostTicks = 0;
   boost = 0;
   catchUp = 0;
@@ -151,7 +157,17 @@ export class Kart {
   tumbleTicks = 0;
   /** Visual spin angle while hit, radians. */
   spinAngle = 0;
+  /** Speed after 1 s of full throttle, wheel straight, on one surface: the settled top there. */
+  readonly settled: Record<Surface, number> = { grass: 0, road: 0, water: 0 };
+  #settling = 0;
+  /** Widest the kart has been from the centre line, metres. */
+  maxLateral = 0;
   wallHits = 0;
+  /** The last wall contact: speed into the wall before and after it (m/s along the wall's
+   * normal; after is negative, away from it) and the throttle it cost. */
+  wallInto = 0;
+  wallAfter = 0;
+  wallThrottleDrop = 0;
   /** Ticks this kart has been touching a wall this tick (0 or 1), for the effects. */
   onWall = false;
   readonly counts = { drifts: 0, hops: 0, miniTurbos: 0, boosts: 0, spins: 0, tumbles: 0 };
@@ -213,6 +229,8 @@ export class Kart {
   startBoost(): void {
     this.boostTicks = KART_FEEL.boostTicks;
     this.counts.boosts += 1;
+    this.boostSeconds = 0;
+    this.boostPeak = this.speed;
   }
 
   /** A banana: a 1.5 s spin. Ends any drift and boost. */
@@ -324,6 +342,7 @@ export class Kart {
       this.driftStage = 0;
       this.#driftCounter = 0;
       this.counts.drifts += 1;
+      this.driftEntrySpeed = this.speed;
     }
     if (this.drifting) {
       if (!input.drift) this.#endDrift(true);
@@ -357,9 +376,19 @@ export class Kart {
     this.velocityYaw = wrapAngle(next);
 
     // Move on the ground plane.
+    if (this.miniTurboTicks > 0) this.turboPeak = Math.max(this.turboPeak, this.speed);
+    if (this.boostTicks > 0) {
+      this.boostSeconds += dt;
+      this.boostPeak = Math.max(this.boostPeak, this.speed);
+    }
     this.x += -Math.sin(this.velocityYaw) * this.speed * dt;
     this.z += -Math.cos(this.velocityYaw) * this.speed * dt;
+    const surface = this.surface;
     this.#follow(dt);
+    this.maxLateral = Math.max(this.maxLateral, Math.abs(this.lateral));
+    const steady = this.grounded && this.throttle >= top && Math.abs(steer) < 0.1 && !this.drifting;
+    this.#settling = steady && surface === this.surface ? this.#settling + dt : 0;
+    if (this.#settling >= 1) this.settled[this.surface] = this.speed;
   }
 
   /** The track-space half of the step: where on the course, what surface, the wall and the ground. */
@@ -388,8 +417,19 @@ export class Kart {
         const rz = vz - (1 + f.wallBounce) * into * nz;
         this.speed = Math.hypot(rx, rz);
         this.velocityYaw = Math.atan2(-rx, -rz);
+        this.wallInto = into;
+        this.wallAfter = rx * nx + rz * nz;
+        this.wallThrottleDrop = Math.min(this.throttle, f.wallThrottle);
         this.throttle = Math.max(0, this.throttle - f.wallThrottle);
         this.wallHits += 1;
+      }
+      // A nose into the wall turns to scrape along it, so the kart glances off instead of
+      // grinding to a stop against it (kit guard; MK64's own response is the reflection above).
+      const fx = -Math.sin(this.yaw);
+      const fz = -Math.cos(this.yaw);
+      const nose = fx * nx + fz * nz;
+      if (nose > 0 && Math.hypot(fx - nose * nx, fz - nose * nz) > 0.1) {
+        this.yaw = Math.atan2(-(fx - nose * nx), -(fz - nose * nz));
       }
       this.onWall = true;
       this.#endDrift(false);
@@ -399,7 +439,7 @@ export class Kart {
 
     // Ground: follow the road while it holds the kart; leave it at a lip that drops away faster
     // than gravity would.
-    const ground = course.y[this.index]!;
+    const ground = course.heightAt(this.index, this.x, this.z);
     if (this.airborne) {
       this.vy -= this.#gravity * dt;
       this.y += this.vy * dt;
@@ -455,6 +495,7 @@ export class Kart {
     if (release && this.driftStage >= 2) {
       this.miniTurboTicks = KART_FEEL.miniTurboTicks;
       this.counts.miniTurbos += 1;
+      this.turboPeak = this.speed;
     }
     this.driftStages.push(this.driftStage);
     if (this.driftStages.length > 8) this.driftStages.shift();
