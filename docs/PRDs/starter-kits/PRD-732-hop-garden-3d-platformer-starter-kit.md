@@ -463,6 +463,21 @@ Each playtest runs on a project scaffolded from `--template collectathon`:
     is recorded when that launch ends the kick's flight (the first green run read `wallKickRise` 0
     because only a landing recorded it).
 
+  - Originality (owner rule: original designs only, no Nintendo trade dress; the face judge read
+    the stout, moustached, capped, button-overalled hero as a palette-swapped famous plumber, D5):
+    in `render/hero.ts` the peaked cap with a round white badge is now a knit beanie (a soft
+    crown over a rolled cuff, a sprout stem on top) with a pale-teal leaf patch, the moustache is
+    gone, the bib, straps and buttons are now a belted mustard tunic with a gold buckle, the
+    gloves are tan, and the pupils sit 0.122 m out from the nose. Fresh Opus judge on gen-12lp
+    headed captures, 2 runs per arm, front and back (frames in `~/Downloads/hop-garden/original/`):
+    look front IMPROVEMENT (the face reads clearly without the moustache; belt, buckle and leaf
+    are Pip's own), back NEUTRAL, overall IMPROVEMENT; "does it read as a known Nintendo
+    character": BEFORE yes (the famous plumber, palette-swapped), AFTER no ("a generic gnome or
+    toddler"). Its residual cues, ranked: the round pink nose under a domed cap with a front
+    emblem, the brown hair band below the cap seen from behind, and the round two-tone body on
+    short legs with big boots. It also notes that the level (castle with a flag, coin trails,
+    eight red gems, the move list) echoes the genre's classic as a whole; the hero no longer does.
+
 ## Execution Phases
 
 #### Phase 1: The hero moves like the reference

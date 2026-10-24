@@ -30,12 +30,13 @@ export const C = {
   water: 0x2f86b8,
   wood: 0xa8743f,
 
-  // Pip: a teal cap with a leaf badge, a rust shirt, mustard overalls, cream gloves, brown shoes.
+  // Pip: a teal knit beanie with a leaf patch, a rust shirt, a mustard tunic, tan gloves, brown shoes.
   cap: 0x169c94,
+  badge: 0x9ae6cf,
   shirt: 0xc8562a,
-  overalls: 0xd9a42c,
+  tunic: 0xd9a42c,
   button: 0xfff1d0,
-  gloves: 0xfff3dc,
+  gloves: 0xc8935a,
   boots: 0x6a4126,
   sole: 0x2e2420,
   skin: 0xf2b48c,

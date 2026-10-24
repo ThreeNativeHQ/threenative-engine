@@ -1,8 +1,8 @@
 // Generated for you. This is ordinary Three.js — edit or delete it freely.
 //
-// Pip, the hero: a stout, moustached sprout-keeper in a teal cap and mustard overalls, modelled from
-// primitives — no mesh file and no skin. The silhouette is the classic 3D-platformer one (big head,
-// short brim, round nose, round torso, stubby limbs, big shoes); the palette and the leaf emblem are
+// Pip, the hero: a stout sprout-keeper in a teal knit beanie and a belted mustard tunic, modelled from
+// primitives — no mesh file and no skin. The silhouette is a chunky toy (big head,
+// round nose, round torso, stubby limbs, big shoes); the beanie, the leaf patch and the palette are
 // this game's own. Arms and legs are groups pivoting at the shoulder and the hip. The idle, walk and
 // run are `AnimationClip`s built here from a few rotations; `Hero.ts` plays them through
 // `AnimationPlayer`, which times the walk and run to the ground the body covers. Jumps, flips and
@@ -20,6 +20,8 @@ import {
   MeshStandardMaterial,
   Quaternion,
   QuaternionKeyframeTrack,
+  Shape,
+  ShapeGeometry,
   SphereGeometry,
   TorusGeometry,
   Vector3,
@@ -211,42 +213,28 @@ export function createHero(): IHero {
     return mesh;
   };
   const ball = (radius: number) => new SphereGeometry(radius, 24, 16);
-  const overalls = fabric(C.overalls, true);
+  const tunic = fabric(C.tunic, true);
   const shirt = fabric(C.shirt, false);
 
-  // Torso: a round shirt under round overalls, with a bib, two straps and two buttons. It sits
-  // low, so the legs stay stubby and the head is a third of the hero.
+  // Torso: a round shirt under a round tunic, cinched by a leather belt with a brass buckle. It
+  // sits low, so the legs stay stubby and the head is a third of the hero.
   part(ball(0.31), C.shirt, pivot, [0, 0.08, 0]).material = shirt;
-  part(ball(0.35), C.overalls, pivot, [0, -0.08, 0], [1, 0.9, 0.9]).material = overalls;
-  const bib = part(
-    new CylinderGeometry(0.16, 0.18, 0.22, 14, 1),
-    C.overalls,
-    pivot,
-    [0, 0.12, -0.23],
-  );
-  bib.scale.set(1, 1, 0.45);
-  bib.material = overalls;
-  for (const side of [-1, 1]) {
-    const strap = part(
-      new CylinderGeometry(0.035, 0.035, 0.28, 6),
-      C.overalls,
-      pivot,
-      [0.12 * side, 0.24, -0.12],
-      [1, 1, 1],
-      false,
-    );
-    strap.rotation.x = 0.9;
-    part(ball(0.04), C.button, pivot, [0.11 * side, 0.2, -0.31], [1, 1, 0.6], false);
-  }
+  part(ball(0.35), C.tunic, pivot, [0, -0.08, 0], [1, 0.9, 0.9]).material = tunic;
+  const belt = new Mesh(new TorusGeometry(0.345, 0.035, 8, 28), lit(C.boots, { roughness: 0.5 }));
+  belt.position.y = -0.03;
+  belt.rotation.x = Math.PI / 2;
+  belt.scale.set(1, 0.9, 1);
+  pivot.add(belt);
+  part(ball(0.055), C.gold, pivot, [0, -0.03, -0.325], [1.2, 1, 0.5], false);
 
-  // Head: big and round, ears, a round nose, a curled moustache, eyes clear below the brim.
+  // Head: big and round, ears, a round nose and eyes below the beanie's cuff; no moustache.
   const R = 0.37;
   const HEAD_Y = 0.6;
   const FACE = -0.02 - R;
   part(ball(R), C.skin, pivot, [0, HEAD_Y, -0.02]);
   for (const side of [-1, 1]) {
     part(ball(0.075), C.skin, pivot, [(R - 0.01) * side, HEAD_Y - 0.03, 0], [0.6, 1, 1], false);
-    // The whites glow a little, so the eyes read under the brim's shade at any exposure.
+    // The whites glow a little, so the eyes read under the cuff's shade at any exposure.
     part(
       ball(0.092),
       C.white,
@@ -259,70 +247,41 @@ export function createHero(): IHero {
       ball(0.044),
       C.ink,
       pivot,
-      [0.108 * side, HEAD_Y - 0.012, FACE - 0.008],
+      [0.122 * side, HEAD_Y - 0.012, FACE - 0.008],
       [1, 1.3, 0.6],
       false,
     );
-    const tash = part(
-      ball(0.085),
-      C.hair,
-      pivot,
-      [0.07 * side, HEAD_Y - 0.14, FACE + 0.045],
-      [1.3, 0.6, 0.6],
-      false,
-    );
-    tash.rotation.z = -0.22 * side;
-    const curl = part(
-      ball(0.05),
-      C.hair,
-      pivot,
-      [0.165 * side, HEAD_Y - 0.115, FACE + 0.085],
-      [1.3, 0.7, 0.7],
-      false,
-    );
-    curl.rotation.z = 0.5 * side;
   }
   part(ball(0.1), C.nose, pivot, [0, HEAD_Y - 0.065, FACE - 0.025], [1, 0.88, 0.95], false);
-  // Hair along the back of the cap's rim: wide and tucked under it, so from behind it reads as
-  // hair and never as a second face.
-  part(ball(0.15), C.hair, pivot, [0, HEAD_Y + 0.04, 0.24], [2, 0.6, 0.8], false);
-  // The cap, a short forward brim, the leaf emblem and the sprout on top. Glossy, like a lacquered
-  // cap, so it catches a highlight the cloth beside it does not.
-  const cap = lit(C.cap, { roughness: 0.32 });
+  // Hair below the back of the beanie's cuff: wide and tucked under it, so from behind it reads
+  // as hair and never as a second face.
+  part(ball(0.15), C.hair, pivot, [0, HEAD_Y + 0.06, 0.24], [2, 0.6, 0.8], false);
+  // A slouchy knit beanie: a tall soft crown over a rolled cuff that sits above the eyes, a leaf
+  // patch on its front and a sprout stem on top. Matte, like wool.
+  const cap = lit(C.cap, { roughness: 0.85 });
   part(
-    new SphereGeometry(R + 0.02, 22, 10, 0, Math.PI * 2, 0, Math.PI / 2),
+    new SphereGeometry(R - 0.01, 22, 10, 0, Math.PI * 2, 0, Math.PI / 2),
     C.cap,
     pivot,
-    [0, HEAD_Y + 0.08, -0.02],
-    [1.03, 0.85, 1.05],
+    [0, HEAD_Y + 0.16, 0],
+    [1, 1.05, 1],
   ).material = cap;
-  const brim = part(new CylinderGeometry(0.27, 0.28, 0.04, 20), C.cap, pivot, [
-    0,
-    HEAD_Y + 0.09,
-    FACE + 0.06,
-  ]);
-  brim.scale.set(1, 1, 0.58);
-  brim.material = cap;
-  brim.rotation.x = 0.3;
-  const badge = part(
-    new CylinderGeometry(0.09, 0.09, 0.02, 16),
-    C.button,
-    pivot,
-    [0, HEAD_Y + 0.26, FACE + 0.07],
-    [1, 1, 1],
-    false,
-  );
-  badge.rotation.x = Math.PI / 2 - 0.55;
-  const leaf = part(
-    ball(0.065),
-    C.leaf,
-    pivot,
-    [0, HEAD_Y + 0.26, FACE + 0.055],
-    [0.6, 1, 0.3],
-    false,
-  );
-  leaf.rotation.set(-0.55, 0, 0.5);
-  const sprout = part(new ConeGeometry(0.06, 0.26, 8), C.leaf, pivot, [0.04, HEAD_Y + 0.44, 0.02]);
+  const cuff = new Mesh(new TorusGeometry(0.34, 0.055, 10, 28), cap);
+  cuff.position.set(0, HEAD_Y + 0.16, -0.01);
+  cuff.rotation.x = Math.PI / 2;
+  cuff.castShadow = true;
+  pivot.add(cuff);
+  // The patch: a leaf (two arcs meeting in points) in a pale teal, laid on the crown's front just
+  // proud of it, tipped back 0.47 rad to follow the curve.
+  const outline = new Shape()
+    .moveTo(0, -0.11)
+    .quadraticCurveTo(0.09, 0, 0, 0.11)
+    .quadraticCurveTo(-0.09, 0, 0, -0.11);
+  const patch = new Mesh(new ShapeGeometry(outline).rotateZ(-0.6).rotateY(Math.PI), lit(C.badge));
+  patch.position.set(0, HEAD_Y + 0.34, -0.337);
+  patch.rotation.x = 0.47;
+  pivot.add(patch);
+  const sprout = part(new ConeGeometry(0.05, 0.24, 8), C.leaf, pivot, [0.03, HEAD_Y + 0.6, 0]);
   sprout.rotation.z = -0.4;
 
   // Arms: a sleeve and a glove on a shoulder joint. Legs: an overall leg and a big shoe on a hip.
@@ -357,8 +316,8 @@ export function createHero(): IHero {
     // Hip 0.42 m above the feet; the shoe's sole is on the floor.
     const [leg, legSwing] = joint(pivot, `legSwing${tag}`);
     leg.position.set(0.15 * side, -0.38, 0);
-    part(new CylinderGeometry(0.1, 0.1, 0.18, 16), C.overalls, legSwing, [0, -0.09, 0]).material =
-      overalls;
+    part(new CylinderGeometry(0.1, 0.1, 0.18, 16), C.tunic, legSwing, [0, -0.09, 0]).material =
+      tunic;
     // Polished leather on a darker, flat rubber sole. Both meshes have their origin where the sole
     // meets the floor, so `AnimationPlayer` reads the stride at the contact point, not the boot's
     // middle (which sweeps a smaller circle and would make the planted foot skate).

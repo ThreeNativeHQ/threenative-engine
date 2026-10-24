@@ -297,7 +297,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // scenario), folding the shared textures, the play-gate scenarios and the footSlip stride bound
   // (method checked against platformer, from a copy of the index). Recomputed 2026-10-24 for the
   // mouse orbit camera, and for the planted-foot gait (no hip twist, walk lift, run blend).
-  collectathon: "93bdfa6be922f24c8b3775c0841cd2c960c5d8e5c34ca3a7285726821908beb8",
+  collectathon: "31a4890a6fb90e8d7a7e4280fa57c77805007770f13dbd4186694669a3c22dc4",
   // PRD-733 (2026-10-23): the new Lantern Vale kit, measured through createProject.
   adventure: "36e3c4f2dac92186c418dc97b87568b54759b0c709d3817aa8ab3bbe234229ce",
   // PRD-734 (2026-10-24): the new Clover Cup kart kit, measured through createProject.
