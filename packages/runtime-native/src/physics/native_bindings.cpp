@@ -361,12 +361,18 @@ bool parseRayQuery(js::Engine *engine, js::JSValueHandle value,
                    TnPhysicsRayQuery &query) {
   if (!engine->isObject(value))
     return false;
-  query = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0xffff};
+  query = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0xffff, 0};
   if (!readVector(engine, value, "from", query.from_x, query.from_y,
                   query.from_z) ||
       !readVector(engine, value, "to", query.to_x, query.to_y, query.to_z) ||
       !readGroup(engine, value, "collisionMask", query.collision_mask))
     return false;
+  const auto hitFromInside = engine->getProperty(value, "hitFromInside");
+  if (!engine->isUndefined(hitFromInside)) {
+    if (!engine->isBoolean(hitFromInside))
+      return false;
+    query.hit_from_inside = engine->toBoolean(hitFromInside) ? 1 : 0;
+  }
   return query.from_x != query.to_x || query.from_y != query.to_y ||
          query.from_z != query.to_z;
 }
