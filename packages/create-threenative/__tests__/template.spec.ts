@@ -812,9 +812,10 @@ describe("template contracts", () => {
           "`threenative-capabilities`",
         );
         expect(instructions, `${template}/${file}/prd skill`).toContain("`prd-creator`");
-        expect(instructions, `${template}/${file}/full request`).toContain(
+        expect(instructions, `${template}/${file}/single gate`).not.toContain(
           "engine_search_capabilities",
         );
+        expect(instructions).toContain("no code, level layouts, character names or art");
         expect(
           instructions.indexOf("`threenative-capabilities`"),
           `${template}/${file}/capabilities before PRD`,
@@ -825,6 +826,35 @@ describe("template contracts", () => {
         );
       }
     }
+  });
+
+  it("requires six discovery sections in order before source authoring", async () => {
+    const base = "packages/create-threenative/agent-files/.agents/skills";
+    const gate = await readFile(path.join(base, "threenative-capabilities/SKILL.md"), "utf8");
+    const plan = await readFile(path.join(base, "prd-creator/SKILL.md"), "utf8");
+    const sections = ["Kit", "Mechanics", "References", "Assets and audio", "Look", "Proof"];
+    let previous = -1;
+    for (const section of sections) {
+      const offset = gate.indexOf(`**${section}**`);
+      expect(offset, section).toBeGreaterThan(previous);
+      previous = offset;
+      expect(plan, section).toContain(section);
+    }
+    for (const tool of [
+      "kit.json",
+      "engine_search_capabilities",
+      "engine_capability_detail",
+      "engine_search_references",
+      "engine_reference_detail",
+      "asset_search_sources",
+      "audio_search_assets",
+      "WorldEnvironment",
+      "playtest",
+    ])
+      expect(gate).toContain(tool);
+    expect(plan).toContain("none");
+    expect(plan).toContain("blank");
+    expect(gate).toContain("before the first `src/` write");
   });
 
   // The project hook is the force: it re-injects the ruleset every session, prompt and subagent
@@ -843,8 +873,9 @@ describe("template contracts", () => {
     };
     expect(output.hookSpecificOutput?.hookEventName).toBe("UserPromptSubmit");
     const context = output.hookSpecificOutput?.additionalContext ?? "";
-    expect(context).toContain("engine_search_capabilities");
-    expect(context).toMatch(/critical capability gate/iu);
+    expect(context).toContain("threenative-capabilities");
+    expect(context).not.toContain("engine_search_capabilities");
+    expect(context).toContain("no code, level layouts, character names or art");
     expect(context).toContain("stop ponytail");
     const off = spawnSync(process.execPath, [hook], {
       encoding: "utf8",

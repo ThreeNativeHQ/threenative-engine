@@ -1,0 +1,89 @@
+{
+  "version": 1,
+  "id": "sm64",
+  "title": "Super Mario 64",
+  "repo": "https://github.com/n64decomp/sm64",
+  "sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "nodes": [
+    {
+      "id": "player",
+      "name": "Player movement",
+      "purpose": "Player movement actions and jumping",
+      "paths": [
+        "src/game/mario.c"
+      ],
+      "functions": [],
+      "dependsOn": []
+    },
+    {
+      "id": "airborne",
+      "parent": "player",
+      "name": "Airborne actions",
+      "purpose": "Jump actions and airborne motion",
+      "paths": [
+        "src/game/mario_actions_airborne.c"
+      ],
+      "functions": [
+        {
+          "name": "act_triple_jump",
+          "path": "src/game/mario_actions_airborne.c",
+          "lines": [
+            10,
+            30
+          ]
+        }
+      ],
+      "dependsOn": []
+    },
+    {
+      "id": "camera",
+      "name": "Camera system",
+      "purpose": "Camera system follow rules",
+      "paths": [
+        "src/game/camera.c"
+      ],
+      "functions": [
+        {
+          "name": "update_camera",
+          "path": "src/game/camera.c",
+          "lines": [
+            40,
+            60
+          ]
+        }
+      ],
+      "dependsOn": [
+        "player"
+      ]
+    }
+  ],
+  "cards": [
+    {
+      "id": "triple-jump",
+      "node": "airborne",
+      "name": "Triple jump",
+      "summary": "Three timed jumps build a higher triple jump",
+      "behavior": "Chain jumps while moving; the third jump launches higher.",
+      "constants": [
+        {
+          "name": "launchSpeed",
+          "value": 69,
+          "unit": "units/frame",
+          "source": "src/game/mario_actions_airborne.c:12"
+        }
+      ],
+      "sources": [
+        {
+          "path": "src/game/mario_actions_airborne.c",
+          "line": 12
+        }
+      ],
+      "capabilities": [],
+      "tags": [
+        "jump",
+        "triple jump",
+        "airborne"
+      ]
+    }
+  ]
+}

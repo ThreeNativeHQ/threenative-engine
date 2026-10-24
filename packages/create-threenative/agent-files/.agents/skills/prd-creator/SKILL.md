@@ -5,8 +5,7 @@ description: Turn a ThreeNative game idea or change into an approved game plan a
 
 # ThreeNative game PRD
 
-Use this after `threenative-capabilities` has recorded a capability or no-match for the full request
-and every concrete mechanic. The outcome is a small, distinctive, playable plan grounded in the
+Use this after `threenative-capabilities` completes the six-section discovery record. The outcome is a small, distinctive, playable plan grounded in the
 engine surface and explicitly approved by the user, not a generic genre template.
 
 ## Plan
@@ -21,6 +20,10 @@ engine surface and explicitly approved by the user, not a generic genre template
    real capture for visible changes. Unexecuted platforms remain unverified.
 5. Record prerequisites: required tools/MCPs, service access, test users, and environment variable
    names. Use placeholders only; never read or write real secrets into planning artifacts.
+
+Copy the six discovery sections verbatim into `.agent/prd/PRD.md`: **Kit**, **Mechanics**,
+**References**, **Assets and audio**, **Look**, **Proof**. Each needs a value or explicit `none`
+with a reason. A blank or missing section blocks approval.
 
 Write the concise plan to `.agent/prd/PRD.md`, its short player-facing summary to
 `.agent/prd/SUMMARY.md`, and implementation tasks to `.agent/tasks.json`. Tasks must be ordered,

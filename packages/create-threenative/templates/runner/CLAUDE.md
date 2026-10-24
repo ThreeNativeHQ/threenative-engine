@@ -11,9 +11,7 @@ look; `src/game.ts` is portable and React mounts only from `src/main.ts`. The re
 
 ## Start every change
 
-1. **Critical planning gate:** invoke `threenative-capabilities` before `prd-creator`. Search
-   `engine_search_capabilities` for the full request and each concrete mechanic, inspect relevant
-   matches with `engine_capability_detail`, and record a capability or no-match for the plan. Apply the `ponytail` ladder before writing code; never hand-write what the capability search already installs.
+1. **Critical planning gate:** invoke `threenative-capabilities` before `prd-creator`; follow its discovery record and the `ponytail` ladder. References borrow mechanics only: no code, level layouts, character names or art.
 2. Then invoke `prd-creator`. Draft the plan around those capabilities and binding constraints,
    direct the user to review it, and wait for explicit approval plus an instruction to implement it.
 3. Treat returned constraints as binding. No navmesh is imported, so this kit runs on every

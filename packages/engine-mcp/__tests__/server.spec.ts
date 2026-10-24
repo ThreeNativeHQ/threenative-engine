@@ -10,35 +10,41 @@ function frame(id: unknown, method: string, params?: unknown): string {
   return JSON.stringify({ id, jsonrpc: "2.0", method, params });
 }
 
-describe("threenative-engine-mcp stdio contract", () => {
+describe("threenative-engine-mcp stdio contract", async () => {
   // Every tools/call below would otherwise append to the launch directory's real log.
-  beforeEach(() => {
+  beforeEach(async () => {
     process.env.THREENATIVE_ENGINE_MCP_LOG = "off";
   });
-  afterEach(() => {
+  afterEach(async () => {
     process.env.THREENATIVE_ENGINE_MCP_LOG = "off";
   });
 
-  it("answers initialize with the pinned protocol version and server info", () => {
-    const response = JSON.parse(handleLine(frame(1, "initialize", {}), manifestFile) ?? "");
+  it("answers initialize with the pinned protocol version and server info", async () => {
+    const response = JSON.parse((await handleLine(frame(1, "initialize", {}), manifestFile)) ?? "");
+    expect(response.result.instructions).not.toContain("scope");
+    expect(response.result.instructions).toContain(
+      "no code, level layouts, character names or art",
+    );
     expect(response).toEqual({
       id: 1,
       jsonrpc: "2.0",
       result: {
         capabilities: { tools: { listChanged: false } },
-        instructions:
-          'Before authoring, infer concrete gameplay mechanics. Preserve the request\'s distinctive fantasy: choose the smallest loop that uses its characteristic setting, traversal medium, or simulation instead of a generic character game with themed props, and search those implied mechanics even when the user did not name engine terms. Search the mechanically explicit complete request with scope "request", then each mechanic with scope "mechanic". A genre label alone is not a capability query: clarify or decompose it; do not assume a preset. Inspect capability detail and obey constraints before implementing. Capability detail is authoritative on platform support: never invent a platform limitation it does not state. A response with verdict "none" is an actionable answer: follow its guidance and write game-owned behavior in src/ instead of rephrasing the same request.',
+        instructions: expect.stringContaining("threenative-capabilities"),
         protocolVersion: "2025-06-18",
         serverInfo: { name: "threenative-engine-mcp", version: "0.2.6" },
       },
     });
   });
 
-  it("lists the two capability tools in order", () => {
-    const response = JSON.parse(handleLine(frame(1, "tools/list"), manifestFile) ?? "");
+  it("lists capability and reference tools in order", async () => {
+    const response = JSON.parse((await handleLine(frame(1, "tools/list"), manifestFile)) ?? "");
     expect(response.result.tools.map((tool: { name: string }) => tool.name)).toEqual([
       "engine_search_capabilities",
       "engine_capability_detail",
+      "engine_search_references",
+      "engine_reference_detail",
+      "engine_save_reference",
     ]);
     expect(response.result.tools).toEqual(
       expect.arrayContaining([
@@ -49,15 +55,15 @@ describe("threenative-engine-mcp stdio contract", () => {
     );
   });
 
-  it("answers tools/call for a search with the results as text content", () => {
+  it("answers tools/call for a search with the results as text content", async () => {
     const response = JSON.parse(
-      handleLine(
+      (await handleLine(
         frame(1, "tools/call", {
           arguments: { situation: "put a weapon in a character's hand" },
           name: "engine_search_capabilities",
         }),
         manifestFile,
-      ) ?? "",
+      )) ?? "",
     );
     expect(response.error).toBeUndefined();
     expect(JSON.parse(response.result.content[0].text)).toMatchObject({
@@ -67,32 +73,34 @@ describe("threenative-engine-mcp stdio contract", () => {
     });
   });
 
-  it("answers tools/call for a detail lookup", () => {
+  it("answers tools/call for a detail lookup", async () => {
     const response = JSON.parse(
-      handleLine(
+      (await handleLine(
         frame(1, "tools/call", {
           arguments: { symbol: "GroundSnap" },
           name: "engine_capability_detail",
         }),
         manifestFile,
-      ) ?? "",
+      )) ?? "",
     );
     expect(JSON.parse(response.result.content[0].text).symbol).toBe("GroundSnap");
   });
 
-  it("answers a detail lookup for a shared symbol with every match in one call", () => {
-    const detail = (argumentsValue: Record<string, string>): Record<string, unknown> => {
+  it("answers a detail lookup for a shared symbol with every match in one call", async () => {
+    const detail = async (
+      argumentsValue: Record<string, string>,
+    ): Promise<Record<string, unknown>> => {
       const response = JSON.parse(
-        handleLine(
+        (await handleLine(
           frame(1, "tools/call", { arguments: argumentsValue, name: "engine_capability_detail" }),
           manifestFile,
-        ) ?? "",
+        )) ?? "",
       );
       expect(response.result.isError).not.toBe(true);
       return JSON.parse(response.result.content[0].text);
     };
 
-    const shared = detail({ symbol: "createThreeObject" }) as {
+    const shared = (await detail({ symbol: "createThreeObject" })) as {
       matches: { importPath: string }[];
     };
     expect(shared.matches.map((match) => match.importPath)).toEqual([
@@ -100,89 +108,94 @@ describe("threenative-engine-mcp stdio contract", () => {
       "@threenative/ueformat",
     ]);
     expect(
-      detail({ importPath: "@threenative/ueformat", symbol: "createThreeObject" }).importPath,
+      (await detail({ importPath: "@threenative/ueformat", symbol: "createThreeObject" }))
+        .importPath,
     ).toBe("@threenative/ueformat");
   });
 
-  it("answers a malformed JSON line with a -32700 parse error addressed to id null", () => {
-    const response = JSON.parse(handleLine("not json", manifestFile) ?? "");
+  it("answers a malformed JSON line with a -32700 parse error addressed to id null", async () => {
+    const response = JSON.parse((await handleLine("not json", manifestFile)) ?? "");
     expect(response.id).toBeNull();
     expect(response.error.code).toBe(-32700);
     expect(response.error.message).toContain("Invalid JSON");
   });
 
-  it("answers an unknown method with -32601", () => {
-    const response = JSON.parse(handleLine(frame(1, "resources/list"), manifestFile) ?? "");
+  it("answers an unknown method with -32601", async () => {
+    const response = JSON.parse((await handleLine(frame(1, "resources/list"), manifestFile)) ?? "");
     expect(response.error.code).toBe(-32601);
     expect(response.error.message).toBe("Method not found: resources/list");
   });
 
-  it("answers a non-object tools/call params with -32000", () => {
-    const response = JSON.parse(handleLine(frame(1, "tools/call", "nope"), manifestFile) ?? "");
+  it("answers a non-object tools/call params with -32000", async () => {
+    const response = JSON.parse(
+      (await handleLine(frame(1, "tools/call", "nope"), manifestFile)) ?? "",
+    );
     expect(response.error.code).toBe(-32000);
     expect(response.error.message).toContain("tools/call requires an object params value");
   });
 
-  it("answers an unknown tool name with -32000 naming it", () => {
+  it("answers an unknown tool name with -32000 naming it", async () => {
     const response = JSON.parse(
-      handleLine(
+      (await handleLine(
         frame(1, "tools/call", { arguments: { situation: "zoom" }, name: "engine_explode" }),
         manifestFile,
-      ) ?? "",
+      )) ?? "",
     );
     expect(response.error.code).toBe(-32000);
     expect(response.error.message).toBe("Unknown engine MCP tool 'engine_explode'.");
   });
 
-  it("answers a tool call with missing arguments as a -32000 tool error", () => {
+  it("answers a tool call with missing arguments as a -32000 tool error", async () => {
     const response = JSON.parse(
-      handleLine(
+      (await handleLine(
         frame(1, "tools/call", { arguments: {}, name: "engine_search_capabilities" }),
         manifestFile,
-      ) ?? "",
+      )) ?? "",
     );
     expect(response.error.code).toBe(-32000);
     expect(response.error.message).toContain("situation");
   });
 
-  it("consumes silently: blank lines, notifications without an id, and non-record lines", () => {
-    expect(handleLine("", manifestFile)).toBeUndefined();
-    expect(handleLine("   \t ", manifestFile)).toBeUndefined();
+  it("consumes silently: blank lines, notifications without an id, and non-record lines", async () => {
+    expect(await handleLine("", manifestFile)).toBeUndefined();
+    expect(await handleLine("   \t ", manifestFile)).toBeUndefined();
     expect(
-      handleLine(JSON.stringify({ jsonrpc: "2.0", method: "ping" }), manifestFile),
+      await handleLine(JSON.stringify({ jsonrpc: "2.0", method: "ping" }), manifestFile),
     ).toBeUndefined();
-    expect(handleLine(JSON.stringify([]), manifestFile)).toBeUndefined();
+    expect(await handleLine(JSON.stringify([]), manifestFile)).toBeUndefined();
   });
 
-  it("answers tools/call whose arguments are missing the required key with -32000", () => {
+  it("answers tools/call whose arguments are missing the required key with -32000", async () => {
     const noArguments = JSON.parse(
-      handleLine(frame(1, "tools/call", { name: "engine_search_capabilities" }), manifestFile) ??
-        "",
+      (await handleLine(
+        frame(1, "tools/call", { name: "engine_search_capabilities" }),
+        manifestFile,
+      )) ?? "",
     );
     expect(noArguments.error.code).toBe(-32000);
     expect(noArguments.error.message).toContain("requires a string 'situation' argument");
   });
 
-  it("errors a numeric situation argument instead of searching with its string form", () => {
+  it("errors a numeric situation argument instead of searching with its string form", async () => {
     const response = JSON.parse(
-      handleLine(
+      (await handleLine(
         frame(1, "tools/call", { arguments: { situation: 0 }, name: "engine_search_capabilities" }),
         manifestFile,
-      ) ?? "",
+      )) ?? "",
     );
     expect(response.error.code).toBe(-32000);
     expect(response.error.message).toContain("situation");
   });
 
-  it("refuses a null scope instead of quietly searching as mechanic", () => {
+  it("refuses a null scope instead of quietly searching as mechanic", async () => {
     const response = JSON.parse(
-      handleLine(
+      (await handleLine(
         frame(1, "tools/call", {
           arguments: { scope: null, situation: "spawn many identical props" },
           name: "engine_search_capabilities",
         }),
         manifestFile,
-      ) ?? "",
+      )) ?? "",
     );
     expect(response.error.code).toBe(-32000);
     expect(response.error.message).toBe(
@@ -216,15 +229,19 @@ describe("threenative-engine-mcp stdio contract", () => {
       { importPath: null, symbol: "Foo" },
       "engine_capability_detail 'importPath' must be a string when given.",
     ],
-  ])("refuses %s called with %j as a named -32000 tool error", (name, arguments_, message) => {
-    const response = JSON.parse(
-      handleLine(frame(1, "tools/call", { arguments: arguments_, name }), manifestFile) ?? "",
-    );
-    expect(response.error.code).toBe(-32000);
-    expect(response.error.message).toBe(message);
-  });
+  ])(
+    "refuses %s called with %j as a named -32000 tool error",
+    async (name, arguments_, message) => {
+      const response = JSON.parse(
+        (await handleLine(frame(1, "tools/call", { arguments: arguments_, name }), manifestFile)) ??
+          "",
+      );
+      expect(response.error.code).toBe(-32000);
+      expect(response.error.message).toBe(message);
+    },
+  );
 
-  it("refuses a manifest whose notOwned ids repeat, naming the duplicate", () => {
+  it("refuses a manifest whose notOwned ids repeat, naming the duplicate", async () => {
     const file = path.join(
       makeTempDirSync("threenative-engine-mcp-manifest-"),
       "capabilities.json",
@@ -235,29 +252,29 @@ describe("threenative-engine-mcp stdio contract", () => {
       JSON.stringify({ entries: [], notOwned: [situation, situation], version: 2 }),
     );
     const response = JSON.parse(
-      handleLine(
+      (await handleLine(
         frame(1, "tools/call", {
           arguments: { situation: "spawn props" },
           name: "engine_search_capabilities",
         }),
         file,
-      ) ?? "",
+      )) ?? "",
     );
     expect(response.error.code).toBe(-32000);
     expect(response.error.message).toContain("notOwned contains duplicate id 'dup'");
   });
 
-  it("appends one JSON line per tool call, rejections included", () => {
+  it("appends one JSON line per tool call, rejections included", async () => {
     const logFile = path.join(makeTempDirSync("threenative-engine-mcp-log-"), "calls.log");
     process.env.THREENATIVE_ENGINE_MCP_LOG = logFile;
-    handleLine(
+    await handleLine(
       frame(1, "tools/call", {
         arguments: { situation: "spawn many identical props" },
         name: "engine_search_capabilities",
       }),
       manifestFile,
     );
-    handleLine(
+    await handleLine(
       frame(2, "tools/call", {
         arguments: { symbol: "nope" },
         name: "engine_capability_detail",
@@ -278,10 +295,10 @@ describe("threenative-engine-mcp stdio contract", () => {
     expect(String(lines[1]?.error)).toContain("nope");
   });
 
-  it("writes nothing when the log is off", () => {
+  it("writes nothing when the log is off", async () => {
     const logFile = path.join(makeTempDirSync("threenative-engine-mcp-log-"), "calls.log");
     process.env.THREENATIVE_ENGINE_MCP_LOG = "off";
-    handleLine(
+    await handleLine(
       frame(1, "tools/call", {
         arguments: { situation: "spawn many identical props" },
         name: "engine_search_capabilities",

@@ -7,9 +7,7 @@ ThreeNative owns bootstrap, renderer, fixed-step loop, input, loading, physics b
 ordinary user code, and nothing in `@threenative/*` reads or chooses their appearance. The render camera also skips an object that projects under **0.5 px** in it; `renderer.minimumProjectedPixels` raises that threshold (`false` disables the cut, not the count) and `alwaysRender(object)` exempts an object, while camera-attached objects and shadow casters are kept. The engine also owns the per-frame world-matrix walk, and by default it does not descend into a hidden subtree — so a game that reads a hidden object's `matrixWorld` directly must use `getWorldPosition` (or call `object.updateWorldMatrix(true, false)`) first; `renderer.matrixWorld: "all"` restores three's every-node walk, and `TN_PROJECTION` reports the visited-node count either way. Physics bodies and `ctx.camera` interpolate between fixed ticks by default; `physicsInterpolation: false` disables it globally, `body.interpolate = false` disables one body, `ctx.interpolate(object)` opts in another transform, and `ctx.resetInterpolation(object)` resets game-driven teleports (`TN_PHYSICS_INTERPOLATION` reports the setting and tracked count).
 
 ## Start every change
-1. **Critical planning gate:** invoke `threenative-capabilities` before `prd-creator`. Search
-   `engine_search_capabilities` for the full request and each concrete mechanic, inspect relevant
-   matches with `engine_capability_detail`, and record a capability or no-match for the plan. Apply the `ponytail` ladder before writing code; never hand-write what the capability search already installs.
+1. **Critical planning gate:** invoke `threenative-capabilities` before `prd-creator`; follow its discovery record and the `ponytail` ladder. References borrow mechanics only: no code, level layouts, character names or art.
 2. Then invoke `prd-creator`. Draft the plan around those capabilities and binding constraints,
    direct the user to review it, and wait for explicit approval plus an instruction to implement it.
 3. Treat returned constraints as binding. `@threenative/physics/navigation` is browser-only WASM;
