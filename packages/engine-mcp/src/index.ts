@@ -665,9 +665,23 @@ function matchedStarterKits(
       .replace(/[^a-z0-9]+/gu, " ")
       .trim()} `;
   const request = words(situation);
+  const spans = kits.map((kit) =>
+    kit.words.flatMap((word) => {
+      const at = request.indexOf(words(word));
+      return at < 0 ? [] : [{ at, end: at + words(word).length }];
+    }),
+  );
+  // A kit word inside a longer phrase another kit claims is that kit's: "mario kart" is the kart
+  // kit's, not the collectathon's "mario".
+  const inside = (span: { at: number; end: number }, own: number) =>
+    spans.some(
+      (other, index) =>
+        index !== own &&
+        other.some((o) => o.at <= span.at && o.end >= span.end && o.end - o.at > span.end - span.at),
+    );
   return kits
-    .map((kit) => ({
-      at: Math.min(...kit.words.map((word) => request.indexOf(words(word))).filter((i) => i >= 0)),
+    .map((kit, own) => ({
+      at: Math.min(...spans[own]!.filter((span) => !inside(span, own)).map((span) => span.at)),
       kit,
     }))
     .filter(({ at }) => Number.isFinite(at))

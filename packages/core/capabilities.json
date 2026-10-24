@@ -9062,6 +9062,12 @@
       "words": ["collectathon", "mario", "sm64", "super-mario", "3d-platformer"]
     },
     {
+      "blurb": "Eight karts race three laps of Clover Loop, a figure-8 with a bridge, a jump over a creek and boost pads, with a hop into a power-slide, mini-turbo sparks, item boxes with bananas, green shells and mushrooms, and seven CPU drivers on a rubber band.",
+      "name": "kart",
+      "title": "Clover Cup",
+      "words": ["kart-racer", "mario-kart", "mariokart", "mk64", "kart"]
+    },
+    {
       "blurb": "A fox runs ninety-seven metres of floating meadow, rope bridges and stompable walkers to a goal flag, with three hearts, five gems and a double jump.",
       "name": "platformer",
       "title": "Fox Dash",

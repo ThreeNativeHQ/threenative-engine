@@ -37,38 +37,28 @@
     {
       "kind": "input",
       "label": "grass-settled",
-      "press": [
-        "KeyW"
-      ],
+      "press": ["KeyW"],
       "holdTicks": 400,
       "release": false
     },
     {
       "kind": "input",
       "label": "back-right",
-      "press": [
-        "KeyW",
-        "KeyD"
-      ],
+      "press": ["KeyW", "KeyD"],
       "holdTicks": 22,
       "release": false
     },
     {
       "kind": "input",
       "label": "back-left",
-      "press": [
-        "KeyW",
-        "KeyA"
-      ],
+      "press": ["KeyW", "KeyA"],
       "holdTicks": 22,
       "release": false
     },
     {
       "kind": "input",
       "label": "over-pad",
-      "press": [
-        "KeyW"
-      ],
+      "press": ["KeyW"],
       "holdTicks": 120,
       "release": true
     }

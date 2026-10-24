@@ -45,7 +45,9 @@ export function createChaseCamera(camera: PerspectiveCamera): IChaseCamera {
     // Chase the velocity's heading: in a slide the nose points in, the kart travels out.
     const swing = kart.drifting ? kart.driftSide * CHASE.driftSwing : 0;
     const target = kart.velocityYaw - swing;
-    heading += (MathUtils.euclideanModulo(target - heading + Math.PI, Math.PI * 2) - Math.PI) * rate(CHASE.turn);
+    heading +=
+      (MathUtils.euclideanModulo(target - heading + Math.PI, Math.PI * 2) - Math.PI) *
+      rate(CHASE.turn);
     const bx = Math.sin(heading);
     const bz = Math.cos(heading);
     goal.set(kart.x + bx * CHASE.behind, kart.y + CHASE.height, kart.z + bz * CHASE.behind);
@@ -54,7 +56,7 @@ export function createChaseCamera(camera: PerspectiveCamera): IChaseCamera {
     camera.position.z += (goal.z - camera.position.z) * k;
     camera.position.y += (goal.y - camera.position.y) * rate(CHASE.lift);
     // Never under the road the kart is on.
-    camera.position.y = Math.max(camera.position.y, kart.course.y[kart.index]! + 1.2);
+    camera.position.y = Math.max(camera.position.y, (kart.course.y[kart.index] ?? 0) + 1.2);
     look.set(kart.x - bx * CHASE.ahead, kart.y + CHASE.lookHeight, kart.z - bz * CHASE.ahead);
     camera.lookAt(look);
     const boosting = kart.boostTicks > 0 || kart.miniTurboTicks > 0;

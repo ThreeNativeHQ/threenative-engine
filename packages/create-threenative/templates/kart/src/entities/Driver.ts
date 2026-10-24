@@ -55,7 +55,9 @@ export class Driver {
     input.steer = Math.max(-1, Math.min(1, -error * 2.6));
     // Lift for a corner the kart cannot take: a big heading error at speed.
     const corner = Math.abs(error) > 0.55 && kart.speed > kart.topSpeed * 0.6;
-    input.throttle = !this.coasting && !corner;
+    // A coasting kart slows to half speed, never to a stop: a leader the band holds still blocks
+    // the grid behind it (kit guard).
+    input.throttle = !corner && (!this.coasting || kart.speed < kart.topSpeed * 0.5);
     input.brake = false;
     input.drift = false;
     input.item = false;

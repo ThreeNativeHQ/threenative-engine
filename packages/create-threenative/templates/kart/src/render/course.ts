@@ -81,10 +81,10 @@ function ribbon(
       const paintWith = colour(i, c);
       if (paintWith === undefined) continue;
       const tint = typeof paintWith === "number" ? new Color(paintWith) : paintWith;
-      const a = corner(i, laterals[c]!);
-      const b = corner(i, laterals[c + 1]!);
-      const d = corner(i + 1, laterals[c]!);
-      const e = corner(i + 1, laterals[c + 1]!);
+      const a = corner(i, laterals[c] ?? 0);
+      const b = corner(i, laterals[c + 1] ?? 0);
+      const d = corner(i + 1, laterals[c] ?? 0);
+      const e = corner(i + 1, laterals[c + 1] ?? 0);
       // Counter-clockwise seen from above: forward × right points down, so a → b → d faces up.
       for (const v of [a, b, d, b, e, d]) {
         positions.push(...v);
@@ -113,10 +113,10 @@ export function buildCourseView(course: ICourse, seed = 734): ICourseView {
   let minZ = Number.POSITIVE_INFINITY;
   let maxZ = Number.NEGATIVE_INFINITY;
   for (let i = 0; i < n; i += 1) {
-    minX = Math.min(minX, cx[i]!);
-    maxX = Math.max(maxX, cx[i]!);
-    minZ = Math.min(minZ, cz[i]!);
-    maxZ = Math.max(maxZ, cz[i]!);
+    minX = Math.min(minX, cx[i] ?? 0);
+    maxX = Math.max(maxX, cx[i] ?? 0);
+    minZ = Math.min(minZ, cz[i] ?? 0);
+    maxZ = Math.max(maxZ, cz[i] ?? 0);
   }
   const midX = (minX + maxX) / 2;
   const midZ = (minZ + maxZ) / 2;
@@ -124,7 +124,7 @@ export function buildCourseView(course: ICourse, seed = 734): ICourseView {
   const halfZ = (maxZ - minZ) / 2 + 20;
   // The creek runs across the line at the jump's dip, square to it.
   const creekAt = Math.round((course.creek[0] + course.creek[1]) / 2);
-  const creekY = cy[creekAt]!;
+  const creekY = cy[creekAt] ?? 0;
   const creekReach = channelReach(course, creekAt);
   /** Rolling ground away from the road, climbing to a ring of hills past the course. */
   const far = (x: number, z: number): number => {
@@ -132,7 +132,8 @@ export function buildCourseView(course: ICourse, seed = 734): ICourseView {
     const roll =
       1.4 * Math.sin(x * 0.029 + 1.3) * Math.cos(z * 0.034 - 0.4) +
       0.8 * Math.sin(x * 0.071 - z * 0.053 + 2.2);
-    const hills = smooth(1, 1.9, e) * (26 + 16 * Math.sin(Math.atan2(z - midZ, x - midX) * 5 + 0.8));
+    const hills =
+      smooth(1, 1.9, e) * (26 + 16 * Math.sin(Math.atan2(z - midZ, x - midX) * 5 + 0.8));
     return roll + hills;
   };
   const ground = (x: number, z: number): number => {
@@ -140,18 +141,23 @@ export function buildCourseView(course: ICourse, seed = 734): ICourseView {
     let low = Number.POSITIVE_INFINITY;
     for (let i = 0; i < n; i += 1) {
       if (deck[i] === 1) continue;
-      const d = (x - cx[i]!) ** 2 + (z - cz[i]!) ** 2;
+      const d = (x - (cx[i] ?? 0)) ** 2 + (z - (cz[i] ?? 0)) ** 2;
       if (d < nearest) nearest = d;
-      if (d < (SHOULDER + 3) ** 2 && cy[i]! < low) low = cy[i]!;
+      if (d < (SHOULDER + 3) ** 2 && (cy[i] ?? 0) < low) low = cy[i] ?? 0;
     }
     const d = Math.sqrt(nearest);
     const base = Number.isFinite(low) ? low - 0.35 : far(x, z);
     let h = base + (far(x, z) - base) * smooth(SHOULDER, SHOULDER + 24, d);
     // The creek's channel: a trough square to the line at the dip, its banks easing up.
-    const along = (x - cx[creekAt]!) * tx[creekAt]! + (z - cz[creekAt]!) * tz[creekAt]!;
-    const across = (x - cx[creekAt]!) * -tz[creekAt]! + (z - cz[creekAt]!) * tx[creekAt]!;
+    const along =
+      (x - (cx[creekAt] ?? 0)) * (tx[creekAt] ?? 0) + (z - (cz[creekAt] ?? 0)) * (tz[creekAt] ?? 0);
+    const across =
+      (x - (cx[creekAt] ?? 0)) * -(tz[creekAt] ?? 0) +
+      (z - (cz[creekAt] ?? 0)) * (tx[creekAt] ?? 0);
     if (across > creekReach[0] - 10 && across < creekReach[1] + 10) {
-      const end = smooth(creekReach[1], creekReach[1] + 10, across) + smooth(-creekReach[0], -creekReach[0] + 10, -across);
+      const end =
+        smooth(creekReach[1], creekReach[1] + 10, across) +
+        smooth(-creekReach[0], -creekReach[0] + 10, -across);
       const trough = creekY - 0.7 + smooth(4, 12, Math.abs(along)) * 30 + end * 30;
       h = Math.min(h, trough);
     }
@@ -161,7 +167,12 @@ export function buildCourseView(course: ICourse, seed = 734): ICourseView {
   // ---- Terrain ------------------------------------------------------------------------------
   const width = 2 * (halfX + MARGIN);
   const depth = 2 * (halfZ + MARGIN);
-  const terrainGeometry = new PlaneGeometry(width, depth, Math.ceil(width / CELL), Math.ceil(depth / CELL));
+  const terrainGeometry = new PlaneGeometry(
+    width,
+    depth,
+    Math.ceil(width / CELL),
+    Math.ceil(depth / CELL),
+  );
   terrainGeometry.rotateX(-Math.PI / 2);
   terrainGeometry.translate(midX, 0, midZ);
   const tp = terrainGeometry.getAttribute("position");
@@ -174,7 +185,8 @@ export function buildCourseView(course: ICourse, seed = 734): ICourseView {
     const z = tp.getZ(i);
     const y = tp.getY(i);
     const steep = 1 - tn.getY(i);
-    const patch = 0.5 + 0.5 * Math.sin(x * 0.11 + Math.sin(z * 0.07) * 2) * Math.cos(z * 0.09 - x * 0.03);
+    const patch =
+      0.5 + 0.5 * Math.sin(x * 0.11 + Math.sin(z * 0.07) * 2) * Math.cos(z * 0.09 - x * 0.03);
     const colour = mixColour(C.grassDark, C.grassLight, patch);
     if (y < creekY + 0.4) colour.lerp(new Color(C.sand), smooth(creekY + 0.4, creekY - 0.3, y));
     if (steep > 0.16) colour.lerp(new Color(C.rock), smooth(0.16, 0.35, steep));
@@ -232,7 +244,7 @@ export function buildCourseView(course: ICourse, seed = 734): ICourseView {
       const lateral = -r + ((col + 0.5) * (2 * r)) / squares;
       const p = { x: 0, y: 0, z: 0 };
       course.pointAt(row, lateral, p);
-      const yaw = Math.atan2(-tx[0]!, -tz[0]!);
+      const yaw = Math.atan2(-(tx[0] ?? 0), -(tz[0] ?? 0));
       checks.push(
         paint(
           new PlaneGeometry((2 * r) / squares, 1).rotateX(-Math.PI / 2),
@@ -242,7 +254,10 @@ export function buildCourseView(course: ICourse, seed = 734): ICourseView {
       );
     }
   }
-  const surfaces = new Mesh(merge([road, kerbs, shoulders, deckEdge, ...checks]), lit({ roughness: 0.86 }));
+  const surfaces = new Mesh(
+    merge([road, kerbs, shoulders, deckEdge, ...checks]),
+    lit({ roughness: 0.86 }),
+  );
   surfaces.name = "road";
   surfaces.receiveShadow = true;
   group.add(surfaces);
@@ -254,8 +269,12 @@ export function buildCourseView(course: ICourse, seed = 734): ICourseView {
     lit({ color: C.water, roughness: 0.08, vertexColors: false, transparent: true, opacity: 0.82 }),
   );
   const mid = (creekReach[0] + creekReach[1]) / 2;
-  water.position.set(cx[creekAt]! - tz[creekAt]! * mid, creekY + 0.14, cz[creekAt]! + tx[creekAt]! * mid);
-  water.rotation.y = Math.atan2(-tx[creekAt]!, -tz[creekAt]!);
+  water.position.set(
+    (cx[creekAt] ?? 0) - (tz[creekAt] ?? 0) * mid,
+    creekY + 0.14,
+    (cz[creekAt] ?? 0) + (tx[creekAt] ?? 0) * mid,
+  );
+  water.rotation.y = Math.atan2(-(tx[creekAt] ?? 0), -(tz[creekAt] ?? 0));
   water.name = "creek";
   water.receiveShadow = true;
   group.add(water);
@@ -273,13 +292,23 @@ export function buildCourseView(course: ICourse, seed = 734): ICourseView {
       const onDeck = deck[i] === 1;
       const thick = onDeck ? 0.3 : 0.6;
       const tall = onDeck ? 0.75 : 0.95;
-      course.pointAt(i + 1, side * (course.wall[i]! + thick / 2), p);
+      course.pointAt(i + 1, side * ((course.wall[i] ?? 0) + thick / 2), p);
       dummy.position.set(p.x, p.y + tall / 2 - 0.05, p.z);
-      dummy.rotation.set(Math.atan(course.slope[i]!), Math.atan2(-tx[i]!, -tz[i]!), 0, "YXZ");
+      dummy.rotation.set(
+        Math.atan(course.slope[i] ?? 0),
+        Math.atan2(-(tx[i] ?? 0), -(tz[i] ?? 0)),
+        0,
+        "YXZ",
+      );
       dummy.scale.set(thick, tall, 2.02);
       dummy.updateMatrix();
       walls.setMatrixAt(w, dummy.matrix);
-      walls.setColorAt(w, new Color(onDeck ? C.bridgeDark : (blockColours[(i / 2) % blockColours.length] ?? C.blockD)));
+      walls.setColorAt(
+        w,
+        new Color(
+          onDeck ? C.bridgeDark : (blockColours[(i / 2) % blockColours.length] ?? C.blockD),
+        ),
+      );
       w += 1;
     }
   }
@@ -294,9 +323,16 @@ export function buildCourseView(course: ICourse, seed = 734): ICourseView {
   let pillars = 0;
   for (let i = 0; i < n; i += 1) {
     if (deck[i] !== 1) continue;
-    const yaw = Math.atan2(-tx[i]!, -tz[i]!);
+    const yaw = Math.atan2(-(tx[i] ?? 0), -(tz[i] ?? 0));
     course.pointAt(i, 0, p);
-    solids.push(paint(new BoxGeometry(2 * PROFILE.rail + 0.6, 0.9, 1.02), C.bridge, at(p.x, p.y - 0.47, p.z, 0, yaw), 0.3));
+    solids.push(
+      paint(
+        new BoxGeometry(2 * PROFILE.rail + 0.6, 0.9, 1.02),
+        C.bridge,
+        at(p.x, p.y - 0.47, p.z, 0, yaw),
+        0.3,
+      ),
+    );
     if (i % 9 !== 0) continue;
     for (const side of [-1, 1]) {
       course.pointAt(i, side * 5.2, p);
@@ -305,24 +341,46 @@ export function buildCourseView(course: ICourse, seed = 734): ICourseView {
       const base = ground(p.x, p.z) - 0.5;
       const height = p.y - 0.9 - base;
       if (height < 0.5) continue;
-      solids.push(paint(new BoxGeometry(1.3, height, 1.3), C.pillar, at(p.x, base + height / 2, p.z, 0, yaw), 0.35));
+      solids.push(
+        paint(
+          new BoxGeometry(1.3, height, 1.3),
+          C.pillar,
+          at(p.x, base + height / 2, p.z, 0, yaw),
+          0.35,
+        ),
+      );
       pillars += 1;
     }
   }
 
   // ---- The start gantry: two posts, a banner and three lamps ---------------------------------------
-  const yaw0 = Math.atan2(-tx[0]!, -tz[0]!);
+  const yaw0 = Math.atan2(-(tx[0] ?? 0), -(tz[0] ?? 0));
   const span = PROFILE.wall + 0.6;
   for (const side of [-1, 1]) {
     course.pointAt(0, side * span, p);
-    solids.push(paint(new BoxGeometry(0.7, 7.4, 0.7), C.metal, at(p.x, p.y + 3.7, p.z, 0, yaw0), 0.25));
+    solids.push(
+      paint(new BoxGeometry(0.7, 7.4, 0.7), C.metal, at(p.x, p.y + 3.7, p.z, 0, yaw0), 0.25),
+    );
   }
   course.pointAt(0, 0, p);
-  solids.push(paint(new BoxGeometry(2 * span + 0.7, 1.6, 0.5), C.banner, at(p.x, p.y + 6.6, p.z, 0, yaw0), 0.2));
+  solids.push(
+    paint(
+      new BoxGeometry(2 * span + 0.7, 1.6, 0.5),
+      C.banner,
+      at(p.x, p.y + 6.6, p.z, 0, yaw0),
+      0.2,
+    ),
+  );
   for (let c = 0; c < 14; c += 1) {
     const lateral = -span + ((c + 0.5) * 2 * span) / 14;
     course.pointAt(0, lateral, p);
-    solids.push(paint(new BoxGeometry((2 * span) / 14, 0.4, 0.52), c % 2 === 0 ? C.check : C.white, at(p.x, p.y + 7.6, p.z, 0, yaw0)));
+    solids.push(
+      paint(
+        new BoxGeometry((2 * span) / 14, 0.4, 0.52),
+        c % 2 === 0 ? C.check : C.white,
+        at(p.x, p.y + 7.6, p.z, 0, yaw0),
+      ),
+    );
   }
   const bridgeMesh = new Mesh(merge(solids), lit({ roughness: 0.7 }));
   bridgeMesh.name = "structures";
@@ -331,11 +389,16 @@ export function buildCourseView(course: ICourse, seed = 734): ICourseView {
   group.add(bridgeMesh);
   const lamps: MeshStandardMaterial[] = [];
   for (let l = 0; l < 3; l += 1) {
-    const material = new MeshStandardMaterial({ color: 0x331010, emissive: 0xff2a1a, emissiveIntensity: 0, roughness: 0.3 });
+    const material = new MeshStandardMaterial({
+      color: 0x331010,
+      emissive: 0xff2a1a,
+      emissiveIntensity: 0,
+      roughness: 0.3,
+    });
     const lamp = new Mesh(new IcosahedronGeometry(0.42, 2), material);
     course.pointAt(0, (l - 1) * 1.3, p);
     // On the banner's back face, toward the grid behind the line.
-    lamp.position.set(p.x + tx[0]! * -0.4, p.y + 6.6, p.z + tz[0]! * -0.4);
+    lamp.position.set(p.x + (tx[0] ?? 0) * -0.4, p.y + 6.6, p.z + (tz[0] ?? 0) * -0.4);
     lamp.name = `lamp.${l}`;
     group.add(lamp);
     lamps.push(material);
@@ -348,20 +411,29 @@ export function buildCourseView(course: ICourse, seed = 734): ICourseView {
       const i = pad.index - 1 + c * 1.2;
       for (const side of [-1, 1]) {
         course.pointAt(Math.round(i), pad.lateral + side * 0.75, p);
-        const yaw = Math.atan2(-tx[pad.index]!, -tz[pad.index]!);
+        const yaw = Math.atan2(-(tx[pad.index] ?? 0), -(tz[pad.index] ?? 0));
         chevrons.push(
-          paint(new PlaneGeometry(1.7, 0.55).rotateX(-Math.PI / 2), c === 1 ? C.padGlow : C.pad,
-            at(p.x, p.y + 0.03, p.z, 0, yaw + side * 0.6)),
+          paint(
+            new PlaneGeometry(1.7, 0.55).rotateX(-Math.PI / 2),
+            c === 1 ? C.padGlow : C.pad,
+            at(p.x, p.y + 0.03, p.z, 0, yaw + side * 0.6),
+          ),
         );
       }
     }
     course.pointAt(pad.index, pad.lateral, p);
     chevrons.push(
-      paint(new PlaneGeometry(3.4, 4.2).rotateX(-Math.PI / 2), C.asphaltDark,
-        at(p.x, p.y + 0.02, p.z, 0, Math.atan2(-tx[pad.index]!, -tz[pad.index]!))),
+      paint(
+        new PlaneGeometry(3.4, 4.2).rotateX(-Math.PI / 2),
+        C.asphaltDark,
+        at(p.x, p.y + 0.02, p.z, 0, Math.atan2(-(tx[pad.index] ?? 0), -(tz[pad.index] ?? 0))),
+      ),
     );
   }
-  const pads = new Mesh(merge(chevrons), lit({ emissive: C.pad, emissiveIntensity: 0.35, roughness: 0.4 }));
+  const pads = new Mesh(
+    merge(chevrons),
+    lit({ emissive: C.pad, emissiveIntensity: 0.35, roughness: 0.4 }),
+  );
   pads.name = "boost-pads";
   group.add(pads);
 
@@ -374,19 +446,43 @@ export function buildCourseView(course: ICourse, seed = 734): ICourseView {
     const z = midZ + (rng() * 2 - 1) * (halfZ + 70);
     if (!clearOfRoad(course, x, z, SHOULDER + 3)) continue;
     const trunk = rng() < 0.25 ? 0 : 1.8 + rng() * 2.2;
-    crowns.push({ size: trunk === 0 ? 0.9 + rng() * 0.8 : 1.8 + rng() * 1.6, trunk, x, y: ground(x, z), z });
+    crowns.push({
+      size: trunk === 0 ? 0.9 + rng() * 0.8 : 1.8 + rng() * 1.6,
+      trunk,
+      x,
+      y: ground(x, z),
+      z,
+    });
   }
   const trunks = new InstancedMesh(trunkGeometry, lit({ roughness: 0.9 }), crowns.length);
-  const canopies = new InstancedMesh(canopyGeometry, lit({ roughness: 0.85, flatShading: true }), crowns.length);
+  const canopies = new InstancedMesh(
+    canopyGeometry,
+    lit({ roughness: 0.85, flatShading: true }),
+    crowns.length,
+  );
   const m = new Matrix4();
   const canopyTints = [C.canopy, C.canopyLight, C.grassDark, C.bloomPink, C.bloomYellow];
   crowns.forEach((tree, i) => {
-    trunks.setMatrixAt(i, m.compose(dummy.position.set(tree.x, tree.y - 0.2, tree.z), dummy.quaternion.identity(), dummy.scale.set(1, tree.trunk + 0.2, 1)));
+    trunks.setMatrixAt(
+      i,
+      m.compose(
+        dummy.position.set(tree.x, tree.y - 0.2, tree.z),
+        dummy.quaternion.identity(),
+        dummy.scale.set(1, tree.trunk + 0.2, 1),
+      ),
+    );
     const lift = tree.trunk === 0 ? tree.size * 0.45 : tree.trunk + tree.size * 0.7;
     dummy.rotation.set(0, rng() * Math.PI, 0);
-    canopies.setMatrixAt(i, m.compose(dummy.position.set(tree.x, tree.y + lift, tree.z), dummy.quaternion.setFromEuler(dummy.rotation), dummy.scale.set(tree.size, tree.size * 0.85, tree.size)));
+    canopies.setMatrixAt(
+      i,
+      m.compose(
+        dummy.position.set(tree.x, tree.y + lift, tree.z),
+        dummy.quaternion.setFromEuler(dummy.rotation),
+        dummy.scale.set(tree.size, tree.size * 0.85, tree.size),
+      ),
+    );
     // Bushes flower now and then; tree crowns stay green.
-    const tint = tree.trunk === 0 && rng() < 0.4 ? canopyTints[3 + (i % 2)]! : canopyTints[i % 3]!;
+    const tint = tree.trunk === 0 && rng() < 0.4 ? canopyTints[3 + (i % 2)] : canopyTints[i % 3];
     canopies.setColorAt(i, new Color(tint));
   });
   for (const mesh of [trunks, canopies]) {
@@ -422,17 +518,27 @@ function smooth(edge0: number, edge1: number, x: number): number {
 function clearOfRoad(course: ICourse, x: number, z: number, clearance: number): boolean {
   const reach = clearance * clearance;
   for (let i = 0; i < course.count; i += 1) {
-    if ((x - course.x[i]!) ** 2 + (z - course.z[i]!) ** 2 < reach) return false;
+    if ((x - (course.x[i] ?? 0)) ** 2 + (z - (course.z[i] ?? 0)) ** 2 < reach) return false;
   }
   return true;
 }
 
 /** True when x/z is at least `clearance` metres from every sample more than 60 m along the lap from `from`. */
-function clearOfBranch(course: ICourse, from: number, x: number, z: number, clearance: number): boolean {
+function clearOfBranch(
+  course: ICourse,
+  from: number,
+  x: number,
+  z: number,
+  clearance: number,
+): boolean {
   for (let i = 0; i < course.count; i += 1) {
     let apart = Math.abs(i - from);
     apart = Math.min(apart, course.count - apart);
-    if (apart > 60 && (x - course.x[i]!) ** 2 + (z - course.z[i]!) ** 2 < clearance * clearance) return false;
+    if (
+      apart > 60 &&
+      (x - (course.x[i] ?? 0)) ** 2 + (z - (course.z[i] ?? 0)) ** 2 < clearance * clearance
+    )
+      return false;
   }
   return true;
 }
@@ -444,13 +550,17 @@ function clearOfBranch(course: ICourse, from: number, x: number, z: number, clea
 function channelReach(course: ICourse, at: number): readonly [number, number] {
   const reach = (side: number): number => {
     for (let d = PROFILE.wall + 4; d <= 90; d += 2) {
-      const x = course.x[at]! - course.tz[at]! * side * d;
-      const z = course.z[at]! + course.tx[at]! * side * d;
+      const x = (course.x[at] ?? 0) - (course.tz[at] ?? 0) * side * d;
+      const z = (course.z[at] ?? 0) + (course.tx[at] ?? 0) * side * d;
       for (let i = 0; i < course.count; i += 1) {
         let apart = Math.abs(i - at);
         apart = Math.min(apart, course.count - apart);
         if (apart < 40) continue;
-        if ((x - course.x[i]!) ** 2 + (z - course.z[i]!) ** 2 < (PROFILE.wall + 14) ** 2) return d - 14;
+        if (
+          (x - (course.x[i] ?? 0)) ** 2 + (z - (course.z[i] ?? 0)) ** 2 <
+          (PROFILE.wall + 14) ** 2
+        )
+          return d - 14;
       }
     }
     return 90;

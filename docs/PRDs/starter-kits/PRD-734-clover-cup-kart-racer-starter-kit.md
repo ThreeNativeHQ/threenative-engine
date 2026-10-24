@@ -174,6 +174,13 @@ gates every kit must pass. Each playtest runs on a project scaffolded from `--te
 - 2026-10-24 (agent): AC-7's infield cut is out of reach by design: the walls close the course on
   both sides, so no kart can cut the infield. The lap rule is proven by order and direction instead
   (`maxJump`, the window of -3..+6 samples, keeps a kart from skipping ahead).
+- 2026-10-24 (agent): a coasting CPU lifts only above half its top speed (kit guard). MK64's band
+  lifts the throttle; with the player placed ahead in a scenario it held every CPU still on the grid.
+- 2026-10-24 (agent): steering reads `input.vector("move").x` with no keys on up and down. The
+  template contract asks every kit for a `move` axis, and the gamepad's left stick only feeds
+  `move`; keys on up/down would normalise W+D to a 0.71 steer.
+- 2026-10-24 (agent): skipping a checkpoint is reachable only by a teleport, which `Racer.resync`
+  absorbs; the walls close the course. The laps playtest proves order and direction instead.
 - 2026-10-24 (agent): the countdown lights last 1 s each. MK64's grand-prix pre-roll of 240 object
   ticks (`mk64: src/code_8006E9C0.c:443`) is 8 s, too long for a starter kit and its playtests.
 
@@ -196,16 +203,16 @@ and driver models.
 
 #### Phase 2: The course is a race
 
-**Status:** NOT STARTED
+**Status:** DONE (2026-10-24)
 **Files:** `src/entities/{Driver,Items}.ts`, `src/track/Race.ts`, `src/state.ts`, `src/ui/Hud.tsx`,
 `src/render/effects.ts`, `playtests/{items,race,laps}.playtest.json`.
 **Implementation:** CPUs and rubber-banding, items and the roulette, countdown, rocket start,
 checkpoints, laps, ranking, finish screen, the effects.
 **Verification:** the three playtests below, plus a rerun of Phase 1's four.
 
-- [ ] AC-5: an item box gives an item drawn from the rank's curve; a dropped banana spins the kart behind for 1.5 s, a green shell hits a CPU ahead and tumbles it for 1.7 s, and a mushroom boosts the user for 1.33 s. proof: `playtests/items.playtest.json`
-- [ ] AC-6: after a 3-2-1 countdown the 7 CPUs finish 3 laps with no CPU stuck, the finish order matches the progress ranking, and the HUD state shows the player's position and lap and the finish screen. proof: `playtests/race.playtest.json`
-- [ ] AC-7: a lap counts only after the 4 checkpoints in order; driving backwards over the line does not add a lap, and no kart skips ahead along the line (the -3..+6 sample window; see Decisions for the infield cut). proof: `playtests/laps.playtest.json`
+- [x] AC-5: an item box gives an item drawn from the rank's curve; a dropped banana spins the kart behind for 1.5 s, a green shell hits a CPU ahead and tumbles it for 1.7 s, and a mushroom boosts the user for 1.33 s. proof: `playtests/items.playtest.json` — exit 0: last place drew 1 item from 1 box (the 8th-place curve, 100% mushroom) and used it, boost 1.317 s; the banana spun the front-row CPU once for 1.500 s; the shell tumbled the CPU ahead once for 1.717 s. Red first: the band held every CPU dead on the grid while the placed player led on paper; a coasting CPU now slows to half speed and never stops.
+- [x] AC-6: after a 3-2-1 countdown the 7 CPUs finish 3 laps with no CPU stuck, the finish order matches the progress ranking, and the HUD state shows the player's position and lap and the finish screen. proof: `playtests/race.playtest.json` — exit 0: countdown 1 then 0 at GO, all 8 karts finished 3 laps in 88.4 s (the autopilot player 2nd at 85.2 s), slowest CPU stall 0.8 s (limit 3), 0 finish-rank mismatches, 35 items used, every CPU's index jump at most 6, state `place` moved from 8, `lap` 2 then 3, `phase` finished, `results` 8 rows (1st to 8th), 3 lap times.
+- [x] AC-7: a lap counts only after the 3 checkpoints in order; driving backwards over the line does not add a lap, and no kart skips ahead along the line (the -3..+6 sample window; see Decisions for the infield cut). proof: `playtests/laps.playtest.json` — exit 0: lap 0 after the line, -1 after backing over it (1 back crossing, next checkpoint reset to 3), 0 again forward, 1 after a full autopilot lap through the 3 checkpoints; largest index jump 1.
 
 #### Phase 3: Registered, measured and judged
 

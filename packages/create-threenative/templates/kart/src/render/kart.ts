@@ -65,8 +65,16 @@ function bodyGeometry(livery: ILivery) {
     paint(new BoxGeometry(0.56, 0.12, 0.42), C.seat, at(0, 0.36, 0.22)),
     paint(new BoxGeometry(0.56, 0.5, 0.12), C.seat, at(0, 0.6, 0.42, 0.2)),
     paint(new BoxGeometry(0.6, 0.34, 0.36), C.metal, at(0, 0.45, 0.68), 0.35),
-    paint(new CylinderGeometry(0.07, 0.08, 0.34, 8), C.exhaust, at(-0.17, 0.56, 0.92, Math.PI / 2 - 0.3)),
-    paint(new CylinderGeometry(0.07, 0.08, 0.34, 8), C.exhaust, at(0.17, 0.56, 0.92, Math.PI / 2 - 0.3)),
+    paint(
+      new CylinderGeometry(0.07, 0.08, 0.34, 8),
+      C.exhaust,
+      at(-0.17, 0.56, 0.92, Math.PI / 2 - 0.3),
+    ),
+    paint(
+      new CylinderGeometry(0.07, 0.08, 0.34, 8),
+      C.exhaust,
+      at(0.17, 0.56, 0.92, Math.PI / 2 - 0.3),
+    ),
     paint(new BoxGeometry(0.05, 0.36, 0.08), C.metal, at(-0.3, 0.7, 0.86)),
     paint(new BoxGeometry(0.05, 0.36, 0.08), C.metal, at(0.3, 0.7, 0.86)),
     paint(new BoxGeometry(1.12, 0.06, 0.3), body, at(0, 0.9, 0.9, 0.12)),
@@ -134,18 +142,22 @@ export class KartModel {
     const root = this.root;
     root.position.set(kart.x, kart.y, kart.z);
     // Pitch: the road's slope along the kart's own heading.
-    const trackYaw = Math.atan2(-course.tx[kart.index]!, -course.tz[kart.index]!);
+    const trackYaw = Math.atan2(-(course.tx[kart.index] ?? 0), -(course.tz[kart.index] ?? 0));
     const along = Math.cos(kart.yaw - trackYaw);
-    const pitch = kart.airborne ? root.rotation.x * 0.96 : Math.atan(course.slope[kart.index]! * along);
+    const pitch = kart.airborne
+      ? root.rotation.x * 0.96
+      : Math.atan((course.slope[kart.index] ?? 0) * along);
     // A drift leans the kart out of the turn and swings its nose a few degrees further in.
     const lean = kart.drifting ? kart.driftSide * 0.1 : steer * 0.05 * Math.min(1, kart.speed / 10);
     this.#roll += (lean - this.#roll) * Math.min(1, dt * 10);
-    const flip = kart.tumbleTicks > 0 ? (1 - kart.tumbleTicks / kart.feel.tumbleTicks) * Math.PI * 2 : 0;
+    const flip =
+      kart.tumbleTicks > 0 ? (1 - kart.tumbleTicks / kart.feel.tumbleTicks) * Math.PI * 2 : 0;
     root.rotation.set(pitch + flip, kart.yaw + kart.spinAngle - kart.driftSide * 0.18, this.#roll);
     this.#spin += (kart.speed * dt) / WHEEL.rear;
     this.#rear.rotation.x = -this.#spin;
     for (const pivot of this.#fronts) pivot.rotation.y = -steer * 0.45;
-    for (const spinner of this.#frontWheels) spinner.rotation.x = -this.#spin * (WHEEL.rear / WHEEL.front);
+    for (const spinner of this.#frontWheels)
+      spinner.rotation.x = -this.#spin * (WHEEL.rear / WHEEL.front);
   }
 
   /** Where the exhausts are, in world space: the boost flame comes out here. */

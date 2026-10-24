@@ -57,6 +57,10 @@ describe("create-threenative CLI", () => {
 
   it("uses an exact genre kit and falls back to minimal for an unknown genre", () => {
     expect(templateForGenre("racing")).toBe("racing");
+    // PRD-734: the kart kit owns the Mario Kart words; collectathon's "mario" does not take them.
+    expect(templateForGenre("mario-kart")).toBe("kart");
+    expect(templateForGenre("mk64")).toBe("kart");
+    expect(templateForGenre("kart-racer")).toBe("kart");
     expect(templateForGenre("pirate")).toBe("minimal");
     expect(parseArgs(["game", "--genre", "pirate", "--no-install"])).toMatchObject({
       install: false,

@@ -37,28 +37,21 @@
     {
       "kind": "input",
       "label": "into-wall",
-      "press": [
-        "KeyW"
-      ],
+      "press": ["KeyW"],
       "holdTicks": 210,
       "release": false
     },
     {
       "kind": "input",
       "label": "autopilot",
-      "press": [
-        "KeyW",
-        "KeyP"
-      ],
+      "press": ["KeyW", "KeyP"],
       "holdTicks": 2,
       "release": false
     },
     {
       "kind": "input",
       "label": "over-jump",
-      "press": [
-        "KeyW"
-      ],
+      "press": ["KeyW"],
       "holdTicks": 480,
       "release": true
     }

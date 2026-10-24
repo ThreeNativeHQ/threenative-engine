@@ -3,7 +3,7 @@
 //
 // Skid marks: dark rubber dashes laid behind the rear tyres in a drift, one instanced mesh in a
 // ring, so the oldest mark is reused when the ring is full. One draw call for the whole field.
-import { InstancedMesh, MeshStandardMaterial, Object3D, PlaneGeometry, type Group } from "three";
+import { type Group, InstancedMesh, MeshStandardMaterial, Object3D, PlaneGeometry } from "three";
 import { C } from "./palette.js";
 
 export class SkidMarks {
@@ -12,7 +12,10 @@ export class SkidMarks {
   #next = 0;
   laid = 0;
 
-  constructor(group: Group, readonly capacity = 900) {
+  constructor(
+    group: Group,
+    readonly capacity = 900,
+  ) {
     const material = new MeshStandardMaterial({
       color: C.tyre,
       depthWrite: false,
@@ -22,7 +25,11 @@ export class SkidMarks {
       roughness: 0.9,
       transparent: true,
     });
-    this.#mesh = new InstancedMesh(new PlaneGeometry(0.26, 0.7).rotateX(-Math.PI / 2), material, capacity);
+    this.#mesh = new InstancedMesh(
+      new PlaneGeometry(0.26, 0.7).rotateX(-Math.PI / 2),
+      material,
+      capacity,
+    );
     this.#mesh.count = 0;
     this.#mesh.name = "skid-marks";
     this.#mesh.frustumCulled = false;

@@ -549,6 +549,14 @@
       "reject": []
     },
     {
+      "id": "request.kart-drift-sparks",
+      "query": "a kart racer with a particle burst of sparks when drifting",
+      "scope": "request",
+      "source": "template:kart#AGENTS.md \u2014 __PROJECT_NAME__ kart racer (Clover Cup)",
+      "expect": ["GPUParticles3D"],
+      "reject": []
+    },
+    {
       "id": "prd451.matrix-world",
       "query": "only update world matrices of visible objects each frame instead of the whole scene",
       "scope": "mechanic",

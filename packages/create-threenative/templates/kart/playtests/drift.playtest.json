@@ -37,162 +37,112 @@
     {
       "kind": "input",
       "label": "approach",
-      "press": [
-        "KeyW"
-      ],
+      "press": ["KeyW"],
       "holdTicks": 240,
       "release": false
     },
     {
       "kind": "input",
       "label": "hop-left",
-      "press": [
-        "KeyW",
-        "KeyA",
-        "Space"
-      ],
+      "press": ["KeyW", "KeyA", "Space"],
       "holdTicks": 8,
       "release": false
     },
     {
       "kind": "input",
       "label": "charge-1",
-      "press": [
-        "KeyW",
-        "KeyD",
-        "Space"
-      ],
+      "press": ["KeyW", "KeyD", "Space"],
       "holdTicks": 20,
       "release": false
     },
     {
       "kind": "input",
       "label": "let-back-1",
-      "press": [
-        "KeyW",
-        "Space"
-      ],
+      "press": ["KeyW", "Space"],
       "holdTicks": 6,
       "release": false
     },
     {
       "kind": "input",
       "label": "release-stage-1",
-      "press": [
-        "KeyW"
-      ],
+      "press": ["KeyW"],
       "holdTicks": 1,
       "release": false
     },
     {
       "kind": "input",
       "label": "straighten",
-      "press": [
-        "KeyW",
-        "KeyD"
-      ],
+      "press": ["KeyW", "KeyD"],
       "holdTicks": 12,
       "release": false
     },
     {
       "kind": "input",
       "label": "hop-right",
-      "press": [
-        "KeyW",
-        "KeyD",
-        "Space"
-      ],
+      "press": ["KeyW", "KeyD", "Space"],
       "holdTicks": 8,
       "release": false
     },
     {
       "kind": "input",
       "label": "charge-a",
-      "press": [
-        "KeyW",
-        "KeyA",
-        "Space"
-      ],
+      "press": ["KeyW", "KeyA", "Space"],
       "holdTicks": 20,
       "release": false
     },
     {
       "kind": "input",
       "label": "let-back-a",
-      "press": [
-        "KeyW",
-        "Space"
-      ],
+      "press": ["KeyW", "Space"],
       "holdTicks": 6,
       "release": false
     },
     {
       "kind": "input",
       "label": "charge-b",
-      "press": [
-        "KeyW",
-        "KeyA",
-        "Space"
-      ],
+      "press": ["KeyW", "KeyA", "Space"],
       "holdTicks": 20,
       "release": false
     },
     {
       "kind": "input",
       "label": "let-back-b",
-      "press": [
-        "KeyW",
-        "Space"
-      ],
+      "press": ["KeyW", "Space"],
       "holdTicks": 6,
       "release": false
     },
     {
       "kind": "input",
       "label": "charge-c",
-      "press": [
-        "KeyW",
-        "KeyA",
-        "Space"
-      ],
+      "press": ["KeyW", "KeyA", "Space"],
       "holdTicks": 20,
       "release": false
     },
     {
       "kind": "input",
       "label": "let-back-c",
-      "press": [
-        "KeyW",
-        "Space"
-      ],
+      "press": ["KeyW", "Space"],
       "holdTicks": 6,
       "release": false
     },
     {
       "kind": "input",
       "label": "release-stage-3",
-      "press": [
-        "KeyW"
-      ],
+      "press": ["KeyW"],
       "holdTicks": 1,
       "release": false
     },
     {
       "kind": "input",
       "label": "turbo",
-      "press": [
-        "KeyW",
-        "KeyA"
-      ],
+      "press": ["KeyW", "KeyA"],
       "holdTicks": 32,
       "release": false
     },
     {
       "kind": "input",
       "label": "coast",
-      "press": [
-        "KeyW"
-      ],
+      "press": ["KeyW"],
       "holdTicks": 45,
       "release": true
     }

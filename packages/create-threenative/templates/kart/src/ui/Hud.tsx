@@ -57,7 +57,13 @@ export function Hud() {
   const state = useUiState<GameState>();
   if (state === undefined) return null;
   const countdown =
-    state.countdown === 4 ? "READY" : state.countdown > 0 ? String(state.countdown) : state.countdown === 0 ? "GO!" : "";
+    state.countdown === 4
+      ? "READY"
+      : state.countdown > 0
+        ? String(state.countdown)
+        : state.countdown === 0
+          ? "GO!"
+          : "";
   return (
     <div className="pointer-events-none absolute inset-0 select-none font-black text-text drop-shadow-[0_2px_0_rgba(0,0,0,0.55)]">
       <div className="absolute left-5 top-4 text-2xl italic tracking-wide">
@@ -73,7 +79,12 @@ export function Hud() {
         ))}
       </div>
       <div className="absolute left-1/2 top-3 -translate-x-1/2 rounded-xl border-4 border-line bg-panel/35">
-        <svg aria-label={state.item === "" ? "no item" : state.item} className="h-14 w-14" role="img" viewBox="0 0 50 50">
+        <svg
+          aria-label={state.item === "" ? "no item" : state.item}
+          className="h-14 w-14"
+          role="img"
+          viewBox="0 0 50 50"
+        >
           <ItemIcon item={state.item} />
         </svg>
       </div>
@@ -85,13 +96,20 @@ export function Hud() {
         <span className="text-3xl tabular-nums">{state.speed}</span>
         <span className="text-sm"> km/h</span>
         {state.driftStage > 0 ? (
-          <div className={`text-sm ${state.driftStage === 1 ? "text-text" : state.driftStage === 2 ? "text-warn" : "text-heart"}`}>
+          <div
+            className={`text-sm ${state.driftStage === 1 ? "text-text" : state.driftStage === 2 ? "text-warn" : "text-heart"}`}
+          >
             {"●".repeat(state.driftStage)} TURBO
           </div>
         ) : null}
       </div>
       {state.mapPath !== "" ? (
-        <svg aria-label="course map" className="absolute right-4 top-28 h-40 w-40 opacity-90" role="img" viewBox="0 0 100 100">
+        <svg
+          aria-label="course map"
+          className="absolute right-4 top-28 h-40 w-40 opacity-90"
+          role="img"
+          viewBox="0 0 100 100"
+        >
           <path d={state.mapPath} fill="none" stroke="#00000066" strokeWidth="6" />
           <path d={state.mapPath} fill="none" stroke="#fff4dc" strokeWidth="3" />
           {state.mapDots.map((dot) => (
@@ -108,7 +126,9 @@ export function Hud() {
         </svg>
       ) : null}
       {countdown !== "" ? (
-        <div className="absolute left-1/2 top-1/3 -translate-x-1/2 text-8xl italic text-lume">{countdown}</div>
+        <div className="absolute left-1/2 top-1/3 -translate-x-1/2 text-8xl italic text-lume">
+          {countdown}
+        </div>
       ) : null}
       {state.wrongWay ? (
         <div className="absolute left-1/2 top-1/2 -translate-x-1/2 rounded-full bg-heart/80 px-6 py-2 text-3xl">
@@ -116,7 +136,9 @@ export function Hud() {
         </div>
       ) : null}
       {state.toast !== "" && countdown === "" ? (
-        <div className="absolute left-1/2 top-24 -translate-x-1/2 text-3xl italic text-lume">{state.toast}</div>
+        <div className="absolute left-1/2 top-24 -translate-x-1/2 text-3xl italic text-lume">
+          {state.toast}
+        </div>
       ) : null}
       {state.results.length > 0 ? (
         <div className="absolute left-1/2 top-1/2 w-72 -translate-x-1/2 -translate-y-1/2 rounded-2xl border-2 border-line bg-panel/70 p-4 text-base backdrop-blur-sm">

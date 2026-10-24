@@ -107,7 +107,8 @@ export class Racer {
 
     // Wrong way: the nose points back along the line.
     const kart = this.kart;
-    const facing = -Math.sin(kart.yaw) * course.tx[after]! - Math.cos(kart.yaw) * course.tz[after]!;
+    const facing =
+      -Math.sin(kart.yaw) * (course.tx[after] ?? 0) - Math.cos(kart.yaw) * (course.tz[after] ?? 0);
     this.#wrongTicks = facing < RACE.wrongWayCos && kart.speed > 1 ? this.#wrongTicks + 1 : 0;
     this.wrongWay = this.#wrongTicks >= RACE.wrongWayTicks;
   }

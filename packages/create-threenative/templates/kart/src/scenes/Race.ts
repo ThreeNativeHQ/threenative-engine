@@ -57,6 +57,8 @@ interface IEntrant {
   stuckWorst: number;
   sparkClock: number;
   wallClock: number;
+  /** Every item this kart used, in order, for the scenarios. */
+  used: string[];
 }
 
 /** The sample nearest a world point, height included, so the bridge and the road under it differ. */
@@ -64,7 +66,10 @@ function locate(course: ICourse, x: number, y: number, z: number): number {
   let best = 0;
   let bestD = Number.POSITIVE_INFINITY;
   for (let i = 0; i < course.count; i += 1) {
-    const d = (x - course.x[i]!) ** 2 + (z - course.z[i]!) ** 2 + (3 * (y - course.y[i]!)) ** 2;
+    const d =
+      (x - (course.x[i] ?? 0)) ** 2 +
+      (z - (course.z[i] ?? 0)) ** 2 +
+      (3 * (y - (course.y[i] ?? 0))) ** 2;
     if (d < bestD) {
       bestD = d;
       best = i;
@@ -131,7 +136,10 @@ export class Race extends Scene<GameState> {
       const player = i === 0;
       const slot = player ? 7 : i - 1;
       const kart = new Kart(course);
-      kart.place(course.count - 5 - Math.floor(slot / 2) * 6 - (slot % 2) * 3, slot % 2 === 0 ? -3 : 3);
+      kart.place(
+        course.count - 5 - Math.floor(slot / 2) * 6 - (slot % 2) * 3,
+        slot % 2 === 0 ? -3 : 3,
+      );
       const model = new KartModel(livery);
       model.update(kart, 0, 0);
       ctx.add(model.root);
@@ -150,6 +158,7 @@ export class Race extends Scene<GameState> {
         stuck: 0,
         stuckWorst: 0,
         useIn: 0,
+        used: [],
         wallClock: 0,
       };
       field.push(entrant);
@@ -172,6 +181,7 @@ export class Race extends Scene<GameState> {
           groundGap: kart.y - course.heightAt(kart.index, kart.x, kart.z),
           finishTime: entrant.racer.finishTime,
           hit: kart.hit,
+          hitSeconds: kart.hitSeconds,
           index: kart.index,
           item: entrant.slot.held ?? (entrant.slot.rolling ? "rolling" : ""),
           itemDraws: entrant.slot.draws,
@@ -200,6 +210,7 @@ export class Race extends Scene<GameState> {
           wallInto: kart.wallInto,
           wallThrottleDrop: kart.wallThrottleDrop,
           wrongWay: entrant.racer.wrongWay,
+          used: entrant.used.join(","),
           y: kart.y,
         }),
         object: model.root,
@@ -214,7 +225,12 @@ export class Race extends Scene<GameState> {
         const item = new CourseItem(kind, kind === "banana" ? bananaMesh() : shellMesh());
         ctx.add(item.mesh);
         ctx.entities.add(`${kind}.${i}`, {
-          debug: () => ({ active: item.active, bounces: item.bounces, hits: item.hits, index: item.index }),
+          debug: () => ({
+            active: item.active,
+            bounces: item.bounces,
+            hits: item.hits,
+            index: item.index,
+          }),
           mesh: item.mesh,
         });
         items.push(item);
@@ -229,7 +245,12 @@ export class Race extends Scene<GameState> {
     const course = this.#course;
     const view = this.#view;
     const boxes = this.#boxes;
-    if (course === undefined || view === undefined || boxes === undefined || this.#sky === undefined)
+    if (
+      course === undefined ||
+      view === undefined ||
+      boxes === undefined ||
+      this.#sky === undefined
+    )
       throw new Error("Race.enter ran before load() built the course.");
     const field = this.#field;
     const items = this.#items;
@@ -265,8 +286,10 @@ export class Race extends Scene<GameState> {
     const euler = new Euler();
     for (const { kart, model, racer } of field) {
       const root = model.root;
-      if (Math.hypot(root.position.x - kart.x, root.position.z - kart.z) > 0.01 ||
-        Math.abs(euler.setFromQuaternion(root.quaternion, "YXZ").y - kart.yaw) > 1e-3) {
+      if (
+        Math.hypot(root.position.x - kart.x, root.position.z - kart.z) > 0.01 ||
+        Math.abs(euler.setFromQuaternion(root.quaternion, "YXZ").y - kart.yaw) > 1e-3
+      ) {
         const yaw = euler.setFromQuaternion(root.quaternion, "YXZ").y;
         const index = locate(course, root.position.x, root.position.y, root.position.z);
         const lateral = course.track(index, root.position.x, root.position.z).lateral;
@@ -283,8 +306,13 @@ export class Race extends Scene<GameState> {
       if (!item.placed) continue;
       const p = item.mesh.position;
       const index = locate(course, p.x, p.y, p.z);
-      p.y = course.y[index]!;
-      item.activate(course, index, euler.setFromQuaternion(item.mesh.quaternion, "YXZ").y, undefined);
+      p.y = course.y[index] ?? 0;
+      item.activate(
+        course,
+        index,
+        euler.setFromQuaternion(item.mesh.quaternion, "YXZ").y,
+        undefined,
+      );
     }
 
     const rig = createChaseCamera(camera);
@@ -305,7 +333,9 @@ export class Race extends Scene<GameState> {
       sparkYellow: make("sparkYellow"),
       sparkle: make("sparkle"),
     };
-    const fired: Record<string, number> = Object.fromEntries(Object.keys(BURSTS).map((kind) => [kind, 0]));
+    const fired: Record<string, number> = Object.fromEntries(
+      Object.keys(BURSTS).map((kind) => [kind, 0]),
+    );
     const burst = (kind: keyof typeof BURSTS, at: { x: number; y: number; z: number }): void => {
       const { count, emitter, shape } = BURSTS[kind];
       emitters[emitter].emitParticle({
@@ -330,10 +360,10 @@ export class Race extends Scene<GameState> {
     let maxX = Number.NEGATIVE_INFINITY;
     let maxZ = Number.NEGATIVE_INFINITY;
     for (let i = 0; i < course.count; i += 1) {
-      minX = Math.min(minX, course.x[i]!);
-      maxX = Math.max(maxX, course.x[i]!);
-      minZ = Math.min(minZ, course.z[i]!);
-      maxZ = Math.max(maxZ, course.z[i]!);
+      minX = Math.min(minX, course.x[i] ?? 0);
+      maxX = Math.max(maxX, course.x[i] ?? 0);
+      minZ = Math.min(minZ, course.z[i] ?? 0);
+      maxZ = Math.max(maxZ, course.z[i] ?? 0);
     }
     const mapScale = 92 / Math.max(maxX - minX, maxZ - minZ);
     const mapX = (x: number) => 4 + (x - minX) * mapScale + (92 - (maxX - minX) * mapScale) / 2;
@@ -341,7 +371,7 @@ export class Race extends Scene<GameState> {
     let mapPath = "";
     for (let i = 0; i <= course.count; i += 6) {
       const k = course.wrap(i);
-      mapPath += `${i === 0 ? "M" : "L"}${mapX(course.x[k]!).toFixed(1)} ${mapY(course.z[k]!).toFixed(1)} `;
+      mapPath += `${i === 0 ? "M" : "L"}${mapX(course.x[k] ?? 0).toFixed(1)} ${mapY(course.z[k] ?? 0).toFixed(1)} `;
     }
     mapPath += "Z";
 
@@ -356,11 +386,18 @@ export class Race extends Scene<GameState> {
     let lapStart = 0;
     const lapTimes: number[] = [];
     const boxReady = new Array<number>(boxes.spots.length).fill(0);
-    const race = { finishedCount: 0, phase: "countdown" as GameState["phase"], rocket: false };
+    const race = {
+      finishedCount: 0,
+      finishRankMismatches: 0,
+      phase: "countdown" as GameState["phase"],
+      rocket: false,
+      thrown: { banana: 0, mushroom: 0, shell: 0 },
+    };
     ctx.entities.add("race", {
       debug: () => ({
         ...race,
         elapsed,
+        itemsUsed: race.thrown.banana + race.thrown.mushroom + race.thrown.shell,
         order: rank(field.map((e) => e.racer)).map((r) => r.name),
         raceTime: goTime < 0 ? 0 : elapsed - goTime,
         stuckWorst: Math.max(...field.filter((e) => !e.player).map((e) => e.stuckWorst)),
@@ -381,6 +418,8 @@ export class Race extends Scene<GameState> {
       const kind = entrant.slot.held;
       if (kind === undefined) return;
       entrant.slot.held = undefined;
+      entrant.used.push(kind);
+      race.thrown[kind] += 1;
       const kart = entrant.kart;
       if (kind === "mushroom") {
         kart.startBoost();
@@ -415,10 +454,19 @@ export class Race extends Scene<GameState> {
 
       // ---- The countdown ------------------------------------------------------------------
       const racing = elapsed >= GO_AT;
-      const lit = Math.max(0, Math.min(RACE.lights, Math.floor((elapsed - RACE.ready) / RACE.light) + 1));
+      const lit = Math.max(
+        0,
+        Math.min(RACE.lights, Math.floor((elapsed - RACE.ready) / RACE.light) + 1),
+      );
       lamps.forEach((lamp, i) => {
         lamp.emissive.setHex(racing ? 0x2aff4a : 0xff2a1a);
-        lamp.emissiveIntensity = racing ? (elapsed < GO_AT + 2 ? 3 : 0) : i < lit && elapsed >= RACE.ready ? 3 : 0;
+        lamp.emissiveIntensity = racing
+          ? elapsed < GO_AT + 2
+            ? 3
+            : 0
+          : i < lit && elapsed >= RACE.ready
+            ? 3
+            : 0;
       });
       const throttleHeld = input.pressed("accel") || touch?.accelHeld === true;
       if (!racing && throttleHeld && !throttleWasHeld) throttlePressedAt = elapsed;
@@ -434,11 +482,18 @@ export class Race extends Scene<GameState> {
         }
       }
       const remaining = GO_AT - elapsed;
-      const countdown = remaining > RACE.lights ? 4 : remaining > 0 ? Math.ceil(remaining) : elapsed < GO_AT + 1 ? 0 : -1;
+      const countdown =
+        remaining > RACE.lights
+          ? 4
+          : remaining > 0
+            ? Math.ceil(remaining)
+            : elapsed < GO_AT + 1
+              ? 0
+              : -1;
 
       // ---- The player's hands -------------------------------------------------------------
       if (input.justPressed("autopilot")) autopilot = !autopilot;
-      const steer = input.vector("steer").x + (touch?.move.x ?? 0);
+      const steer = input.vector("move").x + (touch?.move.x ?? 0);
       playerInput.throttle = throttleHeld;
       playerInput.brake = input.pressed("brake") || (touch !== undefined && touch.move.y < -0.5);
       playerInput.steer = Math.max(-1, Math.min(1, steer));
@@ -458,7 +513,8 @@ export class Race extends Scene<GameState> {
             // The rubber band, against the player's progress, not the leader's.
             kart.catchingUp = racer.progress < leader - RACE.behind && !player.racer.finished;
             driver.coasting =
-              !player.racer.finished && racer.progress > leader + RACE.ahead + RACE.aheadPerPlace * racer.rank;
+              !player.racer.finished &&
+              racer.progress > leader + RACE.ahead + RACE.aheadPerPlace * racer.rank;
           }
           control = driver.update(dt, random);
           if (slot.held !== undefined) {
@@ -479,8 +535,9 @@ export class Race extends Scene<GameState> {
       // ---- Karts bump each other ----------------------------------------------------------
       for (let a = 0; a < field.length; a += 1) {
         for (let b = a + 1; b < field.length; b += 1) {
-          const ka = field[a]!.kart;
-          const kb = field[b]!.kart;
+          const ka = field[a]?.kart;
+          const kb = field[b]?.kart;
+          if (ka === undefined || kb === undefined) continue;
           const dx = kb.x - ka.x;
           const dz = kb.z - ka.z;
           const d2 = dx * dx + dz * dz;
@@ -514,7 +571,7 @@ export class Race extends Scene<GameState> {
         }
         entrant.onPad = onPad;
         boxes.spots.forEach((spot, i) => {
-          if (boxReady[i]! > elapsed) return;
+          if ((boxReady[i] ?? 0) > elapsed) return;
           if ((spot.x - kart.x) ** 2 + (spot.z - kart.z) ** 2 > ITEM_FEEL.boxReach ** 2) return;
           if (Math.abs(spot.y - 1.1 - kart.y) > 2) return;
           boxReady[i] = elapsed + ITEM_FEEL.boxRespawn;
@@ -526,8 +583,9 @@ export class Race extends Scene<GameState> {
           if (entrant.player) emitPlaytestEvent({ entity: "player", name: "item-box" });
         });
       }
+      // Thrown and placed items wait for GO like the karts do.
       for (const item of items) {
-        item.update(course, dt);
+        if (racing) item.update(course, dt);
         if (!item.active) continue;
         for (const entrant of field) {
           if (!item.touches(entrant.kart)) continue;
@@ -551,8 +609,16 @@ export class Race extends Scene<GameState> {
 
       // ---- Race order --------------------------------------------------------------------
       const raceTime = goTime < 0 ? 0 : elapsed - goTime;
-      for (const { racer } of field) racer.update(course, raceTime);
+      const crossing: [Racer, number][] = [];
+      for (const { racer } of field) {
+        const was = racer.finished;
+        racer.update(course, raceTime);
+        if (!was && racer.finished) crossing.push([racer, racer.rank]);
+      }
       rank(field.map((e) => e.racer));
+      // The HUD's place was honest: each kart finishes in the place the progress ranking gave it.
+      for (const [racer, place] of crossing)
+        if (racer.rank !== place) race.finishRankMismatches += 1;
       race.finishedCount = field.filter((e) => e.racer.finished).length;
       if (player.racer.lap !== lastLap) {
         if (player.racer.lap > lastLap && player.racer.lap >= 1) {
@@ -572,17 +638,26 @@ export class Race extends Scene<GameState> {
       // ---- What the race looks like --------------------------------------------------------
       for (const entrant of field) {
         const { kart, model } = entrant;
-        const steering = entrant.player && !autopilot ? playerInput.steer : entrant.driver.input.steer;
+        const steering =
+          entrant.player && !autopilot ? playerInput.steer : entrant.driver.input.steer;
         model.update(kart, steering, dt);
         if (!racing) continue;
-        if ((kart.x - camera.position.x) ** 2 + (kart.z - camera.position.z) ** 2 > EFFECT_RANGE ** 2) continue;
+        if (
+          (kart.x - camera.position.x) ** 2 + (kart.z - camera.position.z) ** 2 >
+          EFFECT_RANGE ** 2
+        )
+          continue;
         entrant.sparkClock += dt;
         const tick = entrant.sparkClock >= 1 / 30;
         if (tick) entrant.sparkClock = 0;
         if (tick && kart.grounded && kart.drifting) {
           for (const side of [-1, 1] as const) {
             model.rearWheel(side, at);
-            if (kart.driftStage > 0) burst(kart.driftStage === 1 ? "spark1" : kart.driftStage === 2 ? "spark2" : "spark3", at);
+            if (kart.driftStage > 0)
+              burst(
+                kart.driftStage === 1 ? "spark1" : kart.driftStage === 2 ? "spark2" : "spark3",
+                at,
+              );
             else burst("drift", at);
             skids.lay(at.x, at.y, at.z, kart.yaw);
           }
@@ -601,7 +676,7 @@ export class Race extends Scene<GameState> {
           burst("wall", { x: kart.x, y: kart.y + 0.5, z: kart.z });
         }
       }
-      boxes.update(elapsed, (i) => boxReady[i]! <= elapsed, dt);
+      boxes.update(elapsed, (i) => (boxReady[i] ?? 0) <= elapsed, dt);
       rig.update(player.kart, dt);
       lighting.follow(new Vector3(player.kart.x, player.kart.y, player.kart.z));
 
@@ -611,14 +686,15 @@ export class Race extends Scene<GameState> {
         frameCtx.state.set({ toast: "" });
       }
       const order = rank(field.map((e) => e.racer));
-      const results: IResult[] = race.phase === "finished"
-        ? order.map((racer) => ({
-            name: racer.name,
-            place: racer.rank,
-            player: racer === player.racer,
-            time: racer.finished ? racer.finishTime : 0,
-          }))
-        : [];
+      const results: IResult[] =
+        race.phase === "finished"
+          ? order.map((racer) => ({
+              name: racer.name,
+              place: racer.rank,
+              player: racer === player.racer,
+              time: racer.finished ? racer.finishTime : 0,
+            }))
+          : [];
       const dots: IMapDot[] = field.map((e) => ({
         colour: `#${e.model.livery.body.toString(16).padStart(6, "0")}`,
         player: e.player,

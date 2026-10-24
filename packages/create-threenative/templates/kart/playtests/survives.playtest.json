@@ -21,6 +21,13 @@
     },
     {
       "kind": "input",
+      "label": "throttle",
+      "press": "ArrowUp",
+      "holdTicks": 120,
+      "release": true
+    },
+    {
+      "kind": "input",
       "label": "autopilot-on",
       "press": "KeyP",
       "holdTicks": 2,
@@ -29,7 +36,7 @@
     {
       "kind": "wait",
       "label": "drive",
-      "waitTicks": 600,
+      "waitTicks": 480,
       "release": true
     }
   ],

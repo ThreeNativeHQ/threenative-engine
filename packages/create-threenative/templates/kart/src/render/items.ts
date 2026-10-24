@@ -24,11 +24,20 @@ import { C } from "./palette.js";
 export function bananaMesh(): Mesh {
   const mesh = new Mesh(
     merge([
-      paint(new TorusGeometry(0.3, 0.09, 6, 12, 2.3), C.banana, at(0, 0.1, 0, Math.PI / 2, 0, 0.4), 0.3),
+      paint(
+        new TorusGeometry(0.3, 0.09, 6, 12, 2.3),
+        C.banana,
+        at(0, 0.1, 0, Math.PI / 2, 0, 0.4),
+        0.3,
+      ),
       paint(new SphereGeometry(0.06, 6, 4), C.bananaTip, at(0.27, 0.12, 0.1)),
       paint(new SphereGeometry(0.06, 6, 4), C.bananaTip, at(-0.21, 0.1, 0.22)),
       ...[0, 2.1, 4.2].map((a) =>
-        paint(new BoxGeometry(0.14, 0.03, 0.3), C.banana, at(Math.cos(a) * 0.12 - 0.3, 0.05, Math.sin(a) * 0.12, 0, a, 0.4)),
+        paint(
+          new BoxGeometry(0.14, 0.03, 0.3),
+          C.banana,
+          at(Math.cos(a) * 0.12 - 0.3, 0.05, Math.sin(a) * 0.12, 0, a, 0.4),
+        ),
       ),
     ]),
     lit({ roughness: 0.5 }),
@@ -41,10 +50,29 @@ export function bananaMesh(): Mesh {
 export function shellMesh(): Mesh {
   const mesh = new Mesh(
     merge([
-      paint(new SphereGeometry(0.4, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2), C.shell, at(0, 0.08, 0, 0, 0, 0, 1, 0.8, 1), 0.4),
+      paint(
+        new SphereGeometry(0.4, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2),
+        C.shell,
+        at(0, 0.08, 0, 0, 0, 0, 1, 0.8, 1),
+        0.4,
+      ),
       paint(new TorusGeometry(0.38, 0.08, 6, 18), C.shellRim, at(0, 0.08, 0, Math.PI / 2)),
       ...[0, 1, 2, 3, 4].map((i) =>
-        paint(new SphereGeometry(0.1, 6, 4), C.shellRim, at(Math.cos((i * Math.PI * 2) / 5) * 0.24, 0.3, Math.sin((i * Math.PI * 2) / 5) * 0.24, 0, 0, 0, 1, 0.35, 1)),
+        paint(
+          new SphereGeometry(0.1, 6, 4),
+          C.shellRim,
+          at(
+            Math.cos((i * Math.PI * 2) / 5) * 0.24,
+            0.3,
+            Math.sin((i * Math.PI * 2) / 5) * 0.24,
+            0,
+            0,
+            0,
+            1,
+            0.35,
+            1,
+          ),
+        ),
       ),
     ]),
     lit({ roughness: 0.35 }),
@@ -84,7 +112,13 @@ export class ItemBoxes {
     cube.setAttribute("color", new BufferAttribute(colours, 3));
     this.#shells = new InstancedMesh(
       cube,
-      lit({ emissive: 0xffffff, emissiveIntensity: 0.12, opacity: 0.62, roughness: 0.2, transparent: true }),
+      lit({
+        emissive: 0xffffff,
+        emissiveIntensity: 0.12,
+        opacity: 0.62,
+        roughness: 0.2,
+        transparent: true,
+      }),
       this.spots.length,
     );
     this.#cores = new InstancedMesh(
@@ -104,7 +138,7 @@ export class ItemBoxes {
     const d = this.#dummy;
     this.spots.forEach((spot, i) => {
       const target = ready(i) ? 1 : 0;
-      const scale = this.#scale[i]! + (target - this.#scale[i]!) * Math.min(1, dt * 8);
+      const scale = (this.#scale[i] ?? 0) + (target - (this.#scale[i] ?? 0)) * Math.min(1, dt * 8);
       this.#scale[i] = scale;
       d.position.set(spot.x, spot.y + Math.sin(time * 2.2 + i) * 0.12, spot.z);
       d.rotation.set(0.5, time * 1.6 + i * 0.7, 0.6);

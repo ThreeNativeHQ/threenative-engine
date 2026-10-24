@@ -120,6 +120,7 @@ const MANIFEST_RELATIVE_PATH = path.join("packages", "create-threenative", "capa
 const TEMPLATE_NAMES = [
   "collectathon",
   "adventure",
+  "kart",
   "action-rpg",
   "minimal",
   "platformer",

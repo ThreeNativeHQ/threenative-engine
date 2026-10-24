@@ -125,7 +125,8 @@ function jumpProfile(s: number, start: number): number {
   if (d < kick) return rise * (d / kick) ** 1.6;
   if (d < kick + drop) return rise - (rise + depth) * smooth(0, 1, (d - kick) / drop);
   if (d < kick + drop + floor) return -depth;
-  if (d < kick + drop + floor + climb) return -depth * (1 - smooth(0, 1, (d - kick - drop - floor) / climb));
+  if (d < kick + drop + floor + climb)
+    return -depth * (1 - smooth(0, 1, (d - kick - drop - floor) / climb));
   return 0;
 }
 
@@ -139,7 +140,11 @@ export function buildCourse(): ICourse {
     const t = (i / dense) * Math.PI * 2;
     px.push(PLAN.A * Math.sin(t));
     pz.push(PLAN.B * Math.sin(t) * Math.cos(t) + PLAN.C * Math.sin(3 * t));
-    if (i > 0) arc.push((arc[i - 1] ?? 0) + Math.hypot(px[i]! - px[i - 1]!, pz[i]! - pz[i - 1]!));
+    if (i > 0)
+      arc.push(
+        (arc[i - 1] ?? 0) +
+          Math.hypot((px[i] ?? 0) - (px[i - 1] ?? 0), (pz[i] ?? 0) - (pz[i - 1] ?? 0)),
+      );
   }
   const total = arc[dense] ?? 0;
   const count = Math.floor(total / STEP);
@@ -161,8 +166,8 @@ export function buildCourse(): ICourse {
     while (j < dense - 1 && (arc[j + 1] ?? 0) < s) j += 1;
     const f = (s - (arc[j] ?? 0)) / ((arc[j + 1] ?? 1) - (arc[j] ?? 0));
     const i = (k - start + count) % count;
-    x[i] = px[j]! + (px[j + 1]! - px[j]!) * f;
-    z[i] = pz[j]! + (pz[j + 1]! - pz[j]!) * f;
+    x[i] = (px[j] ?? 0) + ((px[j + 1] ?? 0) - (px[j] ?? 0)) * f;
+    z[i] = (pz[j] ?? 0) + ((pz[j + 1] ?? 0) - (pz[j] ?? 0)) * f;
   }
   const bridgeAt = (count - start) * STEP;
   // The lower branch passes the crossing near the middle of the lap: its closest sample to it.
@@ -171,7 +176,7 @@ export function buildCourse(): ICourse {
   for (let i = 0; i < count; i += 1) {
     let apart = Math.abs(i * STEP - bridgeAt);
     apart = Math.min(apart, length - apart);
-    const d = Math.hypot(x[i]!, z[i]!);
+    const d = Math.hypot(x[i] ?? 0, z[i] ?? 0);
     if (apart > length / 4 && d < closest) {
       closest = d;
       underAt = i * STEP;
@@ -181,8 +186,8 @@ export function buildCourse(): ICourse {
   for (let i = 0; i < count; i += 1) {
     const next = (i + 1) % count;
     const prev = (i - 1 + count) % count;
-    const dx = x[next]! - x[prev]!;
-    const dz = z[next]! - z[prev]!;
+    const dx = (x[next] ?? 0) - (x[prev] ?? 0);
+    const dz = (z[next] ?? 0) - (z[prev] ?? 0);
     const n = Math.hypot(dx, dz) || 1;
     tx[i] = dx / n;
     tz[i] = dz / n;
@@ -190,21 +195,22 @@ export function buildCourse(): ICourse {
     const { flat, ramp, height, cut } = LAYOUT.bridge;
     const onBridge = plateau(s, bridgeAt, length, flat, ramp);
     const inCut = plateau(s, underAt, length, flat, ramp);
-    const away = 1 - plateau(s, bridgeAt, length, flat + ramp, 20) - plateau(s, underAt, length, flat, 30);
+    const away =
+      1 - plateau(s, bridgeAt, length, flat + ramp, 20) - plateau(s, underAt, length, flat, 30);
     y[i] = height * onBridge - cut * inCut + relief(i / count, away) + jumpProfile(s, jumpStart);
     // The deck is the stretch where the bridge stands clear of the ground under it.
     deck[i] = onBridge > 0.3 ? 1 : 0;
     wall[i] = deck[i] === 1 ? PROFILE.rail : PROFILE.wall;
   }
   for (let i = 0; i < count; i += 1) {
-    slope[i] = (y[(i + 1) % count]! - y[(i - 1 + count) % count]!) / (2 * STEP);
+    slope[i] = ((y[(i + 1) % count] ?? 0) - (y[(i - 1 + count) % count] ?? 0)) / (2 * STEP);
   }
   const index = (fraction: number) => Math.round(fraction * count) % count;
   const creekFirst = Math.round((jumpStart + LAYOUT.jump.kick + LAYOUT.jump.drop) / STEP);
   const wrap = (i: number) => ((i % count) + count) % count;
   const lateralOf = (i: number, px0: number, pz0: number) =>
     // Right of travel: the tangent turned 90° clockwise seen from above, (−tz, tx).
-    (px0 - x[i]!) * -tz[i]! + (pz0 - z[i]!) * tx[i]!;
+    (px0 - (x[i] ?? 0)) * -(tz[i] ?? 0) + (pz0 - (z[i] ?? 0)) * (tx[i] ?? 0);
   return {
     boxes: LAYOUT.boxes.map(index),
     checkpoints: LAYOUT.checkpoints.map(index),
@@ -214,22 +220,23 @@ export function buildCourse(): ICourse {
     length,
     heightAt(i, px0, pz0) {
       const k = wrap(i);
-      const along = (px0 - x[k]!) * tx[k]! + (pz0 - z[k]!) * tz[k]!;
+      const along = (px0 - (x[k] ?? 0)) * (tx[k] ?? 0) + (pz0 - (z[k] ?? 0)) * (tz[k] ?? 0);
       const other = wrap(k + (along >= 0 ? 1 : -1));
       const f = Math.min(1, Math.abs(along) / STEP);
-      return y[k]! + (y[other]! - y[k]!) * f;
+      return (y[k] ?? 0) + ((y[other] ?? 0) - (y[k] ?? 0)) * f;
     },
     pads: LAYOUT.pads.map(({ at, lateral }) => ({ index: index(at), lateral })),
     pointAt(i, lateral, out) {
       const k = wrap(Math.round(i));
-      out.x = x[k]! - tz[k]! * lateral;
-      out.y = y[k]!;
-      out.z = z[k]! + tx[k]! * lateral;
+      out.x = (x[k] ?? 0) - (tz[k] ?? 0) * lateral;
+      out.y = y[k] ?? 0;
+      out.z = (z[k] ?? 0) + (tx[k] ?? 0) * lateral;
     },
     slope,
     surface({ index: i, lateral }) {
       const off = Math.abs(lateral);
-      if (i >= creekFirst && i <= creekFirst + LAYOUT.jump.floor && off < PROFILE.wall) return "water";
+      if (i >= creekFirst && i <= creekFirst + LAYOUT.jump.floor && off < PROFILE.wall)
+        return "water";
       return off <= PROFILE.road + PROFILE.kerb ? "road" : "grass";
     },
     track(from, px0, pz0, out = { index: 0, lateral: 0 }) {
@@ -237,7 +244,7 @@ export function buildCourse(): ICourse {
       let bestD = Number.POSITIVE_INFINITY;
       for (let k = -3; k <= 6; k += 1) {
         const i = wrap(from + k);
-        const d = (px0 - x[i]!) ** 2 + (pz0 - z[i]!) ** 2;
+        const d = (px0 - (x[i] ?? 0)) ** 2 + (pz0 - (z[i] ?? 0)) ** 2;
         if (d < bestD) {
           bestD = d;
           best = i;

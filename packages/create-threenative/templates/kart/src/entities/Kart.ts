@@ -155,6 +155,8 @@ export class Kart {
   catchingUp = false;
   spinTicks = 0;
   tumbleTicks = 0;
+  /** Seconds the last banana spin or shell tumble lasted. */
+  hitSeconds = 0;
   /** Visual spin angle while hit, radians. */
   spinAngle = 0;
   /** Speed after 1 s of full throttle, wheel straight, on one surface: the settled top there. */
@@ -216,7 +218,7 @@ export class Kart {
     this.z = at.z;
     this.index = i;
     this.lateral = lateral;
-    this.yaw = Math.atan2(-course.tx[i]!, -course.tz[i]!);
+    this.yaw = Math.atan2(-(course.tx[i] ?? 0), -(course.tz[i] ?? 0));
     this.velocityYaw = this.yaw;
     this.speed = 0;
     this.throttle = 0;
@@ -238,6 +240,7 @@ export class Kart {
     if (this.hit) return;
     this.spinTicks = KART_FEEL.spinTicks;
     this.counts.spins += 1;
+    this.hitSeconds = 0;
     this.#endDrift(false);
     this.boostTicks = 0;
     this.miniTurboTicks = 0;
@@ -248,6 +251,7 @@ export class Kart {
     if (this.hit) return;
     this.tumbleTicks = KART_FEEL.tumbleTicks;
     this.counts.tumbles += 1;
+    this.hitSeconds = 0;
     this.#endDrift(false);
     this.boostTicks = 0;
     this.miniTurboTicks = 0;
@@ -268,6 +272,7 @@ export class Kart {
     let throttle = input.throttle;
     let brake = input.brake;
     let steer = Math.max(-1, Math.min(1, input.steer));
+    if (this.hit) this.hitSeconds += dt;
     if (this.spinTicks > 0) {
       this.spinTicks = Math.max(0, this.spinTicks - ticks);
       // 360° at 12°/tick, then 360° at 6°/tick.
@@ -337,7 +342,13 @@ export class Kart {
       this.counts.hops += 1;
     }
     const fastEnough = this.speed > this.#topSpeed * f.driftMinFraction;
-    if (this.#hopping && this.driftSide === 0 && input.drift && Math.abs(steer) > 0.2 && fastEnough) {
+    if (
+      this.#hopping &&
+      this.driftSide === 0 &&
+      input.drift &&
+      Math.abs(steer) > 0.2 &&
+      fastEnough
+    ) {
       this.driftSide = Math.sign(steer);
       this.driftStage = 0;
       this.#driftCounter = 0;
@@ -399,13 +410,13 @@ export class Kart {
     this.index = point.index;
     this.lateral = point.lateral;
     // The wall: push the kart back inside, reflect the speed into it ×0.5, cut the throttle.
-    const limit = course.wall[this.index]! - f.halfWidth;
+    const limit = (course.wall[this.index] ?? 0) - f.halfWidth;
     if (Math.abs(this.lateral) > limit) {
       const side = Math.sign(this.lateral);
       const over = Math.abs(this.lateral) - limit;
       // Right of travel is (−tz, tx).
-      const nx = -course.tz[this.index]! * side;
-      const nz = course.tx[this.index]! * side;
+      const nx = -(course.tz[this.index] ?? 0) * side;
+      const nz = (course.tx[this.index] ?? 0) * side;
       this.x -= nx * over;
       this.z -= nz * over;
       this.lateral = side * limit;

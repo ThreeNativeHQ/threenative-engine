@@ -451,6 +451,7 @@ describe("threenative-engine-mcp", () => {
           starterKits: [
             kit("adventure", "Lantern Vale", ["action-adventure", "zelda"]),
             kit("collectathon", "Hop Garden", ["collectathon", "3d-platformer", "mario"]),
+            kit("kart", "Clover Cup", ["kart-racer", "mario-kart", "mk64", "kart"]),
           ],
         }),
       );
@@ -505,6 +506,21 @@ describe("threenative-engine-mcp", () => {
         expect(names("make a pirate game")).toBeUndefined();
         expect(names("marionette puppets")).toBeUndefined();
         expect(searchCapabilities("make a pirate game", file).verdict).toBe("none");
+      } finally {
+        await rm(root, { force: true, recursive: true });
+      }
+    });
+
+    it("gives a longer kit phrase to its kit, not to the kit owning a word inside it", async () => {
+      const { file, root } = await kitManifest();
+      try {
+        const names = (text: string) =>
+          searchCapabilities(text, file).starterKits?.map(({ name }) => name);
+        expect(names("a game like mario kart")).toEqual(["kart"]);
+        expect(names("create me a Mario-Kart clone")).toEqual(["kart"]);
+        expect(names("a kart racer like mk64")).toEqual(["kart"]);
+        expect(names("mario, then mario kart")).toEqual(["collectathon", "kart"]);
+        expect(names("a game similar to mario")).toEqual(["collectathon"]);
       } finally {
         await rm(root, { force: true, recursive: true });
       }

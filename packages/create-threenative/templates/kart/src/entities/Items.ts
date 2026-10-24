@@ -45,7 +45,11 @@ export const ITEM_FEEL = {
 
 /** Draws an item for `place` (1-based) from one uniform `roll` in [0, 1). */
 export function drawItem(place: number, roll: number): ItemKind {
-  const curve = ITEM_CURVE[Math.min(ITEM_CURVE.length, Math.max(1, place)) - 1] ?? ITEM_CURVE[0]!;
+  const curve = ITEM_CURVE[Math.min(ITEM_CURVE.length, Math.max(1, place)) - 1] ?? {
+    banana: 60,
+    mushroom: 5,
+    shell: 35,
+  };
   let ticket = Math.floor(roll * 100);
   for (const kind of ["banana", "shell", "mushroom"] as const) {
     ticket -= curve[kind];
@@ -157,12 +161,12 @@ export class CourseItem {
     const point = course.track(this.index, at.x, at.z);
     this.index = point.index;
     this.lateral = point.lateral;
-    const limit = course.wall[this.index]! - 0.4;
+    const limit = (course.wall[this.index] ?? 0) - 0.4;
     if (Math.abs(this.lateral) > limit) {
       // Reflect the heading about the wall: the wall's normal is the line's right, (−tz, tx).
       const side = Math.sign(this.lateral);
-      const nx = -course.tz[this.index]! * side;
-      const nz = course.tx[this.index]! * side;
+      const nx = -(course.tz[this.index] ?? 0) * side;
+      const nz = (course.tx[this.index] ?? 0) * side;
       const vx = -Math.sin(this.heading);
       const vz = -Math.cos(this.heading);
       const into = vx * nx + vz * nz;
@@ -180,6 +184,8 @@ export class CourseItem {
     if (!this.active || (kart === this.owner && this.grace > 0)) return false;
     const at = this.mesh.position;
     const reach = this.kind === "banana" ? ITEM_FEEL.bananaReach : ITEM_FEEL.shellReach;
-    return (at.x - kart.x) ** 2 + (at.z - kart.z) ** 2 < reach * reach && Math.abs(at.y - kart.y) < 2;
+    return (
+      (at.x - kart.x) ** 2 + (at.z - kart.z) ** 2 < reach * reach && Math.abs(at.y - kart.y) < 2
+    );
   }
 }

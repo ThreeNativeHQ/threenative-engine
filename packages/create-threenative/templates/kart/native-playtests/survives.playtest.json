@@ -1,5 +1,5 @@
 {
-  "name": "collectathon-native-survives",
+  "name": "kart-native-survives",
   "target": "desktop",
   "schemaVersion": 1,
   "viewport": {
@@ -13,16 +13,29 @@
   },
   "steps": [
     {
+      "kind": "wait",
+      "label": "countdown",
+      "waitTicks": 240,
+      "release": true
+    },
+    {
       "kind": "input",
-      "label": "run",
+      "label": "throttle",
       "press": "ArrowUp",
-      "holdTicks": 60,
+      "holdTicks": 120,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "autopilot",
+      "press": "KeyP",
+      "holdTicks": 2,
       "release": true
     },
     {
       "kind": "wait",
-      "label": "stand",
-      "waitTicks": 240,
+      "label": "race",
+      "waitTicks": 300,
       "release": true
     }
   ],
@@ -30,15 +43,15 @@
     "components": [
       {
         "entity": "player",
-        "component": "groundY",
-        "gte": -0.3,
-        "lte": 0.3,
-        "allowTrivial": "The capsule's origin is the waist, so a ground line near zero after 300 ticks proves the hero stands on the island floor on the native host too."
+        "component": "groundGap",
+        "gte": -0.05,
+        "lte": 0.05,
+        "allowTrivial": "After the countdown, two seconds of throttle and five of autopilot, the kart sits on the road surface on the native host too, not under it or in the air."
       }
     ],
     "movement": {
       "entity": "player",
-      "minDistance": 3
+      "minDistance": 20
     }
   }
 }
