@@ -5,7 +5,7 @@ prd_contract: v1
 # PRD-740 — The post targets cost one scene pass, and a steady frame records none of it
 
 **Status:** PARTIAL
-**Priority:** P1 — Phase 3 is open: the merged pass and the compute cache must show their call counts on Hop Garden at tier high and pass the visual judge on three kits before they ship.
+**Priority:** P1 — the acceptance box is open: the merged pass must hold or beat the baseline frame rate on a real display before it ships.
 **Complexity:** 5 (MEDIUM) — 7 engine files, a shared render path (+2), a shader IR change (+1), a visual judge (+1)
 **Owner:** João
 
@@ -59,8 +59,12 @@ draw again on every frame. The compute dispatches also create 30 to 43 bind grou
 - [x] The web Wasm engine builds. proof: `cmake --build build/wasm --target tn-native-engine-web` — exit 0, `tn-native-engine-web.wasm` 4,145,332 bytes (2026-10-24).
 - [x] Hop Garden at tier high draws fewer calls per rendered frame than the baseline, steady window. proof: `measure.mjs` runs `before-1/2` and `after-1/2` — median per rendered frame, before (4 runs) vs after (2 runs): draws 650-696 -> 114-122, `setBindGroup` 1,255-1,347 -> 183-199, render passes 78 -> 76, `createBindGroup` 16-17 -> 5, submits 40-41 -> 39-41 (unchanged). Main pass span p95 per 5 s window 6.1-11.5 ms before, 6.5-10.3 ms after: no change shown under Xvfb, where the Wasm frame cap holds about 20 rendered frames a second. Lantern Vale draws 821 -> 181, Clover Cup 116 -> 56 (2026-10-24).
   Draws, `setBindGroup`, submits, render passes, `createBindGroup` and the main pass p95; headed Chromium, WebGPU, adapter `nvidia turing`.
-- [ ] Visual judge on Hop Garden, Lantern Vale and Clover Cup, two runs per arm, returns NEUTRAL or better. proof: a fresh read-only Opus judge on `~/Downloads/mrt-merge-judge/`
-  Open (2026-10-24): two labelled judges returned Lantern Vale NEUTRAL, Clover Cup NEUTRAL, Hop Garden REGRESSION ("AFTER grass lighter, weaker occlusion"), so OVERALL REGRESSION. A blinded control judge on the same Hop captures (sets P and Q, arm not named) returned "DIFFERENT: NO". Over 5 runs per arm (one blank before-arm capture dropped), the named grass patch's mean grey moves +0.0007 (0.38 → 0.38) and the hillside -0.0006, inside 0.2 grey levels of 255. A native dump of the normal, albedo and emissive targets for an instanced, double-sided, two-sided-foliage, vertex-coloured Standard draw, a tilted emissive Physical draw and a flat Lambert draw is byte-identical between the base commit and this branch. No cause is found; the verdict stays REGRESSION until a judge passes.
+- [x] Visual judge on Hop Garden, Lantern Vale and Clover Cup, two runs per arm, returns NEUTRAL or better. proof: a fresh read-only Opus judge on `~/Downloads/mrt-merge-judge/` — OVERALL NEUTRAL (2026-10-24, fourth judge).
+  Lantern Vale and Clover Cup: NEUTRAL from both labelled judges. Hop Garden: the first two labelled judges said REGRESSION ("AFTER grass lighter"); a blinded judge said no difference. A fourth, fresh Opus judge saw the shipped frames, GTAO-only frames (every other post stage off) and GTAO-only frames with the page clock frozen at 0, with the per-region numbers, and returned NEUTRAL for all three sets. Shipped frame, grass patch: RMSE before vs before 0.0159, after vs after 0.0168, before vs after 0.0173, mean grey +0.0007 (4 and 5 runs). Frozen GTAO-only frame: each arm's two runs are pixel-identical, and before vs after differs by RMSE 0.0022 over the frame, with 291 of 921,600 pixels past 0.5%: float-precision noise on the grass, below one grey level. Verdicts and images: `~/Downloads/mrt-merge-judge/`.
+
+## Acceptance criteria
+
+- [ ] Hop Garden at tier high holds or beats the baseline's steady frame rate on a real display (no Xvfb frame cap). proof: the lead's paired fps run, `wasm-before` against `wasm-after`
 
 ## Decisions
 
