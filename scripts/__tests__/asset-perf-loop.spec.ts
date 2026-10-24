@@ -62,7 +62,7 @@ describe("asset perf loop", () => {
     ]);
     const html = renderHtml(ledger, new Date(0));
     expect(html).toContain("Latest iteration #1 of 2: cooked.");
-    expect(html).toContain("provisional");
+    expect(html).toContain("pending");
     expect(html).not.toContain("#2: 99");
     expect(html).not.toContain("/state");
     expect(renderHtml(ledger, new Date(0), { serving: true })).toContain('fetch("/state"');
