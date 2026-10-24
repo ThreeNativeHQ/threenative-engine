@@ -1,4 +1,5 @@
 import {
+  GPUParticles3D,
   Scene,
   type SceneFrame,
   afterPhysics,
@@ -18,6 +19,7 @@ import { Walker } from "../entities/Walker.js";
 import { type ICourse, COURSE, buildCourse, makeRng } from "../level/Course.js";
 import { emitPlaytestEvent } from "../playtest-events.js";
 import { type WallProbe, createOrbitCamera } from "../render/camera.js";
+import { BURSTS, dustEffect, sparkleEffect } from "../render/effects.js";
 import { setupLighting } from "../render/lighting.js";
 import { createLoadingScreen } from "../render/loading.js";
 import { setupPost } from "../render/postprocessing.js";
@@ -28,6 +30,26 @@ import type { GameState } from "../state.js";
 export type { GameCtx };
 
 const WEDGES = 8;
+/** Effects drawn by the additive star emitter; every other burst is dust. */
+const SPARKLES: ReadonlySet<keyof typeof BURSTS> = new Set([
+  "wallKick",
+  "trail",
+  "streak",
+  "coin",
+  "gem",
+  "seed",
+  "glint",
+]);
+const JUMPS: ReadonlySet<string> = new Set([
+  "single",
+  "double",
+  "triple",
+  "backflip",
+  "sideflip",
+  "longJump",
+]);
+/** Run puffs start above this ground speed (m/s): a slow walk raises no dust. */
+const DUST_SPEED = 5;
 /** The hero's capsule radius plus a walker's, for a touch, and how far a ground pound reaches. */
 const HIT = { touch: Walker.radius + 0.35, pound: 2.5, stompDrop: -1 } as const;
 
@@ -168,6 +190,35 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       lighting.follow(hero.mesh.position);
     });
 
+    // Effects: two pooled emitters, every look parameter in `render/effects.ts`.
+    const dust = ctx.add(new GPUParticles3D(dustEffect()));
+    dust.name = "effects-dust";
+    const sparkle = ctx.add(new GPUParticles3D(sparkleEffect()));
+    sparkle.name = "effects-sparkle";
+    const fired: Record<string, number> = Object.fromEntries(
+      Object.keys(BURSTS).map((kind) => [kind, 0]),
+    );
+    const burst = (kind: keyof typeof BURSTS, x: number, y: number, z: number): void => {
+      const { count, shape } = BURSTS[kind];
+      (SPARKLES.has(kind) ? sparkle : dust).emitParticle({
+        count,
+        direction: { x: shape[0], y: shape[1], z: shape[2] },
+        origin: { x, y, z },
+      });
+      fired[kind] = (fired[kind] ?? 0) + 1;
+    };
+    ctx.entities.add("effects", {
+      debug: () => ({
+        dust: dust.stats.spawned,
+        fired: { ...fired },
+        sparkle: sparkle.stats.spawned,
+      }),
+    });
+    let previous = hero.action;
+    let wasGrounded = hero.grounded;
+    let dustClock = 0;
+    let airTicks = 0;
+
     let coins = 0;
     let gems = 0;
     let seeds = 0;
@@ -188,6 +239,8 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       emitPlaytestEvent({ entity: "player", name: "respawned" });
     };
     const defeat = (walker: Walker, how: string): void => {
+      const w = walker.mesh.position;
+      burst("poof", w.x, w.y + 0.4, w.z);
       walker.kill();
       defeated += 1;
       emitPlaytestEvent({ entity: "player", name: how });
@@ -206,11 +259,48 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       );
       const at = hero.mesh.position;
       const feet = at.y - FOOT_OFFSET;
+      const fx = -Math.sin(hero.yaw);
+      const fz = -Math.cos(hero.yaw);
+      const action = hero.action;
+      if (action !== previous) {
+        if (!wasGrounded && hero.grounded) {
+          if (action === "poundLand") {
+            burst("pound", at.x, feet + 0.05, at.z);
+            burst("debris", at.x, feet + 0.1, at.z);
+          } else burst("landing", at.x, feet + 0.05, at.z);
+        } else if (wasGrounded && JUMPS.has(action)) burst("takeoff", at.x, feet + 0.05, at.z);
+        if (action === "skid") burst("skid", at.x + fx * 0.3, feet + 0.05, at.z + fz * 0.3);
+        // A wall kick faces away from the wall, so the contact is behind the hero.
+        if (action === "wallKick")
+          burst("wallKick", at.x - fx * 0.45, at.y + 0.2, at.z - fz * 0.45);
+        if (action === "ledgeHang") burst("ledge", at.x + fx * 0.45, feet + 1.3, at.z + fz * 0.45);
+        previous = action;
+        airTicks = 0;
+      }
+      wasGrounded = hero.grounded;
+      airTicks += 1;
+      if (action === "run" && hero.speed > DUST_SPEED) {
+        dustClock += dt * (hero.speed / 9.6);
+        if (dustClock > 0.06) {
+          dustClock = 0;
+          burst("run", at.x - fx * 0.3, feet + 0.05, at.z - fz * 0.3);
+        }
+      }
+      if (action === "triple" && airTicks % 2 === 0) burst("trail", at.x, at.y, at.z);
+      if (action === "longJump") burst("streak", at.x, at.y, at.z);
 
+      this.#pickups.forEach((pickup, i) => {
+        // A red gem glints every 1.4 s, staggered so the eight never flash together.
+        const p = pickup.mesh.position;
+        if (pickup.kind === "gem" && !pickup.taken && (elapsed + i * 0.37) % 1.4 < dt)
+          burst("glint", p.x, p.y, p.z);
+      });
       for (const pickup of this.#pickups) {
         pickup.update(dt, elapsed);
         if (pickup.taken || pickup.mesh.position.distanceToSquared(at) >= pickup.reach ** 2)
           continue;
+        const p = pickup.mesh.position;
+        burst(pickup.kind, p.x, p.y, p.z);
         pickup.take();
         emitPlaytestEvent({ entity: "player", name: "collected" });
         if (pickup.kind === "coin") {

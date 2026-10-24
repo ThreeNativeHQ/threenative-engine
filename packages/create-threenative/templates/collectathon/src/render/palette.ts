@@ -7,13 +7,14 @@
 // for the procedural models: a hero, a walker and a gem need more than six colours.
 
 export const palette = {
-  grass: 0x6fbf3f,
+  grass: 0x64b43c,
   /** Distance fades into this; also the loading screen's background. */
   horizon: 0xb9d8ee,
-  rock: 0xb3a089,
+  /** A warm sandstone at about half albedo: lighter reads as grey card under the sun. */
+  rock: 0x927b62,
   /** The loading screen's progress track. */
-  skyHigh: 0x2f74c8,
-  skyLow: 0x6fa8e0,
+  skyHigh: 0x1c5cc6,
+  skyLow: 0x5c9de2,
   /** The one saturated role: coins, gems, Sunseeds. */
   accent: 0xffc93a,
 } as const;
@@ -29,14 +30,19 @@ export const C = {
   water: 0x2f86b8,
   wood: 0xa8743f,
 
-  body: 0xf06a4a,
-  belly: 0xffe2c0,
-  boots: 0x5a3b8c,
-  gloves: 0xfdf6ea,
-  cap: 0x3a7be0,
+  // Pip: a teal cap with a leaf badge, a rust shirt, mustard overalls, cream gloves, brown shoes.
+  cap: 0x169c94,
+  shirt: 0xc8562a,
+  overalls: 0xd9a42c,
+  button: 0xfff1d0,
+  gloves: 0xfff3dc,
+  boots: 0x6a4126,
+  skin: 0xf2b48c,
+  nose: 0xf0a088,
+  hair: 0x4a2c18,
   ink: 0x20140c,
 
-  gold: 0xffc93a,
+  gold: 0xffbf1f,
   goldDark: 0xc98d14,
   gem: 0xe0283c,
   seed: 0xffe066,

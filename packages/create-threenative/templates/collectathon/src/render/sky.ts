@@ -28,20 +28,50 @@ function gradientColor(row: number, height: number): Color {
   // DataTexture rows start at v=0 (nadir); equirectangular v=0.5 is the horizon.
   const elevation = Math.sin((row / (height - 1) - 0.5) * Math.PI);
   if (elevation < 0) return horizon.clone().lerp(new Color(palette.grass), Math.min(1, -elevation));
-  return elevation < 0.35
-    ? horizon.clone().lerp(low, elevation / 0.35)
-    : low.clone().lerp(high, (elevation - 0.35) / 0.65);
+  // A thin haze band, then blue: a third-person camera sees the sky only up to about 30°.
+  return elevation < 0.15
+    ? horizon.clone().lerp(low, elevation / 0.15)
+    : low.clone().lerp(high, Math.min(1, (elevation - 0.15) / 0.5));
+}
+
+/** A few soft, flat-bottomed clouds low in the sky: [azimuth 0..1, elevation 0..1, width, height]. */
+const CLOUDS = [
+  [0.06, 0.16, 0.05, 0.035],
+  [0.19, 0.22, 0.035, 0.025],
+  [0.33, 0.13, 0.06, 0.03],
+  [0.52, 0.2, 0.045, 0.03],
+  [0.64, 0.12, 0.055, 0.025],
+  [0.8, 0.18, 0.05, 0.035],
+  [0.92, 0.25, 0.03, 0.02],
+] as const;
+
+function cloudCover(u: number, elevation: number): number {
+  let cover = 0;
+  for (const [cu, ce, w, h] of CLOUDS) {
+    const du = Math.min(Math.abs(u - cu), 1 - Math.abs(u - cu)) / w;
+    // Flat bottoms: below the centre the cloud fades twice as fast.
+    const de = (elevation - ce) / (elevation < ce ? h * 0.5 : h);
+    cover = Math.max(cover, Math.exp(-(du * du + de * de) * 2));
+  }
+  return cover;
 }
 
 /** sRGB equirectangular radiance from the ground bounce through the horizon to the zenith. */
 export function skyTexture(): DataTexture {
   // three's PMREM sizes its cube from width / 4 and needs at least 16: keep width >= 64.
-  const width = 256;
-  const height = 128;
+  const width = 512;
+  const height = 256;
   const data = new Uint8Array(width * height * 4);
+  const cloud = new Color(0xffffff);
   for (let row = 0; row < height; row += 1) {
-    const { r, g, b } = gradientColor(row, height).convertLinearToSRGB();
+    const base = gradientColor(row, height);
+    const elevation = row / (height - 1) - 0.5;
     for (let column = 0; column < width; column += 1) {
+      const cover = elevation > 0 ? cloudCover(column / width, elevation * 2) : 0;
+      const { r, g, b } = base
+        .clone()
+        .lerp(cloud, cover * 0.85)
+        .convertLinearToSRGB();
       data.set(
         [Math.round(r * 255), Math.round(g * 255), Math.round(b * 255), 255],
         (row * width + column) * 4,
@@ -61,8 +91,10 @@ export function setupSky(scene: Scene, sky: DataTexture): void {
   scene.background = sky;
   scene.backgroundIntensity = 1;
   scene.environment = sky;
-  scene.environmentIntensity = 1;
+  // The sky fills the shade a little above the background's own level, so a cast shadow reads as
+  // a mid-tone of the ground's colour, not a near-black hole in it.
+  scene.environmentIntensity = 1.3;
   // Thin on purpose: the island is 90 m across, so the haze only reads on the far shore and the
   // sea beyond it, where it is what turns the horizon line into distance.
-  scene.fog = new FogExp2(palette.horizon, 0.0045);
+  scene.fog = new FogExp2(palette.horizon, 0.0031);
 }

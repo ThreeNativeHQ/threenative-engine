@@ -16,7 +16,7 @@ function Meter({ wedges }: { wedges: number }) {
     );
   });
   return (
-    <svg aria-label={`${wedges} of 8 wedges`} className="h-12 w-12" role="img" viewBox="0 0 40 40">
+    <svg aria-label={`${wedges} of 8 wedges`} className="h-9 w-9" role="img" viewBox="0 0 40 40">
       {slices}
     </svg>
   );
@@ -31,8 +31,9 @@ export function Hud() {
   // Nothing to draw until the game publishes its first snapshot, a few milliseconds in.
   if (state === undefined) return null;
   return (
-    <div className="pointer-events-none absolute inset-0 p-6 text-sm font-bold text-text">
-      <div className="flex w-fit items-center gap-4 rounded-2xl border-2 border-line bg-panel/40 px-4 py-2 backdrop-blur-sm">
+    <div className="pointer-events-none absolute inset-0 p-4 text-sm font-bold text-text">
+      {/* Compact and unblurred, so a gem behind the panel still shows through it. */}
+      <div className="flex w-fit items-center gap-3 rounded-2xl border border-line bg-panel/25 px-3 py-1">
         <Meter wedges={state.wedges} />
         <span>
           coins{" "}

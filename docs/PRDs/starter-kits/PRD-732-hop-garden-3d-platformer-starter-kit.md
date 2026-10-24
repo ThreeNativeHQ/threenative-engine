@@ -189,6 +189,39 @@ Each playtest runs on a project scaffolded from `--template collectathon`:
   the same name every other kit's `quality.ts` exports, so the tier specs read it unchanged.
 - 2026-10-23 (agent): the native engine-player fix stays out of this kit PR. It is a
   `packages/runtime-native` change, and it does not finish AC-9 alone (see AC-9).
+- 2026-10-24 (agent, polish round 1 after a NOT PASS judge): every fix is game-owned in `src/`, and
+  the core look stays unpinned. The radial grass streaks came from per-facet tints on each lawn's
+  cylinder cap, a fan of long triangles. Each lawn is now a ring disc with smooth position-based
+  patches. Other fixes: half-albedo warm stone with a darker foot, sky fill ×1.3, PCF radius 3, a
+  5,500 K sun, fog −30 %, a deeper zenith with a few clouds, and glowing low-metal coins. Gems are
+  1.5× larger, gloves sit on the body, and the eyes sit wider. The hang pose leans back off the
+  wall. Scenery skips landmarks, the HUD is compact, and the hint fades after 10 s.
+- 2026-10-24 (agent): no 15° camera yaw offset at spawn. The stick is camera-relative and every
+  scenario route is authored in the camera frame, so an offset view turns "forward" 15° off the
+  screen. Wider-set eyes carry the three-quarter read instead.
+- 2026-10-24 (agent): in a narrow shaft the camera cranes up (0.85, 1.2 or 1.45 rad) when the
+  default arm would end closer than 2.5 m. It takes the angle that reaches farthest. The open top
+  is the only clear line there.
+- 2026-10-24 (owner via lead: "add more effects like the smoke that appear when you char walk"):
+  two pooled `GPUParticles3D` spawn emitters, dust (alpha puffs) and sparkle (additive stars).
+  Core owns the slots, the births and the culling. `src/render/effects.ts` owns every look
+  parameter and the `BURSTS` table. Each burst passes its shape in the request's `direction`.
+  The bursts:
+  - movement: run puffs above 5 m/s, skid, take-off, landing ring, ground-pound shockwave and
+    debris, ledge dust, wall-kick sparks, a triple-jump trail and a long-jump streak;
+  - pickups and walkers: coin, gem and Sunseed bursts, a red-gem glint every 1.4 s and the
+    walker-defeat poof.
+
+  Two draw calls in all, a procedural sprite mask and no asset. `playtests/effects.playtest.json`
+  proves 0 run puffs at idle, puffs while running, a take-off only after the jump and GPU spawns.
+- 2026-10-24 (owner via lead: "add the body shape more similar to mario"): Pip keeps the
+  classic 3D-platformer silhouette. The head is big, with a short-brim cap, a round nose, a bushy
+  moustache, ears and a hair tuft. The round torso wears overalls with a bib, straps and two
+  buttons. The arms are stubs ending in gloves, and the legs are short with big shoes. The trade
+  dress is original: a teal cap with a cream leaf badge, a rust shirt, mustard overalls, cream
+  gloves and brown shoes. There is no letter emblem and no red-and-blue scheme. Arms and legs
+  pivot at the shoulder and the hip and swing against each other on the run. On a ledge the arms
+  stretch so the gloves rest on the lip.
 
 ## Execution Phases
 
@@ -240,3 +273,4 @@ Unreal default look, and no frame is blank or white.
   Open, engine-blocked (2026-10-23, V8 engine player built here from the CI recipe): the kit fails to start, `TN_TSL uniform: expected a TSL node or number` from core's `AutoExposureNode` (`uniform(false)`). The V8 shim `packages/runtime-native/src/engine/player/core-tsl.mjs` lacks the boolean-uniform wrapper that `packages/three-native/src/browser-tsl.ts:775` has. With that wrapper cloned in, startup passes (`TN_PLAYER_V8_GAME_CHECK ... startup=passed`), then every frame fails `TN_NATIVE_TEXTURE_VALUE_TYPE` on the meter's render-target swaps (`auto-exposure.ts:192`). Core auto exposure is not ported to the desktop engine player, so any game on the engine default look fails there. Diagnostic only: with the meter off, the native scenario passes (exit 0, 0 errors) but the capture shows the HUD over the loading bar, not the course.
 - [ ] AC-10: the visual judge returns pass on every criterion above for all three poses. proof: the judge report linked from the PR — Evidence: pending.
   Captures ready, judge not run (2026-10-24): 3 poses (spawn, summit, shore) × 2 runs, headed WebGPU on intel `gen-12lp`, Wasm engine (`threenative:web-engine`), `TN_WORLD_ENVIRONMENT` filmic and `TN_AUTO_EXPOSURE` measured+applied in every run, 0 console errors, nonblank ≥ 0.5: `~/Downloads/hop-garden/pose-{spawn,summit,shore}-run{1,2}.png`. Known gap for the judge: inside the 5 m shaft the camera pulls in under 1 m and loses the hero during a wall kick.
+  Round 1 judge (2026-10-24, lead): NOT PASS. The judge rated hero, look, integrity and polish WEAK and readability PASS. The round-1 frames are kept in `~/Downloads/hop-garden/round1/`. Polish round 2 is in Decisions: the lawn, stone, light, sky, pickups, hero and HUD fixes, the owner's effects and body shape, and the camera crane. All 11 scenarios exit 0 on `gen-12lp` after it, `effects` included. Performance: p95 17.7 ms, 58.8 fps, 265 draws (was 240), 54.0k triangles (was 34.6k).

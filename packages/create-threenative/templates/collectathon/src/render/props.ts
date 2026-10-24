@@ -27,7 +27,9 @@ export function coinModel(): Group {
   const disc = shadowed(
     new Mesh(
       new CylinderGeometry(0.34, 0.34, 0.08, 18),
-      lit(C.gold, { metalness: 0.6, roughness: 0.35, emissive: 0.08 }),
+      // Low metalness: a metal coin takes its colour from what it reflects, and over a lawn that
+      // turns gold olive. The glow keeps it saturated whatever the meter does.
+      lit(C.gold, { metalness: 0.15, roughness: 0.35, emissive: 0.3 }),
     ),
   );
   disc.rotation.x = Math.PI / 2;
@@ -35,7 +37,7 @@ export function coinModel(): Group {
   group.add(
     new Mesh(
       new TorusGeometry(0.34, 0.05, 6, 18),
-      lit(C.goldDark, { metalness: 0.6, roughness: 0.4 }),
+      lit(C.goldDark, { metalness: 0.15, roughness: 0.4, emissive: 0.2 }),
     ),
   );
   return group;
@@ -47,10 +49,10 @@ export function gemModel(): Group {
   const body = shadowed(
     new Mesh(
       new OctahedronGeometry(0.42),
-      lit(C.gem, { flat: true, roughness: 0.25, emissive: 0.12 }),
+      lit(C.gem, { flat: true, roughness: 0.25, emissive: 0.25 }),
     ),
   );
-  body.scale.set(0.8, 1.15, 0.8);
+  body.scale.set(1.2, 1.7, 1.2);
   group.add(body);
   return group;
 }

@@ -288,8 +288,9 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // boot-failure text both engines now show, so only puzzle's tree moves.
   "action-rpg": "049b89827707aea83ea5b9847d4c8c0d3a4e01af138c0928ad59cd7f21b080e8",
   // PRD-732 (2026-10-23): the new Hop Garden kit, measured through createProject (method checked
-  // against platformer's unchanged value).
-  collectathon: "164f22ef52eb213036a5232fa9ff450d7aa27b790e138625f7f06ab28866e2bf",
+  // against platformer's unchanged value). Recomputed 2026-10-24 for the PRD-732 polish round: the
+  // new hero, the dust and sparkle effects and the effects scenario.
+  collectathon: "3cb21a7c3da4393d7c7c2f7d3d578ef26061bc7384ee9e94cdae7f3035004ccc",
   // PRD-733 (2026-10-23): the new Lantern Vale kit, measured through createProject.
   adventure: "2afb930d8f2f7ea568f9c590947126384bcdb4d49043009f1b8dba58b93fbb05",
   minimal: "1bdc31f8d31f074cde31e09d67ac850762482f481e4b41050d5679f7155ac085",

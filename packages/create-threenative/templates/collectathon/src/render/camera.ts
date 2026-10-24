@@ -24,6 +24,13 @@ export const CAMERA_RIG = {
   wallGap: 0.35,
   /** Ease toward the arm's end, in 1/s; a pull-in snaps instead. */
   followRate: 9,
+  /**
+   * When a wall would pull the camera closer than this, it cranes up instead: in a narrow shaft
+   * the open sky is the only clear line, and a camera at 0.3 m shows the back of the cap.
+   */
+  craneBelow: 2.5,
+  /** The steeper arm angles a crane tries, in radians above the horizon. */
+  craneElevations: [0.85, 1.2, 1.45],
 } as const;
 
 /** Distance along the ray from `from` to `to` to the first wall, or undefined when clear. */
@@ -49,19 +56,34 @@ export function createOrbitCamera(camera: PerspectiveCamera): IOrbitCamera {
   const arm = new Vector3();
   let yaw = 0;
   let distance: number = CAMERA_RIG.distance;
+  let elevation: number = CAMERA_RIG.elevation;
   let pulledIn = false;
+
+  /** How far the arm reaches at `angle` before a wall; also leaves `arm` pointing along it. */
+  const reachAt = (angle: number, probe: WallProbe): number => {
+    const flat = Math.cos(angle);
+    arm.set(Math.sin(yaw) * flat, Math.sin(angle), Math.cos(yaw) * flat);
+    desired.copy(aim).addScaledVector(arm, CAMERA_RIG.distance);
+    const hit = probe(aim, desired);
+    return hit === undefined ? CAMERA_RIG.distance : hit - CAMERA_RIG.wallGap;
+  };
 
   const place = (target: Vector3, probe: WallProbe, ease: number): void => {
     aim.set(target.x, target.y + CAMERA_RIG.aimHeight, target.z);
-    const flat = Math.cos(CAMERA_RIG.elevation);
-    arm.set(Math.sin(yaw) * flat, Math.sin(CAMERA_RIG.elevation), Math.cos(yaw) * flat);
-    desired.copy(aim).addScaledVector(arm, CAMERA_RIG.distance);
-    const hit = probe(aim, desired);
-    pulledIn = hit !== undefined;
-    const reach =
-      hit === undefined
-        ? CAMERA_RIG.distance
-        : Math.max(CAMERA_RIG.minDistance, hit - CAMERA_RIG.wallGap);
+    // Crane: pick the arm angle that reaches farthest when the default one is boxed in.
+    let goal: number = CAMERA_RIG.elevation;
+    let best = reachAt(goal, probe);
+    if (best < CAMERA_RIG.craneBelow) {
+      for (const angle of CAMERA_RIG.craneElevations) {
+        const reach = reachAt(angle, probe);
+        if (reach > best + 0.5) [goal, best] = [angle, reach];
+      }
+    }
+    // Up is immediate, like a pull-in; back down is eased.
+    elevation = goal > elevation ? goal : elevation + (goal - elevation) * ease;
+    const hit = reachAt(elevation, probe);
+    pulledIn = hit < CAMERA_RIG.distance;
+    const reach = Math.max(CAMERA_RIG.minDistance, hit);
     // Out is eased, in is immediate: a camera that eases into a wall shows the inside of it.
     distance = reach < distance ? reach : distance + (reach - distance) * ease;
     camera.position.copy(aim).addScaledVector(arm, distance);
@@ -75,6 +97,7 @@ export function createOrbitCamera(camera: PerspectiveCamera): IOrbitCamera {
     snap(target, heroYaw, probe) {
       yaw = heroYaw;
       distance = CAMERA_RIG.distance;
+      elevation = CAMERA_RIG.elevation;
       place(target, probe, 1);
     },
     update(target, velocity, dt, probe) {
@@ -91,7 +114,7 @@ export function createOrbitCamera(camera: PerspectiveCamera): IOrbitCamera {
       place(target, probe, 1 - Math.exp(-dt * CAMERA_RIG.followRate));
     },
     debug() {
-      return { distance, pulledIn, yaw };
+      return { distance, elevation, pulledIn, yaw };
     },
   };
 }

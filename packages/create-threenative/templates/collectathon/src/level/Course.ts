@@ -8,10 +8,11 @@ import {
   type Material,
   Mesh,
   PlaneGeometry,
+  RingGeometry,
   Vector3,
 } from "three";
 import { HERO_FEEL } from "../entities/Hero.js";
-import { lit, mottle } from "../render/materials.js";
+import { lit, mottle, patches } from "../render/materials.js";
 import { C, palette } from "../render/palette.js";
 
 type Point = readonly [number, number, number];
@@ -77,7 +78,10 @@ export function buildCourse(rng: () => number): ICourse {
   const dirt = lit(C.dirt, { vertexColors: true });
   /** Walkable: `Play.ts` builds a fixed trimesh body from every mesh tagged `solid`. */
   const solid = (geometry: BufferGeometry, material: Material, variance = 0.12): Mesh => {
-    const mesh = new Mesh(mottle(geometry, variance, rng), material);
+    const mesh = new Mesh(
+      material === grass ? patches(geometry) : mottle(geometry, variance, rng, material === rock),
+      material,
+    );
     mesh.castShadow = true;
     mesh.receiveShadow = true;
     mesh.userData.solid = true;
@@ -110,9 +114,15 @@ export function buildCourse(rng: () => number): ICourse {
     );
     cliff.translate(x, (top - 0.3 + bottom) / 2, z);
     solid(cliff, rock, 0.2);
-    const cap = new CylinderGeometry(radius + 0.15, radius + 0.15, 0.4, segments, 1);
-    cap.translate(x, top - 0.2, z);
-    solid(cap, grass, 0.1);
+    const lip = new CylinderGeometry(radius + 0.15, radius + 0.15, 0.4, segments, 1, true);
+    lip.translate(x, top - 0.2, z);
+    solid(lip, grass, 0);
+    // The lawn is a disc of concentric rings, not a cylinder's cap: a cap is one fan of long
+    // triangles from the centre, and any per-vertex tint on it reads as radial streaks.
+    const lawn = new RingGeometry(0, radius + 0.15, segments, Math.ceil(radius / 2.5));
+    lawn.rotateX(-Math.PI / 2);
+    lawn.translate(x, top, z);
+    solid(lawn, grass, 0);
   };
 
   // The island, its cliff, and the sea round it.
@@ -171,14 +181,22 @@ export function buildCourse(rng: () => number): ICourse {
   box([ledge[0] - 2, 0, ledge[1] - 3], [ledge[0] + 2, ledgeTop, ledge[1] + 3]);
   box([wall[0] - 2, 0, wall[1] - 3], [wall[0] + 2, wallTop, wall[1] + 3]);
 
-  // Scenery: rocks and round trees round the rim, never on a route.
+  // Scenery: rocks and round trees round the rim, never on a route and never inside a landmark (a
+  // tree through the shaft's wall, a rock under the pillar's coin ring).
   const foliage = lit(C.leaf, { flat: true, vertexColors: true });
   const trunk = lit(C.wood);
+  const keepOut = [
+    [px, pz, COURSE.pillar.radius + 5],
+    [(slabX + blockX + 4) / 2, (z[0] + z[1]) / 2, 8],
+    [ledge[0], ledge[1], 5],
+    [wall[0], wall[1], 5],
+  ] as const;
   for (let i = 0; i < 26; i += 1) {
     const angle = (i / 26) * Math.PI * 2 + rng() * 0.15;
     const r = COURSE.islandRadius - 2.5 - rng() * 3;
     const x = Math.cos(angle) * r;
     const zz = Math.sin(angle) * r;
+    if (keepOut.some(([kx, kz, kr]) => Math.hypot(x - kx, zz - kz) < kr)) continue;
     if (i % 2 === 0) {
       const stone = new Mesh(
         mottle(new DodecahedronGeometry(0.8 + rng() * 1.2, 0), 0.25, rng),

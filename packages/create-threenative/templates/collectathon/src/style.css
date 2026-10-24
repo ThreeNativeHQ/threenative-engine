@@ -13,6 +13,14 @@
   --color-text: #fff4dc;
   --color-dim: #e9c98a;
   --font-mono: ui-rounded, "Nunito", "Trebuchet MS", system-ui, sans-serif;
+  /* The controls hint reads once, then gets out of the view. */
+  --animate-hint-fade: hint-fade 1s ease-in 10s forwards;
+
+  @keyframes hint-fade {
+    to {
+      opacity: 0;
+    }
+  }
 }
 
 html,
