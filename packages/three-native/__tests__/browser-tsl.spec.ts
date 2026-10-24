@@ -5,12 +5,54 @@ import { describe, expect, it, vi } from "vitest";
 import { TSL_NODE } from "../src/browser-backend.js";
 import { type ITslRuntime, defineTsl } from "../src/browser-tsl.js";
 import { definePass } from "../src/pass-node.js";
+import { liveUniforms } from "../src/tsl-uniforms.js";
 
 interface INode {
   readonly [TSL_NODE]: number;
   mul(value: unknown): INode;
   add(value: unknown): INode;
 }
+
+it("the V8 facade preserves live boolean uniforms over numeric lanes", () => {
+  const comparison = vi.fn(() => ({}));
+  const nativeUniform = vi.fn((value: unknown, _type?: unknown) => {
+    if (typeof value === "boolean") throw new TypeError("native uniform needs numeric lanes");
+    return { notEqual: comparison };
+  });
+  const setUniform = vi.fn();
+  const live = liveUniforms(nativeUniform, setUniform);
+  // Execute the shipped V8 export against its real shared live-uniform wrapper.
+  const source = readFileSync(
+    new URL("../../runtime-native/src/engine/player/core-tsl.mjs", import.meta.url),
+    "utf8",
+  );
+  const expression = source.slice(
+    source.indexOf("export const uniform ="),
+    source.indexOf("\nexport const uniformArray"),
+  );
+  const uniform = new Function("live", expression.replace("export const uniform =", "return"))(
+    live,
+  );
+  const enabled = uniform(false);
+  expect(enabled.value).toBe(false);
+  expect(nativeUniform).toHaveBeenLastCalledWith(0);
+  expect(comparison).toHaveBeenCalledWith(0);
+  enabled.value = true;
+  expect(enabled.value).toBe(true);
+  expect(setUniform).toHaveBeenLastCalledWith(expect.any(Object), [1]);
+  expect(() => {
+    enabled.value = 1;
+  }).toThrow("expected a boolean");
+  expect(enabled.value).toBe(true);
+  expect(() => uniform(false, "float")).toThrow("requires bool type");
+  uniform(7, "uint");
+  expect(nativeUniform).toHaveBeenLastCalledWith(7, "uint");
+  uniform("gain");
+  expect(nativeUniform).toHaveBeenLastCalledWith("gain");
+  const vector = { x: 1, y: 2 };
+  uniform(vector);
+  expect(nativeUniform).toHaveBeenLastCalledWith(vector);
+});
 interface ITslExports {
   Fn(callback: (parameters: never) => INode): (...args: unknown[]) => INode;
   vec2(...args: number[]): INode;

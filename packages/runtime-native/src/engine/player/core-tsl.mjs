@@ -16,7 +16,22 @@ withConstValues(constants, { Vector2, Vector3, Vector4, Color });
 // three's `uniform.value = x` (shared with the Wasm back end): a number goes through at once; an
 // edited Color or VectorN goes through `syncUniforms`, which the renderer calls before each frame.
 const live = liveUniforms(globalThis.tsl.uniform, (node, lanes) => globalThis.tsl.setUniform(node, ...lanes));
-export const uniform = live.uniform;
+export const uniform = (value, type) => {
+  if (typeof value !== "boolean") return live.uniform(value, type);
+  if (type !== undefined && type !== "bool")
+    throw new TypeError("TN_TSL_UNIFORM_VALUE: a boolean uniform requires bool type");
+  // The ABI stores numeric lanes; compare the live float to produce a shader bool, as on Wasm.
+  const scalar = live.uniform(Number(value));
+  const boolean = scalar.notEqual(0);
+  return Object.defineProperty(boolean, "value", {
+    get: () => Boolean(scalar.value),
+    set: (next) => {
+      if (typeof next !== "boolean")
+        throw new TypeError("TN_TSL_UNIFORM_VALUE: expected a boolean");
+      scalar.value = Number(next);
+    },
+  });
+};
 export const uniformArray = live.uniformArray;
 export const reference = live.reference;
 export const syncUniforms = live.sync;
