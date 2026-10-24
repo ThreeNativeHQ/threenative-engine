@@ -457,7 +457,7 @@
 <rect x="1017.5161209318092" y="85" width="168.48387906819084" height="168.2240277968048" rx="4" fill="#232826"/>
 <text x="1021.5161209318092" y="96" class="s">Anim budget + AnimGraphRun…</text>
 <rect x="1018.5161209318092" y="98" width="165.48387906819084" height="153.2240277968048" rx="2" fill="#d9961f"><title>Anim budget + AnimGraphRuntime · Whole system (not split) · In progress</title></rect>
-<rect x="1018.5161209318092" y="248.2240277968048" width="57.91935767386679" height="3" fill="#fff" opacity=".85"/>
+<rect x="1018.5161209318092" y="248.2240277968048" width="68.14042079278447" height="3" fill="#fff" opacity=".85"/>
 <text x="1021.5161209318092" y="109" class="l">Whole system (not split)</text>
 <rect x="1017.5161209318092" y="255.2240277968048" width="120.3585227247479" height="163.52742615026708" rx="4" fill="#232826"/>
 <text x="1021.5161209318092" y="266.22402779680476" class="s">Texture + mesh str…</text>
