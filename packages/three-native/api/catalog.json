@@ -8741,7 +8741,10 @@
           "name": "shadowSide",
           "type": "Side | null",
           "mutable": true,
-          "lifetime": "owned"
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
         },
         {
           "name": "colorWrite",
@@ -11218,8 +11221,7 @@
           "mutable": true,
           "lifetime": "owned",
           "status": {
-            "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "kind": "supported"
           }
         },
         {
@@ -11916,6 +11918,24 @@
           "status": {
             "kind": "supported"
           }
+        },
+        {
+          "name": "aoNode",
+          "type": "Node | null",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "irradianceNode",
+          "type": "Node | null",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
         }
       ],
       "methods": [
@@ -12306,8 +12326,7 @@
           "mutable": true,
           "lifetime": "owned",
           "status": {
-            "kind": "partial",
-            "gaps": ["native-not-bound"]
+            "kind": "supported"
           }
         },
         {
@@ -12746,6 +12765,33 @@
           "name": "type",
           "type": "string",
           "mutable": false,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "twoSidedFoliage",
+          "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "roughDiffuse",
+          "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "subsurfaceColor",
+          "type": "Color | undefined",
+          "mutable": true,
           "lifetime": "owned",
           "status": {
             "kind": "supported"
@@ -13257,6 +13303,51 @@
         {
           "name": "colorWrite",
           "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "aoNode",
+          "type": "Node | null",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "irradianceNode",
+          "type": "Node | null",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "twoSidedFoliage",
+          "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "roughDiffuse",
+          "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "subsurfaceColor",
+          "type": "Color | undefined",
           "mutable": true,
           "lifetime": "owned",
           "status": {
@@ -13833,6 +13924,24 @@
         {
           "name": "colorWrite",
           "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "aoNode",
+          "type": "Node | null",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "irradianceNode",
+          "type": "Node | null",
           "mutable": true,
           "lifetime": "owned",
           "status": {
@@ -17214,6 +17323,15 @@
           "status": {
             "kind": "supported"
           }
+        },
+        {
+          "name": "sourceRadius",
+          "type": "number",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
         }
       ],
       "methods": []
@@ -19080,6 +19198,15 @@
           "status": {
             "kind": "unsupported",
             "diagnostic": "TN_NATIVE_UNSUPPORTED_RENDERER_PRIVATE"
+          }
+        },
+        {
+          "name": "backgroundNode",
+          "type": "Node | null | undefined",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
           }
         }
       ],
@@ -27130,6 +27257,24 @@
           "status": {
             "kind": "supported"
           }
+        },
+        {
+          "name": "twoSidedFoliage",
+          "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "subsurfaceColor",
+          "type": "Color | undefined",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
         }
       ],
       "methods": [
@@ -27436,6 +27581,24 @@
         {
           "name": "colorWrite",
           "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "twoSidedFoliage",
+          "type": "boolean",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "subsurfaceColor",
+          "type": "Color | undefined",
           "mutable": true,
           "lifetime": "owned",
           "status": {
@@ -28271,7 +28434,7 @@
         {
           "name": "target",
           "type": "Object3D",
-          "mutable": false,
+          "mutable": true,
           "lifetime": "owned",
           "status": {
             "kind": "supported"
@@ -28281,6 +28444,15 @@
           "name": "shadow",
           "type": "SpotLightShadow",
           "mutable": false,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "sourceRadius",
+          "type": "number",
+          "mutable": true,
           "lifetime": "owned",
           "status": {
             "kind": "supported"

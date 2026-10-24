@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
+import { dirname, resolve } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { TSL_NODE } from "../src/browser-backend.js";
 import { type ITslRuntime, defineTsl } from "../src/browser-tsl.js";
@@ -130,6 +133,75 @@ describe("Wasm TSL fog", () => {
     expect(node.isFogNode).toBe(true);
     expect(runtime.call).toHaveBeenCalledWith("vec4", null, expect.any(Array));
   });
+});
+
+describe("mutable texture values", () => {
+  it("retains the graph node and rebinds its replacement texture", () => {
+    const { runtime } = setup();
+    const { exports } = defineTsl(runtime);
+    const texture = exports.texture as (value: unknown) => { value: unknown; [TSL_NODE]: number };
+    const first = { name: "first" };
+    const second = { name: "second" };
+    const sampled = texture(first);
+    const id = sampled[TSL_NODE];
+    sampled.value = second;
+    expect(sampled.value).toBe(second);
+    expect(sampled[TSL_NODE]).toBe(id);
+    expect(runtime.call).toHaveBeenLastCalledWith("textureValue", id, [
+      { kind: "named", text: "second" },
+    ]);
+  });
+});
+
+describe("r185 math surface census", () => {
+  const root = resolve(
+    dirname(createRequire(import.meta.url).resolve("three")),
+    "../src/nodes/math",
+  );
+  for (const file of ["MathNode.js", "OperatorNode.js"]) {
+    const source = readFileSync(resolve(root, file), "utf8");
+    const exports = [...source.matchAll(/export const (\w+)/g)].map((match) => match[1] ?? "");
+    const methods = [...source.matchAll(/addMethodChaining\( '(\w+)'/g)].map(
+      (match) => match[1] ?? "",
+    );
+    it(`${file}: exposes every export`, () => {
+      const { tsl } = setup();
+      expect(
+        exports.filter((name) => {
+          const value = (tsl as unknown as Record<string, unknown>)[name];
+          return /^[A-Z_]+$/.test(name) || name === "PI2"
+            ? typeof value !== "object"
+            : typeof value !== "function";
+        }),
+      ).toEqual([]);
+    });
+    it(`${file}: keeps the V8 player exports and registrations in sync`, () => {
+      const player = readFileSync(
+        new URL("../../runtime-native/src/engine/player/core-tsl.mjs", import.meta.url),
+        "utf8",
+      );
+      const adapter = readFileSync(
+        new URL("../../runtime-native/src/adapters/v8/tsl.cpp", import.meta.url),
+        "utf8",
+      );
+      const playerExports = new Set(
+        [...player.matchAll(/export const \{([^}]+)\}/g)].flatMap(
+          (match) => (match[1] ?? "").match(/\w+/g) ?? [],
+        ),
+      );
+      expect(exports.filter((name) => !playerExports.has(name))).toEqual([]);
+      expect(methods.filter((name) => !adapter.includes(`"${name}"`))).toEqual([]);
+    });
+    it(`${file}: exposes every registered method`, () => {
+      const { tsl } = setup();
+      const node = tsl.float(0.5);
+      expect(
+        methods.filter(
+          (name) => typeof (node as unknown as Record<string, unknown>)[name] !== "function",
+        ),
+      ).toEqual([]);
+    });
+  }
 });
 
 describe("Wasm MaterialX scalar Worley noise", () => {

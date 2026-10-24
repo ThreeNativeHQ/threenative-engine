@@ -150,9 +150,12 @@ export function defineTextureSources(
     depth = 1,
   ) {
     if (BaseVolume === undefined) throw new TypeError("TN_BROWSER_UNBOUND: Data3DTexture");
+    // The engine's constructor takes bytes or floats. A Uint16Array holds half-float bits, so the engine
+    // gets zero floats of the same size and the bits go in on needsUpdate, after `type` says HalfFloat.
+    const bits = data instanceof Uint16Array;
     const texture = Reflect.construct(
       BaseVolume,
-      [data ?? undefined, width, height, depth],
+      [bits ? new Float32Array(data.length) : (data ?? undefined), width, height, depth],
       new.target ?? Data3DTexture,
     );
     sources.set(texture, { data: data ?? null, width, height, depth });

@@ -417,6 +417,21 @@ if (!uvsTile(uv)) rewriteUvs(uv, transforms.get(source)!);
 
 ## `@threenative/core`
 
+### `addFoliageBackLight`
+
+`function` — Adds subsurfaceColor times the far-face irradiance to a Two Sided Foliage leaf's emissive node.
+
+```ts
+export function addFoliageBackLight(material: Material, backIrradiance: Node<"vec3">): boolean { … }
+```
+
+- **Use when:** add bounce light to the far face of a two sided foliage leaf
+- **Constraints:** the material needs the foliage marker and subsurfaceColor, else nothing is added and false is returned; call once per material · the material needs `twoSidedFoliage = true` and a `subsurfaceColor`, or nothing is added and false is returned; backIrradiance is a vec3 node in the unit of `irradianceNode`; call once per material
+
+```ts
+addFoliageBackLight(leaf, backIrradiance);
+```
+
 ### `addInSlices`
 
 `function` — Attach hundreds of built objects to the scene in slices, presenting a frame between each.
@@ -642,6 +657,22 @@ export class AudioBus { … }
 const effects = new AudioBus({ camera });
 ```
 
+### `AutoExposureNode`
+
+`class` — Auto exposure with Unreal 5.8.3's metering: a 64-bin histogram of log2 luminance (the darkest and brightest 10% ignored), key 0.18 x 2, -10 to +20 EV100, 3 stops/s brighter and 1 stop/s darker. `AutoExposureNode` meters a colour texture and outputs the adapted exposure; `exposureSettings` holds the defaults.
+
+```ts
+export class AutoExposureNode extends TempNode<"float"> { … }
+```
+
+- **Use when:** the frame should expose itself the way a fresh Unreal project does as the sun and the view change
+- **Constraints:** WebGPU renderers only: a renderer without WebGPU keeps the fixed exposure and says so
+- **Overrides:** every `IExposureSettings` field, spread over `exposureSettings` and passed to `AutoExposureNode`, replaces the Unreal default
+
+```ts
+const slow = { ...exposureSettings, rateDown: 0.5 }; const node = new AutoExposureNode(input, slow, 1);
+```
+
 ### `baseGeometryOf`
 
 `function` — The full-detail geometry of a mesh the loader gave an automatic LOD chain. Selection swaps `mesh.geometry`, so a ray test or a collision body built from the current geometry would change with the camera. Framework picking and gameplay collide against this instead: the authored LOD0, which never changes as the camera moves.
@@ -764,6 +795,22 @@ export function boneLengths(root: Object3D): IBoneLengthSnapshot { … }
 ```ts
 import { boneLengths } from "@threenative/core";
 const baseline = boneLengths(character);
+```
+
+### `BudgetLadder`
+
+`class` — A cost ladder for one render stage: the whole GPU frame against the frame period moves it, by Unreal's DynamicRenderScaling rule. A frame over the period for 2 frames in a row steps the level down at once, a frame over the period less 10% headroom steps it down after the 8-frame change period, and a frame with room steps it up. A stage steps only when it could absorb the overage at zero cost, and a level that failed is retried after a growing wait. It decides when to move; the game applies the move.
+
+```ts
+export class BudgetLadder<L extends string> { … }
+```
+
+- **Use when:** step a render stage down when the GPU frame goes over the frame period · pick a quality level from measured GPU time without oscillating
+- **Constraints:** levels are listed cheapest first, and the frame period is the game's own display target · a frame without a resolved GPU reading never moves the level
+- **Overrides:** explicit: true keeps the level and only reports a frame over the target
+
+```ts
+const ladder = new BudgetLadder({ levels: ["low", "high"], framePeriodMs: 1000 / 60, start: "high" }); const window = ladder.observe(stageMs, frameMs);
 ```
 
 ### `bvhIntersectFirstHit`
@@ -1165,6 +1212,51 @@ renderer.render(scene, camera);
 tracker.commit(scene);
 ```
 
+### `ev100FromCamera`
+
+`function` — Photometric exposure units: EV100 to the renderer multiplier and back, a physical camera's EV100, and a meter reading. Conversion only; the exposure and the light values are the game's.
+
+```ts
+export function ev100FromCamera(aperture: number, shutterSeconds: number, iso: number): number { … }
+```
+
+- **Use when:** expose a frame lit in lux and nits with a physical camera exposure value · expose like a camera with an aperture, a shutter time and an ISO
+- **Constraints:** arguments must be finite; multipliers, apertures, shutter times, ISO and luminance must be > 0 · every argument must be finite and greater than zero
+
+```ts
+renderer.toneMappingExposure = exposureFromEv100(ev100FromCamera(4, 1 / 60, 100));
+```
+
+### `ev100FromExposure`
+
+`function` — Photometric exposure units: EV100 to the renderer multiplier and back, a physical camera's EV100, and a meter reading. Conversion only; the exposure and the light values are the game's.
+
+```ts
+export function ev100FromExposure(multiplier: number): number { … }
+```
+
+- **Use when:** expose a frame lit in lux and nits with a physical camera exposure value · report a hand-set exposure multiplier as an EV100
+- **Constraints:** arguments must be finite; multipliers, apertures, shutter times, ISO and luminance must be > 0 · multiplier must be finite and greater than zero
+
+```ts
+renderer.toneMappingExposure = exposureFromEv100(ev100FromCamera(4, 1 / 60, 100));
+```
+
+### `ev100FromLuminance`
+
+`function` — Photometric exposure units: EV100 to the renderer multiplier and back, a physical camera's EV100, and a meter reading. Conversion only; the exposure and the light values are the game's.
+
+```ts
+export function ev100FromLuminance(luminance: number): number { … }
+```
+
+- **Use when:** expose a frame lit in lux and nits with a physical camera exposure value · meter a frame's average luminance in cd/m² into an exposure value
+- **Constraints:** arguments must be finite; multipliers, apertures, shutter times, ISO and luminance must be > 0 · luminance must be finite and greater than zero
+
+```ts
+renderer.toneMappingExposure = exposureFromEv100(ev100FromCamera(4, 1 / 60, 100));
+```
+
 ### `exposeDebug`
 
 `function` — Publish one game object under `__THREENATIVE__.debug` for a capture script or the console.
@@ -1180,6 +1272,21 @@ export function exposeDebug(name: string, value: unknown): void { … }
 import { exposeDebug } from "@threenative/core";
 exposeDebug("player", player);
 // then from the console: __THREENATIVE__.debug.player
+```
+
+### `exposureFromEv100`
+
+`function` — Photometric exposure units: EV100 to the renderer multiplier and back, a physical camera's EV100, and a meter reading. Conversion only; the exposure and the light values are the game's.
+
+```ts
+export function exposureFromEv100(ev100: number): number { … }
+```
+
+- **Use when:** expose a frame lit in lux and nits with a physical camera exposure value
+- **Constraints:** arguments must be finite; multipliers, apertures, shutter times, ISO and luminance must be > 0 · ev100 must be finite; a unitless scene keeps its own multiplier instead
+
+```ts
+renderer.toneMappingExposure = exposureFromEv100(ev100FromCamera(4, 1 / 60, 100));
 ```
 
 ### `FlightModel`
@@ -1350,10 +1457,43 @@ export function getPlatform(): Readonly<IPlatformInfo> { … }
 ```
 
 - **Use when:** branch a portable game on web or native · choose touch controls for a mobile device · can I raytrace on native
-- **Constraints:** only use the returned platform facts; native globals are host-owned · ray tracing is unavailable on native until buffer-to-texture copy-out interop exists; `mystralRT.traceRays` refuses instead of resolving success without a readable result
+- **Constraints:** only use the returned platform facts; native globals are host-owned · image ray tracing is unavailable on native until buffer-to-texture copy-out interop exists; `mystralRT.traceRays` refuses instead of resolving success without a readable result · a native desktop host with ray tracing hardware traces ray batches with `mystralRT.traceRayBatch`, which writes hit records into a typed array you own; read `mystralRT.capabilities().rayBatch` first, and keep the software BVH trace for the web and every other host · when `mystralRT.capabilities().sharedTransport` is true, `mystralRT.traceRayBatchGpu({ tlas, rays, hits, rayCount })` traces between two GPUBuffers with no copy through CPU memory; `rays` needs the CopySrc usage and `hits` the CopyDst usage, and each call costs CPU time, so measure it against the software trace for your batch size
 
 ```ts
 if (isMobile()) showTouchControls();
+```
+
+### `GIBudget`
+
+`class` — Reports what a game's global illumination costs against the frame period: the GI share of the GPU frame and whether the frame fits its period less 10% headroom. The method (`none`, `irradianceField`, `screenProbeGather`) holds its level while the game runs, as Unreal's Lumen does: a frame over its period gets cheaper through the primary resolution scale, and the GI pass follows the lower resolution. The budget is the frame period, never a GI time in milliseconds, because a stage reading moves with the GPU clock.
+
+```ts
+export class GIBudget { … }
+```
+
+- **Use when:** global illumination costs too much on a weak GPU · see what share of the GPU frame the bounce light takes · quality tier for indirect lighting that follows the hardware
+- **Constraints:** the method never changes while the game runs: the primary resolution scale is the run-time lever · the GPU time of a pass is read by the scene name three or the game gave it, so name every GI pass in `stages` · timestamp queries are needed: without them every window is unobserved
+
+```ts
+const gi = new GIBudget({ method: "screenProbeGather", stages: ["SSGI"], framePeriodMs: 1000 / 60 });
+ctx.beforeRender(() => gi.observeRenderer(ctx.renderer.raw));
+```
+
+### `GIVisualize`
+
+`class` — Shows the indirect diffuse light of a frame by itself, the counterpart of Unreal's Lumen `Visualize IndirectDiffuse` mode, so a lighting gap against a reference can be told apart from a scene gap. The game's chain builds the term; this class selects it and fails when the term is missing.
+
+```ts
+export class GIVisualize { … }
+```
+
+- **Use when:** see only the bounce light of a frame · compare indirect lighting alone against Unreal · debug global illumination by looking at the indirect diffuse term
+- **Constraints:** the game's render chain builds the indirectDiffuse node (gathered and cached light times albedo); this class draws nothing else · a mode whose term the chain did not build throws instead of showing the finished frame
+- **Overrides:** mode: "off" returns the finished frame unchanged
+
+```ts
+const view = new GIVisualize({ mode: "indirectDiffuse", beauty: frame, indirectDiffuse: albedo.mul(bounce) });
+pipeline.outputNode = view.node;
 ```
 
 ### `GPUParticles3D`
@@ -1436,6 +1576,22 @@ const game = defineGame({ input: { move: { up: ["KeyW"], down: ["KeyS"], left: [
 // inside the scene, per frame: ctx.input.axis("move") is 0 at rest and 1 at full tilt
 ```
 
+### `installFilmicToneMapping`
+
+`function` — Unreal 5.8.3's tone curve, the default tone mapping of `createRenderer` and `Game`: a filmic curve in ACEScg (slope 0.88, toe 0.55, shoulder 0.26) after the gamut expansion and blue correction of Unreal's colour LUT. `installFilmicToneMapping` registers it as three's custom tone mapping.
+
+```ts
+export function installFilmicToneMapping( raw: unknown, c: IFilmicCurve = FILMIC_CURVE, grade: IColorGrade = COLOR_GRADE, ): number | undefined { … }
+```
+
+- **Use when:** the frame should tone map the way a fresh Unreal project does
+- **Constraints:** WebGPU renderers only: a renderer without a node library keeps ACES and reports `TN_TONEMAP`
+- **Overrides:** `createRenderer({ toneMapping: "aces" | "agx" | "neutral" | "none" })` or `game.renderer.toneMapping` in the game config; setting `renderer.raw.toneMapping` later wins
+
+```ts
+const renderer = await createRenderer({ toneMapping: "aces" }); // the named override
+```
+
 ### `installSpanProbes`
 
 `function` — Attach the span probes to a renderer: three's `render`, `_projectObject`, the render list's `sort`, the per-draw submission, and the scene-graph walk. Installed for you when `TN_FRAME_SPANS` asks; exported so a harness can wrap a renderer it owns.
@@ -1493,7 +1649,7 @@ export function isMobile(): boolean { … }
 ```
 
 - **Use when:** branch a portable game on web or native · choose touch controls for a mobile device · can I raytrace on native
-- **Constraints:** only use the returned platform facts; native globals are host-owned · ray tracing is unavailable on native until buffer-to-texture copy-out interop exists; `mystralRT.traceRays` refuses instead of resolving success without a readable result
+- **Constraints:** only use the returned platform facts; native globals are host-owned · image ray tracing is unavailable on native until buffer-to-texture copy-out interop exists; `mystralRT.traceRays` refuses instead of resolving success without a readable result · a native desktop host with ray tracing hardware traces ray batches with `mystralRT.traceRayBatch`, which writes hit records into a typed array you own; read `mystralRT.capabilities().rayBatch` first, and keep the software BVH trace for the web and every other host · when `mystralRT.capabilities().sharedTransport` is true, `mystralRT.traceRayBatchGpu({ tlas, rays, hits, rayCount })` traces between two GPUBuffers with no copy through CPU memory; `rays` needs the CopySrc usage and `hits` the CopyDst usage, and each call costs CPU time, so measure it against the software trace for your batch size
 
 ```ts
 if (isMobile()) showTouchControls();
@@ -1508,7 +1664,7 @@ export function isNative(): boolean { … }
 ```
 
 - **Use when:** branch a portable game on web or native · choose touch controls for a mobile device · can I raytrace on native
-- **Constraints:** only use the returned platform facts; native globals are host-owned · ray tracing is unavailable on native until buffer-to-texture copy-out interop exists; `mystralRT.traceRays` refuses instead of resolving success without a readable result
+- **Constraints:** only use the returned platform facts; native globals are host-owned · image ray tracing is unavailable on native until buffer-to-texture copy-out interop exists; `mystralRT.traceRays` refuses instead of resolving success without a readable result · a native desktop host with ray tracing hardware traces ray batches with `mystralRT.traceRayBatch`, which writes hit records into a typed array you own; read `mystralRT.capabilities().rayBatch` first, and keep the software BVH trace for the web and every other host · when `mystralRT.capabilities().sharedTransport` is true, `mystralRT.traceRayBatchGpu({ tlas, rays, hits, rayCount })` traces between two GPUBuffers with no copy through CPU memory; `rays` needs the CopySrc usage and `hits` the CopyDst usage, and each call costs CPU time, so measure it against the software trace for your batch size
 
 ```ts
 if (isMobile()) showTouchControls();
@@ -1538,7 +1694,7 @@ export function isTouchscreenAvailable(): boolean { … }
 ```
 
 - **Use when:** branch a portable game on web or native · choose touch controls for a mobile device · can I raytrace on native
-- **Constraints:** only use the returned platform facts; native globals are host-owned · ray tracing is unavailable on native until buffer-to-texture copy-out interop exists; `mystralRT.traceRays` refuses instead of resolving success without a readable result
+- **Constraints:** only use the returned platform facts; native globals are host-owned · image ray tracing is unavailable on native until buffer-to-texture copy-out interop exists; `mystralRT.traceRays` refuses instead of resolving success without a readable result · a native desktop host with ray tracing hardware traces ray batches with `mystralRT.traceRayBatch`, which writes hit records into a typed array you own; read `mystralRT.capabilities().rayBatch` first, and keep the software BVH trace for the web and every other host · when `mystralRT.capabilities().sharedTransport` is true, `mystralRT.traceRayBatchGpu({ tlas, rays, hits, rayCount })` traces between two GPUBuffers with no copy through CPU memory; `rays` needs the CopySrc usage and `hits` the CopyDst usage, and each call costs CPU time, so measure it against the software trace for your batch size
 
 ```ts
 if (isMobile()) showTouchControls();
@@ -1553,10 +1709,41 @@ export function isWeb(): boolean { … }
 ```
 
 - **Use when:** branch a portable game on web or native · choose touch controls for a mobile device · can I raytrace on native
-- **Constraints:** only use the returned platform facts; native globals are host-owned · ray tracing is unavailable on native until buffer-to-texture copy-out interop exists; `mystralRT.traceRays` refuses instead of resolving success without a readable result
+- **Constraints:** only use the returned platform facts; native globals are host-owned · image ray tracing is unavailable on native until buffer-to-texture copy-out interop exists; `mystralRT.traceRays` refuses instead of resolving success without a readable result · a native desktop host with ray tracing hardware traces ray batches with `mystralRT.traceRayBatch`, which writes hit records into a typed array you own; read `mystralRT.capabilities().rayBatch` first, and keep the software BVH trace for the web and every other host · when `mystralRT.capabilities().sharedTransport` is true, `mystralRT.traceRayBatchGpu({ tlas, rays, hits, rayCount })` traces between two GPUBuffers with no copy through CPU memory; `rays` needs the CopySrc usage and `hits` the CopyDst usage, and each call costs CPU time, so measure it against the software trace for your batch size
 
 ```ts
 if (isMobile()) showTouchControls();
+```
+
+### `lampPenumbraTangent`
+
+`function` — A lamp's penumbra radius in tangent units at a receiver, from the lamp's source radius and the blocker and receiver distances.
+
+```ts
+export function lampPenumbraTangent( sourceRadius: number, blockerDistance: number, receiverDistance: number, ): number { … }
+```
+
+- **Use when:** measure a lamp shadow's penumbra width without a GPU
+- **Constraints:** sourceRadius is 0 or more; both distances are positive metres; the result is the geometric tangent, before penumbraScale
+
+```ts
+const tangent = lampPenumbraTangent(0.05, 2, 3);
+```
+
+### `lampShadowMarker`
+
+`function` — The `TN_LAMP_SHADOW` line for the renderer's last frame, or `undefined` on a renderer that keeps no lamp counters (three's own).
+
+```ts
+export function lampShadowMarker( renderer: { … }
+```
+
+- **Use when:** log lamp shadow redraws and GPU time apart from the sun's on the owned engine
+- **Constraints:** counters that do not add up to the frame's shadow draws throw TN_LAMP_SHADOW_INVALID
+
+```ts
+const line = lampShadowMarker(renderer, frame);
+if (line !== undefined) console.info(line);
 ```
 
 ### `loadAll`
@@ -1734,6 +1921,21 @@ export class PathFollow3D { … }
 const follower = new PathFollow3D({ points: patrolPoints, loop: true, speed: 3 });
 ```
 
+### `penumbraUv`
+
+`function` — Convert world-space caster gap to a shadow UV radius, floored at one texel.
+
+```ts
+export function penumbraUv( gapMetres: number, sourceAngleRad: number, frustumWidthMetres: number, mapSize: number, ): number { … }
+```
+
+- **Use when:** measure a source-angle shadow's filter radius without a GPU
+- **Constraints:** inputs must be finite and non-negative; sizes must be positive and angle < PI/2 radians
+
+```ts
+const radius = penumbraUv(10, angle, 40, 2048);
+```
+
 ### `PipelineCensus`
 
 `class` — Read the renderer's bounded, versioned pipeline capture in a diagnostic or playtest tool.
@@ -1805,12 +2007,59 @@ prewarm(tracerPool);
 export class ProbeVolume extends Object3D implements IComputeDriven { … }
 ```
 
-- **Use when:** light bouncing from a room I cannot see · light a wall with an off-screen emitter
-- **Constraints:** request a bake after static geometry and lights are authored; this is static-lighting-first, not fully dynamic relighting · add the volume with ctx.add() so its incremental work is measured in the render phase · call sample() or sampleNode() from a game-owned material before screen-space GI; the volume owns no light, material, or colour
+- **Use when:** light bouncing from a room I cannot see · light a wall with an off-screen emitter · glass or fog inside a room takes the room's bounce light
+- **Constraints:** request a bake after static geometry and lights are authored; this is static-lighting-first, not fully dynamic relighting · add the volume with ctx.add() so its incremental work is measured in the render phase · call sample() or sampleNode() from a game-owned material before screen-space GI; the volume owns no light, material, or colour · a translucent material or a fog sample has no side that faces the light: it reads sampleNonDirectional(position), one atlas fetch, the same in every direction (divide by pi for a radiance)
 - **Overrides:** density, bounds, bakeBudgetMs, and bounces are game-owned choices
 
 ```ts
 const probes = new ProbeVolume({ bounds, density: 0.5 }); ctx.add(probes); void probes.requestBake(scene);
+```
+
+### `qualityPreset`
+
+`function` — The quality tiers of the Unreal 5.8.3 look: what `high` (a desktop, Unreal's Epic), `medium` and `low` (a phone) turn on, how a GPU family picks its start tier, and the global illumination and shadow filter settings per tier named after Unreal's scalability levels. A `WorldEnvironment` with no options starts from `high`. `qualityTiers` holds the tier tables: `resolve` picks a start tier from a GPU class, `gi` and `shadow` read a tier's settings.
+
+```ts
+export function qualityPreset(tier: string): IWorldEnvironmentOptions { … }
+```
+
+- **Use when:** pick a start tier for the GPU class and read what that tier costs the look · build a `WorldEnvironment` for a weaker device from a named tier
+- **Constraints:** an unknown tier name throws with the names it expected
+- **Overrides:** pass any `IWorldEnvironmentOptions` field after `qualityPreset(tier)`, or an explicit `tier` to `qualityTiers.resolve`
+
+```ts
+const world = new WorldEnvironment({ ...qualityPreset(qualityTiers.resolve({ gpuClass: renderer.gpuClass })), bloomEnabled: false });
+```
+
+### `readGIMarker`
+
+`function` — Parse a `TN_GI` console line back into its report, or `undefined`.
+
+```ts
+export function readGIMarker(line: string): IGIBudgetReport | undefined { … }
+```
+
+- **Use when:** inspect which global illumination method ran and what the frame cost
+- **Constraints:** non-marker lines and malformed markers return `undefined`
+
+```ts
+const report = readGIMarker(line); if (report?.verdict === "over") console.log(report.reason);
+```
+
+### `readLampShadowMarker`
+
+`function` — Parse a `TN_LAMP_SHADOW` line back into its stats, or `undefined`.
+
+```ts
+export function readLampShadowMarker(line: string): ILampShadowStats | undefined { … }
+```
+
+- **Use when:** count lamp shadow redraws from a renderer log, for example a moving-caster run
+- **Constraints:** non-marker lines and markers whose sun and lamp draws do not add up return `undefined`
+
+```ts
+const stats = readLampShadowMarker(line);
+if (stats !== undefined) console.log(stats.lamps.redraws);
 ```
 
 ### `readProbeVolumeObservation`
@@ -1856,6 +2105,21 @@ export function readRenderChainReport(renderer: unknown): IRenderChainMarker | u
 
 ```ts
 const chain = new RenderChain(renderer, { input: colour, stages, request: { stages: ["bloom"], tier: "auto" } });
+```
+
+### `readShadowTierMarker`
+
+`function` — Parse a `TN_SHADOW_TIER` console line back into its report, or `undefined`.
+
+```ts
+export function readShadowTierMarker(line: string): IShadowFilterReport | undefined { … }
+```
+
+- **Use when:** inspect which shadow filter tier ran and why it stepped
+- **Constraints:** non-marker lines and malformed markers return `undefined`
+
+```ts
+const report = readShadowTierMarker(line); if (report?.stepped) console.log(report.reason);
 ```
 
 ### `readVelocityPreviousBoneMatrices`
@@ -2229,6 +2493,23 @@ export function setSpanRecorder(next: SpanRecorder | undefined): void { … }
 if (spansRequested()) setSpanRecorder(new SpanRecorder());
 ```
 
+### `ShadowFilterBudget`
+
+`class` — Steps a game's soft-shadow tier down (`low`, `medium`, `high`) when the whole GPU frame stays over the frame period, and back up when the frame has room, by the settings of Unreal's virtual shadow map budget (a linear model, 5% headroom). A frame that is slow for another reason keeps its shadows: the tier steps only when the shadow passes could absorb the overage. The game owns the sample counts of each tier and rebuilds its filter on each step; the tiers follow Unreal's `sg.ShadowQuality` Low, Medium and Epic.
+
+```ts
+export class ShadowFilterBudget { … }
+```
+
+- **Use when:** soft shadow filter costs too much on a weak GPU · step the shadow quality tier when the GPU frame goes over the frame period · shadow quality tier that follows the hardware
+- **Constraints:** the game rebuilds its filter with the tier's sample counts on each step; this class draws nothing · timestamp queries are needed: without them every window is unobserved and the tier holds · the rule reads the whole GPU frame and the `Shadow` stage, which the receiver filter inside the colour pass is not part of
+- **Overrides:** explicit: true keeps the game's own sample counts and reports an over-budget frame
+
+```ts
+const filter = new ShadowFilterBudget({ tier: "high", framePeriodMs: 1000 / 60, onStep: (tier) => { light.shadow.filterNode = filterFor(tier); } });
+ctx.beforeRender(() => filter.observeRenderer(ctx.renderer.raw));
+```
+
 ### `SkeletalMesh3D`
 
 `class` — Shared preparation for an imported rigged character. Instances the rig with a skeleton-safe clone, normalises size with skin-aware measurement, validates requested clips against the file and rig at load time, and sets up AnimationPlayer with honest stride-root accounting.
@@ -2264,6 +2545,36 @@ export function skeletonBones(root: Object3D): readonly string[] { … }
 ```ts
 import { skeletonBones } from "@threenative/core";
 const bones = skeletonBones(character);
+```
+
+### `SkyCapture`
+
+`class` — Capture game-owned sky radiance into a sun-triggered, frame-budgeted environment map.
+
+```ts
+export class SkyCapture { … }
+```
+
+- **Use when:** light a scene from a procedural sky when its sun moves
+- **Constraints:** use an initialized WebGPURenderer; the game supplies the sky and assigns the texture · call update once per frame on an initialized WebGPURenderer; assign texture after it returns true · sky nodes use a world-space view direction; keep supplied sky resources alive until dispose
+
+```ts
+const capture = new SkyCapture(renderer, skyNode); if (capture.update(sun)) scene.environment = capture.texture;
+```
+
+### `SkyCaptureSchedule`
+
+`class` — Capture game-owned sky radiance into a sun-triggered, frame-budgeted environment map.
+
+```ts
+export class SkyCaptureSchedule { … }
+```
+
+- **Use when:** light a scene from a procedural sky when its sun moves
+- **Constraints:** use an initialized WebGPURenderer; the game supplies the sky and assigns the texture
+
+```ts
+const capture = new SkyCapture(renderer, skyNode); if (capture.update(sun)) scene.environment = capture.texture;
 ```
 
 ### `snapRefreshRate`
@@ -2340,6 +2651,37 @@ export function solarPositionAt( date: Date | string, latitude: number, longitud
 
 ```ts
 const sun = solarPositionAt(new Date(), 49.28, -123.12);
+```
+
+### `sourceAngleShadowFilter`
+
+`function` — Source-angle blocker search and variable-radius PCF on three's shadow map.
+
+```ts
+export function sourceAngleShadowFilter( { … }
+```
+
+- **Use when:** soften a directional shadow as the caster-receiver gap grows
+- **Constraints:** sourceAngleRad is required, in radians in [0, PI/2); orthographic depth shadows only, not VSM
+
+```ts
+sun.shadow.filterNode = sourceAngleShadowFilter({ sourceAngleRad: angle });
+```
+
+### `sourceRadiusShadowFilter`
+
+`function` — Source-radius blocker search and variable-radius PCF on a spot or point light's shadow map.
+
+```ts
+export function sourceRadiusShadowFilter( { … }
+```
+
+- **Use when:** soften a lamp's shadow by the lamp's size, as Unreal's SourceRadius does
+- **Constraints:** sourceRadius is required, in metres, 0 or more (0 is one hard tap); penumbraScale, the share of the geometric penumbra kept, is in (0, 4] and defaults to 0.6, the width Unreal's lamp ray test resolves; forward-depth maps only
+- **Overrides:** penumbraScale: 1 gives the geometric penumbra of a disk lamp
+
+```ts
+lamp.shadow.filterNode = sourceRadiusShadowFilter({ sourceRadius: 0.05 });
 ```
 
 ### `spanNow`
@@ -2432,6 +2774,21 @@ export class SpriteAnimator3D { … }
 const animator = new SpriteAnimator3D({ texture: atlas, frames, mode: "pingPong" });
 ```
 
+### `stageGpuReading`
+
+`function` — Read the GPU milliseconds of each named render pass of the newest resolved frame, such as `SSGI` or `AO`, with the whole frame's total.
+
+```ts
+export function stageGpuReading(renderer: unknown): IStageGpuReading | undefined { … }
+```
+
+- **Use when:** read the GPU cost of one post-processing stage · tell which render pass takes the GPU time
+- **Constraints:** absent before a whole frame resolves and on an adapter without timestamp queries; the frame number counts each reading once
+
+```ts
+const reading = stageGpuReading(renderer); const ssgiMs = reading?.stages.SSGI;
+```
+
 ### `staticTransformCensus`
 
 `function` — Stop recomposing the transforms of a subtree nobody moves. `markStatic(root)` composes the subtree once and freezes it; the engine re-arms a root whose own transform the game changes, and `invalidateStatic(object)` announces a write deeper inside one.
@@ -2445,6 +2802,54 @@ export function staticTransformCensus(): IStaticTransformCensus { … }
 
 ```ts
 invalidateStatic(drawbridge);
+```
+
+### `SurfaceCache`
+
+`class` — The Surface Cache: what a traced global-illumination ray reads where it hits a surface. A material atlas (base colour and emissive maps reduced to small tiles) answers the albedo and the glow at the hit UV; a flat material keeps its colour. `SurfaceLights` adds the scene's point and spot lamps at the hit, the brightest eight.
+
+```ts
+export class SurfaceCache { … }
+```
+
+- **Use when:** give a traced bounce ray the texture colour and glow of the surface it hits
+- **Constraints:** the materials are fixed when the cache is built; build a new one when a material or a map changes · a map whose image the runtime does not show to JavaScript (the owned engine's glTF maps) returns the flat colour and is listed in `report.fallbacks`; the `images` option hands over its pixels · the cache owns no colour, texture or light; the game's materials and lamps are the only source
+- **Overrides:** atlasSize and cardTexelDensityScale size the atlas; images supplies the pixels of a map the runtime hides
+
+```ts
+const cache = SurfaceCache.from(materials); cache.albedo(slot, hit.uv.x, hit.uv.y, out);
+```
+
+### `SurfaceLights`
+
+`class` — The local lamps at the hit of a traced ray: the point and spot lights whose range reaches it, the brightest eight, one shadow ray each. The Surface Cache gives the hit its colour; this gives it the lamps.
+
+```ts
+export class SurfaceLights { … }
+```
+
+- **Use when:** light the hit of a traced ray with the scene's point and spot lamps
+- **Constraints:** the cap skips the ninth-brightest lamp and every one after it, and counts them in `skipped` · the caller answers each shadow ray; the class owns no scene
+- **Overrides:** maxLights caps the lamps evaluated at one hit
+
+```ts
+const lamps = new SurfaceLights(lights); lamps.shade(point, normal, albedo, out, (i) => !occluded(i));
+```
+
+### `TracedReflections`
+
+`class` — Reflection rays against the scene's triangles, in TSL. For a smooth surface, a ray finds what the screen cannot show (a room behind the camera, the far side of an object) and returns the hit's position, normal and material. The game lights the hit in its own stage. The kernel is plain TSL: float textures and a loop, no storage buffer.
+
+```ts
+export class TracedReflections { … }
+```
+
+- **Use when:** reflect what is behind the camera in a mirror or a chrome sphere · make a glossy or wet floor reflect objects that are off screen · trace a shadow ray from a reflected surface toward the sun · split a surface's specular by roughness into traced, radiance-cache and diffuse-GI shares
+- **Constraints:** the pack is a snapshot of the static triangles taken when the object is built: build a new one after geometry moves · instanced, skinned, batched and morphing meshes are not in the pack; report.skippedMoving counts them · trace only pixels at or below maxRoughnessToTrace (0.4, Unreal's cut-off): each ray walks the tree · a ray visits at most maxSteps tree nodes, then reports a miss; hit light, the miss colour and the blend with the frame stay in the game's src/render/ · the pack needs a device with float32-filterable
+- **Overrides:** maxRoughnessToTrace, roughnessFadeLength, maxRoughnessToEvaluateRoughSpecular, roughSpecularFadeLength and maxSteps are game-owned choices
+
+```ts
+const traced = new TracedReflections(ctx.scene); const hit = traced.trace({ origin, direction, far: 30 }); // light hit.albedo at hit.position in the stage
 ```
 
 ### `TracerPool3D`
@@ -2541,6 +2946,22 @@ const hull = await ctx.assets.model("hull.glb");
 ctx.scene.add(hull.scene);
 ```
 
+### `useRoughDiffuse`
+
+`function` — Unreal's Substrate rough diffuse (EON) on standard and physical materials, so direct sun and lamp light meets a rough surface the way Unreal shades it. The same `roughDiffuse` flag works on three's WebGPU renderer and on the owned engine.
+
+```ts
+export function useRoughDiffuse(root: Object3D, enabled = true): number { … }
+```
+
+- **Use when:** shade rough surfaces under a sun or a lamp the way Unreal's Substrate does, not as flat Lambert
+- **Constraints:** direct light only, indirect light stays Lambert; standard and physical materials; a lamp's `sourceRadius` in metres fades the effect to Lambert at 20 cm; a material changed after its first draw needs `needsUpdate`
+- **Overrides:** material.roughDiffuse = false, or useRoughDiffuse(root, false), puts Lambert back
+
+```ts
+useRoughDiffuse(scene);
+```
+
 ### `validateWorldMatrices`
 
 `function` — Prove that nothing a cache skipped changed the picture: `TN_RENDERLIST_VALIDATE=1` recomputes every world matrix the long way, every frame, and throws on the first element that disagrees with what the frame is about to draw.
@@ -2608,7 +3029,7 @@ export class VirtualShadowNode extends ShadowBaseNode { … }
 
 - **Use when:** crisp shadows close to the player across a large outdoor level · shadow map too coarse over a big terrain · one directional light shadow for a whole open world · shadows shimmer when the camera moves
 - **Constraints:** the light must be a DirectionalLight with `castShadow` and a target in the scene · clipExtents are half-widths in world units, finest first, strictly increasing · movers sort themselves: a layer-0 caster whose world matrix, instance matrix or deformation changed draws through the mover maps and leaves the cached levels, and returns to them after `staticAfterFrames` quiet frames; the cache redraws only the region it left · `trackCaster(object)` is the override that pins an object as a mover for good (it enables layer `VIRTUAL_SHADOW_MOVER_LAYER` on the object and its descendants), and `pinStatic(object)` opts an object out of detection; tracking or untracking refreshes only that object's region · call `object.layers.set(VIRTUAL_SHADOW_CASTER_LAYER)` for a mesh that exists only to cast; the level cameras already render that layer and the main camera never does
-- **Overrides:** bias, biasNode, normalBias, intensity, radius, blurSamples, mapType and filterNode stay on `light.shadow`; mapSize and the other options here have defaults, and `marker: false` silences the TN_VIRTUAL_SHADOW line, not the measurement · bias, biasNode, normalBias, intensity, radius, blurSamples, mapType and filterNode stay on `light.shadow`; mapSize and the other options here have defaults · followViewFocus: false keeps eye follow; receiverPlaneBias: false uses only authored bias
+- **Overrides:** bias, biasNode, normalBias, intensity, radius, blurSamples, mapType and filterNode stay on `light.shadow`; mapSize and the other options here have defaults, and `marker: false` silences the TN_VIRTUAL_SHADOW line, not the measurement · bias, biasNode, normalBias, intensity, radius, blurSamples, mapType and filterNode stay on `light.shadow`; mapSize and the other options here have defaults · followViewFocus: false keeps eye follow; receiverPlaneBias: false uses only authored bias · minWindowAspect: below 1, a level is as high as `sin(sun elevation)` times its width, never under this, so a low sun's floor shadows keep the texel density of a high sun's; the default 1 keeps square levels
 
 ```ts
 const sun = new DirectionalLight(0xffffff, 3);
@@ -2683,6 +3104,22 @@ const tracker = new VelocityTracker();
 tracker.update(scene);
 renderer.render(scene, camera);
 tracker.commit(scene);
+```
+
+### `WorldEnvironment`
+
+`class` — The node that says which lighting effects a scene runs and how strong they are, with a fresh Unreal 5.8.3 project's defaults: the filmic tone curve, Unreal-metered auto exposure, screen-space GI and ambient occlusion, SMAA, Unreal's bloom and local exposure. It builds the post chain through `renderer.createRenderChain()` and prints `TN_RENDER_CHAIN` naming every stage as applied or refused with a reason. Property names are Godot's `Environment` where it has one.
+
+```ts
+export class WorldEnvironment { … }
+```
+
+- **Use when:** a scene should light and tone map like a fresh Unreal level without wiring each post stage by hand · turn one lighting effect off, or pick a cheaper tier, for a weak GPU or a stylised look
+- **Constraints:** post stages run on WebGPU only: a renderer without it keeps the fixed exposure and reports `TN_AUTO_EXPOSURE_REFUSED`, and a missing node library keeps ACES and reports `TN_TONEMAP` · an unknown option value throws instead of becoming the default
+- **Overrides:** every option on `IWorldEnvironmentOptions`: `tonemapMode: "aces" | "agx" | "neutral"`, `autoExposureEnabled: false` with a fixed `exposure`, `bloomEnabled`, `gtaoEnabled`, `ssgiEnabled`, `screenSpaceAA`
+
+```ts
+const world = new WorldEnvironment({ tonemapMode: "aces", autoExposureEnabled: false, exposure: 0.8 }); world.apply(renderer, scene, view);
 ```
 
 ### `zenithTransmittance`

@@ -1,8 +1,8 @@
 /**
  * three's `pass(scene, camera)`, `mrt()` and the MRT slots over the engine's own scene pass, for both
  * back ends (the V8 player and the Wasm engine). The engine draws one scene pass whose targets are
- * the renderer's colour ("output"), depth and, with an MRT that asks for it, view normals and material
- * values; a pass's texture nodes name those targets. `normalView` is the engine's TSL node, as in three, so a graph
+ * the renderer's colour ("output"), depth and, with an MRT that asks for it, view normals, material
+ * values and the diffuse colour; a pass's texture nodes name those targets. `normalView` is the engine's TSL node, as in three, so a graph
  * reads it and `mrt({ normal: normalView })` names the normal target by that node's identity.
  *
  * Which pass is the frame's is fixed by how it is made, never by when: `pass(scene, camera)` (the
@@ -48,8 +48,11 @@ interface IPassTsl {
   texture(source: unknown, uv: unknown): unknown;
   uv(): unknown;
   readonly normalView: unknown;
-  readonly cameraNear: IPassMath;
-  readonly cameraFar: IPassMath;
+  /** The TSL constructors the surface decode composes; a table that lacks them refuses by name. */
+  readonly floor?: (value: unknown) => unknown;
+  readonly vec4?: (...values: unknown[]) => unknown;
+  readonly cameraNear?: IPassMath;
+  readonly cameraFar?: IPassMath;
 }
 
 /** The node arithmetic getViewZNode composes. */
@@ -75,6 +78,8 @@ interface IMRTNode {
   readonly blendModes: Record<string, unknown>;
   setBlendMode(name: string, blend: unknown): IMRTNode;
   getBlendMode(name: string): unknown;
+  /** three's MRTNode.has: the render chain asks before it provisions an output. */
+  has(name: string): boolean;
 }
 
 /**
@@ -112,6 +117,8 @@ export function definePass(
   const normalView = tsl.normalView;
   const metalness = slot("metalness");
   const roughness = slot("roughness");
+  const diffuseColor = slot("diffuseColor");
+  const emissive = slot("emissive");
 
   function mrt(outputs: Record<string, unknown>): IMRTNode {
     const named: Record<string, unknown> = {};
@@ -125,7 +132,7 @@ export function definePass(
         ((value as IMRTSlot | null)?.isMRTSlot !== true || name !== (value as IMRTSlot).name)
       )
         throw new Error(
-          `TN_NATIVE_MRT_UNSUPPORTED: ${name} must be one of output, normal: normalView or vec4(normalView, 0), metalness, roughness`,
+          `TN_NATIVE_MRT_UNSUPPORTED: ${name} must be one of output, normal: normalView or vec4(normalView, 0), metalness, roughness, diffuseColor, emissive`,
         );
       named[name] = normal ? normalView : value;
     }
@@ -138,8 +145,34 @@ export function definePass(
         return node;
       },
       getBlendMode: (name: string): unknown => node.blendModes[name],
+      has: (name: string): boolean => name in named,
     });
     return node;
+  }
+
+  const slots: Record<string, IMRTSlot> = { metalness, roughness, diffuseColor };
+
+  /**
+   * The engine's normal target carries the surface in its alpha (Renderer::planNormals):
+   * `2 * round(7 * metalness) + 0.25 + 0.5 * roughness`, 0 where no material wrote. Each name reads as a
+   * splat of its own value, as three splats a float MRT output to RGBA (and as the separate material
+   * target does). A pixel with no material reads as metalness 0 and roughness 1: it reflects nothing.
+   */
+  function surfaceNode(name: string): unknown {
+    const { floor, vec4 } = tsl;
+    if (floor === undefined || vec4 === undefined)
+      throw new Error(
+        "TN_NATIVE_PASS_TEXTURE_UNSUPPORTED: this TSL table has no floor and vec4 to unpack the surface",
+      );
+    // quality-allow: the engine's untyped TSL node surface (chained operator calls).
+    // biome-ignore lint/suspicious/noExplicitAny: the engine's TSL node surface is open-ended chained calls.
+    const alpha = (tsl.texture({ name: "normal" }, tsl.uv()) as any).a;
+    const level = floor(alpha.mul(0.5)) as typeof alpha;
+    const written = alpha.greaterThan(0.125);
+    const roughness = alpha.sub(level.mul(2)).sub(0.25).mul(2).clamp(0, 1);
+    const value =
+      name === "metalness" ? written.select(level.div(7), 0) : written.select(roughness, 1);
+    return vec4(value, value, value, value);
   }
 
   const framePass = Symbol("tn.framePass");
@@ -257,8 +290,22 @@ export function definePass(
       }
       if (name === "output") return tsl.texture({ name: "scene" }, tsl.uv());
       if (name === "depth") return tsl.texture({ name: "depth" }, tsl.uv());
+      // The temporal pass's velocity target (the NDC difference between two frames, the camera's own motion where no
+      // rigid draw wrote one). The engine draws it while a traa() effect is in the graph, no MRT asks for it.
+      if (name === "velocity") return tsl.texture({ name: "velocity" }, tsl.uv());
       if (name === "normal" && this.#mrt?.outputs.normal === normalView)
         return tsl.texture({ name: "normal" }, tsl.uv());
+      // The renderer's albedo pass: each opaque lit draw's diffuse colour in rgb, alpha 1 where it wrote one.
+      if (name === "diffuseColor" && this.#mrt?.outputs.diffuseColor === diffuseColor)
+        return tsl.texture({ name: "albedo" }, tsl.uv());
+      if (name === "emissive" && this.#mrt?.outputs.emissive === emissive)
+        return tsl.texture({ name: "emissive" }, tsl.uv());
+      if (
+        (name === "metalness" || name === "roughness") &&
+        this.#mrt?.outputs.normal === normalView &&
+        this.#mrt?.outputs[name] === slots[name]
+      )
+        return surfaceNode(name);
       if (
         (name === "metalness" && this.#mrt?.outputs.metalness === metalness) ||
         (name === "roughness" && this.#mrt?.outputs.roughness === roughness)
@@ -275,6 +322,10 @@ export function definePass(
       if (viewZ === undefined) {
         const depth = (this.getTextureNode(name) as IPassMath).x;
         const { cameraNear: near, cameraFar: far } = tsl;
+        if (near === undefined || far === undefined)
+          throw new Error(
+            "TN_NATIVE_PASS_TEXTURE_UNSUPPORTED: this TSL table has no cameraNear and cameraFar",
+          );
         viewZ = near.mul(far).div(far.sub(near).mul(depth).sub(far));
         this.#viewZ.set(name, viewZ);
       }
@@ -310,5 +361,16 @@ export function definePass(
     for (const entry of [...offscreen]) entry[drawPass](lastSurface, draw);
   }
 
-  return { pass, PassNode, updateSecondaryPasses, mrt, output, normalView, metalness, roughness };
+  return {
+    pass,
+    PassNode,
+    updateSecondaryPasses,
+    mrt,
+    output,
+    normalView,
+    metalness,
+    roughness,
+    diffuseColor,
+    emissive,
+  };
 }

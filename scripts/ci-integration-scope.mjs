@@ -394,32 +394,52 @@ export function integrationCandidatePreflight({
   };
 }
 
+/**
+ * A leg that succeeded in an earlier attempt of the same run and candidate stays valid after
+ * `gh run rerun --failed`, so each job counts through its receipt from the latest attempt in which
+ * the job ran. `listing` holds the jobs of attempts 1..current; the API for that attempt is still
+ * checked independently of the receipt.
+ */
 export function validateIntegrationReceipts(expected, receipts, listing) {
   if (expected.qualification && expected.jobs.length === 0)
     throw new Error("CI_INTEGRATION_EMPTY_QUALIFICATION");
-  if (
-    !Array.isArray(receipts) ||
-    receipts.length !== expected.jobs.length ||
-    new Set(receipts.map((r) => r?.job)).size !== expected.jobs.length ||
-    receipts.some((r) => !expected.jobs.includes(r?.job))
-  )
-    throw new Error(
+  const bad = () =>
+    new Error(
       "CI_INTEGRATION_RECEIPT_INVENTORY: required receipts are missing, duplicated or unmapped",
     );
+  if (!Array.isArray(receipts) || receipts.some((r) => !expected.jobs.includes(r?.job)))
+    throw bad();
+  if (new Set(receipts.map((r) => `${r.job}/${r.runAttempt}`)).size !== receipts.length)
+    throw bad();
+  const latest = new Map();
+  for (const receipt of receipts) {
+    const attempt = Number(receipt.runAttempt);
+    if (!/^[1-9]\d*$/u.test(String(receipt.runAttempt)) || attempt > Number(expected.runAttempt))
+      throw new Error(`CI_INTEGRATION_RECEIPT_IDENTITY: ${receipt.job} attempt is not in this run`);
+    if (!latest.has(receipt.job) || attempt > Number(latest.get(receipt.job).runAttempt))
+      latest.set(receipt.job, receipt);
+  }
+  if (latest.size !== expected.jobs.length) throw bad();
   if (
     !Array.isArray(listing?.jobs) ||
     !Number.isInteger(listing.totalCount) ||
     listing.totalCount !== listing.jobs.length
   )
     throw new Error("CI_INTEGRATION_API_INCOMPLETE: job listing must be complete");
-  for (const receipt of receipts) {
-    const matching = listing.jobs.filter(
+  for (const receipt of latest.values()) {
+    const named = listing.jobs.filter(
       (job) => job.name === `integration / ${expected.jobNames[receipt.job]}`,
     );
+    if (named.some((job) => String(job.run_id) !== expected.runId))
+      throw new Error(`CI_INTEGRATION_JOB_IDENTITY: ${receipt.job} belongs to another run/attempt`);
+    // A later attempt ran this job, so an older receipt no longer speaks for it.
+    if (named.some((job) => Number(job.run_attempt) > Number(receipt.runAttempt)))
+      throw new Error(
+        `CI_INTEGRATION_RECEIPT_IDENTITY: ${receipt.job} ran again in a later attempt than its receipt`,
+      );
+    const matching = named.filter((job) => String(job.run_attempt) === receipt.runAttempt);
     if (matching.length !== 1) throw new Error(`CI_INTEGRATION_JOB_IDENTITY: ${receipt.job}`);
     const job = matching[0];
-    if (String(job.run_id) !== expected.runId || String(job.run_attempt) !== expected.runAttempt)
-      throw new Error(`CI_INTEGRATION_JOB_IDENTITY: ${receipt.job} belongs to another run/attempt`);
     if (job.status !== "completed" || job.conclusion !== "success")
       throw new Error(
         `CI_INTEGRATION_LEG_NOT_SUCCESS: ${receipt.job} (${job.conclusion ?? job.status})`,
@@ -428,7 +448,6 @@ export function validateIntegrationReceipts(expected, receipts, listing) {
       receipt.version !== 1 ||
       receipt.candidateSha !== expected.candidateSha ||
       receipt.runId !== expected.runId ||
-      receipt.runAttempt !== expected.runAttempt ||
       receipt.planVersion !== expected.planVersion ||
       receipt.conclusion !== "success" ||
       !Number.isSafeInteger(job.id) ||

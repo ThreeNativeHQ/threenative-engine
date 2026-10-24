@@ -412,6 +412,13 @@ jobs:
       # missing — an unbuilt executable is unexecuted, and a silent skip would read as a pass. CI
       # never built them, so `pnpm test` had four permanently failing tests and this workflow had
       # never once gone green. The build is what makes the native half of the suite real here.
+      - name: Use the Ubuntu archive mirror for native build dependencies
+        shell: bash
+        run: |
+          # Keep package selection unchanged while avoiding the slow hosted Azure mirror.
+          for source in /etc/apt/sources.list /etc/apt/sources.list.d/ubuntu.sources; do
+            [ ! -f "$source" ] || sudo sed -i 's|http://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g; s|https://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' "$source"
+          done
       - name: Install Linux desktop build dependencies
         # Not `--no-install-recommends`, tried and reverted. It took this step from 63s to 36s
         # and then failed `distribution.test.mjs > an installed runtime verifier uses packaged
@@ -842,12 +849,15 @@ jobs:
     # adapter each launch now takes about 7 minutes, against about 1 minute on develop (runs
     # 38818830914 and 38824021621), so five launches exceed the 30-minute cap. Only rain gets the
     # larger cap until that software launch cost is reduced; every other leg keeps 30 minutes.
-    # shooter joined it with the native web engine default (#493): its enemy scenarios take 3 to
-    # 7 minutes each on SwiftShader against about 35 s before (run 39205153764 against
-    # 39099724054), so its 26 scenarios need 55 to 95 minutes with runner load (run 39217177505
-    # finished in 55; run 39226537203 passed all 26 at 86 and was cancelled at 90). Every scenario
-    # and assertion stays.
-    timeout-minutes: ${{ matrix.template == 'shooter' && 120 || matrix.template == 'rain' && 60 || 30 }}
+    # shooter took 77 to 95 minutes (runs 39888992001 and 39894129224), because its enemy
+    # scenarios set `subject: "enemy"` and the bridge could not observe the soldier: the runner
+    # then waited up to 30 display frames after every step for a position that never came, and one
+    # SwiftShader frame costs about a second. The core bridge now observes an entity's `group`
+    # (packages/core/src/playtest.ts), and the 26 scenarios pass in 18 minutes on a loaded 24-core
+    # desktop, which scales to about 31 minutes on this runner (hosted light scenarios ran 1.7 times
+    # slower than the desktop). The cap is 60 minutes until a CI run confirms that number. Every
+    # scenario and assertion stays.
+    timeout-minutes: ${{ matrix.template == 'shooter' && 60 || matrix.template == 'rain' && 60 || 30 }}
     env:
       TN_CI_SHA: ${{ needs.scope.outputs.candidate_sha }}
       TN_PLAYTEST_ALLOW_SOFTWARE: "1"

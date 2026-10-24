@@ -193,9 +193,24 @@ const BUG_REPORT_SKILL_PATHS = [
 // an Engine section, and seven templates pin the legacy engine (slice 8). Measured from the committed branch head, with no sibling edits in the tree.
 // Recomputed 2026-10-18 through all thirteen actual createProject trees after release-cohort preparation and Sailing motion repair.
 // Re-measured all 13 trees for the SMAA mip0 patch; restoring only copied patch bytes recovers every prior hash.
+// Recomputed 2026-10-22 merging develop 9c34f695c into the epic: the 0.3.6 cohort pins, the PRD-626 lint files and the epic's tone curve
+// land in every kit. Measured by this test.
+// Recomputed 2026-10-22 for the Unreal tone curve in every kit (PRD-632): template-assets/tonemap.ts gains the gamut expansion, blue
+// correction, glow, red modifier and output dither of the harness curve; `tonemapMode` stays "aces". Measured by this test.
+// Recomputed 2026-10-21 for the finishing-stage templates (PRD-636, lane/emissive): every kit gains localExposure.ts,
+// motionBlur.ts, unrealBloom.ts and vignette.ts and a changed worldEnvironment.ts and quality.ts. Measured by this test
+// on the merge of lane/emissive into the epic.
+// Recomputed 2026-10-22: worldEnvironment.ts drops the unused smoothstep and vec2 imports (19eb1b38f); measured by this test.
+// Recomputed 2026-10-22 on the merge of lane/tonemap (PRD-632 GAP-1..5: grade, white balance, tone curve amount) with the unused-import removal; measured by this test.
+// Recomputed 2026-10-22 again: only snow moves, its snowSurface.ts uploads the moved windows (lane/snow e764013de); measured by this test.
+// Recomputed 2026-10-20 for the Unreal look epic (PR #541): every template gains the opt-in `filmic` tone mode (tonemap.ts,
+// worldEnvironment.ts), the exposure cold-read retry and the histogram-walk fix, and one AGENTS.md/CLAUDE.md line on the engine
+// default. Measured from the committed branch head.
 // Re-measured 2026-10-20 (PRD-626): every tree gains eslint.config.js and biome.json, three scripts and
 // two dev dependencies, and the pristine sources lose the unused bindings the new lint found.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
+  // 2026-10-19: every kit's exposureReadback.ts retries the undrawn cold-start target. Measured by this test.
+  // PRD-632 (2026-10-19): every kit ships the shared filmic curve render/tonemap.ts. Measured by this test.
   // PRD-637 0.3.6 cohort: the template pins moved, so all thirteen trees were re-measured by this test.
   // PRD-637: every tree gains the npm `@vitejs/devtools` override, and `starter` also moves (grade
   // table reused across a restart, two more restarts in production-readiness). Measured by this test.
@@ -271,23 +286,24 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-10-18 merging develop f30f9b6d3 (PRD-478) into PR #493: the merged Three patch moves every tree.
   // Recomputed 2026-10-16 for PRD-617: puzzle's boot-failure scenario asserts the engine-neutral
   // boot-failure text both engines now show, so only puzzle's tree moves.
-  "action-rpg": "c4c575e4fe3b64e97c8917a6464045e4830d46ebfb5e4aba394fa5900e7fe2dc",
-  minimal: "0b5e079ecabccff2e8ff83cd9c09263d78efd654d93108517e601e7fbc508260",
-  platformer: "cfda80a7341cbb2b9af0135cbdefbdcf44ae2de47a99299f338bda1952736da6",
-  puzzle: "a9bbb0ce09f394efc284b925054d32cf82cd273012183f387defe1e5b18ac686",
-  racing: "9a4ff07adfd15718791e7435112ed072b11b05b65135fb02454479821cf0b930",
-  rain: "a6e15f800507129456ebc7cb7edbb71934d556d8118bc8d8f30f9633c16c6966",
-  rts: "4f63d47422bebf7f541efb5be294ac4bc82d0c96ac75da2527336febb5087558",
-  runner: "b4b7dba6506b77182cee6d87ad5e4d8d22fde3647f4fd80913b4fa84051c720b",
+  "action-rpg": "049b89827707aea83ea5b9847d4c8c0d3a4e01af138c0928ad59cd7f21b080e8",
+  minimal: "1bdc31f8d31f074cde31e09d67ac850762482f481e4b41050d5679f7155ac085",
+  platformer: "27b6033ac8ce09c6b19894586865e465e2edfcc0b7edd7be02e4e8459b248e53",
+  puzzle: "78f16093d5dedabf3a7bff8b07bb261bd1c7f91339aeaae51f7a1a278a5442d2",
+  racing: "7e591c477bdf3fb7ad928576d3e5e5a9113b2792867e01a62c41ff1564513af3",
+  rain: "909fa2c73253480e882855c92043d65b0e2dca9f6499effac8d6a89dba644dcf",
+  rts: "ae2ceac563ac255d56834dd8af62b8be934f3c13dff7179a52ddaf78836d1469",
+  runner: "9b4349fd99dbc3f85aef3ba6eacdf755f5cedf69b7c16f943b0e98258acc5d49",
   // Finite-height readiness plus hull, sail, and buoy interpolation from the current swell pose.
-  sailing: "9d23a60dd3ae1e157f1f1f3c4f81a8388542010838814950c3ac90041790abd1",
-  shooter: "396efe81c8223a9366faec4dee27816b976563b10a496f1de7188018c52267c4",
-  snow: "9ce53cbc8c15f9863338f1ff1dfb5b62a46533a2c33152e5ffe7d44d9811b1c7",
+  sailing: "d27fc1acccff1f55428944f7c1e075c31e240c56fee6250d3feed7ac369f1438",
+  shooter: "7fa374b2f1471c7ad8a2af2bed5f019943b58cceef6844e616aaac9baa7450de",
+  snow: "c041fb86c6cd9f8c926594b6d869179369001ec2ae52457db11b4bf065f00e67",
   // Measured 2026-10-16 through createProject after starter's completed-work quality fallback fix.
   // Recomputed 2026-10-16: starter's adaptiveQuality split its policy resolution into qualityPolicy.ts
   // to stay under the 200-line render-file cap; only starter's tree moves.
-  starter: "744985a8fea4eb6c3705872cee3f502b49041b7403744dd7a4e2cac1ddee47e5",
-  "tower-defense": "001bbe3d04ed6932243de0330f16443c49d7a7d88b962cfa5c9c878772458fcc",
+  // Recomputed 2026-10-23: the native render-chain scenario expects the Unreal finishing chain (grade and grain off).
+  starter: "3634f9d7eebf14ec3d8072ff71bc6bd7635fd7b28f16df8c3234aa839539a7f0",
+  "tower-defense": "654e7d81e46ce652c545ee9a3a6480089b5cd1413eccfde8f2065dfb85129464",
 };
 
 const GENERATED_SCAFFOLD_METADATA =
@@ -390,6 +406,7 @@ const STARTER_PATHS = [
   "src/render/postprocessing.ts",
   "src/render/qualityPolicy.ts",
   "src/render/worldEnvironment.ts",
+  "src/render/tonemap.ts",
   "src/render/temporalAA.ts",
   "src/render/temporalAAInput.ts",
   "src/render/temporalAAResolve.ts",

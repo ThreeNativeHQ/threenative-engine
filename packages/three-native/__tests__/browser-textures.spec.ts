@@ -114,6 +114,22 @@ describe("browser texture sources", () => {
     ]);
   });
 
+  it("builds a volume from half-float bits and sends them once the type says so", () => {
+    const { bound, constructed, writes } = recording();
+    const bits = Uint16Array.from([0x3c00, 0x3800, 0, 0x3c00], (v) => v);
+    const texture = new (bound.Data3DTexture as Ctor)(bits, 1, 1, 1);
+    // The engine's constructor takes bytes or floats: it gets same-sized zero floats, never the bits.
+    expect(constructed.at(-1)).toEqual(["Data3DTexture", [[0, 0, 0, 0], 1, 1, 1]]);
+    expect((texture.image as { data: unknown }).data).toBe(bits);
+    texture.type = 1016;
+    texture.needsUpdate = true;
+    expect(writes.slice(-3).map(([, field, value]) => [field, value])).toEqual([
+      ["type", 1016],
+      ["image.data", [0x3c00, 0x3800, 0, 0x3c00]],
+      ["needsUpdate", true],
+    ]);
+  });
+
   it("keeps an empty volume's image record available for later source assignment", () => {
     const { bound, writes } = recording();
     const texture = new (bound.Data3DTexture as Ctor)();

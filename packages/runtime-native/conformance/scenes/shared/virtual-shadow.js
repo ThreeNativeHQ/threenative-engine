@@ -46,6 +46,16 @@ export function startScene(canvas, dimensions) {
     assertVirtualShadowProof({ renderer, light, node });
 
     scene.add(floor, ball, light, light.target, new THREE.AmbientLight(0xffffff, 0.15));
-    return { ball, floor, light, node, detail: { levels: node.options.clipExtents.length } };
+    let frame = 0;
+    return {
+      ball, floor, light, node,
+      detail: { levels: node.options.clipExtents.length, automaticMover: true },
+      render() {
+        // Exercise automatic departure from the cache, then quiet-frame readmission at a fixed pose.
+        frame += 1;
+        if (frame <= 30) ball.position.x = frame / 15;
+        renderer.render(scene, camera);
+      },
+    };
   });
 }

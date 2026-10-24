@@ -132,6 +132,7 @@ that a sun disc of 1% of the frame does not move the exposure.
   pass sums the tiles. It stays fragment-only and runs on every backend that runs the mean meter.
   The meter's luminance clamp moved from 8 to 65 504 (half-float overflow guard only), as the
   Solution says.
+- 2026-10-19 (PRD-631 reference plan): Turning this histogram on by default, with Unreal's speeds (3 stops/s brightening, 1 stop/s darkening), range (−10 to +20 EV100) and +1 EV bias, is owned by [PRD-632](../../Unreal/look/PRD-632-the-frame-is-exposed-and-tone-mapped-the-way-a-fresh-unreal-project-is.md). This PRD's scope and boxes are unchanged.
 
 ## Blocked on
 

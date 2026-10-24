@@ -7,6 +7,8 @@
 // `probe_capture_environment`: captureFace draws one frame. While the capture renderer's
 // scene.environment is still baking, render() returns 0 and draws nothing, so captureFace must
 // report Pending (and the caller retry) rather than publish the previous target as a valid face.
+// `probe_capture_callback_camera`: an onBeforeRender during a capture gets the face camera, as three
+// hands the camera it renders with: a shared object posed at the probe, looking down the face's axis.
 
 #include "check.h"
 #include "engine/assets/probe_volume.h"
@@ -21,6 +23,7 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <cmath>
 #include <cstdio>
 #include <functional>
 #include <memory>
@@ -166,7 +169,55 @@ void probeCaptureDuringEnvironmentBake() {
     CHECK(!face.empty() && std::all_of(face.begin(), face.end(), [](float value) { return value > 0.5f; }));
 }
 
+// three's Reflector and Water read camera.matrixWorld in onBeforeRender, so a null camera throws inside a
+// capture. The callback gets one shared camera owned by the capture renderer, re-posed for each face.
+void probeCaptureCallbackCamera() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    const Vector3 at{1, 2, 3};
+    const Vector3 axes[] = {{1, 0, 0}, {-1, 0, 0}, {0, 1, 0}, {0, -1, 0}, {0, 0, 1}, {0, 0, -1}};
+    // A mesh on each axis, so every face sees one and runs the callback.
+    Scene scene;
+    std::vector<std::unique_ptr<Mesh>> meshes;
+    std::vector<std::shared_ptr<const Object3D>> kept(6);
+    std::vector<Vector3> seenAt(6), seenLooking(6);
+    int face = 0;
+    const auto callback = std::make_shared<const std::function<bool(const RenderCallbackArgs&, std::string&)>>(
+        [&](const RenderCallbackArgs& args, std::string&) {
+            kept[face] = args.camera ? args.camera->weak_from_this().lock() : nullptr;
+            if (!kept[face]) return true;
+            const Matrix4& world = kept[face]->matrixWorld;
+            seenAt[face] = Vector3(world.elements[12], world.elements[13], world.elements[14]);
+            const_cast<Object3D&>(*kept[face]).getWorldDirection(seenLooking[face]);
+            return true;
+        });
+    for (const Vector3& axis : axes) {
+        meshes.push_back(std::make_unique<Mesh>(makeBoxGeometry(1, 1, 1), std::make_shared<Material>(MaterialType::Standard)));
+        meshes.back()->position.set(at.x + axis.x * 3, at.y + axis.y * 3, at.z + axis.z * 3);
+        meshes.back()->onBeforeRender = callback;
+        scene.add(*meshes.back());
+    }
+    scene.updateMatrixWorld(true);
+    for (face = 0; face < 6; ++face) {
+        bool done = false;
+        CHECK(probes::captureFace(renderer, scene, at, 16, uint32_t(face), 0.1, 20, [&](GpuStatus status, std::vector<float>) {
+            CHECK(status == GpuStatus::Ok);
+            done = true;
+        }, false) == GpuStatus::Ok);
+        CHECK(waitFor(renderer, [&] { return done; }));
+    }
+    for (face = 0; face < 6; ++face) {
+        CHECK(kept[face] != nullptr);  // a shared camera, never null
+        CHECK(kept[face] == kept[0]);  // one camera for the capture, re-posed per face
+        CHECK(std::abs(seenAt[face].x - at.x) < 1e-6 && std::abs(seenAt[face].y - at.y) < 1e-6 && std::abs(seenAt[face].z - at.z) < 1e-6);
+        CHECK(seenLooking[face].dot(axes[face]) > 0.999);  // matrixWorld is the face view
+    }
+}
+
 }  // namespace
 
 TN_TEST_MAIN({"shared_retired_sweep", sharedRetiredSweep},
-             {"probe_capture_environment", probeCaptureDuringEnvironmentBake})
+             {"probe_capture_environment", probeCaptureDuringEnvironmentBake},
+             {"probe_capture_callback_camera", probeCaptureCallbackCamera})

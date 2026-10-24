@@ -30,11 +30,13 @@ import {
   Scene,
   SphereGeometry,
   UnsignedByteType,
+  Vector2,
   setConsoleFunction,
 } from "three";
 import {
   Fn,
   If,
+  Loop,
   attribute,
   cameraFar,
   cameraNear,
@@ -42,17 +44,19 @@ import {
   cameraViewMatrix,
   float,
   positionLocal,
+  positionWorldDirection,
   screenUV,
   texture,
   texture3D,
   uniform,
   uv,
+  vec2,
   vec3,
   vec4,
   viewportLinearDepth,
   viewportSharedTexture,
 } from "three/tsl";
-import { MeshBasicNodeMaterial, QuadMesh, WebGPURenderer } from "three/webgpu";
+import { MeshBasicNodeMaterial, type Node, QuadMesh, WebGPURenderer } from "three/webgpu";
 
 const SOFTWARE = /swiftshader|llvmpipe|lavapipe|softwarerasterizer|software adapter|basic render/iu;
 const probe = {
@@ -83,6 +87,9 @@ const probe = {
   steadyPrograms: -1,
   /** PRD-551: a QuadMesh's flat colour read back from a HalfFloat target (half bits) and a byte target. */
   targetHalf: "",
+  backgroundNodeGradient: false,
+  backgroundNodeUniform: "",
+  backgroundNodeRefusal: false,
   targetBytes: "",
   /** PRD-545: an InstancedBufferGeometry's 4x1 strip, RGBA bytes per column. */
   instancedStrip: "",
@@ -90,6 +97,15 @@ const probe = {
   instanceColorSet: "",
   /** PRD-546: texture3D reads slice 1 of a 4x1x2 Data3DTexture across a 4x1 strip. */
   volumeStrip: "",
+  /** A QuadMesh whose material the engine refuses, drawn into a target: the draw throws, once, by name. */
+  targetRefusal: "",
+  sharedNode: "",
+  /** A vec3 summed in a Loop: constants, then a texture read at level 0. Bytes of the first pixel. */
+  vec3Loop: "",
+  /** A half-float target read back through the bloom downsample pattern: bytes of its first pixel. */
+  chainRead: "",
+  /** Draw calls the world scene submits after that refusal; -1 until measured, 0 while the host stays dead. */
+  drawsAfterTargetRefusal: -1,
 };
 const started = performance.now();
 
@@ -298,6 +314,111 @@ try {
     renderer.setRenderTarget(null);
     return Array.from(await renderer.readRenderTargetPixelsAsync(strip, 0, 0, 4, 1)).join(",");
   };
+  // A per-pixel sky, linear bytes at intensity 2; changing a live uniform changes the next draw.
+  const skyScene = new Scene();
+  const skySun = uniform(0.125);
+  skyScene.backgroundIntensity = 2;
+  skyScene.backgroundNode = vec3(skySun, positionWorldDirection.y.mul(0.25).add(0.25), 0.125);
+  const skyCamera = new PerspectiveCamera(60, 2, 0.1, 10);
+  const skyTarget = new RenderTarget(4, 2, { type: UnsignedByteType });
+  const drawSky = async () => {
+    renderer.setRenderTarget(skyTarget);
+    try {
+      renderer.render(skyScene, skyCamera);
+    } finally {
+      renderer.setRenderTarget(null);
+    }
+    return renderer.readRenderTargetPixelsAsync(skyTarget, 0, 0, 4, 2);
+  };
+  const skyBefore = await drawSky();
+  skySun.value = 0.25;
+  const skyAfter = await drawSky();
+  probe.backgroundNodeGradient =
+    Math.abs(Number(skyBefore[1]) - Number(skyBefore[17])) > 16 &&
+    skyBefore[3] === 255 &&
+    skyBefore[19] === 255;
+  probe.backgroundNodeUniform = `${skyBefore[0]},${skyAfter[0]}`;
+  // One node read by two statements around an assign: `half` before the assign is 0.4, after it 0.2.
+  // The strip's first pixel is (0.4, 0.4) when the node keeps its first value, (0.2, 0.4) when it is
+  // evaluated again at the second statement.
+  const shared = new MeshBasicNodeMaterial();
+  shared.colorNode = Fn(() => {
+    const a = float(0.8).toVar();
+    const half = a.mul(0.5);
+    a.subAssign(half);
+    const c = float(0).toVar();
+    c.assign(half);
+    return vec4(c, a, 0, 1);
+  })();
+  const sharedQuad = new Mesh(new PlaneGeometry(4, 1), shared);
+  sharedQuad.position.set(2, 0.5, 0);
+  const sharedScene = new Scene();
+  sharedScene.add(sharedQuad);
+  probe.sharedNode = (await drawStrip(sharedScene)).split(",").slice(0, 2).join(",");
+  // Three iterations of a vec3 accumulator in a Loop: (0.1, 0.2, 0.3) x 3 reads 77,153,230 as bytes
+  // (all three channels). A texture read at level 0 sums the same way.
+  const swatch = new DataTexture(new Uint8Array([51, 102, 153, 255]), 1, 1);
+  swatch.needsUpdate = true;
+  const looped = new MeshBasicNodeMaterial();
+  looped.colorNode = Fn(() => {
+    const sum = vec3(0).toVar();
+    Loop(3, () => {
+      sum.addAssign(vec3(0.1, 0.2, 0.3));
+    });
+    return vec4(sum, 1);
+  })();
+  const loopedTexture = new MeshBasicNodeMaterial();
+  loopedTexture.colorNode = Fn(() => {
+    const sum = vec3(0).toVar();
+    Loop(3, () => {
+      sum.addAssign(texture(swatch).sample(uv()).level(float(0)).rgb.mul(0.5));
+    });
+    return vec4(sum, 1);
+  })();
+  const loopPixels: string[] = [];
+  for (const material of [looped, loopedTexture]) {
+    const loopQuad = new Mesh(new PlaneGeometry(4, 1), material);
+    loopQuad.position.set(2, 0.5, 0);
+    const loopScene = new Scene();
+    loopScene.add(loopQuad);
+    loopPixels.push((await drawStrip(loopScene)).split(",").slice(0, 3).join(","));
+  }
+  probe.vec3Loop = loopPixels.join(" | ");
+  // The bloom chain's pattern: a colour written to a half-float target, then read with four offset
+  // taps through a uniform vec2 and averaged. (0.2, 0.4, 0.6) must come back in all three channels.
+  const chainA = new RenderTarget(4, 1, { type: HalfFloatType });
+  const chainB = new RenderTarget(2, 1, { type: HalfFloatType });
+  const chainFlat = new MeshBasicNodeMaterial();
+  chainFlat.colorNode = vec3(0.2, 0.4, 0.6);
+  const chainStep = uniform(new Vector2(0.125, 0.5));
+  const chainSource = texture(chainA.texture);
+  const reduce = new MeshBasicNodeMaterial();
+  reduce.colorNode = Fn(() => {
+    const sum = vec3(0).toVar();
+    for (const [x, y] of [
+      [-1, -1],
+      [1, -1],
+      [-1, 1],
+      [1, 1],
+    ] as const)
+      sum.addAssign(chainSource.sample(uv().add(chainStep.mul(vec2(x, y)))).rgb);
+    return vec4(sum.div(4), 1);
+  })();
+  const chainScene = new Scene();
+  const chainFlatQuad = new Mesh(new PlaneGeometry(4, 1), chainFlat);
+  chainFlatQuad.position.set(2, 0.5, 0);
+  chainScene.add(chainFlatQuad);
+  renderer.setRenderTarget(chainA);
+  renderer.render(chainScene, columns);
+  const reduceScene = new Scene();
+  const reduceQuad = new Mesh(new PlaneGeometry(2, 1), reduce);
+  reduceQuad.position.set(1, 0.5, 0);
+  reduceScene.add(reduceQuad);
+  renderer.setRenderTarget(chainB);
+  renderer.render(reduceScene, new OrthographicCamera(0, 2, 1, 0, -1, 1));
+  renderer.setRenderTarget(null);
+  const chainPixels = await renderer.readRenderTargetPixelsAsync(chainB, 0, 0, 1, 1);
+  probe.chainRead = `${chainPixels.constructor.name}:${Array.from(chainPixels).join(",")}`;
   // InstancedBufferGeometry draws instanceCount (3) of its 4 instances; TSL attribute() reads each
   // instance's offset and tint. The fourth (white) instance must not draw.
   const strip = new InstancedBufferGeometry();
@@ -353,6 +474,34 @@ try {
   const volumeScene = new Scene();
   volumeScene.add(volumeQuad);
   probe.volumeStrip = await drawStrip(volumeScene);
+  // A refused offscreen draw fails that draw and leaves the host running: the world still draws after it.
+  // vec2 of a vec3 and a float is four components, a graph the engine refuses to lower.
+  const unlowerable = new MeshBasicNodeMaterial();
+  unlowerable.colorNode = vec4(vec2(vec3(1, 0, 0) as unknown as Node<"float">, 1), 0, 1);
+  skyScene.backgroundNode = unlowerable.colorNode;
+  try {
+    await drawSky();
+  } catch (error) {
+    probe.backgroundNodeRefusal =
+      String(error).includes("TN_NATIVE_BACKGROUND_NODE_UNSUPPORTED") &&
+      String(error).includes("components for 2");
+  }
+  skyTarget.dispose();
+  renderer.setRenderTarget(halfTarget);
+  try {
+    new QuadMesh(unlowerable).render(renderer);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    probe.targetRefusal = message.includes("components for 2")
+      ? "refused: components for 2"
+      : message;
+  }
+  renderer.setRenderTarget(null);
+  for (let attempt = 0; attempt < 60 && probe.drawsAfterTargetRefusal <= 0; attempt++) {
+    renderer.render(scene, camera);
+    probe.drawsAfterTargetRefusal = (renderer.info.render as { frameCalls: number }).frameCalls;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
   // Midway's renderer settings: they reach the engine before each frame, as on the V8 player.
   renderer.toneMapping = 5;
   try {

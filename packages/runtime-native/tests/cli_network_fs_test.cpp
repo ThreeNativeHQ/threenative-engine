@@ -49,6 +49,8 @@ namespace mystral::rt {
 bool g_coverageFailGeometry = false;
 bool g_coverageFailBLAS = false;
 bool g_coverageFailTLAS = false;
+bool g_coverageRayBatch = true;
+bool g_coverageFailBatch = false;
 
 class CoverageRTBackend final : public IRTBackend {
 public:
@@ -77,6 +79,49 @@ public:
         return {reinterpret_cast<void*>(static_cast<uintptr_t>(0x303)), 0};
     }
 
+    void updateTLAS(RTTLASHandle, const RTTLASInstance*, size_t) override {}
+    void destroyTLAS(RTTLASHandle) override {}
+    void traceRays(const TraceRaysOptions&) override {}
+
+    RTCapabilities capabilities() override {
+        RTCapabilities found;
+        found.backend = "coverage";
+        found.deviceName = "coverage device";
+        found.apiVersion = (1u << 22) | (3u << 12) | 4u;
+        found.rayBatch = g_coverageRayBatch;
+        found.reason = g_coverageRayBatch ? "" : "the coverage backend has its ray batch switched off";
+        found.sharedTransportReason = "the coverage backend has no shared transport";
+        return found;
+    }
+
+    TraceRayBatchResult traceRayBatch(const TraceRayBatchOptions& options) override {
+        TraceRayBatchResult result;
+        if (g_coverageFailBatch) {
+            result.error = "coverage batch failure";
+            return result;
+        }
+        for (uint32_t i = 0; i < options.rayCount * kHitWords; ++i) options.hits[i] = -1.0f;
+        result.ok = true;
+        result.gpuMs = 0.5;
+        result.totalMs = 1.5;
+        return result;
+    }
+
+    double sharedTraceGpuMs() override { return 2.5; }
+};
+
+// A backend that overrides only what the interface requires, so the default answers of the
+// optional ray batch and shared trace calls run on the real header.
+class DefaultsRTBackend final : public IRTBackend {
+public:
+    bool isSupported() override { return false; }
+    RTBackendType getBackendType() override { return RTBackendType::None; }
+    const char* getBackend() override { return "defaults"; }
+    RTGeometryHandle createGeometry(const RTGeometryDesc&) override { return {}; }
+    void destroyGeometry(RTGeometryHandle) override {}
+    RTBLASHandle createBLAS(RTGeometryHandle*, size_t) override { return {}; }
+    void destroyBLAS(RTBLASHandle) override {}
+    RTTLASHandle createTLAS(const RTTLASInstance*, size_t) override { return {}; }
     void updateTLAS(RTTLASHandle, const RTTLASInstance*, size_t) override {}
     void destroyTLAS(RTTLASHandle) override {}
     void traceRays(const TraceRaysOptions&) override {}
@@ -1033,6 +1078,94 @@ bool testRaytracingAndWebTransport() {
     mystral::rt::g_coverageFailTLAS = true;
     if (!engine->evalScript(coverageTlasFailureScript, "raytracing_tlas_failure_test.js")) return false;
     mystral::rt::g_coverageFailTLAS = false;
+
+    // The optional calls keep refusing by name on a backend that overrides none of them.
+    {
+        mystral::rt::DefaultsRTBackend defaults;
+        const auto batch = defaults.traceRayBatch(mystral::rt::TraceRayBatchOptions{});
+        const auto setup = defaults.createSharedTrace(16);
+        defaults.destroySharedTrace();
+        const auto shared = defaults.traceShared(mystral::rt::SharedTraceOptions{});
+        const auto found = defaults.capabilities();
+        if (batch.ok || batch.error.find("defaults") == std::string::npos || setup.ok ||
+            shared.ok || defaults.sharedTraceGpuMs() != 0 || found.backend != "defaults" ||
+            found.reason.empty()) {
+            std::cerr << "default ray batch and shared trace answers changed\n";
+            return false;
+        }
+    }
+
+    // The ray batch bindings: capabilities, argument validation, success, backend failure and the
+    // host that has no batch path. The GPU variant is unavailable here, so it must refuse by name.
+    const char* coverageBatchScript = R"JS((() => {
+      const vtx = new Float32Array([0,0,0, 1,0,0, 0,1,0]);
+      const geom = mystralRT.createGeometry({ vertices: vtx });
+      const blas = mystralRT.createBLAS([geom]);
+      const tlas = mystralRT.createTLAS([{ blas }]);
+      const caps = mystralRT.capabilities();
+      if (caps.backend !== 'coverage' || caps.apiVersion !== '1.3.4' || caps.rayBatch !== true ||
+          caps.sharedTransport !== false || caps.sharedTransportReason.length === 0) {
+        throw new Error('coverage capabilities mismatch');
+      }
+      const code = (fn) => { try { fn(); } catch (e) { return String(e); } return ''; };
+      const rays = new Float32Array(16);
+      const hits = new Float32Array(8);
+      const result = mystralRT.traceRayBatch({ tlas, rays, hits });
+      if (result.rayCount !== 2 || result.gpuMs !== 0.5 || result.totalMs !== 1.5 || hits[0] !== -1) {
+        throw new Error('coverage ray batch result mismatch');
+      }
+      if (mystralRT.traceRayBatch({ tlas, rays, hits, rayCount: 1 }).rayCount !== 1) {
+        throw new Error('coverage ray batch count ignored');
+      }
+      const invalid = [
+        () => mystralRT.traceRayBatch(),
+        () => mystralRT.traceRayBatch({ tlas: {}, rays, hits }),
+        () => mystralRT.traceRayBatch({ tlas, rays: new Float32Array(7), hits }),
+        () => mystralRT.traceRayBatch({ tlas, rays }),
+        () => mystralRT.traceRayBatch({ tlas, rays, hits, rayCount: 3 }),
+        () => mystralRT.traceRayBatch({ tlas, rays, hits, rayCount: 1.5 }),
+        () => mystralRT.traceRayBatch({ tlas, rays, hits: new Float32Array(4) }),
+        () => mystralRT.traceRayBatchGpu(),
+      ];
+      for (const fn of invalid) {
+        if (!code(fn).includes('TN_NATIVE_RAYTRACING_')) throw new Error('invalid batch accepted: ' + fn);
+      }
+      if (!code(() => mystralRT.traceRayBatchGpu({ tlas, rays, hits, rayCount: 1 }))
+        .includes('TN_NATIVE_RAYTRACING_UNAVAILABLE')) {
+        throw new Error('GPU batch must be unavailable without a shared transport');
+      }
+      if (mystralRT.sharedBatchGpuMs() !== 2.5) throw new Error('shared GPU time mismatch');
+      globalThis.__coverageBatch = { code, tlas, rays, hits };
+      return true;
+    })())JS";
+    if (!engine->evalScript(coverageBatchScript, "raytracing_batch_test.js")) {
+        std::cerr << "ray batch binding contract failed\n";
+        return false;
+    }
+    mystral::rt::g_coverageFailBatch = true;
+    if (!engine->evalScript(R"JS((() => {
+      const { code, tlas, rays, hits } = globalThis.__coverageBatch;
+      if (!code(() => mystralRT.traceRayBatch({ tlas, rays, hits })).includes('TN_NATIVE_RAYTRACING_BATCH_FAILED')) {
+        throw new Error('a failed batch must throw by name');
+      }
+      return true;
+    })())JS", "raytracing_batch_failure_test.js")) {
+        std::cerr << "ray batch failure contract failed\n";
+        return false;
+    }
+    mystral::rt::g_coverageFailBatch = false;
+    mystral::rt::g_coverageRayBatch = false;
+    if (!engine->evalScript(R"JS((() => {
+      const { code, tlas, rays, hits } = globalThis.__coverageBatch;
+      if (!code(() => mystralRT.traceRayBatch({ tlas, rays, hits })).includes('TN_NATIVE_RAYTRACING_UNAVAILABLE')) {
+        throw new Error('a host without a batch path must throw by name');
+      }
+      return true;
+    })())JS", "raytracing_batch_unavailable_test.js")) {
+        std::cerr << "ray batch unavailable contract failed\n";
+        return false;
+    }
+    mystral::rt::g_coverageRayBatch = true;
     mystral::rt::coverageCleanupRTBindings();
 
     // WebTransport bindings.

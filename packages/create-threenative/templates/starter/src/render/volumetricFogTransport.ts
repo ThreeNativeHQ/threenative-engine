@@ -8,7 +8,6 @@ import {
   If,
   Loop,
   float,
-  getViewPosition,
   lightShadowMatrix,
   max,
   min,
@@ -21,8 +20,10 @@ import {
   vec4,
 } from "three/tsl";
 import type { Node } from "three/webgpu";
+import { type IFogCamera, screenRay, viewDepth } from "./volumetricFogCamera.js";
 
 export type ScenePass = ReturnType<typeof pass>;
+
 type FogDepth = ReturnType<ScenePass["getTextureNode"]>;
 export interface IFogBounds {
   low: Node<"vec3">;
@@ -40,11 +41,11 @@ export interface IFogLocalLight {
 export interface IFogTransportInputs {
   albedo: Node<"vec3">;
   ambient: Node<"vec3">;
+  ambientNode: ((position: Node<"vec3">) => Node<"vec3">) | undefined;
   anisotropy: number;
   bounds: IFogBounds[];
-  cameraMatrix: Node<"mat4">;
+  camera: IFogCamera;
   depth: FogDepth;
-  inverseProjection: Node<"mat4">;
   localLights: IFogLocalLight[];
   origin: Node<"vec3">;
   shadowDepth: DepthTexture | null | undefined;
@@ -58,11 +59,11 @@ export function fogTransport(inputs: IFogTransportInputs): Node<"vec4"> {
   const {
     albedo,
     ambient,
+    ambientNode,
     anisotropy,
     bounds,
-    cameraMatrix,
+    camera,
     depth,
-    inverseProjection,
     localLights,
     origin,
     shadowDepth,
@@ -79,15 +80,14 @@ export function fogTransport(inputs: IFogTransportInputs): Node<"vec4"> {
         .mul(4 * Math.PI),
     );
   return Fn(() => {
-    const endpoint = cameraMatrix.mul(
-      vec4(getViewPosition(screenUV, depth.r, inverseProjection), 1),
-    ).xyz;
+    const endpoint = origin.add(screenRay(screenUV, camera).mul(viewDepth(depth.r, camera)));
     const toSurface = endpoint.sub(origin).toVar();
     const distance = toSurface.length().max(0.000001).toVar();
     const direction = toSurface.div(distance).toVar();
-    const safeDirection = direction
-      .greaterThanEqual(0)
-      .select(direction.abs().max(0.000001), direction.abs().max(0.000001).negate());
+    // Arithmetic, not a vector select: the owned engine's shader IR takes a bool scalar in a select and
+    // two values of one type in a comparison, where three's WGSL builder broadcasts both.
+    const sign = direction.sign();
+    const safeDirection = direction.abs().max(0.000001).mul(sign.add(sign.abs().oneMinus()));
     const near = distance.toVar();
     const far = float(0).toVar();
     for (const volume of bounds) {
@@ -127,7 +127,9 @@ export function fogTransport(inputs: IFogTransportInputs): Node<"vec4"> {
             },
           );
         }
-        const illumination = vec3(ambient).toVar();
+        const illumination = (
+          ambientNode === undefined ? vec3(ambient) : vec3(ambient).add(ambientNode(position))
+        ).toVar();
         if (
           sun !== undefined &&
           shadowDepth != null &&
@@ -138,13 +140,19 @@ export function fogTransport(inputs: IFogTransportInputs): Node<"vec4"> {
           const coordinate = projected.xyz.div(projected.w).toVar();
           // Outside the finite shadow map, Three treats the directional source as unshadowed.
           const visibility = float(1).toVar();
-          If(coordinate.greaterThanEqual(0).all().and(coordinate.lessThanEqual(1).all()), () => {
-            visibility.assign(
-              texture(shadowDepth, vec2(coordinate.x, coordinate.y.oneMinus())).compare(
-                coordinate.z.add(reference("bias", "float", sun.shadow)),
-              ),
-            );
-          });
+          If(
+            coordinate
+              .greaterThanEqual(vec3(0))
+              .all()
+              .and(coordinate.lessThanEqual(vec3(1)).all()),
+            () => {
+              visibility.assign(
+                texture(shadowDepth, vec2(coordinate.x, coordinate.y.oneMinus())).compare(
+                  coordinate.z.add(reference("bias", "float", sun.shadow)),
+                ),
+              );
+            },
+          );
           illumination.addAssign(
             sunRadiance.mul(phase(direction.dot(sunDirection))).mul(visibility),
           );

@@ -138,7 +138,9 @@ describe("framework exposure ownership boundary", () => {
     expect(files.length).toBeGreaterThan(0);
     const appearance =
       /AutoExposureNode|exposureSettings|exposureMeter|exposureLuminance|\bsnap(?:Gain|Lo|Hi)\b/u;
-    for (const file of files) {
+    // Owner exception (2026-10-22): Unreal 5.8.3's exposure is the engine default, so `look/` holds it and `index.ts`
+    // re-exports it. Every other core file still keeps exposure policy out.
+    for (const file of files.filter((name) => !name.startsWith("look/") && name !== "index.ts")) {
       expect(file).not.toMatch(/auto[-_]?exposure/i);
       expect(readFileSync(path.join(root, file), "utf8"), file).not.toMatch(appearance);
     }

@@ -1,7 +1,7 @@
 // PRD-551 on the V8 player: three's render targets through the facade and the real player (headless
 // GPU). A QuadMesh draws a flat colour into a HalfFloat and an UnsignedByte RenderTarget, and
 // readRenderTargetPixelsAsync returns them typed as three types them: the half bits as a Uint16Array,
-// bytes as a Uint8Array. The pinned three's DataUtils is the oracle for the half bits.
+// bytes as a Uint8Array, and a FloatType target keeps float32 (1 + 2^-12 is not a half float). The pinned three's DataUtils is the oracle for the half bits.
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { rmSync } from "node:fs";
@@ -22,7 +22,7 @@ const halves = [0.25, 0.5, 0.75, 1].map((value) => three.DataUtils.toHalfFloat(v
 const entry = resolve(work, "game.ts");
 const outfile = resolve(work, "game.js");
 await writeFile(entry, `
-import { HalfFloatType, PerspectiveCamera, RenderTarget, Scene, UnsignedByteType } from "three";
+import { FloatType, HalfFloatType, PerspectiveCamera, RenderTarget, Scene, UnsignedByteType } from "three";
 import { vec4 } from "three/tsl";
 import { MeshBasicNodeMaterial, QuadMesh, WebGPURenderer } from "three/webgpu";
 
@@ -35,6 +35,10 @@ globalThis.tn.onUpdate(() => {
   const renderer = new WebGPURenderer({ canvas: { width: 8, height: 8 } });
   const material = new MeshBasicNodeMaterial();
   material.colorNode = vec4(0.25, 0.5, 0.75, 1);
+  const fine = new MeshBasicNodeMaterial();
+  fine.colorNode = vec4(1 + 2 ** -12, 0.5, 0.75, 1);
+  const fineQuad = new QuadMesh(fine);
+  const float = new RenderTarget(4, 4, { type: FloatType });
   const quad = new QuadMesh(material);
   const half = new RenderTarget(4, 4, { type: HalfFloatType });
   const bytes = new RenderTarget(4, 4, { type: UnsignedByteType });
@@ -42,13 +46,16 @@ globalThis.tn.onUpdate(() => {
     renderer.setRenderTarget(target);
     quad.render(renderer);
   }
+  renderer.setRenderTarget(float);
+  fineQuad.render(renderer);
   renderer.setRenderTarget(null);
   if (renderer.getRenderTarget() !== null) throw new Error("getRenderTarget after setRenderTarget(null)");
-  Promise.all([renderer.readRenderTargetPixelsAsync(half, 1, 1, 2, 2), renderer.readRenderTargetPixelsAsync(bytes, 0, 0, 1, 1)])
-    .then(([h, b]) => {
+  Promise.all([renderer.readRenderTargetPixelsAsync(half, 1, 1, 2, 2), renderer.readRenderTargetPixelsAsync(bytes, 0, 0, 1, 1), renderer.readRenderTargetPixelsAsync(float, 1, 1, 2, 2)])
+    .then(([h, b, f]) => {
       const halfOk = h instanceof Uint16Array && h.length === 16 && expectedHalves.every((bits, i) => h[i] === bits);
       const bytesOk = b instanceof Uint8Array && [64, 128, 191, 255].every((value, i) => b[i] === value);
-      globalThis.tn.log(halfOk && bytesOk ? "RENDER_TARGET_OK" : "RENDER_TARGET_BAD " + Array.from(h.slice(0, 4)) + " / " + Array.from(b));
+      const floatOk = f instanceof Float32Array && f.length === 16 && f[0] === 1 + 2 ** -12 && f[1] === 0.5 && f[2] === 0.75;
+      globalThis.tn.log(halfOk && bytesOk && floatOk ? "RENDER_TARGET_OK" : "RENDER_TARGET_BAD " + Array.from(h.slice(0, 4)) + " / " + Array.from(b) + " / " + Array.from(f.slice(0, 4)));
     })
     .catch((error) => globalThis.tn.log("RENDER_TARGET_ERROR " + error.message));
 });

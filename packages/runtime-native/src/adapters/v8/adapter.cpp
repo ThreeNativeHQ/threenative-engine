@@ -247,7 +247,7 @@ bool toValues(Adapter& a, const v8::FunctionCallbackInfo<v8::Value>& info, std::
                 : array->IsInt32Array() ? "Int32Array" : array->IsFloat64Array() ? "Float64Array" : nullptr;
         } else if (arg->IsObject() && !arg->IsFunction() && arg.As<v8::Object>()->InternalFieldCount() == 0) {
             // A plain options object (`{ depth, bevelEnabled }`): own enumerable keys whose values are
-            // numbers, booleans, strings or native objects. An undefined value is left out, as three
+            // numbers, booleans, strings, numeric arrays or native objects. An undefined value is left out, as three
             // reads `options.x !== undefined`; anything else is refused.
             v8::Local<v8::Object> object = arg.As<v8::Object>();
             v8::Local<v8::Array> keys;
@@ -266,6 +266,17 @@ bool toValues(Adapter& a, const v8::FunctionCallbackInfo<v8::Value>& info, std::
                     v8::String::Utf8Value utf8(isolate, e);
                     texts.emplace_back(*utf8 ? *utf8 : "");
                     field.kind = TN_VALUE_STRING; field.text = texts.back().c_str(); field.count = texts.back().size();
+                } else if (e->IsArray()) {
+                    const auto array = e.As<v8::Array>();
+                    arrays.emplace_back();
+                    auto& numbers = arrays.back();
+                    numbers.reserve(array->Length());
+                    for (uint32_t i = 0; i < array->Length(); ++i) {
+                        v8::Local<v8::Value> element;
+                        if (!array->Get(ctx, i).ToLocal(&element) || !element->IsNumber()) return false;
+                        numbers.push_back(element.As<v8::Number>()->Value());
+                    }
+                    field.kind = TN_VALUE_NUMBERS; field.numbers = numbers.data(); field.count = numbers.size();
                 } else if (a.unwrap(e, h)) { field.kind = TN_VALUE_HANDLE; field.handle = h; a.holdIfCallback(h); }
                 else if (stand != nullptr && a.math() != nullptr && a.math()->standIn(e, *stand, field)) {}
                 else return false;
@@ -1041,7 +1052,7 @@ void Adapter::install(v8::Local<v8::Context> context, v8::Local<v8::Object> targ
         if (name.ends_with("Material")) slotTemplates.push_back(ctor->InstanceTemplate());
         for (const auto& [path, settable, fixed] : properties) {
             if ((name.ends_with("NodeMaterial") && path.ends_with("Node")) ||
-                (name == "Scene" && path == "fogNode")) {
+                (name == "Scene" && (path == "fogNode" || path == "backgroundNode"))) {
                 auto* data = keep(new MethodData{this, path, {}});
                 proto->SetAccessorProperty(str(isolate_, path),
                     v8::FunctionTemplate::New(isolate_, [](const v8::FunctionCallbackInfo<v8::Value>& info) {

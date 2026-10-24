@@ -19,7 +19,46 @@
     }
   ],
   "assert": {
+    "diagnostics": {
+      "noConsoleErrors": false,
+      "consoleErrorsOptOutReason": "The page refuses invalid material and backgroundNode offscreen draws on purpose; the engine names it once on the console as an error."
+    },
     "components": [
+      {
+        "entity": "wasm-renderer",
+        "component": "probe",
+        "path": "backgroundNodeGradient",
+        "equals": true,
+        "allowTrivial": "A GPU backgroundNode reads different world directions at opposite rows, with opaque alpha."
+      },
+      {
+        "entity": "wasm-renderer",
+        "component": "probe",
+        "path": "backgroundNodeUniform",
+        "equals": "64,128",
+        "allowTrivial": "Intensity 2 scales a live sun uniform from 0.125 to 0.25 on consecutive GPU draws."
+      },
+      {
+        "entity": "wasm-renderer",
+        "component": "probe",
+        "path": "backgroundNodeRefusal",
+        "equals": true,
+        "allowTrivial": "An invalid backgroundNode throws TN_NATIVE_BACKGROUND_NODE_UNSUPPORTED with the compiler cause."
+      },
+      {
+        "entity": "wasm-renderer",
+        "component": "probe",
+        "path": "vec3Loop",
+        "equals": "76,153,229 | 76,153,229",
+        "allowTrivial": "A vec3 accumulator in a Loop sums three constants, then three level-0 texture reads, into all three channels."
+      },
+      {
+        "entity": "wasm-renderer",
+        "component": "probe",
+        "path": "chainRead",
+        "equals": "Uint16Array:12902,13926,14540,15360",
+        "allowTrivial": "Four offset taps through a uniform vec2 of a half-float target return (0.2, 0.4, 0.6) in every channel."
+      },
       {
         "entity": "wasm-renderer",
         "component": "probe",
@@ -38,8 +77,8 @@
         "entity": "wasm-renderer",
         "component": "probe",
         "path": "refusal",
-        "equals": "TN_NATIVE_RENDERER_STATE: toneMapping 5.000000",
-        "allowTrivial": "Set once before the first frame; the engine names the tone mapping it refused."
+        "equals": "TN_NATIVE_CUSTOM_TONEMAPPING_MISSING: register a TSL tone-mapping function before using mode 5",
+        "allowTrivial": "Set once before the first frame; the engine names the missing curve it refused (three's CustomToneMapping, 5, before a TSL curve is registered)."
       },
       {
         "entity": "wasm-renderer",
@@ -81,6 +120,20 @@
         "path": "volumeStrip",
         "equals": "0,255,0,255,80,255,0,255,160,255,0,255,240,255,0,255",
         "allowTrivial": "PRD-546: texture3D samples slice 1 of a nearest-filtered 4x1x2 Data3DTexture: (80x, 255, 0) per column."
+      },
+      {
+        "entity": "wasm-renderer",
+        "component": "probe",
+        "path": "targetRefusal",
+        "equals": "refused: components for 2",
+        "allowTrivial": "The refused offscreen draw throws once and names the graph the engine could not lower."
+      },
+      {
+        "entity": "wasm-renderer",
+        "component": "probe",
+        "path": "drawsAfterTargetRefusal",
+        "gte": 1,
+        "allowTrivial": "A refused render-target draw fails that draw only: the host stays running and the world draws after it. 0 means the host went Failed."
       },
       {
         "entity": "wasm-renderer",
@@ -135,7 +188,8 @@
         "entity": "wasm-renderer",
         "component": "probe",
         "path": "renderUpdates",
-        "gte": 30
+        "gte": 30,
+        "changed": true
       },
       {
         "entity": "wasm-renderer",

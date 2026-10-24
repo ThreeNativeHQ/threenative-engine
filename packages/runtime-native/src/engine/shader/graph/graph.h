@@ -55,9 +55,15 @@ struct RttState {
     uint16_t minFilter = 1006, magFilter = 1006;
     bool autoUpdate = true, textureNeedsUpdate = true;
     uint64_t revision = 1, disposal = 0;
+    /** The GPU stage this pass's time is reported under (post_effects.h kStage*); the author sets it at creation. */
+    uint8_t stage = 0;
 };
 
+struct TextureBinding { std::shared_ptr<const void> object; };
 struct NodeData {
+    std::shared_ptr<TextureBinding> textureBinding;
+    const std::shared_ptr<const void>& textureObject() const { return textureBinding ? textureBinding->object : object; }
+
     std::shared_ptr<RttState> rtt;
     std::shared_ptr<bool> atomic;
 
@@ -68,7 +74,7 @@ struct NodeData {
     std::string name;
     std::string lanes;
     uint64_t bits = 0;
-    // A uniform's value: data, not part of the program key. The one field that changes after a node
+    // A uniform's value: data, not part of the program key. A field that changes after a node
     // is built (three's `uniform.value = x`, through setUniformValues); every draw reads it afresh.
     // Keep i32/u32 exact; f32 lanes are rounded by setUniformValues before storage.
     mutable std::vector<double> values;
@@ -255,7 +261,7 @@ using Graph = Node;
 /** Walks the graph and emits IR into `program`; a Build scope must be active, as tsl.h requires. */
 ExprId lower(const Graph& graph, Program& program,
              const std::unordered_map<std::string, ExprId>& inputs = {},
-             std::optional<ToneMapping> toneMapping = std::nullopt, bool srgb = false);
+             std::optional<ToneMapping> toneMapping = std::nullopt, bool srgb = false, Node custom = {});
 /**
  * One lowering for all of a program's node slots: a node two slots read (the colour and the depth of
  * one raymarch) lowers once, as three builds a material once. `lower` above is a lowering of one slot.
@@ -263,7 +269,7 @@ ExprId lower(const Graph& graph, Program& program,
 class Lowering {
 public:
     explicit Lowering(Program& program, std::unordered_map<std::string, ExprId> inputs = {},
-                      std::optional<ToneMapping> toneMapping = std::nullopt, bool srgb = false);
+                      std::optional<ToneMapping> toneMapping = std::nullopt, bool srgb = false, Node custom = {});
     ~Lowering();
     Lowering(const Lowering&) = delete;
     Lowering& operator=(const Lowering&) = delete;

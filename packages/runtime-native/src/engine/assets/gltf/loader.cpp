@@ -67,9 +67,15 @@ const std::set<std::string> kThreeExtensions = {
     "KHR_materials_volume", "KHR_texture_basisu", "KHR_texture_transform", "KHR_mesh_quantization",
     "KHR_materials_emissive_strength", "EXT_materials_bump", "EXT_texture_webp", "EXT_texture_avif",
     "EXT_meshopt_compression", "KHR_meshopt_compression", "EXT_mesh_gpu_instancing"};
+// What stays refused is what needs a decoder this loader does not have (draco, meshopt, basisu, avif).
+// A material extension the standard program cannot draw yet still loads: its factors land on the
+// Material and the renderer refuses that mesh by name (TN_NATIVE_MATERIAL_UNSUPPORTED), not the model.
 const std::set<std::string> kSupported = {"KHR_mesh_quantization", "KHR_lights_punctual", "KHR_materials_unlit",
                                           "KHR_materials_ior", "KHR_materials_specular", "KHR_materials_clearcoat",
-                                          "KHR_materials_emissive_strength"};
+                                          "KHR_materials_emissive_strength", "KHR_texture_transform",
+                                          "KHR_materials_transmission", "KHR_materials_volume", "KHR_materials_sheen",
+                                          "KHR_materials_iridescence", "KHR_materials_anisotropy",
+                                          "KHR_materials_dispersion", "EXT_materials_bump", "EXT_mesh_gpu_instancing"};
 
 class Builder {
   public:
@@ -114,6 +120,7 @@ class Builder {
     bool checkExtensions() {
         for (std::size_t i = 0; i < data_.extensions_used_count; ++i) {
             const std::string name = data_.extensions_used[i];
+            used_.insert(name);
             if (name == "EXT_texture_webp" && decodesWebP()) continue;
             if (kThreeExtensions.count(name) && !kSupported.count(name)) {
                 refuse("TN_NATIVE_GLTF_EXTENSION_UNSUPPORTED " + name);
@@ -283,9 +290,8 @@ class Builder {
             const double outer = number(member(spot, "outerConeAngle"), 3.141592653589793 / 4);
             auto cone = std::make_shared<SpotLight>(color, 1, range, outer,
                 1 - number(member(spot, "innerConeAngle"), 0) / outer);
-            // Object3D owns shared children, so replace SpotLight's constructor-owned target.
             auto target = std::make_shared<Object3D>(); target->position.set(0, 0, -1);
-            cone->ownTarget.reset(); cone->target = target.get(); cone->add(*target); light = cone;
+            cone->target = target; cone->add(*target); light = cone;
         } else { refuse("TN_NATIVE_GLTF_LIGHT_INVALID " + type); return nullptr; }
         light->position.set(0, 0, 0);
         light->intensity = number(member(def, "intensity"), 1);
@@ -310,12 +316,17 @@ class Builder {
         std::shared_ptr<Object3D> object;     // the Mesh, or the Group of primitive meshes
         std::vector<std::shared_ptr<Mesh>> meshes;
     };
-    std::shared_ptr<Object3D> meshObjectFor(std::size_t meshIndex, std::size_t /*nodeIndex*/) {
+    std::shared_ptr<Object3D> meshObjectFor(std::size_t meshIndex, std::size_t nodeIndex) {
         const cgltf_mesh& def = data_.meshes[meshIndex];
         MeshUse use{meshIndex, nullptr, {}};
+        const Value* instancing = used_.count("EXT_mesh_gpu_instancing")
+            ? member(member(item(member(&json_, "nodes"), nodeIndex), "extensions"), "EXT_mesh_gpu_instancing")
+            : nullptr;
         for (std::size_t p = 0; p < def.primitives_count; ++p) {
-            std::shared_ptr<Mesh> mesh =
-                skinnedMesh_[meshIndex] ? std::make_shared<SkinnedMesh>() : std::make_shared<Mesh>();
+            std::shared_ptr<Mesh> mesh;
+            if (auto instanced = instancedMeshFor(instancing)) mesh = instanced;
+            else if (skinnedMesh_[meshIndex]) mesh = std::make_shared<SkinnedMesh>();
+            else mesh = std::make_shared<Mesh>();
             use.meshes.push_back(mesh);
         }
         if (use.meshes.size() == 1) {
@@ -327,6 +338,37 @@ class Builder {
         }
         uses_.push_back(use);
         return use.object;
+    }
+
+    // GLTFMeshGpuInstancing.createNodeMesh: an InstancedMesh whose matrices compose the TRANSLATION, ROTATION
+    // and SCALE accessors and whose instanceColor is _COLOR_0. Null for a node without the extension.
+    // ponytail: other instance attributes (_ID, ...) feed a custom material, which a glTF cannot carry here.
+    std::shared_ptr<InstancedMesh> instancedMeshFor(const Value* instancing) {
+        const Value* attributes = member(instancing, "attributes");
+        if (!attributes || !attributes->isObject() || attributes->members().empty() || !error_.empty()) return nullptr;
+        std::map<std::string, std::shared_ptr<BufferAttribute>> loaded;
+        for (const auto& [name, index] : attributes->members()) {
+            const auto at = static_cast<std::size_t>(number(&index, -1));
+            if (at >= data_.accessors_count) { refuse("TN_NATIVE_GLTF_ACCESSOR_INVALID instance attribute " + name); return nullptr; }
+            if (!(loaded[name] = accessor(data_.accessors[at]))) return nullptr;
+        }
+        const auto count = static_cast<uint32_t>(loaded[attributes->members().front().first]->count()); // all counts agree
+        auto instanced = std::make_shared<InstancedMesh>(nullptr, nullptr, count);
+        const auto& translation = loaded["TRANSLATION"];
+        const auto& rotation = loaded["ROTATION"];
+        const auto& scale = loaded["SCALE"];
+        const auto& color = loaded["_COLOR_0"];
+        for (uint32_t i = 0; i < count; ++i) {
+            Vector3 p(0, 0, 0), s(1, 1, 1);
+            Quaternion q;
+            if (translation) p.set(translation->getX(i), translation->getY(i), translation->getZ(i));
+            if (rotation) q.set(rotation->getX(i), rotation->getY(i), rotation->getZ(i), rotation->getW(i));
+            if (scale) s.set(scale->getX(i), scale->getY(i), scale->getZ(i));
+            Matrix4 m;
+            instanced->setMatrixAt(i, m.compose(p, q, s));
+            if (color) instanced->setColorAt(i, Color(color->getX(i), color->getY(i), color->getZ(i)));
+        }
+        return instanced;
     }
 
     // loadMesh's continuation, in the order the meshes were first asked for: geometry, final
@@ -589,6 +631,12 @@ class Builder {
         to.clearcoat = from.clearcoat;
         to.clearcoatRoughness = from.clearcoatRoughness;
         to.clearcoatNormalScale = from.clearcoatNormalScale;
+        to.sheen = from.sheen;
+        to.transmission = from.transmission;
+        to.iridescence = from.iridescence;
+        to.anisotropy = from.anisotropy;
+        to.dispersion = from.dispersion;
+        to.bumpScale = from.bumpScale;
         to.maps = from.maps;
     }
 
@@ -600,10 +648,14 @@ class Builder {
         const Value* ior = member(extensions, "KHR_materials_ior");
         const Value* specular = member(extensions, "KHR_materials_specular");
         const Value* clearcoat = member(extensions, "KHR_materials_clearcoat");
-        // loadMaterial: unlit wins; otherwise the ior, specular and clearcoat plugins choose MeshPhysicalMaterial.
+        // loadMaterial: unlit wins; otherwise any plugin that reports MeshPhysicalMaterial chooses it.
+        bool physical = ior || specular || clearcoat;
+        for (const char* name : {"KHR_materials_sheen", "KHR_materials_transmission", "KHR_materials_volume",
+                                 "KHR_materials_iridescence", "KHR_materials_anisotropy", "KHR_materials_dispersion",
+                                 "EXT_materials_bump"})
+            physical = physical || member(extensions, name);
         auto material = std::make_shared<Material>(unlit ? MaterialType::Basic
-                                                   : ior || specular || clearcoat ? MaterialType::Physical
-                                                                                  : MaterialType::Standard);
+                                                   : physical ? MaterialType::Physical : MaterialType::Standard);
         if (index < 0) {
             // createDefaultMaterial
             material->metalness = 1;
@@ -643,9 +695,10 @@ class Builder {
             }
             if (const Value* emissive = member(def, "emissiveFactor"))
                 material->emissive = Color(number(item(emissive, 0), 0), number(item(emissive, 1), 0), number(item(emissive, 2), 0));
+            assignTexture(*material, "emissiveMap", member(def, "emissiveTexture"));
+            // GLTFMaterialsEmissiveStrengthExtension: the strength scales the emissive term.
             if (const Value* strength = member(extensions, "KHR_materials_emissive_strength"))
                 material->emissiveIntensity = number(member(strength, "emissiveStrength"), 1);
-            assignTexture(*material, "emissiveMap", member(def, "emissiveTexture"));
             // GLTFMaterialsIorExtension: ior, 1.5 when absent, and 0 read as 1000 (three #26167).
             if (ior) {
                 material->ior = number(member(ior, "ior"), 1.5);
@@ -673,6 +726,44 @@ class Builder {
                         material->clearcoatNormalScale.x = material->clearcoatNormalScale.y = number(member(normal, "scale"), 1);
                 }
             }
+            // The extensions below set Material fields the standard program does not draw yet, so the renderer
+            // refuses the mesh by name (TN_NATIVE_MATERIAL_UNSUPPORTED). Parameters with no Material field
+            // (sheenColor, sheenRoughness, iridescenceIOR and thickness range, anisotropyRotation, volume
+            // thickness and attenuation) are not stored. KHR_materials_volume only shapes transmission, so
+            // it adds nothing here: a volume without transmission draws as plain PBR, as in three.
+            // GLTFMaterialsSheenExtension: sheen is on (1) as soon as the extension is present.
+            if (const Value* sheen = member(extensions, "KHR_materials_sheen")) {
+                material->sheen = 1;
+                assignTexture(*material, "sheenColorMap", member(sheen, "sheenColorTexture"));
+                assignTexture(*material, "sheenRoughnessMap", member(sheen, "sheenRoughnessTexture"));
+            }
+            // GLTFMaterialsTransmissionExtension
+            if (const Value* transmission = member(extensions, "KHR_materials_transmission")) {
+                if (member(transmission, "transmissionFactor"))
+                    material->transmission = number(member(transmission, "transmissionFactor"), 0);
+                assignTexture(*material, "transmissionMap", member(transmission, "transmissionTexture"));
+            }
+            // GLTFMaterialsIridescenceExtension
+            if (const Value* iridescence = member(extensions, "KHR_materials_iridescence")) {
+                if (member(iridescence, "iridescenceFactor"))
+                    material->iridescence = number(member(iridescence, "iridescenceFactor"), 0);
+                assignTexture(*material, "iridescenceMap", member(iridescence, "iridescenceTexture"));
+                assignTexture(*material, "iridescenceThicknessMap", member(iridescence, "iridescenceThicknessTexture"));
+            }
+            // GLTFMaterialsAnisotropyExtension
+            if (const Value* anisotropy = member(extensions, "KHR_materials_anisotropy")) {
+                if (member(anisotropy, "anisotropyStrength"))
+                    material->anisotropy = number(member(anisotropy, "anisotropyStrength"), 0);
+                assignTexture(*material, "anisotropyMap", member(anisotropy, "anisotropyTexture"));
+            }
+            // GLTFMaterialsDispersionExtension
+            if (const Value* dispersion = member(extensions, "KHR_materials_dispersion"))
+                material->dispersion = number(member(dispersion, "dispersion"), 0);
+            // GLTFMaterialsBumpExtension
+            if (const Value* bump = member(extensions, "EXT_materials_bump")) {
+                material->bumpScale = number(member(bump, "bumpFactor"), 1);
+                assignTexture(*material, "bumpMap", member(bump, "bumpTexture"));
+            }
         }
         if (truthyName(member(def, "name"))) material->name = text(member(def, "name"));
         return materials_[index] = material;
@@ -699,11 +790,29 @@ class Builder {
             decodeImage(*made);
             texture = made;
         }
-        // parser.assignTexture sets the colour space on the shared texture, so the last sRGB slot that
-        // names it wins for every material that uses it, as upstream.
-        if (std::string_view(slot) == "map" || std::string_view(slot) == "emissiveMap" || std::string_view(slot) == "specularColorMap")
-            texture->colorSpace = TextureColorSpace::SRGB;
-        material.maps[slot] = texture;
+        // GLTFTextureTransformExtension.extendTexture: a transform clones the texture (a new GPU identity,
+        // the image shared) with its offset, rotation and repeat. texCoord needs a Texture channel, which
+        // does not exist yet, so it is ignored here as it is for every other slot.
+        std::shared_ptr<Texture> bound = texture;
+        if (used_.count("KHR_texture_transform")) {
+            const Value* transform = member(member(info, "extensions"), "KHR_texture_transform");
+            const Value* offset = member(transform, "offset");
+            const Value* rotation = member(transform, "rotation");
+            const Value* scale = member(transform, "scale");
+            if (offset || rotation || scale) {
+                bound = std::make_shared<Texture>(*texture);
+                if (offset) bound->offset.set(number(item(offset, 0), 0), number(item(offset, 1), 0));
+                if (rotation) bound->rotation = number(rotation, 0);
+                if (scale) bound->repeat.set(number(item(scale, 0), 1), number(item(scale, 1), 1));
+                bound->needsUpdate();
+            }
+        }
+        // parser.assignTexture sets the colour space on the texture it hands over: the shared one without a
+        // transform, so the last sRGB slot that names it wins for every material that uses it, as upstream.
+        if (std::string_view(slot) == "map" || std::string_view(slot) == "emissiveMap" || std::string_view(slot) == "specularColorMap" ||
+            std::string_view(slot) == "sheenColorMap")
+            bound->colorSpace = TextureColorSpace::SRGB;
+        material.maps[slot] = bound;
     }
 
     // GLTFLoader.assignTexture: the sampler's wraps and filters, else Repeat, Linear and
@@ -914,6 +1023,7 @@ class Builder {
     const Value& json_;
     const LoadOptions& options_;
     std::string error_;
+    std::set<std::string> used_;  // extensionsUsed: the plugins GLTFLoader registers by that list
     std::vector<bool> bones_, skinnedMesh_;
     std::map<std::string, int> namesUsed_;
     std::vector<std::shared_ptr<Object3D>> nodes_;

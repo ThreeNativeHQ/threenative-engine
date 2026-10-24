@@ -10,7 +10,7 @@ import {
   type Texture,
 } from "three";
 import { describe, expect, it, vi } from "vitest";
-import { uniformUnchanged } from "../src/projection-uniform.js";
+import { uniformSignatureOf, uniformUnchanged } from "../src/projection-uniform.js";
 import { type ProjectionMaterialChecks, SceneRenderProjection } from "../src/renderProjection.js";
 
 /**
@@ -126,6 +126,12 @@ function expectDrawnColor(batch: InstancedMesh, mesh: Mesh): void {
 }
 
 describe("uniform-colour instanced batches", () => {
+  it("signs a material whose field reads undefined, as an engine material does for an unset slot", () => {
+    const material = new MeshStandardMaterial({ color: 0xb8c4cc });
+    (material as unknown as Record<string, unknown>).unsetSlot = undefined;
+    expect(typeof uniformSignatureOf(material)).toBe("string");
+  });
+
   it("draws materials that differ only in colour as one instanced draw with per-instance colour", () => {
     const { scene, meshes } = uniformLattice(64);
 

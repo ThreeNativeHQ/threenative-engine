@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Shadows vs Unreal</title>
+<style>
+  :root {
+    --bg:#FAF9F5; --card:#F0EEE6; --ink:#141413; --mute:#5E5D59; --line:#E3E0D3; --track:#E3E0D3; --accent:#D97757; --soft:#B0AEA5;
+    --green:#15803d; --green-bg:#e3f3e9; --red:#c8261b; --red-bg:#fbe6e3; --grey-bg:#E8E6DC; --amber:#9a5b00; --amber-bg:#f8ecd2;
+    --desktop:#D97757; --wasm:#6A9BCC; --legacy:#87867F;
+  }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+    --bg:#262624; --card:#30302E; --ink:#F0EEE6; --mute:#B0AEA5; --line:#454441; --track:#454441; --accent:#D97757; --soft:#B0AEA5;
+    --green:#4ade80; --green-bg:#16301f; --red:#ff7b70; --red-bg:#3a1a17; --grey-bg:#3A3936; --amber:#f0b45a; --amber-bg:#3d2f14;
+    --desktop:#E08A6D; --wasm:#7FAAD6; --legacy:#A9A79D;
+  } }
+  :root[data-theme="dark"] {
+    --bg:#262624; --card:#30302E; --ink:#F0EEE6; --mute:#B0AEA5; --line:#454441; --track:#454441; --accent:#D97757; --soft:#B0AEA5;
+    --green:#4ade80; --green-bg:#16301f; --red:#ff7b70; --red-bg:#3a1a17; --grey-bg:#3A3936; --amber:#f0b45a; --amber-bg:#3d2f14;
+    --desktop:#E08A6D; --wasm:#7FAAD6; --legacy:#A9A79D;
+  }
+  * { box-sizing:border-box; }
+  * { box-sizing:border-box; }
+  body { margin:0; padding:14px 18px 40px; background:var(--bg); color:var(--ink); font:14px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif; font-variant-numeric:tabular-nums; }
+  main { max-width:1400px; margin:0 auto; display:grid; gap:14px; } main > * { min-width:0; }
+  header { display:flex; flex-wrap:wrap; gap:6px 16px; align-items:center; }
+  h1 { font-size:17px; margin:0; font-weight:650; } h2 { font-size:12px; margin:0 0 10px; font-weight:650; letter-spacing:.06em; text-transform:uppercase; color:var(--mute); }
+  .grow { flex:1; } .mute { color:var(--mute); } .sm { font-size:12px; }
+  nav.tabs { display:flex; gap:6px; } nav.tabs a { padding:3px 12px; border-radius:999px; color:var(--mute); text-decoration:none; border:1px solid var(--line); }
+  nav.tabs a[aria-current] { background:var(--accent); border-color:var(--accent); color:#fff; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px 16px; }
+  .hero { display:grid; grid-template-columns:repeat(auto-fit,minmax(320px,1fr)); gap:14px; }
+  .ratio { font-size:44px; font-weight:780; line-height:1; letter-spacing:-.025em; } .ok { color:var(--green); } .bad { color:var(--red); } .none { color:var(--soft); }
+  .chip { display:inline-block; border-radius:999px; padding:1px 9px; font-size:11.5px; font-weight:650; background:var(--grey-bg); color:var(--mute); white-space:nowrap; }
+  .chip.keep { background:var(--green-bg); color:var(--green); } .chip.reject, .chip.invalid { background:var(--red-bg); color:var(--red); } .chip.warn { background:var(--amber-bg); color:var(--amber); }
+  .scroll { overflow-x:auto; } table { border-collapse:collapse; width:100%; font-size:12.5px; }
+  th, td { text-align:right; padding:3px 8px; border-top:1px solid var(--line); white-space:nowrap; } th:first-child, td:first-child, td.l, th.l { text-align:left; } th { color:var(--mute); font-weight:500; }
+  #dot { display:inline-block; width:8px; height:8px; border-radius:50%; background:var(--green); margin-right:6px; }
+</style>
+</head>
+<body>
+<main>
+<header>
+  <h1>Shadows vs Unreal <span class="mute">PRD-650/652 · lamp shadow GPU time, owned Wasm engine vs Unreal 5.8.3</span></h1>
+  <nav class="tabs"><a href="/">Epic scoreboard</a><a href="/midway">Midway</a><a href="/shadows" aria-current="page">Shadows vs Unreal</a></nav>
+  <span class="grow"></span>
+  <span class="mute sm"><span id="dot"></span><span id="status">connecting…</span></span>
+</header>
+<section class="card"><h2>Now</h2><div id="now"></div></section>
+<section class="hero" id="hero"></section>
+<section class="card"><h2>Iterations · keep needs 5 paired runs · cycle goal under 30 min</h2><div class="scroll" id="iters"></div></section>
+<p class="mute sm">Ratio = ThreeNative GPU ms ÷ Unreal GPU ms on the same scene, pose and 1280×720, shadows on, GI off (cornell: TN L6 vs Unreal L7-Low; penumbra-lab: L5 both). Below 1.00 means ThreeNative is faster. Target: shadow ratio ≤ 1.00 at the same look. A missing time shows its reason, never a zero.</p>
+</main>
+<script>
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+const $ = (id) => document.getElementById(id);
+const ms = (v) => (v === undefined ? '<span class="none">—</span>' : v.toFixed(2));
+const rt = (v) => (v === undefined ? '<span class="none">—</span>' : `<span class="${v <= 1 ? "ok" : "bad"}">${v.toFixed(2)}×</span>`);
+const ago = (t) => { const m = (Date.now() - Date.parse(t)) / 60000; return m < 1 ? "just now" : m < 90 ? `${Math.round(m)} min ago` : `${(m / 60).toFixed(1)} h ago`; };
+const cellTxt = (c) => (!c ? '<span class="none">not run</span>' : c.totalMs === undefined ? `<span class="chip warn">${esc(c.unavailable)}</span>` : `${ms(c.totalMs)} / ${ms(c.shadowMs)} <span class="mute sm">n=${c.runs}${c.spreadMs === undefined ? "" : " ±" + c.spreadMs.toFixed(2)}</span>`);
+function render(d) {
+  if (d.status === "pending") { $("now").innerHTML = `<span class="chip">baseline pending</span> <span class="mute sm">no results file yet: ${esc(d.file)}</span>`; $("hero").innerHTML = ""; $("iters").innerHTML = ""; return; }
+  if (d.status === "invalid") { $("now").innerHTML = `<span class="chip invalid">invalid results</span> ${esc(d.problem)} <span class="mute sm">${esc(d.file)}</span>`; return; }
+  const beat = d.heartbeatAt ?? d.updatedAt, stale = Date.now() - Date.parse(beat) > 20 * 60000;
+  const last = [...d.iterations].reverse().find((it) => it.cells.length > 0);
+  const best = [...d.iterations].reverse().find((it) => it.decision === "keep" && it.cells.length > 0);
+  $("now").innerHTML = `<b>${esc(d.phase)}</b>${d.next ? ` · next: ${esc(d.next)}` : ""}<br><span class="mute sm">updated ${ago(d.updatedAt)} · heartbeat ${ago(beat)}${stale ? ' <span class="chip warn">stale / check process</span>' : ""} · ${d.iterations.length} iteration(s)</span>`;
+  const shown = best ?? last;
+  $("hero").innerHTML = !shown ? '<div class="card"><span class="chip">baseline pending</span></div>' : shown.pairs.map((p) => `<div class="card"><h2>${esc(p.scene)} · ${esc(shown.id)} ${best === shown ? "(best kept)" : "(latest, not kept)"}</h2>
+    <div style="display:flex;gap:28px;align-items:end"><div><div class="mute sm">shadow ratio</div><div class="ratio">${rt(p.shadowRatio)}</div></div><div><div class="mute sm">frame ratio</div><div class="ratio" style="font-size:30px">${rt(p.totalRatio)}</div></div></div>
+    <table style="margin-top:10px"><tr><th class="l">arm</th><th>frame ms / shadow ms</th><th class="l">adapter</th></tr>
+    <tr><td>ThreeNative ${esc(p.tn?.layer ?? "")}</td><td>${cellTxt(p.tn)}</td><td class="l mute sm">${esc(p.tn?.adapter ?? "")}</td></tr>
+    <tr><td>Unreal ${esc(p.unreal?.layer ?? "")}</td><td>${cellTxt(p.unreal)}</td><td class="l mute sm">${esc(p.unreal?.adapter ?? "")}</td></tr></table></div>`).join("");
+  $("iters").innerHTML = `<table><tr><th class="l">iteration</th><th class="l">lever</th><th class="l">decision</th><th>cycle</th><th class="l">scene</th><th>TN frame / shadow ms</th><th>Unreal frame / shadow ms</th><th>shadow ratio</th><th class="l">sha</th><th class="l">note</th></tr>${
+    [...d.iterations].reverse().map((it) => (it.pairs.length ? it.pairs : [{ scene: "—" }]).map((p, i) => `<tr><td>${i ? "" : esc(it.id)}</td><td class="l">${i ? "" : esc(it.lever)}</td><td class="l">${i ? "" : `<span class="chip ${esc(it.decision)}">${esc(it.decision)}</span>`}</td><td>${i ? "" : it.cycleMinutes === undefined ? '<span class="none">running</span>' : `<span class="${it.cycleMinutes <= 30 ? "ok" : "bad"}">${it.cycleMinutes.toFixed(0)} min</span>`}</td><td class="l">${esc(p.scene)}</td><td>${cellTxt(p.tn)}</td><td>${cellTxt(p.unreal)}</td><td>${rt(p.shadowRatio)}</td><td class="l mute sm">${i ? "" : esc(it.sha ?? "")}</td><td class="l mute sm">${i ? "" : esc(it.note ?? "")}</td></tr>`).join("")).join("")}</table>`;
+}
+async function tick() {
+  try { const r = await fetch("/api/shadows", { cache: "no-store" }); render(await r.json()); $("status").textContent = `live · ${new Date().toLocaleTimeString()}`; $("dot").style.background = "var(--green)"; }
+  catch (e) { $("status").textContent = "server unreachable · reload"; $("dot").style.background = "var(--red)"; }
+}
+tick(); setInterval(tick, 5000);
+</script>
+</body>
+</html>

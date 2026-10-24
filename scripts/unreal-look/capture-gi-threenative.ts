@@ -1,0 +1,383 @@
+/**
+ * ThreeNative side of the PRD-638 GI calibration scenes (PRD-646).
+ *
+ *   pnpm unreal-look:capture --engine threenative --scene gi:cornell [--layers L1,L7,ID] [--reuse]
+ *
+ * Uses the PRD-631 scaffold, then adds `scaffold/CalibrationScene.ts.in`, each scene's scene.glb and
+ * its scene.json (as src/scenes/calibrationData.ts), and captures every (layer, pose) headed on
+ * WebGPU on the owned engine, adapter checked. Frames land in captures/threenative/<scene>/<layer>/.
+ */
+import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
+import { cp, mkdir, readFile, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { assertVisualPortAvailable, stopVisualServer } from "../visual-gate.js";
+import { launchWebgpuBrowser } from "./browser.js";
+import { FRAME_GATE, captureMotionFrames } from "./capture-motion-threenative.js";
+import {
+  HIDE_UI,
+  freePort,
+  referenceFoliageSource,
+  scaffold,
+  waitForServer,
+} from "./capture-threenative.js";
+import { awaitExposureSettled, metersExposure, watchExposure } from "./exposureSettled.js";
+import { isManifestScene, readScene, sceneDir, sceneKey } from "./gi.js";
+import {
+  MIN_STEPS,
+  RENDERER_LOST,
+  SETTLE_STEPS,
+  atFixedJitterPhase,
+  stageBuildFailures,
+} from "./jitterPhase.js";
+import { composeForThreeNative } from "./wildwood.js";
+
+const REPO_ROOT = path.resolve(import.meta.dirname, "../..");
+const SCAFFOLD_DIR =
+  process.env.TN_UNREAL_LOOK_SCAFFOLD ?? path.join(import.meta.dirname, "scaffold");
+/** Layers a GI scene is captured at: the Unreal variant each one is judged against. */
+export const GI_LAYERS: Readonly<Record<string, string>> = {
+  ID: "ID",
+  L1: "L1",
+  L5: "L5", // the shadow family's direct-shadow layer (PRD-649)
+  // Shadows and AO without GI: the pair of Unreal with Lumen GI off.
+  L6: "L7-Low",
+  L7: "L7-Epic",
+  // Reflections: only a shadow scene with an L8 variant (wildwood) is captured here (PRD-651).
+  L8: "L8",
+  // GI at one quality tier, against the Unreal level it follows (PRD-644): Low 0, Medium 1, Epic 3.
+  "L7-low": "L7-Low",
+  "L7-medium": "L7-Medium",
+  "L7-high": "L7-Epic",
+  // The shadow family names its Unreal variants after their layers: sg.ShadowQuality 0 and 1 (PRD-652).
+  "L5-Low": "L5-Low",
+  "L5-Medium": "L5-Medium",
+  L9: "L9-Epic",
+};
+
+/**
+ * `&tier=<tier>` for a tier layer, nothing otherwise. A GI tier layer (`L7-low`) is judged against the
+ * Unreal level of the GI group alone, whose shadows stay at Epic, so it adds `&shadowTier=high`; a shadow
+ * tier layer (`L5-Low`) has no GI and follows the tier for its shadows.
+ */
+export function tierQuery(layer: string): string {
+  const { layer: base, tier } = layerQuery(layer);
+  if (tier === undefined) return "";
+  return base === "L7" ? `&tier=${tier}&shadowTier=high` : `&tier=${tier}`;
+}
+
+/** The query pair a capture layer names: `L7-medium` is layer `L7` at tier `medium`; `L7` keeps the default tier. */
+export function layerQuery(layer: string): { layer: string; tier?: string } {
+  const [base = layer, tier] = layer.split("-");
+  return tier === undefined ? { layer: base } : { layer: base, tier: tier.toLowerCase() };
+}
+
+const SCENES_DECLARATION = "export const SCENES: Record<string, any> = ";
+
+/** The scenes a generated calibrationData.ts holds; a file patchGi did not write fails closed. */
+export function calibrationScenes(source: string): Record<string, unknown> {
+  const start = source.indexOf(SCENES_DECLARATION);
+  if (start === -1)
+    throw new Error("TN_UNREAL_LOOK_PATCH: calibrationData.ts is not one patchGi wrote");
+  return JSON.parse(source.slice(start + SCENES_DECLARATION.length, source.lastIndexOf(";")));
+}
+
+/** Per scene folder, the Subsurface Color of every slot that scene.json reports on Unreal's Two Sided Foliage model. */
+export function foliageOf(
+  scenes: Record<string, unknown>,
+): Record<string, Record<string, [number, number, number]>> {
+  type Meshes = { meshes?: { slots?: { slot: string; subsurfaceColor?: number[] }[] }[] };
+  const out: Record<string, Record<string, [number, number, number]>> = {};
+  for (const [name, scene] of Object.entries(scenes)) {
+    const table: Record<string, [number, number, number]> = {};
+    for (const mesh of (scene as Meshes).meshes ?? [])
+      for (const slot of mesh.slots ?? [])
+        if (slot.subsurfaceColor?.length === 3)
+          table[slot.slot] = slot.subsurfaceColor as [number, number, number];
+    if (Object.keys(table).length > 0) out[sceneKey(name)] = table;
+  }
+  return out;
+}
+
+export async function patchGi(target: string, scenes: readonly string[]): Promise<void> {
+  await cp(
+    path.join(SCAFFOLD_DIR, "CalibrationScene.ts.in"),
+    path.join(target, "src/scenes/CalibrationScene.ts"),
+  );
+  // A scaffold keeps the scenes it already holds: the owner preview serves every calibration scene
+  // while one capture run patches only its own.
+  const dataFile = path.join(target, "src/scenes/calibrationData.ts");
+  const data = existsSync(dataFile) ? calibrationScenes(await readFile(dataFile, "utf8")) : {};
+  for (const name of scenes) {
+    const { scene } = readScene(name);
+    data[name] = scene;
+    const dir = path.join(target, "assets/unreal-reference/gi", sceneKey(name));
+    await mkdir(dir, { recursive: true });
+    // A scene of real assets has no committed scene.glb: it is composed from the verified asset files (PRD-651).
+    if (isManifestScene(name))
+      await writeFile(
+        path.join(dir, "scene.glb"),
+        await composeForThreeNative(sceneDir(name), scene as never, sceneKey(name)),
+      );
+    else await cp(path.join(sceneDir(name), "scene.glb"), path.join(dir, "scene.glb"));
+  }
+  await writeFile(
+    path.join(target, "src/scenes/referenceFoliage.ts"),
+    referenceFoliageSource(foliageOf(data)),
+  );
+  await writeFile(
+    dataFile,
+    `// Generated by scripts/unreal-look/capture-gi-threenative.ts from tools/unreal-reference/gi/<scene>/scene.json.\n// biome-ignore lint/suspicious/noExplicitAny: scene.json is validated by gi.ts before it is written here.\n${SCENES_DECLARATION}${JSON.stringify(data)};\n`,
+  );
+  // Each Unreal actor is one region: the cook must not join meshes that share a material or
+  // instance meshes with equal geometry (cornell's floor and ceiling), so compaction is off.
+  const config = path.join(target, "threenative.config.ts");
+  const configSource = await readFile(config, "utf8");
+  if (!configSource.includes("compact: false")) {
+    const anchor = '  nativeEntry: "src/game.ts",';
+    if (!configSource.includes(anchor))
+      throw new Error(`TN_UNREAL_LOOK_PATCH: '${anchor}' not in ${config}`);
+    await writeFile(
+      config,
+      configSource.replace(anchor, `${anchor}\n  assets: { models: { compact: false } },`),
+    );
+  }
+  const game = path.join(target, "src/game.ts");
+  let source = await readFile(game, "utf8");
+  if (source.includes("CalibrationScene")) return;
+  const swap = (from: string, to: string) => {
+    if (!source.includes(from)) throw new Error(`TN_UNREAL_LOOK_PATCH: '${from}' not in ${game}`);
+    source = source.replace(from, to);
+  };
+  swap(
+    'import { Reference } from "./scenes/Reference.js";',
+    'import { Reference } from "./scenes/Reference.js";\nimport { CalibrationScene } from "./scenes/CalibrationScene.js";',
+  );
+  swap("reference: Reference },", "reference: Reference, calibration: CalibrationScene },");
+  swap(
+    'start: "reference",',
+    'start: new URLSearchParams(location.search).has("tnGi") ? "calibration" : "reference",',
+  );
+  await writeFile(game, source);
+}
+
+export async function captureGiThreeNative(options: {
+  readonly scenes: readonly string[];
+  readonly layers: readonly string[];
+  readonly out: string;
+  readonly reuse: boolean;
+  /** Hold each pose this many seconds and write its TN_FRAME_BUDGET windows instead of a screenshot. */
+  readonly measureSeconds?: number;
+  /** A motion run of the scene (PRD-638): capture its frames, one rendered frame per step, instead of the poses. */
+  readonly motion?: string;
+}): Promise<number> {
+  for (const layer of options.layers)
+    if (!(layer in GI_LAYERS)) throw new Error(`TN_UNREAL_LOOK_BAD_INPUT: GI layer ${layer}`);
+  const work =
+    process.env.TN_UNREAL_LOOK_WORK ?? path.join(os.homedir(), ".cache/threenative/unreal-look");
+  const target = await scaffold(work, options.reuse, false);
+  await patchGi(target, options.scenes);
+  const port = await freePort();
+  await assertVisualPortAvailable(port);
+  const server = spawn(
+    "pnpm",
+    ["dev", "--host", "127.0.0.1", "--port", String(port), "--strictPort"],
+    {
+      cwd: target,
+      detached: process.platform !== "win32",
+      stdio: ["ignore", "inherit", "inherit"],
+    },
+  );
+  let count = 0;
+  // ponytail: the server, browser and adapter check repeat captureThreeNative's; fold them into one
+  // helper when the perf lane's capture-threenative.ts change lands.
+  try {
+    const origin = `http://127.0.0.1:${port}/`;
+    await waitForServer(origin, server);
+    const browser = await launchWebgpuBrowser();
+    try {
+      const report: Record<string, unknown> = {};
+      for (const name of options.scenes) {
+        const { scene } = readScene(name);
+        // TN_GI_SIZE=1920x1080 re-measures a cost at another resolution (the Xvfb screen must be larger: TN_XVFB_SCREEN).
+        const override = process.env.TN_GI_SIZE?.split("x").map(Number);
+        const [width, height] =
+          override?.length === 2 ? (override as [number, number]) : scene.resolution;
+        const page = await browser.newPage({ viewport: { width, height }, deviceScaleFactor: 1 });
+        // The motion run steps the loop itself; a still holds it to land on one jitter phase (jitterPhase.ts).
+        if (options.motion !== undefined || options.measureSeconds === undefined)
+          await page.addInitScript(FRAME_GATE);
+        const errors: string[] = [];
+        // The frame meter prints to the console; a measured pose keeps the windows between two marks.
+        let meter: string[] = [];
+        page.on("pageerror", (error) => errors.push(error.message));
+        // A template-lit scene meters its exposure, which closes on its target in clock time (exposureSettled.ts).
+        const exposure = watchExposure(page);
+        page.on("console", (message) => {
+          if (message.text().startsWith("TN_FRAME_BUDGET")) meter.push(message.text());
+          if (RENDERER_LOST.test(message.text())) errors.push(message.text());
+          errors.push(...stageBuildFailures(message.text()));
+          if (
+            message.type() === "error" ||
+            /^TN_(CALIBRATION|GI_CACHE|SURFACE_CACHE|WORLD_ENVIRONMENT|NATIVE_)/.test(
+              message.text(),
+            )
+          )
+            console.info(`page: ${message.text().slice(0, 2400)}`);
+        });
+        await page.goto(origin, { waitUntil: "domcontentloaded" });
+        const adapter = await page.evaluate(
+          "navigator.gpu?.requestAdapter().then((a) => a && { vendor: a.info.vendor, architecture: a.info.architecture, device: a.info.device, description: a.info.description })",
+        );
+        if (!adapter || /swiftshader|llvmpipe/i.test(JSON.stringify(adapter)))
+          throw new Error(`TN_UNREAL_LOOK_SOFTWARE_ADAPTER: ${JSON.stringify(adapter)}`);
+        for (const layer of options.layers) {
+          const extra = process.env.TN_GI_URL_EXTRA ?? "";
+          // A template-lit shadow scene (PRD-649) is lit by the reference scene's default-level
+          // lighting, once per sun; its ID frames and every other scene use the calibration scene.
+          const visits: {
+            query: string;
+            key: string;
+            poses: typeof scene.poses;
+            reference: boolean;
+          }[] =
+            scene.template === "default" && layer !== "ID"
+              ? (scene.suns ?? []).map((sun) => ({
+                  query: `tnRef=${layerQuery(layer).layer}${tierQuery(layer)}&sun=${sun.elevationDeg},${sun.azimuthDeg}&model=${sceneKey(name)}${process.env.TN_UNREAL_LOOK_QUERY ?? ""}`,
+                  key: `${name}/${layer}/${sun.name}`,
+                  poses: scene.poses.filter((pose) => pose.sun === sun.name),
+                  reference: true,
+                }))
+              : [
+                  {
+                    query: `tnGi=${name}&layer=${layerQuery(layer).layer}${tierQuery(layer)}${process.env.TN_UNREAL_LOOK_QUERY ?? ""}`,
+                    key: `${name}/${layer}`,
+                    poses: scene.poses,
+                    // The calibration scene holds its exposure fixed (Unreal's manual EV100).
+                    reference: false,
+                  },
+                ];
+          for (const visit of visits) {
+            await page.goto(`${origin}?${visit.query}${extra}`, {
+              waitUntil: "domcontentloaded",
+            });
+            await page.addStyleTag({ content: HIDE_UI });
+            // A rejected start never reaches "ready": GameCanvas renders its message, so stop on that
+            // instead of waiting out the timeout.
+            await page.waitForSelector(
+              '[data-threenative-startup="ready"], [data-threenative-canvas-error="true"]',
+              { timeout: 300_000 },
+            );
+            const startFailure = await page
+              .locator('[data-threenative-canvas-error="true"]')
+              .allTextContents();
+            if (startFailure.length > 0)
+              throw new Error(
+                `TN_UNREAL_LOOK_START_FAILED: ${name} ${layer}: ${startFailure.join(" | ")}`,
+              );
+            await page.waitForFunction(() => "__tnRef" in window, undefined, { timeout: 240_000 });
+            const engine = await page.evaluate("window.__tnRef.engine");
+            if (engine !== "threenative")
+              throw new Error(
+                `TN_UNREAL_LOOK_WRONG_ENGINE: ${name} ${layer} drew on ${String(engine)}`,
+              );
+            report[visit.key] = {
+              engine,
+              unsupported: await page.evaluate("window.__tnRef.unsupported"),
+              probe: await page.evaluate("window.__tnRef.probe?.()"),
+            };
+            if (options.motion !== undefined) {
+              count += await captureMotionFrames({
+                page,
+                scene,
+                sceneId: name,
+                layer,
+                run: options.motion,
+                out: options.out,
+              });
+              if (errors.length > 0)
+                throw new Error(`TN_UNREAL_LOOK_PAGE_ERROR: ${errors.join(" | ")}`);
+              continue;
+            }
+            for (const pose of visit.poses) {
+              const poseAt = Date.now();
+              await page.evaluate(`window.__tnRef.pose(${JSON.stringify(pose)})`);
+              await page.evaluate(
+                "new Promise((resolve) => { let n = 0; const tick = () => (++n >= 45 ? resolve() : requestAnimationFrame(tick)); requestAnimationFrame(tick); })",
+              );
+              // Auto exposure (L9) closes at 1 stop/s like Unreal's: 45 frames are well short of that, so the frame waits
+              // until the last three readings after the pose are at rest and fails closed when they never are.
+              // The calibration scene holds its exposure fixed (Unreal's manual EV100) and prints no reading.
+              const metered =
+                visit.reference &&
+                metersExposure({
+                  layer: layerQuery(layer).layer,
+                  measureSeconds: options.measureSeconds,
+                  switches: extra,
+                });
+              if (metered)
+                console.info(
+                  `TN_UNREAL_LOOK exposure ${pose.name} at rest after ${await awaitExposureSettled(page, exposure, poseAt)} ms of waiting`,
+                );
+              if (errors.length > 0)
+                throw new Error(`TN_UNREAL_LOOK_PAGE_ERROR: ${errors.join(" | ")}`);
+              if (options.measureSeconds !== undefined) {
+                meter = [];
+                await page.waitForTimeout(options.measureSeconds * 1000);
+                const log = path.join(
+                  options.out,
+                  sceneKey(name),
+                  layer,
+                  `${pose.name}.frame-budget.log`,
+                );
+                await mkdir(path.dirname(log), { recursive: true });
+                await writeFile(log, `${meter.join("\n")}\n`);
+                console.info(
+                  `TN_UNREAL_LOOK measured ${name} ${layer} ${pose.name} windows=${meter.length} log=${log}`,
+                );
+                count += 1;
+                continue;
+              }
+              const file = path.join(options.out, sceneKey(name), layer, `${pose.name}.png`);
+              await mkdir(path.dirname(file), { recursive: true });
+              if (options.measureSeconds !== undefined) {
+                meter = [];
+                await page.waitForTimeout(options.measureSeconds * 1000);
+                const log = file.replace(/\.png$/u, ".frame-budget.log");
+                await writeFile(log, `${meter.join("\n")}\n`);
+                console.info(
+                  `TN_UNREAL_LOOK measured ${layer}/${pose.name} windows=${meter.length} log=${log}`,
+                );
+                count += 1;
+                continue;
+              }
+              await atFixedJitterPhase(
+                page,
+                async () => writeFile(file, await page.screenshot({ type: "png" })),
+                { minSteps: metered ? SETTLE_STEPS : MIN_STEPS },
+              );
+              // A device lost while the frame was held leaves a black PNG: the frame fails, it is not kept.
+              if (errors.length > 0)
+                throw new Error(`TN_UNREAL_LOOK_PAGE_ERROR: ${errors.join(" | ")}`);
+              count += 1;
+            }
+          }
+        }
+        await page.close();
+        report.adapter = adapter;
+      }
+      await mkdir(options.out, { recursive: true });
+      await writeFile(
+        path.join(options.out, "gi-capture.json"),
+        `${JSON.stringify({ capturedAt: new Date().toISOString(), cells: count, ...report }, null, 2)}\n`,
+      );
+      console.info(`TN_UNREAL_LOOK gi threenative engine=threenative cells=${count}`);
+    } finally {
+      await browser.close();
+    }
+  } finally {
+    await stopVisualServer(server);
+  }
+  return count;
+}

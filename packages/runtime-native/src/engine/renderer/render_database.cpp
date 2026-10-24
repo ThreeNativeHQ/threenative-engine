@@ -31,6 +31,7 @@ namespace {
 struct GraphFind {
     const Texture* texture = nullptr;
     std::shared_ptr<const void> reflector;
+    std::vector<shader::graph::Node> textureNodes;
     std::vector<std::pair<std::string, const Texture*>> textures;  // texture(object) samples, by binding
     std::vector<std::pair<std::string, const BufferAttribute*>> storages;  // storage(attribute) reads, by binding
 };
@@ -45,11 +46,11 @@ GraphFind findGraphSources(const Material& material) {
             if (found.texture && found.texture != texture)
                 throw std::runtime_error("TN_NATIVE_PMREM_UNSUPPORTED: one material samples two pmremTexture sources");
             found.texture = texture;
-        } else if ((node->kind == shader::graph::Kind::Texture || node->kind == shader::graph::Kind::StorageTexture) && node->object) {
-            const auto* texture = static_cast<const Texture*>(node->object.get());
+        } else if ((node->kind == shader::graph::Kind::Texture || node->kind == shader::graph::Kind::StorageTexture) && node->textureObject()) {
+            const auto* texture = static_cast<const Texture*>(node->textureObject().get());
             if (std::none_of(found.textures.begin(), found.textures.end(),
                              [&](const auto& entry) { return entry.first == node->name; }))
-                found.textures.emplace_back(node->name, texture);
+                { found.textures.emplace_back(node->name, texture); found.textureNodes.push_back(node); }
         } else if (node->kind == shader::graph::Kind::StorageElement && node->object) {
             if (std::none_of(found.storages.begin(), found.storages.end(),
                              [&](const auto& entry) { return entry.first == node->name; }))
@@ -160,6 +161,9 @@ DirectLight::Shadow shadowOf(LightShadow& shadow, const std::array<double, 3>& f
     out.view = toArray(camera.matrixWorldInverse);
     out.projection = toArray(camera.projectionMatrix);
     out.matrix = toArray(matrix);
+    out.virtualShadow = shadow.virtualShadow;
+    out.sourceAngleFilter = shadow.sourceAngleFilter;
+    out.sourceRadiusFilter = shadow.sourceRadiusFilter;
     out.bias = shadow.bias;
     out.normalBias = shadow.normalBias;
     out.radius = shadow.radius;
@@ -167,6 +171,12 @@ DirectLight::Shadow shadowOf(LightShadow& shadow, const std::array<double, 3>& f
     out.width = static_cast<uint32_t>(shadow.mapSize.x);
     out.height = static_cast<uint32_t>(shadow.mapSize.y);
     out.layersMask = layersMask;
+    // A spot map is perspective: its depth turns back into a distance for the source-radius filter.
+    if (const auto* perspective = dynamic_cast<const PerspectiveCamera*>(&camera)) {
+        out.near = perspective->near;
+        out.far = perspective->far;
+        out.tanHalfFov = 1.0 / camera.projectionMatrix.elements[5];
+    }
     return out;
 }
 
@@ -194,6 +204,9 @@ DirectLight::Shadow pointShadowOf(LightShadow& shadow, const std::array<double, 
     out.view = out.faceViews[0];
     out.projection = toArray(camera.projectionMatrix);
     out.matrix = toArray(matrix);
+    out.virtualShadow = shadow.virtualShadow;
+    out.sourceAngleFilter = shadow.sourceAngleFilter;
+    out.sourceRadiusFilter = shadow.sourceRadiusFilter;
     out.bias = shadow.bias;
     out.normalBias = shadow.normalBias;
     out.radius = shadow.radius;
@@ -256,6 +269,7 @@ shader::StandardMaterial paramsOf(const Material& m) {
     p.ior = float(m.ior);
     p.specularIntensity = float(m.specularIntensity);
     p.specularColor = {float(m.specularColor.r), float(m.specularColor.g), float(m.specularColor.b)};
+    p.subsurfaceColor = {float(m.subsurfaceColor.r), float(m.subsurfaceColor.g), float(m.subsurfaceColor.b)};
     p.clearcoat = float(m.clearcoat);
     p.clearcoatRoughness = float(m.clearcoatRoughness);
     p.bumpScale = float(m.bumpScale);
@@ -408,7 +422,9 @@ RenderDatabase::Record& RenderDatabase::record(const Mesh& mesh, Record& r, bool
         // A decoded map the standard program does not read is refused by name, never drawn without it.
         // (A placeholder with no image was already refused where models load.)
         for (const auto& [slot, texture] : material->maps) {
-            if (!texture || !texture->sampleable() || slot == "map" || slot == "normalMap") continue;
+            // envMap is read through the PMREM path below (a sphere reflection capture sets it).
+            if (!texture || !texture->sampleable() || slot == "map" || slot == "normalMap" || slot == "envMap")
+                continue;
             const auto pbr = std::find(std::begin(shader::kPbrMapNames), std::end(shader::kPbrMapNames), slot);
             if (pbr - std::begin(shader::kPbrMapNames) < pbrMapsRead(*material)) continue;
             diagnostics_.push_back("TN_NATIVE_MATERIAL_UNSUPPORTED " + std::string(material->typeName()) + ": " + slot +
@@ -486,7 +502,10 @@ RenderDatabase::Record& RenderDatabase::record(const Mesh& mesh, Record& r, bool
     d.positionNode = material->positionNode;
     d.nodes = material->nodes;
     d.side = static_cast<uint8_t>(material->side);
+    d.shadowSide = material->shadowSide ? static_cast<uint8_t>(*material->shadowSide) : 255;
     d.flatShading = material->flatShading;
+    d.twoSidedFoliage = material->twoSidedFoliage;
+    d.roughDiffuse = material->roughDiffuse;
     d.blending = static_cast<uint8_t>(material->blending);
     r.drawable = d.positions != nullptr;
     return r;
@@ -502,7 +521,10 @@ DrawItem& RenderDatabase::refresh(const Mesh& mesh, Record& r) {
     d.depthWrite = r.material->depthWrite;
     d.colorWrite = r.material->colorWrite;
     d.side = static_cast<uint8_t>(r.material->side);
+    d.shadowSide = r.material->shadowSide ? static_cast<uint8_t>(*r.material->shadowSide) : 255;
     d.flatShading = r.material->flatShading;
+    d.twoSidedFoliage = r.material->twoSidedFoliage;
+    d.roughDiffuse = r.material->roughDiffuse;
     d.blending = static_cast<uint8_t>(r.material->blending);
     d.positionNode = r.material->positionNode;
     d.nodes = r.material->nodes;
@@ -526,6 +548,7 @@ DrawItem& RenderDatabase::refresh(const Mesh& mesh, Record& r) {
     if (mesh.geometry) geometryInputsOf(*mesh.geometry, d);
     d.castShadow = mesh.castShadow();
     d.receiveShadow = mesh.receiveShadow();
+    d.shadowObject = &mesh;
     d.layers = Layers::bits(mesh.layers().mask);
     d.mainPass = true;
     return d;
@@ -533,7 +556,7 @@ DrawItem& RenderDatabase::refresh(const Mesh& mesh, Record& r) {
 
 const RenderDatabase::GraphSources& RenderDatabase::graphSources(const Material& material) {
     static const GraphSources none;
-    std::array<const void*, 12> roots{};
+    std::array<const void*, 14> roots{};
     const auto graphs = material.nodes.pointers();
     static_assert(decltype(graphs){}.size() == decltype(roots){}.size(), "a node slot was added to MaterialNodes");
     std::copy(graphs.begin(), graphs.end(), roots.begin());
@@ -545,8 +568,10 @@ const RenderDatabase::GraphSources& RenderDatabase::graphSources(const Material&
         if (diagnostic.enabled) ++diagnostic.graphRebuilds;
         GraphFind found = findGraphSources(material);
         cached = GraphSources{material.version(), roots, found.texture, std::move(found.reflector),
-                              std::move(found.textures), std::move(found.storages)};
+                              std::move(found.textures), std::move(found.textureNodes), std::move(found.storages)};
     }
+    for (size_t i = 0; i < cached.textureNodes.size(); ++i)
+        cached.textures[i].second = static_cast<const Texture*>(cached.textureNodes[i]->textureObject().get());
     return cached;
 }
 
@@ -720,7 +745,7 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
                 if (Record* r = cached ? (cached->meshId == mesh.id() ? cached : nullptr) : findRecord(mesh, false))
                     markSeen(*r);
             } else {
-                const bool compact = batching && type == "Mesh" && mesh.geometry && mesh.material && !mesh.onBeforeRender &&
+                const bool compact = batching && !(virtualShadows_ && mesh.castShadow()) && type == "Mesh" && mesh.geometry && mesh.material && !mesh.onBeforeRender &&
                                      !mesh.material->transparent && !mesh.material->vertexColors && !mesh.material->positionNode &&
                                      !mesh.material->nodes.positionNode && !mesh.material->nodes.vertexNode &&
                                      !mesh.geometry->instanced &&
@@ -839,6 +864,7 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
             d.position = worldPosition(l);
             d.distance = l.distance;
             d.decay = l.decay;
+            d.sourceRadius = l.sourceRadius;
             if (shadowMapEnabled && l.castShadow())
                 d.shadow = pointShadowOf(l.shadow, d.position, l.distance, effectiveShadowLayersMask(*l.shadow.camera, camera));
             direct_.emplace_back(object.id(), d);
@@ -854,6 +880,7 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
             d.direction = normalized({d.position[0] - to[0], d.position[1] - to[1], d.position[2] - to[2]});
             d.distance = l.distance;
             d.decay = l.decay;
+            d.sourceRadius = l.sourceRadius;
             d.coneCos = std::cos(l.angle);
             d.penumbraCos = std::cos(l.angle * (1 - l.penumbra));
             if (shadowMapEnabled && l.castShadow()) {
@@ -967,7 +994,7 @@ void RenderDatabase::batch(std::vector<DrawItem>& items, Object3D& scene,
         const DrawItem& d = items[i];
         const auto verdict = decision.verdict.find(d.skinnedRig);
         const bool skinned = bool(d.gpuJoints) || (d.boneMatrices && verdict != decision.verdict.end() && verdict->second == "skinned");
-        if (!d.batchable && !skinned)
+        if ((virtualShadows_ && d.castShadow) || (!d.batchable && !skinned))
             continue;
         auto same = [&](const std::vector<std::size_t>& g) {
             const DrawItem& o = items[g.front()];
@@ -1328,7 +1355,7 @@ const std::vector<DrawItem>& RenderDatabase::prepare(Object3D& scene, Camera& ca
             if (mesh) continue;
             const Object3D* target = nullptr;
             if (type == typeid(DirectionalLight)) target = static_cast<const DirectionalLight*>(child)->target.get();
-            if (type == typeid(SpotLight)) target = static_cast<const SpotLight*>(child)->target;
+            if (type == typeid(SpotLight)) target = static_cast<const SpotLight*>(child)->target.get();
             const bool light = type == typeid(Light) || type == typeid(AmbientLight) ||
                                type == typeid(PointLight) || type == typeid(HemisphereLight) ||
                                (target && typeid(*target) == typeid(Object3D) && target->parent == nullptr);
@@ -1515,8 +1542,8 @@ const std::vector<DrawItem>& RenderDatabase::prepare(Object3D& scene, Camera& ca
         }
         items_.swap(twoPasses_);
     }
-    if (world && world->backgroundTexture) {
-        if (world->backgroundTexture->mapping != 303 || world->backgroundBlurriness != 0)
+    if (world && (world->backgroundNode || world->backgroundTexture)) {
+        if (!world->backgroundNode && (world->backgroundTexture->mapping != 303 || world->backgroundBlurriness != 0))
             throw std::runtime_error("TN_NATIVE_BACKGROUND_UNSUPPORTED: sharp EquirectangularReflectionMapping required");
         if (!backgroundGeometry_) backgroundGeometry_ = makeSphereGeometry(1, 32, 32);
         DrawItem sky;
@@ -1525,6 +1552,7 @@ const std::vector<DrawItem>& RenderDatabase::prepare(Object3D& scene, Camera& ca
         sky.positions = backgroundGeometry_->attributes.at("position")->store.get();
         sky.normals = backgroundGeometry_->attributes.at("normal")->store.get();
         sky.indices = backgroundGeometry_->index->store.get();
+        sky.uvs = backgroundGeometry_->attributes.at("uv")->store.get();
         Matrix4 model;
         if (camera.projectionMatrix.elements[15] == 1) {
             const double scale = 3 / camera.projectionMatrix.elements[5]; model.makeScale(scale, scale, scale);
@@ -1537,7 +1565,16 @@ const std::vector<DrawItem>& RenderDatabase::prepare(Object3D& scene, Camera& ca
         sky.backgroundRotation = toArray(rotation);
         backgroundParams_.color.fill(static_cast<float>(world->backgroundIntensity));
         sky.material = &backgroundParams_;
-        sky.map = world->backgroundTexture.get();
+        sky.map = world->backgroundNode ? nullptr : world->backgroundTexture.get();
+        if (backgroundNodeMaterial_.nodes.colorNode != world->backgroundNode) {
+            backgroundNodeMaterial_.nodes.colorNode = world->backgroundNode;
+            backgroundNodeMaterial_.needsUpdate();
+        }
+        sky.nodes = backgroundNodeMaterial_.nodes;
+        const auto& sources = graphSources(backgroundNodeMaterial_);
+        sky.nodeTextures = sources.textures.empty() ? nullptr : &sources.textures;
+        sky.nodeStorages = sources.storages.empty() ? nullptr : &sources.storages;
+        sky.pmremMap = sources.texture;
         sky.kind = MaterialKind::Basic; sky.side = 1; sky.depthWrite = false;
         sky.mainPass = true;
         sky.layers = Layers::bits(camera.layers().mask);
@@ -1584,6 +1621,11 @@ uint64_t RenderDatabase::render(Renderer& renderer, Object3D& scene, Camera& cam
     gpuPreparing_ = true;
     try { prepare(scene, camera, lights_, nullptr, renderer.hasVirtualShadows()); } catch (...) { gpuPreparing_ = false; throw; }
     gpuPreparing_ = false;
+    const bool hadVirtual = renderer.hasVirtualShadows();
+    // The main view's tan(hfov / 2) is 1 / P[0]; a reflection pass is another view and measures nothing.
+    const bool mainView = !reflecting_ && dynamic_cast<const PerspectiveCamera*>(&camera) && camera.projectionMatrix.elements[0] > 0;
+    renderer.syncVirtualShadows(lights_, mainView ? 1.0 / camera.projectionMatrix.elements[0] : 0.0);
+    if (!hadVirtual && renderer.hasVirtualShadows()) prepare(scene, camera, lights_, nullptr, true);
     const auto preparedScene = profiling ? Clock::now() : Clock::time_point{};
     // Frame-pumped PMREM (PRD-573): until every environment this frame samples is fully baked,
     // advance one retained packet and skip the frame. No partial target is published and the covered

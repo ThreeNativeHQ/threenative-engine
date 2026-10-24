@@ -4,7 +4,11 @@
 // game finds the same names, parents and transforms it would under the upstream loader.
 //
 // Supported: core glTF 2.0 in a GLB or a glTF with embedded (data URI) buffers, and
-// KHR_mesh_quantization, KHR_lights_punctual, KHR_materials_unlit, KHR_materials_ior and KHR_materials_specular. An extension GLTFLoader implements and this loader does not is refused
+// KHR_mesh_quantization, KHR_lights_punctual, KHR_materials_unlit, ior, specular, clearcoat, emissive_strength,
+// KHR_texture_transform, EXT_mesh_gpu_instancing, and the sheen, transmission, volume, iridescence, anisotropy,
+// dispersion and EXT_materials_bump factors (the standard program does not draw those yet, so the renderer
+// refuses such a mesh by name, TN_NATIVE_MATERIAL_UNSUPPORTED, and the rest of the model draws). An extension
+// GLTFLoader implements that needs a decoder this loader does not have (draco, meshopt, basisu, avif) is refused
 // by name (TN_NATIVE_GLTF_EXTENSION_UNSUPPORTED) instead of being dropped, as is a required
 // extension nobody knows; an unknown optional extension is ignored, as GLTFLoader ignores it.
 // Images: PNG and JPEG decode to RGBA8 (a texture also takes its sampler); WebP, AVIF, KTX2 and

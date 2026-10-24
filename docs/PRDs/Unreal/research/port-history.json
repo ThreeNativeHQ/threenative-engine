@@ -57,10 +57,18 @@
   },
   {
     "date": "2026-10-22",
-    "done": 300,
-    "total": 1037,
-    "lookDone": 87,
-    "lookTotal": 438,
+    "done": 361,
+    "total": 1076,
+    "lookDone": 134,
+    "lookTotal": 488,
+    "open": 83
+  },
+  {
+    "date": "2026-10-23",
+    "done": 369,
+    "total": 1079,
+    "lookDone": 138,
+    "lookTotal": 489,
     "open": 83
   }
 ]

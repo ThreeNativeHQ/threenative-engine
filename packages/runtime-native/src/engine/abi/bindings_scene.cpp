@@ -873,6 +873,12 @@ void registerScene(ClassBinding& b) {
             scene->backgroundTexture = std::static_pointer_cast<Texture>(color->ptr); scene->background.reset();
         } else throw Unsupported{"background must be a Color, Texture or null"};
     };
+    b.getters["backgroundNode"] = [](void* self) { return Value::shaderNode(as<Scene>(self)->backgroundNode); };
+    b.setters["backgroundNode"] = [](void* self, const Value& v) {
+        if (v.kind != Value::Kind::Null && (v.kind != Value::Kind::ShaderNode || !v.node))
+            throw Unsupported{"TN_NATIVE_BACKGROUND_NODE_INVALID: expected a TSL node or null"};
+        as<Scene>(self)->backgroundNode = v.node;
+    };
     // three's `scene.fogNode`: vec4(color, factor), a TSL node set through the TSL runtime (no ABI value carries it).
     b.getters["fogNode"] = [](void* self) { return Value::shaderNode(as<Scene>(self)->fogNode); };
     b.setters["fogNode"] = [](void* self, const Value& v) {

@@ -11,7 +11,7 @@
       "packages/metahuman/wasm/**",
       "artifacts/**",
       "examples/strata-terrain-preview/src/world/*.json",
-      "docs/PRDs/Unreal/research/port-history.json",
+      "docs/PRDs/Unreal/research/**/*.json",
       "examples/strata-terrain-preview/local-assets/**",
       "build/**",
       "release-native/**",

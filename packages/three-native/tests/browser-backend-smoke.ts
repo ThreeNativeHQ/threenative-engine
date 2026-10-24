@@ -11,6 +11,7 @@ import type * as THREE from "three";
 
 import { defineBufferGeometryUtils } from "../src/addons/merge-geometries.js";
 import { definePostEffects } from "../src/addons/post-effects.js";
+import { defineScreenSpaceReflections } from "../src/addons/screen-space.js";
 import type { defineAudioClasses } from "../src/audio.js";
 import {
   type IEngineRef,
@@ -1397,6 +1398,52 @@ if (runtime.tsl !== undefined) {
   ao.radius.value = 0.5;
   check(ao.radius?.value === 0.5, "ao radius updated value");
 
+  // 8a. Object3D lookups walk the subtree in three's order
+  {
+    const holder = new Scene();
+    const first = new Mesh(new BoxGeometry(1, 1, 1));
+    const second = new Mesh(new BoxGeometry(1, 1, 1));
+    first.name = "first";
+    second.name = "second";
+    holder.add(first, second);
+    check(
+      holder.getObjectByProperty("visible", true) === holder,
+      "getObjectByProperty finds the first match, the root before its children",
+    );
+    check(holder.getObjectByName("second") === second, "getObjectByName finds a named child");
+    check(
+      holder.getObjectsByProperty("visible", true).length === 3,
+      "getObjectsByProperty finds every match",
+    );
+    check(
+      holder.getObjectByProperty("name", "none") === undefined,
+      "getObjectByProperty answers undefined for none",
+    );
+  }
+
+  // 8b. screen-space reflections are authored over the engine TSL: the graph builds (Loop, If, Break,
+  // bisection and the projection-column maths) and publishes the SSR uniforms of three.
+  const reflections = defineScreenSpaceReflections(tsl as never)(
+    tsl.texture({ name: "colour" }, tsl.uv()),
+    tsl.texture({ name: "depth" }, tsl.uv()),
+    tsl.texture({ name: "normal" }, tsl.uv()),
+    {
+      camera: {
+        near: 0.1,
+        projectionMatrix: { elements: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, -1, -1, 0, 0, -0.1, 0] },
+      },
+      metalnessNode: tsl.float(1),
+      roughnessNode: tsl.float(0.1),
+      reflectNonMetals: true,
+    },
+  );
+  check(typeof reflections[TSL_NODE] === "number", "ssr builds a render-texture node");
+  check(reflections.maxDistance.value === 1, "ssr maxDistance defaults to three's 1");
+  reflections.maxDistance.value = 30;
+  check(reflections.maxDistance.value === 30, "ssr maxDistance is a live uniform");
+  reflections.resolutionScale = 0.5;
+  check(reflections.resolutionScale === 0.5, "ssr resolutionScale reaches the render texture");
+
   // 9. builds screenUV once and flips it
   const screen = tsl.screenUV;
   check(tsl.screenUV === screen, "screenUV singleton instance");
@@ -1425,6 +1472,59 @@ if (runtime.tsl !== undefined) {
         { name: "swizzle:x", receiver: 2, args: [] },
       ]),
       "uniform(0).mul(2).x crosses as three calls, each on the node before it",
+    );
+  }
+  // A mat4 of four vec4 uniforms, each reading one column of a camera matrix with fromArray(elements, 4 * column),
+  // follows the camera. The offset used to be dropped, so all four columns read the first four lanes and the matrix
+  // stayed at its first pose (the volumetric fog and the glass refraction drew nothing on this engine).
+  {
+    const t = traceTsl(runtime.tsl);
+    const camera = new PerspectiveCamera();
+    const columns = [0, 1, 2, 3].map((column) => {
+      const value = new Vector4();
+      (value as { isVector4?: boolean }).isVector4 = true;
+      return t.tsl
+        .uniform(value)
+        .onRenderUpdate(() => value.fromArray(camera.matrixWorld.elements, column * 4));
+    });
+    t.tsl.mat4(...columns);
+    const lastColumns = () => t.uniforms.slice(-8).map((entry) => entry.split("=")[1]);
+    camera.position.set(1, 2, 3);
+    camera.updateMatrixWorld();
+    t.sync();
+    check(
+      isDeepStrictEqual(lastColumns().slice(0, 4), ["1,0,0,0", "0,1,0,0", "0,0,1,0", "1,2,3,1"]),
+      "a mat4 of four vec4 columns reads each column of the camera matrix",
+    );
+    camera.position.set(4, 5, 6);
+    camera.updateMatrixWorld();
+    t.sync();
+    check(lastColumns()[3] === "4,5,6,1", "a mat4 of four vec4 columns follows the camera's pose");
+  }
+  // toArray(array, offset) fills the array it is given from offset on and answers that array, as three's does.
+  for (const [name, lanes] of [
+    ["Vector2", 2],
+    ["Vector4", 4],
+    ["Quaternion", 4],
+    ["Color", 3],
+    ["Matrix3", 9],
+    ["Matrix4", 16],
+  ] as const) {
+    // biome-ignore lint/suspicious/noExplicitAny: smoke test builds a class by name
+    const value = new (engine.classes as any)[name]();
+    const source = Array.from({ length: lanes + 3 }, (_, index) => index + 1);
+    // biome-ignore lint/suspicious/noExplicitAny: smoke test calls dynamic math methods
+    (value as any).fromArray(source, 3);
+    const target = new Array(lanes + 4).fill(-1);
+    // biome-ignore lint/suspicious/noExplicitAny: smoke test calls dynamic math methods
+    const answer = (value as any).toArray(target, 2);
+    check(
+      answer === target &&
+        isDeepStrictEqual(
+          target,
+          [-1, -1, ...source.slice(3, 3 + lanes), -1, -1].slice(0, lanes + 4),
+        ),
+      `${name}.toArray(array, offset) fills the array from offset`,
     );
   }
   {

@@ -51,5 +51,6 @@
 
 ## Decisions
 
+- 2026-10-19 (unreal-look epic, PR #541): the engine glTF loader now loads `KHR_materials_transmission`, `sheen`, `iridescence`, `anisotropy`, `dispersion`, `volume` and `EXT_materials_bump` into `Material` (`7ae08dc6f`), so models no longer fail to load. The standard program does not draw these features yet: each affected mesh is skipped with `TN_NATIVE_MATERIAL_UNSUPPORTED`, and the rest of the model draws. With the engine as the default, any user model with glass, cloth or coated materials loses those meshes on web and desktop. That makes these features user-facing for this PRD. Parameters with no `Material` field (sheen colour and roughness, iridescence IOR and thickness range, anisotropy rotation, volume thickness and attenuation) are not stored yet.
 - JS WebGPU frame-op serialization and replay stays in the legacy backend and is not part of native submission (§10).
 - Better visual defaults are separate opt-in changes, never part of the parity comparison (§9.3).

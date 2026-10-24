@@ -42,11 +42,12 @@ describe("native engine game spans", () => {
       path.resolve("packages/runtime-native/src/engine/wasm/web_host.cpp"),
       "utf8",
     );
-    expect(webHost).toMatch(/const WGPUFeatureName timestamp = WGPUFeatureName_TimestampQuery;/u);
+    expect(webHost).toMatch(/for \(WGPUFeatureName feature : \{WGPUFeatureName_TimestampQuery,/u);
     expect(webHost).toMatch(
-      /desc\.requiredFeatureCount = wgpuAdapterHasFeature\(adapter, timestamp\) \? 1 : 0;/u,
+      /if \(wgpuAdapterHasFeature\(adapter, feature\)\) features\.push_back\(feature\);/u,
     );
-    expect(webHost).toMatch(/desc\.requiredFeatures = &timestamp;/u);
+    expect(webHost).toMatch(/desc\.requiredFeatureCount = features\.size\(\);/u);
+    expect(webHost).toMatch(/desc\.requiredFeatures = features\.data\(\);/u);
     expect(webHost).toMatch(/renderer->setGpuTimer\(true\)/u);
     expect(webHost).toMatch(/case 7:\s*return renderer->lastGpuMs\(\);/u);
     expect(webHost).toMatch(/case 8:\s*return double\(renderer->gpuSamples\(\)\);/u);
@@ -62,7 +63,7 @@ describe("native engine game spans", () => {
       "utf8",
     );
     expect(renderer).toMatch(/job\.source = sourceFrame_;/u);
-    expect(renderer).toMatch(/\[[^\]]*\bsource\][^\n]*\(GpuStatus status/u);
+    expect(renderer).toMatch(/\[[^\]]*\bsource\b[^\]]*\][^\n]*\(GpuStatus status/u);
     expect(renderer).toMatch(/t->source = source;[^\n]*\n\s*\+\+t->samples;/u);
   });
 });
