@@ -76,6 +76,11 @@ export interface IModelTexturesOptions {
    */
   readonly transcoderBytes?: number;
   /**
+   * Internal switch for the authored-container JPEG rung (default on). A caller that needs the
+   * KTX2 ladder alone, such as a test of rung selection, turns it off.
+   */
+  readonly jpeg?: boolean;
+  /**
    * Longest edge an embedded image may keep, default 2048. Larger images are box-resampled
    * down preserving aspect ratio; smaller ones are never upscaled.
    */
@@ -557,6 +562,44 @@ export async function encodeTextureLadder(
   throw new Error("TN_ASSETS_TEXTURE_FLOOR: forced codec fails its configured floor.");
 }
 
+/**
+ * The smallest JPEG quality that still passes the same floor as every other rung. A colour map
+ * authored as a JPEG or PNG often has 25 to 40 percent of its bytes to give at SSIM 0.95, and
+ * JPEG needs no runtime decoder. Data slots (normal, occlusion, metallic-roughness) never enter
+ * this ladder: lossy chroma on those is a shading error the floor does not model.
+ */
+const JPEG_QUALITY_RUNGS = [75, 80, 85, 90] as const;
+
+async function encodeJpegCandidate(
+  data: Uint8Array,
+  width: number,
+  height: number,
+  options: IImageQualityOptions & { readonly floor?: Partial<IImageQualityFloor> },
+): Promise<{ readonly buffer: Buffer; readonly quality: ITextureQuality } | undefined> {
+  const sharp = (await import("sharp")).default;
+  for (const quality of JPEG_QUALITY_RUNGS) {
+    const buffer = await sharp(Buffer.from(data), {
+      raw: { channels: 4, height, width },
+    })
+      .jpeg({ mozjpeg: true, quality })
+      .toBuffer();
+    const decoded = await decodeImageBytes(buffer, "jpeg-candidate");
+    const score = imageQuality(data, decoded.data, width, height, options);
+    if (score.status !== "pass" || score.alpha.meanAbsoluteError !== 0) continue;
+    return {
+      buffer,
+      quality: {
+        ...score,
+        codec: "jpeg",
+        rung: `jpeg@${String(quality)}`,
+        sourceHeight: height,
+        sourceWidth: width,
+      },
+    };
+  }
+  return undefined;
+}
+
 function gpuBytes(width: number, height: number, codec: string): number {
   return Math.round(width * height * (GPU_BYTES_PER_PIXEL[codec] ?? 4) * MIP_FACTOR);
 }
@@ -784,6 +827,28 @@ export async function compressEmbeddedTextures(
       continue;
     }
 
+    // A colour map needs no runtime decoder in its authored container. Pick the smallest JPEG
+    // rung the floor allows; KTX2 then has to beat that, plus the shared transcoder, to win.
+    const authoredContainer =
+      !explicit &&
+      !authoredBasis &&
+      options.jpeg !== false &&
+      options.astc !== true &&
+      target.width === decoded.width &&
+      target.height === decoded.height &&
+      UNIVERSAL_IMAGE_CONTAINERS.has(texture.getMimeType()) &&
+      slots.some((slot) => COLOUR_SLOTS.has(slot));
+    const jpeg = authoredContainer
+      ? await encodeJpegCandidate(data, target.width, target.height, {
+          ...textureQualitySemantics(texture),
+          floor: options.floor,
+        })
+      : undefined;
+    const jpegLimit =
+      jpeg !== undefined && jpeg.buffer.byteLength < image.byteLength
+        ? jpeg.buffer.byteLength
+        : image.byteLength;
+
     let selected: Awaited<ReturnType<typeof encodeTextureLadder>>;
     try {
       if (authoredBasis && target.width === decoded.width && target.height === decoded.height) {
@@ -826,7 +891,7 @@ export async function compressEmbeddedTextures(
           target.width === decoded.width &&
           target.height === decoded.height &&
           UNIVERSAL_IMAGE_CONTAINERS.has(texture.getMimeType())
-            ? { maxBytes: image.byteLength - transcoderBytes }
+            ? { maxBytes: jpegLimit - transcoderBytes }
             : {}),
           ...(forced === undefined ? {} : { forced }),
         });
@@ -840,6 +905,14 @@ export async function compressEmbeddedTextures(
       throw new Error(`TN_ASSETS_MODEL_BASIS_ASTC: '${logicalPath}#${key}': ${messageOf(error)}`);
     }
     const encoded = selected.encoded;
+    if (encoded === undefined && jpeg !== undefined && jpeg.buffer.byteLength < image.byteLength) {
+      texture.setImage(jpeg.buffer).setMimeType("image/jpeg");
+      bytesAfter += jpeg.buffer.byteLength;
+      gpuBytesAfter += gpuBytes(target.width, target.height, "none");
+      formats[key] = "none";
+      if (options.measureQuality !== false) scores[key] = jpeg.quality;
+      continue;
+    }
     // A tiny source can cost less than the KTX2 container alone. Keep its exact bytes when
     // encoding cannot save download bytes *and* the authored container needs no extension to be
     // read; a WebP costs a decoder-free target the whole model, which is never the smaller cost.

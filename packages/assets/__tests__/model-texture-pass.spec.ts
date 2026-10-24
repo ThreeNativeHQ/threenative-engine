@@ -3,6 +3,7 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import { type Document, NodeIO } from "@gltf-transform/core";
 import { ALL_EXTENSIONS, EXTTextureWebP, KHRTextureBasisu } from "@gltf-transform/extensions";
+import { listTextureSlots } from "@gltf-transform/functions";
 import { read as readKTX2, write as writeKTX2 } from "ktx-parse";
 import { MeshoptDecoder, MeshoptEncoder } from "meshoptimizer";
 import { PNG } from "pngjs";
@@ -274,7 +275,10 @@ describe("embedded model textures", () => {
       .getRoot()
       .listTextures()[0]
       ?.setImage(PNG.sync.write(PNG.sync.read(flat), { deflateLevel: 0 }));
-    const summary = await compressEmbeddedTextures(document, "flat.glb", { transcoderBytes: 0 });
+    const summary = await compressEmbeddedTextures(document, "flat.glb", {
+      jpeg: false,
+      transcoderBytes: 0,
+    });
     expect(summary?.quality.checker?.status).toBe("pass");
     const decoded = PNG.sync.read(flat);
     const passing: Uint8Array[] = [];
@@ -299,6 +303,7 @@ describe("embedded model textures", () => {
     // Force the original first passing candidate instead of the byte minimum.
     document.getRoot().listTextures()[0]?.setImage(flat).setMimeType("image/png");
     await compressEmbeddedTextures(document, "flat.glb", {
+      jpeg: false,
       overrides: [{ slot: "baseColorTexture", codec: "etc1s" }],
       transcoderBytes: 0,
     });
@@ -326,6 +331,45 @@ describe("embedded model textures", () => {
       rung: "uastc+rdo λ3 +zstd",
       status: "pass",
     });
+  });
+
+  it("should re-encode an opaque colour map as the smallest passing JPEG", async () => {
+    const document = await new NodeIO().readBinary(await fixtureWithTextures({ width: 256 }));
+    const colour = document
+      .getRoot()
+      .listTextures()
+      .find((texture) => listTextureSlots(texture).includes("baseColorTexture"));
+    if (colour === undefined) throw new Error("missing colour image");
+    // A smooth gradient: large as an unfiltered PNG, tiny as JPEG, and the floor holds.
+    colour
+      .setImage(
+        rgbaPng({
+          blue: (x, y) => (x + y) % 256,
+          green: (_x, y) => y % 256,
+          height: 256,
+          red: (x) => x % 256,
+          width: 256,
+        }),
+      )
+      .setMimeType("image/png");
+    const sourceBytes = colour.getImage()?.byteLength ?? 0;
+    const input = Buffer.from(await new NodeIO().writeBinary(document));
+    const { buffer, entry } = await compiled(input, {
+      textures: { transcoderBytes: BASIS_TRANSCODER_BYTES },
+    });
+    const output = await readOutput(buffer);
+    const cooked = output
+      .getRoot()
+      .listTextures()
+      .find((texture) => listTextureSlots(texture).includes("baseColorTexture"));
+    expect(cooked?.getMimeType()).toBe("image/jpeg");
+    expect(cooked?.getImage()?.byteLength ?? 0).toBeLessThan(sourceBytes);
+    expect(entry.embeddedTextures).toMatchObject({ count: 2 });
+    const normal = output
+      .getRoot()
+      .listTextures()
+      .find((texture) => listTextureSlots(texture).includes("normalTexture"));
+    expect(normal?.getMimeType()).not.toBe("image/jpeg");
   });
 
   it("should never try etc1s for a normal map", async () => {
@@ -508,7 +552,7 @@ describe("embedded model textures", () => {
       config: { models: { textures: { floor: { ssim: 0, meanDeltaE00: 100 } } } },
     });
     const score = (await read()).entries["prop.glb"]?.embeddedTextures.quality.checker;
-    expect(score?.rung).toBe("uastc+rdo λ3 +zstd");
+    expect(score?.rung).toBe("jpeg@75");
     expect(score?.floor).toEqual({ ssim: 0, meanDeltaE00: 100 });
   });
 
