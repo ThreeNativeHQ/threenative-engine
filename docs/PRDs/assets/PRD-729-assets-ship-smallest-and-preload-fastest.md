@@ -134,6 +134,12 @@ Candidates, ranked by baseline bytes:
 - **2026-10-23: byte goals from the baseline.** 3 MiB and 25% are a 44% cut from 5.37 MiB. Models
   hold 4.33 MiB, so the goal is out of reach without a model lever.
 
+- **2026-10-23, João: fix the Wasm engine provisioning on this PR.** `pnpm test:templates` needs the
+  browser Wasm engine, which git does not carry. Two gate runs failed on it (`TN_WASM_ENGINE_MISSING`,
+  then a build without `cgltf` that refused every model). `pnpm wasm:build` now fetches the sources
+  and builds it, the target refuses to build without `cgltf`, and the template gate stops at once
+  without the pair. Lever 2 stays provisional until the gate runs green on a quiet machine.
+
 ## Blocked on
 
 Nothing.

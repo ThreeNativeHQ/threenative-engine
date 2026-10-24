@@ -40,6 +40,7 @@
     "hooks:install": "git config core.hooksPath githooks",
     "lint": "biome check .",
     "native:build": "pnpm --filter @threenative/runtime-native native:build",
+    "wasm:build": "pnpm --filter @threenative/runtime-native wasm:build",
     "native:qualify:physical": "pnpm --filter @threenative/runtime-native native:qualify:physical",
     "native:verify:desktop": "pnpm --filter threenative-native-smoke test && pnpm --filter @threenative/runtime-native native:verify:desktop",
     "native:verify:android:artifact": "node packages/runtime-native/scripts/check-android-16kb-alignment.mjs",

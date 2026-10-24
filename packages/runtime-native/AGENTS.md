@@ -103,6 +103,7 @@ remain open.
 - `third_party/`, `build/`, `.runtime/` and `artifacts/` stay untracked; a tracked file under
   `third_party/` fails `pnpm budgets`.
 - `scripts/download-deps.mjs` is the only supported dependency reconstruction path.
+- `pnpm wasm:build` (from the repository root) builds the browser Wasm engine the default `engine: "threenative"` needs: it fetches `stb`, `cgltf` and `webp-source` through `download-deps.mjs`, then runs the `wasm` preset with the Emscripten SDK in `$EMSDK` (default `~/emsdk`). The `tn-native-engine-web` target refuses to build without `cgltf`, and `pnpm test:templates` stops at once when the pair is missing. Copying another worktree's pair is not the fix.
 - Native compilation is opt-in via `pnpm native:build`. The default repository gate must not
   require CMake, an NDK, or Xcode.
 - A native runtime tree anywhere but this package is a hard budget failure.
