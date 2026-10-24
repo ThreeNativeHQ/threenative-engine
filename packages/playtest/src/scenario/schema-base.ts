@@ -516,7 +516,10 @@ export interface IPlaytestVisualRegionThresholds {
   minNonblankPixelRatio?: number;
 }
 
-export interface IPlaytestVisualStaticRegion extends IPlaytestVisualRegionBounds, IPlaytestVisualRegionThresholds {}
+export interface IPlaytestVisualStaticRegion extends IPlaytestVisualRegionBounds, IPlaytestVisualRegionThresholds {
+  /** Floor on `regionSharpness` (Laplacian variance at full over half resolution); a smeared frame drops it. */
+  minSharpness?: number;
+}
 
 export interface IPlaytestVisualElementRegion extends IPlaytestVisualRegionThresholds {
   element: IPlaytestVisualRegionTarget;

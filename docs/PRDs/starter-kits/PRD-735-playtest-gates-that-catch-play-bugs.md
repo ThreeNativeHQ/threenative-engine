@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-735 — Playtest gates that catch the bugs a player finds in five minutes
 
-**Status:** NOT STARTED
+**Status:** PARTIAL — Phase 1 harness boxes landed
 **Priority:** P1 — every kit had green scenarios while the owner hit a crash, 30 fps, skating limbs, dead controls and a smeared image by hand (all phases open).
 **Complexity:** 5 (MEDIUM) — `packages/playtest` schema, evaluators and capture (+3), kit scenario files (+1), template `AGENTS.md` rules (+1). Risk override: none.
 **Owner:** João
@@ -58,14 +58,14 @@ exploration step, no sharpness metric and no procedural-rig slip measurement exi
 
 ### Phase 1 — crash and frame budget
 
-- [ ] `explore` step kind expands deterministically into input steps; wrong-typed fields throw at load. proof: `pnpm exec vitest run packages/playtest/__tests__/explore-step.spec.ts`
-- [ ] A `performance` assertion without `maxFrameMsP95` applies the adapter-derived budget and reports its source. proof: `pnpm exec vitest run packages/playtest/__tests__/frame-budget.spec.ts`
+- [x] `explore` step kind expands deterministically into input steps; wrong-typed fields throw at load. proof: `pnpm exec vitest run packages/playtest/__tests__/explore-step.spec.ts` — 10/10 green; full playtest suite 1782/1782.
+- [x] A `performance` assertion without `maxFrameMsP95` applies the adapter-derived budget and reports its source. proof: `pnpm exec vitest run packages/playtest/__tests__/frame-budget.spec.ts` — 6/6 green; 30 fps (33.3 ms) on an RTX 2080 identity fails the derived 20 ms, held 60 fps passes, Intel UHD gets 40 ms, SwiftShader and no adapter report why no budget applied.
 - [ ] Hop Garden at HEAD fails the `explore` scenario on the wall-probe crash. proof: playtest run against the Hop Garden consumer copy
 - [ ] The three kits' performance scenarios drop the 33 ms constant for the derived budget. proof: playtest run of each kit's `performance.playtest.json`
 
 ### Phase 2 — image and limbs
 
-- [ ] `visual.region.minSharpness` fails a smeared frame and passes a sharp one. proof: `pnpm exec vitest run packages/playtest/__tests__/sharpness.spec.ts`
+- [x] `visual.region.minSharpness` fails a smeared frame and passes a sharp one. proof: `pnpm exec vitest run packages/playtest/__tests__/sharpness.spec.ts` — 5/5 green. Metric: Laplacian variance at full over half resolution. Kit frames 2026-10-24: in-focus 0.39-0.61 (Hop Garden spawn 0.49, Lantern Vale 0.59), smeared 0.21-0.24 (Hop Garden after free play 0.21, Lantern Vale SSR arm 0.22); floor 0.3.
 - [ ] Limb slip measurement on named nodes fails a time-driven run cycle. proof: unit spec and a Lantern Vale run
 
 ### Phase 3 — controls

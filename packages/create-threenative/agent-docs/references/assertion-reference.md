@@ -165,7 +165,7 @@ Proves screenshot change, populated coordinate or DOM element-bound regions, dar
 | Field | Type | Required |
 | --- | --- | --- |
 | `frameDiff` | { baselineImage?: project-relative PNG, minChangedPixelRatio?: number, maxChangedPixelRatio?: number } | no |
-| `region` | static bounds { x: number, y: number, width: number, height: number, minNonblankPixelRatio?: number, maxDarkPixelRatio?: number, minDarkPixelRatio?: number, maxLuminance?: number } or element bounds { element: { id?: string, selector?: string }, minNonblankPixelRatio?: number, maxDarkPixelRatio?: number, minDarkPixelRatio?: number, maxLuminance?: number } | no |
+| `region` | static bounds { x: number, y: number, width: number, height: number, minSharpness?: number, minNonblankPixelRatio?: number, maxDarkPixelRatio?: number, minDarkPixelRatio?: number, maxLuminance?: number } or element bounds { element: { id?: string, selector?: string }, minNonblankPixelRatio?: number, maxDarkPixelRatio?: number, minDarkPixelRatio?: number, maxLuminance?: number } | no |
 | `entityVisible` | { entity: string, minProjectedPixels: number, throughoutFrames?: boolean } | no |
 
 
@@ -845,7 +845,7 @@ Bounds when the application's startup milestones happened: the world entered, fi
 
 ### `pipelineCensus`
 
-Bounds node-builder state builds and render-pipeline creations after a complete runtime capture proves that explicit shader warm-up settled; missing, incomplete, or malformed census evidence fails closed. **Use when** that is the thing the scenario must prove.
+Bounds node-builder state builds and render-pipeline creations after a complete runtime capture proves that explicit shader warm-up settled; a named streamed scope must also prove its target-bound first visible world frame, and missing, incomplete, or malformed census evidence fails closed. **Use when** that is the thing the scenario must prove.
 
 - **Supported on:** web, desktop, bevy · **Requires:** runtime.pipelineCensus
 

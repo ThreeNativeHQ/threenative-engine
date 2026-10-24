@@ -81,7 +81,9 @@ export function validatePlaytestScenario(value: unknown, scenarioPath: string, a
     throw invalidScenario(scenarioPath, "Scenario subject must be a non-empty entity id when present.");
   }
   const subject = typeof value.subject === "string" ? value.subject : undefined;
-  const steps = value.steps.map((step, index) => validateStep(step, scenarioPath, index));
+  const steps = value.steps
+    .flatMap((step, index) => isRecord(step) && step.kind === "explore" ? expandExploreStep(step, scenarioPath, index) : [step])
+    .map((step, index) => validateStep(step, scenarioPath, index));
   if (steps.some(({ kind }) => kind === "aimAt") && subject === undefined) {
     throw invalidScenario(scenarioPath, "A step with kind 'aimAt' aims the subject player start; declare scenario.subject or replace the step.");
   }
@@ -113,6 +115,70 @@ export function validatePlaytestScenario(value: unknown, scenarioPath: string, a
     viewport: validateViewport(value.viewport, scenarioPath),
     warmupFrames: optionalNonNegativeInteger(value, "warmupFrames", scenarioPath, "scenario") ?? 0,
   };
+}
+
+/**
+ * Expand one `explore` step into the seeded run of ordinary `input` steps a player would make.
+ *
+ * Scripted steps only visit the places their author thought of; this drives the game's own bindings
+ * from wherever the scenario stands, so a crash, a NaN or a fall out of the world that only a
+ * player finds surfaces in the scenario's assertions. It expands at load, so every runner and every
+ * target that takes an `input` step takes it, and the same seed is the same run.
+ */
+export function expandExploreStep(value: Record<string, unknown>, scenarioPath: string, index: number): Record<string, unknown>[] {
+  rejectUnknownKeys(value, ["actions", "kind", "label", "move", "pointer", "seed", "ticks"], scenarioPath, `steps[${index}]`);
+  const keys = (field: "actions" | "move"): string[] => {
+    const list = value[field];
+    if (list === undefined && field === "actions") return [];
+    if (!Array.isArray(list) || list.length === 0 || list.some((key) => typeof key !== "string" || key.trim() === "") || new Set(list).size !== list.length) {
+      throw invalidStep(scenarioPath, `Scenario step ${index} with kind 'explore' must define ${field} as a non-empty array of unique key names.`);
+    }
+    return list as string[];
+  };
+  if (!Number.isSafeInteger(value.seed)) throw invalidStep(scenarioPath, `Scenario step ${index} with kind 'explore' must define seed as an integer.`);
+  const ticks = positiveInteger(value.ticks);
+  if (ticks === undefined) throw invalidStep(scenarioPath, `Scenario step ${index} with kind 'explore' must define ticks as a positive integer.`);
+  if (value.pointer !== undefined && typeof value.pointer !== "boolean") throw invalidStep(scenarioPath, `Scenario step ${index} with kind 'explore' pointer must be a boolean.`);
+  if (value.label !== undefined && (typeof value.label !== "string" || value.label.trim() === "")) throw invalidStep(scenarioPath, `Scenario step ${index} label must be a non-empty string.`);
+  const move = keys("move");
+  const actions = keys("actions");
+  // mulberry32: the playtest package may not depend on core's createRandom, and the run must replay.
+  let state = (value.seed as number) >>> 0;
+  const random = (): number => {
+    state = (state + 0x6d2b79f5) >>> 0;
+    let t = state;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  const pick = (list: readonly string[]): string => list[Math.floor(random() * list.length)]!;
+  const steps: Record<string, unknown>[] = [];
+  let heading = pick(move);
+  for (let left = ticks; left > 0;) {
+    // Held for 10-59 ticks: long enough to build speed and leave the ground, short enough to turn often.
+    const holdTicks = Math.min(left, 10 + Math.floor(random() * 50));
+    // A player keeps a heading for a while: a fresh key every step is a random walk that never
+    // leaves the spawn, and the walls, ledges and enemies a crash needs are further out.
+    if (random() < 0.2) heading = pick(move);
+    const press = new Set([heading]);
+    if (move.length > 1 && random() < 0.35) press.add(pick(move));
+    // Half the steps press an action, and a quarter of those a second one in the same tick: the
+    // combinations (crouch + jump, attack in the air) are where move sets interact and break.
+    if (actions.length > 0 && random() < 0.5) {
+      press.add(pick(actions));
+      if (random() < 0.25) press.add(pick(actions));
+    }
+    steps.push({
+      holdTicks,
+      kind: "input",
+      press: [...press],
+      ...(value.pointer === true ? { pointerPosition: { x: random(), y: random() } } : {}),
+      release: true,
+    });
+    left -= holdTicks;
+  }
+  if (typeof value.label === "string") steps[steps.length - 1]!.label = value.label;
+  return steps;
 }
 
 export function validateArtifacts(value: Record<string, unknown>, scenarioPath: string): IPlaytestArtifactRequest {
@@ -542,7 +608,7 @@ export function validateStep(value: unknown, scenarioPath: string, index: number
             ? "input"
             : undefined;
   if (value.kind !== undefined && kind === undefined) {
-    throw invalidStep(scenarioPath, `Scenario step ${index} kind must be 'aimAt', 'click', 'input', 'lifecycle', or 'wait'.`);
+    throw invalidStep(scenarioPath, `Scenario step ${index} kind must be 'aimAt', 'click', 'explore', 'input', 'lifecycle', or 'wait'.`);
   }
   const at = validateClickTarget(value.at, scenarioPath, index);
   const target = validateAimTarget(value.target, scenarioPath, index);

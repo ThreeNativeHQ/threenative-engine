@@ -1,6 +1,7 @@
 import { readPath, jsonEqual, textValue } from '../assertion-report.js';
 // Extracted verbatim from assertion-evaluators.ts (PRD-182 Phase 2); do not edit semantics here.
 import type { IEvaluationContext } from "./context.js";
+import { classifyAdapter, type IAdapterClassification } from "./adapter-class.js";
 import { evaluatePerformanceAssertion, evaluateResourceAnyOfAssertion, hasFinalPathExpectation, evaluatePathAssertion, pathValuePass, matchingSignals, evaluateWorldAssertion, evaluateAudioAssertion } from "./helpers.js";
 
 export function emitPerfSignalsWorld(ctx: IEvaluationContext): void {
@@ -8,12 +9,15 @@ export function emitPerfSignalsWorld(ctx: IEvaluationContext): void {
   const { input, scenarioAssertions } = ctx;
   emitTerrainResidency(input.report.observations?.components?.terrain, assertions, diagnostics);
   if (scenarioAssertions.performance !== undefined) {
+    const budget = frameBudget(scenarioAssertions.performance.maxFrameMsP95, classifyAdapter(input.report));
     const result = evaluatePerformanceAssertion(
-      scenarioAssertions.performance,
+      budget.maxFrameMsP95 === undefined ? scenarioAssertions.performance : { ...scenarioAssertions.performance, maxFrameMsP95: budget.maxFrameMsP95 },
       input.report.observations?.performanceSeries,
       input.scenario.sourcePath,
     );
-    assertions.push(...result.assertions);
+    // The budget rides on the rows that always exist, so a run says which budget held it, or why none did.
+    assertions.push(...result.assertions.map((row) =>
+      row.id === "performance.samples" || row.id === "performance.maxFrameMsP95" ? { ...row, details: { ...row.details, frameBudget: budget } } : row));
     diagnostics.push(...result.diagnostics);
   }
   for (const assertion of scenarioAssertions.resources ?? []) {
@@ -161,4 +165,43 @@ function emitTerrainResidency(
       severity: "error",
       suggestion: "Expose TerrainTiles.debug() through the terrain entity and inspect the residency counters.",
     });
+}
+
+/** A 60 Hz frame, or a 30 Hz one, with 20% for vsync jitter: p95 of a held 60 fps reads 17-18 ms. */
+const DESKTOP_FRAME_MS = 20;
+const HANDHELD_FRAME_MS = 40;
+
+export interface IFrameBudget {
+  readonly adapterClass?: string;
+  readonly gpuFamily?: string;
+  /** Absent when no budget applies; `reason` then says why. */
+  readonly maxFrameMsP95?: number;
+  readonly reason: string;
+  readonly source: "adapter" | "scenario";
+}
+
+/**
+ * The frame budget a `performance` assertion is held to.
+ *
+ * A budget the author picks is the one that went wrong: every starter kit wrote 33 ms, so 30 fps on
+ * a desktop RTX 2080 passed. Unset, the budget follows the adapter the harness classified, never a
+ * tier the game chose: a 60 Hz frame on a discrete or unnamed hardware GPU, a 30 Hz frame on an
+ * integrated or mobile one. A CPU rasteriser or an unnamed adapter cannot vouch for a frame rate,
+ * so no budget applies and the report says so. A number in the scenario is an override, reported.
+ */
+export function frameBudget(explicit: number | undefined, adapter: IAdapterClassification): IFrameBudget {
+  const identity = {
+    ...(adapter.adapterClass === undefined ? {} : { adapterClass: adapter.adapterClass }),
+    ...(adapter.gpuFamily === undefined ? {} : { gpuFamily: adapter.gpuFamily }),
+  };
+  if (explicit !== undefined) return { ...identity, maxFrameMsP95: explicit, reason: "maxFrameMsP95 set in the scenario overrides the adapter budget", source: "scenario" };
+  if (adapter.adapterClass === undefined) return { ...identity, reason: "the run named no adapter to derive a frame budget from", source: "adapter" };
+  if (adapter.adapterClass === "software") return { ...identity, reason: `software adapter ${adapter.softwareAdapter ?? ""} cannot carry a frame rate`.replace("  ", " "), source: "adapter" };
+  const handheld = adapter.gpuFamily !== undefined && adapter.gpuFamily !== "discrete";
+  return {
+    ...identity,
+    maxFrameMsP95: handheld ? HANDHELD_FRAME_MS : DESKTOP_FRAME_MS,
+    reason: handheld ? `${adapter.gpuFamily} GPU: a 30 Hz frame plus 20% jitter` : "desktop hardware GPU: a 60 Hz frame plus 20% jitter",
+    source: "adapter",
+  };
 }

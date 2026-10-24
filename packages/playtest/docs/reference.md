@@ -403,6 +403,16 @@ and applies them through the setup channel as quaternion data — no CDP mouse e
 OS-focus dependency. An `aimAt` step cannot also deliver input (`press`, pointers) or
 ignored holds (`holdTicks`/`holdFrames`); follow it with a `waitTicks` step to hold the pose.
 
+`{ kind: "explore", seed, ticks, move: [...keys], actions?: [...keys], pointer?: true, label? }`
+plays the way a player does, not the way the author thought to: at load it expands into seeded
+`input` steps of 10-59 ticks. Each holds a heading `move` key that usually carries on to the next
+step, sometimes a second `move` key, and half the time one or two `actions` keys pressed together;
+`pointer: true` also moves the mouse to a seeded spot each step. The same seed is the same run, it
+covers `ticks` exactly, and `label` lands on its last step. Because it is ordinary input it runs on
+every target an `input` step runs on. List one key for every bound action: an action left out is a
+control no exploration reaches. Pair it with `diagnostics` (a page error or a throw in the frame
+loop fails `noConsoleErrors`) and a bound on the subject's final state.
+
 Every requested override rides into the run report as `setup.requested` next to what
 applied (`setup.applied`). A run whose placement cannot apply fails with the reason named —
 an overridden spawn must be visible in diagnostics, never green-with-silence. The game keeps

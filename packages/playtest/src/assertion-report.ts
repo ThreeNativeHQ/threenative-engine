@@ -106,7 +106,7 @@ export interface IPlaytestObservations {
     changedPixelRatio?: number;
     comparisonSource?: string;
     elementRegions?: IPlaytestVisualElementRegionObservation[];
-    nonblankRegions?: Array<{ darkPixelRatio?: number; height: number; nonblankPixelRatio: number; width: number; x: number; y: number }>;
+    nonblankRegions?: Array<{ darkPixelRatio?: number; height: number; nonblankPixelRatio: number; sharpness?: number; width: number; x: number; y: number }>;
     /** Visual frame observations only; performance samples live in performanceSeries. */
     runtimeDiagnosticsSeries?: unknown[];
   };
