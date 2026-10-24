@@ -65,12 +65,10 @@ it("defaults auto exposure on, so a renderer without WebGPU reports the fixed fa
   });
 });
 
-it("reports the fixed exposure on a native host, where the meter's passes are not ported", () => {
+it("keeps the meter on a native host, where the engine player runs its passes", () => {
   host.native = true;
-  expect(report({}, "webgpu").dropped).toContainEqual({
-    name: "autoExposure",
-    reason: "runtime:native",
-  });
+  const dropped = report({}, "webgpu").dropped.map((d) => d.name);
+  expect(dropped).not.toContain("autoExposure");
 });
 
 it("keeps autoExposureEnabled: false as the named override for the fixed exposure", () => {

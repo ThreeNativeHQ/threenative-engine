@@ -226,6 +226,34 @@
       "reason": "The template's LocalExposureNode (a bilateral grid of log luminance, read as a per pixel gain) and UnrealBloomNode (a downsample chain and six Gaussians) on one frame, on the host as well as the browser. Both are generated template source, so a host that drops a pass, a float render target or a wide loop leaves a game broken where it ships. The frame has a near black half, a bright half, the same mid grey card in each (local exposure moves the two cards by different amounts) and a small bright lamp (the bloom halo), so a stage that silently does nothing on the host cannot match the browser reference. Phones are not registered: local exposure is off on the low tier, as in Unreal's mobile profile. Measured 2026-10-21 on the RTX 2080 desktop lane (Chrome reference and the Linux host, both Dawn on the same adapter): 0 pixels differ and the mean deltaE is 0. The tolerance stays at 0.06 and 9.0 because no software adapter was measured."
     },
     {
+      "id": "auto-exposure",
+      "title": "metered auto exposure",
+      "category": "rendering",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/auto-exposure.js",
+      "owner": "PRD-732",
+      "browserRecipe": "webgpu",
+      "requiresHardwareAdapter": true,
+      "laneRegistrations": {
+        "browser": {
+          "registered": true,
+          "target": "web",
+          "assertsAdapter": true
+        },
+        "desktop": {
+          "registered": true,
+          "target": "desktop"
+        }
+      },
+      "tolerance": {
+        "pixelMismatchRatio": 0.06,
+        "perceptualDeltaE": 9.0
+      },
+      "desktopGate": true,
+      "required": true,
+      "reason": "Core's AutoExposureNode (a luminance reduction chain, a histogram and a ping-pong adaptation texture, all live render targets whose textures swap every frame) on one frame, on the host as well as the browser. Every kit that takes core's look builds it, so a host that cannot take a boolean uniform or a render target texture swap leaves those kits unable to start (TN_TSL uniform, then TN_NATIVE_TEXTURE_VALUE_TYPE). The frame is half near black and half bright, so the metered exposure lands far from the seed of 1 and a host that never measures cannot match the browser reference. reset() adopts the first measured target, so the settled value does not depend on the frame clock. Measured 2026-10-24 on the RTX 2080 desktop lane (Chrome reference with upstream three, and the V8 engine player on the owned engine, both on the same adapter): 0 pixels differ and the mean deltaE is 0. The tolerance stays at 0.06 and 9.0 because no software adapter was measured."
+    },
+    {
       "id": "filmic-tonemap",
       "title": "filmic tone curve",
       "category": "rendering",

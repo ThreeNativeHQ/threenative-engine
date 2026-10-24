@@ -77,6 +77,8 @@ if (names.length === 0) throw new Error(`TN_TEMPLATE_POST_EMPTY: ${templates}`);
  * the stage hands the chain: a float gain, or an rgb colour.
  */
 const HOST_RUN: Record<string, { row: string; lanes: string }> = {
+  // Core's metered exposure: live render targets and per-frame texture swaps, run by the engine player.
+  AutoExposureNode: { row: "auto-exposure", lanes: "x" },
   LocalExposureNode: { row: "local-exposure", lanes: "x" },
   UnrealBloomNode: { row: "local-exposure", lanes: "xyz" },
   // The owned engine's live screen-space effects (post_effects.cpp, not a cooked package): core's chain builds them for
@@ -141,13 +143,6 @@ Object.defineProperty(GTAONode.prototype, "reachPx", {
   get(this: { _reachPx?: { value: number } }) {
     this._reachPx ??= { value: 0 };
     return this._reachPx;
-  },
-});
-
-// The sweep lowers the chain for a native host, so core sees one (it keeps the fixed exposure there and says so).
-Object.assign(globalThis, {
-  __THREENATIVE_NATIVE__: {
-    platform: { runtime: "native", os: "linux", formFactor: "desktop", maxTouchPoints: 0 },
   },
 });
 
