@@ -126,10 +126,10 @@
         "atSteps": [
           {
             "label": "after",
-            "equals": "JUMP AGAIN AS YOU LAND: DOUBLE JUMP"
+            "equals": "SPACE AGAIN: DOUBLE JUMP"
           }
         ],
-        "allowTrivial": "The toast is empty at rest and clears 2.4 s later; the claim is the hint showing as the chain opens."
+        "allowTrivial": "The toast is empty at rest and clears 2.4 s later; the claim is the hint showing from the first single jump."
       }
     ]
   }

@@ -325,7 +325,8 @@ export class Play extends Scene<GameState, IPhysicsContext> {
             burst("poundRing", at.x, feet + 0.1, at.z);
             burst("debris", at.x, feet + 0.1, at.z);
           } else burst("landing", at.x, feet + 0.05, at.z);
-        } else if (wasGrounded && JUMPS.has(action)) burst("takeoff", at.x, feet + 0.05, at.z);
+        } else if ((wasGrounded && JUMPS.has(action)) || action === "double")
+          burst("takeoff", at.x, feet + 0.05, at.z);
         if (action === "skid") burst("skid", at.x + fx * 0.3, feet + 0.05, at.z + fz * 0.3);
         // A wall kick faces away from the wall, so the contact is behind the hero.
         if (action === "wallKick") {
@@ -333,9 +334,8 @@ export class Play extends Scene<GameState, IPhysicsContext> {
           burst("kickStars", at.x - fx * 0.45, at.y + 0.2, at.z - fz * 0.45);
         }
         if (action === "ledgeHang") burst("ledge", at.x + fx * 0.45, feet + 1.3, at.z + fz * 0.45);
-        // The first jump landing that opens a chain teaches it, until the player has done one.
-        if (hero.chain === 1 && JUMPS.has(previous) && !chainTaught)
-          toast("JUMP AGAIN AS YOU LAND: DOUBLE JUMP", 2.4);
+        // A single jump teaches the double (in the air or on landing) until the player has done one.
+        if (action === "single" && !chainTaught) toast("SPACE AGAIN: DOUBLE JUMP", 2.4);
         if (action === "double") chainTaught = true;
         previous = action;
         airTicks = 0;

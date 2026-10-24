@@ -180,7 +180,21 @@
       {
         "entity": "player",
         "component": "wallKickRise",
-        "gte": 2
+        "gte": 3,
+        "allowTrivial": "A kick rises past a single jump's 2.2 m apex (18.6 against 12.6 m/s up)."
+      },
+      {
+        "entity": "player",
+        "component": "action",
+        "atSteps": [{ "label": "kick-rise", "equals": "wallKick" }],
+        "allowTrivial": "The press at the wall is a kick, never the air double jump."
+      },
+      {
+        "entity": "player",
+        "component": "yaw",
+        "gte": 1.4,
+        "lte": 1.75,
+        "allowTrivial": "The kick turns the hero from the wall: the run faced -1.57 rad, the kick faces 1.57."
       },
       {
         "entity": "player",

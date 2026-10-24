@@ -423,6 +423,46 @@ Each playtest runs on a project scaffolded from `--template collectathon`:
     IMPROVEMENT. Left for a later round: the pupils sit a little close to the nose, and the judge
     flags the stout-moustache-cap-overalls silhouette as close to a famous plumber (D5).
 
+  - Ledge grab (owner playtest 2026-10-24: "grip on edge is also flaky"). Measured offline with the
+    kit's `Hero` on the installed Rapier against the yard's 3 m ledge: 1,058 run-ups (4, 7 and 9.6
+    m/s; 0°, 30° and 60° off the face; a straight edge and a corner; a 0.2 s and a 0.5 s jump hold;
+    take-off 0.5 to 6 m out). Of the arcs that passed the 1.0–1.6 m band, HEAD grabbed or landed on
+    top in 46% (straight edge 55/44/34% at 0/30/60°). Two causes: the one probe ray ran along the
+    travel at the waist, so an angled approach slid along the wall unseen; and with the waist above
+    the top the probe was blind while the capsule leaned on the lip, so the stored speed into the
+    wall bonked the hero away as soon as the waist dropped below the top, before the band arrived.
+    The probe now follows the reference (sm64 decomp `mario_step.c`): two wall checks 0.3 m and
+    1.5 m above the feet (:401-402); a wall at the low one only is a ledge's face that never bonks
+    (:471-480); falling into it grabs a floor 1.0–1.6 m up (:348-374); a three-ray fan (the travel
+    and 45° either side) stands in for its round wall check. Result: 96% (edge 98/99/96%, corner
+    94/94/95%); the rest are bonks into the face below the band. Proof: `ledge-angle.playtest.json`
+    (a 45° running single that meets the face falling; HEAD exits 1: no grab, `ledgeGrabs` 0, the change exits 0 on the laptop gen-12lp, headed);
+    `ledge`, `ledge-too-high` and `wall-kick` exit 0.
+  - Air double jump (owner choice 2026-10-24, "Both": "I press double space it doesnt do the double
+    jump"). The classic landing chain stays exactly as it was; on top of it a second press 0.1 s
+    or more after take-off from a single jump, a walk-off fall or a wall kick rises again at the
+    single's 12.6 m/s, once per flight, back on a landing, a wall kick or a ledge grab. A press the
+    0.12 s buffer would carry to touchdown (a ray down over the buffer's drop finds ground) stays
+    the chain's. Chain choice: an air double lands as a double, so a press on that landing is the
+    triple; it reads as the third jump the player pressed. Dev builds log `TN_HERO_INPUT` on every
+    press and touchdown; the HUD hint reads "SPACE AGAIN: DOUBLE JUMP" from the first single.
+    Course check: heights stay gated (from flat ground the most is 5.3 m: the summit steps of 2.5
+    and 3.5 m keep their meaning, the 7 m pillar still needs the platform, the 11 m shaft block
+    still needs wall kicks). The 8.5 m islet gap is no longer "never a single": a single with a
+    late air double carries 8.9 to 13.4 m (a single alone 7.8 m), so the islet reads as a long
+    jump, a triple or a well-timed double; the gap is kept. Proof: `double-tap-air.playtest.json`
+    (second press at +8, +20 and +30 ticks; HEAD exits 1: `counts.airDouble` absent, the change exits 0); `double-tap` and
+    `jump-chain` exit 0. A press at a wall is a kick, always: the kick also takes a press buffered
+    up to 0.12 s before the bonk, and the air double yields while a wall the hero will bonk lies
+    within the buffer's distance. Offline, a running single into a 12 m wall with the second press
+    -8 to +9 ticks from the contact: the first cut made the air double at -8 to 0 (the contact tick
+    included); now -6 to +9 kick (rise 4.65 m against a single's 2.2 m, facing turned 180°) and
+    only -8 (0.13 s, outside the buffer) is an air double. `wall-kick` now also asserts the kick
+    at the press (`action` "wallKick" at `kick-rise`), a rise of 3 m or more and the turned
+    facing. Its late press after the window is an air double, never a second kick; the kick's rise
+    is recorded when that launch ends the kick's flight (the first green run read `wallKickRise` 0
+    because only a landing recorded it).
+
 ## Execution Phases
 
 #### Phase 1: The hero moves like the reference

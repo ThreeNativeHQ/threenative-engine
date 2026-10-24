@@ -65,6 +65,13 @@ export const HERO_FEEL = {
    * was simply lost, which is the miss players remember.
    */
   jumpBuffer: 0.12,
+  /**
+   * The air double jump, the owner's addition to the classic chain (2026-10-24): a second press
+   * this long after take-off, from a single jump, a walk-off fall or a wall kick, rises again at
+   * `jumpSpeed`. One per flight, back on a landing, a wall kick or a ledge grab. A press the
+   * buffer would carry to touchdown stays the chain's.
+   */
+  airJumpGuard: 0.1,
   backflipSpeed: 18.6,
   backflipBack: 4.8,
   sideflipSpeed: 18.6,
@@ -142,6 +149,10 @@ const WALL_AIR: ReadonlySet<HeroAction> = new Set([
   "wallKick",
   "fall",
 ]);
+/** Airborne actions a second press turns into the air double jump. */
+const AIR_JUMP: ReadonlySet<HeroAction> = new Set(["single", "fall", "wallKick"]);
+/** Dev builds log every jump press and its touchdown as `TN_HERO_INPUT`. */
+const DEV = (import.meta as unknown as { env?: { DEV?: boolean } }).env?.DEV === true;
 /** Jumps whose rise the jump button controls. */
 const VARIABLE: ReadonlySet<HeroAction> = new Set(["single", "double"]);
 /** Jumps a scenario measures: apex above take-off and ground distance along the take-off facing. */
@@ -163,6 +174,20 @@ export type WorldRay = (
 
 const _from = new Vector3();
 const _to = new Vector3();
+
+/** The nearest wall one probe height found, its unit normal flattened to the ground. */
+interface IWallProbe {
+  found: boolean;
+  x: number;
+  y: number;
+  z: number;
+  nx: number;
+  nz: number;
+}
+const _lower: IWallProbe = { found: false, nx: 0, nz: 0, x: 0, y: 0, z: 0 };
+const _upper: IWallProbe = { found: false, nx: 0, nz: 0, x: 0, y: 0, z: 0 };
+/** The wall probe's rays: along the travel and 45° to either side of it. */
+const WALL_FAN = [0, Math.PI / 4, -Math.PI / 4] as const;
 
 function forwardOf(yaw: number, target: Vector3): Vector3 {
   return target.set(-Math.sin(yaw), 0, -Math.cos(yaw));
@@ -195,6 +220,10 @@ export class Hero {
   #chainStage = 0;
   #chainTimer = 0;
   #jumpBuffer = 0;
+  #airJumpReady = true;
+  /** Seconds off the ground, and when in this flight jump was last pressed (-1: not yet). */
+  #airTime = 0;
+  #pressedAt = -1;
   #wallTimer = 0;
   #wallKickRise = 0;
   #wallKickFrom = 0;
@@ -327,6 +356,8 @@ export class Hero {
     this.#wallTimer = Math.max(0, this.#wallTimer - dt);
     this.hurtTimer = Math.max(0, this.hurtTimer - dt);
     const grounded = this.body.grounded;
+    const was = this.action;
+    this.#airTime = GROUND.has(was) ? 0 : this.#airTime + dt;
 
     if (this.action === "ledgeHang" || this.action === "ledgeClimb") {
       this.#ledgeStep(magnitude, jumpPressed, crouchPressed);
@@ -338,8 +369,20 @@ export class Hero {
         this.#groundStep(dt, magnitude, jump, crouchPressed, crouchHeld, attackPressed);
       }
     } else {
-      if (grounded && this.body.velocity.y <= 0) this.#land();
-      else this.#airStep(dt, magnitude, jumpPressed, jumpHeld, crouchPressed, attackPressed);
+      if (grounded && this.body.velocity.y <= 0) {
+        if (DEV && this.#pressedAt >= 0)
+          console.info(
+            `TN_HERO_INPUT land airborne=${this.#airTime.toFixed(2)} sincePress=${(this.#airTime - this.#pressedAt).toFixed(2)}`,
+          );
+        this.#land();
+      } else this.#airStep(dt, magnitude, jumpPressed, jumpHeld, crouchPressed, attackPressed);
+    }
+    if (jumpPressed) {
+      this.#pressedAt = GROUND.has(was) ? -1 : this.#airTime;
+      if (DEV)
+        console.info(
+          `TN_HERO_INPUT press airborne=${this.#airTime.toFixed(2)} from=${was} to=${this.action} buffered=${this.#jumpBuffer > 0}`,
+        );
     }
 
     if (GROUND.has(this.action)) {
@@ -473,18 +516,23 @@ export class Hero {
     this.body.gravity = -(action === "longJump" ? HERO_FEEL.longJumpGravity : HERO_FEEL.gravity);
   }
 
-  /** Leaves the ground as `action` with vertical speed `vy` and `forward` m/s along the facing. */
-  #launch(action: HeroAction, vy: number, forward: number): void {
+  /**
+   * Leaves the ground as `action` with vertical speed `vy` and `forward` m/s along the facing,
+   * counted under `count`.
+   */
+  #launch(action: HeroAction, vy: number, forward: number, count: string = action): void {
     this.#enter(action);
     forwardOf(this.yaw, this.#air).multiplyScalar(forward);
     this.body.velocity.y = vy;
     this.#cut = false;
+    // An air double jump ends the wall kick's flight before any landing records its rise.
+    if (this.#airKind === "wallKick") this.#wallKickRise = this.#peak - this.#wallKickFrom;
     this.#airKind = action;
     this.#takeoff.copy(this.mesh.position);
     this.#takeoffYaw = this.yaw;
     this.#takeoffSpeed = this.speed;
     this.#peak = this.mesh.position.y;
-    this.#counts[action] = (this.#counts[action] ?? 0) + 1;
+    this.#counts[count] = (this.#counts[count] ?? 0) + 1;
   }
 
   #groundStep(
@@ -619,8 +667,27 @@ export class Hero {
       this.body.velocity.y = this.#actionTime < feel.poundHang ? 0 : -feel.poundSpeed;
       return;
     }
-    if (jumpPressed && this.#wallTimer > 0) {
+    // A press at the wall is a kick, always: one made just before the contact waits in the buffer
+    // for the window, and the air double yields to it while a wall is in reach.
+    if ((jumpPressed || this.#jumpBuffer > 0) && this.#wallTimer > 0) {
+      this.#jumpBuffer = 0;
       this.#wallKick();
+      return;
+    }
+    if (
+      jumpPressed &&
+      this.#airJumpReady &&
+      AIR_JUMP.has(this.action) &&
+      this.#actionTime >= feel.airJumpGuard &&
+      !this.#landingSoon() &&
+      !this.#wallAhead()
+    ) {
+      // The air double keeps the air speed: `#launch` would aim it along the facing.
+      const { x, z } = this.#air;
+      this.#launch("double", feel.jumpSpeed, 0, "airDouble");
+      this.#air.set(x, 0, z);
+      this.#airJumpReady = false;
+      this.#jumpBuffer = 0;
       return;
     }
     if (crouchPressed && this.action !== "dive") {
@@ -648,38 +715,100 @@ export class Hero {
     if (WALL_AIR.has(this.action)) this.#probeWall();
   }
 
-  /** One ray along the travel direction at waist height finds a wall; a second finds its ledge. */
-  #probeWall(): void {
-    const feel = HERO_FEEL;
+  /**
+   * Falling onto ground within the drop the jump buffer covers: a press now lands as the chain's
+   * buffered jump, not as the air double jump.
+   */
+  #landingSoon(): boolean {
+    const vy = this.body.velocity.y;
+    if (vy >= 0) return false;
+    const t = HERO_FEEL.jumpBuffer;
+    const drop = -vy * t + 0.5 * HERO_FEEL.gravity * t * t;
+    const feet = this.mesh.position.y - FOOT_OFFSET;
+    _from.set(this.mesh.position.x, feet + 0.05, this.mesh.position.z);
+    _to.set(_from.x, feet - drop, _from.z);
+    const ground = this.#ray(_from, _to);
+    return ground !== undefined && ground.normal.y > 0.7;
+  }
+
+  /**
+   * A wall the hero will bonk within the jump buffer: met at the upper check inside the distance
+   * the buffer covers, fast enough into it to open the kick window.
+   */
+  #wallAhead(): boolean {
+    const reach = Math.hypot(this.#air.x, this.#air.z) * HERO_FEEL.jumpBuffer;
+    if (!this.#wallAt(1.5, _upper, CAPSULE.radius + 0.2 + reach)) return false;
+    return -(this.#air.x * _upper.nx + this.#air.z * _upper.nz) >= HERO_FEEL.wallBonkSpeed;
+  }
+
+  /**
+   * The nearest wall `height` above the feet, on a fan of three rays (the travel and 45° either
+   * side), into `out`. The fan stands in for the reference's round wall check, so a wall met at an
+   * angle is found too; one ray along the travel missed it.
+   */
+  #wallAt(height: number, out: IWallProbe, reach = CAPSULE.radius + 0.2): boolean {
     const speed = Math.hypot(this.#air.x, this.#air.z);
     const direction = this.#scratch;
     if (speed > 0.3) direction.set(this.#air.x / speed, 0, this.#air.z / speed);
     else forwardOf(this.yaw, direction);
     const centre = this.mesh.position;
-    _from.copy(centre);
-    _to.copy(centre).addScaledVector(direction, CAPSULE.radius + 0.15);
-    const hit = this.#ray(_from, _to);
-    if (hit === undefined || Math.abs(hit.normal.y) > 0.3) return;
-    const nx = hit.normal.x;
-    const nz = hit.normal.z;
-    const n = Math.hypot(nx, nz);
-    const wallX = nx / n;
-    const wallZ = nz / n;
-    // Ledge: falling, and floor 1.0-1.6 m above the feet just past the wall.
-    if (this.body.velocity.y <= 0) {
-      const feet = centre.y - FOOT_OFFSET;
+    let best = Number.POSITIVE_INFINITY;
+    out.found = false;
+    for (const turn of WALL_FAN) {
+      const c = Math.cos(turn);
+      const s = Math.sin(turn);
+      _from.set(centre.x, centre.y - FOOT_OFFSET + height, centre.z);
+      _to.set(direction.x * c - direction.z * s, 0, direction.x * s + direction.z * c);
+      _to.multiplyScalar(reach).add(_from);
+      const hit = this.#ray(_from, _to);
+      if (hit === undefined || Math.abs(hit.normal.y) > 0.3) continue;
+      const distance = hit.position.distanceToSquared(_from);
+      if (distance >= best) continue;
+      best = distance;
+      const n = Math.hypot(hit.normal.x, hit.normal.z);
+      Object.assign(out, {
+        found: true,
+        nx: hit.normal.x / n,
+        nz: hit.normal.z / n,
+        x: hit.position.x,
+        y: hit.position.y,
+        z: hit.position.z,
+      });
+    }
+    return out.found;
+  }
+
+  /**
+   * The reference's two wall checks, 0.3 m and 1.5 m above the feet (sm64 mario_step.c:401-402).
+   * A wall at the low one only is a ledge's face: it never bonks (mario_step.c:471-480), and
+   * falling into it the hero grabs a floor 1.0-1.6 m above the feet (mario_step.c:348-374).
+   */
+  #probeWall(): void {
+    const feel = HERO_FEEL;
+    const lower = this.#wallAt(0.3, _lower);
+    const upper = this.#wallAt(1.5, _upper);
+    if (lower && !upper) {
+      // Falling, and moving or pushing into the wall: the reference grabs only when the wall
+      // stopped it (mario_step.c:354-365).
+      const into =
+        -(this.#air.x * _lower.nx + this.#air.z * _lower.nz) -
+        (this.#intended.x * _lower.nx + this.#intended.z * _lower.nz);
+      if (this.body.velocity.y > 0 || into <= 0.1) return;
+      const feet = this.mesh.position.y - FOOT_OFFSET;
       _from.set(
-        hit.position.x - wallX * feel.ledgeAhead,
+        _lower.x - _lower.nx * feel.ledgeAhead,
         feet + feel.ledgeTop,
-        hit.position.z - wallZ * feel.ledgeAhead,
+        _lower.z - _lower.nz * feel.ledgeAhead,
       );
       _to.set(_from.x, feet + feel.ledgeBottom, _from.z);
       const ledge = this.#ray(_from, _to);
-      if (ledge !== undefined && ledge.normal.y > 0.7) {
-        this.#grabLedge(hit.position, wallX, wallZ, ledge.position);
-        return;
-      }
+      if (ledge !== undefined && ledge.normal.y > 0.7)
+        this.#grabLedge(_lower, _lower.nx, _lower.nz, ledge.position);
+      return;
     }
+    if (!upper) return;
+    const wallX = _upper.nx;
+    const wallZ = _upper.nz;
     // Only the speed into the wall counts: a glancing contact slides along it. `#air` is this
     // file's own vector, so the part pushing into the wall is removed here, or the stick would
     // keep adding to it while the body stands still against the wall.
@@ -703,6 +832,7 @@ export class Hero {
     // Face away from the wall: the facing becomes the wall's normal.
     this.yaw = Math.atan2(-this.#wall.nx, -this.#wall.nz);
     this.#wallTimer = 0;
+    this.#airJumpReady = true;
     this.#wallKicks += 1;
     this.#wallKickFrom = this.mesh.position.y;
     this.#launch("wallKick", feel.wallKickSpeed, feel.wallKickForward);
@@ -711,6 +841,7 @@ export class Hero {
   #grabLedge(wall: { x: number; z: number }, nx: number, nz: number, top: Vector3): void {
     this.#enter("ledgeHang");
     this.#ledgeGrabs += 1;
+    this.#airJumpReady = true;
     this.#ledge.copy(top);
     this.yaw = Math.atan2(nx, nz);
     this.#air.set(0, 0, 0);
@@ -752,6 +883,8 @@ export class Hero {
     const feel = HERO_FEEL;
     const kind = this.#airKind;
     this.landings += 1;
+    this.#airJumpReady = true;
+    this.#pressedAt = -1;
     if (MEASURED.includes(kind)) {
       this.#apex[kind] = this.#peak - this.#takeoff.y;
       const travelled = this.#scratch.subVectors(this.mesh.position, this.#takeoff).setY(0);

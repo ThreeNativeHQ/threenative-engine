@@ -1,0 +1,107 @@
+{
+  "name": "collectathon-ledge-angle",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "subject": "player",
+  "setup": {
+    "place": [
+      {
+        "entity": "player",
+        "at": {
+          "x": -12.08,
+          "y": 0.85,
+          "z": -1.92
+        },
+        "facing": {
+          "yaw": 2.3562
+        }
+      },
+      {
+        "entity": "walker.1",
+        "at": {
+          "x": 10,
+          "y": 0,
+          "z": -14
+        },
+        "frozen": true
+      },
+      {
+        "entity": "walker.4",
+        "at": {
+          "x": -4,
+          "y": 0,
+          "z": 26
+        },
+        "frozen": true
+      }
+    ]
+  },
+  "steps": [
+    {
+      "kind": "input",
+      "label": "run",
+      "press": ["KeyW"],
+      "holdTicks": 50,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "jump",
+      "press": ["KeyW", "Space"],
+      "holdTicks": 20,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "reach",
+      "press": ["KeyW"],
+      "holdTicks": 1,
+      "release": false
+    },
+    {
+      "label": "on-top",
+      "waitForResource": {
+        "id": "state",
+        "path": "landings",
+        "gte": 2
+      },
+      "timeoutMs": 120000,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "stand",
+      "press": [],
+      "holdTicks": 30,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "components": [
+      {
+        "entity": "player",
+        "component": "ledgeGrabs",
+        "equals": 1,
+        "allowTrivial": "A running jump that meets the 3 m ledge's face at 45 degrees gives exactly one ledge grab; one probe ray along the travel missed a wall met at an angle."
+      },
+      {
+        "entity": "player",
+        "component": "groundY",
+        "gte": 2.9,
+        "lte": 3.1,
+        "allowTrivial": "Standing on the 3 m ledge's top is the climb's outcome."
+      }
+    ]
+  }
+}
