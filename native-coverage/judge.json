@@ -1,0 +1,21 @@
+{
+  "status": "REVIEWED",
+  "models": [
+    "claude-sonnet-5-5"
+  ],
+  "effort": "high",
+  "overall": "NEUTRAL",
+  "frames": [
+    {
+      "name": "local-exposure",
+      "verdict": "NEUTRAL",
+      "reason": "Native run1 and run2 match browser run1 and run2 by eye, and the two native runs match each other. The emitter square, the dark-half card and the bright-half card sit at identical positions within each panel. The left half has the same dark-to-lighter horizontal gradient, with the same lighter edge at the split. Both cards read as the same mid-gray in the dark half and in the clipped-white half, so the local-exposure card behaviour is preserved. The soft bloom halo around the emitter is present in both native runs at comparable extent and softness. I see no color cast, banding, new clipping, missing halo or shift in card tone. The prior upstream thumbnail shows the same arrangement and tonal relationships (dot, two cards, white half), but it is too small to compare halo radius."
+    },
+    {
+      "name": "realism-ssgi",
+      "verdict": "NEUTRAL",
+      "reason": "In the left (gathered GI) halves, all four panels show the same knot silhouette in the same place. The lit tubes are the same teal/blue, with a faint warm brown/orange tint at the lower-left tube and the right edge. The black holes and occluded regions are the same, and the stippled speckle halo at the outer edges is the same. Native run1 and run2 agree with each other and with the browser runs. I see no tint shift, lost GI lighting, geometry change or new artifact. The right (AO=1) halves are flat white on all four panels, as expected for neutral scalar AO on both runtimes. That half carries no information, so I make no AO or GTAO claim. The speckle noise is also present in BEFORE, so it is not a regression. It is a visible trait of both runtimes and is not evidence of stability."
+    }
+  ],
+  "limitations": "I judged by eye at sheet resolution only. I had no zoom, pixel-diff or numeric meter readout, so I cannot rule out differences of a few code values in near-black GI regions or differences in the fine speckle pattern. I judged bloom halo radius qualitatively. The prior upstream thumbnail is about 128 px wide, so it only confirms coarse layout and tone preservation, not halo size. In the SSGI scene only GI-lit regions show geometry, so the geometry check covers just those areas. These are static frames, so I make no claim about motion or temporal stability. The flat-white AO=1 halves validate nothing about AO or GTAO. This is cross-platform parity between the owned Wasm and owned native engines, not a native-baseline regression test. The prior upstream Three SSGI comparison remains FAILED because the algorithms and defaults differ, and this NEUTRAL does not erase or alter that failure."
+}
