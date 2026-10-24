@@ -681,6 +681,7 @@ export class SkinnedBatch {
         }
         const repeatedRefresh = !held && display.writeFrame === this.#frame;
         const packet =
+          state?.gpuPoseEnabled === true &&
           !attached &&
           !repeatedRefresh &&
           !display.retired &&

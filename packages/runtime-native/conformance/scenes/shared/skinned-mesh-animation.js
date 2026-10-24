@@ -92,6 +92,7 @@ export function createRawSkinnedProof() {
         clips: [clip],
         strideSync: false,
         updateRate: index === 2 ? 1 : 4,
+        gpuPose: true,
       }),
   );
   for (const player of allPlayers) {

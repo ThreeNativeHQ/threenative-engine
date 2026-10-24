@@ -24,7 +24,7 @@ function present<T>(value: T | null | undefined): T {
   return value;
 }
 
-function fixture(velocity = true, rate: 1 | 4 | "auto" = 4) {
+function fixture(velocity = true, rate: 1 | 4 | "auto" = 4, gpuPose = true) {
   const scene = new Scene();
   const bones = Array.from({ length: 12 }, (_, i) => {
     const b = new Bone();
@@ -64,6 +64,7 @@ function fixture(velocity = true, rate: 1 | 4 | "auto" = 4) {
     clips: [clip],
     strideSync: false,
     updateRate: rate,
+    gpuPose,
   });
   player.play("sway");
   player.update(0, true);
@@ -112,6 +113,18 @@ function fixture(velocity = true, rate: 1 | 4 | "auto" = 4) {
 }
 
 describe("SkinnedBatch owned scalar display packets", () => {
+  it("keeps a held rig on its stock CPU pose unless the player opts into gpuPose", () => {
+    const f = fixture(true, 4, false);
+    try {
+      f.draw();
+      f.held();
+      expect(f.receipt().slots[0].currentRaw).toBe(false);
+      expect(animationRateStates.get(f.mesh)?.gpuPose).not.toBe(true);
+    } finally {
+      f.close();
+    }
+  });
+
   it("keeps bone attachments on the same stock pose as their character", () => {
     const f = fixture();
     try {

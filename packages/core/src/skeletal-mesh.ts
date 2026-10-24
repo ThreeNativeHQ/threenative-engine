@@ -12,6 +12,7 @@ export interface ISkeletalMesh3DOptions {
   readonly strideRoot?: Object3D;
   readonly strideSync?: boolean;
   readonly updateRate?: "auto" | number;
+  readonly gpuPose?: boolean;
 }
 
 export class SkeletalMesh3D extends AnimationPlayer {
@@ -26,6 +27,7 @@ export class SkeletalMesh3D extends AnimationPlayer {
       strideRoot: options.strideRoot ?? root,
       strideSync: options.strideSync,
       updateRate: options.updateRate,
+      gpuPose: options.gpuPose,
       preparation: rigPreparation(options.source),
     });
     if (options.size !== undefined) {

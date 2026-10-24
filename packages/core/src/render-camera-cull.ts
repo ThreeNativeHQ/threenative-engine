@@ -85,6 +85,8 @@ export interface IAnimationRateState {
   source: RenderCameraCull | undefined;
   evaluated: boolean;
   evaluation: number;
+  /** Set by the player from its `gpuPose` option; the skinned batch evaluates no other rig on the GPU. */
+  gpuPoseEnabled?: boolean;
   /** Set by the skinned batch while the GPU evaluates this rig's pose from keyframes and time. */
   gpuPose?: boolean;
   /** Set by the player: brings the CPU bones to the current playhead now. */

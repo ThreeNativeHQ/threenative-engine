@@ -339,6 +339,7 @@ export class Crowd extends Scene {
                 requiredClips: ["sway"],
                 strideSync: false,
                 updateRate,
+                gpuPose: true,
               });
         const mesh = player?.root ?? new Object3D();
         mesh.name = `walker-${index}`;

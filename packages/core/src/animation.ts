@@ -55,6 +55,13 @@ export interface IAnimationPlayerOptions {
    * Public mixer listeners/speed overrides stay full-rate; action speed interpolations do until settled.
    */
   readonly updateRate?: "auto" | number;
+  /**
+   * Let the skinned batch evaluate a held, distant rig's pose on the GPU from keyframes and time.
+   * Off by default: each vertex re-evaluates the pose in the main and shadow passes, which cost
+   * 2.7 / 10.3 / 13.8 ms of GPU time at 32 / 128 / 256 rigs on Intel gen-12lp (PRD-570). Held rigs
+   * otherwise keep their last CPU pose until their next evaluation.
+   */
+  readonly gpuPose?: boolean;
 }
 
 export interface IAnimationUpdateRateReport {
@@ -419,6 +426,7 @@ export class AnimationPlayer {
     const owner = new.target.name || "AnimationPlayer";
     this.root = options.root;
     this.updateRate = options.updateRate ?? "auto";
+    this.#rateState.gpuPoseEnabled = options.gpuPose === true;
     this.mixer = new LoopAwareAnimationMixer(
       options.root,
       (duringUpdate) => {
