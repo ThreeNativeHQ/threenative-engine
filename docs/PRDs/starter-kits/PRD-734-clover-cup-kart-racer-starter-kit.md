@@ -190,6 +190,15 @@ gates every kit must pass. Each playtest runs on a project scaffolded from `--te
   first kart's frame. A 1.6 m circle let a 2.15 m kart sit inside the one ahead of it.
 - 2026-10-24 (agent, judge round 1): flat road decals (pad plates, chevrons, bridge slabs) pitch to
   `course.slope`; flat on a hill, one end sank and the other floated as a dark quad.
+- 2026-10-24 (agent, judge round 1): shadows are one 2048² map over 60 m that follows the player,
+  as in the collectathon and platformer kits. The kit drew no shadow at all until now (the
+  renderer's shadow map was off). Turned on, the course-wide `VirtualShadowNode` cost a 30-50 ms
+  render phase on the Wasm engine and slowed the fixed-step race below real time (the race
+  playtest timed out at lap 1).
+- 2026-10-24 (agent): skid dashes laid after the first frame do not draw on the Wasm engine, even
+  in magenta at full opacity (92 laid in the drift run, none on screen; the initial matrices draw).
+  The ring keeps a fixed count with hidden dashes, which removed a stray dark quad; the missing
+  trail is reported as an engine bug, not patched in the kit.
 
 ## Execution Phases
 

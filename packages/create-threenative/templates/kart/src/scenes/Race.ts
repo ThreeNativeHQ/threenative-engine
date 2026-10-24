@@ -3,7 +3,6 @@ import {
   type ICtx,
   Scene,
   type SceneFrame,
-  VirtualShadowNode,
   isMobile,
   isTouchscreenAvailable,
   qualityTiers,
@@ -269,11 +268,6 @@ export class Race extends Scene<GameState> {
       ctx.renderer.raw as Parameters<typeof setupLighting>[1],
       shadows,
     );
-    // Clip levels round the camera: crisp under the karts, coarse out to the hills.
-    if (shadows)
-      lighting.key.shadow.shadowNode = new VirtualShadowNode(lighting.key, {
-        clipExtents: tier === "high" ? [14, 48, 160] : [16, 70],
-      });
     this.#post = setupPost(ctx.renderer, ctx.scene, ctx.camera, {
       ...environment,
       godraysLight: lighting.key,
