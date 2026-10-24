@@ -1,3 +1,5 @@
+import type { OutputRenderer } from "@threenative/core";
+import { WorldEnvironment } from "@threenative/core";
 // Generated for you: ordinary Three.js; ThreeNative does not read this file.
 //
 // This file wires two things together and decides nothing itself. `quality.ts`, in this folder,
@@ -12,8 +14,6 @@
 // `TN_QUALITY_TIER` names the tier that ran either way.
 import type { Camera, DirectionalLight, Scene } from "three";
 import { type QualityTier, qualityPreset, resolveQualityTier } from "./quality.js";
-import type { OutputRenderer } from "./worldEnvironment.js";
-import { WorldEnvironment } from "./worldEnvironment.js";
 
 export function setupPost(
   renderer: OutputRenderer,

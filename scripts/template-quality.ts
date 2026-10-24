@@ -104,6 +104,13 @@ const CONTRACT_FUNCTION = "export function resolveQualityTier";
  * finding, never a silently skipped row.
  */
 export function qualityContractSpan(source: string): string {
+  const coreResolver = "export const resolveQualityTier = qualityTiers.resolve;";
+  if (
+    source.includes(coreResolver) &&
+    /import\s*\{[^}]*\bqualityTiers\b[^}]*\}\s*from\s*["']@threenative\/core["']/u.test(source)
+  ) {
+    return `import { qualityTiers } from "@threenative/core";\n${coreResolver}`;
+  }
   const start = source.indexOf(CONTRACT_START);
   if (start === -1) {
     throw new Error(`declares no \`${CONTRACT_START}\``);
@@ -142,7 +149,11 @@ export function contractSpanHash(span: string): string {
  * moves every copy at once.
  */
 export function contractSpanThrows(span: string): boolean {
-  return /\bthrow new Error\(/u.test(span);
+  return (
+    /\bthrow new Error\(/u.test(span) ||
+    span ===
+      'import { qualityTiers } from "@threenative/core";\nexport const resolveQualityTier = qualityTiers.resolve;'
+  );
 }
 
 interface IContractSpan {
@@ -320,7 +331,9 @@ export async function checkTemplateQuality(root: string): Promise<ITemplateQuali
   const spans: IContractSpan[] = [];
   for (const template of templates) {
     const render = path.join(templatesDir, template, "src", "render");
-    const world = await readOptional(path.join(render, "worldEnvironment.ts"));
+    const world = await readOptional(
+      path.join(root, "packages/core/src/look/world-environment.ts"),
+    );
     const quality = await readOptional(path.join(render, "quality.ts"));
     const problems = [
       ...qualityProblems(quality),
@@ -328,10 +341,10 @@ export async function checkTemplateQuality(root: string): Promise<ITemplateQuali
       ...postprocessingProblems(await readOptional(path.join(render, "postprocessing.ts"))),
       ...docProblems(await readOptional(path.join(templatesDir, template, "AGENTS.md"))),
       ...(world === undefined
-        ? ["no src/render/worldEnvironment.ts"]
+        ? ["no core WorldEnvironment source"]
         : eagerSurfaceNodes(world).map(
             (entry) =>
-              `worldEnvironment.ts requests ${entry} eagerly — that attaches a colour target no fragment shader writes, and the frame renders black while the chain reports success`,
+              `core WorldEnvironment requests ${entry} eagerly — that attaches a colour target no fragment shader writes, and the frame renders black while the chain reports success`,
           )),
     ];
     for (const problem of problems) findings.push({ problem, template });

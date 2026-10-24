@@ -79,10 +79,11 @@ test("the conformance registry binds the composed render-chain scenario to deskt
     "utf8",
   );
   assert.match(postprocessing, /new WorldEnvironment/u);
+  assert.match(postprocessing, /import \{[^}]*WorldEnvironment[^}]*\} from "@threenative\/core"/u);
   assert.match(postprocessing, /world\.apply\(renderer, scene, camera/u);
 
   const worldEnvironment = readFileSync(
-    join(workspaceRoot, "packages/create-threenative/templates/starter/src/render/worldEnvironment.ts"),
+    join(workspaceRoot, "packages/core/src/look/world-environment.ts"),
     "utf8",
   );
   assert.match(worldEnvironment, /renderer\.createRenderChain/u);

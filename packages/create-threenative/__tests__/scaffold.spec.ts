@@ -209,6 +209,7 @@ const BUG_REPORT_SKILL_PATHS = [
 // Re-measured 2026-10-20 (PRD-626): every tree gains eslint.config.js and biome.json, three scripts and
 // two dev dependencies, and the pristine sources lose the unused bindings the new lint found.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
+  // PRD-723: measured core imports, vendor removal and current kit guidance; no pixel baseline changed.
   // 2026-10-19: every kit's exposureReadback.ts retries the undrawn cold-start target. Measured by this test.
   // PRD-632 (2026-10-19): every kit ships the shared filmic curve render/tonemap.ts. Measured by this test.
   // PRD-637 0.3.6 cohort: the template pins moved, so all thirteen trees were re-measured by this test.
@@ -286,24 +287,24 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-10-18 merging develop f30f9b6d3 (PRD-478) into PR #493: the merged Three patch moves every tree.
   // Recomputed 2026-10-16 for PRD-617: puzzle's boot-failure scenario asserts the engine-neutral
   // boot-failure text both engines now show, so only puzzle's tree moves.
-  "action-rpg": "049b89827707aea83ea5b9847d4c8c0d3a4e01af138c0928ad59cd7f21b080e8",
-  minimal: "1bdc31f8d31f074cde31e09d67ac850762482f481e4b41050d5679f7155ac085",
-  platformer: "27b6033ac8ce09c6b19894586865e465e2edfcc0b7edd7be02e4e8459b248e53",
-  puzzle: "78f16093d5dedabf3a7bff8b07bb261bd1c7f91339aeaae51f7a1a278a5442d2",
-  racing: "7e591c477bdf3fb7ad928576d3e5e5a9113b2792867e01a62c41ff1564513af3",
-  rain: "909fa2c73253480e882855c92043d65b0e2dca9f6499effac8d6a89dba644dcf",
-  rts: "ae2ceac563ac255d56834dd8af62b8be934f3c13dff7179a52ddaf78836d1469",
-  runner: "9b4349fd99dbc3f85aef3ba6eacdf755f5cedf69b7c16f943b0e98258acc5d49",
+  "action-rpg": "010ad3e24ddf0d8d14ddc04298e6a45521c2b5ca106c62b213c372268dbf9e58",
+  minimal: "9bcad98538aff0cd3d5fad7f9cfaba4402ba7a79e35e6721265618deffbd742f",
+  platformer: "6dade0f1dad9dcb489e8fbdf7ae86cf6b1c390e5d31632f88b17d2aa23eef1a3",
+  puzzle: "1e0784ea33f8ac428e0688e4b697070330a2808580010da64254cacc696d0108",
+  racing: "ba2773d2310bee325facc268a00bcb65ac258dcf4a5f90a8de7ff18b7d72000f",
+  rain: "bdcd69901d07138f9185d412304a2fb213a8d699419908aed953689803b6c4c6",
+  rts: "e4f710b0eba6dc39807066de4e8d7ca9051204288dd8684d17c0b7de92edacca",
+  runner: "7af8e9a0e246d598eb707c22b3b5b099714bcdb2c6a7355c610a8aee8fd018e4",
   // Finite-height readiness plus hull, sail, and buoy interpolation from the current swell pose.
-  sailing: "d27fc1acccff1f55428944f7c1e075c31e240c56fee6250d3feed7ac369f1438",
-  shooter: "7fa374b2f1471c7ad8a2af2bed5f019943b58cceef6844e616aaac9baa7450de",
-  snow: "c041fb86c6cd9f8c926594b6d869179369001ec2ae52457db11b4bf065f00e67",
+  sailing: "65e406f825f6acec7965c198811c293aefbc476e8cc8fcfe15f562326dda1111",
+  shooter: "95b2af2034f94860dbd62ba9b8532e755212b97727882f4b1a37865317e7a469",
+  snow: "0d6695f062e30f515553105a37740e186cbd21e9331fa37f48085592ff4a286c",
   // Measured 2026-10-16 through createProject after starter's completed-work quality fallback fix.
   // Recomputed 2026-10-16: starter's adaptiveQuality split its policy resolution into qualityPolicy.ts
   // to stay under the 200-line render-file cap; only starter's tree moves.
   // Recomputed 2026-10-23: the native render-chain scenario expects the Unreal finishing chain (grade and grain off).
-  starter: "3634f9d7eebf14ec3d8072ff71bc6bd7635fd7b28f16df8c3234aa839539a7f0",
-  "tower-defense": "654e7d81e46ce652c545ee9a3a6480089b5cd1413eccfde8f2065dfb85129464",
+  starter: "de6479f7496fe897aa5480bb0551f76043b46c75301e648f9078f461685b8d51",
+  "tower-defense": "77769811a654b70fb01a7fe07f211142e279f4ebd7a221b096a039d9022d62cd",
 };
 
 const GENERATED_SCAFFOLD_METADATA =
@@ -405,8 +406,6 @@ const STARTER_PATHS = [
   "src/render/lighting.ts",
   "src/render/postprocessing.ts",
   "src/render/qualityPolicy.ts",
-  "src/render/worldEnvironment.ts",
-  "src/render/tonemap.ts",
   "src/render/temporalAA.ts",
   "src/render/temporalAAInput.ts",
   "src/render/temporalAAResolve.ts",
@@ -419,7 +418,6 @@ const STARTER_PATHS = [
   "src/render/temporalCurrentVisibility.ts",
   "src/render/temporalResolve.ts",
   "src/render/exposure.ts",
-  "src/render/autoExposure.ts",
   "src/render/volumetricFog.ts",
   "src/render/volumetricFogOptions.ts",
   "src/render/volumetricFogVolume.ts",
@@ -1054,7 +1052,9 @@ describe("create-threenative", () => {
           readFile(path.join(result.target, "src/render", file), "utf8"),
         ),
       );
-      expect(renderFiles.join("\n")).not.toContain("@threenative/");
+      expect(
+        renderFiles.join("\n").replaceAll('from "@threenative/core"', 'from "shared-core"'),
+      ).not.toContain("@threenative/");
     } finally {
       await rm(root, { recursive: true, force: true });
     }

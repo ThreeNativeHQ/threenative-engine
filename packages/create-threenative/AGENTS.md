@@ -19,7 +19,7 @@ or a platform's status changes. `pnpm sync:agents` mirrors them like every other
 user's repo. They are a floor the model can rewrite or delete, not a ceiling it must reach
 through config. Two hard constraints, both asserted in CI:
 
-- No `@threenative/` import may appear in `templates/*/src/render/`.
+- Shared Unreal look plumbing imports `WorldEnvironment`, `qualityPreset`, `qualityTiers` and their types from `@threenative/core`; game lighting, materials and authored stages stay in `templates/*/src/render/`. See `templates/AGENTS.md` (PRD-723).
 - The generated `package.json` must contain no `catalog:` protocol — templates carry real
   versions, kept in sync by hand with `pnpm-workspace.yaml`.
 

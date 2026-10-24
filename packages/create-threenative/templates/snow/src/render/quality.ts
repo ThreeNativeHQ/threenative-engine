@@ -23,7 +23,13 @@
 // deforming heightfield mesh and tens of thousands of flakes — not the post chain, and snow is
 // already the brightest thing on screen, so the chain is tonemapping alone at every tier and the
 // sun glints come from the snow material.
-import type { IWorldEnvironmentOptions } from "./worldEnvironment.js";
+import {
+  type IWorldEnvironmentOptions,
+  qualityPreset as coreQualityPreset,
+  qualityTiers,
+} from "@threenative/core";
+export type { QualityTier } from "@threenative/core";
+import type { QualityTier } from "@threenative/core";
 
 /**
  * The three names this game's look comes in.
@@ -33,74 +39,37 @@ import type { IWorldEnvironmentOptions } from "./worldEnvironment.js";
  * laptop iGPU, a handheld, a desktop that is dropping frames. Nothing outside this file decides
  * what any of them mean.
  */
-export type QualityTier = "low" | "medium" | "high";
+export const resolveQualityTier = qualityTiers.resolve;
 
-const QUALITY_TIERS: readonly QualityTier[] = ["low", "medium", "high"];
-
-/**
- * Narrows an arbitrary string — a URL parameter, a saved setting — to a tier name. Not exported:
- * `resolveQualityTier` is the one door in, so an unknown name cannot be waved past the throw.
- */
-function isQualityTier(value: string): value is QualityTier {
-  return (QUALITY_TIERS as readonly string[]).includes(value);
-}
-
-/**
- * Where each GPU family starts, from `ctx.renderer.gpuClass`.
- *
- * A start, not a ceiling: the measured frame-budget windows move the look from here, and an
- * explicit `tier` above still wins. A class absent from this table — `unknown`, an adapter no
- * family rule matched — falls back to the `mobile` flag, exactly as before families existed.
- * Edit the right-hand side to change what a family looks like; nothing outside this file reads it.
- */
-const START_TIER_BY_GPU_CLASS: Readonly<Record<string, QualityTier | undefined>> = {
-  software: "low",
-  "mobile-low": "low",
-  "mobile-mid": "low",
-  "mobile-high": "medium",
-  integrated: "medium",
-  discrete: "high",
+const legacyDefaults: IWorldEnvironmentOptions = {
+  // PRD-723: preserve the vendored look until this kit earns IMPROVEMENT. Cost: unmeasured.
+  autoExposureEnabled: false,
+  // Bloom cost: unmeasured; preserve the vendored stage until this kit is judged.
+  bloomEnabled: true,
+  bloomRadius: 0.5,
+  bloomStrength: 0.7,
+  bloomThreshold: 0.2,
+  exposure: 1,
+  finalGatherMethod: "none",
+  gtaoEnabled: false,
+  gtaoRadius: 0.25,
+  gtaoSamples: 16,
+  gtaoDistanceExponent: 1,
+  gtaoDistanceFalloff: 1,
+  gtaoIndirectOnly: false,
+  localExposureEnabled: false,
+  motionBlurEnabled: false,
+  ssgiEnabled: false,
+  ssgiRadius: 12,
+  ssgiResolutionScale: 0.5,
+  ssrEnabled: false,
+  ssrResolutionScale: 0.5,
+  temporalAA: false,
+  tonemapMode: "aces",
+  unrealBloomEnabled: false,
+  vignetteAmount: 0,
 };
 
-/**
- * Picks the tier: an explicit `tier` always wins, otherwise the platform decides.
- *
- * Fails closed. An unrecognised tier name throws with the value it was handed rather than
- * quietly rendering the default, because a silent fallback here looks exactly like a tier that
- * turned out to have no effect.
- */
-export function resolveQualityTier(
-  request: {
-    readonly gpuClass?: string;
-    readonly mobile?: boolean;
-    readonly software?: boolean;
-    readonly tier?: string;
-  } = {},
-): QualityTier {
-  const requested = request.tier;
-  if (requested !== undefined) {
-    if (!isQualityTier(requested)) {
-      throw new Error(
-        `Unknown quality tier ${JSON.stringify(requested)} — expected one of ${QUALITY_TIERS.join(", ")}.`,
-      );
-    }
-    return requested;
-  }
-  // A named software adapter — SwiftShader, llvmpipe, a basic-render driver — is the machine this
-  // game's desktop look cannot run on: a single `high` frame on one can outlast the device it is
-  // drawing on, and no adaptation that reacts to frame times gets to run first. `software` is the
-  // fact the renderer read from `adapter.info`, not a guess from a driver string, and an explicit
-  // `tier` above still wins over it.
-  if (request.software === true) return "low";
-  const family =
-    request.gpuClass === undefined ? undefined : START_TIER_BY_GPU_CLASS[request.gpuClass];
-  if (family !== undefined) return family;
-  return request.mobile === true ? "low" : "high";
-}
-
-/**
- * What a desktop gets: this template's shipped desktop look, unchanged.
- */
 const high: IWorldEnvironmentOptions = {
   // Strength, radius and threshold are a look decision already tuned to this scene's palette.
   // Bloom: ~4.6 ms — the second most expensive stage in the chain, and the one nobody expects
@@ -158,10 +127,10 @@ export function qualityPreset(tier: string): IWorldEnvironmentOptions {
   const preset = QUALITY_PRESETS[tier as QualityTier];
   if (preset === undefined) {
     throw new Error(
-      `Unknown quality tier ${JSON.stringify(tier)} — expected one of ${QUALITY_TIERS.join(", ")}.`,
+      `Unknown quality tier ${JSON.stringify(tier)} — expected one of ${["low", "medium", "high"].join(", ")}.`,
     );
   }
-  return preset;
+  return { ...coreQualityPreset(tier), ...legacyDefaults, ...preset, samples: preset.samples ?? 4 };
 }
 
 export interface IMaterialLightingEnvironment {

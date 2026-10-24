@@ -37,22 +37,22 @@ const requiredBootErrorDeclarations = [
 const bootErrorColour = /^(?:#[\da-f]{6}|var\(--[\w-]+\))$/iu;
 
 describe("starter visual floor", () => {
-  it("should provide readable dynamic-range defaults without framework imports", async () => {
+  it("should provide readable dynamic-range defaults through core", async () => {
     const files = await Promise.all(
-      ["lighting.ts", "postprocessing.ts", "worldEnvironment.ts", "materials.ts"].map((file) =>
+      ["lighting.ts", "postprocessing.ts", "quality.ts", "materials.ts"].map((file) =>
         readFile(path.join(starter, "src/render", file), "utf8"),
       ),
     );
     const source = files.join("\n");
     expect(source).toContain("shadow");
-    expect(source).toContain("ACESFilmicToneMapping");
-    expect(source).not.toContain("@threenative/");
+    expect(source).toContain('tonemapMode: "aces"');
+    expect(source).toContain("@threenative/core");
   });
 
   it("should route setupPost through the framework output node", async () => {
     const [post, environment] = await Promise.all([
       readFile(path.join(starter, "src/render/postprocessing.ts"), "utf8"),
-      readFile(path.join(starter, "src/render/worldEnvironment.ts"), "utf8"),
+      readFile(path.resolve("packages/core/src/look/world-environment.ts"), "utf8"),
     ]);
     const play = await readFile(path.join(starter, "src/scenes/Play.ts"), "utf8");
     expect(`${post}\n${environment}`).toContain("createRenderChain");
@@ -66,7 +66,7 @@ describe("starter visual floor", () => {
     // one place. What replaced the authored paint stages is the grid: three materials, two greys
     // and one saturated colour, with world-metre UVs.
     const [environment, materials, arena] = await Promise.all([
-      readFile(path.join(starter, "src/render/worldEnvironment.ts"), "utf8"),
+      readFile(path.resolve("packages/core/src/look/world-environment.ts"), "utf8"),
       readFile(path.join(starter, "src/render/materials.ts"), "utf8"),
       readFile(path.join(starter, "src/render/arena.ts"), "utf8"),
     ]);
@@ -176,7 +176,10 @@ describe("starter visual floor", () => {
     );
     for (const entries of files) {
       for (const [name, source] of entries) {
-        expect(source, name).not.toContain("@threenative/");
+        expect(
+          source.replaceAll('from "@threenative/core"', 'from "shared-core"'),
+          name,
+        ).not.toContain("@threenative/");
         // Loading is the one generated surface that carries real startup behavior: safe-area
         // layout, texture crops, truthful progress and disposal. Its source stays game-owned; the
         // old 200-line smell cap must not reject that behavior.
@@ -212,19 +215,12 @@ describe("starter visual floor", () => {
     //
     // The stage list's contract is that an unavailable stage is refused **by name, with a
     // reason**, leaving the rest of the chain intact. Guarding the map is what keeps that promise.
-    const templateRoot = path.join(starter, "..");
-    const templates = (await readdir(templateRoot, { withFileTypes: true }))
-      .filter((entry) => entry.isDirectory())
-      .map((entry) => entry.name);
-    expect(templates.length).toBeGreaterThan(0);
-    for (const template of templates) {
-      const source = await readFile(
-        path.join(templateRoot, template, "src/render/worldEnvironment.ts"),
-        "utf8",
-      );
-      const guard = source.slice(source.indexOf('name: "godRays"'));
-      expect(guard.slice(0, guard.indexOf("build:")), template).toContain("shadow?.map == null");
-    }
+    const source = await readFile(
+      path.resolve("packages/core/src/look/world-environment.ts"),
+      "utf8",
+    );
+    const guard = source.slice(source.indexOf('name: "godRays"'));
+    expect(guard.slice(0, guard.indexOf("build:"))).toContain("shadow?.map == null");
   });
 
   it("should ship a rounded-geometry floor rather than raw boxes", async () => {

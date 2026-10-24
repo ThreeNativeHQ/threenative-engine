@@ -1,3 +1,4 @@
+import { type OutputRenderer, WorldEnvironment } from "@threenative/core";
 // Generated for you: ordinary Three.js; ThreeNative does not read this file.
 //
 // This file wires two things together and decides nothing itself. `quality.ts`, in this folder,
@@ -22,7 +23,6 @@ import { type IGradeTable, filterableTable, gradeStages } from "./grade.js";
 import { type QualityTier, gradePreset, qualityPreset } from "./quality.js";
 import { type TemporalAAProvider, temporalAAStages } from "./temporalAAStage.js";
 import type { FogMedium } from "./volumetricFog.js";
-import { type OutputRenderer, WorldEnvironment } from "./worldEnvironment.js";
 
 interface IPostController {
   readonly tier: QualityTier;

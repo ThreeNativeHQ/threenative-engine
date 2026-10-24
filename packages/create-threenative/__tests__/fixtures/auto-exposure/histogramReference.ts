@@ -1,4 +1,4 @@
-import { exposureBins } from "../../../template-assets/exposureGraph.js";
+import { exposureBins } from "../../../../core/src/look/exposure-graph.js";
 
 /** One histogram bin as the GPU stores it: summed weight and summed weight * log2 luminance. */
 export interface IHistogramBin {

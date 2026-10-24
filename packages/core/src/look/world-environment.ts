@@ -42,6 +42,7 @@ import {
   If,
   color,
   convertToTexture,
+  cross,
   diffuseColor,
   emissive,
   float,
@@ -55,6 +56,7 @@ import {
   pass,
   roughness,
   smoothstep,
+  textureSize,
   uniform,
   uv,
   vec2,
@@ -1162,10 +1164,55 @@ export class WorldEnvironment {
           releaseAo = () => {};
         },
         build: (input) => {
-          // No normal input: GTAO rebuilds the normal from the depth, so it agrees with the depth's facets. The pass's
+          // GTAO rebuilds the normal from the depth, so it agrees with the depth's facets. The pass's
           // smooth vertex normal against a faceted depth (a 32-sided capsule) read as one dark stripe per facet and a
           // stair-step band under the cap; the denoiser, GTAO scale and radius did not change them.
-          const contact = ao(subrectTexture(depth()), null as never, view);
+          const aoDepth = subrectTexture(depth());
+          let reconstructedNormal: { sample: (at: Node<"vec2">) => Node<"vec3"> } | null = null;
+          if (resolutionSubrect && !ownedEngine) {
+            const full = new Vector2(1, 1);
+            const fraction = uniform(full).onRenderUpdate(() =>
+              resolutionSubrect.active
+                ? (resolutionSubrect.textureView(aoDepth.value)?.viewFraction ?? full)
+                : full,
+            );
+            const inverseProjection = uniform(view.projectionMatrixInverse);
+            // Three's getNormalFromDepth bypasses TextureNode samplers; keep its nine-tap edge selection inside the retained view.
+            reconstructedNormal = {
+              sample: Fn(([at]: [Node<"vec2">]) => {
+                const size = vec2(textureSize(aoDepth) as unknown as Node<"uvec2">)
+                  .mul(fraction)
+                  .toVar();
+                const pixel = at.mul(size).floor().add(0.5).div(size);
+                const tap = (x: number, y: number) =>
+                  aoDepth.sample(pixel.add(vec2(x, y).div(size))).r.toVar();
+                const c = tap(0, 0);
+                const l2 = tap(-2, 0);
+                const l1 = tap(-1, 0);
+                const r1 = tap(1, 0);
+                const r2 = tap(2, 0);
+                const b2 = tap(0, 2);
+                const b1 = tap(0, 1);
+                const t1 = tap(0, -1);
+                const t2 = tap(0, -2);
+                const dl = l1.mul(2).sub(l2).sub(c).abs();
+                const dr = r1.mul(2).sub(r2).sub(c).abs();
+                const db = b1.mul(2).sub(b2).sub(c).abs();
+                const dt = t1.mul(2).sub(t2).sub(c).abs();
+                const center = getViewPosition(at, c, inverseProjection).toVar();
+                const position = (x: number, y: number, z: Node<"float">) =>
+                  getViewPosition(at.add(vec2(x, y).div(size)), z, inverseProjection);
+                const dx = dl
+                  .lessThan(dr)
+                  .select(center.sub(position(-1, 0, l1)), position(1, 0, r1).sub(center));
+                const dy = db
+                  .lessThan(dt)
+                  .select(center.sub(position(0, 1, b1)), position(0, -1, t1).sub(center));
+                return cross(dx, dy).normalize();
+              }),
+            };
+          }
+          const contact = ao(aoDepth, reconstructedNormal as never, view);
           if (options.gtaoRadius !== undefined) {
             contact.radius.value = options.gtaoRadius;
           } else {

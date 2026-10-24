@@ -1,7 +1,7 @@
 import { Vector2 } from "three";
 import { type NodeBuilder, NodeFrame } from "three/webgpu";
 import type { ICtx } from "../../../../core/dist/index.js";
-import { AutoExposureNode } from "../../../template-assets/autoExposure.js";
+import { AutoExposureNode } from "../../../../core/src/look/auto-exposure.js";
 
 /** Only the fixture's adaptation input is controlled; the renderer's shared frame stays real. */
 export function exposureFrameSnapshot(frame: NodeFrame): NodeFrame {

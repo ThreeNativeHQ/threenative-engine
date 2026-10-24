@@ -2,13 +2,13 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { PerspectiveCamera, Vector2, Vector3 } from "three";
 import { describe, expect, it, vi } from "vitest";
+import { WorldEnvironment } from "../../core/src/look/world-environment.js";
 import { Checkpoints } from "../templates/platformer/src/level/Checkpoints.js";
 import { setupPost } from "../templates/platformer/src/render/postprocessing.js";
 import { TouchControls } from "../templates/platformer/src/render/touch-controls.js";
 import { touchControlPoint } from "../templates/platformer/src/render/touch-layout.js";
-import { WorldEnvironment } from "../templates/platformer/src/render/worldEnvironment.js";
 
-vi.mock("../templates/platformer/src/render/worldEnvironment.js", () => ({
+vi.mock("../../core/src/look/world-environment.js", () => ({
   WorldEnvironment: vi.fn().mockImplementation(function WorldEnvironmentMock() {
     return { apply: vi.fn() };
   }),

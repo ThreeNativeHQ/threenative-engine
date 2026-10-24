@@ -1,3 +1,5 @@
+import type { ChainStage, OutputRenderer } from "@threenative/core";
+import { WorldEnvironment } from "@threenative/core";
 // Generated for you: ordinary Three.js; ThreeNative does not read this file.
 //
 // This is the storm's filmic half — the demo's own `BLOOM` and `POST` passes, ported rather than
@@ -38,8 +40,6 @@ import {
   uTime,
 } from "./post-shader.js";
 import { type QualityTier, qualityPreset, resolveQualityTier } from "./quality.js";
-import type { ChainStage, OutputRenderer } from "./worldEnvironment.js";
-import { WorldEnvironment } from "./worldEnvironment.js";
 
 /**
  * The bloom target's resolution, as a fraction of the frame: the demo's own
