@@ -39,7 +39,8 @@ Split the board by event, not by job.
 
 ```mermaid
 flowchart LR
-  P["push to PR"] --> F["PR lane<br/>fast affected set, ≤ 12 min"]
+  D["draft PR<br/>no CI jobs"] -- "ready for review<br/>or ci.yml dispatch" --> P["push to ready PR"]
+  P --> F["PR lane<br/>thin, ≈ 10 min"]
   F --> Q["merge queue"]
   Q --> B["queue lane<br/>full selected board, once"]
   B -- green --> M["merge"]
@@ -47,15 +48,22 @@ flowchart LR
   E --> P
 ```
 
-**PR lane (`pull_request` into `develop`).** `scope` emits a `review` lane that selects: `scope`, `typecheck`,
-`lint`, `budgets`, the `test-unit` shards the diff reaches, `test` and `build-artifacts` when a package changed,
-and one representative template smoke (`golden-path-template` for starter, plus the template the diff touches). It
+**Draft PRs run nothing.** CI starts when the author marks the PR ready for review, or dispatches `ci.yml` by
+hand. This is today's behavior (`scope` and `ci-required` skip drafts in `ci.yml`); the PRD keeps it and adds a
+spec that pins it.
+
+**PR lane (`pull_request` into `develop`, ready PRs).** Each push runs a thin lane of about 10 min, and that lane
+is the PR's required check. `scope` emits a `review` lane that selects: `scope`, `typecheck`,
+`lint`, `budgets`, the `test-unit` shards the diff reaches (the affected unit tests), `test` and `build-artifacts`
+when a package changed, and the smoke test of the template the diff touches (`golden-path-template` for starter
+when none). It
 omits `test-native`, `native-platforms`, `native-engine`, `integration`, `template-nonvisual`, `benchmark` and
 `performance-contracts`. A prose-only or CI-only diff keeps its current, smaller plan.
 
 **Queue lane (`merge_group` on `develop`).** The board `scope` selects for the complete base-to-candidate diff,
 as today, unchanged by this PRD. If PRD-550 phase 2 lands a smaller gating board, the queue lane is that board.
-The queue lane is the only place the selected full board runs for an ordinary change. `push` to `develop`,
+`ci-required` is the queue's required check. The queue lane is the only place the selected full board runs for an
+ordinary change. `push` to `develop`,
 `schedule`, `workflow_dispatch` and `main` keep `full`.
 
 **Required check.** `ci-required` stays the one required context, so the ruleset does not change. It judges the
@@ -65,6 +73,14 @@ and `main`. `validationProfile` gains a `lane` axis, so PRD-481 reuse never lets
 for a queue candidate (the same rule as PRD-481's reduced-matrix case). An author who wants the full board
 before enqueue dispatches `ci.yml` on the branch; PRD-730 then lets the queue reuse that green run when the tree
 is identical.
+
+**Why PRs do not go straight to the queue with no PR CI (rejected).** A red merge group makes GitHub rebuild
+every PR queued behind it (`max_entries_to_build: 2` today), and agent PRs are often red on the first push. With
+no PR lane, each of those reds would restart other authors' full boards. A thin PR lane catches the first-push
+red in about 10 min and keeps it out of the queue, so it is cheaper than the queue churn.
+
+**PRD-730 stays useful.** A full run that someone dispatches on a PR is reused by the queue when the tree is
+identical. PRD-730 also covers the weeks before this PRD lands, when both events still run the same board.
 
 **A queue red reaches the author fast.** GitHub ejects the PR on a red group. Today nothing names the cause.
 `run-summary` on a failed `merge_group` run posts one comment on the PR: the first failing job, its log link, the
@@ -90,17 +106,19 @@ the PR lane's skipped jobs. All numbers are PRD-550 estimates until phase 3 meas
 - **Policy change.** Root `AGENTS.md` says "Merge groups run the same selected gating board as the PR". This PRD
   replaces that sentence with "pull requests run the fast review lane; merge groups run the full selected
   board". That rule is the owner's. No workflow or `AGENTS.md` text changes before João signs off.
-- **Draft and fork PRs.** `ci-required` skips drafts today. The review lane keeps that skip and keeps fork PRs on
-  hosted runners.
+- **Draft and fork PRs.** Drafts run no jobs today and keep doing so. The review lane keeps fork PRs on hosted
+  runners.
+- **Straight-to-queue is rejected.** See Solution: the queue churn costs more than the thin lane.
 
 ## Execution Phases
 
 #### Phase 1: The plan knows two lanes
 **Status:** NOT STARTED
 **Files:** `scripts/ci-change-scope.mjs`, `scripts/ci-required.mjs`, `scripts/__tests__/ci-qualification.spec.ts`, `scripts/__tests__/ci-efficiency.spec.ts`, `scripts/__tests__/ci-needs.spec.ts`.
-**Implementation:** Add the `lane` field (`review`, `queue`, `full`) to the plan and to `validationProfile`. Select the review job set for `pull_request` into `develop`. Make `validateEventPlan` and `ci-required` enforce the per-event minimum. Land behind a flag that defaults off, so nothing changes until the owner signs off.
+**Implementation:** Add the `lane` field (`review`, `queue`, `full`) to the plan and to `validationProfile`. Select the review job set for `pull_request` into `develop`. Pin the draft skip. Make `validateEventPlan` and `ci-required` enforce the per-event minimum. Land behind a flag that defaults off, so nothing changes until the owner signs off.
 - [ ] A `pull_request` plan for a package diff selects the review job set and omits the native, integration and non-visual template jobs. proof: `pnpm exec vitest run scripts/__tests__/ci-efficiency.spec.ts` red before, green after.
 - [ ] `validateEventPlan` rejects a `review` plan for `merge_group`, `push`, `schedule` and `main`, and accepts it for `pull_request` into `develop` only. proof: `pnpm exec vitest run scripts/__tests__/ci-qualification.spec.ts` red before, green after.
+- [ ] A draft `pull_request` selects no jobs, and the same PR marked ready selects the review lane. proof: `pnpm exec vitest run scripts/__tests__/ci-structure.spec.ts` draft/ready case.
 - [ ] A green `review` run never satisfies reuse for a `queue` or `full` profile. proof: `pnpm exec vitest run scripts/__tests__/ci-qualification.spec.ts` reuse case.
 
 #### Phase 2: The workflow follows the plan (after sign-off)
