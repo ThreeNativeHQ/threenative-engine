@@ -14,6 +14,7 @@ let server: Server;
 let cache: string;
 let project: string;
 let malformed = false;
+let truncated = false;
 const requests: { url: string; etag: string | undefined }[] = [];
 async function refs() {
   return import("../src/references.js");
@@ -37,6 +38,7 @@ async function call(name: string, args: unknown, manifestFile = manifest) {
 beforeEach(async () => {
   vi.resetModules();
   malformed = false;
+  truncated = false;
   requests.length = 0;
   cache = makeTempDirSync("reference-cache-");
   project = makeTempDirSync("reference-project-");
@@ -44,14 +46,21 @@ beforeEach(async () => {
   vi.stubEnv("THREENATIVE_ENGINE_MCP_LOG", "off");
   server = createServer((req, res) => {
     requests.push({ url: req.url ?? "", etag: req.headers["if-none-match"] });
-    if (req.headers["if-none-match"] === '"v1"' && !malformed) {
+    if (req.headers["if-none-match"] === '"v1"' && !malformed && !truncated) {
       res.writeHead(304).end();
       return;
     }
     res.setHeader("etag", '"v1"');
+    if (truncated) {
+      res.setHeader("content-length", "10000");
+      res.setHeader("connection", "close");
+      res.end("partial");
+      return;
+    }
     if (req.url === "/index.json.gz")
       res.end(gzipSync(JSON.stringify(malformed ? { ...index, code: "bad" } : index)));
-    else if (req.url === "/game-sm64.json") res.end(JSON.stringify(game));
+    else if (req.url === "/game-sm64.json" || req.url === "/game-oot.json")
+      res.end(JSON.stringify(game));
     else res.writeHead(404).end();
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -82,6 +91,15 @@ describe("reference release cache", () => {
     await new Promise<void>((resolve) => server.close(() => resolve()));
     vi.resetModules();
     expect((await (await refs()).loadReferenceIndex()).games).toHaveLength(2);
+  });
+  it("uses the last validated cache when a response body is interrupted", async () => {
+    await (await refs()).loadReferenceIndex();
+    truncated = true;
+    vi.resetModules();
+    expect((await (await refs()).loadReferenceIndex()).games).toHaveLength(2);
+  });
+  it("rejects a release game whose identity differs from its filename", async () => {
+    await expect((await refs()).loadReferenceGame("oot")).rejects.toThrow(/id/);
   });
   it("validates nested unknown fields, fenced code, duplicate ids and missing links", async () => {
     const { validateReferenceGame, validateReferenceIndex } = await refs();

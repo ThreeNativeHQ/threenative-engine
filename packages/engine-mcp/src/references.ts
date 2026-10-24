@@ -384,7 +384,13 @@ async function cachedAsset<T>(name: string, parse: (body: Buffer) => T): Promise
     if (existsSync(file)) return parse(readFileSync(file));
     throw new Error(`TN_REFERENCES_UNAVAILABLE: ${name}: HTTP ${response.status}`);
   }
-  const body = Buffer.from(await response.arrayBuffer());
+  let body: Buffer;
+  try {
+    body = Buffer.from(await response.arrayBuffer());
+  } catch (error) {
+    if (existsSync(file)) return parse(readFileSync(file));
+    throw new Error(`TN_REFERENCES_UNAVAILABLE: ${name}: ${String(error)}`);
+  }
   const parsed = parse(body);
   mkdirSync(path.dirname(file), { recursive: true });
   atomicWrite(file, body);
@@ -437,12 +443,14 @@ export function loadReferenceGame(gameId: string, cwd = process.cwd()): Promise<
   const name = `game-${id(gameId, "game id")}.json`;
   let load = gameLoads.get(name);
   if (load === undefined) {
-    load = cachedAsset(name, (body) => validateReferenceGame(parseJson(body, name), name)).catch(
-      (error: unknown) => {
-        gameLoads.delete(name);
-        throw error;
-      },
-    );
+    load = cachedAsset(name, (body) => {
+      const game = validateReferenceGame(parseJson(body, name), name);
+      if (game.id !== gameId) fail(name, `id '${game.id}' differs from requested '${gameId}'`);
+      return game;
+    }).catch((error: unknown) => {
+      gameLoads.delete(name);
+      throw error;
+    });
     gameLoads.set(name, load);
   }
   return load;
