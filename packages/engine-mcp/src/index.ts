@@ -8,6 +8,7 @@ import {
   loadLocalReferenceGames,
   loadReferenceGame,
   loadReferenceIndex,
+  loadReleaseReferenceGame,
   referenceStubs,
   saveReferenceGame,
 } from "./references.js";
@@ -878,6 +879,8 @@ async function searchReferences(situation: string, limit = 5) {
       };
   }
   const localIds = new Set(local.map((game) => game.id));
+  const localStubs = local.flatMap(referenceStubs);
+  const localKeys = new Set(localStubs.map((stub) => `${stub.game}/${stub.kind}/${stub.id}`));
   const games = [
     ...(release?.games ?? []).filter((game) => !localIds.has(game.id)),
     ...local.map((game) => ({
@@ -889,8 +892,10 @@ async function searchReferences(situation: string, limit = 5) {
     })),
   ];
   const stubs = [
-    ...(release?.stubs ?? []).filter((stub) => !localIds.has(stub.game)),
-    ...local.flatMap(referenceStubs),
+    ...(release?.stubs ?? []).filter(
+      (stub) => !localKeys.has(`${stub.game}/${stub.kind}/${stub.id}`),
+    ),
+    ...localStubs,
   ];
   const titles = new Map(games.map((game) => [game.id, game.title]));
   const candidates = [
@@ -1018,12 +1023,19 @@ async function handleToolCall(
       (argumentsValue.kind !== "node" && argumentsValue.kind !== "card")
     )
       throw new Error("engine_reference_detail requires game, id and kind (node or card).");
-    const game = await loadReferenceGame(argumentsValue.game);
+    let game = await loadReferenceGame(argumentsValue.game);
     const { id, kind } = argumentsValue;
-    const entry =
+    let entry =
       kind === "node"
         ? game.nodes.find((node) => node.id === id)
         : game.cards.find((card) => card.id === id);
+    if (!entry) {
+      game = await loadReleaseReferenceGame(argumentsValue.game);
+      entry =
+        kind === "node"
+          ? game.nodes.find((node) => node.id === id)
+          : game.cards.find((card) => card.id === id);
+    }
     if (!entry) throw new Error(`No reference ${kind} '${id}' in '${game.id}'.`);
     logToolCall({ tool: name, game: game.id, id, kind });
     return toolText({

@@ -437,7 +437,15 @@ async function probeEngineServer(target: string): Promise<void> {
   };
   const server = config.mcpServers["threenative-engine"];
   if (server === undefined) throw new Error("scaffold has no threenative-engine server");
-  const child = spawn(server.command, server.args, { cwd: target, stdio: "pipe" });
+  const child = spawn(server.command, server.args, {
+    cwd: target,
+    env: {
+      ...process.env,
+      THREENATIVE_REFERENCES_URL: "http://127.0.0.1:1/",
+      THREENATIVE_REFERENCES_CACHE: path.join(target, ".threenative", "test-reference-cache"),
+    },
+    stdio: "pipe",
+  });
   const lines = createInterface({ input: child.stdout });
   const nextId = { value: 1 };
   try {

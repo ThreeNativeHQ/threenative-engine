@@ -9,6 +9,7 @@ import { gunzipSync } from 'zlib';
 
 var DEFAULT_REFERENCES_URL = "https://github.com/jonit-dev/threenative-game-refs/releases/latest/download/";
 var FETCH_TIMEOUT_MS = 5e3;
+var GAME_FETCH_TIMEOUT_MS = 3e4;
 var ID = /^[a-z0-9][a-z0-9-]*$/u;
 function referencesBaseUrl() {
   const value = process.env.THREENATIVE_REFERENCES_URL?.trim() || DEFAULT_REFERENCES_URL;
@@ -57,6 +58,12 @@ function list(value, where, item) {
 function line(value, where) {
   if (!Number.isInteger(value) || value < 1) fail(where, "expected a line number");
   return value;
+}
+function sourcePath(value, where) {
+  const result = text(value, where);
+  if (path2.isAbsolute(result) || result.split("/").includes("..") || !/^[a-zA-Z0-9_./-]+$/u.test(result))
+    fail(where, "expected a safe relative source path");
+  return result;
 }
 function prose(value, where) {
   const result = text(value, where);
@@ -133,12 +140,12 @@ function validateNode(value, where) {
       return {
         lines: [from, to],
         name: text(fn.name, `${at}.name`),
-        path: text(fn.path, `${at}.path`)
+        path: sourcePath(fn.path, `${at}.path`)
       };
     }),
     id: id(node.id, `${where}.id`),
     name: text(node.name, `${where}.name`),
-    paths: texts(node.paths, `${where}.paths`),
+    paths: list(node.paths, `${where}.paths`, sourcePath),
     purpose: prose(node.purpose, `${where}.purpose`),
     ...node.parent === void 0 ? {} : { parent: id(node.parent, `${where}.parent`) }
   };
@@ -155,6 +162,11 @@ function validateCard(value, where) {
     "capabilities",
     "tags"
   ]);
+  const sources = list(card.sources, `${where}.sources`, (entry, at) => {
+    const source = record(entry, at, ["path", "line"]);
+    return { line: line(source.line, `${at}.line`), path: sourcePath(source.path, `${at}.path`) };
+  });
+  if (sources.length === 0) fail(`${where}.sources`, "expected at least one source");
   return {
     behavior: prose(card.behavior, `${where}.behavior`),
     capabilities: texts(card.capabilities, `${where}.capabilities`),
@@ -162,9 +174,13 @@ function validateCard(value, where) {
       const constant = record(entry, at, ["name", "value", "unit", "source"]);
       if ((typeof constant.value !== "number" || !Number.isFinite(constant.value)) && typeof constant.value !== "string")
         fail(`${at}.value`, "expected a number or a string");
+      const source = text(constant.source, `${at}.source`);
+      const citation = /^(.*):([1-9][0-9]*)$/u.exec(source);
+      if (!citation) fail(`${at}.source`, "expected source path:line");
+      sourcePath(citation[1], `${at}.source`);
       return {
         name: text(constant.name, `${at}.name`),
-        source: text(constant.source, `${at}.source`),
+        source,
         unit: text(constant.unit, `${at}.unit`),
         value: typeof constant.value === "string" ? text(constant.value, `${at}.value`) : constant.value
       };
@@ -172,10 +188,7 @@ function validateCard(value, where) {
     id: id(card.id, `${where}.id`),
     name: text(card.name, `${where}.name`),
     node: id(card.node, `${where}.node`),
-    sources: list(card.sources, `${where}.sources`, (entry, at) => {
-      const source = record(entry, at, ["path", "line"]);
-      return { line: line(source.line, `${at}.line`), path: text(source.path, `${at}.path`) };
-    }),
+    sources,
     summary: prose(card.summary, `${where}.summary`),
     tags: texts(card.tags, `${where}.tags`)
   };
@@ -251,7 +264,7 @@ function referenceStubs(game) {
     }))
   ];
 }
-async function cachedAsset(name, parse) {
+async function cachedAsset(name, parse, timeout = FETCH_TIMEOUT_MS) {
   const file = path2.join(referencesCacheDir(), name);
   const etagFile = `${file}.etag`;
   let response;
@@ -259,7 +272,7 @@ async function cachedAsset(name, parse) {
     const etag2 = existsSync(file) && existsSync(etagFile) ? readFileSync(etagFile, "utf8") : "";
     response = await fetch(new URL(name, referencesBaseUrl()), {
       headers: etag2.length > 0 ? { "if-none-match": etag2 } : {},
-      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS)
+      signal: AbortSignal.timeout(timeout)
     });
   } catch (error) {
     if (existsSync(file)) return parse(readFileSync(file));
@@ -307,28 +320,39 @@ function loadReferenceIndex() {
 function loadLocalReferenceGames(cwd = process.cwd()) {
   const directory = localReferencesDir(cwd);
   if (!existsSync(directory)) return [];
-  return readdirSync(directory).filter((file) => file.endsWith(".json")).sort().map(
-    (file) => validateReferenceGame(
+  return readdirSync(directory).filter((file) => file.endsWith(".json")).sort().map((file) => {
+    const game = validateReferenceGame(
       parseJson(readFileSync(path2.join(directory, file)), file),
       path2.join(".threenative", "refs", file)
-    )
-  );
+    );
+    if (game.id !== path2.basename(file, ".json"))
+      fail(file, `id '${game.id}' differs from filename`);
+    return game;
+  });
 }
 function loadReferenceGame(gameId, cwd = process.cwd()) {
-  const name = `game-${id(gameId, "game id")}.json`;
+  id(gameId, "game id");
   const file = path2.join(localReferencesDir(cwd), `${gameId}.json`);
   if (existsSync(file)) {
     const local = validateReferenceGame(parseJson(readFileSync(file), file), file);
     if (local.id !== gameId) fail(file, `id '${local.id}' differs from requested '${gameId}'`);
     return Promise.resolve(local);
   }
+  return loadReleaseReferenceGame(gameId);
+}
+function loadReleaseReferenceGame(gameId) {
+  const name = `game-${id(gameId, "game id")}.json`;
   let load = gameLoads.get(name);
   if (load === void 0) {
-    load = cachedAsset(name, (body) => {
-      const game = validateReferenceGame(parseJson(body, name), name);
-      if (game.id !== gameId) fail(name, `id '${game.id}' differs from requested '${gameId}'`);
-      return game;
-    }).catch((error) => {
+    load = cachedAsset(
+      name,
+      (body) => {
+        const game = validateReferenceGame(parseJson(body, name), name);
+        if (game.id !== gameId) fail(name, `id '${game.id}' differs from requested '${gameId}'`);
+        return game;
+      },
+      GAME_FETCH_TIMEOUT_MS
+    ).catch((error) => {
       gameLoads.delete(name);
       throw error;
     });
@@ -921,6 +945,8 @@ async function searchReferences(situation, limit = 5) {
       };
   }
   const localIds = new Set(local.map((game) => game.id));
+  const localStubs = local.flatMap(referenceStubs);
+  const localKeys = new Set(localStubs.map((stub) => `${stub.game}/${stub.kind}/${stub.id}`));
   const games = [
     ...(release?.games ?? []).filter((game) => !localIds.has(game.id)),
     ...local.map((game) => ({
@@ -932,8 +958,10 @@ async function searchReferences(situation, limit = 5) {
     }))
   ];
   const stubs = [
-    ...(release?.stubs ?? []).filter((stub) => !localIds.has(stub.game)),
-    ...local.flatMap(referenceStubs)
+    ...(release?.stubs ?? []).filter(
+      (stub) => !localKeys.has(`${stub.game}/${stub.kind}/${stub.id}`)
+    ),
+    ...localStubs
   ];
   const titles = new Map(games.map((game) => [game.id, game.title]));
   const candidates = [
@@ -1036,9 +1064,13 @@ async function handleToolCall(params, manifestFile) {
   if (name === "engine_reference_detail") {
     if (typeof argumentsValue.game !== "string" || typeof argumentsValue.id !== "string" || argumentsValue.kind !== "node" && argumentsValue.kind !== "card")
       throw new Error("engine_reference_detail requires game, id and kind (node or card).");
-    const game = await loadReferenceGame(argumentsValue.game);
+    let game = await loadReferenceGame(argumentsValue.game);
     const { id: id2, kind } = argumentsValue;
-    const entry = kind === "node" ? game.nodes.find((node) => node.id === id2) : game.cards.find((card) => card.id === id2);
+    let entry = kind === "node" ? game.nodes.find((node) => node.id === id2) : game.cards.find((card) => card.id === id2);
+    if (!entry) {
+      game = await loadReleaseReferenceGame(argumentsValue.game);
+      entry = kind === "node" ? game.nodes.find((node) => node.id === id2) : game.cards.find((card) => card.id === id2);
+    }
     if (!entry) throw new Error(`No reference ${kind} '${id2}' in '${game.id}'.`);
     logToolCall({ tool: name, game: game.id, id: id2, kind });
     return toolText({

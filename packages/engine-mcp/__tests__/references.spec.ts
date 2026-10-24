@@ -71,12 +71,82 @@ beforeEach(async () => {
   vi.stubEnv("THREENATIVE_REFERENCES_URL", `http://127.0.0.1:${address.port}/`);
 });
 afterEach(async () => {
+  vi.useRealTimers();
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
   server.closeAllConnections();
   await new Promise<void>((resolve) => server.close(() => resolve()));
   vi.unstubAllEnvs();
 });
 
 describe("reference release cache", () => {
+  it("finishes a game response body that takes longer than the index timeout", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    vi.spyOn(AbortSignal, "timeout").mockImplementation((milliseconds) => {
+      const controller = new AbortController();
+      setTimeout(() => controller.abort(new Error("download timed out")), milliseconds);
+      return controller.signal;
+    });
+    vi.stubGlobal("fetch", async (_url: unknown, options: RequestInit) => {
+      const body = new ReadableStream({
+        start(controller) {
+          options.signal?.addEventListener("abort", () => controller.error(options.signal?.reason));
+          setTimeout(() => {
+            if (options.signal?.aborted) return;
+            controller.enqueue(Buffer.from(JSON.stringify(game)));
+            controller.close();
+          }, 6_000);
+        },
+      });
+      return new Response(body);
+    });
+    const result = (await refs()).loadReferenceGame("sm64").then(
+      (value) => ({ value }),
+      (error: unknown) => ({ error }),
+    );
+    await vi.advanceTimersByTimeAsync(6_000);
+    expect(await result).toMatchObject({ value: { id: "sm64" } });
+  });
+  it.each([
+    [
+      "constant without a line",
+      {
+        ...game,
+        cards: [
+          { ...game.cards[0], constants: [{ ...game.cards[0].constants[0], source: "player.c" }] },
+        ],
+      },
+    ],
+    ["empty card sources", { ...game, cards: [{ ...game.cards[0], sources: [] }] }],
+    [
+      "unsafe card source",
+      { ...game, cards: [{ ...game.cards[0], sources: [{ path: "../player.c", line: 1 }] }] },
+    ],
+    [
+      "unsafe node path",
+      { ...game, nodes: [{ ...game.nodes[0], paths: ["/player.c"] }, ...game.nodes.slice(1)] },
+    ],
+    [
+      "unsafe function path",
+      {
+        ...game,
+        nodes: [
+          game.nodes[0],
+          { ...game.nodes[1], functions: [{ ...game.nodes[1].functions[0], path: "../player.c" }] },
+          game.nodes[2],
+        ],
+      },
+    ],
+  ])("refuses a saved reference with %s", async (_name, value) => {
+    const { validateReferenceGame: validate } = await refs();
+    expect(() => validate(value)).toThrow(/source|path/iu);
+  });
+  it("rejects a local filename that differs from the game's identity during search enumeration", async () => {
+    const { saveReferenceGame, loadLocalReferenceGames } = await refs();
+    saveReferenceGame(game, project);
+    writeFileSync(path.join(project, ".threenative/refs/foo.json"), JSON.stringify(game));
+    expect(() => loadLocalReferenceGames(project)).toThrow(/filename|id/iu);
+  });
   it("refreshes with ETag on a second start, reads offline and preserves the cache on malformed releases", async () => {
     expect((await (await refs()).loadReferenceIndex()).games).toHaveLength(2);
     expect(requests).toHaveLength(1);
@@ -185,6 +255,41 @@ describe("reference release cache", () => {
 });
 
 describe("reference MCP tools", () => {
+  it("keeps published search entries beside a partial local override", async () => {
+    vi.spyOn(process, "cwd").mockReturnValue(project);
+    (await refs()).saveReferenceGame(
+      { ...game, nodes: [game.nodes[0]], cards: [{ ...game.cards[0], node: "player" }] },
+      project,
+    );
+    const result = await call("engine_search_references", { situation: "camera system" });
+    expect(result.results[0]).toMatchObject({ id: "camera", kind: "node" });
+  });
+  it("resolves a published detail absent from a partial local override", async () => {
+    vi.spyOn(process, "cwd").mockReturnValue(project);
+    (await refs()).saveReferenceGame(
+      {
+        ...game,
+        sha: "b".repeat(40),
+        nodes: [game.nodes[0]],
+        cards: [{ ...game.cards[0], node: "player", behavior: "Local jump research" }],
+      },
+      project,
+    );
+    const detail = await call("engine_reference_detail", {
+      game: "sm64",
+      id: "camera",
+      kind: "node",
+    });
+    expect(detail.node.id).toBe("camera");
+    expect(detail.sha).toBe(game.sha);
+    const local = await call("engine_reference_detail", {
+      game: "sm64",
+      id: "triple-jump",
+      kind: "card",
+    });
+    expect(local.card.behavior).toBe("Local jump research");
+    expect(local.sha).toBe("b".repeat(40));
+  });
   it("does not mistake malformed payload text for a network-unavailable error", async () => {
     malformed = true;
     malformedField = "TN_REFERENCES_UNAVAILABLE";

@@ -15,12 +15,14 @@ Reference search reads a gzipped stub index; detail fetches one pinned game's ma
 The source is the latest release of [threenative-game-refs](https://github.com/jonit-dev/threenative-game-refs),
 separate CC-BY 4.0 data. Downloads validate before replacing the cache in
 `$XDG_CACHE_HOME/threenative/refs` (default `~/.cache/threenative/refs`), refresh with ETags, and
-work offline from that cache. `THREENATIVE_REFERENCES_URL` overrides the release asset base URL;
+work offline from that cache. The index has a 5-second fetch budget; game files have 30 seconds,
+including their response bodies. `THREENATIVE_REFERENCES_URL` overrides the release asset base URL;
 `THREENATIVE_REFERENCES_CACHE` overrides the cache directory. Without network or cache, tools report
 `references unavailable` and capability discovery keeps working.
 
-Saved references live in the game's `.threenative/refs/<game-id>.json`, take priority over release
-data, and merge by id at the same commit SHA. A conflicting SHA is rejected without changing the saved file.
+Saved references live in the game's `.threenative/refs/<game-id>.json`. Local entries take priority;
+published entries without a local override remain searchable and loadable, with their own pinned SHA.
+Successive local saves merge by id at the same commit SHA. A conflicting SHA is rejected without changing the saved file.
 The save tool returns a `gh issue create` command for a POSIX shell; run it in that shell.
 It does not send the contribution. Reference guardrail: mechanics and feel only, with pinned
 `file:line` sources; no code, level layouts, character names or art.

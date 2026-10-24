@@ -91,6 +91,7 @@ export interface IReferenceGame {
 const DEFAULT_REFERENCES_URL =
   "https://github.com/jonit-dev/threenative-game-refs/releases/latest/download/";
 const FETCH_TIMEOUT_MS = 5_000;
+const GAME_FETCH_TIMEOUT_MS = 30_000;
 const ID = /^[a-z0-9][a-z0-9-]*$/u;
 
 export function referencesBaseUrl(): string {
@@ -151,6 +152,17 @@ function list<T>(value: unknown, where: string, item: (entry: unknown, at: strin
 function line(value: unknown, where: string): number {
   if (!Number.isInteger(value) || (value as number) < 1) fail(where, "expected a line number");
   return value as number;
+}
+
+function sourcePath(value: unknown, where: string): string {
+  const result = text(value, where);
+  if (
+    path.isAbsolute(result) ||
+    result.split("/").includes("..") ||
+    !/^[a-zA-Z0-9_./-]+$/u.test(result)
+  )
+    fail(where, "expected a safe relative source path");
+  return result;
 }
 
 function prose(value: unknown, where: string): string {
@@ -232,12 +244,12 @@ function validateNode(value: unknown, where: string): IReferenceNode {
       return {
         lines: [from, to] as const,
         name: text(fn.name, `${at}.name`),
-        path: text(fn.path, `${at}.path`),
+        path: sourcePath(fn.path, `${at}.path`),
       };
     }),
     id: id(node.id, `${where}.id`),
     name: text(node.name, `${where}.name`),
-    paths: texts(node.paths, `${where}.paths`),
+    paths: list(node.paths, `${where}.paths`, sourcePath),
     purpose: prose(node.purpose, `${where}.purpose`),
     ...(node.parent === undefined ? {} : { parent: id(node.parent, `${where}.parent`) }),
   };
@@ -255,6 +267,11 @@ function validateCard(value: unknown, where: string): IReferenceCard {
     "capabilities",
     "tags",
   ]);
+  const sources = list(card.sources, `${where}.sources`, (entry, at) => {
+    const source = record(entry, at, ["path", "line"]);
+    return { line: line(source.line, `${at}.line`), path: sourcePath(source.path, `${at}.path`) };
+  });
+  if (sources.length === 0) fail(`${where}.sources`, "expected at least one source");
   return {
     behavior: prose(card.behavior, `${where}.behavior`),
     capabilities: texts(card.capabilities, `${where}.capabilities`),
@@ -265,9 +282,13 @@ function validateCard(value: unknown, where: string): IReferenceCard {
         typeof constant.value !== "string"
       )
         fail(`${at}.value`, "expected a number or a string");
+      const source = text(constant.source, `${at}.source`);
+      const citation = /^(.*):([1-9][0-9]*)$/u.exec(source);
+      if (!citation) fail(`${at}.source`, "expected source path:line");
+      sourcePath(citation[1], `${at}.source`);
       return {
         name: text(constant.name, `${at}.name`),
-        source: text(constant.source, `${at}.source`),
+        source,
         unit: text(constant.unit, `${at}.unit`),
         value:
           typeof constant.value === "string" ? text(constant.value, `${at}.value`) : constant.value,
@@ -276,10 +297,7 @@ function validateCard(value: unknown, where: string): IReferenceCard {
     id: id(card.id, `${where}.id`),
     name: text(card.name, `${where}.name`),
     node: id(card.node, `${where}.node`),
-    sources: list(card.sources, `${where}.sources`, (entry, at) => {
-      const source = record(entry, at, ["path", "line"]);
-      return { line: line(source.line, `${at}.line`), path: text(source.path, `${at}.path`) };
-    }),
+    sources,
     summary: prose(card.summary, `${where}.summary`),
     tags: texts(card.tags, `${where}.tags`),
   };
@@ -365,7 +383,11 @@ export function referenceStubs(game: IReferenceGame): IReferenceStub[] {
  * a 304 or when the network is gone, and a throw when there is neither. `parse` runs before the
  * cache is written, so a malformed release throws and never replaces the last good copy.
  */
-async function cachedAsset<T>(name: string, parse: (body: Buffer) => T): Promise<T> {
+async function cachedAsset<T>(
+  name: string,
+  parse: (body: Buffer) => T,
+  timeout = FETCH_TIMEOUT_MS,
+): Promise<T> {
   const file = path.join(referencesCacheDir(), name);
   const etagFile = `${file}.etag`;
   let response: Response;
@@ -373,7 +395,7 @@ async function cachedAsset<T>(name: string, parse: (body: Buffer) => T): Promise
     const etag = existsSync(file) && existsSync(etagFile) ? readFileSync(etagFile, "utf8") : "";
     response = await fetch(new URL(name, referencesBaseUrl()), {
       headers: etag.length > 0 ? { "if-none-match": etag } : {},
-      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+      signal: AbortSignal.timeout(timeout),
     });
   } catch (error) {
     if (existsSync(file)) return parse(readFileSync(file));
@@ -428,30 +450,43 @@ export function loadLocalReferenceGames(cwd = process.cwd()): IReferenceGame[] {
   return readdirSync(directory)
     .filter((file) => file.endsWith(".json"))
     .sort()
-    .map((file) =>
-      validateReferenceGame(
+    .map((file) => {
+      const game = validateReferenceGame(
         parseJson(readFileSync(path.join(directory, file)), file),
         path.join(".threenative", "refs", file),
-      ),
-    );
+      );
+      if (game.id !== path.basename(file, ".json"))
+        fail(file, `id '${game.id}' differs from filename`);
+      return game;
+    });
 }
 
 /** One game's map and cards: the project's own saved copy first, then the release. */
 export function loadReferenceGame(gameId: string, cwd = process.cwd()): Promise<IReferenceGame> {
-  const name = `game-${id(gameId, "game id")}.json`;
+  id(gameId, "game id");
   const file = path.join(localReferencesDir(cwd), `${gameId}.json`);
   if (existsSync(file)) {
     const local = validateReferenceGame(parseJson(readFileSync(file), file), file);
     if (local.id !== gameId) fail(file, `id '${local.id}' differs from requested '${gameId}'`);
     return Promise.resolve(local);
   }
+  return loadReleaseReferenceGame(gameId);
+}
+
+/** The published game, used when a local overlay does not contain a requested entry. */
+export function loadReleaseReferenceGame(gameId: string): Promise<IReferenceGame> {
+  const name = `game-${id(gameId, "game id")}.json`;
   let load = gameLoads.get(name);
   if (load === undefined) {
-    load = cachedAsset(name, (body) => {
-      const game = validateReferenceGame(parseJson(body, name), name);
-      if (game.id !== gameId) fail(name, `id '${game.id}' differs from requested '${gameId}'`);
-      return game;
-    }).catch((error: unknown) => {
+    load = cachedAsset(
+      name,
+      (body) => {
+        const game = validateReferenceGame(parseJson(body, name), name);
+        if (game.id !== gameId) fail(name, `id '${game.id}' differs from requested '${gameId}'`);
+        return game;
+      },
+      GAME_FETCH_TIMEOUT_MS,
+    ).catch((error: unknown) => {
       gameLoads.delete(name);
       throw error;
     });
