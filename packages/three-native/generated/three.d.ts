@@ -1502,6 +1502,8 @@ polygonOffsetFactor: number;
 polygonOffsetUnits: number;
 fragmentNode: Node | null;
 colorWrite: boolean;
+aoNode: Node | null;
+irradianceNode: Node | null;
 
   clone(): this;
 
@@ -1586,6 +1588,9 @@ fog: boolean;
 alphaTest: number;
 readonly id: number;
 readonly type: string;
+twoSidedFoliage: boolean;
+roughDiffuse: boolean;
+subsurfaceColor: Color | undefined;
 
   setValues(values?: MeshStandardMaterialParameters): void;
 
@@ -1649,6 +1654,11 @@ bumpMap: Texture | null;
 fragmentNode: Node | null;
 flatShading: boolean;
 colorWrite: boolean;
+aoNode: Node | null;
+irradianceNode: Node | null;
+twoSidedFoliage: boolean;
+roughDiffuse: boolean;
+subsurfaceColor: Color | undefined;
 
   clone(): this;
 
@@ -1760,6 +1770,8 @@ vertexNode: Node | null;
 depthNode: Node | null;
 visible: boolean;
 colorWrite: boolean;
+aoNode: Node | null;
+irradianceNode: Node | null;
 
   clone(): this;
 
@@ -2113,6 +2125,7 @@ distance: number;
 intensity: number;
 color: Color;
 readonly shadow: PointLightShadow;
+sourceRadius: number;
 }
 
 /** Catalog partial (members-not-catalogued, media-sources-unbound): three/PositionalAudio. */
@@ -2415,6 +2428,7 @@ backgroundIntensity: number;
 backgroundRotation: Euler;
 environmentIntensity: number;
 environmentRotation: Euler;
+backgroundNode: Node | null | undefined;
 
   copy(source: Scene, recursive?: boolean): this;
 }
@@ -2716,8 +2730,11 @@ generateMipmaps: boolean;
 readonly source: Source;
 format: number;
 type: number;
+readonly center: Vector2;
 
   dispose(): void;
+
+  clone(): this;
 }
 
 /** Catalog supported: three/webgpu/TorusGeometry. */
@@ -3269,6 +3286,9 @@ export declare function lightShadowMatrix(light: Light): Node;
 /** Catalog supported: three/tsl/rtt. */
 export declare function rtt(node: Node, width?: number | null, height?: number | null, options?: Record<string, unknown>): Node;
 
+/** Catalog partial (stochastic-ggx-not-implemented, environment-mis-not-implemented, history-feedback-not-implemented): three/addons/tsl/display/SSRNode.js/ssr. */
+export declare function ssr(colorNode: unknown, depthNode: unknown, normalNode: unknown, options?: { camera?: Camera; metalnessNode?: unknown; roughnessNode?: unknown; reflectNonMetals?: boolean; binaryRefine?: boolean }): Node & { maxDistance: { value: number }; thickness: { value: number }; opacity: { value: number }; quality: { value: number }; intensity: { value: number }; maxLuminance: { value: number }; blurQuality: { value: number }; resolutionScale: number; reflectNonMetals: boolean; binaryRefine: boolean; getTextureNode(): Node };
+
 /** Catalog partial (resource-parameters, includes, more-than-four-arguments): three/tsl/wgslFn. */
 export declare function wgslFn(code: string, includes?: unknown[]): Function;
 
@@ -3301,6 +3321,8 @@ polygonOffsetFactor: number;
 polygonOffsetUnits: number;
 flatShading: boolean;
 colorWrite: boolean;
+twoSidedFoliage: boolean;
+subsurfaceColor: Color | undefined;
 
   clone(): this;
 
@@ -3340,6 +3362,8 @@ polygonOffsetFactor: number;
 polygonOffsetUnits: number;
 flatShading: boolean;
 colorWrite: boolean;
+twoSidedFoliage: boolean;
+subsurfaceColor: Color | undefined;
 
   clone(): this;
 
@@ -3431,8 +3455,9 @@ distance: number;
 intensity: number;
 penumbra: number;
 color: Color;
-readonly target: Object3D;
+target: Object3D;
 readonly shadow: SpotLightShadow;
+sourceRadius: number;
 }
 
 /** Catalog supported: three/AnimationAction. */
@@ -3570,3 +3595,24 @@ export declare function atomicAdd(pointerNode: Node, valueNode: Node | number): 
 
 /** Catalog supported: three/tsl/atomicStore. */
 export declare function atomicStore(pointerNode: Node, valueNode: Node | number): Node;
+
+/** Catalog supported: three/webgpu/StorageTexture. */
+export declare class StorageTexture extends Texture {
+constructor(width?: number, height?: number);
+readonly isStorageTexture: true;
+mipmapsAutoUpdate: boolean;
+
+  setSize(width: number, height: number): void;
+}
+
+/** Catalog supported: three/tsl/uvec2. */
+export declare function uvec2(...args: unknown[]): unknown;
+
+/** Catalog supported: three/tsl/storageTexture. */
+export declare function storageTexture(...args: unknown[]): unknown;
+
+/** Catalog supported: three/tsl/textureStore. */
+export declare function textureStore(...args: unknown[]): unknown;
+
+/** Catalog supported: three/tsl/modelWorldMatrix. */
+export declare function modelWorldMatrix(): void;

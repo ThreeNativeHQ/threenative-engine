@@ -437,6 +437,15 @@ void scene() {
     Runtime& rt = runtime();
     v8::Isolate::Scope isolateScope(rt.isolate);
     Adapter adapter(rt.isolate, rt.context);
+    CHECK(run(rt, adapter, R"JS(
+        const sun = new DirectionalLight();
+        sun.shadow.shadowNode = {clipExtents:[8,24], selectionGuard:[0.9,0.9], refreshStep:[0.125,0.125],
+            mapSize:256, autoDepth:true, adaptiveRefresh:true, adaptiveCasterGate:true, followViewFocus:true,
+            shadowLodBias:true, minCasterTexels:1.5, invalidationDelay:[0.25,0.75], pinnedStatic:[], trackedCasters:[]};
+        sun.shadow.shadowNode = {command:"invalidateRegion", bounds:[-1,0,-1,1,2,1]};
+        "virtual-shadow-records-accepted";
+    )JS") == "virtual-shadow-records-accepted");
+
     const std::string got = run(rt, adapter, R"JS(
         const parent = new Object3D(), child = new Object3D();
         parent.add(child);
@@ -557,14 +566,23 @@ void catalogCoverage() {
     for (const auto& [name, want] : numbers) CHECK(tableConstants.count(name) == 1);
     for (const auto& [name, want] : strings) CHECK(tableConstants.count(name) == 1);
     // Supported TSL functions live on the TSL module, rather than the class/constant globals.
-    const std::set<std::string> tslFunctions = {"atomicAdd", "atomicStore", "lightShadowMatrix", "rtt"};
+    const std::set<std::string> tslFunctions = {"atomicAdd", "atomicStore", "lightShadowMatrix", "rtt", "storageTexture",
+                                                "textureStore", "uvec2"};
+    // TSL nodes the catalog publishes as functions that the engine installs as node objects.
+    const std::set<std::string> tslNodes = {"modelWorldMatrix"};
+    for (const auto& name : tslNodes) {
+        v8::Local<v8::Value> value;
+        CHECK(global->Get(ctx, key("tsl")).ToLocal(&value) && value->IsObject() &&
+              value.As<v8::Object>()->Get(ctx, key(name)).ToLocal(&value) && value->IsObject());
+    }
     v8::Local<v8::Value> tsl;
     CHECK(global->Get(ctx, key("tsl")).ToLocal(&tsl) && tsl->IsObject());
     for (const auto& name : tslFunctions) {
         v8::Local<v8::Value> value;
         CHECK(tsl.As<v8::Object>()->Get(ctx, key(name)).ToLocal(&value) && value->IsFunction());
     }
-    CHECK(installed.size() + tableConstants.size() + recordTypes.size() + enums.size() + tslFunctions.size() ==
+    CHECK(installed.size() + tableConstants.size() + recordTypes.size() + enums.size() + tslFunctions.size() +
+              tslNodes.size() ==
           tn_engine_version().capability_count);
 
     // Every class's prototype exposes exactly its registry members: methods, top-level getters and
@@ -575,7 +593,11 @@ void catalogCoverage() {
         for (const auto& [member, fn] : binding.methods) { (void)fn; expected.insert(member); }
         for (const auto& [member, fn] : binding.getters) {
             (void)fn;
-            if (member.find('.') == std::string::npos) expected.insert(member);
+            const std::size_t dot = member.find('.');
+            if (dot == std::string::npos) expected.insert(member);
+            // A dotted getter with no member object reads through a holder (`texture.image.width`).
+            else if (binding.members.count(member.substr(0, dot)) == 0 && binding.getters.count(member.substr(0, dot)) == 0)
+                expected.insert(member.substr(0, dot));
         }
         for (const auto& [member, fn] : binding.members) {
             (void)fn;
@@ -742,10 +764,10 @@ void tslApi() {
         {"tsl.float(0.25).smoothstep(0,1)", g::smoothstep(g::float_(0), g::float_(1), g::float_(0.25))},
         {"tsl.float(0.25).clamp(0,1)", g::clamp(g::float_(0.25), g::float_(0), g::float_(1))},
         {"tsl.screenUV", g::screenUV()},
-        {"tsl.materialColor", g::swizzle(g::uniform("diffuse", tn::engine::shader::Type::vec(4)), "xyz")},
-        {"tsl.materialEmissive", g::uniform("emissive", tn::engine::shader::Type::vec(3))},
-        {"tsl.materialMetalness", g::uniform("metalness", tn::engine::shader::Type::f32())},
-        {"tsl.materialRoughness", g::uniform("roughness", tn::engine::shader::Type::f32())},
+        {"tsl.materialColor", g::swizzle(g::materialInput("diffuse", tn::engine::shader::Type::vec(4)), "xyz")},
+        {"tsl.materialEmissive", g::materialInput("emissive", tn::engine::shader::Type::vec(3))},
+        {"tsl.materialMetalness", g::materialInput("metalness", tn::engine::shader::Type::f32())},
+        {"tsl.materialRoughness", g::materialInput("roughness", tn::engine::shader::Type::f32())},
         {"tsl.vec4(1,0.5,0.25,1).rgb", g::swizzle(g::vec4({g::float_(1),g::float_(0.5),g::float_(0.25),g::float_(1)}), "xyz")},
     }) {
         const std::string source = "(() => {const m=new MeshBasicNodeMaterial();m.colorNode=" + expression + ";return m;})()";

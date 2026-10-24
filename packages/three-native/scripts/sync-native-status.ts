@@ -214,15 +214,26 @@ const METHOD_OVERRIDE: Record<string, { parameters: ICatalogParameter[]; returns
 const UNDECLARED_FIELDS: Record<string, string> = {
   revision: "number",
   id: "number",
+  // The engine's Two Sided Foliage marker (PRD-651): bound on every lit material class, declared by no three type.
+  twoSidedFoliage: "boolean",
+  // The engine's Substrate rough diffuse switch on a standard or physical material, and a lamp's Source Radius in metres (PRD-653).
+  roughDiffuse: "boolean",
+  sourceRadius: "number",
+  // The Two Sided Foliage leaf's Subsurface Color (PRD-643): unset until written, so it reads undefined.
+  subsurfaceColor: "Color | undefined",
   "BufferGeometry.parameters": "Record<string, unknown>",
   // Basic stores these authored slots too; upstream only evaluates emissiveNode.
   "MeshBasicNodeMaterial.emissiveNode": "Node | null",
   "MeshBasicNodeMaterial.roughnessNode": "Node | null",
   "MeshBasicNodeMaterial.metalnessNode": "Node | null",
+  "MeshBasicNodeMaterial.aoNode": "Node | null",
+  "MeshBasicNodeMaterial.irradianceNode": "Node | null",
   "Sprite.morphTargetInfluences": "number[]",
   "SpriteNodeMaterial.emissiveNode": "Node | null",
   "SpriteNodeMaterial.roughnessNode": "Node | null",
   "SpriteNodeMaterial.metalnessNode": "Node | null",
+  "SpriteNodeMaterial.aoNode": "Node | null",
+  "SpriteNodeMaterial.irradianceNode": "Node | null",
 };
 
 /** A `__` member is engine-internal (a back end calls it, as `__walk`); three's surface never has it. */

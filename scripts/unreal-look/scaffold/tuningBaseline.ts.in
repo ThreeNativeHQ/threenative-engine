@@ -1,0 +1,29 @@
+// Written by scripts/unreal-look/capture-threenative.ts as src/scenes/tuning.ts of a `--baseline` scaffold.
+// The template's own src/render/ has none of the overlay's tuning modules. Reference.ts only calls these
+// behind its TUNED switch (or reads the inert values below), so the arm shows the template look as it ships.
+export type FinalGatherMethod = "none" | "irradianceField" | "screenProbeGather";
+export const EMISSIVE_UNITS = 1;
+export const EPIC_SSGI = {};
+export const installGi = (..._args: unknown[]): void => undefined;
+export type IGlbMaterialImages = Readonly<Record<string, unknown>>;
+export const fetchGlbMaterialImages = async (..._args: unknown[]) => ({
+  images: new Map<string, IGlbMaterialImages>(),
+  tried: [] as string[],
+});
+export const markTwoSidedFoliage = (..._args: unknown[]): void => undefined;
+export const shadeLikeSubstrate = (..._args: unknown[]): void => undefined;
+export const watchGi = (..._args: unknown[]): { lastReport(): unknown } | undefined => undefined;
+export const unrealSunDiscScale = (_sun: { readonly x: number }): number => 1;
+export const watchShadowTier = (..._args: unknown[]): { lastReport(): unknown } | undefined =>
+  undefined;
+export const captureReflections = (..._args: unknown[]): Promise<() => void> =>
+  Promise.resolve(() => undefined);
+export const reflectionTrace: { current?: { dispose(): void } } = {};
+export const giPreset = (_tier: string): { finalGatherMethod: FinalGatherMethod } => ({
+  finalGatherMethod: "none",
+});
+export const shadowPreset = (_tier: string) => ({
+  castShadows: true,
+  filter: {},
+  shadowQuality: "template",
+});

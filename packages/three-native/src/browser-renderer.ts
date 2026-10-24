@@ -5,11 +5,16 @@
  * engine did. What it does not implement throws its diagnostic rather than doing nothing.
  */
 import { TSL_NODE, type TnAbiModule, engineRef } from "./browser-backend.js";
-import { type ITslRuntime, isTslNode } from "./browser-tsl.js";
+import { type ITslRuntime, defineTsl, isTslNode } from "./browser-tsl.js";
+import { GPU_STAGES, SHADOW_SEGMENT_FIELD, SHADOW_STAGE } from "./gpu-stages.js";
 import type { PassDraw } from "./pass-node.js";
-import { defineRenderTargets } from "./render-target.js";
+import { defineRenderTargets, targetTexelBytes } from "./render-target.js";
 import { ShadowMap } from "./shadow-map.js";
+import { syncVirtualShadowLods } from "./shadow-node.js";
+import { defineSphereReflectionCapture } from "./sphere-reflection-capture.js";
 import { readStorageBytes } from "./storage.js";
+import type { INodeFrame } from "./temp-node.js";
+import { defineToneMappingLibrary } from "./tone-mapping.js";
 
 /** The product host's exports beside the catalog ABI (all numbers: pointers, sizes, status). */
 type HostCall =
@@ -23,7 +28,8 @@ type HostCall =
   | "_tnw_web_frame"
   | "_tnw_web_render_target"
   | "_tnw_web_read_target"
-  | "_tnw_web_read_target_take";
+  | "_tnw_web_read_target_take"
+  | "_tnw_web_capture_face";
 
 export type WebHostModule = Record<HostCall, (...args: number[]) => number> & {
   readonly specialHTMLTargets: Record<string, unknown>;
@@ -42,6 +48,11 @@ const READY = 1;
 export const RENDER_AGAIN = Symbol("tn.renderAgain");
 const DRAW_TARGET = Symbol("tn.drawTarget");
 const FAILED = 2;
+/**
+ * `tnw_web_frame` field of the first named stage's segment (web_host.cpp): 19 + 4 shadow, scene, other and output
+ * passes. `GPU_STAGES` counts on from there, one segment per stage.
+ */
+const GPU_STAGE_FIELD = 23;
 
 interface IAdapterInfo {
   readonly vendor: string;
@@ -64,13 +75,14 @@ function unsupported(name: string): never {
 export function defineWebRenderer(
   module: WebEngineModule,
   Color: new (...args: unknown[]) => IColorLike,
-  beforeRender: (frame?: { camera?: unknown; scene?: unknown }) => void = () => {},
+  beforeRender: (frame?: INodeFrame) => void = () => {},
   tsl?: ITslRuntime,
   /** Draws the offscreen PassNodes into their targets (pass-node.ts); given the drawing buffer and the target draw. */
   drawSecondaryPasses: (
     surface: () => { width: number; height: number },
     draw: PassDraw,
   ) => void = () => {},
+  DataTexture?: Parameters<typeof defineSphereReflectionCapture>[1],
 ): new (
   parameters?: Record<string, unknown>,
 ) => object {
@@ -128,12 +140,68 @@ export function defineWebRenderer(
         graphKeys: 0,
         programs: 0,
         frameGateSkips: 0,
+        // The temporal pass, read from the engine each frame. `active` is false until a traa() effect is in the post
+        // graph, so a graph that never reached the engine shows here as a pass that never ran.
+        temporal: {
+          active: false,
+          frame: 0,
+          historyValid: false,
+          jitter: [0, 0] as [number, number],
+          // The newest counted frame (one in 16 is counted): the pixels whose history the resolve discarded and the pixels
+          // whose history it pulled into the colour neighbourhood, of `pixels`, and which frame it was. 0 until the first.
+          rejected: 0,
+          clamped: 0,
+          pixels: 0,
+          countedFrame: 0,
+        },
+        // The samples the scene draws with. `samples` above is what was asked for; 1 here while the temporal pass runs.
+        samples: 1,
+        // The GPU milliseconds of the sample `render.timestamp` reports, by named stage (gpu-stages.ts). A stage that
+        // drew no pass is absent; core's `stageGpuReading` hands it to the GI and shadow budgets.
+        gpuStages: {} as Record<string, number>,
+        // The last frame's shadow passes, the spot and point light maps apart from the sun's (PRD-650):
+        // lamp maps redrawn and their draws, every shadow draw (the sun's are the rest), and the GPU
+        // milliseconds of each part in the sample `render.timestamp` reports, -1 until one resolves.
+        // `lampMapMin` and `lampMapMax` are the edges of the lamp maps the engine sized from their footprint.
+        shadows: {
+          lampRedraws: 0,
+          lampDraws: 0,
+          shadowDraws: 0,
+          sunGpuMs: -1,
+          lampGpuMs: -1,
+          lampMapMin: 0,
+          lampMapMax: 0,
+        },
       },
-      reset(): void {},
+      // three's Info: render() adds to drawCalls and triangles, and the caller resets once per frame, so a
+      // frame that draws its world and then its overlay reports both (core does this in onBeginFrame).
+      reset(): void {
+        this.render.drawCalls = 0;
+        this.render.frameCalls = 0;
+        this.render.triangles = 0;
+      },
     };
     /** three's WebGPURenderer: `antialias` is 4x MSAA, `samples` 0 or 1 is none; the engine draws 1 or 4. */
     readonly samples: number;
     autoClear = true;
+    readonly library = defineToneMappingLibrary(
+      () => {
+        if (!tsl) throw new Error("TN_NATIVE_CUSTOM_TONEMAPPING_MISSING: no TSL runtime");
+        const { exports } = defineTsl(tsl);
+        const color = (exports.toneMappingColor as () => unknown)();
+        const exposure = (exports.uniform as (value: number) => { setName(name: string): unknown })(
+          1,
+        ).setName("toneMappingExposure");
+        return [color, exposure];
+      },
+      (node) => {
+        if (!isTslNode(node))
+          throw new TypeError("TN_NATIVE_CUSTOM_TONEMAPPING_TYPE: expected a TSL vec3 node");
+        if (!tsl?.setToneMapping)
+          throw new Error("TN_NATIVE_CUSTOM_TONEMAPPING_MISSING: no output binding");
+        tsl.setToneMapping(node[TSL_NODE]);
+      },
+    );
     toneMapping = 0;
     toneMappingExposure = 1;
     outputColorSpace = "srgb";
@@ -155,6 +223,8 @@ export function defineWebRenderer(
     #initialized: Promise<this> | undefined;
     #adapter: IAdapterInfo | undefined;
     #last: [unknown, unknown] | undefined;
+    /** The host is Failed for good (the GPU process destroyed the device, an uncaptured error): see #drawStatus. */
+    #lost = false;
     #state: string | undefined;
     #gpuSamples = 0;
     #holdsSlot = true;
@@ -207,6 +277,7 @@ export function defineWebRenderer(
         } else {
           // The disposed renderer's post graph must not outlive its game.
           tsl?.setPost(null);
+          tsl?.setToneMapping?.(null);
         }
         for (;;) {
           const state = module._tnw_web_poll();
@@ -277,6 +348,12 @@ export function defineWebRenderer(
       this.#clear = [value.r, value.g, value.b, alpha];
     }
 
+    getClearColor<T extends IColorLike & { setRGB(r: number, g: number, b: number): T }>(
+      target: T,
+    ): T {
+      return target.setRGB(this.#clear[0], this.#clear[1], this.#clear[2]);
+    }
+
     getClearAlpha(): number {
       return this.#clear[3];
     }
@@ -288,6 +365,7 @@ export function defineWebRenderer(
     render(scene: unknown, camera: unknown): void {
       if (this.#adapter === undefined)
         throw new Error("TN_WASM_RENDERER: render() before init() finished.");
+      if (this.#lost) return;
       // Chromium queues a submitted frame without bound. When rAF outruns the GPU (an unthrottled
       // loop, a heavy scene) the page blocks until the GPU drains and the GPU process is killed.
       // The host says 1 while two drawn frames are still on the GPU: draw nothing this call.
@@ -297,7 +375,8 @@ export function defineWebRenderer(
         this.info.engine.frameGateSkips += 1;
         return;
       }
-      beforeRender({ camera, scene });
+      syncVirtualShadowLods();
+      beforeRender({ camera, scene, renderer: this, frameId: this.info.frame });
       drawSecondaryPasses(
         () => ({ width: this.#drawWidth(), height: this.#drawHeight() }),
         (target, root, view) => this[DRAW_TARGET](target, root, view, true),
@@ -307,12 +386,18 @@ export function defineWebRenderer(
       writeHandle(0, scene, "scene");
       writeHandle(12, camera, "camera");
       const renderFrame = this.info.frame;
-      check(module._tnw_web_render(handles, handles + 12, ...this.#clear, renderFrame));
+      this.#drawStatus(module._tnw_web_render(handles, handles + 12, ...this.#clear, renderFrame));
       this.info.frame += 1;
       this.info.render.frameCalls = module._tnw_web_frame(0);
       this.info.render.calls += this.info.render.frameCalls;
-      this.info.render.drawCalls = this.info.render.frameCalls;
-      this.info.render.triangles = module._tnw_web_frame(1);
+      this.info.render.drawCalls += this.info.render.frameCalls;
+      this.info.render.triangles += module._tnw_web_frame(1);
+      const shadows = this.info.engine.shadows;
+      shadows.lampRedraws = module._tnw_web_frame(25);
+      shadows.lampDraws = module._tnw_web_frame(26);
+      shadows.shadowDraws = module._tnw_web_frame(27);
+      shadows.lampMapMin = module._tnw_web_frame(28);
+      shadows.lampMapMax = module._tnw_web_frame(29);
       const gpuSamples = module._tnw_web_frame(8);
       if (gpuSamples > this.#gpuSamples) {
         this.#gpuSamples = gpuSamples;
@@ -322,6 +407,16 @@ export function defineWebRenderer(
         if (Number.isFinite(gpuMs) && gpuMs > 0) {
           this.info.render.timestamp = gpuMs;
           this.#timestampFrames = [module._tnw_web_frame(9)];
+          const stages: Record<string, number> = {};
+          GPU_STAGES.forEach((name, index) => {
+            const stageMs = module._tnw_web_frame(GPU_STAGE_FIELD + index);
+            if (stageMs > 0) stages[name] = stageMs;
+          });
+          const shadowMs = module._tnw_web_frame(SHADOW_SEGMENT_FIELD);
+          if (shadowMs > 0) stages[SHADOW_STAGE] = shadowMs;
+          this.info.engine.gpuStages = stages;
+          this.info.engine.shadows.sunGpuMs = module._tnw_web_frame(19);
+          this.info.engine.shadows.lampGpuMs = module._tnw_web_frame(24);
         }
       }
       const engine = this.info.engine;
@@ -330,11 +425,23 @@ export function defineWebRenderer(
       engine.bindGroups = module._tnw_web_frame(4);
       engine.graphKeys = module._tnw_web_frame(5);
       engine.programs = module._tnw_web_frame(6);
+      const temporal = engine.temporal;
+      temporal.active = module._tnw_web_frame(13) === 1;
+      temporal.frame = module._tnw_web_frame(14);
+      temporal.historyValid = module._tnw_web_frame(15) === 1;
+      temporal.jitter[0] = module._tnw_web_frame(16);
+      temporal.jitter[1] = module._tnw_web_frame(17);
+      temporal.rejected = module._tnw_web_frame(30);
+      temporal.clamped = module._tnw_web_frame(31);
+      temporal.pixels = module._tnw_web_frame(32);
+      temporal.countedFrame = module._tnw_web_frame(33);
+      engine.samples = module._tnw_web_frame(18);
     }
 
     /** three's output and shadow settings, handed to the engine when they change. */
     #applyState(): void {
       const { toneMapping, toneMappingExposure, outputColorSpace, shadowMap, samples } = this;
+      this.library.apply(toneMapping);
       const key = `${toneMapping}|${toneMappingExposure}|${outputColorSpace}|${shadowMap.enabled}|${shadowMap.type}|${samples}`;
       if (key === this.#state) return;
       const space = string(String(outputColorSpace));
@@ -362,12 +469,14 @@ export function defineWebRenderer(
     [DRAW_TARGET](target: unknown, root: unknown, camera: unknown, deferred = false): void {
       if (this.#adapter === undefined)
         throw new Error("TN_WASM_RENDERER: render() before init() finished.");
-      beforeRender({ camera, scene: root });
+      if (this.#lost) return;
+      syncVirtualShadowLods();
+      beforeRender({ camera, scene: root, renderer: this, frameId: this.info.frame });
       this.#applyState();
       writeHandle(0, root, "scene");
       writeHandle(12, camera, "camera");
       writeHandle(24, target, "render target");
-      check(
+      this.#drawStatus(
         module._tnw_web_render_target(
           handles + 24,
           handles,
@@ -376,6 +485,23 @@ export function defineWebRenderer(
           deferred ? 1 : 0,
         ),
       );
+    }
+
+    /**
+     * A draw's status. The host stays Failed once it lost its device and answers every later draw with the
+     * same message, so the first one throws and the renderer draws nothing after it: one diagnostic, not one
+     * page error per frame. A refusal that leaves the host running (a render target's) still throws each time.
+     */
+    #drawStatus(status: number): void {
+      if (status !== 0 && !this.#lost && module._tnw_web_poll() === FAILED) {
+        this.#lost = true;
+        // The throw below is the only other report, and a warm-up or a frame hook may swallow it: every
+        // later render() returns without drawing, so the console must name the loss once, here.
+        console.error(
+          `TN_WASM_RENDERER_LOST: this renderer draws nothing after this call. ${module.UTF8ToString(module._tnw_web_error())}`,
+        );
+      }
+      check(status);
     }
 
     /** The last scene and camera again: RenderPipeline.render() draws through its post graph. */
@@ -500,7 +626,8 @@ export function defineWebRenderer(
     writeHandle(24, target, "render target");
     const id = module._tnw_web_read_target(handles + 24, x, y, width, height);
     if (id === 0) check(1);
-    const size = width * height * 8;
+    const size =
+      width * height * targetTexelBytes((target as { texture: { type: number } }).texture.type);
     const out = module._malloc(size) >>> 0;
     try {
       for (;;) {
@@ -514,6 +641,31 @@ export function defineWebRenderer(
       module._free(out);
     }
   };
+  if (DataTexture !== undefined)
+    Object.assign(Renderer.prototype, {
+      // quality-allow: the capture API takes the requested Unreal actor name
+      // biome-ignore lint/style/useNamingConvention: capture API uses the requested Unreal actor name.
+      SphereReflectionCapture: defineSphereReflectionCapture(async (scene, x, y, z, size, face) => {
+        beforeRender();
+        writeHandle(0, scene, "scene");
+        const id = module._tnw_web_capture_face(handles, x, y, z, size, face);
+        if (id === -2) return null;
+        if (id < 0) check(1);
+        const bytes = size * size * 3 * 4;
+        const out = module._malloc(bytes) >>> 0;
+        try {
+          for (;;) {
+            module._tnw_web_poll();
+            const status = module._tnw_web_read_target_take(id, out, bytes);
+            if (status === 1) return new Float32Array(module.HEAPU8.slice(out, out + bytes).buffer);
+            if (status < 0) throw new Error("TN_REFLECTION_CAPTURE_READ");
+            await new Promise((resolve) => setTimeout(resolve, 0));
+          }
+        } finally {
+          module._free(out);
+        }
+      }, DataTexture),
+    });
   defineRenderTargets(Renderer.prototype, (renderer) => ({
     draw: (target, root, camera) =>
       (renderer as { [DRAW_TARGET](t: unknown, r: unknown, c: unknown): void })[DRAW_TARGET](

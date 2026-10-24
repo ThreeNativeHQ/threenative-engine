@@ -70,7 +70,7 @@ struct Params {
     inverseProjection: mat4x4<f32>, previousInverseProjection: mat4x4<f32>,
     previousWorld: mat4x4<f32>, view: mat4x4<f32>, projection: mat4x4<f32>,
     size: vec2<f32>, depthThreshold: f32, edgeDepthDiff: f32,
-    maxVelocityLength: f32, subpixel: f32,
+    maxVelocityLength: f32, subpixel: f32, count: f32,
 }
 @group(0) @binding(0) var<uniform> u: Params;
 @group(0) @binding(1) var beauty: texture_2d<f32>;
@@ -79,6 +79,9 @@ struct Params {
 @group(0) @binding(4) var history: texture_2d<f32>;
 @group(0) @binding(5) var previousDepth: texture_depth_2d;
 @group(0) @binding(6) var linearSampler: sampler;
+// On a counted frame (`u.count`): [0] the pixels whose history was discarded, [1] the pixels whose history was pulled into
+// the colour neighbourhood. Other frames never touch it.
+@group(0) @binding(7) var<storage, read_write> stats: array<atomic<u32>, 2>;
 struct Vertex { @builtin(position) position: vec4<f32>, @location(0) uv: vec2<f32> }
 @vertex fn vs(@builtin(vertex_index) index: u32) -> Vertex {
     var positions = array<vec2<f32>, 3>(vec2(-1, -1), vec2(3, -1), vec2(-1, 3));
@@ -124,6 +127,8 @@ fn clipAABB(current: vec4<f32>, old: vec4<f32>, low: vec4<f32>, high: vec4<f32>)
     let edge = farthest - closest > u.edgeDepthDiff;
     let disocclusion = closest - oldDepth > u.depthThreshold;
     let valid = validUV && (edge || !disocclusion);
+    let counting = u.count != 0;
+    if (counting && !valid) { atomicAdd(&stats[0], 1u); }
     let current = textureSampleLevel(beauty, linearSampler, input.uv, 0.0);
     let old = textureSampleLevel(history, linearSampler, historyUV, 0.0);
     let motion = clamp(length((input.uv - historyUV) * u.size) / u.maxVelocityLength, 0.0, 1.0);
@@ -148,12 +153,39 @@ fn clipAABB(current: vec4<f32>, old: vec4<f32>, low: vec4<f32>, high: vec4<f32>)
     let low = mean - variance;
     let high = mean + variance;
     let clipped = clipAABB(clamp(mean, low, high), old, low, high);
+    if (counting && valid && any(clipped.rgb != old.rgb)) { atomicAdd(&stats[1], 1u); }
     let compressedCurrent = current / (max(max(current.r, current.g), current.b) + 1);
     let compressedHistory = clipped / (max(max(clipped.r, clipped.g), clipped.b) + 1);
     let luminance = vec3(0.2126, 0.7152, 0.0722);
     let historyWeight = (1 - currentWeight) / (dot(compressedHistory.rgb, luminance) + 1);
     currentWeight /= dot(compressedCurrent.rgb, luminance) + 1;
     return (current * currentWeight + clipped * historyWeight) / max(currentWeight + historyWeight, 0.00001);
+}
+)WGSL"; }
+
+// The camera's motion at each pixel: the point the depth buffer holds, in the jittered frame it was rasterised in, seen
+// through the unjittered current and previous cameras. The same NDC difference the rigid velocity pass writes, so a
+// rigid draw overwriting this target changes nothing but its own pixels. Alpha 1 marks a written velocity.
+const char* traaFillWgsl() { return R"WGSL(
+struct Fill {
+    inverseProjection: mat4x4<f32>, world: mat4x4<f32>, projection: mat4x4<f32>, view: mat4x4<f32>,
+    previousView: mat4x4<f32>, previousProjection: mat4x4<f32>, size: vec2<f32>,
+}
+@group(0) @binding(0) var<uniform> u: Fill;
+@group(0) @binding(1) var depth: texture_depth_2d;
+struct Vertex { @builtin(position) position: vec4<f32> }
+@vertex fn vs(@builtin(vertex_index) index: u32) -> Vertex {
+    var positions = array<vec2<f32>, 3>(vec2(-1, -1), vec2(3, -1), vec2(-1, 3));
+    return Vertex(vec4(positions[index], 0, 1));
+}
+@fragment fn fs(input: Vertex) -> @location(0) vec4<f32> {
+    let uv = input.position.xy / u.size;
+    let clip = vec4(uv.x * 2 - 1, 1 - uv.y * 2, textureLoad(depth, vec2<i32>(input.position.xy), 0), 1);
+    let viewPoint = u.inverseProjection * clip;
+    let worldPoint = u.world * vec4(viewPoint.xyz / viewPoint.w, 1);
+    let current = u.projection * (u.view * worldPoint);
+    let previous = u.previousProjection * (u.previousView * worldPoint);
+    return vec4(current.xy / current.w - previous.xy / previous.w, 0, 1);
 }
 )WGSL"; }
 
@@ -165,6 +197,10 @@ TraaPass::TraaPass(WGPUDevice device, WGPUQueue queue, TraaOptions options)
     WGPUBufferDescriptor buffer{};
     buffer.size = 352; buffer.usage = WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst;
     uniforms_ = wgpuDeviceCreateBuffer(device_, &buffer);
+    // The counts of a counted frame. A pass whose owner reads them takes `setStatsBuffer`; the rest keep this one.
+    buffer.size = 8; buffer.usage = WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst | WGPUBufferUsage_CopySrc;
+    ownStats_ = stats_ = wgpuDeviceCreateBuffer(device_, &buffer);
+    buffer.size = 352; buffer.usage = WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst;
     WGPUSamplerDescriptor sampler{};
     sampler.maxAnisotropy = 1;
     sampler.magFilter = sampler.minFilter = WGPUFilterMode_Linear;
@@ -184,10 +220,27 @@ TraaPass::TraaPass(WGPUDevice device, WGPUQueue queue, TraaOptions options)
     pipeline_ = wgpuDeviceCreateRenderPipeline(device_, &pipeline);
     wgpuShaderModuleRelease(module);
     if (!pipeline_) throw std::runtime_error("TN_TRAA_PIPELINE_REFUSED");
+    buffer.size = 384 + 16;  // six matrices and the frame size, padded to the next 16 bytes
+    fillUniforms_ = wgpuDeviceCreateBuffer(device_, &buffer);
+    WGPUShaderModuleWGSLDescriptor_Compat fillWgsl{};
+    WGPUShaderModuleDescriptor fillDesc{};
+    setupShaderModuleWGSL(&fillDesc, &fillWgsl, traaFillWgsl());
+    auto fillModule = wgpuDeviceCreateShaderModule(device_, &fillDesc);
+    WGPUFragmentState fillFragment{}; fillFragment.module = fillModule; WGPU_SET_ENTRY_POINT(fillFragment, "fs");
+    fillFragment.targetCount = 1; fillFragment.targets = &color;
+    WGPURenderPipelineDescriptor fillPipeline{};
+    fillPipeline.vertex.module = fillModule; WGPU_SET_ENTRY_POINT(fillPipeline.vertex, "vs");
+    fillPipeline.fragment = &fillFragment; fillPipeline.primitive.topology = WGPUPrimitiveTopology_TriangleList;
+    fillPipeline.multisample.count = 1; fillPipeline.multisample.mask = 0xffffffffu;
+    fillPipeline_ = wgpuDeviceCreateRenderPipeline(device_, &fillPipeline);
+    wgpuShaderModuleRelease(fillModule);
+    if (!fillPipeline_) throw std::runtime_error("TN_TRAA_PIPELINE_REFUSED: camera velocity");
 }
 TraaPass::~TraaPass() {
     releaseTargets();
-    wgpuRenderPipelineRelease(pipeline_); wgpuBufferRelease(uniforms_); wgpuSamplerRelease(sampler_);
+    wgpuRenderPipelineRelease(pipeline_); wgpuRenderPipelineRelease(fillPipeline_);
+    wgpuBufferRelease(uniforms_); wgpuBufferRelease(fillUniforms_); wgpuBufferRelease(ownStats_);
+    wgpuSamplerRelease(sampler_);
 }
 void TraaPass::releaseTargets() {
     for (auto v : {historyView_, historyDepthView_, resolveView_, velocityView_}) if (v) wgpuTextureViewRelease(v);
@@ -232,6 +285,7 @@ TraaPass::Matrix TraaPass::begin(const Matrix& projection, const Matrix& world, 
     projection_ = projection; world_ = world; view_ = view; started_ = true;
     Matrix jittered = projection;
     const auto jitter = traaJitter(history_.frame());
+    jitter_ = jitter;
     // Perspective setViewOffset changes column 2; orthographic changes the translation column.
     if (projection[11] == -1) { jittered[8] += 2 * jitter[0] / width_; jittered[9] -= 2 * jitter[1] / height_; }
     else { jittered[12] -= 2 * jitter[0] / width_; jittered[13] += 2 * jitter[1] / height_; }
@@ -253,6 +307,29 @@ TraaPass::Matrix TraaPass::begin(const Matrix& projection, const Matrix& world, 
 TraaPass::Matrix TraaPass::previousModel(uint64_t object, const Matrix& world) {
     return history_.objectFrame(object, world, 0, 0);
 }
+void TraaPass::fillVelocity(WGPUCommandEncoder encoder, WGPUTextureView depthView) {
+    std::array<float, 100> data{};
+    const Matrix* matrices[] = {&inverseProjection_, &world_, &projection_, &view_, &previousView_, &previousProjection_};
+    for (size_t i = 0; i < 6; ++i) for (size_t j = 0; j < 16; ++j) data[i * 16 + j] = float((*matrices[i])[j]);
+    data[96] = float(width_); data[97] = float(height_);
+    wgpuQueueWriteBuffer(queue_, fillUniforms_, 0, data.data(), sizeof data);
+    auto layout = wgpuRenderPipelineGetBindGroupLayout(fillPipeline_, 0);
+    WGPUBindGroupEntry entries[2]{};
+    entries[0].binding = 0; entries[0].buffer = fillUniforms_; entries[0].size = sizeof data;
+    entries[1].binding = 1; entries[1].textureView = depthView;
+    WGPUBindGroupDescriptor groupDesc{}; groupDesc.layout = layout; groupDesc.entryCount = 2; groupDesc.entries = entries;
+    auto group = createBindGroup(device_, &groupDesc);
+    WGPURenderPassColorAttachment color{}; color.view = velocityView_;
+    color.loadOp = WGPULoadOp_Clear; color.storeOp = WGPUStoreOp_Store;
+#if defined(MYSTRAL_WEBGPU_DAWN)
+    color.depthSlice = WGPU_DEPTH_SLICE_UNDEFINED;
+#endif
+    WGPURenderPassDescriptor desc{}; desc.colorAttachmentCount = 1; desc.colorAttachments = &color;
+    auto pass = beginTimedRenderPass(encoder, &desc);
+    wgpuRenderPassEncoderSetPipeline(pass, fillPipeline_); wgpuRenderPassEncoderSetBindGroup(pass, 0, group, 0, nullptr);
+    wgpuRenderPassEncoderDraw(pass, 3, 1, 0, 0); wgpuRenderPassEncoderEnd(pass); wgpuRenderPassEncoderRelease(pass);
+    wgpuBindGroupRelease(group); wgpuBindGroupLayoutRelease(layout);
+}
 void TraaPass::seedHistory(WGPUCommandEncoder encoder, WGPUTexture beauty) {
     if (!needsSeed()) return;
     // TRAANode.updateBefore copies the beauty target before the resolve quad updates its scene pass.
@@ -263,7 +340,8 @@ void TraaPass::seedHistory(WGPUCommandEncoder encoder, WGPUTexture beauty) {
     wgpuCommandEncoderCopyTextureToTexture(encoder, &src, &dst, &extent);
 }
 void TraaPass::resolve(WGPUCommandEncoder encoder, WGPUTexture beauty, WGPUTextureView beautyView,
-                        WGPUTexture depth, WGPUTextureView depthView) {
+                        WGPUTexture depth, WGPUTextureView depthView, WGPUTexture output, WGPUTextureView outputView) {
+    const WGPUTexture resolved = output ? output : resolve_;
     auto copy = [&](WGPUTexture from, WGPUTexture to, bool isDepth) {
         WGPUImageCopyTexture_Compat src{}, dst{};
         src.texture = from; dst.texture = to;
@@ -287,17 +365,26 @@ void TraaPass::resolve(WGPUCommandEncoder encoder, WGPUTexture beauty, WGPUTextu
     for (size_t i = 0; i < 5; ++i) for (size_t j = 0; j < 16; ++j) data[i * 16 + j] = float((*matrices[i])[j]);
     data[80] = float(width_); data[81] = float(height_); data[82] = options_.depthThreshold;
     data[83] = options_.edgeDepthDiff; data[84] = options_.maxVelocityLength; data[85] = options_.useSubpixelCorrection;
+    // One frame in kMeasureEvery counts. The first frame has no history to judge, so it never counts.
+    measured_ = history_.historyValid(0) && history_.frame() % kMeasureEvery == 0;
+    data[86] = measured_ ? 1.f : 0.f;
+    if (measured_) {
+        const uint32_t zero[2] = {0, 0};
+        wgpuQueueWriteBuffer(queue_, stats_, 0, zero, sizeof zero);
+        measuredFrame_ = history_.frame();
+    }
     wgpuQueueWriteBuffer(queue_, uniforms_, 0, data.data(), sizeof data);
     auto layout = wgpuRenderPipelineGetBindGroupLayout(pipeline_, 0);
-    WGPUBindGroupEntry entries[7]{};
-    for (uint32_t i = 0; i < 7; ++i) entries[i].binding = i;
+    WGPUBindGroupEntry entries[8]{};
+    for (uint32_t i = 0; i < 8; ++i) entries[i].binding = i;
     entries[0].buffer = uniforms_; entries[0].size = sizeof data;
     entries[1].textureView = beautyView; entries[2].textureView = depthView;
     entries[3].textureView = velocityView_; entries[4].textureView = historyView_;
     entries[5].textureView = historyDepthView_; entries[6].sampler = sampler_;
-    WGPUBindGroupDescriptor groupDesc{}; groupDesc.layout = layout; groupDesc.entryCount = 7; groupDesc.entries = entries;
+    entries[7].buffer = stats_; entries[7].size = 8;
+    WGPUBindGroupDescriptor groupDesc{}; groupDesc.layout = layout; groupDesc.entryCount = 8; groupDesc.entries = entries;
     auto group = createBindGroup(device_, &groupDesc);
-    WGPURenderPassColorAttachment color{}; color.view = resolveView_;
+    WGPURenderPassColorAttachment color{}; color.view = outputView ? outputView : resolveView_;
     color.loadOp = WGPULoadOp_Clear; color.storeOp = WGPUStoreOp_Store;
 #if defined(MYSTRAL_WEBGPU_DAWN)
     color.depthSlice = WGPU_DEPTH_SLICE_UNDEFINED;
@@ -307,8 +394,8 @@ void TraaPass::resolve(WGPUCommandEncoder encoder, WGPUTexture beauty, WGPUTextu
     wgpuRenderPassEncoderSetPipeline(pass, pipeline_); wgpuRenderPassEncoderSetBindGroup(pass, 0, group, 0, nullptr);
     wgpuRenderPassEncoderDraw(pass, 3, 1, 0, 0); wgpuRenderPassEncoderEnd(pass); wgpuRenderPassEncoderRelease(pass);
     wgpuBindGroupRelease(group); wgpuBindGroupLayoutRelease(layout);
-    if (debugDump_) stageDebugTexture(encoder, resolve_, "resolved");
-    copy(resolve_, historyColor_, false); copy(depth, historyDepth_, true);
+    if (debugDump_) stageDebugTexture(encoder, resolved, "resolved");
+    copy(resolved, historyColor_, false); copy(depth, historyDepth_, true);
     history_.endFrame();
 }
 } // namespace tn::engine

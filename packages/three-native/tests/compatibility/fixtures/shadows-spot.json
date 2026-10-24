@@ -1,6 +1,6 @@
 {
   "name": "shadows-spot",
-  "adaptedFrom": "original \u2014 a spot light's PCF shadow map (perspective shadow camera fitted to the cone, bias, normalBias, near) on Standard, Lambert and Phong meshes; the box casts but does not receive, and a slab inside the sphere's shadow does neither",
+  "adaptedFrom": "original \u2014 a spot light's PCF shadow map (perspective shadow camera fitted to the cone, bias, normalBias, near) on Standard, Lambert and Phong meshes; the box casts but does not receive, and a slab inside the sphere's shadow does neither; shadow.mapSize is set to 1024, the game's override, because the native engine sizes a lamp map at three's 512 default from its footprint (PRD-650)",
   "tolerance": {
     "abs": 0
   },
@@ -372,6 +372,18 @@
       "id": "spot",
       "path": "shadow.bias",
       "value": -0.0005
+    },
+    {
+      "op": "set",
+      "id": "spot",
+      "path": "shadow.mapSize.x",
+      "value": 1024
+    },
+    {
+      "op": "set",
+      "id": "spot",
+      "path": "shadow.mapSize.y",
+      "value": 1024
     },
     {
       "op": "set",

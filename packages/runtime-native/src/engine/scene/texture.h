@@ -15,6 +15,7 @@
 #include <mutex>
 #include <string>
 #include <string_view>
+#include <stdexcept>
 #include <utility>
 #include <vector>
 
@@ -126,8 +127,16 @@ struct ExternalImage {
     std::function<void(uint32_t)> release;
 };
 
+struct TextureSource {
+    std::vector<uint8_t> data;
+    uint32_t width = 0, height = 0, depth = 1, version = 0;
+    std::shared_ptr<const ExternalImage> external;
+};
+
 class Texture {
 public:
+    // Copies share the image source; sampler state, transforms and GPU identity stay per texture.
+    const std::shared_ptr<TextureSource> imageSource = std::make_shared<TextureSource>();
     virtual ~Texture() = default;
 
     TextureId ident;  // identity for GPU caches; see TextureId
@@ -153,10 +162,12 @@ public:
 
     // RGBA bytes, width-major: 4 bytes/texel for UnsignedByteType, 8 for HalfFloatType (binary16
     // bits), 16 for FloatType. Empty until a loader or DataTexture fills it.
-    std::vector<uint8_t> data;
-    uint32_t width = 0, height = 0;
-    uint32_t depth = 1;   // slices of a Data3DTexture, stored one after another
+    std::vector<uint8_t>& data = imageSource->data;
+    uint32_t& width = imageSource->width;
+    uint32_t& height = imageSource->height;
+    uint32_t& depth = imageSource->depth;   // slices of a Data3DTexture, stored one after another
     bool depthTexture = false;
+    bool storageTexture = false, mipmapsAutoUpdate = true;
     bool volume = false;  // three's isData3DTexture: uploaded and sampled as a 3D texture, at any depth
     /**
      * The render target this texture is the colour of (three's `renderTarget.texture`,
@@ -165,12 +176,23 @@ public:
      */
     std::weak_ptr<void> renderTarget;
     /** The host's decoded image, uploaded in place of `data` (empty then); width and height are its size. */
-    std::shared_ptr<const ExternalImage> external;
+    std::shared_ptr<const ExternalImage>& external = imageSource->external;
 
     /** three.js `texture.needsUpdate`: a GPU record rebuilds when its counter moves. */
-    void needsUpdate() { ++version_; }
+    void needsUpdate() { ++version_; ++imageSource->version; }
     [[nodiscard]] uint32_t version() const { return version_; }
 
+    [[nodiscard]] std::string storageFormat() const {
+        if (format == kTextureRGBAFormat) {
+            if (type == kTextureHalfFloatType) return "rgba16float";
+            if (type == kTextureFloatType) return "rgba32float";
+            if (type == kTextureUnsignedByteType) return "rgba8unorm";
+        }
+        const std::string typeName = type == kTextureHalfFloatType ? "HalfFloatType" : type == kTextureFloatType ? "FloatType"
+                                   : type == kTextureUnsignedByteType ? "UnsignedByteType" : "unknown";
+        throw std::runtime_error("TN_NATIVE_STORAGE_TEXTURE_FORMAT: type=" + std::to_string(type) + " (" + typeName +
+                                 "), format=" + std::to_string(format) + (format == kTextureRGBAFormat ? " (RGBAFormat)" : " (unknown)"));
+    }
     [[nodiscard]] bool isFloat() const { return type == kTextureFloatType; }
     [[nodiscard]] bool isHalfFloat() const { return type == kTextureHalfFloatType; }
     /** Bytes per RGBA texel as stored in `data` and uploaded: RGBA8, RGBA16Float or RGBA32Float. */
@@ -178,7 +200,7 @@ public:
     [[nodiscard]] bool isSRGB() const { return colorSpace == TextureColorSpace::SRGB; }
     [[nodiscard]] bool hasImage() const { return width > 0 && height > 0 && depth > 0 && (!data.empty() || external); }
     /** A material can sample it: an uploaded image, or a render target's last render. */
-    [[nodiscard]] bool sampleable() const { return (depthTexture && width > 0 && height > 0) || hasImage() || !renderTarget.expired(); }
+    [[nodiscard]] bool sampleable() const { return ((depthTexture || storageTexture) && width > 0 && height > 0) || hasImage() || !renderTarget.expired(); }
 
 private:
     uint32_t version_ = 0;

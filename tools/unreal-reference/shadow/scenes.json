@@ -1,0 +1,164 @@
+{
+  "note": "PRD-649 shadow calibration scenes, on the PRD-638 pipeline (gi/export.py, scripts/unreal-look/gi.ts). Each scene folder holds scene.py (authored in Unreal), criteria.md (what the judge looks for), and the exported scene.glb and scene.json. A template-lit scene is lit by Unreal's default level, one level per sun, so its shadows are the ones a fresh project casts. Shadow cells are judged at L5, which has no GI or AO, so neither can hide or add a shadow; its fog and clouds stay as layers.json has them, so the ThreeNative reference scene renders the same layer; L9 is the look a player sees. sg.ShadowQuality 3 is Epic, the level of the ThreeNative `high` tier (PRD-644, PRD-652).",
+  "resolution": [1280, 720],
+  "scenes": [
+    {
+      "name": "penumbra-lab",
+      "owner": "PRD-649",
+      "serves": ["PRD-634", "PRD-652"],
+      "poses": ["heights", "contact", "ramp"]
+    },
+    {
+      "name": "lamp-room",
+      "owner": "PRD-649",
+      "serves": ["PRD-650"],
+      "poses": ["spot", "spot-soft", "point", "rod"]
+    },
+    {
+      "name": "foliage",
+      "owner": "PRD-649",
+      "serves": ["PRD-651", "PRD-643"],
+      "poses": ["canopy", "grass"]
+    },
+    {
+      "name": "wildwood",
+      "owner": "PRD-649",
+      "serves": ["PRD-651", "PRD-643"],
+      "poses": ["closeup", "medium"],
+      "manifest": "manifest.json"
+    },
+    {
+      "name": "wildwood-backlit",
+      "owner": "PRD-643",
+      "serves": ["PRD-643"],
+      "poses": ["under", "toward"],
+      "manifest": "manifest.json"
+    }
+  ],
+  "variants": [
+    {
+      "name": "L5",
+      "layer": "L5",
+      "cvars": {
+        "sg.ShadowQuality": 3
+      },
+      "expect": {
+        "r.Shadow.Virtual.Enable": 1,
+        "r.DynamicGlobalIlluminationMethod": 0,
+        "r.Shadow.Virtual.SMRT.RayCountDirectional": 8
+      },
+      "kinds": ["png", "exr"]
+    },
+    {
+      "name": "L5-direct",
+      "motionOnly": true,
+      "note": "Diagnosis arm for PRD-649: L5 with the sky light at zero, so only the sun lights the scene. motionOnly keeps it out of default runs; ask for it with --variants.",
+      "layer": "L5",
+      "cvars": {
+        "sg.ShadowQuality": 3,
+        "r.SkylightIntensityMultiplier": 0
+      },
+      "expect": {
+        "r.Shadow.Virtual.Enable": 1,
+        "r.DynamicGlobalIlluminationMethod": 0,
+        "r.Shadow.Virtual.SMRT.RayCountDirectional": 8,
+        "r.SkylightIntensityMultiplier": 0
+      },
+      "kinds": ["png", "exr"]
+    },
+    {
+      "name": "L5-Low",
+      "layer": "L5",
+      "cvars": {
+        "sg.ShadowQuality": 0
+      },
+      "expect": {
+        "r.Shadow.Virtual.Enable": 1,
+        "r.DynamicGlobalIlluminationMethod": 0,
+        "r.Shadow.Virtual.SMRT.RayCountDirectional": 0
+      },
+      "kinds": ["png", "exr"]
+    },
+    {
+      "name": "L5-Medium",
+      "layer": "L5",
+      "cvars": {
+        "sg.ShadowQuality": 1
+      },
+      "expect": {
+        "r.Shadow.Virtual.Enable": 1,
+        "r.DynamicGlobalIlluminationMethod": 0,
+        "r.Shadow.Virtual.SMRT.RayCountDirectional": 4
+      },
+      "kinds": ["png", "exr"]
+    },
+    {
+      "name": "L6",
+      "only": ["wildwood"],
+      "layer": "L6",
+      "cvars": {
+        "sg.ShadowQuality": 3
+      },
+      "expect": {
+        "r.Shadow.Virtual.Enable": 1,
+        "r.Shadow.Virtual.SMRT.RayCountDirectional": 8,
+        "r.DynamicGlobalIlluminationMethod": 0,
+        "r.AmbientOcclusionLevels": -1
+      },
+      "kinds": ["png", "exr"]
+    },
+    {
+      "name": "L7",
+      "only": ["wildwood"],
+      "layer": "L7",
+      "cvars": {
+        "sg.ShadowQuality": 3,
+        "sg.GlobalIlluminationQuality": 3
+      },
+      "expect": {
+        "r.Shadow.Virtual.Enable": 1,
+        "r.Shadow.Virtual.SMRT.RayCountDirectional": 8,
+        "r.DynamicGlobalIlluminationMethod": 1,
+        "r.ReflectionMethod": 0
+      },
+      "kinds": ["png", "exr"]
+    },
+    {
+      "name": "L8",
+      "only": ["wildwood"],
+      "layer": "L8",
+      "cvars": {
+        "sg.ShadowQuality": 3,
+        "sg.GlobalIlluminationQuality": 3,
+        "sg.ReflectionQuality": 3
+      },
+      "expect": {
+        "r.Shadow.Virtual.Enable": 1,
+        "r.Shadow.Virtual.SMRT.RayCountDirectional": 8,
+        "r.DynamicGlobalIlluminationMethod": 1,
+        "r.ReflectionMethod": 1
+      },
+      "kinds": ["png", "exr"]
+    },
+    {
+      "name": "L9",
+      "layer": "L9",
+      "cvars": {
+        "sg.ShadowQuality": 3
+      },
+      "expect": {
+        "r.Shadow.Virtual.Enable": 1,
+        "r.Shadow.Virtual.SMRT.RayCountDirectional": 8
+      },
+      "kinds": ["png", "exr"]
+    },
+    {
+      "name": "ID",
+      "layer": "L0",
+      "level": "id",
+      "cvars": {},
+      "expect": {},
+      "kinds": ["png"]
+    }
+  ]
+}

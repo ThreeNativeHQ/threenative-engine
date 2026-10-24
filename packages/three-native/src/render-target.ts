@@ -27,20 +27,24 @@ function halfToFloat(bits: number): number {
   return bits & 0x8000 ? -magnitude : magnitude;
 }
 
+/** Bytes a pixel in the rows `read` returns: a FloatType target is RGBA32Float, any other RGBA16Float. */
+export function targetTexelBytes(type: number): number {
+  return type === FLOAT_TYPE ? 16 : 8;
+}
+
 /**
- * RGBA16Float rows as three's readRenderTargetPixelsAsync types them for the target's texture type:
- * the half bits as a Uint16Array (HalfFloatType), floats (FloatType), or bytes (UnsignedByteType,
- * each channel clamped to [0, 1] and rounded, as an RGBA8 target stores it).
+ * The engine's rows as three's readRenderTargetPixelsAsync types them for the target's texture type:
+ * the half bits as a Uint16Array (HalfFloatType), the float32 values as stored (FloatType), or bytes
+ * (UnsignedByteType, each channel clamped to [0, 1] and rounded, as an RGBA8 target stores it).
  */
 export function pixelsOfType(
   bytes: Uint8Array,
   type: number,
 ): Uint8Array | Uint16Array | Float32Array {
-  const halves = new Uint16Array(
-    bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength),
-  );
+  const copy = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+  if (type === FLOAT_TYPE) return new Float32Array(copy);
+  const halves = new Uint16Array(copy);
   if (type === HALF_FLOAT_TYPE) return halves;
-  if (type === FLOAT_TYPE) return Float32Array.from(halves, halfToFloat);
   return Uint8Array.from(halves, (bits) =>
     Math.round(Math.min(1, Math.max(0, halfToFloat(bits))) * 255),
   );
@@ -50,7 +54,7 @@ export function pixelsOfType(
 export interface IRenderTargetEngine {
   /** Draws `root` through `camera` into `target`; throws the engine's refusal. */
   draw(target: unknown, root: unknown, camera: unknown): void;
-  /** The region's RGBA16Float rows, top row first. */
+  /** The region's rows in the target's format (see targetTexelBytes), top row first. */
   read(target: unknown, x: number, y: number, width: number, height: number): Promise<Uint8Array>;
 }
 

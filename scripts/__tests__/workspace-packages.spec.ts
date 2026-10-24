@@ -3,6 +3,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { makeTempDir } from "../../test-support/temp-dir.js";
 import {
+  assertWebEngineBuilt,
   findLiteralPackageEnumerationViolations,
   workspacePackageArchives,
   workspacePackageSourceFlag,
@@ -332,4 +333,16 @@ describe("workspace package derivation", () => {
     },
     SCAN_TIMEOUT_MS,
   );
+});
+
+describe("assertWebEngineBuilt", () => {
+  it("refuses to pack runtime-native before the Wasm engine is built, then accepts it", async () => {
+    const repo = await makeTempDir("tn-web-engine-");
+    temporaryRoots.push(repo);
+    expect(() => assertWebEngineBuilt(repo)).toThrow("TN_PACK_WEB_ENGINE_MISSING");
+    const web = path.join(repo, "packages/runtime-native/build/web");
+    await mkdir(web, { recursive: true });
+    await writeFile(path.join(web, "tn-native-engine-web.wasm"), "\0asm");
+    expect(() => assertWebEngineBuilt(repo)).not.toThrow();
+  });
 });

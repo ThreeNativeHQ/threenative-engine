@@ -204,3 +204,40 @@ export async function readStorageBytes(
   new Uint8Array(target as ArrayBuffer).set(new Uint8Array(bytes));
   return target;
 }
+
+/** r185's StorageTextureNode: retain the resource and append a store only when asked. */
+export function defineStorageTextures(tsl: {
+  storageTexture(...args: unknown[]): object;
+  textureStore(...args: unknown[]): object;
+}) {
+  const { storageTexture, textureStore } = tsl;
+  const decorate = (node: object, value: unknown, uv?: unknown, stored?: unknown) =>
+    Object.assign(node, {
+      isStorageTextureNode: true,
+      value,
+      store: (coordinate: unknown, data: unknown) =>
+        decorate(textureStore(node, coordinate, data), value, coordinate, data),
+      toStack() {
+        textureStore(node, uv, stored);
+        return node;
+      },
+    });
+  return {
+    storageTexture: (value: unknown, uv?: unknown, stored?: unknown) =>
+      decorate(
+        storageTexture(value, ...[uv, stored].filter((arg) => arg !== undefined)),
+        value,
+        uv,
+        stored,
+      ),
+    textureStore: (value: unknown, uv: unknown, stored: unknown) =>
+      decorate(
+        textureStore(value, uv, stored),
+        (value as { isStorageTextureNode?: boolean; value?: unknown })?.isStorageTextureNode
+          ? (value as { value: unknown }).value
+          : value,
+        uv,
+        stored,
+      ),
+  };
+}

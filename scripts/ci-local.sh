@@ -40,7 +40,8 @@ echo "logs: $log_root"
 # One classifier for hosted and local runs. Dirty/unresolved inputs select the full board.
 scope_args=(--full)
 if [ "$affected" = true ]; then
-  scope_args=(--event pull_request --target "$target" --base "$base" --head "$head" --local)
+  # PRD-731: CI gives a pull request a thin review lane; this proves the board the merge queue runs.
+  scope_args=(--event pull_request --target "$target" --base "$base" --head "$head" --local --queue-lane)
 fi
 if ! node scripts/ci-change-scope.mjs "${scope_args[@]}" --format json > "$log_root/selection.json"; then exit 2; fi
 if ! node scripts/ci-change-scope.mjs --validate-plan "$(cat "$log_root/selection.json")"; then exit 2; fi

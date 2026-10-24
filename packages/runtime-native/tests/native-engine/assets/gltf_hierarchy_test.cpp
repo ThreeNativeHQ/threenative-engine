@@ -2,6 +2,7 @@
 // names, types, parents, transforms, geometry layout, materials, skeletons and the clip list —
 // compared against gltf_reference.json (written by gltf-reference.ts from the real loader).
 #include <algorithm>
+#include <array>
 #include <cstring>
 #include <cstdio>
 #include <fstream>
@@ -300,6 +301,14 @@ int main() {
         infinite->ior != 1000 || infinite->specularColor.b != 0.3) {
         std::printf("physical: wrong material type or ior/specular inputs: %s\n", physical.error.c_str()); ++differ;
     }
+    // KHR_materials_emissive_strength (GLTFMaterialsEmissiveStrengthExtension): the model loads and the
+    // strength lands on emissiveIntensity. The Unreal reference scene's emissive sphere uses it.
+    const std::string glowBytes = readFile(std::string(TN_REPO_ROOT) + "/tools/unreal-reference/scene.glb");
+    auto glowScene = gltf::load(std::span<const uint8_t>(reinterpret_cast<const uint8_t*>(glowBytes.data()), glowBytes.size()));
+    auto* glow = glowScene.scene ? dynamic_cast<Mesh*>(glowScene.scene->getObjectByName("Sphere_Emissive")) : nullptr;
+    if (!glowScene.error.empty() || !glow || glow->material->emissiveIntensity != 5) {
+        std::printf("emissive strength: refused or not applied: %s\n", glowScene.error.c_str()); ++differ;
+    }
     // KHR_materials_clearcoat (GLTFMaterialsClearcoatExtension): a MeshPhysicalMaterial with the coat's
     // factors and its clearcoat and clearcoat-roughness maps.
     const std::string coatBytes = readFile(std::string(TN_REPO_ROOT) + "/packages/three-native/tests/compatibility/fixtures/gltf-model-clearcoat.glb");
@@ -315,6 +324,135 @@ int main() {
         coatMapped->clearcoatRoughness != 1 || !coatMapped->maps.count("clearcoatMap") ||
         !coatMapped->maps.count("clearcoatRoughnessMap")) {
         std::printf("clearcoat: wrong material type, factors or maps: %s\n", coat.error.c_str()); ++differ;
+    }
+    // A one-triangle glTF in memory: mesh i uses materials[i] and sits on node "m<i>"; `nodeExtra` is JSON
+    // appended to each node (an extension), `used` the extensionsUsed list. Texture 0 has no image.
+    const auto tiny = [](const std::string& used, const std::vector<std::string>& materials, const std::string& nodeExtra = "") {
+        std::string mats, meshes, nodes, scene;
+        for (std::size_t i = 0; i < materials.size(); ++i) {
+            const std::string sep = i ? "," : "";
+            mats += sep + materials[i];
+            meshes += sep + R"({"primitives":[{"attributes":{"POSITION":0},"material":)" + std::to_string(i) + "}]}";
+            nodes += sep + R"({"name":"m)" + std::to_string(i) + R"(","mesh":)" + std::to_string(i) + nodeExtra + "}";
+            scene += sep + std::to_string(i);
+        }
+        const std::string json = R"({"asset":{"version":"2.0"},"extensionsUsed":[)" + used + R"(],
+          "buffers":[{"byteLength":60,"uri":"data:application/octet-stream;base64,AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACAPwAAAEAAAEBAAACAQAAAoEAAAMBA"}],
+          "bufferViews":[{"buffer":0,"byteLength":36},{"buffer":0,"byteOffset":36,"byteLength":24}],
+          "accessors":[{"bufferView":0,"componentType":5126,"count":3,"type":"VEC3","min":[0,0,0],"max":[0,0,0]},
+                       {"bufferView":1,"componentType":5126,"count":2,"type":"VEC3"}],
+          "textures":[{}],"materials":[)" + mats + R"(],"meshes":[)" + meshes + R"(],"nodes":[)" + nodes +
+                                 R"(],"scenes":[{"nodes":[)" + scene + R"(]}],"scene":0})";
+        return gltf::load(std::span<const uint8_t>(reinterpret_cast<const uint8_t*>(json.data()), json.size()));
+    };
+    const auto materialIn = [](gltf::LoadResult& result, const char* node) -> const Material* {
+        auto* mesh = result.scene ? dynamic_cast<Mesh*>(result.scene->getObjectByName(node)) : nullptr;
+        return mesh ? mesh->material.get() : nullptr;
+    };
+    // An extension that needs a decoder this loader lacks is still refused by name, not dropped.
+    for (const char* decoder : {"KHR_draco_mesh_compression", "EXT_meshopt_compression", "KHR_texture_basisu", "EXT_texture_avif"}) {
+        auto refusedDecoder = tiny(std::string("\"") + decoder + "\"", {R"({})"});
+        if (refusedDecoder.error != std::string("TN_NATIVE_GLTF_EXTENSION_UNSUPPORTED ") + decoder) {
+            std::printf("%s: not refused by name (%s)\n", decoder, refusedDecoder.error.c_str()); ++differ;
+        }
+    }
+    // KHR_texture_transform (GLTFTextureTransformExtension): a transformed slot gets its own Texture with the
+    // offset, rotation and repeat; a slot without one shares the plain texture; no extensionsUsed entry, no transform.
+    const std::string transformed = R"({"pbrMetallicRoughness":{"baseColorTexture":{"index":0,"extensions":{"KHR_texture_transform":{"offset":[0.25,0.5],"rotation":1.5,"scale":[2,3]}}}},
+        "emissiveTexture":{"index":0}})";
+    const std::string transformless = R"({"pbrMetallicRoughness":{"baseColorTexture":{"index":0,"extensions":{"KHR_texture_transform":{"texCoord":0}}}}})";
+    auto transform = tiny("\"KHR_texture_transform\"", {transformed, transformless});
+    const Material* movedMaterial = materialIn(transform, "m0");
+    const Material* plainMaterial = materialIn(transform, "m1");
+    if (!transform.error.empty() || !movedMaterial || !plainMaterial || !movedMaterial->maps.count("map") ||
+        !movedMaterial->maps.count("emissiveMap") || !plainMaterial->maps.count("map")) {
+        std::printf("texture transform: model refused or maps missing: %s\n", transform.error.c_str()); ++differ;
+    } else {
+        const Texture& moved = *movedMaterial->maps.at("map");
+        const Texture& glowing = *movedMaterial->maps.at("emissiveMap");
+        if (moved.offset.x != 0.25 || moved.offset.y != 0.5 || moved.rotation != 1.5 || moved.repeat.x != 2 ||
+            moved.repeat.y != 3 || &moved == &glowing || glowing.repeat.x != 1 || glowing.offset.x != 0 ||
+            glowing.rotation != 0 || plainMaterial->maps.at("map") != movedMaterial->maps.at("emissiveMap") ||
+            !moved.isSRGB() || glowing.ident.value() == moved.ident.value()) {
+            std::printf("texture transform: wrong offset, rotation or repeat, or the texture is not cloned\n"); ++differ;
+        }
+    }
+    auto transformIgnored = tiny("", {transformed});
+    const Material* ignored = materialIn(transformIgnored, "m0");
+    if (!transformIgnored.error.empty() || !ignored || !ignored->maps.count("map") || ignored->maps.at("map")->repeat.x != 1 ||
+        ignored->maps.at("map")->offset.x != 0) {
+        std::printf("texture transform: applied without KHR_texture_transform in extensionsUsed\n"); ++differ;
+    }
+    // The physical extensions the standard program cannot draw yet still load (the renderer refuses the mesh by
+    // name): MeshPhysicalMaterial with the factors and maps GLTFLoader's plugins set. Volume adds nothing alone.
+    auto physicalExtensions = tiny(
+        R"("KHR_materials_transmission","KHR_materials_volume","KHR_materials_sheen","KHR_materials_iridescence","KHR_materials_anisotropy","KHR_materials_dispersion","EXT_materials_bump")",
+        {R"({"extensions":{"KHR_materials_transmission":{"transmissionFactor":0.5,"transmissionTexture":{"index":0}}}})",
+         R"({"extensions":{"KHR_materials_volume":{"thicknessFactor":2,"attenuationDistance":3}}})",
+         R"({"extensions":{"KHR_materials_sheen":{"sheenColorFactor":[1,0,0],"sheenColorTexture":{"index":0},"sheenRoughnessTexture":{"index":0}}}})",
+         R"({"extensions":{"KHR_materials_iridescence":{"iridescenceFactor":0.3,"iridescenceTexture":{"index":0},"iridescenceThicknessTexture":{"index":0}}}})",
+         R"({"extensions":{"KHR_materials_anisotropy":{"anisotropyStrength":0.7,"anisotropyTexture":{"index":0}}}})",
+         R"({"extensions":{"KHR_materials_dispersion":{"dispersion":0.4}}})",
+         R"({"extensions":{"EXT_materials_bump":{"bumpFactor":2,"bumpTexture":{"index":0}}}})", R"({})"});
+    const auto physicalOf = [&](const char* node) { return materialIn(physicalExtensions, node); };
+    const Material* transmitting = physicalOf("m0");
+    const Material* volumetric = physicalOf("m1");
+    const Material* sheeny = physicalOf("m2");
+    const Material* iridescent = physicalOf("m3");
+    const Material* anisotropic = physicalOf("m4");
+    const Material* dispersive = physicalOf("m5");
+    const Material* bumpy = physicalOf("m6");
+    const Material* ordinary = physicalOf("m7");
+    if (!physicalExtensions.error.empty() || !transmitting || !volumetric || !sheeny || !iridescent || !anisotropic ||
+        !dispersive || !bumpy || !ordinary) {
+        std::printf("physical extensions: model refused: %s\n", physicalExtensions.error.c_str()); ++differ;
+    } else {
+        const auto checkType = [&](const Material* m, const char* what) {
+            if (m->type != MaterialType::Physical) { std::printf("%s: not a MeshPhysicalMaterial\n", what); ++differ; }
+        };
+        checkType(transmitting, "transmission"); checkType(volumetric, "volume"); checkType(sheeny, "sheen");
+        checkType(iridescent, "iridescence"); checkType(anisotropic, "anisotropy"); checkType(dispersive, "dispersion");
+        checkType(bumpy, "bump");
+        if (transmitting->transmission != 0.5 || !transmitting->maps.count("transmissionMap")) {
+            std::printf("transmission: factor or map not read\n"); ++differ;
+        }
+        if (volumetric->transmission != 0 || !volumetric->maps.empty()) { std::printf("volume: set something without transmission\n"); ++differ; }
+        if (sheeny->sheen != 1 || !sheeny->maps.count("sheenColorMap") || !sheeny->maps.count("sheenRoughnessMap") ||
+            !sheeny->maps.at("sheenColorMap")->isSRGB()) {
+            std::printf("sheen: factor, maps or colour space wrong\n"); ++differ;
+        }
+        if (iridescent->iridescence != 0.3 || !iridescent->maps.count("iridescenceMap") || !iridescent->maps.count("iridescenceThicknessMap")) {
+            std::printf("iridescence: factor or maps not read\n"); ++differ;
+        }
+        if (anisotropic->anisotropy != 0.7 || !anisotropic->maps.count("anisotropyMap")) {
+            std::printf("anisotropy: strength or map not read\n"); ++differ;
+        }
+        if (dispersive->dispersion != 0.4) { std::printf("dispersion: not read\n"); ++differ; }
+        if (bumpy->bumpScale != 2 || !bumpy->maps.count("bumpMap")) { std::printf("bump: factor or map not read\n"); ++differ; }
+        if (ordinary->type != MaterialType::Standard || ordinary->sheen != 0 || ordinary->transmission != 0) {
+            std::printf("physical extensions: a plain material changed\n"); ++differ;
+        }
+    }
+    // A mesh using these factors keeps them through assignFinalMaterial's clone (no tangents: a flagged copy).
+    auto* transmittingMesh = physicalExtensions.scene ? dynamic_cast<Mesh*>(physicalExtensions.scene->getObjectByName("m0")) : nullptr;
+    if (!transmittingMesh || transmittingMesh->material->transmission != 0.5 || transmittingMesh->material->type != MaterialType::Physical) {
+        std::printf("physical extensions: the final material lost the factor\n"); ++differ;
+    }
+    // EXT_mesh_gpu_instancing (GLTFMeshGpuInstancing): the node's mesh is an InstancedMesh with one matrix per
+    // TRANSLATION entry; without the extension in extensionsUsed it stays a plain Mesh.
+    auto instancing = tiny(R"("EXT_mesh_gpu_instancing")", {R"({})"}, R"(,"extensions":{"EXT_mesh_gpu_instancing":{"attributes":{"TRANSLATION":1}}})");
+    auto* instanced = instancing.scene ? dynamic_cast<InstancedMesh*>(instancing.scene->getObjectByName("m0")) : nullptr;
+    Matrix4 first, second;
+    if (instanced) { instanced->getMatrixAt(0, first); instanced->getMatrixAt(1, second); }
+    const auto at = [](const Matrix4& m) { const auto e = m.toArray(); return std::array<double, 3>{e[12], e[13], e[14]}; };
+    if (!instancing.error.empty() || !instanced || instanced->count != 2 || !instanced->geometry || !instanced->material ||
+        at(first) != std::array<double, 3>{1, 2, 3} || at(second) != std::array<double, 3>{4, 5, 6}) {
+        std::printf("instancing: not an InstancedMesh with the TRANSLATION matrices: %s\n", instancing.error.c_str()); ++differ;
+    }
+    auto uninstanced = tiny("", {R"({})"}, R"(,"extensions":{"EXT_mesh_gpu_instancing":{"attributes":{"TRANSLATION":1}}})");
+    auto* plainMesh = uninstanced.scene ? uninstanced.scene->getObjectByName("m0") : nullptr;
+    if (!plainMesh || dynamic_cast<InstancedMesh*>(plainMesh)) {
+        std::printf("instancing: applied without EXT_mesh_gpu_instancing in extensionsUsed\n"); ++differ;
     }
     // PRD-526: a texture's image decodes at load (PNG and JPEG), with the sampler GLTFLoader applies.
     const std::string imageBytes = readFile(std::string(TN_REPO_ROOT) + "/packages/runtime-native/tests/native-engine/assets/image-textures.gltf");

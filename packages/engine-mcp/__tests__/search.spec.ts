@@ -22,6 +22,23 @@ function searchResults(
 }
 
 describe("threenative-engine-mcp", () => {
+  it("finds the global illumination and shadow quality tier watchers by Unreal's names", () => {
+    const symbols = (situation: string) => searchResults(situation).map((r) => r.symbol);
+    expect(symbols("global illumination quality")).toContain("GIBudget");
+    expect(symbols("lumen scalability")).toContain("GIBudget");
+    expect(symbols("sg.GlobalIlluminationQuality")).toContain("GIBudget");
+    expect(symbols("shadow quality")).toContain("ShadowFilterBudget");
+    expect(symbols("virtual shadow map scalability")).toContain("ShadowFilterBudget");
+    expect(symbols("sg.ShadowQuality")).toContain("ShadowFilterBudget");
+  });
+
+  it("finds the indirect diffuse visualize mode by Unreal's names", () => {
+    const symbols = (situation: string) => searchResults(situation).map((r) => r.symbol);
+    expect(symbols("lumen visualize indirect diffuse")).toContain("GIVisualize");
+    expect(symbols("indirect diffuse only")).toContain("GIVisualize");
+    expect(symbols("r.Lumen.Visualize.IndirectDiffuse")).toContain("GIVisualize");
+  });
+
   it("exposes exactly the two read-only capability tools", () => {
     expect(toolDefinitions().map((tool) => tool.name)).toEqual([
       "engine_search_capabilities",
@@ -100,6 +117,22 @@ describe("threenative-engine-mcp", () => {
     expect(replication.guidance).toContain("authoritative replication");
   });
 
+  it("finds the Surface Cache from Unreal's vocabulary (PRD-639)", () => {
+    for (const query of [
+      "lumen surface cache",
+      "lumen scene",
+      "mesh cards",
+      "give a traced bounce ray the texture colour and glow of the surface it hits",
+    ]) {
+      expect(
+        searchResults(query, workspaceManifest)
+          .slice(0, 3)
+          .map((result) => result.symbol),
+        query,
+      ).toContain("SurfaceCache");
+    }
+  });
+
   it("finds camera framing from third-person vocabulary", () => {
     const results = searchResults("third person camera follow", workspaceManifest);
     expect(results.slice(0, 3).map((result) => result.symbol)).toContain("defineGame");
@@ -153,6 +186,11 @@ describe("threenative-engine-mcp", () => {
     expect(searchResults("hitscan camera", workspaceManifest)[0]?.symbol).toBe(
       "PhysicsDirectSpaceState3D",
     );
+  });
+
+  it("finds TracedReflections by Unreal's names for it, ahead of the screen-space stage", () => {
+    for (const phrase of ["lumen reflections", "dedicated reflection rays"])
+      expect(searchResults(phrase, workspaceManifest)[0]?.symbol, phrase).toBe("TracedReflections");
   });
 
   it("explains an alias hit with a readable situation", () => {
@@ -589,13 +627,20 @@ describe("threenative-engine-mcp", () => {
     }
   });
 
-  it("answers that native ray tracing is unavailable until readable output interop exists", () => {
+  it("answers that native image ray tracing is unavailable until readable output interop exists", () => {
     const results = searchResults("can I raytrace on native", workspaceManifest);
     const platform = results.find((result) => result.symbol === "getPlatform");
     expect(platform).toBeDefined();
     expect(platform?.constraints.join(" ")).toContain("ray tracing is unavailable on native");
     expect(platform?.constraints.join(" ")).toContain("buffer-to-texture copy-out interop exists");
     expect(platform?.constraints.join(" ")).toContain("traceRays");
+  });
+
+  it("answers that a native desktop host with ray tracing hardware traces ray batches", () => {
+    const results = searchResults("can I raytrace on native", workspaceManifest);
+    const platform = results.find((result) => result.symbol === "getPlatform");
+    expect(platform?.constraints.join(" ")).toContain("mystralRT.traceRayBatch");
+    expect(platform?.constraints.join(" ")).toContain("mystralRT.capabilities().rayBatch");
   });
 
   it("ranks attachToBone for holding a rifle in a character's right hand", () => {

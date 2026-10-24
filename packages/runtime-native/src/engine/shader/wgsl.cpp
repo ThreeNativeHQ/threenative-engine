@@ -11,6 +11,83 @@
 namespace tn::engine::shader {
 
 namespace {
+// r185 WGSLNodeBuilder.js inverse helpers, unchanged.
+constexpr const char* kMathInverseWGSL = R"WGSL(
+fn tsl_inverse_mat2( m : mat2x2<f32> ) -> mat2x2<f32> {
+
+	let det = m[ 0 ][ 0 ] * m[ 1 ][ 1 ] - m[ 0 ][ 1 ] * m[ 1 ][ 0 ];
+
+	return mat2x2<f32>(
+		m[ 1 ][ 1 ], - m[ 0 ][ 1 ],
+		- m[ 1 ][ 0 ], m[ 0 ][ 0 ]
+	) * ( 1.0 / det );
+
+}
+
+fn tsl_inverse_mat3( m : mat3x3<f32> ) -> mat3x3<f32> {
+
+	let a00 = m[ 0 ][ 0 ]; let a01 = m[ 0 ][ 1 ]; let a02 = m[ 0 ][ 2 ];
+	let a10 = m[ 1 ][ 0 ]; let a11 = m[ 1 ][ 1 ]; let a12 = m[ 1 ][ 2 ];
+	let a20 = m[ 2 ][ 0 ]; let a21 = m[ 2 ][ 1 ]; let a22 = m[ 2 ][ 2 ];
+
+	let b01 = a22 * a11 - a12 * a21;
+	let b11 = - a22 * a10 + a12 * a20;
+	let b21 = a21 * a10 - a11 * a20;
+
+	let det = a00 * b01 + a01 * b11 + a02 * b21;
+
+	return mat3x3<f32>(
+		b01, ( - a22 * a01 + a02 * a21 ), ( a12 * a01 - a02 * a11 ),
+		b11, ( a22 * a00 - a02 * a20 ), ( - a12 * a00 + a02 * a10 ),
+		b21, ( - a21 * a00 + a01 * a20 ), ( a11 * a00 - a01 * a10 )
+	) * ( 1.0 / det );
+
+}
+
+fn tsl_inverse_mat4( m : mat4x4<f32> ) -> mat4x4<f32> {
+
+	let a00 = m[ 0 ][ 0 ]; let a01 = m[ 0 ][ 1 ]; let a02 = m[ 0 ][ 2 ]; let a03 = m[ 0 ][ 3 ];
+	let a10 = m[ 1 ][ 0 ]; let a11 = m[ 1 ][ 1 ]; let a12 = m[ 1 ][ 2 ]; let a13 = m[ 1 ][ 3 ];
+	let a20 = m[ 2 ][ 0 ]; let a21 = m[ 2 ][ 1 ]; let a22 = m[ 2 ][ 2 ]; let a23 = m[ 2 ][ 3 ];
+	let a30 = m[ 3 ][ 0 ]; let a31 = m[ 3 ][ 1 ]; let a32 = m[ 3 ][ 2 ]; let a33 = m[ 3 ][ 3 ];
+
+	let b00 = a00 * a11 - a01 * a10;
+	let b01 = a00 * a12 - a02 * a10;
+	let b02 = a00 * a13 - a03 * a10;
+	let b03 = a01 * a12 - a02 * a11;
+	let b04 = a01 * a13 - a03 * a11;
+	let b05 = a02 * a13 - a03 * a12;
+	let b06 = a20 * a31 - a21 * a30;
+	let b07 = a20 * a32 - a22 * a30;
+	let b08 = a20 * a33 - a23 * a30;
+	let b09 = a21 * a32 - a22 * a31;
+	let b10 = a21 * a33 - a23 * a31;
+	let b11 = a22 * a33 - a23 * a32;
+
+	let det = b00 * b11 - b01 * b10 + b02 * b09 + b03 * b08 - b04 * b07 + b05 * b06;
+
+	return mat4x4<f32>(
+		a11 * b11 - a12 * b10 + a13 * b09,
+		a02 * b10 - a01 * b11 - a03 * b09,
+		a31 * b05 - a32 * b04 + a33 * b03,
+		a22 * b04 - a21 * b05 - a23 * b03,
+		a12 * b08 - a10 * b11 - a13 * b07,
+		a00 * b11 - a02 * b08 + a03 * b07,
+		a32 * b02 - a30 * b05 - a33 * b01,
+		a20 * b05 - a22 * b02 + a23 * b01,
+		a10 * b10 - a11 * b08 + a13 * b06,
+		a01 * b08 - a00 * b10 - a03 * b06,
+		a30 * b04 - a31 * b02 + a33 * b00,
+		a21 * b02 - a20 * b04 - a23 * b00,
+		a11 * b07 - a10 * b09 - a12 * b06,
+		a00 * b09 - a01 * b07 + a02 * b06,
+		a31 * b01 - a30 * b03 - a32 * b00,
+		a20 * b03 - a21 * b01 + a22 * b00
+	) * ( 1.0 / det );
+
+}
+)WGSL";
+
 
 struct BuiltinName {
     const char* ir;
@@ -79,7 +156,7 @@ WgslEmitter::WgslEmitter(const Program& program)
     for (const auto& b : program.blocks_) {
         for (const auto& s : b) {
             if (s.kind == Kind::Eval || s.kind == Kind::Assign || s.kind == Kind::Output) visit(visit, s.b);
-            else if (s.kind == Kind::Store) visit(visit, s.b), visit(visit, s.c);
+            else if (s.kind == Kind::Store || s.kind == Kind::TextureStore) visit(visit, s.b), visit(visit, s.c);
             else if (s.kind == Kind::If || s.kind == Kind::Loop) visit(visit, s.a);
         }
     }
@@ -140,7 +217,9 @@ std::string WgslEmitter::inlined(ExprId id) const {
             }
             const std::string& name = p_.textures_[e.immediate];
             if (e.argc == 2)  // three's generateTextureCompare
-                return (p_.stage_ == Stage::Fragment ? "textureSampleCompare(t_" : "textureSampleCompareLevel(t_") + name +
+                // Level 0 always: a depth map has one mip, and the virtual shadow reads it under divergent
+                // control flow, where textureSampleCompare is refused.
+                return "textureSampleCompareLevel(t_" + name +
                        ", smp_" + name + ", " + expr(e.args[0]) + ", " + expr(e.args[1]) + ")";
             return p_.stage_ == Stage::Fragment
                        ? "textureSample(t_" + name + ", smp_" + name + ", " + expr(e.args[0]) + ")"
@@ -164,9 +243,18 @@ std::string WgslEmitter::inlined(ExprId id) const {
                 if (fn == "and") return "(" + expr(e.args[0]) + " && " + expr(e.args[1]) + ")";
                 if (fn == "or") return "(" + expr(e.args[0]) + " || " + expr(e.args[1]) + ")";
                 if (fn == "not") return "(!" + expr(e.args[0]) + ")";
+                if (fn == "xor") return "(" + expr(e.args[0]) + " != " + expr(e.args[1]) + ")";
+                if (fn == "bitNot") return "(~" + expr(e.args[0]) + ")";
+                const char* bit = fn == "bitAnd" ? " & " : fn == "bitOr" ? " | " : fn == "bitXor" ? " ^ " : fn == "shiftLeft" ? " << " : fn == "shiftRight" ? " >> " : nullptr;
+                if (bit) {
+                    auto rhs = expr(e.args[1]);
+                    if (fn == "shiftLeft" || fn == "shiftRight") rhs = type(Type::vec(e.type.rows, Type::Scalar::U32)) + "(" + rhs + ")";
+                    return "(" + expr(e.args[0]) + bit + rhs + ")";
+                }
                 if (fn == "mod" && e.type.scalar != Type::Scalar::F32) return "(" + expr(e.args[0]) + " % " + expr(e.args[1]) + ")";
             }
             std::string out = e.op == Op::Call ? p_.names_[e.immediate] : type(e.type);
+            if (out == "inverse") out = "tsl_inverse_mat" + std::to_string(e.type.cols);
             if (out == "dFdx") out = "dpdx";
             if (out == "mod") out = "tsl_mod_" + (e.type.isVector() ? "vec" + std::to_string(e.type.rows) : std::string("float"));
             // WGSL's dpdy grows downward the framebuffer; three emits `- dpdy` so dFdy grows upward.
@@ -223,6 +311,9 @@ void WgslEmitter::block(uint32_t index, int depth, std::string& out) const {
                 else
                     out += indent + "s_" + p_.storage_[s.a].name + "[" + expr(s.b) + "] = " + expr(s.c) + ";\n";
                 break;
+            case Kind::TextureStore:
+                out += indent + "textureStore(st_" + p_.storageTextures_[s.a].name + ", " + expr(s.b) + ", " + expr(s.c) + ");\n";
+                break;
             case Kind::Discard: out += indent + "discard;\n"; break;
             case Kind::Return: out += indent + "return;\n"; break;
             case Kind::Break: out += indent + "break;\n"; break;
@@ -260,7 +351,9 @@ WgslModule WgslEmitter::emit(const Program& program, uint32_t group) {
     WgslEmitter e(program);
     WgslModule module;
     if (!program.ok()) {
-        module.errors.push_back("TN_SHADER_PACKAGE_INVALID: the program has construction diagnostics");
+        // The first one names the authoring call that built the bad node (code, operation, reason).
+        const Diagnostic& first = program.diagnostics().front();
+        module.errors.push_back("TN_SHADER_PACKAGE_INVALID: the program has construction diagnostics: " + first.code + " " + first.node + ": " + first.reason);
         return module;
     }
     static std::atomic<uint64_t> nextId{1};
@@ -303,18 +396,22 @@ WgslModule WgslEmitter::emit(const Program& program, uint32_t group) {
                (storage.atomic ? "atomic<" + e.type(storage.element) + ">" : e.type(storage.element)) + ">;\n";
     }
 
+    for (const auto& texture : program.storageTextures_)
+        out += "@group(" + std::to_string(group) + ") @binding(" + std::to_string(binding++) + ") var st_" + texture.name +
+               ": texture_storage_2d<" + texture.format + ", write>;\n";
     for (std::size_t i = 0; i < program.textures_.size(); ++i) {
         const std::string& name = program.textures_[i];
         const auto kind = program.textureKinds_[i];
         const bool depth = kind == Program::TextureKind::Depth2d || kind == Program::TextureKind::DepthCube;
         out += "@group(" + std::to_string(group) + ") @binding(" + std::to_string(binding++) + ") var t_" + name +
-               (kind == Program::TextureKind::DepthCube ? ": texture_depth_cube;\n"
+               (kind == Program::TextureKind::DepthCube || kind == Program::TextureKind::DepthCubeValues ? ": texture_depth_cube;\n"
                 : kind == Program::TextureKind::Float3d ? ": texture_3d<f32>;\n"
                 : kind == Program::TextureKind::FloatCube ? ": texture_cube<f32>;\n"
                 : depth                                 ? ": texture_depth_2d;\n"
                                                         : ": texture_2d<f32>;\n");
-        out += "@group(" + std::to_string(group) + ") @binding(" + std::to_string(binding++) + ") var smp_" + name +
-               (depth ? ": sampler_comparison;\n" : ": sampler;\n");
+        if (program.textureNeedsSampler(i))
+            out += "@group(" + std::to_string(group) + ") @binding(" + std::to_string(binding++) + ") var smp_" + name +
+                   (depth ? ": sampler_comparison;\n" : ": sampler;\n");
     }
 
     const Stage stage = program.stage_;
@@ -348,6 +445,9 @@ WgslModule WgslEmitter::emit(const Program& program, uint32_t group) {
             out += kMaterialXNoise;
             break;
         }
+    }
+    for (const auto& x : program.exprs_) {
+        if (x.op == Op::Call && program.names_[x.immediate] == "inverse") { out += kMathInverseWGSL; break; }
     }
     // A call to mod brings its floored helpers, once.
     for (ExprId id = 1; id < program.exprs_.size(); ++id) {

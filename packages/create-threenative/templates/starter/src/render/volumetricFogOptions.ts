@@ -1,6 +1,7 @@
 // The contract this medium accepts. Everything here is checked before a graph, a target or a
 // material exists, so a rejected request costs nothing and names itself in the error.
 import type { Box3, Color, DirectionalLight, PerspectiveCamera, PointLight } from "three";
+import type { Node } from "three/webgpu";
 
 export interface IFogVolume {
   bounds: Box3;
@@ -19,6 +20,12 @@ export interface IVolumetricFogOptions {
   volumes: IFogVolume[];
   albedo: Color;
   ambient: Color;
+  /**
+   * The light the air scatters from every direction, read where each step stands: a field the game owns, such as the
+   * mean radiance of a baked irradiance volume (`ProbeVolume.sampleNonDirectional(position)` divided by pi). It adds to
+   * `ambient`, so a game that wants the field alone leaves `ambient` black.
+   */
+  ambientNode?: (position: Node<"vec3">) => Node<"vec3">;
   anisotropy: number;
   /**
    * A shadow-casting `DirectionalLight` whose `shadow.map` is already initialized — there is no

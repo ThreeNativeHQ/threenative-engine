@@ -145,6 +145,8 @@ export interface IRenderPassTarget {
 /** One allocated timestamp query, before its duration resolves: the pass kind and three's uid. */
 interface IGpuUidEntry {
   readonly kind: FramePassKind;
+  /** The scene name three gave the render call, `""` for a call that had none. */
+  readonly name: string;
   readonly uid: string;
 }
 
@@ -182,6 +184,7 @@ interface IPassFrame {
   readonly entryDraws: number;
   readonly entryTriangles: number;
   readonly kind: FramePassKind;
+  readonly name: string;
   childDraws: number;
   childTriangles: number;
   /** Timestamp uids the nested calls this pass made allocated, in allocation order. */
@@ -216,17 +219,20 @@ const GPU_UID_FRAME_LIMIT = 64;
  * Names a render call by what three already calls it: the outermost call is the main camera, and a
  * nested call carries the scene name three or the reflector gave it.
  */
-function passKind(scene: unknown, depth: number): FramePassKind {
+function passKind(name: string, depth: number): FramePassKind {
   if (depth === 0) return "main";
-  const name =
-    typeof scene === "object" &&
-    scene !== null &&
-    typeof (scene as { name?: unknown }).name === "string"
-      ? (scene as { name: string }).name
-      : "";
   if (name.startsWith("Shadow Map")) return "shadow";
   if (/reflect/iu.test(name)) return "reflection";
   return "nested";
+}
+
+/** The name three or the game gave the scene a render call draws, or `""`. */
+function sceneName(scene: unknown): string {
+  return typeof scene === "object" &&
+    scene !== null &&
+    typeof (scene as { name?: unknown }).name === "string"
+    ? (scene as { name: string }).name
+    : "";
 }
 
 /**
@@ -253,6 +259,61 @@ export function noteShadowRedrawGpuMs(renderer: object, ms: number): void {
   lastShadowGpuMs.set(renderer, ms);
 }
 
+/**
+ * The stage name of the shadow passes' summed GPU time in a stage reading: three's `Shadow Map`
+ * passes here, the owned engine's shadow segment there. A frame that drew no shadow pass has none.
+ */
+export const SHADOW_STAGE = "Shadow";
+
+/**
+ * One resolved frame's GPU milliseconds by stage: `stages` sums the nested passes that carry the same
+ * scene name (three names its post passes `SSGI` and `AO`), and `total` is the whole frame.
+ */
+export interface IStageGpuReading {
+  readonly frame: number;
+  readonly stages: Readonly<Record<string, number>>;
+  readonly total: number;
+}
+
+/** The last whole frame's stage readings per instrumented renderer; see {@link stageGpuReading}. */
+const lastStageGpu = new WeakMap<object, IStageGpuReading>();
+
+/**
+ * The newest whole frame's GPU milliseconds by named stage on this renderer, or `undefined` before
+ * one resolved (or with neither a recorder installed nor an owned engine, or an adapter that grants
+ * no timestamp query). The `frame` number lets a reader count each resolved frame once. A stage that
+ * did not draw is absent.
+ */
+export function stageGpuReading(renderer: unknown): IStageGpuReading | undefined {
+  if (typeof renderer !== "object" || renderer === null) return undefined;
+  return lastStageGpu.get(renderer) ?? ownedEngineReading(renderer);
+}
+
+interface IOwnedEngineRenderer {
+  readonly backend?: { getTimestampFrames?(type: string): readonly number[] };
+  readonly info?: {
+    readonly engine?: { readonly gpuStages?: Readonly<Record<string, number>> };
+    readonly render?: { readonly timestamp?: number };
+  };
+}
+
+/**
+ * The owned (Wasm) engine times its passes natively and has no timestamp pool for the recorder to
+ * read: it reports its newest sample itself, the whole frame as `info.render.timestamp`, the stages
+ * its passes are labelled with as `info.engine.gpuStages`, and the frame they belong to as the last
+ * `getTimestampFrames("render")` entry (three-native `browser-renderer.ts`). Three's renderer has
+ * none of `gpuStages`, so it falls through to `undefined`.
+ */
+function ownedEngineReading(renderer: IOwnedEngineRenderer): IStageGpuReading | undefined {
+  const frames = renderer.backend?.getTimestampFrames?.("render");
+  const frame = frames?.[frames.length - 1];
+  const stages = renderer.info?.engine?.gpuStages;
+  const total = renderer.info?.render?.timestamp;
+  if (frame === undefined || stages === undefined || typeof total !== "number" || !(total > 0))
+    return undefined;
+  return { frame, stages, total };
+}
+
 export class RenderPassBudget {
   readonly #target: IRenderPassTarget;
   readonly #original: (scene: unknown, camera: unknown) => void;
@@ -275,12 +336,14 @@ export class RenderPassBudget {
       const offsets = target.backend?.timestampQueryPool?.render?.queryOffsets;
       const allocatedBefore = offsets?.size ?? 0;
       const depth = this.#stack.length;
+      const name = sceneName(scene);
       const frame: IPassFrame = {
         childDraws: 0,
         childTriangles: 0,
         entryDraws: counters.draws,
         entryTriangles: counters.triangles,
-        kind: passKind(scene, depth),
+        kind: passKind(name, depth),
+        name,
       };
       this.#stack.push(frame);
       try {
@@ -412,6 +475,9 @@ export class RenderPassBudget {
       if (sum === undefined) continue;
       this.#deliveredGpuFrame = frame;
       if (sum.shadowPasses > 0) noteShadowRedrawGpuMs(this.#target, sum.shadow);
+      const stages =
+        sum.shadowPasses > 0 ? { ...sum.stages, [SHADOW_STAGE]: sum.shadow } : sum.stages;
+      lastStageGpu.set(this.#target, { frame, stages, total: sum.total });
       return {
         frame,
         main: sum.main,
@@ -429,9 +495,15 @@ export class RenderPassBudget {
    * everything else — so the frame's own cost does not have to be inferred from three's one number
    * for the batch, and it is only ever returned whole.
    */
-  #gpuSum(
-    frame: number,
-  ): { main: number; shadow: number; shadowPasses: number; total: number } | undefined {
+  #gpuSum(frame: number):
+    | {
+        main: number;
+        shadow: number;
+        shadowPasses: number;
+        stages: Record<string, number>;
+        total: number;
+      }
+    | undefined {
     const entries = this.#gpuUids.get(frame);
     const timestamps = this.#target.backend?.timestampQueryPool?.render?.timestamps;
     if (timestamps === undefined || entries === undefined || entries.length === 0) return undefined;
@@ -440,7 +512,8 @@ export class RenderPassBudget {
     let shadowPasses = 0;
     let total = 0;
     let resolved = 0;
-    for (const { kind, uid } of entries) {
+    const stages: Record<string, number> = {};
+    for (const { kind, name, uid } of entries) {
       if (kind === "shadow") shadowPasses += 1;
       const ms = timestamps.get(uid);
       if (ms === undefined || !Number.isFinite(ms) || ms < 0) continue;
@@ -448,11 +521,12 @@ export class RenderPassBudget {
       total += ms;
       if (kind === "main") main += ms;
       else if (kind === "shadow") shadow += ms;
+      else if (kind === "nested" && name !== "") stages[name] = (stages[name] ?? 0) + ms;
     }
     // A partial sum is not the frame's cost: subtracting the known kinds from a partial `total`
     // leaves an `other` no one measured. The frame stays absent until the whole read is in.
     if (resolved !== entries.length) return undefined;
-    return { main, shadow, shadowPasses, total };
+    return { main, shadow, shadowPasses, stages, total };
   }
 
   /**
@@ -481,17 +555,17 @@ export class RenderPassBudget {
       parent.childUids ??= [];
       parent.childUids.push(...allocated);
     }
-    for (const uid of own) this.#recordGpuUid(uid, frame.kind);
+    for (const uid of own) this.#recordGpuUid(uid, frame.kind, frame.name);
   }
 
   /** Files one allocated uid under the frame the uid names, dropping the oldest frames over time. */
-  #recordGpuUid(uid: string, kind: FramePassKind): void {
+  #recordGpuUid(uid: string, kind: FramePassKind, name: string): void {
     const match = /:f(\d+)$/u.exec(uid);
     if (match === null) return;
     const frame = Number(match[1]);
     const entries = this.#gpuUids.get(frame);
-    if (entries === undefined) this.#gpuUids.set(frame, [{ kind, uid }]);
-    else entries.push({ kind, uid });
+    if (entries === undefined) this.#gpuUids.set(frame, [{ kind, name, uid }]);
+    else entries.push({ kind, name, uid });
     while (this.#gpuUids.size > GPU_UID_FRAME_LIMIT) {
       const oldest = this.#gpuUids.keys().next().value;
       if (oldest === undefined) break;

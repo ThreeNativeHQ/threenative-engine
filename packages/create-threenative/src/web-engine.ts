@@ -68,6 +68,10 @@ function browserModule(built: string, source: string): string {
 /** The binding runtime every upstream three import resolves through. */
 const runtimeModule = () => browserModule("web-engine-runtime.js", "browser-entry.ts");
 
+// The engine is the default; upstream three is the user's choice to make, never a build fix.
+const OPT_OUT =
+  'engine: "threejs" in threenative.config.ts switches to upstream three only when the user asks for it.';
+
 function wasmModule(root: string, explicit: string | undefined): string {
   if (explicit !== undefined) {
     if (!existsSync(explicit))
@@ -85,12 +89,12 @@ function wasmModule(root: string, explicit: string | undefined): string {
     );
   } catch {
     throw new Error(
-      `TN_WASM_ENGINE_MISSING: engine "threenative" needs @threenative/runtime-native installed in ${root}. Set engine: "threejs" in threenative.config.ts to keep upstream three.`,
+      `TN_WASM_ENGINE_MISSING: engine "threenative" needs @threenative/runtime-native installed in ${root}; install it (its npm package ships the Wasm engine). ${OPT_OUT}`,
     );
   }
   if (!existsSync(entry))
     throw new Error(
-      `TN_WASM_ENGINE_MISSING: engine "threenative" needs the Wasm engine at ${entry}; build it with \`cmake --build build/wasm --target tn-native-engine-web\` in packages/runtime-native, or set engine: "threejs" in threenative.config.ts to keep upstream three.`,
+      `TN_WASM_ENGINE_MISSING: engine "threenative" needs the Wasm engine at ${entry}; reinstall @threenative/runtime-native, or in a ThreeNative checkout build it with \`cmake --build build/wasm --target tn-native-engine-web\` in packages/runtime-native. ${OPT_OUT}`,
     );
   return entry;
 }

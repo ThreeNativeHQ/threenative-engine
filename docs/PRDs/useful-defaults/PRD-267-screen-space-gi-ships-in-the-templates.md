@@ -33,6 +33,20 @@ mechanical — the failure mode is forgetting one of the five registrations a ne
 needs. Phase 3 is **HIGH**: a WebGPU port of an upstream WebGL class plus native parity. Budget it as
 the long pole and land it last. Batch: [docs/PRDs/lighting](./README.md).
 
+## Role in the GI set (2026-10-20, PR #541)
+
+The owner made the out-of-the-box Unreal 5.8.3 look the default on 2026-10-19, Lumen-like GI included,
+and asked that the look match the Unreal reference scene in the harness before any template changes.
+The GI algorithms now have their own PRDs in [`../Unreal/gi/`](../Unreal/gi/) and
+[`../Unreal/rendering/`](../Unreal/rendering/): the traced `RadianceCache` (PRD-603), its visibility
+(PRD-604) and clipmaps (PRD-605), dynamic updates (PRD-VQ-09), the Surface Cache (PRD-639), the Screen
+Probe Gather and Short Range AO (PRD-640), temporal stability (PRD-641), reflections (PRD-642),
+translucency and foliage (PRD-643), the tier table (PRD-644) and hardware ray tracing (PRD-645).
+This PRD keeps three jobs, in this order: the templates take the tier table of PRD-644 once the
+harness matches (Phase 1), every GI stage has a native conformance case (Phase 2), and the shipped
+`ProbeVolume` keeps its static-bake contract (Phase 3). The L7 box below is the template copy of the
+harness match, so it closes last.
+
 ## What landed since filing — five claims that are now stale, and what replaced them
 
 | The sources said | The tree today |
@@ -135,7 +149,7 @@ The split already exists upstream, so this PRD is not inventing it:
 `jure/webgiya/src/main.ts:709-722` assembles `postProcessing.outputNode` from `directLight` and
 `indirectLight` in application code. Read §11.1 honestly: *"something that passes both becomes
 framework code once one game writes it more than twice"* — **not yet satisfied by count**, and the
-owner's call on whether the framework leads here is open. See `## Blocked on`.
+owner's call on whether the framework leads here is open. See `## Blocked on`; answered on 2026-10-20 in `## Decisions`.
 
 ### Phase 1 — the look ships in generated source (browser lane, `packages/core` gains nothing)
 
@@ -151,8 +165,9 @@ genre is the preset system the charter closed with evidence.
 - [ ] **The frame cost is measured, not assumed.** proof: the per-template `TN_FRAME_BUDGET` table in
       the PR body.
 
-      One playtest scenario per template asserts `renderChain.stages.includes: ["ssgi"]`, that the
-      tier is not `off`, and that `contributions.graphOutputChanged` names `ssgi` — a named stage,
+      One playtest scenario per template asserts that `renderChain.stages` includes the GI stages of
+      its tier from PRD-644 (`irradianceField` on `medium`, `screenProbeGather` on `high`; `ssgi` until
+      PRD-640 decides), that the tier is not `off`, and that `contributions.graphOutputChanged` names them — a named stage,
       not a screenshot diff, which colour drift alone could satisfy. *Red recorded first:* remove the
       SSGI request from one template's `quality.ts` and its scenario fails naming the missing stage.
 
@@ -166,7 +181,7 @@ genre is the preset system the charter closed with evidence.
       down in its own `quality.ts` and the number is recorded. Desktop A/Bs read `render.p50`, never
       fps — the Xvfb present throttle makes desktop fps meaningless.
 
-Per-template intent, carried from filing and re-measured against what the presets say now:
+Per-template intent, carried from filing and re-measured against what the presets say now. **Superseded on 2026-10-20 for the GI choice:** each tier takes the algorithm PRD-644 matched against its Unreal level, and a template whose art direction the reference does not suit records its own value by name (PRD-631 default-on contract). The notes below still hold for SSR, godrays and TRAA:
 
 - **starter, minimal** — SSGI at the low preset plus denoise, on top of the GTAO already on. Cheap
   enough for the first-run machine; the point is that bounce is visible, not that it is maximal.
@@ -384,7 +399,9 @@ boxes above are the progress record; these close the PRD.
 - **2026-10-03 — the `PRD-266` dependency is retired; the chain landed as PRD-278.** Filing-date
   claims about the chain, the template count and the playtest assertion vocabulary are corrected in
   *What landed since filing* rather than left to mislead the executor.
-- 2026-10-19 (PRD-631 reference plan): This PRD owns layer L7 (global illumination) of the Unreal reference ladder in [PRD-631](../Unreal/look/PRD-631-an-unreal-reference-scene-measures-the-default-look.md). Unreal 5.8.3 defaults to Lumen screen-probe gather (`Engine/Source/Editor/GameProjectGeneration/Private/GameProjectUtils.cpp:121`). It marks SSGI deprecated and does not fall back to it when Lumen is off (`Engine/Source/Runtime/Renderer/Private/IndirectLightRendering.cpp:93,595`). Screen space alone cannot light the room-interior pose from a sun the camera does not see. So Phase 3 (light from off screen) and PRD-603 to PRD-605 decide whether L7 can match, not the SSGI stage alone. The depth-normal prepass comes from [PRD-635](../Unreal/look/PRD-635-ambient-occlusion-darkens-only-the-light-that-comes-from-around.md). Added one acceptance box.
+- 2026-10-19 (PRD-631 reference plan): This PRD owns layer L7 (global illumination) of the Unreal reference ladder in [PRD-631](../done/PRD-631-an-unreal-reference-scene-measures-the-default-look.md). Unreal 5.8.3 defaults to Lumen screen-probe gather (`Engine/Source/Editor/GameProjectGeneration/Private/GameProjectUtils.cpp:121`). It marks SSGI deprecated and does not fall back to it when Lumen is off (`Engine/Source/Runtime/Renderer/Private/IndirectLightRendering.cpp:93,595`). Screen space alone cannot light the room-interior pose from a sun the camera does not see. So Phase 3 (light from off screen) and PRD-603 to PRD-605 decide whether L7 can match, not the SSGI stage alone. The depth-normal prepass comes from [PRD-635](../Unreal/look/PRD-635-ambient-occlusion-darkens-only-the-light-that-comes-from-around.md). Added one acceptance box.
+- 2026-10-20 (GI set for PR #541): the owner call in `## Blocked on` is answered. On 2026-10-19 the owner made the Unreal 5.8.3 look, with Lumen-like GI, the default of every template, so the framework leads off-screen light. Unreal 5.8.3 deprecates SSGI, so per-pixel SSGI alone is no longer the template target; the tier table of PRD-644 is. Two out-of-scope items now have owners: probe relighting without a re-bake is PRD-603 and PRD-VQ-09, and the specular probe fallback is PRD-642 (rough specular from the radiance cache) and PRD-VQ-03 (reflection captures).
+- 2026-10-20 (owner, GI calibration): a GI tier reaches the templates only after it reaches parity on the Unreal calibration scenes, as defined in [PRD-647](../done/PRD-647-a-visual-judge-calibrates-gi-against-the-unreal-scenes-until-parity.md) Phase 3. The per-template GI judge of this PRD then runs as a PRD-647 round on the template, with the calibration scenes as the reference.
 
 ## Blocked on
 
@@ -392,11 +409,6 @@ boxes above are the progress record; these close the PRD.
   devices` lists none. Until a device is attached, the cost verdict runs on the emulator or an
   attached-device lane via `perf --logcat`, is labelled as such in the box above, and the PRD does not
   claim the physical-device number.
-- **An owner call on whether the framework leads off-screen light at all.** §11.1's clause — *"something
-  that passes both becomes framework code once one game writes it more than twice"* — is not satisfied
-  by count, and PRD-245 said so rather than pretending. If the answer is "wait for a second game to
-  write it", Phase 3 parks with that recorded and the game's own version stays writable against
-  buffers the framework already maintains.
 
 ## Out of scope
 

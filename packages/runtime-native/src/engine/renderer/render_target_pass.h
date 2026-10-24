@@ -35,8 +35,9 @@ std::vector<std::string> renderToTarget(Renderer& main, RenderTarget& target, Ob
 WGPUTextureView renderTargetView(Renderer& main, RenderTarget& target);
 
 /**
- * The region [x, y, width, height] of the target's last render, as tightly packed RGBA16Float rows
- * (8 bytes a pixel, top row first), delivered from poll(). OutOfRange for a region outside the
+ * The region [x, y, width, height] of the target's last render, as tightly packed rows (top row first)
+ * in the target's own format: RGBA32Float (16 bytes a pixel) for a FloatType target, else RGBA16Float
+ * (8 bytes), delivered from poll(). OutOfRange for a region outside the
  * target, InvalidHandle for a target that never rendered.
  */
 GpuStatus readRenderTarget(RenderTarget& target, uint32_t x, uint32_t y, uint32_t width, uint32_t height,

@@ -18,7 +18,7 @@ import { join, relative } from "node:path";
 import { runInNewContext } from "node:vm";
 
 const ROOT = join(import.meta.dirname, "..");
-const PAGE = "docs/PRDs/Unreal/research/unreal-visuals-and-performance-feature-map.html";
+export const PAGE = "docs/PRDs/Unreal/research/unreal-visuals-and-performance-feature-map.html";
 const SVG = "docs/PRDs/Unreal/research/unreal-port-status.svg";
 const README = "README.md";
 const INTERNALS = "docs/PRDs/Unreal/research/internals";
@@ -44,9 +44,34 @@ interface IPageData {
   readonly SYS: Record<string, { name: string; subs: Sub[] }>;
   readonly F: { sys: string; loc: number; big: boolean }[];
   readonly AREA_OF: Record<string, string>;
-  readonly PORT: { id: string; wave: number; done: number; total: number }[];
+  readonly PORT: {
+    id: string;
+    wave: number;
+    done: number;
+    total: number;
+    cx: number;
+    vis: number;
+    perf: number;
+    visSrc: string;
+    perfSrc: string;
+    rank: number;
+    waits: string;
+  }[];
+  readonly PRDS: Record<string, { f: string }>;
   readonly prog: (r: Sub) => IProg;
+  readonly rankScore: (p: { vis: number; perf: number; cx: number }) => number;
 }
+
+/** Evaluates the page's `// @data-start … // @data-end` block: plain data and pure rules. */
+function evalData(page: string): IPageData {
+  const code = block(page, "data").exec(page)?.[0];
+  if (!code) throw new Error(`${PAGE}: no // @data-start … // @data-end block`);
+  return runInNewContext(
+    `${code}\n({ SYS, F, AREA_OF, PORT, PRDS, prog, rankScore })`,
+  ) as IPageData;
+}
+
+export const pageData = (): IPageData => evalData(readFileSync(join(ROOT, PAGE), "utf8"));
 
 const block = (text: string, name: string): RegExp =>
   new RegExp(`// @${name}-start[\\s\\S]*?// @${name}-end`);
@@ -382,7 +407,9 @@ export function renderProgressSvg(history: readonly ISnap[]): string {
     Date.parse(last.date) + 7 * DAY,
     ...[all.eta, look.eta].filter((e) => e !== null).map((e) => Date.parse(e)),
   );
-  const yMax = Math.ceil((Math.max(...history.map((s) => s.total)) * 1.08) / 100) * 100;
+  // Share of boxes ticked, so scope growth and progress read as one line per scope.
+  const pct = (done: number, total: number): number => (total > 0 ? (done / total) * 100 : 0);
+  const yMax = 100;
   const x = (iso: string | number): number =>
     L + ((Number(typeof iso === "string" ? Date.parse(iso) : iso) - t0) / (t1 - t0)) * (W - L - R);
   const y = (v: number): number => H - B - (v / yMax) * (H - T - B);
@@ -393,7 +420,7 @@ export function renderProgressSvg(history: readonly ISnap[]): string {
   const parts: string[] = [];
   for (let v = 0; v <= yMax; v += yMax / 4) {
     parts.push(
-      `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" stroke="#2c322f"/><text x="${L - 8}" y="${y(v) + 4}" class="t" text-anchor="end">${v}</text>`,
+      `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" stroke="#2c322f"/><text x="${L - 8}" y="${y(v) + 4}" class="t" text-anchor="end">${v}%</text>`,
     );
   }
   for (let t = t0; t <= t1; t += 14 * DAY) {
@@ -418,24 +445,22 @@ export function renderProgressSvg(history: readonly ISnap[]): string {
       `<circle cx="${x(eta)}" cy="${y(to)}" r="4" fill="${color}"/><text x="${Math.min(x(eta), W - R - 4)}" y="${y(to) + dy}" class="e" fill="${color}" text-anchor="end">${label} ≈ ${long(eta)}</text>`,
     );
   };
-  parts.push(`<path d="${line((s) => s.total)}" stroke="#9aa49f" stroke-width="2" fill="none"/>`);
   parts.push(
-    `<path d="${line((s) => s.lookTotal)}" stroke="#4a86d6" stroke-width="1.5" stroke-dasharray="3 3" fill="none"/>`,
+    `<path d="${line((s) => pct(s.done, s.total))}" stroke="#3aa56c" stroke-width="2.5" fill="none"/>`,
   );
-  parts.push(`<path d="${line((s) => s.done)}" stroke="#3aa56c" stroke-width="2.5" fill="none"/>`);
   parts.push(
-    `<path d="${line((s) => s.lookDone)}" stroke="#4a86d6" stroke-width="2.5" fill="none"/>`,
+    `<path d="${line((s) => pct(s.lookDone, s.lookTotal))}" stroke="#4a86d6" stroke-width="2.5" fill="none"/>`,
   );
-  proj(all.eta, last.done, last.total, "#3aa56c", "Everything filed", -10);
-  proj(look.eta, last.lookDone, last.lookTotal, "#4a86d6", "Default look", -10);
+  proj(all.eta, pct(last.done, last.total), 100, "#3aa56c", "Everything filed", -10);
+  proj(look.eta, pct(last.lookDone, last.lookTotal), 100, "#4a86d6", "Default look", 18);
   const legend = [
-    ["#9aa49f", "All boxes (scope)"],
-    ["#3aa56c", "All boxes ticked"],
-    ["#4a86d6", "Default look (waves 1-4): ticked, and scope dashed"],
+    ["#3aa56c", "Every filed PRD: share of boxes ticked"],
+    ["#4a86d6", "Default look (waves 1-4): share of boxes ticked"],
+    ["#9aa49f", "Dashed: finish at the last 2 weeks' pace"],
   ]
     .map(
       ([c, t], i) =>
-        `<rect x="${L + i * 230}" y="46" width="14" height="4" fill="${c}"/><text x="${L + 20 + i * 230}" y="52" class="t">${t}</text>`,
+        `<rect x="${L + i * 340}" y="46" width="14" height="4" fill="${c}"/><text x="${L + 20 + i * 340}" y="52" class="t">${t}</text>`,
     )
     .join("");
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" font-family="system-ui, -apple-system, Segoe UI, sans-serif">
@@ -509,9 +534,7 @@ export function refresh(): Map<string, string> {
     block(page, "prds"),
     () => `// @prds-start\nconst PRDS = ${JSON.stringify(registry)};\n// @prds-end`,
   );
-  const code = block(page, "data").exec(page)?.[0];
-  if (!code) throw new Error(`${PAGE}: no // @data-start … // @data-end block`);
-  const data = runInNewContext(`${code}\n({ SYS, F, AREA_OF, PORT, prog })`) as IPageData;
+  const data = evalData(page);
   const { svg, share, total } = renderSvg(data);
   let before: ISnap[] = [];
   try {
@@ -527,7 +550,7 @@ export function refresh(): Map<string, string> {
   return new Map([
     [PAGE, page],
     [SVG, svg],
-    [HISTORY, `${JSON.stringify(history, null, 1)}\n`],
+    [HISTORY, `${JSON.stringify(history, null, 2)}\n`],
     [PROGRESS_SVG, renderProgressSvg(history)],
     [README, readme.replace(marker, () => readmeBlock(share, total, data, registry, history))],
   ]);

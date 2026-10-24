@@ -186,10 +186,17 @@ describe("starter visual floor", () => {
         // AutoExposureNode sequences five GPU passes (meter, reduce, histogram tiles, histogram
         // bins, adapt) with their disposal. It stays plain Three.js the game can rewrite, so the
         // ownership check above is the rule that matters for it.
+        // LocalExposureNode (a bilateral grid and its blur) and UnrealBloomNode (six Gaussian stages on a
+        // downsample chain) are multi-pass nodes of the same kind, and each file is the whole stage.
+        // The filmic tone curve is one TSL graph (gamut, blue correction, glow, red modifier, the curve and an
+        // output dither), with the same maths on plain numbers for a test or a capture script.
         if (
           !name.endsWith("loading.ts") &&
           !name.endsWith("worldEnvironment.ts") &&
-          !name.endsWith("autoExposure.ts")
+          !name.endsWith("autoExposure.ts") &&
+          !name.endsWith("localExposure.ts") &&
+          !name.endsWith("tonemap.ts") &&
+          !name.endsWith("unrealBloom.ts")
         )
           expect(source.trimEnd().split("\n").length, name).toBeLessThan(200);
       }
@@ -256,7 +263,7 @@ describe("starter visual floor", () => {
         movement?: { entity?: string; minDistance?: number };
         renderChain?: {
           contributions?: Record<string, string[]>;
-          stages?: { includes?: string[] };
+          stages?: { excludes?: string[]; includes?: string[] };
         };
         resources?: Array<{
           atSteps?: Array<{ label: string; textIncludes?: string }>;
@@ -283,16 +290,17 @@ describe("starter visual floor", () => {
     });
     expect(scenario.assert?.camera).toMatchObject({ entity: "camera.main", follows: "player" });
     expect(scenario.assert?.movement).toMatchObject({ entity: "player", minDistance: 4 });
-    // AO, bloom and vignette are the chain this kit ships, `grade` and `grain` are the two stages
-    // its own `src/render/grade.ts` adds, and each one is proved to have changed the graph output
-    // rather than being reported as applied.
+    // AO, temporal AA, motion blur, bloom and vignette are the chain this kit ships, and each one is
+    // proved to have changed the graph output rather than being reported as applied. `grade` and
+    // `grain` run at intensity 0 (the Unreal defaults), so the scenario asserts the chain refuses both.
     expect(scenario.assert?.renderChain?.stages?.includes).toEqual([
       "ambientOcclusion",
+      "traa",
+      "motionBlur",
       "bloom",
       "vignette",
-      "grade",
-      "grain",
     ]);
+    expect(scenario.assert?.renderChain?.stages?.excludes).toEqual(["grade", "grain"]);
     expect(Object.keys(scenario.assert?.renderChain?.contributions ?? {})).toEqual([
       "graphOutputChanged",
     ]);

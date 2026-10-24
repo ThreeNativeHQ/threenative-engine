@@ -41,3 +41,7 @@ render-graph passes with history (an accumulated irradiance volume), so they wai
 - [ ] A probe-lit fixture matches the legacy backend within tolerance after convergence. proof: `pnpm parity` (new case `native-engine-probes`)
 - [ ] A baked probe volume loads from a cooked package and renders without recapture. proof: `pnpm parity` (new case `native-engine-probes-baked`)
 - [ ] Moving a light invalidates and reconverges the affected probes with no stale frame. proof: `pnpm parity` (new case `native-engine-probes-relight`)
+
+## Decisions
+
+- 2026-10-20 (GI audit for PR #541): the status lags the code. `packages/runtime-native/src/engine/renderer/probes/{capture,schedule,volume}.{h,cpp}` and `packages/runtime-native/src/engine/assets/probe_volume.cpp` landed in `4e8fe84ae` (PRD-624), with no box ticked here. The next run of this PRD checks which boxes that code already satisfies and ticks them only with their proofs. The traced refresh, visibility and rings of [PRD-603](../../Unreal/rendering/PRD-603-probes-refresh-by-tracing-the-packed-scene-not-by-drawing-it-six-times.md) to [PRD-605](../../Unreal/rendering/PRD-605-the-probe-field-follows-the-camera-in-nested-rings.md) set the native update order; their `RadianceCache` names apply here too.

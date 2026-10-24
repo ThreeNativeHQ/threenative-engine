@@ -1,0 +1,251 @@
+{
+  "note": "Written by gi/export.py from the Unreal 5.8.3 level /Game/Shadow/penumbra-lab/GI_penumbra-lab. three.js frame: Y up, metres. Unreal is the authority; scene.py is only the authoring input.",
+  "scene": "shadow:penumbra-lab",
+  "resolution": [1280, 720],
+  "meshes": [
+    {
+      "name": "Floor",
+      "class": "StaticMeshActor",
+      "position": [0.0, -0.1, -8.0],
+      "rotationYDeg": -0.0,
+      "size": [40.0, 0.2, 40.0],
+      "material": {
+        "name": "MI_White",
+        "baseColor": [0.8, 0.8, 0.8],
+        "roughness": 1.0,
+        "metallic": 0.0,
+        "emissive": [0.0, 0.0, 0.0],
+        "emissiveStrength": 1.0
+      }
+    },
+    {
+      "name": "Box_0",
+      "class": "StaticMeshActor",
+      "position": [0.0, 0.25, 0.0],
+      "rotationYDeg": -0.0,
+      "size": [0.5, 0.5, 0.5],
+      "material": {
+        "name": "MI_Grey",
+        "baseColor": [0.5, 0.5, 0.5],
+        "roughness": 1.0,
+        "metallic": 0.0,
+        "emissive": [0.0, 0.0, 0.0],
+        "emissiveStrength": 1.0
+      }
+    },
+    {
+      "name": "Box_0p25",
+      "class": "StaticMeshActor",
+      "position": [0.0, 0.5, -3.0],
+      "rotationYDeg": -0.0,
+      "size": [0.5, 0.5, 0.5],
+      "material": {
+        "name": "MI_Grey",
+        "baseColor": [0.5, 0.5, 0.5],
+        "roughness": 1.0,
+        "metallic": 0.0,
+        "emissive": [0.0, 0.0, 0.0],
+        "emissiveStrength": 1.0
+      }
+    },
+    {
+      "name": "Box_1",
+      "class": "StaticMeshActor",
+      "position": [0.0, 1.25, -6.0],
+      "rotationYDeg": -0.0,
+      "size": [0.5, 0.5, 0.5],
+      "material": {
+        "name": "MI_Grey",
+        "baseColor": [0.5, 0.5, 0.5],
+        "roughness": 1.0,
+        "metallic": 0.0,
+        "emissive": [0.0, 0.0, 0.0],
+        "emissiveStrength": 1.0
+      }
+    },
+    {
+      "name": "Box_4",
+      "class": "StaticMeshActor",
+      "position": [0.0, 4.25, -9.0],
+      "rotationYDeg": -0.0,
+      "size": [0.5, 0.5, 0.5],
+      "material": {
+        "name": "MI_Grey",
+        "baseColor": [0.5, 0.5, 0.5],
+        "roughness": 1.0,
+        "metallic": 0.0,
+        "emissive": [0.0, 0.0, 0.0],
+        "emissiveStrength": 1.0
+      }
+    },
+    {
+      "name": "Box_10",
+      "class": "StaticMeshActor",
+      "position": [0.0, 10.25, -12.0],
+      "rotationYDeg": -0.0,
+      "size": [0.5, 0.5, 0.5],
+      "material": {
+        "name": "MI_Grey",
+        "baseColor": [0.5, 0.5, 0.5],
+        "roughness": 1.0,
+        "metallic": 0.0,
+        "emissive": [0.0, 0.0, 0.0],
+        "emissiveStrength": 1.0
+      }
+    },
+    {
+      "name": "Pole",
+      "class": "StaticMeshActor",
+      "position": [3.0, 1.0, -2.0],
+      "rotationYDeg": -0.0,
+      "size": [0.02, 2.0, 0.02],
+      "material": {
+        "name": "MI_Grey",
+        "baseColor": [0.5, 0.5, 0.5],
+        "roughness": 1.0,
+        "metallic": 0.0,
+        "emissive": [0.0, 0.0, 0.0],
+        "emissiveStrength": 1.0
+      }
+    },
+    {
+      "name": "Ramp",
+      "class": "StaticMeshActor",
+      "position": [-5.0, 0.52, -4.0],
+      "rotationYDeg": -0.0,
+      "rotationXDeg": 15.0,
+      "size": [3.0, 0.1, 4.0],
+      "material": {
+        "name": "MI_White",
+        "baseColor": [0.8, 0.8, 0.8],
+        "roughness": 1.0,
+        "metallic": 0.0,
+        "emissive": [0.0, 0.0, 0.0],
+        "emissiveStrength": 1.0
+      }
+    },
+    {
+      "name": "Step",
+      "class": "StaticMeshActor",
+      "position": [5.0, 0.5, -9.0],
+      "rotationYDeg": -0.0,
+      "size": [3.0, 1.0, 3.0],
+      "material": {
+        "name": "MI_White",
+        "baseColor": [0.8, 0.8, 0.8],
+        "roughness": 1.0,
+        "metallic": 0.0,
+        "emissive": [0.0, 0.0, 0.0],
+        "emissiveStrength": 1.0
+      }
+    }
+  ],
+  "lights": [],
+  "sky": "template",
+  "sun": {
+    "intensityLux": 6.0,
+    "temperatureK": 6500.0,
+    "useTemperature": true,
+    "sourceAngleDeg": 0.7357000112533569,
+    "sourceSoftAngleDeg": 0.0,
+    "castShadows": true,
+    "contactShadowLength": 0.0
+  },
+  "template": "default",
+  "suns": [
+    {
+      "name": "sun60",
+      "elevationDeg": 60,
+      "azimuthDeg": 90
+    },
+    {
+      "name": "sun15",
+      "elevationDeg": 15,
+      "azimuthDeg": 90
+    },
+    {
+      "name": "sun4",
+      "elevationDeg": 4,
+      "azimuthDeg": 90
+    }
+  ],
+  "templateMeshes": ["SM_SkySphere"],
+  "fog": null,
+  "exposure": null,
+  "poses": [
+    {
+      "name": "sun60-heights",
+      "position": [8, 9, 6],
+      "target": [-1, 0, -6],
+      "hfovDeg": 60,
+      "sun": "sun60"
+    },
+    {
+      "name": "sun60-contact",
+      "position": [1.6, 1.0, 1.6],
+      "target": [-0.3, 0.1, -0.2],
+      "hfovDeg": 50,
+      "sun": "sun60"
+    },
+    {
+      "name": "sun60-ramp",
+      "position": [-2, 3, 1],
+      "target": [-5, 0.5, -4],
+      "hfovDeg": 60,
+      "sun": "sun60"
+    },
+    {
+      "name": "sun15-heights",
+      "position": [8, 9, 6],
+      "target": [-1, 0, -6],
+      "hfovDeg": 60,
+      "sun": "sun15"
+    },
+    {
+      "name": "sun15-contact",
+      "position": [1.6, 1.0, 1.6],
+      "target": [-0.3, 0.1, -0.2],
+      "hfovDeg": 50,
+      "sun": "sun15"
+    },
+    {
+      "name": "sun15-ramp",
+      "position": [-2, 3, 1],
+      "target": [-5, 0.5, -4],
+      "hfovDeg": 60,
+      "sun": "sun15"
+    },
+    {
+      "name": "sun4-heights",
+      "position": [8, 9, 6],
+      "target": [-1, 0, -6],
+      "hfovDeg": 60,
+      "sun": "sun4"
+    },
+    {
+      "name": "sun4-contact",
+      "position": [1.6, 1.0, 1.6],
+      "target": [-0.3, 0.1, -0.2],
+      "hfovDeg": 50,
+      "sun": "sun4"
+    },
+    {
+      "name": "sun4-ramp",
+      "position": [-2, 3, 1],
+      "target": [-5, 0.5, -4],
+      "hfovDeg": 60,
+      "sun": "sun4"
+    }
+  ],
+  "regions": {
+    "Floor": [255, 0, 0],
+    "Box_0": [0, 255, 0],
+    "Box_0p25": [0, 0, 255],
+    "Box_1": [255, 255, 0],
+    "Box_4": [255, 0, 255],
+    "Box_10": [0, 255, 255],
+    "Pole": [255, 128, 0],
+    "Ramp": [128, 0, 255],
+    "Step": [0, 128, 64]
+  }
+}

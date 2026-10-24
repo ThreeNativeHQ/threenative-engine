@@ -30,6 +30,12 @@ export const ENGINES = ["threejs", "threenative"] as const;
 // Empty since 2026-10-17: sailing (fc56ef24d, lit mesh without normals) and action-rpg (5bb12e56c, NaN launch cone) closed.
 export const KNOWN_GAPS: Readonly<Record<string, string>> = {};
 const POSE_WAIT_TICKS = 300;
+/** Newest render samples inspected for drawn world frames before the pose is photographed. */
+export const WORLD_DRAWN_FRAMES = 8;
+/** How many of those samples must show the world drawn: the owned engine skips about every third frame while two are on the GPU. */
+export const WORLD_DRAWN_MIN = 2;
+/** Bound on the wait for the world's first draws; a slow software adapter needs tens of seconds, a dead renderer never answers. */
+export const WORLD_DRAWN_TIMEOUT_MS = 150_000;
 const FIXED_STEP_SECONDS = 1 / 60;
 const POSE_VISUAL_REGION = {
   x: 0,
@@ -55,6 +61,59 @@ export function observedFixedStepSeconds(
     return null;
   const seconds = (after.tick - before.tick) * FIXED_STEP_SECONDS;
   return Number.isFinite(seconds) && seconds > 0 ? seconds : null;
+}
+
+/**
+ * Whether the renderer has drawn the world, read from the per-frame render samples.
+ *
+ * Fixed-step ticks advance the simulation, not the renderer. The owned engine skips a frame while
+ * an environment bakes or two frames are still on the GPU (a drawn world interleaves them with
+ * zero-draw samples), and it draws only the pipelines that are ready. On a slow software adapter
+ * the pose tick can therefore arrive before one world frame has drawn. The world is drawn once at
+ * least `min` of the newest `frames` samples each draw at least half of the busiest sample in the
+ * series, and that busiest sample drew more than the single pass of an empty frame.
+ */
+export function worldDrawn(
+  series: readonly { drawCalls?: number }[],
+  frames = WORLD_DRAWN_FRAMES,
+  min = WORLD_DRAWN_MIN,
+): boolean {
+  const draws = series.map(({ drawCalls }) => (typeof drawCalls === "number" ? drawCalls : 0));
+  const peak = Math.max(0, ...draws);
+  return peak > 1 && draws.slice(-frames).filter((count) => count * 2 >= peak).length >= min;
+}
+
+/** Holds until the renderer has drawn the world (see `worldDrawn`), or fails closed after `timeoutMs`. */
+export async function waitForWorld(
+  session: Pick<IBrowserCaptureSession, "bridge" | "page">,
+  timeoutMs = WORLD_DRAWN_TIMEOUT_MS,
+): Promise<{ waitedMs: number; newestDrawCalls: (number | null)[] }> {
+  const startedAt = Date.now();
+  const deadline = startedAt + timeoutMs;
+  for (;;) {
+    const { runtimeDiagnosticsSeries } = await session.bridge.sample({
+      entities: [],
+      include: ["runtimeDiagnosticsSeries"],
+    });
+    if (runtimeDiagnosticsSeries === undefined) {
+      throw new Error(
+        "TN_ENGINE_PARITY_WORLD_UNOBSERVABLE: the bridge returned no render samples, so a drawn world cannot be confirmed.",
+      );
+    }
+    const newestDrawCalls = runtimeDiagnosticsSeries
+      .slice(-WORLD_DRAWN_FRAMES)
+      .map(({ drawCalls }) => drawCalls ?? null);
+    if (worldDrawn(runtimeDiagnosticsSeries))
+      return { waitedMs: Date.now() - startedAt, newestDrawCalls };
+    if (Date.now() >= deadline) {
+      throw new Error(
+        `TN_ENGINE_PARITY_WORLD_NOT_DRAWN: no world frame drew within ${timeoutMs}ms; draw calls of the newest samples: ${JSON.stringify(newestDrawCalls)}.`,
+      );
+    }
+    await session.page.evaluate(
+      () => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())),
+    );
+  }
 }
 
 /** Whether two captures end at the same absolute simulation pose. */
@@ -368,7 +427,8 @@ async function main(argv: string[]): Promise<number> {
         },
         port: 0,
         headless: false,
-        timeoutMs: 120_000,
+        // Covers the pose, the wait for a drawn world and the screenshot, each slow on a software adapter.
+        timeoutMs: 240_000,
         trace: false,
         browserArgs: [
           ...WEBGPU_BROWSER_ARGS,
@@ -403,6 +463,7 @@ async function main(argv: string[]): Promise<number> {
             throw new Error("TN_ENGINE_PARITY_POSE: bridge did not publish an initial clock tick");
           }
           await session.bridge.advance(POSE_WAIT_TICKS);
+          const world = await waitForWorld(session);
           const after = await readPose();
           if (
             after.clock.mode !== "fixed-step" ||
@@ -483,6 +544,7 @@ async function main(argv: string[]): Promise<number> {
                   waitTicks: POSE_WAIT_TICKS,
                 },
                 visual,
+                world,
                 publishedDiagnostics: after.diagnostics,
                 observedErrorsAfterStartup: errors,
                 observedConsoleEntries: consoleEntries,

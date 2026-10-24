@@ -21,6 +21,7 @@
 #include <cmath>
 #include <map>
 #include <memory>
+#include <optional>
 #include <string>
 
 namespace tn::binding {
@@ -162,6 +163,20 @@ void registerMaterialBase(ClassBinding& b) {
         as<Material>(self)->side = static_cast<Side>(static_cast<int>(side));
         as<Material>(self)->needsUpdate();
     };
+    b.getters["shadowSide"] = [](void* self) {
+        const auto& side = as<Material>(self)->shadowSide;
+        return side ? Value::of(double(*side)) : Value{};
+    };
+    b.setters["shadowSide"] = [](void* self, const Value& v) {
+        auto& material = *as<Material>(self);
+        if (v.kind == Value::Kind::Null) material.shadowSide.reset();
+        else {
+            const double side = number(v);
+            if (side != 0 && side != 1 && side != 2) throw Unsupported{"shadowSide must be null, FrontSide, BackSide or DoubleSide"};
+            material.shadowSide = static_cast<Side>(static_cast<int>(side));
+        }
+        material.needsUpdate();
+    };
     b.getters["blending"] = [](void* self) { return Value::of(double(as<Material>(self)->blending)); };
     b.setters["blending"] = [](void* self, const Value& v) {
         // NoBlending 0, NormalBlending 1, AdditiveBlending 2; Subtractive and Multiply need
@@ -209,6 +224,19 @@ void registerTypeFields(ClassBinding& b, MaterialType type) {
     materialMapSlot(b);
     if (type == MaterialType::Basic) return;
     materialBool(b, "flatShading", &Material::flatShading);
+    // An engine field three does not declare: the Two Sided Foliage marker (PRD-651), on every lit class.
+    materialBool(b, "twoSidedFoliage", &Material::twoSidedFoliage);
+    // Its Subsurface Color (PRD-643), another engine field: undefined until set, as three reads an unset one.
+    b.members["subsurfaceColor"] = [](void* self, const Args&, Store& store) -> Value {
+        Material& material = *as<Material>(self);
+        return material.hasSubsurfaceColor ? memberAlias(store, self, material.subsurfaceColor, "Color") : Value::undefined();
+    };
+    b.setters["subsurfaceColor"] = [](void* self, const Value& v, Store& store) {
+        Material& material = *as<Material>(self);
+        material.hasSubsurfaceColor = v.kind != Value::Kind::Null && v.kind != Value::Kind::Undefined;
+        material.subsurfaceColor = material.hasSubsurfaceColor ? store.ref<Color>(v, "Color") : Color{0, 0, 0};
+        material.needsUpdate();
+    };
     // A tangent-space normal map, which the lit programs perturb with three's perturbNormal2Arb, and
     // its scale: the member alias, written whole with a Vector2 (three's setValues assigns it).
     materialMapSlot(b, "normalMap");
@@ -229,6 +257,8 @@ void registerTypeFields(ClassBinding& b, MaterialType type) {
     materialNumber(b, "envMapIntensity", &Material::envMapIntensity);
     materialNumber(b, "roughness", &Material::roughness);
     materialNumber(b, "metalness", &Material::metalness);
+    // An engine field three does not declare: Unreal's rough diffuse (PRD-653), on the classes that have a roughness.
+    materialBool(b, "roughDiffuse", &Material::roughDiffuse);
     // The standard program's scalar and emissive maps (shader::kPbrMapNames) and the occlusion strength.
     for (int k = 0; k < shader::kStandardPbrMapCount; ++k) materialMapSlot(b, shader::kPbrMapNames[k]);
     materialNumber(b, "aoMapIntensity", &Material::aoMapIntensity);
@@ -277,6 +307,8 @@ void registerMeshMaterial(ClassBinding& b, MaterialType type, bool node = false,
              {"roughnessNode", &Nodes::roughnessNode},
              {"metalnessNode", &Nodes::metalnessNode},
              {"vertexNode", &Nodes::vertexNode},
+             {"aoNode", &Nodes::aoNode},
+             {"irradianceNode", &Nodes::irradianceNode},
              {"depthNode", &Nodes::depthNode}}) {
         if (raw && (std::string_view(name) == "emissiveNode" || std::string_view(name) == "roughnessNode" ||
                     std::string_view(name) == "metalnessNode"))
@@ -353,6 +385,174 @@ void shadowBindings(ClassBinding& b, const char* shadowClass, std::vector<const 
 // its numbers, `mapSize`, and `camera`, which is the shadow camera itself (orthographic for a
 // directional light, perspective otherwise). Only a spot shadow has `focus`.
 void registerLightShadow(ClassBinding& b, bool spot) {
+    b.setters["shadowNode"] = [](void* self, const Value& value, Store& store) {
+        auto& shadow = *as<LightShadow>(self);
+        if (value.kind == Value::Kind::Null) { shadow.virtualShadow.reset(); return; }
+        if (value.kind != Value::Kind::Record || !dynamic_cast<OrthographicCamera*>(shadow.camera.get()))
+            throw Unsupported{"TN_NATIVE_SHADOW_NODE_UNSUPPORTED: directional VirtualShadowNode required"};
+        const auto command = std::find_if(value.fields.begin(), value.fields.end(), [](const auto& f) { return f.first == "command"; });
+        if (command != value.fields.end()) {
+            if (!shadow.virtualShadow) throw Unsupported{"TN_VIRTUAL_SHADOW_INVALID: command without node"};
+            auto& control = *shadow.virtualShadow->control;
+            if (command->second.kind != Value::Kind::String) throw Unsupported{"TN_VIRTUAL_SHADOW_INVALID: command"};
+            const std::string& name = command->second.text;
+            if (name == "invalidateAll") { control.invalidateAll = true; return; }
+            if (name == "lod") {
+                const Value* idValue = nullptr; const Value* geometriesValue = nullptr; const Value* errorsValue = nullptr;
+                for (const auto& [key, v] : value.fields) {
+                    if (key == "id") idValue = &v;
+                    if (key == "geometries") geometriesValue = &v;
+                    if (key == "errors") errorsValue = &v;
+                }
+                if (!idValue || !geometriesValue || !errorsValue) throw Unsupported{"TN_VIRTUAL_SHADOW_INVALID: lod command"};
+                const double id = number(*idValue);
+                if (!std::isfinite(id) || id < 0 || id > 9007199254740991.0 || id != std::floor(id))
+                    throw Unsupported{"TN_VIRTUAL_SHADOW_INVALID: caster id"};
+                shadows::ShadowLodChain chain;
+                chain.errors = numbersOf(*errorsValue);
+                for (const Value& ref : refsOf(*geometriesValue)) {
+                    auto* object = store.find(ref);
+                    if (!object || !acceptsClass(object->cls, "BufferGeometry")) throw Unsupported{"TN_VIRTUAL_SHADOW_INVALID: lod geometry"};
+                    chain.rungs.push_back(std::static_pointer_cast<BufferGeometry>(object->ptr));
+                }
+                if (chain.rungs.empty() || chain.rungs.size() != chain.errors.size() ||
+                    std::any_of(chain.errors.begin(), chain.errors.end(), [](double e) { return !std::isfinite(e) || e < 0; }))
+                    throw Unsupported{"TN_VIRTUAL_SHADOW_INVALID: lod rungs and errors"};
+                control.lods[uint64_t(id)] = std::move(chain);
+                control.invalidateAll = true; return;
+            }
+            const auto arg = std::find_if(value.fields.begin(), value.fields.end(), [&](const auto& f) { return f.first == (name == "invalidateRegion" ? "bounds" : "id"); });
+            if (arg == value.fields.end()) throw Unsupported{"TN_VIRTUAL_SHADOW_INVALID: command argument"};
+            if (name == "invalidateRegion") {
+                const auto box = numbersOf(arg->second);
+                if (box.size() != 6 || std::any_of(box.begin(), box.end(), [](double n) { return !std::isfinite(n); }) || box[0] > box[3] || box[1] > box[4] || box[2] > box[5])
+                    throw Unsupported{"TN_VIRTUAL_SHADOW_INVALID: region"};
+                Box3 bounds; bounds.set(Vector3(box[0], box[1], box[2]), Vector3(box[3], box[4], box[5]));
+                control.regions.push_back(bounds); return;
+            }
+            const double id = number(arg->second);
+            if (!std::isfinite(id) || id < 0 || id > 9007199254740991.0 || id != std::floor(id))
+                throw Unsupported{"TN_VIRTUAL_SHADOW_INVALID: caster id"};
+            if (name == "pin") control.pinned.insert(uint64_t(id));
+            else if (name == "track") control.tracked.insert(uint64_t(id));
+            else if (name == "untrack") control.tracked.erase(uint64_t(id));
+            else if (name == "unlod") { control.lods.erase(uint64_t(id)); control.invalidateAll = true; }
+            else throw Unsupported{"TN_VIRTUAL_SHADOW_INVALID: command"};
+            return;
+        }
+        shadows::AtlasOptions options;
+        options.autoDepth = true;
+        bool distanceGiven = false, rangeGiven = false, automaticGiven = false;
+        for (const auto& [key, v] : value.fields) {
+            distanceGiven |= key == "lightDistance";
+            rangeGiven |= key == "depthRange";
+            automaticGiven |= key == "autoDepth";
+            if (key == "pinnedStatic" || key == "trackedCasters") {
+                auto& ids = key == "pinnedStatic" ? options.control->pinned : options.control->tracked;
+                for (double id : numbersOf(v)) {
+                    if (!std::isfinite(id) || id < 0 || id > 9007199254740991.0 || id != std::floor(id))
+                        throw Unsupported{"TN_VIRTUAL_SHADOW_INVALID: caster id"};
+                    ids.insert(uint64_t(id));
+                }
+            }
+            else if (key == "clipExtents") options.clipExtents = numbersOf(v);
+            else if (key == "selectionGuard") options.selectionGuard = numbersOf(v);
+            else if (key == "refreshStep") options.refreshStep = numbersOf(v);
+            else if (key == "invalidationDelay") options.invalidationDelay = numbersOf(v);
+            else if (key == "mapSize") {
+                // One size for every level, or one per level (core resolves it per level).
+                const auto sizes = v.kind == Value::Kind::Number ? std::vector<double>{number(v)} : numbersOf(v);
+                if (sizes.empty() || std::any_of(sizes.begin(), sizes.end(), [](double n) {
+                        return !std::isfinite(n) || n != std::floor(n) || n < 1 || n > 4096; }))
+                    throw Unsupported{"TN_VIRTUAL_SHADOW_INVALID: mapSize"};
+                options.mapSize = int(sizes[0]);
+                options.levelMapSizes.clear();
+                if (sizes.size() > 1) for (double n : sizes) options.levelMapSizes.push_back(int(n));
+                options.pageTexels = std::min(128, int(*std::min_element(sizes.begin(), sizes.end())));
+            }
+            else if (key == "autoMapSize") options.autoMapSize = flag(v);
+            else if (key == "resolutionLodBiasDirectional") {
+                options.resolutionLodBias = number(v);
+                if (!std::isfinite(options.resolutionLodBias)) throw Unsupported{"TN_VIRTUAL_SHADOW_INVALID: resolutionLodBiasDirectional"};
+            }
+            else if (key == "maxPhysicalPages") {
+                const double n = number(v);
+                if (!std::isfinite(n) || n != std::floor(n) || n < 1 || n > 4096)
+                    throw Unsupported{"TN_VIRTUAL_SHADOW_INVALID: maxPhysicalPages"};
+                options.maxPhysicalPages = int(n);
+            }
+            else if (key == "lightDistance") options.lightDistance = number(v);
+            else if (key == "depthRange") options.depthRange = number(v);
+            else if (key == "autoDepth") options.autoDepth = flag(v);
+            else if (key == "adaptiveRefresh") options.adaptiveRefresh = flag(v);
+            else if (key == "adaptiveCasterGate") options.adaptiveCasterGate = flag(v);
+            else if (key == "followViewFocus") options.followViewFocus = flag(v);
+            else if (key == "shadowLodBias") options.shadowLodBias = flag(v);
+            else if (key == "shadowLodTexels") {
+                const double n = number(v);
+                if (!(n > 0)) throw Unsupported{"TN_VIRTUAL_SHADOW_INVALID: shadowLodTexels"};
+                options.shadowLodTexels = n;
+            }
+            else if (key == "staticAfterFrames" || key == "moverMapSize") {
+                const double n = number(v);
+                if (!std::isfinite(n) || n != std::floor(n) || n < 1 || n > 4096)
+                    throw Unsupported{"TN_VIRTUAL_SHADOW_INVALID: " + key};
+                (key == "staticAfterFrames" ? options.staticAfterFrames : options.moverMapSize) = int(n);
+            }
+            else if (key == "expensiveRefreshShare") options.expensiveRefreshShare = number(v);
+            else if (key == "minCasterTexels") options.minCasterTexels = number(v);
+            else if (key == "minWindowAspect") options.minWindowAspect = number(v);
+            else if (key == "partialRedraw") options.partialRedraw = flag(v);
+            else if (key == "receiverPlaneBias") options.receiverPlaneBias = flag(v);
+        }
+        if (!automaticGiven) options.autoDepth = !distanceGiven || !rangeGiven;
+        // The page-border limit on the PCF radius is checked where the filter is known, at render:
+        // a source-angle filter replaces that footprint, and it may be installed after this node.
+        if (!std::isfinite(shadow.radius) || shadow.radius < 0)
+            throw Unsupported{"TN_VIRTUAL_SHADOW_UNSUPPORTED: PCF radius exceeds page guard texels"};
+        std::string error;
+        if (!shadows::PageAtlas::create(options, error)) throw Unsupported{error};
+        shadow.virtualShadow = std::make_shared<const shadows::AtlasOptions>(std::move(options));
+    };
+    b.setters["filterNode"] = [](void* self, const Value& value) {
+        auto& shadow = *as<LightShadow>(self);
+        if (value.kind == Value::Kind::Null) {
+            shadow.sourceAngleFilter.reset();
+            shadow.sourceRadiusFilter.reset();
+            return;
+        }
+        // sourceAngleShadowFilter on a sun (orthographic map), sourceRadiusShadowFilter on a lamp.
+        const bool lamp = dynamic_cast<PerspectiveCamera*>(shadow.camera.get()) != nullptr;
+        const char* size = lamp ? "sourceRadius" : "sourceAngleRad";
+        if (value.kind != Value::Kind::Record || value.fields.size() < (lamp ? 4u : 3u) || value.fields.size() > (lamp ? 4u : 6u) ||
+            (!lamp && !dynamic_cast<OrthographicCamera*>(shadow.camera.get())))
+            throw Unsupported{"TN_VIRTUAL_SHADOW_UNSUPPORTED: filterNode (sourceAngleShadowFilter on a directional "
+                              "light, or sourceRadiusShadowFilter on a spot or point light, required)"};
+        double extent = -1, blockers = 0, samples = 0, penumbraScale = lamp ? -1 : 1;  // a lamp must name its share
+        double minPixels = 0, samplesPerRay = 4, rayLengthScale = 1.5;  // core's defaults
+        std::size_t known = 0;
+        for (const auto& [key, v] : value.fields) {
+            if (key == size) extent = number(v);
+            else if (key == "blockerSamples") blockers = number(v);
+            else if (key == "filterSamples") samples = number(v);
+            else if (lamp && key == "penumbraScale") penumbraScale = number(v);
+            else if (!lamp && key == "minPenumbraPixels") minPixels = number(v);
+            else if (!lamp && key == "samplesPerRay") samplesPerRay = number(v);
+            else if (!lamp && key == "rayLengthScale") rayLengthScale = number(v);
+            else continue;
+            ++known;
+        }
+        if (!std::isfinite(extent) || extent < 0 || (!lamp && extent >= 1.5707963267948966) ||
+            !std::isfinite(blockers) || blockers < 1 || blockers > 64 || blockers != std::floor(blockers) ||
+            !std::isfinite(samples) || samples < 1 || samples > 64 || samples != std::floor(samples) ||
+            !std::isfinite(penumbraScale) || penumbraScale <= 0 || penumbraScale > 4 ||
+            !std::isfinite(minPixels) || minPixels < 0 || minPixels > 16 ||
+            !std::isfinite(samplesPerRay) || samplesPerRay < 0 || samplesPerRay > 64 || samplesPerRay != std::floor(samplesPerRay) ||
+            !std::isfinite(rayLengthScale) || rayLengthScale <= 0 || known != value.fields.size())
+            throw Unsupported{lamp ? "TN_VIRTUAL_SHADOW_INVALID: source-radius filter" : "TN_VIRTUAL_SHADOW_INVALID: source-angle filter"};
+        if (lamp) shadow.sourceRadiusFilter = std::array<double, 4>{extent, blockers, samples, penumbraScale};
+        else shadow.sourceAngleFilter = std::array<double, 6>{extent, blockers, samples, minPixels, samplesPerRay, rayLengthScale};
+    };
     if (spot) {
         b.getters["focus"] = [](void* self) { return Value::of(as<LightShadow>(self)->focus); };
         b.setters["focus"] = [](void* self, const Value& v) { as<LightShadow>(self)->focus = number(v); };
@@ -367,9 +567,8 @@ void registerLightShadow(ClassBinding& b, bool spot) {
         return memberAlias(store, self, as<LightShadow>(self)->mapSize, "Vector2");
     });
     fixedMember(b, "camera", [](void* self, const Args&, Store& store) {
-        Camera* camera = as<LightShadow>(self)->camera.get();
-        return store.adoptAlias(dynamic_cast<OrthographicCamera*>(camera) ? "OrthographicCamera" : "PerspectiveCamera",
-                                camera, self);
+        const std::shared_ptr<Object3D> camera = as<LightShadow>(self)->camera;
+        return store.share(std::string(camera->type()), camera);
     });
 }
 
@@ -413,6 +612,8 @@ void registerPointLight(ClassBinding& b) {
     registerLightBase(b);
     numberField<PointLight>(b, "distance", &PointLight::distance);
     numberField<PointLight>(b, "decay", &PointLight::decay);
+    // An engine field three does not declare: Unreal's Source Radius (PRD-653).
+    numberField<PointLight>(b, "sourceRadius", &PointLight::sourceRadius);
     shadowBindings<PointLight, PerspectiveCamera>(b, "PointLightShadow", {"near", "far"}, {&PerspectiveCamera::near, &PerspectiveCamera::far});
 }
 
@@ -430,12 +631,16 @@ void registerSpotLight(ClassBinding& b) {
     numberField<SpotLight>(b, "angle", &SpotLight::angle);
     numberField<SpotLight>(b, "penumbra", &SpotLight::penumbra);
     numberField<SpotLight>(b, "decay", &SpotLight::decay);
+    numberField<SpotLight>(b, "sourceRadius", &SpotLight::sourceRadius);
     b.members["target"] = [](void* self, const Args&, Store& store) -> Value {
         SpotLight* light = as<SpotLight>(self);
         if (light->target == nullptr) return Value{};
-        return store.adoptAlias("Object3D", light->target, self);
+        return store.share(std::string(light->target->type()), light->target);
     };
-    b.fixedMembers.insert("target"); // the light owns its target for its whole life
+    b.setters["target"] = [](void* self, const Value& value, Store& store) {
+        Object3D& target = objectArg(store, value);
+        as<SpotLight>(self)->target = std::shared_ptr<Object3D>(store.find(value)->ptr, &target);
+    };
     shadowBindings<SpotLight, PerspectiveCamera>(b, "SpotLightShadow", {"near", "far"}, {&PerspectiveCamera::near, &PerspectiveCamera::far});
 }
 
@@ -486,7 +691,17 @@ void textureVector2(ClassBinding& b, const char* field, Vector2 Owner::*member) 
     });
 }
 
-void registerTextureFields(ClassBinding& b) {
+void registerTextureFields(ClassBinding& b, const char* cls) {
+    b.methods["clone"] = [cls](void* self, const Args&, Store& store) {
+        const auto* texture = as<Texture>(self);
+        std::shared_ptr<Texture> clone;
+        if (const auto* data = dynamic_cast<const DataTexture*>(texture))
+            clone = std::make_shared<DataTexture>(*data);
+        else
+            clone = std::make_shared<Texture>(*texture);
+        clone->needsUpdate();
+        return store.share(cls, std::move(clone));
+    };
     b.getters["image.width"] = [](void* self) { return Value::of(double(as<Texture>(self)->width)); };
     b.getters["image.height"] = [](void* self) { return Value::of(double(as<Texture>(self)->height)); };
     b.getters["name"] = [](void* self) { return string(as<Texture>(self)->name); };
@@ -529,10 +744,11 @@ void registerTextureFields(ClassBinding& b) {
     textureNumber<Texture>(b, "rotation", &Texture::rotation);
     // three's `texture.source`: the texture's own image record, whose version moves with needsUpdate.
     fixedMember(b, "source", [](void* self, const Args&, Store& store) {
-        return store.adoptAlias("Source", self, self);
+        return store.share("Source", as<Texture>(self)->imageSource);
     });
     textureVector2<Texture>(b, "repeat", &Texture::repeat);
     textureVector2<Texture>(b, "offset", &Texture::offset);
+    textureVector2<Texture>(b, "center", &Texture::center);
     b.getters["colorSpace"] = [](void* self) { return string(as<Texture>(self)->isSRGB() ? "srgb" : ""); };
     b.setters["colorSpace"] = [](void* self, const Value& v) {
         if (v.kind != Value::Kind::String) throw Unsupported{"colorSpace must be a string"};
@@ -548,7 +764,7 @@ void checkHalfFloatBits(const std::vector<double>& values) {
             throw Unsupported{"HalfFloatType DataTexture data must be a Uint16Array of binary16 bits"};
 }
 
-void registerTextureClass(ClassBinding& b, bool data) {
+void registerTextureClass(ClassBinding& b, bool data, const char* cls) {
     b.ctor = [data](const Args& a, Store&) -> std::shared_ptr<void> {
         if (!data) return std::static_pointer_cast<void>(std::make_shared<Texture>());
         auto texture = std::make_shared<DataTexture>();
@@ -572,7 +788,7 @@ void registerTextureClass(ClassBinding& b, bool data) {
         }
         return std::static_pointer_cast<void>(texture);
     };
-    registerTextureFields(b);
+    registerTextureFields(b, cls);
     if (!data) return;
     // three's `texture.image.data = array`: new texels of the same size and type, uploaded on the
     // next needsUpdate. The V8 and browser back ends copy an array when it crosses, so a game that
@@ -659,16 +875,53 @@ void registerMaterialBindings(Registry& classes) {
 
 void registerTextureBindings(Registry& classes) {
     ClassBinding& source = classes["Source"];
-    source.getters["version"] = [](void* self) { return Value::of(double(as<Texture>(self)->version())); };
+    source.getters["version"] = [](void* self) { return Value::of(double(as<TextureSource>(self)->version)); };
     source.setters["needsUpdate"] = [](void* self, const Value& v) {
-        if (flag(v)) as<Texture>(self)->needsUpdate();
+        if (flag(v)) ++as<TextureSource>(self)->version;
     };
-    registerTextureClass(classes["Texture"], false);
-    registerTextureClass(classes["DataTexture"], true);
+    registerTextureClass(classes["Texture"], false, "Texture");
+    registerTextureClass(classes["DataTexture"], true, "DataTexture");
     classes["DataTexture"].ctorTakesBytes = true;
     classes["DataTexture"].settersTakeBytes = {"image.data"};
+    auto& storage = classes["StorageTexture"];
+    registerTextureFields(storage, "StorageTexture");
+    storage.ctor = [](const Args& a, Store&) -> std::shared_ptr<void> {
+        const double width = optional(a, 0, 1), height = optional(a, 1, 1);
+        if (a.size() > 2 || !(width >= 1 && width <= 16384 && height >= 1 && height <= 16384) ||
+            width != std::floor(width) || height != std::floor(height))
+            throw Unsupported{"StorageTexture needs integer extents in [1, 16384]"};
+        auto texture = std::make_shared<Texture>();
+        texture->storageTexture = true;
+        texture->width = uint32_t(width); texture->height = uint32_t(height);
+        texture->minFilter = texture->magFilter = uint16_t(TextureFilter::Linear);
+        return texture;
+    };
+    storage.getters["isStorageTexture"] = [](void*) { return Value::of(true); };
+    storage.getters["mipmapsAutoUpdate"] = [](void* self) { return Value::of(as<Texture>(self)->mipmapsAutoUpdate); };
+    storage.setters["mipmapsAutoUpdate"] = [](void* self, const Value& v) { as<Texture>(self)->mipmapsAutoUpdate = flag(v); };
+    for (const bool isType : {true, false}) {
+        storage.setters[isType ? "type" : "format"] = [isType](void* self, const Value& v) {
+            const double n = number(v);
+            if (!(n >= 0 && n <= UINT16_MAX) || n != std::floor(n))
+                throw Unsupported{"TN_NATIVE_STORAGE_TEXTURE_FORMAT: type/format must be an unsigned 16-bit integer"};
+            auto* texture = as<Texture>(self);
+            (isType ? texture->type : texture->format) = uint16_t(n);
+            texture->needsUpdate();
+        };
+    }
+    storage.methods["setSize"] = [](void* self, const Args& a, Store&) {
+        if (a.size() != 2) throw Unsupported{"StorageTexture.setSize needs width and height"};
+        const double w = number(a[0]), h = number(a[1]);
+        if (!(w >= 1 && w <= 16384 && h >= 1 && h <= 16384) || w != std::floor(w) || h != std::floor(h))
+            throw Unsupported{"StorageTexture needs integer extents in [1, 16384]"};
+        auto* texture = as<Texture>(self);
+        if (texture->width != w || texture->height != h) {
+            texture->width = uint32_t(w); texture->height = uint32_t(h); texture->needsUpdate();
+        }
+        return Value{};
+    };
     auto& depth = classes["DepthTexture"];
-    registerTextureFields(depth);
+    registerTextureFields(depth, "DepthTexture");
     depth.ctor = [](const Args& a, Store&) -> std::shared_ptr<void> {
         const double width = optional(a, 0, 1), height = optional(a, 1, 1), type = optional(a, 2, 1014);
         if (a.size() > 3 || width < 1 || height < 1 || width > 16384 || height > 16384 ||
@@ -691,9 +944,16 @@ void registerTextureBindings(Registry& classes) {
         if (!(width >= 1) || !(height >= 1) || width > 16384 || height > 16384)
             throw Unsupported{"RenderTarget size must be 1 to 16384"};
         uint16_t type = kTextureUnsignedByteType;
+        std::optional<uint16_t> minFilter, magFilter;
         if (a.size() > 2 && a[2].kind == Value::Kind::Record)
             for (const auto& [key, value] : a[2].fields) {
-                if (key == "type") {
+                if (key == "minFilter" || key == "magFilter") {
+                    // A target has no mip chain: only the two single-level filters apply.
+                    const auto filter = static_cast<uint16_t>(number(value));
+                    if (filter != uint16_t(TextureFilter::Nearest) && filter != uint16_t(TextureFilter::Linear))
+                        throw Unsupported{"RenderTarget " + key + " must be NearestFilter or LinearFilter"};
+                    (key == "minFilter" ? minFilter : magFilter) = filter;
+                } else if (key == "type") {
                     type = static_cast<uint16_t>(number(value));
                     if (type != kTextureUnsignedByteType && type != kTextureHalfFloatType && type != kTextureFloatType)
                         throw Unsupported{"RenderTarget type must be UnsignedByteType, HalfFloatType or FloatType"};
@@ -703,7 +963,10 @@ void registerTextureBindings(Registry& classes) {
                     throw Unsupported{"RenderTarget option " + key + " is not supported natively"};
                 }
             }
-        return RenderTarget::make(static_cast<uint32_t>(width), static_cast<uint32_t>(height), type);
+        auto target = RenderTarget::make(static_cast<uint32_t>(width), static_cast<uint32_t>(height), type);
+        if (minFilter) target->texture->minFilter = *minFilter;
+        if (magFilter) target->texture->magFilter = *magFilter;
+        return target;
     };
     fixedMember(target, "texture", [](void* self, const Args&, Store& store) {
         return store.share("Texture", as<RenderTarget>(self)->texture);
@@ -736,7 +999,7 @@ void registerTextureBindings(Registry& classes) {
     // (flipped rows, linear filters, a generated mip chain). Each back end reads the canvas
     // (getImageData) and passes (pixels, width, height, mapping, wrapS, wrapT, magFilter, minFilter).
     ClassBinding& canvas = classes["CanvasTexture"];
-    registerTextureClass(canvas, true);
+    registerTextureClass(canvas, true, "CanvasTexture");
     canvas.ctor = [](const Args& a, Store&) -> std::shared_ptr<void> {
         // null pixels: a host that copies the canvas itself on the GPU (the web host) gives it next.
         const bool hosted = a.size() >= 3 && (a[0].kind == Value::Kind::Null || a[0].kind == Value::Kind::Undefined);
@@ -766,7 +1029,7 @@ void registerTextureBindings(Registry& classes) {
     // three's Data3DTexture(data, width, height, depth): RGBA texels, `depth` slices of width * height,
     // with DataTexture's defaults (nearest filters, no flip, no mipmaps) and its own wrapR.
     ClassBinding& volume = classes["Data3DTexture"];
-    registerTextureClass(volume, true);
+    registerTextureClass(volume, true, "Data3DTexture");
     volume.ctor = [](const Args& a, Store&) -> std::shared_ptr<void> {
         auto texture = std::make_shared<DataTexture>();
         texture->volume = true;

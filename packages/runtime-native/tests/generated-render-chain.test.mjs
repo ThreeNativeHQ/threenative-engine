@@ -32,28 +32,40 @@ test("the conformance registry binds the composed render-chain scenario to deskt
   const scenarioPath = join(runtimeRoot, entry.scenario);
   assert.ok(existsSync(scenarioPath), `scenario must exist: ${entry.scenario}`);
   const scenario = readJson(scenarioPath);
+  const finishing = ["bloom", "vignette", "antialias"];
+  const excluded = ["grade", "grain"];
   const fullChain = {
-    contributions: { graphOutputChanged: ["grade", "grain"] },
+    contributions: { graphOutputChanged: ["ambientOcclusion", "motionBlur", ...finishing] },
     stages: {
-      includes: ["ambientOcclusion", "bloom", "vignette", "grade", "grain"],
-      order: ["ambientOcclusion", "bloom", "vignette", "grade", "grain"],
+      includes: ["ambientOcclusion", "motionBlur", ...finishing],
+      excludes: excluded,
+      order: ["ambientOcclusion", "motionBlur", ...finishing],
     },
     tier: "high",
   };
-  const lowChain = {
-    contributions: { graphOutputChanged: ["grade"] },
+  const mediumChain = {
+    contributions: { graphOutputChanged: ["ambientOcclusion", ...finishing] },
     stages: {
-      includes: ["bloom", "vignette", "grade"],
-      excludes: ["ambientOcclusion", "grain"],
-      order: ["bloom", "vignette", "grade"],
+      includes: ["ambientOcclusion", ...finishing],
+      excludes: ["motionBlur", ...excluded],
+      order: ["ambientOcclusion", ...finishing],
+    },
+    tier: "medium",
+  };
+  const lowChain = {
+    contributions: { graphOutputChanged: finishing },
+    stages: {
+      includes: finishing,
+      excludes: ["ambientOcclusion", "motionBlur", ...excluded],
+      order: finishing,
     },
     tier: "low",
   };
   assert.deepEqual(scenario.assert?.renderChain, {
     ...fullChain,
     perAdapter: {
-      integrated: { ...fullChain, tier: "medium" },
-      "mobile-high": { ...fullChain, tier: "medium" },
+      integrated: mediumChain,
+      "mobile-high": mediumChain,
       "mobile-low": lowChain,
       "mobile-mid": lowChain,
       software: lowChain,
