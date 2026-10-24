@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // PRD-729: the asset pipeline's performance loop — smallest shipped bytes, fastest preload.
 //
-//   node scripts/asset-perf-loop.mjs measure --label "default cook" [--arm default|none] [--config '{"textures":{"quality":96}}'] [--decision keep] [--notes ...] [--dry-run]
+//   sh scripts/xvfb.sh node scripts/asset-perf-loop.mjs measure --label "default cook" [--arm default|none] [--config '{"textures":{"quality":96}}'] [--decision keep] [--notes ...] [--dry-run] [--no-preload]
 //   node scripts/asset-perf-loop.mjs show
 //   node scripts/asset-perf-loop.mjs discard --iteration 3 --reason "dirty tree"
 //   node scripts/asset-perf-loop.mjs report
@@ -14,9 +14,10 @@
 import { execFileSync } from "node:child_process";
 import { cpSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from "node:fs";
 import { createServer } from "node:http";
-import { tmpdir } from "node:os";
+import { hostname, tmpdir } from "node:os";
 import { dirname, extname, join, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { THROTTLED, measurePreload } from "./asset-preload-probe.mjs";
 import {
   discardIteration,
   esc,
@@ -60,8 +61,10 @@ export const ARMS = {
 };
 
 /**
- * PRD-729 targets. The byte goals come from iteration #1 (5.37 MiB, 45.1%); the preload goals are
- * provisional until the Phase 2 baseline exists. Every goal is lower-is-better.
+ * PRD-729 targets, set from the default cook (iteration #3: 5.37 MiB, 45.1%, 629 ms local, 1705 ms
+ * at 40 Mbps). Every goal is lower-is-better. Preload is read from the page's own clock, so it
+ * includes a fixed shader compile and first render of about 365 ms; the local goal sits above that.
+ * At 40 Mbps the extra time over local is transfer: 1076 ms for 5.37 MiB, 600 ms for 3 MiB.
  */
 export const GOALS = [
   {
@@ -85,18 +88,16 @@ export const GOALS = [
     short: "Preload local",
     label: "Preload to GPU-ready, localhost",
     unit: "ms",
-    goal: 250,
+    goal: 450,
     better: "lower",
-    provisional: true,
   },
   {
     key: "preloadThrottledMs",
     short: "Preload 40 Mbps",
     label: "Preload to GPU-ready, 40 Mbps / 20 ms",
     unit: "ms",
-    goal: 1500,
+    goal: 1200,
     better: "lower",
-    provisional: true,
   },
 ];
 
@@ -159,7 +160,7 @@ export function summarize(sources, receipt) {
     metrics: {
       shippedMiB: round(shippedBytes / MiB),
       shippedPctOfSource: sourceBytes === 0 ? null : round((100 * shippedBytes) / sourceBytes, 1),
-      // ponytail: preload is measured in PRD-729 Phase 2; null renders as "pending".
+      // Filled by `measure` when the preload probe runs; null renders as "pending".
       preloadLocalMs: null,
       preloadThrottledMs: null,
     },
@@ -174,29 +175,60 @@ function listFiles(dir) {
     .map((entry) => join(entry.parentPath, entry.name));
 }
 
-/** Copy the corpus into a fresh project, cook it cold with `config`, return the summary. */
-export async function measure(config) {
+/** Copy the corpus into a fresh project and cook it cold with `config`. The caller removes it. */
+async function cook(config) {
   const { compileAssets, resolveBasisTranscoder } = await import(
     pathToFileURL(resolve(ROOT, "packages/assets/dist/index.js")).href
   );
   const project = mkdtempSync(join(tmpdir(), "tn-asset-perf-"));
+  for (const [name, dir] of CORPUS) cpSync(dir, join(project, "assets", name), { recursive: true });
+  const sourceRoot = join(project, "assets");
+  const sources = listFiles(sourceRoot).map((file) => ({
+    path: relative(sourceRoot, file).split("\\").join("/"),
+    bytes: statSync(file).size,
+  }));
+  const started = performance.now();
+  // The temporary project has no node_modules; three resolves from the assets package instead.
+  const transcoder = resolveBasisTranscoder(resolve(ROOT, "packages/assets"));
+  const result = await compileAssets({ cwd: project, config, transcoder });
+  const compileMs = Math.round(performance.now() - started);
+  if (result.receipt === undefined) throw new Error("compileAssets returned no bake receipt");
+  return {
+    project,
+    sources,
+    summary: { ...summarize(sources, result.receipt), compileMs, preload: null },
+  };
+}
+
+/**
+ * Cook `config` and measure it. With `pair`, the current default is cooked too and the two
+ * arms' preload runs alternate in one browser, so host load hits both alike; the default's
+ * numbers ride along as `pairedControl`. Preload times across separate runs are not comparable.
+ */
+export async function measure(config, { preload = true, pair = false } = {}) {
+  const arms = [];
   try {
-    for (const [name, dir] of CORPUS)
-      cpSync(dir, join(project, "assets", name), { recursive: true });
-    const sourceRoot = join(project, "assets");
-    const sources = listFiles(sourceRoot).map((file) => ({
-      path: relative(sourceRoot, file).split("\\").join("/"),
-      bytes: statSync(file).size,
-    }));
-    const started = performance.now();
-    // The temporary project has no node_modules; three resolves from the assets package instead.
-    const transcoder = resolveBasisTranscoder(resolve(ROOT, "packages/assets"));
-    const result = await compileAssets({ cwd: project, config, transcoder });
-    const compileMs = Math.round(performance.now() - started);
-    if (result.receipt === undefined) throw new Error("compileAssets returned no bake receipt");
-    return { ...summarize(sources, result.receipt), compileMs, written: result.written };
+    arms.push(await cook(config));
+    if (pair) arms.push(await cook(ARMS.default));
+    if (preload) {
+      const entries = arms[0].sources
+        .map((source) => ({ path: source.path, kind: kindOf(source.path) }))
+        .filter((entry) => entry.kind !== "other");
+      const projects = arms.map((arm) => arm.project);
+      const local = await measurePreload(projects, entries);
+      const throttled = await measurePreload(projects, entries, { network: THROTTLED });
+      arms.forEach(({ summary }, index) => {
+        summary.metrics.preloadLocalMs = local[index].readyMs;
+        summary.metrics.preloadThrottledMs = throttled[index].readyMs;
+        summary.preload = { host: hostname(), local: local[index], throttled: throttled[index] };
+      });
+    }
+    const [candidate, control] = arms.map((arm) => arm.summary);
+    if (control === undefined) return candidate;
+    const { metrics, preload: controlPreload, shippedBytes } = control;
+    return { ...candidate, pairedControl: { metrics, preload: controlPreload, shippedBytes } };
   } finally {
-    rmSync(project, { recursive: true, force: true });
+    for (const arm of arms) rmSync(arm.project, { recursive: true, force: true });
   }
 }
 
@@ -224,6 +256,8 @@ export function appendIteration(
       sourceBytes: measurement.sourceBytes,
       shippedBytes: measurement.shippedBytes,
       compileMs: measurement.compileMs ?? null,
+      preload: measurement.preload ?? null,
+      pairedControl: measurement.pairedControl ?? null,
       kinds: measurement.kinds,
     },
     files: measurement.files,
@@ -407,10 +441,19 @@ async function measureCommand(ledger, argv, get) {
   if (!(arm in ARMS)) throw new Error(`--arm must be one of ${Object.keys(ARMS).join(", ")}`);
   const config = { ...ARMS[arm], ...JSON.parse(get("--config") ?? "{}") };
   writeAtomic(RUNNING, JSON.stringify({ label, arm, pid: process.pid, startedAt: Date.now() }));
-  const measurement = await measure(config).finally(() => rmSync(RUNNING, { force: true }));
+  const pair = argv.includes("--pair");
+  const measurement = await measure(config, {
+    preload: !argv.includes("--no-preload"),
+    pair,
+  }).finally(() => rmSync(RUNNING, { force: true }));
   console.log(
-    `${arm} ${JSON.stringify(config)}: ${mib(measurement.sourceBytes)} -> ${mib(measurement.shippedBytes)} (${measurement.metrics.shippedPctOfSource}%), cook ${measurement.compileMs} ms`,
+    `${arm} ${JSON.stringify(config)}: ${mib(measurement.sourceBytes)} -> ${mib(measurement.shippedBytes)} (${measurement.metrics.shippedPctOfSource}%), cook ${measurement.compileMs} ms, preload local ${measurement.metrics.preloadLocalMs ?? "skipped"} ms, 40 Mbps ${measurement.metrics.preloadThrottledMs ?? "skipped"} ms${measurement.preload ? ` on ${JSON.stringify(measurement.preload.local.adapter)} ${JSON.stringify({ local: measurement.preload.local.samplesMs, throttled: measurement.preload.throttled.samplesMs })}` : ""}`,
   );
+  const control = measurement.pairedControl;
+  if (control?.preload)
+    console.log(
+      `paired default: ${mib(control.shippedBytes)}, preload local ${control.metrics.preloadLocalMs} ms ${JSON.stringify(control.preload.local.samplesMs)}, 40 Mbps ${control.metrics.preloadThrottledMs} ms ${JSON.stringify(control.preload.throttled.samplesMs)}`,
+    );
   if (argv.includes("--dry-run")) return;
   const git = (...args) => execFileSync("git", args, { cwd: ROOT, encoding: "utf8" }).trim();
   const next = appendIteration(ledger, {
@@ -431,15 +474,12 @@ async function main(argv) {
   const [command] = argv;
   const get = (flag) => (argv.includes(flag) ? argv[argv.indexOf(flag) + 1] : undefined);
   let ledger = readLedger(LEDGER);
-  if (command === "measure") {
-    return measureCommand(ledger, argv, get);
-  } else if (command === "discard") {
+  if (command === "measure") return measureCommand(ledger, argv, get);
+  if (command === "show") return show(ledger);
+  if (command === "serve") return serve(Number(get("--port") ?? 8767));
+  if (command === "discard") {
     ledger = discardIteration(ledger, Number(get("--iteration")), get("--reason"));
     writeAtomic(LEDGER, `${JSON.stringify(ledger, null, 2)}\n`);
-  } else if (command === "show") {
-    return show(ledger);
-  } else if (command === "serve") {
-    return serve(Number(get("--port") ?? 8767));
   } else if (command !== "report") {
     console.error("usage: asset-perf-loop.mjs measure|show|discard|report|serve");
     process.exit(2);

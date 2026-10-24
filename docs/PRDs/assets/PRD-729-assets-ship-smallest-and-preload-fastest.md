@@ -4,9 +4,9 @@ prd_contract: v1
 
 # PRD-729 — Assets ship as few bytes as they can and preload as fast as they can
 
-**Status:** PARTIAL — Phase 1 (bytes loop and dashboard) is done with a recorded baseline. Phase 2
-(preload measurement) and Phase 3 (levers) are open.
-**Priority:** P2 — Phase 2 is open: no preload time is measured yet, so the two preload goals are provisional.
+**Status:** PARTIAL — Phases 1 and 2 are done: the bytes and the preload are measured and the goals
+are set. Phase 3 (levers) is open.
+**Priority:** P2 — Phase 3 is open: the corpus ships 5.37 MiB against a 3 MiB goal and preloads in 1705 ms at 40 Mbps against 1200 ms.
 **Complexity:** 5 (MEDIUM) — 3–5 files in Phase 1 (+1): a loop script, its spec, the ledger, the
 generated page and this PRD; Phase 2 adds a probe game and a playtest network option (+2); each
 Phase 3 lever changes `packages/assets` defaults that every game inherits (+2).
@@ -49,6 +49,17 @@ What the baseline says:
 - **`shared/sky.jpg` ships as authored** (0.27 MiB). The cause is not read yet.
 - **Audio is already at 4.7%.** It is not a lever on this corpus.
 
+**Preload baseline (iteration #3, same commit, default cook).** GPU-ready in **629 ms** on localhost
+and **1705 ms** at 40 Mbps / 20 ms, median of 5 cold loads each, on the RTX 2080 (`adapter.info`:
+vendor `nvidia`, architecture `turing`; the probe refuses a software adapter). The probe loads through
+core's own `createAssetLoader` and `loadAll`, then compiles and renders one frame, so the time holds a
+fixed shader-compile and first-render part of about 365 ms (629 ms ready against 264 ms loaded).
+
+**Noise.** A paired A/A run (default against default, runs alternating) read 657 against 656 ms
+local and 1943 against 1976 ms throttled, a spread of 5% and 3%. Two separate runs of the same
+build differ by up to 14% (1705 against 1943 ms), so a lever is judged only against its own paired
+control (`measure --pair`), never against an earlier iteration.
+
 The uncooked control (iteration #2, `--arm none`) ships 11.91 MiB, 100%, so the cook halves the
 corpus today.
 
@@ -66,9 +77,9 @@ Preload ends at GPU-ready: every model is in the scene, every texture is uploade
 decoded. Run `engine_search_capabilities` first: `loadAll` and the playtest startup timeline
 (`enteredMs`, `readyMs`) already exist and are the expected building blocks.
 
-- [ ] A probe game loads the cooked corpus through `ctx.assets` and `loadAll`, and the loop records `preloadLocalMs` from its startup timeline on a named WebGPU adapter, 5 runs, median. proof: `node scripts/asset-perf-loop.mjs measure --label "preload baseline"` with the playtest command it runs printed, `--browser-recipe webgpu`, `adapter.info` checked.
-- [ ] The playtest runner can throttle the network (CDP `Network.emulateNetworkConditions`, 40 Mbps down, 20 ms latency, as in the PRD-496 probe), and the loop records `preloadThrottledMs`. proof: red-green `pnpm exec vitest run packages/playtest/__tests__/<network>.spec.ts` and the same `measure` run.
-- [ ] The two preload goals are set from the Phase 2 baseline and lose their `provisional` flag. proof: `node scripts/asset-perf-loop.mjs report` shows no `provisional`.
+- [x] A probe page loads the cooked corpus through core's `createAssetLoader` and `loadAll`, and the loop records `preloadLocalMs` on a named WebGPU adapter, 5 runs, median. proof: `sh scripts/xvfb.sh node scripts/asset-perf-loop.mjs measure --label "default cook with preload, what a game ships today" --decision baseline` — exit 0, local runs [673,629,626,629,628] ms, median 629, adapter nvidia/turing.
+- [x] The probe throttles the network (CDP `Network.emulateNetworkConditions`, 40 Mbps down, 20 ms latency, as in the PRD-496 probe), and the loop records `preloadThrottledMs`. proof: the same run — throttled runs [1704,1711,1709,1705,1699] ms, median 1705. The playtest runner does not throttle; see Decisions.
+- [x] The two preload goals are set from the Phase 2 baseline and lose their `provisional` flag. proof: `node scripts/asset-perf-loop.mjs report` — goals 450 ms local and 1200 ms at 40 Mbps, no `provisional` on the page.
 
 ### Phase 3 — Levers, one at a time
 
@@ -88,6 +99,15 @@ Candidates, ranked by baseline bytes:
 - [ ] Both preload goals are met. proof: `node scripts/asset-perf-loop.mjs show` — latest kept iteration.
 
 ## Decisions
+
+- **2026-10-23: the probe throttles the network itself.** The Phase 2 box asked for throttling in
+  the playtest runner. The probe is a plain Playwright page that owns its CDP session, and no other
+  caller needs a runner option, so the runner stays unchanged (root `AGENTS.md`: smallest diff).
+- **2026-10-23: preload goals from the baseline.** Local ≤ 450 ms: the fixed shader-compile and
+  first-render part is about 365 ms, so 250 ms was unreachable. At 40 Mbps ≤ 1200 ms: 3 MiB takes
+  about 600 ms to transfer, plus 450 ms local.
+- **2026-10-23: judge a lever against its own paired control.** `measure --pair` cooks the default
+  beside the candidate and alternates their preload runs in one browser. Bytes do not need it.
 
 - **2026-10-23, João: the compression is automatic.** A kept lever becomes the `packages/assets`
   default, and the cook picks its setting for each asset from what it measures there (codec,
