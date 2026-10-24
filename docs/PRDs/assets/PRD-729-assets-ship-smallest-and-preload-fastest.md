@@ -88,6 +88,7 @@ Levers tried (the dashboard holds the numbers; a verdict lands here when it land
 | # | Lever | Bytes | Preload (paired) | Verdict |
 | --- | --- | ---: | --- | --- |
 | 5 | Meshopt `FILTER` for animation outputs | 5.37 → 4.94 MiB (−8.0%) | local 830 vs 798 ms, 40 Mbps 1892 vs 1970 ms: noise | **Rejected.** Worst rotation error 0.712° against 0.041° today, translation 0.97 mm against 0. A limb tip moves 12 mm. `__tests__/model-animation-filter.spec.ts` now pins the floor: red on `FILTER`, green on the current cook. |
+| 6 | Drop animation tracks that hold the rest pose (`passes.restTracks`, on by default) | 5.37 → 4.42 MiB (−17.7%) | local 621 vs 645 ms, 40 Mbps 1545 vs 1757 ms (−12%) | **Provisional** until `pnpm test:templates` is green. 3,926 of 5,583 combat tracks dropped; clips, durations and every keyframe time unchanged. Real-model proof: `prune-rest-tracks-pose.spec.ts` plays all 7 `mannequin.glb` clips in three's `AnimationMixer`, worst node difference below 1e-5; with the tolerance loosened to 0.5 it fails at 0.484. |
 
 Each lever is one iteration on the dashboard: measure, then `keep` or `reject`. A lever changes what
 reaches the screen, so a kept lever needs the visual judge (root `AGENTS.md`, owner rule

@@ -79,6 +79,7 @@ import {
   textureKeys,
   textureQualitySemantics,
 } from "./model-textures.js";
+import { pruneRestPoseTracks } from "./prune-rest-tracks.js";
 import { quantizeStaticGeometry } from "./quantize-static.js";
 import { reorderStaticPrimitives } from "./reorder-static.js";
 import {
@@ -145,6 +146,8 @@ export interface IModelPassesOptions {
   readonly prune?: boolean;
   readonly quantize?: boolean;
   readonly reorder?: boolean;
+  /** Drop animation tracks that only hold the pose their node already has. Default true. */
+  readonly restTracks?: boolean;
 }
 
 export interface IModelQuantizeOptions {
@@ -830,6 +833,7 @@ export function modelPass(options: IModelPassOptions = {}): IAssetPass {
         prune: options.passes?.prune ?? true,
         quantize: options.passes?.quantize ?? true,
         reorder: options.passes?.reorder ?? true,
+        restTracks: options.passes?.restTracks ?? true,
       },
       ...(options.vertexLayout === undefined ? {} : { vertexLayout: options.vertexLayout }),
       quantize: {
@@ -902,6 +906,7 @@ export function modelPass(options: IModelPassOptions = {}): IAssetPass {
         prune: passes.prune ?? true,
         quantize: passes.quantize ?? true,
         reorder: passes.reorder ?? true,
+        restTracks: passes.restTracks ?? true,
       };
       // Embedded-texture compression and simplification are switched separately from the
       // geometry sub-passes: a model whose geometry is already final still ships images.
@@ -953,6 +958,8 @@ export function modelPass(options: IModelPassOptions = {}): IAssetPass {
       let compact = compactRequested(options.compact)
         ? await compactModel(document, resolveCompactOptions(options.compact))
         : undefined;
+      // Before `prune`, which removes the samplers and accessors these tracks leave unreferenced.
+      if (enabled.restTracks) pruneRestPoseTracks(document, logicalPath);
       if (enabled.prune) {
         await prune({ keepAttributes: options.preserveLightmapUv === true })(document);
         // The empty nodes `flatten`/`join` left behind are removed by this prune, so the shipped
