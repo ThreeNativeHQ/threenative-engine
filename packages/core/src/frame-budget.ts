@@ -389,6 +389,8 @@ export interface IFrameBudgetWindow {
    * `gpuMain + gpuShadow + gpuOther` reconciles with `gpuMs` only when all three are present.
    */
   readonly gpuMain?: number;
+  /** Fresh frames in the same main-bucket ring as gpuMain; absent when unmeasured. */
+  readonly gpuMainSamples?: number;
   readonly gpuShadow?: number;
   readonly gpuOther?: number;
   readonly gpuCompute?: number;
@@ -1183,7 +1185,8 @@ export class FrameBudget {
       const summary = this.#gpuBucketRings[bucket].summarize(this.#scratch);
       return summary.samples === 0 ? undefined : round1(summary.p50);
     };
-    const gpuMain = gpuBucket("main");
+    const mainBucket = this.#gpuBucketRings.main.summarize(this.#scratch);
+    const gpuMain = mainBucket.samples === 0 ? undefined : round1(mainBucket.p50);
     const gpuShadow = gpuBucket("shadow");
     const gpuOther = gpuBucket("other");
     const gpuCompute = gpuBucket("compute");
@@ -1275,6 +1278,7 @@ export class FrameBudget {
         : { gpuShadowP95: round1(shadowBucket.p95), gpuShadowSamples: shadowBucket.samples }),
       ...(shadowRendered.samples === 0 ? {} : { gpuShadowRendered: shadowRendered }),
       ...(gpuPyramid.samples === 0 ? {} : { gpuPyramid }),
+      ...(mainBucket.samples === 0 ? {} : { gpuMainSamples: mainBucket.samples }),
     };
   }
 

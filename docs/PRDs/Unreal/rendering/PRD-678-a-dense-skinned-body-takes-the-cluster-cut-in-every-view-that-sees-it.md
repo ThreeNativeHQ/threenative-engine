@@ -8,7 +8,7 @@ prd_contract: v1
 **Priority:** P3 — AC-1 to AC-3 are open: a skinned primitive above 65,536 triangles skips the bake and draws every triangle at every distance. Phase 1 has not counted which games carry such a body.
 **Complexity:** 6 (MEDIUM) — 1–5 implementation files (+1), the bake output and the extension layout change (+2), posed cluster bounds are a new mechanism (+2), native proof (+1); risk override: none
 **Owner:** João
-**Depends on:** [PRD-486](../../open-world/PRD-486-characters-get-a-lod-chain.md) (optional: its discrete chain is the baseline Phase 1 measures against. Without it, Phase 1 compares against LOD0 and says so). Coordinate with [PRD-570](../animation/PRD-570-a-character-costs-what-the-camera-sees-of-it.md), which owns how often a rig animates, and with [PRD-600](PRD-600-a-clustered-mesh-submits-only-the-clusters-the-view-holds.md), whose view-pruned walk this cut reuses when it lands.
+**Depends on:** [PRD-486](../../open-world/PRD-486-characters-get-a-lod-chain.md) (optional: its discrete chain is the baseline Phase 1 measures against. Without it, Phase 1 compares against LOD0 and says so). Coordinate with [PRD-570](../../done/PRD-570-a-character-costs-what-the-camera-sees-of-it.md), which owns how often a rig animates, and with [PRD-600](PRD-600-a-clustered-mesh-submits-only-the-clusters-the-view-holds.md), whose view-pruned walk this cut reuses when it lands.
 
 ## Context
 

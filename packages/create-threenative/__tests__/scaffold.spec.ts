@@ -286,24 +286,25 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-10-18 merging develop f30f9b6d3 (PRD-478) into PR #493: the merged Three patch moves every tree.
   // Recomputed 2026-10-16 for PRD-617: puzzle's boot-failure scenario asserts the engine-neutral
   // boot-failure text both engines now show, so only puzzle's tree moves.
-  "action-rpg": "049b89827707aea83ea5b9847d4c8c0d3a4e01af138c0928ad59cd7f21b080e8",
-  minimal: "1bdc31f8d31f074cde31e09d67ac850762482f481e4b41050d5679f7155ac085",
-  platformer: "27b6033ac8ce09c6b19894586865e465e2edfcc0b7edd7be02e4e8459b248e53",
-  puzzle: "78f16093d5dedabf3a7bff8b07bb261bd1c7f91339aeaae51f7a1a278a5442d2",
-  racing: "7e591c477bdf3fb7ad928576d3e5e5a9113b2792867e01a62c41ff1564513af3",
-  rain: "909fa2c73253480e882855c92043d65b0e2dca9f6499effac8d6a89dba644dcf",
-  rts: "ae2ceac563ac255d56834dd8af62b8be934f3c13dff7179a52ddaf78836d1469",
-  runner: "9b4349fd99dbc3f85aef3ba6eacdf755f5cedf69b7c16f943b0e98258acc5d49",
+  "action-rpg": "d99d75895b443ee4cf4b9639d2b99128893cc5e16ba74cc89958011d49e22a9a",
+  minimal: "ac1aa9e43470619f498e092cf10e3b70739ce407bd183120ddfa4f7b2cb10565",
+  platformer: "4432badd586ee3d2cb5bd5234cd750333578f8d983c0f54cf1921d7b3262b5c1",
+  puzzle: "5d81e45e3b773ff3f76f8ef3ca8bcdbd40e7d2d104613c953623e7c90472d4f2",
+  racing: "40de4be415e2a0f8fe32982f596b76aaadba58295c4552f2251af6e6b3d8e448",
+  rain: "b6dfb5f3e8203fa642bab83e1bf8b24544fc166a46005d4f6e8da88adadeb6db",
+  rts: "f57c008dea52fd509aad0674523f1a3bc281a603ba2763d22740d971b9eec568",
+  runner: "e678a74e5719b575d6701b97566959659145429fb488f79f680df512caa5b964",
   // Finite-height readiness plus hull, sail, and buoy interpolation from the current swell pose.
-  sailing: "d27fc1acccff1f55428944f7c1e075c31e240c56fee6250d3feed7ac369f1438",
-  shooter: "7fa374b2f1471c7ad8a2af2bed5f019943b58cceef6844e616aaac9baa7450de",
-  snow: "c041fb86c6cd9f8c926594b6d869179369001ec2ae52457db11b4bf065f00e67",
+  sailing: "432dd4b18d1edaf2f408a1af0be18f6dd18697dfa3ad0a27c94bb726fd84f7df",
+  shooter: "8624a2da3b5ee6e4c55bbfd5fee11835f6b039ea2cf727e5b246b4c94391290b",
+  snow: "02597ae40bd36dbdc3cf732c16a1ab196255dca58f15ec1510f4755968afaea3",
   // Measured 2026-10-16 through createProject after starter's completed-work quality fallback fix.
   // Recomputed 2026-10-16: starter's adaptiveQuality split its policy resolution into qualityPolicy.ts
   // to stay under the 200-line render-file cap; only starter's tree moves.
+  // Recomputed 2026-10-23 on the merge of origin/develop into the PRD-570 lane: measured by this test on the merged tree.
   // Recomputed 2026-10-23: the native render-chain scenario expects the Unreal finishing chain (grade and grain off).
-  starter: "3634f9d7eebf14ec3d8072ff71bc6bd7635fd7b28f16df8c3234aa839539a7f0",
-  "tower-defense": "654e7d81e46ce652c545ee9a3a6480089b5cd1413eccfde8f2065dfb85129464",
+  starter: "3a70d12b9309f023d722d4bf3d315f30a390958b02484aa7b643549cd13b1011",
+  "tower-defense": "5ae4dd70d1775497134afe4b3b4fcbb0975e5d7037881d3e227f5835139f6407",
 };
 
 const GENERATED_SCAFFOLD_METADATA =

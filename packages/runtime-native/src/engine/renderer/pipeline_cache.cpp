@@ -307,10 +307,8 @@ WGPURenderPipeline PipelineCache::create(WGPUDevice device, const shader::StageM
         fragmentState.module = fs;
         WGPU_SET_ENTRY_POINT(fragmentState, "main");
         // A depth-only pass keeps a fragment stage only to discard (a masked shadow caster): no target.
-        if (target.color != WGPUTextureFormat_Undefined) {
-            fragmentState.targetCount = 1;
-            fragmentState.targets = &color;
-        }
+        fragmentState.targetCount = target.color != WGPUTextureFormat_Undefined ? 1 : 0;
+        fragmentState.targets = fragmentState.targetCount ? &color : nullptr;
         desc.fragment = &fragmentState;
     }
     WGPURenderPipeline pipeline = nullptr;

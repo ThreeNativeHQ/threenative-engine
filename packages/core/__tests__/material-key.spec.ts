@@ -11,7 +11,7 @@ describe("materialKey", () => {
     expect(materialKey(first)).toBe(materialKey(second));
   });
 
-  it("changes the key when side, alphaTest or a map size changes", () => {
+  it("changes the key when side, alphaTest, alphaHash or a map size changes", () => {
     const base = new MeshStandardMaterial({ roughness: 0.8, metalness: 0.2 });
     base.color.setHex(0x336699);
     const key = materialKey(base);
@@ -25,6 +25,10 @@ describe("materialKey", () => {
     cutout.color.setHex(0x336699);
     cutout.alphaTest = 0.5;
     expect(materialKey(cutout)).not.toBe(key);
+
+    const hashed = base.clone();
+    hashed.alphaHash = true;
+    expect(materialKey(hashed)).not.toBe(key);
 
     const small = new MeshStandardMaterial({ roughness: 0.8, metalness: 0.2 });
     small.color.setHex(0x336699);

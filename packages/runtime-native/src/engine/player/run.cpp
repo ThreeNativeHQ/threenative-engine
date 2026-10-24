@@ -73,15 +73,15 @@ namespace {
 constexpr const char* kGameSpanNames[] = {
     "compute", "beforeRender", "sceneUpdate", "reconcile", "clustered", "lod", "cull",
     "mainPass", "shadowPass", "reflectionPass", "nestedPass", "projectObject", "sort", "draw",
-    "terrainBlock", "terrainSeam", "input", "scheduler", "plugins", "sceneCallbacks", "entities", "afterPhysics", "mixer",
+    "terrainBlock", "terrainSeam", "animationUpdate", "skinnedWrite", "input", "scheduler", "plugins", "sceneCallbacks", "entities", "afterPhysics", "mixer",
     "stride", "blend", "transport", "publish", "playtest", "hostUpdate", "hostFrame", "ui",
     "gc", "view", "loop", "state", "contacts", "transitions", "objectGraph", "physicsStep",
     "physicsRead", "physicsApply", "characterMove", "animationPlay", "inputVector", "graphVisit"};
 constexpr size_t kGameSpanCount = std::size(kGameSpanNames);
 // The host-owned spans (GAME_SPANS leaves them out); native-engine-game-spans.spec.ts pins these to the names.
-constexpr int kHostUpdateSpan = 28;
-constexpr int kHostFrameSpan = 29;
-constexpr int kGcSpan = 31;
+constexpr int kHostUpdateSpan = 30;
+constexpr int kHostFrameSpan = 31;
+constexpr int kGcSpan = 33;
 struct GameSpans {
     struct Entry { int id; std::chrono::steady_clock::time_point start; double childMs; };
     std::array<Entry, 64> stack{};

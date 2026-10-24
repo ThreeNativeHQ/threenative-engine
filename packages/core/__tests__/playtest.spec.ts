@@ -439,6 +439,7 @@ describe("playtest plugin", () => {
   it("publishes registry tags and drained contacts through gameplay channels", async () => {
     const canvas = testCanvas();
     const body = {};
+    const storage = new Uint8Array(65_536);
     const area = {
       drainContacts: () => [{ body, entity: "coin.3", started: true }],
     };
@@ -448,7 +449,7 @@ describe("playtest plugin", () => {
         const coin = new Mesh(new BoxGeometry(1, 1, 1), new MeshBasicMaterial());
         ctx.add(fox);
         ctx.add(coin);
-        ctx.entities.add("fox", { mesh: fox, physics: { rigidBody: body } });
+        ctx.entities.add("fox", { mesh: fox, physics: { rigidBody: body, storage } });
         ctx.entities.add("coin.3", { mesh: coin, physics: { area }, tags: ["coin"] });
       }
     }
@@ -471,11 +472,15 @@ describe("playtest plugin", () => {
     });
 
     await game.start();
+    const values = vi.spyOn(Object, "values");
     try {
       const gameplay = (await bridge().sample({})).gameplay;
+      const enumeratedStorage = values.mock.calls.some(([value]) => value === storage);
+      expect(enumeratedStorage).toBe(false);
       expect(gameplay?.contacts).toEqual([{ entity: "fox", kind: "trigger", with: "coin.3" }]);
       expect(gameplay?.tags).toEqual({ coin: { count: 1 } });
     } finally {
+      values.mockRestore();
       game.stop();
     }
   });
