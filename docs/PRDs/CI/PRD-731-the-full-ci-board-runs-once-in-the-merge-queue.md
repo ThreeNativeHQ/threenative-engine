@@ -105,7 +105,7 @@ the PR lane's skipped jobs. All numbers are PRD-550 estimates until phase 3 meas
   fix load reds; PRD-550 phase 1 does. Phase 3 records the baseline first-attempt rate so the owner sees the effect.
 - **Policy change.** Root `AGENTS.md` says "Merge groups run the same selected gating board as the PR". This PRD
   replaces that sentence with "pull requests run the fast review lane; merge groups run the full selected
-  board". That rule is the owner's. No workflow or `AGENTS.md` text changes before João signs off.
+  board". João signed off on 2026-10-23 (see Decisions); the workflow and `AGENTS.md` text change in phase 2.
 - **Draft and fork PRs.** Drafts run no jobs today and keep doing so. The review lane keeps fork PRs on hosted
   runners.
 - **Straight-to-queue is rejected.** See Solution: the queue churn costs more than the thin lane.
@@ -115,13 +115,13 @@ the PR lane's skipped jobs. All numbers are PRD-550 estimates until phase 3 meas
 #### Phase 1: The plan knows two lanes
 **Status:** NOT STARTED
 **Files:** `scripts/ci-change-scope.mjs`, `scripts/ci-required.mjs`, `scripts/__tests__/ci-qualification.spec.ts`, `scripts/__tests__/ci-efficiency.spec.ts`, `scripts/__tests__/ci-needs.spec.ts`.
-**Implementation:** Add the `lane` field (`review`, `queue`, `full`) to the plan and to `validationProfile`. Select the review job set for `pull_request` into `develop`. Pin the draft skip. Make `validateEventPlan` and `ci-required` enforce the per-event minimum. Land behind a flag that defaults off, so nothing changes until the owner signs off.
+**Implementation:** Add the `lane` field (`review`, `queue`, `full`) to the plan and to `validationProfile`. Select the review job set for `pull_request` into `develop`. Pin the draft skip. Make `validateEventPlan` and `ci-required` enforce the per-event minimum. Land behind a flag that defaults off, so nothing changes until phase 2 turns it on.
 - [ ] A `pull_request` plan for a package diff selects the review job set and omits the native, integration and non-visual template jobs. proof: `pnpm exec vitest run scripts/__tests__/ci-efficiency.spec.ts` red before, green after.
 - [ ] `validateEventPlan` rejects a `review` plan for `merge_group`, `push`, `schedule` and `main`, and accepts it for `pull_request` into `develop` only. proof: `pnpm exec vitest run scripts/__tests__/ci-qualification.spec.ts` red before, green after.
 - [ ] A draft `pull_request` selects no jobs, and the same PR marked ready selects the review lane. proof: `pnpm exec vitest run scripts/__tests__/ci-structure.spec.ts` draft/ready case.
 - [ ] A green `review` run never satisfies reuse for a `queue` or `full` profile. proof: `pnpm exec vitest run scripts/__tests__/ci-qualification.spec.ts` reuse case.
 
-#### Phase 2: The workflow follows the plan (after sign-off)
+#### Phase 2: The workflow follows the plan (after PRD-730)
 **Status:** NOT STARTED
 **Files:** `.github/workflows/ci.yml`, `.github/workflows/ci-janitor.yml`, root `AGENTS.md` (+ `pnpm sync:agents`), `scripts/__tests__/ci-structure.spec.ts`, `scripts/__tests__/ci-needs.spec.ts`.
 **Implementation:** Turn the flag on. Rewrite the "Merge groups run the same selected gating board" sentence in the root `AGENTS.md` CI paragraph. Add the queue-red comment and fail-fast to the `merge_group` path.
@@ -138,5 +138,9 @@ the PR lane's skipped jobs. All numbers are PRD-550 estimates until phase 3 meas
 
 ## Blocked on
 
-- João's sign-off on the gate-policy change: ordinary PRs run only the fast review lane and the merge queue becomes the only full-board gate. This reverses the root `AGENTS.md` rule that merge groups run the same selected gating board as the PR. Phase 2 and every workflow edit wait for it.
 - PRD-730 landing, so a green full run on an identical tree is reused in the queue instead of rerun.
+
+## Decisions
+
+- 2026-10-23, João: "ok, 1) lgtm". Policy: a ready PR runs the thin review lane, a draft PR runs no CI jobs, and the merge queue runs the full selected board once. This replaces the root `AGENTS.md` rule that merge groups run the same selected gating board as the PR; the text change ships with phase 2.
+- 2026-10-23, rejected: send PRs straight to the queue with no PR CI. A red group makes GitHub rebuild the entries queued behind it, and agent PRs are often red on the first push, so the churn costs more than the thin lane.
