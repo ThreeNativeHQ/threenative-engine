@@ -82,7 +82,7 @@ const HR = 0.165;
 /** How much the jaw narrows toward the chin. */
 const JAW = 0.4;
 /** The hood: a shell round the head, open over the face from the brim down. */
-const HOOD = { r: 0.19, y: HC + 0.004, z: -0.008, brim: 1.1, window: 0.85, hem: 0.86 * Math.PI };
+const HOOD = { r: 0.183, y: HC - 0.004, z: -0.006, brim: 1.1, window: 0.85, hem: 0.93 * Math.PI };
 /** The chest's turned profile, [radius, height] from the waist up; its depth is 0.74 of its width. */
 const CHEST: readonly (readonly [number, number])[] = [
   [0.142, -0.03],
@@ -299,7 +299,7 @@ function mantleRadius(y: number): number {
 }
 
 /** The hood rises to a soft peak behind the crown. Below the head it drapes wider and longer, in
- * three broad folds down the back, and its lower edge lies on the mantle. */
+ * three broad folds down the back, and lies on the mantle down to a dagged edge. */
 function drape(v: Vector3): void {
   const length = v.length();
   const ny = v.y / length;
@@ -308,7 +308,7 @@ function drape(v: Vector3): void {
   if (ny >= 0) return;
   const phi = Math.atan2(v.z, -v.x);
   const back = Math.max(0, -Math.sin(phi));
-  const fold = 1 - 0.06 * ny * back * (0.5 + 0.5 * Math.cos(6 * (phi - (Math.PI * 3) / 2)));
+  const fold = 1 - 0.1 * ny * back * (0.5 + 0.5 * Math.cos(6 * (phi - (Math.PI * 3) / 2)));
   v.x *= (1 - 0.15 * ny) * fold;
   v.z *= (1 - 0.2 * ny) * fold;
   v.y *= 1 - 0.5 * ny;
@@ -318,6 +318,7 @@ function drape(v: Vector3): void {
     v.x *= on / across;
     v.z = ((v.z + HOOD.z) * on) / across - HOOD.z;
   }
+  if (ny < -0.95) v.y -= 0.025 * Math.max(0, Math.sin(8 * phi)) ** 2;
 }
 
 /** Where the face opening's arch closes, as a polar angle on the hood. */
@@ -724,7 +725,7 @@ export function createHero(): IHeroRig {
   ];
   face.push([strand(mouth, (t) => 0.0016 + 0.0026 * Math.sin(Math.PI * t), 5, 8), C.mouth, "eye"]);
   face.push([
-    at(new SphereGeometry(0.175, 20, 6, 0, Math.PI * 2, 0, 1), 0, HC + 0.006, -0.006),
+    at(new SphereGeometry(0.168, 20, 6, 0, Math.PI * 2, 0, 1), 0, HC + 0.002, -0.006),
     C.hair,
     "hair",
   ]);
@@ -787,7 +788,7 @@ export function createHero(): IHeroRig {
 
   // Side locks and the hood's tip hang on their own joints: springs move them.
   const locks = [-1, 1].map((s) => {
-    const lock = joint(head, s * 0.12, HC + 0.05, 0.095);
+    const lock = joint(head, s * 0.105, HC + 0.03, 0.11);
     const hang = (dx: number, dz: number, length: number): Part => [
       strand(
         [
@@ -803,34 +804,27 @@ export function createHero(): IHeroRig {
       dz < 0 ? C.hairLight : C.hair,
       "hair",
     ];
-    bake(lock, [hang(0, 0, 0.16), hang(s * 0.008, -0.04, 0.13)]);
+    bake(lock, [hang(0, 0, 0.17), hang(s * 0.008, -0.03, 0.14)]);
     return lock;
   });
-  // The tip grows out of the peak: a short tapering tail of the hood's cloth lying down its back,
-  // drooping a little to one side.
-  const tipRoot = hoodPoint((Math.PI * 3) / 2, 1.05);
-  const lie = (turn: number, theta: number, out: number): Point => {
-    const [x, y, z] = hoodPoint((Math.PI * 3) / 2 + turn, theta);
-    return [
-      x * out - tipRoot[0],
-      (y - HOOD.y) * out + HOOD.y - tipRoot[1],
-      (z - HOOD.z) * out + HOOD.z - tipRoot[2],
-    ];
+  // The tip gathers at the back of the head: a short tapering tail of the hood's cloth falling down
+  // her back, a little to one side, half sunk in the hood where it starts.
+  const tipRadius = (t: number): number =>
+    0.042 * Math.sin((Math.PI / 2) * Math.min(1, t / 0.3)) * (1 - t) ** 1.3 + 0.006;
+  const tipAt = (t: number): Vector3 => {
+    const [x, y, z] = hoodPoint((Math.PI * 3) / 2 + 0.25 * t, 1.45 + 1.25 * t);
+    const out = 1 + (Math.min(1, 0.5 + t) * tipRadius(t)) / HOOD.r;
+    return new Vector3(x * out, (y - HOOD.y) * out + HOOD.y, (z - HOOD.z) * out + HOOD.z);
   };
-  const hoodTip = joint(head, ...tipRoot);
+  const tipRoot = tipAt(0);
+  const hoodTip = joint(head, tipRoot.x, tipRoot.y, tipRoot.z);
   bake(hoodTip, [
     [
       strand(
-        [
-          lie(0, 1.05, 0.92),
-          lie(0.06, 1.4, 1.04),
-          lie(0.18, 1.75, 1.05),
-          lie(0.32, 2.05, 1.04),
-          lie(0.42, 2.3, 1.03),
-        ],
-        (t) => 0.03 * Math.min(1, t / 0.2) * (1 - t) + 0.006,
+        [0, 0.2, 0.4, 0.6, 0.8, 1].map((t) => tipAt(t).sub(tipRoot).toArray()),
+        tipRadius,
         8,
-        14,
+        16,
       ),
       C.cap,
       "drape",
@@ -1291,7 +1285,7 @@ export function createHero(): IHeroRig {
       lastY = body.position.y;
       const idle = Math.sin(time * 1.7) * (1 - run);
       const thighs = [legs.left.rotation.x, legs.right.rotation.x];
-      panels[0]?.rotation.set(Math.min(0, ...thighs) * 0.7, 0, 0);
+      panels[0]?.rotation.set(Math.max(-0.6, Math.min(0, ...thighs) * 0.7), 0, 0);
       panels[1]?.rotation.set(Math.max(0, ...thighs) * 0.7, 0, 0);
       hoodTip.rotation.set(
         chase(springs.tip, run * 0.12 - lift * 0.3 + idle * 0.04, step),
