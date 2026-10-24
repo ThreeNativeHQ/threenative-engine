@@ -39,6 +39,13 @@ import type { TextureCodec, TextureSkipReason } from "./texture.js";
  * did not survive the round trip all throw naming the model and the image.
  */
 
+/**
+ * What the runtime downloads once for any KTX2 output: three's `basis_transcoder.js` plus
+ * `basis_transcoder.wasm`. Measured at 575,519 bytes on three 0.180; rounded up so a build
+ * switches to decoder-free only when it is certain to save bytes.
+ */
+export const BASIS_TRANSCODER_BYTES = 600 * 1024;
+
 export interface IModelTextureOverride {
   readonly codec: TextureCodec;
   /** glTF slot the override applies to, e.g. `normalTexture` or `baseColorTexture`. */
@@ -60,6 +67,14 @@ export interface IModelTexturesOptions {
    * per-image deduplication, colour space — is unchanged.
    */
   readonly decoderFree?: boolean;
+  /**
+   * Bytes the runtime pays once for the Basis transcoder (`basis_transcoder.js` plus
+   * `basis_transcoder.wasm`) when any model publishes KTX2. An image is encoded only when its
+   * KTX2 output saves at least this many bytes against the authored container, so one small
+   * texture can never make every game download a transcoder larger than the saving. Defaults to
+   * {@link BASIS_TRANSCODER_BYTES}; a preparer that already pays the cost passes 0.
+   */
+  readonly transcoderBytes?: number;
   /**
    * Longest edge an embedded image may keep, default 2048. Larger images are box-resampled
    * down preserving aspect ratio; smaller ones are never upscaled.
@@ -573,6 +588,7 @@ export async function compressEmbeddedTextures(
   const textures = root.listTextures();
   if (textures.length === 0) return undefined;
   const decoderFree = options.decoderFree === true;
+  const transcoderBytes = Math.max(0, options.transcoderBytes ?? BASIS_TRANSCODER_BYTES);
   const quality = Math.min(255, Math.max(1, Math.round(options.quality ?? DEFAULT_ETC1S_QUALITY)));
   const keys = textureKeys(root);
   const formats: Record<string, string> = {};
@@ -803,11 +819,14 @@ export async function compressEmbeddedTextures(
           ...(options.astc === true
             ? { astc: true, gltfColorPrimaries: srgb ? (1 as const) : (0 as const) }
             : {}),
+          // ponytail: one image must repay the whole transcoder, so a project whose many small
+          // KTX2 wins add up to more than it stays decoder-free. Split the cost across the
+          // project when a measured project loses bytes to this ceiling.
           ...(!explicit &&
           target.width === decoded.width &&
           target.height === decoded.height &&
           UNIVERSAL_IMAGE_CONTAINERS.has(texture.getMimeType())
-            ? { maxBytes: image.byteLength }
+            ? { maxBytes: image.byteLength - transcoderBytes }
             : {}),
           ...(forced === undefined ? {} : { forced }),
         });

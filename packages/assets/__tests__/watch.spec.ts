@@ -308,6 +308,8 @@ describe("watchAssets", () => {
         // A decoder-capable page (`engine: "threejs"`) names its decoders; the default has none.
         runtimeDecoders: { ktx2: true, meshopt: true },
         transcoder: basisTranscoderPaths(),
+        // This case is about publishing the KTX2 runtime; a 32-pixel fixture cannot repay it.
+        modelTranscoderBytes: 0,
       }),
     );
     await openHandles[0]?.ready;
@@ -546,6 +548,8 @@ describe("watchAssets", () => {
         onChange: recorder.onChange,
         runtimeDecoders: { ktx2: true, meshopt: true },
         transcoder: basisTranscoderPaths(),
+        // This case is about publishing the KTX2 runtime; a 32-pixel fixture cannot repay it.
+        modelTranscoderBytes: 0,
       }),
     );
     await openHandles[0]?.ready;

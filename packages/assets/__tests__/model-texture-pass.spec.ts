@@ -17,6 +17,7 @@ import { type IAssetSourceConfig, compileAssets } from "../src/index.js";
 import * as encoder from "../src/ktx2-encoder.js";
 import { decodeImageBytes } from "../src/passes/decode-image.js";
 import {
+  BASIS_TRANSCODER_BYTES,
   codecLadder,
   compressEmbeddedTextures,
   encodeTextureLadder,
@@ -81,13 +82,26 @@ async function fixtureWithTextures(options: {
   return Buffer.from(await new NodeIO().writeBinary(document));
 }
 
+/**
+ * Most cases below measure the KTX2 ladder itself, not whether the shared transcoder can be
+ * repaid by a 32-pixel fixture, so they state that its cost is already paid. The default-cost
+ * rule has its own case.
+ */
+function paidTranscoder(
+  options?: Parameters<typeof modelPass>[0],
+): Parameters<typeof modelPass>[0] {
+  const textures = options?.textures;
+  if (textures === "none" || textures?.transcoderBytes !== undefined) return options;
+  return { ...options, textures: { ...(textures ?? {}), transcoderBytes: 0 } };
+}
+
 function apply(
   input: Buffer,
   options?: Parameters<typeof modelPass>[0],
 ): Promise<Buffer | { buffer: Buffer; entry?: Readonly<Record<string, unknown>> }> {
-  return Promise.resolve(modelPass(options).apply(input, "character.glb")) as Promise<
-    Buffer | { buffer: Buffer; entry?: Readonly<Record<string, unknown>> }
-  >;
+  return Promise.resolve(
+    modelPass(paidTranscoder(options)).apply(input, "character.glb"),
+  ) as Promise<Buffer | { buffer: Buffer; entry?: Readonly<Record<string, unknown>> }>;
 }
 
 async function compiled(
@@ -212,6 +226,14 @@ function expectColours(pixels: Uint8Array, width: number, tolerance: number): vo
 }
 
 describe("embedded model textures", () => {
+  it("should charge at least the transcoder pair the runtime downloads once", async () => {
+    const { javascriptPath, wasmPath } = basisTranscoderPaths();
+    const [js, wasm] = await Promise.all([stat(javascriptPath), stat(wasmPath)]);
+    expect(BASIS_TRANSCODER_BYTES).toBeGreaterThanOrEqual(js.size + wasm.size);
+    // A stale constant must not silently disable KTX2 for every project.
+    expect(BASIS_TRANSCODER_BYTES).toBeLessThan((js.size + wasm.size) * 1.2);
+  });
+
   it("should escalate an image that fails the floor", async () => {
     const make = async () => {
       const document = await new NodeIO().readBinary(await fixtureWithTextures({ width: 128 }));
@@ -224,12 +246,15 @@ describe("embedded model textures", () => {
       document.getRoot().listTextures()[0]?.setImage(PNG.sync.write(png));
       return document;
     };
-    const enforced = await compressEmbeddedTextures(await make(), "noise.glb");
+    const enforced = await compressEmbeddedTextures(await make(), "noise.glb", {
+      transcoderBytes: 0,
+    });
     expect(enforced?.quality.checker?.rung).not.toBe("etc1s@150");
     expect(enforced?.quality.checker?.rung).toBeDefined();
     expect(enforced?.quality.checker?.status).toBe("pass");
     const disabled = await compressEmbeddedTextures(await make(), "noise.glb", {
       floor: { ssim: 0, meanDeltaE00: 100 },
+      transcoderBytes: 0,
     });
     expect(disabled?.quality.checker?.rung).toBe("etc1s@150");
     expect(disabled?.quality.checker?.meanDeltaE00).toBeGreaterThan(3);
@@ -249,7 +274,7 @@ describe("embedded model textures", () => {
       .getRoot()
       .listTextures()[0]
       ?.setImage(PNG.sync.write(PNG.sync.read(flat), { deflateLevel: 0 }));
-    const summary = await compressEmbeddedTextures(document, "flat.glb");
+    const summary = await compressEmbeddedTextures(document, "flat.glb", { transcoderBytes: 0 });
     expect(summary?.quality.checker?.status).toBe("pass");
     const decoded = PNG.sync.read(flat);
     const passing: Uint8Array[] = [];
@@ -275,6 +300,7 @@ describe("embedded model textures", () => {
     document.getRoot().listTextures()[0]?.setImage(flat).setMimeType("image/png");
     await compressEmbeddedTextures(document, "flat.glb", {
       overrides: [{ slot: "baseColorTexture", codec: "etc1s" }],
+      transcoderBytes: 0,
     });
     expect(() =>
       minimumGate(document.getRoot().listTextures()[0]?.getImage()?.byteLength ?? 0),
@@ -294,7 +320,7 @@ describe("embedded model textures", () => {
       .getRoot()
       .listTextures()[0]
       ?.setImage(PNG.sync.write(PNG.sync.read(source)));
-    const summary = await compressEmbeddedTextures(document, "rdo.glb");
+    const summary = await compressEmbeddedTextures(document, "rdo.glb", { transcoderBytes: 0 });
     expect(summary?.quality.checker).toMatchObject({
       codec: "uastc",
       rung: "uastc+rdo λ3 +zstd",
@@ -308,7 +334,9 @@ describe("embedded model textures", () => {
     document.getRoot().listTextures()[0]?.dispose();
     const encode = vi.spyOn(encoder, "encodeToKTX2");
     try {
-      const summary = await compressEmbeddedTextures(document, "normal.glb");
+      const summary = await compressEmbeddedTextures(document, "normal.glb", {
+        transcoderBytes: 0,
+      });
       expect(summary?.quality["cloth-normal"]?.rung).toBe("uastc");
       expect(encode.mock.calls.length).toBeGreaterThan(0);
       expect(encode.mock.calls.every(([, settings]) => settings.isUASTC === true)).toBe(true);
@@ -442,6 +470,7 @@ describe("embedded model textures", () => {
       compileAssets({
         cwd: root,
         concurrency: 1,
+        modelTranscoderBytes: 0,
         config: {
           budget: { uncooked },
           models: { textures: { floor: { ssim: 1, meanDeltaE00: 0 } } },
@@ -468,12 +497,14 @@ describe("embedded model textures", () => {
     await compileAssets({
       cwd: root,
       concurrency: 1,
+      modelTranscoderBytes: 0,
       config: { models: { textures: { floor: { ssim: 1, meanDeltaE00: 0 } } } },
     });
     expect((await read()).entries["prop.glb"]?.embeddedTextures.quality.checker?.rung).toBe("none");
     await compileAssets({
       cwd: root,
       concurrency: 1,
+      modelTranscoderBytes: 0,
       config: { models: { textures: { floor: { ssim: 0, meanDeltaE00: 100 } } } },
     });
     const score = (await read()).entries["prop.glb"]?.embeddedTextures.quality.checker;
@@ -1659,7 +1690,11 @@ describe("embedded textures through the compile step", () => {
       const source = await fixtureWithTextures({ width: 32 });
       await writeFile(path.join(root, "assets", "prop.glb"), source);
 
-      await compileAssets({ cwd: root, transcoder: basisTranscoderPaths() });
+      await compileAssets({
+        cwd: root,
+        transcoder: basisTranscoderPaths(),
+        modelTranscoderBytes: 0,
+      });
 
       const manifest = JSON.parse(
         await readFile(path.join(root, "public", "assets.manifest.json"), "utf8"),
@@ -1679,6 +1714,25 @@ describe("embedded textures through the compile step", () => {
     } finally {
       vi.restoreAllMocks();
     }
+  });
+
+  it("should keep authored images and ship no transcoder when KTX2 cannot repay it", async () => {
+    const root = await makeTempDir("threenative-model-textures-cost-");
+    await mkdir(path.join(root, "assets"));
+    await writeFile(
+      path.join(root, "assets", "prop.glb"),
+      await fixtureWithTextures({ width: 32 }),
+    );
+
+    await compileAssets({ cwd: root });
+
+    const manifest = JSON.parse(
+      await readFile(path.join(root, "public", "assets.manifest.json"), "utf8"),
+    ) as { entries: Record<string, Record<string, unknown>> };
+    expect(manifest.entries["prop.glb"]?.extensions).not.toContain("KHR_texture_basisu");
+    // The authored containers already decode everywhere; the shared transcoder would cost
+    // more than the 32-pixel images it serves.
+    await expect(stat(path.join(root, "public", "basis"))).rejects.toThrow();
   });
 
   it('should ship images as authored and need no transcoder when models.textures is "none"', async () => {

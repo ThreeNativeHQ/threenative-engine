@@ -134,9 +134,21 @@ describe("asset byte budgets", () => {
 
   it("counts compiler-owned Basis sidecars exactly once in total and never in uncooked", async () => {
     const { root } = await fixture();
+    // A textured image, so the cook actually publishes KTX2 and the sidecars the budget counts.
+    await writeFile(
+      path.join(root, "assets/largest.png"),
+      rgbaPng({
+        height: 256,
+        width: 256,
+        red: (x, y) => 100 + ((x * 21 + y * 21) % 8),
+        green: (x, y) => 100 + ((x * 29 + y * 31) % 8),
+        blue: (x, y) => 100 + ((x * 37 + y * 41) % 8),
+      }),
+    );
     const first = await compileAssets({
       cwd: root,
       transcoder: basisTranscoderPaths(),
+      modelTranscoderBytes: 0,
       config: { budget: "none" },
     });
     const unique = new Map(first.receipt?.outputs.map((output) => [output.path, output]) ?? []);
@@ -154,6 +166,7 @@ describe("asset byte budgets", () => {
         compileAssets({
           cwd: root,
           transcoder: basisTranscoderPaths(),
+          modelTranscoderBytes: 0,
           config: { budget: { total: primaryBytes, uncooked: "none" } },
         }),
       ).rejects.toThrow(`total ${primaryBytes + sidecarBytes} bytes exceeds ${primaryBytes}`);

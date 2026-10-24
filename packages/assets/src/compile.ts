@@ -309,6 +309,12 @@ export interface IAssetCompileOptions {
   readonly source?: string;
   /** Overrides resolution of three's Basis transcoder for the copy into the output root. */
   readonly transcoder?: IBasisTranscoder;
+  /**
+   * Internal: the bytes an embedded model image must save before KTX2 pays for the shared Basis
+   * transcoder. Absent charges the measured default; a caller that already ships the transcoder
+   * passes 0.
+   */
+  readonly modelTranscoderBytes?: number;
 }
 
 export interface IBasisTranscoder {
@@ -1760,7 +1766,18 @@ function resolveLayout(cwd: string, options: IAssetCompileOptions): ICompileLayo
           : { ...models, vertexLayout: "separate" as const };
       // `assets.lod` is top-level, not under `models`, but it drives the model pass. It rides in
       // the pass options (and its spec) so it is part of the compile cache key.
-      const modelOptionsWithLod = { ...modelOptions, lod: configuredLod };
+      const modelOptionsWithLod = {
+        ...modelOptions,
+        lod: configuredLod,
+        ...(options.modelTranscoderBytes === undefined || modelOptions.textures === "none"
+          ? {}
+          : {
+              textures: {
+                ...(modelOptions.textures ?? {}),
+                transcoderBytes: options.modelTranscoderBytes,
+              },
+            }),
+      };
       const pass = modelPass({
         ...modelOptionsWithLod,
         preserveLightmapUv: lightmap !== undefined,
@@ -2805,6 +2822,7 @@ export async function compileAssets(
   /** Cooked bytes the content-identical model sources saved by sharing one output. */
   let dedupeSavedBytes = 0;
   let textureCount = 0;
+  let ktx2TextureCount = 0;
   let compressedModelCount = 0;
 
   // Asset-free projects still serve the manifest the runtime loader requests.
@@ -2920,6 +2938,9 @@ export async function compileAssets(
         logicalPath: logical,
       });
       textureCount += 1;
+      // Raw ASTC is a KTX2 container but needs no Basis transcoder. Any Basis codec does.
+      if (entry.format !== undefined && entry.format !== "none" && entry.format !== "astc4x4")
+        ktx2TextureCount += 1;
     }
   };
 
@@ -3155,11 +3176,11 @@ export async function compileAssets(
   }
 
   // The transcoder ships once per build next to the compiled assets; the runtime loader points
-  // at `<basePath>basis/` by convention. Copied when anything (re)encoded, and restored when a
-  // cleaned public/ still lists textures, so a served manifest never lacks its transcoder. A
-  // project with no standalone texture at all still needs it once a model publishes
-  // KHR_texture_basisu — otherwise GLTFLoader gets a KTX2Loader pointed at a 404.
-  if ((layout.texturesActive && textureCount > 0) || compressedModelCount > 0) {
+  // at `<basePath>basis/` by convention. Copied only when an output is actually Basis-encoded:
+  // a JPEG or PNG texture, and a model whose images stayed in their authored container, do not
+  // need it. Restored when a cleaned public/ still lists KTX2 outputs, so a served manifest never
+  // lacks its transcoder.
+  if (ktx2TextureCount > 0 || compressedModelCount > 0) {
     const basisJs = path.join(layout.outputRoot, BASIS_DIRECTORY, "basis_transcoder.js");
     if (written > 0 || !(await outputExists(basisJs))) {
       await recordPendingOutputs([

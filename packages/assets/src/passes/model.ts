@@ -882,6 +882,7 @@ export function modelPass(options: IModelPassOptions = {}): IAssetPass {
               instrument: IMAGE_QUALITY_IDENTITY,
               floor: resolveImageQualityFloor(options.textures?.floor),
               maxSize: options.textures?.maxSize ?? null,
+              transcoderBytes: options.textures?.transcoderBytes ?? null,
               // Retention is now conditioned on the container, so it is spelled out rather than
               // named by a boolean: a warm cache keyed on the old rule would keep shipping the
               // WebP-requiring models this replaced.
@@ -1172,6 +1173,7 @@ function sharedSettings(
             maxSize: resolveTextureMaxSize(textureOptions.maxSize, listTextureSlots(texture)),
             overrides: textureOptions.overrides ?? [],
             quality: textureOptions.quality ?? null,
+            transcoderBytes: textureOptions.transcoderBytes ?? null,
           },
   };
 }
