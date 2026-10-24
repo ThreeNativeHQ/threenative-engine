@@ -108,6 +108,9 @@ describe("InputMap", () => {
           (listeners.get(type) ?? []).filter((candidate) => candidate !== listener),
         );
       },
+      dispatchEvent() {
+        return true;
+      },
       fire(event: Event) {
         for (const listener of [...(listeners.get(event.type) ?? [])]) listener(event);
       },
