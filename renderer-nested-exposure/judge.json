@@ -1,0 +1,18 @@
+{
+  "status": "ACCEPTED",
+  "models": [
+    "claude-sonnet-5-5"
+  ],
+  "effort": "high",
+  "requiredImages": 5,
+  "openedImages": 5,
+  "overall": "NEUTRAL",
+  "frames": [
+    {
+      "name": "battlefield-performance",
+      "verdict": "NEUTRAL",
+      "reason": "Pose alignment confirmed first: all four 1920x1080 frames share HUD ORE 890 / GAS 182 / SUPPLY 23/30 / CLOCK 00:12, the same command-core ring (~352,340), barracks, crystal/miner cluster, infantry squad, teal pool (~1040,900), shadow-edge shape, minimap blob/viewport box and '-57 · 49' readout. Against both BEFORE repeats, both AFTER runs show the same terrain grid and sub-grid sharpness, soft shadow edge and contact shadows, warm-lit vs gray-shadow tone, crystals/miners/vehicles/building detail, every selection ring and health bar, and complete crisp HUD, minimap and button text. I see no new blur, grain, halo, clipping, missing element, or brightness/fog/color change. The two BEFORE repeats and the two AFTER runs are indistinguishable from each other, so there is no visible regression and no visible improvement."
+    }
+  ],
+  "limitations": "Judgment is by eye using only Read, with no zoom or pixel diff. Differences of a few code values, subtle dither/noise changes, or sub-pixel edge shifts in low-contrast areas (shadowed far terrain, faint grid show-through inside the pool) cannot be ruled out. The frames are single static captures at one tick (clock 00:12, idle scene, no combat, particles or moving units). They cannot show temporal stability, flicker, exposure adaptation or pumping across frames, or whether the meter's own reading is identical, only that the final tone looks the same. Per-pass uniform synchronization inside the nested meter draws is not observable in pixels, only the absence of visible symptoms. Audio pose and behavior and performance cannot be assessed from images. The WebGPU/NVIDIA Turing hardware path comes from the brief and cannot be confirmed from pixels. The comparison sheet is shown downscaled (3840x2280 at 2000x1188), so I used it only for layout and labels and judged detail on the 1920x1080 originals."
+}
