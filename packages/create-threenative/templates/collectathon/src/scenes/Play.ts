@@ -15,11 +15,11 @@ import {
 import { type DataTexture, Euler, type PerspectiveCamera, Vector3 } from "three";
 import { FOOT_OFFSET, type GameCtx, HERO_FEEL, Hero, WORLD_LAYER } from "../entities/Hero.js";
 import { Pickup } from "../entities/Pickup.js";
-import { Walker } from "../entities/Walker.js";
+import { Walker, type WalkerKind } from "../entities/Walker.js";
 import { type ICourse, COURSE, buildCourse, makeRng } from "../level/Course.js";
 import { emitPlaytestEvent } from "../playtest-events.js";
 import { type WallProbe, createOrbitCamera } from "../render/camera.js";
-import { BURSTS, dustEffect, sparkleEffect } from "../render/effects.js";
+import { BURSTS, EFFECTS } from "../render/effects.js";
 import { setupLighting } from "../render/lighting.js";
 import { createLoadingScreen } from "../render/loading.js";
 import { setupPost } from "../render/postprocessing.js";
@@ -30,16 +30,6 @@ import type { GameState } from "../state.js";
 export type { GameCtx };
 
 const WEDGES = 8;
-/** Effects drawn by the additive star emitter; every other burst is dust. */
-const SPARKLES: ReadonlySet<keyof typeof BURSTS> = new Set([
-  "wallKick",
-  "trail",
-  "streak",
-  "coin",
-  "gem",
-  "seed",
-  "glint",
-]);
 const JUMPS: ReadonlySet<string> = new Set([
   "single",
   "double",
@@ -74,6 +64,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
   };
 
   #sky: DataTexture | undefined;
+  #fill: DataTexture | undefined;
   #course: ICourse | undefined;
   #hero: Hero | undefined;
   #pickups: Pickup[] = [];
@@ -87,7 +78,8 @@ export class Play extends Scene<GameState, IPhysicsContext> {
    */
   override load(ctx: GameCtx): void {
     this.#sky = skyTexture();
-    setupSky(ctx.scene, this.#sky);
+    this.#fill = skyTexture(0.5, 128);
+    setupSky(ctx.scene, this.#sky, this.#fill);
     const course = buildCourse(makeRng(6402));
     this.#course = course;
     ctx.add(course.group);
@@ -115,12 +107,18 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     course.gems.forEach((at, i) => add(`gem.${i}`, new Pickup("gem", at)));
     for (const [name, at] of Object.entries(course.seeds))
       add(`seed.${name}`, new Pickup("seed", at, name));
-    course.walkers.forEach((at, i) => {
-      const walker = new Walker(at, i * 1.7);
-      ctx.add(walker.mesh);
-      ctx.entities.add(`walker.${i}`, walker);
-      this.#walkers.push(walker);
-    });
+    // Bumblets keep the `walker.<i>` names the scenarios place; the others are `hopper.<i>`, `thornback.<i>`.
+    for (const [kind, homes] of Object.entries(course.walkers) as [
+      WalkerKind,
+      ICourse["walkers"][WalkerKind],
+    ][]) {
+      homes.forEach((at, i) => {
+        const walker = new Walker(kind, at, i * 1.7);
+        ctx.add(walker.mesh);
+        ctx.entities.add(`${kind === "bumblet" ? "walker" : kind}.${i}`, walker);
+        this.#walkers.push(walker);
+      });
+    }
   }
 
   override enter(ctx: GameCtx): SceneFrame<GameState, IPhysicsContext> {
@@ -143,7 +141,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       shape: CollisionShape3D.box(...COURSE.platform.size),
       type: "kinematic",
     });
-    setupSky(ctx.scene, this.#sky);
+    setupSky(ctx.scene, this.#sky, this.#fill);
     const lighting = setupLighting(
       ctx.scene,
       ctx.renderer.raw as Parameters<typeof setupLighting>[1],
@@ -190,17 +188,24 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       lighting.follow(hero.mesh.position);
     });
 
-    // Effects: two pooled emitters, every look parameter in `render/effects.ts`.
-    const dust = ctx.add(new GPUParticles3D(dustEffect()));
-    dust.name = "effects-dust";
-    const sparkle = ctx.add(new GPUParticles3D(sparkleEffect()));
-    sparkle.name = "effects-sparkle";
+    // Effects: four pooled emitters, every look parameter in `render/effects.ts`.
+    const make = (name: keyof typeof EFFECTS): GPUParticles3D => {
+      const emitter = ctx.add(new GPUParticles3D(EFFECTS[name]()));
+      emitter.name = `effects-${name}`;
+      return emitter;
+    };
+    const emitters = {
+      dust: make("dust"),
+      flash: make("flash"),
+      pollen: make("pollen"),
+      sparkle: make("sparkle"),
+    };
     const fired: Record<string, number> = Object.fromEntries(
       Object.keys(BURSTS).map((kind) => [kind, 0]),
     );
     const burst = (kind: keyof typeof BURSTS, x: number, y: number, z: number): void => {
-      const { count, shape } = BURSTS[kind];
-      (SPARKLES.has(kind) ? sparkle : dust).emitParticle({
+      const { count, emitter, shape } = BURSTS[kind];
+      emitters[emitter].emitParticle({
         count,
         direction: { x: shape[0], y: shape[1], z: shape[2] },
         origin: { x, y, z },
@@ -209,9 +214,11 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     };
     ctx.entities.add("effects", {
       debug: () => ({
-        dust: dust.stats.spawned,
+        dust: emitters.dust.stats.spawned,
         fired: { ...fired },
-        sparkle: sparkle.stats.spawned,
+        flash: emitters.flash.stats.spawned,
+        pollen: emitters.pollen.stats.spawned,
+        sparkle: emitters.sparkle.stats.spawned,
       }),
     });
     let previous = hero.action;
@@ -266,6 +273,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
         if (!wasGrounded && hero.grounded) {
           if (action === "poundLand") {
             burst("pound", at.x, feet + 0.05, at.z);
+            burst("poundRing", at.x, feet + 0.1, at.z);
             burst("debris", at.x, feet + 0.1, at.z);
           } else burst("landing", at.x, feet + 0.05, at.z);
         } else if (wasGrounded && JUMPS.has(action)) burst("takeoff", at.x, feet + 0.05, at.z);
@@ -288,6 +296,8 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       }
       if (action === "triple" && airTicks % 2 === 0) burst("trail", at.x, at.y, at.z);
       if (action === "longJump") burst("streak", at.x, at.y, at.z);
+      // Pollen drifts in round the hero, a few motes every 0.15 s, so the air is never empty.
+      if (elapsed % 0.15 < dt) burst("pollen", at.x, feet + 0.4, at.z);
 
       this.#pickups.forEach((pickup, i) => {
         // A red gem glints every 1.4 s, staggered so the eight never flash together.
@@ -330,7 +340,8 @@ export class Play extends Scene<GameState, IPhysicsContext> {
           continue;
         }
         if (reach >= HIT.touch || dy <= -0.5 || dy >= Walker.height) continue;
-        if (hero.body.velocity.y < HIT.stompDrop && dy > Walker.height * 0.4) {
+        const stomp = hero.body.velocity.y < HIT.stompDrop && dy > Walker.height * 0.4;
+        if (stomp && walker.stompable) {
           defeat(walker, "stomped");
           hero.bounce();
         } else if (hero.action === "dive" || hero.action === "diveSlide") {
@@ -338,8 +349,10 @@ export class Play extends Scene<GameState, IPhysicsContext> {
         } else if (hero.hurtTimer === 0) {
           wedges -= 1;
           hero.knockBack(w);
+          // A stomp on a thornback lands on its spikes.
+          if (stomp) emitPlaytestEvent({ entity: "player", name: "spiked" });
           emitPlaytestEvent({ entity: "player", name: "hurt" });
-          toast("OUCH!", 0.9);
+          toast(stomp ? "SPIKES!" : "OUCH!", 0.9);
         }
       }
 

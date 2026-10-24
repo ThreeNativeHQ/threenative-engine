@@ -25,12 +25,14 @@ export const CAMERA_RIG = {
   /** Ease toward the arm's end, in 1/s; a pull-in snaps instead. */
   followRate: 9,
   /**
-   * When a wall would pull the camera closer than this, it cranes up instead: in a narrow shaft
-   * the open sky is the only clear line, and a camera at 0.3 m shows the back of the cap.
+   * When a wall would pull the camera closer than this, it looks for a clearer arm instead: in a
+   * shaft the open side is beside the hero, and a camera at 0.3 m shows the back of the cap.
    */
-  craneBelow: 2.5,
-  /** The steeper arm angles a crane tries, in radians above the horizon. */
-  craneElevations: [0.85, 1.2, 1.45],
+  craneBelow: 4,
+  /** The steepest arm angle it tries: 35° above the horizon, so the view never turns top-down. */
+  craneElevation: 0.61,
+  /** The headings it tries, as offsets from the current yaw, nearest first. */
+  craneHeadings: [0, Math.PI / 2, -Math.PI / 2, Math.PI / 4, -Math.PI / 4, 2.36, -2.36],
 } as const;
 
 /** Distance along the ray from `from` to `to` to the first wall, or undefined when clear. */
@@ -58,11 +60,14 @@ export function createOrbitCamera(camera: PerspectiveCamera): IOrbitCamera {
   let distance: number = CAMERA_RIG.distance;
   let elevation: number = CAMERA_RIG.elevation;
   let pulledIn = false;
+  let cuts = 0;
+  let peakElevation = elevation;
+  let closest = distance;
 
-  /** How far the arm reaches at `angle` before a wall; also leaves `arm` pointing along it. */
-  const reachAt = (angle: number, probe: WallProbe): number => {
+  /** How far the arm reaches along `heading` at `angle`; also leaves `arm` pointing along it. */
+  const reachAt = (heading: number, angle: number, probe: WallProbe): number => {
     const flat = Math.cos(angle);
-    arm.set(Math.sin(yaw) * flat, Math.sin(angle), Math.cos(yaw) * flat);
+    arm.set(Math.sin(heading) * flat, Math.sin(angle), Math.cos(heading) * flat);
     desired.copy(aim).addScaledVector(arm, CAMERA_RIG.distance);
     const hit = probe(aim, desired);
     return hit === undefined ? CAMERA_RIG.distance : hit - CAMERA_RIG.wallGap;
@@ -70,24 +75,34 @@ export function createOrbitCamera(camera: PerspectiveCamera): IOrbitCamera {
 
   const place = (target: Vector3, probe: WallProbe, ease: number): void => {
     aim.set(target.x, target.y + CAMERA_RIG.aimHeight, target.z);
-    // Crane: pick the arm angle that reaches farthest when the default one is boxed in.
+    // Crane: when the arm is boxed in, take the heading and angle that reach farthest. A new
+    // heading is a cut, not a swing: an arm swept round a shaft passes through its wall.
     let goal: number = CAMERA_RIG.elevation;
-    let best = reachAt(goal, probe);
+    let heading = yaw;
+    let best = reachAt(yaw, goal, probe);
     if (best < CAMERA_RIG.craneBelow) {
-      for (const angle of CAMERA_RIG.craneElevations) {
-        const reach = reachAt(angle, probe);
-        if (reach > best + 0.5) [goal, best] = [angle, reach];
+      for (const offset of CAMERA_RIG.craneHeadings) {
+        for (const angle of [CAMERA_RIG.elevation, CAMERA_RIG.craneElevation]) {
+          const reach = reachAt(yaw + offset, angle, probe);
+          if (reach > best + 0.5) [heading, goal, best] = [yaw + offset, angle, reach];
+        }
       }
+    }
+    if (heading !== yaw) {
+      [yaw, elevation, distance] = [heading, goal, best];
+      cuts += 1;
     }
     // Up is immediate, like a pull-in; back down is eased.
     elevation = goal > elevation ? goal : elevation + (goal - elevation) * ease;
-    const hit = reachAt(elevation, probe);
+    const hit = reachAt(yaw, elevation, probe);
     pulledIn = hit < CAMERA_RIG.distance;
     const reach = Math.max(CAMERA_RIG.minDistance, hit);
     // Out is eased, in is immediate: a camera that eases into a wall shows the inside of it.
     distance = reach < distance ? reach : distance + (reach - distance) * ease;
     camera.position.copy(aim).addScaledVector(arm, distance);
     camera.lookAt(aim);
+    peakElevation = Math.max(peakElevation, elevation);
+    closest = Math.min(closest, distance);
   };
 
   return {
@@ -98,6 +113,7 @@ export function createOrbitCamera(camera: PerspectiveCamera): IOrbitCamera {
       yaw = heroYaw;
       distance = CAMERA_RIG.distance;
       elevation = CAMERA_RIG.elevation;
+      [cuts, peakElevation, closest] = [0, elevation, distance];
       place(target, probe, 1);
     },
     update(target, velocity, dt, probe) {
@@ -114,7 +130,7 @@ export function createOrbitCamera(camera: PerspectiveCamera): IOrbitCamera {
       place(target, probe, 1 - Math.exp(-dt * CAMERA_RIG.followRate));
     },
     debug() {
-      return { distance, elevation, pulledIn, yaw };
+      return { closest, cuts, distance, elevation, peakElevation, pulledIn, yaw };
     },
   };
 }

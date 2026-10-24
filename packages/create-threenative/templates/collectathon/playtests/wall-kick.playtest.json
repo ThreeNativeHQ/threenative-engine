@@ -123,7 +123,35 @@
       "noRuntimeDiagnostics": true,
       "runtimeReady": true
     },
+    "camera": {
+      "entity": "camera.main",
+      "follows": "player",
+      "within": 10,
+      "targetInViewport": true
+    },
     "components": [
+      {
+        "entity": "camera-rig",
+        "component": "cuts",
+        "gte": 1
+      },
+      {
+        "entity": "camera-rig",
+        "component": "peakElevation",
+        "lte": 0.62,
+        "allowTrivial": "The arm starts at 0.32 rad; the climb must not crane it past 35°, as the top-down view of the shaft did."
+      },
+      {
+        "entity": "camera-rig",
+        "component": "closest",
+        "gte": 3,
+        "allowTrivial": "The arm starts at 9 m; the climb must not pull it against a shaft wall, which then fills the frame."
+      },
+      {
+        "entity": "camera-rig",
+        "component": "rayClear",
+        "atSteps": [{ "label": "slab-contact", "equals": true }]
+      },
       {
         "entity": "player",
         "component": "wallKicks",

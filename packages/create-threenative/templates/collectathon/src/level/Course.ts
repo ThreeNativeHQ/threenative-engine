@@ -12,6 +12,8 @@ import {
   Vector3,
 } from "three";
 import { HERO_FEEL } from "../entities/Hero.js";
+import type { WalkerKind } from "../entities/Walker.js";
+import { plantIsland } from "../render/foliage.js";
 import { lit, mottle, patches } from "../render/materials.js";
 import { C, palette } from "../render/palette.js";
 
@@ -55,7 +57,8 @@ export interface ICourse {
   readonly coins: readonly Point[];
   readonly gems: readonly Point[];
   readonly seeds: Readonly<Record<"summit" | "shaft", Point>>;
-  readonly walkers: readonly Point[];
+  /** Walker homes by kind, each far enough off every scenario's route that it never wanders onto one. */
+  readonly walkers: Readonly<Record<WalkerKind, readonly Point[]>>;
   /** The orbiting platform's mesh, its origin at the deck's centre. */
   readonly platform: Mesh;
   /** Where the platform is at `time` seconds. */
@@ -88,18 +91,19 @@ export function buildCourse(rng: () => number): ICourse {
     group.add(mesh);
     return mesh;
   };
+  /** A stone block cut into 1 m courses, each its own tint, so a tower reads as masonry. */
   const box = (min: Point, max: Point, material: Material = rock): Mesh => {
     const size = [max[0] - min[0], max[1] - min[1], max[2] - min[2]] as const;
     const geometry = new BoxGeometry(
       size[0],
       size[1],
       size[2],
-      Math.ceil(size[0] / 2),
-      Math.ceil(size[1] / 2),
-      Math.ceil(size[2] / 2),
+      Math.ceil(size[0]),
+      Math.ceil(size[1]),
+      Math.ceil(size[2]),
     );
     geometry.translate((min[0] + max[0]) / 2, (min[1] + max[1]) / 2, (min[2] + max[2]) / 2);
-    return solid(geometry, material);
+    return solid(geometry, material, 0.26);
   };
   /** A grass-capped rock drum: the shape of every tier, islet and pillar. */
   const drum = (x: number, z: number, radius: number, top: number, bottom: number): void => {
@@ -153,8 +157,9 @@ export function buildCourse(rng: () => number): ICourse {
   const { slabX, blockX, blockTop, z } = COURSE.shaft;
   box([slabX, 5, z[0]], [slabX + 1, 16, z[1]]);
   box([blockX, 0, z[0]], [blockX + 4, blockTop, z[1]]);
-  box([slabX, 0, z[0] - 0.6], [blockX, 16, z[0]]);
-  box([slabX, 0, z[1]], [blockX, 16, z[1] + 0.6]);
+  // Its ends are 3 m kerbs, not walls: the open sides are where the camera watches the climb from.
+  box([slabX, 0, z[0] - 0.6], [blockX, 3, z[0]]);
+  box([slabX, 0, z[1]], [blockX, 3, z[1] + 0.6]);
 
   // The pillar the orbiting platform rises to.
   drum(COURSE.pillar.at[0], COURSE.pillar.at[1], COURSE.pillar.radius, COURSE.pillar.top, -0.5);
@@ -191,6 +196,8 @@ export function buildCourse(rng: () => number): ICourse {
     [ledge[0], ledge[1], 5],
     [wall[0], wall[1], 5],
   ] as const;
+  /** Contact shade owed by each rock and pine: x, z, radius. */
+  const shade: [number, number, number][] = [];
   for (let i = 0; i < 26; i += 1) {
     const angle = (i / 26) * Math.PI * 2 + rng() * 0.15;
     const r = COURSE.islandRadius - 2.5 - rng() * 3;
@@ -198,10 +205,9 @@ export function buildCourse(rng: () => number): ICourse {
     const zz = Math.sin(angle) * r;
     if (keepOut.some(([kx, kz, kr]) => Math.hypot(x - kx, zz - kz) < kr)) continue;
     if (i % 2 === 0) {
-      const stone = new Mesh(
-        mottle(new DodecahedronGeometry(0.8 + rng() * 1.2, 0), 0.25, rng),
-        rock,
-      );
+      const size = 0.8 + rng() * 1.2;
+      const stone = new Mesh(mottle(new DodecahedronGeometry(size, 0), 0.25, rng), rock);
+      shade.push([x, zz, size * 1.25]);
       stone.position.set(x, 0.3, zz);
       stone.rotation.set(rng() * 3, rng() * 3, rng() * 3);
       stone.castShadow = true;
@@ -213,12 +219,46 @@ export function buildCourse(rng: () => number): ICourse {
       stem.position.set(x, height / 2, zz);
       stem.castShadow = true;
       group.add(stem);
+      shade.push([x, zz, 1.4]);
       const crown = new Mesh(mottle(new ConeGeometry(1.3, 2.6, 8, 2), 0.2, rng), foliage);
       crown.position.set(x, height + 0.9, zz);
       crown.castShadow = true;
       group.add(crown);
     }
   }
+
+  // Planting (`render/foliage.ts`): never on a route a scenario runs, a landmark, the summit's drum
+  // or the rim's rocks and pines. Routes as [x min, x max, z min, z max].
+  const routes = [
+    [-4, 4, -20, 34],
+    [-2, 19, -33, -15],
+    [-25, -14, -10, 8],
+    [24, 37, 1, 11],
+  ] as const;
+  const taken = [...keepOut, ...shade, [sx, sz, COURSE.summit.tiers[0][0] + 1]] as const;
+  group.add(
+    plantIsland({
+      clear: (x, zz, w) =>
+        !routes.some(
+          ([x0, x1, z0, z1]) => x > x0 - w && x < x1 + w && zz > z0 - w && zz < z1 + w,
+        ) && !taken.some(([kx, kz, kr]) => Math.hypot(x - kx, zz - kz) < kr + w),
+      // From spawn along the coin line to the foot of the summit's ramp.
+      path: [
+        [0, 12],
+        [-2.5, 2],
+        [-5.6, -7.6],
+      ],
+      radius: COURSE.islandRadius,
+      rng,
+      seaLevel: COURSE.seaLevel,
+      shade,
+      // Each drum's cliff radius at the waterline: it narrows to 92% over its height.
+      shores: [
+        [0, 0, COURSE.islandRadius * 0.98],
+        [COURSE.islet.at[0], COURSE.islet.at[1], COURSE.islet.radius * 0.98],
+      ],
+    }),
+  );
 
   const coins: Point[] = [];
   // A line from spawn to the summit's ramp, an arc over the islet gap, a ring round the pillar.
@@ -263,13 +303,23 @@ export function buildCourse(rng: () => number): ICourse {
       summit: [sx, COURSE.summit.tiers[2][1] + 1.4, sz],
     },
     spawn: new Vector3(COURSE.spawn[0], COURSE.spawn[1] + 0.85, COURSE.spawn[2]),
-    walkers: [
-      [6, 0, 2],
-      [-8, 0, -4],
-      [sx + 2, COURSE.summit.tiers[0][1], sz + 7],
-      [50, 0, 4],
-      [-12, 0, 12],
-    ],
+    walkers: {
+      bumblet: [
+        [6, 0, 2],
+        [-8, 0, -4],
+        [sx + 2, COURSE.summit.tiers[0][1], sz + 7],
+        [50, 0, 4],
+        [-12, 0, 12],
+      ],
+      hopper: [
+        [20, 0, 18],
+        [24, 0, -12],
+      ],
+      thornback: [
+        [-30, 0, -2],
+        [13, 0, 26],
+      ],
+    },
   };
 }
 

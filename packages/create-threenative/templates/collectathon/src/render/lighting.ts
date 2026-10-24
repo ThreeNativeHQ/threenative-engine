@@ -24,10 +24,11 @@ export function setupLighting(scene: Scene, renderer: ShadowRenderer, mobile = f
   const key = new DirectionalLight(0xffe4c4, 3.2);
   key.castShadow = true;
   // The camera sees about 30 m of island around the hero; the map is fitted to that and travels.
-  const size = mobile ? 2048 : 4096;
+  // A 2.5 cm texel and a 4-texel filter give a 10 cm soft edge, a morning sun's, not a cut-out.
+  const size = mobile ? 1024 : 2048;
   const extent = mobile ? 16 : 26;
   key.shadow.mapSize.set(size, size);
-  key.shadow.radius = 3;
+  key.shadow.radius = 4;
   key.shadow.camera.near = 1;
   key.shadow.camera.far = 140;
   key.shadow.camera.left = -extent;

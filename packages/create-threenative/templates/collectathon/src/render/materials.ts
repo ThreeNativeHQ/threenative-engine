@@ -27,8 +27,8 @@ function cached<T extends Material>(key: string, make: () => T): T {
 
 /**
  * Lit surface. Rough and non-metal, like the stock Unreal default material, so the tone curve and
- * the meter see a world of albedos rather than of glints. `emissive` is for the collectibles only:
- * a gold that glows a little reads as "take me" against grass at any exposure.
+ * the meter see a world of albedos rather than of glints. `emissive` is for the collectibles and the
+ * hero's eye whites: a gold that glows a little reads as "take me" against grass at any exposure.
  */
 export function lit(
   color: ColorRepresentation,
@@ -99,8 +99,8 @@ export function mottle(
 }
 
 /**
- * Bake broad lawn patches into a grass geometry as vertex colours: about ±12% in sRGB value (±30%
- * linear, which is what a vertex colour multiplies), drifting between a yellow-green and a
+ * Bake broad lawn patches into a grass geometry as vertex colours: about ±6% in sRGB value (±15%
+ * linear, which is what a vertex colour multiplies; more reads as dark smudges), drifting between a yellow-green and a
  * blue-green over 10–30 m, from the world position, so a mown field reads as ground rather than
  * one flat colour. Smooth per vertex, so the geometry needs interior vertices (a fan shows its
  * spokes).
@@ -113,7 +113,7 @@ export function patches(geometry: BufferGeometry): BufferGeometry {
     const x = position?.getX(i) ?? 0;
     const z = position?.getZ(i) ?? 0;
     const value =
-      1 + 0.3 * Math.sin(x * 0.31 + Math.sin(z * 0.23) * 2) * Math.cos(z * 0.27 - x * 0.09);
+      1 + 0.15 * Math.sin(x * 0.31 + Math.sin(z * 0.23) * 2) * Math.cos(z * 0.27 - x * 0.09);
     const hue = 0.5 + 0.5 * Math.sin(x * 0.13 - z * 0.17 + 1.3);
     // Yellow-green (warm, less blue) to blue-green (cool, less red).
     colors[i * 3] = value * (1.15 - 0.35 * hue);

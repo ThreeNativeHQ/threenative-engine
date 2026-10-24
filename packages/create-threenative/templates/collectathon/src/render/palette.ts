@@ -50,5 +50,26 @@ export const C = {
 
   walker: 0x7a4bc4,
   walkerBelly: 0xe9d8ff,
+  hopper: 0x8fd14a,
+  hopperBelly: 0xf4f0c8,
+  thornShell: 0xc8642a,
+  thornBelly: 0xe8c890,
+  spike: 0x3a2a24,
+
+  // Planting: leaves by kind, flowers, mushroom caps, the shore.
+  bush: 0x3f9a34,
+  hedge: 0x2f7d2c,
+  canopy: 0x4fae3a,
+  palm: 0x6cb83a,
+  bark: 0x8a6440,
+  fruit: 0xe0502a,
+  blade: 0x5aa632,
+  petalWhite: 0xfff4e0,
+  petalPink: 0xff8fb8,
+  petalYellow: 0xffd84a,
+  petalLilac: 0xb08cff,
+  mushroom: 0xd8423a,
+  wetSand: 0xb09868,
+  foam: 0xf4fbff,
   white: 0xffffff,
 } as const;

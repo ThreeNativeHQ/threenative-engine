@@ -289,8 +289,9 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   "action-rpg": "049b89827707aea83ea5b9847d4c8c0d3a4e01af138c0928ad59cd7f21b080e8",
   // PRD-732 (2026-10-23): the new Hop Garden kit, measured through createProject (method checked
   // against platformer's unchanged value). Recomputed 2026-10-24 for the PRD-732 polish round: the
-  // new hero, the dust and sparkle effects and the effects scenario.
-  collectathon: "3cb21a7c3da4393d7c7c2f7d3d578ef26061bc7384ee9e94cdae7f3035004ccc",
+  // new hero, the dust and sparkle effects and the effects scenario. Recomputed 2026-10-24 for
+  // polish round 3: the shaft camera, the planting, the hopper and thornback and their scenarios.
+  collectathon: "09543e1c53deaf25a942ea9e7ddb5cc715dd5a844738f4eaade10c8b6195ebda",
   // PRD-733 (2026-10-23): the new Lantern Vale kit, measured through createProject.
   adventure: "27b0e2e8581a26556710bfb58e89410c3b4a39d46777129de29071e1ca5b9266",
   minimal: "1bdc31f8d31f074cde31e09d67ac850762482f481e4b41050d5679f7155ac085",

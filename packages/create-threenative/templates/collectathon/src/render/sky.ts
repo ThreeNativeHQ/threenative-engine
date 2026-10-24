@@ -56,22 +56,26 @@ function cloudCover(u: number, elevation: number): number {
   return cover;
 }
 
-/** sRGB equirectangular radiance from the ground bounce through the horizon to the zenith. */
-export function skyTexture(): DataTexture {
+/**
+ * sRGB equirectangular radiance from the ground bounce through the horizon to the zenith.
+ * `saturation` below 1 pulls every texel toward its own grey: the fill light uses a half-saturated
+ * copy, because a real sky's shade light is greyed by haze and cloud, and the full blue of the
+ * backdrop turns every shadow on the grass teal.
+ */
+export function skyTexture(saturation = 1, width = 512): DataTexture {
   // three's PMREM sizes its cube from width / 4 and needs at least 16: keep width >= 64.
-  const width = 512;
-  const height = 256;
+  const height = width / 2;
   const data = new Uint8Array(width * height * 4);
   const cloud = new Color(0xffffff);
+  const grey = new Color();
   for (let row = 0; row < height; row += 1) {
     const base = gradientColor(row, height);
     const elevation = row / (height - 1) - 0.5;
     for (let column = 0; column < width; column += 1) {
       const cover = elevation > 0 ? cloudCover(column / width, elevation * 2) : 0;
-      const { r, g, b } = base
-        .clone()
-        .lerp(cloud, cover * 0.85)
-        .convertLinearToSRGB();
+      const texel = base.clone().lerp(cloud, cover * 0.85);
+      grey.setScalar(texel.r * 0.2126 + texel.g * 0.7152 + texel.b * 0.0722);
+      const { r, g, b } = texel.lerp(grey, 1 - saturation).convertLinearToSRGB();
       data.set(
         [Math.round(r * 255), Math.round(g * 255), Math.round(b * 255), 255],
         (row * width + column) * 4,
@@ -87,13 +91,14 @@ export function skyTexture(): DataTexture {
   return sky;
 }
 
-export function setupSky(scene: Scene, sky: DataTexture): void {
+/** `fill` is the environment light: by default the sky itself, in this game `skyTexture(0.5, 128)`. */
+export function setupSky(scene: Scene, sky: DataTexture, fill: DataTexture = sky): void {
   scene.background = sky;
   scene.backgroundIntensity = 1;
-  scene.environment = sky;
-  // The sky fills the shade a little above the background's own level, so a cast shadow reads as
-  // a mid-tone of the ground's colour, not a near-black hole in it.
-  scene.environmentIntensity = 1.3;
+  scene.environment = fill;
+  // The sky fills the shade above the background's own level, so a cast shadow reads as a
+  // mid-tone of the ground's colour, not a near-black hole in it.
+  scene.environmentIntensity = 1.55;
   // Thin on purpose: the island is 90 m across, so the haze only reads on the far shore and the
   // sea beyond it, where it is what turns the horizon line into distance.
   scene.fog = new FogExp2(palette.horizon, 0.0031);

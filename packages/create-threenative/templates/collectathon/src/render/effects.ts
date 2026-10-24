@@ -1,7 +1,7 @@
 // Generated for you. This is ordinary Three.js TSL — edit or delete it freely.
 //
-// The moveset's feedback: dust under the feet, rings on landings, sparkles on pickups. Two pooled
-// emitters cover every effect. `GPUParticles3D` (built in `scenes/Play.ts`) owns the slots, the
+// The moveset's feedback: dust under the feet, rings on landings, sparkles on pickups, flashes on
+// impacts, pollen on the breeze. Four pooled emitters cover every effect. `GPUParticles3D` (built in `scenes/Play.ts`) owns the slots, the
 // dispatch, the birth stamps and the culling. Every look choice is this file's: life, drag,
 // gravity, size, colour, blend and sprite mask. A burst passes its shape as the request's
 // `direction`: x is the outward speed, y the upward speed, and z the radius it starts in.
@@ -181,8 +181,27 @@ export function dustEffect(): IEffectOptions {
     gravity: 0.8,
     life: 0.9,
     mask: "puff",
-    opacity: 0.9,
-    size: [0.55, 1.5],
+    // Light enough that the shoes read through a run's trail of puffs.
+    opacity: 0.55,
+    size: [0.41, 1.12],
+  });
+}
+
+/** Hot white-to-amber flashes that burst wide and die fast: wall-kick sparks, the ground-pound ring. */
+export function flashEffect(): IEffectOptions {
+  return emitter({
+    additive: true,
+    amount: 256,
+    colour: [
+      [2.4, 1.8, 0.9],
+      [1.6, 0.55, 0.08],
+    ],
+    drag: 3.5,
+    gravity: -2,
+    life: 0.45,
+    mask: "star",
+    opacity: 1,
+    size: [0.8, 0.25],
   });
 }
 
@@ -204,24 +223,55 @@ export function sparkleEffect(): IEffectOptions {
   });
 }
 
+/** Petals and pollen that drift round the hero on the breeze, pale pink to cream. */
+export function pollenEffect(): IEffectOptions {
+  return emitter({
+    additive: false,
+    amount: 256,
+    colour: [
+      [1, 0.72, 0.82],
+      [1, 0.95, 0.75],
+    ],
+    drag: 0.4,
+    gravity: -0.06,
+    life: 5,
+    mask: "puff",
+    opacity: 0.85,
+    size: [0.11, 0.08],
+  });
+}
+
+/** The four emitters `scenes/Play.ts` builds, by the name a burst picks one with. */
+export const EFFECTS = {
+  dust: dustEffect,
+  flash: flashEffect,
+  pollen: pollenEffect,
+  sparkle: sparkleEffect,
+} as const;
+
 /**
- * Every burst the game fires, by name: how many particles and the request's `direction` (outward
- * speed, upward speed, start radius). Tune the feel here, not in `scenes/Play.ts`.
+ * Every burst the game fires, by name: its emitter, how many particles and the request's
+ * `direction` (outward speed, upward speed, start radius). Tune the feel here, not in `scenes/Play.ts`.
  */
 export const BURSTS = {
-  run: { count: 4, shape: [0.9, 1.1, 0.3] },
-  skid: { count: 16, shape: [2.6, 1, 0.35] },
-  takeoff: { count: 12, shape: [2, 0.8, 0.3] },
-  landing: { count: 24, shape: [3.6, 0.4, 0.4] },
-  pound: { count: 56, shape: [8, 0.6, 0.5] },
-  debris: { count: 14, shape: [2.5, 6, 0.6] },
-  ledge: { count: 6, shape: [0.8, 0.4, 0.3] },
-  poof: { count: 24, shape: [2.6, 1.6, 0.4] },
-  wallKick: { count: 18, shape: [3.5, 2.5, 0.15] },
-  trail: { count: 2, shape: [0.4, 0.3, 0.25] },
-  streak: { count: 3, shape: [0.2, 0.1, 0.15] },
-  coin: { count: 14, shape: [2.4, 3.5, 0.2] },
-  gem: { count: 22, shape: [3, 4, 0.3] },
-  seed: { count: 60, shape: [4.5, 6, 0.4] },
-  glint: { count: 1, shape: [0.3, 0.8, 0.35] },
-} as const satisfies Record<string, { count: number; shape: readonly [number, number, number] }>;
+  run: { emitter: "dust", count: 4, shape: [0.9, 1.1, 0.3] },
+  skid: { emitter: "dust", count: 16, shape: [2.6, 1, 0.35] },
+  takeoff: { emitter: "dust", count: 12, shape: [2, 0.8, 0.3] },
+  landing: { emitter: "dust", count: 24, shape: [3.6, 0.4, 0.4] },
+  pound: { emitter: "dust", count: 56, shape: [8, 0.6, 0.5] },
+  poundRing: { emitter: "flash", count: 40, shape: [10, 0.3, 0.6] },
+  debris: { emitter: "dust", count: 14, shape: [2.5, 6, 0.6] },
+  ledge: { emitter: "dust", count: 6, shape: [0.8, 0.4, 0.3] },
+  poof: { emitter: "dust", count: 24, shape: [2.6, 1.6, 0.4] },
+  wallKick: { emitter: "flash", count: 26, shape: [4, 2.2, 0.15] },
+  trail: { emitter: "sparkle", count: 2, shape: [0.4, 0.3, 0.25] },
+  streak: { emitter: "sparkle", count: 3, shape: [0.2, 0.1, 0.15] },
+  coin: { emitter: "sparkle", count: 14, shape: [2.4, 3.5, 0.2] },
+  gem: { emitter: "sparkle", count: 22, shape: [3, 4, 0.3] },
+  seed: { emitter: "sparkle", count: 60, shape: [4.5, 6, 0.4] },
+  glint: { emitter: "sparkle", count: 1, shape: [0.3, 0.8, 0.35] },
+  pollen: { emitter: "pollen", count: 3, shape: [0.5, 0.35, 14] },
+} as const satisfies Record<
+  string,
+  { emitter: keyof typeof EFFECTS; count: number; shape: readonly [number, number, number] }
+>;

@@ -199,9 +199,59 @@ Each playtest runs on a project scaffolded from `--template collectathon`:
 - 2026-10-24 (agent): no 15° camera yaw offset at spawn. The stick is camera-relative and every
   scenario route is authored in the camera frame, so an offset view turns "forward" 15° off the
   screen. Wider-set eyes carry the three-quarter read instead.
-- 2026-10-24 (agent): in a narrow shaft the camera cranes up (0.85, 1.2 or 1.45 rad) when the
-  default arm would end closer than 2.5 m. It takes the angle that reaches farthest. The open top
-  is the only clear line there.
+- 2026-10-24 (agent, superseded in round 3): in a narrow shaft the camera cranes up (0.85, 1.2 or
+  1.45 rad) when the default arm would end closer than 2.5 m. The round-2 judge rated the result,
+  a top-down view of the shaft, a REGRESSION.
+- 2026-10-24 (agent, round 3, judge item 1): the boxed-in camera cuts to a clearer heading instead
+  of craning. When the arm would end closer than 4 m, it tries the current heading and offsets of
+  ±45°, ±90° and ±135°, each at 0.32 and 0.61 rad, and takes the farthest reach. A heading change
+  is a cut, because an arm swept round a shaft passes through its wall. The pitch is capped at
+  0.61 rad (35°). The shaft's end walls drop from 16 m to 3 m kerbs, so the shaft opens to the side
+  and the camera watches the climb from there. `wall-kick.playtest.json` now asserts the bounds: a
+  cut happens, the peak pitch is at most 0.62 rad, the closest arm is at least 3 m, the lens-to-hero
+  ray is clear at the slab contact, and the hero is in the viewport.
+- 2026-10-24 (agent, round 3, judge items 2–6): the following changes use light, material and
+  effect settings only, with no look pin.
+  - Shadows: the environment light is a half-saturated 128 px copy of the sky
+    (`skyTexture(0.5, 128)`) at intensity 1.55, so a shadow on grass is a darker green, not teal.
+    The sun map is 2048 px (1024 on mobile) with a 4-texel PCF radius, which gives a soft edge of
+    about 10 cm, 2.6× the round-2 edge.
+  - Lawn: the patch value amplitude is halved, from ±30% to ±15% linear.
+  - Run dust: opacity 0.9 → 0.55, size −25%.
+  - Hero: hanging, the legs swing back off the wall, splay and kick slowly. The eyes and nose are
+    15% larger, and the eye whites glow a little (emissive 0.45).
+  - Impacts: a third emitter, `flash`, draws hot white-to-amber stars for the wall kick (26) and a
+    ground-pound ring (40, 10 m/s outward).
+  - Stone: blocks are cut into 1 m courses with ±13% tint each, so a tower reads as masonry.
+- 2026-10-24 (owner via lead: "polish world footer, add more vegetation, enemey"): the lead read
+  "footer" as the world floor. The kit keeps the walkable lawn flat, because every gap and jump is
+  measured in metres from `HERO_FEEL`, and undulation under the routes would change their meaning.
+  The floor gets detail instead:
+  - a dirt path with a worn-grass border along the coin line;
+  - contact shade under every tree, rock, bush and palm;
+  - a sand shelf, a wet-sand band and a foam line round both islands. They are visual only: a fall
+    from the cliff still ends in the sea.
+
+  `src/render/foliage.ts` plants the island with one `InstancedMesh` per kind, seeded and kept off
+  every scenario route and landmark:
+  - round fruit trees, with fruit on half of them;
+  - leaning shore palms with fronds and coconuts;
+  - bushes, two hedge arcs, flower clusters in four colours and mushrooms;
+  - about 1,300 tall grass blades that sway through a TSL `positionNode`.
+
+  A fourth emitter, `pollen`, keeps petals drifting round the hero. Nothing planted is solid. The
+  hero walks through a bush as it walks through a pine trunk.
+- 2026-10-24 (owner via lead: enemies): two new walker kinds share `Walker.ts`.
+  - The hopper is lime and frog-round. It crouches for 0.45 s (its telegraph), then hops up to
+    2.6 m at the hero. A stomp defeats it.
+  - The thornback is a rust shell with nine spikes. It rears and bristles for 0.7 s (its
+    telegraph), then charges 0.9 s along the line it faced. A stomp lands on its spikes, which
+    costs a wedge, emits `spiked` and knocks the hero back. A dive or a ground pound defeats it.
+
+  Every defeat fires the dust poof. Proof: `enemies` (hopper stomped, thornbacks dived and
+  pounded), `thornback` (a stomp costs a wedge and the thornback lives) and `telegraphs` (each kind
+  telegraphs and attacks). Bumblets keep their `walker.<i>` names, so the earlier scenarios are
+  unchanged.
 - 2026-10-24 (owner via lead: "add more effects like the smoke that appear when you char walk"):
   two pooled `GPUParticles3D` spawn emitters, dust (alpha puffs) and sparkle (additive stars).
   Core owns the slots, the births and the culling. `src/render/effects.ts` owns every look
@@ -274,3 +324,12 @@ Unreal default look, and no frame is blank or white.
 - [ ] AC-10: the visual judge returns pass on every criterion above for all three poses. proof: the judge report linked from the PR — Evidence: pending.
   Captures ready, judge not run (2026-10-24): 3 poses (spawn, summit, shore) × 2 runs, headed WebGPU on intel `gen-12lp`, Wasm engine (`threenative:web-engine`), `TN_WORLD_ENVIRONMENT` filmic and `TN_AUTO_EXPOSURE` measured+applied in every run, 0 console errors, nonblank ≥ 0.5: `~/Downloads/hop-garden/pose-{spawn,summit,shore}-run{1,2}.png`. Known gap for the judge: inside the 5 m shaft the camera pulls in under 1 m and loses the hero during a wall kick.
   Round 1 judge (2026-10-24, lead): NOT PASS. The judge rated hero, look, integrity and polish WEAK and readability PASS. The round-1 frames are kept in `~/Downloads/hop-garden/round1/`. Polish round 2 is in Decisions: the lawn, stone, light, sky, pickups, hero and HUD fixes, the owner's effects and body shape, and the camera crane. All 11 scenarios exit 0 on `gen-12lp` after it, `effects` included. Performance: p95 17.7 ms, 58.8 fps, 265 draws (was 240), 54.0k triangles (was 34.6k).
+  Round 2 judge (2026-10-24, lead): IMPROVEMENT but NOT PASS. Eight frames improved, and the
+  wall-kick frame regressed (the top-down crane). The round-2 frames are in
+  `~/Downloads/hop-garden/round2/`. Round 3 is in Decisions: the shaft camera, the shadows, the
+  lawn, the dust, the hang pose and face, the impact flashes and the masonry. It also has the
+  owner's floor, planting and enemies. All 14 scenarios exit 0 on `gen-12lp`, including the new
+  `enemies`, `thornback` and `telegraphs`. Red-green for the shaft camera: with the round-2 crane
+  restored, `wall-kick` fails on cuts 0, peak pitch 1.45 rad and closest arm 1.76 m. Round 3
+  passes with 1 cut, 0.32 rad and 9 m. Performance: p95 17.7 ms, 59.2 fps, 321 draws, 111.5k
+  triangles. The budgets are 600 draws and 190k triangles.

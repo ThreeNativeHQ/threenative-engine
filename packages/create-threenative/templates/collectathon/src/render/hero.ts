@@ -110,19 +110,20 @@ export function createHero(): IHero {
   part(ball(R), C.skin, pivot, [0, HEAD_Y, -0.02]);
   for (const side of [-1, 1]) {
     part(ball(0.075), C.skin, pivot, [(R - 0.01) * side, HEAD_Y - 0.03, 0], [0.6, 1, 1], false);
+    // The whites glow a little, so the eyes read under the brim's shade at any exposure.
     part(
-      ball(0.08),
+      ball(0.092),
       C.white,
       pivot,
-      [0.11 * side, HEAD_Y + 0.02, FACE + 0.05],
+      [0.115 * side, HEAD_Y + 0.02, FACE + 0.05],
       [0.8, 1.25, 0.5],
       false,
-    );
+    ).material = lit(C.white, { emissive: 0.45 });
     part(
-      ball(0.038),
+      ball(0.044),
       C.ink,
       pivot,
-      [0.11 * side, HEAD_Y + 0.01, FACE + 0.01],
+      [0.115 * side, HEAD_Y + 0.01, FACE + 0.005],
       [1, 1.3, 0.6],
       false,
     );
@@ -136,7 +137,7 @@ export function createHero(): IHero {
     );
     tash.rotation.z = -0.3 * side;
   }
-  part(ball(0.11), C.nose, pivot, [0, HEAD_Y - 0.06, FACE - 0.02], [1, 0.9, 1], false);
+  part(ball(0.127), C.nose, pivot, [0, HEAD_Y - 0.06, FACE - 0.03], [1, 0.9, 1], false);
   // Hair along the back of the cap's rim: wide and tucked under it, so from behind it reads as
   // hair and never as a second face.
   part(ball(0.15), C.hair, pivot, [0, HEAD_Y + 0.04, 0.24], [2, 0.6, 0.8], false);
@@ -279,8 +280,11 @@ export function createHero(): IHero {
         pitch = pose.action === "skid" ? 0.35 : -run * 0.2;
       } else {
         const rise = MathUtils.clamp(pose.vy / 12, -1, 1);
-        legL.rotation.x = ease(legL.rotation.x, hang ? 0.15 : 0.7 - rise * 0.3, k);
-        legR.rotation.x = ease(legR.rotation.x, hang ? -0.1 : -0.3 + rise * 0.2, k);
+        // Hanging, the legs dangle back off the wall and kick slowly, so they show below the body
+        // instead of folding into the wall under it.
+        const kick = Math.sin(time * 3.2) * 0.22;
+        legL.rotation.x = ease(legL.rotation.x, hang ? -0.55 + kick : 0.7 - rise * 0.3, k);
+        legR.rotation.x = ease(legR.rotation.x, hang ? -0.35 - kick : -0.3 + rise * 0.2, k);
         // A rising jump throws one fist up; falling, both arms float out.
         const up = reachAngle ?? (rise > 0.2 ? 2.6 : 0.4);
         armL.rotation.x = ease(armL.rotation.x, reachAngle ?? 0.4, k);
@@ -288,6 +292,8 @@ export function createHero(): IHero {
       }
       armL.rotation.z = ease(armL.rotation.z, -spread, k);
       armR.rotation.z = ease(armR.rotation.z, spread, k);
+      legL.rotation.z = ease(legL.rotation.z, hang ? -0.25 : 0, k);
+      legR.rotation.z = ease(legR.rotation.z, hang ? 0.25 : 0, k);
       for (const arm of arms) arm.scale.y = ease(arm.scale.y, stretch, k);
       pivot.position.z = ease(pivot.position.z, hang ? HANG.back : 0, k);
       pivot.position.y = BODY_Y * squash + bob + (hang ? HANG.lift : 0);
