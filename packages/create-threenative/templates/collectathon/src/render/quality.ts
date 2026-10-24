@@ -29,6 +29,14 @@ const low: IWorldEnvironmentOptions = {};
 const OVERRIDES: Record<QualityTier, IWorldEnvironmentOptions> = { high, low, medium };
 
 /**
+ * Share of the meadow's grass tufts each tier draws (`render/foliage.ts`). Not a look option: the
+ * same seeded tufts, fewer of them. Cost: every tuft is 12 triangles, so the full meadow is about
+ * 21k tufts (255k triangles), one draw per 12 m cell of land; the meadow's distance thinning
+ * draws every tuft within 20 m of the camera and a sixth of them past 65 m.
+ */
+export const GRASS_SHARE: Record<QualityTier, number> = { high: 1, low: 0.25, medium: 0.55 };
+
+/**
  * Picks the tier: an explicit `tier` wins, a software adapter gets `low`, then the GPU family,
  * then `mobile`. An unknown tier name throws (in core) rather than rendering the default.
  */

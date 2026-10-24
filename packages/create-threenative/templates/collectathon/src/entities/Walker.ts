@@ -53,6 +53,8 @@ export class Walker {
   readonly #spikes: Object3D | undefined;
   #squash = 0;
   #phase: number;
+  /** Height above the ground it keeps: 0 on the lawn, a tier's height when it lives on a drum. */
+  #lift = 0;
   #state: "move" | "telegraph" | "attack" | "rest" = "rest";
   #timer = 0;
 
@@ -60,6 +62,8 @@ export class Walker {
     readonly kind: WalkerKind,
     at: readonly [number, number, number],
     phase: number,
+    /** The terrain's height at (x, z), so it walks over hills instead of through them. */
+    readonly ground: (x: number, z: number) => number = () => 0,
   ) {
     this.mesh = MODELS[kind]();
     this.mesh.position.set(at[0], at[1], at[2]);
@@ -72,9 +76,20 @@ export class Walker {
   static readonly radius = WALKER.radius;
   static readonly height = WALKER.height;
 
-  /** Takes the current position as home: call once after a scenario may have placed it. */
+  /**
+   * Takes the current position as home, lifted onto the ground if a scenario placed it under a
+   * hill: call once after a scenario may have placed it.
+   */
   settle(): void {
-    this.#home.copy(this.mesh.position);
+    const p = this.mesh.position;
+    p.y = Math.max(p.y, this.ground(p.x, p.z));
+    this.#home.copy(p);
+    this.#lift = p.y - this.ground(p.x, p.z);
+  }
+
+  /** Where its feet go at (x, z): the ground plus the lift it was placed with. */
+  #floor(x: number, z: number): number {
+    return this.ground(x, z) + this.#lift;
   }
 
   update(dt: number, time: number, hero: Vector3): void {
@@ -112,7 +127,7 @@ export class Walker {
       this.#walk(dt, chasing ? WALKER.chaseSpeed : WALKER.wanderSpeed);
       const waddle = Math.sin(time * 9 + this.#phase);
       this.mesh.rotation.z = waddle * 0.08;
-      p.y = this.#home.y + Math.abs(waddle) * 0.05;
+      p.y = this.#floor(p.x, p.z) + Math.abs(waddle) * 0.05;
     }
   }
 
@@ -154,14 +169,15 @@ export class Walker {
         const dz = this.#to.z - p.z;
         const d = Math.hypot(dx, dz);
         const s = d > reach ? reach / d : 1;
-        this.#to.set(p.x + dx * s, this.#home.y, p.z + dz * s);
+        this.#to.set(p.x + dx * s, 0, p.z + dz * s);
+        this.#to.y = this.#floor(this.#to.x, this.#to.z);
         [this.#state, this.#timer] = ["attack", 0];
         this.attacks += 1;
       }
     } else if (this.#state === "attack") {
       const t = Math.min(1, k / air);
       p.lerpVectors(this.#from, this.#to, t);
-      p.y = this.#home.y + Math.sin(t * Math.PI) * height;
+      p.y = this.#from.y + (this.#to.y - this.#from.y) * t + Math.sin(t * Math.PI) * height;
       this.mesh.scale.set(0.9, 1.15, 0.9);
       if (t >= 1) {
         [this.#state, this.#timer] = ["rest", 0];
@@ -204,6 +220,7 @@ export class Walker {
       this.#walk(dt, 0.9);
       this.mesh.rotation.z = Math.sin(time * 6 + this.#phase) * 0.05;
     }
+    p.y = this.#floor(p.x, p.z);
     this.#spikes?.scale.setScalar(bristle);
   }
 

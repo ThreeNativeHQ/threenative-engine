@@ -23,7 +23,8 @@ import { type WallProbe, createOrbitCamera } from "../render/camera.js";
 import { BURSTS, EFFECTS } from "../render/effects.js";
 import { setupLighting } from "../render/lighting.js";
 import { createLoadingScreen } from "../render/loading.js";
-import { setupPost } from "../render/postprocessing.js";
+import { postTier, setupPost } from "../render/postprocessing.js";
+import { GRASS_SHARE } from "../render/quality.js";
 import { setupSky, skyTexture } from "../render/sky.js";
 import { TouchControls } from "../render/touch-controls.js";
 import { type GameState, HUD_PILL } from "../state.js";
@@ -82,7 +83,12 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     this.#sky = skyTexture();
     this.#fill = skyTexture(0.3, 128);
     setupSky(ctx.scene, this.#sky, this.#fill);
-    const course = buildCourse(makeRng(6402));
+    const tier = postTier({
+      gpuClass: ctx.renderer.gpuClass?.class,
+      mobile: isMobile(),
+      software: ctx.renderer.softwareAdapter !== undefined,
+    });
+    const course = buildCourse(makeRng(6402), GRASS_SHARE[tier]);
     this.#course = course;
     ctx.add(course.group);
     ctx.entities.add("course", { debug: () => course.audit });
@@ -116,7 +122,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       ICourse["walkers"][WalkerKind],
     ][]) {
       homes.forEach((at, i) => {
-        const walker = new Walker(kind, at, i * 1.7);
+        const walker = new Walker(kind, at, i * 1.7, course.ground);
         ctx.add(walker.mesh);
         ctx.entities.add(`${kind === "bumblet" ? "walker" : kind}.${i}`, walker);
         this.#walkers.push(walker);
@@ -164,8 +170,10 @@ export class Play extends Scene<GameState, IPhysicsContext> {
         ? ctx.entities.add("touch-controls", new TouchControls(camera))
         : undefined;
 
-    // A scenario may have moved the hero and turned it: read both back, then stand it there.
+    // A scenario may have moved the hero and turned it: read both back, then stand it there, on
+    // the ground if the spot it named is under a hill.
     const start = hero.mesh.position.clone();
+    start.y = Math.max(start.y, course.ground(start.x, start.z) + FOOT_OFFSET);
     const startYaw = new Euler().setFromQuaternion(hero.mesh.quaternion, "YXZ").y;
     hero.teleport(start, startYaw);
     for (const pickup of this.#pickups) pickup.settle();
@@ -189,6 +197,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       orbit.update(hero.mesh.position, hero.body.velocity, dt, probe);
       rayClear = probe(camera.position, hero.mesh.position) === undefined;
       lighting.follow(hero.mesh.position);
+      course.meadow.update(camera.position);
     });
 
     // Effects: four pooled emitters, every look parameter in `render/effects.ts`.

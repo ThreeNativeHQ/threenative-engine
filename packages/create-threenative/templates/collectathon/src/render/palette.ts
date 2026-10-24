@@ -56,20 +56,28 @@ export const C = {
   thornBelly: 0xe8c890,
   spike: 0x3a2a24,
 
-  // Planting: leaves by kind, flowers, mushroom caps, the shore.
+  // Planting: leaves by kind, bark, flowers and butterflies, the path and the shore.
   bush: 0x3f9a34,
   hedge: 0x2f7d2c,
-  canopy: 0x4fae3a,
-  palm: 0x6cb83a,
-  bark: 0x8a6440,
-  fruit: 0xe0502a,
-  blade: 0x5aa632,
+  canopy: 0x4fa83a,
+  canopyDeep: 0x2f8a30,
+  birch: 0xf2efe6,
+  birchLeaf: 0x8cc63e,
+  bark: 0x7a5636,
+  blade: 0x4fa82c,
+  petalRed: 0xe8322a,
+  petalOrange: 0xff8a1e,
   petalWhite: 0xfff4e0,
-  petalPink: 0xff8fb8,
   petalYellow: 0xffd84a,
-  petalLilac: 0xb08cff,
-  mushroom: 0xd8423a,
+  wingBlue: 0x4a8cff,
+  /** The sandy dirt of the paths, lighter than the old dirt so it reads as packed sand. */
+  path: 0xcfae80,
+  pebble: 0x9a9088,
   wetSand: 0xb09868,
   foam: 0xf4fbff,
   white: 0xffffff,
+
+  // The castle: a warm grey sandstone and terracotta tiles.
+  stone: 0xc9bca6,
+  roof: 0xc0583a,
 } as const;

@@ -9,9 +9,17 @@ import {
   BufferAttribute,
   type BufferGeometry,
   type ColorRepresentation,
+  DataTexture,
+  LinearFilter,
+  LinearMipmapLinearFilter,
   type Material,
   MeshBasicMaterial,
   MeshStandardMaterial,
+  NoColorSpace,
+  RGBAFormat,
+  RepeatWrapping,
+  SRGBColorSpace,
+  UnsignedByteType,
 } from "three";
 import { palette } from "./palette.js";
 
@@ -134,6 +142,49 @@ export function patches(geometry: BufferGeometry): BufferGeometry {
   }
   geometry.setAttribute("color", new BufferAttribute(colors, 3));
   return geometry;
+}
+
+/**
+ * A repeating texture painted in code, texel by texel: `paint` returns 0..1 RGB. `srgb` for an
+ * albedo or an emblem, linear for a detail or normal map. Mipmapped, so it does not shimmer far off.
+ * This is how the kit has stone, roof tiles and stained glass with no image file.
+ */
+export function paintedTexture(
+  width: number,
+  height: number,
+  paint: (x: number, y: number) => readonly [number, number, number],
+  srgb: boolean,
+): DataTexture {
+  const data = new Uint8Array(width * height * 4);
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const [r, g, b] = paint(x, y);
+      const i = (y * width + x) * 4;
+      data[i] = Math.round(255 * Math.min(1, Math.max(0, r)));
+      data[i + 1] = Math.round(255 * Math.min(1, Math.max(0, g)));
+      data[i + 2] = Math.round(255 * Math.min(1, Math.max(0, b)));
+      data[i + 3] = 255;
+    }
+  }
+  const texture = new DataTexture(data, width, height, RGBAFormat, UnsignedByteType);
+  texture.wrapS = RepeatWrapping;
+  texture.wrapT = RepeatWrapping;
+  texture.colorSpace = srgb ? SRGBColorSpace : NoColorSpace;
+  texture.generateMipmaps = true;
+  texture.minFilter = LinearMipmapLinearFilter;
+  texture.magFilter = LinearFilter;
+  texture.anisotropy = 8;
+  texture.needsUpdate = true;
+  return texture;
+}
+
+/** A seeded 0..1 random source (an LCG), for texture painting that must be the same every build. */
+export function seeded(seed: number): () => number {
+  let state = seed >>> 0;
+  return () => {
+    state = (state * 1664525 + 1013904223) >>> 0;
+    return state / 0x1_0000_0000;
+  };
 }
 
 /** The surfaces the island is made of, resolved once. */

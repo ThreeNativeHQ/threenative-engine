@@ -291,7 +291,9 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // against platformer's unchanged value). Recomputed 2026-10-24 for the PRD-732 polish round: the
   // new hero, the dust and sparkle effects and the effects scenario. Recomputed 2026-10-24 for
   // polish round 3: the shaft camera, the planting, the hopper and thornback and their scenarios.
-  collectathon: "ce8dbace98e4d82c8f8ffefc6fec2d52619d14284c5a113a67253c6c3d347bec",
+  // Recomputed 2026-10-24 for the look round: terrain, castle, meadow, sky and world assertions
+  // (method checked against this kit's previous value, from a copy holding only this template).
+  collectathon: "cf2c08cac69ae7a3991740ac08396ea0547b03a3d1e9cf5072c012e03cb99c36",
   // PRD-733 (2026-10-23): the new Lantern Vale kit, measured through createProject.
   adventure: "a3140d59ceac88ffe7a888b2604cbef9a6c780abee0cfef66b2e2be94a5b27a2",
   minimal: "1bdc31f8d31f074cde31e09d67ac850762482f481e4b41050d5679f7155ac085",
@@ -604,6 +606,17 @@ describe("create-threenative", () => {
         actual[template] = await scaffoldTreeHash(target);
         if (template === "platformer") {
           await expect(stat(path.join(target, "assets/sky.jpg"))).rejects.toThrow(/ENOENT/u);
+        }
+        if (template === "collectathon") {
+          // Hop Garden is all procedural (owner, 2026-10-24): no assets folder and no image or model
+          // file but the shared icon, so every texture is painted in code.
+          await expect(stat(path.join(target, "assets"))).rejects.toThrow(/ENOENT/u);
+          const media = (await readdir(target, { recursive: true })).filter(
+            (file) =>
+              /\.(png|jpe?g|webp|ktx2|hdr|exr|glb|gltf|fbx|obj)$/u.test(file) &&
+              file !== path.join("public", "icon.png"),
+          );
+          expect(media).toEqual([]);
         }
       }
       expect(actual).toEqual(PRD_201_PARENT_SCAFFOLD_HASHES);

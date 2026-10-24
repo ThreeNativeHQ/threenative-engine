@@ -16,31 +16,40 @@ type ProfileGlobals = typeof globalThis & {
   __THREENATIVE_PROFILE__?: { hostedSoftware?: unknown };
 };
 
-export function setupPost(
-  renderer: OutputRenderer,
-  scene: Scene,
-  camera: Camera,
-  environment: {
-    godraysLight?: DirectionalLight;
-    mobile?: boolean;
-    /** The renderer named a software adapter; this game's answer is its `low` tier. */
-    software?: boolean;
-    /** The renderer's GPU family (`ctx.renderer.gpuClass?.class`); it picks the start tier. */
-    gpuClass?: string;
-    /** Forces a tier, ignoring `mobile`. An unknown name throws rather than falling back. */
-    tier?: QualityTier;
-  } = {},
-): { readonly tier: QualityTier; dispose(): void } {
+interface IPostEnvironment {
+  godraysLight?: DirectionalLight;
+  mobile?: boolean;
+  /** The renderer named a software adapter; this game's answer is its `low` tier. */
+  software?: boolean;
+  /** The renderer's GPU family (`ctx.renderer.gpuClass?.class`); it picks the start tier. */
+  gpuClass?: string;
+  /** Forces a tier, ignoring `mobile`. An unknown name throws rather than falling back. */
+  tier?: QualityTier;
+}
+
+/** The tier `setupPost` will run, for scenery that scales with it (the meadow's grass). */
+export function postTier(environment: IPostEnvironment = {}): QualityTier {
   // The native production collector explicitly marks a software-only hosted smoke run; that run
   // takes the `low` look so its screenshot settles on a CPU adapter. An ordinary desktop is `high`.
   const hostedSoftware =
     (globalThis as ProfileGlobals).__THREENATIVE_PROFILE__?.hostedSoftware === true;
-  const tier = resolveQualityTier({
+  return resolveQualityTier({
     mobile: environment.mobile,
     gpuClass: environment.gpuClass,
     software: environment.software,
     tier: environment.tier ?? (hostedSoftware ? "low" : undefined),
   });
+}
+
+export function setupPost(
+  renderer: OutputRenderer,
+  scene: Scene,
+  camera: Camera,
+  environment: IPostEnvironment = {},
+): { readonly tier: QualityTier; dispose(): void } {
+  const hostedSoftware =
+    (globalThis as ProfileGlobals).__THREENATIVE_PROFILE__?.hostedSoftware === true;
+  const tier = postTier(environment);
   const source =
     environment.tier !== undefined ? "override" : hostedSoftware ? "hosted-software" : "platform";
   console.info(

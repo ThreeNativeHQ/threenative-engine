@@ -2,7 +2,6 @@ import {
   Box3,
   BoxGeometry,
   type BufferGeometry,
-  ConeGeometry,
   CylinderGeometry,
   DodecahedronGeometry,
   Group,
@@ -10,15 +9,21 @@ import {
   type Material,
   Matrix4,
   Mesh,
+  MeshStandardMaterial,
+  type Object3D,
   PlaneGeometry,
   RingGeometry,
+  Vector2,
   Vector3,
 } from "three";
 import { HERO_FEEL } from "../entities/Hero.js";
 import type { WalkerKind } from "../entities/Walker.js";
-import { plantIsland } from "../render/foliage.js";
+import { buildCastle, buildSignpost, masonryMaps, planarUv, wrapUv } from "../render/castle.js";
+import { type IMeadow, plantIsland } from "../render/foliage.js";
+import { farHills, groundMaterial, paintGround } from "../render/ground.js";
 import { lit, mottle, patches } from "../render/materials.js";
 import { C, palette } from "../render/palette.js";
+import { TERRAIN_BOUNDS, buildTerrain } from "./terrain.js";
 
 type Point = readonly [number, number, number];
 
@@ -51,10 +56,28 @@ export const COURSE = {
   platform: { radius: 5.5, low: 0.6, high: 7.2, period: 12, size: [3, 0.5, 3] as const },
   /** The practice yard: a grabbable 3 m ledge and a 4.5 m wall, 1.5 m higher, that is not. */
   yard: { ledge: [-20, 4] as const, wall: [-20, -6] as const, ledgeTop: 3, wallTop: 4.5 },
+  /** The castle's plateau on the northern headland, x, z, radius, height; the door faces south. */
+  castle: { pad: [2, -64, 14, 9] as const, door: [2, -56] as const },
+  /**
+   * Level ground, [x min, x max, z min, z max]: every scenario route runs on one of these, so the
+   * terrain keeps them flat at y = 0 and the jumps measured in `HERO_FEEL` keep their meaning.
+   */
+  routes: [
+    // The test lane, spawn to the summit's foot: the move, collect and combat scenarios.
+    [-6, 6, -20, 34],
+    // The shaft and the ground its camera watches from.
+    [-2, 19, -34, -15],
+    // The practice yard.
+    [-25, -14, -10, 8],
+    // The run-up to the islet gap.
+    [24, 40, 0, 12],
+  ] as const,
 } as const;
 
 export interface ICourse {
   readonly group: Group;
+  /** Terrain height at (x, z): what pickups, walkers, checkpoints and a placed hero stand on. */
+  ground(x: number, z: number): number;
   readonly spawn: Vector3;
   readonly checkpoints: readonly Vector3[];
   readonly coins: readonly Point[];
@@ -64,21 +87,47 @@ export interface ICourse {
   readonly walkers: Readonly<Record<WalkerKind, readonly Point[]>>;
   /** The orbiting platform's mesh, its origin at the deck's centre. */
   readonly platform: Mesh;
+  /** The grass's distance thinning; the scene calls `meadow.update` with the camera each frame. */
+  readonly meadow: IMeadow;
   /** Where the platform is at `time` seconds. */
   platformAt(time: number, target: Vector3): Vector3;
   /**
    * Layout self-checks, read by `playtests/survives.playtest.json`: solids that neither stand on the
-   * ground nor touch a solid that does, and pickups within 1 m of a tree, rock, bush or hedge.
+   * ground nor touch a solid that does, pickups within 1 m of a tree, rock, bush or hedge, and the
+   * world's shape and landmarks (relief, slope shares, castle, grass, pebbles, signpost).
    */
-  readonly audit: { readonly floating: number; readonly crowded: number };
+  readonly audit: { readonly floating: number; readonly crowded: number } & Readonly<
+    Record<
+      | "castleParts"
+      | "grassTufts"
+      | "levelShare"
+      | "pathPebbles"
+      | "reliefMetres"
+      | "signposts"
+      | "steepShare",
+      number
+    >
+  >;
 }
 
 /** Counts floating solids and crowded pickups in a built course group (see `ICourse.audit`). */
-function auditCourse(group: Group, pickups: readonly Point[]): ICourse["audit"] {
+function auditCourse(
+  group: Group,
+  pickups: readonly Point[],
+  ground: (x: number, z: number) => number,
+): { floating: number; crowded: number } {
   group.updateMatrixWorld(true);
-  const solids = group.children.filter((object) => object.userData.solid === true);
+  // The terrain is the ground itself; every other solid must reach it, or a solid that does.
+  const solids: Object3D[] = [];
+  group.traverse((object) => {
+    if (object.userData.solid === true && object.name !== "terrain") solids.push(object);
+  });
   const boxes = solids.map((object) => new Box3().setFromObject(object).expandByScalar(0.02));
-  const grounded = boxes.map((box) => box.min.y <= 0.05);
+  const centre = new Vector3();
+  const grounded = boxes.map((box) => {
+    box.getCenter(centre);
+    return box.min.y <= ground(centre.x, centre.z) + 0.05;
+  });
   for (let changed = true; changed; ) {
     changed = false;
     boxes.forEach((box, i) => {
@@ -122,11 +171,53 @@ export function makeRng(seed: number): () => number {
   };
 }
 
-export function buildCourse(rng: () => number): ICourse {
+/** `grassShare` is the share of grass tufts the quality tier draws (`GRASS_SHARE` in `quality.ts`). */
+export function buildCourse(rng: () => number, grassShare = 1): ICourse {
   const group = new Group();
   group.name = "course";
+  const [doorX, doorZ] = COURSE.castle.door;
+  const [sx, sz] = COURSE.summit.at;
+  const [px, pz] = COURSE.pillar.at;
+  // The dirt paths: spawn along the coin line to the summit's ramp, and a branch up to the castle.
+  const paths = [
+    [
+      [0, 33],
+      [0, 12],
+      [-2.5, 2],
+      [-5.6, -7.6],
+    ],
+    [
+      [-2.5, 2],
+      [-1, -12],
+      [2.5, -24],
+      [3, -36],
+      [3, -46],
+      [doorX, doorZ + 1],
+    ],
+  ] as const;
+  const terrain = buildTerrain({
+    level: [
+      ...COURSE.routes,
+      // The pillar with the platform's orbit, and the summit's foot with its ramp.
+      [px, pz, COURSE.pillar.radius + COURSE.platform.radius + 1.5],
+      [sx, sz, COURSE.summit.tiers[0][0] + 2],
+    ],
+    pad: COURSE.castle.pad,
+    paths,
+    seaLevel: COURSE.seaLevel,
+  });
+  const ground = (x: number, z: number): number => terrain.ground(x, z);
+  /** A point `above` metres over the ground at (x, z). */
+  const onGround = (x: number, above: number, z: number): Point => [x, ground(x, z) + above, z];
   const grass = lit(palette.grass, { vertexColors: true });
-  const rock = lit(palette.rock, { flat: true, vertexColors: true });
+  // Blocks and drum cliffs are the castle's coursed stone, so the whole course is one masonry.
+  const rock = new MeshStandardMaterial({
+    ...masonryMaps(),
+    normalScale: new Vector2(1.2, 1.2),
+    roughness: 0.9,
+    vertexColors: true,
+  });
+  const boulder = lit(palette.rock, { flat: true, vertexColors: true });
   const dirt = lit(C.dirt, { vertexColors: true });
   /** Walkable: `Play.ts` builds a fixed trimesh body from every mesh tagged `solid`. */
   const solid = (
@@ -162,7 +253,7 @@ export function buildCourse(rng: () => number): ICourse {
       Math.ceil(size[2]),
     );
     geometry.translate((min[0] + max[0]) / 2, (min[1] + max[1]) / 2, (min[2] + max[2]) / 2);
-    return solid(geometry, material, 0.08, 0.22);
+    return solid(planarUv(geometry, 2), material, 0.06);
   };
   /** A grass-capped rock drum: the shape of every tier, islet and pillar. */
   const drum = (x: number, z: number, radius: number, top: number, bottom: number): void => {
@@ -176,7 +267,7 @@ export function buildCourse(rng: () => number): ICourse {
       true,
     );
     cliff.translate(x, (top - 0.3 + bottom) / 2, z);
-    solid(cliff, rock, 0.2);
+    solid(wrapUv(cliff, radius, 2), rock, 0.12);
     const lip = new CylinderGeometry(radius + 0.15, radius + 0.15, 0.4, segments, 1, true);
     lip.translate(x, top - 0.2, z);
     solid(lip, grass, 0);
@@ -188,18 +279,29 @@ export function buildCourse(rng: () => number): ICourse {
     solid(lawn, grass, 0);
   };
 
-  // The island, its cliff, and the sea round it.
-  drum(0, 0, COURSE.islandRadius, 0, -9);
+  // The island: one terrain mesh, walkable, painted grass, path, sand and rock. Then the sea.
+  const land = new Mesh(
+    paintGround(
+      terrain.field.toGeometry().translate(terrain.field.origin.x, 0, terrain.field.origin.z),
+      { ...terrain, seaLevel: COURSE.seaLevel },
+    ),
+    groundMaterial(),
+  );
+  land.name = "terrain";
+  land.receiveShadow = true;
+  land.castShadow = true;
+  land.userData.solid = true;
+  group.add(land);
   const sea = new Mesh(
     new PlaneGeometry(1600, 1600).rotateX(-Math.PI / 2),
     lit(C.water, { roughness: 0.12 }),
   );
   sea.position.y = COURSE.seaLevel;
+  group.add(farHills(COURSE.seaLevel));
   sea.receiveShadow = true;
   group.add(sea);
 
   // The summit: three tiers, then the Sunseed on top.
-  const [sx, sz] = COURSE.summit.at;
   for (const [radius, top] of COURSE.summit.tiers) drum(sx, sz, radius, top, -0.5);
   // A dirt ramp onto the first tier, so the climb has a walking start.
   const ramp = new BoxGeometry(3, 0.5, 8, 2, 1, 4);
@@ -208,7 +310,7 @@ export function buildCourse(rng: () => number): ICourse {
   solid(ramp, dirt);
 
   // The east islet, past a gap only a long jump or a triple jump crosses.
-  drum(COURSE.islet.at[0], COURSE.islet.at[1], COURSE.islet.radius, 0, -8);
+  drum(COURSE.islet.at[0], COURSE.islet.at[1], COURSE.islet.radius, 0, -10);
 
   // The wall-kick shaft. Run in under the slab, kick off the block, kick off the slab, and the third
   // kick carries you over the block's top. The slab starts 5 m up: a running single jump's head
@@ -224,14 +326,13 @@ export function buildCourse(rng: () => number): ICourse {
   box([slabX, 0, z[1]], [slabX + 1, 16, z[1] + 0.6]);
 
   // The pillar the orbiting platform rises to.
-  drum(COURSE.pillar.at[0], COURSE.pillar.at[1], COURSE.pillar.radius, COURSE.pillar.top, -0.5);
+  drum(px, pz, COURSE.pillar.radius, COURSE.pillar.top, -0.5);
   const deck = new BoxGeometry(...COURSE.platform.size);
   const platform = new Mesh(deck, lit(C.wood));
   platform.castShadow = true;
   platform.receiveShadow = true;
   platform.name = "orbiting-platform";
   group.add(platform);
-  const [px, pz] = COURSE.pillar.at;
   const { radius, low, high, period } = COURSE.platform;
   const platformAt = (time: number, target: Vector3): Vector3 => {
     const angle = (time / period) * Math.PI * 2;
@@ -250,16 +351,16 @@ export function buildCourse(rng: () => number): ICourse {
 
   const coins: Point[] = [];
   // A line from spawn to the summit's ramp, an arc over the islet gap, a ring round the pillar.
-  for (let i = 0; i < 10; i += 1) coins.push([-1 - i * 0.6, 1, 10 - i * 2]);
+  for (let i = 0; i < 10; i += 1) coins.push(onGround(-1 - i * 0.6, 1, 10 - i * 2));
   for (let i = 0; i < 8; i += 1) {
     const t = (i + 1) / 9;
     coins.push([35.5 + t * 8.5, 1.2 + Math.sin(t * Math.PI) * 3.2, 6]);
   }
   for (let i = 0; i < 10; i += 1) {
     const a = (i / 10) * Math.PI * 2;
-    coins.push([px + Math.cos(a) * 3.5, 1, pz + Math.sin(a) * 3.5]);
+    coins.push(onGround(px + Math.cos(a) * 3.5, 1, pz + Math.sin(a) * 3.5));
   }
-  for (let i = 0; i < 6; i += 1) coins.push([2 + i * 1.2, 1, -26]);
+  for (let i = 0; i < 6; i += 1) coins.push(onGround(2 + i * 1.2, 1, -26));
   for (let i = 0; i < 6; i += 1) {
     const a = (i / 6) * Math.PI * 2;
     coins.push([sx + Math.cos(a) * 8.2, 3.5, sz + Math.sin(a) * 8.2]);
@@ -272,7 +373,7 @@ export function buildCourse(rng: () => number): ICourse {
     [px - 4, COURSE.platform.high + 1.5, pz],
     [sx + 5, COURSE.summit.tiers[1][1] + 1.2, sz],
     [ledge[0], ledgeTop + 1.2, ledge[1]],
-    [-6, 1.2, 28],
+    onGround(-6, 1.2, 28),
   ];
   const seeds = {
     shaft: [blockX + 2, blockTop + 1.4, (z[0] + z[1]) / 2] as Point,
@@ -283,115 +384,129 @@ export function buildCourse(rng: () => number): ICourse {
   const nearPickup = (x: number, zz: number, reach: number): boolean =>
     pickups.some(([kx, , kz]) => Math.hypot(x - kx, zz - kz) < reach);
 
-  // Scenery: rocks and round trees round the rim, never on a route and never inside a landmark (a
-  // tree through the shaft's wall, a rock under the pillar's coin ring).
-  const foliage = lit(C.leaf, { flat: true, vertexColors: true });
-  const trunk = lit(C.wood);
+  // Scenery: boulders where the ground breaks into a slope, never on a route and never inside a
+  // landmark (a rock through the shaft's wall, under the pillar's coin ring or in the castle).
   const keepOut = [
     [px, pz, COURSE.pillar.radius + 5],
     [(slabX + blockX + 4) / 2, (z[0] + z[1]) / 2, 8],
     [ledge[0], ledge[1], 5],
     [wall[0], wall[1], 5],
+    [COURSE.castle.pad[0], COURSE.castle.pad[1], COURSE.castle.pad[2] + 2],
+    [sx, sz, COURSE.summit.tiers[0][0] + 1],
   ] as const;
-  /** Contact shade owed by each rock and pine: x, z, radius. */
-  const shade: [number, number, number][] = [];
-  for (let i = 0; i < 26; i += 1) {
-    const angle = (i / 26) * Math.PI * 2 + rng() * 0.15;
-    const r = COURSE.islandRadius - 2.5 - rng() * 3;
-    const x = Math.cos(angle) * r;
-    const zz = Math.sin(angle) * r;
-    // A rock is up to 2 m across its middle and a pine's cone 1.3 m: 3.5 m keeps a metre clear.
+  const onRoute = (x: number, zz: number, w: number): boolean =>
+    COURSE.routes.some(
+      ([x0, x1, z0, z1]) => x > x0 - w && x < x1 + w && zz > z0 - w && zz < z1 + w,
+    );
+  const boulders: [number, number, number][] = [];
+  for (let i = 0; i < 60 && boulders.length < 16; i += 1) {
+    const x = TERRAIN_BOUNDS.minX + rng() * (TERRAIN_BOUNDS.maxX - TERRAIN_BOUNDS.minX);
+    const zz = TERRAIN_BOUNDS.minZ + rng() * (TERRAIN_BOUNDS.maxZ - TERRAIN_BOUNDS.minZ);
+    const size = 0.7 + rng() * 1.1;
+    const slope = terrain.flatness(x, zz);
+    // A rock is up to 2 m across its middle: 3.5 m keeps a metre clear of every pickup.
+    if (slope > 0.93 || slope < 0.6 || ground(x, zz) < COURSE.seaLevel + 1) continue;
     if (keepOut.some(([kx, kz, kr]) => Math.hypot(x - kx, zz - kz) < kr) || nearPickup(x, zz, 3.5))
       continue;
-    if (i % 2 === 0) {
-      const size = 0.8 + rng() * 1.2;
-      const stone = new Mesh(mottle(new DodecahedronGeometry(size, 0), 0.25, rng), rock);
-      shade.push([x, zz, size * 1.25]);
-      stone.position.set(x, 0.3, zz);
-      stone.rotation.set(rng() * 3, rng() * 3, rng() * 3);
-      stone.castShadow = true;
-      stone.receiveShadow = true;
-      group.add(stone);
-    } else {
-      const height = 2.5 + rng() * 2;
-      const stem = new Mesh(new CylinderGeometry(0.18, 0.26, height, 7), trunk);
-      stem.position.set(x, height / 2, zz);
-      stem.castShadow = true;
-      group.add(stem);
-      shade.push([x, zz, 1.4]);
-      const crown = new Mesh(mottle(new ConeGeometry(1.3, 2.6, 8, 2), 0.2, rng), foliage);
-      crown.position.set(x, height + 0.9, zz);
-      crown.castShadow = true;
-      group.add(crown);
-    }
+    if (onRoute(x, zz, 2) || terrain.pathDistance(x, zz) < size + 1.5) continue;
+    const stone = new Mesh(mottle(new DodecahedronGeometry(size, 0), 0.25, rng), boulder);
+    stone.position.set(x, ground(x, zz) + size * 0.2, zz);
+    stone.rotation.set(rng() * 3, rng() * 3, rng() * 3);
+    stone.castShadow = true;
+    stone.receiveShadow = true;
+    group.add(stone);
+    boulders.push([x, zz, size + 0.3]);
   }
 
-  // Planting (`render/foliage.ts`): never on a route a scenario runs, a landmark, the summit's drum
-  // or the rim's rocks and pines. Routes as [x min, x max, z min, z max].
-  const routes = [
-    [-4, 4, -20, 34],
-    [-2, 19, -33, -15],
-    [-25, -14, -10, 8],
-    [24, 37, 1, 11],
-  ] as const;
-  const taken = [...keepOut, ...shade, [sx, sz, COURSE.summit.tiers[0][0] + 1]] as const;
-  group.add(
-    plantIsland({
-      clear: (x, zz, w) =>
-        !routes.some(
-          ([x0, x1, z0, z1]) => x > x0 - w && x < x1 + w && zz > z0 - w && zz < z1 + w,
-        ) &&
-        !taken.some(([kx, kz, kr]) => Math.hypot(x - kx, zz - kz) < kr + w) &&
-        !nearPickup(x, zz, w + 1),
-      // From spawn along the coin line to the foot of the summit's ramp.
-      path: [
-        [0, 12],
-        [-2.5, 2],
-        [-5.6, -7.6],
-      ],
-      radius: COURSE.islandRadius,
-      rng,
-      seaLevel: COURSE.seaLevel,
-      shade,
-      // Each drum's cliff radius at the waterline: it narrows to 92% over its height.
-      shores: [
-        [0, 0, COURSE.islandRadius * 0.98],
-        [COURSE.islet.at[0], COURSE.islet.at[1], COURSE.islet.radius * 0.98],
-      ],
-    }),
-  );
+  // The castle on its plateau, its door at the end of the castle path; its stone is walkable.
+  const castle = buildCastle();
+  castle.group.position.set(doorX, COURSE.castle.pad[3], doorZ);
+  castle.stone.userData.solid = true;
+  group.add(castle.group);
+  // The arrow sign beside the path near spawn, its board broadside to a camera behind the hero.
+  const sign = buildSignpost(rng);
+  sign.position.set(-4.2, ground(-4.2, 9.5), 9.5);
+  group.add(sign);
+
+  // Planting (`render/foliage.ts`): never on a route a scenario runs, a landmark or a boulder.
+  const taken = [...keepOut, ...boulders] as const;
+  const planting = plantIsland({
+    bounds: TERRAIN_BOUNDS,
+    clear: (x, zz, w) =>
+      !onRoute(x, zz, w) &&
+      !taken.some(([kx, kz, kr]) => Math.hypot(x - kx, zz - kz) < kr + w) &&
+      !nearPickup(x, zz, w + 1),
+    flatness: terrain.flatness,
+    grassShare,
+    ground,
+    pathDistance: terrain.pathDistance,
+    rng,
+    seaLevel: COURSE.seaLevel,
+    // The islet's drum cliff radius at the waterline: it narrows to 92% over its height.
+    shores: [[COURSE.islet.at[0], COURSE.islet.at[1], COURSE.islet.radius * 0.98]],
+  });
+  group.add(planting.group);
+
+  // The world's shape on a 1 m grid of land: the climb from the shore to the top, the share of
+  // ground too steep to walk, and the share left dead level for the routes.
+  let landCells = 0;
+  let steep = 0;
+  let level = 0;
+  let bottom = Number.POSITIVE_INFINITY;
+  let top = Number.NEGATIVE_INFINITY;
+  for (let zz = TERRAIN_BOUNDS.minZ + 0.5; zz < TERRAIN_BOUNDS.maxZ; zz += 1) {
+    for (let x = TERRAIN_BOUNDS.minX + 0.5; x < TERRAIN_BOUNDS.maxX; x += 1) {
+      const y = ground(x, zz);
+      if (y < COURSE.seaLevel) continue;
+      landCells += 1;
+      bottom = Math.min(bottom, y);
+      top = Math.max(top, y);
+      if (terrain.flatness(x, zz) < 0.7) steep += 1;
+      if (Math.abs(y) < 0.02) level += 1;
+    }
+  }
+  let castleParts = 0;
+  castle.group.traverse((object) => {
+    if (object instanceof Mesh) castleParts += 1;
+  });
+  const pebbles = planting.group.getObjectByName("path-pebbles");
+  const world = {
+    castleParts,
+    grassTufts: planting.meadow.total,
+    levelShare: level / landCells,
+    pathPebbles: pebbles instanceof InstancedMesh ? pebbles.count : 0,
+    reliefMetres: top - bottom,
+    signposts: group.getObjectByName("signpost") === undefined ? 0 : 1,
+    steepShare: steep / landCells,
+  };
 
   return {
-    audit: auditCourse(group, pickups),
+    audit: { ...auditCourse(group, pickups, ground), ...world },
     checkpoints: [
       new Vector3(...COURSE.spawn),
-      new Vector3(sx + 9, 0, sz + 13),
-      new Vector3(slabX - 6, 0, -26),
+      new Vector3(...onGround(sx + 9, 0, sz + 13)),
+      new Vector3(...onGround(slabX - 6, 0, -26)),
       new Vector3(COURSE.islet.at[0], 0, COURSE.islet.at[1]),
     ],
     coins,
     gems,
+    ground,
     group,
+    meadow: planting.meadow,
     platform,
     platformAt,
     seeds,
-    spawn: new Vector3(COURSE.spawn[0], COURSE.spawn[1] + 0.85, COURSE.spawn[2]),
+    spawn: new Vector3(...onGround(COURSE.spawn[0], 0.85, COURSE.spawn[2])),
     walkers: {
       bumblet: [
-        [6, 0, 2],
-        [-8, 0, -4],
+        onGround(6, 0, 2),
+        onGround(-8, 0, -4),
         [sx + 2, COURSE.summit.tiers[0][1], sz + 7],
         [50, 0, 4],
-        [-12, 0, 12],
+        onGround(-12, 0, 12),
       ],
-      hopper: [
-        [20, 0, 18],
-        [24, 0, -12],
-      ],
-      thornback: [
-        [-30, 0, -2],
-        [13, 0, 26],
-      ],
+      hopper: [onGround(20, 0, 18), onGround(24, 0, -12)],
+      thornback: [onGround(-30, 0, -2), onGround(13, 0, 26)],
     },
   };
 }
