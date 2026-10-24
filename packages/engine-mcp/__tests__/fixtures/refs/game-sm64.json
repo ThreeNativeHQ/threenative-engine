@@ -9,9 +9,7 @@
       "id": "player",
       "name": "Player movement",
       "purpose": "Player movement actions and jumping",
-      "paths": [
-        "src/game/mario.c"
-      ],
+      "paths": ["src/game/mario.c"],
       "functions": [],
       "dependsOn": []
     },
@@ -20,17 +18,12 @@
       "parent": "player",
       "name": "Airborne actions",
       "purpose": "Jump actions and airborne motion",
-      "paths": [
-        "src/game/mario_actions_airborne.c"
-      ],
+      "paths": ["src/game/mario_actions_airborne.c"],
       "functions": [
         {
           "name": "act_triple_jump",
           "path": "src/game/mario_actions_airborne.c",
-          "lines": [
-            10,
-            30
-          ]
+          "lines": [10, 30]
         }
       ],
       "dependsOn": []
@@ -39,22 +32,15 @@
       "id": "camera",
       "name": "Camera system",
       "purpose": "Camera system follow rules",
-      "paths": [
-        "src/game/camera.c"
-      ],
+      "paths": ["src/game/camera.c"],
       "functions": [
         {
           "name": "update_camera",
           "path": "src/game/camera.c",
-          "lines": [
-            40,
-            60
-          ]
+          "lines": [40, 60]
         }
       ],
-      "dependsOn": [
-        "player"
-      ]
+      "dependsOn": ["player"]
     }
   ],
   "cards": [
@@ -79,11 +65,7 @@
         }
       ],
       "capabilities": [],
-      "tags": [
-        "jump",
-        "triple jump",
-        "airborne"
-      ]
+      "tags": ["jump", "triple jump", "airborne"]
     }
   ]
 }

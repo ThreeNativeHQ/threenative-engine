@@ -50,11 +50,7 @@
       "kind": "card",
       "name": "Triple jump",
       "summary": "Three timed jumps build a higher triple jump",
-      "tags": [
-        "jump",
-        "triple jump",
-        "airborne"
-      ],
+      "tags": ["jump", "triple jump", "airborne"],
       "capabilities": []
     }
   ]
