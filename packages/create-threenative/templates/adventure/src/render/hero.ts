@@ -134,7 +134,8 @@ export function createHero(): IHeroRig {
     const leg = legs[name];
     leg.position.set(0.1 * side, 0, 0);
     body.add(leg);
-    leg.add(part(new CapsuleGeometry(0.07, 0.42, 4, 8), lit(C.cloakDark), 0, -0.3, 0));
+    // The leg runs from the hip (y -0.03) down into the boot top (y -0.83): no gap above the boot.
+    leg.add(part(new CapsuleGeometry(0.07, 0.66, 4, 8), lit(C.cloakDark), 0, -0.43, 0));
     leg.add(part(new BoxGeometry(0.12, 0.09, 0.22), leather, 0, -0.87, 0.04));
   }
 

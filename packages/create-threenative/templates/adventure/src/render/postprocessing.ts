@@ -1,7 +1,7 @@
 // Generated for you. This file wires two things together and decides nothing itself.
 //
 // `quality.ts`, in this folder, owns which overrides each tier adds to the engine's look.
-// `WorldEnvironment` from `@threenative/core` builds the chain and prints `TN_RENDER_CHAIN` and
+// `WorldEnvironment` from the engine core builds the chain and prints `TN_RENDER_CHAIN` and
 // `TN_WORLD_ENVIRONMENT`, naming every stage as applied or refused **with a reason**, so a stage
 // that silently no-op'd is never mistaken for one you turned off.
 //

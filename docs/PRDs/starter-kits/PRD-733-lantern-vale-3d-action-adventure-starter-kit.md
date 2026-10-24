@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-733 — Lantern Vale: a 3D action-adventure starter kit with lock-on combat and a dungeon puzzle
 
-**Status:** PARTIAL — Phases 1 and 2 done
+**Status:** PARTIAL — Phases 1 and 2 done, Phase 3 AC-8 done (AC-9 engine-blocked, AC-10 at the judge)
 **Priority:** P2 — new genre kit: the dungeon loop (Phase 2) and the registration, native and judge gates (Phase 3) are open, and no shipped kit has lock-on targeting, a shield, a pushable-block puzzle or a key-and-door dungeon loop.
 **Complexity:** 5 (MEDIUM) — 11+ kit source files (+3), new kit system (+2). Risk override: none. The kit is game code in one template. No `packages/` API changes.
 **Owner:** João
@@ -162,6 +162,10 @@ Each playtest runs on a project scaffolded from `--template adventure`:
 ## Blocked on
 
 - The owner's taste call on the kit's look and feel (does it read as a polished 3D adventure?) — unblocked by João after the judge pass in Phase 3.
+- AC-9, the native desktop run: the core auto exposure does not compile on the desktop V8 engine
+  player. Layer `packages/runtime-native` (the `core-tsl.mjs` shim takes no boolean `uniform(false)`
+  from `AutoExposureNode`). PRD-732 records the same blocker for `collectathon`. Unblocked by an
+  engine lane that makes the core look run on the engine player.
 
 ## Integration Ledger
 
@@ -238,6 +242,18 @@ Each playtest runs on a project scaffolded from `--template adventure`:
   `character_stays_grounded_while_it_presses_a_push_block` was airborne on ticks 102-129, now
   passes. All 230 physics unit tests pass, the existing wall-fall tests included. The web and Rust
   parity arms pass. This is a behaviour fix, not an API change.
+- 2026-10-24 (agent): the captures showed Wren's boots detached under her legs. The leg capsule now
+  runs from the hip into the boot top (`src/render/hero.ts`).
+- 2026-10-24 (agent): the live recordings showed the camera inside Wren's head when a wall stood
+  behind her. A pulled-in camera arm now climbs up to 1.6 m and looks down over her, and a second
+  ray keeps the climb under the ceiling (`src/render/camera.ts`).
+- 2026-10-24 (agent): the render-file comments say "the engine core", not the package name.
+  `check-core-boundary` matches the package name in comment text too.
+- 2026-10-24 (agent): the sibling commit `811734b54` (PRD-732) carried this kit's README row and its
+  first scaffold hash. `packages/create-threenative/README.md` lists no `collectathon`, so this kit
+  is not added there alone: the kit order puts `collectathon` first. Registration rows added here:
+  the PRD-289 conventions table, `TEMPLATE_NAMES` in `scripts/capability-recall.ts`, and the
+  `request.adventure-lock-on` recall row (budget `rowCount` 102).
 
 ## Execution Phases
 
@@ -275,7 +291,7 @@ runs the native player once to record whether navigation is bound.
 
 #### Phase 3: Registered, native and judged
 
-**Status:** NOT STARTED
+**Status:** PARTIAL (2026-10-24): AC-8 done, AC-9 engine-blocked, AC-10 waits for the judge
 **Files:** the registration list above, `native-playtests/survives.playtest.json`,
 `playtests/performance.playtest.json`.
 **Implementation:** register the kit in every gate. Capture the clearing, the block room and the
@@ -286,6 +302,6 @@ visible, and no frame is blank or white.
 **Verification:** the commands on each box. The judge verdict and the PR screenshots go on the PR
 (orphan `prd-733-screenshots` branch, with the PRD-732 images on the same PR).
 
-- [ ] AC-8: the kit passes every registration gate and the template lane. proof: `pnpm budgets && pnpm exec vitest run scripts/__tests__/ci-structure.spec.ts scripts/__tests__/primary-docs.spec.ts scripts/__tests__/check-template-conventions.spec.ts && pnpm test:templates` — Evidence: pending.
-- [ ] AC-9: the kit runs 300 frames on the native desktop engine player with a non-blank capture. proof: `node packages/playtest/dist/runner/cli.js <project>/native-playtests/survives.playtest.json --target desktop` — Evidence: pending.
-- [ ] AC-10: the visual judge returns pass on every criterion above for all three poses. proof: the judge report linked from the PR — Evidence: pending.
+- [x] AC-8: the kit passes every registration gate and the template lane. proof: `pnpm budgets && pnpm exec vitest run scripts/__tests__/ci-structure.spec.ts scripts/__tests__/primary-docs.spec.ts scripts/__tests__/check-template-conventions.spec.ts && pnpm test:templates` — Evidence: `pnpm budgets` exit 0. The registration specs (scaffold, looks, auto-exposure-scaffold, ci-structure, primary-docs, check-template-conventions, playtest) pass 370/370 on the kit's own tree, with the adventure scaffold hash re-pinned after the hero and camera edits. `pnpm check:docs` passes. `TN_TEMPLATE_ONLY=adventure` template lane: 9 scenarios plus the boot smoke pass ("adventure: scaffolded playtests passed"). After the hero and camera edits, all 9 scenarios rerun green on the nvidia adapter (`performance`: p95 18.5 ms, 275 draws, 34,477 triangles, tier high). `pnpm test:tone` has no adventure case, so it did not run.
+- [ ] AC-9: the kit runs 300 frames on the native desktop engine player with a non-blank capture. proof: `node packages/playtest/dist/runner/cli.js <project>/native-playtests/survives.playtest.json --target desktop` — Evidence: open, engine-blocked (see `## Blocked on`). `pnpm build --target desktop` with the worktree's `tn-native-engine-player-v8` builds `dist-native/adventure/adventure`. The run exits 2 with `TN_INSPECT_GAME_BRIDGE: TypeError: TN_TSL uniform: expected a TSL node or number`, the core auto exposure blocker PRD-732 also records.
+- [ ] AC-10: the visual judge returns pass on every criterion above for all three poses. proof: the judge report linked from the PR — Evidence: open, for the lead's judge. Captures, headed WebGPU on the nvidia adapter, two runs per pose: `~/Downloads/lantern-vale/01-vale-run1.png` to `06-warden-run2.png`. All six report `TN_WORLD_ENVIRONMENT` `tonemapMode: "filmic"` and `TN_AUTO_EXPOSURE` measured and applied (settled in the vale and the block room, still settling at the Warden pose). Gameplay video: `~/Downloads/lantern-vale/lantern-vale-gameplay.mp4` (31 s: lock-on and slash, shield block, block push and grate, key and door, the Warden stun).

@@ -1,6 +1,6 @@
 // Generated for you. This is ordinary Three.js configuration — edit it freely.
 //
-// The look is a fresh Unreal 5.8.3 project's, and it comes from `@threenative/core`: the filmic
+// The look is a fresh Unreal 5.8.3 project's, and it comes from the engine core: the filmic
 // tone curve, metered auto exposure, local exposure, Unreal's bloom and vignette, contact
 // occlusion and temporal anti-aliasing on `high`. `qualityPreset(tier)` is that look per tier;
 // this file only adds what this game changes on top of it, each change with its reason and its

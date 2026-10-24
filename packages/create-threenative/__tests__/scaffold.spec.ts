@@ -291,7 +291,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // against platformer's unchanged value).
   collectathon: "164f22ef52eb213036a5232fa9ff450d7aa27b790e138625f7f06ab28866e2bf",
   // PRD-733 (2026-10-23): the new Lantern Vale kit, measured through createProject.
-  adventure: "f02c919529e4428335d2c1849fd7adf91299d06abe31b58d18c1a70f8368dfaf",
+  adventure: "2afb930d8f2f7ea568f9c590947126384bcdb4d49043009f1b8dba58b93fbb05",
   minimal: "1bdc31f8d31f074cde31e09d67ac850762482f481e4b41050d5679f7155ac085",
   platformer: "27b6033ac8ce09c6b19894586865e465e2edfcc0b7edd7be02e4e8459b248e53",
   puzzle: "78f16093d5dedabf3a7bff8b07bb261bd1c7f91339aeaae51f7a1a278a5442d2",

@@ -16,6 +16,8 @@ const AIM_HEIGHT = 0.9;
 const YAW_RATE = 4;
 /** Distance kept in front of a wall the arm would pass through. */
 const WALL_MARGIN = 0.35;
+/** The most a pulled-in camera climbs above its usual height. */
+const MAX_CLIMB = 1.6;
 
 /** A ray from `from` to `to`; returns the hit distance, or undefined when nothing is in the way. */
 export type CameraBlocker = (from: Vector3, to: Vector3) => number | undefined;
@@ -50,10 +52,19 @@ export function setupCamera(camera: PerspectiveCamera, blocked: CameraBlocker): 
       focus.z + Math.cos(yaw) * DISTANCE,
     );
     // Pull the arm in in front of a wall, so the camera never ends up inside one or behind it.
+    // A short arm climbs instead of ending at the back of her head: with a wall at her back the
+    // camera looks down over her, and a second ray keeps that climb under the ceiling.
     const hit = blocked(pivot, desired);
     if (hit !== undefined) {
+      const length = Math.max(0.6, hit - WALL_MARGIN);
       direction.subVectors(desired, pivot).normalize();
-      desired.copy(pivot).addScaledVector(direction, Math.max(0.6, hit - WALL_MARGIN));
+      desired.copy(pivot).addScaledVector(direction, length);
+      desired.y += Math.min(MAX_CLIMB, (DISTANCE - length) * 0.5);
+      const roof = blocked(pivot, desired);
+      if (roof !== undefined) {
+        direction.subVectors(desired, pivot).normalize();
+        desired.copy(pivot).addScaledVector(direction, Math.max(0.6, roof - WALL_MARGIN));
+      }
     }
     camera.position.lerp(desired, ease);
     camera.lookAt(aim.set(focus.x, focus.y + AIM_HEIGHT, focus.z));

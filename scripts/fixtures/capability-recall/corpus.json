@@ -541,6 +541,14 @@
       "reject": []
     },
     {
+      "id": "request.adventure-lock-on",
+      "query": "make a 3D action adventure: the hero character runs, rolls and blocks with a shield, and enemies chase her around walls",
+      "scope": "request",
+      "source": "template:adventure#AGENTS.md \u2014 __PROJECT_NAME__ adventure",
+      "expect": ["CharacterBody3D"],
+      "reject": []
+    },
+    {
       "id": "prd451.matrix-world",
       "query": "only update world matrices of visible objects each frame instead of the whole scene",
       "scope": "mechanic",
