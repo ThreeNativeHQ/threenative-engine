@@ -347,13 +347,7 @@
           "local": {
             "readyMs": 629,
             "loadedMs": 264,
-            "samplesMs": [
-              673,
-              629,
-              626,
-              629,
-              628
-            ],
+            "samplesMs": [673, 629, 626, 629, 628],
             "adapter": {
               "vendor": "nvidia",
               "architecture": "turing",
@@ -364,13 +358,7 @@
           "throttled": {
             "readyMs": 1705,
             "loadedMs": 1344,
-            "samplesMs": [
-              1704,
-              1711,
-              1709,
-              1705,
-              1699
-            ],
+            "samplesMs": [1704, 1711, 1709, 1705, 1699],
             "adapter": {
               "vendor": "nvidia",
               "architecture": "turing",
@@ -532,13 +520,7 @@
           "local": {
             "readyMs": 799,
             "loadedMs": 357,
-            "samplesMs": [
-              917,
-              778,
-              808,
-              761,
-              799
-            ],
+            "samplesMs": [917, 778, 808, 761, 799],
             "adapter": {
               "vendor": "nvidia",
               "architecture": "turing",
@@ -549,13 +531,7 @@
           "throttled": {
             "readyMs": 2104,
             "loadedMs": 1325,
-            "samplesMs": [
-              1877,
-              2350,
-              1972,
-              2202,
-              2104
-            ],
+            "samplesMs": [1877, 2350, 1972, 2202, 2104],
             "adapter": {
               "vendor": "nvidia",
               "architecture": "turing",
@@ -576,13 +552,7 @@
             "local": {
               "readyMs": 823,
               "loadedMs": 376,
-              "samplesMs": [
-                845,
-                784,
-                835,
-                823,
-                819
-              ],
+              "samplesMs": [845, 784, 835, 823, 819],
               "adapter": {
                 "vendor": "nvidia",
                 "architecture": "turing",
@@ -593,13 +563,7 @@
             "throttled": {
               "readyMs": 2214,
               "loadedMs": 1398,
-              "samplesMs": [
-                2222,
-                2158,
-                2256,
-                2214,
-                2192
-              ],
+              "samplesMs": [2222, 2158, 2256, 2214, 2192],
               "adapter": {
                 "vendor": "nvidia",
                 "architecture": "turing",
@@ -767,13 +731,7 @@
           "local": {
             "readyMs": 830,
             "loadedMs": 347,
-            "samplesMs": [
-              871,
-              697,
-              805,
-              830,
-              1038
-            ],
+            "samplesMs": [871, 697, 805, 830, 1038],
             "adapter": {
               "vendor": "nvidia",
               "architecture": "turing",
@@ -784,13 +742,7 @@
           "throttled": {
             "readyMs": 1892,
             "loadedMs": 1326,
-            "samplesMs": [
-              1916,
-              1957,
-              1858,
-              1892,
-              1806
-            ],
+            "samplesMs": [1916, 1957, 1858, 1892, 1806],
             "adapter": {
               "vendor": "nvidia",
               "architecture": "turing",
@@ -811,13 +763,7 @@
             "local": {
               "readyMs": 798,
               "loadedMs": 341,
-              "samplesMs": [
-                754,
-                726,
-                798,
-                813,
-                1052
-              ],
+              "samplesMs": [754, 726, 798, 813, 1052],
               "adapter": {
                 "vendor": "nvidia",
                 "architecture": "turing",
@@ -828,13 +774,7 @@
             "throttled": {
               "readyMs": 1970,
               "loadedMs": 1430,
-              "samplesMs": [
-                2078,
-                1931,
-                1970,
-                1970,
-                1887
-              ],
+              "samplesMs": [2078, 1931, 1970, 1970, 1887],
               "adapter": {
                 "vendor": "nvidia",
                 "architecture": "turing",
@@ -979,7 +919,7 @@
       "commit": "a3ceb360d",
       "dirty": true,
       "label": "lever 2: drop animation tracks that hold the rest pose",
-      "notes": "packages/assets/src/passes/prune-rest-tracks.ts; control = baseline build 6da4a6606 | visual judge NEUTRAL (114 poses x2 runs, 35 isolated pixels over 8 levels, no connected region); mixer worst node diff <1e-5; templates gate 7/8: snow production-performance red 3 of 3 runs, snow ships no model and its cook is byte-identical to the control, not yet run on a clean develop build",
+      "notes": "packages/assets/src/passes/prune-rest-tracks.ts; control = baseline build 6da4a6606 | visual judge NEUTRAL (114 poses x2 runs, 35 isolated pixels over 8 levels, no connected region); mixer worst node diff <1e-5; templates gate 7/8: snow production-performance red 3 of 3 runs, snow ships no model and its cook is byte-identical to the control, not yet run on a clean develop build | visual judge NEUTRAL (114 poses x2 runs, 35 isolated pixels over 8 levels, no connected region); mixer worst node diff <1e-5; templates gate 7/8: snow production-performance red 3 of 3 runs, snow ships no model and its cook is byte-identical to the control, not yet run on a clean develop build | visual judge NEUTRAL (114 poses x2 runs, 35 isolated pixels over 8 levels, no connected region); mixer worst node diff <1e-5; templates gate 7/8: snow production-performance red 3 of 3 runs, snow ships no model and its cook is byte-identical to the control, not yet run on a clean develop build | visual judge NEUTRAL (114 poses x2 runs, 35 isolated pixels over 8 levels, no connected region); mixer worst node diff <1e-5; templates gate 7/8: snow production-performance red 3 of 3 runs, snow ships no model and its cook is byte-identical to the control, not yet run on a clean develop build",
       "decision": "keep",
       "arm": "default",
       "config": {},
@@ -998,13 +938,7 @@
           "local": {
             "readyMs": 621,
             "loadedMs": 263,
-            "samplesMs": [
-              702,
-              597,
-              599,
-              682,
-              621
-            ],
+            "samplesMs": [702, 597, 599, 682, 621],
             "adapter": {
               "vendor": "nvidia",
               "architecture": "turing",
@@ -1015,13 +949,7 @@
           "throttled": {
             "readyMs": 1545,
             "loadedMs": 1158,
-            "samplesMs": [
-              1529,
-              1534,
-              1545,
-              1603,
-              1711
-            ],
+            "samplesMs": [1529, 1534, 1545, 1603, 1711],
             "adapter": {
               "vendor": "nvidia",
               "architecture": "turing",
@@ -1042,13 +970,7 @@
             "local": {
               "readyMs": 645,
               "loadedMs": 263,
-              "samplesMs": [
-                669,
-                628,
-                662,
-                636,
-                645
-              ],
+              "samplesMs": [669, 628, 662, 636, 645],
               "adapter": {
                 "vendor": "nvidia",
                 "architecture": "turing",
@@ -1059,13 +981,7 @@
             "throttled": {
               "readyMs": 1757,
               "loadedMs": 1357,
-              "samplesMs": [
-                1715,
-                1756,
-                1757,
-                1782,
-                2044
-              ],
+              "samplesMs": [1715, 1756, 1757, 1782, 2044],
               "adapter": {
                 "vendor": "nvidia",
                 "architecture": "turing",

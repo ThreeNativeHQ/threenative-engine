@@ -42,6 +42,15 @@ import {
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const LEDGER = resolve(ROOT, "docs/asset-perf/ledger.json");
 const HTML = resolve(ROOT, "docs/asset-perf/index.html");
+/** The ledger is a checked-in file, so it is written the way `biome format` prints it. */
+function writeLedger(ledger) {
+  writeAtomic(LEDGER, `${JSON.stringify(ledger, null, 2)}\n`);
+  execFileSync("pnpm", ["exec", "biome", "format", "--write", relative(ROOT, LEDGER)], {
+    cwd: ROOT,
+    stdio: "ignore",
+  });
+}
+
 const TEMPLATES = resolve(ROOT, "packages/create-threenative/templates");
 const DECISIONS = [
   "baseline",
@@ -498,7 +507,7 @@ async function measureCommand(ledger, argv, get) {
     commit: get("--commit") ?? git("rev-parse", "--short", "HEAD"),
     dirty: git("status", "--porcelain", "--", "packages/assets") !== "",
   });
-  writeAtomic(LEDGER, `${JSON.stringify(next, null, 2)}\n`);
+  writeLedger(next);
   writeAtomic(HTML, renderHtml(next));
 }
 
@@ -516,7 +525,7 @@ async function main(argv) {
       get("--decision"),
       get("--reason"),
     );
-    writeAtomic(LEDGER, `${JSON.stringify(next, null, 2)}\n`);
+    writeLedger(next);
     writeAtomic(HTML, renderHtml(next));
     return console.log(`iteration ${get("--iteration")}: ${get("--decision")}`);
   }
@@ -527,7 +536,7 @@ async function main(argv) {
   }
   if (command === "discard") {
     ledger = discardIteration(ledger, Number(get("--iteration")), get("--reason"));
-    writeAtomic(LEDGER, `${JSON.stringify(ledger, null, 2)}\n`);
+    writeLedger(ledger);
   } else if (command !== "report") {
     console.error("usage: asset-perf-loop.mjs measure|show|discard|decide|report|serve|snapshot");
     process.exit(2);

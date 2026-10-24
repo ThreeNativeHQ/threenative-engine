@@ -89,7 +89,12 @@ async function captureArm(browser, softwareAdapterName, arm, models, dir, run) {
         const png = await page.screenshot();
         const name = `${arm.label}-run${run}-${models[clip.model].replace(/\W+/g, "_")}-${clip.index}-${Math.round(fraction * 100)}.png`;
         writeFileSync(join(dir, name), png);
-        shots.push({ name, clip: clip.name, fraction, sha: createHash("sha256").update(png).digest("hex").slice(0, 16) });
+        shots.push({
+          name,
+          clip: clip.name,
+          fraction,
+          sha: createHash("sha256").update(png).digest("hex").slice(0, 16),
+        });
       }
     }
     return { adapter: state.adapter, shots };
@@ -108,7 +113,9 @@ const models = flag("--models", "mannequin-combat.glb,player-viewmodel.glb").spl
 const runs = Number(flag("--runs", "2"));
 const [out, ...armSpecs] = args;
 if (out === undefined || armSpecs.length < 2) {
-  console.error("usage: asset-pose-capture.mjs <outDir> <label=publicDir> <label=publicDir> [--models a.glb,b.glb] [--runs 2]");
+  console.error(
+    "usage: asset-pose-capture.mjs <outDir> <label=publicDir> <label=publicDir> [--models a.glb,b.glb] [--runs 2]",
+  );
   process.exit(2);
 }
 mkdirSync(out, { recursive: true });
@@ -117,18 +124,23 @@ const { chromium } = await import("@playwright/test");
 const { WEBGPU_BROWSER_ARGS, resolveBrowserArguments, softwareAdapterName } = await import(
   pathToFileURL(resolve(ROOT, "packages/playtest/dist/runner/index.js")).href
 );
-const browser = await chromium.launch({ headless: false, args: resolveBrowserArguments(WEBGPU_BROWSER_ARGS) });
+const browser = await chromium.launch({
+  headless: false,
+  args: resolveBrowserArguments(WEBGPU_BROWSER_ARGS),
+});
 try {
   const report = { arms: {} };
   for (let run = 1; run <= runs; run += 1)
     for (const arm of arms) {
       const result = await captureArm(browser, softwareAdapterName, arm, models, out, run);
-      (report.arms[arm.label] ??= []).push(result);
+      report.arms[arm.label] = [...(report.arms[arm.label] ?? []), result];
     }
   writeFileSync(join(out, "poses.json"), JSON.stringify(report, null, 1));
   const [a, b] = arms.map((arm) => report.arms[arm.label][0].shots);
   const same = a.filter((shot, i) => shot.sha === b[i]?.sha).length;
-  console.log(`poses per arm ${a.length}; first run, pixel-identical between ${arms[0].label} and ${arms[1].label}: ${same}/${a.length}`);
+  console.log(
+    `poses per arm ${a.length}; first run, pixel-identical between ${arms[0].label} and ${arms[1].label}: ${same}/${a.length}`,
+  );
   console.log(`adapter ${JSON.stringify(report.arms[arms[0].label][0].adapter)}`);
 } finally {
   await browser.close();
