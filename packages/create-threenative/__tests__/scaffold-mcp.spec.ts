@@ -452,6 +452,9 @@ async function probeEngineServer(target: string): Promise<void> {
     expect(tools.map((tool) => tool.name)).toEqual([
       "engine_search_capabilities",
       "engine_capability_detail",
+      "engine_search_references",
+      "engine_reference_detail",
+      "engine_save_reference",
     ]);
     const called = await request(child, nextId, lines, "tools/call", {
       arguments: { situation: "enemy walks around a wall" },
