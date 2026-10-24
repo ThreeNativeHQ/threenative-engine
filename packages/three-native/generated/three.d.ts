@@ -1095,6 +1095,7 @@ polygonOffset: boolean;
 polygonOffsetFactor: number;
 polygonOffsetUnits: number;
 colorWrite: boolean;
+alphaHash: boolean;
 
   clone(): this;
 
@@ -1504,6 +1505,7 @@ fragmentNode: Node | null;
 colorWrite: boolean;
 aoNode: Node | null;
 irradianceNode: Node | null;
+alphaHash: boolean;
 
   clone(): this;
 
@@ -1659,6 +1661,7 @@ irradianceNode: Node | null;
 twoSidedFoliage: boolean;
 roughDiffuse: boolean;
 subsurfaceColor: Color | undefined;
+alphaHash: boolean;
 
   clone(): this;
 
@@ -1772,6 +1775,7 @@ visible: boolean;
 colorWrite: boolean;
 aoNode: Node | null;
 irradianceNode: Node | null;
+alphaHash: boolean;
 
   clone(): this;
 
@@ -2594,6 +2598,7 @@ polygonOffset: boolean;
 polygonOffsetFactor: number;
 polygonOffsetUnits: number;
 colorWrite: boolean;
+alphaHash: boolean;
 
   clone(): this;
 
@@ -3323,6 +3328,7 @@ flatShading: boolean;
 colorWrite: boolean;
 twoSidedFoliage: boolean;
 subsurfaceColor: Color | undefined;
+alphaHash: boolean;
 
   clone(): this;
 
@@ -3364,6 +3370,7 @@ flatShading: boolean;
 colorWrite: boolean;
 twoSidedFoliage: boolean;
 subsurfaceColor: Color | undefined;
+alphaHash: boolean;
 
   clone(): this;
 

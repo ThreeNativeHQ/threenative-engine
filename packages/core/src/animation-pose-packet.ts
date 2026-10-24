@@ -1,6 +1,6 @@
 import {
-  LinearInterpolant,
   Matrix4,
+  NumberKeyframeTrack,
   Quaternion,
   Skeleton,
   type SkinnedMesh,
@@ -60,8 +60,20 @@ const typedBuffer = Object.getOwnPropertyDescriptor(prototype, "buffer")?.get;
 const compose = Matrix4.prototype.compose;
 const product = Matrix4.prototype.multiplyMatrices;
 const methods = ["evaluate", "interpolate_", "copySampleValue_", "intervalChanged_"] as const;
+// three's own linear interpolant, read off a stock track: the owned engine binds the tracks but not
+// the interpolant class, and there it stays undefined so no packet is ever captured.
+const linearPrototype: object | undefined = (() => {
+  try {
+    const interpolant = new NumberKeyframeTrack("p", [0, 1], [0, 1]).InterpolantFactoryMethodLinear(
+      undefined,
+    );
+    return Object.getPrototypeOf(interpolant) ?? undefined;
+  } catch {
+    return undefined;
+  }
+})();
 const defaults = methods.map(
-  (name) => [name, installedMethod(LinearInterpolant.prototype, name)] as const,
+  (name) => [name, linearPrototype && installedMethod(linearPrototype, name)] as const,
 );
 const F = Math.fround;
 const skeletonUpdate = Object.getOwnPropertyDescriptor(Skeleton.prototype, "update")?.value;
@@ -141,7 +153,12 @@ function identity(values: readonly number[]): boolean {
   return values.every((v, i) => v === (i % 5 === 0 ? 1 : 0));
 }
 function pristine(value: unknown): boolean {
-  if (!object(value) || Object.getPrototypeOf(value) !== LinearInterpolant.prototype) return false;
+  if (
+    !object(value) ||
+    linearPrototype === undefined ||
+    Object.getPrototypeOf(value) !== linearPrototype
+  )
+    return false;
   return defaults.every(([name, expected]) => {
     for (let owner: object | null = value; owner !== null; owner = Object.getPrototypeOf(owner)) {
       const d = Object.getOwnPropertyDescriptor(owner, name);
@@ -407,7 +424,7 @@ function savedPacketFor(
     skeleton !== saved.sources[2] ||
     skeleton.bones !== saved.sources[3] ||
     !skeletonUpdateIntact(skeleton) ||
-    (state.action as unknown as { _interpolants?: unknown })._interpolants !== saved.sources[6]
+    Reflect.get(state.action, "_interpolants") !== saved.sources[6]
   )
     return undefined;
   return { saved, state };
@@ -435,7 +452,7 @@ export function refreshAnimationPosePacket(
 ): IAnimationPosePacket | undefined {
   const found = savedPacketFor(rig, version);
   if (!found) return undefined;
-  const held = (found.state.action as unknown as { time: number }).time;
+  const held = found.state.action.time;
   if (typeof held !== "number") return undefined;
   const next: IAnimationPoseVersion = Object.freeze({
     ...version,
