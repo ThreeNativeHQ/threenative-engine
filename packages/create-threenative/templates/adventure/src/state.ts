@@ -28,12 +28,17 @@ export type GameState = {
    * target's top (m) — 0 until the first lock. */
   lockMarkerShown: boolean;
   lockMarkerLowest: number;
-  /** Fight readability over every tick a fight is on (a lock, or a hostile within 8 m): the
-   * share with Wren and the target both framed (5% margin), the longest run of ticks without
-   * that, and the ticks with Wren's centre behind the target. 0 until a fight starts. */
+  /** Fight readability over every tick a fight is on (a lock, the awake Warden, or a hostile
+   * within 8 m): the share with Wren and the target both framed (5% margin, 6% at the top), the
+   * longest run of ticks without that, and the ticks with Wren's centre behind the target. 0
+   * until a fight starts. */
   fightFramedShare: number;
   fightOutRun: number;
   fightOccluded: number;
+  /** The same framed share over the Warden's opening only: awake, nothing locked. 0 until then. */
+  openingFramedShare: number;
+  /** Fight ticks with a toast over Wren or the target; a running count. */
+  toastOverlap: number;
   /** Every tick: ticks with something solid between Wren's head and the lens, the most of the
    * frame walls within 1.5 m of the lens covered (0-1), and ticks Wren overlapped the controls card. */
   cameraBlocked: number;

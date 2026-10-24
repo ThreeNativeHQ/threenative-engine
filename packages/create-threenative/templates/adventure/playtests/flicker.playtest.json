@@ -145,6 +145,12 @@
       },
       {
         "id": "state",
+        "path": "toastOverlap",
+        "lte": 0,
+        "allowTrivial": "Fight ticks with a toast over Wren's or the target's on-screen box; a running count, 0 at the start."
+      },
+      {
+        "id": "state",
         "path": "cameraBlocked",
         "lte": 0,
         "allowTrivial": "Ticks with something solid between Wren's head and the lens; a running count, 0 at the start."

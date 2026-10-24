@@ -57,7 +57,8 @@ export function Hud() {
         </div>
       ) : null}
       {state.toast !== "" ? (
-        <div className="absolute left-1/2 top-16 max-w-xl -translate-x-1/2 rounded-2xl border-2 border-line bg-panel/40 px-4 py-1 text-center text-base font-bold text-lume backdrop-blur-sm">
+        // Top left under the hearts, clear of the fight the camera frames in the middle.
+        <div className="absolute left-6 top-20 max-w-sm rounded-2xl border-2 border-line bg-panel/40 px-4 py-1 text-base font-bold text-lume backdrop-blur-sm">
           {state.toast}
         </div>
       ) : null}

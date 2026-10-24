@@ -101,7 +101,8 @@ export interface ILockFrame {
 export interface IFollowCamera {
   /** The yaw the camera sits at around Wren: 0 puts it south of her, looking north. */
   readonly yaw: number;
-  update(focus: Vector3, lock: ILockFrame | undefined, dt: number): void;
+  /** `watch`: a body kept in the picture with nothing locked, such as a boss that just woke. */
+  update(focus: Vector3, lock: ILockFrame | undefined, dt: number, watch?: Box3): void;
   /** Swing round to `yaw` and stay there: the target button with nothing to lock recentres. */
   recenter(yaw: number): void;
   /** Jump to a pose at once: after a respawn or a room change, never ease across the map. */
@@ -120,6 +121,7 @@ export function setupCamera(camera: PerspectiveCamera, blocked: CameraBlocker): 
   let locked = 0;
   let extra = 0;
   let swing = LOCK.orbit;
+  let watching = false;
   const pivot = new Vector3();
   const desired = new Vector3();
   const aim = new Vector3();
@@ -177,12 +179,13 @@ export function setupCamera(camera: PerspectiveCamera, blocked: CameraBlocker): 
       }
     return walls / 24;
   };
-  // Locked, turn the lens onto Wren and the target and widen it until both fit; it eases at the
-  // camera's own rate, not the lock's, so a fight never opens with Wren's feet off the frame.
-  const frame = (focus: Vector3, lock: ILockFrame | undefined, ease: number): void => {
+  // Locked, or with a boss awake (`watch`), turn the lens onto Wren and that body and widen it
+  // until both fit; it eases at the camera's own rate, not the lock's, so a fight never opens with
+  // Wren's feet or the boss's head off the frame.
+  const frame = (focus: Vector3, box: Box3 | undefined, ease: number): void => {
     let fov = FOV;
     goalShift.set(0, 0, 0);
-    if (lock !== undefined) {
+    if (box !== undefined) {
       camera.updateMatrixWorld();
       heroBox.min.set(focus.x - HERO.radius, focus.y - HERO.below, focus.z - HERO.radius);
       heroBox.max.set(focus.x + HERO.radius, focus.y + HERO.above, focus.z + HERO.radius);
@@ -192,7 +195,7 @@ export function setupCamera(camera: PerspectiveCamera, blocked: CameraBlocker): 
         y0: Number.POSITIVE_INFINITY,
         y1: Number.NEGATIVE_INFINITY,
       });
-      if (measure(heroBox) && measure(lock.bounds)) {
+      if (measure(heroBox) && measure(box)) {
         const half = Math.max(
           (extent.y1 - extent.y0) / 2,
           (extent.x1 - extent.x0) / 2 / camera.aspect,
@@ -241,7 +244,7 @@ export function setupCamera(camera: PerspectiveCamera, blocked: CameraBlocker): 
       desired.copy(pivot).addScaledVector(ray, Math.max(MIN_ARM, roof - WALL_MARGIN));
     }
   };
-  const place = (focus: Vector3, lock: ILockFrame | undefined, ease: number): void => {
+  const place = (focus: Vector3, box: Box3 | undefined, ease: number, fit = ease): void => {
     const distance = DISTANCE + extra * locked;
     // The picture's yaw: the stick's yaw, swung right while locked.
     const view = yaw + swing * locked;
@@ -272,7 +275,7 @@ export function setupCamera(camera: PerspectiveCamera, blocked: CameraBlocker): 
     // Easing toward a pose a wall just cut short can cross that wall: then it cuts, never eases.
     if (blocked(pivot, camera.position) !== undefined) camera.position.copy(desired);
     camera.lookAt(aim);
-    frame(focus, lock, ease);
+    frame(focus, box, fit);
   };
   const aimAt = (focus: Vector3, lock: ILockFrame | undefined): void => {
     goalAim.set(focus.x, focus.y + AIM_HEIGHT, focus.z);
@@ -285,7 +288,7 @@ export function setupCamera(camera: PerspectiveCamera, blocked: CameraBlocker): 
     get yaw(): number {
       return yaw;
     },
-    update(focus: Vector3, lock: ILockFrame | undefined, dt: number): void {
+    update(focus: Vector3, lock: ILockFrame | undefined, dt: number, watch?: Box3): void {
       const rate = 1 - Math.exp(-YAW_RATE * dt);
       const quick = 1 - Math.exp(-FRAME_RATE * dt);
       if (lock !== undefined) {
@@ -336,7 +339,10 @@ export function setupCamera(camera: PerspectiveCamera, blocked: CameraBlocker): 
       const turn = MathUtils.euclideanModulo(home - yaw + Math.PI, Math.PI * 2) - Math.PI;
       yaw += turn * rate;
       aimAt(focus, lock);
-      place(focus, lock, quick);
+      // A boss that just woke is framed at once, a reveal cut; then the fit eases as a lock's does.
+      const reveal = watch !== undefined && !watching && lock === undefined;
+      watching = watch !== undefined;
+      place(focus, lock?.bounds ?? watch, quick, reveal ? 1 : quick);
     },
     recenter(to: number): void {
       home = to;

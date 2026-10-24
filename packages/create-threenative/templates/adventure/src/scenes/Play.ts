@@ -57,6 +57,8 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     fightOutRun: 0,
     hearts: ADVENTURE_FEEL.startHalves / 2,
     hintOverlap: 0,
+    toastOverlap: 0,
+    openingFramedShare: 0,
     heroViewNearest: 0,
     hitsTaken: 0,
     keys: 0,
@@ -282,6 +284,10 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       ctx.state.set({ toast: text });
       toastUntil = elapsed + seconds;
     };
+    // The slash hint goes at her first slash, and any toast when the Warden wakes: a fight opens
+    // on a clear screen. -1 while no hint is up, else her slash count when it went up.
+    let slashHint = -1;
+    let wardenSlept = true;
     const standAt = (feet: Vector3): Vector3 =>
       new Vector3(feet.x, feet.y + FOOT_OFFSET + 0.05, feet.z);
 
@@ -293,6 +299,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
         if (swordChest.open() === undefined) return;
         hero.giveSword();
         toast("THE EMBER BLADE! Press J to slash.", 3);
+        slashHint = hero.slashes;
       },
     });
     interactions.add({
@@ -346,16 +353,20 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     const head = new Vector3();
     let viewNearest = Number.POSITIVE_INFINITY;
     // Readability, sampled every tick through the camera's own projection. A fight is on while a
-    // target is locked or a live hostile stands within FIGHT_RANGE of Wren; then Wren and that
-    // target must both sit inside the frame with a 5% margin, and Wren's screen centre must not
-    // sit behind the target; once a lock has glided in (GLIDE ticks), she must not hide over half
-    // of it either. Every tick: nothing solid between her head and the lens, walls in the front
-    // half of the way from the lens to her cover little of the frame (a grid of rays, every 6th
-    // tick), and Wren stays clear of the controls card (top right, Menu.tsx).
+    // target is locked, the Warden is awake (its opening, before any lock) or a live hostile
+    // stands within FIGHT_RANGE of Wren; then Wren and that target must both sit inside the frame
+    // with a 5% margin (6% at the top, so a head never touches the edge), and Wren's screen centre
+    // must not sit behind the target; once a lock has glided in (GLIDE ticks), she must not hide
+    // over half of it either. Every tick: nothing solid between her head and the lens, walls in
+    // the front half of the way from the lens to her cover little of the frame (a grid of rays,
+    // every 6th tick), Wren stays clear of the controls card (top right, Menu.tsx), and a toast
+    // (Hud.tsx) covers neither Wren nor the fight's target.
     const FIGHT_RANGE = 8;
     const GLIDE = 15;
-    // ponytail: the card's corner in view space, kept in step with Menu.tsx by hand.
+    // ponytail: the card's and the toast's boxes in view space at 1280 by 720, kept in step with
+    // Menu.tsx and Hud.tsx by hand.
     const HINT = { x0: 0.55, y0: 0.6 };
+    const TOAST = { x0: -0.97, x1: -0.36, y0: 0.54, y1: 0.78 };
     const fight = {
       blocked: 0,
       frames: 0,
@@ -363,12 +374,21 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       hint: 0,
       nearWall: 0,
       occluded: 0,
+      openingFrames: 0,
+      openingFramed: 0,
+      toast: 0,
       run: 0,
       worstRun: 0,
       ticks: 0,
       lockTicks: 0,
       lockedOn: undefined as ITarget | undefined,
     };
+    const underToast = (rect: typeof HINT & { x1: number; y1: number }): boolean =>
+      toastUntil !== 0 &&
+      rect.x1 > TOAST.x0 &&
+      rect.x0 < TOAST.x1 &&
+      rect.y1 > TOAST.y0 &&
+      rect.y0 < TOAST.y1;
     const fightBox = new Box3();
     const heroCentre = new Vector3();
     const ray = new Vector3();
@@ -384,6 +404,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
         undefined;
     const fightTarget = (): ITarget | undefined => {
       if (lock.target !== undefined) return lock.target;
+      if (warden.alive && warden.state !== "dormant") return warden;
       let best: ITarget | undefined;
       let bestDistance = FIGHT_RANGE;
       for (const target of targets) {
@@ -417,10 +438,17 @@ export class Play extends Scene<GameState, IPhysicsContext> {
         rect.y0 = Math.min(rect.y0, corner.y);
         rect.y1 = Math.max(rect.y1, corner.y);
       }
-      return ahead && rect.x0 >= -0.9 && rect.y0 >= -0.9 && rect.x1 <= 0.9 && rect.y1 <= 0.9;
+      return ahead && rect.x0 >= -0.9 && rect.y0 >= -0.9 && rect.x1 <= 0.9 && rect.y1 <= 0.88;
     };
     afterPhysics(ctx, (dt) => {
-      rig.update(hero.mesh.position, lock.target === undefined ? undefined : lock, dt);
+      // An awake Warden stays in the picture from its first stir, before any lock.
+      const awake = warden.alive && warden.state !== "dormant";
+      rig.update(
+        hero.mesh.position,
+        lock.target === undefined ? undefined : lock,
+        dt,
+        awake ? fightBox.setFromObject(warden.mesh) : undefined,
+      );
       head.copy(hero.mesh.position).setY(hero.mesh.position.y - FOOT_OFFSET + HEAD_HEIGHT);
       const near = camera.position.distanceTo(head);
       // A wall-pulled camera in a tight room climbs to the ceiling right over her, where her cap
@@ -484,6 +512,11 @@ export class Play extends Scene<GameState, IPhysicsContext> {
           hidden > area / 2;
       fight.frames += 1;
       if (behind) fight.occluded += 1;
+      if (underToast(heroRect) || underToast(targetRect)) fight.toast += 1;
+      if (target === warden && lock.target === undefined) {
+        fight.openingFrames += 1;
+        if (heroIn && targetIn) fight.openingFramed += 1;
+      }
       if (heroIn && targetIn) {
         fight.framed += 1;
         fight.run = 0;
@@ -621,7 +654,13 @@ export class Play extends Scene<GameState, IPhysicsContext> {
         }
       }
 
-      if (toastUntil !== 0 && elapsed > toastUntil) {
+      const woke = wardenSlept && warden.state !== "dormant";
+      wardenSlept = warden.state === "dormant";
+      if (woke || (slashHint >= 0 && hero.slashes > slashHint)) {
+        slashHint = -1;
+        toastUntil = elapsed;
+      }
+      if (toastUntil !== 0 && elapsed >= toastUntil) {
         toastUntil = 0;
         frameCtx.state.set({ toast: "" });
       }
@@ -649,6 +688,11 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       statePatch.cameraBlocked = fight.blocked;
       statePatch.nearWallWorst = Math.round(fight.nearWall * 1000) / 1000;
       statePatch.hintOverlap = fight.hint;
+      statePatch.toastOverlap = fight.toast;
+      statePatch.openingFramedShare =
+        fight.openingFrames === 0
+          ? 0
+          : Math.round((fight.openingFramed / fight.openingFrames) * 1000) / 1000;
       statePatch.heroViewNearest =
         viewNearest === Number.POSITIVE_INFINITY ? 0 : Math.round(viewNearest * 100) / 100;
       statePatch.prompt = prompt;
