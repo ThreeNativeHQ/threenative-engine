@@ -95,7 +95,7 @@
     "request.two-sided-foliage"
   ],
   "rejectHits": 15,
-  "rowCount": 100,
+  "rowCount": 102,
   "rowIds": [
     "brief.endless-runner.1",
     "brief.endless-runner.2",
@@ -157,6 +157,8 @@
     "request.multiplayer-replication",
     "request.multiplayer-prediction",
     "request.platformer-double-jump",
+    "request.collectathon-triple-jump",
+    "request.adventure-lock-on",
     "prd451.matrix-world",
     "prd451.mark-static",
     "prd451.create-random",

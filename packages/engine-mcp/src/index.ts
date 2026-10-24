@@ -30,6 +30,22 @@ export interface ICapabilityManifest {
   readonly version: number;
   readonly entries: readonly ICapabilityEntry[];
   readonly notOwned: readonly INotOwnedCapability[];
+  readonly starterKits?: readonly IStarterKit[];
+}
+
+export interface IStarterKit {
+  readonly name: string;
+  readonly title: string;
+  readonly blurb: string;
+  /** Genre plus kit.json aliases, lowercase. */
+  readonly words: readonly string[];
+}
+
+export interface IStarterKitResult {
+  readonly name: string;
+  readonly title: string;
+  readonly blurb: string;
+  readonly command: string;
 }
 
 export interface ICapabilitySearchResult {
@@ -44,7 +60,10 @@ export interface ICapabilitySearchResult {
 }
 
 export interface ICapabilitySearchResponse {
-  readonly verdict: "matched" | "none";
+  /** Present when the request names a genre or game a starter kit covers; it leads the response. */
+  readonly starterKits?: readonly IStarterKitResult[];
+  /** "starterKit": a kit matched but no engine capability did; scaffold the kit, then search its gaps. */
+  readonly verdict: "matched" | "none" | "starterKit";
   readonly results: readonly ICapabilitySearchResult[];
   readonly guidance: string;
 }
@@ -212,7 +231,7 @@ const MAX_SITUATION_RESULTS = 5;
 /** Chosen by the current-manifest threshold sweep: the highest recalled candidate at 0.27. */
 export const RELEVANCE_FLOOR = 0.27;
 const AUTHORING_INSTRUCTIONS =
-  'Before authoring, infer concrete gameplay mechanics. Preserve the request\'s distinctive fantasy: choose the smallest loop that uses its characteristic setting, traversal medium, or simulation instead of a generic character game with themed props, and search those implied mechanics even when the user did not name engine terms. Search the mechanically explicit complete request with scope "request", then each mechanic with scope "mechanic". A genre label alone is not a capability query: clarify or decompose it; do not assume a preset. Inspect capability detail and obey constraints before implementing. Capability detail is authoritative on platform support: never invent a platform limitation it does not state. A response with verdict "none" is an actionable answer: follow its guidance and write game-owned behavior in src/ instead of rephrasing the same request.';
+  'Before authoring, infer concrete gameplay mechanics. Preserve the request\'s distinctive fantasy: choose the smallest loop that uses its characteristic setting, traversal medium, or simulation instead of a generic character game with themed props, and search those implied mechanics even when the user did not name engine terms. Search the mechanically explicit complete request with scope "request", then each mechanic with scope "mechanic". When the request names a game or genre a starter kit covers (engine_search_capabilities leads with it), scaffold from that kit first with the command it gives, then search the mechanics the kit does not cover. Inspect capability detail and obey constraints before implementing. Capability detail is authoritative on platform support: never invent a platform limitation it does not state. A response with verdict "none" is an actionable answer: follow its guidance and write game-owned behavior in src/ instead of rephrasing the same request.';
 const GENERIC_GUIDANCE =
   "No installed engine capability matches this situation. Decompose it into concrete mechanics and write the game-owned behavior in your project's src/; inspect the relevant template AGENTS.md before adding a package.";
 
@@ -303,6 +322,20 @@ function validateManifest(value: unknown, file: string): ICapabilityManifest {
       !raw.constraints.every((constraint) => typeof constraint === "string")
     ) {
       throw manifestError(file, `entry ${index} is malformed`);
+    }
+  }
+  for (const [index, raw] of (Array.isArray(value.starterKits)
+    ? value.starterKits
+    : []
+  ).entries()) {
+    if (
+      !isRecord(raw) ||
+      typeof raw.name !== "string" ||
+      typeof raw.title !== "string" ||
+      typeof raw.blurb !== "string" ||
+      !isStringArray(raw.words)
+    ) {
+      throw manifestError(file, `starterKits ${index} is malformed`);
     }
   }
   const notOwnedIds = new Set<string>();
@@ -621,6 +654,32 @@ function capabilitySearchKey(entry: ICapabilityEntry): string {
   return `${entry.importPath}\n${entry.summary}\n${entry.situations.join("\n")}`;
 }
 
+/** Kits whose genre or kit.json alias is a whole word or phrase of the request, earliest first. */
+function matchedStarterKits(
+  situation: string,
+  kits: readonly IStarterKit[],
+): readonly IStarterKitResult[] {
+  const words = (text: string) =>
+    ` ${text
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/gu, " ")
+      .trim()} `;
+  const request = words(situation);
+  return kits
+    .map((kit) => ({
+      at: Math.min(...kit.words.map((word) => request.indexOf(words(word))).filter((i) => i >= 0)),
+      kit,
+    }))
+    .filter(({ at }) => Number.isFinite(at))
+    .sort((left, right) => left.at - right.at)
+    .map(({ kit: { blurb, name, title } }) => ({
+      blurb,
+      command: `npx create-threenative <dir> --template ${name}`,
+      name,
+      title,
+    }));
+}
+
 export function searchCapabilities(
   situation: string,
   manifestFile = defaultManifestPath(),
@@ -629,6 +688,27 @@ export function searchCapabilities(
   if (typeof situation !== "string" || situation.trim().length === 0)
     throw new Error("engine_search_capabilities requires a non-empty situation string.");
   const manifest = loadCapabilityManifest(manifestFile);
+  const starterKits = matchedStarterKits(situation, manifest.starterKits ?? []);
+  const response = searchMechanics(situation, manifest, scope);
+  if (starterKits.length === 0) return response;
+  // The kit leads the response; the mechanics it does not cover follow unchanged.
+  return {
+    starterKits,
+    ...response,
+    ...(response.verdict === "none"
+      ? {
+          guidance: `Scaffold from the starter kit first, then search the mechanics it does not cover. ${response.guidance}`,
+          verdict: "starterKit" as const,
+        }
+      : {}),
+  };
+}
+
+function searchMechanics(
+  situation: string,
+  manifest: ICapabilityManifest,
+  scope: "mechanic" | "request",
+): ICapabilitySearchResponse {
   const query = tokens(situation);
   const limit = scope === "request" ? MAX_COMPLETE_REQUEST_RESULTS : MAX_SITUATION_RESULTS;
   const weights = tokenWeights(manifest.entries);

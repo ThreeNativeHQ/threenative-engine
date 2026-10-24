@@ -500,6 +500,8 @@ interface ISimulationBody {
   controllerHandle?: IPhysicsHandle;
   character?: IPhysicsCharacterOptions;
   groundCollider?: number;
+  /** The last step asked to move down and the floor held the character in place. */
+  held?: boolean;
 }
 
 interface IStoredCharacterState {
@@ -847,7 +849,9 @@ function characterState(
   let groundNormal: IPhysicsVector3 | undefined;
   // Rapier flags a contact as ground at any positive up component, so a wall that leans back a
   // degree reads as floor. When the only contacts are such walls, the character is not grounded;
-  // a snap-to-ground step records no contact, so no contacts leaves Rapier's answer alone.
+  // a snap-to-ground step records no contact, so no contacts leaves Rapier's answer alone. A
+  // character standing still on a floor while it presses a wall records only the wall: the floor
+  // held its downward step in place, so Rapier's answer stands there too.
   let walkable = false;
   let contacts = 0;
   for (let index = 0; index < controller.numComputedCollisions(); index += 1) {
@@ -865,7 +869,8 @@ function characterState(
       }
     }
   }
-  const grounded = controller.computedGrounded() && (walkable || contacts === 0);
+  const grounded =
+    controller.computedGrounded() && (walkable || contacts === 0 || simulationBody.held === true);
   if (groundCollider !== undefined) simulationBody.groundCollider = groundCollider;
   else if (!grounded) simulationBody.groundCollider = undefined;
   state.grounded = grounded;
@@ -1299,6 +1304,7 @@ export function createWebPhysicsSimulation(
               filterPredicate,
             );
             const movement = controller.computedMovement();
+            entry.held = desired.y < -1e-4 && Math.abs(movement.y) < 1e-4;
             const nextTranslation = kinematicScratch.nextTranslation;
             nextTranslation.x = current.x + movement.x;
             nextTranslation.y = current.y + movement.y;

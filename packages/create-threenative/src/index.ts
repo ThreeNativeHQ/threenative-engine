@@ -41,6 +41,8 @@ type PackageSources = Partial<Record<PackageSourceName, string>> & {
 };
 
 export interface IKitManifest {
+  /** Extra exact words `--genre` resolves to this kit, e.g. "mario". Optional in kit.json. */
+  readonly aliases: readonly string[];
   readonly blurb: string;
   readonly genre: string;
   readonly kit: boolean;
@@ -276,7 +278,10 @@ function loadManifest(directory: string): IKitManifest {
     return invalidManifest(file, `name '${name}' must match directory '${directoryName}'`);
   const kit = record.kit;
   if (typeof kit !== "boolean") return invalidManifest(file, "kit must be a boolean");
+  const rawAliases = record.aliases ?? [];
+  if (!Array.isArray(rawAliases)) return invalidManifest(file, "aliases must be an array");
   return {
+    aliases: rawAliases.map((alias) => nonEmptyString(alias, "aliases[]", file).toLowerCase()),
     blurb: nonEmptyString(record.blurb, "blurb", file),
     genre: nonEmptyString(record.genre, "genre", file),
     kit,
@@ -306,21 +311,30 @@ export function kitManifest(template: ScaffoldTemplate, root = templateRoot()): 
   return manifest;
 }
 
-/** Resolve an exact public genre to its kit. Unknown genres deliberately start from minimal:
- * genre words are authoring input, not an invitation to guess the closest preset. */
+/** Resolve an exact public genre, or an alias a kit declares in its own kit.json, to its kit.
+ * Unknown words deliberately start from minimal: genre words are authoring input, not an
+ * invitation to guess the closest preset. Two kits claiming one word is a manifest bug. */
 export function templateForGenre(genre: string, root = templateRoot()): ScaffoldTemplate {
   const normalized = genre.trim().toLowerCase();
   if (normalized.length === 0) throw new Error("Genre must not be empty.");
-  return (
-    discoverKitManifests(root).find((manifest) => manifest.genre.toLowerCase() === normalized)
-      ?.name ?? "minimal"
+  const matches = discoverKitManifests(root).filter(
+    (manifest) =>
+      manifest.genre.toLowerCase() === normalized || manifest.aliases.includes(normalized),
   );
+  if (matches.length > 1)
+    throw new Error(
+      `TN_KIT_GENRE_AMBIGUOUS: '${normalized}' names ${matches.map(({ name }) => name).join(", ")}.`,
+    );
+  return matches[0]?.name ?? "minimal";
 }
 
 function templateHelp(manifests: readonly IKitManifest[]): string {
   const width = Math.max(...manifests.map(({ name }) => name.length), 0);
   return manifests
-    .map(({ blurb, name, title }) => `  ${name.padEnd(width)}  ${title}: ${blurb}`)
+    .map(
+      ({ aliases, blurb, name, title }) =>
+        `  ${name.padEnd(width)}  ${title}: ${blurb}${aliases.length > 0 ? ` (also: ${aliases.join(", ")})` : ""}`,
+    )
     .join("\n");
 }
 
@@ -345,7 +359,7 @@ export function cliHelp(): string {
     "",
     "Options:",
     "  --template <name>  Choose a template.",
-    "  --genre <name>     Choose an exact genre kit; unknown genres use minimal.",
+    "  --genre <name>     Choose a kit by its genre or a word its kit.json lists (mario, zelda); unknown words use minimal.",
     "  --no-install       Copy the project without running pnpm install.",
     "  --help             Show this help.",
     "",

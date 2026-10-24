@@ -227,6 +227,9 @@ function contractProblems(
   spans: IContractSpan[],
 ): string[] {
   if (source === undefined) return [];
+  // A kit on the core look delegates the tier contract to core's `qualityTiers.resolve`, which
+  // throws on an unknown tier itself (packages/core/src/look/quality.ts); there is no copy to hash.
+  if (takesCoreLook(source, "qualityTiers")) return [];
   let span: string;
   try {
     span = qualityContractSpan(source);
@@ -240,6 +243,17 @@ function contractProblems(
     ];
   }
   return [];
+}
+
+/**
+ * True when a render file imports `symbol` from `@threenative/core`: the kit takes the engine's
+ * Unreal-default look (AGENTS.md rule 3) instead of a vendored copy of the chain.
+ */
+export function takesCoreLook(source: string, symbol: string): boolean {
+  return new RegExp(
+    `import\\s*\\{[^}]*\\b${symbol}\\b[^}]*\\}\\s*from\\s*["']@threenative/core["']`,
+    "u",
+  ).test(source);
 }
 
 /** The switch is *reached*, the incumbent literals are gone, and the tier is reported. */
@@ -322,13 +336,17 @@ export async function checkTemplateQuality(root: string): Promise<ITemplateQuali
     const render = path.join(templatesDir, template, "src", "render");
     const world = await readOptional(path.join(render, "worldEnvironment.ts"));
     const quality = await readOptional(path.join(render, "quality.ts"));
+    const post = await readOptional(path.join(render, "postprocessing.ts"));
+    const coreLook = post !== undefined && takesCoreLook(post, "WorldEnvironment");
     const problems = [
       ...qualityProblems(quality),
       ...contractProblems(quality, template, spans),
-      ...postprocessingProblems(await readOptional(path.join(render, "postprocessing.ts"))),
+      ...postprocessingProblems(post),
       ...docProblems(await readOptional(path.join(templatesDir, template, "AGENTS.md"))),
       ...(world === undefined
-        ? ["no src/render/worldEnvironment.ts"]
+        ? coreLook
+          ? []
+          : ["no src/render/worldEnvironment.ts"]
         : eagerSurfaceNodes(world).map(
             (entry) =>
               `worldEnvironment.ts requests ${entry} eagerly — that attaches a colour target no fragment shader writes, and the frame renders black while the chain reports success`,

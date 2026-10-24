@@ -1145,7 +1145,10 @@ impl Simulation {
                 body.set_next_kinematic_translation(current + movement.translation);
                 body.set_next_kinematic_rotation(rotation);
                 let state = self.characters.get_mut(&id).expect("character was checked");
-                let grounded = movement.grounded && (walkable || contacts == 0);
+                // Standing still on a floor while pressing a wall records only the wall; the floor
+                // held the downward step in place, so Rapier's answer stands, as on the web backend.
+                let held = desired.y < -1e-4 && movement.translation.y.abs() < 1e-4;
+                let grounded = movement.grounded && (walkable || contacts == 0 || held);
                 state.grounded = grounded;
                 state.ground_collider = ground_collider
                     .or_else(|| grounded.then_some(state.ground_collider).flatten());
@@ -2786,6 +2789,98 @@ mod tests {
         let character = simulation.characters[&2].clone();
         assert!(character.grounded);
         assert_eq!(character.ground_collider, Some(1));
+    }
+
+    #[test]
+    fn character_stays_grounded_while_it_presses_a_push_block() {
+        let mut simulation = Simulation::new(TnPhysicsWorldOptions {
+            gravity_x: 0.0,
+            gravity_y: 0.0,
+            gravity_z: 0.0,
+        })
+        .unwrap();
+        let body = |id, body_type, shape_type, [x, y, z]: [f32; 3], [sx, sy, sz]: [f32; 3]| {
+            TnPhysicsBodyOptions {
+                id,
+                body_type,
+                shape_type,
+                position_x: x,
+                position_y: y,
+                position_z: z,
+                rotation_x: 0.0,
+                rotation_y: 0.0,
+                rotation_z: 0.0,
+                rotation_w: 1.0,
+                shape_x: sx,
+                shape_y: sy,
+                shape_z: sz,
+                mass: 0.0,
+                collision_layer: 1,
+                collision_mask: u16::MAX.into(),
+                sensor: false,
+                continuous_collision: true,
+            }
+        };
+        assert!(simulation.add_body(body(1, 1, 0, [0.0, -0.1, 0.0], [5.0, 0.1, 2.0])));
+        assert!(simulation.add_body(body(2, 3, 2, [0.0, 0.86, 0.36], [0.55, 0.3, 0.0])));
+        assert!(simulation.add_body(body(3, 2, 0, [1.0, 0.5, 0.0], [0.5, 0.5, 0.5])));
+        assert!(simulation.configure_character(TnPhysicsCharacterOptions {
+            id: 2,
+            offset: 0.01,
+            max_slope_climb_angle: std::f32::consts::FRAC_PI_4,
+            autostep_enabled: true,
+            autostep_max_height: 0.3,
+            autostep_min_width: 0.2,
+            autostep_include_dynamic_bodies: false,
+            snap_to_ground_enabled: true,
+            snap_to_ground: 0.3,
+            one_way_layers: 0,
+            pushes_dynamic_bodies: false,
+        }));
+        let dt = 1.0 / 60.0;
+        let mut velocity_y = 0.0f32;
+        let mut block_x = 1.0f32;
+        let mut airborne = Vec::new();
+        for tick in 0..130 {
+            let at = *simulation.bodies[simulation.entries[&2].body].translation();
+            velocity_y -= 20.0 * dt;
+            let push = if tick >= 30 { 2.5 * dt } else { 0.0 };
+            // The block slides one metre away and stops, the way a pushed block does.
+            if (50..100).contains(&tick) {
+                block_x += 1.0 / 50.0;
+            }
+            assert!(simulation.step(
+                dt,
+                &[
+                    2.0,
+                    at.x + push,
+                    at.y + velocity_y * dt,
+                    at.z,
+                    0.0,
+                    0.0,
+                    0.0,
+                    1.0,
+                    3.0,
+                    block_x,
+                    0.5,
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    1.0,
+                ],
+            ));
+            let grounded = simulation.characters[&2].grounded;
+            if grounded && velocity_y < 0.0 {
+                velocity_y = 0.0;
+            }
+            if tick >= 50 && !grounded {
+                airborne.push(tick);
+            }
+        }
+        assert!(airborne.is_empty(), "airborne at ticks {airborne:?}");
+        let at = *simulation.bodies[simulation.entries[&2].body].translation();
+        assert!(at.x > 1.1, "the character followed the block, x = {}", at.x);
     }
 
     // --- collision event delivery -------------------------------------------------------

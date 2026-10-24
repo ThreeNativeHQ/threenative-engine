@@ -1,0 +1,157 @@
+{
+  "name": "collectathon-thornback",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "subject": "player",
+  "setup": {
+    "place": [
+      {
+        "entity": "player",
+        "at": {
+          "x": 0,
+          "y": 0.85,
+          "z": 30
+        },
+        "facing": {
+          "yaw": 0
+        }
+      },
+      {
+        "entity": "thornback.0",
+        "at": {
+          "x": 0,
+          "y": 0,
+          "z": 19.8
+        },
+        "frozen": true
+      },
+      {
+        "entity": "walker.3",
+        "at": {
+          "x": 0,
+          "y": 0,
+          "z": -14
+        },
+        "frozen": true
+      },
+      {
+        "entity": "walker.0",
+        "at": {
+          "x": 30,
+          "y": 0,
+          "z": -10
+        },
+        "frozen": true
+      },
+      {
+        "entity": "walker.1",
+        "at": {
+          "x": -30,
+          "y": 0,
+          "z": -5
+        },
+        "frozen": true
+      },
+      {
+        "entity": "walker.2",
+        "at": {
+          "x": 30,
+          "y": 0,
+          "z": 10
+        },
+        "frozen": true
+      },
+      {
+        "entity": "walker.4",
+        "at": {
+          "x": -28,
+          "y": 0,
+          "z": 8
+        },
+        "frozen": true
+      }
+    ]
+  },
+  "steps": [
+    {
+      "kind": "input",
+      "label": "run-up",
+      "press": ["KeyW"],
+      "holdTicks": 60,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "stomp-jump",
+      "press": ["KeyW", "Space"],
+      "holdTicks": 22,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "stomp-fall",
+      "press": ["KeyW"],
+      "holdTicks": 1,
+      "release": false
+    },
+    {
+      "label": "spiked",
+      "waitForResource": {
+        "id": "state",
+        "path": "wedges",
+        "lte": 7
+      },
+      "timeoutMs": 120000,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "stand",
+      "press": [],
+      "holdTicks": 60,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "wedges",
+        "equals": 7,
+        "changed": true
+      },
+      {
+        "id": "state",
+        "path": "defeated",
+        "equals": 0,
+        "allowTrivial": "A stomp must not defeat a thornback."
+      }
+    ],
+    "signals": [
+      {
+        "entity": "player",
+        "name": "spiked",
+        "minCount": 1
+      }
+    ],
+    "components": [
+      {
+        "entity": "thornback.0",
+        "component": "alive",
+        "equals": true,
+        "allowTrivial": "The thornback is alive before the stomp; that it still is after is the rule under test."
+      }
+    ]
+  }
+}

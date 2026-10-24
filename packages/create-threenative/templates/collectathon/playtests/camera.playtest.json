@@ -1,0 +1,80 @@
+{
+  "name": "collectathon-camera",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "subject": "player",
+  "setup": {
+    "place": [
+      {
+        "entity": "player",
+        "at": {
+          "x": 4,
+          "y": 0.85,
+          "z": -26
+        },
+        "facing": {
+          "yaw": 1.5708
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "settle",
+      "waitTicks": 20,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "back-up",
+      "press": ["KeyS"],
+      "holdTicks": 40,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "stand",
+      "press": [],
+      "holdTicks": 30,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "camera": {
+      "entity": "camera.main",
+      "follows": "player",
+      "within": 10,
+      "targetInViewport": true
+    },
+    "components": [
+      {
+        "entity": "camera-rig",
+        "component": "pulledIn",
+        "equals": true
+      },
+      {
+        "entity": "camera-rig",
+        "component": "distance",
+        "lte": 7
+      },
+      {
+        "entity": "camera-rig",
+        "component": "rayClear",
+        "equals": true,
+        "allowTrivial": "A clear ray from the lens to the hero holds before and after the wall comes between them; that it still holds after the pull-in is the property under test."
+      }
+    ]
+  }
+}
