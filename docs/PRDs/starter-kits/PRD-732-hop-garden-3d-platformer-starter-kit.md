@@ -413,6 +413,16 @@ Each playtest runs on a project scaffolded from `--template collectathon`:
     `playtests/stride.playtest.json` on gen-12lp, HEAD exit 1 at 1.02 m/s, the change exit 0 at
     0.16 m/s; `survives`, `acrobatics` and `double-tap` exit 0.
 
+  - Face (owner fix 5, 2026-10-24: eyes hidden under the brim, a big nose, a blob moustache): in
+    `render/hero.ts` the eyes sit lower and further forward so the whites and pupils clear the
+    brim, the nose is a smaller ball higher on the face, the moustache is two lobes with a curl
+    each, and the brim is shorter and tipped up. Proof: headed captures on gen-12lp, two runs per
+    arm, front and back poses (`~/Downloads/hop-garden/face/`); fresh Opus judge: front
+    IMPROVEMENT on both runs (eyes show under the brim, smaller nose, the moustache reads as two
+    curled lobes), back NEUTRAL (the head still reads from above and behind), overall
+    IMPROVEMENT. Left for a later round: the pupils sit a little close to the nose, and the judge
+    flags the stout-moustache-cap-overalls silhouette as close to a famous plumber (D5).
+
 ## Execution Phases
 
 #### Phase 1: The hero moves like the reference

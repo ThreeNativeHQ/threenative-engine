@@ -239,7 +239,7 @@ export function createHero(): IHero {
     part(ball(0.04), C.button, pivot, [0.11 * side, 0.2, -0.31], [1, 1, 0.6], false);
   }
 
-  // Head: big and round, ears, a round nose, a bushy moustache, eyes under the brim.
+  // Head: big and round, ears, a round nose, a curled moustache, eyes clear below the brim.
   const R = 0.37;
   const HEAD_Y = 0.6;
   const FACE = -0.02 - R;
@@ -251,29 +251,38 @@ export function createHero(): IHero {
       ball(0.092),
       C.white,
       pivot,
-      [0.115 * side, HEAD_Y + 0.02, FACE + 0.05],
-      [0.8, 1.25, 0.5],
+      [0.112 * side, HEAD_Y - 0.005, FACE + 0.035],
+      [0.82, 1.2, 0.5],
       false,
     ).material = lit(C.white, { emissive: 0.45 });
     part(
       ball(0.044),
       C.ink,
       pivot,
-      [0.115 * side, HEAD_Y + 0.01, FACE + 0.005],
+      [0.108 * side, HEAD_Y - 0.012, FACE - 0.008],
       [1, 1.3, 0.6],
       false,
     );
     const tash = part(
-      ball(0.1),
+      ball(0.085),
       C.hair,
       pivot,
-      [0.09 * side, HEAD_Y - 0.15, FACE + 0.06],
-      [1.35, 0.55, 0.6],
+      [0.07 * side, HEAD_Y - 0.14, FACE + 0.045],
+      [1.3, 0.6, 0.6],
       false,
     );
-    tash.rotation.z = -0.3 * side;
+    tash.rotation.z = -0.22 * side;
+    const curl = part(
+      ball(0.05),
+      C.hair,
+      pivot,
+      [0.165 * side, HEAD_Y - 0.115, FACE + 0.085],
+      [1.3, 0.7, 0.7],
+      false,
+    );
+    curl.rotation.z = 0.5 * side;
   }
-  part(ball(0.127), C.nose, pivot, [0, HEAD_Y - 0.06, FACE - 0.03], [1, 0.9, 1], false);
+  part(ball(0.1), C.nose, pivot, [0, HEAD_Y - 0.065, FACE - 0.025], [1, 0.88, 0.95], false);
   // Hair along the back of the cap's rim: wide and tucked under it, so from behind it reads as
   // hair and never as a second face.
   part(ball(0.15), C.hair, pivot, [0, HEAD_Y + 0.04, 0.24], [2, 0.6, 0.8], false);
@@ -292,9 +301,9 @@ export function createHero(): IHero {
     HEAD_Y + 0.09,
     FACE + 0.06,
   ]);
-  brim.scale.set(1, 1, 0.7);
+  brim.scale.set(1, 1, 0.58);
   brim.material = cap;
-  brim.rotation.x = 0.12;
+  brim.rotation.x = 0.3;
   const badge = part(
     new CylinderGeometry(0.09, 0.09, 0.02, 16),
     C.button,
