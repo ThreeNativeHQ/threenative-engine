@@ -1,0 +1,40 @@
+{
+  "status": "ACCEPTED",
+  "models": [
+    "claude-sonnet-5-5"
+  ],
+  "effort": "high",
+  "requiredImages": 17,
+  "openedImages": 17,
+  "overall": "IMPROVEMENT",
+  "frames": [
+    {
+      "name": "performance.playtest.json",
+      "verdict": "IMPROVEMENT",
+      "regions": [
+        1,
+        2
+      ],
+      "reason": "Pose is matched across all four captures (same camera, crashed runner, 68 m / 2 near misses, 1080p), and both BEFORE runs and both AFTER runs agree with each other. Sky: AFTER is a deeper, more saturated blue with firmer cloud modelling (brighter lit tops, cooler shaded bases). Cloud highlights keep internal detail with no flat blown patches. The heavy dark-slate strip under the horizon in BEFORE becomes a lighter, softer, slightly warm haze band; a strip exists in both arms, so it is not new banding, and there is no global cast. Track/contact: both rails run intact to the vanishing point with slightly stronger edge contrast. The near-field grid and tile texture stay crisp with no blur. The trailing foot gains a visible contact shadow that BEFORE only hints at. Minor trade-off: the far-field grid fades into haze a little earlier. The runner, CRASHED panel and subline, R RESTART bar and HUD numerals are equally or slightly more legible. No obstacles or pickups appear in this pose. Credit rests on sky, horizon and shadow definition, not on floor brightness."
+    },
+    {
+      "name": "streams.playtest.json",
+      "verdict": "IMPROVEMENT",
+      "regions": [
+        1,
+        2
+      ],
+      "reason": "Same crashed pose at 720p, matched across all four captures. AFTER shows the same gains: richer sky blue, more modelled clouds with intact white detail, and a lighter, softer horizon strip replacing BEFORE's dark-slate band. I see no clipped highlights, new banding, cast or blur. Rails, grid and tile texture stay readable, and the runner's feet carry a darker contact smudge, so foot and track-edge cues are at least as readable. The CRASHED title and the 'PRESS R TO RUN AGAIN' subline are crisper than in BEFORE, and the R RESTART bar is unchanged. The bottom-left SPEED/CHUNKS labels are slightly clearer, especially in AFTER run2; '68 M' in the subline sits under the rail in both arms. The far-field grid fades slightly earlier in AFTER (minor trade-off). No obstacles or pickups appear in this pose."
+    },
+    {
+      "name": "survives.playtest.json",
+      "verdict": "IMPROVEMENT",
+      "regions": [
+        1,
+        2
+      ],
+      "reason": "Camera and running-runner pose are matched, but the dust puff has a different shape in every capture, so effect comparisons are not pose-matched. Sky, cloud and horizon gains match the other scenes: deeper blue, better cloud modelling with no clipped clouds, and a lighter horizon strip instead of the dark-slate band. Rails stay intact with equal or slightly stronger edge contrast, near-field grid lines are a touch crisper, and the runner's cast shadow stays dark and well defined. The AFTER puff is cleaner and softer-edged, with no heavy grey lobes or visible overlapping-disc rims. Its core is near-flat white with less internal shading than BEFORE. It is bright but not visibly hard-clipped, and it is the one item to watch. Foot contact is partly hidden behind the puff in all four captures, so it cannot be compared. HUD numerals and labels stay readable, with labels slightly clearer in AFTER. No obstacles or pickups appear in this pose."
+    }
+  ],
+  "limitations": "The review was done by eye on static 8-bit PNGs, with no pixel measurement. Static images cannot prove exposure adaptation, motion or MSAA stability, or that no pixel is at 255 in the AFTER dust-puff core.\n\n- **Untested criteria:** None of the three poses contains obstacles or pickups, so readability of those items is untested.\n- **Puff and foot contact:** In survives the dust puff differs per capture and covers the foot-contact area in all four frames, so foot contact and puff shading there are not pose-matched.\n- **Attribution:** AFTER changes several settings at once (filmic curve, metered exposure, core-medium cap, GTAO radius 0.35, MSAA 4, SSR off), so I cannot attribute any difference to a single toggle. The floor has no reflections in either arm.\n- **Minor trade-offs:** The far-field floor grid fades into haze earlier in AFTER. A distinct horizon strip remains in both arms, lighter and warmer in AFTER; I treated it as changed rather than new.\n- **Baseline gate:** BEFORE-HOST-run1 performance exceeded its triangle budget (55153 > 45000). Its screenshot and camera pose are valid, and I applied no visual credit or deduction for it.\n- **Context:** Both arms use Runner's explicit threejs engine override. The L9 sun60 and full Unreal/ThreeNative sheets were used as style targets only (saturated blue sky, soft flat bright highlights, crisp cool shadows), not as geometry."
+}
