@@ -87,6 +87,8 @@ export const C = {
   undershirt: 0xe9dcc0,
   cap: 0x2a3b78,
   capDark: 0x1e2b5a,
+  /** The hood's lining, rolled over the edge of the opening. */
+  capLining: 0x5a72b4,
   trousers: 0x6a5444,
   bootCuff: 0x8f6a45,
   skin: 0xe8b98f,
@@ -99,7 +101,7 @@ export const C = {
   iris: 0x2e2014,
   lid: 0x24160e,
   blush: 0xe3a083,
-  gloves: 0x5a3a22,
+  gloves: 0x74492a,
   belt: 0x47301e,
   sole: 0x2a1d14,
   leather: 0x6b4a2e,
