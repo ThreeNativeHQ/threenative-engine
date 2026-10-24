@@ -110,6 +110,14 @@ Ceilings measured before building (no iteration; nothing here is worth a lever b
 With these the corpus ends near 4.3 MiB. The 3 MiB / 25% goal needs a structural or lossy lever
 (shared mesh and skin between the two mannequins, keyframe reduction with a timing bound, Draco), and
 each of those is an owner call.
+**Remaining gap (iteration #14).** The corpus ships 3,853,639 bytes; the 3 MiB goal is 3,145,728,
+so 707,911 bytes must go. Floor-bound images are 1.42 MiB (model maps 1.14 + `sky.jpg` 0.28) and
+cannot shrink without a lower floor. The safe levers left total about 0.33 MiB (8-bit weights 0.07,
+tangent drop 0.05, shared mesh/skin 0.10, wrap-aware UV quantization 0.11), which still lands near
+3.35 MiB. The rest is geometry the metre invariant keeps in float32 (`quantize-static.ts`),
+animation and JSON that meshopt and the JSON pass already compress, and audio at 4.7%. A 3 MiB goal
+therefore needs an owner decision on texture quality (lower the PRD-351 floor or accept lossy
+normal/ORM maps); no safe lever closes the gap.
 
 Each lever is one iteration on the dashboard: measure, then `keep` or `reject`. A lever changes what
 reaches the screen, so a kept lever needs the visual judge (root `AGENTS.md`, owner rule
