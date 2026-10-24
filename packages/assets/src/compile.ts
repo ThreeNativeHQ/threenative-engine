@@ -2281,14 +2281,18 @@ async function writeOutput(
   await writeFile(outputAbsolute, buffer);
 }
 
-/** A decoded PNG or JPEG as a TNPK v1 Texture entry, or undefined for any other container. */
+/** A decoded PNG, JPEG or WebP as a TNPK v1 Texture entry, or undefined for any other container. */
 async function nativeTextureEntry(
   name: string,
   data: Buffer,
 ): Promise<INativePackageEntry | undefined> {
-  // PNG or JPEG: decoded here to RGBA8. KTX2 and other containers need a runtime transcoder.
+  // PNG, JPEG or WebP: decoded here to RGBA8. KTX2 and other containers need a runtime transcoder.
   const jpeg = data.length >= 3 && data[0] === 0xff && data[1] === 0xd8 && data[2] === 0xff;
-  if (!jpeg && parsePng(data) === undefined) return undefined;
+  const webp =
+    data.length >= 12 &&
+    data.toString("ascii", 0, 4) === "RIFF" &&
+    data.toString("ascii", 8, 12) === "WEBP";
+  if (!jpeg && !webp && parsePng(data) === undefined) return undefined;
   const image = await decodeImageBytes(data, name);
   const header = Buffer.alloc(12);
   header.writeUInt32LE(image.width, 0);
@@ -2321,12 +2325,12 @@ function isLeftover(relative: string): boolean {
  * Gathers the native package's entries from the files already on disk.
  *
  * Cooked outputs enter under their logical path: one Buffer entry per cooked binary buffer
- * (audio/other), as CPU data at its exact length, and one Texture entry per cooked PNG or JPEG,
+ * (audio/other), as CPU data at its exact length, and one Texture entry per cooked PNG, JPEG or WebP,
  * decoded to RGBA8, and one Scene entry per cooked model. A KTX2 texture is not a v1 entry.
  *
  * Every other file in the output root (the web root) enters under its web URL, `/` plus its path
  * there, because that is the URL a game requests it by on the web (`/assets/sky.hdr` is served
- * from `public/assets/sky.hdr`). PNG and JPEG become Texture entries, a binary glTF a Scene entry,
+ * from `public/assets/sky.hdr`). PNG, JPEG and WebP become Texture entries, a binary glTF a Scene entry,
  * anything else a CPU Buffer. Cook outputs (this bake's or a previous one's), the manifest, the
  * receipts, the package itself and editor leftovers are not web-root files. An empty file is left
  * out and counted, never silently padded.
