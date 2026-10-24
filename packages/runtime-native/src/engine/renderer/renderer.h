@@ -396,6 +396,8 @@ public:
     void setPostSource(const Renderer* main) { postSource_ = main; }
     WGPUTextureView sceneDepthView() const { return depthView_; }
     WGPUTextureView sceneColorView() const { return sceneView_; }
+    /** The RGBA8 output frame a render() with no present target draws, and blitTo copies to the window. */
+    WGPUTextureView outputColorView() const { return colorView_; }
     /** The format the scene colour is drawn and read in: RGBA16Float, or RGBA32Float for a FloatType render target (a 32-bit target is never multisampled). */
     void setSceneFormat(WGPUTextureFormat format);
     /** True when a blended draw into RGBA32Float is valid on this device (float32-blendable); `forceHalfFloatTargets` says no, for tests. */

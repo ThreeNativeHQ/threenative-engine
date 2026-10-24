@@ -894,12 +894,16 @@ int Session::initialize() {
             if (game.uiResize) game.uiResize(int(window.width), int(window.height));
         }
         // Nothing is drawn until the game publishes its view, as a page's canvas stays blank while it loads.
-        if (scene == nullptr || camera == nullptr) {
+        const bool withoutView = scene == nullptr || camera == nullptr;
+        if (withoutView) {
             if (game.frameWithoutView) game.frameWithoutView();
-            if (spans) { gameSpan(kHostFrameSpan, 1); gameSpanTiming(0); }
-            renderer->poll();
-            events.drain();
-            return;
+            // A loading screen drawn before the world is published is still presented.
+            if (!game.overlay || game.overlay() == 0) {
+                if (spans) { gameSpan(kHostFrameSpan, 1); gameSpanTiming(0); }
+                renderer->poll();
+                events.drain();
+                return;
+            }
         }
         // core restores its projected cull inside beforeRender, before this C++ draw: hold it until the
         // frame ends so the draw sees the hides, as a browser draw inside render() does.
@@ -907,9 +911,10 @@ int Session::initialize() {
         struct ReleaseCull {
             ~ReleaseCull() { ProjectedCull::holdRestores(false); ProjectedCull::releaseHeld(); }
         } releaseCull;
-        if (game.beforeRender) game.beforeRender(*renderer, database);
+        if (!withoutView && game.beforeRender) game.beforeRender(*renderer, database);
         // Frame callbacks can replace the published view and release its previous owners.
-        if (!refreshView() || scene == nullptr || camera == nullptr) { if (spans) gameSpan(kHostFrameSpan, 1); return; }
+        if (!withoutView && (!refreshView() || scene == nullptr || camera == nullptr)) { if (spans) gameSpan(kHostFrameSpan, 1); return; }
+        const int overlay = withoutView ? 2 : game.overlay ? game.overlay() : 0;
         if (metrics && measuredFrames == 0) {
             const char* launch = std::getenv("TN_BENCH_LAUNCH_MS");
             if (launch) readyMs = std::chrono::duration<double, std::milli>(std::chrono::system_clock::now().time_since_epoch()).count() - std::strtod(launch, nullptr);
@@ -931,11 +936,14 @@ int Session::initialize() {
         const double renderCpuBegin = metrics ? threadCpuMs() : -1;
         std::array<double, 2> renderSplitMs{-1, -1};  // wall ms: {prepare, encode+submit}
         // The first frame, a resize and a surface-less run encode inline: they read the frame back at once.
-        const bool offThread = renderThread && presenter && !firstFrame && !resized;
+        // A frame with an overlay too: the overlay composites over the world frame, so the world encodes first.
+        const bool offThread = renderThread && presenter && !firstFrame && !resized && overlay == 0;
         if (renderThread && !offThread) ++renderFallbacks;
         encodeJobs.clear();
         database.encodeJobs = offThread ? &encodeJobs : nullptr;
-        try {
+        // ponytail: an overlay alone, or over a world frame the environment bake skipped, composites over the last
+        // output frame, so a translucent one builds up; core holds an opaque cover there, a clear pass if one is not.
+        if (overlay != 2) try {
             database.render(*renderer, *scene, *camera, game.clear ? game.clear() : std::array<double, 4>{0.05, 0.06, 0.09, 1},
                             metrics ? &renderSplitMs : nullptr);
         } catch (...) {
@@ -944,6 +952,7 @@ int Session::initialize() {
             encodeJobs.clear();
             throw;
         }
+        if (overlay != 0) game.drawOverlay(*renderer);
         if (renderThread && !offThread) renderer->collectFrame();
         const double renderMs = metrics ? elapsed(renderBegin) : 0;
         const double renderCpuMs = renderCpuBegin >= 0 ? threadCpuMs() - renderCpuBegin : -1;

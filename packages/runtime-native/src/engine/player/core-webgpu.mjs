@@ -161,6 +161,15 @@ export class WebGPURenderer {
       this.library.apply(this.toneMapping);
       globalThis.tn.setRendererState(this);
     } finally { globalThis.__tnGameSpan?.(GAME_SPANS.publish, 1); }
+    this.__worldFrame = this.info.frame;
+  }
+  // core's canvas layer (a loading screen, a canvas HUD), drawn over this frame's world with no post and no temporal
+  // step (Renderer::overlayRenderer), and never published as tn.scene: as the world, it moved the world's temporal
+  // history and metered exposure. A frame core draws no world in (a held loader frame) draws the overlay alone;
+  // core advances info.frame once per frame.
+  renderOverlay(scene, camera) {
+    syncUniforms();
+    globalThis.tn.renderOverlay(scene, camera, this.__worldFrame === this.info.frame);
   }
   compileAsync(root, camera, scene) {
     syncUniforms();
