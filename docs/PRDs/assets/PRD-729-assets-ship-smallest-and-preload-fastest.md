@@ -89,6 +89,13 @@ Candidates, ranked by baseline bytes:
 
 ## Decisions
 
+- **2026-10-23, João: the compression is automatic.** A kept lever becomes the `packages/assets`
+  default, and the cook picks its setting for each asset from what it measures there (codec,
+  quality, geometry filter, cap). A game sets nothing to get the win. A lever that wins only through
+  a game config is rejected. This is the root `AGENTS.md` "auto by default" rule.
+- **2026-10-23: a live view.** `node scripts/asset-perf-loop.mjs serve` serves the page at
+  `http://127.0.0.1:8767`. The page reloads when the ledger changes and shows a running `measure`.
+
 - **2026-10-23, João: build the loop and the dashboard first.** The owner asked for this work
   directly, so it runs ahead of the open wave in the Unreal feature map.
 - **2026-10-23: no Unreal port yet.** This PRD measures and tunes the existing cook. A lever that

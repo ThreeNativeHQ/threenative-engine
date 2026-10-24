@@ -64,6 +64,8 @@ describe("asset perf loop", () => {
     expect(html).toContain("Latest iteration #1 of 2: cooked.");
     expect(html).toContain("provisional");
     expect(html).not.toContain("#2: 99");
+    expect(html).not.toContain("/state");
+    expect(renderHtml(ledger, new Date(0), { serving: true })).toContain('fetch("/state"');
     expect(() =>
       appendIteration(ledger, {
         measurement,

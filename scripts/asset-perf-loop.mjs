@@ -5,13 +5,15 @@
 //   node scripts/asset-perf-loop.mjs show
 //   node scripts/asset-perf-loop.mjs discard --iteration 3 --reason "dirty tree"
 //   node scripts/asset-perf-loop.mjs report
+//   node scripts/asset-perf-loop.mjs serve [--port 8767]   # live page, reloads when the ledger changes
 //
 // `measure` copies the shipped template assets (the corpus) into a fresh temporary project, runs a
 // cold `compileAssets` with the arm's config and records what the bake shipped. Build
 // `@threenative/assets` first: `pnpm --filter "@threenative/assets..." build`. docs/asset-perf/ledger.json
 // is the durable record and docs/asset-perf/index.html is generated from it, as in the CI speed loop.
 import { execFileSync } from "node:child_process";
-import { cpSync, mkdtempSync, readdirSync, rmSync, statSync } from "node:fs";
+import { cpSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from "node:fs";
+import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { dirname, extname, join, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -40,6 +42,8 @@ const DECISIONS = [
   "invalid",
 ];
 const MiB = 1024 * 1024;
+/** Written while a `measure` runs, so the live page can say what is cooking. */
+const RUNNING = join(tmpdir(), "tn-asset-perf-running.json");
 
 /** The corpus: every asset directory the scaffolder ships, keyed by the folder it lands in. */
 export const CORPUS = [
@@ -258,7 +262,27 @@ function fileBars(latest) {
   return `<figure class="card wide"><figcaption>Largest shipped files, latest iteration <span class="dim">(solid = shipped, pale = source)</span></figcaption>${body || '<p class="dim">baseline pending</p>'}</figure>`;
 }
 
-export function renderHtml(ledger, now = new Date()) {
+/** Polls the server; reloads when the ledger changes and shows a running `measure`. */
+const LIVE_SCRIPT = `<p id="live" class="dim"></p><script>
+let seen;
+async function tick() {
+  const live = document.getElementById("live");
+  try {
+    const state = await (await fetch("/state", { cache: "no-store" })).json();
+    if (seen !== undefined && state.version !== seen) location.reload();
+    seen = state.version;
+    live.textContent = state.running
+      ? \`Measuring "\${state.running.label}" (arm \${state.running.arm}) for \${Math.round((Date.now() - state.running.startedAt) / 1000)} s\`
+      : \`Live: reloads when the ledger changes. Last check \${new Date().toLocaleTimeString()}.\`;
+  } catch {
+    live.textContent = "Server stopped: this page no longer updates.";
+  }
+}
+tick();
+setInterval(tick, 2000);
+</script>`;
+
+export function renderHtml(ledger, now = new Date(), { serving = false } = {}) {
   const live = ledger.iterations.filter(isLive);
   const latest = live.filter((item) => item.decision !== "control").at(-1);
   const base = baselineOf(live);
@@ -334,7 +358,7 @@ ${bytesTable(latest)}
 <div class="grid3">${charts}</div>
 <h2>Iterations</h2>
 <div class="scroll"><table><thead><tr><th>#</th><th>Date</th><th>Commit</th><th>Change</th><th>Decision</th>${GOALS.map((g) => `<th class="n">${esc(g.short)}</th>`).join("")}<th class="n">Cook</th></tr></thead><tbody>${history || '<tr><td colspan="10" class="dim">baseline pending</td></tr>'}</tbody></table></div>
-</main></body></html>
+</main>${serving ? LIVE_SCRIPT : ""}</body></html>
 `;
 }
 
@@ -348,40 +372,76 @@ function show(ledger) {
   if (ledger.iterations.length === 0) console.log("baseline pending: no iterations recorded");
 }
 
+/** The running `measure`, or null; a file left by a killed process does not count. */
+function running() {
+  try {
+    const state = JSON.parse(readFileSync(RUNNING, "utf8"));
+    process.kill(state.pid, 0);
+    return state;
+  } catch {
+    return null;
+  }
+}
+
+function serve(port) {
+  createServer((req, res) => {
+    if (req.url?.startsWith("/state")) {
+      const version = statSync(LEDGER, { throwIfNoEntry: false })?.mtimeMs ?? 0;
+      res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
+      res.end(JSON.stringify({ version, running: running() }));
+    } else {
+      res.writeHead(200, {
+        "content-type": "text/html; charset=utf-8",
+        "cache-control": "no-store",
+      });
+      res.end(renderHtml(readLedger(LEDGER), new Date(), { serving: true }));
+    }
+  }).listen(port, "127.0.0.1", () => console.log(`asset perf live: http://127.0.0.1:${port}`));
+}
+
+/** `measure`: cook one arm, print it and, unless `--dry-run`, append it to the ledger. */
+async function measureCommand(ledger, argv, get) {
+  const label = get("--label");
+  if (label === undefined) throw new Error("measure needs --label");
+  const arm = get("--arm") ?? "default";
+  if (!(arm in ARMS)) throw new Error(`--arm must be one of ${Object.keys(ARMS).join(", ")}`);
+  const config = { ...ARMS[arm], ...JSON.parse(get("--config") ?? "{}") };
+  writeAtomic(RUNNING, JSON.stringify({ label, arm, pid: process.pid, startedAt: Date.now() }));
+  const measurement = await measure(config).finally(() => rmSync(RUNNING, { force: true }));
+  console.log(
+    `${arm} ${JSON.stringify(config)}: ${mib(measurement.sourceBytes)} -> ${mib(measurement.shippedBytes)} (${measurement.metrics.shippedPctOfSource}%), cook ${measurement.compileMs} ms`,
+  );
+  if (argv.includes("--dry-run")) return;
+  const git = (...args) => execFileSync("git", args, { cwd: ROOT, encoding: "utf8" }).trim();
+  const next = appendIteration(ledger, {
+    measurement,
+    label,
+    arm,
+    config,
+    notes: get("--notes") ?? "",
+    decision: get("--decision"),
+    commit: get("--commit") ?? git("rev-parse", "--short", "HEAD"),
+    dirty: git("status", "--porcelain", "--", "packages/assets") !== "",
+  });
+  writeAtomic(LEDGER, `${JSON.stringify(next, null, 2)}\n`);
+  writeAtomic(HTML, renderHtml(next));
+}
+
 async function main(argv) {
   const [command] = argv;
   const get = (flag) => (argv.includes(flag) ? argv[argv.indexOf(flag) + 1] : undefined);
   let ledger = readLedger(LEDGER);
   if (command === "measure") {
-    const label = get("--label");
-    if (label === undefined) throw new Error("measure needs --label");
-    const arm = get("--arm") ?? "default";
-    if (!(arm in ARMS)) throw new Error(`--arm must be one of ${Object.keys(ARMS).join(", ")}`);
-    const config = { ...ARMS[arm], ...JSON.parse(get("--config") ?? "{}") };
-    const measurement = await measure(config);
-    console.log(
-      `${arm} ${JSON.stringify(config)}: ${mib(measurement.sourceBytes)} -> ${mib(measurement.shippedBytes)} (${measurement.metrics.shippedPctOfSource}%), cook ${measurement.compileMs} ms`,
-    );
-    if (argv.includes("--dry-run")) return;
-    const git = (...args) => execFileSync("git", args, { cwd: ROOT, encoding: "utf8" }).trim();
-    ledger = appendIteration(ledger, {
-      measurement,
-      label,
-      arm,
-      config,
-      notes: get("--notes") ?? "",
-      decision: get("--decision"),
-      commit: get("--commit") ?? git("rev-parse", "--short", "HEAD"),
-      dirty: git("status", "--porcelain", "--", "packages/assets") !== "",
-    });
-    writeAtomic(LEDGER, `${JSON.stringify(ledger, null, 2)}\n`);
+    return measureCommand(ledger, argv, get);
   } else if (command === "discard") {
     ledger = discardIteration(ledger, Number(get("--iteration")), get("--reason"));
     writeAtomic(LEDGER, `${JSON.stringify(ledger, null, 2)}\n`);
   } else if (command === "show") {
     return show(ledger);
+  } else if (command === "serve") {
+    return serve(Number(get("--port") ?? 8767));
   } else if (command !== "report") {
-    console.error("usage: asset-perf-loop.mjs measure|show|discard|report");
+    console.error("usage: asset-perf-loop.mjs measure|show|discard|report|serve");
     process.exit(2);
   }
   writeAtomic(HTML, renderHtml(ledger));
