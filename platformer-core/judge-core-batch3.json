@@ -1,0 +1,40 @@
+{
+  "status": "REVIEWED",
+  "models": [
+    "claude-sonnet-5-5"
+  ],
+  "effort": "high",
+  "requiredImages": 5,
+  "openedImages": 17,
+  "overall": "IMPROVEMENT",
+  "frames": [
+    {
+      "name": "hud.playtest.json",
+      "verdict": "IMPROVEMENT",
+      "regions": [
+        1,
+        2
+      ],
+      "reason": "All four captures share one state (coins 9, checkpoint 1, fox at the bridge end), and AFTER is missing no geometry: castle, windmill, star, ? block, snail, gems, crates, both waterfalls, coin cluster, fence and rocks are all present. The gain goes beyond a brightness lift, and both AFTER runs agree. Clouds get bright white tops with cool blue-grey undersides instead of dull flat grey, and the windmill body is creamy. The sky is smooth and paler but still clearly blue at top-right. Cliff strata, the castle's lit and shaded faces, and grass-top versus cliff-face separation are all clearer. That moves toward the L9 references (soft cream roll-off, neutral surfaces, cool shadow tones). I see no banding, no global cast, no clipped cloud or splash detail, and no blur on the fox or platform edges. Watch items, not regressions: grass cast shadows and the fox's contact shadow on the plank end are lighter and softer but still present. The nearest coin near (727,457) has a lighter rim and a soft dark halo, but its emboss still resolves. The tower door has lower contrast against the wall (background only). The HUD pill and bottom hint bar are unchanged and legible."
+    },
+    {
+      "name": "jump.playtest.json",
+      "verdict": "IMPROVEMENT",
+      "regions": [
+        1,
+        2
+      ],
+      "reason": "All four captures share one state (coins 1, 00:01, checkpoint 1). AFTER keeps every floating island, the castle, windmill, bridge with its edge-on coins, waterfall, snail, ? block and star. Clouds go from flat grey to bright white with soft cool shading. The sky is paler and smoother toward the horizon, with no banding, cast or clipped highlights. Cliff strata, platform-top edges, plank seams, rails and posts read as well or better. Coin shadows on the planks are softer but still readable. The mid-air fox (orange head, blue top, striped tail) still separates clearly from the waterfall. The waterfall is paler with white streaks, so the white tail stripes lose a little contrast, but the orange and blue read is intact. Minor: the top-left cloud cluster shows a darker grey underside smear, which reads as cloud self-shading rather than clipping or banding. Waterfall splash shapes differ between the paired runs in both BEFORE and AFTER (animation phase), so that area is not a pixel-exact comparison. The HUD is unchanged."
+    },
+    {
+      "name": "move.playtest.json",
+      "verdict": "IMPROVEMENT",
+      "regions": [
+        1,
+        2
+      ],
+      "reason": "All four captures share one state (coins 9, checkpoint 2) with the fox mid-dash behind an overlapping coin. AFTER keeps the snail, mushroom enemy, crates, ? block, star, gems, windmill, castle and the lumpy platform edges. The improvement is more than brightness: clouds are whiter with cool shading, the windmill is creamy, and the tower's lit and shaded faces and the cliff strata are clearer. Bright grass tops separate cleanly from the cliff faces and edge lumps. The sky is smooth, with no banding, cast, or clipped cloud and coin detail, and both AFTER runs agree. Trade-offs: grass cast shadows are lighter, and floating coins get soft dark AO-style halos with lighter rims. This is the most noticeable new artifact, but coin silhouettes and star emboss still resolve and the fox and enemy silhouettes are at least as readable. I read it as contact grounding rather than blur. The HUD pill and hint bar are unchanged and legible."
+    }
+  ],
+  "limitations": "Stills only: exposure-adaptation timing, motion and temporal stability cannot be judged, including whether the coin AO halos shimmer. I judged visually from the sheets plus the raw 1280x720 frames with no pixel measurements, so luminance and saturation statements are estimates and faint 8-bit banding cannot be fully excluded. No damage or dash effects, touch controls or menus appear in these three frames. Region 3 effects and region 4 touch/menu coverage rest only on the HUD overlay, waterfalls and pickups. Waterfall splash shapes differ between paired runs (animation phase), so they are not exact comparisons. The L9 references have different geometry and were used only for direction: highlight roll-off, sky and shadow separation, and neutral tones."
+}

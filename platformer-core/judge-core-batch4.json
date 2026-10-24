@@ -1,0 +1,40 @@
+{
+  "status": "REVIEWED",
+  "models": [
+    "claude-sonnet-5-5"
+  ],
+  "effort": "high",
+  "requiredImages": 5,
+  "openedImages": 17,
+  "overall": "IMPROVEMENT",
+  "frames": [
+    {
+      "name": "performance.playtest.json",
+      "verdict": "IMPROVEMENT",
+      "regions": [
+        1,
+        2
+      ],
+      "reason": "Comparable pair: the fox, snail, coins, sail angle and 00:12 timer match in all four captures. AFTER run1 and run2 agree on exposure and colour. The waterfall stream and cap phase differs within both the BEFORE pair and the AFTER pair, so I neither credited nor penalised it. Sky/highlights: BEFORE clouds are dingy grey with hard facet shading and a greyed horizon. AFTER clouds are clean white with soft blue-grey undersides that keep their form, with no flat blown tops. The windmill tower and sails keep their shading, and the sky grades smoothly to a paler horizon with no banding, blur or clipping visible. Terrain/shadow: the castle, cliff strata and the large block under the bridge move from pink-brown to neutral tan and grey-beige with cooler shaded faces, closer to the references' neutral surfaces. Plank light/dark alternation, post and rail shadows, the fox's foot shadow and the grass-to-cliff edges stay dark and defined. The fox (orange, blue vest, white tail), snail, coins, '?' block, crates, mushroom, star and castle debris particles are all present and readable. The HUD and hint bar stay legible, though the panel looks slightly lighter over the brighter clouds. Watch item, not a regression: the shaded block under the bridge is lifted and flatter than BEFORE."
+    },
+    {
+      "name": "respawn.playtest.json",
+      "verdict": "IMPROVEMENT",
+      "regions": [
+        1,
+        2
+      ],
+      "reason": "Comparable pair at 1280x720: the 00:08 timer, checkpoint 2 and the fox's spot at the bridge end match in all four captures. The two AFTER runs agree, and only the waterfall animation phase differs. Sky/highlights: BEFORE clouds are dull grey facets. AFTER clouds are white with soft cool undersides, and the windmill, star and floating-island silhouettes keep their shape against a smoothly graded sky. I saw no banding, blur, cast or clipped cloud tops. Terrain/contact: the large grass plane keeps its tile pattern, bumpy trim edge and dark tree and bush shadow ovals, so those shadows separate slightly more against the brighter grass. The fox's foot shadow stays visible. Castle and cliff faces go from brown-pink to neutral beige with cooler shade, and the dark rocks at lower right stay distinct. The fox, coins, blue gems, crates, '?' block, mushroom and bridge rails remain readable, and the HUD (coins 10) and hint pill are legible. No respawn VFX, damage or dash effects appear in this frame, so those cannot be judged. Watch item: the greens are brighter and slightly yellower but not clipped."
+    },
+    {
+      "name": "stomp.playtest.json",
+      "verdict": "IMPROVEMENT",
+      "regions": [
+        1,
+        2
+      ],
+      "reason": "Comparable pair at 1280x720: the 00:04 timer, 9 coins, the fox beside the snail and the 'NICE!' pill match in all four captures. The two AFTER runs agree, and only the waterfall phase differs. Sky/highlights: cloud tops roll off with their puff shading retained instead of BEFORE's grey facets. The windmill, sails and star stay defined, and the sky gradient is smooth with no visible banding, blur or clipping. Terrain/contact: the dark hexagonal shadow beside the fox and snail and the tree and bush shadow ovals stay clearly dark, so contact shadows separate at least as well on the brighter grass. The raised platform's bumpy edge, crate stack, fence and right cliff column keep clear edges, with warm brown stone replaced by neutral beige and cool-lavender shade. The fox, snail (striped shell), mushroom, coins, gems and star are all present and readable. The HUD and 'NICE!' pill are legible. Watch item, not judged a regression: the filmic hue skew pushes the '?' block and star toward pale yellow and the snail shell toward orange. White '?' glyph contrast drops slightly, but glyphs and silhouettes still read."
+    }
+  ],
+  "limitations": "Visual judgement only, from the supplied sheets and raw frames. I ran no commands and took no pixel measurements, so subtle banding, clipping or colour shifts below visual threshold could be missed. Stills cannot show exposure adaptation, flicker, motion or temporal stability. The two AFTER runs agree at this one sampled instant, which does not show the metered exposure has converged or stays stable. Animated waterfalls differ by phase within both the BEFORE and AFTER pairs, so I excluded them. These three frames contain no damage or dash effects, touch controls or menus, only the HUD, hint bar, 'NICE!' pill and castle debris, so those requirements are unverified here. The L9 references show spheres and boxes, so I used them only for highlight roll-off, sky/shadow separation and neutral surface tones. Worth re-checking in other scenarios and in motion: lifted, flatter shaded stone, a mild cyan tilt in the pale horizon, brighter and yellower greens, and reduced white '?' glyph contrast on the paler block."
+}

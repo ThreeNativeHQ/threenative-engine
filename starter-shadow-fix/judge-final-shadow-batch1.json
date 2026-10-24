@@ -1,0 +1,43 @@
+{
+  "status": "ACCEPTED",
+  "models": [
+    "claude-sonnet-5-5"
+  ],
+  "effort": "high",
+  "requiredImages": 5,
+  "openedImages": 17,
+  "overall": "IMPROVEMENT",
+  "frames": [
+    {
+      "name": "movement.playtest.json",
+      "verdict": "IMPROVEMENT",
+      "regions": [
+        1,
+        2,
+        4
+      ],
+      "reason": "Camera and push pose are identical in all four panels, so the differences are rendering. R1 sky/highlight: BEFORE has a dusky sky with grey-bottomed clouds over a dark-grey slab above the rear wall. AFTER has soft white clouds that keep internal shading, a pale hazy horizon and a light grey-lavender band. The band sits visibly below the cloud whites, so I see no flat clipped patch. It is closer to the harness's soft white clouds and haze, though paler than the harness's deeper blue. R2 terrain/shadow: AFTER separates sun-lit rear wall, pillar and platform from a cool blue-grey shaded right wall, as in the harness. BEFORE's isolated mid-wall triangle (apex about 1215,437) is now one continuous wedge running up to the rear/right wall corner (about 1370,235) in both AFTER runs, with a soft, clean edge. The bright platform top still shows tile grid and bump texture. Contact shadows under player, cube and pickup remain visible, only lighter. R3 player/cube: same pose, still clearly readable. The cube is a lighter azure and the white mannequin has somewhat less luminance separation from the lighter wall, but its silhouette and joints are intact. I score this neutral. R4 HUD/pickup: top-left SCORE/LIVES/POSITION now sits on an opaque teal panel instead of bare text over clouds. The bottom bar, flag and pickup stay legible. Exposure: AFTER run1 and run2 are indistinguishable. The BEFORE pair is close, with run2 perhaps marginally lighter."
+    },
+    {
+      "name": "production-readiness.playtest.json",
+      "verdict": "IMPROVEMENT",
+      "regions": [
+        1,
+        2,
+        4
+      ],
+      "reason": "The two BEFORE observations disagree strongly. Run1 is dark and dull (mid-grey walls, dark slab horizon, deep-blue cube). Run2 is washed out: near-white platform with faint grid, pale desaturated cube, and the top-left SCORE/LIVES text ghosted into bright sky. The two AFTER observations are indistinguishable from each other. AFTER keeps the bright platform top structured (tile grid and bump visible) and the cube a saturated azure with form shading. So it avoids run2's near-flat white without run1's dullness. R1: soft white clouds, pale haze and a light horizon band below the cloud whites, with no clipped flat white seen. R2: BEFORE's isolated triangle (apex about 875,278) becomes a continuous wedge to the rear/right corner (about 985,135) in both AFTER runs. The pillar shows clearer lit/shade modelling, and the cube and pickup contact shadows are retained. R4: the opaque HUD panel keeps SCORE/LIVES/POSITION legible. BEFORE run2 nearly lost them against the sky. The bottom bar is legible in both arms. R3: same idle pose and camera. The small mannequin has lower luminance contrast against the lighter wall than in BEFORE run1, but higher than in BEFORE run2. Its shaded side and dark joints still read. I score this neutral and treat it as a watch item, not a regression."
+    },
+    {
+      "name": "survives.playtest.json",
+      "verdict": "IMPROVEMENT",
+      "regions": [
+        1,
+        2,
+        4
+      ],
+      "reason": "The BEFORE pair is near-identical and the AFTER pair is near-identical, so exposure repeatability is equal here. The gain comes from the look itself, not from other scenarios. R1: BEFORE has dingy clouds, a dark-grey slab above the rear wall and a mid-grey scene. AFTER has brighter soft white clouds, pale horizon haze, and a light band that stays below the cloud whites, with no flat clipped white visible. R2: BEFORE's isolated triangle (apex about 848,292) is now a continuous wedge reaching the rear/right corner (about 950,157) in both AFTER runs, with a soft edge. Lit versus shaded walls and pillar are clearer, and the bluish shade is closer to the harness. The bright platform keeps tile lines. Contact shadows under cube and pickup remain. R4: the opaque top-left panel replaces text sitting directly on pale cloud, so SCORE/LIVES/POSITION are clearly legible. The bottom bar, flag and pickup are unchanged and legible. R3: the walking mannequin's limbs look to be in a slightly different animation phase between the arms, while camera and props match. That is a pose difference, not a rendering difference, so I give no player-detail credit either way. It remains readable against the lighter wall, so region 3 is not scored."
+    }
+  ],
+  "limitations": "Static stills only. Two captures per arm show that AFTER lands on the same exposure twice in all three poses (AFTER run1 and run2 are indistinguishable). They also show that BEFORE production-readiness run1 and run2 disagree strongly. They cannot show pumping, adaptation lag or flicker in motion. The live-motion scenario fails in both arms and gives no passing temporal evidence, so temporal stability is unproven. Scope names four regular scenarios, but only three poses were supplied (movement, production-readiness, survives); the fourth is unreviewed coverage. No crosshair, weapon or clearly identifiable enemy appears in any pose; only the mannequin, blue cube, spike pickup, flag and HUD do. Those items are unassessed, and my reading of the cube and spike roles is a guess. In survives the mannequin's limb phase differs slightly between arms (animation, not rendering), so fine player detail there is not like-for-like. I had Read-only access and no pixel statistics, so clipping, banding and tint judgments are by eye at display scale. Subtle banding in the haze or shadow penumbra, or a near-clip on the brightest platform tops, could be missed. The harness column is a small sphere/sky crop with different geometry, and its run2 rows look slightly deeper blue than the run1 rows, although the brief says it is the run1 panel. I used it only as a qualitative style target. AFTER's sky is paler and hazier than the harness's deeper blue, and its sunlit surfaces read neutral-to-cool rather than warm. Two watch items I judged non-regressions: lower luminance separation of the white mannequin from the lighter walls, and lighter contact shadows."
+}

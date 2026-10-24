@@ -1,0 +1,37 @@
+{
+  "status": "REVIEWED",
+  "models": [
+    "claude-sonnet-5-5"
+  ],
+  "effort": "high",
+  "requiredImages": 5,
+  "openedImages": 17,
+  "overall": "IMPROVEMENT",
+  "frames": [
+    {
+      "name": "survives.playtest.json",
+      "verdict": "IMPROVEMENT",
+      "regions": [
+        2
+      ],
+      "reason": "Comparable: all four captures show the same close-up of a cliff face (identical geometry, shadow shapes, timer 00:02, hearts 3/3), and run1/run2 agree within each condition. BEFORE is murky: dark-brown soil band, brown-grey walls, a near-black green rim on the foreground leaf and navy slivers along the ledge lip. AFTER lifts the dark end and mid-tones without clipping (the tan ledge stays well below white). The brown mud becomes cleaner neutral-warm stone. Plane separation (tan ledge, lower wall, grey wall, sky patch) is kept, and the foliage shadow shapes on the cliff stay clearly readable, softer and less brown. That is the direction of the L9 tonemapped/Unreal crops (soft shoulder, lifted but separated shadows). The sky patch is paler and unclipped. No banding, added blur, cast or missing geometry. Minor costs, not counted as regression: the dark lip seam and the lower ledge strip are less crisp, the foliage is a more vivid lime, and the HUD sits on a lighter panel (white and orange text still legible). No fox, enemy, pickup or damage/dash effect is on screen in any of the four captures, so those requirements cannot be judged here. Credit is limited to terrain and tone, and the gain is modest because much of the shift is exposure."
+    },
+    {
+      "name": "touch-controls-web.playtest.json",
+      "verdict": "IMPROVEMENT",
+      "regions": [
+        2
+      ],
+      "reason": "Comparable: same camera and object set in all four captures (castle, windmill, floating islands, bridge, fox, coins, star, ? block, red walker, brick stack, waterfalls, HUD, joystick and button rings). Differences in sparkle-trail and waterfall phase between runs are animation, not tone, and were ignored. In both AFTER runs the castle, cliff faces and plateau walls move from brown-grey mud to cleaner stone. Dark details (underbridge, post bases, castle door) are lifted without flattening, and shadow-to-lit steps stay clearly visible. Highlights are unclipped: clouds, windmill and foam keep soft grey undersides. Fox silhouette (orange body, blue jacket, white paws) and its contact smear on the planks, plank/gap alternation, coins, star, ? block and red walker are at least as readable. Contact shadows are softer in ratio but still clear. HUD text and the joystick and button rings are equally legible, so no regression in region 4. No banding, blur, cast or missing geometry. Caveats judged stylistic, not regressions: grass is lighter and limier, and the sky is slightly paler with a gentler gradient (as in the L9 tonemapped crops versus the pre-tonemap crop). Net is a modest but real improvement in natural surface tones and shadow detail, not brightness alone."
+    },
+    {
+      "name": "world.playtest.json",
+      "verdict": "IMPROVEMENT",
+      "regions": [
+        2
+      ],
+      "reason": "Comparable: same camera and geometry in all four captures (fox on the bridge, castle, windmill, platforms, coins, star, ? block, walker). AFTER run1/run2 agree, as do BEFORE run1/run2. Waterfall foam and streak differences are animation. AFTER removes the heavy brown-grey muddiness from the castle and cliff bands. Under-bridge, post and cliff-strata detail stays visible and is less dark, and shadow-to-lit steps (cliff bands, tree sides, plank gaps) are preserved. Highlights remain unclipped on cloud tops, windmill and foam, and sky/cloud/terrain separation stays intact. The paler, less saturated sky moves in the same direction as the L9 tonemapped crops. The fox (blue jacket, white paws, contact smear on planks), coin faces, star, ? block and red walker stay at least as readable. Coin and railing contact shadows and plank alternation are softer in ratio but still clearly present. HUD and hint pill remain legible. No banding, blur, cast or missing geometry. Caveats judged stylistic, not regressions: left-foreground grass is lighter and more lime, the sky gradient is compressed, and cloud facet shading is slightly flatter."
+    }
+  ],
+  "limitations": "Stills only: they cannot show how metered exposure adapts over time, motion, flicker or temporal stability. Two runs per condition agreeing only shows the exposure at the capture instant is repeatable. Visual comparison by eye with no pixel sampling or zoom beyond the supplied sheets and raw frames, so small contrast changes (contact-shadow ratio, touch-ring opacity, HUD secondary-text contrast, lip seam) are estimates. survives.playtest.json shows only a cliff close-up in all four captures (BEFORE too), so fox, enemy, pickup and damage/dash readability could only be verified in touch-controls-web and world. No damage hit, dash effect or menu screen appears in any of the three frames (only a coin sparkle trail), so those requirements are unverified. The L9 references show a different scene (spheres, white blocks, boxes), so they set the direction (soft shoulder, lifted but separated shadows, softer sky), not geometry or exact colours. Animated elements (waterfall, sparkle trail) differ between captures regardless of tone and were not used as evidence. Part of the change in the survives frame is an exposure lift driven by metering, so it is credited only where non-brightness evidence exists."
+}

@@ -1,0 +1,35 @@
+{
+  "status": "ACCEPTED",
+  "models": [
+    "claude-sonnet-5-5"
+  ],
+  "effort": "high",
+  "requiredImages": 4,
+  "openedImages": 12,
+  "overall": "IMPROVEMENT",
+  "frames": [
+    {
+      "name": "play.playtest.json",
+      "verdict": "IMPROVEMENT",
+      "regions": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "reason": "Pose is identical in all four captures (player gait, blue cube, flag, cloud layout), so the differences are rendering, not camera or animation. R1 improved: BEFORE has a dim blue-grey sky over a murky mid-grey horizon band. AFTER has a clean pale-blue sky with white clouds easing into a hazy near-white horizon. Cloud tops and haze keep smooth gradation, with no hard white plateau or banding visible. The horizon band is the brightest featureless area and reads near-white but not hard-edged. The sky is paler and lower in cloud contrast than the harness blue, so it approaches the harness only partly. R2 improved, credited for more than brightness: sunlit platform and pillar tops still show tile joints and bevel highlights, wall stucco still resolves, and shade has a cool soft fill like the harness. BEFORE's isolated rear-wall triangle, cut off at its apex with a vertical right edge, is now a full shadow wedge running from the platform's far corner up to the wall corner in both AFTER runs. Contact shadows under the cube, player and flag pole persist. R3 equal: player, cube and flag keep clear silhouettes. Cube and flag are lighter and less saturated but still strongly chromatic. The white player has smaller luminance separation from the now-lit rear wall and tiles, but dark joints and the floor shadow keep it unambiguous. R4 improved or equal: top-left HUD text now sits on an opaque panel, which is a UI change that stays legible against the brighter sky. The bottom bar and buttons are unchanged and legible. No crosshair, enemy or weapon is present. Run1 and run2 look identical in each arm."
+    },
+    {
+      "name": "look.playtest.json",
+      "verdict": "IMPROVEMENT",
+      "regions": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "reason": "Judged on its own 1280x720 pixels, not on play. Same camera as play but a different game state (score 1, small blue teardrop pickup still on the platform). BEFORE and AFTER poses match, so differences are rendering. R1 improved: BEFORE has a dim sky over a grey horizon band. AFTER has a paler, hazier sky rolling smoothly into a near-white band, with no visible banding or hard clipped plateau in the clouds or haze. It is still paler and lower in cloud contrast than the harness blue. R2 improved: BEFORE's clipped triangle on the rear wall is replaced by a full shadow wedge from the platform's far corner to the wall corner in both AFTER runs. The platform edge, gap floor and pillar stay separable, and stucco and grid remain visible, with grid lines fainter on the lighter walls. R3 equal: player, cube and flag keep their silhouettes. Colours are lighter and less saturated, and player-to-wall separation is smaller but clear. R4 equal or improved: the pickup stays clearly readable as an azure teardrop with a highlight and its own contact shadow, versus deeper blue before. The HUD text is legible on its opaque panel and the bottom bar is legible. No crosshair is present. Sharpness is bounded: BEFORE run1 is visibly softer than BEFORE run2 in wall and platform texture while exposure matches. Both AFTER runs agree with each other and are at least as textured as BEFORE run1. I see no new blur but cannot prove it at this resolution."
+    }
+  ],
+  "limitations": "Static stills only. Run1 and run2 are visually identical in each arm and scenario for sky, wall, horizon-band and platform tones, so the settled exposure is repeatable at one scripted instant. Stills cannot establish adaptation speed, overshoot or pumping when the camera or player moves between sun and shade, nor flicker, ghosting or shadow shimmer. The historical live-motion scenario fails in both arms and gives no passing temporal evidence, so motion stability is unproven, not passed. Coverage: only play and look were supplied, so the other two regular scenarios are unjudged. No enemy, weapon or crosshair is identifiable in either pose, so those are incomparable here. Method: Read-only visual inspection with no pixel values, possibly on downscaled previews. 'No flat clipping or banding' is by eye. The near-white, featureless horizon band could be at or near full white and I cannot exclude that numerically. Faint 8-bit banding in the sky gradient could be missed. The BEFORE look pair differ in wall and platform texture crispness (run1 softer than run2) despite equal exposure, so the look sharpness comparison is bounded. The BEFORE play frames sit under a 03- prefix and the AFTER play frames under 01-, so suite order differs. I cannot verify whether metering state carries across scenarios. The harness is a sphere-reflection crop used only as a style target, and AFTER only partly approaches it (paler sky, lower cloud contrast). The opaque HUD panel is a UI change, not a rendering effect, and the restart fix cannot be assessed from stills."
+}

@@ -1,0 +1,24 @@
+{
+  "status": "ACCEPTED",
+  "models": [
+    "claude-sonnet-5-5"
+  ],
+  "effort": "high",
+  "requiredImages": 3,
+  "openedImages": 7,
+  "overall": "IMPROVEMENT",
+  "frames": [
+    {
+      "name": "play.playtest.json",
+      "verdict": "IMPROVEMENT",
+      "regions": [
+        1,
+        2,
+        3,
+        4
+      ],
+      "reason": "Target fixed in both AFTER runs (pixel coordinates are approximate, from the 1920x1080 raw frames). BEFORE (run1 and run2 look identical): an isolated triangular rear-wall shadow, with its diagonal running from ~(945,610) up to an apex ~(1068,432) and a hard vertical edge at x~1068. The wall between that edge and the rear corner (x~1215) is wrongly lit. AFTER (run1 and run2 look identical): the same diagonal continues as one straight line up to the rear-top corner (~(1215,235)) and everything below it is uniformly shaded, merging into the dark side wall, with no vertical cutoff. The lower end of the edge lands at the same spot on the platform's rear edge as before, so the fix adds the missing region and does not move the existing shadow. This is physically consistent: the player, cube and flag shadows all fall left and the side wall's inner face is dark, so the sun is over the right wall, which would cast exactly this diagonal onto the rear wall. No regressions seen: player pose, feet, cast shadow and contact are unchanged; cube contact shadow and flag shadow are unchanged; the HUD score/lives/position panel and bottom control bar are identical and readable; wall bump and grid texture stay visible inside the new shadow; sky, curved left wall, pillar shading and lower-right floor are unchanged. One extra but consistent change: a strip of floor at the rear of the gap (~x1060-1135, y648-670) was lit in BEFORE and is now shadow-tinted like the rest of the gap floor, which looks like the same clipped-frustum artifact being corrected. Regions are sheet rows: 1-2 are the full frames for run1/run2, where the corner join is visible; 3-4 are the subject crops for run1/run2, where the vertical-cutoff triangle is gone but the rear corner is outside the crop."
+    }
+  ],
+  "limitations": "This is a visual judgment from a single frozen frame (play.playtest.json), two runs per variant. Stills cannot show temporal behavior: shadow shimmer or swimming, texel-snapping stability, flicker, or the frustum re-clipping at other camera angles, player positions or arena sizes. A larger arena-derived extent lowers shadow-map texel density. I saw no visible softening or loss at the player's cast shadow, feet contact, cube or flag shadows at this scale, but acne, peter-panning or edge-quality changes below viewing resolution cannot be ruled out by eye. I could not resolve the last few pixels right at the corner join, so I cannot exclude a very thin seam there. If one exists it is not a vertical cutoff. I ran no commands and no pixel diff, so all comparisons are by eye and the coordinates are approximate. BEFORE run1 shows slightly softer platform grid-line contrast than BEFORE run2 and both AFTER runs. That difference exists between the two BEFORE runs, so I attribute it to capture variance and not to the change, but stills cannot prove that. The harness references (the sphere/sky crop and the Unreal-vs-WASM exterior/spheres/interior/backlit board) give look context only. They do not contain this shadow case, and the sheet's third column is the same fixed crop in every row. So physical validity is judged from the scene's own shadow directions and geometry, not against an Unreal render of this arena. The gap-floor strip change is judged consistent with the fix, but that small region is not verified against ground truth."
+}

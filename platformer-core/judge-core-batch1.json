@@ -1,0 +1,43 @@
+{
+  "status": "REVIEWED",
+  "models": [
+    "claude-sonnet-5-5"
+  ],
+  "effort": "high",
+  "requiredImages": 5,
+  "openedImages": 17,
+  "overall": "IMPROVEMENT",
+  "frames": [
+    {
+      "name": "branding.playtest.json",
+      "verdict": "IMPROVEMENT",
+      "regions": [
+        1,
+        2,
+        3
+      ],
+      "reason": "Camera, fox pose and layout match in BEFORE r1/r2 and AFTER r1/r2, and each pair agrees with its twin, so the change is systematic. R1: sky moves from a dull mid-blue to a lighter, cleaner blue. Clouds, windmill, tower parapet and waterfall foam read as clean white with facet shading intact, with no flat blown patches, halos or visible banding. The sky is paler and less saturated than BEFORE, in the same direction as the lighter L9 tonemapped/Unreal sky. Cloud and island-cone silhouettes stay separated by hue. R2: castle and cliff stone shift from mauve-brown to a more neutral sandstone/grey, closer to the L9 neutral surfaces. The shaded right cliff stays clearly darker than the sky. Bridge planks, plank gaps, coin cast-shadows, posts/rope rails and the hedge-to-cliff edge all stay distinct. Grass is brighter and more saturated without losing its facet shading. R3: the fox (orange body, blue shirt, striped tail) still reads on the planks with its feet seated on legible plank/shadow cues. Coins, '?' block, star, red snail and blue gem are all present and slightly more vivid. R4: HUD pill and hint bar are unchanged and legible. The gain is stone hue and cleaner whites, not exposure alone. No visible regression found."
+    },
+    {
+      "name": "buffer.playtest.json",
+      "verdict": "IMPROVEMENT",
+      "regions": [
+        1,
+        2,
+        3
+      ],
+      "reason": "Same airborne fox pose, coin trail and layout in all four frames, and AFTER r1/r2 agree. R1: lighter, cleaner sky. Cloud facets, windmill shading and waterfall foam are retained, with no clipped patches, banding or halo. The sky is paler than BEFORE (watch item only). R2: light-stone cliff faces show clearer strata bands and a more neutral tone than BEFORE's brown-grey. Bridge boards, coin shadows on the planks, posts and the scalloped hedge edge stay readable. Thin rope rails have less contrast against the pale stone but remain discernible. The lower-right rock outcrop is still visible. R3: the fox keeps a clear orange/blue silhouette against stone and waterfall. The tail's white stripes sit closer in value to the pale waterfall, but the orange bands preserve the shape. Bridge coins pop more. Star, '?' block, gem, snail and the grey dust puffs near the fox are all present. Waterfall foam shape differs between runs (animation phase, not tone). R4: HUD and hint bar are unchanged and legible. The improvement is stone neutrality, strata separation and pickup chroma rather than brightness alone. I saw no readability, clipping, banding, blur or cast regression."
+    },
+    {
+      "name": "collect.playtest.json",
+      "verdict": "IMPROVEMENT",
+      "regions": [
+        1,
+        2,
+        3
+      ],
+      "reason": "Camera, fox, coin and gem placement are identical across the four frames, and AFTER r1/r2 agree. R1: sky is lighter and cleaner. Clouds keep facet shading and the windmill keeps distinct lit and shaded sides, so there are no blown whites. The distant right-hand island chain with gem, star and mushroom is still fully resolved. The sky is paler than BEFORE (watch item). R2: the large grass top is brighter and more saturated, yet the cast shadows (fox, coins, dark hexagonal ground patch) remain clearly darker than the lit grass, so this is not a flat lift. The scalloped hedge edge stays separated from both grass and stone face. Right-cliff strata and rock outcrops remain visible. Castle stone loses its pink-brown cast; the door is a little fainter against the tower, but it is not a gameplay element. R3: the fox on the grass has a visible contact shadow. Big coins, gem, '?' block, crate stack, red-shell snail, mushroom and star are all readable and more vivid. The left waterfall keeps streaks and foam in both AFTER runs. Coin sparkles on the bottom-left bridge vary between runs (also between the two BEFORE runs), so that is timing, not lost geometry. R4: HUD and hint bar are unchanged and legible. No visible regression."
+    }
+  ],
+  "limitations": "Judged by eye from the 1280x720 raw frames and the downsampled sheets, read-only with no pixel measurement. Sub-visible banding or isolated 255-valued pixels therefore cannot be excluded. Stills cannot establish metered-exposure adaptation, motion or temporal stability. None of the three scenarios contains damage or dash effects, touch controls or menus, so those requirements are untested here; only the HUD pill and hint bar were checked. The L9 references have different geometry and lighting, so I used them only for tone direction: lighter, less saturated sky, neutral surfaces, retained shadows, cream/white roll-off. Waterfall foam shape and bottom-left coin sparkles differ between runs by animation phase, so those small elements are not comparable. Watch items that I did not judge regressions: the AFTER sky is paler and less saturated than BEFORE, and thin rope rails, the castle door and rock outcrops have lower contrast against the lighter stone. Re-check these if art direction wants a deeper sky or crisper rails."
+}

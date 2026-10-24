@@ -1,0 +1,30 @@
+{
+  "status": "ACCEPTED",
+  "models": [
+    "claude-sonnet-5-5"
+  ],
+  "effort": "high",
+  "requiredImages": 5,
+  "requiredInputs": 10,
+  "openedImages": 5,
+  "overall": "IMPROVEMENT",
+  "reviewedScenarios": [
+    "branding.playtest.json",
+    "buffer.playtest.json",
+    "collect.playtest.json",
+    "coyote.playtest.json",
+    "damage.playtest.json",
+    "dash.playtest.json",
+    "hud.playtest.json",
+    "jump.playtest.json",
+    "move.playtest.json",
+    "performance.playtest.json",
+    "respawn.playtest.json",
+    "stomp.playtest.json",
+    "survives.playtest.json",
+    "touch-controls-web.playtest.json",
+    "world.playtest.json"
+  ],
+  "reason": "The three overview sheets show one coherent AFTER look across all 15 scenarios. Clouds go from flat grey to white with cool undersides. Mauve-brown stone becomes neutral sandstone/beige with cooler shade. Grass is brighter. The two AFTER runs match each other in every row, as the two BEFORE runs do. Camera, fox pose and geometry match BEFORE to AFTER, and no cell shows missing geometry, clipped whites, banding, flat blown planes or a global cast at sheet scale. The gain is material and hue (stone neutrality, cloud separation, strata and edge separation, shadows kept), not brightness alone. It moves in the L9 direction of neutral surfaces, cool shadows, soft cream roll-off and white-on-blue clouds. All five fresh full-resolution judge batches returned IMPROVEMENT for all fifteen scenarios with zero regressions. They found fox, enemies, pickups, HUD and touch rings at least as readable, so nothing blocks acceptance. survives is the weakest credit: a terrain-only close-up whose gain is modest and partly exposure-driven, but it has neutral-stone and lifted-shadow evidence.",
+  "limitations": "Synthesis from the ten required inputs only; I opened no raw frames and took no measurements. Stills and 320x180 overview cells cannot prove motion, exposure-adaptation or metering convergence, flicker or temporal stability. Matching AFTER runs show repeatability at one sampled instant, not stability over time. HUD text and touch rings are not legible at overview scale in any cell, so their legibility rests on the judges' full-resolution reads. Several scenarios show no damage, dash or menu effects, and survives shows no fox, enemy or pickup, so those requirements are only partly covered. The L9 references are different scenes (spheres, boxes) and give tonal direction only. The L9 exterior skies keep a saturated blue horizon band, so L9 does not vouch for how pale, hazy and slightly cyan the AFTER sky is; that needs art-direction confirmation. Nonblocking watch items: (1) Large grass planes trend lighter, yellower and flatter lime (collect, hud, move, respawn, stomp, world), though still unclipped, with tile pattern and shadow ovals kept. (2) Floating coins over bright grass get a soft dark halo with a lighter rim (move, hud); shimmer in motion is untested. (3) Grass and fox contact shadows are softer though present. Shaded stone, such as the under-bridge block, is lifted and flatter, and rope rails and the castle door have less contrast. (4) White or pale accents lose luminance margin on paler backdrops: fox tail tip and stripes, dash dots on lighter planks, and the white '?' glyph on a paler block. Fox hue still reads. (5) Filmic hue skew pushes the '?' block and star toward pale yellow and the snail shell toward orange. (6) Touch-ring opacity and HUD secondary-text contrast over the brighter backdrop were judged by eye only. (7) Waterfall, particle and sparkle phase differences were excluded as evidence."
+}

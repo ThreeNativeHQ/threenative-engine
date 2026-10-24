@@ -1,0 +1,40 @@
+{
+  "status": "ACCEPTED",
+  "models": [
+    "claude-sonnet-5-5"
+  ],
+  "effort": "high",
+  "requiredImages": 5,
+  "openedImages": 17,
+  "overall": "IMPROVEMENT",
+  "frames": [
+    {
+      "name": "performance.playtest.json",
+      "verdict": "IMPROVEMENT",
+      "regions": [
+        1,
+        2
+      ],
+      "reason": "Directly comparable: all four captures show the same crashed pose (68 m, 12.5 m/s, runner beside the left rail, CRASHED overlay), and the two BEFORE runs match each other, as do the two AFTER runs. AFTER replaces the hard dark horizon line and dark stripe with a thin pale line over a lighter warm-taupe haze band, so sky and ground separate more softly. Clouds keep white tops and cool undersides with no flat clipped patches, and the sky/haze gradient shows no banding. Both rails stay present and well separated from the lighter ground, tile joints still read, and the runner's silhouette and foot/leg shadows are at least as visible. No geometry is missing and nothing is newly blurred. HUD, CRASHED overlay and R-restart panel stay readable: faint teal labels read better, while white stats lose a little contrast on the brighter ground. The taupe band is the only warm shift. It is low-saturation and consistent with the warm-grey Unreal target. No obstacles or pickups are in frame."
+    },
+    {
+      "name": "streams.playtest.json",
+      "verdict": "IMPROVEMENT",
+      "regions": [
+        1,
+        2
+      ],
+      "reason": "Same crashed pose as performance (68 m, 12.5 m/s) at 1280x720, identical across both BEFORE and both AFTER runs, so comparable. AFTER loses the dark seam line with its dashed flecks and the dark band, leaving a pale horizon line over soft warm haze. Cloud undersides are cleaner and cooler, and highlights keep their structure with no clipped blobs or banding. The left rail (light face) and right rail (dark slate) stay clearly separated. The runner and the soft shadow under the trailing foot are at least as readable, and nothing is missing or newly blurred. The distance, near-miss, speed and chunk readouts, the CRASHED overlay (its sub-line is crossed by the left rail in all four captures) and the R-restart panel are intact. Small teal labels are easier to read. White stats and the cloud-backed DISTANCE label lose slight contrast on brighter backgrounds but stay legible. No obstacles or pickups are in frame."
+    },
+    {
+      "name": "survives.playtest.json",
+      "verdict": "IMPROVEMENT",
+      "regions": [
+        1,
+        2
+      ],
+      "reason": "Runner pose, camera, rails and HUD are identical in all four captures, so the environment is comparable. The dust puff is a time-varying particle whose shape differs between BEFORE and AFTER, so it is not directly comparable. AFTER gains the same softer pale horizon over warm haze (no dark seam line) and cleaner cloud shading, with smooth unbanded gradients. Both rails, the runner's crisp cast shadow and the right rail's shadow on the track stay at least as readable, and no geometry is missing. The HUD and R-restart panel are unchanged and legible. Watch item: in both AFTER runs the puff is whiter, softer-edged and has less internal billow shading than in both BEFORE runs. Its cores are near-white but still show faint billow outlines and a feathered falloff, so by eye I cannot call it clipped or blurred. I neither credit it nor count it as a regression. No obstacles or pickups are in frame."
+    }
+  ],
+  "limitations": "Visual judgement by eye only, read-only with no pixel or histogram measurement. Near-clipping, faint banding and the exact size of the warm taupe horizon shift are therefore unmeasured. Static frames cannot show exposure adaptation over time, flicker, MSAA edge crawl or horizon shimmer. No obstacles or pickups appear in any of the three scenarios, so those could not be judged. The crash overlay and restart panel are seen, but the restart flow is not exercised. In survives the dust puff is a time-varying particle that differs between BEFORE and AFTER captures. The whiter, softer AFTER puff is therefore a watch item to check in motion, not a verified pass or fail. Performance is 1920x1080 and streams/survives are 1280x720, so each scenario was compared only against itself. The L9 sphere and Unreal/ThreeNative sheets were used only as a style target (warm-neutral grey, saturated sky, soft highlight roll-off), not for geometry. Most of the visible gain is in the horizon/sky treatment, with the rest being brighter ground. I did not credit brightness alone, but the margin is modest."
+}

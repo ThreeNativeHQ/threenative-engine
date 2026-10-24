@@ -1,0 +1,43 @@
+{
+  "status": "REVIEWED",
+  "models": [
+    "claude-sonnet-5-5"
+  ],
+  "effort": "high",
+  "requiredImages": 5,
+  "openedImages": 17,
+  "overall": "IMPROVEMENT",
+  "frames": [
+    {
+      "name": "coyote.playtest.json",
+      "verdict": "IMPROVEMENT",
+      "regions": [
+        1,
+        2,
+        3
+      ],
+      "reason": "Camera, fox pose (airborne off the left platform edge) and geometry match across both BEFORE and both AFTER runs, so this frame is comparable. Nothing is missing: tower, windmill, waterfall, crates, snail, mushroom, gems, coins, star, floating islands and question block are all present. R1: BEFORE clouds are flat dull grey on mid-blue. AFTER clouds read as white volumes with blue-grey undersides, and the windmill and foam keep facet shading. That is a better white-on-blue roll-off, in the direction of the L9 references. The sky is paler with a hazier horizon, but it stays clearly blue, the gradient is smooth with no visible banding, and cloud tops approach white without flattening. R2: strata bands, grass-lip bumps and the dark pad on the central platform stay crisp. Cliff and tower go from darker brown to lighter, slightly pinker stone, a mild hue shift and not a global cast: whites stay neutral, grass stays green, wood stays orange. Shadows under crates, trees and lips are still present. R3: the fox (orange head, blue shirt) stays distinct against the cliff. Only the white tail tip has a little less margin on the lighter wall. Mushroom, snail, gems and star remain readable, and coins read as brighter gold with the emboss visible. Jump puffs appear in all four captures at different positions, so they are not pixel-comparable. R4: HUD and hint bar are unchanged and legible, and I do not credit them. Thin edges (windmill sails, HUD text) are as crisp as BEFORE. The gain is not just brightness: cloud separation and stone tones improve while contrast and shadows hold."
+    },
+    {
+      "name": "damage.playtest.json",
+      "verdict": "IMPROVEMENT",
+      "regions": [
+        1,
+        2,
+        3
+      ],
+      "reason": "Camera and pose match across all four captures, so this frame is comparable. The OUCH! toast, 2-red/1-grey hearts, coins 4 counter, bridge with rope and posts, fox, snail, tower with crenellation debris, waterfalls, and the right platform with question block, crates and star are all present in BEFORE and AFTER. R1: the sky is lighter and slightly less saturated, but the clouds change from grey to white with visible facet shading. Foam and the windmill keep shading, with no flat clipping and no visible banding. R2: the bridge keeps clear board separation. AFTER planks are lighter, warmer wood with seams and alternating dark boards intact, and the cream ropes and orange posts stay distinct. The cliff strata, grass lip and boulder facets remain well defined. Plank and post shadows and the contact shadows under the fox and snail are still present, slightly softer but not lost, so foot contact is as readable as BEFORE. R3: the fox (blue shirt, orange head) is distinct from the saturated red snail shell. The coins on the bridge read as clear gold. The damage burst particles are visible in all four captures, but density and positions differ between runs (timing), so effect strength cannot be compared pixel-wise. R4: hearts, toast, counters and hint bar are unchanged and legible. The HUD panel looks marginally lighter over the brighter backdrop, but text contrast is fine. There is no blur or global cast. Credit is for cloud and stone separation and wood tone, not brightness alone. The paler sky is the only softening."
+    },
+    {
+      "name": "dash.playtest.json",
+      "verdict": "IMPROVEMENT",
+      "regions": [
+        1,
+        2,
+        3
+      ],
+      "reason": "Camera and fox pose (mid-dash on the bridge) match across all four captures, so this frame is comparable. 3 hearts, coins 7, the red enemy on the far platform, crates, question block, stars, gems, coins, waterfall and tower are all present in both BEFORE and AFTER. R1: the sky is smooth and slightly paler, with no visible banding. Clouds are whiter with facet shading, and the windmill and foam keep shading, so I saw no flat-clipped highlights. R2: the bridge planks, rope railing and posts read as warmer, more natural wood with clear seam separation. The right platform's grass-lip bumps stay separated from the stone cliff, and the rock facets at lower right remain clear. The dark contact and post shadows on the planks under the fox are still visible, so the foot contact is no less readable. R3: the fox silhouette (orange head, blue shirt, white-tipped tail) stays clear in both AFTER runs. The yellow dash trail is visible in both AFTER runs but sits differently from BEFORE (timing), so it is not pixel-comparable. Against the lighter planks and paler waterfall, the dots have marginally less luminance margin than against the old darker planks, but they remain readable. This is a minor softening, not a regression. Coins, gems and stars stay clear. R4: HUD and hint bar are unchanged and legible. The gain is cleaner cloud, wood and stone tones with shadows retained, not brightness alone."
+    }
+  ],
+  "limitations": "Judged visually from the Read renders (downscaled sheets plus the 1280x720 raw frames), with no pixel statistics. Single-level banding, tiny specular clipping and hue shifts below visual threshold cannot be excluded. Stills cannot show eye adaptation or metering convergence, motion, or temporal stability and flicker. The two AFTER runs match each other in tone, as do the two BEFORE runs, but that is only run-to-run agreement of single frames. Particles (dash trail, damage burst, jump puffs, waterfall foam) vary in timing between runs and states, so effects were compared qualitatively, not pixel-wise. The fox is airborne in coyote, so foot contact was judged only on the bridge in damage and dash. Region 4 covers only the HUD panel, toast and hint bar. No touch controls or menus appear in these three scenarios, so touch and menu legibility is not covered. The L9 references are different scenes and were used only for tonal direction (white-on-blue roll-off, shadow separation, neutral surface tones). The AFTER sky is paler and hazier at the horizon than BEFORE. That matches the direction of the L9 tonemap-merged and Unreal panels, which are lighter and more muted than the pre-tonemap board ref, but a human should confirm it matches the intended sky look."
+}
