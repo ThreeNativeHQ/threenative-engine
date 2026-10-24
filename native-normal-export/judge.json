@@ -1,0 +1,21 @@
+{
+  "status": "REVIEWED",
+  "models": [
+    "claude-sonnet-5-5"
+  ],
+  "effort": "high",
+  "overall": "NEUTRAL",
+  "frames": [
+    {
+      "name": "box",
+      "verdict": "NEUTRAL",
+      "reason": "All four box panels (BEFORE run1/run2, AFTER run1/run2) show the same dark contact-occlusion pattern on the saturated red field. That includes the base shadow under the left slab, the stepped vertical edge between the two pieces, and the darkened bottom and right edge of the right piece with its soft halo. The silhouette is in the same place and has the same extent in BEFORE and AFTER, at roughly x75–190, y125–192 inside each 320×240 panel. I saw no lost region, no new bright or dark patches, and no weakening of the contact darkening. Run1 and run2 look the same within each condition, so there is no visible run-to-run noise that would hide or imitate a difference."
+    },
+    {
+      "name": "plane",
+      "verdict": "NEUTRAL",
+      "reason": "All four plane panels are a uniform, fully filled saturated red. I saw no gradient, banding, blotches, edge falloff or missing region. AFTER matches BEFORE in both runs, and I could see no change in plane brightness."
+    }
+  ],
+  "limitations": "This is visual inspection only, at display resolution, of two single-frame PNG montages. I only had the Read tool, so I did no pixel diff or statistics. A difference of a few 8-bit levels, or a small shift in the darkness of the contact occlusion, would not be visible to me. The field looks saturated red, so clipping could hide small brightness changes. The flat plane is also a weak test: it only checks the global level and would not expose subtle normal errors. The panels show the downstream shaded result, not the normals themselves, so correctness of the normal export is inferred indirectly from the box contact occlusion. The native Vulkan RTX2080 offscreen render-driver comes from your description, and nothing in the pixels confirms it. I make no browser or temporal claim: this is one frame per run, two runs per condition. I ignored the label strips because they sit outside the panels. NEUTRAL meets the stated acceptance criteria, but the evidence is visual only and is not a measured match.\""
+}
