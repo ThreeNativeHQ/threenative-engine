@@ -31,8 +31,8 @@ export interface ILighting {
 export function setupLighting(scene: Scene, renderer: ShadowRenderer, mobile = false): ILighting {
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = PCFShadowMap;
-  // Warm late-morning sun. It shines through the canopy's gaps: those are the shafts the render
-  // chain's god rays draw from this light's shadow map.
+  // Warm late-morning sun. It reaches the floor through the canopy's gaps, as soft pools under the
+  // sun shafts (`sky.ts`).
   const key = new DirectionalLight(0xffd9a0, 4);
   key.castShadow = true;
   // The camera sees about 30 m around Wren, so the map covers that window and travels with her:

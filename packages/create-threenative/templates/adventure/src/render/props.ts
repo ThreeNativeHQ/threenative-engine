@@ -318,7 +318,7 @@ export function createPitcherLantern(): Group {
 export function createCompanion(): { readonly group: Group; readonly light: PointLight } {
   const group = new Group();
   group.name = "companion";
-  group.add(part(new SphereGeometry(0.07, 10, 8), glow(C.orb, 6)));
+  group.add(part(new SphereGeometry(0.07, 10, 8), glow(C.orb, 3)));
   const halo = new SpriteNodeMaterial({
     blending: AdditiveBlending,
     depthWrite: false,
@@ -328,7 +328,7 @@ export function createCompanion(): { readonly group: Group; readonly light: Poin
   const tint = new Color(C.orb);
   halo.colorNode = vec4(vec3(tint.r, tint.g, tint.b).mul(2.2), mask.mul(mask).mul(0.7));
   const sprite = new Sprite(halo);
-  sprite.scale.setScalar(0.4);
+  sprite.scale.setScalar(0.28);
   group.add(sprite);
   const light = new PointLight(C.orb, 1.2, 4.5, 2);
   group.add(light);

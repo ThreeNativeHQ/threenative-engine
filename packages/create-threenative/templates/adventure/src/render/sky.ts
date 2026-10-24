@@ -117,6 +117,8 @@ function equirect(rgba: (elevation: number) => readonly number[]): DataTexture {
 export interface ISky {
   readonly background: DataTexture;
   readonly environment: DataTexture;
+  /** Under the Hollow's roof: a cool stone-grey fill, so the warm torches read against it. */
+  readonly hollow: DataTexture;
 }
 
 export function createSky(): ISky {
@@ -126,8 +128,19 @@ export function createSky(): ISky {
       const c = e < 0 ? GROUND_FILL : gradient(e).multiplyScalar(SKY_RADIANCE);
       return [c.r, c.g, c.b, 1];
     }),
+    hollow: equirect((e) => [
+      ...HOLLOW_FILL.clone()
+        .multiplyScalar(e < 0 ? 0.6 : 1)
+        .toArray(),
+      1,
+    ]),
   };
 }
+
+/** The Hollow's sky light: cool blue-grey, the colour of daylight leaking down a stone shaft. */
+const HOLLOW_FILL = new Color(0.42, 0.5, 0.66);
+/** The forest's and the Hollow's light, swapped by `setMist`. */
+let fills: { readonly vale: DataTexture; readonly hollow: DataTexture } | undefined;
 
 /** The height term's density at the ground; the fog node reads it every frame. */
 const ground = { density: MIST.vale.density };
@@ -182,6 +195,7 @@ export function setupSky(scene: Scene, sky: ISky): void {
   // three prefilters an equirectangular `scene.environment` itself (PMREM), on WebGPU and WebGL.
   scene.environment = sky.environment;
   scene.environmentIntensity = 1;
+  fills = { hollow: sky.hollow, vale: sky.environment };
   if (scene.fog instanceof FogExp2) return;
   const distanceFog = new FogExp2(palette.horizon, MIST.vale.distance);
   distanceFog.color.multiplyScalar(MIST.vale.glow);
@@ -189,14 +203,20 @@ export function setupSky(scene: Scene, sky: ISky): void {
   scene.fogNode = mistNode(distanceFog);
 }
 
-/** Thins the mist under the Hollow's roof, so a room's far wall and the Warden stay clear. */
+/**
+ * Thins the mist under the Hollow's roof, so a room's far wall and the Warden stay clear, and swaps
+ * the forest's green sky light for the Hollow's cool stone fill.
+ */
 export function setMist(scene: Scene, indoors: boolean): void {
   const mist = indoors ? MIST.hollow : MIST.vale;
   ground.density = mist.density;
+  if (fills !== undefined) scene.environment = indoors ? fills.hollow : fills.vale;
   if (!(scene.fog instanceof FogExp2)) return;
   scene.fog.density = mist.distance;
-  scene.fog.color.set(palette.horizon).multiplyScalar(mist.glow);
+  scene.fog.color.set(indoors ? HOLLOW_MIST : palette.horizon).multiplyScalar(mist.glow);
 }
+/** The Hollow's thin haze: cool grey, never the forest's green. */
+const HOLLOW_MIST = 0x8a96a4;
 
 /**
  * Sun shafts through the canopy: soft open tubes along the sun's direction, added on top of the
