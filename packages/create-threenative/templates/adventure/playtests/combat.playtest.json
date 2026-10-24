@@ -1,0 +1,254 @@
+{
+  "name": "combat",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "subject": "player",
+  "setup": {
+    "spawn": {
+      "x": -6,
+      "y": 0.9,
+      "z": -2.5
+    },
+    "place": [
+      {
+        "entity": "chest.sword",
+        "at": {
+          "x": -7.6,
+          "y": 0,
+          "z": -2.5
+        }
+      },
+      {
+        "entity": "dummy.0",
+        "at": {
+          "x": -4.9,
+          "y": 0,
+          "z": -2.5
+        }
+      },
+      {
+        "entity": "mossling.0",
+        "at": {
+          "x": -6,
+          "y": 0.42,
+          "z": -10
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "kind": "input",
+      "label": "no-sword",
+      "press": "KeyJ",
+      "holdTicks": 10,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "take-sword",
+      "press": "KeyE",
+      "holdTicks": 5,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "arc-miss",
+      "press": "KeyJ",
+      "holdTicks": 40,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "face-dummy",
+      "press": ["KeyQ"],
+      "holdTicks": 10,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "cut-dummy-1",
+      "press": ["KeyQ", "KeyJ"],
+      "holdTicks": 40,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "dummy-between",
+      "press": ["KeyQ"],
+      "holdTicks": 4,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "cut-dummy-2",
+      "press": ["KeyQ", "KeyJ"],
+      "holdTicks": 40,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "let-go",
+      "press": [],
+      "holdTicks": 2,
+      "release": false
+    },
+    {
+      "label": "bitten",
+      "waitForResource": {
+        "id": "state",
+        "path": "hitsTaken",
+        "gte": 1
+      },
+      "timeoutMs": 30000,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "lock",
+      "press": ["KeyQ", "ArrowUp"],
+      "holdTicks": 30,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "cut-1",
+      "press": ["KeyQ", "KeyJ"],
+      "holdTicks": 40,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "between",
+      "press": ["KeyQ", "ArrowUp"],
+      "holdTicks": 10,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "cut-2",
+      "press": ["KeyQ", "KeyJ"],
+      "holdTicks": 40,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "end",
+      "press": [],
+      "holdTicks": 20,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "sword",
+        "equals": true,
+        "atSteps": [
+          {
+            "label": "no-sword",
+            "equals": false
+          },
+          {
+            "label": "take-sword",
+            "equals": true
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "slashes",
+        "gte": 4,
+        "atSteps": [
+          {
+            "label": "no-sword",
+            "equals": 0
+          },
+          {
+            "label": "arc-miss",
+            "equals": 1
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "slashHits",
+        "gte": 4,
+        "atSteps": [
+          {
+            "label": "arc-miss",
+            "equals": 0
+          },
+          {
+            "label": "cut-dummy-2",
+            "equals": 2
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "hitsTaken",
+        "gte": 1
+      },
+      {
+        "id": "state",
+        "path": "defeated",
+        "gte": 2
+      }
+    ],
+    "components": [
+      {
+        "entity": "dummy.0",
+        "component": "health",
+        "equals": 0,
+        "atSteps": [
+          {
+            "label": "arc-miss",
+            "equals": 2
+          },
+          {
+            "label": "cut-dummy-1",
+            "equals": 1
+          }
+        ]
+      },
+      {
+        "entity": "mossling.0",
+        "component": "wallFollowed",
+        "gte": 1
+      },
+      {
+        "entity": "mossling.0",
+        "component": "health",
+        "lte": 0,
+        "atSteps": [
+          {
+            "label": "bitten",
+            "equals": 2
+          },
+          {
+            "label": "cut-1",
+            "equals": 1
+          }
+        ]
+      },
+      {
+        "entity": "mossling.0",
+        "component": "state",
+        "equals": "dead"
+      }
+    ]
+  }
+}

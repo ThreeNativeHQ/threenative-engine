@@ -28,8 +28,9 @@ export type WardenState = "dormant" | "windup" | "charge" | "stunned" | "recover
 
 /**
  * The Stone Warden. It rears, then charges in a straight line at where Wren stood. A charge that
- * meets a wall stuns it, and only a stunned Warden takes damage: a cut while it is standing clanks
- * off. Each cut that lands ends the stun. Three stuns, each answered with a cut, defeat it.
+ * meets a wall or her raised shield stuns it, and only a stunned Warden takes damage: a cut while
+ * it is standing clanks off. Each cut that lands ends the stun. Three stuns, each answered with a
+ * cut, defeat it.
  */
 export class Warden implements ITarget {
   readonly mesh = new Group();
@@ -126,8 +127,9 @@ export class Warden implements ITarget {
           to.length() < this.radius + 0.6 &&
           hero.takeHit(feel.hitHalves, this.mesh.position) === "blocked"
         ) {
-          // The shield turns the charge aside, but only a wall dazes it.
-          this.#set("recover");
+          // Stone meeting the raised shield dazes it, as a wall does.
+          this.stuns += 1;
+          this.#set("stunned");
         }
         break;
       }

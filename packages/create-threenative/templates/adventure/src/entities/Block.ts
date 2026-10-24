@@ -3,13 +3,16 @@ import { type Group, Vector3 } from "three";
 import { createBlock } from "../render/props.js";
 import { type GameCtx, type Hero, LAYER } from "./Hero.js";
 
-/** The push: 0.4 s of leaning, then a 1 m slide at 1.2 m/s. Kit design values. */
-export const BLOCK_FEEL = { pushTime: 0.4, slideSpeed: 1.2, step: 1 } as const;
+/** The push: 0.4 s of leaning, then a 1 m slide at 1.2 m/s; the cell check runs 1.25 m up. */
+export const BLOCK_FEEL = { pushTime: 0.4, rayHeight: 1.25, slideSpeed: 1.2, step: 1 } as const;
 
 /**
  * A 1 m stone block on a 1 m grid. Wren leans on one face for 0.4 s and it slides one cell away
- * from her. One ray from its leading face checks the cell ahead first: a wall, a door or a grate
- * there and it does not move. No engine capability pushes blocks, so this file is the rule.
+ * from her. One ray across the cell ahead checks it first: a wall, a door or a grate there and it
+ * does not move. The ray runs just above the block's top, because a ray that starts inside the
+ * block hits the block, and one that starts inside a wall's trimesh sees no face; anything that
+ * should stop a block must stand taller than that. No engine capability pushes blocks, so this
+ * file is the rule.
  */
 export class Block {
   readonly mesh: Group;
@@ -69,12 +72,9 @@ export class Block {
     this.#lean += dt;
     if (this.#lean < BLOCK_FEEL.pushTime) return true;
     this.#lean = 0;
-    // The cell ahead: a ray from just outside the leading face to the far side of that cell.
-    this.#from
-      .copy(this.mesh.position)
-      .addScaledVector(this.#axis, 0.52)
-      .setY(this.mesh.position.y + 0.5);
-    const end = this.#from.clone().addScaledVector(this.#axis, BLOCK_FEEL.step - 0.04);
+    // The cell ahead: a ray from the block's centre, over its top, to the far side of that cell.
+    this.#from.copy(this.mesh.position).setY(this.mesh.position.y + BLOCK_FEEL.rayHeight);
+    const end = this.#from.clone().addScaledVector(this.#axis, BLOCK_FEEL.step + 0.48);
     const hit = ctx.physics.directSpaceState.intersectRay({
       collisionMask: LAYER.world,
       from: this.#from,

@@ -281,7 +281,10 @@ export class Hero {
       case "idle":
       case "run":
       case "push": {
-        const want = stick > 0.1 ? stick * runSpeed : 0;
+        // She plants and pivots rather than running a wide arc: speed follows how far she still
+        // has to turn, so a reversal turns on the spot and a right angle slows through the corner.
+        const facing = target === undefined ? Math.max(0, Math.cos(angleTo(this.yaw, goalYaw))) : 1;
+        const want = stick > 0.1 ? stick * runSpeed * facing : 0;
         this.#speed = approach(this.#speed, want, feel.acceleration * dt);
         if (target !== undefined) {
           const wish = this.wish.lengthSq() > 1e-4 ? this.wish.clone().normalize() : this.wish;

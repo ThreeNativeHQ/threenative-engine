@@ -23,13 +23,15 @@ const RANGE = 12;
 const CONE = (60 * Math.PI) / 180;
 /** A release and a press inside this window moves the lock to the next target. */
 const SWITCH_WINDOW = 0.3;
+/** A hostile this close locks from any side: the one at Wren's back is the one that matters. */
+const CLOSE = 3;
 
 /**
  * Z-targeting, game-owned: no engine capability locks on, so this file picks and holds a target.
  *
- * Holding `target` locks the nearest living hostile inside 12 m and the camera's 60° cone, and
- * keeps it while held. Releasing drops the lock; pressing again within 0.3 s moves it to the next
- * nearest hostile instead. The lock also drops when the target dies or leaves range. The camera and
+ * Holding `target` locks the nearest living hostile inside 12 m and the camera's 60° cone (or
+ * within 3 m on any side), and keeps it while held. Releasing drops the lock; pressing again
+ * within 0.3 s moves it to the next nearest hostile instead. The lock also drops when the target dies or leaves range. The camera and
  * the hero read `target`; neither picks one.
  */
 export class LockOn {
@@ -105,7 +107,8 @@ export class LockOn {
       this.#to.subVectors(candidate.mesh.position, hero).setY(0);
       const distance = this.#to.length();
       if (distance > bestDistance) continue;
-      if (skip === undefined && this.#view.dot(this.#to.normalize()) < Math.cos(CONE / 2)) continue;
+      const ahead = this.#view.dot(this.#to.normalize()) >= Math.cos(CONE / 2);
+      if (skip === undefined && !ahead && distance > CLOSE) continue;
       best = candidate;
       bestDistance = distance;
     }

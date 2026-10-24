@@ -36,7 +36,7 @@ import { setupPost } from "../render/postprocessing.js";
 import { createHeartVessel, grassTuft } from "../render/props.js";
 import { type ISky, createSky, setupSky } from "../render/sky.js";
 import { TouchControls } from "../render/touch-controls.js";
-import type { GameState } from "../state.js";
+import type { Checkpoint, GameState } from "../state.js";
 
 export type { GameCtx };
 
@@ -53,6 +53,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     hearts: ADVENTURE_FEEL.startHalves / 2,
     hitsTaken: 0,
     keys: 0,
+    lastRespawn: "",
     lockFacingError: 0,
     lockStrafeDrift: 0,
     lockStrafeSeconds: 0,
@@ -82,6 +83,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
   #mosslings: Mossling[] = [];
   #warden: Warden | undefined;
   #block: Block | undefined;
+  #chests: Chest[] = [];
   #post: ReturnType<typeof setupPost> | undefined;
 
   /**
@@ -111,7 +113,18 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     });
     this.#warden = ctx.entities.add("warden", new Warden("warden", hollow.warden));
     this.#block = ctx.entities.add("block", new Block("block", hollow.block, makeRng(7)));
-    for (const thing of [...this.#dummies, ...this.#mosslings, this.#warden, this.#block])
+    this.#chests = [
+      new Chest("chest.sword", "sword", vale.swordChest.at, vale.swordChest.yaw),
+      new Chest("chest.key", "key", hollow.keyChest.at, hollow.keyChest.yaw),
+    ];
+    for (const chest of this.#chests) ctx.entities.add(chest.id, chest);
+    for (const thing of [
+      ...this.#dummies,
+      ...this.#mosslings,
+      ...this.#chests,
+      this.#warden,
+      this.#block,
+    ])
       ctx.add(thing.mesh);
   }
 
@@ -123,12 +136,15 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       vale: this.#vale,
       warden: this.#warden,
     };
+    const [swordChest, keyChest] = this.#chests;
     if (
       vale === undefined ||
       hollow === undefined ||
       hero === undefined ||
       warden === undefined ||
       block === undefined ||
+      swordChest === undefined ||
+      keyChest === undefined ||
       this.#sky === undefined
     )
       throw new Error("Play.enter ran before load() built the world.");
@@ -180,8 +196,6 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     const lock = new LockOn(camera);
     ctx.add(lock.reticle);
 
-    const swordChest = new Chest("chest.sword", "sword", vale.swordChest.at, vale.swordChest.yaw);
-    const keyChest = new Chest("chest.key", "key", hollow.keyChest.at, hollow.keyChest.yaw);
     const grate = new Door(
       "door.grate",
       "grate",
@@ -198,14 +212,10 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       hollow.lockedDoor.width,
       3,
     );
-    for (const [name, thing] of [
-      ["chest.sword", swordChest],
-      ["chest.key", keyChest],
-      ["door.grate", grate],
-      ["door.locked", door],
-    ] as const) {
+    for (const thing of [swordChest, keyChest]) thing.spawn(ctx);
+    for (const thing of [grate, door]) {
       thing.spawn(ctx);
-      ctx.entities.add(name, thing);
+      ctx.entities.add(thing.id, thing);
     }
 
     // --------------------------------------------------------------- the loop's state
@@ -223,7 +233,11 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     let strafeSeconds = 0;
     let lockFacing = 0;
     // Respawn point: the start, then the last doorway Wren came through.
-    const checkpoint = { at: (indoors ? hollow.entry : vale.spawn).clone(), yaw: Math.PI };
+    const checkpoint: { at: Vector3; name: Checkpoint; yaw: number } = {
+      at: (indoors ? hollow.entry : vale.spawn).clone(),
+      name: indoors ? "hollow-entry" : "clearing",
+      yaw: Math.PI,
+    };
     const toast = (text: string, seconds = 2): void => {
       ctx.state.set({ toast: text });
       toastUntil = elapsed + seconds;
@@ -320,6 +334,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
         if (fallen === warden) {
           vessel.position.set(warden.mesh.position.x, 1.2, warden.mesh.position.z);
           vessel.visible = true;
+          door.setOpen(true);
           toast("THE STONE WARDEN FALLS", 3);
         }
       }
@@ -344,25 +359,36 @@ export class Play extends Scene<GameState, IPhysicsContext> {
 
       // The cave mouth carries Wren between the clearing and the Hollow, and moves her checkpoint.
       const at = hero.mesh.position;
-      const enter = (feet: Vector3, yaw: number, camYaw: number): void => {
+      const enter = (name: Checkpoint, feet: Vector3, yaw: number, camYaw: number): void => {
         hero.teleport(standAt(feet));
         hero.yaw = yaw;
+        checkpoint.name = name;
         checkpoint.at.copy(feet);
         checkpoint.yaw = yaw;
         rig.snap(hero.mesh.position, camYaw);
       };
       if (Math.hypot(at.x - vale.caveMouth.x, at.z - vale.caveMouth.z) < 1.4)
-        enter(hollow.entry, Math.PI, 0);
+        enter("hollow-entry", hollow.entry, Math.PI, 0);
       else if (Math.hypot(at.x - hollow.exit.x, at.z - hollow.exit.z) < 0.9)
-        enter(vale.caveExit, 0, Math.PI);
+        enter("cave-exit", vale.caveExit, 0, Math.PI);
       if (
-        door.open &&
         hollow.contains(at) &&
         at.z < hollow.bossCheckpoint.z &&
-        checkpoint.at.z > hollow.bossCheckpoint.z
+        checkpoint.name !== "warden-door"
       ) {
+        checkpoint.name = "warden-door";
         checkpoint.at.copy(hollow.bossCheckpoint);
         checkpoint.yaw = Math.PI;
+      }
+      // The door shuts behind her in the Warden's room and opens again when it falls.
+      if (
+        door.open &&
+        warden.alive &&
+        hollow.contains(at) &&
+        at.z < hollow.bossCheckpoint.z + 0.5
+      ) {
+        door.setOpen(false);
+        toast("The door grinds shut behind you.");
       }
       const nowIndoors = hollow.contains(at);
       if (nowIndoors !== indoors) {
@@ -375,6 +401,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
         hero.respawn(standAt(checkpoint.at), checkpoint.yaw);
         rig.snap(hero.mesh.position, checkpoint.yaw + Math.PI);
         respawns += 1;
+        frameCtx.state.set({ lastRespawn: checkpoint.name });
         toast("Wren picks herself up.");
       }
 
@@ -435,6 +462,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     this.#post = undefined;
     this.#dummies = [];
     this.#mosslings = [];
+    this.#chests = [];
     super.exit(ctx);
   }
 }

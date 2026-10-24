@@ -2,11 +2,16 @@
  * What the game publishes. The HUD reads it through the UI bridge and the playtests read it as the
  * `state` resource, so every number a scenario proves is one the player could also see or feel.
  */
+/** The doorways Wren respawns at: her start, and the last one she came through. */
+export type Checkpoint = "clearing" | "hollow-entry" | "cave-exit" | "warden-door";
+
 export type GameState = {
   /** Hearts left, in hearts: 2.5 is two and a half. One hit costs a half-heart. */
   hearts: number;
   /** Heart capacity, in hearts. The heart vessel adds one. */
   capacity: number;
+  /** Where Wren last came back after losing every heart, or "" before the first time. */
+  lastRespawn: Checkpoint | "";
   /** Small keys carried. The locked door spends one. */
   keys: number;
   /** True once the Ember Blade is out of the clearing chest. */

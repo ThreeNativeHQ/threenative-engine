@@ -1,0 +1,255 @@
+{
+  "name": "boss",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "subject": "player",
+  "setup": {
+    "spawn": {
+      "x": 100,
+      "y": 0.9,
+      "z": -30
+    },
+    "place": [
+      {
+        "entity": "chest.sword",
+        "at": {
+          "x": 98.4,
+          "y": 0,
+          "z": -30
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "kind": "input",
+      "label": "take-sword",
+      "press": "KeyE",
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "lock",
+      "press": ["KeyQ"],
+      "holdTicks": 1,
+      "release": false
+    },
+    {
+      "label": "charged",
+      "waitForResource": {
+        "id": "state",
+        "path": "hitsTaken",
+        "gte": 1
+      },
+      "timeoutMs": 30000,
+      "release": false
+    },
+    {
+      "label": "stun-1",
+      "waitForResource": {
+        "id": "state",
+        "path": "wardenStuns",
+        "gte": 1
+      },
+      "timeoutMs": 30000,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "close",
+      "press": ["KeyQ", "ArrowUp"],
+      "holdTicks": 30,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "cut-1",
+      "press": ["KeyQ", "KeyJ"],
+      "holdTicks": 40,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "ready",
+      "press": ["KeyQ"],
+      "holdTicks": 2,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "clank",
+      "press": ["KeyQ", "KeyJ"],
+      "holdTicks": 40,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "raise-2",
+      "press": ["KeyQ", "ShiftLeft"],
+      "holdTicks": 1,
+      "release": false
+    },
+    {
+      "label": "stun-2",
+      "waitForResource": {
+        "id": "state",
+        "path": "wardenStuns",
+        "gte": 2
+      },
+      "timeoutMs": 30000,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "cut-2",
+      "press": ["KeyQ", "KeyJ"],
+      "holdTicks": 40,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "raise-3",
+      "press": ["KeyQ", "ShiftLeft"],
+      "holdTicks": 1,
+      "release": false
+    },
+    {
+      "label": "stun-3",
+      "waitForResource": {
+        "id": "state",
+        "path": "wardenStuns",
+        "gte": 3
+      },
+      "timeoutMs": 30000,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "cut-3",
+      "press": ["KeyQ", "KeyJ"],
+      "holdTicks": 40,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "settle",
+      "press": [],
+      "holdTicks": 100,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "take-vessel",
+      "press": ["ArrowUp"],
+      "holdTicks": 60,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "wardenHealth",
+        "equals": 0,
+        "atSteps": [
+          {
+            "label": "stun-1",
+            "equals": 3
+          },
+          {
+            "label": "cut-1",
+            "equals": 2
+          },
+          {
+            "label": "clank",
+            "equals": 2
+          },
+          {
+            "label": "cut-2",
+            "equals": 1
+          },
+          {
+            "label": "cut-3",
+            "equals": 0
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "wardenStuns",
+        "equals": 3,
+        "atSteps": [
+          {
+            "label": "lock",
+            "equals": 0
+          },
+          {
+            "label": "stun-1",
+            "equals": 1
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "capacity",
+        "equals": 4,
+        "atSteps": [
+          {
+            "label": "stun-3",
+            "equals": 3
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "hearts",
+        "equals": 4,
+        "atSteps": [
+          {
+            "label": "charged",
+            "equals": 2
+          },
+          {
+            "label": "stun-3",
+            "equals": 2
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "cleared",
+        "equals": true
+      },
+      {
+        "id": "state",
+        "path": "shieldBlocks",
+        "equals": 2
+      }
+    ],
+    "components": [
+      {
+        "entity": "warden",
+        "component": "clanks",
+        "gte": 1,
+        "atSteps": [
+          {
+            "label": "clank",
+            "equals": 1
+          }
+        ]
+      }
+    ]
+  }
+}

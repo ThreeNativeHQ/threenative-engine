@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-733 — Lantern Vale: a 3D action-adventure starter kit with lock-on combat and a dungeon puzzle
 
-**Status:** PARTIAL — Phase 1 done
+**Status:** PARTIAL — Phases 1 and 2 done
 **Priority:** P2 — new genre kit: the dungeon loop (Phase 2) and the registration, native and judge gates (Phase 3) are open, and no shipped kit has lock-on targeting, a shield, a pushable-block puzzle or a key-and-door dungeon loop.
 **Complexity:** 5 (MEDIUM) — 11+ kit source files (+3), new kit system (+2). Risk override: none. The kit is game code in one template. No `packages/` API changes.
 **Owner:** João
@@ -216,6 +216,28 @@ Each playtest runs on a project scaffolded from `--template adventure`:
   deterministic. A release and a new press inside 0.3 s moves the lock to the next target.
 - 2026-10-23 (agent): the sword chest stands beside Wren's start, at (-1.6, 0, 8.4), so opening it is
   the first thing she does and every combat playtest can take the sword in one press.
+- 2026-10-23 (agent): the Warden stuns on a wall or on Wren's raised shield. A charge she blocks
+  dazes it, so a fight can be won without baiting it into a wall. The door to its room shuts behind
+  Wren and opens again when it falls. The checkpoint before that door is named `warden-door`.
+- 2026-10-23 (agent): a fresh lock takes any hostile within 3 m even outside the 60° cone, so a
+  Mossling at Wren's side can be targeted. Unlocked, her speed scales with the cosine of the turn
+  still to make, so she pivots on the spot instead of running a wide arc.
+- 2026-10-23 (agent): both chests are built in `load()` as `chest.sword` and `chest.key`, so a
+  scenario can place them.
+- 2026-10-23 (agent): the block checks the cell ahead with one ray from its centre, 1.25 m up,
+  above its own top. A ray that starts inside the block hits the block. A ray that starts inside a
+  wall's trimesh sees no face, which let the block slide through the north wall. Anything that
+  stops a block must stand taller than 1.25 m. Every wall, door and grate in the Hollow does.
+- 2026-10-23 (agent, engine bug, layer `packages/physics`): a character on a floor that pressed a
+  wall with an off-centre contact read `grounded: false` on most steps. Rapier recorded only the
+  wall contact, and the "only walls, so not grounded" guard overrode Rapier's answer. A push block
+  never got a full 0.4 s lean. Fix in both backends (`packages/physics/src/simulation.ts`,
+  `packages/runtime-native/native/physics/src/lib.rs`): a step that asked to move down and was held
+  in place keeps Rapier's grounded answer. Red-green: `character.spec.ts` "stays grounded on a
+  floor while it presses into a vertical wall" failed at tick 77, now passes. The Rust test
+  `character_stays_grounded_while_it_presses_a_push_block` was airborne on ticks 102-129, now
+  passes. All 230 physics unit tests pass, the existing wall-fall tests included. The web and Rust
+  parity arms pass. This is a behaviour fix, not an API change.
 
 ## Execution Phases
 
@@ -236,7 +258,7 @@ the follow camera with the lock-on yaw ease, the target pick and reticle, the pr
 
 #### Phase 2: The vale and the Hollow are a game
 
-**Status:** NOT STARTED
+**Status:** DONE (2026-10-23), web on WebGPU (nvidia adapter)
 **Files:** `src/level/{Vale,Hollow}.ts`, `src/entities/{Mossling,Warden,Block,Switch,Door,Chest}.ts`,
 `src/interact.ts`, `src/state.ts`, `src/ui/Hud.tsx`, `src/render/camera.ts` (pull-in ray),
 `playtests/{combat,hearts,puzzle,boss}.playtest.json`.
@@ -245,10 +267,11 @@ interact prompt, the chest, key, door, block and switch rules, the Warden, the h
 runs the native player once to record whether navigation is bound.
 **Verification:** the four playtests below, plus a rerun of Phase 1's three.
 
-- [ ] AC-4: a Mossling chases the hero around a wall to reach it. The sword is absent before the clearing chest and a slash defeats a Mossling in two hits only inside the 1.4 m arc. proof: `playtests/combat.playtest.json` — Evidence: pending.
-- [ ] AC-5: a Mossling hit costs a half-heart, a hit into the raised shield front costs none, a hit from behind the shield costs a half-heart, and zero hearts respawns the hero at the last door with full hearts. proof: `playtests/hearts.playtest.json` — Evidence: pending.
-- [ ] AC-6: pushing the block 1 m per step onto the floor switch opens the grate, the chest then gives the small key (HUD `keys: 1`), a block pushed into a wall stops, and the locked door opens only with the key. proof: `playtests/puzzle.playtest.json` — Evidence: pending.
-- [ ] AC-7: the Warden takes damage only while stunned, three stuns defeat it, and the heart vessel then raises capacity from 3 to 4 hearts and refills them. proof: `playtests/boss.playtest.json` — Evidence: pending.
+- [x] AC-4: a Mossling chases the hero around a wall to reach it. The sword is absent before the clearing chest and a slash defeats a Mossling in two hits only inside the 1.4 m arc. proof: `playtests/combat.playtest.json` — Evidence: exit 0. KeyJ before the chest: 0 slashes. A slash at a dummy 90° off the arc: 0 hits; the dummy falls on the 2nd cut. `mossling.0` wall-follows 6.86 m around the ruin wall, bites Wren (2.5 hearts), and falls on the 2nd cut. Red: with the wall-follow off, the wait for the bite timed out after 30 s (exit 2).
+- [x] AC-5: a Mossling hit costs a half-heart, a hit into the raised shield front costs none, a hit from behind the shield costs a half-heart, and zero hearts respawns the hero at the last door with full hearts. proof: `playtests/hearts.playtest.json` — Evidence: exit 0. A bite behind the raised shield: 3 → 2.5 hearts. A bite into the shield front: 2.5 hearts, `shieldBlocks` 1. After 6 hits Wren falls and respawns at `hollow-entry` with 3 hearts, `respawns` 1.
+- [x] AC-6: pushing the block 1 m per step onto the floor switch opens the grate, the chest then gives the small key (HUD `keys: 1`), a block pushed into a wall stops, and the locked door opens only with the key. proof: `playtests/puzzle.playtest.json` — Evidence: exit 0. The door reads `Locked` and stays shut before the key. Two pushes move the block exactly 2 m onto the switch (`blockSteps` 2) and the grate opens. Pushes into the north wall are refused (`refused` 3, block still at z -25). The chest gives `keys` 1, the door opens and spends it (`keys` 0). Red: before the engine fix below, Wren read airborne against the stopped block and never made the 2nd push (`blockSteps` 1). Before the ray fix, the block slid through the wall to z -27.
+- [x] AC-7: the Warden takes damage only while stunned, three stuns defeat it, and the heart vessel then raises capacity from 3 to 4 hearts and refills them. proof: `playtests/boss.playtest.json` — Evidence: exit 0. The first charge costs a heart (2 hearts). A wall stun, then two shield stuns (`shieldBlocks` 2): 3 stuns. A cut during the wind-up clanks (`clanks` 1, health stays 2). Health 3 → 2 → 1 → 0 on the three stunned cuts, then capacity 3 → 4 and hearts 4, `cleared` true.
+- Phase 1 rerun after the Phase 2 changes and the physics fix: `survives`, `move`, `move-hollow` and `lockon` exit 0 (the first `survives` try died on `net::ERR_NETWORK_CHANGED` before the bridge loaded, a host network event; the rerun passed).
 
 #### Phase 3: Registered, native and judged
 
