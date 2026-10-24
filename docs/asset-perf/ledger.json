@@ -1326,6 +1326,213 @@
           "shippedBytes": 150
         }
       ]
+    },
+    {
+      "id": 8,
+      "at": "2026-10-24T18:49:19.395Z",
+      "commit": "a97ccfe04",
+      "dirty": false,
+      "label": "lever 4: start Basis transcoder when the manifest lists Basis output",
+      "notes": "The corpus ships no KTX2 texture (sky.jpg and PNGs only), so the early transcoder start cannot change it. The +100 ms was host noise at load 28. Revisit when a template ships Basis textures.",
+      "decision": "reject",
+      "arm": "default",
+      "config": {},
+      "metrics": {
+        "shippedMiB": 4.33,
+        "shippedPctOfSource": 36.4,
+        "preloadLocalMs": 1036,
+        "preloadThrottledMs": 1838
+      },
+      "extra": {
+        "sourceBytes": 12484547,
+        "shippedBytes": 4542750,
+        "compileMs": 40322,
+        "preload": {
+          "host": "joao-cachyos",
+          "local": {
+            "readyMs": 1036,
+            "loadedMs": 405,
+            "samplesMs": [1111, 1096, 829, 889, 1036],
+            "adapter": {
+              "vendor": "nvidia",
+              "architecture": "turing",
+              "device": "",
+              "description": ""
+            }
+          },
+          "throttled": {
+            "readyMs": 1838,
+            "loadedMs": 1025,
+            "samplesMs": [1968, 1626, 1914, 1809, 1838],
+            "adapter": {
+              "vendor": "nvidia",
+              "architecture": "turing",
+              "device": "",
+              "description": ""
+            }
+          }
+        },
+        "pairedControl": {
+          "metrics": {
+            "shippedMiB": 4.33,
+            "shippedPctOfSource": 36.4,
+            "preloadLocalMs": 923,
+            "preloadThrottledMs": 1756
+          },
+          "preload": {
+            "host": "joao-cachyos",
+            "local": {
+              "readyMs": 923,
+              "loadedMs": 351,
+              "samplesMs": [836, 884, 1100, 1090, 923],
+              "adapter": {
+                "vendor": "nvidia",
+                "architecture": "turing",
+                "device": "",
+                "description": ""
+              }
+            },
+            "throttled": {
+              "readyMs": 1756,
+              "loadedMs": 1021,
+              "samplesMs": [1734, 1712, 1756, 1960, 1829],
+              "adapter": {
+                "vendor": "nvidia",
+                "architecture": "turing",
+                "device": "",
+                "description": ""
+              }
+            }
+          },
+          "shippedBytes": 4542750
+        },
+        "kinds": {
+          "model": {
+            "sourceBytes": 7386300,
+            "shippedBytes": 3450280,
+            "files": 6
+          },
+          "runtime": {
+            "sourceBytes": 0,
+            "shippedBytes": 584862,
+            "files": 2
+          },
+          "texture": {
+            "sourceBytes": 282751,
+            "shippedBytes": 282751,
+            "files": 3
+          },
+          "audio": {
+            "sourceBytes": 4815496,
+            "shippedBytes": 224857,
+            "files": 6
+          }
+        }
+      },
+      "files": [
+        {
+          "path": "shared/player-viewmodel.glb",
+          "kind": "model",
+          "sourceBytes": 3385176,
+          "shippedBytes": 1579916
+        },
+        {
+          "path": "shared/mannequin-combat.glb",
+          "kind": "model",
+          "sourceBytes": 2142220,
+          "shippedBytes": 846324
+        },
+        {
+          "path": "sailing/ship.glb",
+          "kind": "model",
+          "sourceBytes": 1192712,
+          "shippedBytes": 758528
+        },
+        {
+          "path": "basis/basis_transcoder.wasm",
+          "kind": "runtime",
+          "sourceBytes": 0,
+          "shippedBytes": 527333
+        },
+        {
+          "path": "shared/sky.jpg",
+          "kind": "texture",
+          "sourceBytes": 282451,
+          "shippedBytes": 282451
+        },
+        {
+          "path": "shared/mannequin.glb",
+          "kind": "model",
+          "sourceBytes": 664944,
+          "shippedBytes": 263628
+        },
+        {
+          "path": "rain/thunder.wav",
+          "kind": "audio",
+          "sourceBytes": 2469644,
+          "shippedBytes": 106795
+        },
+        {
+          "path": "basis/basis_transcoder.js",
+          "kind": "runtime",
+          "sourceBytes": 0,
+          "shippedBytes": 57529
+        },
+        {
+          "path": "rain/rain-loop.wav",
+          "kind": "audio",
+          "sourceBytes": 1058444,
+          "shippedBytes": 51545
+        },
+        {
+          "path": "rain/wind-loop.wav",
+          "kind": "audio",
+          "sourceBytes": 1058444,
+          "shippedBytes": 36747
+        },
+        {
+          "path": "snow/wind.wav",
+          "kind": "audio",
+          "sourceBytes": 176444,
+          "shippedBytes": 19278
+        },
+        {
+          "path": "snow/crunch.wav",
+          "kind": "audio",
+          "sourceBytes": 13274,
+          "shippedBytes": 5264
+        },
+        {
+          "path": "starter/pickup.wav",
+          "kind": "audio",
+          "sourceBytes": 39246,
+          "shippedBytes": 5228
+        },
+        {
+          "path": "puzzle/native-proof.glb",
+          "kind": "model",
+          "sourceBytes": 624,
+          "shippedBytes": 1260
+        },
+        {
+          "path": "starter/native-proof.glb",
+          "kind": "model",
+          "sourceBytes": 624,
+          "shippedBytes": 624
+        },
+        {
+          "path": "puzzle/native-proof.png",
+          "kind": "texture",
+          "sourceBytes": 150,
+          "shippedBytes": 150
+        },
+        {
+          "path": "starter/native-proof.png",
+          "kind": "texture",
+          "sourceBytes": 150,
+          "shippedBytes": 150
+        }
+      ]
     }
   ]
 }
