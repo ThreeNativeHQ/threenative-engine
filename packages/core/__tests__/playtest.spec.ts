@@ -361,10 +361,12 @@ describe("playtest plugin", () => {
             finished: true,
             // The stride convention is measured whether or not it applies, so it crosses the
             // bridge on every clip. This one carries no root translation, so its feet carry no
-            // ground — reported as the zero it measured, not as an absent field.
+            // ground — reported as the zero it measured, not as an absent field, with `inPlace`
+            // saying that no foot plant was found.
             stride: {
               clipGroundSpeed: 0,
               groundSpeed: 0,
+              inPlace: true,
               overridden: false,
               rate: 1,
               synced: false,
