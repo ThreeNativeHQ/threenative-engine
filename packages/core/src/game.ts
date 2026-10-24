@@ -1781,7 +1781,11 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
           firstWorldPass &&
           (explicitWarmUpPending || (startupCoverActive() && !startupReadiness.compileSettled));
         let worldPasses: ReturnType<RenderPassBudget["passes"]> | undefined;
+        // No world pass before the scene has entered: its world does not exist yet, so the draw
+        // presents only the clear colour. Measured on Hop Garden: three such black frames during
+        // `load()`, then shown for 0.5 s when the page mounted the canvas, before the first cover.
         if (
+          this.#sceneEntered &&
           !mustPresentLoader &&
           !waitingForFirstUse &&
           (!canvasLayer.opaque ||

@@ -2978,9 +2978,13 @@ describe("IGame", () => {
     });
     let updates = 0;
     let renders = 0;
+    const worldRenders: unknown[] = [];
+    let overlayScene: unknown;
     class SlowScene extends Scene {
       static override readonly initialState = {};
-      override load(): Promise<void> {
+      override load(ctx: ICtx): Promise<void> {
+        ctx.canvasLayer.scene.add(new Mesh());
+        overlayScene = ctx.canvasLayer.scene;
         return loadGate;
       }
       override update(): void {
@@ -2995,8 +2999,9 @@ describe("IGame", () => {
         webgl2Factory: () => ({
           dispose: () => undefined,
           domElement: canvas,
-          render: () => {
+          render: (scene: unknown) => {
             renders += 1;
+            if (scene !== overlayScene) worldRenders.push(scene);
           },
           setSize: () => undefined,
         }),
@@ -3024,6 +3029,8 @@ describe("IGame", () => {
         for (let flush = 0; flush < 4; flush += 1) await Promise.resolve();
       }
       expect(renders).toBeGreaterThan(0);
+      // A world that has not entered is only the clear colour; drawn, it flashes before the cover.
+      expect(worldRenders).toEqual([]);
       expect(updates).toBe(0);
       releaseLoad();
       await started;
