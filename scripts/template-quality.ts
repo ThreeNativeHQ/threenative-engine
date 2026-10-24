@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 
 /**
  * The tier vocabulary every template's `src/render/quality.ts` ships. Three names, not two: a
@@ -214,11 +215,53 @@ async function readOptional(file: string): Promise<string | undefined> {
 }
 
 /** The switch itself: three named tiers, each with the cost of what it turns on beside it. */
-function qualityProblems(source: string | undefined): string[] {
+async function qualityProblems(
+  source: string | undefined,
+  file: string,
+  coreSource: string | undefined,
+): Promise<string[]> {
   if (source === undefined) return ["no src/render/quality.ts"];
-  const problems = QUALITY_TIERS.filter(
-    (tier) => !new RegExp(`^const ${tier}:`, "mu").test(source),
-  ).map((tier) => `quality.ts declares no \`${tier}\` tier`);
+  const delegated =
+    /import\s*\{[^}]*\bqualityPreset\b[^}]*\}\s*from\s*["']@threenative\/core["']/u.test(source);
+  const problems = delegated
+    ? []
+    : QUALITY_TIERS.filter((tier) => !new RegExp(`^const ${tier}:`, "mu").test(source)).map(
+        (tier) => `quality.ts declares no \`${tier}\` tier`,
+      );
+  if (delegated) {
+    try {
+      const module = await import(pathToFileURL(file).href);
+      if (typeof module.qualityPreset !== "function")
+        throw new Error("qualityPreset is not a function");
+      for (const tier of QUALITY_TIERS) {
+        const preset: unknown = module.qualityPreset(tier);
+        if (preset === null || typeof preset !== "object" || Array.isArray(preset))
+          throw new Error(`${tier} did not return a preset object`);
+        const options = preset as Record<string, unknown>;
+        if (!(QUALITY_TIERS as readonly unknown[]).includes(options.renderChainTier))
+          throw new Error(`${tier} returned an invalid renderChainTier`);
+        for (const stage of STAGE_OPTIONS)
+          if (options[stage] !== undefined && typeof options[stage] !== "boolean")
+            throw new Error(`${tier} returned a non-boolean ${stage}`);
+      }
+      let refused = false;
+      try {
+        module.qualityPreset("ultra");
+      } catch {
+        refused = true;
+      }
+      if (!refused) throw new Error("factory silently accepts an unknown quality tier");
+    } catch (error) {
+      problems.push(
+        `quality.ts cannot evaluate public quality presets: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+    if (coreSource === undefined)
+      problems.push("quality.ts has no shared core quality source for inherited costs");
+    else
+      for (const gap of costCommentGaps(coreSource))
+        problems.push(`core quality.ts enables ${gap} with no measured cost beside it`);
+  }
   for (const gap of costCommentGaps(source)) {
     problems.push(`quality.ts enables ${gap} with no measured cost beside it`);
   }
@@ -336,7 +379,11 @@ export async function checkTemplateQuality(root: string): Promise<ITemplateQuali
     );
     const quality = await readOptional(path.join(render, "quality.ts"));
     const problems = [
-      ...qualityProblems(quality),
+      ...(await qualityProblems(
+        quality,
+        path.join(render, "quality.ts"),
+        await readOptional(path.join(root, "packages/core/src/look/quality.ts")),
+      )),
       ...contractProblems(quality, template, spans),
       ...postprocessingProblems(await readOptional(path.join(render, "postprocessing.ts"))),
       ...docProblems(await readOptional(path.join(templatesDir, template, "AGENTS.md"))),
