@@ -49,7 +49,11 @@ export function Hud() {
             {state.keys}
           </b>
         </span>
-        {state.sword ? <span className="text-lume">Ember Blade</span> : null}
+        {state.sword ? (
+          <span className="text-lume">Ember Blade</span>
+        ) : (
+          <span className="text-text/70">slash needs the Ember Blade: open the chest (E)</span>
+        )}
       </div>
       {state.prompt !== "" ? (
         <div className="absolute bottom-20 left-1/2 -translate-x-1/2 rounded-full border-2 border-line bg-panel/50 px-4 py-1 text-base text-text backdrop-blur-sm">

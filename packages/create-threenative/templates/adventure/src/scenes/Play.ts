@@ -355,7 +355,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       use: () => {
         if (swordChest.open() === undefined) return;
         hero.giveSword();
-        toast("THE EMBER BLADE! Press J to slash.", 3);
+        toast("THE EMBER BLADE! Click or press J to slash.", 3);
         slashHint = hero.slashes;
       },
     });

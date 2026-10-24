@@ -17,6 +17,20 @@
     },
     {
       "kind": "input",
+      "label": "no-sword",
+      "press": "KeyJ",
+      "holdTicks": 20,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "open-chest",
+      "press": "KeyE",
+      "holdTicks": 10,
+      "release": true
+    },
+    {
+      "kind": "input",
       "label": "slash",
       "press": "KeyJ",
       "holdTicks": 20,
@@ -25,6 +39,20 @@
     {
       "kind": "wait",
       "label": "recover",
+      "waitTicks": 30,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "click",
+      "pointerPosition": { "x": 0.5, "y": 0.5, "buttons": 1 },
+      "waitTicks": 20,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "click-up",
+      "pointerPosition": { "x": 0.5, "y": 0.5, "buttons": 0 },
       "waitTicks": 30,
       "release": true
     },
@@ -61,7 +89,21 @@
       {
         "id": "state",
         "path": "slashes",
-        "gte": 1
+        "gte": 2,
+        "atSteps": [
+          {
+            "label": "no-sword",
+            "equals": 0
+          },
+          {
+            "label": "slash",
+            "equals": 1
+          },
+          {
+            "label": "click",
+            "equals": 2
+          }
+        ]
       },
       {
         "id": "state",

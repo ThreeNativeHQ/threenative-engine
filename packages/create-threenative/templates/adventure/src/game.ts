@@ -15,8 +15,8 @@ const game = defineGame<GameState, IPhysicsContext>({
       right: ["ArrowRight", "KeyD"],
       up: ["ArrowUp", "KeyW"],
     },
-    /** Sword slash. Needs the Ember Blade from the clearing chest. */
-    attack: { buttons: [2], keys: ["KeyJ"] },
+    /** Sword slash: left click or J. Needs the Ember Blade from the clearing chest. */
+    attack: { buttons: [2], keys: ["KeyJ"], mouseButtons: [0] },
     /** Roll when nothing is locked on; a short hop while locked. */
     action: { buttons: [0], keys: ["Space"] },
     /** Hold to raise the shield. */
