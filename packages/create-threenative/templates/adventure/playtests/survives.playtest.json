@@ -37,6 +37,9 @@
       "noRuntimeDiagnostics": true,
       "runtimeReady": true
     },
+    "startup": {
+      "steadyCover": true
+    },
     "components": [
       {
         "allowTrivial": "Feet on the floor: the capsule is centred on Wren's waist, so her feet sit FOOT_OFFSET below the body origin; after 600 frames of running they must be on the meadow at y 0, not floating or sunk.",

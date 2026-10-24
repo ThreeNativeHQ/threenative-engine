@@ -47,6 +47,9 @@
       "noRuntimeDiagnostics": true,
       "runtimeReady": true
     },
+    "startup": {
+      "steadyCover": true
+    },
     "components": [
       {
         "entity": "player",

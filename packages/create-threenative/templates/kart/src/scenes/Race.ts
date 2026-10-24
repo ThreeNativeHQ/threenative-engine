@@ -275,6 +275,8 @@ export class Race extends Scene<GameState> {
     const camera = ctx.camera as PerspectiveCamera;
     ctx.add(camera);
     const loading = createLoadingScreen(ctx);
+    // The HUD is page UI the cover cannot hide, so it waits for the same readiness.
+    void ctx.startup.whenReady().then(() => ctx.state.set({ loaded: true }));
     const touchControls =
       isMobile() && isTouchscreenAvailable()
         ? ctx.entities.add("touch-controls", new TouchControls(camera))

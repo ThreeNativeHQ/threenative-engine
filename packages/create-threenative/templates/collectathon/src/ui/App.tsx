@@ -13,7 +13,7 @@ import { GameUi } from "./GameUi.js";
  */
 export function App({ game }: { game: IGame<GameState, IPhysicsContext> }) {
   return (
-    <main className="relative h-screen w-screen overflow-hidden bg-ink">
+    <main className="relative h-screen w-screen overflow-hidden bg-cover">
       <GameCanvas className="absolute inset-0" game={game} />
       <GameUi />
       <DebugOverlay />

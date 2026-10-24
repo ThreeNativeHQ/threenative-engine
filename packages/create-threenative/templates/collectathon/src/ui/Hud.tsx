@@ -28,8 +28,8 @@ function Meter({ wedges }: { wedges: number }) {
  */
 export function Hud() {
   const state = useUiState<GameState>();
-  // Nothing to draw until the game publishes its first snapshot, a few milliseconds in.
-  if (state === undefined) return null;
+  // Nothing to draw until the loading cover lifts: the HUD is page UI the cover cannot hide.
+  if (state?.loaded !== true) return null;
   return (
     <div className="pointer-events-none absolute inset-0 p-4 text-sm font-bold text-text">
       {/* Compact and unblurred, so a gem behind the panel still shows through it; it fades while a

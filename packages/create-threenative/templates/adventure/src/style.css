@@ -5,6 +5,8 @@
 
 @theme {
   --color-ink: #1d3a5c;
+  /* The loading cover's colour (`palette.skyLow`), so the page and the cover paint as one. */
+  --color-cover: #a9c4b8;
   --color-panel: #2a1a0e;
   --color-line: #ffffff40;
   --color-lume: #ffb35c;
@@ -39,7 +41,7 @@ body {
  */
 
 #root {
-  background: var(--color-ink);
+  background: var(--color-cover);
 }
 
 /* Boot failures are a page state, so the generated game owns their presentation. */

@@ -1,4 +1,6 @@
 export type GameState = {
+  /** True once startup is ready and the loading cover lifts; the HUD stays hidden until then. */
+  loaded?: boolean;
   /** Which checkpoint the hero respawns at, as an index into the course's checkpoints. */
   checkpoint: number;
   coins: number;

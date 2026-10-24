@@ -55,7 +55,8 @@ function ItemIcon({ item }: { item: string }) {
  */
 export function Hud() {
   const state = useUiState<GameState>();
-  if (state === undefined) return null;
+  // Nothing to draw until the loading cover lifts: the HUD is page UI the cover cannot hide.
+  if (state?.loaded !== true) return null;
   const countdown =
     state.countdown === 4
       ? "READY"

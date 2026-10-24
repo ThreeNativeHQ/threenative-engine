@@ -16,6 +16,8 @@ export interface IMapDot {
 }
 
 export type GameState = {
+  /** True once startup is ready and the loading cover lifts; the HUD stays hidden until then. */
+  loaded?: boolean;
   phase: RacePhase;
   /** 3, 2, 1 while the lamps light, 0 for the second of GO, −1 after. */
   countdown: number;

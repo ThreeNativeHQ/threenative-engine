@@ -25,8 +25,8 @@ function Heart({ fill }: { fill: number }) {
  */
 export function Hud() {
   const state = useUiState<GameState>();
-  // Nothing to draw until the game publishes its first snapshot, a few milliseconds in.
-  if (state === undefined) return null;
+  // Nothing to draw until the loading cover lifts: the HUD is page UI the cover cannot hide.
+  if (state?.loaded !== true) return null;
   // Heart n is full when n hearts are left, half when n - 0.5 are.
   const hearts = Array.from({ length: state.capacity }, (_, i) => i + 1).map((n) => {
     const left = state.hearts - n + 1;
