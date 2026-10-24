@@ -16,6 +16,12 @@ export const CAMERA_RIG = {
   elevation: 0.32,
   /** The aim point sits this high above the hero's waist, so the ground ahead fills the frame. */
   aimHeight: 1.1,
+  /**
+   * The lens looks this far above the aim point at full arm length (less as the arm shortens), so
+   * the view pitches about 4° down instead of the arm's 18°: the hero sits in the lower third and
+   * the horizon, the hills and the castle fill the top, as in a 3D platformer's establishing view.
+   */
+  lookAbove: 2.2,
   /** How fast the arm swings toward the travel direction at full run, in 1/s. */
   swingRate: 1.6,
   /** Closest the camera comes to the aim point, even when the hero has its back to a wall. */
@@ -101,7 +107,7 @@ export function createOrbitCamera(camera: PerspectiveCamera): IOrbitCamera {
     // Out is eased, in is immediate: a camera that eases into a wall shows the inside of it.
     distance = reach < distance ? reach : distance + (reach - distance) * ease;
     camera.position.copy(aim).addScaledVector(arm, distance);
-    camera.lookAt(aim);
+    camera.lookAt(aim.x, aim.y + (CAMERA_RIG.lookAbove * distance) / CAMERA_RIG.distance, aim.z);
     peakElevation = Math.max(peakElevation, elevation);
     closest = Math.min(closest, distance);
   };

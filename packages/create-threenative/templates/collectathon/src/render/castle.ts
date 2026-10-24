@@ -307,7 +307,12 @@ function gable(
 /** An arch panel (a rectangle under a half disc), facing +Z, its base centre at the origin. */
 function archPanel(width: number, height: number): BufferGeometry {
   const radius = width / 2;
-  const rect = new PlaneGeometry(width, height - radius).translate(0, (height - radius) / 2, 0);
+  // Subdivided: `glow` paints per vertex, and a one-quad panel has vertices only at the jambs.
+  const rect = new PlaneGeometry(width, height - radius, 8, 6).translate(
+    0,
+    (height - radius) / 2,
+    0,
+  );
   const top = new CircleGeometry(radius, 16, 0, Math.PI).translate(0, height - radius, 0);
   return merge([rect.toNonIndexed(), top.toNonIndexed()]);
 }
@@ -322,7 +327,10 @@ function glow(geometry: BufferGeometry, width: number): BufferGeometry {
   for (let i = 0; i < (position?.count ?? 0); i += 1) {
     const x = (position?.getX(i) ?? 0) / (width / 2);
     const y = position?.getY(i) ?? 0;
-    const k = Math.max(0.08, (1 - Math.min(1, Math.abs(x))) * (1 - Math.min(1, y / (width * 1.6))));
+    const k = Math.max(
+      0.12,
+      (1 - 0.8 * Math.min(1, Math.abs(x))) * (1 - 0.8 * Math.min(1, y / (width * 1.6))),
+    );
     colors.set([2.6 * k, 1.6 * k, 0.75 * k], i * 3);
   }
   geometry.setAttribute("color", new BufferAttribute(colors, 3));
@@ -356,7 +364,7 @@ export function buildCastle(): { group: Group; stone: Mesh } {
   addStone(box(-4.8, 8.6, -3.3, 4.8, 9.1, 0.3));
   // Turrets: x, z, radius, wall top, roof height.
   for (const [x, z, radius, top, roof] of [
-    [12.5, -2.5, 3.2, 17, 8],
+    [12.5, -2.5, 3.2, 14, 6],
     [-11.5, -11.5, 2.4, 13, 6],
   ] as const) {
     stoneParts.push(
@@ -435,7 +443,7 @@ export function buildCastle(): { group: Group; stone: Mesh } {
 
   // The flag on the corner turret's spire, waving from the pole.
   const pole = new Mesh(
-    new CylinderGeometry(0.07, 0.09, 4, 6).translate(12.5, 26.5, -2.5),
+    new CylinderGeometry(0.07, 0.09, 4, 6).translate(12.5, 21.5, -2.5),
     lit(C.wood),
   );
   pole.castShadow = true;
@@ -457,7 +465,7 @@ export function buildCastle(): { group: Group; stone: Mesh } {
     ),
   );
   const flag = new Mesh(new PlaneGeometry(2.5, 1.55, 10, 4), flagMaterial);
-  flag.position.set(12.5 + 1.3, 27.6, -2.5);
+  flag.position.set(12.5 + 1.3, 22.6, -2.5);
   flag.castShadow = true;
   group.add(pole, flag);
   return { group, stone };

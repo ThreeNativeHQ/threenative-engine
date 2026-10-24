@@ -452,7 +452,9 @@ export function plantIsland(site: IPlantingSite): { group: Group; meadow: IMeado
     const x = bounds.minX + rng() * (bounds.maxX - bounds.minX);
     const z = bounds.minZ + rng() * (bounds.maxZ - bounds.minZ);
     const onPath = site.pathDistance(x, z) < 1.4;
-    if ((!onPath && rng() > 0.006) || ground(x, z) < site.seaLevel + 0.4) continue;
+    // A grass stone casts a shadow and counts as a prop: it keeps the planting's clearances.
+    if ((!onPath && (rng() > 0.006 || !clear(x, z, 0.4))) || ground(x, z) < site.seaLevel + 0.4)
+      continue;
     const s = onPath ? 0.025 + rng() ** 3 * 0.11 : 0.1 + rng() ** 2 * 0.3;
     const at: Placement = [
       x,

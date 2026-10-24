@@ -142,7 +142,7 @@ export function setupSky(scene: Scene, sky: DataTexture, fill: DataTexture = sky
   // The sky fills the shade above the background's own level, so a cast shadow reads as a
   // mid-tone of the ground's colour, not a near-black hole in it.
   scene.environmentIntensity = 1.65;
-  // Light haze: about 9% at the castle 70 m off, half by the far hills at 200 m, so distance reads
+  // Light haze: about 5% at the castle 70 m off, a third by the far hills at 200 m, so distance reads
   // as layers of paler blue-green, as aerial perspective does in a stock Unreal outdoor level.
-  scene.fog = new FogExp2(palette.horizon, 0.0045);
+  scene.fog = new FogExp2(palette.horizon, 0.0031);
 }

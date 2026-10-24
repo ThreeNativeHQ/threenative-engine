@@ -57,7 +57,7 @@ export const COURSE = {
   /** The practice yard: a grabbable 3 m ledge and a 4.5 m wall, 1.5 m higher, that is not. */
   yard: { ledge: [-20, 4] as const, wall: [-20, -6] as const, ledgeTop: 3, wallTop: 4.5 },
   /** The castle's plateau on the northern headland, x, z, radius, height; the door faces south. */
-  castle: { pad: [2, -64, 14, 9] as const, door: [2, -56] as const },
+  castle: { pad: [2, -64, 14, 5] as const, door: [2, -56] as const },
   /**
    * Level ground, [x min, x max, z min, z max]: every scenario route runs on one of these, so the
    * terrain keeps them flat at y = 0 and the jumps measured in `HERO_FEEL` keep their meaning.
@@ -294,7 +294,7 @@ export function buildCourse(rng: () => number, grassShare = 1): ICourse {
   group.add(land);
   const sea = new Mesh(
     new PlaneGeometry(1600, 1600).rotateX(-Math.PI / 2),
-    lit(C.water, { roughness: 0.12 }),
+    lit(C.water, { roughness: 0.3 }),
   );
   sea.position.y = COURSE.seaLevel;
   group.add(farHills(COURSE.seaLevel));
