@@ -168,7 +168,6 @@ function strand(
   radius: (t: number) => number,
   radial = 6,
   segments = 8,
-  squash?: { from: Vector3; by: number },
 ): BufferGeometry {
   const curve = new CatmullRomCurve3(points.map(([x, y, z]) => new Vector3(x, y, z)));
   const tube = new TubeGeometry(curve, segments, 1, radial, false);
@@ -176,16 +175,12 @@ function strand(
   if (position === undefined) return tube;
   const centre = new Vector3();
   const v = new Vector3();
-  const out = new Vector3();
   for (let i = 0; i <= segments; i += 1) {
     curve.getPointAt(i / segments, centre);
     const r = radius(i / segments);
-    if (squash !== undefined) out.copy(centre).sub(squash.from).normalize();
     for (let j = 0; j <= radial; j += 1) {
       const k = i * (radial + 1) + j;
-      v.fromBufferAttribute(position, k).sub(centre).multiplyScalar(r);
-      if (squash !== undefined) v.addScaledVector(out, (squash.by - 1) * v.dot(out));
-      v.add(centre);
+      v.fromBufferAttribute(position, k).sub(centre).multiplyScalar(r).add(centre);
       position.setXYZ(k, v.x, v.y, v.z);
     }
   }
@@ -279,8 +274,8 @@ function faceZ(x: number, y: number): number {
   return Math.sqrt(Math.max(0, HR * HR - x0 * x0 - y0 * y0)) * (1 - 0.12 * ny * ny);
 }
 
-/** Where the cloth gathers into a soft point, straight back from the crown. */
-const PEAK = new Vector3(0, 0.3, -0.95).normalize();
+/** Where the cloth gathers into a soft point, at the top of the back of the crown. */
+const PEAK = new Vector3(0, 0.5, -0.87).normalize();
 /** The mantle's outline (radius, height on the body), crown to hem; it is 0.8 as deep as wide. */
 const MANTLE: readonly (readonly [number, number])[] = [
   [0.262, 0.39],
@@ -293,13 +288,14 @@ const MANTLE: readonly (readonly [number, number])[] = [
 /** The hood centre's height on the body: the head joint, the head centre, the hood's offset. */
 const HOOD_ON_BODY = 0.585 + HOOD.y;
 
-/** How much of a fold ridge the hood carries at `v` (from its centre), 0 to 1: three broad folds
- * down the back, from the crown, deepening toward the shoulders. */
+/** Where the hood folds at `v` (from its centre), -1 to 1: a ridge is positive, the crease between
+ * two ridges negative. Three broad folds run down the back from ear height, deepening where the
+ * hood meets the mantle. */
 function foldAt(v: Vector3): number {
   const ny = v.y / v.length();
-  const back = Math.max(0, -Math.sin(Math.atan2(v.z, -v.x)));
-  const ridge = 0.5 + 0.5 * Math.cos(6 * (Math.atan2(v.z, -v.x) - (Math.PI * 3) / 2));
-  return back * ridge * MathUtils.clamp((0.75 - ny) / 1.5, 0, 1);
+  const phi = Math.atan2(v.z, -v.x);
+  const back = Math.max(0, -Math.sin(phi));
+  return back * Math.cos(6 * (phi - (Math.PI * 3) / 2)) * MathUtils.clamp(0.25 - ny, 0, 1);
 }
 
 /** The mantle's radius at body height `y`, or 0 above it. */
@@ -312,16 +308,17 @@ function mantleRadius(y: number): number {
   return 0;
 }
 
-/** The hood rises to a soft point behind the crown and carries three broad folds down its back.
+/** The hood slumps to a soft point behind the crown and carries three broad folds down its back.
  * Below the head it drapes wider and longer, falls straight down behind the neck, and lies on the
  * mantle down to a dagged edge. */
 function drape(v: Vector3): void {
   const length = v.length();
   const ny = v.y / length;
-  const peak = MathUtils.smoothstep(v.dot(PEAK) / length, 0.6, 1);
-  v.addScaledVector(PEAK, 0.035 * peak * peak);
+  const peak = MathUtils.smoothstep(v.dot(PEAK) / length, 0.35, 1) ** 2;
+  v.addScaledVector(PEAK, 0.05 * peak);
   const phi = Math.atan2(v.z, -v.x);
-  const fold = 1 + 0.08 * foldAt(v);
+  // Folds only stand out from the head, so the hair never shows through a crease.
+  const fold = 1 + (ny >= 0 ? 0.05 : 0.12) * Math.max(0, foldAt(v));
   if (ny >= 0) {
     v.x *= fold;
     v.z *= fold;
@@ -574,6 +571,8 @@ export function createHero(): IHeroRig {
     ),
   ]);
   lamp.add(part(new CylinderGeometry(0.032, 0.032, 0.075, 8), glow(C.lamp, 5), 0, -0.1));
+  // Big enough to read as her lantern from the chase camera.
+  lamp.scale.setScalar(1.4);
 
   // The skirt of the tunic: a front and a back panel, lapped at the sides, flaring and folding toward
   // a hem with an ochre band. It swings with the stride, and each leg pushes its panel open over the
@@ -810,18 +809,39 @@ export function createHero(): IHeroRig {
         HOOD.y,
         HOOD.z,
       ),
-      (p: Vector3) =>
-        new Color(C.cap)
-          .lerp(new Color(C.capLining), 0.3 * foldAt(p.clone().sub(new Vector3(0, HOOD.y, HOOD.z))))
-          .getHex(),
+      // The cloth darkens from the crown down; the ridges catch a lighter blue, the creases between
+      // them fall to the dark blue.
+      (p: Vector3) => {
+        const v = p.clone().sub(new Vector3(0, HOOD.y, HOOD.z));
+        const f = foldAt(v);
+        const low = MathUtils.clamp((0.3 - v.y / v.length()) / 1.3, 0, 1);
+        return new Color(C.cap)
+          .lerp(new Color(C.capDark), 0.35 * low)
+          .lerp(new Color(f > 0 ? C.capLining : C.capDark), f > 0 ? 0.3 * f : -0.7 * f)
+          .getHex();
+      },
       "hood",
     ],
     // A lighter lining rolled over the edge, so the opening reads from any side.
     [strand(rim, () => 0.009, 6, 48), C.capLining, "cloth"],
+    // A seam down the middle of the back, crown to nape.
+    [
+      strand(
+        Array.from({ length: 12 }, (_, i) => {
+          const [x, y, z] = hoodPoint((Math.PI * 3) / 2, 0.15 + (2.45 * i) / 11);
+          return [x, (y - HOOD.y) * 1.01 + HOOD.y, (z - HOOD.z) * 1.01 + HOOD.z] as Point;
+        }),
+        () => 0.004,
+        4,
+        24,
+      ),
+      new Color(C.cap).lerp(new Color(C.capLining), 0.5).getHex(),
+      "cloth",
+    ],
   );
   bake(head, face);
 
-  // Side locks and the hood's tip hang on their own joints: springs move them.
+  // Side locks hang on their own joints: springs move them.
   const locks = [-1, 1].map((s) => {
     const lock = joint(head, s * 0.105, HC + 0.03, 0.11);
     const hang = (dx: number, dz: number, length: number): Part => [
@@ -842,40 +862,6 @@ export function createHero(): IHeroRig {
     bake(lock, [hang(0, 0, 0.17), hang(s * 0.008, -0.03, 0.14)]);
     return lock;
   });
-  // The tip grows out of the hood's point: a flattened cone, wide and sunk into the crown where it
-  // starts, bending down under its own weight to a rounded point on the mantle between her shoulder
-  // blades, a little to her left.
-  const hoodCentre = new Vector3(0, HOOD.y, HOOD.z);
-  const lie = (turn: number, theta: number, out: number): Vector3 =>
-    new Vector3(...hoodPoint((Math.PI * 3) / 2 + turn, theta)).sub(hoodCentre).multiplyScalar(out);
-  const tipRoot = lie(0, 1.15, 0.72).add(hoodCentre);
-  const hoodTip = joint(head, tipRoot.x, tipRoot.y, tipRoot.z);
-  bake(hoodTip, [
-    [
-      strand(
-        [
-          [0, 1.15, 0.72],
-          [0.02, 1.4, 1.07],
-          [0.08, 1.75, 1.13],
-          [0.16, 2.1, 1.13],
-          [0.24, 2.45, 1.1],
-          [0.3, 2.75, 1.06],
-        ].map(([turn, theta, out]) =>
-          lie(turn as number, theta as number, out as number)
-            .add(hoodCentre)
-            .sub(tipRoot)
-            .toArray(),
-        ),
-        (t) => 0.01 + 0.055 * (1 - t) ** 1.6,
-        10,
-        24,
-        { from: hoodCentre.clone().sub(tipRoot), by: 0.55 },
-      ),
-      C.cap,
-      "drape",
-    ],
-  ]);
-
   // The mantle over her shoulders, open at the front over the V collar, clasped with a cord.
   const gap = 0.55;
   // The hem is dagged: it hangs in soft points.
@@ -1193,7 +1179,7 @@ export function createHero(): IHeroRig {
   root.add(blob);
 
   // Springs: an angle that chases a target and overshoots a little, so cloth and hair lag.
-  const springs = { tip: [0, 0], tipSide: [0, 0], locks: [0, 0], pouch: [0, 0], lamp: [0, 0] };
+  const springs = { locks: [0, 0], pouch: [0, 0], lamp: [0, 0] };
   const chase = (s: number[], target: number, dt: number, stiffness = 80, damping = 9): number => {
     const angle = s[0] ?? 0;
     const speed = (s[1] ?? 0) + ((target - angle) * stiffness - (s[1] ?? 0) * damping) * dt;
@@ -1343,11 +1329,6 @@ export function createHero(): IHeroRig {
       const thighs = [legs.left.rotation.x, legs.right.rotation.x];
       panels[0]?.rotation.set(Math.max(-0.6, Math.min(0, ...thighs) * 0.7), 0, 0);
       panels[1]?.rotation.set(Math.max(0, ...thighs) * 0.7, 0, 0);
-      hoodTip.rotation.set(
-        chase(springs.tip, run * 0.12 - lift * 0.3 + idle * 0.04, step),
-        0,
-        chase(springs.tipSide, Math.sin(cycle) * 0.1 * run + Math.sin(time * 1.1) * 0.04, step),
-      );
       const sway = chase(springs.locks, run * 0.35 - lift * 0.18 + idle * 0.04, step, 110, 10);
       for (const [i, lock] of locks.entries())
         lock.rotation.set(sway, 0, (i === 0 ? -1 : 1) * (0.04 + 0.05 * run));
