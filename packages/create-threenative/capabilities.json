@@ -4912,11 +4912,16 @@
     },
     {
       "aliases": ["hitscan camera"],
-      "constraints": ["query results are bounded by the configured result limit"],
+      "constraints": [
+        "query results are bounded by the configured result limit",
+        "intersectRay ignores a solid that contains the ray origin and returns the next real hit or none, like Godot hit_from_inside false"
+      ],
       "example": "const space = new PhysicsDirectSpaceState3D(context);",
       "importPath": "@threenative/physics",
       "kind": "class",
-      "overrides": [],
+      "overrides": [
+        "hitFromInside: true returns the solid around the ray origin as a distance 0 hit with a zero normal"
+      ],
       "package": "@threenative/physics",
       "requires": ["npm i @threenative/physics"],
       "signature": "export class PhysicsDirectSpaceState3D { … }",

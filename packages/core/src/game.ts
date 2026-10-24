@@ -1227,6 +1227,13 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     const startupCoverActive = (): boolean =>
       !startupReadiness.ready &&
       (canvasLayer.opaque || (this.#uiReady && this.#uiBridge?.hasPeer() === true));
+    // A draw the warm-up makes in a timer task is presented by the browser on its own, without the
+    // frame loop's overlay: a Wasm engine still baking the environment presents black, and the
+    // cover flickers against it. Paint the cover again in the same task.
+    const repaintCover = (): void => {
+      if (canvasLayer.opaque && canvasLayer.scene.children.length > 0)
+        renderer.renderOverlay(canvasLayer.scene, canvasLayer.camera);
+    };
     const timeline: { -readonly [K in keyof IStartupTimeline]: IStartupTimeline[K] } = {};
     let warmUpStatus: IStartupStatus["warmup"];
     const now = (): number => globalThis.performance?.now() ?? Date.now();
@@ -1288,6 +1295,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         // rest synchronously -- tens of seconds each on a software adapter, which loses the device.
         this.#matrixWorld?.apply(projection.root);
         report = await warmUpScene(renderer, projection.root, camera, {
+          afterCoveredDraw: repaintCover,
           budgetMs,
           computeNodes: this.#computeDriven.warmupNodes,
           renderPasses: this.#warmUpOptions().renderPasses,
@@ -2247,6 +2255,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         this.#matrixWorld?.apply(projection.root);
         const warmUpOptions: IWarmUpOptions = this.#warmUpOptions();
         report = await warmUpScene(this.#renderer, projection.root, camera, {
+          afterCoveredDraw: repaintCover,
           ...warmUpOptions,
           computeNodes: [...(warmUpOptions.computeNodes ?? []), ...this.#computeDriven.warmupNodes],
         });

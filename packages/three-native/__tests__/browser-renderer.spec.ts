@@ -568,6 +568,43 @@ describe("the Wasm engine's environment preparation", () => {
   });
 });
 
+describe("the Wasm engine's environment preparation presents", () => {
+  it("lets the caller paint its cover straight after every draw, in the same task", async () => {
+    // Each draw is a timer task the browser presents alone, so an unbaked environment presents black:
+    // the cover has to follow every draw before the task ends.
+    const pending = [1, 1, 0];
+    const order: string[] = [];
+    let drawn = 0;
+    // The cover is a draw too, so the engine's "skipped for an unbaked environment" flag reads 0
+    // after it: the loop has to read the flag before the cover paints, or it stops at once.
+    let coverIsLastDraw = false;
+    const { Renderer, canvas, scene, camera } = host(
+      (field) => (field === 12 && !coverIsLastDraw ? (pending[drawn - 1] ?? 0) : 0),
+      () => {
+        drawn += 1;
+        coverIsLastDraw = false;
+        order.push("draw");
+        return 0;
+      },
+    );
+    const renderer = new Renderer({ canvas }) as {
+      init(): Promise<unknown>;
+      prepareEnvironmentAsync(
+        scene: unknown,
+        camera: unknown,
+        deadlineMs: number,
+        afterDraw: () => void,
+      ): Promise<boolean>;
+    };
+    await renderer.init();
+    await renderer.prepareEnvironmentAsync(scene, camera, Number.POSITIVE_INFINITY, () => {
+      coverIsLastDraw = true;
+      order.push("cover");
+    });
+    expect(order).toEqual(["draw", "cover", "draw", "cover", "draw", "cover"]);
+  });
+});
+
 describe("the Wasm engine's environment preparation deadline", () => {
   it("gives up at the caller's deadline instead of drawing an unbaked environment forever", async () => {
     let drawn = 0;

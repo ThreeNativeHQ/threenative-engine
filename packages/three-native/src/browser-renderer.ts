@@ -524,17 +524,26 @@ export function defineWebRenderer(
      * (behind the loading cover) until a render is no longer skipped for it. True when it drew;
      * false at `deadlineMs` (a `performance.now()` time), so a bake that never finishes cannot
      * hold the caller or keep drawing after it gave up.
+     *
+     * Each draw runs in a timer task, not in the animation frame, so the browser presents it by
+     * itself: an environment still baking presents black. `afterDraw` runs straight after every
+     * draw, in the same task, so the caller can paint its loading cover over that frame; without
+     * it the cover flickers against black for as long as the bake lasts.
      */
     async prepareEnvironmentAsync(
       scene: unknown,
       camera: unknown,
       deadlineMs = Number.POSITIVE_INFINITY,
+      afterDraw?: () => void,
     ): Promise<boolean> {
       while (performance.now() < deadlineMs) {
         const gated = this.info.engine.frameGateSkips;
         this.render(scene, camera);
-        if (this.info.engine.frameGateSkips === gated && module._tnw_web_frame(12) === 0)
-          return true;
+        // Read before `afterDraw`: the cover is a draw too, and the engine's "skipped for an unbaked
+        // environment" flag describes the last draw it made.
+        const baked = this.info.engine.frameGateSkips === gated && module._tnw_web_frame(12) === 0;
+        afterDraw?.();
+        if (baked) return true;
         // A macrotask, not a frame: the work-done callbacks that advance the bake arrive between tasks.
         await new Promise((resolve) => setTimeout(resolve, 0));
       }

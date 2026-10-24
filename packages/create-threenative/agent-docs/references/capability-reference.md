@@ -3863,8 +3863,9 @@ export class PhysicsDirectSpaceState3D { … }
 ```
 
 - **Use when:** raycast for visibility or aiming · find bodies inside a shape or point query
-- **Constraints:** query results are bounded by the configured result limit
+- **Constraints:** query results are bounded by the configured result limit · intersectRay ignores a solid that contains the ray origin and returns the next real hit or none, like Godot hit_from_inside false
 - **Requires:** npm i @threenative/physics
+- **Overrides:** hitFromInside: true returns the solid around the ray origin as a distance 0 hit with a zero normal
 
 ```ts
 const space = new PhysicsDirectSpaceState3D(context);
