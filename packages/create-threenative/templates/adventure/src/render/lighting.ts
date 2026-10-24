@@ -21,7 +21,7 @@ export interface ILighting {
   /** Keeps the shadow map centred on Wren. Call after physics has moved her. */
   follow(target: Vector3): void;
   /**
-   * Under the Hollow's roof the sky barely reaches: the sky light drops to a tenth and the torches
+   * Under the Hollow's roof the sky barely reaches: the sky light drops to a twentieth and the torches
    * carry the room, and the forest mist thins so the far wall and the Warden stay clear. Auto
    * exposure (core's default) then meters the darker room on its own.
    */
@@ -62,7 +62,7 @@ export function setupLighting(scene: Scene, renderer: ShadowRenderer, mobile = f
     },
     key,
     setIndoors(indoors: boolean): void {
-      scene.environmentIntensity = indoors ? 0.1 : 1;
+      scene.environmentIntensity = indoors ? 0.05 : 1;
       setMist(scene, indoors);
     },
   };

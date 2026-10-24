@@ -71,7 +71,7 @@ const GROUND_FILL = new Color(0.1, 0.13, 0.07);
  */
 const MIST = {
   vale: { distance: 0.016, density: 0.005, glow: 0.8 },
-  hollow: { distance: 0.006, density: 0.004, glow: 0.6 },
+  hollow: { distance: 0.004, density: 0.002, glow: 0.5 },
   heightFalloff: 0.3,
   /** Metres of clear air before the mist starts, so the ground at Wren's feet stays crisp. */
   startDistance: 10,
