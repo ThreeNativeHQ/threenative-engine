@@ -4,7 +4,9 @@ import type { IGeometryOwnership } from "./geometry-capture.js";
 import type { MatrixWorldPass } from "./matrix-world.js";
 import { ProjectionMirror } from "./projection-apply.js";
 import {
+  type IProjectionDeclineCount,
   type IProjectionProjectPlan,
+  type ProjectionDeclineCauseCode,
   createProjectionScanWorkspace,
   isRenderable,
   releaseProjectionScanWorkspace,
@@ -95,12 +97,35 @@ export type ProjectionExactReason =
  */
 export type ProjectionMaterialChecks = "spread" | "everyFrame";
 
+/**
+ * Why a `notWorthwhile` scene had too many meshes drawing alone, with the change that fixes it, so an
+ * agent reading TN_RENDER_PROJECTION learns what to edit rather than only that batching declined.
+ */
+export interface IProjectionDeclineCause extends IProjectionDeclineCount {
+  readonly hint: string;
+}
+
+const DECLINE_HINTS: Record<ProjectionDeclineCauseCode, string> = {
+  uniqueGeometry:
+    "meshes whose geometry data differs cannot share a draw; build each model once and clone() it, or reuse one geometry for every copy",
+  uniqueMaterial:
+    "copies share a shape but not a material; reuse one material per surface (copies may differ only in color) and the same castShadow, receiveShadow and layers",
+};
+
+function declineCauseOf(
+  count: IProjectionDeclineCount | undefined,
+): IProjectionDeclineCause | undefined {
+  return count === undefined ? undefined : { ...count, hint: DECLINE_HINTS[count.code] };
+}
+
 export interface IRenderProjectionReport {
   readonly schemaVersion: 1;
   /** True while the renderer is being handed the mirror rather than the authored scene. */
   readonly projecting: boolean;
   readonly reasonCode: ProjectionReasonCode;
   readonly reason?: string;
+  /** Set on a `notWorthwhile` decline: which meshes drew alone, how many, and what to change. */
+  readonly cause?: IProjectionDeclineCause;
   /** Renderables the authored scene holds — what an unoptimized frame would walk and draw. */
   readonly sourceRenderables: number;
   /**
@@ -220,6 +245,9 @@ interface IHostProjectionVerdict {
   readonly skinnedBatches: number;
   readonly exactObjects: number;
   readonly exact: Partial<Record<ProjectionExactReason, number>>;
+  /** On a `notWorthwhile` decline: the cause code and its mesh count, as the JS scan names them. */
+  readonly cause?: ProjectionDeclineCauseCode;
+  readonly causeMeshes?: number;
 }
 
 /**
@@ -283,6 +311,7 @@ export class SceneRenderProjection {
   #deoptimized = true;
   #reasonCode: ProjectionReasonCode = "belowMeshFloor";
   #reason: string | undefined;
+  #cause: IProjectionDeclineCause | undefined;
   #sourceRenderables = 0;
   #reconcileMs = 0;
   #lastReconcileMs = 0;
@@ -448,7 +477,7 @@ export class SceneRenderProjection {
       if (scan.plan.action === "decline") {
         this.#forgetPlan();
         mirror.releaseAll();
-        this.#deoptimize(scan.plan.reasonCode, scan.plan.reason);
+        this.#deoptimize(scan.plan.reasonCode, scan.plan.reason, scan.plan.cause);
         // A scene with nothing in it yet is still loading, and walking it costs nothing: look
         // again next frame rather than drawing the first second of the level unprojected.
         if (scan.renderables === 0) this.#framesSinceDeclineScan = DECLINE_RESCAN_FRAMES;
@@ -477,6 +506,7 @@ export class SceneRenderProjection {
         this.#deoptimized = false;
         this.#reasonCode = "projected";
         this.#reason = undefined;
+        this.#cause = undefined;
       }
     }
 
@@ -506,6 +536,10 @@ export class SceneRenderProjection {
     this.#reason = verdict.projecting
       ? undefined
       : `the host renderer declined this scene (${verdict.reasonCode})`;
+    this.#cause =
+      verdict.cause === undefined || verdict.projecting
+        ? undefined
+        : declineCauseOf({ code: verdict.cause, meshes: verdict.causeMeshes ?? 0 });
     this.#recordReconcile(startedAt);
     this.#publish();
   }
@@ -570,6 +604,7 @@ export class SceneRenderProjection {
           projecting: r.projecting,
           reasonCode: r.reasonCode,
           ...(r.reason === undefined ? {} : { reason: r.reason }),
+          ...(r.cause === undefined ? {} : { cause: r.cause }),
           sourceRenderables: r.sourceRenderables,
           resultDrawCandidates: r.resultDrawCandidates,
           batches: r.batches,
@@ -615,6 +650,7 @@ export class SceneRenderProjection {
       projecting: !this.#deoptimized,
       reasonCode: this.#reasonCode,
       ...(this.#reason === undefined ? {} : { reason: this.#reason }),
+      ...(this.#cause === undefined ? {} : { cause: this.#cause }),
       sourceRenderables: this.#sourceRenderables,
       resultDrawCandidates,
       projectedObjects: this.#deoptimized ? 0 : (this.#mirror?.projectedObjects ?? 0),
@@ -661,6 +697,7 @@ export class SceneRenderProjection {
       projecting,
       reasonCode: this.#reasonCode,
       ...(this.#reason === undefined ? {} : { reason: this.#reason }),
+      ...(this.#cause === undefined ? {} : { cause: this.#cause }),
       sourceRenderables: verdict.sourceRenderables,
       resultDrawCandidates: verdict.sourceRenderables,
       projectedObjects: projecting ? verdict.projectedObjects : 0,
@@ -707,10 +744,15 @@ export class SceneRenderProjection {
   }
 
   /** Hands this frame back to the authored scene, naming why. */
-  #deoptimize(reasonCode: ProjectionReasonCode, reason: string): void {
+  #deoptimize(
+    reasonCode: ProjectionReasonCode,
+    reason: string,
+    cause?: IProjectionDeclineCount,
+  ): void {
     this.#deoptimized = true;
     this.#reasonCode = reasonCode;
     this.#reason = reason;
+    this.#cause = declineCauseOf(cause);
   }
 
   /**

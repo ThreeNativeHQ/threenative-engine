@@ -290,6 +290,18 @@ Value hostProjectionReport(Object3D& root, int minMeshes) {
     const projection::Decision& d = host.decision;
     std::vector<std::pair<std::string, Value>> exact;
     for (const auto& [reason, count] : d.exact) exact.emplace_back(reason, Value::of(double(count)));
+    if (!d.cause.empty())
+        return Value::record({{"projecting", Value::of(d.projecting)},
+                              {"reasonCode", Value{Value::Kind::String, 0, d.reasonCode}},
+                              {"sourceRenderables", Value::of(double(d.sourceRenderables))},
+                              {"projectedObjects", Value::of(0.0)},
+                              {"instancedBatches", Value::of(0.0)},
+                              {"materialBatches", Value::of(0.0)},
+                              {"skinnedBatches", Value::of(0.0)},
+                              {"exactObjects", Value::of(0.0)},
+                              {"exact", Value::record({})},
+                              {"cause", Value{Value::Kind::String, 0, d.cause}},
+                              {"causeMeshes", Value::of(double(d.causeMeshes))}});
     return Value::record({{"projecting", Value::of(d.projecting)},
                           {"reasonCode", Value{Value::Kind::String, 0, d.reasonCode}},
                           {"sourceRenderables", Value::of(double(d.sourceRenderables))},

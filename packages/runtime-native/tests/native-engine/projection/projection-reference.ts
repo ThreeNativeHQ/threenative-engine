@@ -170,6 +170,7 @@ function decide(spec: ISceneSpec): Record<string, unknown> {
     skinnedBatches: r.skinnedBatches,
     exactObjects: r.exactObjects,
     exact,
+    ...(r.cause === undefined ? {} : { cause: r.cause.code, causeMeshes: r.cause.meshes }),
   };
 }
 

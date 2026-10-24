@@ -61,6 +61,10 @@ struct Decision {
     int skinnedBatches = 0;
     int exactObjects = 0;
     std::map<std::string, int> exact; // reason -> objects keeping their own draw for it
+    // A notWorthwhile decline's cause, as core's declineCause names it: "uniqueGeometry" or
+    // "uniqueMaterial", and the meshes left drawing alone for it. Empty otherwise.
+    std::string cause;
+    int causeMeshes = 0;
     // Per object: the lane that batched it ("instanced", "uniform", "material", "skinned") or the
     // reason it keeps its own draw. Declined frames record nothing here.
     std::map<const Object3D*, std::string> verdict;
@@ -563,6 +567,23 @@ inline Decision decide(Object3D& scene, int minMeshes = 200, bool skinnedVerdict
     }
     if (predicted > d.sourceRenderables * kWorthwhileDrawRatio) {
         d.reasonCode = "notWorthwhile";
+        // declineCause: a mesh drawing alone whose content class has too few meshes in the scene is
+        // held back by its geometry, one whose class has enough by its material or flags.
+        std::unordered_map<const void*, int> sizes;
+        for (Mesh* mesh : eligible) ++sizes[&contentClassOf(mesh->geometry)];
+        int geometry = 0, material = 0;
+        for (const Key& key : groupOrder) {
+            const Group& group = groups[key];
+            if (int(group.members.size()) >= kMinBatchMembers) continue;
+            for (Mesh* mesh : group.members) {
+                if (uniformClaimed(mesh)) continue;
+                ++(sizes[std::get<0>(key)] >= kMinBatchMembers ? material : geometry);
+            }
+        }
+        if (geometry + material > 0) {
+            d.cause = geometry >= material ? "uniqueGeometry" : "uniqueMaterial";
+            d.causeMeshes = std::max(geometry, material);
+        }
         return d;
     }
 

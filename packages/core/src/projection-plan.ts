@@ -454,11 +454,25 @@ export interface IProjectionScanWorkspace {
   scanNumber: number;
 }
 
+/**
+ * Why a `notWorthwhile` frame had too many meshes drawing alone. `uniqueGeometry`: copies whose
+ * geometry data differs (or that are one of a kind); `uniqueMaterial`: copies that share a shape but
+ * not a material beyond its colour, or not their shadow and layer flags.
+ */
+export type ProjectionDeclineCauseCode = "uniqueGeometry" | "uniqueMaterial";
+
+export interface IProjectionDeclineCount {
+  readonly code: ProjectionDeclineCauseCode;
+  /** Meshes left drawing alone for that cause. */
+  readonly meshes: number;
+}
+
 /** Gives the frame back to the authored scene, naming why. */
 export interface IProjectionDeclinePlan {
   readonly action: "decline";
   readonly reasonCode: ProjectionReasonCode;
   readonly reason: string;
+  readonly cause?: IProjectionDeclineCount;
 }
 
 /** Everything the apply seam needs to build and maintain this frame's mirror. */
@@ -1230,6 +1244,42 @@ function resolveGeometryContent(workspace: IProjectionScanWorkspace, scanNumber:
   }
 }
 
+/** A below-floor group's members no uniform group claimed. A packed material batch still pays a sub-draw each. */
+function aloneMembers(workspace: IProjectionScanWorkspace, group: IProjectionBatchGroup): number {
+  let alone = 0;
+  for (let member = 0; member < group.memberCount; member += 1)
+    if (!uniformClaimed(workspace, group.members[member] as Mesh)) alone += 1;
+  return alone;
+}
+
+/**
+ * Why a declined frame has meshes drawing alone: a mesh whose content class has too few meshes in
+ * the whole scene is held back by its geometry, one whose class has enough by its material or flags.
+ * The larger count names the cause. Only a decline pays for this.
+ */
+function declineCause(workspace: IProjectionScanWorkspace): IProjectionDeclineCount | undefined {
+  const sizes = new Map<IGeometryContentClass, number>();
+  for (let index = 0; index < workspace.eligibleCount; index += 1) {
+    const content = (workspace.eligibleContent[index] as IGeometryContentEntry)
+      .cls as IGeometryContentClass;
+    sizes.set(content, (sizes.get(content) ?? 0) + 1);
+  }
+  let geometry = 0;
+  let material = 0;
+  for (let index = 0; index < workspace.activeGroupCount; index += 1) {
+    const group = workspace.activeGroups[index] as IProjectionBatchGroup;
+    if (group.memberCount >= MIN_BATCH_MEMBERS) continue;
+    const alone = aloneMembers(workspace, group);
+    if ((sizes.get(group.content as IGeometryContentClass) ?? 0) >= MIN_BATCH_MEMBERS)
+      material += alone;
+    else geometry += alone;
+  }
+  if (geometry + material === 0) return undefined;
+  return geometry >= material
+    ? { code: "uniqueGeometry", meshes: geometry }
+    : { code: "uniqueMaterial", meshes: material };
+}
+
 function groupEligibleMeshes(workspace: IProjectionScanWorkspace, scanNumber: number): void {
   resolveGeometryContent(workspace, scanNumber);
   for (let index = 0; index < workspace.eligibleCount; index += 1) {
@@ -1414,6 +1464,7 @@ export function scanProjection(
   groupEligibleMeshes(workspace, workspace.scanNumber);
   const predictedDraws = predictDraws(workspace);
   if (predictedDraws > state.renderables * WORTHWHILE_DRAW_RATIO) {
+    const cause = declineCause(workspace);
     return {
       exactLane: workspace.exactLane,
       exactLaneCount: workspace.exactLaneCount,
@@ -1421,6 +1472,7 @@ export function scanProjection(
         action: "decline",
         reasonCode: "notWorthwhile",
         reason: `projecting would draw ${predictedDraws} of ${state.renderables} candidates, which is not worth its own cost`,
+        ...(cause === undefined ? {} : { cause }),
       },
       renderables: state.renderables,
       seen: workspace.seen,

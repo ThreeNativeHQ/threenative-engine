@@ -54,7 +54,7 @@ describe("render projection content identity", () => {
     expect(meshes.map((mesh) => mesh.geometry)).toContain(batches[0]?.geometry);
   });
 
-  it("keeps the same vertex count with different data apart", () => {
+  it("keeps the same vertex count with different data apart, and names the cause", () => {
     const scene = new Scene();
     perCopy(scene, 40, (index) => new BoxGeometry(1, 1 + index * 0.001, 1));
     const projection = new SceneRenderProjection(scene, { minMeshes: 8 });
@@ -62,6 +62,21 @@ describe("render projection content identity", () => {
 
     expect(projection.report.reasonCode).toBe("notWorthwhile");
     expect(batchesIn(projection.root)).toHaveLength(0);
+    expect(projection.report.cause).toMatchObject({ code: "uniqueGeometry", meshes: 40 });
+    expect(projection.report.cause?.hint).toContain("clone()");
+  });
+
+  it("names a material cause when the copies share a shape but not a surface", () => {
+    const scene = new Scene();
+    for (let index = 0; index < 40; index += 1)
+      scene.add(
+        new Mesh(new BoxGeometry(1, 1, 1), new MeshStandardMaterial({ roughness: index / 40 })),
+      );
+    const projection = new SceneRenderProjection(scene, { minMeshes: 8 });
+    projection.reconcile();
+
+    expect(projection.report.reasonCode).toBe("notWorthwhile");
+    expect(projection.report.cause).toMatchObject({ code: "uniqueMaterial", meshes: 40 });
   });
 
   it("lets a member whose geometry changes leave the group, and redraws the rest from a member that did not", () => {

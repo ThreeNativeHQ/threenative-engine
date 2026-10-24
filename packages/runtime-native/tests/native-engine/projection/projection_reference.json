@@ -4221,7 +4221,9 @@
     "materialBatches": 0,
     "skinnedBatches": 0,
     "exactObjects": 0,
-    "exact": {}
+    "exact": {},
+    "cause": "uniqueMaterial",
+    "causeMeshes": 200
    }
   },
   {
@@ -4297,7 +4299,9 @@
     "materialBatches": 0,
     "skinnedBatches": 0,
     "exactObjects": 0,
-    "exact": {}
+    "exact": {},
+    "cause": "uniqueGeometry",
+    "causeMeshes": 40
    }
   },
   {

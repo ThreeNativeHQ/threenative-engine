@@ -187,6 +187,9 @@ int main() {
         check("materialBatches", d.materialBatches);
         check("skinnedBatches", d.skinnedBatches);
         check("exactObjects", d.exactObjects);
+        if (mismatch.empty() && d.cause != text(expected.find("cause")))
+            mismatch = "cause " + d.cause + " vs " + text(expected.find("cause"));
+        check("causeMeshes", expected.find("causeMeshes") ? d.causeMeshes : -1);
         const Value* exact = expected.find("exact");
         if (mismatch.empty() && exact->members().size() != d.exact.size()) mismatch = "exact reasons";
         for (const auto& [reason, count] : exact->members())
