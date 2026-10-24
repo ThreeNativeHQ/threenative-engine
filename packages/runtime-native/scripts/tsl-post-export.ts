@@ -1,3 +1,4 @@
+import { convertToTexture, uv, vec4 } from "three/tsl";
 import type { ISerializedTslNode } from "./tsl-export.js";
 
 function data(node: Record<string, unknown>, key: string): number[] {
@@ -71,7 +72,20 @@ export function exportNativePost(
   } else {
     if (kind === "DenoiseNode") args.push(visit(node.textureNode));
     args.push(visit(node.depthNode));
-    if (node.normalNode !== null) args.push(visit(node.normalNode));
+    if (node.normalNode !== null) {
+      const normal = node.normalNode as {
+        isNode?: boolean;
+        sample?: (at: ReturnType<typeof uv>) => Parameters<typeof convertToTexture>[0];
+      };
+      // GTAO accepts a sample receiver; native post inputs require a texture, so draw its expression first.
+      args.push(
+        visit(
+          kind === "GTAONode" && normal.isNode !== true && typeof normal.sample === "function"
+            ? convertToTexture(vec4(normal.sample(uv()), 1))
+            : normal,
+        ),
+      );
+    }
     images.push(
       image(node, kind, kind === "GTAONode" ? "_noiseNode" : "noiseNode", `${name}_noise`),
     );
