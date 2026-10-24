@@ -1,19 +1,10 @@
 // Generated for you. This is ordinary Three.js — edit or delete it freely.
 //
-// The island's ground: one terrain mesh whose vertex colours paint grass, worn grass, a sandy dirt
-// path, beach sand and rock by height, slope and distance to the path, over a tiling detail map and
-// a normal map baked here from seeded value noise, so close up the ground has grain and pits, not
-// one flat colour. No image file: both maps are `DataTexture`s written in code.
-import {
-  BufferAttribute,
-  BufferGeometry,
-  Color,
-  type DataTexture,
-  Mesh,
-  MeshStandardMaterial,
-  Vector2,
-} from "three";
-import { lit, paintedTexture, seeded } from "./materials.js";
+// The island's ground: one terrain mesh whose vertex attributes say where grass, worn grass, the
+// sandy dirt path, beach sand and rock lie, by height, slope and distance to the path. The textures
+// and the blend are `groundMaterial` in surface.ts.
+import { BufferAttribute, BufferGeometry, Color, Mesh } from "three";
+import { lit, seeded } from "./materials.js";
 import { C } from "./palette.js";
 
 /** What the ground's paint reads from the level, in metres. */
@@ -24,9 +15,8 @@ export interface IGroundSite {
   readonly seaLevel: number;
 }
 
-const SIZE = 128;
-/** Metres one tile of the detail maps covers. */
-const TILE = 3;
+/** Metres one tile of the ground's normal map covers. */
+const TILE = 2;
 
 /** Tileable value noise: `cells` lattice cells per tile, from a fixed seed. */
 export function valueNoise(cells: number, seed: number): (u: number, v: number) => number {
@@ -47,61 +37,25 @@ export function valueNoise(cells: number, seed: number): (u: number, v: number) 
   };
 }
 
-/** Grain (fine noise plus small dark pits) as a detail map, and the same height field as normals. */
-function detailMaps(): { map: DataTexture; normalMap: DataTexture } {
-  const octaves = [valueNoise(8, 11), valueNoise(24, 23), valueNoise(64, 37)];
-  const height = (x: number, y: number): number => {
-    const u = (((x % SIZE) + SIZE) % SIZE) / SIZE;
-    const v = (((y % SIZE) + SIZE) % SIZE) / SIZE;
-    const [a = 0, b = 0, c = 0] = octaves.map((noise) => noise(u, v));
-    // Pits: where the finest octave dips, a small stone-shaped hollow.
-    return 0.5 * a + 0.3 * b + 0.2 * c - 1.4 * Math.max(0, 0.22 - c);
-  };
-  // Albedo grain about ±12% round 0.9.
-  const map = paintedTexture(
-    SIZE,
-    SIZE,
-    (x, y) => {
-      const value = 0.66 + 0.5 * height(x, y);
-      return [value, value, value];
-    },
-    false,
-  );
-  const normalMap = paintedTexture(
-    SIZE,
-    SIZE,
-    (x, y) => {
-      const dx = (height(x + 1, y) - height(x - 1, y)) * 3;
-      const dy = (height(x, y + 1) - height(x, y - 1)) * 3;
-      const length = Math.hypot(dx, dy, 1);
-      return [0.5 - (0.5 * dx) / length, 0.5 - (0.5 * dy) / length, 0.5 + 0.5 / length];
-    },
-    false,
-  );
-  return { map, normalMap };
-}
-
 const smooth = (from: number, to: number, value: number): number => {
   const t = Math.min(1, Math.max(0, (value - from) / (to - from)));
   return t * t * (3 - 2 * t);
 };
 
 /**
- * Paints a terrain geometry in world space (positions already translated to the world) and gives
- * it tiling UVs: grass with broad yellow-to-blue-green patches, darker worn grass beside the path,
- * the path's sandy dirt, beach sand near the water, and rock where the slope passes 40°.
+ * Writes what `groundMaterial` in surface.ts blends, per vertex of a terrain geometry in world
+ * space (positions already translated to the world): `layer` is (sand, rock, worn grass) — the
+ * path's sandy dirt and the beach, rock where the slope passes about 50° (a grassy hill keeps its turf), and trodden grass beside the
+ * path — and `tint` the lawn's broad yellow-to-blue-green patches. `uv` tiles every 2 m for the
+ * normal map. (`tint`, not `color`: a node reading an attribute named `color` fails to compile on
+ * the Wasm engine.)
  */
 export function paintGround(geometry: BufferGeometry, site: IGroundSite): BufferGeometry {
   const position = geometry.attributes.position;
   const count = position?.count ?? 0;
   const colors = new Float32Array(count * 3);
+  const layers = new Float32Array(count * 3);
   const uvs = new Float32Array(count * 2);
-  const grass = new Color(C.grass);
-  const worn = new Color(C.grassDark);
-  const dirt = new Color(C.path);
-  const sand = new Color(C.sand);
-  const rock = new Color(C.rock);
-  const out = new Color();
   for (let i = 0; i < count; i += 1) {
     const x = position?.getX(i) ?? 0;
     const y = position?.getY(i) ?? 0;
@@ -110,36 +64,23 @@ export function paintGround(geometry: BufferGeometry, site: IGroundSite): Buffer
     uvs[i * 2 + 1] = z / TILE;
     // Grass patches, as `patches()` in materials.ts paints the drum lawns.
     const value =
-      1 + 0.12 * Math.sin(x * 0.31 + Math.sin(z * 0.23) * 2) * Math.cos(z * 0.27 - x * 0.09);
+      1 + 0.14 * Math.sin(x * 0.31 + Math.sin(z * 0.23) * 2) * Math.cos(z * 0.27 - x * 0.09);
     const hue = 0.5 + 0.5 * Math.sin(x * 0.13 - z * 0.17 + 1.3);
-    out.setRGB(
-      grass.r * value * (1.12 - 0.3 * hue),
-      grass.g * value,
-      grass.b * value * (0.75 + 0.5 * hue),
-    );
+    colors.set([value * (1.1 - 0.25 * hue), value, value * (0.8 + 0.4 * hue)], i * 3);
     const path = site.pathDistance(x, z);
-    out.lerp(worn, 0.7 * (1 - smooth(1.2, 2.6, path)));
-    out.lerp(dirt, 1 - smooth(0.9, 1.5, path));
-    out.lerp(sand, 1 - smooth(site.seaLevel + 0.6, site.seaLevel + 1.4, y));
-    out.lerp(rock, 1 - smooth(0.7, 0.8, site.flatness(x, z)));
-    colors.set([out.r, out.g, out.b], i * 3);
+    const sand = Math.max(
+      1 - smooth(0.8, 1.6, path),
+      1 - smooth(site.seaLevel + 0.6, site.seaLevel + 1.4, y),
+    );
+    layers.set(
+      [sand, 1 - smooth(0.55, 0.7, site.flatness(x, z)), 1 - smooth(1.2, 2.8, path)],
+      i * 3,
+    );
   }
-  geometry.setAttribute("color", new BufferAttribute(colors, 3));
+  geometry.setAttribute("tint", new BufferAttribute(colors, 3));
+  geometry.setAttribute("layer", new BufferAttribute(layers, 3));
   geometry.setAttribute("uv", new BufferAttribute(uvs, 2));
   return geometry;
-}
-
-/** The ground's one material: vertex-colour albedo under the grain map and its normals. */
-export function groundMaterial(): MeshStandardMaterial {
-  const { map, normalMap } = detailMaps();
-  return new MeshStandardMaterial({
-    color: 0xffffff,
-    map,
-    normalMap,
-    normalScale: new Vector2(0.8, 0.8),
-    roughness: 0.92,
-    vertexColors: true,
-  });
 }
 
 /**
@@ -147,8 +88,12 @@ export function groundMaterial(): MeshStandardMaterial {
  * the horizon has layers instead of one sea line. Scenery only, nothing reaches it.
  */
 export function farHills(seaLevel: number): Mesh {
-  const segments = 96;
-  const rings = 5;
+  const segments = 240;
+  const rings = 12;
+  // Two scales of tiling noise round the ring: knolls and gullies on the slopes, so the sun models
+  // them, and the colour drifts between meadow and wood instead of one flat green.
+  const coarse = valueNoise(24, 41);
+  const fine = valueNoise(96, 43);
   const positions: number[] = [];
   const colors: number[] = [];
   const near = new Color(C.canopyDeep);
@@ -164,8 +109,14 @@ export function farHills(seaLevel: number): Mesh {
       const radius = 170 + t * 160;
       // Rise from the sea to the crest at 70% of the depth, then fall a little behind it.
       const lift = Math.sin(Math.min(1, t / 0.7) * Math.PI * 0.5) * (1 - Math.max(0, t - 0.7));
-      positions.push(Math.cos(a) * radius, seaLevel - 1 + ridge * lift * 46, Math.sin(a) * radius);
-      const c = near.clone().lerp(far, t * 0.6);
+      const u = s / segments;
+      const knoll = coarse(u, t * 0.25) * 0.6 + fine(u, t * 0.5) * 0.4;
+      const height = ridge * lift * 46 * (0.7 + 0.6 * knoll) + lift * fine(u, t) * 5;
+      positions.push(Math.cos(a) * radius, seaLevel - 1 + height, Math.sin(a) * radius);
+      const c = near
+        .clone()
+        .lerp(far, t * 0.6 * coarse(u + 0.5, t * 0.3))
+        .multiplyScalar(0.8 + 0.4 * fine(u + 0.25, t * 0.7));
       colors.push(c.r, c.g, c.b);
     }
   }

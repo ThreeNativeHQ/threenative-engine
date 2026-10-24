@@ -26,6 +26,7 @@ import { createLoadingScreen } from "../render/loading.js";
 import { postTier, setupPost } from "../render/postprocessing.js";
 import { GRASS_SHARE } from "../render/quality.js";
 import { setupSky, skyTexture } from "../render/sky.js";
+import { loadSurfaces } from "../render/surface.js";
 import { TouchControls } from "../render/touch-controls.js";
 import { type GameState, HUD_PILL } from "../state.js";
 
@@ -79,7 +80,8 @@ export class Play extends Scene<GameState, IPhysicsContext> {
    * `load()` and before `enter()`, so an entity that first appears in `enter()` cannot be placed.
    * `enter()` then re-reads every placed transform.
    */
-  override load(ctx: GameCtx): void {
+  override async load(ctx: GameCtx): Promise<void> {
+    const surfaces = await loadSurfaces(ctx.assets);
     this.#sky = skyTexture();
     this.#fill = skyTexture(0.3, 128);
     setupSky(ctx.scene, this.#sky, this.#fill);
@@ -88,7 +90,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       mobile: isMobile(),
       software: ctx.renderer.softwareAdapter !== undefined,
     });
-    const course = buildCourse(makeRng(6402), GRASS_SHARE[tier]);
+    const course = buildCourse(makeRng(6402), surfaces, GRASS_SHARE[tier]);
     this.#course = course;
     ctx.add(course.group);
     ctx.entities.add("course", { debug: () => course.audit });

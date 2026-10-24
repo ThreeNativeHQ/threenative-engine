@@ -19,9 +19,9 @@ export function setupLighting(scene: Scene, renderer: ShadowRenderer, mobile = f
   renderer.shadowMap.enabled = true;
   // PCF with a radius: three's soft variant ignores `shadow.radius` and leaves a hard edge.
   renderer.shadowMap.type = PCFShadowMap;
-  // A 5,500 K morning sun. The level is the meter's: auto exposure scales the frame, so this number
-  // sets the sun against the sky, not how bright the picture is.
-  const key = new DirectionalLight(0xffe4c4, 3.2);
+  // A 4,000 K golden-hour sun. The level is the meter's: auto exposure scales the frame, so this
+  // number sets the sun against the sky, not how bright the picture is.
+  const key = new DirectionalLight(0xffcf9e, 6);
   key.castShadow = true;
   // The camera sees about 30 m of island around the hero; the map is fitted to that and travels.
   // A 2.5 cm texel and a 4-texel filter give a 10 cm soft edge, a morning sun's, not a cut-out.

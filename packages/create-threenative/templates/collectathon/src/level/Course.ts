@@ -3,26 +3,32 @@ import {
   BoxGeometry,
   type BufferGeometry,
   CylinderGeometry,
-  DodecahedronGeometry,
   Group,
+  IcosahedronGeometry,
   InstancedMesh,
   type Material,
   Matrix4,
   Mesh,
-  MeshStandardMaterial,
   type Object3D,
   PlaneGeometry,
   RingGeometry,
-  Vector2,
   Vector3,
 } from "three";
 import { HERO_FEEL } from "../entities/Hero.js";
 import type { WalkerKind } from "../entities/Walker.js";
-import { buildCastle, buildSignpost, masonryMaps, planarUv, wrapUv } from "../render/castle.js";
+import { buildCastle, buildSignpost, planarUv, wrapUv } from "../render/castle.js";
 import { type IMeadow, plantIsland } from "../render/foliage.js";
-import { farHills, groundMaterial, paintGround } from "../render/ground.js";
+import { farHills, paintGround } from "../render/ground.js";
 import { lit, mottle, patches } from "../render/materials.js";
-import { C, palette } from "../render/palette.js";
+import { C } from "../render/palette.js";
+import {
+  type ISurfaces,
+  groundMaterial,
+  lawnMaterial,
+  masonryMaterial,
+  rockMaterial,
+  texturedMaterial,
+} from "../render/surface.js";
 import { TERRAIN_BOUNDS, buildTerrain } from "./terrain.js";
 
 type Point = readonly [number, number, number];
@@ -163,6 +169,27 @@ function auditCourse(
   return { crowded, floating: grounded.filter((g) => !g).length };
 }
 
+/**
+ * A boulder `size` metres across its middle: an icosphere pushed in and out by a few seeded waves and
+ * flattened a little, smooth-shaded, so it reads as weathered rock and not as a faceted gem.
+ */
+function boulderGeometry(size: number, rng: () => number): BufferGeometry {
+  const geometry = new IcosahedronGeometry(size, 2);
+  const position = geometry.attributes.position;
+  const waves = Array.from({ length: 4 }, () => [rng() * 6, rng() * 6, rng() * 6, 1.5 + rng() * 2]);
+  for (let i = 0; i < (position?.count ?? 0); i += 1) {
+    const x = (position?.getX(i) ?? 0) / size;
+    const y = (position?.getY(i) ?? 0) / size;
+    const z = (position?.getZ(i) ?? 0) / size;
+    let k = 1;
+    for (const [a = 0, b = 0, c = 0, f = 2] of waves)
+      k += 0.07 * Math.sin(x * f + a) * Math.sin(y * f + b) * Math.sin(z * f + c) * 2;
+    position?.setXYZ(i, x * size * k, y * size * k * 0.72, z * size * k);
+  }
+  geometry.computeVertexNormals();
+  return geometry;
+}
+
 export function makeRng(seed: number): () => number {
   let state = seed >>> 0;
   return () => {
@@ -171,8 +198,11 @@ export function makeRng(seed: number): () => number {
   };
 }
 
-/** `grassShare` is the share of grass tufts the quality tier draws (`GRASS_SHARE` in `quality.ts`). */
-export function buildCourse(rng: () => number, grassShare = 1): ICourse {
+/**
+ * `surfaces` are the loaded textures (`loadSurfaces` in surface.ts); `grassShare` is the share of
+ * grass tufts the quality tier draws (`GRASS_SHARE` in `quality.ts`).
+ */
+export function buildCourse(rng: () => number, surfaces: ISurfaces, grassShare = 1): ICourse {
   const group = new Group();
   group.name = "course";
   const [doorX, doorZ] = COURSE.castle.door;
@@ -209,16 +239,14 @@ export function buildCourse(rng: () => number, grassShare = 1): ICourse {
   const ground = (x: number, z: number): number => terrain.ground(x, z);
   /** A point `above` metres over the ground at (x, z). */
   const onGround = (x: number, above: number, z: number): Point => [x, ground(x, z) + above, z];
-  const grass = lit(palette.grass, { vertexColors: true });
-  // Blocks and drum cliffs are the castle's coursed stone, so the whole course is one masonry.
-  const rock = new MeshStandardMaterial({
-    ...masonryMaps(),
-    normalScale: new Vector2(1.2, 1.2),
-    roughness: 0.9,
-    vertexColors: true,
-  });
-  const boulder = lit(palette.rock, { flat: true, vertexColors: true });
-  const dirt = lit(C.dirt, { vertexColors: true });
+  const grass = lawnMaterial(surfaces);
+  // Blocks and drum cliffs are the castle's coursed stone, so the whole course is one masonry; its
+  // grime band sits on the level ground at y = 0.
+  const rock = masonryMaterial(surfaces, 0);
+  const boulder = rockMaterial(surfaces);
+  const wood = texturedMaterial(surfaces, "planks");
+  // A drum's turf edge is vertical: the lawn's top-down sampling would smear it into stripes.
+  const turfEdge = texturedMaterial(surfaces, "grass", { roughness: 0.94 });
   /** Walkable: `Play.ts` builds a fixed trimesh body from every mesh tagged `solid`. */
   const solid = (
     geometry: BufferGeometry,
@@ -253,7 +281,7 @@ export function buildCourse(rng: () => number, grassShare = 1): ICourse {
       Math.ceil(size[2]),
     );
     geometry.translate((min[0] + max[0]) / 2, (min[1] + max[1]) / 2, (min[2] + max[2]) / 2);
-    return solid(planarUv(geometry, 2), material, 0.06);
+    return solid(planarUv(geometry, 4), material, 0.06);
   };
   /** A grass-capped rock drum: the shape of every tier, islet and pillar. */
   const drum = (x: number, z: number, radius: number, top: number, bottom: number): void => {
@@ -267,10 +295,10 @@ export function buildCourse(rng: () => number, grassShare = 1): ICourse {
       true,
     );
     cliff.translate(x, (top - 0.3 + bottom) / 2, z);
-    solid(wrapUv(cliff, radius, 2), rock, 0.12);
+    solid(wrapUv(cliff, radius, 4), rock, 0.12);
     const lip = new CylinderGeometry(radius + 0.15, radius + 0.15, 0.4, segments, 1, true);
     lip.translate(x, top - 0.2, z);
-    solid(lip, grass, 0);
+    solid(wrapUv(lip, radius, 2), turfEdge, 0);
     // The lawn is a disc of concentric rings, not a cylinder's cap: a cap is one fan of long
     // triangles from the centre, and any per-vertex tint on it reads as radial streaks.
     const lawn = new RingGeometry(0, radius + 0.15, segments, Math.ceil(radius / 2.5));
@@ -285,7 +313,7 @@ export function buildCourse(rng: () => number, grassShare = 1): ICourse {
       terrain.field.toGeometry().translate(terrain.field.origin.x, 0, terrain.field.origin.z),
       { ...terrain, seaLevel: COURSE.seaLevel },
     ),
-    groundMaterial(),
+    groundMaterial(surfaces),
   );
   land.name = "terrain";
   land.receiveShadow = true;
@@ -294,7 +322,8 @@ export function buildCourse(rng: () => number, grassShare = 1): ICourse {
   group.add(land);
   const sea = new Mesh(
     new PlaneGeometry(1600, 1600).rotateX(-Math.PI / 2),
-    lit(C.water, { roughness: 0.3 }),
+    // Rough enough that the low sun's glare spreads into a soft sheen, not a white sheet.
+    lit(C.water, { roughness: 0.14 }),
   );
   sea.position.y = COURSE.seaLevel;
   group.add(farHills(COURSE.seaLevel));
@@ -303,11 +332,12 @@ export function buildCourse(rng: () => number, grassShare = 1): ICourse {
 
   // The summit: three tiers, then the Sunseed on top.
   for (const [radius, top] of COURSE.summit.tiers) drum(sx, sz, radius, top, -0.5);
-  // A dirt ramp onto the first tier, so the climb has a walking start.
-  const ramp = new BoxGeometry(3, 0.5, 8, 2, 1, 4);
+  // A plank ramp onto the first tier, so the climb has a walking start: planar UVs before the tilt
+  // lay the boards across it, 0.3 m each.
+  const ramp = planarUv(new BoxGeometry(3, 0.5, 8, 2, 1, 4), 2.4);
   ramp.rotateX(Math.atan2(2.5, 7.5));
   ramp.translate(sx + 8, 1.15, sz + 9.5);
-  solid(ramp, dirt);
+  solid(ramp, wood);
 
   // The east islet, past a gap only a long jump or a triple jump crosses.
   drum(COURSE.islet.at[0], COURSE.islet.at[1], COURSE.islet.radius, 0, -10);
@@ -327,8 +357,8 @@ export function buildCourse(rng: () => number, grassShare = 1): ICourse {
 
   // The pillar the orbiting platform rises to.
   drum(px, pz, COURSE.pillar.radius, COURSE.pillar.top, -0.5);
-  const deck = new BoxGeometry(...COURSE.platform.size);
-  const platform = new Mesh(deck, lit(C.wood));
+  const deck = planarUv(new BoxGeometry(...COURSE.platform.size), 2.4);
+  const platform = new Mesh(deck, wood);
   platform.castShadow = true;
   platform.receiveShadow = true;
   platform.name = "orbiting-platform";
@@ -409,7 +439,7 @@ export function buildCourse(rng: () => number, grassShare = 1): ICourse {
     if (keepOut.some(([kx, kz, kr]) => Math.hypot(x - kx, zz - kz) < kr) || nearPickup(x, zz, 3.5))
       continue;
     if (onRoute(x, zz, 2) || terrain.pathDistance(x, zz) < size + 1.5) continue;
-    const stone = new Mesh(mottle(new DodecahedronGeometry(size, 0), 0.25, rng), boulder);
+    const stone = new Mesh(boulderGeometry(size, rng), boulder);
     stone.position.set(x, ground(x, zz) + size * 0.2, zz);
     stone.rotation.set(rng() * 3, rng() * 3, rng() * 3);
     stone.castShadow = true;
@@ -419,12 +449,12 @@ export function buildCourse(rng: () => number, grassShare = 1): ICourse {
   }
 
   // The castle on its plateau, its door at the end of the castle path; its stone is walkable.
-  const castle = buildCastle();
+  const castle = buildCastle(surfaces, COURSE.castle.pad[3]);
   castle.group.position.set(doorX, COURSE.castle.pad[3], doorZ);
   castle.stone.userData.solid = true;
   group.add(castle.group);
   // The arrow sign beside the path near spawn, its board broadside to a camera behind the hero.
-  const sign = buildSignpost(rng);
+  const sign = buildSignpost(surfaces);
   sign.position.set(-4.2, ground(-4.2, 9.5), 9.5);
   group.add(sign);
 
@@ -440,8 +470,14 @@ export function buildCourse(rng: () => number, grassShare = 1): ICourse {
     grassShare,
     ground,
     pathDistance: terrain.pathDistance,
+    lawns: [
+      ...COURSE.summit.tiers.map(([r, top]) => [sx, sz, r, top] as const),
+      [px, pz, COURSE.pillar.radius, COURSE.pillar.top] as const,
+      [COURSE.islet.at[0], COURSE.islet.at[1], COURSE.islet.radius, 0] as const,
+    ],
     rng,
     seaLevel: COURSE.seaLevel,
+    surfaces,
     // The islet's drum cliff radius at the waterline: it narrows to 92% over its height.
     shores: [[COURSE.islet.at[0], COURSE.islet.at[1], COURSE.islet.radius * 0.98]],
   });

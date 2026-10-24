@@ -9,12 +9,12 @@
 export const palette = {
   grass: 0x64b43c,
   /** Distance fades into this; also the loading screen's background. */
-  horizon: 0xb9d8ee,
+  horizon: 0xc2def2,
   /** A warm sandstone at about half albedo: lighter reads as grey card under the sun. */
   rock: 0x927b62,
   /** The loading screen's progress track. */
-  skyHigh: 0x1c5cc6,
-  skyLow: 0x5c9de2,
+  skyHigh: 0x2468d8,
+  skyLow: 0x6aaaea,
   /** The one saturated role: coins, gems, Sunseeds. */
   accent: 0xffc93a,
 } as const;
@@ -37,6 +37,7 @@ export const C = {
   button: 0xfff1d0,
   gloves: 0xfff3dc,
   boots: 0x6a4126,
+  sole: 0x2e2420,
   skin: 0xf2b48c,
   nose: 0xf0a088,
   hair: 0x4a2c18,
@@ -64,7 +65,7 @@ export const C = {
   birch: 0xf2efe6,
   birchLeaf: 0x8cc63e,
   bark: 0x7a5636,
-  blade: 0x4fa82c,
+  blade: 0x48b02a,
   petalRed: 0xe8322a,
   petalOrange: 0xff8a1e,
   petalWhite: 0xfff4e0,

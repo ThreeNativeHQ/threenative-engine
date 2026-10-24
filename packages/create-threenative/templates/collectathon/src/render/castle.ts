@@ -1,9 +1,10 @@
 // Generated for you. This is ordinary Three.js — edit or delete it freely.
 //
-// The castle on the headland, and the wooden arrow sign at the path's fork, from primitives and
-// textures painted in code: coursed stone blocks, terracotta roof tiles, a stained-glass rose of a
-// sun over a leaf, a teal flag with the same leaf, and a warm-lit arched doorway. Every part of one
-// material is merged into one geometry, so the whole castle costs six draws.
+// The castle on the headland, and the wooden arrow sign at the path's fork, from primitives: the
+// sandstone walls and terracotta roofs take the photo textures in `assets/textures/` (surface.ts);
+// the stained-glass rose of a sun over a leaf and the teal flag with the same leaf are painted in
+// code, and the arched doorway glows warm. Every part of one material is merged into one geometry,
+// so the whole castle costs six draws.
 import {
   BoxGeometry,
   BufferAttribute,
@@ -22,8 +23,9 @@ import {
 } from "three";
 import { positionLocal, sin, time, vec3 } from "three/tsl";
 import { MeshStandardNodeMaterial } from "three/webgpu";
-import { lit, mottle, paintedTexture, seeded } from "./materials.js";
+import { paintedTexture } from "./materials.js";
 import { C } from "./palette.js";
+import { type ISurfaces, masonryMaterial, texturedMaterial } from "./surface.js";
 
 const hex = (color: number): [number, number, number] => [
   ((color >> 16) & 255) / 255,
@@ -35,96 +37,6 @@ const shade = ([r, g, b]: readonly number[], k: number): [number, number, number
   (g ?? 0) * k,
   (b ?? 0) * k,
 ];
-
-/** 2 x 2 m of coursed stone: 0.5 m rows of blocks 0.45-1.1 m long, mortar and chipped edges. */
-export function masonryMaps(): {
-  map: ReturnType<typeof paintedTexture>;
-  normalMap: ReturnType<typeof paintedTexture>;
-} {
-  const size = 256;
-  const rng = seeded(97);
-  const rows = 4;
-  const rowHeight = size / rows;
-  // Per row, the block edges in pixels (they wrap, so the texture tiles) and each block's tint.
-  const edges: number[][] = [];
-  const tints: number[][] = [];
-  for (let r = 0; r < rows; r += 1) {
-    const row = [Math.floor(rng() * 60)];
-    while (true) {
-      const next = (row.at(-1) ?? 0) + 58 + Math.floor(rng() * 82);
-      if (next > size + (row[0] ?? 0) - 50) break;
-      row.push(next);
-    }
-    edges.push(row);
-    tints.push(row.map(() => 0.82 + rng() * 0.3));
-  }
-  const stone = hex(C.stone);
-  const block = (x: number, y: number): { tint: number; edge: number } => {
-    const r = Math.min(rows - 1, Math.floor(y / rowHeight));
-    const row = edges[r] ?? [0];
-    const wrapped = x < (row[0] ?? 0) ? x + size : x;
-    let i = row.length - 1;
-    while (i > 0 && wrapped < (row[i] ?? 0)) i -= 1;
-    const left = wrapped - (row[i] ?? 0);
-    const right = (row[i + 1] ?? (row[0] ?? 0) + size) - wrapped;
-    const vertical = Math.min(y - r * rowHeight, (r + 1) * rowHeight - y);
-    return { edge: Math.min(left, right, vertical), tint: tints[r]?.[i] ?? 1 };
-  };
-  const grain = (x: number, y: number): number =>
-    0.5 + 0.5 * Math.sin(x * 0.9 + Math.sin(y * 0.7) * 3) * Math.sin(y * 1.3 + x * 0.21);
-  const height = (x: number, y: number): number => {
-    const { edge } = block(((x % size) + size) % size, ((y % size) + size) % size);
-    return Math.min(1, edge / 6) * (0.9 + 0.1 * grain(x, y));
-  };
-  const map = paintedTexture(
-    size,
-    size,
-    (x, y) => {
-      const { edge, tint } = block(x, y);
-      if (edge < 2.5) return shade(stone, 0.45);
-      return shade(
-        stone,
-        tint * (0.78 + 0.22 * Math.min(1, edge / 7)) * (0.92 + 0.12 * grain(x, y)),
-      );
-    },
-    true,
-  );
-  const normalMap = paintedTexture(
-    size,
-    size,
-    (x, y) => {
-      const dx = (height(x + 1, y) - height(x - 1, y)) * 2;
-      const dy = (height(x, y + 1) - height(x, y - 1)) * 2;
-      const length = Math.hypot(dx, dy, 1);
-      return [0.5 - (0.5 * dx) / length, 0.5 - (0.5 * dy) / length, 0.5 + 0.5 / length];
-    },
-    false,
-  );
-  return { map, normalMap };
-}
-
-/** 1 x 1 m of overlapping terracotta tiles in 0.25 m courses, each tile its own tint. */
-function roofMap(): ReturnType<typeof paintedTexture> {
-  const rng = seeded(41);
-  const tints = Array.from({ length: 16 }, () => 0.8 + rng() * 0.35);
-  const tile = hex(C.roof);
-  return paintedTexture(
-    128,
-    128,
-    (x, y) => {
-      const row = Math.floor(y / 32);
-      const shifted = x + (row % 2) * 16;
-      const column = Math.floor(shifted / 32) % 4;
-      const across = (shifted % 32) / 32;
-      const down = (y % 32) / 32;
-      // Rounded tile bottoms: the shadow line under the next course follows an arc.
-      const lip = down > 0.78 + 0.15 * Math.sin(across * Math.PI) ? 0.55 : 1;
-      const gap = across < 0.05 || across > 0.95 ? 0.6 : 1;
-      return shade(tile, (tints[row * 4 + column] ?? 1) * lip * gap * (0.85 + 0.2 * down));
-    },
-    true,
-  );
-}
 
 /** The rose window: a sun with twelve rays over a green leaf, in lead came. Also its glow map. */
 function roseMap(): ReturnType<typeof paintedTexture> {
@@ -343,22 +255,22 @@ function glow(geometry: BufferGeometry, width: number): BufferGeometry {
  * gabled gatehouse with the rose window over the door, a tall corner turret with the flag and a
  * small back turret. `stone` is solid; the roofs, glass and flag are not.
  */
-export function buildCastle(): { group: Group; stone: Mesh } {
+export function buildCastle(s: ISurfaces, footY: number): { group: Group; stone: Mesh } {
   const group = new Group();
   group.name = "castle";
   const stoneParts: BufferGeometry[] = [];
   const roofParts: BufferGeometry[] = [];
   const glowParts: BufferGeometry[] = [];
-  const addStone = (g: BufferGeometry) => stoneParts.push(planarUv(g, 2));
+  const addStone = (g: BufferGeometry) => stoneParts.push(planarUv(g, 4));
 
   // Hall, gatehouse and the gatehouse's gable wall, sunk a metre so no seam shows on a slope.
   addStone(box(-11, -1, -12, 11, 9, -2));
   addStone(box(-4.5, -1, -3, 4.5, 13, 0));
   const hallRoof = gable(-11, 11, -12.6, -1.4, 9, 14);
-  roofParts.push(planarUv(hallRoof.slopes, 1));
+  roofParts.push(planarUv(hallRoof.slopes, 2.5));
   addStone(hallRoof.ends);
   const gateRoof = gable(-5.1, 5.1, -3.2, 0, 13, 17, true);
-  roofParts.push(planarUv(gateRoof.slopes, 1));
+  roofParts.push(planarUv(gateRoof.slopes, 2.5));
   addStone(gateRoof.ends);
   // A plinth course and a string course: two stone bands that read as weight and as storeys.
   addStone(box(-11.3, -1, -12.3, 11.3, 0.6, -1.7));
@@ -376,21 +288,21 @@ export function buildCastle(): { group: Group; stone: Mesh } {
           0,
         ),
         radius,
-        2,
+        4,
       ).translate(x, 0, z),
     );
     stoneParts.push(
       wrapUv(
         new CylinderGeometry(radius + 0.35, radius + 0.35, 0.6, 20).translate(0, top - 0.3, 0),
         radius,
-        2,
+        4,
       ).translate(x, 0, z),
     );
     roofParts.push(
       wrapUv(
         new ConeGeometry(radius + 0.6, roof, 20, 1, true).translate(0, top + roof / 2, 0),
         radius,
-        1,
+        2.5,
       ).translate(x, 0, z),
     );
     glowParts.push(glow(archPanel(0.9, 1.8), 0.9).translate(x, top - 5, z + radius + 0.06));
@@ -398,27 +310,18 @@ export function buildCastle(): { group: Group; stone: Mesh } {
   // The arched door with its stone voussoirs, and the windows of the hall.
   glowParts.push(glow(archPanel(3.6, 4.6), 3.6).translate(0, 0, 0.03));
   stoneParts.push(
-    planarUv(new TorusGeometry(1.95, 0.32, 6, 16, Math.PI).translate(0, 2.8, 0.05), 2),
+    planarUv(new TorusGeometry(1.95, 0.32, 6, 16, Math.PI).translate(0, 2.8, 0.05), 4),
   );
   for (const x of [-8.5, -6, 6, 8.5]) {
     glowParts.push(glow(archPanel(1.2, 2.4), 1.2).translate(x, 3, -1.97));
-    stoneParts.push(planarUv(box(x - 0.8, 2.75, -1.95, x + 0.8, 3, -1.6), 2));
+    stoneParts.push(planarUv(box(x - 0.8, 2.75, -1.95, x + 0.8, 3, -1.6), 4));
   }
 
-  const { map, normalMap } = masonryMaps();
-  const stone = new Mesh(
-    merge(stoneParts),
-    new MeshStandardMaterial({
-      map,
-      normalMap,
-      normalScale: new Vector2(1.2, 1.2),
-      roughness: 0.9,
-    }),
-  );
+  const stone = new Mesh(merge(stoneParts), masonryMaterial(s, footY));
   stone.name = "castle-stone";
   const roofs = new Mesh(
     merge(roofParts),
-    new MeshStandardMaterial({ map: roofMap(), roughness: 0.75, side: DoubleSide }),
+    texturedMaterial(s, "roof-tiles", { doubleSided: true, roughness: 0.7 }),
   );
   const light = new Mesh(merge(glowParts), new MeshBasicMaterial({ vertexColors: true }));
   const rose = roseMap();
@@ -433,7 +336,7 @@ export function buildCastle(): { group: Group; stone: Mesh } {
     }),
   );
   const frame = new Mesh(
-    planarUv(new TorusGeometry(1.75, 0.22, 6, 32).translate(0, 10.8, 0.05), 2),
+    planarUv(new TorusGeometry(1.75, 0.22, 6, 32).translate(0, 10.8, 0.05), 4),
     stone.material,
   );
   for (const mesh of [stone, roofs, frame]) {
@@ -445,7 +348,7 @@ export function buildCastle(): { group: Group; stone: Mesh } {
   // The flag on the corner turret's spire, waving from the pole.
   const pole = new Mesh(
     new CylinderGeometry(0.07, 0.09, 4, 6).translate(12.5, 21.5, -2.5),
-    lit(C.wood),
+    texturedMaterial(s, "planks"),
   );
   pole.castShadow = true;
   const flagMaterial = new MeshStandardNodeMaterial({
@@ -473,26 +376,24 @@ export function buildCastle(): { group: Group; stone: Mesh } {
 }
 
 /** A wooden arrow sign on a post, its origin at the post's foot, pointing along +X. */
-export function buildSignpost(rng: () => number): Group {
+export function buildSignpost(s: ISurfaces): Group {
   const sign = new Group();
   sign.name = "signpost";
-  const wood = lit(C.wood, { flat: true, vertexColors: true });
-  const post = new Mesh(
-    mottle(new BoxGeometry(0.16, 1.5, 0.16).translate(0, 0.75, 0), 0.2, rng),
-    wood,
-  );
+  const wood = texturedMaterial(s, "planks");
+  // Planar UVs at 2 m a tile: the board shows a plank and a half with its grain along the arrow.
+  const post = new Mesh(planarUv(new BoxGeometry(0.16, 1.5, 0.16).translate(0, 0.75, 0), 2), wood);
   const board = new Mesh(
-    mottle(new BoxGeometry(1.1, 0.34, 0.07, 3, 1, 1).translate(0.45, 1.25, 0.1), 0.18, rng),
+    planarUv(new BoxGeometry(1.1, 0.34, 0.07).translate(0.45, 1.25, 0.1), 2),
     wood,
   );
+  // The arrow's head: a wedge as wide as the board is tall plus a lip, so it reads at 10 m.
   const tip = new Mesh(
-    mottle(
-      new CylinderGeometry(0.24, 0.24, 0.07, 3)
+    planarUv(
+      new CylinderGeometry(0.3, 0.3, 0.07, 3)
         .rotateX(Math.PI / 2)
         .rotateZ(-Math.PI / 2)
-        .translate(1.08, 1.25, 0.1),
-      0.18,
-      rng,
+        .translate(1.12, 1.25, 0.1),
+      2,
     ),
     wood,
   );

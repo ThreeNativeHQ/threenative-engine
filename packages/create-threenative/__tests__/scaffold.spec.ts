@@ -609,8 +609,25 @@ describe("create-threenative", () => {
         if (template === "platformer") {
           await expect(stat(path.join(target, "assets/sky.jpg"))).rejects.toThrow(/ENOENT/u);
         }
-        if (template === "collectathon" || template === "adventure" || template === "kart") {
-          // Hop Garden and Lantern Vale are all procedural (owner, 2026-10-24): no assets folder and
+        if (template === "collectathon") {
+          // Hop Garden's geometry is procedural; its tiling surfaces are generated images (owner,
+          // 2026-10-24: "make sure it doesnt bloat the games with many mb"): at most 1.5 MB, each
+          // traced in PROVENANCE.md.
+          const textures = path.join(target, "assets", "textures");
+          const files = await readdir(path.join(target, "assets"), { recursive: true });
+          const sizes = await Promise.all(
+            files.map(async (file) => {
+              const info = await stat(path.join(target, "assets", file));
+              return info.isFile() ? info.size : 0;
+            }),
+          );
+          expect(sizes.reduce((sum, size) => sum + size, 0)).toBeLessThanOrEqual(1_500_000);
+          const provenance = await readFile(path.join(textures, "PROVENANCE.md"), "utf8");
+          for (const file of files.filter((name) => name.endsWith(".webp")))
+            expect(provenance).toContain(path.basename(file));
+        }
+        if (template === "adventure" || template === "kart") {
+          // Lantern Vale and Clover Cup are all procedural (owner, 2026-10-24): no assets folder and
           // no image or model file but the shared icon, so every texture is painted in code.
           await expect(stat(path.join(target, "assets"))).rejects.toThrow(/ENOENT/u);
           const media = (await readdir(target, { recursive: true })).filter(

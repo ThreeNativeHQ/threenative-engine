@@ -14,9 +14,11 @@ import {
   MathUtils,
   Mesh,
   type MeshBasicMaterial,
+  MeshStandardMaterial,
   SphereGeometry,
+  TorusGeometry,
 } from "three";
-import { flat, lit } from "./materials.js";
+import { flat, lit, paintedTexture } from "./materials.js";
 import { C } from "./palette.js";
 
 export interface IHeroPose {
@@ -56,6 +58,28 @@ const HANG = (() => {
   return { angle: Math.atan2(-dz, -dy), back, lift, stretch: Math.hypot(dy, dz) / ARM };
 })();
 
+/**
+ * Woven cloth: a fine diagonal twill, and with `seams` a stitched seam down each side and the front
+ * and back (a sphere's u = 0, 1/4, 1/2, 3/4), a darker fold with a dashed paler thread beside it.
+ */
+function fabric(color: number, seams: boolean): MeshStandardMaterial {
+  const size = 128;
+  const map = paintedTexture(
+    size,
+    size,
+    (x, y) => {
+      const twill = 0.94 + 0.06 * Math.sin(((x + y) / size) * Math.PI * 2 * 48);
+      const u = (x % (size / 4)) / (size / 4);
+      const fold = seams ? Math.min(u, 1 - u) * (size / 4) : 99;
+      const stitch = fold > 1.5 && fold < 2.6 && y % 6 < 3 ? 1.12 : 1;
+      const v = twill * (fold < 1.2 ? 0.72 : 1) * stitch;
+      return [v, v, v];
+    },
+    true,
+  );
+  return new MeshStandardMaterial({ color, map, roughness: 0.95 });
+}
+
 export function createHero(): IHero {
   const root = new Group();
   const pivot = new Group();
@@ -77,12 +101,14 @@ export function createHero(): IHero {
     parent.add(mesh);
     return mesh;
   };
-  const ball = (radius: number) => new SphereGeometry(radius, 20, 14);
+  const ball = (radius: number) => new SphereGeometry(radius, 32, 24);
+  const overalls = fabric(C.overalls, true);
+  const shirt = fabric(C.shirt, false);
 
   // Torso: a round shirt under round overalls, with a bib, two straps and two buttons. It sits
   // low, so the legs stay stubby and the head is a third of the hero.
-  part(ball(0.31), C.shirt, pivot, [0, 0.08, 0]);
-  part(ball(0.35), C.overalls, pivot, [0, -0.08, 0], [1, 0.9, 0.9]);
+  part(ball(0.31), C.shirt, pivot, [0, 0.08, 0]).material = shirt;
+  part(ball(0.35), C.overalls, pivot, [0, -0.08, 0], [1, 0.9, 0.9]).material = overalls;
   const bib = part(
     new CylinderGeometry(0.16, 0.18, 0.22, 14, 1),
     C.overalls,
@@ -90,6 +116,7 @@ export function createHero(): IHero {
     [0, 0.12, -0.23],
   );
   bib.scale.set(1, 1, 0.45);
+  bib.material = overalls;
   for (const side of [-1, 1]) {
     const strap = part(
       new CylinderGeometry(0.035, 0.035, 0.28, 6),
@@ -141,20 +168,23 @@ export function createHero(): IHero {
   // Hair along the back of the cap's rim: wide and tucked under it, so from behind it reads as
   // hair and never as a second face.
   part(ball(0.15), C.hair, pivot, [0, HEAD_Y + 0.04, 0.24], [2, 0.6, 0.8], false);
-  // The cap, a short forward brim, the leaf emblem and the sprout on top.
+  // The cap, a short forward brim, the leaf emblem and the sprout on top. Glossy, like a lacquered
+  // cap, so it catches a highlight the cloth beside it does not.
+  const cap = lit(C.cap, { roughness: 0.32 });
   part(
     new SphereGeometry(R + 0.02, 22, 10, 0, Math.PI * 2, 0, Math.PI / 2),
     C.cap,
     pivot,
     [0, HEAD_Y + 0.08, -0.02],
     [1.03, 0.85, 1.05],
-  );
+  ).material = cap;
   const brim = part(new CylinderGeometry(0.27, 0.28, 0.04, 20), C.cap, pivot, [
     0,
     HEAD_Y + 0.09,
     FACE + 0.06,
   ]);
   brim.scale.set(1, 1, 0.7);
+  brim.material = cap;
   brim.rotation.x = 0.12;
   const badge = part(
     new CylinderGeometry(0.09, 0.09, 0.02, 16),
@@ -185,16 +215,29 @@ export function createHero(): IHero {
     arm.position.set(SHOULDER.x * side, SHOULDER.y, 0);
     arm.rotation.z = 0.35 * side;
     pivot.add(arm);
-    part(new CylinderGeometry(0.075, 0.07, 0.22, 10), C.shirt, arm, [0, -0.11, 0]);
-    part(ball(0.12), C.gloves, arm, [0, -ARM, 0]);
+    part(new CylinderGeometry(0.075, 0.07, 0.22, 16), C.shirt, arm, [0, -0.11, 0]).material = shirt;
+    // A soft leather glove with a rolled cuff at the wrist.
+    const glove = lit(C.gloves, { roughness: 0.55 });
+    part(ball(0.12), C.gloves, arm, [0, -ARM, 0]).material = glove;
+    const cuff = new Mesh(new TorusGeometry(0.085, 0.03, 10, 20), glove);
+    cuff.position.y = -ARM + 0.1;
+    cuff.rotation.x = Math.PI / 2;
+    arm.add(cuff);
     arms.push(arm);
 
     // Hip 0.42 m above the feet; the shoe's sole is on the floor.
     const leg = new Group();
     leg.position.set(0.15 * side, -0.38, 0);
     pivot.add(leg);
-    part(new CylinderGeometry(0.1, 0.1, 0.18, 10), C.overalls, leg, [0, -0.09, 0]);
-    part(ball(0.17), C.boots, leg, [0, -0.3, -0.06], [1, 0.7, 1.45]);
+    part(new CylinderGeometry(0.1, 0.1, 0.18, 16), C.overalls, leg, [0, -0.09, 0]).material =
+      overalls;
+    // Polished leather on a darker, flat rubber sole.
+    part(ball(0.17), C.boots, leg, [0, -0.29, -0.06], [1, 0.66, 1.45]).material = lit(C.boots, {
+      roughness: 0.42,
+    });
+    part(ball(0.17), C.sole, leg, [0, -0.385, -0.06], [1.04, 0.2, 1.5]).material = lit(C.sole, {
+      roughness: 0.85,
+    });
     legs.push(leg);
   }
 
