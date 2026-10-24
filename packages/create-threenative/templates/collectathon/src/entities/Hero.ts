@@ -52,8 +52,19 @@ export const HERO_FEEL = {
   doubleJumpSpeed: 15.6,
   tripleJumpSpeed: 20.7,
   tripleMinSpeed: 6,
-  /** A landing from a single or double jump opens the next jump of the chain for this long. */
-  chainWindow: 0.167,
+  /**
+   * A landing from a single jump, a fall or a side flip opens a double jump, and a landing from a
+   * double opens a triple, for this long: the classic's 4 landing frames plus its 5-frame
+   * double-jump timer at 30 Hz (sm64 decomp, mario_actions_moving.c:26-52 and :1767,
+   * mario.c:1030-1065 and :1411).
+   */
+  chainWindow: 0.3,
+  /**
+   * A jump pressed this long before touchdown counts as pressed on landing, so a double tap that
+   * comes a little early still chains. The classic has no such buffer: a press before touchdown
+   * was simply lost, which is the miss players remember.
+   */
+  jumpBuffer: 0.12,
   backflipSpeed: 18.6,
   backflipBack: 4.8,
   sideflipSpeed: 18.6,
@@ -183,6 +194,7 @@ export class Hero {
   #actionTime = 0;
   #chainStage = 0;
   #chainTimer = 0;
+  #jumpBuffer = 0;
   #wallTimer = 0;
   #wallKickRise = 0;
   #wallKickFrom = 0;
@@ -304,6 +316,7 @@ export class Hero {
     const magnitude = Math.min(1, this.#intended.length());
     if (magnitude > 0.05) this.#stickYaw = Math.atan2(-this.#intended.x, -this.#intended.z);
     const jumpPressed = input.justPressed("jump") || touch?.jumpPressed === true;
+    this.#jumpBuffer = jumpPressed ? HERO_FEEL.jumpBuffer : Math.max(0, this.#jumpBuffer - dt);
     const jumpHeld = input.pressed("jump") || touch?.jumpHeld === true;
     const crouchPressed = input.justPressed("crouch") || touch?.crouchPressed === true;
     const crouchHeld = input.pressed("crouch") || touch?.crouchHeld === true;
@@ -319,7 +332,11 @@ export class Hero {
       this.#ledgeStep(magnitude, jumpPressed, crouchPressed);
     } else if (GROUND.has(this.action)) {
       if (!grounded) this.#leaveGround();
-      else this.#groundStep(dt, magnitude, jumpPressed, crouchPressed, crouchHeld, attackPressed);
+      else {
+        // A press buffered in the air fires on the first grounded step.
+        const jump = jumpPressed || this.#jumpBuffer > 0;
+        this.#groundStep(dt, magnitude, jump, crouchPressed, crouchHeld, attackPressed);
+      }
     } else {
       if (grounded && this.body.velocity.y <= 0) this.#land();
       else this.#airStep(dt, magnitude, jumpPressed, jumpHeld, crouchPressed, attackPressed);
@@ -376,9 +393,15 @@ export class Hero {
     this.#sole.copy(_to);
   }
 
+  /** The chain jump a press would fire now: 1 a double, 2 a triple, 0 none. */
+  get chain(): number {
+    return this.#chainTimer > 0 ? this.#chainStage : 0;
+  }
+
   debug(): Record<string, unknown> {
     return {
       action: this.action,
+      chain: this.chain,
       apex: { ...this.#apex },
       counts: { ...this.#counts },
       distance: { ...this.#distance },
@@ -563,6 +586,7 @@ export class Hero {
       this.#launch("double", feel.doubleJumpSpeed + lift, forward);
     else this.#launch("single", feel.jumpSpeed + lift, forward);
     this.#chainTimer = 0;
+    this.#jumpBuffer = 0;
   }
 
   #leaveGround(): void {
@@ -738,7 +762,8 @@ export class Hero {
     }
     forwardOf(this.yaw, _from);
     this.#speed = Math.max(0, this.#air.x * _from.x + this.#air.z * _from.z);
-    this.#chainStage = kind === "single" ? 1 : kind === "double" ? 2 : 0;
+    this.#chainStage =
+      kind === "single" || kind === "fall" || kind === "sideflip" ? 1 : kind === "double" ? 2 : 0;
     this.#chainTimer = this.#chainStage > 0 ? feel.chainWindow : 0;
     this.#air.set(0, 0, 0);
     if (kind === "groundPound") {

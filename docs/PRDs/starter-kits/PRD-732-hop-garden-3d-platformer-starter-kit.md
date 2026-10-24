@@ -35,7 +35,7 @@ its logic at 30 Hz. Mario's hitbox is 160 units tall (`src/game/mario.c:1652`), 
 | Gravity | −4 per frame, terminal −75 (`src/game/mario_step.c:535-548`) | 36 m/s², 22.5 m/s |
 | Variable jump | A released while `vy > 20` divides `vy` by 4 (`mario_step.c:519-531`, `:557`) | release above 6 m/s cuts rise to ¼ |
 | Jump | `vy = 42 + 0.25·fwd`, `fwd ×= 0.8` (`src/game/mario.c:821-825`, `:763-766`) | 12.6 m/s + 0.25·fwd (≈2.2 m apex) |
-| Double jump | `vy = 52 + 0.25·fwd`, needs a jump landing inside the 5-frame chain window (`mario.c:785-787`, `:1028-1063`, `mario_actions_moving.c:26-28`) | 15.6 m/s, window 0.167 s |
+| Double jump | `vy = 52 + 0.25·fwd`, needs a jump, fall or side-flip landing inside the chain window: 4 landing frames (`mario_actions_moving.c:26-52`), each one resetting the 5-frame `doubleJumpTimer` (`:1767`, decremented at `mario.c:1411`, checked at `:1030-1065`) | 15.6 m/s, window 0.3 s, plus a 0.12 s pre-landing press buffer |
 | Triple jump | `vy = 69`, needs a double-jump landing and `fwd > 20` (`mario.c:796-798`, `:1046-1056`) | 20.7 m/s, needs fwd > 6 m/s |
 | Backflip | crouch + A: `vy = 62`, `fwd = −16` (`mario.c:790-794`, `src/game/mario_actions_stationary.c:528-535`) | 18.6 m/s up, 4.8 m/s back |
 | Side flip | A during a turn-around: `vy = 62`, `fwd = 8`, face the stick (`mario.c:837-841`, `mario_actions_moving.c:962-969`) | 18.6 m/s up, 2.4 m/s |
@@ -385,6 +385,16 @@ Each playtest runs on a project scaffolded from `--template collectathon`:
     fix the slide was 3.23 m/s, and `stride` exited 1 (gen-12lp).
   - Triangles: the flower rims (10 points), 3-sided stems and 24×16 hero spheres keep the course at
     253.5k triangles and 288 draws on gen-12lp medium (`performance` exit 0).
+  - Double jump (owner playtest 2026-10-24: "I press double space and it doenst double jump"):
+    the window was 5 frames (0.167 s) from the press, but SM64 resets `doubleJumpTimer` on each of
+    the 4 landing frames (`mario_actions_moving.c:26-52`, `:1767`), so its real window is 9 frames
+    at 30 Hz, 0.3 s. A fall or side-flip landing also opens the chain (`mario.c:1030`). The classic
+    has no pre-landing buffer (`framesSinceA`, `mario.c:1278`, only counts after the landing), so
+    a press up to 0.12 s before touchdown is kept, which is the double-tap a keyboard player makes.
+    The HUD teaches it once: the first chain-opening jump landing shows "JUMP AGAIN AS YOU LAND".
+    Proof: `playtests/double-tap.playtest.json` presses Space 12 ticks before touchdown and asserts
+    one double (gen-12lp: green exit 0, with `jumpBuffer: 0` exit 1 on `counts.double` and the
+    landing action); `jump-chain`, `acrobatics`, `collect` and `camera` exit 0 with the change.
 
 ## Execution Phases
 

@@ -253,6 +253,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     let respawns = 0;
     let elapsed = 0;
     let toastUntil = 0;
+    let chainTaught = false;
     const toast = (text: string, seconds = 1.6): void => {
       ctx.state.set({ toast: text });
       toastUntil = elapsed + seconds;
@@ -325,6 +326,10 @@ export class Play extends Scene<GameState, IPhysicsContext> {
           burst("kickStars", at.x - fx * 0.45, at.y + 0.2, at.z - fz * 0.45);
         }
         if (action === "ledgeHang") burst("ledge", at.x + fx * 0.45, feet + 1.3, at.z + fz * 0.45);
+        // The first jump landing that opens a chain teaches it, until the player has done one.
+        if (hero.chain === 1 && JUMPS.has(previous) && !chainTaught)
+          toast("JUMP AGAIN AS YOU LAND: DOUBLE JUMP", 2.4);
+        if (action === "double") chainTaught = true;
         previous = action;
         airTicks = 0;
       }
