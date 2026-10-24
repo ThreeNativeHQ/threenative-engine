@@ -9,9 +9,13 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
-import { bindUpstreamExports } from "../src/browser-entry.js";
+import * as audioBinding from "../src/audio.js";
+import * as backend from "../src/browser-backend.js";
+import { bindUpstreamExports, bindWebEngine } from "../src/browser-entry.js";
+import * as rendererBinding from "../src/browser-renderer.js";
+import * as tslBinding from "../src/browser-tsl.js";
 import { type ICatalog, loadCatalog } from "../src/catalog.js";
 
 const REPO = process.cwd();
@@ -85,5 +89,96 @@ describe("bindUpstreamExports", () => {
         bound[name] === upstream[name],
     );
     expect({ missing, leaked }).toEqual({ missing: [], leaked: [] });
+  });
+});
+
+describe("web engine nested render safe points", () => {
+  it("keeps collection and audio outermost while syncing mutable uniforms on every draw and recovering from failure", async () => {
+    let next = 0;
+    const setUniform = vi.fn();
+    const tslRuntime: tslBinding.ITslRuntime = {
+      call: () => ++next,
+      release() {},
+      set() {},
+      setUniform,
+      effectParameter: () => 0,
+      setPost() {},
+      compute() {},
+      readStorage: async () => new ArrayBuffer(0),
+      deleteStorage() {},
+    };
+    const types = new Map<string, number>();
+    const runtime: backend.IBrowserRuntime = {
+      typeId: (name) => types.get(name) ?? types.set(name, types.size + 1).get(name) ?? 0,
+      construct: () => ({ key: `${++next}:0:1:1`, type: 1 }),
+      invoke: () => null,
+      get: () => undefined,
+      set() {},
+      release() {},
+      setCallback() {},
+      tsl: tslRuntime,
+    };
+    const bindings = backend.defineBrowserClasses(
+      registry as backend.IRegistryDump,
+      runtime,
+      catalog,
+    );
+    const collect = vi.fn(bindings.collect);
+    const audio = audioBinding.defineAudioClasses(bindings.classes as never);
+    const updateAudio = vi.fn(audio.updateAudio);
+    const tsl = tslBinding.defineTsl(tslRuntime);
+    const uniform = (
+      tsl.exports.uniform as (value: { isVector2: boolean; x: number; y: number }) => {
+        value: { x: number; y: number };
+      }
+    )({ isVector2: true, x: 0, y: 0 });
+    const originalSync = tsl.sync;
+    let renderHook: NonNullable<Parameters<typeof rendererBinding.defineWebRenderer>[2]> = () => {
+      throw new Error("Renderer callback was not installed");
+    };
+    let nested = false;
+    const sync = vi.spyOn(tsl, "sync").mockImplementation((frame) => {
+      if (!nested) {
+        nested = true;
+        try {
+          for (let value = 1; value <= 5; value++) {
+            uniform.value.x = value;
+            renderHook(frame);
+          }
+        } finally {
+          nested = false;
+        }
+      }
+      originalSync(frame);
+    });
+    try {
+      vi.spyOn(backend, "createWasmRuntime").mockReturnValue(runtime);
+      vi.spyOn(backend, "defineBrowserClasses").mockReturnValue({ ...bindings, collect });
+      vi.spyOn(audioBinding, "defineAudioClasses").mockReturnValue({ ...audio, updateAudio });
+      vi.spyOn(tslBinding, "defineTsl").mockReturnValue(tsl);
+      vi.spyOn(rendererBinding, "isWebHostModule").mockReturnValue(true);
+      vi.spyOn(rendererBinding, "defineWebRenderer").mockImplementation((...args) => {
+        if (args[2] === undefined) throw new Error("Renderer callback is missing");
+        renderHook = args[2];
+        return class {} as ReturnType<typeof rendererBinding.defineWebRenderer>;
+      });
+      await bindWebEngine(async () => ({}) as backend.TnAbiModule, []);
+      setUniform.mockClear();
+      renderHook({ renderer: {}, frameId: 0 });
+      expect(collect).toHaveBeenCalledTimes(1);
+      expect(updateAudio).toHaveBeenCalledTimes(1);
+      expect(sync).toHaveBeenCalledTimes(6);
+      expect(setUniform.mock.calls.map(([, lanes]) => lanes[0])).toEqual([1, 2, 3, 4, 5, 5]);
+      sync.mockImplementationOnce(() => {
+        throw new Error("meter draw failed");
+      });
+      expect(() => renderHook({ renderer: {}, frameId: 1 })).toThrow("meter draw failed");
+      renderHook({ renderer: {}, frameId: 2 });
+      expect(collect).toHaveBeenCalledTimes(3);
+      expect(updateAudio).toHaveBeenCalledTimes(2);
+      expect(sync).toHaveBeenCalledTimes(13);
+    } finally {
+      vi.restoreAllMocks();
+    }
   });
 });
