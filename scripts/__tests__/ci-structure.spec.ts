@@ -3336,6 +3336,16 @@ describe("CI pipeline structure", () => {
     expect(job).toContain("run: pnpm verify:golden-path");
   });
 
+  it("the review unit leg prepares what `vitest related` may select (PRD-731)", async () => {
+    // #560's first review run: `vitest related` picked the browser e2e specs for a playtest change
+    // and every one died on a missing Chromium, because the install step ran for `full` only.
+    const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
+    const job = requiredJob(ci, "test-unit");
+    const prepare = "if: needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'review'";
+    expect(job).toContain(`uses: ./.github/actions/playwright-chromium\n        ${prepare}`);
+    expect(job).toContain(`${prepare}\n        run: pnpm --filter strata-terrain-preview bake`);
+  });
+
   it("the golden-path required context is still reported by a job of that exact name", async () => {
     // `golden-path` is a required check in the `main protection` ruleset, and required checks are
     // matched by exact context string. A matrix job reports `golden-path (starter)` and

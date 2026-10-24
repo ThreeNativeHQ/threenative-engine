@@ -295,10 +295,10 @@ jobs:
           save-bundles: "false"
           pack-archives: "false"
       - name: Generate the terrain example's ignored world source
-        if: needs.scope.outputs.selection == 'full'
+        if: needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'review'
         run: pnpm --filter strata-terrain-preview bake
       - uses: ./.github/actions/playwright-chromium
-        if: needs.scope.outputs.selection == 'full'
+        if: needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'review'
       - name: Run impacted unit contracts
         run: |
           case '${{ needs.scope.outputs.selection }}' in
