@@ -129,6 +129,7 @@ Each playtest runs on a project scaffolded from `--template collectathon`:
 
 ## Blocked on
 
+- AC-9: core auto exposure on the desktop V8 engine player (boolean uniforms in `core-tsl.mjs`, render-target texture swaps in `AutoExposureNode`) — unblocked by an engine lane in `packages/runtime-native`.
 - The owner's taste call on the kit's look and feel (does it read as a polished 3D collectathon?) — unblocked by João after the judge pass in Phase 3.
 
 ## Integration Ledger
@@ -181,6 +182,13 @@ Each playtest runs on a project scaffolded from `--template collectathon`:
 - 2026-10-23 (agent): no capability-recall mechanic row for the ledge ray. The search does not rank
   `PhysicsDirectSpaceState3D` for "ray to find a wall or ledge" (its situations name only aiming
   and shape queries); that is an engine manifest fix in `packages/physics`, out of this kit's scope.
+- 2026-10-23 (agent): a kit on the core look ships no material backlighting (`rimGain`/`fillGain`,
+  `materialLighting.ts`), because a stock Unreal scene has none. `primary-docs.spec.ts` names that
+  exception and checks the kit's `AGENTS.md` says so.
+- 2026-10-23 (agent): the kit's `quality.ts` exports `qualityPreset` (core's preset plus overrides),
+  the same name every other kit's `quality.ts` exports, so the tier specs read it unchanged.
+- 2026-10-23 (agent): the native engine-player fix stays out of this kit PR. It is a
+  `packages/runtime-native` change, and it does not finish AC-9 alone (see AC-9).
 
 ## Execution Phases
 
@@ -228,4 +236,5 @@ Unreal default look, and no frame is blank or white.
 
 - [ ] AC-8: the kit passes every registration gate and the template lane. proof: `pnpm budgets && pnpm exec vitest run scripts/__tests__/ci-structure.spec.ts scripts/__tests__/primary-docs.spec.ts scripts/__tests__/check-template-conventions.spec.ts && pnpm test:templates` — Evidence: pending.
 - [ ] AC-9: the kit runs 300 frames on the native desktop engine player with a non-blank capture. proof: `node packages/playtest/dist/runner/cli.js <project>/native-playtests/survives.playtest.json --target desktop` — Evidence: pending.
+  Open, engine-blocked (2026-10-23, V8 engine player built here from the CI recipe): the kit fails to start, `TN_TSL uniform: expected a TSL node or number` from core's `AutoExposureNode` (`uniform(false)`). The V8 shim `packages/runtime-native/src/engine/player/core-tsl.mjs` lacks the boolean-uniform wrapper that `packages/three-native/src/browser-tsl.ts:775` has. With that wrapper cloned in, startup passes (`TN_PLAYER_V8_GAME_CHECK ... startup=passed`), then every frame fails `TN_NATIVE_TEXTURE_VALUE_TYPE` on the meter's render-target swaps (`auto-exposure.ts:192`). Core auto exposure is not ported to the desktop engine player, so any game on the engine default look fails there. Diagnostic only: with the meter off, the native scenario passes (exit 0, 0 errors) but the capture shows the HUD over the loading bar, not the course.
 - [ ] AC-10: the visual judge returns pass on every criterion above for all three poses. proof: the judge report linked from the PR — Evidence: pending.

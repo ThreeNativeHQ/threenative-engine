@@ -115,6 +115,7 @@ lifecycle.
 | Template | What you start with |
 | --- | --- |
 | `collectathon` | Hop Garden: a 3D platformer moveset (triple jump, long jump, wall kick, ledge grab, ground pound) on one island with three Sunseeds |
+| `adventure` | Lantern Vale: a 3D action-adventure with lock-on, a sword and shield, half-hearts, a push-block puzzle, a key and a locked door, and the Stone Warden |
 | `starter` *(default)* | A polished default project with a React HUD, physics, and a ready-to-edit scene |
 | `minimal` | The smallest project — core and physics only |
 | `platformer` | Jumping, patrols, pickups, camera follow |
