@@ -1182,11 +1182,12 @@ std::vector<std::pair<std::string, g::Node>> tslConstants() {
             {"vertexIndex", g::builtin("vertexIndex")},
             {"screenUV", g::screenUV()},
             // three's materialColor is the material's colour, a vec3 (MaterialNode COLOR, type 'color').
-            // ponytail: the colour uniform only; three also multiplies in `map` when the material has one.
-            {"materialColor", g::swizzle(g::uniform("diffuse", Type::vec(4)), "xyz")},
-            {"materialEmissive", g::uniform("emissive", Type::vec(3))},
-            {"materialMetalness", g::uniform("metalness", Type::f32())},
-            {"materialRoughness", g::uniform("roughness", Type::f32())},
+            // Each is the material's uniform times its map, as MaterialNode builds it: the program that lowers the
+            // node supplies the map (standard.cpp materialInputs); with none the bare uniform stays.
+            {"materialColor", g::swizzle(g::materialInput("diffuse", Type::vec(4)), "xyz")},
+            {"materialEmissive", g::materialInput("emissive", Type::vec(3))},
+            {"materialMetalness", g::materialInput("metalness", Type::f32())},
+            {"materialRoughness", g::materialInput("roughness", Type::f32())},
             // three's time (utils/Timer.js): the frame's elapsed seconds, a uniform the renderer fills.
             {"time", g::uniform("time", Type::f32())},
             // three's deltaTime: seconds since the frame before, filled the same way.
