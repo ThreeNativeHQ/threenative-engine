@@ -133,7 +133,7 @@ describe("SkinnedBatch owned scalar display packets", () => {
       expect(f.receipt().slots[0].currentRaw).toBe(false);
       expect(animationRateStates.get(f.mesh)?.gpuPose).not.toBe(true);
       f.mesh.skeleton.update();
-      f.mesh.skeleton.boneMatrices.forEach((value, index) =>
+      (f.mesh.skeleton.boneMatrices ?? []).forEach((value, index) =>
         expect(f.batch.palette[index]).toBeCloseTo(value, 6),
       );
     } finally {
@@ -156,7 +156,7 @@ describe("SkinnedBatch owned scalar display packets", () => {
       expect(f.receipt().slots[0].previousRaw).toBe(true);
       expect(animationRateStates.get(f.mesh)?.gpuPose).toBe(false);
       Skeleton.prototype.update.call(f.mesh.skeleton);
-      f.mesh.skeleton.boneMatrices.forEach((value, index) =>
+      (f.mesh.skeleton.boneMatrices ?? []).forEach((value, index) =>
         expect(f.batch.palette[index]).toBeCloseTo(value, 6),
       );
     } finally {

@@ -76,6 +76,7 @@ interface IAnimationRateStateLike {
   readonly evaluated: boolean;
   readonly effectiveRate?: number;
   readonly evaluation: number;
+  readonly gpuPoseEnabled?: boolean;
   gpuPose?: boolean;
   syncBones?: () => void;
 }
