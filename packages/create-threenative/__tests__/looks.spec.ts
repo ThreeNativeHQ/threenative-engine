@@ -269,6 +269,13 @@ describe("starter visual floor", () => {
           id?: string;
           path?: string;
         }>;
+        tone?: Array<{
+          clipFraction?: { max?: number };
+          compare?: { metric?: string; minDelta?: number };
+          mean?: { max?: number };
+          p99?: { max?: number };
+          region?: { height?: number; width?: number; x?: number; y?: number };
+        }>;
         visual?: Array<{ region?: { maxDarkPixelRatio?: number; minNonblankPixelRatio?: number } }>;
       };
       steps: Array<{ holdTicks?: number; kind?: string; label?: string; press?: string }>;
@@ -312,11 +319,7 @@ describe("starter visual floor", () => {
         }),
       ]),
     );
-    // The frame is graded, not black. `maxLuminance` is the guard that matters: a black or
-    // unlit capture still counts as "non-blank", so the dark-pixel ceiling is a design bound —
-    // this is a dark-grid arena, and its walls, pillar and platform flanks are a quarter of the
-    // frame by design. The floor is the other half of that: a frame that lost its dark structure
-    // is as wrong as one that drowned in it.
+    // Keep black-pixel ceilings; meter headroom and player contrast replace near-black occupancy.
     const regions = (scenario.assert?.visual ?? [])
       .flatMap((entry) => (entry.region === undefined ? [] : [entry.region]))
       .filter((region): region is NonNullable<typeof region> => region !== undefined);
@@ -333,12 +336,21 @@ describe("starter visual floor", () => {
     ];
     expect(whole?.minNonblankPixelRatio).toBeGreaterThan(0.9);
     expect(whole?.maxLuminance).toBeLessThan(0.3);
-    expect(whole?.minDarkPixelRatio).toBeGreaterThan(0);
     expect(whole?.maxDarkPixelRatio).toBeGreaterThan(0.3);
     expect(sky?.minNonblankPixelRatio).toBeGreaterThan(0.9);
     expect(sky?.maxLuminance).toBeLessThan(0.3);
     expect(sky?.maxDarkPixelRatio).toBeGreaterThan(0.2);
     expect(middle?.minNonblankPixelRatio).toBeGreaterThan(0.5);
+    // Two tone guards replace the old near-black occupancy floor: the world keeps exposure
+    // headroom and the player stays separated from the wall behind it.
+    const tone = scenario.assert?.tone ?? [];
+    expect(tone).toHaveLength(2);
+    const [headroom, contrast] = tone;
+    expect(headroom?.mean?.max).toBeLessThan(255);
+    expect(headroom?.p99?.max).toBeLessThan(255);
+    expect(headroom?.clipFraction?.max).toBeLessThanOrEqual(0.005);
+    expect(contrast?.compare).toMatchObject({ metric: "p99" });
+    expect(contrast?.compare?.minDelta).toBeGreaterThanOrEqual(80);
   });
 
   it("should tell the generated project what the arena is and what replaced the coast", async () => {
