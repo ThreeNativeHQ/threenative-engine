@@ -4,8 +4,8 @@ prd_contract: v1
 
 # PRD-733 — Lantern Vale: a 3D action-adventure starter kit with lock-on combat and a dungeon puzzle
 
-**Status:** NOT STARTED
-**Priority:** P2 — new genre kit: no box below is ticked, and no shipped kit has lock-on targeting, a shield, a pushable-block puzzle or a key-and-door dungeon loop.
+**Status:** PARTIAL — Phase 1 done
+**Priority:** P2 — new genre kit: the dungeon loop (Phase 2) and the registration, native and judge gates (Phase 3) are open, and no shipped kit has lock-on targeting, a shield, a pushable-block puzzle or a key-and-door dungeon loop.
 **Complexity:** 5 (MEDIUM) — 11+ kit source files (+3), new kit system (+2). Risk override: none. The kit is game code in one template. No `packages/` API changes.
 **Owner:** João
 **Depends on:** [PRD-723](../Unreal/look/PRD-723-every-template-game-looks-like-unreal-on-the-engine-defaults.md) (aligned, not gating: the kit is born on the core Unreal defaults, so it pins no tone curve or fixed exposure and needs no PRD-723 migration). Owner order, 2026-10-23: "use unreal defaults for these new starter kits". Sibling of [PRD-732](PRD-732-hop-garden-3d-platformer-starter-kit.md): both kits ship in one PR (owner order, 2026-10-23).
@@ -188,12 +188,40 @@ Each playtest runs on a project scaffolded from `--template adventure`:
   One clearing and one three-room dungeon carry the genre loop.
 - 2026-10-23 (agent): Navigation is the engine capability for chasing. A hand-written A* is not
   allowed. A direct-steer fallback exists only if Phase 1 shows navigation unbound on native.
+- 2026-10-23 (agent, superseding the line above without a native run): the kit does not import
+  `@threenative/physics/navigation`. Its Recast WASM is refused on Android and iOS
+  (`TN_NATIVE_WASM_ON_MOBILE`), `packages/create-threenative/AGENTS.md` states that no template
+  imports it, and every kit must run on all four targets. The Mossling uses the PRD's own fallback:
+  a ray to Wren, and a slide along the wall that ray hits (`src/entities/Mossling.ts`). No A* is
+  written. Revisit when navigation runs on Android and iOS.
+- 2026-10-23 (agent): `@threenative/core` stays pinned at `0.3.6`, the workspace version, as every
+  template pins it. `pnpm test:templates` does not install that pin from npm:
+  `packageLocalFramework` packs `packages/core` from this tree and the scaffold installs the
+  tarball (`file:.../threenative-core-0.3.6.tgz`). The npm `0.3.6` (published 2026-10-21) does not
+  export `qualityTiers` or `WorldEnvironment` (checked with `npm pack @threenative/core@0.3.6`), so a
+  registry install of this kit, or of `collectathon`, needs the next core release. The release
+  cohort (`pnpm release:prepare`) bumps the pin with the other templates.
+- 2026-10-23 (agent): the render-import rule follows the PRD-732 mechanism, with no second one.
+  `scripts/check-core-boundary.ts` lists the core look in `RENDER_PORTABLE_CORE_SYMBOLS`, and
+  `template-quality.ts` and `visual-gate.ts` detect a kit that takes the core look from its
+  `postprocessing.ts` and `quality.ts` imports. This kit has the same file shapes, so no list
+  names it. `Billboard3D` and `attachToBone` are not in that set, so they are used in
+  `src/entities/`, not in `src/render/`.
+- 2026-10-23 (agent): the input map adds an `attack` input (KeyJ, pad button 2) for the slash. The
+  PRD's five inputs (move, action, block, target, interact) have no slash input. `action` is the roll,
+  or a hop while locked on.
+- 2026-10-23 (agent): the unlocked camera holds its yaw and starts behind Wren. A target press with
+  nothing in range recentres it behind her, and a lock swings it onto the target line. This keeps
+  "up" on the stick fixed until the player asks for a new direction, and keeps the move playtests
+  deterministic. A release and a new press inside 0.3 s moves the lock to the next target.
+- 2026-10-23 (agent): the sword chest stands beside Wren's start, at (-1.6, 0, 8.4), so opening it is
+  the first thing she does and every combat playtest can take the sword in one press.
 
 ## Execution Phases
 
 #### Phase 1: Wren moves, targets and boots on the Unreal look
 
-**Status:** NOT STARTED
+**Status:** DONE (2026-10-23), web on WebGPU (nvidia turing adapter, not SwiftShader)
 **Files:** `templates/adventure/` cloned from `minimal`, with new `src/entities/{Hero,LockOn}.ts`,
 `src/render/{hero,camera,postprocessing,quality}.ts`, a flat test yard in `src/level/Vale.ts`, one
 dummy target, `kit.json`, `playtests/{survives,move,lockon}.playtest.json`.
@@ -202,9 +230,9 @@ the follow camera with the lock-on yaw ease, the target pick and reticle, the pr
 (feet on the floor: the capsule origin is the waist, as Fox Dash documents), the core look wiring.
 **Verification:** the three playtests below on WebGPU, `adapter.info` checked.
 
-- [ ] AC-1: the scaffolded kit boots on the core Unreal defaults (`TN_RENDER_CHAIN` names `filmic` and auto exposure, `rg 'tonemapMode|autoExposureEnabled|exposure:' src/` finds no pin), the hero stands on the floor and runs for 600 frames with no console error. proof: `playtests/survives.playtest.json` — Evidence: pending.
-- [ ] AC-2: full stick reaches 3.0 m/s outdoors (±5%) and 2.5 m/s in the dungeon yard, the hero stops within 0.3 s of release, and a turn of 180° takes 0.8 s to 0.9 s. proof: `playtests/move.playtest.json` — Evidence: pending.
-- [ ] AC-3: with two dummy targets in range, the target press locks the nearest, the hero faces it while strafing and keeps its distance within ±0.3 m, a second press moves the lock to the other target, release unlocks, and a defeated target drops the lock. proof: `playtests/lockon.playtest.json` — Evidence: pending.
+- [x] AC-1: the scaffolded kit boots on the core Unreal defaults (`TN_RENDER_CHAIN` names `filmic` and auto exposure, `rg 'tonemapMode|autoExposureEnabled|exposure:' src/` finds no pin), the hero stands on the floor and runs for 600 frames with no console error. proof: `playtests/survives.playtest.json` — Evidence: exit 0, 600 frames, `feetY` 0.010 m, grounded, moved 14.6 m, 0 console errors. `TN_WORLD_ENVIRONMENT` reports `tonemapMode: "filmic"` and `TN_AUTO_EXPOSURE` reports `applied: true, settled: true` (`TN_RENDER_CHAIN` lists the post stages only: ambientOcclusion, ssgi, ssr, traa, motionBlur, bloom, vignette, tier high). The `rg` finds nothing (exit 1).
+- [x] AC-2: full stick reaches 3.0 m/s outdoors (±5%) and 2.5 m/s in the dungeon yard, the hero stops within 0.3 s of release, and a turn of 180° takes 0.8 s to 0.9 s. proof: `playtests/move.playtest.json` — Evidence: `move` exit 0: top speed 3.000 m/s, stop 0.150 s, 180° turn 0.833 s. The dungeon half is `playtests/move-hollow.playtest.json` (spawned in the Hollow): exit 0, top speed 2.500 m/s, stop 0.133 s.
+- [x] AC-3: with two dummy targets in range, the target press locks the nearest, the hero faces it while strafing and keeps its distance within ±0.3 m, a second press moves the lock to the other target, release unlocks, and a defeated target drops the lock. proof: `playtests/lockon.playtest.json` — Evidence: exit 0, 16 checks pass. The lock goes `dummy.1` (nearest), `""` on release, `dummy.0` on the quick re-press, `""` after 0.5 s, and `""` when the second cut fells the locked dummy. Strafe 1.50 s with 0.03 m worst drift, worst facing error 0.0°, 2 slash hits, 1 defeated.
 
 #### Phase 2: The vale and the Hollow are a game
 

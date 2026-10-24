@@ -1,0 +1,91 @@
+{
+  "name": "lockon",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": { "width": 1280, "height": 720 },
+  "warmupFrames": 10,
+  "subject": "player",
+  "steps": [
+    { "kind": "input", "label": "take-sword", "press": "KeyE", "holdTicks": 5, "release": true },
+    {
+      "kind": "input",
+      "label": "lock",
+      "press": ["KeyQ", "ArrowRight"],
+      "holdTicks": 90,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "let-go",
+      "press": ["ArrowRight"],
+      "holdTicks": 6,
+      "release": false
+    },
+    { "kind": "input", "label": "switch", "press": ["KeyQ"], "holdTicks": 30, "release": false },
+    { "kind": "input", "label": "unlock", "press": [], "holdTicks": 30, "release": false },
+    {
+      "kind": "input",
+      "label": "approach",
+      "press": ["KeyQ", "ArrowUp"],
+      "holdTicks": 90,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "cut-1",
+      "press": ["KeyQ", "KeyJ"],
+      "holdTicks": 40,
+      "release": false
+    },
+    { "kind": "input", "label": "between", "press": ["KeyQ"], "holdTicks": 4, "release": false },
+    {
+      "kind": "input",
+      "label": "cut-2",
+      "press": ["KeyQ", "KeyJ"],
+      "holdTicks": 40,
+      "release": false
+    },
+    { "kind": "input", "label": "fallen", "press": ["KeyQ"], "holdTicks": 20, "release": false },
+    { "kind": "input", "label": "end", "press": [], "holdTicks": 10, "release": true }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "lockTarget",
+        "equals": "",
+        "atSteps": [
+          { "label": "take-sword", "equals": "" },
+          { "label": "lock", "equals": "dummy.1" },
+          { "label": "let-go", "equals": "" },
+          { "label": "switch", "equals": "dummy.0" },
+          { "label": "unlock", "equals": "" },
+          { "label": "fallen", "equals": "" }
+        ],
+        "allowTrivial": "The lock starts and ends empty; the per-step values prove it locked the nearest dummy, moved to the other on a quick re-press, let go on release and dropped when its target fell."
+      },
+      { "id": "state", "path": "sword", "equals": true },
+      { "id": "state", "path": "lockStrafeSeconds", "gte": 1.2 },
+      {
+        "id": "state",
+        "path": "lockStrafeDrift",
+        "lte": 0.3,
+        "allowTrivial": "Zero is the ideal and the start value; lockStrafeSeconds above proves the strafe this bound covers happened."
+      },
+      {
+        "id": "state",
+        "path": "lockFacingError",
+        "lte": 10,
+        "allowTrivial": "Zero is the ideal and the start value; the lock steps above prove a target was held while this was measured."
+      },
+      { "id": "state", "path": "slashHits", "gte": 2 },
+      { "id": "state", "path": "defeated", "gte": 1 }
+    ]
+  }
+}

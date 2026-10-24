@@ -1,0 +1,55 @@
+{
+  "name": "survives",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": { "width": 1280, "height": 720 },
+  "warmupFrames": 10,
+  "subject": "player",
+  "steps": [
+    { "kind": "input", "label": "north", "press": "ArrowUp", "holdTicks": 200, "release": true },
+    { "kind": "input", "label": "east", "press": "ArrowRight", "holdTicks": 200, "release": true },
+    { "kind": "wait", "label": "settle", "waitTicks": 200, "release": true }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "components": [
+      {
+        "allowTrivial": "Feet on the floor: the capsule is centred on Wren's waist, so her feet sit FOOT_OFFSET below the body origin; after 600 frames of running they must be on the meadow at y 0, not floating or sunk.",
+        "component": "feetY",
+        "entity": "player",
+        "gte": -0.05,
+        "lte": 0.08
+      },
+      {
+        "allowTrivial": "The character body reports contact with the floor after the run settles.",
+        "component": "grounded",
+        "entity": "player",
+        "equals": true
+      }
+    ],
+    "movement": { "entity": "player", "minDistance": 8 },
+    "visibility": [
+      {
+        "entity": "touch-controls",
+        "present": false,
+        "allowTrivial": "Desktop keyboard lanes intentionally omit touch controls while movement proves the scene is active."
+      }
+    ],
+    "visual": [
+      {
+        "region": {
+          "x": 0,
+          "y": 0,
+          "width": 1280,
+          "height": 720,
+          "minNonblankPixelRatio": 0.01
+        }
+      }
+    ]
+  }
+}
