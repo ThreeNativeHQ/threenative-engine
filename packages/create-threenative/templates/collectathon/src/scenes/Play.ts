@@ -16,7 +16,7 @@ import { type DataTexture, Euler, type PerspectiveCamera, Vector3 } from "three"
 import { FOOT_OFFSET, type GameCtx, HERO_FEEL, Hero, WORLD_LAYER } from "../entities/Hero.js";
 import { Pickup } from "../entities/Pickup.js";
 import { Walker, type WalkerKind } from "../entities/Walker.js";
-import { type ICourse, COURSE, buildCourse, makeRng } from "../level/Course.js";
+import { COURSE, type ICourse, buildCourse, makeRng } from "../level/Course.js";
 import { emitPlaytestEvent } from "../playtest-events.js";
 import { type WallProbe, createOrbitCamera } from "../render/camera.js";
 import { BURSTS, EFFECTS } from "../render/effects.js";

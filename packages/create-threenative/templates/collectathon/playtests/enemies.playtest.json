@@ -99,28 +99,21 @@
     {
       "kind": "input",
       "label": "run-up",
-      "press": [
-        "KeyW"
-      ],
+      "press": ["KeyW"],
       "holdTicks": 60,
       "release": false
     },
     {
       "kind": "input",
       "label": "stomp-jump",
-      "press": [
-        "KeyW",
-        "Space"
-      ],
+      "press": ["KeyW", "Space"],
       "holdTicks": 22,
       "release": false
     },
     {
       "kind": "input",
       "label": "stomp-fall",
-      "press": [
-        "KeyW"
-      ],
+      "press": ["KeyW"],
       "holdTicks": 1,
       "release": false
     },
@@ -137,19 +130,14 @@
     {
       "kind": "input",
       "label": "dive-run",
-      "press": [
-        "KeyW"
-      ],
+      "press": ["KeyW"],
       "holdTicks": 30,
       "release": false
     },
     {
       "kind": "input",
       "label": "dive",
-      "press": [
-        "KeyW",
-        "KeyX"
-      ],
+      "press": ["KeyW", "KeyX"],
       "holdTicks": 4,
       "release": false
     },
@@ -173,18 +161,14 @@
     {
       "kind": "input",
       "label": "pound-jump",
-      "press": [
-        "Space"
-      ],
+      "press": ["Space"],
       "holdTicks": 12,
       "release": false
     },
     {
       "kind": "input",
       "label": "pound",
-      "press": [
-        "ShiftLeft"
-      ],
+      "press": ["ShiftLeft"],
       "holdTicks": 4,
       "release": false
     },
@@ -214,9 +198,7 @@
     {
       "kind": "input",
       "label": "touch-run",
-      "press": [
-        "KeyW"
-      ],
+      "press": ["KeyW"],
       "holdTicks": 1,
       "release": false
     },

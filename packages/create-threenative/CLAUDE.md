@@ -21,12 +21,10 @@ or a platform's status changes. `pnpm sync:agents` mirrors them like every other
 user's repo. They are a floor the model can rewrite or delete, not a ceiling it must reach
 through config. Two hard constraints, both asserted in CI:
 
-- No `@threenative/` import may appear in `templates/*/src/render/`, except the named symbols in
-  `RENDER_PORTABLE_CORE_SYMBOLS` (`scripts/check-core-boundary.ts`): the core look a kit takes
-  instead of vendoring it (`WorldEnvironment`, `qualityPreset`, `qualityTiers` and their types,
-  the `collectathon` shape) and simulation-only nodes such as `SpectralOcean`.
-- The generated `package.json` must contain no `catalog:` protocol — templates carry real
-  versions, kept in sync by hand with `pnpm-workspace.yaml`.
+- No `@threenative/` import may appear in `templates/*/src/render/`, except `RENDER_PORTABLE_CORE_SYMBOLS`
+  (`scripts/check-core-boundary.ts`): the core look a kit takes instead of vendoring it
+  (`WorldEnvironment`, `qualityPreset`, `qualityTiers`) and `SpectralOcean`.
+- The generated `package.json` must contain no `catalog:` protocol; templates carry real versions in sync with `pnpm-workspace.yaml`.
 
 Move any of that into a package and you have rebuilt the v1 mistake that made generated
 output look worse than vanilla.

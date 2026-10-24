@@ -7,7 +7,8 @@
 // through a bush as it walks through a tree trunk, and the course's metres stay the course's.
 // Placement is seeded and asks the course where planting may go (`clear`).
 import {
-  BufferGeometry,
+  BoxGeometry,
+  type BufferGeometry,
   CircleGeometry,
   ConeGeometry,
   CylinderGeometry,
@@ -20,7 +21,6 @@ import {
   OctahedronGeometry,
   RingGeometry,
   SphereGeometry,
-  BoxGeometry,
 } from "three";
 import { hash, instanceIndex, positionLocal, sin, time, vec3 } from "three/tsl";
 import { MeshStandardNodeMaterial } from "three/webgpu";

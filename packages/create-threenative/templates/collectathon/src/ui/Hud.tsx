@@ -11,7 +11,7 @@ function Meter({ wedges }: { wedges: number }) {
       <path
         d={`M ${point(a0, 7)} L ${point(a0, 18)} A 18 18 0 0 1 ${point(a1, 18)} L ${point(a1, 7)} A 7 7 0 0 0 ${point(a0, 7)} Z`}
         fill={i < wedges ? "var(--color-lume)" : "var(--color-line)"}
-        key={i}
+        key={a0.toFixed(3)}
       />
     );
   });

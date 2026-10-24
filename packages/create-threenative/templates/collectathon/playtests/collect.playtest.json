@@ -125,9 +125,7 @@
     {
       "kind": "input",
       "label": "run",
-      "press": [
-        "KeyW"
-      ],
+      "press": ["KeyW"],
       "holdTicks": 1,
       "release": false
     },

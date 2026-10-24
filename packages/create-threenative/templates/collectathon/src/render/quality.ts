@@ -12,8 +12,8 @@
 // the curve or the meter. Force one with `setupPost(renderer, scene, camera, { tier: "low" })`.
 import {
   type IWorldEnvironmentOptions,
-  qualityPreset as engineQualityPreset,
   type QualityTier,
+  qualityPreset as engineQualityPreset,
   qualityTiers,
 } from "@threenative/core";
 
