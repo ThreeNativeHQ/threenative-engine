@@ -1,16 +1,15 @@
 // Generated for you. This is ordinary Three.js — edit or delete it freely.
 //
 // Every prop in the vale and the Hollow, from primitives: chests, doors, the grate, the push
-// block, the floor switch, trees, rocks, grass, the signpost, torches and the heart vessel. Each
+// block, the floor switch, the signpost, torches and the heart vessel (the vale's planting is
+// `foliage.ts`). Each
 // builder returns a group with its origin on the floor; the level files place them.
 import {
   BoxGeometry,
   type BufferGeometry,
   ConeGeometry,
   CylinderGeometry,
-  DodecahedronGeometry,
   Group,
-  IcosahedronGeometry,
   type Material,
   Mesh,
   SphereGeometry,
@@ -134,44 +133,6 @@ export function createSwitchPlate(): { readonly group: Group; setPressed(pressed
         : lit(C.brass, { metalness: 0.7, roughness: 0.4 });
     },
   };
-}
-
-/** A broadleaf tree: a tapered trunk and three clustered crowns. */
-export function createTree(rng: () => number, scale = 1): Group {
-  const group = new Group();
-  const h = (3.2 + rng() * 1.6) * scale;
-  group.add(part(new CylinderGeometry(0.18 * scale, 0.32 * scale, h, 7), lit(C.bark), 0, h / 2));
-  for (let i = 0; i < 3; i += 1) {
-    const r = (1.1 + rng() * 0.6) * scale;
-    const crown = part(
-      new IcosahedronGeometry(r, 1),
-      lit(i === 0 ? C.leaf : C.leafLight, { flat: true }),
-      (rng() - 0.5) * 1.2 * scale,
-      h + (rng() - 0.2) * 0.8 * scale,
-      (rng() - 0.5) * 1.2 * scale,
-    );
-    crown.scale.y = 0.8;
-    group.add(crown);
-  }
-  return group;
-}
-
-/** A boulder: a squashed dodecahedron with baked facet variation. */
-export function createRock(rng: () => number, size: number): Mesh {
-  const rock = part(
-    mottle(new DodecahedronGeometry(size, 0), 0.25, rng),
-    lit(palette.stone, { flat: true, vertexColors: true }),
-    0,
-    size * 0.45,
-  );
-  rock.scale.set(1 + rng() * 0.4, 0.6 + rng() * 0.3, 1 + rng() * 0.3);
-  rock.rotation.y = rng() * Math.PI;
-  return rock;
-}
-
-/** One grass tuft: three thin blades. Instanced by the vale, never added one by one. */
-export function grassTuft(): BufferGeometry {
-  return new ConeGeometry(0.05, 0.38, 3, 1).translate(0, 0.19, 0);
 }
 
 /** A signpost: a post and a plank. */

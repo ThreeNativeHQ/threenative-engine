@@ -1,0 +1,213 @@
+{
+  "name": "thornback",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "subject": "player",
+  "setup": {
+    "place": [
+      {
+        "entity": "player",
+        "at": {
+          "x": -13,
+          "y": 0.85,
+          "z": 3
+        },
+        "facing": {
+          "yaw": 0
+        }
+      },
+      {
+        "entity": "chest.sword",
+        "at": {
+          "x": -14.4,
+          "y": 0,
+          "z": 3
+        }
+      },
+      {
+        "entity": "thornback.1",
+        "at": {
+          "x": -13,
+          "y": 0.55,
+          "z": 4.4
+        },
+        "facing": {
+          "yaw": 0
+        },
+        "frozen": true
+      },
+      {
+        "entity": "thornback.0",
+        "at": {
+          "x": -13,
+          "y": 0.55,
+          "z": 9.5
+        },
+        "facing": {
+          "yaw": 3.14159
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "kind": "input",
+      "label": "take-sword",
+      "press": "KeyE",
+      "holdTicks": 5,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "back-cut-1",
+      "press": "KeyJ",
+      "holdTicks": 40,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "close",
+      "press": ["ArrowUp"],
+      "holdTicks": 10,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "back-cut-2",
+      "press": ["KeyJ"],
+      "holdTicks": 40,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "lock",
+      "press": ["KeyQ", "ShiftLeft"],
+      "holdTicks": 10,
+      "release": false
+    },
+    {
+      "label": "guarded",
+      "waitForResource": {
+        "id": "state",
+        "path": "shieldBlocks",
+        "gte": 1
+      },
+      "timeoutMs": 20000,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "front-cut",
+      "press": ["KeyQ", "KeyJ"],
+      "holdTicks": 40,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "end",
+      "press": [],
+      "holdTicks": 10,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "lockTarget",
+        "equals": "",
+        "atSteps": [
+          {
+            "label": "lock",
+            "equals": "thornback.0"
+          }
+        ],
+        "allowTrivial": "The lock is released at the end; the lock step proves the second Thornback was the target."
+      },
+      {
+        "id": "state",
+        "path": "lockMarkerShown",
+        "equals": false,
+        "atSteps": [
+          {
+            "label": "lock",
+            "equals": true
+          }
+        ],
+        "allowTrivial": "The lock step proves the arrow shows over this hostile; it is gone once the lock is released at the end."
+      },
+      {
+        "id": "state",
+        "path": "lockMarkerLowest",
+        "gte": 0.3,
+        "allowTrivial": "The lowest the arrow tip floated over the locked hostile's bounds top; 0 until a lock, so a run that never locks fails."
+      },
+      {
+        "id": "state",
+        "path": "shieldBlocks",
+        "gte": 1
+      },
+      {
+        "id": "state",
+        "path": "slashHits",
+        "equals": 2
+      }
+    ],
+    "components": [
+      {
+        "entity": "thornback.1",
+        "component": "health",
+        "lte": 0,
+        "atSteps": [
+          {
+            "label": "back-cut-1",
+            "equals": 1
+          }
+        ]
+      },
+      {
+        "entity": "thornback.1",
+        "component": "state",
+        "equals": "dead"
+      },
+      {
+        "entity": "thornback.0",
+        "component": "telegraphs",
+        "gte": 1
+      },
+      {
+        "entity": "thornback.0",
+        "component": "lunges",
+        "gte": 1
+      },
+      {
+        "entity": "thornback.0",
+        "component": "clanks",
+        "gte": 1,
+        "atSteps": [
+          {
+            "label": "lock",
+            "equals": 0
+          }
+        ]
+      },
+      {
+        "entity": "thornback.0",
+        "component": "health",
+        "equals": 2,
+        "allowTrivial": "A held invariant: the front cut clanked off the plate (clanks at least 1), so its health must stay 2."
+      }
+    ]
+  }
+}

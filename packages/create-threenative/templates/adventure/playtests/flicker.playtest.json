@@ -1,0 +1,152 @@
+{
+  "name": "flicker",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "subject": "player",
+  "setup": {
+    "place": [
+      {
+        "entity": "player",
+        "at": {
+          "x": 12,
+          "y": 0.85,
+          "z": 0
+        },
+        "facing": {
+          "yaw": 3.14159
+        }
+      },
+      {
+        "entity": "chest.sword",
+        "at": {
+          "x": 13.4,
+          "y": 0,
+          "z": 0
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "kind": "input",
+      "label": "take-sword",
+      "press": "KeyE",
+      "holdTicks": 5,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "lock",
+      "press": ["KeyQ", "ShiftLeft"],
+      "holdTicks": 20,
+      "release": false
+    },
+    {
+      "label": "guarded",
+      "waitForResource": {
+        "id": "state",
+        "path": "shieldBlocks",
+        "gte": 1
+      },
+      "timeoutMs": 20000,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "cut",
+      "press": ["KeyQ", "KeyJ"],
+      "holdTicks": 40,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "end",
+      "press": [],
+      "holdTicks": 10,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "lockTarget",
+        "equals": "",
+        "atSteps": [
+          {
+            "label": "lock",
+            "equals": "flicker.0"
+          }
+        ],
+        "allowTrivial": "The lock is released at the end; the lock step proves the Flicker was the target."
+      },
+      {
+        "id": "state",
+        "path": "lockMarkerShown",
+        "equals": false,
+        "atSteps": [
+          {
+            "label": "lock",
+            "equals": true
+          }
+        ],
+        "allowTrivial": "The lock step proves the arrow shows over this hostile; it is gone once the lock is released at the end."
+      },
+      {
+        "id": "state",
+        "path": "lockMarkerLowest",
+        "gte": 0.3,
+        "allowTrivial": "The lowest the arrow tip floated over the locked hostile's bounds top; 0 until a lock, so a run that never locks fails."
+      },
+      {
+        "id": "state",
+        "path": "shieldBlocks",
+        "gte": 1
+      },
+      {
+        "id": "state",
+        "path": "slashHits",
+        "gte": 1
+      }
+    ],
+    "components": [
+      {
+        "entity": "flicker.0",
+        "component": "telegraphs",
+        "gte": 1
+      },
+      {
+        "entity": "flicker.0",
+        "component": "swoops",
+        "gte": 1
+      },
+      {
+        "entity": "flicker.0",
+        "component": "bounced",
+        "gte": 1
+      },
+      {
+        "entity": "flicker.0",
+        "component": "health",
+        "equals": 1,
+        "atSteps": [
+          {
+            "label": "guarded",
+            "equals": 2
+          }
+        ]
+      }
+    ]
+  }
+}

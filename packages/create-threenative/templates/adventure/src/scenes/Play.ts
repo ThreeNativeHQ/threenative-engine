@@ -1,5 +1,5 @@
 import {
-  InstancedBatch,
+  GPUParticles3D,
   Scene,
   type SceneFrame,
   afterPhysics,
@@ -21,8 +21,10 @@ import {
   readHeroInput,
 } from "../entities/Hero.js";
 import { type ITarget, LockOn } from "../entities/LockOn.js";
+import { Flicker } from "../entities/Flicker.js";
 import { Mossling } from "../entities/Mossling.js";
 import { Switch } from "../entities/Switch.js";
+import { Thornback } from "../entities/Thornback.js";
 import { Warden } from "../entities/Warden.js";
 import { Interactions } from "../interact.js";
 import { type IHollow, buildHollow } from "../level/Hollow.js";
@@ -30,10 +32,9 @@ import { type IVale, buildVale, isSolid, makeRng } from "../level/Vale.js";
 import { setupCamera } from "../render/camera.js";
 import { setupLighting } from "../render/lighting.js";
 import { createLoadingScreen } from "../render/loading.js";
-import { lit } from "../render/materials.js";
-import { C } from "../render/palette.js";
+import { BURSTS, EFFECTS } from "../render/effects.js";
 import { setupPost } from "../render/postprocessing.js";
-import { createHeartVessel, grassTuft } from "../render/props.js";
+import { createHeartVessel } from "../render/props.js";
 import { type ISky, createSky, setupSky } from "../render/sky.js";
 import { TouchControls } from "../render/touch-controls.js";
 import type { Checkpoint, GameState } from "../state.js";
@@ -85,6 +86,8 @@ export class Play extends Scene<GameState, IPhysicsContext> {
   #hero: Hero | undefined;
   #dummies: Dummy[] = [];
   #mosslings: Mossling[] = [];
+  #flickers: Flicker[] = [];
+  #thornbacks: Thornback[] = [];
   #warden: Warden | undefined;
   #block: Block | undefined;
   #chests: Chest[] = [];
@@ -115,6 +118,13 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     [...vale.mosslings, ...hollow.guards].forEach((at, i) => {
       this.#mosslings.push(ctx.entities.add(`mossling.${i}`, new Mossling(`mossling.${i}`, at)));
     });
+    [...vale.flickers, ...hollow.flickers].forEach((at, i) => {
+      this.#flickers.push(ctx.entities.add(`flicker.${i}`, new Flicker(`flicker.${i}`, at)));
+    });
+    [...vale.thornbacks, ...hollow.thornbacks].forEach(({ at, yaw }, i) => {
+      const id = `thornback.${i}`;
+      this.#thornbacks.push(ctx.entities.add(id, new Thornback(id, at, yaw)));
+    });
     this.#warden = ctx.entities.add("warden", new Warden("warden", hollow.warden));
     this.#block = ctx.entities.add("block", new Block("block", hollow.block, makeRng(7)));
     this.#chests = [
@@ -125,6 +135,8 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     for (const thing of [
       ...this.#dummies,
       ...this.#mosslings,
+      ...this.#flickers,
+      ...this.#thornbacks,
       ...this.#chests,
       this.#warden,
       this.#block,
@@ -180,25 +192,42 @@ export class Play extends Scene<GameState, IPhysicsContext> {
         ? ctx.entities.add("touch-controls", new TouchControls(camera))
         : undefined;
 
-    // 900 tufts of meadow grass as one draw.
-    const grass = new InstancedBatch({
-      geometry: grassTuft(),
-      material: lit(C.leafLight, { roughness: 0.9 }),
-    });
-    for (const tuft of vale.grass) grass.place(tuft);
-    grass.build({ name: "grass", parent: vale.group });
-
     // ------------------------------------------------------------------ actors
     // A scenario may have moved or turned Wren: read both back, then build her body there.
     hero.yaw = new Euler().setFromQuaternion(hero.mesh.quaternion, "YXZ").y;
     hero.mesh.rotation.set(0, 0, 0);
     hero.spawn(ctx);
-    for (const thing of [...this.#dummies, ...this.#mosslings, warden, block]) thing.spawn(ctx);
     const dummies = this.#dummies;
     const mosslings = this.#mosslings;
-    const targets: ITarget[] = [...dummies, ...mosslings, warden];
+    const foes = [...this.#flickers, ...this.#thornbacks];
+    for (const thing of [...dummies, ...mosslings, ...foes, warden, block]) thing.spawn(ctx);
+    const targets: ITarget[] = [...dummies, ...mosslings, ...foes, warden];
     const lock = new LockOn();
     ctx.add(lock.reticle);
+
+    // Effects: two pooled emitters, every look parameter in `render/effects.ts`. A cut that lands
+    // throws embers, a cut that clanks and a hit the shield turns throw cold sparks.
+    const emitters = {
+      ember: ctx.add(new GPUParticles3D(EFFECTS.ember())),
+      spark: ctx.add(new GPUParticles3D(EFFECTS.spark())),
+    };
+    const burst = (kind: keyof typeof BURSTS, at: Vector3): void => {
+      const { count, emitter, shape } = BURSTS[kind];
+      emitters[emitter].emitParticle({
+        count,
+        direction: { x: shape[0], y: shape[1], z: shape[2] },
+        origin: { x: at.x, y: at.y, z: at.z },
+      });
+    };
+    ctx.entities.add("effects", {
+      debug: () => ({
+        ember: emitters.ember.stats.spawned,
+        spark: emitters.spark.stats.spawned,
+      }),
+    });
+    const thornbacks = this.#thornbacks;
+    const seen = { blocks: 0, clanks: 0, hits: 0 };
+    const impact = new Vector3();
 
     const grate = new Door(
       "door.grate",
@@ -375,6 +404,16 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       hero.rig.group.visible = !hero.blinking;
 
       for (const mossling of mosslings) mossling.update(frameCtx, dt, hero);
+      for (const foe of foes) foe.update(dt, hero);
+      // Effects fire on the counters' edges: a cut's where the blade met the target, a block's off
+      // the shield in front of Wren.
+      const clanks = thornbacks.reduce((sum, foe) => sum + foe.clanks, warden.clanks);
+      impact.copy(hero.forward).multiplyScalar(0.9).add(hero.mesh.position);
+      impact.y += 0.35;
+      if (hero.slashHits > seen.hits) burst("hit", hero.strikeAt);
+      if (clanks > seen.clanks) burst("clank", hero.strikeAt);
+      if (hero.shieldBlocks > seen.blocks) burst("block", impact.setY(hero.mesh.position.y + 0.15));
+      Object.assign(seen, { blocks: hero.shieldBlocks, clanks, hits: hero.slashHits });
       warden.update(dt, hero);
       for (const dummy of dummies) dummy.update(dt);
       // A target falls inside Wren's slash, so count the fallen after everything has moved.
@@ -521,6 +560,8 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     this.#post = undefined;
     this.#dummies = [];
     this.#mosslings = [];
+    this.#flickers = [];
+    this.#thornbacks = [];
     this.#chests = [];
     super.exit(ctx);
   }

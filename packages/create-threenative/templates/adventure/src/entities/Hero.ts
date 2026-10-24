@@ -1,7 +1,7 @@
 import { type ICtx, attachToBone } from "@threenative/core";
 import { CharacterBody3D, CollisionShape3D, type IPhysicsContext } from "@threenative/physics";
 import { Group, MathUtils, type Object3D, Vector2, Vector3 } from "three";
-import { type HeroPoseName, type IHeroRig, createBlade, createHero } from "../render/hero.js";
+import { type IHeroRig, createBlade, createHero } from "../render/hero.js";
 import type { ITouchInput } from "../render/touch-controls.js";
 import type { GameState } from "../state.js";
 import type { ITarget, LockOn } from "./LockOn.js";
@@ -118,12 +118,16 @@ export class Hero {
   stopSeconds = 0;
   turnSeconds = 0;
   #timer = 0;
+  #drawn = 0;
+  #flash = 0;
   #invulnerable = 0;
   #speed = 0;
   #stopClock: number | undefined;
   #turnClock: number | undefined;
   #hitThisSlash = new Set<ITarget>();
   #knock = new Vector3();
+  /** Where the last cut met a target, hit or clank. */
+  readonly strikeAt = new Vector3();
   /** This step's wish direction on the ground (stick through camera or lock), length up to 1. */
   readonly wish = new Vector3();
   #toTarget = new Vector3();
@@ -166,7 +170,6 @@ export class Hero {
 
   giveSword(): void {
     this.hasSword = true;
-    this.blade.visible = true;
   }
 
   /**
@@ -351,12 +354,22 @@ export class Hero {
       } else if (stick >= 0.1) this.#stopClock = undefined;
     }
 
+    // The blade comes out for a fight (a lock, a cut, a block) and goes back 3 s after it; both
+    // hands go to the block while she pushes.
+    if (target !== undefined || this.state === "slash" || this.state === "block") this.#drawn = 3;
+    else this.#drawn = Math.max(0, this.#drawn - dt);
+    const drawn = this.hasSword && this.#drawn > 0 && this.state !== "push";
+    this.blade.visible = drawn;
+    this.#flash = Math.max(0, this.#flash - dt * 4);
     this.rig.group.rotation.y = this.yaw;
     this.rig.update({
+      drawn,
       dt,
+      flash: this.#flash,
       progress: this.#progress(),
       speed: Math.hypot(body.velocity.x, body.velocity.z),
-      state: poseOf(this.state),
+      state: this.state,
+      sword: this.hasSword,
     });
   }
 
@@ -376,6 +389,7 @@ export class Hero {
     const facing = this.forward.dot(toAttacker);
     if (this.state === "block" && facing >= Math.cos(ADVENTURE_FEEL.shieldCone / 2)) {
       this.shieldBlocks += 1;
+      this.#flash = 1;
       return "blocked";
     }
     this.health = Math.max(0, this.health - halves);
@@ -476,6 +490,9 @@ export class Hero {
       if (to.length() - target.radius > feel.slashReach) continue;
       if (forward.dot(to.normalize()) < Math.cos(feel.slashArc / 2)) continue;
       this.#hitThisSlash.add(target);
+      // Where the blade met it: its surface toward Wren, at her chest. The effects fire here.
+      this.strikeAt.copy(target.mesh.position).addScaledVector(to, -target.radius);
+      this.strikeAt.y = this.mesh.position.y + 0.35;
       if (target.hurt(1, this.mesh.position)) this.slashHits += 1;
     }
   }
@@ -484,8 +501,4 @@ export class Hero {
 function approach(current: number, target: number, step: number): number {
   const delta = target - current;
   return Math.abs(delta) <= step ? target : current + Math.sign(delta) * step;
-}
-
-function poseOf(state: HeroState): HeroPoseName {
-  return state === "push" ? "block" : state;
 }

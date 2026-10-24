@@ -1,4 +1,5 @@
-import { BoxGeometry, Group, Mesh, type PointLight, Vector3 } from "three";
+import { BoxGeometry, Group, IcosahedronGeometry, Mesh, type PointLight, Vector3 } from "three";
+import { instanced } from "../render/foliage.js";
 import { torch } from "../render/lighting.js";
 import { lit, mottle, worldMaterials } from "../render/materials.js";
 import { C } from "../render/palette.js";
@@ -15,6 +16,8 @@ export interface IHollow {
   /** Walking into this point leads back out to the clearing. */
   readonly exit: Vector3;
   readonly guards: readonly Vector3[];
+  readonly flickers: readonly Vector3[];
+  readonly thornbacks: readonly { readonly at: Vector3; readonly yaw: number }[];
   readonly block: Vector3;
   readonly switchAt: Vector3;
   readonly grate: { readonly at: Vector3; readonly yaw: number; readonly width: number };
@@ -30,7 +33,7 @@ export interface IHollow {
 /**
  * The Moss Hollow: three rooms in a line running north, under one ceiling.
  *
- * - Guard room (z 0 to -12): one Mossling.
+ * - Guard room (z 0 to -12): a Mossling, a Flicker and a Thornback.
  * - Block room (z -12 to -26): the push block two cells south of the floor switch, which sits
  *   against the north wall; the grate on the east wall over the alcove with the small-key chest;
  *   the locked door in the north wall.
@@ -71,38 +74,41 @@ export function buildHollow(rng: () => number): IHollow {
     return mesh;
   };
   const H = 5;
-  // Floor and ceiling. Coordinates below are relative to X.
-  box(-10, 12, -46, 4, -1, 0, materials.stone);
+  /** Walls run up into the ceiling slab, so no seam between them lets light through. */
+  const TOP = H + 0.3;
+  // Floor and ceiling. Coordinates below are relative to X. The floor slab is the collider; what
+  // Wren sees is a bed of flagstones (below) on dark grout just under it.
+  box(-10, 12, -46, 4, -1, 0, materials.stone).visible = false;
   box(-10, 12, -46, 4, H, H + 0.6);
   // Entrance tunnel, and the guard room's south wall around its doorway.
-  box(-2.5, -1.5, 0, 3.5, 0, H);
-  box(1.5, 2.5, 0, 3.5, 0, H);
-  box(-2.5, 2.5, 3.5, 4.5, 0, H);
-  box(-7, -1.5, -0.5, 0.5, 0, H);
-  box(1.5, 7, -0.5, 0.5, 0, H);
+  box(-2.5, -1.5, 0, 3.5, 0, TOP);
+  box(1.5, 2.5, 0, 3.5, 0, TOP);
+  box(-2.5, 2.5, 3.5, 4.5, 0, TOP);
+  box(-7, -1.5, -0.5, 0.5, 0, TOP);
+  box(1.5, 7, -0.5, 0.5, 0, TOP);
   // Guard room sides.
-  box(-7, -6, -12.5, 0.5, 0, H);
-  box(6, 7, -12.5, 0.5, 0, H);
+  box(-7, -6, -12.5, 0.5, 0, TOP);
+  box(6, 7, -12.5, 0.5, 0, TOP);
   // Wall between the guard room and the block room, open in the middle.
-  box(-7, -1.5, -12.5, -11.5, 0, H);
-  box(1.5, 7, -12.5, -11.5, 0, H);
+  box(-7, -1.5, -12.5, -11.5, 0, TOP);
+  box(1.5, 7, -12.5, -11.5, 0, TOP);
   // Block room sides; the east side is open over the alcove (z -20 to -16).
-  box(-7, -6, -26.5, -12.5, 0, H);
-  box(6, 7, -16, -12.5, 0, H);
-  box(6, 7, -26.5, -20, 0, H);
+  box(-7, -6, -26.5, -12.5, 0, TOP);
+  box(6, 7, -16, -12.5, 0, TOP);
+  box(6, 7, -26.5, -20, 0, TOP);
   // The alcove behind the grate.
-  box(7, 11, -16, -15, 0, H);
-  box(7, 11, -21, -20, 0, H);
-  box(10, 11, -20, -16, 0, H);
-  box(6, 7, -20, -16, 3, H);
+  box(7, 11, -16, -15, 0, TOP);
+  box(7, 11, -21, -20, 0, TOP);
+  box(10, 11, -20, -16, 0, TOP);
+  box(6, 7, -20, -16, 3, TOP);
   // North wall of the block room, the locked door's frame in it (x 0 to 2), and its lintel.
-  box(-9, 0, -26.5, -25.5, 0, H);
-  box(2, 9, -26.5, -25.5, 0, H);
-  box(0, 2, -26.5, -25.5, 3, H);
+  box(-9, 0, -26.5, -25.5, 0, TOP);
+  box(2, 9, -26.5, -25.5, 0, TOP);
+  box(0, 2, -26.5, -25.5, 3, TOP);
   // Warden room.
-  box(-9, -8, -45, -26.5, 0, H);
-  box(8, 9, -45, -26.5, 0, H);
-  box(-9, 9, -45, -44, 0, H);
+  box(-9, -8, -45, -26.5, 0, TOP);
+  box(8, 9, -45, -26.5, 0, TOP);
+  box(-9, 9, -45, -44, 0, TOP);
 
   // Torches: each a flame mesh and a short-range point light.
   const torches: PointLight[] = [];
@@ -128,14 +134,79 @@ export function buildHollow(rng: () => number): IHollow {
   sconce(-7.6, -41, 0);
   sconce(7.6, -41, 0);
 
-  // Moss drifts at the foot of the walls: soft green against the cut stone.
-  for (let i = 0; i < 40; i += 1) {
-    const moss = new Mesh(new BoxGeometry(0.6 + rng() * 1.2, 0.08, 0.5 + rng()), lit(C.moss));
-    const room = rng();
-    moss.position.set(X + (rng() < 0.5 ? -5.4 : 5.4) + (rng() - 0.5) * 0.6, 0.04, -1 - room * 42);
-    moss.receiveShadow = true;
-    group.add(moss);
+  // The flagstone floor: 1 m slabs in three shades, each a little off the grid, on dark grout,
+  // and hairline cracks across some of them. Four draws for the whole Hollow.
+  const grout = new Mesh(new BoxGeometry(22, 0.1, 50).translate(X + 1, -0.052, -21), lit(C.grout));
+  grout.receiveShadow = true;
+  group.add(grout);
+  const shades: [number, number, number, number, number, number, number, number, number][][] = [
+    [],
+    [],
+    [],
+  ];
+  const cracks: [number, number, number, number, number, number, number, number, number][] = [];
+  for (let x = -10; x < 12; x += 1) {
+    for (let z = -46; z < 4; z += 1) {
+      const cx = X + x + 0.5 + (rng() - 0.5) * 0.04;
+      const cz = z + 0.5 + (rng() - 0.5) * 0.04;
+      shades[Math.floor(rng() * 3)]?.push([
+        cx,
+        -0.012,
+        cz,
+        0.94,
+        1,
+        0.94,
+        0,
+        (rng() - 0.5) * 0.04,
+        0,
+      ]);
+      if (rng() < 0.12)
+        cracks.push([
+          cx + (rng() - 0.5) * 0.4,
+          0.0135,
+          cz + (rng() - 0.5) * 0.4,
+          1,
+          1,
+          0.3 + rng() * 0.5,
+          0,
+          rng() * Math.PI,
+          0,
+        ]);
+    }
   }
+  const slab = new BoxGeometry(1, 0.05, 1);
+  [C.flagstone, C.flagstoneDark, C.flagstoneLight].forEach((shade, i) => {
+    group.add(instanced(slab, lit(shade, { flat: true }), shades[i] ?? [], false));
+  });
+  group.add(instanced(new BoxGeometry(0.025, 0.004, 1), lit(C.grout), cracks, false));
+
+  // Moss mounds at the foot of the walls: soft raised cushions in two greens, not flat paint.
+  const mounds: [number, number, number, number, number, number, number, number, number][][] = [
+    [],
+    [],
+  ];
+  for (let i = 0; i < 46; i += 1) {
+    const room = rng();
+    const z = -1 - room * 42;
+    const wall = z < -26.5 ? 7.4 : 5.4;
+    const s = 0.35 + rng() * 0.5;
+    mounds[i % 2]?.push([
+      X + (rng() < 0.5 ? -wall : wall) + (rng() - 0.5) * 0.5,
+      0,
+      z,
+      s * (1.2 + rng()),
+      s * (0.3 + rng() * 0.25),
+      s * (0.9 + rng() * 0.6),
+      0,
+      rng() * Math.PI,
+      0,
+    ]);
+  }
+  const cushion = new IcosahedronGeometry(1, 1);
+  group.add(
+    instanced(cushion, lit(C.moss, { flat: true }), mounds[0] ?? [], false),
+    instanced(cushion, lit(C.mossLight, { flat: true }), mounds[1] ?? [], false),
+  );
 
   return {
     block: new Vector3(X - 3, 0, -23),
@@ -146,6 +217,8 @@ export function buildHollow(rng: () => number): IHollow {
     grate: { at: new Vector3(X + 6.5, 0, -18), width: 4, yaw: Math.PI / 2 },
     group,
     guards: [new Vector3(X + 2, 0, -8)],
+    flickers: [new Vector3(X - 4, 0, -5)],
+    thornbacks: [{ at: new Vector3(X + 4, 0, -9), yaw: -Math.PI / 2 }],
     keyChest: { at: new Vector3(X + 8.6, 0, -18), yaw: -Math.PI / 2 },
     lockedDoor: { at: new Vector3(X + 1, 0, -26), width: 2 },
     switchAt: new Vector3(X - 3, 0, -25),

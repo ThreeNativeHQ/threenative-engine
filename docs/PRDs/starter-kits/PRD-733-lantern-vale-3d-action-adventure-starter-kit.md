@@ -284,6 +284,35 @@ Each playtest runs on a project scaffolded from `--template adventure`:
   both at least 0.9. Red: with the shoulder offset only, `lockClearShare` was about 0 (the target
   stood behind her). Green: `lockon` 1/1, `combat` 1/1, `boss` framed 0.92 and clear 0.94; the
   other six scenarios exit 0.
+- 2026-10-24 (owner, João: "polish world footer, add more vegetation, enemey. zelda clone hero
+  sucks."; decided without him, he is AFK): "footer" is read as the floor. Each change below is
+  game code in the kit, on the core Unreal look, with no tone or exposure pin.
+  - Hero: Wren is redrawn as an original character. She has chibi proportions (a 0.25 m head over a
+    0.62 m hip), a russet tunic over a cream undershirt, and a dusk-blue cap and scarf whose tails
+    lag her motion. She has a brass buckle and a hip lantern. There is no green tunic and no long
+    green cap. The sword and shield ride on her back until she draws them (lock, cut or guard, held
+    3 s). New poses: breathing idle, an arm swing on the run and a push lean.
+  - Floor: a 140 m ground with hills outside the walls, low mounds near them, colour patches, a
+    blended path and contact shade under trees and rocks. The Hollow floor is three-shade
+    flagstones over grout, with cracks.
+  - Vegetation: pines, broadleaf trees and dead trees, plus bushes, ferns, three flower colours,
+    swaying grass, ivy patches with vines, mushrooms, logs and drifting fireflies. All of it is
+    instanced (`src/render/foliage.ts`). The north cliff has buttresses and ledges.
+  - Enemies: the Flicker (a bat) circles, flashes red eyes as its tell, then swoops. A swoop into
+    the raised shield bounces it and dazes it. The Thornback (a beetle) rears up as its tell, then
+    lunges. Its front plate clanks a cut inside a 140° cone, so the player must strike its glowing
+    rump. Each room has one of each, both lock-on targets. Scenarios that do not test them park
+    them frozen far away.
+  - Warden: albedo 30% darker, moss caps, glowing runes and a daze halo with stars while stunned.
+  - Effects: the slash arc is 2x wider and additive. Embers fly on a hit and sparks on a clank, both
+    at the struck surface (`hero.strikeAt`). The shield flashes on a block.
+  - Hollow: walls and lintels overlap the ceiling (no seams), the moss is raised mounds in two
+    greens, and the push pose keeps both feet on the floor.
+  - Chests: an opened chest sinks into the floor after 1.5 s and frees its body, so the boss room
+    has no chest and no "E · Open chest" prompt. The scenarios arm Wren by placing `chest.sword`
+    next to her, because `setup.resources` has no writable provider here.
+  Proof: `flicker` (lock, tell, swoop, shield bounce, cut) and `thornback` (front clank, rump cut,
+  tell, lunge) exit 0, and the nine existing scenarios rerun green.
 
 ## Execution Phases
 
@@ -332,6 +361,6 @@ visible, and no frame is blank or white.
 **Verification:** the commands on each box. The judge verdict and the PR screenshots go on the PR
 (orphan `prd-733-screenshots` branch, with the PRD-732 images on the same PR).
 
-- [x] AC-8: the kit passes every registration gate and the template lane. proof: `pnpm budgets && pnpm exec vitest run scripts/__tests__/ci-structure.spec.ts scripts/__tests__/primary-docs.spec.ts scripts/__tests__/check-template-conventions.spec.ts && pnpm test:templates` — Evidence: `pnpm budgets` exit 0. The registration specs (scaffold, looks, auto-exposure-scaffold, ci-structure, primary-docs, check-template-conventions, playtest) pass 370/370 on the kit's own tree, with the adventure scaffold hash re-pinned after the hero and camera edits. `pnpm check:docs` passes. `TN_TEMPLATE_ONLY=adventure` template lane: 9 scenarios plus the boot smoke pass ("adventure: scaffolded playtests passed"). After the hero and camera edits, all 9 scenarios rerun green on the nvidia adapter (`performance`: p95 18.5 ms, 275 draws, 34,477 triangles, tier high). `pnpm test:tone` has no adventure case, so it did not run.
+- [x] AC-8: the kit passes every registration gate and the template lane. proof: `pnpm budgets && pnpm exec vitest run scripts/__tests__/ci-structure.spec.ts scripts/__tests__/primary-docs.spec.ts scripts/__tests__/check-template-conventions.spec.ts && pnpm test:templates` — Evidence: `pnpm budgets` exit 0. The registration specs (scaffold, looks, auto-exposure-scaffold, ci-structure, primary-docs, check-template-conventions, playtest) pass 370/370 on the kit's own tree, with the adventure scaffold hash re-pinned after the hero and camera edits. `pnpm check:docs` passes. `TN_TEMPLATE_ONLY=adventure` template lane: 9 scenarios plus the boot smoke pass ("adventure: scaffolded playtests passed"). After the hero and camera edits, all 9 scenarios rerun green on the nvidia adapter (`performance`: p95 18.5 ms, 275 draws, 34,477 triangles, tier high). `pnpm test:tone` has no adventure case, so it did not run. After the owner polish round (hero, floor, vegetation, Flicker, Thornback), all 11 scenarios exit 0 on the nvidia turing adapter (`performance`: p95 18.4 ms, 304 draws, 168,725 triangles, tier high, no budget raised). The 9 registration specs pass 402/402 with the hash re-pinned, `pnpm budgets` exit 0 (the PRD-289 conventions row now cites `Hero.ts:144`), `pnpm check:docs` exit 0.
 - [ ] AC-9: the kit runs 300 frames on the native desktop engine player with a non-blank capture. proof: `node packages/playtest/dist/runner/cli.js <project>/native-playtests/survives.playtest.json --target desktop` — Evidence: open, engine-blocked (see `## Blocked on`). `pnpm build --target desktop` with the worktree's `tn-native-engine-player-v8` builds `dist-native/adventure/adventure`. The run exits 2 with `TN_INSPECT_GAME_BRIDGE: TypeError: TN_TSL uniform: expected a TSL node or number`, the core auto exposure blocker PRD-732 also records.
 - [ ] AC-10: the visual judge returns pass on every criterion above for all three poses. proof: the judge report linked from the PR — Evidence: open, for the lead's judge. Captures, headed WebGPU on the nvidia adapter, two runs per pose: `~/Downloads/lantern-vale/01-vale-run1.png` to `06-warden-run2.png`. All six report `TN_WORLD_ENVIRONMENT` `tonemapMode: "filmic"` and `TN_AUTO_EXPOSURE` measured and applied (settled in the vale and the block room, still settling at the Warden pose). Gameplay video: `~/Downloads/lantern-vale/lantern-vale-gameplay.mp4` (31.5 s: the lock-on arrow and slash, shield block, block push and grate, key and door, the Warden stun). Lock-on stills, headed WebGPU on the nvidia adapter, two runs per pose: `07-lockon-mossling-run1.png` to `10-lockon-warden-run2.png`.

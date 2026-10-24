@@ -1,15 +1,8 @@
-import {
-  BoxGeometry,
-  CircleGeometry,
-  Group,
-  Mesh,
-  type Object3D,
-  PlaneGeometry,
-  Vector3,
-} from "three";
+import { BoxGeometry, Group, Mesh, type Object3D, PlaneGeometry, Vector3 } from "three";
+import { type IValeSite, plantVale, valeGround } from "../render/foliage.js";
 import { flat, lit, mottle, worldMaterials } from "../render/materials.js";
 import { C } from "../render/palette.js";
-import { createRock, createSign, createTree } from "../render/props.js";
+import { createSign } from "../render/props.js";
 
 /** A small seeded generator, so the clearing is the same clearing every run. */
 export function makeRng(seed: number): () => number {
@@ -30,23 +23,21 @@ export interface IVale {
   readonly spawnYaw: number;
   readonly dummies: readonly Vector3[];
   readonly mosslings: readonly Vector3[];
+  readonly flickers: readonly Vector3[];
+  readonly thornbacks: readonly { readonly at: Vector3; readonly yaw: number }[];
   readonly swordChest: { readonly at: Vector3; readonly yaw: number };
   readonly sign: { readonly at: Vector3; readonly text: string };
   /** Walking into this point enters the Hollow. */
   readonly caveMouth: Vector3;
   /** Where Wren stands when she comes back out of the Hollow. */
   readonly caveExit: Vector3;
-  /** Tuft transforms for one instanced draw (the scene batches them). */
-  readonly grass: readonly {
-    position: [number, number, number];
-    scale: [number, number, number];
-  }[];
 }
 
 /**
- * The clearing: a meadow ringed by stone and trees, a dirt path from Wren's start to the cave
+ * The clearing: a meadow ringed by stone and woods, a worn path from Wren's start to the cave
  * mouth in the north cliff, a ruined wall the Mosslings must go around, two practice dummies, the
- * sword chest and a signpost. Coordinates are metres; north is -Z.
+ * sword chest, a signpost, a Flicker and a Thornback. Coordinates are metres; north is -Z. The
+ * planting and the floor's look are `render/foliage.ts`; this file decides what blocks.
  */
 export function buildVale(rng: () => number): IVale {
   const group = new Group();
@@ -59,41 +50,43 @@ export function buildVale(rng: () => number): IVale {
     group.add(mesh);
     return mesh;
   };
-  const stoneBox = (w: number, h: number, d: number, x: number, z: number, y = 0): Mesh => {
+  const stoneBox = (
+    w: number,
+    h: number,
+    d: number,
+    x: number,
+    z: number,
+    y = 0,
+    variance = 0.22,
+  ): Mesh => {
     const segments = (n: number): number => Math.max(1, Math.min(8, Math.round(n / 1.5)));
     const geometry = mottle(
       new BoxGeometry(w, h, d, segments(w), segments(h), segments(d)),
-      0.22,
+      variance,
       rng,
     );
     geometry.translate(x, y + h / 2, z);
     return solid(new Mesh(geometry, materials.stone));
   };
 
-  // The meadow: a mottled plane, and the floor slab the colliders stand on.
-  const meadow = new Mesh(
-    mottle(new PlaneGeometry(140, 140, 70, 70).rotateX(-Math.PI / 2), 0.16, rng),
-    materials.grass,
-  );
-  meadow.receiveShadow = true;
-  group.add(meadow);
+  // The floor slab the colliders stand on; the floor Wren sees is `valeGround`, built below.
   solid(new Mesh(new BoxGeometry(60, 1, 52).translate(0, -0.5, -4), materials.grass)).visible =
     false;
-  // The path from the start to the cave mouth.
-  for (let i = 0; i < 14; i += 1) {
-    const stone = new Mesh(
-      new CircleGeometry(0.9 + rng() * 0.4, 9),
-      lit(C.path, { roughness: 0.95 }),
-    );
-    stone.rotation.x = -Math.PI / 2;
-    stone.position.set(Math.sin(i * 0.7) * 0.8, 0.012, 9 - i * 2.1);
-    stone.receiveShadow = true;
-    group.add(stone);
-  }
+  // The path from the start to the cave mouth: its centre line, painted into the floor.
+  const pathX = (z: number): number => Math.sin(((9 - z) / 2.1) * 0.7) * 0.8;
 
-  // The north cliff with the cave mouth at x = 0, and the low walls that close the clearing.
-  stoneBox(28, 9, 3, -15.6, -21.5);
-  stoneBox(28, 9, 3, 15.6, -21.5);
+  // The north cliff with the cave mouth at x = 0: buttresses of uneven height and depth, so its
+  // skyline and its face break up, and two ledges. Then the low walls that close the clearing.
+  for (const side of [-1, 1]) {
+    for (let i = 0; i < 4; i += 1) {
+      const w = 7 + rng() * 0.6;
+      const h = 7.4 + rng() * 3.2;
+      const d = 3 + rng() * 1.4;
+      stoneBox(w, h, d, side * (1.7 + 3.5 + i * 7), -20 - d / 2, 0, 0.32);
+    }
+    stoneBox(3.2, 0.7, 1.1, side * (6 + rng() * 3), -20.1, 3.4 + rng(), 0.3);
+    stoneBox(2.4, 0.6, 0.9, side * (13 + rng() * 3), -20.1, 5.2 + rng(), 0.3);
+  }
   stoneBox(3.4, 5.4, 3, 0, -21.5, 3.6);
   stoneBox(2, 4, 40, -21, -2);
   stoneBox(2, 4, 40, 21, -2);
@@ -112,20 +105,13 @@ export function buildVale(rng: () => number): IVale {
   stoneBox(6, 1.6, 0.6, -6, -6);
   stoneBox(1.2, 0.5, 0.9, -2.4, -6.4);
 
-  // Boulders along the walls, trees behind them and a few inside.
-  for (let i = 0; i < 26; i += 1) {
-    const side = i % 2 === 0 ? -1 : 1;
-    const rock = createRock(rng, 0.8 + rng() * 1.2);
-    rock.position.x = side * (17 + rng() * 3);
-    rock.position.z = -18 + rng() * 34;
-    group.add(rock);
-  }
-  const trees: [number, number, number][] = [
-    [-11, 11, 1.1],
-    [12, 12, 1],
-    [-14, -12, 1.2],
-    [13.5, -14, 1.15],
-    [9, 3, 0.9],
+  // Trees: five inside the clearing, two rings of woods outside it.
+  const trees: [number, number, number, "broadleaf" | "pine" | "dead"][] = [
+    [-11, 11, 1.1, "broadleaf"],
+    [12, 12, 1, "pine"],
+    [-14, -12, 1.2, "broadleaf"],
+    [13.5, -14, 1.15, "pine"],
+    [9, 3, 0.9, "broadleaf"],
   ];
   for (let i = 0; i < 24; i += 1) {
     const a = (i / 24) * Math.PI * 2;
@@ -133,12 +119,19 @@ export function buildVale(rng: () => number): IVale {
       Math.cos(a) * (26 + rng() * 6),
       Math.sin(a) * (24 + rng() * 6) - 2,
       1 + rng() * 0.5,
+      i % 6 === 5 ? "dead" : i % 2 === 0 ? "broadleaf" : "pine",
+    ]);
+  }
+  for (let i = 0; i < 20; i += 1) {
+    const a = (i / 20) * Math.PI * 2 + 0.15;
+    trees.push([
+      Math.cos(a) * (36 + rng() * 8),
+      Math.sin(a) * (34 + rng() * 8) - 2,
+      1.1 + rng() * 0.6,
+      i % 3 === 0 ? "broadleaf" : "pine",
     ]);
   }
   for (const [x, z, s] of trees) {
-    const tree = createTree(rng, s);
-    tree.position.set(x, 0, z);
-    group.add(tree);
     if (Math.abs(x) < 20 && z > -20 && z < 16) {
       // Trees inside the clearing are solid at the trunk.
       solid(
@@ -152,22 +145,43 @@ export function buildVale(rng: () => number): IVale {
   sign.rotation.y = -0.4;
   group.add(sign);
 
-  const grass: IVale["grass"][number][] = [];
-  for (let i = 0; i < 900; i += 1) {
-    const x = (rng() - 0.5) * 40;
-    const z = -19 + rng() * 35;
-    if (Math.abs(x) < 1.6 && z > -2) continue;
-    const s = 0.7 + rng() * 0.9;
-    grass.push({ position: [x, 0, z], scale: [s, s * (0.8 + rng() * 0.6), s] });
-  }
+  // Planting and the floor. The open spaces: the path, the spawn yard with the dummies and the
+  // chest, the ruin's lane, and the cave mouth.
+  const open: [number, number, number][] = [
+    [0, 6, 4.5],
+    [-6, -6, 3.5],
+    [-6, -2.5, 3],
+    [0, -19, 3],
+  ];
+  const site: IValeSite = {
+    clear: (x, z, width) =>
+      Math.abs(x - pathX(z)) > 1.8 + width / 2 &&
+      open.every(([ox, oz, r]) => Math.hypot(x - ox, z - oz) > r + width / 2),
+    clearing: { half: 20, north: -20, south: 16.5 },
+    pathX,
+    rng,
+    trees,
+    walls: [
+      [-14, 4.5, -19.95, 12, 7, 0],
+      [14, 4.5, -19.95, 12, 7, 0],
+      [-19.95, 2, -2, 36, 4, Math.PI / 2],
+      [19.95, 2, -2, 36, 4, -Math.PI / 2],
+      [0, 1.5, 16.45, 36, 3, Math.PI],
+      [-6, 0.8, -5.65, 6, 1.6, 0],
+      [-6, 0.8, -6.35, 6, 1.6, Math.PI],
+    ],
+  };
+  const planting = plantVale(site);
+  group.add(planting.group, valeGround(site, planting.shade));
 
   return {
     caveExit: new Vector3(0, 0, -17),
     caveMouth: new Vector3(0, 0, -23),
     dummies: [new Vector3(-1.6, 0, 4), new Vector3(1.8, 0, 4.5)],
-    grass,
     group,
     mosslings: [new Vector3(-6, 0, -10), new Vector3(7, 0, -9)],
+    flickers: [new Vector3(12, 0, -6)],
+    thornbacks: [{ at: new Vector3(-13, 0, 5), yaw: Math.PI / 2 }],
     sign: {
       at: new Vector3(3.5, 0, 9.5),
       text: "LANTERN VALE — The Moss Hollow lies north. Mind the Warden.",
