@@ -130,7 +130,7 @@ Candidates, ranked by baseline bytes:
 4. Basis transcoder: confirm it ships only when a KTX2 output references it, and long-cache it.
 5. Preload order: critical assets first, the rest after `enter()`.
 
-- [x] Each kept lever lowers `shippedMiB` or a preload metric, holds every texture floor, passes the visual judge and keeps the template playtests green. proof: ledger iterations #6, #7, #9 and #10 are `keep`; judges NEUTRAL/IMPROVEMENT (iterations #6, #9, #10) or pixel-identical (#7); every texture floor holds; template gate green across two hosts — snow, rain and the other templates on the idle laptop, shooter and action-rpg on the quiet RTX 2080 (`TN_TEMPLATE_ONLY=shooter|action-rpg`).
+- [x] Each kept lever lowers `shippedMiB` or a preload metric, holds every texture floor, passes the visual judge and keeps the template playtests green. proof: ledger iterations #6, #7, #9 and #10 are `keep`; judges NEUTRAL/IMPROVEMENT (iterations #6, #9, #10) or pixel-identical (#7); every texture floor holds; template gate green across two hosts — snow, rain and the other templates on the idle laptop, shooter and action-rpg on the quiet RTX 2080 (`TN_TEMPLATE_ONLY=shooter|action-rpg`); `pnpm test:tone` passes (`underexposed failed and restored passed`).
 - [ ] The corpus ships at most 3 MiB and at most 25% of its source. proof: `node scripts/asset-perf-loop.mjs show` — latest kept iteration.
 - [x] Both preload goals are met. proof: iteration #14, a quiet RTX 2080 run on `nvidia/turing`: local samples [422,372,382,362,362] ms, median **372 ms** ≤ 450; 40 Mbps samples [1168,1162,1243,1118,1134] ms, median **1162 ms** ≤ 1200. `node scripts/asset-perf-loop.mjs show` — latest kept iteration.
 
