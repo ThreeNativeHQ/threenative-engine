@@ -93,6 +93,45 @@ describe("InputMap", () => {
     input.dispose();
   });
 
+  it("should ignore a wheel that landed on a game HUD overlay", () => {
+    const canvas = new EventTarget();
+    const listeners = new Map<string, Array<(event: Event) => void>>();
+    const host = {
+      addEventListener(type: string, listener: (event: Event) => void) {
+        const set = listeners.get(type) ?? [];
+        set.push(listener);
+        listeners.set(type, set);
+      },
+      removeEventListener(type: string, listener: (event: Event) => void) {
+        listeners.set(
+          type,
+          (listeners.get(type) ?? []).filter((candidate) => candidate !== listener),
+        );
+      },
+      dispatchEvent() {
+        return true;
+      },
+      fire(event: Event) {
+        for (const listener of [...(listeners.get(event.type) ?? [])]) listener(event);
+      },
+    };
+    const input = new InputMap({ zoom: { scroll: true } }, host, canvas);
+    const hud = { id: "settings-list" };
+
+    const overHud = wheelEvent(-30);
+    Object.defineProperty(overHud, "target", { value: hud });
+    host.fire(overHud);
+    input.tick();
+    expect(input.axis("zoom")).toBe(0);
+
+    const overCanvas = wheelEvent(-30);
+    Object.defineProperty(overCanvas, "target", { value: canvas });
+    host.fire(overCanvas);
+    input.tick();
+    expect(input.axis("zoom")).toBeCloseTo(0.3);
+    input.dispose();
+  });
+
   it("should keep the axis at zero when its scroll binding is removed", () => {
     const target = new EventTarget();
     const input = new InputMap({ zoom: { scroll: true } }, target);

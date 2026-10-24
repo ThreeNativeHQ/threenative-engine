@@ -155,6 +155,7 @@ function countingLoader(): { assets: IAssetLoader; models: string[] } {
     },
     audio: (path) => inner.audio(path),
     clear: () => inner.clear(),
+    dispose: () => inner.dispose(),
     model: (path) => {
       models.push(path);
       return inner.model(path);

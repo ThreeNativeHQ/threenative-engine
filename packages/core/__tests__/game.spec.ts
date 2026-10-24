@@ -68,6 +68,40 @@ class EmptyScene extends Scene {
 }
 
 describe("IGame", () => {
+  it("disposes the asset loader's KTX2 decoder pool on stop", async () => {
+    const { KTX2Loader } = await import("three/addons/loaders/KTX2Loader.js");
+    const loaderDispose = vi.spyOn(KTX2Loader.prototype, "dispose");
+    const canvas = testCanvas();
+    const extensions = {
+      get: () => ({ getSupportedProfiles: () => ["ldr"] }),
+      has: () => true,
+    };
+    const game = defineGame({
+      renderer: {
+        canvas,
+        preferWebGPU: false,
+        webgl2Factory: () => ({
+          dispose: () => undefined,
+          domElement: canvas,
+          extensions,
+          render: () => undefined,
+          setSize: () => undefined,
+        }),
+      },
+      scenes: { test: EmptyScene },
+      start: "test",
+    });
+    try {
+      await game.start();
+      game.stop();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(loaderDispose).toHaveBeenCalledTimes(1);
+    } finally {
+      loaderDispose.mockRestore();
+      game.stop();
+    }
+  });
+
   it("reports render traps once per scene entry, including re-entry", async () => {
     const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
@@ -2092,6 +2126,125 @@ describe("IGame", () => {
       start: "test",
     });
     await expect(invalid.start()).rejects.toThrow("frame function");
+  });
+
+  it("does not enter a scene whose load finished after a newer goto", async () => {
+    const entered: string[] = [];
+    let resolveSlow: () => void = () => undefined;
+    class Fast extends Scene {
+      static override readonly initialState = {};
+      override enter(): void {
+        entered.push("fast");
+      }
+    }
+    class Slow extends Scene {
+      static override readonly initialState = {};
+      override load(): Promise<void> {
+        return new Promise<void>((resolve) => {
+          resolveSlow = resolve;
+        });
+      }
+      override enter(): void {
+        entered.push("slow");
+      }
+    }
+    const game = defineGame({
+      renderer: renderer(testCanvas()),
+      scenes: { fast: Fast, slow: Slow },
+      start: "fast",
+    });
+    await game.start();
+    try {
+      const slow = game.goto("slow");
+      await game.goto("fast");
+      resolveSlow();
+      await slow;
+      expect(entered).toEqual(["fast", "fast"]);
+      expect(game.sceneName).toBe("fast");
+    } finally {
+      game.stop();
+    }
+  });
+
+  it("does not enter a scene whose load finishes after the game stopped", async () => {
+    const entered: string[] = [];
+    let resolveSlow: () => void = () => undefined;
+    class Fast extends Scene {
+      static override readonly initialState = {};
+      override enter(): void {
+        entered.push("fast");
+      }
+    }
+    class Slow extends Scene {
+      static override readonly initialState = {};
+      override load(): Promise<void> {
+        return new Promise<void>((resolve) => {
+          resolveSlow = resolve;
+        });
+      }
+      override enter(): void {
+        entered.push("slow");
+      }
+    }
+    const game = defineGame({
+      renderer: renderer(testCanvas()),
+      scenes: { fast: Fast, slow: Slow },
+      start: "fast",
+    });
+    await game.start();
+    const slow = game.goto("slow");
+    game.stop();
+    resolveSlow();
+    await slow;
+    expect(entered).toEqual(["fast"]);
+  });
+
+  it("cancels the startup stall watch when stopped before readiness", async () => {
+    const realSetInterval = globalThis.setInterval;
+    const realClearInterval = globalThis.clearInterval;
+    const handles = new Set<number>();
+    let next = 1;
+    Object.defineProperty(globalThis, "setInterval", {
+      configurable: true,
+      value: () => {
+        const handle = next++;
+        handles.add(handle);
+        return handle;
+      },
+    });
+    Object.defineProperty(globalThis, "clearInterval", {
+      configurable: true,
+      value: (handle: unknown) => {
+        handles.delete(handle as number);
+      },
+    });
+    class Loading extends Scene {
+      static override readonly initialState = {};
+      override enter(ctx: ICtx): void {
+        ctx.startup.hold("never settles", new Promise<void>(() => undefined));
+      }
+    }
+    const game = defineGame({
+      renderer: renderer(testCanvas()),
+      scenes: { test: Loading },
+      start: "test",
+    });
+    try {
+      await game.start();
+      expect(handles.size).toBeGreaterThan(0);
+      game.stop();
+      expect(handles.size).toBe(0);
+    } finally {
+      Object.defineProperty(globalThis, "setInterval", {
+        configurable: true,
+        value: realSetInterval,
+      });
+      Object.defineProperty(globalThis, "clearInterval", {
+        configurable: true,
+        value: realClearInterval,
+      });
+      game.stop();
+    }
   });
 
   it("reports a scene whose load() rejects by name instead of stalling the launch", async () => {
