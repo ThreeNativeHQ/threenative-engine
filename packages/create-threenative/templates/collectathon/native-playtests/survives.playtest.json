@@ -27,6 +27,14 @@
     }
   ],
   "assert": {
+    "tone": [
+      {
+        "p50": {
+          "min": 60,
+          "max": 230
+        }
+      }
+    ],
     "components": [
       {
         "entity": "player",
