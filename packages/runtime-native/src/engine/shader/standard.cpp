@@ -622,11 +622,40 @@ static ExprId nodeValue(Program& f, const graph::Node& node, Type type, ExprId f
     return nodeType(f, graph::lower(node, f, inputs), type);
 }
 
+// MaterialNode's accessors (materialColor, materialEmissive, materialMetalness, materialRoughness), which a slot's graph
+// may read: the material's uniform times its map, as three builds each (COLOR: map; EMISSIVE: emissiveMap; METALNESS: the
+// metalnessMap's blue; ROUGHNESS: the roughnessMap's green). Resolved only for the accessors the graphs read, at the
+// top of the fragment where a texture sample is in uniform control flow, and held in a variable. An accessor the
+// material has no map for stays the bare uniform, as does one in a program that supplies none.
+static void materialInputs(Program& f, const VertexVariant& variant,
+                           std::unordered_map<std::string, ExprId>& inputs) {
+    const auto pinned = [&](Type type, ExprId value) { return f.load(f.var(type, value)); };
+    const auto& nodes = variant.nodes;  // the slots this fragment lowers; position, vertex and scale nodes run in the vertex stage
+    for (const auto& node : {nodes.colorNode, nodes.emissiveNode, nodes.roughnessNode, nodes.metalnessNode, nodes.opacityNode,
+                             nodes.aoNode, nodes.irradianceNode, nodes.fragmentNode, nodes.depthNode})
+        for (const std::string& name : graph::materialInputs(node)) {
+            const std::string key = "material:" + name;
+            if (inputs.count(key)) continue;
+            if (name == "diffuse" && variant.map && !variant.background)
+                inputs.emplace(key, pinned(Type::vec(4), f.mul(f.uniform("diffuse", Type::vec(4)), mapTexel(f, variant))));
+            else if (name == "emissive" && variant.reads(kEmissiveMap))
+                inputs.emplace(key, pinned(Type::vec(3), f.mul(f.uniform("emissive", Type::vec(3)),
+                                                              f.swizzle(pbrTexel(f, variant, kEmissiveMap), "xyz"))));
+            else if (name == "metalness" && variant.reads(kMetalnessMap))
+                inputs.emplace(key, pinned(Type::f32(), f.mul(f.uniform("metalness", Type::f32()),
+                                                             f.swizzle(pbrTexel(f, variant, kMetalnessMap), "z"))));
+            else if (name == "roughness" && variant.reads(kRoughnessMap))
+                inputs.emplace(key, pinned(Type::f32(), f.mul(f.uniform("roughness", Type::f32()),
+                                                             f.swizzle(pbrTexel(f, variant, kRoughnessMap), "y"))));
+        }
+}
+
 // A slot read through the program's one lowering: a node two slots share (a march feeding colour and
 // depth) lowers once, as three builds a material once. `normalView` is the slot input every slot sees.
-static graph::Lowering slotLowering(Program& f, ExprId normalView) {
+static graph::Lowering slotLowering(Program& f, const VertexVariant& variant, ExprId normalView) {
     std::unordered_map<std::string, ExprId> inputs;
     if (normalView != kInvalid) inputs.emplace("normalView", normalView);
+    materialInputs(f, variant, inputs);
     return graph::Lowering(f, std::move(inputs));
 }
 static ExprId slotValue(Program& f, graph::Lowering& slots, const graph::Node& node, Type type, ExprId fallback) {
@@ -1360,7 +1389,7 @@ static StandardPrograms buildStandardProgram(const StandardMaterial& material, b
     // normalize((vec4(normalView, 0) * viewMatrix).xyz).
     const ExprId normalWorld = f.call("normalize", {f.swizzle(f.mul(f.construct(Type::vec(4), {n, f.constant(0.0f)}),
                                                                      f.uniform("viewMatrix", Type::mat(4, 4))), "xyz")});
-    graph::Lowering slots = slotLowering(f, n);
+    graph::Lowering slots = slotLowering(f, variant, n);
     const ExprId diffuse = slotValue(f, slots, variant.nodes.colorNode, Type::vec(4), f.uniform("diffuse", Type::vec(4)));
     const ExprId texel = variant.nodes.colorNode ? kInvalid : mapTexel(f, variant);
     ExprId diffuseColor = materialColor(f, variant, diffuse);
@@ -1666,7 +1695,7 @@ StandardPrograms buildLit(bool phong, const VertexVariant& variant, const LightL
     // normalize((vec4(normalView, 0) * viewMatrix).xyz).
     const ExprId normalWorld = f.call("normalize", {f.swizzle(f.mul(f.construct(Type::vec(4), {n, f.constant(0.0f)}),
                                                                      f.uniform("viewMatrix", Type::mat(4, 4))), "xyz")});
-    graph::Lowering slots = slotLowering(f, n);
+    graph::Lowering slots = slotLowering(f, variant, n);
     const ExprId diffuse = slotValue(f, slots, variant.nodes.colorNode, Type::vec(4), f.uniform("diffuse", Type::vec(4)));
     const ExprId texel = variant.nodes.colorNode ? kInvalid : mapTexel(f, variant);
     ExprId diffuseColor = materialColor(f, variant, diffuse);
@@ -1759,7 +1788,7 @@ StandardPrograms buildBasic(const VertexVariant& variant) {
     if (variant.nodes.fragmentNode) {
         tsl::Build scope(f);
         // three wraps a fragmentNode in vec4(): a vec3 gains an opaque alpha (rain's world quad is a vec3).
-        graph::Lowering slots = slotLowering(f, kInvalid);
+        graph::Lowering slots = slotLowering(f, variant, kInvalid);
         ExprId color = slots.lower(variant.nodes.fragmentNode);
         if (color != kInvalid && f.expr(color).type == Type::vec(3))
             color = f.construct(Type::vec(4), {color, f.constant(1.0f)});
@@ -1771,7 +1800,7 @@ StandardPrograms buildBasic(const VertexVariant& variant) {
 
     // MeshBasicNodeMaterial.setupNormal: negateOnBackSide(normalViewGeometry); a normalNode is not read.
     const ExprId normalView = needsNormal ? facedNormal(f, variant, f.call("normalize", {f.varying("normalView", Type::vec(3))})) : kInvalid;
-    graph::Lowering slots = slotLowering(f, normalView);
+    graph::Lowering slots = slotLowering(f, variant, normalView);
     const ExprId diffuse = slotValue(f, slots, variant.nodes.colorNode, Type::vec(4), f.uniform("diffuse", Type::vec(4)));
     ExprId texel = kInvalid;
     if (variant.background && !variant.nodes.colorNode) {

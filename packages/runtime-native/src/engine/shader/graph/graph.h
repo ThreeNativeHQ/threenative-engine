@@ -108,6 +108,14 @@ Node uint_(uint32_t value);
 Node uint_(Node value);
 
 Node uniform(std::string_view name, Type type, std::vector<double> values = {});
+/**
+ * three's MaterialNode accessor (materialColor, materialEmissive, ...): the material's own uniform `name`, which the
+ * program that lowers it may replace through Lowering's input "material:<name>" with the value three computes: the
+ * uniform times the material's map. A program that supplies none reads the bare uniform.
+ */
+Node materialInput(std::string_view name, Type type);
+/** Every distinct material accessor `name` reachable from the graph, as `materialInput` made them. */
+std::vector<std::string> materialInputs(const Node& graph);
 /** three's `uniform.value = x`: one number per lane of the uniform's type; the program is unchanged. */
 void setUniformValues(const Node& uniform, std::vector<double> values);
 Node attribute(std::string_view name, Type type);

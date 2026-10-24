@@ -292,6 +292,11 @@ tn_native_engine_test(tn-native-engine-tsl-shared-node-test tests/native-engine/
     native_engine_tsl_shared_node_scopes=scopes)
 target_link_libraries(tn-native-engine-tsl-shared-node-test PRIVATE tn_engine_shader)
 
+tn_native_engine_test(tn-native-engine-tsl-material-accessors-test tests/native-engine/tsl_material_accessors_test.cpp
+    native_engine_tsl_material_accessors_sample_their_map=accessors_sample_their_map
+    native_engine_tsl_material_accessors_listed=every_accessor_is_listed)
+target_link_libraries(tn-native-engine-tsl-material-accessors-test PRIVATE tn_engine_abi)
+
 tn_native_engine_test(tn-native-engine-tsl-math-test tests/native-engine/tsl_math_test.cpp
     native_engine_tsl_math=math)
 target_link_libraries(tn-native-engine-tsl-math-test PRIVATE tn_engine_abi)

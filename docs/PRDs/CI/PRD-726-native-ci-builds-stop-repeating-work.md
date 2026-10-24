@@ -37,6 +37,25 @@ Integration: workflow jobs → existing build/package commands → fresh native 
 - Retain the unmerged task checkout for the coordinator to integrate; never remove an unmerged lane automatically.
 - Final evidence belongs only in the owner-requested `~/.cache/tmp-tn/ciperf-native/report.md`.
 
+## Hosted timings after integration (2026-10-23)
+
+Green job wall times, in minutes, from the develop baseline run 39894129224 and from the two #541 runs that carry these changes: PR run 40036262286 and merge-queue run 40046171681 (attempt 2).
+
+| Job | Baseline | PR run | Queue run |
+| --- | ---: | ---: | ---: |
+| Windows desktop core | 43 | 33 | 30 |
+| macOS desktop core | 18 | 15 | 16 |
+| test-native | 12 | 11 | 10 |
+| Android emulator visual parity | 33 | 31 | 36 |
+| Scaffolded starter desktop artifact (linux-arm64) | 17 | 19 | 18 |
+| Scaffolded starter desktop artifact (linux-x64) | 15 | 34 | 11 |
+| iOS simulator runtime and no-Xcode consumer handoff | 25 | 29 | 44 |
+
+- Windows (-10 to -13 min), macOS (-2 to -3 min) and test-native (-1 to -2 min) are faster in both runs.
+- Android and linux-arm64 are within run-to-run noise.
+- linux-x64 varies between 11 and 34 min. The 34 min run is the epic-look packaging cost that the ciperf-epic lane attributed separately.
+- iOS is slower in both runs (+4 and +19 min). The likely suspect is the change that boots the simulator before the compile. It is unverified, because the step timings were not split.
+
 ## Blocked on
 
-- Hosted Windows/macOS/iOS/Android timing qualification requires the coordinator to run CI after integration. The brief forbids dispatch and pushing; local evidence and estimates cannot establish hosted savings.
+- iOS got slower after the simulator-boot reorder. Next step: pull the per-step timings of the iOS job in runs 40036262286 and 40046171681 against 39894129224. Keep the reorder only if the boot overlaps the compile. Otherwise revert it. Unblocked by the step-timing comparison, and by one more hosted run after any revert.
