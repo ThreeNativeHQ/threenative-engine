@@ -12,7 +12,6 @@ import {
   BufferGeometry,
   Color,
   CylinderGeometry,
-  DodecahedronGeometry,
   DoubleSide,
   Group,
   IcosahedronGeometry,
@@ -304,7 +303,7 @@ export function plantIsland(site: IPlantingSite): { group: Group; meadow: IMeado
   group.add(instanced(trunk, lit(C.bark, { vertexColors: true }), trunks, true));
   group.add(
     instanced(
-      canopyGeometry(rng, 2),
+      canopyGeometry(rng),
       lit(0xffffff, { vertexColors: true, roughness: 0.9 }),
       crowns,
       true,
@@ -469,7 +468,7 @@ export function plantIsland(site: IPlantingSite): { group: Group; meadow: IMeado
     (onPath ? pebbles : stones).push(at);
     (onPath ? pebbleTints : stoneTints).push(pebbleBase.clone().multiplyScalar(0.45 + rng() * 0.7));
   }
-  const pebble = new DodecahedronGeometry(1, 0);
+  const pebble = new OctahedronGeometry(1, 0);
   const pebbleMaterial = lit(0xffffff, { flat: true });
   // Too small to throw a shadow worth its draw.
   const pathPebbles = instanced(pebble, pebbleMaterial, pebbles, false, pebbleTints);
@@ -480,8 +479,8 @@ export function plantIsland(site: IPlantingSite): { group: Group; meadow: IMeado
 
   // The meadow: grass tufts on a jittered 0.5 m grid over all the land, shorter on the mown routes
   // and beside the path, combed one way by the wind, one `InstancedMesh` per 12 m cell. Each cell
-  // is shuffled, so drawing a prefix of it thins it evenly: `update` draws every tuft within 20 m
-  // of the eye and thins to a sixth by 65 m, where the ground's own green carries the field.
+  // is shuffled, so drawing a prefix of it thins it evenly: `update` draws every tuft within 16 m
+  // of the eye and thins to an eighth by 46 m, where the ground's own green carries the field.
   const tuft = tuftGeometry(rng);
   const grassMaterial = swaying(C.blade, 0.16, { vertexColors: true });
   const cells = new Map<
@@ -538,7 +537,7 @@ export function plantIsland(site: IPlantingSite): { group: Group; meadow: IMeado
       drawn = 0;
       for (const cell of grass) {
         const d = Math.hypot(cell.x - eye.x, cell.z - eye.z);
-        const keep = d < 20 ? 1 : Math.max(1 / 6, 1 - (d - 20) / 45);
+        const keep = d < 16 ? 1 : Math.max(1 / 8, 1 - (d - 16) / 34);
         cell.mesh.count = Math.round(cell.full * keep);
         drawn += cell.mesh.count;
       }
