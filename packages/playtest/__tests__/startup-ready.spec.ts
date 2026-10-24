@@ -382,19 +382,20 @@ test("warmup does not spend the readiness allowance", async () => {
   expect(clock).toBe(400);
 });
 
-test("warmup frames are bounded one frame at a time, not by one shared budget", async () => {
+test("warmup is one wait whose budget grows with its frames", async () => {
   vi.useFakeTimers();
   try {
     let result: unknown = "pending";
-    const page = { evaluate: () => new Promise((resolve) => setTimeout(resolve, 50_000)) } as unknown as Page;
-    const pending = waitWarmupFrames(page, 3).then(() => { result = "done"; }, (error) => { result = error; });
-    await vi.advanceTimersByTimeAsync(150_000);
-    expect(result).toBe("done");
+    const slow = { evaluate: () => new Promise((resolve) => setTimeout(resolve, 39_000)) } as unknown as Page;
+    const pending = waitWarmupFrames(slow, 3).then(() => { result = "done"; }, (error) => { result = error; });
+    await vi.advanceTimersByTimeAsync(39_000);
     await pending;
-    const hung = { evaluate: () => new Promise(() => {}) } as unknown as Page;
-    const stalled = waitWarmupFrames(hung, 3).then(() => { result = "done"; }, (error) => { result = error; });
-    await vi.advanceTimersByTimeAsync(59_999);
     expect(result).toBe("done");
+    const hung = { evaluate: () => new Promise(() => {}) } as unknown as Page;
+    result = "pending";
+    const stalled = waitWarmupFrames(hung, 3).then(() => { result = "done"; }, (error) => { result = error; });
+    await vi.advanceTimersByTimeAsync(74_999);
+    expect(result).toBe("pending");
     await vi.advanceTimersByTimeAsync(1);
     expect(result).toMatchObject({ diagnostic: { code: "TN_PLAYTEST_OPERATION_TIMEOUT" } });
     await stalled;
