@@ -1,18 +1,15 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { PerspectiveCamera, Vector2, Vector3 } from "three";
+import { PerspectiveCamera, Scene, Vector2, Vector3 } from "three";
 import { describe, expect, it, vi } from "vitest";
-import { WorldEnvironment } from "../../core/src/look/world-environment.js";
 import { Checkpoints } from "../templates/platformer/src/level/Checkpoints.js";
 import { setupPost } from "../templates/platformer/src/render/postprocessing.js";
 import { TouchControls } from "../templates/platformer/src/render/touch-controls.js";
 import { touchControlPoint } from "../templates/platformer/src/render/touch-layout.js";
 
-vi.mock("../../core/src/look/world-environment.js", () => ({
-  WorldEnvironment: vi.fn().mockImplementation(function WorldEnvironmentMock() {
-    return { apply: vi.fn() };
-  }),
-}));
+type RenderChainOptions = Parameters<
+  NonNullable<Parameters<typeof setupPost>[0]["createRenderChain"]>
+>[0];
 
 type Target = Parameters<Checkpoints["hurt"]>[0];
 
@@ -32,33 +29,37 @@ describe("platformer checkpoints", () => {
     const globals = globalThis as typeof globalThis & {
       __THREENATIVE_PROFILE__?: { hostedSoftware?: boolean };
     };
-    const renderer = { raw: {} } as Parameters<typeof setupPost>[0];
-    const scene = {} as Parameters<typeof setupPost>[1];
-    const camera = {} as Parameters<typeof setupPost>[2];
+    const createRenderChain = vi.fn((options: RenderChainOptions) => ({
+      applied: { dropped: [], stages: [...(options.request?.stages ?? [])] },
+      dispose() {},
+    }));
+    const renderer = { kind: "webgpu", raw: {}, createRenderChain } as Parameters<
+      typeof setupPost
+    >[0];
+    const scene = new Scene();
+    const camera = new PerspectiveCamera();
     const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    // The applied environment prints its own report after the tier line; read that line out.
+    const reportedTier = (): string =>
+      info.mock.calls
+        .map((call) => String(call[0]))
+        .find((line) => line.startsWith("TN_QUALITY_TIER")) ?? "";
     vi.clearAllMocks();
 
     globals.__THREENATIVE_PROFILE__ = { hostedSoftware: true };
     setupPost(renderer, scene, camera, { mobile: false });
-    expect(info).toHaveBeenLastCalledWith(
+    expect(reportedTier()).toBe(
       "TN_QUALITY_TIER low mobile=false software=false source=hosted-software",
     );
 
+    info.mockClear();
     setupPost(renderer, scene, camera, { mobile: false, tier: "high" });
-    expect(info).toHaveBeenLastCalledWith(
-      "TN_QUALITY_TIER high mobile=false software=false source=override",
-    );
+    expect(reportedTier()).toBe("TN_QUALITY_TIER high mobile=false software=false source=override");
     // The three names must be three looks. On this level the difference is contact occlusion: a
     // 2,300-mesh route where every mesh costs per-object work is where a phone loses the screen-space
     // stages and a desktop keeps them.
-    expect(WorldEnvironment).toHaveBeenNthCalledWith(
-      1,
-      expect.not.objectContaining({ gtaoEnabled: expect.anything() }),
-    );
-    expect(WorldEnvironment).toHaveBeenNthCalledWith(
-      2,
-      expect.objectContaining({ gtaoEnabled: true }),
-    );
+    expect(createRenderChain.mock.calls[0]?.[0].request?.stages).not.toContain("ambientOcclusion");
+    expect(createRenderChain.mock.calls[1]?.[0].request?.stages).toContain("ambientOcclusion");
 
     globals.__THREENATIVE_PROFILE__ = undefined;
     info.mockRestore();

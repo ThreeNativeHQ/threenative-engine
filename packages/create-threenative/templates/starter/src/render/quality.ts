@@ -3,6 +3,7 @@ import {
   qualityPreset as coreQualityPreset,
   qualityTiers,
 } from "@threenative/core";
+import { exposureSettings } from "./exposure.js";
 // Generated for you: ordinary Three.js; ThreeNative does not read this file. Delete or rewrite
 // it freely — the tiers below are a starting point, not a framework look.
 //
@@ -135,7 +136,13 @@ export function qualityPreset(tier: string): IWorldEnvironmentOptions {
       `Unknown quality tier ${JSON.stringify(tier)} — expected one of ${["low", "medium", "high"].join(", ")}.`,
     );
   }
-  return { ...coreQualityPreset(tier), ...legacyDefaults, ...preset, samples: preset.samples ?? 4 };
+  return {
+    ...coreQualityPreset(tier),
+    ...legacyDefaults,
+    ...preset,
+    exposurePolicy: exposureSettings,
+    samples: preset.samples ?? 4,
+  };
 }
 
 /** The grade and grain a tier runs. Throws on a name that is not a tier, for the same reason. */

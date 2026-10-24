@@ -1,3 +1,4 @@
+import { exposureSettings } from "./exposure.js";
 // Generated for you: ordinary Three.js; ThreeNative does not read this file. Delete or rewrite
 // it freely — the tiers below are a starting point, not a framework look.
 //
@@ -126,7 +127,13 @@ export function qualityPreset(tier: string): IWorldEnvironmentOptions {
       `Unknown quality tier ${JSON.stringify(tier)} — expected one of ${["low", "medium", "high"].join(", ")}.`,
     );
   }
-  return { ...coreQualityPreset(tier), ...legacyDefaults, ...preset, samples: preset.samples ?? 4 };
+  return {
+    ...coreQualityPreset(tier),
+    ...legacyDefaults,
+    ...preset,
+    exposurePolicy: exposureSettings,
+    samples: preset.samples ?? 4,
+  };
 }
 
 /** First admitted material lane: high desktop hardware WebGPU in the browser only. */

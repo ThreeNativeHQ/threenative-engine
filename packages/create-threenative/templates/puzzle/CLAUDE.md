@@ -67,17 +67,14 @@ Leave `assets` absent: the cook selects target-decodable passes, with `models.sh
 
 Relative look capture: a binding with `pointerRelative: true` captures the canvas on click by default; set `captureOnClick: false` and call `ctx.input.captureMouse()` from your own gesture to opt out. Desktop mode precedence is CLI (`--windowed`, `--maximized`, `--fullscreen`) over `display.fullscreen` over `window.maximized`; with both false, `window.width`/`height` size the normal window.
 Scenes use `load`, `enter`, `update`, `exit`, `render`; physics nodes are Godot-named and disposable.
-The vault is one fixed three-quarter shot that drifts a fraction of a metre toward the warden, so the
-camera reads the body in the frame function; a trailing follow camera is a different game.
+The vault is one fixed three-quarter shot that drifts a fraction of a metre toward the warden, so the camera reads the body in the frame function; a trailing follow camera is a different game.
 `input.vector("move").y` is +up, so forward uses one explicit `-move.y` conversion. Rigged assets: put a `.glb` in `assets/`, await `ctx.assets.model("hero.glb")` in `Scene.load()`, then drive
 `AnimationPlayer` beside its entity. Imported foliage (Fab/Megascans cutouts) draws with its own albedo, normal map and alpha cutoff under the scene's environment light — never tint it, fake its emission or flatten its normals to make up for missing light; `TN_UNLIT_FOLIAGE` names cutout materials drawn with no environment. `ctx.goto(name)` rebuilds without resetting game state; from
 a frame function `goto` and then `return`; `ctx.state.set({ /* copy this game's initial-state shape */ })`
 is a partial patch. `game.goto("<scene-name>")` also rebuilds the scene, but it resets the game's
 state. Seeded randomness is deterministic only when `defineGame({ seed })` is configured.
 
-When an animation looks wrong, measure it before rewriting it. `clipPoseError` scores a
-retargeted clip against its source per bone in degrees — whole quaternions relative to each rig's
-own bind pose, so the two rigs' bind conventions cancel and a limb rolled about its own axis is
+When an animation looks wrong, measure it before rewriting it. `clipPoseError` scores a retargeted clip against its source per bone in degrees — whole quaternions relative to each rig's own bind pose, so the two rigs' bind conventions cancel and a limb rolled about its own axis is
 caught where a bone-direction check reads zero. `clipTrackBindings` names tracks that bind nothing
 (the `<bone>.undefined` failure that plays the bind pose instead of the animation),
 `clipBoneCoverage` names bones the clip does not drive and which therefore keep the previous

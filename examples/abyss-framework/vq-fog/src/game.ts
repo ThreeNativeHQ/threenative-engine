@@ -394,6 +394,15 @@ export class FogProbe extends GameScene<FogState> {
     const world = new WorldEnvironment({
       autoExposureEnabled: this.#exposureEnabled,
       exposurePolicy: { ...exposureSettings, enabled: true },
+      // Keep this qualification fixture isolated from the core scene look.
+      finalGatherMethod: "none",
+      gtaoEnabled: false,
+      localExposureEnabled: false,
+      motionBlurEnabled: false,
+      ssrEnabled: false,
+      temporalAA: false,
+      unrealBloomEnabled: false,
+      vignetteAmount: 0,
       bloomEnabled: false,
       screenSpaceAA: "disabled",
       tonemapMode: "neutral",

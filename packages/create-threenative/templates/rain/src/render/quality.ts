@@ -20,6 +20,7 @@ import {
 //   march. The drawing buffer itself is the engine's adaptive resolution (`resolutionScale: "auto"`
 //   in `threenative.config.ts`), which measures the frame instead of trusting a fixed table.
 import type { QualityName } from "../state.js";
+import { exposureSettings } from "./exposure.js";
 export type { QualityTier } from "@threenative/core";
 import type { QualityTier } from "@threenative/core";
 
@@ -89,7 +90,13 @@ export function qualityPreset(tier: string): IWorldEnvironmentOptions {
       `Unknown quality tier ${JSON.stringify(tier)} — expected one of ${["low", "medium", "high"].join(", ")}.`,
     );
   }
-  return { ...coreQualityPreset(tier), ...legacyDefaults, ...preset, samples: preset.samples ?? 4 };
+  return {
+    ...coreQualityPreset(tier),
+    ...legacyDefaults,
+    ...preset,
+    exposurePolicy: exposureSettings,
+    samples: preset.samples ?? 4,
+  };
 }
 
 /** One rung of the player's quality select. Every number is the reference study's own. */

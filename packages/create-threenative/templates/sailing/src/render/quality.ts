@@ -29,6 +29,7 @@ import {
   qualityPreset as coreQualityPreset,
   qualityTiers,
 } from "@threenative/core";
+import { exposureSettings } from "./exposure.js";
 export type { QualityTier } from "@threenative/core";
 import type { QualityTier } from "@threenative/core";
 
@@ -149,7 +150,13 @@ export function qualityPreset(tier: string): IWorldEnvironmentOptions {
       `Unknown quality tier ${JSON.stringify(tier)} — expected one of ${["low", "medium", "high"].join(", ")}.`,
     );
   }
-  return { ...coreQualityPreset(tier), ...legacyDefaults, ...preset, samples: preset.samples ?? 4 };
+  return {
+    ...coreQualityPreset(tier),
+    ...legacyDefaults,
+    ...preset,
+    exposurePolicy: exposureSettings,
+    samples: preset.samples ?? 4,
+  };
 }
 
 export interface IMaterialLightingEnvironment {
