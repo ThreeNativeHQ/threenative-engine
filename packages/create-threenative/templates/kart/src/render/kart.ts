@@ -62,6 +62,31 @@ function wheel(radius: number, width: number) {
   ];
 }
 
+// Built once and shared by every kart, so the eight karts upload one copy of each part.
+const REAR_AXLE = merge([
+  ...wheel(WHEEL.rear, 0.32).map((g) => g.translate(-WHEEL.track - 0.04, 0, 0)),
+  ...wheel(WHEEL.rear, 0.32).map((g) => g.translate(WHEEL.track + 0.04, 0, 0)),
+  paint(new CylinderGeometry(0.04, 0.04, 1.3, 6), C.metal, at(0, 0, 0, 0, 0, Math.PI / 2)),
+]);
+const FRONT_WHEEL = merge(wheel(WHEEL.front, 0.26));
+const cone = (x: number) =>
+  new ConeGeometry(0.11, 0.6, 8).rotateX(Math.PI / 2).translate(x, 0, 0.3);
+const FLAME = merge([cone(-0.17), cone(0.17)]);
+const FLAME_MATERIAL = new MeshBasicMaterial({
+  blending: AdditiveBlending,
+  color: new Color(7, 3.2, 0.7),
+  depthWrite: false,
+  transparent: true,
+});
+const STAR = merge([
+  new SphereGeometry(0.09, 8, 6),
+  ...[0, 1, 2, 3].map((r) => new BoxGeometry(0.62, 0.05, 0.05).rotateZ((r * Math.PI) / 4)),
+]);
+/** One glow material per drift stage, swapped onto the stars instead of recoloured per kart. */
+const GLOW_MATERIALS = SPARK_GLOW.map(
+  ([r, g, b]) => new MeshBasicMaterial({ color: new Color(r, g, b) }),
+);
+
 function bodyGeometry(livery: ILivery) {
   const { body, trim, helmet, suit } = livery;
   return merge([
@@ -115,7 +140,6 @@ export class KartModel {
   readonly #frontWheels: readonly Mesh[];
   readonly #flame: Mesh;
   readonly #glows: readonly Mesh[];
-  readonly #glowMaterial: MeshBasicMaterial;
   #roll = 0;
   #spin = 0;
 
@@ -124,21 +148,14 @@ export class KartModel {
     this.root.rotation.order = "YXZ";
     const material = lit({ roughness: 0.5 });
     const body = new Mesh(bodyGeometry(livery), material);
-    this.#rear = new Mesh(
-      merge([
-        ...wheel(WHEEL.rear, 0.32).map((g) => g.translate(-WHEEL.track - 0.04, 0, 0)),
-        ...wheel(WHEEL.rear, 0.32).map((g) => g.translate(WHEEL.track + 0.04, 0, 0)),
-        paint(new CylinderGeometry(0.04, 0.04, 1.3, 6), C.metal, at(0, 0, 0, 0, 0, Math.PI / 2)),
-      ]),
-      material,
-    );
+    this.#rear = new Mesh(REAR_AXLE, material);
     this.#rear.position.set(0, WHEEL.rear, WHEEL.rearZ);
     const fronts: Group[] = [];
     const frontWheels: Mesh[] = [];
     for (const side of [-1, 1]) {
       const pivot = new Group();
       pivot.position.set(side * WHEEL.track, WHEEL.front, WHEEL.frontZ);
-      const spinner = new Mesh(merge(wheel(WHEEL.front, 0.26)), material);
+      const spinner = new Mesh(FRONT_WHEEL, material);
       pivot.add(spinner);
       fronts.push(pivot);
       frontWheels.push(spinner);
@@ -153,30 +170,15 @@ export class KartModel {
     // The boost flame rides on the exhausts. Particles alone are left behind at racing speed and
     // the temporal anti-aliasing smears them out, so the flame the player sees is a mesh. Its
     // colour runs above 1 for the same reason the sparks do: auto exposure meters a sunny course.
-    const cone = (x: number) =>
-      new ConeGeometry(0.11, 0.6, 8).rotateX(Math.PI / 2).translate(x, 0, 0.3);
-    this.#flame = new Mesh(
-      merge([cone(-0.17), cone(0.17)]),
-      new MeshBasicMaterial({
-        blending: AdditiveBlending,
-        color: new Color(7, 3.2, 0.7),
-        depthWrite: false,
-        transparent: true,
-      }),
-    );
+    this.#flame = new Mesh(FLAME, FLAME_MATERIAL);
     this.#flame.position.set(0, 0.62, 1.02);
     this.#flame.visible = false;
     this.root.add(this.#flame);
     // The spark charge glows on each rear tyre in the stage's colour, for the same reason: the
     // thrown sparks fall behind and smear, so the colour the player reads rides on the kart.
     // Opaque, not additive: added onto a sunlit road every colour sums toward white.
-    this.#glowMaterial = new MeshBasicMaterial();
-    const star = merge([
-      new SphereGeometry(0.09, 8, 6),
-      ...[0, 1, 2, 3].map((r) => new BoxGeometry(0.62, 0.05, 0.05).rotateZ((r * Math.PI) / 4)),
-    ]);
     this.#glows = [-1, 1].map((side) => {
-      const glow = new Mesh(star, this.#glowMaterial);
+      const glow = new Mesh(STAR, GLOW_MATERIALS[0]);
       glow.position.set(side * (WHEEL.track + 0.1), 0.16, WHEEL.rearZ + 0.34);
       glow.visible = false;
       this.root.add(glow);
@@ -206,10 +208,10 @@ export class KartModel {
     this.#flame.visible = boosting;
     if (boosting) this.#flame.scale.set(1, 1, 0.75 + Math.abs(Math.sin(this.#spin * 7)) * 0.5);
     const charge = kart.drifting && kart.grounded ? kart.driftStage : 0;
-    const tint = SPARK_GLOW[charge - 1];
-    if (tint !== undefined) this.#glowMaterial.color.setRGB(tint[0], tint[1], tint[2]);
+    const tint = GLOW_MATERIALS[charge - 1];
     for (const [g, glow] of this.#glows.entries()) {
-      glow.visible = charge > 0;
+      glow.visible = tint !== undefined;
+      if (tint !== undefined) glow.material = tint;
       glow.rotation.z = this.#spin * (g === 0 ? 0.9 : -0.9);
       glow.scale.setScalar(0.8 + Math.abs(Math.sin(this.#spin * 5 + g)) * 0.4 + charge * 0.1);
     }

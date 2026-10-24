@@ -18,63 +18,61 @@ import type { ICourse } from "../track/Course.js";
 import { at, lit, merge, paint } from "./materials.js";
 import { C } from "./palette.js";
 
-/** A peel lying on the road: a yellow arc, brown tips, three limp flaps. */
-export function bananaMesh(): Mesh {
-  const mesh = new Mesh(
-    merge([
-      paint(
-        new TorusGeometry(0.3, 0.09, 6, 12, 2.3),
-        C.banana,
-        at(0, 0.1, 0, Math.PI / 2, 0, 0.4),
+/** A peel lying on the road: a yellow arc, brown tips, three limp flaps. Shared by every peel. */
+const BANANA = merge([
+  paint(
+    new TorusGeometry(0.3, 0.09, 6, 12, 2.3),
+    C.banana,
+    at(0, 0.1, 0, Math.PI / 2, 0, 0.4),
+    0.3,
+  ),
+  paint(new SphereGeometry(0.06, 6, 4), C.bananaTip, at(0.27, 0.12, 0.1)),
+  paint(new SphereGeometry(0.06, 6, 4), C.bananaTip, at(-0.21, 0.1, 0.22)),
+  ...[0, 2.1, 4.2].map((a) =>
+    paint(
+      new BoxGeometry(0.14, 0.03, 0.3),
+      C.banana,
+      at(Math.cos(a) * 0.12 - 0.3, 0.05, Math.sin(a) * 0.12, 0, a, 0.4),
+    ),
+  ),
+]);
+
+/** A green shell: a dome with a white rim and pale plates. Shared by every shell. */
+const SHELL = merge([
+  paint(
+    new SphereGeometry(0.4, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2),
+    C.shell,
+    at(0, 0.08, 0, 0, 0, 0, 1, 0.8, 1),
+    0.4,
+  ),
+  paint(new TorusGeometry(0.38, 0.08, 6, 18), C.shellRim, at(0, 0.08, 0, Math.PI / 2)),
+  ...[0, 1, 2, 3, 4].map((i) =>
+    paint(
+      new SphereGeometry(0.1, 6, 4),
+      C.shellRim,
+      at(
+        Math.cos((i * Math.PI * 2) / 5) * 0.24,
         0.3,
+        Math.sin((i * Math.PI * 2) / 5) * 0.24,
+        0,
+        0,
+        0,
+        1,
+        0.35,
+        1,
       ),
-      paint(new SphereGeometry(0.06, 6, 4), C.bananaTip, at(0.27, 0.12, 0.1)),
-      paint(new SphereGeometry(0.06, 6, 4), C.bananaTip, at(-0.21, 0.1, 0.22)),
-      ...[0, 2.1, 4.2].map((a) =>
-        paint(
-          new BoxGeometry(0.14, 0.03, 0.3),
-          C.banana,
-          at(Math.cos(a) * 0.12 - 0.3, 0.05, Math.sin(a) * 0.12, 0, a, 0.4),
-        ),
-      ),
-    ]),
-    lit({ roughness: 0.5 }),
-  );
+    ),
+  ),
+]);
+
+export function bananaMesh(): Mesh {
+  const mesh = new Mesh(BANANA, lit({ roughness: 0.5 }));
   mesh.castShadow = true;
   return mesh;
 }
 
-/** A green shell: a dome with a white rim and pale plates. */
 export function shellMesh(): Mesh {
-  const mesh = new Mesh(
-    merge([
-      paint(
-        new SphereGeometry(0.4, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2),
-        C.shell,
-        at(0, 0.08, 0, 0, 0, 0, 1, 0.8, 1),
-        0.4,
-      ),
-      paint(new TorusGeometry(0.38, 0.08, 6, 18), C.shellRim, at(0, 0.08, 0, Math.PI / 2)),
-      ...[0, 1, 2, 3, 4].map((i) =>
-        paint(
-          new SphereGeometry(0.1, 6, 4),
-          C.shellRim,
-          at(
-            Math.cos((i * Math.PI * 2) / 5) * 0.24,
-            0.3,
-            Math.sin((i * Math.PI * 2) / 5) * 0.24,
-            0,
-            0,
-            0,
-            1,
-            0.35,
-            1,
-          ),
-        ),
-      ),
-    ]),
-    lit({ roughness: 0.35 }),
-  );
+  const mesh = new Mesh(SHELL, lit({ roughness: 0.35 }));
   mesh.castShadow = true;
   return mesh;
 }
