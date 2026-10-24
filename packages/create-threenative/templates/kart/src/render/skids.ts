@@ -10,6 +10,9 @@ export class SkidMarks {
   readonly #mesh: InstancedMesh;
   readonly #dummy = new Object3D();
   #next = 0;
+  /** The latest end of each live trail, 32 at most; the oldest is reused. */
+  readonly #ends: { x: number; y: number; z: number }[] = [];
+  #nextEnd = 0;
   laid = 0;
 
   constructor(
@@ -25,8 +28,9 @@ export class SkidMarks {
       roughness: 0.9,
       transparent: true,
     });
+    // One metre long, scaled to each segment, so a trail's segments meet end to end.
     this.#mesh = new InstancedMesh(
-      new PlaneGeometry(0.26, 0.7).rotateX(-Math.PI / 2),
+      new PlaneGeometry(0.26, 1).rotateX(-Math.PI / 2),
       material,
       capacity,
     );
@@ -41,11 +45,37 @@ export class SkidMarks {
     group.add(this.#mesh);
   }
 
-  /** One dash at a tyre's contact point, along the kart's heading. */
+  /**
+   * A mark up to a tyre's contact point. It joins the nearest trail end within 1.5 m, so the trail
+   * is one strip: overlapping see-through dashes darkened every joint into a bar. A new trail
+   * starts with a short dash along `yaw`.
+   */
   lay(x: number, y: number, z: number, yaw: number): void {
+    let from: { x: number; y: number; z: number } | undefined;
+    let best = 1.5 * 1.5;
+    for (const end of this.#ends) {
+      const gap = (end.x - x) ** 2 + (end.z - z) ** 2;
+      if (gap > 0.0001 && gap < best) {
+        best = gap;
+        from = end;
+      }
+    }
     const d = this.#dummy;
-    d.position.set(x, y + 0.03, z);
-    d.rotation.set(0, yaw, 0);
+    if (from === undefined) {
+      d.position.set(x, y + 0.03, z);
+      d.rotation.set(0, yaw, 0);
+      d.scale.set(1, 1, 0.3);
+      from = { x, y, z };
+      this.#ends[this.#nextEnd] = from;
+      this.#nextEnd = (this.#nextEnd + 1) % 32;
+    } else {
+      d.position.set((x + from.x) / 2, (y + from.y) / 2 + 0.03, (z + from.z) / 2);
+      d.rotation.set(0, Math.atan2(-(x - from.x), -(z - from.z)), 0);
+      d.scale.set(1, 1, Math.sqrt(best));
+      from.x = x;
+      from.y = y;
+      from.z = z;
+    }
     d.updateMatrix();
     this.#mesh.setMatrixAt(this.#next, d.matrix);
     this.#next = (this.#next + 1) % this.capacity;
