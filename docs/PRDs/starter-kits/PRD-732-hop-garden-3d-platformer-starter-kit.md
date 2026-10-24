@@ -232,6 +232,29 @@ Each playtest runs on a project scaffolded from `--template collectathon`:
   - Shaft camera tie-break: the cut tries the 35° arm before the 0.32 rad arm at each heading, so on
     a tie it looks down into the shaft rather than along its walls (peak pitch 0.61 rad, closest arm
     9 m).
+- 2026-10-24 (agent, round 4, judge FAIL on C3 with every frame IMPROVEMENT):
+  - Floating slab (C3): cutting the shaft's end walls to 3 m kerbs in round 3 left the 5–16 m slab
+    resting on nothing. Two 0.6 m piers now carry it to the ground at its ends, so it reads as an
+    arch the hero runs through. The open sides stay open for the camera. `buildCourse` returns an
+    `audit`, and the scene registers it as the `course` entity. The audit counts solids that do not
+    stand on the ground and do not touch a solid that does. `survives.playtest.json` asserts
+    `floating` = 0. Red-green: 1 before the piers, 0 after.
+    Engine finding: on the owned Wasm engine, `Box3` has no `clone` (it is missing from
+    `packages/three-native/api/native-registry.json`, although `generated/three.d.ts` declares it).
+    The first audit used `clone`, and the game failed to start with `TN_START_FAILED`. The audit
+    uses `new Box3().copy(...)` instead.
+  - Pickups and props: rim rocks and pines keep 3.5 m from every pickup, and planting keeps its
+    width plus 1 m. `survives` asserts `crowded` = 0, where a pickup within 1 m of a non-walkable
+    shadow caster counts as crowded. Red-green: 2 before, 0 after. The ledge gem in round-3 frame 08
+    overlapped a rim rock only in perspective, 2 m behind it.
+  - Gem column (06): the "ghost stack" was the `collect` scenario's eight gems in a 14 m line
+    straight ahead of the camera. They now sit 0.5 m apart (3.5 m in all). A taken pickup now spins,
+    rises and shrinks away over 0.4 s instead of vanishing.
+  - Shadows: the fill sky drops from 50% to 30% saturation, and its intensity rises from 1.55 to 1.65.
+  - Wall-kick sparks: 10 small (0.35 m) warm stars at half the old brightness, thrown at 7 m/s, in
+    place of 26 large white-hot ones. `wall-kick` asserts at least 10 flash particles.
+  - Ground pound: the ring is 48 small sparks skimming out at 0.15 m/s upward speed. The central
+    dust puff drops from 56 to 39 particles.
   - Stone: blocks are cut into 1 m courses with ±13% tint each, so a tower reads as masonry.
 - 2026-10-24 (owner via lead: "polish world footer, add more vegetation, enemey"): the lead read
   "footer" as the world floor. The kit keeps the walkable lawn flat, because every gap and jump is

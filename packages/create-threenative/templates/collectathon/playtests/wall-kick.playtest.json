@@ -140,7 +140,7 @@
       {
         "entity": "effects",
         "component": "flash",
-        "gte": 26
+        "gte": 10
       },
       {
         "entity": "camera-rig",

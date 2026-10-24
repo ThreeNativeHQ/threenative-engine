@@ -192,9 +192,10 @@ export function flashEffect(): IEffectOptions {
   return emitter({
     additive: true,
     amount: 256,
+    // Warm, not white: overlapping additive stars brighter than this read as one glowing slab.
     colour: [
-      [2.4, 1.8, 0.9],
-      [1.6, 0.55, 0.08],
+      [1.2, 0.9, 0.45],
+      [0.8, 0.28, 0.04],
     ],
     drag: 3.5,
     gravity: -2,
@@ -202,7 +203,8 @@ export function flashEffect(): IEffectOptions {
     life: 0.9,
     mask: "star",
     opacity: 1,
-    size: [1.1, 0.3],
+    // Small and fast: the motion blur draws each one out into a streak.
+    size: [0.35, 0.1],
   });
 }
 
@@ -259,12 +261,13 @@ export const BURSTS = {
   skid: { emitter: "dust", count: 16, shape: [2.6, 1, 0.35] },
   takeoff: { emitter: "dust", count: 12, shape: [2, 0.8, 0.3] },
   landing: { emitter: "dust", count: 24, shape: [3.6, 0.4, 0.4] },
-  pound: { emitter: "dust", count: 56, shape: [8, 0.6, 0.5] },
-  poundRing: { emitter: "flash", count: 40, shape: [10, 0.3, 0.6] },
+  pound: { emitter: "dust", count: 39, shape: [8, 0.6, 0.5] },
+  // A thin ring of sparks that skims out along the ground: almost no upward speed.
+  poundRing: { emitter: "flash", count: 48, shape: [9, 0.15, 0.6] },
   debris: { emitter: "dust", count: 14, shape: [2.5, 6, 0.6] },
   ledge: { emitter: "dust", count: 6, shape: [0.8, 0.4, 0.3] },
   poof: { emitter: "dust", count: 24, shape: [2.6, 1.6, 0.4] },
-  wallKick: { emitter: "flash", count: 26, shape: [5, 3, 0.15] },
+  wallKick: { emitter: "flash", count: 10, shape: [7, 3, 0.1] },
   trail: { emitter: "sparkle", count: 2, shape: [0.4, 0.3, 0.25] },
   streak: { emitter: "sparkle", count: 3, shape: [0.2, 0.1, 0.15] },
   coin: { emitter: "sparkle", count: 14, shape: [2.4, 3.5, 0.2] },

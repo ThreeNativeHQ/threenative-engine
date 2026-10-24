@@ -1,11 +1,14 @@
 import {
+  Box3,
   BoxGeometry,
   type BufferGeometry,
   ConeGeometry,
   CylinderGeometry,
   DodecahedronGeometry,
   Group,
+  InstancedMesh,
   type Material,
+  Matrix4,
   Mesh,
   PlaneGeometry,
   RingGeometry,
@@ -63,6 +66,52 @@ export interface ICourse {
   readonly platform: Mesh;
   /** Where the platform is at `time` seconds. */
   platformAt(time: number, target: Vector3): Vector3;
+  /**
+   * Layout self-checks, read by `playtests/survives.playtest.json`: solids that neither stand on the
+   * ground nor touch a solid that does, and pickups within 1 m of a tree, rock, bush or hedge.
+   */
+  readonly audit: { readonly floating: number; readonly crowded: number };
+}
+
+/** Counts floating solids and crowded pickups in a built course group (see `ICourse.audit`). */
+function auditCourse(group: Group, pickups: readonly Point[]): ICourse["audit"] {
+  group.updateMatrixWorld(true);
+  const solids = group.children.filter((object) => object.userData.solid === true);
+  const boxes = solids.map((object) => new Box3().setFromObject(object).expandByScalar(0.02));
+  const grounded = boxes.map((box) => box.min.y <= 0.05);
+  for (let changed = true; changed; ) {
+    changed = false;
+    boxes.forEach((box, i) => {
+      if (grounded[i] || !boxes.some((other, j) => grounded[j] && other.intersectsBox(box))) return;
+      grounded[i] = true;
+      changed = true;
+    });
+  }
+  // Props are the shadow casters nobody walks on; the orbiting platform moves, so it is skipped.
+  const props: Box3[] = [];
+  const matrix = new Matrix4();
+  group.traverse((object) => {
+    if (!(object instanceof Mesh) || !object.castShadow || object.userData.solid === true) return;
+    if (object.name === "orbiting-platform") return;
+    if (!(object instanceof InstancedMesh)) {
+      props.push(new Box3().setFromObject(object));
+      return;
+    }
+    // `new Box3().copy`, not `clone`: the owned engine's Box3 has no `clone` (2026-10-24).
+    object.geometry.computeBoundingBox();
+    const local = object.geometry.boundingBox;
+    if (local === null) return;
+    for (let i = 0; i < object.count; i += 1) {
+      object.getMatrixAt(i, matrix);
+      matrix.premultiply(object.matrixWorld);
+      props.push(new Box3().copy(local).applyMatrix4(matrix));
+    }
+  });
+  const point = new Vector3();
+  const crowded = pickups.filter((at) =>
+    props.some((box) => box.distanceToPoint(point.set(...at)) < 1),
+  ).length;
+  return { crowded, floating: grounded.filter((g) => !g).length };
 }
 
 export function makeRng(seed: number): () => number {
@@ -160,6 +209,9 @@ export function buildCourse(rng: () => number): ICourse {
   // Its ends are 3 m kerbs, not walls: the open sides are where the camera watches the climb from.
   box([slabX, 0, z[0] - 0.6], [blockX, 3, z[0]]);
   box([slabX, 0, z[1]], [blockX, 3, z[1] + 0.6]);
+  // Two piers carry the slab down to the ground at its ends, an arch you run through.
+  box([slabX, 0, z[0] - 0.6], [slabX + 1, 16, z[0]]);
+  box([slabX, 0, z[1]], [slabX + 1, 16, z[1] + 0.6]);
 
   // The pillar the orbiting platform rises to.
   drum(COURSE.pillar.at[0], COURSE.pillar.at[1], COURSE.pillar.radius, COURSE.pillar.top, -0.5);
@@ -186,6 +238,41 @@ export function buildCourse(rng: () => number): ICourse {
   box([ledge[0] - 2, 0, ledge[1] - 3], [ledge[0] + 2, ledgeTop, ledge[1] + 3]);
   box([wall[0] - 2, 0, wall[1] - 3], [wall[0] + 2, wallTop, wall[1] + 3]);
 
+  const coins: Point[] = [];
+  // A line from spawn to the summit's ramp, an arc over the islet gap, a ring round the pillar.
+  for (let i = 0; i < 10; i += 1) coins.push([-1 - i * 0.6, 1, 10 - i * 2]);
+  for (let i = 0; i < 8; i += 1) {
+    const t = (i + 1) / 9;
+    coins.push([35.5 + t * 8.5, 1.2 + Math.sin(t * Math.PI) * 3.2, 6]);
+  }
+  for (let i = 0; i < 10; i += 1) {
+    const a = (i / 10) * Math.PI * 2;
+    coins.push([px + Math.cos(a) * 3.5, 1, pz + Math.sin(a) * 3.5]);
+  }
+  for (let i = 0; i < 6; i += 1) coins.push([2 + i * 1.2, 1, -26]);
+  for (let i = 0; i < 6; i += 1) {
+    const a = (i / 6) * Math.PI * 2;
+    coins.push([sx + Math.cos(a) * 8.2, 3.5, sz + Math.sin(a) * 8.2]);
+  }
+  const gems: Point[] = [
+    [48, 1.2, 4],
+    [52, 1.2, 8],
+    [50, 1.2, 6],
+    [px, COURSE.pillar.top + 1.2, pz],
+    [px - 4, COURSE.platform.high + 1.5, pz],
+    [sx + 5, COURSE.summit.tiers[1][1] + 1.2, sz],
+    [ledge[0], ledgeTop + 1.2, ledge[1]],
+    [-6, 1.2, 28],
+  ];
+  const seeds = {
+    shaft: [blockX + 2, blockTop + 1.4, (z[0] + z[1]) / 2] as Point,
+    summit: [sx, COURSE.summit.tiers[2][1] + 1.4, sz] as Point,
+  };
+  /** Every pickup: scenery keeps a clear metre round each, so none hangs inside a tree or a rock. */
+  const pickups = [...coins, ...gems, ...Object.values(seeds)];
+  const nearPickup = (x: number, zz: number, reach: number): boolean =>
+    pickups.some(([kx, , kz]) => Math.hypot(x - kx, zz - kz) < reach);
+
   // Scenery: rocks and round trees round the rim, never on a route and never inside a landmark (a
   // tree through the shaft's wall, a rock under the pillar's coin ring).
   const foliage = lit(C.leaf, { flat: true, vertexColors: true });
@@ -203,7 +290,9 @@ export function buildCourse(rng: () => number): ICourse {
     const r = COURSE.islandRadius - 2.5 - rng() * 3;
     const x = Math.cos(angle) * r;
     const zz = Math.sin(angle) * r;
-    if (keepOut.some(([kx, kz, kr]) => Math.hypot(x - kx, zz - kz) < kr)) continue;
+    // A rock is up to 2 m across its middle and a pine's cone 1.3 m: 3.5 m keeps a metre clear.
+    if (keepOut.some(([kx, kz, kr]) => Math.hypot(x - kx, zz - kz) < kr) || nearPickup(x, zz, 3.5))
+      continue;
     if (i % 2 === 0) {
       const size = 0.8 + rng() * 1.2;
       const stone = new Mesh(mottle(new DodecahedronGeometry(size, 0), 0.25, rng), rock);
@@ -241,7 +330,9 @@ export function buildCourse(rng: () => number): ICourse {
       clear: (x, zz, w) =>
         !routes.some(
           ([x0, x1, z0, z1]) => x > x0 - w && x < x1 + w && zz > z0 - w && zz < z1 + w,
-        ) && !taken.some(([kx, kz, kr]) => Math.hypot(x - kx, zz - kz) < kr + w),
+        ) &&
+        !taken.some(([kx, kz, kr]) => Math.hypot(x - kx, zz - kz) < kr + w) &&
+        !nearPickup(x, zz, w + 1),
       // From spawn along the coin line to the foot of the summit's ramp.
       path: [
         [0, 12],
@@ -260,24 +351,8 @@ export function buildCourse(rng: () => number): ICourse {
     }),
   );
 
-  const coins: Point[] = [];
-  // A line from spawn to the summit's ramp, an arc over the islet gap, a ring round the pillar.
-  for (let i = 0; i < 10; i += 1) coins.push([-1 - i * 0.6, 1, 10 - i * 2]);
-  for (let i = 0; i < 8; i += 1) {
-    const t = (i + 1) / 9;
-    coins.push([35.5 + t * 8.5, 1.2 + Math.sin(t * Math.PI) * 3.2, 6]);
-  }
-  for (let i = 0; i < 10; i += 1) {
-    const a = (i / 10) * Math.PI * 2;
-    coins.push([px + Math.cos(a) * 3.5, 1, pz + Math.sin(a) * 3.5]);
-  }
-  for (let i = 0; i < 6; i += 1) coins.push([2 + i * 1.2, 1, -26]);
-  for (let i = 0; i < 6; i += 1) {
-    const a = (i / 6) * Math.PI * 2;
-    coins.push([sx + Math.cos(a) * 8.2, 3.5, sz + Math.sin(a) * 8.2]);
-  }
-
   return {
+    audit: auditCourse(group, pickups),
     checkpoints: [
       new Vector3(...COURSE.spawn),
       new Vector3(sx + 9, 0, sz + 13),
@@ -285,23 +360,11 @@ export function buildCourse(rng: () => number): ICourse {
       new Vector3(COURSE.islet.at[0], 0, COURSE.islet.at[1]),
     ],
     coins,
-    gems: [
-      [48, 1.2, 4],
-      [52, 1.2, 8],
-      [50, 1.2, 6],
-      [px, COURSE.pillar.top + 1.2, pz],
-      [px - 4, COURSE.platform.high + 1.5, pz],
-      [sx + 5, COURSE.summit.tiers[1][1] + 1.2, sz],
-      [ledge[0], ledgeTop + 1.2, ledge[1]],
-      [-6, 1.2, 28],
-    ],
+    gems,
     group,
     platform,
     platformAt,
-    seeds: {
-      shaft: [blockX + 2, blockTop + 1.4, (z[0] + z[1]) / 2],
-      summit: [sx, COURSE.summit.tiers[2][1] + 1.4, sz],
-    },
+    seeds,
     spawn: new Vector3(COURSE.spawn[0], COURSE.spawn[1] + 0.85, COURSE.spawn[2]),
     walkers: {
       bumblet: [

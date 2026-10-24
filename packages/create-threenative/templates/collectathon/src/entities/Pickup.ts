@@ -19,6 +19,7 @@ export class Pickup {
   readonly tags: readonly string[];
   taken = false;
   readonly #home = new Vector3();
+  #gone = 0;
 
   constructor(kind: PickupKind, at: readonly [number, number, number], seed?: string) {
     this.kind = kind;
@@ -39,14 +40,21 @@ export class Pickup {
   }
 
   update(dt: number, time: number): void {
-    if (this.taken) return;
+    if (this.taken) {
+      // A taken pickup spins up, rises a metre and shrinks away over 0.4 s, then leaves the scene.
+      this.#gone += dt / 0.4;
+      this.mesh.rotation.y += dt * 12;
+      this.mesh.position.y += dt * 2.5;
+      this.mesh.scale.setScalar(Math.max(0, 1 - this.#gone));
+      if (this.#gone >= 1) this.mesh.removeFromParent();
+      return;
+    }
     this.mesh.rotation.y += dt * (this.kind === "coin" ? 3.2 : 1.6);
     this.mesh.position.y = this.#home.y + Math.sin(time * 2.4 + this.#home.x) * 0.12;
   }
 
   take(): void {
     this.taken = true;
-    this.mesh.removeFromParent();
   }
 
   debug(): Record<string, unknown> {

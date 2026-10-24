@@ -78,11 +78,12 @@ export class Play extends Scene<GameState, IPhysicsContext> {
    */
   override load(ctx: GameCtx): void {
     this.#sky = skyTexture();
-    this.#fill = skyTexture(0.5, 128);
+    this.#fill = skyTexture(0.3, 128);
     setupSky(ctx.scene, this.#sky, this.#fill);
     const course = buildCourse(makeRng(6402));
     this.#course = course;
     ctx.add(course.group);
+    ctx.entities.add("course", { debug: () => course.audit });
     const hit = { normal: new Vector3(), position: new Vector3() };
     this.#hero = ctx.entities.add(
       "player",

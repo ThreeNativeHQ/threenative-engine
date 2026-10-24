@@ -58,7 +58,7 @@ function cloudCover(u: number, elevation: number): number {
 
 /**
  * sRGB equirectangular radiance from the ground bounce through the horizon to the zenith.
- * `saturation` below 1 pulls every texel toward its own grey: the fill light uses a half-saturated
+ * `saturation` below 1 pulls every texel toward its own grey: the fill light uses a 30%-saturated
  * copy, because a real sky's shade light is greyed by haze and cloud, and the full blue of the
  * backdrop turns every shadow on the grass teal.
  */
@@ -91,14 +91,14 @@ export function skyTexture(saturation = 1, width = 512): DataTexture {
   return sky;
 }
 
-/** `fill` is the environment light: by default the sky itself, in this game `skyTexture(0.5, 128)`. */
+/** `fill` is the environment light: by default the sky itself, in this game `skyTexture(0.3, 128)`. */
 export function setupSky(scene: Scene, sky: DataTexture, fill: DataTexture = sky): void {
   scene.background = sky;
   scene.backgroundIntensity = 1;
   scene.environment = fill;
   // The sky fills the shade above the background's own level, so a cast shadow reads as a
   // mid-tone of the ground's colour, not a near-black hole in it.
-  scene.environmentIntensity = 1.55;
+  scene.environmentIntensity = 1.65;
   // Thin on purpose: the island is 90 m across, so the haze only reads on the far shore and the
   // sea beyond it, where it is what turns the horizon line into distance.
   scene.fog = new FogExp2(palette.horizon, 0.0031);

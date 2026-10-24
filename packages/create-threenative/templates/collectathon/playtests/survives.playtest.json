@@ -37,6 +37,18 @@
         "gte": -0.3,
         "lte": 0.3,
         "allowTrivial": "The capsule's origin is the waist, so the feet sit 0.8 m below it; a ground line near zero after 600 ticks proves the hero stands on the island floor and is not floating a body-length above it."
+      },
+      {
+        "entity": "course",
+        "component": "floating",
+        "equals": 0,
+        "allowTrivial": "A layout check measured once at load: every solid block stands on the ground or on a solid that does, so no landmark hangs in the sky."
+      },
+      {
+        "entity": "course",
+        "component": "crowded",
+        "equals": 0,
+        "allowTrivial": "A layout check measured once at load: no coin, gem or Sunseed sits within 1 m of a tree, rock, bush or hedge."
       }
     ],
     "movement": {
