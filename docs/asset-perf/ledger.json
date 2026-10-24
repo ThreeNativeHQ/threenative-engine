@@ -1,0 +1,324 @@
+{
+  "schemaVersion": 1,
+  "goals": [
+    {
+      "key": "shippedMiB",
+      "short": "Shipped",
+      "label": "Bytes shipped for the template corpus",
+      "unit": "MiB",
+      "goal": 3,
+      "better": "lower"
+    },
+    {
+      "key": "shippedPctOfSource",
+      "short": "Shipped/source",
+      "label": "Shipped bytes as a share of source bytes",
+      "unit": "%",
+      "goal": 25,
+      "better": "lower"
+    },
+    {
+      "key": "preloadLocalMs",
+      "short": "Preload local",
+      "label": "Preload to GPU-ready, localhost",
+      "unit": "ms",
+      "goal": 250,
+      "better": "lower",
+      "provisional": true
+    },
+    {
+      "key": "preloadThrottledMs",
+      "short": "Preload 40 Mbps",
+      "label": "Preload to GPU-ready, 40 Mbps / 20 ms",
+      "unit": "ms",
+      "goal": 1500,
+      "better": "lower",
+      "provisional": true
+    }
+  ],
+  "iterations": [
+    {
+      "id": 1,
+      "at": "2026-10-24T00:20:13.597Z",
+      "commit": "6da4a6606",
+      "dirty": false,
+      "label": "default cook, what a game ships today",
+      "notes": "",
+      "decision": "baseline",
+      "arm": "default",
+      "config": {},
+      "metrics": {
+        "shippedMiB": 5.37,
+        "shippedPctOfSource": 45.1,
+        "preloadLocalMs": null,
+        "preloadThrottledMs": null
+      },
+      "extra": {
+        "sourceBytes": 12484547,
+        "shippedBytes": 5628606,
+        "compileMs": 55073,
+        "kinds": {
+          "model": {
+            "sourceBytes": 7386300,
+            "shippedBytes": 4536136,
+            "files": 6
+          },
+          "runtime": {
+            "sourceBytes": 0,
+            "shippedBytes": 584862,
+            "files": 2
+          },
+          "texture": {
+            "sourceBytes": 282751,
+            "shippedBytes": 282751,
+            "files": 3
+          },
+          "audio": {
+            "sourceBytes": 4815496,
+            "shippedBytes": 224857,
+            "files": 6
+          }
+        }
+      },
+      "files": [
+        {
+          "path": "shared/player-viewmodel.glb",
+          "kind": "model",
+          "sourceBytes": 3385176,
+          "shippedBytes": 1654888
+        },
+        {
+          "path": "shared/mannequin-combat.glb",
+          "kind": "model",
+          "sourceBytes": 2142220,
+          "shippedBytes": 1631448
+        },
+        {
+          "path": "sailing/ship.glb",
+          "kind": "model",
+          "sourceBytes": 1192712,
+          "shippedBytes": 758528
+        },
+        {
+          "path": "basis/basis_transcoder.wasm",
+          "kind": "runtime",
+          "sourceBytes": 0,
+          "shippedBytes": 527333
+        },
+        {
+          "path": "shared/mannequin.glb",
+          "kind": "model",
+          "sourceBytes": 664944,
+          "shippedBytes": 489324
+        },
+        {
+          "path": "shared/sky.jpg",
+          "kind": "texture",
+          "sourceBytes": 282451,
+          "shippedBytes": 282451
+        },
+        {
+          "path": "rain/thunder.wav",
+          "kind": "audio",
+          "sourceBytes": 2469644,
+          "shippedBytes": 106795
+        },
+        {
+          "path": "basis/basis_transcoder.js",
+          "kind": "runtime",
+          "sourceBytes": 0,
+          "shippedBytes": 57529
+        },
+        {
+          "path": "rain/rain-loop.wav",
+          "kind": "audio",
+          "sourceBytes": 1058444,
+          "shippedBytes": 51545
+        },
+        {
+          "path": "rain/wind-loop.wav",
+          "kind": "audio",
+          "sourceBytes": 1058444,
+          "shippedBytes": 36747
+        },
+        {
+          "path": "snow/wind.wav",
+          "kind": "audio",
+          "sourceBytes": 176444,
+          "shippedBytes": 19278
+        },
+        {
+          "path": "snow/crunch.wav",
+          "kind": "audio",
+          "sourceBytes": 13274,
+          "shippedBytes": 5264
+        },
+        {
+          "path": "starter/pickup.wav",
+          "kind": "audio",
+          "sourceBytes": 39246,
+          "shippedBytes": 5228
+        },
+        {
+          "path": "puzzle/native-proof.glb",
+          "kind": "model",
+          "sourceBytes": 624,
+          "shippedBytes": 1324
+        },
+        {
+          "path": "starter/native-proof.glb",
+          "kind": "model",
+          "sourceBytes": 624,
+          "shippedBytes": 624
+        },
+        {
+          "path": "puzzle/native-proof.png",
+          "kind": "texture",
+          "sourceBytes": 150,
+          "shippedBytes": 150
+        },
+        {
+          "path": "starter/native-proof.png",
+          "kind": "texture",
+          "sourceBytes": 150,
+          "shippedBytes": 150
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "at": "2026-10-24T00:20:14.561Z",
+      "commit": "6da4a6606",
+      "dirty": false,
+      "label": "uncooked control, every byte as authored",
+      "notes": "",
+      "decision": "control",
+      "arm": "none",
+      "config": {
+        "textures": "none",
+        "models": "none",
+        "audio": "none"
+      },
+      "metrics": {
+        "shippedMiB": 11.91,
+        "shippedPctOfSource": 100,
+        "preloadLocalMs": null,
+        "preloadThrottledMs": null
+      },
+      "extra": {
+        "sourceBytes": 12484547,
+        "shippedBytes": 12484547,
+        "compileMs": 678,
+        "kinds": {
+          "model": {
+            "sourceBytes": 7386300,
+            "shippedBytes": 7386300,
+            "files": 6
+          },
+          "audio": {
+            "sourceBytes": 4815496,
+            "shippedBytes": 4815496,
+            "files": 6
+          },
+          "texture": {
+            "sourceBytes": 282751,
+            "shippedBytes": 282751,
+            "files": 3
+          }
+        }
+      },
+      "files": [
+        {
+          "path": "shared/player-viewmodel.glb",
+          "kind": "model",
+          "sourceBytes": 3385176,
+          "shippedBytes": 3385176
+        },
+        {
+          "path": "rain/thunder.wav",
+          "kind": "audio",
+          "sourceBytes": 2469644,
+          "shippedBytes": 2469644
+        },
+        {
+          "path": "shared/mannequin-combat.glb",
+          "kind": "model",
+          "sourceBytes": 2142220,
+          "shippedBytes": 2142220
+        },
+        {
+          "path": "sailing/ship.glb",
+          "kind": "model",
+          "sourceBytes": 1192712,
+          "shippedBytes": 1192712
+        },
+        {
+          "path": "rain/rain-loop.wav",
+          "kind": "audio",
+          "sourceBytes": 1058444,
+          "shippedBytes": 1058444
+        },
+        {
+          "path": "rain/wind-loop.wav",
+          "kind": "audio",
+          "sourceBytes": 1058444,
+          "shippedBytes": 1058444
+        },
+        {
+          "path": "shared/mannequin.glb",
+          "kind": "model",
+          "sourceBytes": 664944,
+          "shippedBytes": 664944
+        },
+        {
+          "path": "shared/sky.jpg",
+          "kind": "texture",
+          "sourceBytes": 282451,
+          "shippedBytes": 282451
+        },
+        {
+          "path": "snow/wind.wav",
+          "kind": "audio",
+          "sourceBytes": 176444,
+          "shippedBytes": 176444
+        },
+        {
+          "path": "starter/pickup.wav",
+          "kind": "audio",
+          "sourceBytes": 39246,
+          "shippedBytes": 39246
+        },
+        {
+          "path": "snow/crunch.wav",
+          "kind": "audio",
+          "sourceBytes": 13274,
+          "shippedBytes": 13274
+        },
+        {
+          "path": "puzzle/native-proof.glb",
+          "kind": "model",
+          "sourceBytes": 624,
+          "shippedBytes": 624
+        },
+        {
+          "path": "starter/native-proof.glb",
+          "kind": "model",
+          "sourceBytes": 624,
+          "shippedBytes": 624
+        },
+        {
+          "path": "puzzle/native-proof.png",
+          "kind": "texture",
+          "sourceBytes": 150,
+          "shippedBytes": 150
+        },
+        {
+          "path": "starter/native-proof.png",
+          "kind": "texture",
+          "sourceBytes": 150,
+          "shippedBytes": 150
+        }
+      ]
+    }
+  ]
+}
