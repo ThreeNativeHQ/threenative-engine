@@ -7,7 +7,6 @@
 // through a bush as it walks through a tree trunk, and the course's metres stay the course's.
 // Placement is seeded and asks the course where planting may go (`clear`).
 import {
-  BoxGeometry,
   type BufferGeometry,
   CircleGeometry,
   ConeGeometry,
@@ -225,7 +224,13 @@ export function plantIsland(site: IPlantingSite): Group {
       if (clear(x, z, 1.2)) hedges.push([x, 0, z, 1, 1, 1, 0, -a, 0]);
     }
   }
-  const hedge = mottle(new BoxGeometry(0.9, 1, 2.1, 1, 1, 2).translate(0, 0.5, 0), 0.14, rng);
+  // A faceted, lumpy loaf 2.6 m long, so neighbours 2.1 m apart overlap into one leafy row; a plain
+  // box read as a placeholder cube.
+  const hedge = mottle(
+    new IcosahedronGeometry(1, 1).scale(0.55, 0.62, 1.3).translate(0, 0.5, 0),
+    0.14,
+    rng,
+  );
   group.add(instanced(hedge, lit(C.hedge, { flat: true, vertexColors: true }), hedges, true));
 
   // Flower clusters, one draw per colour, and mushrooms in threes.

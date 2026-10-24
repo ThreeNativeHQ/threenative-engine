@@ -81,13 +81,25 @@ export function mottle(
   rng: () => number,
   /** Darken the first metre above the ground, where stone meets grass and the sky light is low. */
   footing = false,
+  /**
+   * Masonry: each 1 m course (by height) takes one tint from this range, on top of the per-facet
+   * `variance`, so a wall reads as stacked stone rows instead of a checkerboard of random squares.
+   */
+  courses = 0,
 ): BufferGeometry {
   const g = geometry.index === null ? geometry : geometry.toNonIndexed();
   const position = g.attributes.position;
   const count = position?.count ?? 0;
   const colors = new Float32Array(count * 3);
   for (let i = 0; i < count; i += 6) {
-    const k = 1 - variance / 2 + rng() * variance;
+    let k = 1 - variance / 2 + rng() * variance;
+    if (courses > 0) {
+      let y = 0;
+      for (let v = 0; v < 6 && i + v < count; v += 1) y += position?.getY(i + v) ?? 0;
+      const row = Math.floor(y / Math.min(6, count - i));
+      const tint = (Math.sin((row + 0.5) * 12.9898) * 43758.5453) % 1;
+      k *= 1 - courses / 2 + Math.abs(tint) * courses;
+    }
     for (let v = 0; v < 6 && i + v < count; v += 1) {
       const y = position?.getY(i + v) ?? 1;
       const foot = footing ? 0.62 + 0.38 * Math.min(1, Math.max(0, y / 1.2)) : 1;

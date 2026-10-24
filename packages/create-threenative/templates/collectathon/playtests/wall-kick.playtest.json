@@ -140,7 +140,14 @@
       {
         "entity": "effects",
         "component": "flash",
-        "gte": 10
+        "gte": 18
+      },
+      {
+        "entity": "effects",
+        "component": "fired",
+        "path": "kickStars",
+        "equals": 1,
+        "changed": true
       },
       {
         "entity": "camera-rig",

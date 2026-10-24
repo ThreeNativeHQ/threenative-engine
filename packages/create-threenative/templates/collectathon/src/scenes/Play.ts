@@ -5,6 +5,7 @@ import {
   afterPhysics,
   isMobile,
   isTouchscreenAvailable,
+  lodPixelScale,
 } from "@threenative/core";
 import {
   CollisionShape3D,
@@ -25,7 +26,7 @@ import { createLoadingScreen } from "../render/loading.js";
 import { setupPost } from "../render/postprocessing.js";
 import { setupSky, skyTexture } from "../render/sky.js";
 import { TouchControls } from "../render/touch-controls.js";
-import type { GameState } from "../state.js";
+import { type GameState, HUD_PILL } from "../state.js";
 
 export type { GameCtx };
 
@@ -52,6 +53,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     gemTotal: 8,
     gems: 0,
     grounded: false,
+    hudFaded: false,
     landings: 0,
     paused: false,
     respawns: 0,
@@ -253,6 +255,29 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       defeated += 1;
       emitPlaytestEvent({ entity: "player", name: how });
     };
+    // Ticks a Sunseed sat under the HUD pill, and of those, ticks the pill stayed opaque over it.
+    const hud = { covered: 0, under: 0 };
+    ctx.entities.add("hud", { debug: () => ({ ...hud }) });
+    const seedAt = new Vector3();
+    const seedUnderHud = (width: number, height: number): boolean => {
+      camera.updateMatrixWorld();
+      return this.#pickups.some((pickup) => {
+        if (pickup.kind !== "seed" || pickup.taken) return false;
+        const depth = -seedAt.copy(pickup.mesh.position).applyMatrix4(camera.matrixWorldInverse).z;
+        if (depth <= camera.near) return false;
+        // The seed and its halo reach about a metre from its centre.
+        const r = lodPixelScale(camera, height, depth);
+        seedAt.copy(pickup.mesh.position).project(camera);
+        const x = ((seedAt.x + 1) / 2) * width;
+        const y = ((1 - seedAt.y) / 2) * height;
+        return (
+          x + r > HUD_PILL.left &&
+          x - r < HUD_PILL.left + HUD_PILL.width &&
+          y + r > HUD_PILL.top &&
+          y - r < HUD_PILL.top + HUD_PILL.height
+        );
+      });
+    };
     const statePatch: Partial<GameState> = {};
 
     return (frameCtx, dt) => {
@@ -280,8 +305,10 @@ export class Play extends Scene<GameState, IPhysicsContext> {
         } else if (wasGrounded && JUMPS.has(action)) burst("takeoff", at.x, feet + 0.05, at.z);
         if (action === "skid") burst("skid", at.x + fx * 0.3, feet + 0.05, at.z + fz * 0.3);
         // A wall kick faces away from the wall, so the contact is behind the hero.
-        if (action === "wallKick")
+        if (action === "wallKick") {
           burst("wallKick", at.x - fx * 0.45, at.y + 0.2, at.z - fz * 0.45);
+          burst("kickStars", at.x - fx * 0.45, at.y + 0.2, at.z - fz * 0.45);
+        }
         if (action === "ledgeHang") burst("ledge", at.x + fx * 0.45, feet + 1.3, at.z + fz * 0.45);
         previous = action;
         airTicks = 0;
@@ -372,6 +399,10 @@ export class Play extends Scene<GameState, IPhysicsContext> {
         frameCtx.state.set({ toast: "" });
       }
 
+      const under = seedUnderHud(frameCtx.viewport.size.width, frameCtx.viewport.size.height);
+      statePatch.hudFaded = under;
+      hud.under += under ? 1 : 0;
+      hud.covered += under && !statePatch.hudFaded ? 1 : 0;
       statePatch.action = hero.action;
       statePatch.checkpoint = checkpoint;
       statePatch.coins = coins;

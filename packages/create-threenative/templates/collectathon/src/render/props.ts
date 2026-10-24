@@ -43,14 +43,15 @@ export function coinModel(): Group {
   return group;
 }
 
-/** A red gem, origin at its centre. */
+/**
+ * A red gem, origin at its centre. It casts no shadow: a sharp-edged octahedron under a high sun
+ * throws a hard dark diamond on the block it floats over, which reads as a hole, not a gem.
+ */
 export function gemModel(): Group {
   const group = new Group();
-  const body = shadowed(
-    new Mesh(
-      new OctahedronGeometry(0.42),
-      lit(C.gem, { flat: true, roughness: 0.25, emissive: 0.25 }),
-    ),
+  const body = new Mesh(
+    new OctahedronGeometry(0.42),
+    lit(C.gem, { flat: true, roughness: 0.25, emissive: 0.25 }),
   );
   body.scale.set(1.2, 1.7, 1.2);
   group.add(body);

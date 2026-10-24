@@ -1,5 +1,5 @@
 import { useUiState } from "@threenative/ui";
-import type { GameState } from "../state.js";
+import { type GameState, HUD_PILL } from "../state.js";
 
 /** The health meter: eight wedges of one ring, each a slice of the pie. */
 function Meter({ wedges }: { wedges: number }) {
@@ -32,8 +32,12 @@ export function Hud() {
   if (state === undefined) return null;
   return (
     <div className="pointer-events-none absolute inset-0 p-4 text-sm font-bold text-text">
-      {/* Compact and unblurred, so a gem behind the panel still shows through it. */}
-      <div className="flex w-fit items-center gap-3 rounded-2xl border border-line bg-panel/25 px-3 py-1">
+      {/* Compact and unblurred, so a gem behind the panel still shows through it; it fades while a
+          Sunseed sits under it (`Play.ts` measures that against the same `HUD_PILL` box). */}
+      <div
+        className={`absolute flex items-center gap-3 whitespace-nowrap rounded-2xl border border-line bg-panel/25 px-3 transition-opacity duration-200 ${state.hudFaded ? "opacity-20" : "opacity-100"}`}
+        style={HUD_PILL}
+      >
         <Meter wedges={state.wedges} />
         <span>
           coins{" "}

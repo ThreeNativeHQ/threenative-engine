@@ -291,7 +291,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // against platformer's unchanged value). Recomputed 2026-10-24 for the PRD-732 polish round: the
   // new hero, the dust and sparkle effects and the effects scenario. Recomputed 2026-10-24 for
   // polish round 3: the shaft camera, the planting, the hopper and thornback and their scenarios.
-  collectathon: "3a2026374c853db7140085a32b4631746c19a68fa507599dc85b120c6cb70a36",
+  collectathon: "ce8dbace98e4d82c8f8ffefc6fec2d52619d14284c5a113a67253c6c3d347bec",
   // PRD-733 (2026-10-23): the new Lantern Vale kit, measured through createProject.
   adventure: "9aee5024986901c59f533219a35c1e6aaa11532405b527582cdff77f60f5d088",
   minimal: "1bdc31f8d31f074cde31e09d67ac850762482f481e4b41050d5679f7155ac085",

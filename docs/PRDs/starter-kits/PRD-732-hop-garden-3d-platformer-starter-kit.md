@@ -256,6 +256,24 @@ Each playtest runs on a project scaffolded from `--template collectathon`:
   - Ground pound: the ring is 48 small sparks skimming out at 0.15 m/s upward speed. The central
     dust puff drops from 56 to 39 particles.
   - Stone: blocks are cut into 1 m courses with ±13% tint each, so a tower reads as masonry.
+- 2026-10-24 (agent, round 5, kit art and UI only under the D8 freeze; the round-4 judge's notes):
+  - HUD over a Sunseed (07, 08): the pill is a fixed `HUD_PILL` box (`state.ts`). Each tick,
+    `Play.ts` projects every untaken Sunseed, with a 1 m radius through `lodPixelScale`, against
+    that box. While one sits under it, `hudFaded` drops the pill to 20% opacity. The `hud` entity
+    counts the ticks under the box and the ticks covered while opaque. `enemies` asserts
+    `under` >= 1 and `covered` = 0. Red-green: covered 193 of 193 before the fade, 0 after.
+  - Gem shadow parallelogram (05): the gem casts no shadow. An octahedron under a high sun threw a
+    hard dark diamond on the block below it.
+  - Plain green cubes (06): a hedge section is a faceted icosahedron loaf, 2.6 m long, in place of
+    a 0.9 x 1 x 2.1 m box. Neighbours 2.1 m apart overlap into one row. The course audit stays at
+    floating 0 and crowded 0.
+  - Stone checker (04): `mottle(..., courses)` gives each 1 m course one tint (±11%) and each block
+    only ±4% on top. The old per-block ±13% read as a checkerboard. It draws the same `rng` values
+    in the same order, so no planting moves.
+  - Wall-kick spark (04): 18 amber streaks at 5 m/s plus 8 gold-white `kickStars` sparkles, in
+    place of 10 streaks at 7 m/s. `wall-kick` asserts flash >= 18 and `fired.kickStars` = 1.
+    Red: round 4 measured flash 10.
+  - Hero rest pose: no judge finding, so no change.
 - 2026-10-24 (owner via lead: "polish world footer, add more vegetation, enemey"): the lead read
   "footer" as the world floor. The kit keeps the walkable lawn flat, because every gap and jump is
   measured in metres from `HERO_FEEL`, and undulation under the routes would change their meaning.

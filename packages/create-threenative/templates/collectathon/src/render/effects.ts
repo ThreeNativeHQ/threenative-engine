@@ -267,7 +267,10 @@ export const BURSTS = {
   debris: { emitter: "dust", count: 14, shape: [2.5, 6, 0.6] },
   ledge: { emitter: "dust", count: 6, shape: [0.8, 0.4, 0.3] },
   poof: { emitter: "dust", count: 24, shape: [2.6, 1.6, 0.4] },
-  wallKick: { emitter: "flash", count: 10, shape: [7, 3, 0.1] },
+  // A kick: 18 amber streaks off the wall plus 8 gold-white stars, slower than a pound's ring so
+  // they stay round the hero; 10 streaks at 7 m/s were gone before the eye found them.
+  wallKick: { emitter: "flash", count: 18, shape: [5, 2.5, 0.12] },
+  kickStars: { emitter: "sparkle", count: 8, shape: [3, 2, 0.1] },
   trail: { emitter: "sparkle", count: 2, shape: [0.4, 0.3, 0.25] },
   streak: { emitter: "sparkle", count: 3, shape: [0.2, 0.1, 0.15] },
   coin: { emitter: "sparkle", count: 14, shape: [2.4, 3.5, 0.2] },

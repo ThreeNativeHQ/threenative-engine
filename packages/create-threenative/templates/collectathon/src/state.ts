@@ -8,6 +8,8 @@ export type GameState = {
   gems: number;
   gemTotal: number;
   grounded: boolean;
+  /** True while a Sunseed sits under the HUD pill: the pill fades so the goal shows through. */
+  hudFaded: boolean;
   /** The hero's action, as `Hero.ts` names it: "run", "triple", "longJump", "ledgeHang"… */
   action: string;
   /** How many times the hero has landed, which a scenario waits on to press inside a window. */
@@ -27,3 +29,6 @@ export type GameState = {
   /** The health meter, out of eight wedges. */
   wedges: number;
 };
+
+/** The HUD pill's box in CSS pixels from the top-left: `Hud.tsx` draws it here and `Play.ts` fades it when a Sunseed projects inside. */
+export const HUD_PILL = { left: 16, top: 16, width: 336, height: 44 } as const;

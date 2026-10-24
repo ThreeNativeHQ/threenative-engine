@@ -129,9 +129,16 @@ export function buildCourse(rng: () => number): ICourse {
   const rock = lit(palette.rock, { flat: true, vertexColors: true });
   const dirt = lit(C.dirt, { vertexColors: true });
   /** Walkable: `Play.ts` builds a fixed trimesh body from every mesh tagged `solid`. */
-  const solid = (geometry: BufferGeometry, material: Material, variance = 0.12): Mesh => {
+  const solid = (
+    geometry: BufferGeometry,
+    material: Material,
+    variance = 0.12,
+    courses = 0,
+  ): Mesh => {
     const mesh = new Mesh(
-      material === grass ? patches(geometry) : mottle(geometry, variance, rng, material === rock),
+      material === grass
+        ? patches(geometry)
+        : mottle(geometry, variance, rng, material === rock, courses),
       material,
     );
     mesh.castShadow = true;
@@ -140,7 +147,10 @@ export function buildCourse(rng: () => number): ICourse {
     group.add(mesh);
     return mesh;
   };
-  /** A stone block cut into 1 m courses, each its own tint, so a tower reads as masonry. */
+  /**
+   * A stone block cut into 1 m courses, each its own tint, with a faint per-block jitter, so a tower
+   * reads as masonry rows (a strong per-block tint read as a checkerboard).
+   */
   const box = (min: Point, max: Point, material: Material = rock): Mesh => {
     const size = [max[0] - min[0], max[1] - min[1], max[2] - min[2]] as const;
     const geometry = new BoxGeometry(
@@ -152,7 +162,7 @@ export function buildCourse(rng: () => number): ICourse {
       Math.ceil(size[2]),
     );
     geometry.translate((min[0] + max[0]) / 2, (min[1] + max[1]) / 2, (min[2] + max[2]) / 2);
-    return solid(geometry, material, 0.26);
+    return solid(geometry, material, 0.08, 0.22);
   };
   /** A grass-capped rock drum: the shape of every tier, islet and pillar. */
   const drum = (x: number, z: number, radius: number, top: number, bottom: number): void => {
