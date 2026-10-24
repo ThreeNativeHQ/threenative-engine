@@ -1,0 +1,42 @@
+{
+  "name": "adventure-stride",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "subject": "player",
+  "steps": [
+    {
+      "kind": "input",
+      "label": "accelerate",
+      "press": "KeyW",
+      "holdTicks": 30,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "run",
+      "press": "KeyW",
+      "holdTicks": 90,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "footSlip": [
+      {
+        "atStep": "run",
+        "feet": ["footL", "footR"],
+        "maxSlip": 0.35
+      }
+    ]
+  }
+}

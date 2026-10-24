@@ -1,0 +1,77 @@
+{
+  "name": "adventure-controls",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "subject": "player",
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "spawn",
+      "waitTicks": 30,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "slash",
+      "press": "KeyJ",
+      "holdTicks": 20,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "recover",
+      "waitTicks": 30,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "shield",
+      "press": "ShiftLeft",
+      "holdTicks": 30,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "roll",
+      "press": ["KeyW", "Space"],
+      "holdTicks": 30,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "lock",
+      "press": "KeyQ",
+      "holdTicks": 45,
+      "release": false
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "slashes",
+        "gte": 1
+      },
+      {
+        "id": "state",
+        "path": "lockTarget",
+        "changed": true
+      }
+    ],
+    "movement": {
+      "entity": "player",
+      "minDistance": 0.5
+    }
+  }
+}
