@@ -188,6 +188,14 @@ The runtime stamps its startup milestones on its own clock — `loadStartedMs`, 
 `TN_PLAYTEST_STARTUP_TOO_SLOW` with the measured value. Before this, startup was a console
 anecdote read off `TN_STARTUP_WARMUP` after the fact.
 
+`steadyCover: true` checks what the player saw instead. The browser runner records every
+compositor frame through Chromium's screencast from before navigation until `readyMs`, and
+compares each frame with the last one before readiness, the loading cover. A frame with more
+than a quarter of its pixels off by more than 48 per channel fails
+`TN_PLAYTEST_STARTUP_COVER_BROKEN` with its time and mean colour, so a black frame, a blank
+page or a page background in a different colour fails. No recorded frame fails
+`TN_PLAYTEST_STARTUP_COVER_UNOBSERVED`; that includes every target except the browser.
+
 ## Device thermal, power and battery
 
 Every `--target android` run measures the phone around itself and reports it as

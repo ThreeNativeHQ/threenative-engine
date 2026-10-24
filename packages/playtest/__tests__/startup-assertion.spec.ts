@@ -7,8 +7,9 @@ import {
   evaluateRichPlaytestAssertions,
   loadPlaytestScenario,
 } from "../src/index.js";
-import type { IPlaytestStartupTimeline } from "../src/protocol.js";
+import type { IPlaytestStartupCoverObservation, IPlaytestStartupTimeline } from "../src/protocol.js";
 import type { IPlaytestReport } from "../src/report.js";
+import { compareStartupFrames, type IStartupCoverFrame } from "../src/runner/startupCover.js";
 
 /**
  * Startup time was a console anecdote: a `TN_STARTUP_WARMUP` line and a `__TN_STARTUP_READY__`
@@ -64,6 +65,7 @@ describe("startup playtest assertion", () => {
       "maxCompileSettledMs",
       "maxEnteredMs",
       "maxReadyMs",
+      "steadyCover",
     ]);
   });
 
@@ -118,5 +120,53 @@ describe("startup playtest assertion", () => {
     await expect(scenarioWith({})).rejects.toThrow(/at least one of/u);
     await expect(scenarioWith({ maxReadyMs: 0 })).rejects.toThrow(/positive finite number/u);
     await expect(scenarioWith({ maxSlowMs: 5 })).rejects.toThrow(/maxSlowMs/u);
+    await expect(scenarioWith({ steadyCover: false })).rejects.toThrow(/steadyCover/u);
+  });
+});
+
+/**
+ * The loading cover flickered against black for seconds on Lantern Vale while every startup
+ * milestone looked fine: only the presented frames show it.
+ */
+describe("startup steadyCover", () => {
+  const frame = (ms: number, rgb: [number, number, number], bar = 0): IStartupCoverFrame => {
+    const width = 64;
+    const height = 36;
+    const data = new Uint8Array(width * height * 4);
+    for (let i = 0; i < width * height; i += 1) {
+      // A progress bar: one row of the frame, filled up to `bar` of the width.
+      const inBar = Math.floor(i / width) === 24 && i % width < bar * width;
+      data.set(inBar ? [230, 180, 60, 255] : [...rgb, 255], i * 4);
+    }
+    return { data, height, ms, width };
+  };
+  const cover: [number, number, number] = [180, 196, 186];
+
+  it("passes a cover whose bar fills, and flags a black frame and the page background", () => {
+    const steady = compareStartupFrames([frame(100, cover, 0), frame(500, cover, 0.5), frame(900, cover, 0.9)]);
+    expect(steady.differing).toEqual([]);
+    expect(steady.frames).toBe(3);
+    const broken = compareStartupFrames([frame(80, [29, 58, 92]), frame(400, cover, 0.3), frame(450, [4, 4, 4]), frame(900, cover, 0.9)]);
+    expect(broken.differing.map(({ ms }) => ms)).toEqual([80, 450]);
+  });
+
+  it("fails a broken cover, and fails closed when no frame was recorded", async () => {
+    const scenario = await scenarioWith({ steadyCover: true });
+    const evaluate = (observation: IPlaytestStartupCoverObservation | undefined) => {
+      const base = report({ readyMs: 4200 });
+      const startup = base.observations?.startup;
+      if (startup !== undefined && observation !== undefined) startup.cover = observation;
+      return evaluateRichPlaytestAssertions({ report: base, scenario });
+    };
+    const pass = evaluate(compareStartupFrames([frame(100, cover), frame(900, cover, 0.9)]));
+    expect(pass.assertions).toContainEqual(expect.objectContaining({ id: "startup.steadyCover", pass: true }));
+    const broken = evaluate(compareStartupFrames([frame(100, cover), frame(450, [4, 4, 4]), frame(900, cover)]));
+    expect(broken.assertions).toContainEqual(expect.objectContaining({ id: "startup.steadyCover", pass: false }));
+    expect(broken.diagnostics).toContainEqual(expect.objectContaining({ code: "TN_PLAYTEST_STARTUP_COVER_BROKEN" }));
+    for (const unobserved of [undefined, compareStartupFrames([])]) {
+      const result = evaluate(unobserved);
+      expect(result.assertions).toContainEqual(expect.objectContaining({ id: "startup.steadyCover", pass: false }));
+      expect(result.diagnostics).toContainEqual(expect.objectContaining({ code: "TN_PLAYTEST_STARTUP_COVER_UNOBSERVED" }));
+    }
   });
 });

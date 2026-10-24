@@ -492,6 +492,11 @@ export interface IPlaytestStartupAssertion {
   maxCompileSettledMs?: number;
   /** `whenReady()` resolved: the world is safe to show. */
   maxReadyMs?: number;
+  /**
+   * Every frame the page presented between navigation and readiness looks like the last one
+   * before readiness (the loading cover): no black, blank or page-background frame in between.
+   */
+  steadyCover?: true;
 }
 
 /** Ceilings on work observed after the runtime's explicit shader warm-up settled. */

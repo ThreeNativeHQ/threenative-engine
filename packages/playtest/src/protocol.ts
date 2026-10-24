@@ -130,6 +130,21 @@ export interface IPlaytestStartupObservation {
   compileSettled?: boolean;
   /** Present when the application records its startup milestones. */
   timeline?: IPlaytestStartupTimeline;
+  /** The frames the page presented before readiness; recorded by the browser runner on request. */
+  cover?: IPlaytestStartupCoverObservation;
+}
+
+/**
+ * The compositor frames from navigation to readiness, each compared with the last one before
+ * readiness. A frame differs when more than a quarter of its pixels moved past the tolerance.
+ */
+export interface IPlaytestStartupCoverObservation {
+  /** Frames recorded between navigation and readiness. */
+  frames: number;
+  /** Mean colour of the reference frame, the last before readiness, 0-255. */
+  reference: [number, number, number];
+  /** Every differing frame: ms since navigation, its mean colour and its differing pixel share. */
+  differing: Array<{ ms: number; mean: [number, number, number]; share: number }>;
 }
 
 /**

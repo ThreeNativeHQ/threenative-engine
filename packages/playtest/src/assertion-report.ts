@@ -13,6 +13,7 @@ import type {
   IPlaytestRenderChainObservation,
   IPlaytestSceneNodesObservation,
   IPlaytestSceneObservation,
+  IPlaytestStartupCoverObservation,
   IPlaytestStartupTimeline,
   JsonValue,
 } from "./protocol.js";
@@ -102,6 +103,8 @@ export interface IPlaytestObservations {
     progress: number;
     rule?: string;
     timeline?: IPlaytestStartupTimeline;
+    /** The presented frames before readiness, when the scenario asserts `startup.steadyCover`. */
+    cover?: IPlaytestStartupCoverObservation;
   };
   resourceSeries?: Array<{ label: string; snapshots: Record<string, unknown>; tick: number }>;
   runtimeObservations?: unknown;

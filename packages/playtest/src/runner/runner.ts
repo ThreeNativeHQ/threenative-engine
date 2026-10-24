@@ -54,6 +54,7 @@ import { chromium, type Browser, type BrowserContext, type CDPSession, type Page
 
 import { connectPlaytestBridge, PlaytestBridgeError, type IPlaytestBridgeClient } from "./bridgeClient.js";
 import { waitForStartupReady } from "./startupReady.js";
+import { recordStartupCover } from "./startupCover.js";
 import {
   PERFORMANCE_BROWSER_ARGS,
   reconcileBrowserPointers,
@@ -450,6 +451,8 @@ async function runStandalonePlaytestInternal(
       pageLifecycle.closed = true;
     });
     const activePage = page;
+    // Started before navigation: the frames a player sees first are the ones a cover must own.
+    const coverRecorder = scenario.assert?.startup?.steadyCover === true ? await recordStartupCover(page) : undefined;
     const bridge = await openRunnerPage(page, browserConfig, scenario, options.remoteBrowser);
     // From here on the page is expected to stay put; anything that moves it is evidence.
     pageLifecycle.settled = true;
@@ -481,6 +484,9 @@ async function runStandalonePlaytestInternal(
           declaredSoftware: activeConfig.allowSoftwareAdapter === true,
           pump: () => waitFrames(activePage, 1),
         });
+    // No readiness stamp leaves the window unbounded, so the cover goes unobserved and fails.
+    const readyMs = startupOutcome?.startup.timeline?.readyMs;
+    const startupCover = coverRecorder === undefined || readyMs === undefined ? undefined : await coverRecorder.finish(readyMs);
     await alignScenarioStartTick(bridge, scenario.startTick, activeConfig.liveClock === true);
     const runtimeReady = await page.evaluate(() =>
       document.readyState !== "loading" && document.querySelector("canvas") !== null,
@@ -892,7 +898,11 @@ async function runStandalonePlaytestInternal(
       movementBaselineSnapshot,
       startupOutcome === undefined
         ? undefined
-        : { ...startupOutcome.startup, rule: startupOutcome.rule },
+        : {
+            ...startupOutcome.startup,
+            rule: startupOutcome.rule,
+            ...(startupCover === undefined ? {} : { cover: startupCover }),
+          },
       undefined,
       tone,
       footSlip.length === 0 ? undefined : footSlip,
