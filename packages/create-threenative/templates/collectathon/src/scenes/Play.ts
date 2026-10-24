@@ -103,7 +103,11 @@ export class Play extends Scene<GameState, IPhysicsContext> {
           from,
           to,
         });
+        // A ray that starts inside a box (the orbiting deck rising through an airborne hero) hits
+        // at distance 0 with a zero normal. That is no wall, and its normal would divide to NaN.
         if (found === undefined) return undefined;
+        const n = found.normal;
+        if (n.x * n.x + n.y * n.y + n.z * n.z < 0.25) return undefined;
         hit.position.set(found.position.x, found.position.y, found.position.z);
         hit.normal.set(found.normal.x, found.normal.y, found.normal.z);
         return hit;
