@@ -407,7 +407,9 @@ Each playtest runs on a project scaffolded from `--template adventure`:
   - The jumps are the film harness, not the game. The fixed-step runner advances many ticks
     between two 30 fps x11grab frames during a wait, so the grab repeats a frame and then jumps;
     Wren and the Warden jump metres in the same frame. The in-game probe covers every tick,
-    lock-on acquisition included, and reads 2.33° at most.
+    lock-on acquisition included, and reads 2.33° at most. The round 6 film is one screenshot
+    every 2 ticks of the `boss` steps, with the asserts kept (exit 0, the same end state: 4
+    slashes, 3 stuns, cleared), so it plays in game time with no harness jump.
   - The round 5 close-range rise did not move the picture and is removed: at a 9 m arm, a 0.8 m
     or 1.6 m rise, or a sideways step of up to 2.5 m, barely changes where Wren and the Warden
     fall on screen. Only the orbit angle does.
