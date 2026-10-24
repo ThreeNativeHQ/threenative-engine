@@ -13,7 +13,7 @@
 import {
   type IWorldEnvironmentOptions,
   type QualityTier,
-  qualityPreset,
+  qualityPreset as engineQualityPreset,
   qualityTiers,
 } from "@threenative/core";
 
@@ -39,6 +39,6 @@ export function resolveQualityTier(
 }
 
 /** The engine's look for `tier`, with this game's overrides on top. */
-export function qualityOptions(tier: QualityTier): IWorldEnvironmentOptions {
-  return { ...qualityPreset(tier), ...OVERRIDES[tier] };
+export function qualityPreset(tier: QualityTier): IWorldEnvironmentOptions {
+  return { ...engineQualityPreset(tier), ...OVERRIDES[tier] };
 }

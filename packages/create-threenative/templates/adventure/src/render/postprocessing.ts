@@ -10,7 +10,7 @@
 // silence the report: `TN_QUALITY_TIER` names the tier that ran either way.
 import { type OutputRenderer, WorldEnvironment } from "@threenative/core";
 import type { Camera, DirectionalLight, Scene } from "three";
-import { type QualityTier, qualityOptions, resolveQualityTier } from "./quality.js";
+import { type QualityTier, qualityPreset, resolveQualityTier } from "./quality.js";
 
 type ProfileGlobals = typeof globalThis & {
   __THREENATIVE_PROFILE__?: { hostedSoftware?: unknown };
@@ -48,7 +48,7 @@ export function setupPost(
       environment.software === true
     } source=${source}`,
   );
-  const world = new WorldEnvironment(qualityOptions(tier));
+  const world = new WorldEnvironment(qualityPreset(tier));
   const applied = world.apply(renderer, scene, camera, { godraysLight: environment.godraysLight });
   let disposed = false;
   return {
