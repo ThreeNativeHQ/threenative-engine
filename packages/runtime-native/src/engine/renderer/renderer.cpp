@@ -548,6 +548,16 @@ Renderer& Renderer::probeCaptureRenderer() {
     return *probeCapture_;
 }
 
+Renderer& Renderer::overlayRenderer() {
+    if (!canvasLayer_) {
+        canvasLayer_ = sibling();
+        canvasLayer_->outputOver_ = true;
+    }
+    canvasLayer_->setOutput(output_);
+    canvasLayer_->setSize(width_, height_);
+    return *canvasLayer_;
+}
+
 void Renderer::setProbeVolume(const std::string& name, const probes::ProbeVolume& volume, bool capture) {
     if (!wgpuDeviceHasFeature(device_, WGPUFeatureName_Float32Filterable))
         throw std::runtime_error("TN_PROBES_TEXTURE_UNSUPPORTED: requires float32-filterable");
@@ -2420,7 +2430,8 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     if (!compilation) recordDeferred(false);
     const uint64_t id = compilation ? renderId_ : ++renderId_;
     // Taken at once: a frame that throws must not leave a borrowed view armed for the next one.
-    const WGPUTextureView presentTarget = compilation ? nullptr : std::exchange(presentTarget_, nullptr);
+    WGPUTextureView presentTarget = compilation ? nullptr : std::exchange(presentTarget_, nullptr);
+    if (!compilation && !presentTarget && presentAcquire_) presentTarget = std::exchange(presentAcquire_, nullptr)();
     const WGPUTextureFormat presentFormat = presentFormat_;
     for (const auto& target : rttTargets_) {
         auto& state = *target.state;
@@ -4393,6 +4404,9 @@ void Renderer::encodeFrame(FrameJob& job) {
 void Renderer::outputPass(WGPUCommandEncoder encoder, WGPUTextureView present, WGPUTextureFormat presentFormat) {
     PipelineTarget outputTarget{present ? presentFormat : WGPUTextureFormat_RGBA8Unorm, WGPUTextureFormat_Undefined, WGPUCullMode_None};
     outputTarget.layout = outputPipelineLayout_;
+    // overlayRenderer(): the output is premultiplied (buildOutput), so it composites "over" the frame on the surface.
+    const bool over = outputOver_ && present;
+    if (over) outputTarget.blend = 3;
     WGPURenderPipeline pipeline = pipelines_->get(outputVertex_, &outputFragment_, outputTarget);
     if (!pipeline) throw std::runtime_error("TN_NATIVE_PIPELINE_REFUSED: output program");
     std::vector<uint8_t> block(std::max<uint32_t>(outputFragment_.uniformBlockSize, 4));
@@ -4417,7 +4431,7 @@ void Renderer::outputPass(WGPUCommandEncoder encoder, WGPUTextureView present, W
     }
     WGPURenderPassColorAttachment color = {};
     color.view = present ? present : colorView_;
-    color.loadOp = WGPULoadOp_Clear;
+    color.loadOp = over ? WGPULoadOp_Load : WGPULoadOp_Clear;
     color.storeOp = WGPUStoreOp_Store;
 #if defined(MYSTRAL_WEBGPU_DAWN)
     color.depthSlice = WGPU_DEPTH_SLICE_UNDEFINED;

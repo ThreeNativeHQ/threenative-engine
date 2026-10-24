@@ -46,6 +46,8 @@ WGPUTextureFormat surfaceFormat = WGPUTextureFormat_Undefined;
 EventQueue events;
 std::unique_ptr<Renderer> renderer;
 RenderDatabase database;
+RenderDatabase overlayDatabase;  // three's overlay render (core's canvas layer), drawn by renderer->overlayRenderer()
+Renderer* lastDrawn = nullptr;  // the renderer of the last tnw_web_render: its draws are that call's renderer.info
 tn::engine::shader::graph::Node customToneMapping;
 tn::engine::shader::graph::Node pendingPost;  // a RenderPipeline set before the device was ready
 ComputeQueue computeQueue;  // PRD-620: renderer.compute kernels and storage reads, run in call order
@@ -228,18 +230,26 @@ extern "C" int tnw_web_resize(uint32_t w, uint32_t h) {
     return 0;
 }
 
-/** Draws `scene` from `camera` into the canvas; the browser presents it at its animation boundary. */
+/**
+ * Draws `scene` from `camera` into the canvas; the browser presents it at its animation boundary. A nonzero `overlay`
+ * is three's overlay render (core's canvas layer): drawn over the frame already on the canvas, with no post and no
+ * temporal step (Renderer::overlayRenderer). The canvas texture is taken only by a frame that draws: a frame the
+ * renderer skips while an environment bakes leaves the last presented frame on screen.
+ */
 extern "C" int tnw_web_render(const tn_handle_t* sceneHandle, const tn_handle_t* cameraHandle, double r, double g,
-                              double b, double a, uint32_t sourceFrame) {
+                              double b, double a, int overlay, uint32_t sourceFrame) {
     tnw_web_poll();
     if (state != Ready) return fail(state == Pending ? "TN_WASM_RENDER: device not ready" : failure);
     auto* scene = rootOf(sceneHandle);
     auto* camera = cameraOf(cameraHandle);
     if (scene == nullptr || camera == nullptr) return fail("TN_WASM_RENDER: scene or camera handle invalid");
     WGPUSurfaceTexture frame = {};
-    wgpuSurfaceGetCurrentTexture(surface, &frame);
-    if (frame.texture == nullptr) return fail("TN_WASM_SURFACE: no canvas texture");
-    WGPUTextureView view = wgpuTextureCreateView(frame.texture, nullptr);
+    WGPUTextureView view = nullptr;
+    const auto acquire = [&]() -> WGPUTextureView {
+        wgpuSurfaceGetCurrentTexture(surface, &frame);
+        if (frame.texture == nullptr) throw std::runtime_error("TN_WASM_SURFACE: no canvas texture");
+        return view = wgpuTextureCreateView(frame.texture, nullptr);
+    };
     flushCompute();
     if (outputChanged) renderer->setOutput(output);
     outputChanged = false;
@@ -258,15 +268,23 @@ extern "C" int tnw_web_render(const tn_handle_t* sceneHandle, const tn_handle_t*
     database.shadowMapType = shadowMapType;
     try {
         if (!refused.empty()) throw std::runtime_error(refused);
-        renderer->setSampleCount(sampleCount);
-        renderer->setGpuTimerSourceFrame(sourceFrame);  // the sample resolves under the caller's frame id, not the readback's
-        Renderer::PresentScope present(*renderer, view, surfaceFormat);
-        database.render(*renderer, *scene, *camera, {r, g, b, a});
+        if (overlay) {
+            Renderer& target = renderer->overlayRenderer();
+            lastDrawn = &target;
+            Renderer::PresentScope present(target, acquire, surfaceFormat);
+            overlayDatabase.render(target, *scene, *camera, {0, 0, 0, 0});
+        } else {
+            lastDrawn = renderer.get();
+            renderer->setSampleCount(sampleCount);
+            renderer->setGpuTimerSourceFrame(sourceFrame);  // the sample resolves under the caller's frame id, not the readback's
+            Renderer::PresentScope present(*renderer, acquire, surfaceFormat);
+            database.render(*renderer, *scene, *camera, {r, g, b, a});
+        }
     } catch (const std::exception& error) {
         refused = error.what();
     }
-    wgpuTextureViewRelease(view);
-    wgpuTextureRelease(frame.texture);
+    if (view) wgpuTextureViewRelease(view);
+    if (frame.texture) wgpuTextureRelease(frame.texture);
     framesOnGpu.push_back(renderer->gpu().submittedSerial());
     // A refused program or skipped draw, as the V8 player prints it: once each, as a console error,
     // so a page that draws less than its scene says why. TN_POST_NORMAL_SKIPPED is a note, not a fault (the
@@ -274,14 +292,15 @@ extern "C" int tnw_web_render(const tn_handle_t* sceneHandle, const tn_handle_t*
     // the camera) and TN_TRAA_MSAA_OFF (the temporal pass replaces the multisampling), so they go to the console log, which a
     // playtest's no-console-errors policy does not fail on.
     static std::set<std::string> reported;
-    for (const std::string& diagnostic : renderer->diagnostics())
+    for (const std::string& diagnostic : (lastDrawn ? *lastDrawn : *renderer).diagnostics())
         if (reported.insert(diagnostic).second) {
             const bool note = diagnostic.rfind("TN_POST_NORMAL_SKIPPED", 0) == 0 || diagnostic.rfind("TN_TRAA_VELOCITY_SKIPPED", 0) == 0 ||
                               diagnostic.rfind("TN_TRAA_MSAA_OFF", 0) == 0;
             std::fprintf(note ? stdout : stderr, "TN_RENDERER: %s\n", diagnostic.c_str());
         }
     if (!refused.empty()) return fail(refused);
-    if (!database.diagnostics().empty()) return fail(database.diagnostics().front());
+    const RenderDatabase& drawn = overlay ? overlayDatabase : database;
+    if (!drawn.diagnostics().empty()) return fail(drawn.diagnostics().front());
     return 0;
 }
 
@@ -583,11 +602,12 @@ extern "C" int tnw_web_load_gltf(tn_context_t* context, const uint8_t* bytes, ui
  */
 extern "C" double tnw_web_frame(int field) {
     if (!renderer) return 0;
+    if (!lastDrawn) lastDrawn = renderer.get();
     switch (field) {
         // three's renderer.info.render counts every pass of a render(), the shadow pass's included, as the
         // V8 player's frameDrawn does: one scene is counted the same on every backend.
-        case 0: return double(renderer->lastFrame().draws + renderer->lastFrame().shadowDraws);
-        case 1: return double(renderer->lastFrame().triangles + renderer->lastFrame().shadowTriangles);
+        case 0: return double(lastDrawn->lastFrame().draws + lastDrawn->lastFrame().shadowDraws);
+        case 1: return double(lastDrawn->lastFrame().triangles + lastDrawn->lastFrame().shadowTriangles);
         case 2: return double(renderer->pipelines().compiles());
         case 3: return double(renderer->pipelines().textLookups());
         case 4: return double(bindGroupsCreated());

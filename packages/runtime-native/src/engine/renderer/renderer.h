@@ -550,8 +550,29 @@ public:
         presentTarget_ = target;
         presentFormat_ = format;
     }
-    /** Disarms presentNext(); a no-op once render() has taken the view. */
-    void cancelPresent() { presentTarget_ = nullptr; }
+    /**
+     * presentNext() for a view the next render() asks `acquire` for only when it draws. A frame it skips (an
+     * environment still baking) takes no surface texture: a taken canvas texture presents even when nothing was
+     * drawn into it, so a skipped frame flashed black.
+     */
+    void presentWhenDrawn(std::function<WGPUTextureView()> acquire, WGPUTextureFormat format) {
+        presentAcquire_ = std::move(acquire);
+        presentFormat_ = format;
+    }
+    /** Disarms presentNext() and presentWhenDrawn(); a no-op once render() has taken the view. */
+    void cancelPresent() {
+        presentTarget_ = nullptr;
+        presentAcquire_ = nullptr;
+    }
+    /**
+     * The renderer for three's overlay render (core's canvas layer: a loading screen, a HUD drawn in the canvas). It
+     * draws over the frame already on the presented surface: its output pass loads that frame and composites the
+     * overlay's premultiplied colour over it. It is a sibling with no post graph, so the overlay runs no temporal
+     * step (no jitter, no history, no motion vectors) and no exposure meter: drawn through the world renderer, it
+     * replaced the world frame, moved the temporal history and the metered exposure, and the world came back
+     * ghosted and blurred. Output settings and size follow this renderer on each call.
+     */
+    Renderer& overlayRenderer();
     /**
      * presentNext() for the lifetime of a scope: whatever happens between arming and render() (a
      * throw while the scene is prepared, an early return), the borrowed view is disarmed on exit,
@@ -561,6 +582,9 @@ public:
     public:
         PresentScope(Renderer& renderer, WGPUTextureView target, WGPUTextureFormat format) : renderer_(renderer) {
             renderer_.presentNext(target, format);
+        }
+        PresentScope(Renderer& renderer, std::function<WGPUTextureView()> acquire, WGPUTextureFormat format) : renderer_(renderer) {
+            renderer_.presentWhenDrawn(std::move(acquire), format);
         }
         ~PresentScope() { renderer_.cancelPresent(); }
         PresentScope(const PresentScope&) = delete;
@@ -1024,6 +1048,9 @@ private:
     WGPUBindGroupLayout outputLayout_ = nullptr;
     WGPUPipelineLayout outputPipelineLayout_ = nullptr;
     WGPUTextureView presentTarget_ = nullptr;  // presentNext: the output pass draws here, not into colorView_
+    std::function<WGPUTextureView()> presentAcquire_;  // presentWhenDrawn: asked for presentTarget_ by a frame that draws
+    std::unique_ptr<Renderer> canvasLayer_;  // overlayRenderer()
+    bool outputOver_ = false;  // the overlay renderer: the output pass composites over the presented frame
     WGPUTextureFormat presentFormat_ = WGPUTextureFormat_Undefined;
     uint32_t width_ = 0;
     uint32_t height_ = 0;

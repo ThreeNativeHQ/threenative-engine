@@ -748,6 +748,14 @@ function wrapRenderer(
   };
   const renderOverlayFrame = (scene: Object3D, camera: Camera): void => {
     bindSurface();
+    // The owned engine draws an overlay over the presented frame with no post and no temporal step; through its
+    // render() the loading screen moved the world's temporal history and exposure (a ghosted hand-off).
+    const overlay = (raw as { renderOverlay?: (scene: Object3D, camera: Camera) => void })
+      .renderOverlay;
+    if (overlay !== undefined) {
+      overlay.call(raw, scene, camera);
+      return;
+    }
     const hadOwnAutoClear = Object.hasOwn(raw, "autoClear");
     const autoClear = raw.autoClear;
     raw.autoClear = false;

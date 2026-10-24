@@ -825,6 +825,86 @@ void presentDirect() {
     renderer.gpu().destroy(stale);
 }
 
+// The canvas-layer overlay (core's loading screen) draws over the presented world frame: an empty overlay leaves it
+// byte for byte, a plane over the left half replaces only that half. Drawn through the world renderer it cleared the
+// frame and ran the world's temporal step. And a frame the renderer skips (its environment still bakes) never asks
+// for the surface view: a taken canvas texture presents, so the skipped frame flashed black.
+void canvasLayerOverlay() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(160, 120);
+    renderer.setOutput(OutputState{shader::ToneMapping::ACESFilmic, 1, true});
+    LitScene s;
+    RenderDatabase database;
+    const WGPUTextureFormat format = WGPUTextureFormat_BGRA8Unorm;
+    const Handle surface = renderer.gpu().createTexture(160, 120, format, WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_CopySrc);
+    WGPUTextureView view = wgpuTextureCreateView(renderer.gpu().texture(surface), nullptr);
+    renderer.presentNext(view, format);
+    database.render(renderer, s.scene, s.camera, {0.05, 0.06, 0.08, 1});
+    const std::vector<uint8_t> world = readTexture(renderer, events, surface);
+    CHECK(world.size() == 160 * 120 * 4);
+
+    Scene layer;
+    OrthographicCamera ortho(-1, 1, 1, -1, 0.1, 10);
+    ortho.position.z = 5;
+    ortho.updateProjectionMatrix();
+    RenderDatabase overlayDatabase;
+    Renderer& overlay = renderer.overlayRenderer();
+    layer.updateMatrixWorld(true);
+    overlay.presentNext(view, format);
+    overlayDatabase.render(overlay, layer, ortho, {0, 0, 0, 0});
+    CHECK(overlayDatabase.diagnostics().empty());
+    CHECK(readTexture(renderer, events, surface) == world);
+
+    auto cover = std::make_shared<Material>(MaterialType::Basic);
+    cover->color.setRGB(1, 1, 1);
+    Mesh plane(makePlaneGeometry(1, 2), cover);
+    plane.position.x = -0.5;
+    layer.add(plane);
+    layer.updateMatrixWorld(true);
+    overlay.presentNext(view, format);
+    overlayDatabase.render(overlay, layer, ortho, {0, 0, 0, 0});
+    const std::vector<uint8_t> covered = readTexture(renderer, events, surface);
+    bool rightKept = true, leftCovered = true;
+    for (size_t y = 0; y < 120; ++y)
+        for (size_t x = 0; x < 160; ++x) {
+            const size_t at = (y * 160 + x) * 4;
+            if (x >= 84) rightKept = rightKept && std::equal(&covered[at], &covered[at] + 4, &world[at]);
+            if (x < 76) leftCovered = leftCovered && covered[at] > 200 && covered[at + 1] > 200 && covered[at + 2] > 200;
+        }
+    CHECK(rightKept);
+    CHECK(leftCovered);
+
+    auto sky = std::make_shared<DataTexture>();
+    sky->mapping = 303;
+    sky->width = 128;
+    sky->height = 64;
+    sky->data.assign(size_t(sky->width) * sky->height * 4, 255);
+    sky->needsUpdate();
+    s.scene.environment = sky;
+    int asked = 0;
+    const auto acquire = [&] { ++asked; return view; };
+    {
+        Renderer::PresentScope present(renderer, acquire, format);
+        CHECK(database.render(renderer, s.scene, s.camera, {0.05, 0.06, 0.08, 1}) == 0);  // the bake skips this frame
+    }
+    CHECK(asked == 0);
+    for (int frame = 0; frame < 5000 && asked == 0; ++frame) {
+        {
+            Renderer::PresentScope present(renderer, acquire, format);
+            database.render(renderer, s.scene, s.camera, {0.05, 0.06, 0.08, 1});
+        }
+        renderer.poll();
+        events.drain();
+        if (asked == 0) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    CHECK(asked == 1);  // the first drawn frame asked once
+    wgpuTextureViewRelease(view);
+    renderer.gpu().destroy(surface);
+}
+
 // The instance storage keeps its elements between frames: N instances, then fewer, then more, must
 // each draw exactly what a renderer that never saw another count draws.
 void instanceCounts() {
@@ -5756,7 +5836,7 @@ void gpuJointProduction() {
     }
 }
 
-TN_TEST_MAIN({"gpu_joint_production", gpuJointProduction}, {"multi_material_groups", multiMaterialGroups}, {"uniform_batch_preparation", uniformBatchPreparation}, {"content_identical_geometry_batches", contentIdenticalGeometryBatches}, {"steady_state", steadyState}, {"color_write_masks_the_draw", colorWriteMasksTheDraw}, {"normal_pass_is_not_tallied", normalPassIsNotTallied}, {"gtao_screen_reach", gtaoScreenReach}, {"steady_cache_invalidation", steadyCacheInvalidation}, {"render_target", renderTarget}, {"float_render_target_keeps_float32", floatRenderTargetKeepsFloat32}, {"float_render_target_falls_back_to_half", floatRenderTargetFallsBackToHalf}, {"post_texture_resize_keeps_draw_groups", postTextureResizeKeepsDrawGroups}, {"deferred_target_follows_post_rtt", deferredTargetFollowsPostRtt}, {"deferred_target_samples_post_rtt_node", deferredTargetSamplesPostRttNode}, {"screen_size_reaches_the_vertex_stage", screenSizeReachesTheVertexStage}, {"depth_node_sets_fragment_depth", depthNodeSetsFragmentDepth}, {"depth_node_reaches_every_material_program", depthNodeReachesEveryMaterialProgram}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"present_direct", presentDirect}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"directional_target_outside_scene", directionalTargetOutsideScene}, {"scene_fog_node", sceneFogNode}, {"lit_mesh_without_normals", litMeshWithoutNormals}, {"invalidation", invalidation}, {"alpha_scene", alphaScene},
+TN_TEST_MAIN({"gpu_joint_production", gpuJointProduction}, {"multi_material_groups", multiMaterialGroups}, {"uniform_batch_preparation", uniformBatchPreparation}, {"content_identical_geometry_batches", contentIdenticalGeometryBatches}, {"steady_state", steadyState}, {"color_write_masks_the_draw", colorWriteMasksTheDraw}, {"normal_pass_is_not_tallied", normalPassIsNotTallied}, {"gtao_screen_reach", gtaoScreenReach}, {"steady_cache_invalidation", steadyCacheInvalidation}, {"render_target", renderTarget}, {"float_render_target_keeps_float32", floatRenderTargetKeepsFloat32}, {"float_render_target_falls_back_to_half", floatRenderTargetFallsBackToHalf}, {"post_texture_resize_keeps_draw_groups", postTextureResizeKeepsDrawGroups}, {"deferred_target_follows_post_rtt", deferredTargetFollowsPostRtt}, {"deferred_target_samples_post_rtt_node", deferredTargetSamplesPostRttNode}, {"screen_size_reaches_the_vertex_stage", screenSizeReachesTheVertexStage}, {"depth_node_sets_fragment_depth", depthNodeSetsFragmentDepth}, {"depth_node_reaches_every_material_program", depthNodeReachesEveryMaterialProgram}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"present_direct", presentDirect}, {"canvas_layer_overlay", canvasLayerOverlay}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"directional_target_outside_scene", directionalTargetOutsideScene}, {"scene_fog_node", sceneFogNode}, {"lit_mesh_without_normals", litMeshWithoutNormals}, {"invalidation", invalidation}, {"alpha_scene", alphaScene},
              {"material_unsupported", materialUnsupported}, {"shader_invalid", shaderInvalid}, {"time_uniform", timeUniform}, {"gpu_mipmaps", gpuMipmaps}, {"updates", updates},
              {"multi_camera_layers", multiCameraLayers}, {"render_callback", renderCallback}, {"instanced", instanced},
              {"virtual_sun_room_seam", virtualSunRoomSeam},

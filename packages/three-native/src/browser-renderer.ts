@@ -227,6 +227,8 @@ export function defineWebRenderer(
     #lost = false;
     /** A draw got through in this task, so later draws land on its surface texture: see render(). */
     #frameOpen = false;
+    /** The draw in flight is renderOverlay's. */
+    #overlay = false;
     #state: string | undefined;
     #gpuSamples = 0;
     #holdsSlot = true;
@@ -364,6 +366,20 @@ export function defineWebRenderer(
       this.#clear[3] = alpha;
     }
 
+    /**
+     * core's canvas-layer overlay (a loading screen, a canvas HUD): drawn over the frame already on the canvas, with
+     * no post and no temporal step. Through render() it replaced the world frame and moved the temporal history and
+     * the metered exposure, so the world came back ghosted and blurred after the loading screen.
+     */
+    renderOverlay(scene: unknown, camera: unknown): void {
+      this.#overlay = true;
+      try {
+        this.render(scene, camera);
+      } finally {
+        this.#overlay = false;
+      }
+    }
+
     render(scene: unknown, camera: unknown): void {
       if (this.#adapter === undefined)
         throw new Error("TN_WASM_RENDERER: render() before init() finished.");
@@ -401,7 +417,15 @@ export function defineWebRenderer(
       writeHandle(0, scene, "scene");
       writeHandle(12, camera, "camera");
       const renderFrame = this.info.frame;
-      this.#drawStatus(module._tnw_web_render(handles, handles + 12, ...this.#clear, renderFrame));
+      this.#drawStatus(
+        module._tnw_web_render(
+          handles,
+          handles + 12,
+          ...this.#clear,
+          this.#overlay ? 1 : 0,
+          renderFrame,
+        ),
+      );
       this.info.frame += 1;
       this.info.render.frameCalls = module._tnw_web_frame(0);
       this.info.render.calls += this.info.render.frameCalls;

@@ -398,6 +398,24 @@ describe("the Wasm engine's WebGPURenderer sample count", () => {
     expect(secondary).toHaveBeenCalledTimes(1);
   });
 
+  it("draws renderOverlay as the host's overlay, so the canvas layer skips the world's post and temporal state", async () => {
+    // Through render(), core's loading screen ran the world renderer's post chain and temporal step: the world
+    // came back ghosted and blurred after the cover lifted (Lantern Vale, Hop Garden).
+    const render = vi.fn(() => 0);
+    const { Renderer, canvas, scene, camera } = host(undefined, render);
+    const renderer = new Renderer({ canvas }) as {
+      init(): Promise<unknown>;
+      render(scene: unknown, camera: unknown): void;
+      renderOverlay(scene: unknown, camera: unknown): void;
+    };
+    await renderer.init();
+    renderer.render(scene, camera);
+    renderer.renderOverlay(scene, camera);
+    renderer.render(scene, camera);
+    const overlayArgument = (call: unknown[]) => call[6];
+    expect(render.mock.calls.map((call) => overlayArgument(call as unknown[]))).toEqual([0, 1, 0]);
+  });
+
   it("names the loss on the console, so a caller that swallows the one throw cannot hide a black page", async () => {
     // A warm-up or a frame hook may catch the single throw. Every later render() then returns without
     // drawing and nothing says why: auto exposure's refused shader killed the page that way.
