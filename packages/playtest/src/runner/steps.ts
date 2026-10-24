@@ -742,6 +742,17 @@ export async function waitFrames(page: Page, frames: number, timeoutMs?: number)
 }
 
 /** Private opt-in, like CPU windows: one pose per fresh runner/process, deterministic prefix. */
+
+/**
+ * One frame at a time, each bounded by `WARMUP_FRAME_BUDGET_MS`. A software rasteriser can take
+ * over ten seconds a frame, so a warmup of N frames is not capped by a single budget, yet a frame
+ * that never arrives still fails within one allowance instead of hanging the run.
+ */
+const WARMUP_FRAME_BUDGET_MS = 60_000;
+export async function waitWarmupFrames(page: Page, frames: number): Promise<void> {
+  for (let frame = 0; frame < frames; frame += 1) await waitFrames(page, 1, WARMUP_FRAME_BUDGET_MS);
+}
+
 export function completionWindowLabel(scenario: Pick<IPlaytestScenario, "steps">, target: string, live: boolean,
   raw = process.env.TN_PLAYTEST_COMPLETION_WINDOW_LABEL): string | undefined {
   if (raw === undefined) return undefined;

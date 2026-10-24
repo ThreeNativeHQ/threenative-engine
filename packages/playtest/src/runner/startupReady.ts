@@ -35,8 +35,8 @@ export interface IWaitForStartupReadyOptions {
    * the boundary before the first observation is taken.
    */
   readonly pump: (remainingMs?: number) => Promise<void>;
-  /** Authored browser warmup shares startup's deadline; unsupported pages keep the default frame budget. */
-  readonly warmup?: (remainingMs?: number) => Promise<void>;
+  /** Authored browser warmup. It runs before the readiness deadline and bounds its own frames. */
+  readonly warmup?: () => Promise<void>;
   /**
    * True once the run is being torn down, so the wait stops instead of outliving it.
    *
@@ -94,14 +94,17 @@ export async function waitForStartupReady(
   const timeoutMs = options.timeoutMs ?? PLAYTEST_STARTUP_READY_TIMEOUT_MS;
   if (!Number.isFinite(timeoutMs) || timeoutMs <= 0)
     throw new Error(`TN_PLAYTEST_STARTUP_TIMEOUT_INVALID: ${String(options.timeoutMs)}`);
+  // Authored warmup runs before the readiness deadline starts. Its frames are bounded one at a time
+  // by the runner, so a slow software lane is not capped by the readiness allowance.
+  await options.warmup?.();
   const deadline = now() + timeoutMs;
   const aborted = options.aborted ?? (() => false);
   if (aborted()) throw abortedDuringStartup();
   const hostAlive = options.hostAlive ?? (async () => undefined);
-  let observed: IPlaytestStartupObservation | typeof BUSY | undefined = options.warmup === undefined ? BUSY : undefined;
+  let observed: IPlaytestStartupObservation | typeof BUSY = BUSY;
   const timeoutError = () => new PlaytestBridgeError(playtestDiagnostic(
     "TN_PLAYTEST_STARTUP_NOT_READY",
-    `Application startup stayed '${observed === undefined ? "warmup" : observed === BUSY ? "unreadable, the bridge kept timing out" : observed.phase}' for ${timeoutMs}ms; the run would have observed a game that has not finished loading.`,
+    `Application startup stayed '${observed === BUSY ? "unreadable, the bridge kept timing out" : observed.phase}' for ${timeoutMs}ms; the run would have observed a game that has not finished loading.`,
     "Let the application reach startup readiness — check that its loading gate can complete headlessly — or remove the runtime.startup capability if it has no startup phase.",
   ));
   let settled = false;
@@ -114,11 +117,9 @@ export async function waitForStartupReady(
   });
   try {
     return await Promise.race([expired, (async (): Promise<IStartupReadyOutcome> => {
-      await options.warmup?.(deadline - now());
       if (settled) throw timeoutError();
       if (aborted()) throw abortedDuringStartup();
       if (settled || now() >= deadline) throw timeoutError();
-      observed = BUSY;
       observed = await pollStartup(bridge);
       // Readiness, never bare compile settlement. A game whose launch holds build its world on
       // `whenReady()` (the puzzle's crate pile is one), so observing at compile settlement catches it

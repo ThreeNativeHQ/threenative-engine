@@ -1,6 +1,6 @@
 import { createOwnedRunResourceRelease } from "./ownedRunResources.js";
 import type { IPlaytestToneCaptureObservation } from "../tone.js";
-import { completionWindowEnvironment, completionWindowLabel, measureCompletionWindow, setPointerButtons, setBrowserPointers, type ICompletionWindow, waitFrames, captureVisualSurface, runStep, sampleVisualElementBounds, screenshotObservations, sampleAfterTransition } from "./steps.js";
+import { completionWindowEnvironment, completionWindowLabel, measureCompletionWindow, setPointerButtons, setBrowserPointers, type ICompletionWindow, waitFrames, waitWarmupFrames, captureVisualSurface, runStep, sampleVisualElementBounds, screenshotObservations, sampleAfterTransition } from "./steps.js";
 import type { StepInputState } from "./steps.js";
 import { withPerformanceBudget } from "./buildReport.js";
 import { alignScenarioStartTick, preflightDisplay, acquireRunnerCaptureLock, provideRunDisplay, buildReport, addPreflightDiagnostic, isJudgeMarkerRequestFailure } from "./runner-support.js";
@@ -484,7 +484,7 @@ async function runStandalonePlaytestInternal(
           aborted: () => tearingDown,
           bridge,
           declaredSoftware: activeConfig.allowSoftwareAdapter === true,
-          warmup: (remainingMs?: number) => waitFrames(activePage, scenario.warmupFrames, remainingMs),
+          warmup: () => waitWarmupFrames(activePage, scenario.warmupFrames),
           pump: (remainingMs?: number) => waitFrames(activePage, 1, remainingMs),
         });
     await alignScenarioStartTick(bridge, scenario.startTick, activeConfig.liveClock === true);
