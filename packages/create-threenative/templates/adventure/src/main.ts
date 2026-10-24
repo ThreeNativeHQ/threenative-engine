@@ -6,6 +6,10 @@ import { App } from "./ui/App.js";
 import "./style.css";
 import.meta.hot?.accept();
 acceptHotUpdate(game, import.meta.hot);
+// Tab is the lock-on key: keep it from moving browser focus off the canvas.
+window.addEventListener("keydown", (event) => {
+  if (event.code === "Tab") event.preventDefault();
+});
 const root = document.getElementById("root");
 if (root === null) throw new Error("Missing #root element.");
 const appRoot = root as typeof root & { __threenativeRoot?: ReturnType<typeof createRoot> };

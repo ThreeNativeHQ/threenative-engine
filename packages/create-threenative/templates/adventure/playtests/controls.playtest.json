@@ -30,17 +30,10 @@
       "release": true
     },
     {
-      "kind": "input",
-      "label": "slash",
-      "press": "KeyJ",
-      "holdTicks": 20,
-      "release": true
-    },
-    {
-      "kind": "wait",
-      "label": "recover",
-      "waitTicks": 30,
-      "release": true
+      "kind": "click",
+      "label": "capture",
+      "at": { "x": 640, "y": 360 },
+      "waitTicks": 20
     },
     {
       "kind": "input",
@@ -59,8 +52,15 @@
     {
       "kind": "input",
       "label": "shield",
-      "press": "ShiftLeft",
-      "holdTicks": 30,
+      "pointerPosition": { "x": 0.5, "y": 0.5, "buttons": 2 },
+      "waitTicks": 20,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "shield-up",
+      "pointerPosition": { "x": 0.5, "y": 0.5, "buttons": 0 },
+      "waitTicks": 20,
       "release": true
     },
     {
@@ -72,10 +72,30 @@
     },
     {
       "kind": "input",
-      "label": "lock",
-      "press": "KeyQ",
-      "holdTicks": 45,
+      "label": "lock-tab",
+      "press": "Tab",
+      "holdTicks": 10,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "locked",
+      "waitTicks": 20,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "lock-middle",
+      "pointerPosition": { "x": 0.5, "y": 0.5, "buttons": 4 },
+      "waitTicks": 10,
       "release": false
+    },
+    {
+      "kind": "input",
+      "label": "lock-middle-up",
+      "pointerPosition": { "x": 0.5, "y": 0.5, "buttons": 0 },
+      "waitTicks": 20,
+      "release": true
     }
   ],
   "assert": {
@@ -85,30 +105,33 @@
       "noRuntimeDiagnostics": true,
       "runtimeReady": true
     },
+    "components": [
+      {
+        "entity": "player",
+        "component": "state",
+        "atSteps": [{ "label": "shield", "equals": "block" }]
+      }
+    ],
     "resources": [
       {
         "id": "state",
         "path": "slashes",
-        "gte": 2,
+        "gte": 1,
         "atSteps": [
-          {
-            "label": "no-sword",
-            "equals": 0
-          },
-          {
-            "label": "slash",
-            "equals": 1
-          },
-          {
-            "label": "click",
-            "equals": 2
-          }
+          { "label": "no-sword", "equals": 0 },
+          { "label": "capture", "equals": 0 },
+          { "label": "click", "equals": 1 }
         ]
       },
       {
         "id": "state",
         "path": "lockTarget",
-        "changed": true
+        "atSteps": [
+          { "label": "roll", "equals": "" },
+          { "label": "lock-tab", "equals": "dummy.1" },
+          { "label": "locked", "equals": "dummy.1" },
+          { "label": "lock-middle-up", "equals": "dummy.0" }
+        ]
       }
     ],
     "movement": {

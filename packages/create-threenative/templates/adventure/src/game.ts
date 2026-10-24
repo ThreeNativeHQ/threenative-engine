@@ -6,8 +6,9 @@ import { Play } from "./scenes/Play.js";
 import type { GameState } from "./state.js";
 
 const game = defineGame<GameState, IPhysicsContext>({
-  // Six verbs, each one input name. Every scene reads the name, never the key, so a rebinding is
-  // one line here. Gamepad buttons are the standard mapping: 0 A, 1 B, 2 X, 3 Y, 5 RB, 6 LT.
+  // Eight names, each one verb. Every scene reads the name, never the key, so a rebinding is one
+  // line here. Gamepad buttons are the standard mapping: 0 A, 1 B, 2 X, 3 Y, 5 RB, 6 LT. Mouse
+  // buttons: 0 left, 1 middle, 2 right.
   input: {
     move: {
       down: ["ArrowDown", "KeyS"],
@@ -15,12 +16,21 @@ const game = defineGame<GameState, IPhysicsContext>({
       right: ["ArrowRight", "KeyD"],
       up: ["ArrowUp", "KeyW"],
     },
-    /** Sword slash: left click or J. Needs the Ember Blade from the clearing chest. */
-    attack: { buttons: [2], keys: ["KeyJ"], mouseButtons: [0] },
+    /** Sword slash: J or the gamepad. Needs the Ember Blade from the clearing chest. */
+    attack: { buttons: [2], keys: ["KeyJ"] },
+    /**
+     * Sword slash on the left click, read apart from `attack` because the first click only
+     * captures the pointer: `readHeroInput` ignores it until the pointer was already captured.
+     */
+    slash: { mouseButtons: [0] },
+    /** Mouse look: relative movement turns the camera. The first click captures the pointer. */
+    look: { pointerRelative: true },
     /** Roll when nothing is locked on; a short hop while locked. */
     action: { buttons: [0], keys: ["Space"] },
-    /** Hold to raise the shield. */
-    block: { buttons: [5], keys: ["ShiftLeft", "ShiftRight"] },
+    /** Hold to raise the shield: right click, Shift or the right bumper. */
+    block: { buttons: [5], keys: ["ShiftLeft", "ShiftRight"], mouseButtons: [2] },
+    /** Press to lock onto the nearest hostile; press again for the next, then off. */
+    lock: { keys: ["Tab"], mouseButtons: [1] },
     /** Hold to lock onto the nearest hostile; release and press again to move to the next. */
     target: { buttons: [6], keys: ["KeyQ"] },
     /** Open a chest, read a sign, unlock a door. */

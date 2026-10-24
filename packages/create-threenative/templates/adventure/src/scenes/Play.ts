@@ -357,7 +357,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       use: () => {
         if (swordChest.open() === undefined) return;
         hero.giveSword();
-        toast("THE EMBER BLADE! Click or press J to slash.", 3);
+        toast("THE EMBER BLADE! Click to slash.", 3);
         slashHint = hero.slashes;
       },
     });
@@ -682,6 +682,8 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     });
 
     const toTarget = new Vector3();
+    // Whether the pointer was captured on the last step; see `readHeroInput`.
+    let mouseArmed = false;
     const statePatch: Partial<GameState> = {};
 
     return (frameCtx, dt) => {
@@ -690,11 +692,25 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       const input = readHeroInput(
         frameCtx,
         touchControls?.update(frameCtx.input.raw.pointers, frameCtx.viewport.size),
+        mouseArmed,
       );
+      mouseArmed = frameCtx.input.raw.pointer.captured;
 
       // Lock first: the hero reads this step's target for strafing and facing.
-      lock.update(dt, input.target, input.targetPressed, hero.mesh.position, camera, targets);
-      if (input.targetPressed && lock.target === undefined) rig.recenter(hero.yaw + Math.PI);
+      lock.update(
+        dt,
+        input.target,
+        input.targetPressed,
+        input.lockPressed,
+        hero.mesh.position,
+        camera,
+        targets,
+      );
+      if ((input.targetPressed || input.lockPressed) && lock.target === undefined)
+        rig.recenter(hero.yaw + Math.PI);
+      // Mouse look: only once the pointer is captured, and the lock owns the view while it holds.
+      if (frameCtx.input.raw.pointer.captured && lock.target === undefined)
+        rig.look(frameCtx.input.vector("look").x);
       hero.update(frameCtx, dt, input, lock, rig.yaw, indoors, targets);
       hero.setPushing(block.update(frameCtx, dt, hero, hero.wish));
 

@@ -32,6 +32,10 @@ const MIN_SCREEN_SHARE = 0.036;
 /**
  * Z-targeting, game-owned: no engine capability locks on, so this file picks and holds a target.
  *
+ * Pressing `lock` (Tab, middle click) locks the nearest hostile the same way and keeps it with no
+ * button held; pressing it again moves to the next nearest, and after the last one it drops. The
+ * hold path below stays on Q and the left trigger.
+ *
  * Holding `target` locks the nearest living hostile within 6 m on any side, or else the nearest
  * inside 12 m and the camera's 60° cone, and keeps it while held. Releasing drops the lock;
  * pressing again within 0.3 s moves it to the next nearest hostile instead. The lock also drops
@@ -48,6 +52,8 @@ export class LockOn {
   readonly bounds = new Box3();
   /** The marker's top (m), for the camera's framing; 0 while unlocked. */
   markerTop = 0;
+  /** A target taken by the `lock` toggle stays locked when no button is held. */
+  #sticky = false;
   #released: ITarget | undefined;
   #window = 0;
   #spin = 0;
@@ -59,6 +65,7 @@ export class LockOn {
     dt: number,
     held: boolean,
     pressed: boolean,
+    toggled: boolean,
     hero: Vector3,
     camera: PerspectiveCamera,
     targets: readonly ITarget[],
@@ -71,7 +78,8 @@ export class LockOn {
       (!current.alive || current.mesh.position.distanceTo(hero) > RANGE + 1)
     )
       this.target = undefined;
-    if (!held && this.target !== undefined) {
+    if (held || this.target === undefined) this.#sticky = false;
+    if (!held && !this.#sticky && this.target !== undefined) {
       this.#released = this.target;
       this.#window = SWITCH_WINDOW;
       this.target = undefined;
@@ -79,6 +87,11 @@ export class LockOn {
     if (pressed && this.target === undefined) {
       const skip = this.#window > 0 ? this.#released : undefined;
       this.target = this.#pick(hero, camera, targets, skip);
+      this.justAcquired = this.target !== undefined;
+    }
+    if (toggled && !held) {
+      this.target = this.#cycle(hero, camera, targets);
+      this.#sticky = this.target !== undefined;
       this.justAcquired = this.target !== undefined;
     }
     const target = this.target;
@@ -109,6 +122,34 @@ export class LockOn {
       this.markerLift = marker.min.y - box.max.y;
       this.markerTop = marker.max.y;
     }
+  }
+
+  /**
+   * The toggle's next target: with none locked, the same pick a hold makes; with one locked, the
+   * next farther hostile in range, and `undefined` (drop) after the farthest.
+   */
+  #cycle(
+    hero: Vector3,
+    camera: PerspectiveCamera,
+    targets: readonly ITarget[],
+  ): ITarget | undefined {
+    const current = this.target;
+    if (current === undefined) return this.#pick(hero, camera, targets, undefined);
+    const distance = (candidate: ITarget): number =>
+      this.#to.subVectors(candidate.mesh.position, hero).setY(0).length();
+    const near = distance(current);
+    let next: ITarget | undefined;
+    let nextDistance = RANGE;
+    for (const candidate of targets) {
+      if (!candidate.alive || candidate === current) continue;
+      const apart = distance(candidate);
+      if (apart < near || (apart === near && candidate.id < current.id)) continue;
+      if (apart <= nextDistance) {
+        next = candidate;
+        nextDistance = apart;
+      }
+    }
+    return next;
   }
 
   /**

@@ -52,7 +52,7 @@ export function Hud() {
         {state.sword ? (
           <span className="text-lume">Ember Blade</span>
         ) : (
-          <span className="text-text/70">slash needs the Ember Blade: open the chest (E)</span>
+          <span className="text-text/70">open the chest (E), then click to slash</span>
         )}
       </div>
       {state.prompt !== "" ? (

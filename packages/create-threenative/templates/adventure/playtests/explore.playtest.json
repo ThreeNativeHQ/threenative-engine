@@ -15,7 +15,7 @@
       "seed": 1,
       "ticks": 7200,
       "move": ["KeyW", "KeyA", "KeyS", "KeyD"],
-      "actions": ["KeyJ", "Space", "ShiftLeft", "KeyQ", "KeyE"],
+      "actions": ["KeyJ", "Space", "ShiftLeft", "KeyQ", "Tab", "KeyE"],
       "pointer": true
     }
   ],

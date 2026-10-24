@@ -3,8 +3,8 @@
 // A third-person follow camera, written from `afterPhysics` in `scenes/Play.ts`, so it frames
 // where the body ended up this step rather than where it was. It owns no target logic: it reads
 // the lock-on's target, if there is one, and eases its yaw onto the line from that target through
-// Wren. Unlocked, it holds its yaw (it starts looking north) until the target button, pressed with
-// nothing to lock, swings it behind Wren: "up" on the stick keeps its meaning until the player asks
+// Wren. Unlocked, it holds its yaw (it starts looking north) until the mouse turns it or the lock
+// button, pressed with nothing to lock, swings it behind Wren: "up" on the stick keeps its meaning until the player asks
 // for a new one.
 //
 // Locked, it frames the fight the way Ocarina does: it slides over Wren's shoulder, drops,
@@ -46,6 +46,8 @@ const ARM_STEP = 0.75;
  */
 const CLUTTER = { reach: 0.6, share: 2 / 24 };
 const FOV = 55;
+/** Mouse look: radians of yaw per pixel of relative movement, the same feel as Hop Garden. */
+const LOOK_RADIANS_PER_PIXEL = 0.0035;
 /**
  * The fastest the view may turn, in radians per second (140°/s, about 2.3° a 60 Hz tick): a lock,
  * a target switch or a boss charging past swings the picture no faster, so it reads instead of
@@ -124,6 +126,8 @@ export interface IFollowCamera {
   update(focus: Vector3, lock: ILockFrame | undefined, dt: number, watch?: Box3): void;
   /** Swing round to `yaw` and stay there: the target button with nothing to lock recentres. */
   recenter(yaw: number): void;
+  /** Turn the view by a mouse movement of `dx` pixels (right turns right); the lock overrides it. */
+  look(dx: number): void;
   /** Jump to a pose at once: after a respawn or a room change, never ease across the map. */
   snap(focus: Vector3, yaw?: number): void;
 }
@@ -380,6 +384,10 @@ export function setupCamera(
     },
     recenter(to: number): void {
       home = to;
+    },
+    look(dx: number): void {
+      yaw -= dx * LOOK_RADIANS_PER_PIXEL;
+      home -= dx * LOOK_RADIANS_PER_PIXEL;
     },
     snap(focus: Vector3, to = 0): void {
       yaw = to;

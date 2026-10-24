@@ -71,21 +71,32 @@ export interface IHeroInput {
   readonly block: boolean;
   readonly target: boolean;
   readonly targetPressed: boolean;
+  /** The lock toggle (Tab, middle click) went down this step. */
+  readonly lockPressed: boolean;
   readonly interact: boolean;
 }
 
 const inputScratch = new Vector2();
 
-/** Keyboard, gamepad and the touch buttons, merged into the six verbs Wren reads. */
-export function readHeroInput(ctx: GameCtx, touch?: ITouchInput): IHeroInput {
+/**
+ * Keyboard, mouse, gamepad and the touch buttons, merged into the verbs Wren reads. `mouseArmed` is
+ * whether the pointer was already captured on the previous step: a click that captures it lands
+ * between two steps, so reading the capture on the same step would let that click swing the sword.
+ */
+export function readHeroInput(ctx: GameCtx, touch?: ITouchInput, mouseArmed = false): IHeroInput {
   const move = inputScratch.copy(ctx.input.vector("move"));
   if (touch !== undefined) move.add(touch.move);
   move.clampLength(0, 1);
   return {
     action: ctx.input.justPressed("action") || touch?.pressed.action === true,
-    attack: ctx.input.justPressed("attack") || touch?.pressed.attack === true,
+    // The click that captures the pointer is not a swing: the mouse slash counts once armed.
+    attack:
+      ctx.input.justPressed("attack") ||
+      (mouseArmed && ctx.input.justPressed("slash")) ||
+      touch?.pressed.attack === true,
     block: ctx.input.pressed("block") || touch?.held.block === true,
     interact: ctx.input.justPressed("interact") || touch?.pressed.interact === true,
+    lockPressed: ctx.input.justPressed("lock"),
     move,
     target: ctx.input.pressed("target") || touch?.held.target === true,
     targetPressed: ctx.input.justPressed("target") || touch?.pressed.target === true,
