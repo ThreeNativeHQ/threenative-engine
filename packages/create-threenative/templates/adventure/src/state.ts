@@ -28,6 +28,10 @@ export type GameState = {
    * target's top (m) — 0 until the first lock. */
   lockMarkerShown: boolean;
   lockMarkerLowest: number;
+  /** Of the settled locked time: the share with Wren and the target both framed (5% margin), and
+   * the share with the target's middle clear of Wren on screen. 0 until a lock settles. */
+  lockFramedShare: number;
+  lockClearShare: number;
   /** Counters the playtests prove the loop with. */
   slashes: number;
   slashHits: number;

@@ -7,7 +7,7 @@ import {
   isTouchscreenAvailable,
 } from "@threenative/core";
 import { type IPhysicsContext, buildStaticColliders } from "@threenative/physics";
-import { Euler, type Group, MathUtils, type PerspectiveCamera, Vector3 } from "three";
+import { Box3, Euler, type Group, MathUtils, type PerspectiveCamera, Vector3 } from "three";
 import { Block } from "../entities/Block.js";
 import { Chest } from "../entities/Chest.js";
 import { Door } from "../entities/Door.js";
@@ -55,6 +55,8 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     keys: 0,
     lastRespawn: "",
     lockFacingError: 0,
+    lockClearShare: 0,
+    lockFramedShare: 0,
     lockMarkerLowest: 0,
     lockMarkerShown: false,
     lockStrafeDrift: 0,
@@ -303,9 +305,55 @@ export class Play extends Scene<GameState, IPhysicsContext> {
         ?.distance;
     });
     rig.snap(hero.mesh.position, hero.yaw + Math.PI);
+    // Lock framing, measured through the camera's own projection once a lock has settled (0.8 s):
+    // the share of locked time with Wren and the target both inside the frame with a 5% margin,
+    // and the share with the target's middle clear of Wren's on-screen box.
+    const framing = { clear: 0, framed: 0, locked: 0, settle: 0 };
+    // Wren's silhouette: her body's width across the view, from her feet to the top of her head.
+    const heroBox = new Box3();
+    const across = new Vector3();
+    const heroRect = { x0: 0, x1: 0, y0: 0, y1: 0 };
+    const targetRect = { x0: 0, x1: 0, y0: 0, y1: 0 };
+    const corner = new Vector3();
+    const project = (box: Box3, rect: typeof heroRect): boolean => {
+      Object.assign(rect, { x0: Infinity, x1: -Infinity, y0: Infinity, y1: -Infinity });
+      let ahead = true;
+      for (let i = 0; i < 8; i += 1) {
+        corner.set(
+          i & 1 ? box.max.x : box.min.x,
+          i & 2 ? box.max.y : box.min.y,
+          i & 4 ? box.max.z : box.min.z,
+        );
+        corner.project(camera);
+        ahead &&= corner.z < 1;
+        rect.x0 = Math.min(rect.x0, corner.x);
+        rect.x1 = Math.max(rect.x1, corner.x);
+        rect.y0 = Math.min(rect.y0, corner.y);
+        rect.y1 = Math.max(rect.y1, corner.y);
+      }
+      return ahead && rect.x0 >= -0.9 && rect.y0 >= -0.9 && rect.x1 <= 0.9 && rect.y1 <= 0.9;
+    };
     afterPhysics(ctx, (dt) => {
-      rig.update(hero.mesh.position, lock.target?.mesh.position, dt, lock.reticle.position.y);
+      rig.update(hero.mesh.position, lock.target === undefined ? undefined : lock, dt);
       lighting.follow(hero.mesh.position);
+      framing.settle = lock.target === undefined ? 0 : framing.settle + dt;
+      if (framing.settle < 0.8) return;
+      camera.updateMatrixWorld();
+      across.setFromMatrixColumn(camera.matrixWorld, 0).setY(0).normalize().multiplyScalar(0.32);
+      const feet = hero.mesh.position.y - FOOT_OFFSET;
+      heroBox.min.set(hero.mesh.position.x, feet, hero.mesh.position.z).sub(across);
+      heroBox.max.set(hero.mesh.position.x, feet + 1.8, hero.mesh.position.z).add(across);
+      const heroIn = project(heroBox, heroRect);
+      const targetIn = project(lock.bounds, targetRect);
+      lock.bounds.getCenter(corner).project(camera);
+      const hidden =
+        corner.x > heroRect.x0 &&
+        corner.x < heroRect.x1 &&
+        corner.y > heroRect.y0 &&
+        corner.y < heroRect.y1;
+      framing.locked += dt;
+      if (heroIn && targetIn) framing.framed += dt;
+      if (!hidden) framing.clear += dt;
     });
 
     const toTarget = new Vector3();
@@ -448,6 +496,10 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       if (lock.reticle.visible)
         markerLow = markerLow === 0 ? lock.markerLift : Math.min(markerLow, lock.markerLift);
       statePatch.lockMarkerLowest = Math.round(markerLow * 1000) / 1000;
+      const share = (part: number): number =>
+        framing.locked === 0 ? 0 : Math.round((part / framing.locked) * 100) / 100;
+      statePatch.lockFramedShare = share(framing.framed);
+      statePatch.lockClearShare = share(framing.clear);
       statePatch.prompt = prompt;
       statePatch.respawns = respawns;
       statePatch.shieldBlocks = hero.shieldBlocks;

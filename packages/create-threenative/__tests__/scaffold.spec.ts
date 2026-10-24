@@ -293,7 +293,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // polish round 3: the shaft camera, the planting, the hopper and thornback and their scenarios.
   collectathon: "09543e1c53deaf25a942ea9e7ddb5cc715dd5a844738f4eaade10c8b6195ebda",
   // PRD-733 (2026-10-23): the new Lantern Vale kit, measured through createProject.
-  adventure: "27b0e2e8581a26556710bfb58e89410c3b4a39d46777129de29071e1ca5b9266",
+  adventure: "c201b7586a4fdc08cc38e1cd581aafd104d7740ca5e28856c6dedad4435915d4",
   minimal: "1bdc31f8d31f074cde31e09d67ac850762482f481e4b41050d5679f7155ac085",
   platformer: "27b6033ac8ce09c6b19894586865e465e2edfcc0b7edd7be02e4e8459b248e53",
   puzzle: "78f16093d5dedabf3a7bff8b07bb261bd1c7f91339aeaae51f7a1a278a5442d2",

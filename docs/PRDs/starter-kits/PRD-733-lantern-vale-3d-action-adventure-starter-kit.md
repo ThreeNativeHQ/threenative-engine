@@ -270,6 +270,20 @@ Each playtest runs on a project scaffolded from `--template adventure`:
   while locked (a dummy, `mossling.0`, `warden`), hides when unlocked, and that the gap is at least
   0.3 m. Red: the old ring at the old offset hung 0.35-0.59 m into the dummy and the Mossling
   (`lockon` and `combat` exit 1). Green: the lowest gap was 0.43-0.52 m.
+- 2026-10-24 (judge round 1 FAIL, lead's polish list; decided without the owner, who is AFK): the
+  locked camera now frames the fight as Ocarina does. It slides 0.7 m over Wren's right shoulder,
+  drops 0.6 m, and swings round her to the right by 0.25 rad, up to 0.75 rad as the target closes
+  (a shoulder offset alone left a 3-8 m target behind her on screen). It backs off 1 m, 1.5 m more
+  under 3 m, and more for a tall target, never past 9 m. Its pitch is capped at 35°, its climb in
+  front of a wall is off, and the aim moves 45% of the way from her shoulders to the target's
+  middle. The stick's yaw is unchanged. The lock picks the nearest target inside 6 m from any
+  side, else the nearest inside 12 m and the 60° cone. The arrow never draws under 3.6% of the
+  frame height (about 26 px at 720 p). Proof: state `lockFramedShare` (Wren's silhouette and the
+  target both inside 90% of the frame) and `lockClearShare` (the target's middle outside Wren's
+  on-screen box), counted after a lock has settled 0.8 s. `lockon`, `combat` and `boss` assert
+  both at least 0.9. Red: with the shoulder offset only, `lockClearShare` was about 0 (the target
+  stood behind her). Green: `lockon` 1/1, `combat` 1/1, `boss` framed 0.92 and clear 0.94; the
+  other six scenarios exit 0.
 
 ## Execution Phases
 

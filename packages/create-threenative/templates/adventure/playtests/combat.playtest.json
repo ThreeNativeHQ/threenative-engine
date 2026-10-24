@@ -240,6 +240,18 @@
         "path": "lockMarkerLowest",
         "gte": 0.3,
         "allowTrivial": "The lowest the marker tip floated over a locked target's bounds top; 0 until a lock, so a run that never locks fails."
+      },
+      {
+        "id": "state",
+        "path": "lockFramedShare",
+        "gte": 0.9,
+        "allowTrivial": "Of the settled locked time, the share with Wren and the target both inside the frame with a 5% margin; 0 until a lock settles."
+      },
+      {
+        "id": "state",
+        "path": "lockClearShare",
+        "gte": 0.9,
+        "allowTrivial": "Of the settled locked time, the share with the target's middle clear of Wren's on-screen box; 0 until a lock settles."
       }
     ],
     "components": [
