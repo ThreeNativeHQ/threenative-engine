@@ -1,33 +1,44 @@
 // Generated for you. This is ordinary Three.js — edit or delete it freely.
 //
-// Wren, a lantern-bearing wanderer, modelled from primitives: no mesh file, no skin, no clip. Every
-// joint is a group the pose below rotates. Local space is feet at y = 0, facing +Z, so her right
-// is -X. The right hand is a real `Bone` named `RightHand`, so the blade is attached with the
-// engine's `attachToBone` (a weapon stays in the hand that holds it) instead of being parented by
-// hand.
+// Wren, a lantern-bearing wanderer, modelled in code: no mesh file, no skin, no clip. Every joint
+// is a group the pose below rotates. Local space is feet at y = 0, facing +Z, so her right is -X.
+// The right hand is a real `Bone` named `RightHand`, so the blade is attached with the engine's
+// `attachToBone` (a weapon stays in the hand that holds it) instead of being parented by hand.
 //
-// Chibi-heroic proportions: the head is about a third of her 1.75 m. A russet tunic with an ochre
-// hem over a cream undershirt, a brass-buckled belt, a long dusk-blue cap whose tip lags behind her
-// head, a matching scarf whose tails stream back as she runs, bracers and cuffed boots. Sheathed,
-// the scabbard and the round shield ride her back, so she reads from the follow camera behind her.
+// About 4.5 heads tall. Turned (lathe) and swept (tube) forms rather than stacked primitives: a
+// jaw-tapered head with eyes, lids, brows, nose and mouth; side-swept hair locks; a dusk-blue hood
+// with a rolled rim and a short soft tip, over a mantle clasped with a cord; a russet tunic with a
+// V collar, a folded hem and a baldric; gloves, cuffed boots with soles. Each joint's parts merge
+// into one mesh per surface (cloth, leather, metal, skin, hair), so she is a few dozen draws. The
+// hood tip, the side locks, the pouch and the lantern are springs: they lag her bounce and stride.
 import {
   AdditiveBlending,
   Bone,
   BoxGeometry,
-  type BufferGeometry,
+  BufferAttribute,
+  BufferGeometry,
   CapsuleGeometry,
+  CatmullRomCurve3,
   CircleGeometry,
+  Color,
   ConeGeometry,
   CylinderGeometry,
   DoubleSide,
+  ExtrudeGeometry,
   Group,
+  LatheGeometry,
   type Material,
   MathUtils,
   Mesh,
   MeshBasicMaterial,
+  type Object3D,
   RingGeometry,
+  Shape,
   SphereGeometry,
   TorusGeometry,
+  TubeGeometry,
+  Vector2,
+  Vector3,
 } from "three";
 import { flat, glow, lit } from "./materials.js";
 import { C } from "./palette.js";
@@ -65,6 +76,156 @@ export interface IHeroRig {
 
 /** Hip height: the body group's origin, and the pivot the run and the roll turn about. */
 const HIP = 0.62;
+/** The head's centre above the neck joint, and its radius before the jaw taper. */
+const HC = 0.17;
+const HR = 0.165;
+/** The hood: a shell round the head, open over the face from the brim down. */
+const HOOD = { r: 0.205, y: HC + 0.015, z: -0.015, brim: 1.1, window: 0.85, hem: 0.78 * Math.PI };
+/** Where the hood gathers into its tip: up and back. */
+const PEAK = new Vector3(0, 0.55, -0.83).normalize();
+/** The chest's turned profile, [radius, height] from the waist up; its depth is 0.74 of its width. */
+const CHEST: readonly (readonly [number, number])[] = [
+  [0.15, -0.03],
+  [0.158, 0.06],
+  [0.165, 0.16],
+  [0.18, 0.28],
+  [0.183, 0.36],
+  [0.168, 0.44],
+  [0.125, 0.51],
+  [0.065, 0.555],
+  [0.001, 0.565],
+];
+const CHEST_DEPTH = 0.74;
+
+type Surface = "cloth" | "hood" | "skin" | "hair" | "leather" | "metal" | "eye";
+/** A part: its geometry (already placed in its joint), its colour or a colour per point, its surface. */
+type Part = readonly [BufferGeometry, number | ((p: Vector3) => number), Surface];
+type Point = readonly [number, number, number];
+const CASTS = new Set<Surface>(["cloth", "hood", "leather"]);
+
+function surfaces(): Record<Surface, Material> {
+  return {
+    cloth: lit(0xffffff, { detail: true, roughness: 0.92, vertexColors: true }),
+    // The hood and the mantle are seen from inside through their openings.
+    hood: lit(0xffffff, { detail: true, doubleSided: true, roughness: 0.92, vertexColors: true }),
+    skin: lit(0xffffff, { roughness: 0.6, vertexColors: true }),
+    hair: lit(0xffffff, { roughness: 0.5, vertexColors: true }),
+    leather: lit(0xffffff, { detail: true, roughness: 0.6, vertexColors: true }),
+    metal: lit(0xffffff, { metalness: 0.85, roughness: 0.32, vertexColors: true }),
+    eye: lit(0xffffff, { roughness: 0.15, vertexColors: true }),
+  };
+}
+
+/** Scales, turns (x, then y, then z) and moves a geometry in place. */
+function at(
+  geometry: BufferGeometry,
+  x = 0,
+  y = 0,
+  z = 0,
+  rx = 0,
+  ry = 0,
+  rz = 0,
+  sx = 1,
+  sy = sx,
+  sz = sx,
+): BufferGeometry {
+  return geometry.scale(sx, sy, sz).rotateX(rx).rotateY(ry).rotateZ(rz).translate(x, y, z);
+}
+
+/**
+ * A turned form from a [radius, height] profile listed bottom to top (that order faces it
+ * outward). The seam sits at the back; `depth` flattens it front to back.
+ */
+function lathe(
+  profile: readonly (readonly [number, number])[],
+  segments: number,
+  depth = 1,
+  phiStart = Math.PI,
+  phiLength = Math.PI * 2,
+): BufferGeometry {
+  const points = profile.map(([r, y]) => new Vector2(r, y));
+  return new LatheGeometry(points, segments, phiStart, phiLength).scale(1, 1, depth);
+}
+
+/** Moves every vertex through `move`, then relights the result. */
+function shape(geometry: BufferGeometry, move: (v: Vector3) => void): BufferGeometry {
+  const position = geometry.attributes.position;
+  if (position === undefined) return geometry;
+  const v = new Vector3();
+  for (let i = 0; i < position.count; i += 1) {
+    move(v.fromBufferAttribute(position, i));
+    position.setXYZ(i, v.x, v.y, v.z);
+  }
+  geometry.computeVertexNormals();
+  return geometry;
+}
+
+/** A swept lock, strap or crease: a tube through `points` whose radius follows `radius(t)`. */
+function strand(
+  points: readonly Point[],
+  radius: (t: number) => number,
+  radial = 6,
+  segments = 8,
+): BufferGeometry {
+  const curve = new CatmullRomCurve3(points.map(([x, y, z]) => new Vector3(x, y, z)));
+  const tube = new TubeGeometry(curve, segments, 1, radial, false);
+  const position = tube.attributes.position;
+  if (position === undefined) return tube;
+  const centre = new Vector3();
+  const v = new Vector3();
+  for (let i = 0; i <= segments; i += 1) {
+    curve.getPointAt(i / segments, centre);
+    const r = radius(i / segments);
+    for (let j = 0; j <= radial; j += 1) {
+      const k = i * (radial + 1) + j;
+      v.fromBufferAttribute(position, k).sub(centre).multiplyScalar(r).add(centre);
+      position.setXYZ(k, v.x, v.y, v.z);
+    }
+  }
+  return tube;
+}
+
+/** Merges a joint's parts into one mesh per surface, coloured per vertex. */
+function bake(joint: Object3D, parts: readonly Part[]): void {
+  const materials = surfaces();
+  const bySurface = new Map<Surface, Part[]>();
+  for (const p of parts) bySurface.set(p[2], [...(bySurface.get(p[2]) ?? []), p]);
+  const p = new Vector3();
+  const tint = new Color();
+  for (const [surface, list] of bySurface) {
+    const geometries = list.map(([g]) => (g.index === null ? g : g.toNonIndexed()));
+    const count = geometries.reduce((n, g) => n + (g.attributes.position?.count ?? 0), 0);
+    const position = new Float32Array(count * 3);
+    const normal = new Float32Array(count * 3);
+    const uv = new Float32Array(count * 2);
+    const colour = new Float32Array(count * 3);
+    let offset = 0;
+    geometries.forEach((g, i) => {
+      const source = g.attributes.position;
+      const paint = list[i]?.[1] ?? 0xffffff;
+      if (source === undefined) return;
+      position.set(source.array, offset * 3);
+      normal.set(g.attributes.normal?.array ?? [], offset * 3);
+      uv.set(g.attributes.uv?.array ?? [], offset * 2);
+      for (let v = 0; v < source.count; v += 1) {
+        tint.set(typeof paint === "number" ? paint : paint(p.fromBufferAttribute(source, v)));
+        colour.set([tint.r, tint.g, tint.b], (offset + v) * 3);
+      }
+      offset += source.count;
+    });
+    const merged = new BufferGeometry();
+    merged.setAttribute("position", new BufferAttribute(position, 3));
+    merged.setAttribute("normal", new BufferAttribute(normal, 3));
+    merged.setAttribute("uv", new BufferAttribute(uv, 2));
+    merged.setAttribute("color", new BufferAttribute(colour, 3));
+    const mesh = new Mesh(merged, materials[surface]);
+    // Only the cloth and leather cast: the hood, tunic, boots and shield already make her shadow,
+    // and the face, hair and fittings inside it would double her shadow-pass triangles for nothing.
+    mesh.castShadow = CASTS.has(surface);
+    mesh.receiveShadow = true;
+    joint.add(mesh);
+  }
+}
 
 function part(geometry: BufferGeometry, material: Material, x = 0, y = 0, z = 0): Mesh {
   const mesh = new Mesh(geometry, material);
@@ -75,198 +236,765 @@ function part(geometry: BufferGeometry, material: Material, x = 0, y = 0, z = 0)
 }
 
 /** A group at (x, y, z) inside `parent`: a joint the pose rotates. */
-function joint(parent: Group, x = 0, y = 0, z = 0): Group {
+function joint(parent: Object3D, x = 0, y = 0, z = 0): Group {
   const group = new Group();
   group.position.set(x, y, z);
   parent.add(group);
   return group;
 }
 
-/** The Ember Blade: a short sword with a glowing fuller, gripped at its own origin. */
+/** The chest's front (or, negated, back) surface depth at (x, y) in the body. */
+function chestZ(x: number, y: number): number {
+  let r = CHEST[0]?.[0] ?? 0;
+  for (let i = 1; i < CHEST.length; i += 1) {
+    const [r0, y0] = CHEST[i - 1] ?? [0, 0];
+    const [r1, y1] = CHEST[i] ?? [0, 0];
+    if (y >= y0 && y <= y1) r = r0 + ((r1 - r0) * (y - y0)) / (y1 - y0);
+  }
+  return CHEST_DEPTH * Math.sqrt(Math.max(0, r * r - x * x));
+}
+
+/** Below the eyes the head narrows and lengthens into a soft jaw and chin. */
+function skull(v: Vector3): void {
+  const ny = v.y / HR;
+  if (ny >= 0) return;
+  v.y *= 1.12;
+  v.x *= 1 - 0.32 * ny * ny;
+  v.z *= v.z > 0 ? 1 - 0.12 * ny * ny : 1 - 0.3 * ny * ny;
+}
+
+/** The face's depth at (x, y) from the head centre, after `skull`. */
+function faceZ(x: number, y: number): number {
+  if (y >= 0) return Math.sqrt(Math.max(0, HR * HR - x * x - y * y));
+  const y0 = y / 1.12;
+  const ny = y0 / HR;
+  const x0 = x / (1 - 0.32 * ny * ny);
+  return Math.sqrt(Math.max(0, HR * HR - x0 * x0 - y0 * y0)) * (1 - 0.12 * ny * ny);
+}
+
+/** The hood drapes wider and longer below the head and gathers into a soft peak behind. */
+function drape(v: Vector3): void {
+  const length = v.length();
+  const ny = v.y / length;
+  const t = Math.max(0, v.dot(PEAK) / length - 0.72) / 0.28;
+  if (ny < 0) {
+    v.x *= 1 - 0.3 * ny;
+    v.z *= 1 - 0.2 * ny;
+    v.y *= 1 - 0.5 * ny;
+  }
+  v.addScaledVector(PEAK, 0.05 * t * t);
+}
+
+/** Half the face opening's width, in radians round the hood, at polar angle `theta`: rounded at the top. */
+function opening(theta: number): number {
+  const u = MathUtils.clamp((theta - HOOD.brim) / 0.45, 0, 1);
+  return HOOD.window * (0.55 + 0.45 * Math.sin((u * Math.PI) / 2));
+}
+
+/** Spreads the hood's side piece, cut at the widest opening, so its edge follows `opening`. */
+function narrow(v: Vector3): void {
+  const r = v.length();
+  const theta = Math.acos(MathUtils.clamp(v.y / r, -1, 1));
+  const from = Math.PI / 2 + HOOD.window;
+  let phi = Math.atan2(v.z, -v.x);
+  while (phi < from - 1e-4) phi += Math.PI * 2;
+  const w = opening(theta);
+  const spread = (Math.PI * 2 - 2 * w) / (Math.PI * 2 - 2 * HOOD.window);
+  const turned = Math.PI / 2 + w + (phi - from) * spread;
+  v.set(
+    -r * Math.cos(turned) * Math.sin(theta),
+    r * Math.cos(theta),
+    r * Math.sin(turned) * Math.sin(theta),
+  );
+}
+
+/** A point on the hood at sphere angles (phi, theta), in the head joint. */
+function hoodPoint(phi: number, theta: number): Point {
+  const v = new Vector3(
+    -HOOD.r * Math.cos(phi) * Math.sin(theta),
+    HOOD.r * Math.cos(theta),
+    HOOD.r * Math.sin(phi) * Math.sin(theta),
+  );
+  drape(v);
+  return [v.x, v.y + HOOD.y, v.z + HOOD.z];
+}
+
+/** The Ember Blade: a bevelled short sword with a glowing fuller, gripped at its own origin. */
 export function createBlade(): Group {
-  const steel = lit(C.blade, { metalness: 0.9, roughness: 0.25 });
   const blade = new Group();
-  blade.add(part(new CylinderGeometry(0.025, 0.03, 0.16, 8), lit(C.leather), 0, 0, 0));
-  blade.add(part(new SphereGeometry(0.035, 8, 6), lit(C.brass, { metalness: 0.8 }), 0, -0.1));
-  blade.add(part(new BoxGeometry(0.2, 0.035, 0.05), lit(C.brass, { metalness: 0.8 }), 0, 0.09));
-  blade.add(part(new BoxGeometry(0.055, 0.68, 0.015), steel, 0, 0.45));
-  blade.add(part(new BoxGeometry(0.014, 0.55, 0.018), glow(C.ember, 3), 0, 0.42));
-  blade.add(part(new ConeGeometry(0.028, 0.09, 4), steel, 0, 0.83));
+  const outline = new Shape();
+  outline.moveTo(-0.019, 0.1);
+  outline.lineTo(0.019, 0.1);
+  outline.lineTo(0.016, 0.62);
+  outline.lineTo(0, 0.75);
+  outline.lineTo(-0.016, 0.62);
+  outline.closePath();
+  const edge = new ExtrudeGeometry(outline, {
+    bevelEnabled: true,
+    bevelSegments: 1,
+    bevelSize: 0.008,
+    bevelThickness: 0.006,
+    depth: 0.003,
+  }).translate(0, 0, -0.0015);
+  const grip: [number, number][] = [];
+  for (let i = 0; i <= 10; i += 1) grip.push([i % 2 === 0 ? 0.019 : 0.0225, -0.085 + i * 0.015]);
+  bake(blade, [
+    [edge, C.blade, "metal"],
+    [lathe(grip, 10), C.leather, "leather"],
+    [
+      strand(
+        [
+          [-0.1, 0.105, 0],
+          [-0.05, 0.08, 0],
+          [0, 0.076, 0],
+          [0.05, 0.08, 0],
+          [0.1, 0.105, 0],
+        ],
+        (t) => 0.009 + 0.008 * Math.sin(Math.PI * t),
+        8,
+        12,
+      ),
+      C.brass,
+      "metal",
+    ],
+    [at(new SphereGeometry(0.024, 10, 8), 0, 0.08, 0, 0, 0, 0, 1, 0.8, 0.7), C.brass, "metal"],
+    [at(new SphereGeometry(0.027, 10, 8), 0, -0.1, 0), C.brass, "metal"],
+  ]);
+  blade.add(part(new BoxGeometry(0.01, 0.5, 0.0165), glow(C.ember, 3), 0, 0.37));
   return blade;
 }
 
-/** The round shield, face toward +Z: boards, a brass rim and boss, an ochre lantern sigil. */
+/** The round shield, face toward +Z: a domed board painted blue and ochre, a brass rim and boss. */
 function createShield(): Group {
   const shield = new Group();
-  const board = part(new CylinderGeometry(0.2, 0.2, 0.035, 20), lit(C.shield));
-  board.rotation.x = Math.PI / 2;
-  shield.add(board);
-  shield.add(
-    part(new TorusGeometry(0.2, 0.018, 6, 24), lit(C.brass, { metalness: 0.8, roughness: 0.4 })),
-  );
-  shield.add(part(new TorusGeometry(0.12, 0.012, 6, 20), lit(C.tunicTrim), 0, 0, 0.02));
-  shield.add(
-    part(
-      new SphereGeometry(0.055, 10, 8),
-      lit(C.brass, { metalness: 0.8, roughness: 0.35 }),
-      0,
-      0,
-      0.02,
-    ),
-  );
+  const face = lathe(
+    [
+      [0, -0.012],
+      [0.19, -0.012],
+      [0.2, -0.004],
+      [0.2, 0],
+      [0.17, 0.012],
+      [0.145, 0.019],
+      [0.144, 0.0195],
+      [0.106, 0.026],
+      [0.104, 0.0262],
+      [0.06, 0.031],
+      [0, 0.034],
+    ],
+    24,
+  ).rotateX(Math.PI / 2);
+  const field = (p: Vector3): number => {
+    if (p.z < 0) return C.shield;
+    const r = Math.hypot(p.x, p.y);
+    return r < 0.105 ? C.cap : r < 0.1445 ? C.tunicTrim : C.shield;
+  };
+  bake(shield, [
+    [face, field, "leather"],
+    [new TorusGeometry(0.2, 0.014, 6, 28), C.brass, "metal"],
+    [
+      at(new SphereGeometry(0.042, 12, 6, 0, Math.PI * 2, 0, Math.PI / 2), 0, 0, 0.03, Math.PI / 2),
+      C.brass,
+      "metal",
+    ],
+  ]);
   return shield;
 }
 
 export function createHero(): IHeroRig {
   const root = new Group();
   const body = joint(root, 0, HIP, 0);
-  const tunic = lit(C.tunic);
-  const trim = lit(C.tunicTrim);
-  const cream = lit(C.undershirt);
-  const cap = lit(C.cap);
-  const leather = lit(C.leather);
-  const skin = lit(C.skin);
-  const hairMat = lit(C.hair);
-  const brass = lit(C.brass, { metalness: 0.8, roughness: 0.35 });
 
-  // Torso: the chest breathes; the flared hem swings with the stride.
-  const chest = joint(body, 0, 0.05, 0);
-  const torso = part(new CapsuleGeometry(0.17, 0.2, 4, 14), tunic, 0, 0.2, 0);
-  torso.scale.z = 0.85;
-  chest.add(torso);
-  chest.add(part(new CylinderGeometry(0.1, 0.13, 0.06, 12), cream, 0, 0.44, 0));
-  const skirt = joint(body, 0, 0.08, 0);
-  skirt.add(part(new CylinderGeometry(0.18, 0.28, 0.3, 18), tunic, 0, -0.15, 0));
-  const hem = part(new TorusGeometry(0.275, 0.022, 6, 22), trim, 0, -0.29, 0);
-  hem.rotation.x = Math.PI / 2;
-  skirt.add(hem);
-  body.add(part(new CylinderGeometry(0.188, 0.19, 0.06, 16), leather, 0, 0.08, 0));
-  body.add(part(new BoxGeometry(0.08, 0.065, 0.03), brass, 0, 0.08, 0.185));
-
-  // The lantern on her left hip: the one warm light she carries.
-  const lamp = joint(body, 0.2, -0.02, 0.1);
-  const iron = lit(C.iron, { metalness: 0.7 });
-  lamp.add(part(new CylinderGeometry(0.038, 0.038, 0.08, 8), glow(C.lamp, 8)));
-  lamp.add(part(new ConeGeometry(0.05, 0.05, 8), iron, 0, 0.065));
-  lamp.add(part(new CylinderGeometry(0.048, 0.048, 0.015, 8), iron, 0, -0.045));
-
-  // Head: a third of her height. Hair, a fringe under the cap, big eyes with highlights, brows,
-  // pointed ears, and the long cap whose two-joint tip trails behind.
-  const head = joint(body, 0, 0.71, 0);
-  head.add(part(new SphereGeometry(0.25, 20, 16), skin));
-  head.add(part(new SphereGeometry(0.258, 18, 14), hairMat, 0, 0.02, -0.03));
-  for (let i = 0; i < 5; i += 1) {
-    const a = (i - 2) * 0.32;
-    const lock = part(
-      new ConeGeometry(0.06, 0.16, 6),
-      hairMat,
-      Math.sin(a) * 0.22,
-      0.1,
-      Math.cos(a) * 0.215,
-    );
-    lock.rotation.set(Math.PI - 0.25, a, 0);
-    head.add(lock);
-  }
-  const eyeMat = lit(C.eye, { roughness: 0.3 });
-  const shine = flat(0xffffff);
-  for (const side of [-1, 1]) {
-    const eye = part(new SphereGeometry(0.045, 10, 8), eyeMat, 0.088 * side, -0.01, 0.222);
-    eye.scale.set(0.8, 1.25, 0.5);
-    head.add(eye);
-    head.add(part(new SphereGeometry(0.013, 6, 4), shine, 0.088 * side + 0.014, 0.02, 0.245));
-    const brow = part(new BoxGeometry(0.085, 0.02, 0.02), hairMat, 0.088 * side, 0.075, 0.232);
-    brow.rotation.z = 0.2 * side;
-    head.add(brow);
-    const ear = joint(head, 0.235 * side, 0, -0.02);
-    ear.rotation.set(-0.35, 0, -side * (Math.PI / 2 - 0.5));
-    const tip = part(new ConeGeometry(0.06, 0.2, 6), skin, 0, 0.09, 0);
-    tip.scale.z = 0.5;
-    ear.add(tip);
-  }
-  head.add(part(new SphereGeometry(0.024, 6, 4), skin, 0, -0.045, 0.25));
-  head.add(part(new BoxGeometry(0.05, 0.012, 0.01), lit(C.mouth), 0, -0.11, 0.228));
-  const crown = part(
-    new SphereGeometry(0.275, 18, 10, 0, Math.PI * 2, 0, Math.PI * 0.5),
-    cap,
-    0,
-    0.03,
-    0,
-  );
-  crown.rotation.x = -0.5;
-  head.add(crown);
-  const band = part(new TorusGeometry(0.255, 0.022, 6, 24), lit(C.capDark), 0, 0.03, 0);
-  band.rotation.x = Math.PI / 2 - 0.5;
-  head.add(band);
-  const capBase = joint(head, 0, 0.16, -0.2);
-  capBase.add(part(new CylinderGeometry(0.08, 0.17, 0.36, 14), cap, 0, 0.18, 0));
-  const capTip = joint(capBase, 0, 0.35, 0);
-  capTip.add(part(new ConeGeometry(0.08, 0.32, 12), cap, 0, 0.16, 0));
-  capTip.add(part(new SphereGeometry(0.035, 8, 6), brass, 0, 0.33, 0));
-
-  // The scarf: a roll round the neck, knotted at the left shoulder, two tails that stream back.
-  const scarfMat = lit(C.cap);
-  const roll = part(new TorusGeometry(0.15, 0.055, 8, 18), scarfMat, 0, 0.5, 0);
-  roll.rotation.x = Math.PI / 2;
-  body.add(roll);
-  body.add(part(new SphereGeometry(0.06, 10, 8), scarfMat, 0.14, 0.5, -0.16));
-  const tails = [0.11, 0.18].map((x) => {
-    const tail = joint(body, x, 0.49, -0.2);
-    tail.add(part(new BoxGeometry(0.08, 0.36, 0.022), scarfMat, 0, -0.18, 0));
-    return tail;
+  // Torso: a turned chest with a V collar over the cream undershirt; it breathes.
+  const chest = joint(body);
+  const vNeck = (p: Vector3): number =>
+    p.z > 0.03 && p.y > 0.37 + 1.8 * Math.abs(p.x) ? C.undershirt : C.tunic;
+  const collar = [-1, 1].map((s) => {
+    const points: Point[] = [];
+    for (let i = 0; i <= 4; i += 1) {
+      const x = s * 0.088 * (1 - i / 4);
+      const y = 0.37 + 1.8 * Math.abs(x);
+      points.push([x, y, chestZ(x, y) + 0.004]);
+    }
+    return [strand(points, () => 0.009, 6, 6), C.tunicTrim, "cloth"] as const;
   });
+  bake(chest, [[lathe(CHEST, 24, CHEST_DEPTH), vNeck, "cloth"], ...collar]);
+
+  // Belt with a square brass buckle, the pouch on her right hip, the lantern on her left.
+  bake(body, [
+    [
+      at(
+        new TorusGeometry(0.163, 0.022, 6, 32).rotateX(Math.PI / 2),
+        0,
+        0.02,
+        0,
+        0,
+        0,
+        0,
+        1,
+        1,
+        0.76,
+      ),
+      C.belt,
+      "leather",
+    ],
+    [
+      at(new TorusGeometry(0.026, 0.0065, 6, 4), 0, 0.02, 0.143, 0, 0, Math.PI / 4),
+      C.brass,
+      "metal",
+    ],
+    [at(new CylinderGeometry(0.048, 0.05, 0.12, 12, 1, true), 0, 0.59, 0), C.skin, "skin"],
+  ]);
+  const pouch = joint(body, -0.17, -0.005, 0.075);
+  pouch.rotation.y = -0.8;
+  bake(pouch, [
+    [
+      at(new SphereGeometry(0.05, 10, 8), 0, -0.055, 0, 0, 0, 0, 1, 1.1, 0.65),
+      C.leather,
+      "leather",
+    ],
+    [
+      at(
+        new SphereGeometry(0.052, 10, 5, 0, Math.PI * 2, 0, Math.PI / 2),
+        0,
+        -0.035,
+        0.004,
+        0,
+        0,
+        0,
+        1,
+        0.6,
+        0.72,
+      ),
+      C.belt,
+      "leather",
+    ],
+    [at(new SphereGeometry(0.009, 6, 4), 0, -0.05, 0.036), C.brass, "metal"],
+  ]);
+  const lamp = joint(body, 0.19, 0, 0.09);
+  bake(lamp, [
+    [at(new TorusGeometry(0.012, 0.003, 4, 10), 0, -0.012, 0), C.iron, "metal"],
+    [at(new ConeGeometry(0.045, 0.04, 8), 0, -0.045, 0), C.iron, "metal"],
+    [at(new CylinderGeometry(0.042, 0.042, 0.014, 8), 0, -0.142, 0), C.iron, "metal"],
+  ]);
+  lamp.add(part(new CylinderGeometry(0.034, 0.034, 0.075, 8), glow(C.lamp, 8), 0, -0.1));
+
+  // The skirt of the tunic: it flares and folds toward a hem with an ochre band, and swings.
+  const skirt = joint(body, 0, 0.03, 0);
+  const folds = (v: Vector3): void => {
+    const depth = MathUtils.clamp(-v.y / 0.33, 0, 1);
+    const phi = Math.atan2(v.x, v.z / 0.82);
+    const flare = 1 + 0.055 * depth * Math.sin(9 * phi);
+    v.x *= flare;
+    v.z *= flare;
+    v.y += 0.01 * depth * Math.sin(9 * phi + 0.8);
+  };
+  bake(skirt, [
+    [
+      shape(
+        lathe(
+          [
+            [0.25, -0.342],
+            [0.262, -0.335],
+            [0.258, -0.31],
+            [0.235, -0.24],
+            [0.2, -0.14],
+            [0.172, -0.05],
+            [0.16, 0.005],
+          ],
+          30,
+          0.82,
+        ),
+        folds,
+      ),
+      C.tunic,
+      "cloth",
+    ],
+    [
+      shape(
+        lathe(
+          [
+            [0.254, -0.344],
+            [0.266, -0.337],
+            [0.264, -0.302],
+          ],
+          30,
+          0.82,
+        ),
+        folds,
+      ),
+      C.tunicTrim,
+      "cloth",
+    ],
+  ]);
+
+  // The baldric runs from her right shoulder to her left hip, front and back, with the scabbard.
+  const baldric = joint(body);
+  bake(
+    baldric,
+    [1, -1].map((side) => {
+      const points: Point[] = [];
+      for (let i = 0; i <= 5; i += 1) {
+        const x = -0.15 + 0.06 * i;
+        const y = 0.45 - 0.082 * i;
+        points.push([x, y, side * (chestZ(x, y) + 0.011)]);
+      }
+      return [strand(points, () => 0.013, 6, 10), C.belt, "leather"] as const;
+    }),
+  );
+
+  // Head: a jaw-tapered skull, big dark eyes with lids and catchlights, brows, a small nose, a
+  // smile, warm cheeks; hair under the brim, a side-swept fringe.
+  const head = joint(body, 0, 0.585, 0);
+  const face: Part[] = [[at(shape(new SphereGeometry(HR, 24, 18), skull), 0, HC), C.skin, "skin"]];
+  const onFace = (x: number, y: number, lift: number): Point => [x, HC + y, faceZ(x, y) + lift];
+  const sparkle = glow(0xffffff, 1.5);
+  for (const s of [-1, 1]) {
+    const ex = 0.058 * s;
+    const ey = -0.022;
+    const z = faceZ(ex, ey);
+    face.push([
+      at(new SphereGeometry(0.03, 10, 8), ex, HC + ey, z - 0.008, -0.1, 0.38 * s, 0, 1, 1.25, 0.5),
+      C.sclera,
+      "eye",
+    ]);
+    face.push([
+      at(
+        new SphereGeometry(0.024, 10, 8),
+        ex - 0.003 * s,
+        HC + ey - 0.002,
+        z,
+        -0.1,
+        0.3 * s,
+        0,
+        1,
+        1.2,
+        0.5,
+      ),
+      C.iris,
+      "eye",
+    ]);
+    head.add(
+      part(
+        new SphereGeometry(0.0055, 6, 4),
+        sparkle,
+        ex - 0.003 * s + 0.008,
+        HC + ey + 0.01,
+        z + 0.011,
+      ),
+    );
+    const lid = [Math.PI + 0.25, Math.PI - 0.35, Math.PI / 2, 0.4, -0.05].map((a) =>
+      onFace(ex + s * 0.034 * Math.cos(a), ey + 0.04 * Math.sin(a), 0.006),
+    );
+    face.push([strand(lid, (t) => 0.0025 + 0.003 * t, 5, 10), C.lid, "eye"]);
+    const brow = [
+      onFace(s * 0.026, 0.036, 0.006),
+      onFace(s * 0.058, 0.05, 0.006),
+      onFace(s * 0.094, 0.042, 0.006),
+    ];
+    face.push([strand(brow, (t) => 0.0075 - 0.004 * t, 5, 8), C.hair, "hair"]);
+    face.push([
+      at(
+        new SphereGeometry(0.026, 10, 6),
+        s * 0.09,
+        HC - 0.062,
+        faceZ(s * 0.09, -0.062) - 0.003,
+        0,
+        0.5 * s,
+        0,
+        1,
+        0.6,
+        0.22,
+      ),
+      C.blush,
+      "skin",
+    ]);
+  }
+  face.push([
+    at(
+      new SphereGeometry(0.016, 8, 6),
+      0,
+      HC - 0.058,
+      faceZ(0, -0.058) - 0.003,
+      0,
+      0,
+      0,
+      0.9,
+      0.8,
+      1,
+    ),
+    C.skin,
+    "skin",
+  ]);
+  const mouth = [
+    onFace(-0.024, -0.097, 0.003),
+    onFace(-0.01, -0.103, 0.003),
+    onFace(0.01, -0.103, 0.003),
+    onFace(0.024, -0.097, 0.003),
+  ];
+  face.push([strand(mouth, (t) => 0.0016 + 0.0026 * Math.sin(Math.PI * t), 5, 8), C.mouth, "eye"]);
+  face.push([
+    at(new SphereGeometry(0.175, 20, 6, 0, Math.PI * 2, 0, 1), 0, HC + 0.006, -0.006),
+    C.hair,
+    "hair",
+  ]);
+  for (let i = 0; i < 6; i += 1) {
+    const x = -0.09 + 0.033 * i;
+    const drop = (i % 2) * 0.01;
+    const lock = [
+      onFace(x, 0.115, 0.012),
+      onFace(x + 0.012, 0.09, 0.016),
+      onFace(x + 0.026, 0.075 - drop, 0.01),
+      onFace(x + 0.034, 0.062 - drop, 0.004),
+    ];
+    face.push([
+      strand(lock, (t) => 0.022 * (1 - t) + 0.003, 6, 8),
+      i % 2 === 1 ? C.hairLight : C.hair,
+      "hair",
+    ]);
+  }
+
+  // The hood: a shell open over the face, a rolled rim round the opening, a mantle below.
+  const top = new SphereGeometry(HOOD.r, 28, 6, 0, Math.PI * 2, 0, HOOD.brim);
+  const sides = new SphereGeometry(
+    HOOD.r,
+    24,
+    12,
+    Math.PI / 2 + HOOD.window,
+    Math.PI * 2 - 2 * HOOD.window,
+    HOOD.brim,
+    HOOD.hem - HOOD.brim,
+  );
+  const rim: Point[] = [];
+  const down = (i: number): number => HOOD.brim + ((HOOD.hem - HOOD.brim) * i) / 8;
+  for (let i = 8; i > 0; i -= 1) rim.push(hoodPoint(Math.PI / 2 + opening(down(i)), down(i)));
+  const across = opening(HOOD.brim);
+  for (let i = 0; i <= 6; i += 1)
+    rim.push(hoodPoint(Math.PI / 2 + across - (2 * across * i) / 6, HOOD.brim - 0.02));
+  for (let i = 1; i <= 8; i += 1) rim.push(hoodPoint(Math.PI / 2 - opening(down(i)), down(i)));
+  face.push(
+    [at(shape(top, drape), 0, HOOD.y, HOOD.z), C.cap, "hood"],
+    [
+      at(
+        shape(sides, (v) => {
+          narrow(v);
+          drape(v);
+        }),
+        0,
+        HOOD.y,
+        HOOD.z,
+      ),
+      C.cap,
+      "hood",
+    ],
+    [strand(rim, () => 0.012, 6, 40), C.capDark, "cloth"],
+    [
+      strand(
+        [0.35, 0.8, 1.3, 1.8, 2.2].map((theta) => hoodPoint((Math.PI * 3) / 2, theta)),
+        () => 0.005,
+        5,
+        16,
+      ),
+      C.capDark,
+      "cloth",
+    ],
+  );
+  bake(head, face);
+
+  // Side locks and the hood's tip hang on their own joints: springs move them.
+  const locks = [-1, 1].map((s) => {
+    const lock = joint(head, s * 0.128, HC + 0.05, 0.085);
+    const hang = (dx: number, dz: number, length: number): Part => [
+      strand(
+        [
+          [dx, 0.012, dz],
+          [dx + s * 0.014, -0.05, dz + 0.004],
+          [dx + s * 0.016, -length * 0.7, dz + 0.006],
+          [dx + s * 0.006, -length, dz],
+        ],
+        (t) => 0.024 * (1 - t) + 0.004,
+        6,
+        8,
+      ),
+      dz < 0 ? C.hairLight : C.hair,
+      "hair",
+    ];
+    bake(lock, [hang(0, 0, 0.16), hang(s * 0.008, -0.04, 0.13)]);
+    return lock;
+  });
+  const base = PEAK.clone().multiplyScalar(0.23);
+  const hoodTip = joint(head, 0, HOOD.y + base.y, HOOD.z + base.z);
+  bake(hoodTip, [
+    [
+      strand(
+        [
+          [0, 0, 0],
+          [0, -0.03, -0.04],
+          [0, -0.1, -0.062],
+          [0, -0.18, -0.055],
+        ],
+        (t) => 0.045 * (1 - t) + 0.006,
+        10,
+        10,
+      ),
+      C.cap,
+      "cloth",
+    ],
+  ]);
+
+  // The mantle over her shoulders, open at the front over the V collar, clasped with a cord.
+  const gap = 0.55;
+  const mantleProfile: [number, number][] = [
+    [0.262, 0.39],
+    [0.255, 0.42],
+    [0.225, 0.475],
+    [0.17, 0.535],
+    [0.12, 0.565],
+    [0.1, 0.585],
+  ];
+  const wave = (phi: number, y: number): number =>
+    0.012 * MathUtils.clamp((0.44 - y) / 0.05, 0, 1) * Math.sin(7 * phi);
+  const mantle = shape(lathe(mantleProfile, 26, 0.8, gap, Math.PI * 2 - 2 * gap), (v) => {
+    v.y += wave(Math.atan2(v.x, v.z / 0.8), v.y);
+  });
+  const around = (phi: number, [r, y]: readonly [number, number]): Point => [
+    r * Math.sin(phi),
+    y + wave(phi, y),
+    0.8 * r * Math.cos(phi),
+  ];
+  const hem: Point[] = [];
+  for (let i = 0; i <= 24; i += 1)
+    hem.push(around(gap + ((Math.PI * 2 - 2 * gap) * i) / 24, [0.264, 0.39]));
+  const clasp = (s: number): Point => around(s * gap, [0.188, 0.515]);
+  bake(body, [
+    [mantle, C.cap, "hood"],
+    [strand(hem, () => 0.01, 5, 32), C.capDark, "cloth"],
+    ...[-1, 1].map(
+      (s) =>
+        [
+          strand(
+            mantleProfile.map((p) => around(s * gap, p)),
+            () => 0.009,
+            6,
+            8,
+          ),
+          C.capDark,
+          "cloth",
+        ] as const,
+    ),
+    ...[-1, 1].map(
+      (s) => [at(new SphereGeometry(0.014, 8, 6), ...clasp(s)), C.brass, "metal"] as const,
+    ),
+    [
+      strand([clasp(-1), [0, 0.49, chestZ(0, 0.49) + 0.012], clasp(1)], () => 0.0045, 5, 10),
+      C.brass,
+      "metal",
+    ],
+  ]);
 
   // Back gear. The scabbard runs from her right shoulder to her left hip under the shield, with
   // the sheathed hilt over her shoulder; the shield sits on the scabbard.
   const scabbard = joint(body, 0, 0.2, -0.17);
   scabbard.rotation.z = 0.55;
-  scabbard.add(part(new BoxGeometry(0.075, 0.8, 0.04), leather));
-  scabbard.add(part(new BoxGeometry(0.09, 0.07, 0.05), brass, 0, 0.38));
-  const chape = part(new ConeGeometry(0.045, 0.08, 4), brass, 0, -0.43);
-  chape.rotation.z = Math.PI;
-  scabbard.add(chape);
+  bake(scabbard, [
+    [
+      lathe(
+        [
+          [0, -0.4],
+          [0.026, -0.385],
+          [0.036, -0.3],
+          [0.04, 0.3],
+          [0.042, 0.37],
+          [0, 0.371],
+        ],
+        10,
+        0.45,
+      ),
+      C.leather,
+      "leather",
+    ],
+    [
+      lathe(
+        [
+          [0.046, 0.33],
+          [0.046, 0.385],
+        ],
+        10,
+        0.5,
+      ),
+      C.brass,
+      "metal",
+    ],
+    [
+      lathe(
+        [
+          [0, -0.415],
+          [0.03, -0.39],
+          [0.04, -0.33],
+        ],
+        10,
+        0.5,
+      ),
+      C.brass,
+      "metal",
+    ],
+  ]);
   const sheathed = createBlade();
   sheathed.rotation.z = Math.PI;
   sheathed.position.y = 0.48;
   scabbard.add(sheathed);
   const backShield = createShield();
-  backShield.position.set(0.02, 0.24, -0.215);
+  backShield.position.set(0.02, 0.24, -0.24);
   backShield.rotation.y = Math.PI;
   body.add(backShield);
 
-  // Arms: a russet shoulder, a cream sleeve, a leather bracer, a bare hand.
+  // Arms: a puffed russet sleeve with an ochre band, a cream undersleeve at the elbow, a cuffed
+  // leather glove and a gloved fist. Legs: dark trousers into boots with a folded cuff and a sole.
   const arms = { left: new Group(), right: new Group() };
+  const fores = { left: new Group(), right: new Group() };
   const legs = { left: new Group(), right: new Group() };
+  const shins = { left: new Group(), right: new Group() };
   for (const [name, side] of [
     ["left", 1],
     ["right", -1],
   ] as const) {
     const arm = arms[name];
-    arm.position.set(0.23 * side, 0.43, 0);
+    arm.position.set(0.2 * side, 0.43, 0);
     body.add(arm);
-    arm.add(part(new SphereGeometry(0.075, 10, 8), tunic));
-    arm.add(part(new CapsuleGeometry(0.058, 0.1, 4, 8), cream, 0, -0.11, 0));
-    arm.add(part(new CylinderGeometry(0.066, 0.058, 0.13, 10), leather, 0, -0.24, 0));
-    arm.add(part(new SphereGeometry(0.058, 8, 6), skin, 0, -0.34, 0));
-    // Legs: dark trousers into a boot with a folded cuff; the sole meets y = 0.
+    bake(arm, [
+      [new SphereGeometry(0.068, 12, 8), C.tunic, "cloth"],
+      [
+        lathe(
+          [
+            [0.056, -0.205],
+            [0.06, -0.18],
+            [0.07, -0.12],
+            [0.078, -0.06],
+            [0.075, 0],
+          ],
+          14,
+        ),
+        C.tunic,
+        "cloth",
+      ],
+      [
+        lathe(
+          [
+            [0.062, -0.205],
+            [0.064, -0.18],
+          ],
+          14,
+        ),
+        C.tunicTrim,
+        "cloth",
+      ],
+    ]);
+    const fore = fores[name];
+    fore.position.y = -0.2;
+    arm.add(fore);
+    bake(fore, [
+      [new SphereGeometry(0.05, 10, 8), C.undershirt, "cloth"],
+      [
+        lathe(
+          [
+            [0.042, -0.185],
+            [0.044, -0.165],
+            [0.05, -0.1],
+            [0.062, -0.085],
+            [0.064, -0.065],
+            [0.046, -0.05],
+          ],
+          14,
+        ),
+        (p) => (p.y > -0.09 ? C.bootCuff : C.gloves),
+        "leather",
+      ],
+      [
+        at(new SphereGeometry(0.042, 10, 8), 0, -0.215, 0.004, 0, 0, 0, 0.8, 1.1, 0.62),
+        C.gloves,
+        "leather",
+      ],
+      [
+        at(new CapsuleGeometry(0.018, 0.045, 3, 8), 0, -0.245, 0.02, 0, 0, Math.PI / 2),
+        C.gloves,
+        "leather",
+      ],
+      [
+        at(
+          new CapsuleGeometry(0.014, 0.025, 3, 6),
+          -side * 0.012,
+          -0.21,
+          0.035,
+          -0.5,
+          0,
+          side * 0.5,
+        ),
+        C.gloves,
+        "leather",
+      ],
+    ]);
     const leg = legs[name];
-    leg.position.set(0.09 * side, -0.06, 0);
+    leg.position.set(0.085 * side, -0.04, 0);
     body.add(leg);
-    leg.add(part(new CapsuleGeometry(0.065, 0.22, 4, 8), lit(C.trousers), 0, -0.17, 0));
-    leg.add(part(new CylinderGeometry(0.095, 0.088, 0.07, 12), lit(C.bootCuff), 0, -0.33, 0));
-    leg.add(part(new CylinderGeometry(0.08, 0.075, 0.2, 12), leather, 0, -0.43, 0));
-    leg.add(part(new BoxGeometry(0.13, 0.08, 0.22), leather, 0, -0.52, 0.04));
+    bake(leg, [
+      [
+        lathe(
+          [
+            [0.058, -0.28],
+            [0.066, -0.22],
+            [0.076, -0.08],
+            [0.078, 0.02],
+          ],
+          14,
+        ),
+        C.trousers,
+        "cloth",
+      ],
+      [at(new SphereGeometry(0.058, 10, 8), 0, -0.28, 0), C.trousers, "cloth"],
+    ]);
+    const shin = shins[name];
+    shin.position.y = -0.28;
+    leg.add(shin);
+    bake(shin, [
+      [
+        lathe(
+          [
+            [0.05, -0.245],
+            [0.062, -0.225],
+            [0.06, -0.19],
+            [0.066, -0.12],
+            [0.072, -0.075],
+            [0.09, -0.06],
+            [0.092, -0.01],
+            [0.06, 0.0],
+          ],
+          16,
+        ),
+        (p) => (p.y > -0.066 ? C.bootCuff : C.leather),
+        "leather",
+      ],
+      [
+        at(new SphereGeometry(0.062, 12, 8), 0, -0.245, 0.045, 0, 0, 0, 0.95, 0.72, 1.75),
+        C.leather,
+        "leather",
+      ],
+      [
+        at(new CylinderGeometry(0.064, 0.064, 0.022, 16), 0, -0.289, 0.045, 0, 0, 0, 1, 1, 1.8),
+        C.sole,
+        "leather",
+      ],
+    ]);
   }
 
   // The right hand is a bone: `Hero.ts` attaches the blade to it once Wren has one.
   const hand = new Bone();
   hand.name = "RightHand";
-  hand.position.set(0, -0.34, 0.02);
+  hand.position.set(0, -0.235, 0.02);
   hand.rotation.x = Math.PI / 2;
-  arms.right.add(hand);
+  fores.right.add(hand);
 
   // The shield on the left forearm, face out, while drawn; a block turns it to face forward.
   const armShield = createShield();
-  arms.left.add(armShield);
+  fores.left.add(armShield);
   const flashMaterial = new MeshBasicMaterial({
     blending: AdditiveBlending,
     color: C.flash,
@@ -308,8 +1036,19 @@ export function createHero(): IHeroRig {
   blob.renderOrder = 2;
   root.add(blob);
 
+  // Springs: an angle that chases a target and overshoots a little, so cloth and hair lag.
+  const springs = { tip: [0, 0], tipSide: [0, 0], locks: [0, 0], pouch: [0, 0], lamp: [0, 0] };
+  const chase = (s: number[], target: number, dt: number, stiffness = 80, damping = 9): number => {
+    const angle = s[0] ?? 0;
+    const speed = (s[1] ?? 0) + ((target - angle) * stiffness - (s[1] ?? 0) * damping) * dt;
+    s[0] = angle + speed * dt;
+    s[1] = speed;
+    return s[0];
+  };
+
   let time = 0;
   let guard = 0;
+  let lastY = HIP;
   return {
     group: root,
     update({ dt, drawn, flash: flashing, progress, speed, state, sword }: IHeroPose): void {
@@ -323,6 +1062,7 @@ export function createHero(): IHeroRig {
       // Gear: the blade in hand and the shield on the arm only while drawn or blocking.
       const armed = drawn || state === "block";
       scabbard.visible = sword;
+      baldric.visible = sword;
       sheathed.visible = sword && !drawn;
       armShield.visible = armed;
       backShield.visible = !armed;
@@ -330,23 +1070,23 @@ export function createHero(): IHeroRig {
       body.scale.setScalar(1);
       body.position.set(0, HIP + Math.abs(Math.sin(cycle)) * 0.05 * run + breath * 0.006, 0);
       body.rotation.set(run * 0.14, 0, 0);
-      chest.scale.set(1 + breath * 0.012, 1 + breath * 0.02, 1 + breath * 0.012);
+      chest.scale.set(1 + breath * 0.01, 1 + breath * 0.008, 1 + breath * 0.012);
       skirt.rotation.set(-swing * 0.08 - run * 0.1, 0, swing * 0.05);
       legs.left.rotation.set(swing, 0, 0);
       legs.right.rotation.set(-swing, 0, 0);
+      // A knee folds as its foot leaves the ground behind her; an elbow bends more at a run.
+      shins.left.rotation.set(0.05 + run * (0.15 + 1.1 * Math.max(0, Math.sin(cycle - 0.3))), 0, 0);
+      shins.right.rotation.set(
+        0.05 + run * (0.15 + 1.1 * Math.max(0, -Math.sin(cycle - 0.3))),
+        0,
+        0,
+      );
       arms.left.rotation.set(-swing * 0.8, 0, 0.1 + breath * 0.02);
       arms.right.rotation.set(swing * 0.8 - (drawn ? 0.3 : 0), 0, -0.1 - breath * 0.02);
+      fores.left.rotation.set(-0.15 - 0.75 * run, 0, 0);
+      fores.right.rotation.set(-0.15 - 0.75 * run - (drawn ? 0.3 : 0), 0, 0);
       head.rotation.set(-run * 0.1, Math.sin(time * 0.9) * 0.08 * (1 - run), 0);
-      // The cap tip and the scarf tails lag: they lift with speed and flutter with the stride.
-      capBase.rotation.set(-Math.PI / 2 - 0.55 + run * 0.4 + Math.sin(time * 2.4) * 0.04, 0, 0);
-      capTip.rotation.set(-0.45 + run * 0.25 + Math.sin(cycle - 1.2) * (0.12 + 0.2 * run), 0, 0);
-      for (const [i, tail] of tails.entries())
-        tail.rotation.set(
-          0.2 + run * 1 + Math.sin(time * (3 + 11 * run) + i * 1.7) * (0.05 + 0.15 * run),
-          0,
-          0.05 * (i === 0 ? -1 : 1),
-        );
-      armShield.position.set(0.075, -0.22, 0);
+      armShield.position.set(0.055, -0.1, 0);
       armShield.rotation.set(0, Math.PI / 2, 0);
       flashMaterial.opacity = flashing * 0.85;
       flash.scale.setScalar(1 + (1 - flashing) * 0.6);
@@ -361,6 +1101,7 @@ export function createHero(): IHeroRig {
           0,
           -0.9 + cut * 2.1 - recover * 1.2,
         );
+        fores.right.rotation.set(-0.2, 0, 0);
         body.rotation.y = 0.5 - cut * 1.1 + recover * 0.6;
         arms.left.rotation.set(-0.6, 0, 0.5);
         const reveal = MathUtils.clamp((progress - 0.3) / 0.22, 0, 1);
@@ -371,9 +1112,10 @@ export function createHero(): IHeroRig {
       } else if (state === "block" || guard > 0.01) {
         // The shield comes up across her chest, face forward; she braces lower.
         arms.left.rotation.set(-1.45 * guard, 0, MathUtils.lerp(0.1, -0.3, guard));
+        fores.left.rotation.set(MathUtils.lerp(-0.15, 0, guard), 0, 0);
         armShield.position.set(
-          MathUtils.lerp(0.075, 0, guard),
-          MathUtils.lerp(-0.22, -0.3, guard),
+          MathUtils.lerp(0.055, 0, guard),
+          MathUtils.lerp(-0.1, -0.12, guard),
           0,
         );
         armShield.rotation.set((Math.PI / 2) * guard, (Math.PI / 2) * (1 - guard), 0);
@@ -388,22 +1130,32 @@ export function createHero(): IHeroRig {
         body.rotation.x = 0.3;
         arms.left.rotation.set(-1.25, 0, -0.2);
         arms.right.rotation.set(-1.25, 0, 0.2);
+        fores.left.rotation.set(-0.3, 0, 0);
+        fores.right.rotation.set(-0.3, 0, 0);
         legs.left.rotation.set(-0.35 + step, 0, 0);
         legs.right.rotation.set(-0.35 - step, 0, 0);
+        shins.left.rotation.set(0.3, 0, 0);
+        shins.right.rotation.set(0.3, 0, 0);
       } else if (state === "roll") {
         // A tucked somersault: the body shrinks into a ball and turns about the hip, which lifts
-        // enough that the cap never dips under the floor.
+        // enough that the hood never dips under the floor.
         const tuck = Math.sin(progress * Math.PI);
         body.rotation.x = progress * Math.PI * 2;
         body.scale.setScalar(1 - 0.28 * tuck);
         body.position.y = HIP + 0.08 * tuck;
         legs.left.rotation.x = -1.4 * tuck;
         legs.right.rotation.x = -1.4 * tuck;
+        shins.left.rotation.x = 1.6 * tuck;
+        shins.right.rotation.x = 1.6 * tuck;
         arms.left.rotation.set(-1.2 * tuck, 0, 0.3);
         arms.right.rotation.set(-1.2 * tuck, 0, -0.3);
+        fores.left.rotation.x = -1.2 * tuck;
+        fores.right.rotation.x = -1.2 * tuck;
       } else if (state === "hop") {
         legs.left.rotation.x = -0.5;
         legs.right.rotation.x = 0.4;
+        shins.left.rotation.x = 0.6;
+        shins.right.rotation.x = 0.3;
         arms.left.rotation.z = 0.6;
         arms.right.rotation.z = -0.6;
       } else if (state === "hurt") {
@@ -414,6 +1166,35 @@ export function createHero(): IHeroRig {
         body.rotation.x = MathUtils.lerp(0, -1.45, Math.min(1, progress * 2));
         body.position.y = MathUtils.lerp(HIP, 0.3, Math.min(1, progress * 2));
       }
+
+      // Secondary motion. Each hanging part chases where her motion would throw it: back with
+      // speed, up as she drops, side to side with the stride, a slow sway at rest.
+      const step = Math.min(dt, 1 / 30);
+      const lift = MathUtils.clamp((body.position.y - lastY) / Math.max(dt, 1e-3), -3, 3);
+      lastY = body.position.y;
+      const idle = Math.sin(time * 1.7) * (1 - run);
+      hoodTip.rotation.set(
+        chase(springs.tip, run * 0.55 - lift * 0.3 + idle * 0.06, step),
+        0,
+        chase(springs.tipSide, Math.sin(cycle) * 0.14 * run + Math.sin(time * 1.1) * 0.05, step),
+      );
+      const sway = chase(springs.locks, run * 0.35 - lift * 0.18 + idle * 0.04, step, 110, 10);
+      for (const [i, lock] of locks.entries())
+        lock.rotation.set(sway, 0, (i === 0 ? -1 : 1) * (0.04 + 0.05 * run));
+      pouch.rotation.x = chase(
+        springs.pouch,
+        run * 0.4 - lift * 0.2 + Math.sin(cycle) * 0.2 * run + idle * 0.05,
+        step,
+        60,
+        7,
+      );
+      lamp.rotation.x = chase(
+        springs.lamp,
+        run * 0.45 - lift * 0.25 - Math.sin(cycle) * 0.25 * run + idle * 0.06,
+        step,
+        50,
+        6,
+      );
     },
   };
 }
