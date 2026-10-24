@@ -827,7 +827,8 @@ void presentDirect() {
 
 // The canvas-layer overlay (core's loading screen) draws over the presented world frame: an empty overlay leaves it
 // byte for byte, a plane over the left half replaces only that half. Drawn through the world renderer it cleared the
-// frame and ran the world's temporal step. And a frame the renderer skips (its environment still bakes) never asks
+// frame and ran the world's temporal step. The overlay is UI, so it draws with no tone curve (Unreal's Slate composites
+// after the tonemapper): its grey lands on the CSS value within 2 levels under a world output that tone maps. And a frame the renderer skips (its environment still bakes) never asks
 // for the surface view: a taken canvas texture presents, so the skipped frame flashed black.
 void canvasLayerOverlay() {
     mystral::webgpu::Context context;
@@ -858,8 +859,9 @@ void canvasLayerOverlay() {
     CHECK(overlayDatabase.diagnostics().empty());
     CHECK(readTexture(renderer, events, surface) == world);
 
+    // Mid grey: sRGB 128 is linear 0.2158. The world's ACES curve took it to about 146; UI draws after the curve.
     auto cover = std::make_shared<Material>(MaterialType::Basic);
-    cover->color.setRGB(1, 1, 1);
+    cover->color.setRGB(0.2158, 0.2158, 0.2158);
     Mesh plane(makePlaneGeometry(1, 2), cover);
     plane.position.x = -0.5;
     layer.add(plane);
@@ -872,7 +874,8 @@ void canvasLayerOverlay() {
         for (size_t x = 0; x < 160; ++x) {
             const size_t at = (y * 160 + x) * 4;
             if (x >= 84) rightKept = rightKept && std::equal(&covered[at], &covered[at] + 4, &world[at]);
-            if (x < 76) leftCovered = leftCovered && covered[at] > 200 && covered[at + 1] > 200 && covered[at + 2] > 200;
+            if (x < 76)
+                for (size_t c = 0; c < 3; ++c) leftCovered = leftCovered && std::abs(int(covered[at + c]) - 128) <= 2;
         }
     CHECK(rightKept);
     CHECK(leftCovered);

@@ -553,7 +553,14 @@ Renderer& Renderer::overlayRenderer() {
         canvasLayer_ = sibling();
         canvasLayer_->outputOver_ = true;
     }
-    canvasLayer_->setOutput(output_);
+    // UI composites after the tone curve: Unreal draws Slate onto the already tone-mapped back buffer
+    // (UE 5.8.3: Engine/Source/Runtime/SlateRHIRenderer/Private/SlateRHIRenderer.cpp:986, :1032), so a
+    // cover drawn in its CSS colour matches the page behind it. Only the output colour space stays.
+    OutputState ui = output_;
+    ui.toneMapping.reset();
+    ui.toneMappingExposure = 1;
+    ui.customToneMapping = {};
+    canvasLayer_->setOutput(ui);
     canvasLayer_->setSize(width_, height_);
     return *canvasLayer_;
 }

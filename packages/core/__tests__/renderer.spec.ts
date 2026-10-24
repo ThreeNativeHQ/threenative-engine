@@ -1739,8 +1739,18 @@ describe("createRenderer", () => {
         setSize: () => undefined,
       };
       const renderer = await createRenderer({ canvas, webgpuFactory: () => raw });
+      const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
       renderer.renderOverlay({} as never, {} as never);
-      expect(calls).toEqual(["renderOverlay"]);
+      renderer.renderOverlay({} as never, {} as never);
+      expect(calls).toEqual(["renderOverlay", "renderOverlay"]);
+      // UI composites after the tone curve, and says so once
+      const reports = log.mock.calls.filter(([line]) =>
+        String(line).startsWith("TN_CANVAS_LAYER:"),
+      );
+      expect(reports).toEqual([
+        ['TN_CANVAS_LAYER:{"toneMapping":"none","composite":"after the tone curve"}'],
+      ]);
+      log.mockRestore();
       renderer.dispose();
     } finally {
       if (descriptor === undefined) Reflect.deleteProperty(globalThis, "navigator");

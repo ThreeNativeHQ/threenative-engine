@@ -746,12 +746,28 @@ function wrapRenderer(
       pipelineCensus?.endWorldFrame(scene, completed);
     }
   };
+  let overlayReported = false;
   const renderOverlayFrame = (scene: Object3D, camera: Camera): void => {
     bindSurface();
-    // The owned engine draws an overlay over the presented frame with no post and no temporal step; through its
-    // render() the loading screen moved the world's temporal history and exposure (a ghosted hand-off).
+    // The owned engine draws an overlay over the presented frame with no post, no temporal step and
+    // no tone curve; through its render() the loading screen moved the world's temporal history and
+    // exposure (a ghosted hand-off).
     const overlay = (raw as { renderOverlay?: (scene: Object3D, camera: Camera) => void })
       .renderOverlay;
+    // The canvas layer is UI, and UI composites after the tone curve, as Unreal draws Slate onto the
+    // already tone-mapped back buffer (UE 5.8.3: Engine/Source/Runtime/SlateRHIRenderer/Private/
+    // SlateRHIRenderer.cpp:986 and :1032). Reported, because three's WebGPURenderer cannot: it tone
+    // maps the canvas layer and the world below it in one output pass over a shared frame buffer.
+    if (!overlayReported) {
+      overlayReported = true;
+      console.log(
+        `TN_CANVAS_LAYER:${JSON.stringify(
+          overlay !== undefined
+            ? { toneMapping: "none", composite: "after the tone curve" }
+            : { toneMapping: "renderer", composite: "with the world in three's output pass" },
+        )}`,
+      );
+    }
     if (overlay !== undefined) {
       overlay.call(raw, scene, camera);
       return;
