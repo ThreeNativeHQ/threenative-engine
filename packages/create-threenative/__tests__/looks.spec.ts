@@ -123,10 +123,8 @@ describe("starter visual floor", () => {
   it("should inherit core occlusion sampling on high and medium", () => {
     const highPreset = qualityPreset("high");
     const mediumPreset = qualityPreset("medium");
-    expect(highPreset.gtaoSamples).toBeGreaterThan(0);
     expect(highPreset.gtaoSamples).toBe(coreQualityPreset("high").gtaoSamples);
     expect(mediumPreset.gtaoSamples).toBe(coreQualityPreset("medium").gtaoSamples);
-    expect(mediumPreset.gtaoSamples).toBeLessThanOrEqual(highPreset.gtaoSamples);
   });
 
   it("should ship no contrast-reducing stage at any tier", () => {

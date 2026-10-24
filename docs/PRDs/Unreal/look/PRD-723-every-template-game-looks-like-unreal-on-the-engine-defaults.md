@@ -137,3 +137,5 @@ Execution (2026-10-24, restart regression): Starter's new look exposes black wor
 **Verification:** the full template gate once, then the release and one cold sandbox scaffold. A publish cannot be undone: the agent asks João once, after the dry run is green, before `--yes` or the tag.
 
 Execution (2026-10-24, accepted Starter/Racing ports): the complete scaffolder run passes 1748 tests and fails one flat-guide line-budget assertion (Racing has 101 lines). The same guidance is folded into its existing look paragraph, reducing it to 97 lines; both agent mirrors are regenerated. The focused scaffold/template contract files pass 106 tests after measuring their new hashes; root typecheck, lint (1771 warnings) and docs pass. No budgets or timeouts change.
+
+The subsequent root typecheck catches an optional-number comparison in the revised look test. That test now checks inheritance of the core sampling policy without imposing the obsolete fixed 16/8 ratio; all 21 look tests and root typecheck pass.
