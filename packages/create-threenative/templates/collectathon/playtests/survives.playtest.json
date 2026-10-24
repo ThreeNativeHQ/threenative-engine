@@ -1,0 +1,65 @@
+{
+  "name": "collectathon-survives",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "subject": "player",
+  "steps": [
+    {
+      "kind": "input",
+      "label": "run",
+      "press": "ArrowUp",
+      "holdTicks": 120,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "stand",
+      "waitTicks": 480,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "components": [
+      {
+        "entity": "player",
+        "component": "groundY",
+        "gte": -0.3,
+        "lte": 0.3,
+        "allowTrivial": "The capsule's origin is the waist, so the feet sit 0.8 m below it; a ground line near zero after 600 ticks proves the hero stands on the island floor and is not floating a body-length above it."
+      }
+    ],
+    "movement": {
+      "entity": "player",
+      "minDistance": 5
+    },
+    "visibility": [
+      {
+        "entity": "touch-controls",
+        "present": false,
+        "allowTrivial": "Desktop keyboard lanes omit touch controls; movement proves the scene is live."
+      }
+    ],
+    "visual": [
+      {
+        "region": {
+          "x": 0,
+          "y": 0,
+          "width": 1280,
+          "height": 720,
+          "minNonblankPixelRatio": 0.01
+        }
+      }
+    ]
+  }
+}

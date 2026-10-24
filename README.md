@@ -114,6 +114,7 @@ lifecycle.
 
 | Template | What you start with |
 | --- | --- |
+| `collectathon` | Hop Garden: a 3D platformer moveset (triple jump, long jump, wall kick, ledge grab, ground pound) on one island with three Sunseeds |
 | `starter` *(default)* | A polished default project with a React HUD, physics, and a ready-to-edit scene |
 | `minimal` | The smallest project — core and physics only |
 | `platformer` | Jumping, patrols, pickups, camera follow |

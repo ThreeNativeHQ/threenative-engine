@@ -28,7 +28,19 @@ const RENDER_EXTENSIONS = new Set([".css", ".js", ".jsx", ".ts", ".tsx"]);
 // Adding a name here needs the same proof: the game must be able to change the appearance
 // without editing package code. A symbol that picks a material, a colour or a timing curve
 // belongs in `src/render/` as generated source instead.
+//
+// The look's engine default is the one exception that does decide appearance (AGENTS.md rule 3,
+// owner 2026-10-22: a scene with no look options gets the stock Unreal 5.8.3 look). A kit that
+// takes that default imports the chain and its tiers from core in `postprocessing.ts` and
+// `quality.ts` instead of vendoring them; every option stays overridable from the kit's own
+// `quality.ts`, so the game can still change the look completely without editing package code.
 const RENDER_PORTABLE_CORE_SYMBOLS: ReadonlySet<string> = new Set([
+  "IWorldEnvironmentOptions",
+  "OutputRenderer",
+  "QualityTier",
+  "WorldEnvironment",
+  "qualityPreset",
+  "qualityTiers",
   "ISpectralOceanCascade",
   "ISpectralOceanHeight",
   "ISpectralOceanOptions",

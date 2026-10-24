@@ -1,0 +1,44 @@
+{
+  "name": "collectathon-native-survives",
+  "target": "desktop",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "subject": "player",
+  "artifacts": {
+    "screenshots": "after"
+  },
+  "steps": [
+    {
+      "kind": "input",
+      "label": "run",
+      "press": "ArrowUp",
+      "holdTicks": 60,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "stand",
+      "waitTicks": 240,
+      "release": true
+    }
+  ],
+  "assert": {
+    "components": [
+      {
+        "entity": "player",
+        "component": "groundY",
+        "gte": -0.3,
+        "lte": 0.3,
+        "allowTrivial": "The capsule's origin is the waist, so a ground line near zero after 300 ticks proves the hero stands on the island floor on the native host too."
+      }
+    ],
+    "movement": {
+      "entity": "player",
+      "minDistance": 3
+    }
+  }
+}

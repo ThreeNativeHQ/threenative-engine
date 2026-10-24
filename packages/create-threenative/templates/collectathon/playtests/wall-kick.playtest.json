@@ -1,0 +1,145 @@
+{
+  "name": "collectathon-wall-kick",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "subject": "player",
+  "setup": {
+    "place": [
+      {
+        "entity": "player",
+        "at": {
+          "x": 2,
+          "y": 0.85,
+          "z": -26
+        },
+        "facing": {
+          "yaw": -1.5708
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "kind": "input",
+      "label": "run-up",
+      "press": ["KeyW"],
+      "holdTicks": 85,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "jump",
+      "press": ["KeyW", "Space"],
+      "holdTicks": 22,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "fly",
+      "press": ["KeyW"],
+      "holdTicks": 1,
+      "release": false
+    },
+    {
+      "label": "block-contact",
+      "waitForResource": {
+        "id": "state",
+        "path": "wallHits",
+        "gte": 1
+      },
+      "timeoutMs": 120000,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "kick",
+      "press": ["Space"],
+      "holdTicks": 6,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "kick-rise",
+      "press": [],
+      "holdTicks": 1,
+      "release": false
+    },
+    {
+      "label": "slab-contact",
+      "waitForResource": {
+        "id": "state",
+        "path": "wallHits",
+        "gte": 2
+      },
+      "timeoutMs": 120000,
+      "release": false
+    },
+    {
+      "kind": "wait",
+      "label": "past-window",
+      "waitTicks": 20,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "late-press",
+      "press": ["Space"],
+      "holdTicks": 4,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "late-fall",
+      "press": [],
+      "holdTicks": 1,
+      "release": false
+    },
+    {
+      "label": "down",
+      "waitForResource": {
+        "id": "state",
+        "path": "grounded",
+        "equals": true
+      },
+      "timeoutMs": 120000,
+      "release": false
+    },
+    {
+      "kind": "wait",
+      "label": "settle",
+      "waitTicks": 10,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "components": [
+      {
+        "entity": "player",
+        "component": "wallKicks",
+        "equals": 1,
+        "allowTrivial": "One kick inside the window; the press 20 ticks after the second contact must not add a second."
+      },
+      {
+        "entity": "player",
+        "component": "wallKickRise",
+        "gte": 2
+      },
+      {
+        "entity": "player",
+        "component": "wallHits",
+        "gte": 2
+      }
+    ]
+  }
+}

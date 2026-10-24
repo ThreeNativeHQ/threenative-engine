@@ -533,6 +533,14 @@
       "reject": []
     },
     {
+      "id": "request.collectathon-triple-jump",
+      "query": "make a 3D platformer with a triple jump, long jump and wall kick",
+      "scope": "request",
+      "source": "template:collectathon#AGENTS.md \u2014 __PROJECT_NAME__ collectathon (Hop Garden)",
+      "expect": ["CharacterBody3D"],
+      "reject": []
+    },
+    {
       "id": "prd451.matrix-world",
       "query": "only update world matrices of visible objects each frame instead of the whole scene",
       "scope": "mechanic",

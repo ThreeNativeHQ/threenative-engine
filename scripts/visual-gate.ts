@@ -18,6 +18,7 @@ import {
   createImageBlindBundle,
   hashPromptFile,
 } from "./score-blind.js";
+import { takesCoreLook } from "./template-quality.js";
 import {
   assertWebEngineBuilt,
   localPackageEntries,
@@ -225,8 +226,11 @@ export function inspectTemplate(
       if (!lighting.includes(marker)) errors.push(`${template}: lighting.ts is missing ${marker}`);
     }
   }
+  // A kit on the core look (`WorldEnvironment` from `@threenative/core`) carries no chain source:
+  // the tone mapping, exposure, render chain and bloom are core's, proven by core's own specs.
+  const coreLook = takesCoreLook(post, "WorldEnvironment");
   for (const marker of ["toneMapping", "toneMappingExposure", "createRenderChain", "bloom("]) {
-    if (!postPipeline.includes(marker))
+    if (!coreLook && !postPipeline.includes(marker))
       errors.push(`${template}: render pipeline is missing ${marker}`);
   }
 

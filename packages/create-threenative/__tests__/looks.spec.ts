@@ -218,8 +218,17 @@ describe("starter visual floor", () => {
       .map((entry) => entry.name);
     expect(templates.length).toBeGreaterThan(0);
     for (const template of templates) {
+      // A kit that takes the look from core vendors no chain, so core's own copy carries its guard.
+      const post = await readFile(
+        path.join(templateRoot, template, "src/render/postprocessing.ts"),
+        "utf8",
+      );
+      const coreLook =
+        /import\s*\{[^}]*\bWorldEnvironment\b[^}]*\}\s*from\s*"@threenative\/core"/u.test(post);
       const source = await readFile(
-        path.join(templateRoot, template, "src/render/worldEnvironment.ts"),
+        coreLook
+          ? path.resolve("packages/core/src/look/world-environment.ts")
+          : path.join(templateRoot, template, "src/render/worldEnvironment.ts"),
         "utf8",
       );
       const guard = source.slice(source.indexOf('name: "godRays"'));

@@ -1,0 +1,56 @@
+{
+  "acceptanceId": "prd-732-performance",
+  "artifacts": {
+    "screenshots": "after"
+  },
+  "assert": {
+    "performance": {
+      "maxDrawCalls": 600,
+      "maxFrameMsP95": 33,
+      "maxTriangles": 190000,
+      "minFps": 30
+    },
+    "renderChain": {
+      "tier": "high",
+      "perAdapter": {
+        "integrated": {
+          "tier": "medium"
+        },
+        "mobile-high": {
+          "tier": "medium"
+        },
+        "mobile-low": {
+          "tier": "low"
+        },
+        "mobile-mid": {
+          "tier": "low"
+        },
+        "software": {
+          "tier": "low"
+        }
+      }
+    }
+  },
+  "name": "production-performance",
+  "schemaVersion": 1,
+  "steps": [
+    {
+      "kind": "input",
+      "press": "KeyW",
+      "holdTicks": 60,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "waitTicks": 600,
+      "release": true
+    }
+  ],
+  "subject": "player",
+  "target": "web",
+  "viewport": {
+    "height": 1080,
+    "width": 1920
+  },
+  "warmupFrames": 60
+}

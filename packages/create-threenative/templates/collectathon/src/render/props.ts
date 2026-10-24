@@ -1,0 +1,112 @@
+// Generated for you. This is ordinary Three.js — edit or delete it freely.
+//
+// Everything the hero collects or stomps, from primitives: a coin, a red gem, a Sunseed and the
+// walker (a "bumblet"). Each is a `Group` whose origin is its base or its centre as named below,
+// so the entity that owns it only ever moves and spins the group.
+import {
+  ConeGeometry,
+  CylinderGeometry,
+  Group,
+  IcosahedronGeometry,
+  Mesh,
+  OctahedronGeometry,
+  SphereGeometry,
+  TorusGeometry,
+} from "three";
+import { flat, lit } from "./materials.js";
+import { C } from "./palette.js";
+
+function shadowed(mesh: Mesh): Mesh {
+  mesh.castShadow = true;
+  return mesh;
+}
+
+/** A spinning coin, origin at its centre. */
+export function coinModel(): Group {
+  const group = new Group();
+  const disc = shadowed(
+    new Mesh(
+      new CylinderGeometry(0.34, 0.34, 0.08, 18),
+      lit(C.gold, { metalness: 0.6, roughness: 0.35, emissive: 0.08 }),
+    ),
+  );
+  disc.rotation.x = Math.PI / 2;
+  group.add(disc);
+  group.add(
+    new Mesh(
+      new TorusGeometry(0.34, 0.05, 6, 18),
+      lit(C.goldDark, { metalness: 0.6, roughness: 0.4 }),
+    ),
+  );
+  return group;
+}
+
+/** A red gem, origin at its centre. */
+export function gemModel(): Group {
+  const group = new Group();
+  const body = shadowed(
+    new Mesh(
+      new OctahedronGeometry(0.42),
+      lit(C.gem, { flat: true, roughness: 0.25, emissive: 0.12 }),
+    ),
+  );
+  body.scale.set(0.8, 1.15, 0.8);
+  group.add(body);
+  return group;
+}
+
+/** A Sunseed: a glowing seed with two leaves, origin at its centre. */
+export function seedModel(): Group {
+  const group = new Group();
+  const seed = shadowed(
+    new Mesh(
+      new IcosahedronGeometry(0.62, 1),
+      lit(C.seed, { flat: true, roughness: 0.3, emissive: 0.6 }),
+    ),
+  );
+  seed.scale.set(0.85, 1.1, 0.85);
+  group.add(seed);
+  for (const side of [-1, 1]) {
+    const leaf = shadowed(new Mesh(new SphereGeometry(0.32, 10, 6), lit(C.leaf)));
+    leaf.scale.set(1, 0.18, 0.5);
+    leaf.position.set(0.35 * side, 0.72, 0);
+    leaf.rotation.z = 0.5 * side;
+    group.add(leaf);
+  }
+  const halo = new Mesh(new TorusGeometry(0.95, 0.04, 6, 32), flat(C.seed, { opacity: 0.55 }));
+  group.add(halo);
+  return group;
+}
+
+/** The walker: a round purple bumblet on two stubby feet, origin at its feet, facing -Z. */
+export function walkerModel(): Group {
+  const group = new Group();
+  const body = shadowed(
+    new Mesh(new SphereGeometry(0.55, 20, 14), lit(C.walker, { roughness: 0.6 })),
+  );
+  body.position.y = 0.62;
+  body.scale.set(1, 0.85, 1);
+  group.add(body);
+  const belly = new Mesh(new SphereGeometry(0.38, 14, 10), lit(C.walkerBelly));
+  belly.position.set(0, 0.5, -0.3);
+  belly.scale.set(1, 0.8, 0.5);
+  group.add(belly);
+  for (const side of [-1, 1]) {
+    const eye = new Mesh(new SphereGeometry(0.11, 10, 8), flat(C.white));
+    eye.position.set(0.19 * side, 0.82, -0.44);
+    group.add(eye);
+    const pupil = new Mesh(new SphereGeometry(0.055, 8, 6), flat(C.ink));
+    pupil.position.set(0.19 * side, 0.8, -0.53);
+    group.add(pupil);
+    const horn = shadowed(new Mesh(new ConeGeometry(0.08, 0.28, 8), lit(C.walkerBelly)));
+    horn.position.set(0.28 * side, 1.12, -0.05);
+    horn.rotation.z = -0.4 * side;
+    group.add(horn);
+    const foot = shadowed(new Mesh(new SphereGeometry(0.17, 10, 8), lit(C.boots)));
+    foot.position.set(0.26 * side, 0.12, -0.06);
+    foot.scale.set(1, 0.7, 1.3);
+    foot.name = side < 0 ? "footL" : "footR";
+    group.add(foot);
+  }
+  return group;
+}

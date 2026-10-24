@@ -4,8 +4,8 @@ prd_contract: v1
 
 # PRD-732 — Hop Garden: a 3D collectathon starter kit with an SM64-style moveset
 
-**Status:** NOT STARTED
-**Priority:** P2 — new genre kit: no box below is ticked, and no shipped kit has a free-roam 3D moveset (triple jump, long jump, wall kick, ledge grab).
+**Status:** PARTIAL — Phases 1 and 2 done; Phase 3 (gates, native, judge) open
+**Priority:** P2 — new genre kit: Phase 3's registration gates, native run and visual judge (AC-8..AC-10) are open.
 **Complexity:** 5 (MEDIUM) — 11+ kit source files (+3), new kit system (+2); risk override: none. The kit is game code in one template; no `packages/` API changes.
 **Owner:** João
 **Depends on:** [PRD-723](../Unreal/look/PRD-723-every-template-game-looks-like-unreal-on-the-engine-defaults.md) (aligned, not gating: the kit is born on the core Unreal defaults, so it pins no tone curve or fixed exposure and needs no PRD-723 migration). Owner order, 2026-10-23: "use unreal defaults for these new starter kits".
@@ -150,12 +150,43 @@ Each playtest runs on a project scaffolded from `--template collectathon`:
 - 2026-10-23 (agent): deferred until a user asks — swimming, slides, pole and tree climbing,
   punch and kick combos, carry and throw, power-up caps, a hub with several courses, a boss. One
   course with three Sunseeds carries the genre loop.
+- 2026-10-23 (agent): the proof harness scaffolds from workspace tarballs (`packageLocalFramework`)
+  at the 0.3.6 template pins, because the published 0.3.6 predates #541 and has no core
+  `WorldEnvironment`. The Wasm engine pair for packing came from the PRD-723 lane (same
+  `native/` sources).
+- 2026-10-23 (agent): the render-import rule allows named core symbols. `src/render/` may import
+  `WorldEnvironment`, `qualityPreset`, `qualityTiers` and their types from `@threenative/core`
+  (`RENDER_PORTABLE_CORE_SYMBOLS` in `scripts/check-core-boundary.ts`). `scripts/template-quality.ts`
+  (`takesCoreLook`), `scripts/visual-gate.ts`, `looks.spec.ts` and `auto-exposure-scaffold.spec.ts`
+  read the chain from core for a kit that takes it, instead of demanding the vendored files.
+- 2026-10-23 (agent): the platform is carried by the engine. A kinematic `RigidBody3D` under a
+  `CharacterBody3D` carries the character, so the "no platform-carry capability" verdict above was
+  wrong for translation. The kit's platform orbits (no spin) and has no carry code.
+- 2026-10-23 (agent): AC-3 and AC-4 each split into two scenarios, because one scenario per clause
+  keeps each run short and its failure specific: `acrobatics` + `wall-kick`, `ledge` +
+  `ledge-too-high`.
+- 2026-10-23 (agent): the 8th red gem awards a Sunseed on the spot. No jump buffer and no coyote
+  time: the reference has neither, and the 0.167 s windows are the whole forgiveness.
+- 2026-10-23 (agent): a wall bonk counts only the speed into the wall, and a bonk-free contact
+  removes the into-wall part of air speed, so a standing jump beside a ledge reaches the grab band.
+- 2026-10-23 (agent): the shaft's lower slab starts at 5 m, because a running single jump's head
+  (3 m apex + 1.6 m of hero) hit a 3.2 m slab and cut the wall-kick run-up.
+- 2026-10-23 (agent): the `collect` scenario places the gems on the test lane (the "scripted route");
+  the course keeps its own gem layout.
+- 2026-10-23 (agent): `TN_RENDER_CHAIN` names stages, not the tone curve. AC-1's "filmic and auto
+  exposure" is read from `TN_WORLD_ENVIRONMENT` (`tonemapMode: "filmic"`) and `TN_AUTO_EXPOSURE`
+  (`measured`/`applied` true).
+- 2026-10-23 (agent): the camera's closest distance is 0.3 m, not 1.4 m. With the hero's back to a
+  wall, a 1.4 m floor put the lens inside the rock (`rayClear` false in the first camera run).
+- 2026-10-23 (agent): no capability-recall mechanic row for the ledge ray. The search does not rank
+  `PhysicsDirectSpaceState3D` for "ray to find a wall or ledge" (its situations name only aiming
+  and shape queries); that is an engine manifest fix in `packages/physics`, out of this kit's scope.
 
 ## Execution Phases
 
 #### Phase 1: The hero moves like the reference
 
-**Status:** NOT STARTED
+**Status:** DONE (2026-10-23)
 **Files:** `templates/collectathon/` cloned from `minimal`; new `src/entities/Hero.ts`,
 `src/render/hero.ts`, `src/render/camera.ts`, a flat test yard in `src/level/Course.ts`, `kit.json`,
 `playtests/{survives,jump-chain,acrobatics,ledge}.playtest.json`.
@@ -164,14 +195,14 @@ orbit camera without pull-in, the procedural hero rig (feet on the floor: the ca
 waist, as Fox Dash documents).
 **Verification:** the four playtests below on WebGPU, `adapter.info` checked.
 
-- [ ] AC-1: the scaffolded kit boots on the core Unreal defaults (`TN_RENDER_CHAIN` names `filmic` and auto exposure, `rg 'tonemapMode|autoExposureEnabled|exposure:' src/` finds no pin), the hero lands on the floor and runs for 600 frames with no console error. proof: `playtests/survives.playtest.json` — Evidence: pending.
-- [ ] AC-2: three jumps landed inside the chain window at full run reach three rising apexes (single < double < triple), and the same chain at walk speed (below 6 m/s) yields no triple. proof: `playtests/jump-chain.playtest.json` — Evidence: pending.
-- [ ] AC-3: the long jump travels farther than a running jump, the backflip lands behind its start, the side flip leaves facing the stick, and a wall kick inside its window gains height while one after the window does not. proof: `playtests/acrobatics.playtest.json` — Evidence: pending.
-- [ ] AC-4: a jump into a wall whose top is ≤ 1.0 m above the hands ends with the hero standing on top after a forward press, and a wall 1.5 m higher gives no grab. proof: `playtests/ledge.playtest.json` — Evidence: pending.
+- [x] AC-1: the scaffolded kit boots on the core Unreal defaults (`TN_RENDER_CHAIN` names `filmic` and auto exposure, `rg 'tonemapMode|autoExposureEnabled|exposure:' src/` finds no pin), the hero lands on the floor and runs for 600 frames with no console error. proof: `playtests/survives.playtest.json` — Evidence: 2026-10-23, laptop intel `gen-12lp` (`adapter.info`, not SwiftShader), headed WebGPU, Wasm engine (`threenative:web-engine`): exit 0, 0 console errors, groundY 0.0095, moved 17.8 m, nonblank 1.0; `TN_WORLD_ENVIRONMENT` `tonemapMode: "filmic"`, `TN_AUTO_EXPOSURE` measured+applied true; the `rg` finds 0 pins.
+- [x] AC-2: three jumps landed inside the chain window at full run reach three rising apexes (single < double < triple), and the same chain at walk speed (below 6 m/s) yields no triple. proof: `playtests/jump-chain.playtest.json` — Evidence: 2026-10-23, `gen-12lp`: exit 0; apexes 3.00 < 4.35 < 5.78 m; counts single 3, double 2, triple 1 (the walk chain's third jump fell back to a single); triple takeoff 7.68 m/s.
+- [x] AC-3: the long jump travels farther than a running jump, the backflip lands behind its start, the side flip leaves facing the stick, and a wall kick inside its window gains height while one after the window does not. proof: `playtests/acrobatics.playtest.json` + `playtests/wall-kick.playtest.json` (split, see Decisions) — Evidence: 2026-10-23, `gen-12lp`: both exit 0; running jump 7.69 m vs long jump 13.87 m, backflip −4.88 m, side flip facing error 0; wall kick: 1 kick inside the window, rise 4.5 m, the press after the window adds none (wallKicks 1, wallHits 2).
+- [x] AC-4: a jump into a wall whose top is ≤ 1.0 m above the hands ends with the hero standing on top after a forward press, and a wall 1.5 m higher gives no grab. proof: `playtests/ledge.playtest.json` + `playtests/ledge-too-high.playtest.json` (split, see Decisions) — Evidence: 2026-10-23, `gen-12lp`: both exit 0; 3 m ledge: 1 grab, stands at groundY 3.01; 4.5 m wall: 0 grabs, apex 2.1 m, hero back on the floor.
 
 #### Phase 2: The course is a game
 
-**Status:** NOT STARTED
+**Status:** DONE (2026-10-23)
 **Files:** `src/level/Course.ts` (island, shaft, rotating platform, checkpoints),
 `src/entities/{Walker,Pickup}.ts`, `src/state.ts`, `src/ui/Hud.tsx`, `src/render/camera.ts`
 (pull-in ray), `playtests/{collect,combat,camera}.playtest.json`.
@@ -179,9 +210,9 @@ waist, as Fox Dash documents).
 defeat, the rotating-platform carry, the camera pull-in.
 **Verification:** the three playtests below, plus a rerun of Phase 1's four.
 
-- [ ] AC-5: a scripted route collects the 8 red gems and the summit Sunseed, and the HUD state shows `seeds: 2`, and coins heal a damaged meter by one wedge each. proof: `playtests/collect.playtest.json` — Evidence: pending.
-- [ ] AC-6: a walker touch costs one wedge, while a stomp, a ground pound or a dive each defeat a walker with no wedge lost. proof: `playtests/combat.playtest.json` — Evidence: pending.
-- [ ] AC-7: with a wall between the hero and the default camera spot, the hero stays inside the frame and the camera-to-hero ray hits nothing. proof: `playtests/camera.playtest.json` — Evidence: pending.
+- [x] AC-5: a scripted route collects the 8 red gems and the summit Sunseed, and the HUD state shows `seeds: 2`, and coins heal a damaged meter by one wedge each. proof: `playtests/collect.playtest.json` — Evidence: 2026-10-23, `gen-12lp`: exit 0; gems 0→8, seeds 0→2, 10 `collected` signals; two walker hits then one coin: wedges 8→6→7, coins 1.
+- [x] AC-6: a walker touch costs one wedge, while a stomp, a ground pound or a dive each defeat a walker with no wedge lost. proof: `playtests/combat.playtest.json` — Evidence: 2026-10-23, `gen-12lp`: exit 0; stomped, pounded, dived 1 each, defeated 3, wedges 8 at `after-three`; then one touch: hurt 1, wedges 7.
+- [x] AC-7: with a wall between the hero and the default camera spot, the hero stays inside the frame and the camera-to-hero ray hits nothing. proof: `playtests/camera.playtest.json` — Evidence: 2026-10-23, `gen-12lp`: exit 0; pulledIn false→true, arm 9→6.31 m, `rayClear` true, `camera` follows the player with the target in the viewport. The Phase 1 four, rerun on the same build: all exit 0.
 
 #### Phase 3: Registered, native and judged
 
