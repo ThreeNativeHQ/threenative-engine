@@ -323,6 +323,48 @@ Each playtest runs on a project scaffolded from `--template collectathon`:
   gloves and brown shoes. There is no letter emblem and no red-and-blue scheme. Arms and legs
   pivot at the shoulder and the hip and swing against each other on the run. On a ledge the arms
   stretch so the gloves rest on the lip.
+- 2026-10-24 (owner via lead: "try this look and feel for the mario one", "all procedural
+  please", "just remember Unreal like GI, atmosphere", "maps also look flat"): the look round.
+  The look stays core's (filmic curve, metered exposure, nothing pinned in `quality.ts`).
+  Every texture is a seeded `DataTexture` painted in code, and no asset file exists.
+  - Terrain: `src/level/terrain.ts` samples hills, coast cliffs and a 5 m castle plateau into
+    core's `Heightfield`. Every route a scenario runs stays level at y = 0, so the setup
+    coordinates keep their meaning. Hero, walkers, pickups and checkpoints snap to
+    `course.ground`. `src/render/ground.ts` paints grass, worn grass, the dirt path, sand and
+    rock by slope over a grain map and a normal map.
+  - Castle and props: `src/render/castle.ts` is an original keep with coursed stone, terracotta
+    roofs, two turrets, a warm arched door, a sun-and-leaf rose window and a waving teal flag.
+    The signpost stands by the spawn path. Course blocks and drum cliffs share the castle masonry.
+    The door and windows glow a deep amber: the first glow sat far above 1 and tone-mapped to a
+    flat cream, and its door panel was one quad with vertices only at the jambs.
+  - Camera: the view pitched 18° down with the arm, so nothing more than about 12° above the
+    horizon fit in frame and the castle was cut off. The lens now looks 1.6 m above the aim at full
+    arm length (about 8° down), scaled down as the arm pulls in. The arm, its elevation and the
+    wall checks are unchanged: `camera` and `wall-kick` exit 0.
+  - Planting: a meadow of 12-blade tufts on a 0.5 m grid, one draw per 12 m cell. The meadow
+    draws every tuft within 16 m and an eighth of them by 46 m, and `GRASS_SHARE` sets 1 / 0.4 /
+    0.25 per tier. Broadleaf and birch trees, flowers, butterflies, pebbles on the path and far
+    hills complete it. The sky paints a sun halo and projected cumulus.
+  - Bug found and fixed: in an instanced node material `positionLocal` already carries the
+    instance matrix. The grass sway and the butterfly flap scaled with world height and threw
+    blades metres into the sky on hills. Both now read `positionGeometry`. A sway-off capture
+    showed no blades in the sky, and the fixed build shows none.
+  - Proof: `survives` asserts relief ≥ 8 m, steep share 5–30 %, level share ≤ 50 %, castle
+    parts ≥ 6, grass tufts ≥ 5000, path pebbles ≥ 400 and one signpost. All 7 fail on the
+    round-5 source and pass now (`gen-12lp`, exit 1 then 0). The scaffold spec asserts that the
+    kit has no `assets/` folder and no image or model file but the shared icon.
+  - A grass stone counts as a prop, so it keeps the planting clearances. The crown detail cut
+    shifted the seeded stream and put one stone 0.7 m from a coin: `survives` exited 1 on
+    `crowded` at 2c93dda67 and exits 0 since 7553a692e.
+  - Budget raised openly: `performance` `maxTriangles` 190k → 300k. On `gen-12lp` (medium) at
+    daf027a6c the look round measures 225.6k triangles, 356 draws, p95 17.7 ms and 65.8 fps.
+    Round 5 measured 111.5k triangles at p95 17.7 ms, so the triangles cost no frame time there.
+    The waste was cut first: pebbles 36 → 8 triangles, crowns at icosahedron detail 1, grass share
+    0.4 at medium, and a tighter meadow fade, taking the course from 202k to 132k at the perf
+    pose. The high tier adds about 72k by the node count; it is not measured on a discrete GPU.
+  - Visual judge, fresh read-only Opus subagents, 4 poses × 2 runs per arm, gen-12lp medium:
+    pass 1 (2c93dda67) NOT PASS, castle FAIL (out of frame, flat door). Pass 3 (daf027a6c) PASS:
+    all 4 poses IMPROVEMENT, with lushness, lighting, castle and integrity WEAK.
 
 ## Execution Phases
 
@@ -387,3 +429,9 @@ Unreal default look, and no frame is blank or white.
   tie-break follow-up, `wall-kick`, `effects`, `performance`, `collect`, `combat` and `enemies`
   exit 0 again on `gen-12lp` (wall kick: 1 cut, peak 0.61 rad, closest 9 m; performance: p95
   17.7 ms, 58.8 fps, 321 draws, 111.5k triangles).
+  Look round judge (2026-10-24, db84839d5, fresh read-only Opus): PASS by the look-round rule.
+  All 4 poses are IMPROVEMENT, castle, relief and hero are PASS, and lushness, lighting,
+  path/props and integrity are WEAK. The box stays open because AC-10 asks for PASS on every
+  criterion. All 13 scenarios and `performance` exit 0 on `gen-12lp` at daf027a6c, and
+  `survives` and `performance` exit 0 again at db84839d5. Stills and the run video are in
+  `docs/PRDs/starter-kits/screenshots/hop-garden/` and `~/Downloads/hop-garden/look1/`.
