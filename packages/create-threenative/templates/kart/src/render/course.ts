@@ -435,7 +435,7 @@ export function buildCourseView(course: ICourse, seed = 734): ICourseView {
     course.pointAt(pad.index, pad.lateral, p);
     chevrons.push(
       paint(
-        new PlaneGeometry(3.4, 4.2).rotateX(-Math.PI / 2).rotateX(pitch(pad.index)),
+        new PlaneGeometry(3, 4.2).rotateX(-Math.PI / 2).rotateX(pitch(pad.index)),
         C.asphaltDark,
         at(p.x, p.y + 0.04, p.z, 0, yaw),
       ),

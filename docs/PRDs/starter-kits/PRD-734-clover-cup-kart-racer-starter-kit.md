@@ -199,6 +199,10 @@ gates every kit must pass. Each playtest runs on a project scaffolded from `--te
   in magenta at full opacity (92 laid in the drift run, none on screen; the initial matrices draw).
   The ring keeps a fixed count with hidden dashes, which removed a stray dark quad; the missing
   trail is reported as an engine bug, not patched in the kit.
+- 2026-10-24 (agent, judge round 2): the same engine bug held every item box still. A probe set
+  every box to scale 0 after 5 s, and the boxes were still drawn at 10 s, so they never spun,
+  shrank when taken or got out of the camera's way. The boxes are now one plain mesh pair each
+  (about 32 more draws), which the engine moves like any kart.
 
 ## Execution Phases
 
