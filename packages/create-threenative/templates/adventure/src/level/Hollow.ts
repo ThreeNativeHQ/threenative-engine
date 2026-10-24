@@ -184,7 +184,7 @@ export function buildHollow(rng: () => number): IHollow {
     group.add(
       instanced(
         slab,
-        surfaced(shade, "rock", { flat: true, strength: 0.5 }),
+        surfaced(shade, "rock", { flat: true, strength: 0.35 }),
         shades[i] ?? [],
         false,
       ),

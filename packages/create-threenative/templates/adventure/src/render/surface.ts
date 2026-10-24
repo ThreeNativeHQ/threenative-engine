@@ -21,6 +21,7 @@ import {
 } from "three";
 import {
   abs,
+  attribute,
   color as colorNode,
   cross,
   dFdx,
@@ -126,7 +127,7 @@ function triplanar(map: Texture, tile: number, flat: boolean) {
 }
 
 /** A sample over the photo's own average colour: about 1, darker in its cracks, lighter on its ridges. */
-function structure(map: Texture, sample: Node<"vec3">, strength: number) {
+function structure(map: Texture, sample: Node<"vec3">, strength: number | Node<"float">) {
   const mean = max(texture(map, vec2(0.5, 0.5)).level(float(16)).xyz, vec3(0.02, 0.02, 0.02));
   return mix(colorNode(1, 1, 1), sample.div(mean), strength);
 }
@@ -171,15 +172,17 @@ export function surfaced(
 
 /**
  * The vale's floor: grass offset per patch on level ground, rock projected from three axes where
- * the ground is steeper than Wren can climb, under the colours `valeGround` paints.
+ * the ground is steeper than Wren can climb, under the colours `valeGround` paints. Blades show in
+ * full only where that paint is green: on the dry, brown banks a grass photo reads as straw.
  */
 export function groundSurface(): Material {
   if (maps === undefined) return lit(0xffffff, { detail: true, vertexColors: true });
   const material = new MeshStandardNodeMaterial({ roughness: 0.9, vertexColors: true });
+  const paint = attribute<"vec3">("color", "vec3");
   const grass = structure(
     maps.grass,
     stochastic(maps.grass, positionWorld.xz.div(TILE.grass), 512),
-    0.9,
+    smoothstep(-0.02, 0.06, paint.y.sub(paint.x)).mul(0.6).add(0.3),
   );
   const rock = structure(maps.rock, triplanar(maps.rock, TILE.rock, false), 0.9);
   material.colorNode = mix(grass, rock, smoothstep(0.8, 0.68, normalWorldGeometry.y));
