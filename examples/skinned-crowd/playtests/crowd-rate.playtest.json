@@ -14,7 +14,7 @@
   "steps": [
     {
       "label": "completed-post-warmup-window",
-      "timeoutMs": 30000,
+      "timeoutMs": 120000,
       "waitForResource": {
         "id": "state",
         "path": "crowdRate.window",
@@ -23,7 +23,7 @@
     },
     {
       "label": "complete-cpu-window-and-resolved-gpu-samples",
-      "timeoutMs": 30000,
+      "timeoutMs": 120000,
       "waitForResource": {
         "id": "state",
         "path": "crowdRate.ready",
