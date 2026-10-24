@@ -319,7 +319,8 @@ function archPanel(width: number, height: number): BufferGeometry {
 
 /**
  * Warm light inside a doorway or window: unlit vertex colours, bright at the floor's centre and
- * dark at the jambs, above 1 so the lit room still reads behind the arch in full sun.
+ * dark at the jambs, a deep amber just above 1 so the lit room reads warm behind the arch in full
+ * sun (a brighter glow tone-maps to a flat cream).
  */
 function glow(geometry: BufferGeometry, width: number): BufferGeometry {
   const position = geometry.attributes.position;
@@ -331,7 +332,7 @@ function glow(geometry: BufferGeometry, width: number): BufferGeometry {
       0.12,
       (1 - 0.8 * Math.min(1, Math.abs(x))) * (1 - 0.8 * Math.min(1, y / (width * 1.6))),
     );
-    colors.set([2.6 * k, 1.6 * k, 0.75 * k], i * 3);
+    colors.set([1.5 * k, 0.68 * k, 0.22 * k], i * 3);
   }
   geometry.setAttribute("color", new BufferAttribute(colors, 3));
   return geometry;
