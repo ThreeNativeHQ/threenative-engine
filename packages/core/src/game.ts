@@ -119,6 +119,8 @@ import { type IViewportOptions, Viewport } from "./viewport.js";
 import {
   type IWarmUpOptions,
   type IWarmUpReport,
+  prepareSceneEnvironment,
+  sceneNeedsEnvironmentPreparation,
   warmUpComputeNodes,
   warmUpScene,
 } from "./warmup.js";
@@ -1349,6 +1351,21 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     const startupCompile: StartupCompile = async (): Promise<void> => {
       await warmUp("TN_STARTUP_WARMUP", STARTUP_COMPILE_BUDGET_MS, true);
     };
+    // A game with no cover skips the compile above, yet readiness still waits for the scene's
+    // environment: the owned engine skips every frame while it bakes, and a skipped frame is fast,
+    // so the frame window would pass before the world drew once. (An explicit warm-up bakes it.)
+    const startupEnvironment = (): StartupCompile | undefined =>
+      sceneNeedsEnvironmentPreparation(renderer, projection.root) ? bakeEnvironment : undefined;
+    const bakeEnvironment: StartupCompile = async (): Promise<void> => {
+      if (this.#aborted) return;
+      await prepareSceneEnvironment(
+        renderer,
+        projection.root,
+        camera,
+        now() + STARTUP_COMPILE_BUDGET_MS,
+        repaintCover,
+      );
+    };
     // The GPU-selected main-pass tally, registered by whichever streamed world is added to the
     // scene. The frame budget reads it once per window; a world with no sample reports undefined, so
     // the window carries nothing rather than a zero no frame selected.
@@ -1745,9 +1762,11 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
           // is on it has already happened behind the loading screen, so running it again here
           // would pay the same cost twice.
           startupReadiness.start(
-            startupCoverActive() && !this.#warmUpConfiguredExplicitly()
-              ? startupCompile
-              : undefined,
+            this.#warmUpConfiguredExplicitly()
+              ? undefined
+              : startupCoverActive()
+                ? startupCompile
+                : startupEnvironment(),
           );
         }
         // Ordinary render compute waits for startup readiness. Streaming explicitly opts in

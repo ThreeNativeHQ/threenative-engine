@@ -277,7 +277,10 @@ function nativeEnvironmentPreparer(raw: unknown): INativeEnvironmentPreparer | u
     : undefined;
 }
 
-function sceneNeedsEnvironmentPreparation(renderer: IWarmUpRenderer, scene: Object3D): boolean {
+export function sceneNeedsEnvironmentPreparation(
+  renderer: IWarmUpRenderer,
+  scene: Object3D,
+): boolean {
   const environment = (scene as Object3D & { environment?: Texture }).environment;
   if (environment?.isTexture !== true) return false;
 
@@ -288,7 +291,7 @@ function sceneNeedsEnvironmentPreparation(renderer: IWarmUpRenderer, scene: Obje
   return backend?.isWebGPUBackend === true;
 }
 
-async function prepareSceneEnvironment(
+export async function prepareSceneEnvironment(
   renderer: IWarmUpRenderer,
   scene: Object3D,
   camera: Camera,
