@@ -4,9 +4,10 @@ prd_contract: v1
 
 # PRD-729 — Assets ship as few bytes as they can and preload as fast as they can
 
-**Status:** PARTIAL — Phases 1 and 2 are done: the bytes and the preload are measured and the goals
-are set. Phase 3 (levers) is open.
-**Priority:** P2 — Phase 3 is open: the corpus ships 5.37 MiB against a 3 MiB goal and preloads in 1705 ms at 40 Mbps against 1200 ms.
+**Status:** PARTIAL — Phases 1 and 2 are done; Phase 3 has cut the corpus from 5.37 to 3.68 MiB and
+both preload goals are met. The bytes goal is open.
+**Priority:** P1 — the corpus ships 3.68 MiB against a 3 MiB goal and 30.9% of source against 25%;
+preload is 372 ms local and 1162 ms at 40 Mbps on the RTX 2080.
 **Complexity:** 5 (MEDIUM) — 3–5 files in Phase 1 (+1): a loop script, its spec, the ledger, the
 generated page and this PRD; Phase 2 adds a probe game and a playtest network option (+2); each
 Phase 3 lever changes `packages/assets` defaults that every game inherits (+2).
@@ -93,6 +94,8 @@ Levers tried (the dashboard holds the numbers; a verdict lands here when it land
 | 9 | KTX2 only when an embedded image repays the 600 KiB Basis transcoder (`transcoderBytes`, always on) | 4.33 → 3.78 MiB (−12.7%) | local 1109 vs 1483 ms, 40 Mbps 1823 vs 2086 ms (−25% / −13%) | **Provisional** (iteration #9). A paired control on the RTX 2080 under host load, 5 runs each; the absolute 1109/1823 ms are load-inflated and a quiet-machine rerun must confirm them. The transcoder is copied only when a KTX2 output exists; a JPEG/PNG texture no longer drags it in. `model-texture-pass.spec.ts` pins the new rule (authored bytes and no `basis/`) and the constant against three's real pair. Visual judge on 15 `player-viewmodel` poses (2 runs): **IMPROVEMENT**, small fabric/receiver detail gain, no banding or alpha break. Assets suite green; template gate pending on a quiet machine. |
 | 10 | Smallest passing JPEG for opaque colour maps (`encodeJpegCandidate`, always on) | 3.78 → 3.68 MiB (−2.6%) | local 569 vs 619 ms, 40 Mbps 1322 vs 1448 ms (−8% / −9%) | **Kept** (iteration #10). The ladder tries quality 75/80/85/90 and keeps the smallest that holds SSIM 0.95 / ΔE00 3; data slots never enter it. Visual judge **NEUTRAL** on 15 `player-viewmodel` poses (2 runs, RTX 2080). `model-texture-pass.spec.ts` pins the rung, the smaller output and the untouched normal map. Shooter and action-rpg template gates pass on the quiet RTX; snow and rain passed on the laptop. |
 
+| 11 | Standalone colour maps take the smallest passing JPEG (`sky.jpg`) | 3.68 → 3.55 MiB (−3.5%) | local 416/459/402 vs control 400/426/379 ms; 40 Mbps 1122/1136/1115 vs 1145/1141/1175 ms | **Rejected.** Three paired runs: local preload rose 4–8% while throttled fell about 5%, so the other preload metric got worse than its paired control. The 0.13 MiB is real and returns if the local decode cost is explained. |
+
 Ceilings measured before building (no iteration; nothing here is worth a lever by itself):
 
 | Candidate | Ceiling | Why |
@@ -118,7 +121,7 @@ Candidates, ranked by baseline bytes:
 
 - [x] Each kept lever lowers `shippedMiB` or a preload metric, holds every texture floor, passes the visual judge and keeps the template playtests green. proof: ledger iterations #6, #7, #9 and #10 are `keep`; judges NEUTRAL/IMPROVEMENT (iterations #6, #9, #10) or pixel-identical (#7); every texture floor holds; template gate green across two hosts — snow, rain and the other templates on the idle laptop, shooter and action-rpg on the quiet RTX 2080 (`TN_TEMPLATE_ONLY=shooter|action-rpg`).
 - [ ] The corpus ships at most 3 MiB and at most 25% of its source. proof: `node scripts/asset-perf-loop.mjs show` — latest kept iteration.
-- [ ] Both preload goals are met. proof: `node scripts/asset-perf-loop.mjs show` — latest kept iteration.
+- [x] Both preload goals are met. proof: iteration #14, a quiet RTX 2080 run on `nvidia/turing`: local samples [422,372,382,362,362] ms, median **372 ms** ≤ 450; 40 Mbps samples [1168,1162,1243,1118,1134] ms, median **1162 ms** ≤ 1200. `node scripts/asset-perf-loop.mjs show` — latest kept iteration.
 
 ## Decisions
 
