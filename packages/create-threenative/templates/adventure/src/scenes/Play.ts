@@ -284,7 +284,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       ctx.state.set({ toast: text });
       toastUntil = elapsed + seconds;
     };
-    // The slash hint goes at her first slash, and any toast when the Warden wakes: a fight opens
+    // The slash hint goes at her first slash or lock, and any toast when the Warden wakes: a fight opens
     // on a clear screen. -1 while no hint is up, else her slash count when it went up.
     let slashHint = -1;
     let wardenSlept = true;
@@ -656,7 +656,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
 
       const woke = wardenSlept && warden.state !== "dormant";
       wardenSlept = warden.state === "dormant";
-      if (woke || (slashHint >= 0 && hero.slashes > slashHint)) {
+      if (woke || (slashHint >= 0 && (hero.slashes > slashHint || lock.target !== undefined))) {
         slashHint = -1;
         toastUntil = elapsed;
       }
