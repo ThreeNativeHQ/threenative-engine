@@ -267,6 +267,18 @@ export interface IPlaytestSceneAssertion {
 }
 
 /**
+ * Bounds how far a planted foot slides, measured from the feet's world positions every tick of one
+ * step. A clip reports its own stride; a procedural rig reports nothing, so this measures what the
+ * screen shows instead of what the game says. Browser target only; elsewhere it fails unobserved.
+ */
+export interface IPlaytestFootSlipAssertion {
+  atStep: string;
+  entity?: string;
+  feet: string[];
+  maxSlip: number;
+}
+
+/**
  * Bounds on named nodes of the scene graph — the questions a screenshot gets taken for.
  *
  * `scene` bounds the room as a whole: is anything lit, does the fog clear the world. This bounds
@@ -649,6 +661,7 @@ export interface IPlaytestScenarioAssertions {
   scene?: IPlaytestSceneAssertion;
   causedBy?: IPlaytestCausedByAssertion[];
   sceneNodes?: IPlaytestSceneNodesAssertion[];
+  footSlip?: IPlaytestFootSlipAssertion[];
   startup?: IPlaytestStartupAssertion;
   states?: IPlaytestStateAssertion[];
   tags?: IPlaytestTagCountAssertion[];

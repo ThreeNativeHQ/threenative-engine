@@ -1,6 +1,6 @@
 import { createOwnedRunResourceRelease } from "./ownedRunResources.js";
 import type { IPlaytestToneCaptureObservation } from "../tone.js";
-import { completionWindowEnvironment, completionWindowLabel, measureCompletionWindow, setPointerButtons, setBrowserPointers, type ICompletionWindow, waitFrames, captureVisualSurface, runStep, sampleVisualElementBounds, screenshotObservations, sampleAfterTransition } from "./steps.js";
+import { completionWindowEnvironment, completionWindowLabel, measureCompletionWindow, sampleFootSlip, samplePathPosition, setPointerButtons, setBrowserPointers, type ICompletionWindow, waitFrames, captureVisualSurface, runStep, sampleVisualElementBounds, screenshotObservations, sampleAfterTransition } from "./steps.js";
 import type { StepInputState } from "./steps.js";
 import { withPerformanceBudget } from "./buildReport.js";
 import { alignScenarioStartTick, preflightDisplay, acquireRunnerCaptureLock, provideRunDisplay, buildReport, addPreflightDiagnostic, isJudgeMarkerRequestFailure } from "./runner-support.js";
@@ -40,6 +40,7 @@ import {
   resolveDiagnosticsPolicy,
   type IPlaytestArtifactRequest,
   type IPlaytestCaptureProvenance,
+  type IPlaytestFootSlipObservation,
   type IPlaytestFramebufferCoverageObservation,
   type IPlaytestScenario,
   type IPlaytestSetupApplication,
@@ -732,6 +733,9 @@ async function runStandalonePlaytestInternal(
     if (activeConfig.cpuProfilePath !== undefined) {
       cpuProfile = await startBrowserCpuProfile(activePage, activeConfig.cpuProfilePath);
     }
+    const footSlip: IPlaytestFootSlipObservation[] = [];
+    const footSlipAt = (label: string | undefined) =>
+      label === undefined ? undefined : scenario.assert?.footSlip?.find(({ atStep }) => atStep === label);
     for (const [index, step] of scenario.steps.entries()) {
       const framebufferAssertion = scenario.assert?.framebufferCoverage;
       if (framebufferAssertion !== undefined
@@ -783,7 +787,16 @@ async function runStandalonePlaytestInternal(
               await setBrowserPointers(activePage, inputState, [], scenario.viewport);
             });
           completionWindow.setupSnapshot = setupSnapshot;
-        } : undefined,
+        } : footSlipAt(step.label) === undefined ? undefined : async (ticks) => {
+          const assertion = footSlipAt(step.label)!;
+          const entity = assertion.entity ?? scenario.subject;
+          if (bridge === undefined || entity === undefined || activeConfig.liveClock === true
+            || !bridge.description.capabilities.includes("runtime.fixedStep")) {
+            throw new Error("TN_PLAYTEST_FOOT_SLIP_UNOBSERVED: footSlip needs a fixed-step bridge and a subject entity");
+          }
+          footSlip.push(await sampleFootSlip(activePage, bridge, ticks, step.label!, entity, assertion.feet));
+          await samplePathPosition(bridge, pathEntity, pathPositions);
+        },
       );
       if (movementBaselineSnapshot === undefined && movementNeedsBaseline && movementEntity !== undefined) {
         const candidate = stepSamples.afterStep ?? stepSamples.afterInput;
@@ -882,6 +895,7 @@ async function runStandalonePlaytestInternal(
         : { ...startupOutcome.startup, rule: startupOutcome.rule },
       undefined,
       tone,
+      footSlip.length === 0 ? undefined : footSlip,
     );
     if (cpuWindows.length !== cpuLabels.length) throw new Error("TN_PLAYTEST_CPU_WINDOW_FAILED: missing requested CPU window");
     if (completionWindow !== undefined) {

@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-735 — Playtest gates that catch the bugs a player finds in five minutes
 
-**Status:** PARTIAL — Phase 1 harness boxes landed
+**Status:** PARTIAL — harness gates landed (explore, frame budget, sharpness, footSlip); kit scenarios and the explore crash catch open
 **Priority:** P1 — every kit had green scenarios while the owner hit a crash, 30 fps, skating limbs, dead controls and a smeared image by hand (all phases open).
 **Complexity:** 5 (MEDIUM) — `packages/playtest` schema, evaluators and capture (+3), kit scenario files (+1), template `AGENTS.md` rules (+1). Risk override: none.
 **Owner:** João
@@ -49,8 +49,10 @@ exploration step, no sharpness metric and no procedural-rig slip measurement exi
   override and the result says so.
 - **Sharpness floor.** `visual.region.minSharpness`: variance of the Laplacian of luminance over the
   region of the final capture. A post stage that smears the frame drops it.
-- **Limb slip.** Deferred to Phase 2 design once the cheaper gates land: a named-node planted-foot
-  slip measurement that works for procedural rigs.
+- **Limb slip.** `assert.footSlip[]` advances one labelled step a tick at a time and samples the
+  subject and each named sole node. A foot is planted in the lowest quarter of its height below the
+  body; slip is planted-foot travel over body travel. Browser target only; elsewhere it fails
+  `TN_PLAYTEST_FOOT_SLIP_UNOBSERVED`.
 - **Controls from the spawn.** A default `controls` scenario per kit presses each control the HUD
   advertises from the spawn, plus pointer motion for the camera, and asserts each changes state.
 
@@ -61,12 +63,13 @@ exploration step, no sharpness metric and no procedural-rig slip measurement exi
 - [x] `explore` step kind expands deterministically into input steps; wrong-typed fields throw at load. proof: `pnpm exec vitest run packages/playtest/__tests__/explore-step.spec.ts` — 10/10 green; full playtest suite 1782/1782.
 - [x] A `performance` assertion without `maxFrameMsP95` applies the adapter-derived budget and reports its source. proof: `pnpm exec vitest run packages/playtest/__tests__/frame-budget.spec.ts` — 6/6 green; 30 fps (33.3 ms) on an RTX 2080 identity fails the derived 20 ms, held 60 fps passes, Intel UHD gets 40 ms, SwiftShader and no adapter report why no budget applied.
 - [ ] Hop Garden at HEAD fails the `explore` scenario on the wall-probe crash. proof: playtest run against the Hop Garden consumer copy
-- [ ] The three kits' performance scenarios drop the 33 ms constant for the derived budget. proof: playtest run of each kit's `performance.playtest.json`
+  Open: seeds 1-9 x 7200 ticks on a pre-fix copy (headed, nvidia/turing) all passed, no crash. The crash needs the orbiting deck to rise through an airborne Pip; `hop-garden-look` fixed it in f1a329533 with a targeted `clipped-probe` scenario.
+- [x] The three kits' performance scenarios drop the 33 ms constant for the derived budget. proof: playtest run of each kit's `performance.playtest.json` — adaad10d7; headed, nvidia/turing, derived 20 ms: Hop Garden p95 19.2 ms pass, Clover Cup 18.2 ms pass, Lantern Vale 153.7 ms FAIL (host load 35-46, contended).
 
 ### Phase 2 — image and limbs
 
 - [x] `visual.region.minSharpness` fails a smeared frame and passes a sharp one. proof: `pnpm exec vitest run packages/playtest/__tests__/sharpness.spec.ts` — 5/5 green. Metric: Laplacian variance at full over half resolution. Kit frames 2026-10-24: in-focus 0.39-0.61 (Hop Garden spawn 0.49, Lantern Vale 0.59), smeared 0.21-0.24 (Hop Garden after free play 0.21, Lantern Vale SSR arm 0.22); floor 0.3.
-- [ ] Limb slip measurement on named nodes fails a time-driven run cycle. proof: unit spec and a Lantern Vale run
+- [x] Limb slip measurement on named nodes fails a time-driven run cycle. proof: unit spec and a Lantern Vale run — `foot-slip.spec.ts` 6/6; Lantern Vale HEAD with `footL`/`footR` sole nodes named in the copy: slip 1.54 / 1.93, ceiling 0.35, FAIL; Hop Garden working-tree stride-synced rig: 0.13 / 0.09 PASS (headed, nvidia/turing).
 
 ### Phase 3 — controls
 

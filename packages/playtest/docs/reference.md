@@ -262,6 +262,15 @@ producer reported no stride, reported half of one, or the body covered no ground
 against; `TN_PLAYTEST_STRIDE_NOT_SYNCED`; `TN_PLAYTEST_FOOT_SLIDE` with both speeds and the
 ceiling. A game that does not measure stride has not measured zero slide.
 
+A procedural rig plays no clip, so it reports no stride. `assert.footSlip[]` measures the screen
+instead: `{ atStep, feet: ["footL", "footR"], maxSlip: 0.35, entity? }` advances the labelled step
+one tick at a time and samples the world position of the subject and of each named sole node
+after every tick. A foot is planted while it is in the lowest quarter of its height below the
+body, and its slip is planted-foot travel over body travel on those ticks: 0 is planted, about 1
+skates with the body. It fails `TN_PLAYTEST_FOOT_SLIP`. A missing node, a step that moved the
+subject under 0.5 m, fewer than 4 planted tick pairs, or a target other than the browser fails
+`TN_PLAYTEST_FOOT_SLIP_UNOBSERVED`.
+
 A scenario bounds the same numbers with `assert.scene`, so the check outlives whoever ran
 `doctor` once:
 

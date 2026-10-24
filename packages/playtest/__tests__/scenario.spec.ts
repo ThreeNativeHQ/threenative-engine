@@ -611,6 +611,7 @@ const FAMILY_SCENARIO_ASSERTS = {
   },
   scene: { cameraClearsScene: true, fogClearsScene: true, litMaterialsAreLit: true, minVisibleLights: 1 },
   sceneNodes: [{ select: { nameContains: "crate" }, visible: true }],
+  footSlip: [{ atStep: "loading-end", feet: ["footL", "footR"], maxSlip: 0.35 }],
   causedBy: [
     {
       cause: { contact: { entity: "fox", kind: "trigger", with: "coin" } },
@@ -666,6 +667,7 @@ const FAMILY_PASS_IDS = [
   "scene.cameraClearsScene",
   "sceneNodes[0].count",
   "sceneNodes[0].visible",
+  "footSlip[0].slip",
   "causedBy[0].neverBefore",
   "causedBy[0].withinTicks",
   "startup.readyMs",
@@ -823,6 +825,20 @@ function familyReportObservations(fulfilled: boolean) {
       incompleteReasons: [],
     },
     resources: { GameState: { after: { coins: 2 }, before: { coins: 0 } } },
+    // A stride matched to the ground: each foot holds still for half of a 20-tick cycle.
+    footSlip: [{
+      entity: "player",
+      feet: ["footL", "footR"],
+      label: "loading-end",
+      samples: Array.from({ length: 41 }, (_, tick) => {
+        const foot = (offset: number) => {
+          const phase = (tick + offset) % 20;
+          const planted = Math.floor((tick + offset) / 20) * 2 + 0.3;
+          return phase < 10 ? [0, -0.9, planted] : [0, -0.8, planted + (phase - 9) * 0.2];
+        };
+        return { body: [0, 0, tick * 0.1], feet: [foot(0), foot(10)] };
+      }),
+    }],
     sceneNodes: [
       {
         matched: 1,
@@ -950,6 +966,7 @@ test("should preserve every assertion family's result contract", async () => {
     // family says so once rather than failing each bound against nothing.
     "scene.observed",
     "sceneNodes.observed",
+    "footSlip[0].observed",
     "causedBy.observed",
     "startup.readyMs",
     "diagnostics",
@@ -994,6 +1011,7 @@ test("should preserve every assertion family's result contract", async () => {
     "TN_PLAYTEST_PIPELINE_CENSUS_UNOBSERVABLE",
     "TN_PLAYTEST_SCENE_UNOBSERVED",
     "TN_PLAYTEST_SCENE_NODES_UNOBSERVED",
+    "TN_PLAYTEST_FOOT_SLIP_UNOBSERVED",
     "TN_PLAYTEST_TRANSITIONS_UNOBSERVED",
     "TN_PLAYTEST_STARTUP_UNOBSERVABLE",
     "TN_PLAYTEST_VISIBILITY_FAILED",

@@ -225,6 +225,12 @@ export const GENERATED_ASSERTION_FIELD_VALIDATORS: Readonly<Record<string, Reado
     "maxCount": (value: unknown) => typeof value === "number" && Number.isFinite(value),
     "minTriangles": (value: unknown) => typeof value === "number" && Number.isFinite(value),
   }),
+  "footSlip": Object.freeze({
+    "atStep": (value: unknown) => typeof value === "string" && value.trim() !== "",
+    "feet": (value: unknown) => Array.isArray(value),
+    "maxSlip": (value: unknown) => typeof value === "number" && Number.isFinite(value) && value > 0,
+    "entity": (value: unknown) => typeof value === "string" && value.trim() !== "",
+  }),
   "causedBy": Object.freeze({
     "cause": (value: unknown) => isRecord(value),
     "effect": (value: unknown) => isRecord(value),

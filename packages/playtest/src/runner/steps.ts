@@ -9,6 +9,7 @@ import {
   playtestStepHoldTicks,
   playtestStepWaitTicks,
   type IPlaytestAssertionResult,
+  type IPlaytestFootSlipObservation,
   type IPlaytestObservationSnapshot,
   type IPlaytestObservations,
   type IPlaytestSampleRequest,
@@ -275,7 +276,8 @@ export async function runStep(
   subject?: string,
   liveClock = false,
   cpuWindow?: (advance: () => Promise<void>) => Promise<void>,
-  completionWindow?: () => Promise<void>,
+  /** Advances the step's ticks itself, in place of the batched advance below. */
+  stepWindow?: (ticks: number) => Promise<void>,
 ): Promise<IRunStepSamples> {
   if (step.waitForResource !== undefined) {
     if (bridge === undefined || movementSampleRequest === undefined) {
@@ -380,8 +382,8 @@ export async function runStep(
       "Advertise runtime.fixedStep from the bridge so ticks are deterministic, or author the step in waitFrames/holdFrames, which are display frames and say so.",
     ));
   }
-  if (completionWindow !== undefined) {
-    await completionWindow();
+  if (stepWindow !== undefined) {
+    await stepWindow(ticks);
   } else if (cpuWindow !== undefined) {
     if (step.kind !== "wait" || step.waitTicks !== 1000 || ticks < 1000 || !fixedStep || bridge === undefined || liveClock) {
       throw new Error("TN_PLAYTEST_CPU_WINDOW_FAILED: measurement requires a fixed-step 1000-tick WAIT");
@@ -723,6 +725,30 @@ export async function setPointerButtons(
     }
   }
   inputState.pointerButtons = buttons;
+}
+
+/**
+ * Advances one tick at a time and records where the subject and each named foot are after every
+ * tick. The 10-tick path cadence cannot see a stride, so a footSlip step pays one round trip per tick.
+ */
+export async function sampleFootSlip(
+  page: Page,
+  bridge: IPlaytestBridgeClient,
+  ticks: number,
+  label: string,
+  entity: string,
+  feet: string[],
+): Promise<IPlaytestFootSlipObservation> {
+  const samples: IPlaytestFootSlipObservation["samples"] = [];
+  for (let tick = 0; tick < ticks; tick += 1) {
+    await advanceFixedStep(page, bridge, 1);
+    const snapshot = await bridge.sample({ entities: [entity], include: ["entities"], sceneNodes: feet.map((name) => ({ limit: 1, name })) });
+    samples.push({
+      body: entityPosition(snapshot, entity) ?? null,
+      feet: feet.map((_name, index) => snapshot.sceneNodes?.[index]?.nodes[0]?.position ?? null),
+    });
+  }
+  return { entity, feet, label, samples };
 }
 
 export async function samplePathPosition(

@@ -785,6 +785,35 @@ Bounds on named nodes of the scene graph — where an object is, whether it is o
 }
 ```
 
+### `footSlip`
+
+Bounds how far a planted foot slides while the subject moves, measured every tick from named foot nodes' world positions, so it holds a procedural rig to the feet-meet-the-floor convention as well as a clip. Browser target only; another target fails it as unobserved. **Use when** that is the thing the scenario must prove.
+
+- **Supported on:** web · **Requires:** entity.observe, scene.nodes
+
+| Field | Type | Required |
+| --- | --- | --- |
+| `atStep` | string | no |
+| `feet` | Array<string> | no |
+| `maxSlip` | positive number | no |
+| `entity` | string | no |
+
+
+```json
+{
+  "footSlip": [
+    {
+      "atStep": "run",
+      "feet": [
+        "footL",
+        "footR"
+      ],
+      "maxSlip": 0.35
+    }
+  ]
+}
+```
+
 ### `causedBy`
 
 Relates a tick-stamped effect to the tick-stamped cause that must precede it — the 'because' a terminal state needs. **Use when** that is the thing the scenario must prove.

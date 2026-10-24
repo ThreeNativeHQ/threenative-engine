@@ -3,7 +3,7 @@ import type { IToneRegion } from "../tone.js";
 import type { IPlaytestToneAssertion } from "./schema-base.js";
 import { PLAYTEST_ASSERTION_REGISTRY } from "../assertions.js";
 import { invalidScenario, invalidStep, rejectUnknownKeys } from "./errors.js";
-import { isRecord, validateViewport, positiveInteger, hasKey, validateOptionalNumberTuple, validateAssertionKeys, validateDeviceMetricsAssertion, validateParityAssertion, validatePerformanceAssertion, validateFramebufferCoverageAssertion, validateRenderChainAssertion, validateStartupAssertion, validatePipelineCensusAssertion, validateSceneAssertion, validateSceneNodesAssertion, validateCausedByAssertion, validateAnimationAssertion, validateContactAssertion, validatePathAssertion, validateNumberTuple, validateResourcePathAssertion, validateSignalAssertion, validateStateAssertion, validateTagCountAssertion, validateVisibilityAssertion, validateVisualAssertion, requireRecord, optionalNumber, requireString, optionalPositiveNumber, present, optionalTrivialityReason, optionalString, optionalPositiveInteger, optionalTargetArray, optionalBoolean, requireArray, describeValue, optionalNonNegativeNumber, optionalNonNegativeInteger } from "./schema-accessors.js";
+import { isRecord, validateViewport, positiveInteger, hasKey, validateOptionalNumberTuple, validateAssertionKeys, validateDeviceMetricsAssertion, validateParityAssertion, validatePerformanceAssertion, validateFramebufferCoverageAssertion, validateRenderChainAssertion, validateStartupAssertion, validatePipelineCensusAssertion, validateSceneAssertion, validateSceneNodesAssertion, validateFootSlipAssertion, validateCausedByAssertion, validateAnimationAssertion, validateContactAssertion, validatePathAssertion, validateNumberTuple, validateResourcePathAssertion, validateSignalAssertion, validateStateAssertion, validateTagCountAssertion, validateVisibilityAssertion, validateVisualAssertion, requireRecord, optionalNumber, requireString, optionalPositiveNumber, present, optionalTrivialityReason, optionalString, optionalPositiveInteger, optionalTargetArray, optionalBoolean, requireArray, describeValue, optionalNonNegativeNumber, optionalNonNegativeInteger } from "./schema-accessors.js";
 import { NUMERIC_COMPARISON_KEYS } from "./schema-base.js";
 import type { IPlaytestGeometryCaptureRequest } from "../protocol.js";
 import type { IPlaytestAimRequest, IPlaytestAimTarget, IPlaytestPlaceRequest, IPlaytestSpawnRequest, IPlaytestScenario, IPlaytestArtifactRequest, IPlaytestParityConfig, PlaytestTarget, IPlaytestScenarioSetup, IPlaytestSetupResource, IPlaytestSetupEntityTransform, IPlaytestStep, IPlaytestPointer, IPlaytestScenarioAssertions, IPlaytestAudioAssertion, IPlaytestWorldAssertion, IPlaytestReachabilityAssertion, IPlaytestSettledAssertion, IPlaytestOverlayNodeAssertion, IPlaytestComponentAssertion, IPlaytestAerodynamicsAssertion, IPlaytestOccludedAssertion, IPlaytestResourceWait } from "./schema-base.js";
@@ -987,6 +987,12 @@ export function validateStepLabels(
   for (const [index, assertion] of (assertions.tone ?? []).entries()) {
     requireLabel(assertion.atStep, `assert.tone[${index}].atStep`);
   }
+  for (const [index, assertion] of (assertions.footSlip ?? []).entries()) {
+    requireLabel(assertion.atStep, `assert.footSlip[${index}].atStep`);
+    // The runner samples one set of feet per step; a second assertion there would never be measured.
+    if (assertions.footSlip!.findIndex(({ atStep }) => atStep === assertion.atStep) !== index)
+      throw invalidScenario(scenarioPath, `Assertion 'assert.footSlip[${index}]' repeats atStep '${assertion.atStep}'; list every foot in one assertion.`);
+  }
   for (const [index, assertion] of (assertions.signals ?? []).entries()) {
     requireLabel(assertion.atStep, `assert.signals[${index}].atStep`);
   }
@@ -1034,6 +1040,9 @@ export function validateAssertions(value: Record<string, unknown>, scenarioPath:
   validateAssertionKeys(value, scenarioPath);
   if (Array.isArray(value.signals) && value.signals.length === 0) {
     throw invalidScenario(scenarioPath, "Assertion 'assert.signals' must contain at least one signal assertion.");
+  }
+  if (Array.isArray(value.footSlip) && value.footSlip.length === 0) {
+    throw invalidScenario(scenarioPath, "Assertion 'assert.footSlip' must contain at least one foot-slip assertion.");
   }
   if (Array.isArray(value.tone) && value.tone.length === 0) {
     throw invalidScenario(scenarioPath, "Assertion 'assert.tone' must contain at least one tone assertion.");
@@ -1157,6 +1166,12 @@ export function validateAssertions(value: Record<string, unknown>, scenarioPath:
       ? {
           causedBy: requireArray(value, "causedBy", scenarioPath, "assert.causedBy").map((entry, index) =>
             validateCausedByAssertion(entry, scenarioPath, `assert.causedBy[${index}]`)),
+        }
+      : {}),
+    ...(hasKey(value, "footSlip")
+      ? {
+          footSlip: requireArray(value, "footSlip", scenarioPath, "assert.footSlip").map((entry, index) =>
+            validateFootSlipAssertion(entry, scenarioPath, `assert.footSlip[${index}]`)),
         }
       : {}),
     ...(hasKey(value, "sceneNodes")

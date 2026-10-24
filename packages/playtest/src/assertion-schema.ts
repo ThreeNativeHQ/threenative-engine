@@ -569,6 +569,25 @@ export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry
   {
     cardinality: "array",
     description:
+      "Bounds how far a planted foot slides while the subject moves, measured every tick from named foot nodes' world positions, so it holds a procedural rig to the feet-meet-the-floor convention as well as a clip. Browser target only; another target fails it as unobserved.",
+    example: { footSlip: [{ atStep: "run", feet: ["footL", "footR"], maxSlip: 0.35 }] },
+    fields: [
+      { description: "Label of the input step to measure; it is advanced one tick at a time and must move the subject at least 0.5 m.", name: "atStep", type: "string" },
+      { description: "Exact Object3D names of the nodes at the soles, one per foot.", name: "feet", type: "Array<string>" },
+      { description: "Ceiling on planted-foot travel over body travel while a foot is in the lowest quarter of its lift below the body: 0 is planted, 1 skates with the body, above 1 the legs cycle faster than the ground moves.", name: "maxSlip", type: "positive number" },
+      { description: "The moving entity; defaults to the scenario subject.", name: "entity", type: "string" },
+    ],
+    kind: "footSlip",
+    observationPath: "footSlip",
+    requiredCapabilities: ["entity.observe", "scene.nodes"],
+    resultIdPrefix: "footSlip",
+    supportedOn: ["web"],
+    triviality: "not-applicable",
+    trivialityRationale: "The measurement needs the subject to cover ground during the step, so a standing subject fails as unmeasured instead of passing.",
+  },
+  {
+    cardinality: "array",
+    description:
       "Relates a tick-stamped effect to the tick-stamped cause that must precede it — the 'because' a terminal state needs.",
     example: {
       causedBy: [

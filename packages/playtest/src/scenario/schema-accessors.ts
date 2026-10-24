@@ -4,7 +4,7 @@ import { PlaytestScenarioError, invalidScenario, rejectUnknownKeys } from "./err
 import { MIN_TRIVIALITY_REASON_LENGTH, NUMERIC_COMPARISON_KEYS, PLAYTEST_PER_ADAPTER_KEYS } from "./schema-base.js";
 import { GENERATED_ASSERTION_FIELD_VALIDATORS } from "./generated-assertion-validators.js";
 import type { IPlaytestVisualAssertion, PlaytestTarget, IPlaytestPerformanceAssertion, IPlaytestFramebufferCoverageAssertion, IPlaytestStateAssertion, IPlaytestTagCountAssertion, IPlaytestContactAssertion, IPlaytestSignalAssertion, IPlaytestAnimationAssertion,
-  IPlaytestSceneAssertion, IPlaytestSceneNodesAssertion, IPlaytestSceneNodeSelectorSpec, IPlaytestCausedByAssertion, IPlaytestCauseSpec, IPlaytestEffectSpec, IPlaytestVisibilityAssertion, IPlaytestPathAssertion, IPlaytestResourceAssertion, IPlaytestResourcePathAlternative, IPlaytestViewport, IPlaytestScenarioAssertions, IPlaytestDeviceMetricsAssertion, IPlaytestParityAssertion, IPlaytestRenderChainAssertion, IPlaytestRenderChainExpectation, IPlaytestStartupAssertion, IPlaytestPipelineCensusAssertion, IPlaytestVisualRegionTarget } from "./schema-base.js";
+  IPlaytestSceneAssertion, IPlaytestSceneNodesAssertion, IPlaytestFootSlipAssertion, IPlaytestSceneNodeSelectorSpec, IPlaytestCausedByAssertion, IPlaytestCauseSpec, IPlaytestEffectSpec, IPlaytestVisibilityAssertion, IPlaytestPathAssertion, IPlaytestResourceAssertion, IPlaytestResourcePathAlternative, IPlaytestViewport, IPlaytestScenarioAssertions, IPlaytestDeviceMetricsAssertion, IPlaytestParityAssertion, IPlaytestRenderChainAssertion, IPlaytestRenderChainExpectation, IPlaytestStartupAssertion, IPlaytestPipelineCensusAssertion, IPlaytestVisualRegionTarget } from "./schema-base.js";
 export function validateVisualAssertion(value: unknown, scenarioPath: string, objectPath: string): IPlaytestVisualAssertion {
   const record = requireRecord(value, scenarioPath, objectPath);
   // A non-record entry used to be dropped from the array, and a mistyped key
@@ -910,6 +910,23 @@ export function validateSceneNodesAssertion(
       `${objectPath}.texturesLoaded may only be true; remove the key to stop requiring loaded textures.`,
     );
   return result;
+}
+
+export function validateFootSlipAssertion(value: unknown, scenarioPath: string, objectPath: string): IPlaytestFootSlipAssertion {
+  const record = requireRecord(value, scenarioPath, objectPath);
+  rejectUnknownKeys(record, ["atStep", "entity", "feet", "maxSlip"], scenarioPath, objectPath);
+  const feet = record.feet;
+  if (!Array.isArray(feet) || feet.length === 0 || feet.some((foot) => typeof foot !== "string" || foot.trim() === "")
+    || new Set(feet).size !== feet.length)
+    throw invalidScenario(scenarioPath, `${objectPath}.feet must be a non-empty array of unique node names; got ${describeValue(feet)}.`);
+  const maxSlip = optionalPositiveNumber(record, "maxSlip", scenarioPath, objectPath);
+  if (maxSlip === undefined) throw invalidScenario(scenarioPath, `${objectPath}.maxSlip is required; a slip measure with no ceiling bounds nothing.`);
+  return {
+    atStep: requireString(record, "atStep", scenarioPath, objectPath),
+    ...present("entity", optionalString(record, "entity", scenarioPath, objectPath)),
+    feet: feet as string[],
+    maxSlip,
+  };
 }
 
 export function validateAnimationAssertion(value: unknown, scenarioPath: string, objectPath: string): IPlaytestAnimationAssertion {

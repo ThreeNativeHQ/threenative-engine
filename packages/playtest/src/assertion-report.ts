@@ -50,6 +50,13 @@ export interface IPlaytestVisualElementRegionObservation {
   rendered: boolean;
 }
 
+export interface IPlaytestFootSlipObservation {
+  entity: string;
+  feet: string[];
+  label: string;
+  samples: Array<{ body: [number, number, number] | null; feet: Array<[number, number, number] | null> }>;
+}
+
 export interface IPlaytestObservations {
   tone?: IPlaytestToneCaptureObservation[];
   animation?: unknown;
@@ -86,6 +93,8 @@ export interface IPlaytestObservations {
   /** Lights, materials, fog, background, camera framing and world extent, as the bridge found them. */
   scene?: IPlaytestSceneObservation;
   sceneNodes?: IPlaytestSceneNodesObservation[];
+  /** Per-tick world positions of the subject and its named feet over each footSlip step; a foot the walk did not find is null. */
+  footSlip?: IPlaytestFootSlipObservation[];
   /** The startup observation the runner waited on, with the rule it resolved under. */
   startup?: {
     compileSettled?: boolean;
