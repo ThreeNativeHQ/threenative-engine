@@ -9,14 +9,14 @@
  * A transparent box beside it must be skipped by name, not cost the frame.
  * Usage: post-normal-pass.ts <render-driver> <work-dir>
  */
-import { throws } from "node:assert/strict";
+import { deepEqual, throws } from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { PNG } from "pngjs";
 import { PerspectiveCamera, Texture, Vector3 } from "three";
 import { ao } from "three/addons/tsl/display/GTAONode.js";
-import { Fn, texture, type uv } from "three/tsl";
+import { Fn, texture, uniform, type uv } from "three/tsl";
 import type { FixtureOp, IFixture } from "../../../three-native/src/fixture-format.js";
 import { encodeFixture, parseReply } from "../../../three-native/src/fixture-protocol.js";
 import { exportTslGraph } from "../../scripts/tsl-export.js";
@@ -41,6 +41,13 @@ normal.name = "normal";
 const graph = path.join(directory, "gtao-normals.json");
 const occlusion = ao(texture(depth), texture(normal), camera);
 occlusion.radius.value = 1; // a unit box's contact shadow, not the default quarter metre
+// This upstream carrier exports native screen reach; it does not implement it in the browser.
+Reflect.set(occlusion, "reachPx", uniform(0));
+const reachExport = exportTslGraph(occlusion.getTextureNode());
+deepEqual(
+  reachExport.nodes.find((node) => node.kind === "GTAONode")?.post?.parameters.reachPx,
+  [0],
+);
 writeFileSync(graph, JSON.stringify(exportTslGraph(occlusion.getTextureNode())));
 const sampledGraph = path.join(directory, "gtao-sampled-normals.json");
 const sampledNormal = {

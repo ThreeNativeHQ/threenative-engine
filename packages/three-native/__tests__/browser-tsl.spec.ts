@@ -1,10 +1,15 @@
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
+import { PerspectiveCamera, RenderTarget } from "three";
+import * as upstreamTsl from "three/tsl";
+import { NodeMaterial, QuadMesh } from "three/webgpu";
 import { describe, expect, it, vi } from "vitest";
+import { defineScreenSpaceGi } from "../src/addons/screen-space.js";
 import { TSL_NODE } from "../src/browser-backend.js";
 import { type ITslRuntime, defineTsl } from "../src/browser-tsl.js";
 import { definePass } from "../src/pass-node.js";
+import { defineRtt } from "../src/rtt.js";
 import { liveUniforms } from "../src/tsl-uniforms.js";
 
 interface INode {
@@ -53,6 +58,57 @@ it("the V8 facade preserves live boolean uniforms over numeric lanes", () => {
   uniform(vector);
   expect(nativeUniform).toHaveBeenLastCalledWith(vector);
 });
+it("the V8 SSGI facade uses live camera uniforms when constructing its real graph", () => {
+  const rawUniform = (value: unknown) => {
+    if (typeof value !== "number") throw new TypeError("native camera uniform needs a number");
+    return Object.defineProperty(upstreamTsl.uniform(value), "onRenderUpdate", {
+      configurable: true,
+      value: undefined,
+    });
+  };
+  const setUniform = vi.fn();
+  const live = liveUniforms(rawUniform, setUniform);
+  const rawRtt = vi.fn((...args: unknown[]) => {
+    if (args.length !== 5) throw new TypeError("TN_TSL rtt: expected 5 arguments");
+    return Object.assign(upstreamTsl.vec4(0), { __effect: vi.fn(), __rtt: vi.fn() });
+  });
+  const rtt = defineRtt(rawRtt, { NodeMaterial, RenderTarget, QuadMesh });
+  const source = readFileSync(
+    new URL("../../runtime-native/src/engine/player/core-addons.mjs", import.meta.url),
+    "utf8",
+  );
+  const expression = source.slice(
+    source.indexOf("export const ssgi ="),
+    source.indexOf(";", source.indexOf("export const ssgi =")) + 1,
+  );
+  const ssgi = new Function(
+    "globalThis",
+    "defineScreenSpaceGi",
+    "uniform",
+    "rtt",
+    expression.replace("export const ssgi =", "return"),
+  )(
+    { tsl: { ...upstreamTsl, uniform: rawUniform, rtt: rawRtt } },
+    defineScreenSpaceGi,
+    live.uniform,
+    rtt,
+  );
+  const camera = new PerspectiveCamera(60, 1, 0.1, 100);
+  const input = upstreamTsl.vec4(0);
+  const node = ssgi(input, input, input, camera);
+  expect(node.getGINode().isNode).toBe(true);
+  expect(node.getAONode().isNode).toBe(true);
+  expect(rawRtt).toHaveBeenCalledWith(expect.any(Object), 0, 0, 1006, 1006);
+  camera.near = 0.25;
+  camera.fov = 45;
+  camera.updateProjectionMatrix();
+  live.sync();
+  expect(setUniform).toHaveBeenCalledWith(expect.any(Object), [0.25]);
+  expect(setUniform).toHaveBeenCalledWith(expect.any(Object), [
+    camera.projectionMatrix.elements[0],
+  ]);
+});
+
 interface ITslExports {
   Fn(callback: (parameters: never) => INode): (...args: unknown[]) => INode;
   vec2(...args: number[]): INode;

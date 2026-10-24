@@ -1,5 +1,7 @@
 import * as THREE from "three/webgpu";
-import { float, pass, vec4 } from "three/tsl";
+import { float, pass, texture, vec4 } from "three/tsl";
+import { AutoExposureNode } from "../../../../core/src/look/auto-exposure.ts";
+import { exposureSettings } from "../../../../core/src/look/exposure-settings.ts";
 import { LocalExposureNode } from "../../../../core/src/look/local-exposure.ts";
 import { UnrealBloomNode } from "../../../../core/src/look/unreal-bloom.ts";
 import { startVisualScene } from "./scene-support.js";
@@ -17,6 +19,8 @@ import { startVisualScene } from "./scene-support.js";
  */
 
 const EXPOSURE = 0.5;
+const METER_LUMINANCE = 46 / 255;
+const METER_STOPS = Math.log2(exposureSettings.key / METER_LUMINANCE);
 
 function patch(scene, color, width, height, x, y) {
   const mesh = new THREE.Mesh(
@@ -28,7 +32,7 @@ function patch(scene, color, width, height, x, y) {
 }
 
 export function startScene(canvas, dimensions) {
-  return startVisualScene(canvas, dimensions, "local-exposure", ({ renderer, scene, camera }) => {
+  return startVisualScene(canvas, dimensions, "local-exposure", async ({ renderer, scene, camera }) => {
     patch(scene, 0.004, 4, 3.6, -2, 0);
     patch(scene, 3, 4, 3.6, 2, 0);
     patch(scene, 0.18, 0.7, 0.7, -1.1, -0.7);
@@ -39,13 +43,32 @@ export function startScene(canvas, dimensions) {
     const exposure = float(EXPOSURE);
     const localExposure = new LocalExposureNode(colour, exposure);
     const bloom = new UnrealBloomNode(colour);
+    const meterSize = renderer.getDrawingBufferSize(new THREE.Vector2());
+    const meterPixels = new Uint8Array(meterSize.x * meterSize.y * 4);
+    for (let i = 0; i < meterPixels.length; i += 4) meterPixels.set([46, 46, 46, 255], i);
+    const meterInput = new THREE.DataTexture(meterPixels, meterSize.x, meterSize.y, THREE.RGBAFormat, THREE.UnsignedByteType);
+    meterInput.colorSpace = THREE.NoColorSpace;
+    meterInput.needsUpdate = true;
+    const meter = new AutoExposureNode(texture(meterInput), exposureSettings, 1);
+    meter.reset();
     const pipeline = new THREE.RenderPipeline(renderer);
     pipeline.outputNode = vec4(
-      colour.rgb.add(bloom.bloomNode).mul(exposure).mul(localExposure.gainNode),
+      colour.rgb.add(bloom.bloomNode).mul(exposure).mul(localExposure.gainNode).mul(meter.exposureNode.div(2 ** METER_STOPS)),
       1,
     );
+    let observation = meter.getObservation();
+    while (observation.measured !== true) {
+      pipeline.render();
+      await new Promise(requestAnimationFrame);
+      observation = meter.getObservation();
+      if (observation.reason !== undefined) throw new Error(`Auto exposure readback failed: ${observation.reason}`);
+    }
+    if (observation.applied !== true || observation.settled !== true ||
+      Math.abs(observation.luminance - METER_LUMINANCE) > 0.005 ||
+      Math.abs(observation.exposureStops - METER_STOPS) > 0.03 || Math.abs(observation.targetStops - METER_STOPS) > 0.03)
+      throw new Error(`Auto exposure known-target mismatch: ${JSON.stringify(observation)}`);
     return {
-      detail: { exposure: EXPOSURE, stages: ["local-exposure", "unreal-bloom"] },
+      detail: { exposure: EXPOSURE, meter: observation, stages: ["auto-exposure", "local-exposure", "unreal-bloom"] },
       render: () => {
         pipeline.render();
       },

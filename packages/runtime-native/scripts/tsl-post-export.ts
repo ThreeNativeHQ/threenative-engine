@@ -63,6 +63,7 @@ export function exportNativePost(
     ],
   };
   for (const key of keys[kind] ?? []) parameters[key] = data(node, key);
+  if (kind === "GTAONode" && node.reachPx !== undefined) parameters.reachPx = data(node, "reachPx");
   if (kind === "SMAANode") {
     args.push(visit(node.textureNode));
     images.push(
