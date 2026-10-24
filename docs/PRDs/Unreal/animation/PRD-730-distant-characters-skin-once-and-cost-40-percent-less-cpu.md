@@ -4,11 +4,11 @@ prd_contract: v1
 
 # PRD-730 — Distant characters skin once and cost 40% less CPU
 
-**Status:** DEFERRED — split from [PRD-570](PRD-570-a-character-costs-what-the-camera-sees-of-it.md) on 2026-10-23 (owner decision). Revisit when a skin-once pass is designed for both the web and the owned native engine; the RAW GPU pose stays the opt-in `gpuPose` until then.
+**Status:** DEFERRED — split from [PRD-570](../../done/PRD-570-a-character-costs-what-the-camera-sees-of-it.md) on 2026-10-23 (owner decision). Revisit when a skin-once pass is designed for both the web and the owned native engine; the RAW GPU pose stays the opt-in `gpuPose` until then.
 **Priority:** P2
 **Complexity:** 7 (HIGH) — GPU storage pass on two backends (+3), velocity-history lifetime (+2), CPU measurement on a loaded host (+2)
 **Owner:** João
-**Depends on:** [PRD-570](PRD-570-a-character-costs-what-the-camera-sees-of-it.md) (shipped cadence policy and the opt-in RAW GPU pose).
+**Depends on:** [PRD-570](../../done/PRD-570-a-character-costs-what-the-camera-sees-of-it.md) (shipped cadence policy and the opt-in RAW GPU pose).
 
 ## Context
 
