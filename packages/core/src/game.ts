@@ -746,14 +746,10 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
   #pendingStart: Promise<void> | undefined;
   #aborted = false;
   #sceneEntered = false;
-  /**
-   * The scene a `goto()` is loading right now, or undefined when none is.
-   *
-   * Between a `goto()` and its `enter()` the registry is cleared and nothing owns the world, so a
-   * reader that needs the world's entities has to wait for this rather than for the scene it
-   * navigated from. The playtest handshake reads exactly that.
-   */
+  /** The full `goto()` transition, including first-use warm-up, or undefined when none is. */
   #pendingSceneEnter: Promise<void> | undefined;
+  /** One-shot notification after the scene that owns the world has entered, before warm-up. */
+  #onStartSceneEntered: (() => void) | undefined;
   #paused = false;
   #started = false;
   #uiBridge: IUiBridge | undefined;
@@ -949,6 +945,9 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     const unlit = unlitFoliageWarning(ctx.scene);
     if (unlit !== undefined)
       console.warn(`${formatUnlitFoliageWarning(unlit)} ${UNLIT_FOLIAGE_FIX}`);
+    const entered = this.#onStartSceneEntered;
+    this.#onStartSceneEntered = undefined;
+    entered?.();
     return true;
   }
 
@@ -2200,21 +2199,16 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       }
     }
     try {
-      this.#enterScene(scene, ctx);
-      timeline.enteredMs ??= now();
-      // A start scene that navigates inside `enter()` — every `boot` template does — has handed the
-      // run a world that is still in `load()`, and the entity registry is empty until it enters.
-      // Releasing the gate there described a game that had not been built yet, so every
-      // entity-derived capability was read off nothing. The gate follows the scene that entered.
-      const worldEntered = this.#pendingSceneEnter;
-      const entered = (): void => {
+      // A boot scene can navigate during enter(). Describe the destination's registered entities
+      // after it enters, while readiness and the full goto() still wait for first-use warm-up.
+      this.#onStartSceneEntered = () => {
         for (const startGate of startGates) startGate.resolveEntered();
       };
-      if (worldEntered === undefined) entered();
-      else
-        void worldEntered.then(entered, (error: unknown) => {
-          for (const startGate of startGates) startGate.rejectEntered(error);
-        });
+      this.#enterScene(scene, ctx);
+      timeline.enteredMs ??= now();
+      void this.#pendingSceneEnter?.catch((error: unknown) => {
+        for (const startGate of startGates) startGate.rejectEntered(error);
+      });
     } catch (error) {
       for (const startGate of startGates) startGate.rejectEntered(error);
       this.#teardown(ctx);
@@ -2323,6 +2317,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
   }
 
   #teardown(startingCtx?: ICtx<TState, TPhysics>): void {
+    this.#onStartSceneEntered = undefined;
     const ctx = this.#ctx ?? startingCtx;
     // Teardown is failure-atomic: one throwing release must not strand the resources after it.
     // Every attempt runs, errors are collected, and the first — the original cause — is thrown
