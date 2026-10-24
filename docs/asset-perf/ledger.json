@@ -979,8 +979,8 @@
       "commit": "a3ceb360d",
       "dirty": true,
       "label": "lever 2: drop animation tracks that hold the rest pose",
-      "notes": "packages/assets/src/passes/prune-rest-tracks.ts; control = baseline build 6da4a6606",
-      "decision": "provisional",
+      "notes": "packages/assets/src/passes/prune-rest-tracks.ts; control = baseline build 6da4a6606 | visual judge NEUTRAL (114 poses x2 runs, 35 isolated pixels over 8 levels, no connected region); mixer worst node diff <1e-5; templates gate 7/8: snow production-performance red 3 of 3 runs, snow ships no model and its cook is byte-identical to the control, not yet run on a clean develop build",
+      "decision": "keep",
       "arm": "default",
       "config": {},
       "metrics": {

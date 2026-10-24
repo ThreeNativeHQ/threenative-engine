@@ -73,11 +73,11 @@ const TYPES = {
 };
 
 /** Bundle the probe page into `dir` once: core and three resolve from packages/core. */
-async function writeProbePage(dir, entries) {
+export async function writeProbePage(dir, entries, entry = ENTRY) {
   const tsup = createRequire(resolve(ROOT, "packages/assets/package.json")).resolve("tsup");
   const { build } = await import(pathToFileURL(createRequire(tsup).resolve("esbuild")).href);
   await build({
-    stdin: { contents: ENTRY, resolveDir: CORE, loader: "js" },
+    stdin: { contents: entry, resolveDir: CORE, loader: "js" },
     bundle: true,
     format: "esm",
     platform: "browser",
@@ -93,7 +93,7 @@ async function writeProbePage(dir, entries) {
 }
 
 /** Serve the cooked output first, then the project root, so an uncooked source still resolves. */
-function serveStatic(roots) {
+export function serveStatic(roots) {
   const server = createServer((req, res) => {
     const path = decodeURIComponent(new URL(req.url ?? "/", "http://x").pathname);
     const file = roots

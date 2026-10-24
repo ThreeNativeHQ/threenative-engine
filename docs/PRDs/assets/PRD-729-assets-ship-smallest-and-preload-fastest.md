@@ -88,7 +88,7 @@ Levers tried (the dashboard holds the numbers; a verdict lands here when it land
 | # | Lever | Bytes | Preload (paired) | Verdict |
 | --- | --- | ---: | --- | --- |
 | 5 | Meshopt `FILTER` for animation outputs | 5.37 → 4.94 MiB (−8.0%) | local 830 vs 798 ms, 40 Mbps 1892 vs 1970 ms: noise | **Rejected.** Worst rotation error 0.712° against 0.041° today, translation 0.97 mm against 0. A limb tip moves 12 mm. `__tests__/model-animation-filter.spec.ts` now pins the floor: red on `FILTER`, green on the current cook. |
-| 6 | Drop animation tracks that hold the rest pose (`passes.restTracks`, on by default) | 5.37 → 4.42 MiB (−17.7%) | local 621 vs 645 ms, 40 Mbps 1545 vs 1757 ms (−12%) | **Provisional** until `pnpm test:templates` is green. 3,926 of 5,583 combat tracks dropped; clips, durations and every keyframe time unchanged. Real-model proof: `prune-rest-tracks-pose.spec.ts` plays all 7 `mannequin.glb` clips in three's `AnimationMixer`, worst node difference below 1e-5; with the tolerance loosened to 0.5 it fails at 0.484. |
+| 6 | Drop animation tracks that hold the rest pose (`passes.restTracks`, on by default) | 5.37 → 4.42 MiB (−17.7%) | local 621 vs 645 ms, 40 Mbps 1545 vs 1757 ms (−12%) | **Kept** (iteration #6). Visual judge **NEUTRAL**: 114 poses x 2 runs on the RTX 2080 (`scripts/asset-pose-capture.mjs`), 35 isolated pixels over 8 levels and no connected region, runs repeat to 0 pixels. `pnpm test:templates`: 7 of 8 templates pass; **snow `production-performance` is red** (p95 201, 61 and 75 ms against 33 ms, desktop under load). Snow ships no model and its cook is byte-identical to the control, but it has not run on a clean develop build, so the gate is **not** green. 3,926 of 5,583 combat tracks dropped; clips, durations and every keyframe time unchanged. Real-model proof: `prune-rest-tracks-pose.spec.ts` plays all 7 `mannequin.glb` clips in three's `AnimationMixer`, worst node difference below 1e-5; with the tolerance loosened to 0.5 it fails at 0.484. |
 
 Each lever is one iteration on the dashboard: measure, then `keep` or `reject`. A lever changes what
 reaches the screen, so a kept lever needs the visual judge (root `AGENTS.md`, owner rule
@@ -102,6 +102,7 @@ Candidates, ranked by baseline bytes:
 5. Preload order: critical assets first, the rest after `enter()`.
 
 - [ ] Each kept lever lowers `shippedMiB` or a preload metric, holds every texture floor, passes the visual judge and keeps the template playtests green. proof: the ledger iteration with `--decision keep`, `pnpm test:templates`, and the judge verdict beside the box.
+  Open: lever 2 meets every clause except "template playtests green" (snow, see the table). Close it with snow green on a quiet machine or on a develop control.
 - [ ] The corpus ships at most 3 MiB and at most 25% of its source. proof: `node scripts/asset-perf-loop.mjs show` — latest kept iteration.
 - [ ] Both preload goals are met. proof: `node scripts/asset-perf-loop.mjs show` — latest kept iteration.
 
