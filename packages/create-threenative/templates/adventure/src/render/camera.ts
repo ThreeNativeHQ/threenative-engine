@@ -68,13 +68,20 @@ const LOCK = {
   orbitFrom: 6,
   orbitPerMetre: 0.11,
   orbitMax: 0.75,
+  /**
+   * A target taller than `bigAt` metres (the Warden) swings on faster, `bigPerMetre`, up to
+   * `bigOrbitMax` (77°, from 2 m in), so its chest reads beside Wren, not behind her: a sideways
+   * step or a higher camera barely moves a 9 m arm's picture. A small target keeps the gentle
+   * ramp: on the steep one a bat swooping past her comes round to the lens side.
+   */
+  bigAt: 2,
+  bigPerMetre: 0.275,
+  bigOrbitMax: 1.35,
   /** Metres added to the arm while locked. */
   back: 1,
   /** Metres added when the target is closer than `closeAt`, so Wren never hides it. */
   closeBack: 1.5,
   closeAt: 3,
-  /** Metres the camera rises there too, so Wren sits below the target's torso on screen. */
-  closeRise: 0.8,
   /** Metres added per metre the target stands taller than Wren, up to `tallMax`. */
   tallBack: 0.8,
   tallMax: 2,
@@ -128,7 +135,6 @@ export function setupCamera(camera: PerspectiveCamera, blocked: CameraBlocker): 
   // 0 unlocked, 1 locked, eased between, so a lock glides into the fight framing.
   let locked = 0;
   let extra = 0;
-  let rise = 0;
   let swing = LOCK.orbit;
   let watching = false;
   // The view's orientation last tick: the next one turns from it by at most MAX_TURN.
@@ -238,7 +244,7 @@ export function setupCamera(camera: PerspectiveCamera, blocked: CameraBlocker): 
     );
     desired.set(
       pivot.x + Math.sin(view) * distance,
-      focus.y + HEIGHT + (rise - LOCK.drop) * locked,
+      focus.y + HEIGHT - LOCK.drop * locked,
       pivot.z + Math.cos(view) * distance,
     );
     return blocked(pivot, desired)?.distance;
@@ -312,19 +318,19 @@ export function setupCamera(camera: PerspectiveCamera, blocked: CameraBlocker): 
           (apart < LOCK.closeAt ? LOCK.closeBack : 0) +
           MathUtils.clamp(tall * LOCK.tallBack, 0, LOCK.tallMax);
         extra += (Math.min(goal, LOCK.maxDistance - DISTANCE) - extra) * rate;
-        rise += ((apart < LOCK.closeAt ? LOCK.closeRise : 0) - rise) * rate;
         // It orbits on the side of the fight line it already films from, so a new lock or a target
         // switch never swings the picture across the line, where Wren would hide the target.
         const onLine = MathUtils.euclideanModulo(
           yaw + swing * locked - home + Math.PI,
           Math.PI * 2,
         );
+        const big = lock.bounds.max.y - lock.bounds.min.y > LOCK.bigAt;
         const wantSwing =
           Math.sign(onLine - Math.PI || 1) *
           MathUtils.clamp(
-            LOCK.orbit + (LOCK.orbitFrom - apart) * LOCK.orbitPerMetre,
+            LOCK.orbit + (LOCK.orbitFrom - apart) * (big ? LOCK.bigPerMetre : LOCK.orbitPerMetre),
             LOCK.orbit,
-            LOCK.orbitMax,
+            big ? LOCK.bigOrbitMax : LOCK.orbitMax,
           );
         let pick = wantSwing;
         let longest = -1;

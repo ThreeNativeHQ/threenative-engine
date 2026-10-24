@@ -61,6 +61,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     openingFramedShare: 0,
     cameraTurnWorst: 0,
     torsoCovered: 0,
+    torsoContactWorst: 0,
     heroViewNearest: 0,
     hitsTaken: 0,
     keys: 0,
@@ -363,7 +364,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     // the front half of the way from the lens to her cover little of the frame (a grid of rays,
     // every 6th tick), Wren stays clear of the controls card (top right, Menu.tsx), and a toast
     // (Hud.tsx) covers neither Wren nor the fight's target. The worst per-tick view turn and the
-    // ticks Wren's box sits over a locked target's middle (its torso) are kept too.
+    // most of the locked Warden's chest rune ring Wren's box covers at close range are kept too.
     const FIGHT_RANGE = 8;
     const GLIDE = 15;
     // ponytail: the card's and the toast's boxes in view space at 1280 by 720, kept in step with
@@ -382,6 +383,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       toast: 0,
       turn: 0,
       torso: 0,
+      contact: 0,
       run: 0,
       worstRun: 0,
       ticks: 0,
@@ -405,6 +407,37 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     const heroRect = { x0: 0, x1: 0, y0: 0, y1: 0 };
     const targetRect = { x0: 0, x1: 0, y0: 0, y1: 0 };
     const corner = new Vector3();
+    // The Warden's chest rune ring (render/creatures.ts): a disc on its chest face, centred at
+    // `at` on the rig, `radius` out to the tips of its strokes; the fight is close inside `within`.
+    // Closer than `clear` (ring centre to Wren's) no lens short of side-on clears it, as her
+    // half-width alone is 0.32 m: that is shield contact, kept apart.
+    const CHEST = { at: new Vector3(0, 1.3, 0.72), radius: 0.48, within: 5, clear: 0.4 };
+    const chestRect = { x0: 0, x1: 0, y0: 0, y1: 0 };
+    const ringAt = new Vector3();
+    // The ring's screen box: its four rim points (left, right, top, bottom) projected.
+    const projectRing = (): void => {
+      Object.assign(chestRect, {
+        x0: Number.POSITIVE_INFINITY,
+        x1: Number.NEGATIVE_INFINITY,
+        y0: Number.POSITIVE_INFINITY,
+        y1: Number.NEGATIVE_INFINITY,
+      });
+      for (let i = 0; i < 4; i += 1) {
+        const a = (i * Math.PI) / 2;
+        corner.copy(CHEST.at);
+        corner.x += Math.cos(a) * CHEST.radius;
+        corner.y += Math.sin(a) * CHEST.radius;
+        warden.rig.group.localToWorld(corner).project(camera);
+        chestRect.x0 = Math.min(chestRect.x0, corner.x);
+        chestRect.x1 = Math.max(chestRect.x1, corner.x);
+        chestRect.y0 = Math.min(chestRect.y0, corner.y);
+        chestRect.y1 = Math.max(chestRect.y1, corner.y);
+      }
+    };
+    // The screen area two boxes share.
+    const overlap = (a: typeof heroRect, b: typeof heroRect): number =>
+      Math.max(0, Math.min(a.x1, b.x1) - Math.max(a.x0, b.x0)) *
+      Math.max(0, Math.min(a.y1, b.y1) - Math.max(a.y0, b.y0));
     const solidBetween = (from: Vector3, to: Vector3): boolean =>
       from.distanceToSquared(to) > 1e-8 &&
       ctx.physics.directSpaceState.intersectRay({ collisionMask: LAYER.world, from, to }) !==
@@ -511,9 +544,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       const covers = (point: Vector3, rect: typeof heroRect): boolean =>
         point.x > rect.x0 && point.x < rect.x1 && point.y > rect.y0 && point.y < rect.y1;
       // Wren hiding the locked target: she covers its centre and over half of its box.
-      const hidden =
-        Math.max(0, Math.min(heroRect.x1, targetRect.x1) - Math.max(heroRect.x0, targetRect.x0)) *
-        Math.max(0, Math.min(heroRect.y1, targetRect.y1) - Math.max(heroRect.y0, targetRect.y0));
+      const hidden = overlap(heroRect, targetRect);
       const area = (targetRect.x1 - targetRect.x0) * (targetRect.y1 - targetRect.y0);
       const behind = targetNearer
         ? covers(heroCentre, targetRect)
@@ -523,9 +554,33 @@ export class Play extends Scene<GameState, IPhysicsContext> {
           hidden > area / 2;
       fight.frames += 1;
       if (behind) fight.occluded += 1;
-      // Wren's box over the locked target's middle (its torso), once the lock has glided in.
-      if (target === lock.target && fight.lockTicks > GLIDE && covers(corner, heroRect))
-        fight.torso += 1;
+      // Locked on the Warden within CHEST.within, once the lock has glided in (its stuns, cuts and
+      // shield blocks): the most of the box round its chest rune ring that Wren's box covers.
+      if (
+        target === warden &&
+        lock.target === warden &&
+        fight.lockTicks > GLIDE &&
+        warden.mesh.position.distanceTo(hero.mesh.position) < CHEST.within
+      ) {
+        warden.rig.group.updateWorldMatrix(true, false);
+        warden.rig.group.localToWorld(ringAt.copy(CHEST.at));
+        // A ring facing away from the lens is behind the Warden's own body: nothing to cover.
+        if (
+          warden.rig.group.getWorldDirection(ray).dot(corner.subVectors(camera.position, ringAt)) >
+          0
+        ) {
+          projectRing();
+          const share =
+            overlap(heroRect, chestRect) /
+            ((chestRect.x1 - chestRect.x0) * (chestRect.y1 - chestRect.y0));
+          const ahead = Math.hypot(
+            ringAt.x - hero.mesh.position.x,
+            ringAt.z - hero.mesh.position.z,
+          );
+          if (ahead < CHEST.clear) fight.contact = Math.max(fight.contact, share);
+          else fight.torso = Math.max(fight.torso, share);
+        }
+      }
       if (underToast(heroRect) || underToast(targetRect)) fight.toast += 1;
       if (target === warden && lock.target === undefined) {
         fight.openingFrames += 1;
@@ -699,12 +754,14 @@ export class Play extends Scene<GameState, IPhysicsContext> {
         fight.frames === 0 ? 0 : Math.round((fight.framed / fight.frames) * 1000) / 1000;
       statePatch.fightOutRun = fight.worstRun;
       statePatch.fightOccluded = fight.occluded;
+
       statePatch.cameraBlocked = fight.blocked;
       statePatch.nearWallWorst = Math.round(fight.nearWall * 1000) / 1000;
       statePatch.hintOverlap = fight.hint;
       statePatch.toastOverlap = fight.toast;
       statePatch.cameraTurnWorst = Math.round(fight.turn * 100) / 100;
-      statePatch.torsoCovered = fight.torso;
+      statePatch.torsoCovered = Math.round(fight.torso * 1000) / 1000;
+      statePatch.torsoContactWorst = Math.round(fight.contact * 1000) / 1000;
       statePatch.openingFramedShare =
         fight.openingFrames === 0
           ? 0

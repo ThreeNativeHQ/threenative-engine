@@ -348,8 +348,14 @@
       {
         "id": "state",
         "path": "torsoCovered",
-        "lte": 0,
-        "allowTrivial": "Ticks, once a lock has glided in, with Wren's on-screen box over the Warden's middle; a running count, 0 at the start."
+        "lte": 0.33,
+        "allowTrivial": "Locked on the Warden within 5 m, its chest rune ring facing the lens and 0.4 m or more from Wren: the most of the ring's on-screen box her box covers (a third at most); a running maximum, 0 at the start."
+      },
+      {
+        "id": "state",
+        "path": "torsoContactWorst",
+        "lte": 0.75,
+        "allowTrivial": "The same share at shield contact (ring under 0.4 m from Wren), where no lens clears it: a guard that it grows no worse; a running maximum, 0 at the start."
       },
       {
         "id": "state",
