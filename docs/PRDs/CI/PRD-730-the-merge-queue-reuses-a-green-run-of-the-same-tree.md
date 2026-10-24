@@ -45,6 +45,8 @@ Integration: `ci-change-scope.mjs` (scope job) → `plan.selection = reused` →
 
 - 2026-10-23, PRD-731: a pull-request run is the thin review lane and never proves the queue board, so the source worth citing is a full `ci.yml` run an author dispatches on the branch (its tested candidate is the head itself, no merge parents). `queueHeadReuse` accepts both events and recomputes the source plan, so a review run is refused as "not a full board (review)".
 
+- 2026-10-23, coordinator: the failures seen beside the gates (`ci-fast` x2, `ci-structure` QuickJS, `package-list-drift`) fail identically on the baseline worktree `hostdisplay` (epic `2f213906d` plus a playtest-only change), so they are environmental: an unbuilt `@threenative/assets` and a branch that diffs `origin/develop` over a native path.
+
 ## Blocked on
 
 - A real merge-group run is the only full proof of the workflow wiring. It needs a PR to enter the queue after the branch carrying this change is merged to develop (owner or coordinator).
