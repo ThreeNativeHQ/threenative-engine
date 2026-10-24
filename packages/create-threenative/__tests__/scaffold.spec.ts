@@ -295,7 +295,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // (method checked against this kit's previous value, from a copy holding only this template).
   collectathon: "60acea8cc8e5d20067b63a130b0138c48825f51ba7b980459ce4dca1fc7891a1",
   // PRD-733 (2026-10-23): the new Lantern Vale kit, measured through createProject.
-  adventure: "a3140d59ceac88ffe7a888b2604cbef9a6c780abee0cfef66b2e2be94a5b27a2",
+  adventure: "749e5cdb893501841081ee90932f76c4764fec3b899db3b47c0c0a78c5db6733",
   minimal: "1bdc31f8d31f074cde31e09d67ac850762482f481e4b41050d5679f7155ac085",
   platformer: "27b6033ac8ce09c6b19894586865e465e2edfcc0b7edd7be02e4e8459b248e53",
   puzzle: "78f16093d5dedabf3a7bff8b07bb261bd1c7f91339aeaae51f7a1a278a5442d2",
@@ -607,9 +607,9 @@ describe("create-threenative", () => {
         if (template === "platformer") {
           await expect(stat(path.join(target, "assets/sky.jpg"))).rejects.toThrow(/ENOENT/u);
         }
-        if (template === "collectathon") {
-          // Hop Garden is all procedural (owner, 2026-10-24): no assets folder and no image or model
-          // file but the shared icon, so every texture is painted in code.
+        if (template === "collectathon" || template === "adventure") {
+          // Hop Garden and Lantern Vale are all procedural (owner, 2026-10-24): no assets folder and
+          // no image or model file but the shared icon, so every texture is painted in code.
           await expect(stat(path.join(target, "assets"))).rejects.toThrow(/ENOENT/u);
           const media = (await readdir(target, { recursive: true })).filter(
             (file) =>

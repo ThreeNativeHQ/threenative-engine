@@ -9,14 +9,14 @@
 // Wren's cloak never touches a rock.
 
 export const palette = {
-  /** The zenith, and the loading screen's progress track. */
-  skyHigh: 0x3a78c4,
-  /** The sky just above the haze, and the loading screen's background. */
-  skyLow: 0x8fbfe6,
-  /** Distance fades into this. */
-  horizon: 0xd7e6ee,
-  grass: 0x6f9a3c,
-  stone: 0x8f8a7e,
+  /** The bright mist above the canopy, and the loading screen's progress track. */
+  skyHigh: 0xd2e2da,
+  /** The haze just above the trees, and the loading screen's background. */
+  skyLow: 0xa9c4b8,
+  /** Distance fades into this: a cool teal-green forest mist. */
+  horizon: 0x8fae9f,
+  grass: 0x5b7a30,
+  stone: 0x7d7a6c,
   /** The one saturated role: what the player can take or use. */
   accent: 0xf2b33d,
 } as const;
@@ -56,6 +56,28 @@ export const C = {
   /** A firefly's glow: an emissive colour, never a light. */
   firefly: 0xd9ff7a,
   brass: 0xc79a3a,
+
+  // The forest floor, the old trees and the hut
+  soil: 0x3d2f22,
+  soilWet: 0x2a2a20,
+  forestMoss: 0x4d6a26,
+  mossBright: 0x5f7f2a,
+  cliff: 0x5f6155,
+  rock: 0x6c6b5f,
+  flagstone2: 0x6a665b,
+  barkDeep: 0x46352a,
+  leafDeep: 0x2f5a22,
+  leafSun: 0x6e9a32,
+  broadleaf: 0x2f6a2a,
+  flowerPink: 0xe07ab8,
+  thatch: 0xb08a4a,
+  thatchDark: 0x7a5a2e,
+  hutDoor: 0x4a3020,
+  lanternGlow: 0xffb055,
+  pitcher: 0xff8a2a,
+  water: 0x1c3534,
+  /** The companion orb: a soft white-blue light of its own. */
+  orb: 0xcfe6ff,
 
   // Wren
   tunic: 0xa0502c,

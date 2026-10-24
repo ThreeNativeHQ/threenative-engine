@@ -12,7 +12,7 @@ import {
   type Scene,
   type Vector3,
 } from "three";
-import { SUN_DIRECTION } from "./sky.js";
+import { SUN_DIRECTION, setMist } from "./sky.js";
 
 type ShadowRenderer = { shadowMap: { enabled: boolean; type: number } };
 
@@ -22,7 +22,8 @@ export interface ILighting {
   follow(target: Vector3): void;
   /**
    * Under the Hollow's roof the sky barely reaches: the sky light drops to a tenth and the torches
-   * carry the room. Auto exposure (core's default) then meters the darker room on its own.
+   * carry the room, and the forest mist thins so the far wall and the Warden stay clear. Auto
+   * exposure (core's default) then meters the darker room on its own.
    */
   setIndoors(indoors: boolean): void;
 }
@@ -30,15 +31,17 @@ export interface ILighting {
 export function setupLighting(scene: Scene, renderer: ShadowRenderer, mobile = false): ILighting {
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = PCFSoftShadowMap;
-  // Warm morning white.
-  const key = new DirectionalLight(0xfff0dc, 5.5);
+  // Warm late-morning sun. It shines through the canopy's gaps: those are the shafts the render
+  // chain's god rays draw from this light's shadow map.
+  const key = new DirectionalLight(0xffe4b8, 6);
   key.castShadow = true;
   // The camera sees about 30 m around Wren, so the map covers that window and travels with her:
   // 4096² over 36 m is under a centimetre a texel. Phones take 2048² over a smaller window.
   const size = mobile ? 2048 : 4096;
   const extent = mobile ? 12 : 18;
   key.shadow.mapSize.set(size, size);
-  key.shadow.radius = 2;
+  // A soft edge: the canopy's dapple is light through leaves ten metres up, never a sharp cut-out.
+  key.shadow.radius = 5;
   key.shadow.camera.near = 1;
   key.shadow.camera.far = 90;
   key.shadow.camera.left = -extent;
@@ -59,6 +62,7 @@ export function setupLighting(scene: Scene, renderer: ShadowRenderer, mobile = f
     key,
     setIndoors(indoors: boolean): void {
       scene.environmentIntensity = indoors ? 0.1 : 1;
+      setMist(scene, indoors);
     },
   };
 }

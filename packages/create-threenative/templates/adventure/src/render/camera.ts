@@ -34,6 +34,8 @@ const FRAME_RATE = 10;
 const WALL_MARGIN = 0.35;
 /** The most a pulled-in camera climbs above its usual height, unlocked. */
 const MAX_CLIMB = 1.6;
+/** The least height kept over the ground under the lens, so a slope behind Wren never swallows it. */
+const GROUND_CLEARANCE = 0.45;
 /** The shortest arm, in metres. */
 const MIN_ARM = 0.6;
 /** How much the arm shortens per try while walls clutter the view. */
@@ -126,7 +128,15 @@ export interface IFollowCamera {
   snap(focus: Vector3, yaw?: number): void;
 }
 
-export function setupCamera(camera: PerspectiveCamera, blocked: CameraBlocker): IFollowCamera {
+/**
+ * `floor(x, z)` is the ground's height under the lens; the camera keeps `GROUND_CLEARANCE` over it.
+ * The default has no floor: the arm's rays alone keep it out of walls.
+ */
+export function setupCamera(
+  camera: PerspectiveCamera,
+  blocked: CameraBlocker,
+  floor: (x: number, z: number) => number = () => Number.NEGATIVE_INFINITY,
+): IFollowCamera {
   camera.fov = FOV;
   camera.near = 0.1;
   camera.far = 600;
@@ -290,9 +300,12 @@ export function setupCamera(camera: PerspectiveCamera, blocked: CameraBlocker): 
     const run = Math.hypot(desired.x - aim.x, desired.z - aim.z);
     const cap = aim.y + run * Math.tan(LOCK.maxPitch);
     if (desired.y > cap) desired.y = MathUtils.lerp(desired.y, cap, locked);
+    desired.y = Math.max(desired.y, floor(desired.x, desired.z) + GROUND_CLEARANCE);
     camera.position.lerp(desired, ease);
     // Easing toward a pose a wall just cut short can cross that wall: then it cuts, never eases.
     if (blocked(pivot, camera.position) !== undefined) camera.position.copy(desired);
+    const { x, z } = camera.position;
+    camera.position.y = Math.max(camera.position.y, floor(x, z) + GROUND_CLEARANCE);
     camera.lookAt(aim);
     frame(focus, box, fit);
   };

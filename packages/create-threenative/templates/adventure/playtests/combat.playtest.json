@@ -288,6 +288,12 @@
         "path": "nearWallWorst",
         "lte": 0.2,
         "allowTrivial": "The most of the frame that walls in the front half of the way from the lens to Wren covered (a 24-ray grid, every 6th tick), so the camera never films her through a doorway; a running maximum, 0 at the start."
+      },
+      {
+        "id": "state",
+        "path": "cameraInGround",
+        "equals": 0,
+        "allowTrivial": "The fight camera never sinks into a bank or an outcrop of the vale during the fight."
       }
     ],
     "components": [

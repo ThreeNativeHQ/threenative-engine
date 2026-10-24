@@ -380,6 +380,13 @@
         "path": "nearWallWorst",
         "lte": 0.2,
         "allowTrivial": "The most of the frame that walls in the front half of the way from the lens to Wren covered (a 24-ray grid, every 6th tick), so the camera never films her through a doorway; a running maximum, 0 at the start."
+      },
+      {
+        "id": "state",
+        "path": "companionFarthest",
+        "gte": 0.5,
+        "lte": 3,
+        "allowTrivial": "The companion orb's farthest stray from Wren's head over the whole run; it starts measuring before the fight, so the bound holds before and after."
       }
     ],
     "components": [

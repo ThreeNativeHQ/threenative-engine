@@ -82,6 +82,28 @@ export type GameState = {
   doorOpen: boolean;
   /** True once the heart vessel is taken: the dungeon is done. */
   cleared: boolean;
+  /** The vale's landform, measured once on a 0.5 m grid over the clearing: its height range (m),
+   * the share steeper than Wren can climb (45°, the controller's default) and the share under 6°. */
+  reliefRange: number;
+  reliefSteepShare: number;
+  reliefLevelShare: number;
+  /** Flagstones laid along the path, and the share of its centre line they cover (0-1). */
+  pathStones: number;
+  pathCover: number;
+  /** Lanterns hanging from the hut's eaves. */
+  hutLanterns: number;
+  /** Sun shafts standing in the vale, and whether the height mist is on the scene's fog. */
+  sunShafts: number;
+  heightFog: boolean;
+  /** Fireflies and motes sprinkled round Wren so far. */
+  motesSpawned: number;
+  /** The companion orb: the nearest and farthest it flew from Wren's head (m); 0 until measured. */
+  companionNearest: number;
+  companionFarthest: number;
+  /** Ticks the camera spent under the vale's ground (inside a bank or an outcrop). */
+  cameraInGround: number;
+  /** Asset files the game asked the loader for: every model, texture and sky is built in code. */
+  assetLoads: number;
   paused: boolean;
   uiReady: boolean;
 };

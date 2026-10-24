@@ -1,7 +1,8 @@
 // Generated for you. This is ordinary Three.js TSL — edit or delete it freely.
 //
 // The fight's feedback: ember sparks where the Ember Blade bites, cold white sparks where it
-// clanks off stone or a thorned plate, and a burst off the shield when it turns a hit. Two pooled
+// clanks off stone or a thorned plate, and a burst off the shield when it turns a hit. And the
+// vale's air: fireflies and motes round Wren, and the trail off her companion orb. Four pooled
 // emitters cover every effect. `GPUParticles3D` (built in `scenes/Play.ts`) owns the slots, the
 // dispatch, the birth stamps and the culling. Every look choice is this file's: life, drag,
 // gravity, size, colour, blend and sprite mask. A burst passes its shape as the request's
@@ -205,10 +206,116 @@ export function sparkEffect(): IEffectOptions {
   });
 }
 
-/** The two emitters `scenes/Play.ts` builds, by the name a burst picks one with. */
+/**
+ * Fireflies and floating motes in the vale's air: soft green-gold specks that drift on a slow
+ * wander and pulse, each living `life` seconds. `scenes/Play.ts` sprinkles a few round Wren every
+ * quarter second; a request's `direction` is (unused, the height band, the radius).
+ */
+export function moteEffect(): IEffectOptions {
+  const amount = 480;
+  const life = 7;
+  const material = new SpriteNodeMaterial({
+    blending: AdditiveBlending,
+    depthWrite: false,
+    transparent: true,
+  });
+  material.alphaTest = 0.02;
+  const bind = (born: Node<"float">): void => {
+    const age = time.sub(born);
+    const alive = varying(step(0, age).mul(step(age, life)));
+    const fade = varying(
+      smoothstep(0, 1.2, age).mul(float(1).sub(smoothstep(life - 1.5, life, age))),
+    );
+    const seed = hash(instanceIndex.add(13));
+    const pulse = sin(time.mul(seed.mul(2).add(1.5)).add(seed.mul(TAU)))
+      .mul(0.5)
+      .add(0.5);
+    material.scaleNode = seed.mul(0.05).add(0.06).mul(alive);
+    // Most are fireflies (gold-green), a third pale green motes that barely pulse.
+    const firefly = step(0.33, seed);
+    material.colorNode = vec4(
+      mix(vec3(0.9, 1.3, 0.75), vec3(2.6, 3, 0.9), firefly),
+      sprite("puff")
+        .mul(mix(float(0.5), pulse.mul(0.85).add(0.15), firefly))
+        .mul(fade)
+        .mul(alive),
+    );
+  };
+  const spawn = (
+    { positions, velocities, births }: IEffectBuffers,
+    request: IEffectRequest,
+  ): ComputeNode => {
+    bind(births.toAttribute());
+    return Fn(() => {
+      If(instanceIndex.lessThan(request.count), () => {
+        const slot = request.first.add(instanceIndex).mod(uint(amount));
+        const key = instanceIndex.add(request.seed.mul(977).toUint());
+        const r = (salt: number) => hash(key.add(salt));
+        const angle = r(1).mul(TAU);
+        const radius = r(2).sqrt().mul(request.direction.z);
+        positions
+          .element(slot)
+          .assign(
+            request.origin.add(
+              vec3(cos(angle).mul(radius), r(4).mul(request.direction.y), sin(angle).mul(radius)),
+            ),
+          );
+        velocities.element(slot).assign(vec3(r(5).sub(0.5), r(6).sub(0.5), r(7).sub(0.5)).mul(0.3));
+      });
+    })().compute(amount);
+  };
+  const process = (
+    { positions, velocities, births }: IEffectBuffers,
+    runtime: { readonly time: Node<"float">; readonly delta: Node<"float"> },
+  ): ComputeNode =>
+    Fn(() => {
+      const age = runtime.time.sub(births.element(instanceIndex));
+      If(age.greaterThanEqual(0).and(age.lessThan(life)), () => {
+        // A slow wander: each mote steers round its own pair of sines, with a little drag.
+        const phase = hash(instanceIndex).mul(TAU);
+        const wander = vec3(
+          sin(runtime.time.mul(0.7).add(phase)),
+          sin(runtime.time.mul(1.1).add(phase.mul(2))).mul(0.5),
+          cos(runtime.time.mul(0.6).add(phase.mul(3))),
+        ).mul(0.35);
+        const velocity = velocities
+          .element(instanceIndex)
+          .mul(exp(float(-0.8).mul(runtime.delta)))
+          .add(wander.mul(runtime.delta));
+        velocities.element(instanceIndex).assign(velocity);
+        positions.element(instanceIndex).addAssign(velocity.mul(runtime.delta));
+      });
+    })().compute(amount);
+  return { amount, lifetime: life, material, process, spawn };
+}
+
+/**
+ * The companion orb's trail: tiny cold-white sparks shed where it flies, that drift up and fade
+ * fast. `scenes/Play.ts` sheds one or two a tick at the orb.
+ */
+export function wispEffect(): IEffectOptions {
+  return emitter({
+    additive: true,
+    amount: 96,
+    colour: [
+      [1.6, 2, 2.6],
+      [0.3, 0.6, 1.2],
+    ],
+    drag: 2,
+    gravity: 0.4,
+    life: 0.45,
+    mask: "puff",
+    opacity: 0.8,
+    size: [0.05, 0.01],
+  });
+}
+
+/** The emitters `scenes/Play.ts` builds, by the name a burst picks one with. */
 export const EFFECTS = {
   ember: emberEffect,
   spark: sparkEffect,
+  mote: moteEffect,
+  wisp: wispEffect,
 } as const;
 
 /**
@@ -219,4 +326,8 @@ export const BURSTS = {
   hit: { emitter: "ember", count: 28, shape: [3.2, 2.4, 0.2] },
   clank: { emitter: "spark", count: 20, shape: [3.6, 1.6, 0.15] },
   block: { emitter: "spark", count: 26, shape: [4, 1.2, 0.25] },
+  /** Fireflies sprinkled round Wren: a 3.2 m band up from her waist, out to 13 m. */
+  motes: { emitter: "mote", count: 14, shape: [0, 3.2, 13] },
+  /** One spark off the companion orb. */
+  wisp: { emitter: "wisp", count: 1, shape: [0.25, 0.3, 0.04] },
 } as const;

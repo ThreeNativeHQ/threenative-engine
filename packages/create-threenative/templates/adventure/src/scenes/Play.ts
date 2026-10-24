@@ -7,7 +7,15 @@ import {
   isTouchscreenAvailable,
 } from "@threenative/core";
 import { type IPhysicsContext, buildStaticColliders } from "@threenative/physics";
-import { Box3, Euler, type Group, MathUtils, type PerspectiveCamera, Vector3 } from "three";
+import {
+  Box3,
+  Euler,
+  type Group,
+  type InstancedMesh,
+  MathUtils,
+  type PerspectiveCamera,
+  Vector3,
+} from "three";
 import { Block } from "../entities/Block.js";
 import { Chest } from "../entities/Chest.js";
 import { Door } from "../entities/Door.js";
@@ -28,13 +36,20 @@ import { Thornback } from "../entities/Thornback.js";
 import { Warden } from "../entities/Warden.js";
 import { Interactions } from "../interact.js";
 import { type IHollow, buildHollow } from "../level/Hollow.js";
-import { type IVale, buildVale, isSolid, makeRng } from "../level/Vale.js";
+import {
+  type IVale,
+  buildVale,
+  isSolid,
+  makeRng,
+  measureRelief,
+  valeHeight,
+} from "../level/Vale.js";
 import { setupCamera } from "../render/camera.js";
 import { BURSTS, EFFECTS } from "../render/effects.js";
 import { setupLighting } from "../render/lighting.js";
 import { createLoadingScreen } from "../render/loading.js";
 import { setupPost } from "../render/postprocessing.js";
-import { createHeartVessel } from "../render/props.js";
+import { createCompanion, createHeartVessel } from "../render/props.js";
 import { type ISky, createSky, setupSky } from "../render/sky.js";
 import { TouchControls } from "../render/touch-controls.js";
 import type { Checkpoint, GameState } from "../state.js";
@@ -45,9 +60,22 @@ const DEG = 180 / Math.PI;
 
 export class Play extends Scene<GameState, IPhysicsContext> {
   static override readonly initialState: GameState = {
+    assetLoads: 0,
     blockSteps: 0,
+    cameraInGround: 0,
     capacity: ADVENTURE_FEEL.startHalves / 2,
     cleared: false,
+    companionFarthest: 0,
+    companionNearest: 0,
+    heightFog: false,
+    hutLanterns: 0,
+    motesSpawned: 0,
+    pathCover: 0,
+    pathStones: 0,
+    reliefLevelShare: 0,
+    reliefRange: 0,
+    reliefSteepShare: 0,
+    sunShafts: 0,
     defeated: 0,
     doorOpen: false,
     grateOpen: false,
@@ -217,11 +245,14 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     const lock = new LockOn();
     ctx.add(lock.reticle);
 
-    // Effects: two pooled emitters, every look parameter in `render/effects.ts`. A cut that lands
-    // throws embers, a cut that clanks and a hit the shield turns throw cold sparks.
+    // Effects: four pooled emitters, every look parameter in `render/effects.ts`. A cut that lands
+    // throws embers, a cut that clanks and a hit the shield turns throw cold sparks; fireflies
+    // drift round Wren in the vale, and her companion orb sheds a trail.
     const emitters = {
       ember: ctx.add(new GPUParticles3D(EFFECTS.ember())),
+      mote: ctx.add(new GPUParticles3D(EFFECTS.mote())),
       spark: ctx.add(new GPUParticles3D(EFFECTS.spark())),
+      wisp: ctx.add(new GPUParticles3D(EFFECTS.wisp())),
     };
     const burst = (kind: keyof typeof BURSTS, at: Vector3): void => {
       const { count, emitter, shape } = BURSTS[kind];
@@ -234,8 +265,30 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     ctx.entities.add("effects", {
       debug: () => ({
         ember: emitters.ember.stats.spawned,
+        mote: emitters.mote.stats.spawned,
         spark: emitters.spark.stats.spawned,
+        wisp: emitters.wisp.stats.spawned,
       }),
+    });
+    // Wren's companion orb rides off her left shoulder, a little behind, and lags so it reads as
+    // alive; in a fight it climbs higher, out of the line between the lens and what she fights.
+    const companion = createCompanion();
+    companion.group.position.copy(hero.mesh.position).setY(hero.mesh.position.y + 0.8);
+    ctx.add(companion.group);
+    const orbGoal = new Vector3();
+    const orb = { clock: 0, farthest: 0, nearest: Number.POSITIVE_INFINITY };
+    let moteClock = 0;
+    // The landform and the path are fixed: measure them once.
+    const relief = measureRelief();
+    ctx.state.set({
+      hutLanterns: vale.hut.lanterns,
+      pathCover: Math.round(vale.path.cover * 1000) / 1000,
+      pathStones: vale.path.stones,
+      reliefLevelShare: Math.round(relief.levelShare * 1000) / 1000,
+      reliefRange: Math.round(relief.range * 100) / 100,
+      reliefSteepShare: Math.round(relief.steepShare * 1000) / 1000,
+      heightFog: ctx.scene.fogNode !== null,
+      sunShafts: (ctx.scene.getObjectByName("sun-shafts") as InstancedMesh | undefined)?.count ?? 0,
     });
     const thornbacks = this.#thornbacks;
     const seen = { blocks: 0, clanks: 0, hits: 0 };
@@ -345,10 +398,14 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     ctx.add(vessel);
 
     // The camera arm and the sun read the solved body, so they run after physics has moved it.
-    const rig = setupCamera(camera, (from, to) =>
-      from.distanceToSquared(to) < 1e-8
-        ? undefined
-        : ctx.physics.directSpaceState.intersectRay({ collisionMask: LAYER.world, from, to }),
+    const rig = setupCamera(
+      camera,
+      (from, to) =>
+        from.distanceToSquared(to) < 1e-8
+          ? undefined
+          : ctx.physics.directSpaceState.intersectRay({ collisionMask: LAYER.world, from, to }),
+      // Outdoors the lens stays over the vale's ground; the Hollow's rooms are flat and roofed.
+      (x, z) => (indoors ? Number.NEGATIVE_INFINITY : valeHeight(x, z)),
     );
     rig.snap(hero.mesh.position, hero.yaw + Math.PI);
     // The closest the camera came to Wren's head (her head's centre is 1.33 m over her soles).
@@ -373,6 +430,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     const HINT = { x0: 0.55, y0: 0.6 };
     const TOAST = { x0: -0.97, x1: -0.36, y0: 0.54, y1: 0.78 };
     const fight = {
+      inGround: 0,
       blocked: 0,
       frames: 0,
       framed: 0,
@@ -500,6 +558,24 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       if (hero.rig.group.visible) viewNearest = Math.min(viewNearest, near);
       lighting.follow(hero.mesh.position);
       camera.updateMatrixWorld();
+      // A camera under the vale's ground is inside a bank or an outcrop: the arm must never go there.
+      if (!indoors && camera.position.y < valeHeight(camera.position.x, camera.position.z) + 0.2)
+        fight.inGround += 1;
+      // The orb: off her left shoulder, a little behind, on a slow small circle; higher in a fight.
+      orb.clock += dt;
+      const f = hero.forward;
+      const fighting = lock.target !== undefined || awake;
+      orbGoal.set(
+        hero.mesh.position.x + f.z * 0.7 - f.x * 0.4 + Math.cos(orb.clock * 1.3) * 0.15,
+        head.y + (fighting ? 0.8 : 0.35) + Math.sin(orb.clock * 2.3) * 0.08,
+        hero.mesh.position.z - f.x * 0.7 - f.z * 0.4 + Math.sin(orb.clock * 1.3) * 0.15,
+      );
+      if (companion.group.position.distanceTo(orbGoal) > 6) companion.group.position.copy(orbGoal);
+      else companion.group.position.lerp(orbGoal, 1 - Math.exp(-dt * 4));
+      const orbGap = companion.group.position.distanceTo(head);
+      orb.nearest = Math.min(orb.nearest, orbGap);
+      orb.farthest = Math.max(orb.farthest, orbGap);
+      if (fight.ticks % 3 === 0) burst("wisp", companion.group.position);
       // How far the view turned this tick, in degrees: the fastest swing a player sees.
       camera.getWorldDirection(viewNow);
       if (fight.ticks > 0) fight.turn = Math.max(fight.turn, viewNow.angleTo(viewBefore) * DEG);
@@ -651,6 +727,12 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       door.update(dt);
       plate.update();
       const prompt = interactions.update(hero.mesh.position, input.interact && hero.alive);
+      // Fireflies round Wren in the vale, a few every quarter second, from just under her waist.
+      moteClock += dt;
+      if (!indoors && moteClock >= 0.25) {
+        moteClock = 0;
+        burst("motes", impact.copy(hero.mesh.position).setY(hero.mesh.position.y - 0.6));
+      }
 
       if (vessel.visible) {
         vessel.rotation.y += dt * 2;
@@ -764,6 +846,12 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       statePatch.fightOccluded = fight.occluded;
 
       statePatch.cameraBlocked = fight.blocked;
+      statePatch.cameraInGround = fight.inGround;
+      statePatch.motesSpawned = emitters.mote.stats.spawned;
+      statePatch.companionNearest =
+        orb.nearest === Number.POSITIVE_INFINITY ? 0 : Math.round(orb.nearest * 100) / 100;
+      statePatch.companionFarthest = Math.round(orb.farthest * 100) / 100;
+      statePatch.assetLoads = frameCtx.assets.progress.requested;
       statePatch.nearWallWorst = Math.round(fight.nearWall * 1000) / 1000;
       statePatch.hintOverlap = fight.hint;
       statePatch.toastOverlap = fight.toast;
