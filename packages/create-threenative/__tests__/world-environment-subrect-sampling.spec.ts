@@ -226,7 +226,11 @@ const expectOwnViewClamps = (built: IBuilt, controller: ResolutionSubrect) => {
 };
 
 /** The real, canonical graph of one stage, its compiled output pass, and its controller. */
-const canonical = (stageName: string, worldOptions: Record<string, unknown> = {}) => {
+const canonical = (
+  stageName: string,
+  worldOptions: Record<string, unknown> = {},
+  retained = true,
+) => {
   vi.stubGlobal(
     "Image",
     class {
@@ -246,7 +250,7 @@ const canonical = (stageName: string, worldOptions: Record<string, unknown> = {}
   const capture: OutputRenderer = {
     kind: "webgpu",
     raw: renderer,
-    createResolutionSubrect: () => controller,
+    ...(retained ? { createResolutionSubrect: () => controller } : {}),
     createRenderChain(options) {
       worldPass = options.worldPass as typeof worldPass;
       const stage = options.stages?.find((entry) => entry.name === stageName);
@@ -316,8 +320,8 @@ const canonical = (stageName: string, worldOptions: Record<string, unknown> = {}
   };
 };
 
-const stage = () => {
-  const proof = canonical("ambientOcclusion");
+const stage = (samples = 0) => {
+  const proof = canonical("ambientOcclusion", { samples });
   const ao = proof.own<Node & { _aoRenderTarget: RenderTarget }>(
     "_aoRenderTarget",
     "real GTAO node",
@@ -352,16 +356,49 @@ const stage = () => {
 };
 
 describe("canonical ambient occlusion under a retained sub-rectangle", () => {
-  it("clamps every GTAO input read to the retained view the controller owns", () => {
-    const proof = stage();
+  it.each([0, 4])(
+    "compiles unretained GTAO depth at %i samples without invalid mip arguments",
+    (samples) => {
+      const proof = canonical("ambientOcclusion", { samples }, false);
+      try {
+        const ao = proof.own<Node & { _material: unknown }>("_aoRenderTarget", "real GTAO node");
+        const gtao = proof.compileMaterial(ao._material);
+        const names = bindingNames(gtao, proof.depth);
+        expect(names.length).toBeGreaterThan(0);
+        expect(reads(gtao.fragmentShader, names).length).toBeGreaterThanOrEqual(9);
+        if (samples > 0) {
+          expect(gtao.fragmentShader).toContain("texture_depth_multisampled_2d");
+          for (const name of names)
+            expect(gtao.fragmentShader).not.toMatch(
+              new RegExp(`textureDimensions\\(\\s*${name}\\s*,`),
+            );
+        }
+      } finally {
+        proof.close();
+      }
+    },
+  );
+
+  it.each([0, 4])("clamps every GTAO input read at %i samples to the retained view", (samples) => {
+    const proof = stage(samples);
     try {
       const scene = proof.view(proof.depth);
       const fraction = namesOf(proof.gtao, [scene.viewFraction]);
       const half = namesOf(proof.gtao, [scene.halfTexel]);
       expect(fraction).not.toHaveLength(0);
-      const depthReads = reads(proof.gtao.fragmentShader, bindingNames(proof.gtao, proof.depth));
+      const depthNames = bindingNames(proof.gtao, proof.depth);
+      if (samples > 0) {
+        expect(proof.gtao.fragmentShader).toContain("texture_depth_multisampled_2d");
+        for (const name of depthNames)
+          expect(proof.gtao.fragmentShader).not.toMatch(
+            new RegExp(`textureDimensions\\(\\s*${name}\\s*,`),
+          );
+      }
+      const depthReads = reads(proof.gtao.fragmentShader, depthNames);
       // Core reconstructs AO normals from depth; the denoiser still samples the normal target.
-      expect(depthReads.length).toBeGreaterThan(0);
+      expect(depthReads.length).toBeGreaterThanOrEqual(9);
+      if (samples > 0)
+        for (const read of depthReads) expect(read).toMatch(/,\s*i32\(\s*0\s*\)\s*\)$/);
       const pairs = new Set(
         depthReads.map((read) => retainedViewOf(read, fraction, half)?.fraction),
       );
@@ -425,6 +462,11 @@ describe("canonical ambient occlusion under a retained sub-rectangle", () => {
       expect(live(fraction)).toBe(view.viewFraction);
       expect(live(fraction).toArray()).toEqual([928 / 1280, 520 / 720]);
       expect(live(half).toArray()).toEqual([0.5 / 1280, 0.5 / 720]);
+      const activeExtent = proof.gtao.uniforms.fragment.find(
+        (entry) =>
+          entry.node.value instanceof Vector2 && entry.node.value.equals(new Vector2(928, 520)),
+      )?.node.value;
+      expect(activeExtent).toBeInstanceOf(Vector2);
       const capacity = [proof.ao._aoRenderTarget.width, proof.ao._aoRenderTarget.height];
       const reallocations = { count: 0 };
       proof.ao._aoRenderTarget.addEventListener("dispose", () => {
@@ -433,6 +475,8 @@ describe("canonical ambient occlusion under a retained sub-rectangle", () => {
 
       proof.controller.setScale(0.61);
       proof.draw(proof.output);
+      proof.draw(proof.gtao);
+      expect((activeExtent as Vector2).toArray()).toEqual([784, 440]);
 
       expect(live(fraction)).toBe(view.viewFraction);
       expect(live(fraction).toArray()).toEqual([784 / 1280, 440 / 720]);

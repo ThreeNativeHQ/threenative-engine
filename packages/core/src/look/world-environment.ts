@@ -56,7 +56,6 @@ import {
   pass,
   roughness,
   smoothstep,
-  textureSize,
   uniform,
   uv,
   vec2,
@@ -1169,20 +1168,17 @@ export class WorldEnvironment {
           // stair-step band under the cap; the denoiser, GTAO scale and radius did not change them.
           const aoDepth = subrectTexture(depth());
           let reconstructedNormal: { sample: (at: Node<"vec2">) => Node<"vec3"> } | null = null;
-          if (resolutionSubrect && !ownedEngine) {
-            const full = new Vector2(1, 1);
-            const fraction = uniform(full).onRenderUpdate(() =>
-              resolutionSubrect.active
-                ? (resolutionSubrect.textureView(aoDepth.value)?.viewFraction ?? full)
-                : full,
+          if (!ownedEngine) {
+            const extent = new Vector2(1, 1);
+            // The pass viewport is the active pixel extent, including for multisampled depth.
+            const activeSize = uniform(extent).onRenderUpdate(() =>
+              extent.set(scenePass.renderTarget.viewport.z, scenePass.renderTarget.viewport.w),
             );
             const inverseProjection = uniform(view.projectionMatrixInverse);
-            // Three's getNormalFromDepth bypasses TextureNode samplers; keep its nine-tap edge selection inside the retained view.
+            // Reconstruct through TextureNode samplers: Three's raw depth path bypasses retained clamps and misqueries MSAA dimensions.
             reconstructedNormal = {
               sample: Fn(([at]: [Node<"vec2">]) => {
-                const size = vec2(textureSize(aoDepth) as unknown as Node<"uvec2">)
-                  .mul(fraction)
-                  .toVar();
+                const size = activeSize.toVar();
                 const pixel = at.mul(size).floor().add(0.5).div(size);
                 const tap = (x: number, y: number) =>
                   aoDepth.sample(pixel.add(vec2(x, y).div(size))).r.toVar();
