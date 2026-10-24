@@ -327,7 +327,14 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     const counted = new Set<ITarget>();
     let cleared = false;
     let indoors = hollow.contains(hero.mesh.position);
-    lighting.setIndoors(indoors);
+    // The place Wren is not in is hidden: neither draws while she is in the other.
+    const enterZone = (inside: boolean): void => {
+      indoors = inside;
+      lighting.setIndoors(inside);
+      vale.group.visible = !inside;
+      hollow.group.visible = inside;
+    };
+    enterZone(indoors);
     let lockAge = 0;
     let strafeDrift = 0;
     let strafeSeconds = 0;
@@ -798,10 +805,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
         toast("The door grinds shut behind you.");
       }
       const nowIndoors = hollow.contains(at);
-      if (nowIndoors !== indoors) {
-        indoors = nowIndoors;
-        lighting.setIndoors(indoors);
-      }
+      if (nowIndoors !== indoors) enterZone(nowIndoors);
 
       // Out of hearts, or off the world: back at the last checkpoint with full hearts.
       if (hero.readyToRespawn || at.y < ADVENTURE_FEEL.killPlane) {
