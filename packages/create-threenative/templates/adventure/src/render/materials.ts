@@ -96,6 +96,8 @@ export function lit(
     flat?: boolean;
     detail?: boolean;
     doubleSided?: boolean;
+    /** A faint glow of the material's own, added in shade. */
+    emissive?: ColorRepresentation;
   } = {},
 ): MeshStandardMaterial {
   return cached(
@@ -103,6 +105,7 @@ export function lit(
     () =>
       new MeshStandardMaterial({
         color,
+        emissive: options.emissive ?? 0x000000,
         flatShading: options.flat ?? false,
         map: options.detail === true ? detailTexture() : null,
         metalness: options.metalness ?? 0,

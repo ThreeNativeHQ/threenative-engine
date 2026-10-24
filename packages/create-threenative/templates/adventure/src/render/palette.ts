@@ -90,6 +90,8 @@ export const C = {
   trousers: 0x6a5444,
   bootCuff: 0x8f6a45,
   skin: 0xe8b98f,
+  /** The skin's own faint warmth, added in shade. */
+  skinGlow: 0x4a2416,
   mouth: 0x9a5444,
   hair: 0x5b3320,
   hairLight: 0x7a4428,
