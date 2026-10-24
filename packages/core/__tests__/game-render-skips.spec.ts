@@ -74,4 +74,73 @@ describe("the game loop reports frames the renderer declined to draw", () => {
       vi.restoreAllMocks();
     }
   });
+
+  it("does not count a declined frame toward startup readiness", async () => {
+    const canvas = testCanvas();
+    let frame: ((time: number) => void) | undefined;
+    for (const method of ["info", "warn", "log"] as const)
+      vi.spyOn(console, method).mockImplementation(() => undefined);
+    const info = { engine: { frameGateSkips: 0 }, render: { calls: 0 } };
+    let declining: "all" | "alternate" = "all";
+    let calls = 0;
+    let ready = false;
+    class WatchedScene extends EmptyScene {
+      override enter(ctx: Parameters<Scene["enter"]>[0]): void {
+        void ctx.startup.whenReady().then(() => {
+          ready = true;
+        });
+      }
+    }
+    const game = defineGame({
+      renderer: {
+        canvas,
+        preferWebGPU: false,
+        webgl2Factory: () => ({
+          domElement: canvas,
+          info,
+          // the web engine's gate while the first world frame is still on the GPU: every call declined
+          // then a GPU-bound world under the cover: every other call declined
+          render: () => {
+            calls += 1;
+            if (declining === "all" || calls % 2 === 0) info.engine.frameGateSkips += 1;
+          },
+          setSize: () => undefined,
+        }),
+      },
+      scenes: { test: WatchedScene },
+      start: "test",
+    });
+    const requestFrame = globalThis.requestAnimationFrame;
+    Object.defineProperty(globalThis, "requestAnimationFrame", {
+      configurable: true,
+      value: (callback: (time: number) => void) => {
+        frame = callback;
+        return 1;
+      },
+    });
+    try {
+      await game.start();
+      if (!frame) throw new Error("Game did not start its loop");
+      let time = performance.now();
+      const run = async (frames: number): Promise<void> => {
+        for (let index = 0; index < frames; index += 1) {
+          time += 16.7;
+          frame?.(time);
+          await Promise.resolve();
+        }
+      };
+      await run(40);
+      expect(ready).toBe(false);
+      declining = "alternate";
+      await run(40);
+      expect(ready).toBe(true);
+    } finally {
+      Object.defineProperty(globalThis, "requestAnimationFrame", {
+        configurable: true,
+        value: requestFrame,
+      });
+      game.stop();
+      vi.restoreAllMocks();
+    }
+  });
 });

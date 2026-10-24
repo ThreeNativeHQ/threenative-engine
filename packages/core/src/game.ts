@@ -1725,6 +1725,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     let updates = 0;
     let renders = 0;
     let lastGateSkips = 0;
+    let readinessGateSkips = 0;
     const gameLoop: FixedStepLoop = new FixedStepLoop({
       interpolation,
       ...(frameBudget === undefined ? {} : { budget: frameBudget }),
@@ -2110,7 +2111,18 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         if (this.#renderer !== undefined && this.#sceneEntered)
           this.#computeDriven.process(this.#renderer);
       },
-      onFrame: (frameMs) => startupReadiness.observe(frameMs),
+      // A frame the renderer declined to draw (the Wasm engine's gate: two frames still on the GPU)
+      // is no frame at all for the readiness window. Counted, five cheap declined frames closed the
+      // window while the first world frame was still compiling on the GPU, so the cover lifted and
+      // the player saw a 0.9 s stall and then a first frame with unmetered exposure (Hop Garden, 4
+      // of 13 launches). Not a reset either: a GPU-bound world under the cover declines every other
+      // frame, and a reset held every Hop launch to the 10 s window bound.
+      onFrame: (frameMs) => {
+        const skips = rendererFrameGateSkips(renderer.raw);
+        const declined = skips !== undefined && skips > readinessGateSkips;
+        if (skips !== undefined) readinessGateSkips = skips;
+        if (!declined) startupReadiness.observe(frameMs);
+      },
       step: this.#config.step,
     });
     loopState.current = gameLoop;
