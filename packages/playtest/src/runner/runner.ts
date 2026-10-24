@@ -1,6 +1,6 @@
 import { createOwnedRunResourceRelease } from "./ownedRunResources.js";
 import type { IPlaytestToneCaptureObservation } from "../tone.js";
-import { completionWindowEnvironment, completionWindowLabel, measureCompletionWindow, setPointerButtons, setBrowserPointers, type ICompletionWindow, waitFrames, captureVisualSurface, runStep, sampleVisualElementBounds, screenshotObservations, sampleAfterTransition } from "./steps.js";
+import { completionWindowEnvironment, completionWindowLabel, measureCompletionWindow, setPointerButtons, setBrowserPointers, type ICompletionWindow, waitFrames, waitWarmupFrames, captureVisualSurface, runStep, sampleVisualElementBounds, screenshotObservations, sampleAfterTransition } from "./steps.js";
 import type { StepInputState } from "./steps.js";
 import { withPerformanceBudget } from "./buildReport.js";
 import { alignScenarioStartTick, preflightDisplay, acquireRunnerCaptureLock, provideRunDisplay, buildReport, addPreflightDiagnostic, isJudgeMarkerRequestFailure } from "./runner-support.js";
@@ -206,11 +206,17 @@ async function runStandalonePlaytestInternal(
   options: IStandalonePlaytestInternalOptions = {},
 ): Promise<IStandalonePlaytestReport> {
   const usesFreePort = config.server !== undefined && config.port === 0;
-  const activeConfig = usesFreePort ? await resolveManagedServerConfig(config) : config;
+  let activeConfig = usesFreePort ? await resolveManagedServerConfig(config) : config;
   const scenario = withPerformanceBudget(
     await loadPlaytestScenario(activeConfig.projectPath, activeConfig.scenarioPath),
     activeConfig.performanceBudget,
   );
+  const performance = scenario.assert?.performance;
+  // Forced tick batches measure the runner's simulation workload, not ordinary frame pacing.
+  if ((activeConfig.target ?? "browser") === "browser" && activeConfig.liveClock === undefined
+    && (performance?.maxFrameMsP95 !== undefined || performance?.minFps !== undefined)) {
+    activeConfig = { ...activeConfig, liveClock: true };
+  }
   const cpuLabels = cpuWindowLabels(scenario, "browser", activeConfig.liveClock === true);
   if (cpuLabels.length > 0 && options.remoteBrowser !== undefined) {
     throw new Error("TN_PLAYTEST_CPU_WINDOW_FAILED: remote browser has no local owned process tree");
@@ -465,20 +471,21 @@ async function runStandalonePlaytestInternal(
         ));
       }
     }
-    await waitFrames(page, scenario.warmupFrames);
     // `warmupFrames` is a fixed count, so whether it covers the application's launch depends on
     // the machine. Where the application reports its own startup, wait for that instead: the
     // baseline below must be read from a game that is running, not from one still loading.
     // `allowSoftwareAdapter` is the operator saying out loud that this machine has no GPU. The
     // wait still runs to full readiness; the declaration is the only thing that labels the result
     // as the non-smoothness measurement it is. Nothing infers it from a slow run.
+    if (bridge === undefined || scenario.awaitStartup === false) await waitFrames(page, scenario.warmupFrames);
     const startupOutcome = bridge === undefined || scenario.awaitStartup === false
       ? undefined
       : await waitForStartupReady({
           aborted: () => tearingDown,
           bridge,
           declaredSoftware: activeConfig.allowSoftwareAdapter === true,
-          pump: () => waitFrames(activePage, 1),
+          warmup: () => waitWarmupFrames(activePage, scenario.warmupFrames),
+          pump: (remainingMs?: number) => waitFrames(activePage, 1, remainingMs),
         });
     await alignScenarioStartTick(bridge, scenario.startTick, activeConfig.liveClock === true);
     const runtimeReady = await page.evaluate(() =>

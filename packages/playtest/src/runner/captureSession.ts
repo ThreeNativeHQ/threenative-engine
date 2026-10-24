@@ -180,12 +180,12 @@ export async function withBrowserCapture<T>(
         networkEntries,
       })}`);
     }
-    await stage("warmup", () => waitFrames(activePage, scenario.warmupFrames), startupBudget);
+    await stage("warmup", () => waitFrames(activePage, scenario.warmupFrames, startupBudget), startupBudget);
     const startup = await stage("engine startup readiness", () => waitForStartupReady({
       aborted: () => controller.signal.aborted,
       bridge,
       declaredSoftware: active.allowSoftwareAdapter === true,
-      pump: () => waitFrames(activePage, 1),
+      pump: (remainingMs?: number) => waitFrames(activePage, 1, remainingMs),
     }), startupBudget);
     if (startup === undefined) throw new Error("TN_CAPTURE_SESSION_READINESS_REQUIRED: no startup observation was returned");
     const provenance = await stage("adapter provenance", () => readCaptureProvenance(activePage, active, scenario));

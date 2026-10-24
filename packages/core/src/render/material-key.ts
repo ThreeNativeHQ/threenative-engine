@@ -44,6 +44,7 @@ export function materialKey(material: Material): string {
     material.type,
     material.transparent ? 1 : 0,
     num(material.alphaTest),
+    material.alphaHash ? 1 : 0,
     material.side,
     material.vertexColors ? 1 : 0,
     num(material.opacity),

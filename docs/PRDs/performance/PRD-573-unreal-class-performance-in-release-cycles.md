@@ -336,7 +336,7 @@ The game side reads the DOM directly (23 core files read `document.` or `window.
 
 PRD-553 on F (JS-to-Wasm calls, upload bytes);
 [PRD-519](../native-engine/PRD-519-n12-native-batching-visibility-lod-gpu-scene.md) (batching, LOD, GPU-scene kernel);
-[PRD-570](../Unreal/animation/PRD-570-a-character-costs-what-the-camera-sees-of-it.md) (core animation rate);
+[PRD-570](../done/PRD-570-a-character-costs-what-the-camera-sees-of-it.md) (core animation rate);
 [PRD-327](./critical/PRD-327-first-use-pipeline-compilation-leaves-the-main-loop.md),
 [PRD-540](./critical/PRD-540-the-compile-walk-leaves-the-main-thread.md) and
 [PRD-368](../assets/PRD-368-compiled-pipelines-survive-a-relaunch.md) (legacy pipelines);

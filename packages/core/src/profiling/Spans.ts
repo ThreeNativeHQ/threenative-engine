@@ -74,6 +74,10 @@ export const SPANS = {
   terrainBlock: 14,
   /** Terrain seam reconciliation and bridge-attribute swap on the calling thread. */
   terrainSeam: 15,
+  /** One actual AnimationPlayer.update call, measured by the crowd fixture. */
+  animationUpdate: 16,
+  /** One actual SkinnedBatch.write call, including its guard and any skeleton/palette work. */
+  skinnedWrite: 17,
 } as const;
 
 export type SpanId = (typeof SPANS)[keyof typeof SPANS];
@@ -86,31 +90,31 @@ export type SpanId = (typeof SPANS)[keyof typeof SPANS];
  * opened by the host itself and have no id here.
  */
 export const GAME_SPANS = {
-  input: 16,
-  scheduler: 17,
-  plugins: 18,
-  sceneCallbacks: 19,
-  entities: 20,
-  afterPhysics: 21,
-  mixer: 22,
-  stride: 23,
-  blend: 24,
-  transport: 25,
-  publish: 26,
-  playtest: 27,
-  ui: 30,
-  loop: 33,
-  state: 34,
-  contacts: 35,
-  transitions: 36,
-  objectGraph: 37,
-  physicsStep: 38,
-  physicsRead: 39,
-  physicsApply: 40,
-  characterMove: 41,
-  animationPlay: 42,
-  inputVector: 43,
-  graphVisit: 44,
+  input: 18,
+  scheduler: 19,
+  plugins: 20,
+  sceneCallbacks: 21,
+  entities: 22,
+  afterPhysics: 23,
+  mixer: 24,
+  stride: 25,
+  blend: 26,
+  transport: 27,
+  publish: 28,
+  playtest: 29,
+  ui: 32,
+  loop: 35,
+  state: 36,
+  contacts: 37,
+  transitions: 38,
+  objectGraph: 39,
+  physicsStep: 40,
+  physicsRead: 41,
+  physicsApply: 42,
+  characterMove: 43,
+  animationPlay: 44,
+  inputVector: 45,
+  graphVisit: 46,
 } as const;
 
 /** Names, indexed by id. The only place a span name is a string. */
@@ -131,6 +135,8 @@ export const SPAN_NAMES: readonly string[] = [
   "draw",
   "terrainBlock",
   "terrainSeam",
+  "animationUpdate",
+  "skinnedWrite",
 ];
 
 export const SPAN_COUNT = SPAN_NAMES.length;
