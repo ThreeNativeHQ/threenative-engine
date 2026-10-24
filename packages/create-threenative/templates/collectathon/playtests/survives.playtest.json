@@ -76,7 +76,7 @@
         "entity": "course",
         "component": "castleParts",
         "gte": 6,
-        "allowTrivial": "Measured once at load: the castle on the plateau is built (stone, roofs, door, windows, rose window, flag)."
+        "allowTrivial": "Measured once at load: the keep on the plateau is built (stone, roofs, door and windows, sprout relief, windmill sails, flag)."
       },
       {
         "entity": "course",

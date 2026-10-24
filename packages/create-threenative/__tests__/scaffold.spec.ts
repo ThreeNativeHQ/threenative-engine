@@ -297,7 +297,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // scenario), folding the shared textures, the play-gate scenarios and the footSlip stride bound
   // (method checked against platformer, from a copy of the index). Recomputed 2026-10-24 for the
   // mouse orbit camera, and for the planted-foot gait (no hip twist, walk lift, run blend).
-  collectathon: "31a4890a6fb90e8d7a7e4280fa57c77805007770f13dbd4186694669a3c22dc4",
+  collectathon: "ed5d681f974ec45ac204df4d0328b0be3b608027a20b61fd8a05cbc4d79c6e94",
   // PRD-733 (2026-10-23): the new Lantern Vale kit, measured through createProject.
   adventure: "36e3c4f2dac92186c418dc97b87568b54759b0c709d3817aa8ab3bbe234229ce",
   // PRD-734 (2026-10-24): the new Clover Cup kart kit, measured through createProject.
@@ -631,7 +631,7 @@ describe("create-threenative", () => {
             "utf8",
           );
           const textures = files.filter((name) => name.endsWith(".webp"));
-          expect(textures).toHaveLength(template === "collectathon" ? 14 : 5);
+          expect(textures).toHaveLength(template === "collectathon" ? 12 : 5);
           for (const file of textures) expect(provenance).toContain(path.basename(file).slice(4));
         }
         if (template === "kart") {

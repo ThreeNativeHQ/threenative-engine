@@ -78,8 +78,4 @@ export const C = {
   wetSand: 0xb09868,
   foam: 0xf4fbff,
   white: 0xffffff,
-
-  // The castle: a warm grey sandstone and terracotta tiles.
-  stone: 0xc9bca6,
-  roof: 0xc0583a,
 } as const;

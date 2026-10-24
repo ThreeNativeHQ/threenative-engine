@@ -478,6 +478,22 @@ Each playtest runs on a project scaffolded from `--template collectathon`:
     short legs with big boots. It also notes that the level (castle with a flag, coin trails,
     eight red gems, the move list) echoes the genre's classic as a whole; the hero no longer does.
 
+  - Castle originality (D12, owner rule: original designs only): a fresh Opus judge read the castle
+    as Peach's Castle from Super Mario 64 (HIGH confidence). Its cues, ranked: the round
+    stained-glass window over the arched door under a gable, the symmetric front with a cone
+    turret on each side, the path up a hill to the door, and the red-orange cone roofs. The round
+    window alone was a copy cue. The flag (teal, with a leaf) and the cones alone were not.
+    `render/castle.ts` now builds a mill keep. A green sprout in relief replaces the rose window
+    over the door. A windmill tower with four sails stands on the left: a low wooden cap, and
+    sails that turn on the GPU about the hub. The roofs are wooden shingles (`tex-planks`), not
+    terracotta. The other cone turret moved behind the right side, and the flag flies from the
+    windmill cap. Fresh Opus judge on desktop RTX 2080 headed captures, high tier, 2 runs per arm,
+    castle and spawn poses (frames in `~/Downloads/hop-garden/castle/`): known Nintendo landmark,
+    BEFORE yes (Peach's Castle), AFTER no ("a storybook mill-hall"); look castle IMPROVEMENT,
+    spawn IMPROVEMENT, overall IMPROVEMENT. Its weak, generic leftovers are the gable over an
+    arched door at the end of the path and the paired arched windows. Its open polish notes: the
+    sprout reads flat like a decal, the sails are plain white boards, and a sail can hide the flag.
+
 ## Execution Phases
 
 #### Phase 1: The hero moves like the reference

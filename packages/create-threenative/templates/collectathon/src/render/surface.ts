@@ -58,7 +58,6 @@ const ALBEDO = [
   "tex-sand.webp",
   "tex-rock.webp",
   "tex-stone-wall.webp",
-  "tex-roof-tiles.webp",
   "tex-bark.webp",
   "tex-birch-bark.webp",
   "tex-planks.webp",
@@ -67,7 +66,6 @@ const NORMAL = [
   "tex-sand-normal.webp",
   "tex-rock-normal.webp",
   "tex-stone-wall-normal.webp",
-  "tex-roof-tiles-normal.webp",
   "tex-bark-normal.webp",
   "tex-planks-normal.webp",
 ];

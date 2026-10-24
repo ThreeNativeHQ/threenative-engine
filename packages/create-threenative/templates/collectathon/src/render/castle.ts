@@ -1,10 +1,10 @@
 // Generated for you. This is ordinary Three.js — edit or delete it freely.
 //
-// The castle on the headland, and the wooden arrow sign at the path's fork, from primitives: the
-// sandstone walls and terracotta roofs take the photo textures in `assets/` (`tex-*.webp`) (surface.ts);
-// the stained-glass rose of a sun over a leaf and the teal flag with the same leaf are painted in
-// code, and the arched doorway glows warm. Every part of one material is merged into one geometry,
-// so the whole castle costs six draws.
+// The mill keep on the headland, and the wooden arrow sign at the path's fork, from primitives: the
+// sandstone walls and the wooden shingle roofs take the photo textures in `assets/` (`tex-*.webp`)
+// (surface.ts); a green sprout in relief over the door, a windmill on the corner tower whose sails
+// turn on the GPU, and the teal flag with the hero's leaf painted in code; the arched doorway glows
+// warm. Every part of one material is merged into one geometry, so the whole keep costs eight draws.
 import {
   BoxGeometry,
   BufferAttribute,
@@ -13,15 +13,16 @@ import {
   ConeGeometry,
   CylinderGeometry,
   DoubleSide,
+  ExtrudeGeometry,
   Group,
   Mesh,
   MeshBasicMaterial,
   MeshStandardMaterial,
   PlaneGeometry,
+  Shape,
   TorusGeometry,
-  Vector2,
 } from "three";
-import { positionLocal, sin, time, vec3 } from "three/tsl";
+import { cos, positionLocal, sin, time, vec3 } from "three/tsl";
 import { MeshStandardNodeMaterial } from "three/webgpu";
 import { paintedTexture } from "./materials.js";
 import { C } from "./palette.js";
@@ -32,42 +33,6 @@ const hex = (color: number): [number, number, number] => [
   ((color >> 8) & 255) / 255,
   (color & 255) / 255,
 ];
-const shade = ([r, g, b]: readonly number[], k: number): [number, number, number] => [
-  (r ?? 0) * k,
-  (g ?? 0) * k,
-  (b ?? 0) * k,
-];
-
-/** The rose window: a sun with twelve rays over a green leaf, in lead came. Also its glow map. */
-function roseMap(): ReturnType<typeof paintedTexture> {
-  const gold = hex(0xffc93a);
-  const amber = hex(0xf07a28);
-  const sky = hex(0x3d7fd6);
-  const leaf = hex(0x3fae4a);
-  const lead = hex(0x2a2420);
-  return paintedTexture(
-    128,
-    128,
-    (x, y) => {
-      const u = (x - 63.5) / 63.5;
-      const v = (63.5 - y) / 63.5;
-      const r = Math.hypot(u, v);
-      const a = Math.atan2(v, u);
-      if (r > 0.97 || Math.abs(r - 0.62) < 0.025 || Math.abs(r - 0.3) < 0.02) return lead;
-      // The leaf: a pointed oval tilted 30°, with a midrib.
-      const lu = u * 0.87 + v * 0.5;
-      const lv = -u * 0.5 + v * 0.87;
-      const inLeaf = Math.abs(lu) < 0.5 && Math.abs(lv) < 0.2 * (1 - (lu / 0.5) ** 2);
-      if (inLeaf) return Math.abs(lv) < 0.015 ? lead : shade(leaf, 0.9 + 0.2 * lu);
-      const sector = (a / (Math.PI * 2)) * 12;
-      if (r > 0.3 && Math.abs(sector - Math.round(sector)) < 0.04) return lead;
-      if (r < 0.3) return gold;
-      if (r < 0.62) return Math.round(sector) % 2 === 0 ? amber : gold;
-      return shade(sky, 0.85 + 0.3 * (Math.round(sector) % 2));
-    },
-    true,
-  );
-}
 
 /** The flag: a teal field and a cream leaf, the hero's own badge. */
 function flagMap(): ReturnType<typeof paintedTexture> {
@@ -144,6 +109,9 @@ function merge(parts: readonly BufferGeometry[]): BufferGeometry {
   }
   return merged;
 }
+
+/** The windmill tower: x, z, radius, wall top, cap height, sail length from the hub. */
+const MILL = { x: -12.5, z: -2.5, radius: 3.2, top: 13, cap: 3.5, sail: 7 } as const;
 
 const box = (x0: number, y0: number, z0: number, x1: number, y1: number, z1: number) =>
   new BoxGeometry(x1 - x0, y1 - y0, z1 - z0).translate((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2);
@@ -250,10 +218,20 @@ function glow(geometry: BufferGeometry, width: number): BufferGeometry {
   return geometry;
 }
 
+/** A pointed leaf in the XY plane, its stalk at the origin, `length` along +Y, `depth` deep along +Z. */
+function leaf(length: number, depth: number): BufferGeometry {
+  const w = length * 0.36;
+  const outline = new Shape()
+    .moveTo(0, 0)
+    .quadraticCurveTo(w, length * 0.45, 0, length)
+    .quadraticCurveTo(-w, length * 0.45, 0, 0);
+  return new ExtrudeGeometry(outline, { bevelEnabled: false, curveSegments: 8, depth });
+}
+
 /**
- * The castle, its origin at the foot of its front door, facing +Z: a hall with a gable roof, a
- * gabled gatehouse with the rose window over the door, a tall corner turret with the flag and a
- * small back turret. `stone` is solid; the roofs, glass and flag are not.
+ * The keep, its origin at the foot of its front door, facing +Z: a hall with a gable roof, a gabled
+ * gatehouse with a sprout in relief over the door, a windmill on the corner tower with the flag on
+ * its cap, and a small back turret. `stone` is solid; the roofs, sails, relief and flag are not.
  */
 export function buildCastle(s: ISurfaces, footY: number): { group: Group; stone: Mesh } {
   const group = new Group();
@@ -275,10 +253,10 @@ export function buildCastle(s: ISurfaces, footY: number): { group: Group; stone:
   // A plinth course and a string course: two stone bands that read as weight and as storeys.
   addStone(box(-11.3, -1, -12.3, 11.3, 0.6, -1.7));
   addStone(box(-4.8, 8.6, -3.3, 4.8, 9.1, 0.3));
-  // Turrets: x, z, radius, wall top, roof height.
+  // Towers: x, z, radius, wall top, roof height. The first is the windmill: a low cap, sails in front.
   for (const [x, z, radius, top, roof] of [
-    [12.5, -2.5, 3.2, 14, 6],
-    [-11.5, -11.5, 2.4, 13, 6],
+    [MILL.x, MILL.z, MILL.radius, MILL.top, MILL.cap],
+    [11.5, -11.5, 2.4, 13, 6],
   ] as const) {
     stoneParts.push(
       wrapUv(
@@ -319,36 +297,59 @@ export function buildCastle(s: ISurfaces, footY: number): { group: Group; stone:
 
   const stone = new Mesh(merge(stoneParts), masonryMaterial(s, footY));
   stone.name = "castle-stone";
-  const roofs = new Mesh(
-    merge(roofParts),
-    texturedMaterial(s, "roof-tiles", { doubleSided: true, roughness: 0.7 }),
-  );
+  const wood = texturedMaterial(s, "planks", { doubleSided: true });
+  const roofs = new Mesh(merge(roofParts), wood);
   const light = new Mesh(merge(glowParts), new MeshBasicMaterial({ vertexColors: true }));
-  const rose = roseMap();
-  const glass = new Mesh(
-    new CircleGeometry(1.7, 32).translate(0, 10.8, 0.04),
-    new MeshStandardMaterial({
-      emissive: 0xffffff,
-      emissiveIntensity: 0.55,
-      emissiveMap: rose,
-      map: rose,
-      roughness: 0.2,
-    }),
+  // The sprout over the door: a stem and two leaves standing proud of the gable wall.
+  const sproutParts = [
+    new BoxGeometry(0.3, 2.4, 0.22).translate(0, 10.4, 0.11).toNonIndexed(),
+    leaf(2.6, 0.24).rotateZ(0.75).translate(0, 11, 0),
+    leaf(2.3, 0.24).rotateZ(-0.7).translate(0, 10.6, 0),
+  ];
+  const sprout = new Mesh(
+    merge(sproutParts),
+    new MeshStandardMaterial({ color: C.leaf, roughness: 0.6 }),
   );
-  const frame = new Mesh(
-    planarUv(new TorusGeometry(1.75, 0.22, 6, 32).translate(0, 10.8, 0.05), 4),
-    stone.material,
+  // The sails: four lattice arms on a hub before the tower, turned about the hub's axis on the GPU.
+  const spin = time.mul(0.45);
+  const turned = vec3(
+    positionLocal.x.mul(cos(spin)).sub(positionLocal.y.mul(sin(spin))),
+    positionLocal.x.mul(sin(spin)).add(positionLocal.y.mul(cos(spin))),
+    positionLocal.z,
   );
-  for (const mesh of [stone, roofs, frame]) {
+  const spars: BufferGeometry[] = [
+    planarUv(new CylinderGeometry(0.55, 0.55, 1.2, 10).rotateX(Math.PI / 2), 2),
+  ];
+  const cloth: BufferGeometry[] = [];
+  for (let arm = 0; arm < 4; arm += 1) {
+    const a = (arm * Math.PI) / 2;
+    spars.push(planarUv(box(-0.14, 0.4, 0.4, 0.14, MILL.sail, 0.62), 2).rotateZ(a));
+    cloth.push(planarUv(box(0.14, 1.5, 0.5, 1.6, MILL.sail - 0.3, 0.56), 2).rotateZ(a));
+  }
+  const sparMaterial = new MeshStandardNodeMaterial({ map: wood.map, roughness: 0.85 });
+  sparMaterial.positionNode = turned;
+  const clothMaterial = new MeshStandardNodeMaterial({
+    color: C.button,
+    roughness: 0.9,
+    side: DoubleSide,
+  });
+  clothMaterial.positionNode = turned;
+  const hub = [MILL.x, MILL.top + 0.4, MILL.z + MILL.radius + 0.7] as const;
+  const sails = new Group();
+  sails.name = "mill-sails";
+  sails.position.set(...hub);
+  sails.add(new Mesh(merge(spars), sparMaterial), new Mesh(merge(cloth), clothMaterial));
+  for (const mesh of [stone, roofs, sprout, ...(sails.children as Mesh[])]) {
     mesh.castShadow = true;
     mesh.receiveShadow = true;
   }
-  group.add(stone, roofs, light, glass, frame);
+  group.add(stone, roofs, light, sprout, sails);
 
-  // The flag on the corner turret's spire, waving from the pole.
+  // The flag on the windmill's cap, waving from the pole.
+  const capTop = MILL.top + MILL.cap;
   const pole = new Mesh(
-    new CylinderGeometry(0.07, 0.09, 4, 6).translate(12.5, 21.5, -2.5),
-    texturedMaterial(s, "planks"),
+    new CylinderGeometry(0.07, 0.09, 4, 6).translate(MILL.x, capTop + 1.5, MILL.z),
+    wood,
   );
   pole.castShadow = true;
   const flagMaterial = new MeshStandardNodeMaterial({
@@ -369,7 +370,7 @@ export function buildCastle(s: ISurfaces, footY: number): { group: Group; stone:
     ),
   );
   const flag = new Mesh(new PlaneGeometry(2.5, 1.55, 10, 4), flagMaterial);
-  flag.position.set(12.5 + 1.3, 22.6, -2.5);
+  flag.position.set(MILL.x + 1.3, capTop + 2.6, MILL.z);
   flag.castShadow = true;
   group.add(pole, flag);
   return { group, stone };
