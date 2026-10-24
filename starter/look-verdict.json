@@ -1,0 +1,23 @@
+{
+  "status": "REVIEWED",
+  "models": [
+    "claude-sonnet-5-5"
+  ],
+  "effort": "high",
+  "requiredImages": 3,
+  "openedImages": 7,
+  "overall": "IMPROVEMENT",
+  "frames": [
+    {
+      "name": "look.playtest.json",
+      "verdict": "IMPROVEMENT",
+      "regions": [
+        1,
+        2,
+        4
+      ],
+      "reason": "Camera, player pose and HUD values (SCORE 1, POSITION 58) are the same in all four captures, so the differences are rendering, not pose. R1 (sky/highlight): BEFORE has a murky grey-blue sky and a dull dark-grey slab under the horizon (y≈118–200). AFTER has a cleaner, brighter sky with white clouds that keep soft grey-blue undersides, and the slab becomes a pale-grey ground with a soft horizon line. That is close to the harness's airy light-grey ground and white-cloud sky. There is no flat clipped white: the brightest planes (platform top and face, pillar top, cloud cores) still show tile lines, bump texture and cloud form. The horizon band is smooth pale grey with a slight left-to-right gradient, not 255 white. Caveats: the sky is paler and less saturated than the harness's blue. The near-white planes also sit in a compressed, slightly milky range with lower contrast than BEFORE. R2 (terrain/shadow): the near-black right wall becomes blue-grey with its tile grid and bump texture legible, and the left wall lifts from muddy dark grey to light grey. The cube/cone/player contact shadows, the wall shadow wedge and the pillar-face shadow all stay defined, only softer and bluer. This matches the harness's blue-grey shaded faces, so it is shadow lift and highlight compression, not just a brightness increase. R4 (HUD/pickups): the blue cube, cone and checkered flag keep strong chroma and pop on the bright platform. Royal blue shifts to a lighter azure and the flag is more pastel. The top-left HUD now sits on a dark-teal panel (x≈12–164, y≈12–149) and is more legible than BEFORE's bare text over sky. The bottom bar is legible in both arms. R3 (player): still clearly readable in the same pose, but separation from the lighter left wall and near-white platform is visibly lower, with the legs/feet weakest, and the dark knee/elbow accents are softer. I count this as neither improvement nor regression and flag it for the gate. I see no banding, blur, missing geometry or colour cast beyond slightly cooler neutrals and a lavender haze near the horizon. Wall and platform texture crispness in AFTER is comparable to BEFORE. Exposure reads identically between the two AFTER stills (horizon band, platform, walls, HUD backdrop), as it does between the two BEFORE stills."
+    }
+  ],
+  "limitations": "Stills only: the two AFTER captures match in exposure at this one pose, but that cannot show auto-exposure adaptation or pumping when the camera or scene luminance changes. The historical live-motion scenario fails in both baseline and candidate, so no motion or temporal stability is claimed. Inspection was visual and read-only with no pixel statistics, so brightness and contrast statements are by-eye estimates. Fine 8-bit banding in the smooth sky haze and horizon band cannot be fully excluded, though none is visible at 1280x720. This pose has no crosshair, weapon or distinct enemy, so those requirements are not assessed, and the roles of the blue cube and cone are not identifiable from the still. Region 3 therefore rests on the player mannequin alone. The top-left HUD panel appears only in AFTER. Stills cannot show whether it comes from the tone work or a HUD style change, and it is unexpected if both arms are the same game. I judged only its legibility. BEFORE run 1 and run 2 differ slightly in wall and platform texture crispness (run 2 is crisper), so small sharpness differences cannot be pinned on the tone change. The harness is a sphere-reflection crop (sky plus sun hot-spot) and a differently built reference room. It is a style target only and has no equivalent of the starter's thin sky strip, tiled walls or HUD. The sky and shading comparison is therefore directional, not exact. This verdict covers look.playtest.json only. The kit-level gate also needs the four regular scenarios, which were not part of this request."
+}
