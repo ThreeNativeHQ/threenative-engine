@@ -519,6 +519,21 @@ export function assertMergeParentCandidate(root, candidateSha, base, head) {
     );
 }
 
+// The payload base can lag; resolve the target ref frozen by the full-history checkout.
+function fetchedTargetBase(root, target) {
+  const ref = `refs/remotes/origin/${(target ?? "").replace(/^refs\/heads\//u, "")}`;
+  const resolved =
+    target && git(root, ["check-ref-format", ref]).status === 0
+      ? git(root, ["rev-parse", "--verify", "--quiet", `${ref}^{commit}`])
+      : undefined;
+  const sha = resolved?.stdout.trim() ?? "";
+  if (resolved?.status !== 0 || !/^[0-9a-f]{40}$/u.test(sha))
+    throw new Error(
+      `CI_REQUIRED_PR_CANDIDATE_MISMATCH: the fetched target ref ${JSON.stringify(ref)} is missing or malformed; changed inputs require fresh verification`,
+    );
+  return sha;
+}
+
 function ghApi(pathname) {
   const repository = process.env.GITHUB_REPOSITORY;
   if (repository === undefined || !/^[^/\s]+\/[^/\s]+$/u.test(repository)) {
@@ -1283,11 +1298,12 @@ function reuseOrKeep(plan, options, candidateSha) {
   );
 }
 
-function output(result, format) {
+function output(result, format, base = "") {
   if (format === "json") return console.log(JSON.stringify(result));
   if (format === "github") {
     for (const key of ["scope", "selection", "reason"]) console.log(`${key}=${result[key]}`);
     console.log(`candidate_sha=${result.candidateSha}`);
+    console.log(`base_sha=${base}`);
     console.log(`reused_run_id=${result.reusedRunId}`);
     console.log(`native_tier=${result.nativeTier}`);
     console.log(`plan=${JSON.stringify(result)}`);
@@ -1307,14 +1323,21 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       output(validatePlan(JSON.parse(options.plan)), options.format);
     } else {
       // Only the live GitHub projection owes the parent assertion; local and offline keep classify().
-      if (options.format === "github" && options.eventName === "pull_request" && !options.local)
+      if (options.format === "github" && options.eventName === "pull_request" && !options.local) {
+        // The API payload's base.sha may lag the fetched branch; the frozen target ref is the base.
+        if (!/^[0-9a-f]{40}$/u.test(options.base ?? ""))
+          throw new Error(
+            "CI_REQUIRED_PR_CANDIDATE_MISMATCH: the proposed base input is missing or malformed; changed inputs require fresh verification",
+          );
+        options.base = fetchedTargetBase(options.root, options.target);
         assertMergeParentCandidate(
           options.root,
           options.candidateSha ?? git(options.root, ["rev-parse", "HEAD"]).stdout.trim(),
           options.base,
           options.head,
         );
-      output(classify(options), options.format);
+      }
+      output(classify(options), options.format, options.base);
     }
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error));
