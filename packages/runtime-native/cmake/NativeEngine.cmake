@@ -120,6 +120,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     tn_native_engine_test(tn-native-engine-renderer-test tests/native-engine/renderer_test.cpp
         native_engine_renderer_resize_readback=resize_readback
         native_engine_renderer_emissive_target=emissive_target
+        native_engine_renderer_aux_targets_one_pass=aux_targets_one_pass
         native_engine_renderer_emissive_validation=emissive_validation
         native_engine_renderer_output_ramp=output_ramp
         native_engine_renderer_lit_reference=lit_reference

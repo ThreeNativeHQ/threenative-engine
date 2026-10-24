@@ -1747,9 +1747,79 @@ void emissivePass(bool requirePixels) {
 void emissiveTarget() { emissivePass(true); }
 void emissiveValidation() { emissivePass(false); }
 
+// PRD-740: a post graph that reads every post target (normal, metalness and roughness, albedo, emissive) costs one
+// scene pass, which writes all four as MRT, and a steady frame replays that pass from its cached bundle, recording
+// no draw. Each target still holds its own value at the lit plane's centre.
+void auxTargetsOnePass() {
+    mystral::webgpu::Context context;
+    const bool initialized = context.initializeHeadless();
+    CHECK(initialized);
+    if (!initialized) return;
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(16, 16);
+    renderer.setOutput(OutputState{shader::ToneMapping::Linear, 1, false});
+    namespace g = shader::graph;
+    const auto lane = [](const char* name) { return g::swizzle(g::texture(name, g::uv()), "x"); };
+    // The bloom makes it a pass graph, which is what reads the scene targets (as emissive_target does).
+    renderer.setPostGraph(g::bloom(g::vec4({lane("normal"), lane("metalness"), lane("albedo"), lane("emissive")}), 0, 0, 0));
+    const auto geometry = plane(4, 4);
+    const float facing[12] = {0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1};  // plane() carries no normals
+    geometry->normals.resize(12);
+    geometry->normals.write(0, facing, sizeof facing);
+    shader::StandardMaterial material;
+    material.color = {0.25f, 0.5f, 1};
+    material.metalness = 1; material.roughness = 0.5f;
+    material.emissive = {1, 0.5f, 0}; material.emissiveIntensity = 4;
+    DrawItem item;
+    item.key = item.id = 1;
+    item.kind = MaterialKind::Standard;
+    item.positions = &geometry->positions; item.normals = &geometry->normals; item.indices = &geometry->indices;
+    item.material = &material;
+    item.matrixWorld = {1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1};
+    for (int frame = 0; frame < 3; ++frame)
+        renderer.render(std::span<const DrawItem>(&item, 1), camera(1), LightState{}, {0,0,0,0});
+    std::printf("aux targets: %u pass(es), %u draw(s) recorded on a steady frame\n", renderer.lastFrame().auxPasses,
+                renderer.lastFrame().auxRecorded);
+    CHECK(renderer.lastFrame().auxPasses == 1);
+    CHECK(renderer.lastFrame().auxRecorded == 0);
+    const auto centre = [&](GpuStatus (Renderer::*read)(ReadbackCallback)) {
+        std::vector<uint8_t> pixels;
+        bool done = false;
+        CHECK((renderer.*read)([&](GpuStatus status, std::vector<uint8_t> bytes) {
+            CHECK(status == GpuStatus::Ok);
+            pixels = std::move(bytes); done = true;
+        }) == GpuStatus::Ok);
+        for (int i = 0; i < 4000 && !done; ++i) {
+            renderer.poll(); events.drain();
+            if (!done) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        std::array<float, 4> value{-1, -1, -1, -1};
+        CHECK(done && pixels.size() == 16 * 16 * 8);
+        if (pixels.size() != 16 * 16 * 8) return value;
+        for (int l = 0; l < 4; ++l) {
+            const size_t offset = (8 * 16 + 8) * 8 + l * 2;
+            const uint16_t half = uint16_t(pixels[offset]) | uint16_t(pixels[offset + 1] << 8);
+            const int exponent = (half >> 10) & 31, mantissa = half & 1023;
+            value[l] = (half >> 15 ? -1.f : 1.f) * (exponent ? std::ldexp(1.f + mantissa / 1024.f, exponent - 15) : std::ldexp(mantissa / 1024.f, -14));
+        }
+        return value;
+    };
+    const auto near = [](std::array<float, 4> got, std::array<float, 4> want) {
+        bool same = true;
+        for (int l = 0; l < 4; ++l) same = same && std::abs(got[l] - want[l]) < 0.01f;
+        if (!same) std::printf("  got %g %g %g %g, want %g %g %g %g\n", got[0], got[1], got[2], got[3], want[0], want[1], want[2], want[3]);
+        return same;
+    };
+    // The plane faces the camera; its alpha packs metalness level 7 and roughness 0.5: 2 * 7 + 0.25 + 0.25.
+    CHECK(near(centre(&Renderer::readNormalPixels), {0, 0, 1, 14.5f}));
+    CHECK(near(centre(&Renderer::readAlbedoPixels), {0.25f, 0.5f, 1, 1}));
+    CHECK(near(centre(&Renderer::readEmissivePixels), {4, 2, 0, 1}));
+}
+
 }  // namespace
 
-TN_TEST_MAIN({"resize_readback", resizeReadback}, {"emissive_target", emissiveTarget}, {"emissive_validation", emissiveValidation}, {"output_ramp", outputRamp},
+TN_TEST_MAIN({"resize_readback", resizeReadback}, {"emissive_target", emissiveTarget}, {"aux_targets_one_pass", auxTargetsOnePass}, {"emissive_validation", emissiveValidation}, {"output_ramp", outputRamp},
              {"traa_alpha", traaAlpha},
              {"traa_reset_seed", traaResetSeed},
              {"traa_camera_velocity", traaCameraVelocity},

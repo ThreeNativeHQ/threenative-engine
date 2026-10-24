@@ -167,14 +167,6 @@ struct VertexVariant {
     bool clearcoat = false;
     /** The position output is @invariant: this frame draws a normal pass that shares the vertex stage, or TRAA's velocity pass depth-Equal against it. */
     bool invariantPosition = false;
-    /**
-     * The fragment's colour output is the diffuse colour (map, tint and colorNode included), not the lit colour. Every
-     * uniform and texture is still created in the same order, so its layout equals the lit program's and a draw's bind
-     * groups serve both. Only Renderer::albedoFragment builds it; it is no program key.
-     */
-    bool albedoOutput = false;
-    /** Select the existing emitted radiance on the lit program layout. */
-    bool emissiveOutput = false;
     MaterialNodes nodes;
     /** Equal variants build the same program: a draw whose variant is unchanged reuses its Program*. */
     bool operator==(const VertexVariant&) const = default;
@@ -218,6 +210,9 @@ struct StandardPrograms {
     Program vertex{Stage::Vertex};
     Program fragment{Stage::Fragment};
     ExprId materialProperties = kInvalid;
+    /** A lit fragment's diffuse colour (map, tint and colorNode included, unfogged) and emitted radiance, both vec3:
+     *  what the albedo and emissive post targets hold (Renderer::auxFragment). kInvalid for an unlit program. */
+    ExprId albedo = kInvalid, emissive = kInvalid;
     std::vector<std::string> diagnostics;  // TN_MATERIAL_UNSUPPORTED ...; empty when drawable
 };
 

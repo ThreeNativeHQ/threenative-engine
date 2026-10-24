@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-740 — The post targets cost one scene pass, and a steady frame records none of it
 
-**Status:** NOT STARTED
+**Status:** PARTIAL
 **Priority:** P1 — Phase 3 is open: the merged pass and the compute cache must show their call counts on Hop Garden at tier high and pass the visual judge on three kits before they ship.
 **Complexity:** 5 (MEDIUM) — 7 engine files, a shared render path (+2), a shader IR change (+1), a visual judge (+1)
 **Owner:** João
@@ -41,11 +41,11 @@ draw again on every frame. The compute dispatches also create 30 to 43 bind grou
 
 ### Phase 1 — one MRT pass for every post target
 
-- [ ] `PipelineTarget` carries the colour formats after the first as a list that the pipeline cache keys on. proof: `ctest -R native_engine_renderer_pipeline`
+- [x] `PipelineTarget` carries the colour formats after the first as a list that the pipeline cache keys on. proof: `ctest -R native_engine_renderer_pipeline` — 6/6 pass (2026-10-24).
   A single-format caller is unchanged.
-- [ ] Each fragment output after `color` takes its own location, and albedo and emissive are program fields. proof: `tn-native-engine-material-test emissive_output`
+- [x] Each fragment output after `color` takes its own location, and albedo and emissive are program fields. proof: `tn-native-engine-material-test emissive_output` — PASS (2026-10-24).
   They were vertex-variant switches; the test holds the lit fragment's layout, the locations and the unfogged values.
-- [ ] A graph that reads all four targets draws one MRT scene pass, replayed from a bundle on a steady frame. proof: `tn-native-engine-renderer-test aux_targets_one_pass`
+- [x] A graph that reads all four targets draws one MRT scene pass, replayed from a bundle on a steady frame. proof: `tn-native-engine-renderer-test aux_targets_one_pass` — red on the baseline with only the two counters added: 4 passes, 4 draws recorded on a steady frame; green after: 1 pass, 0 draws. Normal (0, 0, 1), alpha 14.5, albedo and emissive match at the centre pixel in both runs.
   The TRAA velocity pass replays from its own bundle too.
 
 ### Phase 2 — a steady compute dispatch creates no bind group

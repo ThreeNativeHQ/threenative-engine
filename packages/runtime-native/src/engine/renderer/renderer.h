@@ -588,6 +588,9 @@ public:
             uint32_t batches = 0, draws = 0, exactDraws = 0, instances = 0;
         };
         SkinnedPass mainSkinned, shadowSkinned;
+        /** The scene passes drawn for post targets besides colour and velocity (PRD-740: one, however many it writes),
+         *  and the draws they and the velocity pass recorded this frame: zero while their cached bundles hold. */
+        uint32_t auxPasses = 0, auxRecorded = 0;
     };
     /** With a render thread the frame's stats arrive from `encodePending` and `collectFrame` publishes them, one frame late. */
     const FrameStats& lastFrame() const { return publishes_ ? published_ : lastFrame_; }
@@ -685,7 +688,6 @@ private:
     struct Program {
         shader::StageModule vertex;
         shader::StageModule fragment;
-        shader::StageModule materialFragment;
         // Explicit layouts: each stage's uniform block is a dynamic-offset slice of the frame's one
         // uniform buffer, so a draw costs a bind-group offset, not a buffer and a bind group of its own.
         WGPUBindGroupLayout layouts[2] = {};
@@ -694,20 +696,23 @@ private:
         const shader::UniformField* vertexSlots[kSlotCount] = {};
         const shader::UniformField* fragmentSlots[kSlotCount] = {};
         std::vector<std::array<const shader::UniformField*, kLightFieldCount>> lightSlots;
-        // What the program was built from, so albedoFragment() can build the same fragment again with its output swapped.
+        // What the program was built from, so auxFragment() can build the same fragment again with more outputs.
         MaterialKind kind = MaterialKind::Standard;
         shader::VertexVariant variant;
         std::string lightKinds;
         bool softShadows = false;
-        std::unique_ptr<shader::StageModule> albedo;  // built on first request; empty module when the kind has none
-        bool albedoBuilt = false;
-        std::unique_ptr<shader::StageModule> emissive;
-        bool emissiveBuilt = false;
+        std::array<std::unique_ptr<shader::StageModule>, 16> aux;  // by AuxTarget mask, built on first request
+        uint16_t auxBuilt = 0;  // bit `mask`: aux[mask] was asked for (it stays null when refused)
     };
-    /** The program's fragment with the diffuse colour as its output (VertexVariant::albedoOutput), on the program's own
-     *  layout so a draw's bind groups serve it; null for an unlit kind, or when the builder refuses the variant. */
-    const shader::StageModule* albedoFragment(Program& program);
-    const shader::StageModule* emissiveFragment(Program& program);
+    /** The post targets the scene can write besides its colour, in attachment order (PRD-740). */
+    enum AuxTarget : uint8_t { kAuxNormal = 1, kAuxMaterial = 2, kAuxAlbedo = 4, kAuxEmissive = 8 };
+    /**
+     * The aux pass's fragment for the targets in `mask`: the program's own lit fragment built again, writing each
+     * target at its own location in AuxTarget order, so one draw fills every target the post graph reads. Same builder
+     * call, so its layout equals the program's and the draw's bind groups serve it; null for an unlit kind, or when
+     * the builder refuses the variant or the layout differs.
+     */
+    const shader::StageModule* auxFragment(Program& program, uint8_t mask);
     void buildLayouts(Program& program, const std::string& key);
     /** The program for a material kind, vertex variant and light layout, built on first use; null
      *  when its WGSL is invalid, which is reported once in diagnostics() and its draws are skipped,
@@ -953,7 +958,7 @@ private:
     WGPUTextureView albedoView_ = nullptr;
     WGPUTexture emissiveTexture_ = nullptr;
     WGPUTextureView emissiveView_ = nullptr;
-    /** The normal-target programs, one per face-normal variant: smooth, DoubleSide smooth, flat (see planNormals). */
+    /** The normal-target programs, one per face-normal variant: smooth, DoubleSide smooth, flat (see planAux). */
     std::array<shader::StageModule, 3> normalFragments_;
     /** normalFragments_ for Standard and Physical draws: the alpha also packs metalness and roughness. */
     std::array<shader::StageModule, 3> surfaceFragments_;
@@ -1032,6 +1037,11 @@ private:
     WGPURenderBundle mainBundle_ = nullptr;
     WGPURenderBundle viewportBundle_ = nullptr;  // the draws after a viewport-texture copy, else null
     std::vector<uint64_t> mainBundleKey_;
+    // The aux and TRAA velocity passes' draws, recorded once and replayed while their plans hold (PRD-740).
+    WGPURenderBundle auxBundle_ = nullptr, velocityBundle_ = nullptr;
+    std::vector<uint64_t> auxBundleKey_, velocityBundleKey_;
+    /** Releases every cached bundle: the bind groups or targets they reference are about to change. */
+    void dropBundles();
     FrameStats mainBundleStats_;
     bool timerBeganAtShadow_ = false;
     std::shared_ptr<FrameGpuTimer> passTimer_;
