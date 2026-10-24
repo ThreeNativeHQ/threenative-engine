@@ -622,6 +622,19 @@
       "required": true
     },
     {
+      "id": "27-instanced-matrix-rewrite",
+      "title": "setMatrixAt after the first frames moves the drawn instances",
+      "category": "geometry",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/instanced-matrix-rewrite.js",
+      "tolerance": {
+        "pixelMismatchRatio": 0.01,
+        "perceptualDeltaE": 3.0
+      },
+      "desktopGate": false,
+      "required": true
+    },
+    {
       "id": "27-tsl-attribute-color",
       "title": "TSL attribute(\"color\") in a colorNode without vertexColors",
       "category": "webgpu-tsl",
