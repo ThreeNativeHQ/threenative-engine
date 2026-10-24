@@ -2,6 +2,8 @@
 #include "fixture/traa_dump.h"
 #include "engine/renderer/render_database.h"
 #include "engine/scene/geometries.h"
+#include "engine/scene/lights.h"
+#include "engine/scene/nodes.h"
 #include "engine/scene/texture.h"
 #include "engine/renderer/renderer.h"
 #include "engine/renderer/post/traa.h"
@@ -799,6 +801,225 @@ void alphaTest() {
     CHECK(worst <= 2 && off < 0.001);
 }
 
+void alphaHashCoverage() {
+    mystral::webgpu::Context context;
+    const bool initialized = context.initializeHeadless();
+    CHECK(initialized);
+    if (!initialized) return;
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(128, 128);
+    const auto wall = plane(4.2, 2.2), tile = plane(1.8, 1.8);
+    shader::StandardMaterial materials[2];
+    materials[0].color = {1, 0, 0};
+    materials[1].color = {0, 1, 1};
+    materials[1].alphaHash = true;
+    std::vector<DrawItem> items(2);
+    for (int k = 0; k < 2; ++k) {
+        items[k].key = items[k].id = k + 1;
+        items[k].kind = MaterialKind::Basic;
+        items[k].positions = k ? &tile->positions : &wall->positions;
+        items[k].indices = k ? &tile->indices : &wall->indices;
+        items[k].material = &materials[k];
+        if (k == 1) { items[k].transparent = false; items[k].depthWrite = true; }
+        items[k].matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, k ? 0 : -0.5, 1};
+    }
+    for (const auto [opacity, expected] : {std::pair{0.0f, 0}, std::pair{0.5f, 1}, std::pair{1.0f, 2}}) {
+        materials[1].opacity = opacity;
+        renderer.render(items, wideOrtho(), LightState{}, {0, 0, 0, 1});
+        const auto first = read(renderer, events);
+        renderer.render(items, wideOrtho(), LightState{}, {0, 0, 0, 1});
+        const auto second = read(renderer, events);
+        CHECK(first.size() == 128 * 128 * 4 && first == second);
+        if (first.size() != 128 * 128 * 4) continue;
+        if (const char* dir = std::getenv("TN_ALPHA_HASH_OUT_DIR")) {
+            std::filesystem::create_directories(dir);
+            const auto path = std::filesystem::path(dir) / ("main-" + std::to_string(expected) + ".png");
+            stbi_write_png(path.c_str(), 128, 128, 4, first.data(), 128 * 4);
+        }
+        int cyan = 0, red = 0;
+        for (int y = 40; y < 88; ++y) for (int x = 40; x < 88; ++x) {
+            const size_t i = (size_t(y) * 128 + x) * 4;
+            if (first[i + 1] > first[i] + 32 && first[i + 2] > first[i] + 32) ++cyan;
+            if (first[i] > first[i + 1] + 32 && first[i] > first[i + 2] + 32) ++red;
+        }
+        constexpr int pixels = 48 * 48;
+        std::printf("alphaHash main opacity %.1f: cyan %d/%d, red %d/%d\n", opacity, cyan, pixels, red, pixels);
+        if (expected == 0) CHECK(cyan == 0 && red == pixels);
+        else if (expected == 1) CHECK(cyan > pixels / 10 && cyan < pixels * 9 / 10 && red > 0);
+        else CHECK(cyan == pixels && red == 0);
+    }
+    BufferStore tileUvs(Scalar::F32, 8);
+    const float uv[] = {0, 1, 1, 1, 0, 0, 1, 0};
+    tileUvs.write(0, uv, sizeof uv);
+    items[1].uvs = &tileUvs;
+    materials[1].opacity = 1;
+    for (const auto [alpha, expected] : {std::pair{uint8_t(0), 0}, std::pair{uint8_t(128), 1}, std::pair{uint8_t(255), 2}}) {
+        auto map = std::make_shared<DataTexture>();
+        map->width = map->height = 1;
+        map->generateMipmaps = false;
+        map->minFilter = map->magFilter = static_cast<uint16_t>(TextureFilter::Nearest);
+        map->data = {255, 255, 255, alpha};
+        map->needsUpdate();
+        items[1].map = map.get();
+        renderer.render(items, wideOrtho(), LightState{}, {0, 0, 0, 1});
+        const auto first = read(renderer, events);
+        renderer.render(items, wideOrtho(), LightState{}, {0, 0, 0, 1});
+        const auto second = read(renderer, events);
+        CHECK(first.size() == 128 * 128 * 4 && first == second);
+        if (first.size() != 128 * 128 * 4) continue;
+        if (const char* dir = std::getenv("TN_ALPHA_HASH_OUT_DIR")) {
+            std::filesystem::create_directories(dir);
+            const auto path = std::filesystem::path(dir) / ("main-map-" + std::to_string(expected) + ".png");
+            stbi_write_png(path.c_str(), 128, 128, 4, first.data(), 128 * 4);
+        }
+        int cyan = 0, red = 0;
+        for (int y = 40; y < 88; ++y) for (int x = 40; x < 88; ++x) {
+            const size_t i = (size_t(y) * 128 + x) * 4;
+            if (first[i + 1] > first[i] + 32 && first[i + 2] > first[i] + 32) ++cyan;
+            if (first[i] > first[i + 1] + 32 && first[i] > first[i + 2] + 32) ++red;
+        }
+        constexpr int pixels = 48 * 48;
+        std::printf("alphaHash main map alpha %u: cyan %d/%d, red %d/%d\n", unsigned(alpha), cyan, pixels, red, pixels);
+        if (expected == 0) CHECK(cyan == 0 && red == pixels);
+        else if (expected == 1) CHECK(cyan > pixels / 10 && cyan < pixels * 9 / 10 && red > 0);
+        else CHECK(cyan == pixels && red == 0);
+    }
+}
+
+void alphaHashShadowCoverage() {
+    mystral::webgpu::Context context;
+    const bool initialized = context.initializeHeadless();
+    CHECK(initialized);
+    if (!initialized) return;
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(192, 192);
+    Scene scene;
+    PerspectiveCamera camera(50, 1, 0.1, 100);
+    camera.position.set(0, 2.8, 6);
+    camera.lookAt(0, -0.4, 0);
+    auto groundMaterial = std::make_shared<Material>(MaterialType::Standard);
+    groundMaterial->color.setRGB(0.8, 0.2, 0.1);
+    auto ground = std::make_shared<Mesh>(makePlaneGeometry(6, 6), groundMaterial);
+    ground->rotation.x = -kPi / 2;
+    ground->position.y = -0.8;
+    ground->setReceiveShadow(true);
+    auto casterMaterial = std::make_shared<Material>(MaterialType::Standard);
+    casterMaterial->color.setRGB(0.1, 0.8, 0.8);
+    casterMaterial->alphaHash = true;
+    casterMaterial->transparent = false;
+    casterMaterial->depthWrite = true;
+    auto caster = std::make_shared<Mesh>(makeBoxGeometry(1, 1, 1), casterMaterial);
+    caster->position.y = -0.3;
+    caster->setCastShadow(true);
+    DirectionalLight light(Color(1, 1, 1), 3);
+    light.position.set(-3, 5, 2);
+    light.setCastShadow(true);
+    light.shadow.mapSize.set(512, 512);
+    scene.add(*ground);
+    scene.add(*caster);
+    scene.add(light);
+    scene.add(*light.target);
+    camera.updateProjectionMatrix();
+    RenderDatabase database;
+    database.shadowMapEnabled = true;
+    caster->setVisible(false);
+    database.render(renderer, scene, camera, {0.02, 0.02, 0.02, 1});
+    const auto noCaster = read(renderer, events);
+    if (const char* dir = std::getenv("TN_ALPHA_HASH_OUT_DIR")) {
+        std::filesystem::create_directories(dir);
+        const auto path = std::filesystem::path(dir) / "shadow-baseline.png";
+        stbi_write_png(path.c_str(), 192, 192, 4, noCaster.data(), 192 * 4);
+    }
+    caster->setVisible(true);
+    std::vector<uint8_t> none, half, full;
+    for (const auto [opacity, slot] : {std::pair{0.0, 0}, std::pair{0.5, 1}, std::pair{1.0, 2}}) {
+        casterMaterial->opacity = opacity;
+        casterMaterial->needsUpdate();
+        database.render(renderer, scene, camera, {0.02, 0.02, 0.02, 1});
+        auto first = read(renderer, events);
+        database.render(renderer, scene, camera, {0.02, 0.02, 0.02, 1});
+        const auto second = read(renderer, events);
+        CHECK(first.size() == 192 * 192 * 4 && first == second);
+        if (first.size() != 192 * 192 * 4) continue;
+        if (const char* dir = std::getenv("TN_ALPHA_HASH_OUT_DIR")) {
+            std::filesystem::create_directories(dir);
+            const auto path = std::filesystem::path(dir) / ("shadow-" + std::to_string(slot) + ".png");
+            stbi_write_png(path.c_str(), 192, 192, 4, first.data(), 192 * 4);
+        }
+        if (slot == 0) none = std::move(first);
+        else if (slot == 1) half = std::move(first);
+        else full = std::move(first);
+    }
+    std::vector<uint8_t> mapNone, mapHalf, mapFull;
+    for (const auto [alpha, slot] : {std::pair{uint8_t(0), 0}, std::pair{uint8_t(128), 1}, std::pair{uint8_t(255), 2}}) {
+        auto map = std::make_shared<DataTexture>();
+        map->width = map->height = 1;
+        map->generateMipmaps = false;
+        map->minFilter = map->magFilter = static_cast<uint16_t>(TextureFilter::Nearest);
+        map->data = {255, 255, 255, alpha};
+        map->needsUpdate();
+        casterMaterial->maps["map"] = map;
+        casterMaterial->opacity = 1;
+        casterMaterial->needsUpdate();
+        database.render(renderer, scene, camera, {0.02, 0.02, 0.02, 1});
+        auto first = read(renderer, events);
+        database.render(renderer, scene, camera, {0.02, 0.02, 0.02, 1});
+        const auto second = read(renderer, events);
+        CHECK(first.size() == 192 * 192 * 4 && first == second);
+        if (first.size() != 192 * 192 * 4) continue;
+        if (const char* dir = std::getenv("TN_ALPHA_HASH_OUT_DIR")) {
+            std::filesystem::create_directories(dir);
+            const auto path = std::filesystem::path(dir) / ("shadow-map-" + std::to_string(slot) + ".png");
+            stbi_write_png(path.c_str(), 192, 192, 4, first.data(), 192 * 4);
+        }
+        if (slot == 0) mapNone = std::move(first);
+        else if (slot == 1) mapHalf = std::move(first);
+        else mapFull = std::move(first);
+    }
+    if (noCaster.size() != 192 * 192 * 4 || none.size() != noCaster.size() || half.size() != noCaster.size() || full.size() != noCaster.size()) return;
+    if (mapNone.size() != noCaster.size() || mapHalf.size() != noCaster.size() || mapFull.size() != noCaster.size()) return;
+    const auto shadowPixels = [&](const std::vector<uint8_t>& pixels, const std::vector<uint8_t>& opaque) {
+        uint64_t darkening = 0;
+        // Compare receiver-red pixels only; the fully opaque cyan image marks the caster footprint.
+        // PCF keeps the penumbra footprint while alphaHash changes its integrated shadow darkness.
+        for (int y = 0; y < 192; ++y) for (int x = 0; x < 192; ++x) {
+            const size_t i = (size_t(y) * 192 + x) * 4;
+            const bool receiver = noCaster[i] > noCaster[i + 1] + 16 && noCaster[i] > noCaster[i + 2] + 16;
+            const bool casterPixel = opaque[i + 1] > opaque[i] + 16 && opaque[i + 2] > opaque[i] + 16;
+            if (!receiver || casterPixel) continue;
+            for (int channel = 0; channel < 3; ++channel) {
+                const int delta = int(noCaster[i + channel]) - int(pixels[i + channel]);
+                if (delta > 0) darkening += delta;
+            }
+        }
+        return darkening;
+    };
+    const uint64_t noShadow = shadowPixels(none, full), partialShadow = shadowPixels(half, full), fullShadow = shadowPixels(full, full);
+    std::printf("alphaHash shadow receiver darkening: none %llu, half %llu, full %llu\n",
+                static_cast<unsigned long long>(noShadow), static_cast<unsigned long long>(partialShadow),
+                static_cast<unsigned long long>(fullShadow));
+    CHECK(noShadow == 0);
+    CHECK(fullShadow > 0);
+    CHECK(partialShadow > fullShadow / 10 && partialShadow < fullShadow * 9 / 10);
+    const uint64_t mapNoShadow = shadowPixels(mapNone, mapFull), mapPartialShadow = shadowPixels(mapHalf, mapFull), mapFullShadow = shadowPixels(mapFull, mapFull);
+    std::printf("alphaHash shadow map alpha darkening: none %llu, half %llu, full %llu\n",
+                static_cast<unsigned long long>(mapNoShadow), static_cast<unsigned long long>(mapPartialShadow),
+                static_cast<unsigned long long>(mapFullShadow));
+    CHECK(mapNoShadow == 0);
+    CHECK(mapFullShadow > 0);
+    CHECK(mapPartialShadow > mapFullShadow / 10 && mapPartialShadow < mapFullShadow * 9 / 10);
+    casterMaterial->nodes.opacityNode = shader::graph::float_(0.5);
+    casterMaterial->needsUpdate();
+    bool refused = false;
+    try { database.render(renderer, scene, camera, {0.02, 0.02, 0.02, 1}); }
+    catch (const std::runtime_error& error) {
+        refused = std::string(error.what()).starts_with("TN_NATIVE_SHADOW_ALPHA_UNSUPPORTED:");
+    }
+    CHECK(refused);
+}
+
 // Every uploaded mipmapped texture used to cost its own queue submit and work-done callback; the
 // chains of all textures uploaded before a frame now go out as one command buffer. The first frame
 // of five distinct textures submits exactly what one texture's does.
@@ -865,4 +1086,6 @@ TN_TEST_MAIN({"resize_readback", resizeReadback}, {"output_ramp", outputRamp},
              {"physical_reference", physicalReference},
              {"alpha_transparency", alphaTransparency},
              {"alpha_test", alphaTest},
+             {"alpha_hash_coverage", alphaHashCoverage},
+             {"alpha_hash_shadow_coverage", alphaHashShadowCoverage},
              {"mipmaps_share_one_submit", mipmapsShareOneSubmit})

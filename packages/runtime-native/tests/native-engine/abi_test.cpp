@@ -1490,6 +1490,27 @@ void material_uuid() {
     CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
 }
 
+void material_alpha_hash() {
+    const tn_version_info_t own = tn_engine_version();
+    tn_context_t* ctx = nullptr;
+    Diag d;
+    CHECK(tn_context_create(&ctx, &own, &d.value) == TN_OK);
+    tn_handle_t material{};
+    CHECK(tn_construct(ctx, "MeshStandardMaterial", nullptr, 0, &material, &d.value) == TN_OK);
+    tn_value_t value{};
+    CHECK(tn_get(material, "alphaHash", &value, &d.value) == TN_OK);
+    CHECK(value.kind == TN_VALUE_BOOL && !value.boolean);
+    const tn_value_t enabled = boolean(true);
+    CHECK(tn_set(material, "alphaHash", &enabled, &d.value) == TN_OK);
+    CHECK(tn_get(material, "alphaHash", &value, &d.value) == TN_OK);
+    CHECK(value.kind == TN_VALUE_BOOL && value.boolean);
+    CHECK(tn_invoke(material, "clone", nullptr, 0, &value, &d.value) == TN_OK);
+    CHECK(value.kind == TN_VALUE_HANDLE);
+    CHECK(tn_get(value.handle, "alphaHash", &value, &d.value) == TN_OK);
+    CHECK(value.kind == TN_VALUE_BOOL && value.boolean);
+    CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
+}
+
 // three's `geometry.setIndex(null)` removes the index (core's mergeParts deindexes this way); the web
 // platformer failed to start on it with TN_NATIVE_UNSUPPORTED.
 void geometry_index_null() {
@@ -2245,5 +2266,5 @@ void starter_post_bindings() {
 TN_TEST_MAIN({"body_result_lowers_once", body_result_lowers_once}, {"body_result_in_a_branch", body_result_in_a_branch}, {"struct_function_return", struct_function_return}, {"authored_output", authored_output}, {"fragment_node_vec3_is_opaque", fragment_node_vec3_is_opaque}, {"rtt_quad_depth_has_a_vertex_output", rtt_quad_depth_has_a_vertex_output}, {"post_output_depth_has_a_vertex_output", post_output_depth_has_a_vertex_output}, {"skinned_bounds_before_the_first_frame", skinned_bounds_before_the_first_frame}, {"tsl_mat2_scalar_order", tsl_mat2_scalar_order}, {"starter_post_bindings", starter_post_bindings}, {"gpu_bind_escape", gpu_bind_escape}, {"version", version}, {"handles", handles}, {"generic", generic}, {"scene", scene},
              {"unsupported_member", unsupported_member}, {"material", material}, {"light", light}, {"lifetime", lifetime},
              {"callbacks", callbacks}, {"color_set", color_set}, {"children", children}, {"tsl_call", tsl_call}, {"tsl_uniform_value", tsl_uniform_value}, {"tsl_statements", tsl_statements}, {"tsl_effect_parameter", tsl_effect_parameter}, {"mixer_time_field", mixer_time_field}, {"visible_field", visible_field}, {"layers_field", layers_field}, {"walk_parents", walk_parents}, {"property_bind", property_bind}, {"euler_order_field", euler_order_field}, {"object_addresses", object_addresses}, {"geometry_shapes", geometry_shapes}, {"typed_bytes", typed_bytes}, {"data_texture_bytes", data_texture_bytes}, {"attribute_view_writes", attribute_view_writes},
-             {"attribute_defer", attribute_defer}, {"material_uuid", material_uuid}, {"matrix_walk_count", matrix_walk_count}, {"geometry_index_null", geometry_index_null}, {"world_space_conversions", world_space_conversions},
+             {"attribute_defer", attribute_defer}, {"material_uuid", material_uuid}, {"material_alpha_hash", material_alpha_hash}, {"matrix_walk_count", matrix_walk_count}, {"geometry_index_null", geometry_index_null}, {"world_space_conversions", world_space_conversions},
              {"projected_cull_list", projected_cull_list}, {"projected_cull_held_restore", projected_cull_held_restore})

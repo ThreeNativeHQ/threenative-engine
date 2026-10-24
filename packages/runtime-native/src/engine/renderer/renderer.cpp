@@ -2030,14 +2030,21 @@ Renderer::Program& Renderer::depthProgram(const shader::VertexVariant& variant) 
     kind.nodes = {};
     kind.nodes.positionNode = positionGraph; // a depth pass reads no colour
     kind.nodes.vertexNode = variant.nodes.vertexNode;  // ...but casts where the vertexNode puts it
-    kind.map = false;           // ...nor a diffuse map: no uv passes through the depth program
+    kind.map = kind.alphaHash && variant.map;
+    kind.normalMap = false;
+    kind.pbrMaps = 0;
     const std::string key = "depth|" + kind.key();
     if (const auto found = programs_.find(key); found != programs_.end()) return *found->second;
     // three's shadow pass draws with the default positionNode, the same transform as a basic material.
-    shader::StageModule vertex = shader::buildStage(shader::buildBasic(kind).vertex, 0);
+    const auto source = kind.alphaHash ? shader::buildDepth(kind) : shader::buildBasic(kind);
+    shader::StageModule vertex = shader::buildStage(source.vertex, 0);
     if (!vertex.wgsl.ok()) throw std::runtime_error("TN_NATIVE_SHADER_INVALID: shadow depth program");
     shader::StageModule fragment;
     fragment.stage = shader::Stage::Fragment;
+    if (kind.alphaHash) {
+        fragment = shader::buildStage(source.fragment, 1);
+        if (!fragment.wgsl.ok()) throw std::runtime_error("TN_NATIVE_SHADER_INVALID: shadow alpha coverage");
+    }
     return add(key, std::move(vertex), std::move(fragment));
 }
 
@@ -2494,6 +2501,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     auto variantOf = [invariantPosition](const DrawItem& item) {
         shader::VertexVariant v;
         v.invariantPosition = invariantPosition;
+        v.alphaHash = item.material && item.material->alphaHash;
         v.background = item.background;
         v.fog = item.fog ? item.fog->exponential() ? 2 : 1 : 0;
         v.sprite = item.sprite;
@@ -2764,6 +2772,9 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             if (page && !item.positionNode && !item.nodes.positionNode && !item.boneMatrices && !item.morphGeometry &&
                 !item.instanceMatrices && !virtualIt->second.atlas.overlaps(*page, casterBounds.at(i).at(item.key))) continue;
             shader::VertexVariant variant = variantOf(item);
+            // shortcut: shadow coverage reads opacity/map; lower node and vertex alpha before admitting those casters.
+            if (variant.alphaHash && (item.nodes.colorNode || item.nodes.opacityNode || variant.vertexColors == 4))
+                throw std::runtime_error("TN_NATIVE_SHADOW_ALPHA_UNSUPPORTED: alphaHash shadow supports material opacity and diffuse-map alpha only");
             DrawCache* cache = item.cache;
             Program* cachedDepth = nullptr;
             if (cache && cache->depthProgram && cache->variant == variant)
@@ -2786,7 +2797,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             target.skinIndex = skinIndexFormat(item);
             target.instanceStepMask = instanceStepMask(program.vertex, item);
             if (compilation) {
-                compilation->push_back(pipelines_->getAsync(program.vertex, nullptr, target));
+                compilation->push_back(pipelines_->getAsync(program.vertex, variant.alphaHash ? &program.fragment : nullptr, target));
                 continue;
             }
             const uint64_t depthTargetKey = drawTargetKey(item, program.vertex);
@@ -2794,7 +2805,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             if (cache && cache->depthPipeline && cache->depthTargetKey == depthTargetKey) {
                 pipeline = static_cast<WGPURenderPipeline>(cache->depthPipeline);
             } else {
-                pipeline = pipelines_->get(program.vertex, nullptr, target);
+                pipeline = pipelines_->get(program.vertex, variant.alphaHash ? &program.fragment : nullptr, target);
                 if (!pipeline) throw std::runtime_error("TN_NATIVE_PIPELINE_REFUSED: shadow depth program");
                 if (cache) { cache->depthTargetKey = depthTargetKey; cache->depthPipeline = pipeline; }
             }
@@ -2815,7 +2826,15 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             put(frameUniforms_, v, program.vertexSlots[kCameraProjectionMatrix], page ? page->projection.elements : shadow.projection);
             putSkin(v, program.vertexSlots, item);
             putNodes(frameUniforms_, v, program.vertex, item.nodes, frameTime_, frameDelta_, lights);
-            pass.draws.push_back({&item, &program, pipeline, static_cast<uint32_t>(v), 0});
+            const uint64_t f = frameUniforms_.size();
+            frameUniforms_.resize(f + aligned(program.fragment.uniformBlockSize), 0);
+            if (variant.alphaHash) {
+                const auto& m = *item.material;
+                put(frameUniforms_, f, program.fragmentSlots[kDiffuse], std::array<double, 4>{m.color[0], m.color[1], m.color[2], m.opacity});
+                put(frameUniforms_, f, program.fragmentSlots[kAlphaTest], std::array<double, 1>{m.alphaTest});
+                if (item.map) put(frameUniforms_, f, program.fragmentSlots[kUvTransform], uvTransformOf(*item.map));
+            }
+            pass.draws.push_back({&item, &program, pipeline, static_cast<uint32_t>(v), static_cast<uint32_t>(f)});
         }
         }
     }
@@ -3071,8 +3090,21 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     // The post graph's textures are read after the plan; a render target's view that moves there would drop
     // the groups chosen below, so it moves here. A shadow draw's vertex group follows for the same reason.
     for (const auto& texture : postTextures_) materialTexture(*texture.second);
+    for (const ShadowPass& pass : shadowPasses)
+        for (const Planned& draw : pass.draws)
+            if (draw.item->material->alphaHash && draw.item->map) materialTexture(*draw.item->map);
     for (ShadowPass& pass : shadowPasses)
-        for (Planned& draw : pass.draws) draw.vertexGroup = vertexGroupOf(draw, graphKeyOf(*draw.item));
+        for (Planned& draw : pass.draws) {
+            draw.vertexGroup = vertexGroupOf(draw, graphKeyOf(*draw.item));
+            if (!draw.item->material->alphaHash || !draw.item->map) continue;
+            const MaterialTexture* map = materialTexture(*draw.item->map);
+            const std::string key = "shadow|" + std::to_string(reinterpret_cast<uintptr_t>(draw.program)) + "|" +
+                std::to_string(reinterpret_cast<uintptr_t>(map->view)) + "|" + std::to_string(reinterpret_cast<uintptr_t>(map->sampler));
+            const auto found = mapGroups_.find(key);
+            draw.mapGroup = found != mapGroups_.end() ? found->second :
+                mapGroups_.emplace(key, bindGroup(draw.program->layouts[1], draw.program->fragment, uniformBuffer_,
+                    lutView_, lutSampler_, map->view, map->sampler)).first->second;
+        }
 
     postStamp = postViewsStamp();
     // A mapped draw's fragment group binds its own texture and sampler beside the frame's uniforms.
@@ -3313,7 +3345,7 @@ void Renderer::encodeFrame(FrameJob& job) {
         if (vertexGroup == nullptr && !p.program->vertex.bindings.empty())
             throw std::runtime_error("TN_NATIVE_BINDING_NULL: active draw has no vertex bind group");
         TN_ENCODE(SetBindGroup, 0, vertexGroup, 1, &p.vertexOffset);
-        // The depth program's fragment group is empty: no uniform block, no dynamic offset.
+        // Plain depth draws have no fragment block; alpha coverage uses its own uniform slice.
         const bool fragmentBlock = p.program->fragment.uniformBlockSize != 0;
         const WGPUBindGroup fragmentGroup = p.mapGroup ? p.mapGroup : p.program->groups[1];
         if (fragmentGroup == nullptr && !p.program->fragment.bindings.empty())

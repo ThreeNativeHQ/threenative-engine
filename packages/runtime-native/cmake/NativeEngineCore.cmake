@@ -294,6 +294,7 @@ tn_native_engine_test(tn-native-engine-shader-ir-test tests/native-engine/shader
 target_link_libraries(tn-native-engine-shader-ir-test PRIVATE tn_engine_shader)
 
 tn_native_engine_test(tn-native-engine-material-test tests/native-engine/material_test.cpp
+    native_engine_material_alpha_hash=alpha_hash
     native_engine_material_depth_node_writes_frag_depth=depth_node_writes_frag_depth
     native_engine_material_unsupported=unsupported
     native_engine_material_standard_builds=builds
@@ -350,6 +351,7 @@ tn_native_engine_test(tn-native-engine-abi-test tests/native-engine/abi_test.cpp
     native_engine_abi_data_texture_bytes=data_texture_bytes
     native_engine_abi_attribute_view_writes=attribute_view_writes
     native_engine_abi_attribute_defer=attribute_defer
+    native_engine_abi_material_alpha_hash=material_alpha_hash
     native_engine_abi_material_uuid=material_uuid
     native_engine_abi_matrix_walk_count=matrix_walk_count
     native_engine_abi_geometry_index_null=geometry_index_null

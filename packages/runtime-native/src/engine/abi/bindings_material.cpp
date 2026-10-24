@@ -155,6 +155,7 @@ void registerMaterialBase(ClassBinding& b) {
     materialBool(b, "fog", &Material::fog);
     materialNumber(b, "opacity", &Material::opacity);
     materialNumber(b, "alphaTest", &Material::alphaTest);
+    materialBool(b, "alphaHash", &Material::alphaHash);
     b.getters["side"] = [](void* self) { return Value::of(double(as<Material>(self)->side)); };
     b.setters["side"] = [](void* self, const Value& v) {
         const double side = number(v);  // FrontSide 0, BackSide 1, DoubleSide 2; anything else is refused
