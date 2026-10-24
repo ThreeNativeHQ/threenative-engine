@@ -297,11 +297,11 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // scenario), folding the shared textures, the play-gate scenarios and the footSlip stride bound
   // (method checked against platformer, from a copy of the index). Recomputed 2026-10-24 for the
   // mouse orbit camera, and for the planted-foot gait (no hip twist, walk lift, run blend).
-  collectathon: "f3aa01f58e5e830837cdc1ce75ed25f29913b1b9f918c5978397e491efe32ac6",
+  collectathon: "20634f7f03b9b9ab18964c1fceac7f6d8abd3cd3afdc3507ddd731ec06cf8c4b",
   // PRD-733 (2026-10-23): the new Lantern Vale kit, measured through createProject.
-  adventure: "e28766ba50385d64886773385ca98c3c088357f5d6a140b93f7b45ab328356b0",
+  adventure: "053df1c0bdd51750491b9c92e5a8345f3aa1991e3949270f0f6ad3040f376005",
   // PRD-734 (2026-10-24): the new Clover Cup kart kit, measured through createProject.
-  kart: "4dcc75798909d14da3d428057aea09acf7f2858f183d74e15557d3d7c5f2eedc",
+  kart: "7ab1fb7930b0dbd5c4d7a4b4cff36ce2750930940223ffe972b699a338b50a45",
   minimal: "04038bc1992ddf983b8e330b46142f8fa7c67bb9b32cb23cecf3228ed3a15bb9",
   platformer: "77acc3c7f3d2f6953a14588ddf855d3479539f37c5e4203f0e50899c2a1ed1c1",
   puzzle: "f2a02e5bd2b1281e2fe94057fd7ab5a1843473e65cf8285b4fa25a9a88a371fe",
