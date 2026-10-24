@@ -1,16 +1,16 @@
 import { describe, expect, it, vi } from "vitest";
+import { defineGame } from "../src/game.js";
+import { Scene } from "../src/scene.js";
 
 // A desktop holds full resolution (`resolution-scaler-desktop-floor.spec.ts`), so the ladder's
 // mechanics are driven on the phone platform, whose rungs still move. `getPlatform()` memoises
-// with no reset hook, so the module is mocked, as in warmup-default.spec.ts.
+// with no reset hook, so the module is mocked (vitest hoists the mock above the imports), as in
+// warmup-default.spec.ts.
 const platform = vi.hoisted(() => ({ os: "android" }));
 vi.mock("../src/platform.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../src/platform.js")>();
   return { ...actual, getPlatform: () => ({ ...actual.getPlatform(), os: platform.os }) };
 });
-
-const { defineGame } = await import("../src/game.js");
-const { Scene } = await import("../src/scene.js");
 
 function testCanvas(): HTMLCanvasElement {
   const canvas = new EventTarget() as EventTarget & Partial<HTMLCanvasElement>;
