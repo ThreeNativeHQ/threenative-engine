@@ -29,7 +29,7 @@ function stride(rate: number, ticks = 80): IPlaytestFootSlipObservation {
   return { entity: "player", feet: ["footL"], label: "run", samples };
 }
 
-function evaluate(observation: IPlaytestFootSlipObservation | undefined, maxSlip = 0.35) {
+function evaluate(observation: IPlaytestFootSlipObservation | undefined, maxSlip = 0.35, strideAtRun?: Record<string, unknown>) {
   const scenario = validatePlaytestScenario(
     {
       assert: { footSlip: [{ atStep: "run", feet: ["footL"], maxSlip }] },
@@ -46,7 +46,7 @@ function evaluate(observation: IPlaytestFootSlipObservation | undefined, maxSlip
     entity: "player",
     expectMoved: false,
     frames: 80,
-    observations: { console: [], hud: {}, network: [], resources: {}, ...(observation === undefined ? {} : { footSlip: [observation] }) },
+    observations: { console: [], hud: {}, network: [], resources: {}, ...(strideAtRun === undefined ? {} : { runtimeObservations: { gameplaySeries: [{ gameplay: { animation: { player: { advancedFrames: 40, clip: "run", stride: strideAtRun } }, states: {} }, label: "run" }] } }), ...(observation === undefined ? {} : { footSlip: [observation] }) },
     trivialityOptOuts: [],
   };
   const { assertions, diagnostics } = evaluateRichPlaytestAssertions({ report, scenario });
@@ -92,6 +92,19 @@ describe("footSlip", () => {
     const missing = evaluate({ entity: "player", feet: ["footL"], label: "run", samples: noFoot });
     expect(missing.result).toMatchObject({ id: "footSlip[0].observed", pass: false });
     expect(evaluate(undefined).codes).toContain("TN_PLAYTEST_FOOT_SLIP_UNOBSERVED");
+  });
+
+  it("fails closed with no foot plant when a moving character's clip is in place with zero ground speed", () => {
+    const inPlace = { clipGroundSpeed: 0, groundSpeed: 2, inPlace: true, overridden: false, rate: 1, synced: false };
+    const { codes, result } = evaluate(stride(1), 0.35, inPlace);
+    expect(result).toMatchObject({ id: "footSlip[0].observed", pass: false });
+    expect((result?.details as { reason: string }).reason).toBe("no foot plant found: stride sync is off");
+    expect(codes).toContain("TN_PLAYTEST_STRIDE_NO_FOOT_PLANT");
+  });
+
+  it("measures slip when the in-place clip found a foot plant", () => {
+    const planted = { clipGroundSpeed: 2, groundSpeed: 2, inPlace: true, overridden: false, rate: 1, synced: true };
+    expect(evaluate(stride(1), 0.35, planted).result?.id).toBe("footSlip[0].slip");
   });
 
   it("throws at load on a malformed assertion", () => {

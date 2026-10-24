@@ -269,7 +269,24 @@ after every tick. A foot is planted while it is in the lowest quarter of its hei
 body, and its slip is planted-foot travel over body travel on those ticks: 0 is planted, about 1
 skates with the body. It fails `TN_PLAYTEST_FOOT_SLIP`. A missing node, a step that moved the
 subject under 0.5 m, fewer than 4 planted tick pairs, or a target other than the browser fails
-`TN_PLAYTEST_FOOT_SLIP_UNOBSERVED`.
+`TN_PLAYTEST_FOOT_SLIP_UNOBSERVED`. A moving character whose clip is `inPlace` with a zero
+`clipGroundSpeed` has no foot plant for stride sync to match: `footSlip`, `strideSynced` and
+`maxFootSlide` all fail closed with `no foot plant found: stride sync is off`
+(`TN_PLAYTEST_STRIDE_NO_FOOT_PLANT`).
+
+**The frame budget is 60 fps on every tier.** A `performance` assertion without `maxFrameMsP95`
+holds the run to 16.7 ms at nearest-rank p95, on a discrete, integrated or mobile GPU alike; the
+`frameBudget` row detail says which budget applied. A software adapter is unmeasurable and fails
+`TN_PLAYTEST_PERFORMANCE_UNMEASURABLE`. A scenario may set a looser `maxFrameMsP95` only with
+`maxFrameMsReason`, which the report prints; without it the scenario throws at load. The runner
+reads no display period from the host today, so 16.7 ms is the whole rule.
+
+**An engine performance warning fails the run.** Any `TN_SCENE_WARNING` console line, and any
+`TN_RENDER_PROJECTION` line with `projecting: false`, fails the `diagnostics` row with
+`TN_PLAYTEST_PERF_WARNING`, whatever the console-error policy. The report prints the marker text and,
+for a projection decline, the `cause` code (`uniqueGeometry` or `uniqueMaterial`) with its hint.
+Two lines are not defects: `reasonCode: "disabled"`, the game's `renderer.projection: false`, and
+`belowMeshFloor`, the engine's verdict that too few meshes are batchable for a mirror to pay.
 
 A scenario bounds the same numbers with `assert.scene`, so the check outlives whoever ran
 `doctor` once:

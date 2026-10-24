@@ -495,6 +495,7 @@ Proves a live render sample exists and optionally bounds frame time, an fps floo
 | Field | Type | Required |
 | --- | --- | --- |
 | `maxFrameMsP95` | number | no |
+| `maxFrameMsReason` | non-empty string | no |
 | `minFps` | number | no |
 | `maxPhaseMsP95` | { [phase]: number } | no |
 | `maxDrawCalls` | number | no |

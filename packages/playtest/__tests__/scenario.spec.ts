@@ -601,7 +601,7 @@ const FAMILY_SCENARIO_ASSERTS = {
   occluded: [{ entity: "listener", target: "emitter" }],
   overlayNodes: [{ equals: "true", overlayId: "game-ui", selector: "[data-testid=fps-crosshair]" }],
   parity: { minFpsRatio: 0.85, reference: { fps: 100, serial: "fixture-phone", thermallyConfounded: false }, referenceReport: "native.json", referenceSide: "native" },
-  performance: { maxDrawCalls: 10, maxFrameMsP95: 33, maxTriangles: 10_000 },
+  performance: { maxDrawCalls: 10, maxFrameMsP95: 16, maxTriangles: 10_000 },
   reachability: { artifact: "artifacts/envelope.json", entities: ["platform.a", "platform.b"] },
   resources: [{ changed: true, gte: 1, id: "GameState", path: "coins" }],
   renderChain: { tier: "high", velocity: { maxRejectionFraction: 0.2 } },

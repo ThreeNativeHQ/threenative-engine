@@ -10,7 +10,7 @@ const SWIFTSHADER = { architecture: "swiftshader", vendor: "google" };
 
 /** 30 fps: every frame 33.3 ms, the rate the owner saw on an RTX 2080 while the kits passed. */
 const THIRTY_FPS = Array.from({ length: 60 }, () => ({ drawCalls: 100, frameMs: 33.3 }));
-const SIXTY_FPS = Array.from({ length: 60 }, (_, index) => ({ drawCalls: 100, frameMs: index % 10 === 0 ? 18 : 16.7 }));
+const SIXTY_FPS = Array.from({ length: 60 }, (_, index) => ({ drawCalls: 100, frameMs: index % 10 === 0 ? 16.7 : 16.6 }));
 
 function evaluate(performance: Record<string, unknown>, series: unknown[], adapter?: Record<string, string>) {
   const scenario = validatePlaytestScenario(
@@ -38,7 +38,7 @@ function evaluate(performance: Record<string, unknown>, series: unknown[], adapt
 describe("frame budget from the adapter", () => {
   it("fails 30 fps on a discrete desktop GPU when the scenario names no budget", () => {
     const { budget, codes, frame } = evaluate({ maxDrawCalls: 600 }, THIRTY_FPS, RTX_2080);
-    expect(budget).toMatchObject({ gpuFamily: "discrete", maxFrameMsP95: 20, source: "adapter" });
+    expect(budget).toMatchObject({ gpuFamily: "discrete", maxFrameMsP95: 16.7, source: "adapter" });
     expect(frame?.pass).toBe(false);
     expect(codes).toContain("TN_PLAYTEST_PERFORMANCE_ASSERTION_FAILED");
   });
@@ -48,26 +48,39 @@ describe("frame budget from the adapter", () => {
     expect(frame?.pass).toBe(true);
   });
 
-  it("holds an integrated GPU to a 30 Hz frame", () => {
+  it("holds an integrated GPU to the same 16.7 ms, not a 30 Hz frame", () => {
     const { budget, frame } = evaluate({ maxDrawCalls: 600 }, THIRTY_FPS, INTEL_UHD);
-    expect(budget).toMatchObject({ gpuFamily: "integrated", maxFrameMsP95: 40 });
-    expect(frame?.pass).toBe(true);
+    expect(budget).toMatchObject({ gpuFamily: "integrated", maxFrameMsP95: 16.7 });
+    expect(frame?.pass).toBe(false);
   });
 
-  it("reports an explicit number as the scenario's override", () => {
-    const { budget, frame } = evaluate({ maxFrameMsP95: 34 }, THIRTY_FPS, RTX_2080);
+  it("applies 16.7 ms when the run named no adapter", () => {
+    const { budget, frame } = evaluate({ maxDrawCalls: 600 }, THIRTY_FPS, undefined);
+    expect(budget).toMatchObject({ maxFrameMsP95: 16.7, source: "adapter" });
+    expect(frame?.pass).toBe(false);
+  });
+
+  it("reports a looser scenario number with its written reason", () => {
+    const { budget, frame } = evaluate({ maxFrameMsP95: 34, maxFrameMsReason: "30 fps puzzle on a shared CI adapter" }, THIRTY_FPS, RTX_2080);
     expect(budget).toMatchObject({ maxFrameMsP95: 34, source: "scenario" });
+    expect((budget as { reason: string }).reason).toContain("30 fps puzzle on a shared CI adapter");
     expect(frame?.pass).toBe(true);
   });
 
-  it.each([
-    ["a software adapter", SWIFTSHADER, /software adapter swiftshader/u],
-    ["no adapter", undefined, /named no adapter/u],
-  ])("names why no budget applies on %s", (_name, adapter, reason) => {
-    const { budget, codes, frame } = evaluate({ maxDrawCalls: 600 }, THIRTY_FPS, adapter);
-    expect(budget).toMatchObject({ source: "adapter" });
-    expect((budget as { reason: string }).reason).toMatch(reason);
-    expect(frame).toBeUndefined();
-    expect(codes).toEqual([]);
+  it("refuses a looser number without a reason at load", () => {
+    expect(() => evaluate({ maxFrameMsP95: 33 }, THIRTY_FPS, RTX_2080)).toThrow(/maxFrameMsReason/u);
+    expect(() => evaluate({ maxFrameMsP95: 33, maxFrameMsReason: "  " }, THIRTY_FPS, RTX_2080)).toThrow(/maxFrameMsReason/u);
+  });
+
+  it("accepts a tighter number without a reason", () => {
+    expect(() => evaluate({ maxFrameMsP95: 12 }, SIXTY_FPS, RTX_2080)).not.toThrow();
+  });
+
+  it("fails closed on a software adapter: unmeasurable", () => {
+    const { budget, codes, frame } = evaluate({ maxDrawCalls: 600 }, SIXTY_FPS, SWIFTSHADER);
+    expect(budget).toMatchObject({ source: "adapter", unmeasurable: true });
+    expect((budget as { reason: string }).reason).toMatch(/software adapter swiftshader is unmeasurable/u);
+    expect(frame?.pass).toBe(false);
+    expect(codes).toContain("TN_PLAYTEST_PERFORMANCE_UNMEASURABLE");
   });
 });

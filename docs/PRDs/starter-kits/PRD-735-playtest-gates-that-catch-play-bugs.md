@@ -42,11 +42,16 @@ exploration step, no sharpness metric and no procedural-rig slip measurement exi
   expands at load into ordinary seeded `input` steps. It reuses every runner path, so it runs on every
   target that runs `input` steps. The default scenario that holds it asserts clean diagnostics and a
   finite, grounded subject.
-- **Frame budget from the adapter.** A `performance` assertion without `maxFrameMsP95` gets the
-  budget for the classified adapter: a 60 Hz frame (16.7 ms plus 20% vsync jitter, 20 ms) on a
-  discrete or unnamed hardware GPU, 30 Hz (40 ms) on integrated and mobile families. A software or
-  unclassified adapter reports the budget as not applied, with the reason. An explicit number is an
-  override and the result says so.
+- **Frame budget: 60 fps on every tier.** A `performance` assertion without `maxFrameMsP95` holds the
+  run to 16.7 ms at p95 on a discrete, integrated or mobile GPU alike (owner: "it shouldnt be capped or
+  minimum 60 fps", "goal is 60 fps"). A software adapter is unmeasurable and fails closed. A looser
+  `maxFrameMsP95` needs a written `maxFrameMsReason`, which the report prints; the scenario throws at
+  load without it. No template pins a frame time.
+- **Perf warnings fail the run.** Any `TN_SCENE_WARNING`, and any `TN_RENDER_PROJECTION` decline other
+  than the game's `renderer.projection: false` or `belowMeshFloor`, fails the `diagnostics` row
+  with the marker text and the `cause` code and hint.
+- **No foot plant.** A moving character on an `inPlace` clip with zero `clipGroundSpeed` fails the
+  stride and footSlip gates with `no foot plant found: stride sync is off`.
 - **Sharpness floor.** `visual.region.minSharpness`: variance of the Laplacian of luminance over the
   region of the final capture. A post stage that smears the frame drops it.
 - **Limb slip.** `assert.footSlip[]` advances one labelled step a tick at a time and samples the

@@ -287,7 +287,6 @@ describe("platformer checkpoints", () => {
       assert: {
         performance: {
           maxDrawCalls: number;
-          maxFrameMsP95: number;
           maxTriangles: number;
           minFps: number;
         };
@@ -301,12 +300,11 @@ describe("platformer checkpoints", () => {
     // `scenes/Play.ts` bought: the same scene un-collapsed is 2,128 draws, because a level
     // authored out of primitives is one draw per primitive until something merges it.
     //
-    // The frame-time and FPS ceilings deliberately did not move — measured p95 was 0.5 ms against
-    // the 33 ms ceiling. A cap raised to fit the work is a cap routed around; these three numbers
+    // The FPS floor deliberately did not move, and the scenario pins no frame time: the harness holds
+    // every tier to 16.7 ms p95 (PRD-735). A cap raised to fit the work is a cap routed around; these numbers
     // are a guard against the next change that makes the frame worse, not a score.
     expect(scenario.assert.performance).toEqual({
       maxDrawCalls: 600,
-      maxFrameMsP95: 33,
       maxTriangles: 190_000,
       // PRD-222 Phase 1: the Tier 3 Floor lives in the shipped scenario, beside the ceilings.
       minFps: 30,

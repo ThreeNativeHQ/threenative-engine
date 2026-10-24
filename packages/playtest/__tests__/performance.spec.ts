@@ -184,7 +184,7 @@ async function renderControl(
 }
 
 test("performance bounds pass against observed frame cost and renderer counts", async () => {
-  const loaded = await scenario({ maxDrawCalls: 10, maxFrameMsP95: 20, maxTriangles: 500 });
+  const loaded = await scenario({ maxDrawCalls: 10, maxFrameMsP95: 20, maxFrameMsReason: "fixture series reads 18 ms", maxTriangles: 500 });
   const evaluated = evaluateRichPlaytestAssertions({
     report: report([
       { drawCalls: 4, frameMs: 16, triangles: 120 },
@@ -247,7 +247,7 @@ test("the permanent regressed-scene control fails closed when renderer counts di
 });
 
 test("an empty performance series fails closed instead of passing vacuously", async () => {
-  const loaded = await scenario({ maxFrameMsP95: 20 });
+  const loaded = await scenario({ maxFrameMsP95: 20, maxFrameMsReason: "fixture" });
   const evaluated = evaluateRichPlaytestAssertions({
     report: report([]),
     scenario: loaded,
@@ -349,7 +349,7 @@ const PASS_SERIES = [
     ],
   },
   {
-    frameMs: 17,
+    frameMs: 16.5,
     passes: [
       { draws: 120, kind: "main", triangles: 1200 },
       { draws: 45, kind: "shadow", triangles: 450 },

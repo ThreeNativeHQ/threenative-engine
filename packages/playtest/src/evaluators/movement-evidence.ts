@@ -1,5 +1,6 @@
 import { PLAYTEST_ASSERTION_REGISTRY } from '../assertion-schema.js';
 import { consoleErrors, resolveDiagnosticsPolicy, runtimeDiagnostics, parseMovementAxisExpectation, axisIndex, vectorDistance, isRecord } from '../assertion-report.js';
+import { perfWarnings } from "./perf-warnings.js";
 // Extracted verbatim from assertion-evaluators.ts (PRD-182 Phase 2); do not edit semantics here.
 import type { IEvaluationContext } from "./context.js";
 import { evaluateDiagnosticsPolicy, maxResolvedAxisDelta, rotationDelta, tiltDegrees, finalTiltDegrees, minimumResolvedDistance, movementFacingEvidence, finalFacingAngleToEntity, finalFacingAngleToPosition, evaluateVisibilityAssertion, runtimeGameplayAtStep, mergeEffectLogs, countMatchingEntries, countRuntimeContacts, physicsDebugContactEvidence, runtimeContactEvidence, summarizeMatchingEntries, settledCandidate, physicsDebugOmittedBodies, physicsDebugMeanPoseDistance, initialPhysicsDebugSnapshot, matchingOccludedRaycasts, initialEffectLog, runtimeAnimationObservations, runtimeGameplayBefore, animationObservationPass, footSlideRatio, strideFailure, strideReading, assertionEvaluatedByBaseProbe, assertionNotEvaluatedDiagnostic, allTrivialityEligibleAssertionsWaived } from "./helpers.js";
@@ -15,12 +16,14 @@ export function emitMovementEvidence(ctx: IEvaluationContext): void {
       scenarioAssertions.diagnostics,
       input.report.target,
     );
+    const warningTexts = perfWarnings((input.report.observations?.console ?? []).map(({ text }) => text));
     const policyDiagnostics = evaluateDiagnosticsPolicy(input.report, diagnosticsPolicy);
     diagnostics.push(...policyDiagnostics);
     assertions.push({
       details: {
         consoleErrors: consoleErrors(input.report.observations?.console ?? []).length,
         networkErrors: input.report.observations?.network.length ?? 0,
+        ...(warningTexts.length === 0 ? {} : { perfWarnings: warningTexts }),
         policy: diagnosticsPolicy,
         runtimeDiagnostics: runtimeDiagnostics(input.report.observations?.runtimeDiagnostics).length,
       },

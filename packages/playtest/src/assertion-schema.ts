@@ -354,7 +354,8 @@ export const PLAYTEST_ASSERTION_REGISTRY: readonly IPlaytestAssertionSchemaEntry
     description: "Proves a live render sample exists and optionally bounds frame time, an fps floor, per-phase frame budget, whole-frame or per-pass draw calls and triangles.",
     example: { performance: { maxPassDrawCalls: { shadow: 400 }, maxPhaseMsP95: { render: 12 }, minFps: 30 } },
     fields: [
-      { description: "Maximum nearest-rank 95th-percentile frame time in milliseconds. Unset, the classified adapter decides: 20 ms (a 60 Hz frame plus jitter) on desktop hardware, 40 ms (30 Hz) on integrated and mobile GPUs, none on a software or unnamed adapter; `frameBudget` in the `performance.samples` details reports which applied. A number here is an override.", name: "maxFrameMsP95", type: "number" },
+      { description: "Maximum nearest-rank 95th-percentile frame time in milliseconds. Unset, the budget is 16.7 ms (one 60 Hz frame, 60 fps) on every tier; a software adapter is unmeasurable and fails closed. `frameBudget` in the `performance.samples` details reports which applied. A value above 16.7 is an override and needs `maxFrameMsReason`.", name: "maxFrameMsP95", type: "number" },
+      { description: "Why this scenario cannot hold 60 fps. Required when `maxFrameMsP95` is above 16.7; printed in the report.", name: "maxFrameMsReason", type: "non-empty string" },
       { description: "Minimum sustained frames per second, from the median sampled frame.", name: "minFps", type: "number" },
       { description: "Per-phase millisecond ceilings at nearest-rank p95. Phases: hostGap, update, render, overlay, residual.", name: "maxPhaseMsP95", type: "{ [phase]: number }" },
       { description: "Maximum observed renderer draw-call count across every pass combined.", name: "maxDrawCalls", type: "number" },

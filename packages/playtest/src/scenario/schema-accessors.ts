@@ -304,16 +304,23 @@ export function validateDeviceMetricsAssertion(value: unknown, scenarioPath: str
 
 export function validatePerformanceAssertion(value: unknown, scenarioPath: string, objectPath: string): IPlaytestPerformanceAssertion {
   const record = requireRecord(value, scenarioPath, objectPath);
-  rejectUnknownKeys(record, ["maxDrawCalls", "maxFrameMsP95", "maxPassDrawCalls", "maxPassTriangles", "maxPhaseMsP95", "maxTriangles", "minFps"], scenarioPath, objectPath);
+  rejectUnknownKeys(record, ["maxDrawCalls", "maxFrameMsP95", "maxFrameMsReason", "maxPassDrawCalls", "maxPassTriangles", "maxPhaseMsP95", "maxTriangles", "minFps"], scenarioPath, objectPath);
   const assertion = {
     ...present("maxDrawCalls", optionalNonNegativeNumber(record, "maxDrawCalls", scenarioPath, objectPath)),
     ...present("maxFrameMsP95", optionalNonNegativeNumber(record, "maxFrameMsP95", scenarioPath, objectPath)),
+    ...present("maxFrameMsReason", optionalString(record, "maxFrameMsReason", scenarioPath, objectPath)),
     ...present("maxPassDrawCalls", validatePassBudget(record.maxPassDrawCalls, scenarioPath, `${objectPath}.maxPassDrawCalls`)),
     ...present("maxPassTriangles", validatePassBudget(record.maxPassTriangles, scenarioPath, `${objectPath}.maxPassTriangles`)),
     ...present("maxPhaseMsP95", validatePhaseBudget(record.maxPhaseMsP95, scenarioPath, `${objectPath}.maxPhaseMsP95`)),
     ...present("maxTriangles", optionalNonNegativeNumber(record, "maxTriangles", scenarioPath, objectPath)),
     ...present("minFps", optionalNonNegativeNumber(record, "minFps", scenarioPath, objectPath)),
   };
+  if (assertion.maxFrameMsP95 !== undefined && assertion.maxFrameMsP95 > 16.7 && (assertion.maxFrameMsReason ?? "").trim() === "") {
+    throw invalidScenario(
+      scenarioPath,
+      `'${objectPath}.maxFrameMsP95' is ${assertion.maxFrameMsP95} ms, looser than the 16.7 ms (60 fps) budget every tier gets: set 'maxFrameMsReason' to say why, or drop maxFrameMsP95.`,
+    );
+  }
   // A performance assertion with no ceiling reports the numbers it measured and passes; it
   // measures without judging, which is the vacuous shape this package refuses.
   if (Object.keys(assertion).length === 0) {

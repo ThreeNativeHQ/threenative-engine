@@ -1,5 +1,7 @@
 import type { IPlaytestFootSlipObservation } from "../assertion-report.js";
+import { isRecord } from "../assertion-report.js";
 import type { IEvaluationContext } from "./context.js";
+import { NO_FOOT_PLANT_DETAIL, runtimeGameplaySamples, strideHasNoFootPlant, strideReading } from "./families-observation.js";
 
 /** Below this the step did not move the subject enough to tell a planted foot from a dragged one. */
 export const FOOT_SLIP_MIN_TRAVEL_M = 0.5;
@@ -84,6 +86,21 @@ export function emitFootSlip(ctx: IEvaluationContext): void {
         observedRuntimePath: `observations.json/footSlip`,
         severity: "error",
         suggestion: "Run on the browser target, name each sole node, and make the step move the subject at a run.",
+      });
+      return;
+    }
+    // The stride the producer reported at this step: a moving character on a clip with no foot plant
+    // has nothing for the slip number to be compared with, so a pass would be a measurement of nothing.
+    const animation = runtimeGameplaySamples(ctx.input.report.observations?.runtimeObservations).find(({ label }) => label === assertion.atStep)?.gameplay.animation;
+    const stride = isRecord(animation) ? strideReading(animation[observation!.entity]) : undefined;
+    if (stride !== undefined && strideHasNoFootPlant(stride)) {
+      ctx.assertions.push({ details: { atStep: assertion.atStep, reason: NO_FOOT_PLANT_DETAIL, stride, travel: measure!.travel }, id: `${id}.observed`, pass: false });
+      ctx.diagnostics.push({
+        code: "TN_PLAYTEST_STRIDE_NO_FOOT_PLANT",
+        message: `footSlip at '${assertion.atStep}' failed closed: ${NO_FOOT_PLANT_DETAIL}.`,
+        observedRuntimePath: "observations.json/runtimeObservations",
+        severity: "error",
+        suggestion: "The clip has no root motion and its feet never plant, so stride sync cannot match it to the ground: author a clip whose feet plant, or drive the stride from distance travelled.",
       });
       return;
     }

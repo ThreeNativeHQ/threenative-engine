@@ -144,6 +144,7 @@ export const GENERATED_ASSERTION_FIELD_VALIDATORS: Readonly<Record<string, Reado
   }),
   "performance": Object.freeze({
     "maxFrameMsP95": (value: unknown) => typeof value === "number" && Number.isFinite(value),
+    "maxFrameMsReason": (value: unknown) => typeof value === "string" && value.trim() !== "",
     "minFps": (value: unknown) => typeof value === "number" && Number.isFinite(value),
     "maxPhaseMsP95": (value: unknown) => isRecord(value),
     "maxDrawCalls": (value: unknown) => typeof value === "number" && Number.isFinite(value),

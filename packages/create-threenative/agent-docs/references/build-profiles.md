@@ -13,7 +13,7 @@ buildProfiles: {
     compact: {
       assets: { textures: { maxSize: 1024 }, models: { textures: { maxSize: 1024 } } },
       artifactBudget: { packagedAssetBytes: { limit: 18_000_000, severity: "error" } },
-      performanceBudget: { maxDrawCalls: 300, maxFrameMsP95: 22 },
+      performanceBudget: { maxDrawCalls: 300, maxFrameMsP95: 16.7 },
     },
   },
 },

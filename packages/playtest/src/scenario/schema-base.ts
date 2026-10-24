@@ -418,6 +418,8 @@ export interface IPlaytestDiagnosticsAssertion {
 export interface IPlaytestPerformanceAssertion {
   maxDrawCalls?: number;
   maxFrameMsP95?: number;
+  /** Required when `maxFrameMsP95` is above 16.7 ms: why this scenario cannot hold 60 fps. The report prints it. */
+  maxFrameMsReason?: string;
   maxTriangles?: number;
   /** Frame-budget floor: the median presented frame must sustain at least this many frames a second. */
   minFps?: number;
