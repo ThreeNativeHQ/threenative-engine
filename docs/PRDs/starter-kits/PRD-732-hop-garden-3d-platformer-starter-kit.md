@@ -402,6 +402,16 @@ Each playtest runs on a project scaffolded from `--template collectathon`:
     and the travel swing waits 1.5 s after the mouse moves so it does not undo the player's view.
     Proof: `playtests/look.playtest.json` (gen-12lp: green exit 0, rotationDelta 2.91 rad; with
     the `orbit.look` call removed exit 1, rotationDelta 0); `camera` and `jump-chain` exit 0.
+  - Foot slide (owner playtest 2026-10-24: "legs looks super fast compared to the movement"; the
+    `footSlip` gate, `maxSlideSpeed` 1 m/s on soles `footL`/`footR`, read the run step at 1.02 to
+    1.60 m/s). Three causes, measured offline with the harness's own `measureFootSlip` on the rig:
+    the hips twisted ±0.1 rad about the vertical, which swings a planted foot sideways (0.6 to
+    0.9 m/s); the walk's 6 cm swing lift sat inside the planted band a run's lift sets, so a walking
+    swing read as a planted foot; and the walk-to-run blend ran to 5 m/s, mixing a 50% stance with a
+    15% one so the planted foot dragged. The hips no longer twist, the walk lifts 16 cm, and the
+    run takes over by 4 m/s. Cadence is unchanged (stride rate 1.03 at 9.6 m/s). Proof:
+    `playtests/stride.playtest.json` on gen-12lp, HEAD exit 1 at 1.02 m/s, the change exit 0 at
+    0.16 m/s; `survives`, `acrobatics` and `double-tap` exit 0.
 
 ## Execution Phases
 

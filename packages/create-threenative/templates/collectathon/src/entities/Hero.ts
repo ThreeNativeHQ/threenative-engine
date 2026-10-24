@@ -437,7 +437,9 @@ export class Hero {
     if (this.action === "idle" || this.action === "run") {
       const speed = Math.abs(this.#speed);
       const moving = MathUtils.smoothstep(speed, 0.2, 1);
-      const running = MathUtils.smoothstep(speed, 1.5, 5);
+      // A walk plants each foot for half its cycle and a run for 15%, so a blend of the two drags
+      // the planted foot: the hand-over is kept short, done by 4 m/s.
+      const running = MathUtils.smoothstep(speed, 1.5, 4);
       this.#anim.playWeighted(
         [
           { clip: "idle", weight: 1 - moving },

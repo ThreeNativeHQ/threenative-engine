@@ -296,8 +296,8 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-10-24 for the double jump (chain window, press buffer, HUD hint, double-tap
   // scenario), folding the shared textures, the play-gate scenarios and the footSlip stride bound
   // (method checked against platformer, from a copy of the index). Recomputed 2026-10-24 for the
-  // mouse orbit camera.
-  collectathon: "5ee6ec62853218fd9e49c867cbdbb1c22200c28313ed9e70185ce0d5c222d224",
+  // mouse orbit camera, and for the planted-foot gait (no hip twist, walk lift, run blend).
+  collectathon: "c67cbd48789d4253ac48165cc91571975df5f2fe02153d5d1a01597f792416b5",
   // PRD-733 (2026-10-23): the new Lantern Vale kit, measured through createProject.
   adventure: "5b4bab685cf3567dc2643313b2bfdde58fd270dffccc8dcd9833a5faa19b4d1b",
   // PRD-734 (2026-10-24): the new Clover Cup kart kit, measured through createProject.
@@ -613,8 +613,8 @@ describe("create-threenative", () => {
         if (template === "platformer") {
           await expect(stat(path.join(target, "assets/sky.jpg"))).rejects.toThrow(/ENOENT/u);
         }
-        if (template === "collectathon") {
-          // Hop Garden's geometry is procedural; its tiling surfaces are generated images (owner,
+        if (template === "collectathon" || template === "adventure") {
+          // Hop Garden's and Lantern Vale's geometry is procedural; their tiling surfaces are images (owner,
           // 2026-10-24: "make sure it doesnt bloat the games with many mb"): at most 1.5 MB, each
           // traced in PROVENANCE.md.
           const files = await readdir(path.join(target, "assets"), { recursive: true });
@@ -625,17 +625,17 @@ describe("create-threenative", () => {
             }),
           );
           expect(sizes.reduce((sum, size) => sum + size, 0)).toBeLessThanOrEqual(1_500_000);
-          // The 14 textures ship once in `template-assets/assets/tex-*`; the licence record follows.
+          // The textures ship once in `template-assets/assets/tex-*`; the licence record follows.
           const provenance = await readFile(
             path.join(target, "assets", "tex-PROVENANCE.md"),
             "utf8",
           );
           const textures = files.filter((name) => name.endsWith(".webp"));
-          expect(textures).toHaveLength(14);
+          expect(textures).toHaveLength(template === "collectathon" ? 14 : 5);
           for (const file of textures) expect(provenance).toContain(path.basename(file).slice(4));
         }
-        if (template === "adventure" || template === "kart") {
-          // Lantern Vale and Clover Cup are all procedural (owner, 2026-10-24): no assets folder and
+        if (template === "kart") {
+          // Clover Cup is all procedural (owner, 2026-10-24): no assets folder and
           // no image or model file but the shared icon, so every texture is painted in code.
           await expect(stat(path.join(target, "assets"))).rejects.toThrow(/ENOENT/u);
           const media = (await readdir(target, { recursive: true })).filter(

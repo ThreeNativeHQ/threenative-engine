@@ -55,12 +55,10 @@ interface ICycleKey {
   readonly lift: readonly [number, number];
   readonly arms: readonly [number, number];
   readonly bob: number;
-  readonly twist: number;
 }
 
 const SWINGS = ["legSwingL", "legSwingR", "armSwingL", "armSwingR"] as const;
 const X_AXIS = new Vector3(1, 0, 0);
-const Y_AXIS = new Vector3(0, 1, 0);
 
 /** A looping clip sampled from `key(p)` at 33 keys over one cycle, p from 0 to 1. */
 function cycleClip(name: string, period: number, key: (p: number) => ICycleKey): AnimationClip {
@@ -97,11 +95,6 @@ function cycleClip(name: string, period: number, key: (p: number) => ICycleKey):
       times,
       keys.flatMap((k) => [0, k.bob, 0]),
     ),
-    new QuaternionKeyframeTrack(
-      "bounce.quaternion",
-      times,
-      turn(Y_AXIS, (k) => k.twist),
-    ),
   ]);
 }
 
@@ -112,16 +105,10 @@ function cycleClip(name: string, period: number, key: (p: number) => ICycleKey):
  *
  * The planted foot slides back at one steady speed (the angle is the arcsine of a linear sweep):
  * a leg turning at a steady rate moves its foot fastest under the hip, so the foot would skate
- * whatever rate the clip played at.
+ * whatever rate the clip played at. The hips do not twist: a turn of the body about the vertical
+ * swings a planted foot sideways, which `playtests/stride.playtest.json` reads as a slide.
  */
-function gait(
-  stance: number,
-  reach: number,
-  lift: number,
-  arms: number,
-  bob: number,
-  twist: number,
-) {
+function gait(stance: number, reach: number, lift: number, arms: number, bob: number) {
   const leg = (p: number) => {
     if (p < stance) return [Math.asin(Math.sin(reach) * (1 - (2 * p) / stance)), 0] as const;
     const s = (p - stance) / (1 - stance);
@@ -136,7 +123,6 @@ function gait(
       bob: (bob * (1 - Math.cos(Math.PI * 4 * (p - stance / 2)))) / 2,
       legs: [l, r],
       lift: [liftL, liftR],
-      twist: twist * swing,
     };
   };
 }
@@ -149,12 +135,12 @@ const CLIPS = [
       bob: 0.012 * breath,
       legs: [0, 0],
       lift: [0, 0],
-      twist: 0,
     };
   }),
-  cycleClip("walk", 0.5, gait(0.5, 0.6, 0.06, 0.45, 0.03, 0.05)),
-  cycleClip("run", 0.45, gait(0.15, 0.85, 0.14, 1.1, 0.1, 0.1)),
-  cycleClip("air", 1, () => ({ arms: [0, 0], bob: 0, legs: [0, 0], lift: [0, 0], twist: 0 })),
+  // The walk lifts its swing foot 16 cm: at 6 cm it stayed inside the band a run plants in.
+  cycleClip("walk", 0.5, gait(0.5, 0.6, 0.16, 0.45, 0.03)),
+  cycleClip("run", 0.45, gait(0.15, 0.85, 0.14, 1.1, 0.1)),
+  cycleClip("air", 1, () => ({ arms: [0, 0], bob: 0, legs: [0, 0], lift: [0, 0] })),
 ];
 
 /** The pivot every flip and squash turns about: the middle of the torso, above the feet. */
@@ -201,7 +187,7 @@ function fabric(color: number, seams: boolean): MeshStandardMaterial {
 
 export function createHero(): IHero {
   const root = new Group();
-  // The clips bob and twist `bounce`; the procedural poses own `pivot` inside it.
+  // The clips bob `bounce`; the procedural poses own `pivot` inside it.
   const bounce = new Group();
   bounce.name = "bounce";
   root.add(bounce);
@@ -376,6 +362,8 @@ export function createHero(): IHero {
       legSwing,
       contact,
     );
+    // Named for the playtest's `footSlip` assertion, which follows these nodes by name.
+    sole.name = `foot${tag}`;
     soles.push(sole);
     sole.material = lit(C.sole, { roughness: 0.85 });
     legs.push(leg);
