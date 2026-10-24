@@ -33,6 +33,7 @@ flowchart TD
 | 4 | PRD-482 phase 2 | Done in #403: push rule, ponytail once per session, playtest AGENTS.md 1,113 words | — |
 | 5 | Flaky template lanes | NEW. `tower-defense` (SwiftShader `DEVICE_LOST`, timeouts) and `rain` (`CAPTURE_PROVENANCE_MISSING`) fail about half the time on hosted and local. They have bounced the merge queue three times. Needs a fix in the template or the playtest bridge, not a quarantine | an owner for the lane |
 | 6 | [PRD-550](PRD-550-a-change-merges-within-30-minutes.md) | NEW 2026-10-09. Last push → merge is 2–15 h; target 30 min. Merge groups fail 62% and wait ~50 min for runners | owner: merge-path policy and `TN_RUNNER` |
+| 7 | [PRD-731](PRD-731-the-full-ci-board-runs-once-in-the-merge-queue.md) | NEW 2026-10-23. A PR run and a queue run both run the selected board (#541: 51 + 54 + 50 min). Proposal: PRs run a fast review lane, the queue runs the full board once | owner: gate-policy sign-off; PRD-730 |
 
 Each PRD's 7-day runner-minute acceptance (PRD-380, 481, 482 AC-1) can only be measured a week after its phases land.
 PRD-480 AC-2 (summed queue wait < 60 min) is measured and not met: 317 min, with 42 min wall against 39 hosted.
