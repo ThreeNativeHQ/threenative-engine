@@ -62,6 +62,7 @@ import {
   vec4,
 } from "three/tsl";
 import { BlendMode, type Node, type NodeBuilder, type TextureNode } from "three/webgpu";
+import { isNative } from "../platform.js";
 import { RENDER_CHAIN_TIERS } from "../render/chain.js";
 import { GIVisualize, type GIVisualizeMode } from "../render/gi-visualize.js";
 import { AO_MULTIBOUNCE_FIT, UNREAL_AO_MULTIBOUNCE_ALBEDO } from "./ao-multibounce.js";
@@ -777,11 +778,15 @@ export class WorldEnvironment {
     /** The engine's live temporal state; present only while `temporalAA` runs. */
     temporalReport?: () => Record<string, unknown>;
   } {
-    // The meter is a WebGPU pass: a WebGL fallback keeps the fixed `exposure` and the report says why.
-    const exposureRefusal =
-      this.#options.autoExposureEnabled && renderer.kind !== "webgpu"
+    // The meter is a WebGPU pass: a WebGL fallback keeps the fixed `exposure` and the report says why. A native host
+    // keeps it too: the meter's render-target swaps and readback are not ported there (`TN_NATIVE_TEXTURE_VALUE_TYPE`).
+    const exposureRefusal = !this.#options.autoExposureEnabled
+      ? undefined
+      : renderer.kind !== "webgpu"
         ? `renderer:${renderer.kind}`
-        : undefined;
+        : isNative()
+          ? "runtime:native"
+          : undefined;
     const options =
       exposureRefusal === undefined
         ? this.#options

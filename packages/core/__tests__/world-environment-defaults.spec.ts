@@ -2,8 +2,14 @@ import { ACESFilmicToneMapping, CustomToneMapping, PerspectiveCamera, Scene } fr
 import { afterEach, expect, it, vi } from "vitest";
 import { type OutputRenderer, WorldEnvironment } from "../src/look/world-environment.js";
 
+const host = vi.hoisted(() => ({ native: false }));
+vi.mock("../src/platform.js", () => ({ isNative: () => host.native }));
+
 // Owner 2026-10-22: a scene with no look options gets a fresh Unreal 5.8.3 project's look (PRD-722 Phase 2).
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => {
+  vi.restoreAllMocks();
+  host.native = false;
+});
 
 function renderer(kind: string, raw: object = {}) {
   const requested: { stages?: readonly string[]; tier?: string }[] = [];
@@ -59,6 +65,14 @@ it("defaults auto exposure on, so a renderer without WebGPU reports the fixed fa
   });
 });
 
+it("reports the fixed exposure on a native host, where the meter's passes are not ported", () => {
+  host.native = true;
+  expect(report({}, "webgpu").dropped).toContainEqual({
+    name: "autoExposure",
+    reason: "runtime:native",
+  });
+});
+
 it("keeps autoExposureEnabled: false as the named override for the fixed exposure", () => {
   const dropped = report({ autoExposureEnabled: false }, "webgl2").dropped.map((d) => d.name);
   expect(dropped).not.toContain("autoExposure");
@@ -79,7 +93,9 @@ it("gathers screen-space GI at half resolution by default, reports it, and keeps
   const marker = (options: ConstructorParameters<typeof WorldEnvironment>[0]) => {
     info.mockClear();
     apply(options, renderer("webgpu", { library: { addToneMapping() {} } }).target);
-    const line = info.mock.calls.map(String).find((text) => text.startsWith("TN_WORLD_ENVIRONMENT:"));
+    const line = info.mock.calls
+      .map(String)
+      .find((text) => text.startsWith("TN_WORLD_ENVIRONMENT:"));
     return JSON.parse(line?.slice("TN_WORLD_ENVIRONMENT:".length) ?? "{}");
   };
   expect(marker({}).ssgiResolutionScale).toBe(0.5);

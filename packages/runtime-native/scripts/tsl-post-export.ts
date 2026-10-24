@@ -62,6 +62,8 @@ export function exportNativePost(
     ],
   };
   for (const key of keys[kind] ?? []) parameters[key] = data(node, key);
+  // The owned engine's GTAO carries a screen reach (`reachPx`); upstream three's has none and keeps the world radius.
+  if (kind === "GTAONode" && node.reachPx !== undefined) parameters.reachPx = data(node, "reachPx");
   if (kind === "SMAANode") {
     args.push(visit(node.textureNode));
     images.push(

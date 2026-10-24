@@ -17,7 +17,7 @@ import {
   Texture,
 } from "three";
 import { denoise } from "three/addons/tsl/display/DenoiseNode.js";
-import { ao } from "three/addons/tsl/display/GTAONode.js";
+import GTAONode, { ao } from "three/addons/tsl/display/GTAONode.js";
 import { lut3D } from "three/addons/tsl/display/Lut3DNode.js";
 import { smaa } from "three/addons/tsl/display/SMAANode.js";
 import { float, texture, texture3D, vec2 } from "three/tsl";
@@ -79,6 +79,10 @@ if (names.length === 0) throw new Error(`TN_TEMPLATE_POST_EMPTY: ${templates}`);
 const HOST_RUN: Record<string, { row: string; lanes: string }> = {
   LocalExposureNode: { row: "local-exposure", lanes: "x" },
   UnrealBloomNode: { row: "local-exposure", lanes: "xyz" },
+  // The owned engine's live screen-space effects (post_effects.cpp, not a cooked package): core's chain builds them for
+  // the kits that take the engine look, and each row draws the effect on the host as well as the browser.
+  SSGINode: { row: "realism-ssgi", lanes: "xyz" },
+  SSRNode: { row: "realism-ssr", lanes: "xyzw" },
 };
 const registry = JSON.parse(
   readFileSync(path.resolve(import.meta.dirname, "../../conformance/registry.json"), "utf8"),
@@ -129,6 +133,23 @@ function standIn(exported: ReturnType<typeof exportTslGraph>): string[] {
   }
   return [...rows];
 }
+
+// The owned engine's GTAO takes Unreal's screen reach as `reachPx` (three-native post-effects.ts); upstream three's has
+// no such uniform, so the sweep adds it to the node the chain builds and the export cooks it (post_effects.cpp reads it).
+Object.defineProperty(GTAONode.prototype, "reachPx", {
+  configurable: true,
+  get(this: { _reachPx?: { value: number } }) {
+    this._reachPx ??= { value: 0 };
+    return this._reachPx;
+  },
+});
+
+// The sweep lowers the chain for a native host, so core sees one (it keeps the fixed exposure there and says so).
+Object.assign(globalThis, {
+  __THREENATIVE_NATIVE__: {
+    platform: { runtime: "native", os: "linux", formFactor: "desktop", maxTouchPoints: 0 },
+  },
+});
 
 class UnloweredPostNode extends TempNode {
   static get type(): string {
@@ -330,7 +351,7 @@ for (const name of names) {
     let pendingTable = false;
     const renderer = {
       kind: "webgpu" as const,
-      raw: { toneMapping: 0, toneMappingExposure: 1 },
+      raw: { toneMapping: 0, toneMappingExposure: 1, info: {} },
       width: 320,
       height: 240,
       setOutputNode(node: unknown) {
