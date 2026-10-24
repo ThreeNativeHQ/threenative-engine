@@ -2,6 +2,8 @@ import {
   type AnimationAction,
   type AnimationClip,
   AnimationMixer,
+  type Box3,
+  type BufferGeometry,
   LoopOnce,
   LoopRepeat,
   Matrix4,
@@ -120,13 +122,58 @@ function clipRootMotionSpeed(clip: AnimationClip): number {
 }
 
 /**
+ * The box a mesh's contact point is read from, or undefined for the object's own origin.
+ *
+ * A procedural boot or sole has its origin wherever the author put the geometry, usually the
+ * middle. On a leg that swings from the hip the origin sweeps a smaller circle than the sole does,
+ * so reading it reports a stride shorter than the ground the sole covers, and the clip plays too
+ * fast. A skinned mesh keeps its bind-pose box under a static matrix, so its bones carry the
+ * motion and it stays on the origin path.
+ */
+function contactBox(object: Object3D): Box3 | undefined {
+  const mesh = object as Object3D & { geometry?: BufferGeometry; isSkinnedMesh?: boolean };
+  if (mesh.geometry === undefined || mesh.isSkinnedMesh === true) return undefined;
+  if (mesh.geometry.boundingBox === null) mesh.geometry.computeBoundingBox();
+  const box = mesh.geometry.boundingBox;
+  if (box === null || box.isEmpty()) return undefined;
+  const finite = [box.min.x, box.min.y, box.min.z, box.max.x, box.max.y, box.max.z];
+  return finite.every(Number.isFinite) ? box : undefined;
+}
+
+/**
+ * Where an object meets the floor: its lowest world-space geometry point, with the horizontal
+ * position taken at the middle of the four lowest corners of its box (the sole, however it tilts).
+ * An object without geometry is its origin.
+ */
+function contactPoint(matrix: Matrix4, box: Box3 | undefined, target: Vector3): Vector3 {
+  if (box === undefined) return target.setFromMatrixPosition(matrix);
+  for (let index = 0; index < 8; index += 1) {
+    (scratchCorners[index] as Vector3)
+      .set(
+        index & 1 ? box.max.x : box.min.x,
+        index & 2 ? box.max.y : box.min.y,
+        index & 4 ? box.max.z : box.min.z,
+      )
+      .applyMatrix4(matrix);
+  }
+  scratchCorners.sort((first, second) => first.y - second.y);
+  let x = 0;
+  let z = 0;
+  for (let index = 0; index < 4; index += 1) {
+    x += (scratchCorners[index] as Vector3).x;
+    z += (scratchCorners[index] as Vector3).z;
+  }
+  return target.set(x / 4, (scratchCorners[0] as Vector3).y, z / 4);
+}
+
+/**
  * The ground an in-place clip was authored for, read off the feet, in world metres per clip-second.
  *
  * A planted foot sweeps backward relative to the body at exactly the speed the body is meant to be
  * travelling — that is what "planted" means — so the stance phase of a cycle states the clip's
  * speed even though nothing in it translates. Contact bones are found by where they go rather than
  * by what they are called: whatever reaches the bottom of the rig's arc is a foot, in any rig and
- * any language. The median over stance frames rejects the toe-off and heel-strike ends of the
+ * any language. A mesh counts at its lowest geometry point, not its origin (`contactPoint`). The median over stance frames rejects the toe-off and heel-strike ends of the
  * sweep, and the median over feet rejects a limb that never plants.
  *
  * The rig is driven and then restored to the transforms it arrived with, once per clip.
@@ -134,6 +181,7 @@ function clipRootMotionSpeed(clip: AnimationClip): number {
 function footPlantSpeed(root: Object3D, clip: AnimationClip): number {
   const objects: Object3D[] = [];
   root.traverse((object) => objects.push(object));
+  const boxes = objects.map(contactBox);
 
   // The root belongs to the game, which turns it with `rotation.y +=`. A quaternion restore
   // rewrites `rotation` as the equivalent Euler, so a yaw of PI comes back as (PI, 0, PI) and the
@@ -157,10 +205,12 @@ function footPlantSpeed(root: Object3D, clip: AnimationClip): number {
         const object = objects[index] as Object3D & {
           __tnCopyMatrixWorld?: (target: Matrix4) => void;
         };
+        let matrix = object.matrixWorld;
         if (object.__tnCopyMatrixWorld !== undefined) {
           object.__tnCopyMatrixWorld(scratchMatrixWorld);
-          scratchWorld.setFromMatrixPosition(scratchMatrixWorld);
-        } else scratchWorld.setFromMatrixPosition(object.matrixWorld);
+          matrix = scratchMatrixWorld;
+        }
+        contactPoint(matrix, boxes[index], scratchWorld);
         (paths[index] as { x: number; y: number; z: number }[]).push({
           x: scratchWorld.x,
           y: scratchWorld.y,
@@ -844,6 +894,7 @@ export class AnimationPlayer {
 const scratchWorld = new Vector3();
 const scratchScale = new Vector3();
 const scratchMatrixWorld = new Matrix4();
+const scratchCorners = Array.from({ length: 8 }, () => new Vector3());
 
 /**
  * Validate one weighted request into normalized, non-zero target weights.

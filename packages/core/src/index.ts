@@ -16,7 +16,9 @@ export const version = "0.3.6";
  * `player.stride` reports the measurement either way. Name the body a game moves as
  * `strideRoot` when the rig is a child of it. Clips authored **in place** — every ActorX and
  * Unreal export, every Mixamo "in place" clip, every stock animal pack — are matched too: their
- * stride is read off the ground a planted foot sweeps, and `stride.inPlace` says so.
+ * stride is read off the ground a planted foot sweeps, and `stride.inPlace` says so. A mesh counts
+ * at its lowest geometry point, so a boot's origin may sit anywhere; an in-place clip with no
+ * foot plant reports `inPlace: true` and `clipGroundSpeed: 0`, and stride sync stays off.
  * @situation play an animation on a character
  * @situation switch a character between idle and attack clips
  * @situation stop a walking character's feet from sliding or spinning
@@ -25,6 +27,8 @@ export const version = "0.3.6";
  * @situation find out what speed an animation clip was authored for
  * @constraint name the body a game moves as strideRoot when the animated rig is a child of it
  * @constraint a one-shot clip always plays at its authored rate; the matched rate re-times loops only
+ * @constraint a foot mesh is measured at its lowest geometry point (the sole), never its origin; a skinned mesh is measured through its bones
+ * @constraint `stride.inPlace: true` with `clipGroundSpeed: 0` means no foot plant was found and stride sync is not active; the playtest `stride` observation carries `inPlace`
  * @constraint the matched rate is held inside 0.15x-3x; a speed outside what the clip's own stride supports is clamped, and `stride.rate` says so
  * @override strideSync controls whether the matched rate is applied while stride is still measured
  * @example const player = new AnimationPlayer({ clips, root: rig, strideRoot: body });

@@ -608,6 +608,7 @@ function strideObservation(value: unknown): IPlaytestStrideObservation | undefin
   return {
     clipGroundSpeed: report.clipGroundSpeed as number,
     groundSpeed: report.groundSpeed as number,
+    ...(typeof report.inPlace === "boolean" ? { inPlace: report.inPlace } : {}),
     overridden: report.overridden as boolean,
     rate: report.rate as number,
     synced: report.synced as boolean,

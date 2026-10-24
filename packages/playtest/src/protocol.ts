@@ -215,6 +215,11 @@ export interface IPlaytestStrideObservation {
   clipGroundSpeed: number;
   /** Metres per second the body actually covered, as the producer smoothed it. */
   groundSpeed: number;
+  /**
+   * True when the clip carries no root motion and its stride came from the feet. With a zero
+   * `clipGroundSpeed` it says no foot plant was found, which is why stride sync is not active.
+   */
+  inPlace?: boolean;
   /** True when a rate was measured and deliberately not applied. */
   overridden: boolean;
   /** The playback rate those two imply, after the producer's own clamping. */
