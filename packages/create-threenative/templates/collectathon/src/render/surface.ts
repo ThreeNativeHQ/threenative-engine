@@ -1,7 +1,7 @@
 // Generated for you. This is ordinary Three.js — edit or delete it freely.
 //
-// The island's surfaces: the eight tiling photo textures in `assets/textures/` (see its
-// PROVENANCE.md), loaded once through `ctx.assets`, and the samplers that hide their tiling. A tile
+// The island's surfaces: the eight tiling photo textures in `assets/` (see
+// `tex-PROVENANCE.md`), loaded once through `ctx.assets`, and the samplers that hide their tiling. A tile
 // repeated over a field reads as wallpaper, so no surface here samples a texture plainly:
 // - `stochastic` (Inigo Quilez's "texture repetition" technique) shifts the texture by a random
 //   offset per patch of a low-frequency noise and cross-fades two neighbouring offsets, so no two
@@ -51,17 +51,28 @@ type TextureLoader = {
   ): Promise<Texture>;
 };
 
+// Shared with the other kits: the files live once in the package's `template-assets/assets/` and the
+// scaffolder copies each one named here, with `tex-PROVENANCE.md` (its licence record).
 const ALBEDO = [
-  "grass",
-  "sand",
-  "rock",
-  "stone-wall",
-  "roof-tiles",
-  "bark",
-  "birch-bark",
-  "planks",
+  "tex-grass.webp",
+  "tex-sand.webp",
+  "tex-rock.webp",
+  "tex-stone-wall.webp",
+  "tex-roof-tiles.webp",
+  "tex-bark.webp",
+  "tex-birch-bark.webp",
+  "tex-planks.webp",
 ];
-const NORMAL = ["sand", "rock", "stone-wall", "roof-tiles", "bark", "planks"];
+const NORMAL = [
+  "tex-sand-normal.webp",
+  "tex-rock-normal.webp",
+  "tex-stone-wall-normal.webp",
+  "tex-roof-tiles-normal.webp",
+  "tex-bark-normal.webp",
+  "tex-planks-normal.webp",
+];
+/** `tex-stone-wall-normal.webp` -> `stone-wall`: the surface name the materials look up. */
+const surfaceName = (file: string) => file.replace(/^tex-|(?:-normal)?\.webp$/gu, "");
 
 export interface ISurfaces {
   readonly albedo: Readonly<Record<string, Texture>>;
@@ -72,11 +83,11 @@ export interface ISurfaces {
 
 /** Loads every texture once: albedo in sRGB, normal maps as data, all repeating and anisotropic. */
 export async function loadSurfaces(assets: TextureLoader): Promise<ISurfaces> {
-  const load = (name: string, data: boolean) =>
-    assets.texture(`textures/${name}.webp`, { anisotropy: 8, data, wrap: RepeatWrapping });
+  const load = (file: string, data: boolean) =>
+    assets.texture(file, { anisotropy: 8, data, wrap: RepeatWrapping });
   const [albedo, normal] = await Promise.all([
-    Promise.all(ALBEDO.map((name) => load(name, false))),
-    Promise.all(NORMAL.map((name) => load(`${name}-normal`, true))),
+    Promise.all(ALBEDO.map((file) => load(file, false))),
+    Promise.all(NORMAL.map((file) => load(file, true))),
   ]);
   const field = valueNoise(64, 5);
   const noise = paintedTexture(
@@ -91,8 +102,8 @@ export async function loadSurfaces(assets: TextureLoader): Promise<ISurfaces> {
   noise.generateMipmaps = false;
   noise.minFilter = LinearFilter;
   return {
-    albedo: Object.fromEntries(ALBEDO.map((name, i) => [name, albedo[i] as Texture])),
-    normal: Object.fromEntries(NORMAL.map((name, i) => [name, normal[i] as Texture])),
+    albedo: Object.fromEntries(ALBEDO.map((file, i) => [surfaceName(file), albedo[i] as Texture])),
+    normal: Object.fromEntries(NORMAL.map((file, i) => [surfaceName(file), normal[i] as Texture])),
     noise,
   };
 }

@@ -224,8 +224,19 @@ async function copySharedAssets(target: string, templateRootDirectory: string): 
     }
   };
   if (existsSync(source)) await walk(source);
-  for (const name of readdirSync(shared)) {
-    if (!texts.some((text) => text.includes(`"${name}"`))) continue;
+  const names = readdirSync(shared);
+  // A `<prefix>-PROVENANCE.md` licence record travels with any copied `<prefix>-*` file.
+  const named = (name: string): boolean => texts.some((text) => text.includes(`"${name}"`));
+  const copied = (name: string): boolean => {
+    const record = /^(.+-)PROVENANCE\.md$/u.exec(name);
+    if (record)
+      return names.some(
+        (other) => other.startsWith(record[1] as string) && other !== name && named(other),
+      );
+    return named(name);
+  };
+  for (const name of names) {
+    if (!copied(name)) continue;
     const destination = path.join(target, "assets", name);
     await mkdir(path.dirname(destination), { recursive: true });
     await cp(path.join(shared, name), destination, { errorOnExist: true, force: false });

@@ -1,7 +1,7 @@
 // Generated for you. This is ordinary Three.js — edit or delete it freely.
 //
 // The castle on the headland, and the wooden arrow sign at the path's fork, from primitives: the
-// sandstone walls and terracotta roofs take the photo textures in `assets/textures/` (surface.ts);
+// sandstone walls and terracotta roofs take the photo textures in `assets/` (`tex-*.webp`) (surface.ts);
 // the stained-glass rose of a sun over a leaf and the teal flag with the same leaf are painted in
 // code, and the arched doorway glows warm. Every part of one material is merged into one geometry,
 // so the whole castle costs six draws.

@@ -5,7 +5,7 @@
 // of red, orange, white and yellow flowers, butterflies, pebbles on the path and stones in the
 // grass, and the islet's beach. The leaves are cut out of one leaf-cluster texture painted in code
 // and use Unreal's Two Sided Foliage shading (`twoSidedFoliage`), so the low sun shines through a
-// crown seen against it. The bark is the photo textures in `assets/textures/`. Every kind is one
+// crown seen against it. The bark is the photo textures in `assets/` (`tex-*.webp`). Every kind is one
 // `InstancedMesh` (the grass one per 12 m cell, so the camera culls what it does not see), and
 // every plant stands on the terrain's own height or on a drum's lawn. Nothing here is solid: the
 // hero walks through a bush as it walks through a tree trunk, and the course's metres stay the

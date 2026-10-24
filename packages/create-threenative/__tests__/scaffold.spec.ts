@@ -293,7 +293,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // polish round 3: the shaft camera, the planting, the hopper and thornback and their scenarios.
   // Recomputed 2026-10-24 for the look round: terrain, castle, meadow, sky and world assertions
   // (method checked against this kit's previous value, from a copy holding only this template).
-  collectathon: "e439a1ff1efe8968dc2ea4b2577b11a32c007743ed2543ce7bf209d98e3f53b1",
+  collectathon: "6431b4491ca14e73649e095c629f7df16f803ec39270104ac195ce9ff552aec8",
   // PRD-733 (2026-10-23): the new Lantern Vale kit, measured through createProject.
   adventure: "f8db2262d54c47d1eced0b0682870057f55c9c89348e18b414bc574fa7438756",
   // PRD-734 (2026-10-24): the new Clover Cup kart kit, measured through createProject.
@@ -613,7 +613,6 @@ describe("create-threenative", () => {
           // Hop Garden's geometry is procedural; its tiling surfaces are generated images (owner,
           // 2026-10-24: "make sure it doesnt bloat the games with many mb"): at most 1.5 MB, each
           // traced in PROVENANCE.md.
-          const textures = path.join(target, "assets", "textures");
           const files = await readdir(path.join(target, "assets"), { recursive: true });
           const sizes = await Promise.all(
             files.map(async (file) => {
@@ -622,9 +621,14 @@ describe("create-threenative", () => {
             }),
           );
           expect(sizes.reduce((sum, size) => sum + size, 0)).toBeLessThanOrEqual(1_500_000);
-          const provenance = await readFile(path.join(textures, "PROVENANCE.md"), "utf8");
-          for (const file of files.filter((name) => name.endsWith(".webp")))
-            expect(provenance).toContain(path.basename(file));
+          // The 14 textures ship once in `template-assets/assets/tex-*`; the licence record follows.
+          const provenance = await readFile(
+            path.join(target, "assets", "tex-PROVENANCE.md"),
+            "utf8",
+          );
+          const textures = files.filter((name) => name.endsWith(".webp"));
+          expect(textures).toHaveLength(14);
+          for (const file of textures) expect(provenance).toContain(path.basename(file).slice(4));
         }
         if (template === "adventure" || template === "kart") {
           // Lantern Vale and Clover Cup are all procedural (owner, 2026-10-24): no assets folder and
