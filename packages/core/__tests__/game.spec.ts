@@ -210,19 +210,29 @@ describe("IGame", () => {
         await Promise.resolve();
         observed.length = 0;
         if (frame === undefined) throw new Error("Game did not start its loop.");
+        let lagging = 0;
         for (let count = 1; count <= 64; count++) {
           frame(count * 16);
-          if (stateFlushMs === undefined) expect(mirror.get()?.score).toBe(renderedFrames);
+          if (stateFlushMs === undefined && mirror.get()?.score !== renderedFrames) lagging += 1;
           await Promise.resolve();
         }
         // Startup may hold the world while still presenting loader frames. Count actual renders.
         expect(renderedFrames).toBeGreaterThanOrEqual(8);
         if (stateFlushMs === undefined) {
-          expect(observed).toEqual(Array.from({ length: renderedFrames }, (_, index) => index + 1));
+          // Every frame publishes, except the startup hand-off's three held frames, once.
+          expect(lagging).toBeGreaterThan(0);
+          expect(lagging).toBeLessThanOrEqual(3);
+          expect(observed).toEqual(
+            Array.from({ length: renderedFrames }, (_, index) => index + 1).filter((score) =>
+              observed.includes(score),
+            ),
+          );
+          expect(observed.length).toBe(renderedFrames - lagging);
+          expect(observed.at(-1)).toBe(renderedFrames);
           animateUi = false;
           frame(1_040);
           await Promise.resolve();
-          expect(observed).toHaveLength(renderedFrames);
+          expect(observed).toHaveLength(renderedFrames - lagging);
         } else {
           expect(observed).toEqual([]);
           await vi.advanceTimersByTimeAsync(stateFlushMs);

@@ -143,4 +143,67 @@ describe("the game loop reports frames the renderer declined to draw", () => {
       vi.restoreAllMocks();
     }
   });
+
+  it("publishes state written on whenReady only once the uncovered world frame has left the GPU", async () => {
+    const canvas = testCanvas();
+    let frame: ((time: number) => void) | undefined;
+    for (const method of ["info", "warn", "log"] as const)
+      vi.spyOn(console, method).mockImplementation(() => undefined);
+    let ready = false;
+    class HudScene extends Scene {
+      static override readonly initialState = { loaded: false };
+      override enter(ctx: Parameters<Scene["enter"]>[0]): void {
+        // what every kit does: the HUD shows on `loaded`, set when the cover lifts
+        void ctx.startup.whenReady().then(() => {
+          ready = true;
+          ctx.state.set({ loaded: true });
+        });
+      }
+    }
+    const game = defineGame({
+      renderer: {
+        canvas,
+        preferWebGPU: false,
+        webgl2Factory: () => ({
+          domElement: canvas,
+          info: { engine: { frameGateSkips: 0 }, render: { calls: 0 } },
+          render: () => undefined,
+          setSize: () => undefined,
+        }),
+      },
+      scenes: { test: HudScene },
+      start: "test",
+    });
+    const requestFrame = globalThis.requestAnimationFrame;
+    Object.defineProperty(globalThis, "requestAnimationFrame", {
+      configurable: true,
+      value: (callback: (time: number) => void) => {
+        frame = callback;
+        return 1;
+      },
+    });
+    try {
+      await game.start();
+      if (!frame || !game.ctx) throw new Error("Game did not start its loop");
+      const state = game.ctx.state as unknown as { getPublishedState(): { loaded: boolean } };
+      let time = performance.now();
+      let framesAfterReady = 0;
+      for (let index = 0; index < 60 && !state.getPublishedState().loaded; index += 1) {
+        if (ready) framesAfterReady += 1;
+        time += 16.7;
+        frame(time);
+        await Promise.resolve();
+      }
+      expect(state.getPublishedState().loaded).toBe(true);
+      // three held frames (two on the GPU, the third proves the first left it), published on the fourth (the first runs before the kit sees ready)
+      expect(framesAfterReady).toBe(3);
+    } finally {
+      Object.defineProperty(globalThis, "requestAnimationFrame", {
+        configurable: true,
+        value: requestFrame,
+      });
+      game.stop();
+      vi.restoreAllMocks();
+    }
+  });
 });

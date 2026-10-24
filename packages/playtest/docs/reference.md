@@ -189,12 +189,15 @@ The runtime stamps its startup milestones on its own clock — `loadStartedMs`, 
 anecdote read off `TN_STARTUP_WARMUP` after the fact.
 
 `steadyCover: true` checks what the player saw instead. The browser runner records every
-compositor frame through Chromium's screencast from before navigation until `readyMs`, and
-compares each frame with the last one before readiness, the loading cover. A frame with more
-than a quarter of its pixels off by more than 48 per channel fails
-`TN_PLAYTEST_STARTUP_COVER_BROKEN` with its time and mean colour, so a black frame, a blank
-page or a page background in a different colour fails. No recorded frame fails
-`TN_PLAYTEST_STARTUP_COVER_UNOBSERVED`; that includes every target except the browser.
+compositor frame through Chromium's screencast (128 x 72) from before navigation until 30
+frames after `readyMs`, and compares each frame before readiness with the last one before
+readiness, the loading cover. A frame with more than a quarter of its pixels off by more than 48
+per channel fails `TN_PLAYTEST_STARTUP_COVER_BROKEN` with its time and mean colour, so a black
+frame, a blank page or a page background in a different colour fails. After readiness, the first
+frame that differs from the cover is the world frame. A frame before it with more than 0.5% of
+its pixels off the cover and on the world frame's colour shows page UI (a HUD) over the cover and
+fails `TN_PLAYTEST_STARTUP_UI_OVER_COVER`. No recorded frame, or no world frame after readiness,
+fails `TN_PLAYTEST_STARTUP_COVER_UNOBSERVED`; that includes every target except the browser.
 
 ## Device thermal, power and battery
 

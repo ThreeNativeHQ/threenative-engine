@@ -364,6 +364,15 @@ export type GamePlugin<
  */
 const STARTUP_READY_GLOBAL = "__TN_STARTUP_READY__";
 
+/**
+ * Drawn frames the state publish waits after startup readiness. The page paints a state change on
+ * the next vsync, but the canvas frame that lifts the cover reaches the screen only when the GPU has
+ * drawn it: Lantern Vale's HUD (`loaded` on `whenReady()`) painted one frame over its loading cover.
+ * Three, because a renderer keeps at most two frames on the GPU (the Wasm engine's gate declines a
+ * third), so the third drawn frame proves the first uncovered one has left the GPU.
+ */
+const STARTUP_HANDOFF_FRAMES = 3;
+
 export interface IGameConfig<
   TState extends Record<string, unknown> = Record<string, unknown>,
   TPhysics = undefined,
@@ -1188,6 +1197,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     };
     let worldRendered = false;
     let loadingFramePresented = false;
+    let stateHandOffFrames = 0;
     let markProjectionSettled: () => void = () => undefined;
     const projectionReady = new Promise<void>((resolve) => {
       markProjectionSettled = resolve;
@@ -1273,6 +1283,9 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       timeline.frameworkReadyMs ??= now();
       timeline.readyMs ??= now();
       projectionSettled = true;
+      // What a game does on `whenReady()` (lift its cover, show its HUD) reaches the page with the
+      // world frame, not before it: see `STARTUP_HANDOFF_FRAMES`.
+      stateHandOffFrames = STARTUP_HANDOFF_FRAMES;
       markProjectionSettled();
       // A host capturing a frame has no other way to know the world is on screen. Counting frames
       // cannot express it: on a software rasteriser the gate resolves on its bounded window rather
@@ -2042,7 +2055,8 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         }
         if (mustPresentLoader) loadingFramePresented = true;
         // Include state written by beforeRender and Scene.render in this frame's UI snapshot.
-        if (this.#config.stateFlushMs === undefined) this.#state.flush();
+        if (this.#config.stateFlushMs === undefined && stateHandOffFrames === 0)
+          this.#state.flush();
         // Every frame, including one whose canvas layer is empty: the native UI is composited into
         // the game's own frame whether or not the game draws a HUD of its own, so a frame that
         // skipped this would report work it did pay as `residual`. The host reports what the
@@ -2122,6 +2136,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         const declined = skips !== undefined && skips > readinessGateSkips;
         if (skips !== undefined) readinessGateSkips = skips;
         if (!declined) startupReadiness.observe(frameMs);
+        if (stateHandOffFrames > 0 && !declined) stateHandOffFrames -= 1;
       },
       step: this.#config.step,
     });

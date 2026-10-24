@@ -145,6 +145,10 @@ export interface IPlaytestStartupCoverObservation {
   reference: [number, number, number];
   /** Every differing frame: ms since navigation, its mean colour and its differing pixel share. */
   differing: Array<{ ms: number; mean: [number, number, number]; share: number }>;
+  /** The first frame after readiness that differs from the cover, ms since navigation; absent when none was recorded. */
+  worldMs?: number;
+  /** Frames between readiness and `worldMs` that show the world's page UI (a HUD) over the cover. */
+  uiOverCover: Array<{ ms: number; share: number }>;
 }
 
 /**

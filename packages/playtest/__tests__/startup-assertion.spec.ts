@@ -129,18 +129,21 @@ describe("startup playtest assertion", () => {
  * milestone looked fine: only the presented frames show it.
  */
 describe("startup steadyCover", () => {
-  const frame = (ms: number, rgb: [number, number, number], bar = 0): IStartupCoverFrame => {
-    const width = 64;
-    const height = 36;
+  const frame = (ms: number, rgb: [number, number, number], bar = 0, hud = false): IStartupCoverFrame => {
+    const width = 128;
+    const height = 72;
     const data = new Uint8Array(width * height * 4);
     for (let i = 0; i < width * height; i += 1) {
       // A progress bar: one row of the frame, filled up to `bar` of the width.
-      const inBar = Math.floor(i / width) === 24 && i % width < bar * width;
-      data.set(inBar ? [230, 180, 60, 255] : [...rgb, 255], i * 4);
+      const inBar = Math.floor(i / width) === 48 && i % width < bar * width;
+      // A HUD pill, top left: 20 x 4 px, as a 200 x 40 px pill at 720p.
+      const inHud = hud && Math.floor(i / width) >= 4 && Math.floor(i / width) < 8 && i % width >= 4 && i % width < 24;
+      data.set(inHud ? [250, 250, 250, 255] : inBar ? [230, 180, 60, 255] : [...rgb, 255], i * 4);
     }
     return { data, height, ms, width };
   };
   const cover: [number, number, number] = [180, 196, 186];
+  const world: [number, number, number] = [60, 120, 40];
 
   it("passes a cover whose bar fills, and flags a black frame and the page background", () => {
     const steady = compareStartupFrames([frame(100, cover, 0), frame(500, cover, 0.5), frame(900, cover, 0.9)]);
@@ -158,15 +161,36 @@ describe("startup steadyCover", () => {
       if (startup !== undefined && observation !== undefined) startup.cover = observation;
       return evaluateRichPlaytestAssertions({ report: base, scenario });
     };
-    const pass = evaluate(compareStartupFrames([frame(100, cover), frame(900, cover, 0.9)]));
+    const pass = evaluate(compareStartupFrames([frame(100, cover), frame(900, cover, 0.9), frame(1000, world, 0, true)], 950));
     expect(pass.assertions).toContainEqual(expect.objectContaining({ id: "startup.steadyCover", pass: true }));
-    const broken = evaluate(compareStartupFrames([frame(100, cover), frame(450, [4, 4, 4]), frame(900, cover)]));
+    const broken = evaluate(compareStartupFrames([frame(100, cover), frame(450, [4, 4, 4]), frame(900, cover), frame(1000, world)], 950));
     expect(broken.assertions).toContainEqual(expect.objectContaining({ id: "startup.steadyCover", pass: false }));
     expect(broken.diagnostics).toContainEqual(expect.objectContaining({ code: "TN_PLAYTEST_STARTUP_COVER_BROKEN" }));
-    for (const unobserved of [undefined, compareStartupFrames([])]) {
+    // No world frame after readiness: the hand-off was never seen.
+    for (const unobserved of [undefined, compareStartupFrames([]), compareStartupFrames([frame(100, cover), frame(1000, cover, 1)], 950)]) {
       const result = evaluate(unobserved);
       expect(result.assertions).toContainEqual(expect.objectContaining({ id: "startup.steadyCover", pass: false }));
       expect(result.diagnostics).toContainEqual(expect.objectContaining({ code: "TN_PLAYTEST_STARTUP_COVER_UNOBSERVED" }));
     }
+  });
+
+  // The owner's Hop Garden launch: the coin pill and the controls hint over the loading bar, because
+  // the page showed the HUD on whenReady() before the canvas frame that lifted the cover arrived.
+  it("fails page UI painted over the cover before the world frame", async () => {
+    const scenario = await scenarioWith({ steadyCover: true });
+    const base = report({ readyMs: 950 });
+    const observation = compareStartupFrames(
+      [frame(100, cover), frame(900, cover, 0.9), frame(960, cover, 1, true), frame(980, cover, 1, true), frame(1000, world, 0, true)],
+      950,
+    );
+    expect(observation.worldMs).toBe(1000);
+    expect(observation.uiOverCover.map(({ ms }) => ms)).toEqual([960, 980]);
+    const startup = base.observations?.startup;
+    if (startup !== undefined) startup.cover = observation;
+    const result = evaluateRichPlaytestAssertions({ report: base, scenario });
+    expect(result.assertions).toContainEqual(expect.objectContaining({ id: "startup.steadyCover", pass: false }));
+    expect(result.diagnostics).toContainEqual(expect.objectContaining({ code: "TN_PLAYTEST_STARTUP_UI_OVER_COVER" }));
+    // the bar filling to its end over the cover is not page UI
+    expect(compareStartupFrames([frame(100, cover), frame(900, cover, 0.9), frame(960, cover, 1), frame(1000, world, 0, true)], 950).uiOverCover).toEqual([]);
   });
 });
