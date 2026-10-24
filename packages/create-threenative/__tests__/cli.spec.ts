@@ -35,6 +35,8 @@ describe("create-threenative CLI", () => {
       expect(help).toContain(
         `${manifest.name.padEnd(width)}  ${manifest.title}: ${manifest.blurb}`,
       );
+      if (manifest.aliases.length > 0)
+        expect(help).toContain(`(also: ${manifest.aliases.join(", ")})`);
     }
   });
 

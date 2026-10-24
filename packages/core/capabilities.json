@@ -9042,5 +9042,85 @@
       ]
     }
   ],
+  "starterKits": [
+    {
+      "blurb": "A three-room grid dungeon of mannequin fighters: melee, the Arcane Surge, loot, equipment, persistence, and a real character sheet.",
+      "name": "action-rpg",
+      "title": "Action RPG",
+      "words": ["action-rpg"]
+    },
+    {
+      "blurb": "Wren crosses a sunlit clearing and a three-room moss dungeon with lock-on sword combat, a shield, a block-and-switch puzzle, a small key and the Stone Warden mini-boss.",
+      "name": "adventure",
+      "title": "Lantern Vale",
+      "words": ["adventure", "zelda", "ocarina", "action-adventure"]
+    },
+    {
+      "blurb": "A round hero runs one free-roam island with a triple jump, long jump, backflip, side flip, wall kick, dive, ground pound and ledge grab, collecting three Sunseeds.",
+      "name": "collectathon",
+      "title": "Hop Garden",
+      "words": ["collectathon", "mario", "sm64", "super-mario", "3d-platformer"]
+    },
+    {
+      "blurb": "A fox runs ninety-seven metres of floating meadow, rope bridges and stompable walkers to a goal flag, with three hearts, five gems and a double jump.",
+      "name": "platformer",
+      "title": "Fox Dash",
+      "words": ["platformer"]
+    },
+    {
+      "blurb": "A forty-five body vault: shove the pile, walk through the glowing ward, and stand on the seal.",
+      "name": "puzzle",
+      "title": "Physics puzzle",
+      "words": ["physics-puzzle"]
+    },
+    {
+      "blurb": "Three laps, ordered checklines, rescue sectors, boost pads, and route-progress ranking.",
+      "name": "racing",
+      "title": "Circuit racing",
+      "words": ["racing"]
+    },
+    {
+      "blurb": "A real-time coastal weather study: shape rain, cloud, wind, fog and wetness, and watch a coastline answer.",
+      "name": "rain",
+      "title": "Rain",
+      "words": ["rain"]
+    },
+    {
+      "blurb": "Three commanders, a seeded world, fog of war and a deterministic 0.05 s simulation headless in src/sim/.",
+      "name": "rts",
+      "title": "Real-time strategy",
+      "words": ["rts"]
+    },
+    {
+      "blurb": "Three lanes, a track that builds itself ahead of you, and obstacles that end the run.",
+      "name": "runner",
+      "title": "Endless runner",
+      "words": ["endless-runner"]
+    },
+    {
+      "blurb": "A wind-and-wave sailing starter with buoyancy, ordered course buoys, and a ship you can reshape.",
+      "name": "sailing",
+      "title": "Sailing",
+      "words": ["sailing"]
+    },
+    {
+      "blurb": "Mouse look, a weapon in your hands, aim down the sights, reload, and targets that hunt you.",
+      "name": "shooter",
+      "title": "First-person shooter",
+      "words": ["shooter"]
+    },
+    {
+      "blurb": "Deformable snow that remembers every footstep, a ball that carves its own track, and weather you can turn into a blizzard.",
+      "name": "snow",
+      "title": "Snow glade",
+      "words": ["snow"]
+    },
+    {
+      "blurb": "Four towers with three upgrade levels, twelve waves, two bosses and an orbital strike on a mossy diorama.",
+      "name": "tower-defense",
+      "title": "Tower defense",
+      "words": ["strategy"]
+    }
+  ],
   "version": 2
 }

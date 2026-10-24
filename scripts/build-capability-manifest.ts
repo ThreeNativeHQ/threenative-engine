@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
 import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import ts from "typescript";
@@ -40,10 +40,20 @@ export interface ICapabilityManifestEntry {
   readonly deprecated?: readonly string[];
 }
 
+export interface IStarterKit {
+  readonly name: string;
+  readonly title: string;
+  readonly blurb: string;
+  /** The kit's genre plus its kit.json aliases, lowercase: the words that route a request to it. */
+  readonly words: readonly string[];
+}
+
 export interface ICapabilityManifest {
   readonly version: typeof MANIFEST_VERSION;
   readonly entries: readonly ICapabilityManifestEntry[];
   readonly notOwned: readonly INotOwnedCapability[];
+  /** Kits from `create-threenative/templates/<name>/kit.json`, so search needs no template files. */
+  readonly starterKits?: readonly IStarterKit[];
 }
 
 export interface ICapabilityAllowlistEntry {
@@ -649,6 +659,37 @@ export function validateNotOwned(
   }
 }
 
+const TEMPLATES_RELATIVE_PATH = "packages/create-threenative/templates";
+
+/** Source of truth is each kit's own kit.json; templates that are not kits (`kit: false`) are skipped. */
+function readStarterKits(root: string): readonly IStarterKit[] {
+  const directory = path.join(root, TEMPLATES_RELATIVE_PATH);
+  if (!existsSync(directory)) return [];
+  return readdirSync(directory, { withFileTypes: true })
+    .filter(
+      (entry) => entry.isDirectory() && existsSync(path.join(directory, entry.name, "kit.json")),
+    )
+    .map((entry) => {
+      const kit = JSON.parse(
+        readFileSync(path.join(directory, entry.name, "kit.json"), "utf8"),
+      ) as {
+        aliases?: string[];
+        blurb: string;
+        genre: string;
+        kit: boolean;
+        name: string;
+        title: string;
+      };
+      return {
+        ...kit,
+        words: [kit.genre, ...(kit.aliases ?? [])].map((word) => word.toLowerCase()),
+      };
+    })
+    .filter(({ kit }) => kit)
+    .map(({ blurb, name, title, words }) => ({ blurb, name, title, words: [...new Set(words)] }))
+    .sort((left, right) => left.name.localeCompare(right.name));
+}
+
 export function buildCapabilityManifest(
   root: string,
   allowlist: readonly ICapabilityAllowlistEntry[] = CAPABILITY_ALLOWLIST,
@@ -708,7 +749,13 @@ export function buildCapabilityManifest(
       throw new Error(`Realism-effects coverage validation failed:\n${coverageErrors.join("\n")}`);
     }
   }
-  return { entries, notOwned, version: MANIFEST_VERSION };
+  const starterKits = readStarterKits(root);
+  return {
+    entries,
+    notOwned,
+    ...(starterKits.length > 0 ? { starterKits } : {}),
+    version: MANIFEST_VERSION,
+  };
 }
 
 function manifestPath(root: string): string {

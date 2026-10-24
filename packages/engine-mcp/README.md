@@ -9,7 +9,10 @@ The server exposes exactly two read-only tools: `engine_search_capabilities` and
 First infer the concrete mechanics implied by the request. Call `engine_search_capabilities` once
 with that mechanically explicit request and `scope: "request"`, then once per mechanic with
 `scope: "mechanic"`. Complete requests return up to 15 deduplicated capabilities; focused
-situations return up to five. A genre label alone returns no guessed recipe. Every result includes
+situations return up to five. A request that names a game or genre a starter kit covers (`like mario`, `zelda-style`) leads with a
+`starterKits` entry carrying `npx create-threenative <dir> --template <name>`; scaffold it first, then
+search the mechanics it does not cover. The kits and their words come from each `kit.json` through
+the manifest's `starterKits` section (verdict `"starterKit"` when no mechanic also matched). Every result includes
 `matchedSituation`, so an authoring agent can verify why it was selected instead of treating a
 lexical coincidence as engine guidance.
 

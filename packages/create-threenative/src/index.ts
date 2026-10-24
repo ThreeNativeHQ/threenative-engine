@@ -331,7 +331,10 @@ export function templateForGenre(genre: string, root = templateRoot()): Scaffold
 function templateHelp(manifests: readonly IKitManifest[]): string {
   const width = Math.max(...manifests.map(({ name }) => name.length), 0);
   return manifests
-    .map(({ blurb, name, title }) => `  ${name.padEnd(width)}  ${title}: ${blurb}`)
+    .map(
+      ({ aliases, blurb, name, title }) =>
+        `  ${name.padEnd(width)}  ${title}: ${blurb}${aliases.length > 0 ? ` (also: ${aliases.join(", ")})` : ""}`,
+    )
     .join("\n");
 }
 
