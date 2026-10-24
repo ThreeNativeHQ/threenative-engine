@@ -264,7 +264,11 @@ export class Race extends Scene<GameState> {
     };
     const tier = postTier(environment);
     const shadows = qualityTiers.shadow(tier).castShadows;
-    const lighting = setupLighting(ctx.scene, shadows);
+    const lighting = setupLighting(
+      ctx.scene,
+      ctx.renderer.raw as Parameters<typeof setupLighting>[1],
+      shadows,
+    );
     // Clip levels round the camera: crisp under the karts, coarse out to the hills.
     if (shadows)
       lighting.key.shadow.shadowNode = new VirtualShadowNode(lighting.key, {

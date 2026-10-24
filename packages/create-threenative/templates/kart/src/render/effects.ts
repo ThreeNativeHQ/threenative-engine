@@ -208,11 +208,11 @@ function spark(birth: readonly [number, number, number], death: readonly [number
 }
 
 /** Stage 1: the slide is charging. White-blue, like MK64's first spark. */
-export const sparkWhiteEffect = (): IEffectOptions => spark([2.4, 3, 5], [1, 1.6, 4]);
+export const sparkWhiteEffect = (): IEffectOptions => spark([1.2, 1.8, 4], [0.5, 1, 3]);
 /** Stage 2: a release now fires the mini-turbo. Yellow. */
-export const sparkYellowEffect = (): IEffectOptions => spark([4, 3, 0.3], [3, 1.6, 0.05]);
+export const sparkYellowEffect = (): IEffectOptions => spark([3, 2, 0.15], [2.2, 1.1, 0.03]);
 /** Stage 3: the top of the charge. Orange-red. */
-export const sparkOrangeEffect = (): IEffectOptions => spark([4.5, 1.4, 0.15], [3, 0.4, 0.04]);
+export const sparkOrangeEffect = (): IEffectOptions => spark([3.2, 0.9, 0.08], [2.2, 0.25, 0.02]);
 
 /** The exhaust flame on a boost: hot yellow to red, short and bright, rising a little. */
 export function flameEffect(): IEffectOptions {

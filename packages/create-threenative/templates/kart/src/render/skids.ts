@@ -30,7 +30,12 @@ export class SkidMarks {
       material,
       capacity,
     );
-    this.#mesh.count = 0;
+    // A fixed count, with the unused dashes at zero scale: the ring only rewrites matrices, so the
+    // draw never changes size while the race runs.
+    const hidden = new Object3D();
+    hidden.scale.setScalar(0);
+    hidden.updateMatrix();
+    for (let i = 0; i < capacity; i += 1) this.#mesh.setMatrixAt(i, hidden.matrix);
     this.#mesh.name = "skid-marks";
     this.#mesh.frustumCulled = false;
     group.add(this.#mesh);
@@ -44,7 +49,6 @@ export class SkidMarks {
     d.updateMatrix();
     this.#mesh.setMatrixAt(this.#next, d.matrix);
     this.#next = (this.#next + 1) % this.capacity;
-    this.#mesh.count = Math.min(this.capacity, this.#mesh.count + 1);
     this.#mesh.instanceMatrix.needsUpdate = true;
     this.laid += 1;
   }

@@ -43,11 +43,14 @@ export const LIVERIES: readonly ILivery[] = [
   { body: 0xe9edf2, helmet: 0x1a1410, name: "Frost", suit: 0x5a6878, trim: 0x2f6fe0 },
 ];
 
-/** The drift-charge glow per stage: blue-white, yellow, orange, one channel kept low so it never reads white. */
+/**
+ * The drift-charge glow per stage: blue, yellow, orange. Above 1 so it glows on a metered sunny
+ * course, with one channel kept low so the filmic curve keeps the hue instead of turning it white.
+ */
 const SPARK_GLOW = [
-  [1.6, 2.2, 4.2],
-  [3.2, 2.2, 0.15],
-  [3.4, 0.9, 0.08],
+  [0.6, 1.1, 2.6],
+  [2.4, 1.7, 0.1],
+  [2.6, 0.32, 0.02],
 ] as const;
 const WHEEL = { front: 0.27, rear: 0.31, track: 0.62, frontZ: -0.62, rearZ: 0.58 } as const;
 
@@ -166,11 +169,8 @@ export class KartModel {
     this.root.add(this.#flame);
     // The spark charge glows on each rear tyre in the stage's colour, for the same reason: the
     // thrown sparks fall behind and smear, so the colour the player reads rides on the kart.
-    this.#glowMaterial = new MeshBasicMaterial({
-      blending: AdditiveBlending,
-      depthWrite: false,
-      transparent: true,
-    });
+    // Opaque, not additive: added onto a sunlit road every colour sums toward white.
+    this.#glowMaterial = new MeshBasicMaterial();
     const star = merge([
       new SphereGeometry(0.09, 8, 6),
       ...[0, 1, 2, 3].map((r) => new BoxGeometry(0.62, 0.05, 0.05).rotateZ((r * Math.PI) / 4)),
