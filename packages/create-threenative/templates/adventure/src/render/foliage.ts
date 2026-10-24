@@ -470,7 +470,7 @@ export function plantVale(site: IValeSite): {
   // ------------------------------------------------------------------------------ old trees
   // Three giant cuts and two far cuts; every tree is one of them, scaled and turned.
   const giants = [0, 1, 2].map(() => gnarledTree(rng, 6, 5, true));
-  const fars = [0, 1].map(() => gnarledTree(rng, 3, 3, false));
+  const fars = [0, 1].map(() => gnarledTree(rng, 3, 2, false));
   const wood = { far: fars.map((): Placement[] => []), giant: giants.map((): Placement[] => []) };
   const nearClumps: Placement[] = [];
   const farClumps: Placement[] = [];
@@ -635,9 +635,13 @@ export function plantVale(site: IValeSite): {
 
   // Grass tufts in the open spaces off the path, where the canopy lets light in.
   const tufts: Placement[] = [];
-  for (let i = 0; i < 420; i += 1) {
-    const x = (rng() * 2 - 1) * clearing.half;
+  for (let i = 0; i < 340; i += 1) {
+    // Half of them fringe the path, where the cobbles meet the moss.
     const z = clearing.north + rng() * (clearing.south - clearing.north);
+    const x =
+      i % 2 === 0
+        ? site.pathX(z) + (rng() < 0.5 ? -1 : 1) * (1.75 + rng() * 1.4)
+        : (rng() * 2 - 1) * clearing.half;
     if (Math.abs(x - site.pathX(z)) < 1.7 || site.stream.distance(x, z) < 1.4) continue;
     tufts.push(P(x, 0, z, 0.7 + rng() * 0.9, 0.6 + rng() * 0.9));
   }
@@ -767,20 +771,20 @@ export function plantVale(site: IValeSite): {
   const stone = lit(0xffffff, { detail: true, vertexColors: true });
   group.add(instanced(boulder, stone, rocks, true));
 
-  // The flagstone path: irregular flat slabs, two or three across, laid in the dark soil with moss
-  // in the joints, each tipped to the slope it lies on.
+  // The path: rounded cobbles, two to four across, a few centimetres proud of the dark soil and
+  // its moss, each tipped to the slope it lies on.
   const slab = (() => {
-    const g = new CylinderGeometry(1, 1, 0.14, 9, 1).toNonIndexed();
+    const g = new SphereGeometry(1, 9, 3, 0, Math.PI * 2, 0, Math.PI / 2);
     const position = g.attributes.position;
     if (position !== undefined) {
       for (let i = 0; i < position.count; i += 1) {
         const x = position.getX(i);
         const z = position.getZ(i);
         const a = Math.atan2(z, x);
-        const k =
-          (1 + 0.16 * Math.sin(a * 3 + 1.1) + 0.1 * Math.sin(a * 5 + 0.4)) *
-          (position.getY(i) > 0 ? 0.94 : 1);
-        position.setXYZ(i, x * k, position.getY(i), z * k);
+        const k = 1 + 0.16 * Math.sin(a * 3 + 1.1) + 0.1 * Math.sin(a * 5 + 0.4);
+        // A flat-topped dome: the crown is broad, the edge rolls down into the soil.
+        const y = Math.min(1, position.getY(i) * 1.6) * 0.11;
+        position.setXYZ(i, x * k, y, z * k);
       }
     }
     g.computeVertexNormals();
@@ -803,10 +807,10 @@ export function plantVale(site: IValeSite): {
       const [rx, rz] = tiltTo(normalAt(x, sz), yaw);
       (rng() < 0.5 ? slabs[0] : slabs[1]).push([
         x,
-        height(x, sz) - 0.045,
+        height(x, sz) - 0.05,
         sz,
         r * (1 + rng() * 0.25),
-        1,
+        0.7 + rng() * 0.6,
         r,
         rx,
         yaw,
@@ -816,8 +820,8 @@ export function plantVale(site: IValeSite): {
     }
   }
   group.add(
-    instanced(slab, lit(C.flagstoneDark, { detail: true }), slabs[0], false),
-    instanced(slab, lit(C.flagstone2, { detail: true }), slabs[1], false),
+    instanced(slab, lit(C.flagstoneDark, { detail: true, roughness: 0.9 }), slabs[0], false),
+    instanced(slab, lit(C.flagstone2, { detail: true, roughness: 0.9 }), slabs[1], false),
   );
   // How much of the path's centre line a slab covers: the playtest's proof the path is laid.
   let covered = 0;
@@ -894,12 +898,12 @@ export function plantVale(site: IValeSite): {
     return [x + SUN_DIRECTION.x * t, z + SUN_DIRECTION.z * t, r * 1.5] as const;
   });
   const discs: BufferGeometry[] = [];
-  for (let i = 0; i < 1500; i += 1) {
+  for (let i = 0; i < 1600; i += 1) {
     const x = (rng() * 2 - 1) * 30 - 6;
     const z = -30 + rng() * 52;
-    const r = 0.6 + rng() * 0.7;
+    const r = 0.7 + rng() * 0.75;
     if (gaps.some(([gx, gz, gr]) => Math.hypot(x - gx, z - gz) < gr + r * 0.5)) continue;
-    if (Math.sin(x * 0.7) * Math.cos(z * 0.6) + Math.sin(x * 0.23 + z * 0.31) > 1.35) continue;
+    if (Math.sin(x * 0.7) * Math.cos(z * 0.6) + Math.sin(x * 0.23 + z * 0.31) > 1.65) continue;
     discs.push(
       new CircleGeometry(r, 6)
         .rotateX(-Math.PI / 2)

@@ -295,7 +295,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // (method checked against this kit's previous value, from a copy holding only this template).
   collectathon: "30a5e8e43a4a442437a278a9fb643e7c56c7d505f3c8e99b12577aefe8b89bcf",
   // PRD-733 (2026-10-23): the new Lantern Vale kit, measured through createProject.
-  adventure: "749e5cdb893501841081ee90932f76c4764fec3b899db3b47c0c0a78c5db6733",
+  adventure: "31631d129dfef7f34b3f046cedfc8a4c0f5321a2554c1660c53726acd3c7e553",
   minimal: "1bdc31f8d31f074cde31e09d67ac850762482f481e4b41050d5679f7155ac085",
   platformer: "27b6033ac8ce09c6b19894586865e465e2edfcc0b7edd7be02e4e8459b248e53",
   puzzle: "78f16093d5dedabf3a7bff8b07bb261bd1c7f91339aeaae51f7a1a278a5442d2",

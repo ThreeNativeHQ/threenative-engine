@@ -15,7 +15,7 @@ export const palette = {
   skyLow: 0xa9c4b8,
   /** Distance fades into this: a cool teal-green forest mist. */
   horizon: 0x8fae9f,
-  grass: 0x5b7a30,
+  grass: 0x4c6a2a,
   stone: 0x7d7a6c,
   /** The one saturated role: what the player can take or use. */
   accent: 0xf2b33d,
@@ -23,7 +23,7 @@ export const palette = {
 
 export const C = {
   grassDark: 0x4e7a2a,
-  grassTip: 0x9fc25a,
+  grassTip: 0x7f9e44,
   dirt: 0x8b6a48,
   path: 0xb39a72,
   stoneDark: 0x5d5a52,
@@ -58,14 +58,14 @@ export const C = {
   brass: 0xc79a3a,
 
   // The forest floor, the old trees and the hut
-  soil: 0x3d2f22,
+  soil: 0x33271c,
   soilWet: 0x2a2a20,
-  forestMoss: 0x4d6a26,
-  mossBright: 0x5f7f2a,
-  cliff: 0x5f6155,
+  forestMoss: 0x3e5820,
+  mossBright: 0x4f6c26,
+  cliff: 0x4e5446,
   rock: 0x6c6b5f,
   flagstone2: 0x6a665b,
-  barkDeep: 0x46352a,
+  barkDeep: 0x2e231b,
   leafDeep: 0x2f5a22,
   leafSun: 0x6e9a32,
   broadleaf: 0x2f6a2a,

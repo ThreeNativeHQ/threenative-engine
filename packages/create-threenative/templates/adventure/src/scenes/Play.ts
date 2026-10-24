@@ -575,7 +575,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       const orbGap = companion.group.position.distanceTo(head);
       orb.nearest = Math.min(orb.nearest, orbGap);
       orb.farthest = Math.max(orb.farthest, orbGap);
-      if (fight.ticks % 3 === 0) burst("wisp", companion.group.position);
+      burst("wisp", companion.group.position);
       // How far the view turned this tick, in degrees: the fastest swing a player sees.
       camera.getWorldDirection(viewNow);
       if (fight.ticks > 0) fight.turn = Math.max(fight.turn, viewNow.angleTo(viewBefore) * DEG);

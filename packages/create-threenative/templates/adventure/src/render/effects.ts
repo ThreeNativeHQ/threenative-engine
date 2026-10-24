@@ -234,7 +234,7 @@ export function moteEffect(): IEffectOptions {
     // Most are fireflies (gold-green), a third pale green motes that barely pulse.
     const firefly = step(0.33, seed);
     material.colorNode = vec4(
-      mix(vec3(0.9, 1.3, 0.75), vec3(2.6, 3, 0.9), firefly),
+      mix(vec3(0.7, 1, 0.5), vec3(2.4, 2.8, 0.45), firefly),
       sprite("puff")
         .mul(mix(float(0.5), pulse.mul(0.85).add(0.15), firefly))
         .mul(fade)
@@ -305,8 +305,8 @@ export function wispEffect(): IEffectOptions {
     gravity: 0.4,
     life: 0.45,
     mask: "puff",
-    opacity: 0.8,
-    size: [0.05, 0.01],
+    opacity: 0.45,
+    size: [0.035, 0.008],
   });
 }
 
@@ -329,5 +329,5 @@ export const BURSTS = {
   /** Fireflies sprinkled round Wren: a 3.2 m band up from her waist, out to 13 m. */
   motes: { emitter: "mote", count: 14, shape: [0, 3.2, 13] },
   /** One spark off the companion orb. */
-  wisp: { emitter: "wisp", count: 1, shape: [0.25, 0.3, 0.04] },
+  wisp: { emitter: "wisp", count: 1, shape: [0.08, 0.1, 0.03] },
 } as const;

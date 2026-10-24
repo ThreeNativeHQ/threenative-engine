@@ -70,7 +70,7 @@ const GROUND_FILL = new Color(0.1, 0.13, 0.07);
  * it hangs in washes the midground out.
  */
 const MIST = {
-  vale: { distance: 0.02, density: 0.008, glow: 0.55 },
+  vale: { distance: 0.016, density: 0.005, glow: 0.8 },
   hollow: { distance: 0.006, density: 0.004, glow: 0.6 },
   heightFalloff: 0.3,
   /** Metres of clear air before the mist starts, so the ground at Wren's feet stays crisp. */
@@ -82,7 +82,7 @@ const MIST = {
 };
 const SUN_COLOUR = new Color(0xffe2b0);
 /** A shaft's added light at its brightest, in the sun's colour; the meter keeps it relative. */
-const SHAFT_BRIGHTNESS = 0.4;
+const SHAFT_BRIGHTNESS = 0.3;
 
 function gradient(elevation: number): Color {
   const high = new Color(palette.skyHigh);
