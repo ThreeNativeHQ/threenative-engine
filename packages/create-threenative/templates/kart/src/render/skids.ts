@@ -22,7 +22,7 @@ export class SkidMarks {
     const material = new MeshStandardMaterial({
       color: C.tyre,
       depthWrite: false,
-      opacity: 0.55,
+      opacity: 0.4,
       polygonOffset: true,
       polygonOffsetFactor: -2,
       roughness: 0.9,
@@ -46,16 +46,20 @@ export class SkidMarks {
   }
 
   /**
-   * A mark up to a tyre's contact point. It joins the nearest trail end within 1.5 m, so the trail
+   * A mark up to a tyre's contact point. It joins the nearest trail end up to 1.5 m behind it, so the trail
    * is one strip: overlapping see-through dashes darkened every joint into a bar. A new trail
    * starts with a short dash along `yaw`.
    */
   lay(x: number, y: number, z: number, yaw: number): void {
     let from: { x: number; y: number; z: number } | undefined;
     let best = 1.5 * 1.5;
+    const ahead = { x: -Math.sin(yaw), z: -Math.cos(yaw) };
     for (const end of this.#ends) {
       const gap = (end.x - x) ** 2 + (end.z - z) ** 2;
-      if (gap > 0.0001 && gap < best) {
+      // Only an end behind this tyre along its travel: the other tyre, or a kart alongside, sits
+      // across the travel and would draw a zigzag.
+      const along = ((x - end.x) * ahead.x + (z - end.z) * ahead.z) / Math.sqrt(gap);
+      if (gap > 0.0001 && gap < best && along > 0.87) {
         best = gap;
         from = end;
       }

@@ -214,7 +214,11 @@ export const sparkYellowEffect = (): IEffectOptions => spark([3, 2, 0.15], [2.2,
 /** Stage 3: the top of the charge. Orange-red. */
 export const sparkOrangeEffect = (): IEffectOptions => spark([3.2, 0.9, 0.08], [2.2, 0.25, 0.02]);
 
-/** The exhaust flame on a boost: hot yellow to red, short and bright, rising a little. */
+/**
+ * The exhaust flame on a boost: hot yellow to red, short and bright, rising a little. Short-lived:
+ * a puff stays where it was born while the kart runs on, so a longer life lays a dotted row of
+ * lights down the road behind every boost.
+ */
 export function flameEffect(): IEffectOptions {
   return emitter({
     additive: true,
@@ -225,7 +229,7 @@ export function flameEffect(): IEffectOptions {
     ],
     drag: 6,
     gravity: 1.5,
-    life: 0.22,
+    life: 0.12,
     mask: "puff",
     opacity: 0.95,
     size: [0.7, 0.2],

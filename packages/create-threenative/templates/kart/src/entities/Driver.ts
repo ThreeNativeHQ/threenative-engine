@@ -19,6 +19,8 @@ export class Driver {
   #laneClock = 0;
   #stuck = 0;
   #reversing = 0;
+  /** Seconds into a power-slide, or -1 when not sliding. */
+  #slide = -1;
   readonly #at = { x: 0, y: 0, z: 0 };
 
   constructor(
@@ -61,6 +63,7 @@ export class Driver {
     input.brake = false;
     input.drift = false;
     input.item = false;
+    this.#powerSlide(dt);
 
     // Stuck against a wall or nose-in after a hit: back off and turn round.
     if (this.#reversing > 0) {
@@ -76,5 +79,45 @@ export class Driver {
       this.#reversing = 0.8;
     }
     return input;
+  }
+
+  /**
+   * Power-slides a long bend as a player does: hop in with the stick toward the bend, push the
+   * stick out and back every 0.7 s to charge the sparks, and let go as the road straightens, so a
+   * slide that reached stage 2 fires the mini-turbo. The wiggle's outward half is 0.35 s, past
+   * `KART_FEEL.chargeTicks` (18 ticks) and short of `chargeStall`.
+   */
+  #powerSlide(dt: number): void {
+    const kart = this.kart;
+    const input = this.input;
+    const bend = Math.abs(this.#bend(kart.index));
+    if (this.#slide < 0) {
+      const fast = kart.speed > kart.topSpeed * 0.7 && !this.coasting;
+      if (bend > 0.6 && fast && kart.grounded && !kart.hit) this.#slide = 0;
+      else return;
+    }
+    this.#slide += dt;
+    const engaged = kart.drifting || this.#slide < 0.3;
+    const straight = this.#slide > 0.5 && (bend < 0.25 || this.#slide > 2.5);
+    if (!engaged || straight || kart.hit) {
+      this.#slide = -1;
+      return;
+    }
+    input.drift = true;
+    // The outward half only while the kart is on the asphalt's middle, so a slide never runs wide
+    // onto the grass.
+    const wiggle = kart.drifting && this.#slide % 0.7 < 0.35 && Math.abs(kart.lateral) < 3.5;
+    if (wiggle) input.steer = -kart.driftSide * 0.35;
+  }
+
+  /** How far the road turns between 8 m and 30 m ahead, in radians. */
+  #bend(index: number): number {
+    const course = this.kart.course;
+    const a = (index + 8) % course.count;
+    const b = (index + 30) % course.count;
+    const turn =
+      Math.atan2(-(course.tx[b] ?? 0), -(course.tz[b] ?? 0)) -
+      Math.atan2(-(course.tx[a] ?? 0), -(course.tz[a] ?? 0));
+    return Math.atan2(Math.sin(turn), Math.cos(turn));
   }
 }

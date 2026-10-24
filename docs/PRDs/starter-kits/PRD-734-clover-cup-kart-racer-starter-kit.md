@@ -198,7 +198,9 @@ gates every kit must pass. Each playtest runs on a project scaffolded from `--te
 - 2026-10-24 (agent): skid dashes laid after the first frame do not draw on the Wasm engine, even
   in magenta at full opacity (92 laid in the drift run, none on screen; the initial matrices draw).
   The ring keeps a fixed count with hidden dashes, which removed a stray dark quad; the missing
-  trail is reported as an engine bug, not patched in the kit.
+  trail is reported as an engine bug, not patched in the kit. The engine packed at 14:34 draws the
+  trail (judge round 5). Overlapping see-through dashes then darkened every joint into a bar, so
+  each mark now runs from the nearest trail end and the segments meet end to end.
 - 2026-10-24 (agent, judge round 2): the same engine bug held every item box still. A probe set
   every box to scale 0 after 5 s, and the boxes were still drawn at 10 s, so they never spun,
   shrank when taken or got out of the camera's way. The boxes are now one plain mesh pair each
@@ -209,6 +211,25 @@ gates every kit must pass. Each playtest runs on a project scaffolded from `--te
 - 2026-10-24 (agent, judge round 3): a box shrinks from 6.5 m of the camera and hides at 3.5 m, so
   a box the kart drives through never fills the screen. The back-straight pad moved from 5 m to
   4.2 m left of the line so its plate stays inside the edge line.
+- 2026-10-24 (agent, on the owner's texture addenda): no image textures yet. The owner allowed
+  CC0 or `meta/muse-image` textures where they beat the procedural look in a judge A/B. Every
+  surface here is vertex colour with low-frequency wear and no tiled image, so the course has no
+  repeating texture to hide, and the look judge passed without textures. Revisit when a judge
+  names flat asphalt or grass as a gap. That work then needs road UVs, a `ctx.assets` load, an
+  anti-tiling sample and an `assets/` budget of 1.5 MB.
+- 2026-10-24 (agent, perf guardrails): the eight karts share one wheel, axle, flame and spark-star
+  geometry, and the peels and shells share one geometry each. The `lit()` cache already shared
+  the materials. Projection stays off with `belowMeshFloor` (107 renderables), which means the
+  scene is too small to batch. It is not a decline with a cause.
+- 2026-10-24 (agent, judge round 6): the race film showed no drift sparks, because no driver
+  slid. A CPU and the autopilot now power-slide a bend that turns over 0.6 rad between 8 m and
+  30 m ahead, wiggle against the slide every 0.7 s and let go on the straight. In a node sim two
+  laps take 54.1-54.7 s against 57.0 s without slides, with 0 wall hits and 4-7 mini-turbos.
+- 2026-10-24 (agent, judge round 6): the exhaust flame lives 0.12 s, not 0.22 s. A puff stays
+  where it was born, so the longer life laid a dotted row of lights behind every boost.
+- 2026-10-24 (agent, slide film): a skid mark joins only a trail end behind its tyre along the
+  travel (cosine above 0.87), at opacity 0.4. The nearest end alone joined the other tyre or a
+  kart alongside, which drew zigzag cross-links in a pack of sliding karts.
 
 ## Execution Phases
 
