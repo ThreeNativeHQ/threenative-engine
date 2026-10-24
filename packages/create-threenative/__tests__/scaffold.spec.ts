@@ -295,8 +295,9 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // (method checked against this kit's previous value, from a copy holding only this template).
   // Recomputed 2026-10-24 for the double jump (chain window, press buffer, HUD hint, double-tap
   // scenario), folding the shared textures, the play-gate scenarios and the footSlip stride bound
-  // (method checked against platformer, from a copy of the index).
-  collectathon: "7adfa6ed6aa949c045c927c378b96697d16b48a97635111b0f3fa7ed6ae07539",
+  // (method checked against platformer, from a copy of the index). Recomputed 2026-10-24 for the
+  // mouse orbit camera.
+  collectathon: "5ee6ec62853218fd9e49c867cbdbb1c22200c28313ed9e70185ce0d5c222d224",
   // PRD-733 (2026-10-23): the new Lantern Vale kit, measured through createProject.
   adventure: "5b4bab685cf3567dc2643313b2bfdde58fd270dffccc8dcd9833a5faa19b4d1b",
   // PRD-734 (2026-10-24): the new Clover Cup kart kit, measured through createProject.

@@ -20,6 +20,9 @@ const game = defineGame<GameState, IPhysicsContext>({
     crouch: { buttons: [6, 7], keys: ["ShiftLeft", "ShiftRight", "KeyC"] },
     // Dive at speed.
     attack: { buttons: [2], keys: ["KeyX", "KeyJ"] },
+    // Mouse orbit, as a relative axis: a click on the canvas takes the pointer lock (the framework
+    // owns it and the native equivalent), and `scenes/Play.ts` turns the camera by the delta.
+    look: { pointerRelative: true },
   },
   plugins: [rapier({ gravity: { x: 0, y: -36, z: 0 } }), playtest({ events })],
   display: config.display,

@@ -200,6 +200,11 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       debug: () => ({ ...orbit.debug(), rayClear }),
     });
     afterPhysics(ctx, (dt) => {
+      // The mouse turns the camera only while the canvas holds the pointer lock a click took.
+      if (ctx.input.raw.pointer.captured) {
+        const look = ctx.input.vector("look");
+        orbit.look(look.x, look.y);
+      }
       orbit.update(hero.mesh.position, hero.body.velocity, dt, probe);
       rayClear = probe(camera.position, hero.mesh.position) === undefined;
       lighting.follow(hero.mesh.position);

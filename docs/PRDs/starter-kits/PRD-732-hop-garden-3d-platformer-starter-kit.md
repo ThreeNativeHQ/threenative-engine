@@ -395,6 +395,13 @@ Each playtest runs on a project scaffolded from `--template collectathon`:
     Proof: `playtests/double-tap.playtest.json` presses Space 12 ticks before touchdown and asserts
     one double (gen-12lp: green exit 0, with `jumpBuffer: 0` exit 1 on `counts.double` and the
     landing action); `jump-chain`, `acrobatics`, `collect` and `camera` exit 0 with the change.
+  - Mouse camera (owner order 2026-10-24; the `look` gate read `camera.main` rotationDelta 0): a
+    `look` binding with `pointerRelative: true` takes the pointer lock on a canvas click (the
+    framework's, as in the shooter kit), and `scenes/Play.ts` turns the orbit arm by the delta in
+    `afterPhysics` while the lock is held: 0.0035 rad per pixel, the arm angle between 3° and 50°,
+    and the travel swing waits 1.5 s after the mouse moves so it does not undo the player's view.
+    Proof: `playtests/look.playtest.json` (gen-12lp: green exit 0, rotationDelta 2.91 rad; with
+    the `orbit.look` call removed exit 1, rotationDelta 0); `camera` and `jump-chain` exit 0.
 
 ## Execution Phases
 

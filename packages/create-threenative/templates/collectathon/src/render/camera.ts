@@ -39,6 +39,12 @@ export const CAMERA_RIG = {
   craneElevation: 0.61,
   /** The headings it tries, as offsets from the current yaw, nearest first. */
   craneHeadings: [0, Math.PI / 2, -Math.PI / 2, Math.PI / 4, -Math.PI / 4, 2.36, -2.36],
+  /** Mouse orbit, in radians per pixel of pointer motion. */
+  lookSensitivity: 0.0035,
+  /** The arm angles the mouse can tilt between: just above the ground to 50° above the horizon. */
+  lookElevation: [0.05, 0.87],
+  /** After the mouse turns the arm, the travel swing waits this long, in seconds. */
+  lookHold: 1.5,
 } as const;
 
 /** Distance along the ray from `from` to `to` to the first wall, or undefined when clear. */
@@ -49,6 +55,8 @@ export interface IOrbitCamera {
   readonly yaw: number;
   /** Puts the camera behind a hero facing `yaw`, with no easing. */
   snap(target: Vector3, yaw: number, probe: WallProbe): void;
+  /** Turns the arm by a pointer delta in pixels: right turns the view right, down raises the arm. */
+  look(dx: number, dy: number): void;
   update(target: Vector3, velocity: Vector3, dt: number, probe: WallProbe): void;
   debug(): Record<string, unknown>;
 }
@@ -65,6 +73,9 @@ export function createOrbitCamera(camera: PerspectiveCamera): IOrbitCamera {
   let yaw = 0;
   let distance: number = CAMERA_RIG.distance;
   let elevation: number = CAMERA_RIG.elevation;
+  // The arm angle at rest, which the mouse tilts, and how long the travel swing still waits.
+  let tilt: number = CAMERA_RIG.elevation;
+  let held = 0;
   let pulledIn = false;
   let cuts = 0;
   let peakElevation = elevation;
@@ -83,7 +94,7 @@ export function createOrbitCamera(camera: PerspectiveCamera): IOrbitCamera {
     aim.set(target.x, target.y + CAMERA_RIG.aimHeight, target.z);
     // Crane: when the arm is boxed in, take the heading and angle that reach farthest. A new
     // heading is a cut, not a swing: an arm swept round a shaft passes through its wall.
-    let goal: number = CAMERA_RIG.elevation;
+    let goal = tilt;
     let heading = yaw;
     let best = reachAt(yaw, goal, probe);
     if (best < CAMERA_RIG.craneBelow) {
@@ -119,13 +130,22 @@ export function createOrbitCamera(camera: PerspectiveCamera): IOrbitCamera {
     snap(target, heroYaw, probe) {
       yaw = heroYaw;
       distance = CAMERA_RIG.distance;
-      elevation = CAMERA_RIG.elevation;
+      elevation = tilt = CAMERA_RIG.elevation;
+      held = 0;
       [cuts, peakElevation, closest] = [0, elevation, distance];
       place(target, probe, 1);
     },
+    look(dx, dy) {
+      if (dx === 0 && dy === 0) return;
+      yaw -= dx * CAMERA_RIG.lookSensitivity;
+      const [low, high] = CAMERA_RIG.lookElevation;
+      tilt = MathUtils.clamp(tilt + dy * CAMERA_RIG.lookSensitivity, low, high);
+      held = CAMERA_RIG.lookHold;
+    },
     update(target, velocity, dt, probe) {
       const speed = Math.hypot(velocity.x, velocity.z);
-      if (speed > 1) {
+      held = Math.max(0, held - dt);
+      if (speed > 1 && held === 0) {
         const travel = Math.atan2(-velocity.x, -velocity.z);
         const turn = MathUtils.euclideanModulo(travel - yaw + Math.PI, Math.PI * 2) - Math.PI;
         // Running at the camera does not spin it round: only travel within 120° of the view swings it.
@@ -137,7 +157,7 @@ export function createOrbitCamera(camera: PerspectiveCamera): IOrbitCamera {
       place(target, probe, 1 - Math.exp(-dt * CAMERA_RIG.followRate));
     },
     debug() {
-      return { closest, cuts, distance, elevation, peakElevation, pulledIn, yaw };
+      return { closest, cuts, distance, elevation, peakElevation, pulledIn, tilt, yaw };
     },
   };
 }
