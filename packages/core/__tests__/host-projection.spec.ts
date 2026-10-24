@@ -127,6 +127,17 @@ describe("SceneRenderProjection on a host that batches the authored scene", () =
     projection.dispose();
   });
 
+  it("keeps no velocity history of its own: the host engine tracks each object's previous transform", () => {
+    const { reads, scene } = hostScene(250);
+    const projection = new SceneRenderProjection(scene, { velocity: true, onReport: () => {} });
+    for (let frame = 0; frame < 3; frame += 1) {
+      projection.reconcile();
+      projection.commit();
+    }
+    expect(reads()).toBe(0);
+    projection.dispose();
+  });
+
   it("passes its own mesh floor to the host", () => {
     const { calls, scene } = hostScene(10);
     const projection = new SceneRenderProjection(scene, { minMeshes: 8, onReport: () => {} });

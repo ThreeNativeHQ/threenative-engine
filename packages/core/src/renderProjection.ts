@@ -376,7 +376,7 @@ export class SceneRenderProjection {
     }
     const host = this.#host;
     if (host !== undefined) {
-      this.#reconcileHost(host, velocityEnabled);
+      this.#reconcileHost(host);
       return;
     }
     const mirror = this.#mirror;
@@ -493,10 +493,12 @@ export class SceneRenderProjection {
    * here: one call reports what its batching made of the frame. The world-matrix pass stays the
    * frame loop's (it runs on the root the renderer is handed, which is this scene).
    */
-  #reconcileHost(host: IHostProjectionRoot, velocityEnabled: boolean): void {
+  #reconcileHost(host: IHostProjectionRoot): void {
     const startedAt = globalThis.performance?.now() ?? 0;
-    if (velocityEnabled) this.#velocityTracker.update(this.#source);
-    else this.#velocityTracker.clear();
+    // The host engine keeps each object's previous transform itself (its temporal pass's
+    // `previousModel`) and reads none of this tracker's history; tracking here would only cross
+    // the bridge for every matrix twice a frame (about 2 ms a frame on a 400-object scene).
+    this.#velocityTracker.clear();
     const verdict = host.__tnProjectionReport(this.#minMeshes);
     this.#hostVerdict = verdict;
     this.#sourceRenderables = verdict.sourceRenderables;
