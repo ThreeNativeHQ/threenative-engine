@@ -797,6 +797,8 @@ Bounds how far a planted foot slides while the subject moves, measured every tic
 | `atStep` | string | no |
 | `feet` | Array<string> | no |
 | `maxSlip` | positive number | no |
+| `maxSlideSpeed` | positive number | no |
+| `stepSeconds` | positive number | no |
 | `entity` | string | no |
 
 

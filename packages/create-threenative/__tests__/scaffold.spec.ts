@@ -286,35 +286,38 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-10-18 merging develop f30f9b6d3 (PRD-478) into PR #493: the merged Three patch moves every tree.
   // Recomputed 2026-10-16 for PRD-617: puzzle's boot-failure scenario asserts the engine-neutral
   // boot-failure text both engines now show, so only puzzle's tree moves.
-  "action-rpg": "049b89827707aea83ea5b9847d4c8c0d3a4e01af138c0928ad59cd7f21b080e8",
+  "action-rpg": "48433a32758cd9472dae265053dae668dfa86da48f2aaf8f7ebba7a7fc18c2cb",
   // PRD-732 (2026-10-23): the new Hop Garden kit, measured through createProject (method checked
   // against platformer's unchanged value). Recomputed 2026-10-24 for the PRD-732 polish round: the
   // new hero, the dust and sparkle effects and the effects scenario. Recomputed 2026-10-24 for
   // polish round 3: the shaft camera, the planting, the hopper and thornback and their scenarios.
   // Recomputed 2026-10-24 for the look round: terrain, castle, meadow, sky and world assertions
   // (method checked against this kit's previous value, from a copy holding only this template).
-  collectathon: "6431b4491ca14e73649e095c629f7df16f803ec39270104ac195ce9ff552aec8",
+  // Recomputed 2026-10-24 for the double jump (chain window, press buffer, HUD hint, double-tap
+  // scenario), folding the shared textures and the play-gate scenarios (method checked against
+  // platformer, from a copy of the index).
+  collectathon: "961da08b315a5e32c10ace570cef558de5ae376b3a6ba96185561b1c068efac8",
   // PRD-733 (2026-10-23): the new Lantern Vale kit, measured through createProject.
   adventure: "5b4bab685cf3567dc2643313b2bfdde58fd270dffccc8dcd9833a5faa19b4d1b",
   // PRD-734 (2026-10-24): the new Clover Cup kart kit, measured through createProject.
   kart: "1fd8dc61d1dc6dfae64868062113d878651669cf8de2c9c9e8250c709d864304",
-  minimal: "1bdc31f8d31f074cde31e09d67ac850762482f481e4b41050d5679f7155ac085",
-  platformer: "27b6033ac8ce09c6b19894586865e465e2edfcc0b7edd7be02e4e8459b248e53",
-  puzzle: "78f16093d5dedabf3a7bff8b07bb261bd1c7f91339aeaae51f7a1a278a5442d2",
-  racing: "7e591c477bdf3fb7ad928576d3e5e5a9113b2792867e01a62c41ff1564513af3",
-  rain: "909fa2c73253480e882855c92043d65b0e2dca9f6499effac8d6a89dba644dcf",
-  rts: "ae2ceac563ac255d56834dd8af62b8be934f3c13dff7179a52ddaf78836d1469",
-  runner: "9b4349fd99dbc3f85aef3ba6eacdf755f5cedf69b7c16f943b0e98258acc5d49",
+  minimal: "04038bc1992ddf983b8e330b46142f8fa7c67bb9b32cb23cecf3228ed3a15bb9",
+  platformer: "77acc3c7f3d2f6953a14588ddf855d3479539f37c5e4203f0e50899c2a1ed1c1",
+  puzzle: "f2a02e5bd2b1281e2fe94057fd7ab5a1843473e65cf8285b4fa25a9a88a371fe",
+  racing: "fb73355fc332905ea7d79eb2355fa652a978198aa9c07502cf305def7c9e08ba",
+  rain: "e5d396c0aef4c6fb601421c1137b880cff01f8c94ff3596fe34c44eaead379bd",
+  rts: "61dec8144abd3c6c8e22842078a9c5eae80c1a4ec381e964b7136eee07018e9b",
+  runner: "0b6001ad7fa23e07028c7cc47535e606ca8008f16fce1ee81c20a4b771b275fb",
   // Finite-height readiness plus hull, sail, and buoy interpolation from the current swell pose.
-  sailing: "d27fc1acccff1f55428944f7c1e075c31e240c56fee6250d3feed7ac369f1438",
-  shooter: "7fa374b2f1471c7ad8a2af2bed5f019943b58cceef6844e616aaac9baa7450de",
-  snow: "c041fb86c6cd9f8c926594b6d869179369001ec2ae52457db11b4bf065f00e67",
+  sailing: "f6178f253eb17b551bc7d314f18b03af092d2f36170525db55053799ce494191",
+  shooter: "bb7d82f34b4077c5939b54085c34d31a2c91291b2bffa3df018de614936306a9",
+  snow: "8bf3b1de4c79a78ed134fcec6eb44b4d9c8a8fde542a554abf0fa746eb35833c",
   // Measured 2026-10-16 through createProject after starter's completed-work quality fallback fix.
   // Recomputed 2026-10-16: starter's adaptiveQuality split its policy resolution into qualityPolicy.ts
   // to stay under the 200-line render-file cap; only starter's tree moves.
   // Recomputed 2026-10-23: the native render-chain scenario expects the Unreal finishing chain (grade and grain off).
-  starter: "3634f9d7eebf14ec3d8072ff71bc6bd7635fd7b28f16df8c3234aa839539a7f0",
-  "tower-defense": "654e7d81e46ce652c545ee9a3a6480089b5cd1413eccfde8f2065dfb85129464",
+  starter: "a81534516da58a566637a69e3ba0d8f5790c1726f03ba7b912120487f6fb042f",
+  "tower-defense": "6832c52d982e8ec921b5da337af73a03572b04d3463846c138bb0765d2c16ecc",
 };
 
 const GENERATED_SCAFFOLD_METADATA =

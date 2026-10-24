@@ -99,6 +99,13 @@
         "lte": 1,
         "allowTrivial": "Zero before the run; over the planted run frames the sole slides at most 1 m/s against 9.6 m/s of travel, about 10%."
       }
+    ],
+    "footSlip": [
+      {
+        "atStep": "run",
+        "feet": ["footL", "footR"],
+        "maxSlideSpeed": 1
+      }
     ]
   }
 }

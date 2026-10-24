@@ -9,8 +9,13 @@ export const FOOT_SLIP_MIN_TRAVEL_M = 0.5;
 export const FOOT_SLIP_CONTACT_BAND = 0.25;
 const MIN_CONTACT_PAIRS = 4;
 
+/** The engine's default fixed step; an assertion names `stepSeconds` when the game sets another. */
+const DEFAULT_STEP_SECONDS = 1 / 60;
+
 export interface IFootSlipMeasure {
   contactPairs: number;
+  /** Planted-foot world speed in m/s: its travel over the time those planted ticks took. */
+  speed?: number;
   /** Planted-foot travel over body travel across the same ticks. */
   slip?: number;
   lift: number;
@@ -23,7 +28,7 @@ export interface IFootSlipMeasure {
  * a foot that skates with the body, and grows as the legs cycle faster or slower than the ground.
  * A foot that never lifts is planted on every tick, so a rig that slides flat-footed reads ~1 too.
  */
-export function measureFootSlip(observation: IPlaytestFootSlipObservation): { feet: IFootSlipMeasure[]; travel: number; unobserved?: string } {
+export function measureFootSlip(observation: IPlaytestFootSlipObservation, stepSeconds = DEFAULT_STEP_SECONDS): { feet: IFootSlipMeasure[]; travel: number; unobserved?: string } {
   const { samples } = observation;
   let travel = 0;
   for (let index = 1; index < samples.length; index += 1) {
@@ -61,7 +66,7 @@ export function measureFootSlip(observation: IPlaytestFootSlipObservation): { fe
       contactPairs,
       lift,
       name,
-      ...(contactPairs < MIN_CONTACT_PAIRS || bodyTravel <= 0 ? {} : { slip: footTravel / bodyTravel }),
+      ...(contactPairs < MIN_CONTACT_PAIRS || bodyTravel <= 0 ? {} : { slip: footTravel / bodyTravel, speed: footTravel / (contactPairs * stepSeconds) }),
     };
   });
   return { feet, travel };
@@ -73,7 +78,7 @@ export function emitFootSlip(ctx: IEvaluationContext): void {
   assertions.forEach((assertion, index) => {
     const id = `footSlip[${index}]`;
     const observation = ctx.input.report.observations?.footSlip?.find(({ label }) => label === assertion.atStep);
-    const measure = observation === undefined ? undefined : measureFootSlip(observation);
+    const measure = observation === undefined ? undefined : measureFootSlip(observation, assertion.stepSeconds);
     const unmeasured = measure?.feet.find(({ slip }) => slip === undefined);
     const reason = observation === undefined
       ? "the run recorded no per-tick foot samples for this step; footSlip runs only on the browser target"
@@ -85,7 +90,7 @@ export function emitFootSlip(ctx: IEvaluationContext): void {
         message: `footSlip at '${assertion.atStep}' was not measured: ${reason}.`,
         observedRuntimePath: `observations.json/footSlip`,
         severity: "error",
-        suggestion: "Run on the browser target, name each sole node, and make the step move the subject at a run.",
+        suggestion: "Run on the browser target, name each sole node (Object3D.name, for example footL and footR), and make the step move the subject at a run.",
       });
       return;
     }
@@ -105,16 +110,33 @@ export function emitFootSlip(ctx: IEvaluationContext): void {
       return;
     }
     const worst = Math.max(...measure!.feet.map(({ slip }) => slip!));
-    const pass = worst <= assertion.maxSlip;
+    const worstSpeed = Math.max(...measure!.feet.map(({ speed }) => speed!));
+    const slipPass = assertion.maxSlip === undefined || worst <= assertion.maxSlip;
+    const speedPass = assertion.maxSlideSpeed === undefined || worstSpeed <= assertion.maxSlideSpeed;
     ctx.assertions.push({
-      details: { atStep: assertion.atStep, expected: assertion.maxSlip, feet: measure!.feet, travel: measure!.travel, worst },
+      details: {
+        atStep: assertion.atStep,
+        expected: { maxSlideSpeed: assertion.maxSlideSpeed, maxSlip: assertion.maxSlip },
+        feet: measure!.feet,
+        travel: measure!.travel,
+        worst,
+        worstSpeed,
+      },
       id: `${id}.slip`,
-      pass,
+      pass: slipPass && speedPass,
     });
-    if (!pass)
+    if (!slipPass)
       ctx.diagnostics.push({
         code: "TN_PLAYTEST_FOOT_SLIP",
         message: `A planted foot travelled ${worst.toFixed(2)} m per metre of body travel at '${assertion.atStep}', ceiling ${assertion.maxSlip}.`,
+        observedRuntimePath: `observations.json/footSlip`,
+        severity: "error",
+        suggestion: "Drive the stride from distance travelled, not from time: the cycle phase should advance by ground speed over stride length, so a planted foot stays put.",
+      });
+    if (!speedPass)
+      ctx.diagnostics.push({
+        code: "TN_PLAYTEST_FOOT_SLIP",
+        message: `A planted foot slid at ${worstSpeed.toFixed(2)} m/s at '${assertion.atStep}', ceiling ${assertion.maxSlideSpeed} m/s.`,
         observedRuntimePath: `observations.json/footSlip`,
         severity: "error",
         suggestion: "Drive the stride from distance travelled, not from time: the cycle phase should advance by ground speed over stride length, so a planted foot stays put.",

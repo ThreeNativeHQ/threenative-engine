@@ -54,7 +54,7 @@ pnpm typecheck
 obstacle `InstancedMesh` is built once at a fixed slot count and its matrices rewritten on
 recycle. The obstacle *bodies* are the exception — disposed and recreated, because `RigidBody3D`
 cannot reposition a fixed body. The runner is not a rigid body — a lane snap and a jump arc feel worse in a solver — but the collision is real: `src/entities/Runner.ts` carries an `Area3D` masked to the obstacle layer and listens for `bodyEntered`, so a hit is an overlap the engine reports, not a hand-kept distance check. Its figure is `assets/mannequin.glb` (the file `minimal` ships) through `SkeletalMesh3D`; `CLIPS` names the four clips it plays. Gravity is zero in `src/game.ts` on purpose; nothing falls. The track comes from `ctx.random`, so `defineGame({ seed })` **is** the level.
-Register entities with `ctx.entities`; the React HUD reads `GameState`, never an entity. Keep `playtests/survives.playtest.json` as smoke proof, and `streams` honest
+Register entities with `ctx.entities`; the React HUD reads `GameState`, never an entity. Keep `playtests/survives.playtest.json` as smoke proof, `playtests/stride.playtest.json` bounds the mannequin's `footSlip` at 1 m/s, and keep `streams` honest
 when chunk recycling changes.
 
 ## Portable authoring contracts

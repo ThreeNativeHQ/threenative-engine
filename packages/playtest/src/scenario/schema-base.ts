@@ -275,7 +275,12 @@ export interface IPlaytestFootSlipAssertion {
   atStep: string;
   entity?: string;
   feet: string[];
-  maxSlip: number;
+  /** Ceiling on planted-foot travel over body travel. At least one of this and `maxSlideSpeed` is required. */
+  maxSlip?: number;
+  /** Ceiling on a planted foot's world speed in m/s, whatever the body's speed is. */
+  maxSlideSpeed?: number;
+  /** Seconds per fixed tick, for `maxSlideSpeed`; the engine's own default step is 1/60. */
+  stepSeconds?: number;
 }
 
 /**

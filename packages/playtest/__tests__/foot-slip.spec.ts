@@ -29,10 +29,10 @@ function stride(rate: number, ticks = 80): IPlaytestFootSlipObservation {
   return { entity: "player", feet: ["footL"], label: "run", samples };
 }
 
-function evaluate(observation: IPlaytestFootSlipObservation | undefined, maxSlip = 0.35, strideAtRun?: Record<string, unknown>) {
+function evaluate(observation: IPlaytestFootSlipObservation | undefined, maxSlip: number | undefined = 0.35, strideAtRun?: Record<string, unknown>, extra: Record<string, unknown> = {}) {
   const scenario = validatePlaytestScenario(
     {
-      assert: { footSlip: [{ atStep: "run", feet: ["footL"], maxSlip }] },
+      assert: { footSlip: [{ atStep: "run", feet: ["footL"], ...(maxSlip === undefined ? {} : { maxSlip }), ...extra }] },
       name: "slip",
       schemaVersion: 1,
       steps: [{ holdTicks: 80, kind: "input", label: "run", press: "KeyW", release: true }],
@@ -107,6 +107,30 @@ describe("footSlip", () => {
     expect(evaluate(stride(1), 0.35, planted).result?.id).toBe("footSlip[0].slip");
   });
 
+  it("bounds a planted foot's world speed in m/s, whatever the body's speed", () => {
+    const ok = evaluate(stride(1), undefined, undefined, { maxSlideSpeed: 1 });
+    expect(ok.result).toMatchObject({ id: "footSlip[0].slip", pass: true });
+    expect((ok.result?.details as { worstSpeed: number }).worstSpeed).toBeLessThan(0.5);
+    // Legs cycling twice as fast as the ground: the planted foot sweeps back at the body's 6 m/s.
+    const fast = evaluate(stride(2), undefined, undefined, { maxSlideSpeed: 1 });
+    expect(fast.result?.pass).toBe(false);
+    expect((fast.result?.details as { worstSpeed: number }).worstSpeed).toBeCloseTo(6, 0);
+    expect(fast.codes).toContain("TN_PLAYTEST_FOOT_SLIP");
+  });
+
+  it("converts planted ticks to time with the named stepSeconds", () => {
+    const half = evaluate(stride(2), undefined, undefined, { maxSlideSpeed: 1, stepSeconds: 1 / 30 });
+    expect((half.result?.details as { worstSpeed: number }).worstSpeed).toBeCloseTo(3, 0);
+  });
+
+  it("fails closed on maxSlideSpeed when the sole nodes are unnamed", () => {
+    const noFoot = stride(1).samples.map(({ body }) => ({ body, feet: [null] }));
+    const { codes, result } = evaluate({ entity: "player", feet: ["footL"], label: "run", samples: noFoot }, undefined, undefined, { maxSlideSpeed: 1 });
+    expect(result).toMatchObject({ id: "footSlip[0].observed", pass: false });
+    expect((result?.details as { reason: string }).reason).toMatch(/name the sole nodes/u);
+    expect(codes).toContain("TN_PLAYTEST_FOOT_SLIP_UNOBSERVED");
+  });
+
   it("throws at load on a malformed assertion", () => {
     const load = (footSlip: unknown, label = "run") => () => validatePlaytestScenario(
       { assert: { footSlip }, name: "slip", schemaVersion: 1, steps: [{ holdTicks: 10, kind: "input", label, press: "KeyW", release: true }], subject: "player" },
@@ -114,7 +138,8 @@ describe("footSlip", () => {
     );
     expect(load([{ atStep: "run", feet: [], maxSlip: 0.35 }])).toThrow(/feet/u);
     expect(load([{ atStep: "run", feet: ["footL", "footL"], maxSlip: 0.35 }])).toThrow(/unique/u);
-    expect(load([{ atStep: "run", feet: ["footL"] }])).toThrow(/maxSlip/u);
+    expect(load([{ atStep: "run", feet: ["footL"] }])).toThrow(/maxSlip or .*maxSlideSpeed/u);
+    expect(load([{ atStep: "run", feet: ["footL"], maxSlideSpeed: 0 }])).toThrow();
     expect(load([{ atStep: "run", feet: ["footL"], maxSlip: "0.35" }])).toThrow();
     expect(load([{ atStep: "walk", feet: ["footL"], maxSlip: 0.35 }])).toThrow(/walk/u);
     expect(load([{ atStep: "run", feet: ["footL"], maxSlip: 0.35, slack: 1 }])).toThrow();

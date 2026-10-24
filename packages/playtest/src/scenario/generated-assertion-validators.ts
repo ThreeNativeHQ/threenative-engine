@@ -230,6 +230,8 @@ export const GENERATED_ASSERTION_FIELD_VALIDATORS: Readonly<Record<string, Reado
     "atStep": (value: unknown) => typeof value === "string" && value.trim() !== "",
     "feet": (value: unknown) => Array.isArray(value),
     "maxSlip": (value: unknown) => typeof value === "number" && Number.isFinite(value) && value > 0,
+    "maxSlideSpeed": (value: unknown) => typeof value === "number" && Number.isFinite(value) && value > 0,
+    "stepSeconds": (value: unknown) => typeof value === "number" && Number.isFinite(value) && value > 0,
     "entity": (value: unknown) => typeof value === "string" && value.trim() !== "",
   }),
   "causedBy": Object.freeze({

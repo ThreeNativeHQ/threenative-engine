@@ -35,6 +35,7 @@
       {
         "atStep": "run",
         "feet": ["footL", "footR"],
+        "maxSlideSpeed": 1,
         "maxSlip": 0.35
       }
     ]

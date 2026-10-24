@@ -267,7 +267,10 @@ instead: `{ atStep, feet: ["footL", "footR"], maxSlip: 0.35, entity? }` advances
 one tick at a time and samples the world position of the subject and of each named sole node
 after every tick. A foot is planted while it is in the lowest quarter of its height below the
 body, and its slip is planted-foot travel over body travel on those ticks: 0 is planted, about 1
-skates with the body. It fails `TN_PLAYTEST_FOOT_SLIP`. A missing node, a step that moved the
+skates with the body. It fails `TN_PLAYTEST_FOOT_SLIP`. `maxSlideSpeed` (m/s) bounds the same
+planted-foot travel in metres per second instead of as a ratio, so a body that barely moves cannot
+hide a slide; it assumes `stepSeconds` (default 1/60) per tick, because the bridge does not report
+the game's step. Set `maxSlip`, `maxSlideSpeed` or both; one is required. A missing node, a step that moved the
 subject under 0.5 m, fewer than 4 planted tick pairs, or a target other than the browser fails
 `TN_PLAYTEST_FOOT_SLIP_UNOBSERVED`. A moving character whose clip is `inPlace` with a zero
 `clipGroundSpeed` has no foot plant for stride sync to match: `footSlip`, `strideSynced` and

@@ -921,18 +921,22 @@ export function validateSceneNodesAssertion(
 
 export function validateFootSlipAssertion(value: unknown, scenarioPath: string, objectPath: string): IPlaytestFootSlipAssertion {
   const record = requireRecord(value, scenarioPath, objectPath);
-  rejectUnknownKeys(record, ["atStep", "entity", "feet", "maxSlip"], scenarioPath, objectPath);
+  rejectUnknownKeys(record, ["atStep", "entity", "feet", "maxSlideSpeed", "maxSlip", "stepSeconds"], scenarioPath, objectPath);
   const feet = record.feet;
   if (!Array.isArray(feet) || feet.length === 0 || feet.some((foot) => typeof foot !== "string" || foot.trim() === "")
     || new Set(feet).size !== feet.length)
     throw invalidScenario(scenarioPath, `${objectPath}.feet must be a non-empty array of unique node names; got ${describeValue(feet)}.`);
   const maxSlip = optionalPositiveNumber(record, "maxSlip", scenarioPath, objectPath);
-  if (maxSlip === undefined) throw invalidScenario(scenarioPath, `${objectPath}.maxSlip is required; a slip measure with no ceiling bounds nothing.`);
+  const maxSlideSpeed = optionalPositiveNumber(record, "maxSlideSpeed", scenarioPath, objectPath);
+  if (maxSlip === undefined && maxSlideSpeed === undefined)
+    throw invalidScenario(scenarioPath, `${objectPath}.maxSlip or ${objectPath}.maxSlideSpeed is required; a slip measure with no ceiling bounds nothing.`);
   return {
     atStep: requireString(record, "atStep", scenarioPath, objectPath),
     ...present("entity", optionalString(record, "entity", scenarioPath, objectPath)),
     feet: feet as string[],
-    maxSlip,
+    ...present("maxSlideSpeed", maxSlideSpeed),
+    ...present("maxSlip", maxSlip),
+    ...present("stepSeconds", optionalPositiveNumber(record, "stepSeconds", scenarioPath, objectPath)),
   };
 }
 
