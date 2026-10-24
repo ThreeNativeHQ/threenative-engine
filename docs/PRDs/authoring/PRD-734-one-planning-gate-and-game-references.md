@@ -113,8 +113,9 @@ the cache for tests.
 and `runServer` writes each response when it resolves. The 22 calls in `server.spec.ts` get an
 `await`. JSON-RPC ids keep responses matched when they finish out of order.
 
-**Search** reuses the engine-mcp scorer over the stubs, with the game title as an alias, so cards
-using the existing scoring helpers. Mechanic and game-title scores add so a shared title cannot hide mechanic agreement. A Tier-2 game matches on its title and returns its repo with
+**Search** reuses the engine-mcp scoring helpers over the stubs, with the game title as an alias.
+Mechanic and game-title scores add so a shared title cannot hide mechanic agreement.
+A Tier-2 game matches on its title and returns its repo with
 the guidance "explore it, then call `engine_save_reference`". If there is no cache and no network,
 the tool returns "references unavailable", and capability search keeps working.
 
