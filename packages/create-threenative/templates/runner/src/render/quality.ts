@@ -3,8 +3,9 @@
 //
 // This is the one place this game decides how expensive it looks. `postprocessing.ts` reads
 // `qualityPreset(resolveQualityTier(...))` and nothing else, so "make it run on a phone" is one
-// file to edit rather than a hunt through anonymous literals. All three tiers use the World
-// Environment's shared SMAA stage; see `screenSpaceAA` in `worldEnvironment.ts`.
+// file to edit rather than a hunt through anonymous literals. `high` and `medium` anti-alias
+// temporally (`temporalAA`) and `low` uses the World Environment's shared SMAA stage; see
+// `screenSpaceAA` in `worldEnvironment.ts`.
 //
 // **Where the numbers come from.** Every millisecond below is GPU time from the per-stage
 // ablation recorded in the engine repository's `docs/verification/runtime-perf-state.md`: Chrome
@@ -92,21 +93,21 @@ export function resolveQualityTier(
 }
 
 /**
- * The look every tier shares: a wide, faint glow on what is genuinely brighter than white rather
- * than a haze over the frame (a threshold under 1 blooms lit grey surfaces and flattens
- * contrast), a corner falloff, and the tone curve. Antialiasing (SMAA) is on in every tier that
- * installs a chain.
+ * The look every tier shares is a fresh Unreal 5.8.3 project's: its bloom, local exposure and
+ * cosine-fourth vignette, plus Unreal's temporal anti-aliasing on `high` and `medium` (`temporalAA`) and the
+ * shared SMAA on `low` (`screenSpaceAA` in `worldEnvironment.ts`).
+ * Each has a named override: `unrealBloomEnabled: false` (then `bloomStrength`, `bloomRadius` and
+ * `bloomThreshold` apply), `localExposureEnabled: false` and `vignetteAmount: 0`.
  */
 const shared: IWorldEnvironmentOptions = {
-  // Bloom: ~4.6 ms in the reference ablation — the second most expensive stage there.
+  // Bloom cost: unmeasured here; PRD-636 records it in ms.
   bloomEnabled: true,
-  bloomRadius: 0.6,
-  bloomStrength: 0.22,
-  bloomThreshold: 1,
   autoExposureEnabled: false,
   exposure: 0.62,
   tonemapMode: "aces",
-  vignetteAmount: 0.22,
+  // The Unreal bloom is the one `bloomEnabled` runs. Cost: unmeasured.
+  unrealBloomEnabled: true,
+  vignetteAmount: 0.4,
 };
 
 /**
@@ -117,15 +118,27 @@ const shared: IWorldEnvironmentOptions = {
  */
 const high: IWorldEnvironmentOptions = {
   ...shared,
+  // Unreal's default anti-aliasing is temporal (`r.AntiAliasingMethod` 4). The engine jitters the camera, draws the motion
+  // and blends the frames; `temporalAA: false` brings back the chain's SMAA, which is what `low` and three.js keep.
+  temporalAA: true,
   // GTAO, full resolution plus denoise: unmeasured on its own here; read `TN_FRAME_BUDGET`.
   gtaoEnabled: true,
   gtaoRadius: 0.35,
+  // Measures against `exposure` while auto exposure is off. Cost: unmeasured.
+  localExposureEnabled: true,
+  // Unreal enables motion blur on high-end PCs only. It needs the chain's velocity. Cost: unmeasured.
+  motionBlurEnabled: true,
 };
 
 /** The rung in between: the same occlusion at half the directions. Saving unmeasured. */
-const medium: IWorldEnvironmentOptions = { ...high, gtaoSamples: 8, renderChainTier: "medium" };
+const medium: IWorldEnvironmentOptions = {
+  ...high,
+  gtaoSamples: 8,
+  motionBlurEnabled: false,
+  renderChainTier: "medium",
+};
 
-/** What a phone gets: bloom, vignette and the tone curve, nothing screen-space. */
+/** What a phone gets: bloom, vignette and the tone curve. Unreal's mobile profile has no local exposure. */
 const low: IWorldEnvironmentOptions = { ...shared, renderChainTier: "low" };
 
 const QUALITY_PRESETS: Record<QualityTier, IWorldEnvironmentOptions> = { high, low, medium };

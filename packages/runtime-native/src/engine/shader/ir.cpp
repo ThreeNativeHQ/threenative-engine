@@ -262,15 +262,23 @@ ExprId Program::construct(Type type, const std::vector<ExprId>& parts, Where whe
     Expr e{Op::Construct, type, {}, static_cast<uint8_t>(parts.size())};
     for (size_t i = 0; i < parts.size(); ++i) {
         if (parts[i] == kInvalid) return kInvalid;
-        const Type part = exprs_[parts[i]].type;
+        ExprId id = parts[i];
+        Type part = exprs_[id].type;
         // One numeric part of the same shape converts, as WGSL's u32(x) and vec3<f32>(v) do.
         const auto numeric = [](Type t) { return t.scalar != Type::Scalar::Bool && !t.isMatrix(); };
         const bool conversion = parts.size() == 1 && numeric(part) && numeric(type) && part.rows == type.rows;
+        // Several parts: three's JoinNode casts each input to the vector's element type, so ivec2(a, b) of
+        // whole numbers and vec2(i32, f32) build. A scalar part converts first; WGSL has no implicit cast.
+        if (parts.size() > 1 && part.isScalar() && numeric(part) && numeric(type) && part.scalar != type.scalar) {
+            id = construct(Type{type.scalar, 1, 1}, {id}, where);
+            if (id == kInvalid) return kInvalid;
+            part = exprs_[id].type;
+        }
         if ((part.scalar != type.scalar && !conversion) || part.isMatrix()) {
             return fail("construct " + type.name(), "part " + std::to_string(i) + " is " + part.name(), where);
         }
         components += part.rows;
-        e.args[i] = parts[i];
+        e.args[i] = id;
     }
     const unsigned want = static_cast<unsigned>(type.rows) * type.cols;
     // A single scalar splats, as vec3(1.0) does.
@@ -295,31 +303,155 @@ ExprId Program::authoredCall(std::string_view name, std::string_view source, Typ
     return pure(call);
 }
 
-ExprId Program::call(std::string_view function, const std::vector<ExprId>& args, Where where) {
+ExprId Program::call(std::string_view function, const std::vector<ExprId>& inputs, Where where) {
+    std::vector<ExprId> args = inputs;
     for (ExprId a : args) {
         if (a == kInvalid) return kInvalid;
     }
+    if (function == "atan" && args.size() == 2) function = "atan2";
     auto type = [&](size_t i) { return exprs_[args[i]].type; };
     auto floating = [&](size_t i) { return type(i).scalar == Type::Scalar::F32 && !type(i).isMatrix(); };
+    // MathNode.getInputType / NodeBuilder.format: float operands use the widest shape,
+    // splatting scalars and padding shorter vectors with z=0, w=1.
+    const std::string_view floatMath[] = {"min", "max", "pow", "step", "atan2", "mod", "dot", "distance", "cross", "reflect", "mix", "clamp", "smoothstep", "faceForward", "faceforward", "refract", "difference", "mixElement", "smoothstepElement", "stepElement"};
+    if (args.size() >= 2 && std::find(std::begin(floatMath), std::end(floatMath), function) != std::end(floatMath) &&
+        std::all_of(args.begin(), args.end(), [&](ExprId a) { const auto t = exprs_[a].type; return t.scalar == Type::Scalar::F32 && !t.isMatrix(); })) {
+        uint8_t rows = function == "cross" ? 3 : 1;
+        if (function != "cross") for (auto a : args) rows = std::max(rows, exprs_[a].type.rows);
+        for (size_t i = 0; i < args.size(); ++i) {
+            auto& a = args[i];
+            const auto source = exprs_[a].type;
+            // Preserve scalar factors/bounds already supported by the IR and emitter.
+            if (source.isScalar() && ((function == "mix" && i == 2) ||
+                (function == "clamp" && i > 0) ||
+                (function == "smoothstep" && i < 2 && type(0) == type(1)))) continue;
+            const uint8_t want = function == "refract" && i == 2 ? 1 : rows;
+            if (source.rows > want) a = swizzle(a, std::string("xyzw").substr(0, want), where);
+            else if (source.rows < want) {
+                if (source.isScalar()) a = construct(Type::vec(want), {a}, where);
+                else {
+                    if (source.rows == 2) a = construct(Type::vec(3), {a, constant(0.0f)}, where);
+                    if (want == 4) a = construct(Type::vec(4), {a, constant(1.0f)}, where);
+                }
+            }
+        }
+    }
+    // r185 MathNode.setup aliases and compositions; shared by every authoring path.
+    if (function == "inversesqrt") function = "inverseSqrt";
+    if (function == "faceforward") function = "faceForward";
+    if (function == "mixElement" || function == "smoothstepElement") {
+        if (args.size() != 3) return fail(function, "takes three operands", where);
+        return call(function == "mixElement" ? "mix" : "smoothstep", {args[1], args[2], args[0]}, where);
+    }
+    if (function == "stepElement") {
+        if (args.size() != 2) return fail(function, "takes two operands", where);
+        return call("step", {args[1], args[0]}, where);
+    }
+    const bool unaryComposition = function == "reciprocal" || function == "oneMinus" || function == "negate" ||
+        function == "saturate" || function == "pow2" || function == "pow3" || function == "pow4" || function == "cbrt";
+    if (unaryComposition) {
+        const bool product = function == "pow2" || function == "pow3" || function == "pow4";
+        if (args.size() != 1 || !(product ? type(0).numeric() : floating(0))) return fail(function, "takes one floating value", where);
+        const auto a = args[0];
+        if (function == "negate") return neg(a, where);
+        const auto one = construct(type(0), {constant(1.0f)}, where);
+        if (function == "reciprocal") return div(one, a, where);
+        if (function == "oneMinus") return sub(one, a, where);
+        if (function == "saturate") return call("clamp", {a, constant(0.0f), constant(1.0f)}, where);
+        if (function == "cbrt") return mul(call("sign", {a}, where), call("pow", {call("abs", {a}, where), constant(1.0f / 3.0f)}, where), where);
+        auto result = mul(a, a, where);
+        if (function != "pow2") result = mul(result, a, where);
+        if (function == "pow4") result = mul(result, a, where);
+        return result;
+    }
+    if (function == "difference") {
+        if (args.size() != 2) return fail(function, "takes two floating values", where);
+        return call("abs", {sub(args[0], args[1], where)}, where);
+    }
+    if (function == "lengthSq") {
+        if (args.size() != 1) return fail(function, "takes one vector", where);
+        return call("dot", {args[0], args[0]}, where);
+    }
+    if (function == "rand") {
+        if (args.size() != 1 || !floating(0) || type(0).rows < 2) return fail(function, "takes a float vector with xy lanes", where);
+        const auto seed = construct(Type::vec(2), {constant(12.9898f), constant(78.233f)}, where);
+        const auto dt = call("dot", {swizzle(args[0], "xy", where), seed}, where);
+        return call("fract", {mul(call("sin", {call("mod", {dt, constant(3.141592653589793f)}, where)}, where), constant(43758.5453f), where)}, where);
+    }
+    if (function == "transformDirection" || function == "transformNormalByViewMatrix" || function == "transformNormalByInverseViewMatrix") {
+        if (args.size() != 2) return fail(function, "takes a direction and a matrix", where);
+        const bool firstMatrix = function == "transformDirection" && type(0).isMatrix();
+        const auto matrix = args[firstMatrix ? 0 : 1], direction = args[firstMatrix ? 1 : 0];
+        const Type mt = exprs_[matrix].type, dt = exprs_[direction].type;
+        if (!mt.isMatrix() || mt.rows != mt.cols || mt.rows < 3 || mt.rows > 4 || dt.scalar != Type::Scalar::F32 || dt.isMatrix())
+            return fail(function, "requires mat3/mat4 and a floating direction", where);
+        auto vector = direction;
+        if (dt.rows > 3) vector = swizzle(vector, "xyz", where);
+        else if (dt.rows < 3) vector = dt.isScalar() ? construct(Type::vec(3), {vector}, where) : construct(Type::vec(3), {vector, constant(0.0f)}, where);
+        if (mt.cols == 4) vector = construct(Type::vec(4), {vector, constant(0.0f)}, where);
+        const auto product = function == "transformNormalByInverseViewMatrix" ? mul(vector, matrix, where) : mul(matrix, vector, where);
+        return call("normalize", {swizzle(product, "xyz", where)}, where);
+    }
     Type result{};
     std::string error;
-    const std::string_view unary[] = {"abs", "sin", "cos", "asin", "floor", "fract", "sqrt", "exp", "exp2", "log2", "log", "normalize", "dFdx", "dFdy", "sign", "atan", "fwidth"};
+    const std::string_view unary[] = {"acos", "tan", "ceil", "round", "trunc", "inverseSqrt", "radians", "degrees", "sinh", "cosh", "tanh", "asinh", "acosh", "atanh", "abs", "sin", "cos", "asin", "floor", "fract", "sqrt", "exp", "exp2", "log2", "log", "normalize", "dFdx", "dFdy", "sign", "atan", "fwidth"};
     const std::string_view binary[] = {"min", "max", "pow", "step", "atan2", "mod"};
     bool known = false;
     for (std::string_view name : unary) {
         if (function != name) continue;
         known = true;
-        if (args.size() != 1 || !floating(0)) error = "takes one floating value";
+        if (args.size() != 1 || !(floating(0) || ((function == "abs" || function == "sign") && type(0).numeric() && !type(0).isMatrix()))) error = "takes one floating value";
         else result = type(0);
     }
     for (std::string_view name : binary) {
         if (function != name) continue;
         known = true;
         // mod of two whole numbers of one type is WGSL's remainder, as three builds an integer `x % y`.
-        const bool whole = function == "mod" && args.size() == 2 && !type(0).isMatrix() &&
+        const bool whole = (function == "mod" || function == "min" || function == "max") && args.size() == 2 && !type(0).isMatrix() &&
                            (type(0).scalar == Type::Scalar::I32 || type(0).scalar == Type::Scalar::U32);
         if (args.size() != 2 || !(floating(0) || whole) || type(0) != type(1)) error = "takes two floating values of one type";
         else result = type(0);
+    }
+    if (function == "transpose" || function == "determinant" || function == "inverse") {
+        known = true;
+        if (args.size() != 1 || !type(0).isMatrix() || type(0).scalar != Type::Scalar::F32 || type(0).rows != type(0).cols || type(0).rows < 2 || type(0).rows > 4)
+            error = "takes a square float matrix (mat2, mat3 or mat4)";
+        else result = function == "determinant" ? Type::f32() : type(0);
+    } else if (function == "refract" || function == "faceForward") {
+        known = true;
+        if (args.size() != 3 || !floating(0) || !type(0).isVector() || type(0) != type(1) ||
+            (function == "refract" ? type(2) != Type::f32() : type(2) != type(0)))
+            error = function == "refract" ? "takes equal float vectors and a float eta" : "takes three equal float vectors";
+        else result = type(0);
+    } else if (function == "bitAnd" || function == "bitOr" || function == "bitXor" || function == "shiftLeft" || function == "shiftRight" || function == "bitNot") {
+        known = true;
+        const auto count = function == "bitNot" ? 1u : 2u;
+        if (args.size() != count || !type(0).numeric() || type(0).isMatrix() ||
+            (count == 2 && (!type(1).numeric() || type(1).isMatrix()))) error = "takes numeric scalar/vector operands";
+        else {
+            // OperatorNode.getIntegerType(typeA), including float JS literals -> signed integer.
+            result = Type::vec(type(0).rows, type(0).scalar == Type::Scalar::U32 ? Type::Scalar::U32 : Type::Scalar::I32);
+            for (size_t i = 0; i < args.size(); ++i) {
+                auto& a = args[i];
+                const Type original = exprs_[a].type;
+                const auto scalar = i == 1 && (function == "shiftLeft" || function == "shiftRight") ? Type::Scalar::U32 : result.scalar;
+                const auto target = Type::vec(result.rows, scalar);
+                if (original.scalar != scalar) a = construct(Type::vec(original.rows, scalar), {a}, where);
+                if (a != kInvalid && exprs_[a].type != target) a = construct(target, {a}, where);
+            }
+        }
+    } else if (function == "xor") {
+        known = true;
+        if (args.size() != 2 || type(0).isMatrix() || type(1).isMatrix() ||
+            type(0).scalar == Type::Scalar::Void || type(1).scalar == Type::Scalar::Void) error = "takes two values convertible to bool";
+        else {
+            for (auto& a : args) {
+                if (exprs_[a].type.isVector()) a = swizzle(a, "x", where);
+                const auto scalar = exprs_[a].type;
+                if (scalar.numeric()) a = call("not", {equal(a, construct(scalar, {constant(0.0f)}, where), where)}, where);
+            }
+            result = Type::boolean();
+        }
     }
     if (function == "dot" || function == "distance") {
         known = true;
@@ -362,25 +494,25 @@ ExprId Program::call(std::string_view function, const std::vector<ExprId>& args,
         const bool three = args.size() == 3 && floating(0) && floating(1) && floating(2);
         const Type value = three ? (function == "smoothstep" ? type(2) : type(0)) : Type{};
         auto fits = [&](size_t i) { return type(i) == value || (type(i).isScalar() && type(i).scalar == value.scalar); };
-        const bool shapes = function == "mix"      ? type(1) == value && fits(2)
+        const bool shapes = three && (function == "mix"      ? type(1) == value && fits(2)
                             : function == "clamp"  ? fits(1) && fits(2)
-                                                   : type(0) == type(1) && fits(0);
+                                                   : type(0) == type(1) && fits(0));
         if (!three || !shapes) error = "operand types do not match";
         else result = value;
     }
     // MaterialX noise (materialx_noise.h): three's overload is chosen by the coordinate, vec2 (`_0`)
     // or vec3 (`_1`), and the WGSL function carries that number.
     std::string library;
-    if (function == "mx_perlin_noise_float" || function == "mx_worley_noise_vec2") {
+    if (function == "mx_perlin_noise_float" || function == "mx_worley_noise_float" || function == "mx_worley_noise_vec2") {
         known = true;
-        const bool worley = function == "mx_worley_noise_vec2";
+        const bool worley = function != "mx_perlin_noise_float";
         const bool coordinate = !args.empty() && (type(0) == Type::vec(2) || type(0) == Type::vec(3));
         if (args.size() != (worley ? 3u : 1u) || !coordinate)
             error = worley ? "takes a vec2 or vec3, a float jitter and an int metric" : "takes a vec2 or vec3";
         else if (worley && (type(1) != Type::f32() || type(2) != Type::i32()))
             error = "takes a vec2 or vec3, a float jitter and an int metric";
         else {
-            result = worley ? Type::vec(2) : Type::f32();
+            result = function == "mx_worley_noise_vec2" ? Type::vec(2) : Type::f32();
             library = std::string(function) + (type(0) == Type::vec(2) ? "_0" : "_1");
         }
     }
@@ -484,6 +616,28 @@ void Program::store(uint32_t buffer, ExprId index, ExprId value, Where where) {
     emit(Stmt{StmtKind::Store, buffer, index, value});
 }
 
+uint32_t Program::storageTexture2d(std::string_view name, std::string_view format) {
+    if (format != "rgba16float" && format != "rgba32float" && format != "rgba8unorm") {
+        fail("storageTexture2d", "unsupported storage texture format " + std::string(format), Where::current());
+        return kInvalid;
+    }
+    for (uint32_t i = 0; i < storageTextures_.size(); ++i)
+        if (storageTextures_[i].name == name && storageTextures_[i].format == format) return i;
+    storageTextures_.push_back({std::string(name), std::string(format)});
+    return static_cast<uint32_t>(storageTextures_.size() - 1);
+}
+
+void Program::textureStore(uint32_t texture, ExprId coordinate, ExprId value, Where where) {
+    if (stage_ != Stage::Compute || texture >= storageTextures_.size() || coordinate == kInvalid || value == kInvalid) {
+        fail("textureStore", "requires a compute stage, storage texture, coordinate and value", where); return;
+    }
+    const Type coord = exprs_[coordinate].type;
+    if ((coord != Type::vec(2, Type::Scalar::U32) && coord != Type::vec(2, Type::Scalar::I32)) || exprs_[value].type != Type::vec(4)) {
+        fail("textureStore", "requires an integer vec2 coordinate and a vec4<f32> value", where); return;
+    }
+    emit(Stmt{StmtKind::TextureStore, texture, coordinate, value});
+}
+
 uint32_t Program::texture2d(std::string_view name) {
     // One texture is one binding however often it is sampled, as upstream binds a TextureNode once.
     for (std::size_t i = 0; i < textures_.size(); ++i)
@@ -519,9 +673,28 @@ uint32_t Program::textureDepth(std::string_view name, bool cube) {
     return static_cast<uint32_t>(textures_.size() - 1);
 }
 
+uint32_t Program::textureDepthCubeValues(std::string_view name) {
+    for (std::size_t i = 0; i < textures_.size(); ++i)
+        if (textures_[i] == name && textureKinds_[i] == TextureKind::DepthCubeValues) return static_cast<uint32_t>(i);
+    textures_.emplace_back(name);
+    textureKinds_.push_back(TextureKind::DepthCubeValues);
+    return static_cast<uint32_t>(textures_.size() - 1);
+}
+
+bool Program::textureNeedsSampler(uint32_t texture) const {
+    if (textureKinds_[texture] != TextureKind::Depth2d && textureKinds_[texture] != TextureKind::DepthCube) return true;
+    for (const auto& e : exprs_) {
+        if (e.op != Op::Sample && e.op != Op::SampleLevel) continue;
+        const auto sampled = e.op == Op::Sample && e.argc == 2 && e.type == Type::vec(4)
+            ? gatherTexture(e.immediate) : uint32_t(e.immediate);
+        if (sampled == texture) return true;
+    }
+    return false;
+}
+
 ExprId Program::sampleCompare(uint32_t texture, ExprId uv, ExprId reference, Where where) {
     if (uv == kInvalid || reference == kInvalid) return kInvalid;
-    if (texture >= textures_.size() || (textureKinds_[texture] == TextureKind::Float2d || textureKinds_[texture] == TextureKind::Float3d || textureKinds_[texture] == TextureKind::FloatCube))
+    if (texture >= textures_.size() || (textureKinds_[texture] != TextureKind::Depth2d && textureKinds_[texture] != TextureKind::DepthCube))
         return fail("sampleCompare", "no such depth texture", where);
     const Type coordinate = textureKinds_[texture] == TextureKind::DepthCube ? Type::vec(3) : Type::vec(2);
     if (exprs_[uv].type != coordinate)
@@ -554,6 +727,11 @@ ExprId Program::sample(uint32_t texture, ExprId uv, Where where) {
 
 ExprId Program::sampleLevel(uint32_t texture, ExprId uv, ExprId level, Where where) {
     if (uv == kInvalid || level == kInvalid) return kInvalid;
+    if (texture < textures_.size() && textureKinds_[texture] == TextureKind::DepthCubeValues) {
+        if (exprs_[uv].type != Type::vec(3) || exprs_[level].type != Type::i32())
+            return fail("sampleLevel " + textures_[texture], "a depth cube reads a vec3 direction at an i32 level", where);
+        return pure(Expr{Op::SampleLevel, Type::f32(), {uv, level}, 2, texture});
+    }
     if (texture >= textures_.size() || (textureKinds_[texture] != TextureKind::Float2d && textureKinds_[texture] != TextureKind::Float3d && textureKinds_[texture] != TextureKind::FloatCube))
         return fail("sampleLevel", "no such texture", where);
     if (exprs_[uv].type != ((textureKinds_[texture] == TextureKind::Float3d || textureKinds_[texture] == TextureKind::FloatCube) ? Type::vec(3) : Type::vec(2)))
@@ -760,6 +938,9 @@ void Program::dumpBlock(uint32_t block, int depth, std::string& out, std::vector
             case StmtKind::Store:
                 out += indent + "store " + storage_[s.a].name + "[" + describe(s.b, numbering) + "] = " +
                        describe(s.c, numbering) + "\n";
+                break;
+            case StmtKind::TextureStore:
+                out += indent + "textureStore " + storageTextures_[s.a].name + "[" + describe(s.b, numbering) + "] = " + describe(s.c, numbering) + "\n";
                 break;
             case StmtKind::Discard: out += indent + "discard\n"; break;
             case StmtKind::Return: out += indent + "return\n"; break;

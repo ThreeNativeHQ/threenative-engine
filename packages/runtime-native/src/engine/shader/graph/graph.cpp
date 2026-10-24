@@ -64,9 +64,10 @@ std::shared_ptr<NodeData> makeJoin(uint8_t lanes, std::initializer_list<Node> pa
 class Lowerer {
 public:
     explicit Lowerer(Program& program, const std::unordered_map<std::string, ExprId>& inputs,
-                     std::optional<ToneMapping> toneMapping, bool srgb)
-        : program_(program), inputs_(inputs), toneMapping_(toneMapping), srgb_(srgb) {}
+                     std::optional<ToneMapping> toneMapping, bool srgb, Node custom)
+        : custom_(custom), program_(program), inputs_(inputs), toneMapping_(toneMapping), srgb_(srgb) {}
 
+    void analyze(Node node);
     ExprId expression(Node node);
     void statements(const std::vector<Node>& list);
 
@@ -81,9 +82,12 @@ private:
     /** A storage element's index: a float (the JS number 0) is the whole number it holds, as three builds it as uint. */
     ExprId index(const Node& element);
 
+    Node custom_;
     Program& program_;
     const std::unordered_map<std::string, ExprId>& inputs_;
     std::unordered_map<const NodeData*, ExprId> exprs_, effects_;
+    std::unordered_map<const NodeData*, uint32_t> uses_;
+    std::unordered_map<const NodeData*, std::pair<uint32_t, ExprId>> temps_;
     std::unordered_map<const NodeData*, std::vector<ExprId>> aggregates_;
     std::unordered_map<const NodeData*, VarId> vars_;
     std::unordered_map<const NodeData*, ExprId> loopIndex_;
@@ -91,6 +95,7 @@ private:
     // lexical scope: `scopes_` is the open If/Loop blocks, `bodyScope_` where each Body already lowered.
     std::vector<uint32_t> scopes_{0};
     uint32_t scopeCount_ = 0;
+    bool returned_ = false;
     std::unordered_map<const NodeData*, uint32_t> bodyScope_;
     std::function<void()> inScope(std::function<void()> body) {
         return [this, body = std::move(body)] { scopes_.push_back(++scopeCount_); body(); scopes_.pop_back(); };
@@ -123,12 +128,41 @@ ExprId Lowerer::index(const Node& element) {
     return value != kInvalid && program_.expr(value).type == Type::f32() ? convert(value, Type::u32()) : value;
 }
 
+// Node.analyze r185 counts each incoming use, descending into children only on the first.
+void Lowerer::analyze(Node node) {
+    if (!node || ++uses_[node.get()] != 1) return;
+    if (node->kind == Kind::Call) return; // each invocation owns its analysis and early returns
+    for (const auto& arg : node->args) analyze(arg);
+    for (const auto& child : node->body) analyze(child);
+    for (const auto& child : node->otherwise) analyze(child);
+}
+
 ExprId Lowerer::expression(Node node) {
     if (!node) return kInvalid;
     if (const auto effect = effects_.find(node.get()); effect != effects_.end()) return effect->second;
+    const auto temp = temps_.find(node.get());
+    if (temp != temps_.end() && std::find(scopes_.begin(), scopes_.end(), temp->second.first) != scopes_.end())
+        return temp->second.second;
     const auto found = exprs_.find(node.get());
     if (found != exprs_.end()) return found->second;
-    const ExprId id = emit(node);
+    ExprId id = emit(node);
+    // The scene's two scalar MRT outputs share a packed target; three splats each to RGBA.
+    if (id != kInvalid && (node->kind == Kind::Texture || node->kind == Kind::TextureLoad)) {
+        if (node->name == "metalness") id = program_.swizzle(id, "xxxx");
+        if (node->name == "roughness") id = program_.swizzle(id, "yyyy");
+    }
+    // TempNode subclasses snapshot shared values; Var/Split/Convert remain live expressions.
+    const auto kind = node->kind;
+    const bool shared = uses_[node.get()] > 1 && (kind == Kind::Unary || kind == Kind::Binary ||
+        kind == Kind::Math || kind == Kind::Join || kind == Kind::Pmrem ||
+        kind == Kind::RenderOutput || kind == Kind::WgslCall);
+    // TextureNode generates a sampled temporary even for a single use.
+    const bool sampled = kind == Kind::Texture || kind == Kind::TextureLoad || kind == Kind::RenderTexture ||
+        kind == Kind::Reflector || kind == Kind::ViewportDepth;
+    if (id != kInvalid && (shared || sampled)) {
+        id = program_.load(program_.var(program_.expr(id).type, id));
+        temps_[node.get()] = {scopes_.back(), id};
+    }
     exprs_.emplace(node.get(), id);
     if (node->kind == Kind::AtomicAdd) effects_.emplace(node.get(), id);
     return id;
@@ -138,8 +172,9 @@ std::vector<ExprId> Lowerer::aggregate(Node node) {
     if (const auto found = aggregates_.find(node.get()); found != aggregates_.end()) return found->second;
     std::vector<ExprId> values;
     if (node->kind == Kind::Call) {
-        Lowerer invocation(program_, inputs_, toneMapping_, srgb_);
+        Lowerer invocation(program_, inputs_, toneMapping_, srgb_, custom_);
         invocation.vars_ = vars_; invocation.loopIndex_ = loopIndex_;
+        invocation.analyze(node->args.at(0));
         values = invocation.aggregate(node->args.at(0));
     } else if (node->kind == Kind::Struct) {
         for (const auto& member : node->args) {
@@ -154,6 +189,8 @@ std::vector<ExprId> Lowerer::aggregate(Node node) {
         if (!schema || schema->kind != Kind::Struct) throw std::runtime_error("TN_TSL_STRUCT_RETURN_TYPE: expected a struct result");
         const auto previousReturns = std::move(aggregateReturns_);
         const VarId previousDone = doneVar_, previousReturn = returnVar_;
+        const bool previousReturned = returned_;
+        returned_ = false;
         aggregateReturns_.clear(); returnVar_ = noVar;
         doneVar_ = program_.var(Type::boolean(), program_.constant(false));
         for (const auto& [name, type] : schema->members)
@@ -166,6 +203,7 @@ std::vector<ExprId> Lowerer::aggregate(Node node) {
         });
         for (const auto slot : aggregateReturns_) values.push_back(program_.load(slot));
         aggregateReturns_ = previousReturns; doneVar_ = previousDone; returnVar_ = previousReturn;
+        returned_ = previousReturned;
     } else {
         throw std::runtime_error("TN_TSL_STRUCT_RETURN_TYPE: expected a struct result");
     }
@@ -201,10 +239,10 @@ ExprId Lowerer::emit(Node node) {
             if (d.bits) {
                 static const std::map<uint64_t, std::optional<ToneMapping>> mappings{
                     {1, std::nullopt}, {2, ToneMapping::Linear}, {3, ToneMapping::Reinhard},
-                    {4, ToneMapping::Cineon}, {5, ToneMapping::ACESFilmic}, {7, ToneMapping::AgX}, {8, ToneMapping::Neutral}};
+                    {4, ToneMapping::Cineon}, {5, ToneMapping::ACESFilmic}, {6, ToneMapping::Custom}, {7, ToneMapping::AgX}, {8, ToneMapping::Neutral}};
                 tone = mappings.at(d.bits);
             }
-            return renderOutput(program_, expression(d.args[0]), tone, d.name.empty() ? srgb_ : d.name == "srgb");
+            return renderOutput(program_, expression(d.args[0]), tone, d.name.empty() ? srgb_ : d.name == "srgb", custom_);
         }
         case Kind::Body: {
             const auto lowered = bodyScope_.find(node.get());
@@ -223,8 +261,9 @@ ExprId Lowerer::emit(Node node) {
             return program_.load(returnVar_);
         }
         case Kind::Call: {
-            Lowerer invocation(program_, inputs_, toneMapping_, srgb_);
+            Lowerer invocation(program_, inputs_, toneMapping_, srgb_, custom_);
             invocation.vars_ = vars_; invocation.loopIndex_ = loopIndex_;
+            invocation.analyze(d.args.at(0));
             invocation.returnType_ = d.type;
             invocation.doneVar_ = program_.var(Type::boolean(), program_.constant(false));
             const ExprId result = invocation.expression(d.args.at(0));
@@ -233,11 +272,19 @@ ExprId Lowerer::emit(Node node) {
         }
         case Kind::Var: { const auto variable = ensureVar(node); return variable == noVar ? kInvalid : program_.load(variable); }
         case Kind::RenderTexture:
-            return program_.sample(program_.texture2d(d.name), expression(d.args[1]));
+            // A third argument is an explicit level (`.level(n)`), so the read is legal under divergent control flow.
+            return d.args.size() > 2
+                       ? program_.sampleLevel(program_.texture2d(d.name), expression(d.args[1]), expression(d.args[2]))
+                       : program_.sample(program_.texture2d(d.name), expression(d.args[1]));
         case Kind::TextureSize:
-            return program_.textureSize(program_.texture2d(d.name), d.args.empty() ? program_.constant(int32_t(0)) : expression(d.args[0]));
-        case Kind::TextureLoad:
-            return program_.textureLoad(d.bits == 1 ? program_.textureDepth(d.name) : program_.texture2d(d.name), expression(d.args[0]), d.args.size() < 2 ? program_.constant(int32_t(0)) : expression(d.args[1]));
+            return program_.textureSize(d.name == "depth" ? program_.textureDepth(d.name) : program_.texture2d(d.name), d.args.empty() ? program_.constant(int32_t(0)) : expression(d.args[0]));
+        case Kind::StorageTexture:
+            if (d.args.empty()) throw std::runtime_error("storageTexture requires coordinates when read");
+            return program_.textureLoad(program_.texture2d(d.name), convert(expression(d.args[0]), Type::vec(2, Type::Scalar::I32)), program_.constant(int32_t(0)));
+        case Kind::TextureLoad: {
+            const auto loaded = program_.textureLoad(d.bits == 1 || d.name == "depth" ? program_.textureDepth(d.name) : program_.texture2d(d.name), expression(d.args[0]), d.args.size() < 2 ? program_.constant(int32_t(0)) : expression(d.args[1]));
+            return d.name == "depth" ? convert(loaded, d.type == Type{} ? Type::vec(4) : d.type) : loaded;
+        }
         case Kind::Constant:
             if (d.type.scalar == Type::Scalar::F32)
                 return program_.constant(std::bit_cast<float>(static_cast<uint32_t>(d.bits)));
@@ -317,6 +364,15 @@ ExprId Lowerer::emit(Node node) {
             const bool pairwise = d.name == "min" || d.name == "max" || d.name == "pow" || d.name == "step" || d.name == "mod";
             if (ids.size() == 2 && pairwise) {
                 if (ids[0] == kInvalid || ids[1] == kInvalid) return kInvalid;
+                // r185 types a whole JS divisor from the integer index, as the binary operators do.
+                if (d.name == "mod" && d.args[1]->kind == Kind::Constant) {
+                    const auto& divisor = program_.expr(ids[1]);
+                    const Type index = program_.expr(ids[0]).type;
+                    const float value = std::bit_cast<float>(static_cast<uint32_t>(divisor.immediate));
+                    if (divisor.op == Op::Constant && divisor.type == Type::f32() && value == std::floor(value) &&
+                        index.isScalar() && (index.scalar == Type::Scalar::U32 || index.scalar == Type::Scalar::I32))
+                        ids[1] = program_.construct(index, {ids[1]});
+                }
                 const auto a = program_.expr(ids[0]).type, b = program_.expr(ids[1]).type;
                 // A serialized graph converts any mismatch; an authored one only widens a float scalar to the other
                 // operand's lanes (TSL's mod(vec2, float)), so a real type error still reports.
@@ -324,7 +380,7 @@ ExprId Lowerer::emit(Node node) {
                                    (a.isScalar() || b.isScalar());
                 if (d.bits == 1 || widen) {
                     const auto target = a.rows >= b.rows ? a : b;
-                    for (auto& id : ids) if (program_.expr(id).type != target) id = program_.construct(target, {id});
+                    for (auto& id : ids) if (program_.expr(id).type != target) id = convert(id, target);
                 }
             }
             return program_.call(d.name, ids);
@@ -332,7 +388,11 @@ ExprId Lowerer::emit(Node node) {
         case Kind::Swizzle: return program_.swizzle(expression(d.args[0]), d.lanes);
         case Kind::Join: {
             std::vector<ExprId> ids;
-            for (const Node& part : d.args) ids.push_back(expression(part));
+            for (const Node& part : d.args) {
+                const auto value = expression(part);
+                ids.push_back(d.type.scalar == Type::Scalar::U32 && value != kInvalid
+                    ? convert(value, Type::vec(program_.expr(value).type.rows, Type::Scalar::U32)) : value);
+            }
             // `vec3(0.5)` splats a constant, as the builder's join does.
             if (ids.size() == 1 && ids[0] != kInvalid && program_.expr(ids[0]).op == Op::Constant)
                 ids.assign(d.type.rows, ExprId{ids[0]});  // a copy: assign's value must not alias the vector
@@ -379,12 +439,17 @@ ExprId Lowerer::emit(Node node) {
         case Kind::Texture: {
             const ExprId coordinate = expression(d.args[0]);
             if (coordinate == kInvalid) return kInvalid;
-            if (d.bits == 1) {
+            // A depth texture, or the scene pass's own depth (a texture named "depth" with no object
+            // behind it), has no filtered sample: read the texel under the uv.
+            if (d.bits == 1 || (d.name == "depth" && !d.textureBinding)) {
                 const auto texture = program_.textureDepth(d.name);
                 const auto size = program_.textureSize(texture, program_.constant(int32_t(0)));
-                const auto texel = program_.construct(Type::vec(2, Type::Scalar::I32), {
-                    program_.mul(coordinate, program_.construct(Type::vec(2), {size}))});
-                return program_.textureLoad(texture, texel, program_.constant(int32_t(0)));
+                const auto extent = program_.construct(Type::vec(2), {size});
+                const auto clamped = program_.call("clamp", {program_.mul(coordinate, extent), program_.constant(0.0f),
+                    program_.sub(extent, program_.construct(Type::vec(2), {program_.constant(1.0f)}))});
+                const auto texel = program_.construct(Type::vec(2, Type::Scalar::I32), {clamped});
+                const auto loaded = program_.textureLoad(texture, texel, program_.constant(int32_t(0)));
+                return d.bits == 1 ? loaded : convert(loaded, d.type == Type{} ? Type::vec(4) : d.type);
             }
             // TextureNode.level(n): an explicit mip, which a vertex stage needs.
             if (d.args.size() == 2) {
@@ -414,7 +479,12 @@ VarId Lowerer::ensureVar(Node var) {
     const auto found = vars_.find(var.get());
     if (found != vars_.end()) return found->second;
     const ExprId initial = expression(var->args[0]);
-    if (initial == kInvalid) return noVar;
+    if (initial == kInvalid) {
+        // A var over a void call (a TSL function body with no result) has no value, but the call's statements are emitted:
+        // remember that, or the next use of the var lowers the call again.
+        vars_.emplace(var.get(), noVar);
+        return noVar;
+    }
     const VarId id = program_.var(var->type.scalar == Type::Scalar::Void ? program_.expr(initial).type : var->type, initial);
     vars_.emplace(var.get(), id);
     return id;
@@ -435,12 +505,20 @@ void Lowerer::statement(Node node) {
             if (!s.args.empty()) statement(s.args[0]);
             return;
         case Kind::Call: case Kind::AtomicAdd: (void)expression(node); return;
+        case Kind::TextureStore: {
+            const auto* texture = static_cast<const tn::engine::Texture*>(s.object.get());
+            program_.textureStore(program_.storageTexture2d(s.name, texture->storageFormat()),
+                                  convert(expression(s.args[0]), Type::vec(2, Type::Scalar::U32)),
+                                  convert(expression(s.args[1]), Type::vec(4)));
+            return;
+        }
         case Kind::AtomicStore: {
             const auto& target = *s.args[0];
             program_.store(ensureStorage(target), index(s.args[0]), convert(expression(s.args[1]), target.type));
             return;
         }
         case Kind::Return: {
+            returned_ = true;
             if (s.args.empty()) {
                 if (doneVar_ != noVar) program_.assign(doneVar_, program_.constant(true));
                 else program_.returnEarly();  // the kernel's own body: this invocation stops
@@ -520,10 +598,18 @@ void Lowerer::statement(Node node) {
 }
 
 void Lowerer::statements(const std::vector<Node>& list) {
-    for (const Node& node : list) {
-        exprs_.clear(); // ordered loads must observe assignments and stay in their lexical block
-        if (doneVar_ == noVar) statement(node);
-        else program_.If(program_.equal(program_.load(doneVar_), program_.constant(false)), inScope([this, &node] { statement(node); }));
+    for (size_t i = 0; i < list.size(); ++i) {
+        if (doneVar_ != noVar && returned_) {
+            // One guarded tail keeps consecutive statements in the same lexical scope.
+            returned_ = false;
+            program_.If(program_.equal(program_.load(doneVar_), program_.constant(false)), inScope([this, &list, i] {
+                statements(std::vector<Node>(list.begin() + i, list.end()));
+            }));
+            returned_ = true;
+            return;
+        }
+        exprs_.clear(); // live reads observe assignments; shared temporaries survive in temps_
+        statement(list[i]);
     }
 }
 
@@ -605,7 +691,7 @@ Node objectTexture(std::shared_ptr<const void> texture, std::string name, Node u
     data->kind = Kind::Texture;
     data->name = std::move(name);
     data->bits = std::static_pointer_cast<const tn::engine::Texture>(texture)->depthTexture ? 1 : 0;
-    data->object = std::move(texture);
+    data->textureBinding = std::make_shared<TextureBinding>(TextureBinding{std::move(texture)});
     data->args = {std::move(uvs)};
     return data;
 }
@@ -838,24 +924,28 @@ Node Block::node() const {
 }
 
 ExprId lower(const Graph& graph, Program& program, const std::unordered_map<std::string, ExprId>& inputs,
-             std::optional<ToneMapping> toneMapping, bool srgb) {
+             std::optional<ToneMapping> toneMapping, bool srgb, Node custom) {
     if (!graph) return kInvalid;
-    Lowerer lowerer(program, inputs, toneMapping, srgb);
+    Lowerer lowerer(program, inputs, toneMapping, srgb, custom);
+    lowerer.analyze(graph);
     return lowerer.expression(graph);
 }
 
 struct Lowering::Impl {
     std::unordered_map<std::string, ExprId> inputs;
     Lowerer lowerer;
-    Impl(Program& program, std::unordered_map<std::string, ExprId> in, std::optional<ToneMapping> tone, bool srgb)
-        : inputs(std::move(in)), lowerer(program, inputs, tone, srgb) {}
+    Impl(Program& program, std::unordered_map<std::string, ExprId> in, std::optional<ToneMapping> tone, bool srgb, Node custom)
+        : inputs(std::move(in)), lowerer(program, inputs, tone, srgb, custom) {}
 };
 
 Lowering::Lowering(Program& program, std::unordered_map<std::string, ExprId> inputs,
-                   std::optional<ToneMapping> toneMapping, bool srgb)
-    : impl_(std::make_unique<Impl>(program, std::move(inputs), toneMapping, srgb)) {}
+                   std::optional<ToneMapping> toneMapping, bool srgb, Node custom)
+    : impl_(std::make_unique<Impl>(program, std::move(inputs), toneMapping, srgb, custom)) {}
 Lowering::~Lowering() = default;
-ExprId Lowering::lower(const Graph& graph) { return graph ? impl_->lowerer.expression(graph) : kInvalid; }
+ExprId Lowering::lower(const Graph& graph) {
+    impl_->lowerer.analyze(graph);
+    return graph ? impl_->lowerer.expression(graph) : kInvalid;
+}
 
 namespace {
 uint64_t keySerializations = 0;

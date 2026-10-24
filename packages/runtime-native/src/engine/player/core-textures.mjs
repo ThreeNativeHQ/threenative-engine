@@ -13,6 +13,14 @@ const NativeCanvasTexture = globalThis.CanvasTexture;
 const sources = new WeakMap();
 const bitmaps = new WeakMap();
 const nativeFlipY = Object.getOwnPropertyDescriptor(NativeTexture.prototype, "flipY").set;
+for (const Native of [NativeTexture, NativeDataTexture, NativeCanvasTexture, NativeVolumeTexture]) {
+  const clone = Native.prototype.clone;
+  Native.prototype.clone = function () {
+    const result = clone.call(this);
+    if (sources.has(this)) sources.set(result, sources.get(this));
+    return result;
+  };
+}
 
 /** The package entry a URL names: `tnpk:<path>` and `<package>#<path>` from `assets.resolve`, or the path. */
 export function logicalPath(url) {
@@ -60,7 +68,13 @@ DataTexture.prototype = NativeDataTexture.prototype;
 Object.setPrototypeOf(DataTexture, NativeDataTexture);
 
 export function Data3DTexture(data = null, width = 1, height = 1, depth = 1) {
-  const texture = Reflect.construct(NativeVolumeTexture, [data ?? undefined, width, height, depth], new.target ?? Data3DTexture);
+  // The engine's constructor takes bytes or floats: a Uint16Array's half-float bits go in on needsUpdate, after `type`.
+  const bits = data instanceof Uint16Array;
+  const texture = Reflect.construct(
+    NativeVolumeTexture,
+    [bits ? new Float32Array(data.length) : (data ?? undefined), width, height, depth],
+    new.target ?? Data3DTexture,
+  );
   if (data) sources.set(texture, { data, width, height, depth });
   return texture;
 }

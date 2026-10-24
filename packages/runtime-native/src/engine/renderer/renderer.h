@@ -37,6 +37,7 @@ using Matrix = std::array<double, 16>;  // column-major, as three's Matrix4.elem
 
 class SkinnedMesh;
 class Bone;
+class PerspectiveCamera;
 struct GpuJointScene {
     struct Rig {
         std::weak_ptr<SkinnedMesh> mesh;
@@ -90,6 +91,7 @@ struct DrawCache {
     uint64_t mapGroupKey = 0;     // the textures/epoch the fragment bind group was built for
     void* program = nullptr;
     void* depthProgram = nullptr;
+    bool depthMasked = false;     // the depth program runs the material's alpha test (PRD-651)
     void* pipeline = nullptr;
     void* depthPipeline = nullptr;
     void* mapGroup = nullptr;
@@ -97,6 +99,7 @@ struct DrawCache {
 
 /** One opaque draw. The render database (PRD-514 phase 1) fills these from the scene graph. */
 struct DrawItem {
+    const Object3D* shadowObject = nullptr;
     uint32_t layers = 1;
     bool mainPass = true;
     bool background = false;
@@ -180,7 +183,10 @@ struct DrawItem {
     bool castShadow = false;    // Object3D.castShadow: drawn into every shadow map
     bool receiveShadow = false; // Object3D.receiveShadow: its lit program reads the shadow maps
     uint8_t side = 0;           // material.side: 0 FrontSide, 1 BackSide, 2 DoubleSide
+    uint8_t shadowSide = 255;   // material.shadowSide, the same codes; 255 is null
     bool flatShading = false;   // material.flatShading: the face normal replaces the vertex normal
+    bool twoSidedFoliage = false;  // material.twoSidedFoliage: Unreal's Two Sided Foliage receiver (PRD-651)
+    bool roughDiffuse = false;     // material.roughDiffuse: Unreal's Substrate rough diffuse, EON (PRD-653)
     uint8_t blending = 1;       // material.blending: 0 NoBlending, 1 NormalBlending, 2 AdditiveBlending
     // InstancedMesh: one mat4 (16 floats) per instance, an optional rgb per instance, and how many draw.
     BufferStore* instanceMatrices = nullptr;
@@ -219,6 +225,7 @@ struct DirectLight {
     std::array<double, 3> direction{0, 1, 0}; // directional: towards the light; spot: target to light
     std::array<double, 3> position{0, 0, 0};  // point and spot
     double distance = 0, decay = 2;           // point and spot: the cutoff (0 none) and the falloff exponent
+    double sourceRadius = 0;                  // point and spot: Unreal's Source Radius in metres (PRD-653)
     double coneCos = 0, penumbraCos = 0;      // spot: cos(angle) and cos(angle * (1 - penumbra))
     /**
      * Set when the light casts a shadow and the shadow map is on (three's LightShadow after
@@ -226,6 +233,10 @@ struct DirectLight {
      * world position to the map's uv and depth.
      */
     struct Shadow {
+        std::shared_ptr<const shadows::AtlasOptions> virtualShadow;
+        std::optional<std::array<double, 6>> sourceAngleFilter;  // as LightShadow's
+        std::optional<std::array<double, 4>> sourceRadiusFilter;
+        double tanHalfFov = 1;  // a perspective map's: a cube face's is 1
         Matrix view{}, projection{}, matrix{};
         double bias = 0, normalBias = 0, radius = 1, intensity = 1;
         uint32_t width = 512, height = 512;
@@ -269,6 +280,7 @@ struct OutputState {
     std::optional<shader::ToneMapping> toneMapping;  // empty: NoToneMapping
     double toneMappingExposure = 1;
     bool srgb = true;  // false: LinearSRGBColorSpace
+    shader::graph::Node customToneMapping;
 };
 
 /**
@@ -277,7 +289,7 @@ struct OutputState {
  * does not implement; a value is never mapped to a neighbour. Shared by the V8 player and the web host.
  */
 std::optional<OutputState> outputStateOf(double toneMapping, double exposure, const std::string& colorSpace,
-                                         std::string& refusal);
+                                         std::string& refusal, shader::graph::Node custom = {});
 
 /**
  * The native renderer's draw core (PRD-514): standard-material meshes into a linear RGBA16Float
@@ -325,12 +337,36 @@ public:
     GpuStatus readProbePixels(ReadbackCallback done);
     /** The post normal target (RGBA16Float, packed rows); InvalidHandle until a post pass has read "normal". */
     GpuStatus readNormalPixels(ReadbackCallback done);
+    /** The post albedo target (RGBA16Float, packed rows); InvalidHandle until a post pass has read "albedo". */
+    GpuStatus readAlbedoPixels(ReadbackCallback done);
+    /** The emitted radiance (RGBA16Float); InvalidHandle until a post pass reads "emissive". */
+    GpuStatus readEmissivePixels(ReadbackCallback done);
     /** Textures the renderer holds GPU copies of (a destroyed Texture's are released at the next frame). */
     std::size_t materialTextureCount() const { return textures_->records.size(); }
     /** What the last frame refused or skipped by name; cleared at the start of each frame. */
     const std::vector<std::string>& diagnostics() const { return diagnostics_; }
+    /** The smallest and largest edge of the lamp maps the footprint sized, {0, 0} without one (PRD-650). */
+    std::array<uint32_t, 2> lampShadowExtent() const {
+        std::array<uint32_t, 2> extent{0, 0};
+        for (const auto& [light, motion] : lampMotion_) {
+            const uint32_t size = lampShadowSize(light);
+            if (!size) continue;
+            extent[0] = extent[0] ? std::min(extent[0], size) : size;
+            extent[1] = std::max(extent[1], size);
+        }
+        return extent;
+    }
+    /** The edge of light `light`'s lamp map as last allocated, 0 without one (PRD-650). */
+    uint32_t lampShadowSize(std::size_t light) const {
+        for (const auto* maps : {&shadowMaps_, &cubeShadowMaps_})
+            if (light < maps->size() && (*maps)[light].width) return (*maps)[light].width;
+        return 0;
+    }
     /** Separate capture targets: probe work never resizes the presented frame or its post history. */
     Renderer& probeCaptureRenderer();
+    /** The face camera of a probe capture, shared so a render callback that keeps its handle is safe. The
+     *  capture creates it on the first face and poses it again for each one. */
+    std::shared_ptr<PerspectiveCamera>& probeCaptureCamera() { return probeCamera_; }
     /** Another renderer on this device, with its own targets: a reflection pass draws into one. */
     /** A renderer on the same device for a render target or a reflection: it shares this one's map
      *  textures, geometry copies, and layout and pipeline caches, as three's one renderer does. */
@@ -347,18 +383,36 @@ public:
     }
     /** The last render's linear HDR scene target (RGBA16Float), before post and the output transform. */
     void copyDepthToTexture(const Texture& texture);
+    /** The main renderer's scene colour and depth this target's materials read by name. A bind group built over views the
+     *  main renderer has since replaced (a resize, or temporal AA replacing multisampling) holds textures that keep their
+     *  last frame, so replaced views rebuild the groups. */
     void setSourceAttachments(WGPUTextureView color, WGPUTextureView depth) {
+        const bool replaced = color != sourceScene_ || depth != sourceDepth_;
         sourceScene_ = color;
         sourceDepth_ = depth;
+        if (replaced) rebuildGroups();
     }
     /** The renderer whose post render-to-texture passes this target's materials sample (a material node may read one). */
     void setPostSource(const Renderer* main) { postSource_ = main; }
     WGPUTextureView sceneDepthView() const { return depthView_; }
     WGPUTextureView sceneColorView() const { return sceneView_; }
+    /** The format the scene colour is drawn and read in: RGBA16Float, or RGBA32Float for a FloatType render target (a 32-bit target is never multisampled). */
+    void setSceneFormat(WGPUTextureFormat format);
+    /** True when a blended draw into RGBA32Float is valid on this device (float32-blendable); `forceHalfFloatTargets` says no, for tests. */
+    bool float32Blendable() const { return !forceHalfFloatTargets_ && wgpuDeviceHasFeature(device_, WGPUFeatureName_Float32Blendable); }
+    void forceHalfFloatTargets(bool force) { forceHalfFloatTargets_ = force; }
+    WGPUTextureFormat sceneFormat() const { return sceneFormat_; }
     /** Linear filtering, clamped to the edge: three's RenderTarget texture defaults. */
     WGPUSampler linearClampSampler();
     void setVirtualShadow(std::size_t light, const shadows::AtlasOptions& options);
+    /** `tanHalfFov` is the main view's (0 for a pass that is not it): auto-sized atlases measure on it. */
+    void syncVirtualShadows(const LightState& lights, double tanHalfFov = 0);
     bool hasVirtualShadows() const { return !virtualShadows_.empty(); }
+    /** The page plan of light `light`'s virtual shadow, or null. */
+    const shadows::PageAtlas* virtualShadowAtlas(std::size_t light) const {
+        const auto it = virtualShadows_.find(light);
+        return it == virtualShadows_.end() ? nullptr : &it->second.atlas;
+    }
     void cutVirtualShadows() { virtualCut_ = true; }
     void setOutput(const OutputState& output);
     /** A post pass between the scene and the output transform; null draws the scene straight out. */
@@ -368,12 +422,30 @@ public:
     void setPostInput(const std::string& name, WGPUTextureView view);
     void setTraa(const TraaOptions& options);
     TraaPass* traaDebugPass() const { return traa_.get(); }
+    /**
+     * The temporal pass as the last planned frame left it: whether a traa() effect is in the post graph, the frames it has
+     * begun, whether the next resolve has history, and the sub-pixel jitter in pixels. A snapshot taken where frames are
+     * planned, so the game thread reads it while the render thread encodes the frame before.
+     */
+    struct TemporalStatus {
+        bool active = false, historyValid = false;
+        uint64_t frame = 0;
+        double jitterX = 0, jitterY = 0;
+        // The newest counted frame (one in `TraaPass::kMeasureEvery` is counted): the pixels whose history the resolve
+        // discarded (`rejected`: off screen or disoccluded), the pixels whose history it pulled into the colour
+        // neighbourhood (`clamped`), the pixel count of that frame and the frame it was. All 0 until the first count.
+        uint32_t rejected = 0, clamped = 0, pixels = 0;
+        uint64_t countedFrame = 0;
+    };
+    const TemporalStatus& temporalStatus() const { return temporalStatus_; }
     void cutHistory();
     const OutputState& output() const { return output_; }
 
     /** Reallocates the targets; the next render draws at the new extent. Zero sizes clamp to 1. */
     void setSize(uint32_t width, uint32_t height);
+    /** The multisampling the game asks for. A traa() effect in the post graph replaces it: see sampleCount(). */
     void setSampleCount(uint32_t samples);
+    /** The samples the scene draws with: 1 while a traa() effect is in the post graph, otherwise the requested count. */
     uint32_t sampleCount() const { return sampleCount_; }
     uint32_t width() const { return width_; }
     uint32_t height() const { return height_; }
@@ -510,6 +582,8 @@ public:
         uint32_t shadowDraws = 0;
         /** The triangles those shadow draws submitted; three's Info counts them with the main pass's. */
         uint64_t shadowTriangles = 0;
+        /** Of the shadow draws, the spot and point light maps' (PRD-650): maps redrawn, and their draws. */
+        uint32_t lampRedraws = 0, lampShadowDraws = 0;
         struct SkinnedPass {
             uint32_t batches = 0, draws = 0, exactDraws = 0, instances = 0;
         };
@@ -542,7 +616,7 @@ public:
      * The last timed frame's GPU time by segment, in ms: shadow passes (0 when the frame drew none),
      * scene pass, other passes (offscreen, compute, post, TRAA), output pass.
      */
-    std::array<double, 4> lastGpuSegments() const { return timing_->segments; }
+    std::array<double, kGpuSegments> lastGpuSegments() const { return timing_->segments; }
     /** How many GPU times have come back, so a caller samples each one once. */
     uint64_t gpuSamples() const { return timing_->samples; }
     /** Timestamp pairs in the most recently resolved complete frame. */
@@ -586,13 +660,14 @@ private:
         kSpecularIntensityMapUvTransform, kClearcoatMapUvTransform, kClearcoatRoughnessMapUvTransform,
         kClearcoatNormalMapUvTransform, kAoMapIntensity, kClearcoat, kClearcoatRoughness, kClearcoatNormalScale, kBumpScale,
         kPmremTexelWidth, kPmremTexelHeight, kPmremMaxMip, kPmremRotation, kScreenSize, kCameraNear, kCameraFar,
-        kModelNormalMatrix, kSlotCount
+        kModelNormalMatrix, kSubsurfaceColor, kSlotCount
     };
     // Per direct light i, `light{i}<Field>` (shader::LightLayout).
     enum LightField : uint8_t { kLightColor, kLightDirection, kLightPosition, kLightDistance, kLightDecay, kLightAxis,
                                 kLightConeCos, kLightPenumbraCos, kLightShadowMatrix, kLightShadowBias,
                                 kLightShadowNormalBias, kLightShadowRadius, kLightShadowMapSize,
-                                kLightShadowIntensity, kLightShadowNear, kLightShadowFar, kLightFieldCount };
+                                kLightShadowIntensity, kLightShadowNear, kLightShadowFar, kLightShadowSourceRadius,
+                                kLightShadowPenumbraScale, kLightSourceRadius, kLightFieldCount };
     uint64_t renderPrepared(std::span<const DrawItem> items, const CameraState& camera, const LightState& lights,
         std::array<double, 4> clear, std::vector<std::shared_ptr<PipelineCompilation>>* compilation,
         WGPUTextureFormat outputFormat, bool defer = false);
@@ -610,6 +685,7 @@ private:
     struct Program {
         shader::StageModule vertex;
         shader::StageModule fragment;
+        shader::StageModule materialFragment;
         // Explicit layouts: each stage's uniform block is a dynamic-offset slice of the frame's one
         // uniform buffer, so a draw costs a bind-group offset, not a buffer and a bind group of its own.
         WGPUBindGroupLayout layouts[2] = {};
@@ -618,7 +694,20 @@ private:
         const shader::UniformField* vertexSlots[kSlotCount] = {};
         const shader::UniformField* fragmentSlots[kSlotCount] = {};
         std::vector<std::array<const shader::UniformField*, kLightFieldCount>> lightSlots;
+        // What the program was built from, so albedoFragment() can build the same fragment again with its output swapped.
+        MaterialKind kind = MaterialKind::Standard;
+        shader::VertexVariant variant;
+        std::string lightKinds;
+        bool softShadows = false;
+        std::unique_ptr<shader::StageModule> albedo;  // built on first request; empty module when the kind has none
+        bool albedoBuilt = false;
+        std::unique_ptr<shader::StageModule> emissive;
+        bool emissiveBuilt = false;
     };
+    /** The program's fragment with the diffuse colour as its output (VertexVariant::albedoOutput), on the program's own
+     *  layout so a draw's bind groups serve it; null for an unlit kind, or when the builder refuses the variant. */
+    const shader::StageModule* albedoFragment(Program& program);
+    const shader::StageModule* emissiveFragment(Program& program);
     void buildLayouts(Program& program, const std::string& key);
     /** The program for a material kind, vertex variant and light layout, built on first use; null
      *  when its WGSL is invalid, which is reported once in diagnostics() and its draws are skipped,
@@ -626,7 +715,7 @@ private:
     Program* program(MaterialKind kind, const shader::VertexVariant& variant, const std::string& lights,
                      bool softShadows = false);
     /** The shadow pass's depth-only program for a vertex variant (0 plain, 1 instanced). */
-    Program& depthProgram(const shader::VertexVariant& variant);
+    Program& depthProgram(const shader::VertexVariant& variant, bool masked);
     Program& add(const std::string& key, shader::StageModule vertex, shader::StageModule fragment);
     struct MaterialTexture;
     /** blitTo's pass-through copy into `format`, blended by PipelineTarget's `blend`. */
@@ -655,6 +744,7 @@ private:
         uint32_t version = 0;
         void release();
     };
+    friend class GraphCompute;
     const MaterialTexture* materialTexture(const Texture& texture);
     // Render-target textures by texture id: views borrowed from each target's renderer, never released here.
     std::unordered_map<uint64_t, MaterialTexture> renderTargetTextures_;
@@ -727,12 +817,13 @@ private:
     void rebuildGroups();
     void releaseTargets();
     void resolveDepth(WGPUCommandEncoder encoder);  // 4x: depth_ takes sample 0 of msaaDepth_
-    GpuStatus readRgba16(WGPUTexture texture, ReadbackCallback done);
+    GpuStatus readRgba16(WGPUTexture texture, ReadbackCallback done, uint32_t texelBytes = 8);
     void releaseOutputGroup();
     void outputPass(WGPUCommandEncoder encoder, WGPUTextureView present, WGPUTextureFormat presentFormat);
 
     WGPUInstance instance_;
     std::unique_ptr<Renderer> probeCapture_;
+    std::shared_ptr<PerspectiveCamera> probeCamera_;
     WGPUDevice device_;
     WGPUQueue queue_;
     // Mip passes recorded since the last submit: one encoder for every texture uploaded in between,
@@ -780,15 +871,26 @@ private:
     // light still binds a 2D map after light i becomes a point light.
     std::vector<ShadowMap> shadowMaps_, cubeShadowMaps_;
     bool shadowMapsChanged_ = false;  // compilation changes survive until a real frame rebuilds groups
+    struct VirtualShadowCosts {
+        std::mutex mutex;
+        std::map<int, std::pair<double, uint64_t>> levels;
+    };
     struct VirtualShadow {
         shadows::PageAtlas atlas;
+        std::shared_ptr<const shadows::AtlasOptions> source;
         ShadowMap map;
-        std::map<uint64_t, Box3> casters;
-        std::map<uint64_t, std::string> casterPrograms;
+        std::shared_ptr<VirtualShadowCosts> costs = std::make_shared<VirtualShadowCosts>();
+        std::map<int, uint64_t> consumedCosts;
     };
     std::map<std::size_t, VirtualShadow> virtualShadows_;
+    /** Each lamp's last drawn map signature (PRD-650): an equal one skips its depth passes. */
+    std::map<std::size_t, uint64_t> lampSignatures_;
+    /** Each lamp's last pose and the frame it last moved: a moving lamp takes a coarser map (PRD-650). */
+    struct LampMotion { uint64_t pose = 0; int64_t movedAt = 0; };
+    std::map<std::size_t, LampMotion> lampMotion_;
     bool virtualCut_ = false;
     WGPUSampler compareSampler_ = nullptr;
+    WGPUSampler depthValueSampler_ = nullptr;  // nearest, no compare: a blocker search's depth reads
     // The viewport textures (three's viewportSharedTexture / viewportDepthTexture): the scene colour
     // and depth copied at the first draw that reads either, created with the scene target.
     WGPUTexture viewportColor_ = nullptr, viewportDepth_ = nullptr;
@@ -829,10 +931,15 @@ private:
     WGPUTextureView colorView_ = nullptr;
     WGPUTextureView depthView_ = nullptr;
     WGPUTexture sceneColor_ = nullptr;  // linear HDR, what materials draw into
+    WGPUTextureFormat sceneFormat_ = WGPUTextureFormat_RGBA16Float;
+    bool forceHalfFloatTargets_ = false;
     WGPUTextureView sceneView_ = nullptr;
     uint32_t sampleCount_ = 1;
+    uint32_t requestedSamples_ = 1;  // what the game asked for; sampleCount_ is 1 while a traa() effect is in the post graph
     WGPUTexture msaaColor_ = nullptr;
     WGPUTextureView msaaColorView_ = nullptr;
+    WGPUTexture msaaAuxColor_ = nullptr;
+    WGPUTextureView msaaAuxColorView_ = nullptr;
     WGPUTexture msaaDepth_ = nullptr;
     WGPUTextureView msaaDepthView_ = nullptr;
     WGPURenderPipeline depthResolve_ = nullptr;  // built by the first 4x frame
@@ -840,7 +947,18 @@ private:
     // drawn after the main pass; created with the first such frame, released with the targets.
     WGPUTexture normalTexture_ = nullptr;
     WGPUTextureView normalView_ = nullptr;
-    shader::StageModule normalFragment_;
+    /** The diffuse colour of every opaque lit draw for post passes that read "albedo" (three's MRT `diffuseColor`),
+     *  drawn after the normal pass over the same draws; created with the first such frame, released with the targets. */
+    WGPUTexture albedoTexture_ = nullptr;
+    WGPUTextureView albedoView_ = nullptr;
+    WGPUTexture emissiveTexture_ = nullptr;
+    WGPUTextureView emissiveView_ = nullptr;
+    /** The normal-target programs, one per face-normal variant: smooth, DoubleSide smooth, flat (see planNormals). */
+    std::array<shader::StageModule, 3> normalFragments_;
+    /** normalFragments_ for Standard and Physical draws: the alpha also packs metalness and roughness. */
+    std::array<shader::StageModule, 3> surfaceFragments_;
+    WGPUTexture materialTexture_ = nullptr;
+    WGPUTextureView materialView_ = nullptr;
     std::vector<std::string> diagnostics_;
     OutputState output_;
     std::shared_ptr<const shader::PostNode> post_;
@@ -849,8 +967,11 @@ private:
     const Renderer* postSource_ = nullptr;
     const PostEffects* postTextureOwner(const std::string& name) const;
     WGPUTextureView postTextureView(const std::string& name) const;
+    void applySampleCount();
     uint64_t postViewsStamp() const;
+    void collectPostSources();
     GraphTextures postTextures_;
+    std::vector<shader::graph::Node> postTextureNodes_;
     struct RttTarget {
         std::string name;
         std::shared_ptr<shader::graph::RttState> state;
@@ -872,6 +993,19 @@ private:
     std::vector<WGPUTextureView> postTextureViews_;  // a resized render target's texture is a new view
     std::unique_ptr<TraaPass> traa_;
     std::shared_ptr<const shader::graph::PostEffect> liveTraa_;
+    TemporalStatus temporalStatus_;
+    /** What the newest counted frame's readback brought back (`TemporalStatus::rejected`): shared with the callback, which can outlive the renderer. */
+    struct TraaCounts {
+        std::atomic<uint32_t> rejected{0}, clamped{0}, pixels{0};
+        std::atomic<uint64_t> frame{0};
+    };
+    std::shared_ptr<TraaCounts> traaCounts_ = std::make_shared<TraaCounts>();
+    Handle traaStats_;  // the resolve's two counters, read back after the frame that counted them
+    void readTraaCounts();
+    /** True when the resolve reads a frame the post graph drew (`traaResolvesLate`): it then runs as a graph pass. */
+    bool lateTraa_ = false;
+    /** The colour the post graph and the output pass read as `scene`: the scene pass's own, or its resolve. */
+    WGPUTextureView postScene() const;
     std::unique_ptr<PostEffects> postEffects_;
     std::map<std::string, std::vector<double>> postUniforms_;
     /** three's `time` (its NodeFrame clock): seconds since this renderer was made, read once a frame. */
@@ -908,7 +1042,7 @@ private:
     // renderer is gone (wgpu does at teardown), and it must then find nothing to write into.
     struct Timing {
         double lastMs = -1;
-        std::array<double, 4> segments{};  // shadow passes, scene pass, other passes, output pass, in ms
+        std::array<double, kGpuSegments> segments{};  // shadow passes, scene pass, other passes, output pass, screen-space gather, in ms
         uint32_t passes = 0;
         uint64_t samples = 0;
         uint64_t source = 0;  // the caller frame id the successful sample was submitted with

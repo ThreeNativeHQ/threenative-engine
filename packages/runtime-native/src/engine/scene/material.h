@@ -1,5 +1,6 @@
 #pragma once
 #include <memory>
+#include <optional>
 #include <map>
 
 // three@0.185.1's Material and the five mesh materials, as the properties the native renderer
@@ -87,6 +88,7 @@ public:
     bool polygonOffset = false;
     double polygonOffsetFactor = 0, polygonOffsetUnits = 0;
     Side side = Side::Front;
+    std::optional<Side> shadowSide;  // three's material.shadowSide: the faces a shadow pass draws; null derives it
     Blending blending = Blending::Normal;
     bool visible = true;
     bool toneMapped = true;
@@ -111,6 +113,14 @@ public:
     Vector2 clearcoatNormalScale{1, 1};     // Physical
     bool vertexColors = false;
     bool flatShading = false;
+    /** Unreal's Two Sided Foliage shading model (PRD-651): a receiver that looks its shadow up where it stands. */
+    bool twoSidedFoliage = false;
+    /** Unreal's Subsurface Color on a Two Sided Foliage leaf (PRD-643): the sun it lets through. Absent (undefined in
+     *  script) until the game sets one, as in three, so a marked material without it takes no transmitted light. */
+    Color subsurfaceColor{0, 0, 0};
+    bool hasSubsurfaceColor = false;
+    /** Unreal's Substrate rough diffuse, the EON model (PRD-653): direct light shades the diffuse lobe with EON, not Lambert. */
+    bool roughDiffuse = false;
     Vector2 normalScale{1, 1};
     double aoMapIntensity = 1;
     double bumpScale = 1;  // Standard, Physical (Lambert and Phong declare it too; their programs do not read it yet)

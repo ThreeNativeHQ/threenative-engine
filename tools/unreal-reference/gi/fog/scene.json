@@ -1,0 +1,158 @@
+{
+  "note": "Written by gi/export.py from the Unreal 5.8.3 level /Game/GI/fog/GI_fog. three.js frame: Y up, metres. Unreal is the authority; scene.py is only the authoring input.",
+  "scene": "fog",
+  "resolution": [1280, 720],
+  "meshes": [
+    {
+      "name": "Floor",
+      "class": "StaticMeshActor",
+      "position": [0.0, -0.1, 0.0],
+      "rotationYDeg": -0.0,
+      "size": [6.4, 0.2, 6.4],
+      "material": {
+        "name": "MI_White",
+        "baseColor": [0.73, 0.73, 0.73],
+        "roughness": 1.0,
+        "metallic": 0.0,
+        "emissive": [0.0, 0.0, 0.0],
+        "emissiveStrength": 1.0
+      }
+    },
+    {
+      "name": "Ceiling",
+      "class": "StaticMeshActor",
+      "position": [0.0, 3.1, 0.0],
+      "rotationYDeg": -0.0,
+      "size": [6.4, 0.2, 6.4],
+      "material": {
+        "name": "MI_White",
+        "baseColor": [0.73, 0.73, 0.73],
+        "roughness": 1.0,
+        "metallic": 0.0,
+        "emissive": [0.0, 0.0, 0.0],
+        "emissiveStrength": 1.0
+      }
+    },
+    {
+      "name": "Back",
+      "class": "StaticMeshActor",
+      "position": [0.0, 1.5, -3.1],
+      "rotationYDeg": -0.0,
+      "size": [6.4, 3.4, 0.2],
+      "material": {
+        "name": "MI_White",
+        "baseColor": [0.73, 0.73, 0.73],
+        "roughness": 1.0,
+        "metallic": 0.0,
+        "emissive": [0.0, 0.0, 0.0],
+        "emissiveStrength": 1.0
+      }
+    },
+    {
+      "name": "Front",
+      "class": "StaticMeshActor",
+      "position": [0.0, 1.5, 3.1],
+      "rotationYDeg": -0.0,
+      "size": [6.4, 3.4, 0.2],
+      "material": {
+        "name": "MI_White",
+        "baseColor": [0.73, 0.73, 0.73],
+        "roughness": 1.0,
+        "metallic": 0.0,
+        "emissive": [0.0, 0.0, 0.0],
+        "emissiveStrength": 1.0
+      }
+    },
+    {
+      "name": "Wall_Red",
+      "class": "StaticMeshActor",
+      "position": [-3.1, 1.5, 0.0],
+      "rotationYDeg": -0.0,
+      "size": [0.2, 3.4, 6.4],
+      "material": {
+        "name": "MI_Red",
+        "baseColor": [0.63, 0.065, 0.05],
+        "roughness": 1.0,
+        "metallic": 0.0,
+        "emissive": [0.0, 0.0, 0.0],
+        "emissiveStrength": 1.0
+      }
+    },
+    {
+      "name": "Wall_Green",
+      "class": "StaticMeshActor",
+      "position": [3.1, 1.5, 0.0],
+      "rotationYDeg": -0.0,
+      "size": [0.2, 3.4, 6.4],
+      "material": {
+        "name": "MI_Green",
+        "baseColor": [0.14, 0.45, 0.091],
+        "roughness": 1.0,
+        "metallic": 0.0,
+        "emissive": [0.0, 0.0, 0.0],
+        "emissiveStrength": 1.0
+      }
+    }
+  ],
+  "lights": [
+    {
+      "name": "Lamp",
+      "class": "PointLight",
+      "position": [0.0, 2.3, -0.3],
+      "intensity": 2000.0,
+      "units": "lumens",
+      "attenuationRadiusM": 20.0,
+      "color": [1.0, 1.0, 1.0],
+      "useTemperature": false,
+      "castShadows": false,
+      "inverseSquaredFalloff": true,
+      "volumetricScatteringIntensity": 1.0,
+      "sourceRadiusM": 0.05
+    }
+  ],
+  "sky": null,
+  "sun": null,
+  "fog": {
+    "position": [0.0, 0.0, 0.0],
+    "density": 1.0,
+    "heightFalloff": 0.2,
+    "inscatteringLuminance": [0.0, 0.0, 0.0],
+    "startDistanceM": 0.0,
+    "maxOpacity": 1.0,
+    "volumetric": true,
+    "volumetricScatteringDistribution": 0.2,
+    "volumetricAlbedo": [1.0, 1.0, 1.0],
+    "volumetricExtinctionScale": 1.0,
+    "volumetricDistanceM": 60.0
+  },
+  "exposure": {
+    "method": "aem_manual",
+    "physicalCamera": false,
+    "bias": -5.0,
+    "ev100": 5.0,
+    "lensAttenuation": 0.7799999713897705,
+    "exposureScale": 0.03124999885375683
+  },
+  "poses": [
+    {
+      "name": "fog",
+      "position": [0, 1.4, 2.7],
+      "target": [0, 1.5, -3.0],
+      "hfovDeg": 80
+    },
+    {
+      "name": "fog-corner",
+      "position": [-1.5, 1.4, 1.5],
+      "target": [-3.0, 1.2, -2.5],
+      "hfovDeg": 70
+    }
+  ],
+  "regions": {
+    "Floor": [255, 0, 0],
+    "Ceiling": [0, 255, 0],
+    "Back": [0, 0, 255],
+    "Front": [255, 255, 0],
+    "Wall_Red": [255, 0, 255],
+    "Wall_Green": [0, 255, 255]
+  }
+}

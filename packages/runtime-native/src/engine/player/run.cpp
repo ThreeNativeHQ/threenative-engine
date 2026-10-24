@@ -31,6 +31,7 @@
 #include <cstdlib>
 #include <memory>
 #include <optional>
+#include <set>
 #include <string>
 #include <stdexcept>
 #include <vector>
@@ -664,6 +665,7 @@ struct Session {
     // queue them ahead of the next readback faster than a software GPU executes them.
     uint64_t lastRenderedTick = UINT64_MAX;
     bool hasRendered = false;
+    std::set<std::string> renderNotes;  // a renderer note (a skipped draw) prints once, not every frame
     double updateMs = 0, readyMs = 0, updateCpuMs = 0, updateInstructions = 0, updateCycles = 0;
     double updateMixerCpuMs = 0;
     uint64_t updateMixerCalls = 0;
@@ -948,7 +950,7 @@ int Session::initialize() {
         for (const std::string& diagnostic : database.diagnostics())
             std::printf("[Playtest] %s\n", diagnostic.c_str());
         for (const std::string& diagnostic : renderer->diagnostics())
-            std::printf("[Playtest] %s\n", diagnostic.c_str());
+            if (renderNotes.insert(diagnostic).second) std::printf("[Playtest] %s\n", diagnostic.c_str());
         lastRenderedTick = tick();
         hasRendered = true;
         if (presenter) {
@@ -1133,7 +1135,8 @@ int Session::initialize() {
                     {"fresh", json::Value::makeBool(samples > previousGpuSamples)},
                     {"elapsedMs", samples ? json::Value::makeNumber(renderer->lastGpuMs()) : json::Value::makeNull()},
                     {"segmentsMs", samples ? json::Value::makeArray({json::Value::makeNumber(segments[0]), json::Value::makeNumber(segments[1]),
-                        json::Value::makeNumber(segments[2]), json::Value::makeNumber(segments[3])}) : json::Value::makeNull()}}));
+                        json::Value::makeNumber(segments[2]), json::Value::makeNumber(segments[3]), json::Value::makeNumber(segments[4]),
+                        json::Value::makeNumber(segments[5])}) : json::Value::makeNull()}}));
                 previousGpuSamples = samples;
                 sample = json::Value::makeObject(std::move(members));
             }

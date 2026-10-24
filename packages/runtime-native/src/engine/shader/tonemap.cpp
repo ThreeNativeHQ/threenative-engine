@@ -3,6 +3,7 @@
 // takes ROWS (NodeUtils.getValueFromType). mat3() below takes columns, mat3Rows() rows.
 
 #include "tonemap.h"
+#include <stdexcept>
 
 #include <array>
 
@@ -88,6 +89,7 @@ ExprId toneMap(Program& p, ToneMapping mapping, ExprId color, ExprId exposure) {
             c = p.mul(rec2020ToSrgb, c);
             return saturate(p, c);
         }
+        case ToneMapping::Custom: throw std::runtime_error("TN_NATIVE_CUSTOM_TONEMAPPING_MISSING: custom curve requires the output graph");
         case ToneMapping::Neutral: {
             const ExprId startCompression = f(p, 0.8f - 0.04f);
             const ExprId desaturation = f(p, 0.15f);

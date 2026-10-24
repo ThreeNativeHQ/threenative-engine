@@ -133,10 +133,12 @@ function clippedLog2Mean(
   const logSum = float(0).toVar();
   Loop(exposureBins, ({ i }) => {
     const bin = textureLoad(histogram, ivec2(i, 0));
-    const removed = bin.r.min(dropLow);
+    // toVar: each is read after a variable it depends on was assigned, so it must hold the value it had
+    // when it was computed. A bare expression node is evaluated again at every use, after the assignments.
+    const removed = bin.r.min(dropLow).toVar();
     dropLow.subAssign(removed);
     keepUpTo.subAssign(removed);
-    const keep = bin.r.sub(removed).min(keepUpTo);
+    const keep = bin.r.sub(removed).min(keepUpTo).toVar();
     keepUpTo.subAssign(keep);
     kept.addAssign(keep);
     logSum.addAssign(bin.g.mul(keep.div(bin.r.max(1e-20))));

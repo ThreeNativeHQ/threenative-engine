@@ -11,10 +11,14 @@ import { describe, expect, it, vi } from "vitest";
 import {
   type IBrowserRuntime,
   type IRegistryDump,
+  TSL_NODE,
   defineBrowserClasses,
 } from "../src/browser-backend.js";
 import { type WebEngineModule, defineWebRenderer } from "../src/browser-renderer.js";
+import { type ITslRuntime, defineTsl } from "../src/browser-tsl.js";
 import { loadCatalog } from "../src/catalog.js";
+import { defineQuadMesh } from "../src/quad-mesh.js";
+import { defineRendererUtils } from "../src/renderer-utils.js";
 
 const REPO = process.cwd();
 const registry = JSON.parse(
@@ -26,6 +30,9 @@ function host(
   render: (...args: number[]) => number = () => 0,
   secondary?: Parameters<typeof defineWebRenderer>[4],
   renderTarget: (...args: number[]) => number = () => 0,
+  before?: Parameters<typeof defineWebRenderer>[2],
+  tsl?: ITslRuntime,
+  poll: () => number = () => 1,
 ) {
   const types = new Map<string, number>();
   const runtime: IBrowserRuntime = {
@@ -53,7 +60,7 @@ function host(
     },
     _free: () => undefined,
     _tnw_web_init: initCalls,
-    _tnw_web_poll: () => 1,
+    _tnw_web_poll: poll,
     _tnw_web_adapter: () => 0,
     _tnw_web_error: () => 0,
     _tnw_web_resize: () => 0,
@@ -62,13 +69,7 @@ function host(
     _tnw_web_frame: frame,
     _tnw_web_renderer_state: state,
   } as unknown as WebEngineModule;
-  const Renderer = defineWebRenderer(
-    module,
-    classes.Color as never,
-    undefined,
-    undefined,
-    secondary,
-  );
+  const Renderer = defineWebRenderer(module, classes.Color as never, before, tsl, secondary);
   const canvas = { width: 300, height: 150, style: {}, setAttribute: () => undefined };
   const scene = new (classes.Scene as new () => object)();
   const camera = new (classes.PerspectiveCamera as new () => object)();
@@ -86,6 +87,64 @@ async function drawn(parameters: Record<string, unknown>) {
   renderer.render(scene, camera);
   return { samples: renderer.samples, handed: state.mock.calls.at(-1)?.[5] };
 }
+
+describe("the Wasm engine's temporal pass readout", () => {
+  async function readout(fields: Record<number, number>) {
+    const { Renderer, canvas, scene, camera } = host((field) => fields[field] ?? 0);
+    const renderer = new Renderer({ canvas }) as {
+      info: { engine: { temporal: unknown } };
+      init(): Promise<unknown>;
+      render(scene: unknown, camera: unknown): void;
+    };
+    await renderer.init();
+    renderer.render(scene, camera);
+    return renderer.info.engine.temporal;
+  }
+
+  it("reads the engine's frame, history, jitter and counted history rejection while a traa() effect is in the graph", async () => {
+    expect(
+      await readout({ 13: 1, 14: 7, 15: 1, 16: 0.25, 17: -0.5, 30: 12, 31: 7, 32: 3072, 33: 48 }),
+    ).toEqual({
+      active: true,
+      frame: 7,
+      historyValid: true,
+      jitter: [0.25, -0.5],
+      rejected: 12,
+      clamped: 7,
+      pixels: 3072,
+      countedFrame: 48,
+    });
+  });
+
+  it("reports the samples the scene draws with, which the temporal pass sets to 1", async () => {
+    const { Renderer, canvas, scene, camera } = host((field) => (field === 18 ? 1 : 0));
+    const renderer = new Renderer({ canvas, antialias: true }) as {
+      samples: number;
+      info: { engine: { samples: number } };
+      init(): Promise<unknown>;
+      render(scene: unknown, camera: unknown): void;
+    };
+    await renderer.init();
+    renderer.render(scene, camera);
+    expect({ asked: renderer.samples, drawn: renderer.info.engine.samples }).toEqual({
+      asked: 4,
+      drawn: 1,
+    });
+  });
+
+  it("reports an inactive pass when no traa() effect reached the engine", async () => {
+    expect(await readout({})).toEqual({
+      active: false,
+      frame: 0,
+      historyValid: false,
+      jitter: [0, 0],
+      rejected: 0,
+      clamped: 0,
+      pixels: 0,
+      countedFrame: 0,
+    });
+  });
+});
 
 describe("the Wasm engine's WebGPURenderer sample count", () => {
   it("declares that its surface-owned frame pass cannot retain a target sub-rectangle", () => {
@@ -181,6 +240,75 @@ describe("the Wasm engine's WebGPURenderer sample count", () => {
     expect(renderer.backend.getTimestampFrames?.("compute")).toEqual([]);
   });
 
+  it("reports the sample's labelled stage times beside its whole frame, and leaves a stage that drew nothing out", async () => {
+    let gpuSamples = 0;
+    let gatherMs = 0;
+    let shadowMs = 0;
+    const { Renderer, canvas, scene, camera } = host((field) => {
+      if (field === 7) return 12.5;
+      if (field === 19) return shadowMs; // the shadow passes' segment (web_host.cpp)
+      if (field === 8) return gpuSamples;
+      if (field === 9) return 4;
+      if (field === 10) return 1;
+      if (field === 23) return gatherMs; // the screen-space gather's segment (web_host.cpp 19 + 4)
+      return 0;
+    });
+    const renderer = new Renderer({ canvas, trackTimestamp: true }) as {
+      info: { engine: { gpuStages: Record<string, number> } };
+      init(): Promise<unknown>;
+      render(scene: unknown, camera: unknown): void;
+    };
+    await renderer.init();
+    renderer.render(scene, camera);
+    expect(renderer.info.engine.gpuStages).toEqual({});
+    gpuSamples = 1;
+    gatherMs = 4.25;
+    shadowMs = 0.75;
+    renderer.render(scene, camera);
+    expect(renderer.info.engine.gpuStages).toEqual({ SSGI: 4.25, Shadow: 0.75 });
+    gpuSamples = 2;
+    gatherMs = 0;
+    shadowMs = 0;
+    renderer.render(scene, camera);
+    expect(renderer.info.engine.gpuStages).toEqual({});
+  });
+
+  it("reports the lamp shadow maps apart from the sun's (PRD-650)", async () => {
+    let gpuSamples = 0;
+    const { Renderer, canvas, scene, camera } = host((field) => {
+      if (field === 7) return 1.5;
+      if (field === 8) return gpuSamples;
+      if (field === 10) return 1;
+      if (field === 19) return 0.25; // the sun's shadow passes
+      if (field === 24) return 0.5; // the lamp shadow passes
+      if (field === 25) return 2; // lamp maps redrawn
+      if (field === 26) return 13; // their draws
+      if (field === 27) return 15; // every shadow draw
+      if (field === 28) return 1024; // the smallest footprint-sized lamp map
+      if (field === 29) return 2048; // and the largest
+      return 0;
+    });
+    const renderer = new Renderer({ canvas, trackTimestamp: true }) as {
+      info: { engine: { shadows: Record<string, number> } };
+      init(): Promise<unknown>;
+      render(scene: unknown, camera: unknown): void;
+    };
+    await renderer.init();
+    renderer.render(scene, camera);
+    expect(renderer.info.engine.shadows).toEqual({
+      lampRedraws: 2,
+      lampDraws: 13,
+      shadowDraws: 15,
+      sunGpuMs: -1,
+      lampGpuMs: -1,
+      lampMapMin: 1024,
+      lampMapMax: 2048,
+    });
+    gpuSamples = 1;
+    renderer.render(scene, camera);
+    expect(renderer.info.engine.shadows).toMatchObject({ sunGpuMs: 0.25, lampGpuMs: 0.5 });
+  });
+
   it("does not claim enabled timestamps when the caller opts out or the device has none", async () => {
     const opted = host((field) => (field === 10 ? 1 : 0));
     const off = new opted.Renderer({ canvas: opted.canvas, trackTimestamp: false }) as {
@@ -197,6 +325,115 @@ describe("the Wasm engine's WebGPURenderer sample count", () => {
     };
     await unsupported.init();
     expect(unsupported.backend.trackTimestamp).toBe(false);
+  });
+
+  it("counts a frame's draws and triangles over every render() call until info.reset(), as three's Info does", async () => {
+    // The game draws the world, then its HUD overlay, as two render() calls in one frame; the
+    // overlay's own few draws used to overwrite the world's (doctor: "4 draw calls, 7 triangles").
+    const perCall = [
+      { draws: 58, triangles: 13700 },
+      { draws: 4, triangles: 7 },
+    ];
+    let call = -1;
+    const { Renderer, canvas, scene, camera } = host(
+      (field) =>
+        field === 0
+          ? (perCall[call]?.draws ?? 0)
+          : field === 1
+            ? (perCall[call]?.triangles ?? 0)
+            : 0,
+      () => {
+        call += 1;
+        return 0;
+      },
+    );
+    const renderer = new Renderer({ canvas }) as {
+      info: { reset(): void; render: { drawCalls: number; triangles: number; frameCalls: number } };
+      init(): Promise<unknown>;
+      render(scene: unknown, camera: unknown): void;
+    };
+    await renderer.init();
+    renderer.render(scene, camera);
+    renderer.render(scene, camera);
+    expect(renderer.info.render.drawCalls).toBe(62);
+    expect(renderer.info.render.triangles).toBe(13707);
+    renderer.info.reset();
+    expect(renderer.info.render).toMatchObject({ drawCalls: 0, frameCalls: 0, triangles: 0 });
+  });
+
+  it("reports a lost device once and then stops drawing, instead of throwing every frame", async () => {
+    // Chromium's headless shell cannot back a WebGPU canvas, so the GPU process destroys the device right
+    // after start; the host stays Failed. The renderer threw "TN_WASM_DEVICE_LOST" from every render() (about
+    // 950 page errors in 25 s).
+    let hostState = 1;
+    const render = vi.fn(() => {
+      hostState = 2;
+      return 1;
+    });
+    const secondary = vi.fn();
+    const { Renderer, canvas, scene, camera } = host(
+      undefined,
+      render,
+      secondary,
+      undefined,
+      undefined,
+      undefined,
+      () => hostState,
+    );
+    const renderer = new Renderer({ canvas }) as {
+      init(): Promise<unknown>;
+      render(scene: unknown, camera: unknown): void;
+    };
+    await renderer.init();
+    const failures: unknown[] = [];
+    for (let frame = 0; frame < 50; frame += 1) {
+      try {
+        renderer.render(scene, camera);
+      } catch (error) {
+        failures.push(error);
+      }
+    }
+    expect(failures).toHaveLength(1);
+    expect(render).toHaveBeenCalledTimes(1);
+    expect(secondary).toHaveBeenCalledTimes(1);
+  });
+
+  it("names the loss on the console, so a caller that swallows the one throw cannot hide a black page", async () => {
+    // A warm-up or a frame hook may catch the single throw. Every later render() then returns without
+    // drawing and nothing says why: auto exposure's refused shader killed the page that way.
+    let hostState = 1;
+    const render = vi.fn(() => {
+      hostState = 2;
+      return 1;
+    });
+    const { Renderer, canvas, scene, camera } = host(
+      undefined,
+      render,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      () => hostState,
+    );
+    const renderer = new Renderer({ canvas }) as {
+      init(): Promise<unknown>;
+      render(scene: unknown, camera: unknown): void;
+    };
+    await renderer.init();
+    const errors = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      for (let frame = 0; frame < 5; frame += 1) {
+        try {
+          renderer.render(scene, camera);
+        } catch {
+          // The caller swallows it, as startup warm-up does.
+        }
+      }
+      expect(errors).toHaveBeenCalledTimes(1);
+      expect(String(errors.mock.calls[0]?.[0])).toContain("TN_WASM_RENDERER_LOST");
+    } finally {
+      errors.mockRestore();
+    }
   });
 });
 
@@ -391,5 +628,136 @@ describe("the Wasm engine's WebGPURenderer across a hot update", () => {
       renderer.dispose();
     }
     expect(initCalls).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("Wasm TempNode render lifecycle", () => {
+  it("draws a subclass quad through the existing target path once per frame and restores state", async () => {
+    let next = 0;
+    const runtime: ITslRuntime = {
+      call: () => ++next,
+      release() {},
+      set() {},
+      setUniform() {},
+      effectParameter: () => 0,
+      setPost() {},
+      compute() {},
+      readStorage: async () => new ArrayBuffer(0),
+      deleteStorage() {},
+    };
+    const tsl = defineTsl(runtime);
+    const draw = vi.fn(() => 0);
+    const { Renderer, canvas, scene, camera, classes } = host(
+      undefined,
+      undefined,
+      undefined,
+      draw,
+      tsl.sync,
+    );
+    const renderer = new Renderer({ canvas }) as {
+      init(): Promise<void>;
+      render(scene: unknown, camera: unknown): void;
+      setRenderTarget(target: unknown): void;
+      getRenderTarget(): unknown;
+      setClearColor(color: unknown, alpha: number): void;
+      getClearAlpha(): number;
+      autoClear: boolean;
+    };
+    const utils = defineRendererUtils(classes.Color as never);
+    const QuadMesh = defineQuadMesh(classes as never);
+    const quad = new QuadMesh();
+    const TempNode = tsl.exports.TempNode as new (
+      type: string,
+    ) => {
+      setup(builder: unknown): unknown;
+      updateBefore(frame: unknown): unknown;
+      updateBeforeType: string;
+      dispose(): void;
+    };
+    const target = new (classes.RenderTarget as new () => object)();
+    const update = vi.fn();
+    class Exposure extends TempNode {
+      constructor() {
+        super("float");
+        this.updateBeforeType = "frame";
+      }
+      override setup(builder: unknown) {
+        super.setup(builder);
+        return (tsl.exports.float as (v: number) => unknown)(2);
+      }
+      override updateBefore(frame: unknown) {
+        expect((frame as { renderer: unknown }).renderer).toBe(renderer);
+        update();
+        const state = utils.resetRendererState(renderer as never);
+        try {
+          renderer.setRenderTarget(target);
+          quad.render(renderer);
+        } finally {
+          utils.restoreRendererState(renderer as never, state);
+        }
+      }
+    }
+    const node = new Exposure();
+    (tsl.exports.float as (v: unknown) => unknown)(node);
+    await renderer.init();
+    renderer.setClearColor(0, 0.25);
+    renderer.autoClear = false;
+    renderer.render(scene, camera);
+    expect(update).toHaveBeenCalledTimes(1);
+    expect(draw).toHaveBeenCalledTimes(1);
+    expect(renderer.getRenderTarget()).toBe(null);
+    expect(renderer.getClearAlpha()).toBe(0.25);
+    expect(renderer.autoClear).toBe(false);
+    renderer.render(scene, camera);
+    expect(update).toHaveBeenCalledTimes(2);
+    node.dispose();
+    renderer.render(scene, camera);
+    expect(update).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("custom tone mapping", () => {
+  it("refuses mode 5 precisely until a curve is registered", async () => {
+    const { Renderer, canvas, scene, camera } = host();
+    const renderer = new Renderer({ canvas }) as {
+      toneMapping: number;
+      init(): Promise<unknown>;
+      render(scene: unknown, camera: unknown): void;
+    };
+    await renderer.init();
+    renderer.toneMapping = 5;
+    expect(() => renderer.render(scene, camera)).toThrow("TN_NATIVE_CUSTOM_TONEMAPPING_MISSING");
+  });
+
+  it("installs the registered TSL curve before rendering mode 5", async () => {
+    let id = 0;
+    const runtime = {
+      call: vi.fn(() => ++id),
+      release: vi.fn(),
+      setToneMapping: vi.fn(),
+    } as unknown as ITslRuntime;
+    const { Renderer, canvas, scene, camera, state } = host(
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      runtime,
+    );
+    const renderer = new Renderer({ canvas }) as {
+      library: ReturnType<typeof import("../src/tone-mapping.js").defineToneMappingLibrary>;
+      toneMapping: number;
+      init(): Promise<unknown>;
+      render(scene: unknown, camera: unknown): void;
+    };
+    const curve = vi.fn((color: { mul(value: number): { [TSL_NODE]: number } }) => color.mul(0.25));
+    renderer.library.addToneMapping(curve, 5);
+    expect(renderer.library.getToneMappingFunction(5)).toBe(curve);
+    renderer.toneMapping = 5;
+    await renderer.init();
+    renderer.render(scene, camera);
+    expect(curve).toHaveBeenCalledTimes(1);
+    expect(runtime.setToneMapping).toHaveBeenCalledWith(curve.mock.results[0]?.value[TSL_NODE]);
+    expect(state.mock.calls.at(-1)?.[0]).toBe(5);
   });
 });

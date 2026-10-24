@@ -71,9 +71,12 @@ describe("the browser-JS back end", () => {
         .flatMap((side) => Object.getOwnPropertyNames(side))
         .filter((key) => key !== "constructor");
       // PRD-540: scene-graph classes also carry the JavaScript-side members (browser-surface.spec.ts).
+      // Disposable classes (textures, materials, geometries) carry `userData` as three's do.
       const language: readonly string[] = binding.members.includes("parent")
         ? LANGUAGE_MEMBERS
-        : [];
+        : binding.methods.includes("dispose")
+          ? ["userData"]
+          : [];
       const expected = new Set([
         ...binding.methods,
         ...binding.getters.filter((key) => !key.includes(".")),

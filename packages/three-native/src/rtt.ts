@@ -1,3 +1,5 @@
+import { gpuStageId } from "./gpu-stages.js";
+
 /** RTTNode's mutable target and quad over the engine's scheduled fullscreen pass. */
 interface IRttNode {
   __effect(name: string, value?: number): number;
@@ -35,6 +37,11 @@ function validateOptions(options: Record<string, unknown>): void {
   for (const [key, value] of Object.entries(options)) {
     if (key === "type" && value === 1016) continue;
     if (key === "depthBuffer" && value === false) continue;
+    // Not a RenderTarget option: the GPU stage the pass reports its time under (gpu-stages.ts).
+    if (key === "gpuStage") {
+      if (value !== undefined) gpuStageId(value);
+      continue;
+    }
     if ((key === "minFilter" || key === "magFilter") && (value === 1003 || value === 1006))
       continue;
     throw new TypeError(`TN_TSL_RTT_OPTION: unsupported ${key}=${value}`);
@@ -60,7 +67,8 @@ export function defineRtt(make: (...args: unknown[]) => IRttNode, classes?: IRtt
     const material = new classes.NodeMaterial();
     material.fragmentNode = source;
     const quad = new classes.QuadMesh(material as never) as IRttQuad;
-    const { minFilter = 1006, magFilter = 1006, ...targetOptions } = options;
+    if (options.gpuStage !== undefined) node.__effect("stage", gpuStageId(options.gpuStage));
+    const { minFilter = 1006, magFilter = 1006, gpuStage: _stage, ...targetOptions } = options;
     const target = new classes.RenderTarget(width ?? 1, height ?? 1, targetOptions);
     Object.assign(target.texture as object, { minFilter, magFilter });
     node.__rtt(target, quad);

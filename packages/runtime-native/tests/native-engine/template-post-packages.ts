@@ -69,6 +69,67 @@ const names = readdirSync(templates, { withFileTypes: true })
   .sort();
 if (names.length === 0) throw new Error(`TN_TEMPLATE_POST_EMPTY: ${templates}`);
 
+/**
+ * A template stage that is generated source driving its own render targets (the Unreal bloom's mip chain, local exposure's
+ * bilateral grid) runs on the host through the facade, so no single exported graph can say what it draws. The conformance row
+ * that draws it on the host and in the browser is its native proof. The sweep checks that the row is still required and
+ * desktop-gated, then lowers the rest of the chain with each such stage read from a host texture of its name. `lanes` is what
+ * the stage hands the chain: a float gain, or an rgb colour.
+ */
+const HOST_RUN: Record<string, { row: string; lanes: string }> = {
+  LocalExposureNode: { row: "local-exposure", lanes: "x" },
+  UnrealBloomNode: { row: "local-exposure", lanes: "xyz" },
+};
+const registry = JSON.parse(
+  readFileSync(path.resolve(import.meta.dirname, "../../conformance/registry.json"), "utf8"),
+) as { tests: { id: string; status: string; required?: boolean; desktopGate?: boolean }[] };
+
+/** Rewrites the host-run stages of `exported` into reads of host textures, and names the parity rows that prove them. */
+function standIn(exported: ReturnType<typeof exportTslGraph>): string[] {
+  const rows = new Set<string>();
+  const count = exported.nodes.length;
+  for (let id = 0; id < count; id++) {
+    const node = exported.nodes[id];
+    if (node === undefined) continue;
+    // The chain's real-three context carries the temporal pass's velocity only so TRAANode can unjitter its projection.
+    // The host draws that velocity itself and the stages read it by the name `velocity`.
+    if (node.kind === "VelocityNode") {
+      Object.assign(node, { kind: "TextureNode", name: "velocity", args: [], dependencies: [] });
+      continue;
+    }
+    if (
+      node.kind === "ContextNode" &&
+      node.operation === "custom-context" &&
+      node.name === "velocity"
+    ) {
+      // Nothing else reads this context, so it is the node it wraps (JSON drops the undefined fields).
+      Object.assign(node, { operation: undefined, name: undefined });
+      continue;
+    }
+    const hosted = HOST_RUN[node.kind];
+    if (hosted === undefined) continue;
+    const row = registry.tests.find((test) => test.id === hosted.row);
+    if (!row || row.status !== "implemented" || row.required !== true || row.desktopGate !== true)
+      throw new Error(
+        `TN_TEMPLATE_POST_HOST_RUN: ${node.kind} has no required, desktop-gated parity row '${hosted.row}'`,
+      );
+    rows.add(`${node.kind} (${hosted.row})`);
+    exported.nodes.push({
+      kind: "TextureNode",
+      name: `host_${node.kind}`,
+      args: [],
+      dependencies: [],
+    });
+    Object.assign(node, {
+      kind: "SplitNode",
+      lanes: hosted.lanes,
+      args: [exported.nodes.length - 1],
+      dependencies: [],
+    });
+  }
+  return [...rows];
+}
+
 class UnloweredPostNode extends TempNode {
   static get type(): string {
     return "UnloweredPostNode";
@@ -123,10 +184,11 @@ function checkPostModules(name: string, modules: string[]): void {
   }
 }
 
-async function compile(name: string, output: unknown): Promise<boolean> {
+async function compile(name: string, output: unknown, hosted = false): Promise<boolean> {
   const input = path.join(directory, `${name}.json`);
   const prefix = path.join(directory, name);
   const exported = exportTslGraph(output);
+  const accounted = hosted ? standIn(exported) : [];
   if (name === "SMAANode") checkSmaaTables(exported);
   writeFileSync(input, JSON.stringify(exported));
   const compiled = await run(native as string, [name, input, prefix]);
@@ -140,6 +202,18 @@ async function compile(name: string, output: unknown): Promise<boolean> {
   const expected = { FnNode: 2, RTTNode: 4, BloomNode: 26, SharpenNode: 4 }[name];
   if (expected !== undefined && modules.length !== expected)
     throw new Error(`${name}: expected ${expected} native modules, got ${modules.length}`);
+  // A loop body reads at an explicit mip; a plain sample there has no implicit derivatives to pick one.
+  // The fixture's loop body holds one read, so the package holds one: a statement the importer lowered twice would sum it twice.
+  if (name === "TextureLevel") {
+    const reads = modules.reduce(
+      (count, m) => count + (readFileSync(m, "utf8").match(/textureSampleLevel\(/gu)?.length ?? 0),
+      0,
+    );
+    if (reads !== 1)
+      throw new Error(
+        `TextureLevel: expected 1 explicit-level sample in the native package, got ${reads}`,
+      );
+  }
   if (name === "FnNode") {
     const shader = readFileSync(modules[1] as string, "utf8");
     for (const operation of ["for (", "if (", " = "])
@@ -166,6 +240,8 @@ async function compile(name: string, output: unknown): Promise<boolean> {
     }
   }
   console.info(`${name}: native package + Tint (${modules.length} modules)`);
+  if (accounted.length > 0)
+    console.info(`${name}: host-run stages, proven by their parity row: ${accounted.join(", ")}`);
   return true;
 }
 
@@ -330,7 +406,7 @@ for (const name of names) {
       if (output === undefined)
         throw new Error("TN_TEMPLATE_POST_EMPTY: no output graph installed");
       if (process.env.TN_POST_RED_CONTROL === "1") output = new UnloweredPostNode(output);
-      if (!(await compile(label, output))) failures++;
+      if (!(await compile(label, output, true))) failures++;
     } catch (error) {
       failures++;
       console.error(`${label}: ${error instanceof Error ? error.message : String(error)}`);

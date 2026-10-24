@@ -1,0 +1,690 @@
+{
+  "system": "niagara",
+  "rows": [
+    {
+      "parent": "Data interfaces (grids, mesh, collision)",
+      "internals": [
+        [
+          "Collision: scene depth query",
+          765,
+          "Tests a particle against the scene depth and returns the hit point and normal.",
+          "open",
+          "PRD-610 SceneDepthSampler: swept hit, point and normal from last frame's depth.",
+          ["610"]
+        ],
+        [
+          "Collision: global distance field query",
+          84,
+          "Returns the distance to the nearest surface from the global distance field, also off screen.",
+          "deferred",
+          "PRD-610 Decisions defers off-screen collision: no global distance field; revisit when its Phase 3 shows an off-screen miss a player notices.",
+          []
+        ],
+        [
+          "Collision: async GPU ray trace",
+          1783,
+          "Traces particle rays against the hardware ray tracing scene or the distance field, with results a frame later.",
+          "deferred",
+          "Hardware ray tracing needs an API WebGPU lacks; GPUSceneBVH could serve a trace. Revisit with a consumer that depth collision cannot serve.",
+          []
+        ],
+        [
+          "Collision: rigid bodies and physics assets",
+          4230,
+          "Collides particles with the primitive shapes of physics bodies on the GPU.",
+          "deferred",
+          "PRD-610 Decisions: characters write depth, so sparks bounce off visible bodies. Revisit when an occluded or off-screen body must stop particles.",
+          []
+        ],
+        [
+          "Landscape height and normal",
+          2087,
+          "Reads terrain height and normal at a world position.",
+          "deferred",
+          "PRD-610 Decisions names a heightfield (Godot GPUParticlesCollisionHeightField3D) as the off-screen analog; revisit on the same condition.",
+          []
+        ],
+        [
+          "Static mesh sampling",
+          6348,
+          "Picks points on a static mesh surface by triangle and barycentric coordinate.",
+          "open",
+          "PRD-706 MeshEmissionPoints static path (no skin step). A game can also use three's MeshSurfaceSampler addon.",
+          ["706"]
+        ],
+        [
+          "Skeletal mesh sampling (triangles, vertices, bones, sockets)",
+          10206,
+          "Picks skinned points, bones and sockets on an animated mesh with position, normal and velocity.",
+          "open",
+          "PRD-706 MeshEmissionPoints: area-weighted triangle samples skinned each frame. Bone, socket and region sampling deferred in its Decisions.",
+          ["706"]
+        ],
+        [
+          "Socket and component transforms",
+          1611,
+          "Reads the transforms of sockets and attached components.",
+          "shipped",
+          "A game binds an Object3D's matrixWorld as a TSL uniform; no mechanism needed.",
+          []
+        ],
+        [
+          "Grid 2D collection",
+          3444,
+          "Stores and updates 2D simulation grids for simulation stages.",
+          "shipped",
+          "FluidField2D (packages/core/src/fluid-field.ts) and three StorageTexture.",
+          []
+        ],
+        [
+          "Grid 3D collection and volume targets",
+          6839,
+          "Stores and updates 3D simulation grids and writes volume textures.",
+          "partial",
+          "FluidParticles3D writes a density volume; a 3D gas simulation is not built. Revisit when PRD-664 passes its gate and a template wants simulated smoke.",
+          []
+        ],
+        [
+          "Rasterization grid 3D (particle splat)",
+          1307,
+          "Splats particles into a 3D grid with atomics.",
+          "shipped",
+          "FluidParticles3D splats particles into its grid with TSL atomics.",
+          []
+        ],
+        [
+          "Neighbor grid 3D and neighbor query",
+          2448,
+          "Bins particles in cells so a particle can find its neighbours.",
+          "partial",
+          "FluidParticles3D builds its own cell grid; no reusable neighbor grid. Revisit at a second consumer (flocking, crowds of particles).",
+          []
+        ],
+        [
+          "Render targets 2D, array, cube, int",
+          4152,
+          "Lets a kernel write render targets that materials read.",
+          "shipped",
+          "three StorageTexture and textureStore from a game kernel.",
+          []
+        ],
+        [
+          "Scene capture and GBuffer reads",
+          1753,
+          "Reads scene captures, GBuffer channels and point occlusion from a kernel.",
+          "deferred",
+          "PRD-610 rebuilds normal from depth; no consumer needs a GBuffer read or a scene capture from a particle kernel.",
+          []
+        ],
+        [
+          "Curves (float, color, vector)",
+          2563,
+          "Bakes authored curves into lookup tables a kernel samples.",
+          "rule",
+          "Curves decide the look: they stay TSL or a DataTexture in the game's src/render (rule (b), PRD-316).",
+          []
+        ],
+        [
+          "Audio spectrum, oscilloscope and player",
+          3529,
+          "Reads audio spectrum and waveform, and plays sounds from particles.",
+          "deferred",
+          "No template reacts to audio. Revisit when a template ships an audio-reactive effect.",
+          []
+        ],
+        [
+          "Camera query",
+          791,
+          "Gives a kernel the camera position, view and distance.",
+          "shipped",
+          "TSL cameraPosition, view and projection nodes.",
+          []
+        ],
+        [
+          "Particle read (another emitter's particles)",
+          2667,
+          "Lets one emitter read the particles of another.",
+          "deferred",
+          "PRD-609 Decisions defers emitter-to-emitter spawn; revisit with a real sub-emitter consumer.",
+          []
+        ],
+        [
+          "Data channels (gameplay to effect)",
+          13895,
+          "Carries gameplay events into effects, batched across writers.",
+          "partial",
+          "PRD-609 emitParticle takes many requests per frame into one emitter. Islands, map channels and GPU writers are deferred.",
+          ["609"]
+        ],
+        [
+          "Export particles to the CPU",
+          642,
+          "Sends particle data back to gameplay code.",
+          "deferred",
+          "GPUReadback ships; no gameplay reads particle state. Revisit when gameplay must react to a particle event.",
+          []
+        ],
+        [
+          "Texture sampling (2D, array, cube, volume, virtual)",
+          2868,
+          "Samples textures from a kernel.",
+          "shipped",
+          "three texture nodes; residency is PRD-VQ-10's.",
+          []
+        ],
+        [
+          "Sparse volume texture and volume cache",
+          1681,
+          "Plays back sparse voxel and cached volume data.",
+          "deferred",
+          "PRD-664 Decisions: no sparse voxels, no OpenVDB. Revisit when a game ships a VDB asset.",
+          []
+        ],
+        [
+          "Vector field and curl noise",
+          1226,
+          "Samples a vector field or curl noise as a force.",
+          "shipped",
+          "TSL noise nodes and a game Data3DTexture.",
+          []
+        ],
+        [
+          "Spline sampling",
+          1852,
+          "Reads positions and tangents along a spline.",
+          "notfiled",
+          "Game-writable: bake a three Curve into a storage buffer. Revisit at a second template with a path effect.",
+          []
+        ],
+        [
+          "Dynamic mesh output",
+          2467,
+          "Builds mesh geometry from a kernel.",
+          "notfiled",
+          "No consumer builds a mesh from a particle kernel.",
+          []
+        ],
+        [
+          "Arrays, memory buffers and counters",
+          6606,
+          "Gives kernels typed arrays, raw buffers and atomic counters.",
+          "shipped",
+          "instancedArray storage buffers and TSL atomics.",
+          []
+        ],
+        [
+          "Engine object readers (properties, tables, console variables, materials, renderer info)",
+          6175,
+          "Reads engine object properties, data tables, settings and material parameters.",
+          "rule",
+          "Reflection bridges into Unreal objects; a ThreeNative game passes values as uniforms. No reflection system by rule.",
+          []
+        ],
+        [
+          "Debug draw from kernels",
+          3258,
+          "Draws debug lines and shapes from particle kernels.",
+          "notfiled",
+          "Debug only; PRD-676 owns effect diagnostics.",
+          []
+        ],
+        [
+          "Shared and glue (data interface base, read-write base, utilities)",
+          4428,
+          "Base classes and binding for every data interface.",
+          "rule",
+          "The data interface base is part of Niagara's script IR; closed by rule.",
+          []
+        ]
+      ]
+    },
+    {
+      "parent": "Assets, scripts, components",
+      "internals": [
+        [
+          "System asset",
+          4687,
+          "Holds a system's emitters, settings and compiled scripts.",
+          "rule",
+          "Authored asset and editor data: closed by rule.",
+          []
+        ],
+        [
+          "Emitter asset",
+          3782,
+          "Holds one emitter's modules, renderers and scalability overrides.",
+          "rule",
+          "Authored asset and editor data: closed by rule.",
+          []
+        ],
+        [
+          "Script asset and compiled data",
+          4372,
+          "Holds compiled simulation scripts and their parameters.",
+          "rule",
+          "Niagara script IR and VM: closed by rule; ThreeNative effects are TSL.",
+          []
+        ],
+        [
+          "Component: activation, parameters, desired age",
+          4886,
+          "Activates, resets, parameterises and seeks an effect in the world.",
+          "partial",
+          "ctx.add, emitting and emitParticle cover activation. Desired-age seeking serves sequencer playback: deferred until a game scrubs an effect.",
+          ["609"]
+        ],
+        [
+          "Component pool",
+          776,
+          "Reuses whole effect components with a size cap and a kill timer.",
+          "deferred",
+          "PRD-611 Decisions: a GPUParticles3D is already its own fixed pool. Revisit when spawning whole effects costs a measured hitch.",
+          []
+        ],
+        [
+          "Spawn helpers and anim notifies",
+          4476,
+          "Spawns an effect at a location, from Blueprint or from an animation notify.",
+          "shipped",
+          "Spawn at a location is emitParticle({ origin }) (PRD-609); animation notifies are game events. Blueprint nodes: rule.",
+          ["609"]
+        ]
+      ]
+    },
+    {
+      "parent": "CPU simulation (system, emitter, data sets)",
+      "internals": [
+        [
+          "System instance: activation, age, warmup, reset",
+          3228,
+          "Runs one effect instance: activation, age, warmup pre-roll and reset.",
+          "partial",
+          "Activation and restart ship (PRD-609). Warmup pre-roll deferred by PRD-611 Decisions until a steady stateful emitter has a consumer.",
+          ["609"]
+        ],
+        [
+          "Batched system tick and its clock (fixed step, delta clamp)",
+          2577,
+          "Ticks all instances of a system together and clamps or fixes the time step.",
+          "notfiled",
+          "runtime.delta is three's unclamped deltaTime; Unreal clamps at 0.125 s. Proposed as a box on PRD-610, the first stateful integrator. Fixed step is off by default in Unreal: deferred.",
+          []
+        ],
+        [
+          "Emitter spawn and tick",
+          969,
+          "Builds spawn requests per frame and ticks one emitter.",
+          "shipped",
+          "PRD-609 spawn requests into a ring, with clamps and stats.",
+          ["609"]
+        ],
+        [
+          "Emitter bounds",
+          81,
+          "Computes dynamic or fixed emitter bounds.",
+          "shipped",
+          "PRD-569 measured bounds with a declared override.",
+          ["569"]
+        ],
+        [
+          "Event spawning between emitters",
+          39,
+          "Spawns particles from another emitter's events.",
+          "deferred",
+          "PRD-609 Decisions: Unreal counts event spawns on the CPU too; revisit with a real sub-emitter consumer.",
+          []
+        ],
+        [
+          "Emitter instance glue",
+          1063,
+          "Binds parameters and tracks execution state for one emitter.",
+          "rule",
+          "Parameter binding and execution state for Niagara scripts: closed IR.",
+          []
+        ],
+        [
+          "Particle data set (storage, packing, IDs)",
+          1902,
+          "Stores particle attributes, packs live particles and keeps optional stable IDs.",
+          "shipped",
+          "PRD-609 ring slots and storage buffers; stable IDs deferred in its Context.",
+          ["609"]
+        ],
+        [
+          "Parameter store",
+          1772,
+          "Stores and binds script parameters.",
+          "rule",
+          "Script parameter storage; ThreeNative uses TSL uniforms.",
+          []
+        ],
+        [
+          "Simulation cache (record and replay)",
+          6959,
+          "Records a simulation and replays it without simulating.",
+          "deferred",
+          "Stepped playtest clocks already repeat closed-form effects. Revisit when a game must replay a heavy stateful simulation bit for bit.",
+          []
+        ]
+      ]
+    },
+    {
+      "parent": "Stateless emitters",
+      "internals": [
+        [
+          "Live window, age and seed",
+          3389,
+          "Computes the live particle range, each age and each seed from the emitter age alone.",
+          "open",
+          "PRD-674 Phase 2: live-window arithmetic, age, lifetime and a deterministic seed.",
+          ["674"]
+        ],
+        [
+          "Distributions (ranges and curves)",
+          1342,
+          "Evaluates random ranges and curves for stateless attributes.",
+          "open",
+          "PRD-674: lifetime ranges in core; value curves are the game's nodes.",
+          ["674"]
+        ],
+        [
+          "Closed-form modules",
+          3978,
+          "Closed-form shape, velocity, size, colour and rotation modules.",
+          "rule",
+          "PRD-674 Solution: modules decide the look and stay the game's position and material nodes.",
+          ["674"]
+        ],
+        [
+          "Expressions",
+          876,
+          "Evaluates small parameter expressions for stateless emitters.",
+          "rule",
+          "An expression graph is an IR: closed by rule.",
+          []
+        ],
+        [
+          "Shared and glue (templates, debug draw, shader parameters)",
+          851,
+          "Emitter templates, debug draw and shader binding for stateless emitters.",
+          "rule",
+          "Editor templates and debug draw; no counterpart.",
+          []
+        ]
+      ]
+    },
+    {
+      "parent": "First-frame pipelines (engine PSO precache)",
+      "internals": [
+        [
+          "Component precache request and priority",
+          1582,
+          "Requests pipeline precache for a component with a priority.",
+          "open",
+          "PRD-611 Phase 2: GPUParticles3D warms its draw pipeline at registration.",
+          ["611"]
+        ],
+        [
+          "Material pipeline collection",
+          1370,
+          "Collects the pipeline states a material needs.",
+          "open",
+          "PRD-611: the emitter compiles its own draw pipeline before the first draw.",
+          ["611"]
+        ],
+        [
+          "Delay rendering until ready",
+          205,
+          "Holds drawing, or activation, until the pipelines are ready.",
+          "open",
+          "PRD-611 Solution 2: count stays 0 while compute runs (Unreal DelayRendering).",
+          ["611"]
+        ],
+        [
+          "Precache validation and miss stats",
+          2012,
+          "Counts pipelines that missed the precache.",
+          "shipped",
+          "The playtest pipeline summary counts pipelines created after the first present.",
+          []
+        ],
+        [
+          "Shared and glue (not located)",
+          3726,
+          "Lines the map counted that this read could not attribute to a file.",
+          "notfiled",
+          "The map counted 8,895 lines; the engine PSO files found sum to 5,169. The rest is not located.",
+          []
+        ]
+      ]
+    },
+    {
+      "parent": "Renderers (ribbons, meshes, sprites)",
+      "internals": [
+        [
+          "Sprite facing, alignment and pixel coverage",
+          1808,
+          "Orients each sprite to the camera, its velocity or a custom axis, and keeps sub-pixel sprites from flickering.",
+          "open",
+          "PRD-704: velocity alignment (transformAlign) and pixel coverage for sub-pixel sprites. Camera-position facing and custom facing deferred in its Solution.",
+          ["704"]
+        ],
+        [
+          "Sprite sub-UV flipbook and cutout geometry",
+          1312,
+          "Picks flipbook frames and trims the quad to the texture's opaque shape.",
+          "deferred",
+          "Frame choice and blend are material (look) in the game. Cutout geometry saves fill: revisit when PRD-676's overdraw view shows particle overdraw dominating.",
+          []
+        ],
+        [
+          "Ribbons: order, tessellation, UVs, shapes",
+          5436,
+          "Links particles into strips with curvature tessellation, UVs by length and several shapes.",
+          "open",
+          "PRD-705: the spawn ring drawn as a screen-facing strip with automatic tessellation.",
+          ["705"]
+        ],
+        [
+          "Mesh particles: orientation, LOD, mesh index",
+          4997,
+          "Draws a mesh per particle with orientation modes, LOD and a mesh index.",
+          "deferred",
+          "No template draws a 3D mesh per particle; shooter chips are quads owned by PRD-316 Phase 5. Revisit when a template ships debris, casings or leaves as meshes.",
+          []
+        ],
+        [
+          "Light renderer",
+          806,
+          "Adds a light per particle.",
+          "deferred",
+          "No consumer; r.ParticleLightQuality is 0 at Low and Medium. Revisit when PRD-660 makes many lights cheap or a template asks for lit sparks.",
+          []
+        ],
+        [
+          "Decal renderer",
+          884,
+          "Projects a decal per particle.",
+          "deferred",
+          "No particle decal consumer. Revisit when a template ships scorch or splat decals.",
+          []
+        ],
+        [
+          "Volume renderer",
+          967,
+          "Draws a volume per particle.",
+          "open",
+          "PRD-664 HeterogeneousVolume, gated.",
+          ["664"]
+        ],
+        [
+          "Component renderer",
+          1891,
+          "Spawns engine components per particle.",
+          "notfiled",
+          "A ThreeNative effect adds Object3Ds directly; no counterpart needed.",
+          []
+        ],
+        [
+          "Readback renderer",
+          790,
+          "Reads rendered particle data back for capture.",
+          "shipped",
+          "GPUReadback.",
+          []
+        ],
+        [
+          "Particle sorting",
+          382,
+          "Sorts particles by view depth or a custom key on the GPU.",
+          "partial",
+          "PRD-VQ-12 compares sorting, cutout and OIT for smoke cards. Unreal's sort mode defaults to none.",
+          ["VQ-12"]
+        ],
+        [
+          "Shared and glue (renderer base, properties, vertex factory base)",
+          3793,
+          "Renderer base classes, properties and vertex-factory plumbing.",
+          "rule",
+          "Renderer and vertex-factory plumbing of Unreal's renderer; three owns the draw.",
+          []
+        ]
+      ]
+    },
+    {
+      "parent": "Scalability, culling, budget",
+      "internals": [
+        [
+          "Effect type cull rules and reactions",
+          1122,
+          "Culls by distance, view and instance count after a grace time, with a per-effect reaction.",
+          "shipped",
+          "PRD-569: grace time, pause and clear reactions.",
+          ["569"]
+        ],
+        [
+          "Significance ranking and global budget",
+          1598,
+          "Ranks instances by significance and scales culling by a damped global FX budget.",
+          "shipped",
+          "PRD-569: projected-size ranking against the measured compute bucket, damped at 0.1/s.",
+          ["569"]
+        ],
+        [
+          "Platform sets and per-quality emitters",
+          2182,
+          "Enables emitters and scales spawn counts per platform and quality level.",
+          "rule",
+          "Per-quality emitter choice and spawn-count scale are authored in Unreal (off by default); in ThreeNative they are the template's quality.ts. PRD-563 picks the tier.",
+          []
+        ],
+        [
+          "Cull proxies",
+          151,
+          "Draws one cheap proxy in place of many culled instances.",
+          "deferred",
+          "No scene has enough culled instances of one effect. Revisit when a crowd scene sheds many copies of the same effect.",
+          []
+        ],
+        [
+          "Performance baselines",
+          1635,
+          "Measures effects against a per-platform baseline in the editor.",
+          "rule",
+          "Editor-driven perf baselines; playtest perf and budgets cover measurement.",
+          []
+        ],
+        [
+          "Shared and glue (world manager)",
+          3308,
+          "World-level tick groups, culled-instance bookkeeping and pools.",
+          "rule",
+          "World-level tick groups and pools; ComputeDrivenRegistry is the counterpart.",
+          []
+        ]
+      ]
+    },
+    {
+      "parent": "Debug HUD",
+      "internals": [
+        [
+          "Effect list, counts and cull state",
+          4141,
+          "Lists every system with counts, cull state, memory and particle attributes.",
+          "open",
+          "PRD-676 effects view: one row per GPUParticles3D with cull, dispatches, stats and shed.",
+          ["676"]
+        ],
+        [
+          "Debugger client and shared types",
+          1735,
+          "Connects the in-game HUD to the editor debugger.",
+          "rule",
+          "Editor debugger transport: closed by rule.",
+          []
+        ]
+      ]
+    },
+    {
+      "parent": "GPU compute dispatch",
+      "internals": [
+        [
+          "Tick-stage scheduling (before views, after views, after opaque)",
+          938,
+          "Runs each GPU simulation at the frame stage its data needs.",
+          "shipped",
+          "Compute runs at render cadence before the draw; PRD-610 pairs last frame's depth with its camera instead of an after-opaque stage.",
+          ["610"]
+        ],
+        [
+          "Simulation stages and iteration",
+          934,
+          "Dispatches simulation stages over particles or grids, several times when asked.",
+          "shipped",
+          "IComputeDriven and multi-pass kernels (fluid-field.ts).",
+          []
+        ],
+        [
+          "Live counts and indirect arguments",
+          1268,
+          "Keeps live particle counts on the GPU and writes indirect draw arguments.",
+          "deferred",
+          "PRD-569 Decisions: no live-count indirect draw. Revisit with a measured dead-slot cost; PRD-609 births plus lifetime now give the liveness signal.",
+          []
+        ],
+        [
+          "GPU readback",
+          803,
+          "Reads GPU particle data back to the CPU.",
+          "shipped",
+          "GPUReadback (packages/core/src/gpu-readback.ts).",
+          []
+        ],
+        [
+          "Debug capture and draw",
+          734,
+          "Captures and draws GPU simulation data for debugging.",
+          "notfiled",
+          "Debug only; PRD-676 owns effect diagnostics.",
+          []
+        ],
+        [
+          "Multi-GPU transfers",
+          114,
+          "Copies simulation buffers between GPUs.",
+          "rule",
+          "A platform path ThreeNative does not ship.",
+          []
+        ],
+        [
+          "Shared and glue (proxy registry, scratch pads)",
+          768,
+          "Registers compute proxies and manages scratch buffers.",
+          "shipped",
+          "ComputeDrivenRegistry.",
+          []
+        ]
+      ]
+    }
+  ]
+}

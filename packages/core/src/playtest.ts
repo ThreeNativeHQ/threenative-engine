@@ -518,9 +518,9 @@ function bridgeEntities<TState extends Record<string, unknown>, TPhysics>(
 }
 function entityObject(entity: object | undefined): ThreeObject3D | undefined {
   if (entity instanceof Object3D) return entity;
-  const candidate =
-    (entity as { mesh?: unknown; object?: unknown } | undefined)?.mesh ??
-    (entity as { mesh?: unknown; object?: unknown } | undefined)?.object;
+  // A game's own entity class usually exposes its root as `mesh`, `object` or `group`.
+  const roots = entity as { group?: unknown; mesh?: unknown; object?: unknown } | undefined;
+  const candidate = roots?.mesh ?? roots?.object ?? roots?.group;
   return candidate instanceof Object3D ? candidate : undefined;
 }
 function gameplayObservations<TState extends Record<string, unknown>, TPhysics>(

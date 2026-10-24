@@ -667,7 +667,10 @@ const game: ReturnType<typeof defineGame<ISmokeState>> = defineGame<ISmokeState>
   plugins: __TN_PLAYTEST_ENABLED__
     ? [playtest(__TN_LOADING_PROOF__ ? { holdUntilAttached: false } : {})]
     : [],
-  renderer: loadingProofRenderer,
+  // The overlay gates (verify-desktop-core, iOS simulator, Android multitouch) count EXACT
+  // OVERLAY_COLOR pixels. three applies the tone curve to the whole frame, overlay included, so the
+  // proof asks for linear output; the default filmic curve turns #ff00ff into #f33ae0.
+  renderer: { toneMapping: "none", ...loadingProofRenderer },
   scenes: { smoke: NativeSmoke },
   start: "smoke",
 });

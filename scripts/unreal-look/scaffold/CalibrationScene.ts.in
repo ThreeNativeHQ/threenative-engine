@@ -1,0 +1,590 @@
+// Written by scripts/unreal-look/capture-threenative.ts into a scaffolded copy of the starter
+// (PRD-646). It recreates a PRD-638 calibration scene: geometry and materials from the scene.glb
+// that Unreal exported, lights and exposure from its scene.json (src/scenes/calibrationData.ts).
+// It is scene setup only; every look decision comes from the copy's own `src/render/`.
+//   ?tnGi=<scene>&layer=<ID|L1..L9>&tier=<low|medium|high>
+// and `window.__tnRef.pose(...)` frames one camera pose, as in Reference.ts.
+import {
+  type ICtx,
+  Scene,
+  type SceneFrame,
+  type ShadowFilterTier,
+  TracedReflections,
+  sourceRadiusShadowFilter,
+} from "@threenative/core";
+import type { IPhysicsContext } from "@threenative/physics";
+import {
+  BackSide,
+  Box3,
+  Color,
+  DoubleSide,
+  FrontSide,
+  type Group,
+  Mesh,
+  MeshBasicMaterial,
+  type MeshStandardMaterial,
+  NoToneMapping,
+  type Object3D,
+  type PerspectiveCamera,
+  PointLight,
+  SRGBColorSpace,
+  SpotLight,
+  Vector3,
+} from "three";
+import { texture, uniform, vec4 } from "three/tsl";
+import { MeshBasicNodeMaterial, type Node } from "three/webgpu";
+import { gtaoUrlKnobs } from "../render/aoReach.js";
+import { giCache, installGi } from "../render/giCache.js";
+import { watchGi } from "../render/giTier.js";
+import { type IGlbMaterialImages, fetchGlbMaterialImages } from "../render/glbImages.js";
+import { reflectionTrace } from "../render/reflectionTrace.js";
+import {
+  type MotionRun,
+  type Pose,
+  actorOffset,
+  candela,
+  checkMapped,
+  lightCandela,
+  lightScale,
+  lightUnsupported,
+  motionPose,
+} from "../render/calibrationUnits.js";
+import { shadeLikeSubstrate } from "../render/lighting.js";
+import { watchShadowTier } from "../render/shadowTier.js";
+import { GLTF_IOR, refractBehind } from "../render/refraction.js";
+import { pointLightMean, translucentTwin } from "../render/translucency.js";
+import { createVolumetricFog } from "../render/volumetricFog.js";
+import {
+  EPIC_SSGI,
+  type FinalGatherMethod,
+  giPreset,
+  qualityPreset,
+  resolveQualityTier,
+  shadowPreset,
+} from "../render/quality.js";
+import { type IWorldEnvironmentOptions, WorldEnvironment } from "../render/worldEnvironment.js";
+import type { GameState } from "../state.js";
+import { SCENES } from "./calibrationData.js";
+import { Play } from "./Play.js";
+
+type GameCtx = ICtx<GameState, IPhysicsContext>;
+
+const params = new URLSearchParams(location.search);
+const NAME = params.get("tnGi") ?? "";
+const LAYER = params.get("layer") ?? "L7";
+const level = LAYER === "ID" ? -1 : Number(LAYER.slice(1));
+// The quality tier the cell is drawn at (default high, Unreal's Epic): its GI method and shadow filter come
+// from `render/quality.ts` (PRD-644, PRD-652). GI enters at L7; below it there is none, as in Unreal's ladder.
+const TIER = resolveQualityTier({ tier: params.get("tier") ?? "high" });
+const GI_METHOD = level >= 7 ? giPreset(TIER).finalGatherMethod : "none";
+// Unreal's GI and shadow levels are separate scalability groups: `shadowTier=` draws the shadows at another tier.
+const SHADOW_TIER = resolveQualityTier({ tier: params.get("shadowTier") ?? TIER });
+const SHADOW = shadowPreset(SHADOW_TIER);
+const DATA = SCENES[NAME];
+// Diagnosis only: scales every light, so a capture can bracket a unit error. Unset in every judged capture.
+const LIGHT_SCALE = Number(params.get("lightScale") ?? 1);
+const EXPOSURE = Number(params.get("exposure") ?? DATA?.exposure?.exposureScale ?? 1);
+
+export class CalibrationScene extends Scene<GameState, IPhysicsContext> {
+  static override readonly initialState: GameState = Play.initialState;
+  #model: Group | undefined;
+  #images: Map<string, IGlbMaterialImages> = new Map();
+  #dispose: (() => void) | undefined;
+  #gi: ReturnType<typeof watchGi> | undefined;
+  #shadow: ReturnType<typeof watchShadowTier> | undefined;
+
+  override async load(ctx: GameCtx): Promise<void> {
+    if (DATA === undefined) throw new Error(`TN_CALIBRATION_SCENE_UNKNOWN: ${NAME}`);
+    const model = await ctx.assets.model<{ scene: Group }>(
+      // A family scene `shadow:<name>` lives in its family folder (PRD-649).
+      `unreal-reference/gi/${NAME.replace(":", "/")}/scene.glb`,
+    );
+    this.#model = model.scene;
+    // The engine decodes the scene's maps itself and shows JavaScript only their size. The Surface Cache reads
+    // the same images again from the file (PRD-639).
+    const file = `unreal-reference/gi/${NAME.replace(":", "/")}/scene.glb`;
+    const { images, tried } = await fetchGlbMaterialImages(await ctx.assets.resolve(file));
+    this.#images = images;
+    console.info(`TN_CALIBRATION_IMAGES ${JSON.stringify({ tried, materials: [...this.#images.keys()] })}`);
+  }
+
+  override enter(ctx: GameCtx): SceneFrame<GameState, IPhysicsContext> {
+    const model = this.#model;
+    if (model === undefined || DATA === undefined) throw new Error("TN_CALIBRATION_SCENE_NOT_LOADED");
+    ctx.add(model);
+    const scene = ctx.scene;
+    const camera = ctx.camera as PerspectiveCamera;
+    const raw = ctx.renderer.raw as unknown as { toneMapping: number };
+    // Every scene.json property this recreation does not carry, with the PRD that owns it.
+    const unsupported: { actor: string; property: string; reason: string }[] = [];
+    // Draws the lamps' shadows at another tier: what a `ShadowFilterBudget` step does, callable from the page.
+    let setShadowTier = (_tier: ShadowFilterTier): void => undefined;
+    // Rebuilds the chain at another final gather method: what a `GIBudget` step does, callable from the page. The cost
+    // run alternates methods in one page, so every method sees the same GPU clock. `arm` overrides the chain options last:
+    // the cost run's paired arms (`gi-tier-cost.ts --arms`) change one knob in the same page.
+    let setGatherMethod = (_method: FinalGatherMethod, _arm?: IWorldEnvironmentOptions): void => undefined;
+    // Sets a lamp to its scene.json intensity times `scale` (a motion run's light track).
+    let setLight = (name: string, _scale: number): void => {
+      throw new Error(`TN_CALIBRATION_MOTION_LIGHT: ${name}: layer ${LAYER} has no lights`);
+    };
+    // The region a mesh belongs to: the scene.glb node named after the Unreal actor, or, when the
+    // asset pipeline flattened the nodes away, the mesh named after its static mesh, SM_<actor>. An
+    // actor shares its region with others when scene.json names one (the leaf cards: Leaves).
+    const regionByActor = new Map<string, string>(
+      (DATA.meshes as { name: string; region?: string }[]).map((m) => [m.name, m.region ?? m.name]),
+    );
+    const regionOf = (object: Object3D): string | undefined => {
+      for (let o: Object3D | null = object; o !== null; o = o.parent) {
+        const region = regionByActor.get(o.name.replace(/^SM_/, ""));
+        if (region !== undefined) return region;
+      }
+      return undefined;
+    };
+    const meshes: Mesh[] = [];
+    model.traverse((object) => {
+      if (object instanceof Mesh) meshes.push(object);
+    });
+    checkMapped(meshes, regionOf);
+
+    // PRD-643: a slot that scene.json reports on Unreal's Two Sided Foliage model, with its Subsurface Color, is a
+    // twoSidedFoliage material with the same subsurfaceColor here (by the glTF material name, which both engines keep).
+    const subsurface = new Map<string, [number, number, number]>();
+    for (const mesh of DATA.meshes as { slots?: { slot: string; subsurfaceColor?: number[] }[] }[])
+      for (const slot of mesh.slots ?? [])
+        if (slot.subsurfaceColor?.length === 3)
+          subsurface.set(slot.slot, slot.subsurfaceColor as [number, number, number]);
+    for (const mesh of meshes)
+      for (const material of [mesh.material].flat() as MeshStandardMaterial[]) {
+        const colour = subsurface.get(material.name);
+        if (colour === undefined) continue;
+        material.twoSidedFoliage = true;
+        material.subsurfaceColor = new Color(...colour);
+      }
+
+    scene.background = new Color(0x000000);
+    scene.environment = null;
+    if (level <= 0) {
+      // ID and L0: the region colour unlit, no post. Unreal: ShowFlag.Lighting 0, post off, base
+      // colour id / 255 as linear, display-encoded on output.
+      for (const mesh of meshes) {
+        const [r = 0, g = 0, b = 0] = DATA.regions[regionOf(mesh) ?? ""] ?? [];
+        const colour = new Color().setRGB(r / 255, g / 255, b / 255);
+        // A slot keeps its sides. A masked slot (leaf cards) keeps its cut too. The ID colour is flat: a real leaf
+        // texture is green, so the node material takes only the texture's alpha, where a `map` would tint it (PRD-651).
+        const flat = (source: MeshStandardMaterial) => {
+          if (!(source.alphaTest > 0 && source.map))
+            return new MeshBasicMaterial({ color: colour, side: source.side, toneMapped: false });
+          const masked = new MeshBasicNodeMaterial({ side: source.side, toneMapped: false });
+          masked.colorNode = vec4(uniform(colour), texture(source.map).a);
+          masked.alphaTest = source.alphaTest;
+          return masked;
+        };
+        mesh.material = Array.isArray(mesh.material)
+          ? mesh.material.map((m) => flat(m as MeshStandardMaterial))
+          : flat(mesh.material as MeshStandardMaterial);
+      }
+      raw.toneMapping = NoToneMapping;
+    } else {
+      // Unreal L1 to L4 render without shadows (r.ShadowQuality 0); from L5 every light casts.
+      const shadows = level >= 5;
+      // Casters and receivers do nothing until the renderer runs a shadow pass (scaffold lighting.ts does
+      // this for the reference scene, which this scene does not use).
+      (ctx.renderer.raw as unknown as { shadowMap: { enabled: boolean } }).shadowMap.enabled = shadows;
+      // Casters keep three's derived shadowSide (back faces of a front-sided material). Those leak a
+      // bright line at a box's far foot; the owned engine stores a lamp's back faces a few depth steps
+      // nearer, which closes it (native_engine_contact_shadow_foot), and front faces instead add acne on
+      // the grazing walls (cornell L6, 2026-10-20). Diagnosis knob: shadowSide=front|back|double|three.
+      const side = { front: FrontSide, back: BackSide, double: DoubleSide }[params.get("shadowSide") ?? "three"];
+      for (const mesh of meshes) {
+        // A translucent material casts no dynamic shadow in Unreal unless it asks to be cut out like a mask (UE 5.8.3:
+        // Engine/Public/MaterialShared.h, FMaterial::ShouldCastDynamicShadows): the lamp's light passes a glass pane.
+        mesh.castShadow = shadows && (mesh.material as MeshStandardMaterial).transparent !== true;
+        mesh.receiveShadow = shadows;
+        if (side !== undefined) for (const m of [mesh.material].flat()) m.shadowSide = side;
+      }
+      // PRD-653: direct light meets a rough surface as Unreal's Substrate does. Diagnosis knob roughDiffuse=0 is plain Lambert.
+      if (params.get("roughDiffuse") !== "0") shadeLikeSubstrate(model);
+      const lights: (PointLight | SpotLight)[] = [];
+      const lamps: { point: PointLight | SpotLight; radius: number; casts: boolean }[] = [];
+      for (const light of DATA.lights) {
+        const [r = 1, g = 1, b = 1] = light.color;
+        // scene.json holds Unreal's `light_color`, an FColor: Unreal reads its bytes as sRGB and lights with the linear
+        // value (neon-corridor L1 EXR: a [1, 0.85, 0.65] lamp lights a grey wall at G/R 0.70 and B/R 0.41, the
+        // decoded (1, 0.69, 0.38), not the raw numbers). A white lamp reads the same either way.
+        const colour = new Color().setRGB(r, g, b, SRGBColorSpace);
+        const cd = lightCandela(light) * LIGHT_SCALE;
+        // A spot looks at its target through the outer cone; three's penumbra is the share of the cone that
+        // fades, Unreal's inner cone the part that does not (PRD-649 lamp-room).
+        const outer = ((light.outerConeDeg ?? 0) * Math.PI) / 180;
+        const point =
+          light.class === "SpotLight"
+            ? new SpotLight(
+                colour,
+                cd,
+                light.attenuationRadiusM,
+                outer,
+                ((light.outerConeDeg ?? 0) - (light.innerConeDeg ?? 0)) / (light.outerConeDeg ?? 1),
+                2,
+              )
+            : new PointLight(colour, cd, light.attenuationRadiusM, 2);
+        if (point instanceof SpotLight) {
+          point.target.position.fromArray(light.target ?? [0, 0, 0]);
+          scene.add(point.target);
+        }
+        point.name = light.name;
+        point.position.fromArray(light.position);
+        lamps.push({ point, radius: light.sourceRadiusM ?? 0, casts: shadows && light.castShadows });
+        // The lamp's Source Radius also sets how rough diffuse shades it: a lamp of 20 cm or more is Lambert (PRD-653).
+        point.sourceRadius = light.sourceRadiusM ?? 0;
+        // Unreal's lamp shadow has no near plane: three's 0.5 m default clipped cornell's shade, 0.3 m
+        // from the lamp. Diagnosis knobs: shadowNear, shadowMap (texels), shadowBias, shadowNormalBias.
+        point.shadow.camera.near = Number(params.get("shadowNear") ?? 0.02);
+        // The owned engine sizes a lamp's map from the pixels it covers, as Unreal does (PRD-650 Phase 1);
+        // `shadowMap` (texels) is the diagnosis override. The lamp cache draws a still lamp's map once.
+        const mapSize = params.get("shadowMap");
+        if (mapSize !== null) point.shadow.mapSize.set(Number(mapSize), Number(mapSize));
+        point.shadow.bias = Number(params.get("shadowBias") ?? point.shadow.bias);
+        point.shadow.normalBias = Number(params.get("shadowNormalBias") ?? point.shadow.normalBias);
+        scene.add(point);
+        lights.push(point);
+        unsupported.push(...lightUnsupported(light, params.get("sourceRadius") === "0"));
+      }
+      setLight = (name, scale) => {
+        const index = DATA.lights.findIndex((l: { name: string }) => l.name === name);
+        const light = lights[index];
+        const spec = DATA.lights[index];
+        if (light === undefined || spec === undefined) throw new Error(`TN_CALIBRATION_MOTION_LIGHT: ${name}`);
+        light.intensity = candela(spec.intensity, spec.units) * LIGHT_SCALE * scale;
+      };
+      // A shadow tier decides whether a lamp casts and what its filter samples; `ShadowFilterBudget` moves
+      // it with the frame period when the URL asks for shadowAuto=1 (PRD-652). Diagnosis knobs: sourceRadius=0
+      // leaves the shadow on the hard filter (the filter's cost arm); blockers and samples set the tap counts.
+      const applyShadowTier = (next: ShadowFilterTier) => {
+        const preset = shadowPreset(next);
+        for (const { point, radius, casts } of lamps) {
+          point.castShadow = casts && preset.castShadows;
+          // The lamp's radius softens its shadow as Unreal's does (PRD-650); its highlight stays a point's.
+          if (radius > 0 && params.get("sourceRadius") !== "0")
+            // three's WebGPU ShadowNode reads `shadow.filterNode`; its types do not declare it yet.
+            (point.shadow as unknown as { filterNode: unknown }).filterNode = sourceRadiusShadowFilter({
+              sourceRadius: radius,
+              blockerSamples: Number(params.get("blockers") ?? preset.filter.blockerSamples),
+              filterSamples: Number(params.get("samples") ?? preset.filter.filterSamples),
+            });
+        }
+      };
+      applyShadowTier(SHADOW_TIER);
+      setShadowTier = applyShadowTier;
+      if (shadows) this.#shadow = watchShadowTier(ctx, { tier: SHADOW_TIER, apply: applyShadowTier });
+      // PRD-642: a scene with a surface smoother than the trace limit (roughness 0.4, Unreal's default) traces that
+      // surface's reflection through the scene's triangles from L7, where Unreal's Lumen reflections run. A scene of rough
+      // surfaces draws as before. Diagnosis: ?traced=0 leaves the reflections to the environment.
+      const smooth = meshes.some((m) => ((m.material as { roughness?: number }).roughness ?? 1) < 0.4);
+      const tracing = smooth && GI_METHOD !== "none" && params.get("traced") !== "0";
+      if (tracing) {
+        reflectionTrace.current = new TracedReflections(model);
+        // The lamps light a reflection's hit as they light the screen. Diagnosis: ?lampHit=0 leaves a hit to the cache alone.
+        if (params.get("lampHit") !== "0") reflectionTrace.lamps = lights;
+      }
+      if (GI_METHOD !== "none") {
+        // Diagnosis: ?giSkip=<region> bakes with that region black, to measure its share of the bounce.
+        const skipped = meshes.filter((m) => regionOf(m) === params.get("giSkip"));
+        const kept = skipped.map((m) => (m.material as unknown as { color: Color }).color.clone());
+        for (const m of skipped) {
+          // Materials are shared (every white surface is one MI_White): only this region goes black.
+          m.material = (m.material as MeshBasicMaterial).clone();
+          (m.material as unknown as { color: Color }).color.setScalar(0);
+        }
+        const gi = installGi(ctx, model, {
+          // A traced ray finds the floor itself: the painted floor of the cube capture is not needed.
+          paintGround: !tracing,
+          // Diagnosis: ?bounces=N brackets how much of the indirect light the later bounces carry.
+          bounces: Number(params.get("bounces") ?? 5),
+          // The Surface Cache is on: a ray reads the map where it lands (PRD-639). Diagnosis: ?giMaps=0 returns the
+          // flat colour factor, ?giLights=0 leaves the lamps out of what a ray returns (the direct frame keeps them).
+          surfaceCache:
+            params.get("giMaps") !== "0" && {
+              images: (material, slot) => this.#images.get(material.name ?? "")?.[slot],
+            },
+          lights: lights.map((l) => ({
+            position: l.position,
+            color: l.color,
+            // Diagnosis: ?giLights=0 keeps the lamp's place but lights nothing. An empty list would stop the bake
+            // in a scene with no sun and no sky.
+            intensity: params.get("giLights") === "0" ? 0 : l.intensity,
+            distance: l.distance,
+            // A lamp that changes after the bake changes the bounce light with it (PRD-641 AC-2). ?direct=0 zeroes the
+            // lamps on purpose to leave the indirect frame, so it keeps the bake. Diagnosis: ?giFollow=0 keeps the bake
+            // too (the fixed-world arm of a paired run).
+            ...(params.get("direct") === "0" || params.get("giFollow") === "0" ? {} : { source: l }),
+          })),
+        });
+        skipped.forEach((m, i) => (m.material as unknown as { color: Color }).color.copy(kept[i] as Color));
+        if (gi === undefined)
+          unsupported.push({ actor: NAME, property: "GI", reason: "the GI cache did not bake" });
+        // Diagnosis: ?direct=0 switches the lights off after the bake, so the frame holds the indirect
+        // light alone (Unreal's L7-Epic-indirect, r.Lumen.Visualize.IndirectDiffuse 1, is its pair).
+        if (params.get("direct") === "0") for (const l of lights) l.intensity = 0;
+      }
+      // Unreal's default lighting for a translucent surface is its translucency volume, the same in every direction
+      // (Volumetric NonDirectional): the lamps at a quarter of what a facing surface receives and, from L7, the room's mean
+      // bounce light. Another mode is not recreated (PRD-643). A mapped surface keeps the lit material.
+      // Unreal also bends the scene behind a translucent surface (refraction.ts). The scene file gives each box exactly,
+      // where the geometry of a model may not carry a bounding box on every engine.
+      const paneBoxes: Box3[] = [];
+      for (const m of DATA.meshes as {
+        name: string;
+        position: number[];
+        rotationYDeg: number;
+        size: number[];
+        material: { alphaMode?: string; baseColorTexture?: string; translucencyLightingMode?: string };
+      }[]) {
+        if (m.material.alphaMode !== "BLEND") continue;
+        const mode = m.material.translucencyLightingMode;
+        if (mode !== undefined && mode !== "tlm_volumetric_non_directional")
+          unsupported.push({ actor: m.name, property: "translucencyLightingMode", reason: `${mode} is not recreated` });
+        if (m.material.baseColorTexture !== undefined) continue;
+        if (Math.abs(m.rotationYDeg) > 1e-6) {
+          unsupported.push({ actor: m.name, property: "rotation", reason: "a turned translucent box does not refract" });
+          continue;
+        }
+        const [x = 0, y = 0, z = 0] = m.position;
+        const [w = 0, h = 0, d = 0] = m.size;
+        paneBoxes.push(new Box3(new Vector3(x - w / 2, y - h / 2, z - d / 2), new Vector3(x + w / 2, y + h / 2, z + d / 2)));
+      }
+      // Diagnosis: ?refraction=off draws the same frame without the bent picture.
+      const refracts = paneBoxes.length > 0 && params.get("refraction") !== "off";
+      const bounce = giCache.meanRadiance;
+      const direct = (position: Node<"vec3">) => pointLightMean(lights, position);
+      for (const mesh of meshes) {
+        const source = mesh.material as MeshStandardMaterial;
+        if (source.transparent !== true || source.map != null) continue;
+        mesh.material = translucentTwin(source, (position) =>
+          bounce === undefined ? direct(position) : bounce(position).add(direct(position)),
+        );
+        // Cost measurement: ?translucent=off draws the same frame without its translucent surfaces.
+        if (params.get("translucent") === "off") mesh.visible = false;
+      }
+      // The fog Unreal draws from layer L3 (r.Fog, r.VolumetricFog), as VQ-07's medium: Unreal's exponential height fog in
+      // the room, its extinction and albedo, the lamps as unshadowed point lights. One medium per chain build.
+      const fogData = level >= 3 ? DATA.fog : undefined;
+      const makeFog = () => {
+        if (fogData === undefined || fogData === null) return undefined;
+        if (!fogData.volumetric) {
+          unsupported.push({ actor: "Fog", property: "volumetric", reason: "only volumetric fog is recreated" });
+          return undefined;
+        }
+        const extinction = fogData.density * 0.1 * fogData.volumetricExtinctionScale;
+        const [ar = 1, ag = 1, ab = 1] = fogData.volumetricAlbedo;
+        // The fog fills the scene and ends at its opaque surfaces: the model's bounds, past the walls.
+        const bounds = new Box3().setFromObject(model).expandByScalar(1);
+        const shadowed = lights.filter((l) => !(l instanceof PointLight) || l.castShadow);
+        for (const l of shadowed)
+          unsupported.push({ actor: l.name, property: "castShadows", reason: "the fog takes unshadowed point lights only" });
+        for (const [key, zero] of [
+          ["startDistanceM", 0],
+          ["maxOpacity", 1],
+        ] as const)
+          if (fogData[key] !== zero)
+            unsupported.push({ actor: "Fog", property: key, reason: "not carried by the fog medium" });
+        if (fogData.inscatteringLuminance.some((c: number) => c > 0))
+          unsupported.push({ actor: "Fog", property: "inscatteringLuminance", reason: "the analytic fog colour is not drawn" });
+        return createVolumetricFog(scene, camera, {
+          enabled: true,
+          renderer: ctx.renderer.kind,
+          steps: Number(params.get("fogSteps") ?? 48),
+          resolutionScale: params.get("fogScale") === "1" ? 1 : 0.5,
+          // Unreal: FogDensity / 1000 per centimetre, FogHeightFalloff / 1000 per centimetre in base 2
+          // (UE 5.8.3: Renderer/Private/SceneCore.cpp, FExponentialHeightFogSceneInfo).
+          volumes: [
+            {
+              bounds,
+              density: extinction,
+              baseHeight: fogData.position[1],
+              heightFalloff: ((fogData.heightFalloff / 1000) * 100) * Math.LN2,
+            },
+          ],
+          albedo: new Color().setRGB(ar, ag, ab, SRGBColorSpace),
+          ambient: new Color(0, 0, 0),
+          // From L7 the air can also scatter the room's bounce light: the cache's mean radiance, the same in every direction
+          // (Unreal adds the Lumen translucency volume to every fog sample). Opt-in with ?fogGi=1: the judge read it as a
+          // REGRESSION against the same fog without it (PRD-643 Decision 15), because it veils the walls by about twice
+          // what Unreal shows while the walls are already too bright from the direct light (PRD-646).
+          ...(giCache.meanRadiance === undefined || params.get("fogGi") !== "1"
+            ? {}
+            : { ambientNode: giCache.meanRadiance }),
+          anisotropy: fogData.volumetricScatteringDistribution,
+          points: lights.filter((l): l is PointLight => l instanceof PointLight && !l.castShadow),
+          environment: { aerialPerspective: false, godRays: false },
+        });
+      };
+      // The template's `high` chain with the L9-only stages off, as Reference.ts runs below L9.
+      // Exposure is the scene's fixed EV100: Unreal's manual exposure, 0.18 / 2^EV100.
+      const build = (method: FinalGatherMethod, arm: IWorldEnvironmentOptions = {}) => {
+        this.#dispose?.();
+        const medium = makeFog();
+        const world = new WorldEnvironment({
+          ...qualityPreset("high"),
+          autoExposureEnabled: false,
+          bloomEnabled: false,
+          // Unreal draws L1 to L8 with ShowFlag.LocalExposure 0 (PRD-631), and the `high` preset turns the stage on
+          // since the finishing chain became the default (ff837b1f2): it lifted neon-corridor L1's dark walls 14
+          // levels. This gate turns it off below L7. L7 and above keep it for now: the GI cache there is brighter than Unreal's, the stage's highlight
+          // compression hides part of that, and switching it off broke 14 cornell L7 locks. Remove it with the GI excess.
+          // Diagnosis: ?localExposure=0|1 forces the stage.
+          localExposureEnabled:
+            params.get("localExposure") === null ? level >= 7 : params.get("localExposure") === "1",
+          // Diagnosis: ?gtao=0 takes the contact occlusion out, to tell its darkening from the shadow's.
+          gtaoEnabled: level >= 6 && params.get("gtao") !== "0",
+          ssrEnabled: tracing,
+          finalGatherMethod: method,
+          // Diagnosis: ?ssgi=0|1 and ?ssgiIntensity=N bracket the screen-space gather over the cache.
+          ...(params.get("ssgi") === null ? {} : { ssgiEnabled: params.get("ssgi") === "1" }),
+          ...(params.get("ssgiIntensity") === null ? {} : { ssgiIntensity: Number(params.get("ssgiIntensity")) }),
+          // Unreal's L7 is its Epic tier (render/quality.ts).
+          ...EPIC_SSGI,
+          // Diagnosis: ?ssgiQuality=<tier> and ?ssgiScale=N gather another way (PRD-640 cost gate).
+          ...(params.get("ssgiQuality") === null ? {} : { ssgiQuality: params.get("ssgiQuality") as "epic" }),
+          ...(params.get("ssgiScale") === null ? {} : { ssgiResolutionScale: Number(params.get("ssgiScale")) }),
+          ...(params.get("ssgiDenoise") === null ? {} : { ssgiDenoiseRadius: Number(params.get("ssgiDenoise")) }),
+          // Diagnosis: ?probes=1 gathers with screen probes (PRD-640).
+          // 16 x 16 rays per probe: the engine's probes carry no radiance cache, so they trace twice Unreal's real-time 8 x 8
+          // (PRD-640 round 2026-10-21: sunlit-room dP50 0.129 against 0.140 for the per-pixel Epic gather). ?probeRays=N overrides.
+          ...(params.get("probes") === "1"
+            ? {
+                ssgiScreenProbes: true,
+                ssgiProbeRays: Number(params.get("probeRays") ?? 16),
+                ssgiDenoiseRadius: Number(params.get("ssgiDenoise") ?? 16),
+              }
+            : {}),
+          ...(params.get("probeJitter") === null ? {} : { ssgiProbeJitter: Number(params.get("probeJitter")) }),
+          ...(params.get("probeDebug") === null ? {} : { ssgiProbeDebug: Number(params.get("probeDebug")) }),
+          // Diagnosis: the contact occlusion's URL knobs (aoReach.ts), as on the reference scene.
+          ...gtaoUrlKnobs(params),
+          vignetteAmount: 0,
+          exposure: EXPOSURE,
+          ...arm,
+        });
+        const applied = world.apply(
+          ctx.renderer,
+          scene,
+          camera,
+          medium === undefined && !refracts
+            ? {}
+            : {
+                baseColour: (scenePass) =>
+                  medium?.compose(scenePass) ??
+                  refractBehind(scenePass, camera, paneBoxes, { ior: GLTF_IOR, widthPixels: () => innerWidth }),
+              },
+        );
+        this.#dispose = () => {
+          applied.dispose();
+          medium?.dispose();
+        };
+      };
+      build(GI_METHOD);
+      // Diagnosis: ?linear=1 writes the exposed light with no tone curve, so the frame reads as scene-linear (the
+      // light a PRD-646 direct-light gap is measured in). Pair it with ?exposure=N small enough that nothing clips.
+      if (params.get("linear") === "1") raw.toneMapping = NoToneMapping;
+      setGatherMethod = build;
+      // The tier's method holds; the GI watcher reports its share of the GPU frame (PRD-644).
+      if (GI_METHOD !== "none")
+        this.#gi = watchGi(ctx, { tier: TIER, method: GI_METHOD });
+    }
+    for (const u of unsupported)
+      console.info(`TN_CALIBRATION_SCENE unsupported ${u.actor}.${u.property}: ${u.reason}`);
+
+    const target = new Vector3();
+    // The actors a motion run moves, with the position the scene put them at (PRD-650 swing).
+    const actors = new Map<string, { object: Object3D; rest: Vector3 }>();
+    const reference = {
+      layer: LAYER,
+      tier: TIER,
+      finalGatherMethod: GI_METHOD,
+      shadowQuality: SHADOW.shadowQuality,
+      // The GI and shadow watchers' newest windows, for the perf run (PRD-644 AC-2, PRD-652).
+      giBudget: () => this.#gi?.lastReport(),
+      shadowBudget: () => this.#shadow?.lastReport(),
+      setShadowTier: (tier: string) => setShadowTier(resolveQualityTier({ tier })),
+      setGatherMethod: (method: FinalGatherMethod, arm?: IWorldEnvironmentOptions) => setGatherMethod(method, arm),
+      scene: NAME,
+      unsupported,
+      // The live scene, renderer and GI cache, for in-page diagnosis.
+      world: scene,
+      camera,
+      gi: giCache,
+      renderer: ctx.renderer.raw,
+      disposePost: () => this.#dispose?.(),
+      // Diagnosis: a lamp filter with other tap counts, for in-page paired cost runs (PRD-650).
+      lampFilter: (blockers: number, samples: number) =>
+        sourceRadiusShadowFilter({
+          sourceRadius: DATA.lights[0]?.sourceRadiusM ?? 0,
+          blockerSamples: blockers,
+          filterSamples: samples,
+        }),
+      // What the frame was drawn with, for the capture report: a wrong unit shows here first.
+      probe: () => {
+        const r = ctx.renderer.raw as unknown as { toneMapping: number; toneMappingExposure: number };
+        const lights: unknown[] = [];
+        scene.traverse((o) => {
+          const l = o as PointLight;
+          if (l.isLight) lights.push({ type: l.type, intensity: l.intensity, distance: l.distance, decay: l.decay, visible: l.visible });
+        });
+        const m = meshes[0]?.material as { type?: string; color?: Color; roughness?: number } | undefined;
+        return {
+          toneMapping: r.toneMapping,
+          toneMappingExposure: r.toneMappingExposure,
+          lights,
+          material: { type: m?.type, color: m?.color?.toArray(), roughness: m?.roughness },
+        };
+      },
+      engine:
+        "engine" in (ctx.renderer.raw as unknown as { info: object }).info ? "threenative" : "threejs",
+      pose(pose: Pose): void {
+        const aspect = innerWidth / innerHeight;
+        const half = (pose.hfovDeg * Math.PI) / 360;
+        camera.fov = (2 * Math.atan(Math.tan(half) / aspect) * 180) / Math.PI;
+        camera.aspect = aspect;
+        camera.near = 0.1;
+        camera.far = 2000;
+        camera.position.fromArray(pose.position);
+        camera.lookAt(target.fromArray(pose.target));
+        camera.updateProjectionMatrix();
+      },
+      // PRD-638 motion runs: the harness steps the frame loop itself and asks for the camera and the lamps of one frame.
+      motionFrame(name: string, frame: number): void {
+        const run = (DATA.motion ?? {})[name] as MotionRun | undefined;
+        if (run === undefined) throw new Error(`TN_CALIBRATION_MOTION_UNKNOWN: ${name}`);
+        reference.pose(motionPose(run, frame, (DATA.poses ?? []) as (Pose & { name: string })[]));
+        if (run.light !== undefined) setLight(run.light.name, lightScale(run.light.keys, frame));
+        if (run.actor !== undefined) {
+          const name = run.actor.name;
+          let actor = actors.get(name);
+          if (actor === undefined) {
+            const found = model.getObjectByName(name) ?? model.getObjectByName(`SM_${name}`);
+            if (found === undefined) throw new Error(`TN_CALIBRATION_MOTION_ACTOR: ${name}`);
+            actor = { object: found, rest: found.position.clone() };
+            actors.set(name, actor);
+          }
+          const [dx = 0, dy = 0, dz = 0] = actorOffset(run.actor.keys, frame);
+          actor.object.position.copy(actor.rest).add(new Vector3(dx, dy, dz));
+        }
+      },
+    };
+    (window as unknown as { __tnRef: unknown }).__tnRef = reference;
+    // Start at the capture's first pose (or ?pose=<name>), not at the framework camera's origin.
+    const poses = (DATA.poses ?? []) as (Pose & { name: string })[];
+    const start = poses.find((pose) => pose.name === params.get("pose")) ?? poses[0];
+    if (start !== undefined) reference.pose(start);
+    return () => undefined;
+  }
+
+  override exit(ctx: GameCtx): void {
+    reflectionTrace.current?.dispose();
+    reflectionTrace.current = undefined;
+    reflectionTrace.lamps = undefined;
+    this.#dispose?.();
+    this.#dispose = undefined;
+    super.exit(ctx);
+  }
+}

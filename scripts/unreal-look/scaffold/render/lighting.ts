@@ -1,0 +1,91 @@
+// Generated for you. This is ordinary Three.js — edit or delete it freely.
+// ThreeNative does not read this file.
+//
+// One sun. The sky in `sky.ts` is the fill light — its environment reaches every face the
+// sun misses — so there is no hemisphere or ambient light stacked on top to flatten the frame.
+//
+// Harness overlay (PRD-632): the sun is Unreal's default level sun in lux and kelvin, not an
+// intensity matched by eye. `atmosphere.ts` holds the units and the sky that reads the same sun.
+import { useRoughDiffuse } from "@threenative/core";
+import {
+  Color,
+  DirectionalLight,
+  type Object3D,
+  PCFSoftShadowMap,
+  type Scene,
+  Vector3,
+} from "three";
+import { SUN_ILLUMINANCE, SUN_KELVIN, sunLight, temperatureColour } from "./atmosphere.js";
+import { SUN_DIRECTION } from "./sky.js";
+
+type ShadowRenderer = { shadowMap: { enabled: boolean; type: number } };
+
+export function setupLighting(
+  scene: Scene,
+  renderer: ShadowRenderer,
+  mobile = false,
+): { key: DirectionalLight } {
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = PCFSoftShadowMap;
+
+  // 6 lux at 6500 K in three's units; `setupSky` multiplies in the air's transmittance.
+  const tint = temperatureColour(SUN_KELVIN);
+  const key = new DirectionalLight(new Color().setRGB(tint[0], tint[1], tint[2]), SUN_ILLUMINANCE);
+  sunLight.current = key;
+  key.position.copy(SUN_DIRECTION).multiplyScalar(30);
+  key.castShadow = true;
+  // One map fitted to the 28 m arena: 4096² is under a centimetre a texel, so every shadow has the
+  // same softness. Camera-centred cascades (`VirtualShadowNode`) are for open worlds; here their
+  // level boundaries showed as shadows that turned sharp halfway along. Phones take 2048².
+  const size = mobile ? 2048 : 4096;
+  key.shadow.mapSize.set(size, size);
+  key.shadow.radius = 2;
+  key.shadow.camera.near = 1;
+  key.shadow.camera.far = 80;
+  const extent = 14;
+  key.shadow.camera.left = -extent;
+  key.shadow.camera.right = extent;
+  key.shadow.camera.top = extent;
+  key.shadow.camera.bottom = -extent;
+  // Small biases: a large normal bias is what lifted the mannequin's shadow off its own feet.
+  key.shadow.bias = -0.0002;
+  key.shadow.normalBias = 0.005;
+  scene.add(key);
+  // The key light is returned because `WorldEnvironment`'s godrays stage raymarches against its
+  // shadow map, so `setupPost` needs the light itself.
+  return { key };
+}
+
+/**
+ * Rough surfaces take the sun and lamps the way Unreal's Substrate shades them (PRD-653): the EON diffuse, brighter than Lambert
+ * facing the light and flatter at grazing angles, not flat Lambert. Indirect light stays Lambert. Call it once for a loaded
+ * model, and delete the call for Lambert everywhere.
+ */
+export function shadeLikeSubstrate(root: Object3D): void {
+  useRoughDiffuse(root);
+}
+
+/** Material conventions are game-owned; each scene gets independent mutable controls. */
+export interface ILightingConvention {
+  rimGain: number;
+  fillGain: number;
+  fillColor: Color;
+  fillDirection: Vector3;
+  fillAngularSize: number;
+  darkThreshold: number;
+  maxSourceTexels: number;
+}
+export function createLightingConvention(
+  overrides: Partial<ILightingConvention> = {},
+): ILightingConvention {
+  return {
+    rimGain: 0.12,
+    fillGain: 1,
+    fillColor: new Color(0x667b9d),
+    fillDirection: new Vector3(0, 1, 1).normalize(),
+    fillAngularSize: 0.7,
+    darkThreshold: 0.001,
+    maxSourceTexels: 65536,
+    ...overrides,
+  };
+}

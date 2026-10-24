@@ -45,9 +45,11 @@ scalability—without pretending directional clipmaps solve point/spot lights.
   tiny pages” is not automatically 24 complete scene traversals.
 - **2026-10-09 (João, via the Unreal review request): overflow degrades resolution before it switches path.** Unreal's answer to page-pool pressure (below) replaces this PRD's plain overflow fallback in Phase 2's first box. No other box changes.
 - 2026-10-12 (Unreal source review): All cited line ranges and defaults match Unreal 5.8.3, except the static-return range, now `1767-1820`. The `trackCaster` remark was stale because PRD-572 is done. Unreal also skips small instances in coarse pages by pixel footprint. Phase 2's first box now names that limit.
+- 2026-10-20 (shadow slicing): Phase 3's two boxes (a many-light fixture, and local-light counters apart from directional ones) are moot here and deleted. [PRD-650](../../done/PRD-650-a-lamp-shadow-is-as-sharp-as-the-pixels-it-covers-and-softens-with-the-lamp-size.md) builds the lamp atlas and cache that they would measure, and carries both as its own boxes. This PRD keeps the directional page-cost gate.
 - **Local lights are a measured follow-on.** This PRD may establish a common budget/update scheduler
   for one spot-light fixture, but does not claim full Unreal-style point/spot shadow virtualization
   unless the acceptance evidence actually covers it.
+- 2026-10-19 (PRD-631 reference plan): [PRD-634](../look/PRD-634-sun-shadows-reach-the-horizon-and-soften-with-distance-from-the-caster.md) now owns the template sun-shadow method and the source-angle penumbra, measured on layer L5 of the Unreal reference. If its Phase 1 picks virtual shadows, this PRD's page-cost gate decides whether that default holds the frame budget. No box changed.
 
 ## What Unreal does (UE 5.8.3, read 2026-10-09; ideas only, no code copied)
 
@@ -101,12 +103,12 @@ Paths are under `Engine/Source/Runtime/Renderer/Private/VirtualShadowMaps/`.
 ### Phase 2 — Admit sparse pages only behind the measured gate
 
 - [ ] The admitted path renders only demanded dirty pages into bounded physical storage and reuses clean resident pages. It skips instances under a pixel-footprint limit in coarse pages. Under pool pressure it first raises a resolution bias, and it falls back to the cached-level path only at the bias cap or on an unsupported case, never dropping shadows. **proof:** focused specs exercise demand, LRU eviction, invalidation, the footprint limit, the pressure bias and overflow; a forced-small pool preserves a valid shadow through the bias and then the fallback.
+- [ ] Page marking skips back-facing receiver pixels, widens each marked page by a 0.05-page border, and requests a coarser level for out-of-focus pixels, as Unreal's VSM page marking does. **proof:** red-green `pnpm exec vitest run packages/core/__tests__/virtual-shadow-pages.spec.ts` on `ReceiverDemandPass`.
 - [ ] On the Phase-1 winning workload, sparse pages reduce attributable shadow GPU/render p95 without increasing total frame p95 or visible shadow error beyond the pinned threshold. **proof:** paired A/B run on the same adapter records shadow cost, total frame cost, page/level render counts and image delta; if the win gate is missed, sparse mode remains unshipped/disabled.
 
-### Phase 3 — Establish the local-light boundary honestly
+### Phase 3 — Moved to PRD-650
 
-- [ ] A many-light fixture attributes point/spot shadow cost separately from the directional path and demonstrates whether the same budget/update scheduler can reduce redundant updates for at least one supported local-light type. **proof:** fixture reports lights, faces/maps updated, shadow draws and GPU/render cost before/after scheduler reuse; unsupported light types are named.
-- [ ] The public diagnostics distinguish directional clip/page work from local-light work so future MegaLights/local-shadow work starts from measured data. **proof:** diagnostics/parser test reads one mixed-light frame and reports separate counters whose totals reconcile with the renderer's shadow submissions.
+The local-light scope moved to [PRD-650](../../done/PRD-650-a-lamp-shadow-is-as-sharp-as-the-pixels-it-covers-and-softens-with-the-lamp-size.md) on 2026-10-20 (see `## Decisions`).
 
 ## Acceptance criteria
 

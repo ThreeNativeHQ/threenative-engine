@@ -8,6 +8,13 @@
 
 namespace tn::engine {
 
+// A timed pass sums into one segment of the frame: 0 the sun's shadow passes, 1 the scene pass, 2 other passes
+// (offscreen, compute, post, TRAA), 3 the output pass, 4 the screen-space gather (post passes labelled
+// `kStageScreenSpaceGi`), 5 the spot and point lights' shadow passes (PRD-650).
+inline constexpr size_t kGpuSegments = 6;
+inline constexpr uint8_t kGpuGiSegment = 4;
+inline constexpr uint8_t kGpuLampShadowSegment = 5;
+
 // One query stream shared by a renderer and its offscreen siblings, across all their encoders.
 struct FrameGpuTimer {
     static constexpr uint32_t maxPasses = 2048;

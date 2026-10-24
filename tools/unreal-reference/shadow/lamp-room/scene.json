@@ -1,0 +1,237 @@
+{
+  "note": "Written by gi/export.py from the Unreal 5.8.3 level /Game/Shadow/lamp-room/GI_lamp-room. three.js frame: Y up, metres. Unreal is the authority; scene.py is only the authoring input.",
+  "scene": "shadow:lamp-room",
+  "resolution": [1280, 720],
+  "meshes": [
+    {
+      "name": "Floor",
+      "class": "StaticMeshActor",
+      "position": [0.0, -0.1, 0.0],
+      "rotationYDeg": -0.0,
+      "size": [6.2, 0.2, 4.2],
+      "material": {
+        "name": "MI_White",
+        "baseColor": [0.73, 0.73, 0.73],
+        "roughness": 1.0,
+        "metallic": 0.0,
+        "emissive": [0.0, 0.0, 0.0],
+        "emissiveStrength": 1.0
+      }
+    },
+    {
+      "name": "Ceiling",
+      "class": "StaticMeshActor",
+      "position": [0.0, 3.1, 0.0],
+      "rotationYDeg": -0.0,
+      "size": [6.2, 0.2, 4.2],
+      "material": {
+        "name": "MI_White",
+        "baseColor": [0.73, 0.73, 0.73],
+        "roughness": 1.0,
+        "metallic": 0.0,
+        "emissive": [0.0, 0.0, 0.0],
+        "emissiveStrength": 1.0
+      }
+    },
+    {
+      "name": "Back",
+      "class": "StaticMeshActor",
+      "position": [0.0, 1.5, -2.1],
+      "rotationYDeg": -0.0,
+      "size": [6.2, 3.2, 0.2],
+      "material": {
+        "name": "MI_White",
+        "baseColor": [0.73, 0.73, 0.73],
+        "roughness": 1.0,
+        "metallic": 0.0,
+        "emissive": [0.0, 0.0, 0.0],
+        "emissiveStrength": 1.0
+      }
+    },
+    {
+      "name": "Wall_L",
+      "class": "StaticMeshActor",
+      "position": [-3.1, 1.5, 0.0],
+      "rotationYDeg": -0.0,
+      "size": [0.2, 3.2, 4.2],
+      "material": {
+        "name": "MI_White",
+        "baseColor": [0.73, 0.73, 0.73],
+        "roughness": 1.0,
+        "metallic": 0.0,
+        "emissive": [0.0, 0.0, 0.0],
+        "emissiveStrength": 1.0
+      }
+    },
+    {
+      "name": "Wall_R",
+      "class": "StaticMeshActor",
+      "position": [3.1, 1.5, 0.0],
+      "rotationYDeg": -0.0,
+      "size": [0.2, 3.2, 4.2],
+      "material": {
+        "name": "MI_White",
+        "baseColor": [0.73, 0.73, 0.73],
+        "roughness": 1.0,
+        "metallic": 0.0,
+        "emissive": [0.0, 0.0, 0.0],
+        "emissiveStrength": 1.0
+      }
+    },
+    {
+      "name": "Table_L",
+      "class": "StaticMeshActor",
+      "position": [-2.0, 0.8, -0.5],
+      "rotationYDeg": -0.0,
+      "size": [1.0, 0.05, 0.8],
+      "material": {
+        "name": "MI_Grey",
+        "baseColor": [0.4, 0.4, 0.4],
+        "roughness": 1.0,
+        "metallic": 0.0,
+        "emissive": [0.0, 0.0, 0.0],
+        "emissiveStrength": 1.0
+      }
+    },
+    {
+      "name": "Table_R",
+      "class": "StaticMeshActor",
+      "position": [2.0, 0.8, -0.5],
+      "rotationYDeg": -0.0,
+      "size": [1.0, 0.05, 0.8],
+      "material": {
+        "name": "MI_Grey",
+        "baseColor": [0.4, 0.4, 0.4],
+        "roughness": 1.0,
+        "metallic": 0.0,
+        "emissive": [0.0, 0.0, 0.0],
+        "emissiveStrength": 1.0
+      }
+    },
+    {
+      "name": "Crate",
+      "class": "StaticMeshActor",
+      "position": [-0.4, 0.25, -0.6],
+      "rotationYDeg": 20.0,
+      "size": [0.5, 0.5, 0.5],
+      "material": {
+        "name": "MI_Grey",
+        "baseColor": [0.4, 0.4, 0.4],
+        "roughness": 1.0,
+        "metallic": 0.0,
+        "emissive": [0.0, 0.0, 0.0],
+        "emissiveStrength": 1.0
+      }
+    },
+    {
+      "name": "Rod",
+      "class": "StaticMeshActor",
+      "position": [0.6, 1.0, -1.945],
+      "rotationYDeg": -0.0,
+      "size": [0.01, 2.0, 0.01],
+      "material": {
+        "name": "MI_Grey",
+        "baseColor": [0.4, 0.4, 0.4],
+        "roughness": 1.0,
+        "metallic": 0.0,
+        "emissive": [0.0, 0.0, 0.0],
+        "emissiveStrength": 1.0
+      }
+    }
+  ],
+  "lights": [
+    {
+      "name": "Spot",
+      "class": "SpotLight",
+      "position": [-2.0, 2.8, -0.5],
+      "intensity": 600.0,
+      "units": "candelas",
+      "attenuationRadiusM": 12.0,
+      "color": [1.0, 1.0, 1.0],
+      "useTemperature": false,
+      "castShadows": true,
+      "inverseSquaredFalloff": true,
+      "sourceRadiusM": 0.0,
+      "target": [-2.0, 1.8, -0.5],
+      "innerConeDeg": 20.0,
+      "outerConeDeg": 35.0
+    },
+    {
+      "name": "SpotSoft",
+      "class": "SpotLight",
+      "position": [2.0, 2.8, -0.5],
+      "intensity": 600.0,
+      "units": "candelas",
+      "attenuationRadiusM": 12.0,
+      "color": [1.0, 1.0, 1.0],
+      "useTemperature": false,
+      "castShadows": true,
+      "inverseSquaredFalloff": true,
+      "sourceRadiusM": 0.1,
+      "target": [2.0, 1.8, -0.5],
+      "innerConeDeg": 20.0,
+      "outerConeDeg": 35.0
+    },
+    {
+      "name": "Point",
+      "class": "PointLight",
+      "position": [0.6, 1.5, 0.4],
+      "intensity": 400.0,
+      "units": "candelas",
+      "attenuationRadiusM": 12.0,
+      "color": [1.0, 1.0, 1.0],
+      "useTemperature": false,
+      "castShadows": true,
+      "inverseSquaredFalloff": true,
+      "sourceRadiusM": 0.05
+    }
+  ],
+  "sky": null,
+  "sun": null,
+  "fog": null,
+  "exposure": {
+    "method": "aem_manual",
+    "physicalCamera": false,
+    "bias": -5.0,
+    "ev100": 5.0,
+    "lensAttenuation": 0.7799999713897705,
+    "exposureScale": 0.03124999885375683
+  },
+  "poses": [
+    {
+      "name": "spot",
+      "position": [-2, 1.6, 2.2],
+      "target": [-2, 0.4, -0.5],
+      "hfovDeg": 60
+    },
+    {
+      "name": "spot-soft",
+      "position": [2, 1.6, 2.2],
+      "target": [2, 0.4, -0.5],
+      "hfovDeg": 60
+    },
+    {
+      "name": "point",
+      "position": [-0.4, 1.6, 2.2],
+      "target": [-0.4, 0.3, -0.9],
+      "hfovDeg": 60
+    },
+    {
+      "name": "rod",
+      "position": [1.5, 1.2, -0.4],
+      "target": [0.6, 1.0, -1.95],
+      "hfovDeg": 45
+    }
+  ],
+  "regions": {
+    "Floor": [255, 0, 0],
+    "Ceiling": [0, 255, 0],
+    "Back": [0, 0, 255],
+    "Wall_L": [255, 255, 0],
+    "Wall_R": [255, 0, 255],
+    "Table_L": [0, 255, 255],
+    "Table_R": [255, 128, 0],
+    "Crate": [128, 0, 255],
+    "Rod": [0, 128, 64]
+  }
+}

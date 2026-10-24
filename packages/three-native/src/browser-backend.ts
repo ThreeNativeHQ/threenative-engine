@@ -14,6 +14,7 @@
 
 import { defineMath } from "./browser-math.js";
 import type { ITslRuntime, TslArgValue } from "./browser-tsl.js";
+import { detachVirtualShadow, shadowFilterOptions, virtualShadowOptions } from "./shadow-node.js";
 import { withUpdateRanges } from "./update-ranges.js";
 
 export interface IRegistryClass {
@@ -163,6 +164,20 @@ interface IWrapped {
   [REF]: IEngineRef;
 }
 
+/** One own, enumerable field of a material: its descriptor is built once per class and shared by every instance. */
+interface IOwnField {
+  readonly key: string;
+  readonly descriptor: PropertyDescriptor;
+}
+
+/**
+ * Define a class's own fields on one instance. A loop of `Object.defineProperty` takes about 12 us for the
+ * 40 fields of a standard material where one `Object.defineProperties` takes 17 us (node 20, 20000 builds).
+ */
+function defineOwn(target: object, own: readonly IOwnField[]): void {
+  for (const field of own) Object.defineProperty(target, field.key, field.descriptor);
+}
+
 /** The engine object behind a back-end wrapper, for a host that talks to the ABI directly. */
 export function engineRef(object: object): IEngineRef | undefined {
   return (object as Partial<IWrapped>)[REF];
@@ -236,6 +251,10 @@ export const LANGUAGE_MEMBERS = [
   "traverse",
   "traverseVisible",
   "traverseAncestors",
+  "getObjectsByProperty",
+  "getObjectByProperty",
+  "getObjectByName",
+  "getObjectById",
   "raycast",
 ] as const;
 
@@ -287,6 +306,34 @@ function defineTraversal(
   };
   for (const [name, value] of Object.entries(methods))
     Object.defineProperty(prototype, name, { configurable: true, writable: true, value });
+  // three's lookups, written over `traverse` as three writes them: the first match in walk order.
+  const lookups: Record<string, (this: object, ...args: never[]) => unknown> = {
+    getObjectsByProperty(this: object, name: string, value: unknown, result: object[] = []) {
+      (this as { traverse(c: TraverseCallback): void }).traverse((object) => {
+        if ((object as Record<string, unknown>)[name] === value) result.push(object);
+      });
+      return result;
+    },
+    getObjectByProperty(this: object, name: string, value: unknown) {
+      return (
+        this as { getObjectsByProperty(n: string, v: unknown): object[] }
+      ).getObjectsByProperty(name, value)[0];
+    },
+    getObjectByName(this: object, name: string) {
+      return (this as { getObjectByProperty(n: string, v: unknown): object }).getObjectByProperty(
+        "name",
+        name,
+      );
+    },
+    getObjectById(this: object, id: number) {
+      return (this as { getObjectByProperty(n: string, v: unknown): object }).getObjectByProperty(
+        "id",
+        id,
+      );
+    },
+  };
+  for (const [name, value] of Object.entries(lookups))
+    Object.defineProperty(prototype, name, { configurable: true, writable: true, value });
   // three's Object3D.raycast(raycaster, intersects): push this object's own hits, no recursion. The engine
   // answers them through Raycaster.intersectObject (the object's native raycast; a Group answers none).
   Object.defineProperty(prototype, "raycast", {
@@ -330,7 +377,7 @@ export function defineBrowserClasses(
       : { engineReferences: counted(source.engineReferences) }),
   };
   const classes: Record<string, new (...args: unknown[]) => object> = {};
-  const byType = new Map<number, { prototype: object }>();
+  const byType = new Map<number, { prototype: object; own?: readonly IOwnField[] }>();
   const typeNames = new Map<number, string>();
   (globalThis as { __tnEngineTypes?: Map<number, string> }).__tnEngineTypes = typeNames;
   // Reads that need no engine call: a field the engine holds in place is read from its memory (Wasm,
@@ -560,6 +607,7 @@ export function defineBrowserClasses(
       throw new TypeError(`TN_BROWSER_TYPE_UNKNOWN: no class for engine type ${ref.type}`);
     // Held until the next safe point decides: the engine may reference what it just handed out.
     const wrapper = adopt(Object.create(cls.prototype) as object, ref);
+    if (cls.own !== undefined) defineOwn(wrapper, cls.own);
     hold(wrapper);
     return wrapper;
   };
@@ -692,6 +740,11 @@ export function defineBrowserClasses(
       (name === "BufferAttribute" || name === "InstancedBufferAttribute");
     const attributeClass = ATTRIBUTE_CLASSES.has(name);
     const geometryClass = name.endsWith("Geometry");
+    // three keeps a material's slots as own, enumerable fields, and the desktop host gives each
+    // material instance its accessors as own ones. `for...in`, `Object.keys` and `Object.values` find
+    // them on the web too: core's node-twin copy loops and "dispose every texture" rely on that.
+    const materialClass = name.endsWith("Material");
+    const own: IOwnField[] = [];
     const engineClass = class {
       constructor(...args: unknown[]) {
         if (!binding.constructor) throw new TypeError(`TN_BROWSER_NOT_CONSTRUCTIBLE: ${name}`);
@@ -704,6 +757,7 @@ export function defineBrowserClasses(
             : undefined;
         const engineArgs = parameters === undefined ? args : args.slice(0, -1);
         adopt(this, runtime.construct(name, engineArgs.map(toEngine)));
+        if (materialClass) defineOwn(this, own);
         if (parameters !== undefined) setValues(this, name, parameters);
         // three's BufferAttribute keeps the typed array it is handed; the typed subclasses copy.
         const handed = args[0];
@@ -748,6 +802,15 @@ export function defineBrowserClasses(
         configurable: true,
         writable: true,
         value(this: object, ...args: unknown[]) {
+          // three's toArray(array, offset) writes the lanes into the array it is given and answers that array; the
+          // engine answers a new one, since a plain array crosses by value.
+          if (method === "toArray" && args[0] !== undefined) {
+            const target = args[0] as number[];
+            const start = (args[1] as number | undefined) ?? 0;
+            const lanes = (prototype.toArray as () => unknown[]).call(this);
+            for (let i = 0; i < lanes.length; i++) target[start + i] = lanes[i] as number;
+            return target;
+          }
           const intersections = method === "intersectObject" || method === "intersectObjects";
           const key = query ? `${method} ${String(args[0])}` : "";
           if (query && labels.get(this)?.has(key)) return labels.get(this)?.get(key);
@@ -872,6 +935,37 @@ export function defineBrowserClasses(
         },
         set(this: object, value: unknown) {
           const ref = refOf(this);
+          if (property === "filterNode") {
+            runtime.set(ref, property, shadowFilterOptions(value));
+            const slots = shaderNodes.get(ref.key) ?? new Map<string, unknown>();
+            shaderNodes.set(ref.key, slots.set(property, value));
+            return;
+          }
+          if (property === "shadowNode") {
+            if (shaderNodes.get(ref.key)?.get(property) === value) return;
+            const options = virtualShadowOptions(value, (command) =>
+              runtime.set(
+                ref,
+                property,
+                Object.fromEntries(
+                  Object.entries(command).map(([key, item]) => [key, toEngine(item)]),
+                ),
+              ),
+            );
+            runtime.set(
+              ref,
+              property,
+              options === null
+                ? null
+                : Object.fromEntries(
+                    Object.entries(options).map(([key, item]) => [key, toEngine(item)]),
+                  ),
+            );
+            const slots = shaderNodes.get(ref.key) ?? new Map<string, unknown>();
+            if (slots.get(property) !== value) detachVirtualShadow(slots.get(property));
+            shaderNodes.set(ref.key, slots.set(property, value));
+            return;
+          }
           if (value === null) {
             runtime.set(ref, property, null);
             shaderNodes.get(ref.key)?.delete(property);
@@ -931,7 +1025,7 @@ export function defineBrowserClasses(
         flagField !== undefined && flagField[1] === 0 && peek !== undefined
           ? (self: object): boolean => peek(addressOf(self) + (flagField[0] ?? 0)) !== 0
           : undefined;
-      Object.defineProperty(accessors, property, {
+      const accessor: PropertyDescriptor = {
         configurable: true,
         get:
           fastGetter(binding, property) ??
@@ -1000,7 +1094,9 @@ export function defineBrowserClasses(
                 },
               }
             : {}),
-      });
+      };
+      Object.defineProperty(accessors, property, accessor);
+      if (materialClass) own.push({ key: property, descriptor: { ...accessor, enumerable: true } });
     }
     // Games turn objects every frame: an object's `rotation` is written in place (the transform page's
     // rotation column), and its quaternion follows here, as three's onRotationChange does. Any other
@@ -1267,7 +1363,10 @@ export function defineBrowserClasses(
         },
       });
     }
-    if (binding.members.includes("parent") || binding.getters.includes("parent")) {
+    const graphNode = binding.members.includes("parent") || binding.getters.includes("parent");
+    // three gives Object3D, Material, Texture and BufferGeometry a `userData`; the engine classes
+    // with a parent or a `dispose` are those.
+    if (graphNode || binding.methods.includes("dispose")) {
       Object.defineProperty(prototype, "userData", {
         configurable: true,
         get(this: object) {
@@ -1278,6 +1377,8 @@ export function defineBrowserClasses(
           userData.set(this, value);
         },
       });
+    }
+    if (graphNode) {
       defineTraversal(
         prototype,
         name,
@@ -1286,7 +1387,7 @@ export function defineBrowserClasses(
       );
     }
     classes[name] = cls;
-    byType.set(runtime.typeId(name), { prototype: accessors });
+    byType.set(runtime.typeId(name), { prototype: accessors, ...(materialClass ? { own } : {}) });
     typeNames.set(runtime.typeId(name), name);
   }
   for (const name of ATTRIBUTE_CLASSES) {
@@ -1653,7 +1754,14 @@ function tslOf(
       setPost: (node) =>
         h.scoped(() => {
           if (setPost === undefined) throw new Error("TN_WASM_POST: this module has no web host");
-          if (setPost(context, nodeOf(node)) !== 0) throw new Error("TN_WASM_POST: refused");
+          if (setPost(context, nodeOf(node), 0) !== 0) throw new Error("TN_WASM_POST: refused");
+        }),
+      setToneMapping: (node) =>
+        h.scoped(() => {
+          if (setPost === undefined)
+            throw new Error("TN_NATIVE_CUSTOM_TONEMAPPING_MISSING: no web output binding");
+          if (setPost(context, nodeOf(node), 1) !== 0)
+            throw new Error("TN_NATIVE_CUSTOM_TONEMAPPING_INVALID: refused output node");
         }),
       // PRD-620: renderer.compute and storage reads over the product web host.
       compute: (node) =>

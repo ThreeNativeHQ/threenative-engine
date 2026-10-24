@@ -13,7 +13,11 @@
 #include <array>
 #include <cmath>
 #include <memory>
+#include <stdexcept>
 #include <string>
+#include <tuple>
+#include <type_traits>
+#include <utility>
 #include <vector>
 
 namespace tn::binding {
@@ -263,14 +267,28 @@ void toArray(ClassBinding& b, const char* name, std::array<double, N> (T::*metho
 }
 
 /**
- * `fromArray(array)` reads the plain array the reference reads, which is a boxed `toArray()`.
- * Euler's form takes no offset at all and every other class defaults it to zero.
+ * `fromArray(array, offset)` reads the plain array the reference reads, which is a boxed `toArray()`, from lane
+ * `offset` on (a mat4 of four vec4 columns reads column k at offset 4k of a camera matrix). Euler's form takes no
+ * offset at all and every other class defaults it to zero. A window that leaves the array is refused where three
+ * would read `undefined`, so a short array never reads the engine's memory past its end.
  */
 template <typename T>
 void fromArray(ClassBinding& b, const char* name) {
     b.methods[name] = [](void* self, const Args& a, Store& d) {
         const std::vector<double> values = d.numbers(a.at(0));
-        (as<T>(self)->fromArray)(values.data());
+        constexpr size_t lanes = std::tuple_size_v<decltype(std::declval<const T&>().toArray())>;
+        if constexpr (std::is_invocable_v<decltype(&T::fromArray), T&, const double*, int>) {
+            // An absent or undefined offset is 0, as in three's `offset = 0`.
+            const double offset = a.size() > 1 && a[1].kind != Value::Kind::Undefined ? number(a[1]) : 0;
+            if (!(offset >= 0) || offset != std::floor(offset) || offset + lanes > static_cast<double>(values.size()))
+                throw std::out_of_range("fromArray offset " + std::to_string(offset) + " needs " + std::to_string(lanes) +
+                                        " lanes inside an array of " + std::to_string(values.size()));
+            (as<T>(self)->fromArray)(values.data(), static_cast<int>(offset));
+        } else {
+            if (values.size() < lanes)
+                throw std::out_of_range("fromArray needs " + std::to_string(lanes) + " lanes, the array has " + std::to_string(values.size()));
+            (as<T>(self)->fromArray)(values.data());
+        }
         return chain();
     };
 }

@@ -2,8 +2,14 @@
 #include "engine/shader/tonemap.h"
 #include "engine/shader/output.h"
 #include "engine/shader/wgsl.h"
+#include "engine/shader/graph/serialized.h"
+#include "engine/shader/graph/post_effects.h"
+#include "engine/shader/graph/render_texture_pass.h"
 
 #include <cstdio>
+#include <algorithm>
+#include <stdexcept>
+#include <string>
 
 using namespace tn::engine::shader;
 
@@ -11,6 +17,42 @@ namespace {
 
 // Every operator builds well-typed IR and emits WGSL; the GPU validates it in the shader suites.
 void operators() {
+    bool refused = false;
+    try { buildOutput(ToneMapping::Custom, true); }
+    catch (const std::runtime_error& error) { refused = std::string(error.what()).find("TN_NATIVE_CUSTOM_TONEMAPPING_MISSING") != std::string::npos; }
+    CHECK(refused);
+    namespace g = tn::engine::shader::graph;
+    const auto input = g::varying("tnToneMappingColor", Type::vec(3));
+    const auto exposure = g::uniform("toneMappingExposure", Type::f32());
+    const auto gain = g::uniform("customGain", Type::f32(), {0.5});
+    const auto curve = g::mul(gain, g::clamp(g::log2(g::add(g::mul(input, exposure), g::float_(1))), g::float_(0), g::float_(1)));
+    for (bool srgb : {false, true}) {
+        const auto custom = buildOutput(ToneMapping::Custom, srgb, nullptr, true, curve);
+        const auto emitted = WgslEmitter::emit(custom.fragment);
+        CHECK(custom.fragment.ok() && emitted.ok());
+        CHECK(emitted.code.find("log2(") != std::string::npos);
+        CHECK(emitted.code.find("tnToneMappingColor") == std::string::npos);
+        CHECK(emitted.code.find("toneMappingExposure") != std::string::npos);
+        CHECK((emitted.code.find("pow(") != std::string::npos) == srgb);
+        if (srgb) CHECK(emitted.code.find("log2(") < emitted.code.find("pow("));
+        // Explicit renderOutput(color, 5) in a post graph gets the same registered curve.
+        auto authored = std::make_shared<g::NodeData>();
+        authored->kind = g::Kind::RenderOutput; authored->bits = 6;
+        authored->args = {g::texture("scene", g::uv())};
+        const auto post = g::serializedPost(authored, ToneMapping::Custom, srgb, curve);
+        const auto programs = buildOutput(ToneMapping::Custom, srgb, &post, false, curve);
+        CHECK(programs.fragment.ok() && WgslEmitter::emit(programs.fragment).ok());
+        auto rtt = std::make_shared<g::NodeData>();
+        rtt->kind = g::Kind::RenderTexture; rtt->name = "customRtt";
+        rtt->args = {authored, g::uv()};
+        const auto intermediate = g::renderTexturePass(rtt, ToneMapping::Custom, srgb, curve);
+        CHECK(intermediate.uniforms.at("customGain").at(0) == 0.5);
+        CHECK(std::find(intermediate.live.begin(), intermediate.live.end(), gain) != intermediate.live.end());
+        const auto smaa = g::effectNode(g::smaaEffect(authored));
+        const auto passes = g::postPasses(smaa, ToneMapping::Custom, srgb, curve);
+        CHECK(passes.front().uniforms.at("customGain").at(0) == 0.5);
+    }
+
     // RenderOutputNode must transform straight RGB and then premultiply in output space.
     for (bool srgb : {false, true}) {
         const auto output = buildOutput(ToneMapping::ACESFilmic, srgb);

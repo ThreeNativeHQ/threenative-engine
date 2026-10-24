@@ -3,6 +3,7 @@
 import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
+  copyFileSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -15,7 +16,7 @@ import {
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { delimiter, dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { SDL3_ANDROID_VERSION, stageAndroidAssets } from "../scripts/package-android.mjs";
 import { stageDesktopFiles } from "../scripts/package-desktop.mjs";
 import { prepareAndroidEmulator } from "../scripts/android-emulator.mjs";
@@ -173,6 +174,11 @@ function usage() {
   --target android-hardware       Run only with an explicitly selected physical device
   --project PATH                  Run the configured native entry of a scaffolded project
   --only-tests id,id               Run selected rows; every other row is blocked
+  --engine threejs|threenative     Web or desktop lane engine: upstream three (default; the legacy host on
+                                  desktop), or the owned C++ engine: the Wasm engine in Chromium on web,
+                                  the V8 engine player on desktop (THREENATIVE_ENGINE_PLAYER, else
+                                  build/tn-engine-ui). With --reference on web, the row is compared
+                                  with that upstream three capture.
   --reference DIR                  Browser capture directory for native comparison
   --device SERIAL                  Android emulator/device serial
   --out PATH                       Report file or artifact directory
@@ -666,6 +672,7 @@ export async function bundle(entry, out, result, side, esbuildBin, dryRun, forma
 function contentType(path) {
   if (path.endsWith(".js")) return "text/javascript";
   if (path.endsWith(".html")) return "text/html";
+  if (path.endsWith(".wasm")) return "application/wasm";
   if (path.endsWith(".glb")) return "model/gltf-binary";
   if (path.endsWith(".gltf")) return "model/gltf+json";
   if (path.endsWith(".bin")) return "application/octet-stream";
@@ -1083,10 +1090,15 @@ function writeNativeScreenshotRequest(mailboxRoot, screenshot) {
   renameSync(temporary, request);
 }
 
-async function waitForNativeMarker(child, output, marker, timeoutMs) {
+export async function waitForNativeMarker(child, output, marker, timeoutMs, failMarker = null) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() <= deadline) {
     if (output.stdout.includes(marker) || output.stderr.includes(marker)) return;
+    if (failMarker !== null) {
+      const text = `${output.stdout}\n${output.stderr}`;
+      const at = text.indexOf(failMarker);
+      if (at !== -1) throw new Error(`Native scene failed before ${marker}: ${text.slice(at, at + 1500)}`);
+    }
     if (output.error) throw output.error;
     if (child.exitCode !== null || child.signalCode !== null) {
       throw new Error(
@@ -1096,6 +1108,24 @@ async function waitForNativeMarker(child, output, marker, timeoutMs) {
     await wait(25);
   }
   throw new Error(`Native process timed out waiting for ${marker}.`);
+}
+
+async function attachNativeWallClock(child, mailboxRoot, timeoutMs) {
+  const request = join(mailboxRoot, "tn-playtest-request.json");
+  const response = join(mailboxRoot, "tn-playtest-response.json");
+  writeFileSync(`${request}.tmp`, JSON.stringify({ id: "clock", method: "_setClockMode", argument: "wall-clock" }), "utf8");
+  renameSync(`${request}.tmp`, request);
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() <= deadline) {
+    const answer = existsSync(response) ? readFileSync(response, "utf8") : "";
+    if (answer.includes('"id":"clock"')) {
+      if (answer.includes('"error"')) throw new Error(`TN_PARITY_OWNED_CLOCK: ${answer}`);
+      return;
+    }
+    if (child.exitCode !== null || child.signalCode !== null) throw new Error("Native process exited before it took the wall clock");
+    await wait(25);
+  }
+  throw new Error("TN_PARITY_OWNED_CLOCK: the player did not answer _setClockMode");
 }
 
 async function waitForNativeScreenshot(child, outputPath, timeoutMs) {
@@ -1191,6 +1221,167 @@ async function captureNativeTemporalFrames(
       gpuValidationErrors,
       stderr: output.stderr,
       stdout: output.stdout,
+    };
+  } finally {
+    await stopNativeCaptureProcess(child);
+    rmSync(mailboxRoot, { recursive: true, force: true });
+  }
+}
+
+/**
+ * The engine a web or desktop lane runs. `threejs` (the default of this tool) runs upstream three:
+ * in Chromium on web, on the legacy `mystral` host on desktop. `threenative` runs the owned C++
+ * engine, the way a game with the default `engine` setting runs (NATIVE-ENGINE-DECISION.md,
+ * 2026-10-15): the Wasm engine in Chromium on web, the V8 engine player on desktop.
+ */
+export function desktopEngine(argv) {
+  const engine = valueAfter(argv, "--engine") ?? "threejs";
+  if (!["threejs", "threenative"].includes(engine)) {
+    throw new Error(`--engine must be threejs or threenative; received ${engine}`);
+  }
+  return engine;
+}
+
+export function ownedEngineWasmPath() {
+  return join(runtimeRoot, "build/web/tn-native-engine-web.mjs");
+}
+
+/**
+ * The web build of a row on the owned engine: esbuild with the web-engine plugin that routes every
+ * `three`, `three/webgpu` and `three/tsl` import to the Wasm engine, as a game's Vite build does. The
+ * plugin is TypeScript source of create-threenative, so it is bundled to a module first (Node 20
+ * cannot import TypeScript). The Wasm file goes beside the bundle, where the engine module looks.
+ */
+export async function bundleOwnedWeb(entry, outfile, wasmEntry = ownedEngineWasmPath()) {
+  const { build } = await import("esbuild");
+  if (!existsSync(wasmEntry)) {
+    throw new Error(`TN_WASM_ENGINE_MISSING: build tn-native-engine-web; ${wasmEntry} does not exist.`);
+  }
+  const pluginDir = mkdtempSync(join(tmpdir(), "threenative-parity-web-engine-"));
+  try {
+    const source = resolve(runtimeRoot, "../create-threenative/src/web-engine.ts");
+    const compiled = join(pluginDir, "web-engine.mjs");
+    await build({
+      entryPoints: [source],
+      outfile: compiled,
+      bundle: true,
+      format: "esm",
+      platform: "node",
+      packages: "external",
+      logLevel: "silent",
+      // The plugin finds its sibling modules relative to its own source file.
+      define: { "import.meta.url": JSON.stringify(pathToFileURL(source).href) },
+    });
+    const { createWebEnginePlugin } = await import(pathToFileURL(compiled).href);
+    const hooks = createWebEnginePlugin({ root: runtimeRoot, engine: "threenative", wasm: wasmEntry });
+    hooks.configResolved({ root: runtimeRoot });
+    await build({
+      absWorkingDir: runtimeRoot,
+      entryPoints: [entry],
+      outfile,
+      bundle: true,
+      format: "esm",
+      platform: "browser",
+      sourcemap: true,
+      logLevel: "silent",
+      plugins: [
+        {
+          name: "threenative-web-engine",
+          setup(builder) {
+            builder.onResolve({ filter: /.*/ }, (args) => {
+              if (args.kind === "entry-point" || args.path.startsWith(".") || isAbsolute(args.path))
+                return undefined;
+              const id = hooks.resolveId(args.path);
+              if (!id) return undefined;
+              return id.startsWith("\0") ? { path: id, namespace: "web-engine" } : { path: id };
+            });
+            builder.onLoad({ filter: /.*/, namespace: "web-engine" }, async (args) => ({
+              contents: await hooks.load(args.path),
+              loader: "js",
+              resolveDir: runtimeRoot,
+            }));
+          },
+        },
+      ],
+    });
+  } finally {
+    rmSync(pluginDir, { recursive: true, force: true });
+  }
+  copyFileSync(wasmEntry.replace(/\.mjs$/u, ".wasm"), join(dirname(outfile), "tn-native-engine-web.wasm"));
+}
+
+export function ownedEnginePlayerPath(env = process.env, platform = process.platform) {
+  if (env.THREENATIVE_ENGINE_PLAYER) return resolve(env.THREENATIVE_ENGINE_PLAYER);
+  const filename = `tn-native-engine-player-v8${platform === "win32" ? ".exe" : ""}`;
+  return join(runtimeRoot, "build", "tn-engine-ui", filename);
+}
+
+/**
+ * One row on the owned engine: the scene is bundled against the engine's own `three` (the bundler
+ * refuses an unbound symbol and any upstream three file), the V8 engine player runs it, and the
+ * screenshot comes through the playtest mailbox once the scene announced itself.
+ */
+async function runDesktopOwned(test, bundlePath, result, player, captureRoot) {
+  if (!player || !existsSync(player)) {
+    result.status = "blocked";
+    result.blockedReason = `TN_PARITY_ENGINE_PLAYER_MISSING: the owned engine player does not exist at ${player}. Build tn-native-engine-player-v8 (packages/runtime-native/AGENTS.md) or set THREENATIVE_ENGINE_PLAYER.`;
+    return;
+  }
+  const screenshot = join(captureRoot, `${test.id}.png`);
+  const mailboxRoot = mkdtempSync(join(tmpdir(), "threenative-parity-owned-"));
+  const output = { error: null, stderr: "", stdout: "" };
+  rmSync(screenshot, { force: true });
+  const child = spawn(player, [bundlePath, "--width", "1280", "--height", "720"], {
+    cwd: runtimeRoot,
+    env: {
+      ...process.env,
+      ...(process.platform === "linux" ? { SDL_VIDEODRIVER: "x11" } : {}),
+      TN_PLAYTEST_MAILBOX_ROOT: mailboxRoot,
+    },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  child.stdout?.on("data", (chunk) => { output.stdout += String(chunk); });
+  child.stderr?.on("data", (chunk) => { output.stderr += String(chunk); });
+  child.on("error", (error) => { output.error = error; });
+  try {
+    await waitForNativeMarker(
+      child,
+      output,
+      `TN_CONFORMANCE_READY:${test.id}`,
+      Number(process.env.TN_PARITY_OWNED_READY_MS ?? 120_000),
+      "[ThreeNative conformance] failed:",
+    );
+    // A player with a mailbox holds its loop until the runner's first request, then steps only when
+    // asked, so the settle below drew no frame and the capture was the first one (a post chain whose
+    // passes fill on later frames read as missing). Attach on the wall clock, as a game runs.
+    await attachNativeWallClock(child, mailboxRoot, 30_000);
+    // Frames the scene needs to settle: the legacy lane waits for frame `nativeFrames` (300).
+    await wait(Number(process.env.TN_PARITY_OWNED_SETTLE_MS ?? 3_000));
+    writeNativeScreenshotRequest(mailboxRoot, screenshot);
+    await waitForNativeScreenshot(child, screenshot, 60_000);
+    const combined = `${output.stdout}\n${output.stderr}`;
+    const gpuErrors = validationErrors(combined);
+    result.gpuValidationErrors.push(...gpuErrors);
+    const inspection = inspectCapture(readFileSync(screenshot));
+    result.native = {
+      completed: gpuErrors.length === 0 && !/TypeError|ReferenceError|SyntaxError/iu.test(combined),
+      engine: "threenative",
+      exitCode: null,
+      screenshot,
+      stdout: output.stdout.slice(-4000),
+      stderr: output.stderr.slice(-4000),
+      uniform: inspection.uniform,
+    };
+    if (!result.native.completed) result.status = "fail";
+  } catch (error) {
+    result.status = "fail";
+    result.native = {
+      completed: false,
+      engine: "threenative",
+      error: error instanceof Error ? error.message : String(error),
+      stdout: output.stdout.slice(-4000),
+      stderr: output.stderr.slice(-4000),
+      uniform: null,
     };
   } finally {
     await stopNativeCaptureProcess(child);
@@ -1886,7 +2077,9 @@ async function runAndroid(
     if (!/Status:\s*ok/iu.test(String(launch.stdout)))
       throw new Error(`Android activity failed to start: ${launch.stdout}`);
     const marker = `TN_CONFORMANCE_READY:${test.id}`;
-    const timeoutAt = Date.now() + Number(process.env.TN_ANDROID_TIMEOUT_MS || 45_000);
+    // A case whose first frame compiles heavy compute on SwiftShader names its own floor.
+    const timeoutAt =
+      Date.now() + Math.max(Number(test.androidReadyTimeoutMs || 0), Number(process.env.TN_ANDROID_TIMEOUT_MS || 45_000));
     let pid = null;
     let appLog = "";
     while (Date.now() <= timeoutAt) {
@@ -2449,6 +2642,29 @@ export function missingHardwareReferenceBlocker(test, reference, exists = exists
   return `Missing browser reference capture: ${reference}`;
 }
 
+/**
+ * The owned engine on web is judged against the upstream-three capture of the same row (`--reference`),
+ * the same rule the desktop lane applies to its native capture. Without a reference the row only runs.
+ */
+function applyUpstreamReference(test, result, referenceArg) {
+  if (result.status !== "pass" || !referenceArg) return;
+  const reference = referencePath(referenceArg, test.id, test);
+  if (!existsSync(reference)) {
+    result.status = "blocked";
+    result.blockedReason = `Missing upstream three reference capture: ${reference}`;
+    return;
+  }
+  result.browser.engine = "threenative";
+  result.metrics = compareCaptures(readFileSync(reference), readFileSync(result.browser.screenshot));
+  if (
+    result.metrics.pixelMismatchRatio > test.tolerance.pixelMismatchRatio ||
+    result.metrics.perceptualDeltaE > test.tolerance.perceptualDeltaE
+  ) {
+    result.status = "fail";
+    result.failureReason = "Capture metrics exceeded the registry tolerance.";
+  }
+}
+
 function applyReferenceAndMetrics(test, result, reference) {
   if (result.status !== "pass") return;
   if (!existsSync(reference)) {
@@ -2653,9 +2869,17 @@ async function main(argv = process.argv.slice(2)) {
     const unknown = selectedIds.filter((id) => !known.has(id));
     if (unknown.length > 0) throw new Error(`Unknown --only-tests id(s): ${unknown.join(", ")}`);
   }
-  const runtime = configuredRuntime() || defaultDesktopRuntimePath();
+  const engine = desktopEngine(argv);
+  const owned = engine === "threenative" && target === "desktop";
+  if (engine === "threenative" && !["web", "desktop"].includes(target)) {
+    throw new Error("--engine threenative selects the web or desktop lane's engine; use --target web|desktop");
+  }
+  const ownedWeb = engine === "threenative" && target === "web";
+  const runtime = owned
+    ? ownedEnginePlayerPath()
+    : configuredRuntime() || defaultDesktopRuntimePath();
   const desktopPreparation =
-    !dryRun && (target === "desktop" || target === "all")
+    !dryRun && !owned && (target === "desktop" || target === "all")
       ? prepareDesktopRuntime(runtime)
       : { runtime, blockedReason: null };
   const desktopRuntimeBlocker = desktopPreparation.blockedReason;
@@ -2663,7 +2887,10 @@ async function main(argv = process.argv.slice(2)) {
   const { reportPath, captureRoot } = outputLayout(outArg, target);
   const artifactRoot = join(runtimeRoot, "artifacts/conformance");
   const entryRoot = join(artifactRoot, "entries");
-  const bundleRoot = join(artifactRoot, `${target}-bundles`);
+  const bundleRoot = join(
+    artifactRoot,
+    engine === "threenative" ? `${target}-owned-bundles` : `${target}-bundles`,
+  );
   for (const path of [entryRoot, bundleRoot, captureRoot]) mkdirSync(path, { recursive: true });
   const device = valueAfter(argv, "--device");
   const provenance = buildProvenance({
@@ -2774,6 +3001,38 @@ async function main(argv = process.argv.slice(2)) {
             result.nativeBundle = relative(runtimeRoot, nativeBundle).replaceAll("\\", "/");
           }
           bundled = browserBundled && nativeBundled;
+        } else if (ownedWeb && !dryRun) {
+          const entry = makeEntry(test, "browser", port, entryRoot);
+          bundlePath = join(bundleRoot, `${test.id}.js`);
+          try {
+            await bundleOwnedWeb(entry, bundlePath);
+            bundled = true;
+          } catch (error) {
+            result.status = "fail";
+            result.browser = {
+              completed: false,
+              engine,
+              phase: "bundle",
+              error: error instanceof Error ? error.message : String(error),
+            };
+          }
+        } else if (owned && !dryRun) {
+          const entry = makeEntry(test, "native", port, entryRoot);
+          bundlePath = join(bundleRoot, `${test.id}.js`);
+          const { bundleNativeEngine } = await import("../scripts/bundle-native-engine.mjs");
+          try {
+            await bundleNativeEngine({ entry, outfile: bundlePath, boot: false, host: true });
+            bundled = true;
+          } catch (error) {
+            result.status = "fail";
+            result.native = {
+              completed: false,
+              engine,
+              phase: "bundle",
+              error: error instanceof Error ? error.message : String(error),
+              uniform: null,
+            };
+          }
         } else {
           const entryTarget = target === "web" ? "browser" : "native";
           const entry = makeEntry(test, entryTarget, port, entryRoot);
@@ -2791,6 +3050,14 @@ async function main(argv = process.argv.slice(2)) {
         }
         if (!dryRun && bundled && target === "web") {
           await runBrowser(test, bundlePath, result, port, broker, captureRoot);
+          if (ownedWeb) applyUpstreamReference(test, result, valueAfter(argv, "--reference"));
+        } else if (!dryRun && bundled && owned) {
+          await runDesktopOwned(test, bundlePath, result, runtime, captureRoot);
+          applyReferenceAndMetrics(
+            test,
+            result,
+            referencePath(valueAfter(argv, "--reference"), test.id, test),
+          );
         } else if (!dryRun && bundled && target === "desktop") {
           await runDesktop(
             test,
