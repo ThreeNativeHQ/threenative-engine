@@ -6,6 +6,8 @@
 export type Checkpoint = "clearing" | "hollow-entry" | "cave-exit" | "warden-door";
 
 export type GameState = {
+  /** True once startup is ready and the loading cover lifts; the HUD stays hidden until then. */
+  loaded?: boolean;
   /** Hearts left, in hearts: 2.5 is two and a half. One hit costs a half-heart. */
   hearts: number;
   /** Heart capacity, in hearts. The heart vessel adds one. */
