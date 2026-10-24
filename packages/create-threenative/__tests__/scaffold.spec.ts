@@ -289,12 +289,12 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // boot-failure text both engines now show, so only puzzle's tree moves.
   "action-rpg": "1cae629196c039ce4aed7c37529f3a3e5eebcffbed4264a22bffe3c6bd99332b",
   minimal: "a74f1c8861de355347e53d917b7ed9279cdd19e26ac5be7639160ac0b5d33ace",
-  platformer: "cdeabe05fa66094152d669b89aa819e41360a6d50a7ea9af6ffee1efd28fb589",
+  platformer: "a5ca004eb02355f703b30498a30d016bf43ea007ed512be428ffdb30cbae6ffc",
   puzzle: "20dce7f3bbca3c02cd183644faf5efdfc813d1d1d3800ff6e63d35f68e8b06d3",
   racing: "3d9510c878663278c2486b497860c21bee0adaac19d9e20b0dce8c47306dca91",
   rain: "067261c50b3e083d8679a1d63a27f5d02dcd5aa142958c0324608d4078bf99f9",
   rts: "e2b7213272bd670f9c937a1209c7275fe4347f02a6263809de8e3c00301a1d48",
-  runner: "b371996313ddf7911731686aa9898d0ce083a43d491b0c24a969ad333561c1bf",
+  runner: "b57661701fa91d7ad8dcebdee64b197496a48171698c730d680c38c0ebe8d434",
   // Finite-height readiness plus hull, sail, and buoy interpolation from the current swell pose.
   sailing: "86cb9b9056c9fcc0ff2310b1d19c6389cc2698da56c8a3cece1e1869868be957",
   shooter: "483e29be49e00cc01e8ca6ca25391f8ab64c4f3b69cd2ac450cfd96cea95128f",
@@ -303,7 +303,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-10-16: starter's adaptiveQuality split its policy resolution into qualityPolicy.ts
   // to stay under the 200-line render-file cap; only starter's tree moves.
   // Recomputed 2026-10-23: the native render-chain scenario expects the Unreal finishing chain (grade and grain off).
-  starter: "75ad264e72ff730e817ff772f29eda70f789c12f2f9b5827c5f880cfbc5c7d60",
+  starter: "b1588080a086094954f2d259e32bdd0eda919590024bd91ca095102100724ddd",
   "tower-defense": "ca714d88435b0bf4df00315200a0879c44ffae8cb06a8a5f6747a4acb346b8c6",
 };
 

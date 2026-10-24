@@ -69,6 +69,7 @@ therefore keep the previous clip's pose, and `boneContact` reports in metres whe
 
 ## The arena is a test arena, and its look is a grid
 `src/render/arena.ts` owns the ground, the four walls, one pillar, and `platform()`, the single builder both ends of the course are cut from. A platform is a light metre-grid plate over a dark-grid body down to the ground: two meshes, so the player collides with exactly the triangles they can see, and the sides read as structure while the walking surface reads as floor. The ground has no collider — that is the pit under the gap, and why falling costs a life instead of landing on scenery. Move a platform and move its support surface in `Play.ts` and `Goal.ts` with it, or grounding will answer for a surface that is no longer there.
+The sun's shadow camera covers the diagonal of `ARENA` down to `GROUND_Y`; changing those dimensions updates coverage automatically.
 `materials.ts` is the whole look: two greys and one saturated colour. Light grid where the player walks, dark grid on sides and structure, and the single `accent` hue reserved for the crate, the pickup and the flagpole — what you can touch. `worldGridUVs` makes one grid tile one metre on every face of every prop, so call it after a geometry is placed and before it is given to a mesh.
 ## Quality and proof
 

@@ -55,11 +55,9 @@ const VENDORED_RENDER_FILES = [
  */
 const LOOK_OVERRIDES: Readonly<Record<string, string>> = {
   "action-rpg": "Retain the develop look until this kit has a fresh PRD-723 IMPROVEMENT verdict.",
-  platformer: "Retain the develop look until this kit has a fresh PRD-723 IMPROVEMENT verdict.",
   puzzle: "Retain the develop look until this kit has a fresh PRD-723 IMPROVEMENT verdict.",
   rain: "Retain the develop look until this kit has a fresh PRD-723 IMPROVEMENT verdict.",
   rts: "Retain the develop look until this kit has a fresh PRD-723 IMPROVEMENT verdict.",
-  runner: "Retain the develop look until this kit has a fresh PRD-723 IMPROVEMENT verdict.",
   sailing: "Retain the develop look until this kit has a fresh PRD-723 IMPROVEMENT verdict.",
   shooter: "Retain the develop look until this kit has a fresh PRD-723 IMPROVEMENT verdict.",
   snow: "Retain the develop look until this kit has a fresh PRD-723 IMPROVEMENT verdict.",

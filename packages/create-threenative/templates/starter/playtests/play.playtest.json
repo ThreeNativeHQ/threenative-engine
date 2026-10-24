@@ -65,6 +65,26 @@
           "tier": "low"
         }
       }
-    }
+    },
+    "tone": [
+      {
+        "region": {
+          "x": 900,
+          "y": 460,
+          "width": 60,
+          "height": 100
+        },
+        "compare": {
+          "region": {
+            "x": 1100,
+            "y": 460,
+            "width": 60,
+            "height": 100
+          },
+          "metric": "mean",
+          "minDelta": 15
+        }
+      }
+    ]
   }
 }
