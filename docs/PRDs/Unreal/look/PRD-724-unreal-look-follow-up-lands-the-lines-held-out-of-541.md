@@ -14,7 +14,7 @@ prd_contract: v1
 
 Draft PR #541 (`feat/unreal-look-epic`) froze at f5d469841. Some lanes did not merge into it. Each one has a dated park note in the Decisions section of its own PRD. This PRD holds the order in which those lines land after #541 reaches develop.
 
-PRD-722 (starter and minimal port) and PRD-723 (kit migration plan) exist only on lane branches (`lane/sunwarm`, `lane/migrate-prd`). They are not on the epic. This PRD does not copy their text.
+PRD-722 (starter and minimal port) exists only on `lane/sunwarm`. PRD-723 (kit migration) is on develop since 2026-10-23, re-planned on the core defaults of #541; it replaces the `lane/migrate-prd` draft. This PRD does not copy their text.
 
 | Line | Commit | PRD with the park note | State |
 | --- | --- | --- | --- |
