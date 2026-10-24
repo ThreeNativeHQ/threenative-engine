@@ -191,6 +191,7 @@ export function dustEffect(): IEffectOptions {
 /**
  * One drift-spark colour: additive stars thrown off the rear wheels, falling fast. The colours run
  * well above 1 because auto exposure meters a sunlit course: at 1.5 they vanish against the road.
+ * Keep one channel low: overlapping additive stars sum, and a near-white birth colour reads white.
  */
 function spark(birth: readonly [number, number, number], death: readonly [number, number, number]) {
   return emitter({
@@ -207,11 +208,11 @@ function spark(birth: readonly [number, number, number], death: readonly [number
 }
 
 /** Stage 1: the slide is charging. White-blue, like MK64's first spark. */
-export const sparkWhiteEffect = (): IEffectOptions => spark([5, 5.4, 6], [2, 2.6, 4.2]);
+export const sparkWhiteEffect = (): IEffectOptions => spark([2.4, 3, 5], [1, 1.6, 4]);
 /** Stage 2: a release now fires the mini-turbo. Yellow. */
-export const sparkYellowEffect = (): IEffectOptions => spark([6, 5, 1.2], [4, 2.2, 0.15]);
+export const sparkYellowEffect = (): IEffectOptions => spark([4, 3, 0.3], [3, 1.6, 0.05]);
 /** Stage 3: the top of the charge. Orange-red. */
-export const sparkOrangeEffect = (): IEffectOptions => spark([6.5, 2.6, 0.6], [4, 0.6, 0.06]);
+export const sparkOrangeEffect = (): IEffectOptions => spark([4.5, 1.4, 0.15], [3, 0.4, 0.04]);
 
 /** The exhaust flame on a boost: hot yellow to red, short and bright, rising a little. */
 export function flameEffect(): IEffectOptions {

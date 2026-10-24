@@ -32,8 +32,8 @@ export type GameCtx = ICtx<GameState>;
 
 /** Seconds from the scene's start to GO: "READY", then the three lamps. */
 const GO_AT = RACE.ready + RACE.light * RACE.lights;
-/** Karts closer than this bump apart, metres between centres. */
-const BUMP = 1.6;
+/** A kart's bump footprint, metres: an ellipse this long and this wide around its centre (the model is 2.15 m by 1.4 m). */
+const BUMP = { length: 2.2, width: 1.5 } as const;
 /** Effects are drawn for karts within this many metres of the camera. */
 const EFFECT_RANGE = 90;
 const POOL = { bananas: ITEM_FEEL.maxBananas, shells: 6 } as const;
@@ -540,14 +540,21 @@ export class Race extends Scene<GameState> {
           if (ka === undefined || kb === undefined) continue;
           const dx = kb.x - ka.x;
           const dz = kb.z - ka.z;
-          const d2 = dx * dx + dz * dz;
-          if (d2 >= BUMP * BUMP || d2 < 1e-6 || Math.abs(ka.y - kb.y) > 1.5) continue;
-          const d = Math.sqrt(d2);
-          const push = (BUMP - d) / 2;
-          ka.x -= (dx / d) * push;
-          ka.z -= (dz / d) * push;
-          kb.x += (dx / d) * push;
-          kb.z += (dz / d) * push;
+          if (Math.abs(ka.y - kb.y) > 1.5) continue;
+          // The gap in kart a's frame, scaled so the footprint is the unit circle.
+          const fx = -Math.sin(ka.yaw);
+          const fz = -Math.cos(ka.yaw);
+          const e = Math.hypot(
+            (dx * fx + dz * fz) / BUMP.length,
+            (dx * -fz + dz * fx) / BUMP.width,
+          );
+          if (e >= 1 || e < 1e-6) continue;
+          // Scale the gap by 1/e to put b on a's footprint, half the move each.
+          const push = (1 / e - 1) / 2;
+          ka.x -= dx * push;
+          ka.z -= dz * push;
+          kb.x += dx * push;
+          kb.z += dz * push;
           // The kart behind gives a little speed to the one ahead.
           const share = (ka.speed - kb.speed) * 0.15;
           ka.speed -= share;
@@ -659,7 +666,7 @@ export class Race extends Scene<GameState> {
                 at,
               );
             else burst("drift", at);
-            skids.lay(at.x, at.y, at.z, kart.yaw);
+            skids.lay(at.x, at.y, at.z, kart.velocityYaw);
           }
         }
         if (tick && (kart.boostTicks > 0 || kart.miniTurboTicks > 0)) {
@@ -676,7 +683,7 @@ export class Race extends Scene<GameState> {
           burst("wall", { x: kart.x, y: kart.y + 0.5, z: kart.z });
         }
       }
-      boxes.update(elapsed, (i) => (boxReady[i] ?? 0) <= elapsed, dt);
+      boxes.update(elapsed, (i) => (boxReady[i] ?? 0) <= elapsed, dt, camera.position);
       rig.update(player.kart, dt);
       lighting.follow(new Vector3(player.kart.x, player.kart.y, player.kart.z));
 

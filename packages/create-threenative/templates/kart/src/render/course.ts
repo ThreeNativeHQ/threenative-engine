@@ -325,11 +325,17 @@ export function buildCourseView(course: ICourse, seed = 734): ICourseView {
     if (deck[i] !== 1) continue;
     const yaw = Math.atan2(-(tx[i] ?? 0), -(tz[i] ?? 0));
     course.pointAt(i, 0, p);
+    // Each 1 m slab pitches with the road, as the walls do: a level slab pokes its ends up through
+    // a sloped deck and stripes the ramp.
+    dummy.position.set(p.x, p.y - 0.51, p.z);
+    dummy.rotation.set(Math.atan(course.slope[i] ?? 0), yaw, 0, "YXZ");
+    dummy.scale.set(1, 1, 1);
+    dummy.updateMatrix();
     solids.push(
       paint(
         new BoxGeometry(2 * PROFILE.rail + 0.6, 0.9, 1.02),
         C.bridge,
-        at(p.x, p.y - 0.47, p.z, 0, yaw),
+        dummy.matrix.clone(),
         0.3,
       ),
     );
@@ -405,18 +411,23 @@ export function buildCourseView(course: ICourse, seed = 734): ICourseView {
   }
 
   // ---- Boost pads: three chevrons each, glowing ---------------------------------------------
+  // Each flat piece is pitched to the road's slope, or on a hill one end sinks and the other floats.
+  const pitch = (i: number): number => Math.atan(course.slope[i] ?? 0);
   const chevrons: BufferGeometry[] = [];
   for (const pad of course.pads) {
+    const yaw = Math.atan2(-(tx[pad.index] ?? 0), -(tz[pad.index] ?? 0));
     for (let c = 0; c < 3; c += 1) {
-      const i = pad.index - 1 + c * 1.2;
+      const i = Math.round(pad.index - 1 + c * 1.2);
       for (const side of [-1, 1]) {
-        course.pointAt(Math.round(i), pad.lateral + side * 0.75, p);
-        const yaw = Math.atan2(-(tx[pad.index] ?? 0), -(tz[pad.index] ?? 0));
+        course.pointAt(i, pad.lateral + side * 0.75, p);
         chevrons.push(
           paint(
-            new PlaneGeometry(1.7, 0.55).rotateX(-Math.PI / 2),
+            new PlaneGeometry(1.7, 0.55)
+              .rotateX(-Math.PI / 2)
+              .rotateY(side * 0.6)
+              .rotateX(pitch(i)),
             c === 1 ? C.padGlow : C.pad,
-            at(p.x, p.y + 0.03, p.z, 0, yaw + side * 0.6),
+            at(p.x, p.y + 0.06, p.z, 0, yaw),
           ),
         );
       }
@@ -424,9 +435,9 @@ export function buildCourseView(course: ICourse, seed = 734): ICourseView {
     course.pointAt(pad.index, pad.lateral, p);
     chevrons.push(
       paint(
-        new PlaneGeometry(3.4, 4.2).rotateX(-Math.PI / 2),
+        new PlaneGeometry(3.4, 4.2).rotateX(-Math.PI / 2).rotateX(pitch(pad.index)),
         C.asphaltDark,
-        at(p.x, p.y + 0.02, p.z, 0, Math.atan2(-(tx[pad.index] ?? 0), -(tz[pad.index] ?? 0))),
+        at(p.x, p.y + 0.04, p.z, 0, yaw),
       ),
     );
   }

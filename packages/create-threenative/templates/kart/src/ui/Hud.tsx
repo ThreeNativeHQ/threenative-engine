@@ -126,7 +126,7 @@ export function Hud() {
         </svg>
       ) : null}
       {countdown !== "" ? (
-        <div className="absolute left-1/2 top-1/3 -translate-x-1/2 text-8xl italic text-lume">
+        <div className="absolute left-1/2 top-1/3 -translate-x-1/2 text-9xl italic text-lume">
           {countdown}
         </div>
       ) : null}

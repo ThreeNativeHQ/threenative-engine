@@ -133,8 +133,16 @@ export class ItemBoxes {
     this.update(0, () => true);
   }
 
-  /** Spins and bobs the boxes; a box that is not `ready` shrinks away, then grows back. */
-  update(time: number, ready: (box: number) => boolean, dt = 1): void {
+  /**
+   * Spins and bobs the boxes; a box that is not `ready` shrinks away, then grows back. A box within
+   * 4.5 m of `eye` (the camera) shrinks too, so the chase camera never flies through one.
+   */
+  update(
+    time: number,
+    ready: (box: number) => boolean,
+    dt = 1,
+    eye?: { x: number; y: number; z: number },
+  ): void {
     const d = this.#dummy;
     this.spots.forEach((spot, i) => {
       const target = ready(i) ? 1 : 0;
@@ -142,7 +150,8 @@ export class ItemBoxes {
       this.#scale[i] = scale;
       d.position.set(spot.x, spot.y + Math.sin(time * 2.2 + i) * 0.12, spot.z);
       d.rotation.set(0.5, time * 1.6 + i * 0.7, 0.6);
-      d.scale.setScalar(Math.max(1e-3, scale));
+      const near = eye ? Math.hypot(spot.x - eye.x, spot.y - eye.y, spot.z - eye.z) : 9;
+      d.scale.setScalar(Math.max(1e-3, scale * Math.min(1, Math.max(0, (near - 2.5) / 2))));
       d.updateMatrix();
       this.#shells.setMatrixAt(i, d.matrix);
       d.rotation.set(0, -time * 2.4, 0);

@@ -43,6 +43,12 @@ export const LIVERIES: readonly ILivery[] = [
   { body: 0xe9edf2, helmet: 0x1a1410, name: "Frost", suit: 0x5a6878, trim: 0x2f6fe0 },
 ];
 
+/** The drift-charge glow per stage: blue-white, yellow, orange, one channel kept low so it never reads white. */
+const SPARK_GLOW = [
+  [1.6, 2.2, 4.2],
+  [3.2, 2.2, 0.15],
+  [3.4, 0.9, 0.08],
+] as const;
 const WHEEL = { front: 0.27, rear: 0.31, track: 0.62, frontZ: -0.62, rearZ: 0.58 } as const;
 
 function wheel(radius: number, width: number) {
@@ -105,6 +111,8 @@ export class KartModel {
   readonly #fronts: readonly Group[];
   readonly #frontWheels: readonly Mesh[];
   readonly #flame: Mesh;
+  readonly #glows: readonly Mesh[];
+  readonly #glowMaterial: MeshBasicMaterial;
   #roll = 0;
   #spin = 0;
 
@@ -156,6 +164,24 @@ export class KartModel {
     this.#flame.position.set(0, 0.62, 1.02);
     this.#flame.visible = false;
     this.root.add(this.#flame);
+    // The spark charge glows on each rear tyre in the stage's colour, for the same reason: the
+    // thrown sparks fall behind and smear, so the colour the player reads rides on the kart.
+    this.#glowMaterial = new MeshBasicMaterial({
+      blending: AdditiveBlending,
+      depthWrite: false,
+      transparent: true,
+    });
+    const star = merge([
+      new SphereGeometry(0.09, 8, 6),
+      ...[0, 1, 2, 3].map((r) => new BoxGeometry(0.62, 0.05, 0.05).rotateZ((r * Math.PI) / 4)),
+    ]);
+    this.#glows = [-1, 1].map((side) => {
+      const glow = new Mesh(star, this.#glowMaterial);
+      glow.position.set(side * (WHEEL.track + 0.1), 0.16, WHEEL.rearZ + 0.34);
+      glow.visible = false;
+      this.root.add(glow);
+      return glow;
+    });
   }
 
   /** Follows the kart: place, heading, the road's pitch, a lean out of a drift, the hits. */
@@ -179,6 +205,14 @@ export class KartModel {
     const boosting = kart.boostTicks > 0 || kart.miniTurboTicks > 0;
     this.#flame.visible = boosting;
     if (boosting) this.#flame.scale.set(1, 1, 0.75 + Math.abs(Math.sin(this.#spin * 7)) * 0.5);
+    const charge = kart.drifting && kart.grounded ? kart.driftStage : 0;
+    const tint = SPARK_GLOW[charge - 1];
+    if (tint !== undefined) this.#glowMaterial.color.setRGB(tint[0], tint[1], tint[2]);
+    for (const [g, glow] of this.#glows.entries()) {
+      glow.visible = charge > 0;
+      glow.rotation.z = this.#spin * (g === 0 ? 0.9 : -0.9);
+      glow.scale.setScalar(0.8 + Math.abs(Math.sin(this.#spin * 5 + g)) * 0.4 + charge * 0.1);
+    }
     this.#spin += (kart.speed * dt) / WHEEL.rear;
     this.#rear.rotation.x = -this.#spin;
     for (const pivot of this.#fronts) pivot.rotation.y = -steer * 0.45;

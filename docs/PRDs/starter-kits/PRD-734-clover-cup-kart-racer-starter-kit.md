@@ -183,6 +183,13 @@ gates every kit must pass. Each playtest runs on a project scaffolded from `--te
   absorbs; the walls close the course. The laps playtest proves order and direction instead.
 - 2026-10-24 (agent): the countdown lights last 1 s each. MK64's grand-prix pre-roll of 240 object
   ticks (`mk64: src/code_8006E9C0.c:443`) is 8 s, too long for a starter kit and its playtests.
+- 2026-10-24 (agent, judge round 1): the drift-charge colour also rides on the kart as a glowing
+  star at each rear tyre, and the boost flame is a mesh. Thrown particles fall behind at racing
+  speed and the temporal anti-aliasing smears them, so they alone read as white puffs.
+- 2026-10-24 (agent, judge round 1): karts bump on an ellipse 2.2 m long and 1.5 m wide in the
+  first kart's frame. A 1.6 m circle let a 2.15 m kart sit inside the one ahead of it.
+- 2026-10-24 (agent, judge round 1): flat road decals (pad plates, chevrons, bridge slabs) pitch to
+  `course.slope`; flat on a hill, one end sank and the other floated as a dark quad.
 
 ## Execution Phases
 
