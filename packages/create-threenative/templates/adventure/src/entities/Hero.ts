@@ -1,4 +1,4 @@
-import { type ICtx, attachToBone } from "@threenative/core";
+import { AnimationPlayer, type ICtx, attachToBone } from "@threenative/core";
 import { CharacterBody3D, CollisionShape3D, type IPhysicsContext } from "@threenative/physics";
 import { Group, MathUtils, type Object3D, Vector2, Vector3 } from "three";
 import { type IHeroRig, createBlade, createHero } from "../render/hero.js";
@@ -102,6 +102,7 @@ export class Hero {
   readonly mesh = new Group();
   readonly rig: IHeroRig;
   readonly blade: Object3D;
+  readonly #anim: AnimationPlayer;
   readonly tags = ["player"];
   body: CharacterBody3D | undefined;
   state: HeroState = "idle";
@@ -138,6 +139,12 @@ export class Hero {
     this.rig = createHero();
     this.rig.group.position.y = -FOOT_OFFSET;
     this.mesh.add(this.rig.group);
+    // `strideRoot` is the body: the walk and run play at the rate the ground it covers asks for.
+    this.#anim = new AnimationPlayer({
+      clips: this.rig.clips,
+      root: this.rig.group,
+      strideRoot: this.mesh,
+    });
     this.blade = createBlade();
     this.blade.visible = false;
     // A weapon stays in the hand that holds it: the rig's `RightHand` bone carries the blade.
@@ -362,6 +369,7 @@ export class Hero {
     this.blade.visible = drawn;
     this.#flash = Math.max(0, this.#flash - dt * 4);
     this.rig.group.rotation.y = this.yaw;
+    this.#animate(dt, Math.hypot(body.velocity.x, body.velocity.z));
     this.rig.update({
       drawn,
       dt,
@@ -439,13 +447,51 @@ export class Hero {
       health: this.health,
       position: this.mesh.position.toArray(),
       state: this.state,
+      stride: this.#strideReport(),
       yawDegrees: Math.round(MathUtils.radToDeg(MathUtils.euclideanModulo(this.yaw, Math.PI * 2))),
     };
   }
 
   dispose(): void {
+    this.#anim.dispose();
     this.body?.dispose();
     this.mesh.removeFromParent();
+  }
+
+  /**
+   * On her feet she blends idle, walk and run by ground speed; every other action holds the neutral
+   * idle pose that `render/hero.ts` bends procedurally.
+   */
+  #animate(dt: number, speed: number): void {
+    const afoot =
+      this.state !== "roll" &&
+      this.state !== "hop" &&
+      this.state !== "hurt" &&
+      this.state !== "dead";
+    const moving = afoot ? MathUtils.smoothstep(speed, 0.2, 0.8) : 0;
+    const running = MathUtils.smoothstep(speed, 1, 2.4);
+    this.#anim.playWeighted(
+      [
+        { clip: "idle", weight: 1 - moving },
+        { clip: "walk", weight: moving * (1 - running) },
+        { clip: "run", weight: moving * running },
+      ],
+      { transition: afoot ? 0.15 : 0.08 },
+    );
+    this.#anim.update(dt);
+  }
+
+  /** The stride report, and the foot speed it implies over the ground speed: 1 is no skating. */
+  #strideReport(): Record<string, unknown> {
+    const stride = this.#anim.stride;
+    const feet = stride.clipGroundSpeed * stride.rate;
+    const footRatio = stride.groundSpeed > 0.5 ? feet / stride.groundSpeed : 1;
+    return {
+      ...stride,
+      clip: this.#anim.current ?? "none",
+      footRatio,
+      inBand: Math.abs(footRatio - 1) <= 0.1,
+    };
   }
 
   #begin(state: HeroState): void {

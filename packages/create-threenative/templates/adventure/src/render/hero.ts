@@ -1,7 +1,10 @@
 // Generated for you. This is ordinary Three.js — edit or delete it freely.
 //
-// Wren, a lantern-bearing wanderer, modelled in code: no mesh file, no skin, no clip. Every joint
-// is a group the pose below rotates. Local space is feet at y = 0, facing +Z, so her right is -X.
+// Wren, a lantern-bearing wanderer, modelled in code: no mesh file and no skin. Every joint is a
+// group the pose below rotates; the idle, walk and run limbs are `AnimationClip`s that `Hero.ts` plays
+// through `AnimationPlayer`, which times them to the ground she covers (`strideRoot`), so the feet
+// keep pace with the floor. Each limb is an outer joint the poses turn holding an inner swing the
+// clips turn. Local space is feet at y = 0, facing +Z, so her right is -X.
 // The right hand is a real `Bone` named `RightHand`, so the blade is attached with the engine's
 // `attachToBone` (a weapon stays in the hand that holds it) instead of being parented by hand.
 //
@@ -13,11 +16,11 @@
 // hood tip, the side locks, the pouch and the lantern are springs: they lag her bounce and stride.
 import {
   AdditiveBlending,
+  AnimationClip,
   Bone,
   BoxGeometry,
   BufferAttribute,
   BufferGeometry,
-  CapsuleGeometry,
   CatmullRomCurve3,
   CircleGeometry,
   Color,
@@ -32,6 +35,8 @@ import {
   Mesh,
   MeshBasicMaterial,
   type Object3D,
+  Quaternion,
+  QuaternionKeyframeTrack,
   RingGeometry,
   Shape,
   SphereGeometry,
@@ -39,6 +44,7 @@ import {
   TubeGeometry,
   Vector2,
   Vector3,
+  VectorKeyframeTrack,
 } from "three";
 import { flat, glow, lit } from "./materials.js";
 import { C } from "./palette.js";
@@ -71,8 +77,89 @@ export interface IHeroPose {
 
 export interface IHeroRig {
   readonly group: Group;
+  /** "idle" (the neutral pose the procedural actions bend), "walk" and "run". */
+  readonly clips: readonly AnimationClip[];
   update(pose: IHeroPose): void;
 }
+
+/** One key of a stride: each leg's swing about the hip and knee (+ swings the foot back), each arm's swing, the body's rise. */
+interface ICycleKey {
+  readonly legs: readonly [number, number];
+  readonly knees: readonly [number, number];
+  readonly arms: readonly [number, number];
+  readonly bob: number;
+}
+
+const SIDES = ["L", "R"] as const;
+const X_AXIS = new Vector3(1, 0, 0);
+
+/** A looping clip sampled from `key(p)` at 33 keys over one cycle, p from 0 to 1. */
+function cycleClip(name: string, period: number, key: (p: number) => ICycleKey): AnimationClip {
+  const keys = Array.from({ length: 33 }, (_, i) => key((i / 32) % 1));
+  const times = keys.map((_, i) => (i / 32) * period);
+  const q = new Quaternion();
+  const turn = (angle: (k: ICycleKey) => number) =>
+    keys.flatMap((k) => q.setFromAxisAngle(X_AXIS, angle(k)).toArray());
+  return new AnimationClip(name, period, [
+    ...SIDES.flatMap((side, i) => [
+      new QuaternionKeyframeTrack(
+        `legSwing${side}.quaternion`,
+        times,
+        turn((k) => k.legs[i] ?? 0),
+      ),
+      new QuaternionKeyframeTrack(
+        `kneeSwing${side}.quaternion`,
+        times,
+        turn((k) => k.knees[i] ?? 0),
+      ),
+      new QuaternionKeyframeTrack(
+        `armSwing${side}.quaternion`,
+        times,
+        turn((k) => k.arms[i] ?? 0),
+      ),
+    ]),
+    new VectorKeyframeTrack(
+      "bounce.position",
+      times,
+      keys.flatMap((k) => [0, k.bob, 0]),
+    ),
+  ]);
+}
+
+/**
+ * A stride: each foot is planted for half the cycle, sweeping from `reach` radians ahead of the hip
+ * to `reach` behind it, then swings forward with its knee folded by `fold`. The planted foot slides
+ * back at one steady speed (the angle is the arcsine of a linear sweep): a leg turning at a steady
+ * rate moves its foot fastest under the hip, so it would skate whatever rate the clip played at.
+ * The arms swing against the legs; the body rises `bob` as the legs spread.
+ */
+function gait(reach: number, fold: number, bob: number) {
+  const leg = (p: number): readonly [number, number] => {
+    if (p < 0.5) return [Math.asin(Math.sin(reach) * (4 * p - 1)), 0];
+    const s = (p - 0.5) * 2;
+    return [
+      reach * Math.cos(Math.PI * s),
+      fold * MathUtils.smoothstep(s, 0, 0.3) * (1 - MathUtils.smoothstep(s, 0.95, 1)),
+    ];
+  };
+  return (p: number): ICycleKey => {
+    const [l, kneeL] = leg(p);
+    const [r, kneeR] = leg((p + 0.5) % 1);
+    return {
+      arms: [-0.85 * l, -0.85 * r],
+      bob: bob * Math.abs(Math.cos(Math.PI * 2 * p)),
+      knees: [kneeL, kneeR],
+      legs: [l, r],
+    };
+  };
+}
+
+const REST: ICycleKey = { arms: [0, 0], bob: 0, knees: [0, 0], legs: [0, 0] };
+const CLIPS = [
+  cycleClip("idle", 1, () => REST),
+  cycleClip("walk", 0.8, gait(0.5, 0.35, 0.02)),
+  cycleClip("run", 0.65, gait(0.9, 1.3, 0.05)),
+];
 
 /** Hip height: the body group's origin, and the pivot the run and the roll turn about. */
 const HIP = 0.66;
@@ -469,7 +556,10 @@ function createShield(): Group {
 
 export function createHero(): IHeroRig {
   const root = new Group();
-  const body = joint(root, 0, HIP, 0);
+  // The clips lift `bounce` with each step; the poses own `body` inside it.
+  const bounce = joint(root);
+  bounce.name = "bounce";
+  const body = joint(bounce, 0, HIP, 0);
 
   // Torso: a turned chest with a V collar over the cream undershirt; it breathes.
   const chest = joint(body);
@@ -972,10 +1062,14 @@ export function createHero(): IHeroRig {
     ["left", 1],
     ["right", -1],
   ] as const) {
+    const tag = name === "left" ? "L" : "R";
     const arm = arms[name];
     arm.position.set(0.2 * side, 0.43, 0);
     body.add(arm);
-    bake(arm, [
+    // The poses turn `arm`; the clips turn the swing inside it.
+    const armSwing = joint(arm);
+    armSwing.name = `armSwing${tag}`;
+    bake(armSwing, [
       [new SphereGeometry(0.068, 12, 8), C.tunic, "cloth"],
       [
         lathe(
@@ -1005,7 +1099,7 @@ export function createHero(): IHeroRig {
     ]);
     const fore = fores[name];
     fore.position.y = -0.24;
-    arm.add(fore);
+    armSwing.add(fore);
     bake(fore, [
       [new SphereGeometry(0.05, 10, 8), C.tunic, "cloth"],
       [
@@ -1065,7 +1159,9 @@ export function createHero(): IHeroRig {
     const leg = legs[name];
     leg.position.set(0.085 * side, -0.04, 0);
     body.add(leg);
-    bake(leg, [
+    const legSwing = joint(leg);
+    legSwing.name = `legSwing${tag}`;
+    bake(legSwing, [
       [
         lathe(
           [
@@ -1083,8 +1179,12 @@ export function createHero(): IHeroRig {
     ]);
     const shin = shins[name];
     shin.position.y = -0.3;
-    leg.add(shin);
-    bake(shin, [
+    legSwing.add(shin);
+    const kneeSwing = joint(shin);
+    kneeSwing.name = `kneeSwing${tag}`;
+    // The sole's contact point, where the stride is read and the foot-slip scenario looks.
+    joint(kneeSwing, 0, -0.317, 0.04).name = `foot${tag}`;
+    bake(kneeSwing, [
       [
         lathe(
           [
@@ -1191,13 +1291,15 @@ export function createHero(): IHeroRig {
   let time = 0;
   let guard = 0;
   let lastY = HIP;
+  const legSwings = [root.getObjectByName("legSwingL"), root.getObjectByName("legSwingR")];
   return {
+    clips: CLIPS,
     group: root,
     update({ dt, drawn, flash: flashing, progress, speed, state, sword }: IHeroPose): void {
       time += dt;
       const run = Math.min(1, speed / 3);
-      const cycle = time * (5 + run * 6);
-      const swing = Math.sin(cycle) * 0.9 * run;
+      // The clips swing the limbs at the rate the ground asks for; read her left thigh's swing.
+      const swing = legSwings[0]?.rotation.x ?? 0;
       const breath = Math.sin(time * 2.4) * (1 - run);
       guard += ((state === "block" ? 1 : 0) - guard) * Math.min(1, dt * 18);
 
@@ -1210,26 +1312,18 @@ export function createHero(): IHeroRig {
       backShield.visible = !armed;
 
       body.scale.setScalar(1);
-      body.position.set(0, HIP + Math.abs(Math.sin(cycle)) * 0.05 * run + breath * 0.006, 0);
+      body.position.set(0, HIP + breath * 0.006, 0);
       body.rotation.set(run * 0.14, 0, 0);
       chest.scale.set(1 + breath * 0.01, 1 + breath * 0.008, 1 + breath * 0.012);
       skirt.rotation.set(-swing * 0.08 - run * 0.1, 0, swing * 0.05);
       skirt.scale.setScalar(1);
-      legs.left.rotation.set(swing, 0, 0);
-      legs.right.rotation.set(-swing, 0, 0);
-      // A knee folds as its foot leaves the ground behind her; an elbow bends more at a run.
-      shins.left.rotation.set(0.08 + run * (0.15 + 1.1 * Math.max(0, Math.sin(cycle - 0.3))), 0, 0);
-      shins.right.rotation.set(
-        0.08 + run * (0.15 + 1.1 * Math.max(0, -Math.sin(cycle - 0.3))),
-        0,
-        0,
-      );
-      arms.left.rotation.set(-swing * 0.85 + 0.25 * run, 0, 0.1 + breath * 0.02);
-      arms.right.rotation.set(
-        swing * 0.85 + 0.25 * run - (drawn ? 0.3 : 0),
-        0,
-        -0.1 - breath * 0.02,
-      );
+      legs.left.rotation.set(0, 0, 0);
+      legs.right.rotation.set(0, 0, 0);
+      // The clips fold a knee as its foot leaves the ground; an elbow bends more at a run.
+      shins.left.rotation.set(0.08 + run * 0.15, 0, 0);
+      shins.right.rotation.set(0.08 + run * 0.15, 0, 0);
+      arms.left.rotation.set(0.25 * run, 0, 0.1 + breath * 0.02);
+      arms.right.rotation.set(0.25 * run - (drawn ? 0.3 : 0), 0, -0.1 - breath * 0.02);
       fores.left.rotation.set(-0.42 - 0.33 * run, 0, 0);
       fores.right.rotation.set(-0.42 - 0.33 * run - (drawn ? 0.3 : 0), 0, 0);
       head.rotation.set(-run * 0.1, Math.sin(time * 0.9) * 0.08 * (1 - run), 0);
@@ -1272,15 +1366,14 @@ export function createHero(): IHeroRig {
       if (state === "push") {
         // Both palms on the block's face: the body leans in from a step back, so her feet stay
         // out of the block while the stride stays short and behind her.
-        const step = Math.sin(cycle) * 0.3 * run;
         body.position.z = -0.12;
         body.rotation.x = 0.3;
         arms.left.rotation.set(-1.25, 0, -0.2);
         arms.right.rotation.set(-1.25, 0, 0.2);
         fores.left.rotation.set(-0.3, 0, 0);
         fores.right.rotation.set(-0.3, 0, 0);
-        legs.left.rotation.set(-0.35 + step, 0, 0);
-        legs.right.rotation.set(-0.35 - step, 0, 0);
+        legs.left.rotation.set(-0.35, 0, 0);
+        legs.right.rotation.set(-0.35, 0, 0);
         shins.left.rotation.set(0.3, 0, 0);
         shins.right.rotation.set(0.3, 0, 0);
       } else if (state === "roll") {
@@ -1323,10 +1416,13 @@ export function createHero(): IHeroRig {
       // Secondary motion. Each hanging part chases where her motion would throw it: back with
       // speed, up as she drops, side to side with the stride, a slow sway at rest.
       const step = Math.min(dt, 1 / 30);
-      const lift = MathUtils.clamp((body.position.y - lastY) / Math.max(dt, 1e-3), -3, 3);
-      lastY = body.position.y;
+      const rise = body.position.y + bounce.position.y;
+      const lift = MathUtils.clamp((rise - lastY) / Math.max(dt, 1e-3), -3, 3);
+      lastY = rise;
       const idle = Math.sin(time * 1.7) * (1 - run);
-      const thighs = [legs.left.rotation.x, legs.right.rotation.x];
+      const thighs = [0, 1].map(
+        (i) => legs[i ? "right" : "left"].rotation.x + (legSwings[i]?.rotation.x ?? 0),
+      );
       panels[0]?.rotation.set(Math.max(-0.6, Math.min(0, ...thighs) * 0.7), 0, 0);
       panels[1]?.rotation.set(Math.max(0, ...thighs) * 0.7, 0, 0);
       const sway = chase(springs.locks, run * 0.35 - lift * 0.18 + idle * 0.04, step, 110, 10);
@@ -1334,14 +1430,14 @@ export function createHero(): IHeroRig {
         lock.rotation.set(sway, 0, (i === 0 ? -1 : 1) * (0.04 + 0.05 * run));
       pouch.rotation.x = chase(
         springs.pouch,
-        run * 0.4 - lift * 0.2 + Math.sin(cycle) * 0.2 * run + idle * 0.05,
+        run * 0.4 - lift * 0.2 + swing * 0.22 + idle * 0.05,
         step,
         60,
         7,
       );
       lamp.rotation.x = chase(
         springs.lamp,
-        run * 0.45 - lift * 0.25 - Math.sin(cycle) * 0.25 * run + idle * 0.06,
+        run * 0.45 - lift * 0.25 - swing * 0.28 + idle * 0.06,
         step,
         50,
         6,

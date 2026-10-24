@@ -31,6 +31,30 @@
       "noRuntimeDiagnostics": true,
       "runtimeReady": true
     },
+    "components": [
+      {
+        "entity": "player",
+        "component": "stride",
+        "path": "clip",
+        "equals": "run",
+        "changed": true
+      },
+      {
+        "entity": "player",
+        "component": "stride",
+        "path": "synced",
+        "equals": true,
+        "changed": true
+      },
+      {
+        "entity": "player",
+        "component": "stride",
+        "path": "footRatio",
+        "gte": 0.9,
+        "lte": 1.1,
+        "allowTrivial": "Standing reads 1; at a run the planted foot sweeps within 10% of the ground speed."
+      }
+    ],
     "footSlip": [
       {
         "atStep": "run",
