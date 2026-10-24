@@ -82,9 +82,11 @@ export const C = {
   // Wren
   tunic: 0xa0502c,
   tunicTrim: 0xd29b3e,
+  /** The tunic's hem band: a muted ochre, cloth rather than gold. */
+  hem: 0xa8793a,
   undershirt: 0xe9dcc0,
-  cap: 0x1d2a5c,
-  capDark: 0x131b3e,
+  cap: 0x2a3b78,
+  capDark: 0x1e2b5a,
   trousers: 0x6a5444,
   bootCuff: 0x8f6a45,
   skin: 0xe8b98f,

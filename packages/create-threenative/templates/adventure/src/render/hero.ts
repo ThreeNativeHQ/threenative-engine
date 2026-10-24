@@ -83,8 +83,6 @@ const HR = 0.165;
 const JAW = 0.4;
 /** The hood: a shell round the head, open over the face from the brim down. */
 const HOOD = { r: 0.19, y: HC + 0.012, z: -0.01, brim: 1.1, window: 0.85, hem: 0.78 * Math.PI };
-/** Where the hood gathers into its tip: up and back. */
-const PEAK = new Vector3(0, 0.55, -0.83).normalize();
 /** The chest's turned profile, [radius, height] from the waist up; its depth is 0.74 of its width. */
 const CHEST: readonly (readonly [number, number])[] = [
   [0.142, -0.03],
@@ -275,17 +273,13 @@ function faceZ(x: number, y: number): number {
   return Math.sqrt(Math.max(0, HR * HR - x0 * x0 - y0 * y0)) * (1 - 0.12 * ny * ny);
 }
 
-/** The hood drapes wider and longer below the head and gathers into a soft peak behind. */
+/** Below the head the hood drapes a little wider and longer, onto the mantle. */
 function drape(v: Vector3): void {
-  const length = v.length();
-  const ny = v.y / length;
-  const t = Math.max(0, v.dot(PEAK) / length - 0.72) / 0.28;
-  if (ny < 0) {
-    v.x *= 1 - 0.3 * ny;
-    v.z *= 1 - 0.2 * ny;
-    v.y *= 1 - 0.5 * ny;
-  }
-  v.addScaledVector(PEAK, 0.05 * t * t);
+  const ny = v.y / v.length();
+  if (ny >= 0) return;
+  v.x *= 1 - 0.15 * ny;
+  v.z *= 1 - 0.2 * ny;
+  v.y *= 1 - 0.5 * ny;
 }
 
 /** Half the face opening's width, in radians round the hood, at polar angle `theta`: rounded at the top. */
@@ -488,10 +482,24 @@ export function createHero(): IHeroRig {
     [at(new TorusGeometry(0.012, 0.003, 4, 10), 0, -0.012, 0), C.iron, "metal"],
     [at(new ConeGeometry(0.045, 0.04, 8), 0, -0.045, 0), C.iron, "metal"],
     [at(new CylinderGeometry(0.042, 0.042, 0.014, 8), 0, -0.142, 0), C.iron, "metal"],
+    ...[0, 1, 2, 3].map(
+      (i) =>
+        [
+          at(
+            new CylinderGeometry(0.004, 0.004, 0.08, 4),
+            0.036 * Math.cos((i * Math.PI) / 2 + 0.785),
+            -0.1,
+            0.036 * Math.sin((i * Math.PI) / 2 + 0.785),
+          ),
+          C.iron,
+          "metal",
+        ] as const,
+    ),
   ]);
-  lamp.add(part(new CylinderGeometry(0.034, 0.034, 0.075, 8), glow(C.lamp, 8), 0, -0.1));
+  lamp.add(part(new CylinderGeometry(0.032, 0.032, 0.075, 8), glow(C.lamp, 3.5), 0, -0.1));
 
-  // The skirt of the tunic: it flares and folds toward a hem with an ochre band, and swings.
+  // The skirt of the tunic: a front and a back panel, slit at the sides, flaring and folding toward
+  // a hem with an ochre band. It swings with the stride, and each leg pushes its panel.
   const skirt = joint(body, 0, 0.03, 0);
   const folds = (v: Vector3): void => {
     const depth = MathUtils.clamp(-v.y / 0.33, 0, 1);
@@ -501,44 +509,53 @@ export function createHero(): IHeroRig {
     v.z *= flare;
     v.y += 0.012 * depth * Math.sin(7 * phi + 0.8);
   };
-  bake(skirt, [
-    [
-      shape(
-        lathe(
-          [
-            [0.25, -0.342],
-            [0.262, -0.335],
-            [0.258, -0.31],
-            [0.235, -0.24],
-            [0.2, -0.14],
-            [0.165, -0.05],
-            [0.15, 0.005],
-          ],
-          30,
-          0.82,
+  const panels = [0, Math.PI].map((facing) => {
+    const panel = joint(skirt);
+    const from = facing - 1.32;
+    bake(panel, [
+      [
+        shape(
+          lathe(
+            [
+              [0.25, -0.342],
+              [0.262, -0.335],
+              [0.258, -0.31],
+              [0.235, -0.24],
+              [0.2, -0.14],
+              [0.165, -0.05],
+              [0.15, 0.005],
+            ],
+            14,
+            0.82,
+            from,
+            2.64,
+          ),
+          folds,
         ),
-        folds,
-      ),
-      C.tunic,
-      "cloth",
-    ],
-    [
-      shape(
-        lathe(
-          [
-            [0.254, -0.344],
-            [0.266, -0.337],
-            [0.264, -0.302],
-          ],
-          30,
-          0.82,
+        C.tunic,
+        "drape",
+      ],
+      [
+        shape(
+          lathe(
+            [
+              [0.254, -0.344],
+              [0.266, -0.337],
+              [0.264, -0.302],
+            ],
+            14,
+            0.82,
+            from,
+            2.64,
+          ),
+          folds,
         ),
-        folds,
-      ),
-      C.tunicTrim,
-      "cloth",
-    ],
-  ]);
+        C.hem,
+        "drape",
+      ],
+    ]);
+    return panel;
+  });
 
   // The baldric runs from her right shoulder to her left hip, front and back, with the scabbard.
   const baldric = joint(body);
@@ -626,14 +643,14 @@ export function createHero(): IHeroRig {
     at(
       new SphereGeometry(0.016, 8, 6),
       0,
-      HC - 0.058,
-      faceZ(0, -0.058) - 0.003,
+      HC - 0.056,
+      faceZ(0, -0.056) - 0.002,
+      -0.35,
       0,
       0,
-      0,
-      0.9,
-      0.8,
-      1,
+      0.72,
+      1.2,
+      0.95,
     ),
     C.skin,
     "skin",
@@ -678,6 +695,11 @@ export function createHero(): IHeroRig {
     HOOD.hem - HOOD.brim,
   );
   const rim: Point[] = [];
+  const hoodHem: Point[] = [];
+  for (let i = 0; i <= 18; i += 1)
+    hoodHem.push(
+      hoodPoint(Math.PI / 2 + HOOD.window + ((Math.PI * 2 - 2 * HOOD.window) * i) / 18, HOOD.hem),
+    );
   const down = (i: number): number => HOOD.brim + ((HOOD.hem - HOOD.brim) * i) / 8;
   for (let i = 8; i > 0; i -= 1) rim.push(hoodPoint(Math.PI / 2 + opening(down(i)), down(i)));
   const across = opening(HOOD.brim);
@@ -699,17 +721,23 @@ export function createHero(): IHeroRig {
       C.cap,
       "hood",
     ],
-    [strand(rim, () => 0.012, 6, 40), C.capDark, "cloth"],
-    ...[0, -0.55, 0.55].map(
+    [strand(rim, () => 0.009, 6, 40), C.capDark, "cloth"],
+    // The hood's lower edge, so it reads apart from the mantle it lies on.
+    [strand(hoodHem, () => 0.008, 5, 36), C.capDark, "cloth"],
+    // Soft folds: the centre seam and four creases running down from the crown.
+    ...[0, -0.5, 0.5, -1, 1].map(
       (turn) =>
         [
           strand(
-            [0.35, 0.8, 1.3, 1.8, 2.2].map((theta) =>
-              hoodPoint((Math.PI * 3) / 2 + turn, theta + Math.abs(turn) * 0.6),
+            [0.3, 0.75, 1.2, 1.7, 2.2].map((theta) =>
+              hoodPoint(
+                (Math.PI * 3) / 2 + turn * (0.4 + theta * 0.3),
+                theta + Math.abs(turn) * 0.3,
+              ),
             ),
-            () => (turn === 0 ? 0.005 : 0.004),
+            (t) => (turn === 0 ? 0.005 : 0.0045 * Math.sin(Math.PI * t) + 0.001),
             5,
-            16,
+            10,
           ),
           C.capDark,
           "cloth",
@@ -739,23 +767,23 @@ export function createHero(): IHeroRig {
     bake(lock, [hang(0, 0, 0.16), hang(s * 0.008, -0.04, 0.13)]);
     return lock;
   });
-  const base = PEAK.clone().multiplyScalar(0.23);
-  const hoodTip = joint(head, 0, HOOD.y + base.y, HOOD.z + base.z);
+  // The tip is gathered at the back of the hood and hangs down between her shoulder blades.
+  const hoodTip = joint(head, ...hoodPoint((Math.PI * 3) / 2, 1.25));
   bake(hoodTip, [
     [
       strand(
         [
           [0, 0, 0],
-          [0, -0.04, -0.04],
-          [0, -0.11, -0.07],
-          [0, -0.19, -0.075],
+          [0, -0.06, -0.035],
+          [0, -0.14, -0.045],
+          [0, -0.21, -0.035],
         ],
-        (t) => 0.045 * (1 - t) + 0.006,
+        (t) => 0.05 * (1 - t) + 0.008,
         10,
         10,
       ),
       C.cap,
-      "cloth",
+      "drape",
     ],
   ]);
 
@@ -884,10 +912,10 @@ export function createHero(): IHeroRig {
       [
         lathe(
           [
-            [0.052, -0.205],
-            [0.057, -0.18],
-            [0.073, -0.11],
-            [0.085, -0.05],
+            [0.052, -0.245],
+            [0.057, -0.215],
+            [0.073, -0.13],
+            [0.085, -0.06],
             [0.078, 0],
           ],
           14,
@@ -898,8 +926,8 @@ export function createHero(): IHeroRig {
       [
         lathe(
           [
-            [0.062, -0.205],
-            [0.064, -0.18],
+            [0.062, -0.245],
+            [0.064, -0.215],
           ],
           14,
         ),
@@ -908,27 +936,27 @@ export function createHero(): IHeroRig {
       ],
     ]);
     const fore = fores[name];
-    fore.position.y = -0.2;
+    fore.position.y = -0.24;
     arm.add(fore);
     bake(fore, [
       [new SphereGeometry(0.05, 10, 8), C.undershirt, "cloth"],
       [
         lathe(
           [
-            [0.042, -0.185],
-            [0.044, -0.165],
-            [0.05, -0.1],
-            [0.062, -0.085],
-            [0.064, -0.065],
-            [0.046, -0.05],
+            [0.042, -0.215],
+            [0.044, -0.195],
+            [0.05, -0.125],
+            [0.068, -0.105],
+            [0.07, -0.08],
+            [0.046, -0.06],
           ],
           14,
         ),
-        (p) => (p.y > -0.09 ? C.bootCuff : C.gloves),
+        (p) => (p.y > -0.11 ? C.bootCuff : C.gloves),
         "leather",
       ],
       [
-        at(new SphereGeometry(0.046, 10, 8), 0, -0.215, 0.004, 0, 0, 0, 0.8, 1.05, 0.66),
+        at(new SphereGeometry(0.046, 10, 8), 0, -0.245, 0.004, 0, 0, 0, 0.8, 1.05, 0.66),
         C.gloves,
         "leather",
       ],
@@ -938,7 +966,7 @@ export function createHero(): IHeroRig {
             at(
               new CapsuleGeometry(0.0115, 0.02, 2, 6),
               -side * 0.012,
-              -0.25,
+              -0.28,
               z + 0.004,
               0,
               0,
@@ -952,7 +980,7 @@ export function createHero(): IHeroRig {
         at(
           new CapsuleGeometry(0.013, 0.03, 2, 6),
           -side * 0.02,
-          -0.215,
+          -0.245,
           0.034,
           -0.4,
           0,
@@ -1018,7 +1046,7 @@ export function createHero(): IHeroRig {
   // The right hand is a bone: `Hero.ts` attaches the blade to it once Wren has one.
   const hand = new Bone();
   hand.name = "RightHand";
-  hand.position.set(0, -0.235, 0.02);
+  hand.position.set(0, -0.265, 0.02);
   hand.rotation.x = Math.PI / 2;
   fores.right.add(hand);
 
@@ -1102,6 +1130,7 @@ export function createHero(): IHeroRig {
       body.rotation.set(run * 0.14, 0, 0);
       chest.scale.set(1 + breath * 0.01, 1 + breath * 0.008, 1 + breath * 0.012);
       skirt.rotation.set(-swing * 0.08 - run * 0.1, 0, swing * 0.05);
+      skirt.scale.setScalar(1);
       legs.left.rotation.set(swing, 0, 0);
       legs.right.rotation.set(-swing, 0, 0);
       // A knee folds as its foot leaves the ground behind her; an elbow bends more at a run.
@@ -1116,7 +1145,7 @@ export function createHero(): IHeroRig {
       fores.left.rotation.set(-0.3 - 0.6 * run, 0, 0);
       fores.right.rotation.set(-0.3 - 0.6 * run - (drawn ? 0.3 : 0), 0, 0);
       head.rotation.set(-run * 0.1, Math.sin(time * 0.9) * 0.08 * (1 - run), 0);
-      armShield.position.set(0.055, -0.1, 0);
+      armShield.position.set(0.055, -0.12, 0);
       armShield.rotation.set(0, Math.PI / 2, 0);
       flashMaterial.opacity = flashing * 0.85;
       flash.scale.setScalar(1 + (1 - flashing) * 0.6);
@@ -1145,7 +1174,7 @@ export function createHero(): IHeroRig {
         fores.left.rotation.set(MathUtils.lerp(-0.3, 0, guard), 0, 0);
         armShield.position.set(
           MathUtils.lerp(0.055, 0, guard),
-          MathUtils.lerp(-0.1, -0.12, guard),
+          MathUtils.lerp(-0.12, -0.14, guard),
           0,
         );
         armShield.rotation.set((Math.PI / 2) * guard, (Math.PI / 2) * (1 - guard), 0);
@@ -1178,6 +1207,7 @@ export function createHero(): IHeroRig {
         body.scale.set(1 - 0.15 * tuck, scale, 1 - 0.15 * tuck);
         body.position.set(0, middle - 0.3 * scale * Math.cos(turn), -0.3 * scale * Math.sin(turn));
         head.rotation.x = 0.7 * tuck;
+        skirt.scale.set(1 - 0.3 * tuck, 1 - 0.2 * tuck, 1 - 0.3 * tuck);
         legs.left.rotation.x = -2.1 * tuck;
         legs.right.rotation.x = -2.1 * tuck;
         shins.left.rotation.x = 2.3 * tuck;
@@ -1204,17 +1234,20 @@ export function createHero(): IHeroRig {
 
       // Secondary motion. Each hanging part chases where her motion would throw it: back with
       // speed, up as she drops, side to side with the stride, a slow sway at rest. The hood tip
-      // falls toward her left shoulder blade, so it shows in her silhouette from behind.
+      // trails down and back; it leans a little to her left.
       const step = Math.min(dt, 1 / 30);
       const lift = MathUtils.clamp((body.position.y - lastY) / Math.max(dt, 1e-3), -3, 3);
       lastY = body.position.y;
       const idle = Math.sin(time * 1.7) * (1 - run);
+      const thighs = [legs.left.rotation.x, legs.right.rotation.x];
+      panels[0]?.rotation.set(Math.min(0, ...thighs) * 0.7, 0, 0);
+      panels[1]?.rotation.set(Math.max(0, ...thighs) * 0.7, 0, 0);
       hoodTip.rotation.set(
         chase(springs.tip, run * 0.15 - lift * 0.4 + idle * 0.06, step),
         0,
         chase(
           springs.tipSide,
-          0.35 + Math.sin(cycle) * 0.14 * run + Math.sin(time * 1.1) * 0.05,
+          0.12 + Math.sin(cycle) * 0.14 * run + Math.sin(time * 1.1) * 0.05,
           step,
         ),
       );
