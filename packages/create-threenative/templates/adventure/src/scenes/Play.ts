@@ -62,6 +62,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     cameraTurnWorst: 0,
     torsoCovered: 0,
     torsoContactWorst: 0,
+    ringFacingLeast: 0,
     heroViewNearest: 0,
     hitsTaken: 0,
     keys: 0,
@@ -384,6 +385,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       turn: 0,
       torso: 0,
       contact: 0,
+      ring: Number.POSITIVE_INFINITY,
       run: 0,
       worstRun: 0,
       ticks: 0,
@@ -414,6 +416,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     const CHEST = { at: new Vector3(0, 1.3, 0.72), radius: 0.48, within: 5, clear: 0.4 };
     const chestRect = { x0: 0, x1: 0, y0: 0, y1: 0 };
     const ringAt = new Vector3();
+    const toWren = new Vector3();
     // The ring's screen box: its four rim points (left, right, top, bottom) projected.
     const projectRing = (): void => {
       Object.assign(chestRect, {
@@ -564,11 +567,16 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       ) {
         warden.rig.group.updateWorldMatrix(true, false);
         warden.rig.group.localToWorld(ringAt.copy(CHEST.at));
+        // How square the ring faces the lens: its on-screen width over its face-on width.
+        const facing =
+          warden.rig.group.getWorldDirection(ray).dot(corner.subVectors(camera.position, ringAt)) /
+          corner.length();
+        // A shield stun leaves the ring facing Wren; a wall stun turns it to the wall, unseen anyway.
+        const stunnedAtWren =
+          warden.state === "stunned" && ray.dot(toWren.subVectors(hero.mesh.position, ringAt)) > 0;
+        if (stunnedAtWren) fight.ring = Math.min(fight.ring, Math.max(0, facing));
         // A ring facing away from the lens is behind the Warden's own body: nothing to cover.
-        if (
-          warden.rig.group.getWorldDirection(ray).dot(corner.subVectors(camera.position, ringAt)) >
-          0
-        ) {
+        if (facing > 0) {
           projectRing();
           const share =
             overlap(heroRect, chestRect) /
@@ -762,6 +770,8 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       statePatch.cameraTurnWorst = Math.round(fight.turn * 100) / 100;
       statePatch.torsoCovered = Math.round(fight.torso * 1000) / 1000;
       statePatch.torsoContactWorst = Math.round(fight.contact * 1000) / 1000;
+      statePatch.ringFacingLeast =
+        fight.ring === Number.POSITIVE_INFINITY ? 0 : Math.round(fight.ring * 1000) / 1000;
       statePatch.openingFramedShare =
         fight.openingFrames === 0
           ? 0

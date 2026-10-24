@@ -70,13 +70,15 @@ const LOCK = {
   orbitMax: 0.75,
   /**
    * A target taller than `bigAt` metres (the Warden) swings on faster, `bigPerMetre`, up to
-   * `bigOrbitMax` (77°, from 2 m in), so its chest reads beside Wren, not behind her: a sideways
-   * step or a higher camera barely moves a 9 m arm's picture. A small target keeps the gentle
-   * ramp: on the steep one a bat swooping past her comes round to the lens side.
+   * `bigOrbitMax` (from 2.8 m in), so its chest reads beside Wren, not behind her: a sideways
+   * step or a higher camera barely moves a 9 m arm's picture. 65° is measured: a narrower orbit
+   * lets her cover over a third of the chest ring, a wider one turns the ring edge-on. A small
+   * target keeps the gentle ramp: on the steep one a bat swooping past her comes round to the
+   * lens side.
    */
   bigAt: 2,
   bigPerMetre: 0.275,
-  bigOrbitMax: 1.35,
+  bigOrbitMax: MathUtils.degToRad(65),
   /** Metres added to the arm while locked. */
   back: 1,
   /** Metres added when the target is closer than `closeAt`, so Wren never hides it. */

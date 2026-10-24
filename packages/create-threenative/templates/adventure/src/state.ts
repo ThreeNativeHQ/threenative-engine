@@ -46,6 +46,9 @@ export type GameState = {
    * stands 0.4 m or more from her, and the same closer in (shield contact), where no lens clears it. */
   torsoCovered: number;
   torsoContactWorst: number;
+  /** While the locked Warden is stunned within 5 m: the least its chest ring's on-screen width
+   * reached of its face-on width (0-1, 1 square to the lens); 0 until measured. */
+  ringFacingLeast: number;
   /** Every tick: ticks with something solid between Wren's head and the lens, the most of the
    * frame walls within 1.5 m of the lens covered (0-1), and ticks Wren overlapped the controls card. */
   cameraBlocked: number;
