@@ -225,6 +225,8 @@ export function defineWebRenderer(
     #last: [unknown, unknown] | undefined;
     /** The host is Failed for good (the GPU process destroyed the device, an uncaptured error): see #drawStatus. */
     #lost = false;
+    /** A draw got through in this task, so later draws land on its surface texture: see render(). */
+    #frameOpen = false;
     #state: string | undefined;
     #gpuSamples = 0;
     #holdsSlot = true;
@@ -369,11 +371,24 @@ export function defineWebRenderer(
       // Chromium queues a submitted frame without bound. When rAF outruns the GPU (an unthrottled
       // loop, a heavy scene) the page blocks until the GPU drains and the GPU process is killed.
       // The host says 1 while two drawn frames are still on the GPU: draw nothing this call.
-      if (module._tnw_web_frame(11) === 1) {
+      // The gate holds back a frame, not a draw: a draw after one that got through in the same task
+      // (the overlay over the world, a loading cover over a covered bake) lands on the surface
+      // texture already taken, so refusing it saves no frame and presents the world without it.
+      // Measured on Lantern Vale: every cover over a drawn frame was refused, so the loading screen
+      // flickered black for the whole environment bake and then showed the unfinished world.
+      if (!this.#frameOpen && module._tnw_web_frame(11) === 1) {
         // Counted, never hidden: the loop's render phase for this frame is near zero, and a meter that
         // averages it with drawn frames reads cheaper than the work that was done (core's `renderSkips`).
         this.info.engine.frameGateSkips += 1;
         return;
+      }
+      if (!this.#frameOpen) {
+        this.#frameOpen = true;
+        // Every draw of a frame is synchronous in one task (the frame loop's callback, a warm-up timer
+        // task), so the frame closes when the task's synchronous work is done.
+        queueMicrotask(() => {
+          this.#frameOpen = false;
+        });
       }
       syncVirtualShadowLods();
       beforeRender({ camera, scene, renderer: this, frameId: this.info.frame });

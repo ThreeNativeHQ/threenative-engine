@@ -496,6 +496,8 @@ describe("the Wasm engine's WebGPURenderer backpressure", () => {
     };
     await renderer.init();
     renderer.render(scene, camera);
+    // The next frame: a draw in the same task would land on the frame just drawn.
+    await new Promise((resolve) => setTimeout(resolve, 0));
     behind = 1;
     renderer.render(scene, camera);
     renderer.render(scene, camera);
@@ -526,6 +528,8 @@ describe("the Wasm engine's frame gate", () => {
     await renderer.init();
     expect(renderer.info.engine.frameGateSkips).toBe(0);
     renderer.render(scene, camera);
+    // The next frame: a draw in the same task would land on the frame just drawn.
+    await new Promise((resolve) => setTimeout(resolve, 0));
     onGpu = 1;
     renderer.render(scene, camera);
     renderer.render(scene, camera);
@@ -602,6 +606,75 @@ describe("the Wasm engine's environment preparation presents", () => {
       order.push("cover");
     });
     expect(order).toEqual(["draw", "cover", "draw", "cover", "draw", "cover"]);
+  });
+});
+
+describe("the Wasm engine's cover repaint under the frame gate", () => {
+  it("is not refused by the gate that refuses a second draw while frames are still on the GPU", async () => {
+    // The host counts a frame on the GPU for every draw, so the repaint straight after a draw meets the
+    // gate. A refused repaint presents the draw's black frame instead of the cover.
+    const pending = [1, 1, 0];
+    let worldDraws = 0;
+    let coverDraws = 0;
+    let inCover = false;
+    let onGpu = 0;
+    const { Renderer, canvas, scene, camera } = host(
+      (field) =>
+        field === 11 ? (onGpu >= 1 ? 1 : 0) : field === 12 ? (pending[worldDraws - 1] ?? 0) : 0,
+      () => {
+        if (inCover) coverDraws += 1;
+        else worldDraws += 1;
+        onGpu += 1;
+        return 0;
+      },
+    );
+    const renderer = new Renderer({ canvas }) as {
+      init(): Promise<unknown>;
+      prepareEnvironmentAsync(
+        scene: unknown,
+        camera: unknown,
+        deadlineMs: number,
+        afterDraw: () => void,
+      ): Promise<boolean>;
+      render(scene: unknown, camera: unknown): void;
+    };
+    await renderer.init();
+    await renderer.prepareEnvironmentAsync(scene, camera, Number.POSITIVE_INFINITY, () => {
+      inCover = true;
+      renderer.render(scene, camera);
+      inCover = false;
+      onGpu = 0; // the GPU finishes before the next timer task
+    });
+    expect(worldDraws).toBe(3);
+    expect(coverDraws).toBe(3);
+  });
+
+  it("holds back a frame, not a draw: the overlay over a drawn world draws, the next frame waits", async () => {
+    // The frame loop draws the world and then its overlay in one callback. A refused overlay presents
+    // the world without its loading cover; the next frame is where the gate saves the GPU a frame.
+    let onGpu = 0;
+    let drawn = 0;
+    const { Renderer, canvas, scene, camera } = host(
+      (field) => (field === 11 ? (onGpu >= 1 ? 1 : 0) : 0),
+      () => {
+        drawn += 1;
+        onGpu += 1;
+        return 0;
+      },
+    );
+    const renderer = new Renderer({ canvas }) as {
+      info: { engine: { frameGateSkips: number } };
+      init(): Promise<unknown>;
+      render(scene: unknown, camera: unknown): void;
+    };
+    await renderer.init();
+    renderer.render(scene, camera);
+    renderer.render(scene, camera);
+    expect(drawn).toBe(2);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    renderer.render(scene, camera);
+    expect(drawn).toBe(2);
+    expect(renderer.info.engine.frameGateSkips).toBe(1);
   });
 });
 
