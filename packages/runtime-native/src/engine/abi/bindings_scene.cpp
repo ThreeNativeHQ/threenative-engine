@@ -1731,6 +1731,13 @@ void registerInstancedMesh(ClassBinding& b) {
     b.members["instanceMatrix"] = [](void* self, const Args&, Store& store) -> Value {
         return store.share("InstancedBufferAttribute", as<InstancedMesh>(self)->instanceMatrix);
     };
+    // three's instanceMatrix is a plain property too: core's projection hands a stand-in the source's buffer, so the
+    // game's later setMatrixAt writes reach what draws.
+    b.setters["instanceMatrix"] = [](void* self, const Value& v, Store& store) {
+        std::shared_ptr<BufferAttribute> matrices = sharedAttributeArg(store, v);
+        if (matrices->itemSize != 16) throw Unsupported{"instanceMatrix needs 16 components per instance"};
+        as<InstancedMesh>(self)->instanceMatrix = std::move(matrices);
+    };
     b.members["instanceColor"] = [](void* self, const Args&, Store& store) -> Value {
         const auto& colors = as<InstancedMesh>(self)->instanceColor;
         return colors ? store.share("InstancedBufferAttribute", colors) : Value{};

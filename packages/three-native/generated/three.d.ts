@@ -928,7 +928,7 @@ export declare class InstancedMesh extends Mesh {
 constructor();
 count: number;
 instanceColor: InstancedBufferAttribute | null;
-readonly instanceMatrix: InstancedBufferAttribute;
+instanceMatrix: InstancedBufferAttribute;
 boundingBox: Box3 | null;
 boundingSphere: Sphere | null;
 

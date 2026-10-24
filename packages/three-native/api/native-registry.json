@@ -3024,6 +3024,7 @@
         "frustumCulled",
         "geometry",
         "instanceColor",
+        "instanceMatrix",
         "layers.mask",
         "material",
         "matrixAutoUpdate",

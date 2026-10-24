@@ -7036,7 +7036,7 @@
         {
           "name": "instanceMatrix",
           "type": "InstancedBufferAttribute",
-          "mutable": false,
+          "mutable": true,
           "lifetime": "owned",
           "status": {
             "kind": "supported"
