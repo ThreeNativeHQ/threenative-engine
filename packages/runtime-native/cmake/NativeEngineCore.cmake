@@ -960,6 +960,12 @@ if(EMSCRIPTEN)
     tn_native_engine_target(tn-native-engine-web)
     set_target_properties(tn-native-engine-web PROPERTIES SUFFIX ".mjs"
         RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/build/web)
+    # The module names the sources it was built from, and `prepack` refuses a stale one
+    # (scripts/web-engine-stamp.mjs): a pack after an engine commit shipped the older Wasm.
+    find_program(TN_NODE_EXECUTABLE node REQUIRED NO_CMAKE_FIND_ROOT_PATH)
+    add_custom_command(TARGET tn-native-engine-web POST_BUILD
+        COMMAND ${TN_NODE_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/web-engine-stamp.mjs --write
+        VERBATIM)
     target_link_options(tn-native-engine-web PRIVATE --no-entry -sMODULARIZE=1 -sEXPORT_ES6=1
         # The whole 32-bit address space: a game the size of Midway (161 MB of GLBs, decoded on the
         # engine side) ran past emscripten's 2 GB default maximum and failed with std::bad_alloc.
