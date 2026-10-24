@@ -500,7 +500,12 @@ Each playtest runs on a project scaffolded from `--template adventure`:
     `src/render/surface.ts`, structure only, so the palette stays. Opus judge: PASS, 16 of 16
     frames IMPROVEMENT, crisp at rest. `2690a12a8` softens the Hollow slabs and bricks (judge:
     IMPROVEMENT in the Hollow); a grass and slope retune judged NEUTRAL was not committed.
-    Captures: `~/Downloads/lantern-vale/textures/`.
+    `6597d29ce` fades the grass photo on brown-painted banks (no more straw streaks) and sets the
+    slabs to 0.35 (judge: PASS on both). Captures: `~/Downloads/lantern-vale/textures/`.
+    Deferred (team lead, 2026-10-24): the Hollow slabs still read as light wooden parquet at low
+    angles under the torches. Cooler slab shades (0x64666a family) were judged NEUTRAL, 2 runs per
+    arm, and not committed. Revisit in a fresh pass with cool grey grout, a less streaky or
+    per-slab rotated stone texture, and more variation from slab to slab.
   - Wind (owner: "wind and vegetation movement is super fast"): TSL `time` is seconds on the owned
     engine (`renderer.cpp` frameTime_). `2690a12a8` slows the sway to periods of 7-10 s at 0.4 of
     the bend; frame-to-frame motion 0.5 s apart drops from 6.1-10.4 to 2.9-3.6 of 255. Opus judge:
