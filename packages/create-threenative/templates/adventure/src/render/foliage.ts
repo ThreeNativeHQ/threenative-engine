@@ -153,7 +153,10 @@ function merge(parts: readonly (readonly [BufferGeometry, number])[]): BufferGeo
   return mergeAll(parts.map(([g, color]) => paint(g, color)));
 }
 
-/** A lit plant material whose vertices above y = 0 sway with the wind, each instance on its own phase. */
+/**
+ * A lit plant material whose vertices above y = 0 sway with the wind, each instance on its own phase.
+ * `time` is seconds: the sway takes about 7 s one way and 10 s the other, a breeze, not a gale.
+ */
 function swaying(amount: number, vertexColors = true, color = 0xffffff): MeshStandardNodeMaterial {
   const material = new MeshStandardNodeMaterial({
     color,
@@ -163,12 +166,12 @@ function swaying(amount: number, vertexColors = true, color = 0xffffff): MeshSta
   });
   const phase = hash(instanceIndex).mul(6.28);
   const height = positionLocal.y.max(0);
-  const bend = height.mul(height).mul(amount);
+  const bend = height.mul(height).mul(amount * 0.4);
   material.positionNode = positionLocal.add(
     vec3(
-      sin(time.mul(1.7).add(phase)).mul(bend),
+      sin(time.mul(0.9).add(phase)).mul(bend),
       0,
-      sin(time.mul(1.2).add(phase.mul(1.7)))
+      sin(time.mul(0.63).add(phase.mul(1.7)))
         .mul(bend)
         .mul(0.6),
     ),
@@ -180,7 +183,7 @@ function swaying(amount: number, vertexColors = true, color = 0xffffff): MeshSta
   return material;
 }
 
-/** A crown's leaf clumps: the whole clump rocks slowly in the wind, the far side of it more. */
+/** A crown's leaf clumps: the whole clump rocks over 10 to 20 s in the wind, the far side of it more. */
 function canopyMaterial(): MeshStandardNodeMaterial {
   const material = new MeshStandardNodeMaterial({
     roughness: 0.75,
@@ -188,12 +191,12 @@ function canopyMaterial(): MeshStandardNodeMaterial {
     vertexColors: true,
   });
   const phase = hash(instanceIndex).mul(6.28);
-  const reach = positionLocal.length().mul(0.06);
+  const reach = positionLocal.length().mul(0.025);
   material.positionNode = positionLocal.add(
     vec3(
-      sin(time.mul(0.8).add(phase)),
-      sin(time.mul(1.3).add(phase.mul(2))).mul(0.4),
-      cos(time.mul(0.6).add(phase)),
+      sin(time.mul(0.45).add(phase)),
+      sin(time.mul(0.6).add(phase.mul(2))).mul(0.4),
+      cos(time.mul(0.32).add(phase)),
     ).mul(reach),
   );
   return material;

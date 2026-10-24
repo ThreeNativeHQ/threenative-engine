@@ -47,7 +47,11 @@ export function buildHollow(rng: () => number): IHollow {
   const group = new Group();
   group.name = "hollow";
   const materials = worldMaterials();
-  const wallMaterial = surfaced(C.stoneDark, "stone-wall", { flat: true, vertexColors: true });
+  const wallMaterial = surfaced(C.stoneDark, "stone-wall", {
+    flat: true,
+    vertexColors: true,
+    strength: 0.75,
+  });
   const box = (
     x0: number,
     x1: number,
@@ -177,7 +181,14 @@ export function buildHollow(rng: () => number): IHollow {
   }
   const slab = new BoxGeometry(1, 0.05, 1);
   [C.flagstone, C.flagstoneDark, C.flagstoneLight].forEach((shade, i) => {
-    group.add(instanced(slab, surfaced(shade, "rock", { flat: true }), shades[i] ?? [], false));
+    group.add(
+      instanced(
+        slab,
+        surfaced(shade, "rock", { flat: true, strength: 0.5 }),
+        shades[i] ?? [],
+        false,
+      ),
+    );
   });
   group.add(instanced(new BoxGeometry(0.025, 0.004, 1), lit(C.grout), cracks, false));
 
