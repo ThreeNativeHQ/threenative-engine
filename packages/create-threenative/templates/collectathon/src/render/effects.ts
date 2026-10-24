@@ -198,10 +198,11 @@ export function flashEffect(): IEffectOptions {
     ],
     drag: 3.5,
     gravity: -2,
-    life: 0.45,
+    // 0.9 s, as long as a dust puff, so a kick's sparks still trail the hero off the wall.
+    life: 0.9,
     mask: "star",
     opacity: 1,
-    size: [0.8, 0.25],
+    size: [1.1, 0.3],
   });
 }
 
@@ -216,7 +217,7 @@ export function sparkleEffect(): IEffectOptions {
     ],
     drag: 2.2,
     gravity: -5,
-    life: 0.6,
+    life: 0.9,
     mask: "star",
     opacity: 0.9,
     size: [0.32, 0.08],
@@ -263,7 +264,7 @@ export const BURSTS = {
   debris: { emitter: "dust", count: 14, shape: [2.5, 6, 0.6] },
   ledge: { emitter: "dust", count: 6, shape: [0.8, 0.4, 0.3] },
   poof: { emitter: "dust", count: 24, shape: [2.6, 1.6, 0.4] },
-  wallKick: { emitter: "flash", count: 26, shape: [4, 2.2, 0.15] },
+  wallKick: { emitter: "flash", count: 26, shape: [5, 3, 0.15] },
   trail: { emitter: "sparkle", count: 2, shape: [0.4, 0.3, 0.25] },
   streak: { emitter: "sparkle", count: 3, shape: [0.2, 0.1, 0.15] },
   coin: { emitter: "sparkle", count: 14, shape: [2.4, 3.5, 0.2] },

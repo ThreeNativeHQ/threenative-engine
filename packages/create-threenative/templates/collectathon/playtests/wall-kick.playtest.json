@@ -131,6 +131,18 @@
     },
     "components": [
       {
+        "entity": "effects",
+        "component": "fired",
+        "path": "wallKick",
+        "equals": 1,
+        "changed": true
+      },
+      {
+        "entity": "effects",
+        "component": "flash",
+        "gte": 26
+      },
+      {
         "entity": "camera-rig",
         "component": "cuts",
         "gte": 1

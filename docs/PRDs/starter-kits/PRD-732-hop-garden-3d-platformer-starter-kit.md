@@ -221,7 +221,17 @@ Each playtest runs on a project scaffolded from `--template collectathon`:
   - Hero: hanging, the legs swing back off the wall, splay and kick slowly. The eyes and nose are
     15% larger, and the eye whites glow a little (emissive 0.45).
   - Impacts: a third emitter, `flash`, draws hot white-to-amber stars for the wall kick (26) and a
-    ground-pound ring (40, 10 m/s outward).
+    ground-pound ring (40, 10 m/s outward). The flash and sparkle bursts live 0.9 s, as long as a
+    dust puff. At 0.45 s and 0.6 s they were missing from most filmed frames. The cause is the
+    capture, not the engine: a filmed step advances the game 2 ticks, but the particles age on the
+    TSL wall clock, and each screenshot costs far more wall time than 2 ticks. Normal blending, a
+    rewritten star mask and `graceSeconds = Infinity` each changed nothing and were reverted. The
+    burst does draw in the frame right after the event (wall kick `c-0055`, pound `f-0163`).
+    `wall-kick.playtest.json` now also asserts that the kick fires its burst (`fired.wallKick` = 1,
+    26 flash particles).
+  - Shaft camera tie-break: the cut tries the 35° arm before the 0.32 rad arm at each heading, so on
+    a tie it looks down into the shaft rather than along its walls (peak pitch 0.61 rad, closest arm
+    9 m).
   - Stone: blocks are cut into 1 m courses with ±13% tint each, so a tower reads as masonry.
 - 2026-10-24 (owner via lead: "polish world footer, add more vegetation, enemey"): the lead read
   "footer" as the world floor. The kit keeps the walkable lawn flat, because every gap and jump is
@@ -332,4 +342,7 @@ Unreal default look, and no frame is blank or white.
   `enemies`, `thornback` and `telegraphs`. Red-green for the shaft camera: with the round-2 crane
   restored, `wall-kick` fails on cuts 0, peak pitch 1.45 rad and closest arm 1.76 m. Round 3
   passes with 1 cut, 0.32 rad and 9 m. Performance: p95 17.7 ms, 59.2 fps, 321 draws, 111.5k
-  triangles. The budgets are 600 draws and 190k triangles.
+  triangles. The budgets are 600 draws and 190k triangles. After the effect-life and camera
+  tie-break follow-up, `wall-kick`, `effects`, `performance`, `collect`, `combat` and `enemies`
+  exit 0 again on `gen-12lp` (wall kick: 1 cut, peak 0.61 rad, closest 9 m; performance: p95
+  17.7 ms, 58.8 fps, 321 draws, 111.5k triangles).

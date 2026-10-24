@@ -82,7 +82,8 @@ export function createOrbitCamera(camera: PerspectiveCamera): IOrbitCamera {
     let best = reachAt(yaw, goal, probe);
     if (best < CAMERA_RIG.craneBelow) {
       for (const offset of CAMERA_RIG.craneHeadings) {
-        for (const angle of [CAMERA_RIG.elevation, CAMERA_RIG.craneElevation]) {
+        // The 35° arm first: on a tie it looks down into a shaft instead of along its walls.
+        for (const angle of [CAMERA_RIG.craneElevation, CAMERA_RIG.elevation]) {
           const reach = reachAt(yaw + offset, angle, probe);
           if (reach > best + 0.5) [heading, goal, best] = [yaw + offset, angle, reach];
         }
