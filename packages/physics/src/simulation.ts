@@ -794,7 +794,6 @@ function bodyDescription(
   type: PhysicsBodyType,
   position: IPhysicsBodyCreateOptions["position"],
   rotation: IPhysicsBodyCreateOptions["rotation"],
-  mass: number,
   continuousCollision: boolean,
 ): rapier.RigidBodyDesc {
   const description =
@@ -810,7 +809,6 @@ function bodyDescription(
   // transforms (including teleports), so enabling it there changes the existing bulk-transform
   // contract; CCD is meaningful for the dynamic bodies this option targets.
   if (type === "dynamic") description.setCcdEnabled(continuousCollision);
-  if (mass !== 0) description.setAdditionalMass(mass);
   return description;
 }
 
@@ -1096,13 +1094,15 @@ export function createWebPhysicsSimulation(
       const id = nextId;
       nextId += 1;
       const rawShape = createWebPhysicsShape(options.rapier, bodyOptions.shape, sensor);
+      // Explicit mass is the body's total mass. Adding it to the collider's density-derived
+      // mass made `mass: 2` weigh 10 kg on a 2 m cube, while the public field still said 2.
+      if (bodyOptions.mass > 0) rawShape.setMass(bodyOptions.mass);
       const rawBody = options.world.createRigidBody(
         bodyDescription(
           options.rapier,
           bodyOptions.type,
           bodyOptions.position,
           bodyOptions.rotation,
-          bodyOptions.mass,
           effectiveContinuousCollision(bodyOptions.type, bodyOptions.continuousCollision),
         ),
       );

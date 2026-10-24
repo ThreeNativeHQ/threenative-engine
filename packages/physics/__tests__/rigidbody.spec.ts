@@ -7,6 +7,7 @@ import { CharacterBody3D } from "../src/CharacterBody3D.js";
 import { CollisionShape3D } from "../src/CollisionShape3D.js";
 import { RigidBody3D } from "../src/RigidBody3D.js";
 import { type IPhysicsContext, rapier } from "../src/plugin.js";
+import { createWebPhysicsSimulation } from "../src/simulation.js";
 
 const worlds: RAPIER.World[] = [];
 const plugins: Array<ReturnType<typeof rapier>> = [];
@@ -32,6 +33,54 @@ afterEach(() => {
   for (const plugin of plugins.splice(0))
     plugin.dispose?.({} as ICtx<Record<string, unknown>, IPhysicsContext>);
   for (const instance of worlds.splice(0)) instance.free();
+});
+
+describe("explicit body mass", () => {
+  it("should be the body's total mass, not an addition to the collider's", async () => {
+    await RAPIER.init();
+    const instance = world();
+    const simulation = createWebPhysicsSimulation({
+      eventQueue: new RAPIER.EventQueue(true),
+      rapier: RAPIER,
+      version: RAPIER.version(),
+      world: instance,
+    });
+    const created = simulation.createBody({
+      mass: 2,
+      position: { x: 0, y: 0, z: 0 },
+      rotation: { w: 1, x: 0, y: 0, z: 0 },
+      sensor: false,
+      shape: CollisionShape3D.box(1, 1, 1).descriptor,
+      type: "dynamic",
+    });
+    const raw = created.body.raw as RAPIER.RigidBody;
+
+    expect(raw.mass()).toBeCloseTo(2, 5);
+    raw.applyImpulse({ x: 2, y: 0, z: 0 }, true);
+    instance.step();
+    expect(raw.linvel().x).toBeCloseTo(1, 4);
+  });
+
+  it("should keep automatic collider mass when the mass is zero", async () => {
+    await RAPIER.init();
+    const instance = world();
+    const simulation = createWebPhysicsSimulation({
+      eventQueue: new RAPIER.EventQueue(true),
+      rapier: RAPIER,
+      version: RAPIER.version(),
+      world: instance,
+    });
+    const created = simulation.createBody({
+      mass: 0,
+      position: { x: 0, y: 0, z: 0 },
+      rotation: { w: 1, x: 0, y: 0, z: 0 },
+      sensor: false,
+      shape: CollisionShape3D.sphere(1).descriptor,
+      type: "dynamic",
+    });
+
+    expect((created.body.raw as RAPIER.RigidBody).mass()).toBeCloseTo((4 / 3) * Math.PI, 2);
+  });
 });
 
 describe("RigidBody3D", () => {

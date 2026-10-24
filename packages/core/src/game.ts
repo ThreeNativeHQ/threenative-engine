@@ -956,6 +956,10 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     scene: Scene<TState, TPhysics>,
     ctx: ICtx<TState, TPhysics>,
   ): Promise<void> {
+    // A load can finish after the game moved on or stopped. Check before `enter()`, because an
+    // entry hook mutates the live Three.js scene and no later check can undo that. The check
+    // inside `#enterScene` stays: an entry hook may itself navigate.
+    if (this.#aborted || this.#ctx !== ctx || this.#scene !== scene) return;
     if (!this.#enterScene(scene, ctx)) return;
     const renderer = this.#renderer;
     const nodes = this.#computeDriven.warmupNodes;
@@ -1086,6 +1090,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     // support against the real backend; a target that supports none fails right here.
     const assets = createAssetLoader({ ...this.#config.assets, renderer: renderer.raw });
     if (assets.compressedTextures !== undefined) await assets.compressedTextures.ready;
+    this.#cleanup.push(() => assets.dispose());
     const entities = new Registry();
     const random = createRandom(this.#config.seed);
     const scheduler = new Scheduler();
@@ -1235,6 +1240,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       workProgress: () => assets.progress.settled + startupReadiness.workProgress,
       stallMs: STARTUP_STALL_MS,
     });
+    this.#cleanup.push(stopStallWatch);
     watchDeviceLoss(
       (
         renderer.raw as {
