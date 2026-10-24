@@ -89,7 +89,7 @@ export const C = {
   capDark: 0x1e2b5a,
   /** The hood's lining, rolled over the edge of the opening. */
   capLining: 0x5a72b4,
-  trousers: 0x6a5444,
+  trousers: 0x7a7458,
   bootCuff: 0x8f6a45,
   skin: 0xe8b98f,
   /** The skin's own faint warmth, added in shade. */

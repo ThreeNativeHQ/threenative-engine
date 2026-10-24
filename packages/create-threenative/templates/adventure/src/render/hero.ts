@@ -298,8 +298,8 @@ function mantleRadius(y: number): number {
   return 0;
 }
 
-/** The hood rises to a soft peak behind the crown. Below the head it drapes wider and longer, in
- * three broad folds down the back, and lies on the mantle down to a dagged edge. */
+/** The hood rises to a soft peak behind the crown. Below the head it drapes wider and longer, falls
+ * straight down behind the neck in three broad folds, and lies on the mantle down to a dagged edge. */
 function drape(v: Vector3): void {
   const length = v.length();
   const ny = v.y / length;
@@ -310,7 +310,7 @@ function drape(v: Vector3): void {
   const back = Math.max(0, -Math.sin(phi));
   const fold = 1 - 0.1 * ny * back * (0.5 + 0.5 * Math.cos(6 * (phi - (Math.PI * 3) / 2)));
   v.x *= (1 - 0.15 * ny) * fold;
-  v.z *= (1 - 0.2 * ny) * fold;
+  v.z = Math.max(v.z * (1 - 0.2 * ny), -HOOD.r) * fold;
   v.y *= 1 - 0.5 * ny;
   const on = mantleRadius(v.y + HOOD_ON_BODY) + 0.01;
   const across = Math.hypot(v.x, (v.z + HOOD.z) / 0.8);
@@ -783,6 +783,20 @@ export function createHero(): IHeroRig {
     ],
     // A lighter lining rolled over the edge, so the opening reads from any side.
     [strand(rim, () => 0.009, 6, 48), C.capLining, "cloth"],
+    // The seam over the crown, from the arch of the opening back to the tip.
+    [
+      strand(
+        [
+          ...[ARCH - 0.04, 0.6, 0.25].map((theta) => hoodPoint(Math.PI / 2, theta)),
+          ...[0.25, 0.6, 1.0].map((theta) => hoodPoint((Math.PI * 3) / 2, theta)),
+        ],
+        () => 0.005,
+        5,
+        24,
+      ),
+      C.capDark,
+      "cloth",
+    ],
   );
   bake(head, face);
 
@@ -807,22 +821,20 @@ export function createHero(): IHeroRig {
     bake(lock, [hang(0, 0, 0.17), hang(s * 0.008, -0.03, 0.14)]);
     return lock;
   });
-  // The tip gathers at the back of the head: a short tapering tail of the hood's cloth falling down
-  // her back, a little to one side, half sunk in the hood where it starts.
-  const tipRadius = (t: number): number =>
-    0.042 * Math.sin((Math.PI / 2) * Math.min(1, t / 0.3)) * (1 - t) ** 1.3 + 0.006;
-  const tipAt = (t: number): Vector3 => {
-    const [x, y, z] = hoodPoint((Math.PI * 3) / 2 + 0.25 * t, 1.45 + 1.25 * t);
-    const out = 1 + (Math.min(1, 0.5 + t) * tipRadius(t)) / HOOD.r;
-    return new Vector3(x * out, (y - HOOD.y) * out + HOOD.y, (z - HOOD.z) * out + HOOD.z);
-  };
-  const tipRoot = tipAt(0);
-  const hoodTip = joint(head, tipRoot.x, tipRoot.y, tipRoot.z);
+  // The tip leaves the peak behind the crown and hangs free down the back of the hood, curving to
+  // her left, its end clear of the cloth above the mantle.
+  const hoodTip = joint(head, ...hoodPoint((Math.PI * 3) / 2, 1.15));
   bake(hoodTip, [
     [
       strand(
-        [0, 0.2, 0.4, 0.6, 0.8, 1].map((t) => tipAt(t).sub(tipRoot).toArray()),
-        tipRadius,
+        [
+          [0, 0, 0.012],
+          [0.012, -0.035, -0.03],
+          [0.03, -0.09, -0.045],
+          [0.05, -0.15, -0.045],
+          [0.065, -0.2, -0.04],
+        ],
+        (t) => 0.034 * (1 - t) ** 1.2 + 0.006,
         8,
         16,
       ),
