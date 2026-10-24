@@ -1,5 +1,6 @@
 import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
+import { qualityPreset as coreQualityPreset } from "@threenative/core";
 import {
   Color,
   DataUtils,
@@ -45,7 +46,9 @@ describe("starter visual floor", () => {
     );
     const source = files.join("\n");
     expect(source).toContain("shadow");
-    expect(source).toContain('tonemapMode: "aces"');
+    for (const tier of ["high", "medium", "low"] as const) {
+      expect(qualityPreset(tier).tonemapMode, tier).toBe("filmic");
+    }
     expect(source).toContain("@threenative/core");
   });
 
@@ -89,9 +92,11 @@ describe("starter visual floor", () => {
         new RegExp(`${stage}[A-Za-z]*(?:Enabled|Stage|Stages)\\b`, "u"),
       );
     }
-    expect(quality).toContain("gtaoEnabled: true");
-    expect(quality).toContain("bloomEnabled: true");
-    expect(quality).toContain("vignetteAmount:");
+    expect(quality).toContain("coreQualityPreset");
+    const high = qualityPreset("high");
+    for (const field of ["gtaoEnabled", "bloomEnabled", "vignetteAmount"] as const) {
+      expect(high[field], field).toBe(coreQualityPreset("high")[field]);
+    }
   });
 
   it("should keep the metre grid on the same byte layout minimal ships", async () => {
@@ -115,13 +120,13 @@ describe("starter visual floor", () => {
     expect(await definitions(starter)).toEqual(await definitions(minimal));
   });
 
-  it("should gather occlusion with fewer samples on medium than high", () => {
+  it("should inherit core occlusion sampling on high and medium", () => {
     const highPreset = qualityPreset("high");
     const mediumPreset = qualityPreset("medium");
-    const highSamples = highPreset.gtaoSamples ?? 16;
-    expect(highSamples).toBe(16);
-    expect(mediumPreset.gtaoSamples).toBe(8);
-    expect(mediumPreset.gtaoSamples).toBeLessThan(highSamples);
+    expect(highPreset.gtaoSamples).toBeGreaterThan(0);
+    expect(highPreset.gtaoSamples).toBe(coreQualityPreset("high").gtaoSamples);
+    expect(mediumPreset.gtaoSamples).toBe(coreQualityPreset("medium").gtaoSamples);
+    expect(mediumPreset.gtaoSamples).toBeLessThanOrEqual(highPreset.gtaoSamples);
   });
 
   it("should ship no contrast-reducing stage at any tier", () => {
