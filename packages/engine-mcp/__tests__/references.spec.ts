@@ -5,6 +5,7 @@ import { gzipSync } from "node:zlib";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { makeTempDirSync } from "../../../test-support/temp-dir.js";
 
+const liveUrl = process.env.THREENATIVE_REFERENCES_URL;
 const fixture = path.resolve("packages/engine-mcp/__tests__/fixtures/refs");
 const manifest = path.resolve("packages/create-threenative/capabilities.json");
 const game = JSON.parse(readFileSync(path.join(fixture, "game-sm64.json"), "utf8"));
@@ -226,3 +227,23 @@ describe("reference MCP tools", () => {
     ).toBe("matched");
   });
 });
+
+// Opt in with THREENATIVE_REFERENCES_URL=<published-release>/ and -t live.
+it.skipIf(!liveUrl)(
+  "live SM64 release downloads, searches and contains at least ten pinned cards",
+  async () => {
+    vi.stubEnv("THREENATIVE_REFERENCES_URL", liveUrl ?? "");
+    const result = await call("engine_search_references", { situation: "triple jump" });
+    expect(result.results[0]).toMatchObject({ game: "sm64", id: "triple-jump", kind: "card" });
+    const loaded = await (await refs()).loadReferenceGame("sm64");
+    expect(loaded.cards.length).toBeGreaterThanOrEqual(10);
+    expect(loaded.sha).toMatch(/^[0-9a-f]{40}$/u);
+    const detail = await call("engine_reference_detail", {
+      game: "sm64",
+      id: "triple-jump",
+      kind: "card",
+    });
+    expect(detail.sha).toBe(loaded.sha);
+    expect(detail.card.constants.length).toBeGreaterThan(0);
+  },
+);
