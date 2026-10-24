@@ -715,7 +715,7 @@ function familyReportObservations(fulfilled: boolean) {
   return {
     tone: [{ code: "TN_TONE", label: "after.png", mean: 100, p1: 0, p50: 100, p99: 200, clipFraction: 0, blackFraction: 0 }],
     components: { player: { health: { after: 2, before: 3 } } },
-    console: [],
+    console: [{ level: "log", text: `TN_FRAME_BUDGET:${JSON.stringify({ gpu: { p95: 4, samples: 8 } })}` }],
     deviceMetrics: {
       available: true,
       errors: [],
@@ -749,7 +749,7 @@ function familyReportObservations(fulfilled: boolean) {
     hud: { "score-label": { after: { text: "Score: 10" }, before: { text: "—" } } },
     network: [],
     overlayNodes: { "game-ui:[data-testid=fps-crosshair]": { after: { text: "true", visible: true } } },
-    performanceSeries: [{ drawCalls: 5, frameMs: 10, triangles: 100 }],
+    performanceSeries: [{ drawCalls: 5, frameMs: 10, phases: { render: 1, update: 0.1 }, triangles: 100 }],
     physicsDebugBefore: physicsSample([
       { category: "sleep", entity: "crate.1", value: 0 },
       { category: "sleep", entity: "crate.2", value: 0 },

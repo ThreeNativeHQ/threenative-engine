@@ -2,7 +2,13 @@ import { readPath, jsonEqual, textValue } from '../assertion-report.js';
 // Extracted verbatim from assertion-evaluators.ts (PRD-182 Phase 2); do not edit semantics here.
 import type { IEvaluationContext } from "./context.js";
 import { classifyAdapter, type IAdapterClassification } from "./adapter-class.js";
+import { frameDisplay, gpuWindows } from "./frame-cost.js";
 import { evaluatePerformanceAssertion, evaluateResourceAnyOfAssertion, hasFinalPathExpectation, evaluatePathAssertion, pathValuePass, matchingSignals, evaluateWorldAssertion, evaluateAudioAssertion } from "./helpers.js";
+
+function gpuLane(consoleTexts: readonly unknown[]): { gpuP95?: number } {
+  const { p95 } = gpuWindows(consoleTexts);
+  return p95 === undefined ? {} : { gpuP95: p95 };
+}
 
 export function emitPerfSignalsWorld(ctx: IEvaluationContext): void {
   const { assertions, diagnostics } = ctx;
@@ -14,6 +20,7 @@ export function emitPerfSignalsWorld(ctx: IEvaluationContext): void {
       budget.maxFrameMsP95 === undefined ? scenarioAssertions.performance : { ...scenarioAssertions.performance, maxFrameMsP95: budget.maxFrameMsP95 },
       input.report.observations?.performanceSeries,
       input.scenario.sourcePath,
+      { display: frameDisplay(), ...gpuLane((input.report.observations?.console ?? []).map(({ text }) => text)) },
     );
     // The budget rides on the rows that always exist, so a run says which budget held it, or why none did.
     assertions.push(...result.assertions.map((row) =>

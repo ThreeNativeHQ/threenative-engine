@@ -1,0 +1,49 @@
+import { hostDisplayRequested } from "../runner/captureEnvironment.js";
+
+const FRAME_BUDGET = "TN_FRAME_BUDGET:";
+
+/** Which display paced the frames: the runner's private Xvfb (`virtual`) or a real one. */
+export type FrameDisplay = "real" | "virtual";
+
+/**
+ * On Linux the runner paints on a private Xvfb unless `TN_PLAYTEST_HOST_DISPLAY` asks for the
+ * session's display (`decideDisplayStrategy`), and a virtual display paces frames on its own
+ * timer. Every other platform paints on a real one.
+ */
+export function frameDisplay(env: NodeJS.ProcessEnv = process.env, platform: string = process.platform): FrameDisplay {
+  return platform === "linux" && !hostDisplayRequested(env) ? "virtual" : "real";
+}
+
+export interface IGpuWindows {
+  /**
+   * The GPU p95 of the latest window that measured it, in milliseconds, or `undefined` when no window
+   * carried a GPU reading. The first window holds the startup shader compile (an RTS read 196 ms
+   * there and 6.4 ms in the next), so the steady state a player is left in is the latest one.
+   */
+  readonly p95?: number;
+  /** One GPU p95 per `TN_FRAME_BUDGET` window that measured it, in order. */
+  readonly windows: readonly number[];
+}
+
+/**
+ * The engine's own GPU time, read off its `TN_FRAME_BUDGET` windows. A window with no GPU
+ * reading (`gpu` absent, or `gpuMs` null because the adapter has no timestamp queries) adds
+ * nothing, and with no window at all the GPU is unmeasured, never zero.
+ */
+export function gpuWindows(consoleLines: readonly unknown[]): IGpuWindows {
+  const windows: number[] = [];
+  for (const line of consoleLines) {
+    if (typeof line !== "string") continue;
+    const at = line.indexOf(FRAME_BUDGET);
+    if (at === -1) continue;
+    let report: { gpu?: { p95?: unknown; samples?: unknown } | null };
+    try {
+      report = JSON.parse(line.slice(at + FRAME_BUDGET.length)) as typeof report;
+    } catch {
+      continue;
+    }
+    const p95 = report.gpu?.p95;
+    if (typeof p95 === "number" && Number.isFinite(p95) && (typeof report.gpu?.samples !== "number" || report.gpu.samples > 0)) windows.push(p95);
+  }
+  return windows.length === 0 ? { windows } : { p95: windows[windows.length - 1], windows };
+}

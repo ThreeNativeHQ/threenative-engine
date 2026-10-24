@@ -295,6 +295,17 @@ holds the run to 16.7 ms at nearest-rank p95, on a discrete, integrated or mobil
 `maxFrameMsReason`, which the report prints; without it the scenario throws at load. The runner
 reads no display period from the host today, so 16.7 ms is the whole rule.
 
+What 16.7 ms judges depends on the display. The runner paints on a private Xvfb unless
+`TN_PLAYTEST_HOST_DISPLAY=1` names the session's display, and a virtual display paces frames on its
+own timer, so its rAF interval is cadence, not game cost. On a **virtual display** the run is judged
+on the engine's own cost: the p95 of update plus render per frame, or the GPU p95 of the latest
+`TN_FRAME_BUDGET` window that measured it (the first window holds the startup shader compile) when
+that is larger. The interval p95 is still in the row details, marked `gated: false`
+with the reason. On a **real display** the interval p95 and the cost p95 must both hold 16.7 ms,
+because host gap only the interval sees is part of what a player feels. A run with no CPU split on
+its samples, or no GPU reading in any `TN_FRAME_BUDGET` window (an adapter without timestamp
+queries), fails closed: an unmeasured cost is not a zero. There is no tolerance multiplier.
+
 **An engine performance warning fails the run.** Any `TN_SCENE_WARNING` console line, and any
 `TN_RENDER_PROJECTION` line with `projecting: false`, fails the `diagnostics` row with
 `TN_PLAYTEST_PERF_WARNING`, whatever the console-error policy. The report prints the marker text and,
