@@ -1614,6 +1614,17 @@ std::vector<std::shared_ptr<PipelineCompilation>> RenderDatabase::compileAsync(R
     return renderer.compileAsync(items, state, lights, outputFormat);
 }
 
+bool RenderDatabase::prepareEnvironments(Renderer& renderer, Object3D& scene, Camera& camera) {
+    LightState lights;
+    gpuJoints_ = renderer.currentGpuJoints();
+    gpuPreparing_ = true;
+    compiling_ = true;
+    try { prepare(scene, camera, lights, nullptr, renderer.hasVirtualShadows()); } catch (...) { gpuPreparing_ = compiling_ = false; throw; }
+    gpuPreparing_ = compiling_ = false;
+    if (!diagnostics_.empty()) throw std::runtime_error(diagnostics_.front());
+    return renderer.prepareEnvironments(items_);
+}
+
 uint64_t RenderDatabase::render(Renderer& renderer, Object3D& scene, Camera& camera, std::array<double, 4> clear, std::array<double, 2>* cpuMs) {
     // Planning rewrites the draws a pending encode reads, so a second frame in flight is refused first.
     if (renderer.framePending())

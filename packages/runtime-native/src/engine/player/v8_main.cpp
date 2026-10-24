@@ -318,6 +318,7 @@ class V8Game {
     /** Settles a read promise from the GPU event drain: bytes as a Uint8Array (an ArrayBuffer for a storage read), or a rejection. */
     void settleRead(v8::Global<v8::Promise::Resolver>& pending, GpuStatus status, const std::vector<uint8_t>& bytes, bool asBuffer = false);
     static void compileAsync(const v8::FunctionCallbackInfo<v8::Value>& info);
+    static void prepareEnvironment(const v8::FunctionCallbackInfo<v8::Value>& info);
     struct Compilation {
         std::shared_ptr<void> root, camera, scene;
         OutputState output;
@@ -949,6 +950,33 @@ void V8Game::compileAsync(const v8::FunctionCallbackInfo<v8::Value>& info) {
     game.pollCompilations();
 }
 
+// `tn.prepareEnvironment(scene, camera)`: one step of the PMREM bake that render() gates every frame
+// on, drawn or not, so startup warm-up can wait for it as three's PMREM preparer does on the web.
+// True once every environment the scene samples is baked; false while it bakes or before the renderer opens.
+void V8Game::prepareEnvironment(const v8::FunctionCallbackInfo<v8::Value>& info) {
+    auto& game = *static_cast<V8Game*>(info.Data().As<v8::External>()->Value());
+    auto* isolate = info.GetIsolate();
+    if (!game.hasGpu_) { info.GetReturnValue().Set(true); return; }  // --check-game: nothing will be drawn
+    if (!game.renderer_) { info.GetReturnValue().Set(false); return; }
+    auto* scene = info.Length() > 0 ? game.engineObject(info[0], "Object3D") : nullptr;
+    auto* camera = info.Length() > 1 ? game.engineObject(info[1], "Camera") : nullptr;
+    if (!scene || !camera) {
+        isolate->ThrowException(v8::Exception::TypeError(v8str(isolate, "TN_NATIVE_ENVIRONMENT: scene or camera invalid")));
+        return;
+    }
+    try {
+        game.idleRenderer();
+        game.renderer_->poll();  // the bake advances only after its previous submission completes
+        RenderDatabase database;
+        database.shadowMapEnabled = game.shadowMap_;
+        database.shadowMapType = game.shadowMapType_;
+        info.GetReturnValue().Set(database.prepareEnvironments(*game.renderer_, *static_cast<Object3D*>(scene->ptr.get()),
+            *static_cast<Camera*>(camera->ptr.get())));
+    } catch (const std::exception& error) {
+        isolate->ThrowException(v8::Exception::Error(v8str(isolate, error.what())));
+    }
+}
+
 void V8Game::pollCompilations() {
     if (!renderer_ || compilations_.empty()) return;  // boot can call before the device is initialized
     idleRenderer();
@@ -1222,6 +1250,7 @@ bool V8Game::start(const std::string& path, std::string& error) {
     host->Set(ctx, v8str(isolate_, "renderTarget"), v8::Function::New(ctx, &renderTarget, self).ToLocalChecked()).Check();
     host->Set(ctx, v8str(isolate_, "hasRenderer"), v8::Function::New(ctx, &hasRenderer, self).ToLocalChecked()).Check();
     host->Set(ctx, v8str(isolate_, "compileAsync"), v8::Function::New(ctx, &compileAsync, self).ToLocalChecked()).Check();
+    host->Set(ctx, v8str(isolate_, "prepareEnvironment"), v8::Function::New(ctx, &prepareEnvironment, self).ToLocalChecked()).Check();
     host->Set(ctx, v8str(isolate_, "captureFace"), v8::Function::New(ctx, &captureFace, self).ToLocalChecked()).Check();
     host->Set(ctx, v8str(isolate_, "readTarget"), v8::Function::New(ctx, &readTarget, self).ToLocalChecked()).Check();
     host->Set(ctx, v8str(isolate_, "readFrame"), v8::Function::New(ctx, &readFrame, self).ToLocalChecked()).Check();

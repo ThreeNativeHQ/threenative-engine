@@ -45,6 +45,9 @@ class RenderDatabase {
     std::vector<std::shared_ptr<PipelineCompilation>> compileAsync(Renderer& renderer, Object3D& root,
         Camera& camera, Object3D* targetScene = nullptr, WGPUTextureFormat outputFormat = WGPUTextureFormat_RGBA8Unorm);
 
+    /** Startup warm-up's PMREM step: advances the bake render() would gate on, draws nothing; true once every environment the scene samples is baked. */
+    bool prepareEnvironments(Renderer& renderer, Object3D& scene, Camera& camera);
+
     /** CPU preparation used by render; returned pointers remain valid until the next prepare. */
     const std::vector<DrawItem>& prepare(Object3D& scene, Camera& camera, LightState& lights, Object3D* targetScene = nullptr, bool virtualShadows = false);
 
