@@ -319,6 +319,48 @@ Each playtest runs on a project scaffolded from `--template adventure`:
   while the camera is closer than 1.8 m to her head, as Ocarina's hero does. Proof: state
   `heroViewNearest` (the closest the camera came to her head while she was drawn); `puzzle` asserts
   at least 1.8 m. Red: 1.43 m without the hide. Green: 1.80 m, `puzzle` exit 0.
+- 2026-10-24 (judge round 2 FAIL on the video, lead's readability list; decided without the owner,
+  who is AFK; the look stays frozen, so no light, material, sky, fog, post or art changed): the
+  settled-lock probe (`lockFramedShare`, `lockClearShare`) missed most of the fight, so a whole-run
+  probe replaces it. Every tick, through the camera's own projection, `scenes/Play.ts` counts:
+  - `fightFramedShare` and `fightOutRun`: while a target is locked or a live foe stands within 8 m,
+    Wren's silhouette and the target both inside 90% of the frame (assert at least 0.95, and no
+    run of more than 10 ticks out).
+  - `fightOccluded`: the target's box covers Wren's screen centre while nearer the lens, or, once a
+    lock has glided in for 15 ticks, Wren hides the locked target's centre and over half its box
+    (assert 0).
+  - `cameraBlocked`: something solid between Wren's head and the lens (assert 0).
+  - `nearWallWorst`: a 24-ray grid, every 6th tick, of walls in the front half of the way from the
+    lens to Wren (assert at most 0.2).
+  - `hintOverlap`: Wren's box under the controls card (assert 0).
+  `lockon`, `combat`, `boss`, `flicker` and `thornback` assert all six; `move-hollow` and `hearts`
+  assert the two camera ones; `puzzle` asserts `cameraBlocked`. Fixes, all gameplay code:
+  - The Warden passed through Wren after an unblocked charge hit, so the lock line flipped and the
+    camera filmed her from inside the stone (f09). A charge that meets Wren now stops there and the
+    Warden recovers. The `boss` scenario dodges the first charge with a locked side hop into the
+    wall stun, and takes the hit after the clank (`wardenState` is the new state field it waits on).
+  - Locked, the camera measures the picture: it turns the lens onto both bodies and widens it up to
+    75° until both fit inside 80% of the frame (Wren's feet off the bottom at the start, f07). It
+    orbits on the side of the fight line it already films from, so a lock or a target switch never
+    swings across the line, and the lock and orbit now ease at 10/s (was 4/s), as the camera's place
+    does. With Wren's back to a wall it tries swings up to 1.5 rad either side and takes the first
+    arm clear over 80% of its length.
+  - Every arm checks the picture itself: while walls in the front 60% of the way cover over 2/24 of
+    its own grid, it shortens by 0.75 m, so the camera follows Wren through a doorway into the
+    block room (raw 04). Easing toward a pose a wall just cut short now cuts instead, so the camera
+    never crosses a lintel (`puzzle` blocked 23 ticks).
+  - The controls card moved to the top right, out of Wren's lower-middle place (f08).
+  Red (new probes, `HEAD` camera, Warden and controls bar): `boss` framed 0.381, out run 251,
+  occluded 77, card overlap 141; `combat` occluded 10; `move-hollow` (now walking through the
+  doorway to the raw-04 pose) walls 0.333; `puzzle` blocked 23. All exit 1.
+  Deferred: in the alcove passage (4 m wide under a 1 m lintel), with Wren walking along its south
+  wall, the held camera yaw pins the camera beside her and stone fills up to half the frame. A fix
+  turns the unlocked camera, which changes what the stick means, so `puzzle` does not assert
+  `nearWallWorst`. Revisit with an Ocarina-style wall slide for the unlocked camera.
+  Green, all 11 scenarios exit 0 on the nvidia turing adapter: `boss` framed 0.998, out run 1,
+  occluded 0, card overlap 0; `combat`, `lockon`, `flicker`, `thornback` framed 1, occluded 0;
+  `move-hollow` walls 0.083 (Wren ends 3 m into the block room, the camera inside it); `puzzle`
+  blocked 0; `performance` p95 17.7 ms, 303 draws, 168,725 triangles, tier high, no budget raised.
 
 ## Execution Phases
 
@@ -351,7 +393,7 @@ runs the native player once to record whether navigation is bound.
 - [x] AC-4: a Mossling chases the hero around a wall to reach it. The sword is absent before the clearing chest and a slash defeats a Mossling in two hits only inside the 1.4 m arc. proof: `playtests/combat.playtest.json` — Evidence: exit 0. KeyJ before the chest: 0 slashes. A slash at a dummy 90° off the arc: 0 hits; the dummy falls on the 2nd cut. `mossling.0` wall-follows 6.86 m around the ruin wall, bites Wren (2.5 hearts), and falls on the 2nd cut. Red: with the wall-follow off, the wait for the bite timed out after 30 s (exit 2).
 - [x] AC-5: a Mossling hit costs a half-heart, a hit into the raised shield front costs none, a hit from behind the shield costs a half-heart, and zero hearts respawns the hero at the last door with full hearts. proof: `playtests/hearts.playtest.json` — Evidence: exit 0. A bite behind the raised shield: 3 → 2.5 hearts. A bite into the shield front: 2.5 hearts, `shieldBlocks` 1. After 6 hits Wren falls and respawns at `hollow-entry` with 3 hearts, `respawns` 1.
 - [x] AC-6: pushing the block 1 m per step onto the floor switch opens the grate, the chest then gives the small key (HUD `keys: 1`), a block pushed into a wall stops, and the locked door opens only with the key. proof: `playtests/puzzle.playtest.json` — Evidence: exit 0. The door reads `Locked` and stays shut before the key. Two pushes move the block exactly 2 m onto the switch (`blockSteps` 2) and the grate opens. Pushes into the north wall are refused (`refused` 3, block still at z -25). The chest gives `keys` 1, the door opens and spends it (`keys` 0). Red: before the engine fix below, Wren read airborne against the stopped block and never made the 2nd push (`blockSteps` 1). Before the ray fix, the block slid through the wall to z -27.
-- [x] AC-7: the Warden takes damage only while stunned, three stuns defeat it, and the heart vessel then raises capacity from 3 to 4 hearts and refills them. proof: `playtests/boss.playtest.json` — Evidence: exit 0. The first charge costs a heart (2 hearts). A wall stun, then two shield stuns (`shieldBlocks` 2): 3 stuns. A cut during the wind-up clanks (`clanks` 1, health stays 2). Health 3 → 2 → 1 → 0 on the three stunned cuts, then capacity 3 → 4 and hearts 4, `cleared` true.
+- [x] AC-7: the Warden takes damage only while stunned, three stuns defeat it, and the heart vessel then raises capacity from 3 to 4 hearts and refills them. proof: `playtests/boss.playtest.json` — Evidence: exit 0. The first charge costs a heart (2 hearts). A wall stun, then two shield stuns (`shieldBlocks` 2): 3 stuns. A cut during the wind-up clanks (`clanks` 1, health stays 2). Health 3 → 2 → 1 → 0 on the three stunned cuts, then capacity 3 → 4 and hearts 4, `cleared` true. Since judge round 2 (Decisions, 2026-10-24) a charge that meets Wren stops there, so the scenario side-hops the first charge into the wall stun and takes the hit after the clank; same counts, exit 0.
 - Phase 1 rerun after the Phase 2 changes and the physics fix: `survives`, `move`, `move-hollow` and `lockon` exit 0 (the first `survives` try died on `net::ERR_NETWORK_CHANGED` before the bridge loaded, a host network event; the rerun passed).
 
 #### Phase 3: Registered, native and judged
@@ -367,6 +409,6 @@ visible, and no frame is blank or white.
 **Verification:** the commands on each box. The judge verdict and the PR screenshots go on the PR
 (orphan `prd-733-screenshots` branch, with the PRD-732 images on the same PR).
 
-- [x] AC-8: the kit passes every registration gate and the template lane. proof: `pnpm budgets && pnpm exec vitest run scripts/__tests__/ci-structure.spec.ts scripts/__tests__/primary-docs.spec.ts scripts/__tests__/check-template-conventions.spec.ts && pnpm test:templates` — Evidence: `pnpm budgets` exit 0. The registration specs (scaffold, looks, auto-exposure-scaffold, ci-structure, primary-docs, check-template-conventions, playtest) pass 370/370 on the kit's own tree, with the adventure scaffold hash re-pinned after the hero and camera edits. `pnpm check:docs` passes. `TN_TEMPLATE_ONLY=adventure` template lane: 9 scenarios plus the boot smoke pass ("adventure: scaffolded playtests passed"). After the hero and camera edits, all 9 scenarios rerun green on the nvidia adapter (`performance`: p95 18.5 ms, 275 draws, 34,477 triangles, tier high). `pnpm test:tone` has no adventure case, so it did not run. After the owner polish round (hero, floor, vegetation, Flicker, Thornback), all 11 scenarios exit 0 on the nvidia turing adapter (`performance`: p95 18.4 ms, 304 draws, 168,725 triangles, tier high, no budget raised). The 9 registration specs pass 402/402 with the hash re-pinned, `pnpm budgets` exit 0 (the PRD-289 conventions row now cites `Hero.ts:144`), `pnpm check:docs` exit 0.
+- [x] AC-8: the kit passes every registration gate and the template lane. proof: `pnpm budgets && pnpm exec vitest run scripts/__tests__/ci-structure.spec.ts scripts/__tests__/primary-docs.spec.ts scripts/__tests__/check-template-conventions.spec.ts && pnpm test:templates` — Evidence: `pnpm budgets` exit 0. The registration specs (scaffold, looks, auto-exposure-scaffold, ci-structure, primary-docs, check-template-conventions, playtest) pass 370/370 on the kit's own tree, with the adventure scaffold hash re-pinned after the hero and camera edits. `pnpm check:docs` passes. `TN_TEMPLATE_ONLY=adventure` template lane: 9 scenarios plus the boot smoke pass ("adventure: scaffolded playtests passed"). After the hero and camera edits, all 9 scenarios rerun green on the nvidia adapter (`performance`: p95 18.5 ms, 275 draws, 34,477 triangles, tier high). `pnpm test:tone` has no adventure case, so it did not run. After the owner polish round (hero, floor, vegetation, Flicker, Thornback), all 11 scenarios exit 0 on the nvidia turing adapter (`performance`: p95 18.4 ms, 304 draws, 168,725 triangles, tier high, no budget raised). The 9 registration specs pass 402/402 with the hash re-pinned, `pnpm budgets` exit 0 (the PRD-289 conventions row now cites `Hero.ts:144`), `pnpm check:docs` exit 0. After the judge round 2 readability fixes: all 11 scenarios exit 0 (`performance` p95 17.7 ms, 303 draws, 168,725 triangles), the 9 specs pass 402/402 with the hash re-pinned, `pnpm budgets` exit 0.
 - [ ] AC-9: the kit runs 300 frames on the native desktop engine player with a non-blank capture. proof: `node packages/playtest/dist/runner/cli.js <project>/native-playtests/survives.playtest.json --target desktop` — Evidence: open, engine-blocked (see `## Blocked on`). `pnpm build --target desktop` with the worktree's `tn-native-engine-player-v8` builds `dist-native/adventure/adventure`. The run exits 2 with `TN_INSPECT_GAME_BRIDGE: TypeError: TN_TSL uniform: expected a TSL node or number`, the core auto exposure blocker PRD-732 also records.
 - [ ] AC-10: the visual judge returns pass on every criterion above for all three poses. proof: the judge report linked from the PR — Evidence: open, for the lead's judge. Captures, headed WebGPU on the nvidia adapter, two runs per pose: `~/Downloads/lantern-vale/01-vale-run1.png` to `06-warden-run2.png`. All six report `TN_WORLD_ENVIRONMENT` `tonemapMode: "filmic"` and `TN_AUTO_EXPOSURE` measured and applied (settled in the vale and the block room, still settling at the Warden pose). Gameplay video: `~/Downloads/lantern-vale/lantern-vale-gameplay.mp4` (31.5 s: the lock-on arrow and slash, shield block, block push and grate, key and door, the Warden stun). Lock-on stills, headed WebGPU on the nvidia adapter, two runs per pose: `07-lockon-mossling-run1.png` to `10-lockon-warden-run2.png`. Round 1 moved to `~/Downloads/lantern-vale/round1/`. Polish round (2026-10-24): `01-vale.png` to `13-flicker-block.png` labelled "LANTERN VALE ca97704", `hero-front/side/back/guard.png` (WebGL turnaround viewer, not the game renderer), and `lantern-vale-gameplay.mp4` (51 s, live clock, labelled `20b0d9e06`). Immutable provenance export for the Unreal comparison: `~/.hermes/cache/scratch/starter-kits-unreal-comparison-20261024/captures/adventure/20b0d9e065e3cae7e3f0b5e085cb89ec515f637d/` (3 poses, tier high, RTX 2080, 1280x720 and 1920x1080, state.json, scene.glb, SHA256SUMS, read-only). A repeat run differs by a mean of 0.4-3.2 of 255, because TSL `time` sway and the effects run on wall time.

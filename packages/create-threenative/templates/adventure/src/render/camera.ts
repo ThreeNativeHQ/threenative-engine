@@ -7,11 +7,17 @@
 // nothing to lock, swings it behind Wren: "up" on the stick keeps its meaning until the player asks
 // for a new one.
 //
-// Locked, it frames the fight the way Ocarina does: it slides over Wren's right shoulder, drops,
+// Locked, it frames the fight the way Ocarina does: it slides over Wren's shoulder, drops,
 // backs off for a tall or a close target, and aims part of the way toward the target, so Wren
 // stands in the lower third and never hides what she fights. Its yaw, the one the stick reads,
-// does not change: the shoulder offset and the aim only move the picture.
-import { type Box3, MathUtils, type PerspectiveCamera, Vector3 } from "three";
+// does not change: the shoulder offset and the aim only move the picture. Then it measures the
+// picture: when Wren or the target would leave the frame, it turns the lens onto both of them and
+// widens it, up to `FIT.maxFov`, until both fit.
+//
+// Then it checks the picture itself: while walls fill the front half of the way to Wren (a doorway
+// behind her, the jamb of a nook she walks into), the arm shortens, so the camera follows her
+// through instead of filming her past the stone.
+import { Box3, MathUtils, type PerspectiveCamera, Vector3 } from "three";
 
 const DISTANCE = 5.6;
 const HEIGHT = 2.6;
@@ -19,14 +25,33 @@ const HEIGHT = 2.6;
 const AIM_HEIGHT = 0.9;
 /** Yaw ease rate, per second. */
 const YAW_RATE = 4;
+/**
+ * Ease rate, per second, of the camera's place and of the lock's orbit into the fight framing: a
+ * lock that started on the fight line is off it within a few ticks, so Wren never hides the target.
+ */
+const FRAME_RATE = 10;
 /** Distance kept in front of a wall the arm would pass through. */
 const WALL_MARGIN = 0.35;
 /** The most a pulled-in camera climbs above its usual height, unlocked. */
 const MAX_CLIMB = 1.6;
+/** The shortest arm, in metres. */
+const MIN_ARM = 0.6;
+/** How much the arm shortens per try while walls clutter the view. */
+const ARM_STEP = 0.75;
+/**
+ * The most of the view (a 6 by 4 grid of rays) that walls in the front `reach` of the way to Wren
+ * may cover before the arm shortens: stricter than the playtests' half-way and 20%, for margin.
+ */
+const CLUTTER = { reach: 0.6, share: 2 / 24 };
+const FOV = 55;
+/** Wren's body around her origin (her waist), for the framing: soles to the top of her cap. */
+const HERO = { below: 0.85, above: 0.95, radius: 0.35 };
+/** Locked framing: both bodies stay inside `share` of the frame, the lens never wider than this. */
+const FIT = { share: 0.8, maxFov: 75 };
 
 /** The locked framing: every number a fight's picture depends on. */
 const LOCK = {
-  /** Metres to the right of Wren, over her shoulder. */
+  /** Metres beside Wren, over her shoulder on the side the camera orbits to. */
   shoulder: 0.7,
   /**
    * Radians the camera swings round Wren to her right while it keeps aiming down the fight: the
@@ -53,10 +78,19 @@ const LOCK = {
   aimPull: 0.45,
   /** The steepest the camera looks down at its aim. */
   maxPitch: MathUtils.degToRad(35),
+  /**
+   * Swings tried, nearest the wanted one first, when a wall cuts the arm under `clearShare` of its
+   * length: with her back to a wall the camera films the fight from the side instead.
+   */
+  swings: [0, 0.5, -0.5, 1, -1, 1.5, -1.5],
+  clearShare: 0.8,
 };
 
-/** A ray from `from` to `to`; returns the hit distance, or undefined when nothing is in the way. */
-export type CameraBlocker = (from: Vector3, to: Vector3) => number | undefined;
+/** A ray from `from` to `to`; returns the first hit, or undefined when nothing is in the way. */
+export type CameraBlocker = (
+  from: Vector3,
+  to: Vector3,
+) => { readonly distance: number; readonly normal: { readonly y: number } } | undefined;
 
 /** The locked target, as the camera frames it: its live bounds and the marker's top. */
 export interface ILockFrame {
@@ -75,7 +109,7 @@ export interface IFollowCamera {
 }
 
 export function setupCamera(camera: PerspectiveCamera, blocked: CameraBlocker): IFollowCamera {
-  camera.fov = 55;
+  camera.fov = FOV;
   camera.near = 0.1;
   camera.far = 600;
   camera.updateProjectionMatrix();
@@ -92,11 +126,97 @@ export function setupCamera(camera: PerspectiveCamera, blocked: CameraBlocker): 
   const goalAim = new Vector3();
   const middle = new Vector3();
   const direction = new Vector3();
-  const place = (focus: Vector3, ease: number): void => {
-    const distance = DISTANCE + extra * locked;
-    const right = LOCK.shoulder * locked;
-    // The picture's yaw: the stick's yaw, swung right while locked.
-    const view = yaw + swing * locked;
+  const forward = new Vector3();
+  const across = new Vector3();
+  const lift = new Vector3();
+  const ray = new Vector3();
+  const UP = new Vector3(0, 1, 0);
+  const heroBox = new Box3();
+  const corner = new Vector3();
+  const shift = new Vector3();
+  const goalShift = new Vector3();
+  const look = new Vector3();
+  const extent = { x0: 0, x1: 0, y0: 0, y1: 0 };
+  // Widens `extent` by a box's corners, as view-space tangents; false when one is behind the lens.
+  const measure = (box: Box3): boolean => {
+    for (let i = 0; i < 8; i += 1) {
+      corner.set(
+        i & 1 ? box.max.x : box.min.x,
+        i & 2 ? box.max.y : box.min.y,
+        i & 4 ? box.max.z : box.min.z,
+      );
+      corner.applyMatrix4(camera.matrixWorldInverse);
+      const depth = -corner.z;
+      if (depth < 0.2) return false;
+      extent.x0 = Math.min(extent.x0, corner.x / depth);
+      extent.x1 = Math.max(extent.x1, corner.x / depth);
+      extent.y0 = Math.min(extent.y0, corner.y / depth);
+      extent.y1 = Math.max(extent.y1, corner.y / depth);
+    }
+    return true;
+  };
+  // The share of the view from `desired` toward the aim that a wall or ceiling (a hit not facing
+  // up) covers near the lens: the grid `scenes/Play.ts` measures.
+  const clutter = (): number => {
+    const reach = desired.distanceTo(goalAim) * CLUTTER.reach;
+    forward.subVectors(goalAim, desired).normalize();
+    across.crossVectors(forward, UP).normalize();
+    lift.crossVectors(across, forward);
+    const tall = Math.tan(MathUtils.degToRad(camera.fov / 2));
+    let walls = 0;
+    for (let u = -0.75; u <= 0.76; u += 0.3)
+      for (let v = -0.75; v <= 0.76; v += 0.5) {
+        ray
+          .copy(forward)
+          .addScaledVector(across, u * tall * camera.aspect)
+          .addScaledVector(lift, v * tall)
+          .setLength(reach)
+          .add(desired);
+        const hit = blocked(desired, ray);
+        if (hit !== undefined && hit.normal.y < 0.7) walls += 1;
+      }
+    return walls / 24;
+  };
+  // Locked, turn the lens onto Wren and the target and widen it until both fit; it eases at the
+  // camera's own rate, not the lock's, so a fight never opens with Wren's feet off the frame.
+  const frame = (focus: Vector3, lock: ILockFrame | undefined, ease: number): void => {
+    let fov = FOV;
+    goalShift.set(0, 0, 0);
+    if (lock !== undefined) {
+      camera.updateMatrixWorld();
+      heroBox.min.set(focus.x - HERO.radius, focus.y - HERO.below, focus.z - HERO.radius);
+      heroBox.max.set(focus.x + HERO.radius, focus.y + HERO.above, focus.z + HERO.radius);
+      Object.assign(extent, {
+        x0: Number.POSITIVE_INFINITY,
+        x1: Number.NEGATIVE_INFINITY,
+        y0: Number.POSITIVE_INFINITY,
+        y1: Number.NEGATIVE_INFINITY,
+      });
+      if (measure(heroBox) && measure(lock.bounds)) {
+        const half = Math.max(
+          (extent.y1 - extent.y0) / 2,
+          (extent.x1 - extent.x0) / 2 / camera.aspect,
+        );
+        fov = MathUtils.clamp(MathUtils.radToDeg(2 * Math.atan(half / FIT.share)), FOV, FIT.maxFov);
+        look.set((extent.x0 + extent.x1) / 2, (extent.y0 + extent.y1) / 2, -1);
+        look.transformDirection(camera.matrixWorld).multiplyScalar(aim.distanceTo(camera.position));
+        goalShift.copy(camera.position).add(look).sub(aim);
+      } else goalShift.copy(shift);
+    }
+    shift.lerp(goalShift, ease);
+    if (Math.abs(camera.fov - fov) > 0.01) {
+      camera.fov += (fov - camera.fov) * ease;
+      camera.updateProjectionMatrix();
+    }
+    camera.lookAt(look.copy(aim).add(shift));
+  };
+  // Lays the arm out at `view` into `pivot` and `desired`; returns where a wall cuts it.
+  const arm = (
+    focus: Vector3,
+    view: number,
+    distance: number,
+    right: number,
+  ): number | undefined => {
     pivot.set(
       focus.x + Math.cos(view) * right,
       focus.y + AIM_HEIGHT + 0.4,
@@ -107,28 +227,52 @@ export function setupCamera(camera: PerspectiveCamera, blocked: CameraBlocker): 
       focus.y + HEIGHT - LOCK.drop * locked,
       pivot.z + Math.cos(view) * distance,
     );
-    // Pull the arm in in front of a wall, so the camera never ends up inside one or behind it.
-    // Unlocked, a short arm climbs instead of ending at the back of her head, and a second ray
-    // keeps that climb under the ceiling. Locked, the shoulder offset already clears her head.
-    const hit = blocked(pivot, desired);
-    if (hit !== undefined) {
-      const length = Math.max(0.6, hit - WALL_MARGIN);
-      direction.subVectors(desired, pivot).normalize();
-      desired.copy(pivot).addScaledVector(direction, length);
-      desired.y += Math.min(MAX_CLIMB, (distance - length) * 0.5) * (1 - locked);
-      const roof = blocked(pivot, desired);
-      if (roof !== undefined) {
-        direction.subVectors(desired, pivot).normalize();
-        desired.copy(pivot).addScaledVector(direction, Math.max(0.6, roof - WALL_MARGIN));
-      }
+    return blocked(pivot, desired)?.distance;
+  };
+  // Puts `desired` `length` along the arm. Unlocked, a short arm climbs instead of ending at the
+  // back of her head, and a second ray keeps that climb under the ceiling. Locked, the shoulder
+  // offset already clears her head.
+  const lay = (length: number, distance: number): void => {
+    desired.copy(pivot).addScaledVector(direction, length);
+    desired.y += Math.min(MAX_CLIMB, (distance - length) * 0.5) * (1 - locked);
+    const roof = blocked(pivot, desired)?.distance;
+    if (roof !== undefined) {
+      ray.subVectors(desired, pivot).normalize();
+      desired.copy(pivot).addScaledVector(ray, Math.max(MIN_ARM, roof - WALL_MARGIN));
     }
+  };
+  const place = (focus: Vector3, lock: ILockFrame | undefined, ease: number): void => {
+    const distance = DISTANCE + extra * locked;
+    // The picture's yaw: the stick's yaw, swung right while locked.
+    const view = yaw + swing * locked;
+    const hit = arm(focus, view, distance, LOCK.shoulder * locked * Math.sign(swing || 1));
+    direction.subVectors(desired, pivot).normalize();
+    // Pull the arm in in front of a wall, so the camera never ends up inside one or behind it, then
+    // shorter while walls clutter the view; when no length clears it, the least cluttered one.
+    let length = hit === undefined ? distance : Math.max(MIN_ARM, hit - WALL_MARGIN);
+    let best = length;
+    let least = Number.POSITIVE_INFINITY;
+    for (;;) {
+      lay(length, distance);
+      const share = clutter();
+      if (share < least) {
+        least = share;
+        best = length;
+      }
+      if (share <= CLUTTER.share || length <= MIN_ARM) break;
+      length = Math.max(MIN_ARM, length - ARM_STEP);
+    }
+    if (best !== length) lay(best, distance);
     aim.lerp(goalAim, ease);
     // Locked, never steeper than LOCK.maxPitch: a steep camera loses the target off the top.
     const run = Math.hypot(desired.x - aim.x, desired.z - aim.z);
     const cap = aim.y + run * Math.tan(LOCK.maxPitch);
     if (desired.y > cap) desired.y = MathUtils.lerp(desired.y, cap, locked);
     camera.position.lerp(desired, ease);
+    // Easing toward a pose a wall just cut short can cross that wall: then it cuts, never eases.
+    if (blocked(pivot, camera.position) !== undefined) camera.position.copy(desired);
     camera.lookAt(aim);
+    frame(focus, lock, ease);
   };
   const aimAt = (focus: Vector3, lock: ILockFrame | undefined): void => {
     goalAim.set(focus.x, focus.y + AIM_HEIGHT, focus.z);
@@ -143,6 +287,7 @@ export function setupCamera(camera: PerspectiveCamera, blocked: CameraBlocker): 
     },
     update(focus: Vector3, lock: ILockFrame | undefined, dt: number): void {
       const rate = 1 - Math.exp(-YAW_RATE * dt);
+      const quick = 1 - Math.exp(-FRAME_RATE * dt);
       if (lock !== undefined) {
         lock.bounds.getCenter(middle);
         home = Math.atan2(focus.x - middle.x, focus.z - middle.z);
@@ -153,18 +298,45 @@ export function setupCamera(camera: PerspectiveCamera, blocked: CameraBlocker): 
           (apart < LOCK.closeAt ? LOCK.closeBack : 0) +
           MathUtils.clamp(tall * LOCK.tallBack, 0, LOCK.tallMax);
         extra += (Math.min(goal, LOCK.maxDistance - DISTANCE) - extra) * rate;
-        const wantSwing = MathUtils.clamp(
-          LOCK.orbit + (LOCK.orbitFrom - apart) * LOCK.orbitPerMetre,
-          LOCK.orbit,
-          LOCK.orbitMax,
+        // It orbits on the side of the fight line it already films from, so a new lock or a target
+        // switch never swings the picture across the line, where Wren would hide the target.
+        const onLine = MathUtils.euclideanModulo(
+          yaw + swing * locked - home + Math.PI,
+          Math.PI * 2,
         );
-        swing += (wantSwing - swing) * rate;
+        const wantSwing =
+          Math.sign(onLine - Math.PI || 1) *
+          MathUtils.clamp(
+            LOCK.orbit + (LOCK.orbitFrom - apart) * LOCK.orbitPerMetre,
+            LOCK.orbit,
+            LOCK.orbitMax,
+          );
+        let pick = wantSwing;
+        let longest = -1;
+        for (const step of LOCK.swings) {
+          const free =
+            arm(
+              focus,
+              yaw + wantSwing + step,
+              DISTANCE + extra,
+              LOCK.shoulder * Math.sign(wantSwing + step || 1),
+            ) ?? Number.POSITIVE_INFINITY;
+          if (free >= (DISTANCE + extra) * LOCK.clearShare) {
+            pick = wantSwing + step;
+            break;
+          }
+          if (free > longest) {
+            longest = free;
+            pick = wantSwing + step;
+          }
+        }
+        swing += (pick - swing) * quick;
       }
-      locked += ((lock === undefined ? 0 : 1) - locked) * rate;
+      locked += ((lock === undefined ? 0 : 1) - locked) * quick;
       const turn = MathUtils.euclideanModulo(home - yaw + Math.PI, Math.PI * 2) - Math.PI;
       yaw += turn * rate;
       aimAt(focus, lock);
-      place(focus, 1 - Math.exp(-10 * dt));
+      place(focus, lock, quick);
     },
     recenter(to: number): void {
       home = to;
@@ -175,7 +347,8 @@ export function setupCamera(camera: PerspectiveCamera, blocked: CameraBlocker): 
       locked = 0;
       aimAt(focus, undefined);
       aim.copy(goalAim);
-      place(focus, 1);
+      shift.set(0, 0, 0);
+      place(focus, undefined, 1);
     },
   };
 }

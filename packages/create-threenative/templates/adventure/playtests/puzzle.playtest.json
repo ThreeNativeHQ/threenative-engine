@@ -226,6 +226,12 @@
         "path": "heroViewNearest",
         "gte": 1.8,
         "allowTrivial": "A running minimum: 5.6 m at spawn, and it must stay over 1.8 m through the pushes into the wall (1.43 m before Wren hid from a close camera)."
+      },
+      {
+        "id": "state",
+        "path": "cameraBlocked",
+        "lte": 0,
+        "allowTrivial": "Ticks with something solid between Wren's head and the lens; a running count, 0 at the start."
       }
     ],
     "components": [

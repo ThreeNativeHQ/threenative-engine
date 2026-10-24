@@ -20,7 +20,7 @@ export const WARDEN_FEEL = {
   /** Dazed after it meets a wall: the only time a cut lands. */
   stunTime: 3,
   recover: 0.8,
-  /** A charge that meets Wren costs a full heart unless the shield takes it. */
+  /** A charge that meets Wren costs a full heart unless the shield takes it, and ends there. */
   hitHalves: 2,
 } as const;
 
@@ -28,7 +28,8 @@ export type WardenState = "dormant" | "windup" | "charge" | "stunned" | "recover
 
 /**
  * The Stone Warden. It rears, then charges in a straight line at where Wren stood. A charge that
- * meets a wall or her raised shield stuns it, and only a stunned Warden takes damage: a cut while
+ * meets a wall or her raised shield stuns it; one that meets Wren knocks her back and stops there,
+ * so stone never runs through her. Only a stunned Warden takes damage: a cut while
  * it is standing clanks off. Each cut that lands ends the stun. Three stuns, each answered with a
  * cut, defeat it.
  */
@@ -122,13 +123,15 @@ export class Warden implements ITarget {
           this.#set("stunned");
           speed = 0;
         } else if (this.#timer >= feel.chargeTime) this.#set("recover");
-        if (
-          to.length() < this.radius + 0.6 &&
-          hero.takeHit(feel.hitHalves, this.mesh.position) === "blocked"
-        ) {
+        const met =
+          to.length() < this.radius + 0.6 && hero.takeHit(feel.hitHalves, this.mesh.position);
+        if (met === "blocked") {
           // Stone meeting the raised shield dazes it, as a wall does.
           this.stuns += 1;
           this.#set("stunned");
+        } else if (met === "hit") {
+          this.#set("recover");
+          speed = 0;
         }
         break;
       }

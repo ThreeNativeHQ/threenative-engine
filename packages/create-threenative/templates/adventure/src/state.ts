@@ -28,10 +28,17 @@ export type GameState = {
    * target's top (m) — 0 until the first lock. */
   lockMarkerShown: boolean;
   lockMarkerLowest: number;
-  /** Of the settled locked time: the share with Wren and the target both framed (5% margin), and
-   * the share with the target's middle clear of Wren on screen. 0 until a lock settles. */
-  lockFramedShare: number;
-  lockClearShare: number;
+  /** Fight readability over every tick a fight is on (a lock, or a hostile within 8 m): the
+   * share with Wren and the target both framed (5% margin), the longest run of ticks without
+   * that, and the ticks with Wren's centre behind the target. 0 until a fight starts. */
+  fightFramedShare: number;
+  fightOutRun: number;
+  fightOccluded: number;
+  /** Every tick: ticks with something solid between Wren's head and the lens, the most of the
+   * frame walls within 1.5 m of the lens covered (0-1), and ticks Wren overlapped the controls card. */
+  cameraBlocked: number;
+  nearWallWorst: number;
+  hintOverlap: number;
   /** The closest the camera came to Wren's head while she was drawn (m); 0 until measured. */
   heroViewNearest: number;
   /** Counters the playtests prove the loop with. */
@@ -43,6 +50,8 @@ export type GameState = {
   defeated: number;
   wardenStuns: number;
   wardenHealth: number;
+  /** The Warden's state: "dormant", "windup", "charge", "stunned", "recover" or "dead". */
+  wardenState: string;
   /** Measured feel: fastest ground speed, last stop time and last 180° turn time, in m/s and s. */
   topSpeed: number;
   stopSeconds: number;

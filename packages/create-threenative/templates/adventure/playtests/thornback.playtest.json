@@ -162,6 +162,42 @@
         "id": "state",
         "path": "slashHits",
         "equals": 2
+      },
+      {
+        "id": "state",
+        "path": "fightFramedShare",
+        "gte": 0.95,
+        "allowTrivial": "Of every tick a fight is on (a lock, or a hostile within 8 m), the share with Wren and the target both inside the frame with a 5% margin; 0 until a fight starts."
+      },
+      {
+        "id": "state",
+        "path": "fightOutRun",
+        "lte": 10,
+        "allowTrivial": "The longest run of fight ticks without Wren and the target both framed; a running maximum, 0 at the start."
+      },
+      {
+        "id": "state",
+        "path": "fightOccluded",
+        "lte": 0,
+        "allowTrivial": "Fight ticks with Wren's screen centre behind the target's on-screen box, or, once a lock has glided in for 15 ticks, Wren hiding over half of the locked target's; a running count, 0 at the start."
+      },
+      {
+        "id": "state",
+        "path": "hintOverlap",
+        "lte": 0,
+        "allowTrivial": "Ticks with Wren's on-screen box under the controls card; a running count, 0 at the start."
+      },
+      {
+        "id": "state",
+        "path": "cameraBlocked",
+        "lte": 0,
+        "allowTrivial": "Ticks with something solid between Wren's head and the lens; a running count, 0 at the start."
+      },
+      {
+        "id": "state",
+        "path": "nearWallWorst",
+        "lte": 0.2,
+        "allowTrivial": "The most of the frame that walls in the front half of the way from the lens to Wren covered (a 24-ray grid, every 6th tick), so the camera never films her through a doorway; a running maximum, 0 at the start."
       }
     ],
     "components": [

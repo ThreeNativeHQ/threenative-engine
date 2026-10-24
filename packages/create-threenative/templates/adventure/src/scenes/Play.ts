@@ -12,6 +12,7 @@ import { Block } from "../entities/Block.js";
 import { Chest } from "../entities/Chest.js";
 import { Door } from "../entities/Door.js";
 import { Dummy } from "../entities/Dummy.js";
+import { Flicker } from "../entities/Flicker.js";
 import {
   ADVENTURE_FEEL,
   FOOT_OFFSET,
@@ -21,7 +22,6 @@ import {
   readHeroInput,
 } from "../entities/Hero.js";
 import { type ITarget, LockOn } from "../entities/LockOn.js";
-import { Flicker } from "../entities/Flicker.js";
 import { Mossling } from "../entities/Mossling.js";
 import { Switch } from "../entities/Switch.js";
 import { Thornback } from "../entities/Thornback.js";
@@ -30,9 +30,9 @@ import { Interactions } from "../interact.js";
 import { type IHollow, buildHollow } from "../level/Hollow.js";
 import { type IVale, buildVale, isSolid, makeRng } from "../level/Vale.js";
 import { setupCamera } from "../render/camera.js";
+import { BURSTS, EFFECTS } from "../render/effects.js";
 import { setupLighting } from "../render/lighting.js";
 import { createLoadingScreen } from "../render/loading.js";
-import { BURSTS, EFFECTS } from "../render/effects.js";
 import { setupPost } from "../render/postprocessing.js";
 import { createHeartVessel } from "../render/props.js";
 import { type ISky, createSky, setupSky } from "../render/sky.js";
@@ -51,17 +51,21 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     defeated: 0,
     doorOpen: false,
     grateOpen: false,
+    cameraBlocked: 0,
+    fightFramedShare: 0,
+    fightOccluded: 0,
+    fightOutRun: 0,
     hearts: ADVENTURE_FEEL.startHalves / 2,
+    hintOverlap: 0,
     heroViewNearest: 0,
     hitsTaken: 0,
     keys: 0,
     lastRespawn: "",
     lockFacingError: 0,
-    lockClearShare: 0,
-    lockFramedShare: 0,
     lockMarkerLowest: 0,
     lockMarkerShown: false,
     lockStrafeDrift: 0,
+    nearWallWorst: 0,
     lockStrafeSeconds: 0,
     lockTarget: "",
     paused: false,
@@ -78,6 +82,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     uiReady: false,
     wardenHealth: 3,
     wardenStuns: 0,
+    wardenState: "dormant",
     zone: "vale",
   };
 
@@ -329,29 +334,75 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     ctx.add(vessel);
 
     // The camera arm and the sun read the solved body, so they run after physics has moved it.
-    const rig = setupCamera(camera, (from, to) => {
-      if (from.distanceToSquared(to) < 1e-8) return undefined;
-      return ctx.physics.directSpaceState.intersectRay({ collisionMask: LAYER.world, from, to })
-        ?.distance;
-    });
+    const rig = setupCamera(camera, (from, to) =>
+      from.distanceToSquared(to) < 1e-8
+        ? undefined
+        : ctx.physics.directSpaceState.intersectRay({ collisionMask: LAYER.world, from, to }),
+    );
     rig.snap(hero.mesh.position, hero.yaw + Math.PI);
     // The closest the camera came to Wren's head (her head's centre is 1.33 m over her soles).
     const HEAD_HEIGHT = 1.33;
     const NEAR_VIEW = 1.8;
     const head = new Vector3();
     let viewNearest = Number.POSITIVE_INFINITY;
-    // Lock framing, measured through the camera's own projection once a lock has settled (0.8 s):
-    // the share of locked time with Wren and the target both inside the frame with a 5% margin,
-    // and the share with the target's middle clear of Wren's on-screen box.
-    const framing = { clear: 0, framed: 0, locked: 0, settle: 0 };
+    // Readability, sampled every tick through the camera's own projection. A fight is on while a
+    // target is locked or a live hostile stands within FIGHT_RANGE of Wren; then Wren and that
+    // target must both sit inside the frame with a 5% margin, and Wren's screen centre must not
+    // sit behind the target; once a lock has glided in (GLIDE ticks), she must not hide over half
+    // of it either. Every tick: nothing solid between her head and the lens, walls in the front
+    // half of the way from the lens to her cover little of the frame (a grid of rays, every 6th
+    // tick), and Wren stays clear of the controls card (top right, Menu.tsx).
+    const FIGHT_RANGE = 8;
+    const GLIDE = 15;
+    // ponytail: the card's corner in view space, kept in step with Menu.tsx by hand.
+    const HINT = { x0: 0.55, y0: 0.6 };
+    const fight = {
+      blocked: 0,
+      frames: 0,
+      framed: 0,
+      hint: 0,
+      nearWall: 0,
+      occluded: 0,
+      run: 0,
+      worstRun: 0,
+      ticks: 0,
+      lockTicks: 0,
+      lockedOn: undefined as ITarget | undefined,
+    };
+    const fightBox = new Box3();
+    const heroCentre = new Vector3();
+    const ray = new Vector3();
     // Wren's silhouette: her body's width across the view, from her feet to the top of her head.
     const heroBox = new Box3();
     const across = new Vector3();
     const heroRect = { x0: 0, x1: 0, y0: 0, y1: 0 };
     const targetRect = { x0: 0, x1: 0, y0: 0, y1: 0 };
     const corner = new Vector3();
+    const solidBetween = (from: Vector3, to: Vector3): boolean =>
+      from.distanceToSquared(to) > 1e-8 &&
+      ctx.physics.directSpaceState.intersectRay({ collisionMask: LAYER.world, from, to }) !==
+        undefined;
+    const fightTarget = (): ITarget | undefined => {
+      if (lock.target !== undefined) return lock.target;
+      let best: ITarget | undefined;
+      let bestDistance = FIGHT_RANGE;
+      for (const target of targets) {
+        if (!target.alive) continue;
+        const distance = target.mesh.position.distanceTo(hero.mesh.position);
+        if (distance < bestDistance) {
+          best = target;
+          bestDistance = distance;
+        }
+      }
+      return best;
+    };
     const project = (box: Box3, rect: typeof heroRect): boolean => {
-      Object.assign(rect, { x0: Infinity, x1: -Infinity, y0: Infinity, y1: -Infinity });
+      Object.assign(rect, {
+        x0: Number.POSITIVE_INFINITY,
+        x1: Number.NEGATIVE_INFINITY,
+        y0: Number.POSITIVE_INFINITY,
+        y1: Number.NEGATIVE_INFINITY,
+      });
       let ahead = true;
       for (let i = 0; i < 8; i += 1) {
         corner.set(
@@ -377,24 +428,69 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       hero.rig.group.visible = !hero.blinking && near > NEAR_VIEW;
       if (hero.rig.group.visible) viewNearest = Math.min(viewNearest, near);
       lighting.follow(hero.mesh.position);
-      framing.settle = lock.target === undefined ? 0 : framing.settle + dt;
-      if (framing.settle < 0.8) return;
       camera.updateMatrixWorld();
+      fight.ticks += 1;
+      fight.lockTicks =
+        lock.target !== undefined && lock.target === fight.lockedOn ? fight.lockTicks + 1 : 0;
+      fight.lockedOn = lock.target;
+      if (solidBetween(head, camera.position)) fight.blocked += 1;
+      if (fight.ticks % 6 === 0) {
+        // A wall or ceiling (any hit not facing up) in the front half of the way from the lens to
+        // Wren is foreground clutter: a doorway jamb the camera films her through.
+        const reach = near / 2;
+        let walls = 0;
+        for (let u = -0.75; u <= 0.76; u += 0.3)
+          for (let v = -0.75; v <= 0.76; v += 0.5) {
+            ray.set(u, v, 0.5).unproject(camera).sub(camera.position).setLength(reach);
+            const hit = ctx.physics.directSpaceState.intersectRay({
+              collisionMask: LAYER.world,
+              from: camera.position,
+              to: ray.add(camera.position),
+            });
+            if (hit !== undefined && hit.normal.y < 0.7) walls += 1;
+          }
+        fight.nearWall = Math.max(fight.nearWall, walls / 24);
+      }
       across.setFromMatrixColumn(camera.matrixWorld, 0).setY(0).normalize().multiplyScalar(0.32);
       const feet = hero.mesh.position.y - FOOT_OFFSET;
       heroBox.min.set(hero.mesh.position.x, feet, hero.mesh.position.z).sub(across);
       heroBox.max.set(hero.mesh.position.x, feet + 1.8, hero.mesh.position.z).add(across);
       const heroIn = project(heroBox, heroRect);
-      const targetIn = project(lock.bounds, targetRect);
-      lock.bounds.getCenter(corner).project(camera);
+      if (hero.rig.group.visible && heroRect.x1 > HINT.x0 && heroRect.y1 > HINT.y0) fight.hint += 1;
+      const target = fightTarget();
+      if (target === undefined) {
+        fight.run = 0;
+        return;
+      }
+      const box = target === lock.target ? lock.bounds : fightBox.setFromObject(target.mesh);
+      const targetIn = project(box, targetRect);
+      heroCentre.set(hero.mesh.position.x, feet + 0.9, hero.mesh.position.z);
+      const heroDistance = heroCentre.distanceTo(camera.position);
+      heroCentre.project(camera);
+      const targetNearer = box.getCenter(corner).distanceTo(camera.position) < heroDistance;
+      corner.project(camera);
+      const covers = (point: Vector3, rect: typeof heroRect): boolean =>
+        point.x > rect.x0 && point.x < rect.x1 && point.y > rect.y0 && point.y < rect.y1;
+      // Wren hiding the locked target: she covers its centre and over half of its box.
       const hidden =
-        corner.x > heroRect.x0 &&
-        corner.x < heroRect.x1 &&
-        corner.y > heroRect.y0 &&
-        corner.y < heroRect.y1;
-      framing.locked += dt;
-      if (heroIn && targetIn) framing.framed += dt;
-      if (!hidden) framing.clear += dt;
+        Math.max(0, Math.min(heroRect.x1, targetRect.x1) - Math.max(heroRect.x0, targetRect.x0)) *
+        Math.max(0, Math.min(heroRect.y1, targetRect.y1) - Math.max(heroRect.y0, targetRect.y0));
+      const area = (targetRect.x1 - targetRect.x0) * (targetRect.y1 - targetRect.y0);
+      const behind = targetNearer
+        ? covers(heroCentre, targetRect)
+        : target === lock.target &&
+          fight.lockTicks > GLIDE &&
+          covers(corner, heroRect) &&
+          hidden > area / 2;
+      fight.frames += 1;
+      if (behind) fight.occluded += 1;
+      if (heroIn && targetIn) {
+        fight.framed += 1;
+        fight.run = 0;
+      } else {
+        fight.run += 1;
+        fight.worstRun = Math.max(fight.worstRun, fight.run);
+      }
     });
 
     const toTarget = new Vector3();
@@ -546,10 +642,13 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       if (lock.reticle.visible)
         markerLow = markerLow === 0 ? lock.markerLift : Math.min(markerLow, lock.markerLift);
       statePatch.lockMarkerLowest = Math.round(markerLow * 1000) / 1000;
-      const share = (part: number): number =>
-        framing.locked === 0 ? 0 : Math.round((part / framing.locked) * 100) / 100;
-      statePatch.lockFramedShare = share(framing.framed);
-      statePatch.lockClearShare = share(framing.clear);
+      statePatch.fightFramedShare =
+        fight.frames === 0 ? 0 : Math.round((fight.framed / fight.frames) * 1000) / 1000;
+      statePatch.fightOutRun = fight.worstRun;
+      statePatch.fightOccluded = fight.occluded;
+      statePatch.cameraBlocked = fight.blocked;
+      statePatch.nearWallWorst = Math.round(fight.nearWall * 1000) / 1000;
+      statePatch.hintOverlap = fight.hint;
       statePatch.heroViewNearest =
         viewNearest === Number.POSITIVE_INFINITY ? 0 : Math.round(viewNearest * 100) / 100;
       statePatch.prompt = prompt;
@@ -563,6 +662,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       statePatch.turnSeconds = Math.round(hero.turnSeconds * 1000) / 1000;
       statePatch.wardenHealth = warden.health;
       statePatch.wardenStuns = warden.stuns;
+      statePatch.wardenState = warden.state;
       statePatch.zone = indoors ? "hollow" : "vale";
       frameCtx.state.set(statePatch);
     };

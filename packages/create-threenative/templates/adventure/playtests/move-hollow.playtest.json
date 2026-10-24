@@ -49,7 +49,7 @@
       "kind": "input",
       "label": "run-north",
       "press": "ArrowUp",
-      "holdTicks": 90,
+      "holdTicks": 400,
       "release": true
     },
     {
@@ -71,7 +71,7 @@
         "id": "state",
         "path": "zone",
         "equals": "hollow",
-        "allowTrivial": "The run is in the Hollow's guard room, so the indoor run speed is the one measured."
+        "allowTrivial": "The run starts in the Hollow's guard room and ends through its doorway in the block room, so the indoor run speed is the one measured and the camera follows her through a doorway."
       },
       {
         "id": "state",
@@ -84,6 +84,18 @@
         "path": "stopSeconds",
         "gte": 0.01,
         "lte": 0.3
+      },
+      {
+        "id": "state",
+        "path": "cameraBlocked",
+        "lte": 0,
+        "allowTrivial": "Ticks with something solid between Wren's head and the lens; a running count, 0 at the start."
+      },
+      {
+        "id": "state",
+        "path": "nearWallWorst",
+        "lte": 0.2,
+        "allowTrivial": "The most of the frame that walls in the front half of the way from the lens to Wren covered (a 24-ray grid, every 6th tick), so the camera never films her through a doorway; a running maximum, 0 at the start."
       }
     ],
     "movement": {

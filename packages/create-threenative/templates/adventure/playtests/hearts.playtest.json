@@ -153,6 +153,18 @@
             "equals": ""
           }
         ]
+      },
+      {
+        "id": "state",
+        "path": "cameraBlocked",
+        "lte": 0,
+        "allowTrivial": "Ticks with something solid between Wren's head and the lens; a running count, 0 at the start."
+      },
+      {
+        "id": "state",
+        "path": "nearWallWorst",
+        "lte": 0.2,
+        "allowTrivial": "The most of the frame that walls in the front half of the way from the lens to Wren covered (a 24-ray grid, every 6th tick), so the camera never films her through a doorway; a running maximum, 0 at the start."
       }
     ]
   }
