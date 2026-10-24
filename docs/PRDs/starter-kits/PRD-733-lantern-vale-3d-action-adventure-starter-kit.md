@@ -492,7 +492,19 @@ Each playtest runs on a project scaffolded from `--template adventure`:
     (the tail read as a beak), so `63a47cbfb` drops it and adds a top-back peak, a centre seam,
     folds at the mantle and a darker lower hood. A round 14 (lower peak, darker palette,
     crown-to-mantle creases) was reverted: it cast a face-like shadow on the hood back and did not
-    change the in-game lavender, which comes from the dungeon light on the hood top. Open.
+    change the in-game lavender, which comes from the dungeon light on the hood top.
+    Deferred (team lead, 2026-10-24): light on the hood top in the Hollow, revisit in a fresh pass.
+  - Textures (owner: "still has missing textures"): `720fa828d` puts the shared tiling photos
+    (`tex-grass/rock/bark/planks/stone-wall.webp`, about 375 KB, `tex-PROVENANCE.md`) on the floor,
+    path, cliffs, boulders, trunks, hut, signs and the Hollow walls and slabs through
+    `src/render/surface.ts`, structure only, so the palette stays. Opus judge: PASS, 16 of 16
+    frames IMPROVEMENT, crisp at rest. `2690a12a8` softens the Hollow slabs and bricks (judge:
+    IMPROVEMENT in the Hollow); a grass and slope retune judged NEUTRAL was not committed.
+    Captures: `~/Downloads/lantern-vale/textures/`.
+  - Wind (owner: "wind and vegetation movement is super fast"): TSL `time` is seconds on the owned
+    engine (`renderer.cpp` frameTime_). `2690a12a8` slows the sway to periods of 7-10 s at 0.4 of
+    the bend; frame-to-frame motion 0.5 s apart drops from 6.1-10.4 to 2.9-3.6 of 255. Opus judge:
+    IMPROVEMENT. Film: `~/Downloads/lantern-vale/textures/wind/wind-before-after.mp4`.
   - The sculpt MCP spec gate was not completed for Wren: she is code-built parts in `hero.ts`, and
     the judge loop above stood in for `sculpt_pass_gate`.
   - Black warden frames in some capture runs came from host load (load 70-140): the same build
