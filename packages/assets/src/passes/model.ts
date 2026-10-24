@@ -68,6 +68,7 @@ import {
   resolveCompactOptions,
   sceneNodeNames,
 } from "./compact.js";
+import { withoutSpecDefaults } from "./glb-spec-defaults.js";
 import {
   type IEmbeddedTextureSummary,
   type IModelTexturesOptions,
@@ -79,7 +80,6 @@ import {
   textureKeys,
   textureQualitySemantics,
 } from "./model-textures.js";
-import { withoutSpecDefaults } from "./glb-spec-defaults.js";
 import { pruneRestPoseTracks } from "./prune-rest-tracks.js";
 import { quantizeStaticGeometry } from "./quantize-static.js";
 import { reorderStaticPrimitives } from "./reorder-static.js";
