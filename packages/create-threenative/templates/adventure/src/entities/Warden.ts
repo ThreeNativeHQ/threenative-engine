@@ -22,14 +22,16 @@ export const WARDEN_FEEL = {
   recover: 0.8,
   /** A charge that meets Wren costs a full heart unless the shield takes it, and ends there. */
   hitHalves: 2,
+  /** Then it backs off this fast through its recovery, so it never pins her to a wall. */
+  recoil: 3,
 } as const;
 
 export type WardenState = "dormant" | "windup" | "charge" | "stunned" | "recover" | "dead";
 
 /**
  * The Stone Warden. It rears, then charges in a straight line at where Wren stood. A charge that
- * meets a wall or her raised shield stuns it; one that meets Wren knocks her back and stops there,
- * so stone never runs through her. Only a stunned Warden takes damage: a cut while
+ * meets a wall or her raised shield stuns it; one that meets Wren knocks her back, stops there and
+ * backs off, so stone never runs through her or pins her. Only a stunned Warden takes damage: a cut while
  * it is standing clanks off. Each cut that lands ends the stun. Three stuns, each answered with a
  * cut, defeat it.
  */
@@ -44,6 +46,7 @@ export class Warden implements ITarget {
   stuns = 0;
   clanks = 0;
   #timer = 0;
+  #recoil = false;
   #flash = 0;
   #heading = new Vector3();
   #last = new Vector3();
@@ -131,6 +134,7 @@ export class Warden implements ITarget {
           this.#set("stunned");
         } else if (met === "hit") {
           this.#set("recover");
+          this.#recoil = true;
           speed = 0;
         }
         break;
@@ -139,7 +143,11 @@ export class Warden implements ITarget {
         if (this.#timer >= feel.stunTime) this.#set("recover");
         break;
       case "recover":
-        if (this.#timer >= feel.recover) this.#set(hero.alive ? "windup" : "dormant");
+        if (this.#recoil) speed = -feel.recoil;
+        if (this.#timer >= feel.recover) {
+          this.#recoil = false;
+          this.#set(hero.alive ? "windup" : "dormant");
+        }
         break;
       case "dead":
         if (this.#timer > 1.4) {
