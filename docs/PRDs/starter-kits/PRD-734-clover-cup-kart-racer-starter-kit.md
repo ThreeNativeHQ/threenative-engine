@@ -4,8 +4,8 @@ prd_contract: v1
 
 # PRD-734 — Clover Cup: a kart racer starter kit with MK64-style drifting, items and CPU drivers
 
-**Status:** PARTIAL — Phase 1 done
-**Priority:** P2 — new genre kit: no shipped kit has a power-slide with a mini-turbo, item boxes, CPU drivers with rubber-banding or a kart chase camera (all three phases open).
+**Status:** PARTIAL — Phases 1 and 2 done, Phase 3 holds AC-9 open
+**Priority:** P2 — the kart kit is registered and judged; AC-9's 16.7 ms frame budget is not yet held on either tier.
 **Complexity:** 5 (MEDIUM) — 11+ kit source files (+3), new kit system (+2). Risk override: none. The kit is game code in one template; the only `packages/` change is the engine-mcp kit router (one function, one test).
 **Owner:** João
 **Depends on:** [PRD-723](../Unreal/look/PRD-723-every-template-game-looks-like-unreal-on-the-engine-defaults.md) (aligned, not gating: the kit is born on the core Unreal defaults, so it pins no tone curve or fixed exposure). Sibling of [PRD-732](PRD-732-hop-garden-3d-platformer-starter-kit.md) and [PRD-733](PRD-733-lantern-vale-3d-action-adventure-starter-kit.md): the three kits ship in one PR (#563).
@@ -203,6 +203,12 @@ gates every kit must pass. Each playtest runs on a project scaffolded from `--te
   every box to scale 0 after 5 s, and the boxes were still drawn at 10 s, so they never spun,
   shrank when taken or got out of the camera's way. The boxes are now one plain mesh pair each
   (about 32 more draws), which the engine moves like any kart.
+- 2026-10-24 (agent, judge round 3): a taken box is back in 40 ticks, MK64's 20 spinning out and
+  about 20 rising (`mk64: src/actors/item_box/update.inc.c:56`, `:42`). At 3 s the CPUs ahead
+  emptied every row, so the player never drew an item in the race film.
+- 2026-10-24 (agent, judge round 3): a box shrinks from 6.5 m of the camera and hides at 3.5 m, so
+  a box the kart drives through never fills the screen. The back-straight pad moved from 5 m to
+  4.2 m left of the line so its plate stays inside the edge line.
 
 ## Execution Phases
 
@@ -236,12 +242,13 @@ checkpoints, laps, ranking, finish screen, the effects.
 
 #### Phase 3: Registered, measured and judged
 
-**Status:** NOT STARTED
+**Status:** PARTIAL — registered and judged; the 16.7 ms frame budget is not yet held (AC-9)
 **Files:** the registration list above, `playtests/performance.playtest.json`.
 **Implementation:** register the kit in every gate; measure per tier; capture stills and a race
 film; a fresh read-only judge with the reference frames.
 **Verification:** the commands on each box.
 
-- [ ] AC-8: the kit passes the registration gates. proof: `pnpm exec vitest run packages/create-threenative/__tests__ packages/engine-mcp/__tests__ && pnpm budgets && pnpm check:docs`
+- [x] AC-8: the kit passes the registration gates. proof: `pnpm exec vitest run packages/create-threenative/__tests__ packages/engine-mcp/__tests__ && pnpm budgets && pnpm check:docs` — at 9a8558837 every kart row is green (the kart tree hash `bfda594e…` matches, the kit router and `kit.json` specs pass), `check:docs` exit 0, `biome check templates/kart` exit 0. In the shared tree the full command exits 1 on 4 tests (adventure and collectathon hashes, assets and mirror) and on the budgets' adventure conventions, all from those lanes' uncommitted edits.
 - [ ] AC-9: the `performance` scenario stays inside its budget on `high` (RTX 2080) and on `medium` (the Debian laptop's integrated GPU). proof: `playtests/performance.playtest.json`
-- [ ] AC-10: the visual judge returns PASS on kart feel, drift sparks, course depth and relief, lighting and no regressions. proof: the judge report linked from the PR
+  At 9a8558837 both runs exit 0 on the scenario's own bounds: `high` (nvidia turing) 114 draws, 151,353 triangles; `medium` (Intel gen-12lp) 108 draws, 151,345 triangles. The harness's 16.7 ms p95 is not held: `high` 25.2 ms over 939 samples (desktop load 25-34 on 12 cores), `medium` 16.9 ms over 777. The slow samples are host gap (13 and 16 ms), not the game's render phase (5.7 and 3.9 ms), so the next step is a quiet-host run before any scene cut.
+- [x] AC-10: the visual judge returns PASS on kart feel, drift sparks, course depth and relief, lighting and no regressions. proof: the judge report linked from the PR — round 4 (fresh opus, BEFORE 32b787ad2, AFTER 9a8558837): PASS, overall IMPROVEMENT, all 4 intended effects met (item roulette and mushroom in the HUD from f200, no box looms, pad plate inside the edge line, stage-1 sparks). Rounds 1-3 FAIL drove the Decisions above. Stills and film: `screenshots/kart/`.
