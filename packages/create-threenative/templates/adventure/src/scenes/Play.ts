@@ -52,6 +52,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     doorOpen: false,
     grateOpen: false,
     hearts: ADVENTURE_FEEL.startHalves / 2,
+    heroViewNearest: 0,
     hitsTaken: 0,
     keys: 0,
     lastRespawn: "",
@@ -334,6 +335,11 @@ export class Play extends Scene<GameState, IPhysicsContext> {
         ?.distance;
     });
     rig.snap(hero.mesh.position, hero.yaw + Math.PI);
+    // The closest the camera came to Wren's head (her head's centre is 1.33 m over her soles).
+    const HEAD_HEIGHT = 1.33;
+    const NEAR_VIEW = 1.8;
+    const head = new Vector3();
+    let viewNearest = Number.POSITIVE_INFINITY;
     // Lock framing, measured through the camera's own projection once a lock has settled (0.8 s):
     // the share of locked time with Wren and the target both inside the frame with a 5% margin,
     // and the share with the target's middle clear of Wren's on-screen box.
@@ -364,6 +370,12 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     };
     afterPhysics(ctx, (dt) => {
       rig.update(hero.mesh.position, lock.target === undefined ? undefined : lock, dt);
+      head.copy(hero.mesh.position).setY(hero.mesh.position.y - FOOT_OFFSET + HEAD_HEIGHT);
+      const near = camera.position.distanceTo(head);
+      // A wall-pulled camera in a tight room climbs to the ceiling right over her, where her cap
+      // fills the lens: closer than NEAR_VIEW she hides, as Ocarina's hero does.
+      hero.rig.group.visible = !hero.blinking && near > NEAR_VIEW;
+      if (hero.rig.group.visible) viewNearest = Math.min(viewNearest, near);
       lighting.follow(hero.mesh.position);
       framing.settle = lock.target === undefined ? 0 : framing.settle + dt;
       if (framing.settle < 0.8) return;
@@ -401,7 +413,6 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       if (input.targetPressed && lock.target === undefined) rig.recenter(hero.yaw + Math.PI);
       hero.update(frameCtx, dt, input, lock, rig.yaw, indoors, targets);
       hero.setPushing(block.update(frameCtx, dt, hero, hero.wish));
-      hero.rig.group.visible = !hero.blinking;
 
       for (const mossling of mosslings) mossling.update(frameCtx, dt, hero);
       for (const foe of foes) foe.update(dt, hero);
@@ -539,6 +550,8 @@ export class Play extends Scene<GameState, IPhysicsContext> {
         framing.locked === 0 ? 0 : Math.round((part / framing.locked) * 100) / 100;
       statePatch.lockFramedShare = share(framing.framed);
       statePatch.lockClearShare = share(framing.clear);
+      statePatch.heroViewNearest =
+        viewNearest === Number.POSITIVE_INFINITY ? 0 : Math.round(viewNearest * 100) / 100;
       statePatch.prompt = prompt;
       statePatch.respawns = respawns;
       statePatch.shieldBlocks = hero.shieldBlocks;

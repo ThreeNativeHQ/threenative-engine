@@ -32,6 +32,8 @@ export type GameState = {
    * the share with the target's middle clear of Wren on screen. 0 until a lock settles. */
   lockFramedShare: number;
   lockClearShare: number;
+  /** The closest the camera came to Wren's head while she was drawn (m); 0 until measured. */
+  heroViewNearest: number;
   /** Counters the playtests prove the loop with. */
   slashes: number;
   slashHits: number;

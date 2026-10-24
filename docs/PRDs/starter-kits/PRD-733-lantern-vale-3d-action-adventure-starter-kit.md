@@ -313,6 +313,12 @@ Each playtest runs on a project scaffolded from `--template adventure`:
     next to her, because `setup.resources` has no writable provider here.
   Proof: `flicker` (lock, tell, swoop, shield bounce, cut) and `thornback` (front clank, rump cut,
   tell, lunge) exit 0, and the nine existing scenarios rerun green.
+- 2026-10-24 (found in the polish video, decided without the owner): when Wren pushes the block
+  into the north wall, the wall pulls the camera arm in, and the climb stops at the ceiling right
+  over her. Her long cap then fills the lens. A tight room has no better camera spot, so Wren hides
+  while the camera is closer than 1.8 m to her head, as Ocarina's hero does. Proof: state
+  `heroViewNearest` (the closest the camera came to her head while she was drawn); `puzzle` asserts
+  at least 1.8 m. Red: 1.43 m without the hide. Green: 1.80 m, `puzzle` exit 0.
 
 ## Execution Phases
 
