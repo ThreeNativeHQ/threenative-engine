@@ -1,0 +1,63 @@
+== ADS weapon crop (440,230,840,720)  (8-bit sRGB, same pose, nvidia WebGPU, 2 runs per arm, FINAL code e66924953)
+  BEFORE   1 vs REFERENCE1: mean|d| R26.10 G26.39 B25.74  all 26.08  max 187  p99 159
+  BEFORE   1 vs REFERENCE2: mean|d| R26.10 G26.39 B25.74  all 26.08  max 188  p99 159
+  BEFORE   2 vs REFERENCE1: mean|d| R26.18 G26.49 B25.85  all 26.17  max 189  p99 159
+  BEFORE   2 vs REFERENCE2: mean|d| R26.18 G26.49 B25.84  all 26.17  max 188  p99 159
+  AFTER    1 vs REFERENCE1: mean|d| R2.47 G2.47 B3.00  all 2.65  max 101  p99 29
+  AFTER    1 vs REFERENCE2: mean|d| R2.48 G2.48 B3.01  all 2.65  max 101  p99 30
+  AFTER    2 vs REFERENCE1: mean|d| R2.33 G2.31 B2.85  all 2.49  max 105  p99 27
+  AFTER    2 vs REFERENCE2: mean|d| R2.33 G2.31 B2.85  all 2.50  max 105  p99 27
+  REFERENCE1 vs REFERENCE2 (noise floor): mean|d| R0.28 G0.26 B0.27  all 0.27  max 46  p99 3
+  AFTER1 vs AFTER2 (noise floor): mean|d| R0.95 G0.94 B1.00  all 0.97  max 72  p99 14
+
+== ADS optic body (520,250,740,520)  (8-bit sRGB, same pose, nvidia WebGPU, 2 runs per arm, FINAL code e66924953)
+  BEFORE   1 vs REFERENCE1: mean|d| R81.42 G82.04 B78.51  all 80.66  max 187  p99 166
+  BEFORE   1 vs REFERENCE2: mean|d| R81.42 G82.04 B78.51  all 80.65  max 188  p99 166
+  BEFORE   2 vs REFERENCE1: mean|d| R81.33 G82.01 B78.49  all 80.61  max 189  p99 166
+  BEFORE   2 vs REFERENCE2: mean|d| R81.33 G82.01 B78.49  all 80.61  max 188  p99 166
+  AFTER    1 vs REFERENCE1: mean|d| R3.71 G3.37 B3.63  all 3.57  max 101  p99 36
+  AFTER    1 vs REFERENCE2: mean|d| R3.71 G3.37 B3.63  all 3.57  max 101  p99 36
+  AFTER    2 vs REFERENCE1: mean|d| R3.56 G3.15 B3.43  all 3.38  max 105  p99 33
+  AFTER    2 vs REFERENCE2: mean|d| R3.56 G3.15 B3.44  all 3.38  max 105  p99 33
+  REFERENCE1 vs REFERENCE2 (noise floor): mean|d| R0.23 G0.19 B0.21  all 0.21  max 46  p99 2
+  AFTER1 vs AFTER2 (noise floor): mean|d| R1.42 G1.43 B1.48  all 1.44  max 72  p99 19
+
+== HIP weapon crop (700,440,1280,720)  (8-bit sRGB, same pose, nvidia WebGPU, 2 runs per arm, FINAL code e66924953)
+  BEFORE   1 vs REFERENCE1: mean|d| R9.52 G9.58 B9.53  all 9.55  max 176  p99 148
+  BEFORE   1 vs REFERENCE2: mean|d| R9.52 G9.58 B9.53  all 9.54  max 176  p99 148
+  BEFORE   2 vs REFERENCE1: mean|d| R9.62 G9.69 B9.63  all 9.64  max 176  p99 148
+  BEFORE   2 vs REFERENCE2: mean|d| R9.62 G9.68 B9.63  all 9.64  max 176  p99 148
+  AFTER    1 vs REFERENCE1: mean|d| R1.57 G1.64 B1.76  all 1.65  max 153  p99 20
+  AFTER    1 vs REFERENCE2: mean|d| R1.56 G1.63 B1.76  all 1.65  max 154  p99 20
+  AFTER    2 vs REFERENCE1: mean|d| R1.62 G1.69 B1.80  all 1.70  max 127  p99 22
+  AFTER    2 vs REFERENCE2: mean|d| R1.62 G1.69 B1.80  all 1.70  max 126  p99 22
+  REFERENCE1 vs REFERENCE2 (noise floor): mean|d| R0.11 G0.11 B0.10  all 0.11  max 26  p99 1
+  AFTER1 vs AFTER2 (noise floor): mean|d| R0.62 G0.59 B0.56  all 0.59  max 68  p99 8
+
+== HIP optic (930,540,1090,640)  (8-bit sRGB, same pose, nvidia WebGPU, 2 runs per arm, FINAL code e66924953)
+  BEFORE   1 vs REFERENCE1: mean|d| R79.90 G80.19 B78.81  all 79.64  max 176  p99 159
+  BEFORE   1 vs REFERENCE2: mean|d| R79.90 G80.19 B78.81  all 79.63  max 176  p99 159
+  BEFORE   2 vs REFERENCE1: mean|d| R79.89 G80.18 B78.81  all 79.62  max 176  p99 159
+  BEFORE   2 vs REFERENCE2: mean|d| R79.88 G80.18 B78.80  all 79.62  max 176  p99 159
+  AFTER    1 vs REFERENCE1: mean|d| R2.99 G2.98 B3.09  all 3.02  max 153  p99 34
+  AFTER    1 vs REFERENCE2: mean|d| R2.99 G2.98 B3.09  all 3.02  max 154  p99 34
+  AFTER    2 vs REFERENCE1: mean|d| R3.10 G3.09 B3.22  all 3.14  max 127  p99 38
+  AFTER    2 vs REFERENCE2: mean|d| R3.09 G3.09 B3.22  all 3.13  max 126  p99 38
+  REFERENCE1 vs REFERENCE2 (noise floor): mean|d| R0.11 G0.12 B0.11  all 0.12  max 6  p99 1
+  AFTER1 vs AFTER2 (noise floor): mean|d| R1.31 G1.19 B1.11  all 1.20  max 68  p99 17
+
+== ADS glove patch seen through the lens (470,330,600,400)  (8-bit sRGB, same pose, nvidia WebGPU, 2 runs per arm, FINAL code e66924953)
+  BEFORE   1 vs REFERENCE1: mean|d| R50.28 G49.33 B46.89  all 48.83  max 185  p99 172
+  BEFORE   1 vs REFERENCE2: mean|d| R50.27 G49.33 B46.89  all 48.83  max 185  p99 172
+  BEFORE   2 vs REFERENCE1: mean|d| R50.82 G49.83 B47.37  all 49.34  max 185  p99 172
+  BEFORE   2 vs REFERENCE2: mean|d| R50.82 G49.83 B47.36  all 49.34  max 185  p99 172
+  AFTER    1 vs REFERENCE1: mean|d| R4.70 G3.96 B4.42  all 4.36  max 94  p99 37
+  AFTER    1 vs REFERENCE2: mean|d| R4.70 G3.95 B4.41  all 4.35  max 94  p99 37
+  AFTER    2 vs REFERENCE1: mean|d| R4.53 G3.72 B4.10  all 4.11  max 89  p99 33
+  AFTER    2 vs REFERENCE2: mean|d| R4.52 G3.71 B4.10  all 4.11  max 89  p99 33
+  REFERENCE1 vs REFERENCE2 (noise floor): mean|d| R0.35 G0.34 B0.37  all 0.35  max 16  p99 4
+  AFTER1 vs AFTER2 (noise floor): mean|d| R1.33 G1.33 B1.48  all 1.38  max 64  p99 18
+
+== Motion blur OFF in both arms (probe build, quality.ts motionBlurEnabled:false), ADS, owned engine vs three.js
+  weapon crop: mean|d| R2.11 G2.21 B2.71  all 2.34  max 84  p99 22
+  glove patch: mean|d| R3.02 G3.09 B3.50  all 3.20  max 84  p99 37
