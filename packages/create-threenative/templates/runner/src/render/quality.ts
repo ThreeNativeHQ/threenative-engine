@@ -43,6 +43,8 @@ export function qualityPreset(tier: string): IWorldEnvironmentOptions {
     console.info("TN_RENDER_CHAIN_TIER_OVERRIDE high->medium: 52 ms p95 exceeded 33 ms");
   return {
     ...coreQualityPreset(renderTier),
+    // Rough track needs no SSR; retain 33 ms p95 (real-display runs: 17.0/20.3 ms).
+    ssrEnabled: false,
     // Keep Runner’s authored foot-contact radius under the core curve.
     gtaoRadius: 0.35,
     // The Three.js fallback uses SMAA; retain authored MSAA for the thin track rails.
