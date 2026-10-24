@@ -128,9 +128,12 @@ describe("Unreal reference CPU clouds", () => {
     expect(() => bakeCloudRadiance(sky(), { x: Number.NaN, y: 1, z: 0 }, width, height)).toThrow();
   });
 
-  it("bakes a small sky within 300 ms on one core", () => {
+  it("bakes a small sky within 1000 ms of CPU on one core", () => {
     // CPU time of this test process, best of three: wall time on a loaded host also counts the
-    // time the scheduler gives other lanes, which is not the cost of the bake.
+    // time the scheduler gives other lanes, which is not the cost of the bake. Shared hosted
+    // runners still inflate CPU time under core contention: 249 to 258 ms on passing runs, and
+    // 385 to 625 ms on merge groups that share the pool (PR #487, 2026-10-24). The budget sits
+    // above that spread and well below a gross regression, the desktop reading being 126 ms.
     let elapsed = Number.POSITIVE_INFINITY;
     for (let run = 0; run < 3; run++) {
       const start = process.cpuUsage();
@@ -139,7 +142,7 @@ describe("Unreal reference CPU clouds", () => {
       elapsed = Math.min(elapsed, (used.user + used.system) / 1000);
     }
     console.log(`CPU clouds ${width}x${height}: ${elapsed.toFixed(1)} ms`);
-    expect(elapsed).toBeLessThan(300);
+    expect(elapsed).toBeLessThan(1000);
   });
 
   it("marches up to the reference level's TracingMaxDistance, 200 km, after the layer entry", () => {
