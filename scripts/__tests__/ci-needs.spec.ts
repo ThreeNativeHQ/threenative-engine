@@ -189,13 +189,11 @@ describe("ci run summary", () => {
     // The guard against the summary itself going quiet: a job added to ci.yml without being added
     // to run-summary's `needs:` is an unreported job, which is the exact shape of the defect.
     const jobs = ciJobGraph(await ci());
-    const results = Object.fromEntries(
-      jobs
-        .filter((job) => job.name !== "run-summary")
-        .map((job) => [job.name, { result: "success" }]),
-    );
+    // The results are exactly what `toJSON(needs)` hands the script: the jobs run-summary waits on.
+    const waitedOn = jobs.find((job) => job.name === "run-summary")?.needs ?? [];
+    const results = Object.fromEntries(waitedOn.map((name) => [name, { result: "success" }]));
     const rows = summaryRows(jobs, "run-summary", results);
-    expect(rows).toHaveLength(jobs.length - 1);
+    expect(rows.map((row) => row.job).sort()).toEqual([...waitedOn].sort());
     expect(formatRunSummary(rows)).toContain(`Every one of the ${String(rows.length)} jobs ran.`);
   });
 

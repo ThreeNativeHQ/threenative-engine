@@ -44,7 +44,8 @@ export function summaryRows(
   reporter: string,
   results: Readonly<Record<string, IJobResult>>,
 ): readonly ISummaryRow[] {
-  const reported = jobs.filter((job) => job.name !== reporter);
+  // `queue-watch` polls this whole run, so a `needs:` on it would deadlock the summary.
+  const reported = jobs.filter((job) => job.name !== reporter && job.name !== "queue-watch");
   const missing = reported.filter((job) => !(job.name in results)).map((job) => job.name);
   if (missing.length > 0) {
     throw new Error(
