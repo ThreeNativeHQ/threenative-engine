@@ -714,7 +714,7 @@ export class Race extends Scene<GameState> {
       statePatch.place = player.racer.rank;
       statePatch.results = results;
       statePatch.speed = Math.round(Math.abs(player.kart.speed) * 3.6);
-      statePatch.time = raceTime;
+      statePatch.time = player.racer.finished ? player.racer.finishTime : raceTime;
       statePatch.wrongWay = player.racer.wrongWay;
       frameCtx.state.set(statePatch);
     };

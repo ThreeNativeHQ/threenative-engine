@@ -4,8 +4,8 @@
 // The chase camera, after MK64's: low behind the kart, looking a little ahead of it, the kart at
 // the bottom middle of the frame. Its ground position eases toward its goal at 40% a tick and its
 // height at 15% (`mk64: src/camera.c:22`, `:614-621`), so a hop or a ramp lifts the kart in the frame
-// before the camera follows. It chases the direction of travel, not the nose, and swings 12° to
-// the outside of a drift so the slide reads from the side.
+// before the camera follows. It chases the direction of travel, not the nose, so in a slide the
+// kart shows its angle: a camera that turned with the nose would hide the drift.
 import { MathUtils, type PerspectiveCamera, Vector3 } from "three";
 import type { Kart } from "../entities/Kart.js";
 
@@ -20,8 +20,6 @@ export const CHASE = {
   follow: 0.4,
   lift: 0.15,
   turn: 0.12,
-  /** Extra heading swing during a drift, radians. */
-  driftSwing: (12 * Math.PI) / 180,
   /** A boost pulls the camera back and widens the lens a little. */
   boostFov: 8,
 } as const;
@@ -43,8 +41,7 @@ export function createChaseCamera(camera: PerspectiveCamera): IChaseCamera {
   const look = new Vector3();
   const place = (kart: Kart, rate: (share: number) => number): void => {
     // Chase the velocity's heading: in a slide the nose points in, the kart travels out.
-    const swing = kart.drifting ? kart.driftSide * CHASE.driftSwing : 0;
-    const target = kart.velocityYaw - swing;
+    const target = kart.velocityYaw;
     heading +=
       (MathUtils.euclideanModulo(target - heading + Math.PI, Math.PI * 2) - Math.PI) *
       rate(CHASE.turn);

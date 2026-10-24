@@ -7,11 +7,15 @@
 // `KartModel.update` follows a `Kart` from `entities/Kart.ts`: it pitches with the road, leans
 // out of a drift, spins on a banana and flips on a shell. Forward is −z, the origin is the ground.
 import {
+  AdditiveBlending,
   BoxGeometry,
   CapsuleGeometry,
+  Color,
+  ConeGeometry,
   CylinderGeometry,
   Group,
   Mesh,
+  MeshBasicMaterial,
   SphereGeometry,
   TorusGeometry,
 } from "three";
@@ -100,6 +104,7 @@ export class KartModel {
   readonly #rear: Mesh;
   readonly #fronts: readonly Group[];
   readonly #frontWheels: readonly Mesh[];
+  readonly #flame: Mesh;
   #roll = 0;
   #spin = 0;
 
@@ -134,6 +139,23 @@ export class KartModel {
       object.castShadow = true;
       object.receiveShadow = true;
     });
+    // The boost flame rides on the exhausts. Particles alone are left behind at racing speed and
+    // the temporal anti-aliasing smears them out, so the flame the player sees is a mesh. Its
+    // colour runs above 1 for the same reason the sparks do: auto exposure meters a sunny course.
+    const cone = (x: number) =>
+      new ConeGeometry(0.11, 0.6, 8).rotateX(Math.PI / 2).translate(x, 0, 0.3);
+    this.#flame = new Mesh(
+      merge([cone(-0.17), cone(0.17)]),
+      new MeshBasicMaterial({
+        blending: AdditiveBlending,
+        color: new Color(7, 3.2, 0.7),
+        depthWrite: false,
+        transparent: true,
+      }),
+    );
+    this.#flame.position.set(0, 0.62, 1.02);
+    this.#flame.visible = false;
+    this.root.add(this.#flame);
   }
 
   /** Follows the kart: place, heading, the road's pitch, a lean out of a drift, the hits. */
@@ -147,12 +169,16 @@ export class KartModel {
     const pitch = kart.airborne
       ? root.rotation.x * 0.96
       : Math.atan((course.slope[kart.index] ?? 0) * along);
-    // A drift leans the kart out of the turn and swings its nose a few degrees further in.
+    // A drift leans the kart out of the turn and swings its nose 17° further in, so the slide reads
+    // from the chase camera, which follows the travel and not the nose.
     const lean = kart.drifting ? kart.driftSide * 0.1 : steer * 0.05 * Math.min(1, kart.speed / 10);
     this.#roll += (lean - this.#roll) * Math.min(1, dt * 10);
     const flip =
       kart.tumbleTicks > 0 ? (1 - kart.tumbleTicks / kart.feel.tumbleTicks) * Math.PI * 2 : 0;
-    root.rotation.set(pitch + flip, kart.yaw + kart.spinAngle - kart.driftSide * 0.18, this.#roll);
+    root.rotation.set(pitch + flip, kart.yaw + kart.spinAngle - kart.driftSide * 0.3, this.#roll);
+    const boosting = kart.boostTicks > 0 || kart.miniTurboTicks > 0;
+    this.#flame.visible = boosting;
+    if (boosting) this.#flame.scale.set(1, 1, 0.75 + Math.abs(Math.sin(this.#spin * 7)) * 0.5);
     this.#spin += (kart.speed * dt) / WHEEL.rear;
     this.#rear.rotation.x = -this.#spin;
     for (const pivot of this.#fronts) pivot.rotation.y = -steer * 0.45;

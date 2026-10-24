@@ -188,7 +188,10 @@ export function dustEffect(): IEffectOptions {
   });
 }
 
-/** One drift-spark colour: small additive stars thrown off the rear wheels, falling fast. */
+/**
+ * One drift-spark colour: additive stars thrown off the rear wheels, falling fast. The colours run
+ * well above 1 because auto exposure meters a sunlit course: at 1.5 they vanish against the road.
+ */
 function spark(birth: readonly [number, number, number], death: readonly [number, number, number]) {
   return emitter({
     additive: true,
@@ -199,16 +202,16 @@ function spark(birth: readonly [number, number, number], death: readonly [number
     life: 0.35,
     mask: "star",
     opacity: 1,
-    size: [0.32, 0.08],
+    size: [0.55, 0.14],
   });
 }
 
 /** Stage 1: the slide is charging. White-blue, like MK64's first spark. */
-export const sparkWhiteEffect = (): IEffectOptions => spark([1.4, 1.5, 1.7], [0.6, 0.75, 1.2]);
+export const sparkWhiteEffect = (): IEffectOptions => spark([5, 5.4, 6], [2, 2.6, 4.2]);
 /** Stage 2: a release now fires the mini-turbo. Yellow. */
-export const sparkYellowEffect = (): IEffectOptions => spark([1.7, 1.45, 0.4], [1.2, 0.7, 0.05]);
+export const sparkYellowEffect = (): IEffectOptions => spark([6, 5, 1.2], [4, 2.2, 0.15]);
 /** Stage 3: the top of the charge. Orange-red. */
-export const sparkOrangeEffect = (): IEffectOptions => spark([1.8, 0.75, 0.2], [1.1, 0.18, 0.02]);
+export const sparkOrangeEffect = (): IEffectOptions => spark([6.5, 2.6, 0.6], [4, 0.6, 0.06]);
 
 /** The exhaust flame on a boost: hot yellow to red, short and bright, rising a little. */
 export function flameEffect(): IEffectOptions {
@@ -216,15 +219,15 @@ export function flameEffect(): IEffectOptions {
     additive: true,
     amount: 512,
     colour: [
-      [2.2, 1.5, 0.5],
-      [1.2, 0.15, 0.02],
+      [8, 5, 1.6],
+      [4, 0.5, 0.06],
     ],
     drag: 6,
     gravity: 1.5,
     life: 0.22,
     mask: "puff",
     opacity: 0.95,
-    size: [0.42, 0.12],
+    size: [0.7, 0.2],
   });
 }
 
