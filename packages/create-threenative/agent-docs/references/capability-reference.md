@@ -564,15 +564,15 @@ animation.setWeights([0.5, 0.5]); animation.update(dt);
 
 ### `AnimationPlayer`
 
-`class` — Play a skinned or sprite animation from game code. A locomotion clip's playback rate is matched to the ground the body actually covers, so feet do not skate or spin — on by default, `strideSync: false` to keep the authored rate, and `player.stride` reports the measurement either way. Name the body a game moves as `strideRoot` when the rig is a child of it. Clips authored **in place** — every ActorX and Unreal export, every Mixamo "in place" clip, every stock animal pack — are matched too: their stride is read off the ground a planted foot sweeps, and `stride.inPlace` says so.
+`class` — Play a skinned or sprite animation from game code. A locomotion clip's playback rate is matched to the ground the body actually covers, so feet do not skate or spin — on by default, `strideSync: false` to keep the authored rate, and `player.stride` reports the measurement either way. Name the body a game moves as `strideRoot` when the rig is a child of it. Clips authored **in place** — every ActorX and Unreal export, every Mixamo "in place" clip, every stock animal pack — are matched too: their stride is read off the ground a planted foot sweeps, and `stride.inPlace` says so. Evaluation is automatic by default: `updateRate: "auto"` follows measured camera visibility and projected size. `updateRate: 1` evaluates every frame; another positive safe integer names that frame interval. `updateRateReport` reports the effective rate, whether a named override is active, and whether the latest update evaluated. One-shots and fades stay full-rate; root-motion `AnimationComposer` advances every tick, and auto camera-ray targets and camera-parented rigs stay full-rate. A public `mixer` `"loop"` listener promotes the player to full-rate and observes only loop events after registration, so skipped pre-registration cycles are not replayed; `updateRateReport` reports that effective rate.
 
 ```ts
 export class AnimationPlayer { … }
 ```
 
-- **Use when:** play an animation on a character · switch a character between idle and attack clips · stop a walking character's feet from sliding or spinning · match a walk or run cycle to how fast a character is moving · match an in-place walk cycle with no root motion to the body's speed · find out what speed an animation clip was authored for
+- **Use when:** play an animation on a character · switch a character between idle and attack clips · stop a walking character's feet from sliding or spinning · match a walk or run cycle to how fast a character is moving · match an in-place walk cycle with no root motion to the body's speed · find out what speed an animation clip was authored for · reduce animation CPU for distant characters · inspect the effective animation evaluation rate
 - **Constraints:** name the body a game moves as strideRoot when the animated rig is a child of it · a one-shot clip always plays at its authored rate; the matched rate re-times loops only · the matched rate is held inside 0.15x-3x; a speed outside what the clip's own stride supports is clamped, and `stride.rate` says so
-- **Overrides:** strideSync controls whether the matched rate is applied while stride is still measured
+- **Overrides:** strideSync controls whether the matched rate is applied while stride is still measured · updateRate: "auto" chooses the camera-based interval; 1 is full evaluation, and another positive safe integer requests that interval; a public `mixer` `"loop"` listener promotes effective evaluation to 1 to preserve event timing
 
 ```ts
 const player = new AnimationPlayer({ clips, root: rig, strideRoot: body });
@@ -2512,15 +2512,15 @@ ctx.beforeRender(() => filter.observeRenderer(ctx.renderer.raw));
 
 ### `SkeletalMesh3D`
 
-`class` — Shared preparation for an imported rigged character. Instances the rig with a skeleton-safe clone, normalises size with skin-aware measurement, validates requested clips against the file and rig at load time, and sets up AnimationPlayer with honest stride-root accounting.
+`class` — Shared preparation for an imported rigged character. Instances the rig with a skeleton-safe clone, normalises size with skin-aware measurement, validates requested clips against the file and rig at load time, and sets up AnimationPlayer with honest stride-root accounting. Animation evaluation inherits AnimationPlayer's automatic camera-based `updateRate: "auto"` default; `updateRate: 1` evaluates every frame, another positive safe integer requests that interval, and `updateRateReport` exposes the effective rate, override status and latest result. One-shots and fades stay full-rate; root-motion `AnimationComposer` advances every tick, and auto camera-ray targets and camera-parented rigs stay full-rate. A public `mixer` `"loop"` listener promotes effective evaluation to 1 and observes only loop events after registration, so skipped pre-registration cycles are not replayed.
 
 ```ts
 export class SkeletalMesh3D extends AnimationPlayer { … }
 ```
 
-- **Use when:** put an animated character in the scene · my imported character renders deformed · instance an imported rigged character · validate animation clips on a character rig at load time · prepare a skinned character with safe skeleton cloning and stride sync
+- **Use when:** put an animated character in the scene · my imported character renders deformed · instance an imported rigged character · validate animation clips on a character rig at load time · prepare a skinned character with safe skeleton cloning and stride sync · reduce animation CPU for a crowd of imported rigs · inspect an imported rig's effective animation evaluation rate
 - **Constraints:** use strideRoot to name the body moved by game code when the rig is parented under it · requiredClips fails closed at load time if any requested clip is missing or binds 0 tracks
-- **Overrides:** strideSync controls whether locomotion playback rate matches ground covered · size normalises the instance to real-world metres with skin-aware measurement
+- **Overrides:** strideSync controls whether locomotion playback rate matches ground covered · size normalises the instance to real-world metres with skin-aware measurement · updateRate: "auto" chooses the camera-based interval; 1 is full evaluation, and another positive safe integer requests that interval; a public `mixer` `"loop"` listener promotes effective evaluation to 1 to preserve event timing
 
 ```ts
 import { SkeletalMesh3D } from "@threenative/core";

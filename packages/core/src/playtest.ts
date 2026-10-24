@@ -760,7 +760,8 @@ function objectGraphValues(root: object | undefined): object[] {
     if (value === null || typeof value !== "object" || visited.has(value)) return;
     visited.add(value);
     values.push(value);
-    if (depth >= 4 || value instanceof Object3D) return;
+    // Numeric storage is leaf data, not a container of contact adapters.
+    if (depth >= 4 || value instanceof Object3D || ArrayBuffer.isView(value)) return;
     for (const child of Object.values(value)) visit(child, depth + 1);
   };
   visit(root, 0);
