@@ -155,6 +155,12 @@ export interface IWorldEnvironmentOptions {
    * at half resolution costs a quarter of the rays and is very hard to see in the result.
    */
   readonly ssrResolutionScale?: number;
+  /**
+   * The most steps one reflection ray marches. Defaults to Unreal's count for the render chain
+   * tier (`RENDER_CHAIN_TIERS`: 32 on high, 16 on medium, 8 on low). Fewer steps cost less and
+   * step over thin objects sooner.
+   */
+  readonly ssrMaxSteps?: number;
   /** Spatial denoise over the SSGI result. Off is noisier and cheaper. */
   readonly denoiseEnabled?: boolean;
   /** The SSGI denoise's reach in gather pixels; omit for DenoiseNode's 5. A half-resolution gather wants more. */
@@ -707,6 +713,7 @@ export class WorldEnvironment {
       ssrEnabled: options.ssrEnabled ?? lookDiagnostics.layer >= 8,
       ssrMaxDistance: options.ssrMaxDistance ?? 30,
       ssrResolutionScale: options.ssrResolutionScale ?? 1,
+      ssrMaxSteps: options.ssrMaxSteps ?? RENDER_CHAIN_TIERS[renderChainTier].ssrMaxSteps,
       denoiseEnabled: options.denoiseEnabled ?? true,
       ssgiDenoiseRadius: options.ssgiDenoiseRadius,
       ssgiScreenProbes: options.ssgiScreenProbes ?? false,
@@ -1403,6 +1410,9 @@ export class WorldEnvironment {
           );
           reflections.maxDistance.value = options.ssrMaxDistance;
           reflections.resolutionScale = options.ssrResolutionScale;
+          // `maxSteps` is the core three patch's step cap; `@types/three` does not declare it.
+          (reflections as unknown as { maxSteps: { value: number } }).maxSteps.value =
+            options.ssrMaxSteps;
           // Unreal traces reflections only for surfaces smoother than a roughness cut-off and fades
           // the trace out over the last stretch: cut-off 0.4 (Engine/Source/Runtime/Engine/Private/
           // Scene.cpp:658), fade 0.1 (Renderer/Private/Lumen/LumenReflections.cpp:129). Above it the
@@ -1794,6 +1804,7 @@ export class WorldEnvironment {
         temporalAA: options.temporalAA,
         ssgiQuality: options.ssgiQuality,
         ssgiResolutionScale: options.ssgiResolutionScale,
+        ssrMaxSteps: options.ssrMaxSteps,
         stages,
         tonemapMode: options.tonemapMode,
         unrealBloom: options.unrealBloomEnabled,

@@ -1,4 +1,6 @@
-import { ACESFilmicToneMapping, CustomToneMapping, PerspectiveCamera, Scene } from "three";
+import { ACESFilmicToneMapping, CustomToneMapping, PerspectiveCamera, Scene, Texture } from "three";
+import { ssr } from "three/addons/tsl/display/SSRNode.js";
+import { texture } from "three/tsl";
 import { afterEach, expect, it, vi } from "vitest";
 import { type OutputRenderer, WorldEnvironment } from "../src/look/world-environment.js";
 
@@ -98,6 +100,27 @@ it("gathers screen-space GI at half resolution by default, reports it, and keeps
   };
   expect(marker({}).ssgiResolutionScale).toBe(0.5);
   expect(marker({ ssgiResolutionScale: 1 }).ssgiResolutionScale).toBe(1);
+});
+
+it("caps the reflection march at Unreal's steps per tier, reports it, and keeps ssrMaxSteps as the override", () => {
+  const info = vi.spyOn(console, "info").mockImplementation(() => {});
+  const marker = (options: ConstructorParameters<typeof WorldEnvironment>[0]) => {
+    info.mockClear();
+    apply(options, renderer("webgpu", { library: { addToneMapping() {} } }).target);
+    const line = info.mock.calls
+      .map(String)
+      .find((text) => text.startsWith("TN_WORLD_ENVIRONMENT:"));
+    return JSON.parse(line?.slice("TN_WORLD_ENVIRONMENT:".length) ?? "{}").ssrMaxSteps;
+  };
+  expect(marker({})).toBe(32);
+  expect(marker({ renderChainTier: "medium" })).toBe(16);
+  expect(marker({ renderChainTier: "low" })).toBe(8);
+  expect(marker({ ssrMaxSteps: 64 })).toBe(64);
+  // The core three patch adds the cap to the mirror trace; stock three has no such uniform.
+  const node = ssr(texture(new Texture()), texture(new Texture()), texture(new Texture()), {
+    camera: new PerspectiveCamera(),
+  }) as unknown as { maxSteps?: { value: number } };
+  expect(node.maxSteps?.value).toBe(1e6);
 });
 
 it("does not let an undefined option cancel the preset", () => {
