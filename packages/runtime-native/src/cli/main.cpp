@@ -1162,6 +1162,7 @@ static std::unique_ptr<mystral::Runtime> createConfiguredRuntime(const CLIOption
     config.vsync = opts.vsync;
     config.maxFps = opts.maxFps;
     config.debug = debugMode;
+    config.storageIdentity = opts.scriptPath;
     // An embedded release is one closed source graph. Development module trees and hot reload
     // deliberately stay memory-only rather than identifying imported shaders by the entry alone.
     if (!opts.watch && mystral::vfs::hasEmbeddedBundle()) {

@@ -631,6 +631,25 @@ describe("AudioBus", () => {
     }
   });
 
+  it("should start a new cue at zero after a paused voice is stopped and reused", async () => {
+    const context = audioContext();
+    const bus = new AudioBus({ camera: new PerspectiveCamera() });
+    await bus.unlock();
+
+    try {
+      bus.play({ duration: 10 } as AudioBuffer);
+      advance(context, 3);
+      bus.pause();
+      bus.stop();
+      bus.resume();
+      const second = bus.play({ duration: 10 } as AudioBuffer);
+      const source = second.source as unknown as IFakeSource;
+      expect(source.startArgs.at(-1)?.[1]).toBe(0);
+    } finally {
+      bus.dispose();
+    }
+  });
+
   it("should name the cue shaping this runtime cannot honour", async () => {
     audioContext();
     const bus = new AudioBus({ camera: new PerspectiveCamera() });

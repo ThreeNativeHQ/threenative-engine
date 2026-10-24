@@ -56,6 +56,15 @@ export async function openConnection(
   });
   try {
     await Promise.race([Promise.resolve(transport.ready), deadline, cancelled]);
+  } catch (error) {
+    // A transport created for this attempt must not outlive it: a retry loop against a peer
+    // that never becomes ready otherwise accumulates open transports.
+    try {
+      transport.close();
+    } catch {
+      /* best effort */
+    }
+    throw error;
   } finally {
     if (timeoutId !== undefined) clearTimeout(timeoutId);
     normalized.signal?.removeEventListener("abort", onAbort);
@@ -69,11 +78,30 @@ async function establishSession(
   normalized: INormalizedOptions,
 ): Promise<INetworkConnection> {
   const abort = new AbortController();
-  const timer = setTimeout(() => abort.abort(), normalized.connectTimeoutMs);
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    abort.abort();
+  }, normalized.connectTimeoutMs);
+  // The caller's signal covers the whole establishment, not just readiness: a stream that never
+  // opens or a handshake write held by backpressure must be cancellable and bounded like the
+  // handshake read already is.
+  const onCallerAbort = (): void => abort.abort();
+  normalized.signal?.addEventListener("abort", onCallerAbort, { once: true });
+  const interrupted = new Promise<never>((_, reject) => {
+    const fail = (): void => reject(new Error("TN_NET_INTERRUPTED: establishment aborted"));
+    if (abort.signal.aborted) fail();
+    else abort.signal.addEventListener("abort", fail, { once: true });
+  });
+  // It rejects on cleanup too, where no step is racing it any more.
+  interrupted.catch(() => undefined);
+  /** Bound one establishment step by the session deadline and cancellation. */
+  const bounded = <T>(operation: Promise<T> | T): Promise<T> =>
+    Promise.race([Promise.resolve(operation), interrupted]);
   const readers: FrameReader[] = [];
   const writers: WritableStream<Uint8Array>[] = [];
   try {
-    const controlStream = await Promise.resolve(transport.createBidirectionalStream());
+    const controlStream = await bounded(transport.createBidirectionalStream());
     writers.push(controlStream.writable);
     const controlReader = new FrameReader(controlStream.readable, MAX_HELLO_BYTES);
     readers.push(controlReader);
@@ -93,7 +121,7 @@ async function establishSession(
     );
     if (helloPayload.length > MAX_HELLO_BYTES)
       throw invalidArgument("handshake payload exceeds 4096 bytes");
-    await writeAll(controlStream.writable, encodeFrame(KIND_HELLO, 0, helloPayload));
+    await bounded(writeAll(controlStream.writable, encodeFrame(KIND_HELLO, 0, helloPayload)));
 
     const welcomeFrame = await controlReader.nextFrame(abort.signal);
     if (welcomeFrame.kind !== KIND_WELCOME || welcomeFrame.channel !== 0)
@@ -125,11 +153,13 @@ async function establishSession(
     const reliableReaders = new Map<number, FrameReader>();
     const reliableWriters = new Map<number, WritableStream<Uint8Array>>();
     for (const channelId of reliableIds) {
-      const stream = await Promise.resolve(transport.createBidirectionalStream());
+      const stream = await bounded(transport.createBidirectionalStream());
       writers.push(stream.writable);
       const reader = new FrameReader(stream.readable, messageLimit);
       readers.push(reader);
-      await writeAll(stream.writable, encodeFrame(KIND_BIND, channelId, new Uint8Array(0)));
+      await bounded(
+        writeAll(stream.writable, encodeFrame(KIND_BIND, channelId, new Uint8Array(0))),
+      );
       const bound = await reader.nextFrame(abort.signal);
       if (bound.kind !== KIND_BOUND || bound.channel !== channelId)
         throw new Error("TN_NET_PROTOCOL: expected BOUND");
@@ -138,6 +168,7 @@ async function establishSession(
       reliableWriters.set(channelId, stream.writable);
     }
     clearTimeout(timer);
+    normalized.signal?.removeEventListener("abort", onCallerAbort);
     return createConnection({
       transport,
       channelById: new Map(normalized.channels.map((channel) => [channel.id, channel.delivery])),
@@ -152,9 +183,15 @@ async function establishSession(
     });
   } catch (error) {
     clearTimeout(timer);
+    normalized.signal?.removeEventListener("abort", onCallerAbort);
     abort.abort();
+    // A stalled stream can also hold its reader's cancel; bound the release so a failed launch
+    // settles rather than waiting on the operation that already failed to answer.
     for (const reader of readers) {
-      await reader.cancel(error);
+      await Promise.race([
+        reader.cancel(error).catch(() => undefined),
+        new Promise<void>((resolve) => setTimeout(resolve, 50)),
+      ]);
       reader.release();
     }
     try {
@@ -163,6 +200,7 @@ async function establishSession(
       /* best effort */
     }
     if (normalized.signal?.aborted) throw new Error("TN_NET_CANCELLED: aborted");
+    if (timedOut) throw new Error("TN_NET_TIMEOUT: connect timed out");
     if (error instanceof Error && error.message.startsWith("TN_NET_")) throw error;
     if (error instanceof Error) throw new Error(`TN_NET_PROTOCOL: ${error.message}`);
     throw new Error("TN_NET_UNAVAILABLE: handshake failed");
@@ -230,9 +268,8 @@ function createConnection(established: IEstablished): INetworkConnection {
   const enqueueReceived = (channel: number, data: Uint8Array): void => {
     const delivery = established.channelById.get(channel);
     if (delivery === "reliable-ordered") {
-      // Reliable saturation pauses reads: the reader loop below stops consuming
-      // while this queue holds a full window, and never drops.
-      if (queuedReliableBytesReceived + data.length > established.maxQueuedReliableBytes) return;
+      // The pump below waits for room before it calls this, so an already-read reliable frame is
+      // never discarded: reliable delivery is ordered and lossless for every accepted message.
       queuedReliableBytesReceived += data.length;
       receiveQueue.push({ channel, data });
       return;
@@ -259,14 +296,21 @@ function createConnection(established: IEstablished): INetworkConnection {
       try {
         for (;;) {
           if (state !== "connected") return;
-          if (queuedReliableBytesReceived >= established.maxQueuedReliableBytes) {
-            await new Promise<void>((resolve) => setTimeout(resolve, 5));
-            continue;
-          }
           const frame = await reader.nextFrame();
           if (frame.kind !== KIND_DATA || frame.channel !== channelId)
             throw new Error("TN_NET_PROTOCOL: wrong stream frame");
-          enqueueReceived(frame.channel, frame.payload.slice());
+          const payload = frame.payload.slice();
+          // A legal frame can be larger than the room left in the window. Hold this one frame and
+          // stop reading until a poll frees room, instead of dropping it and delivering the next,
+          // smaller one out of order.
+          while (
+            state === "connected" &&
+            queuedReliableBytesReceived + payload.length > established.maxQueuedReliableBytes
+          ) {
+            await new Promise<void>((resolve) => setTimeout(resolve, 5));
+          }
+          if (state !== "connected") return;
+          enqueueReceived(frame.channel, payload);
         }
       } catch {
         if (state === "connected") markDisconnected("transport error");

@@ -403,6 +403,43 @@ int main() {
         expect(!LocalStorage::getStorageDirectory().empty(), "platform storage dir resolves");
     }
 
+    // --- Game identity namespacing ------------------------------------------
+    //
+    // Desktop storage used to derive its filename from `current_path().filename()` only. Two
+    // games installed as `.../puzzle/game` and `.../racing/game` therefore both wrote
+    // `game.json`: the second read the first's progress and overwrote it.
+    {
+        const std::string puzzle = LocalStorage::deriveStorageFilenameForEntry(
+            "/games/puzzle/game/game.js");
+        const std::string racing = LocalStorage::deriveStorageFilenameForEntry(
+            "/games/racing/game/game.js");
+        expect(puzzle != racing, "same basename at different game roots gets different storage");
+        expectEq(LocalStorage::deriveStorageFilenameForEntry("/games/puzzle/game/game.js"), puzzle,
+                 "the same entry path derives the same storage name");
+        expect(puzzle.rfind("game-", 0) == 0, "the readable basename stays in front");
+        expectEq(LocalStorage::deriveStorageFilenameForEntry(""),
+                 "default.json", "an empty identity keeps the default name");
+    }
+
+    // --- Legacy save migration ---------------------------------------------
+    {
+        const std::string legacyPath = temp.file("migrate/game.json");
+        std::filesystem::create_directories(std::filesystem::path(legacyPath).parent_path());
+        {
+            std::ofstream out(legacyPath);
+            out << "{\"save\":\"puzzle-level-40\"}";
+        }
+        const std::string migratedPath = temp.file("migrate/game-0123456789abcdef.json");
+        expect(LocalStorage::migrateStorageFile(legacyPath, migratedPath),
+               "an existing legacy save migrates to the identity-derived name");
+        LocalStorage migrated;
+        migrated.init(migratedPath);
+        expectEq(migrated.getItem("save"), "puzzle-level-40",
+                 "the migrated save keeps the player's progress");
+        expect(!LocalStorage::migrateStorageFile(legacyPath, migratedPath),
+               "migration never overwrites the namespaced save");
+    }
+
     // --- Storage root, per platform, from any platform ------------------------
     //
     // A physical Pixel 8 logged this on every cold launch of com.threenative.bayview:

@@ -6,6 +6,8 @@
 #include <iostream>
 #include <algorithm>
 #include <cctype>
+#include <cstdint>
+#include <cstdio>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -248,6 +250,47 @@ std::string LocalStorage::deriveStorageFilename(const std::string& identifier) {
     }
     if (safe.empty()) safe = "default";
     return safe + ".json";
+}
+
+namespace {
+
+/** FNV-1a 64: stable across compilers and library versions, unlike `std::hash`. */
+std::uint64_t stableIdentityHash(const std::string& value) {
+    std::uint64_t hash = 1469598103934665603ULL;
+    for (unsigned char byte : value) {
+        hash ^= byte;
+        hash *= 1099511628211ULL;
+    }
+    return hash;
+}
+
+}  // namespace
+
+std::string LocalStorage::deriveStorageFilenameForEntry(const std::string& entryPath) {
+    if (entryPath.empty()) return "default.json";
+    const std::filesystem::path path(entryPath);
+    std::error_code ec;
+    const std::filesystem::path canonical = std::filesystem::weakly_canonical(path, ec);
+    const std::string identity =
+        ec ? path.lexically_normal().string() : canonical.string();
+    std::string base = path.stem().string();
+    if (base.empty() || base == "." || base == "..") base = path.filename().string();
+    if (base.empty() || base == "." || base == "..") base = "default";
+    std::string filename = deriveStorageFilename(base);
+    filename.resize(filename.size() - 5);  // strip ".json"
+    char suffix[17];
+    std::snprintf(suffix, sizeof(suffix), "%016llx",
+                  static_cast<unsigned long long>(stableIdentityHash(identity)));
+    return filename + "-" + suffix + ".json";
+}
+
+bool LocalStorage::migrateStorageFile(const std::string& legacyPath, const std::string& path) {
+    if (legacyPath == path) return false;
+    std::error_code ec;
+    if (std::filesystem::exists(path, ec)) return false;
+    if (!std::filesystem::exists(legacyPath, ec)) return false;
+    std::filesystem::copy_file(legacyPath, path, std::filesystem::copy_options::none, ec);
+    return !ec;
 }
 
 // ============================================================================

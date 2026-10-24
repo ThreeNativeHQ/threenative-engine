@@ -155,6 +155,7 @@ extern "C" __attribute__((visibility("default"))) int SDL_main(int argc, char* a
         config.pipelineCacheAppIdentity = scriptPath;
         config.pipelineCacheSourceIdentity = mystral::webgpu::pipelineCacheDigest(scriptContent);
     }
+    config.storageIdentity = scriptPath;
     config.width = 0;   // Use full screen width (0 = auto)
     config.height = 0;  // Use full screen height (0 = auto)
     std::string windowTitle = "ThreeNative";
