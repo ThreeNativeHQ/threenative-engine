@@ -8,10 +8,13 @@
 // the material-drift checks of later frames are not carried. The native scene has no sprites,
 // points, lines, LODs, BatchedMeshes, custom depth materials, draw ranges,
 // indirect geometries or vertex-displacing materials, so those reasons never arise here.
+#include <algorithm>
 #include <bit>
 #include <cmath>
 #include <cstdint>
+#include <cstring>
 #include <map>
+#include <memory>
 #include <string>
 #include <vector>
 #include <unordered_map>
@@ -24,6 +27,20 @@
 #include "engine/scene/lights.h"
 #include "engine/scene/material.h"
 #include "engine/scene/nodes.h"
+
+namespace tn::engine {
+
+/**
+ * Geometries whose layout and bytes are equal (projection::contentClassOf). Agents build a geometry per
+ * copy, so the instanced lanes key on this class rather than on the geometry, and `canonical` is the
+ * member every batch of the class draws. Held by its members; the registry keeps it weakly.
+ */
+struct GeometryContentClass {
+    std::weak_ptr<BufferGeometry> canonical;
+    const BufferGeometry* drawn = nullptr;  // canonical's address while it lives, for identity compares
+};
+
+} // namespace tn::engine
 
 namespace tn::engine::projection {
 
@@ -216,7 +233,157 @@ struct Group {
     std::vector<Mesh*> members;
 };
 
+inline constexpr uint64_t kFnvBasis = 0xcbf29ce484222325ull;
+inline constexpr uint64_t kFnvPrime = 0x100000001b3ull;
+
+// What a change to a geometry's data moves: its revision, and each attribute's store, version and length.
+inline uint64_t contentVersionKey(const BufferGeometry& g) {
+    uint64_t h = kFnvBasis ^ g.revision();
+    const auto mix = [&](uint64_t v) { h = (h ^ v) * kFnvPrime; };
+    const auto attribute = [&](const BufferAttribute* a) {
+        if (!a) return mix(0);
+        mix(reinterpret_cast<std::uintptr_t>(a->store.get()));
+        mix(a->version());
+        mix(a->store->byteLength());
+    };
+    for (const auto& [name, a] : g.attributes) attribute(a.get());
+    attribute(g.index.get());
+    return h;
+}
+
+// An instanced geometry's draw count, a per-instance attribute and a draw range are not in the bytes
+// compared, and a morph target is not drawn by the instanced lanes: each keeps a class of its own.
+inline bool contentMergeable(const BufferGeometry& g) {
+    if (g.instanced || !g.morphPositions.empty() || !g.morphNormals.empty() || g.drawRange.start != 0 ||
+        std::isfinite(g.drawRange.count))
+        return false;
+    return std::all_of(g.attributes.begin(), g.attributes.end(),
+                       [](const auto& entry) { return entry.second && !entry.second->perInstance; });
+}
+
+inline uint64_t hashStore(uint64_t h, const BufferStore& store) {
+    const uint64_t n = store.byteLength();
+    if (n == 0) return h;
+    const std::byte* p = store.data();
+    uint64_t i = 0;
+    for (; i + 8 <= n; i += 8) {
+        uint64_t word;
+        std::memcpy(&word, p + i, 8);
+        h = (h ^ word) * kFnvPrime;
+    }
+    for (; i < n; ++i) h = (h ^ uint64_t(p[i])) * kFnvPrime;
+    return h;
+}
+
+// FNV-1a over the layout (index, then each attribute's name, scalar, item size and normalization) and bytes.
+inline uint64_t contentHash(const BufferGeometry& g) {
+    uint64_t h = kFnvBasis;
+    const auto mix = [&](uint64_t v) { h = (h ^ v) * kFnvPrime; };
+    const auto attribute = [&](const BufferAttribute& a) {
+        mix(uint64_t(a.store->scalar()));
+        mix(uint64_t(a.itemSize));
+        mix(a.normalized ? 1 : 0);
+        mix(a.store->byteLength());
+        h = hashStore(h, *a.store);
+    };
+    mix(g.index ? 1 : 0);
+    if (g.index) attribute(*g.index);
+    for (const auto& [name, a] : g.attributes) {
+        mix(std::hash<std::string>{}(name));
+        attribute(*a);
+    }
+    return h;
+}
+
+// The full byte compare behind an equal hash: no false merge.
+inline bool sameContent(const BufferGeometry& a, const BufferGeometry& b) {
+    const auto same = [](const BufferAttribute& x, const BufferAttribute& y) {
+        const uint64_t n = x.store->byteLength();
+        return x.itemSize == y.itemSize && x.normalized == y.normalized && x.store->scalar() == y.store->scalar() &&
+               n == y.store->byteLength() && (n == 0 || std::memcmp(x.store->data(), y.store->data(), n) == 0);
+    };
+    if (bool(a.index) != bool(b.index) || a.attributes.size() != b.attributes.size()) return false;
+    if (a.index && !same(*a.index, *b.index)) return false;
+    for (auto x = a.attributes.begin(), y = b.attributes.begin(); x != a.attributes.end(); ++x, ++y)
+        if (x->first != y->first || !same(*x->second, *y->second)) return false;
+    return true;
+}
+
+// Whether a class's canonical geometry is alive, still in it and unchanged since it was classed.
+inline bool canonicalHolds(const GeometryContentClass& cls, uint64_t epoch) {
+    const auto canonical = cls.canonical.lock();
+    return canonical && canonical->contentClass_.get() == &cls &&
+           (canonical->contentEpoch_ == epoch || contentVersionKey(*canonical) == canonical->contentKey_);
+}
+
+// Content hash -> the classes of that hash. Weak: a class lives while a member geometry holds it.
+inline std::unordered_map<uint64_t, std::vector<std::weak_ptr<GeometryContentClass>>>& contentClasses() {
+    static std::unordered_map<uint64_t, std::vector<std::weak_ptr<GeometryContentClass>>> classes;
+    return classes;
+}
+
+// The class whose bytes equal this geometry's, or a new one it is canonical for.
+inline std::shared_ptr<GeometryContentClass> classify(const std::shared_ptr<BufferGeometry>& geometry, uint64_t epoch) {
+    auto& classes = contentClasses();
+    // Unique content (a streamed terrain tile) would leave a dead entry per hash: sweep when the table doubles.
+    static std::size_t sweepAt = 64;
+    if (classes.size() > sweepAt) {
+        for (auto it = classes.begin(); it != classes.end();) {
+            std::erase_if(it->second, [](const auto& weak) { return weak.expired(); });
+            it = it->second.empty() ? classes.erase(it) : std::next(it);
+        }
+        sweepAt = std::max<std::size_t>(64, classes.size() * 2);
+    }
+    auto& bucket = classes[contentHash(*geometry)];
+    std::erase_if(bucket, [](const auto& weak) { return weak.expired(); });
+    for (const auto& weak : bucket) {
+        auto cls = weak.lock();
+        if (canonicalHolds(*cls, epoch) && sameContent(*cls->canonical.lock(), *geometry)) return cls;
+    }
+    auto cls = std::make_shared<GeometryContentClass>();
+    cls->canonical = geometry;
+    cls->drawn = geometry.get();
+    bucket.push_back(cls);
+    return cls;
+}
+
 } // namespace detail
+
+/**
+ * The content class of `geometry`, port of core's resolveGeometryContent (projection-plan.ts). Resolved
+ * once per prepare (uniformEpoch): a geometry whose revision, stores and versions hold keeps its class;
+ * one whose data moved leaves for a class of its own and is never hashed again; a new one is hashed and
+ * byte-compared against the classes of its hash. A class whose canonical geometry died or moved is
+ * drawn from the first unchanged member that resolves to it.
+ */
+inline const GeometryContentClass& contentClassOf(const std::shared_ptr<BufferGeometry>& geometry) {
+    BufferGeometry& g = *geometry;
+    const uint64_t epoch = detail::uniformEpoch();
+    if (g.contentEpoch_ == epoch && g.contentClass_) return *g.contentClass_;
+    g.contentEpoch_ = epoch;
+    const uint64_t key = detail::contentVersionKey(g);
+    if (!g.contentClass_ || key != g.contentKey_) {
+        if (g.contentStreamed_) {
+        } else if (g.contentClass_ || !detail::contentMergeable(g)) {
+            g.contentClass_ = std::make_shared<GeometryContentClass>();
+            g.contentStreamed_ = true;
+        } else {
+            g.contentClass_ = detail::classify(geometry, epoch);
+        }
+        g.contentKey_ = key;
+    }
+    GeometryContentClass& cls = *g.contentClass_;
+    if (cls.drawn != &g && !detail::canonicalHolds(cls, epoch)) {
+        cls.canonical = geometry;
+        cls.drawn = &g;
+    }
+    return cls;
+}
+
+/** The geometry a batch draws for every member whose geometry has `geometry`'s bytes. */
+inline std::shared_ptr<BufferGeometry> canonicalGeometry(const std::shared_ptr<BufferGeometry>& geometry) {
+    return contentClassOf(geometry).canonical.lock();
+}
 
 /**
  * One frame's projection decision for `scene`, as a fresh SceneRenderProjection reconcile makes it.
@@ -293,16 +460,17 @@ inline Decision decide(Object3D& scene, int minMeshes = 200, bool skinnedVerdict
         return d;
     }
 
-    // groupEligibleMeshes: by geometry, material and flags (rigs also by bone count); the members of
-    // groups below the floor then try a uniform group (same geometry, uniforms but colour), and what
-    // no uniform group claims tries a material group (same material, any geometry of one layout).
+    // groupEligibleMeshes: by geometry content class, material and flags (rigs by their geometry and
+    // bone count); the members of groups below the floor then try a uniform group (same content,
+    // uniforms but colour), and what no uniform group claims tries a material group (same material,
+    // any geometry of one layout).
     using Key = std::tuple<const void*, const void*, double>;
     std::vector<Key> groupOrder, skinnedOrder;
     std::map<Key, Group> groups, skinnedGroups;
     const Key* runKey = nullptr;  // the previous mesh's key and group: a run of one key skips the map
     Group* runGroup = nullptr;
     for (Mesh* mesh : eligible) {
-        const Key key{mesh->geometry.get(), mesh->material.get(), batchFlags(*mesh)};
+        const Key key{&contentClassOf(mesh->geometry), mesh->material.get(), batchFlags(*mesh)};
         if (runGroup && key == *runKey) {
             runGroup->members.push_back(mesh);
             continue;
@@ -319,7 +487,7 @@ inline Decision decide(Object3D& scene, int minMeshes = 200, bool skinnedVerdict
         skinnedGroups[key].members.push_back(rig);
     }
     struct UniformGroup {
-        const BufferGeometry* geometry;
+        const void* content;
         const Material* material; // the first member's: the signature it shares
         double flags;
         std::vector<Mesh*> members;
@@ -330,21 +498,22 @@ inline Decision decide(Object3D& scene, int minMeshes = 200, bool skinnedVerdict
     for (const Key& key : groupOrder) {
         Group& group = groups[key];
         if (int(group.members.size()) >= kMinBatchMembers) continue;
+        const void* content = std::get<0>(key);
         for (Mesh* mesh : group.members) {
             std::size_t found = uniformGroups.size();
-            const auto hash = uniformHash(*mesh->material) ^ std::hash<const void*>{}(mesh->geometry.get()) ^
+            const auto hash = uniformHash(*mesh->material) ^ std::hash<const void*>{}(content) ^
                               std::hash<double>{}(batchFlags(*mesh));
             auto& candidates = uniformCandidates[hash];
             for (std::size_t i : candidates) {
                 const UniformGroup& u = uniformGroups[i];
-                if (u.geometry == mesh->geometry.get() && u.flags == batchFlags(*mesh) && sameUniforms(*u.material, *mesh->material)) {
+                if (u.content == content && u.flags == batchFlags(*mesh) && sameUniforms(*u.material, *mesh->material)) {
                     found = i;
                     break;
                 }
             }
             if (found == uniformGroups.size()) {
                 candidates.push_back(found);
-                uniformGroups.push_back({mesh->geometry.get(), mesh->material.get(), batchFlags(*mesh), {}});
+                uniformGroups.push_back({content, mesh->material.get(), batchFlags(*mesh), {}});
             }
             uniformGroups[found].members.push_back(mesh);
             uniformOf[mesh] = found;

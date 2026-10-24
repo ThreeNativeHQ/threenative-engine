@@ -156,6 +156,8 @@ class RenderDatabase {
         // Held, so neither is released while the record's item points into it, and a new one can
         // never take its address and pass for it. The mesh is known by its id, never reused.
         std::shared_ptr<const BufferGeometry> geometry;
+        // What it draws from: `geometry`, or the member of its content class a batch draws for all.
+        std::shared_ptr<const BufferGeometry> canonical;
         std::shared_ptr<const Material> material;
         // The renderer's resolved program/pipeline/bind groups, reused while the variant is unchanged.
         // On the record, not its draw: a batched mesh's draw is rebuilt every frame but the record is not.

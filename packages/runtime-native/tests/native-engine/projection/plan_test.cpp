@@ -29,11 +29,13 @@ std::string text(const Value* v) { return v && v->isString() ? v->string() : std
 
 struct Assets {
     std::map<std::string, std::shared_ptr<BufferGeometry>> geometries;
+    std::map<std::string, const Value*> specs;
     std::map<std::string, std::shared_ptr<Material>> materials;
 };
 
 std::shared_ptr<BufferGeometry> geometryOf(const Value& spec) {
-    auto geometry = text(spec.find("kind")) == "box" ? makeBoxGeometry() : makeSphereGeometry(0.5, 8, 6);
+    auto geometry =
+        text(spec.find("kind")) == "box" ? makeBoxGeometry() : makeSphereGeometry(num(spec.find("radius"), 0.5), 8, 6);
     const uint64_t count = geometry->attributes.at("position")->count();
     if (flag(spec.find("morph"))) geometry->morphPositions.push_back(geometry->attributes.at("position"));
     if (flag(spec.find("skinned"))) {
@@ -59,9 +61,14 @@ std::shared_ptr<Material> materialOf(const Value& spec) {
     return material;
 }
 
-std::shared_ptr<Object3D> build(const Value& spec, Assets& assets) {
+std::shared_ptr<Object3D> build(const Value& spec, Assets& assets, int copy = 0) {
     const std::string kind = text(spec.find("kind"));
-    const auto geometry = assets.geometries[text(spec.find("geometry"))];
+    auto geometry = assets.geometries[text(spec.find("geometry"))];
+    // A geometry per copy, as agent-written games build them: the same bytes, or copy i scaled in y.
+    if (const std::string own = text(spec.find("ownGeometry")); !own.empty()) {
+        geometry = geometryOf(*assets.specs[text(spec.find("geometry"))]);
+        if (own == "varied") geometry->scale(1, 1 + copy / 100.0, 1);
+    }
     const auto material = assets.materials[text(spec.find("material"))];
     std::shared_ptr<Object3D> object;
     if (kind == "mesh") object = std::make_shared<Mesh>(geometry, material);
@@ -94,8 +101,47 @@ std::shared_ptr<Object3D> build(const Value& spec, Assets& assets) {
                 [](const RenderCallbackArgs&, std::string&) { return true; });
     if (const Value* children = spec.find("children"))
         for (const Value& child : children->items())
-            for (int i = 0; i < int(num(child.find("repeat"), 1)); ++i) object->add(*build(child, assets));
+            for (int i = 0; i < int(num(child.find("repeat"), 1)); ++i) object->add(*build(child, assets, i));
     return object;
+}
+
+// Forty copies of one box, each its own geometry: one batch. A member whose data then moves (a new
+// prepare, as the renderer bumps the epoch) leaves the batch, and the rest draw from one that did not.
+int memberWhoseGeometryMovesLeaves() {
+    auto scene = std::make_shared<Scene>();
+    auto material = std::make_shared<Material>(MaterialType::Standard);
+    std::vector<std::shared_ptr<Mesh>> meshes;
+    for (int i = 0; i < 40; ++i) {
+        meshes.push_back(std::make_shared<Mesh>(makeBoxGeometry(), material));
+        scene->add(*meshes.back());
+    }
+    scene->updateMatrixWorld(true);
+    ++projection::detail::uniformEpoch();
+    const projection::Decision before = projection::decide(*scene, 8);
+    const auto canonical = projection::canonicalGeometry(meshes[5]->geometry);
+    const auto moved = std::find_if(meshes.begin(), meshes.end(), [&](const auto& m) { return m->geometry == canonical; });
+    int failures = 0;
+    const auto expect = [&](bool ok, const char* what) {
+        if (!ok) std::printf("  content identity: %s\n", what), ++failures;
+    };
+    expect(before.projecting && before.instancedBatches == 1 && before.projectedObjects == 40, "40 copies are one batch");
+    expect(moved != meshes.end(), "the canonical geometry is a member's");
+    if (moved == meshes.end()) return failures;
+    auto position = (*moved)->geometry->attributes.at("position");
+    position->setY(0, 5);
+    position->setNeedsUpdate();
+    ++projection::detail::uniformEpoch();
+    const projection::Decision after = projection::decide(*scene, 8);
+    expect(after.projecting && after.instancedBatches == 1 && after.projectedObjects == 39, "the moved member left");
+    expect(after.exact.count("tooFewToBatch") && after.exact.at("tooFewToBatch") == 1, "the moved member draws alone");
+    const auto redrawn = projection::canonicalGeometry(meshes[(moved - meshes.begin() + 1) % 40]->geometry);
+    expect(redrawn && redrawn != (*moved)->geometry, "the batch draws from a member that did not move");
+    expect(projection::canonicalGeometry((*moved)->geometry) == (*moved)->geometry, "the moved geometry draws itself");
+    // The same vertex count with one float different never merges, whatever the hash says.
+    auto other = makeBoxGeometry();
+    other->attributes.at("normal")->setX(3, 0.5);
+    expect(!projection::detail::sameContent(*other, *redrawn), "a one-float difference is not equal content");
+    return failures;
 }
 
 } // namespace
@@ -112,13 +158,16 @@ int main() {
         const Value& spec = *entry.find("scene");
         const Value& expected = *entry.find("decision");
         Assets assets;
-        for (const Value& g : spec.find("geometries")->items()) assets.geometries[text(g.find("id"))] = geometryOf(g);
+        for (const Value& g : spec.find("geometries")->items()) {
+            assets.geometries[text(g.find("id"))] = geometryOf(g);
+            assets.specs[text(g.find("id"))] = &g;
+        }
         for (const Value& m : spec.find("materials")->items()) assets.materials[text(m.find("id"))] = materialOf(m);
         auto scene = std::make_shared<Scene>();
         std::vector<std::shared_ptr<Object3D>> keep;
         for (const Value& object : spec.find("objects")->items())
             for (int i = 0; i < int(num(object.find("repeat"), 1)); ++i) {
-                keep.push_back(build(object, assets));
+                keep.push_back(build(object, assets, i));
                 scene->add(*keep.back());
             }
         scene->updateMatrixWorld(true);
@@ -165,7 +214,8 @@ int main() {
         }
     }
     std::printf("projection plan: %d scenes, %d differ\n", scenes, differ);
-    if (scenes == 0 || differ != 0) {
+    const int moved = memberWhoseGeometryMovesLeaves();
+    if (scenes == 0 || differ != 0 || moved != 0) {
         std::printf("FAIL\n");
         return 1;
     }

@@ -274,6 +274,53 @@ void multiMaterialGroups() {
     CHECK(triangles == 4 * 12);
 }
 
+// Forty copies that each built their own box draw as one instanced item from one copy's buffers;
+// copies with different data at the same vertex count do not; a copy whose data moves leaves.
+void contentIdenticalGeometryBatches() {
+    Scene scene; PerspectiveCamera camera; LightState lights; RenderDatabase database;
+    camera.position.set(20, 30, 60);
+    camera.lookAt(20, 0, 0);
+    auto material = std::make_shared<Material>(MaterialType::Standard);
+    std::vector<std::shared_ptr<Mesh>> meshes;
+    for (int i = 0; i < 40; ++i) {
+        meshes.push_back(std::make_shared<Mesh>(makeBoxGeometry(), material));
+        meshes.back()->position.set(i, 0, 0);
+        scene.add(*meshes.back());
+    }
+    auto items = database.prepare(scene, camera, lights);
+    CHECK(items.size() == 1 && items[0].instanceCount == 40);
+    if (items.size() != 1) return;
+    const BufferStore* drawn = items[0].positions;
+    const auto owner = std::find_if(meshes.begin(), meshes.end(), [&](const auto& mesh) {
+        return mesh->geometry->attributes.at("position")->store.get() == drawn;
+    });
+    CHECK(owner != meshes.end());
+    if (owner == meshes.end()) return;
+    auto position = (*owner)->geometry->attributes.at("position");
+    position->setY(0, 5);
+    position->setNeedsUpdate();
+    items = database.prepare(scene, camera, lights);
+    CHECK(items.size() == 2);
+    const bool moved = std::any_of(items.begin(), items.end(), [&](const DrawItem& item) {
+        return item.instanceCount <= 1 && item.positions == position->store.get();
+    });
+    const bool rest = std::any_of(items.begin(), items.end(), [&](const DrawItem& item) {
+        return item.instanceCount == 39 && item.positions != position->store.get();
+    });
+    CHECK(moved && rest);
+
+    Scene varied; RenderDatabase other;
+    std::vector<std::shared_ptr<Mesh>> keep;
+    for (int i = 0; i < 40; ++i) {
+        auto geometry = makeBoxGeometry();
+        geometry->scale(1, 1 + i / 100.0, 1);
+        keep.push_back(std::make_shared<Mesh>(geometry, material));
+        keep.back()->position.set(i, 0, 0);
+        varied.add(*keep.back());
+    }
+    CHECK(other.prepare(varied, camera, lights).size() == 40);
+}
+
 void uniformBatchPreparation() {
     rigRelativePreparation();
     Material a(MaterialType::Standard), b(MaterialType::Standard);
@@ -3457,6 +3504,7 @@ void batchCachesStayPut() {
     std::vector<std::shared_ptr<Mesh>> meshes;
     for (int g = 0; g < 64; ++g) {
         const auto geometry = makeBoxGeometry();
+        geometry->scale(1, 1 + g / 100.0, 1); // distinct bytes: equal boxes would batch as one group
         auto material = std::make_shared<Material>(MaterialType::Standard);
         for (int i = 0; i < 4; ++i) {
             auto mesh = std::make_shared<Mesh>(geometry, material);
@@ -5708,7 +5756,7 @@ void gpuJointProduction() {
     }
 }
 
-TN_TEST_MAIN({"gpu_joint_production", gpuJointProduction}, {"multi_material_groups", multiMaterialGroups}, {"uniform_batch_preparation", uniformBatchPreparation}, {"steady_state", steadyState}, {"color_write_masks_the_draw", colorWriteMasksTheDraw}, {"normal_pass_is_not_tallied", normalPassIsNotTallied}, {"gtao_screen_reach", gtaoScreenReach}, {"steady_cache_invalidation", steadyCacheInvalidation}, {"render_target", renderTarget}, {"float_render_target_keeps_float32", floatRenderTargetKeepsFloat32}, {"float_render_target_falls_back_to_half", floatRenderTargetFallsBackToHalf}, {"post_texture_resize_keeps_draw_groups", postTextureResizeKeepsDrawGroups}, {"deferred_target_follows_post_rtt", deferredTargetFollowsPostRtt}, {"deferred_target_samples_post_rtt_node", deferredTargetSamplesPostRttNode}, {"screen_size_reaches_the_vertex_stage", screenSizeReachesTheVertexStage}, {"depth_node_sets_fragment_depth", depthNodeSetsFragmentDepth}, {"depth_node_reaches_every_material_program", depthNodeReachesEveryMaterialProgram}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"present_direct", presentDirect}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"directional_target_outside_scene", directionalTargetOutsideScene}, {"scene_fog_node", sceneFogNode}, {"lit_mesh_without_normals", litMeshWithoutNormals}, {"invalidation", invalidation}, {"alpha_scene", alphaScene},
+TN_TEST_MAIN({"gpu_joint_production", gpuJointProduction}, {"multi_material_groups", multiMaterialGroups}, {"uniform_batch_preparation", uniformBatchPreparation}, {"content_identical_geometry_batches", contentIdenticalGeometryBatches}, {"steady_state", steadyState}, {"color_write_masks_the_draw", colorWriteMasksTheDraw}, {"normal_pass_is_not_tallied", normalPassIsNotTallied}, {"gtao_screen_reach", gtaoScreenReach}, {"steady_cache_invalidation", steadyCacheInvalidation}, {"render_target", renderTarget}, {"float_render_target_keeps_float32", floatRenderTargetKeepsFloat32}, {"float_render_target_falls_back_to_half", floatRenderTargetFallsBackToHalf}, {"post_texture_resize_keeps_draw_groups", postTextureResizeKeepsDrawGroups}, {"deferred_target_follows_post_rtt", deferredTargetFollowsPostRtt}, {"deferred_target_samples_post_rtt_node", deferredTargetSamplesPostRttNode}, {"screen_size_reaches_the_vertex_stage", screenSizeReachesTheVertexStage}, {"depth_node_sets_fragment_depth", depthNodeSetsFragmentDepth}, {"depth_node_reaches_every_material_program", depthNodeReachesEveryMaterialProgram}, {"scene_environment", sceneEnvironment}, {"lit_scene", litScene}, {"present_direct", presentDirect}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"directional_target_outside_scene", directionalTargetOutsideScene}, {"scene_fog_node", sceneFogNode}, {"lit_mesh_without_normals", litMeshWithoutNormals}, {"invalidation", invalidation}, {"alpha_scene", alphaScene},
              {"material_unsupported", materialUnsupported}, {"shader_invalid", shaderInvalid}, {"time_uniform", timeUniform}, {"gpu_mipmaps", gpuMipmaps}, {"updates", updates},
              {"multi_camera_layers", multiCameraLayers}, {"render_callback", renderCallback}, {"instanced", instanced},
              {"virtual_sun_room_seam", virtualSunRoomSeam},
