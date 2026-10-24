@@ -132,10 +132,6 @@ the same surfaces as the gate.
 
 See the phase boxes below. Each box names its proof.
 
-## Blocked on
-
-- Public repo `jonit-dev/threenative-game-refs` with a CC-BY 4.0 licence, needed for AC-7 — unblocked by João's confirmation to create and publish it.
-
 ## Integration Ledger
 
 | Capability | Reachable consumer/trigger | Replaces / disposition | Evidence |
@@ -161,6 +157,7 @@ See the phase boxes below. Each box names its proof.
 - 2026-10-24 (João): discoverability at plan time is the main risk, so this PRD also revamps the
   authoring layer into one planning gate (Part A). AC-3 proves the call order from the log.
 - 2026-10-24 (João): the gain stays unmeasured until AC-9, an A/B with references on vs off.
+- 2026-10-24 (João): create the data repo with the gh CLI. Done: <https://github.com/jonit-dev/threenative-game-refs>, public, licence `cc-by-4.0`.
 - 2026-10-24 (agent): content at scale (the Tier-2 import of the full list, OoT and the other Tier-1
   classics, the scout pipeline) goes to PRD-735, so this PRD stays within the 3-phase cap. This PRD
   seeds one Tier-1 game, SM64, which AC-9 needs.
