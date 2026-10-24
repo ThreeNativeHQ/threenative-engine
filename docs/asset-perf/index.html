@@ -34,7 +34,7 @@ svg{width:100%;height:auto}
 tr.out td{opacity:.55;text-decoration:line-through}tr.out td small{text-decoration:none}
 </style></head><body><main>
 <h1>Asset pipeline performance</h1>
-<p class="dim">Latest iteration #14 of 14: quiet measurement of the kept build (lever 6). Snapshot 2026-10-24T22:43:29.555Z. Regenerate with <code>node scripts/asset-perf-loop.mjs report</code>; the page is a static render of <code>docs/asset-perf/ledger.json</code>. Goal: the template corpus ships as few bytes as it can and preloads to GPU-ready as fast as it can, with no texture below its quality floor (PRD-729).</p>
+<p class="dim">Latest iteration #14 of 14: quiet measurement of the kept build (lever 6). Snapshot 2026-10-24T22:47:41.463Z. Regenerate with <code>node scripts/asset-perf-loop.mjs report</code>; the page is a static render of <code>docs/asset-perf/ledger.json</code>. Goal: the template corpus ships as few bytes as it can and preloads to GPU-ready as fast as it can, with no texture below its quality floor (PRD-729).</p>
 <h2>Progress toward the goal</h2>
 <div class="scroll"><table><thead><tr><th>Metric</th><th>Baseline</th><th>Now</th><th>Goal</th><th>Progress</th><th></th></tr></thead><tbody><tr><td>Bytes shipped for the template corpus</td><td>5.37 MiB</td><td><b>3.68 MiB</b></td><td>≤ 3 MiB</td>
 <td class="meter"><span class="track"><span class="fill " style="width:71%"></span></span> 71%</td><td><span class="pill">open</span></td></tr><tr><td>Shipped bytes as a share of source bytes</td><td>45.1%</td><td><b>30.9%</b></td><td>≤ 25 %</td>

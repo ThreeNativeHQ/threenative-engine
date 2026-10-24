@@ -105,6 +105,7 @@ Ceilings measured before building (no iteration; nothing here is worth a lever b
 | Textures that ship as authored (`not-smaller`) | none without a lower floor | Every rung that passes the PRD-351 floor is at least as large as the source. |
 | Keyframe reduction at 0.01° / 0.1 mm / 0.0001 scale (RDP per channel) | −0.05 MiB total | Combat drops 41% of its keys (49,224 → 29,249) and ships 846,324 → 821,116 bytes: `EXT_meshopt_compression` already encodes collinear keys cheaply. The risk to animation is not worth 1.4%. `reduce-keyframes.ts` was measured and reverted. |
 | Standalone JPEG rung (`sky.jpg`) | −0.13 MiB | Three paired runs: local preload +4–8%, 40 Mbps −5%. Rejected as iteration #11; the file is 282,451 → ~152,000 bytes at the same floor. |
+| Texture resolution cap (`models.textures.maxSize` / `textures.maxSize`) | none; 256 raises the corpus to 4.33 MiB | Every model map is already ≤ 512, so 1024 and 512 are no-ops (3.68 MiB). At 256 the resize path re-emits PNG (the JPEG rung only runs unresized), shipping 4.33 MiB and losing detail: worse on both axes. |
 
 With these the corpus ends near 4.3 MiB. The 3 MiB / 25% goal needs a structural or lossy lever
 (shared mesh and skin between the two mannequins, keyframe reduction with a timing bound, Draco), and
