@@ -68,19 +68,23 @@ exploration step, no sharpness metric and no procedural-rig slip measurement exi
 
 ### Phase 2 — image and limbs
 
-- [x] `visual.region.minSharpness` fails a smeared frame and passes a sharp one. proof: `pnpm exec vitest run packages/playtest/__tests__/sharpness.spec.ts` — 5/5 green. Metric: Laplacian variance at full over half resolution. Kit frames 2026-10-24: in-focus 0.39-0.61 (Hop Garden spawn 0.49, Lantern Vale 0.59), smeared 0.21-0.24 (Hop Garden after free play 0.21, Lantern Vale SSR arm 0.22); floor 0.3.
+- [x] `visual.region.minSharpness` fails a smeared frame and passes a sharp one. proof: `pnpm exec vitest run packages/playtest/__tests__/sharpness.spec.ts` — 5/5 green. Metric: Laplacian variance at full over half resolution. Kit frames 2026-10-24: in-focus 0.39-0.61 (Hop Garden spawn 0.49, Lantern Vale 0.59), smeared 0.21-0.24 (Hop Garden after free play 0.21, Lantern Vale SSR arm 0.22); floor 0.3. Each kit's `explore` end frame carries the floor on its centre band: Clover Cup 0.47 in the run, Hop Garden 0.54 and Lantern Vale 0.62 measured on the same frames offline; the earlier smear did not reproduce at HEAD.
 - [x] Limb slip measurement on named nodes fails a time-driven run cycle. proof: unit spec and a Lantern Vale run — `foot-slip.spec.ts` 6/6; Lantern Vale HEAD with `footL`/`footR` sole nodes named in the copy: slip 1.54 / 1.93, ceiling 0.35, FAIL; Hop Garden working-tree stride-synced rig: 0.13 / 0.09 PASS (headed, nvidia/turing).
 
 ### Phase 3 — controls
 
-- [ ] Each kit ships a `controls` scenario from the spawn, with pointer camera motion; Lantern Vale at HEAD fails it. proof: playtest run against the Lantern Vale consumer copy
-- [ ] The kits' `AGENTS.md` name the default gates and the rule that a new binding joins `explore` and `controls`. proof: `pnpm check:docs` and `pnpm sync:agents --check`
+- [x] Lantern Vale ships `controls` and `look` scenarios from the spawn and Hop Garden ships `look`; each fails at HEAD. proof: playtest run against the Lantern Vale consumer copy — bf8e37804; Lantern Vale HEAD `controls`: `state.slashes` 0, expected >= 1, FAIL; `look`: `camera.main` rotationDelta 0, FAIL; a fixture copy (pointer-relative look, sword at spawn) passes both. Hop Garden working tree `look`: rotationDelta 0, FAIL. All headed, nvidia/turing.
+- [x] The kits' `AGENTS.md` name the default gates and the rule that a new binding joins `explore` and `controls`. proof: `pnpm check:docs` and `pnpm sync:agents --check` — bf8e37804; check:docs 3519 links ok, mirrors in sync, instruction budgets met, template.spec 38/38. `explore` at HEAD passes on all three kits (Lantern Vale 13.6 m, Hop Garden working tree 35.7 m, Clover Cup 74.1 m).
 
 ## Acceptance criteria
 
 - [ ] A cold agent's kit gets the crash, the frame budget, the smear and the dead control as red scenarios without adding a check. proof: the Phase 1 and 3 red runs above
 
 ## Decisions
+
+- 2026-10-24 (playtest-gates): `controls` ships for Lantern Vale only, where the owner found the
+  dead controls; Hop Garden's moves already have one scenario each, and Clover Cup's chase camera
+  takes no mouse look, so it gets `explore` alone.
 
 - 2026-10-24 (lead brief): the gates do not fix the kits. A red kit goes to its owning agent
   (`hop-garden-look`, `lantern-vale-look`, `kart-kit`) with the scenario and the numbers.

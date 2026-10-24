@@ -29,6 +29,17 @@
     "movement": {
       "entity": "player",
       "minDistance": 5
-    }
+    },
+    "visual": [
+      {
+        "region": {
+          "x": 160,
+          "y": 90,
+          "width": 960,
+          "height": 540,
+          "minSharpness": 0.3
+        }
+      }
+    ]
   }
 }
