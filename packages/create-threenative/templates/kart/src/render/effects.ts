@@ -1,8 +1,10 @@
 // Generated for you. This is ordinary Three.js TSL — edit or delete it freely.
 //
 // The race's feedback: dust off the tyres, drift sparks that change colour as the mini-turbo
-// charges (white, yellow, orange, as MK64's do), a flame out of the exhaust on every boost, and
-// stars when a kart is hit or takes an item box. Six pooled emitters cover every effect.
+// charges (white, yellow, orange, as MK64's do), and stars when a kart is hit or takes an item
+// box. Five pooled emitters cover every effect. The boost flame is a mesh on the kart
+// (`kart.ts`): a puff stays where it was born, so a flame of particles laid a dotted row of
+// lights down the road behind every boost.
 // `GPUParticles3D` (built in `scenes/Race.ts`) owns the slots, the dispatch, the birth stamps and
 // the culling. Every look choice is this file's: life, drag, gravity, size, colour, blend and
 // sprite mask. A burst passes its shape as the request's `direction`: x is the outward speed,
@@ -214,28 +216,6 @@ export const sparkYellowEffect = (): IEffectOptions => spark([3, 2, 0.15], [2.2,
 /** Stage 3: the top of the charge. Orange-red. */
 export const sparkOrangeEffect = (): IEffectOptions => spark([3.2, 0.9, 0.08], [2.2, 0.25, 0.02]);
 
-/**
- * The exhaust flame on a boost: hot yellow to red, short and bright, rising a little. Short-lived:
- * a puff stays where it was born while the kart runs on, so a longer life lays a dotted row of
- * lights down the road behind every boost.
- */
-export function flameEffect(): IEffectOptions {
-  return emitter({
-    additive: true,
-    amount: 512,
-    colour: [
-      [8, 5, 1.6],
-      [4, 0.5, 0.06],
-    ],
-    drag: 6,
-    gravity: 1.5,
-    life: 0.12,
-    mask: "puff",
-    opacity: 0.95,
-    size: [0.7, 0.2],
-  });
-}
-
 /** Gold-white stars that pop out and fall: item boxes, hits, the finish line. */
 export function sparkleEffect(): IEffectOptions {
   return emitter({
@@ -254,10 +234,9 @@ export function sparkleEffect(): IEffectOptions {
   });
 }
 
-/** The six emitters `scenes/Race.ts` builds, by the name a burst picks one with. */
+/** The five emitters `scenes/Race.ts` builds, by the name a burst picks one with. */
 export const EFFECTS = {
   dust: dustEffect,
-  flame: flameEffect,
   sparkOrange: sparkOrangeEffect,
   sparkWhite: sparkWhiteEffect,
   sparkYellow: sparkYellowEffect,
@@ -278,7 +257,6 @@ export const BURSTS = {
   spark1: { emitter: "sparkWhite", count: 3, shape: [2.2, 2.6, 0.15] },
   spark2: { emitter: "sparkYellow", count: 3, shape: [2.6, 3, 0.15] },
   spark3: { emitter: "sparkOrange", count: 4, shape: [3, 3.4, 0.15] },
-  flame: { emitter: "flame", count: 3, shape: [0.5, 0.4, 0.08] },
   box: { emitter: "sparkle", count: 26, shape: [4, 4.5, 0.5] },
   hit: { emitter: "sparkle", count: 30, shape: [4.5, 5, 0.4] },
   splash: { emitter: "dust", count: 10, shape: [2.5, 3, 0.4] },

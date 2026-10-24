@@ -99,8 +99,8 @@ seven CPU drivers. The kit is game code only.
   auto exposure and the GI method per tier (screen probe gather on `high`, the irradiance field on
   `medium`, none on `low`). The scene adds a `VirtualShadowNode` sun (no shadow on `low`, as core's
   shadow tier says), a gradient sky with clouds, and exponential fog. Effects are pooled
-  `GPUParticles3D` emitters: drift sparks by stage colour, a boost flame, dust, skid dust, item-box
-  pops and hit stars.
+  `GPUParticles3D` emitters: drift sparks by stage colour, dust, skid dust, item-box pops and hit
+  stars; the boost flame is a mesh on the kart.
 
 ```mermaid
 flowchart LR
@@ -230,6 +230,16 @@ gates every kit must pass. Each playtest runs on a project scaffolded from `--te
 - 2026-10-24 (agent, slide film): a skid mark joins only a trail end behind its tyre along the
   travel (cosine above 0.87), at opacity 0.4. The nearest end alone joined the other tyre or a
   kart alongside, which drew zigzag cross-links in a pack of sliding karts.
+- 2026-10-24 (agent, judge round 7 FAIL): the cosine test still broke a slide into staggered
+  dashes and laid a brick pattern on the start straight, and the 0.12 s flame still left a dotted
+  row in the mini-turbo still. Each rear tyre now owns its trail by key (kart name and side), a
+  new trail lays nothing until its second point, a trail breaks only past 4 m, and each segment
+  pitches with the road. The strips are opaque rubber (40% from asphalt to tyre colour): the
+  see-through strips darkened every crossing and joint, so a pack's racing line read as bricks.
+  The boost flame is only the mesh on the kart: the particle flame and its emitter are gone (five
+  emitters), and `effects.flame` counts the ticks a flame shows. The race film places one banana
+  4 m ahead of the player's grid slot, so the film opens on a hit; the template's race is
+  unchanged.
 
 ## Execution Phases
 

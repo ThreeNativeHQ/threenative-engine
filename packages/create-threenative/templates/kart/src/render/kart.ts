@@ -222,14 +222,6 @@ export class KartModel {
       spinner.rotation.x = -this.#spin * (WHEEL.rear / WHEEL.front);
   }
 
-  /** Where the exhausts are, in world space: the boost flame comes out here. */
-  exhaust(out: { x: number; y: number; z: number }): void {
-    const yaw = this.root.rotation.y;
-    out.x = this.root.position.x + Math.sin(yaw) * 1.1;
-    out.y = this.root.position.y + 0.58;
-    out.z = this.root.position.z + Math.cos(yaw) * 1.1;
-  }
-
   /** The two rear tyres' contact points in world space, for sparks, dust and skid marks. */
   rearWheel(side: -1 | 1, out: { x: number; y: number; z: number }): void {
     const yaw = this.root.rotation.y;

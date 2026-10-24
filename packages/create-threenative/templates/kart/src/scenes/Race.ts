@@ -319,7 +319,7 @@ export class Race extends Scene<GameState> {
     rig.snap(player.kart);
     ctx.entities.add("camera-rig", { debug: () => rig.debug() });
 
-    // Effects: six pooled emitters, every look parameter in `render/effects.ts`.
+    // Effects: five pooled emitters, every look parameter in `render/effects.ts`.
     const make = (name: keyof typeof EFFECTS): GPUParticles3D => {
       const emitter = ctx.add(new GPUParticles3D(EFFECTS[name]()));
       emitter.name = `effects-${name}`;
@@ -327,7 +327,6 @@ export class Race extends Scene<GameState> {
     };
     const emitters = {
       dust: make("dust"),
-      flame: make("flame"),
       sparkOrange: make("sparkOrange"),
       sparkWhite: make("sparkWhite"),
       sparkYellow: make("sparkYellow"),
@@ -346,9 +345,12 @@ export class Race extends Scene<GameState> {
       fired[kind] = (fired[kind] ?? 0) + 1;
     };
     const skids = new SkidMarks(view.group);
+    // Spark ticks with a boost flame shown; the flame is a mesh on the kart (`render/kart.ts`).
+    let flames = 0;
     ctx.entities.add("effects", {
       debug: () => ({
         ...fired,
+        flame: flames,
         skids: skids.laid,
         spawned: Object.fromEntries(Object.entries(emitters).map(([k, e]) => [k, e.stats.spawned])),
       }),
@@ -409,7 +411,6 @@ export class Race extends Scene<GameState> {
     };
     const statePatch: Partial<GameState> = {};
     const at = { x: 0, y: 0, z: 0 };
-    const at2 = { x: 0, y: 0, z: 0 };
     const playerInput: IKartInput = idleInput();
     const frozen = idleInput();
     const lamps = view.lamps;
@@ -666,13 +667,10 @@ export class Race extends Scene<GameState> {
                 at,
               );
             else burst("drift", at);
-            skids.lay(at.x, at.y, at.z, kart.velocityYaw);
+            skids.lay(`${entrant.name}${side}`, at.x, at.y, at.z);
           }
         }
-        if (tick && (kart.boostTicks > 0 || kart.miniTurboTicks > 0)) {
-          model.exhaust(at2);
-          burst("flame", at2);
-        }
+        if (tick && (kart.boostTicks > 0 || kart.miniTurboTicks > 0)) flames += 1;
         if (tick && kart.grounded && kart.surface !== "road" && Math.abs(kart.speed) > 3) {
           model.rearWheel(kart.index % 2 === 0 ? -1 : 1, at);
           burst(kart.surface === "water" ? "splash" : "grass", at);
