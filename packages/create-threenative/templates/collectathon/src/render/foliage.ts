@@ -388,7 +388,8 @@ function butterflies(placements: readonly Placement[], tints: readonly Color[]):
 function flowerGeometry(): BufferGeometry {
   const positions: number[] = [];
   const colors: number[] = [];
-  const steps = 20;
+  // Ten rim points: alternately a petal tip and the notch between two petals.
+  const steps = 10;
   for (let i = 0; i < steps; i += 1) {
     const at = (k: number) => {
       const a = (k / steps) * Math.PI * 2;
@@ -531,7 +532,7 @@ export function plantIsland(site: IPlantingSite): { group: Group; meadow: IMeado
     ),
   );
   leafMaterial.twoSidedFoliage = true;
-  leafMaterial.subsurfaceColor = new Color(0.5, 0.62, 0.16);
+  leafMaterial.subsurfaceColor = new Color(0.3, 0.46, 0.1);
   const cards = new InstancedMesh(cardGeometry(), leafMaterial, leaves.cards.length);
   leaves.cards.forEach((matrix, i) => {
     cards.setMatrixAt(i, matrix);
@@ -574,7 +575,7 @@ export function plantIsland(site: IPlantingSite): { group: Group; meadow: IMeado
       hue.push([x, y + h, z, s, s, s, (rng() - 0.5) * 0.6, spin(), (rng() - 0.5) * 0.6]);
     }
   }
-  const stem = new CylinderGeometry(0.01, 0.012, 1, 3).translate(0, 0.5, 0);
+  const stem = new CylinderGeometry(0.01, 0.012, 1, 3, 1, true).translate(0, 0.5, 0);
   group.add(instanced(stem, lit(C.blade), stems, false));
   const head = flowerGeometry();
   petals.forEach((colour, i) => {

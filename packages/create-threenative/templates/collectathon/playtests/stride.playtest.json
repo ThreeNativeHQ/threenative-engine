@@ -1,0 +1,104 @@
+{
+  "name": "collectathon-stride",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "subject": "player",
+  "steps": [
+    {
+      "kind": "input",
+      "label": "walk",
+      "press": ["KeyW"],
+      "holdTicks": 14,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "run",
+      "press": ["KeyW"],
+      "holdTicks": 150,
+      "release": false
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "components": [
+      {
+        "entity": "player",
+        "component": "stride",
+        "path": "clip",
+        "equals": "run",
+        "changed": true,
+        "atSteps": [
+          {
+            "label": "walk",
+            "equals": "walk"
+          },
+          {
+            "label": "run",
+            "equals": "run"
+          }
+        ]
+      },
+      {
+        "entity": "player",
+        "component": "stride",
+        "path": "inBand",
+        "equals": true,
+        "atSteps": [
+          {
+            "label": "walk",
+            "equals": true
+          },
+          {
+            "label": "run",
+            "equals": true
+          }
+        ],
+        "allowTrivial": "Standing still reads in band (no ground, no stride); the walk and run steps are the claim: the foot speed the playing clip implies is within 10% of the ground speed."
+      },
+      {
+        "entity": "player",
+        "component": "stride",
+        "path": "footRatio",
+        "gte": 0.9,
+        "lte": 1.1,
+        "allowTrivial": "Standing reads 1; at full run the planted foot sweeps within 10% of the 9.6 m/s ground speed."
+      },
+      {
+        "entity": "player",
+        "component": "stride",
+        "path": "synced",
+        "equals": true,
+        "changed": true
+      },
+      {
+        "entity": "player",
+        "component": "speed",
+        "gte": 9
+      },
+      {
+        "entity": "player",
+        "component": "stride",
+        "path": "plantedTime",
+        "gte": 0.2
+      },
+      {
+        "entity": "player",
+        "component": "stride",
+        "path": "skate",
+        "lte": 1,
+        "allowTrivial": "Zero before the run; over the planted run frames the sole slides at most 1 m/s against 9.6 m/s of travel, about 10%."
+      }
+    ]
+  }
+}

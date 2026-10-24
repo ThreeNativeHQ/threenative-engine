@@ -365,6 +365,26 @@ Each playtest runs on a project scaffolded from `--template collectathon`:
   - Visual judge, fresh read-only Opus subagents, 4 poses × 2 runs per arm, gen-12lp medium:
     pass 1 (2c93dda67) NOT PASS, castle FAIL (out of frame, flat door). Pass 3 (daf027a6c) PASS:
     all 4 poses IMPROVEMENT, with lushness, lighting, castle and integrity WEAK.
+- 2026-10-24, owner playtest of db84839d5 on the web Wasm engine. These fixes come before the look
+  round 2, one commit each:
+  - NaN crash in `Hero #probeWall`: the orbiting platform is a kinematic box collider, and the
+    rising deck sweeps through an airborne Pip. A Rapier ray that starts inside a box hits at
+    distance 0 with a zero normal, and `nx / hypot(0, 0)` gave NaN. The kit ray adapter in
+    `Play.ts` now treats a zero-normal hit as no wall, as Godot's `hit_from_inside = false`
+    default does. Proof: `clipped-probe` exits 2 with the owner's error when the guard is removed,
+    and exits 0 with it (gen-12lp). Open: `@threenative/physics` `intersectRay` always reports
+    hits from inside a solid; a `hitFromInside` option is a physics-lane item.
+  - Limb sync: the idle, walk and run are three.js `AnimationClip`s built in `render/hero.ts`.
+    `Hero.ts` blends them by ground speed through core `AnimationPlayer` with `strideRoot` set to
+    the body, so stride sync times them to the ground covered. Two root causes of skating were
+    fixed in the clip. First, a leg turning at a steady rate moves its foot fastest under the hip,
+    so the stance angle is now the arcsine of a linear sweep. Second, the engine reads the stride
+    off every low mesh, so the boot and the sole now have their origin at the contact point. Proof:
+    `stride` measures walk clip 1.83 m/s at rate 1.09 and run clip 9.30 m/s at rate 1.03, about
+    2.3 cycles a second at 9.6 m/s, and the planted sole slides 0.82 m/s. Before the contact-origin
+    fix the slide was 3.23 m/s, and `stride` exited 1 (gen-12lp).
+  - Triangles: the flower rims (10 points), 3-sided stems and 24×16 hero spheres keep the course at
+    253.5k triangles and 288 draws on gen-12lp medium (`performance` exit 0).
 
 ## Execution Phases
 

@@ -1,4 +1,4 @@
-import type { ICtx } from "@threenative/core";
+import { AnimationPlayer, type ICtx } from "@threenative/core";
 import { CharacterBody3D, CollisionShape3D, type IPhysicsContext } from "@threenative/physics";
 import { Group, MathUtils, Vector3 } from "three";
 import { type IHero, createHero } from "../render/hero.js";
@@ -207,6 +207,12 @@ export class Hero {
   readonly #ray: WorldRay;
   readonly #intended = new Vector3();
   readonly #scratch = new Vector3();
+  readonly #anim: AnimationPlayer;
+  /** Metres the planted sole slid over the ground while running, and the seconds it was planted. */
+  #slid = 0;
+  #plantedTime = 0;
+  #planted = -1;
+  readonly #sole = new Vector3();
   /** Seconds the hero is still invulnerable after a hit. */
   hurtTimer = 0;
 
@@ -219,6 +225,12 @@ export class Hero {
     this.mesh.position.copy(spawn);
     this.#groundY = spawn.y - FOOT_OFFSET;
     ctx.add(this.mesh);
+    // `strideRoot` is the body: the walk and run play at the rate the ground it covers asks for.
+    this.#anim = new AnimationPlayer({
+      clips: this.rig.clips,
+      root: this.rig.group,
+      strideRoot: this.mesh,
+    });
     this.body = new CharacterBody3D({
       autostep: { maxHeight: 0.3, minWidth: 0.2 },
       collisionLayer: HERO_LAYER,
@@ -330,6 +342,7 @@ export class Hero {
       20,
       dt,
     );
+    this.#animate(dt);
     this.rig.update({
       action: this.action,
       actionTime: this.#actionTime,
@@ -338,6 +351,29 @@ export class Hero {
       speed: this.speed,
       vy: this.body.velocity.y,
     });
+    this.#measureSkate(dt);
+  }
+
+  /**
+   * A sole within 10 cm of the feet line is planted; the ground it covers over consecutive planted
+   * frames is how far it slid. Zero means the run cycle matches the ground the body covers.
+   */
+  #measureSkate(dt: number): void {
+    const feet = this.mesh.position.y - FOOT_OFFSET;
+    let planted = -1;
+    this.rig.soles.forEach((sole, i) => {
+      if (planted < 0 && sole.getWorldPosition(_to).y - feet < 0.1) planted = i;
+    });
+    if (this.action !== "run" || this.#speed < 5.5 || planted < 0 || dt <= 0) {
+      this.#planted = -1;
+      return;
+    }
+    if (planted === this.#planted) {
+      this.#slid += Math.hypot(_to.x - this.#sole.x, _to.z - this.#sole.z);
+      this.#plantedTime += dt;
+    }
+    this.#planted = planted;
+    this.#sole.copy(_to);
   }
 
   debug(): Record<string, unknown> {
@@ -354,6 +390,7 @@ export class Hero {
       position: this.mesh.position.toArray(),
       sideflipFacingError: this.#sideflipFacingError,
       speed: this.speed,
+      stride: this.#strideReport(),
       takeoffSpeed: { ...this.#takeoffSpeeds },
       velocity: this.body.velocity.toArray(),
       wallHits: this.wallHits,
@@ -364,8 +401,45 @@ export class Hero {
   }
 
   dispose(): void {
+    this.#anim.dispose();
     this.body.dispose();
     this.mesh.removeFromParent();
+  }
+
+  /**
+   * Standing and running blend idle, walk and run by ground speed; every other action holds the
+   * neutral "air" pose that `render/hero.ts` bends procedurally.
+   */
+  #animate(dt: number): void {
+    if (this.action === "idle" || this.action === "run") {
+      const speed = Math.abs(this.#speed);
+      const moving = MathUtils.smoothstep(speed, 0.2, 1);
+      const running = MathUtils.smoothstep(speed, 1.5, 5);
+      this.#anim.playWeighted(
+        [
+          { clip: "idle", weight: 1 - moving },
+          { clip: "walk", weight: moving * (1 - running) },
+          { clip: "run", weight: moving * running },
+        ],
+        { transition: 0.15 },
+      );
+    } else this.#anim.playWeighted([{ clip: "air", weight: 1 }], { transition: 0.08 });
+    this.#anim.update(dt);
+  }
+
+  /** The stride report, and the foot speed it implies over the ground speed: 1 is no skating. */
+  #strideReport(): Record<string, unknown> {
+    const stride = this.#anim.stride;
+    const feet = stride.clipGroundSpeed * stride.rate;
+    const footRatio = stride.groundSpeed > 0.5 ? feet / stride.groundSpeed : 1;
+    return {
+      ...stride,
+      clip: this.#anim.current ?? "none",
+      footRatio,
+      skate: this.#plantedTime > 0 ? this.#slid / this.#plantedTime : 0,
+      plantedTime: this.#plantedTime,
+      inBand: Math.abs(footRatio - 1) <= 0.1,
+    };
   }
 
   #enter(action: HeroAction): void {
