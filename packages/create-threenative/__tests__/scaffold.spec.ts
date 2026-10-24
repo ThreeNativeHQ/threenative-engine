@@ -295,7 +295,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // (method checked against this kit's previous value, from a copy holding only this template).
   collectathon: "e439a1ff1efe8968dc2ea4b2577b11a32c007743ed2543ce7bf209d98e3f53b1",
   // PRD-733 (2026-10-23): the new Lantern Vale kit, measured through createProject.
-  adventure: "0ac8aba396bf1ab2ead448b15670db45d815cc55e4b86d65291cd1a82a2bed66",
+  adventure: "4a2b7b59200e1a034a5d5ee7c0b5b6f74a585d3cb0a17f0b6cc98ff7f2e8f3f5",
   // PRD-734 (2026-10-24): the new Clover Cup kart kit, measured through createProject.
   kart: "dda3e3f9219bf278969b4168a74285facfdada75de03ce5c8dd967e4c0c11b4f",
   minimal: "1bdc31f8d31f074cde31e09d67ac850762482f481e4b41050d5679f7155ac085",

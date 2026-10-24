@@ -168,6 +168,7 @@ function strand(
   radius: (t: number) => number,
   radial = 6,
   segments = 8,
+  squash?: { from: Vector3; by: number },
 ): BufferGeometry {
   const curve = new CatmullRomCurve3(points.map(([x, y, z]) => new Vector3(x, y, z)));
   const tube = new TubeGeometry(curve, segments, 1, radial, false);
@@ -175,12 +176,16 @@ function strand(
   if (position === undefined) return tube;
   const centre = new Vector3();
   const v = new Vector3();
+  const out = new Vector3();
   for (let i = 0; i <= segments; i += 1) {
     curve.getPointAt(i / segments, centre);
     const r = radius(i / segments);
+    if (squash !== undefined) out.copy(centre).sub(squash.from).normalize();
     for (let j = 0; j <= radial; j += 1) {
       const k = i * (radial + 1) + j;
-      v.fromBufferAttribute(position, k).sub(centre).multiplyScalar(r).add(centre);
+      v.fromBufferAttribute(position, k).sub(centre).multiplyScalar(r);
+      if (squash !== undefined) v.addScaledVector(out, (squash.by - 1) * v.dot(out));
+      v.add(centre);
       position.setXYZ(k, v.x, v.y, v.z);
     }
   }
@@ -288,6 +293,15 @@ const MANTLE: readonly (readonly [number, number])[] = [
 /** The hood centre's height on the body: the head joint, the head centre, the hood's offset. */
 const HOOD_ON_BODY = 0.585 + HOOD.y;
 
+/** How much of a fold ridge the hood carries at `v` (from its centre), 0 to 1: three broad folds
+ * down the back, from the crown, deepening toward the shoulders. */
+function foldAt(v: Vector3): number {
+  const ny = v.y / v.length();
+  const back = Math.max(0, -Math.sin(Math.atan2(v.z, -v.x)));
+  const ridge = 0.5 + 0.5 * Math.cos(6 * (Math.atan2(v.z, -v.x) - (Math.PI * 3) / 2));
+  return back * ridge * MathUtils.clamp((0.75 - ny) / 1.5, 0, 1);
+}
+
 /** The mantle's radius at body height `y`, or 0 above it. */
 function mantleRadius(y: number): number {
   for (let i = 1; i < MANTLE.length; i += 1) {
@@ -298,17 +312,21 @@ function mantleRadius(y: number): number {
   return 0;
 }
 
-/** The hood rises to a soft peak behind the crown. Below the head it drapes wider and longer, falls
- * straight down behind the neck in three broad folds, and lies on the mantle down to a dagged edge. */
+/** The hood rises to a soft point behind the crown and carries three broad folds down its back.
+ * Below the head it drapes wider and longer, falls straight down behind the neck, and lies on the
+ * mantle down to a dagged edge. */
 function drape(v: Vector3): void {
   const length = v.length();
   const ny = v.y / length;
   const peak = MathUtils.smoothstep(v.dot(PEAK) / length, 0.6, 1);
   v.addScaledVector(PEAK, 0.035 * peak * peak);
-  if (ny >= 0) return;
   const phi = Math.atan2(v.z, -v.x);
-  const back = Math.max(0, -Math.sin(phi));
-  const fold = 1 - 0.1 * ny * back * (0.5 + 0.5 * Math.cos(6 * (phi - (Math.PI * 3) / 2)));
+  const fold = 1 + 0.08 * foldAt(v);
+  if (ny >= 0) {
+    v.x *= fold;
+    v.z *= fold;
+    return;
+  }
   v.x *= (1 - 0.15 * ny) * fold;
   v.z = Math.max(v.z * (1 - 0.2 * ny), -HOOD.r) * fold;
   v.y *= 1 - 0.5 * ny;
@@ -522,7 +540,7 @@ export function createHero(): IHeroRig {
     ],
     [at(new SphereGeometry(0.009, 6, 4), 0, -0.05, 0.036), C.brass, "metal"],
   ]);
-  const lamp = joint(body, 0.17, 0, -0.03);
+  const lamp = joint(body, 0.19, 0, -0.07);
   bake(lamp, [
     [at(new TorusGeometry(0.012, 0.003, 4, 10), 0, -0.012, 0), C.iron, "metal"],
     [
@@ -555,7 +573,7 @@ export function createHero(): IHeroRig {
         ] as const,
     ),
   ]);
-  lamp.add(part(new CylinderGeometry(0.032, 0.032, 0.075, 8), glow(C.lamp, 3.5), 0, -0.1));
+  lamp.add(part(new CylinderGeometry(0.032, 0.032, 0.075, 8), glow(C.lamp, 5), 0, -0.1));
 
   // The skirt of the tunic: a front and a back panel, lapped at the sides, flaring and folding toward
   // a hem with an ochre band. It swings with the stride, and each leg pushes its panel open over the
@@ -792,25 +810,14 @@ export function createHero(): IHeroRig {
         HOOD.y,
         HOOD.z,
       ),
-      C.cap,
+      (p: Vector3) =>
+        new Color(C.cap)
+          .lerp(new Color(C.capLining), 0.3 * foldAt(p.clone().sub(new Vector3(0, HOOD.y, HOOD.z))))
+          .getHex(),
       "hood",
     ],
     // A lighter lining rolled over the edge, so the opening reads from any side.
     [strand(rim, () => 0.009, 6, 48), C.capLining, "cloth"],
-    // Two soft ridges of the same cloth from the crown down to the mantle.
-    ...[-0.62, 0.62].map(
-      (turn) =>
-        [
-          strand(
-            [0.55, 1.1, 1.65, 2.2, 2.6].map((theta) => hoodPoint((Math.PI * 3) / 2 + turn, theta)),
-            (t) => 0.009 * Math.sin(Math.PI * t) + 0.002,
-            6,
-            14,
-          ),
-          C.cap,
-          "hood",
-        ] as const,
-    ),
   );
   bake(head, face);
 
@@ -835,25 +842,34 @@ export function createHero(): IHeroRig {
     bake(lock, [hang(0, 0, 0.17), hang(s * 0.008, -0.03, 0.14)]);
     return lock;
   });
-  // The tip: the hood's point drawn out into a tapering tail that lies down the back of the hood and
-  // on over the mantle, drifting to her left, lifted a hair off the cloth so it throws a shadow line.
-  const crown = Math.acos(PEAK.y);
-  const tipRadius = (t: number): number =>
-    0.03 * Math.sin((Math.PI / 2) * Math.min(1, t / 0.2)) * (1 - t) + 0.007;
-  const tipAt = (t: number): Vector3 => {
-    const [x, y, z] = hoodPoint((Math.PI * 3) / 2 + 0.35 * t, crown + (2.75 - crown) * t);
-    const out = 1 + (0.7 * tipRadius(t)) / HOOD.r;
-    return new Vector3(x * out, (y - HOOD.y) * out + HOOD.y, (z - HOOD.z) * out + HOOD.z);
-  };
-  const tipRoot = tipAt(0);
+  // The tip grows out of the hood's point: a flattened cone, wide and sunk into the crown where it
+  // starts, bending down under its own weight to a rounded point on the mantle between her shoulder
+  // blades, a little to her left.
+  const hoodCentre = new Vector3(0, HOOD.y, HOOD.z);
+  const lie = (turn: number, theta: number, out: number): Vector3 =>
+    new Vector3(...hoodPoint((Math.PI * 3) / 2 + turn, theta)).sub(hoodCentre).multiplyScalar(out);
+  const tipRoot = lie(0, 1.15, 0.72).add(hoodCentre);
   const hoodTip = joint(head, tipRoot.x, tipRoot.y, tipRoot.z);
   bake(hoodTip, [
     [
       strand(
-        [0, 0.15, 0.3, 0.45, 0.6, 0.75, 0.9, 1].map((t) => tipAt(t).sub(tipRoot).toArray()),
-        tipRadius,
-        8,
-        12,
+        [
+          [0, 1.15, 0.72],
+          [0.02, 1.4, 1.07],
+          [0.08, 1.75, 1.13],
+          [0.16, 2.1, 1.13],
+          [0.24, 2.45, 1.1],
+          [0.3, 2.75, 1.06],
+        ].map(([turn, theta, out]) =>
+          lie(turn as number, theta as number, out as number)
+            .add(hoodCentre)
+            .sub(tipRoot)
+            .toArray(),
+        ),
+        (t) => 0.01 + 0.055 * (1 - t) ** 1.6,
+        10,
+        24,
+        { from: hoodCentre.clone().sub(tipRoot), by: 0.55 },
       ),
       C.cap,
       "drape",
@@ -1091,15 +1107,26 @@ export function createHero(): IHeroRig {
             [0.047, -0.205],
             [0.058, -0.17],
             [0.075, -0.115],
-            [0.07, -0.075],
-            [0.09, -0.06],
-            [0.092, -0.01],
-            [0.06, 0.0],
+            [0.07, -0.11],
+            [0.09, -0.1],
+            [0.092, -0.055],
+            [0.062, -0.045],
           ],
           16,
         ),
-        (p) => (p.y > -0.066 ? C.bootCuff : C.leather),
+        (p) => (p.y > -0.106 ? C.bootCuff : C.leather),
         "leather",
+      ],
+      [
+        lathe(
+          [
+            [0.054, -0.06],
+            [0.058, 0.01],
+          ],
+          12,
+        ),
+        C.trousers,
+        "cloth",
       ],
       [
         at(new SphereGeometry(0.062, 12, 8), 0, -0.265, 0.045, -0.12, 0, 0, 0.95, 0.72, 1.75),
@@ -1249,7 +1276,7 @@ export function createHero(): IHeroRig {
         fores.left.rotation.set(MathUtils.lerp(-0.3, 0, guard), 0, 0);
         armShield.position.set(
           MathUtils.lerp(0.055, 0, guard),
-          MathUtils.lerp(-0.12, -0.14, guard),
+          MathUtils.lerp(-0.12, -0.32, guard),
           0,
         );
         armShield.rotation.set((Math.PI / 2) * guard, (Math.PI / 2) * (1 - guard), 0);
