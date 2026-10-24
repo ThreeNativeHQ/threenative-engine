@@ -79,6 +79,7 @@ import {
   textureKeys,
   textureQualitySemantics,
 } from "./model-textures.js";
+import { withoutSpecDefaults } from "./glb-spec-defaults.js";
 import { pruneRestPoseTracks } from "./prune-rest-tracks.js";
 import { quantizeStaticGeometry } from "./quantize-static.js";
 import { reorderStaticPrimitives } from "./reorder-static.js";
@@ -328,7 +329,7 @@ async function writeDocument(
     .registerExtensions([...ALL_EXTENSIONS, EXTTextureAstc, TNVirtualGeometry, TNDiscreteLod])
     .registerDependencies({ "meshopt.encoder": MeshoptEncoder });
   try {
-    const buffer = Buffer.from(await io.writeBinary(document));
+    const buffer = withoutSpecDefaults(Buffer.from(await io.writeBinary(document)));
     return { buffer, extensions: jsonOfGlb(buffer).extensionsUsed ?? [] };
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
