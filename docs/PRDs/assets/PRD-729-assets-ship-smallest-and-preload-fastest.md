@@ -90,6 +90,18 @@ Levers tried (the dashboard holds the numbers; a verdict lands here when it land
 | 5 | Meshopt `FILTER` for animation outputs | 5.37 → 4.94 MiB (−8.0%) | local 830 vs 798 ms, 40 Mbps 1892 vs 1970 ms: noise | **Rejected.** Worst rotation error 0.712° against 0.041° today, translation 0.97 mm against 0. A limb tip moves 12 mm. `__tests__/model-animation-filter.spec.ts` now pins the floor: red on `FILTER`, green on the current cook. |
 | 6 | Drop animation tracks that hold the rest pose (`passes.restTracks`, on by default) | 5.37 → 4.42 MiB (−17.7%) | local 621 vs 645 ms, 40 Mbps 1545 vs 1757 ms (−12%) | **Kept** (iteration #6). Visual judge **NEUTRAL**: 114 poses x 2 runs on the RTX 2080 (`scripts/asset-pose-capture.mjs`), 35 isolated pixels over 8 levels and no connected region, runs repeat to 0 pixels. `pnpm test:templates`: 7 of 8 templates pass; **snow `production-performance` is red** (p95 201, 61 and 75 ms against 33 ms, desktop under load). Snow ships no model and its cook is byte-identical to the control, but it has not run on a clean develop build, so the gate is **not** green. 3,926 of 5,583 combat tracks dropped; clips, durations and every keyframe time unchanged. Real-model proof: `prune-rest-tracks-pose.spec.ts` plays all 7 `mannequin.glb` clips in three's `AnimationMixer`, worst node difference below 1e-5; with the tolerance loosened to 0.5 it fails at 0.484. |
 
+Ceilings measured before building (no iteration; nothing here is worth a lever by itself):
+
+| Candidate | Ceiling | Why |
+| --- | ---: | --- |
+| Lossless JPEG recompression (`jpegtran -optimize -progressive`) of the 11 textures that ship as authored | −12 KB (1%) | 617,831 → 605,554 bytes. The one PNG gains 61 bytes. |
+| Spec-default JSON fields in the GLB (`"interpolation":"LINEAR"`, `"normalized":false`) | about −0.1 MiB | 78 KB on combat, 18 KB on mannequin; a lossless rewrite of the JSON chunk. |
+| Textures that ship as authored (`not-smaller`) | none without a lower floor | Every rung that passes the PRD-351 floor is at least as large as the source. |
+
+With these the corpus ends near 4.3 MiB. The 3 MiB / 25% goal needs a structural or lossy lever
+(shared mesh and skin between the two mannequins, keyframe reduction with a timing bound, Draco), and
+each of those is an owner call.
+
 Each lever is one iteration on the dashboard: measure, then `keep` or `reject`. A lever changes what
 reaches the screen, so a kept lever needs the visual judge (root `AGENTS.md`, owner rule
 2026-10-09) to return NEUTRAL or IMPROVEMENT, and no texture may fall below its PRD-351 floor.
