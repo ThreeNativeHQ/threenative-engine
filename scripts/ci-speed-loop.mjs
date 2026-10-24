@@ -78,7 +78,7 @@ export function readLedger(path = LEDGER) {
   return ledger;
 }
 
-function writeAtomic(path, text) {
+export function writeAtomic(path, text) {
   mkdirSync(dirname(path), { recursive: true });
   const temporary = `${path}.${process.pid}.tmp`;
   writeFileSync(temporary, text);
@@ -147,7 +147,7 @@ export const meetsGoal = (goal, value) =>
   value !== undefined &&
   (goal.better === "lower" ? value <= goal.goal : value >= goal.goal);
 
-const esc = (value) =>
+export const esc = (value) =>
   String(value ?? "").replace(
     /[&<>"']/gu,
     (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c],
@@ -158,7 +158,7 @@ const num = (value, unit = "") =>
     : `${value}${unit === "%" ? "%" : ` ${unit}`}`.trim();
 
 /** One goal's trend: a line per live iteration, a dashed goal line, a break where a value is missing. */
-function lineChart(goal, live) {
+export function lineChart(goal, live) {
   const width = 380;
   const height = 190;
   const pad = { l: 44, r: 14, t: 14, b: 28 };
