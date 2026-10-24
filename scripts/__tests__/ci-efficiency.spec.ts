@@ -146,7 +146,8 @@ describe("CI efficiency without lost evidence", () => {
     expect([...declaredNeeds(job("run-summary"))].sort()).toEqual(
       graph
         .map(({ name }) => name)
-        .filter((name) => name !== "run-summary")
+        // The watcher ends when every other job has, so run-summary must not wait on it.
+        .filter((name) => name !== "run-summary" && name !== "queue-watch")
         .sort(),
     );
   });
@@ -556,7 +557,7 @@ describe("PRD-373 fail-closed required verdict", () => {
     const jobs = plan.jobs as Record<string, { required: boolean }>;
     const coverage = ciJobGraph(source)
       .map(({ name }) => name)
-      .filter((name) => !["scope", "ci-required", "run-summary"].includes(name))
+      .filter((name) => !["scope", "ci-required", "run-summary", "queue-watch"].includes(name))
       .sort();
     expect(Object.keys(jobs).sort()).toEqual(coverage);
     // The native matrix is a `needs` of ci-required because the plan can require it: a full
