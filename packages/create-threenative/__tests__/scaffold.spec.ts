@@ -293,7 +293,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // polish round 3: the shaft camera, the planting, the hopper and thornback and their scenarios.
   // Recomputed 2026-10-24 for the look round: terrain, castle, meadow, sky and world assertions
   // (method checked against this kit's previous value, from a copy holding only this template).
-  collectathon: "9675b875801b8e019614d73063199ac1b83eddc53f1170feeed224a45e005bee",
+  collectathon: "4f1dd677d9b7d1850194b81482c050707c70b0044226dd347117b0784afda8cd",
   // PRD-733 (2026-10-23): the new Lantern Vale kit, measured through createProject.
   adventure: "749e5cdb893501841081ee90932f76c4764fec3b899db3b47c0c0a78c5db6733",
   minimal: "1bdc31f8d31f074cde31e09d67ac850762482f481e4b41050d5679f7155ac085",

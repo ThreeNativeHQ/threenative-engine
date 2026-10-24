@@ -18,10 +18,10 @@ export const CAMERA_RIG = {
   aimHeight: 1.1,
   /**
    * The lens looks this far above the aim point at full arm length (less as the arm shortens), so
-   * the view pitches about 4° down instead of the arm's 18°: the hero sits in the lower third and
+   * the view pitches about 8° down instead of the arm's 18°: the hero sits in the lower third and
    * the horizon, the hills and the castle fill the top, as in a 3D platformer's establishing view.
    */
-  lookAbove: 2.2,
+  lookAbove: 1.6,
   /** How fast the arm swings toward the travel direction at full run, in 1/s. */
   swingRate: 1.6,
   /** Closest the camera comes to the aim point, even when the hero has its back to a wall. */
