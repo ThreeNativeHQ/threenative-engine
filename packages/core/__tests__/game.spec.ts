@@ -2251,6 +2251,77 @@ describe("IGame", () => {
     game.stop();
   });
 
+  it("holds restarted scene updates until its environment is prepared", async () => {
+    const canvas = testCanvas();
+    let advance: ((ticks: number) => number) | undefined;
+    let enters = 0;
+    let updates = 0;
+    let release: ((ready: boolean) => void) | undefined;
+    const prepareEnvironmentAsync = vi.fn(() =>
+      enters === 1
+        ? Promise.resolve(true)
+        : new Promise<boolean>((resolve) => {
+            release = resolve;
+          }),
+    );
+    class Restartable extends Scene {
+      static override readonly initialState = {};
+
+      override enter(ctx: ICtx): () => void {
+        enters += 1;
+        ctx.scene.environment = new DataTexture(new Uint8Array(8 * 65 * 4), 8, 65);
+        ctx.add(new Mesh(new SphereGeometry(), new MeshBasicMaterial()));
+        return () => updates++;
+      }
+    }
+    const game = defineGame({
+      plugins: [
+        {
+          setup: (_ctx, runtime) => {
+            advance = runtime?.fixedStep;
+          },
+        },
+      ],
+      renderer: {
+        canvas,
+        preferWebGPU: false,
+        webgl2Factory: () => ({
+          compileAsync: () => Promise.resolve(),
+          dispose: () => undefined,
+          domElement: canvas,
+          prepareEnvironmentAsync,
+          render: () => undefined,
+          setSize: () => undefined,
+        }),
+      },
+      scenes: { play: Restartable },
+      start: "play",
+      warmUp: { yieldFrame: () => Promise.resolve() },
+    });
+    try {
+      await game.start();
+      expect(prepareEnvironmentAsync).toHaveBeenCalled();
+      if (advance === undefined) throw new Error("Missing fixed-step runtime");
+      advance(1);
+      const before = updates;
+      let settled = false;
+      const transition = game.goto("play").then(() => {
+        settled = true;
+      });
+      await vi.waitFor(() => expect(release).toBeTypeOf("function"));
+      expect(settled).toBe(false);
+      advance(1);
+      expect(updates).toBe(before);
+      release?.(true);
+      await transition;
+      advance(1);
+      expect(updates).toBe(before + 1);
+    } finally {
+      release?.(true);
+      game.stop();
+    }
+  });
+
   it("resets goto to the destination scene and merges a serializable carry patch", async () => {
     type ScreenState = { characterName: string; screen: "menu" | "play" };
 
