@@ -293,11 +293,11 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // polish round 3: the shaft camera, the planting, the hopper and thornback and their scenarios.
   // Recomputed 2026-10-24 for the look round: terrain, castle, meadow, sky and world assertions
   // (method checked against this kit's previous value, from a copy holding only this template).
-  collectathon: "30a5e8e43a4a442437a278a9fb643e7c56c7d505f3c8e99b12577aefe8b89bcf",
+  collectathon: "6258150f948df051fb95ceef7025ba5e702c168c0a6739d711142b3acbb25d80",
   // PRD-733 (2026-10-23): the new Lantern Vale kit, measured through createProject.
   adventure: "94beb07de45130328c502c806d5fcd2e881d80310d2f999eaeec2c36df676c81",
   // PRD-734 (2026-10-24): the new Clover Cup kart kit, measured through createProject.
-  kart: "0ff8c6c94d0d61097ab01e01666b2567df23390ad86bd0ba39fa43f023d18a69",
+  kart: "dda3e3f9219bf278969b4168a74285facfdada75de03ce5c8dd967e4c0c11b4f",
   minimal: "1bdc31f8d31f074cde31e09d67ac850762482f481e4b41050d5679f7155ac085",
   platformer: "27b6033ac8ce09c6b19894586865e465e2edfcc0b7edd7be02e4e8459b248e53",
   puzzle: "78f16093d5dedabf3a7bff8b07bb261bd1c7f91339aeaae51f7a1a278a5442d2",
