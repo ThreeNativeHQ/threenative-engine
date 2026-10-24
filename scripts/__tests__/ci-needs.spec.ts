@@ -616,7 +616,9 @@ function classifyCandidate(
       "--target",
       options.target ?? "develop",
       "--event-name",
-      options.event ?? "pull_request",
+      // PRD-731: a pull request into develop earns the thin review lane, so the generic tree reuse
+      // of a full board is exercised with the event that still owes one on develop: a push.
+      options.event ?? "push",
       // The nightly split is decided from the clock, so the fixture states the day rather than
       // waiting for one.
       ...(options.dayOfWeek === undefined ? [] : ["--day-of-week", String(options.dayOfWeek)]),
@@ -969,15 +971,18 @@ describe("a develop push qualifies its tree and still warms the caches every pul
     expect(plan).toMatchObject({ selection: "full", nativeTier: "full" });
   });
 
-  it("leaves a pull request and the merge queue on develop on the same plan", () => {
+  it("gives a pull request the review lane and leaves the merge queue the full board", () => {
+    // PRD-731: the two events no longer share a plan. The queue's board is the one a tree reuse
+    // may replace, so it stays full here; the pull request's thin lane never consults the API.
     const fixture = reuseFixture();
     fakeActionsApi(fixture);
     listSourceRun(fixture);
-    for (const event of ["pull_request", "merge_group"]) {
-      expect(
-        classifyCandidate(fixture, fixture.candidate, { event, target: "develop" }),
-      ).toMatchObject({ selection: "full", reusedRunId: 0 });
-    }
+    expect(
+      classifyCandidate(fixture, fixture.candidate, { event: "pull_request", target: "develop" }),
+    ).toMatchObject({ selection: "review", lane: "review", reusedRunId: 0 });
+    expect(
+      classifyCandidate(fixture, fixture.candidate, { event: "merge_group", target: "develop" }),
+    ).toMatchObject({ selection: "full", reusedRunId: 0 });
   });
 
   it("never lets a warm run stand in as a reused verdict", () => {
@@ -985,7 +990,7 @@ describe("a develop push qualifies its tree and still warms the caches every pul
     fakeActionsApi(fixture, { event: "push", headBranch: "develop" });
     listSourceRun(fixture);
     const plan = classifyCandidate(fixture, fixture.candidate, {
-      event: "pull_request",
+      event: "push",
       target: "develop",
     });
     expect(plan.selection).toBe("full");

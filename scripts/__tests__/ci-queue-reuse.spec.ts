@@ -98,6 +98,8 @@ function fixture({ sourceBaseHasRuntime = false } = {}): IFixture {
 }
 
 interface IStub {
+  /** The source run's event. A pull-request run is the thin review lane, so a dispatch is the default. */
+  event?: "pull_request" | "workflow_dispatch";
   conclusion?: string;
   status?: string;
   /** Board jobs the source run never ran. */
@@ -135,7 +137,7 @@ function stubApi(f: IFixture, stub: IStub = {}): void {
     id,
     run_number: number,
     run_attempt: 1,
-    event: "pull_request",
+    event: stub.event ?? "workflow_dispatch",
     head_sha: f.head,
     head_branch: "feat/x",
     status,
@@ -160,7 +162,8 @@ function stubApi(f: IFixture, stub: IStub = {}): void {
     runner_name: "GitHub Actions 1",
   }));
   write("jobs.json", { total_count: jobs.length, jobs });
-  const candidate = stub.candidate === "queue" ? f.queue : (stub.candidate ?? f.merged);
+  const tested = stub.event === "pull_request" ? f.merged : f.head;
+  const candidate = stub.candidate === "queue" ? f.queue : (stub.candidate ?? tested);
   write("artifacts.json", {
     total_count: 2,
     artifacts: [
@@ -292,9 +295,18 @@ describe("PRD-730 the merge queue reuses a green run of the same tree", () => {
     expect(plan.reason).toContain("tree reuse unavailable");
   });
 
+  it("runs the board when the earlier pull-request run was the thin review lane", () => {
+    // PRD-731: a green pull-request run proves the review lane only, however green it is.
+    const f = fixture();
+    stubApi(f, { event: "pull_request" });
+    const plan = classify(f);
+    expect(plan).toMatchObject({ selection: "full", reusedRunId: 0 });
+    expect(plan.reason).toContain("not a full board (review)");
+  });
+
   it("runs the board when the earlier run was narrowed", () => {
     const f = fixture({ sourceBaseHasRuntime: true });
-    stubApi(f);
+    stubApi(f, { event: "pull_request" });
     const plan = classify(f);
     expect(plan).toMatchObject({ selection: "full", reusedRunId: 0 });
     expect(plan.reason).toContain("not a full board");
@@ -319,7 +331,11 @@ describe("PRD-730 the merge queue reuses a green run of the same tree", () => {
     const f = fixture();
     stubApi(f);
     const plan = classify(f, { event });
-    expect(plan).toMatchObject({ selection: "full", reusedRunId: 0 });
+    // A pull request earns the thin lane (PRD-731); the other events keep the whole board.
+    expect(plan).toMatchObject({
+      selection: event === "pull_request" ? "review" : "full",
+      reusedRunId: 0,
+    });
     expect(plan.reason).not.toContain("queue");
   });
 

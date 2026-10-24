@@ -120,7 +120,7 @@ jobs:
   # The cheap gates now start together, and the expensive ones name the gate they wait on.
   typecheck:
     needs: [scope, build-artifacts]
-    if: ${{ (needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'template') || needs.scope.outputs.selection == 'ci' }}
+    if: ${{ (needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'template' || needs.scope.outputs.selection == 'review') || needs.scope.outputs.selection == 'ci' }}
     runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(needs.scope.outputs.runner_admission || '[]'), 'ci:typecheck')) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 15
     env:
@@ -152,7 +152,7 @@ jobs:
     # at promotion, so this job is skipped rather than spending a runner on inert prose. A reused
     # tree skips it too — every gate it would run here already passed in the run that tested this
     # exact tree, and `!= 'prose'` would otherwise have bought a second full lint.
-    if: (needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'template') || needs.scope.outputs.selection == 'instructions' || needs.scope.outputs.selection == 'ci' || needs.scope.outputs.selection == 'native-engine'
+    if: (needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'template' || needs.scope.outputs.selection == 'review') || needs.scope.outputs.selection == 'instructions' || needs.scope.outputs.selection == 'ci' || needs.scope.outputs.selection == 'native-engine'
     runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(needs.scope.outputs.runner_admission || '[]'), 'ci:lint')) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 10
     env:
@@ -168,10 +168,10 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: Run the complete lint gate
-        if: needs.scope.outputs.selection == 'full'
+        if: needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'review'
         run: pnpm lint
       - name: Run the selected documentation and evidence gates
-        if: needs.scope.outputs.selection != 'full'
+        if: needs.scope.outputs.selection != 'full' && needs.scope.outputs.selection != 'review'
         run: |
           set -euo pipefail
           pnpm lint
@@ -209,7 +209,7 @@ jobs:
 
   test:
     needs: scope
-    if: ${{ needs.scope.outputs.selection == 'full' }}
+    if: ${{ needs.scope.outputs.selection == 'full' || (needs.scope.outputs.selection == 'review' && fromJSON(needs.scope.outputs.plan).jobs.test.required) }}
     runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(needs.scope.outputs.runner_admission || '[]'), 'ci:test')) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 45
     env:
@@ -258,7 +258,7 @@ jobs:
   # one more runner, so four is the whole of it.
   test-unit:
     needs: [scope, build-artifacts]
-    if: ${{ (needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'template') || needs.scope.outputs.selection == 'ci' }}
+    if: ${{ (needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'template' || needs.scope.outputs.selection == 'review') || needs.scope.outputs.selection == 'ci' }}
     runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(needs.scope.outputs.runner_admission || '[]'), format('ci:test-unit:{0}', matrix.shard))) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 30
     strategy:
@@ -305,6 +305,14 @@ jobs:
             ci) pnpm exec vitest run scripts/__tests__/ci-*.spec.ts ;;
             template)
               pnpm exec vitest run packages/create-threenative/__tests__ scripts/__tests__/verify-golden-path.spec.ts
+              if [ '${{ fromJSON(needs.scope.outputs.plan).checks.ci }}' = true ]; then
+                pnpm exec vitest run scripts/__tests__/ci-*.spec.ts
+              fi
+              ;;
+            review)
+              # PRD-731: the unit tests that import a changed file; the merge queue runs them all.
+              node -p "JSON.parse(process.env.TN_CI_PLAN).files.join('\n')" \
+                | xargs pnpm exec vitest related --run --passWithNoTests
               if [ '${{ fromJSON(needs.scope.outputs.plan).checks.ci }}' = true ]; then
                 pnpm exec vitest run scripts/__tests__/ci-*.spec.ts
               fi
@@ -703,7 +711,7 @@ jobs:
 
   golden-path-template:
     needs: [scope, build-artifacts]
-    if: ${{ (needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'template') }}
+    if: ${{ (needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'template' || needs.scope.outputs.selection == 'review') }}
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.scope.outputs.plan).goldenMatrix }}
@@ -972,7 +980,7 @@ jobs:
     # by the next push, and `golden-path` the only red check on the board. A cancelled run must read
     # as cancelled, so the skip is correct there; it still cannot be mistaken for a pass, because a
     # cancelled run has no passing checks to merge on.
-    if: ${{ !cancelled() && (needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'template') }}
+    if: ${{ !cancelled() && (needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'template' || needs.scope.outputs.selection == 'review') }}
     runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER_LIGHT) && 'ubuntu-24.04' || vars.TN_RUNNER_LIGHT }}
     timeout-minutes: 5
     env:
@@ -1069,7 +1077,7 @@ jobs:
     needs: scope
     # `warm` too: this job runs the shared workspace-dist action as the run's only saver, and the
     # `workspace-dist-*` entry it publishes is what every pull request into develop restores.
-    if: ${{ (needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'template') || needs.scope.outputs.selection == 'ci' || needs.scope.outputs.selection == 'warm' }}
+    if: ${{ (needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'template' || needs.scope.outputs.selection == 'review') || needs.scope.outputs.selection == 'ci' || needs.scope.outputs.selection == 'warm' }}
     runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(needs.scope.outputs.runner_admission || '[]'), 'ci:build-artifacts')) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 30
     env:
@@ -1183,7 +1191,7 @@ jobs:
 
   budgets:
     needs: [scope, build-artifacts]
-    if: ${{ (needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'template') || needs.scope.outputs.selection == 'ci' }}
+    if: ${{ (needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'template' || needs.scope.outputs.selection == 'review') || needs.scope.outputs.selection == 'ci' }}
     runs-on: ${{ (github.event.pull_request.head.repo.fork || !vars.TN_RUNNER || !contains(fromJSON(needs.scope.outputs.runner_admission || '[]'), 'ci:budgets')) && 'ubuntu-24.04' || vars.TN_RUNNER }}
     timeout-minutes: 15
     env:
@@ -1357,7 +1365,7 @@ jobs:
     # Skipped for Markdown-only PRs: the nightly develop run and promotions still scan the full
     # git history, so an inert prose PR does not spend a runner here. Skipped for a reused tree for
     # the same reason every other gate is: the run that tested this exact tree already scanned it.
-    if: (needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'template') || needs.scope.outputs.selection == 'instructions' || needs.scope.outputs.selection == 'ci' || needs.scope.outputs.selection == 'native-engine'
+    if: (needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'template' || needs.scope.outputs.selection == 'review') || needs.scope.outputs.selection == 'instructions' || needs.scope.outputs.selection == 'ci' || needs.scope.outputs.selection == 'native-engine'
     # PR-only until 2026-09-01 (owner call): a push to main skipped the whole job, so the board
     # read a skip where the secrets scan should have been. Pushes now scan the repository's full
     # git history — gitleaks' default git mode — which is strictly stronger than the incremental
@@ -1419,6 +1427,32 @@ jobs:
         if: github.event_name == 'pull_request'
         with:
           fail-on-severity: moderate
+
+  # PRD-731: the merge queue is where the full board runs, so its first red job is the cause worth
+  # naming. This job tells the pull request which job failed and cancels the rest of the run. It
+  # needs nothing, is no coverage and is not a `needs` of `ci-required`: a cancelled run reads as
+  # not green to the queue, which ejects the pull request.
+  queue-watch:
+    needs: scope
+    if: ${{ github.event_name == 'merge_group' }}
+    # Hosted on purpose: it waits for the whole run, and a local light slot held for an hour would
+    # queue the small joins behind it.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    permissions:
+      actions: write
+      contents: read
+      issues: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.scope.outputs.candidate_sha || github.sha }}
+      - name: Comment on the pull request and cancel the run at the first red job
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TN_CI_QUEUE_REF: ${{ github.event.merge_group.head_ref }}
+        run: node scripts/ci-queue-watch.mjs
 
   # The only required context after protected-develop cutover. Explicit exemptions are not passes.
   # Legacy main contexts stay in place until the owner changes protection after full qualification.

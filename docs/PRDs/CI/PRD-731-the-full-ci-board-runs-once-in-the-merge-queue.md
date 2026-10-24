@@ -1,6 +1,6 @@
 # PRD-731 — The full CI board runs once, in the merge queue
 
-**Status:** NOT STARTED
+**Status:** PARTIAL — phases 1 and 2 verified locally; the real red queue entry and phase 3 need merged runs
 **Priority:** P1 — all boxes are open: one change pays for the same selected board twice, a PR run plus a queue run of about 50 min each, and that doubling is the largest single cost on the path to PRD-550's 30-minute goal.
 **Complexity:** 5 (MEDIUM) — 6–10 files (2), new plan lane and profile axis (+2), GitHub API comment (+1); risk override → HIGH, because a wrong per-event gate lets a red tree land on `develop`.
 **Owner:** João (decisions), agent (implementation)
@@ -113,20 +113,21 @@ the PR lane's skipped jobs. All numbers are PRD-550 estimates until phase 3 meas
 ## Execution Phases
 
 #### Phase 1: The plan knows two lanes
-**Status:** NOT STARTED
+**Status:** DONE locally
 **Files:** `scripts/ci-change-scope.mjs`, `scripts/ci-required.mjs`, `scripts/__tests__/ci-qualification.spec.ts`, `scripts/__tests__/ci-efficiency.spec.ts`, `scripts/__tests__/ci-needs.spec.ts`.
 **Implementation:** Add the `lane` field (`review`, `queue`, `full`) to the plan and to `validationProfile`. Select the review job set for `pull_request` into `develop`. Pin the draft skip. Make `validateEventPlan` and `ci-required` enforce the per-event minimum. Land behind a flag that defaults off, so nothing changes until phase 2 turns it on.
-- [ ] A `pull_request` plan for a package diff selects the review job set and omits the native, integration and non-visual template jobs. proof: `pnpm exec vitest run scripts/__tests__/ci-efficiency.spec.ts` red before, green after.
-- [ ] `validateEventPlan` rejects a `review` plan for `merge_group`, `push`, `schedule` and `main`, and accepts it for `pull_request` into `develop` only. proof: `pnpm exec vitest run scripts/__tests__/ci-qualification.spec.ts` red before, green after.
-- [ ] A draft `pull_request` selects no jobs, and the same PR marked ready selects the review lane. proof: `pnpm exec vitest run scripts/__tests__/ci-structure.spec.ts` draft/ready case.
-- [ ] A green `review` run never satisfies reuse for a `queue` or `full` profile. proof: `pnpm exec vitest run scripts/__tests__/ci-qualification.spec.ts` reuse case.
+- [x] A `pull_request` plan for a package diff selects the review job set and omits the native, integration and non-visual template jobs. proof: `pnpm exec vitest run scripts/__tests__/ci-efficiency.spec.ts` red before, green after. Result: `ci-qualification.spec.ts` "gives a package diff the thin job set..." and `ci-needs.spec.ts` red on the unchanged scripts (7 of 8 new cases red, the eighth holds before and after), green after: required set is budgets, build-artifacts, golden-path(-template), lint, supply-chain, test, test-unit, typecheck.
+- [x] `validateEventPlan` rejects a `review` plan for `merge_group`, `push`, `schedule` and `main`, and accepts it for `pull_request` into `develop` only. proof: `pnpm exec vitest run scripts/__tests__/ci-qualification.spec.ts` red before, green after. Result: `ci-qualification.spec.ts` "is a verdict for a pull request into develop only" (merge_group, push, schedule, workflow_dispatch, PR into main, merge_group on main all throw `CI_REQUIRED_REVIEW_LANE`) and the `ci-required.mjs` run on a merge group; red before, green after.
+- [x] A draft `pull_request` selects no jobs, and the same PR marked ready selects the review lane. proof: `pnpm exec vitest run scripts/__tests__/ci-structure.spec.ts` draft/ready case. Result: the existing draft case in `ci-structure.spec.ts` ("runs nothing on draft pull requests...") still passes, and the new "admits the review lane to its jobs only" ties each job `if` to the plan.
+- [x] A green `review` run never satisfies reuse for a `queue` or `full` profile. proof: `pnpm exec vitest run scripts/__tests__/ci-qualification.spec.ts` reuse case. Result: `ci-qualification.spec.ts` lane case (`coverageMiss` names the lane for review vs queue, queue vs full) and `ci-queue-reuse.spec.ts` ("earlier pull-request run was the thin review lane") red before, green after.
 
 #### Phase 2: The workflow follows the plan (after PRD-730)
-**Status:** NOT STARTED
+**Status:** PARTIAL
 **Files:** `.github/workflows/ci.yml`, `.github/workflows/ci-janitor.yml`, root `AGENTS.md` (+ `pnpm sync:agents`), `scripts/__tests__/ci-structure.spec.ts`, `scripts/__tests__/ci-needs.spec.ts`.
 **Implementation:** Turn the flag on. Rewrite the "Merge groups run the same selected gating board" sentence in the root `AGENTS.md` CI paragraph. Add the queue-red comment and fail-fast to the `merge_group` path.
-- [ ] The workflow contract and the `needs` graph match the two lanes, and the `AGENTS.md` CI paragraph states them. proof: `pnpm exec vitest run scripts/__tests__/ci-structure.spec.ts scripts/__tests__/ci-needs.spec.ts scripts/__tests__/sync-agent-docs.spec.ts` and `pnpm sync:agents --check`.
-- [ ] A failed `merge_group` run comments on its PR with the first failing job, log link and run id. proof: a spec for the comment builder, plus the run id of one real red queue entry carrying the comment.
+- [x] The workflow contract and the `needs` graph match the two lanes, and the `AGENTS.md` CI paragraph states them. proof: `pnpm exec vitest run scripts/__tests__/ci-structure.spec.ts scripts/__tests__/ci-needs.spec.ts scripts/__tests__/sync-agent-docs.spec.ts` and `pnpm sync:agents --check`. Result: `pnpm exec vitest run scripts/__tests__/ci-` : 673 tests, all green but `ci-fast` x2 (pre-existing: this branch diffs `origin/develop` over a native path) and `ci-structure` QuickJS (`@threenative/assets` unbuilt here); `pnpm sync:agents --check`: 26 mirrors in sync.
+- [ ] A failed `merge_group` run comments on its PR with the first failing job, log link and run id, and cancels the rest. proof: `ci-queue-watch.spec.ts` (builder, earliest red job, comment-before-cancel against a stub `gh`), plus the run id of one real red queue entry carrying the comment.
+  Builder and order are green in `ci-queue-watch.spec.ts` (6/6); the real queue entry is open until a merge group goes red.
 
 #### Phase 3: Measure against PRD-550
 **Status:** NOT STARTED
@@ -138,9 +139,18 @@ the PR lane's skipped jobs. All numbers are PRD-550 estimates until phase 3 meas
 
 ## Blocked on
 
+- A real merge-group run that goes red, to show the comment and the cancel on the real API (needs a queue entry after this lands on develop).
+- Phase 3 windows: baseline and after windows of 10 merged code PRs need the policy merged and used.
 - PRD-730 landing, so a green full run on an identical tree is reused in the queue instead of rerun.
 
 ## Decisions
+
+- 2026-10-23, agent: the "flag that defaults off" is dropped. Phases 1 and 2 ship in one unpushed branch, so a flag would only be turned on in the same change.
+- 2026-10-23, agent: the review lane also runs `supply-chain` (the secrets scan) and the `golden-path` join. A secret pushed to a PR branch is public before the queue could catch it, and the join keeps the golden-path context reported. Both are cheap.
+- 2026-10-23, agent: "affected unit shards" is one `1/1` leg running `vitest related` over the plan's changed files (plus the CI-contract specs when the diff touches CI). The queue runs every shard.
+- 2026-10-23, agent: fail-fast is a `queue-watch` job in `ci.yml` (merge_group only, hosted, `needs: scope`). It polls the run, comments the first red job on the PR, then cancels the run. This is the named exception to "no job cancels its own run", because the comment names the gate before the cancel erases it. A flake red in the queue is not retried by `ci-janitor` (the run ends cancelled, not failed).
+- 2026-10-23, agent: `pnpm ci:local --affected` passes `--queue-lane`, so a developer proves the board the queue will run, not the thin lane.
+- 2026-10-23, agent: PRD-730 reuse now needs a full run an author dispatched on the branch; a review-lane PR run never qualifies.
 
 - 2026-10-23, João: "ok, 1) lgtm". Policy: a ready PR runs the thin review lane, a draft PR runs no CI jobs, and the merge queue runs the full selected board once. This replaces the root `AGENTS.md` rule that merge groups run the same selected gating board as the PR; the text change ships with phase 2.
 - 2026-10-23, rejected: send PRs straight to the queue with no PR CI. A red group makes GitHub rebuild the entries queued behind it, and agent PRs are often red on the first push, so the churn costs more than the thin lane.
