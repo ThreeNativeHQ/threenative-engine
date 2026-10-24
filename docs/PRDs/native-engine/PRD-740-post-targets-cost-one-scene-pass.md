@@ -50,12 +50,12 @@ draw again on every frame. The compute dispatches also create 30 to 43 bind grou
 
 ### Phase 2 — a steady compute dispatch creates no bind group
 
-- [ ] `ComputePass` keeps its layout and its 8 most recent bind groups, keyed on the bound resources. proof: `tn-native-engine-compute-test readback`
+- [x] `ComputePass` keeps its layout and its 8 most recent bind groups, keyed on the bound resources. proof: `tn-native-engine-compute-test readback` — red before: a repeated dispatch with the same buffer created a bind group; green after: 0 for a repeat, 1 for a new buffer (2026-10-24).
   It holds a reference to each bound resource while cached, so a recycled handle cannot hit a stale group.
 
 ### Phase 3 — measured and judged
 
-- [ ] The native engine suites pass. proof: `ctest -L native-engine`
+- [x] The native engine suites pass. proof: `ctest -L native-engine` — 436/436 pass with both commits in the tree (2026-10-24).
 - [ ] The web Wasm engine builds. proof: `cmake --build build/wasm --target tn-native-engine-web`
 - [ ] Hop Garden at tier high draws fewer calls per rendered frame than the baseline, steady window. proof: `measure.mjs` runs `before-1/2` and `after-1/2`
   Draws, `setBindGroup`, submits, render passes, `createBindGroup` and the main pass p95; headed Chromium, WebGPU, adapter `nvidia turing`.
