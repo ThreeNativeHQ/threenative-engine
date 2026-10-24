@@ -2228,20 +2228,9 @@ private:
         // Initialize localStorage backed by a JSON file. The filename comes from the game's entry
         // path, not just a directory basename: two games installed as `.../game` must not share
         // or overwrite each other's saved progress.
-        std::string storageDir = storage::LocalStorage::getStorageDirectory();
-        const std::string identity = config_.storageIdentity.empty()
-            ? std::filesystem::current_path().filename().string()
-            : config_.storageIdentity;
-        std::string filename = storage::LocalStorage::deriveStorageFilenameForEntry(identity);
-        std::string storagePath = storageDir + "/" + filename;
-
-        // Preserve saves written before storage was namespaced by game identity.
-        std::string legacyStem = std::filesystem::path(identity).filename().string();
-        std::string legacyPath = storageDir + "/" +
-            storage::LocalStorage::deriveStorageFilename(legacyStem);
-        if (storage::LocalStorage::migrateStorageFile(legacyPath, storagePath)) {
-            std::cout << "[Mystral] migrated localStorage from " << legacyPath << std::endl;
-        }
+        std::string storagePath = storage::LocalStorage::prepareStorageFile(
+            storage::LocalStorage::getStorageDirectory(), config_.storageIdentity,
+            std::filesystem::current_path().string());
 
         localStorage_.init(storagePath);
         std::cout << "[Mystral] localStorage initialized: " << storagePath << std::endl;

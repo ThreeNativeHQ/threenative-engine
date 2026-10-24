@@ -293,6 +293,20 @@ bool LocalStorage::migrateStorageFile(const std::string& legacyPath, const std::
     return !ec;
 }
 
+std::string LocalStorage::prepareStorageFile(const std::string& storageDir,
+                                             const std::string& entryIdentity,
+                                             const std::string& workingDirectory) {
+    const std::string cwdStem = std::filesystem::path(workingDirectory).filename().string();
+    const std::string identity = entryIdentity.empty() ? cwdStem : entryIdentity;
+    const std::string path = storageDir + "/" + deriveStorageFilenameForEntry(identity);
+    // Before namespacing, the save was named after the working directory alone.
+    const std::string legacyPath = storageDir + "/" + deriveStorageFilename(cwdStem);
+    if (migrateStorageFile(legacyPath, path)) {
+        std::cout << "[Mystral] migrated localStorage from " << legacyPath << std::endl;
+    }
+    return path;
+}
+
 // ============================================================================
 // LocalStorage implementation
 // ============================================================================

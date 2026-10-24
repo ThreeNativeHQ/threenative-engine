@@ -137,6 +137,15 @@ public:
      */
     static bool migrateStorageFile(const std::string& legacyPath, const std::string& path);
 
+    /**
+     * Resolve the save file for a game in `storageDir` and migrate its pre-namespacing save.
+     * `entryIdentity` is the game's entry path; empty falls back to the working directory's name.
+     * The legacy save was named after the working directory's basename alone.
+     */
+    static std::string prepareStorageFile(const std::string& storageDir,
+                                          const std::string& entryIdentity,
+                                          const std::string& workingDirectory);
+
     /** Flush pending changes at a runtime boundary. Safe to call when storage is clean. */
     void flushIfDirty();
 

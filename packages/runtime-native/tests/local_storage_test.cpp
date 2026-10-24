@@ -440,6 +440,26 @@ int main() {
                "migration never overwrites the namespaced save");
     }
 
+    // The legacy name is the working directory's basename, not the entry file's: a game run as
+    // `game.js` from `.../puzzle` saved to `puzzle.json` before namespacing.
+    {
+        const std::string storageDir = temp.file("prepare");
+        std::filesystem::create_directories(storageDir);
+        {
+            std::ofstream out(storageDir + "/puzzle.json");
+            out << "{\"save\":\"puzzle-level-41\"}";
+        }
+        const std::string path =
+            LocalStorage::prepareStorageFile(storageDir, "/games/puzzle/game.js", "/games/puzzle");
+        expectEq(path, storageDir + "/" +
+                           LocalStorage::deriveStorageFilenameForEntry("/games/puzzle/game.js"),
+                 "the save path is the identity-derived name");
+        LocalStorage prepared;
+        prepared.init(path);
+        expectEq(prepared.getItem("save"), "puzzle-level-41",
+                 "the working-directory save migrates to the entry-derived name");
+    }
+
     // --- Storage root, per platform, from any platform ------------------------
     //
     // A physical Pixel 8 logged this on every cold launch of com.threenative.bayview:
