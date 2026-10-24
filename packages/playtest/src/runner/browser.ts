@@ -7,11 +7,8 @@ export const WEBGPU_BROWSER_ARGS = [
   "--ignore-gpu-blocklist",
   // Keep Vulkan available on both hardware and software adapters.
   "--enable-features=Vulkan",
-  // Forced ANGLE/Vulkan selects NVIDIA locally but breaks hosted software adapters, especially headed.
-  // Apply that workaround only when the caller explicitly requests the host display.
-  ...(typeof process !== "undefined" && process.env.TN_PLAYTEST_HOST_DISPLAY === "1"
-    ? ["--use-angle=vulkan", "--use-vulkan", "--disable-vulkan-surface"]
-    : []),
+  // No forced ANGLE/Vulkan (--use-angle=vulkan --use-vulkan --disable-vulkan-surface): on a KDE
+  // Xwayland host display it blacked out the sky while the same NVIDIA adapter drew it without them.
 ] as const;
 
 /** Allow performance probes to sample render work instead of Xvfb's compositor cadence. */
