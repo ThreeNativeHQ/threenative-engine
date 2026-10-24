@@ -4,13 +4,23 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { makeTempDirSync } from "../../test-support/temp-dir.js";
 
-const { allFinished, commentBody, firstRedJob, queuePullNumber } = await import(
-  new URL("../ci-queue-watch.mjs", import.meta.url).href
-);
+const {
+  allFinished,
+  commentBody,
+  firstRedJob,
+  isInfraFailure,
+  janitorSignatures,
+  queuePullNumber,
+} = await import(new URL("../ci-queue-watch.mjs", import.meta.url).href);
 const script = new URL("../ci-queue-watch.mjs", import.meta.url).pathname;
 
 const job = (name: string, conclusion: string | null, completed = "2026-10-23T00:00:00Z") => ({
+  id: name.length * 1000 + (conclusion?.length ?? 0),
   name,
+  steps: [
+    { name: "Set up job", conclusion: "success" },
+    { name: "Run", conclusion },
+  ],
   conclusion,
   status: conclusion === null ? "in_progress" : "completed",
   completed_at: conclusion === null ? null : completed,
@@ -56,22 +66,20 @@ describe("PRD-731 queue watcher", () => {
     expect(body).toContain("Fix, push, re-enqueue.");
   });
 
-  it("comments on the pull request first, then cancels the run", () => {
+  /** Runs the watcher against a stub `gh` and returns what it called, in order. */
+  function watch(jobs: unknown[], log: string) {
     const root = makeTempDirSync("threenative-queue-watch-");
     const bin = path.join(root, "bin");
     mkdirSync(bin, { recursive: true });
-    writeFileSync(
-      path.join(root, "jobs.json"),
-      JSON.stringify([
-        { jobs: [job("lint", "success"), job("typecheck", "failure"), job("test", null)] },
-      ]),
-    );
+    writeFileSync(path.join(root, "jobs.json"), JSON.stringify([{ jobs }]));
+    writeFileSync(path.join(root, "job.log"), log);
     writeFileSync(
       path.join(bin, "gh"),
       `#!/bin/sh
 echo "$*" >> "${root}/calls.log"
 case "$*" in
   *actions/runs/99/jobs*) cat "${root}/jobs.json" ;;
+  *actions/jobs/*/logs*) cat "${root}/job.log" ;;
   *) ;;
 esac
 `,
@@ -89,12 +97,56 @@ esac
       },
     });
     expect(result.status, result.stderr).toBe(0);
-    const log = readFileSync(path.join(root, "calls.log"), "utf8");
+    return readFileSync(path.join(root, "calls.log"), "utf8");
+  }
+
+  it("comments on the pull request first, then cancels the run, on a real test red", () => {
+    const log = watch(
+      [job("lint", "success"), job("typecheck", "failure"), job("test", null)],
+      "FAIL scripts/__tests__/x.spec.ts\nAssertionError: expected 1 to be 2",
+    );
     const comment = log.indexOf("repos/o/r/issues/541/comments");
     const cancel = log.indexOf("run cancel 99 --repo o/r");
     expect(comment).toBeGreaterThan(0);
     expect(cancel).toBeGreaterThan(comment);
     expect(log.slice(comment, cancel)).toContain("typecheck");
+  });
+
+  it.each([
+    [
+      "a runner shutdown",
+      "The runner has received a shutdown signal. This can happen when the runner service is stopped",
+    ],
+    ["a lost runner", "The self-hosted runner: tn-local-03 lost communication with the server."],
+    ["a janitor-known flake", "ERR_CONNECTION_REFUSED while waiting for the dev server"],
+  ])("leaves %s to the janitor: no comment, no cancel", (_name, text) => {
+    const log = watch([job("scope", "success"), job("Change scope", "failure")], text);
+    expect(log).not.toContain("issues/541/comments");
+    expect(log).not.toContain("run cancel");
+  });
+
+  it("leaves a job that ran no step to the janitor", () => {
+    const dead = { ...job("test-unit (1/4)", "failure"), steps: [] };
+    const log = watch([job("lint", "success"), dead], "");
+    expect(log).not.toContain("issues/541/comments");
+    expect(log).not.toContain("run cancel");
+  });
+
+  it("reads its infra signatures from the janitor, the same list the retry uses", () => {
+    const janitor = readFileSync(
+      path.join(import.meta.dirname, "../../.github/workflows/ci-janitor.yml"),
+      "utf8",
+    );
+    const signatures = janitorSignatures(janitor);
+    for (const text of [
+      "runner has received a shutdown signal",
+      "lost communication with the server",
+    ]) {
+      expect(isInfraFailure(job("a", "failure"), text, signatures)).toBe(true);
+    }
+    expect(isInfraFailure(job("a", "failure"), "AssertionError", signatures)).toBe(false);
+    // Nothing readable means every red is a real one, never a silent pass.
+    expect(isInfraFailure(job("a", "failure"), "runner has received a shutdown", "")).toBe(false);
   });
 
   it("stops with a usage error when the queue ref names no pull request", () => {

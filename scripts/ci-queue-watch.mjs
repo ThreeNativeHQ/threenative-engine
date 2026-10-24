@@ -4,6 +4,7 @@
 // the rest, so a red costs minutes of runners and the author does not read a wall of cancelled
 // checks. The failed job keeps its own conclusion: only jobs still in flight are cancelled.
 import { spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
 // Aggregates only echo another job's failure; the watcher is not evidence of anything.
@@ -16,9 +17,31 @@ export function queuePullNumber(queueRef) {
   return QUEUE_REF.exec(queueRef ?? "")?.[1] ?? null;
 }
 
+/**
+ * The janitor's own list of environmental signatures (`FLAKE:` in ci-janitor.yml), so the watcher
+ * and the retry can never disagree about what an infra failure is. Empty when it cannot be read,
+ * which makes every red a real one.
+ */
+export function janitorSignatures(workflow) {
+  return /^\s+FLAKE: (.+)$/mu.exec(workflow)?.[1]?.trim() ?? "";
+}
+
+/**
+ * An infra failure leaves the run to the janitor, which reruns the failed jobs once and skips a
+ * cancelled run: a job that ran no step (the runner died or never started), or a log carrying one
+ * of the janitor's signatures (a runner shutdown, a lost runner, a known flake).
+ */
+export function isInfraFailure(job, log, signatures) {
+  const ran = (job?.steps ?? []).some((step) => step?.conclusion && step.conclusion !== "skipped");
+  if (!ran) return true;
+  return signatures !== "" && new RegExp(signatures, "u").test(log);
+}
+
 /** The earliest-completed red job that is not an aggregate, or null while nothing is red. */
-export function firstRedJob(jobs) {
-  const red = jobs.filter((job) => RED.has(job?.conclusion) && !ECHOES.has(job?.name));
+export function firstRedJob(jobs, ignore = new Set()) {
+  const red = jobs.filter(
+    (job) => RED.has(job?.conclusion) && !ECHOES.has(job?.name) && !ignore.has(job?.id),
+  );
   red.sort((a, b) => String(a.completed_at).localeCompare(String(b.completed_at)));
   return red[0] ?? null;
 }
@@ -46,6 +69,14 @@ function gh(args) {
   return result.stdout;
 }
 
+function jobLog(repository, jobId) {
+  try {
+    return gh(["api", `repos/${repository}/actions/jobs/${jobId}/logs`]);
+  } catch {
+    return "";
+  }
+}
+
 function runJobs(repository, runId) {
   const pages = JSON.parse(
     gh([
@@ -70,10 +101,18 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     console.error("CI_QUEUE_WATCH_INPUT: the queue ref, repository or run id is missing");
     process.exit(2);
   }
+  const signatures = janitorSignatures(
+    readFileSync(new URL("../.github/workflows/ci-janitor.yml", import.meta.url), "utf8"),
+  );
+  const infra = new Set();
   for (;;) {
     const jobs = runJobs(repository, runId);
-    const red = firstRedJob(jobs);
-    if (red !== null) {
+    const red = firstRedJob(jobs, infra);
+    if (red !== null && isInfraFailure(red, jobLog(repository, red.id), signatures)) {
+      // The janitor reruns this job once; cancelling here would end the run as cancelled and skip it.
+      console.log(`red job ${red.name} is an infra failure: left to the janitor`);
+      infra.add(red.id);
+    } else if (red !== null) {
       // The comment first: a cancel that fails must not hide the cause.
       gh([
         "api",

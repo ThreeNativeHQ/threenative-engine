@@ -36,8 +36,11 @@ jobs:
           RUN_ID: ${{ github.event.workflow_run.id }}
           # Environmental signatures seen on 2026-10-02/03: SwiftShader device loss, a bridge call
           # outliving its budget, an unreadable WebGPU adapter, a dev server not up yet, a 5xx on a
-          # download, and a runner shut down under its job. Anything else is a real failure.
-          FLAKE: TN_PLAYTEST_SOFTWARE_DEVICE_LOST|Bridge operation '[a-z]+' exceeded|TN_PLAYTEST_CAPTURE_PROVENANCE_MISSING|TN_GOLDEN_PATH_DEV_UNAVAILABLE|ERR_CONNECTION_REFUSED|HTTP 50[0-9]|runner has received a shutdown signal
+          # download, and a runner shut down or lost under its job. A job that ran no step (the runner
+          # died before it started) is infra too. `scripts/ci-queue-watch.mjs` reads this same list
+          # so the merge-queue watcher leaves these failures to the retry below. Anything else is a
+          # real failure.
+          FLAKE: TN_PLAYTEST_SOFTWARE_DEVICE_LOST|Bridge operation '[a-z]+' exceeded|TN_PLAYTEST_CAPTURE_PROVENANCE_MISSING|TN_GOLDEN_PATH_DEV_UNAVAILABLE|ERR_CONNECTION_REFUSED|HTTP 50[0-9]|runner has received a shutdown signal|lost communication with the server
         run: |
           set -euo pipefail
           # Aggregates (ci-required, golden-path, run-summary) only echo another job's failure.
@@ -45,6 +48,8 @@ jobs:
             --jq '.jobs[] | select(.conclusion == "failure") | select(.name | test("^(ci-required|golden-path|run-summary)$") | not) | .id')"
           [ -n "$failed" ] || { echo "No primary job failed; nothing to retry."; exit 0; }
           for id in $failed; do
+            ran="$(gh api "repos/$GITHUB_REPOSITORY/actions/jobs/$id" --jq '[.steps[]? | select(.conclusion != null and .conclusion != "skipped")] | length')"
+            [ "$ran" = 0 ] && continue
             if ! gh api "repos/$GITHUB_REPOSITORY/actions/jobs/$id/logs" 2>/dev/null | grep -qE "$FLAKE"; then
               echo "Job $id failed for a reason that is not a known flake; leaving the run red."
               exit 0
