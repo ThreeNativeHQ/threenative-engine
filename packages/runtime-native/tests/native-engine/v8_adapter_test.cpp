@@ -764,10 +764,10 @@ void tslApi() {
         {"tsl.float(0.25).smoothstep(0,1)", g::smoothstep(g::float_(0), g::float_(1), g::float_(0.25))},
         {"tsl.float(0.25).clamp(0,1)", g::clamp(g::float_(0.25), g::float_(0), g::float_(1))},
         {"tsl.screenUV", g::screenUV()},
-        {"tsl.materialColor", g::swizzle(g::uniform("diffuse", tn::engine::shader::Type::vec(4)), "xyz")},
-        {"tsl.materialEmissive", g::uniform("emissive", tn::engine::shader::Type::vec(3))},
-        {"tsl.materialMetalness", g::uniform("metalness", tn::engine::shader::Type::f32())},
-        {"tsl.materialRoughness", g::uniform("roughness", tn::engine::shader::Type::f32())},
+        {"tsl.materialColor", g::swizzle(g::materialInput("diffuse", tn::engine::shader::Type::vec(4)), "xyz")},
+        {"tsl.materialEmissive", g::materialInput("emissive", tn::engine::shader::Type::vec(3))},
+        {"tsl.materialMetalness", g::materialInput("metalness", tn::engine::shader::Type::f32())},
+        {"tsl.materialRoughness", g::materialInput("roughness", tn::engine::shader::Type::f32())},
         {"tsl.vec4(1,0.5,0.25,1).rgb", g::swizzle(g::vec4({g::float_(1),g::float_(0.5),g::float_(0.25),g::float_(1)}), "xyz")},
     }) {
         const std::string source = "(() => {const m=new MeshBasicNodeMaterial();m.colorNode=" + expression + ";return m;})()";

@@ -220,3 +220,71 @@ describe("Wasm MaterialX scalar Worley noise", () => {
     ]);
   });
 });
+
+/**
+ * three's `material*` accessors each build `material.<value> * material.<map>` (MaterialNode.js). The engine
+ * bridges four, and `tsl_material_accessors_test.cpp` proves each samples its map. A bridged accessor that
+ * dropped its map left a bare factor: a glTF emissiveFactor of 1 beside a near-black emissiveMap drew a white part.
+ * A three accessor must be in one list: a new one fails here until it is bridged with its map or named unbridged.
+ */
+describe("MaterialNode accessor census", () => {
+  const MAP_AWARE = ["materialColor", "materialEmissive", "materialMetalness", "materialRoughness"];
+  // Not bridged: an import of one is refused by name (TN_NATIVE_UNCATALOGUED_<NAME>) at its use.
+  const UNBRIDGED = [
+    "materialAO",
+    "materialAlphaTest",
+    "materialAnisotropy",
+    "materialAnisotropyVector",
+    "materialAttenuationColor",
+    "materialAttenuationDistance",
+    "materialClearcoat",
+    "materialClearcoatNormal",
+    "materialClearcoatRoughness",
+    "materialDispersion",
+    "materialIOR",
+    "materialIridescence",
+    "materialIridescenceIOR",
+    "materialIridescenceThickness",
+    "materialLightMap",
+    "materialLineDashOffset",
+    "materialLineDashSize",
+    "materialLineGapSize",
+    "materialLineScale",
+    "materialLineWidth",
+    "materialNormal",
+    "materialOpacity",
+    "materialPointSize",
+    "materialReflectivity",
+    "materialRotation",
+    "materialSheen",
+    "materialSheenRoughness",
+    "materialShininess",
+    "materialSpecular",
+    "materialSpecularColor",
+    "materialSpecularIntensity",
+    "materialSpecularStrength",
+    "materialThickness",
+    "materialTransmission",
+  ];
+  const source = readFileSync(
+    resolve(
+      dirname(createRequire(import.meta.url).resolve("three")),
+      "../src/nodes/accessors/MaterialNode.js",
+    ),
+    "utf8",
+  );
+  const accessors = [...source.matchAll(/export const (material\w+)/g)].map(
+    (match) => match[1] ?? "",
+  );
+
+  it("lists every accessor three declares", () => {
+    expect(accessors.filter((name) => ![...MAP_AWARE, ...UNBRIDGED].includes(name))).toEqual([]);
+  });
+  it("bridges exactly the map-aware accessors", () => {
+    const { tsl } = setup();
+    const bridged = accessors.filter(
+      (name) => (tsl as unknown as Record<string, unknown>)[name] !== undefined,
+    );
+    expect(bridged.sort()).toEqual([...MAP_AWARE].sort());
+  });
+});

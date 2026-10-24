@@ -291,7 +291,12 @@ ExprId Lowerer::emit(Node node) {
             if (d.type.scalar == Type::Scalar::I32) return program_.constant(static_cast<int32_t>(d.bits));
             if (d.type.scalar == Type::Scalar::Bool) return program_.constant(d.bits != 0);
             return kInvalid;
-        case Kind::Uniform: return program_.uniform(d.name, d.type);
+        case Kind::Uniform: {
+            if (d.bits == 1)
+                if (const auto input = inputs_.find("material:" + d.name); input != inputs_.end())
+                    return convert(input->second, d.type);
+            return program_.uniform(d.name, d.type);
+        }
         case Kind::Attribute:
             // The fragment's `position` would collide with the clip-position output's name.
             if (d.name == "position" && program_.stage() == Stage::Fragment)
@@ -718,6 +723,19 @@ Node uniform(std::string_view name, Type type, std::vector<double> values) {
         if (!data->values.empty()) setUniformValues(data, data->values);
     } else for (double& value : data->values) value = static_cast<float>(value);
     return data;
+}
+Node materialInput(std::string_view name, Type type) {
+    auto data = makeNode(Kind::Uniform, type);
+    data->name = std::string(name);
+    data->bits = 1;  // marks the accessor; part of the structural key, so no authored uniform shares its program
+    return data;
+}
+std::vector<std::string> materialInputs(const Node& graph) {
+    std::vector<std::string> names;
+    if (!graph) return names;
+    for (const Node& n : uniformList(graph))
+        if (n->bits == 1 && std::find(names.begin(), names.end(), n->name) == names.end()) names.push_back(n->name);
+    return names;
 }
 void setUniformValues(const Node& uniform, std::vector<double> values) {
     if (!uniform || uniform->kind != Kind::Uniform) throw std::runtime_error("TN_TSL_UNIFORM_VALUE: not a uniform node");
