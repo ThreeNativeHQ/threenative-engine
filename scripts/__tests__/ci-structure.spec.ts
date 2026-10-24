@@ -3341,7 +3341,8 @@ describe("CI pipeline structure", () => {
     // and every one died on a missing Chromium, because the install step ran for `full` only.
     const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
     const job = requiredJob(ci, "test-unit");
-    const prepare = "if: needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'review'";
+    const prepare =
+      "if: needs.scope.outputs.selection == 'full' || needs.scope.outputs.selection == 'review'";
     expect(job).toContain(`uses: ./.github/actions/playwright-chromium\n        ${prepare}`);
     expect(job).toContain(`${prepare}\n        run: pnpm --filter strata-terrain-preview bake`);
   });
