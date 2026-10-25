@@ -87,7 +87,10 @@ export interface IScreenSpaceReflectionOptions {
 const HALF_FLOAT_TYPE = 1016;
 /** The passes of the screen-space gather report their GPU time under this stage (gpu-stages.ts). */
 const GI_STAGE: GpuStage = "SSGI";
-/** Ray slices per pixel. A game scales how far they reach (`maxDistance`), not how many there are. */
+/**
+ * The most ray slices per pixel. `maxSteps` lowers it per quality tier, as Unreal caps its march
+ * (UE 5.8.3: Engine/Shaders/Private/SSRT/SSRTReflections.usf:198-216); `maxDistance` scales how far they reach.
+ */
 const STEPS = 48;
 /** Bisection steps that sharpen a detected crossing. */
 const REFINEMENTS = 5;
@@ -153,6 +156,7 @@ export function defineScreenSpaceReflections(tsl: IScreenSpaceTsl) {
     const thickness = uniform(0.1);
     const intensity = uniform(1);
     const screenEdgeFade = uniform(0.2);
+    const maxSteps = uniform(STEPS);
     const roughness = options.roughnessNode ?? float(0);
     const metalness = options.metalnessNode ?? float(0);
 
@@ -183,7 +187,10 @@ export function defineScreenSpaceReflections(tsl: IScreenSpaceTsl) {
         const previousBehind = float(-1).toVar();
         const previousSceneZ = position.z.toVar();
         Loop({ start: int(0), end: int(STEPS), type: "int", condition: "<" }, ({ i }) => {
-          const fraction = float(i).add(1).div(STEPS);
+          If(float(i).greaterThanEqual(maxSteps), () => {
+            Break();
+          });
+          const fraction = float(i).add(1).div(min(maxSteps, STEPS));
           const travelled = maxDistance.mul(fraction.mul(fraction));
           const point = origin.add(direction.mul(travelled));
           If(point.z.greaterThan(cameraNear.negate()), () => {
@@ -283,6 +290,7 @@ export function defineScreenSpaceReflections(tsl: IScreenSpaceTsl) {
       thickness: { value: thickness },
       intensity: { value: intensity },
       screenEdgeFade: { value: screenEdgeFade },
+      maxSteps: { value: maxSteps },
       resolutionScale: {
         get: () => node.getResolutionScale(),
         set: (value: number) => node.setResolutionScale(value),
