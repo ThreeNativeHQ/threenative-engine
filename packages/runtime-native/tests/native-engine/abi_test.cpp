@@ -2569,6 +2569,25 @@ void starter_post_bindings() {
         CHECK(programs.fragment.diagnostics().empty());
         return fragment;
     };
+    for (const auto& effect : {temporal, late}) {
+        const auto texture = call("convertToTexture", {TslArg::of(effect)});
+        CHECK(texture->kind == g::Kind::Texture && texture->name == effect->name);
+        CHECK(call("convertToTexture", {TslArg::of(texture)}) == texture);
+        const auto self = TslArg::of(texture);
+        const auto sampled = tn::abi::tslCall("sample", &self, {TslArg::of(g::uv())}, serial);
+        const auto texel = call("ivec2", {TslArg::of(0.0), TslArg::of(0.0)});
+        const auto loaded = call("textureLoad", {self, TslArg::of(texel)});
+        const auto size = call("textureSize", {self});
+        for (const auto& consumer : {texture, sampled, loaded, size}) {
+            CHECK(g::traaEffect(consumer) == effect->post);
+            const auto retained = g::postPasses(consumer);
+            CHECK(retained.size() == (effect == late ? 2u : 0u));
+            if (effect == late && retained.size() == 2)
+                CHECK(retained.back().host == "traa" && retained.back().output == effect->name);
+        }
+        compile(sampled);
+        compile(loaded);
+    }
     // `.level(n)` on a render texture reads it at an explicit level, as the motion blur's loop does.
     const auto compositeSelf = TslArg::of(composite);
     const auto leveled = tn::abi::tslCall("level", &compositeSelf, {TslArg::of(g::float_(0))}, serial);
