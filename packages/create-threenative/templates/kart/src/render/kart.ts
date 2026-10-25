@@ -5,7 +5,7 @@
 // a rear wing, and a driver in a round helmet, merged into one vertex-coloured mesh; the wheels
 // are three more (the rear axle turns as one, each front wheel steers). Eight original liveries.
 // `KartModel.update` follows a `Kart` from `entities/Kart.ts`: it pitches with the road, leans
-// out of a drift, spins on a banana and flips on a shell. Forward is −z, the origin is the ground.
+// out of a drift, spins on a burr and flips on an acorn. Forward is −z, the origin is the ground.
 import {
   AdditiveBlending,
   BoxGeometry,

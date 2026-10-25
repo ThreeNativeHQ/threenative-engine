@@ -57,7 +57,7 @@ export const KART_FEEL = {
    * (`player_controller.c:1123-1140`, `:3094`). */
   miniTurboTicks: 31,
   miniTurbo: 580 / 4096,
-  /** The mushroom and the boost pad: 80 ticks at +400/4096, eased in at 50% a tick, then −10% a
+  /** The nitro can and the boost pad: 80 ticks at +400/4096, eased in at 50% a tick, then −10% a
    * tick (`effects.c:547`, `player_controller.c:1120`, `:3117`). */
   boostTicks: 80,
   boost: 400 / 4096,
@@ -68,7 +68,7 @@ export const KART_FEEL = {
   wallThrottle: 18,
   /** Half the kart's width, for the wall line. */
   halfWidth: 0.85,
-  /** A banana spin and a shell tumble, in ticks (`effects.c:375-394`, `:197-224`). */
+  /** A burr spin and an acorn tumble, in ticks (`effects.c:375-394`, `:197-224`). */
   spinTicks: 90,
   tumbleTicks: 103,
 } as const;
@@ -155,7 +155,7 @@ export class Kart {
   catchingUp = false;
   spinTicks = 0;
   tumbleTicks = 0;
-  /** Seconds the last banana spin or shell tumble lasted. */
+  /** Seconds the last burr spin or acorn tumble lasted. */
   hitSeconds = 0;
   /** Visual spin angle while hit, radians. */
   spinAngle = 0;
@@ -227,7 +227,7 @@ export class Kart {
     this.#roadVy = 0;
   }
 
-  /** The mushroom, a boost pad or a rocket start: throttle pinned to top for 80 ticks. */
+  /** The nitro can, a boost pad or a rocket start: throttle pinned to top for 80 ticks. */
   startBoost(): void {
     this.boostTicks = KART_FEEL.boostTicks;
     this.counts.boosts += 1;
@@ -235,7 +235,7 @@ export class Kart {
     this.boostPeak = this.speed;
   }
 
-  /** A banana: a 1.5 s spin. Ends any drift and boost. */
+  /** A burr: a 1.5 s spin. Ends any drift and boost. */
   spinOut(): void {
     if (this.hit) return;
     this.spinTicks = KART_FEEL.spinTicks;
@@ -246,7 +246,7 @@ export class Kart {
     this.miniTurboTicks = 0;
   }
 
-  /** A shell: a 1.7 s tumble that brings the kart to a stop. */
+  /** An acorn: a 1.7 s tumble that brings the kart to a stop. */
   tumble(): void {
     if (this.hit) return;
     this.tumbleTicks = KART_FEEL.tumbleTicks;
@@ -318,7 +318,7 @@ export class Kart {
     else this.catchUp *= 0.9 ** ticks;
 
     // Speed chases the throttle's terminal speed: ∝ throttle², less drag, plus the boosts. The
-    // mushroom skips the drag (`player_controller.c:3117`). In the air the speed holds.
+    // nitro can skips the drag (`player_controller.c:3117`). In the air the speed holds.
     if (this.grounded) {
       const resist = this.boostTicks > 0 ? 0 : this.drag;
       let target =

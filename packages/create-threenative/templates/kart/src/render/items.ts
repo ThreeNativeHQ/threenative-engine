@@ -1,80 +1,81 @@
 // Generated for you. This is ordinary Three.js — edit or delete it freely.
 // ThreeNative does not read this file.
 //
-// The items: a banana peel, a green shell, and the rows of rainbow item boxes. The boxes are two
+// The items: a burr, an acorn, and the rows of rainbow item boxes. The boxes are two
 // instanced meshes, a see-through rainbow cube round a glowing core, so every box is two draw
 // calls in all. A taken box shrinks to nothing and grows back when `Race.ts` says it has respawned.
 import {
   BoxGeometry,
   BufferAttribute,
   Color,
+  ConeGeometry,
+  CylinderGeometry,
   type Group,
+  IcosahedronGeometry,
   InstancedMesh,
+  Matrix4,
   Mesh,
   Object3D,
   OctahedronGeometry,
+  Quaternion,
   SphereGeometry,
-  TorusGeometry,
+  Vector3,
 } from "three";
 import type { ICourse } from "../track/Course.js";
 import { at, lit, merge, paint } from "./materials.js";
 import { C } from "./palette.js";
 
-/** A peel lying on the road: a yellow arc, brown tips, three limp flaps. Shared by every peel. */
-const BANANA = merge([
-  paint(
-    new TorusGeometry(0.3, 0.09, 6, 12, 2.3),
-    C.banana,
-    at(0, 0.1, 0, Math.PI / 2, 0, 0.4),
-    0.3,
-  ),
-  paint(new SphereGeometry(0.06, 6, 4), C.bananaTip, at(0.27, 0.12, 0.1)),
-  paint(new SphereGeometry(0.06, 6, 4), C.bananaTip, at(-0.21, 0.1, 0.22)),
-  ...[0, 2.1, 4.2].map((a) =>
-    paint(
-      new BoxGeometry(0.14, 0.03, 0.3),
-      C.banana,
-      at(Math.cos(a) * 0.12 - 0.3, 0.05, Math.sin(a) * 0.12, 0, a, 0.4),
-    ),
-  ),
-]);
+/** Spike directions: the twelve corners of an icosahedron, so the spikes stand evenly. */
+const SPIKES = new IcosahedronGeometry(1, 0).getAttribute("position");
+const spikeAxes = Array.from({ length: SPIKES.count }, (_, i) =>
+  new Vector3().fromBufferAttribute(SPIKES, i).normalize(),
+).filter((axis, i, all) => all.findIndex((other) => other.distanceTo(axis) < 1e-3) === i);
 
-/** A green shell: a dome with a white rim and pale plates. Shared by every shell. */
-const SHELL = merge([
-  paint(
-    new SphereGeometry(0.4, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2),
-    C.shell,
-    at(0, 0.08, 0, 0, 0, 0, 1, 0.8, 1),
-    0.4,
-  ),
-  paint(new TorusGeometry(0.38, 0.08, 6, 18), C.shellRim, at(0, 0.08, 0, Math.PI / 2)),
-  ...[0, 1, 2, 3, 4].map((i) =>
+/**
+ * A burr dropped on the road: a round seed head bristling with pale hooked spikes, the size of a
+ * football so it reads from the chase camera. Shared by every burr.
+ */
+const BURR = merge([
+  paint(new IcosahedronGeometry(0.24, 1), C.burr, at(0, 0.34, 0), 0.35),
+  ...spikeAxes.map((axis) =>
     paint(
-      new SphereGeometry(0.1, 6, 4),
-      C.shellRim,
-      at(
-        Math.cos((i * Math.PI * 2) / 5) * 0.24,
-        0.3,
-        Math.sin((i * Math.PI * 2) / 5) * 0.24,
-        0,
-        0,
-        0,
-        1,
-        0.35,
-        1,
+      new ConeGeometry(0.06, 0.22, 5),
+      C.burrTip,
+      new Matrix4().compose(
+        axis
+          .clone()
+          .multiplyScalar(0.3)
+          .add(new Vector3(0, 0.34, 0)),
+        new Quaternion().setFromUnitVectors(new Vector3(0, 1, 0), axis),
+        new Vector3(1, 1, 1),
       ),
     ),
   ),
 ]);
 
-export function bananaMesh(): Mesh {
-  const mesh = new Mesh(BANANA, lit({ roughness: 0.5 }));
+/**
+ * An acorn rolled up the road: a tan nut under a dark scaly cap with a stub of stalk, upright and
+ * spinning as it runs. Shared by every acorn.
+ */
+const ACORN = merge([
+  paint(new SphereGeometry(0.28, 14, 10), C.acorn, at(0, 0.36, 0, 0, 0, 0, 1, 1.25, 1), 0.3),
+  paint(
+    new SphereGeometry(0.31, 14, 6, 0, Math.PI * 2, 0, Math.PI / 2),
+    C.acornCap,
+    at(0, 0.52, 0, 0, 0, 0, 1, 0.7, 1),
+    0.4,
+  ),
+  paint(new CylinderGeometry(0.04, 0.05, 0.16, 6), C.acornCap, at(0, 0.78, 0, 0, 0, 0.3)),
+]);
+
+export function burrMesh(): Mesh {
+  const mesh = new Mesh(BURR, lit({ roughness: 0.8 }));
   mesh.castShadow = true;
   return mesh;
 }
 
-export function shellMesh(): Mesh {
-  const mesh = new Mesh(SHELL, lit({ roughness: 0.35 }));
+export function acornMesh(): Mesh {
+  const mesh = new Mesh(ACORN, lit({ roughness: 0.55 }));
   mesh.castShadow = true;
   return mesh;
 }

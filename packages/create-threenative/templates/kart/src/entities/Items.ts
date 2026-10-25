@@ -2,23 +2,23 @@ import type { Object3D } from "three";
 import type { ICourse } from "../track/Course.js";
 import { KART_FEEL, type Kart } from "./Kart.js";
 
-export type ItemKind = "banana" | "shell" | "mushroom";
+export type ItemKind = "burr" | "acorn" | "nitro";
 
 /**
  * The item roulette: per place, how many of 100 draws give each item. MK64 draws
  * `curve[rank·100 + rand%100]` (`mk64: src/update_objects.c:3665`); its curves are ROM data that
  * is not in the decompiled source, so these are the kit's: the leaders get defence, the back of
- * the field gets speed, and last place always gets a mushroom.
+ * the field gets speed, and last place always gets a nitro can.
  */
 export const ITEM_CURVE: readonly Readonly<Record<ItemKind, number>>[] = [
-  { banana: 60, mushroom: 5, shell: 35 },
-  { banana: 45, mushroom: 15, shell: 40 },
-  { banana: 35, mushroom: 25, shell: 40 },
-  { banana: 25, mushroom: 35, shell: 40 },
-  { banana: 20, mushroom: 50, shell: 30 },
-  { banana: 15, mushroom: 60, shell: 25 },
-  { banana: 5, mushroom: 80, shell: 15 },
-  { banana: 0, mushroom: 100, shell: 0 },
+  { burr: 60, nitro: 5, acorn: 35 },
+  { burr: 45, nitro: 15, acorn: 40 },
+  { burr: 35, nitro: 25, acorn: 40 },
+  { burr: 25, nitro: 35, acorn: 40 },
+  { burr: 20, nitro: 50, acorn: 30 },
+  { burr: 15, nitro: 60, acorn: 25 },
+  { burr: 5, nitro: 80, acorn: 15 },
+  { burr: 0, nitro: 100, acorn: 0 },
 ];
 
 export const ITEM_FEEL = {
@@ -29,36 +29,36 @@ export const ITEM_FEEL = {
    * (`mk64: src/actors/item_box/update.inc.c:56`, `:42`), so a box is back before the next kart.
    */
   boxRespawn: 40 / 60,
-  /** Reach of a box, banana and shell, in metres between centres on the ground plane. */
+  /** Reach of a box, burr and acorn, in metres between centres on the ground plane. */
   boxReach: 1.7,
-  bananaReach: 1.2,
-  shellReach: 1.3,
-  /** A banana lands this far behind the kart. */
-  bananaBehind: 1.9,
-  /** Green shell speed: MK64 launches at 8 units a tick against a 5.89 top, 1.36 × top speed
+  burrReach: 1.2,
+  acornReach: 1.3,
+  /** A burr lands this far behind the kart. */
+  burrBehind: 1.9,
+  /** Acorn speed: MK64 launches at 8 units a tick against a 5.89 top, 1.36 × top speed
    * (`mk64: src/actors/green_shell/update.inc.c:100`). */
-  shellSpeed: KART_FEEL.topSpeed["150cc"] * 1.36,
-  /** Seconds a shell lives. MK64's shell lives until it hits something (kit guard). */
-  shellLife: 10,
+  acornSpeed: KART_FEEL.topSpeed["150cc"] * 1.36,
+  /** Seconds an acorn lives. MK64's thrown projectile lives until it hits something (kit guard). */
+  acornLife: 10,
   /** Seconds the thrower is immune to its own item. */
   ownerGrace: 0.6,
-  /** Bananas on the course at once; the oldest goes first. */
-  maxBananas: 10,
+  /** Burrs on the course at once; the oldest goes first. */
+  maxBurrs: 10,
 } as const;
 
 /** Draws an item for `place` (1-based) from one uniform `roll` in [0, 1). */
 export function drawItem(place: number, roll: number): ItemKind {
   const curve = ITEM_CURVE[Math.min(ITEM_CURVE.length, Math.max(1, place)) - 1] ?? {
-    banana: 60,
-    mushroom: 5,
-    shell: 35,
+    burr: 60,
+    nitro: 5,
+    acorn: 35,
   };
   let ticket = Math.floor(roll * 100);
-  for (const kind of ["banana", "shell", "mushroom"] as const) {
+  for (const kind of ["burr", "acorn", "nitro"] as const) {
     ticket -= curve[kind];
     if (ticket < 0) return kind;
   }
-  return "mushroom";
+  return "nitro";
 }
 
 /** A kart's item slot: empty, spinning, or holding. */
@@ -94,26 +94,26 @@ export class ItemSlot {
 }
 
 /**
- * A thrown or dropped item on the course. Pooled: `scenes/Race.ts` builds every banana and shell
+ * A thrown or dropped item on the course. Pooled: `scenes/Race.ts` builds every burr and acorn
  * at load and registers each as an entity, so a scenario can place one with `setup.place`.
  * Parked items sit far below the course and are inactive.
  */
 export class CourseItem {
   active = false;
   owner: Kart | undefined;
-  /** Seconds left of the owner's immunity, and of a shell's life. */
+  /** Seconds left of the owner's immunity, and of an acorn's life. */
   grace = 0;
   life = 0;
   index = 0;
   lateral = 0;
-  /** A shell's heading on the ground plane, three's yaw convention. */
+  /** An acorn's heading on the ground plane, three's yaw convention. */
   heading = 0;
   bounces = 0;
   hits = 0;
   static readonly parkedY = -50;
 
   constructor(
-    readonly kind: "banana" | "shell",
+    readonly kind: "burr" | "acorn",
     readonly mesh: Object3D,
   ) {
     mesh.position.set(0, CourseItem.parkedY, 0);
@@ -129,7 +129,7 @@ export class CourseItem {
     this.active = true;
     this.owner = owner;
     this.grace = owner === undefined ? 0 : ITEM_FEEL.ownerGrace;
-    this.life = ITEM_FEEL.shellLife;
+    this.life = ITEM_FEEL.acornLife;
     this.heading = heading;
     this.bounces = 0;
     const point = course.track(from, this.mesh.position.x, this.mesh.position.z);
@@ -145,12 +145,12 @@ export class CourseItem {
     this.mesh.position.set(0, CourseItem.parkedY, 0);
   }
 
-  /** A shell runs straight along its heading, bounces off the walls and follows the ground. */
+  /** An acorn runs straight along its heading, bounces off the walls and follows the ground. */
   update(course: ICourse, dt: number): void {
     if (!this.active) return;
     this.grace = Math.max(0, this.grace - dt);
     const at = this.mesh.position;
-    if (this.kind === "banana") {
+    if (this.kind === "burr") {
       at.y = course.heightAt(this.index, at.x, at.z) + 0.02;
       return;
     }
@@ -159,8 +159,8 @@ export class CourseItem {
       this.park();
       return;
     }
-    at.x += -Math.sin(this.heading) * ITEM_FEEL.shellSpeed * dt;
-    at.z += -Math.cos(this.heading) * ITEM_FEEL.shellSpeed * dt;
+    at.x += -Math.sin(this.heading) * ITEM_FEEL.acornSpeed * dt;
+    at.z += -Math.cos(this.heading) * ITEM_FEEL.acornSpeed * dt;
     const point = course.track(this.index, at.x, at.z);
     this.index = point.index;
     this.lateral = point.lateral;
@@ -186,7 +186,7 @@ export class CourseItem {
   touches(kart: Kart): boolean {
     if (!this.active || (kart === this.owner && this.grace > 0)) return false;
     const at = this.mesh.position;
-    const reach = this.kind === "banana" ? ITEM_FEEL.bananaReach : ITEM_FEEL.shellReach;
+    const reach = this.kind === "burr" ? ITEM_FEEL.burrReach : ITEM_FEEL.acornReach;
     return (
       (at.x - kart.x) ** 2 + (at.z - kart.z) ** 2 < reach * reach && Math.abs(at.y - kart.y) < 2
     );

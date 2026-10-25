@@ -15,7 +15,7 @@ import { emitPlaytestEvent } from "../playtest-events.js";
 import { createChaseCamera } from "../render/camera.js";
 import { buildCourseView, makeRng } from "../render/course.js";
 import { BURSTS, EFFECTS } from "../render/effects.js";
-import { ItemBoxes, bananaMesh, shellMesh } from "../render/items.js";
+import { ItemBoxes, burrMesh, acornMesh } from "../render/items.js";
 import { KartModel, LIVERIES } from "../render/kart.js";
 import { setupLighting } from "../render/lighting.js";
 import { createLoadingScreen } from "../render/loading.js";
@@ -35,7 +35,7 @@ const GO_AT = RACE.ready + RACE.light * RACE.lights;
 const BUMP = { length: 2.2, width: 1.5 } as const;
 /** Effects are drawn for karts within this many metres of the camera. */
 const EFFECT_RANGE = 90;
-const POOL = { bananas: ITEM_FEEL.maxBananas, shells: 6 } as const;
+const POOL = { burrs: ITEM_FEEL.maxBurrs, acorns: 6 } as const;
 
 /** A kart in the field: the model, its place in the race, its hand on the wheel and its item. */
 interface IEntrant {
@@ -217,11 +217,11 @@ export class Race extends Scene<GameState> {
     });
     this.#field = field;
 
-    // Every banana and shell is built now and parked under the course, so a scenario can place one.
+    // Every burr and acorn is built now and parked under the course, so a scenario can place one.
     const items: CourseItem[] = [];
-    const pool = (kind: "banana" | "shell", count: number): void => {
+    const pool = (kind: "burr" | "acorn", count: number): void => {
       for (let i = 0; i < count; i += 1) {
-        const item = new CourseItem(kind, kind === "banana" ? bananaMesh() : shellMesh());
+        const item = new CourseItem(kind, kind === "burr" ? burrMesh() : acornMesh());
         ctx.add(item.mesh);
         ctx.entities.add(`${kind}.${i}`, {
           debug: () => ({
@@ -235,8 +235,8 @@ export class Race extends Scene<GameState> {
         items.push(item);
       }
     };
-    pool("banana", POOL.bananas);
-    pool("shell", POOL.shells);
+    pool("burr", POOL.burrs);
+    pool("acorn", POOL.acorns);
     this.#items = items;
   }
 
@@ -393,13 +393,13 @@ export class Race extends Scene<GameState> {
       finishRankMismatches: 0,
       phase: "countdown" as GameState["phase"],
       rocket: false,
-      thrown: { banana: 0, mushroom: 0, shell: 0 },
+      thrown: { burr: 0, nitro: 0, acorn: 0 },
     };
     ctx.entities.add("race", {
       debug: () => ({
         ...race,
         elapsed,
-        itemsUsed: race.thrown.banana + race.thrown.mushroom + race.thrown.shell,
+        itemsUsed: race.thrown.burr + race.thrown.nitro + race.thrown.acorn,
         order: rank(field.map((e) => e.racer)).map((r) => r.name),
         raceTime: goTime < 0 ? 0 : elapsed - goTime,
         stuckWorst: Math.max(...field.filter((e) => !e.player).map((e) => e.stuckWorst)),
@@ -422,7 +422,7 @@ export class Race extends Scene<GameState> {
       entrant.used.push(kind);
       race.thrown[kind] += 1;
       const kart = entrant.kart;
-      if (kind === "mushroom") {
+      if (kind === "nitro") {
         kart.startBoost();
         return;
       }
@@ -431,19 +431,19 @@ export class Race extends Scene<GameState> {
       if (free === undefined) return;
       const fx = -Math.sin(kart.yaw);
       const fz = -Math.cos(kart.yaw);
-      const reach = kind === "banana" ? -ITEM_FEEL.bananaBehind : 1.8;
+      const reach = kind === "burr" ? -ITEM_FEEL.burrBehind : 1.8;
       free.mesh.position.set(kart.x + fx * reach, kart.y, kart.z + fz * reach);
       free.activate(course, kart.index, kart.yaw, kart);
       emitPlaytestEvent({ entity: entrant.name, item: kind, name: "item-used" });
     };
 
-    const hitKart = (entrant: IEntrant, kind: "banana" | "shell"): void => {
+    const hitKart = (entrant: IEntrant, kind: "burr" | "acorn"): void => {
       if (entrant.kart.hit) return;
-      if (kind === "banana") entrant.kart.spinOut();
+      if (kind === "burr") entrant.kart.spinOut();
       else entrant.kart.tumble();
       burst("hit", { x: entrant.kart.x, y: entrant.kart.y + 0.8, z: entrant.kart.z });
       emitPlaytestEvent({ entity: entrant.name, item: kind, name: "hit" });
-      if (entrant.player) toast(kind === "banana" ? "SPUN OUT!" : "SHELL HIT!", 1.2);
+      if (entrant.player) toast(kind === "burr" ? "SPUN OUT!" : "ACORN HIT!", 1.2);
     };
 
     return (frameCtx, rawDt) => {
@@ -603,13 +603,13 @@ export class Race extends Scene<GameState> {
           break;
         }
       }
-      for (const shell of items) {
-        if (shell.kind !== "shell" || !shell.active) continue;
-        for (const banana of items) {
-          if (banana.kind !== "banana" || !banana.active) continue;
-          if (shell.mesh.position.distanceToSquared(banana.mesh.position) < 1.2) {
-            shell.park();
-            banana.park();
+      for (const acorn of items) {
+        if (acorn.kind !== "acorn" || !acorn.active) continue;
+        for (const burr of items) {
+          if (burr.kind !== "burr" || !burr.active) continue;
+          if (acorn.mesh.position.distanceToSquared(burr.mesh.position) < 1.2) {
+            acorn.park();
+            burr.park();
             break;
           }
         }

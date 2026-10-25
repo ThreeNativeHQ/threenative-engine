@@ -22,7 +22,7 @@
         }
       },
       {
-        "entity": "banana.0",
+        "entity": "burr.0",
         "at": {
           "x": 72.48,
           "y": 1.74,
@@ -30,7 +30,7 @@
         }
       },
       {
-        "entity": "shell.0",
+        "entity": "acorn.0",
         "at": {
           "x": 51.85,
           "y": 0.17,
@@ -76,10 +76,10 @@
     },
     "components": [
       {
-        "entity": "banana.0",
+        "entity": "burr.0",
         "component": "hits",
         "equals": 1,
-        "allowTrivial": "The banana on the grid's front row was run over once."
+        "allowTrivial": "The burr on the grid's front row was run over once."
       },
       {
         "entity": "cpu.1",
@@ -92,26 +92,26 @@
         "component": "hitSeconds",
         "gte": 1.49,
         "lte": 1.51,
-        "allowTrivial": "A banana spin lasts MK64's 90 ticks, 1.5 s."
+        "allowTrivial": "A burr spin lasts MK64's 90 ticks, 1.5 s."
       },
       {
-        "entity": "shell.0",
+        "entity": "acorn.0",
         "component": "hits",
         "equals": 1,
-        "allowTrivial": "The green shell fired up the grid hit once."
+        "allowTrivial": "The acorn fired up the grid hit once."
       },
       {
         "entity": "cpu.7",
         "component": "tumbles",
         "equals": 1,
-        "allowTrivial": "The CPU ahead of the shell tumbled."
+        "allowTrivial": "The CPU ahead of the acorn tumbled."
       },
       {
         "entity": "cpu.7",
         "component": "hitSeconds",
         "gte": 1.7,
         "lte": 1.73,
-        "allowTrivial": "A shell tumble lasts MK64's 103 ticks, 1.72 s."
+        "allowTrivial": "An acorn tumble lasts MK64's 103 ticks, 1.72 s."
       },
       {
         "entity": "player",
@@ -128,15 +128,15 @@
       {
         "entity": "player",
         "component": "used",
-        "equals": "mushroom",
-        "allowTrivial": "Last place draws from the 8th-place curve, which is all mushrooms, and the mushroom was used."
+        "equals": "nitro",
+        "allowTrivial": "Last place draws from the 8th-place curve, which is all nitro cans, and the can was used."
       },
       {
         "entity": "player",
         "component": "boostSeconds",
         "gte": 1.3,
         "lte": 1.36,
-        "allowTrivial": "The mushroom's boost lasts 80 ticks, 1.33 s."
+        "allowTrivial": "The nitro can's boost lasts 80 ticks, 1.33 s."
       }
     ]
   }

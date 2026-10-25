@@ -14,30 +14,35 @@ function clock(seconds: number): string {
 
 /** The item in hand, drawn in SVG: no image files. */
 function ItemIcon({ item }: { item: string }) {
-  if (item === "banana")
-    return (
-      <path
-        d="M14 34 C 18 18, 30 10, 38 12 C 32 16, 24 26, 22 38 Z"
-        fill="#f2d132"
-        stroke="#5a3c1a"
-        strokeWidth="2"
-      />
-    );
-  if (item === "shell")
+  if (item === "burr")
     return (
       <g>
-        <ellipse cx="25" cy="30" fill="#2fae3c" rx="15" ry="11" stroke="#f4f0e0" strokeWidth="4" />
-        <circle cx="25" cy="26" fill="#f4f0e0" r="4" />
+        <path
+          d="M30.0 25.7 L39.4 27.0 l-1.9 1.7 M28.9 28.1 L34.8 32.8 l-2.5 0.5 M27.8 29.1 L33.8 37.8 l-2.6 -0.2 M25.2 30.0 L25.4 38.0 l-2.0 -1.6 M23.6 29.8 L21.0 39.2 l-1.5 -2.2 M21.1 28.2 L15.6 32.7 l0.0 -2.6 M20.2 26.4 L10.4 29.4 l1.0 -2.4 M20.0 24.6 L11.7 23.8 l1.8 -1.8 M21.1 21.9 L13.9 16.1 l2.5 -0.5 M22.3 20.8 L18.1 14.2 l2.6 0.3 M24.2 20.1 L22.6 9.6 l2.2 1.3 M27.0 20.4 L30.5 12.6 l1.1 2.3 M28.6 21.6 L35.6 15.0 l0.2 2.6 M29.9 23.8 L37.0 22.1 l-1.2 2.3"
+          fill="none"
+          stroke="#f2df92"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth="1.4"
+        />
+        <circle cx="25" cy="25" fill="#8a5a2b" r="9.5" />
+        <circle cx="22" cy="22" fill="#a8743c" r="4" />
       </g>
     );
-  if (item === "mushroom")
+  if (item === "acorn")
     return (
       <g>
-        <rect fill="#f6ead2" height="14" rx="4" width="14" x="18" y="26" />
-        <path d="M8 28 C 8 12, 42 12, 42 28 Z" fill="#e23a2e" />
-        <circle cx="25" cy="18" fill="#ffffff" r="4" />
-        <circle cx="14" cy="24" fill="#ffffff" r="3" />
-        <circle cx="36" cy="24" fill="#ffffff" r="3" />
+        <ellipse cx="25" cy="29" fill="#c98a43" rx="11" ry="13" />
+        <path d="M11 22 C 11 10, 39 10, 39 22 Z" fill="#5b3a1c" />
+        <rect fill="#5b3a1c" height="7" rx="2" width="4" x="23" y="6" />
+      </g>
+    );
+  if (item === "nitro")
+    return (
+      <g>
+        <rect fill="#2b6fd8" height="32" rx="5" width="20" x="15" y="10" />
+        <rect fill="#d8dde6" height="5" rx="2" width="12" x="19" y="6" />
+        <path d="M27 15 L20 27 L25 27 L22 37 L31 23 L26 23 Z" fill="#ffd23a" />
       </g>
     );
   if (item === "rolling")

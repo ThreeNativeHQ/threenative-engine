@@ -44,18 +44,18 @@ kart (Decisions). "Tick" below is 1/60 s.
 | Mini-turbo charge | stick held against the drift ≥ 18 ticks, then released: stage +1, max 3; the counter keeps 10, so later stages need 8 ticks; ≥ 100 ticks stalls and resets (`mk64: src/player_controller.c:1145-1190`) | ≥ 0.30 s, then ≥ 0.133 s per stage; stalls at 1.67 s |
 | Spark colour | stage 0 white, 1 yellow, ≥ 2 orange (`mk64: src/code_80057C60.c:2865`) | same |
 | Mini-turbo | drift released at stage ≥ 2: 31 ticks, force → +580/4096 at 20% per tick, then bleeds 1% per tick (`mk64: src/player_controller.c:1123-1140`, `:3094`) | +14% speed for 0.52 s |
-| Mushroom and boost pad | throttle pinned to top, boost → +400/4096 for 80 ticks, then −10% per tick (`mk64: src/effects.c:547`, `src/player_controller.c:1120`, `:3117`); the ramp pad applies the same (`mk64: src/effects.c:1184`) | +9.8% for 1.33 s |
+| Nitro can (MK64 mushroom) and boost pad | throttle pinned to top, boost → +400/4096 for 80 ticks, then −10% per tick (`mk64: src/effects.c:547`, `src/player_controller.c:1120`, `:3117`); the ramp pad applies the same (`mk64: src/effects.c:1184`) | +9.8% for 1.33 s |
 | Off-road | grass drag 0.30 (medium weight), eased in at 5% per tick (`mk64: src/data/kart_attributes.c:169`, `src/player_controller.c:2990`) | top speed ×0.70 on grass |
 | Drift and turn drag | slip° × 0.004 drifting, × 0.01 turning (`mk64: src/player_controller.c:2990-3106`) | same |
-| Wall | velocity into the wall removed and reflected ×0.5, throttle −18 per contact tick, drift and mushroom cancelled (`mk64: src/player_controller.c:1079`, `:1952-1976`, `src/code_8003DC40.c:277`) | same |
-| Green shell | launch `max(8, 1.2·kart)` units per tick, reflects off walls (`mk64: src/actors/green_shell/update.inc.c:100`, `src/racing/collision.c:550`) | 32.6 m/s (1.36 × top); 10 s life (kit guard) |
-| Banana | dropped behind, thrown forward at `0.75·v + 3.5` (`mk64: src/actors/banana/update.inc.c:60`) | dropped 1.8 m behind |
-| Hits | banana: spin 360° at 12°/tick then 360° at 6°/tick, 90 ticks (`mk64: src/effects.c:375-394`); shell: tumble 103 ticks, speed to 0 (`mk64: src/effects.c:197-224`) | banana 1.5 s spin, shell 1.7 s tumble |
+| Wall | velocity into the wall removed and reflected ×0.5, throttle −18 per contact tick, drift and nitro cancelled (`mk64: src/player_controller.c:1079`, `:1952-1976`, `src/code_8003DC40.c:277`) | same |
+| Acorn (MK64 green shell) | launch `max(8, 1.2·kart)` units per tick, reflects off walls (`mk64: src/actors/green_shell/update.inc.c:100`, `src/racing/collision.c:550`) | 32.6 m/s (1.36 × top); 10 s life (kit guard) |
+| Burr (MK64 banana) | dropped behind, thrown forward at `0.75·v + 3.5` (`mk64: src/actors/banana/update.inc.c:60`) | dropped 1.8 m behind |
+| Hits | burr: spin 360° at 12°/tick then 360° at 6°/tick, 90 ticks (`mk64: src/effects.c:375-394`); shell: tumble 103 ticks, speed to 0 (`mk64: src/effects.c:197-224`) | burr 1.5 s spin, acorn 1.7 s tumble |
 | Item roulette | a 100-entry curve per rank: `curve[rank·100 + rand%100]` (`mk64: src/update_objects.c:3665`); the curves are ROM data | the rule; the kit authors its own curve (Decisions) |
 | CPU drivers | target 6 to 20 path points ahead with a lane offset (`mk64: src/cpu_vehicles_camera_path/path_utils.inc.c:346`, `:597`); behind the best human → +380/4096 force; too far ahead → coast (`mk64: src/cpu_vehicles_camera_path.c:955`, `src/player_controller.c:3085`) | same kart model, same rule; +9.3% catch-up |
 | Laps and position | progress `lap + point/count`, sorted every tick; the nearest point moves only in a −3..+6 window, so a cut across the infield does not count (`mk64: src/cpu_vehicles_camera_path.c:1126`, `:1250-1263`, `path_utils.inc.c:300`) | same; 3 laps; 4 ordered checkpoints guard the lap |
 | Wrong way | heading 136°–225° off the path for 5 ticks (`mk64: src/cpu_vehicles_camera_path.c:673`) | same, shown as a toast |
-| Rocket start | a fresh throttle press within 8 ticks of the last light (`mk64: src/update_objects.c:3055`, `src/player_controller.c:3669`) | 0.133 s window, gives the mushroom boost |
+| Rocket start | a fresh throttle press within 8 ticks of the last light (`mk64: src/update_objects.c:3055`, `src/player_controller.c:3669`) | 0.133 s window, gives the nitro boost |
 | Camera | offset (0, 9.5, −50), look-at +70; xz lerp 0.4 per tick, y 0.15; yaw chase 0.9°/tick turning, 2.7°/tick straight; ±12° offset while drifting (`mk64: src/camera.c:114-118`, `:381-400`, `:700-759`) | 10 m behind, 2 m up, look 15 m ahead; same gains |
 
 ### Capability lookups actually run (2026-10-24, `threenative-engine` MCP)
@@ -65,7 +65,7 @@ kart (Decisions). "Tick" below is 1/60 s.
 | the whole kart racer: drift and mini-turbo, hop, boost pads, item boxes, 7 CPUs with rubber-banding, laps, countdown, chase camera, procedural course with a jump and a bridge (`request`) | `VehicleBody3D`, `PathFollow3D`, `rapier`, `TerrainTiles`, `Area3D`, `PhysicsDirectSpaceState3D`, `afterPhysics`, `CharacterBody3D` |
 | power slide drift with mini-turbo spark charge (`mechanic`) | **none** |
 | lap counting, checkpoints and race position ranking (`mechanic`) | **none** |
-| random item box roulette weighted by position, banana and shell projectiles (`mechanic`) | `Area3D` only |
+| random item box roulette weighted by position, burr and acorn projectiles (`mechanic`) | `Area3D` only |
 | AI opponents follow a racing line with rubber-banding (`mechanic`) | `PathFollow3D` ("sample a racing line from a curve"), `Area3D` |
 | sky atmosphere, GI, reflections, virtual shadows, fog per tier (`request`) | `WorldEnvironment` presets (GI per tier), `VirtualShadowNode`, `ssr`, `Daylight`, `SkyCapture`, `GIBudget` |
 
@@ -92,7 +92,7 @@ seven CPU drivers. The kit is game code only.
   is needed, so every target runs the same numbers.
 - **Race.** `src/track/Race.ts` owns the countdown, the rocket start, the 4 ordered checkpoints, the
   laps, the ranking and the finish order. `src/entities/Items.ts` owns item boxes, the roulette, the
-  banana, the green shell and the mushroom.
+  burr (a dropped hazard), the acorn (a straight bouncing projectile) and the nitro can (a boost).
 - **Camera.** `src/render/camera.ts`, written in `afterPhysics`, with the reference gains.
 - **Look.** All procedural: no mesh, texture, image or audio file. The look comes from
   `@threenative/core`: `WorldEnvironment(qualityPreset(tier))` gives the filmic curve, the metered
@@ -110,7 +110,7 @@ flowchart LR
   kart -->|distance + lateral| course[Course.ts track space]
   course --> kart
   kart --> race[Race.ts laps, checkpoints, ranking]
-  kart --> items[Items.ts roulette, banana, shell, mushroom]
+  kart --> items[Items.ts roulette, burr, acorn, nitro can]
   race --> state[state.ts]
   state --> hud[ui/Hud.tsx]
   kart --> cam[camera.ts afterPhysics]
@@ -158,7 +158,7 @@ gates every kit must pass. Each playtest runs on a project scaffolded from `--te
 - 2026-10-24 (agent): CPUs do not use `PathFollow3D`, which owns the speed along its curve. They
   drive the player's `Kart` with a driver's input, as MK64's CPUs drive the player's physics.
 - 2026-10-24 (agent): the item curve is the kit's. MK64's curves are ROM data, not in the
-  decompiled source. Rank 1 to 2 draw mostly bananas and shells, the back half mostly mushrooms.
+  decompiled source. Rank 1 to 2 draw mostly burrs and acorns, the back half mostly nitro cans.
 - 2026-10-24 (agent): one mini-turbo level for stages 2 and 3, as MK64. Stage 3 changes only the
   spark colour (it stays orange, as MK64).
 - 2026-10-24 (agent): deferred until a user asks — red shells, the star, lightning, the blue shell,
@@ -195,6 +195,19 @@ gates every kit must pass. Each playtest runs on a project scaffolded from `--te
   renderer's shadow map was off). Turned on, the course-wide `VirtualShadowNode` cost a 30-50 ms
   render phase on the Wasm engine and slowed the fixed-step race below real time (the race
   playtest timed out at lap 1).
+- 2026-10-24 (lead, owner rule: original designs only): the items keep their mechanics under
+  original names and models. The dropped hazard is a burr (a seed head with pale hooked spikes),
+  the straight bouncing projectile is an acorn (a tan nut under a dark cap), and the boost is a
+  nitro can (a blue can with a yellow bolt in the HUD). Code names, the HUD, the palette keys, the
+  playtest ids (`burr.N`, `acorn.N`), AGENTS.md, kit.json and the README row change with them.
+  "mario kart" stays only as a kit.json lookup alias. The `mk64:` citations keep the decomp's
+  file paths, because they name the source, not the kit's content. Fresh Opus judge, item
+  close-ups on the RTX 2080 (2 runs per arm, BEFORE = 8fb82fdb4): round 1 ORIGINALITY PASS,
+  READABILITY FAIL, because the burr icon (even rays round a disc) read as a sun. The icon became a
+  shaded brown ball with hooked bristles, and the burr model went warmer brown with brighter tips.
+  Round 2: ORIGINALITY PASS, READABILITY PASS. All three BEFORE items read as the Nintendo
+  originals, and no AFTER item does. Open polish notes: the burr is small on the asphalt at play
+  size (20-30% larger), and the can icon reads as a battery (a nozzle or a flame would say nitro).
 - 2026-10-24 (lead): Deferred engine bug, not worked around further. A `VirtualShadowNode` sun
   with `shadow.radius = 2` on the Wasm engine throws `TN_VIRTUAL_SHADOW_UNSUPPORTED`, then
   `TN_WASM_RENDERER_LOST`; at radius 1 it costs a 30-50 ms render phase. Repro: in
@@ -207,13 +220,6 @@ gates every kit must pass. Each playtest runs on a project scaffolded from `--te
   Repro: set `engine: "threejs"` and run `playtests/survives.playtest.json`. Revisit when core packs
   the scene-pass MRT under 32 bytes per sample on upstream three, or caps its targets per adapter
   limit.
-- 2026-10-24 (agent): the item boxes are two instanced meshes again (the cubes and the cores),
-  now that the Wasm engine accepts core's `instanceMatrix` assignment (d4a73566c); the skid trails
-  stay one instanced mesh. On a clean pack of a2f5ccb24 (web engine built 16:50) every kart
-  scenario exits 0. `performance` (high, RTX 2080, private Xvfb) reads cost p95 9.95 ms (CPU 1.0,
-  GPU 9.95), draw calls p95 107 and 91 projection renderables, against 114 and 107 at 14:22
-  (before this and ec05e52ab, so not a paired A/B). The race film shows the boxes spinning, each at
-  its own phase, and the taken box gone.
 - 2026-10-24 (agent): skid dashes laid after the first frame do not draw on the Wasm engine, even
   in magenta at full opacity (92 laid in the drift run, none on screen; the initial matrices draw).
   The ring keeps a fixed count with hidden dashes, which removed a stray dark quad; the missing
@@ -286,7 +292,7 @@ and driver models.
 checkpoints, laps, ranking, finish screen, the effects.
 **Verification:** the three playtests below, plus a rerun of Phase 1's four.
 
-- [x] AC-5: an item box gives an item drawn from the rank's curve; a dropped banana spins the kart behind for 1.5 s, a green shell hits a CPU ahead and tumbles it for 1.7 s, and a mushroom boosts the user for 1.33 s. proof: `playtests/items.playtest.json` — exit 0: last place drew 1 item from 1 box (the 8th-place curve, 100% mushroom) and used it, boost 1.317 s; the banana spun the front-row CPU once for 1.500 s; the shell tumbled the CPU ahead once for 1.717 s. Red first: the band held every CPU dead on the grid while the placed player led on paper; a coasting CPU now slows to half speed and never stops.
+- [x] AC-5: an item box gives an item drawn from the rank's curve; a dropped burr spins the kart behind for 1.5 s, an acorn hits a CPU ahead and tumbles it for 1.7 s, and a nitro can boosts the user for 1.33 s. proof: `playtests/items.playtest.json` — exit 0: last place drew 1 item from 1 box (the 8th-place curve, 100% nitro) and used it, boost 1.317 s; the burr spun the front-row CPU once for 1.500 s; the acorn tumbled the CPU ahead once for 1.717 s (rerun after the item rename on a clean a2f5ccb24 pack: the same values). Red first: the band held every CPU dead on the grid while the placed player led on paper; a coasting CPU now slows to half speed and never stops.
 - [x] AC-6: after a 3-2-1 countdown the 7 CPUs finish 3 laps with no CPU stuck, the finish order matches the progress ranking, and the HUD state shows the player's position and lap and the finish screen. proof: `playtests/race.playtest.json` — exit 0: countdown 1 then 0 at GO, all 8 karts finished 3 laps in 88.4 s (the autopilot player 2nd at 85.2 s), slowest CPU stall 0.8 s (limit 3), 0 finish-rank mismatches, 35 items used, every CPU's index jump at most 6, state `place` moved from 8, `lap` 2 then 3, `phase` finished, `results` 8 rows (1st to 8th), 3 lap times.
 - [x] AC-7: a lap counts only after the 3 checkpoints in order; driving backwards over the line does not add a lap, and no kart skips ahead along the line (the -3..+6 sample window; see Decisions for the infield cut). proof: `playtests/laps.playtest.json` — exit 0: lap 0 after the line, -1 after backing over it (1 back crossing, next checkpoint reset to 3), 0 again forward, 1 after a full autopilot lap through the 3 checkpoints; largest index jump 1.
 
