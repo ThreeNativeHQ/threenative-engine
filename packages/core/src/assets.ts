@@ -80,8 +80,8 @@ export interface IAssetPrefetchProgress {
   readonly requested: number;
   readonly requestedBytes: number;
   readonly settled: number;
-  /** Bytes downloaded; the disk may refuse some of them when the quota is full. */
-  readonly downloadedBytes: number;
+  /** Bytes served by the load, from disk or network; not a claim that the disk kept them. */
+  readonly settledBytes: number;
 }
 
 /** The cache report plus the one action a settings screen needs. */
@@ -187,7 +187,7 @@ export interface IAssetLoader {
   /**
    * Download the next scene's files to disk at `soon` priority, so its `load()` reads them back
    * without a cold fetch. Stores bytes only: no decode, no GPU memory. Resolves at once on native,
-   * where the files are already installed, and reports how many bytes reached the disk.
+   * where the files are already installed, and reports how many bytes the request served.
    */
   prefetch(paths: readonly string[]): Promise<IAssetPrefetchProgress>;
   /**
@@ -850,9 +850,9 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
   const assetCache = createAssetCache({
     enabled: options.cache,
     backgroundFill: options.backgroundFill,
-    // A different base path or manifest is a different game on the same origin, and must not
+    // A different page, base path or manifest is a different game on the same origin, and must not
     // delete this one's cache at startup.
-    namespace: `${basePath}|${options.manifest ?? "assets.manifest.json"}`,
+    namespace: `${(globalThis as { location?: { pathname?: string } }).location?.pathname ?? ""}|${basePath}|${options.manifest ?? "assets.manifest.json"}`,
   });
   /** The urls the background fill warms, in manifest order, with the sizes the manifest records. */
   const fillEntries = (manifest: IAssetManifest): readonly { bytes?: number; url: string }[] => {
@@ -887,7 +887,12 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
   let manifestRequest: Promise<IAssetManifest | undefined> | undefined;
   const manifestOnce = (): Promise<IAssetManifest | undefined> => {
     if (manifestRequest === undefined) {
-      manifestRequest = readManifest(manifestUrl).then((manifest) => {
+      manifestRequest = readManifest(manifestUrl).catch((error: unknown) => {
+        // A malformed manifest still has to release the fill gate; otherwise a game that awaits
+        // the documented `startBackgroundFill()` promise waits forever.
+        assetCache.setManifest("", []);
+        throw error;
+      }).then((manifest) => {
         if (manifest !== undefined) {
           const entries = fillEntries(manifest);
           assetCache.setManifest(manifestFingerprint(entries), entries);
@@ -1163,7 +1168,7 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
         requested: paths.length,
         requestedBytes: 0,
         settled: paths.length,
-        downloadedBytes: 0,
+        settledBytes: 0,
       };
     }
     const targets: { bytes?: number; url: string }[] = [];
@@ -1184,17 +1189,17 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
       unique.map((target) => assetCache.fetchBytes(target.url, "soon", target.bytes)),
     );
     let settled = 0;
-    let downloadedBytes = 0;
+    let settledBytes = 0;
     results.forEach((result, index) => {
       if (result.status !== "fulfilled") return;
       settled += 1;
-      downloadedBytes += unique[index]?.bytes ?? result.value.byteLength;
+      settledBytes += unique[index]?.bytes ?? result.value.byteLength;
     });
     return {
       requested: unique.length,
       requestedBytes: unique.reduce((sum, target) => sum + (target.bytes ?? 0), 0),
       settled,
-      downloadedBytes,
+      settledBytes,
     };
   };
 

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createAssetCache, manifestFingerprint } from "../src/asset-cache.js";
 import { createAssetLoader } from "../src/assets.js";
-import { FakeCacheStorage, seedEntry } from "./fixtures/fake-cache.js";
+import { FakeCacheStorage, fakeKey, seedEntry } from "./fixtures/fake-cache.js";
 
 function stubStorage(
   quotaBytes?: number,
@@ -111,6 +111,14 @@ describe("asset cache", () => {
 
   it("should evict an earlier session's entry on a quota error and retry once", async () => {
     const storage = stubStorage(100, { failPuts: 1 });
+    // The quota belongs to the origin: 80 bytes of it are this cache's earlier-session entry.
+    vi.stubGlobal("navigator", {
+      connection: { saveData: false },
+      storage: {
+        estimate: async () => ({ quota: 100, usage: 80 }),
+        persist: async () => true,
+      },
+    });
     vi.stubGlobal("fetch", async () => new Response(new Uint8Array(50)));
     const entries = [
       { bytes: 80, url: "old.eeee.bin" },
@@ -125,8 +133,8 @@ describe("asset cache", () => {
 
     await cache.fetchBytes("new.ffff.bin", "now", 50);
 
-    expect(disk.store.has("old.eeee.bin")).toBe(false);
-    expect(disk.store.has("new.ffff.bin")).toBe(true);
+    expect(disk.store.has(fakeKey("old.eeee.bin"))).toBe(false);
+    expect(disk.store.has(fakeKey("new.ffff.bin"))).toBe(true);
   });
 
   it("should delete the previous release's cache when a new manifest names another one", async () => {
@@ -207,6 +215,55 @@ describe("asset cache", () => {
     cache.dispose();
   });
 
+  it("should match a Request url to the cache key a string put produced", async () => {
+    stubStorage();
+    vi.stubGlobal("location", { href: "http://localhost/app/" });
+    const fetchMock = vi.fn(async () => new Response(new Uint8Array(4)));
+    vi.stubGlobal("fetch", fetchMock);
+    const entries = [{ bytes: 4, url: "shared.bbbb.ktx2" }];
+    const cache = createAssetCache({ retryDelaysMs: [0] });
+    cache.setManifest(manifestFingerprint(entries), entries);
+    await cache.fetchBytes("shared.bbbb.ktx2", "now", 4);
+
+    const viaLoader = await fetch(new Request("http://localhost/app/shared.bbbb.ktx2"));
+
+    expect(new Uint8Array(await viaLoader.arrayBuffer())).toHaveLength(4);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    cache.dispose();
+  });
+
+  it("should not evict an entry this session read, and evicts the oldest access first", async () => {
+    const storage = stubStorage(100);
+    vi.stubGlobal("navigator", {
+      connection: { saveData: false },
+      storage: {
+        estimate: async () => ({ quota: 100, usage: 80 }),
+        persist: async () => true,
+      },
+    });
+    vi.stubGlobal("fetch", async () => new Response(new Uint8Array(50)));
+    const entries = [
+      { bytes: 40, url: "oldest.llll.bin" },
+      { bytes: 40, url: "newer.mmmm.bin" },
+      { bytes: 50, url: "fresh.nnnn.bin" },
+    ];
+    const fingerprint = manifestFingerprint(entries);
+    const cache = createAssetCache({ retryDelaysMs: [0] });
+    const disk = await storage.open(`threenative-assets-${fingerprint}`);
+    seedEntry(disk, "oldest.llll.bin", 40, 1);
+    seedEntry(disk, "newer.mmmm.bin", 40, 2);
+    cache.setManifest(fingerprint, entries);
+    await vi.waitFor(() => expect(cache.report.bytesOnDisk).toBe(80));
+    // Read the newer entry this session, which protects it; the oldest untouched goes first.
+    await cache.fetchBytes("newer.mmmm.bin", "now", 40);
+
+    await cache.fetchBytes("fresh.nnnn.bin", "now", 50);
+
+    expect(disk.store.has(fakeKey("oldest.llll.bin"))).toBe(false);
+    expect(disk.store.has(fakeKey("newer.mmmm.bin"))).toBe(true);
+    expect(disk.store.has(fakeKey("fresh.nnnn.bin"))).toBe(true);
+  });
+
   it("should honour assets.cache: false", () => {
     stubStorage();
     const cache = createAssetCache({ enabled: false });
@@ -246,7 +303,7 @@ describe("asset loader disk cache", () => {
 
     const progress = await assets.prefetch(["rock.png"]);
 
-    expect(progress).toMatchObject({ requestedBytes: 4, settled: 1, downloadedBytes: 4 });
+    expect(progress).toMatchObject({ requestedBytes: 4, settled: 1, settledBytes: 4 });
     const before = fetchMock.mock.calls.length;
     await assets.texture("rock.png");
     expect(fetchMock).toHaveBeenCalledTimes(before);

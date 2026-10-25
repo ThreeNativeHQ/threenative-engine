@@ -126,6 +126,16 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/** Cache keys are compared as absolute urls; a `Request.url` always is one. */
+function canonicalUrl(url: string): string {
+  try {
+    const base = (globalThis as { location?: { href?: string } }).location?.href;
+    return new URL(url, base ?? "http://localhost/").href;
+  } catch {
+    return url;
+  }
+}
+
 function errorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
   return String(error);
@@ -188,6 +198,7 @@ export function createAssetCache(options: IAssetCacheOptions = {}): IAssetCache 
   let bytesTotal = 0;
   let filling = false;
   let fillStarted = false;
+  let cleared = false;
   let restoreFetch: (() => void) | undefined;
 
   /** Every url this session read or wrote. Those are the entries a quota error must not evict. */
@@ -225,12 +236,15 @@ export function createAssetCache(options: IAssetCacheOptions = {}): IAssetCache 
   };
 
   const evictFor = async (cache: CacheLike, needed: number): Promise<boolean> => {
-    const quota = await storageManager()
+    const estimate = await storageManager()
       ?.estimate?.()
-      .then((estimate) => estimate.quota)
       .catch(() => undefined);
+    const quota = estimate?.quota;
     if (typeof quota !== "number" || quota <= 0) return false;
-    if (bytesOnDisk + needed <= quota) return true;
+    // The quota belongs to the whole origin, so compare against measured usage when the browser
+    // reports it. Our own bytes are the fallback where it does not.
+    let used = typeof estimate?.usage === "number" ? estimate.usage : bytesOnDisk;
+    if (used + needed <= quota) return true;
     const candidates: { access: number; size: number; url: string }[] = [];
     for (const request of await cache.keys()) {
       const response = await cache.match(request.url);
@@ -243,12 +257,14 @@ export function createAssetCache(options: IAssetCacheOptions = {}): IAssetCache 
     // The least recently accessed entry goes first; this session's entries are never evicted.
     candidates.sort((left, right) => left.access - right.access);
     for (const candidate of candidates) {
-      if (bytesOnDisk + needed <= quota) return true;
-      if (touched.has(candidate.url)) continue;
-      if (await cache.delete(candidate.url))
+      if (used + needed <= quota) return true;
+      if (touched.has(canonicalUrl(candidate.url))) continue;
+      if (await cache.delete(candidate.url)) {
         bytesOnDisk = Math.max(0, bytesOnDisk - candidate.size);
+        used = Math.max(0, used - candidate.size);
+      }
     }
-    return bytesOnDisk + needed <= quota;
+    return used + needed <= quota;
   };
 
   const store = async (cache: CacheLike, url: string, buffer: ArrayBuffer): Promise<void> => {
@@ -355,7 +371,7 @@ export function createAssetCache(options: IAssetCacheOptions = {}): IAssetCache 
           // cannot leave a game permanently broken on that file.
           if (expectedBytes === undefined || cached.byteLength === expectedBytes) {
             hits += 1;
-            touched.add(url);
+            touched.add(canonicalUrl(url));
             // One write per hour at most keeps the eviction order honest without paying for a
             // metadata write on every asset the game reads.
             if (Date.now() - access > ACCESS_REFRESH_MS) {
@@ -388,7 +404,7 @@ export function createAssetCache(options: IAssetCacheOptions = {}): IAssetCache 
     misses += 1;
     const buffer = await enqueue(url, priority, expectedBytes);
     if (cache !== undefined) {
-      touched.add(url);
+      touched.add(canonicalUrl(url));
       await askToPersist();
       await store(cache, url, buffer);
     }
@@ -444,7 +460,8 @@ export function createAssetCache(options: IAssetCacheOptions = {}): IAssetCache 
     priority: AssetPriority = "now",
     expectedBytes?: number,
   ): Promise<ArrayBuffer> => {
-    const existing = requests.get(url);
+    const key = canonicalUrl(url);
+    const existing = requests.get(key);
     if (existing !== undefined) {
       if (PRIORITY_ORDER[priority] < PRIORITY_ORDER[existing.priority]) {
         existing.priority = priority;
@@ -458,13 +475,15 @@ export function createAssetCache(options: IAssetCacheOptions = {}): IAssetCache 
           break;
         }
       }
+      // A promoted job must start now if a lane is free; otherwise it waits for the next settle.
+      pump();
       return existing.promise;
     }
     const promise = load(url, priority, expectedBytes);
-    requests.set(url, { priority, promise });
+    requests.set(key, { priority, promise });
     void promise.then(
-      () => requests.delete(url),
-      () => requests.delete(url),
+      () => requests.delete(key),
+      () => requests.delete(key),
     );
     return promise;
   };
@@ -489,20 +508,21 @@ export function createAssetCache(options: IAssetCacheOptions = {}): IAssetCache 
     const wrapped = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
       const method = init?.method ?? (input instanceof Request ? input.method : "GET");
       const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
-      const expected = known.get(url);
+      const key = canonicalUrl(url);
+      const expected = known.get(key);
       if (method.toUpperCase() === "GET") {
         try {
           const cache = await storage.open(name);
           const hit = await cache.match(url);
           if (hit !== undefined) {
             if (expected === undefined) {
-              touched.add(url);
+              touched.add(key);
               return hit;
             }
             const access = Number(hit.headers.get(ACCESS_HEADER) ?? "0");
             const cached = await hit.arrayBuffer();
             if (cached.byteLength === expected) {
-              touched.add(url);
+              touched.add(key);
               if (Date.now() - access > ACCESS_REFRESH_MS) {
                 void cache
                   .put(
@@ -535,7 +555,7 @@ export function createAssetCache(options: IAssetCacheOptions = {}): IAssetCache 
         // The bridge normally only reads. When a loader core does not wrap fetches a manifest
         // output the fill has not reached yet, keep it: otherwise the first visit downloads that
         // file twice, once here and once in the fill.
-        if (response.ok && expected !== undefined && !requests.has(url)) {
+        if (response.ok && expected !== undefined && !requests.has(key)) {
           try {
             const cache = await storage.open(name);
             const copy = response.clone();
@@ -567,9 +587,10 @@ export function createAssetCache(options: IAssetCacheOptions = {}): IAssetCache 
     try {
       const chunk = Math.max(1, concurrency);
       for (let index = 0; index < entries.length; index += chunk) {
-        // Checked between chunks, not once: a player who turns on data saving mid-fill stops it
-        // at the next file boundary instead of paying for the rest of the release.
-        if (saveDataEnabled()) break;
+        // Checked between chunks, not once: a player who turns on data saving or frees the cache
+        // mid-fill stops it at the next file boundary instead of paying for the rest of the
+        // release.
+        if (cleared || saveDataEnabled()) break;
         await prefetch(entries.slice(index, index + chunk), "idle");
       }
     } finally {
@@ -605,7 +626,7 @@ export function createAssetCache(options: IAssetCacheOptions = {}): IAssetCache 
       }
       entries = manifestEntries;
       known.clear();
-      for (const entry of manifestEntries) known.set(entry.url, entry.bytes);
+      for (const entry of manifestEntries) known.set(canonicalUrl(entry.url), entry.bytes);
       bytesTotal = manifestEntries.reduce((sum, entry) => sum + (entry.bytes ?? 0), 0);
       void storageManager()
         ?.persisted?.()
@@ -637,11 +658,13 @@ export function createAssetCache(options: IAssetCacheOptions = {}): IAssetCache 
       })();
     },
     startFill: () => {
-      if (fillStarted) return Promise.resolve();
+      if (fillStarted || cleared) return Promise.resolve();
       fillStarted = true;
       return runFill().catch(() => undefined);
     },
     clear: async () => {
+      cleared = true;
+      fillStarted = true;
       if (cacheName === undefined || storage === undefined) {
         bytesOnDisk = 0;
         return;

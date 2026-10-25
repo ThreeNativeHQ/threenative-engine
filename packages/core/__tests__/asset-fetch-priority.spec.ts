@@ -82,6 +82,27 @@ describe("asset fetch priority", () => {
     await Promise.all([first, second, urgent]);
   });
 
+  it("should stop the fill when the cache is cleared", async () => {
+    stub();
+    const gated = gatedFetch();
+    vi.stubGlobal("fetch", gated.fetch);
+    const entries = [
+      { bytes: 1, url: "clear-a" },
+      { bytes: 1, url: "clear-b" },
+    ];
+    const cache = createAssetCache({ concurrency: 1, retryDelaysMs: [0] });
+    cache.setManifest(manifestFingerprint(entries), entries);
+    const fill = cache.startFill();
+    await vi.waitFor(() => expect(gated.order).toEqual(["clear-a"]));
+
+    await cache.clear();
+    gated.gates.get("clear-a")?.release();
+    await fill;
+
+    expect(gated.order).toEqual(["clear-a"]);
+    expect(cache.report.filling).toBe(false);
+  });
+
   it("should let a now request overtake the background fill", async () => {
     stub();
     const gated = gatedFetch();

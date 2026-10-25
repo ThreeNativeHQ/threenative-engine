@@ -135,10 +135,14 @@ export type { CameraShakeCurve, ICameraShakeOffset, ICameraShakeOptions } from "
 /**
  * Create the portable asset loader a scene also receives as `ctx.assets`.
  * @situation preload models, textures, or audio before a scene enters
+ * @situation keep downloaded web assets on disk between visits
+ * @situation download the next scene before the player gets there
+ * @situation free the disk cache from a settings menu
  * @situation load assets from a nonstandard base path or a compiled asset manifest
  * @alias different area props
  * @alias first playable screen external assets
  * @constraint reuse the loader handed to scenes as `ctx.assets` instead of building parallel caches
+ * @constraint `assets.cache: false` and `assets.backgroundFill: false` are the named overrides, reported on `ctx.assets.cache`
  * @example const assets = createAssetLoader({ basePath: "/assets" });
  * const rock = await assets.texture("rock.png");
  */

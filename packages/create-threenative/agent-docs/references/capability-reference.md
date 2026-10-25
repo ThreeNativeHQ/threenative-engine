@@ -997,8 +997,8 @@ const counters = FrameCounters.install(counterDeviceOf(renderer.raw));
 export function createAssetLoader(options: IAssetLoaderOptions = { … }
 ```
 
-- **Use when:** preload models, textures, or audio before a scene enters · load assets from a nonstandard base path or a compiled asset manifest
-- **Constraints:** reuse the loader handed to scenes as `ctx.assets` instead of building parallel caches
+- **Use when:** preload models, textures, or audio before a scene enters · keep downloaded web assets on disk between visits · download the next scene before the player gets there · free the disk cache from a settings menu · load assets from a nonstandard base path or a compiled asset manifest
+- **Constraints:** reuse the loader handed to scenes as `ctx.assets` instead of building parallel caches · `assets.cache: false` and `assets.backgroundFill: false` are the named overrides, reported on `ctx.assets.cache`
 
 ```ts
 const assets = createAssetLoader({ basePath: "/assets" });

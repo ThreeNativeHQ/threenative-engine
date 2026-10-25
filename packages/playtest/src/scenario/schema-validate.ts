@@ -445,7 +445,9 @@ export const PLAYTEST_STEP_KEYS = [
   "window",
 ] as const;
 
-const MAX_RESOURCE_WAIT_TIMEOUT_MS = 120_000;
+// A multi-gigabyte web release on a 20 Mbit/s link can legitimately take minutes to reach its
+// final tier. The bound exists to fail a predicate that will never be true, not to cap a slow link.
+const MAX_RESOURCE_WAIT_TIMEOUT_MS = 300_000;
 
 export function validateStep(value: unknown, scenarioPath: string, index: number): IPlaytestStep {
   if (!isRecord(value)) {

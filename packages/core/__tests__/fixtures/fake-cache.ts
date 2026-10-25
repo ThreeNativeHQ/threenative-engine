@@ -1,5 +1,15 @@
 /** A smallest-useful Cache API double for `asset-cache.spec.ts` and its priority sibling. */
 
+/** The Cache API stores an entry under the request's absolute url, even when put as a string. */
+export function fakeKey(url: string): string {
+  try {
+    const base = (globalThis as { location?: { href?: string } }).location?.href;
+    return new URL(url, base ?? "http://localhost/").href;
+  } catch {
+    return url;
+  }
+}
+
 export interface IFakeCacheOptions {
   /** Throw this name on `put` while total stored bytes plus the new body exceed `quotaBytes`. */
   readonly quotaBytes?: number;
@@ -19,7 +29,7 @@ export class FakeCache {
   }
 
   async delete(url: string): Promise<boolean> {
-    return this.store.delete(url);
+    return this.store.delete(fakeKey(url));
   }
 
   async keys(): Promise<readonly Request[]> {
@@ -27,7 +37,7 @@ export class FakeCache {
   }
 
   async match(url: string): Promise<Response | undefined> {
-    return this.store.get(url)?.clone();
+    return this.store.get(fakeKey(url))?.clone();
   }
 
   async put(url: string, response: Response): Promise<void> {
@@ -47,7 +57,7 @@ export class FakeCache {
         throw Object.assign(new Error("quota"), { name: "QuotaExceededError" });
       }
     }
-    this.store.set(url, response.clone());
+    this.store.set(fakeKey(url), response.clone());
   }
 }
 
@@ -79,9 +89,11 @@ export class FakeCacheStorage {
 }
 
 /** Store one entry as a previous visit would have left it. */
-export function seedEntry(cache: FakeCache, url: string, bytes: number): void {
+export function seedEntry(cache: FakeCache, url: string, bytes: number, access = 0): void {
   cache.store.set(
-    url,
-    new Response(new Uint8Array(bytes), { headers: { "x-tn-bytes": String(bytes) } }),
+    fakeKey(url),
+    new Response(new Uint8Array(bytes), {
+      headers: { "x-tn-access": String(access), "x-tn-bytes": String(bytes) },
+    }),
   );
 }

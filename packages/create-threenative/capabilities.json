@@ -1285,7 +1285,8 @@
     {
       "aliases": ["different area props", "first playable screen external assets"],
       "constraints": [
-        "reuse the loader handed to scenes as `ctx.assets` instead of building parallel caches"
+        "reuse the loader handed to scenes as `ctx.assets` instead of building parallel caches",
+        "`assets.cache: false` and `assets.backgroundFill: false` are the named overrides, reported on `ctx.assets.cache`"
       ],
       "example": "const assets = createAssetLoader({ basePath: \"/assets\" });\nconst rock = await assets.texture(\"rock.png\");",
       "importPath": "@threenative/core",
@@ -1295,6 +1296,9 @@
       "signature": "export function createAssetLoader(options: IAssetLoaderOptions = { … }",
       "situations": [
         "preload models, textures, or audio before a scene enters",
+        "keep downloaded web assets on disk between visits",
+        "download the next scene before the player gets there",
+        "free the disk cache from a settings menu",
         "load assets from a nonstandard base path or a compiled asset manifest"
       ],
       "summary": "Create the portable asset loader a scene also receives as `ctx.assets`.",

@@ -103,6 +103,32 @@ describe("scenario schema boundaries", () => {
     }, "invalid-reduced-motion.playtest.json")).toThrow(/reducedMotion must be 'reduce'/u);
   });
 
+  it("allows a resource wait long enough for a throttled large release, and still caps it", () => {
+    const parsed = validatePlaytestScenario({
+      ...scenario(undefined),
+      steps: [
+        {
+          label: "slow-tier",
+          release: true,
+          timeoutMs: 240_000,
+          waitForResource: { gte: 100, id: "state", path: "treeCount" },
+        },
+      ],
+    }, "slow-tier.playtest.json");
+    expect(parsed.steps[0]?.timeoutMs).toBe(240_000);
+    expect(() => validatePlaytestScenario({
+      ...scenario(undefined),
+      steps: [
+        {
+          label: "too-long",
+          release: true,
+          timeoutMs: 300_001,
+          waitForResource: { gte: 100, id: "state", path: "treeCount" },
+        },
+      ],
+    }, "too-long.playtest.json")).toThrow(/no greater than 300000/u);
+  });
+
   it("accepts a browser network profile and refuses an unknown key or a non-web target", () => {
     const web = { ...scenario(undefined), target: "web", viewport: { height: 720, width: 1280 } };
     const parsed = validatePlaytestScenario({
