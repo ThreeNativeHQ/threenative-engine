@@ -225,13 +225,6 @@ export function pageLifecycleDiagnostic(
   );
 }
 
-/**
- * Navigate and complete the bridge handshake, re-navigating when the page reloads itself
- * before the handshake finishes. This never retries past the handshake: no observation has
- * been taken and no assertion has been evaluated yet, so a reattempt cannot hide a failure.
- * A bridge that is genuinely missing or incompatible still fails on its own diagnostic, and
- * an exhausted retry budget fails closed on TN_PLAYTEST_PAGE_NAVIGATED rather than passing.
- */
 /** Live CDP sessions by page: the throttle belongs to a session, so something must hold it. */
 const throttledPages = new WeakMap<Page, unknown>();
 
@@ -251,6 +244,13 @@ async function applyNetworkProfile(page: Page, scenario: IPlaytestScenario): Pro
   throttledPages.set(page, session);
 }
 
+/**
+ * Navigate and complete the bridge handshake, re-navigating when the page reloads itself
+ * before the handshake finishes. This never retries past the handshake: no observation has
+ * been taken and no assertion has been evaluated yet, so a reattempt cannot hide a failure.
+ * A bridge that is genuinely missing or incompatible still fails on its own diagnostic, and
+ * an exhausted retry budget fails closed on TN_PLAYTEST_PAGE_NAVIGATED rather than passing.
+ */
 export async function openPageAndConnectBridge(
   page: Page,
   config: IStandalonePlaytestConfig,

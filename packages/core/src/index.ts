@@ -151,6 +151,7 @@ export { onLaunchFailure } from "./launch-diagnostics.js";
 export { resetAudioCueLedger } from "./audio.js";
 export type { ILaunchFailure, LaunchFailureKind } from "./launch-diagnostics.js";
 export type {
+  IAssetCacheState,
   IAssetLoader,
   IAssetLoaderOptions,
   IAssetPrefetchProgress,

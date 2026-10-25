@@ -82,6 +82,22 @@ describe("asset fetch priority", () => {
     await Promise.all([first, second, urgent]);
   });
 
+  it("should start a queued request the moment it is promoted to now", async () => {
+    stub();
+    const gated = gatedFetch();
+    vi.stubGlobal("fetch", gated.fetch);
+    const cache = createAssetCache({ concurrency: 1, retryDelaysMs: [0] });
+
+    const idle = cache.fetchBytes("idle-promote", "idle");
+    const soon = cache.fetchBytes("target-promote", "soon");
+    const now = cache.fetchBytes("target-promote", "now");
+
+    await vi.waitFor(() => expect(gated.order).toEqual(["idle-promote", "target-promote"]));
+    gated.gates.get("idle-promote")?.release();
+    gated.gates.get("target-promote")?.release();
+    await Promise.all([idle, soon, now]);
+  });
+
   it("should stop the fill when the cache is cleared", async () => {
     stub();
     const gated = gatedFetch();

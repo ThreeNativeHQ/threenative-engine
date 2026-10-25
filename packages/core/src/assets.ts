@@ -1173,7 +1173,25 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
         settledBytes: 0,
       };
     }
+    const manifest = await manifestOnce().catch(() => undefined);
+    // No manifest means no content-addressed output, so there is nothing the cache may keep and
+    // nothing to warm. Reporting the paths as settled is honest; downloading them would not be.
+    if (manifest === undefined) {
+      return {
+        requested: paths.length,
+        requestedBytes: 0,
+        settled: paths.length,
+        settledBytes: 0,
+      };
+    }
     const targets: { bytes?: number; url: string }[] = [];
+    const addOutput = (output: unknown, bytes: unknown): void => {
+      if (typeof output !== "string") return;
+      targets.push({
+        url: resolvePath(basePath, output),
+        ...(typeof bytes === "number" ? { bytes } : {}),
+      });
+    };
     for (const path of paths) {
       let urls: readonly string[];
       try {
@@ -1183,9 +1201,20 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
       }
       const size = await bytesOf(path);
       for (const url of urls) targets.push({ url, ...(size > 0 ? { bytes: size } : {}) });
+      // A model's external textures and a lightmap are separate files; prefetching the model
+      // alone would leave the deferred tier fetching the textures again over the network.
+      const entry = manifest.entries[path];
+      if (!isRecord(entry)) continue;
+      for (const key of ["lightmaps", "sharedImages"] as const) {
+        const outputs = entry[key];
+        if (!Array.isArray(outputs)) continue;
+        for (const output of outputs) {
+          if (!isRecord(output)) continue;
+          addOutput(output.output, output.bytes);
+        }
+      }
     }
-    // One entry per url, so a no-manifest path tried verbatim and under `assets/` still costs one
-    // download when the first candidate answers.
+    // One entry per url, so a candidate list with two spellings still costs one download.
     const unique = [...new Map(targets.map((target) => [target.url, target])).values()];
     const results = await Promise.allSettled(
       unique.map((target) => assetCache.fetchBytes(target.url, "soon", target.bytes)),

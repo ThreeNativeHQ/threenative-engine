@@ -111,14 +111,6 @@ describe("asset cache", () => {
 
   it("should evict an earlier session's entry on a quota error and retry once", async () => {
     const storage = stubStorage(100, { failPuts: 1 });
-    // The quota belongs to the origin: 80 bytes of it are this cache's earlier-session entry.
-    vi.stubGlobal("navigator", {
-      connection: { saveData: false },
-      storage: {
-        estimate: async () => ({ quota: 100, usage: 80 }),
-        persist: async () => true,
-      },
-    });
     vi.stubGlobal("fetch", async () => new Response(new Uint8Array(50)));
     const entries = [
       { bytes: 80, url: "old.eeee.bin" },
@@ -232,7 +224,7 @@ describe("asset cache", () => {
     cache.dispose();
   });
 
-  it("should not evict an entry this session read, and evicts the oldest access first", async () => {
+  it("should evict the least recently accessed entry, not the first inserted", async () => {
     const storage = stubStorage(100);
     vi.stubGlobal("navigator", {
       connection: { saveData: false },
@@ -243,25 +235,98 @@ describe("asset cache", () => {
     });
     vi.stubGlobal("fetch", async () => new Response(new Uint8Array(50)));
     const entries = [
-      { bytes: 40, url: "oldest.llll.bin" },
-      { bytes: 40, url: "newer.mmmm.bin" },
+      { bytes: 40, url: "first-inserted.llll.bin" },
+      { bytes: 40, url: "second-inserted.mmmm.bin" },
       { bytes: 50, url: "fresh.nnnn.bin" },
     ];
     const fingerprint = manifestFingerprint(entries);
     const cache = createAssetCache({ retryDelaysMs: [0] });
     const disk = await storage.open(`threenative-assets-${fingerprint}`);
-    seedEntry(disk, "oldest.llll.bin", 40, 1);
-    seedEntry(disk, "newer.mmmm.bin", 40, 2);
+    // The first entry was accessed most recently, so insertion order and access order disagree.
+    seedEntry(disk, "first-inserted.llll.bin", 40, 2);
+    seedEntry(disk, "second-inserted.mmmm.bin", 40, 1);
     cache.setManifest(fingerprint, entries);
     await vi.waitFor(() => expect(cache.report.bytesOnDisk).toBe(80));
-    // Read the newer entry this session, which protects it; the oldest untouched goes first.
-    await cache.fetchBytes("newer.mmmm.bin", "now", 40);
 
     await cache.fetchBytes("fresh.nnnn.bin", "now", 50);
 
-    expect(disk.store.has(fakeKey("oldest.llll.bin"))).toBe(false);
-    expect(disk.store.has(fakeKey("newer.mmmm.bin"))).toBe(true);
+    expect(disk.store.has(fakeKey("first-inserted.llll.bin"))).toBe(true);
+    expect(disk.store.has(fakeKey("second-inserted.mmmm.bin"))).toBe(false);
     expect(disk.store.has(fakeKey("fresh.nnnn.bin"))).toBe(true);
+  });
+
+  it("should not evict an entry this session read", async () => {
+    const storage = stubStorage(100);
+    vi.stubGlobal("navigator", {
+      connection: { saveData: false },
+      storage: {
+        estimate: async () => ({ quota: 100, usage: 80 }),
+        persist: async () => true,
+      },
+    });
+    vi.stubGlobal("fetch", async () => new Response(new Uint8Array(50)));
+    const entries = [
+      { bytes: 40, url: "read-now.oooo.bin" },
+      { bytes: 40, url: "untouched.pppp.bin" },
+      { bytes: 50, url: "fresh.qqqq.bin" },
+    ];
+    const fingerprint = manifestFingerprint(entries);
+    const cache = createAssetCache({ retryDelaysMs: [0] });
+    const disk = await storage.open(`threenative-assets-${fingerprint}`);
+    // The one this session reads has the oldest access stamp; it still must not be evicted.
+    seedEntry(disk, "read-now.oooo.bin", 40, 1);
+    seedEntry(disk, "untouched.pppp.bin", 40, 2);
+    cache.setManifest(fingerprint, entries);
+    await vi.waitFor(() => expect(cache.report.bytesOnDisk).toBe(80));
+    await cache.fetchBytes("read-now.oooo.bin", "now", 40);
+
+    await cache.fetchBytes("fresh.qqqq.bin", "now", 50);
+
+    expect(disk.store.has(fakeKey("read-now.oooo.bin"))).toBe(true);
+    expect(disk.store.has(fakeKey("untouched.pppp.bin"))).toBe(false);
+    expect(disk.store.has(fakeKey("fresh.qqqq.bin"))).toBe(true);
+  });
+
+  it("should not download both candidates when there is no manifest to cache", async () => {
+    stubStorage();
+    const fetchMock = vi.fn(async (url: string) =>
+      String(url).endsWith("m.json")
+        ? new Response("gone", { status: 404 })
+        : new Response(new Uint8Array(4)),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const assets = createAssetLoader({ manifest: "m.json" });
+
+    await expect(assets.prefetch(["rock.png"])).resolves.toMatchObject({ settled: 1 });
+
+    expect(fetchMock.mock.calls.map(([url]) => String(url))).toEqual(["m.json"]);
+  });
+
+  it("should release the fill gate when the manifest is malformed", async () => {
+    stubStorage();
+    const fetchMock = vi.fn(async () => new Response("not json", { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const assets = createAssetLoader({ manifest: "m.json" });
+
+    await expect(assets.startBackgroundFill()).resolves.toBeUndefined();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(assets.cache.filling).toBe(false);
+  });
+
+  it("should keep another game's cache on the same origin", async () => {
+    const storage = stubStorage();
+    vi.stubGlobal("fetch", async () => new Response(new Uint8Array(4)));
+    const one = createAssetCache({ namespace: "/game-one|assets", retryDelaysMs: [0] });
+    const entriesOne = [{ bytes: 4, url: "one.rrrr.bin" }];
+    one.setManifest(manifestFingerprint(entriesOne), entriesOne);
+    await vi.waitFor(() => expect(storage.caches.size).toBe(1));
+    const two = createAssetCache({ namespace: "/game-two|assets", retryDelaysMs: [0] });
+    const entriesTwo = [{ bytes: 4, url: "two.ssss.bin" }];
+    two.setManifest(manifestFingerprint(entriesTwo), entriesTwo);
+
+    await vi.waitFor(() => expect(storage.caches.size).toBe(2));
+    one.dispose();
+    two.dispose();
   });
 
   it("should honour assets.cache: false", () => {

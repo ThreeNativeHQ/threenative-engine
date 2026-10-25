@@ -296,7 +296,7 @@ short or failed download retries after 0.5 s, 1 s and 2 s, then rejects naming t
 status. A 404 or 403 is not retried, so the next candidate url starts at once.
 
 Call `prefetch` before a scene change. It downloads the next scene's files at `soon` priority and
-returns how many bytes it downloaded (`requested`, `settled`, `requestedBytes`, `downloadedBytes`),
+returns how many bytes it served (`requested`, `settled`, `requestedBytes`, `settledBytes`),
 with no decode and no GPU memory:
 
 ```ts

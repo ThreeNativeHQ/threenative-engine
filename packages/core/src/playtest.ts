@@ -819,13 +819,6 @@ function stateResources<TState extends Record<string, unknown>, TPhysics>(
   };
 }
 
-/**
- * The asset loader's `resolved` ledger, nested on the dots of each logical path.
- *
- * An observation path addresses a value with dots, so a logical path — which is itself dotted —
- * cannot be a key here without being split first. Nesting keeps it lossless and makes
- * `path: "native-proof.png.via"` read as what it is.
- */
 /** The cache counters and switches, without the action; observations are data. */
 function assetCacheReport(assets: IAssetLoader): Record<string, JsonValue> {
   const cache = assets.cache;
@@ -842,6 +835,13 @@ function assetCacheReport(assets: IAssetLoader): Record<string, JsonValue> {
   };
 }
 
+/**
+ * The asset loader's `resolved` ledger, nested on the dots of each logical path.
+ *
+ * An observation path addresses a value with dots, so a logical path — which is itself dotted —
+ * cannot be a key here without being split first. Nesting keeps it lossless and makes
+ * `path: "native-proof.png.via"` read as what it is.
+ */
 function assetResolutions(assets: IAssetLoader): Record<string, JsonValue> {
   const nested: Record<string, JsonValue> = {};
   for (const [logical, record] of assets.resolved) {
