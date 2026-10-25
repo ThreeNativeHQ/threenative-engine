@@ -10,8 +10,9 @@
  * **The rule is derived, never a constant an author is told to revisit.** It fires when
  *
  *  - the GPU used less than a third of the frame — the device is not the constraint, and
- *  - the JS render phase alone is longer than the display's own period — so the scene cannot make
- *    the display's rate even if everything else in the frame were free.
+ *  - the JS render phase alone, in the typical (median) frame, is longer than the display's own
+ *    period — so the scene cannot make the display's rate even if everything else in the frame
+ *    were free.
  *
  * Both numbers come from the frame meter. The display's period comes from the host's own
  * presentation cap where there is one, and otherwise from the frame rate the game itself declared;
@@ -56,7 +57,7 @@ export interface ISceneWarning {
   readonly window: number;
   /** The GPU's share of the frame, as a fraction. */
   readonly gpuShare: number;
-  /** The JS render phase's mean, in milliseconds. */
+  /** The JS render phase's median, in milliseconds. */
   readonly renderMs: number;
   /** The period the display works at, in milliseconds, and where that number came from. */
   readonly displayPeriodMs: number;
@@ -117,7 +118,10 @@ export function sceneWarning(
   if (gpuShare >= GPU_IDLE_SHARE) return undefined;
   const period = displayPeriodMs(declaredTargetFps);
   if (period === undefined) return undefined;
-  const renderMs = window.phases.render.mean;
+  // The median, not the mean: this verdict is about the scene's shape, which every frame pays. A
+  // single first-use compile in a short window lifts the mean past the period and says nothing about
+  // the scene (TN_FRAME_HITCH and the frame bounds report that stall).
+  const renderMs = window.phases.render.p50;
   if (renderMs <= period.ms) return undefined;
 
   // The terms are the things the CPU describes once per frame. They are counts, not milliseconds,
