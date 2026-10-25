@@ -42,7 +42,7 @@ export async function freshWasm(repoRoot: string): Promise<IWasmBuild> {
   if (!existsSync(wasm))
     throw new BenchError(
       "TN_BENCH_WASM_MISSING",
-      `${WEB_ENGINE_WASM} does not exist; build it with \`cmake --build build/wasm --target tn-native-engine-web\` in packages/runtime-native`,
+      `${WEB_ENGINE_WASM} does not exist; build it with \`pnpm wasm:build\` from the repository root`,
       1,
     );
   const built = await stat(wasm);

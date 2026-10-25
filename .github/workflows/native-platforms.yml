@@ -1200,6 +1200,38 @@ jobs:
         run: ccache --zero-stats
       - name: Build the native host
         run: pnpm --filter @threenative/runtime-native native:build
+      - name: Verify the shipped Crowd rate scenario on desktop
+        # Software adapters prove the native scenario contract, not physical GPU performance.
+        env:
+          TN_PLAYTEST_ALLOW_SOFTWARE: "1"
+          TN_FRAME_SPANS: "1"
+        shell: bash
+        run: |
+          set -euo pipefail
+          project="$GITHUB_WORKSPACE/packages/runtime-native/artifacts/conformance/crowd-rate-project"
+          mkdir -p "$project"
+          pnpm --filter skinned-crowd exec node ../../packages/runtime-native/scripts/bundle.mjs \
+            --project . --entry src/game.ts --target desktop --output "$project/skinned-crowd-native.js"
+          cp examples/skinned-crowd/public/assets.manifest.json "$project/assets.manifest.json"
+          timeout --kill-after=15s 315s node --input-type=module - \
+            "$GITHUB_WORKSPACE/examples/skinned-crowd/playtests/crowd-rate.playtest.json" \
+            --project "$project" --target desktop \
+            --executable "$GITHUB_WORKSPACE/packages/runtime-native/build/tn-linux/mystral" \
+            --host-arg run --host-arg "$project/skinned-crowd-native.js" \
+            --artifacts "$GITHUB_WORKSPACE/packages/runtime-native/artifacts/conformance/crowd-rate" <<'NODE'
+          import { main, flushStdout } from './packages/playtest/dist/runner/cli.js';
+          const keepalive = setInterval(() => {}, 1000);
+          const bound = setTimeout(() => process.exit(124), 300_000);
+          let code = 3;
+          try {
+            code = await main(process.argv.slice(2));
+          } finally {
+            clearTimeout(bound);
+            clearInterval(keepalive);
+          }
+          await flushStdout();
+          process.exit(code);
+          NODE
       - name: Report the compiler cache hit rate
         if: always() && env.CCACHE_UNAVAILABLE != '1'
         shell: bash

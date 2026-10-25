@@ -6,6 +6,7 @@ import { existsSync } from "node:fs";
 import { mkdir, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
+import { transform } from "esbuild";
 import { build, createServer } from "vite";
 import { afterEach, describe, expect, it } from "vitest";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
@@ -198,6 +199,13 @@ describe("createWebEnginePlugin", () => {
     expect(await plugin.load(WEB_ENGINE_ID)).toContain(WASM_ENGINE_ENTRY);
   });
 
+  it("emits valid browser exports from Node's CommonJS interop namespace", async () => {
+    const root = await project(true);
+    const source = await createWebEnginePlugin({ root, engine: "threenative" }).load(WEB_ENGINE_ID);
+    expect(source).not.toBeNull();
+    await expect(transform(source ?? "", { loader: "js", format: "esm" })).resolves.toBeDefined();
+  });
+
   it("loads the Wasm engine from an explicit module path when one is given", async () => {
     const root = await project(false);
     const wasm = path.join(root, "engine/tn-native-engine-web.mjs");
@@ -351,7 +359,7 @@ describe("createWebEnginePlugin", () => {
     const root = await project(false);
     await expect(
       createWebEnginePlugin({ root, engine: "threenative" }).load(WEB_ENGINE_ID),
-    ).rejects.toThrow("TN_WASM_ENGINE_MISSING");
+    ).rejects.toThrow("pnpm wasm:build");
   });
 
   it("bundles the Wasm engine binding instead of upstream three; legacy still bundles three", async () => {

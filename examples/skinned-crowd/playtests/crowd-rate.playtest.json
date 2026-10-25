@@ -1,0 +1,122 @@
+{
+  "name": "crowd-rate-measured-baseline",
+  "schemaVersion": 1,
+  "subject": "Run with ?tnFrameSpans=1&crowdCount=32|128|256&crowdArm=animated|held|static&crowdRate=auto|1. CPU spans cover actual AnimationPlayer.update and SkinnedBatch.write calls; crowdRate=1 is the named control and crowdRate=auto must reduce palette writes; held versus baked static controls report main and shadow GPU buckets separately.",
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 120,
+  "artifacts": {
+    "screenshots": false
+  },
+  "steps": [
+    {
+      "label": "completed-post-warmup-window",
+      "timeoutMs": 120000,
+      "waitForResource": {
+        "id": "state",
+        "path": "crowdRate.window",
+        "gte": 2
+      }
+    },
+    {
+      "label": "complete-cpu-window-and-resolved-gpu-samples",
+      "timeoutMs": 120000,
+      "waitForResource": {
+        "id": "state",
+        "path": "crowdRate.ready",
+        "equals": true
+      }
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "crowdRate.measuring",
+        "equals": true,
+        "allowTrivial": "The crowdCount URL selects measurement mode before the startup observation; the post-baseline measured.window and measurement checks remain unwaived."
+      },
+      {
+        "id": "state",
+        "path": "crowdRate.count",
+        "gte": 32,
+        "lte": 256,
+        "allowTrivial": "The crowdCount URL fixes the cohort size at boot; the post-baseline measured.window and measurement checks remain unwaived."
+      },
+      {
+        "id": "state",
+        "path": "crowdRate.projectedRigs",
+        "gte": 32,
+        "allowTrivial": "Crowd.enter computes a projected held-pose observation per rig before startup sampling; the post-baseline measured.window and measurement checks remain unwaived."
+      },
+      {
+        "id": "state",
+        "path": "crowdRate.ready",
+        "equals": true
+      },
+      {
+        "id": "state",
+        "path": "crowdRate.measured.gpuSamples",
+        "gte": 1
+      },
+      {
+        "id": "state",
+        "path": "crowdRate.measured.gpuMainSamples",
+        "gte": 1
+      },
+      {
+        "id": "state",
+        "path": "crowdRate.measured.gpuShadowSamples",
+        "gte": 1
+      },
+      {
+        "id": "state",
+        "path": "crowdRate.measured.gpuMainMs",
+        "gte": 0
+      },
+      {
+        "id": "state",
+        "path": "crowdRate.measured.gpuShadowMs",
+        "gte": 0
+      },
+      {
+        "id": "state",
+        "path": "crowdRate.measured.mainDraws",
+        "gte": 1
+      },
+      {
+        "id": "state",
+        "path": "crowdRate.measured.shadowDraws",
+        "gte": 1
+      },
+      {
+        "id": "state",
+        "path": "crowdRate.measured.window",
+        "gte": 2
+      },
+      {
+        "id": "state",
+        "path": "crowdRate.measured.renderFrames",
+        "gte": 1
+      },
+      {
+        "id": "state",
+        "path": "crowdRate.measured.simulatedSeconds",
+        "gte": 2
+      },
+      {
+        "id": "state",
+        "path": "crowdRate.window",
+        "gte": 2
+      }
+    ]
+  }
+}

@@ -915,7 +915,14 @@ describe("model compaction", () => {
     const input = Buffer.from(await toGlb(buildJoinFixture()));
     const result = await modelPass({
       compact: false,
-      passes: { dedup: false, meshopt: false, prune: false, quantize: false, reorder: false },
+      passes: {
+        dedup: false,
+        meshopt: false,
+        prune: false,
+        quantize: false,
+        reorder: false,
+        restTracks: false,
+      },
       textures: "none",
       virtual: "none",
     }).apply(input, "join-fixture.glb");

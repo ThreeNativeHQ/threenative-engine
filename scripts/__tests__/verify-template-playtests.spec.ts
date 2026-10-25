@@ -8,6 +8,7 @@ import {
   ALREADY_BOOTED_TEMPLATES,
   TEMPLATE_PLAYTEST_NAMES,
   assertTemplatePlaytestsPassed,
+  assertWasmEngineBuilt,
   auditTemplatePlaytests,
   runTemplatePlaytests,
   verifyTemplatePlaytests,
@@ -348,5 +349,21 @@ describe("template playtest matrix", () => {
     } finally {
       await rm(root, { force: true, recursive: true });
     }
+  });
+});
+
+describe("assertWasmEngineBuilt", () => {
+  it("should name the one command when the Wasm engine pair is missing", async () => {
+    const root = await makeTempDir("tn-wasm-preflight-");
+    await expect(assertWasmEngineBuilt(root)).rejects.toThrow("pnpm wasm:build");
+  });
+
+  it("should pass when both files of the pair exist", async () => {
+    const root = await makeTempDir("tn-wasm-preflight-");
+    const web = path.join(root, "packages/runtime-native/build/web");
+    await mkdir(web, { recursive: true });
+    for (const file of ["tn-native-engine-web.mjs", "tn-native-engine-web.wasm"])
+      await writeFile(path.join(web, file), "");
+    await expect(assertWasmEngineBuilt(root)).resolves.toBeUndefined();
   });
 });

@@ -78,6 +78,7 @@
     "deps:sbom": "node scripts/generate-native-sbom.mjs --out .runtime/sbom",
     "deps:sbom:check": "node scripts/generate-native-sbom.mjs --check --sbom .runtime/sbom/native-dependencies.cdx.json --inventory .runtime/sbom/native-license-inventory.json",
     "native:build": "node scripts/download-deps.mjs && node scripts/native-build.mjs",
+    "wasm:build": "node scripts/build-wasm.mjs",
     "native:coverage": "sh ../../scripts/xvfb.sh node scripts/measure-native-coverage.mjs",
     "native:test:cpp": "node scripts/measure-native-coverage.mjs --ctest",
     "native:test:asan": "node scripts/measure-native-coverage.mjs --sanitizers",

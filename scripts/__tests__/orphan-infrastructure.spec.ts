@@ -21,7 +21,7 @@ it.each(["0", "1"])(
             'set -euo pipefail; suite_temp_root="$TN_TEST_ROOT"',
             source.slice(start, end),
             "capture_coordination_empty",
-            'test "$(find "$suite_temp_root" -mindepth 1 -maxdepth 1 -type d | wc -l)" -eq 1',
+            'test "$(find "$suite_temp_root" -mindepth 1 -maxdepth 1 -type d | wc -l)" -eq 2',
             'mkdir "$capture_coordination_root/lock"',
             'printf "owned lease\\n" > "$capture_coordination_root/lock/holder.json"',
             "if capture_coordination_empty; then exit 21; fi",

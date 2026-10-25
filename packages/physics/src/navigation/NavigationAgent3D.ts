@@ -192,7 +192,7 @@ export class NavigationAgent3D {
       this.#crowdAgent?.resetMoveTarget();
     } else if (start.polyRef === end.polyRef) {
       // Same polygon as today: judged from the closest point, with one computation for storage.
-      this.#storeComputedPath(target);
+      this.#storeComputedPath(target, end.point);
       if (
         !navigationPointMatchesTarget(end.point, target, this.targetDesiredDistance, this.height)
       ) {
@@ -201,7 +201,7 @@ export class NavigationAgent3D {
         this.#requestCrowdMoveTarget(target);
       }
     } else {
-      const reachable = this.#storeComputedPath(target);
+      const reachable = this.#storeComputedPath(target, end.point);
       if (!reachable) {
         this.#crowdAgent?.resetMoveTarget();
       } else if (this.#path.length > 0) {
@@ -235,7 +235,7 @@ export class NavigationAgent3D {
    * whether its final waypoint lands within tolerance. The one place both `setTargetPosition`
    * and reachability judgments get their path from.
    */
-  #storeComputedPath(target: Vector3): boolean {
+  #storeComputedPath(target: Vector3, projectedTarget: Pick<Vector3, "x" | "y" | "z">): boolean {
     const result = this.navigation.query.computePath(
       toNavigationVector(this.object.position, this.#objectRecord),
       toNavigationVector(target, this.#targetRecord),
@@ -243,11 +243,16 @@ export class NavigationAgent3D {
     this.#path = result.success
       ? result.path.map((point) => new Vector3(point.x, point.y, point.z))
       : [];
+    // Both ends must agree. Recast may return the raw requested height on an off-mesh point, so
+    // the path endpoint alone calls an elevated target reachable; the projected endpoint alone
+    // calls a disconnected island reachable because it projects onto the requested floor. The
+    // path endpoint proves connectivity, the projected endpoint proves an on-mesh arrival.
     const final = this.#path.at(-1);
     return (
       result.success &&
       final !== undefined &&
-      navigationPointMatchesTarget(final, target, this.targetDesiredDistance, this.height)
+      navigationPointMatchesTarget(final, target, this.targetDesiredDistance, this.height) &&
+      navigationPointMatchesTarget(projectedTarget, target, this.targetDesiredDistance, this.height)
     );
   }
 
@@ -272,11 +277,14 @@ export class NavigationAgent3D {
       toNavigationVector(this.object.position, this.#objectRecord),
       toNavigationVector(target, this.#targetRecord),
     );
+    // Same rule as #storeComputedPath: the path endpoint proves the route connects, and the
+    // projected endpoint proves the arrival is on the navmesh at the requested height.
     const final = path.path.at(-1);
     return (
       path.success &&
       final !== undefined &&
-      navigationPointMatchesTarget(final, target, this.targetDesiredDistance, this.height)
+      navigationPointMatchesTarget(final, target, this.targetDesiredDistance, this.height) &&
+      navigationPointMatchesTarget(end.point, target, this.targetDesiredDistance, this.height)
     );
   }
 
@@ -337,10 +345,16 @@ export class NavigationAgent3D {
         break;
       this.#pathIndex += 1;
     }
+    // Arrival is three-dimensional: a partial path that stops underneath an elevated target
+    // must not report `targetReached`.
     const reached =
       this.#pathIndex === this.#path.length - 1 &&
-      horizontalDistanceSquared(this.object.position, this.#target) <=
-        this.targetDesiredDistance ** 2;
+      navigationPointMatchesTarget(
+        this.object.position,
+        this.#target,
+        this.targetDesiredDistance,
+        this.height,
+      );
     if (!reached || this.#finished) return;
     this.#finished = true;
     for (const handler of this.#listeners.targetReached) handler();

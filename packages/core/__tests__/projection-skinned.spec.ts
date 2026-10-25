@@ -1,12 +1,16 @@
 import {
+  AnimationClip,
   Bone,
   BufferGeometry,
   Float32BufferAttribute,
+  Group,
   type InstancedBufferGeometry,
   Matrix4,
   Mesh,
   MeshStandardMaterial,
+  NumberKeyframeTrack,
   type Object3D,
+  PerspectiveCamera,
   Scene,
   Skeleton,
   SkinnedMesh,
@@ -14,8 +18,11 @@ import {
 } from "three";
 import { positionLocal } from "three/tsl";
 import { MeshStandardNodeMaterial } from "three/webgpu";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { AnimationPlayer } from "../src/animation.js";
+import { SpanRecorder, setSpanRecorder } from "../src/profiling/Spans.js";
 import { SkinnedBatch, isSimilarityTransform } from "../src/projection-skinned.js";
+import { RenderCameraCull } from "../src/render-camera-cull.js";
 import { SceneRenderProjection } from "../src/renderProjection.js";
 
 /**
@@ -109,6 +116,41 @@ function expectPalette(batch: SkinnedBatch, slot: number, mesh: SkinnedMesh): vo
 }
 
 describe("skinned lane of the render projection", () => {
+  it("attributes each actual palette write, excluding reconcile overhead", () => {
+    const { scene } = crowd(8);
+    const projection = new SceneRenderProjection(scene);
+    const recorder = new SpanRecorder();
+    setSpanRecorder(recorder);
+    try {
+      projection.reconcile();
+      recorder.endFrame(10);
+      expect(recorder.window()?.spans.skinnedWrite?.perFrame).toBe(8);
+    } finally {
+      setSpanRecorder(undefined);
+      projection.dispose();
+    }
+  });
+
+  it("closes the write span if skeleton evaluation throws", () => {
+    const mesh = rig(rigGeometry(), new MeshStandardMaterial());
+    const batch = new SkinnedBatch({ first: mesh, capacity: 2, velocity: false });
+    const slot = batch.claim(mesh) as number;
+    const recorder = new SpanRecorder();
+    const update = vi.spyOn(mesh.skeleton, "update").mockImplementation(() => {
+      throw new Error("failed skeleton update");
+    });
+    setSpanRecorder(recorder);
+    try {
+      expect(() => batch.write(slot, mesh)).toThrow("failed skeleton update");
+      recorder.endFrame(10);
+      expect(recorder.window()?.spans.skinnedWrite?.perFrame).toBe(1);
+    } finally {
+      setSpanRecorder(undefined);
+      update.mockRestore();
+      batch.dispose();
+    }
+  });
+
   it("draws a crowd sharing geometry and material as one palette draw, with no game code", () => {
     const { scene, rigs } = crowd(8);
     const projection = new SceneRenderProjection(scene);
@@ -273,6 +315,312 @@ describe("SkinnedBatch palette", () => {
     batch.end();
     // Back from hidden: history is its own pose, not the collapsed zeros.
     expect([...(batch.history as Float32Array)]).toEqual([...batch.palette]);
+  });
+
+  it.each([4, 8])("rewrites a hidden slot after a skipped update at rate %i", (updateRate) => {
+    const root = new Group();
+    const mesh = rig(rigGeometry(), new MeshStandardMaterial());
+    root.add(mesh);
+    const player = new AnimationPlayer({ root, clips: [], strideSync: false, updateRate });
+    const batch = new SkinnedBatch({ first: mesh, capacity: 1, velocity: true });
+    const slot = batch.claim(mesh) as number;
+
+    player.update(0, true);
+    root.updateMatrixWorld(true);
+    batch.begin();
+    batch.write(slot, mesh);
+    batch.end();
+    expect(batch.palette.some((value) => value !== 0)).toBe(true);
+
+    batch.begin();
+    batch.hide(slot);
+    batch.end();
+    do player.update(1 / 60);
+    while (player.updateRateReport.evaluated);
+
+    root.updateMatrixWorld(true);
+    batch.begin();
+    batch.restart(slot);
+    batch.write(slot, mesh);
+    batch.end();
+    expect(batch.palette.some((value) => value !== 0)).toBe(true);
+    expect([...(batch.history as Float32Array)]).toEqual([...batch.palette]);
+
+    player.dispose();
+    batch.dispose();
+  });
+
+  it("writes the restored pose and velocity history when stopped after a skipped tick", () => {
+    const root = new Group();
+    const mesh = rig(rigGeometry(), new MeshStandardMaterial());
+    (mesh.skeleton.bones[0] as Bone).name = "joint";
+    root.add(mesh);
+    const player = new AnimationPlayer({
+      root,
+      clips: [
+        new AnimationClip("move", 1, [
+          new NumberKeyframeTrack("joint.position[x]", [0, 1], [0, 1]),
+        ]),
+      ],
+      strideSync: false,
+      updateRate: 8,
+    });
+    const batch = new SkinnedBatch({ first: mesh, capacity: 1, velocity: true });
+    const slot = batch.claim(mesh) as number;
+    player.play("move");
+    player.update(0, true);
+    root.updateMatrixWorld(true);
+    batch.begin();
+    batch.write(slot, mesh);
+    batch.end();
+    const initial = batch.palette.slice();
+    player.update(0.5, true);
+    root.updateMatrixWorld(true);
+    batch.begin();
+    batch.write(slot, mesh);
+    batch.end();
+    const animated = batch.palette.slice();
+    do player.update(1 / 60);
+    while (player.updateRateReport.evaluated);
+    player.stop();
+    root.updateMatrixWorld(true);
+    batch.begin();
+    batch.write(slot, mesh);
+    batch.end();
+    expect([...batch.palette]).toEqual([...initial]);
+    expect([...(batch.history as Float32Array)]).toEqual([...animated]);
+    player.dispose();
+    batch.dispose();
+  });
+
+  it("skips a palette write on a skipped animation frame and carries the whole step on evaluation", () => {
+    const root = new Group();
+    const mesh = rig(rigGeometry(), new MeshStandardMaterial());
+    root.add(mesh);
+    const player = new AnimationPlayer({
+      root,
+      clips: [
+        new AnimationClip("turn", 1, [
+          new NumberKeyframeTrack(".rotation[x]", [0, 1], [0, Math.PI]),
+        ]),
+      ],
+      strideSync: false,
+      updateRate: 4,
+    });
+    player.play("turn");
+    const batch = new SkinnedBatch({ first: mesh, capacity: 1, velocity: true });
+    const slot = batch.claim(mesh) as number;
+    player.update(0, true);
+    root.updateMatrixWorld(true);
+    batch.begin();
+    batch.write(slot, mesh);
+    batch.end();
+    const first = batch.palette.slice();
+
+    let skipped = false;
+    while (!skipped) {
+      player.update(1 / 60);
+      if (player.updateRateReport.evaluated) {
+        root.updateMatrixWorld(true);
+        batch.begin();
+        batch.write(slot, mesh);
+        batch.end();
+        first.set(batch.palette);
+      }
+      skipped = !player.updateRateReport.evaluated;
+    }
+    root.updateMatrixWorld(true);
+    batch.begin();
+    batch.write(slot, mesh);
+    batch.end();
+    expect([...(batch.history as Float32Array)]).toEqual([...batch.palette]);
+
+    while (!player.updateRateReport.evaluated) player.update(1 / 60);
+    root.updateMatrixWorld(true);
+    batch.begin();
+    batch.write(slot, mesh);
+    batch.end();
+    expect([...(batch.history as Float32Array)]).toEqual([...first]);
+    expect([...batch.palette]).not.toEqual([...first]);
+
+    player.updateRate = 1;
+    player.update(1 / 60);
+    root.updateMatrixWorld(true);
+    batch.begin();
+    batch.write(slot, mesh);
+    batch.end();
+    expect([...(batch.history as Float32Array)]).not.toEqual([...batch.palette]);
+    player.dispose();
+    batch.dispose();
+  });
+
+  it("keeps an unparented camera target at full rate behind a projected skinned batch", () => {
+    const scene = new Scene();
+    const geometry = rigGeometry();
+    const material = new MeshStandardMaterial();
+    const entries = Array.from({ length: 8 }, (_, index) => {
+      const root = new Group();
+      root.position.set(index * 5, 0, -120);
+      const mesh = rig(geometry, material);
+      root.add(mesh);
+      scene.add(root);
+      const player = new AnimationPlayer({
+        root,
+        clips: [
+          new AnimationClip("turn", 1, [
+            new NumberKeyframeTrack(".rotation[z]", [0, 1], [0, Math.PI]),
+          ]),
+        ],
+        strideSync: false,
+      });
+      player.play("turn");
+      return { player, root };
+    });
+    const projection = new SceneRenderProjection(scene);
+    const camera = new PerspectiveCamera(60, 1, 0.1, 1_000);
+    camera.lookAt(0, 0, -120);
+    scene.updateMatrixWorld(true);
+    projection.reconcile();
+    expect(projection.report.skinnedBatches).toBe(1);
+
+    const cull = new RenderCameraCull();
+    cull.apply(projection.root, camera, 720);
+    cull.restore();
+    for (const entry of entries) entry.player.update(1 / 60);
+
+    expect(entries[0]?.player.updateRateReport).toMatchObject({ rate: 1, overridden: false });
+    expect(entries[1]?.player.updateRateReport.rate).toBe(4);
+
+    cull.dispose();
+    projection.dispose();
+    for (const entry of entries) entry.player.dispose();
+  });
+
+  it("observes animation roots behind exact projection proxies", () => {
+    const scene = new Scene();
+    const geometry = rigGeometry();
+    const material = new MeshStandardMaterial();
+    const camera = new PerspectiveCamera(60, 1, 0.1, 1_000);
+    scene.add(camera);
+    const entries: { player: AnimationPlayer; root: Group }[] = [];
+    for (let index = 0; index < 9; index += 1) {
+      const root = new Group();
+      root.position.set(index === 0 ? 60 : 0, 0, -120);
+      const mesh = rig(geometry, material);
+      if (index === 0) mesh.scale.set(1, 2, 1);
+      else if (index === 1 || index === 2) mesh.scale.set(-1, 1, 1);
+      root.add(mesh);
+      (index === 2 ? camera : scene).add(root);
+      const player = new AnimationPlayer({
+        root,
+        clips: [
+          new AnimationClip("turn", 1, [
+            new NumberKeyframeTrack(".rotation[z]", [0, 1], [0, Math.PI]),
+          ]),
+        ],
+        strideSync: false,
+      });
+      player.play("turn");
+      entries.push({ player, root });
+    }
+    camera.lookAt(0, 0, -120);
+    scene.updateMatrixWorld(true);
+    const projection = new SceneRenderProjection(scene, { minMeshes: 1 });
+    const cull = new RenderCameraCull({ minimumPixels: 2 });
+    try {
+      projection.reconcile();
+      expect(projection.report.exact.nonUniformScale).toBe(1);
+      expect(projection.report.exact.negativeScale).toBe(2);
+      cull.apply(projection.root, camera, 720);
+      cull.restore();
+      for (const entry of entries) entry.player.update(1 / 60);
+      expect(entries[0]?.player.updateRateReport.rate).toBeGreaterThan(1);
+      expect(entries[1]?.player.updateRateReport).toMatchObject({ rate: 1, overridden: false });
+      expect(entries[2]?.player.updateRateReport).toMatchObject({ rate: 1, overridden: false });
+    } finally {
+      cull.dispose();
+      projection.dispose();
+      for (const entry of entries) entry.player.dispose();
+      geometry.dispose();
+      material.dispose();
+    }
+  });
+
+  it("writes gameplay root movement on a skipped animation frame", () => {
+    const root = new Group();
+    const mesh = rig(rigGeometry(), new MeshStandardMaterial());
+    root.add(mesh);
+    const player = new AnimationPlayer({ root, clips: [], strideSync: false, updateRate: 4 });
+    const batch = new SkinnedBatch({ first: mesh, capacity: 1, velocity: true });
+    const slot = batch.claim(mesh) as number;
+    const skeletonUpdate = vi.spyOn(mesh.skeleton, "update");
+    const recorder = new SpanRecorder();
+    setSpanRecorder(recorder);
+    try {
+      player.update(0, true);
+      root.updateMatrixWorld(true);
+      batch.begin();
+      batch.write(slot, mesh);
+      batch.end();
+      recorder.endFrame(1);
+      recorder.window();
+
+      while (player.updateRateReport.evaluated) player.update(1 / 60);
+      root.position.x = 10;
+      root.updateMatrixWorld(true);
+      batch.begin();
+      batch.write(slot, mesh);
+      batch.end();
+      recorder.endFrame(1);
+      expect(batch.palette[12]).toBeCloseTo(10);
+      expect(batch.history?.[12]).toBeCloseTo(0);
+      expect(recorder.window()?.spans.skinnedWrite?.perFrame).toBe(1);
+
+      skeletonUpdate.mockClear();
+      batch.begin();
+      batch.write(slot, mesh);
+      batch.end();
+      recorder.endFrame(1);
+      expect(skeletonUpdate).not.toHaveBeenCalled();
+      expect(batch.history?.[12]).toBeCloseTo(batch.palette[12] as number);
+      expect(recorder.window()?.spans.skinnedWrite?.perFrame).toBe(1);
+    } finally {
+      setSpanRecorder(undefined);
+      skeletonUpdate.mockRestore();
+      player.dispose();
+      batch.dispose();
+    }
+  });
+
+  it("updates auto-rate state for source rigs behind the projected skinned batch", () => {
+    const root = new Group();
+    const mesh = rig(rigGeometry(), new MeshStandardMaterial());
+    root.add(mesh);
+    // Keep this policy subject off the centre ray: this test measures projected size behind the
+    // batch, not camera target recognition.
+    root.position.set(10, 0, -100);
+    root.updateMatrixWorld(true);
+    const player = new AnimationPlayer({
+      root,
+      clips: [],
+      strideSync: false,
+    });
+    const batch = new SkinnedBatch({ first: mesh, capacity: 1, velocity: false });
+    batch.claim(mesh);
+    batch.begin();
+    batch.write(0, mesh);
+    batch.end();
+    const scene = new Scene();
+    scene.add(batch.mesh);
+    const camera = new PerspectiveCamera(60, 1, 0.1, 1000);
+    scene.updateMatrixWorld(true);
+    const cull = new RenderCameraCull();
+    cull.apply(scene, camera, 720);
+    cull.restore();
+    expect(player.updateRateReport.rate).toBeGreaterThan(1);
+    cull.dispose();
+    player.dispose();
+    batch.dispose();
   });
 
   it("collapses a released slot so it draws nothing", () => {

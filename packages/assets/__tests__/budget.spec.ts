@@ -10,7 +10,7 @@ import { rgbaPng } from "../../../test-support/png.js";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
 import { basisTranscoderPaths } from "../../../test-support/three-basis.js";
 import { assertBudget, measureBudget, parseBudget } from "../src/budget.js";
-import { compileAssets } from "../src/compile.js";
+import { compileAssets, modelTranscoderCharge } from "../src/compile.js";
 import { unpackGlb } from "../src/passes/shared-images.js";
 import { encodeLinearRgbaKtx2 } from "../src/passes/texture.js";
 
@@ -102,6 +102,44 @@ describe("asset byte budgets", () => {
     expect(() => parseBudget({ typo: 2 })).toThrow("TN_ASSETS_CONFIG_UNKNOWN_KEY");
   });
 
+  it("charges shared model texture savings once per distinct image", () => {
+    const embeddedTextures = {
+      bytesAfter: 1,
+      bytesBefore: 1,
+      count: 1,
+      gpuBytesAfter: 1,
+      gpuBytesBefore: 1,
+      resized: 0,
+      transcoderSavings: 400_000,
+    };
+    const entry = (output: string, key: string, detailed = true) => ({
+      bytes: 1,
+      embeddedTextures,
+      kind: "model" as const,
+      output,
+      passes: [],
+      sharedImages: [
+        {
+          key,
+          ...(detailed ? { transcoderRequired: false, transcoderSavings: 400_000 } : {}),
+        },
+      ],
+    });
+
+    expect(
+      modelTranscoderCharge({ one: entry("one.glb", "same"), two: entry("two.glb", "same") }),
+    ).toBeUndefined();
+    expect(
+      modelTranscoderCharge({ one: entry("one.glb", "one"), two: entry("two.glb", "two") }),
+    ).toBe(0);
+    expect(
+      modelTranscoderCharge({
+        one: entry("one.glb", "same", false),
+        two: entry("two.glb", "same", false),
+      }),
+    ).toBe(0);
+  });
+
   it("counts 200 MB cooked once, using emitted sizes rather than stale manifest claims", async () => {
     const root = await makeTempDir("asset-budget-large-");
     const ktx2 = await encodeLinearRgbaKtx2(new Uint8Array(16 * 16 * 4).fill(128), 16, 16);
@@ -134,9 +172,21 @@ describe("asset byte budgets", () => {
 
   it("counts compiler-owned Basis sidecars exactly once in total and never in uncooked", async () => {
     const { root } = await fixture();
+    // A textured image, so the cook actually publishes KTX2 and the sidecars the budget counts.
+    await writeFile(
+      path.join(root, "assets/largest.png"),
+      rgbaPng({
+        height: 256,
+        width: 256,
+        red: (x, y) => 100 + ((x * 21 + y * 21) % 8),
+        green: (x, y) => 100 + ((x * 29 + y * 31) % 8),
+        blue: (x, y) => 100 + ((x * 37 + y * 41) % 8),
+      }),
+    );
     const first = await compileAssets({
       cwd: root,
       transcoder: basisTranscoderPaths(),
+      modelTranscoderBytes: 0,
       config: { budget: "none" },
     });
     const unique = new Map(first.receipt?.outputs.map((output) => [output.path, output]) ?? []);
@@ -154,6 +204,7 @@ describe("asset byte budgets", () => {
         compileAssets({
           cwd: root,
           transcoder: basisTranscoderPaths(),
+          modelTranscoderBytes: 0,
           config: { budget: { total: primaryBytes, uncooked: "none" } },
         }),
       ).rejects.toThrow(`total ${primaryBytes + sidecarBytes} bytes exceeds ${primaryBytes}`);

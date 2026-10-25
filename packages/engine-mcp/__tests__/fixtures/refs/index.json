@@ -1,0 +1,57 @@
+{
+  "version": 1,
+  "games": [
+    {
+      "id": "sm64",
+      "title": "Super Mario 64",
+      "platform": "N64",
+      "repo": "https://github.com/n64decomp/sm64",
+      "tier": 1
+    },
+    {
+      "id": "oot",
+      "title": "Ocarina of Time",
+      "platform": "N64",
+      "repo": "https://github.com/zeldaret/oot",
+      "tier": 2
+    }
+  ],
+  "stubs": [
+    {
+      "id": "player",
+      "game": "sm64",
+      "kind": "node",
+      "name": "Player movement",
+      "summary": "Player movement actions and jumping",
+      "tags": [],
+      "capabilities": []
+    },
+    {
+      "id": "airborne",
+      "game": "sm64",
+      "kind": "node",
+      "name": "Airborne actions",
+      "summary": "Jump actions and airborne motion",
+      "tags": [],
+      "capabilities": []
+    },
+    {
+      "id": "camera",
+      "game": "sm64",
+      "kind": "node",
+      "name": "Camera system",
+      "summary": "Camera system follow rules",
+      "tags": [],
+      "capabilities": []
+    },
+    {
+      "id": "triple-jump",
+      "game": "sm64",
+      "kind": "card",
+      "name": "Triple jump",
+      "summary": "Three timed jumps build a higher triple jump",
+      "tags": ["jump", "triple jump", "airborne"],
+      "capabilities": []
+    }
+  ]
+}
