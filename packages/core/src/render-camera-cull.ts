@@ -99,6 +99,17 @@ export interface IAnimationRateState {
 export const animationRateStates = new WeakMap<Object3D, IAnimationRateState>();
 /** The roots that may hold a rate state, so the camera pass walks the rigs instead of the scene. */
 const animationRateRoots = new Set<WeakRef<Object3D>>();
+/** The stand-ins named in {@link animationRateSources}, so the pass can reach them without a scene walk. */
+const animationRateCarriers = new Set<WeakRef<Object3D>>();
+
+/** A projection stand-in or skinned batch names the rigs it draws (see {@link animationRateSources}). */
+export function observeAnimationRates(
+  carrier: Object3D,
+  sources: ReadonlyMap<Object3D, unknown>,
+): void {
+  if (!animationRateSources.has(carrier)) animationRateCarriers.add(new WeakRef(carrier));
+  animationRateSources.set(carrier, sources);
+}
 
 /** AnimationPlayer's registration: the state the camera pass writes, and the root it is found on. */
 export function trackAnimationRate(root: Object3D, state: IAnimationRateState): void {
@@ -305,7 +316,41 @@ export class RenderCameraCull {
     this.#animationFrame += 1;
     this.#animationPrepared = true;
     this.#prepareCamera(camera, viewportHeight);
-    if (this.#prepareAnimated()) root.traverseVisible(this.#animationVisitor);
+    if (!this.#prepareAnimated()) return;
+    // Start at each rig and each stand-in that observes one, never at the scene: the walk then visits
+    // the same objects a scene walk would have acted on, and nothing else.
+    for (const ref of animationRateRoots) {
+      const rig = ref.deref();
+      if (rig !== undefined && this.#reaches(rig, root))
+        rig.traverseVisible(this.#animationVisitor);
+    }
+    for (const ref of animationRateCarriers) {
+      const carrier = ref.deref();
+      const sources = carrier === undefined ? undefined : animationRateSources.get(carrier);
+      if (carrier === undefined || sources === undefined) {
+        animationRateCarriers.delete(ref);
+        continue;
+      }
+      // A carrier inside a rig is visited by that rig's walk.
+      if (this.#animated.has(carrier)) continue;
+      let observes = false;
+      for (const source of sources.keys()) observes ||= this.#animated.has(source);
+      if (observes && this.#reaches(carrier, root)) carrier.traverseVisible(this.#animationVisitor);
+    }
+  }
+
+  /**
+   * True when a scene walk from `root` would visit `object`: it and every parent up to `root` are
+   * visible. A rate root above it answers false, since that root's own walk covers it.
+   */
+  #reaches(object: Object3D, root: unknown): boolean {
+    if (!object.visible) return false;
+    for (let node = object.parent; node !== null; node = node.parent) {
+      if (animationRateStates.has(node)) return false;
+      if (!node.visible) return false;
+      if (node === root) return true;
+    }
+    return object === root;
   }
 
   /**

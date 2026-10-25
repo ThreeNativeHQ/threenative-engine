@@ -39,7 +39,7 @@ import {
   setBatchedMeshMatrixWithVelocity,
   setBatchedMeshPreviousMatrix,
 } from "./render/batched-velocity.js";
-import { animationRateSources } from "./render-camera-cull.js";
+import { observeAnimationRates } from "./render-camera-cull.js";
 import type { ProjectionExactReason, ProjectionMaterialChecks } from "./renderProjection.js";
 
 /**
@@ -1342,7 +1342,7 @@ export class ProjectionMirror {
       proxy.matrixAutoUpdate = false;
       this.#proxies.set(object, proxy);
       fresh = true;
-      animationRateSources.set(proxy, new Map([[object, 0]]));
+      observeAnimationRates(proxy, new Map([[object, 0]]));
       // An `LOD` picks one of its levels by distance every frame, and it does that on itself. Its
       // levels therefore have to hang off the stand-in, or nothing selects one and the mirror
       // draws whichever rung happened to be visible when it was built.

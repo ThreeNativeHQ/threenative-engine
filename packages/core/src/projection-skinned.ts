@@ -51,7 +51,7 @@ import {
   skeletonUpdateIntact,
 } from "./animation-pose-packet.js";
 import { SPANS, beginSpan, endSpan } from "./profiling/Spans.js";
-import { animationRateSources } from "./render-camera-cull.js";
+import { observeAnimationRates } from "./render-camera-cull.js";
 
 const skeletonUpdate = Skeleton.prototype.update;
 interface IRawDisplaySlot {
@@ -447,7 +447,7 @@ export class SkinnedBatch {
 
     this.mesh = new Mesh(geometry, material);
     this.mesh.matrixAutoUpdate = false;
-    animationRateSources.set(this.mesh, this.instances);
+    observeAnimationRates(this.mesh, this.instances);
     this.mesh.userData["threenative.animationPosePackets"] = () => ({
       capacity: this.capacity,
       bones: this.bones,

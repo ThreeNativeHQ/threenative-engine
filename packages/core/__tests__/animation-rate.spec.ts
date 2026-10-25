@@ -869,6 +869,8 @@ describe("camera-rate walk cost", () => {
       const { geometry, userData } = prop;
       Object.defineProperty(prop, "geometry", { get: () => (reads += 1) && geometry });
       Object.defineProperty(prop, "userData", { get: () => (reads += 1) && userData });
+      // The walk itself does not reach scenery either: it starts at the rigs.
+      Object.defineProperty(prop, "visible", { get: () => (reads += 1) > 0, set: () => {} });
       view.scene.add(prop);
     }
     view.scene.updateMatrixWorld(true);
