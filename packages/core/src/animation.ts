@@ -203,9 +203,16 @@ function contactPoint(matrix: Matrix4, box: Box3 | undefined, target: Vector3): 
     cornerX[index] = (e0 * x + e4 * y + e8 * z + e12) * w;
     cornerY[index] = (e1 * x + e5 * y + e9 * z + e13) * w;
     cornerZ[index] = (e2 * x + e6 * y + e10 * z + e14) * w;
-    cornerOrder[index] = index;
+    // Insert by height as each corner lands: a stable sort of 8 without Array.sort's comparator calls,
+    // which cost three quarters of this function on Lantern Vale's first walk.
+    const height = cornerY[index] as number;
+    let slot = index;
+    while (slot > 0 && (cornerY[cornerOrder[slot - 1] as number] as number) > height) {
+      cornerOrder[slot] = cornerOrder[slot - 1] as number;
+      slot -= 1;
+    }
+    cornerOrder[slot] = index;
   }
-  cornerOrder.sort((first, second) => (cornerY[first] as number) - (cornerY[second] as number));
   let x = 0;
   let z = 0;
   for (let index = 0; index < 4; index += 1) {
@@ -1386,7 +1393,7 @@ const scratchMatrixWorld = new Matrix4();
 const cornerX = new Float64Array(8);
 const cornerY = new Float64Array(8);
 const cornerZ = new Float64Array(8);
-const cornerOrder = [0, 1, 2, 3, 4, 5, 6, 7];
+const cornerOrder = new Uint8Array(8);
 
 /**
  * Validate one weighted request into normalized, non-zero target weights.

@@ -1032,15 +1032,18 @@ describe("AnimationPlayer stride sync on in-place clips", () => {
     expect(aboveSole.stride.clipGroundSpeed).toBeCloseTo(atSole.stride.clipGroundSpeed, 6);
   });
 
-  it("measures a boot's sole with no vector call per corner (the owned engine held Lantern Vale's first walk 43 ms)", () => {
+  it("measures a boot's sole with no vector call or comparator sort per corner (the owned engine held Lantern Vale's first walk 43 ms)", () => {
     const leg = swingingLeg(0.1);
     const apply = vi.spyOn(Vector3.prototype, "applyMatrix4");
+    const sort = vi.spyOn(Array.prototype, "sort");
     try {
       leg.play("walk");
       expect(leg.stride.clipGroundSpeed).toBeCloseTo(0.6444015098802138, 12); // the per-corner applyMatrix4 code measured this
       expect(apply).not.toHaveBeenCalled();
+      expect(sort.mock.calls.length).toBeLessThan(16); // the per-corner sort ran 65 times for 64 samples
     } finally {
       apply.mockRestore();
+      sort.mockRestore();
     }
   });
 });
