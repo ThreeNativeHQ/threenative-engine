@@ -25,6 +25,8 @@ export interface IAssetCacheReport {
   readonly bytesOnDisk: number;
   readonly bytesTotal: number;
   readonly filling: boolean;
+  /** True when the post-reveal fill is allowed (`assets.backgroundFill` and no `saveData`). */
+  readonly backgroundFill: boolean;
   readonly reason?: string;
 }
 
@@ -37,6 +39,8 @@ export interface IAssetCacheOptions {
   readonly concurrency?: number;
   /** Retry delays in milliseconds. Defaults to 500, 1000 and 2000. */
   readonly retryDelaysMs?: readonly number[];
+  /** A stable game identity, so two games on one origin do not delete each other's cache. */
+  readonly namespace?: string;
 }
 
 export interface IAssetCache {
@@ -49,7 +53,7 @@ export interface IAssetCache {
   /** Name the release and the files it publishes. Called once, when the manifest lands. */
   setManifest(fingerprint: string, entries: readonly IAssetCacheEntry[]): void;
   /** Start the post-reveal fill of everything not on disk yet. Idempotent. */
-  startFill(): void;
+  startFill(): Promise<void>;
   /** Delete the whole cache. */
   clear(): Promise<void>;
   /** Remove the disk-first fetch bridge. Idempotent. */
@@ -60,6 +64,9 @@ const CACHE_PREFIX = "threenative-assets-";
 const DEFAULT_CONCURRENCY = 6;
 const DEFAULT_RETRY_DELAYS_MS = [500, 1000, 2000] as const;
 const BYTES_HEADER = "x-tn-bytes";
+const ACCESS_HEADER = "x-tn-access";
+/** How often a read refreshes an entry's access stamp. Unreal purges at the same granularity. */
+const ACCESS_REFRESH_MS = 3_600_000;
 
 const PRIORITY_ORDER: Record<AssetPriority, number> = { now: 0, soon: 1, idle: 2 };
 
@@ -92,6 +99,7 @@ function storageManager():
   | {
       estimate?: () => Promise<{ quota?: number; usage?: number }>;
       persist?: () => Promise<boolean>;
+      persisted?: () => Promise<boolean>;
     }
   | undefined {
   return (
@@ -100,6 +108,7 @@ function storageManager():
         storage?: {
           estimate?: () => Promise<{ quota?: number; usage?: number }>;
           persist?: () => Promise<boolean>;
+          persisted?: () => Promise<boolean>;
         };
       };
     }
@@ -158,7 +167,13 @@ export function createAssetCache(options: IAssetCacheOptions = {}): IAssetCache 
   const retryDelays = options.retryDelaysMs ?? DEFAULT_RETRY_DELAYS_MS;
 
   let cacheName: string | undefined;
+  const cachePrefix =
+    options.namespace === undefined || options.namespace === ""
+      ? CACHE_PREFIX
+      : `${CACHE_PREFIX}${manifestFingerprint([{ url: options.namespace }]).slice(0, 8)}-`;
   let entries: readonly IAssetCacheEntry[] = [];
+  /** Every manifest output and its compiled size, for the fetch bridge's hit and write checks. */
+  const known = new Map<string, number | undefined>();
   let resolveManifest: (() => void) | undefined;
   const manifestReady = new Promise<void>((resolve) => {
     resolveManifest = resolve;
@@ -216,22 +231,39 @@ export function createAssetCache(options: IAssetCacheOptions = {}): IAssetCache 
       .catch(() => undefined);
     if (typeof quota !== "number" || quota <= 0) return false;
     if (bytesOnDisk + needed <= quota) return true;
+    const candidates: { access: number; size: number; url: string }[] = [];
     for (const request of await cache.keys()) {
-      if (bytesOnDisk + needed <= quota) return true;
-      if (touched.has(request.url)) continue;
       const response = await cache.match(request.url);
-      const size = Number(response?.headers.get(BYTES_HEADER) ?? "0");
-      if (await cache.delete(request.url)) bytesOnDisk = Math.max(0, bytesOnDisk - size);
+      candidates.push({
+        access: Number(response?.headers.get(ACCESS_HEADER) ?? "0"),
+        size: Number(response?.headers.get(BYTES_HEADER) ?? "0"),
+        url: request.url,
+      });
+    }
+    // The least recently accessed entry goes first; this session's entries are never evicted.
+    candidates.sort((left, right) => left.access - right.access);
+    for (const candidate of candidates) {
+      if (bytesOnDisk + needed <= quota) return true;
+      if (touched.has(candidate.url)) continue;
+      if (await cache.delete(candidate.url))
+        bytesOnDisk = Math.max(0, bytesOnDisk - candidate.size);
     }
     return bytesOnDisk + needed <= quota;
   };
 
   const store = async (cache: CacheLike, url: string, buffer: ArrayBuffer): Promise<void> => {
     const response = new Response(buffer, {
-      headers: { [BYTES_HEADER]: String(buffer.byteLength) },
+      headers: {
+        [ACCESS_HEADER]: String(Date.now()),
+        [BYTES_HEADER]: String(buffer.byteLength),
+      },
     });
     try {
-      await evictFor(cache, buffer.byteLength);
+      try {
+        await evictFor(cache, buffer.byteLength);
+      } catch {
+        // Eviction is an optimisation; a storage failure here must not block the write attempt.
+      }
       await cache.put(url, response);
       if (measured) bytesOnDisk += buffer.byteLength;
     } catch (error) {
@@ -241,11 +273,21 @@ export function createAssetCache(options: IAssetCacheOptions = {}): IAssetCache 
       if (!quotaError) return;
       // One eviction pass and one retry: an entry that still cannot fit is fetched again next
       // visit rather than growing the cache past what the browser will hold.
-      await evictFor(cache, buffer.byteLength);
+      try {
+        await evictFor(cache, buffer.byteLength);
+      } catch {
+        // The bytes are in hand and the game still gets them; only the disk write failed.
+        return;
+      }
       try {
         await cache.put(
           url,
-          new Response(buffer, { headers: { [BYTES_HEADER]: String(buffer.byteLength) } }),
+          new Response(buffer, {
+            headers: {
+              [ACCESS_HEADER]: String(Date.now()),
+              [BYTES_HEADER]: String(buffer.byteLength),
+            },
+          }),
         );
         if (measured) bytesOnDisk += buffer.byteLength;
       } catch {
@@ -265,7 +307,15 @@ export function createAssetCache(options: IAssetCacheOptions = {}): IAssetCache 
         const init =
           priority === "idle" ? ({ priority: "low" } as unknown as RequestInit) : undefined;
         const response = await (init === undefined ? fetch(url) : fetch(url, init));
-        if (!response.ok) throw new Error(`status ${String(response.status)}`);
+        if (!response.ok) {
+          const status = response.status;
+          const error = new Error(`status ${String(status)}`);
+          // A 404 or a 403 will answer the same on every attempt. Retrying it only adds the
+          // backoff to a startup that could already be trying its next candidate url.
+          const retryable = status === 408 || status === 425 || status === 429 || status >= 500;
+          if (!retryable) throw Object.assign(error, { retryable: false });
+          throw error;
+        }
         const buffer = await response.arrayBuffer();
         if (expectedBytes !== undefined && buffer.byteLength !== expectedBytes) {
           throw new Error(
@@ -275,6 +325,7 @@ export function createAssetCache(options: IAssetCacheOptions = {}): IAssetCache 
         return buffer;
       } catch (error) {
         last = error;
+        if ((error as { retryable?: boolean }).retryable === false) break;
         const wait = retryDelays[attempt];
         if (wait === undefined) break;
         await delay(wait);
@@ -293,20 +344,45 @@ export function createAssetCache(options: IAssetCacheOptions = {}): IAssetCache 
       if (!response.ok) throw new Error(`status ${String(response.status)}`);
       return response.arrayBuffer();
     }
-    const cache = expectedBytes === undefined ? undefined : await openCache();
+    let cache = expectedBytes === undefined ? undefined : await openCache().catch(() => undefined);
     if (cache !== undefined) {
-      const hit = await cache.match(url);
-      if (hit !== undefined) {
-        const cached = await hit.arrayBuffer();
-        // A truncated entry is not a hit: drop it and download the file again, so one bad write
-        // cannot leave a game permanently broken on that file.
-        if (expectedBytes === undefined || cached.byteLength === expectedBytes) {
-          hits += 1;
-          touched.add(url);
-          return cached;
+      try {
+        const hit = await cache.match(url);
+        if (hit !== undefined) {
+          const access = Number(hit.headers.get(ACCESS_HEADER) ?? "0");
+          const cached = await hit.arrayBuffer();
+          // A truncated entry is not a hit: drop it and download the file again, so one bad write
+          // cannot leave a game permanently broken on that file.
+          if (expectedBytes === undefined || cached.byteLength === expectedBytes) {
+            hits += 1;
+            touched.add(url);
+            // One write per hour at most keeps the eviction order honest without paying for a
+            // metadata write on every asset the game reads.
+            if (Date.now() - access > ACCESS_REFRESH_MS) {
+              void cache
+                .put(
+                  url,
+                  new Response(cached, {
+                    headers: {
+                      [ACCESS_HEADER]: String(Date.now()),
+                      [BYTES_HEADER]: String(cached.byteLength),
+                    },
+                  }),
+                )
+                .catch(() => undefined);
+            }
+            return cached;
+          }
+          console.warn(
+            `TN_ASSETS_CACHE_TRUNCATED '${url}': stored ${String(cached.byteLength)} of ${String(expectedBytes)} bytes; fetching again.`,
+          );
+          bytesOnDisk = Math.max(0, bytesOnDisk - cached.byteLength);
+          await cache.delete(url);
         }
-        bytesOnDisk = Math.max(0, bytesOnDisk - cached.byteLength);
-        await cache.delete(url);
+      } catch {
+        // A storage read that fails is a cache miss, never a failed asset: the network can serve
+        // the bytes the player is waiting for.
+        cache = undefined;
       }
     }
     misses += 1;
@@ -412,20 +488,69 @@ export function createAssetCache(options: IAssetCacheOptions = {}): IAssetCache 
     const original = globalThis.fetch;
     const wrapped = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
       const method = init?.method ?? (input instanceof Request ? input.method : "GET");
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      const expected = known.get(url);
       if (method.toUpperCase() === "GET") {
         try {
-          const url =
-            typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
           const cache = await storage.open(name);
           const hit = await cache.match(url);
           if (hit !== undefined) {
-            touched.add(url);
-            hits += 1;
-            return hit;
+            if (expected === undefined) {
+              touched.add(url);
+              return hit;
+            }
+            const access = Number(hit.headers.get(ACCESS_HEADER) ?? "0");
+            const cached = await hit.arrayBuffer();
+            if (cached.byteLength === expected) {
+              touched.add(url);
+              if (Date.now() - access > ACCESS_REFRESH_MS) {
+                void cache
+                  .put(
+                    url,
+                    new Response(cached, {
+                      headers: {
+                        [ACCESS_HEADER]: String(Date.now()),
+                        [BYTES_HEADER]: String(cached.byteLength),
+                      },
+                    }),
+                  )
+                  .catch(() => undefined);
+              }
+              return new Response(cached, {
+                headers: {
+                  [ACCESS_HEADER]: String(Date.now()),
+                  [BYTES_HEADER]: String(cached.byteLength),
+                },
+              });
+            }
+            console.warn(
+              `TN_ASSETS_CACHE_TRUNCATED '${url}': stored ${String(cached.byteLength)} of ${String(expected)} bytes; fetching again.`,
+            );
+            await cache.delete(url).catch(() => undefined);
           }
         } catch {
           // A storage failure falls through to the network; the game still loads.
         }
+        const response = await original(input, init);
+        // The bridge normally only reads. When a loader core does not wrap fetches a manifest
+        // output the fill has not reached yet, keep it: otherwise the first visit downloads that
+        // file twice, once here and once in the fill.
+        if (response.ok && expected !== undefined && !requests.has(url)) {
+          try {
+            const cache = await storage.open(name);
+            const copy = response.clone();
+            void copy
+              .arrayBuffer()
+              .then((buffer) => {
+                if (buffer.byteLength === expected) return store(cache, url, buffer);
+                return undefined;
+              })
+              .catch(() => undefined);
+          } catch {
+            // The clone is an optimisation; the caller's response is already on its way.
+          }
+        }
+        return response;
       }
       return original(input, init);
     };
@@ -437,10 +562,16 @@ export function createAssetCache(options: IAssetCacheOptions = {}): IAssetCache 
 
   const runFill = async (): Promise<void> => {
     await manifestReady;
-    if (!enabled || !backgroundFill || saveDataEnabled() || entries.length === 0) return;
+    if (!enabled || !backgroundFill || entries.length === 0) return;
     filling = true;
     try {
-      await prefetch(entries, "idle");
+      const chunk = Math.max(1, concurrency);
+      for (let index = 0; index < entries.length; index += chunk) {
+        // Checked between chunks, not once: a player who turns on data saving mid-fill stops it
+        // at the next file boundary instead of paying for the rest of the release.
+        if (saveDataEnabled()) break;
+        await prefetch(entries.slice(index, index + chunk), "idle");
+      }
     } finally {
       filling = false;
     }
@@ -459,6 +590,7 @@ export function createAssetCache(options: IAssetCacheOptions = {}): IAssetCache 
         bytesOnDisk,
         bytesTotal,
         filling,
+        backgroundFill: enabled && backgroundFill && !saveDataEnabled(),
         ...(reason === undefined ? {} : { reason }),
       };
     },
@@ -472,12 +604,20 @@ export function createAssetCache(options: IAssetCacheOptions = {}): IAssetCache 
         return;
       }
       entries = manifestEntries;
+      known.clear();
+      for (const entry of manifestEntries) known.set(entry.url, entry.bytes);
       bytesTotal = manifestEntries.reduce((sum, entry) => sum + (entry.bytes ?? 0), 0);
+      void storageManager()
+        ?.persisted?.()
+        .then((granted) => {
+          persisted = granted === true;
+        })
+        .catch(() => undefined);
       if (!enabled) {
         resolveManifest?.();
         return;
       }
-      const name = `${CACHE_PREFIX}${fingerprint}`;
+      const name = `${cachePrefix}${fingerprint}`;
       cacheName = name;
       installFetchBridge(name);
       // A release cleans up after the last one: without this every build adds its full size to
@@ -486,7 +626,7 @@ export function createAssetCache(options: IAssetCacheOptions = {}): IAssetCache 
       void (async () => {
         try {
           for (const other of (await storage?.keys()) ?? []) {
-            if (other.startsWith(CACHE_PREFIX) && other !== current) await storage?.delete(other);
+            if (other.startsWith(cachePrefix) && other !== current) await storage?.delete(other);
           }
           const cache = await openCache();
           if (cache !== undefined) await measureOnDisk(cache);
@@ -497,9 +637,9 @@ export function createAssetCache(options: IAssetCacheOptions = {}): IAssetCache 
       })();
     },
     startFill: () => {
-      if (fillStarted) return;
+      if (fillStarted) return Promise.resolve();
       fillStarted = true;
-      void runFill().catch(() => undefined);
+      return runFill().catch(() => undefined);
     },
     clear: async () => {
       if (cacheName === undefined || storage === undefined) {

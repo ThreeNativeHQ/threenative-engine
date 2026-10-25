@@ -9,6 +9,7 @@ import {
 } from "../index.js";
 import { connectPlaytestBridge, PlaytestBridgeError, type IPlaytestBridgeClient } from "./bridgeClient.js";
 import type { IStandalonePlaytestConfig } from "./config.js";
+import { networkEmulation } from "./network.js";
 import { managedServerError } from "./shared.js";
 import type { Page } from "playwright";
 
@@ -246,14 +247,7 @@ async function applyNetworkProfile(page: Page, scenario: IPlaytestScenario): Pro
   if (profile === undefined) return;
   const session = await page.context().newCDPSession(page);
   await session.send("Network.enable");
-  const bytesPerSecond = (profile.downloadKbps * 1000) / 8;
-  await session.send("Network.emulateNetworkConditions", {
-    connectionType: "cellular3g",
-    downloadThroughput: bytesPerSecond,
-    latency: profile.latencyMs,
-    offline: false,
-    uploadThroughput: bytesPerSecond,
-  });
+  await session.send("Network.emulateNetworkConditions", networkEmulation(profile));
   throttledPages.set(page, session);
 }
 

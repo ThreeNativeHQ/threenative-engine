@@ -5,6 +5,8 @@ export interface IFakeCacheOptions {
   readonly quotaBytes?: number;
   /** Number of `put` calls that throw a quota error regardless of size. */
   readonly failPuts?: number;
+  /** Reject every `cache.open`, as a browser with storage blocked does. */
+  readonly openError?: boolean;
 }
 
 export class FakeCache {
@@ -66,6 +68,7 @@ export class FakeCacheStorage {
   }
 
   async open(name: string): Promise<FakeCache> {
+    if (this.#options.openError === true) throw new Error("storage blocked");
     let cache = this.caches.get(name);
     if (cache === undefined) {
       cache = new FakeCache(this.#options);

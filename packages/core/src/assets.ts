@@ -75,12 +75,19 @@ export interface IAssetRequestOptions {
   readonly priority?: AssetPriority;
 }
 
-/** How many of the bytes a `prefetch` asked for reached the disk. */
+/** What a `prefetch` asked for and what the download produced. */
 export interface IAssetPrefetchProgress {
   readonly requested: number;
   readonly requestedBytes: number;
   readonly settled: number;
-  readonly settledBytes: number;
+  /** Bytes downloaded; the disk may refuse some of them when the quota is full. */
+  readonly downloadedBytes: number;
+}
+
+/** The cache report plus the one action a settings screen needs. */
+export interface IAssetCacheState extends IAssetCacheReport {
+  /** Delete every byte this release stored, for a "free 1.8 GB" button. */
+  clear(): Promise<void>;
 }
 
 /** The structural slice of three's `KTX2Loader` core depends on. */
@@ -176,7 +183,7 @@ export interface IAssetLoader {
    * view can show "1.2 of 2.0 GB on disk" without new code, and `enabled` is false with a `reason`
    * on a native host or when the game passed `assets.cache: false`.
    */
-  readonly cache: IAssetCacheReport;
+  readonly cache: IAssetCacheState;
   /**
    * Download the next scene's files to disk at `soon` priority, so its `load()` reads them back
    * without a cold fetch. Stores bytes only: no decode, no GPU memory. Resolves at once on native,
@@ -187,7 +194,7 @@ export interface IAssetLoader {
    * Start the post-reveal idle fill. The engine calls this when `ctx.startup.whenReady()` settles;
    * a game that drives a loader outside `defineGame` may call it after its own reveal.
    */
-  startBackgroundFill(): void;
+  startBackgroundFill(): Promise<void>;
   /**
    * How many loads this loader has been asked for and how many have settled (resolved or
    * rejected). A loading view reads the ratio; the runtime folds it into `ctx.startup.progress`
@@ -843,6 +850,9 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
   const assetCache = createAssetCache({
     enabled: options.cache,
     backgroundFill: options.backgroundFill,
+    // A different base path or manifest is a different game on the same origin, and must not
+    // delete this one's cache at startup.
+    namespace: `${basePath}|${options.manifest ?? "assets.manifest.json"}`,
   });
   /** The urls the background fill warms, in manifest order, with the sizes the manifest records. */
   const fillEntries = (manifest: IAssetManifest): readonly { bytes?: number; url: string }[] => {
@@ -1153,7 +1163,7 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
         requested: paths.length,
         requestedBytes: 0,
         settled: paths.length,
-        settledBytes: 0,
+        downloadedBytes: 0,
       };
     }
     const targets: { bytes?: number; url: string }[] = [];
@@ -1174,17 +1184,17 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
       unique.map((target) => assetCache.fetchBytes(target.url, "soon", target.bytes)),
     );
     let settled = 0;
-    let settledBytes = 0;
+    let downloadedBytes = 0;
     results.forEach((result, index) => {
       if (result.status !== "fulfilled") return;
       settled += 1;
-      settledBytes += unique[index]?.bytes ?? result.value.byteLength;
+      downloadedBytes += unique[index]?.bytes ?? result.value.byteLength;
     });
     return {
       requested: unique.length,
       requestedBytes: unique.reduce((sum, target) => sum + (target.bytes ?? 0), 0),
       settled,
-      settledBytes,
+      downloadedBytes,
     };
   };
 
@@ -1359,7 +1369,7 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
         request?.priority ?? "now",
       ),
     get cache() {
-      return assetCache.report;
+      return { ...assetCache.report, clear: () => assetCache.clear() };
     },
     get progress() {
       return { pending: [...pending], requested, requestedBytes, settled, settledBytes };
@@ -1370,7 +1380,7 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
       // The fill needs the manifest even when the scene loaded nothing through this loader yet;
       // a failed read is the documented no-manifest case and simply leaves the fill empty.
       void manifestOnce().catch(() => undefined);
-      assetCache.startFill();
+      return assetCache.startFill();
     },
     // A copy per read, like `progress`: a caller inspecting the record must not be able to
     // rewrite what the loader reports for the next asset that settles.

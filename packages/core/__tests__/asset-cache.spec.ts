@@ -3,8 +3,11 @@ import { createAssetCache, manifestFingerprint } from "../src/asset-cache.js";
 import { createAssetLoader } from "../src/assets.js";
 import { FakeCacheStorage, seedEntry } from "./fixtures/fake-cache.js";
 
-function stubStorage(quotaBytes?: number): FakeCacheStorage {
-  const storage = new FakeCacheStorage({ quotaBytes });
+function stubStorage(
+  quotaBytes?: number,
+  extra: { failPuts?: number; openError?: boolean } = {},
+): FakeCacheStorage {
+  const storage = new FakeCacheStorage({ quotaBytes, ...extra });
   vi.stubGlobal("caches", storage);
   vi.stubGlobal("navigator", {
     connection: { saveData: false },
@@ -80,8 +83,34 @@ describe("asset cache", () => {
     expect(fetchMock).toHaveBeenCalledTimes(4);
   });
 
+  it("should not retry a 404, so the next candidate url starts at once", async () => {
+    stubStorage();
+    const fetchMock = vi.fn(async () => new Response("gone", { status: 404 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const entries = [{ bytes: 4, url: "missing.jjjj.bin" }];
+    const cache = createAssetCache({ retryDelaysMs: [0, 0, 0] });
+    cache.setManifest(manifestFingerprint(entries), entries);
+
+    await expect(cache.fetchBytes("missing.jjjj.bin", "now", 4)).rejects.toThrow("status 404");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("should still load from the network when the cache cannot be opened", async () => {
+    stubStorage(undefined, { openError: true });
+    const fetchMock = vi.fn(async () => new Response(new Uint8Array(4)));
+    vi.stubGlobal("fetch", fetchMock);
+    const entries = [{ bytes: 4, url: "blocked.kkkk.bin" }];
+    const cache = createAssetCache({ retryDelaysMs: [0] });
+    cache.setManifest(manifestFingerprint(entries), entries);
+
+    await expect(cache.fetchBytes("blocked.kkkk.bin", "now", 4)).resolves.toBeInstanceOf(
+      ArrayBuffer,
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it("should evict an earlier session's entry on a quota error and retry once", async () => {
-    const storage = stubStorage(100);
+    const storage = stubStorage(100, { failPuts: 1 });
     vi.stubGlobal("fetch", async () => new Response(new Uint8Array(50)));
     const entries = [
       { bytes: 80, url: "old.eeee.bin" },
@@ -217,7 +246,7 @@ describe("asset loader disk cache", () => {
 
     const progress = await assets.prefetch(["rock.png"]);
 
-    expect(progress).toMatchObject({ requestedBytes: 4, settled: 1, settledBytes: 4 });
+    expect(progress).toMatchObject({ requestedBytes: 4, settled: 1, downloadedBytes: 4 });
     const before = fetchMock.mock.calls.length;
     await assets.texture("rock.png");
     expect(fetchMock).toHaveBeenCalledTimes(before);
@@ -248,11 +277,12 @@ describe("asset loader disk cache", () => {
     stubBitmap();
     const assets = createAssetLoader({ manifest: "m.json" });
 
-    assets.startBackgroundFill();
-    await assets.prefetch([]);
+    await assets.startBackgroundFill();
 
-    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    const requested = fetchMock.mock.calls.map(([url]) => String(url));
+    expect(requested).toEqual(["m.json"]);
     expect(assets.cache.bytesOnDisk).toBe(0);
+    expect(assets.cache.backgroundFill).toBe(false);
   });
 
   it("should honour backgroundFill: false", async () => {
@@ -262,10 +292,10 @@ describe("asset loader disk cache", () => {
     stubBitmap();
     const assets = createAssetLoader({ backgroundFill: false, manifest: "m.json" });
 
-    assets.startBackgroundFill();
-    await assets.prefetch([]);
+    await assets.startBackgroundFill();
 
     expect(assets.cache.bytesOnDisk).toBe(0);
+    expect(assets.cache.backgroundFill).toBe(false);
   });
 
   it("should resolve prefetch at once on native, with no asset request", async () => {

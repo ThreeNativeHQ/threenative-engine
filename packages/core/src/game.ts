@@ -1267,7 +1267,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       markProjectionSettled();
       // The reveal is the first moment the network is free and the player is playing: fill the
       // rest of the release at idle priority from here, never before.
-      assets.startBackgroundFill();
+      void assets.startBackgroundFill();
       // A host capturing a frame has no other way to know the world is on screen. Counting frames
       // cannot express it: on a software rasteriser the gate resolves on its bounded window rather
       // than on five in-budget frames, so a fast 300-frame run finishes before the world is shown

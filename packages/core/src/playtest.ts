@@ -809,7 +809,7 @@ function stateResources<TState extends Record<string, unknown>, TPhysics>(
         // Where every asset was actually served from, on every target and not only in a browser
         // console log: a game whose manifest never loaded runs on the uncompiled source directory
         // and looks healthy, and without this nothing observable says so.
-        ["assetCache", { ...ctx.assets.cache }],
+        ["assetCache", assetCacheReport(ctx.assets)],
         ["assets", assetResolutions(ctx.assets)],
         ...(runtime?.frameCounts === undefined
           ? []
@@ -826,6 +826,22 @@ function stateResources<TState extends Record<string, unknown>, TPhysics>(
  * cannot be a key here without being split first. Nesting keeps it lossless and makes
  * `path: "native-proof.png.via"` read as what it is.
  */
+/** The cache counters and switches, without the action; observations are data. */
+function assetCacheReport(assets: IAssetLoader): Record<string, JsonValue> {
+  const cache = assets.cache;
+  return {
+    enabled: cache.enabled,
+    persisted: cache.persisted,
+    hits: cache.hits,
+    misses: cache.misses,
+    bytesOnDisk: cache.bytesOnDisk,
+    bytesTotal: cache.bytesTotal,
+    filling: cache.filling,
+    backgroundFill: cache.backgroundFill,
+    ...(cache.reason === undefined ? {} : { reason: cache.reason }),
+  };
+}
+
 function assetResolutions(assets: IAssetLoader): Record<string, JsonValue> {
   const nested: Record<string, JsonValue> = {};
   for (const [logical, record] of assets.resolved) {
