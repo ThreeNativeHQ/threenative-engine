@@ -1,0 +1,7 @@
+{
+  "status": "FAILED_BASELINE_SHADER_VALIDATION",
+  "errors": [
+    "TN_RENDERER: TN_NATIVE_SHADER_INVALID: material program 0|000vc300m0e|nodes:#52;5:null;5:null;5:null;5:null;5:null;5:null;5:null;5:null;5:null;5:null;5:null;5:null;5:null;#37;|...: TN_TSL_TYPE: output color: a fragment stage writes color as vec4<f32>",
+    "TN_RENDERER: TN_NATIVE_SHADER_INVALID: material program 0|000vc300m0ei|nodes:#52;5:null;5:null;5:null;5:null;5:null;5:null;5:null;5:null;5:null;5:null;5:null;5:null;5:null;#37;...: TN_TSL_TYPE: output color: a fragment stage writes color as vec4<f32>"
+  ]
+}

@@ -1,0 +1,56 @@
+{
+  "arms": {
+    "BEFORE": {
+      "dist": "/tmp/prd741-kits/adventure-old-runtime/dist",
+      "wasm": "655be40f3b95a12fee407579e4abbb15dfabfa80b8e5491c4f3eca1c6871c3c3"
+    },
+    "AFTER": {
+      "dist": "/tmp/prd741-kits/adventure/dist",
+      "wasm": "ddee0306ac28c54ff78720077e52584e470843c7c114f51f384bb37365353546"
+    }
+  },
+  "nonWasmFiles": {
+    "assets/DRACOLoader-CWP-bNZt.js": "d39f3db5d1f192b5b0c596c84637bb361029fed3686cbc31d814826200c68c97",
+    "assets/DRACOLoader-CWP-bNZt.js.br": "12223d74672426c4a7534e3bb1e974b0ae15a2c179b075758ae2363824e7dbc4",
+    "assets/DRACOLoader-CWP-bNZt.js.gz": "a6bd38b2c8ac8e390343a29a928d4c92589d2cfeeb77b5be0e46928928403f25",
+    "assets/KTX2Loader-vxaWqmp3.js": "a284d550be4ca568f3e8a0f17ae603b3eee746b39fe0acd0142bc5fffcb6aa51",
+    "assets/KTX2Loader-vxaWqmp3.js.br": "9429f4d1ac78269722e67875d6174fc150876c85e42954e3dd1559db48d3552c",
+    "assets/KTX2Loader-vxaWqmp3.js.gz": "295b19f00698168a4871bbbb717836397a757a933925501f2ce60ea3d637194b",
+    "assets/_threenative_web-engine-BsQebWwA.js": "f8e4c111f27ef3be7b03270d14ff0f02b20dc36819ac1e3250e870d9635d4ecc",
+    "assets/_threenative_web-engine-BsQebWwA.js.br": "51c8353c7adfb9dc13db71915a8e7b71593158da06c15730587b91269893a411",
+    "assets/_threenative_web-engine-BsQebWwA.js.gz": "b8e10f9640bf66e41bddf031e0280cc3d10f8278142eb94a9d64bc6cb9cd9f51",
+    "assets/_threenative_web-engine-DmAJRiWI.js": "0480eedd138297f52aa6c5f54f019404f9202b955cff63cdbe84e5ab0d9231f0",
+    "assets/_threenative_web-engine-DmAJRiWI.js.br": "f97d163e00f3b3b255fe9f957d1a3af5cf09fc18a07d5379415778469eed23d3",
+    "assets/_threenative_web-engine-DmAJRiWI.js.gz": "ac3ab6ae37aa1e8f0e15c9fc8678d82d332a962e08106bf690c10fa7a110b6f2",
+    "assets/index-BVBGfzmW.css": "b31a275bdcaa9c6e537560fc2d7063870aade88a2911fd951341c609fe653756",
+    "assets/index-BVBGfzmW.css.br": "dabff8b144781f5721e7bbefad36cdd2d6b7684b1d69ac8e54c6cfe54e9ea92c",
+    "assets/index-BVBGfzmW.css.gz": "2c8365e08223bf0b2cd91c3e0dffc6fe3ea53c6bf1803507d4b39454aebc7027",
+    "assets/index-DYhyk5bq.js": "2ad63080e7a3927c494faaafb039ddecc514600d2f523b1da9edcbf81f6283bf",
+    "assets/index-DYhyk5bq.js.br": "b22655505f50b57593edb698f48f471cd6336fdc1c7214622e19c72e1d5cafc7",
+    "assets/index-DYhyk5bq.js.gz": "0f3da5866c2c4e600fff5379562bdbfe58e561cb5546eed84403d01222c20c6e",
+    "assets/meshopt_decoder.module-DXTYc6wn.js": "6bf68170d437477fb3411dfb24339df33257d69a4322c3907e14af33cff083c7",
+    "assets/meshopt_decoder.module-DXTYc6wn.js.br": "b266a2f59fc0d4b0bc89707fc2c9b9fd2941d4ef42c76301488299de0f374b46",
+    "assets/meshopt_decoder.module-DXTYc6wn.js.gz": "68e3867e131e5df061123b46e8f4eee3e798def0c5b87adc7d0d3858a3caeaf1",
+    "assets/rolldown-runtime-4tVxZq34.js": "e1a1c25cf197ccd96571062973f07d34fb794a4745cd7284f8f64c63be00c578",
+    "assets/terrain-jobs-worker-7u6rman0.js": "0c5b69d98074f8636f8e0ae8a137e0c478c9f229e037a814c7a2e556bb21507b",
+    "assets/terrain-jobs-worker-7u6rman0.js.br": "c84400905f5b81230d89db888858486cca863b4104fcd4be060bba13ae397556",
+    "assets/terrain-jobs-worker-7u6rman0.js.gz": "6237ef4ded0ea311557f5ea72621cb89f15e2c345234478cf178835fb29132a0",
+    "assets/tn-native-engine-web-gATiuXp_.wasm.br": "cf3b76d58aa6a338d9c3b581cc3b017c89ae29fb70fbc800bddff5ced075baa2",
+    "assets/tn-native-engine-web-gATiuXp_.wasm.gz": "910802fbfbadbbdb19f6079f9290e3dfc552a3061487318cd3c0bd58a54fc374",
+    "assets/web-engine-gltf-loader-B8O1ebRd.js": "a1e2bbc13bc89976ac5eeeab401f1199285d5f460aaafcb0d713039131c9a78f",
+    "assets/web-engine-gltf-loader-B8O1ebRd.js.br": "3c5bdef9e239fc7fa61a868dfcbb4abc3c7ff63a5c95eb38bbc98842e7a4f917",
+    "assets/web-engine-gltf-loader-B8O1ebRd.js.gz": "f0156285bbc80215b2580925c067c94af266e72a46f6a977be9a4580964d56d1",
+    "assets.manifest.json": "4b681c7419f2a5b1db9bd3b3537d5695348b5c07da616e4a1d6bc62e39c4e191",
+    "bake.receipt.json": "db281e47ec5da7caa43da7684e7329e5da866c7d0ae6d4b42220a94f545cea54",
+    "favicon.svg": "2d208c58ea4c25b3bef0208ff84c5847eab49455481e001275ddd0aa7d7746bb",
+    "icon.png": "e6284520e340124d9300889add523251d93705457e7cd8c2d6e05aebd7ed04b7",
+    "index.html": "26911cb4f18fe29e748fa9842436ed71665423e59bb7cb97d1b32e2f5008a7e9",
+    "manifest.webmanifest": "fb0023573f6a1bd891f861c1cb70283f6120948528c110abe1579eb89ec7546c",
+    "tex-bark.886e1653.webp": "2b4f3259ac9a8bc868b18b06c1f5eca20d8586eb9e5715b36f1fc8973a3d4b35",
+    "tex-grass.8331daea.webp": "6d2890a5220ceab5da00b1e9711f868273df5791e349a6aca1f55bb0a288e801",
+    "tex-planks.e921fe06.webp": "c8bf02f06844fada0124f97449b47373159351d3941ff5e0beb970e12bd14813",
+    "tex-rock.9fe28243.webp": "9147a4091d3384c6724b6568e34614dbfe4d51fba06f47d84a5c506782a34d52",
+    "tex-stone-wall.23503328.webp": "0e452d8b711b55b8b863435fe15569bf2d7e4ec924fee6e87abd461ca2719a01"
+  },
+  "expectedBaselineStatus": "FAILED_SHADER_VALIDATION"
+}
