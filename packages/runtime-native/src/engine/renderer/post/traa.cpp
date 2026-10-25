@@ -136,10 +136,15 @@ fn clipAABB(current: vec4<f32>, old: vec4<f32>, low: vec4<f32>, high: vec4<f32>)
     let valid = u.historyValid != 0 && validUV && (edge || !disocclusion);
     let counting = u.count != 0;
     if (counting && !valid) { atomicAdd(&stats[0], 1u); }
-    var current = textureSampleLevel(beauty, linearSampler, input.uv, 0.0);
+    var current: vec4<f32>;
+    var moment1 = vec4<f32>(0);
+    var moment2 = vec4<f32>(0);
+    var gatheredMoments = false;
     if (upsampling) {
         // UE 5.8.3 TemporalAA.usf:1463-1478: filter nearby input samples in output-pixel units.
         let centre = floor(currentUV * u.size);
+        // The reconstruction and clamp share nine input texels, except beyond the jittered viewport edge.
+        gatheredMoments = all(vec2<i32>(centre) == texel);
         let upscale = outputSize / u.size;
         var sum = vec4<f32>(0);
         var weights = 0.0;
@@ -149,12 +154,22 @@ fn clipAABB(current: vec4<f32>, old: vec4<f32>, low: vec4<f32>, high: vec4<f32>)
                 let delta = (samplePosition + 0.5 - currentUV * u.size) * upscale;
                 let x2 = clamp(dot(delta, delta), 0.0, 1.0);
                 let weight = (0.905 * x2 - 1.9) * x2 + 1.0;
-                let pixel = clamp(vec2<i32>(samplePosition), vec2<i32>(0), vec2<i32>(u.size) - 1);
-                sum += textureLoad(beauty, pixel, 0) * weight;
+                let sourcePixel = vec2<i32>(samplePosition);
+                let pixel = clamp(sourcePixel, vec2<i32>(0), vec2<i32>(u.size) - 1);
+                let color = textureLoad(beauty, pixel, 0);
+                sum += color * weight;
                 weights += weight;
+                if (gatheredMoments) {
+                    let inside = all(sourcePixel >= vec2<i32>(0)) && all(sourcePixel < vec2<i32>(u.size));
+                    let neighbor = max(select(vec4(0.0, 0.0, 0.0, 1.0), color, inside), vec4(0.0));
+                    let sample = select(neighbor, color, x == 0 && y == 0);
+                    moment1 += sample; moment2 += sample * sample;
+                }
             }
         }
         current = sum / weights;
+    } else {
+        current = textureSampleLevel(beauty, linearSampler, input.uv, 0.0);
     }
     let old = textureSampleLevel(history, linearSampler, historyUV, 0.0);
     let motion = clamp(length((input.uv - historyUV) * u.size) / u.maxVelocityLength, 0.0, 1.0);
@@ -168,12 +183,14 @@ fn clipAABB(current: vec4<f32>, old: vec4<f32>, low: vec4<f32>, high: vec4<f32>)
     let gamma = mix(0.5, 1.0, (1 - motion) * (1 - motion));
     var offsets = array<vec2<i32>, 8>(vec2(-1,-1), vec2(-1,1), vec2(1,-1), vec2(1,1),
         vec2(1,0), vec2(0,-1), vec2(0,1), vec2(-1,0));
-    let centreSample = select(current, textureLoad(beauty, texel, 0), upsampling);
-    var moment1 = centreSample;
-    var moment2 = centreSample * centreSample;
-    for (var i = 0u; i < 8u; i++) {
-        let neighbor = max(select(vec4(0.0, 0.0, 0.0, 1.0), textureLoad(beauty, texel + offsets[i], 0), all(texel + offsets[i] >= vec2<i32>(0)) && all(texel + offsets[i] < vec2<i32>(u.size))), vec4(0.0));
-        moment1 += neighbor; moment2 += neighbor * neighbor;
+    if (!gatheredMoments) {
+        let centreSample = select(current, textureLoad(beauty, texel, 0), upsampling);
+        moment1 = centreSample;
+        moment2 = centreSample * centreSample;
+        for (var i = 0u; i < 8u; i++) {
+            let neighbor = max(select(vec4(0.0, 0.0, 0.0, 1.0), textureLoad(beauty, texel + offsets[i], 0), all(texel + offsets[i] >= vec2<i32>(0)) && all(texel + offsets[i] < vec2<i32>(u.size))), vec4(0.0));
+            moment1 += neighbor; moment2 += neighbor * neighbor;
+        }
     }
     let mean = moment1 / 9;
     let variance = sqrt(max(moment2 / 9 - mean * mean, vec4(0.0))) * gamma;
