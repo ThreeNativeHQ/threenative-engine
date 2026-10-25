@@ -306,8 +306,9 @@ because host gap only the interval sees is part of what a player feels. A run wi
 its samples, or no GPU reading in any `TN_FRAME_BUDGET` window (an adapter without timestamp
 queries), fails closed: an unmeasured cost is not a zero. So does a judged GPU window that holds
 fewer than 3 GPU samples (`TN_PLAYTEST_PERF_FEW_GPU_SAMPLES`; the row prints `cost.gpuSamples`): the
-engine skips static frames and takes no GPU sample on them, so a scenario must keep the scene moving
-through the measured window, and below 20 samples the p95 is the maximum. 3 is chosen, not measured:
+counted-tick clock advances ticks faster than frames draw, so a 300-tick window closes on about 50
+presented frames. A performance scenario sets `"clock": "wall-clock"` (target `web`; see
+[determinism.md](determinism.md)). Below 20 samples the p95 is the maximum. 3 is chosen, not measured:
 it is the least that stops one query deciding the verdict. There is no tolerance multiplier.
 
 **An engine performance warning fails the run.** Any `TN_SCENE_WARNING` console line, and any

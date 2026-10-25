@@ -362,6 +362,7 @@
         "@threenative/playtest/runner#viewportPresentationObserved": "export function viewportPresentationObserved( override: string | undefined, expected: string | undefined, physical: { … }",
         "@threenative/playtest/runner#viewportRestoreCommands": "export function viewportRestoreCommands(): string[][] { … }",
         "@threenative/playtest/runner#withBrowserCapture": "export async function withBrowserCapture<T>( config: IStandalonePlaytestConfig, capture: (session: IBrowserCaptureSession) => Promise<T>, signal?: AbortSignal, ): Promise<T> { … }",
+        "@threenative/playtest/runner#withScenarioClock": "export function withScenarioClock<T extends { … }",
         "@threenative/playtest/runner#writeCaptureProvenance": "export async function writeCaptureProvenance( artifactDirectory: string, provenance: IPlaytestCaptureProvenance, ): Promise<void> { … }",
         "@threenative/playtest/runner#writeObservationArtifacts": "export async function writeObservationArtifacts( artifactDirectory: string, requested: IPlaytestArtifactRequest | undefined, observations: { … }",
         "@threenative/playtest/runner#XcrunIosDriver": "export class XcrunIosDriver implements IDevicePlaytestDriver { … }",

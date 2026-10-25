@@ -800,6 +800,12 @@ export interface IPlaytestScenario {
   name: string;
   parity?: IPlaytestParityConfig;
   /**
+   * Browser-only: run this scenario on the wall clock, as `--live-clock` does for a whole run. A
+   * performance scenario needs it, because counted ticks advance faster than frames draw and a window
+   * then holds a few GPU samples. Tick counts keep their meaning; the other scenarios of one glob run stay counted.
+   */
+  clock?: "wall-clock";
+  /**
    * Browser-only: open the page with `prefers-reduced-motion: reduce` emulated, so a game that
    * honours the preference can prove it. Applied before navigation, so the first read sees it.
    */

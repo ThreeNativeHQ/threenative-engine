@@ -13,6 +13,7 @@ export const PLAYTEST_ROOT_KEYS = [
   "assert",
   "awaitStartup",
   "bootFailure",
+  "clock",
   "inputDelivery",
   "name",
   "parity",
@@ -58,6 +59,12 @@ export function validatePlaytestScenario(value: unknown, scenarioPath: string, a
   if (value.bootFailure !== undefined && target !== "web") {
     throw invalidScenario(scenarioPath, "Scenario bootFailure is browser-only and requires target 'web'.");
   }
+  if (value.clock !== undefined && value.clock !== "wall-clock") {
+    throw invalidScenario(scenarioPath, "Scenario clock must be 'wall-clock' when present.");
+  }
+  if (value.clock !== undefined && target !== "web") {
+    throw invalidScenario(scenarioPath, "Scenario clock is browser-only and requires target 'web'.");
+  }
   if (value.reducedMotion !== undefined && value.reducedMotion !== "reduce") {
     throw invalidScenario(scenarioPath, "Scenario reducedMotion must be 'reduce' when present.");
   }
@@ -97,6 +104,7 @@ export function validatePlaytestScenario(value: unknown, scenarioPath: string, a
     ...(assertions === undefined ? {} : { assert: assertions }),
     ...(typeof value.awaitStartup === "boolean" ? { awaitStartup: value.awaitStartup } : {}),
     ...(value.bootFailure === "renderer-no-adapter" ? { bootFailure: value.bootFailure } : {}),
+    ...(value.clock === "wall-clock" ? { clock: value.clock } : {}),
     inputDelivery,
     name,
     ...(value.parity === undefined

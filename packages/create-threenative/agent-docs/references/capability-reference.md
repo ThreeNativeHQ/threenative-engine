@@ -5464,6 +5464,21 @@ const config = parseStandalonePlaytestArgs(["--scenario", "playtests/smoke.playt
 await withBrowserCapture(config, async (session) => session.screenshot("ready"));
 ```
 
+### `withScenarioClock`
+
+`function` — Parse standalone playtest runner configuration.
+
+```ts
+export function withScenarioClock<T extends { … }
+```
+
+- **Use when:** invoke the playtest CLI from a scaffold · validate runner flags before launching a browser
+- **Constraints:** invalid flags throw a named usage error
+
+```ts
+const config = parseStandalonePlaytestArgs(argv);
+```
+
 ### `writeCaptureProvenance`
 
 `function` — Execute scenario steps, assertions, and evidence capture.

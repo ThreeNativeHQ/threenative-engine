@@ -6738,6 +6738,23 @@
     },
     {
       "aliases": [],
+      "constraints": ["invalid flags throw a named usage error"],
+      "example": "const config = parseStandalonePlaytestArgs(argv);",
+      "importPath": "@threenative/playtest/runner",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export function withScenarioClock<T extends { … }",
+      "situations": [
+        "invoke the playtest CLI from a scaffold",
+        "validate runner flags before launching a browser"
+      ],
+      "summary": "Parse standalone playtest runner configuration.",
+      "supersedes": [],
+      "symbol": "withScenarioClock"
+    },
+    {
+      "aliases": [],
       "constraints": ["missing observations and malformed assertions fail closed"],
       "example": "const report = await runStandalonePlaytest(options);",
       "importPath": "@threenative/playtest/runner",

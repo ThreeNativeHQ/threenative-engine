@@ -61,7 +61,7 @@ import {
   resolveBrowserArguments,
   softwareAdapterName,
 } from "./browser.js";
-import type { IStandalonePlaytestConfig } from "./config.js";
+import { withScenarioClock, type IStandalonePlaytestConfig } from "./config.js";
 import {
   provideDisplay,
   runNeedsPixels,
@@ -208,11 +208,12 @@ async function runStandalonePlaytestInternal(
   options: IStandalonePlaytestInternalOptions = {},
 ): Promise<IStandalonePlaytestReport> {
   const usesFreePort = config.server !== undefined && config.port === 0;
-  const activeConfig = usesFreePort ? await resolveManagedServerConfig(config) : config;
+  const resolvedConfig = usesFreePort ? await resolveManagedServerConfig(config) : config;
   const scenario = withPerformanceBudget(
-    await loadPlaytestScenario(activeConfig.projectPath, activeConfig.scenarioPath),
-    activeConfig.performanceBudget,
+    await loadPlaytestScenario(resolvedConfig.projectPath, resolvedConfig.scenarioPath),
+    resolvedConfig.performanceBudget,
   );
+  const activeConfig = withScenarioClock(resolvedConfig, scenario);
   const cpuLabels = cpuWindowLabels(scenario, "browser", activeConfig.liveClock === true);
   if (cpuLabels.length > 0 && options.remoteBrowser !== undefined) {
     throw new Error("TN_PLAYTEST_CPU_WINDOW_FAILED: remote browser has no local owned process tree");

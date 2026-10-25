@@ -135,6 +135,11 @@ export class PlaytestCliUsageError extends Error {
   }
 }
 
+/** A scenario that asks for `clock: "wall-clock"` runs as `--live-clock` does, whatever the other scenarios of the glob do. */
+export function withScenarioClock<T extends { liveClock?: boolean }>(config: T, scenario: { clock?: "wall-clock" }): T {
+  return scenario.clock === "wall-clock" && config.liveClock !== true ? { ...config, liveClock: true } : config;
+}
+
 export function formatUsage(): string {
   const flags = Object.entries(PLAYTEST_FLAGS).map(([name, details]) =>
     `  ${name.padEnd(20)} ${details.summary} (default: ${details.default})`,
