@@ -94,7 +94,8 @@ export function Hud() {
           <ItemIcon item={state.item} />
         </svg>
       </div>
-      <div className="absolute bottom-4 left-5 italic leading-none">
+      {/* A dark halo keeps the place legible over the kart's flames and sparks. */}
+      <div className="absolute bottom-4 left-5 italic leading-none drop-shadow-[0_0_3px_rgba(0,0,0,0.85)]">
         <span className="text-7xl text-lume">{state.place}</span>
         <span className="text-3xl">{ordinal(state.place)}</span>
       </div>

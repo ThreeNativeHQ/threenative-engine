@@ -208,6 +208,13 @@ gates every kit must pass. Each playtest runs on a project scaffolded from `--te
   Round 2: ORIGINALITY PASS, READABILITY PASS. All three BEFORE items read as the Nintendo
   originals, and no AFTER item does. Open polish notes: the burr is small on the asphalt at play
   size (20-30% larger), and the can icon reads as a battery (a nozzle or a flame would say nitro).
+- 2026-10-24 (agent, round 8 judge note): the place readout gets a dark 3 px halo, because an
+  orange "2nd" washed out over the orange mini-turbo sparks. Fresh Opus judge on the finish pose
+  (2 runs per arm): IMPROVEMENT in both runs, the halo follows the letterforms, nothing else
+  changed. The dust puff's hard bottom edge stays open: each puff ends at the top of a skid strip,
+  but neither fading the sprite's lower half nor a constant depth bias on the skid strips (in place
+  of the slope bias) changed the frame, so the edge is not a plain depth intersection. Next check:
+  a puff over bare road with no skids, then the AO alpha test and the temporal history.
 - 2026-10-24 (lead): Deferred engine bug, not worked around further. A `VirtualShadowNode` sun
   with `shadow.radius = 2` on the Wasm engine throws `TN_VIRTUAL_SHADOW_UNSUPPORTED`, then
   `TN_WASM_RENDERER_LOST`; at radius 1 it costs a 30-50 ms render phase. Repro: in
