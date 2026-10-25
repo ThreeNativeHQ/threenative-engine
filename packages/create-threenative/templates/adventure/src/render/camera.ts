@@ -100,11 +100,13 @@ const LOCK = {
   /** The steepest the camera looks down at its aim. */
   maxPitch: MathUtils.degToRad(35),
   /**
-   * Swings tried, nearest the wanted one first, when a wall cuts the arm under `clearShare` of its
-   * length: with her back to a wall the camera films the fight from the side instead.
+   * The camera holds its yaw while the fight line stays inside this angle of it, and turns only to
+   * keep the line at the edge, as Ocarina's Z-target camera does: it never chases a target that
+   * steps or circles a little. zeldaret/oot `z_camera.c` Camera_Battle1 turns the eye only while
+   * the target sits outside `swingAngle`, here its far value, 10° + (80° - 10°) × (1.1 - 1)
+   * (`z_camera_data.inc.c` sSetNormal0ModeZTargetUnfriendlyData). A wall only pulls the arm in.
    */
-  swings: [0, 0.5, -0.5, 1, -1, 1.5, -1.5],
-  clearShare: 0.8,
+  cone: MathUtils.degToRad(17),
 };
 
 /** A ray from `from` to `to`; returns the first hit, or undefined when nothing is in the way. */
@@ -152,6 +154,8 @@ export function setupCamera(
   let locked = 0;
   let extra = 0;
   let swing = LOCK.orbit;
+  // The shoulder the camera rides over, kept while a lock eases out.
+  let side = 1;
   let watching = false;
   // The view's orientation last tick: the next one turns from it by at most MAX_TURN.
   const held = new Quaternion();
@@ -281,7 +285,7 @@ export function setupCamera(
     const distance = DISTANCE + extra * locked;
     // The picture's yaw: the stick's yaw, swung right while locked.
     const view = yaw + swing * locked;
-    const hit = arm(focus, view, distance, LOCK.shoulder * locked * Math.sign(swing || 1));
+    const hit = arm(focus, view, distance, LOCK.shoulder * locked * side);
     direction.subVectors(desired, pivot).normalize();
     // Pull the arm in in front of a wall, so the camera never ends up inside one or behind it, then
     // shorter while walls clutter the view; when no length clears it, the least cluttered one.
@@ -329,7 +333,11 @@ export function setupCamera(
       const quick = 1 - Math.exp(-FRAME_RATE * dt);
       if (lock !== undefined) {
         lock.bounds.getCenter(middle);
-        home = Math.atan2(focus.x - middle.x, focus.z - middle.z);
+        const line = Math.atan2(focus.x - middle.x, focus.z - middle.z);
+        // The cone opens only on the orbit's side: a yaw that drifted across the line would bring
+        // the picture back onto it, and Wren would hide the target.
+        const off = MathUtils.euclideanModulo(yaw - line + Math.PI, Math.PI * 2) - Math.PI;
+        home = line + MathUtils.clamp(off, Math.min(0, side * LOCK.cone), Math.max(0, side * LOCK.cone));
         const apart = Math.hypot(focus.x - middle.x, focus.z - middle.z);
         const tall = Math.max(lock.bounds.max.y, lock.markerTop) - (focus.y + AIM_HEIGHT + 1);
         const goal =
@@ -340,7 +348,7 @@ export function setupCamera(
         // It orbits on the side of the fight line it already films from, so a new lock or a target
         // switch never swings the picture across the line, where Wren would hide the target.
         const onLine = MathUtils.euclideanModulo(
-          yaw + swing * locked - home + Math.PI,
+          yaw + swing * locked - line + Math.PI,
           Math.PI * 2,
         );
         const big = lock.bounds.max.y - lock.bounds.min.y > LOCK.bigAt;
@@ -351,26 +359,14 @@ export function setupCamera(
             LOCK.orbit,
             big ? LOCK.bigOrbitMax : LOCK.orbitMax,
           );
-        let pick = wantSwing;
-        let longest = -1;
-        for (const step of LOCK.swings) {
-          const free =
-            arm(
-              focus,
-              yaw + wantSwing + step,
-              DISTANCE + extra,
-              LOCK.shoulder * Math.sign(wantSwing + step || 1),
-            ) ?? Number.POSITIVE_INFINITY;
-          if (free >= (DISTANCE + extra) * LOCK.clearShare) {
-            pick = wantSwing + step;
-            break;
-          }
-          if (free > longest) {
-            longest = free;
-            pick = wantSwing + step;
-          }
-        }
-        swing += (pick - swing) * quick;
+        swing += (wantSwing - swing) * quick;
+        side = Math.sign(swing || side);
+      } else if (locked > 0) {
+        // A lock that ends leaves the picture where it is, as Ocarina's normal camera starts from
+        // the eye the Z-target camera left: the orbit folds into the yaw, so nothing swings back.
+        yaw += swing * locked;
+        home = yaw;
+        swing = 0;
       }
       locked += ((lock === undefined ? 0 : 1) - locked) * quick;
       const turn = MathUtils.euclideanModulo(home - yaw + Math.PI, Math.PI * 2) - Math.PI;
