@@ -14,6 +14,14 @@ export function frameDisplay(env: NodeJS.ProcessEnv = process.env, platform: str
   return platform === "linux" && !hostDisplayRequested(env) ? "virtual" : "real";
 }
 
+/**
+ * The fewest GPU timestamp samples a window may hold and still be judged. No measured value says
+ * how many are enough: windows seen on the kits hold 1 to 6 (the engine skips static frames, so an
+ * idle wait starves them), and the nearest-rank p95 of fewer than 20 samples is the maximum. 3 means
+ * one lucky or one slow query cannot decide the verdict alone.
+ */
+export const MIN_GPU_SAMPLES = 3;
+
 export interface IGpuWindows {
   /**
    * The GPU p95 of the latest window that measured it, in milliseconds, or `undefined` when no window
@@ -21,6 +29,8 @@ export interface IGpuWindows {
    * there and 6.4 ms in the next), so the steady state a player is left in is the latest one.
    */
   readonly p95?: number;
+  /** The timestamp samples the latest window's p95 rests on, or `undefined` when that window did not count them. */
+  readonly samples?: number;
   /** One GPU p95 per `TN_FRAME_BUDGET` window that measured it, in order. */
   readonly windows: readonly number[];
 }
@@ -32,6 +42,7 @@ export interface IGpuWindows {
  */
 export function gpuWindows(consoleLines: readonly unknown[]): IGpuWindows {
   const windows: number[] = [];
+  let samples: number | undefined;
   for (const line of consoleLines) {
     if (typeof line !== "string") continue;
     const at = line.indexOf(FRAME_BUDGET);
@@ -43,7 +54,10 @@ export function gpuWindows(consoleLines: readonly unknown[]): IGpuWindows {
       continue;
     }
     const p95 = report.gpu?.p95;
-    if (typeof p95 === "number" && Number.isFinite(p95) && (typeof report.gpu?.samples !== "number" || report.gpu.samples > 0)) windows.push(p95);
+    if (typeof p95 === "number" && Number.isFinite(p95) && (typeof report.gpu?.samples !== "number" || report.gpu.samples > 0)) {
+      windows.push(p95);
+      samples = typeof report.gpu?.samples === "number" ? report.gpu.samples : undefined;
+    }
   }
-  return windows.length === 0 ? { windows } : { p95: windows[windows.length - 1], windows };
+  return windows.length === 0 ? { windows } : { p95: windows[windows.length - 1], ...(samples === undefined ? {} : { samples }), windows };
 }

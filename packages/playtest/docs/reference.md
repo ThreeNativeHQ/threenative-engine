@@ -304,7 +304,11 @@ that is larger. The interval p95 is still in the row details, marked `gated: fal
 with the reason. On a **real display** the interval p95 and the cost p95 must both hold 16.7 ms,
 because host gap only the interval sees is part of what a player feels. A run with no CPU split on
 its samples, or no GPU reading in any `TN_FRAME_BUDGET` window (an adapter without timestamp
-queries), fails closed: an unmeasured cost is not a zero. There is no tolerance multiplier.
+queries), fails closed: an unmeasured cost is not a zero. So does a judged GPU window that holds
+fewer than 3 GPU samples (`TN_PLAYTEST_PERF_FEW_GPU_SAMPLES`; the row prints `cost.gpuSamples`): the
+engine skips static frames and takes no GPU sample on them, so a scenario must keep the scene moving
+through the measured window, and below 20 samples the p95 is the maximum. 3 is chosen, not measured:
+it is the least that stops one query deciding the verdict. There is no tolerance multiplier.
 
 **An engine performance warning fails the run.** Any `TN_SCENE_WARNING` console line, and any
 `TN_RENDER_PROJECTION` line with `projecting: false`, fails the `diagnostics` row with

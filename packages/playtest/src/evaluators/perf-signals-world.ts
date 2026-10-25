@@ -5,9 +5,9 @@ import { classifyAdapter, type IAdapterClassification } from "./adapter-class.js
 import { frameDisplay, gpuWindows } from "./frame-cost.js";
 import { evaluatePerformanceAssertion, evaluateResourceAnyOfAssertion, hasFinalPathExpectation, evaluatePathAssertion, pathValuePass, matchingSignals, evaluateWorldAssertion, evaluateAudioAssertion } from "./helpers.js";
 
-function gpuLane(consoleTexts: readonly unknown[]): { gpuP95?: number } {
-  const { p95 } = gpuWindows(consoleTexts);
-  return p95 === undefined ? {} : { gpuP95: p95 };
+function gpuLane(consoleTexts: readonly unknown[]): { gpuP95?: number; gpuSamples?: number } {
+  const { p95, samples } = gpuWindows(consoleTexts);
+  return p95 === undefined ? {} : { gpuP95: p95, ...(samples === undefined ? {} : { gpuSamples: samples }) };
 }
 
 export function emitPerfSignalsWorld(ctx: IEvaluationContext): void {

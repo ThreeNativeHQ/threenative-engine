@@ -4,7 +4,7 @@ import type { IPlaytestAnimationAssertion, IPlaytestComponentAssertion, IPlaytes
 import type { IPlaytestReport, IPlaytestDiagnosticsPolicy } from "../report.js";
 import type { IPlaytestRuntimeDiagnosticsSample } from "../protocol.js";
 import { renderedEntity, projectedPixelsFromNdcBounds } from "./measures.js";
-import type { FrameDisplay } from "./frame-cost.js";
+import { MIN_GPU_SAMPLES, type FrameDisplay } from "./frame-cost.js";
 // Extracted verbatim from assertion-evaluators.ts (PRD-182 Phase 2); do not edit semantics here.
 import { PLAYTEST_ASSERTION_REGISTRY } from "../assertion-schema.js";
 import {
@@ -239,6 +239,8 @@ export function evaluatePerformanceAssertion(
 export interface IFrameLane {
   readonly display: FrameDisplay;
   readonly gpuP95?: number;
+  /** The timestamp samples that GPU p95 rests on; absent when its window did not count them. */
+  readonly gpuSamples?: number;
 }
 
 /** `DEFAULT_HITCH_MS` in the engine's frame budget: the present gap from which a frame is a hitch. */
@@ -279,12 +281,14 @@ function emitFrameBound(
   const virtual = lane.display === "virtual";
   const costPass = costP95 !== undefined && costP95 <= ceiling;
   const intervalPass = virtual || (intervalP95 !== undefined && intervalP95 <= ceiling);
-  const pass = samplesPass && costPass && intervalPass;
+  // A GPU p95 from a thin window is one query's word: the judged window must hold MIN_GPU_SAMPLES.
+  const thinGpu = lane.gpuP95 !== undefined && !(lane.gpuSamples !== undefined && lane.gpuSamples >= MIN_GPU_SAMPLES);
+  const pass = samplesPass && costPass && intervalPass && !thinGpu;
   const round = (value: number | undefined): number | null => (value === undefined ? null : Math.round(value * 100) / 100);
   results.push({
     details: {
       actual: round(virtual || !costPass ? costP95 : intervalP95),
-      cost: { cpuP95: round(cpuP95), gpuP95: round(lane.gpuP95), hitchFrames: hitches, p95: round(costP95) },
+      cost: { cpuP95: round(cpuP95), gpuP95: round(lane.gpuP95), gpuSamples: lane.gpuSamples ?? null, hitchFrames: hitches, p95: round(costP95) },
       display: lane.display,
       expected: ceiling,
       interval: virtual
@@ -302,16 +306,24 @@ function emitFrameBound(
     : !costPass
       ? `cost p95 ${round(costP95)} ms (CPU ${round(cpuP95)}, GPU ${round(lane.gpuP95)}) is over ${ceiling} ms`
       : `rAF interval p95 ${round(intervalP95)} ms on a real display is over ${ceiling} ms`;
+  const fewSamples = missing.length === 0 && costPass && thinGpu;
   diagnostics.push({
-    code: "TN_PLAYTEST_PERFORMANCE_ASSERTION_FAILED",
-    message: `performance.maxFrameMsP95 ${detail}.`,
+    code: fewSamples ? "TN_PLAYTEST_PERF_FEW_GPU_SAMPLES" : "TN_PLAYTEST_PERFORMANCE_ASSERTION_FAILED",
+    message: `performance.maxFrameMsP95 ${fewSamples ? fewGpuSamples(lane.gpuSamples) : detail}.`,
     observedRuntimePath: path,
     severity: "error",
     sourcePath,
-    suggestion: missing.length > 0
+    suggestion: fewSamples
+      ? "Keep the scene moving through the judged window (hold a move input or loop a route): the engine skips static frames and takes no GPU sample on them."
+      : missing.length > 0
       ? "Keep the engine frame budget installed and run on an adapter with timestamp queries: an unmeasured cost is not a zero."
       : "Read the TN_FRAME_BUDGET marker for this run: it names which frame phase or GPU pass owns the time.",
   });
+}
+
+function fewGpuSamples(samples: number | undefined): string {
+  const held = samples === undefined ? "reports no sample count" : `holds ${samples} GPU sample${samples === 1 ? "" : "s"}`;
+  return `cannot be judged: the latest GPU window ${held}, under the minimum of ${MIN_GPU_SAMPLES}`;
 }
 
 export function isRuntimeDiagnosticsSample(value: unknown): value is IPlaytestRuntimeDiagnosticsSample {
