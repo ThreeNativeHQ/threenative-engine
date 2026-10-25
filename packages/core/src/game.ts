@@ -1542,7 +1542,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     renderer.noteTargetFps?.(initialTarget.targetFps);
     const automaticScale = renderer.surface().scaleSource === "auto";
     const createScaler = () =>
-      automaticScale && initialTarget.targetFps > 0
+      automaticScale && heldTargetFps > 0
         ? new ResolutionScaler({
             // Phones keep the device ladder; a desktop stops before its bottom, where a picture
             // with nothing reconstructing it stops being a faster frame and becomes a blur.
@@ -1553,7 +1553,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
               (renderer.gpuClass === undefined
                 ? undefined
                 : RESOLUTION_SCALER.startScaleByGpuClass[renderer.gpuClass.class]),
-            targetFps: initialTarget.targetFps,
+            targetFps: heldTargetFps,
             temporalUpscale: () => renderer.temporalUpscale?.() === true,
           })
         : undefined;
