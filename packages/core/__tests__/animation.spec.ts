@@ -910,9 +910,13 @@ describe("AnimationPlayer stride sync on in-place clips", () => {
       vi.spyOn(quaternion, "clone"),
       vi.spyOn(scale, "clone"),
     ]);
+    const worldUpdates = vi.spyOn(root, "updateMatrixWorld");
     try {
       expect(player.stride.clipGroundSpeed).toBeCloseTo(1, 1);
-      for (const copy of copies) expect(copy).toHaveBeenCalledTimes(65);
+      // The world matrices come from each node's own transform: no engine world read per node per
+      // sample (65 each before), and one world update, the restore, instead of one per sample (66).
+      for (const copy of copies) expect(copy).not.toHaveBeenCalled();
+      expect(worldUpdates).toHaveBeenCalledTimes(1);
       for (const clone of clones) expect(clone).not.toHaveBeenCalled();
       for (const { object, position, quaternion, scale, values } of originals) {
         expect(object.position).toBe(position);
@@ -923,6 +927,31 @@ describe("AnimationPlayer stride sync on in-place clips", () => {
     } finally {
       for (const clone of clones) clone.mockRestore();
     }
+  });
+
+  it("keeps the engine's world read for a rig with a hand-set matrix", () => {
+    const rig = (handSet: boolean) => {
+      const root = new Group();
+      const foot = new Bone();
+      foot.name = "Foot";
+      root.add(foot);
+      const prop = new Group();
+      prop.matrixAutoUpdate = !handSet;
+      prop.position.set(0, 0.5, 0);
+      prop.updateMatrix();
+      root.add(prop);
+      const copy = vi.fn((target: Matrix4) => target.copy(prop.matrixWorld));
+      Object.assign(prop, { __tnCopyMatrixWorld: copy });
+      const player = new AnimationPlayer({ root, clips: [plantedWalk()] });
+      player.play("walk");
+      player.mixer.update(0.2);
+      return { speed: player.stride.clipGroundSpeed, copies: copy.mock.calls.length };
+    };
+    const composed = rig(false);
+    const handSet = rig(true);
+    expect(composed.copies).toBe(0);
+    expect(handSet.copies).toBe(65);
+    expect(handSet.speed).toBe(composed.speed);
   });
 
   it("reads the sampled rig's world positions without re-walking each bone's ancestors", () => {
