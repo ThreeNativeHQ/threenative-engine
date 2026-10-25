@@ -652,7 +652,12 @@ export class InputMap {
     } else if (edgeType === "up" || edgeType === "cancel") {
       this.#pointers.delete(id);
     } else if (tracked !== undefined) {
-      tracked.buttons = buttons;
+      // Under pointer lock Chromium sends a move that presses or releases nothing (`button` -1)
+      // with `buttons` 0 while a button is held, about every fifth frame: it released a held block
+      // or lock button. Locked, the pointer cannot leave the page, so its pointerup still arrives.
+      // Unlocked, the same move is what clears a button released outside the window.
+      const phantomRelease = this.raw.pointer.captured && buttons === 0 && pointer.button === -1;
+      if (!phantomRelease) tracked.buttons = buttons;
       tracked.position.set(x, y);
     }
     const primary = this.#pointers.values().next().value as IRawInputPointer | undefined;

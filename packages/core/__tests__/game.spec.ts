@@ -2608,6 +2608,49 @@ describe("IGame", () => {
     game.stop();
   });
 
+  // The runner kit on SwiftShader: a full scene warm-up on restart compiled for its 45 s budget
+  // before the first world frame, and readiness came 45 s later than on develop.
+  it("bakes a restarted scene's environment without compiling the scene again", async () => {
+    const canvas = testCanvas();
+    const compileAsync = vi.fn(() => Promise.resolve());
+    const prepareEnvironmentAsync = vi.fn(() => Promise.resolve(true));
+    class Restartable extends Scene {
+      static override readonly initialState = {};
+
+      override enter(ctx: ICtx): void {
+        ctx.scene.environment = new DataTexture(new Uint8Array(8 * 65 * 4), 8, 65);
+        ctx.add(new Mesh(new SphereGeometry(), new MeshBasicMaterial()));
+      }
+    }
+    const game = defineGame({
+      renderer: {
+        canvas,
+        preferWebGPU: false,
+        webgl2Factory: () => ({
+          compileAsync,
+          dispose: () => undefined,
+          domElement: canvas,
+          prepareEnvironmentAsync,
+          render: () => undefined,
+          setSize: () => undefined,
+        }),
+      },
+      scenes: { play: Restartable },
+      start: "play",
+      warmUp: { yieldFrame: () => Promise.resolve() },
+    });
+    try {
+      await game.start();
+      const compiles = compileAsync.mock.calls.length;
+      const bakes = prepareEnvironmentAsync.mock.calls.length;
+      await game.goto("play");
+      expect(prepareEnvironmentAsync.mock.calls.length).toBe(bakes + 1);
+      expect(compileAsync.mock.calls.length).toBe(compiles);
+    } finally {
+      game.stop();
+    }
+  });
+
   it("holds restarted scene updates until its environment is prepared", async () => {
     const canvas = testCanvas();
     let advance: ((ticks: number) => number) | undefined;

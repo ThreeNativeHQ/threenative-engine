@@ -55,6 +55,8 @@ const LOG_SPAN = 30;
 const DEPTH = 32;
 /** A grid cell is 8x8 threads times 8x8 texels each of the half resolution image. */
 const CELL = 64;
+/** Half resolution logs per log texel: neighbours along a row, so a row sum reads four with one tap. */
+const PACK = 4;
 /** Gaussian taps either side: the unrolled loop's 32 samples (r.Filter.LoopMode 0) cap the radius. */
 const BLUR_RADIUS = 31;
 /** PostProcessWeightedSampleSum.cpp LegacyCompatibilityConstant. */
@@ -75,7 +77,9 @@ export function localExposureSizes(
   readonly half: readonly [number, number];
   readonly blur: readonly [number, number];
   readonly cells: readonly [number, number];
+  readonly log: readonly [number, number];
   readonly rows: readonly [number, number];
+  readonly grid: readonly [number, number];
   readonly blurRadius: number;
 } {
   const half = [Math.max(1, Math.ceil(width / 2)), Math.max(1, Math.ceil(height / 2))] as const;
@@ -89,8 +93,16 @@ export function localExposureSizes(
     Math.max(1e-4, blur[0] * BLUR_KERNEL_PERCENT * 0.01 * 0.5),
   );
   const cells = [Math.ceil(half[0] / CELL), Math.ceil(half[1] / CELL)] as const;
-  // The grid's row sums: one RGBA texel per pair of bins and half resolution cell row.
-  return { half, blur, cells, rows: [cells[0] * (DEPTH / 2), cells[1] * CELL], blurRadius };
+  // The grid's row sums: one texel per cell, pair of bins and half resolution row, CELL logs each.
+  return {
+    half,
+    blur,
+    cells,
+    log: [Math.ceil(half[0] / PACK), half[1]],
+    rows: [(cells[0] * DEPTH) / 2, cells[1] * CELL],
+    grid: [cells[0] * DEPTH, cells[1]],
+    blurRadius,
+  };
 }
 
 function scratch(type: typeof FloatType | typeof HalfFloatType, linear: boolean): RenderTarget {
@@ -117,6 +129,8 @@ export class LocalExposureNode extends TempNode<"float"> {
   readonly #size = new Vector2();
   readonly #full = uniform(new Vector2(1, 1));
   readonly #half = uniform(new Vector2(1, 1));
+  readonly #logSize = uniform(new Vector2(1, 1));
+  readonly #rows = uniform(new Vector2(1, 1));
   readonly #grid = uniform(new Vector2(1, 1));
   readonly #cells = uniform(new Vector2(1, 1));
   readonly #blurSize = uniform(new Vector2(1, 1));
@@ -153,20 +167,27 @@ export class LocalExposureNode extends TempNode<"float"> {
     const blurSize = this.#blurSize;
     const radius = this.#blurRadius;
 
-    // Pass 1: log2 luminance of the half resolution image (a 2x2 average of colour).
+    // Pass 1: log2 luminance of the half resolution image (a 2x2 average of colour), PACK neighbouring
+    // half resolution texels of a row per texel, so the row sums read four logs with one tap.
     this.#logMaterial.fragmentNode = Fn(() => {
       const c = uv();
       const texel = vec2(0.5).div(this.#full);
-      const sum = vec3(0).toVar();
-      for (const [x, y] of [
-        [-1, -1],
-        [1, -1],
-        [-1, 1],
-        [1, 1],
-      ] as const)
-        sum.addAssign(input.sample(c.add(texel.mul(vec2(x, y)))).rgb);
-      const luminance = exposureMeter(vec4(sum.div(4), 1), c).x.max(2 ** LOG_MIN);
-      return vec4(luminance.log2(), 0, 0, 1);
+      const first = c.x.mul(this.#logSize.x).floor().mul(PACK);
+      const logAt = (k: number): Node<"float"> => {
+        const at = vec2(first.add(k + 0.5).div(half.x), c.y);
+        const sum = vec3(0).toVar();
+        for (const [x, y] of [
+          [-1, -1],
+          [1, -1],
+          [-1, 1],
+          [1, 1],
+        ] as const)
+          sum.addAssign(input.sample(at.add(texel.mul(vec2(x, y)))).rgb);
+        return exposureMeter(vec4(sum.div(4), 1), at)
+          .x.max(2 ** LOG_MIN)
+          .log2();
+      };
+      return vec4(logAt(0), logAt(1), logAt(2), logAt(3));
     })();
 
     // Pass 2: log2 luminance of the colour averaged over each 16x16 block, the downsample chain's mip 4
@@ -218,57 +239,67 @@ export class LocalExposureNode extends TempNode<"float"> {
     this.#blurXMaterial.fragmentNode = blur(this.#lumTexture, 0);
     this.#blurYMaterial.fragmentNode = blur(this.#blurXTexture, 1);
 
-    // Passes 5 and 6: the bilateral grid. Texel (cell x * DEPTH + bin, cell y) holds the summed weight
-    // and weighted log luminance of the half resolution texels in that cell, each texel shared
-    // between its two nearest bins by linear weights (PostProcessHistogram.usf). Pass 5 sums each
-    // cell row, packing two bins into RG/BA; pass 6 sums those rows. The former whole-cell pass
-    // ran 7,680 fragments of 4,096 serial taps at 2560x1440, 1.3 ms on an RTX 2080. Unreal spreads a cell over 64
-    // threads and reduces their histograms after (UE 5.8.3: Engine/Shaders/Private/PostProcessHistogram.usf:99-102,209-224).
+    // Passes 5 and 6: the bilateral grid. Each half resolution texel of a cell is shared between its
+    // two nearest bins of log luminance by linear weights (PostProcessHistogram.usf), and the grid
+    // sums the weight and the weighted log per cell and bin. Pass 5 sums each cell row, pass 6 sums
+    // the rows: one fragment looping over the whole cell ran 7,680 threads of 4,096 serial taps at
+    // 2560x1440, 1.3 ms on an RTX 2080. Unreal also spreads a cell over 64 threads and reduces their
+    // histograms after (UE 5.8.3: Engine/Shaders/Private/PostProcessHistogram.usf:99-102,209-224).
+    // A row sum texel (cell x * DEPTH / 2 + pair, cell y * CELL + row) holds bins 2 pair and 2 pair + 1
+    // as (log sum, weight, log sum, weight), reading the row's logs PACK at a time: one bin a texel
+    // read each log once per bin, 17.7M taps and 1.25 ms at 1920x1080 on Iris Xe.
     this.#rowMaterial.fragmentNode = Fn(() => {
       const c = uv();
-      const column = c.x.mul(this.#grid.x.div(2)).floor();
-      const y = c.y.mul(this.#grid.y.mul(CELL)).floor();
+      const column = c.x.mul(this.#rows.x).floor();
+      const y = c.y.mul(this.#rows.y).floor();
       const cell = column.div(DEPTH / 2).floor();
       const bin = column.sub(cell.mul(DEPTH / 2)).mul(2);
-      const weight = vec2(0).toVar();
-      const logSum = vec2(0).toVar();
-      Loop(CELL, ({ i }) => {
-        const x = cell.mul(CELL).add(float(i));
-        If(x.lessThan(half.x).and(y.lessThan(half.y)), () => {
-          const log = this.#logTexture
-            .sample(vec2(x.add(0.5).div(half.x), y.add(0.5).div(half.y)))
-            .level(float(0))
-            .r.toVar();
-          const position = log
-            .sub(LOG_MIN)
-            .div(LOG_SPAN)
-            .clamp(0, 1)
-            .mul(DEPTH - 1)
-            .toVar();
-          const share = vec2(position)
-            .sub(vec2(bin, bin.add(1)))
-            .abs()
-            .oneMinus()
-            .max(0);
-          weight.addAssign(share);
-          logSum.addAssign(share.mul(log));
-        });
+      const sums = vec4(0).toVar();
+      Loop(CELL / PACK, ({ i }) => {
+        const packed = cell.mul(CELL / PACK).add(float(i));
+        const logs = this.#logTexture
+          .sample(vec2(packed.add(0.5).div(this.#logSize.x), y.add(0.5).div(half.y)))
+          .level(float(0));
+        for (const [k, lane] of (["x", "y", "z", "w"] as const).entries()) {
+          If(packed.mul(PACK).add(k).lessThan(half.x).and(y.lessThan(half.y)), () => {
+            const log = logs[lane];
+            const position = log
+              .sub(LOG_MIN)
+              .div(LOG_SPAN)
+              .clamp(0, 1)
+              .mul(DEPTH - 1);
+            const low = position.sub(bin).abs().oneMinus().max(0);
+            const high = position.sub(bin.add(1)).abs().oneMinus().max(0);
+            sums.addAssign(vec4(low.mul(log), low, high.mul(log), high));
+          });
+        }
       });
-      return vec4(logSum.x, weight.x, logSum.y, weight.y);
+      return sums;
     })();
+    // Grid texel (cell x * DEPTH + bin, cell y) holds bin and bin + 1 (the last bin twice) as
+    // (log sum, weight, log sum, weight), so the trilinear lookup reads both bins with one tap.
     this.#gridMaterial.fragmentNode = Fn(() => {
       const c = uv();
-      const row = c.y.mul(this.#grid.y).floor();
       const column = c.x.mul(this.#grid.x).floor();
-      const u = column.div(2).floor().add(0.5).div(this.#grid.x.div(2));
-      const even = column.mod(2).equal(0);
-      const sum = vec2(0).toVar();
+      const row = c.y.mul(this.#grid.y).floor();
+      const cell = column.div(DEPTH).floor();
+      const bin = column.sub(cell.mul(DEPTH));
+      const next = bin.add(1).min(DEPTH - 1);
+      const at = (b: Node<"float">): Node<"float"> =>
+        cell
+          .mul(DEPTH / 2)
+          .add(b.div(2).floor())
+          .add(0.5)
+          .div(this.#rows.x);
+      const odd = (b: Node<"float">): Node<"bool"> => b.mod(2).greaterThan(0.5);
+      const sum = vec4(0).toVar();
       Loop(CELL, ({ i }) => {
-        const v = row.mul(CELL).add(float(i)).add(0.5).div(this.#grid.y.mul(CELL));
-        const bins = this.#rowTexture.sample(vec2(u, v)).level(float(0)).toVar();
-        sum.addAssign(even.select(bins.rg, bins.ba));
+        const v = row.mul(CELL).add(float(i)).add(0.5).div(this.#rows.y);
+        const own = this.#rowTexture.sample(vec2(at(bin), v)).level(float(0));
+        const above = this.#rowTexture.sample(vec2(at(next), v)).level(float(0));
+        sum.addAssign(vec4(odd(bin).select(own.zw, own.xy), odd(next).select(above.zw, above.xy)));
       });
-      return vec4(sum, 0, 1);
+      return sum;
     })();
   }
 
@@ -299,23 +330,21 @@ export class LocalExposureNode extends TempNode<"float"> {
     const fx = gx.sub(x0);
     const fy = gy.sub(y0);
     const fz = gz.sub(z0);
-    const fetch = (dx: number, dy: number, dz: number): Node<"vec2"> => {
+    // One tap holds bin z0 and the next (the last bin twice), so the eight corners take four taps.
+    const fetch = (dx: number, dy: number): Node<"vec4"> => {
       const x = x0.add(dx).min(cells.x.sub(1));
       const y = y0.add(dy).min(cells.y.sub(1));
-      const z = z0.add(dz).min(DEPTH - 1);
       return this.#gridTexture
-        .sample(vec2(x.mul(DEPTH).add(z).add(0.5).div(gridSize.x), y.add(0.5).div(gridSize.y)))
-        .level(float(0)).rg;
+        .sample(vec2(x.mul(DEPTH).add(z0).add(0.5).div(gridSize.x), y.add(0.5).div(gridSize.y)))
+        .level(float(0));
     };
     let grid: Node<"vec2"> = vec2(0);
-    for (const dz of [0, 1])
-      for (const dy of [0, 1])
-        for (const dx of [0, 1]) {
-          const weight = (dx ? fx : fx.oneMinus())
-            .mul(dy ? fy : fy.oneMinus())
-            .mul(dz ? fz : fz.oneMinus());
-          grid = grid.add(fetch(dx, dy, dz).mul(weight));
-        }
+    for (const dy of [0, 1])
+      for (const dx of [0, 1]) {
+        const corner = fetch(dx, dy);
+        const weight = (dx ? fx : fx.oneMinus()).mul(dy ? fy : fy.oneMinus());
+        grid = grid.add(mix(corner.xy, corner.zw, fz).mul(weight));
+      }
     const blurred = this.#blurTexture.sample(c).level(float(0)).r;
     // A cell with no samples (the grid is built from the half resolution image) uses the blur.
     const bilateral = grid.y.lessThan(0.001).select(blurred, grid.x.div(grid.y.max(0.001)));
@@ -350,18 +379,22 @@ export class LocalExposureNode extends TempNode<"float"> {
     const [halfWidth, halfHeight] = sizes.half;
     const [blurWidth, blurHeight] = sizes.blur;
     const [cellsX, cellsY] = sizes.cells;
+    const [logWidth, logHeight] = sizes.log;
     const [rowsWidth, rowsHeight] = sizes.rows;
+    const [gridWidth, gridHeight] = sizes.grid;
     this.#half.value.set(halfWidth, halfHeight);
+    this.#logSize.value.set(logWidth, logHeight);
+    this.#rows.value.set(rowsWidth, rowsHeight);
     this.#blurSize.value.set(blurWidth, blurHeight);
     this.#blurRadius.value = sizes.blurRadius;
     this.#cells.value.set(cellsX, cellsY);
-    this.#grid.value.set(cellsX * DEPTH, cellsY);
-    this.#logTarget.setSize(halfWidth, halfHeight);
+    this.#grid.value.set(gridWidth, gridHeight);
+    this.#logTarget.setSize(logWidth, logHeight);
     this.#lumTarget.setSize(blurWidth, blurHeight);
     this.#blurXTarget.setSize(blurWidth, blurHeight);
     this.#blurTarget.setSize(blurWidth, blurHeight);
     this.#rowTarget.setSize(rowsWidth, rowsHeight);
-    this.#gridTarget.setSize(cellsX * DEPTH, cellsY);
+    this.#gridTarget.setSize(gridWidth, gridHeight);
     this.#rendererState ??= RendererUtils.saveRendererState(renderer);
     this.#rendererState = RendererUtils.resetRendererState(renderer, this.#rendererState);
     try {

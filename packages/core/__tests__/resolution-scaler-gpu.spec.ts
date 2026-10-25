@@ -93,3 +93,28 @@ describe("resolution responds to measured GPU cost", () => {
     expect(scaler.observe(slow(30, 3))).toBeLessThan(0.85);
   });
 });
+
+// Lantern Vale on Iris Xe at 1920x1080 (laptop TN_FRAME_BUDGET): the Wasm engine declined about a
+// third of the renders while two frames were on the GPU, so rAF kept the panel's 16.7 ms cadence and
+// `fps` read 59.88 while 39 frames a second were drawn at 25 ms of GPU each. The scale stayed at 1.
+describe("resolution counts the frames the renderer declined to draw", () => {
+  const gated = (renderSkips?: number): IScalerWindow => ({
+    fps: 59.88,
+    frames: 300,
+    gpu: { p50: 25.2, samples: 90 },
+    gpuAgeFrames: 400,
+    gpuMs: 25.2,
+    presented: { max: 17.4, p50: 16.7, p95: 16.9, p99: 17.1 },
+    ...(renderSkips === undefined ? {} : { renderSkips }),
+  });
+
+  it("steps down when a third of the window's renders were declined on a GPU over budget", () => {
+    const stepped = ready().observe(gated(105));
+    expect(stepped).toBeDefined();
+    expect(stepped).toBeLessThan(1);
+  });
+
+  it("still holds a window that drew every frame at the panel's cadence", () => {
+    expect(ready().observe(gated())).toBeUndefined();
+  });
+});

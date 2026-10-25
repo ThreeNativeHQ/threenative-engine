@@ -72,7 +72,14 @@ describe("modelPass with a Draco input", () => {
     const input = await dracoFixture();
     const result = await modelPass({
       compact: false,
-      passes: { dedup: false, meshopt: false, prune: false, quantize: false, reorder: false },
+      passes: {
+        dedup: false,
+        meshopt: false,
+        prune: false,
+        quantize: false,
+        reorder: false,
+        restTracks: false,
+      },
       virtual: "none",
     }).apply(input, "legacy.glb");
     // The negative control for the re-emission test: no transform, no re-emission — which

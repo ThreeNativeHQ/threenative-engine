@@ -343,8 +343,13 @@ export function setupCamera(
         // The cone opens only on the orbit's side: a yaw that drifted across the line would bring
         // the picture back onto it, and Wren would hide the target.
         const off = MathUtils.euclideanModulo(yaw - line + Math.PI, Math.PI * 2) - Math.PI;
-        home =
-          line + MathUtils.clamp(off, Math.min(0, side * LOCK.cone), Math.max(0, side * LOCK.cone));
+        const big = lock.bounds.max.y - lock.bounds.min.y > LOCK.bigAt;
+        // A big target keeps orbit plus cone inside its orbit cap: the cone drifted the Warden's
+        // picture 82° round, where its chest ring turned edge-on to the lens.
+        const cone = big
+          ? MathUtils.clamp(LOCK.bigOrbitMax - Math.abs(swing), 0, LOCK.cone)
+          : LOCK.cone;
+        home = line + MathUtils.clamp(off, Math.min(0, side * cone), Math.max(0, side * cone));
         const apart = Math.hypot(focus.x - middle.x, focus.z - middle.z);
         const tall = Math.max(lock.bounds.max.y, lock.markerTop) - (focus.y + AIM_HEIGHT + 1);
         const goal =
@@ -358,7 +363,6 @@ export function setupCamera(
           yaw + swing * locked - line + Math.PI,
           Math.PI * 2,
         );
-        const big = lock.bounds.max.y - lock.bounds.min.y > LOCK.bigAt;
         const wantSwing =
           Math.sign(onLine - Math.PI || 1) *
           MathUtils.clamp(

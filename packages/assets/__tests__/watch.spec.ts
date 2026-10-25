@@ -308,6 +308,8 @@ describe("watchAssets", () => {
         // A decoder-capable page (`engine: "threejs"`) names its decoders; the default has none.
         runtimeDecoders: { ktx2: true, meshopt: true },
         transcoder: basisTranscoderPaths(),
+        // This case is about publishing the KTX2 runtime; a 32-pixel fixture cannot repay it.
+        modelTranscoderBytes: 0,
       }),
     );
     await openHandles[0]?.ready;
@@ -541,11 +543,17 @@ describe("watchAssets", () => {
     const recorder = createBurstRecorder();
     openHandles.push(
       watchAssets({
+        // The tiny fixture auto-selects JPEG; force a Basis-backed rung to test runtime publishing.
+        config: {
+          models: { textures: { overrides: [{ slot: "baseColorTexture", codec: "uastc" }] } },
+        },
         cwd: root,
         debounceMs: DEBOUNCE_MS,
         onChange: recorder.onChange,
         runtimeDecoders: { ktx2: true, meshopt: true },
         transcoder: basisTranscoderPaths(),
+        // This case is about publishing the KTX2 runtime; a 32-pixel fixture cannot repay it.
+        modelTranscoderBytes: 0,
       }),
     );
     await openHandles[0]?.ready;
@@ -565,9 +573,17 @@ describe("watchAssets", () => {
 
     // Modified: a repainted base-colour map is a new content-addressed shared image, and the
     // unchanged normal map is one already on disk that must not be rewritten.
-    const declaredBefore = (
-      requireEntry(await readManifestEntries(manifestPath), "props/oak.glb").sharedImages ?? []
-    ).map((image) => image.output);
+    const sharedBefore =
+      requireEntry(await readManifestEntries(manifestPath), "props/oak.glb").sharedImages ?? [];
+    expect(sharedBefore).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          transcoderRequired: expect.any(Boolean),
+          transcoderSavings: expect.any(Number),
+        }),
+      ]),
+    );
+    const declaredBefore = sharedBefore.map((image) => image.output);
     const mtimesBefore = new Map(
       await Promise.all(
         declaredBefore.map(

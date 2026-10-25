@@ -1,0 +1,2653 @@
+{
+  "schemaVersion": 1,
+  "goals": [
+    {
+      "key": "shippedMiB",
+      "short": "Shipped",
+      "label": "Bytes shipped for the template corpus",
+      "unit": "MiB",
+      "goal": 3,
+      "better": "lower"
+    },
+    {
+      "key": "shippedPctOfSource",
+      "short": "Shipped/source",
+      "label": "Shipped bytes as a share of source bytes",
+      "unit": "%",
+      "goal": 25,
+      "better": "lower"
+    },
+    {
+      "key": "preloadLocalMs",
+      "short": "Preload local",
+      "label": "Preload to GPU-ready, localhost",
+      "unit": "ms",
+      "goal": 450,
+      "better": "lower"
+    },
+    {
+      "key": "preloadThrottledMs",
+      "short": "Preload 40 Mbps",
+      "label": "Preload to GPU-ready, 40 Mbps / 20 ms",
+      "unit": "ms",
+      "goal": 1200,
+      "better": "lower"
+    }
+  ],
+  "iterations": [
+    {
+      "id": 1,
+      "at": "2026-10-24T00:20:13.597Z",
+      "commit": "6da4a6606",
+      "dirty": false,
+      "label": "default cook, what a game ships today",
+      "notes": "",
+      "decision": "baseline",
+      "arm": "default",
+      "config": {},
+      "metrics": {
+        "shippedMiB": 5.37,
+        "shippedPctOfSource": 45.1,
+        "preloadLocalMs": null,
+        "preloadThrottledMs": null
+      },
+      "extra": {
+        "sourceBytes": 12484547,
+        "shippedBytes": 5628606,
+        "compileMs": 55073,
+        "kinds": {
+          "model": {
+            "sourceBytes": 7386300,
+            "shippedBytes": 4536136,
+            "files": 6
+          },
+          "runtime": {
+            "sourceBytes": 0,
+            "shippedBytes": 584862,
+            "files": 2
+          },
+          "texture": {
+            "sourceBytes": 282751,
+            "shippedBytes": 282751,
+            "files": 3
+          },
+          "audio": {
+            "sourceBytes": 4815496,
+            "shippedBytes": 224857,
+            "files": 6
+          }
+        }
+      },
+      "files": [
+        {
+          "path": "shared/player-viewmodel.glb",
+          "kind": "model",
+          "sourceBytes": 3385176,
+          "shippedBytes": 1654888
+        },
+        {
+          "path": "shared/mannequin-combat.glb",
+          "kind": "model",
+          "sourceBytes": 2142220,
+          "shippedBytes": 1631448
+        },
+        {
+          "path": "sailing/ship.glb",
+          "kind": "model",
+          "sourceBytes": 1192712,
+          "shippedBytes": 758528
+        },
+        {
+          "path": "basis/basis_transcoder.wasm",
+          "kind": "runtime",
+          "sourceBytes": 0,
+          "shippedBytes": 527333
+        },
+        {
+          "path": "shared/mannequin.glb",
+          "kind": "model",
+          "sourceBytes": 664944,
+          "shippedBytes": 489324
+        },
+        {
+          "path": "shared/sky.jpg",
+          "kind": "texture",
+          "sourceBytes": 282451,
+          "shippedBytes": 282451
+        },
+        {
+          "path": "rain/thunder.wav",
+          "kind": "audio",
+          "sourceBytes": 2469644,
+          "shippedBytes": 106795
+        },
+        {
+          "path": "basis/basis_transcoder.js",
+          "kind": "runtime",
+          "sourceBytes": 0,
+          "shippedBytes": 57529
+        },
+        {
+          "path": "rain/rain-loop.wav",
+          "kind": "audio",
+          "sourceBytes": 1058444,
+          "shippedBytes": 51545
+        },
+        {
+          "path": "rain/wind-loop.wav",
+          "kind": "audio",
+          "sourceBytes": 1058444,
+          "shippedBytes": 36747
+        },
+        {
+          "path": "snow/wind.wav",
+          "kind": "audio",
+          "sourceBytes": 176444,
+          "shippedBytes": 19278
+        },
+        {
+          "path": "snow/crunch.wav",
+          "kind": "audio",
+          "sourceBytes": 13274,
+          "shippedBytes": 5264
+        },
+        {
+          "path": "starter/pickup.wav",
+          "kind": "audio",
+          "sourceBytes": 39246,
+          "shippedBytes": 5228
+        },
+        {
+          "path": "puzzle/native-proof.glb",
+          "kind": "model",
+          "sourceBytes": 624,
+          "shippedBytes": 1324
+        },
+        {
+          "path": "starter/native-proof.glb",
+          "kind": "model",
+          "sourceBytes": 624,
+          "shippedBytes": 624
+        },
+        {
+          "path": "puzzle/native-proof.png",
+          "kind": "texture",
+          "sourceBytes": 150,
+          "shippedBytes": 150
+        },
+        {
+          "path": "starter/native-proof.png",
+          "kind": "texture",
+          "sourceBytes": 150,
+          "shippedBytes": 150
+        }
+      ],
+      "superseded": {
+        "reason": "re-recorded as #3 with preload",
+        "at": "2026-10-24T00:35:15.828Z"
+      }
+    },
+    {
+      "id": 2,
+      "at": "2026-10-24T00:20:14.561Z",
+      "commit": "6da4a6606",
+      "dirty": false,
+      "label": "uncooked control, every byte as authored",
+      "notes": "",
+      "decision": "control",
+      "arm": "none",
+      "config": {
+        "textures": "none",
+        "models": "none",
+        "audio": "none"
+      },
+      "metrics": {
+        "shippedMiB": 11.91,
+        "shippedPctOfSource": 100,
+        "preloadLocalMs": null,
+        "preloadThrottledMs": null
+      },
+      "extra": {
+        "sourceBytes": 12484547,
+        "shippedBytes": 12484547,
+        "compileMs": 678,
+        "kinds": {
+          "model": {
+            "sourceBytes": 7386300,
+            "shippedBytes": 7386300,
+            "files": 6
+          },
+          "audio": {
+            "sourceBytes": 4815496,
+            "shippedBytes": 4815496,
+            "files": 6
+          },
+          "texture": {
+            "sourceBytes": 282751,
+            "shippedBytes": 282751,
+            "files": 3
+          }
+        }
+      },
+      "files": [
+        {
+          "path": "shared/player-viewmodel.glb",
+          "kind": "model",
+          "sourceBytes": 3385176,
+          "shippedBytes": 3385176
+        },
+        {
+          "path": "rain/thunder.wav",
+          "kind": "audio",
+          "sourceBytes": 2469644,
+          "shippedBytes": 2469644
+        },
+        {
+          "path": "shared/mannequin-combat.glb",
+          "kind": "model",
+          "sourceBytes": 2142220,
+          "shippedBytes": 2142220
+        },
+        {
+          "path": "sailing/ship.glb",
+          "kind": "model",
+          "sourceBytes": 1192712,
+          "shippedBytes": 1192712
+        },
+        {
+          "path": "rain/rain-loop.wav",
+          "kind": "audio",
+          "sourceBytes": 1058444,
+          "shippedBytes": 1058444
+        },
+        {
+          "path": "rain/wind-loop.wav",
+          "kind": "audio",
+          "sourceBytes": 1058444,
+          "shippedBytes": 1058444
+        },
+        {
+          "path": "shared/mannequin.glb",
+          "kind": "model",
+          "sourceBytes": 664944,
+          "shippedBytes": 664944
+        },
+        {
+          "path": "shared/sky.jpg",
+          "kind": "texture",
+          "sourceBytes": 282451,
+          "shippedBytes": 282451
+        },
+        {
+          "path": "snow/wind.wav",
+          "kind": "audio",
+          "sourceBytes": 176444,
+          "shippedBytes": 176444
+        },
+        {
+          "path": "starter/pickup.wav",
+          "kind": "audio",
+          "sourceBytes": 39246,
+          "shippedBytes": 39246
+        },
+        {
+          "path": "snow/crunch.wav",
+          "kind": "audio",
+          "sourceBytes": 13274,
+          "shippedBytes": 13274
+        },
+        {
+          "path": "puzzle/native-proof.glb",
+          "kind": "model",
+          "sourceBytes": 624,
+          "shippedBytes": 624
+        },
+        {
+          "path": "starter/native-proof.glb",
+          "kind": "model",
+          "sourceBytes": 624,
+          "shippedBytes": 624
+        },
+        {
+          "path": "puzzle/native-proof.png",
+          "kind": "texture",
+          "sourceBytes": 150,
+          "shippedBytes": 150
+        },
+        {
+          "path": "starter/native-proof.png",
+          "kind": "texture",
+          "sourceBytes": 150,
+          "shippedBytes": 150
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "at": "2026-10-24T00:36:17.797Z",
+      "commit": "ed1764ca1",
+      "dirty": false,
+      "label": "default cook with preload, what a game ships today",
+      "notes": "",
+      "decision": "baseline",
+      "arm": "default",
+      "config": {},
+      "metrics": {
+        "shippedMiB": 5.37,
+        "shippedPctOfSource": 45.1,
+        "preloadLocalMs": 629,
+        "preloadThrottledMs": 1705
+      },
+      "extra": {
+        "sourceBytes": 12484547,
+        "shippedBytes": 5628606,
+        "compileMs": 39550,
+        "preload": {
+          "host": "joao-cachyos",
+          "local": {
+            "readyMs": 629,
+            "loadedMs": 264,
+            "samplesMs": [673, 629, 626, 629, 628],
+            "adapter": {
+              "vendor": "nvidia",
+              "architecture": "turing",
+              "device": "",
+              "description": ""
+            }
+          },
+          "throttled": {
+            "readyMs": 1705,
+            "loadedMs": 1344,
+            "samplesMs": [1704, 1711, 1709, 1705, 1699],
+            "adapter": {
+              "vendor": "nvidia",
+              "architecture": "turing",
+              "device": "",
+              "description": ""
+            }
+          }
+        },
+        "kinds": {
+          "model": {
+            "sourceBytes": 7386300,
+            "shippedBytes": 4536136,
+            "files": 6
+          },
+          "runtime": {
+            "sourceBytes": 0,
+            "shippedBytes": 584862,
+            "files": 2
+          },
+          "texture": {
+            "sourceBytes": 282751,
+            "shippedBytes": 282751,
+            "files": 3
+          },
+          "audio": {
+            "sourceBytes": 4815496,
+            "shippedBytes": 224857,
+            "files": 6
+          }
+        }
+      },
+      "files": [
+        {
+          "path": "shared/player-viewmodel.glb",
+          "kind": "model",
+          "sourceBytes": 3385176,
+          "shippedBytes": 1654888
+        },
+        {
+          "path": "shared/mannequin-combat.glb",
+          "kind": "model",
+          "sourceBytes": 2142220,
+          "shippedBytes": 1631448
+        },
+        {
+          "path": "sailing/ship.glb",
+          "kind": "model",
+          "sourceBytes": 1192712,
+          "shippedBytes": 758528
+        },
+        {
+          "path": "basis/basis_transcoder.wasm",
+          "kind": "runtime",
+          "sourceBytes": 0,
+          "shippedBytes": 527333
+        },
+        {
+          "path": "shared/mannequin.glb",
+          "kind": "model",
+          "sourceBytes": 664944,
+          "shippedBytes": 489324
+        },
+        {
+          "path": "shared/sky.jpg",
+          "kind": "texture",
+          "sourceBytes": 282451,
+          "shippedBytes": 282451
+        },
+        {
+          "path": "rain/thunder.wav",
+          "kind": "audio",
+          "sourceBytes": 2469644,
+          "shippedBytes": 106795
+        },
+        {
+          "path": "basis/basis_transcoder.js",
+          "kind": "runtime",
+          "sourceBytes": 0,
+          "shippedBytes": 57529
+        },
+        {
+          "path": "rain/rain-loop.wav",
+          "kind": "audio",
+          "sourceBytes": 1058444,
+          "shippedBytes": 51545
+        },
+        {
+          "path": "rain/wind-loop.wav",
+          "kind": "audio",
+          "sourceBytes": 1058444,
+          "shippedBytes": 36747
+        },
+        {
+          "path": "snow/wind.wav",
+          "kind": "audio",
+          "sourceBytes": 176444,
+          "shippedBytes": 19278
+        },
+        {
+          "path": "snow/crunch.wav",
+          "kind": "audio",
+          "sourceBytes": 13274,
+          "shippedBytes": 5264
+        },
+        {
+          "path": "starter/pickup.wav",
+          "kind": "audio",
+          "sourceBytes": 39246,
+          "shippedBytes": 5228
+        },
+        {
+          "path": "puzzle/native-proof.glb",
+          "kind": "model",
+          "sourceBytes": 624,
+          "shippedBytes": 1324
+        },
+        {
+          "path": "starter/native-proof.glb",
+          "kind": "model",
+          "sourceBytes": 624,
+          "shippedBytes": 624
+        },
+        {
+          "path": "puzzle/native-proof.png",
+          "kind": "texture",
+          "sourceBytes": 150,
+          "shippedBytes": 150
+        },
+        {
+          "path": "starter/native-proof.png",
+          "kind": "texture",
+          "sourceBytes": 150,
+          "shippedBytes": 150
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "at": "2026-10-24T03:07:13.692Z",
+      "commit": "4a7848209",
+      "dirty": true,
+      "label": "lever 1: meshopt FILTER (animation quaternion/exponential filters)",
+      "notes": "keeps keyframe times; packages/assets/src/passes/model.ts",
+      "decision": "provisional",
+      "arm": "default",
+      "config": {},
+      "metrics": {
+        "shippedMiB": 4.94,
+        "shippedPctOfSource": 41.5,
+        "preloadLocalMs": 799,
+        "preloadThrottledMs": 2104
+      },
+      "extra": {
+        "sourceBytes": 12484547,
+        "shippedBytes": 5184430,
+        "compileMs": 40538,
+        "preload": {
+          "host": "joao-cachyos",
+          "local": {
+            "readyMs": 799,
+            "loadedMs": 357,
+            "samplesMs": [917, 778, 808, 761, 799],
+            "adapter": {
+              "vendor": "nvidia",
+              "architecture": "turing",
+              "device": "",
+              "description": ""
+            }
+          },
+          "throttled": {
+            "readyMs": 2104,
+            "loadedMs": 1325,
+            "samplesMs": [1877, 2350, 1972, 2202, 2104],
+            "adapter": {
+              "vendor": "nvidia",
+              "architecture": "turing",
+              "device": "",
+              "description": ""
+            }
+          }
+        },
+        "pairedControl": {
+          "metrics": {
+            "shippedMiB": 4.94,
+            "shippedPctOfSource": 41.5,
+            "preloadLocalMs": 823,
+            "preloadThrottledMs": 2214
+          },
+          "preload": {
+            "host": "joao-cachyos",
+            "local": {
+              "readyMs": 823,
+              "loadedMs": 376,
+              "samplesMs": [845, 784, 835, 823, 819],
+              "adapter": {
+                "vendor": "nvidia",
+                "architecture": "turing",
+                "device": "",
+                "description": ""
+              }
+            },
+            "throttled": {
+              "readyMs": 2214,
+              "loadedMs": 1398,
+              "samplesMs": [2222, 2158, 2256, 2214, 2192],
+              "adapter": {
+                "vendor": "nvidia",
+                "architecture": "turing",
+                "device": "",
+                "description": ""
+              }
+            }
+          },
+          "shippedBytes": 5184430
+        },
+        "kinds": {
+          "model": {
+            "sourceBytes": 7386300,
+            "shippedBytes": 4091960,
+            "files": 6
+          },
+          "runtime": {
+            "sourceBytes": 0,
+            "shippedBytes": 584862,
+            "files": 2
+          },
+          "texture": {
+            "sourceBytes": 282751,
+            "shippedBytes": 282751,
+            "files": 3
+          },
+          "audio": {
+            "sourceBytes": 4815496,
+            "shippedBytes": 224857,
+            "files": 6
+          }
+        }
+      },
+      "files": [
+        {
+          "path": "shared/player-viewmodel.glb",
+          "kind": "model",
+          "sourceBytes": 3385176,
+          "shippedBytes": 1571056
+        },
+        {
+          "path": "shared/mannequin-combat.glb",
+          "kind": "model",
+          "sourceBytes": 2142220,
+          "shippedBytes": 1347040
+        },
+        {
+          "path": "sailing/ship.glb",
+          "kind": "model",
+          "sourceBytes": 1192712,
+          "shippedBytes": 742436
+        },
+        {
+          "path": "basis/basis_transcoder.wasm",
+          "kind": "runtime",
+          "sourceBytes": 0,
+          "shippedBytes": 527333
+        },
+        {
+          "path": "shared/mannequin.glb",
+          "kind": "model",
+          "sourceBytes": 664944,
+          "shippedBytes": 429480
+        },
+        {
+          "path": "shared/sky.jpg",
+          "kind": "texture",
+          "sourceBytes": 282451,
+          "shippedBytes": 282451
+        },
+        {
+          "path": "rain/thunder.wav",
+          "kind": "audio",
+          "sourceBytes": 2469644,
+          "shippedBytes": 106795
+        },
+        {
+          "path": "basis/basis_transcoder.js",
+          "kind": "runtime",
+          "sourceBytes": 0,
+          "shippedBytes": 57529
+        },
+        {
+          "path": "rain/rain-loop.wav",
+          "kind": "audio",
+          "sourceBytes": 1058444,
+          "shippedBytes": 51545
+        },
+        {
+          "path": "rain/wind-loop.wav",
+          "kind": "audio",
+          "sourceBytes": 1058444,
+          "shippedBytes": 36747
+        },
+        {
+          "path": "snow/wind.wav",
+          "kind": "audio",
+          "sourceBytes": 176444,
+          "shippedBytes": 19278
+        },
+        {
+          "path": "snow/crunch.wav",
+          "kind": "audio",
+          "sourceBytes": 13274,
+          "shippedBytes": 5264
+        },
+        {
+          "path": "starter/pickup.wav",
+          "kind": "audio",
+          "sourceBytes": 39246,
+          "shippedBytes": 5228
+        },
+        {
+          "path": "puzzle/native-proof.glb",
+          "kind": "model",
+          "sourceBytes": 624,
+          "shippedBytes": 1324
+        },
+        {
+          "path": "starter/native-proof.glb",
+          "kind": "model",
+          "sourceBytes": 624,
+          "shippedBytes": 624
+        },
+        {
+          "path": "puzzle/native-proof.png",
+          "kind": "texture",
+          "sourceBytes": 150,
+          "shippedBytes": 150
+        },
+        {
+          "path": "starter/native-proof.png",
+          "kind": "texture",
+          "sourceBytes": 150,
+          "shippedBytes": 150
+        }
+      ],
+      "superseded": {
+        "reason": "control used the same rebuilt code, so the pair was A/A; bytes 4.94 MiB are valid",
+        "at": "2026-10-24T03:08:17.584Z"
+      }
+    },
+    {
+      "id": 5,
+      "at": "2026-10-24T03:10:48.302Z",
+      "commit": "4a7848209",
+      "dirty": true,
+      "label": "lever 1: meshopt FILTER (animation quaternion/exponential filters)",
+      "notes": "keeps keyframe times; packages/assets/src/passes/model.ts; control = baseline build 6da4a6606 | worst rotation error 0.712 deg vs 0.041 baseline, translation 0.97 mm vs 0; paired preload within noise (830 vs 798 ms, 1892 vs 1970 ms); -8.0% bytes",
+      "decision": "reject",
+      "arm": "default",
+      "config": {},
+      "metrics": {
+        "shippedMiB": 4.94,
+        "shippedPctOfSource": 41.5,
+        "preloadLocalMs": 830,
+        "preloadThrottledMs": 1892
+      },
+      "extra": {
+        "sourceBytes": 12484547,
+        "shippedBytes": 5184430,
+        "compileMs": 51194,
+        "preload": {
+          "host": "joao-cachyos",
+          "local": {
+            "readyMs": 830,
+            "loadedMs": 347,
+            "samplesMs": [871, 697, 805, 830, 1038],
+            "adapter": {
+              "vendor": "nvidia",
+              "architecture": "turing",
+              "device": "",
+              "description": ""
+            }
+          },
+          "throttled": {
+            "readyMs": 1892,
+            "loadedMs": 1326,
+            "samplesMs": [1916, 1957, 1858, 1892, 1806],
+            "adapter": {
+              "vendor": "nvidia",
+              "architecture": "turing",
+              "device": "",
+              "description": ""
+            }
+          }
+        },
+        "pairedControl": {
+          "metrics": {
+            "shippedMiB": 5.37,
+            "shippedPctOfSource": 45.1,
+            "preloadLocalMs": 798,
+            "preloadThrottledMs": 1970
+          },
+          "preload": {
+            "host": "joao-cachyos",
+            "local": {
+              "readyMs": 798,
+              "loadedMs": 341,
+              "samplesMs": [754, 726, 798, 813, 1052],
+              "adapter": {
+                "vendor": "nvidia",
+                "architecture": "turing",
+                "device": "",
+                "description": ""
+              }
+            },
+            "throttled": {
+              "readyMs": 1970,
+              "loadedMs": 1430,
+              "samplesMs": [2078, 1931, 1970, 1970, 1887],
+              "adapter": {
+                "vendor": "nvidia",
+                "architecture": "turing",
+                "device": "",
+                "description": ""
+              }
+            }
+          },
+          "shippedBytes": 5628606
+        },
+        "kinds": {
+          "model": {
+            "sourceBytes": 7386300,
+            "shippedBytes": 4091960,
+            "files": 6
+          },
+          "runtime": {
+            "sourceBytes": 0,
+            "shippedBytes": 584862,
+            "files": 2
+          },
+          "texture": {
+            "sourceBytes": 282751,
+            "shippedBytes": 282751,
+            "files": 3
+          },
+          "audio": {
+            "sourceBytes": 4815496,
+            "shippedBytes": 224857,
+            "files": 6
+          }
+        }
+      },
+      "files": [
+        {
+          "path": "shared/player-viewmodel.glb",
+          "kind": "model",
+          "sourceBytes": 3385176,
+          "shippedBytes": 1571056
+        },
+        {
+          "path": "shared/mannequin-combat.glb",
+          "kind": "model",
+          "sourceBytes": 2142220,
+          "shippedBytes": 1347040
+        },
+        {
+          "path": "sailing/ship.glb",
+          "kind": "model",
+          "sourceBytes": 1192712,
+          "shippedBytes": 742436
+        },
+        {
+          "path": "basis/basis_transcoder.wasm",
+          "kind": "runtime",
+          "sourceBytes": 0,
+          "shippedBytes": 527333
+        },
+        {
+          "path": "shared/mannequin.glb",
+          "kind": "model",
+          "sourceBytes": 664944,
+          "shippedBytes": 429480
+        },
+        {
+          "path": "shared/sky.jpg",
+          "kind": "texture",
+          "sourceBytes": 282451,
+          "shippedBytes": 282451
+        },
+        {
+          "path": "rain/thunder.wav",
+          "kind": "audio",
+          "sourceBytes": 2469644,
+          "shippedBytes": 106795
+        },
+        {
+          "path": "basis/basis_transcoder.js",
+          "kind": "runtime",
+          "sourceBytes": 0,
+          "shippedBytes": 57529
+        },
+        {
+          "path": "rain/rain-loop.wav",
+          "kind": "audio",
+          "sourceBytes": 1058444,
+          "shippedBytes": 51545
+        },
+        {
+          "path": "rain/wind-loop.wav",
+          "kind": "audio",
+          "sourceBytes": 1058444,
+          "shippedBytes": 36747
+        },
+        {
+          "path": "snow/wind.wav",
+          "kind": "audio",
+          "sourceBytes": 176444,
+          "shippedBytes": 19278
+        },
+        {
+          "path": "snow/crunch.wav",
+          "kind": "audio",
+          "sourceBytes": 13274,
+          "shippedBytes": 5264
+        },
+        {
+          "path": "starter/pickup.wav",
+          "kind": "audio",
+          "sourceBytes": 39246,
+          "shippedBytes": 5228
+        },
+        {
+          "path": "puzzle/native-proof.glb",
+          "kind": "model",
+          "sourceBytes": 624,
+          "shippedBytes": 1324
+        },
+        {
+          "path": "starter/native-proof.glb",
+          "kind": "model",
+          "sourceBytes": 624,
+          "shippedBytes": 624
+        },
+        {
+          "path": "puzzle/native-proof.png",
+          "kind": "texture",
+          "sourceBytes": 150,
+          "shippedBytes": 150
+        },
+        {
+          "path": "starter/native-proof.png",
+          "kind": "texture",
+          "sourceBytes": 150,
+          "shippedBytes": 150
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "at": "2026-10-24T03:21:58.394Z",
+      "commit": "a3ceb360d",
+      "dirty": true,
+      "label": "lever 2: drop animation tracks that hold the rest pose",
+      "notes": "packages/assets/src/passes/prune-rest-tracks.ts; control = baseline build 6da4a6606 | visual judge NEUTRAL (114 poses x2 runs, 35 isolated pixels over 8 levels, no connected region); mixer worst node diff <1e-5; templates gate 7/8: snow production-performance red 3 of 3 runs, snow ships no model and its cook is byte-identical to the control, not yet run on a clean develop build | visual judge NEUTRAL (114 poses x2 runs, 35 isolated pixels over 8 levels, no connected region); mixer worst node diff <1e-5; templates gate 7/8: snow production-performance red 3 of 3 runs, snow ships no model and its cook is byte-identical to the control, not yet run on a clean develop build | visual judge NEUTRAL (114 poses x2 runs, 35 isolated pixels over 8 levels, no connected region); mixer worst node diff <1e-5; templates gate 7/8: snow production-performance red 3 of 3 runs, snow ships no model and its cook is byte-identical to the control, not yet run on a clean develop build | visual judge NEUTRAL (114 poses x2 runs, 35 isolated pixels over 8 levels, no connected region); mixer worst node diff <1e-5; templates gate 7/8: snow production-performance red 3 of 3 runs, snow ships no model and its cook is byte-identical to the control, not yet run on a clean develop build",
+      "decision": "keep",
+      "arm": "default",
+      "config": {},
+      "metrics": {
+        "shippedMiB": 4.42,
+        "shippedPctOfSource": 37.2,
+        "preloadLocalMs": 621,
+        "preloadThrottledMs": 1545
+      },
+      "extra": {
+        "sourceBytes": 12484547,
+        "shippedBytes": 4638438,
+        "compileMs": 47352,
+        "preload": {
+          "host": "joao-cachyos",
+          "local": {
+            "readyMs": 621,
+            "loadedMs": 263,
+            "samplesMs": [702, 597, 599, 682, 621],
+            "adapter": {
+              "vendor": "nvidia",
+              "architecture": "turing",
+              "device": "",
+              "description": ""
+            }
+          },
+          "throttled": {
+            "readyMs": 1545,
+            "loadedMs": 1158,
+            "samplesMs": [1529, 1534, 1545, 1603, 1711],
+            "adapter": {
+              "vendor": "nvidia",
+              "architecture": "turing",
+              "device": "",
+              "description": ""
+            }
+          }
+        },
+        "pairedControl": {
+          "metrics": {
+            "shippedMiB": 5.37,
+            "shippedPctOfSource": 45.1,
+            "preloadLocalMs": 645,
+            "preloadThrottledMs": 1757
+          },
+          "preload": {
+            "host": "joao-cachyos",
+            "local": {
+              "readyMs": 645,
+              "loadedMs": 263,
+              "samplesMs": [669, 628, 662, 636, 645],
+              "adapter": {
+                "vendor": "nvidia",
+                "architecture": "turing",
+                "device": "",
+                "description": ""
+              }
+            },
+            "throttled": {
+              "readyMs": 1757,
+              "loadedMs": 1357,
+              "samplesMs": [1715, 1756, 1757, 1782, 2044],
+              "adapter": {
+                "vendor": "nvidia",
+                "architecture": "turing",
+                "device": "",
+                "description": ""
+              }
+            }
+          },
+          "shippedBytes": 5628606
+        },
+        "kinds": {
+          "model": {
+            "sourceBytes": 7386300,
+            "shippedBytes": 3545968,
+            "files": 6
+          },
+          "runtime": {
+            "sourceBytes": 0,
+            "shippedBytes": 584862,
+            "files": 2
+          },
+          "texture": {
+            "sourceBytes": 282751,
+            "shippedBytes": 282751,
+            "files": 3
+          },
+          "audio": {
+            "sourceBytes": 4815496,
+            "shippedBytes": 224857,
+            "files": 6
+          }
+        }
+      },
+      "files": [
+        {
+          "path": "shared/player-viewmodel.glb",
+          "kind": "model",
+          "sourceBytes": 3385176,
+          "shippedBytes": 1579916
+        },
+        {
+          "path": "shared/mannequin-combat.glb",
+          "kind": "model",
+          "sourceBytes": 2142220,
+          "shippedBytes": 924096
+        },
+        {
+          "path": "sailing/ship.glb",
+          "kind": "model",
+          "sourceBytes": 1192712,
+          "shippedBytes": 758528
+        },
+        {
+          "path": "basis/basis_transcoder.wasm",
+          "kind": "runtime",
+          "sourceBytes": 0,
+          "shippedBytes": 527333
+        },
+        {
+          "path": "shared/sky.jpg",
+          "kind": "texture",
+          "sourceBytes": 282451,
+          "shippedBytes": 282451
+        },
+        {
+          "path": "shared/mannequin.glb",
+          "kind": "model",
+          "sourceBytes": 664944,
+          "shippedBytes": 281480
+        },
+        {
+          "path": "rain/thunder.wav",
+          "kind": "audio",
+          "sourceBytes": 2469644,
+          "shippedBytes": 106795
+        },
+        {
+          "path": "basis/basis_transcoder.js",
+          "kind": "runtime",
+          "sourceBytes": 0,
+          "shippedBytes": 57529
+        },
+        {
+          "path": "rain/rain-loop.wav",
+          "kind": "audio",
+          "sourceBytes": 1058444,
+          "shippedBytes": 51545
+        },
+        {
+          "path": "rain/wind-loop.wav",
+          "kind": "audio",
+          "sourceBytes": 1058444,
+          "shippedBytes": 36747
+        },
+        {
+          "path": "snow/wind.wav",
+          "kind": "audio",
+          "sourceBytes": 176444,
+          "shippedBytes": 19278
+        },
+        {
+          "path": "snow/crunch.wav",
+          "kind": "audio",
+          "sourceBytes": 13274,
+          "shippedBytes": 5264
+        },
+        {
+          "path": "starter/pickup.wav",
+          "kind": "audio",
+          "sourceBytes": 39246,
+          "shippedBytes": 5228
+        },
+        {
+          "path": "puzzle/native-proof.glb",
+          "kind": "model",
+          "sourceBytes": 624,
+          "shippedBytes": 1324
+        },
+        {
+          "path": "starter/native-proof.glb",
+          "kind": "model",
+          "sourceBytes": 624,
+          "shippedBytes": 624
+        },
+        {
+          "path": "puzzle/native-proof.png",
+          "kind": "texture",
+          "sourceBytes": 150,
+          "shippedBytes": 150
+        },
+        {
+          "path": "starter/native-proof.png",
+          "kind": "texture",
+          "sourceBytes": 150,
+          "shippedBytes": 150
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "at": "2026-10-24T16:42:52.741Z",
+      "commit": "a1d5b60ef",
+      "dirty": true,
+      "label": "lever 3: drop spec-default JSON fields from the GLB (normalized false, byteOffset 0, interpolation LINEAR)",
+      "notes": "4.42 to 4.33 MiB, preload not worse vs paired control (local 684 vs 699 ms, 40 Mbps 1611 vs 1646 ms); 114 animated poses pixel-identical (0 differing pixels), so no judge subagent; 7 model-bearing templates pass the gate (95 scenarios, exit 0); snow has no model",
+      "decision": "keep",
+      "arm": "default",
+      "config": {},
+      "metrics": {
+        "shippedMiB": 4.33,
+        "shippedPctOfSource": 36.4,
+        "preloadLocalMs": 684,
+        "preloadThrottledMs": 1611
+      },
+      "extra": {
+        "sourceBytes": 12484547,
+        "shippedBytes": 4542750,
+        "compileMs": 35602,
+        "preload": {
+          "host": "joao-cachyos",
+          "local": {
+            "readyMs": 684,
+            "loadedMs": 291,
+            "samplesMs": [996, 750, 684, 639, 682],
+            "adapter": {
+              "vendor": "nvidia",
+              "architecture": "turing",
+              "device": "",
+              "description": ""
+            }
+          },
+          "throttled": {
+            "readyMs": 1611,
+            "loadedMs": 1199,
+            "samplesMs": [1617, 1611, 1730, 1558, 1546],
+            "adapter": {
+              "vendor": "nvidia",
+              "architecture": "turing",
+              "device": "",
+              "description": ""
+            }
+          }
+        },
+        "pairedControl": {
+          "metrics": {
+            "shippedMiB": 4.42,
+            "shippedPctOfSource": 37.2,
+            "preloadLocalMs": 699,
+            "preloadThrottledMs": 1646
+          },
+          "preload": {
+            "host": "joao-cachyos",
+            "local": {
+              "readyMs": 699,
+              "loadedMs": 308,
+              "samplesMs": [755, 699, 765, 669, 681],
+              "adapter": {
+                "vendor": "nvidia",
+                "architecture": "turing",
+                "device": "",
+                "description": ""
+              }
+            },
+            "throttled": {
+              "readyMs": 1646,
+              "loadedMs": 1206,
+              "samplesMs": [1777, 1881, 1590, 1554, 1646],
+              "adapter": {
+                "vendor": "nvidia",
+                "architecture": "turing",
+                "device": "",
+                "description": ""
+              }
+            }
+          },
+          "shippedBytes": 4638438
+        },
+        "kinds": {
+          "model": {
+            "sourceBytes": 7386300,
+            "shippedBytes": 3450280,
+            "files": 6
+          },
+          "runtime": {
+            "sourceBytes": 0,
+            "shippedBytes": 584862,
+            "files": 2
+          },
+          "texture": {
+            "sourceBytes": 282751,
+            "shippedBytes": 282751,
+            "files": 3
+          },
+          "audio": {
+            "sourceBytes": 4815496,
+            "shippedBytes": 224857,
+            "files": 6
+          }
+        }
+      },
+      "files": [
+        {
+          "path": "shared/player-viewmodel.glb",
+          "kind": "model",
+          "sourceBytes": 3385176,
+          "shippedBytes": 1579916
+        },
+        {
+          "path": "shared/mannequin-combat.glb",
+          "kind": "model",
+          "sourceBytes": 2142220,
+          "shippedBytes": 846324
+        },
+        {
+          "path": "sailing/ship.glb",
+          "kind": "model",
+          "sourceBytes": 1192712,
+          "shippedBytes": 758528
+        },
+        {
+          "path": "basis/basis_transcoder.wasm",
+          "kind": "runtime",
+          "sourceBytes": 0,
+          "shippedBytes": 527333
+        },
+        {
+          "path": "shared/sky.jpg",
+          "kind": "texture",
+          "sourceBytes": 282451,
+          "shippedBytes": 282451
+        },
+        {
+          "path": "shared/mannequin.glb",
+          "kind": "model",
+          "sourceBytes": 664944,
+          "shippedBytes": 263628
+        },
+        {
+          "path": "rain/thunder.wav",
+          "kind": "audio",
+          "sourceBytes": 2469644,
+          "shippedBytes": 106795
+        },
+        {
+          "path": "basis/basis_transcoder.js",
+          "kind": "runtime",
+          "sourceBytes": 0,
+          "shippedBytes": 57529
+        },
+        {
+          "path": "rain/rain-loop.wav",
+          "kind": "audio",
+          "sourceBytes": 1058444,
+          "shippedBytes": 51545
+        },
+        {
+          "path": "rain/wind-loop.wav",
+          "kind": "audio",
+          "sourceBytes": 1058444,
+          "shippedBytes": 36747
+        },
+        {
+          "path": "snow/wind.wav",
+          "kind": "audio",
+          "sourceBytes": 176444,
+          "shippedBytes": 19278
+        },
+        {
+          "path": "snow/crunch.wav",
+          "kind": "audio",
+          "sourceBytes": 13274,
+          "shippedBytes": 5264
+        },
+        {
+          "path": "starter/pickup.wav",
+          "kind": "audio",
+          "sourceBytes": 39246,
+          "shippedBytes": 5228
+        },
+        {
+          "path": "puzzle/native-proof.glb",
+          "kind": "model",
+          "sourceBytes": 624,
+          "shippedBytes": 1260
+        },
+        {
+          "path": "starter/native-proof.glb",
+          "kind": "model",
+          "sourceBytes": 624,
+          "shippedBytes": 624
+        },
+        {
+          "path": "puzzle/native-proof.png",
+          "kind": "texture",
+          "sourceBytes": 150,
+          "shippedBytes": 150
+        },
+        {
+          "path": "starter/native-proof.png",
+          "kind": "texture",
+          "sourceBytes": 150,
+          "shippedBytes": 150
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "at": "2026-10-24T18:49:19.395Z",
+      "commit": "a97ccfe04",
+      "dirty": false,
+      "label": "lever 4: start Basis transcoder when the manifest lists Basis output",
+      "notes": "Measured under host load 30-138 from other agents. The absolute 1036/1838 ms is not comparable to the quiet baseline; this lever was rejected because the transcoder loaded eagerly.",
+      "decision": "reject",
+      "arm": "default",
+      "config": {},
+      "metrics": {
+        "shippedMiB": 4.33,
+        "shippedPctOfSource": 36.4,
+        "preloadLocalMs": 1036,
+        "preloadThrottledMs": 1838
+      },
+      "extra": {
+        "sourceBytes": 12484547,
+        "shippedBytes": 4542750,
+        "compileMs": 40322,
+        "preload": {
+          "host": "joao-cachyos",
+          "local": {
+            "readyMs": 1036,
+            "loadedMs": 405,
+            "samplesMs": [1111, 1096, 829, 889, 1036],
+            "adapter": {
+              "vendor": "nvidia",
+              "architecture": "turing",
+              "device": "",
+              "description": ""
+            }
+          },
+          "throttled": {
+            "readyMs": 1838,
+            "loadedMs": 1025,
+            "samplesMs": [1968, 1626, 1914, 1809, 1838],
+            "adapter": {
+              "vendor": "nvidia",
+              "architecture": "turing",
+              "device": "",
+              "description": ""
+            }
+          }
+        },
+        "pairedControl": {
+          "metrics": {
+            "shippedMiB": 4.33,
+            "shippedPctOfSource": 36.4,
+            "preloadLocalMs": 923,
+            "preloadThrottledMs": 1756
+          },
+          "preload": {
+            "host": "joao-cachyos",
+            "local": {
+              "readyMs": 923,
+              "loadedMs": 351,
+              "samplesMs": [836, 884, 1100, 1090, 923],
+              "adapter": {
+                "vendor": "nvidia",
+                "architecture": "turing",
+                "device": "",
+                "description": ""
+              }
+            },
+            "throttled": {
+              "readyMs": 1756,
+              "loadedMs": 1021,
+              "samplesMs": [1734, 1712, 1756, 1960, 1829],
+              "adapter": {
+                "vendor": "nvidia",
+                "architecture": "turing",
+                "device": "",
+                "description": ""
+              }
+            }
+          },
+          "shippedBytes": 4542750
+        },
+        "kinds": {
+          "model": {
+            "sourceBytes": 7386300,
+            "shippedBytes": 3450280,
+            "files": 6
+          },
+          "runtime": {
+            "sourceBytes": 0,
+            "shippedBytes": 584862,
+            "files": 2
+          },
+          "texture": {
+            "sourceBytes": 282751,
+            "shippedBytes": 282751,
+            "files": 3
+          },
+          "audio": {
+            "sourceBytes": 4815496,
+            "shippedBytes": 224857,
+            "files": 6
+          }
+        }
+      },
+      "files": [
+        {
+          "path": "shared/player-viewmodel.glb",
+          "kind": "model",
+          "sourceBytes": 3385176,
+          "shippedBytes": 1579916
+        },
+        {
+          "path": "shared/mannequin-combat.glb",
+          "kind": "model",
+          "sourceBytes": 2142220,
+          "shippedBytes": 846324
+        },
+        {
+          "path": "sailing/ship.glb",
+          "kind": "model",
+          "sourceBytes": 1192712,
+          "shippedBytes": 758528
+        },
+        {
+          "path": "basis/basis_transcoder.wasm",
+          "kind": "runtime",
+          "sourceBytes": 0,
+          "shippedBytes": 527333
+        },
+        {
+          "path": "shared/sky.jpg",
+          "kind": "texture",
+          "sourceBytes": 282451,
+          "shippedBytes": 282451
+        },
+        {
+          "path": "shared/mannequin.glb",
+          "kind": "model",
+          "sourceBytes": 664944,
+          "shippedBytes": 263628
+        },
+        {
+          "path": "rain/thunder.wav",
+          "kind": "audio",
+          "sourceBytes": 2469644,
+          "shippedBytes": 106795
+        },
+        {
+          "path": "basis/basis_transcoder.js",
+          "kind": "runtime",
+          "sourceBytes": 0,
+          "shippedBytes": 57529
+        },
+        {
+          "path": "rain/rain-loop.wav",
+          "kind": "audio",
+          "sourceBytes": 1058444,
+          "shippedBytes": 51545
+        },
+        {
+          "path": "rain/wind-loop.wav",
+          "kind": "audio",
+          "sourceBytes": 1058444,
+          "shippedBytes": 36747
+        },
+        {
+          "path": "snow/wind.wav",
+          "kind": "audio",
+          "sourceBytes": 176444,
+          "shippedBytes": 19278
+        },
+        {
+          "path": "snow/crunch.wav",
+          "kind": "audio",
+          "sourceBytes": 13274,
+          "shippedBytes": 5264
+        },
+        {
+          "path": "starter/pickup.wav",
+          "kind": "audio",
+          "sourceBytes": 39246,
+          "shippedBytes": 5228
+        },
+        {
+          "path": "puzzle/native-proof.glb",
+          "kind": "model",
+          "sourceBytes": 624,
+          "shippedBytes": 1260
+        },
+        {
+          "path": "starter/native-proof.glb",
+          "kind": "model",
+          "sourceBytes": 624,
+          "shippedBytes": 624
+        },
+        {
+          "path": "puzzle/native-proof.png",
+          "kind": "texture",
+          "sourceBytes": 150,
+          "shippedBytes": 150
+        },
+        {
+          "path": "starter/native-proof.png",
+          "kind": "texture",
+          "sourceBytes": 150,
+          "shippedBytes": 150
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "at": "2026-10-24T19:11:25.590Z",
+      "commit": "290f8f3f5",
+      "dirty": true,
+      "label": "lever 5: KTX2 only when it repays the Basis transcoder",
+      "notes": "Measured under host load; the paired control on the same host was 1483/2086 ms and the candidate 1109/1823 ms. The quiet measurement of the kept build is iteration #14 (372/1162 ms). | Owner 2026-10-24 accepts +3.67 MB GPU texture memory on player-viewmodel for -0.55 MiB and faster preload; quiet rerun #14 meets both preload goals; the transcoder charge is now decided once per build (compileAssets), so a build that ships the transcoder anyway keeps KTX2 model maps.",
+      "decision": "keep",
+      "arm": "default",
+      "config": {},
+      "metrics": {
+        "shippedMiB": 3.78,
+        "shippedPctOfSource": 31.7,
+        "preloadLocalMs": 1109,
+        "preloadThrottledMs": 1823
+      },
+      "extra": {
+        "sourceBytes": 12484547,
+        "shippedBytes": 3960199,
+        "compileMs": 45398,
+        "preload": {
+          "host": "joao-cachyos",
+          "local": {
+            "readyMs": 1109,
+            "loadedMs": 278,
+            "samplesMs": [1189, 1072, 1109, 1189, 1069],
+            "adapter": {
+              "vendor": "nvidia",
+              "architecture": "turing",
+              "device": "",
+              "description": ""
+            }
+          },
+          "throttled": {
+            "readyMs": 1823,
+            "loadedMs": 933,
+            "samplesMs": [1807, 2010, 1811, 1823, 1973],
+            "adapter": {
+              "vendor": "nvidia",
+              "architecture": "turing",
+              "device": "",
+              "description": ""
+            }
+          }
+        },
+        "pairedControl": {
+          "metrics": {
+            "shippedMiB": 4.33,
+            "shippedPctOfSource": 36.4,
+            "preloadLocalMs": 1483,
+            "preloadThrottledMs": 2086
+          },
+          "preload": {
+            "host": "joao-cachyos",
+            "local": {
+              "readyMs": 1483,
+              "loadedMs": 523,
+              "samplesMs": [1483, 1288, 1626, 1538, 1315],
+              "adapter": {
+                "vendor": "nvidia",
+                "architecture": "turing",
+                "device": "",
+                "description": ""
+              }
+            },
+            "throttled": {
+              "readyMs": 2086,
+              "loadedMs": 1308,
+              "samplesMs": [2038, 2259, 2090, 2086, 2020],
+              "adapter": {
+                "vendor": "nvidia",
+                "architecture": "turing",
+                "device": "",
+                "description": ""
+              }
+            }
+          },
+          "shippedBytes": 4542750
+        },
+        "kinds": {
+          "model": {
+            "sourceBytes": 7386300,
+            "shippedBytes": 3452591,
+            "files": 6
+          },
+          "texture": {
+            "sourceBytes": 282751,
+            "shippedBytes": 282751,
+            "files": 3
+          },
+          "audio": {
+            "sourceBytes": 4815496,
+            "shippedBytes": 224857,
+            "files": 6
+          }
+        }
+      },
+      "files": [
+        {
+          "path": "shared/player-viewmodel.glb",
+          "kind": "model",
+          "sourceBytes": 3385176,
+          "shippedBytes": 1582227
+        },
+        {
+          "path": "shared/mannequin-combat.glb",
+          "kind": "model",
+          "sourceBytes": 2142220,
+          "shippedBytes": 846324
+        },
+        {
+          "path": "sailing/ship.glb",
+          "kind": "model",
+          "sourceBytes": 1192712,
+          "shippedBytes": 758528
+        },
+        {
+          "path": "shared/sky.jpg",
+          "kind": "texture",
+          "sourceBytes": 282451,
+          "shippedBytes": 282451
+        },
+        {
+          "path": "shared/mannequin.glb",
+          "kind": "model",
+          "sourceBytes": 664944,
+          "shippedBytes": 263628
+        },
+        {
+          "path": "rain/thunder.wav",
+          "kind": "audio",
+          "sourceBytes": 2469644,
+          "shippedBytes": 106795
+        },
+        {
+          "path": "rain/rain-loop.wav",
+          "kind": "audio",
+          "sourceBytes": 1058444,
+          "shippedBytes": 51545
+        },
+        {
+          "path": "rain/wind-loop.wav",
+          "kind": "audio",
+          "sourceBytes": 1058444,
+          "shippedBytes": 36747
+        },
+        {
+          "path": "snow/wind.wav",
+          "kind": "audio",
+          "sourceBytes": 176444,
+          "shippedBytes": 19278
+        },
+        {
+          "path": "snow/crunch.wav",
+          "kind": "audio",
+          "sourceBytes": 13274,
+          "shippedBytes": 5264
+        },
+        {
+          "path": "starter/pickup.wav",
+          "kind": "audio",
+          "sourceBytes": 39246,
+          "shippedBytes": 5228
+        },
+        {
+          "path": "puzzle/native-proof.glb",
+          "kind": "model",
+          "sourceBytes": 624,
+          "shippedBytes": 1260
+        },
+        {
+          "path": "starter/native-proof.glb",
+          "kind": "model",
+          "sourceBytes": 624,
+          "shippedBytes": 624
+        },
+        {
+          "path": "puzzle/native-proof.png",
+          "kind": "texture",
+          "sourceBytes": 150,
+          "shippedBytes": 150
+        },
+        {
+          "path": "starter/native-proof.png",
+          "kind": "texture",
+          "sourceBytes": 150,
+          "shippedBytes": 150
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "at": "2026-10-24T21:53:03.846Z",
+      "commit": "2999fbc35",
+      "dirty": true,
+      "label": "lever 6: JPEG rung for opaque colour maps",
+      "notes": "Measured in a quiet window; paired control (lever 5) 619/1448 ms, candidate 569/1322 ms. Judge NEUTRAL; shooter and action-rpg gates pass on the quiet RTX.",
+      "decision": "keep",
+      "arm": "default",
+      "config": {},
+      "metrics": {
+        "shippedMiB": 3.68,
+        "shippedPctOfSource": 30.9,
+        "preloadLocalMs": 569,
+        "preloadThrottledMs": 1322
+      },
+      "extra": {
+        "sourceBytes": 12484547,
+        "shippedBytes": 3853639,
+        "compileMs": 30529,
+        "preload": {
+          "host": "joao-cachyos",
+          "local": {
+            "readyMs": 569,
+            "loadedMs": 144,
+            "samplesMs": [641, 552, 668, 569, 531],
+            "adapter": {
+              "vendor": "nvidia",
+              "architecture": "turing",
+              "device": "",
+              "description": ""
+            }
+          },
+          "throttled": {
+            "readyMs": 1322,
+            "loadedMs": 876,
+            "samplesMs": [1280, 1360, 1468, 1322, 1252],
+            "adapter": {
+              "vendor": "nvidia",
+              "architecture": "turing",
+              "device": "",
+              "description": ""
+            }
+          }
+        },
+        "pairedControl": {
+          "metrics": {
+            "shippedMiB": 3.78,
+            "shippedPctOfSource": 31.7,
+            "preloadLocalMs": 619,
+            "preloadThrottledMs": 1448
+          },
+          "preload": {
+            "host": "joao-cachyos",
+            "local": {
+              "readyMs": 619,
+              "loadedMs": 153,
+              "samplesMs": [683, 705, 579, 619, 600],
+              "adapter": {
+                "vendor": "nvidia",
+                "architecture": "turing",
+                "device": "",
+                "description": ""
+              }
+            },
+            "throttled": {
+              "readyMs": 1448,
+              "loadedMs": 906,
+              "samplesMs": [1296, 1254, 1581, 1448, 1514],
+              "adapter": {
+                "vendor": "nvidia",
+                "architecture": "turing",
+                "device": "",
+                "description": ""
+              }
+            }
+          },
+          "shippedBytes": 3960199
+        },
+        "kinds": {
+          "model": {
+            "sourceBytes": 7386300,
+            "shippedBytes": 3346031,
+            "files": 6
+          },
+          "texture": {
+            "sourceBytes": 282751,
+            "shippedBytes": 282751,
+            "files": 3
+          },
+          "audio": {
+            "sourceBytes": 4815496,
+            "shippedBytes": 224857,
+            "files": 6
+          }
+        }
+      },
+      "files": [
+        {
+          "path": "shared/player-viewmodel.glb",
+          "kind": "model",
+          "sourceBytes": 3385176,
+          "shippedBytes": 1497868
+        },
+        {
+          "path": "shared/mannequin-combat.glb",
+          "kind": "model",
+          "sourceBytes": 2142220,
+          "shippedBytes": 846324
+        },
+        {
+          "path": "sailing/ship.glb",
+          "kind": "model",
+          "sourceBytes": 1192712,
+          "shippedBytes": 736327
+        },
+        {
+          "path": "shared/sky.jpg",
+          "kind": "texture",
+          "sourceBytes": 282451,
+          "shippedBytes": 282451
+        },
+        {
+          "path": "shared/mannequin.glb",
+          "kind": "model",
+          "sourceBytes": 664944,
+          "shippedBytes": 263628
+        },
+        {
+          "path": "rain/thunder.wav",
+          "kind": "audio",
+          "sourceBytes": 2469644,
+          "shippedBytes": 106795
+        },
+        {
+          "path": "rain/rain-loop.wav",
+          "kind": "audio",
+          "sourceBytes": 1058444,
+          "shippedBytes": 51545
+        },
+        {
+          "path": "rain/wind-loop.wav",
+          "kind": "audio",
+          "sourceBytes": 1058444,
+          "shippedBytes": 36747
+        },
+        {
+          "path": "snow/wind.wav",
+          "kind": "audio",
+          "sourceBytes": 176444,
+          "shippedBytes": 19278
+        },
+        {
+          "path": "snow/crunch.wav",
+          "kind": "audio",
+          "sourceBytes": 13274,
+          "shippedBytes": 5264
+        },
+        {
+          "path": "starter/pickup.wav",
+          "kind": "audio",
+          "sourceBytes": 39246,
+          "shippedBytes": 5228
+        },
+        {
+          "path": "puzzle/native-proof.glb",
+          "kind": "model",
+          "sourceBytes": 624,
+          "shippedBytes": 1260
+        },
+        {
+          "path": "starter/native-proof.glb",
+          "kind": "model",
+          "sourceBytes": 624,
+          "shippedBytes": 624
+        },
+        {
+          "path": "puzzle/native-proof.png",
+          "kind": "texture",
+          "sourceBytes": 150,
+          "shippedBytes": 150
+        },
+        {
+          "path": "starter/native-proof.png",
+          "kind": "texture",
+          "sourceBytes": 150,
+          "shippedBytes": 150
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "at": "2026-10-24T22:31:10.727Z",
+      "commit": "a847bd2fe",
+      "dirty": true,
+      "label": "lever 7: standalone textures take the smallest passing JPEG (sky.jpg)",
+      "notes": "3.68 -> 3.55 MiB, but local preload rose in three paired runs (+16, +33, +23 ms, 4-8%) for a ~5% throttled gain; the loop rule rejects a lever that worsens the other metric.",
+      "decision": "reject",
+      "arm": "default",
+      "config": {},
+      "metrics": {
+        "shippedMiB": 3.55,
+        "shippedPctOfSource": 29.8,
+        "preloadLocalMs": 416,
+        "preloadThrottledMs": 1122
+      },
+      "extra": {
+        "sourceBytes": 12484547,
+        "shippedBytes": 3721067,
+        "compileMs": 34322,
+        "preload": {
+          "host": "joao-cachyos",
+          "local": {
+            "readyMs": 416,
+            "loadedMs": 133,
+            "samplesMs": [840, 390, 416, 394, 440],
+            "adapter": {
+              "vendor": "nvidia",
+              "architecture": "turing",
+              "device": "",
+              "description": ""
+            }
+          },
+          "throttled": {
+            "readyMs": 1122,
+            "loadedMs": 853,
+            "samplesMs": [1105, 1100, 1122, 2404, 1251],
+            "adapter": {
+              "vendor": "nvidia",
+              "architecture": "turing",
+              "device": "",
+              "description": ""
+            }
+          }
+        },
+        "pairedControl": {
+          "metrics": {
+            "shippedMiB": 3.68,
+            "shippedPctOfSource": 30.9,
+            "preloadLocalMs": 400,
+            "preloadThrottledMs": 1145
+          },
+          "preload": {
+            "host": "joao-cachyos",
+            "local": {
+              "readyMs": 400,
+              "loadedMs": 118,
+              "samplesMs": [418, 400, 377, 425, 384],
+              "adapter": {
+                "vendor": "nvidia",
+                "architecture": "turing",
+                "device": "",
+                "description": ""
+              }
+            },
+            "throttled": {
+              "readyMs": 1145,
+              "loadedMs": 863,
+              "samplesMs": [1131, 1145, 1120, 1161, 1183],
+              "adapter": {
+                "vendor": "nvidia",
+                "architecture": "turing",
+                "device": "",
+                "description": ""
+              }
+            }
+          },
+          "shippedBytes": 3853639
+        },
+        "kinds": {
+          "model": {
+            "sourceBytes": 7386300,
+            "shippedBytes": 3346031,
+            "files": 6
+          },
+          "texture": {
+            "sourceBytes": 282751,
+            "shippedBytes": 150179,
+            "files": 3
+          },
+          "audio": {
+            "sourceBytes": 4815496,
+            "shippedBytes": 224857,
+            "files": 6
+          }
+        }
+      },
+      "files": [
+        {
+          "path": "shared/player-viewmodel.glb",
+          "kind": "model",
+          "sourceBytes": 3385176,
+          "shippedBytes": 1497868
+        },
+        {
+          "path": "shared/mannequin-combat.glb",
+          "kind": "model",
+          "sourceBytes": 2142220,
+          "shippedBytes": 846324
+        },
+        {
+          "path": "sailing/ship.glb",
+          "kind": "model",
+          "sourceBytes": 1192712,
+          "shippedBytes": 736327
+        },
+        {
+          "path": "shared/mannequin.glb",
+          "kind": "model",
+          "sourceBytes": 664944,
+          "shippedBytes": 263628
+        },
+        {
+          "path": "shared/sky.jpg",
+          "kind": "texture",
+          "sourceBytes": 282451,
+          "shippedBytes": 149879
+        },
+        {
+          "path": "rain/thunder.wav",
+          "kind": "audio",
+          "sourceBytes": 2469644,
+          "shippedBytes": 106795
+        },
+        {
+          "path": "rain/rain-loop.wav",
+          "kind": "audio",
+          "sourceBytes": 1058444,
+          "shippedBytes": 51545
+        },
+        {
+          "path": "rain/wind-loop.wav",
+          "kind": "audio",
+          "sourceBytes": 1058444,
+          "shippedBytes": 36747
+        },
+        {
+          "path": "snow/wind.wav",
+          "kind": "audio",
+          "sourceBytes": 176444,
+          "shippedBytes": 19278
+        },
+        {
+          "path": "snow/crunch.wav",
+          "kind": "audio",
+          "sourceBytes": 13274,
+          "shippedBytes": 5264
+        },
+        {
+          "path": "starter/pickup.wav",
+          "kind": "audio",
+          "sourceBytes": 39246,
+          "shippedBytes": 5228
+        },
+        {
+          "path": "puzzle/native-proof.glb",
+          "kind": "model",
+          "sourceBytes": 624,
+          "shippedBytes": 1260
+        },
+        {
+          "path": "starter/native-proof.glb",
+          "kind": "model",
+          "sourceBytes": 624,
+          "shippedBytes": 624
+        },
+        {
+          "path": "puzzle/native-proof.png",
+          "kind": "texture",
+          "sourceBytes": 150,
+          "shippedBytes": 150
+        },
+        {
+          "path": "starter/native-proof.png",
+          "kind": "texture",
+          "sourceBytes": 150,
+          "shippedBytes": 150
+        }
+      ]
+    },
+    {
+      "id": 12,
+      "at": "2026-10-24T22:32:54.159Z",
+      "commit": "a847bd2fe",
+      "dirty": true,
+      "label": "lever 7 rerun: standalone JPEG rung",
+      "notes": "",
+      "decision": "provisional",
+      "arm": "default",
+      "config": {},
+      "metrics": {
+        "shippedMiB": 3.55,
+        "shippedPctOfSource": 29.8,
+        "preloadLocalMs": 459,
+        "preloadThrottledMs": 1136
+      },
+      "extra": {
+        "sourceBytes": 12484547,
+        "shippedBytes": 3721067,
+        "compileMs": 26180,
+        "preload": {
+          "host": "joao-cachyos",
+          "local": {
+            "readyMs": 459,
+            "loadedMs": 148,
+            "samplesMs": [704, 459, 400, 470, 423],
+            "adapter": {
+              "vendor": "nvidia",
+              "architecture": "turing",
+              "device": "",
+              "description": ""
+            }
+          },
+          "throttled": {
+            "readyMs": 1136,
+            "loadedMs": 840,
+            "samplesMs": [1178, 1113, 1112, 1139, 1136],
+            "adapter": {
+              "vendor": "nvidia",
+              "architecture": "turing",
+              "device": "",
+              "description": ""
+            }
+          }
+        },
+        "pairedControl": {
+          "metrics": {
+            "shippedMiB": 3.68,
+            "shippedPctOfSource": 30.9,
+            "preloadLocalMs": 426,
+            "preloadThrottledMs": 1141
+          },
+          "preload": {
+            "host": "joao-cachyos",
+            "local": {
+              "readyMs": 426,
+              "loadedMs": 133,
+              "samplesMs": [390, 425, 437, 426, 480],
+              "adapter": {
+                "vendor": "nvidia",
+                "architecture": "turing",
+                "device": "",
+                "description": ""
+              }
+            },
+            "throttled": {
+              "readyMs": 1141,
+              "loadedMs": 868,
+              "samplesMs": [1208, 1146, 1141, 1126, 1125],
+              "adapter": {
+                "vendor": "nvidia",
+                "architecture": "turing",
+                "device": "",
+                "description": ""
+              }
+            }
+          },
+          "shippedBytes": 3853639
+        },
+        "kinds": {
+          "model": {
+            "sourceBytes": 7386300,
+            "shippedBytes": 3346031,
+            "files": 6
+          },
+          "texture": {
+            "sourceBytes": 282751,
+            "shippedBytes": 150179,
+            "files": 3
+          },
+          "audio": {
+            "sourceBytes": 4815496,
+            "shippedBytes": 224857,
+            "files": 6
+          }
+        }
+      },
+      "files": [
+        {
+          "path": "shared/player-viewmodel.glb",
+          "kind": "model",
+          "sourceBytes": 3385176,
+          "shippedBytes": 1497868
+        },
+        {
+          "path": "shared/mannequin-combat.glb",
+          "kind": "model",
+          "sourceBytes": 2142220,
+          "shippedBytes": 846324
+        },
+        {
+          "path": "sailing/ship.glb",
+          "kind": "model",
+          "sourceBytes": 1192712,
+          "shippedBytes": 736327
+        },
+        {
+          "path": "shared/mannequin.glb",
+          "kind": "model",
+          "sourceBytes": 664944,
+          "shippedBytes": 263628
+        },
+        {
+          "path": "shared/sky.jpg",
+          "kind": "texture",
+          "sourceBytes": 282451,
+          "shippedBytes": 149879
+        },
+        {
+          "path": "rain/thunder.wav",
+          "kind": "audio",
+          "sourceBytes": 2469644,
+          "shippedBytes": 106795
+        },
+        {
+          "path": "rain/rain-loop.wav",
+          "kind": "audio",
+          "sourceBytes": 1058444,
+          "shippedBytes": 51545
+        },
+        {
+          "path": "rain/wind-loop.wav",
+          "kind": "audio",
+          "sourceBytes": 1058444,
+          "shippedBytes": 36747
+        },
+        {
+          "path": "snow/wind.wav",
+          "kind": "audio",
+          "sourceBytes": 176444,
+          "shippedBytes": 19278
+        },
+        {
+          "path": "snow/crunch.wav",
+          "kind": "audio",
+          "sourceBytes": 13274,
+          "shippedBytes": 5264
+        },
+        {
+          "path": "starter/pickup.wav",
+          "kind": "audio",
+          "sourceBytes": 39246,
+          "shippedBytes": 5228
+        },
+        {
+          "path": "puzzle/native-proof.glb",
+          "kind": "model",
+          "sourceBytes": 624,
+          "shippedBytes": 1260
+        },
+        {
+          "path": "starter/native-proof.glb",
+          "kind": "model",
+          "sourceBytes": 624,
+          "shippedBytes": 624
+        },
+        {
+          "path": "puzzle/native-proof.png",
+          "kind": "texture",
+          "sourceBytes": 150,
+          "shippedBytes": 150
+        },
+        {
+          "path": "starter/native-proof.png",
+          "kind": "texture",
+          "sourceBytes": 150,
+          "shippedBytes": 150
+        }
+      ],
+      "superseded": {
+        "reason": "rerun of the same rejected lever",
+        "at": "2026-10-24T22:34:54.866Z"
+      }
+    },
+    {
+      "id": 13,
+      "at": "2026-10-24T22:34:40.647Z",
+      "commit": "a847bd2fe",
+      "dirty": true,
+      "label": "lever 7 rerun 2: standalone JPEG rung",
+      "notes": "",
+      "decision": "provisional",
+      "arm": "default",
+      "config": {},
+      "metrics": {
+        "shippedMiB": 3.55,
+        "shippedPctOfSource": 29.8,
+        "preloadLocalMs": 402,
+        "preloadThrottledMs": 1115
+      },
+      "extra": {
+        "sourceBytes": 12484547,
+        "shippedBytes": 3721067,
+        "compileMs": 25187,
+        "preload": {
+          "host": "joao-cachyos",
+          "local": {
+            "readyMs": 402,
+            "loadedMs": 132,
+            "samplesMs": [408, 355, 360, 429, 402],
+            "adapter": {
+              "vendor": "nvidia",
+              "architecture": "turing",
+              "device": "",
+              "description": ""
+            }
+          },
+          "throttled": {
+            "readyMs": 1115,
+            "loadedMs": 841,
+            "samplesMs": [1115, 1223, 1126, 1097, 1091],
+            "adapter": {
+              "vendor": "nvidia",
+              "architecture": "turing",
+              "device": "",
+              "description": ""
+            }
+          }
+        },
+        "pairedControl": {
+          "metrics": {
+            "shippedMiB": 3.68,
+            "shippedPctOfSource": 30.9,
+            "preloadLocalMs": 379,
+            "preloadThrottledMs": 1175
+          },
+          "preload": {
+            "host": "joao-cachyos",
+            "local": {
+              "readyMs": 379,
+              "loadedMs": 113,
+              "samplesMs": [359, 356, 379, 520, 467],
+              "adapter": {
+                "vendor": "nvidia",
+                "architecture": "turing",
+                "device": "",
+                "description": ""
+              }
+            },
+            "throttled": {
+              "readyMs": 1175,
+              "loadedMs": 867,
+              "samplesMs": [1130, 1133, 1175, 1272, 1302],
+              "adapter": {
+                "vendor": "nvidia",
+                "architecture": "turing",
+                "device": "",
+                "description": ""
+              }
+            }
+          },
+          "shippedBytes": 3853639
+        },
+        "kinds": {
+          "model": {
+            "sourceBytes": 7386300,
+            "shippedBytes": 3346031,
+            "files": 6
+          },
+          "texture": {
+            "sourceBytes": 282751,
+            "shippedBytes": 150179,
+            "files": 3
+          },
+          "audio": {
+            "sourceBytes": 4815496,
+            "shippedBytes": 224857,
+            "files": 6
+          }
+        }
+      },
+      "files": [
+        {
+          "path": "shared/player-viewmodel.glb",
+          "kind": "model",
+          "sourceBytes": 3385176,
+          "shippedBytes": 1497868
+        },
+        {
+          "path": "shared/mannequin-combat.glb",
+          "kind": "model",
+          "sourceBytes": 2142220,
+          "shippedBytes": 846324
+        },
+        {
+          "path": "sailing/ship.glb",
+          "kind": "model",
+          "sourceBytes": 1192712,
+          "shippedBytes": 736327
+        },
+        {
+          "path": "shared/mannequin.glb",
+          "kind": "model",
+          "sourceBytes": 664944,
+          "shippedBytes": 263628
+        },
+        {
+          "path": "shared/sky.jpg",
+          "kind": "texture",
+          "sourceBytes": 282451,
+          "shippedBytes": 149879
+        },
+        {
+          "path": "rain/thunder.wav",
+          "kind": "audio",
+          "sourceBytes": 2469644,
+          "shippedBytes": 106795
+        },
+        {
+          "path": "rain/rain-loop.wav",
+          "kind": "audio",
+          "sourceBytes": 1058444,
+          "shippedBytes": 51545
+        },
+        {
+          "path": "rain/wind-loop.wav",
+          "kind": "audio",
+          "sourceBytes": 1058444,
+          "shippedBytes": 36747
+        },
+        {
+          "path": "snow/wind.wav",
+          "kind": "audio",
+          "sourceBytes": 176444,
+          "shippedBytes": 19278
+        },
+        {
+          "path": "snow/crunch.wav",
+          "kind": "audio",
+          "sourceBytes": 13274,
+          "shippedBytes": 5264
+        },
+        {
+          "path": "starter/pickup.wav",
+          "kind": "audio",
+          "sourceBytes": 39246,
+          "shippedBytes": 5228
+        },
+        {
+          "path": "puzzle/native-proof.glb",
+          "kind": "model",
+          "sourceBytes": 624,
+          "shippedBytes": 1260
+        },
+        {
+          "path": "starter/native-proof.glb",
+          "kind": "model",
+          "sourceBytes": 624,
+          "shippedBytes": 624
+        },
+        {
+          "path": "puzzle/native-proof.png",
+          "kind": "texture",
+          "sourceBytes": 150,
+          "shippedBytes": 150
+        },
+        {
+          "path": "starter/native-proof.png",
+          "kind": "texture",
+          "sourceBytes": 150,
+          "shippedBytes": 150
+        }
+      ],
+      "superseded": {
+        "reason": "rerun of the same rejected lever",
+        "at": "2026-10-24T22:34:55.251Z"
+      }
+    },
+    {
+      "id": 14,
+      "at": "2026-10-24T22:35:52.287Z",
+      "commit": "a847bd2fe",
+      "dirty": false,
+      "label": "quiet measurement of the kept build (lever 6)",
+      "notes": "",
+      "decision": "keep",
+      "arm": "default",
+      "config": {},
+      "metrics": {
+        "shippedMiB": 3.68,
+        "shippedPctOfSource": 30.9,
+        "preloadLocalMs": 372,
+        "preloadThrottledMs": 1162
+      },
+      "extra": {
+        "sourceBytes": 12484547,
+        "shippedBytes": 3853639,
+        "compileMs": 26609,
+        "preload": {
+          "host": "joao-cachyos",
+          "local": {
+            "readyMs": 372,
+            "loadedMs": 113,
+            "samplesMs": [422, 372, 382, 362, 362],
+            "adapter": {
+              "vendor": "nvidia",
+              "architecture": "turing",
+              "device": "",
+              "description": ""
+            }
+          },
+          "throttled": {
+            "readyMs": 1162,
+            "loadedMs": 867,
+            "samplesMs": [1168, 1162, 1243, 1118, 1134],
+            "adapter": {
+              "vendor": "nvidia",
+              "architecture": "turing",
+              "device": "",
+              "description": ""
+            }
+          }
+        },
+        "pairedControl": null,
+        "kinds": {
+          "model": {
+            "sourceBytes": 7386300,
+            "shippedBytes": 3346031,
+            "files": 6
+          },
+          "texture": {
+            "sourceBytes": 282751,
+            "shippedBytes": 282751,
+            "files": 3
+          },
+          "audio": {
+            "sourceBytes": 4815496,
+            "shippedBytes": 224857,
+            "files": 6
+          }
+        }
+      },
+      "files": [
+        {
+          "path": "shared/player-viewmodel.glb",
+          "kind": "model",
+          "sourceBytes": 3385176,
+          "shippedBytes": 1497868
+        },
+        {
+          "path": "shared/mannequin-combat.glb",
+          "kind": "model",
+          "sourceBytes": 2142220,
+          "shippedBytes": 846324
+        },
+        {
+          "path": "sailing/ship.glb",
+          "kind": "model",
+          "sourceBytes": 1192712,
+          "shippedBytes": 736327
+        },
+        {
+          "path": "shared/sky.jpg",
+          "kind": "texture",
+          "sourceBytes": 282451,
+          "shippedBytes": 282451
+        },
+        {
+          "path": "shared/mannequin.glb",
+          "kind": "model",
+          "sourceBytes": 664944,
+          "shippedBytes": 263628
+        },
+        {
+          "path": "rain/thunder.wav",
+          "kind": "audio",
+          "sourceBytes": 2469644,
+          "shippedBytes": 106795
+        },
+        {
+          "path": "rain/rain-loop.wav",
+          "kind": "audio",
+          "sourceBytes": 1058444,
+          "shippedBytes": 51545
+        },
+        {
+          "path": "rain/wind-loop.wav",
+          "kind": "audio",
+          "sourceBytes": 1058444,
+          "shippedBytes": 36747
+        },
+        {
+          "path": "snow/wind.wav",
+          "kind": "audio",
+          "sourceBytes": 176444,
+          "shippedBytes": 19278
+        },
+        {
+          "path": "snow/crunch.wav",
+          "kind": "audio",
+          "sourceBytes": 13274,
+          "shippedBytes": 5264
+        },
+        {
+          "path": "starter/pickup.wav",
+          "kind": "audio",
+          "sourceBytes": 39246,
+          "shippedBytes": 5228
+        },
+        {
+          "path": "puzzle/native-proof.glb",
+          "kind": "model",
+          "sourceBytes": 624,
+          "shippedBytes": 1260
+        },
+        {
+          "path": "starter/native-proof.glb",
+          "kind": "model",
+          "sourceBytes": 624,
+          "shippedBytes": 624
+        },
+        {
+          "path": "puzzle/native-proof.png",
+          "kind": "texture",
+          "sourceBytes": 150,
+          "shippedBytes": 150
+        },
+        {
+          "path": "starter/native-proof.png",
+          "kind": "texture",
+          "sourceBytes": 150,
+          "shippedBytes": 150
+        }
+      ]
+    }
+  ]
+}

@@ -68,6 +68,7 @@ import {
   resolveCompactOptions,
   sceneNodeNames,
 } from "./compact.js";
+import { withoutSpecDefaults } from "./glb-spec-defaults.js";
 import {
   type IEmbeddedTextureSummary,
   type IModelTexturesOptions,
@@ -79,6 +80,7 @@ import {
   textureKeys,
   textureQualitySemantics,
 } from "./model-textures.js";
+import { pruneRestPoseTracks } from "./prune-rest-tracks.js";
 import { quantizeStaticGeometry } from "./quantize-static.js";
 import { reorderStaticPrimitives } from "./reorder-static.js";
 import {
@@ -145,6 +147,8 @@ export interface IModelPassesOptions {
   readonly prune?: boolean;
   readonly quantize?: boolean;
   readonly reorder?: boolean;
+  /** Drop animation tracks that only hold the pose their node already has. Default true. */
+  readonly restTracks?: boolean;
 }
 
 export interface IModelQuantizeOptions {
@@ -246,6 +250,8 @@ const DRACO_EXTENSION = "KHR_draco_mesh_compression";
 const EXT_MESHOPT_EXTENSION = "EXT_meshopt_compression";
 /** Bumped with the merge signature so a stale compile-cache entry cannot hide a changed merge. */
 const MATERIAL_MERGE_VERSION = 1;
+/** Bumped when shared-image manifest rows gain per-image Basis accounting. */
+const SHARED_TRANSCODER_ACCOUNTING_VERSION = 1;
 /**
  * Bumped with the content-key signature behind `TN_ASSET_MODEL_DEDUPE`, for the same reason and
  * the same reason it is not `PIPELINE_VERSION`: that constant is hand-maintained, so a change
@@ -325,7 +331,7 @@ async function writeDocument(
     .registerExtensions([...ALL_EXTENSIONS, EXTTextureAstc, TNVirtualGeometry, TNDiscreteLod])
     .registerDependencies({ "meshopt.encoder": MeshoptEncoder });
   try {
-    const buffer = Buffer.from(await io.writeBinary(document));
+    const buffer = withoutSpecDefaults(Buffer.from(await io.writeBinary(document)));
     return { buffer, extensions: jsonOfGlb(buffer).extensionsUsed ?? [] };
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
@@ -830,6 +836,7 @@ export function modelPass(options: IModelPassOptions = {}): IAssetPass {
         prune: options.passes?.prune ?? true,
         quantize: options.passes?.quantize ?? true,
         reorder: options.passes?.reorder ?? true,
+        restTracks: options.passes?.restTracks ?? true,
       },
       ...(options.vertexLayout === undefined ? {} : { vertexLayout: options.vertexLayout }),
       quantize: {
@@ -867,6 +874,9 @@ export function modelPass(options: IModelPassOptions = {}): IAssetPass {
               bakeVersion: VIRTUAL_BAKE_VERSION,
             },
       sharedImages: options.sharedImages !== undefined,
+      ...(options.sharedImages === undefined
+        ? {}
+        : { sharedTranscoderAccounting: SHARED_TRANSCODER_ACCOUNTING_VERSION }),
       textures:
         options.textures === "none"
           ? "none"
@@ -875,8 +885,11 @@ export function modelPass(options: IModelPassOptions = {}): IAssetPass {
               decoderFree: options.textures?.decoderFree ?? false,
               encoder: KTX2_ENCODER_VERSION,
               instrument: IMAGE_QUALITY_IDENTITY,
+              jpeg: options.textures?.jpeg ?? null,
+              jpegLadder: "colour-opaque-q75-90-v1",
               floor: resolveImageQualityFloor(options.textures?.floor),
               maxSize: options.textures?.maxSize ?? null,
+              transcoderBytes: options.textures?.transcoderBytes ?? null,
               // Retention is now conditioned on the container, so it is spelled out rather than
               // named by a boolean: a warm cache keyed on the old rule would keep shipping the
               // WebP-requiring models this replaced.
@@ -902,6 +915,7 @@ export function modelPass(options: IModelPassOptions = {}): IAssetPass {
         prune: passes.prune ?? true,
         quantize: passes.quantize ?? true,
         reorder: passes.reorder ?? true,
+        restTracks: passes.restTracks ?? true,
       };
       // Embedded-texture compression and simplification are switched separately from the
       // geometry sub-passes: a model whose geometry is already final still ships images.
@@ -953,6 +967,8 @@ export function modelPass(options: IModelPassOptions = {}): IAssetPass {
       let compact = compactRequested(options.compact)
         ? await compactModel(document, resolveCompactOptions(options.compact))
         : undefined;
+      // Before `prune`, which removes the samplers and accessors these tracks leave unreferenced.
+      if (enabled.restTracks) pruneRestPoseTracks(document, logicalPath);
       if (enabled.prune) {
         await prune({ keepAttributes: options.preserveLightmapUv === true })(document);
         // The empty nodes `flatten`/`join` left behind are removed by this prune, so the shipped
@@ -1044,6 +1060,7 @@ export function modelPass(options: IModelPassOptions = {}): IAssetPass {
           shared,
           embeddedTextures?.formats,
           embeddedTextures?.quality,
+          embeddedTextures?.transcoderByImage,
         );
       if (enabled.meshopt) {
         document
@@ -1159,11 +1176,14 @@ function sharedSettings(
             decoderFree: textureOptions.decoderFree ?? false,
             encoder: KTX2_ENCODER_VERSION,
             instrument: IMAGE_QUALITY_IDENTITY,
+            jpeg: textureOptions.jpeg ?? null,
+            jpegLadder: "colour-opaque-q75-90-v1",
             floor: resolveImageQualityFloor(textureOptions.floor),
             keepSmallerSource: "universal-containers",
             maxSize: resolveTextureMaxSize(textureOptions.maxSize, listTextureSlots(texture)),
             overrides: textureOptions.overrides ?? [],
             quality: textureOptions.quality ?? null,
+            transcoderBytes: textureOptions.transcoderBytes ?? null,
           },
   };
 }
@@ -1203,6 +1223,10 @@ async function recallSharedImages(
       codec: stored.codec,
       sourceBytes: image.byteLength,
       quality: stored.quality,
+      ...(stored.transcoderSavings === undefined
+        ? {}
+        : { transcoderSavings: stored.transcoderSavings }),
+      ...(stored.transcoderRequired === true ? { transcoderRequired: true as const } : {}),
     });
   }
   return { keys, recalled };
@@ -1224,6 +1248,7 @@ async function rememberSharedImages(
   plan: ISharedImagePlan,
   formats?: Readonly<Record<string, string>>,
   quality?: Readonly<Record<string, ITextureQuality>>,
+  transcoder?: Readonly<Record<string, { readonly savings?: number; readonly required?: true }>>,
 ): Promise<void> {
   const textures = document.getRoot().listTextures();
   const names = textureKeys(document.getRoot());
@@ -1232,13 +1257,15 @@ async function rememberSharedImages(
     const key = plan.keys[index];
     const image = texture.getImage();
     if (key === undefined || key === "" || image === null) continue;
+    const name = names[index] ?? "";
+    const contribution = transcoder?.[name];
     await store.put(key, {
       buffer: Buffer.from(image.buffer, image.byteOffset, image.byteLength),
-      codec: codecOf(texture.getMimeType(), formats, names[index] ?? ""),
+      codec: codecOf(texture.getMimeType(), formats, name),
       mimeType: texture.getMimeType(),
-      ...(quality?.[names[index] ?? ""] === undefined
-        ? {}
-        : { quality: quality?.[names[index] ?? ""] }),
+      ...(quality?.[name] === undefined ? {} : { quality: quality?.[name] }),
+      ...(contribution?.savings === undefined ? {} : { transcoderSavings: contribution.savings }),
+      ...(contribution?.required === true ? { transcoderRequired: true as const } : {}),
     });
   }
 }
@@ -1257,6 +1284,8 @@ function declareSharedImage(
     metadata: {
       codec: candidate.image.codec,
       key: candidate.key,
+      transcoderRequired: candidate.image.transcoderRequired === true,
+      transcoderSavings: candidate.image.transcoderSavings ?? 0,
       ...(candidate.image.quality === undefined ? {} : { quality: candidate.image.quality }),
     },
     outputPath,

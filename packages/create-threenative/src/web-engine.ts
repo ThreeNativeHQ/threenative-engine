@@ -114,7 +114,7 @@ function wasmModule(root: string, explicit: string | undefined): string {
   }
   if (!existsSync(entry))
     throw new Error(
-      `TN_WASM_ENGINE_MISSING: engine "threenative" needs the Wasm engine at ${entry}; reinstall @threenative/runtime-native, or in a ThreeNative checkout build it with \`cmake --build build/wasm --target tn-native-engine-web\` in packages/runtime-native. ${OPT_OUT}`,
+      `TN_WASM_ENGINE_MISSING: engine "threenative" needs the Wasm engine at ${entry}; reinstall @threenative/runtime-native, or in a ThreeNative checkout run \`pnpm wasm:build\` from the repository root (it fetches stb, cgltf and webp-source, then builds), or build it with \`cmake --build build/wasm --target tn-native-engine-web\` in packages/runtime-native. ${OPT_OUT}`,
     );
   return entry;
 }

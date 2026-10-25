@@ -910,9 +910,13 @@ describe("AnimationPlayer stride sync on in-place clips", () => {
       vi.spyOn(quaternion, "clone"),
       vi.spyOn(scale, "clone"),
     ]);
+    const worldUpdates = vi.spyOn(root, "updateMatrixWorld");
     try {
       expect(player.stride.clipGroundSpeed).toBeCloseTo(1, 1);
-      for (const copy of copies) expect(copy).toHaveBeenCalledTimes(65);
+      // The world matrices come from each node's own transform: no engine world read per node per
+      // sample (65 each before), and one world update, the restore, instead of one per sample (66).
+      for (const copy of copies) expect(copy).not.toHaveBeenCalled();
+      expect(worldUpdates).toHaveBeenCalledTimes(1);
       for (const clone of clones) expect(clone).not.toHaveBeenCalled();
       for (const { object, position, quaternion, scale, values } of originals) {
         expect(object.position).toBe(position);
@@ -923,6 +927,50 @@ describe("AnimationPlayer stride sync on in-place clips", () => {
     } finally {
       for (const clone of clones) clone.mockRestore();
     }
+  });
+
+  it("keeps the engine's world read for a rig with a hand-set matrix, and both reads agree exactly", () => {
+    const rig = (handSet: boolean) => {
+      // Scaled, turned and parented at every level, with a boot mesh, so the composed path must
+      // match updateMatrixWorld bit for bit through compose, multiply and the sole's corners.
+      const holder = new Group();
+      holder.position.set(2, 0.3, -1);
+      holder.rotation.y = 0.7;
+      holder.scale.setScalar(1.5);
+      const root = new Group();
+      root.rotation.y = -0.4;
+      root.scale.set(1.2, 0.9, 1.1);
+      holder.add(root);
+      const hip = new Bone();
+      hip.position.set(0.1, 0, 0);
+      hip.rotation.set(0.3, 0.2, 0.1);
+      hip.scale.set(1, 1.3, 0.8);
+      root.add(hip);
+      const foot = new Bone();
+      foot.name = "Foot";
+      hip.add(foot);
+      const boot = new Mesh(new BoxGeometry(0.2, 0.1, 0.3));
+      boot.position.set(0, -0.05, 0.05);
+      boot.rotation.x = 0.2;
+      foot.add(boot);
+      const prop = new Group();
+      prop.matrixAutoUpdate = !handSet;
+      prop.position.set(0, 0.5, 0);
+      prop.updateMatrix();
+      root.add(prop);
+      const copy = vi.fn((target: Matrix4) => target.copy(prop.matrixWorld));
+      Object.assign(prop, { __tnCopyMatrixWorld: copy });
+      const player = new AnimationPlayer({ root, clips: [plantedWalk()] });
+      player.play("walk");
+      player.mixer.update(0.2);
+      return { speed: player.stride.clipGroundSpeed, copies: copy.mock.calls.length };
+    };
+    const composed = rig(false);
+    const handSet = rig(true);
+    expect(composed.copies).toBe(0);
+    expect(handSet.copies).toBe(65);
+    expect(composed.speed).toBeGreaterThan(0);
+    expect(handSet.speed).toBe(composed.speed);
   });
 
   it("reads the sampled rig's world positions without re-walking each bone's ancestors", () => {
@@ -1032,15 +1080,18 @@ describe("AnimationPlayer stride sync on in-place clips", () => {
     expect(aboveSole.stride.clipGroundSpeed).toBeCloseTo(atSole.stride.clipGroundSpeed, 6);
   });
 
-  it("measures a boot's sole with no vector call per corner (the owned engine held Lantern Vale's first walk 43 ms)", () => {
+  it("measures a boot's sole with no vector call or comparator sort per corner (the owned engine held Lantern Vale's first walk 43 ms)", () => {
     const leg = swingingLeg(0.1);
     const apply = vi.spyOn(Vector3.prototype, "applyMatrix4");
+    const sort = vi.spyOn(Array.prototype, "sort");
     try {
       leg.play("walk");
       expect(leg.stride.clipGroundSpeed).toBeCloseTo(0.6444015098802138, 12); // the per-corner applyMatrix4 code measured this
       expect(apply).not.toHaveBeenCalled();
+      expect(sort.mock.calls.length).toBeLessThan(16); // the per-corner sort ran 65 times for 64 samples
     } finally {
       apply.mockRestore();
+      sort.mockRestore();
     }
   });
 });
