@@ -4,7 +4,7 @@
 // One sun, and the sky in `sky.ts` is the fill — a fresh Unreal level's directional light and sky
 // light, and nothing stacked on top. A hemisphere or ambient light next to an image-based
 // environment fills the same faces twice and flattens the shadow side the sun is there to make.
-import { DirectionalLight, PCFShadowMap, Vector3, type Scene } from "three";
+import { DirectionalLight, PCFShadowMap, type Scene, Vector3 } from "three";
 import { SUN_DIRECTION } from "./sky.js";
 
 type ShadowRenderer = { shadowMap: { enabled: boolean; type: number } };
@@ -52,7 +52,11 @@ export function setupLighting(scene: Scene, renderer: ShadowRenderer, mobile = f
         ahead.y = 0;
         if (ahead.lengthSq() > 1e-6) ahead.normalize().multiplyScalar(14);
       }
-      key.position.set(target.x + ahead.x + offset.x, target.y + offset.y, target.z + ahead.z + offset.z);
+      key.position.set(
+        target.x + ahead.x + offset.x,
+        target.y + offset.y,
+        target.z + ahead.z + offset.z,
+      );
       key.target.position.copy(target).add(ahead);
       key.target.updateMatrixWorld();
     },

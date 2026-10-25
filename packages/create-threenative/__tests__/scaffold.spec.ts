@@ -303,7 +303,7 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-10-24 for the shadow window: the 52 m map now travels 14 m ahead of the hero,
   // so the castle and trees the camera sees keep their shadows; the 2048 map and shadow pass cost
   // stay the same.
-  collectathon: "8c5d6a1ae796e7f66b23e71d3c4ed473f9c5b19c9d34d82dd685fb5d75c203c3",
+  collectathon: "b63ede76ac9d6f5d7fc683df9c630ad535ac6c7f5038c79310a61383865b8aa8",
   // PRD-733 (2026-10-23): the new Lantern Vale kit, measured through createProject.
   // Recomputed 2026-10-24 for the owner perf round: the fixed-step catch-up cap and the gentler
   // wind on the crowns, clusters and grass tufts. Only this tree moves.
