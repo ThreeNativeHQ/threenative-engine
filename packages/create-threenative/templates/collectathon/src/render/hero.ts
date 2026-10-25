@@ -252,7 +252,13 @@ export function createHero(): IHero {
       false,
     );
   }
-  part(ball(0.1), C.nose, pivot, [0, HEAD_Y - 0.065, FACE - 0.025], [1, 0.88, 0.95], false);
+  // The nose sits below the eye whites, clear of them, and a small smile under it gives the face an
+  // expression: a half ring laid on the head's surface (tilted 0.56 rad, the face's slope there).
+  part(ball(0.072), C.nose, pivot, [0, HEAD_Y - 0.13, FACE + 0.005], [1, 0.88, 0.95], false);
+  const smile = new Mesh(new TorusGeometry(0.07, 0.016, 6, 16, Math.PI), lit(C.ink));
+  smile.position.set(0, HEAD_Y - 0.195, -0.338);
+  smile.rotation.set(-0.56, 0, Math.PI);
+  pivot.add(smile);
   // Hair below the back of the beanie's cuff: wide and tucked under it, so from behind it reads
   // as hair and never as a second face.
   part(ball(0.15), C.hair, pivot, [0, HEAD_Y + 0.06, 0.24], [2, 0.6, 0.8], false);

@@ -588,3 +588,9 @@ Unreal default look, and no frame is blank or white.
   IMPROVEMENT; eyes, nose and moustache PASS, the hero does not read as Mario or Luigi (high
   confidence). Its open note: the face has no mouth and the nose touches the eye whites, so it
   reads blank. Shots: `~/Downloads/hop-garden/face-final/`.
+  Mouth fix: the nose is a smaller ball below the eye whites, and a small dark smile (a half
+  ring on the head's surface) sits under it. Face judge (fresh Opus, RTX 2080 headed WebGPU, old
+  core + engine pair where post works, 2 runs per arm, against the owner's report): IMPROVEMENT;
+  nose clear of the whites, mouth, eyes, nose size and no moustache PASS, not read as Mario or
+  Luigi (high confidence). Open note: the mouth sits low, near the collar, so the face crowds into
+  its lower third. Shots: `~/Downloads/hop-garden/face-mouth/`.
