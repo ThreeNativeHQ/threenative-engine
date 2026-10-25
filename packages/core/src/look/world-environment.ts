@@ -1424,6 +1424,11 @@ export class WorldEnvironment {
             console.warn(
               `TN_SSR_STEP_CAP_UNSUPPORTED: this engine's SSR has no maxSteps; ssrMaxSteps ${options.ssrMaxSteps} is not applied`,
             );
+          // Unreal traces no ray for a surface at or above the roughness cut-off below. An SSR that can skip those pixels
+          // (`maxRoughness`) does; the weight below is 0 there either way, so the frame does not change.
+          const roughnessGate = (reflections as unknown as { maxRoughness?: { value: number } })
+            .maxRoughness;
+          if (roughnessGate) roughnessGate.value = REFLECTION_CUTOFF;
           // Unreal traces reflections only for surfaces smoother than a roughness cut-off and fades
           // the trace out over the last stretch: cut-off 0.4 (Engine/Source/Runtime/Engine/Private/
           // Scene.cpp:658), fade 0.1 (Renderer/Private/Lumen/LumenReflections.cpp:129). Above it the
