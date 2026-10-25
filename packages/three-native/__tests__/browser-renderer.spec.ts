@@ -978,4 +978,31 @@ describe("the Wasm engine's compileAsync", () => {
     // The bake compiles the scene off the queue before the draw that would compile it synchronously.
     expect(order).toEqual(["post", "compile", "post", "post", "compile", "draw"]);
   });
+
+  it("still bakes inside its deadline when the scene compile never settles", async () => {
+    const { Renderer, canvas, scene, camera, module } = host();
+    const engine = module as unknown as Record<string, unknown>;
+    engine._tnw_web_compile_async = () => 7;
+    engine._tnw_web_compile_status = () => 0;
+    let draws = 0;
+    const render = engine._tnw_web_render as (...args: unknown[]) => number;
+    engine._tnw_web_render = (...args: unknown[]) => {
+      draws += 1;
+      return render(...args);
+    };
+    const renderer = new Renderer({ canvas }) as {
+      init(): Promise<unknown>;
+      prepareEnvironmentAsync(
+        scene: unknown,
+        camera: unknown,
+        deadlineMs: number,
+      ): Promise<boolean>;
+    };
+    await renderer.init();
+    const started = performance.now();
+    expect(await renderer.prepareEnvironmentAsync(scene, camera, started + 400)).toBe(true);
+    expect(draws).toBe(1);
+    // The compile waits half the time left at most: the bake drew near 200 ms, not at its deadline.
+    expect(performance.now() - started).toBeLessThan(320);
+  });
 });

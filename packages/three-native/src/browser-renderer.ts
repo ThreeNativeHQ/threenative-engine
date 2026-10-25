@@ -635,11 +635,19 @@ export function defineWebRenderer(
       // The bake's last draw is the scene's first, so build its pipelines off the queue first: on
       // Lantern Vale that draw compiled 84 synchronously and held the GPU queue for over a second
       // (ready 6.3 s -> 4.5 s). A refusal is the draw's to report, where it compiles that pipeline again.
-      const compiled = this.compileAsync(scene, camera).catch(() => undefined);
-      const left = deadlineMs - performance.now();
-      await (Number.isFinite(left)
-        ? Promise.race([compiled, new Promise((resolve) => setTimeout(resolve, Math.max(0, left)))])
-        : compiled);
+      // It waits at most half the time left, so a slow compile still leaves the bake its draws.
+      const compiling = this.compileAsync(scene, camera).catch(() => undefined);
+      const left = (deadlineMs - performance.now()) / 2;
+      if (Number.isFinite(left)) {
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        await Promise.race([
+          compiling,
+          new Promise((resolve) => {
+            timer = setTimeout(resolve, Math.max(0, left));
+          }),
+        ]);
+        clearTimeout(timer);
+      } else await compiling;
       while (performance.now() < deadlineMs) {
         const gated = this.info.engine.frameGateSkips;
         this.render(scene, camera);

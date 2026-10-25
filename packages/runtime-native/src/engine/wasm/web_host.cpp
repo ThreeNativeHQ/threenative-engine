@@ -368,6 +368,10 @@ extern "C" uint32_t tnw_web_compile_async(const tn_handle_t* rootHandle, const t
 extern "C" int tnw_web_compile_status(uint32_t id) {
     tnw_web_poll();
     const auto found = compilations.find(id);
+    if (state == Failed && found != compilations.end()) {
+        compilations.erase(found);  // a lost device may never complete the pipelines; its failure names why
+        return -1;
+    }
     if (found == compilations.end()) {
         refuse("TN_WASM_COMPILE: no compilation " + std::to_string(id));
         return -1;

@@ -1522,9 +1522,10 @@ export function drawPastFrameGate(
   const first = draw();
   if (before === undefined || rendererFrameGateSkips(raw) === before) return first;
   const now = (): number => globalThis.performance?.now() ?? Date.now();
-  const deadline = now() + waitMs;
   return (async () => {
     await first;
+    // The wait starts once the declined draw settled, so a slow settle does not use up the retries.
+    const deadline = now() + waitMs;
     while (now() < deadline) {
       await new Promise((resolve) => setTimeout(resolve, 16));
       const skips = rendererFrameGateSkips(raw);

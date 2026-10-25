@@ -1992,6 +1992,19 @@ describe("drawPastFrameGate", () => {
     expect(draws).toEqual([true]);
   });
 
+  it("starts its wait once the declined draw settled, so a slow settle keeps its retries", async () => {
+    const { raw, draws, draw } = gated(1);
+    let first = true;
+    const slow = () => {
+      draw();
+      if (!first) return undefined;
+      first = false;
+      return new Promise<void>((resolve) => setTimeout(resolve, 80));
+    };
+    await drawPastFrameGate(raw, slow, 50);
+    expect(draws).toEqual([false, true]);
+  });
+
   it("fails, naming the gate, when the GPU never takes a frame", async () => {
     const { raw, draw } = gated(Number.POSITIVE_INFINITY);
     await expect(drawPastFrameGate(raw, draw, 50)).rejects.toThrow("TN_WARMUP_FRAME_GATE");
