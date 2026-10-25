@@ -601,3 +601,10 @@ Unreal default look, and no frame is blank or white.
   (high confidence); IMPROVEMENT overall, the owner's three fixes PASS, not Mario or Luigi. Open
   note: at 1:1 the rose mouth is faint, so the face reads nearly mouthless at gameplay distance.
   Shots: `~/Downloads/hop-garden/face-mouth2/`.
+  Startup hitch (flash-hunter's profile: about 7.7 s of a 7 to 11 s hitch was `skyTexture`, whose
+  per-texel `Color` lerps cross the Wasm facade millions of times): `render/sky.ts` reads each
+  colour into plain numbers once and mixes r, g, b as numbers. Texel data is bit-identical (sha256
+  of both calls, 2048 and 128 wide, equal BEFORE and AFTER). RTX 2080 headed WebGPU, `survives`:
+  TN_FRAME_HITCH gapMs BEFORE 11750, 9283, 8733, 9483, 8916 over 5 launches (4 of them crashed or
+  failed), AFTER 3400 and 2800 (exit 0); `combat` and `collect` exit 0 at 3083 and 2600. The
+  engine cause (value math crossing the facade per call) is its own PRD.

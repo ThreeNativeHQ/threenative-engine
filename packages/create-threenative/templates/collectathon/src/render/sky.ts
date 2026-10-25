@@ -96,16 +96,19 @@ export function skyTexture(saturation = 1, width = 2048): DataTexture {
   // three's PMREM sizes its cube from width / 4 and needs at least 16: keep width >= 64.
   const height = width / 2;
   const data = new Uint8Array(width * height * 4);
-  const high = new Color(palette.skyHigh);
-  const low = new Color(palette.skyLow);
-  const horizon = new Color(palette.horizon);
-  const ground = new Color(palette.grass);
-  const glow = new Color(0xffe2b8);
-  const lit = new Color(1, 0.98, 0.94);
-  const shade = new Color(0.56, 0.62, 0.74);
-  const base = new Color();
-  const texel = new Color();
-  const cloud = new Color();
+  // The colours are read into plain numbers once: the loops below run per texel, millions of
+  // times, and plain arithmetic there is far cheaper than a `Color` method call.
+  const rgb = (color: Color): readonly [number, number, number] => [color.r, color.g, color.b];
+  const [highR, highG, highB] = rgb(new Color(palette.skyHigh));
+  const [lowR, lowG, lowB] = rgb(new Color(palette.skyLow));
+  const [horizonR, horizonG, horizonB] = rgb(new Color(palette.horizon));
+  const [groundR, groundG, groundB] = rgb(new Color(palette.grass));
+  const [glowR, glowG, glowB] = rgb(new Color(0xffe2b8));
+  const [litR, litG, litB] = [1, 0.98, 0.94];
+  const [shadeR, shadeG, shadeB] = [0.56, 0.62, 0.74];
+  let baseR = 0;
+  let baseG = 0;
+  let baseB = 0;
   // Pass 1: the deck's density under every cloud-band texel, once (the shading reads neighbours).
   const deck = new Float32Array(width * height);
   const bands = new Float32Array(height);
@@ -144,9 +147,22 @@ export function skyTexture(saturation = 1, width = 2048): DataTexture {
     const up = Math.sin(elevation);
     const cosE = Math.cos(elevation);
     // A thin haze band, then blue deepening to the zenith; below, the haze over the ground.
-    if (up < 0) base.copy(horizon).lerp(ground, Math.min(1, -up * 3));
-    else if (up < 0.12) base.copy(horizon).lerp(low, up / 0.12);
-    else base.copy(low).lerp(high, Math.min(1, (up - 0.12) / 0.55));
+    if (up < 0) {
+      const t = Math.min(1, -up * 3);
+      baseR = mix(horizonR, groundR, t);
+      baseG = mix(horizonG, groundG, t);
+      baseB = mix(horizonB, groundB, t);
+    } else if (up < 0.12) {
+      const t = up / 0.12;
+      baseR = mix(horizonR, lowR, t);
+      baseG = mix(horizonG, lowG, t);
+      baseB = mix(horizonB, lowB, t);
+    } else {
+      const t = Math.min(1, (up - 0.12) / 0.55);
+      baseR = mix(lowR, highR, t);
+      baseG = mix(lowG, highG, t);
+      baseB = mix(lowB, highB, t);
+    }
     const band = bands[row] ?? 0;
     const above = Math.min(height - 1, row + step);
     const towardRow = Math.min(
@@ -160,7 +176,10 @@ export function skyTexture(saturation = 1, width = 2048): DataTexture {
       const tz = Math.sin(azimuth) * cosE;
       // The sun's halo: a warm glow round its direction, wider than the disc the lens never sees.
       const sun = Math.max(0, tx * SUN_DIRECTION.x + up * SUN_DIRECTION.y + tz * SUN_DIRECTION.z);
-      texel.copy(base).lerp(glow, 0.6 * sun ** 32 + 0.22 * sun ** 5);
+      const halo = 0.6 * sun ** 32 + 0.22 * sun ** 5;
+      let r = mix(baseR, glowR, halo);
+      let g = mix(baseG, glowG, halo);
+      let b = mix(baseB, glowB, halo);
       const d = deck[row * width + column] ?? 0;
       const cover = band > 0 ? smooth(0.43, 0.54, d) * band : 0;
       if (cover > 0.002) {
@@ -172,10 +191,11 @@ export function skyTexture(saturation = 1, width = 2048): DataTexture {
         // Thick middles go a little grey, as a real heap's core does.
         const light =
           smooth(-0.05, 0.05, -toward * 1.2 - base01 * 2) * (1 - 0.35 * smooth(0.6, 0.8, d));
-        cloud.copy(shade).lerp(lit, light);
         // The edge facing the sun catches its warmth.
-        cloud.lerp(glow, 0.4 * sun ** 3 * light);
-        texel.lerp(cloud, cover);
+        const warm = 0.4 * sun ** 3 * light;
+        r = mix(r, mix(mix(shadeR, litR, light), glowR, warm), cover);
+        g = mix(g, mix(mix(shadeG, litG, light), glowG, warm), cover);
+        b = mix(b, mix(mix(shadeB, litB, light), glowB, warm), cover);
       }
       const foot = bases[column] ?? 0;
       const top = tops[column] ?? 0;
@@ -197,19 +217,17 @@ export function skyTexture(saturation = 1, width = 2048): DataTexture {
             (0.05 + 0.95 * height01 ** 1.2) * (0.5 + 0.65 * crown) +
               0.25 * (1 - smooth(0, 0.05, below)),
           );
-          cloud.copy(shade).lerp(lit, light);
-          cloud.lerp(glow, 0.45 * sun ** 2 * light);
-          texel.lerp(cloud, inside);
+          const warm = 0.45 * sun ** 2 * light;
+          r = mix(r, mix(mix(shadeR, litR, light), glowR, warm), inside);
+          g = mix(g, mix(mix(shadeG, litG, light), glowG, warm), inside);
+          b = mix(b, mix(mix(shadeB, litB, light), glowB, warm), inside);
         }
       }
-      const grey = texel.r * 0.2126 + texel.g * 0.7152 + texel.b * 0.0722;
-      const r = texel.r + (grey - texel.r) * (1 - saturation);
-      const g = texel.g + (grey - texel.g) * (1 - saturation);
-      const b = texel.b + (grey - texel.b) * (1 - saturation);
+      const grey = r * 0.2126 + g * 0.7152 + b * 0.0722;
       const i = (row * width + column) * 4;
-      data[i] = Math.round(255 * linearToSrgb(r));
-      data[i + 1] = Math.round(255 * linearToSrgb(g));
-      data[i + 2] = Math.round(255 * linearToSrgb(b));
+      data[i] = Math.round(255 * linearToSrgb(r + (grey - r) * (1 - saturation)));
+      data[i + 1] = Math.round(255 * linearToSrgb(g + (grey - g) * (1 - saturation)));
+      data[i + 2] = Math.round(255 * linearToSrgb(b + (grey - b) * (1 - saturation)));
       data[i + 3] = 255;
     }
   }
@@ -221,6 +239,8 @@ export function skyTexture(saturation = 1, width = 2048): DataTexture {
   sky.needsUpdate = true;
   return sky;
 }
+
+const mix = (from: number, to: number, t: number): number => from + (to - from) * t;
 
 function linearToSrgb(value: number): number {
   const v = Math.min(1, Math.max(0, value));
