@@ -1,7 +1,13 @@
 {
   "comment": "The engine capability MCP surface shipped through @threenative/core. The golden path also calls a mechanically explicit cross-system request so a packaged consumer proves full-request discovery without repository source.",
   "version": "0.2.6",
-  "tools": ["engine_capability_detail", "engine_search_capabilities"],
+  "tools": [
+    "engine_capability_detail",
+    "engine_reference_detail",
+    "engine_save_reference",
+    "engine_search_capabilities",
+    "engine_search_references"
+  ],
   "inputSchemas": {
     "engine_search_capabilities": {
       "additionalProperties": false,
@@ -31,10 +37,51 @@
       },
       "required": ["symbol"],
       "type": "object"
+    },
+    "engine_search_references": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "situation": {
+          "type": "string"
+        }
+      },
+      "required": ["situation"]
+    },
+    "engine_reference_detail": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "game": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string",
+          "enum": ["node", "card"]
+        }
+      },
+      "required": ["game", "id", "kind"]
+    },
+    "engine_save_reference": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "game": {
+          "type": "object",
+          "description": "Pinned game reference: version, id, title, repo, sha (40 hex), nodes [{id,name,purpose,parent?,paths,functions:[{name,path,lines:[from,to]}],dependsOn}], cards [{id,node,name,summary,behavior,constants:[{name,value,unit,source}],sources:[{path,line}],capabilities,tags}]. No extra fields or code fences."
+        }
+      },
+      "required": ["game"]
     }
   },
   "descriptions": {
     "engine_search_capabilities": "Search the installed engine by concrete gameplay mechanic. Decompose genres first. Use scope \"request\" for the mechanically explicit full request and \"mechanic\" for each focused search; matchedSituation and score explain every result. The response verdict \"none\" is an actionable answer with guidance, not a failed search.",
-    "engine_capability_detail": "Inspect one engine capability's import, signature, example, constraints, and overrides. When several packages export the symbol, every match is returned under `matches`."
+    "engine_capability_detail": "Inspect one engine capability's import, signature, example, constraints, and overrides. When several packages export the symbol, every match is returned under `matches`.",
+    "engine_search_references": "Search mechanic cards and repository map nodes from classic games. Tier-2 titles link to repos to explore and save. References describe feel only; borrow algorithms, cite pinned sources, copy no code or art.",
+    "engine_reference_detail": "Read a game's pinned map or mechanic card. A node includes files, key functions, dependencies and child nodes; a card includes constants and sources.",
+    "engine_save_reference": "Validate and save a pinned game's repository map and mechanic cards to .threenative/refs, merged by id at the same SHA; conflicting revisions are refused. Pass a game object with version:1, id, title, repo, sha, nodes and cards. Returns a POSIX-shell contribution command for review; does not send it. Unknown fields and fenced code are refused."
   }
 }
