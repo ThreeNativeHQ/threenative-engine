@@ -188,6 +188,36 @@ describe("GPU exposure lifecycle", () => {
     node.dispose();
   });
 
+  it("adopts the measured target on the first frame and while the history holds no measurement", () => {
+    const renderer = new WebGPURenderer({ canvas: new EventTarget() as HTMLCanvasElement });
+    vi.spyOn(renderer, "hasFeature").mockReturnValue(false);
+    const capabilities = Reflect.get(renderer.backend, "capabilities");
+    vi.spyOn(capabilities, "getUniformBufferLimit").mockReturnValue(65_536);
+    const draws: { code: string; scalars: unknown[] }[] = [];
+    vi.mocked(QuadMesh.prototype.render).mockImplementation(function (this: QuadMesh) {
+      if (!(this.material instanceof NodeMaterial)) throw new Error("missing node material");
+      const builder = new WGSLNodeBuilder(this, renderer) as WGSLNodeBuilder & {
+        setShaderStage(stage: string): void;
+        flowStagesNode(node: unknown, output: string): { code: string };
+        uniforms: Record<string, Array<{ value: unknown }>>;
+      };
+      builder.setShaderStage("fragment");
+      const { code } = builder.flowStagesNode(this.material.fragmentNode, "vec4");
+      const values = builder.uniforms.fragment?.map(({ value }) => value) ?? [];
+      draws.push({ code, scalars: values.filter((value) => typeof value === "number") });
+    });
+    const { node, frame } = harness();
+    node.updateBefore(frame);
+    node.updateBefore(frame);
+    // The adaptation draw is the fifth; its scalars are the reset mode, the seed and the delta.
+    expect(draws[4]?.scalars).toEqual([2, 0, 1 / 60]);
+    expect(draws[9]?.scalars).toEqual([0, 0, 1 / 60]);
+    // In history mode, a history luminance at or below zero (never drawn, or an empty histogram)
+    // takes the target.
+    expect(draws[4]?.code).toMatch(/== 0\.0 \) && \( nodeVar\d+\.y <= 0\.0 \)/u);
+    node.dispose();
+  });
+
   it("refuses invalid readback rather than reporting a made-up luminance", async () => {
     const { node, frame, renderer } = harness();
     vi.mocked(renderer.readRenderTargetPixelsAsync).mockResolvedValueOnce(

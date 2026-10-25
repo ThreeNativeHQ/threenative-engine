@@ -51,7 +51,10 @@ export class AutoExposureNode extends TempNode<"float"> {
   readonly #reduceSize = uniform(new Vector2(1, 1));
   readonly #blockSize = uniform(new Vector2(1, 1));
   readonly #delta = uniform(0);
-  readonly #resetMode = uniform(1); // 0 = history, 1 = seed, 2 = next measured target
+  // 0 = history, 1 = seed, 2 = next measured target. The first frame adopts its measured target,
+  // as Unreal forces the target on a view's first frame (UE 5.8.3: Engine/Source/Runtime/
+  // Renderer/Private/SceneVisibility.cpp:5495, PostProcess/PostProcessEyeAdaptation.cpp:723).
+  readonly #resetMode = uniform(2);
   readonly #seed = uniform(0);
   readonly #enabled = uniform(false);
   readonly #quad = new QuadMesh();
