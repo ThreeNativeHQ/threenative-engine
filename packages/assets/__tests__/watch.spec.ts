@@ -543,6 +543,10 @@ describe("watchAssets", () => {
     const recorder = createBurstRecorder();
     openHandles.push(
       watchAssets({
+        // The tiny fixture auto-selects JPEG; force a Basis-backed rung to test runtime publishing.
+        config: {
+          models: { textures: { overrides: [{ slot: "baseColorTexture", codec: "uastc" }] } },
+        },
         cwd: root,
         debounceMs: DEBOUNCE_MS,
         onChange: recorder.onChange,
