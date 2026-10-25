@@ -55,5 +55,8 @@ export function createAssetLoader(options = {}) {
     resolve: async (path) => [resolved.get(path)?.url ?? `tnpk:${path}`],
     release: (kind, path) => cache.delete(`${kind}:${path}`),
     clear() { cache.clear(); resolved.clear(); },
+    // Final disposal releases decoder worker pools in core; the TNPK host owns no such pool.
+    // Keep this idempotent contract separate from clear(), which empties the reusable cache.
+    dispose() {},
   };
 }
