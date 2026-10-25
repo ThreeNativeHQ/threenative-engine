@@ -161,6 +161,10 @@ export function playtest<
           ...(runtime?.startupTimeline === undefined
             ? {}
             : { timeline: runtime.startupTimeline() }),
+          // What the reveal waited for that the spawn camera does not show, once the reveal ran.
+          ...(runtime?.startupOffscreenBytes?.() === undefined
+            ? {}
+            : { offscreenBytes: runtime.startupOffscreenBytes() }),
         }),
       };
       const installation = installThreePlaytestBridge(bridgeOptions);

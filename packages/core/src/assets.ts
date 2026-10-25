@@ -116,6 +116,14 @@ export type AssetSource = "manifest" | "source";
 
 /** Where one settled load's bytes actually came from. */
 export interface IResolvedAsset {
+  /**
+   * The manifest's size for this path, set once the load settled and the manifest named one.
+   * Absent for a game with no manifest, an external url, or an entry the compile step wrote
+   * without a size, so absent means unknown and never zero.
+   */
+  readonly bytes?: number;
+  /** What the load was asked for; set once the load settled. */
+  readonly kind?: AssetKind;
   readonly url: string;
   readonly via: AssetSource;
 }
@@ -1116,6 +1124,8 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
     entry.promise = entry.promise.then((value) => {
       entry.loaded = true;
       entry.value = value;
+      const record = resolvedAssets.get(path);
+      if (record !== undefined) resolvedAssets.set(path, { ...record, kind: kind as AssetKind });
       if (entry.released) disposeEntry(entry, disposed);
       return value;
     });
@@ -1128,6 +1138,10 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
       pending.delete(path);
       void weighed.then(() => {
         settledBytes += weight;
+        // Only a load that resolved has a record; a rejected one has no bytes to attribute.
+        const record = resolvedAssets.get(path);
+        if (record !== undefined && weight > 0)
+          resolvedAssets.set(path, { ...record, bytes: weight });
       });
       if (traceStart !== 0) {
         console.log(
@@ -1496,6 +1510,13 @@ function stampAssetProvenance(value: unknown, logicalPath: string): void {
     const existing = userData[GEOMETRY_ASSET_KEY];
     if (typeof existing === "string" && existing !== "") continue;
     userData[GEOMETRY_ASSET_KEY] = logicalPath;
+    // An instanced batch is built from a model's geometry and the root never enters the scene, so
+    // the geometry carries the stamp too. `BufferGeometry.copy` shares `userData`, so clones keep it.
+    root.traverse((object) => {
+      const geometry = (object as Object3D & { geometry?: { userData?: Record<string, unknown> } })
+        .geometry;
+      if (geometry?.userData !== undefined) geometry.userData[GEOMETRY_ASSET_KEY] ??= logicalPath;
+    });
   }
 }
 
