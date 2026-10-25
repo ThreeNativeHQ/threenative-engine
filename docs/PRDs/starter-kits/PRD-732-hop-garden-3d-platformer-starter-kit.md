@@ -511,6 +511,27 @@ Each playtest runs on a project scaffolded from `--template collectathon`:
     shelf edge, ghost island, seam or banding. Open polish notes: the foam round the coin islet is
     an even ring with a hard outline, the ripple streaks are regular out to the horizon, and the
     open sea in the shore pose reads periwinkle, not deep blue. Shots: `~/Downloads/hop-garden/sea/`.
+- 2026-10-24 (agent, lead's option 1): the shadow-edge stipple is an engine fix, not a kit radius
+  cut. The owned engine's PCF (three's PCFShadowFilter, ported exactly) turns its five Vogel taps
+  by interleaved gradient noise of the pixel with no frame term, so TRAA sees one fixed pattern and
+  cannot average it; a wide radius stipples (Vale, radius 12). Knob arms on the private page
+  ruled out TRAA (off: the same pattern, stronger) and GTAO (off: no change). The kit cut to radius
+  3 removed the stipple, but the Opus judge called it a REGRESSION (hard cut-out edges), so the
+  kit keeps radius 12. ad1d08404 adds Unreal's frame term to the noise, uv += frame * (47, 17) *
+  0.695 (UE 5.8.3: Engine/Shaders/Private/RandomInterleavedGradientNoise.ush:11-18, seeded with
+  View.StateFrameIndexMod8 in Engine/Shaders/Private/DeferredLightPixelShaders.usf:440): the
+  `shadowNoiseFrame` uniform is the TRAA frame counter mod 8, and 0 with no temporal pass (three's
+  static rotation, deterministic stills). Directional, point and virtual PCF all read it. Named
+  difference: `engine: "threejs"` keeps three's ShadowFilterNode, unpatched. Red-green:
+  render_database_test `shadow_noise_frame` (3 shader checks and the 8-rotation check red without
+  the change). The 93 shadow, VSM, shader, material and TRAA native tests pass. Of all 508
+  native-engine tests, 4 fail with and without the change (`target_graph`, `player_imports`,
+  `player_canvas2d`, `player_canvas_decal`). Pack: one clean archive at ad1d08404, web host ABI 2.
+  GPU p50 (RTX 2080, noisy host: windows swing 12 to 35 ms in both arms): Vale 14.94 -> 14.34 ms
+  (6 alternating pairs, paired median +0.10 ms), Hop 18.49 -> 14.45 ms (4 valid pairs), Clover Cup
+  27.9 -> 27.1 ms (3 pairs): neutral. Hop's BEFORE arm (2239dfda8) lost the device twice with
+  VK_ERROR_OUT_OF_DEVICE_MEMORY, read as GPU memory pressure from overlapping jobs. Open: stills
+  0.9 s apart cannot rule out fine shimmer at full frame rate; a full-rate capture would.
 
 ## Execution Phases
 
@@ -614,3 +635,8 @@ Unreal default look, and no frame is blank or white.
   Since 2ee81c747 a mismatched facade and Wasm stop at start with `TN_WASM_ABI_MISMATCH` (both
   directions, browser and specs). The engine row `post_survives_overlay` passes, but it was never
   red: it guards a present path that was never broken.
+  Shadow-edge stipple (kits-perf judge, 1:1, both arms; engine, fixed in ad1d08404, see Decisions):
+  fresh Opus judges on RTX 2080 headed WebGPU, 2 runs per arm. Stills: Lantern Vale IMPROVEMENT,
+  Clover Cup IMPROVEMENT, Hop Garden NEUTRAL. Motion (camera turn, 8 stills about 0.9 s apart):
+  Vale NEUTRAL, kart IMPROVEMENT on weak coverage, no crawl or shimmer added. Stipple metric
+  (mean |frame - 3x3 blur|, 3 runs): Vale grass edge 3.35 -> 2.81, kart shadow 1.31 -> 0.77.
