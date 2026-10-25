@@ -977,6 +977,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     if (renderer === undefined || (nodes.length === 0 && !hasEnvironment)) return;
     this.#sceneEntered = false;
     let report: Awaited<ReturnType<typeof warmUpComputeNodes>> | undefined;
+    let environmentPrepared: boolean | undefined;
     let failure: string | undefined;
     try {
       const options = this.#warmUpOptions();
@@ -985,24 +986,35 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         projection?.reconcile();
         const root = projection?.root ?? ctx.scene;
         this.#matrixWorld?.apply(root);
-        // A new environment skips world draws until its retained bake has completed.
-        report = await warmUpScene(renderer, root, ctx.camera, {
-          ...options,
-          computeNodes: [...(options.computeNodes ?? []), ...nodes],
-        });
-      } else report = await warmUpComputeNodes(renderer, nodes, options);
+        // A new environment skips world draws until its retained bake has completed. Only the bake:
+        // a whole-scene warm-up here held the runner kit's first frame for its 45 s budget on
+        // SwiftShader, and the first world frame's startup warm-up compiles the scene anyway.
+        const now = globalThis.performance?.now() ?? Date.now();
+        environmentPrepared = await prepareSceneEnvironment(
+          renderer,
+          root,
+          ctx.camera,
+          now + (options.budgetMs ?? STARTUP_COMPILE_BUDGET_MS),
+        );
+      }
+      if (nodes.length > 0) report = await warmUpComputeNodes(renderer, nodes, options);
     } catch (error) {
       failure = error instanceof Error ? error.message : String(error);
     }
     console.log(
       `${hasEnvironment ? "TN_TRANSITION_WARMUP" : "TN_TRANSITION_COMPUTE_WARMUP"}:${JSON.stringify(
-        report === undefined
+        failure !== undefined || (report === undefined && environmentPrepared === undefined)
           ? { failed: failure ?? "unknown" }
           : {
-              compiled: report.compiled,
-              abandoned: report.abandoned,
-              unsupported: report.unsupported,
-              timedOut: report.timedOut,
+              ...(environmentPrepared === undefined ? {} : { environmentPrepared }),
+              ...(report === undefined
+                ? {}
+                : {
+                    compiled: report.compiled,
+                    abandoned: report.abandoned,
+                    unsupported: report.unsupported,
+                    timedOut: report.timedOut,
+                  }),
             },
       )}`,
     );
