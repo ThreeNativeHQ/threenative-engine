@@ -1,13 +1,14 @@
 ---
 name: prd-creator
-description: Turn a ThreeNative game idea or change into an approved game plan and implementation tasks before authoring code. Use after threenative-capabilities has recorded a capability or no-match for every mechanic, and before any game source is written.
+description: Plan new ThreeNative games only, after kit selection plus mechanics-reference and built-in capability discovery; hand approved plans to texture selection, execution and verification.
 ---
 
 # ThreeNative game PRD
 
-Use this after `threenative-capabilities` has recorded a capability or no-match for the full request
-and every concrete mechanic. The outcome is a small, distinctive, playable plan grounded in the
-engine surface and explicitly approved by the user, not a generic genre template.
+Use this for new games only, at step 4 of `threenative-capabilities`, after kit selection and both
+mechanics-reference and built-in capability discovery. Existing-game changes follow steps 5-7
+using their existing context; do not invoke this skill to restart whole-game planning.
+The outcome is a small, distinctive, playable plan grounded in both discovery passes.
 
 ## Plan
 
@@ -22,11 +23,21 @@ engine surface and explicitly approved by the user, not a generic genre template
 5. Record prerequisites: required tools/MCPs, service access, test users, and environment variable
    names. Use placeholders only; never read or write real secrets into planning artifacts.
 
+Copy the three completed discovery sections into `.agent/prd/PRD.md`: **Kit**, **Mechanics**
+and **References**. Each needs a value or explicit `none` with a reason; a blank or missing
+section blocks approval. Required texture search/download is step 5, after plan approval;
+record planned asset needs here without claiming assets have already been selected or downloaded.
+
 Write the concise plan to `.agent/prd/PRD.md`, its short player-facing summary to
 `.agent/prd/SUMMARY.md`, and implementation tasks to `.agent/tasks.json`. Tasks must be ordered,
 bounded to about 10 minutes each, carry a concrete pass check, and start with `"passes": false`.
-The first task verifies prerequisites; later tasks include implementation, playtest proof, and
-visual inspection. Preserve the pre-planning capability decisions in the relevant task checks.
+The first task verifies prerequisites and selects/downloads required textures from the mechanics
+matches and supplied reference. Step 6 delegates to subagents focused on specific areas: every
+bounded task names its area, file ownership and acceptance check. The coordinator reviews and
+integrates all returned changes before step 7 mechanics playtests; do not use a catch-all worker.
+Later tasks playtest mechanics with real actions and assertions, then require the reference-image
+visual judge gate from `threenative-capabilities`. Preserve the pre-planning capability decisions
+in the relevant task checks.
 
 ## Approval gate
 

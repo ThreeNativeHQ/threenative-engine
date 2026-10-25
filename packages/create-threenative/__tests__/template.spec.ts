@@ -812,9 +812,10 @@ describe("template contracts", () => {
           "`threenative-capabilities`",
         );
         expect(instructions, `${template}/${file}/prd skill`).toContain("`prd-creator`");
-        expect(instructions, `${template}/${file}/full request`).toContain(
+        expect(instructions, `${template}/${file}/single gate`).not.toContain(
           "engine_search_capabilities",
         );
+        expect(instructions).toContain("no code, level layouts, character names or art");
         expect(
           instructions.indexOf("`threenative-capabilities`"),
           `${template}/${file}/capabilities before PRD`,
@@ -825,6 +826,166 @@ describe("template contracts", () => {
         );
       }
     }
+  });
+
+  it("routes a new game through the requested eight stages in order", async () => {
+    const gate = await readFile(
+      path.resolve(
+        "packages/create-threenative/agent-files/.agents/skills/threenative-capabilities/SKILL.md",
+      ),
+      "utf8",
+    );
+    const fresh = gate.split("## New game")[1]?.split("## Existing game")[0] ?? "";
+    let previous = -1;
+    for (const stage of [
+      "Prompt",
+      "Starter kit",
+      "Mechanics discovery",
+      "Core-mechanics plan",
+      "Required textures",
+      "Execute",
+      "Mechanics playtest",
+      "Reference-image visual judge",
+    ]) {
+      const offset = fresh.indexOf(`**${stage}**`);
+      expect(offset, stage).toBeGreaterThan(previous);
+      previous = offset;
+    }
+    expect(fresh).toContain("no kit matches, use `minimal`");
+    const discovery =
+      fresh.split("**Mechanics discovery**")[1]?.split("**Core-mechanics plan**")[0] ?? "";
+    for (const tool of [
+      "engine_search_references",
+      "engine_reference_detail",
+      "engine_search_capabilities",
+      "engine_capability_detail",
+    ])
+      expect(discovery, tool).toContain(tool);
+    expect(fresh).toContain("threenative-reverse-engineer");
+    expect(fresh).toContain("engine_capabilities");
+  });
+
+  it("selects required textures from mechanics and reference context before execution", async () => {
+    const gate = await readFile(
+      path.resolve(
+        "packages/create-threenative/agent-files/.agents/skills/threenative-capabilities/SKILL.md",
+      ),
+      "utf8",
+    );
+    const textures = gate.split("**Required textures**")[1]?.split("**Execute**")[0] ?? "";
+    for (const item of [
+      "mechanics matches",
+      "reference image",
+      "threenative-asset-mcp",
+      "asset_search_sources",
+      "asset_download_file",
+      "licen",
+    ])
+      expect(textures, item).toContain(item);
+  });
+
+  it("requires observable mechanics assertions before a reference-image visual verdict", async () => {
+    const gate = await readFile(
+      path.resolve(
+        "packages/create-threenative/agent-files/.agents/skills/threenative-capabilities/SKILL.md",
+      ),
+      "utf8",
+    );
+    const proof = gate.split("**Mechanics playtest**")[1]?.split("## Existing game")[0] ?? "";
+    for (const item of [
+      "observable state",
+      "actions",
+      "assertions",
+      "empty",
+      "screenshot",
+      "Reference-image visual judge",
+      "dream-loop.md",
+      "supplied",
+      "authorized",
+      "missing",
+    ])
+      expect(proof, item).toContain(item);
+  });
+
+  it("routes an existing game through steps 5-7 only using existing context", async () => {
+    const gate = await readFile(
+      path.resolve(
+        "packages/create-threenative/agent-files/.agents/skills/threenative-capabilities/SKILL.md",
+      ),
+      "utf8",
+    );
+    const existing = gate.split("## Existing game")[1] ?? "";
+    expect(existing).toContain("steps 5-7 only");
+    expect(existing).toContain("existing game, plan, mechanics matches and reference context");
+    expect([...existing.matchAll(/^(\d+)\. /gmu)].map((match) => match[1])).toEqual([
+      "5",
+      "6",
+      "7",
+    ]);
+    expect(existing).toContain(
+      "Do not repeat kit selection, mechanics discovery or whole-game planning",
+    );
+    expect(existing).toContain("Do not add step 8");
+    const plan = await readFile(
+      path.resolve("packages/create-threenative/agent-files/.agents/skills/prd-creator/SKILL.md"),
+      "utf8",
+    );
+    expect(plan).toContain("new games only");
+    expect(plan).not.toContain("six-section discovery record");
+  });
+
+  it("delegates bounded areas in both step-6 routes before coordinator integration and playtest", async () => {
+    const gate = await readFile(
+      path.resolve(
+        "packages/create-threenative/agent-files/.agents/skills/threenative-capabilities/SKILL.md",
+      ),
+      "utf8",
+    );
+    for (const route of ["New game", "Existing game"]) {
+      const body = gate.split(`## ${route}`)[1]?.split("## ")[0] ?? "";
+      const execute = body.split("6. **Execute**")[1]?.split("7. **Mechanics playtest**")[0] ?? "";
+      for (const requirement of [
+        "subagents",
+        "specific areas",
+        "bounded",
+        "file ownership",
+        "coordinator",
+        "integrat",
+        "before step 7",
+        "acceptance",
+        "catch-all",
+      ])
+        expect(execute, `${route}/${requirement}`).toContain(requirement);
+    }
+    const plan = await readFile(
+      path.resolve("packages/create-threenative/agent-files/.agents/skills/prd-creator/SKILL.md"),
+      "utf8",
+    );
+    expect(plan).toContain("subagents");
+    expect(plan).toContain("file ownership");
+    expect(plan).toContain("coordinator");
+  });
+
+  it("keeps all kit entry points and the injected hook on the same new/existing routes", async () => {
+    for (const template of await templateNames()) {
+      const instructions = await readFile(path.join(templateRoot, template, "AGENTS.md"), "utf8");
+      expect(instructions, template).toContain("New games: steps 1-8");
+      expect(instructions, template).toContain("Existing games: steps 5-7 only");
+      expect(instructions, template).toContain("New game only");
+    }
+    const hook = path.resolve(
+      "packages/create-threenative/agent-files/.claude/hooks/ponytail-context.mjs",
+    );
+    const run = spawnSync(process.execPath, [hook], {
+      encoding: "utf8",
+      input: '{"hook_event_name":"UserPromptSubmit"}',
+    });
+    expect(run.status, run.stderr).toBe(0);
+    const context = JSON.parse(run.stdout).hookSpecificOutput.additionalContext as string;
+    expect(context).toContain("New games: steps 1-8");
+    expect(context).toContain("Existing games: steps 5-7 only");
+    expect(context).toContain("Step 6 delegates bounded areas with file ownership to subagents");
+    expect(context).toContain("coordinator integrates before step 7");
   });
 
   // The project hook is the force: it re-injects the ruleset every session, prompt and subagent
@@ -843,8 +1004,9 @@ describe("template contracts", () => {
     };
     expect(output.hookSpecificOutput?.hookEventName).toBe("UserPromptSubmit");
     const context = output.hookSpecificOutput?.additionalContext ?? "";
-    expect(context).toContain("engine_search_capabilities");
-    expect(context).toMatch(/critical capability gate/iu);
+    expect(context).toContain("threenative-capabilities");
+    expect(context).not.toContain("engine_search_capabilities");
+    expect(context).toContain("no code, level layouts, character names or art");
     expect(context).toContain("stop ponytail");
     const off = spawnSync(process.execPath, [hook], {
       encoding: "utf8",
