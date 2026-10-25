@@ -4,7 +4,7 @@
 **Priority:** P2 — AC-1 to AC-7 are open: a web game re-downloads every byte on each visit, and nothing fetches the next area before the game asks for it.
 **Complexity:** 6 (MEDIUM) — 4 implementation files (+1), new module (+2), priority queue with cancellation (+2), browser storage API (+1); risk override: none.
 **Owner:** unassigned
-**Depends on:** None. Reuses the [PRD-459](../open-world/PRD-459-smooth-streaming-one-admission-budget-per-frame.md) prefetch ring and the [PRD-618](../open-world/PRD-618-the-world-is-complete-when-the-cover-lifts.md) reveal readiness; neither blocks this PRD.
+**Depends on:** None. Reuses the [PRD-459](../open-world/PRD-459-smooth-streaming-one-admission-budget-per-frame.md) prefetch ring and the PRD-618 (the world is complete when the cover lifts) reveal readiness; neither blocks this PRD.
 
 ## Context
 
