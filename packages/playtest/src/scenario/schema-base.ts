@@ -755,6 +755,15 @@ export interface IPlaytestScenarioSetup {
   spawn?: IPlaytestSpawnRequest;
 }
 
+/**
+ * A browser-only network profile applied before the page loads, so a scenario can prove what a
+ * real link costs. Throughput is in kilobits per second, one direction, as a user reads a plan.
+ */
+export interface IPlaytestNetworkProfile {
+  readonly downloadKbps: number;
+  readonly latencyMs: number;
+}
+
 export interface IPlaytestScenario {
   acceptanceId?: string;
   artifacts?: IPlaytestArtifactRequest;
@@ -770,6 +779,8 @@ export interface IPlaytestScenario {
   awaitStartup?: boolean;
   inputDelivery?: PlaytestInputDelivery;
   name: string;
+  /** Browser-only: throttle the page before navigation. See {@link IPlaytestNetworkProfile}. */
+  network?: IPlaytestNetworkProfile;
   parity?: IPlaytestParityConfig;
   /**
    * Browser-only: open the page with `prefers-reduced-motion: reduce` emulated, so a game that

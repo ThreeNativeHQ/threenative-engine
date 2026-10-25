@@ -231,11 +231,38 @@ export function pageLifecycleDiagnostic(
  * A bridge that is genuinely missing or incompatible still fails on its own diagnostic, and
  * an exhausted retry budget fails closed on TN_PLAYTEST_PAGE_NAVIGATED rather than passing.
  */
+/** Live CDP sessions by page: the throttle belongs to a session, so something must hold it. */
+const throttledPages = new WeakMap<Page, unknown>();
+
+/**
+ * Apply the scenario's browser-only network profile before navigation.
+ *
+ * CDP takes bytes per second; a plan is read in kilobits, so one conversion happens here. A
+ * session that cannot be created fails the run: a scenario that asked to be throttled must never
+ * report numbers from an unthrottled page.
+ */
+async function applyNetworkProfile(page: Page, scenario: IPlaytestScenario): Promise<void> {
+  const profile = scenario.network;
+  if (profile === undefined) return;
+  const session = await page.context().newCDPSession(page);
+  await session.send("Network.enable");
+  const bytesPerSecond = (profile.downloadKbps * 1000) / 8;
+  await session.send("Network.emulateNetworkConditions", {
+    connectionType: "cellular3g",
+    downloadThroughput: bytesPerSecond,
+    latency: profile.latencyMs,
+    offline: false,
+    uploadThroughput: bytesPerSecond,
+  });
+  throttledPages.set(page, session);
+}
+
 export async function openPageAndConnectBridge(
   page: Page,
   config: IStandalonePlaytestConfig,
   scenario: IPlaytestScenario,
 ): Promise<IPlaytestBridgeClient | undefined> {
+  await applyNetworkProfile(page, scenario);
   const attempts = 3;
   let lastError: Error | undefined;
   for (let attempt = 1; attempt <= attempts; attempt += 1) {

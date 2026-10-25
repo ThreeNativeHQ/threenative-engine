@@ -36,6 +36,16 @@ bridge; avoid DOM globals, dynamic `import()`, and raw physics handles. **Report
 - `.agents/skills/threenative-context/SKILL.md` / `.claude/skills/threenative-context/SKILL.md` — portable ctx APIs.
 - Confirmed framework bugs: use `file-engine-bug` in `.agents/skills/` or `.claude/skills/` after a minimal repro. A game-side `patches/` fix is temporary: once it is settled, it moves into the engine in one PR. Lazy-first: `.agents/skills/ponytail/SKILL.md` / `.claude/skills/ponytail/SKILL.md` — smallest correct change, and its reuse rung is the capability search above. Engine: The owned C++ engine is the default for a new game: the Wasm engine on web and the engine player on desktop. This template runs on it: `threenative.config.ts` names no `engine`. `engine: "threejs"` switches to upstream Three.js only when the user asks for it; it is never a fix for a build error. Android and iOS use the legacy host.
 
+## Large assets download before the player needs them
+
+A web game downloads its compiled assets on demand and keeps them on disk between visits. Await
+`ctx.assets.prefetch(["next-level.glb", "boss.png"])` before `ctx.goto("next-level")`, so the next
+scene reads from disk instead of a cold fetch. The idle fill downloads the rest of the release
+after the reveal. Two named overrides on `defineGame`'s `assets`: `cache: false` turns the disk
+cache off and `backgroundFill: false` turns the fill off; `ctx.assets.cache` reports both plus
+`hits`, `misses`, `bytesOnDisk` and `bytesTotal`. Native hosts read installed files and resolve
+`prefetch` at once.
+
 ## Commands and map
 
 ```sh

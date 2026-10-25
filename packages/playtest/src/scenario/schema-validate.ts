@@ -6,7 +6,7 @@ import { invalidScenario, invalidStep, rejectUnknownKeys } from "./errors.js";
 import { isRecord, validateViewport, positiveInteger, hasKey, validateOptionalNumberTuple, validateAssertionKeys, validateDeviceMetricsAssertion, validateParityAssertion, validatePerformanceAssertion, validateFramebufferCoverageAssertion, validateRenderChainAssertion, validateStartupAssertion, validatePipelineCensusAssertion, validateSceneAssertion, validateSceneNodesAssertion, validateCausedByAssertion, validateAnimationAssertion, validateContactAssertion, validatePathAssertion, validateNumberTuple, validateResourcePathAssertion, validateSignalAssertion, validateStateAssertion, validateTagCountAssertion, validateVisibilityAssertion, validateVisualAssertion, requireRecord, optionalNumber, requireString, optionalPositiveNumber, present, optionalTrivialityReason, optionalString, optionalPositiveInteger, optionalTargetArray, optionalBoolean, requireArray, describeValue, optionalNonNegativeNumber, optionalNonNegativeInteger } from "./schema-accessors.js";
 import { NUMERIC_COMPARISON_KEYS } from "./schema-base.js";
 import type { IPlaytestGeometryCaptureRequest } from "../protocol.js";
-import type { IPlaytestAimRequest, IPlaytestAimTarget, IPlaytestPlaceRequest, IPlaytestSpawnRequest, IPlaytestScenario, IPlaytestArtifactRequest, IPlaytestParityConfig, PlaytestTarget, IPlaytestScenarioSetup, IPlaytestSetupResource, IPlaytestSetupEntityTransform, IPlaytestStep, IPlaytestPointer, IPlaytestScenarioAssertions, IPlaytestAudioAssertion, IPlaytestWorldAssertion, IPlaytestReachabilityAssertion, IPlaytestSettledAssertion, IPlaytestOverlayNodeAssertion, IPlaytestComponentAssertion, IPlaytestAerodynamicsAssertion, IPlaytestOccludedAssertion, IPlaytestResourceWait } from "./schema-base.js";
+import type { IPlaytestAimRequest, IPlaytestAimTarget, IPlaytestPlaceRequest, IPlaytestSpawnRequest, IPlaytestScenario, IPlaytestArtifactRequest, IPlaytestNetworkProfile, IPlaytestParityConfig, PlaytestTarget, IPlaytestScenarioSetup, IPlaytestSetupResource, IPlaytestSetupEntityTransform, IPlaytestStep, IPlaytestPointer, IPlaytestScenarioAssertions, IPlaytestAudioAssertion, IPlaytestWorldAssertion, IPlaytestReachabilityAssertion, IPlaytestSettledAssertion, IPlaytestOverlayNodeAssertion, IPlaytestComponentAssertion, IPlaytestAerodynamicsAssertion, IPlaytestOccludedAssertion, IPlaytestResourceWait } from "./schema-base.js";
 export const PLAYTEST_ROOT_KEYS = [
   "acceptanceId",
   "artifacts",
@@ -15,6 +15,7 @@ export const PLAYTEST_ROOT_KEYS = [
   "bootFailure",
   "inputDelivery",
   "name",
+  "network",
   "parity",
   "reducedMotion",
   "schemaVersion",
@@ -64,6 +65,15 @@ export function validatePlaytestScenario(value: unknown, scenarioPath: string, a
   if (value.reducedMotion !== undefined && target !== "web") {
     throw invalidScenario(scenarioPath, "Scenario reducedMotion is browser-only and requires target 'web'.");
   }
+  if (value.network !== undefined && !isRecord(value.network)) {
+    throw invalidScenario(scenarioPath, "Scenario network must be an object with downloadKbps and latencyMs.");
+  }
+  const network = value.network === undefined
+    ? undefined
+    : validateNetworkProfile(value.network, scenarioPath);
+  if (network !== undefined && target !== "web") {
+    throw invalidScenario(scenarioPath, "Scenario network is browser-only and requires target 'web'.");
+  }
   const inputDelivery = value.inputDelivery ?? "deterministic";
   if (inputDelivery !== "deterministic" && inputDelivery !== "focused-dom") {
     throw invalidScenario(scenarioPath, "Scenario inputDelivery must be deterministic or focused-dom.");
@@ -97,6 +107,7 @@ export function validatePlaytestScenario(value: unknown, scenarioPath: string, a
     ...(value.bootFailure === "renderer-no-adapter" ? { bootFailure: value.bootFailure } : {}),
     inputDelivery,
     name,
+    ...(network === undefined ? {} : { network }),
     ...(value.parity === undefined
       ? {}
       : { parity: validateParityConfig(requireRecord(value.parity, scenarioPath, "parity"), scenarioPath) }),
@@ -227,6 +238,30 @@ function validateParityTargets(value: unknown, scenarioPath: string, objectPath:
     }
     return target;
   });
+}
+
+/** A browser-only throttle; every key is required, so a typo fails the scenario rather than running unthrottled. */
+function validateNetworkProfile(
+  value: Record<string, unknown>,
+  scenarioPath: string,
+): IPlaytestNetworkProfile {
+  rejectUnknownKeys(value, ["downloadKbps", "latencyMs"], scenarioPath, "network");
+  const downloadKbps = value.downloadKbps;
+  if (
+    typeof downloadKbps !== "number" ||
+    !Number.isFinite(downloadKbps) ||
+    downloadKbps <= 0
+  ) {
+    throw invalidScenario(
+      scenarioPath,
+      "Scenario network.downloadKbps must be a positive number of kilobits per second.",
+    );
+  }
+  const latencyMs = value.latencyMs;
+  if (typeof latencyMs !== "number" || !Number.isFinite(latencyMs) || latencyMs < 0) {
+    throw invalidScenario(scenarioPath, "Scenario network.latencyMs must be a non-negative number.");
+  }
+  return { downloadKbps, latencyMs };
 }
 
 export function validateSetup(value: Record<string, unknown>, scenarioPath: string, subject?: string): IPlaytestScenarioSetup {

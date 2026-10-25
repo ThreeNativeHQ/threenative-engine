@@ -282,7 +282,36 @@ is `undefined` for a layer with no height set. Leave it out and the weight is th
 curve: a half-painted layer holds the crests of its relief first, a fully painted layer covers, and
 an unpainted one stays hidden. Edit or replace it to change the look. The package does not decide it.
 
-## 4. Prove it
+## 4. Keep the bytes on disk
+
+On the web, the asset loader stores every compiled file it downloads in the Cache API and reads it
+back on the next visit, so a returning player downloads nothing. Entries are content-addressed, so
+they never go stale; the cache name carries a fingerprint of the release and startup deletes the
+previous release's bytes. The loader reads `navigator.storage.estimate()`, evicts entries the
+current session has not touched when a write hits the quota, and retries once. Only a complete body
+reaches disk: a short or failed download retries after 0.5 s, 1 s and 2 s, then rejects naming the
+url and the last status.
+
+Call `prefetch` before a scene change. It downloads the next scene's files at `soon` priority and
+returns how many bytes reached the disk, with no decode and no GPU memory:
+
+```ts
+await ctx.assets.prefetch(["world/assets/castle.glb", "ui/level-two.png"]);
+await ctx.goto("level-two");
+```
+
+After the reveal, the loader fills the rest of the manifest at idle priority. A `WorldCells` cell
+load is `soon`, so the ring's files start before the fill; a `now` request from the running scene
+starts first and pauses new idle starts until it settles. Read the result from
+`ctx.assets.cache`: `{ enabled, persisted, hits, misses, bytesOnDisk, bytesTotal, filling }`, so a
+settings screen can show "1.2 of 2.0 GB on disk" and call `ctx.assets.cache.clear()`.
+
+Two named overrides, both on `defineGame`'s `assets`: `cache: false` turns the disk cache off and
+`backgroundFill: false` turns the fill off. Both are reported. A native host has no Cache API: the
+cache reports `enabled: false` with the reason "native host reads installed files", `prefetch`
+resolves at once, and the load path is unchanged.
+
+## 5. Prove it
 
 The in-repo fixture
 [`world-flythrough.playtest.json`](../../examples/abyss-framework/playtests/world-flythrough.playtest.json)

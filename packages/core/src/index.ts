@@ -146,7 +146,14 @@ export { createAssetLoader } from "./assets.js";
 export { onLaunchFailure } from "./launch-diagnostics.js";
 export { resetAudioCueLedger } from "./audio.js";
 export type { ILaunchFailure, LaunchFailureKind } from "./launch-diagnostics.js";
-export type { IAssetLoader, IAssetLoaderOptions, ITextureOptions } from "./assets.js";
+export type {
+  IAssetLoader,
+  IAssetLoaderOptions,
+  IAssetPrefetchProgress,
+  IAssetRequestOptions,
+  ITextureOptions,
+} from "./assets.js";
+export type { AssetPriority, IAssetCacheReport } from "./asset-cache.js";
 export type {
   IAudioBusOptions,
   IAudioCompressorOptions,

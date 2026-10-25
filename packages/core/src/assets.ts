@@ -13,6 +13,12 @@ import {
   type TextureLoader,
   type Wrapping,
 } from "three";
+import {
+  type AssetPriority,
+  type IAssetCacheReport,
+  createAssetCache,
+  manifestFingerprint,
+} from "./asset-cache.js";
 import { TN_VIRTUAL_GEOMETRY, VirtualGeometryPlugin } from "./clustered-mesh.js";
 import { GEOMETRY_ASSET_KEY } from "./geometry-capture.js";
 import { DiscreteLodPlugin, type IModelLodPolicy, TN_DISCRETE_LOD } from "./model-lod.js";
@@ -46,6 +52,35 @@ export interface IAssetLoaderOptions {
    * than silently uploading decoded RGBA.
    */
   readonly renderer?: unknown;
+  /**
+   * Keep compiled asset bytes on disk between visits. On by default where the Cache API exists;
+   * `false` is the named override. A native host has no Cache API and reports the cache off with
+   * the reason "native host reads installed files", so the native load path is unchanged.
+   */
+  readonly cache?: boolean;
+  /**
+   * Download the rest of the manifest after the reveal, at idle priority. On by default;
+   * `false` is the named override. It stops by itself when the browser reports
+   * `navigator.connection.saveData`.
+   */
+  readonly backgroundFill?: boolean;
+}
+
+/** What one request is worth relative to the rest of the loader's queue. */
+export interface IAssetRequestOptions {
+  /**
+   * `now` for a file the running scene awaits, `soon` for a prefetch. The loader's own direct
+   * calls default to `now`.
+   */
+  readonly priority?: AssetPriority;
+}
+
+/** How many of the bytes a `prefetch` asked for reached the disk. */
+export interface IAssetPrefetchProgress {
+  readonly requested: number;
+  readonly requestedBytes: number;
+  readonly settled: number;
+  readonly settledBytes: number;
 }
 
 /** The structural slice of three's `KTX2Loader` core depends on. */
@@ -116,7 +151,7 @@ function configuredTexture(texture: Texture, options: ITextureOptions): Texture 
 
 export interface IAssetLoader {
   readonly compressedTextures?: ICompressedTextureSupport;
-  model<T = unknown>(path: string): Promise<T>;
+  model<T = unknown>(path: string, options?: IAssetRequestOptions): Promise<T>;
   /**
    * Load a texture, optionally configured in one call.
    *
@@ -136,6 +171,23 @@ export interface IAssetLoader {
    * hard-code a hashed output name, which changes on every rebuild.
    */
   resolve(path: string): Promise<readonly string[]>;
+  /**
+   * What is on disk right now: hits, misses, bytes stored and the whole release's size. A loading
+   * view can show "1.2 of 2.0 GB on disk" without new code, and `enabled` is false with a `reason`
+   * on a native host or when the game passed `assets.cache: false`.
+   */
+  readonly cache: IAssetCacheReport;
+  /**
+   * Download the next scene's files to disk at `soon` priority, so its `load()` reads them back
+   * without a cold fetch. Stores bytes only: no decode, no GPU memory. Resolves at once on native,
+   * where the files are already installed, and reports how many bytes reached the disk.
+   */
+  prefetch(paths: readonly string[]): Promise<IAssetPrefetchProgress>;
+  /**
+   * Start the post-reveal idle fill. The engine calls this when `ctx.startup.whenReady()` settles;
+   * a game that drives a loader outside `defineGame` may call it after its own reveal.
+   */
+  startBackgroundFill(): void;
   /**
    * How many loads this loader has been asked for and how many have settled (resolved or
    * rejected). A loading view reads the ratio; the runtime folds it into `ctx.startup.progress`
@@ -425,17 +477,19 @@ function declaredExtensions(data: ArrayBuffer): ReadonlySet<string> {
   }
 }
 
-async function fetchModelBytes(url: string): Promise<ArrayBuffer> {
-  let response: Response;
+async function fetchModelBytes(
+  url: string,
+  cache: ReturnType<typeof createAssetCache>,
+  expectedBytes: number | undefined,
+  priority: AssetPriority,
+): Promise<ArrayBuffer> {
   try {
-    response = await fetch(url);
+    return await cache.fetchBytes(url, priority, expectedBytes);
   } catch (error) {
     throw new Error(
       `Failed to load model '${url}': ${error instanceof Error ? error.message : String(error)}.`,
     );
   }
-  if (!response.ok) throw new Error(`Failed to load model '${url}': ${response.status}.`);
-  return response.arrayBuffer();
 }
 
 /**
@@ -457,10 +511,22 @@ async function fetchModelBytes(url: string): Promise<ArrayBuffer> {
  * it flipped instead. Both land on the pixels `TextureLoader` would have produced; getting this
  * wrong turns every standalone texture upside down with no error anywhere.
  */
-async function loadBitmapTexture(url: string, renderer: unknown): Promise<Texture> {
-  const response = await fetch(url);
-  if (!response.ok) throw new Error(`Failed to load texture '${url}': ${response.status}.`);
-  const blob = new Blob([await response.arrayBuffer()]);
+async function loadBitmapTexture(
+  url: string,
+  renderer: unknown,
+  cache: ReturnType<typeof createAssetCache>,
+  expectedBytes: number | undefined,
+  priority: AssetPriority,
+): Promise<Texture> {
+  let data: ArrayBuffer;
+  try {
+    data = await cache.fetchBytes(url, priority, expectedBytes);
+  } catch (error) {
+    throw new Error(
+      `Failed to load texture '${url}': ${error instanceof Error ? error.message : String(error)}.`,
+    );
+  }
+  const blob = new Blob([data]);
   // No renderer means the native host or a bare-node load, both of which flip at upload.
   const flipsAtUpload =
     renderer === undefined ||
@@ -774,9 +840,36 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
   // where an unbaked game's files are. A project that moved its sources passes `sourcePath`.
   const sourcePath = (options.sourcePath ?? "assets").replace(/^\/+|\/+$/gu, "");
   const manifestUrl = resolvePath(basePath, options.manifest ?? "assets.manifest.json");
+  const assetCache = createAssetCache({
+    enabled: options.cache,
+    backgroundFill: options.backgroundFill,
+  });
+  /** The urls the background fill warms, in manifest order, with the sizes the manifest records. */
+  const fillEntries = (manifest: IAssetManifest): readonly { bytes?: number; url: string }[] =>
+    Object.values(manifest.entries).flatMap((entry) => {
+      if (!isRecord(entry) || typeof entry.output !== "string") return [];
+      const bytes = typeof entry.bytes === "number" ? entry.bytes : undefined;
+      return [
+        {
+          url: resolvePath(basePath, entry.output),
+          ...(bytes === undefined ? {} : { bytes }),
+        },
+      ];
+    });
   let manifestRequest: Promise<IAssetManifest | undefined> | undefined;
   const manifestOnce = (): Promise<IAssetManifest | undefined> => {
-    if (manifestRequest === undefined) manifestRequest = readManifest(manifestUrl);
+    if (manifestRequest === undefined) {
+      manifestRequest = readManifest(manifestUrl).then((manifest) => {
+        if (manifest !== undefined) {
+          const entries = fillEntries(manifest);
+          assetCache.setManifest(manifestFingerprint(entries), entries);
+        } else {
+          // No manifest means nothing is content-addressed, so the cache stays out of the way.
+          assetCache.setManifest("", []);
+        }
+        return manifest;
+      });
+    }
     return manifestRequest;
   };
   // Detection still runs exactly once, but `ready` only makes unsupported compressed textures a
@@ -956,7 +1049,12 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
     return typeof bytes === "number" && Number.isFinite(bytes) && bytes > 0 ? bytes : 0;
   };
 
-  const cached = <T>(kind: string, path: string, load: (url: string) => Promise<T>): Promise<T> => {
+  const cached = <T>(
+    kind: string,
+    path: string,
+    load: (url: string, priority: AssetPriority) => Promise<T>,
+    priority: AssetPriority = "now",
+  ): Promise<T> => {
     const key = `${kind}:${path}`;
     const existing = cache.get(key);
     if (existing !== undefined) return existing.promise as Promise<T>;
@@ -982,7 +1080,7 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
       loaded: false,
       promise: Promise.resolve()
         .then(() => resolveCandidates(path))
-        .then((candidates) => loadFirst(path, candidates, load)),
+        .then((candidates) => loadFirst(path, candidates, (url) => load(url, priority))),
       released: false,
     };
     entry.promise = entry.promise.then((value) => {
@@ -1027,6 +1125,51 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
       );
   };
 
+  /**
+   * Warm the disk with the named logical paths at `soon` priority. Resolves once every candidate
+   * settles; a path the manifest does not list is skipped rather than failing the whole prefetch.
+   */
+  const prefetchPaths = async (paths: readonly string[]): Promise<IAssetPrefetchProgress> => {
+    if (!assetCache.enabled) {
+      return {
+        requested: paths.length,
+        requestedBytes: 0,
+        settled: paths.length,
+        settledBytes: 0,
+      };
+    }
+    const targets: { bytes?: number; url: string }[] = [];
+    for (const path of paths) {
+      let urls: readonly string[];
+      try {
+        urls = (await resolveCandidates(path)).urls;
+      } catch {
+        continue;
+      }
+      const size = await bytesOf(path);
+      for (const url of urls) targets.push({ url, ...(size > 0 ? { bytes: size } : {}) });
+    }
+    // One entry per url, so a no-manifest path tried verbatim and under `assets/` still costs one
+    // download when the first candidate answers.
+    const unique = [...new Map(targets.map((target) => [target.url, target])).values()];
+    const results = await Promise.allSettled(
+      unique.map((target) => assetCache.fetchBytes(target.url, "soon", target.bytes)),
+    );
+    let settled = 0;
+    let settledBytes = 0;
+    results.forEach((result, index) => {
+      if (result.status !== "fulfilled") return;
+      settled += 1;
+      settledBytes += unique[index]?.bytes ?? result.value.byteLength;
+    });
+    return {
+      requested: unique.length,
+      requestedBytes: unique.reduce((sum, target) => sum + (target.bytes ?? 0), 0),
+      settled,
+      settledBytes,
+    };
+  };
+
   return {
     audio: (path) =>
       cached("audio", path, async (url) => {
@@ -1051,144 +1194,165 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
         .catch(() => undefined);
     },
     ...(compressedTextures === undefined ? {} : { compressedTextures }),
-    model: <T = unknown>(path: string) =>
-      cached<T>("model", path, async (url) => {
-        if (options.model !== undefined) {
-          const value = (await options.model(url)) as T;
+    model: <T = unknown>(path: string, request?: IAssetRequestOptions) =>
+      cached<T>(
+        "model",
+        path,
+        async (url, priority) => {
+          if (options.model !== undefined) {
+            const value = (await options.model(url)) as T;
+            stampAssetProvenance(value, path);
+            await attachCompiledLightmaps(path, value);
+            return value;
+          }
+          // Fetched here rather than through the loader so the declared extensions decide which
+          // decoders load: a game never pays for a codec its assets do not use, and no WASM is
+          // instantiated on platforms that never load a compressed model. Both the compiled and
+          // the uncompiled path take this one code path.
+          const expected = await bytesOf(path);
+          const data = await fetchModelBytes(
+            url,
+            assetCache,
+            expected > 0 ? expected : undefined,
+            priority,
+          );
+          const extensions = declaredExtensions(data);
+          const { GLTFLoader } = await import("three/addons/loaders/GLTFLoader.js");
+          const loader = new GLTFLoader();
+          // Both glTF texture extensions use the same support-detected instance as texture().
+          const astcExtension = "EXT_texture_astc";
+          const hasBasis = extensions.has("KHR_texture_basisu");
+          const hasAstc = extensions.has(astcExtension);
+          let shared: IKTX2LoaderLike | undefined;
+          if (compressedTextures !== undefined && (hasBasis || hasAstc)) {
+            try {
+              shared = await compressedTextures.loader;
+            } catch (error) {
+              // Only ASTC-only models may select their ordinary fallback on capability refusal.
+              // Import/setup failures and the existing Basis contract still reject unchanged.
+              if (
+                hasBasis ||
+                !(error instanceof Error) ||
+                !error.message.startsWith("TN_ASSETS_KTX2_UNSUPPORTED:")
+              )
+                throw error;
+            }
+            if (shared !== undefined) {
+              loader.setKTX2Loader(shared as unknown as Parameters<typeof loader.setKTX2Loader>[0]);
+            }
+          }
+          if (hasAstc) {
+            const astcLoader = shared;
+            const astcSupported = hasAstcSupport(astcLoader);
+            // EXT_texture_astc is an official vendor draft. Borrow Three's Basis plugin handoff,
+            // but raw ASTC cannot use Basis's format fallback and needs this explicit GPU guard.
+            loader.register((parser) => {
+              if (!astcSupported && parser.json.extensionsRequired?.includes(astcExtension)) {
+                throw new Error(
+                  "TN_ASSETS_ASTC_UNSUPPORTED: required EXT_texture_astc needs a renderer with ASTC texture-compression support.",
+                );
+              }
+              return {
+                name: astcExtension,
+                loadTexture(textureIndex) {
+                  const extension = parser.json.textures[textureIndex].extensions?.[astcExtension];
+                  if (extension === undefined || !astcSupported || astcLoader === undefined)
+                    return null;
+                  return parser.loadTextureImage(
+                    textureIndex,
+                    extension.source,
+                    astcLoader as NonNullable<Parameters<typeof loader.setKTX2Loader>[0]>,
+                  );
+                },
+              };
+            });
+          }
+          // three's own decoder embeds its WASM; it compiles only once a compressed model is
+          // actually loaded. The native bundle inlines this branch (no runtime import remains),
+          // and the host shims WebAssembly.
+          if (MESHOPT_EXTENSIONS.some((extension) => extensions.has(extension))) {
+            const { MeshoptDecoder } = await import("three/addons/libs/meshopt_decoder.module.js");
+            loader.setMeshoptDecoder(MeshoptDecoder);
+          }
+          // Draco is an input format only: the compile step re-emits Draco assets as Meshopt,
+          // so this serves uncompiled Draco files dropped into a web root. The decoder wasm is
+          // served from `<basePath>draco/` by convention, like `basis/`.
+          // The cluster DAG the asset pipeline baked in. Registered only when the file declares it,
+          // so a game whose models are ordinary meshes never pays for the plugin — and a game whose
+          // models are not gets a plain `Mesh`, with no runtime switch either way.
+          if (extensions.has(TN_VIRTUAL_GEOMETRY)) {
+            loader.register((parser) => new VirtualGeometryPlugin(parser as never) as never);
+          }
+          // The discrete chain the asset pipeline baked in. Registered only when the file declares it,
+          // so a game with no auto LOD never pays for the plugin. Levels are built after the quantized
+          // positions are widened, so the derived geometries share the widened attributes.
+          // The Wasm engine's loader hosts this plugin too, and sets `failClosed`: a chain it cannot
+          // deliver rejects the load there instead of being logged.
+          const discreteLod = extensions.has(TN_DISCRETE_LOD)
+            ? new DiscreteLodPlugin({
+                failClosed: (loader as { failClosed?: boolean }).failClosed === true,
+              })
+            : undefined;
+          if (discreteLod !== undefined) {
+            const plugin = discreteLod;
+            loader.register((parser) => {
+              plugin.setParser(parser as never);
+              return plugin as never;
+            });
+          }
+          if (extensions.has(DRACO_EXTENSION)) {
+            const { DRACOLoader } = await import("three/addons/loaders/DRACOLoader.js");
+            const dracoLoader = new DRACOLoader();
+            dracoLoader.setDecoderPath(resolvePath(basePath, "draco/"));
+            loader.setDRACOLoader(dracoLoader);
+          }
+          const value = await new Promise<T>((resolve, reject) =>
+            loader.parse(data, resourcePathOf(url), resolve as never, reject),
+          );
+          // Before the game ever sees it: a quantized POSITION is a trap for every ordinary
+          // three.js geometry call. See `widenQuantizedPositions`.
+          const root = modelRoot(value);
+          if (root !== undefined) widenQuantizedPositions(root);
+          // And a normalized scalar is a trap for the WebGPU pipeline. See `widenNormalizedScalars`.
+          if (root !== undefined) widenNormalizedScalars(root);
+          // Built here, after both widenings, so the derived levels share the widened base
+          // attributes instead of pinning the quantized ones.
+          if (root !== undefined && discreteLod !== undefined)
+            discreteLod.attach(root, await discretePolicy(path));
+          // Before the game ever sees it: clips z-mirrored against their own bind pose play every
+          // animal backwards, silently. See `reconcileMirroredClips`.
+          const clips = modelClips(value);
+          if (root !== undefined && clips.length > 0 && reconcileMirroredClips(root, clips)) {
+            // A warning, not an info line: every file this fires on is a defect in whatever wrote
+            // it, and a repair that reads as routine is a repair nobody ever removes the cause of.
+            // The Unreal importer's own reader of ActorX PSA keys once produced exactly this on
+            // every skeletal mesh it converted, unnoticed for as long as the line said `info`.
+            const cause =
+              "its clips are mirrored against its own bind pose, and the loader un-mirrored them " +
+              "so the game plays forwards. The file is wrong, not the game: re-import it with a " +
+              "current converter and this stops.";
+            console.warn(`TN_ASSETS_MIRRORED_CLIPS_REPAIRED ${path} — ${cause}`);
+          }
           stampAssetProvenance(value, path);
           await attachCompiledLightmaps(path, value);
           return value;
-        }
-        // Fetched here rather than through the loader so the declared extensions decide which
-        // decoders load: a game never pays for a codec its assets do not use, and no WASM is
-        // instantiated on platforms that never load a compressed model. Both the compiled and
-        // the uncompiled path take this one code path.
-        const data = await fetchModelBytes(url);
-        const extensions = declaredExtensions(data);
-        const { GLTFLoader } = await import("three/addons/loaders/GLTFLoader.js");
-        const loader = new GLTFLoader();
-        // Both glTF texture extensions use the same support-detected instance as texture().
-        const astcExtension = "EXT_texture_astc";
-        const hasBasis = extensions.has("KHR_texture_basisu");
-        const hasAstc = extensions.has(astcExtension);
-        let shared: IKTX2LoaderLike | undefined;
-        if (compressedTextures !== undefined && (hasBasis || hasAstc)) {
-          try {
-            shared = await compressedTextures.loader;
-          } catch (error) {
-            // Only ASTC-only models may select their ordinary fallback on capability refusal.
-            // Import/setup failures and the existing Basis contract still reject unchanged.
-            if (
-              hasBasis ||
-              !(error instanceof Error) ||
-              !error.message.startsWith("TN_ASSETS_KTX2_UNSUPPORTED:")
-            )
-              throw error;
-          }
-          if (shared !== undefined) {
-            loader.setKTX2Loader(shared as unknown as Parameters<typeof loader.setKTX2Loader>[0]);
-          }
-        }
-        if (hasAstc) {
-          const astcLoader = shared;
-          const astcSupported = hasAstcSupport(astcLoader);
-          // EXT_texture_astc is an official vendor draft. Borrow Three's Basis plugin handoff,
-          // but raw ASTC cannot use Basis's format fallback and needs this explicit GPU guard.
-          loader.register((parser) => {
-            if (!astcSupported && parser.json.extensionsRequired?.includes(astcExtension)) {
-              throw new Error(
-                "TN_ASSETS_ASTC_UNSUPPORTED: required EXT_texture_astc needs a renderer with ASTC texture-compression support.",
-              );
-            }
-            return {
-              name: astcExtension,
-              loadTexture(textureIndex) {
-                const extension = parser.json.textures[textureIndex].extensions?.[astcExtension];
-                if (extension === undefined || !astcSupported || astcLoader === undefined)
-                  return null;
-                return parser.loadTextureImage(
-                  textureIndex,
-                  extension.source,
-                  astcLoader as NonNullable<Parameters<typeof loader.setKTX2Loader>[0]>,
-                );
-              },
-            };
-          });
-        }
-        // three's own decoder embeds its WASM; it compiles only once a compressed model is
-        // actually loaded. The native bundle inlines this branch (no runtime import remains),
-        // and the host shims WebAssembly.
-        if (MESHOPT_EXTENSIONS.some((extension) => extensions.has(extension))) {
-          const { MeshoptDecoder } = await import("three/addons/libs/meshopt_decoder.module.js");
-          loader.setMeshoptDecoder(MeshoptDecoder);
-        }
-        // Draco is an input format only: the compile step re-emits Draco assets as Meshopt,
-        // so this serves uncompiled Draco files dropped into a web root. The decoder wasm is
-        // served from `<basePath>draco/` by convention, like `basis/`.
-        // The cluster DAG the asset pipeline baked in. Registered only when the file declares it,
-        // so a game whose models are ordinary meshes never pays for the plugin — and a game whose
-        // models are not gets a plain `Mesh`, with no runtime switch either way.
-        if (extensions.has(TN_VIRTUAL_GEOMETRY)) {
-          loader.register((parser) => new VirtualGeometryPlugin(parser as never) as never);
-        }
-        // The discrete chain the asset pipeline baked in. Registered only when the file declares it,
-        // so a game with no auto LOD never pays for the plugin. Levels are built after the quantized
-        // positions are widened, so the derived geometries share the widened attributes.
-        // The Wasm engine's loader hosts this plugin too, and sets `failClosed`: a chain it cannot
-        // deliver rejects the load there instead of being logged.
-        const discreteLod = extensions.has(TN_DISCRETE_LOD)
-          ? new DiscreteLodPlugin({
-              failClosed: (loader as { failClosed?: boolean }).failClosed === true,
-            })
-          : undefined;
-        if (discreteLod !== undefined) {
-          const plugin = discreteLod;
-          loader.register((parser) => {
-            plugin.setParser(parser as never);
-            return plugin as never;
-          });
-        }
-        if (extensions.has(DRACO_EXTENSION)) {
-          const { DRACOLoader } = await import("three/addons/loaders/DRACOLoader.js");
-          const dracoLoader = new DRACOLoader();
-          dracoLoader.setDecoderPath(resolvePath(basePath, "draco/"));
-          loader.setDRACOLoader(dracoLoader);
-        }
-        const value = await new Promise<T>((resolve, reject) =>
-          loader.parse(data, resourcePathOf(url), resolve as never, reject),
-        );
-        // Before the game ever sees it: a quantized POSITION is a trap for every ordinary
-        // three.js geometry call. See `widenQuantizedPositions`.
-        const root = modelRoot(value);
-        if (root !== undefined) widenQuantizedPositions(root);
-        // And a normalized scalar is a trap for the WebGPU pipeline. See `widenNormalizedScalars`.
-        if (root !== undefined) widenNormalizedScalars(root);
-        // Built here, after both widenings, so the derived levels share the widened base
-        // attributes instead of pinning the quantized ones.
-        if (root !== undefined && discreteLod !== undefined)
-          discreteLod.attach(root, await discretePolicy(path));
-        // Before the game ever sees it: clips z-mirrored against their own bind pose play every
-        // animal backwards, silently. See `reconcileMirroredClips`.
-        const clips = modelClips(value);
-        if (root !== undefined && clips.length > 0 && reconcileMirroredClips(root, clips)) {
-          // A warning, not an info line: every file this fires on is a defect in whatever wrote
-          // it, and a repair that reads as routine is a repair nobody ever removes the cause of.
-          // The Unreal importer's own reader of ActorX PSA keys once produced exactly this on
-          // every skeletal mesh it converted, unnoticed for as long as the line said `info`.
-          const cause =
-            "its clips are mirrored against its own bind pose, and the loader un-mirrored them " +
-            "so the game plays forwards. The file is wrong, not the game: re-import it with a " +
-            "current converter and this stops.";
-          console.warn(`TN_ASSETS_MIRRORED_CLIPS_REPAIRED ${path} — ${cause}`);
-        }
-        stampAssetProvenance(value, path);
-        await attachCompiledLightmaps(path, value);
-        return value;
-      }),
+        },
+        request?.priority ?? "now",
+      ),
+    get cache() {
+      return assetCache.report;
+    },
     get progress() {
       return { pending: [...pending], requested, requestedBytes, settled, settledBytes };
     },
+    prefetch: prefetchPaths,
     resolve: async (path) => (await resolveCandidates(path)).urls,
+    startBackgroundFill: () => {
+      // The fill needs the manifest even when the scene loaded nothing through this loader yet;
+      // a failed read is the documented no-manifest case and simply leaves the fill empty.
+      void manifestOnce().catch(() => undefined);
+      assetCache.startFill();
+    },
     // A copy per read, like `progress`: a caller inspecting the record must not be able to
     // rewrite what the loader reports for the next asset that settles.
     get resolved(): ReadonlyMap<string, IResolvedAsset> {
@@ -1203,7 +1367,7 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
       return true;
     },
     texture: async (path, textureOptions) => {
-      const texture = await cached("texture", path, async (url) => {
+      const texture = await cached("texture", path, async (url, priority) => {
         if (options.texture !== undefined) return options.texture(url);
         // Compiled output carries the content-addressed extension: anything ending in .ktx2
         // goes through the shared KTX2 loader, everything else stays on TextureLoader.
@@ -1211,7 +1375,14 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
           return loadCompiledKtx2(url);
         }
         if (typeof createImageBitmap === "function") {
-          return loadBitmapTexture(url, options.renderer);
+          const expected = await bytesOf(path);
+          return loadBitmapTexture(
+            url,
+            options.renderer,
+            assetCache,
+            expected > 0 ? expected : undefined,
+            priority,
+          );
         }
         const { TextureLoader: Loader } = await import("three");
         return loadWith(new Loader() as TextureLoader, url);

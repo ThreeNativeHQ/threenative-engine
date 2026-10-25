@@ -2463,7 +2463,9 @@ function release(target: { dispose: () => void } | undefined): boolean {
 }
 
 async function loadModelWith(assets: IAssetLoader, path: string): Promise<Object3D> {
-  const gltf = await assets.model<{ scene?: Object3D }>(path);
+  // A cell load is one the ring asks for ahead of the camera, so it takes `soon`: a direct
+  // `ctx.assets.model` call from the running scene still starts first.
+  const gltf = await assets.model<{ scene?: Object3D }>(path, { priority: "soon" });
   const scene = gltf?.scene;
   if (!(scene instanceof Object3D))
     throw new Error(`World asset '${path}' loaded without an Object3D scene.`);
