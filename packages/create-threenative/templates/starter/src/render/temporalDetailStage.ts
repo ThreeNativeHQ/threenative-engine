@@ -33,7 +33,7 @@ export function temporalDetailRequested(
 }
 
 /** Scene-linear reconstruction detail, applied only when motion and output texture sizes differ. */
-export function temporalDetailStages(): ChainStage[] {
+export function temporalDetailStages(): [ChainStage, ChainStage] {
   const strength = temporalDetail.strength;
   if (!Number.isFinite(strength) || strength < 0)
     throw new Error("temporalDetail.strength must be finite and nonnegative.");
@@ -51,7 +51,6 @@ export function temporalDetailStages(): ChainStage[] {
     {
       name: "temporalDetailSource",
       before: "bloom",
-      requiresVelocity: true,
       available,
       build: (input) => {
         colour = convertToTexture(input as Node<"vec4">);
@@ -64,7 +63,6 @@ export function temporalDetailStages(): ChainStage[] {
     {
       name: "temporalDetail",
       after: "bloom",
-      requiresVelocity: true,
       available,
       build: (input, chain) => {
         if (chain.velocityNode === undefined)

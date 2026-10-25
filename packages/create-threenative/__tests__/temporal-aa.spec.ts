@@ -1172,7 +1172,7 @@ describe("generated temporal detail controls", () => {
     temporalDetail.strength = 1;
   });
   function stage() {
-    return temporalDetailStages()[1]!;
+    return temporalDetailStages()[1];
   }
   it("uses valid authored anchors in the render chain", () => {
     const chain = new RenderChain(
