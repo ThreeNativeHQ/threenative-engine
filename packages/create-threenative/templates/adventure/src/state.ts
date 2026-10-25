@@ -97,6 +97,8 @@ export type GameState = {
   /** Sun shafts standing in the vale, and whether the height mist is on the scene's fog. */
   sunShafts: number;
   heightFog: boolean;
+  /** Meshes in a wood, stone or bark tone with no photo on them (`untexturedSurfaces`); 0 is right. */
+  untexturedSurfaces: number;
   /** Fireflies and motes sprinkled round Wren so far. */
   motesSpawned: number;
   /** The companion orb: the nearest and farthest it flew from Wren's head (m); 0 until measured. */

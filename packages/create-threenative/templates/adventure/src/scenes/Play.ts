@@ -51,7 +51,7 @@ import { createLoadingScreen } from "../render/loading.js";
 import { setupPost } from "../render/postprocessing.js";
 import { createCompanion, createHeartVessel } from "../render/props.js";
 import { type ISky, createSky, setupSky } from "../render/sky.js";
-import { loadSurfaces } from "../render/surface.js";
+import { loadSurfaces, untexturedSurfaces } from "../render/surface.js";
 import { TouchControls } from "../render/touch-controls.js";
 import type { Checkpoint, GameState } from "../state.js";
 
@@ -77,6 +77,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     reliefRange: 0,
     reliefSteepShare: 0,
     sunShafts: 0,
+    untexturedSurfaces: -1,
     defeated: 0,
     doorOpen: false,
     grateOpen: false,
@@ -293,6 +294,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       reliefSteepShare: Math.round(relief.steepShare * 1000) / 1000,
       heightFog: ctx.scene.fogNode !== null,
       sunShafts: (ctx.scene.getObjectByName("sun-shafts") as InstancedMesh | undefined)?.count ?? 0,
+      untexturedSurfaces: untexturedSurfaces(ctx.scene),
     });
     const thornbacks = this.#thornbacks;
     const seen = { blocks: 0, clanks: 0, hits: 0 };

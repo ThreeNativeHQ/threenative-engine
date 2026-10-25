@@ -47,7 +47,7 @@ export interface IChestRig {
 /** A banded wooden chest. The lid pivots on its back edge. */
 export function createChest(): IChestRig {
   const group = new Group();
-  const wood = lit(C.wood);
+  const wood = surfaced(C.wood, "planks");
   const band = lit(palette.accent, { metalness: 0.7, roughness: 0.4 });
   group.add(part(new BoxGeometry(0.9, 0.5, 0.6), wood, 0, 0.25));
   for (const x of [-0.32, 0.32]) group.add(part(new BoxGeometry(0.07, 0.52, 0.62), band, x, 0.26));
@@ -69,7 +69,7 @@ export function createChest(): IChestRig {
 /** A heavy door in a stone frame. `locked` adds the brass lock plate. Slides down to open. */
 export function createDoor(width: number, height: number, locked: boolean): Group {
   const group = new Group();
-  const plank = lit(C.woodDark);
+  const plank = surfaced(C.woodDark, "planks");
   group.add(part(new BoxGeometry(width, height, 0.22), plank, 0, height / 2));
   for (const y of [0.4, height - 0.4])
     group.add(part(new BoxGeometry(width, 0.12, 0.26), lit(C.iron, { metalness: 0.7 }), 0, y));
@@ -112,7 +112,7 @@ export function createBlock(rng: () => number): Group {
   group.add(
     part(
       mottle(new BoxGeometry(0.98, 0.98, 0.98, 2, 2, 2), 0.2, rng),
-      lit(C.stoneDark, { flat: true, vertexColors: true }),
+      surfaced(C.stoneDark, "rock", { flat: true, vertexColors: true }),
       0,
       0.49,
     ),
@@ -135,7 +135,12 @@ export function createSwitchPlate(): { readonly group: Group; setPressed(pressed
     0,
     0.02,
   );
-  const plate = part(new CylinderGeometry(0.5, 0.5, 0.1, 20), lit(C.stoneDark), 0, 0.06);
+  const plate = part(
+    new CylinderGeometry(0.5, 0.5, 0.1, 20),
+    surfaced(C.stoneDark, "rock"),
+    0,
+    0.06,
+  );
   group.add(ring, plate);
   return {
     group,
@@ -217,7 +222,9 @@ export function createHut(): { readonly group: Group; readonly lanterns: number 
   group.add(walls);
   // The round door, its ring and a brass knob; a round window to its right.
   group.add(part(new CircleGeometry(0.72, 18), surfaced(C.hutDoor, "planks"), 0, 0.85, 2.06));
-  group.add(part(new TorusGeometry(0.76, 0.09, 6, 20), lit(C.woodDark), 0, 0.85, 2.06));
+  group.add(
+    part(new TorusGeometry(0.76, 0.09, 6, 20), surfaced(C.woodDark, "planks"), 0, 0.85, 2.06),
+  );
   group.add(
     part(
       new SphereGeometry(0.05, 6, 4),
@@ -281,13 +288,18 @@ export function createPitcherLantern(): Group {
   const group = new Group();
   const stick = part(
     new CylinderGeometry(0.03, 0.045, 1.7, 5),
-    lit(C.woodDark, { detail: true }),
+    surfaced(C.woodDark, "bark"),
     0,
     0.85,
   );
   stick.rotation.z = 0.06;
   group.add(stick);
-  const arm = part(new CylinderGeometry(0.02, 0.025, 0.38, 4), lit(C.woodDark), -0.18, 1.62);
+  const arm = part(
+    new CylinderGeometry(0.02, 0.025, 0.38, 4),
+    surfaced(C.woodDark, "bark"),
+    -0.18,
+    1.62,
+  );
   arm.rotation.z = Math.PI / 2 - 0.3;
   group.add(arm);
   const cup = new LatheGeometry(

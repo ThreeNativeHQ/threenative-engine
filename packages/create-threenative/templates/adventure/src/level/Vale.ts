@@ -8,7 +8,7 @@ import {
   Vector3,
 } from "three";
 import { type IValeSite, plantVale, valeGround } from "../render/foliage.js";
-import { flat, lit, mottle } from "../render/materials.js";
+import { flat, mottle } from "../render/materials.js";
 import { C } from "../render/palette.js";
 import { createHut, createPitcherLantern, createSign } from "../render/props.js";
 import { surfaced } from "../render/surface.js";
@@ -255,7 +255,10 @@ export function buildVale(rng: () => number): IVale {
   const back = new Mesh(new PlaneGeometry(4, 4), flat(0x050605));
   back.position.set(0, top + 2, -28.8);
   group.add(back);
-  const roof = new Mesh(new BoxGeometry(5, 1, 6).translate(0, top + 4.1, -26), lit(C.stoneDark));
+  const roof = new Mesh(
+    new BoxGeometry(5, 1, 6).translate(0, top + 4.1, -26),
+    surfaced(C.stoneDark, "rock", { flat: true }),
+  );
   roof.castShadow = true;
   group.add(roof);
 

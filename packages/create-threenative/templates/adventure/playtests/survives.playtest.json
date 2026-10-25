@@ -159,6 +159,12 @@
         "path": "assetLoads",
         "equals": 5,
         "allowTrivial": "Every model and the sky are built in code; the loader is asked only for the five shared tiling photos in src/render/surface.ts."
+      },
+      {
+        "id": "state",
+        "path": "untexturedSurfaces",
+        "equals": 0,
+        "allowTrivial": "Counted once at enter: meshes in a wood, stone or bark tone built with a plain material and no photo (a lit(C.wood) chest where surfaced(C.wood, \"planks\") was meant). Unmeasured is -1, so a missing count fails."
       }
     ]
   }

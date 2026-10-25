@@ -16,6 +16,9 @@ import {
   DoubleSide,
   FrontSide,
   type Material,
+  type Mesh,
+  type MeshStandardMaterial,
+  type Object3D,
   RepeatWrapping,
   type Texture,
 } from "three";
@@ -71,6 +74,8 @@ const TILE: Record<Surface, number> = {
 
 let maps: Record<Surface, Texture> | undefined;
 const cache = new Map<string, Material>();
+/** Every colour a surface was asked for: wood, stone and bark tones. */
+const surfaceColors = new Set<number>();
 
 /** Loads the five textures once, in sRGB, repeating and anisotropic. */
 export async function loadSurfaces(assets: TextureLoader): Promise<void> {
@@ -150,6 +155,7 @@ export function surfaced(
   } = {},
 ): Material {
   const { strength = 0.9, ...shape } = options;
+  surfaceColors.add(new Color(color).getHex());
   if (maps === undefined) return lit(color, { ...shape, detail: true });
   const key = `${String(color)}|${surface}|${JSON.stringify(options)}`;
   const hit = cache.get(key);
@@ -168,6 +174,27 @@ export function surfaced(
   ).mul(colorNode(new Color(color)));
   cache.set(key, material);
   return material;
+}
+
+/**
+ * Meshes under `root` painted in a surface's colour with a plain material and no photo: a chest or
+ * a post built with `lit(C.wood)` where `surfaced(C.wood, "planks")` was meant. White is skipped,
+ * as a white material takes its colours from the vertices. 0 when every wood, stone and bark tone
+ * carries its photo; the whole set when the photos failed to load.
+ */
+export function untexturedSurfaces(root: Object3D): number {
+  let count = 0;
+  root.traverse((object) => {
+    if (!(object as Mesh).isMesh) return;
+    const materials = [(object as Mesh).material].flat();
+    for (const material of materials) {
+      const plain = material as MeshStandardMaterial | null;
+      if (plain?.type !== "MeshStandardMaterial") continue;
+      const hex = plain.color.getHex();
+      if (hex !== 0xffffff && surfaceColors.has(hex)) count += 1;
+    }
+  });
+  return count;
 }
 
 /**

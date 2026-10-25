@@ -21,6 +21,7 @@ import {
 } from "three";
 import { flat, glow, lit } from "./materials.js";
 import { C } from "./palette.js";
+import { surfaced } from "./surface.js";
 
 export interface ICreatureRig {
   readonly group: Group;
@@ -83,7 +84,7 @@ export function createWarden(): ICreatureRig {
   const root = new Group();
   const body = new Group();
   root.add(body, blob(1));
-  const stone = lit(C.wardenStone, { flat: true });
+  const stone = surfaced(C.wardenStone, "rock", { flat: true });
   const moss = lit(C.moss, { flat: true });
   const rune = glow(C.wardenRune, 1.2);
   const torso = part(new DodecahedronGeometry(0.85, 0), stone, 0, 1.25);
@@ -364,11 +365,12 @@ export function createDummy(): ICreatureRig {
   const root = new Group();
   const body = new Group();
   root.add(body, blob(0.3));
-  body.add(part(new CylinderGeometry(0.05, 0.06, 1.5, 6), lit(C.woodDark), 0, 0.75));
+  const post = surfaced(C.woodDark, "planks");
+  body.add(part(new CylinderGeometry(0.05, 0.06, 1.5, 6), post, 0, 0.75));
   const straw = lit(C.straw);
   body.add(part(new CylinderGeometry(0.22, 0.2, 0.6, 10), straw, 0, 1.15));
   body.add(part(new SphereGeometry(0.17, 10, 8), straw, 0, 1.62));
-  const bar = part(new CylinderGeometry(0.04, 0.04, 0.9, 6), lit(C.woodDark), 0, 1.3);
+  const bar = part(new CylinderGeometry(0.04, 0.04, 0.9, 6), post, 0, 1.3);
   bar.rotation.z = Math.PI / 2;
   body.add(bar);
   return {
