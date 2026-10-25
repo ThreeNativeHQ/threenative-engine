@@ -157,16 +157,22 @@ struct Resolved { @location(0) color: vec4<f32>, @location(1) dynamic: f32 }
     let dynamic = motionSample.z != 1;
     var dynamicNeighborhood = dynamic;
     var completeMotion = motionSample.z > 0.5;
-    for (var y = -1; y <= 1; y++) {
-        for (var x = -1; x <= 1; x++) {
-            let step = vec2<i32>(x,y);
-            let pixel = clamp(texel + step, vec2<i32>(0), vec2<i32>(u.size) - 1);
-            completeMotion = completeMotion && textureLoad(velocity, pixel, 0).z > 0.5;
-            if (x == 0 || y == 0) {
-                let nearest = clamp(vec2<i32>(closestPosition) + step, vec2<i32>(0), vec2<i32>(u.size) - 1);
-                dynamicNeighborhood = dynamicNeighborhood || textureLoad(velocity, nearest, 0).z != 1;
-            }
-        }
+    if (upsampling) {
+        // A gather at integer + .25 covers integer - 1 through integer. The four
+        // overlapping quads cover the same clamped 3x3 footprint as the loads.
+        let origin = vec2<f32>(texel) + 0.25;
+        let g00 = textureGather(2, velocity, linearSampler, origin / u.size);
+        let g10 = textureGather(2, velocity, linearSampler, (origin + vec2(1,0)) / u.size);
+        let g01 = textureGather(2, velocity, linearSampler, (origin + vec2(0,1)) / u.size);
+        let g11 = textureGather(2, velocity, linearSampler, (origin + vec2(1,1)) / u.size);
+        completeMotion = completeMotion && all(g00 > vec4(0.5)) && all(g10 > vec4(0.5)) &&
+                         all(g01 > vec4(0.5)) && all(g11 > vec4(0.5));
+        let nearestOrigin = vec2<f32>(vec2<i32>(closestPosition)) + 0.25;
+        let nearest00 = textureGather(2, velocity, linearSampler, nearestOrigin / u.size);
+        let nearest11 = textureGather(2, velocity, linearSampler, (nearestOrigin + vec2(1,1)) / u.size);
+        // Gather x/z are left/up in the first quad and down/right in the second.
+        dynamicNeighborhood = dynamicNeighborhood || any(nearest00.xz != vec2(1)) ||
+                              any(nearest11.xz != vec2(1));
     }
     let highClamp = upsampling;
     let oldDynamic = upsampling && textureSampleLevel(previousDynamic, linearSampler, historyUV, 0).r > 0;

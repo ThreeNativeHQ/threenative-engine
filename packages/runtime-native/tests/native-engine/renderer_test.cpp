@@ -11,12 +11,14 @@
 #include "engine/renderer/post/effects.h"
 #include "engine/shader/graph/post_effects.h"
 #include "mystral/webgpu/context.h"
+#include "mystral/webgpu_compat.h"
 
 #include <algorithm>
 #include <array>
 #include <chrono>
 #include <cmath>
 #include <cstdlib>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
@@ -100,6 +102,122 @@ void rawTargetOmitsUnusedOutput() {
 }
 
 #if defined(MYSTRAL_WEBGPU_DAWN)
+bool rendersPixels(mystral::webgpu::Context& context);
+// Execute the production footprint expressions against the original clamped loads,
+// including isolated markers, half-valued markers, odd sizes and 1x1 borders.
+void traaVelocityFootprint() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    CHECK(rendersPixels(context));
+    if (!rendersPixels(context)) return;
+    const auto device = context.getDevice();
+    const auto queue = context.getQueue();
+    EventQueue events;
+    GpuResources gpu(context.getInstance(), device, queue, events, 1);
+    const std::string production = traaResolveWgsl();
+    const auto start = production.find("    let dynamic = motionSample.z != 1;");
+    const auto end = production.find("    let highClamp =", start);
+    CHECK(start != std::string::npos && end != std::string::npos);
+    if (start == std::string::npos || end == std::string::npos) return;
+    const std::string source = R"WGSL(
+@group(0) @binding(0) var velocity: texture_2d<f32>;
+@group(0) @binding(1) var linearSampler: sampler;
+@group(0) @binding(2) var<storage, read_write> mismatches: array<atomic<u32>, 3>;
+struct Dimensions { size: vec2<f32> }
+@compute @workgroup_size(1) fn main(@builtin(global_invocation_id) id: vec3<u32>) {
+    let size = textureDimensions(velocity);
+    let u = Dimensions(vec2<f32>(size));
+    let texel = vec2<i32>(id.xy);
+    let closestPosition = vec2<f32>(texel + vec2<i32>(i32(id.z % 5u) - 2, i32(id.z / 5u) - 2));
+    let motionSample = textureLoad(velocity, vec2<i32>(closestPosition), 0);
+    let upsampling = true;
+)WGSL" + production.substr(start, end - start) + R"WGSL(
+    var referenceComplete = motionSample.z > 0.5;
+    var referenceDynamic = motionSample.z != 1;
+    for (var y = -1; y <= 1; y++) {
+        for (var x = -1; x <= 1; x++) {
+            let step = vec2<i32>(x,y);
+            let pixel = clamp(texel + step, vec2<i32>(0), vec2<i32>(size) - 1);
+            referenceComplete = referenceComplete && textureLoad(velocity, pixel, 0).z > 0.5;
+            if (x == 0 || y == 0) {
+                let nearest = clamp(vec2<i32>(closestPosition) + step, vec2<i32>(0), vec2<i32>(size) - 1);
+                referenceDynamic = referenceDynamic || textureLoad(velocity, nearest, 0).z != 1;
+            }
+        }
+    }
+    if (referenceComplete != completeMotion) { atomicAdd(&mismatches[0], 1u); }
+    if (referenceDynamic != dynamicNeighborhood) { atomicAdd(&mismatches[1], 1u); }
+    atomicAdd(&mismatches[2], 1u);
+}
+)WGSL";
+    WGPUShaderModuleWGSLDescriptor_Compat wgsl{};
+    WGPUShaderModuleDescriptor shader{};
+    setupShaderModuleWGSL(&shader, &wgsl, source.c_str());
+    const auto module = wgpuDeviceCreateShaderModule(device, &shader);
+    WGPUComputePipelineDescriptor pipelineDesc{};
+    pipelineDesc.compute.module = module;
+    WGPU_SET_ENTRY_POINT(pipelineDesc.compute, "main");
+    const auto pipeline = wgpuDeviceCreateComputePipeline(device, &pipelineDesc);
+    CHECK(pipeline != nullptr);
+    if (!pipeline) { wgpuShaderModuleRelease(module); return; }
+    const auto layout = wgpuComputePipelineGetBindGroupLayout(pipeline, 0);
+    WGPUSamplerDescriptor samplerDesc{};
+    samplerDesc.maxAnisotropy = 1;
+    samplerDesc.magFilter = samplerDesc.minFilter = WGPUFilterMode_Linear;
+    samplerDesc.addressModeU = samplerDesc.addressModeV = samplerDesc.addressModeW = WGPUAddressMode_ClampToEdge;
+    const auto sampler = wgpuDeviceCreateSampler(device, &samplerDesc);
+    const auto counts = gpu.createBuffer(12, WGPUBufferUsage_Storage | WGPUBufferUsage_CopySrc);
+    uint32_t comparisons = 0;
+    for (const auto size : {std::array<uint32_t, 2>{1, 1}, std::array<uint32_t, 2>{5, 3}}) {
+        const auto texture = gpu.createTexture(size[0], size[1], WGPUTextureFormat_RGBA16Float,
+                                               WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopyDst);
+        const auto view = wgpuTextureCreateView(gpu.texture(texture), nullptr);
+        WGPUBindGroupEntry entries[3]{};
+        entries[0].binding = 0; entries[0].textureView = view;
+        entries[1].binding = 1; entries[1].sampler = sampler;
+        entries[2].binding = 2; entries[2].buffer = gpu.buffer(counts); entries[2].size = 12;
+        WGPUBindGroupDescriptor groupDesc{};
+        groupDesc.layout = layout; groupDesc.entries = entries; groupDesc.entryCount = 3;
+        const auto group = wgpuDeviceCreateBindGroup(device, &groupDesc);
+        const uint32_t pixels = size[0] * size[1];
+        for (uint32_t marker = 0; marker <= pixels; ++marker) {
+            for (const uint16_t flag : {uint16_t(0), uint16_t(0x3800), uint16_t(0x4000)}) {
+                std::vector<uint16_t> data(pixels * 4, 0x3c00);
+                if (marker < pixels) data[marker * 4 + 2] = flag;
+                CHECK(gpu.writeTexture(texture, data.data(), data.size() * 2) == GpuStatus::Ok);
+                const auto encoder = wgpuDeviceCreateCommandEncoder(device, nullptr);
+                const auto pass = wgpuCommandEncoderBeginComputePass(encoder, nullptr);
+                wgpuComputePassEncoderSetPipeline(pass, pipeline);
+                wgpuComputePassEncoderSetBindGroup(pass, 0, group, 0, nullptr);
+                wgpuComputePassEncoderDispatchWorkgroups(pass, size[0], size[1], 25);
+                wgpuComputePassEncoderEnd(pass); wgpuComputePassEncoderRelease(pass);
+                gpu.submit(wgpuCommandEncoderFinish(encoder, nullptr));
+                wgpuCommandEncoderRelease(encoder);
+                comparisons += pixels * 25;
+            }
+        }
+        wgpuBindGroupRelease(group); wgpuTextureViewRelease(view); gpu.destroy(texture);
+    }
+    bool done = false;
+    CHECK(gpu.readBuffer(counts, 0, 12, [&](GpuStatus status, std::vector<uint8_t> bytes) {
+        CHECK(status == GpuStatus::Ok && bytes.size() == 12);
+        if (bytes.size() == 12) {
+            uint32_t values[3]; std::memcpy(values, bytes.data(), 12);
+            std::fprintf(stderr, "TN_TRAA_FOOTPRINT comparisons=%u executed=%u complete=%u cross=%u\n", comparisons, values[2], values[0], values[1]);
+            CHECK(values[2] == comparisons);
+            CHECK(values[0] == 0 && values[1] == 0);
+        }
+        done = true;
+    }) == GpuStatus::Ok);
+    for (int i = 0; i < 4000 && !done; ++i) {
+        gpu.poll(); events.drain();
+        if (!done) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    CHECK(done && comparisons > 18000);
+    gpu.destroy(counts); wgpuSamplerRelease(sampler); wgpuBindGroupLayoutRelease(layout);
+    wgpuComputePipelineRelease(pipeline); wgpuShaderModuleRelease(module);
+}
+
 // Dawn's Null backend validates the complete command stream without a GPU.
 void traaValidation() {
     tn::engine::LightState lights;
@@ -2312,6 +2430,7 @@ TN_TEST_MAIN({"history_depth_rows", historyDepthRows}, {"raw_target_scene_only",
              {"traa_rejection", traaRejection},
              {"output_screen_size", outputScreenSize},
 #if defined(MYSTRAL_WEBGPU_DAWN)
+             {"traa_velocity_footprint", traaVelocityFootprint},
              {"traa_validation", traaValidation},
 #endif
              {"lit_reference", litReference},
