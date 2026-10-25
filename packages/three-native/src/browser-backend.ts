@@ -495,6 +495,11 @@ export function defineBrowserClasses(
       });
     },
   });
+  /** A value's member vector (`Box3.min`, `Sphere.center`): present on every real instance. */
+  const memberVector = (vector: IValueLanes["min"]): NonNullable<IValueLanes["min"]> => {
+    if (vector === undefined) throw new TypeError("TN_BROWSER_VALUE_MEMBER: the value has no vector");
+    return vector;
+  };
   // three's private storage names, and the classes whose lanes are not plain fields.
   const valuePlans: Record<string, IValuePlan> = {
     // biome-ignore lint/style/useNamingConvention: keyed by three's class name.
@@ -514,7 +519,7 @@ export function defineBrowserClasses(
       lanes: ["x", "y", "z"],
       drop: ["_x", "_y", "_z", "_order"],
       read: (value) =>
-        [value._x, value._y, value._z, eulerOrders.indexOf(value._order)] as number[],
+        [value._x, value._y, value._z, eulerOrders.indexOf(value._order as (typeof eulerOrders)[number])] as number[],
       write: (value, values) => {
         value._x = values[0];
         value._y = values[1];
@@ -553,17 +558,14 @@ export function defineBrowserClasses(
       promote: true,
       lanes: [],
       drop: ["min", "max"],
-      read: (value) => [
-        value.min.x,
-        value.min.y,
-        value.min.z,
-        value.max.x,
-        value.max.y,
-        value.max.z,
-      ],
+      read: (value) => {
+        const min = memberVector(value.min);
+        const max = memberVector(value.max);
+        return [min.x, min.y, min.z, max.x, max.y, max.z];
+      },
       write: (value, values) => {
-        value.min.set(values[0], values[1], values[2]);
-        value.max.set(values[3], values[4], values[5]);
+        memberVector(value.min).set(values[0] as number, values[1] as number, values[2] as number);
+        memberVector(value.max).set(values[3] as number, values[4] as number, values[5] as number);
       },
       args: (values, make) => [
         make("Vector3", values.slice(0, 3).map(Number)),
@@ -575,10 +577,17 @@ export function defineBrowserClasses(
       promote: true,
       lanes: ["radius"],
       drop: ["center", "radius"],
-      read: (value) => [value.center.x, value.center.y, value.center.z, value.radius],
+      read: (value) => {
+        const center = memberVector(value.center);
+        return [center.x, center.y, center.z, value.radius as number];
+      },
       write: (value, values) => {
-        value.center.set(values[0], values[1], values[2]);
-        value.radius = values[3];
+        memberVector(value.center).set(
+          values[0] as number,
+          values[1] as number,
+          values[2] as number,
+        );
+        value.radius = values[3] as number;
       },
       args: (values, make) => [make("Vector3", values.slice(0, 3).map(Number)), values[3]],
     },
