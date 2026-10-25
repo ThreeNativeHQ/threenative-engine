@@ -208,6 +208,7 @@ const BUG_REPORT_SKILL_PATHS = [
 // default. Measured from the committed branch head.
 // Re-measured 2026-10-20 (PRD-626): every tree gains eslint.config.js and biome.json, three scripts and
 // two dev dependencies, and the pristine sources lose the unused bindings the new lint found.
+// Refreshed 2026-10-24: shared authoring routes, delegation skills and prompt hook change all 13 trees.
 const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // 2026-10-19: every kit's exposureReadback.ts retries the undrawn cold-start target. Measured by this test.
   // PRD-632 (2026-10-19): every kit ships the shared filmic curve render/tonemap.ts. Measured by this test.
@@ -286,25 +287,25 @@ const PRD_201_PARENT_SCAFFOLD_HASHES: Readonly<Record<string, string>> = {
   // Recomputed 2026-10-18 merging develop f30f9b6d3 (PRD-478) into PR #493: the merged Three patch moves every tree.
   // Recomputed 2026-10-16 for PRD-617: puzzle's boot-failure scenario asserts the engine-neutral
   // boot-failure text both engines now show, so only puzzle's tree moves.
-  "action-rpg": "37b6c257fdfa93f84be14daf89013e8a85fc9bf5e1c93afee94943ff04f1b45e",
-  minimal: "9bb9fbee23f8a3470574cb7c33a40aa8148f3c4f6c4222d44b8792f33729536b",
-  platformer: "c826d0c3cc1140e8adb258ab19ff5c0165a6b6d713ea4526d76cd2671daeb12d",
-  puzzle: "fb183869a7ca5ed7f29af77ea5da3c455b932a81fbbaf33e9472ef8974236a61",
-  racing: "8a9535849d3025825a37ad2d6e4b516a0f70cf8da02021c6eaaaf3e4998ed29a",
-  rain: "71fc9090e77bfbca174ed55fb43eeb6ef7af111724bcfc2465a8457d93869ef1",
-  rts: "7edd7af87021f6f95275dbfc9c76840818a95b07a006960e192e0456ee6a6589",
-  runner: "ca3e4e9b3c2b925ea3e2c11ede7c870f6fcd447021fa517c86321314a9392763",
+  "action-rpg": "991dd5e006eebe689d6afeecdb9fe6d30494ad4f0d7012dead5b6d49aba4477b",
+  minimal: "5969959ac645f11d17aec23df4b4e52b7ed1949f9c10fd2da9091a7d6f205273",
+  platformer: "bc0f585250d56b6f7b1bd4769c9bbd8b3c4606f0752ef596ffb87660e7a082ca",
+  puzzle: "87f691f5b33c2ca1dfff9af4274fd43139a21011c30481da90f3836c51017aae",
+  racing: "4e8471351097a415e7fb634d26480c2cf5c2bd8390df886afbf2f74879478f27",
+  rain: "0d7043a804d55dfdb726bb531ee445d9bf1f78d016ae21ab1b2f709ea4a2063d",
+  rts: "e35841cfd747fcf420daaf1a5a1d21d4604071d6482bd7bcdc0e766cba83edad",
+  runner: "e954542e45418da48bfbaea7b8e1c53bfb695b764186f4120d032d5df461a836",
   // Finite-height readiness plus hull, sail, and buoy interpolation from the current swell pose.
-  sailing: "267a6085d07a4f1a0b564349a3290e3b7ea67732fa8d1c49f639a95761fa37c3",
-  shooter: "8010fbb06f637976e214d650c9871250e628677451989e871a7335aabbd884b3",
-  snow: "f5eef5402719546ad1e0bc1c6500258419e27a246e86b73ce3a32db15039b736",
+  sailing: "7b0b12ced5b59739b80f3b32289c346d8dd0ef0f38723c8aba30cd2c4401eb7c",
+  shooter: "75f00cc3a7cf3c7c37c0096c04fc63f465ed296c987b493cf11a3a98d2d923f6",
+  snow: "50fe3591c4170de6d63a0d7fabe6e65d57f84fc32e9912441a769bd37bbcc41f",
   // Measured 2026-10-16 through createProject after starter's completed-work quality fallback fix.
   // Recomputed 2026-10-16: starter's adaptiveQuality split its policy resolution into qualityPolicy.ts
   // to stay under the 200-line render-file cap; only starter's tree moves.
   // Recomputed 2026-10-23 on the merge of origin/develop into the PRD-570 lane: measured by this test on the merged tree.
   // Recomputed 2026-10-23: the native render-chain scenario expects the Unreal finishing chain (grade and grain off).
-  starter: "c81093602b01f4ddc660f080c0b7743f9ec5ca53cfa4cfeab0a45d92300c1840",
-  "tower-defense": "7ff8db099e657780591342390c764ea79eacc11cfe7ae67cd32cb668f6178647",
+  starter: "77c221ca6732ebfed24380aa76ee987b2d1e48537ac1986ebb8d0f184b805f7b",
+  "tower-defense": "0f011d3d8b8041c8fd66cb5a6d36a8a93cd73c4c793ef6435abe20ba1f820b4c",
 };
 
 const GENERATED_SCAFFOLD_METADATA =
