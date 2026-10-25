@@ -547,6 +547,7 @@ var STOP_WORDS = /* @__PURE__ */ new Set([
 var MAX_COMPLETE_REQUEST_RESULTS = 15;
 var MAX_SITUATION_RESULTS = 5;
 var RELEVANCE_FLOOR = 0.27;
+var AUTHORING_INSTRUCTIONS = `Before authoring, infer concrete gameplay mechanics. Preserve the request's distinctive fantasy: choose the smallest loop that uses its characteristic setting, traversal medium, or simulation instead of a generic character game with themed props, and search those implied mechanics even when the user did not name engine terms. Search the mechanically explicit complete request with scope "request", then each mechanic with scope "mechanic". A genre label alone is not a capability query: clarify or decompose it; do not assume a preset. Inspect capability detail and obey constraints before implementing. Capability detail is authoritative on platform support: never invent a platform limitation it does not state. A response with verdict "none" is an actionable answer: follow its guidance and write game-owned behavior in src/ instead of rephrasing the same request.`;
 var AUTHORING_INSTRUCTIONS = "Invoke threenative-capabilities to route authoring. New games: steps 1-8 \u2014 prompt, matching starter kit (minimal fallback), mechanics references PLUS built-in capabilities, core-mechanics plan via prd-creator, required textures, execute, mechanics playtest, reference-image visual judge. Existing games: steps 5-7 only \u2014 required textures, execute and mechanics playtest using existing context; no kit selection, rediscovery, whole-game replanning or added step 8. In both routes, execute plan with subagents focused on specific areas: bounded tasks, file ownership, then coordinator integration before step 7 mechanics playtests. Follow binding capability constraints. References borrow mechanics only: no code, level layouts, character names or art; cite pinned file:line sources.";
 var GENERIC_GUIDANCE = "No installed engine capability matches this situation. Decompose it into concrete mechanics and write the game-owned behavior in your project's src/; inspect the relevant template AGENTS.md before adding a package.";
 function defaultManifestPath(cwd = process.cwd()) {
@@ -590,6 +591,11 @@ function validateManifest(value, file) {
   for (const [index, raw] of value.entries.entries()) {
     if (!isRecord(raw) || typeof raw.symbol !== "string" || typeof raw.package !== "string" || typeof raw.importPath !== "string" || typeof raw.kind !== "string" || typeof raw.signature !== "string" || typeof raw.summary !== "string" || typeof raw.example !== "string" || !Array.isArray(raw.situations) || !Array.isArray(raw.aliases) || !Array.isArray(raw.constraints) || raw.requires !== void 0 && !isStringArray(raw.requires) || raw.deprecated !== void 0 && !isStringArray(raw.deprecated) || !raw.situations.every((situation) => typeof situation === "string") || !raw.aliases.every((alias) => typeof alias === "string") || !raw.constraints.every((constraint) => typeof constraint === "string")) {
       throw manifestError(file, `entry ${index} is malformed`);
+    }
+  }
+  for (const [index, raw] of (Array.isArray(value.starterKits) ? value.starterKits : []).entries()) {
+    if (!isRecord(raw) || typeof raw.name !== "string" || typeof raw.title !== "string" || typeof raw.blurb !== "string" || !isStringArray(raw.words)) {
+      throw manifestError(file, `starterKits ${index} is malformed`);
     }
   }
   const notOwnedIds = /* @__PURE__ */ new Set();
@@ -757,10 +763,48 @@ function capabilitySearchKey(entry) {
 ${entry.summary}
 ${entry.situations.join("\n")}`;
 }
+function matchedStarterKits(situation, kits) {
+  const words = (text) => ` ${text.toLowerCase().replace(/[^a-z0-9]+/gu, " ").trim()} `;
+  const request = words(situation);
+  const claims = kits.map((kit) => ({
+    kit,
+    spans: kit.words.flatMap((word) => {
+      const at = request.indexOf(words(word));
+      return at < 0 ? [] : [{ at, end: at + words(word).length }];
+    })
+  }));
+  const inside = (span, own) => claims.some(
+    (other) => other !== own && other.spans.some(
+      (o) => o.at <= span.at && o.end >= span.end && o.end - o.at > span.end - span.at
+    )
+  );
+  return claims.map((claim) => ({
+    at: Math.min(...claim.spans.filter((span) => !inside(span, claim)).map((span) => span.at)),
+    kit: claim.kit
+  })).filter(({ at }) => Number.isFinite(at)).sort((left, right) => left.at - right.at).map(({ kit: { blurb, name, title } }) => ({
+    blurb,
+    command: `npx create-threenative <dir> --template ${name}`,
+    name,
+    title
+  }));
+}
 function searchCapabilities(situation, manifestFile = defaultManifestPath(), scope = "mechanic") {
   if (typeof situation !== "string" || situation.trim().length === 0)
     throw new Error("engine_search_capabilities requires a non-empty situation string.");
   const manifest = loadCapabilityManifest(manifestFile);
+  const starterKits = matchedStarterKits(situation, manifest.starterKits ?? []);
+  const response = searchMechanics(situation, manifest, scope);
+  if (starterKits.length === 0) return response;
+  return {
+    starterKits,
+    ...response,
+    ...response.verdict === "none" ? {
+      guidance: `Scaffold from the starter kit first, then search the mechanics it does not cover. ${response.guidance}`,
+      verdict: "starterKit"
+    } : {}
+  };
+}
+function searchMechanics(situation, manifest, scope) {
   const query = tokens(situation);
   const limit = scope === "request" ? MAX_COMPLETE_REQUEST_RESULTS : MAX_SITUATION_RESULTS;
   const weights = tokenWeights(manifest.entries);

@@ -1304,7 +1304,7 @@ export async function bundleOwnedWeb(entry, outfile, wasmEntry = ownedEngineWasm
             builder.onResolve({ filter: /.*/ }, (args) => {
               if (args.kind === "entry-point" || args.path.startsWith(".") || isAbsolute(args.path))
                 return undefined;
-              const id = hooks.resolveId(args.path);
+              const id = hooks.resolveId(args.path, args.importer);
               if (!id) return undefined;
               return id.startsWith("\0") ? { path: id, namespace: "web-engine" } : { path: id };
             });

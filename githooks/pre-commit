@@ -3,7 +3,8 @@
 # This intentionally does nothing for docs, examples, tests, and ordinary game/template edits.
 set -euo pipefail
 
-cd "$(dirname -- "${BASH_SOURCE[0]}")/.."
+# The committing checkout, not the hook's: an absolute core.hooksPath runs one checkout's hook for every worktree.
+cd "$(git rev-parse --show-toplevel)"
 
 if [[ "${TN_SKIP_CAPABILITY_SYNC:-}" == "1" ]]; then
   echo "pre-commit: capability sync skipped (TN_SKIP_CAPABILITY_SYNC=1)"

@@ -101,7 +101,7 @@ thesis: each spends the training-data advantage to buy a surface the model then 
 | A JSON/structured-source ECS | Measured at **14x vanilla Three.js** on greenfield work, and scored lower on playability and visuals. |
 | An editor | Not in v1. The paid editor is a separate product in a separate repository. |
 | A bespoke CLI vocabulary | 178 command forms, a 2,477-word root help. Models are worst at discovering novel API surfaces. |
-| A recipe/preset/genre system | 0 of 7 presets ever reproduced their genre. |
+| A runtime recipe/preset system that generates a genre | 0 of 7 presets ever reproduced their genre. **One exception (owner, 2026-10-23):** a request that names a game or genre ("like Mario", "Zelda") routes to a starter kit through `--genre`, `kit.json` aliases and capability search. A kit is plain source the game owns, not a runtime preset. |
 | A code-first ECS (miniplex, bitECS) | Entities are plain classes (§9b). Gameplay architecture is the model's job. A game that wants one runs `pnpm add miniplex`; the framework neither ships nor fights it. |
 
 > An LLM's greatest strength is writing code in languages already in its weights. Its greatest
@@ -695,7 +695,7 @@ fifteen lines.
 **Four things this does not loosen:**
 
 1. **§2's closed list outranks both questions.** An authored IR, a scene format, an editor, a
-   preset/genre/recipe system, a code-first ECS and a bespoke CLI vocabulary stay closed however
+   runtime recipe system, a code-first ECS and a bespoke CLI vocabulary stay closed however
    cleanly they pass.
 2. **§11.2 applies retroactively to everything admitted here.** Generous on the way in is only safe
    because the way out is automatic.

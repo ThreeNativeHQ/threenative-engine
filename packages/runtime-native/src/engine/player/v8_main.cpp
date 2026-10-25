@@ -291,7 +291,24 @@ class V8Game {
         database.shadowMapEnabled = shadowMap_;
         database.shadowMapType = shadowMapType_;
     }
+    /** run.h overlay: 0 for no overlay this frame, 1 over the world frame, 2 alone (a held loader frame drew no world). */
+    int overlay() const { return !overlaySceneHold_ ? 0 : overlayAlone_ ? 2 : 1; }
+    /** run.h drawOverlay: this frame's overlay over the renderer's output frame, as web_host.cpp draws it over the canvas. */
+    void drawOverlay(Renderer& renderer) {
+        const auto scene = std::exchange(overlaySceneHold_, nullptr);
+        const auto camera = std::exchange(overlayCameraHold_, nullptr);
+        if (!scene || !renderer.outputColorView()) return;
+        Renderer& target = renderer.overlayRenderer();
+        Renderer::PresentScope present(target, renderer.outputColorView(), WGPUTextureFormat_RGBA8Unorm);
+        overlayDatabase_.render(target, *static_cast<Object3D*>(scene.get()), *static_cast<Camera*>(camera.get()), {0, 0, 0, 0});
+        for (const std::string& diagnostic : overlayDatabase_.diagnostics()) std::printf("[Playtest] %s\n", diagnostic.c_str());
+    }
   private:
+    // three's overlay render of this frame (tn.renderOverlay), drawn by the loop after the world frame.
+    std::shared_ptr<void> overlaySceneHold_, overlayCameraHold_;
+    bool overlayAlone_ = false;
+    RenderDatabase overlayDatabase_;
+    static void renderOverlay(const v8::FunctionCallbackInfo<v8::Value>& info);
     // Everything this game does to the renderer outside the loop's own handoff calls this first.
     void idleRenderer() { if (renderBarrier_) renderBarrier_(); }
     std::function<void()> renderBarrier_;
@@ -321,6 +338,7 @@ class V8Game {
     /** Settles a read promise from the GPU event drain: bytes as a Uint8Array (an ArrayBuffer for a storage read), or a rejection. */
     void settleRead(v8::Global<v8::Promise::Resolver>& pending, GpuStatus status, const std::vector<uint8_t>& bytes, bool asBuffer = false);
     static void compileAsync(const v8::FunctionCallbackInfo<v8::Value>& info);
+    static void prepareEnvironment(const v8::FunctionCallbackInfo<v8::Value>& info);
     struct Compilation {
         std::shared_ptr<void> root, camera, scene;
         OutputState output;
@@ -967,6 +985,51 @@ void V8Game::compileAsync(const v8::FunctionCallbackInfo<v8::Value>& info) {
     game.pollCompilations();
 }
 
+// `tn.prepareEnvironment(scene, camera)`: one step of the PMREM bake that render() gates every frame
+// on, drawn or not, so startup warm-up can wait for it as three's PMREM preparer does on the web.
+// True once every environment the scene samples is baked; false while it bakes or before the renderer opens.
+void V8Game::prepareEnvironment(const v8::FunctionCallbackInfo<v8::Value>& info) {
+    auto& game = *static_cast<V8Game*>(info.Data().As<v8::External>()->Value());
+    auto* isolate = info.GetIsolate();
+    if (!game.hasGpu_) { info.GetReturnValue().Set(true); return; }  // --check-game: nothing will be drawn
+    if (!game.renderer_) { info.GetReturnValue().Set(false); return; }
+    auto* scene = info.Length() > 0 ? game.engineObject(info[0], "Object3D") : nullptr;
+    auto* camera = info.Length() > 1 ? game.engineObject(info[1], "Camera") : nullptr;
+    if (!scene || !camera) {
+        isolate->ThrowException(v8::Exception::TypeError(v8str(isolate, "TN_NATIVE_ENVIRONMENT: scene or camera invalid")));
+        return;
+    }
+    try {
+        game.idleRenderer();
+        game.renderer_->poll();  // the bake advances only after its previous submission completes
+        RenderDatabase database;
+        database.shadowMapEnabled = game.shadowMap_;
+        database.shadowMapType = game.shadowMapType_;
+        info.GetReturnValue().Set(database.prepareEnvironments(*game.renderer_, *static_cast<Object3D*>(scene->ptr.get()),
+            *static_cast<Camera*>(camera->ptr.get())));
+    } catch (const std::exception& error) {
+        isolate->ThrowException(v8::Exception::Error(v8str(isolate, error.what())));
+    }
+}
+
+// `tn.renderOverlay(scene, camera, worldDrawn)`: three's overlay render (core's canvas layer: a loading screen, a
+// canvas HUD) for this frame. The loop draws it over the world frame with Renderer::overlayRenderer, with no post and
+// no temporal step: published as tn.scene, it replaced the world frame and moved the world's temporal history and
+// metered exposure. `worldDrawn` false is a held loader frame: the overlay is drawn alone, over no new world frame.
+void V8Game::renderOverlay(const v8::FunctionCallbackInfo<v8::Value>& info) {
+    auto& game = *static_cast<V8Game*>(info.Data().As<v8::External>()->Value());
+    auto* isolate = info.GetIsolate();
+    auto* scene = info.Length() > 0 ? game.engineObject(info[0], "Object3D") : nullptr;
+    auto* camera = info.Length() > 1 ? game.engineObject(info[1], "Camera") : nullptr;
+    if (!scene || !camera) {
+        isolate->ThrowException(v8::Exception::TypeError(v8str(isolate, "TN_NATIVE_OVERLAY: scene or camera invalid")));
+        return;
+    }
+    game.overlaySceneHold_ = scene->ptr;
+    game.overlayCameraHold_ = camera->ptr;
+    game.overlayAlone_ = info.Length() > 2 && info[2]->IsFalse();
+}
+
 void V8Game::pollCompilations() {
     if (!renderer_ || compilations_.empty()) return;  // boot can call before the device is initialized
     idleRenderer();
@@ -1240,6 +1303,8 @@ bool V8Game::start(const std::string& path, std::string& error) {
     host->Set(ctx, v8str(isolate_, "renderTarget"), v8::Function::New(ctx, &renderTarget, self).ToLocalChecked()).Check();
     host->Set(ctx, v8str(isolate_, "hasRenderer"), v8::Function::New(ctx, &hasRenderer, self).ToLocalChecked()).Check();
     host->Set(ctx, v8str(isolate_, "compileAsync"), v8::Function::New(ctx, &compileAsync, self).ToLocalChecked()).Check();
+    host->Set(ctx, v8str(isolate_, "prepareEnvironment"), v8::Function::New(ctx, &prepareEnvironment, self).ToLocalChecked()).Check();
+    host->Set(ctx, v8str(isolate_, "renderOverlay"), v8::Function::New(ctx, &renderOverlay, self).ToLocalChecked()).Check();
     host->Set(ctx, v8str(isolate_, "captureFace"), v8::Function::New(ctx, &captureFace, self).ToLocalChecked()).Check();
     host->Set(ctx, v8str(isolate_, "readTarget"), v8::Function::New(ctx, &readTarget, self).ToLocalChecked()).Check();
     host->Set(ctx, v8str(isolate_, "readFrame"), v8::Function::New(ctx, &readFrame, self).ToLocalChecked()).Check();
@@ -1727,6 +1792,8 @@ int main(int argc, char** argv) {
     configured.bridgeCalls = [] { return tn::abi::crossings(); };
     configured.frameComplete = [&game](Renderer& renderer, const std::vector<std::string>&) { game.frameDrawn(renderer); };
     configured.frameWithoutView = [&game] { game.frameWithoutView(); };
+    configured.overlay = [&game] { return game.overlay(); };
+    configured.drawOverlay = [&game](Renderer& renderer) { game.drawOverlay(renderer); };
     configured.setRenderBarrier = [&game](std::function<void()> barrier) { game.setRenderBarrier(std::move(barrier)); };
     // PRD-554: a built UI beside the game bundle (`ui/index.html`, where the packager stages it beside
     // the executable for the legacy host), through the legacy host's overlay seam; TN_UI_RENDERER=

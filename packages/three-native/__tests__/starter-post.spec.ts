@@ -117,6 +117,9 @@ describe("starter post bindings", () => {
     expect(() => {
       filter.gpuStage = "AO";
     }).toThrow("TN_GPU_STAGE");
+    // GTAO's filter runs at the AO resolution on the owned engine, so the scale reaches the native pass.
+    (filter as unknown as { resolutionScale: number }).resolutionScale = 0.5;
+    expect(values.get("resolutionScale")).toBe(0.5);
     const temporal = effects.traa(input, depth, velocity, camera) as unknown as {
       depthThreshold: number;
       useSubpixelCorrection: boolean;

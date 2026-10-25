@@ -1160,6 +1160,7 @@ double tslEffectParameter(const g::Node& node, const std::string& name, const do
             if ((name == "maxDistance" && *value <= 0) ||
                 ((name == "thickness" || name == "opacity" || name == "intensity" || name == "maxLuminance") && *value < 0) ||
                 (name == "quality" && (*value < 0 || *value > 1)) ||
+                (name == "maxSteps" && *value < 1) ||
                 (name == "blurQuality" && (*value < 1 || *value > 3 || *value != std::floor(*value))) ||
                 ((name == "reflectNonMetals" || name == "binaryRefine") && *value != 0 && *value != 1))
                 throw std::runtime_error("TN_NATIVE_SSR_PARAMETER: " + name);

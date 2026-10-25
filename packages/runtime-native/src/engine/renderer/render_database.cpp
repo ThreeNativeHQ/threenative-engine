@@ -397,9 +397,14 @@ RenderDatabase::Record& RenderDatabase::record(const Mesh& mesh, Record& r, bool
     const Material* material = mesh.material.get();
     const uint64_t geometryRevision = mesh.geometry ? mesh.geometry->revision() : 0;
     const uint32_t materialVersion = material ? material->version() : 0;
+    // Copies whose geometry bytes are equal draw from one of them (projection::contentClassOf), so their
+    // buffers are the same stores and the batch passes below fold them into one instanced draw. A rig
+    // keeps its own: the skinned lane groups by geometry identity, as core's does.
+    const bool merges = mesh.geometry && typeid(mesh) != typeid(SkinnedMesh);
+    const BufferGeometry* drawn = merges ? projection::contentClassOf(mesh.geometry).drawn : mesh.geometry.get();
     const bool cached = r.drawable && r.meshId == mesh.id() && r.geometry == mesh.geometry &&
                         r.geometryRevision == geometryRevision && r.material.get() == material &&
-                        r.materialVersion == materialVersion;
+                        r.materialVersion == materialVersion && r.canonical.get() == drawn;
     auto& diagnostic = Material::diagnostics();
     if (!cached) {
         Material::DiagnosticTimer rebuildTimer(diagnostic.enabled, diagnostic.recordCpuNs);
@@ -410,6 +415,7 @@ RenderDatabase::Record& RenderDatabase::record(const Mesh& mesh, Record& r, bool
         r.cacheId = cacheId;
         r.meshId = mesh.id();
         r.geometry = mesh.geometry;
+        r.canonical = merges ? projection::canonicalGeometry(mesh.geometry) : mesh.geometry;
         r.geometryRevision = geometryRevision;
         r.material = mesh.material;
         r.materialVersion = materialVersion;
@@ -435,17 +441,18 @@ RenderDatabase::Record& RenderDatabase::record(const Mesh& mesh, Record& r, bool
         }
         if (const auto normal = material->maps.find("normalMap");
             normal != material->maps.end() && normal->second && normal->second->sampleable() &&
-            !store(*mesh.geometry, "uv")) {
+            !store(*r.canonical, "uv")) {
             diagnostics_.push_back("TN_NATIVE_MATERIAL_UNSUPPORTED " + std::string(material->typeName()) +
                                    ": normalMap needs a uv attribute (drawn without it)");
         }
         for (int k = 0; k < pbrMapsRead(*material); ++k)
             if (const auto map = material->maps.find(shader::kPbrMapNames[k]); map != material->maps.end() &&
-                map->second && map->second->sampleable() && !store(*mesh.geometry, "uv"))
+                map->second && map->second->sampleable() && !store(*r.canonical, "uv"))
                 diagnostics_.push_back("TN_NATIVE_MATERIAL_UNSUPPORTED " + std::string(material->typeName()) + ": " +
                                        shader::kPbrMapNames[k] + " needs a uv attribute (drawn without it)");
-        r.buffers = {floatStore(*mesh.geometry, "position"), floatStore(*mesh.geometry, "normal"),
-                     floatStore(*mesh.geometry, "uv"), mesh.geometry->index ? mesh.geometry->index->store.get() : nullptr};
+        const BufferGeometry& geometry = *r.canonical;
+        r.buffers = {floatStore(geometry, "position"), floatStore(geometry, "normal"), floatStore(geometry, "uv"),
+                     geometry.index ? geometry.index->store.get() : nullptr};
         // Match three's (0, 1, 0) fallback: geometry roughness still reads it when normalNode overrides lighting.
         // Flat shading instead derives its normals from position derivatives.
         if (!r.buffers[1] && r.buffers[0] && !material->flatShading && !material->nodes.fragmentNode &&
@@ -490,9 +497,9 @@ RenderDatabase::Record& RenderDatabase::record(const Mesh& mesh, Record& r, bool
     d.aoMapIntensity = material->aoMapIntensity;
     d.normalScaleX = material->normalScale.x;
     d.normalScaleY = material->normalScale.y;
-    vertexColorsOf(*mesh.geometry, *material, d);
+    vertexColorsOf(*r.canonical, *material, d);
     depthBiasOf(*material, d);
-    geometryInputsOf(*mesh.geometry, d);
+    geometryInputsOf(*r.canonical, d);
     d.matrixWorld = toArray(mesh.matrixWorld);
     d.kind = material->nodes.fragmentNode ? MaterialKind::Basic : kindOf(material->type);
     d.renderOrder = mesh.renderOrder();
@@ -545,9 +552,9 @@ DrawItem& RenderDatabase::refresh(const Mesh& mesh, Record& r) {
     d.aoMapIntensity = r.material->aoMapIntensity;
     d.normalScaleX = r.material->normalScale.x;
     d.normalScaleY = r.material->normalScale.y;
-    if (mesh.geometry) vertexColorsOf(*mesh.geometry, *r.material, d);
+    if (r.canonical) vertexColorsOf(*r.canonical, *r.material, d);
     depthBiasOf(*r.material, d);
-    if (mesh.geometry) geometryInputsOf(*mesh.geometry, d);
+    if (r.canonical) geometryInputsOf(*r.canonical, d);
     d.castShadow = mesh.castShadow();
     d.receiveShadow = mesh.receiveShadow();
     d.shadowObject = &mesh;
@@ -1606,6 +1613,17 @@ std::vector<std::shared_ptr<PipelineCompilation>> RenderDatabase::compileAsync(R
     state.matrixWorldInverse = toArray(camera.matrixWorldInverse);
     state.projectionMatrix = toArray(camera.projectionMatrix);
     return renderer.compileAsync(items, state, lights, outputFormat);
+}
+
+bool RenderDatabase::prepareEnvironments(Renderer& renderer, Object3D& scene, Camera& camera) {
+    LightState lights;
+    gpuJoints_ = renderer.currentGpuJoints();
+    gpuPreparing_ = true;
+    compiling_ = true;
+    try { prepare(scene, camera, lights, nullptr, renderer.hasVirtualShadows()); } catch (...) { gpuPreparing_ = compiling_ = false; throw; }
+    gpuPreparing_ = compiling_ = false;
+    if (!diagnostics_.empty()) throw std::runtime_error(diagnostics_.front());
+    return renderer.prepareEnvironments(items_);
 }
 
 uint64_t RenderDatabase::render(Renderer& renderer, Object3D& scene, Camera& camera, std::array<double, 4> clear, std::array<double, 2>* cpuMs) {

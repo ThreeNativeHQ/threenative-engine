@@ -1,0 +1,274 @@
+{
+  "name": "collectathon-jump-chain",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "subject": "player",
+  "setup": {
+    "place": [
+      {
+        "entity": "player",
+        "at": {
+          "x": 0,
+          "y": 0.85,
+          "z": 30
+        },
+        "facing": {
+          "yaw": 0
+        }
+      },
+      {
+        "entity": "walker.0",
+        "at": {
+          "x": 30,
+          "y": 0,
+          "z": -10
+        },
+        "frozen": true
+      },
+      {
+        "entity": "walker.1",
+        "at": {
+          "x": -30,
+          "y": 0,
+          "z": -5
+        },
+        "frozen": true
+      }
+    ]
+  },
+  "steps": [
+    {
+      "kind": "input",
+      "label": "walk-start",
+      "press": ["KeyW"],
+      "holdTicks": 25,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "walk-1",
+      "press": ["Space"],
+      "holdTicks": 20,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "walk-1-fall",
+      "press": [],
+      "holdTicks": 1,
+      "release": false
+    },
+    {
+      "label": "walk-1-land",
+      "waitForResource": {
+        "id": "state",
+        "path": "landings",
+        "gte": 2
+      },
+      "timeoutMs": 120000,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "walk-2",
+      "press": ["Space"],
+      "holdTicks": 20,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "walk-2-fall",
+      "press": [],
+      "holdTicks": 1,
+      "release": false
+    },
+    {
+      "label": "walk-2-land",
+      "waitForResource": {
+        "id": "state",
+        "path": "landings",
+        "gte": 3
+      },
+      "timeoutMs": 120000,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "walk-3",
+      "press": ["Space"],
+      "holdTicks": 20,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "walk-3-fall",
+      "press": [],
+      "holdTicks": 1,
+      "release": false
+    },
+    {
+      "label": "walk-3-land",
+      "waitForResource": {
+        "id": "state",
+        "path": "landings",
+        "gte": 4
+      },
+      "timeoutMs": 120000,
+      "release": false
+    },
+    {
+      "kind": "wait",
+      "label": "stop",
+      "waitTicks": 40,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "run-up",
+      "press": ["KeyW"],
+      "holdTicks": 100,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "run-1",
+      "press": ["KeyW", "Space"],
+      "holdTicks": 22,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "run-1-fall",
+      "press": ["KeyW"],
+      "holdTicks": 1,
+      "release": false
+    },
+    {
+      "label": "run-1-land",
+      "waitForResource": {
+        "id": "state",
+        "path": "landings",
+        "gte": 5
+      },
+      "timeoutMs": 120000,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "run-2",
+      "press": ["KeyW", "Space"],
+      "holdTicks": 28,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "run-2-fall",
+      "press": ["KeyW"],
+      "holdTicks": 1,
+      "release": false
+    },
+    {
+      "label": "run-2-land",
+      "waitForResource": {
+        "id": "state",
+        "path": "landings",
+        "gte": 6
+      },
+      "timeoutMs": 120000,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "run-3",
+      "press": ["KeyW", "Space"],
+      "holdTicks": 36,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "run-3-fall",
+      "press": ["KeyW"],
+      "holdTicks": 1,
+      "release": false
+    },
+    {
+      "label": "run-3-land",
+      "waitForResource": {
+        "id": "state",
+        "path": "landings",
+        "gte": 7
+      },
+      "timeoutMs": 120000,
+      "release": false
+    },
+    {
+      "kind": "wait",
+      "label": "settle",
+      "waitTicks": 10,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "components": [
+      {
+        "entity": "player",
+        "component": "counts",
+        "path": "single",
+        "equals": 3,
+        "allowTrivial": "Three singles is the proof: two chain starts and the walk chain's third jump, which fell back to a single because it was under 6 m/s."
+      },
+      {
+        "entity": "player",
+        "component": "counts",
+        "path": "double",
+        "equals": 2,
+        "allowTrivial": "Each of the two chains reaches exactly one double jump."
+      },
+      {
+        "entity": "player",
+        "component": "counts",
+        "path": "triple",
+        "equals": 1,
+        "allowTrivial": "Only the full-run chain, above 6 m/s, reaches a triple jump."
+      },
+      {
+        "entity": "player",
+        "component": "apex",
+        "path": "single",
+        "gte": 2.4,
+        "lte": 3.4
+      },
+      {
+        "entity": "player",
+        "component": "apex",
+        "path": "double",
+        "gte": 3.4,
+        "lte": 4.6
+      },
+      {
+        "entity": "player",
+        "component": "apex",
+        "path": "triple",
+        "gte": 5.0,
+        "lte": 7.0
+      },
+      {
+        "entity": "player",
+        "component": "takeoffSpeed",
+        "path": "triple",
+        "gte": 6
+      }
+    ]
+  }
+}

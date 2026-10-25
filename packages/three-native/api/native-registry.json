@@ -2202,7 +2202,7 @@
       "members": ["color"],
       "callbacks": [],
       "events": [],
-      "fixedMembers": [],
+      "fixedMembers": ["color"],
       "fields": {}
     },
     "FogExp2": {
@@ -2213,7 +2213,7 @@
       "members": ["color"],
       "callbacks": [],
       "events": [],
-      "fixedMembers": [],
+      "fixedMembers": ["color"],
       "fields": {}
     },
     "Frustum": {
@@ -2985,6 +2985,7 @@
         "frustumCulled",
         "geometry",
         "instanceColor",
+        "instanceMatrix",
         "layers.mask",
         "material",
         "matrixAutoUpdate",

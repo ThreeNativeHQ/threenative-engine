@@ -83,7 +83,10 @@ export function Commands() {
           );
         })}
       </div>
-      <p className="text-right text-[10px] uppercase tracking-[0.14em] text-dim" id="command-hint">
+      <p
+        className="bg-black/80 text-right text-[10px] uppercase tracking-[0.14em] text-dim"
+        id="command-hint"
+      >
         {placing === ""
           ? "drag to select · right-click to order · wheel to zoom"
           : `placing ${TYPES[placing as BuildingType].name} — click the ground, esc to cancel`}
@@ -115,7 +118,7 @@ function Button({
       // class is load-bearing rather than decoration — without it every order in this panel is
       // dead to a mouse and only the keyboard can issue one.
       className={`pointer-events-auto border px-2 py-1 text-[10px] uppercase tracking-[0.12em] ${
-        active ? "border-lume bg-lume/20 text-lume" : "border-line bg-panel/80 text-text"
+        active ? "border-lume bg-lume/20 text-lume" : "border-line bg-black/80 text-text"
       } ${afford ? "" : "text-dim/60 line-through"}`}
       data-tn-interactive
       data-testid={testid}

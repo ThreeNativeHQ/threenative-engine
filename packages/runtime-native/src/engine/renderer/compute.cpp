@@ -41,6 +41,8 @@ ComputePass::ComputePass(WGPUDevice device, GpuResources& gpu, const shader::Pro
 }
 
 ComputePass::~ComputePass() {
+    for (const CachedGroup& cached : groups_) release(cached);
+    if (layout_) wgpuBindGroupLayoutRelease(layout_);
     if (pipeline_) wgpuComputePipelineRelease(pipeline_);
     if (module_.uniformBlockSize) gpu_.destroy(uniforms_);
 }
@@ -114,13 +116,11 @@ bool ComputePass::encode(WGPUCommandEncoder encoder, std::span<const Handle> sto
         error_ = "TN_COMPUTE_STORAGE: more storage buffers were given than the program declares";
         return false;
     }
-    WGPUBindGroupLayout layout = wgpuComputePipelineGetBindGroupLayout(pipeline_, 0);
-    WGPUBindGroupDescriptor groupDesc = {};
-    groupDesc.layout = layout;
-    groupDesc.entryCount = entries.size();
-    groupDesc.entries = entries.data();
-    WGPUBindGroup group = createBindGroup(device_, &groupDesc);
-    wgpuBindGroupLayoutRelease(layout);
+    WGPUBindGroup group = bindGroup(entries);
+    if (!group) {
+        error_ = "TN_COMPUTE_BINDING: the device refused the bind group";
+        return false;
+    }
     WGPUComputePassDescriptor passDesc = {};
     WGPUComputePassEncoder pass = beginTimedComputePass(encoder, &passDesc);
     wgpuComputePassEncoderSetPipeline(pass, pipeline_);
@@ -131,8 +131,47 @@ bool ComputePass::encode(WGPUCommandEncoder encoder, std::span<const Handle> sto
     wgpuComputePassEncoderDispatchWorkgroups(pass, across, across == 0 ? 1 : static_cast<uint32_t>((groups + across - 1) / across), 1);
     wgpuComputePassEncoderEnd(pass);
     wgpuComputePassEncoderRelease(pass);
-    wgpuBindGroupRelease(group);
     return true;
+}
+
+// A steady dispatch binds what the last one bound, so its group is found, not made (render_database_test
+// steady_state holds frames to creating none). The group's resources are referenced while it is cached, so a
+// released handle cannot be recycled into a stale hit (Emdawn reuses a freed handle at once).
+WGPUBindGroup ComputePass::bindGroup(const std::vector<WGPUBindGroupEntry>& entries) {
+    std::vector<uint64_t> key;
+    key.reserve(entries.size() * 6);
+    for (const WGPUBindGroupEntry& e : entries)
+        key.insert(key.end(), {e.binding, uint64_t(uintptr_t(e.buffer)), e.offset, e.size,
+                               uint64_t(uintptr_t(e.textureView)), uint64_t(uintptr_t(e.sampler))});
+    for (const CachedGroup& cached : groups_) if (cached.key == key) return cached.group;
+    if (!layout_) layout_ = wgpuComputePipelineGetBindGroupLayout(pipeline_, 0);
+    WGPUBindGroupDescriptor desc = {};
+    desc.layout = layout_;
+    desc.entryCount = entries.size();
+    desc.entries = entries.data();
+    WGPUBindGroup group = createBindGroup(device_, &desc);
+    if (!group) return nullptr;
+    for (const WGPUBindGroupEntry& e : entries) {
+        if (e.buffer) wgpuBufferAddRef(e.buffer);
+        if (e.textureView) wgpuTextureViewAddRef(e.textureView);
+        if (e.sampler) wgpuSamplerAddRef(e.sampler);
+    }
+    // ponytail: the 8 most recent binding sets per kernel; a kernel bound to more each frame recreates groups.
+    if (groups_.size() == 8) {
+        release(groups_.front());
+        groups_.erase(groups_.begin());
+    }
+    groups_.push_back({std::move(key), group, entries});
+    return group;
+}
+
+void ComputePass::release(const CachedGroup& cached) {
+    wgpuBindGroupRelease(cached.group);
+    for (const WGPUBindGroupEntry& e : cached.entries) {
+        if (e.buffer) wgpuBufferRelease(e.buffer);
+        if (e.textureView) wgpuTextureViewRelease(e.textureView);
+        if (e.sampler) wgpuSamplerRelease(e.sampler);
+    }
 }
 
 namespace {

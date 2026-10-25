@@ -119,6 +119,8 @@ import { type IViewportOptions, Viewport } from "./viewport.js";
 import {
   type IWarmUpOptions,
   type IWarmUpReport,
+  prepareSceneEnvironment,
+  sceneNeedsEnvironmentPreparation,
   warmUpComputeNodes,
   warmUpScene,
 } from "./warmup.js";
@@ -200,6 +202,12 @@ export interface IGamePluginRuntime {
    * they read are the ones the world actually has. The frame loop remains held throughout.
    */
   readonly holdStart?: (gate: Promise<void>) => Promise<void>;
+  /**
+   * Settles when the start scene's `load()` has finished, so its entities are registered. A runner's
+   * pre-entry setup awaits it: setup names entities `load()` adds, and an async `load()` (a texture
+   * or a model fetch) is still pending when the runner first attaches. Rejects when `load()` throws.
+   */
+  readonly startSceneLoaded?: () => Promise<void>;
   readonly observations: IGameRuntimeObservations;
   readonly tick: () => number;
   readonly runtimeDiagnosticsSeries?: () => readonly IRenderPerformanceSample[];
@@ -355,6 +363,15 @@ export type GamePlugin<
  * inline so the host and the framework agree on one spelling.
  */
 const STARTUP_READY_GLOBAL = "__TN_STARTUP_READY__";
+
+/**
+ * Drawn frames the state publish waits after startup readiness. The page paints a state change on
+ * the next vsync, but the canvas frame that lifts the cover reaches the screen only when the GPU has
+ * drawn it: Lantern Vale's HUD (`loaded` on `whenReady()`) painted one frame over its loading cover.
+ * Three, because a renderer keeps at most two frames on the GPU (the Wasm engine's gate declines a
+ * third), so the third drawn frame proves the first uncovered one has left the GPU.
+ */
+const STARTUP_HANDOFF_FRAMES = 3;
 
 export interface IGameConfig<
   TState extends Record<string, unknown> = Record<string, unknown>,
@@ -746,14 +763,10 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
   #pendingStart: Promise<void> | undefined;
   #aborted = false;
   #sceneEntered = false;
-  /**
-   * The scene a `goto()` is loading right now, or undefined when none is.
-   *
-   * Between a `goto()` and its `enter()` the registry is cleared and nothing owns the world, so a
-   * reader that needs the world's entities has to wait for this rather than for the scene it
-   * navigated from. The playtest handshake reads exactly that.
-   */
+  /** The full `goto()` transition, including first-use warm-up, or undefined when none is. */
   #pendingSceneEnter: Promise<void> | undefined;
+  /** One-shot notification after the scene that owns the world has entered, before warm-up. */
+  #onStartSceneEntered: (() => void) | undefined;
   #paused = false;
   #started = false;
   #uiBridge: IUiBridge | undefined;
@@ -949,6 +962,9 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     const unlit = unlitFoliageWarning(ctx.scene);
     if (unlit !== undefined)
       console.warn(`${formatUnlitFoliageWarning(unlit)} ${UNLIT_FOLIAGE_FIX}`);
+    const entered = this.#onStartSceneEntered;
+    this.#onStartSceneEntered = undefined;
+    entered?.();
     return true;
   }
 
@@ -963,17 +979,29 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     if (!this.#enterScene(scene, ctx)) return;
     const renderer = this.#renderer;
     const nodes = this.#computeDriven.warmupNodes;
-    if (renderer === undefined || nodes.length === 0) return;
+    const hasEnvironment = ctx.scene.environment?.isTexture === true;
+    if (renderer === undefined || (nodes.length === 0 && !hasEnvironment)) return;
     this.#sceneEntered = false;
     let report: Awaited<ReturnType<typeof warmUpComputeNodes>> | undefined;
     let failure: string | undefined;
     try {
-      report = await warmUpComputeNodes(renderer, nodes, this.#warmUpOptions());
+      const options = this.#warmUpOptions();
+      if (hasEnvironment) {
+        const projection = this.#projection;
+        projection?.reconcile();
+        const root = projection?.root ?? ctx.scene;
+        this.#matrixWorld?.apply(root);
+        // A new environment skips world draws until its retained bake has completed.
+        report = await warmUpScene(renderer, root, ctx.camera, {
+          ...options,
+          computeNodes: [...(options.computeNodes ?? []), ...nodes],
+        });
+      } else report = await warmUpComputeNodes(renderer, nodes, options);
     } catch (error) {
       failure = error instanceof Error ? error.message : String(error);
     }
     console.log(
-      `TN_TRANSITION_COMPUTE_WARMUP:${JSON.stringify(
+      `${hasEnvironment ? "TN_TRANSITION_WARMUP" : "TN_TRANSITION_COMPUTE_WARMUP"}:${JSON.stringify(
         report === undefined
           ? { failed: failure ?? "unknown" }
           : {
@@ -1137,11 +1165,14 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     threeScene.matrixWorldAutoUpdate = false;
     // Built before the context because `ctx.startup` reads it: a game asks what the framework's
     // startup is doing, and the answer is this pass.
+    // The owned renderer retains its own velocity history; JS snapshots serve Three's accessors.
+    const engineInfo = (renderer.raw as { info?: object }).info;
+    const ownedEngine = engineInfo !== undefined && "engine" in engineInfo;
     const projection = new SceneRenderProjection(threeScene, {
       // The game's `renderer.projection` value verbatim: `false` declines the mirror, an object
       // names the material check beside accepting it, and the projection owns both readings.
       projection: this.#config.render?.projection,
-      velocity: () => renderer.renderChainUsesPerObjectVelocity?.() ?? false,
+      velocity: () => !ownedEngine && (renderer.renderChainUsesPerObjectVelocity?.() ?? false),
       matrixWorld: matrixWorldPass,
     });
     this.#projection = projection;
@@ -1185,6 +1216,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     };
     let worldRendered = false;
     let loadingFramePresented = false;
+    let stateHandOffFrames = 0;
     let markProjectionSettled: () => void = () => undefined;
     const projectionReady = new Promise<void>((resolve) => {
       markProjectionSettled = resolve;
@@ -1226,6 +1258,13 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     const startupCoverActive = (): boolean =>
       !startupReadiness.ready &&
       (canvasLayer.opaque || (this.#uiReady && this.#uiBridge?.hasPeer() === true));
+    // A draw the warm-up makes in a timer task is presented by the browser on its own, without the
+    // frame loop's overlay: a Wasm engine still baking the environment presents black, and the
+    // cover flickers against it. Paint the cover again in the same task.
+    const repaintCover = (): void => {
+      if (canvasLayer.opaque && canvasLayer.scene.children.length > 0)
+        renderer.renderOverlay(canvasLayer.scene, canvasLayer.camera);
+    };
     const timeline: { -readonly [K in keyof IStartupTimeline]: IStartupTimeline[K] } = {};
     let warmUpStatus: IStartupStatus["warmup"];
     const now = (): number => globalThis.performance?.now() ?? Date.now();
@@ -1264,6 +1303,9 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       timeline.frameworkReadyMs ??= now();
       timeline.readyMs ??= now();
       projectionSettled = true;
+      // What a game does on `whenReady()` (lift its cover, show its HUD) reaches the page with the
+      // world frame, not before it: see `STARTUP_HANDOFF_FRAMES`.
+      stateHandOffFrames = STARTUP_HANDOFF_FRAMES;
       markProjectionSettled();
       // A host capturing a frame has no other way to know the world is on screen. Counting frames
       // cannot express it: on a software rasteriser the gate resolves on its bounded window rather
@@ -1288,6 +1330,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         // rest synchronously -- tens of seconds each on a software adapter, which loses the device.
         this.#matrixWorld?.apply(projection.root);
         report = await warmUpScene(renderer, projection.root, camera, {
+          afterCoveredDraw: repaintCover,
           budgetMs,
           computeNodes: this.#computeDriven.warmupNodes,
           renderPasses: this.#warmUpOptions().renderPasses,
@@ -1340,6 +1383,21 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     };
     const startupCompile: StartupCompile = async (): Promise<void> => {
       await warmUp("TN_STARTUP_WARMUP", STARTUP_COMPILE_BUDGET_MS, true);
+    };
+    // A game with no cover skips the compile above, yet readiness still waits for the scene's
+    // environment: the owned engine skips every frame while it bakes, and a skipped frame is fast,
+    // so the frame window would pass before the world drew once. (An explicit warm-up bakes it.)
+    const startupEnvironment = (): StartupCompile | undefined =>
+      sceneNeedsEnvironmentPreparation(renderer, projection.root) ? bakeEnvironment : undefined;
+    const bakeEnvironment: StartupCompile = async (): Promise<void> => {
+      if (this.#aborted) return;
+      await prepareSceneEnvironment(
+        renderer,
+        projection.root,
+        camera,
+        now() + STARTUP_COMPILE_BUDGET_MS,
+        repaintCover,
+      );
     };
     // The GPU-selected main-pass tally, registered by whichever streamed world is added to the
     // scene. The frame budget reads it once per window; a world with no sample reports undefined, so
@@ -1701,6 +1759,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     let updates = 0;
     let renders = 0;
     let lastGateSkips = 0;
+    let readinessGateSkips = 0;
     const gameLoop: FixedStepLoop = new FixedStepLoop({
       interpolation,
       ...(frameBudget === undefined ? {} : { budget: frameBudget }),
@@ -1738,9 +1797,11 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
           // is on it has already happened behind the loading screen, so running it again here
           // would pay the same cost twice.
           startupReadiness.start(
-            startupCoverActive() && !this.#warmUpConfiguredExplicitly()
-              ? startupCompile
-              : undefined,
+            this.#warmUpConfiguredExplicitly()
+              ? undefined
+              : startupCoverActive()
+                ? startupCompile
+                : startupEnvironment(),
           );
         }
         // Ordinary render compute waits for startup readiness. Streaming explicitly opts in
@@ -1774,7 +1835,13 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
           firstWorldPass &&
           (explicitWarmUpPending || (startupCoverActive() && !startupReadiness.compileSettled));
         let worldPasses: ReturnType<RenderPassBudget["passes"]> | undefined;
+        // Before the scene has entered, the world pass runs only under an opaque cover. With nothing
+        // over it, the draw presents the clear colour: Hop Garden showed three black frames during
+        // `load()` for 0.5 s when the page mounted the canvas. Under the cover it is what compiles the
+        // world's pipelines inside the load: skipped, Hop's 10 s first-use compile landed after a
+        // playtest's setup had released enter(), and setup.place runs failed.
         if (
+          (this.#sceneEntered || canvasLayer.opaque) &&
           !mustPresentLoader &&
           !waitingForFirstUse &&
           (!canvasLayer.opaque ||
@@ -2028,7 +2095,8 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         }
         if (mustPresentLoader) loadingFramePresented = true;
         // Include state written by beforeRender and Scene.render in this frame's UI snapshot.
-        if (this.#config.stateFlushMs === undefined) this.#state.flush();
+        if (this.#config.stateFlushMs === undefined && stateHandOffFrames === 0)
+          this.#state.flush();
         // Every frame, including one whose canvas layer is empty: the native UI is composited into
         // the game's own frame whether or not the game draws a HUD of its own, so a frame that
         // skipped this would report work it did pay as `residual`. The host reports what the
@@ -2080,7 +2148,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         for (const plugin of this.#activePlugins) plugin.beforeUpdate?.(ctx, dt);
         const scene = this.#scene;
         const frame = this.#sceneFrame;
-        if (frame !== undefined) {
+        if (this.#sceneEntered && frame !== undefined) {
           frame(ctx, dt);
           updates += 1;
         }
@@ -2097,7 +2165,19 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         if (this.#renderer !== undefined && this.#sceneEntered)
           this.#computeDriven.process(this.#renderer);
       },
-      onFrame: (frameMs) => startupReadiness.observe(frameMs),
+      // A frame the renderer declined to draw (the Wasm engine's gate: two frames still on the GPU)
+      // is no frame at all for the readiness window. Counted, five cheap declined frames closed the
+      // window while the first world frame was still compiling on the GPU, so the cover lifted and
+      // the player saw a 0.9 s stall and then a first frame with unmetered exposure (Hop Garden, 4
+      // of 13 launches). Not a reset either: a GPU-bound world under the cover declines every other
+      // frame, and a reset held every Hop launch to the 10 s window bound.
+      onFrame: (frameMs) => {
+        const skips = rendererFrameGateSkips(renderer.raw);
+        const declined = skips !== undefined && skips > readinessGateSkips;
+        if (skips !== undefined) readinessGateSkips = skips;
+        if (!declined) startupReadiness.observe(frameMs);
+        if (stateHandOffFrames > 0 && !declined) stateHandOffFrames -= 1;
+      },
       step: this.#config.step,
     });
     loopState.current = gameLoop;
@@ -2107,7 +2187,14 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       readonly rejectEntered: (error: unknown) => void;
       readonly resolveEntered: () => void;
     }> = [];
+    let settleLoaded: (error?: unknown) => void = () => undefined;
+    const startLoaded = new Promise<void>((resolve, reject) => {
+      settleLoaded = (error) => (error === undefined ? resolve() : reject(error));
+    });
+    // A run with no setup never awaits it; a failed load is reported by start() itself.
+    void startLoaded.catch(() => undefined);
     const runtime: IGamePluginRuntime = {
+      startSceneLoaded: () => startLoaded,
       fixedStep: (ticks, options) =>
         gameLoop.advance(ticks, { ...options, until: () => this.#pendingSceneEnter !== undefined }),
       sceneTransition: () =>
@@ -2186,7 +2273,9 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       const loaded = scene.load(ctx);
       startHeldLoop();
       if (loaded !== undefined) await loaded;
+      settleLoaded();
     } catch (error) {
+      settleLoaded(error);
       this.#teardown(ctx);
       throw error;
     }
@@ -2212,21 +2301,16 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
       }
     }
     try {
-      this.#enterScene(scene, ctx);
-      timeline.enteredMs ??= now();
-      // A start scene that navigates inside `enter()` — every `boot` template does — has handed the
-      // run a world that is still in `load()`, and the entity registry is empty until it enters.
-      // Releasing the gate there described a game that had not been built yet, so every
-      // entity-derived capability was read off nothing. The gate follows the scene that entered.
-      const worldEntered = this.#pendingSceneEnter;
-      const entered = (): void => {
+      // A boot scene can navigate during enter(). Describe the destination's registered entities
+      // after it enters, while readiness and the full goto() still wait for first-use warm-up.
+      this.#onStartSceneEntered = () => {
         for (const startGate of startGates) startGate.resolveEntered();
       };
-      if (worldEntered === undefined) entered();
-      else
-        void worldEntered.then(entered, (error: unknown) => {
-          for (const startGate of startGates) startGate.rejectEntered(error);
-        });
+      this.#enterScene(scene, ctx);
+      timeline.enteredMs ??= now();
+      void this.#pendingSceneEnter?.catch((error: unknown) => {
+        for (const startGate of startGates) startGate.rejectEntered(error);
+      });
     } catch (error) {
       for (const startGate of startGates) startGate.rejectEntered(error);
       this.#teardown(ctx);
@@ -2256,6 +2340,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
         this.#matrixWorld?.apply(projection.root);
         const warmUpOptions: IWarmUpOptions = this.#warmUpOptions();
         report = await warmUpScene(this.#renderer, projection.root, camera, {
+          afterCoveredDraw: repaintCover,
           ...warmUpOptions,
           computeNodes: [...(warmUpOptions.computeNodes ?? []), ...this.#computeDriven.warmupNodes],
         });
@@ -2335,6 +2420,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
   }
 
   #teardown(startingCtx?: ICtx<TState, TPhysics>): void {
+    this.#onStartSceneEntered = undefined;
     const ctx = this.#ctx ?? startingCtx;
     // Teardown is failure-atomic: one throwing release must not strand the resources after it.
     // Every attempt runs, errors are collected, and the first — the original cause — is thrown

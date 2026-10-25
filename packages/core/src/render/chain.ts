@@ -74,17 +74,26 @@ const TIER_LEVEL: Record<RenderChainTier, number> = {
   off: 0,
 };
 
-/** Quality values are algorithm parameters, not appearance values. Templates own the latter. */
+/**
+ * Quality values are algorithm parameters, not appearance values. Templates own the latter.
+ *
+ * `ssrMaxSteps` caps the mirror reflection march as Unreal caps it per tier (UE 5.8.3:
+ * Engine/Shaders/Private/SSRT/SSRTReflections.usf:198-216, Engine/Config/BaseScalability.ini
+ * `[ReflectionQuality@N]`). `high` is Epic, `r.SSR.Quality` 3: 8 steps on each of 4 rays, so the
+ * one mirror ray gets the 32 steps. `medium` is Medium, quality 2: 16 steps on 1 ray. `low` takes
+ * quality 1, 8 steps on 1 ray.
+ */
 export const RENDER_CHAIN_TIERS = {
-  high: { denoiseIterations: 3, sliceCount: 3, stepCount: 16 },
-  low: { denoiseIterations: 1, sliceCount: 1, stepCount: 12 },
-  medium: { denoiseIterations: 2, sliceCount: 2, stepCount: 8 },
-  off: { denoiseIterations: 0, sliceCount: 0, stepCount: 0 },
+  high: { denoiseIterations: 3, sliceCount: 3, ssrMaxSteps: 32, stepCount: 16 },
+  low: { denoiseIterations: 1, sliceCount: 1, ssrMaxSteps: 8, stepCount: 12 },
+  medium: { denoiseIterations: 2, sliceCount: 2, ssrMaxSteps: 16, stepCount: 8 },
+  off: { denoiseIterations: 0, sliceCount: 0, ssrMaxSteps: 0, stepCount: 0 },
 } as const satisfies Record<
   RenderChainTier,
   {
     denoiseIterations: number;
     sliceCount: number;
+    ssrMaxSteps: number;
     stepCount: number;
   }
 >;

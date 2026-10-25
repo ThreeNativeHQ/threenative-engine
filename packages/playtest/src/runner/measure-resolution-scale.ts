@@ -335,8 +335,16 @@ async function serveStarter(
   await mkdir(target);
   await checkpoint("starter.scaffold");
   await createProject({ target, template: "starter", install: false });
-  if (controlCode !== undefined)
-    await writeFile(resolve(target, "src/render/worldEnvironment.ts"), controlCode);
+  if (controlCode !== undefined) {
+    const postprocessingPath = resolve(target, "src/render/postprocessing.ts");
+    const postprocessing = await readFile(postprocessingPath, "utf8");
+    const coreImport = 'import { type OutputRenderer, WorldEnvironment } from "@threenative/core";';
+    if (!postprocessing.includes(coreImport))
+      throw new Error("Starter WorldEnvironment control import source is missing");
+    await writeFile(resolve(target, "src/render/resolutionControl.ts"), controlCode);
+    await writeFile(postprocessingPath, postprocessing.replace(coreImport,
+      'import { type OutputRenderer } from "@threenative/core";\nimport { WorldEnvironment } from "./resolutionControl.js";'));
+  }
   await checkpoint("starter.link-dependencies");
   await mkdir(resolve(target, "node_modules"));
   for (const name of [

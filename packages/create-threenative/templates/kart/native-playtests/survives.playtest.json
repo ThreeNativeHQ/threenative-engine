@@ -1,0 +1,65 @@
+{
+  "name": "kart-native-survives",
+  "target": "desktop",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "subject": "player",
+  "artifacts": {
+    "screenshots": "after"
+  },
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "countdown",
+      "waitTicks": 240,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "throttle",
+      "press": "ArrowUp",
+      "holdTicks": 120,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "autopilot",
+      "press": "KeyP",
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "race",
+      "waitTicks": 300,
+      "release": true
+    }
+  ],
+  "assert": {
+    "tone": [
+      {
+        "p50": {
+          "min": 60,
+          "max": 230
+        }
+      }
+    ],
+    "components": [
+      {
+        "entity": "player",
+        "component": "groundGap",
+        "gte": -0.05,
+        "lte": 0.05,
+        "allowTrivial": "After the countdown, two seconds of throttle and five of autopilot, the kart sits on the road surface on the native host too, not under it or in the air."
+      }
+    ],
+    "movement": {
+      "entity": "player",
+      "minDistance": 20
+    }
+  }
+}

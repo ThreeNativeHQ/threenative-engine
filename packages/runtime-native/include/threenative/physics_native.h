@@ -86,6 +86,8 @@ typedef struct TnPhysicsRayQuery {
   float to_y;
   float to_z;
   uint32_t collision_mask;
+  /* Godot hit_from_inside: 0 skips a solid that contains the origin, nonzero reports it. */
+  uint32_t hit_from_inside;
 } TnPhysicsRayQuery;
 
 typedef struct TnPhysicsRayHit {

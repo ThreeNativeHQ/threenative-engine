@@ -2,14 +2,17 @@ import {
   AnimationClip,
   AnimationMixer,
   Bone,
+  BoxGeometry,
   BufferGeometry,
   Float32BufferAttribute,
   Group,
   Matrix4,
+  Mesh,
   MeshBasicMaterial,
   NumberKeyframeTrack,
   Object3D,
   PropertyBinding,
+  Quaternion,
   QuaternionKeyframeTrack,
   Skeleton,
   SkinnedMesh,
@@ -992,6 +995,40 @@ describe("AnimationPlayer stride sync on in-place clips", () => {
     }
     expect(player.stride.rate).toBeCloseTo(2, 1);
     expect(player.stride.synced).toBe(true);
+  });
+
+  /**
+   * A procedural leg swings from the hip, so a boot mesh whose origin sits in its middle sweeps a
+   * smaller circle than its sole does. Both rigs below put the sole in the same place; only the
+   * mesh origin differs. The stride is a property of where the sole goes.
+   */
+  const swingingLeg = (originAboveSole: number) => {
+    const root = new Group();
+    const hip = new Group();
+    hip.name = "Hip";
+    hip.position.y = 0.42;
+    root.add(hip);
+    const geometry = new BoxGeometry(0.2, 0.2, 0.3).translate(0, 0.1 - originAboveSole, 0);
+    const boot = new Mesh(geometry, new MeshBasicMaterial());
+    boot.position.y = -0.42 + originAboveSole;
+    hip.add(boot);
+    const times = [0, 0.25, 0.5, 0.75, 1];
+    const values = [0, 0.4, 0, -0.4, 0].flatMap((angle) =>
+      new Quaternion().setFromAxisAngle({ x: 1, y: 0, z: 0 } as never, angle).toArray(),
+    );
+    const clip = new AnimationClip("walk", 1, [
+      new QuaternionKeyframeTrack("Hip.quaternion", times, values),
+    ]);
+    return new AnimationPlayer({ root, clips: [clip] });
+  };
+
+  it("reads the same stride whether a boot's origin is at its sole or above it", () => {
+    const atSole = swingingLeg(0);
+    atSole.play("walk");
+    const aboveSole = swingingLeg(0.1);
+    aboveSole.play("walk");
+    expect(atSole.stride.clipGroundSpeed).toBeGreaterThan(0.2);
+    expect(aboveSole.stride.clipGroundSpeed).toBeCloseTo(atSole.stride.clipGroundSpeed, 6);
   });
 });
 

@@ -88,7 +88,7 @@ PipelineCache::~PipelineCache() {
 
 bool PipelineCache::IdKey::operator==(const IdKey& o) const {
     return vertex == o.vertex && fragment == o.fragment && vertexSize == o.vertexSize &&
-           fragmentSize == o.fragmentSize && target.color == o.target.color &&
+           fragmentSize == o.fragmentSize && target.color == o.target.color && target.moreColors == o.target.moreColors &&
            target.depth == o.target.depth && target.sampleCount == o.target.sampleCount &&
            target.cull == o.target.cull && target.blend == o.target.blend &&
            target.depthWrite == o.target.depthWrite && target.colorWrite == o.target.colorWrite && target.layout == o.target.layout &&
@@ -124,6 +124,7 @@ size_t PipelineCache::IdKeyHash::operator()(const IdKey& key) const {
     mix(uint64_t(uint32_t(key.target.depthBias)) | uint64_t(std::bit_cast<uint32_t>(key.target.depthBiasSlopeScale)) << 32);
     mix(key.target.instanceStepMask);
     mix(uint64_t(key.target.topology) | uint64_t(key.target.stripIndexFormat) << 32);
+    for (const WGPUTextureFormat format : key.target.moreColors) mix(uint64_t(format));
     return size_t(h ^ h >> 32);
 }
 
@@ -145,6 +146,7 @@ std::string PipelineCache::textKey(const shader::StageModule& vertex, const shad
            std::to_string(target.depthBias) + ':' + std::to_string(std::bit_cast<uint32_t>(target.depthBiasSlopeScale)) +
            ':' + std::to_string(target.instanceStepMask) + ':' + std::to_string(target.topology) + ':' +
            std::to_string(target.stripIndexFormat);
+    for (const WGPUTextureFormat format : target.moreColors) key += ':' + std::to_string(format);
     return key;
 }
 
@@ -302,13 +304,21 @@ WGPURenderPipeline PipelineCache::create(WGPUDevice device, const shader::StageM
     blend.color = {WGPUBlendOperation_Add, src, dst};
     blend.alpha = {WGPUBlendOperation_Add, WGPUBlendFactor_One, dst};
     if (target.blend) color.blend = &blend;
+    std::array<WGPUColorTargetState, 1 + std::tuple_size_v<decltype(target.moreColors)>> colors{color};
+    size_t colorCount = target.color != WGPUTextureFormat_Undefined ? 1 : 0;
+    for (const WGPUTextureFormat format : target.moreColors) {
+        if (!colorCount || format == WGPUTextureFormat_Undefined) break;
+        colors[colorCount] = {};
+        colors[colorCount].format = format;
+        colors[colorCount++].writeMask = color.writeMask;
+    }
     WGPUFragmentState fragmentState = {};
     if (fs) {
         fragmentState.module = fs;
         WGPU_SET_ENTRY_POINT(fragmentState, "main");
         // A depth-only pass keeps a fragment stage only to discard (a masked shadow caster): no target.
-        fragmentState.targetCount = target.color != WGPUTextureFormat_Undefined ? 1 : 0;
-        fragmentState.targets = fragmentState.targetCount ? &color : nullptr;
+        fragmentState.targetCount = colorCount;
+        fragmentState.targets = colorCount ? colors.data() : nullptr;
         desc.fragment = &fragmentState;
     }
     WGPURenderPipeline pipeline = nullptr;

@@ -20,6 +20,7 @@ import {
   createWasmRuntime,
   defineBrowserClasses,
 } from "./browser-backend.js";
+import { ColorManagement } from "./browser-math.js";
 import { RENDER_AGAIN, defineWebRenderer, isWebHostModule } from "./browser-renderer.js";
 import { type ITslRuntime, defineTsl, isTslNode } from "./browser-tsl.js";
 import type { CatalogEntry, ICatalog } from "./catalog.js";
@@ -189,14 +190,30 @@ export async function bindWebEngine(
   // The product host draws; a module without it (the ABI-only test module) keeps the refusal.
   // Before each frame: edited Color/VectorN uniform values reach the engine, world poses WebAudio,
   // and the wrapper safe point runs (collect: held while the engine references them).
+  // The safe point and the audio pose run once per renderer frame: collect asks a sixty-fourth of the
+  // settled wrappers per call, sized for one call a frame, and a post chain renders about ten passes.
+  let updating = false;
+  let collectedFrame: number | undefined;
   if (isWebHostModule(module))
     bound.WebGPURenderer = defineWebRenderer(
       module,
       classes.Color as never,
       (frame) => {
-        collect();
-        tsl?.sync(frame);
-        audio.updateAudio();
+        // A compute dispatch passes no frame: it belongs to the frame already collected.
+        const frameId = frame?.frameId ?? collectedFrame;
+        if (updating || (frameId !== undefined && frameId === collectedFrame)) {
+          tsl?.sync(frame);
+          return;
+        }
+        collectedFrame = frameId;
+        updating = true;
+        try {
+          collect();
+          tsl?.sync(frame);
+          audio.updateAudio();
+        } finally {
+          updating = false;
+        }
       },
       runtime.tsl,
       (surface, draw) => drawSecondaryPasses(surface, draw),
@@ -239,13 +256,13 @@ export async function bindWebEngine(
 
 /**
  * The engine classes plus what plain JS adds over them: three's texture sources (typed array,
- * canvas, image, ImageBitmapLoader) and `DataUtils`, which touches no engine object at all.
+ * canvas, image, ImageBitmapLoader), `DataUtils`, and the `ColorManagement` singleton.
  */
 export function withTextureSources(
   classes: Readonly<Record<string, unknown>>,
   runtime: IBrowserRuntime,
 ): Record<string, unknown> {
-  return { ...classes, ...defineTextureSources(classes, runtime), DataUtils };
+  return { ...classes, ...defineTextureSources(classes, runtime), DataUtils, ColorManagement };
 }
 
 interface IPipelineRenderer {

@@ -9,8 +9,8 @@ Three.js source in this project, yours to rewrite or delete.
   not raw `BoxGeometry`.** A sharp box reads as Minecraft; the same box with a 0.14 corner
   radius reads as a toy, and that is most of the difference between a scene that looks
   designed and one that looks like a test harness. For the seeded randomness that varies a
-  run of meshes, the scene builds `createRandom(seed)` and passes it down — nothing in
-  `src/render/` may import a framework package, which is what keeps this folder portable.
+  run of meshes, the scene builds `createRandom(seed)` and passes it down.
+  `src/render/` imports shared Unreal look plumbing from `@threenative/core`; its lighting and materials stay game-owned.
 - `lighting.ts` — key, sky/ground bounce, **rim**, ambient, with soft shadows and a
   `normalBias` tuned for rounded geometry. The rim is what stops silhouettes reading as
   flat cut-outs; do not delete it while "simplifying".
@@ -18,8 +18,7 @@ Three.js source in this project, yours to rewrite or delete.
   **lead** are the framing: the default aims ahead of the character rather than centring it,
   because a level that runs one way puts half the picture behind the player otherwise.
 - `postprocessing.ts` — the editable presets and `setupPost` delegation.
-- `worldEnvironment.ts` — the editable Godot-named render chain: tone mapping/exposure and
-  optional TSL stages, with `createRenderChain` reporting applied or refused stages.
+- `WorldEnvironment` from `@threenative/core` — the shared Unreal render chain, with filmic tone mapping and metered exposure. Override options in `quality.ts`; `TN_RENDER_CHAIN` reports applied or refused stages.
 - `materials.ts` — `floorMaterial`, `structureMaterial` and `propMaterial`, over a `DataTexture`
   metre grid and a grain normal map. **Two greys and one saturated colour is the whole rule:**
   light grid where the player walks, dark grid on sides and structure, and a single saturated

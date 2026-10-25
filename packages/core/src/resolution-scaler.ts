@@ -32,12 +32,17 @@ export const RESOLUTION_SCALER = {
    * The ladder above is the device arm's, and it ends at 0.23 because a phone buys the pixels back
    * differently. A desktop has nothing: no temporal stage, no reconstruction, just 5% of the
    * pixels stretched across the panel, which is blocky mush rather than a slow frame — and the
-   * report at that point claims the budget was met. 0.61 is where surrendering more pixels stops
-   * buying frame time worth what it costs to look at, and it is reported as `atFloor` rather than
-   * passed in silence. A host whose chain *does* reconstruct the frame says so, and the deep
-   * rungs come back; `renderer-config.ts` decides which floor a platform starts with.
+   * report at that point claims the budget was met. The floor was 0.61 until 2026-10-24, when the
+   * owner played Hop Garden at 30 fps on a faster panel and read the stretched 0.61 frame as a
+   * blur over everything. Unreal ships dynamic resolution off (UE 5.8.3:
+   * Engine/Source/Runtime/Engine/Private/UnrealEngine.cpp:538-542, `r.DynamicRes.OperationMode`
+   * 0; GameUserSettings.cpp:329, `bUseDynamicResolution = false`) and only drops pixels under a
+   * temporal upscaler, so a desktop holds full resolution and reports `atFloor` and one
+   * `TN_RESOLUTION_FLOOR` line rather than a met budget. A host whose chain *does* reconstruct the
+   * frame says so, and the rungs come back; `renderer-config.ts` decides which floor a platform
+   * starts with, and a pinned `renderer.resolutionScale` still lowers it on purpose.
    */
-  desktopFloorScale: 0.61,
+  desktopFloorScale: 1,
   /**
    * The rung a class of adapter starts on instead of the ceiling; a class not named here starts at
    * 1.0. Only `mobile-low` moves: one rung down is 0.85, close to the 0.8 content scale Unreal's
@@ -170,6 +175,8 @@ export const RESOLUTION_SCALER = {
 
 /** Printed when a downward step is refunded because the frame did not respond to the pixels. */
 export const RESOLUTION_SCALE_INSENSITIVE_MARKER = "TN_RESOLUTION_SCALE_INSENSITIVE";
+/** Printed once, the first window the scaler is out of room, with the floor's reason. */
+export const RESOLUTION_FLOOR_MARKER = "TN_RESOLUTION_FLOOR";
 
 /** Pixels retained per rung: 0.85 linear on each axis. */
 const RUNG_PIXEL_RATIO = 0.85 * 0.85;
@@ -357,6 +364,21 @@ export class ResolutionScaler {
    * step, `undefined` otherwise. Allocation-free: no object is constructed on the steady path.
    */
   observe(window: IScalerWindow): number | undefined {
+    const step = this.#observeWindow(window);
+    if (this.#atFloor && !this.#floorReported) {
+      this.#floorReported = true;
+      // The platform's own floor holds above the ladder's end only where nothing reconstructs.
+      const reason =
+        this.#limitIndex < RESOLUTION_SCALER.rungs.length - 1 ? "no-reconstruction" : "ladder-end";
+      console.info(
+        `${RESOLUTION_FLOOR_MARKER} scale=${String(this.scale)} reason=${reason} override=renderer.resolutionScale`,
+      );
+    }
+    return step;
+  }
+  #floorReported = false;
+
+  #observeWindow(window: IScalerWindow): number | undefined {
     const temporal = this.#temporalUpscale?.() === true;
     const removed = this.#hadTemporalUpscale && !temporal;
     this.#hadTemporalUpscale = temporal;

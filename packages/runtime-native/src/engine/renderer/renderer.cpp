@@ -176,7 +176,7 @@ constexpr const char* kSlotNames[] = {
     "specularIntensityMapUvTransform", "clearcoatMapUvTransform", "clearcoatRoughnessMapUvTransform",
     "clearcoatNormalMapUvTransform", "aoMapIntensity", "clearcoat", "clearcoatRoughness", "clearcoatNormalScale", "bumpScale",
     "pmremTexelWidth", "pmremTexelHeight", "pmremMaxMip", "pmremRotation", "screenSize", "cameraNear", "cameraFar",
-    "modelNormalMatrix", "subsurfaceColor"};
+    "modelNormalMatrix", "subsurfaceColor", "shadowNoiseFrame"};
 constexpr const char* kLightFieldNames[] = {"Color",       "Direction",        "Position",     "Distance",
                                             "Decay",       "Axis",             "ConeCos",      "PenumbraCos",
                                             "ShadowMatrix", "ShadowBias",      "ShadowNormalBias", "ShadowRadius",
@@ -454,7 +454,7 @@ struct Renderer::ShadowPass {
 
 struct Renderer::FrameJob {
     uint64_t groupEpoch = 0;  // the group epoch the plan's bind groups were chosen under
-    std::vector<Planned> plan, velocityPlan, normalPlan, albedoPlan, emissivePlan, materialPlan;
+    std::vector<Planned> plan, velocityPlan, auxPlan;
     std::vector<ShadowPass> shadowPasses;
     std::deque<DrawItem> shadowLodItems;
     WGPURenderPassColorAttachment color{};
@@ -465,9 +465,11 @@ struct Renderer::FrameJob {
     LightState lights;
     WGPUTextureView presentTarget = nullptr;
     WGPUTextureFormat presentFormat = WGPUTextureFormat_Undefined;
-    bool timed = false, normalPass = false, albedoPass = false, emissivePass = false, materialPass = false;
+    bool timed = false;
+    uint8_t auxMask = 0;  // the AuxTarget bits the aux pass writes, in attachment order
     uint64_t source = 0;  // the caller frame id this frame's timed sample is reported under
-    std::vector<uint64_t> bundleKey;  // the main bundle's inputs, built while the draws' stores were live
+    // The main, aux and velocity bundles' inputs, built while the draws' stores were live.
+    std::vector<uint64_t> bundleKey, auxKey, velocityKey;
 };
 
 Renderer::Renderer(WGPUInstance instance, WGPUDevice device, WGPUQueue queue, EventQueue& events)
@@ -546,6 +548,23 @@ Renderer& Renderer::probeCaptureRenderer() {
         probeCapture_->pipelines_ = pipelines_;
     }
     return *probeCapture_;
+}
+
+Renderer& Renderer::overlayRenderer() {
+    if (!canvasLayer_) {
+        canvasLayer_ = sibling();
+        canvasLayer_->outputOver_ = true;
+    }
+    // UI composites after the tone curve: Unreal draws Slate onto the already tone-mapped back buffer
+    // (UE 5.8.3: Engine/Source/Runtime/SlateRHIRenderer/Private/SlateRHIRenderer.cpp:986, :1032), so a
+    // cover drawn in its CSS colour matches the page behind it. Only the output colour space stays.
+    OutputState ui = output_;
+    ui.toneMapping.reset();
+    ui.toneMappingExposure = 1;
+    ui.customToneMapping = {};
+    canvasLayer_->setOutput(ui);
+    canvasLayer_->setSize(width_, height_);
+    return *canvasLayer_;
 }
 
 void Renderer::setProbeVolume(const std::string& name, const probes::ProbeVolume& volume, bool capture) {
@@ -815,9 +834,7 @@ Renderer::~Renderer() {
     if (mipEncoder_) wgpuCommandEncoderRelease(mipEncoder_);
     for (WGPUBindGroup group : mipGroups_) wgpuBindGroupRelease(group);
     for (WGPUTextureView view : mipViews_) wgpuTextureViewRelease(view);
-    if (mainBundle_) wgpuRenderBundleRelease(mainBundle_);
-    if (viewportBundle_) wgpuRenderBundleRelease(viewportBundle_);
-    mainBundle_ = viewportBundle_ = nullptr;
+    dropBundles();
     for (auto& [key, program] : programs_) {
         if (!program) continue;  // a refused program
         for (int g = 0; g < 2; ++g) {
@@ -1092,9 +1109,7 @@ void Renderer::applySampleCount() {
     }
     if (samples == sampleCount_) return;
     sampleCount_ = samples;
-    if (mainBundle_) wgpuRenderBundleRelease(mainBundle_);
-    if (viewportBundle_) wgpuRenderBundleRelease(viewportBundle_);
-    mainBundle_ = viewportBundle_ = nullptr;
+    dropBundles();
     if (width_ && height_) {
         const uint32_t w = width_, h = height_;
         width_ = height_ = 0;
@@ -1615,10 +1630,15 @@ Renderer::BackgroundCube& Renderer::backgroundCube(const Texture& texture) {
     return cube;
 }
 
+void Renderer::dropBundles() {
+    for (WGPURenderBundle* bundle : {&mainBundle_, &viewportBundle_, &auxBundle_, &velocityBundle_}) {
+        if (*bundle) wgpuRenderBundleRelease(*bundle);
+        *bundle = nullptr;
+    }
+}
+
 void Renderer::releaseMaterialTextures() {
-    if (mainBundle_) wgpuRenderBundleRelease(mainBundle_);
-    if (viewportBundle_) wgpuRenderBundleRelease(viewportBundle_);
-    mainBundle_ = viewportBundle_ = nullptr;
+    dropBundles();
     for (auto& [texture, cube] : backgroundCubes_) {
         if (cube.view) wgpuTextureViewRelease(cube.view);
         if (cube.texture) wgpuTextureRelease(cube.texture);
@@ -1633,9 +1653,7 @@ void Renderer::releaseMaterialTextures() {
 void Renderer::dropMapGroups() {
     // A bind group is cached by the address of the views it binds; a view released here can come back
     // at the same address.
-    if (mainBundle_) wgpuRenderBundleRelease(mainBundle_);
-    if (viewportBundle_) wgpuRenderBundleRelease(viewportBundle_);
-    mainBundle_ = viewportBundle_ = nullptr;
+    dropBundles();
     for (auto& [key, group] : mapGroups_)
         if (group) wgpuBindGroupRelease(group);
     mapGroups_.clear();
@@ -2193,57 +2211,45 @@ Renderer::Program* Renderer::program(MaterialKind kind, const shader::VertexVari
         const auto& errors = vertex.wgsl.ok() ? fragment.wgsl.errors : vertex.wgsl.errors;
         return refuseBuild(errors.empty() ? "no reason" : errors.front());
     }
-    // Keep the colour fragment's bindings and offsets, including maps and node uniforms.
-    auto& f = source.fragment;
-    f.output("color", source.materialProperties != shader::kInvalid ? source.materialProperties :
-        f.construct(shader::Type::vec(4), {f.constant(0.f), f.constant(1.f), f.constant(0.f), f.constant(1.f)}));
-    auto materialFragment = shader::buildStage(f, 1);
-    if (!materialFragment.wgsl.ok()) return refuseBuild("post material program");
     Program& built = add(key, std::move(vertex), std::move(fragment));
     built.kind = kind; built.variant = vv; built.lightKinds = lights; built.softShadows = softShadows;
-    built.materialFragment = std::move(materialFragment);
     return &built;
 }
 
-// The albedo pass's fragment: the same builder run again with the output swapped. Every uniform and texture is
-// created in the same order, so the layout equals the program's own and the draw's bind groups are valid for it.
-const shader::StageModule* Renderer::albedoFragment(Program& program) {
-    if (program.albedoBuilt) return program.albedo.get();
-    program.albedoBuilt = true;
-    if (program.kind == MaterialKind::Basic) return nullptr;  // unlit: nothing is lit by a bounce
-    shader::VertexVariant variant = program.variant;
-    variant.albedoOutput = true;
-    const shader::LightLayout layout{program.lightKinds, program.softShadows};
-    try {
-        shader::StandardPrograms source;
-        switch (program.kind) {
-        case MaterialKind::Standard: source = shader::buildStandard(shader::StandardMaterial{}, variant, layout); break;
-        case MaterialKind::Lambert: source = shader::buildLambert(variant, layout); break;
-        case MaterialKind::Phong: source = shader::buildPhong(variant, layout); break;
-        case MaterialKind::Physical: source = shader::buildPhysical(shader::StandardMaterial{}, variant, layout); break;
-        case MaterialKind::Basic: return nullptr;
-        }
-        if (!source.fragment.diagnostics().empty()) return nullptr;
-        auto module = std::make_unique<shader::StageModule>(shader::buildStage(source.fragment, 1));
-        const auto& own = program.fragment;
-        bool same = module->wgsl.ok() && module->uniforms.size() == own.uniforms.size() &&
-                    module->bindings.size() == own.bindings.size() && module->uniformBlockSize == own.uniformBlockSize;
-        for (std::size_t i = 0; same && i < own.uniforms.size(); ++i)
-            same = module->uniforms[i].name == own.uniforms[i].name && module->uniforms[i].offset == own.uniforms[i].offset;
-        if (!same) return nullptr;
-        program.albedo = std::move(module);
-    } catch (const std::exception&) {
-        return nullptr;
+// The normal target's value (three's MRT `normalView`): the interpolated view-space normal, or a flat face's from the
+// derivatives of positionView as the colour fragment takes it (flat vertices carry zero normals), flipped on a
+// DoubleSide back face. For post passes that read metalness and roughness, a Standard or Physical surface packs both
+// into the alpha:
+//   alpha = 2 * round(7 * metalness) + 0.25 + 0.5 * roughness
+// so the integer half is the metalness level, the fraction is roughness, and 0 (nothing written) is no surface at all.
+// Half-float spacing stays well under the 0.25 offset. The material's own `metalness` and `roughness` uniforms are
+// read, so a fragment that declares only these two finds them at the lit block's offsets 0 and 4.
+static shader::ExprId normalTarget(shader::Program& f, bool flat, bool doubleSide, bool surface) {
+    auto normal = f.varying("normalView", shader::Type::vec(3));
+    if (flat) {
+        const auto position = f.varying("positionView", shader::Type::vec(3));
+        normal = f.call("cross", {f.call("dFdx", {position}), f.call("dFdy", {position})});
     }
-    return program.albedo.get();
+    normal = f.call("normalize", {normal});
+    if (doubleSide && !flat)
+        normal = f.mul(normal, f.select(f.builtin("frontFacing"), f.constant(1.f), f.constant(-1.f)));
+    auto alpha = f.constant(0.f);
+    if (surface) {
+        const auto clamp01 = [&](shader::ExprId v) { return f.call("clamp", {v, f.constant(0.f), f.constant(1.f)}); };
+        const auto metalness = clamp01(f.uniform("metalness", shader::Type::f32()));
+        const auto roughness = clamp01(f.uniform("roughness", shader::Type::f32()));
+        const auto level = f.call("floor", {f.add(f.mul(metalness, f.constant(7.f)), f.constant(0.5f))});
+        alpha = f.add(f.add(f.mul(level, f.constant(2.f)), f.constant(0.25f)), f.mul(roughness, f.constant(0.5f)));
+    }
+    return f.construct(shader::Type::vec(4), {normal, alpha});
 }
 
-const shader::StageModule* Renderer::emissiveFragment(Program& program) {
-    if (program.emissiveBuilt) return program.emissive.get();
-    program.emissiveBuilt = true;
-    if (program.kind == MaterialKind::Basic) return nullptr;  // unlit writes zero
-    shader::VertexVariant variant = program.variant;
-    variant.emissiveOutput = true;
+// The same builder run again with one output per target. Every uniform, texture and varying is created in the same
+// order, so the layout equals the program's own and the draw's bind groups are valid for it; checked, not assumed.
+const shader::StageModule* Renderer::auxFragment(Program& program, uint8_t mask) {
+    if (program.auxBuilt >> mask & 1u) return program.aux[mask].get();
+    program.auxBuilt |= uint16_t(1u << mask);
+    const shader::VertexVariant& variant = program.variant;
     const shader::LightLayout layout{program.lightKinds, program.softShadows};
     try {
         shader::StandardPrograms source;
@@ -2252,21 +2258,36 @@ const shader::StageModule* Renderer::emissiveFragment(Program& program) {
         case MaterialKind::Lambert: source = shader::buildLambert(variant, layout); break;
         case MaterialKind::Phong: source = shader::buildPhong(variant, layout); break;
         case MaterialKind::Physical: source = shader::buildPhysical(shader::StandardMaterial{}, variant, layout); break;
-        case MaterialKind::Basic: return nullptr;
+        case MaterialKind::Basic: return nullptr;  // unlit: no surface, nothing lit by a bounce, nothing emitted
         }
-        if (!source.fragment.diagnostics().empty()) return nullptr;
-        auto module = std::make_unique<shader::StageModule>(shader::buildStage(source.fragment, 1));
+        auto& f = source.fragment;
+        if (!f.diagnostics().empty()) return nullptr;
+        const std::size_t varyings = f.varyings().size();
+        const bool surface = (program.kind == MaterialKind::Standard || program.kind == MaterialKind::Physical) &&
+                             !variant.nodes.metalnessNode && !variant.nodes.roughnessNode;
+        std::vector<shader::ExprId> outputs;
+        if (mask & kAuxNormal) outputs.push_back(normalTarget(f, variant.flatShading, variant.doubleSide, surface));
+        if (mask & kAuxMaterial)
+            outputs.push_back(source.materialProperties != shader::kInvalid ? source.materialProperties :
+                f.construct(shader::Type::vec(4), {f.constant(0.f), f.constant(1.f), f.constant(0.f), f.constant(1.f)}));
+        if (mask & kAuxAlbedo) outputs.push_back(f.construct(shader::Type::vec(4), {source.albedo, f.constant(1.f)}));
+        if (mask & kAuxEmissive) outputs.push_back(f.construct(shader::Type::vec(4), {source.emissive, f.constant(1.f)}));
+        // The first target takes the colour output's location 0 (its last write wins), the rest 1, 2 and 3 in order.
+        static constexpr const char* kOutputs[] = {"color", "aux1", "aux2", "aux3"};
+        for (std::size_t i = 0; i < outputs.size(); ++i) f.output(kOutputs[i], outputs[i]);
+        if (!f.diagnostics().empty() || f.varyings().size() != varyings) return nullptr;
+        auto module = std::make_unique<shader::StageModule>(shader::buildStage(f, 1));
         const auto& own = program.fragment;
         bool same = module->wgsl.ok() && module->uniforms.size() == own.uniforms.size() &&
                     module->bindings.size() == own.bindings.size() && module->uniformBlockSize == own.uniformBlockSize;
         for (std::size_t i = 0; same && i < own.uniforms.size(); ++i)
             same = module->uniforms[i].name == own.uniforms[i].name && module->uniforms[i].offset == own.uniforms[i].offset;
         if (!same) return nullptr;
-        program.emissive = std::move(module);
+        program.aux[mask] = std::move(module);
     } catch (const std::exception&) {
         return nullptr;
     }
-    return program.emissive.get();
+    return program.aux[mask].get();
 }
 
 Renderer::Program& Renderer::depthProgram(const shader::VertexVariant& variant, bool masked) {
@@ -2330,9 +2351,7 @@ Renderer::Program& Renderer::add(const std::string& key, shader::StageModule ver
 }
 
 void Renderer::rebuildGroups() {
-    if (mainBundle_) wgpuRenderBundleRelease(mainBundle_);
-    if (viewportBundle_) wgpuRenderBundleRelease(viewportBundle_);
-    mainBundle_ = viewportBundle_ = nullptr; // Emdawn may recycle a released bind-group handle immediately
+    dropBundles(); // Emdawn may recycle a released bind-group handle immediately
     for (auto& [key, group] : mapGroups_)  // they bind the old uniform buffer
         if (group) wgpuBindGroupRelease(group);
     mapGroups_.clear();
@@ -2444,7 +2463,8 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     if (!compilation) recordDeferred(false);
     const uint64_t id = compilation ? renderId_ : ++renderId_;
     // Taken at once: a frame that throws must not leave a borrowed view armed for the next one.
-    const WGPUTextureView presentTarget = compilation ? nullptr : std::exchange(presentTarget_, nullptr);
+    WGPUTextureView presentTarget = compilation ? nullptr : std::exchange(presentTarget_, nullptr);
+    if (!compilation && !presentTarget && presentAcquire_) presentTarget = std::exchange(presentAcquire_, nullptr)();
     const WGPUTextureFormat presentFormat = presentFormat_;
     for (const auto& target : rttTargets_) {
         auto& state = *target.state;
@@ -2987,7 +3007,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     FrameJob compileJob;  // a compile plans pipelines only: it never touches a pending frame's job
     if (!compilation && !job_) job_ = std::make_unique<FrameJob>();
     FrameJob& job = compilation ? compileJob : *job_;
-    job.plan.clear(); job.velocityPlan.clear(); job.normalPlan.clear(); job.albedoPlan.clear(); job.emissivePlan.clear(); job.materialPlan.clear(); job.shadowPasses.clear(); job.shadowLodItems.clear();
+    job.plan.clear(); job.velocityPlan.clear(); job.auxPlan.clear(); job.shadowPasses.clear(); job.shadowLodItems.clear();
     std::vector<Planned>& plan = job.plan;
     std::vector<Planned>& velocityPlan = job.velocityPlan;
     plan.reserve(opaque.size());
@@ -3156,6 +3176,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 }
             }
         }
+        put(frameUniforms_, f, fs[kShadowNoiseFrame], std::array<double, 1>{shadowNoiseFrame()});
         put(frameUniforms_, f, fs[kHemisphereSky], lights.hemisphereSky);
         put(frameUniforms_, f, fs[kHemisphereGround], lights.hemisphereGround);
         put(frameUniforms_, f, fs[kHemisphereDirection], lights.hemisphereUp);  // world space: it meets normalWorld
@@ -3407,239 +3428,108 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         // A post pass that reads "velocity" (motion blur) samples the target the temporal pass draws.
         if (!compilation && postEffects_ && postEffects_->reads("velocity")) postEffects_->input("velocity", traa_->velocityView());
     }
-    // A post pass that reads "normal" (GTAO, denoise) gets three's MRT normal output as a second
-    // pass over the same draws: each draw's own vertex stage (skinning, morphs, instancing, position
-    // nodes included, so the depth matches the main pass exactly) with a fragment that writes the
-    // interpolated view-space normal, depth-tested Equal against the main pass's depth.
-    std::vector<Planned>& normalPlan = job.normalPlan;
+    // The post targets besides colour and velocity: three's MRT `normal` (GTAO, denoise, SSR), metalness/roughness
+    // (SSR), `diffuseColor` albedo (GTAO's indirect occlusion) and emissive (SSGI). Like Unreal's base pass writing its
+    // GBuffer (PRD-740), one pass over the opaque lit draws writes every target the post graph reads, each at its own
+    // colour attachment: each draw's own vertex stage (skinning, morphs, instancing and position nodes included, so
+    // the depth matches the colour pass exactly) with a fragment of one output per target, depth-tested Equal against
+    // the colour pass's depth. A draw the pass cannot write (unlit, transparent, sprite, alpha-tested) leaves every
+    // target cleared there: the effects read a depth-derived normal, no surface, no albedo and no emission.
     const bool normalPass = postEffects_ && postEffects_->reads("normal");
     const bool materialPass = postEffects_ && (postEffects_->reads("metalness") || postEffects_->reads("roughness"));
-    const auto planMaterials = [&] {
-        if (!materialPass) return;
+    const bool albedoPass = postEffects_ && postEffects_->reads("albedo");
+    const bool emissivePass = postEffects_ && postEffects_->reads("emissive");
+    const uint8_t auxMask = uint8_t((normalPass ? kAuxNormal : 0) | (materialPass ? kAuxMaterial : 0) |
+                                    (albedoPass ? kAuxAlbedo : 0) | (emissivePass ? kAuxEmissive : 0));
+    // A normal-only frame keeps the small normal fragment: the merged one is the whole lit program.
+    const auto normalFragment = [&](const Planned& draw) -> const shader::StageModule* {
+        const DrawItem& item = *draw.item;
+        // Standard and Physical programs lead their fragment block with metalness and roughness.
+        // A material node that replaces either one has no such field: the draw writes no surface (alpha 0).
+        const bool surface = (item.kind == MaterialKind::Standard || item.kind == MaterialKind::Physical) &&
+                             !item.nodes.metalnessNode && !item.nodes.roughnessNode;
+        auto& fragment = (surface ? surfaceFragments_ : normalFragments_)[item.flatShading ? 2 : size_t(item.side == 2)];
+        if (fragment.wgsl.code.empty()) {
+            shader::Program f{shader::Stage::Fragment};
+            f.output("color", normalTarget(f, item.flatShading, item.side == 2, surface));
+            fragment = shader::buildStage(f, 1);
+            if (!fragment.wgsl.ok())
+                throw std::runtime_error(surface ? "TN_NATIVE_SHADER_INVALID: post surface program" : "TN_NATIVE_SHADER_INVALID: post normal program");
+        }
+        // The normal fragment reads `normalView` at location 0, which the program's vertex stage must write there.
+        if (draw.program->vertex.wgsl.code.find("@location(0) o_normalView") == std::string::npos)
+            throw std::runtime_error("TN_POST_NORMAL_LAYOUT: normalView is not the vertex stage's first varying");
+        if (item.flatShading && draw.program->vertex.wgsl.code.find("@location(1) o_positionView") == std::string::npos)
+            throw std::runtime_error("TN_POST_NORMAL_LAYOUT: positionView is not the vertex stage's second varying");
+        return &fragment;
+    };
+    const auto planAux = [&] {
+        if (!auxMask) return;
         for (const Planned& draw : plan) {
             const DrawItem& item = *draw.item;
-            if (item.background || item.kind == MaterialKind::Basic || item.transparent || item.sprite || item.material->alphaTest > 0) continue;
+            // The sky and unlit materials write no view-space normal (their programs have no normalView).
+            if (item.background || item.kind == MaterialKind::Basic) continue;
+            // These draws write no normal, so the post pass reads its depth-derived one there. Named once a
+            // frame, not thrown: a transparent particle must not cost the frame.
+            if (item.transparent || item.sprite || item.material->alphaTest > 0) {
+                if (!normalPass) continue;
+                const std::string reason = item.transparent ? "transparent" : item.sprite ? "sprite" : "alpha-tested";
+                const std::string note = "TN_POST_NORMAL_SKIPPED: " + reason + " draws write no normal (depth-derived there)";
+                if (std::find(diagnostics_.begin(), diagnostics_.end(), note) == diagnostics_.end()) diagnostics_.push_back(note);
+                continue;
+            }
+            if (normalPass && item.nodes.normalNode)
+                throw std::runtime_error("TN_POST_NORMAL_UNSUPPORTED: a material normalNode is not written to the normal target");
+            const shader::StageModule* fragment = auxMask == kAuxNormal ? normalFragment(draw) : auxFragment(*draw.program, auxMask);
+            if (!fragment) {
+                const std::string note = "TN_POST_AUX_SKIPPED: a draw's program has no post-target fragment on its own layout";
+                if (std::find(diagnostics_.begin(), diagnostics_.end(), note) == diagnostics_.end()) diagnostics_.push_back(note);
+                continue;
+            }
             PipelineTarget target{WGPUTextureFormat_RGBA16Float, WGPUTextureFormat_Depth32Float,
                 item.side == 2 ? WGPUCullMode_None : item.side == 1 ? WGPUCullMode_Front : WGPUCullMode_Back};
+            for (std::size_t i = 1; i < std::size_t(std::popcount(auxMask)); ++i) target.moreColors[i - 1] = WGPUTextureFormat_RGBA16Float;
             target.layout = draw.program->pipelineLayout; target.depthWrite = false;
-            target.sampleCount = sampleCount_;
             target.colorWrite = item.colorWrite;
             target.depthCompare = WGPUCompareFunction_Equal; target.frontFace = item.frontFace();
+            // At 4x the pass draws single-sampled against the colour pass's resolved depth, one sample taken at a
+            // sample position, while this pass interpolates at the pixel centre: they differ by up to half a pixel of
+            // depth slope, so Equal fails on every surface that is not square to the camera. Test LessEqual with the
+            // bias pulling this pass nearer by that slope instead: the nearest surface passes, a surface behind it does not.
+            if (sampleCount_ == 4) {
+                target.depthCompare = WGPUCompareFunction_LessEqual;
+                target.depthBias = -4; target.depthBiasSlopeScale = -1.5f;
+            }
             target.skinIndex = skinIndexFormat(item);
             target.instanceStepMask = instanceStepMask(draw.program->vertex, item);
             lineTopology(target, item);
             if (compilation) {
-                compilation->push_back(pipelines_->getAsync(draw.program->vertex, &draw.program->materialFragment, target));
-                continue;
-            }
-            const auto pipeline = pipelines_->get(draw.program->vertex, &draw.program->materialFragment, target);
-            if (!pipeline) throw std::runtime_error("TN_POST_MATERIAL_PIPELINE_REFUSED");
-            Planned material = draw;
-            material.pipeline = pipeline;
-            job.materialPlan.push_back(material);
-        }
-        if (!compilation) {
-            if (!materialTexture_) {
-                WGPUTextureDescriptor desc = {};
-                desc.dimension = WGPUTextureDimension_2D; desc.size = {inputWidth_, inputHeight_, 1};
-                desc.format = WGPUTextureFormat_RGBA16Float; desc.mipLevelCount = 1; desc.sampleCount = 1;
-                desc.usage = WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopySrc;
-                materialTexture_ = wgpuDeviceCreateTexture(device_, &desc);
-                materialView_ = view2d(materialTexture_, WGPUTextureFormat_RGBA16Float);
-            }
-            postEffects_->input("metalness", materialView_);
-            postEffects_->input("roughness", materialView_);
-        }
-    };
-    const auto planNormals = [&] {
-        if (normalPass) {
-            for (const Planned& draw : plan) {
-                const DrawItem& item = *draw.item;
-                // The sky and unlit materials write no view-space normal (their programs have no normalView).
-                if (item.background || item.kind == MaterialKind::Basic) continue;
-                // These draws write no normal, so the post pass reads its depth-derived one there. Named once a
-                // frame, not thrown: a transparent particle must not cost the frame.
-                if (item.transparent || item.sprite || item.material->alphaTest > 0) {
-                    const std::string reason = item.transparent ? "transparent" : item.sprite ? "sprite" : "alpha-tested";
-                    const std::string note = "TN_POST_NORMAL_SKIPPED: " + reason + " draws write no normal (depth-derived there)";
-                    if (std::find(diagnostics_.begin(), diagnostics_.end(), note) == diagnostics_.end()) diagnostics_.push_back(note);
-                    continue;
-                }
-                if (item.nodes.normalNode)
-                    throw std::runtime_error("TN_POST_NORMAL_UNSUPPORTED: a material normalNode is not written to the normal target");
-                // Standard and Physical programs lead their fragment block with metalness and roughness.
-                // A material node that replaces either one has no such field: the draw writes no surface (alpha 0).
-                const bool surface = (item.kind == MaterialKind::Standard || item.kind == MaterialKind::Physical) &&
-                                     !item.nodes.metalnessNode && !item.nodes.roughnessNode;
-                auto& normalFragment = (surface ? surfaceFragments_ : normalFragments_)[item.flatShading ? 2 : size_t(item.side == 2)];
-                if (normalFragment.wgsl.code.empty()) {
-                    shader::Program fragment{shader::Stage::Fragment};
-                    auto normal = fragment.varying("normalView", shader::Type::vec(3));
-                    // Flat vertices carry zero normals; match the colour fragment's face derivatives instead.
-                    if (item.flatShading) {
-                        const auto position = fragment.varying("positionView", shader::Type::vec(3));
-                        normal = fragment.call("cross", {fragment.call("dFdx", {position}), fragment.call("dFdy", {position})});
-                    }
-                    normal = fragment.call("normalize", {normal});
-                    if (item.side == 2 && !item.flatShading)
-                        normal = fragment.mul(normal, fragment.select(fragment.builtin("frontFacing"), fragment.constant(1.f), fragment.constant(-1.f)));
-                    auto alpha = fragment.constant(0.f);
-                    if (surface) {
-                        // The alpha carries the surface for post passes that read metalness and roughness:
-                        //   alpha = 2 * round(7 * metalness) + 0.25 + 0.5 * roughness
-                        // so the integer half is the metalness level, the fraction is roughness, and 0 (nothing written)
-                        // is no surface at all. Half-float spacing stays well under the 0.25 offset. `metalness` and
-                        // `roughness` are the first two fields of a standard fragment's uniform block (offsets 0 and 4),
-                        // so this block-prefix reads each draw's own material values through the draw's own bindings.
-                        const auto clamp01 = [&](shader::ExprId v) {
-                            return fragment.call("clamp", {v, fragment.constant(0.f), fragment.constant(1.f)});
-                        };
-                        const auto metalness = clamp01(fragment.uniform("metalness", shader::Type::f32()));
-                        const auto roughness = clamp01(fragment.uniform("roughness", shader::Type::f32()));
-                        const auto level = fragment.call("floor", {fragment.add(fragment.mul(metalness, fragment.constant(7.f)),
-                                                                                 fragment.constant(0.5f))});
-                        alpha = fragment.add(fragment.add(fragment.mul(level, fragment.constant(2.f)), fragment.constant(0.25f)),
-                                             fragment.mul(roughness, fragment.constant(0.5f)));
-                    }
-                    fragment.output("color", fragment.construct(shader::Type::vec(4), {normal, alpha}));
-                    normalFragment = shader::buildStage(fragment, 1);
-                    if (!normalFragment.wgsl.ok())
-                        throw std::runtime_error(surface ? "TN_NATIVE_SHADER_INVALID: post surface program" : "TN_NATIVE_SHADER_INVALID: post normal program");
-                }
-                // The normal fragment reads `normalView` at location 0, which the program's vertex stage must write there.
-                if (draw.program->vertex.wgsl.code.find("@location(0) o_normalView") == std::string::npos)
-                    throw std::runtime_error("TN_POST_NORMAL_LAYOUT: normalView is not the vertex stage's first varying");
-                if (item.flatShading && draw.program->vertex.wgsl.code.find("@location(1) o_positionView") == std::string::npos)
-                    throw std::runtime_error("TN_POST_NORMAL_LAYOUT: positionView is not the vertex stage's second varying");
-                PipelineTarget target{WGPUTextureFormat_RGBA16Float, WGPUTextureFormat_Depth32Float,
-                    item.side == 2 ? WGPUCullMode_None : item.side == 1 ? WGPUCullMode_Front : WGPUCullMode_Back};
-                target.layout = draw.program->pipelineLayout; target.depthWrite = false;
-                target.sampleCount = sampleCount_;
-                target.colorWrite = item.colorWrite;
-                target.depthCompare = WGPUCompareFunction_Equal; target.frontFace = item.frontFace();
-                // At 4x the colour pass's depth is one resolved sample, taken at a sample position, while this pass
-                // interpolates at the pixel centre: they differ by up to half a pixel of depth slope, so Equal fails
-                // on every surface that is not square to the camera. Test LessEqual with the bias pulling this
-                // pass nearer by that slope instead: the nearest surface passes, a surface behind it does not.
-                if (sampleCount_ == 4) {
-                    target.depthCompare = WGPUCompareFunction_LessEqual;
-                    target.depthBias = -4; target.depthBiasSlopeScale = -1.5f;
-                }
-                target.skinIndex = skinIndexFormat(item);
-                target.instanceStepMask = instanceStepMask(draw.program->vertex, item);
-                if (compilation) {
-                    compilation->push_back(pipelines_->getAsync(draw.program->vertex, &normalFragment, target));
-                    continue;
-                }
-                const auto pipeline = pipelines_->get(draw.program->vertex, &normalFragment, target);
-                if (!pipeline) throw std::runtime_error("TN_POST_NORMAL_PIPELINE_REFUSED");
-                Planned normal = draw;
-                normal.pipeline = pipeline;
-                normalPlan.push_back(normal);
-            }
-            if (!compilation && !normalTexture_) {
-                WGPUTextureDescriptor desc = {};
-                desc.dimension = WGPUTextureDimension_2D; desc.size = {inputWidth_, inputHeight_, 1};
-                desc.format = WGPUTextureFormat_RGBA16Float; desc.mipLevelCount = 1; desc.sampleCount = 1;
-                desc.usage = WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopySrc;
-                normalTexture_ = wgpuDeviceCreateTexture(device_, &desc);
-                normalView_ = view2d(normalTexture_, WGPUTextureFormat_RGBA16Float);
-            }
-            if (!compilation) postEffects_->input("normal", normalView_);
-        }
-    };
-    // A post pass that reads "albedo" (three's MRT `diffuseColor`) gets each opaque lit draw's diffuse colour, map
-    // and instance tint included, as a pass over the same draws, depth-tested like the normal pass. A draw the pass
-    // cannot write (unlit, transparent, sprite, alpha-tested) leaves alpha 0: the effect reads no albedo there.
-    std::vector<Planned>& albedoPlan = job.albedoPlan;
-    const bool albedoPass = postEffects_ && postEffects_->reads("albedo");
-    const auto planAlbedo = [&] {
-        if (!albedoPass) return;
-        for (const Planned& draw : plan) {
-            const DrawItem& item = *draw.item;
-            if (item.background || item.kind == MaterialKind::Basic) continue;
-            if (item.transparent || item.sprite || item.material->alphaTest > 0) continue;  // named by the normal pass
-            const shader::StageModule* fragment = albedoFragment(*draw.program);
-            if (!fragment) {
-                const std::string note = "TN_POST_ALBEDO_SKIPPED: a draw's program has no albedo fragment on its own layout";
-                if (std::find(diagnostics_.begin(), diagnostics_.end(), note) == diagnostics_.end()) diagnostics_.push_back(note);
-                continue;
-            }
-            PipelineTarget target{WGPUTextureFormat_RGBA16Float, WGPUTextureFormat_Depth32Float,
-                item.side == 2 ? WGPUCullMode_None : item.side == 1 ? WGPUCullMode_Front : WGPUCullMode_Back};
-            target.layout = draw.program->pipelineLayout; target.depthWrite = false;
-            target.colorWrite = item.colorWrite;
-            target.depthCompare = WGPUCompareFunction_Equal; target.frontFace = item.frontFace();
-            if (sampleCount_ == 4) {  // the normal pass's reason: a resolved sample against a pixel-centre interpolation
-                target.depthCompare = WGPUCompareFunction_LessEqual;
-                target.depthBias = -4; target.depthBiasSlopeScale = -1.5f;
-            }
-            target.skinIndex = skinIndexFormat(item);
-            target.instanceStepMask = instanceStepMask(draw.program->vertex, item);
-            if (compilation) {
                 compilation->push_back(pipelines_->getAsync(draw.program->vertex, fragment, target));
                 continue;
             }
             const auto pipeline = pipelines_->get(draw.program->vertex, fragment, target);
-            if (!pipeline) throw std::runtime_error("TN_POST_ALBEDO_PIPELINE_REFUSED");
-            Planned albedo = draw;
-            albedo.pipeline = pipeline;
-            albedoPlan.push_back(albedo);
+            if (!pipeline) throw std::runtime_error("TN_POST_AUX_PIPELINE_REFUSED");
+            Planned aux = draw;
+            aux.pipeline = pipeline;
+            job.auxPlan.push_back(aux);
         }
-        if (!compilation && !albedoTexture_) {
-            WGPUTextureDescriptor desc = {};
-            desc.dimension = WGPUTextureDimension_2D; desc.size = {inputWidth_, inputHeight_, 1};
-            desc.format = WGPUTextureFormat_RGBA16Float; desc.mipLevelCount = 1; desc.sampleCount = 1;
-            desc.usage = WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopySrc;
-            albedoTexture_ = wgpuDeviceCreateTexture(device_, &desc);
-            albedoView_ = view2d(albedoTexture_, WGPUTextureFormat_RGBA16Float);
-        }
-        if (!compilation) postEffects_->input("albedo", albedoView_);
-    };
-    std::vector<Planned>& emissivePlan = job.emissivePlan;
-    const bool emissivePass = postEffects_ && postEffects_->reads("emissive");
-    const auto planEmissive = [&] {
-        if (!emissivePass) return;
-        for (const Planned& draw : plan) {
-            const DrawItem& item = *draw.item;
-            if (item.background || item.kind == MaterialKind::Basic) continue;
-            if (item.transparent || item.sprite || item.material->alphaTest > 0) continue;  // named by the normal pass
-            const shader::StageModule* fragment = emissiveFragment(*draw.program);
-            if (!fragment) {
-                const std::string note = "TN_POST_EMISSIVE_SKIPPED: a draw's program has no emissive fragment on its own layout";
-                if (std::find(diagnostics_.begin(), diagnostics_.end(), note) == diagnostics_.end()) diagnostics_.push_back(note);
-                continue;
+        if (compilation) return;
+        const auto target = [&](bool read, WGPUTexture& texture, WGPUTextureView& view, std::initializer_list<const char*> inputs) {
+            if (!read) return;
+            if (!texture) {
+                WGPUTextureDescriptor desc = {};
+                desc.dimension = WGPUTextureDimension_2D; desc.size = {inputWidth_, inputHeight_, 1};
+                desc.format = WGPUTextureFormat_RGBA16Float; desc.mipLevelCount = 1; desc.sampleCount = 1;
+                desc.usage = WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopySrc;
+                texture = wgpuDeviceCreateTexture(device_, &desc);
+                view = view2d(texture, WGPUTextureFormat_RGBA16Float);
             }
-            PipelineTarget target{WGPUTextureFormat_RGBA16Float, WGPUTextureFormat_Depth32Float,
-                item.side == 2 ? WGPUCullMode_None : item.side == 1 ? WGPUCullMode_Front : WGPUCullMode_Back};
-            target.layout = draw.program->pipelineLayout; target.depthWrite = false;
-            target.colorWrite = item.colorWrite;
-            target.depthCompare = WGPUCompareFunction_Equal; target.frontFace = item.frontFace();
-            if (sampleCount_ == 4) {  // the normal pass's reason: a resolved sample against a pixel-centre interpolation
-                target.depthCompare = WGPUCompareFunction_LessEqual;
-                target.depthBias = -4; target.depthBiasSlopeScale = -1.5f;
-            }
-            target.skinIndex = skinIndexFormat(item);
-            target.instanceStepMask = instanceStepMask(draw.program->vertex, item);
-            if (compilation) {
-                compilation->push_back(pipelines_->getAsync(draw.program->vertex, fragment, target));
-                continue;
-            }
-            const auto pipeline = pipelines_->get(draw.program->vertex, fragment, target);
-            if (!pipeline) throw std::runtime_error("TN_POST_EMISSIVE_PIPELINE_REFUSED");
-            Planned emissive = draw;
-            emissive.pipeline = pipeline;
-            emissivePlan.push_back(emissive);
-        }
-        if (!compilation && !emissiveTexture_) {
-            WGPUTextureDescriptor desc = {};
-            desc.dimension = WGPUTextureDimension_2D; desc.size = {inputWidth_, inputHeight_, 1};
-            desc.format = WGPUTextureFormat_RGBA16Float; desc.mipLevelCount = 1; desc.sampleCount = 1;
-            desc.usage = WGPUTextureUsage_RenderAttachment | WGPUTextureUsage_TextureBinding | WGPUTextureUsage_CopySrc;
-            emissiveTexture_ = wgpuDeviceCreateTexture(device_, &desc);
-            emissiveView_ = view2d(emissiveTexture_, WGPUTextureFormat_RGBA16Float);
-        }
-        if (!compilation) postEffects_->input("emissive", emissiveView_);
+            for (const char* input : inputs) postEffects_->input(input, view);
+        };
+        target(normalPass, normalTexture_, normalView_, {"normal"});
+        target(materialPass, materialTexture_, materialView_, {"metalness", "roughness"});
+        target(albedoPass, albedoTexture_, albedoView_, {"albedo"});
+        target(emissivePass, emissiveTexture_, emissiveView_, {"emissive"});
     };
     WGPURenderPipeline pageClear = nullptr;
     if (!virtualShadows_.empty()) {
@@ -3659,10 +3549,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         }
     }
     if (compilation) {
-        planNormals();
-        planAlbedo();
-        planEmissive();
-        planMaterials();
+        planAux();
         PipelineTarget target{outputFormat, WGPUTextureFormat_Undefined, WGPUCullMode_None};
         target.layout = outputPipelineLayout_;
         compilation->push_back(pipelines_->getAsync(outputVertex_, &outputFragment_, target));
@@ -3885,10 +3772,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         }
     const uint64_t groupsChosenAt = groupEpoch_;
 
-    planNormals();
-    planAlbedo();
-    planEmissive();
-    planMaterials();
+    planAux();
 
     if (!compilation && gpuJoints_ && (!gpuJoints_->drawUse.empty() || Object3D::poseObserver)) {
         const auto mark = [](const Planned& p) {
@@ -3932,20 +3816,27 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         }
     // A bundle references buffers and offsets, not their contents. Matrix, colour, camera and
     // light writes therefore leave it valid; changed draw order, resources or counts rebuild it.
-    job.bundleKey.clear();
-    for (const Planned& p : plan) {
-        const DrawItem& item = *p.item;
-        job.bundleKey.insert(job.bundleKey.end(), {reinterpret_cast<uintptr_t>(p.pipeline),
-            reinterpret_cast<uintptr_t>(p.vertexGroup ? p.vertexGroup : p.program->groups[0]),
-            reinterpret_cast<uintptr_t>(p.mapGroup ? p.mapGroup : p.program->groups[1]),
-            p.vertexOffset, p.fragmentOffset, item.instanceCount});
-        for (BufferStore* store : {item.positions, item.normals, item.uvs, item.indices, item.skinIndices, item.skinWeights}) {
-            const Handle handle = store ? geometry_->cache.sync(*store,
-                store == item.indices ? WGPUBufferUsage_Index : WGPUBufferUsage_Vertex) : Handle{};
-            job.bundleKey.insert(job.bundleKey.end(), {handle.type, handle.context, handle.index, handle.generation,
-                store ? store->byteLength() : 0, store ? static_cast<uintptr_t>(store->scalar()) : 0});
+    // The aux and velocity passes replay their draws the same way, each from its own key.
+    const auto bundleKeyOf = [&](const std::vector<Planned>& draws, std::vector<uint64_t>& key) {
+        key.clear();
+        for (const Planned& p : draws) {
+            const DrawItem& item = *p.item;
+            key.insert(key.end(), {reinterpret_cast<uintptr_t>(p.pipeline),
+                reinterpret_cast<uintptr_t>(p.vertexGroup ? p.vertexGroup : p.program->groups[0]),
+                reinterpret_cast<uintptr_t>(p.mapGroup ? p.mapGroup : p.program->groups[1]),
+                p.vertexOffset, p.fragmentOffset, item.instanceCount});
+            for (BufferStore* store : {item.positions, item.normals, item.uvs, item.indices, item.skinIndices, item.skinWeights}) {
+                const Handle handle = store ? geometry_->cache.sync(*store,
+                    store == item.indices ? WGPUBufferUsage_Index : WGPUBufferUsage_Vertex) : Handle{};
+                key.insert(key.end(), {handle.type, handle.context, handle.index, handle.generation,
+                    store ? store->byteLength() : 0, store ? static_cast<uintptr_t>(store->scalar()) : 0});
+            }
         }
-    }
+    };
+    bundleKeyOf(plan, job.bundleKey);
+    bundleKeyOf(job.auxPlan, job.auxKey);
+    bundleKeyOf(velocityPlan, job.velocityKey);
+    job.auxKey.push_back(auxMask);
     job.bundleKey.push_back(static_cast<std::size_t>(
         std::find_if(plan.begin(), plan.end(), [](const Planned& p) { return readsViewport(p.program->fragment); }) -
         plan.begin()));
@@ -3991,13 +3882,10 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     job.timed = timed;
     job.source = sourceFrame_;
     job.groupEpoch = groupsChosenAt;
-    job.normalPass = normalPass;
-    job.albedoPass = albedoPass;
-    job.emissivePass = emissivePass;
-    job.materialPass = materialPass;
-    // At 4x the normal, material and velocity passes draw into one shared multisampled attachment,
-    // resolving each result before reuse; allocated on first use, so a frame without them pays nothing.
-    if (sampleCount_ == 4 && (normalPass || materialPass || traa_) && !msaaAuxColor_) {
+    job.auxMask = auxMask;
+    // At 4x the velocity pass draws into a multisampled attachment and resolves it; allocated on first
+    // use, so a frame without it pays nothing.
+    if (sampleCount_ == 4 && traa_ && !msaaAuxColor_) {
         WGPUTextureDescriptor desc = {};
         desc.dimension = WGPUTextureDimension_2D; desc.size = {inputWidth_, inputHeight_, 1};
         desc.format = WGPUTextureFormat_RGBA16Float; desc.mipLevelCount = 1; desc.sampleCount = 4;
@@ -4024,12 +3912,11 @@ void Renderer::encodeFrame(FrameJob& job) {
         throw std::logic_error("TN_NATIVE_GROUPS_STALE: bind groups were dropped after this frame's draws chose them");
     std::vector<Planned>& plan = job.plan;
     std::vector<Planned>& velocityPlan = job.velocityPlan;
-    std::vector<Planned>& normalPlan = job.normalPlan;
     std::vector<ShadowPass>& shadowPasses = job.shadowPasses;
     WGPUCommandEncoder encoder = job.encoder;
     WGPURenderPassColorAttachment& color = job.color;
     WGPURenderPassDepthStencilAttachment& depth = job.depth;
-    const bool timed = job.timed, normalPass = job.normalPass, albedoPass = job.albedoPass, emissivePass = job.emissivePass;
+    const bool timed = job.timed;
     const uint64_t source = job.source;
     const CameraState& camera = job.camera;
     const LightState& lights = job.lights;
@@ -4251,78 +4138,58 @@ void Renderer::encodeFrame(FrameJob& job) {
         // The rest pass draws more depth. Resolve it again for the normal, motion and post stages.
         if (sampleCount_ == 4) resolveDepth(encoder);
     }
-    if (normalPass) {
-        WGPURenderPassColorAttachment normals{};
-        normals.view = normalView_; normals.loadOp = WGPULoadOp_Clear; normals.storeOp = WGPUStoreOp_Store;
-        if (sampleCount_ == 4) {
-            normals.view = msaaAuxColorView_;
-            normals.resolveTarget = normalView_;
+    // The aux and velocity passes replay a bundle recorded once from their draws, recorded again only when the draws,
+    // pipelines, groups, offsets or stores change (their keys, built with the plan), as the main pass does.
+    const auto replay = [&](WGPURenderPassEncoder pass, WGPURenderBundle& bundle, std::vector<uint64_t>& key,
+                            std::vector<uint64_t>& planned, const std::vector<Planned>& draws,
+                            const WGPUTextureFormat* formats, size_t formatCount, uint32_t samples) {
+        if (!bundle || planned != key) {
+            if (bundle) wgpuRenderBundleRelease(bundle);
+            WGPURenderBundleEncoderDescriptor descriptor{};
+            descriptor.colorFormatCount = formatCount; descriptor.colorFormats = formats;
+            descriptor.depthStencilFormat = WGPUTextureFormat_Depth32Float; descriptor.sampleCount = samples;
+            descriptor.depthReadOnly = true;
+            const auto recorder = wgpuDeviceCreateRenderBundleEncoder(device_, &descriptor);
+            bound = nullptr; boundIndex = nullptr;
+            std::fill(std::begin(boundVertex), std::end(boundVertex), nullptr);
+            for (const Planned& p : draws) encode(recorder, p, Tally::Extra);
+            WGPURenderBundleDescriptor finish{};
+            bundle = wgpuRenderBundleEncoderFinish(recorder, &finish);
+            wgpuRenderBundleEncoderRelease(recorder);
+            key = std::move(planned);
+            lastFrame_.auxRecorded += uint32_t(draws.size());
         }
+        wgpuRenderPassEncoderExecuteBundles(pass, 1, &bundle);
+    };
+    if (job.auxMask) {
+        // One pass writes every post target the graph reads, one colour attachment each in AuxTarget order
+        // (planAux): single-sampled, against the colour pass's resolved depth, which it only reads.
+        std::array<WGPURenderPassColorAttachment, 4> targets{};
+        std::array<WGPUTextureFormat, 4> formats{};
+        size_t count = 0;
+        const auto attach = [&](uint8_t bit, WGPUTextureView view, WGPUColor clear) {
+            if (!(job.auxMask & bit)) return;
+            WGPURenderPassColorAttachment& target = targets[count];
+            target.view = view; target.loadOp = WGPULoadOp_Clear; target.storeOp = WGPUStoreOp_Store;
+            target.clearValue = clear;
 #if defined(MYSTRAL_WEBGPU_DAWN)
-        normals.depthSlice = WGPU_DEPTH_SLICE_UNDEFINED;
+            target.depthSlice = WGPU_DEPTH_SLICE_UNDEFINED;
 #endif
-        WGPURenderPassDepthStencilAttachment normalDepth{};
-        normalDepth.view = sampleCount_ == 4 ? msaaDepthView_ : depthView_; normalDepth.depthReadOnly = true;
-        WGPURenderPassDescriptor normalDesc{};
-        normalDesc.colorAttachmentCount = 1; normalDesc.colorAttachments = &normals;
-        normalDesc.depthStencilAttachment = &normalDepth;
-        auto normalEncoder = beginTimedRenderPass(encoder, &normalDesc);
-        bound = nullptr; boundIndex = nullptr;
-        for (const Planned& p : normalPlan) encode(normalEncoder, p, Tally::Extra);
-        wgpuRenderPassEncoderEnd(normalEncoder); wgpuRenderPassEncoderRelease(normalEncoder);
-    }
-    if (albedoPass) {
-        WGPURenderPassColorAttachment albedo{};
-        albedo.view = albedoView_; albedo.loadOp = WGPULoadOp_Clear; albedo.storeOp = WGPUStoreOp_Store;
-#if defined(MYSTRAL_WEBGPU_DAWN)
-        albedo.depthSlice = WGPU_DEPTH_SLICE_UNDEFINED;
-#endif
-        WGPURenderPassDepthStencilAttachment albedoDepth{};
-        albedoDepth.view = depthView_; albedoDepth.depthReadOnly = true;
-        WGPURenderPassDescriptor albedoDesc{};
-        albedoDesc.colorAttachmentCount = 1; albedoDesc.colorAttachments = &albedo;
-        albedoDesc.depthStencilAttachment = &albedoDepth;
-        auto albedoEncoder = beginTimedRenderPass(encoder, &albedoDesc);
-        bound = nullptr; boundIndex = nullptr;
-        for (const Planned& p : job.albedoPlan) encode(albedoEncoder, p, Tally::Extra);
-        wgpuRenderPassEncoderEnd(albedoEncoder); wgpuRenderPassEncoderRelease(albedoEncoder);
-    }
-    if (emissivePass) {
-        WGPURenderPassColorAttachment emissive{};
-        emissive.view = emissiveView_; emissive.loadOp = WGPULoadOp_Clear; emissive.storeOp = WGPUStoreOp_Store;
-#if defined(MYSTRAL_WEBGPU_DAWN)
-        emissive.depthSlice = WGPU_DEPTH_SLICE_UNDEFINED;
-#endif
-        WGPURenderPassDepthStencilAttachment emissiveDepth{};
-        emissiveDepth.view = depthView_; emissiveDepth.depthReadOnly = true;
-        WGPURenderPassDescriptor emissiveDesc{};
-        emissiveDesc.colorAttachmentCount = 1; emissiveDesc.colorAttachments = &emissive;
-        emissiveDesc.depthStencilAttachment = &emissiveDepth;
-        auto emissiveEncoder = beginTimedRenderPass(encoder, &emissiveDesc);
-        bound = nullptr; boundIndex = nullptr;
-        for (const Planned& p : job.emissivePlan) encode(emissiveEncoder, p, Tally::Extra);
-        wgpuRenderPassEncoderEnd(emissiveEncoder); wgpuRenderPassEncoderRelease(emissiveEncoder);
-    }
-    if (job.materialPass) {
-        WGPURenderPassColorAttachment material{};
-        material.view = materialView_; material.loadOp = WGPULoadOp_Clear; material.storeOp = WGPUStoreOp_Store;
-        if (sampleCount_ == 4) {
-            material.view = msaaAuxColorView_;
-            material.resolveTarget = materialView_;
-        }
-        material.clearValue = {0, 1, 0, 1};
-#if defined(MYSTRAL_WEBGPU_DAWN)
-        material.depthSlice = WGPU_DEPTH_SLICE_UNDEFINED;
-#endif
-        WGPURenderPassDepthStencilAttachment materialDepth{};
-        materialDepth.view = sampleCount_ == 4 ? msaaDepthView_ : depthView_; materialDepth.depthReadOnly = true;
-        WGPURenderPassDescriptor materialDesc{};
-        materialDesc.colorAttachmentCount = 1; materialDesc.colorAttachments = &material;
-        materialDesc.depthStencilAttachment = &materialDepth;
-        auto materialEncoder = beginTimedRenderPass(encoder, &materialDesc);
-        bound = nullptr; boundIndex = nullptr;
-        for (const Planned& p : job.materialPlan) encode(materialEncoder, p, Tally::Extra);
-        wgpuRenderPassEncoderEnd(materialEncoder); wgpuRenderPassEncoderRelease(materialEncoder);
+            formats[count++] = WGPUTextureFormat_RGBA16Float;
+        };
+        attach(kAuxNormal, normalView_, {0, 0, 0, 0});
+        attach(kAuxMaterial, materialView_, {0, 1, 0, 1});  // no surface: metalness 0, roughness 1
+        attach(kAuxAlbedo, albedoView_, {0, 0, 0, 0});
+        attach(kAuxEmissive, emissiveView_, {0, 0, 0, 0});
+        WGPURenderPassDepthStencilAttachment auxDepth{};
+        auxDepth.view = depthView_; auxDepth.depthReadOnly = true;
+        WGPURenderPassDescriptor auxDesc{};
+        auxDesc.colorAttachmentCount = count; auxDesc.colorAttachments = targets.data();
+        auxDesc.depthStencilAttachment = &auxDepth;
+        auto auxPass = beginTimedRenderPass(encoder, &auxDesc);
+        replay(auxPass, auxBundle_, auxBundleKey_, job.auxKey, job.auxPlan, formats.data(), count, 1);
+        wgpuRenderPassEncoderEnd(auxPass); wgpuRenderPassEncoderRelease(auxPass);
+        lastFrame_.auxPasses = 1;
     }
     if (traa_) {
         traa_->fillVelocity(encoder, depthView_);
@@ -4342,8 +4209,8 @@ void Renderer::encodeFrame(FrameJob& job) {
         motionDesc.colorAttachmentCount = 1; motionDesc.colorAttachments = &motion;
         motionDesc.depthStencilAttachment = &motionDepth;
         auto velocityPass = beginTimedRenderPass(encoder, &motionDesc);
-        bound = nullptr; boundIndex = nullptr;
-        for (const Planned& p : velocityPlan) encode(velocityPass, p, Tally::Extra);
+        const WGPUTextureFormat motionFormat = WGPUTextureFormat_RGBA16Float;
+        replay(velocityPass, velocityBundle_, velocityBundleKey_, job.velocityKey, velocityPlan, &motionFormat, 1, sampleCount_);
         wgpuRenderPassEncoderEnd(velocityPass); wgpuRenderPassEncoderRelease(velocityPass);
         if (!lateTraa_) traa_->resolve(encoder, sceneColor_, sceneView_, depth_, depthView_);
     }
@@ -4434,6 +4301,9 @@ void Renderer::encodeFrame(FrameJob& job) {
 void Renderer::outputPass(WGPUCommandEncoder encoder, WGPUTextureView present, WGPUTextureFormat presentFormat) {
     PipelineTarget outputTarget{present ? presentFormat : WGPUTextureFormat_RGBA8Unorm, WGPUTextureFormat_Undefined, WGPUCullMode_None};
     outputTarget.layout = outputPipelineLayout_;
+    // overlayRenderer(): the output is premultiplied (buildOutput), so it composites "over" the frame on the surface.
+    const bool over = outputOver_ && present;
+    if (over) outputTarget.blend = 3;
     WGPURenderPipeline pipeline = pipelines_->get(outputVertex_, &outputFragment_, outputTarget);
     if (!pipeline) throw std::runtime_error("TN_NATIVE_PIPELINE_REFUSED: output program");
     std::vector<uint8_t> block(std::max<uint32_t>(outputFragment_.uniformBlockSize, 4));
@@ -4458,7 +4328,7 @@ void Renderer::outputPass(WGPUCommandEncoder encoder, WGPUTextureView present, W
     }
     WGPURenderPassColorAttachment color = {};
     color.view = present ? present : colorView_;
-    color.loadOp = WGPULoadOp_Clear;
+    color.loadOp = over ? WGPULoadOp_Load : WGPULoadOp_Clear;
     color.storeOp = WGPUStoreOp_Store;
 #if defined(MYSTRAL_WEBGPU_DAWN)
     color.depthSlice = WGPU_DEPTH_SLICE_UNDEFINED;

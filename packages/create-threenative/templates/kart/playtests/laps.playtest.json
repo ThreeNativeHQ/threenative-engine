@@ -1,0 +1,149 @@
+{
+  "name": "kart-laps",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "subject": "player",
+  "setup": {
+    "place": [
+      {
+        "entity": "player",
+        "at": {
+          "x": 68.24,
+          "y": 1.38,
+          "z": 45.76
+        },
+        "facing": {
+          "yaw": -1.7562
+        }
+      }
+    ]
+  },
+  "steps": [
+    {
+      "label": "go",
+      "waitForResource": {
+        "id": "state",
+        "path": "phase",
+        "equals": "race"
+      },
+      "timeoutMs": 60000,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "over-line",
+      "press": ["KeyW"],
+      "holdTicks": 150,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "brake",
+      "press": ["KeyS"],
+      "holdTicks": 90,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "back-over",
+      "press": ["KeyS"],
+      "holdTicks": 240,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "over-again",
+      "press": ["KeyW"],
+      "holdTicks": 150,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "autopilot",
+      "press": ["KeyW", "KeyP"],
+      "holdTicks": 2,
+      "release": false
+    },
+    {
+      "label": "next-lap",
+      "waitForResource": {
+        "id": "state",
+        "path": "lap",
+        "equals": 2
+      },
+      "timeoutMs": 120000,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "components": [
+      {
+        "entity": "player",
+        "component": "lap",
+        "atSteps": [
+          {
+            "label": "over-line",
+            "equals": 0
+          },
+          {
+            "label": "back-over",
+            "equals": -1
+          },
+          {
+            "label": "over-again",
+            "equals": 0
+          },
+          {
+            "label": "next-lap",
+            "equals": 1
+          }
+        ]
+      },
+      {
+        "entity": "player",
+        "component": "backCrossings",
+        "equals": 1,
+        "allowTrivial": "Backing over the line once took one lap back."
+      },
+      {
+        "entity": "player",
+        "component": "next",
+        "atSteps": [
+          {
+            "label": "over-line",
+            "equals": 0
+          },
+          {
+            "label": "back-over",
+            "equals": 3
+          },
+          {
+            "label": "over-again",
+            "equals": 0
+          },
+          {
+            "label": "next-lap",
+            "equals": 0
+          }
+        ]
+      },
+      {
+        "entity": "player",
+        "component": "maxJump",
+        "lte": 6,
+        "allowTrivial": "The player's course index never jumped past the -3..+6 window in one tick."
+      }
+    ]
+  }
+}

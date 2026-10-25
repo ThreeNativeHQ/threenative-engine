@@ -149,6 +149,10 @@ const medium: IWorldEnvironmentOptions = {
   motionBlurEnabled: false,
   // Medium: world-space probes only (`sg.GlobalIlluminationQuality` 1).
   finalGatherMethod: "irradianceField",
+  // Unreal's Medium spends less on AO than Epic: AmbientOcclusionMaxQuality 60 against 100 (BaseScalability.ini:590,
+  // :625), so its SSAO runs 2 levels, the second at half resolution (PostProcessAmbientOcclusion.cpp:243-270). This
+  // tier gathers its occlusion at half resolution: Iris Xe, Hop Garden 1080p, GPU 28.8 -> 25.0 ms.
+  gtaoResolutionScale: 0.5,
   renderChainTier: "medium",
   samples: 0,
 };

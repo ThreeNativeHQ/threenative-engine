@@ -107,13 +107,25 @@ describe.each([
     return { bin, xvfbArgs, compositorArgs };
   }
 
-  function runScript(bin: string, args: readonly string[]): { status: number; stderr: string } {
+  function runScript(
+    bin: string,
+    args: readonly string[],
+    extraEnv: Readonly<Record<string, string>> = {},
+  ): { status: number; stderr: string } {
     const result = spawnSync("/bin/sh", [script, ...args], {
-      env: { PATH: bin, HOME: os.tmpdir() },
+      env: { PATH: bin, HOME: os.tmpdir(), ...extraEnv },
       encoding: "utf8",
       timeout: 30_000,
     });
     return { status: result.status ?? -1, stderr: result.stderr ?? "" };
+  }
+
+  /** A PATH where `Xvfb` only records that it was launched, so a test can prove it never ran. */
+  function hostSandbox(): { bin: string; xvfbRan: string } {
+    const { bin } = sandbox("Linux");
+    const xvfbRan = path.join(bin, "..", "xvfb-ran");
+    fs.writeFileSync(path.join(bin, "Xvfb"), `#!/bin/sh\necho ran > ${xvfbRan}\n`, { mode: 0o755 });
+    return { bin, xvfbRan };
   }
 
   it("enables COMPOSITE and SHAPE and has the compositor up before the command runs", () => {
@@ -142,6 +154,45 @@ describe.each([
 
     expect(result.status).toBe(7);
     expect(fs.existsSync(compositorArgs)).toBe(false);
+  });
+
+  it("honours TN_PLAYTEST_HOST_DISPLAY, keeping DISPLAY and XAUTHORITY, without starting Xvfb", () => {
+    const { bin, xvfbRan } = hostSandbox();
+    const result = runScript(
+      bin,
+      ["/bin/sh", "-c", 'test "$DISPLAY" = ":7" && test "$XAUTHORITY" = "/tmp/host-xauthority"'],
+      {
+        TN_PLAYTEST_HOST_DISPLAY: "1",
+        DISPLAY: ":7",
+        XAUTHORITY: "/tmp/host-xauthority",
+      },
+    );
+
+    expect(result.status, result.stderr).toBe(0);
+    expect(fs.existsSync(xvfbRan)).toBe(false);
+  });
+
+  it("returns the wrapped command's own status on the host-display path", () => {
+    const { bin } = hostSandbox();
+    const result = runScript(bin, ["/bin/sh", "-c", "exit 5"], {
+      TN_PLAYTEST_HOST_DISPLAY: "true",
+      DISPLAY: ":7",
+    });
+
+    expect(result.status).toBe(5);
+  });
+
+  it("fails closed on a host-display request with no DISPLAY, without running the command", () => {
+    const { bin, xvfbRan } = hostSandbox();
+    const marker = path.join(bin, "..", "ran");
+    const result = runScript(bin, ["/bin/sh", "-c", `echo ran > ${marker}`], {
+      TN_PLAYTEST_HOST_DISPLAY: "1",
+    });
+
+    expect(fs.existsSync(marker)).toBe(false);
+    expect(fs.existsSync(xvfbRan)).toBe(false);
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain("TN_PLAYTEST_HOST_DISPLAY_UNAVAILABLE");
   });
 });
 

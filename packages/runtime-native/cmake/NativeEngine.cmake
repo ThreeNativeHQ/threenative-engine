@@ -120,6 +120,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     tn_native_engine_test(tn-native-engine-renderer-test tests/native-engine/renderer_test.cpp
         native_engine_renderer_resize_readback=resize_readback
         native_engine_renderer_emissive_target=emissive_target
+        native_engine_renderer_aux_targets_one_pass=aux_targets_one_pass
         native_engine_renderer_emissive_validation=emissive_validation
         native_engine_renderer_output_ramp=output_ramp
         native_engine_renderer_lit_reference=lit_reference
@@ -147,11 +148,12 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     target_link_libraries(tn-native-engine-renderer-test PRIVATE tn_engine_renderer tn_host_services)
 
     # A texture's retirement reaches every renderer that caches it, and a probe capture waits for a
-    # scene environment's frame-pumped PMREM before it reads a face.
+    # scene environment's frame-pumped PMREM before it reads a face; startup warm-up bakes it with no frame.
     tn_native_engine_test(tn-native-engine-renderer-lifetime-test tests/native-engine/renderer_lifetime_test.cpp
         native_engine_renderer_shared_retired_sweep=shared_retired_sweep
         native_engine_probe_capture_environment=probe_capture_environment
-        native_engine_probe_capture_callback_camera=probe_capture_callback_camera)
+        native_engine_probe_capture_callback_camera=probe_capture_callback_camera
+        native_engine_database_environment_warmup=database_environment_warmup)
     target_link_libraries(tn-native-engine-renderer-lifetime-test PRIVATE tn_engine_renderer tn_host_services)
     if(TN_ENGINE_SANITIZE)
         # Like Gate E, exercise ASan/UBSan without judging the GPU driver's exit allocations.
@@ -249,6 +251,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     tn_native_engine_test(tn-native-engine-render-database-test tests/native-engine/render_database_test.cpp
         native_engine_gpu_joint_production=gpu_joint_production
         native_engine_uniform_batch_preparation=uniform_batch_preparation
+        native_engine_content_identical_geometry_batches=content_identical_geometry_batches
         native_engine_multi_material_groups=multi_material_groups
         native_engine_renderer_scene_lit=lit_scene
         native_engine_renderer_present_direct=present_direct
@@ -299,6 +302,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_renderer_shadow_caster_frustum_culling=shadow_caster_frustum_culling
         native_engine_masked_shadow=masked_shadow
         native_engine_leaf_receiver=leaf_receiver
+        native_engine_shadow_noise_frame=shadow_noise_frame
         native_engine_foliage_transmission=foliage_transmission
         native_engine_rough_diffuse=rough_diffuse
         native_engine_point_shadow_cube_faces=point_shadow_cube_faces

@@ -1,0 +1,136 @@
+{
+  "name": "collectathon-double-tap",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "subject": "player",
+  "setup": {
+    "place": [
+      {
+        "entity": "player",
+        "at": {
+          "x": 0,
+          "y": 0.85,
+          "z": 30
+        },
+        "facing": {
+          "yaw": 0
+        }
+      },
+      {
+        "entity": "walker.0",
+        "at": {
+          "x": 30,
+          "y": 0,
+          "z": -10
+        },
+        "frozen": true
+      },
+      {
+        "entity": "walker.1",
+        "at": {
+          "x": -30,
+          "y": 0,
+          "z": -5
+        },
+        "frozen": true
+      }
+    ]
+  },
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "settle",
+      "waitTicks": 30,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "first-press",
+      "press": ["Space"],
+      "holdTicks": 20,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "rise-and-fall",
+      "press": [],
+      "holdTicks": 16,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "early-press",
+      "press": ["Space"],
+      "holdTicks": 12,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "after",
+      "press": [],
+      "holdTicks": 2,
+      "release": false
+    },
+    {
+      "kind": "wait",
+      "label": "land",
+      "waitTicks": 200,
+      "release": false
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "components": [
+      {
+        "entity": "player",
+        "component": "counts",
+        "path": "double",
+        "equals": 1,
+        "allowTrivial": "The second Space goes down five ticks before the single jump lands and is held through touchdown; only the jump buffer turns it into the double jump."
+      },
+      {
+        "entity": "player",
+        "component": "counts",
+        "path": "single",
+        "equals": 1,
+        "allowTrivial": "One single jump starts the chain and the early press does not become a second single."
+      },
+      {
+        "entity": "player",
+        "component": "action",
+        "equals": "idle",
+        "atSteps": [
+          {
+            "label": "after",
+            "equals": "double"
+          }
+        ],
+        "allowTrivial": "The hero stands idle at the start and again after the double jump lands; the claim is the double at the step after the early press."
+      }
+    ],
+    "resources": [
+      {
+        "id": "state",
+        "path": "toast",
+        "equals": "",
+        "atSteps": [
+          {
+            "label": "after",
+            "equals": "SPACE AGAIN: DOUBLE JUMP"
+          }
+        ],
+        "allowTrivial": "The toast is empty at rest and clears 2.4 s later; the claim is the hint showing from the first single jump."
+      }
+    ]
+  }
+}

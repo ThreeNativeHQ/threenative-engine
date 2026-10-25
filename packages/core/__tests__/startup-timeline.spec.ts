@@ -1,3 +1,4 @@
+import { Texture } from "three";
 import { describe, expect, it } from "vitest";
 import { defineGame } from "../src/game.js";
 import type { ICtx, IStartupTimeline } from "../src/scene.js";
@@ -163,6 +164,88 @@ describe("startup timeline", () => {
       expect(ready?.readyMs ?? 0).toBeGreaterThanOrEqual(ready?.frameworkReadyMs ?? -1);
       expect(capturedCtx?.startup.progress).toBe(1);
       expect(capturedCtx?.startup.phase).toBe("ready");
+    } finally {
+      await game.stop();
+      Object.defineProperty(globalThis, "requestAnimationFrame", {
+        configurable: true,
+        value: requestFrame,
+      });
+    }
+  });
+
+  // The owned engine skips every frame whose environment is still baking, and a skipped frame is a
+  // fast frame. A game with no loading cover must still wait for the bake, or `ready` arrives before
+  // the world has drawn once (the V8 player's blank kits, 4e31fcead).
+  it("should hold readiness for an unbaked environment in a game with no loading cover", async () => {
+    const canvas = new EventTarget() as EventTarget & Partial<HTMLCanvasElement>;
+    Object.defineProperties(canvas, {
+      clientHeight: { configurable: true, value: 90 },
+      clientWidth: { configurable: true, value: 160 },
+      parentElement: { configurable: true, value: null },
+    });
+    let capturedCtx: ICtx | undefined;
+    class Lit extends Scene {
+      static override readonly initialState = {};
+      override enter(ctx: ICtx): undefined {
+        capturedCtx = ctx;
+        ctx.scene.environment = new Texture();
+        return undefined;
+      }
+    }
+    let baked: (done: boolean) => void = () => undefined;
+    const prepared: unknown[] = [];
+    let frame: ((time: number) => void) | undefined;
+    const game = defineGame({
+      renderer: {
+        canvas: canvas as never,
+        preferWebGPU: false,
+        webgl2Factory: () =>
+          ({
+            domElement: canvas,
+            prepareEnvironmentAsync: (scene: { environment?: unknown }) => {
+              prepared.push(scene.environment);
+              return new Promise<boolean>((resolve) => {
+                baked = resolve;
+              });
+            },
+            render: () => undefined,
+            setSize: () => undefined,
+          }) as never,
+      },
+      scenes: { lit: Lit },
+      start: "lit",
+    });
+    const requestFrame = globalThis.requestAnimationFrame;
+    Object.defineProperty(globalThis, "requestAnimationFrame", {
+      configurable: true,
+      value: (callback: (time: number) => void) => {
+        frame = callback;
+        return 1;
+      },
+    });
+    try {
+      await game.start();
+      if (frame === undefined) throw new Error("Game did not start its loop.");
+      for (let index = 1; index <= 12; index += 1) {
+        frame(index * 16.7);
+        await Promise.resolve();
+      }
+      expect(prepared).toHaveLength(1);
+      expect(prepared[0]).toBe(capturedCtx?.scene.environment);
+      expect(capturedCtx?.startup.timeline.compileSettledMs).toBeUndefined();
+      expect(capturedCtx?.startup.timeline.readyMs).toBeUndefined();
+
+      baked(true);
+      for (
+        let index = 13;
+        index <= 30 && capturedCtx?.startup.timeline.readyMs === undefined;
+        index += 1
+      ) {
+        frame(index * 16.7);
+        await Promise.resolve();
+      }
+      await capturedCtx?.startup.whenReady();
+      expect(capturedCtx?.startup.timeline.readyMs).toBeTypeOf("number");
     } finally {
       await game.stop();
       Object.defineProperty(globalThis, "requestAnimationFrame", {

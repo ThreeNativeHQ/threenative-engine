@@ -168,12 +168,35 @@ export class WebGPURenderer {
       this.library.apply(this.toneMapping);
       globalThis.tn.setRendererState(this);
     } finally { globalThis.__tnGameSpan?.(GAME_SPANS.publish, 1); }
+    this.__worldFrame = this.info.frame;
+  }
+  // core's canvas layer (a loading screen, a canvas HUD), drawn over this frame's world with no post and no temporal
+  // step (Renderer::overlayRenderer), and never published as tn.scene: as the world, it moved the world's temporal
+  // history and metered exposure. A frame core draws no world in (a held loader frame) draws the overlay alone;
+  // core advances info.frame once per frame.
+  renderOverlay(scene, camera) {
+    syncUniforms();
+    globalThis.tn.renderOverlay(scene, camera, this.__worldFrame === this.info.frame);
   }
   compileAsync(root, camera, scene) {
     syncUniforms();
     this.library.apply(this.toneMapping);
     globalThis.tn.setRendererState(this);
     return globalThis.tn.compileAsync(root, camera, scene);
+  }
+  // Core warm-up's PMREM preparer (warmup.ts nativeEnvironmentPreparer): the player skips every frame
+  // whose environment is not baked yet, so startup waits for the bake instead of counting empty frames.
+  // True once baked; false at `deadlineMs` (a performance.now() time).
+  async prepareEnvironmentAsync(scene, camera, deadlineMs = Number.POSITIVE_INFINITY) {
+    syncUniforms();
+    this.library.apply(this.toneMapping);
+    globalThis.tn.setRendererState(this);
+    while (performance.now() < deadlineMs) {
+      if (globalThis.tn.prepareEnvironment(scene, camera)) return true;
+      // A macrotask: the GPU completion that advances the bake lands between tasks.
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    return false;
   }
   // PRD-620: three's compute(node | node[]) queues kernels in call order; the player runs them before the
   // frame's passes (and before a render target or a read of one). A dispatch size override has no native form.

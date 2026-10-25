@@ -1,0 +1,27 @@
+{
+  "name": "runner-stride",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": { "width": 1280, "height": 720 },
+  "warmupFrames": 40,
+  "subject": "player",
+  "steps": [
+    { "kind": "wait", "label": "settle", "waitTicks": 60, "release": true },
+    { "kind": "input", "label": "run", "press": "ArrowUp", "holdTicks": 60, "release": true }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "footSlip": [
+      {
+        "atStep": "run",
+        "feet": ["foot_l", "foot_r"],
+        "maxSlideSpeed": 1
+      }
+    ]
+  }
+}

@@ -5,7 +5,12 @@
  * before an upload. The V8 player's equivalent is `runtime-native/src/engine/player/core-textures.mjs`;
  * the browser decodes images itself, so no bitmap needs the engine decoder here.
  */
-import { type IBrowserRuntime, type IEngineRef, engineRef } from "./browser-backend.js";
+import {
+  type EngineValue,
+  type IBrowserRuntime,
+  type IEngineRef,
+  engineRef,
+} from "./browser-backend.js";
 
 type EngineClass = new (...args: unknown[]) => object;
 
@@ -100,12 +105,16 @@ export function defineTextureSources(
         configurable: true,
         set(this: object, value: unknown) {
           const image = value ? sources.get(this) : undefined;
-          if (image !== undefined)
-            runtime.set(
-              engineRef(this) as IEngineRef,
-              "image.data",
-              Array.from(pixelsOf(image).data),
-            );
+          if (image !== undefined) {
+            const data = pixelsOf(image).data;
+            const pixels =
+              runtime.typedArrays === true &&
+              ArrayBuffer.isView(data) &&
+              !(data instanceof DataView)
+                ? (data as EngineValue)
+                : Array.from(data);
+            runtime.set(engineRef(this) as IEngineRef, "image.data", pixels);
+          }
           needsUpdate.call(this, value);
         },
       },

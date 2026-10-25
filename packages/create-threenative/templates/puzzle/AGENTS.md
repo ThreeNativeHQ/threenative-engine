@@ -63,17 +63,14 @@ Leave `assets` absent: the cook selects target-decodable passes, with `models.sh
 
 Relative look capture: a binding with `pointerRelative: true` captures the canvas on click by default; set `captureOnClick: false` and call `ctx.input.captureMouse()` from your own gesture to opt out. Desktop mode precedence is CLI (`--windowed`, `--maximized`, `--fullscreen`) over `display.fullscreen` over `window.maximized`; with both false, `window.width`/`height` size the normal window.
 Scenes use `load`, `enter`, `update`, `exit`, `render`; physics nodes are Godot-named and disposable.
-The vault is one fixed three-quarter shot that drifts a fraction of a metre toward the warden, so the
-camera reads the body in the frame function; a trailing follow camera is a different game.
+The vault is one fixed three-quarter shot that drifts a fraction of a metre toward the warden, so the camera reads the body in the frame function; a trailing follow camera is a different game.
 `input.vector("move").y` is +up, so forward uses one explicit `-move.y` conversion. Rigged assets: put a `.glb` in `assets/`, await `ctx.assets.model("hero.glb")` in `Scene.load()`, then drive
 `AnimationPlayer` beside its entity. Imported foliage (Fab/Megascans cutouts) draws with its own albedo, normal map and alpha cutoff under the scene's environment light — never tint it, fake its emission or flatten its normals to make up for missing light; `TN_UNLIT_FOLIAGE` names cutout materials drawn with no environment. `ctx.goto(name)` rebuilds without resetting game state; from
 a frame function `goto` and then `return`; `ctx.state.set({ /* copy this game's initial-state shape */ })`
 is a partial patch. `game.goto("<scene-name>")` also rebuilds the scene, but it resets the game's
 state. Seeded randomness is deterministic only when `defineGame({ seed })` is configured.
 
-When an animation looks wrong, measure it before rewriting it. `clipPoseError` scores a
-retargeted clip against its source per bone in degrees — whole quaternions relative to each rig's
-own bind pose, so the two rigs' bind conventions cancel and a limb rolled about its own axis is
+When an animation looks wrong, measure it before rewriting it. `clipPoseError` scores a retargeted clip against its source per bone in degrees — whole quaternions relative to each rig's own bind pose, so the two rigs' bind conventions cancel and a limb rolled about its own axis is
 caught where a bone-direction check reads zero. `clipTrackBindings` names tracks that bind nothing
 (the `<bone>.undefined` failure that plays the bind pose instead of the animation),
 `clipBoneCoverage` names bones the clip does not drive and which therefore keep the previous
@@ -91,4 +88,6 @@ For terrain generation or editing, read `node_modules/create-threenative/agent-d
 ## Optional multiplayer transport
 For online play only, import `connect` from `@threenative/core/net` with an HTTPS URL and nonempty identity credential; configure `connectTimeoutMs`, `maxReliableMessageBytes`, `maxQueuedReliableBytes`, and `maxQueuedDatagrams` (10s/65,536/1 MiB/256), use `reliable-ordered` for ordered reliable messages and bounded `unreliable` datagrams that may drop, and keep serialization, replication, prediction, interpolation, snapshots and rejoin in this game's `src/` and server. There is no fallback: unsupported WebTransport/native rejects with `TN_NET_UNAVAILABLE`; reference Go server: `packages/runtime-native/examples/webtransport/server`.
 Material backlighting lives in `src/render/lighting.ts`: named `rimGain` and `fillGain` controls preserve the authored palette; `materialLighting.ts` reports `TN_ENVIRONMENT_CONTRIBUTION`. Admission is limited to high hardware desktop WebGPU; mobile/software/WebGL/native retain original materials. Existing authored fill stays authoritative.
-`src/render/exposure.ts` owns optional adaptation (`enabled: false`); `autoExposure.ts` meters even when disabled. Recipe: `node_modules/create-threenative/agent-docs/references/auto-exposure.md`. Fog is height fog: `HEIGHT_FOG` in `src/render/heightFog.ts` (`density`, `heightFalloff`, `fogHeight`, `maxOpacity`, `startDistance`, `sunExponent`, `sunStartDistance`, `cutoffDistance`) is added to the `FogExp2` distance term on `scene.fogNode` and never replaces it, so a streaming fog `far` still holds.
+`src/render/exposure.ts` is optional game policy; pass it as `exposurePolicy` in `quality.ts` to use it. Core owns adaptation and its readback. Recipe: `node_modules/create-threenative/agent-docs/references/auto-exposure.md`. Fog is height fog: `HEIGHT_FOG` in `src/render/heightFog.ts` (`density`, `heightFalloff`, `fogHeight`, `maxOpacity`, `startDistance`, `sunExponent`, `sunStartDistance`, `cutoffDistance`) is added to the `FogExp2` distance term on `scene.fogNode` and never replaces it, so a streaming fog `far` still holds.
+
+Core supplies Unreal filmic and metered defaults through `WorldEnvironment` and `qualityPreset`. This kit currently retains `tonemapMode: "aces"` and `autoExposureEnabled: false` with fixed `exposure` in `quality.ts` until its PRD-723 visual migration earns IMPROVEMENT.

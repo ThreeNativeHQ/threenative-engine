@@ -59,6 +59,36 @@ const CELL = 64;
 const BLUR_RADIUS = 31;
 /** PostProcessWeightedSampleSum.cpp LegacyCompatibilityConstant. */
 const BLUR_SHAPE = -16.7;
+/**
+ * The blurred luminance reads SceneDownsampleChain mip 4, a sixteenth of the view (PostProcessing.cpp:1431-1434),
+ * and blurs it there: a radius of 31 texels at that size spans a quarter of the view, as Unreal's does.
+ */
+const BLUR_DOWNSAMPLE = 16;
+/** LocalExposureBlurredLuminanceKernelSizePercent (Scene.cpp:531): the kernel's diameter as a share of the width. */
+const BLUR_KERNEL_PERCENT = 50;
+
+/** The pass sizes for a drawing buffer, in texels: half for the grid's input, a sixteenth for the blur. */
+export function localExposureSizes(
+  width: number,
+  height: number,
+): {
+  readonly half: readonly [number, number];
+  readonly blur: readonly [number, number];
+  readonly cells: readonly [number, number];
+  readonly blurRadius: number;
+} {
+  const half = [Math.max(1, Math.ceil(width / 2)), Math.max(1, Math.ceil(height / 2))] as const;
+  const blur = [
+    Math.max(1, Math.ceil(width / BLUR_DOWNSAMPLE)),
+    Math.max(1, Math.ceil(height / BLUR_DOWNSAMPLE)),
+  ] as const;
+  // GetBlurRadius takes the filter width times the percent as a diameter; GetClampedKernelRadius caps it.
+  const blurRadius = Math.min(
+    BLUR_RADIUS,
+    Math.max(1e-4, blur[0] * BLUR_KERNEL_PERCENT * 0.01 * 0.5),
+  );
+  return { half, blur, cells: [Math.ceil(half[0] / CELL), Math.ceil(half[1] / CELL)], blurRadius };
+}
 
 function scratch(type: typeof FloatType | typeof HalfFloatType, linear: boolean): RenderTarget {
   return new RenderTarget(1, 1, {
@@ -86,16 +116,21 @@ export class LocalExposureNode extends TempNode<"float"> {
   readonly #half = uniform(new Vector2(1, 1));
   readonly #grid = uniform(new Vector2(1, 1));
   readonly #cells = uniform(new Vector2(1, 1));
+  readonly #blurSize = uniform(new Vector2(1, 1));
+  readonly #blurRadius = uniform(BLUR_RADIUS);
   readonly #quad = new QuadMesh();
   readonly #logMaterial = new NodeMaterial();
+  readonly #lumMaterial = new NodeMaterial();
   readonly #blurXMaterial = new NodeMaterial();
   readonly #blurYMaterial = new NodeMaterial();
   readonly #gridMaterial = new NodeMaterial();
   readonly #logTarget = scratch(FloatType, false);
+  readonly #lumTarget = scratch(FloatType, false);
   readonly #blurXTarget = scratch(FloatType, false);
   readonly #blurTarget = scratch(HalfFloatType, true);
   readonly #gridTarget = scratch(FloatType, false);
   readonly #logTexture = texture(this.#logTarget.texture);
+  readonly #lumTexture = texture(this.#lumTarget.texture);
   readonly #blurXTexture = texture(this.#blurXTarget.texture);
   readonly #blurTexture = texture(this.#blurTarget.texture);
   readonly #gridTexture = texture(this.#gridTarget.texture);
@@ -109,10 +144,8 @@ export class LocalExposureNode extends TempNode<"float"> {
     this.#exposure = exposure;
     this.updateBeforeType = NodeUpdateType.FRAME;
     const half = this.#half;
-    const kernel = Array.from({ length: 2 * BLUR_RADIUS + 1 }, (_, i) =>
-      Math.exp(BLUR_SHAPE * ((i - BLUR_RADIUS) / BLUR_RADIUS) ** 2),
-    );
-    const kernelSum = kernel.reduce((sum, value) => sum + value, 0);
+    const blurSize = this.#blurSize;
+    const radius = this.#blurRadius;
 
     // Pass 1: log2 luminance of the half resolution image (a 2x2 average of colour).
     this.#logMaterial.fragmentNode = Fn(() => {
@@ -130,26 +163,56 @@ export class LocalExposureNode extends TempNode<"float"> {
       return vec4(luminance.log2(), 0, 0, 1);
     })();
 
-    // Passes 2 and 3: the Gaussian of the log luminance, one axis each, mirror addressed.
+    // Pass 2: log2 luminance of the colour averaged over each 16x16 block, the downsample chain's mip 4
+    // (SetupLogLuminanceCS takes the log after the downsample). Point taps at texel centres, so the
+    // input's filter does not matter.
+    this.#lumMaterial.fragmentNode = Fn(() => {
+      const c = uv();
+      const texel = float(1).div(this.#full);
+      const sum = vec3(0).toVar();
+      Loop(BLUR_DOWNSAMPLE * BLUR_DOWNSAMPLE, ({ i }) => {
+        const x = float(i)
+          .mod(BLUR_DOWNSAMPLE)
+          .sub((BLUR_DOWNSAMPLE - 1) / 2);
+        const y = float(i)
+          .div(BLUR_DOWNSAMPLE)
+          .floor()
+          .sub((BLUR_DOWNSAMPLE - 1) / 2);
+        sum.addAssign(input.sample(c.add(texel.mul(vec2(x, y)))).rgb);
+      });
+      const luminance = exposureMeter(vec4(sum.div(BLUR_DOWNSAMPLE * BLUR_DOWNSAMPLE), 1), c).x.max(
+        2 ** LOG_MIN,
+      );
+      return vec4(luminance.log2(), 0, 0, 1);
+    })();
+
+    // Passes 3 and 4: the Gaussian of that log luminance, one axis each, mirror addressed, with the
+    // radius Compute1DGaussianFilterKernel takes from the width (both axes use it).
     const blur = (source: ColourTexture, axis: 0 | 1): Node<"vec4"> =>
       Fn(() => {
         const c = uv();
-        const step = float(1).div(axis === 0 ? half.x : half.y);
+        const step = float(1).div(axis === 0 ? blurSize.x : blurSize.y);
+        const reach = radius.ceil();
         const sum = float(0).toVar();
+        const weights = float(0).toVar();
         Loop(2 * BLUR_RADIUS + 1, ({ i }) => {
           const offset = float(i).sub(BLUR_RADIUS);
-          const t = offset.div(BLUR_RADIUS);
-          const weight = t.mul(t).mul(BLUR_SHAPE).exp();
+          const t = offset.div(radius);
+          const weight = offset
+            .abs()
+            .lessThanEqual(reach)
+            .select(t.mul(t).mul(BLUR_SHAPE).exp(), 0);
           const along = mirror((axis === 0 ? c.x : c.y).add(offset.mul(step)));
           const at = axis === 0 ? vec2(along, c.y) : vec2(c.x, along);
           sum.addAssign(source.sample(at).level(float(0)).r.mul(weight));
+          weights.addAssign(weight);
         });
-        return vec4(sum.div(kernelSum), 0, 0, 1);
+        return vec4(sum.div(weights), 0, 0, 1);
       })();
-    this.#blurXMaterial.fragmentNode = blur(this.#logTexture, 0);
+    this.#blurXMaterial.fragmentNode = blur(this.#lumTexture, 0);
     this.#blurYMaterial.fragmentNode = blur(this.#blurXTexture, 1);
 
-    // Pass 4: the bilateral grid. Texel (cell x * DEPTH + bin, cell y) holds the summed weight
+    // Pass 5: the bilateral grid. Texel (cell x * DEPTH + bin, cell y) holds the summed weight
     // and weighted log luminance of the half resolution texels in that cell, each texel shared
     // between its two nearest bins by linear weights (PostProcessHistogram.usf).
     this.#gridMaterial.fragmentNode = Fn(() => {
@@ -255,22 +318,26 @@ export class LocalExposureNode extends TempNode<"float"> {
     if (renderer === null) throw new Error("Local exposure requires a renderer.");
     renderer.getDrawingBufferSize(this.#size);
     this.#full.value.copy(this.#size);
-    const halfWidth = Math.max(1, Math.ceil(this.#size.x / 2));
-    const halfHeight = Math.max(1, Math.ceil(this.#size.y / 2));
-    const cellsX = Math.ceil(halfWidth / CELL);
-    const cellsY = Math.ceil(halfHeight / CELL);
+    const sizes = localExposureSizes(this.#size.x, this.#size.y);
+    const [halfWidth, halfHeight] = sizes.half;
+    const [blurWidth, blurHeight] = sizes.blur;
+    const [cellsX, cellsY] = sizes.cells;
     this.#half.value.set(halfWidth, halfHeight);
+    this.#blurSize.value.set(blurWidth, blurHeight);
+    this.#blurRadius.value = sizes.blurRadius;
     this.#cells.value.set(cellsX, cellsY);
     this.#grid.value.set(cellsX * DEPTH, cellsY);
     this.#logTarget.setSize(halfWidth, halfHeight);
-    this.#blurXTarget.setSize(halfWidth, halfHeight);
-    this.#blurTarget.setSize(halfWidth, halfHeight);
+    this.#lumTarget.setSize(blurWidth, blurHeight);
+    this.#blurXTarget.setSize(blurWidth, blurHeight);
+    this.#blurTarget.setSize(blurWidth, blurHeight);
     this.#gridTarget.setSize(cellsX * DEPTH, cellsY);
     this.#rendererState ??= RendererUtils.saveRendererState(renderer);
     this.#rendererState = RendererUtils.resetRendererState(renderer, this.#rendererState);
     try {
       for (const [material, target] of [
         [this.#logMaterial, this.#logTarget],
+        [this.#lumMaterial, this.#lumTarget],
         [this.#blurXMaterial, this.#blurXTarget],
         [this.#blurYMaterial, this.#blurTarget],
         [this.#gridMaterial, this.#gridTarget],
@@ -287,10 +354,17 @@ export class LocalExposureNode extends TempNode<"float"> {
   override dispose(): void {
     if (this.#disposed) return;
     this.#disposed = true;
-    for (const target of [this.#logTarget, this.#blurXTarget, this.#blurTarget, this.#gridTarget])
+    for (const target of [
+      this.#logTarget,
+      this.#lumTarget,
+      this.#blurXTarget,
+      this.#blurTarget,
+      this.#gridTarget,
+    ])
       target.dispose();
     for (const material of [
       this.#logMaterial,
+      this.#lumMaterial,
       this.#blurXMaterial,
       this.#blurYMaterial,
       this.#gridMaterial,

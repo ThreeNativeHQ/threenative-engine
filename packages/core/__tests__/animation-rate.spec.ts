@@ -854,3 +854,77 @@ describe("AnimationPlayer update rate", () => {
     for (const rig of rigs) rig.dispose();
   });
 });
+
+describe("camera-rate walk cost", () => {
+  // Lantern Vale on the web engine: the camera-rate pass walked every visible object to find the few
+  // rigs, and each object's userData, geometry and parent read crossed into the engine. It was 41% of
+  // the main thread. Scenery that no rig owns and no stand-in observes is not read at all.
+  it("reads nothing from scenery that carries no animation rate", () => {
+    const rig = player(1);
+    const view = rendered(rig, -20);
+    let reads = 0;
+    const read = <T>(value: T): T => {
+      reads += 1;
+      return value;
+    };
+    for (let index = 0; index < 50; index += 1) {
+      const prop = new Mesh(new SphereGeometry(1, 8, 6), new MeshBasicMaterial());
+      prop.position.set(index, 0, -30);
+      const { geometry, userData } = prop;
+      Object.defineProperty(prop, "geometry", { get: () => read(geometry) });
+      Object.defineProperty(prop, "userData", { get: () => read(userData) });
+      // The walk itself does not reach scenery either: it starts at the rigs.
+      Object.defineProperty(prop, "visible", { get: () => read(true), set: () => {} });
+      view.scene.add(prop);
+    }
+    view.scene.updateMatrixWorld(true);
+    reads = 0;
+    view.cull.prepareAnimation(view.scene, view.camera, 720);
+    expect(reads).toBe(0);
+    // The rig is still observed on the frame the walk published.
+    const state = animationRateStates.get(rig.root);
+    expect(state?.source).toBe(view.cull);
+    expect(state?.frame).toBe(view.cull.animationFrame);
+    rig.dispose();
+  });
+
+  // Lantern Vale battle capture: each rig part walked its parents to the scene root twice a frame
+  // (rate states, then camera attachment), 7% of the main thread. The parts above a rig are read
+  // once per rig, not once per part.
+  it("reads the groups above a rig once per rig, not once per part", () => {
+    const rig = player(1);
+    const view = rendered(rig, -20);
+    for (let index = 0; index < 20; index += 1) {
+      const part = new Mesh(new SphereGeometry(0.2, 8, 6), new MeshBasicMaterial());
+      part.position.x = index * 0.1;
+      rig.root.add(part);
+    }
+    let outer: Group = view.scene as unknown as Group;
+    const groups: Group[] = [];
+    for (let depth = 0; depth < 8; depth += 1) {
+      const group = new Group();
+      outer.add(group);
+      groups.push(group);
+      outer = group;
+    }
+    outer.add(rig.root);
+    view.scene.updateMatrixWorld(true);
+    let reads = 0;
+    for (const group of groups) {
+      const parent = group.parent;
+      Object.defineProperty(group, "parent", {
+        get: () => {
+          reads += 1;
+          return parent;
+        },
+        configurable: true,
+      });
+    }
+    view.cull.prepareAnimation(view.scene, view.camera, 720);
+    expect(reads).toBeLessThanOrEqual(groups.length);
+    const state = animationRateStates.get(rig.root);
+    expect(state?.frame).toBe(view.cull.animationFrame);
+    expect(state?.rate).toBe(1);
+    rig.dispose();
+  });
+});
