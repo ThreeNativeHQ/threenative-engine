@@ -107,6 +107,8 @@ Frame after the GTAO work: ~21 ms. Not scaled by the input size: local exposure 
 
 - Trace cohort qualification: Wasm SHA `d519c305c3a36bffa54c60486f7e51a0ad7443ffa5c47380432025468de24ac3`, player SHA `50da0b5c6d96682b2eb9cb198e79c2dde50aac21f71cf8c6868f89b50093a638`. All three clean kits install, build and typecheck; packed/installed/compiled facades remain ABI 3. Host ABI tests pass 3/3, documentation checks pass (3549 links), and regenerated native coverage exits 0 on the trace source. No strict performance or independent visual gate is implied.
 
+- Named non-gating motion corpus ran on the trace source under private Xvfb: `pnpm tsx scripts/verify-temporal-motion.ts` exits 1. Its own qualification limits it to software WebGPU AA measurements, with no native, reconstruction or GPU-performance claim. Its summary records passing causal/recompile/velocity controls and temporal stability, but failing edge improvement and reveal recovery (both motion and quality checks). Actual frames and measurements remain in the existing workflow output `artifacts/temporal-aa/motion/summary.json`. This is the explicitly non-gating PRD-539 corpus, not a passing temporal quality claim; the required independent three-kit visual judgment stays open.
+
 ## Decisions
 
 - 2026-10-24 (filing agent): the brief asked for 5 phases. `docs/PRDs/AGENTS.md` R5 allows at most 3, so measurement + red test, engine + routing + tier defaults, and gates are the 3 phases. Every requested item keeps its own box.
