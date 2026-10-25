@@ -55,6 +55,7 @@ export const WASM_ENGINE_ENTRY = "build/web/tn-native-engine-web.mjs";
 const ENGINE_MATH_MODULES = new Set([
   "three/src/math/Box3.js",
   "three/src/math/Color.js",
+  "three/src/math/ColorManagement.js",
   "three/src/math/Euler.js",
   "three/src/math/Matrix3.js",
   "three/src/math/Matrix4.js",

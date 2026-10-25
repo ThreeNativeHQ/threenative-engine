@@ -11,6 +11,7 @@
  */
 import { Box3 } from "three/src/math/Box3.js";
 import { Color } from "three/src/math/Color.js";
+import { ColorManagement } from "three/src/math/ColorManagement.js";
 import { Euler } from "three/src/math/Euler.js";
 import { Matrix3 } from "three/src/math/Matrix3.js";
 import { Matrix4 } from "three/src/math/Matrix4.js";
@@ -20,7 +21,7 @@ import { Vector2 } from "three/src/math/Vector2.js";
 import { Vector3 as UpstreamVector3 } from "three/src/math/Vector3.js";
 import { Vector4 } from "three/src/math/Vector4.js";
 
-export { UpstreamVector3 };
+export { ColorManagement, UpstreamVector3 };
 
 interface IVec3 {
   x: number;

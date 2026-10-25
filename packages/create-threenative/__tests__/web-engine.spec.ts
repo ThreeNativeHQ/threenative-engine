@@ -247,6 +247,12 @@ describe("createWebEnginePlugin", () => {
         "/game/node_modules/create-threenative/dist/web-engine-runtime.js",
       ),
     ).toBeNull();
+    expect(
+      plugin.resolveId(
+        "three/src/math/ColorManagement.js",
+        "/repo/packages/three-native/src/browser-math.ts",
+      ),
+    ).toBeNull();
     expect(() => plugin.resolveId("three/src/math/Color.js", "/game/src/main.ts")).toThrow(
       "TN_NATIVE_UPSTREAM_IMPORT",
     );
