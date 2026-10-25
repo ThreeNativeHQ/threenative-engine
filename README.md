@@ -114,9 +114,6 @@ lifecycle.
 
 | Template | What you start with |
 | --- | --- |
-| `collectathon` | Hop Garden: a 3D platformer moveset (triple jump, long jump, wall kick, ledge grab, ground pound) on one island with three Sunseeds |
-| `adventure` | Lantern Vale: a 3D action-adventure with lock-on, a sword and shield, half-hearts, a push-block puzzle, a key and a locked door, and the Stone Warden |
-| `kart` | Clover Cup: a kart racer with a hop into a power-slide, three-stage mini-turbo sparks, boost pads, item boxes (burr, acorn, nitro can) and seven CPU drivers over three laps of a figure-8 |
 | `starter` *(default)* | A polished default project with a React HUD, physics, and a ready-to-edit scene |
 | `minimal` | The smallest project — core and physics only |
 | `platformer` | Jumping, patrols, pickups, camera follow |
@@ -184,13 +181,13 @@ Every Unreal 5.8.3 system that sets the look or the frame cost, split into 380 s
 measured in lines of the Unreal source. Each one maps to the ThreeNative PRD that ports it.
 
 **20% done · 20% in progress · 37% not started · 16% deferred · 5% with no PRD** (share of 676K Unreal lines; the tool-heavy Niagara, Landscape, World Partition, RHI and RenderCore modules are left out)
-· 83 open PRDs on this branch · 72 subsystems with no PRD
+· 84 open PRDs on this branch · 72 subsystems with no PRD
 
 [![Unreal port progress map](docs/PRDs/Unreal/research/unreal-port-status.svg)](docs/PRDs/Unreal/research/unreal-visuals-and-performance-feature-map.html)
 
-**Pace:** 132 PRD boxes ticked a week over the last 2 weeks. The port order runs waves 1-4 first,
-so at that pace the default look is done about **Nov 10, 2026**, and everything filed today about
-**Nov 29, 2026**. Scope grows as PRDs are filed, so read the dates as the earliest finish.
+**Pace:** 120 PRD boxes ticked a week over the last 2 weeks. The port order runs waves 1-4 first,
+so at that pace the default look is done about **Nov 14, 2026**, and everything filed today about
+**Dec 5, 2026**. Scope grows as PRDs are filed, so read the dates as the earliest finish.
 
 [![Unreal port burn-up](docs/PRDs/Unreal/research/unreal-port-progress.svg)](docs/PRDs/Unreal/research/unreal-visuals-and-performance-feature-map.html)
 
