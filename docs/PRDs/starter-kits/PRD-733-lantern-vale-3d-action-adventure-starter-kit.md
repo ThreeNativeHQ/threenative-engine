@@ -506,6 +506,15 @@ Each playtest runs on a project scaffolded from `--template adventure`:
     angles under the torches. Cooler slab shades (0x64666a family) were judged NEUTRAL, 2 runs per
     arm, and not committed. Revisit in a fresh pass with cool grey grout, a less streaky or
     per-slab rotated stone texture, and more variation from slab to slab.
+    `e51b37126` (team lead, 2026-10-24: "an untextured chest at the spawn is a defect"): 13 meshes
+    the texture pass missed (the chest, the Hollow doors, the push block, the switch plate, the
+    tunnel roof, the hut door ring, the pitcher lantern's stick, the dummies' posts) and the Stone
+    Warden now take `surfaced()`. `survives` asserts `untexturedSurfaces` equals 0, which is 13
+    before the fix and 0 after (RTX 2080, headed webgpu). Fresh Opus judge on 2x close-ups, 2 runs
+    per arm against `6494a9b98`: IMPROVEMENT on the chest, door and block sheets, NEUTRAL on the
+    sign reference. Sheets: `~/Downloads/lantern-vale/look1/props-judge/`. Deferred: the rock
+    photo streaks the 1 m push block like layered sandstone, darker than the floor tiles. Revisit
+    it with the slab stone pass above.
   - Wind (owner: "wind and vegetation movement is super fast"): TSL `time` is seconds on the owned
     engine (`renderer.cpp` frameTime_). `2690a12a8` slows the sway to periods of 7-10 s at 0.4 of
     the bend; frame-to-frame motion 0.5 s apart drops from 6.1-10.4 to 2.9-3.6 of 255. Opus judge:
