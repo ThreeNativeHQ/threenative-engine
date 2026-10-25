@@ -140,6 +140,17 @@ describe("three's math values on the browser back end", () => {
     expect(calls.filter((call) => call === "construct Vector3")).toHaveLength(1);
   });
 
+  it("lends a Box3's own upstream Vector3 member to an engine call", () => {
+    const { runtime, calls } = memoryRuntime();
+    const { classes } = defineBrowserClasses(registry, runtime);
+    const Box3 = classes.Box3 as new () => { min: IVec };
+    const Object3D = classes.Object3D as new () => { lookAt(v: IVec): void };
+    const box = new Box3();
+    // Box3's default min comes from three's own Vector3 module, not the hand-written class.
+    new Object3D().lookAt(box.min);
+    expect(calls.some((call) => call.startsWith("lookAt"))).toBe(true);
+  });
+
   it("keeps a JS box's member vectors in JS until the box itself crosses", () => {
     const { runtime, calls } = memoryRuntime();
     const { classes } = defineBrowserClasses(registry, runtime);
@@ -533,5 +544,13 @@ describe("three's math values on the browser back end", () => {
       "setAttribute uv",
       "hasAttribute uv",
     ]);
+  });
+  it("lends three's own Vector3, as a Box3 default member, to an engine call", () => {
+    const { runtime, calls } = memoryRuntime();
+    const { classes } = defineBrowserClasses(registry, runtime);
+    const Box3 = classes.Box3 as new () => { min: IVec };
+    const Object3D = classes.Object3D as new () => { lookAt(v: IVec): void };
+    new Object3D().lookAt(new Box3().min);
+    expect(calls.some((call) => call.startsWith("lookAt"))).toBe(true);
   });
 });

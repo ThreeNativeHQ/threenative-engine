@@ -17,7 +17,10 @@ import { Matrix4 } from "three/src/math/Matrix4.js";
 import { Quaternion } from "three/src/math/Quaternion.js";
 import { Sphere } from "three/src/math/Sphere.js";
 import { Vector2 } from "three/src/math/Vector2.js";
+import { Vector3 as UpstreamVector3 } from "three/src/math/Vector3.js";
 import { Vector4 } from "three/src/math/Vector4.js";
+
+export { UpstreamVector3 };
 
 interface IVec3 {
   x: number;
@@ -470,5 +473,8 @@ export function defineMath() {
     Box3,
     Sphere,
     MathUtils,
+    // three's own Vector3, whose prototype Box3 and Sphere use for their default members; the
+    // back end registers it beside the hand-written Vector3 so those members can cross too.
+    UpstreamVector3,
   };
 }

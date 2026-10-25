@@ -12,7 +12,7 @@
  * collected wrapper releases its object.
  */
 
-import { defineMath } from "./browser-math.js";
+import { UpstreamVector3, defineMath } from "./browser-math.js";
 import type { ITslRuntime, TslArgValue } from "./browser-tsl.js";
 import { detachVirtualShadow, shadowFilterOptions, virtualShadowOptions } from "./shadow-node.js";
 import { withUpdateRanges } from "./update-ranges.js";
@@ -548,6 +548,8 @@ export function defineBrowserClasses(
       write: (value, values) => {
         value.elements = Array.from(values);
       },
+      // `elements` is column-major; the engine constructor takes three's row-major set order.
+      args: (values) => [0, 3, 6, 1, 4, 7, 2, 5, 8].map((index) => values[index] as number),
     },
     // biome-ignore lint/style/useNamingConvention: keyed by three's class name.
     Matrix4: {
@@ -558,6 +560,11 @@ export function defineBrowserClasses(
       write: (value, values) => {
         value.elements = Array.from(values);
       },
+      // `elements` is column-major; the engine constructor takes three's row-major set order.
+      args: (values) =>
+        [0, 4, 8, 12, 1, 5, 9, 13, 2, 6, 10, 14, 3, 7, 11, 15].map(
+          (index) => values[index] as number,
+        ),
     },
     // biome-ignore lint/style/useNamingConvention: keyed by three's class name.
     Box3: {
@@ -610,14 +617,30 @@ export function defineBrowserClasses(
       borrowing = false;
     }
   };
-  const makeEngineValue = (name: string, values: number[]): IEngineRef =>
-    runtime.construct(name, values);
-  const engineArgs = (info: IValueClass, values: number[]): EngineValue[] =>
-    info.plan.args === undefined ? values : info.plan.args(values, makeEngineValue);
+  // A plan's member-vector arguments (Box3's two, Sphere's one) are native temporaries: the engine
+  // copies them, so they are released as soon as the value that owns the lanes is constructed.
+  const engineArgs = (
+    info: IValueClass,
+    values: number[],
+  ): { args: EngineValue[]; temporaries: IEngineRef[] } => {
+    if (info.plan.args === undefined) return { args: values, temporaries: [] };
+    const temporaries: IEngineRef[] = [];
+    const args = info.plan.args(values, (name, lanes) => {
+      const ref = runtime.construct(name, lanes);
+      temporaries.push(ref);
+      return ref;
+    });
+    return { args, temporaries };
+  };
   const lend = (value: IValueLanes, info: IValueClass): IEngineRef => {
     let scratch = info.pool[info.top];
     if (scratch === undefined) {
-      scratch = wrap(runtime.construct(info.name, engineArgs(info, info.plan.read(value))));
+      const built = engineArgs(info, info.plan.read(value));
+      try {
+        scratch = wrap(runtime.construct(info.name, built.args));
+      } finally {
+        for (const temporary of built.temporaries) runtime.release(temporary);
+      }
       info.pool.push(scratch);
     }
     info.top++;
@@ -642,7 +665,12 @@ export function defineBrowserClasses(
     const values = info.plan.read(value);
     for (const key of info.plan.drop) delete value[key];
     Object.setPrototypeOf(value, info.engine);
-    adopt(value, runtime.construct(info.name, engineArgs(info, values)));
+    const built = engineArgs(info, values);
+    try {
+      adopt(value, runtime.construct(info.name, built.args));
+    } finally {
+      for (const temporary of built.temporaries) runtime.release(temporary);
+    }
   };
   // An engine-owned value reads and writes its lanes in the engine's memory through accessors named
   // for the storage its class actually uses. Quaternion and Euler store `_x`, Matrix stores
@@ -1087,13 +1115,17 @@ export function defineBrowserClasses(
     // Engine properties a class's own view already names: the generic accessors stay off them.
     const skip = new Set<string>();
     if (valueClass !== undefined) {
-      valueClasses.set(prototype, {
+      const info: IValueClass = {
         name,
         engine: accessors,
         pool: [],
         top: 0,
         plan: valuePlans[name] ?? defaultPlan(Object.keys(binding.fields ?? {})),
-      });
+      };
+      valueClasses.set(prototype, info);
+      // Box3 and Sphere build their default members from three's own Vector3 module, not the
+      // hand-written class; both are the same value and cross the same way.
+      if (name === "Vector3") valueClasses.set(UpstreamVector3.prototype, info);
       defineValueView(name, accessors, binding, skip);
     }
     for (const method of binding.methods) {

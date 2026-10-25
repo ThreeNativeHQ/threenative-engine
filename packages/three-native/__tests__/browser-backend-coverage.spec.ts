@@ -448,8 +448,9 @@ describe("BufferAttribute sync between the JS array and the engine, on the brows
           return ref;
         }
         if (name === "Matrix4") {
-          // A JS Matrix4 that a call takes is promoted with its sixteen numbers (PRD-742).
-          matrices.set(key, [Number(args[12] ?? 0), Number(args[13] ?? 0), Number(args[14] ?? 0)]);
+          // A JS Matrix4 that a call takes is promoted with its sixteen row-major numbers (PRD-742):
+          // the translation is the fourth column, so n14/n24/n34 are indices 3, 7 and 11.
+          matrices.set(key, [Number(args[3] ?? 0), Number(args[7] ?? 0), Number(args[11] ?? 0)]);
           return ref;
         }
         const handed = args[0];

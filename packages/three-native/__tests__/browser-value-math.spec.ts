@@ -231,6 +231,65 @@ describe("PRD-742 value math stays in JS on the web engine", () => {
     expect([...heap.subarray(at + 12, at + 15)]).toEqual([1, 2, 3]);
   });
 
+  it("promotes a JS matrix with row-major constructor arguments, not transposed", () => {
+    const constructed: { name: string; args: unknown[] }[] = [];
+    let types = 0;
+    const typeId = () => ++types;
+    const construct = (name: string, args: readonly unknown[]): IEngineRef => {
+      constructed.push({ name, args: [...args] });
+      return { key: `${name}:${constructed.length}`, type: typeId() };
+    };
+    const { classes } = defineBrowserClasses(registry, {
+      typeId,
+      construct,
+      invoke: () => null,
+      get(self, property) {
+        if (property === "__address") return 0;
+        throw new Error(`get ${property}`);
+      },
+      set: () => undefined,
+      release: () => undefined,
+      setCallback: () => undefined,
+    });
+    const Plane = classes.Plane as new () => { applyMatrix4(m: object): void };
+    const Matrix4 = classes.Matrix4 as typeof ThreeMatrix4;
+    const matrix = new Matrix4().makeTranslation(1, 2, 3);
+    new Plane().applyMatrix4(matrix);
+    const promoted = constructed.find((entry) => entry.name === "Matrix4");
+    expect(promoted).toBeDefined();
+    // Row-major n14/n24/n34 are indices 3, 7, 11; column-major elements would put them at 12, 13, 14.
+    expect([promoted?.args[3], promoted?.args[7], promoted?.args[11]]).toEqual([1, 2, 3]);
+  });
+
+  it("releases the temporary vectors a Box3 or Sphere promotion builds", () => {
+    let released = 0;
+    const types = new Map<string, number>();
+    const typeId = (name: string) =>
+      types.get(name) ?? types.set(name, types.size + 1).get(name) ?? 0;
+    const { classes } = defineBrowserClasses(registry, {
+      typeId,
+      construct: (name) => ({ key: `${name}:${types.size}`, type: typeId(name) }),
+      invoke: () => null,
+      get: (self, property) => (property === "__address" ? 0 : 0),
+      set: () => undefined,
+      release: () => {
+        released++;
+      },
+      setCallback: () => undefined,
+    });
+    const Box3 = classes.Box3 as typeof ThreeBox3;
+    const Sphere = classes.Sphere as typeof ThreeSphere;
+    const Geometry = classes.BufferGeometry as new () => {
+      boundingBox: object | null;
+      boundingSphere: object | null;
+    };
+    const geometry = new Geometry();
+    geometry.boundingBox = new Box3();
+    expect(released).toBe(2);
+    geometry.boundingSphere = new Sphere();
+    expect(released).toBe(3);
+  });
+
   it("keeps Box3 and Sphere values JS, with copies on the engine side", () => {
     const classes = classesOf();
     const Vector3 = classes.Vector3 as typeof ThreeVector3;
@@ -242,5 +301,54 @@ describe("PRD-742 value math stays in JS on the web engine", () => {
     expect(sphere.containsPoint(new Vector3(1, 2, 3))).toBe(true);
     expect(engineRef(box)).toBeUndefined();
     expect(engineRef(sphere)).toBeUndefined();
+  });
+  it("promotes a JS matrix with row-major constructor arguments", () => {
+    const seen: number[][] = [];
+    let types = 0;
+    const { classes } = defineBrowserClasses(registry, {
+      typeId: () => ++types,
+      construct(name, args) {
+        if (name === "Matrix4") seen.push(args.map(Number));
+        return { key: `${name}:${++types}`, type: types };
+      },
+      invoke: () => null,
+      get: () => 0,
+      set: () => undefined,
+      release: () => undefined,
+      setCallback: () => undefined,
+    });
+    const Plane = classes.Plane as new () => { applyMatrix4(m: ThreeMatrix4): unknown };
+    const Matrix4 = classes.Matrix4 as typeof ThreeMatrix4;
+    new Plane().applyMatrix4(new Matrix4().makeTranslation(1, 2, 3));
+    const args = seen.at(-1) as number[];
+    // The native constructor reads three's row-major set order: m14/m24/m34 are 3, 7 and 11.
+    expect([args[3], args[7], args[11]]).toEqual([1, 2, 3]);
+  });
+
+  it("releases the temporary vectors a Box3 or Sphere promotion builds", () => {
+    let released = 0;
+    let types = 0;
+    const { classes } = defineBrowserClasses(registry, {
+      typeId: () => ++types,
+      construct: (name) => ({ key: `${name}:${++types}`, type: types }),
+      invoke: () => null,
+      get: () => 0,
+      set: () => undefined,
+      release: () => {
+        released++;
+      },
+      setCallback: () => undefined,
+    });
+    const Geometry = classes.BufferGeometry as new () => {
+      boundingBox: object;
+      boundingSphere: object;
+    };
+    const Box3 = classes.Box3 as typeof ThreeBox3;
+    const Sphere = classes.Sphere as typeof ThreeSphere;
+    const geometry = new Geometry();
+    geometry.boundingBox = new Box3();
+    expect(released).toBe(2);
+    geometry.boundingSphere = new Sphere();
+    expect(released).toBe(3);
   });
 });
