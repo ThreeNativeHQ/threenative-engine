@@ -56,12 +56,13 @@ import { connectPlaytestBridge, PlaytestBridgeError, type IPlaytestBridgeClient 
 import { waitForStartupReady } from "./startupReady.js";
 import { recordStartupCover } from "./startupCover.js";
 import {
-  PERFORMANCE_BROWSER_ARGS,
+  measurementBrowserArgs,
   reconcileBrowserPointers,
   resolveBrowserArguments,
   softwareAdapterName,
 } from "./browser.js";
 import { withScenarioClock, type IStandalonePlaytestConfig } from "./config.js";
+import { frameDisplay } from "../evaluators/frame-cost.js";
 import {
   provideDisplay,
   runNeedsPixels,
@@ -229,13 +230,14 @@ async function runStandalonePlaytestInternal(
   let completionWindow: ICompletionWindow | undefined;
   const completionDisplay = completionLabel === undefined ? undefined : completionWindowEnvironment("browser", activeConfig.headless);
   if (completionLabel !== undefined && options.remoteBrowser !== undefined) throw new Error("TN_PLAYTEST_COMPLETION_WINDOW_FAILED: requires a fresh local browser process");
-  const browserConfig = scenario.assert?.performance === undefined && completionLabel === undefined
+  const measurementArgs = measurementBrowserArgs(scenario.assert?.performance !== undefined, completionLabel !== undefined, frameDisplay());
+  const browserConfig = measurementArgs.length === 0
     ? activeConfig
     : {
         ...activeConfig,
         browserArgs: [
           ...(activeConfig.browserArgs ?? []),
-          ...PERFORMANCE_BROWSER_ARGS.filter((argument) => !activeConfig.browserArgs?.includes(argument)),
+          ...measurementArgs.filter((argument) => !activeConfig.browserArgs?.includes(argument)),
         ],
       };
   await mkdir(activeConfig.artifactDirectory, { recursive: true });
