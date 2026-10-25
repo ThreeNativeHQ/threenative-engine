@@ -50,7 +50,7 @@ import {
   vec3,
 } from "three/tsl";
 import { MeshStandardNodeMaterial, type Node } from "three/webgpu";
-import { flat, lit, seeded } from "./materials.js";
+import { lit, seeded } from "./materials.js";
 import { C } from "./palette.js";
 import { type ISurfaces, texturedMaterial } from "./surface.js";
 
@@ -725,7 +725,8 @@ export function plantIsland(site: IPlantingSite): { group: Group; meadow: IMeado
     },
   };
 
-  // Beaches: a sand shelf at the cliff's foot, a darker wet band at the water, and a foam line.
+  // Beaches: a sand shelf at the cliff's foot and a darker wet band at the water; the sea's own
+  // shader breaks the foam along it (`water.ts`).
   for (const [x, z, r] of site.shores) {
     const band = (inner: number, outer: number, y: number, material: Material): void => {
       const ring = new RingGeometry(inner, outer, Math.max(24, Math.round(r * 3)), 1).rotateX(
@@ -738,7 +739,6 @@ export function plantIsland(site: IPlantingSite): { group: Group; meadow: IMeado
     };
     band(r - 1, r + 1.1, 0.16, lit(C.sand));
     band(r + 1.1, r + 1.8, 0.1, lit(C.wetSand, { roughness: 0.35 }));
-    band(r + 1.8, r + 2.3, 0.06, flat(C.foam, { opacity: 0.7 }));
   }
   return { group, meadow: meadowLod };
 }

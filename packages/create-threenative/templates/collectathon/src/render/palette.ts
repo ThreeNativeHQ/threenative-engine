@@ -27,7 +27,6 @@ export const C = {
   sand: 0xd8c08c,
   rock: 0xa89580,
   rockDark: 0x7d6c5c,
-  water: 0x2f86b8,
   wood: 0xa8743f,
 
   // Pip: a teal knit beanie with a leaf patch, a rust shirt, a mustard tunic, tan gloves, brown shoes.

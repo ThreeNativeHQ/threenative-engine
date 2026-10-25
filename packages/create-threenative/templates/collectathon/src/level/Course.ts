@@ -1,3 +1,4 @@
+import { WaveField } from "@threenative/core";
 import {
   Box3,
   BoxGeometry,
@@ -7,6 +8,7 @@ import {
   IcosahedronGeometry,
   InstancedMesh,
   type Material,
+  MathUtils,
   Matrix4,
   Mesh,
   type Object3D,
@@ -19,8 +21,7 @@ import type { WalkerKind } from "../entities/Walker.js";
 import { buildCastle, buildSignpost, planarUv, wrapUv } from "../render/castle.js";
 import { type IMeadow, plantIsland } from "../render/foliage.js";
 import { farHills, paintGround } from "../render/ground.js";
-import { lit, mottle, patches } from "../render/materials.js";
-import { C } from "../render/palette.js";
+import { mottle, patches } from "../render/materials.js";
 import {
   type ISurfaces,
   groundMaterial,
@@ -29,9 +30,26 @@ import {
   rockMaterial,
   texturedMaterial,
 } from "../render/surface.js";
+import { seaMaterial } from "../render/water.js";
 import { TERRAIN_BOUNDS, buildTerrain } from "./terrain.js";
 
 type Point = readonly [number, number, number];
+
+/**
+ * The sea's swell, in metres and seconds: wavelengths with no common multiple so the pattern never
+ * repeats, each at the deep-water speed for its length (sqrt(g λ / 2π)). The two short ones are
+ * detail and fade out where a pixel covers more sea than they are long.
+ */
+const SWELL = new WaveField({
+  waves: [
+    { amplitude: 0.09, direction: [0.8, 0.6], speed: 5.2, wavelength: 17.1 },
+    { amplitude: 0.07, direction: [0.3, 0.95], speed: 4.3, wavelength: 11.9 },
+    { amplitude: 0.05, direction: [0.95, -0.3], speed: 3.4, wavelength: 7.3 },
+    { amplitude: 0.035, direction: [-0.4, 0.9], speed: 2.9, wavelength: 5.3 },
+    { amplitude: 0.02, detail: true, direction: [0.6, -0.8], speed: 2.1, wavelength: 2.9 },
+    { amplitude: 0.012, detail: true, direction: [-0.9, -0.45], speed: 1.6, wavelength: 1.7 },
+  ],
+});
 
 /**
  * One island course, laid out from `HERO_FEEL` rather than tuned the other way round. At full run a
@@ -320,10 +338,31 @@ export function buildCourse(rng: () => number, surfaces: ISurfaces, grassShare =
   land.castShadow = true;
   land.userData.solid = true;
   group.add(land);
+  // The sea's depth map covers the island and the islet; a drum rising from the sea is land in it.
+  // The terrain stops at its bounds with the beach shelf still shallow, so the bed slopes down to
+  // the open sea's floor over the last 12 m or the shallows end on a straight line. The islet's
+  // beach rings reach 2 m past its cliff, and a shelf falls 1 m in 2 past them.
+  const [ix, iz] = COURSE.islet.at;
+  const { minX, maxX, minZ, maxZ } = TERRAIN_BOUNDS;
+  const openSea = ground(maxX + 1, 0);
   const sea = new Mesh(
     new PlaneGeometry(1600, 1600).rotateX(-Math.PI / 2),
-    // Rough enough that the low sun's glare spreads into a soft sheen, not a white sheet.
-    lit(C.water, { roughness: 0.14 }),
+    seaMaterial(
+      {
+        height: (x, z) => {
+          const beach = Math.hypot(x - ix, z - iz) - COURSE.islet.radius - 2;
+          if (beach <= 0) return COURSE.seaLevel + 1;
+          const edge = Math.min(x - minX, maxX - x, z - minZ, maxZ - z);
+          const bed = MathUtils.lerp(openSea, ground(x, z), MathUtils.smoothstep(edge, 0, 12));
+          return Math.max(bed, COURSE.seaLevel - beach * 0.5);
+        },
+        minX: -80,
+        minZ: -110,
+        seaLevel: COURSE.seaLevel,
+        size: 180,
+      },
+      SWELL,
+    ),
   );
   sea.position.y = COURSE.seaLevel;
   group.add(farHills(COURSE.seaLevel));

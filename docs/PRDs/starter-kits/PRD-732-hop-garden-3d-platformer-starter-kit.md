@@ -411,7 +411,11 @@ Each playtest runs on a project scaffolded from `--template collectathon`:
     15% one so the planted foot dragged. The hips no longer twist, the walk lifts 16 cm, and the
     run takes over by 4 m/s. Cadence is unchanged (stride rate 1.03 at 9.6 m/s). Proof:
     `playtests/stride.playtest.json` on gen-12lp, HEAD exit 1 at 1.02 m/s, the change exit 0 at
-    0.16 m/s; `survives`, `acrobatics` and `double-tap` exit 0.
+    0.16 m/s; `survives`, `acrobatics` and `double-tap` exit 0. Visual judge (three fresh Opus
+    rounds, 2 runs per arm, RTX 2080 headed WebGPU: a back view, a 3/4 follow camera, then a
+    capture-only side camera with the hero 500 px tall): NEUTRAL each time, no regression. The
+    change is 0.1 rad of hip yaw and 10 cm of walk lift, which a follow camera cannot show against
+    the ground; the `footSlip` gate is the proof of the claim. Sheets: `~/Downloads/hop-garden/legs/`.
 
   - Face (owner fix 5, 2026-10-24: eyes hidden under the brim, a big nose, a blob moustache): in
     `render/hero.ts` the eyes sit lower and further forward so the whites and pupils clear the
@@ -493,6 +497,20 @@ Each playtest runs on a project scaffolded from `--template collectathon`:
     spawn IMPROVEMENT, overall IMPROVEMENT. Its weak, generic leftovers are the gable over an
     arched door at the end of the path and the paired arched windows. Its open polish notes: the
     sprout reads flat like a decal, the sails are plain white boards, and a sail can hide the flag.
+  - Sea (owner fix 4, 2026-10-24: "ocean ... turquoise to deep blue, glints, foam, crisp"): the
+    flat tinted plane is now `src/render/water.ts`, a lit transparent material read from a 256²
+    depth map baked from the island: turquoise over the sand, deep blue past 6 m, a swash of foam
+    along every shore with the swell. The swell is core's `WaveField` (six waves, built in
+    `Course.ts`) evaluated per pixel; two scrolling ripple octaves fade on the pixel footprint
+    into roughness so the far sea does not shimmer. The depth map is clamped, not tiled (tiled,
+    it drew a ghost island of foam at the horizon), and the bed slopes to the open-sea floor over
+    the last 12 m inside the terrain's bounds (the shelf ended on a straight line). Proof:
+    gen-12lp medium, p95 17.2 -> 17.1 ms, draws 289 -> 288. Visual judge (fresh Opus, RTX 2080
+    headed WebGPU, shore and summit poses, 2 runs per arm, runs agree): IMPROVEMENT on both poses,
+    turquoise shallows, ripples and a broken glint path where the old sea was a milky plane; no
+    shelf edge, ghost island, seam or banding. Open polish notes: the foam round the coin islet is
+    an even ring with a hard outline, the ripple streaks are regular out to the horizon, and the
+    open sea in the shore pose reads periwinkle, not deep blue. Shots: `~/Downloads/hop-garden/sea/`.
 
 ## Execution Phases
 
