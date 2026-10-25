@@ -24,7 +24,7 @@ function referenceGrid(logs, width, height) {
             const x = cx * CELL + tap;
             const y = cy * CELL + row;
             if (x >= width || y >= height) continue;
-            const log = logs[(y * width + x) * 4];
+            const log = logs[y * width + x];
             assertCondition(Number.isFinite(log), "local histogram log readback is nonfinite");
             const normalized = Math.min(1, Math.max(0, f32(f32(log + 10) / 30)));
             const position = f32(normalized * (BINS - 1));
@@ -53,6 +53,7 @@ export function startScene(canvas, dimensions) {
     assertCondition(width === 1280 && height === 720, "histogram fixture requires the real default drawing buffer");
     const halfWidth = Math.ceil(width / 2);
     const halfHeight = Math.ceil(height / 2);
+    const logWidth = Math.ceil(halfWidth / 4);
     const cellsX = Math.ceil(halfWidth / CELL);
     const cellsY = Math.ceil(halfHeight / CELL);
     const logs = [-10, -8.9, -7.5, -6.25, -4.7, -2.9, -1.35, 0.15, 1.7, 3.2, 4.7, 6.35, 8.2, 10.6, 12.3, 14.4, 15.9];
@@ -91,11 +92,16 @@ export function startScene(canvas, dimensions) {
     assertCondition(targets.length === 6, `expected six actual local-exposure producers, observed ${targets.length}`);
     const logTarget = targets[0];
     const gridTarget = targets[5];
-    assertCondition(logTarget.width === halfWidth && logTarget.height === halfHeight && logTarget.texture.type === THREE.FloatType, "actual log target size/type differs");
+    assertCondition(logTarget.width === logWidth && logTarget.height === halfHeight && logTarget.texture.type === THREE.FloatType, "actual log target size/type differs");
     assertCondition(gridTarget.width === cellsX * BINS && gridTarget.height === cellsY && gridTarget.texture.type === THREE.FloatType, "actual final histogram size/type differs");
-    const logPixels = await renderer.readRenderTargetPixelsAsync(logTarget, 0, 0, halfWidth, halfHeight);
+    const packedLogs = await renderer.readRenderTargetPixelsAsync(logTarget, 0, 0, logWidth, halfHeight);
     const gridPixels = await renderer.readRenderTargetPixelsAsync(gridTarget, 0, 0, cellsX * BINS, cellsY);
-    assertCondition(logPixels instanceof Float32Array && logPixels.length === halfWidth * halfHeight * 4, "missing Float32 GPU log readback");
+    assertCondition(packedLogs instanceof Float32Array && packedLogs.length === logWidth * halfHeight * 4, "missing packed Float32 GPU log readback");
+    // Restore the logical half-resolution rows from four adjacent luminances per RGBA texel.
+    const logPixels = new Float32Array(halfWidth * halfHeight);
+    for (let y = 0; y < halfHeight; y++)
+      for (let x = 0; x < halfWidth; x++)
+        logPixels[y * halfWidth + x] = packedLogs[(y * logWidth + Math.floor(x / 4)) * 4 + x % 4];
     assertCondition(gridPixels instanceof Float32Array && gridPixels.length === cellsX * BINS * cellsY * 4, "missing Float32 GPU histogram readback");
     const expected = referenceGrid(logPixels, halfWidth, halfHeight);
     let maxAbsoluteError = 0;
@@ -107,18 +113,25 @@ export function startScene(canvas, dimensions) {
       let totalWeight = 0;
       for (let bin = 0; bin < BINS; bin++) {
         const texel = cell * BINS + bin;
-        for (let channel = 0; channel < 2; channel++) {
+        for (let channel = 0; channel < 4; channel++) {
           const actual = gridPixels[texel * 4 + channel];
-          const reference = expected[texel * 2 + channel];
+          const referenceBin = channel < 2 ? bin : Math.min(bin + 1, BINS - 1);
+          const reference = expected[(cell * BINS + referenceBin) * 2 + channel % 2];
           const error = Math.abs(actual - reference);
           // The historical unpacked GPU control has the same 0.00953 max log-sum rounding error.
           // Packed and unpacked GPU arrays match exactly; keep absent-bin zeros exact.
           const tolerance = reference === 0 ? 0 : 0.02 + Math.abs(reference) * 0.00002;
           assertCondition(Number.isFinite(actual) && error <= tolerance, `histogram mismatch cell=${cell} bin=${bin} channel=${channel}: actual=${actual} expected=${reference} tolerance=${tolerance}`);
           maxAbsoluteError = Math.max(maxAbsoluteError, error);
-          if (channel === 0) maxLogSumError = Math.max(maxLogSumError, error);
+          if (channel % 2 === 0) maxLogSumError = Math.max(maxLogSumError, error);
           else maxWeightError = Math.max(maxWeightError, error);
         }
+        const nextTexel = cell * BINS + Math.min(bin + 1, BINS - 1);
+        assertCondition(
+          gridPixels[texel * 4 + 2] === gridPixels[nextTexel * 4] &&
+          gridPixels[texel * 4 + 3] === gridPixels[nextTexel * 4 + 1],
+          `next-bin lanes differ from adjacent RG cell=${cell} bin=${bin}`,
+        );
         const weight = gridPixels[texel * 4 + 1];
         totalWeight += weight;
         if (weight > 0) populatedBins.add(bin);
@@ -132,8 +145,8 @@ export function startScene(canvas, dimensions) {
     assertCondition(populatedBins.has(0) && [...populatedBins].some(bin => bin % 2 === 1), "missing reachable low/odd-bin coverage");
     assertCondition(!populatedBins.has(31), "clamped real luminance unexpectedly populated bin31");
     const detail = {
-      half: [halfWidth, halfHeight], grid: [cellsX * BINS, cellsY],
-      comparedChannels: expected.length, maxAbsoluteError, maxLogSumError, maxWeightError, maxConservationError, populatedBins: [...populatedBins].sort((a, b) => a - b),
+      half: [halfWidth, halfHeight], packedLog: [logWidth, halfHeight], grid: [cellsX * BINS, cellsY],
+      comparedChannels: expected.length * 2, nextBinLaneChecks: expected.length, maxAbsoluteError, maxLogSumError, maxWeightError, maxConservationError, populatedBins: [...populatedBins].sort((a, b) => a - b),
       partialY: halfHeight % CELL, oddXCovered: false,
       coverageLimit: "Default drawing buffer covers partial Y; odd/tiny X is unit-only. Real metering clamps below bin31, whose zero entries are still compared.",
     };

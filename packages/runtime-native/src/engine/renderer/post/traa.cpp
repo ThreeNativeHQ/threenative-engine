@@ -169,7 +169,7 @@ struct Resolved { @location(0) color: vec4<f32>, @location(1) dynamic: f32 }
         }
     }
     let highClamp = upsampling;
-    let oldDynamic = textureSampleLevel(previousDynamic, linearSampler, historyUV, 0).r > 0;
+    let oldDynamic = upsampling && textureSampleLevel(previousDynamic, linearSampler, historyUV, 0).r > 0;
     let departed = !dynamicNeighborhood && oldDynamic;
     let valid = u.historyValid != 0 && validUV && (edge || !disocclusion) && !departed;
     let counting = u.count != 0;
@@ -488,7 +488,7 @@ void TraaPass::resolve(WGPUCommandEncoder encoder, WGPUTexture beauty, WGPUTextu
     // One frame in kMeasureEvery counts. The first frame has no history to judge, so it never counts.
     measured_ = history_.historyValid(0) && history_.frame() % kMeasureEvery == 0;
     data[14] = measured_ ? 1.f : 0.f;
-    data[15] = history_.historyValid(0) ? 1.f : 0.f;
+    data[15] = (width_ == outputWidth_ && height_ == outputHeight_) || history_.historyValid(0) ? 1.f : 0.f;
     data[16] = float(jitter_[0]); data[17] = float(jitter_[1]);
     data[18] = float(previousJitter_[0]); data[19] = float(previousJitter_[1]);
     if (measured_) {
