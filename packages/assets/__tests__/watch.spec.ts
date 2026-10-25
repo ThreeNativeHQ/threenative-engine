@@ -573,9 +573,17 @@ describe("watchAssets", () => {
 
     // Modified: a repainted base-colour map is a new content-addressed shared image, and the
     // unchanged normal map is one already on disk that must not be rewritten.
-    const declaredBefore = (
-      requireEntry(await readManifestEntries(manifestPath), "props/oak.glb").sharedImages ?? []
-    ).map((image) => image.output);
+    const sharedBefore =
+      requireEntry(await readManifestEntries(manifestPath), "props/oak.glb").sharedImages ?? [];
+    expect(sharedBefore).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          transcoderRequired: expect.any(Boolean),
+          transcoderSavings: expect.any(Number),
+        }),
+      ]),
+    );
+    const declaredBefore = sharedBefore.map((image) => image.output);
     const mtimesBefore = new Map(
       await Promise.all(
         declaredBefore.map(

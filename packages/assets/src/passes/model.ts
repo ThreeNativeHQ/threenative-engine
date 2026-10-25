@@ -250,6 +250,8 @@ const DRACO_EXTENSION = "KHR_draco_mesh_compression";
 const EXT_MESHOPT_EXTENSION = "EXT_meshopt_compression";
 /** Bumped with the merge signature so a stale compile-cache entry cannot hide a changed merge. */
 const MATERIAL_MERGE_VERSION = 1;
+/** Bumped when shared-image manifest rows gain per-image Basis accounting. */
+const SHARED_TRANSCODER_ACCOUNTING_VERSION = 1;
 /**
  * Bumped with the content-key signature behind `TN_ASSET_MODEL_DEDUPE`, for the same reason and
  * the same reason it is not `PIPELINE_VERSION`: that constant is hand-maintained, so a change
@@ -872,6 +874,9 @@ export function modelPass(options: IModelPassOptions = {}): IAssetPass {
               bakeVersion: VIRTUAL_BAKE_VERSION,
             },
       sharedImages: options.sharedImages !== undefined,
+      ...(options.sharedImages === undefined
+        ? {}
+        : { sharedTranscoderAccounting: SHARED_TRANSCODER_ACCOUNTING_VERSION }),
       textures:
         options.textures === "none"
           ? "none"
@@ -1279,6 +1284,8 @@ function declareSharedImage(
     metadata: {
       codec: candidate.image.codec,
       key: candidate.key,
+      transcoderRequired: candidate.image.transcoderRequired === true,
+      transcoderSavings: candidate.image.transcoderSavings ?? 0,
       ...(candidate.image.quality === undefined ? {} : { quality: candidate.image.quality }),
     },
     outputPath,

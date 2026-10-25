@@ -1,8 +1,12 @@
+import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 const { appendIteration, decideIteration, kindOf, renderHtml, summarize } = await import(
   new URL("../asset-perf-loop.mjs", import.meta.url).href
 );
 const { emptyLedger } = await import(new URL("../ci-speed-loop.mjs", import.meta.url).href);
+const { serveStatic } = await import(new URL("../asset-preload-probe.mjs", import.meta.url).href);
 
 const sources = [
   { path: "shared/hero.glb", bytes: 1000 },
@@ -92,5 +96,23 @@ describe("asset perf loop", () => {
     });
     expect(() => decideIteration(ledger, 9, "keep")).toThrow(/no iteration 9/u);
     expect(() => decideIteration(ledger, 1, "maybe")).toThrow(/decision must be one of/u);
+  });
+
+  it("does not serve a file outside its root through traversal or symlinks", async () => {
+    const base = await mkdtemp(join(tmpdir(), "asset-static-root-"));
+    const root = join(base, "public");
+    await mkdir(root);
+    await writeFile(join(base, "secret.txt"), "secret");
+    await symlink(join(base, "secret.txt"), join(root, "secret-link.txt"));
+    const { server, port } = await serveStatic([root]);
+    try {
+      for (const path of ["/%2e%2e%2fsecret.txt", "/secret-link.txt"]) {
+        const response = await fetch(`http://127.0.0.1:${port}${path}`);
+        expect(response.status).toBe(404);
+      }
+    } finally {
+      await new Promise<void>((done) => server.close(done));
+      await rm(base, { force: true, recursive: true });
+    }
   });
 });

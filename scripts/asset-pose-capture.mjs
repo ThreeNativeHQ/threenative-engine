@@ -87,7 +87,7 @@ async function captureArm(browser, softwareAdapterName, arm, models, dir, run) {
       for (const fraction of FRACTIONS) {
         await page.evaluate((args) => window.__show(...args), [clip.model, clip.index, fraction]);
         const png = await page.screenshot();
-        const name = `${arm.label}-run${run}-${models[clip.model].replace(/\W+/g, "_")}-${clip.index}-${Math.round(fraction * 100)}.png`;
+        const name = `${arm.label.replace(/[^a-z0-9._-]/gi, "_")}-run${run}-${models[clip.model].replace(/\W+/g, "_")}-${clip.index}-${Math.round(fraction * 100)}.png`;
         writeFileSync(join(dir, name), png);
         shots.push({
           name,

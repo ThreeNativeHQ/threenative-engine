@@ -5,10 +5,10 @@
 // queue. That is GPU-ready: core uploads a texture on first render, not on load. The clock starts
 // after `renderer.init()`, so the probe's own script and device start-up are not counted.
 // Chromium runs headed with the playtest harness's WebGPU flags; a software adapter is refused.
-import { createReadStream, statSync, writeFileSync } from "node:fs";
+import { createReadStream, realpathSync, statSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { createRequire } from "node:module";
-import { dirname, extname, join, resolve } from "node:path";
+import { dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -94,11 +94,28 @@ export async function writeProbePage(dir, entries, entry = ENTRY) {
 
 /** Serve the cooked output first, then the project root, so an uncooked source still resolves. */
 export function serveStatic(roots) {
+  const allowedRoots = roots.map((root) => realpathSync(root));
   const server = createServer((req, res) => {
-    const path = decodeURIComponent(new URL(req.url ?? "/", "http://x").pathname);
-    const file = roots
-      .map((root) => join(root, path))
-      .find((candidate) => statSync(candidate, { throwIfNoEntry: false })?.isFile());
+    let requestedPath;
+    try {
+      requestedPath = decodeURIComponent(new URL(req.url ?? "/", "http://x").pathname);
+    } catch {
+      res.writeHead(404).end();
+      return;
+    }
+    const file = allowedRoots
+      .map((root) => {
+        try {
+          const candidate = realpathSync(resolve(root, `.${requestedPath}`));
+          const fromRoot = relative(root, candidate);
+          return fromRoot === ".." || fromRoot.startsWith(`..${sep}`) || isAbsolute(fromRoot)
+            ? undefined
+            : candidate;
+        } catch {
+          return undefined;
+        }
+      })
+      .find((candidate) => candidate !== undefined && statSync(candidate)?.isFile());
     if (file === undefined) {
       res.writeHead(404).end();
       return;

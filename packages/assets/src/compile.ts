@@ -370,6 +370,13 @@ export interface IBakeReceipt {
   readonly pipelineVersion: number;
 }
 
+interface ISharedImageManifestEntry extends Readonly<Record<string, unknown>> {
+  readonly key?: string;
+  readonly output?: string;
+  readonly transcoderRequired?: boolean;
+  readonly transcoderSavings?: number;
+}
+
 interface IAssetManifestEntry {
   readonly quality?: import("./image-quality.js").ITextureQuality;
   readonly compressionSkipped?: TextureSkipReason;
@@ -399,6 +406,7 @@ interface IAssetManifestEntry {
   readonly lightmaps?: readonly Readonly<Record<string, unknown>>[];
   readonly output: string;
   readonly passes: string[];
+  readonly sharedImages?: readonly ISharedImageManifestEntry[];
   /** Triangle count of the compiled output (model pass). */
   readonly triangles?: number;
   readonly transcodeTargets?: readonly string[];
@@ -2625,27 +2633,71 @@ async function copyBasisTranscoder(
  * for the whole build: free when a standalone texture or a required model image already ships it,
  * or when the KTX2 savings summed over every model repay it; otherwise each image pays it alone.
  */
-function modelTranscoderCharge(
+interface ITranscoderChargeState {
+  readonly countedImages: Set<string>;
+  readonly countedOutputs: Set<string>;
+  needsSharedRecount: boolean;
+  paid: boolean;
+  savings: number;
+}
+
+function addTranscoderCharge(entry: IAssetManifestEntry, state: ITranscoderChargeState): void {
+  if (entry.kind === "texture" && entry.format !== undefined) {
+    if (entry.format !== "none" && entry.format !== "astc4x4") state.paid = true;
+    return;
+  }
+  const row = entry.embeddedTextures;
+  // Content-identical sources share one output; its images download once.
+  if (row === undefined || state.countedOutputs.has(entry.output)) return;
+  state.countedOutputs.add(entry.output);
+  state.paid ||= row.transcoderRequired === true;
+  const images = entry.sharedImages;
+  if (images === undefined || images.length === 0) {
+    state.savings += row.transcoderSavings ?? 0;
+    return;
+  }
+  const detailed = images.filter(isAccountedSharedImage);
+  if (detailed.length !== images.length) {
+    // Probe with KTX2 so the recook writes per-image savings, then settle from that manifest.
+    state.needsSharedRecount ||= (row.transcoderSavings ?? 0) > 0;
+    return;
+  }
+  for (const image of detailed) {
+    if (state.countedImages.has(image.key)) continue;
+    state.countedImages.add(image.key);
+    state.paid ||= image.transcoderRequired;
+    state.savings += image.transcoderSavings;
+  }
+}
+
+export function modelTranscoderCharge(
   entries: Readonly<Record<string, IAssetManifestEntry>>,
 ): 0 | undefined | "either" {
-  let savings = 0;
-  let paid = false;
-  const counted = new Set<string>();
-  for (const entry of Object.values(entries)) {
-    if (entry.kind === "texture" && entry.format !== undefined) {
-      if (entry.format !== "none" && entry.format !== "astc4x4") paid = true;
-      continue;
-    }
-    const row = entry.embeddedTextures;
-    // Content-identical sources share one output; its images download once.
-    if (row === undefined || counted.has(entry.output)) continue;
-    counted.add(entry.output);
-    if (row.transcoderRequired === true) paid = true;
-    savings += row.transcoderSavings ?? 0;
-  }
+  const state: ITranscoderChargeState = {
+    countedImages: new Set(),
+    countedOutputs: new Set(),
+    needsSharedRecount: false,
+    paid: false,
+    savings: 0,
+  };
+  for (const entry of Object.values(entries)) addTranscoderCharge(entry, state);
+  if (state.needsSharedRecount) return 0;
   // No model image would save bytes as KTX2, so the charge changes nothing.
-  if (savings === 0) return "either";
-  return paid || savings >= BASIS_TRANSCODER_BYTES ? 0 : undefined;
+  if (state.savings === 0) return "either";
+  return state.paid || state.savings >= BASIS_TRANSCODER_BYTES ? 0 : undefined;
+}
+
+function isAccountedSharedImage(value: unknown): value is ISharedImageManifestEntry & {
+  readonly key: string;
+  readonly transcoderRequired: boolean;
+  readonly transcoderSavings: number;
+} {
+  return (
+    isRecord(value) &&
+    typeof value.key === "string" &&
+    typeof value.transcoderRequired === "boolean" &&
+    typeof value.transcoderSavings === "number"
+  );
 }
 
 export async function compileAssets(
