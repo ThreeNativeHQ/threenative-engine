@@ -676,7 +676,9 @@ describe("the ktx2 texture pass", () => {
 
   it("should accept a WebP source the decoder reads (kit tiling textures ship as .webp)", async () => {
     const sharp = (await import("sharp")).default;
-    const webp = await sharp(rgbaPng({ height: 16, width: 16 })).webp({ lossless: true }).toBuffer();
+    const webp = await sharp(rgbaPng({ height: 16, width: 16 }))
+      .webp({ lossless: true })
+      .toBuffer();
     const result = await texturePass().apply(webp, "tex-grass.webp");
     expect(Buffer.isBuffer(result) || result.buffer.byteLength > 0).toBe(true);
   });
