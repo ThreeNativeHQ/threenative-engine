@@ -929,12 +929,30 @@ describe("AnimationPlayer stride sync on in-place clips", () => {
     }
   });
 
-  it("keeps the engine's world read for a rig with a hand-set matrix", () => {
+  it("keeps the engine's world read for a rig with a hand-set matrix, and both reads agree exactly", () => {
     const rig = (handSet: boolean) => {
+      // Scaled, turned and parented at every level, with a boot mesh, so the composed path must
+      // match updateMatrixWorld bit for bit through compose, multiply and the sole's corners.
+      const holder = new Group();
+      holder.position.set(2, 0.3, -1);
+      holder.rotation.y = 0.7;
+      holder.scale.setScalar(1.5);
       const root = new Group();
+      root.rotation.y = -0.4;
+      root.scale.set(1.2, 0.9, 1.1);
+      holder.add(root);
+      const hip = new Bone();
+      hip.position.set(0.1, 0, 0);
+      hip.rotation.set(0.3, 0.2, 0.1);
+      hip.scale.set(1, 1.3, 0.8);
+      root.add(hip);
       const foot = new Bone();
       foot.name = "Foot";
-      root.add(foot);
+      hip.add(foot);
+      const boot = new Mesh(new BoxGeometry(0.2, 0.1, 0.3));
+      boot.position.set(0, -0.05, 0.05);
+      boot.rotation.x = 0.2;
+      foot.add(boot);
       const prop = new Group();
       prop.matrixAutoUpdate = !handSet;
       prop.position.set(0, 0.5, 0);
@@ -951,6 +969,7 @@ describe("AnimationPlayer stride sync on in-place clips", () => {
     const handSet = rig(true);
     expect(composed.copies).toBe(0);
     expect(handSet.copies).toBe(65);
+    expect(composed.speed).toBeGreaterThan(0);
     expect(handSet.speed).toBe(composed.speed);
   });
 

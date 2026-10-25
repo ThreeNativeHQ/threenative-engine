@@ -589,6 +589,7 @@ export class RenderCameraCull {
     if (states === undefined) return;
     let rate = notRendered ? 8 : 1;
     let radius = 0;
+    let banded = false;
     if (
       !notRendered &&
       this.#cameraResolved &&
@@ -601,15 +602,17 @@ export class RenderCameraCull {
       radius = sphere.radius * object.matrixWorld.getMaxScaleOnAxis();
       // A known bound on the camera's forward centre ray is the conservative observable target
       // signal. Test each source independently so a nearer bound cannot hide a farther target.
-      if (this.#animationRay.intersectsSphere(this.#animationSphere.set(this.#center, radius)))
-        radius = 0;
+      banded = !this.#animationRay.intersectsSphere(
+        this.#animationSphere.set(this.#center, radius),
+      );
     }
     const { x, y, z } = this.#center;
     for (const state of states) {
       // The pixel band reads the whole rig this frame, not this part: Lantern Vale's hero is 51 rigid
       // parts, the largest 80 px at 720p while the hero stands 170 px, and per part it held every
       // other pose. A one-mesh rig's union is its own sphere.
-      if (radius > 0) rate = this.#bandRate(this.#rigSphere(state, x, y, z, radius));
+      // A part scaled to nothing projects 0 px: it leaves the rig to its other parts.
+      if (banded) rate = radius > 0 ? this.#bandRate(this.#rigSphere(state, x, y, z, radius)) : 8;
       if (state.source === this && state.frame === this.#animationFrame)
         state.rate = Math.min(state.rate, rate);
       else state.rate = rate;
@@ -625,22 +628,32 @@ export class RenderCameraCull {
       union = new Float64Array(5);
       this.#rigSpheres.set(state, union);
     }
-    if (union[0] !== this.#animationFrame) union.set([this.#animationFrame, x, y, z, radius]);
-    else {
-      const [, ux, uy, uz, ur] = union as unknown as [number, number, number, number, number];
+    // In place, a part at a time each frame: no array literal and no typed-array destructuring.
+    if (union[0] !== this.#animationFrame) {
+      union[0] = this.#animationFrame;
+      union[1] = x;
+      union[2] = y;
+      union[3] = z;
+      union[4] = radius;
+    } else {
+      const ux = union[1] as number;
+      const uy = union[2] as number;
+      const uz = union[3] as number;
+      const ur = union[4] as number;
       const distance = Math.hypot(x - ux, y - uy, z - uz);
       if (distance + radius > ur) {
-        if (distance + ur <= radius) union.set([this.#animationFrame, x, y, z, radius]);
-        else {
+        if (distance + ur <= radius) {
+          union[1] = x;
+          union[2] = y;
+          union[3] = z;
+          union[4] = radius;
+        } else {
           const grown = (distance + ur + radius) / 2;
           const shift = (grown - ur) / distance;
-          union.set([
-            this.#animationFrame,
-            ux + (x - ux) * shift,
-            uy + (y - uy) * shift,
-            uz + (z - uz) * shift,
-            grown,
-          ]);
+          union[1] = ux + (x - ux) * shift;
+          union[2] = uy + (y - uy) * shift;
+          union[3] = uz + (z - uz) * shift;
+          union[4] = grown;
         }
       }
     }

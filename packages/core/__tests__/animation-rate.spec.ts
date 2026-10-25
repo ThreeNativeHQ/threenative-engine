@@ -695,6 +695,50 @@ describe("AnimationPlayer update rate", () => {
     rig.dispose();
   });
 
+  /**
+   * The rig's rate with these parts, `radius` or `[radius, x, y]` (radius 0 = a part scaled to
+   * nothing), in this order, off the centre ray.
+   */
+  const rigRate = (parts: readonly (number | readonly [number, number, number])[]): number => {
+    const rig = player();
+    for (const entry of parts) {
+      const [radius, x, y] = typeof entry === "number" ? [entry, 0, 0] : entry;
+      const part = new Mesh(new SphereGeometry(radius || 1, 8, 6), new MeshBasicMaterial());
+      if (radius === 0) part.scale.setScalar(0);
+      part.position.set(x, y, 0);
+      rig.root.add(part);
+    }
+    rig.root.position.set(3, 0, -8);
+    const scene = new Scene();
+    scene.add(rig.root);
+    const cull = new RenderCameraCull();
+    scene.updateMatrixWorld(true);
+    cull.apply(scene, new PerspectiveCamera(60, 1, 0.1, 1000), 720);
+    cull.restore();
+    rig.update(1 / 60);
+    const { rate } = rig.updateRateReport;
+    cull.dispose();
+    rig.dispose();
+    return rate;
+  };
+
+  it("lets a part scaled to nothing leave the rig's rate to its other parts", () => {
+    // A 59 px body; the zero-scale part held the rig at rate 1 when it counted as a centre-ray hit.
+    expect(rigRate([0.4])).toBe(2);
+    expect(rigRate([0.4, 0])).toBe(2);
+  });
+
+  it("grows a rig's sphere the same in any part order and keeps it for a part inside it", () => {
+    const tiny = [0.05, 0.05, 0.05, 0.05, 0.05];
+    expect(rigRate([0.4])).toBe(2);
+    expect(rigRate([0.4, ...tiny])).toBe(2);
+    expect(rigRate([...tiny, 0.4])).toBe(2);
+    // Two 59 px parts 0.85 m apart make one 128+ px figure; a part inside the first must not
+    // shrink the sphere the second grows from.
+    expect(rigRate([0.4, [0.4, 0, 0.85]])).toBe(1);
+    expect(rigRate([0.4, [0.05, 0.1, 0], [0.4, 0, 0.85]])).toBe(1);
+  });
+
   it("keeps a distant unparented camera target at full rate and retargeting drops promotion", () => {
     const rig = player();
     const view = rendered(rig, -120);
