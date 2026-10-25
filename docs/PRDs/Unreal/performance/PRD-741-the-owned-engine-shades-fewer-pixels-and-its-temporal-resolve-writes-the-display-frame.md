@@ -71,7 +71,116 @@ reported no error. These failures need diagnosis before claiming the native gate
 The final binary passes the unchanged draw-count assertions; three additional focused repeats
 also passed. The initial count failure did not recur; its cause remains unproven.
 
-- [ ] Per-pass GPU ms for Hop Garden medium on Iris Xe at pinned scale 1.0 and 0.72 (stretch path), each pass sorted into input-bound, output-bound or fixed. This gives R (input-bound ms) and F (the rest) for the projection below. proof: `node packages/playtest/dist/runner/cli.js perf` on the kit scenario with `?tnFrameSpans=1`, 2 runs per arm, table in this box.
+- [x] Per-pass GPU ms for Hop Garden medium on Iris Xe at pinned scale 1.0 and 0.72 (stretch path), each pass sorted into input-bound, output-bound or fixed. This gives R (input-bound ms) and F (the rest) for the projection below. proof: the existing kit playtest runner executes `integrated-gpu-passes.playtest.json` with `?tnScale=<1|0.72>&tnTier=medium&tnFrameSpans=1&tnGpuPasses=1`, `--browser-recipe webgpu --headed --live-clock --timeout 180000`, two runs per arm; measured table below. This replaces the plan's `cli perf` shorthand with the actual timestamp-observing scenario command.
+
+  Measured before the subsequent exposure/denoise optimization, frozen source `618c0670eaff8e331b9cd87e22828d026a1aa134`, core `70cf2c29...`, Wasm `d519c305...`. A1/B1/B2/A2 order, all four exit 0 with no diagnostics/errors, real Intel gen12lp and identical spawn `[0,0.810099959,14]`. 6602 complete trace records validate; final 12 complete budget windows per arm select 3699 unique GPU frames. Profiling is ON; these runs do not qualify presented timing.
+
+  | Class | Pass rows | Additive mean A / B (ms) | Per-frame group p50 A / B (ms) |
+  | --- | ---: | ---: | ---: |
+  | Input-bound | 10 | 12.737 / 7.208 | 12.765 / 7.189 |
+  | Output-bound | 53 | 9.383 / 9.042 | 9.377 / 9.036 |
+  | Fixed | 27 | 0.721 / 0.568 | 0.586 / 0.530 |
+  | Total | 90 | 22.841 / 16.817 | 23.019 / 16.841 |
+
+  Group p50 values are nonadditive. Measured R = 12.737 ms and F = 10.104 ms (means). Actual area ratio `(1382*778)/(1920*1080)` = 0.518517 predicts `F + R*ratio` = 16.708 ms, versus measured mean 16.817 ms. The original F estimate 6.3 ms was too low. The fixed 480x9 local-exposure grid alone is 1.824 / 1.807 ms (pooled p50); its full five stages plus native output blits are 3.174 / 2.932 ms. This evidence led to integrating the parent's two-pass grid and gather-resolution denoising before final qualification.
+
+  Each row below is one measured pass occurrence, with GPU p50 milliseconds. A is 1.0, B is 0.72; dimensions are actual render targets, A → B. `not observed`/`—` is a missing occurrence, not zero cost. Output-derived local/auto-exposure and bloom targets follow the display size; fixed meters are 64x64, 64x1 and 1x1, shadows use the authored 2048x2048 map, and compute dispatches use fixed particle storage (exact per-emitter kernel identities are unavailable). Zero dimensions in raw metadata are resolved from those source owners; they are not treated as resolution evidence. Raw per-frame logs, screenshots, source-qualified classification bases and the complete CSV remain in the existing capture workflow output `~/Downloads/PRD-741/iris-gpu-passes/`.
+
+  | Pass / segment / occurrence | Class | Target A → B | A1 | B1 | B2 | A2 |
+  | --- | --- | --- | ---: | ---: | ---: | ---: |
+  | scene / 1 / 1 | input-bound | 1920x1080 → 1382x778 | 5.8920 | 3.5343 | 3.5869 | 6.0845 |
+  | aux / 2 / 1 | input-bound | 1920x1080 → 1382x778 | 0.9409 | 0.5822 | 0.5939 | 0.9598 |
+  | traaVelocity / 2 / 1 | input-bound | 1920x1080 → 1382x778 | 0.4305 | 0.2064 | 0.2116 | 0.4385 |
+  | velocityObjects / 2 / 1 | input-bound | 1920x1080 → 1382x778 | 0.1195 | 0.0706 | 0.0716 | 0.1193 |
+  | post / 2 / 1 | input-bound | 960x540 → 691x389 | 1.1039 | 0.5637 | 0.5837 | 1.1456 |
+  | post / 2 / 2 | input-bound | 1920x1080 → 1382x778 | 0.2748 | 0.1445 | 0.1459 | 0.2844 |
+  | post / 2 / 3 | input-bound | 960x540 → 691x389 | 1.4350 | 0.7424 | 0.7558 | 1.4802 |
+  | post / 2 / 4 | input-bound | 1920x1080 → 1382x778 | 1.5137 | 0.7771 | 0.7890 | 1.5625 |
+  | post / 2 / 5 | input-bound | 1920x1080 → 1382x778 | 0.4454 | 0.2364 | 0.2422 | 0.4605 |
+  | post / 2 / 6 | input-bound | 1920x1080 → 1382x778 | 0.5345 | 0.2240 | 0.2294 | 0.5379 |
+  | traaResolve / 2 / 1 | output-bound | 1920x1080 → 1920x1080 | 2.2904 | 2.5755 | 2.6038 | 2.3492 |
+  | post / 2 / 7 | output-bound | 1920x1080 → 1920x1080 | 0.4797 | 0.4404 | 0.4465 | 0.4839 |
+  | output / 3 / 1 | output-bound | 1920x1080 → 1920x1080 | 1.1722 | 1.1550 | 1.1709 | 1.1994 |
+  | scene / 2 / 1 | output-bound | 480x270 → 480x270 | 0.4448 | 0.2507 | 0.2555 | 0.4529 |
+  | output / 2 / 1 | output-bound | 480x270 → 480x270 | 0.0258 | 0.0206 | 0.0211 | 0.0266 |
+  | scene / 2 / 2 | output-bound | 120x68 → 120x68 | 0.0424 | 0.0383 | 0.0390 | 0.0437 |
+  | output / 2 / 2 | output-bound | 120x68 → 120x68 | 0.0047 | 0.0046 | 0.0047 | 0.0048 |
+  | scene / 2 / 3 | fixed | 64x64 → 64x64 | 0.0992 | 0.0955 | 0.0986 | 0.1029 |
+  | output / 2 / 3 | fixed | 64x64 → 64x64 | 0.0044 | 0.0041 | 0.0042 | 0.0045 |
+  | scene / 2 / 4 | fixed | 64x1 → 64x1 | 0.0255 | 0.0248 | 0.0254 | 0.0261 |
+  | output / 2 / 4 | fixed | 64x1 → 64x1 | 0.0040 | 0.0039 | 0.0040 | 0.0041 |
+  | scene / 2 / 5 | fixed | 1x1 → 1x1 | 0.0397 | 0.0387 | 0.0397 | 0.0410 |
+  | output / 2 / 5 | fixed | 1x1 → 1x1 | 0.0042 | 0.0041 | 0.0042 | 0.0043 |
+  | localExposure.log / 2 / 6 | output-bound | 960x540 → 960x540 | 0.3517 | 0.2372 | 0.2491 | 0.3525 |
+  | localExposure.log.outputBlit / 2 / 6 | output-bound | 960x540 → 960x540 | 0.0960 | 0.0976 | 0.0987 | 0.0982 |
+  | localExposure.luminance / 2 / 7 | output-bound | 120x68 → 120x68 | 0.6608 | 0.3658 | 0.3628 | 0.6741 |
+  | localExposure.luminance.outputBlit / 2 / 7 | output-bound | 120x68 → 120x68 | 0.0049 | 0.0046 | 0.0048 | 0.0050 |
+  | localExposure.blurX / 2 / 8 | output-bound | 120x68 → 120x68 | 0.0477 | 0.0464 | 0.0476 | 0.0493 |
+  | localExposure.blurX.outputBlit / 2 / 8 | output-bound | 120x68 → 120x68 | 0.0046 | 0.0045 | 0.0046 | 0.0047 |
+  | localExposure.blurY / 2 / 9 | output-bound | 120x68 → 120x68 | 0.0455 | 0.0445 | 0.0456 | 0.0471 |
+  | localExposure.blurY.outputBlit / 2 / 9 | output-bound | 120x68 → 120x68 | 0.0046 | 0.0045 | 0.0046 | 0.0047 |
+  | localExposure.grid / 2 / 10 | output-bound | 480x9 → 480x9 | 1.8200 | 1.7677 | 1.8137 | 1.8819 |
+  | localExposure.grid.outputBlit / 2 / 10 | output-bound | 480x9 → 480x9 | 0.0045 | 0.0044 | 0.0045 | 0.0045 |
+  | scene / 2 / 11 | output-bound | 960x540 → 960x540 | 0.2786 | 0.2704 | 0.2735 | 0.2820 |
+  | output / 2 / 11 | output-bound | 960x540 → 960x540 | 0.0578 | 0.0560 | 0.0575 | 0.0598 |
+  | scene / 2 / 12 | output-bound | 480x270 → 480x270 | 0.0580 | 0.0585 | 0.0596 | 0.0624 |
+  | output / 2 / 12 | output-bound | 480x270 → 480x270 | 0.0164 | 0.0160 | 0.0163 | 0.0169 |
+  | scene / 2 / 13 | output-bound | 240x135 → 240x135 | 0.0232 | 0.0226 | 0.0230 | 0.0238 |
+  | output / 2 / 13 | output-bound | 240x135 → 240x135 | 0.0074 | 0.0073 | 0.0074 | 0.0077 |
+  | scene / 2 / 14 | output-bound | 120x68 → 120x68 | 0.0134 | 0.0132 | 0.0134 | 0.0138 |
+  | output / 2 / 14 | output-bound | 120x68 → 120x68 | 0.0046 | 0.0045 | 0.0046 | 0.0047 |
+  | scene / 2 / 15 | output-bound | 60x34 → 60x34 | 0.0110 | 0.0107 | 0.0109 | 0.0112 |
+  | output / 2 / 15 | output-bound | 60x34 → 60x34 | 0.0041 | 0.0040 | 0.0041 | 0.0042 |
+  | scene / 2 / 16 | output-bound | 30x17 → 30x17 | 0.0099 | 0.0098 | 0.0099 | 0.0102 |
+  | output / 2 / 16 | output-bound | 30x17 → 30x17 | 0.0040 | 0.0040 | 0.0040 | 0.0041 |
+  | scene / 2 / 17 | output-bound | 30x17 → 30x17 | 0.0202 | 0.0200 | 0.0204 | 0.0208 |
+  | output / 2 / 17 | output-bound | 30x17 → 30x17 | 0.0040 | 0.0039 | 0.0040 | 0.0041 |
+  | scene / 2 / 18 | output-bound | 30x17 → 30x17 | 0.0187 | 0.0186 | 0.0190 | 0.0193 |
+  | output / 2 / 18 | output-bound | 30x17 → 30x17 | 0.0041 | 0.0040 | 0.0041 | 0.0042 |
+  | scene / 2 / 19 | output-bound | 60x34 → 60x34 | 0.0223 | 0.0221 | 0.0224 | 0.0230 |
+  | output / 2 / 19 | output-bound | 60x34 → 60x34 | 0.0041 | 0.0040 | 0.0041 | 0.0042 |
+  | scene / 2 / 20 | output-bound | 60x34 → 60x34 | 0.0210 | 0.0208 | 0.0212 | 0.0216 |
+  | output / 2 / 20 | output-bound | 60x34 → 60x34 | 0.0040 | 0.0040 | 0.0041 | 0.0042 |
+  | scene / 2 / 21 | output-bound | 120x68 → 120x68 | 0.0220 | 0.0215 | 0.0218 | 0.0225 |
+  | output / 2 / 21 | output-bound | 120x68 → 120x68 | 0.0046 | 0.0045 | 0.0046 | 0.0047 |
+  | scene / 2 / 22 | output-bound | 120x68 → 120x68 | 0.0221 | 0.0216 | 0.0220 | 0.0227 |
+  | output / 2 / 22 | output-bound | 120x68 → 120x68 | 0.0045 | 0.0045 | 0.0045 | 0.0046 |
+  | scene / 2 / 23 | output-bound | 240x135 → 240x135 | 0.0335 | 0.0331 | 0.0335 | 0.0345 |
+  | output / 2 / 23 | output-bound | 240x135 → 240x135 | 0.0072 | 0.0072 | 0.0073 | 0.0075 |
+  | scene / 2 / 24 | output-bound | 240x135 → 240x135 | 0.0334 | 0.0330 | 0.0335 | 0.0345 |
+  | output / 2 / 24 | output-bound | 240x135 → 240x135 | 0.0072 | 0.0071 | 0.0072 | 0.0075 |
+  | scene / 2 / 25 | output-bound | 480x270 → 480x270 | 0.0935 | 0.0908 | 0.0928 | 0.0944 |
+  | output / 2 / 25 | output-bound | 480x270 → 480x270 | 0.0157 | 0.0154 | 0.0157 | 0.0163 |
+  | scene / 2 / 26 | output-bound | 480x270 → 480x270 | 0.0952 | 0.0932 | 0.0956 | 0.0986 |
+  | output / 2 / 26 | output-bound | 480x270 → 480x270 | 0.0156 | 0.0153 | 0.0156 | 0.0162 |
+  | scene / 2 / 27 | output-bound | 960x540 → 960x540 | 0.2470 | 0.2471 | 0.2509 | 0.2573 |
+  | output / 2 / 27 | output-bound | 960x540 → 960x540 | 0.0572 | 0.0553 | 0.0570 | 0.0592 |
+  | scene / 2 / 28 | output-bound | 960x540 → 960x540 | 0.2647 | 0.2584 | 0.2646 | 0.2723 |
+  | output / 2 / 28 | output-bound | 960x540 → 960x540 | 0.0553 | 0.0534 | 0.0551 | 0.0573 |
+  | particle compute / 2 / 1 | fixed | fixed particle storage | 0.0030 | 0.0029 | 0.0030 | 0.0030 |
+  | particle compute / 2 / 2 | fixed | fixed particle storage | 0.0031 | 0.0030 | 0.0031 | 0.0032 |
+  | particle compute / 2 / 3 | fixed | fixed particle storage | 0.0037 | 0.0037 | 0.0037 | 0.0038 |
+  | particle compute / 2 / 4 | fixed | fixed particle storage | 0.0037 | 0.0036 | 0.0037 | 0.0037 |
+  | particle compute / 2 / 5 | fixed | fixed particle storage | 0.0027 | 0.0028 | 0.0029 | 0.0029 |
+  | particle compute / 2 / 6 | fixed | fixed particle storage | 0.0030 | 0.0035 | 0.0035 | 0.0033 |
+  | particle compute / 2 / 7 | fixed | fixed particle storage | 0.0032 | 0.0032 | 0.0032 | 0.0031 |
+  | particle compute / 2 / 8 | fixed | fixed particle storage | 0.0033 | 0.0033 | 0.0033 | 0.0033 |
+  | particle compute / 2 / 9 | fixed | fixed particle storage | 0.0032 | 0.0032 | 0.0033 | 0.0032 |
+  | particle compute / 2 / 10 | fixed | fixed particle storage | 0.0033 | 0.0033 | 0.0034 | 0.0034 |
+  | particle compute / 2 / 11 | fixed | fixed particle storage | 0.0032 | 0.0033 | 0.0034 | 0.0031 |
+  | particle compute / 2 / 12 | fixed | fixed particle storage | 0.0035 | 0.0038 | 0.0037 | 0.0035 |
+  | particle compute / 2 / 13 | fixed | fixed particle storage | 0.0032 | 0.0035 | 0.0035 | 0.0032 |
+  | particle compute / 2 / 14 | fixed | fixed particle storage | 0.0034 | 0.0038 | 0.0039 | 0.0034 |
+  | particle compute / 2 / 15 | fixed | fixed particle storage | 0.0033 | 0.0034 | 0.0035 | 0.0033 |
+  | particle compute / 2 / 16 | fixed | fixed particle storage | 0.0037 | 0.0042 | 0.0038 | 0.0035 |
+  | particle compute / 2 / 17 | fixed | fixed particle storage | 0.0033 | 0.0031 | 0.0038 | 0.0035 |
+  | particle compute / 2 / 18 | fixed | fixed particle storage | 0.0039 | 0.0039 | 0.0041 | 0.0040 |
+  | particle compute / 2 / 19 | fixed | fixed particle storage | 0.0034 | — | — | 0.0035 |
+  | particle compute / 2 / 20 | fixed | fixed particle storage | 0.0040 | — | — | 0.0041 |
+  | directional shadow 2048x2048 / 0 / 1 | fixed | 2048x2048 → 2048x2048 | 0.3325 | 0.3304 | 0.3334 | 0.3424 |
+
+  Start temperature/load A1 78 C / 0.51, B1 81 C / 1.74, B2 83 C / 2.29, A2 82 C / 2.62. The first three following-arm starts bound the preceding ends; A2 immediate end was not recorded. A delayed post-run reading was 69 C / 0.31 at 08:22:19 UTC, not an end-of-capture sample. Laptop CI was restored and owned browsers/servers stopped.
+
 - [x] Red: an engine test asserts that `TraaPass` at input 1280x720 and output 1920x1080 has input-size velocity and depth history, output-size color history and resolve, and a jitter length of at least 8/f². proof: the focused native renderer test object build exited 1 before implementation (missing four-argument `resize`); the CMake renderer/player build then passed, and `ctest --test-dir packages/runtime-native/build/prd741 -R '^native_engine_traa_validation$' --output-on-failure` passed 1/1 after implementation. Status reads actual GPU allocation sizes; tests also encode three resolves, check output-only resize invalidation, odd dimensions, and the 0.27 fraction.
 
 ### Phase 2 — Engine resolve, routing and tier defaults
@@ -94,8 +203,8 @@ Frame after the GTAO work: ~21 ms. Not scaled by the input size: local exposure 
 
 ## Current verification (2026-10-25)
 
-- Integrated PR #563 at `f9a61d044e110d82736ab4c3a22a30966046fb70`, including its authored kits, SSR step cap and one-pass MRT renderer. The owner's request to base this work on #563 authorizes this dependency integration; #563 itself remains unmerged. Preserved the separately published develop merge on this PR's branch; no force push.
-- The owner-reported white Adventure ground was a fragment `attribute("color")` collision with the fragment output named `color`. Reused #563's existing `vertexColor` varying fix, with a native material regression and selected browser/desktop conformance. Final Wasm SHA `4f99b70a5054d4f8ba585be5eb3174bf382e9bc10c03dd2400f8c84d6f72198c`; player SHA `72bfbab5d1bfaa2c25d7f5deadab9213e6f9cbaf7ac7928d019faa6e390e7842`.
+- Integrated PR #563 initially at `f9a61d044e110d82736ab4c3a22a30966046fb70`, then at current parent head `3a94788abe335c9772fcea082e2ada546d656d70`, including its authored kits, SSR step cap, one-pass MRT renderer, two-pass local-exposure grid and gather-resolution SSGI denoising. The owner's request to base this work on #563 authorizes this dependency integration; #563 itself remains unmerged. Preserved the separately published develop merge on this PR's branch; no force push.
+- The owner-reported white Adventure ground was a fragment `attribute("color")` collision with the fragment output named `color`. Reused #563's existing `vertexColor` varying fix, with a native material regression and selected browser/desktop conformance. Then-qualified Wasm SHA `4f99b70a5054d4f8ba585be5eb3174bf382e9bc10c03dd2400f8c84d6f72198c`; player SHA `72bfbab5d1bfaa2c25d7f5deadab9213e6f9cbaf7ac7928d019faa6e390e7842`.
 - Integration gates: 297 related TypeScript tests pass across 21 files; five focused native ABI/material/temporal tests pass; workspace typecheck passes. Native exposure contract and its validation-negative control pass 2/2 after explicitly seeding the adaptation fixture with `reset(1)`; incoming #563 intentionally snaps the unseeded first frame, which made the old fixture's requirement for 120 changing values time out. Repaired the incoming MCP instruction assignment against its existing red-to-green server tests (23/23), then rebuilt its generated core server.
 - The temporal render-scale argument changes the host ABI: facade/native are now ABI 3 with signature digest `5cdb0d90812f406d`. The existing ABI test failed before the bump and passes afterward. A real kit boot caught a stale ABI-2 facade embedded in the scaffolder despite a current raw facade package; rebuilt the scaffolder and verified ABI 3 in the packed, installed and compiled bundle. All three integrated external kits install, build and typecheck. Corrected CLI tarball SHA `60f416cd5094a0e6a7883801996b891ed3e66e73f32d34f29087f2732f3ff83f`.
 - Final selected conformance reports `artifacts/conformance/prd741-integrated-{reference,web,desktop}/report.json`: all three selected rows pass. Temporal web mismatch/deltaE 0.058331163194 / 0.383133136098; desktop 0.05810546875 / 0.383432175137 (unchanged limits 0.06 / 9). Color mismatch/deltaE 0.000564236111 / 0.000250461924 on both; reduced-input exposure mismatch/deltaE 0 / 0 on both. Real NVIDIA Turing; no reported page/frame/GPU errors. Aggregate exit 2 marks 133 intentionally unselected rows blocked, not a green full board.
@@ -108,6 +217,11 @@ Frame after the GTAO work: ~21 ms. Not scaled by the input size: local exposure 
 - Trace cohort qualification: Wasm SHA `d519c305c3a36bffa54c60486f7e51a0ad7443ffa5c47380432025468de24ac3`, player SHA `50da0b5c6d96682b2eb9cb198e79c2dde50aac21f71cf8c6868f89b50093a638`. All three clean kits install, build and typecheck; packed/installed/compiled facades remain ABI 3. Host ABI tests pass 3/3, documentation checks pass (3549 links), and regenerated native coverage exits 0 on the trace source. No strict performance or independent visual gate is implied.
 
 - Named non-gating motion corpus ran on the trace source under private Xvfb: `pnpm tsx scripts/verify-temporal-motion.ts` exits 1. Its own qualification limits it to software WebGPU AA measurements, with no native, reconstruction or GPU-performance claim. Its summary records passing causal/recompile/velocity controls and temporal stability, but failing edge improvement and reveal recovery (both motion and quality checks). Actual frames and measurements remain in the existing workflow output `artifacts/temporal-aa/motion/summary.json`. This is the explicitly non-gating PRD-539 corpus, not a passing temporal quality claim; the required independent three-kit visual judgment stays open.
+
+- Pre-optimization Iris trace cohort `618c0670eaff8e331b9cd87e22828d026a1aa134`: all four stationary-spawn arms exit 0, no console errors; 6602 JSON records parse and pass-sum errors are at most 3.55e-15 ms. GPU p50 A1/B1/B2/A2 = 22.7454 / 16.6187 / 16.9521 / 23.3523 ms; pooled A/B = 23.019 / 16.841 ms. The unchanged 480x9 local-exposure grid alone costs 1.824 / 1.807 ms. Logging is enabled for attribution, so this is not the strict performance gate. The complete classified pass table and measured R/F projection are recorded in the completed Phase 1 box. Existing capture workflow output: `~/Downloads/PRD-741/iris-gpu-passes/per-pass.csv` and arm folders.
+- Integrated the parent update after that measurement; source head `08ad35668fb6fd3eac4739c65e92b2de530edb65`. All 163 related tests across five files pass; workspace typecheck and lint pass (1890 warnings). The new grid splits the cell reduction into row and column passes; SSGI denoising now runs at gather resolution. Repacking and strict untraced three-pair qualification remain pending. Port 7451 now serves the previously qualified traced Adventure build (Wasm d519c305...), replacing the stale ddee0306... preview; no owner-desktop windows opened.
+
+- Optimized cohort: all three fresh kits pass install, build and typecheck; CLI packed/installed/compiled ABI 3 and Wasm `d519c305...` verified. Core SHA `fd0bbe7ca53eea808bb61e93b5e0b2a228b82dd6e8132aca1a6e026f42058702`; handoff archive SHA `b886e46ad7cebbf182a6380b9d32d413cbe3ad25aa7a7708f4af9b8f1865eeb2`. Strict three-pair runs omit profiling and CPU spans; the stronger qualification requires all 12 complete five-second GPU-p50 windows per arm <= 15 ms and worst-window presented p95 <= 16.7 ms, with positive sample counts. A median of window medians is reported as such, not as an exact pooled p50.
 
 ## Decisions
 
